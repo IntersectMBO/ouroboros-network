@@ -6,6 +6,8 @@
 
 ### Non-breaking changes
 
+- Bump io-sim and io-classes
+
 ## 0.2.0.13
 
 ### Non-breaking changes

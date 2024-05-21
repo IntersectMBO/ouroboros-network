@@ -6,6 +6,9 @@
 
 ### Non-Breaking changes
 
+- Bump io-sim and io-classes
+- Refactor testnet
+
 ## 0.16.0.0 -- 2024-05-07
 
 ### Breaking changes
@@ -43,7 +46,7 @@
 * Reset public root retry state when transition between `LedgerStateJudgements`.
 * Reduce public root retry timer.
 * Don't classify a config file with publicRoot/bootstrapPeers IP addresss only
-  as a DNS error. 
+  as a DNS error.
 * Renamed `fuzzRnd` to `stdGen` in `PeerSelectionState`
 * split `stdGen` in `PeerSelection.Governor.wakeupAction`
 

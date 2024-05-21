@@ -4,6 +4,7 @@
 
 ### Breaking changes
 
+- Bump io-sim and io-classes
 * Un-orphan `ShowProxy SlotNo` instance.
 
 ### Non-Breaking changes
