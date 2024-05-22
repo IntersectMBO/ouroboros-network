@@ -4,6 +4,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
+#if defined(mingw32_HOST_OS)
+{-# LANGUAGE PackageImports      #-}
+#endif
+
 {-# OPTIONS_GHC -Wno-orphans     #-}
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
@@ -36,7 +40,7 @@ import Data.Bits ((.|.))
 import System.IOManager
 import System.Win32 qualified as Win32
 import System.Win32.Async qualified as Win32.Async
-import System.Win32.NamedPipes qualified as Win32.NamedPipes
+import "Win32-network" System.Win32.NamedPipes qualified as Win32.NamedPipes
 #else
 import System.IO (hClose)
 import System.Process (createPipe)

@@ -4,6 +4,10 @@
 {-# LANGUAGE NamedFieldPuns     #-}
 {-# LANGUAGE NumericUnderscores #-}
 
+#if defined(mingw32_HOST_OS)
+{-# LANGUAGE PackageImports     #-}
+#endif
+
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
 -- | Demo application using mux over unix sockets or named pipes on Windows.
@@ -19,7 +23,7 @@ import Control.Exception (finally)
 import Control.Monad
 import Control.Tracer (Tracer (..), nullTracer, showTracing)
 
-import System.Environment
+import System.Environment qualified as SysEnv
 import System.Exit
 import System.IO
 
@@ -28,7 +32,7 @@ import Data.Bits
 import System.IOManager
 import System.Win32
 import System.Win32.Async qualified as Win32.Async
-import System.Win32.NamedPipes
+import "Win32-network" System.Win32.NamedPipes
 #else
 import Network.Socket (Family (AF_UNIX), SockAddr (..))
 import Network.Socket qualified as Socket
@@ -43,7 +47,7 @@ import Test.Mux.ReqResp
 
 main :: IO ()
 main = do
-    args <- getArgs
+    args <- SysEnv.getArgs
     case args of
       ["server"]         -> server
       ["client", n, msg] -> client (read n) msg

@@ -10,6 +10,10 @@
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 
+#if defined(mingw32_HOST_OS)
+{-# LANGUAGE PackageImports             #-}
+#endif
+
 {-# OPTIONS_GHC -Wno-orphans            #-}
 #if __GLASGOW_HASKELL__ >= 908
 {-# OPTIONS_GHC -Wno-x-partial          #-}
@@ -52,7 +56,7 @@ import Control.Tracer
 #if defined(mingw32_HOST_OS)
 import System.Win32.Async qualified as Win32.Async
 import System.Win32.File qualified as Win32.File
-import System.Win32.NamedPipes qualified as Win32.NamedPipes
+import "Win32-network" System.Win32.NamedPipes qualified as Win32.NamedPipes
 #else
 import System.IO (hClose)
 import System.Process (createPipe)

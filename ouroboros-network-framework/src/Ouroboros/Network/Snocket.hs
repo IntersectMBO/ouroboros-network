@@ -10,6 +10,10 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 
+#if defined(mingw32_HOST_OS)
+{-# LANGUAGE PackageImports             #-}
+#endif
+
 #if !defined(mingw32_HOST_OS)
 #define POSIX
 #endif
@@ -57,7 +61,7 @@ import Data.Bits
 import Foreign.Ptr (IntPtr (..), ptrToIntPtr)
 import System.Win32 qualified as Win32
 import System.Win32.Async qualified as Win32.Async
-import System.Win32.NamedPipes qualified as Win32
+import "Win32-network" System.Win32.NamedPipes qualified as Win32
 #endif
 
 import NoThunks.Class
