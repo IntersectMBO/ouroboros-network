@@ -304,8 +304,10 @@ splitAt i (AnchoredSeq a ft) = case FT.split (\v -> measureSize v > i) ft of
 -- > anchor      before == anchor s
 -- > headAnchor  before == anchor after
 -- > headAnchor  after  == headAnchor s
--- > [before] == filter ((< v) . getElementMeasure . MeasuredWith) s
--- > [after] == filter ((v <=) . getElementMeasure . MeasuredWith) s
+-- > toOldestFirst before ==
+-- >   filter ((< v) . getAnchorMeasure @v @a (Proxy @b) . asAnchor) (toOldestFirst s)
+-- > toOldestFirst after ==
+-- >   filter ((v <=) . getAnchorMeasure @v @a (Proxy @b) . asAnchor) (toOldestFirst s)
 splitAtMeasure ::
       Anchorable v a b
    => v
