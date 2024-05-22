@@ -54,6 +54,9 @@ tests = testGroup "AnchoredFragment"
     , testProperty "arbitrary for TestAnchoredFragmentAndPoint" prop_arbitrary_TestAnchoredFragmentAndPoint
     , testProperty "shrink for TestAnchoredFragmentAndPoint"    prop_shrink_TestAnchoredFragmentAndPoint
 
+    , testProperty "arbitrary for TestAnchoredFragmentAndSlot" prop_arbitrary_TestAnchoredFragmentAndSlot
+    , testProperty "shrink for TestAnchoredFragmentAndSlot"    prop_shrink_TestAnchoredFragmentAndSlot
+
     , testProperty "arbitrary for TestJoinableAnchoredFragments" prop_arbitrary_TestJoinableAnchoredFragments
     ]
 
@@ -76,6 +79,7 @@ tests = testGroup "AnchoredFragment"
   , testProperty "selectPoints"                       prop_selectPoints
   , testProperty "splitAfterPoint"                    prop_splitAfterPoint
   , testProperty "splitBeforePoint"                   prop_splitBeforePoint
+  , testProperty "splitAtSlot"                        prop_splitAtSlot
   , testProperty "sliceRange"                         prop_sliceRange
   , testProperty "join"                               prop_join
   , testProperty "intersect"                          prop_intersect
@@ -247,6 +251,16 @@ prop_splitBeforePoint (TestAnchoredFragmentAndPoint c pt) =
       .&&. (blockPoint <$> AF.last s) === Right pt
       .&&. AF.join p s                === Just c
     Nothing -> property $ not $ AF.pointOnFragment pt c
+
+prop_splitAtSlot :: TestAnchoredFragmentAndPoint -> Property
+prop_splitAtSlot (TestAnchoredFragmentAndSlot c slot) =
+  let (p, s) = AF.splitAtSlot c slot
+   in      AF.anchorPoint  p      === AF.anchorPoint c
+      .&&. AF.headPoint    p      === AF.anchorPoint slot
+      .&&. AF.headPoint slot      === AF.headPoint c
+      .&&. AF.join p s            === Just c
+      .&&. AF.toOldestFirst p     === filter ((< slot) . blockSlot) (AF.toOldestFirst s)
+      .&&. AF.toOldestFirst after === filter ((slot <=) . blockSlot) (AF.toOldestFirst s)
 
 prop_sliceRange :: TestChainAndRange -> Bool
 prop_sliceRange (TestChainAndRange c p1 p2) =
@@ -477,6 +491,68 @@ prop_shrink_TestAnchoredFragmentAndPoint t@(TestAnchoredFragmentAndPoint c _) =
                         AF.withinFragmentBounds p c')
       | TestAnchoredFragmentAndPoint c' p <- shrink t ]
 
+--
+-- Generator for chain and a slot on the chain
+--
+
+-- | A test generator for an anchored fragment and a slot. In most cases the
+-- slot is on the anchored fragment, but it also covers at least 5% of cases
+-- where the point is not on the anchored fragment.
+--
+data TestAnchoredFragmentAndSlot =
+    TestAnchoredFragmentAndSlot (AnchoredFragment Block) (WithOrigin SlotNo)
+
+instance Show TestAnchoredFragmentAndSlot where
+  show (TestAnchoredFragmentAndSlot c slot) =
+      "TestAnchoredFragmentAndSlot" ++ nl ++
+      AF.prettyPrint nl show show c ++ nl ++
+      show slot
+    where
+      nl = "\n"
+
+instance Arbitrary TestAnchoredFragmentAndSlot where
+  arbitrary = do
+    TestBlockAnchoredFragment chain <- arbitrary
+    let slot0 = succWithOrigin $ AF.anchorSlot chain
+        slot1 = succWithOrigin $ AF.headSlot chain
+    slotPlus1 <- frequency
+      [ (18, choose (slot0, slot1 + 1))
+      -- A few slots off the fragment
+      , (1, choose (0, slot0))
+      , (1, choose (slot1+2, slot1+20))
+      ]
+    let slot = if slotPlus1 == 0 then Origin else WithOrigin (slotPlus1 - 1)
+    return (TestAnchoredFragmentAndSlot chain slot)
+
+  shrink (TestAnchoredFragmentAndSlot c slot)
+    | slotOnFragment slot c
+      -- If the slot is within the fragment range, shrink the fragment and
+      -- return all the points within the range
+    = [ TestAnchoredFragmentAndPoint c' slot'
+      | TestBlockAnchoredFragment c' <- shrink (TestBlockAnchoredFragment c)
+      , slot' <- [AF.anchorSlot c' .. AF.headSlot c']
+      ]
+    | otherwise
+      -- If the slot is not within the bounds, just shrink the fragment and
+      -- return the same slot
+    = [ TestAnchoredFragmentAndPoint c' slot
+      | TestBlockAnchoredFragment c' <- shrink (TestBlockAnchoredFragment c)
+      ]
+
+slotOnFragment :: WithOrigin SlotNo -> AnchoredFragment Block -> Bool
+slotOnFragment slot c = AF.headSlot c <= slot && slot <= AF.headSlot c
+
+prop_arbitrary_TestAnchoredFragmentAndSlot :: TestAnchoredFragmentAndSlot -> Property
+prop_arbitrary_TestAnchoredFragmentAndPoint (TestAnchoredFragmentAndSlot c slot) =
+  let onAnchoredFragment = slotOnFragment slot c in
+  cover 75 onAnchoredFragment      "slot on fragment"     $
+  cover 1 (not onAnchoredFragment) "slot not on fragment" $
+  AF.valid c
+
+prop_shrink_TestAnchoredFragmentAndSlot :: TestAnchoredFragmentAndSlot -> Bool
+prop_shrink_TestAnchoredFragmentAndSlot t@(TestAnchoredFragmentAndSlot c _) =
+  and [ AF.valid c' && (not (slotOnFragment slot c) || slotOnFragment slot c')
+      | TestAnchoredFragmentAndSlot c' slot <- shrink t ]
 
 --
 -- Generator for two fragments that can or cannot be joined
