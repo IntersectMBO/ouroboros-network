@@ -70,6 +70,7 @@ module Ouroboros.Network.AnchoredFragment
   , selectPoints
   , isPrefixOf
   , splitAfterPoint
+  , splitAtSlot
   , splitBeforePoint
   , sliceRange
   , join
@@ -529,6 +530,24 @@ splitBeforePoint af p =
       (pointSlot p)
       ((== castPoint p) . blockPoint)
       af
+
+-- | \( O(\log(\min(i,n-i)) \). Split the 'AnchoredFragment' at the given
+-- slot.
+--
+-- POSTCONDITION: when @(before, after) = splitAtSlot s f@, then:
+--
+-- * @anchorPoint before == anchorPoint f@
+-- * @headPoint   before == anchorPoint after@
+-- * @headPoint   after  == headPoint f@
+-- * @join before after  == Just f@
+-- * @toOldestFirst before == filter ((< s) . blockSlot) (toOldestFirst s)@
+-- * @toOldestFirst after == filter ((s <=) . blockSlot) (toOldestFirst s)@
+splitAtSlot
+   :: HasHeader block
+   => WithOrigin SlotNo
+   -> AnchoredFragment block
+   -> (AnchoredFragment block, AnchoredFragment block)
+splitAtSlot = splitAtMeasure
 
 -- | Select a slice of an anchored fragment between two points, inclusive.
 --
