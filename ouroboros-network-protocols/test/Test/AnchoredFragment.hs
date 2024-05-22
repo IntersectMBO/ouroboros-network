@@ -30,7 +30,7 @@ import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.Block
 import Ouroboros.Network.Mock.Chain qualified as Chain
 import Ouroboros.Network.Mock.ConcreteBlock
-import Ouroboros.Network.Point (WithOrigin (..))
+import Ouroboros.Network.Point (WithOrigin (..), withOrigin)
 import Test.ChainGenerators (TestBlockChain (..), TestChainAndRange (..),
            addSlotGap, genChainAnchor, genNonNegative, genSlotGap)
 
@@ -54,6 +54,9 @@ tests = testGroup "AnchoredFragment"
     , testProperty "arbitrary for TestAnchoredFragmentAndPoint" prop_arbitrary_TestAnchoredFragmentAndPoint
     , testProperty "shrink for TestAnchoredFragmentAndPoint"    prop_shrink_TestAnchoredFragmentAndPoint
 
+    , testProperty "arbitrary for TestAnchoredFragmentAndSlot" prop_arbitrary_TestAnchoredFragmentAndSlot
+    , testProperty "shrink for TestAnchoredFragmentAndSlot"    prop_shrink_TestAnchoredFragmentAndSlot
+
     , testProperty "arbitrary for TestJoinableAnchoredFragments" prop_arbitrary_TestJoinableAnchoredFragments
     ]
 
@@ -76,6 +79,7 @@ tests = testGroup "AnchoredFragment"
   , testProperty "selectPoints"                       prop_selectPoints
   , testProperty "splitAfterPoint"                    prop_splitAfterPoint
   , testProperty "splitBeforePoint"                   prop_splitBeforePoint
+  , testProperty "splitAtSlot"                        prop_splitAtSlot
   , testProperty "sliceRange"                         prop_sliceRange
   , testProperty "join"                               prop_join
   , testProperty "intersect"                          prop_intersect
@@ -247,6 +251,22 @@ prop_splitBeforePoint (TestAnchoredFragmentAndPoint c pt) =
       .&&. (blockPoint <$> AF.last s) === Right pt
       .&&. AF.join p s                === Just c
     Nothing -> property $ not $ AF.pointOnFragment pt c
+
+prop_splitAtSlot :: TestAnchoredFragmentAndSlot -> Property
+prop_splitAtSlot (TestAnchoredFragmentAndSlot c slot) =
+  let (p, s) = AF.splitAtSlot slot c
+   in      counterexample "the prefix and the input should share anchors"
+             (AF.anchorPoint  p  === AF.anchorPoint c)
+      .&&. counterexample "the tip of the prefix should be the anchor of the suffix"
+             (AF.headPoint    p  === AF.anchorPoint s)
+      .&&. counterexample "the tip of the suffix should be the tip of the input"
+             (AF.headPoint    s  === AF.headPoint c)
+      .&&. counterexample "the prefix and suffix should join to the input"
+             (AF.join p s        === Just c)
+      .&&. counterexample "the prefix should contain all blocks up to the slot"
+             (AF.toOldestFirst p === filter ((< slot) . blockSlot) (AF.toOldestFirst c))
+      .&&. counterexample "the suffix should contain all blocks from the slot"
+             (AF.toOldestFirst s === filter ((slot <=) . blockSlot) (AF.toOldestFirst c))
 
 prop_sliceRange :: TestChainAndRange -> Bool
 prop_sliceRange (TestChainAndRange c p1 p2) =
@@ -477,6 +497,72 @@ prop_shrink_TestAnchoredFragmentAndPoint t@(TestAnchoredFragmentAndPoint c _) =
                         AF.withinFragmentBounds p c')
       | TestAnchoredFragmentAndPoint c' p <- shrink t ]
 
+--
+-- Generator for chain and a slot on the chain
+--
+
+-- | A test generator for an anchored fragment and a slot. In most cases the
+-- slot is on the anchored fragment, but it also covers at least 5% of cases
+-- where the point is not on the anchored fragment.
+--
+data TestAnchoredFragmentAndSlot =
+    TestAnchoredFragmentAndSlot (AnchoredFragment Block) SlotNo
+
+instance Show TestAnchoredFragmentAndSlot where
+  show (TestAnchoredFragmentAndSlot c slot) =
+      "TestAnchoredFragmentAndSlot" ++ nl ++
+      AF.prettyPrint nl show show c ++ nl ++
+      show slot
+    where
+      nl = "\n"
+
+instance Arbitrary TestAnchoredFragmentAndSlot where
+  arbitrary = do
+    TestBlockAnchoredFragment chain <- arbitrary
+    let slot0 = unSlotNo $ withOrigin 0 succ $ AF.anchorToSlotNo $ AF.anchor chain
+        slot1 = unSlotNo $ withOrigin 0 succ $ AF.headSlot chain
+    slotW <- frequency
+      [ (18, choose (slot0, slot1))
+      -- A few slots off the fragment
+      , (1, choose (0, if slot0 > 0 then slot0 - 1 else 0))
+      , (1, choose (slot1, slot1 + 20))
+      ]
+    return (TestAnchoredFragmentAndSlot chain (SlotNo slotW))
+
+  shrink (TestAnchoredFragmentAndSlot c slot)
+    | slotOnFragment slot c
+      -- If the slot is within the fragment range and the fragment has more than
+      -- one slot, shrink the fragment and return all the points within the range
+    = [ TestAnchoredFragmentAndSlot c' slot'
+      | TestBlockAnchoredFragment c' <- shrink (TestBlockAnchoredFragment c)
+      , slot' <- [withOrigin 0 succ (AF.anchorToSlotNo (AF.anchor c')) .. withOrigin 0 id (AF.headSlot c')]
+      , AF.length c' > 1
+      ]
+    | otherwise
+      -- If the slot is not within the bounds, just shrink the fragment and
+      -- return the same slot
+    = [ TestAnchoredFragmentAndSlot c' slot
+      | TestBlockAnchoredFragment c' <- shrink (TestBlockAnchoredFragment c)
+      ]
+
+slotOnFragment :: SlotNo -> AnchoredFragment Block -> Bool
+slotOnFragment slot c = AF.anchorToSlotNo (AF.anchor c) < At slot && At slot <= AF.headSlot c
+
+prop_arbitrary_TestAnchoredFragmentAndSlot :: TestAnchoredFragmentAndSlot -> Property
+prop_arbitrary_TestAnchoredFragmentAndSlot (TestAnchoredFragmentAndSlot c slot) =
+  let onAnchoredFragment = slotOnFragment slot c in
+  cover 75 onAnchoredFragment      "slot on fragment"     $
+  cover 1 (not onAnchoredFragment) "slot not on fragment" $
+  AF.valid c
+
+prop_shrink_TestAnchoredFragmentAndSlot :: TestAnchoredFragmentAndSlot -> Property
+prop_shrink_TestAnchoredFragmentAndSlot t@(TestAnchoredFragmentAndSlot c _) =
+  conjoin
+      [ counterexample ("shrink: " ++ show t') $
+               counterexample "invalid fragment" (AF.valid c')
+          .&&. counterexample "the slot is not in the range of the shrunk fragment"
+                 (not (slotOnFragment slot c) || slotOnFragment slot c')
+      | t'@(TestAnchoredFragmentAndSlot c' slot) <- shrink t ]
 
 --
 -- Generator for two fragments that can or cannot be joined
