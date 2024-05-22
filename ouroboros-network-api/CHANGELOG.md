@@ -7,6 +7,8 @@
 ### Non-Breaking changes
 
 * Added `ShowProxy SlotNo` instance
+* Added `AnchoredSeq.splitAtMeasure`
+* Added `AnchoredFragment.splitAtSlot`
 
 ## 0.7.2.0 -- 2024-05-07
 
