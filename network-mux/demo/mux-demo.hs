@@ -19,7 +19,7 @@ import Control.Exception (finally)
 import Control.Monad
 import Control.Tracer (Tracer (..), nullTracer, showTracing)
 
-import System.Environment
+import System.Environment qualified as SysEnv
 import System.Exit
 import System.IO
 
@@ -43,7 +43,7 @@ import Test.Mux.ReqResp
 
 main :: IO ()
 main = do
-    args <- getArgs
+    args <- SysEnv.getArgs
     case args of
       ["server"]         -> server
       ["client", n, msg] -> client (read n) msg

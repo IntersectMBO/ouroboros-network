@@ -309,7 +309,7 @@ test-suite io-tests
                        with-utf8,
 
   if os(windows)
-    build-depends:     Win32-network                 <0.2.0.0,
+    build-depends:     Win32-network                 <0.3.0.0,
                        Win32           >= 2.5.4.1 && <3.0
   else
     build-depends:     process
