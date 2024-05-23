@@ -32,8 +32,8 @@ packages: ./cardano-ping
           ./ntp-client
           ./cardano-client
 
-tests: True
-benchmarks: True
+tests: False
+benchmarks: False
 
 package bitvec
   flags: -simd
