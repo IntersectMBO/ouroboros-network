@@ -6,6 +6,8 @@
 
 ### Non-Breaking changes
 
+* Don't include peers that are failing in peershare responses.
+
 ## 0.16.0.0 -- 2024-05-07
 
 ### Breaking changes

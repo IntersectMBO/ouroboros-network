@@ -450,6 +450,7 @@ canSharePeers pa KnownPeers { allPeers } =
     Just KnownPeerInfo
           { knownPeerAdvertise        = DoAdvertisePeer
           , knownSuccessfulConnection = True
+          , knownPeerFailCount        = 0
           } -> True
     _       -> False
 
@@ -474,6 +475,7 @@ getPeerSharingResponsePeers knownPeers =
                   KnownPeerInfo
                     { knownPeerAdvertise        = DoAdvertisePeer
                     , knownSuccessfulConnection = True
+                    , knownPeerFailCount        = 0
                     } -> True
                   _   -> False
                )
