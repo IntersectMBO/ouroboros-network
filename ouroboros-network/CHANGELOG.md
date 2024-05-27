@@ -8,6 +8,7 @@
 
 - Bump io-sim and io-classes
 - Refactor testnet
+* Don't include peers that are failing in peershare responses.
 
 ## 0.16.0.0 -- 2024-05-07
 
