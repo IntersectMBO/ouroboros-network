@@ -6,6 +6,8 @@
 
 ### Non-breaking changes
 
+- Fixed `InboundGovernorCounters` tracing frequency
+
 ## 0.13.1.0 -- 2024-05-08
 
 ### Non-breaking changes
