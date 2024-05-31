@@ -519,7 +519,6 @@ withInboundGovernor trTracer tracer debugTracer inboundInfoChannel
           traceWith tracer $ TrInactive ((\(a,b,_) -> (a,b)) <$> OrdPSQ.toList (igsFreshDuplexPeers state))
           pure (Nothing, state)
 
-
       mask_ $ do
         atomically $ writeTVar var (mkPublicInboundGovernorState state')
         traceWith debugTracer (DebugInboundGovernor state')
@@ -527,7 +526,13 @@ withInboundGovernor trTracer tracer debugTracer inboundInfoChannel
           Just cid -> traceWith trTracer (mkRemoteTransitionTrace cid state state')
           Nothing  -> pure ()
 
-      inboundGovernorLoop var state'
+      -- Update Inbound Governor Counters cache values
+      let newCounters       = inboundGovernorCounters state'
+          Cache oldCounters = igsCountersCache state'
+          state'' | newCounters /= oldCounters = state' { igsCountersCache = Cache newCounters }
+                  | otherwise                 = state'
+
+      inboundGovernorLoop var state''
 
 
 -- | Run a responder mini-protocol.
