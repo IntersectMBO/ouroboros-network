@@ -192,7 +192,7 @@ instance Show MuxTrace where
     show (MuxTraceTerminating mid dir) = printf "Terminating (%s) in %s" (show mid) (show dir)
     show MuxTraceStopping = "Mux stopping"
     show MuxTraceStopped  = "Mux stoppped"
-#ifdef os_HOST_linux
+#ifdef linux_HOST_OS
     show (MuxTraceTCPInfo StructTCPInfo
             { tcpi_snd_mss, tcpi_rcv_mss, tcpi_lost, tcpi_retrans
             , tcpi_rtt, tcpi_rttvar, tcpi_snd_cwnd }
