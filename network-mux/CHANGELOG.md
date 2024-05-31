@@ -6,6 +6,8 @@
 
 ### Non-breaking changes
 
+* Fix compilation with `tracetcpinfo` flag.
+
 ## 0.4.5.1 -- 2024-01-22
 
 ### Non-breaking changes
