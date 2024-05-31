@@ -7,6 +7,7 @@
 ### Non-breaking changes
 
 * Make it build with ghc-9.10
+* Fix compilation with `tracetcpinfo` flag.
 
 ## 0.4.5.2 -- 2024-06-07
 
@@ -14,14 +15,14 @@
 
 ### Non-breaking changes
 
-- Bump io-sim and io-classes
+* Bump io-sim and io-classes
 
 ## 0.4.5.1 -- 2024-01-22
 
 ### Non-breaking changes
 
 * Use io-sim-1.4.1.0
-- Bump `Win32-network` version
+* Bump `Win32-network` version
 
 ## 0.4.5.0 -- 2024-01-22
 
