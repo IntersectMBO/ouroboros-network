@@ -1,0 +1,421 @@
+{-# LANGUAGE BlockArguments      #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DerivingVia         #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+
+module Ouroboros.Network.TxSubmission.Inbound.Decision
+  ( TxDecision (..)
+    -- * Internal API exposed for testing
+  , makeDecisions
+  , filterActivePeers
+  , SharedDecisionContext (..)
+  , pickTxsToDownload
+  ) where
+
+import Control.Arrow ((>>>))
+import Control.Exception (assert)
+
+import Data.Bifunctor (second)
+import Data.List (mapAccumR, sortOn)
+import Data.Map.Merge.Strict qualified as Map
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Maybe (mapMaybe)
+import Data.Set (Set)
+import Data.Set qualified as Set
+
+import Ouroboros.Network.DeltaQ (PeerGSV (..), gsvRequestResponseDuration)
+import Ouroboros.Network.Protocol.TxSubmission2.Type
+import Ouroboros.Network.TxSubmission.Inbound.Policy
+import Ouroboros.Network.TxSubmission.Inbound.State
+import qualified Data.Sequence.Strict as StrictSeq
+
+
+-- | Decision made by the decision logic.  Each peer will receive a 'Decision'.
+--
+-- /note:/ it is rather non-standard to represent a choice between requesting
+-- `txid`s and `tx`'s as a product rather than a sum type.  The client will
+-- need to download `tx`s first and then send a request for more txids (and
+-- acknowledge some `txid`s).   Due to pipelining each client will request
+-- decision from the decision logic quite often (every two pipelined requests),
+-- but with this design a decision once taken will make the peer non-active
+-- (e.g. it won't be returned by `filterActivePeers`) for longer, and thus the
+-- expensive `makeDecision` computation will not need to take that peer into
+-- account.
+--
+data TxDecision txid = TxDecision {
+    txdTxIdsToAcknowledge :: !NumTxIdsToAck,
+    -- ^ txid's to acknowledge
+
+    txdTxIdsToRequest     :: !NumTxIdsToReq,
+    -- ^ number of txid's to request
+
+    txdTxsToRequest       :: !(Set txid)
+    -- ^ txid's to download
+  }
+  deriving (Show, Eq)
+
+-- | A non-commutative semigroup.
+--
+-- /note:/ this instance must be consistent with `pickTxsToDownload` and how
+-- `PeerTxState` is updated.  It is designed to work with `TMergeVar`s.
+--
+instance Ord txid => Semigroup (TxDecision txid) where
+    TxDecision a c b <> TxDecision a' c' b' = TxDecision (a + a') (c + c') (b <> b')
+
+
+data SharedDecisionContext peeraddr txid tx = SharedDecisionContext {
+    -- TODO: check how to access it.
+    sdcPeerGSV       :: !(Map peeraddr PeerGSV),
+
+    sdcSharedTxState :: !(SharedTxState peeraddr txid tx)
+  }
+  deriving Show
+
+--
+-- Decision Logic
+--
+
+-- | Make download decisions.
+--
+makeDecisions
+    :: ( Ord peeraddr
+       , Ord txid
+       )
+    => TxDecisionPolicy
+    -- ^ decision policy
+    -> SharedDecisionContext peeraddr txid tx
+    -- ^ decision context
+    -> Map peeraddr (PeerTxState txid tx)
+    -- ^ list of available peers.
+    --
+    -- This is a subset of `peerTxStates` of peers which either:
+    -- * can be used to download a `tx`,
+    -- * can acknowledge some `txid`s.
+    --
+    -> ( SharedTxState peeraddr txid tx
+       , Map peeraddr (TxDecision txid)
+       )
+makeDecisions policy SharedDecisionContext {
+      sdcPeerGSV = peerGSV,
+      sdcSharedTxState = st
+    }
+    = second Map.fromList
+    . pickTxsToDownload policy st
+    . orderByDeltaQ peerGSV
+
+
+-- | Order peers by `DeltaQ`.
+--
+orderByDeltaQ :: forall peeraddr txid tx.
+                 Ord peeraddr
+              => Map peeraddr PeerGSV
+              -> Map peeraddr (PeerTxState txid tx)
+              -> [(peeraddr, PeerTxState txid tx)]
+orderByDeltaQ dq =
+        sortOn (\(peeraddr, _) ->
+                   gsvRequestResponseDuration
+                     (dq Map.! peeraddr) reqSize respSize)
+      . Map.toList
+    where
+      -- according to calculations in `txSubmissionProtocolLimits`: sizes of
+      -- `MsgRequestTx` with a single `txid` and `MsgReplyTxs` with a single
+      -- `tx`.
+      reqSize :: SizeInBytes
+      reqSize = 36 -- 32 + 4 (MsgRequestTxs overhead)
+
+      respSize :: SizeInBytes
+      respSize = 65540
+
+
+-- | Internal state of `pickTxsToDownload` computation.
+--
+data St peeraddr txid tx =
+   St { stInflightSize :: !SizeInBytes,
+        -- ^ size of all `tx`s in-flight.
+
+        stInflight     :: !(Map txid Int),
+        -- ^ `txid`s in-flight.
+
+        stAcknowledged :: !(Map txid Int)
+        -- ^ acknowledged `txid` with multiplicities.  It is used to update
+        -- `referenceCounts`.
+      }
+
+
+-- | Distribute `tx`'s to download among available peers.  Peers are considered
+-- in the given order.
+--
+-- * pick txs from the set of available tx's (in `txid` order, note these sets
+--   might be different for different peers).
+-- * pick txs until the peers in-flight limit (we can go over the limit by one tx)
+--   (`txsSizeInflightPerPeer` limit)
+-- * pick txs until the overall in-flight limit (we can go over the limit by one tx)
+--   (`maxTxsSizeInflight` limit)
+-- * each tx can be downloaded simultaneously from at most
+--   `txInflightMultiplicity` peers.
+--
+pickTxsToDownload
+  :: forall peeraddr txid tx.
+     ( Ord peeraddr
+     , Ord txid
+     )
+  => TxDecisionPolicy
+  -- ^ decision policy
+  -> SharedTxState peeraddr txid tx
+  -- ^ shared state
+
+  -> [(peeraddr, PeerTxState txid tx)]
+  -> ( SharedTxState peeraddr txid tx
+     , [(peeraddr, TxDecision txid)]
+     )
+
+pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
+                                            maxTxsSizeInflight,
+                                            txInflightMultiplicity }
+                  sharedState@SharedTxState { peerTxStates,
+                                              inflightTxs,
+                                              inflightTxsSize,
+                                              bufferedTxs,
+                                              referenceCounts } =
+    -- outer fold: fold `[(peeraddr, PeerTxState txid tx)]`
+    mapAccumR
+      (\st@St { stInflight,
+                stInflightSize,
+                stAcknowledged }
+        (peeraddr, peerTxState@PeerTxState { availableTxIds,
+                                             unknownTxs,
+                                             requestedTxsInflight,
+                                             requestedTxsInflightSize }) ->
+
+        let sizeInflightAll   :: SizeInBytes
+            sizeInflightOther :: SizeInBytes
+
+            sizeInflightAll   = stInflightSize
+            sizeInflightOther = sizeInflightAll - requestedTxsInflightSize
+
+        -- TODO: together with numTxIdsToAck we should also decide how many
+        -- `txid`s it should request; one can only acknowledge `txid`s if new
+        -- ones can be requested.
+        in if sizeInflightAll >= maxTxsSizeInflight
+          then let (numTxIdsToAck, RefCountDiff { txIdsToAck }, peerTxState') =
+                      acknowledgeTxIds sharedState peerTxState
+                   (numTxIdsToReq, peerTxState'') = numTxIdsToRequest policy peerTxState'
+
+                   stAcknowledged' = Map.unionWith (+) stAcknowledged txIdsToAck
+               in 
+               ( st { stAcknowledged = stAcknowledged' }
+               , ( (peeraddr, peerTxState'')
+                 , TxDecision { txdTxIdsToAcknowledge = numTxIdsToAck,
+                                txdTxIdsToRequest     = numTxIdsToReq,
+                                txdTxsToRequest       = Set.empty
+                              }
+                 )
+               )
+          else
+            let requestedTxsInflightSize' :: SizeInBytes
+                txsToRequest :: Set txid
+
+                (requestedTxsInflightSize', txsToRequest) =
+                  -- inner fold: fold available `txid`s
+                  --
+                  -- Note: although `Map.foldrWithKey` could be used here, it
+                  -- does not allow to short circuit the fold, unlike
+                  -- `foldWithState`.
+                  foldWithState
+                    (\(txid, (txSize, inflightMultiplicity)) sizeInflight ->
+                      if -- note that we pick `txid`'s as long the `s` is
+                         -- smaller or equal to `txsSizeInflightPerPeer`.
+                         sizeInflight <= txsSizeInflightPerPeer
+                         -- overall `tx`'s in-flight must be smaller than
+                         -- `maxTxsSizeInflight`
+                      && sizeInflight + sizeInflightOther <= maxTxsSizeInflight
+                         -- the transaction must not be downloaded from more
+                         -- than `txInflightMultiplicity` peers simultaneously
+                      && inflightMultiplicity < txInflightMultiplicity
+                      -- TODO: we must validate that `txSize` is smaller than
+                      -- maximum txs size
+                      then Just (sizeInflight + txSize, txid)
+                      else Nothing
+                    )
+                    (Map.assocs $
+                      -- merge `availableTxIds` with `stInflight`, so we don't
+                      -- need to lookup into `stInflight` on every `txid` which
+                      -- is in `availableTxIds`.
+                      Map.merge (Map.mapMaybeMissing \_txid -> Just . (,0))
+                                 Map.dropMissing
+                                (Map.zipWithMatched \_txid -> (,))
+
+                                availableTxIds
+                                stInflight
+                      -- remove `tx`s which were already downloaded by some
+                      -- other peer or are in-flight or unknown by this peer.
+                      `Map.withoutKeys`
+                      (Map.keysSet bufferedTxs <> requestedTxsInflight <> unknownTxs)
+
+                    )
+                    requestedTxsInflightSize
+                    -- pick from `txid`'s which are available from that given
+                    -- peer.  Since we are folding a dictionary each `txid`
+                    -- will be selected only once from a given peer (at least
+                    -- in each round).
+
+                peerTxState' = peerTxState {
+                    requestedTxsInflightSize = requestedTxsInflightSize',
+                    requestedTxsInflight     = requestedTxsInflight
+                                            <> txsToRequest
+                  }
+
+                (numTxIdsToAck, RefCountDiff { txIdsToAck }, peerTxState'') =
+                  acknowledgeTxIds sharedState peerTxState'
+
+                stAcknowledged' = Map.unionWith (+) stAcknowledged txIdsToAck
+
+                stInflightDelta :: Map txid Int
+                stInflightDelta = Map.fromSet (\_ -> 1) txsToRequest
+                                  -- note: this is right since every `txid`
+                                  -- could be picked at most once
+
+                stInflight' :: Map txid Int
+                stInflight' = Map.unionWith (+) stInflightDelta stInflight
+
+                (numTxIdsToReq, peerTxState''') = numTxIdsToRequest policy peerTxState''
+
+
+            in ( St { stInflight     = stInflight',
+                      stInflightSize = sizeInflightOther + requestedTxsInflightSize',
+                      stAcknowledged = stAcknowledged' }
+               , ( (peeraddr, peerTxState''')
+                 , TxDecision { txdTxIdsToAcknowledge = numTxIdsToAck,
+                                txdTxIdsToRequest     = numTxIdsToReq,
+                                txdTxsToRequest       = txsToRequest }
+                 )
+               )
+      )
+      -- initial state
+      St { stInflight     = inflightTxs,
+           stInflightSize = inflightTxsSize,
+           stAcknowledged = Map.empty }
+
+    >>>
+
+      (\(St { stInflight,
+              stInflightSize,
+              stAcknowledged }, as) ->
+        let peerTxStates' = Map.fromList (fst <$> as)
+                         <> peerTxStates
+
+            referenceCounts' =
+              Map.merge (Map.mapMaybeMissing \_ x -> Just x)
+                        (Map.mapMaybeMissing \_ _ -> assert False Nothing)
+                        (Map.zipWithMaybeMatched \_ x y -> if x > y then Just $! x - y
+                                                                    else Nothing)
+                        referenceCounts
+                        stAcknowledged
+
+            liveSet = Map.keysSet referenceCounts'
+
+            bufferedTxs' = bufferedTxs
+                           `Map.restrictKeys`
+                           liveSet
+
+        in ( sharedState {
+               peerTxStates    = peerTxStates',
+               inflightTxs     = stInflight,
+               inflightTxsSize = stInflightSize,
+               bufferedTxs     = bufferedTxs',
+               referenceCounts = referenceCounts' }
+           , -- exclude empty results
+             mapMaybe (\((a, _), b) -> case b of
+                        TxDecision 0 0 txids | null txids
+                                            -> Nothing
+                        _                   -> Just (a, b)
+                      )
+                      as
+           )
+      )
+
+
+-- | Filter peers which can either download a `tx` or acknowledge `txid`s.
+--
+filterActivePeers
+    :: forall peeraddr txid tx.
+       Ord txid
+    => TxDecisionPolicy
+    -> SharedTxState peeraddr txid tx
+    -> Map peeraddr (PeerTxState txid tx)
+filterActivePeers
+    TxDecisionPolicy { maxUnacknowledgedTxIds,
+                       txsSizeInflightPerPeer,
+                       maxTxsSizeInflight,
+                       txInflightMultiplicity }
+    st@SharedTxState { peerTxStates,
+                       bufferedTxs,
+                       inflightTxs,
+                       inflightTxsSize }
+    | overLimit
+    = Map.filter fn peerTxStates
+    | otherwise
+    = Map.filter gn peerTxStates
+  where
+    overLimit = inflightTxsSize > maxTxsSizeInflight
+    unrequestable = Map.keysSet (Map.filter (>= txInflightMultiplicity) inflightTxs)
+                 <> Map.keysSet bufferedTxs
+
+    fn :: PeerTxState txid tx -> Bool
+    fn ps@PeerTxState { unacknowledgedTxIds,
+                        requestedTxIdsInflight } =
+           hasTxIdsToAcknowledge st ps
+        || requestedTxIdsInflight + numOfUnacked < maxUnacknowledgedTxIds
+      where
+        numOfUnacked   = fromIntegral (StrictSeq.length unacknowledgedTxIds)
+
+    gn :: PeerTxState txid tx -> Bool
+    gn ps@PeerTxState { unacknowledgedTxIds,
+                        requestedTxIdsInflight,
+                        requestedTxsInflight,
+                        requestedTxsInflightSize,
+                        availableTxIds,
+                        unknownTxs } =
+           hasTxIdsToAcknowledge st ps
+        || requestedTxIdsInflight + numOfUnacked < maxUnacknowledgedTxIds
+        || (underSizeLimit && not (Map.null downloadable)) 
+      where
+        numOfUnacked   = fromIntegral (StrictSeq.length unacknowledgedTxIds)
+        underSizeLimit = requestedTxsInflightSize <= txsSizeInflightPerPeer
+        downloadable   = availableTxIds
+            `Map.withoutKeys` requestedTxsInflight
+            `Map.withoutKeys` unknownTxs
+            `Map.withoutKeys` unrequestable
+
+--
+-- Auxiliary functions
+--
+
+-- | A fold with state implemented as a `foldr` to take advantage of fold-build
+-- fusion optimisation.
+--
+foldWithState
+  :: forall s a b.
+     Ord b
+  => (a -> s -> Maybe (s, b))
+  -> [a] -> s -> (s, Set b)
+{-# INLINE foldWithState #-}
+
+foldWithState f = foldr cons nil
+  where
+    cons :: a
+         -> (s -> (s, Set b))
+         -> (s -> (s, Set b))
+    cons a k = \ !s ->
+      case f a s of
+        Nothing -> nil s
+        Just (!s', !b) ->
+          case Set.insert b `second` k s' of
+            r@(!_s, !_bs) -> r
+
+    nil :: s -> (s, Set b)
+    nil = \ !s -> (s, Set.empty)
