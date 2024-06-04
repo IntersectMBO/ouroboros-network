@@ -107,12 +107,16 @@ blockFetchClient _version controlMessageSTM reportFetched
 
     -- And similarly if there are no pending pipelined results at all.
     senderIdle Zero = SenderEffect $ do
+      !() <- traceWith tracer (BOLTDEBUG "senderIdle Zero")
+
       -- assert nothing in flight here
       PeerFetchInFlight {
           peerFetchReqsInFlight,
           peerFetchBytesInFlight,
           peerFetchBlocksInFlight
         } <- readTVarIO (fetchClientInFlightVar stateVars)
+
+      !() <- traceWith tracer (BOLTDEBUG $ "senderIdle Zero: " ++ show peerFetchReqsInFlight ++ " " ++ show peerFetchBytesInFlight ++ " " ++ show (peerFetchBlocksInFlight))
 
       assert
         ( peerFetchReqsInFlight  == 0 &&
@@ -143,7 +147,8 @@ blockFetchClient _version controlMessageSTM reportFetched
         Nothing -> do
           traceWith tracer (ClientTerminating $ natToInt outstanding)
           return $ senderTerminate outstanding
-        Just (request, gsvs, inflightlimits) ->
+        Just (request, gsvs, inflightlimits) -> do
+          traceWith tracer (BOLTDEBUG ("senderAwait before senderActive has outstanding: " ++ show outstanding))
           return $ senderActive outstanding gsvs inflightlimits
                                 (fetchRequestFragments request)
 
@@ -184,6 +189,7 @@ blockFetchClient _version controlMessageSTM reportFetched
                 Right lower = AF.last fragment
                 Right upper = AF.head fragment
 
+        traceWith tracer (BOLTDEBUG ("senderActive has outstanding: " ++ show outstanding))
         traceWith tracer (SendFetchRequest fragment gsvs)
         return $
           SenderPipeline
@@ -193,7 +199,11 @@ blockFetchClient _version controlMessageSTM reportFetched
             (senderActive (Succ outstanding) gsvs inflightlimits fragments)
 
     -- And when we run out, go back to idle.
-    senderActive outstanding _ _ [] = senderIdle outstanding
+    senderActive outstanding _ _ [] = do
+      SenderEffect $ do
+        traceWith tracer (BOLTDEBUG ("senderActive [] has outstanding: " ++ show outstanding))
+        return $
+          senderIdle outstanding
 
 
     -- Terminate the sender; 'controlMessageSTM' returned 'Terminate'.
@@ -231,9 +241,11 @@ blockFetchClient _version controlMessageSTM reportFetched
           -- points to make sure we do not ask for extensions of this again.
           MsgNoBlocks   ->
             ReceiverEffect $ do
+              traceWith tracer (BOLTDEBUG "receiverBusy before rejectFetchBatch")
               -- Update our in-flight stats and our current status
               rejectedFetchBatch tracer blockFetchSize inflightlimits
                                  range headers stateVars
+              traceWith tracer (BOLTDEBUG "receiverBusy after rejectFetchBatch")
               return (ReceiverDone ())
             where
               headers = AF.toOldestFirst fragment

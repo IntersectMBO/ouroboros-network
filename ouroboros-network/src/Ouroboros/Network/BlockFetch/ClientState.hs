@@ -428,6 +428,8 @@ data TraceFetchClientState header =
         -- requests.
         --
       | ClientTerminating Int
+
+      | BOLTDEBUG String
   deriving Show
 
 
@@ -454,7 +456,7 @@ addNewFetchRequest tracer blockFetchSize addedReq gsvs
                      fetchClientInFlightVar,
                      fetchClientStatusVar
                    } = do
-    (inflight', currentStatus') <- atomically $ do
+    (inflight, inflight', currentStatus') <- atomically $ do
 
       -- Add a new fetch request, or extend or merge with the existing
       -- unacknowledged one.
@@ -484,8 +486,9 @@ addNewFetchRequest tracer blockFetchSize addedReq gsvs
 
       --TODO: think about status aberrant
 
-      return (inflight', currentStatus')
+      return (inflight, inflight', currentStatus')
 
+    traceWith tracer (BOLTDEBUG ("addNewFetchRequest updated peerFetchReqsInFlight from: " ++ show (peerFetchReqsInFlight inflight) ++ "to: " ++ show (peerFetchReqsInFlight inflight')))
     traceWith tracer $
       AddedFetchRequest
         addedReq
@@ -628,7 +631,7 @@ rejectedFetchBatch tracer blockFetchSize inflightlimits range headers
                      fetchClientInFlightVar,
                      fetchClientStatusVar
                    } = do
-    (inflight', currentStatus') <- atomically $ do
+    (inflight, inflight', currentStatus') <- atomically $ do
       inflight <- readTVar fetchClientInFlightVar
       let !inflight' =
             (deleteHeadersInFlight blockFetchSize headers inflight) {
@@ -645,8 +648,9 @@ rejectedFetchBatch tracer blockFetchSize inflightlimits range headers
     -- TODO: when do we reset the status from PeerFetchStatusAberrant
     -- to PeerFetchStatusReady/Busy?
 
-      return (inflight', currentStatus')
+      return (inflight, inflight', currentStatus')
 
+    traceWith tracer (BOLTDEBUG ("rejectedFetchBatch updated peerFetchReqsInFlight from: " ++ show (peerFetchReqsInFlight inflight) ++ "to: " ++ show (peerFetchReqsInFlight inflight')))
     traceWith tracer $
       RejectedFetchBatch
         range
