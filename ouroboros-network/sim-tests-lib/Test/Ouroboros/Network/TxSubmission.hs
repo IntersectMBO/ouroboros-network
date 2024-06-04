@@ -88,10 +88,20 @@ instance ShowProxy txid => ShowProxy (Tx txid) where
 instance Arbitrary txid => Arbitrary (Tx txid) where
     arbitrary =
       Tx <$> arbitrary
-         <*> (SizeInBytes <$> arbitrary)
+         <*> chooseEnum (0, maxTxSize)
+             -- note:
+             -- generating small tx sizes avoids overflow error when semigroup
+             -- instance of `SizeInBytes` is used (summing up all inflight tx
+             -- sizes).
          <*> frequency [ (3, pure True)
                        , (1, pure False)
                        ]
+
+
+-- maximal tx size
+maxTxSize :: SizeInBytes
+maxTxSize = 65536
+
 
 newtype Mempool m txid = Mempool (TVar m (Seq (Tx txid)))
 
