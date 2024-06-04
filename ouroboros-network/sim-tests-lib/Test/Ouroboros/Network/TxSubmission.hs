@@ -87,6 +87,8 @@ import Test.Tasty.QuickCheck (testProperty)
 import Text.Pretty.Simple
 import Text.Printf
 
+import GHC.Stack (HasCallStack)
+
 
 tests :: TestTree
 tests = testGroup "Ouroboros.Network.TxSubmission"
@@ -129,6 +131,8 @@ tests = testGroup "Ouroboros.Network.TxSubmission"
     , testProperty "policy"                    prop_makeDecisions_policy
     , testProperty "acknowledged"              prop_makeDecisions_acknowledged
     , testProperty "exhaustive"                prop_makeDecisions_exhaustive
+    , testProperty "receivedTxIds"             prop_makeDecisions_receivedTxIds
+    , testProperty "collectTxs"                prop_makeDecisions_collectTxs
     ]
   , testGroup "Registry"
     [ testGroup "filterActivePeers"
@@ -1806,6 +1810,382 @@ prop_makeDecisions_exhaustive
    . counterexample ("decisions'': " ++ show decisions'')
    . counterexample ("state'':     " ++ show sharedTxState'')
    $ null decisions''
+
+
+data ArbDecisionContextWithReceivedTxIds = ArbDecisionContextWithReceivedTxIds {
+      adcrDecisionPolicy :: TxDecisionPolicy,
+      adcrSharedContext  :: SharedDecisionContext PeerAddr TxId (Tx TxId),
+      adcrMempoolHasTx   :: Fun TxId Bool,
+      adcrTxsToAck       :: [Tx TxId],
+      -- txids to acknowledge
+      adcrPeerAddr       :: PeerAddr
+      -- the peer which owns the acknowledged txids
+    }
+    deriving Show
+
+
+instance Arbitrary ArbDecisionContextWithReceivedTxIds where
+    arbitrary = do
+      ArbTxDecisionPolicy policy <- arbitrary
+      ArbReceivedTxIds mempoolHasTx
+                       txIdsToAck
+                       peeraddr
+                       _ps
+                       st
+        <- arbitrary
+
+      let st' = fixupSharedTxStateForPolicy
+                  (apply mempoolHasTx)
+                  policy st
+          txIdsToAck' = take (fromIntegral (TXS.requestedTxIdsInflight $ peerTxStates st' Map.! peeraddr)) txIdsToAck
+          peers = Map.keys (peerTxStates st')
+
+      gsvs <- zip peers
+          <$> infiniteListOf (unPeerGSVT <$> arbitrary)
+
+      return ArbDecisionContextWithReceivedTxIds {
+          adcrDecisionPolicy = policy,
+          adcrSharedContext  = SharedDecisionContext {
+              sdcPeerGSV       = Map.fromList gsvs,
+              sdcSharedTxState = st'
+            },
+          adcrMempoolHasTx   = mempoolHasTx,
+          adcrTxsToAck       = txIdsToAck',
+          adcrPeerAddr       = peeraddr
+        }
+
+    shrink ArbDecisionContextWithReceivedTxIds {
+        adcrDecisionPolicy = policy,
+        adcrSharedContext  = ctx,
+        adcrMempoolHasTx   = mempoolHasTx,
+        adcrTxsToAck       = txIdsToAck,
+        adcrPeerAddr       = peeraddr
+      }
+      =
+      [ ArbDecisionContextWithReceivedTxIds {
+          adcrDecisionPolicy = policy',
+          adcrSharedContext  = ctx',
+          adcrMempoolHasTx   = mempoolHasTx',
+          adcrTxsToAck       = txIdsToAck',
+          adcrPeerAddr       = peeraddr
+        }
+      | ArbDecisionContexts {
+          arbDecisionPolicy = policy',
+          arbSharedContext  = ctx'@SharedDecisionContext { sdcSharedTxState = st' },
+          arbMempoolHasTx   = mempoolHasTx'
+        }
+          <- shrink ArbDecisionContexts {
+                 arbDecisionPolicy = policy,
+                 arbSharedContext  = ctx,
+                 arbMempoolHasTx   = mempoolHasTx
+               }
+      , peeraddr `Map.member` peerTxStates st'
+      , let txIdsToAck' = take ( fromIntegral
+                               . TXS.requestedTxIdsInflight
+                               $ peerTxStates st' Map.! peeraddr
+                               )
+                               txIdsToAck
+      ]
+
+
+-- | `receivedTxIdsImpl` and `makeDecisions` have a non trivial commutator (e.g.
+-- they don't commute in an interesting way).
+--
+prop_makeDecisions_receivedTxIds
+  :: HasCallStack
+  => ArbDecisionContextWithReceivedTxIds
+  -> Property
+prop_makeDecisions_receivedTxIds
+    ArbDecisionContextWithReceivedTxIds {
+      adcrDecisionPolicy = policy,
+      adcrSharedContext  = ctx@SharedDecisionContext {
+          sdcSharedTxState = st
+        },
+      adcrMempoolHasTx   = mempoolHasTx,
+      adcrTxsToAck       = txs,
+      adcrPeerAddr       = peeraddr
+    }
+    =
+    counterexample ("st'   = " ++ show st') $
+    counterexample ("st''  = " ++ show st'') $
+    counterexample ("stA'  = " ++ show stA') $
+    counterexample ("stA'' = " ++ show stA'') $
+    counterexample ("txDecisions  = " ++ show txDecisions) $
+    counterexample ("txDecisionsA = " ++ show txDecisionsA) $
+
+    counterexample "state property failure" (
+      -- States should be comparable; although not identical:
+      --  1. number of txids in-flight might be smaller if we first `makeDecision`
+      --  and then `receivedTxIdsImpl`.
+      --  2. it could happen that we acknowledge and GC a txid which is then added
+      --  by `receivedTxIdsImpl`, which leads to a missing txid in `bufferedTxs`
+      --  compared to do the other way around
+      --  3. `availableTxs` might be smaller if we first `makeDecision` because we
+      --  might acknowledge a txid which is removed from `availableTxs` and after
+      --  calling `receivedTxIdsImpl` we won't get back the `txid` entry in
+      --  `availableTxs`
+      --  4. `unacknowledgedTxs` might be smaller if we call `makeDecision` first,
+      --  simply because some of `txids` might be removed from `bufferedTxs`.
+      --
+      --  For simplicity we ignore differences in `bufferedTxs` and
+      --  `referenceCounts` and thus we set them to empty maps.
+      st''  { bufferedTxs     = Map.empty,
+              referenceCounts = Map.empty
+            }
+      ===
+      stA'' { peerTxStates    =
+                let fn :: PeerTxState TxId (Tx TxId) -> PeerTxState TxId (Tx TxId)
+                    fn ps = snd . TXS.numTxIdsToRequest policy -- ad 2.
+                          $ ps { unacknowledgedTxIds = unacknowledgedTxIds',
+                                 availableTxIds      = (availableTxIds ps <> txidMap) -- ad 3.
+                                                       `Map.restrictKeys`
+                                                       Set.fromList (toList unacknowledgedTxIds')
+                               }
+                      where
+                        unacknowledgedTxIds' = StrictSeq.dropWhileL
+                                                 (\txid -> txid `Map.member` bufferedTxs st -- ad 4.
+                                                        || applyFun mempoolHasTx txid)
+                                             $ unacknowledgedTxIds ps
+                in
+                Map.adjust fn peeraddr (peerTxStates stA''),
+              bufferedTxs     = Map.empty,
+              referenceCounts = Map.empty
+            }
+    )
+
+    .&&.
+
+    counterexample "unacknowledgedTxIds property failure" (
+      Map.findWithDefault 0 peeraddr (Map.map txdTxIdsToAcknowledge txDecisions)
+      ===
+      Map.findWithDefault 0 peeraddr (Map.map txdTxIdsToAcknowledge txDecisionsA)
+        -- account for txids which could be acknowledged because they were
+        -- buffered in `st`
+        + foldr (\txid x -> if txid `Map.member` bufferedTxs st
+                            then x + 1
+                            else 0) 0
+                (TXS.unacknowledgedTxIds (peerTxStates stA'' Map.! peeraddr))
+
+    )
+
+    .&&.
+
+    counterexample "txdTxsToRequest proporety failure" (
+      Map.filter (not . Set.null) (Map.map txdTxsToRequest txDecisions)
+      ===
+      Map.filter (not . Set.null) (Map.map txdTxsToRequest txDecisionsA)
+    )
+
+  where
+    txidSeq = StrictSeq.fromList (getTxId <$> txs)
+    txidMap = Map.fromList [ (getTxId tx, getTxSize tx) | tx <- txs ]
+
+    st' = TXS.receivedTxIdsImpl
+            (apply mempoolHasTx)
+            peeraddr
+            (fromIntegral $ StrictSeq.length txidSeq)
+            txidSeq txidMap
+            st
+
+    (st'', txDecisions) = TXS.makeDecisions
+                            policy ctx { sdcSharedTxState = st' }
+                            (filterActivePeers policy st')
+
+
+    (stA', txDecisionsA) = TXS.makeDecisions
+                             policy ctx
+                             (filterActivePeers policy st)
+
+    stA'' = TXS.receivedTxIdsImpl
+              (apply mempoolHasTx)
+              peeraddr
+              (fromIntegral $ StrictSeq.length txidSeq)
+              txidSeq txidMap
+              stA'
+
+
+data ArbDecisionContextWithCollectTxs = ArbDecisionContextWithCollectTxs {
+    adccDecisionPolicy :: TxDecisionPolicy,
+    adccSharedContext  :: SharedDecisionContext PeerAddr TxId (Tx TxId),
+    adccMempoolHasTx   :: Fun TxId Bool,
+    adccRequestedTxIds :: Set TxId,
+    adccReceivedTxs    :: Map TxId (Tx TxId),
+    adccPeer           :: PeerAddr
+  }
+  deriving Show
+
+instance Arbitrary ArbDecisionContextWithCollectTxs where
+    arbitrary = do
+      ArbTxDecisionPolicy policy <- arbitrary
+      ArbCollectTxs mempoolHasTx
+                    requestedTxIds
+                    receivedTxs
+                    peeraddr
+                    _
+                    st
+        <- arbitrary
+
+      let st' = fixupSharedTxStateForPolicy
+                  (apply mempoolHasTx)
+                  policy st
+          ps' =  peerTxStates st' Map.! peeraddr
+          peers = Map.keys (peerTxStates st')
+
+          requestedTxIds' = requestedTxIds
+                            `Set.intersection`
+                            requestedTxsInflight ps'
+          receivedTxs'    = receivedTxs
+                            `Map.restrictKeys`
+                            requestedTxIds'
+
+      gsvs <- zip peers
+          <$> infiniteListOf (unPeerGSVT <$> arbitrary)
+
+      return $ ArbDecisionContextWithCollectTxs {
+          adccDecisionPolicy = policy,
+          adccSharedContext  = SharedDecisionContext {
+              sdcPeerGSV       = Map.fromList gsvs,
+              sdcSharedTxState = st'
+            },
+          adccMempoolHasTx   = mempoolHasTx,
+          adccRequestedTxIds = requestedTxIds',
+          adccReceivedTxs    = receivedTxs',
+          adccPeer           = peeraddr
+        }
+
+    shrink ctx@ArbDecisionContextWithCollectTxs {
+                adccDecisionPolicy = decisionPolicy,
+                adccSharedContext  = sharedCtx,
+                adccRequestedTxIds = requestedTxIds,
+                adccReceivedTxs    = receivedTxs,
+                adccMempoolHasTx   = mempoolHasTx,
+                adccPeer           = peer
+             } =
+      [ ctx { adccDecisionPolicy = decisionPolicy
+            , adccSharedContext  = sharedCtx { sdcSharedTxState = st }
+            , adccRequestedTxIds = requestedTxIds'
+            , adccReceivedTxs    = receivedTxs'
+            }
+      | ArbTxDecisionPolicy decisionPolicy' <- shrink (ArbTxDecisionPolicy decisionPolicy)
+      , let st = fixupSharedTxStateForPolicy
+                   (apply mempoolHasTx)
+                   decisionPolicy'
+                   (sdcSharedTxState sharedCtx)
+            ps = peerTxStates st Map.! peer
+            requestedTxIds' = requestedTxIds
+                              `Set.intersection`
+                              requestedTxsInflight ps
+            receivedTxs'    = receivedTxs
+                              `Map.restrictKeys`
+                              requestedTxIds'
+      , st /= sdcSharedTxState sharedCtx
+      ]
+      ++
+      [ ctx { adccDecisionPolicy = policy
+            , adccSharedContext  = sharedCtx' { sdcSharedTxState = st }
+            , adccRequestedTxIds = requestedTxIds'
+            , adccReceivedTxs    = receivedTxs'
+            , adccMempoolHasTx   = mempoolHasTx'
+            }
+      | ArbDecisionContexts {
+          arbDecisionPolicy = policy,
+          arbSharedContext  = sharedCtx'@SharedDecisionContext { sdcSharedTxState = st },
+          arbMempoolHasTx   = mempoolHasTx'
+        }
+          <- shrink ArbDecisionContexts {
+                 arbDecisionPolicy = decisionPolicy,
+                 arbSharedContext  = sharedCtx,
+                 arbMempoolHasTx   = mempoolHasTx
+             }
+      , Just ps <- [peer `Map.lookup` peerTxStates st]
+      , let requestedTxIds' = requestedTxIds
+                              `Set.intersection`
+                              requestedTxsInflight ps
+            receivedTxs'    = receivedTxs
+                              `Map.restrictKeys`
+                              requestedTxIds'
+      ]
+      ++
+      [ ctx { adccRequestedTxIds = requestedTxIds'
+            , adccReceivedTxs    = receivedTxs'
+            }
+      | -- Don't shrink `TxId`s.
+        -- NOTE: if `TxId` would be a newtype an arbitrary instance would not
+        -- be provided and thus `shrink requestedTxIds` would not compile.
+        requestedTxIds' <- map Set.fromList $ shrinkList (\_ -> []) (Set.toList requestedTxIds)
+      , let receivedTxs' = receivedTxs
+                           `Map.restrictKeys`
+                           requestedTxIds'
+      ]
+
+prop_makeDecisions_collectTxs
+  :: ArbDecisionContextWithCollectTxs
+  -> Property
+prop_makeDecisions_collectTxs
+    ArbDecisionContextWithCollectTxs {
+      adccDecisionPolicy = policy,
+      adccSharedContext  = ctx@SharedDecisionContext { sdcSharedTxState = st },
+      adccRequestedTxIds = requestedTxIds,
+      adccReceivedTxs    = receivedTxs,
+      adccPeer           = peeraddr
+    }
+    =
+    counterexample ("st'   = " ++ show st') $
+    counterexample ("st''  = " ++ show st'') $
+    counterexample ("stA'  = " ++ show stA') $
+    counterexample ("stA'' = " ++ show stA'') $
+    counterexample ("txDecisions  = " ++ show txDecisions) $
+    counterexample ("txDecisionsA = " ++ show txDecisionsA) $
+
+    counterexample "acknowledged txids property failure" (
+      -- remove all decisions which do not acknowledge any txids; adjust number
+      -- of acknowledged txids by peeraddr.
+      let m  = Map.filter (/= 0)
+             . Map.map txdTxIdsToAcknowledge
+             $ txDecisions
+          mA = Map.filter (/= 0)
+             . Map.map txdTxIdsToAcknowledge
+             $ txDecisionsA
+      in
+         and
+         -- when we first collect then make a decision, we might acknowledged
+         -- more txids; e.g. if we received a `tx`, then it can be acknowledged
+         -- for all peers while `collectTxIds` only acknowledges it for one
+         -- peer - this is reflected by the following merge function.
+       $ Map.merge
+         (Map.mapMaybeMissing \_ _ -> Just True)
+         (Map.mapMaybeMissing \_ _ -> Just False)
+         (Map.zipWithMaybeMatched \_ x y -> Just $ x >= y)
+         m mA
+    )
+
+    .&&.
+
+    (    counterexample "txs to be added to the mempool"
+       . counterexample (show txs)
+       . counterexample (show txsA)
+       $ txsA
+         `Set.isSubsetOf`
+         txs
+    )
+
+  where
+    st'                        = TXS.collectTxsImpl
+                                   peeraddr requestedTxIds
+                                   receivedTxs st
+    (st'', txDecisions)        = TXS.makeDecisions
+                                   policy
+                                   ctx { sdcSharedTxState = st' }
+                                   (filterActivePeers policy st')
+    txs                        = foldMap (Set.fromList . txdTxsToMempool) txDecisions
+
+    (stA', txDecisionsA)       = TXS.makeDecisions
+                                   policy ctx
+                                   (filterActivePeers policy st)
+    txsA                       = foldMap (Set.fromList . txdTxsToMempool) txDecisionsA
+    stA''                      = TXS.collectTxsImpl
+                                   peeraddr requestedTxIds
+                                   receivedTxs stA'
 
 
 -- | `filterActivePeers` should not change decisions made by `makeDecisions`
