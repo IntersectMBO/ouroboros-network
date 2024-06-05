@@ -23,6 +23,15 @@
 * Added `daMinBigLedgerPeersForTrustedState` to `ArgumentsExtra` when starting diffusion.
   It is used by `outboundConnectionsState` when signaling trust state when syncing in
   Genesis mode. Default value is provided by the Configuration module.
+* The BulkSync mode of BlockFetch has been reimplemented to penalize peers that
+  are slow enough to delay syncing. This is necessary to deflect attacks
+  targeting the synchronizing nodes.
+  The penalization consists in switching the serving peer when blocks are in
+  flight long enough that the syncing node is idle while waiting for more blocks
+  to validate.
+  Full details on the implementation are in
+  `ouroboros-network/src/Ouroboros/Network/BlockFetch/Decision/BulkSync.hs`
+  [PR #4919](https://github.com/IntersectMBO/ouroboros-network/pull/4919).
 
 ### Non-Breaking changes
 

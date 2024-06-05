@@ -44,7 +44,7 @@ module Ouroboros.Network.Diffusion.Configuration
 import Control.Monad.Class.MonadTime.SI
 import System.Random (randomRIO)
 
-import Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
+import Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..), GenesisBlockFetchConfiguration (..))
 import Ouroboros.Network.ConnectionManager.Core (defaultProtocolIdleTimeout,
            defaultResetTimeout, defaultTimeWaitTimeout)
 import Ouroboros.Network.ConsensusMode
@@ -140,12 +140,16 @@ defaultPeerSharing = PeerSharingDisabled
 --
 defaultBlockFetchConfiguration :: Int -> BlockFetchConfiguration
 defaultBlockFetchConfiguration bfcSalt =
-  BlockFetchConfiguration {
-    bfcMaxConcurrencyBulkSync = 1,
-    bfcMaxConcurrencyDeadline = 1,
-    bfcMaxRequestsInflight    = fromIntegral $ blockFetchPipeliningMax defaultMiniProtocolParameters,
-    bfcDecisionLoopInterval   = 0.01, -- 10ms
-    bfcSalt }
+  BlockFetchConfiguration
+    { bfcMaxConcurrencyDeadline = 1
+    , bfcMaxRequestsInflight    = fromIntegral $ blockFetchPipeliningMax defaultMiniProtocolParameters
+    , bfcDecisionLoopIntervalBulkSync = 0.04  -- 40ms
+    , bfcDecisionLoopIntervalDeadline = 0.01  -- 10ms
+    , bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
+      { gbfcBulkSyncGracePeriod = 10 -- seconds
+      }
+    , bfcSalt
+    }
 
 defaultChainSyncTimeout :: IO ChainSyncTimeout
 defaultChainSyncTimeout = do
