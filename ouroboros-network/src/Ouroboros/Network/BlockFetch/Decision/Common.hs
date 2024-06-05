@@ -1,4 +1,6 @@
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE TypeOperators #-}
 
 -- | This module contains the part of the block fetch decisions process that is
 -- common to both the bulk sync and deadline modes.
@@ -7,6 +9,13 @@ module Ouroboros.Network.BlockFetch.Decision.Common (
   , PeerInfo
   , FetchDecision
   , FetchDecline (..)
+  , ChainSuffix (..)
+  , filterNotAlreadyFetched
+  , filterNotAlreadyInFlightWithPeer
+  , (?!)
+  , CandidateFragments
+  , filterWithMaxSlotNo
+  , filterPlausibleCandidates
 ) where
 
 import GHC.Stack (HasCallStack)
@@ -16,6 +25,10 @@ import Ouroboros.Network.SizeInBytes ( SizeInBytes )
 import Ouroboros.Network.BlockFetch.ClientState (PeerFetchInFlight (..), PeerFetchStatus (..))
 import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..))
 import Ouroboros.Network.DeltaQ ( PeerGSV )
+import Ouroboros.Network.Block (HasHeader, HeaderHash, Point, MaxSlotNo (..), castPoint, blockPoint, blockSlot)
+import Control.Monad (guard)
+import qualified Ouroboros.Network.AnchoredFragment as AF
+import qualified Data.Set as Set
 
 data FetchDecisionPolicy header = FetchDecisionPolicy {
        maxInFlightReqsPerPeer  :: Word,  -- A protocol constant.
@@ -191,3 +204,277 @@ data FetchDecline =
      --
    | FetchDeclineConcurrencyLimit   !FetchMode !Word
   deriving (Eq, Show)
+
+-- | The combination of a 'ChainSuffix' and a list of discontiguous
+-- 'AnchoredFragment's:
+--
+-- * When comparing two 'CandidateFragments' as candidate chains, we use the
+--   'ChainSuffix'.
+--
+-- * To track which blocks of that candidate still have to be downloaded, we
+--   use a list of discontiguous 'AnchoredFragment's.
+--
+type CandidateFragments header = (ChainSuffix header, [AnchoredFragment header])
+
+{-
+Of course we would at most need to download the blocks in a candidate chain
+that are not already in the current chain. So we must find those intersections.
+
+Before we do that, lets define how we represent a suffix of a chain. We do this
+very simply as a chain fragment: exactly those blocks contained in the suffix.
+A chain fragment is of course not a chain, but has many similar invariants.
+
+We will later also need to represent chain ranges when we send block fetch
+requests. We do this using a pair of points: the first and last blocks in the
+range.  While we can represent an empty chain fragment, we cannot represent an
+empty fetch range, but this is ok since we never request empty ranges.
+
+ Chain fragment
+    ┌───┐
+    │ ◉ │ Start of range, inclusive
+    ├───┤
+    │   │
+    ├───┤
+    │   │
+    ├───┤
+    │   │
+    ├───┤
+    │ ◉ │ End of range, inclusive.
+    └───┘
+-}
+
+-- | A chain suffix, obtained by intersecting a candidate chain with the
+-- current chain.
+--
+-- The anchor point of a 'ChainSuffix' will be a point within the bounds of
+-- the current chain ('AF.withinFragmentBounds'), indicating that it forks off
+-- in the last @K@ blocks.
+--
+-- A 'ChainSuffix' must be non-empty, as an empty suffix, i.e. the candidate
+-- chain is equal to the current chain, would not be a plausible candidate.
+newtype ChainSuffix header =
+    ChainSuffix { getChainSuffix :: AnchoredFragment header }
+
+{-
+We have the node's /current/ or /adopted/ chain. This is the node's chain in
+the sense specified by the Ouroboros algorithm. It is a fully verified chain
+with block bodies and a ledger state.
+
+    ┆   ┆
+    ├───┤
+    │   │
+    ├───┤
+    │   │
+    ├───┤
+    │   │
+    ├───┤
+    │   │
+ ───┴───┴─── current chain length (block number)
+
+With chain selection we are interested in /candidate/ chains. We have these
+candidate chains in the form of chains of verified headers, but without bodies.
+
+The consensus layer gives us the current set of candidate chains from our peers
+and we have the task of selecting which block bodies to download, and then
+passing those block bodes back to the consensus layer. The consensus layer will
+try to validate them and decide if it wants to update its current chain.
+
+    ┆   ┆     ┆   ┆     ┆   ┆     ┆   ┆     ┆   ┆
+    ├───┤     ├───┤     ├───┤     ├───┤     ├───┤
+    │   │     │   │     │   │     │   │     │   │
+    ├───┤     ├───┤     ├───┤     ├───┤     ├───┤
+    │   │     │   │     │   │     │   │     │   │
+    ├───┤     ├───┤     ├───┤     ├───┤     ├───┤
+    │   │     │   │     │   │     │   │     │   │
+    ├───┤     ├───┤     ├───┤     ├───┤     └───┘
+    │   │     │   │     │   │     │   │
+ ───┴───┴─────┼───┼─────┼───┼─────┼───┼───────────── current chain length
+              │   │     │   │     │   │
+  current     ├───┤     ├───┤     └───┘
+  (blocks)    │   │     │   │
+              └───┘     └───┘
+                A         B         C         D
+             candidates
+             (headers)
+
+In this example we have four candidate chains, with all but chain D strictly
+longer than our current chain.
+
+In general there are many candidate chains. We make a distinction between a
+candidate chain and the peer from which it is available. It is often the
+case that the same chain is available from multiple peers. We will try to be
+clear about when we are referring to chains or the combination of a chain and
+the peer from which it is available.
+
+For the sake of the example let us assume we have the four chains above
+available from the following peers.
+
+peer    1         2         3         4         5         6         7
+      ┆   ┆     ┆   ┆     ┆   ┆     ┆   ┆     ┆   ┆     ┆   ┆     ┆   ┆
+      ├───┤     ├───┤     ├───┤     ├───┤     ├───┤     ├───┤     ├───┤
+      │   │     │   │     │   │     │   │     │   │     │   │     │   │
+      ├───┤     ├───┤     ├───┤     ├───┤     └───┘     ├───┤     ├───┤
+      │   │     │   │     │   │     │   │               │   │     │   │
+    ──┼───┼─────┼───┼─────┼───┼─────┼───┼───────────────┼───┼─────┼───┼──
+      │   │     │   │     │   │     │   │               │   │     │   │
+      └───┘     ├───┤     ├───┤     ├───┤               ├───┤     ├───┤
+                │   │     │   │     │   │               │   │     │   │
+                └───┘     └───┘     └───┘               └───┘     └───┘
+chain   C         A         B         A         D         B         A
+
+This is the form in which we are informed about candidate chains from the
+consensus layer, the combination of a chain and the peer it is from. This
+makes sense, since these things change independently.
+
+We will process the chains in this form, keeping the peer/chain combination all
+the way through. Although there could in principle be some opportunistic saving
+by sharing when multiple peers provide the same chain, taking advantage of this
+adds complexity and does nothing to improve our worst case costs.
+
+We are only interested in candidate chains that are strictly longer than our
+current chain. So our first task is to filter down to this set.
+-}
+
+-- | Keep only those candidate chains that are preferred over the current
+-- chain. Typically, this means that their length is longer than the length of
+-- the current chain.
+--
+filterPlausibleCandidates
+  :: (AnchoredFragment block -> AnchoredFragment header -> Bool)
+  -> AnchoredFragment block  -- ^ The current chain
+  -> [(AnchoredFragment header, peerinfo)]
+  -> [(FetchDecision (AnchoredFragment header), peerinfo)]
+filterPlausibleCandidates plausibleCandidateChain currentChain chains =
+    [ (chain', peer)
+    | (chain,  peer) <- chains
+    , let chain' = do
+            guard (plausibleCandidateChain currentChain chain)
+              ?! FetchDeclineChainNotPlausible
+            return chain
+    ]
+
+{-
+We define the /fetch range/ as the suffix of the fork range that has not yet
+had its blocks downloaded and block content checked against the headers.
+
+    ┆   ┆
+    ├───┤
+    │   │
+    ├───┤               ┌───┐
+    │   │    already    │   │
+    ├───┤    fetched    ├───┤
+    │   │    blocks     │   │
+    ├───┤               ├───┤
+    │   │               │░◉░│  ◄  fetch range
+ ───┴───┴─────┬───┬─────┼───┼───
+              │░◉░│ ◄   │░░░│
+              └───┘     ├───┤
+                        │░◉░│  ◄
+                        └───┘
+
+In earlier versions of this scheme we maintained and relied on the invariant
+that the ranges of fetched blocks are backwards closed. This meant we never had
+discontinuous ranges of fetched or not-yet-fetched blocks. This invariant does
+simplify things somewhat by keeping the ranges continuous however it precludes
+fetching ranges of blocks from different peers in parallel.
+
+We do not maintain any such invariant and so we have to deal with there being
+gaps in the ranges we have already fetched or are yet to fetch. To keep the
+tracking simple we do not track the ranges themselves, rather we track the set
+of individual blocks without their relationship to each other.
+
+-}
+
+-- | Find the fragments of the chain suffix that we still need to fetch, these
+-- are the fragments covering blocks that have not yet been fetched and are
+-- not currently in the process of being fetched from this peer.
+--
+-- Typically this is a single fragment forming a suffix of the chain, but in
+-- the general case we can get a bunch of discontiguous chain fragments.
+--
+filterNotAlreadyFetched
+  :: (HasHeader header, HeaderHash header ~ HeaderHash block)
+  => (Point block -> Bool)
+  -> MaxSlotNo
+  -> [(FetchDecision (ChainSuffix        header), peerinfo)]
+  -> [(FetchDecision (CandidateFragments header), peerinfo)]
+filterNotAlreadyFetched alreadyDownloaded fetchedMaxSlotNo chains =
+    [ (mcandidates, peer)
+    | (mcandidate,  peer) <- chains
+    , let mcandidates = do
+            candidate <- mcandidate
+            let fragments = filterWithMaxSlotNo
+                              notAlreadyFetched
+                              fetchedMaxSlotNo
+                              (getChainSuffix candidate)
+            guard (not (null fragments)) ?! FetchDeclineAlreadyFetched
+            return (candidate, fragments)
+    ]
+  where
+    notAlreadyFetched = not . alreadyDownloaded . castPoint . blockPoint
+
+filterNotAlreadyInFlightWithPeer
+  :: HasHeader header
+  => [(FetchDecision (CandidateFragments header), PeerFetchInFlight header,
+                                                  peerinfo)]
+  -> [(FetchDecision (CandidateFragments header), peerinfo)]
+filterNotAlreadyInFlightWithPeer chains =
+    [ (mcandidatefragments',          peer)
+    | (mcandidatefragments, inflight, peer) <- chains
+    , let mcandidatefragments' = do
+            (candidate, chainfragments) <- mcandidatefragments
+            let fragments = concatMap (filterWithMaxSlotNo
+                                         (notAlreadyInFlight inflight)
+                                         (peerFetchMaxSlotNo inflight))
+                                      chainfragments
+            guard (not (null fragments)) ?! FetchDeclineInFlightThisPeer
+            return (candidate, fragments)
+    ]
+  where
+    notAlreadyInFlight inflight b =
+      blockPoint b `Set.notMember` peerFetchBlocksInFlight inflight
+
+-- | The \"oh noes?!\" operator.
+--
+-- In the case of an error, the operator provides a specific error value.
+--
+(?!) :: Maybe a -> e -> Either e a
+Just x  ?! _ = Right x
+Nothing ?! e = Left  e
+
+-- | Filter a fragment. This is an optimised variant that will behave the same
+-- as 'AnchoredFragment.filter' if the following precondition is satisfied:
+--
+-- PRECONDITION: for all @hdr@ in the chain fragment: if @blockSlot hdr >
+-- maxSlotNo@ then the predicate should not hold for any header after @hdr@ in
+-- the chain fragment.
+--
+-- For example, when filtering out already downloaded blocks from the
+-- fragment, it does not make sense to keep filtering after having encountered
+-- the highest slot number the ChainDB has seen so far: blocks with a greater
+-- slot number cannot have been downloaded yet. When the candidate fragments
+-- get far ahead of the current chain, e.g., @2k@ headers, this optimisation
+-- avoids the linear cost of filtering these headers when we know in advance
+-- they will all remain in the final fragment. In case the given slot number
+-- is 'NoSlotNo', no filtering takes place, as there should be no matches
+-- because we haven't downloaded any blocks yet.
+--
+-- For example, when filtering out blocks already in-flight for the given
+-- peer, the given @maxSlotNo@ can correspond to the block with the highest
+-- slot number that so far has been in-flight for the given peer. When no
+-- blocks have been in-flight yet, @maxSlotNo@ can be 'NoSlotNo', in which
+-- case no filtering needs to take place, which makes sense, as there are no
+-- blocks to filter out. Note that this is conservative: if a block is for
+-- some reason multiple times in-flight (maybe it has to be redownloaded) and
+-- the block's slot number matches the @maxSlotNo@, it will now be filtered
+-- (while the filtering might previously have stopped before encountering the
+-- block in question). This is fine, as the filter will now include the block,
+-- because according to the filtering predicate, the block is not in-flight.
+filterWithMaxSlotNo
+  :: forall header. HasHeader header
+  => (header -> Bool)
+  -> MaxSlotNo  -- ^ @maxSlotNo@
+  -> AnchoredFragment header
+  -> [AnchoredFragment header]
+filterWithMaxSlotNo p maxSlotNo =
+    AF.filterWithStop p ((> maxSlotNo) . MaxSlotNo . blockSlot)

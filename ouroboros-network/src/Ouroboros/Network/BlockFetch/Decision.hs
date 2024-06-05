@@ -29,9 +29,11 @@ import Ouroboros.Network.Block
 import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..))
 import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..))
 
-import Ouroboros.Network.BlockFetch.Decision.Common
-import Ouroboros.Network.BlockFetch.Decision.Deadline
-import Ouroboros.Network.BlockFetch.Decision.BulkSync (fetchDecisionsBulkSync)
+import Ouroboros.Network.BlockFetch.Decision.Common (FetchDecisionPolicy (..), PeerInfo, FetchDecision, FetchDecline (..),
+                                                     filterPlausibleCandidates, filterNotAlreadyFetched, filterNotAlreadyInFlightWithPeer)
+import Ouroboros.Network.BlockFetch.Decision.Deadline (fetchDecisionsDeadline, selectForkSuffixes,
+                                                      prioritisePeerChains, fetchRequestDecisions)
+import Ouroboros.Network.BlockFetch.Decision.BulkSync (fetchDecisionsBulkSync, filterNotAlreadyInFlightWithOtherPeers)
 
 fetchDecisions
   :: (Ord peer,
