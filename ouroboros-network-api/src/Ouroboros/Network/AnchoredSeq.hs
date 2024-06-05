@@ -25,6 +25,7 @@ module Ouroboros.Network.AnchoredSeq
   , fromNewestFirst
   , fromOldestFirst
   , splitAt
+  , splitAtMeasure
   , dropNewest
   , takeOldest
   , dropWhileNewest
@@ -291,6 +292,28 @@ splitAt ::
    -> AnchoredSeq v a b
    -> (AnchoredSeq v a b, AnchoredSeq v a b)
 splitAt i (AnchoredSeq a ft) = case FT.split (\v -> measureSize v > i) ft of
+   (before, after) ->
+     let before' = AnchoredSeq a before
+     in (before', AnchoredSeq (headAnchor before') after)
+
+-- | \( O(\log(\min(i,n-i)) \). Split the 'AnchoredSeq' at a given
+--  measure.
+--
+-- POSTCONDITION: @(before, after) = splitAtMeasure v s@, then:
+--
+-- > anchor      before == anchor s
+-- > headAnchor  before == anchor after
+-- > headAnchor  after  == headAnchor s
+-- > toOldestFirst before ==
+-- >   filter ((< v) . getAnchorMeasure @v @a (Proxy @b) . asAnchor) (toOldestFirst s)
+-- > toOldestFirst after ==
+-- >   filter ((v <=) . getAnchorMeasure @v @a (Proxy @b) . asAnchor) (toOldestFirst s)
+splitAtMeasure ::
+      Anchorable v a b
+   => v
+   -> AnchoredSeq v a b
+   -> (AnchoredSeq v a b, AnchoredSeq v a b)
+splitAtMeasure v (AnchoredSeq a ft) = case FT.split ((v <=) . measureMax) ft of
    (before, after) ->
      let before' = AnchoredSeq a before
      in (before', AnchoredSeq (headAnchor before') after)

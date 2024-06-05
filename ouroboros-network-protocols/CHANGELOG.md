@@ -8,6 +8,8 @@
 
 ### Non-Breaking changes
 
+* Added a test for `AnchoredFragment.splitAtSlot`.
+
 ## 0.8.1.0 -- 2024-03-14
 
 ### Breaking changes
