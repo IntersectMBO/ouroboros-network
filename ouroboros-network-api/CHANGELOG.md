@@ -4,6 +4,14 @@
 
 ### Breaking changes
 
+* Added two new fields to `BlockFetchConsensusInterface`: `readChainSelStarvation`
+  indicates to BlockFetch if block validation is waiting for more blocks to arrive.
+  `demoteCSJDynamo` indicates to the consensus layer that BlockFetch stopped
+  downloading blocks from a given peer. These fields are only used by the BulkSync
+  fetch mode at the moment.
+
+* Removed unused function `Ouroboros.Network.PeerSelection.LedgerPeers.Type.compareLedgerPeerSnapshotApproximate`.
+
 ### Non-Breaking changes
 
 * Transplanted `accBigPoolStake` and `reRelativeStake` from ouroboros-network

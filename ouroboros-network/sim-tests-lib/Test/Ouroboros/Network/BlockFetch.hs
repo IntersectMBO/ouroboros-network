@@ -55,6 +55,7 @@ import Ouroboros.Network.NodeToNode.Version (isPipeliningEnabled)
 import Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch)
 
 import Ouroboros.Network.Testing.Utils
+import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
 
 
 --
@@ -209,8 +210,7 @@ chainPoints = map (castPoint . blockPoint)
             . AnchoredFragment.toOldestFirst
 
 data Example1TraceEvent =
-     TraceFetchDecision       [TraceLabelPeer Int
-                                (FetchDecision [Point BlockHeader])]
+     TraceFetchDecision       (TraceDecisionEvent Int BlockHeader)
    | TraceFetchClientState    (TraceLabelPeer Int
                                 (TraceFetchClientState BlockHeader))
    | TraceFetchClientSendRecv (TraceLabelPeer Int
@@ -243,8 +243,8 @@ tracePropertyBlocksRequestedAndRecievedPerPeer
   -> [Example1TraceEvent]
   -> Property
 tracePropertyBlocksRequestedAndRecievedPerPeer fork1 fork2 es =
-      requestedFetchPoints === requiredFetchPoints
- .&&. receivedFetchPoints  === requiredFetchPoints
+       counterexample "should request the expected blocks" (requestedFetchPoints === requiredFetchPoints)
+  .&&. counterexample "should receive the expected blocks" (receivedFetchPoints  === requiredFetchPoints)
   where
     requiredFetchPoints =
       Map.filter (not . Prelude.null) $

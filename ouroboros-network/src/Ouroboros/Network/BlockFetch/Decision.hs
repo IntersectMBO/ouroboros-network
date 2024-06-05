@@ -16,58 +16,83 @@ module Ouroboros.Network.BlockFetch.Decision
     -- ** Components of the decision-making process
   , filterPlausibleCandidates
   , selectForkSuffixes
-  , filterNotAlreadyFetched
-  , filterNotAlreadyInFlightWithPeer
+  , dropAlreadyFetched
+  , dropAlreadyInFlightWithPeer
   , prioritisePeerChains
-  , filterNotAlreadyInFlightWithOtherPeers
   , fetchRequestDecisions
   ) where
 
 import Data.Hashable
+import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime(..))
+import Control.Tracer (Tracer)
+
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import Ouroboros.Network.Block
-import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..))
-import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..))
+import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..), PeersOrder (..))
+import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..), ChainSelStarvation)
 
-import Ouroboros.Network.BlockFetch.Decision.Common
-import Ouroboros.Network.BlockFetch.Decision.Deadline
-import Ouroboros.Network.BlockFetch.Decision.BulkSync (fetchDecisionsBulkSync)
+import Ouroboros.Network.BlockFetch.Decision.Deadline (FetchDecisionPolicy (..), PeerInfo, FetchDecision, FetchDecline (..),
+                                                     filterPlausibleCandidates, dropAlreadyFetched, dropAlreadyInFlightWithPeer,
+                                                     selectForkSuffixes, fetchDecisionsDeadline, prioritisePeerChains, fetchRequestDecisions)
+import Ouroboros.Network.BlockFetch.Decision.BulkSync (fetchDecisionsBulkSyncM)
+import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
 
 fetchDecisions
-  :: (Ord peer,
+  :: forall peer header block m extra.
+     (Ord peer,
       Hashable peer,
       HasHeader header,
-      HeaderHash header ~ HeaderHash block)
-  => FetchDecisionPolicy header
+      HeaderHash header ~ HeaderHash block, MonadMonotonicTime m)
+  => Tracer m (TraceDecisionEvent peer header)
+  -> FetchDecisionPolicy header
   -> FetchMode
   -> AnchoredFragment header
   -> (Point block -> Bool)
   -> MaxSlotNo
+  -> ChainSelStarvation
+  -> ( PeersOrder peer
+     , PeersOrder peer -> m ()
+     , peer -> m ()
+     )
   -> [(AnchoredFragment header, PeerInfo header peer extra)]
-  -> [(FetchDecision (FetchRequest header), PeerInfo header peer extra)]
+  -> m [(FetchDecision (FetchRequest header), PeerInfo header peer extra)]
 
 fetchDecisions
+  _tracer
   fetchDecisionPolicy
   FetchModeDeadline
   currentChain
   fetchedBlocks
   fetchedMaxSlotNo
+  _chainSelStarvation
+  _peersOrderHandlers
+  candidatesAndPeers
   =
-  fetchDecisionsDeadline
-    fetchDecisionPolicy
-    currentChain
-    fetchedBlocks
-    fetchedMaxSlotNo
+    pure
+      $ fetchDecisionsDeadline
+        fetchDecisionPolicy
+        currentChain
+        fetchedBlocks
+        fetchedMaxSlotNo
+        candidatesAndPeers
 
 fetchDecisions
+  tracer
   fetchDecisionPolicy
   FetchModeBulkSync
   currentChain
   fetchedBlocks
   fetchedMaxSlotNo
+  chainSelStarvation
+  peersOrderHandlers
+  candidatesAndPeers
   =
-  fetchDecisionsBulkSync
-    fetchDecisionPolicy
-    currentChain
-    fetchedBlocks
-    fetchedMaxSlotNo
+      fetchDecisionsBulkSyncM
+        tracer
+        fetchDecisionPolicy
+        currentChain
+        fetchedBlocks
+        fetchedMaxSlotNo
+        chainSelStarvation
+        peersOrderHandlers
+        candidatesAndPeers

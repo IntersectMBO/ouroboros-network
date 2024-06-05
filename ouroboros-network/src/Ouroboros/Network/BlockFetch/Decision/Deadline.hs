@@ -7,44 +7,211 @@
 
 -- | This module contains the part of the block fetch decisions process that is
 -- specific to the deadline mode.
-module Ouroboros.Network.BlockFetch.Decision.Deadline
-  ( -- * Deciding what to fetch
-    fetchDecisionsDeadline
-    -- ** Components of the decision-making process
-  , filterPlausibleCandidates
-  , selectForkSuffixes
-  , filterNotAlreadyFetched
-  , filterNotAlreadyInFlightWithPeer
-  , prioritisePeerChains
-  , filterNotAlreadyInFlightWithOtherPeers
-  , fetchRequestDecisions
-  ) where
-
-import Data.Set qualified as Set
-
-import Data.Function (on)
-import Data.Hashable
-import Data.List (foldl', groupBy, sortBy, transpose)
-import Data.Maybe (mapMaybe)
-import Data.Set (Set)
+module Ouroboros.Network.BlockFetch.Decision.Deadline where
 
 import Control.Exception (assert)
+import Control.Monad.Class.MonadTime.SI (DiffTime)
+import Data.Function (on)
+import Data.Hashable
+import Data.List as List (foldl', groupBy, sortBy, transpose)
+import Data.Maybe (mapMaybe)
+import Data.Set (Set)
+import Data.Set qualified as Set
+import GHC.Stack (HasCallStack)
+
 import Control.Monad (guard)
 
-import Ouroboros.Network.AnchoredFragment (AnchoredFragment, AnchoredSeq (..))
+import Ouroboros.Network.AnchoredFragment (AnchoredSeq (..), AnchoredFragment)
 import Ouroboros.Network.AnchoredFragment qualified as AF
+import Ouroboros.Network.BlockFetch.DeltaQ (PeerFetchInFlightLimits (..))
 import Ouroboros.Network.Block
 import Ouroboros.Network.Point (withOriginToMaybe)
 
 import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..),
            PeerFetchInFlight (..), PeerFetchStatus (..))
 import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..))
-import Ouroboros.Network.BlockFetch.DeltaQ (PeerFetchInFlightLimits (..),
-           PeerGSV (..), SizeInBytes, calculatePeerFetchInFlightLimits,
-           comparePeerGSV, comparePeerGSV', estimateExpectedResponseDuration,
-           estimateResponseDeadlineProbability)
+import Ouroboros.Network.BlockFetch.DeltaQ (PeerGSV (..), SizeInBytes, calculatePeerFetchInFlightLimits,
+           comparePeerGSV, comparePeerGSV', estimateResponseDeadlineProbability)
 
-import Ouroboros.Network.BlockFetch.Decision.Common
+
+data FetchDecisionPolicy header = FetchDecisionPolicy {
+       maxInFlightReqsPerPeer  :: Word,  -- A protocol constant.
+
+       maxConcurrencyDeadline  :: Word,
+       decisionLoopIntervalBulkSync :: DiffTime,
+       decisionLoopIntervalDeadline :: DiffTime,
+       peerSalt                :: Int,
+       bulkSyncGracePeriod     :: DiffTime,
+
+       plausibleCandidateChain :: HasCallStack
+                               => AnchoredFragment header
+                               -> AnchoredFragment header -> Bool,
+
+       compareCandidateChains  :: HasCallStack
+                               => AnchoredFragment header
+                               -> AnchoredFragment header
+                               -> Ordering,
+
+       blockFetchSize          :: header -> SizeInBytes
+     }
+
+type PeerInfo header peer extra =
+       ( PeerFetchStatus header,
+         PeerFetchInFlight header,
+         PeerGSV,
+         peer,
+         extra
+       )
+
+peerInfoPeer :: PeerInfo header peer extra -> peer
+peerInfoPeer (_, _, _, p, _) = p
+
+-- | Throughout the decision making process we accumulate reasons to decline
+-- to fetch any blocks. This type is used to wrap intermediate and final
+-- results.
+--
+type FetchDecision result = Either FetchDecline result
+
+-- | All the various reasons we can decide not to fetch blocks from a peer.
+--
+-- It is worth highlighting which of these reasons result from competition
+-- among upstream peers.
+--
+-- * 'FetchDeclineInFlightOtherPeer': decline this peer because all the
+--   unfetched blocks of its candidate chain have already been requested from
+--   other peers. This reason reflects the least-consequential competition
+--   among peers: the competition that determines merely which upstream peer to
+--   burden with the request (eg the one with the best
+--   'Ouroboros.Network.BlockFetch.DeltaQ.DeltaQ' metrics). The consequences
+--   are relatively minor because the unfetched blocks on this peer's candidate
+--   chain will be requested regardless; it's merely a question of "From who?".
+--   (One exception: if an adversarial peer wins this competition such that the
+--   blocks are only requested from them, then it may be possible that this
+--   decision determines whether the blocks are ever /received/. But that
+--   depends on details of timeouts, a longer competing chain being soon
+--   received within those timeouts, and so on.)
+--
+-- * 'FetchDeclineChainNotPlausible': decline this peer because the node has
+--   already fetched, validated, and selected a chain better than its candidate
+--   chain from other peers (or from the node's own block forge). Because the
+--   node's current selection is influenced by what blocks other peers have
+--   recently served (or it recently minted), this reason reflects that peers
+--   /indirectly/ compete by serving as long of a chain as possible and as
+--   promptly as possible. When the tips of the peers' selections are all
+--   within their respective forecast horizons (see
+--   'Ouroboros.Consensus.Ledger.SupportsProtocol.ledgerViewForecastAt'), then
+--   the length of their candidate chains will typically be the length of their
+--   selections, since the ChainSync is free to race ahead (in contrast, the
+--   BlockFetch pipeline depth is bounded such that it will, for a syncing
+--   node, not be able to request all blocks between the selection and the end
+--   of the forecast window). But if one or more of their tips is beyond the
+--   horizon, then the relative length of the candidate chains is more
+--   complicated, influenced by both the relative density of the chains'
+--   suffixes and the relative age of the chains' intersection with the node's
+--   selection (since each peer's forecast horizon is a fixed number of slots
+--   after the candidate's successor of that intersection).
+--
+-- * 'FetchDeclineConcurrencyLimit': decline this peer while the node has
+--   already fully allocated the artificially scarce 'maxConcurrentFetchPeers'
+--   resource amongst its other peers. This reason reflects the
+--   least-fundamental competition: it's the only way a node would decline a
+--   candidate chain C that it would immediately switch to if C had somehow
+--   already been fetched (and any better current candidates hadn't). It is
+--   possible that this peer's candidate fragment is better than the candidate
+--   fragments of other peers, but that should only happen ephemerally (eg for
+--   a brief while immediately after first connecting to this peer).
+--
+-- * 'FetchDeclineChainIntersectionTooDeep': decline this peer because the node's
+--   selection has more than @K@ blocks that are not on this peer's candidate
+--   chain. Typically, this reason occurs after the node has been declined---ie
+--   lost the above competitions---for a long enough duration. This decision
+--   only arises if the BlockFetch decision logic wins a harmless race against
+--   the ChainSync client once the node's selection gets longer, since
+--   'Ouroboros.Consensus.MiniProtocol.ChainSync.Client.ForkTooDeep'
+--   disconnects from such a peer.
+--
+data FetchDecline =
+     -- | This peer's candidate chain is not longer than our chain. For more
+     -- details see
+     -- 'Ouroboros.Consensus.MiniProtocol.BlockFetch.ClientInterface.mkBlockFetchConsensusInterface'
+     -- which implements 'plausibleCandidateChain'.
+     --
+     FetchDeclineChainNotPlausible
+
+     -- | Switching to this peer's candidate chain would require rolling back
+     -- more than @K@ blocks.
+     --
+   | FetchDeclineChainIntersectionTooDeep
+
+     -- | Every block on this peer's candidate chain has already been fetched.
+     --
+   | FetchDeclineAlreadyFetched
+
+     -- | This peer's candidate chain has already been requested from this
+     -- peer.
+     --
+   | FetchDeclineInFlightThisPeer
+
+     -- | Some blocks on this peer's candidate chain have not yet been fetched,
+     -- but all of those have already been requested from other peers.
+     --
+   | FetchDeclineInFlightOtherPeer
+
+     -- | This peer's BlockFetch client is shutting down, see
+     -- 'PeerFetchStatusShutdown'.
+     --
+   | FetchDeclinePeerShutdown
+
+     -- | Blockfetch is starting up and waiting on corresponding Chainsync.
+   | FetchDeclinePeerStarting
+
+
+   -- The reasons above this comment are fundamental and/or obvious. On the
+   -- other hand, the reasons below are heuristic.
+
+
+     -- | This peer is in a potentially-temporary state in which it has not
+     -- responded to us within a certain expected time limit, see
+     -- 'PeerFetchStatusAberrant'.
+     --
+   | FetchDeclinePeerSlow
+
+     -- | This peer is not under the 'maxInFlightReqsPerPeer' limit.
+     --
+     -- The argument is the 'maxInFlightReqsPerPeer' constant.
+     --
+   | FetchDeclineReqsInFlightLimit  !Word
+
+     -- | This peer is not under the 'inFlightBytesHighWatermark' bytes limit.
+     --
+     -- The arguments are:
+     --
+     -- * number of bytes currently in flight for that peer
+     -- * the configured 'inFlightBytesLowWatermark' constant
+     -- * the configured 'inFlightBytesHighWatermark' constant
+     --
+   | FetchDeclineBytesInFlightLimit !SizeInBytes !SizeInBytes !SizeInBytes
+
+     -- | This peer is not under the 'inFlightBytesLowWatermark'.
+     --
+     -- The arguments are:
+     --
+     -- * number of bytes currently in flight for that peer
+     -- * the configured 'inFlightBytesLowWatermark' constant
+     -- * the configured 'inFlightBytesHighWatermark' constant
+     --
+   | FetchDeclinePeerBusy           !SizeInBytes !SizeInBytes !SizeInBytes
+
+     -- | The node is not under the 'maxConcurrentFetchPeers' limit.
+     --
+     -- The arguments are:
+     --
+     -- * the current 'FetchMode'
+     -- * the corresponding configured limit constant, either
+     --   'maxConcurrencyDeadline', or 1 for bulk sync.
+     --
+   | FetchDeclineConcurrencyLimit   !FetchMode !Word
+  deriving (Eq, Show)
 
 -- | The \"oh noes?!\" operator.
 --
@@ -89,30 +256,19 @@ fetchDecisionsDeadline fetchDecisionPolicy@FetchDecisionPolicy {
                fetchedMaxSlotNo =
 
     -- Finally, make a decision for each (chain, peer) pair.
-    fetchRequestDecisions
-      fetchDecisionPolicy
-      FetchModeDeadline
+    fetchRequestDecisions fetchDecisionPolicy
   . map swizzleSIG
 
-    -- Filter to keep blocks that are not already in-flight with other peers.
-  . filterNotAlreadyInFlightWithOtherPeers
-      FetchModeDeadline
-  . map swizzleSI
-
     -- Reorder chains based on consensus policy and network timing data.
-  . prioritisePeerChains
-      FetchModeDeadline
-      peerSalt
-      compareCandidateChains
-      blockFetchSize
+  . prioritisePeerChains peerSalt compareCandidateChains blockFetchSize
   . map swizzleIG
 
     -- Filter to keep blocks that are not already in-flight for this peer.
-  . filterNotAlreadyInFlightWithPeer
+  . dropAlreadyInFlightWithPeer'
   . map swizzleI
 
     -- Filter to keep blocks that have not already been downloaded.
-  . filterNotAlreadyFetched
+  . dropAlreadyFetched'
       fetchedBlocks
       fetchedMaxSlotNo
 
@@ -128,7 +284,6 @@ fetchDecisionsDeadline fetchDecisionPolicy@FetchDecisionPolicy {
     -- Data swizzling functions to get the right info into each stage.
     swizzleI   (c, p@(_,     inflight,_,_,      _)) = (c,         inflight,       p)
     swizzleIG  (c, p@(_,     inflight,gsvs,peer,_)) = (c,         inflight, gsvs, peer, p)
-    swizzleSI  (c, p@(status,inflight,_,_,      _)) = (c, status, inflight,       p)
     swizzleSIG (c, p@(status,inflight,gsvs,peer,_)) = (c, status, inflight, gsvs, peer, p)
 
 {-
@@ -211,7 +366,6 @@ We are only interested in candidate chains that are strictly longer than our
 current chain. So our first task is to filter down to this set.
 -}
 
-
 -- | Keep only those candidate chains that are preferred over the current
 -- chain. Typically, this means that their length is longer than the length of
 -- the current chain.
@@ -229,7 +383,6 @@ filterPlausibleCandidates plausibleCandidateChain currentChain chains =
               ?! FetchDeclineChainNotPlausible
             return chain
     ]
-
 
 {-
 In the example, this leaves us with only the candidate chains: A, B and C, but
@@ -249,7 +402,6 @@ peer    1         2         3         4                   6         7
                 └───┘     └───┘     └───┘               └───┘     └───┘
 chain   C         A         B         A                   B         A
 -}
-
 
 {-
 Of course we would at most need to download the blocks in a candidate chain
@@ -386,107 +538,69 @@ of individual blocks without their relationship to each other.
 
 -}
 
--- | Find the fragments of the chain suffix that we still need to fetch, these
--- are the fragments covering blocks that have not yet been fetched and are
--- not currently in the process of being fetched from this peer.
+-- | Find the fragments of the chain suffix that we still need to fetch because
+-- they are covering blocks that have not yet been fetched.
 --
 -- Typically this is a single fragment forming a suffix of the chain, but in
 -- the general case we can get a bunch of discontiguous chain fragments.
 --
-filterNotAlreadyFetched
-  :: (HasHeader header, HeaderHash header ~ HeaderHash block)
-  => (Point block -> Bool)
-  -> MaxSlotNo
-  -> [(FetchDecision (ChainSuffix        header), peerinfo)]
-  -> [(FetchDecision (CandidateFragments header), peerinfo)]
-filterNotAlreadyFetched alreadyDownloaded fetchedMaxSlotNo chains =
-    [ (mcandidates, peer)
-    | (mcandidate,  peer) <- chains
-    , let mcandidates = do
-            candidate <- mcandidate
-            let fragments = filterWithMaxSlotNo
-                              notAlreadyFetched
-                              fetchedMaxSlotNo
-                              (getChainSuffix candidate)
-            guard (not (null fragments)) ?! FetchDeclineAlreadyFetched
-            return (candidate, fragments)
-    ]
+-- See also 'dropAlreadyInFlightWithPeer'.
+dropAlreadyFetched ::
+  (HasHeader header, HeaderHash header ~ HeaderHash block) =>
+  (Point block -> Bool) ->
+  MaxSlotNo ->
+  ChainSuffix header ->
+  FetchDecision (CandidateFragments header)
+dropAlreadyFetched alreadyDownloaded fetchedMaxSlotNo candidate =
+  if null fragments
+    then Left FetchDeclineAlreadyFetched
+    else Right (candidate, fragments)
   where
+    fragments = filterWithMaxSlotNo notAlreadyFetched fetchedMaxSlotNo (getChainSuffix candidate)
     notAlreadyFetched = not . alreadyDownloaded . castPoint . blockPoint
 
+dropAlreadyFetched' ::
+  (HasHeader header, HeaderHash header ~ HeaderHash block) =>
+  (Point block -> Bool) ->
+  MaxSlotNo ->
+  [(FetchDecision (ChainSuffix header), peerinfo)] ->
+  [(FetchDecision (CandidateFragments header), peerinfo)]
+dropAlreadyFetched' alreadyDownloaded fetchedMaxSlotNo =
+  map
+    ( \(mcandidate, peer) ->
+        ((dropAlreadyFetched alreadyDownloaded fetchedMaxSlotNo =<< mcandidate), peer)
+    )
 
-filterNotAlreadyInFlightWithPeer
-  :: HasHeader header
-  => [(FetchDecision (CandidateFragments header), PeerFetchInFlight header,
-                                                  peerinfo)]
-  -> [(FetchDecision (CandidateFragments header), peerinfo)]
-filterNotAlreadyInFlightWithPeer chains =
-    [ (mcandidatefragments',          peer)
-    | (mcandidatefragments, inflight, peer) <- chains
-    , let mcandidatefragments' = do
-            (candidate, chainfragments) <- mcandidatefragments
-            let fragments = concatMap (filterWithMaxSlotNo
-                                         (notAlreadyInFlight inflight)
-                                         (peerFetchMaxSlotNo inflight))
-                                      chainfragments
-            guard (not (null fragments)) ?! FetchDeclineInFlightThisPeer
-            return (candidate, fragments)
-    ]
-  where
-    notAlreadyInFlight inflight b =
-      blockPoint b `Set.notMember` peerFetchBlocksInFlight inflight
-
-
--- | A penultimate step of filtering, but this time across peers, rather than
--- individually for each peer. If we're following the parallel fetch
--- mode then we filter out blocks that are already in-flight with other
--- peers.
+-- | Find the fragments of the chain suffix that we still need to fetch because
+-- they are covering blocks that are not currently in the process of being
+-- fetched from this peer.
 --
--- Note that this does /not/ cover blocks that are proposed to be fetched in
--- this round of decisions. That step is covered  in 'fetchRequestDecisions'.
+-- Typically this is a single fragment forming a suffix of the chain, but in
+-- the general case we can get a bunch of discontiguous chain fragments.
 --
-filterNotAlreadyInFlightWithOtherPeers
-  :: HasHeader header
-  => FetchMode
-  -> [( FetchDecision [AnchoredFragment header]
-      , PeerFetchStatus header
-      , PeerFetchInFlight header
-      , peerinfo )]
-  -> [(FetchDecision [AnchoredFragment header], peerinfo)]
-
-filterNotAlreadyInFlightWithOtherPeers FetchModeDeadline chains =
-    [ (mchainfragments,       peer)
-    | (mchainfragments, _, _, peer) <- chains ]
-
-filterNotAlreadyInFlightWithOtherPeers FetchModeBulkSync chains =
-    [ (mcandidatefragments',      peer)
-    | (mcandidatefragments, _, _, peer) <- chains
-    , let mcandidatefragments' = do
-            chainfragments <- mcandidatefragments
-            let fragments = concatMap (filterWithMaxSlotNo
-                                        notAlreadyInFlight
-                                        maxSlotNoInFlightWithOtherPeers)
-                                      chainfragments
-            guard (not (null fragments)) ?! FetchDeclineInFlightOtherPeer
-            return fragments
-    ]
+-- See also 'dropAlreadyFetched'
+dropAlreadyInFlightWithPeer ::
+  (HasHeader header) =>
+  PeerFetchInFlight header ->
+  CandidateFragments header ->
+  FetchDecision (CandidateFragments header)
+dropAlreadyInFlightWithPeer inflight (candidate, chainfragments) =
+  if null fragments
+    then Left FetchDeclineInFlightThisPeer
+    else Right (candidate, fragments)
   where
-    notAlreadyInFlight b =
-      blockPoint b `Set.notMember` blocksInFlightWithOtherPeers
+    fragments = concatMap (filterWithMaxSlotNo notAlreadyInFlight (peerFetchMaxSlotNo inflight)) chainfragments
+    notAlreadyInFlight b = blockPoint b `Set.notMember` peerFetchBlocksInFlight inflight
 
-   -- All the blocks that are already in-flight with all peers
-    blocksInFlightWithOtherPeers =
-      Set.unions
-        [ case status of
-            PeerFetchStatusShutdown -> Set.empty
-            PeerFetchStatusStarting -> Set.empty
-            PeerFetchStatusAberrant -> Set.empty
-            _other                  -> peerFetchBlocksInFlight inflight
-        | (_, status, inflight, _) <- chains ]
-
-    -- The highest slot number that is or has been in flight for any peer.
-    maxSlotNoInFlightWithOtherPeers = foldl' max NoMaxSlotNo
-      [ peerFetchMaxSlotNo inflight | (_, _, inflight, _) <- chains ]
+dropAlreadyInFlightWithPeer' ::
+  (HasHeader header) =>
+  [(FetchDecision (CandidateFragments header), PeerFetchInFlight header, peerinfo)] ->
+  [(FetchDecision (CandidateFragments header), peerinfo)]
+dropAlreadyInFlightWithPeer' =
+  map
+    ( \(mcandidatefragments, inflight, peer) ->
+        ((dropAlreadyInFlightWithPeer inflight =<< mcandidatefragments), peer)
+    )
 
 -- | Filter a fragment. This is an optimised variant that will behave the same
 -- as 'AnchoredFragment.filter' if the following precondition is satisfied:
@@ -531,8 +645,7 @@ prioritisePeerChains
    , Hashable peer
    , Ord peer
    )
-  => FetchMode
-  -> Int
+  => Int
   -> (AnchoredFragment header -> AnchoredFragment header -> Ordering)
   -> (header -> SizeInBytes)
   -> [(FetchDecision (CandidateFragments header), PeerFetchInFlight header,
@@ -540,7 +653,7 @@ prioritisePeerChains
                                                   peer,
                                                   extra )]
   -> [(FetchDecision [AnchoredFragment header],   extra)]
-prioritisePeerChains FetchModeDeadline salt compareCandidateChains blockFetchSize =
+prioritisePeerChains salt compareCandidateChains blockFetchSize =
     map (\(decision, peer) ->
             (fmap (\(_,_,fragment) -> fragment) decision, peer))
   . concatMap ( concat
@@ -591,32 +704,6 @@ prioritisePeerChains FetchModeDeadline salt compareCandidateChains blockFetchSiz
       | otherwise                                  = False
 
     chainHeadPoint (_,ChainSuffix c,_) = AF.headPoint c
-
-prioritisePeerChains FetchModeBulkSync salt compareCandidateChains blockFetchSize =
-    map (\(decision, peer) ->
-            (fmap (\(_, _, fragment) -> fragment) decision, peer))
-  . sortBy (comparingFst
-             (comparingRight
-               (comparingPair
-                  -- compare on preferred chain first, then duration
-                  (compareCandidateChains `on` getChainSuffix)
-                  compare
-                `on`
-                  (\(duration, chain, _fragments) -> (chain, duration)))))
-  . map annotateDuration
-  . sortBy (\(_,_,a,ap,_) (_,_,b,bp,_) ->
-      comparePeerGSV' salt (a,ap) (b,bp))
-  where
-    annotateDuration (Left decline, _, _, _, peer) = (Left decline, peer)
-    annotateDuration (Right (chain,fragments), inflight, gsvs, _, peer) =
-        (Right (duration, chain, fragments), peer)
-      where
-        -- TODO: consider if we should put this into bands rather than just
-        -- taking the full value.
-        duration = estimateExpectedResponseDuration
-                     gsvs
-                     (peerFetchBytesInFlight inflight)
-                     (totalFetchSize blockFetchSize fragments)
 
 totalFetchSize :: (header -> SizeInBytes)
                -> [AnchoredFragment header]
@@ -713,7 +800,6 @@ fetchRequestDecisions
       , Ord peer
       )
   => FetchDecisionPolicy header
-  -> FetchMode
   -> [( FetchDecision [AnchoredFragment header]
       , PeerFetchStatus header
       , PeerFetchInFlight header
@@ -721,7 +807,7 @@ fetchRequestDecisions
       , peer
       , extra)]
   -> [(FetchDecision (FetchRequest header), extra)]
-fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
+fetchRequestDecisions fetchDecisionPolicy chains =
     go nConcurrentFetchPeers0 Set.empty NoMaxSlotNo chains
   where
     go :: Word
@@ -740,30 +826,14 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
       where
         decision = fetchRequestDecision
                      fetchDecisionPolicy
-                     fetchMode
+                     FetchModeDeadline
                      -- Permit the preferred peers to by pass any concurrency limits.
                      (if elem peer nPreferedPeers then 0
                                                   else nConcurrentFetchPeers)
                      (calculatePeerFetchInFlightLimits gsvs)
                      inflight
                      status
-                     mchainfragments'
-
-        mchainfragments' =
-          case fetchMode of
-            FetchModeDeadline -> mchainfragments
-            FetchModeBulkSync -> do
-                chainfragments <- mchainfragments
-                let fragments =
-                      concatMap (filterWithMaxSlotNo
-                                   notFetchedThisRound
-                                   maxSlotNoFetchedThisRound)
-                                chainfragments
-                guard (not (null fragments)) ?! FetchDeclineInFlightOtherPeer
-                return fragments
-              where
-                notFetchedThisRound h =
-                  blockPoint h `Set.notMember` blocksFetchedThisRound
+                     mchainfragments
 
         nConcurrentFetchPeers'
           -- increment if it was idle, and now will not be
@@ -773,7 +843,7 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
 
         -- This is only for avoiding duplication between fetch requests in this
         -- round of decisions. Avoiding duplication with blocks that are already
-        -- in flight is handled by filterNotAlreadyInFlightWithOtherPeers
+        -- in flight is handled by dropAlreadyInFlightWithOtherPeers
         (blocksFetchedThisRound', maxSlotNoFetchedThisRound') =
           case decision of
             Left _                         ->
@@ -783,7 +853,7 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
                maxSlotNoFetchedThisRound `max` maxSlotNoFetchedThisDecision)
               where
                 maxSlotNoFetchedThisDecision =
-                  foldl' max NoMaxSlotNo $ map MaxSlotNo $
+                  List.foldl' max NoMaxSlotNo $ map MaxSlotNo $
                   mapMaybe (withOriginToMaybe . AF.headSlot) fragments
 
                 blocksFetchedThisDecision =
@@ -813,23 +883,23 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
     nPreferedPeers :: [peer]
     nPreferedPeers =
         map snd
-      . take (fromIntegral maxConcurrentFetchPeers)
+      . take (fromIntegral $ maxConcurrencyDeadline fetchDecisionPolicy)
       . sortBy (\a b -> comparePeerGSV nActivePeers (peerSalt fetchDecisionPolicy) a b)
       . map (\(_, _, _, gsv, p, _) -> (gsv, p))
       $ chains
 
-    maxConcurrentFetchPeers :: Word
-    maxConcurrentFetchPeers =
-      case fetchMode of
-           FetchModeBulkSync -> maxConcurrencyBulkSync fetchDecisionPolicy
-           FetchModeDeadline -> maxConcurrencyDeadline fetchDecisionPolicy
-
-
+-- |
+--
+-- This function _does not_ check if the peer is likely to have the blocks in
+-- the ranges, it only compute a request that respect what the peer's current
+-- status indicates on their ability to fulfill it.
 fetchRequestDecision
   :: HasHeader header
   => FetchDecisionPolicy header
   -> FetchMode
   -> Word
+     -- ^ Number of concurrent fetch peers. Can be set to @0@ to bypass
+     -- concurrency limits.
   -> PeerFetchInFlightLimits
   -> PeerFetchInFlight header
   -> PeerFetchStatus header
@@ -849,7 +919,6 @@ fetchRequestDecision _ _ _ _ _ PeerFetchStatusAberrant _
   = Left FetchDeclinePeerSlow
 
 fetchRequestDecision FetchDecisionPolicy {
-                       maxConcurrencyBulkSync,
                        maxConcurrencyDeadline,
                        maxInFlightReqsPerPeer,
                        blockFetchSize
@@ -872,7 +941,7 @@ fetchRequestDecision FetchDecisionPolicy {
              maxInFlightReqsPerPeer
 
   | peerFetchBytesInFlight >= inFlightBytesHighWatermark
-  = Left $ FetchDeclineBytesInFlightLimit
+  = Left $ FetchDeclineBytesInFlightLimit -- FIXME: this one should be maybe not too bad.
              peerFetchBytesInFlight
              inFlightBytesLowWatermark
              inFlightBytesHighWatermark
@@ -881,14 +950,14 @@ fetchRequestDecision FetchDecisionPolicy {
     -- we want to let it drop below a low water mark before sending more so we
     -- get a bit more batching behaviour, rather than lots of 1-block reqs.
   | peerFetchStatus == PeerFetchStatusBusy
-  = Left $ FetchDeclinePeerBusy
+  = Left $ FetchDeclinePeerBusy -- FIXME: also not too bad
              peerFetchBytesInFlight
              inFlightBytesLowWatermark
              inFlightBytesHighWatermark
 
     -- Refuse any blockrequest if we're above the concurrency limit.
   | let maxConcurrentFetchPeers = case fetchMode of
-                                    FetchModeBulkSync -> maxConcurrencyBulkSync
+                                    FetchModeBulkSync -> 1
                                     FetchModeDeadline -> maxConcurrencyDeadline
   , nConcurrentFetchPeers > maxConcurrentFetchPeers
   = Left $ FetchDeclineConcurrencyLimit
@@ -897,7 +966,7 @@ fetchRequestDecision FetchDecisionPolicy {
     -- If we're at the concurrency limit refuse any additional peers.
   | peerFetchReqsInFlight == 0
   , let maxConcurrentFetchPeers = case fetchMode of
-                                    FetchModeBulkSync -> maxConcurrencyBulkSync
+                                    FetchModeBulkSync -> 1
                                     FetchModeDeadline -> maxConcurrencyDeadline
   , nConcurrentFetchPeers == maxConcurrentFetchPeers
   = Left $ FetchDeclineConcurrencyLimit
@@ -916,7 +985,6 @@ fetchRequestDecision FetchDecisionPolicy {
               peerFetchBytesInFlight
               inFlightBytesHighWatermark
               fetchFragments
-
 
 -- |
 --
@@ -948,7 +1016,7 @@ selectBlocksUpToLimits blockFetchSize nreqs0 maxreqs nbytes0 maxbytes fragments 
     goFrags _     _      []     = []
     goFrags nreqs nbytes (c:cs)
       | nreqs+1  > maxreqs      = []
-      | otherwise               = goFrag (nreqs+1) nbytes (AF.Empty (AF.anchor c)) c cs
+      | otherwise               = goFrag (nreqs+1) nbytes (Empty (AF.anchor c)) c cs
       -- Each time we have to pick from a new discontiguous chain fragment then
       -- that will become a new request, which contributes to our in-flight
       -- request count. We never break the maxreqs limit.
