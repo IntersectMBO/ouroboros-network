@@ -63,6 +63,7 @@ import Ouroboros.Network.ExitPolicy
 import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
+import Ouroboros.Network.Point
 
 import Ouroboros.Network.Testing.Data.Script (PickScript, Script (..),
            ScriptDelay (..), TimedScript, arbitraryPickScript,
@@ -444,13 +445,17 @@ mockPeerSelectionActions' tracer
           closePeerConnection
         },
       readUseBootstrapPeers,
-      readLedgerStateJudgement,
+      getLedgerStateCtx = LedgerPeersConsensusInterface {
+          lpGetLedgerStateJudgement = readLedgerStateJudgement,
+          lpGetLatestSlot = pure Origin,
+          lpGetLedgerPeers = pure [] },
       readInboundPeers = pure Map.empty,
       updateOutboundConnectionsState = \a -> do
         a' <- readTVar outboundConnectionsStateVar
         when (a /= a') $
           writeTVar outboundConnectionsStateVar a,
-      peerTargets
+      peerTargets,
+      readLedgerPeerSnapshot = pure Nothing
     }
   where
     -- TODO: make this dynamic
@@ -757,6 +762,7 @@ tracerTracePeerSelection = contramap f tracerTestTraceEvent
     f a@(TraceDebugState !_ !_)                              = GovernorEvent a
     f a@(TraceChurnAction !_ !_ !_)                          = GovernorEvent a
     f a@(TraceChurnTimeout !_ !_ !_)                         = GovernorEvent a
+    f a@(TraceVerifyPeerSnapshot !_)                         = GovernorEvent a
 
 tracerDebugPeerSelection :: Tracer (IOSim s) (DebugPeerSelection PeerAddr)
 tracerDebugPeerSelection = GovernorDebug `contramap` tracerTestTraceEvent

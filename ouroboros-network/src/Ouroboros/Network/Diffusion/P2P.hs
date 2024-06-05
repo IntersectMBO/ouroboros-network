@@ -115,12 +115,14 @@ import Ouroboros.Network.PeerSelection.Governor.Types
 #endif
 import Ouroboros.Network.PeerSelection.LedgerPeers (TraceLedgerPeers,
            WithLedgerPeersArgs (..))
+#ifdef POSIX
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
            LedgerPeersConsensusInterface (..), UseLedgerPeers)
-#ifdef POSIX
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics,
            fetchynessBlocks, upstreamyness)
 #else
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
+           UseLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 #endif
 import Ouroboros.Network.ConsensusMode
@@ -659,9 +661,7 @@ runM Interfaces
        { daApplicationInitiatorMode
        , daApplicationInitiatorResponderMode
        , daLocalResponderApplication
-       , daLedgerPeersCtx =
-          daLedgerPeersCtx@LedgerPeersConsensusInterface
-            { lpGetLedgerStateJudgement }
+       , daLedgerPeersCtx
        , daUpdateOutboundConnectionsState
        }
      ApplicationsExtra
@@ -990,7 +990,7 @@ runM Interfaces
                                          psLocalRootPeersTracer = dtTraceLocalRootPeersTracer,
                                          psPublicRootPeersTracer = dtTracePublicRootPeersTracer,
                                          psReadTargets = readTVar peerSelectionTargetsVar,
-                                         psJudgement = lpGetLedgerStateJudgement,
+                                         getLedgerStateCtx = daLedgerPeersCtx,
                                          psReadLocalRootPeers = daReadLocalRootPeers,
                                          psReadPublicRootPeers = daReadPublicRootPeers,
                                          psReadUseBootstrapPeers = daReadUseBootstrapPeers,
@@ -1002,7 +1002,8 @@ runM Interfaces
                                              PeerSharingDisabled -> pure Map.empty
                                              PeerSharingEnabled  -> readInboundPeers,
                                          psUpdateOutboundConnectionsState = daUpdateOutboundConnectionsState,
-                                         peerTargets = daPeerTargets }
+                                         peerTargets = daPeerTargets,
+                                         readLedgerPeerSnapshot = daReadLedgerPeerSnapshot }
                                        WithLedgerPeersArgs {
                                          wlpRng = ledgerPeersRng,
                                          wlpConsensusInterface = daLedgerPeersCtx,

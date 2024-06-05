@@ -79,6 +79,7 @@ import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
            LocalRootPeers (..), WarmValency (..))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
+import Ouroboros.Network.Point
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingResult (..))
 
 import Ouroboros.Network.Testing.Data.Script
@@ -917,6 +918,7 @@ traceNum TraceOutboundGovernorCriticalFailure {}              = 53
 traceNum TraceDebugState {}                                   = 54
 traceNum TraceChurnAction {}                                  = 55
 traceNum TraceChurnTimeout {}                                 = 56
+traceNum TraceVerifyPeerSnapshot {}                           = 57
 
 allTraceNames :: Map Int String
 allTraceNames =
@@ -978,6 +980,7 @@ allTraceNames =
    , (54, "TraceDebugState")
    , (55, "TraceChurnAction")
    , (56, "TraceChurnTimeout")
+   , (57, "TraceVerifyPeerSnapshot")
    ]
 
 
@@ -3788,12 +3791,17 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
                   closePeerConnection      = error "closePeerConnection"
                 },
                 readUseBootstrapPeers,
-                readLedgerStateJudgement,
                 readInboundPeers = pure Map.empty,
                 updateOutboundConnectionsState = \a -> do
                   a' <- readTVar olocVar
                   when (a /= a') $
-                    writeTVar olocVar a
+                    writeTVar olocVar a,
+                getLedgerStateCtx =
+                  LedgerPeersConsensusInterface {
+                    lpGetLatestSlot = pure Origin,
+                    lpGetLedgerStateJudgement = readLedgerStateJudgement,
+                    lpGetLedgerPeers = pure [] },
+                readLedgerPeerSnapshot = pure Nothing
               }
 
     targets :: PeerSelectionTargets
