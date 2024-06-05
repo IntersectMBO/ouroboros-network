@@ -1033,6 +1033,8 @@ runM Interfaces
                 debugStateVar      = dbgVar,
                 readUseLedgerPeers = daReadUseLedgerPeers
               }
+              daReadLedgerPeerSnapshot
+              daLedgerPeersCtx
 
 
       --
