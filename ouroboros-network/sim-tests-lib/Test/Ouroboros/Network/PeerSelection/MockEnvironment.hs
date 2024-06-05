@@ -64,6 +64,7 @@ import Ouroboros.Network.ExitPolicy
 import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
+import Ouroboros.Network.Point
 
 import Ouroboros.Network.Testing.Data.Script (PickScript, Script (..),
            ScriptDelay (..), TimedScript, arbitraryPickScript,
@@ -237,6 +238,10 @@ governorAction mockEnv@GovernorMockEnvironment {
     countersVar <- StrictTVar.newTVarIO emptyPeerSelectionCounters
     policy  <- mockPeerSelectionPolicy mockEnv
     let initialPeerTargets = fst . NonEmpty.head $ targets'
+        consensusInterface = LedgerPeersConsensusInterface {
+          lpGetLatestSlot = pure Origin,
+          lpGetLedgerStateJudgement = pure TooOld,
+          lpGetLedgerPeers = pure [] }
 
     actions <-
       case consensusMode of
@@ -295,6 +300,8 @@ governorAction mockEnv@GovernorMockEnvironment {
         actions
         policy
         interfaces
+        (pure Nothing)
+        consensusInterface
       atomically retry
     atomically retry  -- block to allow the governor to run
 
@@ -763,6 +770,7 @@ tracerTracePeerSelection = contramap f tracerTestTraceEvent
     f a@(TraceDebugState !_ !_)                              = GovernorEvent a
     f a@(TraceChurnAction !_ !_ !_)                          = GovernorEvent a
     f a@(TraceChurnTimeout !_ !_ !_)                         = GovernorEvent a
+    f a@(TraceVerifyPeerSnapshot !_)                         = GovernorEvent a
 
 tracerDebugPeerSelection :: Tracer (IOSim s) (DebugPeerSelection PeerAddr)
 tracerDebugPeerSelection = GovernorDebug `contramap` tracerTestTraceEvent

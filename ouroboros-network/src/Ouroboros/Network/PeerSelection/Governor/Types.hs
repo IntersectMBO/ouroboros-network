@@ -122,6 +122,7 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , DebugPeerSelection (..)
     -- * Error types
   , BootstrapPeersCriticalTimeoutError (..)
+  , BigLedgerPeerSnapshotError (..)
   ) where
 
 import Data.Map.Strict (Map)
@@ -1712,6 +1713,7 @@ data TracePeerSelection peeraddr =
      | TraceOnlyBootstrapPeers
      | TraceBootstrapPeersFlagChangedWhilstInSensitiveState
      | TraceUseBootstrapPeersChanged UseBootstrapPeers
+     | TraceVerifyPeerSnapshot Bool
 
      --
      -- Critical Failures
@@ -1748,6 +1750,14 @@ data BootstrapPeersCriticalTimeoutError =
 instance Exception BootstrapPeersCriticalTimeoutError where
    displayException BootstrapPeersCriticalTimeoutError =
      "The peer selection did not converged to a clean state in 15 minutes. Something is wrong!"
+
+data BigLedgerPeerSnapshotError = BigLedgerPeerSnapshotError
+  deriving (Eq, Show)
+
+instance Exception BigLedgerPeerSnapshotError where
+  displayException _ =    "Syncing with peer ledger peers has reached the slot"
+                       <> " where the snapshot was ostensibly taken at, but"
+                       <> " the data it contains is not consistent with the ledger"
 
 data DebugPeerSelection peeraddr where
   TraceGovernorState :: forall peeraddr peerconn.

@@ -28,7 +28,10 @@
       or Genesis mode, which influences what `PeerSelectionTargets` both
       governors should use. Genesis may use two different sets of targets
       depending on ledger state, while Praos uses only one set. Either set
-      once active is appropriately churned. 
+      once active is appropriately churned.
+* Implemented verification of big ledger peer snapshot when syncing reaches
+  the point at which the snapshot was taken. An error is raised when there's
+  a mismatch detected. 
 
 ### Non-Breaking changes
 
