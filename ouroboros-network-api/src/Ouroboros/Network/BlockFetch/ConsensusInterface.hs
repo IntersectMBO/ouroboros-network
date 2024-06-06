@@ -19,6 +19,8 @@ import Ouroboros.Network.Block
 import Ouroboros.Network.SizeInBytes (SizeInBytes)
 
 
+-- REVIEW: “Bulk Sync” is really not bulk anymore, so maybe we should rename
+-- this? Just “Sync”? Maybe “Genesis Sync”?
 data FetchMode =
        -- | Use this mode when we are catching up on the chain but are stil
        -- well behind. In this mode the fetch logic will optimise for
