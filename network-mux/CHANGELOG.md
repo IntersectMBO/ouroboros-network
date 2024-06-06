@@ -6,6 +6,8 @@
 
 ### Non-breaking changes
 
+- Bump io-sim and io-classes
+
 ## 0.4.5.1 -- 2024-01-22
 
 ### Non-breaking changes
