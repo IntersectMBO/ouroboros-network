@@ -6,6 +6,12 @@
 
 ### Non-Breaking changes
 
+## 0.16.1.0 -- 2024-06-07
+
+### Breaking changes
+
+### Non-Breaking changes
+
 * Don't include peers that are failing in peershare responses.
 - Bump io-sim and io-classes
 - Refactor testnet

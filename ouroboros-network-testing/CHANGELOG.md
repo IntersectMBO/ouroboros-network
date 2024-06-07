@@ -6,8 +6,20 @@
 
 ### Non-Breaking changes
 
+## 0.6.2.0 -- 2024-06-07
+
+### Breaking changes
+
+### Non-Breaking changes
+
 - Bump io-sim and io-classes
 * Added `isSubsetProperty` and `disjoinSetsProperty` to `Ouroboros.Network.Testing.Utils`.
+
+## 0.6.1.0 -- 2024-05-07
+
+### Breaking changes
+
+### Non-Breaking changes
 
 ## 0.6.0.0 -- 2024-02-21
 

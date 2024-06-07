@@ -6,6 +6,12 @@
 
 ### Non-Breaking changes
 
+## 0.7.3.0 -- 2024-06-07
+
+### Breaking changes
+
+### Non-Breaking changes
+
 - Bump io-sim and io-classes
 * Added `ShowProxy SlotNo` instance
 

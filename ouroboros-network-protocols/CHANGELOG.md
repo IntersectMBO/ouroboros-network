@@ -4,10 +4,15 @@
 
 ### Breaking changes
 
-- Bump io-sim and io-classes
+## 0.9.0.0 -- 2024-06-07
+
+### Breaking changes
+
 * Un-orphan `ShowProxy SlotNo` instance.
 
 ### Non-Breaking changes
+
+- Bump io-sim and io-classes
 
 ## 0.8.1.0 -- 2024-03-14
 

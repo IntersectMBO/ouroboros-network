@@ -6,6 +6,12 @@
 
 ### Non-breaking changes
 
+## 0.0.1.5 -- 2024-06-07
+
+### Breaking changes
+
+### Non-breaking changes
+
 - Bump `Win32-network` package version
 
 ## 0.0.1.4 -- 2024-01-22

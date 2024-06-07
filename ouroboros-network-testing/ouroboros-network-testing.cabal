@@ -1,7 +1,7 @@
 cabal-version:       3.0
 
 name:                   ouroboros-network-testing
-version:                0.6.1.0
+version:                0.6.2.0
 synopsis:               Common modules used for testing in ouroboros-network and ouroboros-consensus
 description:            Common modules used for testing in ouroboros-network and ouroboros-consensus.
 license:                Apache-2.0
