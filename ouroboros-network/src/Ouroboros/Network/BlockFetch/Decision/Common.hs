@@ -1,6 +1,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | This module contains the part of the block fetch decisions process that is
 -- common to both the bulk sync and deadline modes.
@@ -19,6 +20,7 @@ module Ouroboros.Network.BlockFetch.Decision.Common (
   , selectForkSuffixes
   , filterNotAlreadyInFlightWithPeer'
   , filterNotAlreadyFetched'
+  , fetchRequestDecision
 ) where
 
 import GHC.Stack (HasCallStack)
@@ -27,13 +29,14 @@ import Control.Monad (guard)
 import Control.Monad.Class.MonadTime.SI (DiffTime)
 import qualified Data.Set as Set
 
-import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
+import Ouroboros.Network.AnchoredFragment (AnchoredFragment, AnchoredSeq (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import Ouroboros.Network.Block (HasHeader, HeaderHash, Point, MaxSlotNo (..), castPoint, blockPoint, blockSlot)
-import Ouroboros.Network.BlockFetch.ClientState (PeerFetchInFlight (..), PeerFetchStatus (..))
+import Ouroboros.Network.BlockFetch.ClientState (PeerFetchInFlight (..), PeerFetchStatus (..), FetchRequest (..))
 import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..))
 import Ouroboros.Network.DeltaQ ( PeerGSV )
 import Ouroboros.Network.SizeInBytes ( SizeInBytes )
+import Ouroboros.Network.BlockFetch.DeltaQ (PeerFetchInFlightLimits (..))
 
 data FetchDecisionPolicy header = FetchDecisionPolicy {
        maxInFlightReqsPerPeer  :: Word,  -- A protocol constant.
@@ -522,3 +525,145 @@ selectForkSuffixes current chains =
             chain <- mchain
             chainForkSuffix current chain ?! FetchDeclineChainIntersectionTooDeep
     ]
+
+fetchRequestDecision
+  :: HasHeader header
+  => FetchDecisionPolicy header
+  -> FetchMode
+  -> Word
+  -> PeerFetchInFlightLimits
+  -> PeerFetchInFlight header
+  -> PeerFetchStatus header
+  -> FetchDecision [AnchoredFragment header]
+  -> FetchDecision (FetchRequest  header)
+
+fetchRequestDecision _ _ _ _ _ _ (Left decline)
+  = Left decline
+
+fetchRequestDecision _ _ _ _ _ PeerFetchStatusShutdown _
+  = Left FetchDeclinePeerShutdown
+
+fetchRequestDecision _ _ _ _ _ PeerFetchStatusStarting _
+  = Left FetchDeclinePeerStarting
+
+fetchRequestDecision _ _ _ _ _ PeerFetchStatusAberrant _
+  = Left FetchDeclinePeerSlow
+
+fetchRequestDecision FetchDecisionPolicy {
+                       maxConcurrencyBulkSync,
+                       maxConcurrencyDeadline,
+                       maxInFlightReqsPerPeer,
+                       blockFetchSize
+                     }
+                     fetchMode
+                     nConcurrentFetchPeers
+                     PeerFetchInFlightLimits {
+                       inFlightBytesLowWatermark,
+                       inFlightBytesHighWatermark
+                     }
+                     PeerFetchInFlight {
+                       peerFetchReqsInFlight,
+                       peerFetchBytesInFlight
+                     }
+                     peerFetchStatus
+                     (Right fetchFragments)
+
+  | peerFetchReqsInFlight >= maxInFlightReqsPerPeer
+  = Left $ FetchDeclineReqsInFlightLimit
+             maxInFlightReqsPerPeer
+
+  | peerFetchBytesInFlight >= inFlightBytesHighWatermark
+  = Left $ FetchDeclineBytesInFlightLimit
+             peerFetchBytesInFlight
+             inFlightBytesLowWatermark
+             inFlightBytesHighWatermark
+
+    -- This covers the case when we could still fit in more reqs or bytes, but
+    -- we want to let it drop below a low water mark before sending more so we
+    -- get a bit more batching behaviour, rather than lots of 1-block reqs.
+  | peerFetchStatus == PeerFetchStatusBusy
+  = Left $ FetchDeclinePeerBusy
+             peerFetchBytesInFlight
+             inFlightBytesLowWatermark
+             inFlightBytesHighWatermark
+
+    -- Refuse any blockrequest if we're above the concurrency limit.
+  | let maxConcurrentFetchPeers = case fetchMode of
+                                    FetchModeBulkSync -> maxConcurrencyBulkSync
+                                    FetchModeDeadline -> maxConcurrencyDeadline
+  , nConcurrentFetchPeers > maxConcurrentFetchPeers
+  = Left $ FetchDeclineConcurrencyLimit
+             fetchMode maxConcurrentFetchPeers
+
+    -- If we're at the concurrency limit refuse any additional peers.
+  | peerFetchReqsInFlight == 0
+  , let maxConcurrentFetchPeers = case fetchMode of
+                                    FetchModeBulkSync -> maxConcurrencyBulkSync
+                                    FetchModeDeadline -> maxConcurrencyDeadline
+  , nConcurrentFetchPeers == maxConcurrentFetchPeers
+  = Left $ FetchDeclineConcurrencyLimit
+             fetchMode maxConcurrentFetchPeers
+
+    -- We've checked our request limit and our byte limit. We are then
+    -- guaranteed to get at least one non-empty request range.
+  | otherwise
+  = assert (peerFetchReqsInFlight < maxInFlightReqsPerPeer) $
+    assert (not (null fetchFragments)) $
+
+    Right $ selectBlocksUpToLimits
+              blockFetchSize
+              peerFetchReqsInFlight
+              maxInFlightReqsPerPeer
+              peerFetchBytesInFlight
+              inFlightBytesHighWatermark
+              fetchFragments
+
+-- |
+--
+-- Precondition: The result will be non-empty if
+--
+-- Property: result is non-empty if preconditions satisfied
+--
+selectBlocksUpToLimits
+  :: forall header. HasHeader header
+  => (header -> SizeInBytes) -- ^ Block body size
+  -> Word -- ^ Current number of requests in flight
+  -> Word -- ^ Maximum number of requests in flight allowed
+  -> SizeInBytes -- ^ Current number of bytes in flight
+  -> SizeInBytes -- ^ Maximum number of bytes in flight allowed
+  -> [AnchoredFragment header]
+  -> FetchRequest header
+selectBlocksUpToLimits blockFetchSize nreqs0 maxreqs nbytes0 maxbytes fragments =
+    assert (nreqs0 < maxreqs && nbytes0 < maxbytes && not (null fragments)) $
+    -- The case that we are already over our limits has to be checked earlier,
+    -- outside of this function. From here on however we check for limits.
+
+    let fragments' = goFrags nreqs0 nbytes0 fragments in
+    assert (all (not . AF.null) fragments') $
+    FetchRequest fragments'
+  where
+    goFrags :: Word
+            -> SizeInBytes
+            -> [AnchoredFragment header] -> [AnchoredFragment header]
+    goFrags _     _      []     = []
+    goFrags nreqs nbytes (c:cs)
+      | nreqs+1  > maxreqs      = []
+      | otherwise               = goFrag (nreqs+1) nbytes (Empty (AF.anchor c)) c cs
+      -- Each time we have to pick from a new discontiguous chain fragment then
+      -- that will become a new request, which contributes to our in-flight
+      -- request count. We never break the maxreqs limit.
+
+    goFrag :: Word
+           -> SizeInBytes
+           -> AnchoredFragment header
+           -> AnchoredFragment header
+           -> [AnchoredFragment header] -> [AnchoredFragment header]
+    goFrag nreqs nbytes c' (Empty _) cs = c' : goFrags nreqs nbytes cs
+    goFrag nreqs nbytes c' (b :< c)  cs
+      | nbytes' >= maxbytes             = [c' :> b]
+      | otherwise                       = goFrag nreqs nbytes' (c' :> b) c cs
+      where
+        nbytes' = nbytes + blockFetchSize b
+      -- Note that we always pick the one last block that crosses the maxbytes
+      -- limit. This cover the case where we otherwise wouldn't even be able to
+      -- request a single block, as it's too large.
