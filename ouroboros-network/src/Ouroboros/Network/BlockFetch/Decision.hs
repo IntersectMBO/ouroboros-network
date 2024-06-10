@@ -19,7 +19,6 @@ module Ouroboros.Network.BlockFetch.Decision
   , filterNotAlreadyFetched
   , filterNotAlreadyInFlightWithPeer
   , prioritisePeerChains
-  , filterNotAlreadyInFlightWithOtherPeers
   , fetchRequestDecisions
   ) where
 
@@ -34,7 +33,7 @@ import Ouroboros.Network.BlockFetch.Decision.Common (FetchDecisionPolicy (..), P
                                                      selectForkSuffixes)
 import Ouroboros.Network.BlockFetch.Decision.Deadline (fetchDecisionsDeadline,
                                                       prioritisePeerChains, fetchRequestDecisions)
-import Ouroboros.Network.BlockFetch.Decision.BulkSync (fetchDecisionsBulkSync, filterNotAlreadyInFlightWithOtherPeers)
+import Ouroboros.Network.BlockFetch.Decision.BulkSync (fetchDecisionsBulkSync)
 
 fetchDecisions
   :: (Ord peer,
