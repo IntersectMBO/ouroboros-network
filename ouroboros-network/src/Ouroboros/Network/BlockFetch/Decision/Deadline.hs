@@ -84,7 +84,7 @@ fetchDecisionsDeadline fetchDecisionPolicy@FetchDecisionPolicy {
   . map swizzleI
 
     -- Filter to keep blocks that have not already been downloaded.
-  . filterNotAlreadyFetched
+  . filterNotAlreadyFetched'
       fetchedBlocks
       fetchedMaxSlotNo
 
@@ -102,6 +102,17 @@ fetchDecisionsDeadline fetchDecisionPolicy@FetchDecisionPolicy {
     swizzleIG  (c, p@(_,     inflight,gsvs,peer,_)) = (c,         inflight, gsvs, peer, p)
     swizzleSIG (c, p@(status,inflight,gsvs,peer,_)) = (c, status, inflight, gsvs, peer, p)
 
+filterNotAlreadyFetched' ::
+  (HasHeader header, HeaderHash header ~ HeaderHash block) =>
+  (Point block -> Bool) ->
+  MaxSlotNo ->
+  [(FetchDecision (ChainSuffix header), peerinfo)] ->
+  [(FetchDecision (CandidateFragments header), peerinfo)]
+filterNotAlreadyFetched' alreadyDownloaded fetchedMaxSlotNo =
+  map
+    ( \(mcandidate, peer) ->
+        ((filterNotAlreadyFetched alreadyDownloaded fetchedMaxSlotNo =<< mcandidate), peer)
+    )
 
 
 {-

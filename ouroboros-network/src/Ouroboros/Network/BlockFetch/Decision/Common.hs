@@ -19,16 +19,17 @@ module Ouroboros.Network.BlockFetch.Decision.Common (
 ) where
 
 import GHC.Stack (HasCallStack)
+import Control.Monad (guard)
 import Control.Monad.Class.MonadTime.SI (DiffTime)
+import qualified Data.Set as Set
+
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import Ouroboros.Network.SizeInBytes ( SizeInBytes )
+import qualified Ouroboros.Network.AnchoredFragment as AF
+import Ouroboros.Network.Block (HasHeader, HeaderHash, Point, MaxSlotNo (..), castPoint, blockPoint, blockSlot)
 import Ouroboros.Network.BlockFetch.ClientState (PeerFetchInFlight (..), PeerFetchStatus (..))
 import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..))
 import Ouroboros.Network.DeltaQ ( PeerGSV )
-import Ouroboros.Network.Block (HasHeader, HeaderHash, Point, MaxSlotNo (..), castPoint, blockPoint, blockSlot)
-import Control.Monad (guard)
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import qualified Data.Set as Set
+import Ouroboros.Network.SizeInBytes ( SizeInBytes )
 
 data FetchDecisionPolicy header = FetchDecisionPolicy {
        maxInFlightReqsPerPeer  :: Word,  -- A protocol constant.
@@ -391,26 +392,18 @@ of individual blocks without their relationship to each other.
 --
 -- Typically this is a single fragment forming a suffix of the chain, but in
 -- the general case we can get a bunch of discontiguous chain fragments.
---
-filterNotAlreadyFetched
-  :: (HasHeader header, HeaderHash header ~ HeaderHash block)
-  => (Point block -> Bool)
-  -> MaxSlotNo
-  -> [(FetchDecision (ChainSuffix        header), peerinfo)]
-  -> [(FetchDecision (CandidateFragments header), peerinfo)]
-filterNotAlreadyFetched alreadyDownloaded fetchedMaxSlotNo chains =
-    [ (mcandidates, peer)
-    | (mcandidate,  peer) <- chains
-    , let mcandidates = do
-            candidate <- mcandidate
-            let fragments = filterWithMaxSlotNo
-                              notAlreadyFetched
-                              fetchedMaxSlotNo
-                              (getChainSuffix candidate)
-            guard (not (null fragments)) ?! FetchDeclineAlreadyFetched
-            return (candidate, fragments)
-    ]
+filterNotAlreadyFetched ::
+  (HasHeader header, HeaderHash header ~ HeaderHash block) =>
+  (Point block -> Bool) ->
+  MaxSlotNo ->
+  ChainSuffix header ->
+  FetchDecision (CandidateFragments header)
+filterNotAlreadyFetched alreadyDownloaded fetchedMaxSlotNo candidate =
+  if null fragments
+    then Left FetchDeclineAlreadyFetched
+    else Right (candidate, fragments)
   where
+    fragments = filterWithMaxSlotNo notAlreadyFetched fetchedMaxSlotNo (getChainSuffix candidate)
     notAlreadyFetched = not . alreadyDownloaded . castPoint . blockPoint
 
 filterNotAlreadyInFlightWithPeer
