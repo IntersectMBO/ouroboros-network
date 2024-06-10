@@ -1,5 +1,6 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TupleSections #-}
 
 -- | This module contains the part of the block fetch decisions process that is
 -- specific to the bulk sync mode.
@@ -7,6 +8,7 @@ module Ouroboros.Network.BlockFetch.Decision.BulkSync (
   fetchDecisionsBulkSync
 ) where
 
+import Cardano.Prelude (maybeToEither)
 import Data.Bifunctor (first)
 import Data.List (foldl', sortOn)
 import Data.Ord (Down(Down))
@@ -17,6 +19,7 @@ import Ouroboros.Network.Block
 import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..),
            PeerFetchInFlight (..), PeerFetchStatus (..))
 import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode(FetchModeBulkSync))
+import Ouroboros.Network.BlockFetch.DeltaQ (calculatePeerFetchInFlightLimits)
 
 import Ouroboros.Network.BlockFetch.Decision.Common
 -- REVIEW: We should not import anything from 'Decision.Deadline'; if the need
@@ -35,7 +38,7 @@ fetchDecisionsBulkSync ::
   [(AnchoredFragment header, PeerInfo header peer extra)] ->
   [(FetchDecision (FetchRequest header), PeerInfo header peer extra)]
 fetchDecisionsBulkSync
-  _fetchDecisionPolicy@FetchDecisionPolicy {plausibleCandidateChain}
+  fetchDecisionPolicy@FetchDecisionPolicy {plausibleCandidateChain}
   currentChain
   fetchedBlocks
   fetchedMaxSlotNo
@@ -63,6 +66,7 @@ fetchDecisionsBulkSync
             [] -> []
             ((candidate, peer) : otherCandidates) ->
               case fetchTheCandidate
+                fetchDecisionPolicy
                 fetchedBlocks
                 fetchedMaxSlotNo
                 candidatesAndPeers
@@ -93,21 +97,51 @@ fetchTheCandidate ::
   ( HasHeader header,
     HeaderHash header ~ HeaderHash block
   ) =>
+  FetchDecisionPolicy header ->
   (Point block -> Bool) ->
   MaxSlotNo ->
   [(AnchoredFragment header, PeerInfo header peer extra)] ->
   ChainSuffix header ->
   FetchDecision ((FetchRequest header), PeerInfo header peer extra)
-fetchTheCandidate fetchedBlocks fetchedMaxSlotNo candidatesAndPeers chainSuffix =
-  do
-    -- Filter to keep blocks that have not already been downloaded or that are
-    -- not already in-flight with any peer.
-    fragments <-
-      filterNotAlreadyFetched fetchedBlocks fetchedMaxSlotNo chainSuffix
-        >>= filterNotAlreadyInFlightWithAnyPeer statusInflightInfo
-    pure undefined
-  where
-    statusInflightInfo = map (\(_, (status,inflight,_,_,_)) -> (status,inflight)) candidatesAndPeers
+fetchTheCandidate
+  fetchDecisionPolicy
+  fetchedBlocks
+  fetchedMaxSlotNo
+  candidatesAndPeers
+  chainSuffix =
+    do
+      -- Filter to keep blocks that have not already been downloaded or that are
+      -- not already in-flight with any peer.
+      fragments <-
+        filterNotAlreadyFetched fetchedBlocks fetchedMaxSlotNo chainSuffix
+          >>= filterNotAlreadyInFlightWithAnyPeer statusInflightInfo
+      -- For each peer, try to create a request for those fragments. Then take
+      -- the first one that is successful.
+      maybeToEither FetchDeclineAlreadyFetched $
+        firstRight $
+            map
+              ( \(_, peerInfo@(status, inflight, gsvs, _, _)) ->
+                  -- let fragments' = filterWithMaxSlotNo (not . blockAlreadyFetched) fragments
+                  --  in (FetchRequest fragments', peer)
+                  (,peerInfo)
+                    <$> fetchRequestDecision
+                      fetchDecisionPolicy
+                      FetchModeBulkSync
+                      nConcurrentFetchPeers
+                      (calculatePeerFetchInFlightLimits gsvs)
+                      inflight
+                      status
+                      (Right fragments) -- FIXME: This is a hack to avoid having to change the signature of 'fetchRequestDecisions'.
+              )
+              candidatesAndPeers
+    where
+      statusInflightInfo = map (\(_, (status, inflight, _, _, _)) -> (status, inflight)) candidatesAndPeers
+      nConcurrentFetchPeers =
+        -- REVIEW: A bit weird considering that this should be '0' or '1'.
+        fromIntegral $ length $ filter (\(_, inflight) -> peerFetchReqsInFlight inflight > 0) statusInflightInfo
+      firstRight [] = Nothing
+      firstRight (Right x : _) = Just x
+      firstRight (Left _ : xs) = firstRight xs
 
 -- | A penultimate step of filtering, but this time across peers, rather than
 -- individually for each peer. If we're following the parallel fetch
