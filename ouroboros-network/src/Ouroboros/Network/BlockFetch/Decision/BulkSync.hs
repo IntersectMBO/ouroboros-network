@@ -24,16 +24,17 @@ import Ouroboros.Network.BlockFetch.Decision.Common
 -- arises, we should move the interesting piece of code to 'Decision.Common'.
 -- This is to be done on demand.
 
-fetchDecisionsBulkSync
-  :: (HasHeader header,
-      HeaderHash header ~ HeaderHash block)
-  =>FetchDecisionPolicy header
-  -> AnchoredFragment header
-  -> (Point block -> Bool)
-  -> MaxSlotNo
-  -> [(AnchoredFragment header, PeerInfo header peer extra)]
-  -> [(FetchDecision (FetchRequest header), PeerInfo header peer extra)]
-
+fetchDecisionsBulkSync ::
+  ( HasHeader header,
+    HeaderHash header ~ HeaderHash block,
+    Eq peer
+  ) =>
+  FetchDecisionPolicy header ->
+  AnchoredFragment header ->
+  (Point block -> Bool) ->
+  MaxSlotNo ->
+  [(AnchoredFragment header, PeerInfo header peer extra)] ->
+  [(FetchDecision (FetchRequest header), PeerInfo header peer extra)]
 fetchDecisionsBulkSync
   _fetchDecisionPolicy@FetchDecisionPolicy {plausibleCandidateChain}
   currentChain
@@ -45,6 +46,9 @@ fetchDecisionsBulkSync
     -- of plausible candidates.
     let (declinedCandidates, candidates) =
           partitionEithersFirst
+              -- Select the suffix up to the intersection with the current chain.
+            . selectForkSuffixes
+                currentChain
             -- Filter to keep chains the consensus layer tells us are plausible.
             . filterPlausibleCandidates
               plausibleCandidateChain
@@ -53,18 +57,23 @@ fetchDecisionsBulkSync
             -- consider longest fragments first.
             . sortOn (Down . headBlockNo . fst)
             $ candidatesAndPeers
-        declinedCandidates' = map (first Left) declinedCandidates
-     in
-      -- If there are no candidates remaining, we are done. Otherwise, pick the
-      -- first one and try to fetch it. Decline all the others.
-      case candidates of
-          [] -> declinedCandidates'
-          ((theCandidate, _thePeer) : otherCandidates) ->
-            let declinedOtherCandidates = map (first (const (Left (FetchDeclineConcurrencyLimit FetchModeBulkSync 1)))) otherCandidates
-             in fetchTheCandidate
-                  candidatesAndPeers
-                  theCandidate
-                  : (declinedCandidates' ++ declinedOtherCandidates)
+     in -- If there are no candidates remaining, we are done. Otherwise, pick the
+        -- first one and try to fetch it. Decline all the others.
+        map (first Left) declinedCandidates
+          ++ case candidates of
+            [] -> []
+            ((candidate, peer) : otherCandidates) ->
+              case fetchTheCandidate candidatesAndPeers candidate of
+                Left declined ->
+                  -- If fetching the candidate did not work, report the reason and
+                  -- decline all the others for concurrency reasons.
+                  (Left declined, peer) : declineConcurrent otherCandidates
+                Right (theRequest, thePeer) ->
+                  -- If fetching the candidate _did_ work, then we have a request
+                  -- potentially for another peer, so we report this request and
+                  -- decline all the peers except for that specific one.
+                  (Right theRequest, thePeer)
+                    : filter ((not . eqPeerInfo thePeer) . snd) (declineConcurrent candidates)
     where
       partitionEithersFirst :: [(Either a b, c)] -> ([(a, c)], [(b, c)])
       partitionEithersFirst =
@@ -74,12 +83,14 @@ fetchDecisionsBulkSync
               Right b -> (as, (b, c) : bs)
           )
           ([], [])
+      declineConcurrent = map (first (const (Left (FetchDeclineConcurrencyLimit FetchModeBulkSync 1))))
+      eqPeerInfo (_, _, _, p1, _) (_, _, _, p2, _) = p1 == p2
 
 fetchTheCandidate ::
   -- (HasHeader header, HeaderHash header ~ HeaderHash block) =>
   [(AnchoredFragment header, PeerInfo header peer extra)] ->
-  AnchoredFragment header ->
-  (FetchDecision (FetchRequest header), PeerInfo header peer extra)
+  ChainSuffix header ->
+  FetchDecision ((FetchRequest header), PeerInfo header peer extra)
 fetchTheCandidate _candidatesAndPeers _theCandidate =
   undefined
 
@@ -98,10 +109,6 @@ fetchTheCandidate _candidatesAndPeers _theCandidate =
   -- . filterNotAlreadyFetched'
   --     fetchedBlocks
   --     fetchedMaxSlotNo
-
-  --   -- Select the suffix up to the intersection with the current chain.
-  -- . selectForkSuffixes
-  --     currentChain
 
   -- where
   --   -- Data swizzling functions to get the right info into each stage.
