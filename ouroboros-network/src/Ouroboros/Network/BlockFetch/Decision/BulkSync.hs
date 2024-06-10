@@ -5,9 +5,8 @@
 -- specific to the bulk sync mode.
 module Ouroboros.Network.BlockFetch.Decision.BulkSync (
   fetchDecisionsBulkSync
-, filterNotAlreadyInFlightWithOtherPeers) where
+) where
 
-import Control.Monad (guard)
 import Data.Bifunctor (first)
 import Data.List (foldl', sortOn)
 import Data.Ord (Down(Down))
@@ -46,9 +45,9 @@ fetchDecisionsBulkSync
     -- of plausible candidates.
     let (declinedCandidates, candidates) =
           partitionEithersFirst
-              -- Select the suffix up to the intersection with the current chain.
+            -- Select the suffix up to the intersection with the current chain.
             . selectForkSuffixes
-                currentChain
+              currentChain
             -- Filter to keep chains the consensus layer tells us are plausible.
             . filterPlausibleCandidates
               plausibleCandidateChain
@@ -63,7 +62,11 @@ fetchDecisionsBulkSync
           ++ case candidates of
             [] -> []
             ((candidate, peer) : otherCandidates) ->
-              case fetchTheCandidate candidatesAndPeers candidate of
+              case fetchTheCandidate
+                fetchedBlocks
+                fetchedMaxSlotNo
+                candidatesAndPeers
+                candidate of
                 Left declined ->
                   -- If fetching the candidate did not work, report the reason and
                   -- decline all the others for concurrency reasons.
@@ -87,33 +90,24 @@ fetchDecisionsBulkSync
       eqPeerInfo (_, _, _, p1, _) (_, _, _, p2, _) = p1 == p2
 
 fetchTheCandidate ::
-  -- (HasHeader header, HeaderHash header ~ HeaderHash block) =>
+  ( HasHeader header,
+    HeaderHash header ~ HeaderHash block
+  ) =>
+  (Point block -> Bool) ->
+  MaxSlotNo ->
   [(AnchoredFragment header, PeerInfo header peer extra)] ->
   ChainSuffix header ->
   FetchDecision ((FetchRequest header), PeerInfo header peer extra)
-fetchTheCandidate _candidatesAndPeers _theCandidate =
-  undefined
-
--- -- FIXME: Wrap in a 'FetchRequest'.
-  -- map (first (fmap FetchRequest))
-
-  --   -- Filter to keep blocks that are not already in-flight with other peers.
-  -- . filterNotAlreadyInFlightWithOtherPeers
-  -- . map (swizzleSI . first (fmap snd))
-
-  --   -- Filter to keep blocks that are not already in-flight for this peer.
-  -- . filterNotAlreadyInFlightWithPeer'
-  -- . map swizzleI
-
-  --   -- Filter to keep blocks that have not already been downloaded.
-  -- . filterNotAlreadyFetched'
-  --     fetchedBlocks
-  --     fetchedMaxSlotNo
-
-  -- where
-  --   -- Data swizzling functions to get the right info into each stage.
-  --   swizzleI   (c, p@(_,     inflight,_,_,      _)) = (c,         inflight,       p)
-  --   swizzleSI  (c, p@(status,inflight,_,_,      _)) = (c, status, inflight,       p)
+fetchTheCandidate fetchedBlocks fetchedMaxSlotNo candidatesAndPeers chainSuffix =
+  do
+    -- Filter to keep blocks that have not already been downloaded or that are
+    -- not already in-flight with any peer.
+    fragments <-
+      filterNotAlreadyFetched fetchedBlocks fetchedMaxSlotNo chainSuffix
+        >>= filterNotAlreadyInFlightWithAnyPeer statusInflightInfo
+    pure undefined
+  where
+    statusInflightInfo = map (\(_, (status,inflight,_,_,_)) -> (status,inflight)) candidatesAndPeers
 
 -- | A penultimate step of filtering, but this time across peers, rather than
 -- individually for each peer. If we're following the parallel fetch
@@ -122,41 +116,27 @@ fetchTheCandidate _candidatesAndPeers _theCandidate =
 --
 -- Note that this does /not/ cover blocks that are proposed to be fetched in
 -- this round of decisions. That step is covered  in 'fetchRequestDecisions'.
---
-filterNotAlreadyInFlightWithOtherPeers
-  :: HasHeader header
-  => [( FetchDecision [AnchoredFragment header]
-      , PeerFetchStatus header
-      , PeerFetchInFlight header
-      , peerinfo )]
-  -> [(FetchDecision [AnchoredFragment header], peerinfo)]
-
-filterNotAlreadyInFlightWithOtherPeers chains =
-    [ (mcandidatefragments',      peer)
-    | (mcandidatefragments, _, _, peer) <- chains
-    , let mcandidatefragments' = do
-            chainfragments <- mcandidatefragments
-            let fragments = concatMap (filterWithMaxSlotNo
-                                        notAlreadyInFlight
-                                        maxSlotNoInFlightWithOtherPeers)
-                                      chainfragments
-            guard (not (null fragments)) ?! FetchDeclineInFlightOtherPeer
-            return fragments
-    ]
+filterNotAlreadyInFlightWithAnyPeer ::
+  (HasHeader header) =>
+  [(PeerFetchStatus header, PeerFetchInFlight header)] ->
+  CandidateFragments header ->
+  FetchDecision [AnchoredFragment header]
+filterNotAlreadyInFlightWithAnyPeer statusInflightInfos chainfragments =
+  if null fragments
+    then Left FetchDeclineInFlightOtherPeer
+    else Right fragments
   where
-    notAlreadyInFlight b =
-      blockPoint b `Set.notMember` blocksInFlightWithOtherPeers
-
-   -- All the blocks that are already in-flight with all peers
+    fragments = concatMap (filterWithMaxSlotNo notAlreadyInFlight maxSlotNoInFlight) $ snd chainfragments
+    notAlreadyInFlight b = blockPoint b `Set.notMember` blocksInFlightWithOtherPeers
+    -- All the blocks that are already in-flight with all peers
     blocksInFlightWithOtherPeers =
       Set.unions
         [ case status of
             PeerFetchStatusShutdown -> Set.empty
             PeerFetchStatusStarting -> Set.empty
             PeerFetchStatusAberrant -> Set.empty
-            _other                  -> peerFetchBlocksInFlight inflight
-        | (_, status, inflight, _) <- chains ]
-
+            _other -> peerFetchBlocksInFlight inflight
+          | (status, inflight) <- statusInflightInfos
+        ]
     -- The highest slot number that is or has been in flight for any peer.
-    maxSlotNoInFlightWithOtherPeers = foldl' max NoMaxSlotNo
-      [ peerFetchMaxSlotNo inflight | (_, _, inflight, _) <- chains ]
+    maxSlotNoInFlight = foldl' max NoMaxSlotNo (map (peerFetchMaxSlotNo . snd) statusInflightInfos)
