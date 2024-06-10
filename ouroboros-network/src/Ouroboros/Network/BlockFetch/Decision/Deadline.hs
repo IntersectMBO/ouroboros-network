@@ -80,7 +80,7 @@ fetchDecisionsDeadline fetchDecisionPolicy@FetchDecisionPolicy {
   . map swizzleIG
 
     -- Filter to keep blocks that are not already in-flight for this peer.
-  . filterNotAlreadyInFlightWithPeer
+  . filterNotAlreadyInFlightWithPeer'
   . map swizzleI
 
     -- Filter to keep blocks that have not already been downloaded.
@@ -114,6 +114,15 @@ filterNotAlreadyFetched' alreadyDownloaded fetchedMaxSlotNo =
         ((filterNotAlreadyFetched alreadyDownloaded fetchedMaxSlotNo =<< mcandidate), peer)
     )
 
+filterNotAlreadyInFlightWithPeer' ::
+  (HasHeader header) =>
+  [(FetchDecision (CandidateFragments header), PeerFetchInFlight header, peerinfo)] ->
+  [(FetchDecision (CandidateFragments header), peerinfo)]
+filterNotAlreadyInFlightWithPeer' =
+  map
+    ( \(mcandidatefragments, inflight, peer) ->
+        ((filterNotAlreadyInFlightWithPeer inflight =<< mcandidatefragments), peer)
+    )
 
 {-
 In the example, this leaves us with only the candidate chains: A, B and C, but
