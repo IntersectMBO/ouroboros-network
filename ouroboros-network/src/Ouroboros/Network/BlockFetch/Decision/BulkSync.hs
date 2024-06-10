@@ -6,20 +6,23 @@ module Ouroboros.Network.BlockFetch.Decision.BulkSync (
   fetchDecisionsBulkSync
 , filterNotAlreadyInFlightWithOtherPeers) where
 
-import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
+import Control.Monad (guard)
+import Data.List (foldl', sortOn)
+import Data.Ord (Down(Down))
+import qualified Data.Set as Set
+
+import Ouroboros.Network.AnchoredFragment (AnchoredFragment, headBlockNo)
 import Ouroboros.Network.Block
 import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..),
            PeerFetchInFlight (..), PeerFetchStatus (..))
 
 import Ouroboros.Network.BlockFetch.Decision.Common
-import Control.Monad (guard)
-import qualified Data.Set as Set
-import Data.List (foldl', singleton)
 -- REVIEW: We should not import anything from 'Decision.Deadline'; if the need
 -- arises, we should move the interesting piece of code to 'Decision.Common'.
 -- This is to be done on demand.
 
 fetchDecisionsBulkSync ::
+     HasHeader header =>
      FetchDecisionPolicy header
   -> AnchoredFragment header
   -> (Point block -> Bool)
@@ -28,21 +31,16 @@ fetchDecisionsBulkSync ::
   -> [(FetchDecision (FetchRequest header), PeerInfo header peer extra)]
 
 fetchDecisionsBulkSync
-  _fetchDecisionPolicy@FetchDecisionPolicy {
-    plausibleCandidateChain
-  }
-  currentChain
+  _fetchDecisionPolicy
+  _currentChain
   _fetchedBlocks
   _fetchedMaxSlotNo
+  candidatesAndPeers
   =
-    map (\(fd, peer) ->
-           (FetchRequest . singleton <$> fd, peer)
-        )
-
-  -- First, filter to keep chains the consensus layer tells us are plausible.
-  . filterPlausibleCandidates
-      plausibleCandidateChain
-      currentChain
+    case sortOn (Down . headBlockNo) $ map fst candidatesAndPeers of
+      [] -> error "fetchDecisionsBulkSync: empty list of candidates"
+      _candidate : _ ->
+        undefined
 
 -- | A penultimate step of filtering, but this time across peers, rather than
 -- individually for each peer. If we're following the parallel fetch
