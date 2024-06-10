@@ -406,26 +406,18 @@ filterNotAlreadyFetched alreadyDownloaded fetchedMaxSlotNo candidate =
     fragments = filterWithMaxSlotNo notAlreadyFetched fetchedMaxSlotNo (getChainSuffix candidate)
     notAlreadyFetched = not . alreadyDownloaded . castPoint . blockPoint
 
-filterNotAlreadyInFlightWithPeer
-  :: HasHeader header
-  => [(FetchDecision (CandidateFragments header), PeerFetchInFlight header,
-                                                  peerinfo)]
-  -> [(FetchDecision (CandidateFragments header), peerinfo)]
-filterNotAlreadyInFlightWithPeer chains =
-    [ (mcandidatefragments',          peer)
-    | (mcandidatefragments, inflight, peer) <- chains
-    , let mcandidatefragments' = do
-            (candidate, chainfragments) <- mcandidatefragments
-            let fragments = concatMap (filterWithMaxSlotNo
-                                         (notAlreadyInFlight inflight)
-                                         (peerFetchMaxSlotNo inflight))
-                                      chainfragments
-            guard (not (null fragments)) ?! FetchDeclineInFlightThisPeer
-            return (candidate, fragments)
-    ]
+filterNotAlreadyInFlightWithPeer ::
+  (HasHeader header) =>
+  PeerFetchInFlight header ->
+  CandidateFragments header ->
+  FetchDecision (CandidateFragments header)
+filterNotAlreadyInFlightWithPeer inflight (candidate, chainfragments) =
+  if null fragments
+    then Left FetchDeclineInFlightThisPeer
+    else Right (candidate, fragments)
   where
-    notAlreadyInFlight inflight b =
-      blockPoint b `Set.notMember` peerFetchBlocksInFlight inflight
+    fragments = concatMap (filterWithMaxSlotNo notAlreadyInFlight (peerFetchMaxSlotNo inflight)) chainfragments
+    notAlreadyInFlight b = blockPoint b `Set.notMember` peerFetchBlocksInFlight inflight
 
 -- | The \"oh noes?!\" operator.
 --
