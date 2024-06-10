@@ -531,6 +531,8 @@ fetchRequestDecision
   => FetchDecisionPolicy header
   -> FetchMode
   -> Word
+     -- ^ Number of concurrent fetch peers. Can be set to @0@ to bypass
+     -- concurrency limits.
   -> PeerFetchInFlightLimits
   -> PeerFetchInFlight header
   -> PeerFetchStatus header
@@ -550,7 +552,6 @@ fetchRequestDecision _ _ _ _ _ PeerFetchStatusAberrant _
   = Left FetchDeclinePeerSlow
 
 fetchRequestDecision FetchDecisionPolicy {
-                       maxConcurrencyBulkSync,
                        maxConcurrencyDeadline,
                        maxInFlightReqsPerPeer,
                        blockFetchSize
@@ -589,7 +590,7 @@ fetchRequestDecision FetchDecisionPolicy {
 
     -- Refuse any blockrequest if we're above the concurrency limit.
   | let maxConcurrentFetchPeers = case fetchMode of
-                                    FetchModeBulkSync -> maxConcurrencyBulkSync
+                                    FetchModeBulkSync -> 1 -- FIXME: maxConcurrencyBulkSync has to be removed from the interface
                                     FetchModeDeadline -> maxConcurrencyDeadline
   , nConcurrentFetchPeers > maxConcurrentFetchPeers
   = Left $ FetchDeclineConcurrencyLimit
@@ -598,7 +599,7 @@ fetchRequestDecision FetchDecisionPolicy {
     -- If we're at the concurrency limit refuse any additional peers.
   | peerFetchReqsInFlight == 0
   , let maxConcurrentFetchPeers = case fetchMode of
-                                    FetchModeBulkSync -> maxConcurrencyBulkSync
+                                    FetchModeBulkSync -> 1 -- FIXME: maxConcurrencyBulkSync has to be removed from the interface
                                     FetchModeDeadline -> maxConcurrencyDeadline
   , nConcurrentFetchPeers == maxConcurrentFetchPeers
   = Left $ FetchDeclineConcurrencyLimit
