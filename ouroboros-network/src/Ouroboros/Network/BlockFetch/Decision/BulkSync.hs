@@ -34,13 +34,17 @@ fetchDecisionsBulkSync
   -> [(FetchDecision (FetchRequest header), PeerInfo header peer extra)]
 
 fetchDecisionsBulkSync
-  _fetchDecisionPolicy
+  _fetchDecisionPolicy@FetchDecisionPolicy{plausibleCandidateChain}
   currentChain
   fetchedBlocks
   fetchedMaxSlotNo
   =
   -- FIXME: Wrap in a 'FetchRequest'.
-  map (first ((FetchRequest . snd) <$>))
+  map (first (fmap FetchRequest))
+
+    -- Filter to keep blocks that are not already in-flight with other peers.
+  . filterNotAlreadyInFlightWithOtherPeers
+  . map (swizzleSI . first (fmap snd))
 
     -- Filter to keep blocks that are not already in-flight for this peer.
   . filterNotAlreadyInFlightWithPeer'
@@ -55,8 +59,10 @@ fetchDecisionsBulkSync
   . selectForkSuffixes
       currentChain
 
-    -- FIXME: Wrap in a 'FetchDecision'.
-  . map (first pure)
+    -- Filter to keep chains the consensus layer tells us are plausible.
+  . filterPlausibleCandidates
+      plausibleCandidateChain
+      currentChain
 
     -- Sort the candidates by descending block number of their heads, that is
     -- consider longest fragments first.
@@ -64,6 +70,7 @@ fetchDecisionsBulkSync
   where
     -- Data swizzling functions to get the right info into each stage.
     swizzleI   (c, p@(_,     inflight,_,_,      _)) = (c,         inflight,       p)
+    swizzleSI  (c, p@(status,inflight,_,_,      _)) = (c, status, inflight,       p)
 
 -- | A penultimate step of filtering, but this time across peers, rather than
 -- individually for each peer. If we're following the parallel fetch
