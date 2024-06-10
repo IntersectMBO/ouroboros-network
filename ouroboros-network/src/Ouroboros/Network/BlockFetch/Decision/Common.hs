@@ -16,9 +16,13 @@ module Ouroboros.Network.BlockFetch.Decision.Common (
   , CandidateFragments
   , filterWithMaxSlotNo
   , filterPlausibleCandidates
+  , selectForkSuffixes
+  , filterNotAlreadyInFlightWithPeer'
+  , filterNotAlreadyFetched'
 ) where
 
 import GHC.Stack (HasCallStack)
+import Control.Exception (assert)
 import Control.Monad (guard)
 import Control.Monad.Class.MonadTime.SI (DiffTime)
 import qualified Data.Set as Set
@@ -406,6 +410,18 @@ filterNotAlreadyFetched alreadyDownloaded fetchedMaxSlotNo candidate =
     fragments = filterWithMaxSlotNo notAlreadyFetched fetchedMaxSlotNo (getChainSuffix candidate)
     notAlreadyFetched = not . alreadyDownloaded . castPoint . blockPoint
 
+filterNotAlreadyFetched' ::
+  (HasHeader header, HeaderHash header ~ HeaderHash block) =>
+  (Point block -> Bool) ->
+  MaxSlotNo ->
+  [(FetchDecision (ChainSuffix header), peerinfo)] ->
+  [(FetchDecision (CandidateFragments header), peerinfo)]
+filterNotAlreadyFetched' alreadyDownloaded fetchedMaxSlotNo =
+  map
+    ( \(mcandidate, peer) ->
+        ((filterNotAlreadyFetched alreadyDownloaded fetchedMaxSlotNo =<< mcandidate), peer)
+    )
+
 filterNotAlreadyInFlightWithPeer ::
   (HasHeader header) =>
   PeerFetchInFlight header ->
@@ -418,6 +434,16 @@ filterNotAlreadyInFlightWithPeer inflight (candidate, chainfragments) =
   where
     fragments = concatMap (filterWithMaxSlotNo notAlreadyInFlight (peerFetchMaxSlotNo inflight)) chainfragments
     notAlreadyInFlight b = blockPoint b `Set.notMember` peerFetchBlocksInFlight inflight
+
+filterNotAlreadyInFlightWithPeer' ::
+  (HasHeader header) =>
+  [(FetchDecision (CandidateFragments header), PeerFetchInFlight header, peerinfo)] ->
+  [(FetchDecision (CandidateFragments header), peerinfo)]
+filterNotAlreadyInFlightWithPeer' =
+  map
+    ( \(mcandidatefragments, inflight, peer) ->
+        ((filterNotAlreadyInFlightWithPeer inflight =<< mcandidatefragments), peer)
+    )
 
 -- | The \"oh noes?!\" operator.
 --
@@ -463,3 +489,36 @@ filterWithMaxSlotNo
   -> [AnchoredFragment header]
 filterWithMaxSlotNo p maxSlotNo =
     AF.filterWithStop p ((> maxSlotNo) . MaxSlotNo . blockSlot)
+
+-- | Find the chain suffix for a candidate chain, with respect to the
+-- current chain.
+--
+chainForkSuffix
+  :: (HasHeader header, HasHeader block,
+      HeaderHash header ~ HeaderHash block)
+  => AnchoredFragment block  -- ^ Current chain.
+  -> AnchoredFragment header -- ^ Candidate chain
+  -> Maybe (ChainSuffix header)
+chainForkSuffix current candidate =
+    case AF.intersect current candidate of
+      Nothing                         -> Nothing
+      Just (_, _, _, candidateSuffix) ->
+        -- If the suffix is empty, it means the candidate chain was equal to
+        -- the current chain and didn't fork off. Such a candidate chain is
+        -- not a plausible candidate, so it must have been filtered out.
+        assert (not (AF.null candidateSuffix)) $
+        Just (ChainSuffix candidateSuffix)
+
+selectForkSuffixes
+  :: (HasHeader header, HasHeader block,
+      HeaderHash header ~ HeaderHash block)
+  => AnchoredFragment block
+  -> [(FetchDecision (AnchoredFragment header), peerinfo)]
+  -> [(FetchDecision (ChainSuffix      header), peerinfo)]
+selectForkSuffixes current chains =
+    [ (mchain', peer)
+    | (mchain,  peer) <- chains
+    , let mchain' = do
+            chain <- mchain
+            chainForkSuffix current chain ?! FetchDeclineChainIntersectionTooDeep
+    ]

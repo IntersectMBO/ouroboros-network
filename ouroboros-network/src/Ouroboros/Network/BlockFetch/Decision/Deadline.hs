@@ -11,8 +11,6 @@ module Ouroboros.Network.BlockFetch.Decision.Deadline
   ( -- * Deciding what to fetch
     fetchDecisionsDeadline
     -- ** Components of the decision-making process
-  , selectForkSuffixes
-  , filterNotAlreadyFetched
   , prioritisePeerChains
   , fetchRequestDecisions
   ) where
@@ -102,28 +100,6 @@ fetchDecisionsDeadline fetchDecisionPolicy@FetchDecisionPolicy {
     swizzleIG  (c, p@(_,     inflight,gsvs,peer,_)) = (c,         inflight, gsvs, peer, p)
     swizzleSIG (c, p@(status,inflight,gsvs,peer,_)) = (c, status, inflight, gsvs, peer, p)
 
-filterNotAlreadyFetched' ::
-  (HasHeader header, HeaderHash header ~ HeaderHash block) =>
-  (Point block -> Bool) ->
-  MaxSlotNo ->
-  [(FetchDecision (ChainSuffix header), peerinfo)] ->
-  [(FetchDecision (CandidateFragments header), peerinfo)]
-filterNotAlreadyFetched' alreadyDownloaded fetchedMaxSlotNo =
-  map
-    ( \(mcandidate, peer) ->
-        ((filterNotAlreadyFetched alreadyDownloaded fetchedMaxSlotNo =<< mcandidate), peer)
-    )
-
-filterNotAlreadyInFlightWithPeer' ::
-  (HasHeader header) =>
-  [(FetchDecision (CandidateFragments header), PeerFetchInFlight header, peerinfo)] ->
-  [(FetchDecision (CandidateFragments header), peerinfo)]
-filterNotAlreadyInFlightWithPeer' =
-  map
-    ( \(mcandidatefragments, inflight, peer) ->
-        ((filterNotAlreadyInFlightWithPeer inflight =<< mcandidatefragments), peer)
-    )
-
 {-
 In the example, this leaves us with only the candidate chains: A, B and C, but
 still paired up with the various peers.
@@ -175,39 +151,6 @@ Note that it's possible that we don't find any intersection within the last K
 blocks. This means the candidate forks by more than K and so we are not
 interested in this candidate at all.
 -}
-
--- | Find the chain suffix for a candidate chain, with respect to the
--- current chain.
---
-chainForkSuffix
-  :: (HasHeader header, HasHeader block,
-      HeaderHash header ~ HeaderHash block)
-  => AnchoredFragment block  -- ^ Current chain.
-  -> AnchoredFragment header -- ^ Candidate chain
-  -> Maybe (ChainSuffix header)
-chainForkSuffix current candidate =
-    case AF.intersect current candidate of
-      Nothing                         -> Nothing
-      Just (_, _, _, candidateSuffix) ->
-        -- If the suffix is empty, it means the candidate chain was equal to
-        -- the current chain and didn't fork off. Such a candidate chain is
-        -- not a plausible candidate, so it must have been filtered out.
-        assert (not (AF.null candidateSuffix)) $
-        Just (ChainSuffix candidateSuffix)
-
-selectForkSuffixes
-  :: (HasHeader header, HasHeader block,
-      HeaderHash header ~ HeaderHash block)
-  => AnchoredFragment block
-  -> [(FetchDecision (AnchoredFragment header), peerinfo)]
-  -> [(FetchDecision (ChainSuffix      header), peerinfo)]
-selectForkSuffixes current chains =
-    [ (mchain', peer)
-    | (mchain,  peer) <- chains
-    , let mchain' = do
-            chain <- mchain
-            chainForkSuffix current chain ?! FetchDeclineChainIntersectionTooDeep
-    ]
 
 prioritisePeerChains
   :: forall extra header peer.

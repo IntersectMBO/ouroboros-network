@@ -1,4 +1,5 @@
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE TypeOperators #-}
 
 -- | This module contains the part of the block fetch decisions process that is
 -- specific to the bulk sync mode.
@@ -7,6 +8,7 @@ module Ouroboros.Network.BlockFetch.Decision.BulkSync (
 , filterNotAlreadyInFlightWithOtherPeers) where
 
 import Control.Monad (guard)
+import Data.Bifunctor (first)
 import Data.List (foldl', sortOn)
 import Data.Ord (Down(Down))
 import qualified Data.Set as Set
@@ -21,9 +23,10 @@ import Ouroboros.Network.BlockFetch.Decision.Common
 -- arises, we should move the interesting piece of code to 'Decision.Common'.
 -- This is to be done on demand.
 
-fetchDecisionsBulkSync ::
-     HasHeader header =>
-     FetchDecisionPolicy header
+fetchDecisionsBulkSync
+  :: (HasHeader header,
+      HeaderHash header ~ HeaderHash block)
+  =>FetchDecisionPolicy header
   -> AnchoredFragment header
   -> (Point block -> Bool)
   -> MaxSlotNo
@@ -32,15 +35,35 @@ fetchDecisionsBulkSync ::
 
 fetchDecisionsBulkSync
   _fetchDecisionPolicy
-  _currentChain
-  _fetchedBlocks
-  _fetchedMaxSlotNo
-  candidatesAndPeers
+  currentChain
+  fetchedBlocks
+  fetchedMaxSlotNo
   =
-    case sortOn (Down . headBlockNo) $ map fst candidatesAndPeers of
-      [] -> error "fetchDecisionsBulkSync: empty list of candidates"
-      _candidate : _ ->
-        undefined
+  -- FIXME: Wrap in a 'FetchRequest'.
+  map (first ((FetchRequest . snd) <$>))
+
+    -- Filter to keep blocks that are not already in-flight for this peer.
+  . filterNotAlreadyInFlightWithPeer'
+  . map swizzleI
+
+    -- Filter to keep blocks that have not already been downloaded.
+  . filterNotAlreadyFetched'
+      fetchedBlocks
+      fetchedMaxSlotNo
+
+    -- Select the suffix up to the intersection with the current chain.
+  . selectForkSuffixes
+      currentChain
+
+    -- FIXME: Wrap in a 'FetchDecision'.
+  . map (first pure)
+
+    -- Sort the candidates by descending block number of their heads, that is
+    -- consider longest fragments first.
+   . sortOn (Down . headBlockNo . fst)
+  where
+    -- Data swizzling functions to get the right info into each stage.
+    swizzleI   (c, p@(_,     inflight,_,_,      _)) = (c,         inflight,       p)
 
 -- | A penultimate step of filtering, but this time across peers, rather than
 -- individually for each peer. If we're following the parallel fetch
