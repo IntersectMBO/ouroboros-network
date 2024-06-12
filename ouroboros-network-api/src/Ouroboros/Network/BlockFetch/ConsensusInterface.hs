@@ -151,7 +151,9 @@ data BlockFetchConsensusInterface peer header block m =
        -- PRECONDITION: Same as 'headerForgeUTCTime'.
        --
        -- WARNING: Same as 'headerForgeUTCTime'.
-       blockForgeUTCTime  :: FromConsensus block -> STM m UTCTime
+       blockForgeUTCTime  :: FromConsensus block -> STM m UTCTime,
+
+       readPeersOrder :: STM m [peer]
      }
 
 
