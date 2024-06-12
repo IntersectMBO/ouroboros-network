@@ -181,7 +181,8 @@ fetchDecisionsForStateSnapshot
       fetchStatePeerGSVs,
       fetchStateFetchedBlocks,
       fetchStateFetchedMaxSlotNo,
-      fetchStateFetchMode
+      fetchStateFetchMode,
+      fetchStatePeersOrder
     } =
     assert (                 Map.keysSet fetchStatePeerChains
             `Set.isSubsetOf` Map.keysSet fetchStatePeerStates) $
@@ -195,6 +196,7 @@ fetchDecisionsForStateSnapshot
       fetchStateCurrentChain
       fetchStateFetchedBlocks
       fetchStateFetchedMaxSlotNo
+      fetchStatePeersOrder
       peerChainsAndPeerInfo
   where
     peerChainsAndPeerInfo =
@@ -255,7 +257,8 @@ data FetchNonTriggerVariables peer header block m = FetchNonTriggerVariables {
        readStatePeerStateVars    :: STM m (Map peer (FetchClientStateVars m header)),
        readStatePeerGSVs         :: STM m (Map peer PeerGSV),
        readStateFetchMode        :: STM m FetchMode,
-       readStateFetchedMaxSlotNo :: STM m MaxSlotNo
+       readStateFetchedMaxSlotNo :: STM m MaxSlotNo,
+       readStatePeersOrder       :: STM m [peer]
      }
 
 
@@ -298,7 +301,8 @@ data FetchStateSnapshot peer header block m = FetchStateSnapshot {
        fetchStatePeerGSVs         :: Map peer PeerGSV,
        fetchStateFetchedBlocks    :: Point block -> Bool,
        fetchStateFetchMode        :: FetchMode,
-       fetchStateFetchedMaxSlotNo :: MaxSlotNo
+       fetchStateFetchedMaxSlotNo :: MaxSlotNo,
+       fetchStatePeersOrder       :: [peer]
      }
 
 readStateVariables :: (MonadSTM m, Eq peer,
@@ -335,7 +339,7 @@ readStateVariables FetchTriggerVariables{..}
     fetchStateFetchedBlocks    <- readStateFetchedBlocks
     fetchStateFetchMode        <- readStateFetchMode
     fetchStateFetchedMaxSlotNo <- readStateFetchedMaxSlotNo
-
+    fetchStatePeersOrder       <- readStatePeersOrder
 
     -- Construct the overall snapshot of the state
     let fetchStateSnapshot =
@@ -346,7 +350,8 @@ readStateVariables FetchTriggerVariables{..}
             fetchStatePeerGSVs,
             fetchStateFetchedBlocks,
             fetchStateFetchMode,
-            fetchStateFetchedMaxSlotNo
+            fetchStateFetchedMaxSlotNo,
+            fetchStatePeersOrder
           }
 
     return (fetchStateSnapshot, fetchStateFingerprint')
