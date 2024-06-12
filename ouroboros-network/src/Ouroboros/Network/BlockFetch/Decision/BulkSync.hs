@@ -128,7 +128,9 @@ fetchTheCandidate
 
       -- Trim the fragments to each specific peer's candidate, keeping only
       -- blocks that they may actually serve. If they cannot serve any of the
-      -- blocks, filter them out.
+      -- blocks, filter them out. FIXME: Maybe we should rather have a
+      -- 'ChainSuffix' for all the peers at this point? Are we not too
+      -- restrictive by using only their candidate?
       fragmentsAndPeers <-
         nonEmpty $
           mapMaybe
