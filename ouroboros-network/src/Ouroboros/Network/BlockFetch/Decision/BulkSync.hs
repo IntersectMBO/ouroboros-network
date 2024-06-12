@@ -8,13 +8,16 @@ module Ouroboros.Network.BlockFetch.Decision.BulkSync (
   fetchDecisionsBulkSync
 ) where
 
-import Cardano.Prelude (maybeToEither)
+import Cardano.Prelude (rightToMaybe, mapMaybe)
 import Data.Bifunctor (first)
 import Data.List (foldl', sortOn)
+import Data.List.NonEmpty (nonEmpty)
+import qualified Data.List.NonEmpty as NE
 import Data.Ord (Down(Down))
 import qualified Data.Set as Set
 
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment, headBlockNo)
+import qualified Ouroboros.Network.AnchoredFragment as AF
 import Ouroboros.Network.Block
 import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..),
            PeerFetchInFlight (..), PeerFetchStatus (..))
@@ -64,18 +67,21 @@ fetchDecisionsBulkSync
         map (first Left) declinedCandidates
           ++ case candidates of
             [] -> []
-            ((candidate, peer) : otherCandidates) ->
+            ((candidate, _) : _) ->
               case fetchTheCandidate
                 fetchDecisionPolicy
                 fetchedBlocks
                 fetchedMaxSlotNo
                 candidatesAndPeers
                 candidate of
-                Left declined ->
-                  -- If fetching the candidate did not work, report the reason and
-                  -- decline all the others for concurrency reasons.
-                  (Left declined, peer) : declineConcurrent otherCandidates
-                Right (theRequest, thePeer) ->
+                Nothing ->
+                  -- If fetching the candidate did not work, this is either
+                  -- because it has been fully requested or because we are
+                  -- already at maximum capacity of the chosen peer. FIXME:
+                  -- Maybe we should find which peer it is and reject this one
+                  -- for a different reason?
+                  declineConcurrent candidates
+                Just (theRequest, thePeer) ->
                   -- If fetching the candidate _did_ work, then we have a request
                   -- potentially for another peer, so we report this request and
                   -- decline all the peers except for that specific one.
@@ -93,6 +99,9 @@ fetchDecisionsBulkSync
       declineConcurrent = map (first (const (Left (FetchDeclineConcurrencyLimit FetchModeBulkSync 1))))
       eqPeerInfo (_, _, _, p1, _) (_, _, _, p2, _) = p1 == p2
 
+-- FIXME: The 'FetchDeclineConcurrencyLimit' should only be used for
+-- 'FetchModeDeadline', and 'FetchModeBulkSync' should have its own reasons.
+
 fetchTheCandidate ::
   ( HasHeader header,
     HeaderHash header ~ HeaderHash block
@@ -102,7 +111,7 @@ fetchTheCandidate ::
   MaxSlotNo ->
   [(AnchoredFragment header, PeerInfo header peer extra)] ->
   ChainSuffix header ->
-  FetchDecision ((FetchRequest header), PeerInfo header peer extra)
+  Maybe ((FetchRequest header), PeerInfo header peer extra)
 fetchTheCandidate
   fetchDecisionPolicy
   fetchedBlocks
@@ -113,37 +122,72 @@ fetchTheCandidate
       -- Filter to keep blocks that have not already been downloaded or that are
       -- not already in-flight with any peer.
       fragments <-
-        filterNotAlreadyFetched fetchedBlocks fetchedMaxSlotNo chainSuffix
-          >>= filterNotAlreadyInFlightWithAnyPeer statusInflightInfo
-      -- For each peer, try to create a request for those fragments. Then take
-      -- the first one that is successful.
-      maybeToEither FetchDeclineAlreadyFetched $
-        firstRight $
-            map
-              ( \(_, peerInfo@(status, inflight, gsvs, _, _)) ->
-                  -- FIXME: 'fetchRequestDecisions' does not check whether the
-                  -- peer _could_ serve the given blocks, so we need to trim the
-                  -- fragments to only contain blocks that are in the peer's
-                  -- candidate fragment.
-                  (,peerInfo)
-                    <$> fetchRequestDecision
-                      fetchDecisionPolicy
-                      FetchModeBulkSync
-                      nConcurrentFetchPeers
-                      (calculatePeerFetchInFlightLimits gsvs)
-                      inflight
-                      status
-                      (Right fragments) -- FIXME: This is a hack to avoid having to change the signature of 'fetchRequestDecisions'.
-              )
-              candidatesAndPeers
+        rightToMaybe $
+          filterNotAlreadyFetched fetchedBlocks fetchedMaxSlotNo chainSuffix
+            >>= filterNotAlreadyInFlightWithAnyPeer statusInflightInfo
+
+      -- Trim the fragments to each specific peer's candidate, keeping only
+      -- blocks that they may actually serve. If they cannot serve any of the
+      -- blocks, filter them out.
+      fragmentsAndPeers <-
+        nonEmpty $
+          mapMaybe
+            ( \(candidate, peerInfo) ->
+                (,peerInfo) <$> trimFragmentsToCandidate fragments candidate
+            )
+            candidatesAndPeers
+
+      -- For each peer, try to create a request for those fragments.
+      -- 'fetchRequestDecision' enforces respect of concurrency limits, and
+      -- 'FetchModeBulkSync' should have a limit of 1. This creates a fairly
+      -- degenerate situation with two extreme cases of interest:
+      --
+      -- 1. If there is no currently in-flight request, then all the peers are
+      --    eligible, and all of them will manage to create a request.
+      --
+      -- 2. If there are currently in-flight requests, then they are all with
+      --    the same peer, and only that peer will manage to create a request.
+      requestsAndPeers <-
+        nonEmpty $
+          mapMaybe
+            ( \(fragments', peerInfo@(status, inflight, gsvs, _, _)) ->
+                (,peerInfo)
+                  <$> ( rightToMaybe $
+                          fetchRequestDecision
+                            fetchDecisionPolicy
+                            FetchModeBulkSync
+                            nConcurrentFetchPeers
+                            (calculatePeerFetchInFlightLimits gsvs)
+                            inflight
+                            status
+                            (Right fragments') -- FIXME: This is a hack to avoid having to change the signature of 'fetchRequestDecisions'.
+                      )
+            )
+            (NE.toList fragmentsAndPeers)
+
+      -- Return the first successful request. FIXME: Peer ordering respecting a
+      -- priority list.
+      pure $ NE.head requestsAndPeers
     where
-      statusInflightInfo = map (\(_, (status, inflight, _, _, _)) -> (status, inflight)) candidatesAndPeers
+      statusInflightInfo =
+        map (\(_, (status, inflight, _, _, _)) -> (status, inflight)) candidatesAndPeers
       nConcurrentFetchPeers =
         -- REVIEW: A bit weird considering that this should be '0' or '1'.
         fromIntegral $ length $ filter (\(_, inflight) -> peerFetchReqsInFlight inflight > 0) statusInflightInfo
-      firstRight [] = Nothing
-      firstRight (Right x : _) = Just x
-      firstRight (Left _ : xs) = firstRight xs
+
+-- | Given a candidate and some fragments, keep only the parts of the fragments
+-- that are within the candidate. The returned value is @Nothing@ if nothing
+-- remains, and a non-empty list of non-empty fragments otherwise.
+trimFragmentsToCandidate ::
+  (HasHeader header) =>
+  [AnchoredFragment header] ->
+  AnchoredFragment header ->
+  Maybe [AnchoredFragment header]
+trimFragmentsToCandidate fragments candidate =
+  let trimmedFragments = concatMap (AF.filter (flip AF.withinFragmentBounds candidate . blockPoint)) fragments
+   in if null trimmedFragments
+        then Nothing
+        else Just trimmedFragments
 
 -- | A penultimate step of filtering, but this time across peers, rather than
 -- individually for each peer. If we're following the parallel fetch
