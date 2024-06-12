@@ -526,6 +526,11 @@ selectForkSuffixes current chains =
             chainForkSuffix current chain ?! FetchDeclineChainIntersectionTooDeep
     ]
 
+-- |
+--
+-- This function _does not_ check if the peer is likely to have the blocks in
+-- the ranges, it only compute a request that respect what the peer's current
+-- status indicates on their ability to fulfill it.
 fetchRequestDecision
   :: HasHeader header
   => FetchDecisionPolicy header
@@ -574,7 +579,7 @@ fetchRequestDecision FetchDecisionPolicy {
              maxInFlightReqsPerPeer
 
   | peerFetchBytesInFlight >= inFlightBytesHighWatermark
-  = Left $ FetchDeclineBytesInFlightLimit
+  = Left $ FetchDeclineBytesInFlightLimit -- FIXME: this one should be maybe not too bad.
              peerFetchBytesInFlight
              inFlightBytesLowWatermark
              inFlightBytesHighWatermark
@@ -583,7 +588,7 @@ fetchRequestDecision FetchDecisionPolicy {
     -- we want to let it drop below a low water mark before sending more so we
     -- get a bit more batching behaviour, rather than lots of 1-block reqs.
   | peerFetchStatus == PeerFetchStatusBusy
-  = Left $ FetchDeclinePeerBusy
+  = Left $ FetchDeclinePeerBusy -- FIXME: also not too bad
              peerFetchBytesInFlight
              inFlightBytesLowWatermark
              inFlightBytesHighWatermark
