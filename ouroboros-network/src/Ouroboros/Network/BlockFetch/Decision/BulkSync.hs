@@ -80,7 +80,7 @@ fetchDecisionsBulkSync
                   -- potentially for another peer, so we report this request and
                   -- decline all the peers except for that specific one.
                   (Right theRequest, thePeer)
-                    : filter ((not . eqPeerInfo thePeer) . snd) (declineConcurrent candidates)
+                    : filter (not . eqPeerInfo thePeer . snd) (declineConcurrent candidates)
     where
       partitionEithersFirst :: [(Either a b, c)] -> ([(a, c)], [(b, c)])
       partitionEithersFirst =
@@ -121,8 +121,10 @@ fetchTheCandidate
         firstRight $
             map
               ( \(_, peerInfo@(status, inflight, gsvs, _, _)) ->
-                  -- let fragments' = filterWithMaxSlotNo (not . blockAlreadyFetched) fragments
-                  --  in (FetchRequest fragments', peer)
+                  -- FIXME: 'fetchRequestDecisions' does not check whether the
+                  -- peer _could_ serve the given blocks, so we need to trim the
+                  -- fragments to only contain blocks that are in the peer's
+                  -- candidate fragment.
                   (,peerInfo)
                     <$> fetchRequestDecision
                       fetchDecisionPolicy
