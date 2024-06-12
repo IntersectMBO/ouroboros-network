@@ -45,6 +45,7 @@ fetchDecisions
   -> AnchoredFragment header
   -> (Point block -> Bool)
   -> MaxSlotNo
+  -> [peer] -- ^ Order of the peers for syncing purposes
   -> [(AnchoredFragment header, PeerInfo header peer extra)]
   -> [(FetchDecision (FetchRequest header), PeerInfo header peer extra)]
 
@@ -54,6 +55,7 @@ fetchDecisions
   currentChain
   fetchedBlocks
   fetchedMaxSlotNo
+  _peersOrder
   =
   fetchDecisionsDeadline
     fetchDecisionPolicy
@@ -67,6 +69,7 @@ fetchDecisions
   currentChain
   fetchedBlocks
   fetchedMaxSlotNo
+  _peersOrder
   =
   fetchDecisionsBulkSync
     fetchDecisionPolicy
