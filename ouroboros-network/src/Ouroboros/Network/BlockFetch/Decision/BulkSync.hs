@@ -8,8 +8,7 @@ module Ouroboros.Network.BlockFetch.Decision.BulkSync (
   fetchDecisionsBulkSync
 ) where
 
-import Cardano.Prelude (rightToMaybe, mapMaybe)
-import Data.Bifunctor (first)
+import Data.Bifunctor (first, Bifunctor (..))
 import Data.List (foldl', sortOn)
 import Data.List.NonEmpty (nonEmpty)
 import qualified Data.List.NonEmpty as NE
@@ -38,72 +37,74 @@ fetchDecisionsBulkSync ::
   AnchoredFragment header ->
   (Point block -> Bool) ->
   MaxSlotNo ->
-  [peer] -> -- ^ Order of the peers, from most to least preferred
+  -- | Order of the peers, from most to least preferred
+  [peer] ->
   [(AnchoredFragment header, PeerInfo header peer extra)] ->
   [(FetchDecision (FetchRequest header), PeerInfo header peer extra)]
 fetchDecisionsBulkSync
-  fetchDecisionPolicy@FetchDecisionPolicy {plausibleCandidateChain}
+  fetchDecisionPolicy
   currentChain
   fetchedBlocks
   fetchedMaxSlotNo
-  peersOrder
-  candidatesAndPeers =
-    -- Sort candidates from longest to shortest and filter out all unplausible
-    -- candidates. This gives a list of already-declined candidates and a list
-    -- of plausible candidates.
-    let (declinedCandidates, candidates) =
-          partitionEithersFirst
-            -- Select the suffix up to the intersection with the current chain.
-            . selectForkSuffixes
-              currentChain
-            -- Filter to keep chains the consensus layer tells us are plausible.
-            . filterPlausibleCandidates
-              plausibleCandidateChain
-              currentChain
-            -- Sort the candidates by descending block number of their heads, that is
-            -- consider longest fragments first.
-            . sortOn (Down . headBlockNo . fst)
-            $ candidatesAndPeers
-     in -- If there are no candidates remaining, we are done. Otherwise, pick the
-        -- first one and try to fetch it. Decline all the others.
-        map (first Left) declinedCandidates
-          ++ case candidates of
-            [] -> []
-            ((candidate, _) : _) ->
-              case fetchTheCandidate
-                fetchDecisionPolicy
-                fetchedBlocks
-                fetchedMaxSlotNo
-                peersOrder
-                candidatesAndPeers
-                candidate of
-                Nothing ->
-                  -- If fetching the candidate did not work, this is either
-                  -- because it has been fully requested or because we are
-                  -- already at maximum capacity of the chosen peer. FIXME:
-                  -- Maybe we should find which peer it is and reject this one
-                  -- for a different reason?
-                  declineConcurrent candidates
-                Just (theRequest, thePeer) ->
-                  -- If fetching the candidate _did_ work, then we have a request
-                  -- potentially for another peer, so we report this request and
-                  -- decline all the peers except for that specific one.
-                  (Right theRequest, thePeer)
-                    : filter (not . eqPeerInfo thePeer . snd) (declineConcurrent candidates)
-    where
-      partitionEithersFirst :: [(Either a b, c)] -> ([(a, c)], [(b, c)])
-      partitionEithersFirst =
-        foldr
-          ( \(e, c) (as, bs) -> case e of
-              Left a -> ((a, c) : as, bs)
-              Right b -> (as, (b, c) : bs)
-          )
-          ([], [])
-      declineConcurrent = map (first (const (Left (FetchDeclineConcurrencyLimit FetchModeBulkSync 1))))
-      eqPeerInfo (_, _, _, p1, _) (_, _, _, p2, _) = p1 == p2
+  peersOrder =
+    -- Select the candidate to sync from, then try to fetch it from the peers
+    -- that are still in the race to serve it, which gives us one peer to fetch
+    -- from and all the others to decline.
+    uncurry (++)
+      . ( second $
+            maybe
+              []
+              ( uncurry $
+                  fetchTheCandidate
+                    fetchDecisionPolicy
+                    fetchedBlocks
+                    fetchedMaxSlotNo
+                    peersOrder
+              )
+        )
+      . ( selectTheCandidate
+            fetchDecisionPolicy
+            currentChain
+        )
 
 -- FIXME: The 'FetchDeclineConcurrencyLimit' should only be used for
 -- 'FetchModeDeadline', and 'FetchModeBulkSync' should have its own reasons.
+
+selectTheCandidate ::
+  ( HasHeader header
+  ) =>
+  FetchDecisionPolicy header ->
+  -- | The current chain.
+  AnchoredFragment header ->
+  -- | The candidate fragments and their associated peers.
+  [(AnchoredFragment header, peerInfo)] ->
+  -- | The pair of: (a) a list of peers that we have decided are not right, eg.
+  -- because they presented us with a chain forking too deep, and (b) the
+  -- selected candidate that we choose to sync from and a list of peers that are
+  -- still in the race to serve that candidate.
+  ( [(FetchDecision any, peerInfo)],
+    Maybe (ChainSuffix header, [(ChainSuffix header, peerInfo)])
+  )
+selectTheCandidate
+  FetchDecisionPolicy {plausibleCandidateChain}
+  currentChain =
+    separateDeclinedAndStillInRace
+      -- Select the suffix up to the intersection with the current chain. This can
+      -- eliminate candidates that fork too deep.
+      . selectForkSuffixes currentChain
+      -- Filter to keep chains the consensus layer tells us are plausible.
+      . filterPlausibleCandidates plausibleCandidateChain currentChain
+      -- Sort the candidates by descending block number of their heads, that is
+      -- consider longest fragments first.
+      . sortOn (Down . headBlockNo . fst)
+    where
+      -- Very ad-hoc helper.
+      separateDeclinedAndStillInRace :: [(Either a b, c)] -> ([(Either a any, c)], Maybe (b, [(b, c)]))
+      separateDeclinedAndStillInRace xs =
+        let (declined, inRace) = partitionEithersFirst xs
+         in ( map (first Left) declined,
+              ((,inRace) . fst . NE.head) <$> nonEmpty inRace
+            )
 
 fetchTheCandidate ::
   ( HasHeader header,
@@ -114,95 +115,98 @@ fetchTheCandidate ::
   (Point block -> Bool) ->
   MaxSlotNo ->
   [peer] ->
-  [(AnchoredFragment header, PeerInfo header peer extra)] ->
   ChainSuffix header ->
-  Maybe ((FetchRequest header), PeerInfo header peer extra)
+  [(ChainSuffix header, PeerInfo header peer extra)] ->
+  [(FetchDecision (FetchRequest header), PeerInfo header peer extra)]
 fetchTheCandidate
   fetchDecisionPolicy
   fetchedBlocks
   fetchedMaxSlotNo
   peersOrder
-  candidatesAndPeers
-  chainSuffix =
-    do
-      -- Filter to keep blocks that have not already been downloaded or that are
-      -- not already in-flight with any peer.
-      fragments <-
-        rightToMaybe $
+  chainSuffix
+  candidates =
+    let -- Keep blocks that have not already been downloaded or that are not
+        -- already in-flight with any peer. This returns a 'FetchDecision'.
+        fragments =
           filterNotAlreadyFetched fetchedBlocks fetchedMaxSlotNo chainSuffix
             >>= filterNotAlreadyInFlightWithAnyPeer statusInflightInfo
 
-      -- Trim the fragments to each specific peer's candidate, keeping only
-      -- blocks that they may actually serve. If they cannot serve any of the
-      -- blocks, filter them out. FIXME: Maybe we should rather have a
-      -- 'ChainSuffix' for all the peers at this point? Are we not too
-      -- restrictive by using only their candidate?
-      fragmentsAndPeers <-
-        nonEmpty $
-          mapMaybe
-            ( \(candidate, peerInfo) ->
-                (,peerInfo) <$> trimFragmentsToCandidate fragments candidate
-            )
-            candidatesAndPeers
+        -- For each peer with its candidate, try to create a request for those
+        -- fragments. We are not yet deciding which peer to fetch from.
+        requests =
+          map
+            ( \(candidate, peerInfo@(status, inflight, gsvs, _, _)) ->
+                (,peerInfo) $ do
+                  -- Trim the fragments to each specific peer's candidate, keeping only
+                  -- blocks that they may actually serve. If they cannot serve any of the
+                  -- blocks, filter them out.
+                  trimmedFragments <- trimFragmentsToCandidate candidate =<< fragments
 
-      -- For each peer, try to create a request for those fragments.
-      -- 'fetchRequestDecision' enforces respect of concurrency limits, and
-      -- 'FetchModeBulkSync' should have a limit of 1. This creates a fairly
-      -- degenerate situation with two extreme cases of interest:
-      --
-      -- 1. If there is no currently in-flight request, then all the peers are
-      --    eligible, and all of them will manage to create a request.
-      --
-      -- 2. If there are currently in-flight requests, then they are all with
-      --    the same peer, and only that peer will manage to create a request.
-      requestsAndPeers <-
-        nonEmpty $
-          mapMaybe
-            ( \(fragments', peerInfo@(status, inflight, gsvs, _, _)) ->
-                (,peerInfo)
-                  <$> ( rightToMaybe $
-                          fetchRequestDecision
-                            fetchDecisionPolicy
-                            FetchModeBulkSync
-                            nConcurrentFetchPeers
-                            (calculatePeerFetchInFlightLimits gsvs)
-                            inflight
-                            status
-                            (Right fragments') -- FIXME: This is a hack to avoid having to change the signature of 'fetchRequestDecisions'.
-                      )
+                  -- For each peer, try to create a request for those fragments.
+                  -- 'fetchRequestDecision' enforces respect of concurrency limits, and
+                  -- 'FetchModeBulkSync' should have a limit of 1. This creates a fairly
+                  -- degenerate situation with two extreme cases of interest:
+                  --
+                  -- 1. If there is no currently in-flight request, then all the peers are
+                  --    eligible, and all of them will manage to create a request.
+                  --
+                  -- 2. If there are currently in-flight requests, then they are all with
+                  --    the same peer, and only that peer will manage to create a request.
+                  request <-
+                    fetchRequestDecision
+                      fetchDecisionPolicy
+                      FetchModeBulkSync
+                      nConcurrentFetchPeers
+                      (calculatePeerFetchInFlightLimits gsvs)
+                      inflight
+                      status
+                      (Right trimmedFragments) -- FIXME: This is a hack to avoid having to change the signature of 'fetchRequestDecisions'.
+                  pure request
             )
-            (NE.toList fragmentsAndPeers)
+            candidates
 
-      -- Return the first successful request according to the peer order that
-      -- has been given to us.
-      requestsAndPeersOrdered <-
-        nonEmpty
-          [ (request, peerInfo)
-            | (request, peerInfo@(_, _, _, peer, _)) <- NE.toList requestsAndPeers,
-              peer' <- peersOrder,
-              peer == peer'
-          ]
-      pure $ NE.head requestsAndPeersOrdered
+        -- Order the requests according to the peer order that we have been
+        -- given, then separate between declined and accepted requests.
+        (declinedRequests, requestsOrdered) =
+          partitionEithersFirst
+            [ (request, peerInfo)
+              | (request, peerInfo@(_, _, _, peer, _)) <- requests,
+                peer' <- peersOrder,
+                peer == peer'
+            ]
+     in -- Return the first peer in that order, and decline all the ones that were
+        -- not already declined.
+        case requestsOrdered of
+          [] -> []
+          (theRequest, thePeer) : otherRequests ->
+            (Right theRequest, thePeer)
+              : map (first (const (Left (FetchDeclineConcurrencyLimit FetchModeBulkSync 1)))) otherRequests
+              ++ map (first Left) declinedRequests
     where
       statusInflightInfo =
-        map (\(_, (status, inflight, _, _, _)) -> (status, inflight)) candidatesAndPeers
+        map (\(_, (status, inflight, _, _, _)) -> (status, inflight)) candidates
       nConcurrentFetchPeers =
         -- REVIEW: A bit weird considering that this should be '0' or '1'.
         fromIntegral $ length $ filter (\(_, inflight) -> peerFetchReqsInFlight inflight > 0) statusInflightInfo
 
 -- | Given a candidate and some fragments, keep only the parts of the fragments
--- that are within the candidate. The returned value is @Nothing@ if nothing
--- remains, and a non-empty list of non-empty fragments otherwise.
+-- that are within the candidate. Decline if nothing remains, and return a
+-- non-empty list of non-empty fragments otherwise.
 trimFragmentsToCandidate ::
   (HasHeader header) =>
+  ChainSuffix header ->
   [AnchoredFragment header] ->
-  AnchoredFragment header ->
-  Maybe [AnchoredFragment header]
-trimFragmentsToCandidate fragments candidate =
-  let trimmedFragments = concatMap (AF.filter (flip AF.withinFragmentBounds candidate . blockPoint)) fragments
+  FetchDecision [AnchoredFragment header]
+trimFragmentsToCandidate candidate fragments =
+  let trimmedFragments =
+        -- FIXME: This can most definitely be improved considering that the
+        -- property to be in `candidate` is monotonic.
+        concatMap
+          (AF.filter (flip AF.withinFragmentBounds (getChainSuffix candidate) . blockPoint))
+          fragments
    in if null trimmedFragments
-        then Nothing
-        else Just trimmedFragments
+        then Left FetchDeclineAlreadyFetched
+        else Right trimmedFragments
 
 -- | A penultimate step of filtering, but this time across peers, rather than
 -- individually for each peer. If we're following the parallel fetch
@@ -235,3 +239,13 @@ filterNotAlreadyInFlightWithAnyPeer statusInflightInfos chainfragments =
         ]
     -- The highest slot number that is or has been in flight for any peer.
     maxSlotNoInFlight = foldl' max NoMaxSlotNo (map (peerFetchMaxSlotNo . snd) statusInflightInfos)
+
+-- | Partition eithers on the first component of the pair.
+partitionEithersFirst :: [(Either a b, c)] -> ([(a, c)], [(b, c)])
+partitionEithersFirst =
+  foldr
+    ( \(e, c) (as, bs) -> case e of
+        Left a -> ((a, c) : as, bs)
+        Right b -> (as, (b, c) : bs)
+    )
+    ([], [])
