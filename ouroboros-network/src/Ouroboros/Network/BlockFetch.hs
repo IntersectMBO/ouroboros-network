@@ -102,8 +102,11 @@ module Ouroboros.Network.BlockFetch
   ) where
 
 import Data.Hashable (Hashable)
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import Data.Void
 
+import Control.Concurrent.Class.MonadSTM.Strict.TVar.Checked (StrictTVar, newTVarIO, readTVar, writeTVar)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
@@ -174,11 +177,13 @@ blockFetchLogic decisionTracer clientStateTracer
 
     setFetchClientContext registry clientStateTracer mkFetchClientPolicy
 
+    peersOrderVar <- newTVarIO []
+
     fetchLogicIterations
       decisionTracer clientStateTracer
       fetchDecisionPolicy
       fetchTriggerVariables
-      fetchNonTriggerVariables
+      (fetchNonTriggerVariables peersOrderVar)
   where
     mkFetchClientPolicy :: WhetherReceivingTentativeBlocks -> STM m (FetchClientPolicy header block m)
     mkFetchClientPolicy receivingTentativeBlocks = do
@@ -212,13 +217,37 @@ blockFetchLogic decisionTracer clientStateTracer
         readStatePeerStatus      = readFetchClientsStatus registry
       }
 
-    fetchNonTriggerVariables :: FetchNonTriggerVariables addr header block m
-    fetchNonTriggerVariables =
+    fetchNonTriggerVariables ::
+      StrictTVar m [addr] ->
+      FetchNonTriggerVariables addr header block m
+    fetchNonTriggerVariables peersOrderVar =
       FetchNonTriggerVariables {
         readStateFetchedBlocks    = readFetchedBlocks,
         readStatePeerStateVars    = readFetchClientsStateVars registry,
         readStatePeerGSVs         = readPeerGSVs registry,
         readStateFetchMode        = readFetchMode,
         readStateFetchedMaxSlotNo = readFetchedMaxSlotNo,
-        readStatePeersOrder       = readPeersOrder
+        readStatePeersOrder       = readPeersOrder peersOrderVar readCandidateChains
       }
+
+-- | Read the current peers order from the TVar, update it according to the
+-- current peers, and return the updated order.
+readPeersOrder ::
+  ( MonadSTM m,
+    Eq addr
+  ) =>
+  -- | The TVar containing the current order of peers
+  StrictTVar m [addr] ->
+  -- | An STM action to read all the current
+  -- peers. This can for instance be
+  -- 'readCandidateChains'
+  STM m (Map addr whatever) ->
+  STM m [addr]
+readPeersOrder peersOrderVar readPeers = do
+  peers <- Map.keys <$> readPeers
+  peersOrder <- readTVar peersOrderVar
+  let peersOrder' =
+        filter (`elem` peers) peersOrder
+          ++ filter (`notElem` peersOrder) peers
+  writeTVar peersOrderVar peersOrder'
+  pure peersOrder'
