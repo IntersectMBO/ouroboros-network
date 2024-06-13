@@ -69,10 +69,11 @@ fetchDecisions
   currentChain
   fetchedBlocks
   fetchedMaxSlotNo
-  _peersOrder
+  peersOrder
   =
   fetchDecisionsBulkSync
     fetchDecisionPolicy
     currentChain
     fetchedBlocks
     fetchedMaxSlotNo
+    peersOrder

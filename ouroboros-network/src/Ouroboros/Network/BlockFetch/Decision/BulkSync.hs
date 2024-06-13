@@ -38,6 +38,7 @@ fetchDecisionsBulkSync ::
   AnchoredFragment header ->
   (Point block -> Bool) ->
   MaxSlotNo ->
+  [peer] -> -- ^ Order of the peers, from most to least preferred
   [(AnchoredFragment header, PeerInfo header peer extra)] ->
   [(FetchDecision (FetchRequest header), PeerInfo header peer extra)]
 fetchDecisionsBulkSync
@@ -45,6 +46,7 @@ fetchDecisionsBulkSync
   currentChain
   fetchedBlocks
   fetchedMaxSlotNo
+  peersOrder
   candidatesAndPeers =
     -- Sort candidates from longest to shortest and filter out all unplausible
     -- candidates. This gives a list of already-declined candidates and a list
@@ -72,6 +74,7 @@ fetchDecisionsBulkSync
                 fetchDecisionPolicy
                 fetchedBlocks
                 fetchedMaxSlotNo
+                peersOrder
                 candidatesAndPeers
                 candidate of
                 Nothing ->
@@ -104,11 +107,13 @@ fetchDecisionsBulkSync
 
 fetchTheCandidate ::
   ( HasHeader header,
-    HeaderHash header ~ HeaderHash block
+    HeaderHash header ~ HeaderHash block,
+    Eq peer
   ) =>
   FetchDecisionPolicy header ->
   (Point block -> Bool) ->
   MaxSlotNo ->
+  [peer] ->
   [(AnchoredFragment header, PeerInfo header peer extra)] ->
   ChainSuffix header ->
   Maybe ((FetchRequest header), PeerInfo header peer extra)
@@ -116,6 +121,7 @@ fetchTheCandidate
   fetchDecisionPolicy
   fetchedBlocks
   fetchedMaxSlotNo
+  peersOrder
   candidatesAndPeers
   chainSuffix =
     do
@@ -167,9 +173,16 @@ fetchTheCandidate
             )
             (NE.toList fragmentsAndPeers)
 
-      -- Return the first successful request. FIXME: Peer ordering respecting a
-      -- priority list.
-      pure $ NE.head requestsAndPeers
+      -- Return the first successful request according to the peer order that
+      -- has been given to us.
+      requestsAndPeersOrdered <-
+        nonEmpty
+          [ (request, peerInfo)
+            | (request, peerInfo@(_, _, _, peer, _)) <- NE.toList requestsAndPeers,
+              peer' <- peersOrder,
+              peer == peer'
+          ]
+      pure $ NE.head requestsAndPeersOrdered
     where
       statusInflightInfo =
         map (\(_, (status, inflight, _, _, _)) -> (status, inflight)) candidatesAndPeers
