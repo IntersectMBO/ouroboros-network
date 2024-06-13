@@ -149,6 +149,12 @@ data BlockFetchConsensusInterface peer header block m =
        -- PRECONDITION: Same as 'headerForgeUTCTime'.
        --
        -- WARNING: Same as 'headerForgeUTCTime'.
+       blockForgeUTCTime  :: FromConsensus block -> STM m UTCTime,
+
+       -- | Action to inform CSJ that its dynamo has not been performing
+       -- adequately with respect to BlockFetch, and that it should be demoted.
+       -- Can be set to @pure ()@ in all other scenarios.
+       demoteCSJDynamo :: m ()
      }
 
 
