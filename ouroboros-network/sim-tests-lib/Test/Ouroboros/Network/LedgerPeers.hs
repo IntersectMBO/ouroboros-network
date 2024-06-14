@@ -194,7 +194,8 @@ prop_pick100 seed (NonNegative n) (ArbLedgerPeersKind ledgerPeersKind) (MockRoot
                 WithLedgerPeersArgs { wlpRng = rng,
                                       wlpConsensusInterface = interface,
                                       wlpTracer = verboseTracer,
-                                      wlpGetUseLedgerPeers = pure $ UseLedgerPeers Always }
+                                      wlpGetUseLedgerPeers = pure $ UseLedgerPeers Always,
+                                      wlpGetLedgerPeerSnapshot = pure Nothing }
                 (\request _ -> do
                   threadDelay 1900 -- we need to invalidate ledger peer's cache
                   resp <- request (NumberOfPeers 1) ledgerPeersKind
@@ -254,7 +255,8 @@ prop_pick (LedgerPools lps) (ArbLedgerPeersKind ledgerPeersKind) count seed (Moc
                 WithLedgerPeersArgs { wlpRng = rng,
                                       wlpConsensusInterface = interface,
                                       wlpTracer = verboseTracer,
-                                      wlpGetUseLedgerPeers = pure $ UseLedgerPeers (After 0) }
+                                      wlpGetUseLedgerPeers = pure $ UseLedgerPeers (After 0),
+                                      wlpGetLedgerPeerSnapshot = pure Nothing }
                 (\request _ -> do
                   threadDelay 1900 -- we need to invalidate ledger peer's cache
                   resp <- request (NumberOfPeers count) ledgerPeersKind
