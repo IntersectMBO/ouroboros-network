@@ -184,6 +184,7 @@ blockFetchLogic decisionTracer clientStateTracer
       fetchDecisionPolicy
       fetchTriggerVariables
       (fetchNonTriggerVariables peersOrderVar)
+      (reportBadPeer demoteCSJDynamo peersOrderVar)
   where
     mkFetchClientPolicy :: WhetherReceivingTentativeBlocks -> STM m (FetchClientPolicy header block m)
     mkFetchClientPolicy receivingTentativeBlocks = do
@@ -236,18 +237,40 @@ readPeersOrder ::
   ( MonadSTM m,
     Eq addr
   ) =>
-  -- | The TVar containing the current order of peers
+  -- | The TVar containing the current order of peers.
   StrictTVar m [addr] ->
-  -- | An STM action to read all the current
-  -- peers. This can for instance be
-  -- 'readCandidateChains'
+  -- | An STM action to read all the current peers. This can for instance be
+  -- 'readCandidateChains'.
   STM m (Map addr whatever) ->
   STM m [addr]
 readPeersOrder peersOrderVar readPeers = do
-  peers <- Map.keys <$> readPeers
   peersOrder <- readTVar peersOrderVar
+  currentPeers <- Map.keys <$> readPeers
   let peersOrder' =
-        filter (`elem` peers) peersOrder
-          ++ filter (`notElem` peersOrder) peers
+        filter (`elem` currentPeers) peersOrder
+          ++ filter (`notElem` peersOrder) currentPeers
   writeTVar peersOrderVar peersOrder'
   pure peersOrder'
+
+-- | Report a peer as a bad peer. This pushes the peer to the end of the peers
+-- order and demotes it from the dynamo role in ChainSync Jumping (CSJ) in the
+-- consensus layer.
+reportBadPeer ::
+  ( MonadSTM m,
+    Eq peer
+  ) =>
+  -- | An STM action to demote a peer from the dynamo role in ChainSync Jumping
+  -- (CSJ) in the consensus layer.
+  (peer -> m ()) ->
+  -- | The TVar containing the current order of peers.
+  StrictTVar m [peer] ->
+  -- | The peer that we know is a bad peer (e.g. because it has not respected
+  -- our syncing BlockFetch timeouts).
+  peer ->
+  m ()
+reportBadPeer demoteCSJDynamo peersOrderVar peer = do
+  atomically $ do
+    peersOrder <- readTVar peersOrderVar
+    let peersOrder' = filter (/= peer) peersOrder ++ [peer]
+    writeTVar peersOrderVar peersOrder'
+  demoteCSJDynamo peer
