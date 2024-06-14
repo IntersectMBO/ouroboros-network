@@ -28,6 +28,8 @@ import Ouroboros.Network.BlockFetch.Decision.Common
 -- arises, we should move the interesting piece of code to 'Decision.Common'.
 -- This is to be done on demand.
 
+-- | Given a list of candidate fragments and their associated peers, choose what
+-- to sync from who in the bulk sync mode.
 fetchDecisionsBulkSync ::
   ( HasHeader header,
     HeaderHash header ~ HeaderHash block,
@@ -37,10 +39,13 @@ fetchDecisionsBulkSync ::
   AnchoredFragment header ->
   (Point block -> Bool) ->
   MaxSlotNo ->
-  -- | Order of the peers, from most to least preferred
+  -- | Order of the peers, from most to least preferred.
   [peer] ->
+  -- | Association list of the candidate fragments and their associated peers.
   [(AnchoredFragment header, PeerInfo header peer extra)] ->
+  -- | Association list of the requests and their associated peers.
   [(FetchDecision (FetchRequest header), PeerInfo header peer extra)]
+
 fetchDecisionsBulkSync
   fetchDecisionPolicy
   currentChain
@@ -70,6 +75,10 @@ fetchDecisionsBulkSync
 -- FIXME: The 'FetchDeclineConcurrencyLimit' should only be used for
 -- 'FetchModeDeadline', and 'FetchModeBulkSync' should have its own reasons.
 
+-- | Given a list of candidate fragments and their associated peers, select the
+-- candidate to sync from. Return this fragment, the list of peers that are
+-- still in race to serve it, and the list of peers that are already being
+-- declined.
 selectTheCandidate ::
   ( HasHeader header
   ) =>
@@ -85,6 +94,7 @@ selectTheCandidate ::
   ( [(FetchDecision any, peerInfo)],
     Maybe (ChainSuffix header, [(ChainSuffix header, peerInfo)])
   )
+
 selectTheCandidate
   FetchDecisionPolicy {plausibleCandidateChain}
   currentChain =
@@ -106,6 +116,12 @@ selectTheCandidate
               ((,inRace) . fst . NE.head) <$> nonEmpty inRace
             )
 
+-- | Given a candidate to sync from and a list of peers in race to serve that,
+-- choose which peer to sync from and decline the others.
+--
+-- PRECONDITION: The set of peers must be included in the peer order queue.
+--
+-- POSTCONDITION: The returned list contains at most one @Right@ element.
 fetchTheCandidate ::
   ( HasHeader header,
     HeaderHash header ~ HeaderHash block,
@@ -114,10 +130,18 @@ fetchTheCandidate ::
   FetchDecisionPolicy header ->
   (Point block -> Bool) ->
   MaxSlotNo ->
+  -- | Order of the peers, from most to least preferred.
   [peer] ->
+  -- | The candidate fragment that we have selected to sync from, as suffix of
+  -- the immutable tip.
   ChainSuffix header ->
+  -- | Association list of candidate fragments (as suffixes of the immutable
+  -- tip) and their associated peers.
   [(ChainSuffix header, PeerInfo header peer extra)] ->
+  -- | Association list of the requests and the peers that they are associated
+  -- with. The requests can only be declined.
   [(FetchDecision (FetchRequest header), PeerInfo header peer extra)]
+
 fetchTheCandidate
   fetchDecisionPolicy
   fetchedBlocks
