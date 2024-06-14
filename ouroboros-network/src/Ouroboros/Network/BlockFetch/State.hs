@@ -58,11 +58,13 @@ fetchLogicIterations
   -> FetchDecisionPolicy header
   -> FetchTriggerVariables peer header m
   -> FetchNonTriggerVariables peer header block m
+  -> (peer -> m ()) -- ^ Report a peer as bad with respect to BlockFetch.
   -> m Void
 fetchLogicIterations decisionTracer clientStateTracer
                      fetchDecisionPolicy
                      fetchTriggerVariables
-                     fetchNonTriggerVariables =
+                     fetchNonTriggerVariables
+                     _reportBadPeer =
 
     iterateForever initialFetchStateFingerprint $ \stateFingerprint -> do
 
