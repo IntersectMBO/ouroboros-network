@@ -76,7 +76,7 @@ fetchDecisionsBulkSync
     -- Step 2: Select the peer to sync from. This eliminates peers that
     -- cannot serve a reasonable batch of the candidate, then chooses the
     -- peer to sync from, then again declines the others.
-    thePeer <-
+    (thePeerCandidate, thePeer) <-
       -- FIXME: make 'selectThePeer' return a 'WithDeclined'?
       withDeclined $
         selectThePeer
@@ -89,15 +89,16 @@ fetchDecisionsBulkSync
 
     -- Step 3: Fetch the candidate from the selected peer, potentially
     -- declining it (eg. if the peer is already too busy).
-    let decision =
+    let theDecision =
           fetchTheCandidate
             fetchDecisionPolicy
             fetchedBlocks
             fetchedMaxSlotNo
             theCandidate
             thePeer
+            thePeerCandidate
 
-    pure [decision]
+    pure [(theDecision, thePeer)]
 
 -- FIXME: The 'FetchDeclineConcurrencyLimit' should only be used for
 -- 'FetchModeDeadline', and 'FetchModeBulkSync' should have its own reasons.
@@ -248,36 +249,37 @@ fetchTheCandidate ::
   -- | The candidate fragment that we have selected to sync from, as suffix of
   -- the immutable tip.
   ChainSuffix header ->
-  -- | The peer that we have selected to sync from, with its candidate fragment
-  -- as suffix of the immutable tip.
-  (ChainSuffix header, PeerInfo header peer extra) ->
-  (FetchDecision (FetchRequest header), PeerInfo header peer extra)
+  -- | The peer that we have selected to sync from.
+  PeerInfo header peer extra ->
+  -- | Its candidate fragment as suffix of the immutable tip.
+  ChainSuffix header ->
+  FetchDecision (FetchRequest header)
 fetchTheCandidate
   fetchDecisionPolicy
   fetchedBlocks
   fetchedMaxSlotNo
   theCandidate
-  (thePeerCandidate, thePeer@(status, inflight, gsvs, _, _)) =
-    (,thePeer) $ do
-      -- Keep blocks that have not already been downloaded or that are not
-      -- already in-flight with this peer.
-      fragments <-
-        filterNotAlreadyFetched fetchedBlocks fetchedMaxSlotNo theCandidate
-          >>= filterNotAlreadyInFlightWithPeer inflight
+  (status, inflight, gsvs, _, _)
+  thePeerCandidate = do
+    -- Keep blocks that have not already been downloaded or that are not
+    -- already in-flight with this peer.
+    fragments <-
+      filterNotAlreadyFetched fetchedBlocks fetchedMaxSlotNo theCandidate
+        >>= filterNotAlreadyInFlightWithPeer inflight
 
-      -- Trim the fragments to the peer's candidate, keeping only blocks that
-      -- they may actually serve.
-      trimmedFragments <- trimFragmentsToCandidate thePeerCandidate (snd fragments)
+    -- Trim the fragments to the peer's candidate, keeping only blocks that
+    -- they may actually serve.
+    trimmedFragments <- trimFragmentsToCandidate thePeerCandidate (snd fragments)
 
-      -- Try to create a request for those fragments.
-      fetchRequestDecision
-        fetchDecisionPolicy
-        FetchModeBulkSync
-        0 -- bypass all concurrency limits. REVIEW: is this really what we want?
-        (calculatePeerFetchInFlightLimits gsvs)
-        inflight
-        status
-        (Right trimmedFragments) -- FIXME: This is a hack to avoid having to change the signature of 'fetchRequestDecisions'.
+    -- Try to create a request for those fragments.
+    fetchRequestDecision
+      fetchDecisionPolicy
+      FetchModeBulkSync
+      0 -- bypass all concurrency limits. REVIEW: is this really what we want?
+      (calculatePeerFetchInFlightLimits gsvs)
+      inflight
+      status
+      (Right trimmedFragments) -- FIXME: This is a hack to avoid having to change the signature of 'fetchRequestDecisions'.
     where
       trimFragmentsToCandidate candidate fragments =
         let trimmedFragments =
