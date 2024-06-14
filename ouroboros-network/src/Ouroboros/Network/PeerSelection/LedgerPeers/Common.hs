@@ -57,6 +57,7 @@ data TraceLedgerPeers =
     | FallingBackToPublicRootPeers
     | NotEnoughBigLedgerPeers NumberOfPeers Int
     | NotEnoughLedgerPeers NumberOfPeers Int
+    | UsingBigLedgerPeerSnapshot
 
 
 instance Show TraceLedgerPeers where
@@ -102,3 +103,4 @@ instance Show TraceLedgerPeers where
       "Resolution success " ++ show domain ++ " " ++ show l
     show (TraceLedgerPeersFailure domain err) =
       "Resolution failed " ++ show domain ++ " " ++ show err
+    show UsingBigLedgerPeerSnapshot = "Using peer snapshot for big ledger peers"
