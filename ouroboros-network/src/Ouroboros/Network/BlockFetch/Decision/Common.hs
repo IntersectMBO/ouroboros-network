@@ -21,6 +21,7 @@ module Ouroboros.Network.BlockFetch.Decision.Common (
   , filterNotAlreadyInFlightWithPeer'
   , filterNotAlreadyFetched'
   , fetchRequestDecision
+  , selectBlocksUpToLimits
 ) where
 
 import GHC.Stack (HasCallStack)
