@@ -113,8 +113,8 @@ import Ouroboros.Network.PeerSelection.Governor.Types
 #endif
 import Ouroboros.Network.PeerSelection.LedgerPeers (TraceLedgerPeers,
            WithLedgerPeersArgs (..))
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-           (LedgerPeersConsensusInterface (..), UseLedgerPeers)
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
+           LedgerPeersConsensusInterface (..), UseLedgerPeers)
 #ifdef POSIX
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics,
            fetchynessBlocks, upstreamyness)
@@ -250,6 +250,12 @@ data ArgumentsExtra m = ArgumentsExtra {
     , daReadLocalRootPeers    :: STM m (LocalRootPeers.Config RelayAccessPoint)
     , daReadPublicRootPeers   :: STM m (Map RelayAccessPoint PeerAdvertise)
     , daReadUseBootstrapPeers :: STM m UseBootstrapPeers
+    -- | Depending on configuration, node may provide us with
+    -- a snapshot of big ledger peers taken at some slot on the chain.
+    -- These peers may be selected by ledgerPeersThread when requested
+    -- by the peer selection governor when the node is syncing up.
+    -- This is especially useful for Genesis consensus mode.
+    , daReadLedgerPeerSnapshot :: STM m (Maybe LedgerPeerSnapshot)
 
     -- | Peer's own PeerSharing value.
     --
@@ -637,6 +643,7 @@ runM Interfaces
        , daTimeWaitTimeout
        , daDeadlineChurnInterval
        , daBulkChurnInterval
+       , daReadLedgerPeerSnapshot
        }
      Applications
        { daApplicationInitiatorMode
@@ -989,7 +996,8 @@ runM Interfaces
                                          wlpRng = ledgerPeersRng,
                                          wlpConsensusInterface = daLedgerPeersCtx,
                                          wlpTracer = dtTraceLedgerPeersTracer,
-                                         wlpGetUseLedgerPeers = daReadUseLedgerPeers }
+                                         wlpGetUseLedgerPeers = daReadUseLedgerPeers,
+                                         wlpGetLedgerPeerSnapshot = daReadLedgerPeerSnapshot }
 
           peerSelectionGovernor'
             :: forall (muxMode :: MuxMode) b.

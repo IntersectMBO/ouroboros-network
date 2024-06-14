@@ -49,7 +49,7 @@ import Data.Map.Strict qualified as Map
 import Data.Ratio
 import System.Random
 
-import Cardano.Slotting.Slot (WithOrigin (..))
+import Cardano.Slotting.Slot (SlotNo (..), WithOrigin (..))
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadThrow
 import Data.Set (Set)
@@ -224,17 +224,19 @@ ledgerPeersThread PeerActionsDNS {
                     wlpRng,
                     wlpConsensusInterface,
                     wlpTracer,
-                    wlpGetUseLedgerPeers }
+                    wlpGetUseLedgerPeers,
+                    wlpGetLedgerPeerSnapshot }
                   getReq
                   putResp = do
-    go wlpRng (Time 0) Map.empty Map.empty
+    go wlpRng (Time 0) Map.empty Map.empty 0
   where
     go :: StdGen
        -> Time
        -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
        -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
+       -> SlotNo
        -> m Void
-    go rng oldTs peerMap bigPeerMap = do
+    go rng oldTs peerMap bigPeerMap lastSnapshotSlot = do
         traceWith wlpTracer WaitingOnRequest
         -- wait until next request of ledger peers
         ((numRequested, ledgerPeersKind), useLedgerPeers) <- atomically $
@@ -248,32 +250,53 @@ ledgerPeersThread PeerActionsDNS {
         traceWith wlpTracer $ RequestForPeers numRequested
         !now <- getMonotonicTime
         let age = diffTime now oldTs
-        (peerMap', bigPeerMap', ts) <-
+        (peerMap', bigPeerMap', lastSnapshotSlot', ts) <-
           if age > peerListLifeTime
              then case useLedgerPeers of
                DontUseLedgerPeers -> do
                  traceWith wlpTracer DisabledLedgerPeers
-                 return (Map.empty, Map.empty, now)
+                 return (Map.empty, Map.empty, 0, now)
                UseLedgerPeers ula -> do
-                 peers <- (\case
-                            BeforeSlot          -> []
-                            LedgerPeers _ peers -> peers
-                          )
-                      <$> atomically (getLedgerPeers wlpConsensusInterface ula)
-                 let peersStake   = accPoolStake peers
-                     bigPeersStakeMap = accBigPoolStakeMap peers
-                 traceWith wlpTracer $ FetchingNewLedgerState (Map.size peersStake) (Map.size bigPeersStakeMap)
-                 return (peersStake, bigPeersStakeMap, now)
+                 (consensusSlotNo, consensusPeers, peerSnapshot) <-
+                   atomically ((,,) <$> lpGetLatestSlot wlpConsensusInterface
+                                    <*> getLedgerPeers wlpConsensusInterface ula
+                                    <*> wlpGetLedgerPeerSnapshot)
+
+                 -- we have to assess which of, if any, peers we get from consensus vs.
+                 -- peers we may have from the snapshot file is more recent, and use that
+                 (peersStakeMap, bigPeersStakeMap, lastSnapshotSlot'') <-
+                   case (consensusSlotNo, consensusPeers, peerSnapshot) of
+                     (At t, LedgerPeers _ lp, Just (LedgerPeerSnapshot (At t', sp {- snapshot peers -})))
+                       | t' > t -> do traceWith wlpTracer UsingBigLedgerPeerSnapshot
+                                      -- we cache the peers from the snapshot to avoid unnecessary work
+                                      if t' == lastSnapshotSlot
+                                        then return (peerMap, bigPeerMap, t')
+                                        else return (accPoolStake (map snd sp), Map.fromAscList sp, t')
+                       | otherwise -> return (accPoolStake lp, accBigPoolStakeMap lp, lastSnapshotSlot)
+
+                     (_, LedgerPeers _ lp, Nothing) -> return (accPoolStake lp, accBigPoolStakeMap lp, 0)
+
+                     (_, _, Just (LedgerPeerSnapshot (At t', sp)))
+                       | After slot <- ula, t' >= slot -> do
+                         traceWith wlpTracer UsingBigLedgerPeerSnapshot
+                         if t' == lastSnapshotSlot
+                           then return (peerMap, bigPeerMap, t')
+                           else return (accPoolStake (map snd sp), Map.fromAscList sp, t')
+
+                     _otherwise -> return (Map.empty, Map.empty, lastSnapshotSlot)
+
+                 traceWith wlpTracer $ FetchingNewLedgerState (Map.size peersStakeMap) (Map.size bigPeersStakeMap)
+                 return (peersStakeMap, bigPeersStakeMap, lastSnapshotSlot'', now)
              else do
                traceWith wlpTracer $ ReusingLedgerState (Map.size peerMap) age
-               return (peerMap, bigPeerMap, oldTs)
+               return (peerMap, bigPeerMap, lastSnapshotSlot, oldTs)
 
-        if Map.null peerMap'
+        if all Map.null [peerMap', bigPeerMap']
            then do
                when (isLedgerPeersEnabled useLedgerPeers) $
                    traceWith wlpTracer FallingBackToPublicRootPeers
                atomically $ putResp Nothing
-               go rng ts peerMap' bigPeerMap'
+               go rng ts peerMap' bigPeerMap' lastSnapshotSlot'
            else do
                let ttl = 5 -- TTL, used as re-request interval by the governor.
 
@@ -312,7 +335,7 @@ ledgerPeersThread PeerActionsDNS {
                                   domainAddrs
 
                atomically $ putResp $ Just (pickedAddrs, ttl)
-               go rng'' ts peerMap' bigPeerMap'
+               go rng'' ts peerMap' bigPeerMap' lastSnapshotSlot'
 
     -- Randomly pick one of the addresses returned in the DNS result.
     pickDomainAddrs :: (StdGen, Set peerAddr)
@@ -341,13 +364,15 @@ ledgerPeersThread PeerActionsDNS {
 -- | Argument record for withLedgerPeers
 --
 data WithLedgerPeersArgs m = WithLedgerPeersArgs {
-  wlpRng                :: StdGen,
+  wlpRng                   :: StdGen,
   -- ^ Random generator for picking ledger peers
-  wlpConsensusInterface :: LedgerPeersConsensusInterface m,
-  wlpTracer             :: Tracer m TraceLedgerPeers,
+  wlpConsensusInterface    :: LedgerPeersConsensusInterface m,
+  wlpTracer                :: Tracer m TraceLedgerPeers,
   -- ^ Get Ledger Peers comes from here
-  wlpGetUseLedgerPeers  :: STM m UseLedgerPeers
+  wlpGetUseLedgerPeers     :: STM m UseLedgerPeers,
   -- ^ Get Use Ledger After value
+  wlpGetLedgerPeerSnapshot :: STM m (Maybe LedgerPeerSnapshot)
+  -- ^ Get ledger peer snapshot from file read by node
   }
 
 -- | For a LedgerPeers worker thread and submit request and receive responses.
