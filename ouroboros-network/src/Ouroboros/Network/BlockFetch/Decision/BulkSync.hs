@@ -1,6 +1,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE RankNTypes #-}
 
 -- | This module contains the part of the block fetch decisions process that is
 -- specific to the bulk sync mode.
@@ -66,8 +67,6 @@ fetchDecisionsBulkSync
     -- Step 1: Select the candidate to sync from. This already eliminates
     -- peers that have an implausible candidate.
     (theCandidate, candidatesAndPeers') <-
-      -- FIXME: make 'selectTheCandidate' return a 'WithDeclined'?
-      withDeclined $
         selectTheCandidate
           fetchDecisionPolicy
           currentChain
@@ -108,6 +107,7 @@ fetchDecisionsBulkSync
 -- still in race to serve it, and the list of peers that are already being
 -- declined.
 selectTheCandidate ::
+  forall header peerInfo.
   ( HasHeader header
   ) =>
   FetchDecisionPolicy header ->
@@ -119,9 +119,7 @@ selectTheCandidate ::
   -- because they presented us with a chain forking too deep, and (b) the
   -- selected candidate that we choose to sync from and a list of peers that are
   -- still in the race to serve that candidate.
-  ( Maybe (ChainSuffix header, [(ChainSuffix header, peerInfo)]),
-    [(FetchDecline, peerInfo)]
-  )
+  WithDeclined peerInfo (ChainSuffix header, [(ChainSuffix header, peerInfo)])
 selectTheCandidate
   FetchDecisionPolicy {plausibleCandidateChain}
   currentChain =
@@ -136,10 +134,14 @@ selectTheCandidate
       . sortOn (Down . headBlockNo . fst)
     where
       -- Very ad-hoc helper.
-      separateDeclinedAndStillInRace :: [(Either a b, c)] -> (Maybe (b, [(b, c)]), [(a, c)])
+      separateDeclinedAndStillInRace ::
+        [(FetchDecision (ChainSuffix header), peerInfo)] ->
+        WithDeclined peerInfo (ChainSuffix header, [(ChainSuffix header, peerInfo)])
       separateDeclinedAndStillInRace xs =
+        -- FIXME: Make 'partitionEithersFirst' 'WithDeclined'-specific?
         let (declined, inRace) = partitionEithersFirst xs
-         in ( ((,inRace) . fst . NE.head) <$> nonEmpty inRace,
+         in withDeclined (
+              ((,inRace) . fst . NE.head) <$> nonEmpty inRace,
               declined
             )
 
