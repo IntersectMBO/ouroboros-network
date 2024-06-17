@@ -106,19 +106,7 @@ blockFetchClient _version controlMessageSTM reportFetched
                     (\_ -> senderIdle outstanding)
 
     -- And similarly if there are no pending pipelined results at all.
-    senderIdle Zero = SenderEffect $ do
-      -- assert nothing in flight here
-      PeerFetchInFlight {
-          peerFetchReqsInFlight,
-          peerFetchBytesInFlight,
-          peerFetchBlocksInFlight
-        } <- readTVarIO (fetchClientInFlightVar stateVars)
-
-      assert
-        ( peerFetchReqsInFlight  == 0 &&
-          peerFetchBytesInFlight == 0 &&
-          Set.null peerFetchBlocksInFlight )
-        $ pure (senderAwait Zero)
+    senderIdle Zero = senderAwait Zero
 
     senderAwait :: forall n.
                    Nat n
