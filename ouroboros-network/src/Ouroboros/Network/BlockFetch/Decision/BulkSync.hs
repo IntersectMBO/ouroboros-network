@@ -16,7 +16,7 @@ import Data.Bifunctor (first, Bifunctor (..))
 import Data.List (sortOn)
 import Data.List.NonEmpty (nonEmpty)
 import qualified Data.List.NonEmpty as NE
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, catMaybes)
 import Data.Ord (Down(Down))
 
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment, headBlockNo)
@@ -138,11 +138,17 @@ selectTheCandidate
       separateDeclinedAndStillInRace ::
         [(FetchDecision (ChainSuffix header), peerInfo)] ->
         WithDeclined peerInfo (Maybe (ChainSuffix header, [(ChainSuffix header, peerInfo)]))
-      separateDeclinedAndStillInRace xs = do
-        -- FIXME: Make 'partitionEithersFirst' 'WithDeclined'-specific?
-        let (declined, inRace) = partitionEithersFirst xs
-        tell declined
-        pure $ ((,inRace) . fst . NE.head) <$> nonEmpty inRace
+      separateDeclinedAndStillInRace decisions = do
+        inRace <-
+          catMaybes
+            <$> traverse
+              ( \(decision, peer) ->
+                  case decision of
+                    Left reason -> tell [(reason, peer)] >> pure Nothing
+                    Right candidate -> pure $ Just (candidate, peer)
+              )
+              decisions
+        return $ ((,inRace) . fst . NE.head) <$> nonEmpty inRace
 
 -- |
 --
@@ -291,13 +297,3 @@ fetchTheCandidate
          in if null trimmedFragments
               then Left FetchDeclineAlreadyFetched
               else Right trimmedFragments
-
--- | Partition eithers on the first component of the pair.
-partitionEithersFirst :: [(Either a b, c)] -> ([(a, c)], [(b, c)])
-partitionEithersFirst =
-  foldr
-    ( \(e, c) (as, bs) -> case e of
-        Left a -> ((a, c) : as, bs)
-        Right b -> (as, (b, c) : bs)
-    )
-    ([], [])
