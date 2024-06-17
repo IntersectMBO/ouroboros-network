@@ -125,6 +125,7 @@ library
                        nothunks,
                        psqueues          >=0.2.3 && <0.3,
                        random,
+                       transformers,
 
                        cardano-prelude,
                        cardano-slotting,
