@@ -9,7 +9,8 @@ module Ouroboros.Network.BlockFetch.Decision.BulkSync (
   fetchDecisionsBulkSync
 ) where
 
-import Control.Monad (filterM, liftM)
+import Control.Monad (filterM)
+import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
 import Control.Monad.Writer (Writer, runWriter, MonadWriter (writer, tell), MonadTrans (lift))
 import Data.Bifunctor (first, Bifunctor (..))
 import Data.List (sortOn)
@@ -305,59 +306,3 @@ partitionEithersFirst =
         Right b -> (as, (b, c) : bs)
     )
     ([], [])
-
---------------------------------------------------------------------------------
--- The following is copied from package `transformers` 0.6.1.1.
-
--- | The parameterizable maybe monad, obtained by composing an arbitrary
--- monad with the 'Maybe' monad.
---
--- Computations are actions that may produce a value or exit.
---
--- The 'return' function yields a computation that produces that
--- value, while @>>=@ sequences two subcomputations, exiting if either
--- computation does.
-newtype MaybeT m a = MaybeT { runMaybeT :: m (Maybe a) }
-
--- | Transform the computation inside a @MaybeT@.
---
--- * @'runMaybeT' ('mapMaybeT' f m) = f ('runMaybeT' m)@
-mapMaybeT :: (m (Maybe a) -> n (Maybe b)) -> MaybeT m a -> MaybeT n b
-mapMaybeT f = MaybeT . f . runMaybeT
-{-# INLINE mapMaybeT #-}
-
-instance (Functor m) => Functor (MaybeT m) where
-    fmap f = mapMaybeT (fmap (fmap f))
-    {-# INLINE fmap #-}
-
-instance (Functor m, Monad m) => Applicative (MaybeT m) where
-    pure = MaybeT . return . Just
-    {-# INLINE pure #-}
-    mf <*> mx = MaybeT $ do
-        mb_f <- runMaybeT mf
-        case mb_f of
-            Nothing -> return Nothing
-            Just f  -> do
-                mb_x <- runMaybeT mx
-                case mb_x of
-                    Nothing -> return Nothing
-                    Just x  -> return (Just (f x))
-    {-# INLINE (<*>) #-}
-    m *> k = m >>= \_ -> k
-    {-# INLINE (*>) #-}
-
-instance (Monad m) => Monad (MaybeT m) where
-    -- return = MaybeT . return . Just
-    -- {-# INLINE return #-}
-    x >>= f = MaybeT $ do
-        v <- runMaybeT x
-        case v of
-            Nothing -> return Nothing
-            Just y  -> runMaybeT (f y)
-    {-# INLINE (>>=) #-}
-    -- fail _ = MaybeT (return Nothing)
-    -- {-# INLINE fail #-}
-
-instance MonadTrans MaybeT where
-    lift = MaybeT . liftM Just
-    {-# INLINE lift #-}
