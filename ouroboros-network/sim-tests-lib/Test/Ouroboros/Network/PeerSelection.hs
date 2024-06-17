@@ -3746,14 +3746,12 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
     publicStateVar <- makePublicPeerSelectionStateVar
     debugStateVar <- newTVarIO $ emptyPeerSelectionState (mkStdGen 42) consensusMode
     dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
-    churnMutex <- newTMVarIO ()
     let interfaces = PeerSelectionInterfaces {
             countersVar,
             publicStateVar,
             debugStateVar,
             readUseLedgerPeers = return DontUseLedgerPeers
           }
-        actions' = actions churnMutex
         consensusInterface = LedgerPeersConsensusInterface {
           lpGetLatestSlot = pure Origin,
           lpGetLedgerStateJudgement = pure TooOld,
@@ -3771,7 +3769,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
           -- TODO: #3182 Rng seed should come from quickcheck.
           (mkStdGen 42)
           consensusMode
-          actions'
+          actions
             { requestPublicRootPeers = \_ ->
                 transformPeerSelectionAction requestPublicRootPeers }
           policy
@@ -3782,10 +3780,8 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
     tracer :: Show a => Tracer IO a
     tracer  = Tracer (BS.putStrLn . BS.pack . show)
 
-    actions :: StrictTMVar IO ()
-            -> PeerSelectionActions SockAddr PeerSharing IO
-    actions churnMutex = PeerSelectionActions {
-                churnMutex,
+    actions :: PeerSelectionActions SockAddr PeerSharing IO
+    actions = PeerSelectionActions {
                 peerTargets,
                 readLocalRootPeers       = return [],
                 peerSharing              = peerSharing,

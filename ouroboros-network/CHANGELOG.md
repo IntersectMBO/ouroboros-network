@@ -44,6 +44,8 @@
   a churn cycle is running, a change in ledger state (in Genesis) will make
   peer selection governor hold its target basis until churn completes its round,
   to prevent some non-deterministic interleaving of targets. 
+* Explicit synchronization via a TMVar between churn & peer selection governors
+  has been removed.
 
 ## 0.16.1.0 -- 2024-06-07
 

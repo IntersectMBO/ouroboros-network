@@ -73,10 +73,8 @@ data PeerSelectionActionsArgs peeraddr peerconn exception m = PeerSelectionActio
   psUpdateOutboundConnectionsState
                               :: OutboundConnectionsState -> STM m (),
   -- ^ Callback which updates information about outbound connections state.
-  psReadInboundPeers          :: m (Map peeraddr PeerSharing),
+  psReadInboundPeers          :: m (Map peeraddr PeerSharing)
   -- ^ inbound duplex peers
-  psChurnMutex                :: StrictTMVar m ()
-  -- ^ this is used to coordinate the actions of peer selection and churn governor
   }
 
 -- | Record of remaining parameters for withPeerSelectionActions
@@ -122,8 +120,7 @@ withPeerSelectionActions
     psPeerConnToPeerSharing = peerConnToPeerSharing,
     psReadPeerSharingController = sharingController,
     psReadInboundPeers = readInboundPeers,
-    psUpdateOutboundConnectionsState = updateOutboundConnectionsState,
-    psChurnMutex }
+    psUpdateOutboundConnectionsState = updateOutboundConnectionsState }
   ledgerPeersArgs
   PeerSelectionActionsDiffusionMode { psPeerStateActions = peerStateActions }
   k = do
@@ -145,8 +142,7 @@ withPeerSelectionActions
                                        readUseBootstrapPeers = useBootstrapped,
                                        readInboundPeers,
                                        readLedgerStateJudgement = judgement,
-                                       updateOutboundConnectionsState,
-                                       churnMutex = psChurnMutex }
+                                       updateOutboundConnectionsState }
           withAsync
             (localRootPeersProvider
               localTracer

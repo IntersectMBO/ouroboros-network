@@ -20,14 +20,12 @@ module Ouroboros.Network.PeerSelection.Governor.Monitor
   , waitForSystemToQuiesce
   ) where
 
-import Data.Functor ((<&>))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, isJust, maybeToList)
 import Data.Set (Set)
 import Data.Set qualified as Set
 
-import Control.Concurrent.Class.MonadSTM.Strict.TMVar (tryReadTMVar)
 import Control.Concurrent.JobPool (Job (..), JobPool)
 import Control.Concurrent.JobPool qualified as JobPool
 import Control.Exception (assert)
@@ -77,37 +75,27 @@ targetPeers :: (MonadSTM m, Ord peeraddr)
             => PeerSelectionActions peeraddr peerconn m
             -> PeerSelectionState peeraddr peerconn
             -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-targetPeers PeerSelectionActions{ readPeerSelectionTargets,
-                                  readLedgerStateJudgement,
-                                  peerTargets = ConsensusModePeerTargets { praosTargets, genesisSyncTargets },
-                                  churnMutex }
+targetPeers PeerSelectionActions{ readPeerSelectionTargets }
             st@PeerSelectionState{
               publicRootPeers,
               localRootPeers,
               targets,
               bootstrapPeersFlag,
               hasOnlyBootstrapPeers,
-              consensusMode
+              ledgerStateJudgement
             } =
     Guarded Nothing $ do
       targets'  <- readPeerSelectionTargets
-      ledgerStateJudgement' <- readLedgerStateJudgement
-      targets'' <- tryReadTMVar churnMutex <&>
-        \case
-          Nothing -> targets'
-          _just   -> case (consensusMode, ledgerStateJudgement') of
-            (GenesisMode, YoungEnough) -> praosTargets
-            (GenesisMode, TooOld)      -> genesisSyncTargets
-            (PraosMode, _)             -> praosTargets
 
       -- nb. first check is redundant in Genesis mode
       check (   isNodeAbleToMakeProgress bootstrapPeersFlag
-                                         ledgerStateJudgement'
+                                         ledgerStateJudgement
                                          hasOnlyBootstrapPeers
-             && targets /= targets''
-             && sanePeerSelectionTargets targets'')
+             && targets /= targets'
+             && sanePeerSelectionTargets targets')
+
       let usingBootstrapPeers = requiresBootstrapPeers bootstrapPeersFlag
-                                                       ledgerStateJudgement'
+                                                       ledgerStateJudgement
           -- We have to enforce the invariant that the number of root peers is
           -- not more than the target number of known peers. It's unlikely in
           -- practice so it's ok to resolve it arbitrarily using clampToLimit.
@@ -120,7 +108,7 @@ targetPeers PeerSelectionActions{ readPeerSelectionTargets,
           -- scenarios.
           localRootPeers' =
               LocalRootPeers.clampToLimit
-                              (targetNumberOfKnownPeers targets'')
+                              (targetNumberOfKnownPeers targets')
             $ (if usingBootstrapPeers
                   then LocalRootPeers.clampToTrustable
                   else id)
@@ -132,10 +120,10 @@ targetPeers PeerSelectionActions{ readPeerSelectionTargets,
                              LocalRootPeers.keysSet localRootPeers'
 
       return $ \_now -> Decision {
-        decisionTrace = [TraceTargetsChanged targets targets''],
+        decisionTrace = [TraceTargetsChanged targets targets'],
         decisionJobs  = [],
         decisionState = st {
-                          targets        = targets'',
+                          targets        = targets',
                           localRootPeers = localRootPeers',
                           publicRootPeers = publicRootPeers'
                         } }
@@ -596,7 +584,10 @@ monitorLedgerStateJudgement :: ( MonadSTM m
                             -> LedgerPeersConsensusInterface m
                             -> PeerSelectionState peeraddr peerconn
                             -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-monitorLedgerStateJudgement PeerSelectionActions{ readLedgerStateJudgement }
+monitorLedgerStateJudgement PeerSelectionActions{ readLedgerStateJudgement,
+                                                  peerTargets = ConsensusModePeerTargets{
+                                                    praosTargets,
+                                                    genesisSyncTargets } }
                             readLedgerPeerSnapshot
                             ledgerPeersCtx
                             st@PeerSelectionState{ bootstrapPeersFlag,
@@ -606,11 +597,15 @@ monitorLedgerStateJudgement PeerSelectionActions{ readLedgerStateJudgement }
                                                    inProgressPromoteCold,
                                                    inProgressPromoteWarm,
                                                    ledgerStateJudgement,
-                                                   consensusMode}
+                                                   consensusMode }
   | GenesisMode <- consensusMode =
     Guarded Nothing $ do
       lsj <- readLedgerStateJudgement
       check (lsj /= ledgerStateJudgement)
+      let targets = case lsj of
+            YoungEnough -> praosTargets
+            TooOld      -> genesisSyncTargets
+
       return $ \_now ->
         Decision {
           decisionTrace = [TraceLedgerStateJudgementChanged lsj],
@@ -619,8 +614,8 @@ monitorLedgerStateJudgement PeerSelectionActions{ readLedgerStateJudgement }
                               [jobVerifyPeerSnapshot readLedgerPeerSnapshot ledgerPeersCtx]
                             _otherwise -> [],
           decisionState = st {
-              ledgerStateJudgement = lsj }
-        }
+              ledgerStateJudgement = lsj,
+              targets } }
 
   | PraosMode <- consensusMode
   , isBootstrapPeersEnabled bootstrapPeersFlag =

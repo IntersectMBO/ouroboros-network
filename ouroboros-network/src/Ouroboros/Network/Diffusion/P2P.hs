@@ -824,11 +824,6 @@ runM Interfaces
 
       churnModeVar <- newTVarIO ChurnModeNormal
 
-      -- ensure that peer selection governor does not change targets
-      -- in the initial starting phase when churn governor should be
-      -- in control. See comment directly below.
-      churnMutex <- newEmptyTMVarIO
-
       peerSelectionTargetsVar <- newTVarIO $
         -- because peer selection governor starts up in TooOld state
         let base = case daConsensusMode of
@@ -1012,8 +1007,7 @@ runM Interfaces
                                              PeerSharingDisabled -> pure Map.empty
                                              PeerSharingEnabled  -> readInboundPeers,
                                          psUpdateOutboundConnectionsState = daUpdateOutboundConnectionsState,
-                                         peerTargets = daPeerTargets,
-                                         psChurnMutex = churnMutex }
+                                         peerTargets = daPeerTargets }
                                        WithLedgerPeersArgs {
                                          wlpRng = ledgerPeersRng,
                                          wlpConsensusInterface = daLedgerPeersCtx,
@@ -1065,8 +1059,7 @@ runM Interfaces
                                  pcaReadCounters = (readTVar countersVar),
                                  peerTargets = daPeerTargets,
                                  pcaReadUseBootstrap = daReadUseBootstrapPeers,
-                                 pcaConsensusMode = daConsensusMode,
-                                 pcaChurnMutex = churnMutex }
+                                 pcaConsensusMode = daConsensusMode }
 
       --
       -- Two functions only used in InitiatorAndResponder mode

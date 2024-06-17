@@ -136,7 +136,6 @@ import Data.Set qualified as Set
 import GHC.Stack (HasCallStack)
 
 import Control.Applicative (Alternative)
-import Control.Concurrent.Class.MonadSTM.Strict.TMVar
 import Control.Concurrent.JobPool (Job)
 import Control.Exception (Exception (..), SomeException, assert)
 import Control.Monad.Class.MonadSTM
@@ -338,10 +337,6 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        -- from node's configuration for the current state
        --
        peerTargets :: ConsensusModePeerTargets,
-
-       -- | Mutex to avoid interleaved updates between peer sel. & churn govnrs
-       -- which could result in mixed target values
-       churnMutex     :: StrictTMVar m (),
 
        -- | Read the current set of locally or privately known root peers.
        --

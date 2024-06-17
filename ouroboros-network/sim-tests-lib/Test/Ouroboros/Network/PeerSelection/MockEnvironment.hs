@@ -375,7 +375,6 @@ mockPeerSelectionActions tracer
                                  connectionScript
                                }) <- adjacency
                    ]
-    churnMutex <- StrictTVar.newEmptyTMVarIO
     peerConns  <- atomically $ do
       v <- newTVar Map.empty
       traceTVar proxy
@@ -395,7 +394,6 @@ mockPeerSelectionActions tracer
                getLedgerStateJudgement
                peerConns
                onlyLocalOutboundConnsVar
-               churnMutex
   where
     proxy :: Proxy m
     proxy = Proxy
@@ -423,7 +421,6 @@ mockPeerSelectionActions' :: forall m.
                           -> STM m LedgerStateJudgement
                           -> TVar m (Map PeerAddr (TVar m PeerStatus))
                           -> TVar m OutboundConnectionsState
-                          -> StrictTVar.StrictTMVar m ()
                           -> PeerSelectionActions PeerAddr (PeerConn m) m
 mockPeerSelectionActions' tracer
                           GovernorMockEnvironment {
@@ -439,8 +436,7 @@ mockPeerSelectionActions' tracer
                           readUseLedgerPeers
                           readLedgerStateJudgement
                           connsVar
-                          outboundConnectionsStateVar
-                          churnMutex =
+                          outboundConnectionsStateVar =
     PeerSelectionActions {
       readLocalRootPeers       = return (LocalRootPeers.toGroups localRootPeers),
       peerSharing              = peerSharingFlag,
@@ -462,7 +458,6 @@ mockPeerSelectionActions' tracer
         a' <- readTVar outboundConnectionsStateVar
         when (a /= a') $
           writeTVar outboundConnectionsStateVar a,
-      churnMutex,
       peerTargets
     }
   where
