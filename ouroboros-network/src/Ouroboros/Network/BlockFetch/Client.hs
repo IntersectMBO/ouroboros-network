@@ -26,8 +26,6 @@ import Control.Monad (unless)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 
-import Data.Set qualified as Set
-
 import Control.Tracer (traceWith)
 
 import Ouroboros.Network.Block
@@ -40,12 +38,10 @@ import Ouroboros.Network.Protocol.BlockFetch.Type
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.BlockFetch.ClientState (FetchClientContext (..),
-           FetchClientPolicy (..),
-           FetchClientStateVars (fetchClientInFlightVar), FetchRequest (..),
-           FromConsensus (..), PeerFetchInFlight (..),
-           TraceFetchClientState (..), acknowledgeFetchRequest,
-           completeBlockDownload, completeFetchBatch, fetchClientCtxStateVars,
-           rejectedFetchBatch, startedFetchBatch)
+           FetchClientPolicy (..), FetchClientStateVars (..), FetchRequest (..),
+           FromConsensus (..), TraceFetchClientState (..),
+           acknowledgeFetchRequest, completeBlockDownload, completeFetchBatch,
+           fetchClientCtxStateVars, rejectedFetchBatch, startedFetchBatch)
 import Ouroboros.Network.BlockFetch.DeltaQ (PeerFetchInFlightLimits (..),
            PeerGSV (..))
 import Ouroboros.Network.PeerSelection.PeerMetric.Type (FetchedMetricsTracer)
