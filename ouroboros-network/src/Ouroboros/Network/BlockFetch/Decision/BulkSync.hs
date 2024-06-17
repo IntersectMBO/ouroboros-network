@@ -9,7 +9,8 @@ module Ouroboros.Network.BlockFetch.Decision.BulkSync (
   fetchDecisionsBulkSync
 ) where
 
-import Control.Monad.Writer (Writer, runWriter, MonadWriter (writer))
+import Control.Monad (filterM, liftM)
+import Control.Monad.Writer (Writer, runWriter, MonadWriter (writer, tell), MonadTrans (lift))
 import Data.Bifunctor (first, Bifunctor (..))
 import Data.List (sortOn)
 import Data.List.NonEmpty (nonEmpty)
@@ -33,6 +34,12 @@ type WithDeclined peer = MaybeT (Writer [(FetchDecline, peer)])
 
 withDeclined :: (Maybe a, [(FetchDecline, peer)]) -> WithDeclined peer a
 withDeclined = MaybeT . writer
+
+decline :: FetchDecline -> peer -> WithDeclined peer ()
+decline reason peer = withDeclined (Just (), [(reason, peer)])
+
+returnNothing :: WithDeclined peer a
+returnNothing = withDeclined (Nothing, [])
 
 runWithDeclined :: WithDeclined peer a -> (Maybe a, [(FetchDecline, peer)])
 runWithDeclined = runWriter . runMaybeT
@@ -76,8 +83,6 @@ fetchDecisionsBulkSync
     -- cannot serve a reasonable batch of the candidate, then chooses the
     -- peer to sync from, then again declines the others.
     (thePeerCandidate, thePeer) <-
-      -- FIXME: make 'selectThePeer' return a 'WithDeclined'?
-      withDeclined $
         selectThePeer
           fetchDecisionPolicy
           fetchedBlocks
@@ -149,6 +154,7 @@ selectTheCandidate
 --
 -- PRECONDITION: The set of peers must be included in the peer order queue.
 selectThePeer ::
+  forall header block peer extra.
   ( HasHeader header,
     HeaderHash header ~ HeaderHash block,
     Eq peer
@@ -164,31 +170,29 @@ selectThePeer ::
   -- | Association list of candidate fragments (as suffixes of the immutable
   -- tip) and their associated peers.
   [(ChainSuffix header, PeerInfo header peer extra)] ->
-  ( Maybe (ChainSuffix header, PeerInfo header peer extra),
-    [(FetchDecline, PeerInfo header peer extra)]
-  )
+  WithDeclined (PeerInfo header peer extra) (ChainSuffix header, PeerInfo header peer extra)
 selectThePeer
   FetchDecisionPolicy {blockFetchSize}
   fetchedBlocks
   fetchedMaxSlotNo
   peersOrder
   theCandidate
-  candidates =
-    let -- Filter out from the chosen candidate fragment the blocks that have
-        -- already been downloaded, but keep the blocks that have a request in
-        -- flight.
-        fragments =
+  candidates = do
+    -- Filter out from the chosen candidate fragment the blocks that have
+    -- already been downloaded, but keep the blocks that have a request in
+    -- flight.
+    let fragments =
           snd
             <$> filterNotAlreadyFetched
               fetchedBlocks
               fetchedMaxSlotNo
               theCandidate
 
-        -- Create a fetch request for the blocks in question The request is made
-        -- to fit in 1MB but ignores everything else. It is gross in that sense.
-        -- It will only be used to choose the peer to fetch from, but we will
-        -- later craft a more refined request for that peer.
-        grossRequest =
+    -- Create a fetch request for the blocks in question The request is made
+    -- to fit in 1MB but ignores everything else. It is gross in that sense.
+    -- It will only be used to choose the peer to fetch from, but we will
+    -- later craft a more refined request for that peer.
+    let grossRequest =
           selectBlocksUpToLimits
             blockFetchSize
             0 -- number of request in flight
@@ -197,38 +201,36 @@ selectThePeer
             (1024 * 1024) -- maximum bytes in flight; one megabyte
             <$> fragments
 
-        -- For each peer, check whether its candidate contains the gross request
-        -- in its entirety, otherwise decline it.
-        peers =
-          map
-            ( first $ \candidate -> do
-                checkRequestInCandidate candidate =<< grossRequest
-                pure candidate
+    -- For each peer, check whether its candidate contains the gross request
+    -- in its entirety, otherwise decline it.
+    peers <-
+          filterM
+            ( \(candidate, peer) ->
+                case checkRequestInCandidate candidate =<< grossRequest of
+                  Left reason -> decline reason peer >> pure False
+                  Right () -> pure True
             )
             candidates
 
-        -- Order the peers according to the peer order that we have been given,
-        -- then separate between declined peers and the others.
-        (declinedPeers, peersOrdered) =
-          partitionEithersFirst
-            [ (decision, peerInfo)
-              | (decision, peerInfo@(_, _, _, peer, _)) <- peers,
+    -- Order the peers according to the peer order that we have been given,
+    -- then separate between declined peers and the others.
+    let peersOrdered =
+            [ (candidate, peerInfo)
+              | (candidate, peerInfo@(_, _, _, peer, _)) <- peers,
                 peer' <- peersOrder,
                 peer == peer'
             ]
-     in -- Return the first peer in that order, and decline all the ones that were
-        -- not already declined.
-        case peersOrdered of
-          [] ->
-            ( Nothing,
-              declinedPeers
-            )
-          (thePeerCandidate, thePeer) : otherPeers ->
-            ( Just (thePeerCandidate, thePeer),
-              declinedPeers
-                ++ map (first (const (FetchDeclineConcurrencyLimit FetchModeBulkSync 1))) otherPeers
-            )
+
+    -- Return the first peer in that order, and decline all the ones that were
+    -- not already declined.
+    case peersOrdered of
+          [] ->            returnNothing
+          (thePeerCandidate, thePeer) : otherPeers -> do
+            lift $ tell $ map (first (const (FetchDeclineConcurrencyLimit FetchModeBulkSync 1))) otherPeers
+            pure (thePeerCandidate, thePeer)
     where
+      checkRequestInCandidate ::
+        HasHeader header => ChainSuffix header -> FetchRequest header -> FetchDecision ()
       checkRequestInCandidate candidate request =
         if all isSubfragmentOfCandidate $ fetchRequestFragments request
           then pure ()
@@ -355,3 +357,7 @@ instance (Monad m) => Monad (MaybeT m) where
     {-# INLINE (>>=) #-}
     -- fail _ = MaybeT (return Nothing)
     -- {-# INLINE fail #-}
+
+instance MonadTrans MaybeT where
+    lift = MaybeT . liftM Just
+    {-# INLINE lift #-}
