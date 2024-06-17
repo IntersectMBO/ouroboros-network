@@ -11,7 +11,7 @@ module Ouroboros.Network.BlockFetch.Decision.BulkSync (
 
 import Control.Monad (filterM)
 import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
-import Control.Monad.Writer (Writer, runWriter, MonadWriter (writer, tell), MonadTrans (lift))
+import Control.Monad.Writer (Writer, runWriter, MonadWriter (tell))
 import Data.Bifunctor (first, Bifunctor (..))
 import Data.List (sortOn)
 import Data.List.NonEmpty (nonEmpty)
@@ -31,22 +31,10 @@ import Ouroboros.Network.BlockFetch.Decision.Common
 -- arises, we should move the interesting piece of code to 'Decision.Common'.
 -- This is to be done on demand.
 
-type WithDeclined peer = MaybeT (Writer [(FetchDecline, peer)])
+type WithDeclined peer = Writer [(FetchDecline, peer)]
 
-withDeclined :: (Maybe a, [(FetchDecline, peer)]) -> WithDeclined peer a
-withDeclined = MaybeT . writer
-
-decline :: FetchDecline -> peer -> WithDeclined peer ()
-decline reason peer = withDeclined (Just (), [(reason, peer)])
-
-returnNothing :: WithDeclined peer a
-returnNothing = withDeclined (Nothing, [])
-
-runWithDeclined :: WithDeclined peer a -> (Maybe a, [(FetchDecline, peer)])
-runWithDeclined = runWriter . runMaybeT
-
-combineWithDeclined :: WithDeclined peer [(FetchDecision a, peer)] -> [(FetchDecision a, peer)]
-combineWithDeclined = uncurry (++) . bimap (fromMaybe []) (map (first Left)) . runWithDeclined
+runWithDeclined :: WithDeclined peer a -> (a, [(FetchDecline, peer)])
+runWithDeclined = runWriter
 
 -- | Given a list of candidate fragments and their associated peers, choose what
 -- to sync from who in the bulk sync mode.
@@ -75,6 +63,7 @@ fetchDecisionsBulkSync
     -- Step 1: Select the candidate to sync from. This already eliminates
     -- peers that have an implausible candidate.
     (theCandidate, candidatesAndPeers') <-
+      MaybeT $
         selectTheCandidate
           fetchDecisionPolicy
           currentChain
@@ -84,6 +73,7 @@ fetchDecisionsBulkSync
     -- cannot serve a reasonable batch of the candidate, then chooses the
     -- peer to sync from, then again declines the others.
     (thePeerCandidate, thePeer) <-
+      MaybeT $
         selectThePeer
           fetchDecisionPolicy
           fetchedBlocks
@@ -104,6 +94,9 @@ fetchDecisionsBulkSync
             thePeerCandidate
 
     pure [(theDecision, thePeer)]
+    where
+      combineWithDeclined :: MaybeT (WithDeclined peer) [(FetchDecision a, peer)] -> [(FetchDecision a, peer)]
+      combineWithDeclined = uncurry (++) . bimap (fromMaybe []) (map (first Left)) . runWithDeclined . runMaybeT
 
 -- FIXME: The 'FetchDeclineConcurrencyLimit' should only be used for
 -- 'FetchModeDeadline', and 'FetchModeBulkSync' should have its own reasons.
@@ -125,7 +118,9 @@ selectTheCandidate ::
   -- because they presented us with a chain forking too deep, and (b) the
   -- selected candidate that we choose to sync from and a list of peers that are
   -- still in the race to serve that candidate.
-  WithDeclined peerInfo (ChainSuffix header, [(ChainSuffix header, peerInfo)])
+  WithDeclined
+    peerInfo
+    (Maybe (ChainSuffix header, [(ChainSuffix header, peerInfo)]))
 selectTheCandidate
   FetchDecisionPolicy {plausibleCandidateChain}
   currentChain =
@@ -142,14 +137,12 @@ selectTheCandidate
       -- Very ad-hoc helper.
       separateDeclinedAndStillInRace ::
         [(FetchDecision (ChainSuffix header), peerInfo)] ->
-        WithDeclined peerInfo (ChainSuffix header, [(ChainSuffix header, peerInfo)])
-      separateDeclinedAndStillInRace xs =
+        WithDeclined peerInfo (Maybe (ChainSuffix header, [(ChainSuffix header, peerInfo)]))
+      separateDeclinedAndStillInRace xs = do
         -- FIXME: Make 'partitionEithersFirst' 'WithDeclined'-specific?
         let (declined, inRace) = partitionEithersFirst xs
-         in withDeclined (
-              ((,inRace) . fst . NE.head) <$> nonEmpty inRace,
-              declined
-            )
+        tell declined
+        pure $ ((,inRace) . fst . NE.head) <$> nonEmpty inRace
 
 -- |
 --
@@ -171,7 +164,9 @@ selectThePeer ::
   -- | Association list of candidate fragments (as suffixes of the immutable
   -- tip) and their associated peers.
   [(ChainSuffix header, PeerInfo header peer extra)] ->
-  WithDeclined (PeerInfo header peer extra) (ChainSuffix header, PeerInfo header peer extra)
+  WithDeclined
+    (PeerInfo header peer extra)
+    (Maybe (ChainSuffix header, PeerInfo header peer extra))
 selectThePeer
   FetchDecisionPolicy {blockFetchSize}
   fetchedBlocks
@@ -205,33 +200,33 @@ selectThePeer
     -- For each peer, check whether its candidate contains the gross request
     -- in its entirety, otherwise decline it.
     peers <-
-          filterM
-            ( \(candidate, peer) ->
-                case checkRequestInCandidate candidate =<< grossRequest of
-                  Left reason -> decline reason peer >> pure False
-                  Right () -> pure True
-            )
-            candidates
+      filterM
+        ( \(candidate, peer) ->
+            case checkRequestInCandidate candidate =<< grossRequest of
+              Left reason -> tell [(reason, peer)] >> pure False
+              Right () -> pure True
+        )
+        candidates
 
     -- Order the peers according to the peer order that we have been given,
     -- then separate between declined peers and the others.
     let peersOrdered =
-            [ (candidate, peerInfo)
-              | (candidate, peerInfo@(_, _, _, peer, _)) <- peers,
-                peer' <- peersOrder,
-                peer == peer'
-            ]
+          [ (candidate, peerInfo)
+            | (candidate, peerInfo@(_, _, _, peer, _)) <- peers,
+              peer' <- peersOrder,
+              peer == peer'
+          ]
 
     -- Return the first peer in that order, and decline all the ones that were
     -- not already declined.
     case peersOrdered of
-          [] ->            returnNothing
-          (thePeerCandidate, thePeer) : otherPeers -> do
-            lift $ tell $ map (first (const (FetchDeclineConcurrencyLimit FetchModeBulkSync 1))) otherPeers
-            pure (thePeerCandidate, thePeer)
+      [] -> return Nothing
+      (thePeerCandidate, thePeer) : otherPeers -> do
+        tell $ map (first (const (FetchDeclineConcurrencyLimit FetchModeBulkSync 1))) otherPeers
+        return $ Just (thePeerCandidate, thePeer)
     where
       checkRequestInCandidate ::
-        HasHeader header => ChainSuffix header -> FetchRequest header -> FetchDecision ()
+        (HasHeader header) => ChainSuffix header -> FetchRequest header -> FetchDecision ()
       checkRequestInCandidate candidate request =
         if all isSubfragmentOfCandidate $ fetchRequestFragments request
           then pure ()
