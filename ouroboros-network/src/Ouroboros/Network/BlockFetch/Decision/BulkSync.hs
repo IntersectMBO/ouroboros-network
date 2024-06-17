@@ -151,7 +151,13 @@ selectTheCandidate
               decisions
         return $ ((,inRace) . fst . NE.head) <$> nonEmpty inRace
 
--- |
+-- | Given _the_ candidate fragment to sync from, and a list of peers (with
+-- their corresponding candidate fragments), choose which peer to sync _the_
+-- candidate fragment from.
+--
+-- We first filter out all the peers that cannot even serve a reasonable batch
+-- of _the_ candidate fragment, and then we choose the first one according to
+-- the ordering passed as argument.
 --
 -- PRECONDITION: The set of peers must be included in the peer order queue.
 selectThePeer ::
