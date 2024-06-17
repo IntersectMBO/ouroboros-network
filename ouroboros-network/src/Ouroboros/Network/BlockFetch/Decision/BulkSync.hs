@@ -60,8 +60,9 @@ fetchDecisionsBulkSync
   fetchedMaxSlotNo
   peersOrder
   candidatesAndPeers = combineWithDeclined $ do
-    -- Step 1: Select the candidate to sync from. This already eliminates
-    -- peers that have an implausible candidate.
+    -- Step 1: Select the candidate to sync from. This already eliminates peers
+    -- that have an implausible candidate. It returns the remaining candidates
+    -- (with their corresponding peer) as suffixes of the immutable tip.
     (theCandidate, candidatesAndPeers') <-
       MaybeT $
         selectTheCandidate
@@ -69,9 +70,9 @@ fetchDecisionsBulkSync
           currentChain
           candidatesAndPeers
 
-    -- Step 2: Select the peer to sync from. This eliminates peers that
-    -- cannot serve a reasonable batch of the candidate, then chooses the
-    -- peer to sync from, then again declines the others.
+    -- Step 2: Select the peer to sync from. This eliminates peers that cannot
+    -- serve a reasonable batch of the candidate, then chooses the peer to sync
+    -- from, then again declines the others.
     (thePeerCandidate, thePeer) <-
       MaybeT $
         selectThePeer
@@ -82,8 +83,8 @@ fetchDecisionsBulkSync
           theCandidate
           candidatesAndPeers'
 
-    -- Step 3: Fetch the candidate from the selected peer, potentially
-    -- declining it (eg. if the peer is already too busy).
+    -- Step 3: Fetch the candidate from the selected peer, potentially declining
+    -- it (eg. if the peer is already too busy).
     let theDecision =
           fetchTheCandidate
             fetchDecisionPolicy
