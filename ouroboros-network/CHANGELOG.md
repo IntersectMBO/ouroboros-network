@@ -4,6 +4,10 @@
 
 ### Breaking changes
 
+* moved `accBigPoolStake` and `reRelativeStake` to ouroboros-networking-api
+  in order to expose functionality of creating snapshots of big ledger peers,
+  eg. for Genesis consensus mode.
+
 ### Non-Breaking changes
 
 * Refactored signature of `LedgerPeers.ledgerPeersThread` for concision

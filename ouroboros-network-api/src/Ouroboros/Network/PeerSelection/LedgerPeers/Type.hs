@@ -14,6 +14,7 @@ module Ouroboros.Network.PeerSelection.LedgerPeers.Type
   , LedgerPeersConsensusInterface (..)
   , UseLedgerPeers (..)
   , AfterSlot (..)
+  , LedgerPeersKind (..)
   , isLedgerPeersEnabled
   ) where
 
@@ -24,6 +25,11 @@ import Data.List.NonEmpty (NonEmpty)
 import GHC.Generics
 import NoThunks.Class
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
+
+-- | Which ledger peers to pick.
+--
+data LedgerPeersKind = AllLedgerPeers | BigLedgerPeers
+  deriving Show
 
 -- | Only use the ledger after the given slot number.
 data UseLedgerPeers = DontUseLedgerPeers
