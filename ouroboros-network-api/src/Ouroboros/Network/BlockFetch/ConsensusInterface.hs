@@ -10,6 +10,7 @@ module Ouroboros.Network.BlockFetch.ConsensusInterface
 
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime (UTCTime)
+import Control.Monad.Class.MonadTime.SI (Time)
 
 import Data.Map.Strict (Map)
 import GHC.Stack (HasCallStack)
@@ -152,6 +153,10 @@ data BlockFetchConsensusInterface peer header block m =
        --
        -- WARNING: Same as 'headerForgeUTCTime'.
        blockForgeUTCTime  :: FromConsensus block -> STM m UTCTime,
+
+       -- | The last time that the Chain Selection pipeline was starved, that is
+       -- it tried to pop a block but there wasn't any.
+       lastChainSelStarvation :: STM m Time,
 
        -- | Action to inform CSJ that the given peer has not been performing
        -- adequately with respect to BlockFetch, and that it should be demoted
