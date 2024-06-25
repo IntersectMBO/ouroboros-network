@@ -22,7 +22,10 @@ module Ouroboros.Network.BlockFetch.Decision
   , fetchRequestDecisions
   ) where
 
+import Data.Bifunctor (Bifunctor(..))
 import Data.Hashable
+import Data.List (singleton)
+
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import Ouroboros.Network.Block
 import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..), PeersOrder)
@@ -69,11 +72,12 @@ fetchDecisions
   currentChain
   fetchedBlocks
   fetchedMaxSlotNo
-  peersOrder
-  =
-  fetchDecisionsBulkSync
-    fetchDecisionPolicy
-    currentChain
-    fetchedBlocks
-    fetchedMaxSlotNo
-    peersOrder
+  peersOrder =
+    uncurry (++)
+      . bimap (maybe [] (singleton . first Right)) (map (first Left))
+      . fetchDecisionsBulkSync
+        fetchDecisionPolicy
+        currentChain
+        fetchedBlocks
+        fetchedMaxSlotNo
+        peersOrder
