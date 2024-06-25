@@ -237,14 +237,10 @@ data PeerFetchInFlight header = PeerFetchInFlight {
 
 -- | Information associated to a block in flight.
 data PeerFetchBlockInFlight = PeerFetchBlockInFlight
-  { -- | The time at which the block was requested.
-    peerFetchBlockReqTime :: Time
-  }
   deriving (Eq, Show)
 
-defaultPeerFetchBlockInFlight :: Time -> PeerFetchBlockInFlight
-defaultPeerFetchBlockInFlight peerFetchBlockReqTime =
-  PeerFetchBlockInFlight {peerFetchBlockReqTime}
+defaultPeerFetchBlockInFlight :: PeerFetchBlockInFlight
+defaultPeerFetchBlockInFlight = PeerFetchBlockInFlight
 
 initialPeerFetchInFlight :: PeerFetchInFlight header
 initialPeerFetchInFlight =
@@ -262,14 +258,13 @@ initialPeerFetchInFlight =
 -- @old <> added = merged@.
 --
 addHeadersInFlight :: HasHeader header
-                   => Time                        -- ^ The current time
-                   -> (header -> SizeInBytes)
+                   => (header -> SizeInBytes)
                    -> Maybe (FetchRequest header) -- ^ The old request (if any).
                    -> FetchRequest header         -- ^ The added request.
                    -> FetchRequest header         -- ^ The merged request.
                    -> PeerFetchInFlight header
                    -> PeerFetchInFlight header
-addHeadersInFlight reqTime blockFetchSize oldReq addedReq mergedReq inflight =
+addHeadersInFlight blockFetchSize oldReq addedReq mergedReq inflight =
 
     -- This assertion checks the pre-condition 'addNewFetchRequest' that all
     -- requested blocks are new. This is true irrespective of fetch-request
@@ -301,7 +296,7 @@ addHeadersInFlight reqTime blockFetchSize oldReq addedReq mergedReq inflight =
           (\_ _ -> error "addHeadersInFlight: precondition violated")
           (peerFetchBlocksInFlight inflight)
           ( Map.fromList
-                [ (blockPoint header, defaultPeerFetchBlockInFlight reqTime)
+                [ (blockPoint header, PeerFetchBlockInFlight)
                 | fragment <- fetchRequestFragments addedReq
                 , header   <- AF.toOldestFirst fragment ]
           ),
@@ -461,7 +456,7 @@ data TraceFetchClientState header =
 -- only operation that grows the in-flight blocks, and is only used by the
 -- fetch decision logic thread.
 --
-addNewFetchRequest :: (MonadSTM m, HasHeader header, MonadMonotonicTime m)
+addNewFetchRequest :: (MonadSTM m, HasHeader header)
                    => Tracer m (TraceFetchClientState header)
                    -> (header -> SizeInBytes)
                    -> FetchRequest header
@@ -474,7 +469,6 @@ addNewFetchRequest tracer blockFetchSize addedReq gsvs
                      fetchClientInFlightVar,
                      fetchClientStatusVar
                    } = do
-    reqTime <- getMonotonicTime
     (inflight', currentStatus') <- atomically $ do
 
       -- Add a new fetch request, or extend or merge with the existing
@@ -492,7 +486,7 @@ addNewFetchRequest tracer blockFetchSize addedReq gsvs
 
       -- Update our in-flight stats
       inflight <- readTVar fetchClientInFlightVar
-      let !inflight' = addHeadersInFlight reqTime blockFetchSize
+      let !inflight' = addHeadersInFlight blockFetchSize
                                           oldReq addedReq mergedReq
                                           inflight
       writeTVar fetchClientInFlightVar inflight'
