@@ -42,7 +42,8 @@ fetchDecisions
   :: (Ord peer,
       Hashable peer,
       HasHeader header,
-      HeaderHash header ~ HeaderHash block)
+      HeaderHash header ~ HeaderHash block,
+      Applicative m)
   => FetchDecisionPolicy header
   -> FetchMode
   -> AnchoredFragment header
@@ -50,7 +51,7 @@ fetchDecisions
   -> MaxSlotNo
   -> PeersOrder peer
   -> [(AnchoredFragment header, PeerInfo header peer extra)]
-  -> [(FetchDecision (FetchRequest header), PeerInfo header peer extra)]
+  -> m [(FetchDecision (FetchRequest header), PeerInfo header peer extra)]
 
 fetchDecisions
   fetchDecisionPolicy
@@ -59,12 +60,15 @@ fetchDecisions
   fetchedBlocks
   fetchedMaxSlotNo
   _peersOrder
+  candidatesAndPeers
   =
-  fetchDecisionsDeadline
-    fetchDecisionPolicy
-    currentChain
-    fetchedBlocks
-    fetchedMaxSlotNo
+    pure
+      $ fetchDecisionsDeadline
+        fetchDecisionPolicy
+        currentChain
+        fetchedBlocks
+        fetchedMaxSlotNo
+        candidatesAndPeers
 
 fetchDecisions
   fetchDecisionPolicy
@@ -72,12 +76,16 @@ fetchDecisions
   currentChain
   fetchedBlocks
   fetchedMaxSlotNo
-  peersOrder =
-    uncurry (++)
-      . bimap (maybe [] (singleton . first Right)) (map (first Left))
-      . fetchDecisionsBulkSync
-        fetchDecisionPolicy
-        currentChain
-        fetchedBlocks
-        fetchedMaxSlotNo
-        peersOrder
+  peersOrder
+  candidatesAndPeers = do
+    let (theDecision, declines) =
+          fetchDecisionsBulkSync
+            fetchDecisionPolicy
+            currentChain
+            fetchedBlocks
+            fetchedMaxSlotNo
+            peersOrder
+            candidatesAndPeers
+    pure $
+      maybe [] (singleton . first Right) theDecision
+        ++ map (first Left) declines
