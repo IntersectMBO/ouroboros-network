@@ -28,7 +28,7 @@ import GHC.Stack (HasCallStack)
 import Control.Exception (assert)
 import Control.Monad (guard)
 import Control.Monad.Class.MonadTime.SI (DiffTime)
-import qualified Data.Set as Set
+import qualified Data.Map.Strict as Map
 
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment, AnchoredSeq (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -437,7 +437,7 @@ filterNotAlreadyInFlightWithPeer inflight (candidate, chainfragments) =
     else Right (candidate, fragments)
   where
     fragments = concatMap (filterWithMaxSlotNo notAlreadyInFlight (peerFetchMaxSlotNo inflight)) chainfragments
-    notAlreadyInFlight b = blockPoint b `Set.notMember` peerFetchBlocksInFlight inflight
+    notAlreadyInFlight b = blockPoint b `Map.notMember` peerFetchBlocksInFlight inflight
 
 filterNotAlreadyInFlightWithPeer' ::
   (HasHeader header) =>
