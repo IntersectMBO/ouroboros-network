@@ -34,6 +34,7 @@ module Ouroboros.Network.BlockFetch.ClientState
   , FromConsensus (..)
   , WhetherReceivingTentativeBlocks (..)
   , defaultPeerFetchBlockInFlight
+  , PeersOrder(..)
   ) where
 
 import Data.List as List (foldl')
@@ -770,3 +771,7 @@ takeTFetchRequestVar :: MonadSTM m
                                PeerFetchInFlightLimits)
 takeTFetchRequestVar v = (\(r,g,l) -> (r, getLast g, getLast l))
                      <$> takeTMergeVar v
+
+data PeersOrder peer = PeersOrder
+  { peersOrderAll :: [peer]
+  }
