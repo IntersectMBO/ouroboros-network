@@ -168,7 +168,7 @@ fetchDecisionsForStateSnapshot
       HeaderHash header ~ HeaderHash block,
       Ord peer,
       Hashable peer,
-      Applicative m)
+      Monad m)
   => FetchDecisionPolicy header
   -> FetchStateSnapshot peer header block m
   -> m [( FetchDecision (FetchRequest header),
@@ -199,7 +199,9 @@ fetchDecisionsForStateSnapshot
       fetchStateCurrentChain
       fetchStateFetchedBlocks
       fetchStateFetchedMaxSlotNo
-      fetchStatePeersOrder
+      ( fetchStatePeersOrder
+      , undefined
+      )
       peerChainsAndPeerInfo
   where
     peerChainsAndPeerInfo =
