@@ -130,7 +130,7 @@ fetchLogicIteration decisionTracer clientStateTracer
     -- TODO: log the difference in the fingerprint that caused us to wake up
 
     -- Make all the fetch decisions
-    let decisions = fetchDecisionsForStateSnapshot
+    decisions <- fetchDecisionsForStateSnapshot
                       fetchDecisionPolicy
                       stateSnapshot
 
@@ -167,10 +167,11 @@ fetchDecisionsForStateSnapshot
   :: (HasHeader header,
       HeaderHash header ~ HeaderHash block,
       Ord peer,
-      Hashable peer)
+      Hashable peer,
+      Applicative m)
   => FetchDecisionPolicy header
   -> FetchStateSnapshot peer header block m
-  -> [( FetchDecision (FetchRequest header),
+  -> m [( FetchDecision (FetchRequest header),
         PeerInfo header peer (FetchClientStateVars m header, peer)
       )]
 
