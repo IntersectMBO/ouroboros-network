@@ -34,6 +34,7 @@ module Ouroboros.Network.BlockFetch.ClientState
   , FromConsensus (..)
   , WhetherReceivingTentativeBlocks (..)
   , defaultPeerFetchBlockInFlight
+  , PeersOrder(..)
   ) where
 
 import Data.List (foldl')
@@ -804,3 +805,7 @@ tryReadTMergeVar :: MonadSTM m
                  => TMergeVar m a
                  -> STM m (Maybe a)
 tryReadTMergeVar (TMergeVar v) = tryReadTMVar v
+
+data PeersOrder peer = PeersOrder
+  { peersOrderAll :: [peer]
+  }
