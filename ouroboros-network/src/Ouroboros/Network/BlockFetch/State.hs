@@ -37,7 +37,7 @@ import Ouroboros.Network.Block
 import Ouroboros.Network.BlockFetch.ClientState (FetchClientStateVars (..),
            FetchRequest (..), PeerFetchInFlight (..), PeerFetchStatus (..),
            TraceFetchClientState (..), TraceLabelPeer (..), addNewFetchRequest,
-           readFetchClientState)
+           readFetchClientState, PeersOrder)
 import Ouroboros.Network.BlockFetch.Decision (FetchDecision,
            FetchDecisionPolicy (..), FetchDecline (..), FetchMode (..),
            PeerInfo, fetchDecisions)
@@ -261,7 +261,7 @@ data FetchNonTriggerVariables peer header block m = FetchNonTriggerVariables {
        readStatePeerGSVs         :: STM m (Map peer PeerGSV),
        readStateFetchMode        :: STM m FetchMode,
        readStateFetchedMaxSlotNo :: STM m MaxSlotNo,
-       readStatePeersOrder       :: STM m [peer]
+       readStatePeersOrder       :: STM m (PeersOrder peer)
      }
 
 
@@ -305,7 +305,7 @@ data FetchStateSnapshot peer header block m = FetchStateSnapshot {
        fetchStateFetchedBlocks    :: Point block -> Bool,
        fetchStateFetchMode        :: FetchMode,
        fetchStateFetchedMaxSlotNo :: MaxSlotNo,
-       fetchStatePeersOrder       :: [peer]
+       fetchStatePeersOrder       :: PeersOrder peer
      }
 
 readStateVariables :: (MonadSTM m, Eq peer,

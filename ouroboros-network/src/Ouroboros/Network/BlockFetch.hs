@@ -120,6 +120,7 @@ import Ouroboros.Network.BlockFetch.ClientRegistry (FetchClientPolicy (..),
            bracketSyncWithFetchClient, newFetchClientRegistry,
            readFetchClientsStateVars, readFetchClientsStatus, readPeerGSVs,
            setFetchClientContext)
+import Ouroboros.Network.BlockFetch.ClientState (PeersOrder (..))
 import Ouroboros.Network.BlockFetch.ConsensusInterface
            (BlockFetchConsensusInterface (..), FromConsensus (..),
            WhetherReceivingTentativeBlocks (..))
@@ -177,7 +178,7 @@ blockFetchLogic decisionTracer clientStateTracer
 
     setFetchClientContext registry clientStateTracer mkFetchClientPolicy
 
-    peersOrderVar <- newTVarIO []
+    peersOrderVar <- newTVarIO $ PeersOrder []
 
     fetchLogicIterations
       decisionTracer clientStateTracer
@@ -219,7 +220,7 @@ blockFetchLogic decisionTracer clientStateTracer
       }
 
     fetchNonTriggerVariables ::
-      StrictTVar m [addr] ->
+      StrictTVar m (PeersOrder addr) ->
       FetchNonTriggerVariables addr header block m
     fetchNonTriggerVariables peersOrderVar =
       FetchNonTriggerVariables {
@@ -228,27 +229,29 @@ blockFetchLogic decisionTracer clientStateTracer
         readStatePeerGSVs         = readPeerGSVs registry,
         readStateFetchMode        = readFetchMode,
         readStateFetchedMaxSlotNo = readFetchedMaxSlotNo,
-        readStatePeersOrder       = readPeersOrder peersOrderVar readCandidateChains
+        readStatePeersOrder       = readUpdatePeersOrder peersOrderVar readCandidateChains
       }
 
 -- | Read the current peers order from the TVar, update it according to the
 -- current peers, and return the updated order.
-readPeersOrder ::
+readUpdatePeersOrder ::
   ( MonadSTM m,
     Eq addr
   ) =>
   -- | The TVar containing the current order of peers.
-  StrictTVar m [addr] ->
+  StrictTVar m (PeersOrder addr) ->
   -- | An STM action to read all the current peers. This can for instance be
   -- 'readCandidateChains'.
   STM m (Map addr whatever) ->
-  STM m [addr]
-readPeersOrder peersOrderVar readPeers = do
-  peersOrder <- readTVar peersOrderVar
+  STM m (PeersOrder addr)
+readUpdatePeersOrder peersOrderVar readPeers = do
+  PeersOrder{peersOrderAll}
+    <- readTVar peersOrderVar
   currentPeers <- Map.keys <$> readPeers
-  let peersOrder' =
-        filter (`elem` currentPeers) peersOrder
-          ++ filter (`notElem` peersOrder) currentPeers
+  let peersOrderAll' =
+        filter (`elem` currentPeers) peersOrderAll
+          ++ filter (`notElem` peersOrderAll) currentPeers
+      peersOrder' = PeersOrder peersOrderAll'
   writeTVar peersOrderVar peersOrder'
   pure peersOrder'
 
@@ -263,14 +266,15 @@ reportBadPeer ::
   -- (CSJ) in the consensus layer.
   (peer -> m ()) ->
   -- | The TVar containing the current order of peers.
-  StrictTVar m [peer] ->
+  StrictTVar m (PeersOrder peer) ->
   -- | The peer that we know is a bad peer (e.g. because it has not respected
   -- our syncing BlockFetch timeouts).
   peer ->
   m ()
 reportBadPeer demoteCSJDynamo peersOrderVar peer = do
   atomically $ do
-    peersOrder <- readTVar peersOrderVar
-    let peersOrder' = filter (/= peer) peersOrder ++ [peer]
+    PeersOrder {peersOrderAll} <- readTVar peersOrderVar
+    let peersOrderAll' = filter (/= peer) peersOrderAll ++ [peer]
+        peersOrder' = PeersOrder peersOrderAll'
     writeTVar peersOrderVar peersOrder'
   demoteCSJDynamo peer

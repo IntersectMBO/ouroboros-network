@@ -22,7 +22,7 @@ import Data.Ord (Down(Down))
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment, headBlockNo)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import Ouroboros.Network.Block
-import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..))
+import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..), PeersOrder (..))
 import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode(FetchModeBulkSync))
 import Ouroboros.Network.BlockFetch.DeltaQ (calculatePeerFetchInFlightLimits)
 
@@ -47,8 +47,7 @@ fetchDecisionsBulkSync ::
   AnchoredFragment header ->
   (Point block -> Bool) ->
   MaxSlotNo ->
-  -- | Order of the peers, from most to least preferred.
-  [peer] ->
+  PeersOrder peer ->
   -- | Association list of the candidate fragments and their associated peers.
   [(AnchoredFragment header, PeerInfo header peer extra)] ->
   -- | Association list of the requests and their associated peers.
@@ -169,8 +168,7 @@ selectThePeer ::
   FetchDecisionPolicy header ->
   (Point block -> Bool) ->
   MaxSlotNo ->
-  -- | Order of the peers, from most to least preferred.
-  [peer] ->
+  PeersOrder peer ->
   -- | The candidate fragment that we have selected to sync from, as suffix of
   -- the immutable tip.
   ChainSuffix header ->
@@ -226,7 +224,7 @@ selectThePeer
     let peersOrdered =
           [ (candidate, peerInfo)
             | (candidate, peerInfo@(_, _, _, peer, _)) <- peers,
-              peer' <- peersOrder,
+              peer' <- peersOrderAll peersOrder,
               peer == peer'
           ]
 

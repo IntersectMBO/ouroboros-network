@@ -25,7 +25,7 @@ module Ouroboros.Network.BlockFetch.Decision
 import Data.Hashable
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import Ouroboros.Network.Block
-import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..))
+import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..), PeersOrder)
 import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..))
 
 import Ouroboros.Network.BlockFetch.Decision.Common (FetchDecisionPolicy (..), PeerInfo, FetchDecision, FetchDecline (..),
@@ -45,7 +45,7 @@ fetchDecisions
   -> AnchoredFragment header
   -> (Point block -> Bool)
   -> MaxSlotNo
-  -> [peer] -- ^ Order of the peers for syncing purposes
+  -> PeersOrder peer
   -> [(AnchoredFragment header, PeerInfo header peer extra)]
   -> [(FetchDecision (FetchRequest header), PeerInfo header peer extra)]
 
