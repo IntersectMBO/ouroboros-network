@@ -16,7 +16,7 @@ import Data.Bifunctor (first, Bifunctor (..))
 import Data.List (sortOn)
 import Data.List.NonEmpty (nonEmpty)
 import qualified Data.List.NonEmpty as NE
-import Data.Maybe (fromMaybe, catMaybes)
+import Data.Maybe (catMaybes)
 import Data.Ord (Down(Down))
 
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment, headBlockNo)
@@ -50,8 +50,11 @@ fetchDecisionsBulkSync ::
   PeersOrder peer ->
   -- | Association list of the candidate fragments and their associated peers.
   [(AnchoredFragment header, PeerInfo header peer extra)] ->
-  -- | Association list of the requests and their associated peers.
-  [(FetchDecision (FetchRequest header), PeerInfo header peer extra)]
+  -- | Association list of the requests and their associated peers. There is at
+  -- most one accepted request; everything else is declined.
+  ( Maybe (FetchRequest header, PeerInfo header peer extra)
+  , [(FetchDecline, PeerInfo header peer extra)]
+  )
 fetchDecisionsBulkSync
   fetchDecisionPolicy
   currentChain
@@ -93,10 +96,17 @@ fetchDecisionsBulkSync
             thePeer
             thePeerCandidate
 
-    pure [(theDecision, thePeer)]
+    MaybeT $
+      case theDecision of
+        Left reason -> tell [(reason, thePeer)] >> pure Nothing
+        Right theRequest -> pure $ Just (theRequest, thePeer)
     where
-      combineWithDeclined :: MaybeT (WithDeclined peer) [(FetchDecision a, peer)] -> [(FetchDecision a, peer)]
-      combineWithDeclined = uncurry (++) . bimap (fromMaybe []) (map (first Left)) . runWithDeclined . runMaybeT
+      combineWithDeclined ::
+        MaybeT (WithDeclined peer) (a, peer) ->
+        ( Maybe (a, peer),
+          [(FetchDecline, peer)]
+        )
+      combineWithDeclined = runWithDeclined . runMaybeT
 
 -- FIXME: The 'FetchDeclineConcurrencyLimit' should only be used for
 -- 'FetchModeDeadline', and 'FetchModeBulkSync' should have its own reasons.
