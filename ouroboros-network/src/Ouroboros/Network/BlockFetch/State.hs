@@ -101,8 +101,7 @@ iterateForever x0 m = go x0 where go x = m x >>= go
 fetchLogicIteration
   :: (Hashable peer, MonadSTM m, Ord peer,
       HasHeader header, HasHeader block,
-      HeaderHash header ~ HeaderHash block,
-      MonadMonotonicTime m)
+      HeaderHash header ~ HeaderHash block)
   => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
   -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
   -> FetchDecisionPolicy header
@@ -216,7 +215,7 @@ fetchDecisionsForStateSnapshot
 -- request variables that are shared with the threads running the block fetch
 -- protocol with each peer.
 --
-fetchLogicIterationAct :: (MonadSTM m, HasHeader header, MonadMonotonicTime m)
+fetchLogicIterationAct :: (MonadSTM m, HasHeader header)
                        => Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
                        -> FetchDecisionPolicy header
                        -> [(FetchDecision (FetchRequest header),
