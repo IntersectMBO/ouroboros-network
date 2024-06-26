@@ -154,7 +154,7 @@ fetchDecisions
       checkLastChainSelStarvation :: PeersOrder peer -> m (PeersOrder peer)
       checkLastChainSelStarvation
         peersOrder@PeersOrder {peersOrderCurrent, peersOrderStart, peersOrderOthers} =
-          if lastChainSelStarvation <= addTime (10 :: DiffTime) peersOrderStart
+          if lastChainSelStarvation <= addTime (1 :: DiffTime) peersOrderStart
             then pure peersOrder
             else do
               let peersOrder' =
