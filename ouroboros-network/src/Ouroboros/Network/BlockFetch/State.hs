@@ -24,6 +24,7 @@ import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Void
 
+import Control.Concurrent.Class.MonadSTM.Strict.TVar.Checked (newTVarIO, StrictTVar, readTVarIO, writeTVar)
 import Control.Exception (assert)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
@@ -37,7 +38,7 @@ import Ouroboros.Network.Block
 import Ouroboros.Network.BlockFetch.ClientState (FetchClientStateVars (..),
            FetchRequest (..), PeerFetchInFlight (..), PeerFetchStatus (..),
            TraceFetchClientState (..), TraceLabelPeer (..), addNewFetchRequest,
-           readFetchClientState, PeersOrder)
+           readFetchClientState, PeersOrder (..))
 import Ouroboros.Network.BlockFetch.Decision (FetchDecision,
            FetchDecisionPolicy (..), FetchDecline (..), FetchMode (..),
            PeerInfo, fetchDecisions)
@@ -58,13 +59,19 @@ fetchLogicIterations
   -> FetchDecisionPolicy header
   -> FetchTriggerVariables peer header m
   -> FetchNonTriggerVariables peer header block m
-  -> (peer -> m ()) -- ^ Report a peer as bad with respect to BlockFetch.
+  -> (peer -> m ()) -- ^ Action to call to demote the dynamo of ChainSync jumping.
   -> m Void
 fetchLogicIterations decisionTracer clientStateTracer
                      fetchDecisionPolicy
                      fetchTriggerVariables
                      fetchNonTriggerVariables
-                     _reportBadPeer =
+                     demoteCSJDynamo = do
+
+    peersOrderVar <- newTVarIO $ PeersOrder {
+      peersOrderCurrent = Nothing,
+      peersOrderStart = Time 0,
+      peersOrderOthers = []
+      }
 
     iterateForever initialFetchStateFingerprint $ \stateFingerprint -> do
 
@@ -79,6 +86,7 @@ fetchLogicIterations decisionTracer clientStateTracer
         fetchTriggerVariables
         fetchNonTriggerVariables
         stateFingerprint
+        (peersOrderVar, demoteCSJDynamo)
       end <- getMonotonicTime
       let delta = diffTime end start
       -- Limit decision is made once every decisionLoopInterval.
@@ -101,19 +109,22 @@ iterateForever x0 m = go x0 where go x = m x >>= go
 fetchLogicIteration
   :: (Hashable peer, MonadSTM m, Ord peer,
       HasHeader header, HasHeader block,
-      HeaderHash header ~ HeaderHash block)
+      HeaderHash header ~ HeaderHash block,
+      MonadMonotonicTime m)
   => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
   -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
   -> FetchDecisionPolicy header
   -> FetchTriggerVariables peer header m
   -> FetchNonTriggerVariables peer header block m
   -> FetchStateFingerprint peer header block
+  -> (StrictTVar m (PeersOrder peer), peer -> m ())
   -> m (FetchStateFingerprint peer header block)
 fetchLogicIteration decisionTracer clientStateTracer
                     fetchDecisionPolicy
                     fetchTriggerVariables
                     fetchNonTriggerVariables
-                    stateFingerprint = do
+                    stateFingerprint
+                    (peersOrderVar, demoteCSJDynamo) = do
 
     -- Gather a snapshot of all the state we need.
     (stateSnapshot, stateFingerprint') <-
@@ -122,6 +133,7 @@ fetchLogicIteration decisionTracer clientStateTracer
           fetchTriggerVariables
           fetchNonTriggerVariables
           stateFingerprint
+    peersOrder <- readTVarIO peersOrderVar
 
     -- TODO: allow for boring PeerFetchStatusBusy transitions where we go round
     -- again rather than re-evaluating everything.
@@ -133,6 +145,7 @@ fetchLogicIteration decisionTracer clientStateTracer
     decisions <- fetchDecisionsForStateSnapshot
                       fetchDecisionPolicy
                       stateSnapshot
+                      (peersOrder, atomically . writeTVar peersOrderVar, demoteCSJDynamo)
 
     -- If we want to trace timings, we can do it here after forcing:
     -- _ <- evaluate (force decisions)
@@ -168,9 +181,13 @@ fetchDecisionsForStateSnapshot
       HeaderHash header ~ HeaderHash block,
       Ord peer,
       Hashable peer,
-      Monad m)
+      MonadMonotonicTime m)
   => FetchDecisionPolicy header
   -> FetchStateSnapshot peer header block m
+  -> ( PeersOrder peer
+     , PeersOrder peer -> m ()
+     , peer -> m ()
+     )
   -> m [( FetchDecision (FetchRequest header),
         PeerInfo header peer (FetchClientStateVars m header, peer)
       )]
@@ -184,9 +201,9 @@ fetchDecisionsForStateSnapshot
       fetchStatePeerGSVs,
       fetchStateFetchedBlocks,
       fetchStateFetchedMaxSlotNo,
-      fetchStateFetchMode,
-      fetchStatePeersOrder
-    } =
+      fetchStateFetchMode
+    }
+    peersOrderHandlers =
     assert (                 Map.keysSet fetchStatePeerChains
             `Set.isSubsetOf` Map.keysSet fetchStatePeerStates) $
 
@@ -199,9 +216,7 @@ fetchDecisionsForStateSnapshot
       fetchStateCurrentChain
       fetchStateFetchedBlocks
       fetchStateFetchedMaxSlotNo
-      ( fetchStatePeersOrder
-      , undefined
-      )
+      peersOrderHandlers
       peerChainsAndPeerInfo
   where
     peerChainsAndPeerInfo =
@@ -262,8 +277,7 @@ data FetchNonTriggerVariables peer header block m = FetchNonTriggerVariables {
        readStatePeerStateVars    :: STM m (Map peer (FetchClientStateVars m header)),
        readStatePeerGSVs         :: STM m (Map peer PeerGSV),
        readStateFetchMode        :: STM m FetchMode,
-       readStateFetchedMaxSlotNo :: STM m MaxSlotNo,
-       readStatePeersOrder       :: STM m (PeersOrder peer)
+       readStateFetchedMaxSlotNo :: STM m MaxSlotNo
      }
 
 
@@ -306,8 +320,7 @@ data FetchStateSnapshot peer header block m = FetchStateSnapshot {
        fetchStatePeerGSVs         :: Map peer PeerGSV,
        fetchStateFetchedBlocks    :: Point block -> Bool,
        fetchStateFetchMode        :: FetchMode,
-       fetchStateFetchedMaxSlotNo :: MaxSlotNo,
-       fetchStatePeersOrder       :: PeersOrder peer
+       fetchStateFetchedMaxSlotNo :: MaxSlotNo
      }
 
 readStateVariables :: (MonadSTM m, Eq peer,
@@ -344,7 +357,6 @@ readStateVariables FetchTriggerVariables{..}
     fetchStateFetchedBlocks    <- readStateFetchedBlocks
     fetchStateFetchMode        <- readStateFetchMode
     fetchStateFetchedMaxSlotNo <- readStateFetchedMaxSlotNo
-    fetchStatePeersOrder       <- readStatePeersOrder
 
     -- Construct the overall snapshot of the state
     let fetchStateSnapshot =
@@ -355,8 +367,7 @@ readStateVariables FetchTriggerVariables{..}
             fetchStatePeerGSVs,
             fetchStateFetchedBlocks,
             fetchStateFetchMode,
-            fetchStateFetchedMaxSlotNo,
-            fetchStatePeersOrder
+            fetchStateFetchedMaxSlotNo
           }
 
     return (fetchStateSnapshot, fetchStateFingerprint')

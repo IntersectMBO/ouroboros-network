@@ -800,6 +800,15 @@ tryReadTMergeVar :: MonadSTM m
                  -> STM m (Maybe a)
 tryReadTMergeVar (TMergeVar v) = tryReadTMVar v
 
+-- | The order of peers for bulk sync fetch decisions.
+--
+-- We could merge the current peer into the list of others, but we keep them
+-- separate to make sure that we always consider it separately.
 data PeersOrder peer = PeersOrder
-  { peersOrderAll :: [peer]
+  { peersOrderOthers :: [peer]
+    -- ^ All the other peers, from most preferred to least preferred.
+  , peersOrderCurrent :: Maybe peer
+    -- ^ The current peer that we are talking to.
+  , peersOrderStart :: Time
+    -- ^ The time at which we started talking to that peer.
   }
