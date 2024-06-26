@@ -234,9 +234,12 @@ selectThePeer
     let peersOrdered =
           [ (candidate, peerInfo)
             | (candidate, peerInfo@(_, _, _, peer, _)) <- peers,
-              peer' <- peersOrderAll peersOrder,
+              peer' <- mcons (peersOrderCurrent peersOrder) (peersOrderOthers peersOrder),
               peer == peer'
           ]
+          where
+            mcons Nothing xs = xs
+            mcons (Just x) xs = x : xs
 
     -- Return the first peer in that order, and decline all the ones that were
     -- not already declined.

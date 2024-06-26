@@ -25,7 +25,6 @@ module Ouroboros.Network.BlockFetch.Decision
 import Data.Bifunctor (Bifunctor(..))
 import Data.Hashable
 import Data.List (singleton)
-import Data.Maybe (listToMaybe)
 
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import Ouroboros.Network.Block
@@ -38,13 +37,14 @@ import Ouroboros.Network.BlockFetch.Decision.Common (FetchDecisionPolicy (..), P
 import Ouroboros.Network.BlockFetch.Decision.Deadline (fetchDecisionsDeadline,
                                                       prioritisePeerChains, fetchRequestDecisions)
 import Ouroboros.Network.BlockFetch.Decision.BulkSync (fetchDecisionsBulkSync)
+import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime(..))
 
 fetchDecisions
-  :: (Ord peer,
+  :: forall peer header block m extra.
+     (Ord peer,
       Hashable peer,
       HasHeader header,
-      HeaderHash header ~ HeaderHash block,
-      Monad m)
+      HeaderHash header ~ HeaderHash block, MonadMonotonicTime m)
   => FetchDecisionPolicy header
   -> FetchMode
   -> AnchoredFragment header
@@ -52,6 +52,7 @@ fetchDecisions
   -> MaxSlotNo
   -> ( PeersOrder peer
      , PeersOrder peer -> m ()
+     , peer -> m ()
      )
   -> [(AnchoredFragment header, PeerInfo header peer extra)]
   -> m [(FetchDecision (FetchRequest header), PeerInfo header peer extra)]
@@ -79,22 +80,22 @@ fetchDecisions
   currentChain
   fetchedBlocks
   fetchedMaxSlotNo
-  ( PeersOrder {peersOrderAll},
-    writePeersOrder
+  ( peersOrder0,
+    writePeersOrder,
+    _demoteCSJDynamo
     )
   candidatesAndPeers = do
     -- Align the peers order with the actual peers; this consists in removing
     -- all peers from the peers order that are not in the actual peers list and
     -- adding at the end of the peers order all the actual peers that were not
     -- there before.
-    let actualPeers = map (\(_, (_, _, _, peer, _)) -> peer) candidatesAndPeers
-        peersOrderAll' =
-          filter (`elem` actualPeers) peersOrderAll
-            ++ filter (`notElem` peersOrderAll) actualPeers
-        peersOrder' = PeersOrder peersOrderAll'
+    let peersOrder@PeersOrder {peersOrderCurrent, peersOrderOthers} =
+          alignPeersOrderWithActualPeers
+            peersOrder0
+            (map (\(_, (_, _, _, peer, _)) -> peer) candidatesAndPeers)
 
     -- FIXME: If ChainSel was starved, push the current peer to the end of the
-    -- peers order priority queue.
+    -- peers order priority queue and demote CSJ dynamo.
 
     -- Compute the actual block fetch decision. This contains only declines and
     -- at most one request. 'theDecision' is therefore a 'Maybe'.
@@ -104,22 +105,46 @@ fetchDecisions
             currentChain
             fetchedBlocks
             fetchedMaxSlotNo
-            peersOrder'
+            peersOrder
             candidatesAndPeers
 
-    -- If the peer that is supposed to fetch the block is not the first in the
-    -- peers order, then we have changed focused peer. We move the new peer at
-    -- the beginning of the queue, but we do not push the other one away,
-    -- because it has not done anything wrong.
+    -- If the peer that is supposed to fetch the block is not the current one in
+    -- the peers order, then we have shifted our focus: we make the new peer our
+    -- current one and we put back the previous current peer at the beginning of
+    -- the queue; not the end, because it has not done anything wrong.
     case theDecision of
       Just (_, (_, _, _, thePeer, _))
-        | Just thePeer /= listToMaybe peersOrderAll -> do
-            let peersOrder'' = PeersOrder $ thePeer : filter (/= thePeer) peersOrderAll'
-            -- FIXME: Record the current time as the first time we chose that
-            -- new peer.
-            writePeersOrder peersOrder''
+        | Just thePeer /= peersOrderCurrent -> do
+            peersOrderStart' <- getMonotonicTime
+            let peersOrder' =
+                  PeersOrder
+                    { peersOrderCurrent = Just thePeer,
+                      peersOrderStart = peersOrderStart',
+                      peersOrderOthers = mcons peersOrderCurrent (filter (/= thePeer) peersOrderOthers)
+                    }
+            writePeersOrder peersOrder'
       _ -> pure ()
 
     pure $
       maybe [] (singleton . first Right) theDecision
         ++ map (first Left) declines
+    where
+      alignPeersOrderWithActualPeers :: PeersOrder peer -> [peer] -> PeersOrder peer
+      alignPeersOrderWithActualPeers
+        PeersOrder {peersOrderCurrent, peersOrderStart, peersOrderOthers}
+        actualPeers =
+          let peersOrderCurrent' = case peersOrderCurrent of
+                Just peersOrderCurrent_ | peersOrderCurrent_ `elem` actualPeers -> peersOrderCurrent
+                _ -> Nothing
+              peersOrderOthers' =
+                filter (`elem` actualPeers) peersOrderOthers
+                  ++ filter (`notElem` peersOrderOthers) actualPeers
+           in PeersOrder
+                { peersOrderCurrent = peersOrderCurrent',
+                  peersOrderOthers = peersOrderOthers',
+                  peersOrderStart
+                }
+
+mcons :: Maybe a -> [a] -> [a]
+mcons Nothing xs = xs
+mcons (Just x) xs = x : xs
