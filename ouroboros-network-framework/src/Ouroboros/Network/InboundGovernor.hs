@@ -163,14 +163,6 @@ withInboundGovernor trTracer tracer debugTracer inboundInfoChannel
       -> InboundGovernorState muxMode initiatorCtx peerAddr versionData m a b
       -> m Void
     inboundGovernorLoop var !state = do
-      mapTraceWithCache TrInboundGovernorCounters
-                        tracer
-                        (igsCountersCache state)
-                        (inboundGovernorCounters state)
-      traceWith tracer $ TrRemoteState $
-            mkRemoteSt . csRemoteState
-        <$> igsConnections state
-
       time <- getMonotonicTime
       inactivityVar <- registerDelay inactionTimeout
 
@@ -525,6 +517,14 @@ withInboundGovernor trTracer tracer debugTracer inboundInfoChannel
         case mbConnId of
           Just cid -> traceWith trTracer (mkRemoteTransitionTrace cid state state')
           Nothing  -> pure ()
+
+      mapTraceWithCache TrInboundGovernorCounters
+                        tracer
+                        (igsCountersCache state')
+                        (inboundGovernorCounters state')
+      traceWith tracer $ TrRemoteState $
+            mkRemoteSt . csRemoteState
+        <$> igsConnections state'
 
       -- Update Inbound Governor Counters cache values
       let newCounters       = inboundGovernorCounters state'
