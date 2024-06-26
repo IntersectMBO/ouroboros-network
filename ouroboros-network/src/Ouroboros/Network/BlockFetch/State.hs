@@ -201,7 +201,8 @@ fetchDecisionsForStateSnapshot
       fetchStatePeerGSVs,
       fetchStateFetchedBlocks,
       fetchStateFetchedMaxSlotNo,
-      fetchStateFetchMode
+      fetchStateFetchMode,
+      fetchStateLastChainSelStarvation
     }
     peersOrderHandlers =
     assert (                 Map.keysSet fetchStatePeerChains
@@ -216,6 +217,7 @@ fetchDecisionsForStateSnapshot
       fetchStateCurrentChain
       fetchStateFetchedBlocks
       fetchStateFetchedMaxSlotNo
+      fetchStateLastChainSelStarvation
       peersOrderHandlers
       peerChainsAndPeerInfo
   where
@@ -277,7 +279,8 @@ data FetchNonTriggerVariables peer header block m = FetchNonTriggerVariables {
        readStatePeerStateVars    :: STM m (Map peer (FetchClientStateVars m header)),
        readStatePeerGSVs         :: STM m (Map peer PeerGSV),
        readStateFetchMode        :: STM m FetchMode,
-       readStateFetchedMaxSlotNo :: STM m MaxSlotNo
+       readStateFetchedMaxSlotNo :: STM m MaxSlotNo,
+       readStateLastChainSelStarvation :: STM m Time
      }
 
 
@@ -320,7 +323,8 @@ data FetchStateSnapshot peer header block m = FetchStateSnapshot {
        fetchStatePeerGSVs         :: Map peer PeerGSV,
        fetchStateFetchedBlocks    :: Point block -> Bool,
        fetchStateFetchMode        :: FetchMode,
-       fetchStateFetchedMaxSlotNo :: MaxSlotNo
+       fetchStateFetchedMaxSlotNo :: MaxSlotNo,
+       fetchStateLastChainSelStarvation :: Time
      }
 
 readStateVariables :: (MonadSTM m, Eq peer,
@@ -357,6 +361,7 @@ readStateVariables FetchTriggerVariables{..}
     fetchStateFetchedBlocks    <- readStateFetchedBlocks
     fetchStateFetchMode        <- readStateFetchMode
     fetchStateFetchedMaxSlotNo <- readStateFetchedMaxSlotNo
+    fetchStateLastChainSelStarvation <- readStateLastChainSelStarvation
 
     -- Construct the overall snapshot of the state
     let fetchStateSnapshot =
@@ -367,7 +372,8 @@ readStateVariables FetchTriggerVariables{..}
             fetchStatePeerGSVs,
             fetchStateFetchedBlocks,
             fetchStateFetchMode,
-            fetchStateFetchedMaxSlotNo
+            fetchStateFetchedMaxSlotNo,
+            fetchStateLastChainSelStarvation
           }
 
     return (fetchStateSnapshot, fetchStateFingerprint')
