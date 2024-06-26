@@ -25,6 +25,9 @@ module Ouroboros.Network.BlockFetch.Decision
 import Data.Bifunctor (Bifunctor(..))
 import Data.Hashable
 import Data.List (singleton)
+import Data.Foldable (traverse_)
+import Data.Function ((&))
+import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime(..), addTime, DiffTime, Time (..))
 
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import Ouroboros.Network.Block
@@ -37,7 +40,6 @@ import Ouroboros.Network.BlockFetch.Decision.Common (FetchDecisionPolicy (..), P
 import Ouroboros.Network.BlockFetch.Decision.Deadline (fetchDecisionsDeadline,
                                                       prioritisePeerChains, fetchRequestDecisions)
 import Ouroboros.Network.BlockFetch.Decision.BulkSync (fetchDecisionsBulkSync)
-import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime(..))
 
 fetchDecisions
   :: forall peer header block m extra.
@@ -50,6 +52,7 @@ fetchDecisions
   -> AnchoredFragment header
   -> (Point block -> Bool)
   -> MaxSlotNo
+  -> Time -- ^ Last time ChainSel was starved
   -> ( PeersOrder peer
      , PeersOrder peer -> m ()
      , peer -> m ()
@@ -63,7 +66,8 @@ fetchDecisions
   currentChain
   fetchedBlocks
   fetchedMaxSlotNo
-  _peersOrder
+  _lastChainSelStarvation
+  _peersOrderHandlers
   candidatesAndPeers
   =
     pure
@@ -80,22 +84,24 @@ fetchDecisions
   currentChain
   fetchedBlocks
   fetchedMaxSlotNo
+  lastChainSelStarvation
   ( peersOrder0,
     writePeersOrder,
-    _demoteCSJDynamo
+    demoteCSJDynamo
     )
   candidatesAndPeers = do
-    -- Align the peers order with the actual peers; this consists in removing
-    -- all peers from the peers order that are not in the actual peers list and
-    -- adding at the end of the peers order all the actual peers that were not
-    -- there before.
-    let peersOrder@PeersOrder {peersOrderCurrent, peersOrderOthers} =
-          alignPeersOrderWithActualPeers
-            peersOrder0
-            (map (\(_, (_, _, _, peer, _)) -> peer) candidatesAndPeers)
-
-    -- FIXME: If ChainSel was starved, push the current peer to the end of the
-    -- peers order priority queue and demote CSJ dynamo.
+    peersOrder@PeersOrder {peersOrderCurrent, peersOrderOthers} <-
+      -- Align the peers order with the actual peers; this consists in removing
+      -- all peers from the peers order that are not in the actual peers list and
+      -- adding at the end of the peers order all the actual peers that were not
+      -- there before.
+      alignPeersOrderWithActualPeers
+        peersOrder0
+        (map (\(_, (_, _, _, peer, _)) -> peer) candidatesAndPeers)
+        -- If the chain selection has been starved recently, that is after the
+        -- current peer started (and a grace period), then the current peer is bad.
+        -- We push it at the end of the queue and demote it from CSJ dynamo.
+        & checkLastChainSelStarvation
 
     -- Compute the actual block fetch decision. This contains only declines and
     -- at most one request. 'theDecision' is therefore a 'Maybe'.
@@ -145,6 +151,25 @@ fetchDecisions
                   peersOrderStart
                 }
 
+      checkLastChainSelStarvation :: PeersOrder peer -> m (PeersOrder peer)
+      checkLastChainSelStarvation
+        peersOrder@PeersOrder {peersOrderCurrent, peersOrderStart, peersOrderOthers} =
+          if lastChainSelStarvation <= addTime (10 :: DiffTime) peersOrderStart
+            then pure peersOrder
+            else do
+              let peersOrder' =
+                    PeersOrder
+                      { peersOrderCurrent = Nothing,
+                        peersOrderOthers = msnoc peersOrderOthers peersOrderCurrent,
+                        peersOrderStart
+                      }
+              traverse_ demoteCSJDynamo peersOrderCurrent
+              pure peersOrder'
+
 mcons :: Maybe a -> [a] -> [a]
 mcons Nothing xs = xs
 mcons (Just x) xs = x : xs
+
+msnoc :: [a] -> Maybe a -> [a]
+msnoc xs Nothing = xs
+msnoc xs (Just x) = xs ++ [x]

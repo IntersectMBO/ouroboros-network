@@ -220,5 +220,6 @@ blockFetchLogic decisionTracer clientStateTracer
         readStatePeerStateVars    = readFetchClientsStateVars registry,
         readStatePeerGSVs         = readPeerGSVs registry,
         readStateFetchMode        = readFetchMode,
-        readStateFetchedMaxSlotNo = readFetchedMaxSlotNo
+        readStateFetchedMaxSlotNo = readFetchedMaxSlotNo,
+        readStateLastChainSelStarvation = lastChainSelStarvation
       }
