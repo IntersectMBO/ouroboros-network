@@ -43,6 +43,7 @@ import Ouroboros.Network.BlockFetch.Decision (FetchDecision,
            FetchDecisionPolicy (..), FetchDecline (..), FetchMode (..),
            PeerInfo, fetchDecisions)
 import Ouroboros.Network.BlockFetch.DeltaQ (PeerGSV (..))
+import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation)
 
 
 fetchLogicIterations
@@ -202,7 +203,7 @@ fetchDecisionsForStateSnapshot
       fetchStateFetchedBlocks,
       fetchStateFetchedMaxSlotNo,
       fetchStateFetchMode,
-      fetchStateLastChainSelStarvation
+      fetchStateChainSelStarvation
     }
     peersOrderHandlers =
     assert (                 Map.keysSet fetchStatePeerChains
@@ -217,7 +218,7 @@ fetchDecisionsForStateSnapshot
       fetchStateCurrentChain
       fetchStateFetchedBlocks
       fetchStateFetchedMaxSlotNo
-      fetchStateLastChainSelStarvation
+      fetchStateChainSelStarvation
       peersOrderHandlers
       peerChainsAndPeerInfo
   where
@@ -280,7 +281,7 @@ data FetchNonTriggerVariables peer header block m = FetchNonTriggerVariables {
        readStatePeerGSVs         :: STM m (Map peer PeerGSV),
        readStateFetchMode        :: STM m FetchMode,
        readStateFetchedMaxSlotNo :: STM m MaxSlotNo,
-       readStateLastChainSelStarvation :: STM m Time
+       readStateChainSelStarvation :: STM m ChainSelStarvation
      }
 
 
@@ -324,7 +325,7 @@ data FetchStateSnapshot peer header block m = FetchStateSnapshot {
        fetchStateFetchedBlocks    :: Point block -> Bool,
        fetchStateFetchMode        :: FetchMode,
        fetchStateFetchedMaxSlotNo :: MaxSlotNo,
-       fetchStateLastChainSelStarvation :: Time
+       fetchStateChainSelStarvation :: ChainSelStarvation
      }
 
 readStateVariables :: (MonadSTM m, Eq peer,
@@ -361,7 +362,7 @@ readStateVariables FetchTriggerVariables{..}
     fetchStateFetchedBlocks    <- readStateFetchedBlocks
     fetchStateFetchMode        <- readStateFetchMode
     fetchStateFetchedMaxSlotNo <- readStateFetchedMaxSlotNo
-    fetchStateLastChainSelStarvation <- readStateLastChainSelStarvation
+    fetchStateChainSelStarvation <- readStateChainSelStarvation
 
     -- Construct the overall snapshot of the state
     let fetchStateSnapshot =
@@ -373,7 +374,7 @@ readStateVariables FetchTriggerVariables{..}
             fetchStateFetchedBlocks,
             fetchStateFetchMode,
             fetchStateFetchedMaxSlotNo,
-            fetchStateLastChainSelStarvation
+            fetchStateChainSelStarvation
           }
 
     return (fetchStateSnapshot, fetchStateFingerprint')
