@@ -1,11 +1,14 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE RankNTypes    #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module Ouroboros.Network.BlockFetch.ConsensusInterface
   ( FetchMode (..)
   , BlockFetchConsensusInterface (..)
   , WhetherReceivingTentativeBlocks (..)
   , FromConsensus (..)
+  , ChainSelStarvation (..)
   ) where
 
 import Control.Monad.Class.MonadSTM
@@ -14,6 +17,8 @@ import Control.Monad.Class.MonadTime.SI (Time)
 
 import Data.Map.Strict (Map)
 import GHC.Stack (HasCallStack)
+import GHC.Generics (Generic)
+import NoThunks.Class (NoThunks)
 
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import Ouroboros.Network.Block
@@ -152,9 +157,9 @@ data BlockFetchConsensusInterface peer header block m =
        -- WARNING: Same as 'headerForgeUTCTime'.
        blockForgeUTCTime  :: FromConsensus block -> STM m UTCTime,
 
-       -- | The last time that the Chain Selection pipeline was starved, that is
-       -- it tried to pop a block but there wasn't any.
-       lastChainSelStarvation :: STM m Time,
+       -- | Information on the ChainSel starvation status; whether it is ongoing
+       -- or has ended recently. Needed by the bulk sync decision logic.
+       readChainSelStarvation :: STM m ChainSelStarvation,
 
        -- | Action to inform CSJ that the given peer has not been performing
        -- adequately with respect to BlockFetch, and that it should be demoted
@@ -169,6 +174,16 @@ data BlockFetchConsensusInterface peer header block m =
 data WhetherReceivingTentativeBlocks
   = ReceivingTentativeBlocks
   | NotReceivingTentativeBlocks
+
+-- | Whether ChainSel is starved or has been recently.
+--
+-- The bulk sync fetch decision logic needs to decide whether the current
+-- focused peer has starved ChainSel recently. This datatype is used to
+-- represent this piece of information.
+data ChainSelStarvation
+  = ChainSelStarvationOngoing
+  | ChainSelStarvationEndedAt Time
+  deriving (Eq, Show, NoThunks, Generic)
 
 {-------------------------------------------------------------------------------
   Syntactic indicator of key precondition about Consensus time conversions

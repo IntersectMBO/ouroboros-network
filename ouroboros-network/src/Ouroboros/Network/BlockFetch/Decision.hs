@@ -27,12 +27,12 @@ import Data.Hashable
 import Data.List (singleton)
 import Data.Foldable (traverse_)
 import Data.Function ((&))
-import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime(..), addTime, DiffTime, Time (..))
+import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime(..), addTime, DiffTime)
 
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import Ouroboros.Network.Block
 import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..), PeersOrder (..))
-import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..))
+import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..), ChainSelStarvation)
 
 import Ouroboros.Network.BlockFetch.Decision.Common (FetchDecisionPolicy (..), PeerInfo, FetchDecision, FetchDecline (..),
                                                      filterPlausibleCandidates, filterNotAlreadyFetched, filterNotAlreadyInFlightWithPeer,
@@ -40,6 +40,7 @@ import Ouroboros.Network.BlockFetch.Decision.Common (FetchDecisionPolicy (..), P
 import Ouroboros.Network.BlockFetch.Decision.Deadline (fetchDecisionsDeadline,
                                                       prioritisePeerChains, fetchRequestDecisions)
 import Ouroboros.Network.BlockFetch.Decision.BulkSync (fetchDecisionsBulkSync)
+import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation(..))
 
 fetchDecisions
   :: forall peer header block m extra.
@@ -52,7 +53,7 @@ fetchDecisions
   -> AnchoredFragment header
   -> (Point block -> Bool)
   -> MaxSlotNo
-  -> Time -- ^ Last time ChainSel was starved
+  -> ChainSelStarvation
   -> ( PeersOrder peer
      , PeersOrder peer -> m ()
      , peer -> m ()
@@ -66,7 +67,7 @@ fetchDecisions
   currentChain
   fetchedBlocks
   fetchedMaxSlotNo
-  _lastChainSelStarvation
+  _chainSelStarvation
   _peersOrderHandlers
   candidatesAndPeers
   =
@@ -84,7 +85,7 @@ fetchDecisions
   currentChain
   fetchedBlocks
   fetchedMaxSlotNo
-  lastChainSelStarvation
+  chainSelStarvation
   ( peersOrder0,
     writePeersOrder,
     demoteCSJDynamo
@@ -154,9 +155,11 @@ fetchDecisions
       checkLastChainSelStarvation :: PeersOrder peer -> m (PeersOrder peer)
       checkLastChainSelStarvation
         peersOrder@PeersOrder {peersOrderCurrent, peersOrderStart, peersOrderOthers} =
-          if lastChainSelStarvation <= addTime (1 :: DiffTime) peersOrderStart
-            then pure peersOrder
-            else do
+          case chainSelStarvation of
+            ChainSelStarvationEndedAt time
+              | time < addTime (1 :: DiffTime) peersOrderStart ->
+                pure peersOrder
+            _ -> do
               let peersOrder' =
                     PeersOrder
                       { peersOrderCurrent = Nothing,
