@@ -35,6 +35,8 @@ module Ouroboros.Network.BlockFetch.ClientState
   , WhetherReceivingTentativeBlocks (..)
   , defaultPeerFetchBlockInFlight
   , PeersOrder(..)
+  , mcons
+  , msnoc
   ) where
 
 import Data.List (foldl')
@@ -812,3 +814,11 @@ data PeersOrder peer = PeersOrder
   , peersOrderStart :: Time
     -- ^ The time at which we started talking to that peer.
   }
+
+mcons :: Maybe a -> [a] -> [a]
+mcons Nothing xs = xs
+mcons (Just x) xs = x : xs
+
+msnoc :: [a] -> Maybe a -> [a]
+msnoc xs Nothing = xs
+msnoc xs (Just x) = xs ++ [x]
