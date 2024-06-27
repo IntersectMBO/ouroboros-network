@@ -22,7 +22,7 @@ import Data.Ord (Down(Down))
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment, headBlockNo)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import Ouroboros.Network.Block
-import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..), PeersOrder (..))
+import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..), PeersOrder (..), mcons)
 import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode(FetchModeBulkSync))
 import Ouroboros.Network.BlockFetch.DeltaQ (calculatePeerFetchInFlightLimits)
 
@@ -237,9 +237,6 @@ selectThePeer
               peer' <- mcons (peersOrderCurrent peersOrder) (peersOrderOthers peersOrder),
               peer == peer'
           ]
-          where
-            mcons Nothing xs = xs
-            mcons (Just x) xs = x : xs
 
     -- Return the first peer in that order, and decline all the ones that were
     -- not already declined.
