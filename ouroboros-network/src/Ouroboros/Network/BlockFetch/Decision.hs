@@ -31,7 +31,7 @@ import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime(..), addTime, DiffTi
 
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import Ouroboros.Network.Block
-import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..), PeersOrder (..))
+import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..), PeersOrder (..), msnoc, mcons)
 import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..), ChainSelStarvation)
 
 import Ouroboros.Network.BlockFetch.Decision.Common (FetchDecisionPolicy (..), PeerInfo, FetchDecision, FetchDecline (..),
@@ -168,11 +168,3 @@ fetchDecisions
                       }
               traverse_ demoteCSJDynamo peersOrderCurrent
               pure peersOrder'
-
-mcons :: Maybe a -> [a] -> [a]
-mcons Nothing xs = xs
-mcons (Just x) xs = x : xs
-
-msnoc :: [a] -> Maybe a -> [a]
-msnoc xs Nothing = xs
-msnoc xs (Just x) = xs ++ [x]
