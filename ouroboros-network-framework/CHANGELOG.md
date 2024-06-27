@@ -2,11 +2,14 @@
 
 ## next release
 
+## 0.13.2.1 -- 2024-06-26
+
 ### Breaking changes
 
 ### Non-breaking changes
 
 - Fix `InboundGovernorCounters`
+
 ## 0.13.2.0 -- 2024-06-07
 
 ### Breaking changes
