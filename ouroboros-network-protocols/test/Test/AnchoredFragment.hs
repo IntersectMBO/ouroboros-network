@@ -80,6 +80,8 @@ tests = testGroup "AnchoredFragment"
   , testProperty "join"                               prop_join
   , testProperty "intersect"                          prop_intersect
   , testProperty "intersect when within bounds"       prop_intersect_bounds
+  , testProperty "intersect2"                         prop_intersect2
+  , testProperty "intersect2 when within bounds"      prop_intersect2_bounds
   , testProperty "toChain/fromChain"                  prop_toChain_fromChain
   , testProperty "anchorNewest"                       prop_anchorNewest
   , testProperty "filter"                             prop_filter
@@ -294,6 +296,39 @@ prop_intersect_bounds (TestAnchoredFragmentFork _ _ c1 c2) =
                     AF.withinFragmentBounds (AF.anchorPoint c2) c1)
   where
     intersects = isJust (AF.intersect c1 c2) || isJust (AF.intersect c2 c1)
+
+prop_intersect2 :: TestAnchoredFragmentFork -> Property
+prop_intersect2 (TestAnchoredFragmentFork origP1 origP2 c1 c2) =
+  case AF.intersect2 c1 c2 of
+    Nothing ->
+      counterexample "" $
+      counterexample "No intersection found, yet there are common points." $
+      counterexample "" $
+      L.intersect (pointsList c1) (pointsList c2) === []
+    Just (p1, p2, s1, s2) ->
+      counterexample "" $
+      counterexample ("p1 = " ++ show p1) $
+      counterexample ("p2 = " ++ show p2) $
+      counterexample ("s1 = " ++ show s1) $
+      counterexample ("s2 = " ++ show s2) $
+      counterexample "" $
+      p1 === origP1 .&&. p2 === origP2 .&&.
+      AF.join p1 s1 === Just c1 .&&.
+      AF.join p2 s2 === Just c2 .&&.
+      AF.headPoint p1   === AF.headPoint   p2 .&&.
+      AF.anchorPoint p1 === AF.anchorPoint c1 .&&.
+      AF.anchorPoint p2 === AF.anchorPoint c2 .&&.
+      AF.anchorPoint s1 === AF.headPoint   p1 .&&.
+      AF.anchorPoint s2 === AF.headPoint   p2
+  where
+    pointsList c = AF.anchorPoint c : map blockPoint (AF.toOldestFirst c)
+
+prop_intersect2_bounds :: TestAnchoredFragmentFork -> Property
+prop_intersect2_bounds (TestAnchoredFragmentFork _ _ c1 c2) =
+    intersects === (AF.withinFragmentBounds (AF.anchorPoint c1) c2 ||
+                    AF.withinFragmentBounds (AF.anchorPoint c2) c1)
+  where
+    intersects = isJust (AF.intersect2 c1 c2) || isJust (AF.intersect2 c2 c1)
 
 prop_toChain_fromChain :: TestBlockChain -> Property
 prop_toChain_fromChain (TestBlockChain ch) =

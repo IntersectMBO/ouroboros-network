@@ -74,6 +74,7 @@ module Ouroboros.Network.AnchoredFragment
   , sliceRange
   , join
   , intersect
+  , intersect2
   , intersectionPoint
   , mapAnchoredFragment
   , anchorNewest
@@ -675,6 +676,14 @@ intersect c1 c2
       = Just (p1, p2, s1, s2)
       | otherwise
       = go c2'
+
+intersect2 ::
+  (Eq blk, HasHeader blk) =>
+  AnchoredFragment blk ->
+  AnchoredFragment blk ->
+  Maybe (AnchoredFragment blk, AnchoredFragment blk,
+         AnchoredFragment blk, AnchoredFragment blk)
+intersect2 = AS.intersect'
 
 -- | \( O(n_2 \log(n_1)) \). Look for the most recent intersection point of
 -- two 'AnchoredFragment's

@@ -10,6 +10,8 @@
 {-# LANGUAGE TypeApplications       #-}
 {-# LANGUAGE UndecidableInstances   #-}
 {-# LANGUAGE ViewPatterns           #-}
+{-# LANGUAGE LambdaCase             #-}
+
 module Ouroboros.Network.AnchoredSeq
   ( -- * 'AnchoredSeq' type
     AnchoredSeq (Empty, (:>), (:<))
@@ -53,6 +55,7 @@ module Ouroboros.Network.AnchoredSeq
   , prettyPrint
     -- * Reference implementations for testing
   , filterWithStopSpec
+  , intersect'
   ) where
 
 import Prelude hiding (filter, foldr, head, last, length, map, null, splitAt)
@@ -69,6 +72,7 @@ import GHC.Generics (Generic)
 import NoThunks.Class (NoThunks)
 import Prelude hiding (filter, foldr, head, last, length, map, null, splitAt)
 import Prelude qualified as Prelude
+import Cardano.Slotting.Slot (WithOrigin (..), SlotNo (..))
 
 {-------------------------------------------------------------------------------
   AnchoredSeq
@@ -368,26 +372,25 @@ rollback k p s
     | otherwise
     = fst <$> splitAfterMeasure k p s
 
--- | \( O(\log(\min(i,n-i)) \). Internal variant of 'lookupByMeasure' that
--- returns a 'FT.SearchResult'.
+-- | \( O(\log(\min(i,n-i)) \). Internal variant of 'lookupByMeasure' that takes
+-- a finger tree directly and returns a 'FT.SearchResult'.
 lookupByMeasureFT ::
      Anchorable v a b
   => v
-  -> AnchoredSeq v a b
+  -> StrictFingerTree (Measure v) (MeasuredWith v a b)
   -> FT.SearchResult (Measure v) (MeasuredWith v a b)
-lookupByMeasureFT k (AnchoredSeq _ ft) =
+lookupByMeasureFT k ft =
     FT.search (\ml mr -> measureMax ml >= k && measureMin mr > k) ft
 
 -- | \( O(\log(\min(i,n-i) + s) \) where /s/ is the number of elements with the
--- same measure. Return all elements in the anchored sequence with a measure
--- (@k@) equal to the given one. The elements will be ordered from oldest to
--- newest. Does not look at the anchor.
-lookupByMeasure ::
+-- same measure. Internal variant of 'lookupByMeasure' that takes a finger tree
+-- directly.
+lookupByMeasureFT' ::
      Anchorable v a b
   => v
-  -> AnchoredSeq v a b
+  -> StrictFingerTree (Measure v) (MeasuredWith v a b)
   -> [b]
-lookupByMeasure k s = case lookupByMeasureFT k s of
+lookupByMeasureFT' k ft = case lookupByMeasureFT k ft of
     FT.Position before b _after
       | getElementMeasure b == k
         -- We have found the rightmost element with the given measure, we still
@@ -405,6 +408,17 @@ lookupByMeasure k s = case lookupByMeasureFT k s of
            -- final list of elements will be ordered from oldest to newest. No
            -- need to reverse the accumulator.
       _ -> acc
+
+-- | \( O(\log(\min(i,n-i) + s) \) where /s/ is the number of elements with the
+-- same measure. Return all elements in the anchored sequence with a measure
+-- (@k@) equal to the given one. The elements will be ordered from oldest to
+-- newest. Does not look at the anchor.
+lookupByMeasure ::
+     Anchorable v a b
+  => v
+  -> AnchoredSeq v a b
+  -> [b]
+lookupByMeasure k (AnchoredSeq _ ft) = lookupByMeasureFT' k ft
 
 -- | \( O(\log(\min(i,n-i)) \). Does the anchored sequence contain an element
 -- with the given measure that satisfies the predicate? The anchor is ignored.
@@ -807,3 +821,209 @@ filterWithStopSpec p stop = goNext []
     join' a b =
         fromMaybe (error "could not join sequences") $
         join (\_ _ -> True) a b
+
+intersect' ::
+  forall a b.
+  ( Eq a,
+    Eq b,
+    Anchorable (WithOrigin SlotNo) a b
+  ) =>
+  AnchoredSeq (WithOrigin SlotNo) a b ->
+  AnchoredSeq (WithOrigin SlotNo) a b ->
+  Maybe
+    ( AnchoredSeq (WithOrigin SlotNo) a b,
+      AnchoredSeq (WithOrigin SlotNo) a b,
+      AnchoredSeq (WithOrigin SlotNo) a b,
+      AnchoredSeq (WithOrigin SlotNo) a b
+    )
+intersect' s@(AnchoredSeq sAnchor sFT) t@(AnchoredSeq tAnchor tFT) =
+    case splitAtAnchor (anchor s) t of
+      Just (AnchoredSeq _ tBeforeFT, AnchoredSeq _ tFT') ->
+          let (sPrefixFT, tPrefixFT, sSuffixFT, tSuffixFT) = intersectAlignedFTs sFT tFT'
+              sPrefix = AnchoredSeq sAnchor sPrefixFT
+              tPrefix = AnchoredSeq tAnchor (tBeforeFT FT.>< tPrefixFT)
+              sSuffix = AnchoredSeq (headAnchor sPrefix) sSuffixFT
+              tSuffix = AnchoredSeq (headAnchor tPrefix) tSuffixFT
+           in Just (sPrefix, tPrefix, sSuffix, tSuffix)
+      Nothing ->
+        case splitAtAnchor (anchor t) s of
+          Just (AnchoredSeq _ sBeforeFT, AnchoredSeq _ sFT') ->
+              let (sPrefixFT, tPrefixFT, sSuffixFT, tSuffixFT) = intersectAlignedFTs sFT' tFT
+                  sPrefix = AnchoredSeq sAnchor (sBeforeFT FT.>< sPrefixFT)
+                  tPrefix = AnchoredSeq tAnchor tPrefixFT
+                  sSuffix = AnchoredSeq (headAnchor sPrefix) sSuffixFT
+                  tSuffix = AnchoredSeq (headAnchor tPrefix) tSuffixFT
+               in Just (sPrefix, tPrefix, sSuffix, tSuffix)
+          Nothing ->
+            if sAnchor == tAnchor
+              then Just (AnchoredSeq sAnchor FT.empty, AnchoredSeq tAnchor FT.empty, s, t)
+              else Nothing
+  where
+    -- Given an anchor and an 'AnchoredSeq', split the sequence at the anchor,
+    -- leaving it at the head of the first returned sequence.
+    splitAtAnchor ::
+      a ->
+      AnchoredSeq (WithOrigin SlotNo) a b ->
+      Maybe (AnchoredSeq (WithOrigin SlotNo) a b, AnchoredSeq (WithOrigin SlotNo) a b)
+    splitAtAnchor x =
+      splitAfterMeasure
+        (getAnchorMeasure (Proxy @b) x)
+        ( \case
+            Left x' -> x' == x
+            Right y' -> asAnchor y' == x
+        )
+
+intersectAlignedFTs ::
+  forall a b.
+  ( Eq b,
+    Anchorable (WithOrigin SlotNo) a b
+  ) =>
+  StrictFingerTree (Measure (WithOrigin SlotNo)) (MeasuredWith (WithOrigin SlotNo) a b) ->
+  StrictFingerTree (Measure (WithOrigin SlotNo)) (MeasuredWith (WithOrigin SlotNo) a b) ->
+  ( StrictFingerTree (Measure (WithOrigin SlotNo)) (MeasuredWith (WithOrigin SlotNo) a b),
+    StrictFingerTree (Measure (WithOrigin SlotNo)) (MeasuredWith (WithOrigin SlotNo) a b),
+    StrictFingerTree (Measure (WithOrigin SlotNo)) (MeasuredWith (WithOrigin SlotNo) a b),
+    StrictFingerTree (Measure (WithOrigin SlotNo)) (MeasuredWith (WithOrigin SlotNo) a b)
+  )
+intersectAlignedFTs s t =
+    if FT.null s
+      then (FT.empty, FT.empty, FT.empty, t)
+      else
+        if FT.null t
+          then (FT.empty, FT.empty, s, FT.empty)
+          else
+            -- If they differ on the all the elements of the first slot already, then
+            -- there is simply no intersection, except maybe if the anchors come into
+            -- play. FIXME: Can be made more efficient.
+            if not (any (`elem` t0) s0)
+              then (FT.empty, FT.empty, s, t) -- FIXME: is this contained in the previous ones?
+              else
+                let -- If, on the contrary, they agree on the first element of the last
+                    -- slot, then that is where the intersection is. Otherwise, the
+                    -- invariant to our divide-and-conquer is satisfied and we can look
+                    -- for the intersection.
+                    intersectionSlot =
+                      if getFirstAt j0 s == getFirstAt j0 t
+                        then j0
+                        else refineIntersection i0 j0
+
+                    -- This gives us a gross approximation of things. At this point, we
+                    -- know that 'sBefore' and 'tBefore' end in the same block, but we
+                    -- still have to collect the blocks of 'intersectionSlot' that are the
+                    -- same.
+                    (sBefore, sAfter) = FT.split (\m -> measureMax m >= intersectionSlot) s
+                    (tBefore, tAfter) = FT.split (\m -> measureMax m >= intersectionSlot) t
+                    (sBefore', tBefore', sAfter', tAfter') =
+                      collectEqualElements (sBefore, tBefore, sAfter, tAfter)
+                 in
+                      (sBefore', tBefore', sAfter', tAfter')
+  where
+    s0 = lookupByMeasureFT' i0 s
+    t0 = lookupByMeasureFT' i0 t
+
+    i0 = max (measureMin (FT.measure s)) (measureMin (FT.measure t))
+    j0 = min (measureMax (FT.measure s)) (measureMax (FT.measure t))
+
+    -- Get the first element of a finger tree. This returns a pair of the
+    -- measure and the element.
+    getFirst ::
+      StrictFingerTree (Measure (WithOrigin SlotNo)) (MeasuredWith (WithOrigin SlotNo) a b) ->
+      Maybe (WithOrigin SlotNo, b)
+    getFirst ft = case FT.viewl ft of
+      FT.EmptyL -> Nothing
+      x FT.:< _ -> Just (measureMax (measure x), unMeasuredWith x)
+
+    -- Get the first element with a measure bigger than @i@. Logarithmic.
+    getFirstAfter ::
+      WithOrigin SlotNo ->
+      StrictFingerTree (Measure (WithOrigin SlotNo)) (MeasuredWith (WithOrigin SlotNo) a b) ->
+      Maybe (WithOrigin SlotNo, b)
+    getFirstAfter i ft =
+      case FT.search (\_ r -> measureMin r >= i) ft of
+        FT.Position _ _ after -> getFirst after
+        FT.OnLeft -> getFirst ft
+        _ -> Nothing
+
+    -- Get the first element with a measure in the range @[i, j)@, if there is
+    -- one, and return 'Nothing' otherwise. Logarithmic.
+    getFirstBetween ::
+      WithOrigin SlotNo ->
+      WithOrigin SlotNo ->
+      StrictFingerTree (Measure (WithOrigin SlotNo)) (MeasuredWith (WithOrigin SlotNo) a b) ->
+      Maybe (WithOrigin SlotNo, b)
+    getFirstBetween i j ft = do
+      (k, x) <- getFirstAfter i ft
+      if k < j
+        then Just (k, x)
+        else Nothing
+
+    -- Get the first element with the given measure, if there are any, and
+    -- return 'Nothing' otherwise. Logarithmic.
+    getFirstAt ::
+      WithOrigin SlotNo ->
+      StrictFingerTree (Measure (WithOrigin SlotNo)) (MeasuredWith (WithOrigin SlotNo) a b) ->
+      Maybe b
+    getFirstAt i ft = snd <$> getFirstBetween i (At (succWithOrigin i)) ft
+
+    succWithOrigin :: WithOrigin SlotNo -> SlotNo
+    succWithOrigin Origin = 0
+    succWithOrigin (At n) = n + 1
+
+    predWithOrigin :: SlotNo -> WithOrigin SlotNo
+    predWithOrigin 0 = Origin
+    predWithOrigin n = At (n - 1)
+
+    -- Middle element between two @'WithOrigin' 'SlotNo'@. If there is none,
+    -- lean towards the left of the interval. In particular, if j = i + 1, then
+    -- @'midWithOrigin' i j = i@.
+    --
+    -- PRECONDITION: The second argument must be higher or equal to the first.
+    midWithOrigin :: WithOrigin SlotNo -> WithOrigin SlotNo -> WithOrigin SlotNo
+    midWithOrigin low high =
+      let lowPlus1 = unSlotNo $ succWithOrigin low
+          highPlus1 = unSlotNo $ succWithOrigin high
+       in predWithOrigin $ SlotNo $
+            lowPlus1 + (highPlus1 - lowPlus1) `div` 2
+
+    -- Look for the intersection in the range [i, j), where we know it is.
+    --
+    -- INVARIANT: the sequences are equal in @i@ and not equal in @j@, so we
+    -- know that the intersection is in this range. We also know that @i < j@.
+    refineIntersection :: WithOrigin SlotNo -> WithOrigin SlotNo -> WithOrigin SlotNo
+    refineIntersection i j =
+      if m == i
+        then i
+        else case getFirstBetween m j s of
+          Just (k, c) | getFirstAt k t == Just c -> refineIntersection m j
+          _ -> refineIntersection i m
+      where
+        m = midWithOrigin i j
+
+    -- @collectEqualElements (a, b, c, d)@ removes the first elements of @c@ and
+    -- @d@ if they are equal and adds them add the end of @a@ and @b@
+    -- respectively, as long as it is possible.
+    collectEqualElements ::
+      ( StrictFingerTree (Measure (WithOrigin SlotNo)) (MeasuredWith (WithOrigin SlotNo) a b),
+        StrictFingerTree (Measure (WithOrigin SlotNo)) (MeasuredWith (WithOrigin SlotNo) a b),
+        StrictFingerTree (Measure (WithOrigin SlotNo)) (MeasuredWith (WithOrigin SlotNo) a b),
+        StrictFingerTree (Measure (WithOrigin SlotNo)) (MeasuredWith (WithOrigin SlotNo) a b)
+      ) ->
+      ( StrictFingerTree (Measure (WithOrigin SlotNo)) (MeasuredWith (WithOrigin SlotNo) a b),
+        StrictFingerTree (Measure (WithOrigin SlotNo)) (MeasuredWith (WithOrigin SlotNo) a b),
+        StrictFingerTree (Measure (WithOrigin SlotNo)) (MeasuredWith (WithOrigin SlotNo) a b),
+        StrictFingerTree (Measure (WithOrigin SlotNo)) (MeasuredWith (WithOrigin SlotNo) a b)
+      )
+    collectEqualElements
+      ( sBefore,
+        tBefore,
+        FT.viewl -> se FT.:< sAfter,
+        FT.viewl -> te FT.:< tAfter
+        )
+        | se == te =
+            collectEqualElements
+              ( sBefore FT.|> se,
+                tBefore FT.|> te,
+                sAfter,
+                tAfter
+              )
+    collectEqualElements fts = fts
