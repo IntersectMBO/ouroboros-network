@@ -34,6 +34,7 @@ import Ouroboros.Network.Diffusion.Policies (churnEstablishConnectionTimeout,
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Ouroboros.Network.PeerSelection.Governor.Types hiding (targets)
 import Ouroboros.Network.PeerSelection.PeerMetric
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..))
 
 
 type ModifyPeerSelectionTargets = PeerSelectionTargets -> PeerSelectionTargets
@@ -73,12 +74,13 @@ peerChurnGovernor :: forall m peeraddr.
                   -> StrictTVar m PeerSelectionTargets
                   -> STM m PeerSelectionCounters
                   -> STM m UseBootstrapPeers
+                  -> STM m HotValency
                   -> m Void
 peerChurnGovernor tracer churnTracer
                   deadlineChurnInterval bulkChurnInterval requestPeersTimeout
                   _metrics churnModeVar inRng getFetchMode base
                   peerSelectionVar readCounters
-                  getUseBootstrapPeers = do
+                  getUseBootstrapPeers getLocalRootHotTarget = do
   -- Wait a while so that not only the closest peers have had the time
   -- to become warm.
   startTs0 <- getMonotonicTime
@@ -86,15 +88,22 @@ peerChurnGovernor tracer churnTracer
   -- The intention is to give local root peers give head start and avoid
   -- giving advantage to hostile and quick root peers.
   threadDelay 3
-  (mode, ubp) <- atomically ((,) <$> updateChurnMode
-                                 <*> getUseBootstrapPeers)
+  (mode, ubp, ltt) <- atomically getExtState
+  traceWith tracer $ TraceChurnMode mode
   atomically $ do
-    modifyTVar peerSelectionVar ( increaseActivePeers mode
+    modifyTVar peerSelectionVar ( increaseActivePeers mode ltt
                                 . increaseEstablishedPeers mode ubp )
   endTs0 <- getMonotonicTime
   fuzzyDelay inRng (endTs0 `diffTime` startTs0) >>= churnLoop
 
   where
+
+    getExtState :: STM m (ChurnMode, UseBootstrapPeers, HotValency)
+    getExtState = do
+        cm <- updateChurnMode
+        bp <- getUseBootstrapPeers
+        ltt <- getLocalRootHotTarget
+        return (cm, bp, ltt)
 
     updateChurnMode :: STM m ChurnMode
     updateChurnMode = do
@@ -160,9 +169,10 @@ peerChurnGovernor tracer churnTracer
 
     -- TODO: #3396 revisit the policy for genesis
     increaseActivePeers :: ChurnMode
+                        -> HotValency
                         -> ModifyPeerSelectionTargets
     increaseActivePeers
-      mode targets
+      mode (HotValency ltt) targets
       =
       targets {
         targetNumberOfActivePeers =
@@ -170,7 +180,7 @@ peerChurnGovernor tracer churnTracer
             ChurnModeNormal  ->
               targetNumberOfActivePeers base
             ChurnModeBulkSync ->
-              min 2 (targetNumberOfActivePeers base)
+              min ((max 1 ltt) + 1) (targetNumberOfActivePeers base)
       }
 
     checkActivePeersIncreased :: CheckPeerSelectionCounters
@@ -181,15 +191,17 @@ peerChurnGovernor tracer churnTracer
       numberOfActivePeers >= targetNumberOfActivePeers
 
 
-    decreaseActivePeers :: ChurnMode -> ModifyPeerSelectionTargets
-    decreaseActivePeers mode targets =
+    decreaseActivePeers :: ChurnMode
+                        -> HotValency
+                        -> ModifyPeerSelectionTargets
+    decreaseActivePeers mode (HotValency ltt) targets =
       targets {
         targetNumberOfActivePeers =
           case mode of
             ChurnModeNormal ->
               decrease $ targetNumberOfActivePeers base
             ChurnModeBulkSync ->
-              min 1 (targetNumberOfActivePeers base - 1)
+              min (max 1 ltt) (targetNumberOfActivePeers base - 1)
       }
 
     checkActivePeersDecreased :: CheckPeerSelectionCounters
@@ -417,22 +429,22 @@ peerChurnGovernor tracer churnTracer
     churnLoop !rng = do
       startTs <- getMonotonicTime
 
-      (churnMode, ubp) <- atomically ((,) <$> updateChurnMode
-                                          <*> getUseBootstrapPeers)
+      (churnMode, ubp, ltt) <- atomically getExtState
+
       traceWith tracer $ TraceChurnMode churnMode
 
       -- Purge the worst active peers.
       updateTargets DecreasedActivePeers
                     numberOfActivePeers
                     deactivateTimeout -- chainsync might timeout after 5mins
-                    (decreaseActivePeers churnMode)
+                    (decreaseActivePeers churnMode ltt)
                     checkActivePeersDecreased
 
       -- Pick new active peers.
       updateTargets IncreasedActivePeers
                     numberOfActivePeers
                     shortTimeout
-                    (increaseActivePeers churnMode)
+                    (increaseActivePeers churnMode ltt)
                     checkActivePeersIncreased
 
       -- Purge the worst active big ledger peers.
