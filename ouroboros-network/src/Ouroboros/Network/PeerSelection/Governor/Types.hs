@@ -1672,7 +1672,7 @@ data TracePeerSelection peeraddr =
      --
 
      | TraceChurnWait          DiffTime
-     | TraceChurnMode          ChurnMode
+     | TraceChurnMode          ChurnMode UseBootstrapPeers HotValency
      | TraceChurnAction
          DiffTime    -- ^ duration of the churn action
          ChurnAction -- ^ churn action type

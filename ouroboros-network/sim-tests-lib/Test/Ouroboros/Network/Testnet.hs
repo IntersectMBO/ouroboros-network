@@ -1032,7 +1032,7 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
         "TraceGovernorWakeup"
       peerSelectionTraceMap TraceChurnWait {}                        =
         "TraceChurnWait"
-      peerSelectionTraceMap (TraceChurnMode cm)                      =
+      peerSelectionTraceMap (TraceChurnMode cm _ _)                  =
         "TraceChurnMode " ++ show cm
       peerSelectionTraceMap TraceForgetBigLedgerPeers {}             =
         "TraceForgetBigLedgerPeers"
