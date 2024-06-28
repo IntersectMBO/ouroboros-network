@@ -6,6 +6,9 @@
 
 ### Non-Breaking changes
 
+- Increase the target number of active peers during bulk sync to account for hot
+  trusted localroot peers.
+
 ## 0.16.1.0 -- 2024-06-07
 
 ### Breaking changes

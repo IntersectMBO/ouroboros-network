@@ -93,7 +93,8 @@ withPeerSelectionActions
      , Ord peeraddr
      , Exception exception
      )
-  => PeerActionsDNS peeraddr resolver exception m
+  => StrictTVar m (Config peeraddr)
+  -> PeerActionsDNS peeraddr resolver exception m
   -> PeerSelectionActionsArgs peeraddr peerconn exception m
   -> WithLedgerPeersArgs m
   -> PeerSelectionActionsDiffusionMode peeraddr peerconn m
@@ -104,6 +105,7 @@ withPeerSelectionActions
   -- (only if local root peers were non-empty).
   -> m a
 withPeerSelectionActions
+  localRootsVar
   paDNS@PeerActionsDNS { paToPeerAddr = toPeerAddr, paDnsActions = dnsActions, paDnsSemaphore = dnsSemaphore }
   PeerSelectionActionsArgs {
     psLocalRootPeersTracer = localTracer,
@@ -121,8 +123,6 @@ withPeerSelectionActions
   ledgerPeersArgs
   PeerSelectionActionsDiffusionMode { psPeerStateActions = peerStateActions }
   k = do
-    localRootsVar <- newTVarIO mempty
-
     withLedgerPeers
       paDNS
       ledgerPeersArgs
