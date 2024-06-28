@@ -809,12 +809,7 @@ runM Interfaces
 
       localRootsVar <- newTVarIO mempty
 
-      peerSelectionTargetsVar <- newTVarIO $ daPeerSelectionTargets {
-          -- Start with a smaller number of active peers, the churn governor
-          -- will increase it to the configured value after a delay.
-          targetNumberOfActivePeers =
-            min 2 (targetNumberOfActivePeers daPeerSelectionTargets)
-        }
+      peerSelectionTargetsVar <- newTVarIO $ daPeerSelectionTargets
 
       countersVar <- newTVarIO emptyPeerSelectionCounters
 
