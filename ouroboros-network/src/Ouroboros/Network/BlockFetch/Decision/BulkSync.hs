@@ -16,7 +16,7 @@ import Data.Bifunctor (first, Bifunctor (..))
 import Data.List (sortOn)
 import Data.List.NonEmpty (nonEmpty)
 import qualified Data.List.NonEmpty as NE
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, mapMaybe)
 import Data.Ord (Down(Down))
 
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment, headBlockNo)
@@ -304,10 +304,13 @@ fetchTheCandidate
     where
       trimFragmentsToCandidate candidate fragments =
         let trimmedFragments =
-              -- FIXME: This can most definitely be improved considering that the
-              -- property to be in `candidate` is monotonic.
-              concatMap
-                (AF.filter (flip AF.withinFragmentBounds (getChainSuffix candidate) . blockPoint))
+              mapMaybe
+                ( \fragment ->
+                    -- 'candidate' is anchored at the immutable tip, so we don't
+                    -- need to look for something more complicated than this.
+                    (\(_, prefix, _, _) -> prefix)
+                      <$> AF.intersect (getChainSuffix candidate) fragment
+                )
                 fragments
          in if null trimmedFragments
               then Left FetchDeclineAlreadyFetched
