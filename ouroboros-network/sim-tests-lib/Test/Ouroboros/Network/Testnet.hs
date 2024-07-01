@@ -830,20 +830,6 @@ prop_track_coolingToCold_demotions ioSimTracer traceNumber =
              . Trace.take traceNumber
              $ ioSimTracer
 
-      consensusModes =
-        map ((\evs ->
-                 let evsList = Signal.eventsToList evs
-                 in
-                   case evsList of
-                     []      -> Signal.fromChangeEvents PraosMode evs
-                     (_, consensusMode):_ ->
-                       Signal.fromChangeEvents consensusMode evs)
-            . Signal.selectEvents f)
-            $ events
-      f = (\case
-            DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just (Governor.consensusMode st)
-            _                                                            -> Nothing)
-
      in conjoin
       $ (\(ev, cmode) ->
         let evsList = eventsToList ev
@@ -857,6 +843,20 @@ prop_track_coolingToCold_demotions ioSimTracer traceNumber =
       <$> zip events consensusModes
 
   where
+    consensusModes =
+        map ((\evs ->
+                 let evsList = Signal.eventsToList evs
+                 in
+                   case evsList of
+                     []      -> Signal.fromChangeEvents PraosMode evs
+                     (_, consensusMode):_ ->
+                       Signal.fromChangeEvents consensusMode evs)
+            . Signal.selectEvents f)
+            $ events
+    f = (\case
+            DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just (Governor.consensusMode st)
+            _                                                            -> Nothing)
+          
     verify_coolingToColdDemotions :: Events DiffusionTestTrace
                                   -> ConsensusMode
                                   -> Property
@@ -3845,19 +3845,28 @@ selectDiffusionSimulationTrace = Signal.selectEvents
 
 selectDiffusionPeerSelectionState :: Eq a
                                   => (forall peerconn. Governor.PeerSelectionState NtNAddr peerconn -> a)
-                                  -> ConsensusMode
                                   -> Events DiffusionTestTrace
                                   -> Signal a
-selectDiffusionPeerSelectionState f cmode =
+selectDiffusionPeerSelectionState f =
     Signal.nub
   -- TODO: #3182 Rng seed should come from quickcheck.
-  . Signal.fromChangeEvents (f $ Governor.emptyPeerSelectionState
-                                   (mkStdGen 42)
-                                   cmode )
+  . Signal.fromChangeEvents 
+  . (\evs ->
+       let evsList = Signal.eventsToList evs
+       in
+         case evsList of
+           [] -> Signal.fromChangeEvents PraosMode evs
+           (_, consensusMode):_ ->
+             Signal.fromChangeEvents emptyState evs)  
   . Signal.selectEvents
       (\case
         DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just (f st)
         _                                                            -> Nothing)
+  where
+    emptyState consensusMode =
+      (f $ Governor.emptyPeerSelectionState
+        (mkStdGen 42)
+        cmode )       
 
 selectDiffusionPeerSelectionState' :: Eq a
                                   => (forall peerconn. Governor.PeerSelectionState NtNAddr peerconn -> a)
