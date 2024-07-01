@@ -118,7 +118,7 @@ peerChurnGovernor PeerChurnArgs {
                     pcaPeerSelectionVar = peerSelectionVar,
                     pcaReadCounters = readCounters,
                     pcaReadUseBootstrap = getUseBootstrapPeers,
-                    pcaConsensusMode = consensusMode
+                    pcaConsensusMode = consensusMode,
                     pcaGetLocalRootHotTarget = getLocalRootHotTarget } = do
   -- Wait a while so that not only the closest peers have had the time
   -- to become warm.
@@ -136,8 +136,8 @@ peerChurnGovernor PeerChurnArgs {
             (GenesisMode, ChurnModeNormal)   -> praosTargets
             (PraosMode, _)                   -> praosTargets
         regime = pickChurnRegime consensusMode churnMode useBootstrapPeers
-    modifyTVar peerSelectionVar ( increaseActivePeers regime base ltt
-                                . increaseEstablishedPeers regime base ltt)
+    modifyTVar peerSelectionVar ( increaseActivePeers regime ltt base
+                                . increaseEstablishedPeers regime ltt base)
 
   endTs0 <- getMonotonicTime
   fuzzyDelay inRng (endTs0 `diffTime` startTs0) >>= churnLoop
@@ -162,7 +162,7 @@ peerChurnGovernor PeerChurnArgs {
       -- ^ counter getter
       -> DiffTime
       -- ^ timeout
-      -> (ChurnRegime -> PeerSelectionTargets -> ModifyPeerSelectionTargets)
+      -> (ChurnRegime -> HotValency -> PeerSelectionTargets -> ModifyPeerSelectionTargets)
       -- ^ update counters function
       -> CheckPeerSelectionCounters
       -- ^ check counters
@@ -172,6 +172,7 @@ peerChurnGovernor PeerChurnArgs {
       startTime <- getMonotonicTime
       (c, targets) <- atomically $ do
         churnMode <- updateChurnMode
+        ltt       <- getLocalRootHotTarget
         regime <- pickChurnRegime consensusMode churnMode <$> getUseBootstrapPeers
         let base =
               case (consensusMode, churnMode) of
@@ -180,7 +181,7 @@ peerChurnGovernor PeerChurnArgs {
                 (PraosMode, _)                   -> praosTargets
 
         (,) <$> (getCounter <$> readCounters)
-            <*> stateTVar peerSelectionVar ((\a -> (a, a)) . modifyTargets regime base)
+            <*> stateTVar peerSelectionVar ((\a -> (a, a)) . modifyTargets regime ltt base)
 
       -- create timeout and block on counters
       bracketOnError (registerDelayCancellable timeoutDelay)
@@ -252,9 +253,10 @@ peerChurnGovernor PeerChurnArgs {
       <= targetNumberOfActivePeers
 
     increaseEstablishedPeers :: ChurnRegime
+                             -> HotValency
                              -> PeerSelectionTargets
                              -> ModifyPeerSelectionTargets
-    increaseEstablishedPeers regime base targets =
+    increaseEstablishedPeers regime _ base targets =
       targets {
         targetNumberOfEstablishedPeers =
           case regime of
@@ -272,9 +274,10 @@ peerChurnGovernor PeerChurnArgs {
 
     increaseEstablishedBigLedgerPeers
       :: ChurnRegime
+      -> HotValency
       -> PeerSelectionTargets
       -> ModifyPeerSelectionTargets
-    increaseEstablishedBigLedgerPeers _ base
+    increaseEstablishedBigLedgerPeers _ _ base
       targets
       =
       targets { targetNumberOfEstablishedBigLedgerPeers = targetNumberOfEstablishedBigLedgerPeers base }
@@ -289,9 +292,10 @@ peerChurnGovernor PeerChurnArgs {
 
     decreaseEstablishedPeers
       :: ChurnRegime
+      -> HotValency
       -> PeerSelectionTargets
       -> ModifyPeerSelectionTargets
-    decreaseEstablishedPeers regime base targets =
+    decreaseEstablishedPeers regime _ base targets =
       targets {
         targetNumberOfEstablishedPeers =
           case regime of
@@ -310,9 +314,10 @@ peerChurnGovernor PeerChurnArgs {
       <= targetNumberOfEstablishedPeers
 
     increaseActiveBigLedgerPeers :: ChurnRegime
+                                 -> HotValency
                                  -> PeerSelectionTargets
                                  -> ModifyPeerSelectionTargets
-    increaseActiveBigLedgerPeers regime base targets =
+    increaseActiveBigLedgerPeers regime _ base targets =
       targets {
         targetNumberOfActiveBigLedgerPeers =
           let praosSync = min 1 (targetNumberOfActiveBigLedgerPeers base)
@@ -330,9 +335,10 @@ peerChurnGovernor PeerChurnArgs {
       numberOfActiveBigLedgerPeers >= targetNumberOfActiveBigLedgerPeers
 
     decreaseActiveBigLedgerPeers :: ChurnRegime
+                                 -> HotValency
                                  -> PeerSelectionTargets
                                  -> ModifyPeerSelectionTargets
-    decreaseActiveBigLedgerPeers regime base targets =
+    decreaseActiveBigLedgerPeers regime _ base targets =
       targets {
         targetNumberOfActiveBigLedgerPeers =
           let praosSync = min 1 (targetNumberOfActiveBigLedgerPeers base)
@@ -351,9 +357,10 @@ peerChurnGovernor PeerChurnArgs {
       <= targetNumberOfActiveBigLedgerPeers
 
     decreaseEstablishedBigLedgerPeers :: ChurnRegime
+                                      -> HotValency
                                       -> PeerSelectionTargets
                                       -> ModifyPeerSelectionTargets
-    decreaseEstablishedBigLedgerPeers _ base targets =
+    decreaseEstablishedBigLedgerPeers _ _ base targets =
       targets {
         targetNumberOfEstablishedBigLedgerPeers =
           decrease (targetNumberOfEstablishedBigLedgerPeers base -
@@ -373,9 +380,10 @@ peerChurnGovernor PeerChurnArgs {
 
     decreaseKnownPeers
       :: ChurnRegime
+      -> HotValency
       -> PeerSelectionTargets
       -> ModifyPeerSelectionTargets
-    decreaseKnownPeers _ base targets =
+    decreaseKnownPeers _ _ base targets =
       targets {
           targetNumberOfRootPeers =
             decrease (targetNumberOfRootPeers base - targetNumberOfEstablishedPeers base)
@@ -397,9 +405,10 @@ peerChurnGovernor PeerChurnArgs {
 
     decreaseKnownBigLedgerPeers
       :: ChurnRegime
+      -> HotValency
       -> PeerSelectionTargets
       -> ModifyPeerSelectionTargets
-    decreaseKnownBigLedgerPeers _ targets base =
+    decreaseKnownBigLedgerPeers _ _ targets base =
       targets {
           targetNumberOfKnownBigLedgerPeers =
             decrease (targetNumberOfKnownBigLedgerPeers base -
@@ -417,9 +426,10 @@ peerChurnGovernor PeerChurnArgs {
 
     increaseKnownPeers
       :: ChurnRegime
+      -> HotValency
       -> PeerSelectionTargets
       -> ModifyPeerSelectionTargets
-    increaseKnownPeers _ base targets =
+    increaseKnownPeers _ _ base targets =
       targets {
           targetNumberOfRootPeers = targetNumberOfRootPeers base
         , targetNumberOfKnownPeers = targetNumberOfKnownPeers base
@@ -439,9 +449,10 @@ peerChurnGovernor PeerChurnArgs {
 
     increaseKnownBigLedgerPeers
       :: ChurnRegime
+      -> HotValency
       -> PeerSelectionTargets
       -> ModifyPeerSelectionTargets
-    increaseKnownBigLedgerPeers _ base targets =
+    increaseKnownBigLedgerPeers _ _ base targets =
       targets {
           targetNumberOfKnownBigLedgerPeers = targetNumberOfKnownBigLedgerPeers base
         }
@@ -462,8 +473,10 @@ peerChurnGovernor PeerChurnArgs {
     churnLoop :: StdGen -> m Void
     churnLoop !rng = do
       startTs <- getMonotonicTime
-
-      traceWith tracer . TraceChurnMode =<< atomically updateChurnMode
+      
+      (churnMode, useBootstrapPeers, ltt)
+        <- atomically $ (,,) <$> updateChurnMode <*> getUseBootstrapPeers <*> getLocalRootHotTarget
+      traceWith tracer $ TraceChurnMode churnMode useBootstrapPeers ltt
 
       -- Purge the worst active peers.
       updateTargets DecreasedActivePeers

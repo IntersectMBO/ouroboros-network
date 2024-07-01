@@ -1055,7 +1055,7 @@ runM Interfaces
                                  peerTargets = daPeerTargets,
                                  pcaReadUseBootstrap = daReadUseBootstrapPeers,
                                  pcaConsensusMode = daConsensusMode,
-                                 getLocalRootHotTarget =
+                                 pcaGetLocalRootHotTarget =
                                    ((LocalRootPeers.hotTarget . LocalRootPeers.clampToTrustable . LocalRootPeers.fromGroups) <$> (readTVar localRootsVar)) }
 
       --
