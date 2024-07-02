@@ -10,6 +10,7 @@
 
 - Fixed `InboundGovernorCounters` tracing frequency
 - Bump io-sim and io-classes
+- Fixed connection manager transition test
 
 ## 0.13.1.0 -- 2024-05-08
 
