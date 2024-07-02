@@ -97,8 +97,6 @@
 \def\Connected{\textsf{Connected}}
 \def\Accepted{\textsf{Accepted}}
 \def\Overwritten{\textsf{Overwritten}}
-\def\SelfConnA{\textsf{SelfConn}}
-\def\SelfConnB{\textsf{SelfConn}\textsuperscript{\textsf{-1}}}
 \def\NegotiatedUniOut{\textsf{Negotiated}\textsuperscript{\textsf{Unidirectional}}\textsubscript{\textsf{Outbound}}}
 \def\NegotiatedDupOut{\textsf{Negotiated}\textsuperscript{\textsf{Duplex}}\textsubscript{\textsf{Outbound}}}
 \def\NegotiatedUniIn{\textsf{Negotiated}\textsuperscript{\textsf{Unidirectional}}\textsubscript{\textsf{Inbound}}}
@@ -615,8 +613,8 @@ regarding \texttt{InitiatorMode}.
     \draw[->] (ReservedOutboundState)          -- node[fill=white,above left] {\small\Connected}                       (UnnegotiatedStateOut);
     \draw[->] (ReservedOutboundState)          -- node[fill=white,above right] {\small\Overwritten}                    (UnnegotiatedStateIn);
 
-    \draw[->] (UnnegotiatedStateOut)           -- node[fill=white, above=18pt, left] {\small \SelfConnA}               (UnnegotiatedStateIn);
-    \draw[->] (UnnegotiatedStateIn)            -- node[fill=white, above=18pt, right] {\small \SelfConnB}              (UnnegotiatedStateOut);
+    \draw[->] (UnnegotiatedStateOut)           -- node[fill=white, above=18pt, left] {\small \SelfConn}               (UnnegotiatedStateIn);
+    \draw[->] (UnnegotiatedStateIn)            -- node[fill=white, above=18pt, right] {\small \SelfConnRev}              (UnnegotiatedStateOut);
 
     \draw[->] (UnnegotiatedStateOut)           -- node[fill=white,left=-42pt] {\small\NegotiatedUniOut}                (OutboundStateUni.165);
     \draw[->] (UnnegotiatedStateOut.340)       to [out=-60, in=90]
@@ -629,7 +627,7 @@ regarding \texttt{InitiatorMode}.
     \draw[->]         (UnnegotiatedStateIn)    -- node[fill=white]{\small\NegotiatedDupIn}                  (InboundIdleStateDup.150);
     \draw[->]         (UnnegotiatedStateIn)    -- node[fill=white,pos=0.35,right=6pt]{\small\NegotiatedUniIn}        (InboundIdleStateUni.60);
 
-    \draw[->]  (InboundIdleStateUni)           -- node[fill=white, left=6pt] {\small \SelfConnB}                       (OutboundStateUni);
+    \draw[->]  (InboundIdleStateUni)           -- node[fill=white, left=6pt] {\small \SelfConnPrim}                       (OutboundStateUni);
     \draw[->]         (InboundIdleStateUni.320) to [out=-90,in=40]
                                                 node[fill=white,pos=0.5,rotate=70,left=-15pt]{\small\CommitUniRem}     (TerminatingState.0);
     \draw[->, dashed] (InboundStateUni.10)      -- node[pos=0.3,fill=white,right=-45pt]{\small\DemotedToColdUniRem}    (InboundIdleStateUni.350);

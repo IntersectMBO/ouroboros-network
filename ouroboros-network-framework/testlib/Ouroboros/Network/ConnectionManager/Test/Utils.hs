@@ -179,14 +179,14 @@ validTransitionMap t@Transition { fromState, toState } =
       (OutboundIdleSt Duplex        , InboundSt Duplex)             -> (30, show t)
       (UnnegotiatedSt Outbound      , UnnegotiatedSt Inbound)       -> (36, show t)
       (UnnegotiatedSt Inbound       , UnnegotiatedSt Outbound)      -> (37, show t) -- max valid transition
-      (OutboundIdleSt _dataFlow , TerminatingSt)                    -> (31, show t)
-      (TerminatingSt            , TerminatedSt)                     -> (32, show t)
-      (_                        , TerminatedSt)                     -> (33, show t)
-      (_                        , UnknownConnectionSt)              -> (34, show t)
-      (TerminatingSt            , UnnegotiatedSt Inbound)           -> (35, show t)
-      (UnnegotiatedSt Outbound      , InboundIdleSt Duplex)         -> (36, show t)
-      (UnnegotiatedSt Outbound      , InboundIdleSt Unidirectional) -> (37, show t)
-      (InboundIdleSt Unidirectional , OutboundUniSt)                -> (38, show t)
+      (OutboundIdleSt _dataFlow , TerminatingSt)                    -> (38, show t)
+      (TerminatingSt            , TerminatedSt)                     -> (39, show t)
+      (_                        , TerminatedSt)                     -> (40, show t)
+      (_                        , UnknownConnectionSt)              -> (41, show t)
+      (TerminatingSt            , UnnegotiatedSt Inbound)           -> (42, show t)
+      (UnnegotiatedSt Outbound      , InboundIdleSt Duplex)         -> (43, show t)
+      (UnnegotiatedSt Outbound      , InboundIdleSt Unidirectional) -> (44, show t)
+      (InboundIdleSt Unidirectional , OutboundUniSt)                -> (45, show t)
       _                                                             -> (99, show t)
 
 -- Assuming all transitions in the transition list are valid, we only need to
