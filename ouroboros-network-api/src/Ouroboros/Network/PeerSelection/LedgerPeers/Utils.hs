@@ -3,8 +3,8 @@
 
 module Ouroboros.Network.PeerSelection.LedgerPeers.Utils
   ( bigLedgerPeerQuota
-  , accBigPoolStake
-  , reRelativeStake
+  , accumulateBigLedgerStake
+  , recomputeRelativeStake
   , AccPoolStake (..)
   , PoolStake (..)
   , RelayAccessPoint (..)
@@ -29,13 +29,13 @@ bigLedgerPeerQuota = 0.9
 -- and tag each one with cumulative stake, with a cutoff
 -- at 'bigLedgerPeerQuota'
 --
-accBigPoolStake :: [(PoolStake, NonEmpty RelayAccessPoint)]
-                -> [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))]
-accBigPoolStake =
+accumulateBigLedgerStake :: [(PoolStake, NonEmpty RelayAccessPoint)]
+                         -> [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))]
+accumulateBigLedgerStake =
     takeWhilePrev (\(acc, _) -> acc <= bigLedgerPeerQuota)
     . go 0
     . sortOn (Down . fst)
-    . reRelativeStake BigLedgerPeers
+    . recomputeRelativeStake BigLedgerPeers
   where
     takeWhilePrev :: (a -> Bool) -> [a] -> [a]
     takeWhilePrev f as =
@@ -55,10 +55,10 @@ accBigPoolStake =
 -- | Not all stake pools have valid \/ usable relay information. This means that
 -- we need to recalculate the relative stake for each pool.
 --
-reRelativeStake :: LedgerPeersKind
+recomputeRelativeStake :: LedgerPeersKind
                 -> [(PoolStake, NonEmpty RelayAccessPoint)]
                 -> [(PoolStake, NonEmpty RelayAccessPoint)]
-reRelativeStake ledgerPeersKind pl =
+recomputeRelativeStake ledgerPeersKind pl =
     let pl'   = first adjustment <$> pl
         total = foldl' (+) 0 (fst <$> pl')
         pl''  = first (/ total) <$> pl'

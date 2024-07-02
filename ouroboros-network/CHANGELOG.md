@@ -7,11 +7,23 @@
 * moved `accBigPoolStake` and `reRelativeStake` to ouroboros-networking-api
   in order to expose functionality of creating snapshots of big ledger peers,
   eg. for Genesis consensus mode.
+* Introduced `daReadLedgerPeerSnapshot` to `P2P.ArgumentsExtra` which holds
+  a `Maybe LedgerPeerSnapshot` from a node's configuration. If present, it
+  may be used to pick big ledger peers by the peer selection governor when
+  bootstrapping a node in Genesis consensus mode, or in general when 
+  LedgerStateJudgement = TooOld, subject to conditions in
+  `LedgerPeers.ledgerPeersThread`.
 
 ### Non-Breaking changes
 
 * Refactored signature of `LedgerPeers.ledgerPeersThread` for concision
   and use of previously created records for shunting related values around.
+* Implemented provision of big ledger peers from the snapshot by `ledgerPeersThread`
+* Added property test checking if `ledgerPeersThread` is providing big ledger peers
+  from the snapshot when appropriate conditions are met
+* Added property tests checking if `LedgerPeerSnapshot` CBOR encoding is valid,
+  and decode/encode = id, as well as some property tests for calculating big ledger
+  peers
 
 ## 0.16.1.0 -- 2024-06-07
 
