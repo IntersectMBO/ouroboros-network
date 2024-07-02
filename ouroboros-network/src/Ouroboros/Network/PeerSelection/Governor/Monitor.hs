@@ -18,6 +18,7 @@ module Ouroboros.Network.PeerSelection.Governor.Monitor
   , monitorLedgerStateJudgement
   , monitorBootstrapPeersFlag
   , waitForSystemToQuiesce
+  , ledgerPeerSnapshotChange
   ) where
 
 import Data.Map.Strict (Map)
@@ -30,6 +31,7 @@ import Control.Concurrent.JobPool (Job (..), JobPool)
 import Control.Concurrent.JobPool qualified as JobPool
 import Control.Exception (assert)
 import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import System.Random (randomR)
 
@@ -576,19 +578,17 @@ monitorBootstrapPeersFlag PeerSelectionActions { readUseBootstrapPeers }
 -- to a clean state. I.e., it will disconnect from the targets source of truth.
 --
 monitorLedgerStateJudgement :: ( MonadSTM m
+                               , MonadThrow m
                                , Ord peeraddr
                                )
                             => PeerSelectionActions peeraddr peerconn m
-                            -> STM m (Maybe LedgerPeerSnapshot)
-                            -> LedgerPeersConsensusInterface m
                             -> PeerSelectionState peeraddr peerconn
                             -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-monitorLedgerStateJudgement PeerSelectionActions{ readLedgerStateJudgement,
-                                                  peerTargets = ConsensusModePeerTargets{
+monitorLedgerStateJudgement PeerSelectionActions{ peerTargets = ConsensusModePeerTargets{
                                                     praosTargets,
-                                                    genesisSyncTargets } }
-                            readLedgerPeerSnapshot
-                            ledgerPeersCtx  
+                                                    genesisSyncTargets },
+                                                  readLedgerStateCtx = ledgerCtx@LedgerPeersConsensusInterface {
+                                                    lpGetLedgerStateJudgement = readLedgerStateJudgement } }
                             st@PeerSelectionState{ bootstrapPeersFlag,
                                                    publicRootPeers,
                                                    knownPeers,
@@ -596,7 +596,8 @@ monitorLedgerStateJudgement PeerSelectionActions{ readLedgerStateJudgement,
                                                    inProgressPromoteCold,
                                                    inProgressPromoteWarm,
                                                    ledgerStateJudgement,
-                                                   consensusMode }
+                                                   consensusMode,
+                                                   ledgerPeerSnapshot }
   | GenesisMode <- consensusMode =
     Guarded Nothing $ do
       lsj <- readLedgerStateJudgement
@@ -608,10 +609,10 @@ monitorLedgerStateJudgement PeerSelectionActions{ readLedgerStateJudgement,
       return $ \_now ->
         Decision {
           decisionTrace = [TraceLedgerStateJudgementChanged lsj],
-          decisionJobs  = case lsj of
-                            TooOld ->
-                              [jobVerifyPeerSnapshot readLedgerPeerSnapshot ledgerPeersCtx]
-                            _otherwise -> [],
+          decisionJobs = case (lsj, ledgerPeerSnapshot) of
+                           (TooOld, Just ledgerPeerSnapshot') ->
+                             [jobVerifyPeerSnapshot ledgerPeerSnapshot' ledgerCtx]
+                           _otherwise -> [],
           decisionState = st {
               ledgerStateJudgement = lsj,
               targets } }
@@ -740,16 +741,24 @@ waitForSystemToQuiesce st@PeerSelectionState{
         }
   | otherwise = GuardedSkip Nothing
 
-jobVerifyPeerSnapshot :: MonadSTM m
-                      => STM m (Maybe LedgerPeerSnapshot)
+-- |This job, which is initiated by monitorLedgerStateJudgement job,
+-- verifies whether the provided big ledger pools match up with the
+-- ledger state once the node catches up to the slot at which the
+-- snapshot was ostensibly taken
+--
+jobVerifyPeerSnapshot :: ( MonadSTM m
+                         , MonadThrow m)
+                      => LedgerPeerSnapshot
                       -> LedgerPeersConsensusInterface m
                       -> Job () m (Completion m peeraddr peerconn)
-jobVerifyPeerSnapshot readBigLedgerSnapshot
+jobVerifyPeerSnapshot (LedgerPeerSnapshot (slot, relays))
                       LedgerPeersConsensusInterface {
                         lpGetLatestSlot,
-                        lpGetLedgerStateJudgement,
                         lpGetLedgerPeers }
-  = Job job (const (completion Nothing Nothing)) () "jobVerifyPeerSnapshot"
+  = Job job
+        (const . completion Nothing $ Just $ TraceVerifyPeerSnapshot False)
+        ()
+        "jobVerifyPeerSnapshot"
   where
     completion queueJob trace = return . Completion $ \st _now ->
       Decision {
@@ -757,19 +766,37 @@ jobVerifyPeerSnapshot readBigLedgerSnapshot
         decisionState = st,
         decisionJobs  = maybeToList queueJob }
 
-    job = atomically $ do
-      lsj <- lpGetLedgerStateJudgement
-      case lsj of
-        TooOld -> do
-          maybeLps <- readBigLedgerSnapshot
-          (snapshotSlotNo, snapshotPools) <-
-            case maybeLps of
-              Just (LedgerPeerSnapshot result) -> pure result
-              Nothing                          -> retry
+    job = do
+      result <-
+        atomically $ do
+          check . (slot >=) =<< lpGetLatestSlot
+          (relays ==) . accumulateBigLedgerStake <$> lpGetLedgerPeers
+      case result of
+        True  -> completion Nothing (Just $ TraceVerifyPeerSnapshot result)
+        False -> throwIO BigLedgerPeerSnapshotError
 
-          check . (snapshotSlotNo ==) =<< lpGetLatestSlot
-          result <- (snapshotPools ==) . accumulateBigLedgerStake <$> lpGetLedgerPeers
-          completion Nothing (Just $ TraceVerifyPeerSnapshot result)
+-- |This job monitors for any changes in the big ledger peer snapshot
+-- and flips ledger state judgement private state so that monitoring action
+-- can launch `jobVerifyPeerSnapshot`
+ledgerPeerSnapshotChange :: (MonadSTM m)
+                         => PeerSelectionState peeraddr peerconn
+                         -> PeerSelectionActions peeraddr peerconn m
+                         -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
+ledgerPeerSnapshotChange st@PeerSelectionState {
+                              ledgerPeerSnapshot }
+                         PeerSelectionActions {
+                           readLedgerPeerSnapshot } =
+  Guarded Nothing $ do
+    ledgerPeerSnapshot' <- readLedgerPeerSnapshot
+    case (ledgerPeerSnapshot', ledgerPeerSnapshot) of
+      (Nothing, _) -> retry
+      (Just (LedgerPeerSnapshot (slot, _)), Just (LedgerPeerSnapshot (slot', _)))
+        | slot == slot' -> retry
+      _otherwise ->
+        return $ \_now ->
+                   Decision { decisionTrace = [],
+                              decisionJobs  = [],
+                              decisionState = st {
+                                ledgerStateJudgement = YoungEnough,
+                                ledgerPeerSnapshot = ledgerPeerSnapshot' } }
 
-        YoungEnough ->
-          completion Nothing Nothing

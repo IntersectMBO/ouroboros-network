@@ -81,8 +81,7 @@ import Ouroboros.Network.PeerSelection.Governor.KnownPeers qualified as KnownPee
 import Ouroboros.Network.PeerSelection.Governor.Monitor qualified as Monitor
 import Ouroboros.Network.PeerSelection.Governor.RootPeers qualified as RootPeers
 import Ouroboros.Network.PeerSelection.Governor.Types
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
-           LedgerPeersConsensusInterface, UseLedgerPeers (..))
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type (UseLedgerPeers (..))
 import Ouroboros.Network.PeerSelection.LocalRootPeers
            (OutboundConnectionsState (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
@@ -480,10 +479,8 @@ peerSelectionGovernor :: ( Alternative (STM m)
                       -> PeerSelectionActions peeraddr peerconn m
                       -> PeerSelectionPolicy  peeraddr m
                       -> PeerSelectionInterfaces peeraddr peerconn m
-                      -> STM m (Maybe LedgerPeerSnapshot)
-                      -> LedgerPeersConsensusInterface m
                       -> m Void
-peerSelectionGovernor tracer debugTracer countersTracer fuzzRng consensusMode actions policy interfaces readBigLedgerSnapshot ledgerPeersCtx =
+peerSelectionGovernor tracer debugTracer countersTracer fuzzRng consensusMode actions policy interfaces =
     JobPool.withJobPool $ \jobPool ->
       peerSelectionGovernorLoop
         tracer
@@ -494,8 +491,6 @@ peerSelectionGovernor tracer debugTracer countersTracer fuzzRng consensusMode ac
         interfaces
         jobPool
         (emptyPeerSelectionState fuzzRng consensusMode)
-        readBigLedgerSnapshot
-        ledgerPeersCtx
 
 -- | Our pattern here is a loop with two sets of guarded actions:
 --
@@ -530,8 +525,6 @@ peerSelectionGovernorLoop :: forall m peeraddr peerconn.
                           -> PeerSelectionInterfaces peeraddr peerconn m
                           -> JobPool () m (Completion m peeraddr peerconn)
                           -> PeerSelectionState peeraddr peerconn
-                          -> STM m (Maybe LedgerPeerSnapshot)
-                          -> LedgerPeersConsensusInterface m
                           -> m Void
 peerSelectionGovernorLoop tracer
                           debugTracer
@@ -544,16 +537,8 @@ peerSelectionGovernorLoop tracer
                             debugStateVar
                           }
                           jobPool
-                          pst
-                          readBigLedgerSnapshot
-                          ledgerPeersCtx =
-    handle (\e -> traceWith tracer (TraceOutboundGovernorCriticalFailure e) >> throwIO e) $ do
-      -- we run the verification job pre-emptively at startup because we may be stuck
-      -- in the TooOld ledger state before we catch up. Once ledger state turns YoungEnough,
-      -- this job ends. If for any reason ledger state turns TooOld from YoungEnough, this job
-      -- is restarted by the monitorLedgerStateJudgement job.
-      JobPool.forkJob jobPool (Monitor.jobVerifyPeerSnapshot readBigLedgerSnapshot ledgerPeersCtx)
-      loop pst (Time 0)
+                          pst = do
+    loop pst (Time 0) `catch` (\e -> traceWith tracer (TraceOutboundGovernorCriticalFailure e) >> throwIO e)
   where
     loop :: PeerSelectionState peeraddr peerconn
          -> Time
@@ -664,7 +649,7 @@ peerSelectionGovernorLoop tracer
       --   Check the definition site for more details, but in short, when the
       --   node changes to 'TooOld' state it will go through a purging phase which
       --   the 'waitForTheSystemToQuiesce' monitoring action will wait for.
-      <> Monitor.monitorLedgerStateJudgement actions readBigLedgerSnapshot ledgerPeersCtx st
+      <> Monitor.monitorLedgerStateJudgement actions st
       -- In Praos consensus mode,
       -- When the node transitions to 'TooOld' state the node will wait until
       -- it reaches a clean (quiesced) state free of non-trusted peers, before
@@ -673,6 +658,7 @@ peerSelectionGovernorLoop tracer
 
       <> Monitor.connections          actions st
       <> Monitor.jobs                 jobPool st
+      <> Monitor.ledgerPeerSnapshotChange st actions
       -- In Genesis consensus mode, this is responsible for settings targets on the basis
       -- of the ledger state judgement. It takes into account whether
       -- the churn governor is running via a tmvar such that targets are set

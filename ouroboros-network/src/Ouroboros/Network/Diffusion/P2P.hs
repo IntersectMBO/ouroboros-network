@@ -659,9 +659,7 @@ runM Interfaces
        { daApplicationInitiatorMode
        , daApplicationInitiatorResponderMode
        , daLocalResponderApplication
-       , daLedgerPeersCtx =
-          daLedgerPeersCtx@LedgerPeersConsensusInterface
-            { lpGetLedgerStateJudgement }
+       , daLedgerPeersCtx
        , daUpdateOutboundConnectionsState
        }
      ApplicationsExtra
@@ -995,7 +993,7 @@ runM Interfaces
                                          psLocalRootPeersTracer = dtTraceLocalRootPeersTracer,
                                          psPublicRootPeersTracer = dtTracePublicRootPeersTracer,
                                          psReadTargets = readTVar peerSelectionTargetsVar,
-                                         psJudgement = lpGetLedgerStateJudgement,
+                                         readLedgerStateCtx = daLedgerPeersCtx,
                                          psReadLocalRootPeers = daReadLocalRootPeers,
                                          psReadPublicRootPeers = daReadPublicRootPeers,
                                          psReadUseBootstrapPeers = daReadUseBootstrapPeers,
@@ -1007,7 +1005,8 @@ runM Interfaces
                                              PeerSharingDisabled -> pure Map.empty
                                              PeerSharingEnabled  -> readInboundPeers,
                                          psUpdateOutboundConnectionsState = daUpdateOutboundConnectionsState,
-                                         peerTargets = daPeerTargets }
+                                         peerTargets = daPeerTargets,
+                                         readLedgerPeerSnapshot = daReadLedgerPeerSnapshot }
                                        WithLedgerPeersArgs {
                                          wlpRng = ledgerPeersRng,
                                          wlpConsensusInterface = daLedgerPeersCtx,
@@ -1038,8 +1037,6 @@ runM Interfaces
                 debugStateVar      = dbgVar,
                 readUseLedgerPeers = daReadUseLedgerPeers
               }
-              daReadLedgerPeerSnapshot
-              daLedgerPeersCtx
 
 
       --

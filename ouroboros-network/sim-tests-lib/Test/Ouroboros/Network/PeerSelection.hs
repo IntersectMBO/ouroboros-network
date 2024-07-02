@@ -3752,10 +3752,6 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
             debugStateVar,
             readUseLedgerPeers = return DontUseLedgerPeers
           }
-        consensusInterface = LedgerPeersConsensusInterface {
-          lpGetLatestSlot = pure Origin,
-          lpGetLedgerStateJudgement = pure TooOld,
-          lpGetLedgerPeers = pure [] }
 
     publicRootPeersProvider
       tracer
@@ -3774,8 +3770,6 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
                 transformPeerSelectionAction requestPublicRootPeers }
           policy
           interfaces
-          (pure Nothing)
-          consensusInterface
   where
     tracer :: Show a => Tracer IO a
     tracer  = Tracer (BS.putStrLn . BS.pack . show)
@@ -3797,12 +3791,17 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
                   closePeerConnection      = error "closePeerConnection"
                 },
                 readUseBootstrapPeers,
-                readLedgerStateJudgement,
                 readInboundPeers = pure Map.empty,
                 updateOutboundConnectionsState = \a -> do
                   a' <- readTVar olocVar
                   when (a /= a') $
-                    writeTVar olocVar a
+                    writeTVar olocVar a,
+                readLedgerStateCtx =
+                  LedgerPeersConsensusInterface {
+                    lpGetLatestSlot = pure Origin,
+                    lpGetLedgerStateJudgement = readLedgerStateJudgement,
+                    lpGetLedgerPeers = pure [] },
+                readLedgerPeerSnapshot = pure Nothing
               }
 
     targets :: PeerSelectionTargets

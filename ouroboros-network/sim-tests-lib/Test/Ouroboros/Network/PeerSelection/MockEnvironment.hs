@@ -238,10 +238,6 @@ governorAction mockEnv@GovernorMockEnvironment {
     countersVar <- StrictTVar.newTVarIO emptyPeerSelectionCounters
     policy  <- mockPeerSelectionPolicy mockEnv
     let initialPeerTargets = fst . NonEmpty.head $ targets'
-        consensusInterface = LedgerPeersConsensusInterface {
-          lpGetLatestSlot = pure Origin,
-          lpGetLedgerStateJudgement = pure TooOld,
-          lpGetLedgerPeers = pure [] }
 
     actions <-
       case consensusMode of
@@ -300,8 +296,6 @@ governorAction mockEnv@GovernorMockEnvironment {
         actions
         policy
         interfaces
-        (pure Nothing)
-        consensusInterface
       atomically retry
     atomically retry  -- block to allow the governor to run
 
@@ -452,13 +446,17 @@ mockPeerSelectionActions' tracer
           closePeerConnection
         },
       readUseBootstrapPeers,
-      readLedgerStateJudgement,
+      readLedgerStateCtx = LedgerPeersConsensusInterface {
+          lpGetLedgerStateJudgement = readLedgerStateJudgement,
+          lpGetLatestSlot = pure Origin,
+          lpGetLedgerPeers = pure [] },
       readInboundPeers = pure Map.empty,
       updateOutboundConnectionsState = \a -> do
         a' <- readTVar outboundConnectionsStateVar
         when (a /= a') $
           writeTVar outboundConnectionsStateVar a,
-      peerTargets
+      peerTargets,
+      readLedgerPeerSnapshot = pure Nothing
     }
   where
     -- TODO: make this dynamic
