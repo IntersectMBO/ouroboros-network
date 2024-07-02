@@ -807,12 +807,9 @@ runM Interfaces
 
       churnModeVar <- newTVarIO ChurnModeNormal
 
-      peerSelectionTargetsVar <- newTVarIO $ daPeerSelectionTargets {
-          -- Start with a smaller number of active peers, the churn governor
-          -- will increase it to the configured value after a delay.
-          targetNumberOfActivePeers =
-            min 2 (targetNumberOfActivePeers daPeerSelectionTargets)
-        }
+      localRootsVar <- newTVarIO mempty
+
+      peerSelectionTargetsVar <- newTVarIO $ daPeerSelectionTargets
 
       countersVar <- newTVarIO emptyPeerSelectionCounters
 
@@ -965,7 +962,7 @@ runM Interfaces
             -- (only if local root peers were non-empty).
             -> m c
           withPeerSelectionActions' readInboundPeers =
-              withPeerSelectionActions PeerActionsDNS {
+              withPeerSelectionActions localRootsVar PeerActionsDNS {
                                          paToPeerAddr = diNtnToPeerAddr,
                                          paDnsActions = diDnsActions lookupReqs,
                                          paDnsSemaphore = dnsSemaphore }
@@ -1032,6 +1029,7 @@ runM Interfaces
                                  peerSelectionTargetsVar
                                  (readTVar countersVar)
                                  daReadUseBootstrapPeers
+                                 ((LocalRootPeers.hotTarget . LocalRootPeers.clampToTrustable . LocalRootPeers.fromGroups) <$> (readTVar localRootsVar))
 
       --
       -- Two functions only used in InitiatorAndResponder mode

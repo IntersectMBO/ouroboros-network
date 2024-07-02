@@ -13,6 +13,15 @@
 * Refactored signature of `LedgerPeers.ledgerPeersThread` for concision
   and use of previously created records for shunting related values around.
 
+## 0.16.1.1 -- 2024-06-28
+
+### Breaking changes
+
+### Non-Breaking changes
+
+- Increase the target number of active peers during bulk sync to account for hot
+  trusted localroot peers.
+
 ## 0.16.1.0 -- 2024-06-07
 
 ### Breaking changes
