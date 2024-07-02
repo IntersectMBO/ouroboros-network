@@ -29,6 +29,7 @@ library
                        Ouroboros.Network.BlockFetch.ConsensusInterface
 
                        Ouroboros.Network.CodecCBORTerm
+                       Ouroboros.Network.ConsensusMode
                        Ouroboros.Network.ControlMessage
                        Ouroboros.Network.Handshake
                        Ouroboros.Network.Handshake.Acceptable
@@ -67,6 +68,7 @@ library
                        serialise         >=0.2   && <0.3,
                        text              >=1.2 && <2.2,
 
+                       cardano-binary,
                        cardano-slotting,
                        cardano-strict-containers,
                        contra-tracer,

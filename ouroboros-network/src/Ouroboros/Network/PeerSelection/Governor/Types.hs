@@ -21,6 +21,7 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   ( -- * P2P governor policies
     PeerSelectionPolicy (..)
   , PeerSelectionTargets (..)
+  , ConsensusModePeerTargets (..)
   , nullPeerSelectionTargets
   , sanePeerSelectionTargets
   , PickPolicy
@@ -121,6 +122,7 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , DebugPeerSelection (..)
     -- * Error types
   , BootstrapPeersCriticalTimeoutError (..)
+  , BigLedgerPeerSnapshotError (..)
   ) where
 
 import Data.Map.Strict (Map)
@@ -141,12 +143,10 @@ import Control.Monad.Class.MonadTime.SI
 import System.Random (StdGen)
 
 import Control.Concurrent.Class.MonadSTM.Strict
+import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.ExitPolicy
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
-import Ouroboros.Network.PeerSelection.LedgerPeers (IsBigLedgerPeer,
-           LedgerPeersKind)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-           (LedgerStateJudgement (..), UseLedgerPeers (..))
 import Ouroboros.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
@@ -238,20 +238,18 @@ data PeerSelectionTargets = PeerSelectionTargets {
 
        targetNumberOfRootPeers                 :: !Int,
 
-       -- | The target number of all known peers.  This includes ledger,
-       -- big ledger peers.
+       -- | The target number of all known peers.  Doesn't include big ledger peers
+       -- |
        targetNumberOfKnownPeers                :: !Int,
        -- | The target number of established peers (does not include big ledger
        -- peers).
        --
-       -- The target includes root peers, local root peers, ledger peers and big
-       -- ledger peers.
+       -- The target includes root peers, local root peers, and ledger peers
        --
        targetNumberOfEstablishedPeers          :: !Int,
        -- | The target number of active peers (does not include big ledger
        -- peers).
        --
-       -- The
        targetNumberOfActivePeers               :: !Int,
 
        -- | Target number of known big ledger peers.
@@ -282,6 +280,14 @@ data PeerSelectionTargets = PeerSelectionTargets {
      }
   deriving (Eq, Show)
 
+-- | Provides alternate peer selection targets
+-- for various syncing modes.
+--
+data ConsensusModePeerTargets = ConsensusModePeerTargets {
+  praosTargets       :: !PeerSelectionTargets,
+  genesisSyncTargets :: !PeerSelectionTargets }
+  deriving (Eq, Show)
+
 nullPeerSelectionTargets :: PeerSelectionTargets
 nullPeerSelectionTargets =
     PeerSelectionTargets {
@@ -292,9 +298,6 @@ nullPeerSelectionTargets =
        targetNumberOfKnownBigLedgerPeers       = 0,
        targetNumberOfEstablishedBigLedgerPeers = 0,
        targetNumberOfActiveBigLedgerPeers      = 0
---     targetChurnIntervalKnownPeers       = 0,
---     targetChurnIntervalEstablishedPeers = 0,
---     targetChurnIntervalActivePeers      = 0
     }
 
 sanePeerSelectionTargets :: PeerSelectionTargets -> Bool
@@ -326,6 +329,11 @@ sanePeerSelectionTargets PeerSelectionTargets{..} =
 data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
 
        readPeerSelectionTargets :: STM m PeerSelectionTargets,
+
+       -- | Retrieve peer targets for Genesis & non-Genesis modes
+       -- from node's configuration for the current state
+       --
+       peerTargets :: ConsensusModePeerTargets,
 
        -- | Read the current set of locally or privately known root peers.
        --
@@ -384,9 +392,9 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        -- | Read the current bootstrap peers flag
        readUseBootstrapPeers :: STM m UseBootstrapPeers,
 
-       -- | Read the current ledger state judgement
+       -- | Read the current ledger state
        --
-       readLedgerStateJudgement :: STM m LedgerStateJudgement,
+       readLedgerStateCtx :: LedgerPeersConsensusInterface m,
 
        -- | Callback provided by consensus to inform it if the node is
        -- connected to only local roots or also some external peers.
@@ -395,8 +403,11 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        -- simply refuse to transition from TooOld to YoungEnough while
        -- it only has local peers.
        --
-       updateOutboundConnectionsState :: OutboundConnectionsState -> STM m ()
+       updateOutboundConnectionsState :: OutboundConnectionsState -> STM m (),
 
+       -- | Read the current state of ledger peer snapshot
+       --
+       readLedgerPeerSnapshot :: STM m (Maybe LedgerPeerSnapshot)
      }
 
 -- | Interfaces required by the peer selection governor, which do not need to
@@ -405,21 +416,21 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
 data PeerSelectionInterfaces peeraddr peerconn m = PeerSelectionInterfaces {
       -- | PeerSelectionCounters are shared with churn through a `StrictTVar`.
       --
-      countersVar                   :: StrictTVar m PeerSelectionCounters,
+      countersVar        :: StrictTVar m PeerSelectionCounters,
 
       -- | PublicPeerSelectionState var.
       --
-      publicStateVar                :: StrictTVar m (PublicPeerSelectionState peeraddr),
+      publicStateVar     :: StrictTVar m (PublicPeerSelectionState peeraddr),
 
       -- | PeerSelectionState shared for debugging purposes (to support SIGUSR1
       -- debug event tracing)
       --
-      debugStateVar                 :: StrictTVar m (PeerSelectionState peeraddr peerconn),
+      debugStateVar      :: StrictTVar m (PeerSelectionState peeraddr peerconn),
 
       -- | `UseLedgerPeers` used by `peerSelectionGovernor` to support
       -- `HiddenRelayOrBP`
       --
-      readUseLedgerPeers            :: STM m UseLedgerPeers
+      readUseLedgerPeers :: STM m UseLedgerPeers
     }
 
 
@@ -550,6 +561,11 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
        --
        ledgerStateJudgement        :: !LedgerStateJudgement,
 
+       -- | Flag whether to sync in genesis mode when ledgerStateJudgement == TooOld
+       -- this comes from node configuration and should be treated as read-only
+       --
+       consensusMode               :: !ConsensusMode,
+
        -- | Current value of 'UseBootstrapPeers'.
        --
        bootstrapPeersFlag          :: !UseBootstrapPeers,
@@ -564,9 +580,11 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
 
        -- | Time to query of inbound peers time.
        --
-       inboundPeersRetryTime       :: !Time
+       inboundPeersRetryTime       :: !Time,
 
-
+       -- | Internal state of ledger peer snapshot
+       --
+       ledgerPeerSnapshot          :: Maybe LedgerPeerSnapshot
 --     TODO: need something like this to distinguish between lots of bad peers
 --     and us getting disconnected from the network locally. We don't want a
 --     network disconnect to cause us to flush our full known peer set by
@@ -1189,8 +1207,9 @@ emptyPeerSelectionCounters =
   }
 
 emptyPeerSelectionState :: StdGen
+                        -> ConsensusMode
                         -> PeerSelectionState peeraddr peerconn
-emptyPeerSelectionState rng =
+emptyPeerSelectionState rng consensusMode =
     PeerSelectionState {
       targets                     = nullPeerSelectionTargets,
       localRootPeers              = LocalRootPeers.empty,
@@ -1212,10 +1231,12 @@ emptyPeerSelectionState rng =
       inProgressDemoteToCold      = Set.empty,
       stdGen                      = rng,
       ledgerStateJudgement        = TooOld,
+      consensusMode,
       bootstrapPeersFlag          = DontUseBootstrapPeers,
       hasOnlyBootstrapPeers       = False,
       bootstrapPeersTimeout       = Nothing,
-      inboundPeersRetryTime       = Time 0
+      inboundPeersRetryTime       = Time 0,
+      ledgerPeerSnapshot          = Nothing
     }
 
 
@@ -1690,6 +1711,7 @@ data TracePeerSelection peeraddr =
      | TraceOnlyBootstrapPeers
      | TraceBootstrapPeersFlagChangedWhilstInSensitiveState
      | TraceUseBootstrapPeersChanged UseBootstrapPeers
+     | TraceVerifyPeerSnapshot Bool
 
      --
      -- Critical Failures
@@ -1726,6 +1748,14 @@ data BootstrapPeersCriticalTimeoutError =
 instance Exception BootstrapPeersCriticalTimeoutError where
    displayException BootstrapPeersCriticalTimeoutError =
      "The peer selection did not converged to a clean state in 15 minutes. Something is wrong!"
+
+data BigLedgerPeerSnapshotError = BigLedgerPeerSnapshotError
+  deriving (Eq, Show)
+
+instance Exception BigLedgerPeerSnapshotError where
+  displayException _ =    "Syncing with peer ledger peers has reached the slot"
+                       <> " where the snapshot was ostensibly taken at, but"
+                       <> " the data it contains is not consistent with the ledger"
 
 data DebugPeerSelection peeraddr where
   TraceGovernorState :: forall peeraddr peerconn.

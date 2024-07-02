@@ -7,11 +7,45 @@
 * moved `accBigPoolStake` and `reRelativeStake` to ouroboros-networking-api
   in order to expose functionality of creating snapshots of big ledger peers,
   eg. for Genesis consensus mode.
+* Introduced `daReadLedgerPeerSnapshot` to `P2P.ArgumentsExtra` which holds
+  a `Maybe LedgerPeerSnapshot` from a node's configuration. If present, it
+  may be used to pick big ledger peers by the peer selection governor when
+  bootstrapping a node in Genesis consensus mode, or in general when 
+  LedgerStateJudgement = TooOld, subject to conditions in
+  `LedgerPeers.ledgerPeersThread`.
+* Implemented provision of big ledger peers from the snapshot by `ledgerPeersThread`
+* Added property test checking if `ledgerPeersThread` is providing big ledger peers
+  from the snapshot when appropriate conditions are met
+* Added property tests checking if `LedgerPeerSnapshot` CBOR encoding is valid,
+  and decode/encode = id, as well as some property tests for calculating big ledger
+  peers
+* Diffusion run function in P2P mode has new paramaters:
+    * `daPeerTargets` - replaces daPeerSelectionTargets. `Configuration`
+        module provides an API. Used by peer selection & churn governors. Given
+        required arguments, it returns the correct target basis to use for churn
+        and peer selection governors.
+    * `daConsensusMode` - flag indicating whether diffusion should run in Praos
+      or Genesis mode, which influences what `PeerSelectionTargets` both
+      governors should use. Genesis may use two different sets of targets
+      depending on ledger state, while Praos uses only one set. Either set
+      once active is appropriately churned.
+* Implemented verification of big ledger peer snapshot when syncing reaches
+  the point at which the snapshot was taken. An error is raised when there's
+  a mismatch detected. 
 
 ### Non-Breaking changes
 
 * Refactored signature of `LedgerPeers.ledgerPeersThread` for concision
   and use of previously created records for shunting related values around.
+* Implemented separate configurable peer selection targets for Praos and
+  Genesis consensus modes. Genesis mode may use more big ledger peers when
+  a node is syncing up.
+* Churn & OG/peer selection governor are synchronized to ensure that while
+  a churn cycle is running, a change in ledger state (in Genesis) will make
+  peer selection governor hold its target basis until churn completes its round,
+  to prevent some non-deterministic interleaving of targets. 
+* Explicit synchronization via a TMVar between churn & peer selection governors
+  has been removed.
 
 ## 0.16.1.0 -- 2024-06-07
 

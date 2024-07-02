@@ -1,10 +1,11 @@
-{-# LANGUAGE CPP                 #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE CPP                      #-}
+{-# LANGUAGE DisambiguateRecordFields #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE LambdaCase               #-}
+{-# LANGUAGE NamedFieldPuns           #-}
+{-# LANGUAGE RankNTypes               #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE TupleSections            #-}
 
 module Ouroboros.Network.PeerSelection.PeerSelectionActions
   ( withPeerSelectionActions
@@ -56,8 +57,9 @@ data PeerSelectionActionsArgs peeraddr peerconn exception m = PeerSelectionActio
   psLocalRootPeersTracer      :: Tracer m (TraceLocalRootPeers peeraddr exception),
   psPublicRootPeersTracer     :: Tracer m TracePublicRootPeers,
   psReadTargets               :: STM m PeerSelectionTargets,
+  peerTargets                 :: ConsensusModePeerTargets,
   -- ^ peer selection governor know, established and active targets
-  psJudgement                 :: STM m LedgerStateJudgement,
+  readLedgerStateCtx          :: LedgerPeersConsensusInterface m,
   -- ^ Is consensus close to current slot?
   psReadLocalRootPeers        :: STM m [(HotValency, WarmValency, Map RelayAccessPoint (PeerAdvertise, PeerTrustable))],
   psReadPublicRootPeers       :: STM m (Map RelayAccessPoint PeerAdvertise),
@@ -71,8 +73,9 @@ data PeerSelectionActionsArgs peeraddr peerconn exception m = PeerSelectionActio
   psUpdateOutboundConnectionsState
                               :: OutboundConnectionsState -> STM m (),
   -- ^ Callback which updates information about outbound connections state.
-  psReadInboundPeers          :: m (Map peeraddr PeerSharing)
+  psReadInboundPeers          :: m (Map peeraddr PeerSharing),
   -- ^ inbound duplex peers
+  readLedgerPeerSnapshot      :: STM m (Maybe LedgerPeerSnapshot)
   }
 
 -- | Record of remaining parameters for withPeerSelectionActions
@@ -108,8 +111,9 @@ withPeerSelectionActions
   PeerSelectionActionsArgs {
     psLocalRootPeersTracer = localTracer,
     psPublicRootPeersTracer = publicTracer,
+    peerTargets,
     psReadTargets = selectionTargets,
-    psJudgement = judgement,
+    readLedgerStateCtx,
     psReadLocalRootPeers = localRootPeers,
     psReadPublicRootPeers = publicRootPeers,
     psReadUseBootstrapPeers = useBootstrapped,
@@ -117,7 +121,8 @@ withPeerSelectionActions
     psPeerConnToPeerSharing = peerConnToPeerSharing,
     psReadPeerSharingController = sharingController,
     psReadInboundPeers = readInboundPeers,
-    psUpdateOutboundConnectionsState = updateOutboundConnectionsState }
+    psUpdateOutboundConnectionsState = updateOutboundConnectionsState,
+    readLedgerPeerSnapshot }
   ledgerPeersArgs
   PeerSelectionActionsDiffusionMode { psPeerStateActions = peerStateActions }
   k = do
@@ -135,10 +140,12 @@ withPeerSelectionActions
                                        requestPublicRootPeers = \lpk n -> requestPublicRootPeers lpk n getLedgerPeers,
                                        requestPeerShare,
                                        peerStateActions,
+                                       peerTargets,
                                        readUseBootstrapPeers = useBootstrapped,
                                        readInboundPeers,
-                                       readLedgerStateJudgement = judgement,
-                                       updateOutboundConnectionsState }
+                                       readLedgerStateCtx,
+                                       updateOutboundConnectionsState,
+                                       readLedgerPeerSnapshot }
           withAsync
             (localRootPeersProvider
               localTracer
@@ -163,7 +170,7 @@ withPeerSelectionActions
       -- Check if the node is in a sensitive state
       usingBootstrapPeers <- atomically
                            $ requiresBootstrapPeers <$> useBootstrapped
-                                                    <*> judgement
+                                                    <*> lpGetLedgerStateJudgement readLedgerStateCtx
       if usingBootstrapPeers
          then do
           -- If the ledger state is in sensitive state we should get trustable peers.

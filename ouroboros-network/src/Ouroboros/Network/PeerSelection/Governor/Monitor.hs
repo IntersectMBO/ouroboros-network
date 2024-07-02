@@ -12,26 +12,30 @@
 module Ouroboros.Network.PeerSelection.Governor.Monitor
   ( targetPeers
   , jobs
+  , jobVerifyPeerSnapshot
   , connections
   , localRoots
   , monitorLedgerStateJudgement
   , monitorBootstrapPeersFlag
   , waitForSystemToQuiesce
+  , ledgerPeerSnapshotChange
   ) where
 
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe, isJust)
+import Data.Maybe (fromMaybe, isJust, maybeToList)
 import Data.Set (Set)
 import Data.Set qualified as Set
 
-import Control.Concurrent.JobPool (JobPool)
+import Control.Concurrent.JobPool (Job (..), JobPool)
 import Control.Concurrent.JobPool qualified as JobPool
 import Control.Exception (assert)
 import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import System.Random (randomR)
 
+import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.ExitPolicy (RepromoteDelay)
 import Ouroboros.Network.ExitPolicy qualified as ExitPolicy
 import Ouroboros.Network.PeerSelection.Bootstrap (isBootstrapPeersEnabled,
@@ -41,7 +45,9 @@ import Ouroboros.Network.PeerSelection.Governor.ActivePeers
 import Ouroboros.Network.PeerSelection.Governor.Types hiding
            (PeerSelectionCounters)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-           (LedgerStateJudgement (..))
+           (LedgerPeerSnapshot (..), LedgerPeersConsensusInterface (..),
+           LedgerStateJudgement (..))
+import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
 import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
@@ -63,28 +69,31 @@ governor_BOOTSTRAP_PEERS_TIMEOUT = 15 * 60
 -- state) then, until the node reaches a clean state, this monitoring action
 -- will be disabled and thus churning will be disabled as well.
 --
+-- On the other hand, if Genesis mode is on for the node, this action responds
+-- to changes in ledger state judgement monitoring actions to change the static
+-- set of target peers.
 targetPeers :: (MonadSTM m, Ord peeraddr)
             => PeerSelectionActions peeraddr peerconn m
             -> PeerSelectionState peeraddr peerconn
             -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-targetPeers PeerSelectionActions{readPeerSelectionTargets}
+targetPeers PeerSelectionActions{ readPeerSelectionTargets }
             st@PeerSelectionState{
               publicRootPeers,
               localRootPeers,
               targets,
-              ledgerStateJudgement,
               bootstrapPeersFlag,
-              hasOnlyBootstrapPeers
+              hasOnlyBootstrapPeers,
+              ledgerStateJudgement
             } =
     Guarded Nothing $ do
-      targets' <- readPeerSelectionTargets
-      check ( isNodeAbleToMakeProgress bootstrapPeersFlag
-                                       ledgerStateJudgement
-                                       hasOnlyBootstrapPeers
-            && targets' /= targets
-            && sanePeerSelectionTargets targets'
-            )
-      -- We simply ignore target updates that are not "sane".
+      targets'  <- readPeerSelectionTargets
+
+      -- nb. first check is redundant in Genesis mode
+      check (   isNodeAbleToMakeProgress bootstrapPeersFlag
+                                         ledgerStateJudgement
+                                         hasOnlyBootstrapPeers
+             && targets /= targets'
+             && sanePeerSelectionTargets targets')
 
       let usingBootstrapPeers = requiresBootstrapPeers bootstrapPeersFlag
                                                        ledgerStateJudgement
@@ -118,9 +127,8 @@ targetPeers PeerSelectionActions{readPeerSelectionTargets}
                           targets        = targets',
                           localRootPeers = localRootPeers',
                           publicRootPeers = publicRootPeers'
-                        }
-      }
-
+                        } }
+    where
 
 -- | Await for the first result from 'JobPool' and return its 'Decision'.
 --
@@ -425,9 +433,10 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
           -- doesn't really matter.
           --
           ledgerStateJudgement' =
-            if not hasOnlyBootstrapPeers'
-               then YoungEnough
-               else ledgerStateJudgement
+            if    requiresBootstrapPeers bootstrapPeersFlag ledgerStateJudgement
+               && not hasOnlyBootstrapPeers'
+            then YoungEnough
+            else ledgerStateJudgement
 
           -- If we are removing local roots and we have active connections to
           -- them then things are a little more complicated. We would typically
@@ -457,9 +466,7 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
         $ Decision {
             decisionTrace = TraceLocalRootPeersChanged localRootPeers localRootPeers'
                           : [ TraceLedgerStateJudgementChanged YoungEnough
-                            |  isBootstrapPeersEnabled bootstrapPeersFlag
-                            && not hasOnlyBootstrapPeers'
-                            && ledgerStateJudgement /= ledgerStateJudgement'
+                            | ledgerStateJudgement /= ledgerStateJudgement'
                             ],
             decisionState = st {
                               localRootPeers      = localRootPeers',
@@ -521,7 +528,10 @@ monitorBootstrapPeersFlag PeerSelectionActions { readUseBootstrapPeers }
                                                 , publicRootPeers
                                                 , inProgressPromoteCold
                                                 , inProgressPromoteWarm
-                                                } =
+                                                , consensusMode
+                                                }
+  | GenesisMode <- consensusMode = GuardedSkip Nothing
+  | otherwise =
   Guarded Nothing $ do
     ubp <- readUseBootstrapPeers
     check (ubp /= bootstrapPeersFlag)
@@ -551,11 +561,13 @@ monitorBootstrapPeersFlag PeerSelectionActions { readUseBootstrapPeers }
              }
       }
 
--- | Monitor 'LedgerStateJudgement', if it changes, depending on the value we
--- just need to update 'PeerSelectionTargets'. If the ledger state changed to
--- 'TooOld' we set all other targets to 0 and the governor waits for all
--- active connections to drop and then set the targets to sensible values for
--- getting caught up again.
+-- | Monitor 'LedgerStateJudgement', if it changes,
+--
+-- For Praos mode:
+-- If bootstrap peers are enabled, we need to update 'PeerSelectionTargets'.
+-- If the ledger state changed to 'TooOld' we set all other targets to 0
+-- and the governor waits for all active connections to drop and then set
+-- the targets to sensible values for getting caught up again.
 -- However if the state changes to 'YoungEnough' we reset the targets back to
 -- their original values.
 --
@@ -566,21 +578,47 @@ monitorBootstrapPeersFlag PeerSelectionActions { readUseBootstrapPeers }
 -- to a clean state. I.e., it will disconnect from the targets source of truth.
 --
 monitorLedgerStateJudgement :: ( MonadSTM m
+                               , MonadThrow m
                                , Ord peeraddr
                                )
                             => PeerSelectionActions peeraddr peerconn m
                             -> PeerSelectionState peeraddr peerconn
                             -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-monitorLedgerStateJudgement PeerSelectionActions{ readLedgerStateJudgement }
+monitorLedgerStateJudgement PeerSelectionActions{ peerTargets = ConsensusModePeerTargets{
+                                                    praosTargets,
+                                                    genesisSyncTargets },
+                                                  readLedgerStateCtx = ledgerCtx@LedgerPeersConsensusInterface {
+                                                    lpGetLedgerStateJudgement = readLedgerStateJudgement } }
                             st@PeerSelectionState{ bootstrapPeersFlag,
                                                    publicRootPeers,
                                                    knownPeers,
                                                    establishedPeers,
                                                    inProgressPromoteCold,
                                                    inProgressPromoteWarm,
-                                                   ledgerStateJudgement
-                                                 }
-  | isBootstrapPeersEnabled bootstrapPeersFlag =
+                                                   ledgerStateJudgement,
+                                                   consensusMode,
+                                                   ledgerPeerSnapshot }
+  | GenesisMode <- consensusMode =
+    Guarded Nothing $ do
+      lsj <- readLedgerStateJudgement
+      check (lsj /= ledgerStateJudgement)
+      let targets = case lsj of
+            YoungEnough -> praosTargets
+            TooOld      -> genesisSyncTargets
+
+      return $ \_now ->
+        Decision {
+          decisionTrace = [TraceLedgerStateJudgementChanged lsj],
+          decisionJobs = case (lsj, ledgerPeerSnapshot) of
+                           (TooOld, Just ledgerPeerSnapshot') ->
+                             [jobVerifyPeerSnapshot ledgerPeerSnapshot' ledgerCtx]
+                           _otherwise -> [],
+          decisionState = st {
+              ledgerStateJudgement = lsj,
+              targets } }
+
+  | PraosMode <- consensusMode
+  , isBootstrapPeersEnabled bootstrapPeersFlag =
     Guarded Nothing $ do
       lsj <- readLedgerStateJudgement
       check (lsj /= ledgerStateJudgement)
@@ -702,3 +740,63 @@ waitForSystemToQuiesce st@PeerSelectionState{
                                       }
         }
   | otherwise = GuardedSkip Nothing
+
+-- |This job, which is initiated by monitorLedgerStateJudgement job,
+-- verifies whether the provided big ledger pools match up with the
+-- ledger state once the node catches up to the slot at which the
+-- snapshot was ostensibly taken
+--
+jobVerifyPeerSnapshot :: ( MonadSTM m
+                         , MonadThrow m)
+                      => LedgerPeerSnapshot
+                      -> LedgerPeersConsensusInterface m
+                      -> Job () m (Completion m peeraddr peerconn)
+jobVerifyPeerSnapshot (LedgerPeerSnapshot (slot, relays))
+                      LedgerPeersConsensusInterface {
+                        lpGetLatestSlot,
+                        lpGetLedgerPeers }
+  = Job job
+        (const . completion Nothing $ Just $ TraceVerifyPeerSnapshot False)
+        ()
+        "jobVerifyPeerSnapshot"
+  where
+    completion queueJob trace = return . Completion $ \st _now ->
+      Decision {
+        decisionTrace = maybeToList trace,
+        decisionState = st,
+        decisionJobs  = maybeToList queueJob }
+
+    job = do
+      result <-
+        atomically $ do
+          check . (slot >=) =<< lpGetLatestSlot
+          (relays ==) . accumulateBigLedgerStake <$> lpGetLedgerPeers
+      case result of
+        True  -> completion Nothing (Just $ TraceVerifyPeerSnapshot result)
+        False -> throwIO BigLedgerPeerSnapshotError
+
+-- |This job monitors for any changes in the big ledger peer snapshot
+-- and flips ledger state judgement private state so that monitoring action
+-- can launch `jobVerifyPeerSnapshot`
+ledgerPeerSnapshotChange :: (MonadSTM m)
+                         => PeerSelectionState peeraddr peerconn
+                         -> PeerSelectionActions peeraddr peerconn m
+                         -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
+ledgerPeerSnapshotChange st@PeerSelectionState {
+                              ledgerPeerSnapshot }
+                         PeerSelectionActions {
+                           readLedgerPeerSnapshot } =
+  Guarded Nothing $ do
+    ledgerPeerSnapshot' <- readLedgerPeerSnapshot
+    case (ledgerPeerSnapshot', ledgerPeerSnapshot) of
+      (Nothing, _) -> retry
+      (Just (LedgerPeerSnapshot (slot, _)), Just (LedgerPeerSnapshot (slot', _)))
+        | slot == slot' -> retry
+      _otherwise ->
+        return $ \_now ->
+                   Decision { decisionTrace = [],
+                              decisionJobs  = [],
+                              decisionState = st {
+                                ledgerStateJudgement = YoungEnough,
+                                ledgerPeerSnapshot = ledgerPeerSnapshot' } }
+
