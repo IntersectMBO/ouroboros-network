@@ -2,6 +2,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | This module contains the part of the block fetch decisions process that is
 -- specific to the bulk sync mode.
@@ -44,16 +45,21 @@ fetchDecisionsBulkSync ::
     Eq peer
   ) =>
   FetchDecisionPolicy header ->
+  -- | The current chain, anchored at the immutable tip.
   AnchoredFragment header ->
   (Point block -> Bool) ->
   MaxSlotNo ->
   PeersOrder peer ->
   -- | Association list of the candidate fragments and their associated peers.
+  -- The candidate fragments are anchored in the current chain (not necessarily
+  -- at the tip).
   [(AnchoredFragment header, PeerInfo header peer extra)] ->
   -- | Association list of the requests and their associated peers. There is at
-  -- most one accepted request; everything else is declined.
-  ( Maybe (FetchRequest header, PeerInfo header peer extra)
-  , [(FetchDecline, PeerInfo header peer extra)]
+  -- most one accepted request; everything else is declined. Morally, this is a
+  -- map from peers to @'FetchDecision' ('FetchRequest' header)@ with at most
+  -- one @'FetchRequest' header@.
+  ( Maybe (FetchRequest header, PeerInfo header peer extra),
+    [(FetchDecline, PeerInfo header peer extra)]
   )
 fetchDecisionsBulkSync
   fetchDecisionPolicy
@@ -65,7 +71,12 @@ fetchDecisionsBulkSync
     -- Step 1: Select the candidate to sync from. This already eliminates peers
     -- that have an implausible candidate. It returns the remaining candidates
     -- (with their corresponding peer) as suffixes of the immutable tip.
-    (theCandidate, candidatesAndPeers') <-
+    --
+    -- FIXME: 'ChainSuffix' is supposed to represent fragments that fork off the
+    -- selection, and we use it the wrong way here?
+    ( theCandidate :: ChainSuffix header,
+      candidatesAndPeers' :: [(ChainSuffix header, PeerInfo header peer extra)]
+      ) <-
       MaybeT $
         selectTheCandidate
           fetchDecisionPolicy
@@ -75,7 +86,9 @@ fetchDecisionsBulkSync
     -- Step 2: Select the peer to sync from. This eliminates peers that cannot
     -- serve a reasonable batch of the candidate, then chooses the peer to sync
     -- from, then again declines the others.
-    (thePeerCandidate, thePeer) <-
+    ( thePeerCandidate :: ChainSuffix header,
+      thePeer :: PeerInfo header peer extra
+      ) <-
       MaybeT $
         selectThePeer
           fetchDecisionPolicy
@@ -96,6 +109,8 @@ fetchDecisionsBulkSync
             thePeer
             thePeerCandidate
 
+    -- FIXME: 'fetchTheCandidate' should also return a @WithDeclined (Maybe
+    -- ...)@.
     MaybeT $
       case theDecision of
         Left reason -> tell [(reason, thePeer)] >> pure Nothing
@@ -247,7 +262,7 @@ selectThePeer
         return $ Just (thePeerCandidate, thePeer)
     where
       checkRequestInCandidate ::
-        (HasHeader header) => ChainSuffix header -> FetchRequest header -> FetchDecision ()
+        ChainSuffix header -> FetchRequest header -> FetchDecision ()
       checkRequestInCandidate candidate request =
         if all isSubfragmentOfCandidate $ fetchRequestFragments request
           then pure ()
