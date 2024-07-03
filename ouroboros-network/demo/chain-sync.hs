@@ -31,6 +31,7 @@ import Control.Concurrent.Async
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception
 import Control.Monad (when)
+import Control.Monad.Class.MonadTime.SI (Time (..))
 import Control.Tracer
 
 import System.Directory
@@ -75,6 +76,7 @@ import Ouroboros.Network.Protocol.BlockFetch.Type qualified as BlockFetch
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.BlockFetch.Client
 import Ouroboros.Network.BlockFetch.ClientRegistry (FetchClientRegistry (..))
+import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation(..))
 import Ouroboros.Network.DeltaQ (defaultGSV)
 
 
@@ -440,7 +442,10 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
               blockMatchesHeader     = \_ _ -> True,
 
               headerForgeUTCTime,
-              blockForgeUTCTime      = headerForgeUTCTime . fmap blockHeader
+              blockForgeUTCTime      = headerForgeUTCTime . fmap blockHeader,
+
+              readChainSelStarvation = pure (ChainSelStarvationEndedAt (Time 0)),
+              demoteCSJDynamo = \_ -> pure ()
             }
           where
             plausibleCandidateChain cur candidate =

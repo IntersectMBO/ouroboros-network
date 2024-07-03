@@ -44,6 +44,7 @@ import Ouroboros.Network.ControlMessage (ControlMessageSTM)
 
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.BlockFetch.Client
+import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation(..))
 import Ouroboros.Network.Channel
 import Ouroboros.Network.DeltaQ
 import Ouroboros.Network.Driver
@@ -293,7 +294,10 @@ sampleBlockFetchPolicy1 headerFieldsForgeUTCTime blockHeap currentChain candidat
       blockMatchesHeader     = \_ _ -> True,
 
       headerForgeUTCTime     = headerFieldsForgeUTCTime,
-      blockForgeUTCTime      = headerFieldsForgeUTCTime
+      blockForgeUTCTime      = headerFieldsForgeUTCTime,
+
+      readChainSelStarvation = pure (ChainSelStarvationEndedAt (Time 0)),
+      demoteCSJDynamo = \_ -> pure ()
       }
   where
     plausibleCandidateChain cur candidate =

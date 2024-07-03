@@ -342,6 +342,7 @@ executable demo-chain-sync
 
                        contra-tracer,
 
+                       si-timers,
                        typed-protocols,
                        strict-stm,
                        ouroboros-network-api,
