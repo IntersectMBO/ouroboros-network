@@ -92,7 +92,7 @@
 \def\TerminatingState{\texttt{TerminatingState\textsuperscript{$\tau$}}}
 \def\TerminatedState{\texttt{TerminatedState}}
 
-% Connection manager's ransitions
+% Connection manager's transitions
 \def\Reserve{\textsf{Reserve}}
 \def\Connected{\textsf{Connected}}
 \def\Accepted{\textsf{Accepted}}
@@ -101,6 +101,8 @@
 \def\NegotiatedDupOut{\textsf{Negotiated}\textsuperscript{\textsf{Duplex}}\textsubscript{\textsf{Outbound}}}
 \def\NegotiatedUniIn{\textsf{Negotiated}\textsuperscript{\textsf{Unidirectional}}\textsubscript{\textsf{Inbound}}}
 \def\NegotiatedDupIn{\textsf{Negotiated}\textsuperscript{\textsf{Duplex}}\textsubscript{\textsf{Inbound}}}
+\def\SelfNegotiatedUniIn{\textsf{SelfNegotiated}\textsuperscript{\textsf{Unidirectional}}\textsubscript{\textsf{Inbound}}}
+\def\SelfNegotiatedDupIn{\textsf{SelfNegotiated}\textsuperscript{\textsf{Duplex}}\textsubscript{\textsf{Inbound}}}
 \def\NegotiatedAnyIn{\textsf{Negotiated}\textsuperscript{\textsf{dataFlow}}\textsubscript{\textsf{Inbound}}}
 \def\PromotedToWarmDupLoc{\textsf{PromotedToWarm}\textsuperscript{\textsf{Duplex}}\textsubscript{\textsf{Local}}}
 \def\PromotedToWarmDupRem{\textsf{PromotedToWarm}\textsuperscript{\textsf{Duplex}}\textsubscript{\textsf{Remote}}}
@@ -589,8 +591,8 @@ regarding \texttt{InitiatorMode}.
   {\begin{tikzpicture}[scale=0.66]
     \node                                     (init)                       at ( 2,   2)     {\small\InitialState};
     \node[outbound_state]                     (ReservedOutboundState)      at ( 0,-0.25)    {\small\ReservedOutboundState};
-    \node[outbound_state,anchor=east]         (UnnegotiatedStateOut)       at (-1,  -3)     {\small\UnnegotiatedStateOut};
-    \node[inbound_state]                      (UnnegotiatedStateIn)        at ( 5.5, -3)    {\small\UnnegotiatedStateIn};
+    \node[outbound_state,anchor=east]         (UnnegotiatedStateOut)       at (-1.5,  -3)   {\small\UnnegotiatedStateOut};
+    \node[inbound_state]                      (UnnegotiatedStateIn)        at ( 6, -3)      {\small\UnnegotiatedStateIn};
     \node[inbound_outbound_state,anchor=west] (InboundIdleStateDup)        at ( 1, -6.0)    {\small\InboundIdleStateDup};
     \node[inbound_state,anchor=west]          (InboundIdleStateUni)        at ( 5, -8)      {\small\InboundIdleStateUni};
     \node[outbound_state,anchor=east]         (OutboundStateUni)           at (-2, -7.5)    {\small\OutboundStateUni};
@@ -611,17 +613,25 @@ regarding \texttt{InitiatorMode}.
     \draw[->] (ReservedOutboundState)          -- node[fill=white,above left] {\small\Connected}                       (UnnegotiatedStateOut);
     \draw[->] (ReservedOutboundState)          -- node[fill=white,above right] {\small\Overwritten}                    (UnnegotiatedStateIn);
 
+    \draw[->] (UnnegotiatedStateOut)           -- node[fill=white, above=18pt, left] {\small \SelfConn}               (UnnegotiatedStateIn);
+    \draw[->] (UnnegotiatedStateIn)            -- node[fill=white, above=18pt, right] {\small \SelfConnRev}              (UnnegotiatedStateOut);
+
     \draw[->] (UnnegotiatedStateOut)           -- node[fill=white,left=-42pt] {\small\NegotiatedUniOut}                (OutboundStateUni.165);
     \draw[->] (UnnegotiatedStateOut.340)       to [out=-60, in=90]
                                                node[fill=white,right=-30pt,pos=0.23]{\small\NegotiatedDupOut}          (OutboundStateDupTau.13);
 
-    \draw[->]         (UnnegotiatedStateIn)    -- node[fill=white,left=-12pt]{\small\NegotiatedDupIn}                  (InboundIdleStateDup.150);
-    \draw[->]         (UnnegotiatedStateIn)    -- node[fill=white,pos=0.35,right=-28pt]{\small\NegotiatedUniIn}        (InboundIdleStateUni.60);
+    \draw[->] (UnnegotiatedStateOut)           -- node[fill=white, right=0.3, pos=0.01]{\footnotesize\SelfNegotiatedDupIn}    (InboundIdleStateDup);
+    \draw[->] (UnnegotiatedStateOut)           to [out=205, in=175]
+                                               node[fill=white, pos=0.45]{\footnotesize\SelfNegotiatedUniIn}                  (InboundIdleStateUni);
 
+    \draw[->]         (UnnegotiatedStateIn)    -- node[fill=white]{\small\NegotiatedDupIn}                  (InboundIdleStateDup.150);
+    \draw[->]         (UnnegotiatedStateIn)    -- node[fill=white,pos=0.35,right=6pt]{\small\NegotiatedUniIn}        (InboundIdleStateUni.60);
+
+    \draw[->]  (InboundIdleStateUni)           -- node[fill=white, left=6pt] {\small \SelfConnPrim}                       (OutboundStateUni);
     \draw[->]         (InboundIdleStateUni.320) to [out=-90,in=40]
                                                 node[fill=white,pos=0.5,rotate=70,left=-15pt]{\small\CommitUniRem}     (TerminatingState.0);
     \draw[->, dashed] (InboundStateUni.10)      -- node[pos=0.3,fill=white,right=-45pt]{\small\DemotedToColdUniRem}    (InboundIdleStateUni.350);
-    \draw[->]         (InboundIdleStateDup.195) -- node[fill=white,pos=0.4]{\small\AwakeDupLoc}                        (OutboundStateDupTau.10);
+    \draw[->]         (InboundIdleStateDup.195) -- node[fill=white,pos=0.6]{\small\AwakeDupLoc}                          (OutboundStateDupTau.10);
 
     \draw[->, dashed] (InboundIdleStateDup.200) -- node[fill=white,pos=0.65]{\small\AwakeDupRem}                       (InboundStateDup.160);
     \draw[->]         (OutboundStateDupTau.150) to [out=90,in=-170]
