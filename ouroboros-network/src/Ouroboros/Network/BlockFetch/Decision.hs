@@ -157,7 +157,7 @@ fetchDecisions
         peersOrder@PeersOrder {peersOrderCurrent, peersOrderStart, peersOrderOthers} =
           case chainSelStarvation of
             ChainSelStarvationEndedAt time
-              | time < addTime (1 :: DiffTime) peersOrderStart ->
+              | time < addTime (10 :: DiffTime) peersOrderStart ->
                 pure peersOrder
             _ -> do
               let peersOrder' =
