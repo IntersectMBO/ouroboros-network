@@ -62,6 +62,7 @@ library
                        deepseq,
                        dns,
                        iproute,
+                       measures,
                        network           >=3.1.2 && <3.2,
                        nothunks,
                        serialise         >=0.2   && <0.3,
