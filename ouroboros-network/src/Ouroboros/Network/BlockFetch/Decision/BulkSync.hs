@@ -10,7 +10,6 @@ module Ouroboros.Network.BlockFetch.Decision.BulkSync (
   fetchDecisionsBulkSync
 ) where
 
-import Control.Monad (filterM)
 import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
 import Control.Monad.Writer (Writer, runWriter, MonadWriter (tell))
 import Data.Bifunctor (first, Bifunctor (..))
@@ -236,13 +235,12 @@ selectThePeer
     -- For each peer, check whether its candidate contains the gross request
     -- in its entirety, otherwise decline it.
     peers <-
-      filterM
-        ( \(candidate, peer) ->
-            case checkRequestInCandidate candidate =<< grossRequest of
-              Left reason -> tell [(reason, peer)] >> pure False
-              Right () -> pure True
-        )
-        candidates
+      tellLeftsFirst $
+        map
+          ( first $ \candidate -> do
+              checkRequestInCandidate candidate =<< grossRequest
+              pure candidate )
+          candidates
 
     -- Order the peers according to the peer order that we have been given,
     -- then separate between declined peers and the others.
@@ -330,3 +328,13 @@ fetchTheCandidate
          in if null trimmedFragments
               then Left FetchDeclineAlreadyFetched
               else Right trimmedFragments
+
+tellLeftsFirst :: [(Either a b, c)] -> Writer [(a, c)] [(b, c)]
+tellLeftsFirst xs =
+  let (lefts, rights) = partitionEithersFirst xs
+   in tell lefts >> pure rights
+
+partitionEithersFirst :: [(Either a b, c)] -> ([(a, c)], [(b, c)])
+partitionEithersFirst [] = ([], [])
+partitionEithersFirst ((Left a, c) : xs) = first ((a, c) :) (partitionEithersFirst xs)
+partitionEithersFirst ((Right b, c) : xs) = second ((b, c) :) (partitionEithersFirst xs)
