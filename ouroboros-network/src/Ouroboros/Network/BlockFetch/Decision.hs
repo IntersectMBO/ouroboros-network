@@ -27,7 +27,7 @@ import Data.Hashable
 import Data.List (singleton)
 import Data.Foldable (traverse_)
 import Data.Function ((&))
-import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime(..), addTime, DiffTime)
+import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime(..), addTime)
 
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import Ouroboros.Network.Block
@@ -154,12 +154,13 @@ fetchDecisions
 
       checkLastChainSelStarvation :: PeersOrder peer -> m (PeersOrder peer)
       checkLastChainSelStarvation
-        peersOrder@PeersOrder {peersOrderCurrent, peersOrderStart, peersOrderOthers} =
-          case chainSelStarvation of
-            ChainSelStarvationEndedAt time
-              | time < addTime bulkSyncGracePeriod peersOrderStart ->
-                  pure peersOrder
-            _ -> do
+        peersOrder@PeersOrder {peersOrderCurrent, peersOrderStart, peersOrderOthers} = do
+          lastStarvationTime <- case chainSelStarvation of
+            ChainSelStarvationEndedAt time -> pure time
+            ChainSelStarvationOngoing -> getMonotonicTime
+          if lastStarvationTime < addTime bulkSyncGracePeriod peersOrderStart
+            then pure peersOrder
+            else do
               let peersOrder' =
                     PeersOrder
                       { peersOrderCurrent = Nothing,
