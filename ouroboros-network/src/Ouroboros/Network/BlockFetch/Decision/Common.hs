@@ -46,6 +46,7 @@ data FetchDecisionPolicy header = FetchDecisionPolicy {
        maxConcurrencyDeadline  :: Word,
        decisionLoopInterval    :: DiffTime,
        peerSalt                :: Int,
+       bulkSyncGracePeriod     :: DiffTime,
 
        plausibleCandidateChain :: HasCallStack
                                => AnchoredFragment header
