@@ -295,7 +295,8 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
           bfcMaxConcurrencyDeadline = 2,
           bfcMaxRequestsInflight    = 10,
           bfcDecisionLoopInterval   = 0.01,
-          bfcSalt                   = 0
+          bfcSalt                   = 0,
+          bfcBulkSyncGracePeriod    = 10 -- seconds
         })
 
     blockFetchPolicy :: NodeKernel BlockHeader Block s m

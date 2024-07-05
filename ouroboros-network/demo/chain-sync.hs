@@ -515,7 +515,8 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
                         bfcMaxConcurrencyDeadline = 2,
                         bfcMaxRequestsInflight    = 10,
                         bfcDecisionLoopInterval   = 0.01,
-                        bfcSalt                   = 0
+                        bfcSalt                   = 0,
+                        bfcBulkSyncGracePeriod    = 10 -- seconds
                         })
                  >> return ()
 

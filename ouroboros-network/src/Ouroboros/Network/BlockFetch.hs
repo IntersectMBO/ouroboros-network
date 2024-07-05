@@ -141,7 +141,11 @@ data BlockFetchConfiguration =
          bfcDecisionLoopInterval   :: !DiffTime,
 
          -- | Salt used when comparing peers
-         bfcSalt                   :: !Int
+         bfcSalt                   :: !Int,
+
+         -- | Grace period when starting to talk to a peer in bulk sync mode
+         -- during which it is fine if the chain selection gets starved.
+         bfcBulkSyncGracePeriod    :: !DiffTime
      }
      deriving (Show)
 
@@ -199,6 +203,7 @@ blockFetchLogic decisionTracer clientStateTracer
         maxConcurrencyDeadline   = bfcMaxConcurrencyDeadline,
         decisionLoopInterval     = bfcDecisionLoopInterval,
         peerSalt                 = bfcSalt,
+        bulkSyncGracePeriod      = bfcBulkSyncGracePeriod,
 
         plausibleCandidateChain,
         compareCandidateChains,

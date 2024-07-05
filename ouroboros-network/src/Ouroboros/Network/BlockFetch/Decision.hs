@@ -80,7 +80,7 @@ fetchDecisions
         candidatesAndPeers
 
 fetchDecisions
-  fetchDecisionPolicy
+  fetchDecisionPolicy@FetchDecisionPolicy {bulkSyncGracePeriod}
   FetchModeBulkSync
   currentChain
   fetchedBlocks
@@ -157,8 +157,8 @@ fetchDecisions
         peersOrder@PeersOrder {peersOrderCurrent, peersOrderStart, peersOrderOthers} =
           case chainSelStarvation of
             ChainSelStarvationEndedAt time
-              | time < addTime (10 :: DiffTime) peersOrderStart ->
-                pure peersOrder
+              | time < addTime bulkSyncGracePeriod peersOrderStart ->
+                  pure peersOrder
             _ -> do
               let peersOrder' =
                     PeersOrder
