@@ -11,7 +11,7 @@ module Ouroboros.Network.BlockFetch.Decision.BulkSync (
 ) where
 
 import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
-import Control.Monad.Writer (Writer, runWriter, MonadWriter (tell))
+import Control.Monad.Writer.CPS (Writer, runWriter, MonadWriter (tell))
 import Data.Bifunctor (first, Bifunctor (..))
 import Data.List (sortOn)
 import Data.List.NonEmpty (nonEmpty)
