@@ -14,6 +14,7 @@ import Control.Monad (filterM)
 import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
 import Control.Monad.Writer.CPS (Writer, runWriter, MonadWriter (tell))
 import Data.Bifunctor (first, Bifunctor (..))
+import Data.Foldable (toList)
 import Data.List (sortOn)
 import Data.List.NonEmpty (nonEmpty)
 import qualified Data.List.NonEmpty as NE
@@ -32,9 +33,23 @@ import Ouroboros.Network.BlockFetch.Decision.Common
 -- arises, we should move the interesting piece of code to 'Decision.Common'.
 -- This is to be done on demand.
 
-type WithDeclined peer = Writer [(FetchDecline, peer)]
+-- | A trivial foldable data structure with a 'Semigroup' instance that
+-- concatenates in @O(1)@. Only meant for short-term use, followed by one fold.
+data ListConcat a = List [a] | Concat (ListConcat a) (ListConcat a)
 
-runWithDeclined :: WithDeclined peer a -> (a, [(FetchDecline, peer)])
+instance Semigroup (ListConcat a) where
+  (<>) = Concat
+
+instance Monoid (ListConcat a) where
+  mempty = List []
+
+instance Foldable ListConcat where
+  foldMap f (List xs) = foldMap f xs
+  foldMap f (Concat x y) = foldMap f x <> foldMap f y
+
+type WithDeclined peer = Writer (ListConcat (FetchDecline, peer))
+
+runWithDeclined :: WithDeclined peer a -> (a, ListConcat (FetchDecline, peer))
 runWithDeclined = runWriter
 
 -- | Given a list of candidate fragments and their associated peers, choose what
@@ -111,7 +126,7 @@ fetchDecisionsBulkSync
         ( Maybe (a, peer),
           [(FetchDecline, peer)]
         )
-      combineWithDeclined = runWithDeclined . runMaybeT
+      combineWithDeclined = second toList . runWithDeclined . runMaybeT
 
 -- FIXME: The 'FetchDeclineConcurrencyLimit' should only be used for
 -- 'FetchModeDeadline', and 'FetchModeBulkSync' should have its own reasons.
@@ -159,7 +174,7 @@ selectTheCandidate
             <$> traverse
               ( \(decision, peer) ->
                   case decision of
-                    Left reason -> tell [(reason, peer)] >> pure Nothing
+                    Left reason -> tell (List [(reason, peer)]) >> pure Nothing
                     Right candidate -> pure $ Just (candidate, peer)
               )
               decisions
@@ -229,7 +244,7 @@ selectThePeer
       filterM
         ( \(candidate, peer) ->
             case checkRequestInCandidate candidate =<< grossRequest of
-              Left reason -> tell [(reason, peer)] >> pure False
+              Left reason -> tell (List [(reason, peer)]) >> pure False
               Right () -> pure True
         )
         candidates
@@ -248,7 +263,7 @@ selectThePeer
     case peersOrdered of
       [] -> return Nothing
       (thePeerCandidate, thePeer) : otherPeers -> do
-        tell $ map (first (const (FetchDeclineConcurrencyLimit FetchModeBulkSync 1))) otherPeers
+        tell $ List $ map (first (const (FetchDeclineConcurrencyLimit FetchModeBulkSync 1))) otherPeers
         return $ Just (thePeerCandidate, thePeer)
     where
       checkRequestInCandidate ::
@@ -310,7 +325,7 @@ fetchTheCandidate
             status
             (Right trimmedFragments) -- FIXME: This is a hack to avoid having to change the signature of 'fetchRequestDecisions'.
      in case theDecision of
-          Left reason -> tell [(reason, thePeer)] >> pure Nothing
+          Left reason -> tell (List [(reason, thePeer)]) >> pure Nothing
           Right theRequest -> pure $ Just (theRequest, thePeer)
     where
       trimFragmentsToCandidate candidate fragments =
