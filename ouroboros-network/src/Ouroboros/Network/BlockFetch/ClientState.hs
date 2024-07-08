@@ -239,10 +239,15 @@ data PeerFetchInFlight header = PeerFetchInFlight {
 
 -- | Information associated to a block in flight.
 data PeerFetchBlockInFlight = PeerFetchBlockInFlight
+  { -- | The block fetch decision logic might decide to ignore a block that is
+    -- in flight. It will only be ignored when taking decisions, by it can of
+    -- course not be ignored when computing the actual request.
+    peerFetchBlocksInFlightIgnoredByLogic :: !Bool
+  }
   deriving (Eq, Show)
 
 defaultPeerFetchBlockInFlight :: PeerFetchBlockInFlight
-defaultPeerFetchBlockInFlight = PeerFetchBlockInFlight
+defaultPeerFetchBlockInFlight = PeerFetchBlockInFlight False
 
 initialPeerFetchInFlight :: PeerFetchInFlight header
 initialPeerFetchInFlight =
@@ -298,7 +303,7 @@ addHeadersInFlight blockFetchSize oldReq addedReq mergedReq inflight =
           (\_ _ -> error "addHeadersInFlight: precondition violated")
           (peerFetchBlocksInFlight inflight)
           ( Map.fromList
-                [ (blockPoint header, PeerFetchBlockInFlight)
+                [ (blockPoint header, defaultPeerFetchBlockInFlight)
                 | fragment <- fetchRequestFragments addedReq
                 , header   <- AF.toOldestFirst fragment ]
           ),

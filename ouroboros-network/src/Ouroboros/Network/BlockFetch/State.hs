@@ -38,12 +38,13 @@ import Ouroboros.Network.Block
 import Ouroboros.Network.BlockFetch.ClientState (FetchClientStateVars (..),
            FetchRequest (..), PeerFetchInFlight (..), PeerFetchStatus (..),
            TraceFetchClientState (..), TraceLabelPeer (..), addNewFetchRequest,
-           readFetchClientState, PeersOrder (..))
+           readFetchClientState, PeersOrder (..), PeerFetchBlockInFlight (..))
 import Ouroboros.Network.BlockFetch.Decision (FetchDecision,
            FetchDecisionPolicy (..), FetchDecline (..), FetchMode (..),
            PeerInfo, fetchDecisions)
 import Ouroboros.Network.BlockFetch.DeltaQ (PeerGSV (..))
 import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation)
+import Control.Concurrent.Class.MonadSTM.Strict.TVar (modifyTVar)
 
 
 fetchLogicIterations
@@ -146,7 +147,9 @@ fetchLogicIteration decisionTracer clientStateTracer
     decisions <- fetchDecisionsForStateSnapshot
                       fetchDecisionPolicy
                       stateSnapshot
-                      (peersOrder, atomically . writeTVar peersOrderVar, demoteCSJDynamo)
+                      (peersOrder,
+                       atomically . writeTVar peersOrderVar,
+                       demoteCSJDynamoAndIgnoreInflightBlocks)
 
     -- If we want to trace timings, we can do it here after forcing:
     -- _ <- evaluate (force decisions)
@@ -173,6 +176,19 @@ fetchLogicIteration decisionTracer clientStateTracer
       [ blockPoint header
       | headers <- headerss
       , header  <- AF.toOldestFirst headers ]
+
+    demoteCSJDynamoAndIgnoreInflightBlocks peer = do
+      demoteCSJDynamo peer
+      atomically $ do
+        peerStateVars <- readStatePeerStateVars fetchNonTriggerVariables
+        case Map.lookup peer peerStateVars of
+          Nothing -> return ()
+          Just peerStateVar ->
+            modifyTVar (fetchClientInFlightVar peerStateVar) $ \pfif ->
+              pfif
+                { peerFetchBlocksInFlight =
+                    fmap (const (PeerFetchBlockInFlight True)) (peerFetchBlocksInFlight pfif)
+                }
 
 -- | Do a bit of rearranging of data before calling 'fetchDecisions' to do the
 -- real work.
