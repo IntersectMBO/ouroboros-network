@@ -88,7 +88,7 @@ fetchDecisions
   chainSelStarvation
   ( peersOrder0,
     writePeersOrder,
-    demoteCSJDynamo
+    demoteCSJDynamoAndIgnoreInflightBlocks
     )
   candidatesAndPeers = do
     peersOrder@PeersOrder {peersOrderCurrent, peersOrderOthers} <-
@@ -100,8 +100,9 @@ fetchDecisions
         peersOrder0
         (map (\(_, (_, _, _, peer, _)) -> peer) candidatesAndPeers)
         -- If the chain selection has been starved recently, that is after the
-        -- current peer started (and a grace period), then the current peer is bad.
-        -- We push it at the end of the queue and demote it from CSJ dynamo.
+        -- current peer started (and a grace period), then the current peer is
+        -- bad. We push it at the end of the queue, demote it from CSJ dynamo,
+        -- and ignore its in-flight blocks for the future.
         & checkLastChainSelStarvation
 
     -- Compute the actual block fetch decision. This contains only declines and
@@ -167,5 +168,5 @@ fetchDecisions
                         peersOrderOthers = msnoc peersOrderOthers peersOrderCurrent,
                         peersOrderStart
                       }
-              traverse_ demoteCSJDynamo peersOrderCurrent
+              traverse_ demoteCSJDynamoAndIgnoreInflightBlocks peersOrderCurrent
               pure peersOrder'
