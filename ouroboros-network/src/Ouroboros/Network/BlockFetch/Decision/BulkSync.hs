@@ -51,7 +51,7 @@ fetchDecisionsBulkSync ::
   PeersOrder peer ->
   -- | Association list of the candidate fragments and their associated peers.
   -- The candidate fragments are anchored in the current chain (not necessarily
-  -- at the tip).
+  -- at the tip; and not necessarily forking off immediately).
   [(AnchoredFragment header, PeerInfo header peer extra)] ->
   -- | Association list of the requests and their associated peers. There is at
   -- most one accepted request; everything else is declined. Morally, this is a
@@ -70,9 +70,6 @@ fetchDecisionsBulkSync
     -- Step 1: Select the candidate to sync from. This already eliminates peers
     -- that have an implausible candidate. It returns the remaining candidates
     -- (with their corresponding peer) as suffixes of the immutable tip.
-    --
-    -- FIXME: 'ChainSuffix' is supposed to represent fragments that fork off the
-    -- selection, and we use it the wrong way here?
     ( theCandidate :: ChainSuffix header,
       candidatesAndPeers' :: [(ChainSuffix header, PeerInfo header peer extra)]
       ) <-
@@ -99,21 +96,14 @@ fetchDecisionsBulkSync
 
     -- Step 3: Fetch the candidate from the selected peer, potentially declining
     -- it (eg. if the peer is already too busy).
-    let theDecision =
-          fetchTheCandidate
-            fetchDecisionPolicy
-            fetchedBlocks
-            fetchedMaxSlotNo
-            theCandidate
-            thePeer
-            thePeerCandidate
-
-    -- FIXME: 'fetchTheCandidate' should also return a @WithDeclined (Maybe
-    -- ...)@.
     MaybeT $
-      case theDecision of
-        Left reason -> tell [(reason, thePeer)] >> pure Nothing
-        Right theRequest -> pure $ Just (theRequest, thePeer)
+      fetchTheCandidate
+        fetchDecisionPolicy
+        fetchedBlocks
+        fetchedMaxSlotNo
+        theCandidate
+        thePeer
+        thePeerCandidate
     where
       combineWithDeclined ::
         MaybeT (WithDeclined peer) (a, peer) ->
@@ -287,33 +277,39 @@ fetchTheCandidate ::
   PeerInfo header peer extra ->
   -- | Its candidate fragment as suffix of the immutable tip.
   ChainSuffix header ->
-  FetchDecision (FetchRequest header)
+  WithDeclined
+    (PeerInfo header peer extra)
+    (Maybe (FetchRequest header, PeerInfo header peer extra))
 fetchTheCandidate
   fetchDecisionPolicy
   fetchedBlocks
   fetchedMaxSlotNo
   theCandidate
-  (status, inflight, gsvs, _, _)
-  thePeerCandidate = do
-    -- Keep blocks that have not already been downloaded or that are not
-    -- already in-flight with this peer.
-    fragments <-
-      filterNotAlreadyFetched fetchedBlocks fetchedMaxSlotNo theCandidate
-        >>= filterNotAlreadyInFlightWithPeer inflight
+  thePeer@(status, inflight, gsvs, _, _)
+  thePeerCandidate =
+    let theDecision = do
+          -- Keep blocks that have not already been downloaded or that are not
+          -- already in-flight with this peer.
+          fragments <-
+            filterNotAlreadyFetched fetchedBlocks fetchedMaxSlotNo theCandidate
+              >>= filterNotAlreadyInFlightWithPeer inflight
 
-    -- Trim the fragments to the peer's candidate, keeping only blocks that
-    -- they may actually serve.
-    trimmedFragments <- trimFragmentsToCandidate thePeerCandidate (snd fragments)
+          -- Trim the fragments to the peer's candidate, keeping only blocks that
+          -- they may actually serve.
+          trimmedFragments <- trimFragmentsToCandidate thePeerCandidate (snd fragments)
 
-    -- Try to create a request for those fragments.
-    fetchRequestDecision
-      fetchDecisionPolicy
-      FetchModeBulkSync
-      0 -- bypass all concurrency limits. REVIEW: is this really what we want?
-      (calculatePeerFetchInFlightLimits gsvs)
-      inflight
-      status
-      (Right trimmedFragments) -- FIXME: This is a hack to avoid having to change the signature of 'fetchRequestDecisions'.
+          -- Try to create a request for those fragments.
+          fetchRequestDecision
+            fetchDecisionPolicy
+            FetchModeBulkSync
+            0 -- bypass all concurrency limits. REVIEW: is this really what we want?
+            (calculatePeerFetchInFlightLimits gsvs)
+            inflight
+            status
+            (Right trimmedFragments) -- FIXME: This is a hack to avoid having to change the signature of 'fetchRequestDecisions'.
+     in case theDecision of
+          Left reason -> tell [(reason, thePeer)] >> pure Nothing
+          Right theRequest -> pure $ Just (theRequest, thePeer)
     where
       trimFragmentsToCandidate candidate fragments =
         let trimmedFragments =
