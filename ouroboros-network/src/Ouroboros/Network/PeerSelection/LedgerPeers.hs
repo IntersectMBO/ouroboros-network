@@ -41,7 +41,7 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadTime.SI
 import Control.Tracer (Tracer, traceWith)
 import Data.IP qualified as IP
-import Data.List (foldl')
+import Data.List as List (foldl')
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict (Map)
@@ -109,7 +109,7 @@ accPoolStake :: [(PoolStake, NonEmpty RelayAccessPoint)]
              -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
 accPoolStake =
       Map.fromList
-    . foldl' fn []
+    . List.foldl' fn []
     . reRelativeStake AllLedgerPeers
   where
     fn :: [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))]
@@ -294,7 +294,7 @@ ledgerPeersThread PeerActionsDNS {
 
 
                let (plainAddrs, domains) =
-                     foldl' partitionPeer (Set.empty, []) pickedPeers
+                     List.foldl' partitionPeer (Set.empty, []) pickedPeers
 
                -- NOTE: we don't set `resolveConcurrent` because
                -- of https://github.com/kazu-yamamoto/dns/issues/174
@@ -307,7 +307,7 @@ ledgerPeersThread PeerActionsDNS {
 
                let (rng'', rngDomain) = split rng'
                    pickedAddrs =
-                     snd $ foldl' pickDomainAddrs
+                     snd $ List.foldl' pickDomainAddrs
                                   (rngDomain, plainAddrs)
                                   domainAddrs
 

@@ -22,7 +22,7 @@ flag asserts
 library
   hs-source-dirs:       src
   exposed-modules:      Cardano.Network.Ping
-  build-depends:        base                          >=4.14     && <4.20,
+  build-depends:        base                          >=4.14     && <4.21,
                         aeson                         >=2.1.1.0  && <3,
                         cborg                         >=0.2.8    && <0.3,
                         bytestring                    >=0.10     && <0.13,

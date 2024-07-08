@@ -41,7 +41,7 @@ common demo-deps
                        -Wunused-packages
 
 library
-  build-depends:       base            >=4.14 && <4.20,
+  build-depends:       base            >=4.14 && <4.21,
                        io-classes     ^>=1.5.0,
                        strict-stm,
                        si-timers,
@@ -120,7 +120,7 @@ test-suite test
                        Test.Mux.Timeout
   default-language:    Haskell2010
   default-extensions:  ImportQualifiedPost
-  build-depends:       base >=4.14 && <4.20,
+  build-depends:       base >=4.14 && <4.21,
                        io-classes,
                        si-timers,
                        strict-stm,
@@ -165,7 +165,7 @@ executable mux-demo
   hs-source-dirs:      demo, test
   main-is:             mux-demo.hs
   other-modules:       Test.Mux.ReqResp
-  build-depends:       base >=4.14 && <4.20,
+  build-depends:       base >=4.14 && <4.21,
                        network-mux,
                        io-classes,
                        contra-tracer,

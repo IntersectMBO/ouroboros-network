@@ -12,7 +12,7 @@ import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.IOSim (runSimOrThrow)
 import Data.IntPSQ qualified as Pq
-import Data.List (foldl')
+import Data.List as List (foldl')
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
@@ -246,7 +246,7 @@ prop_randomDemotionM ArbitraryPolicyArguments{..} seed = do
                -> m Property
     doDemotion 0 _ countMap = do
         let (!nonTepids, !nonTepidSum, !tepids, !tepidSum) =
-                foldl' byTepid (0,0,0,0) $ Map.toList countMap
+                List.foldl' byTepid (0,0,0,0) $ Map.toList countMap
             meanNonTepid = if nonTepids == 0
                               then 0 :: Double
                               else fromIntegral nonTepidSum /
@@ -293,7 +293,7 @@ prop_randomDemotionM ArbitraryPolicyArguments{..} seed = do
         if Set.size picked /= apaPickNum
            then return $ property False
            else do
-               let countMap' = foldl' fn countMap picked
+               let countMap' = List.foldl' fn countMap picked
                doDemotion (n-1) policies countMap'
       where
         fn :: Map SockAddr Int -> SockAddr -> Map SockAddr Int

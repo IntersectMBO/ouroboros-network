@@ -18,7 +18,7 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim hiding (SimResult)
 import Control.Tracer (Tracer (..), nullTracer, traceWith)
 import Data.IP qualified as IP
-import Data.List (foldl', intercalate, isPrefixOf, nub, sortOn)
+import Data.List as List (foldl', intercalate, isPrefixOf, nub, sortOn)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -135,7 +135,7 @@ instance Arbitrary LedgerPools where
 calculateRelativeStake :: [StakePool]
                        -> [(PoolStake, NonEmpty RelayAccessPoint)]
 calculateRelativeStake sps =
-    let totalStake = foldl' (\s p -> s + spStake p) 0 sps in
+    let totalStake = List.foldl' (\s p -> s + spStake p) 0 sps in
     map (\p -> ( PoolStake (fromIntegral (spStake p) % fromIntegral totalStake)
                , spRelay p)) sps
 

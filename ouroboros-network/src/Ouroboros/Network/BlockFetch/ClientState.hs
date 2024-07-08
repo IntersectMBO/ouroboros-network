@@ -34,7 +34,7 @@ module Ouroboros.Network.BlockFetch.ClientState
   , WhetherReceivingTentativeBlocks (..)
   ) where
 
-import Data.List (foldl')
+import Data.List as List (foldl')
 import Data.Maybe (mapMaybe)
 import Data.Semigroup (Last (..))
 import Data.Set (Set)
@@ -317,7 +317,7 @@ deleteHeadersInFlight :: HasHeader header
 deleteHeadersInFlight blockFetchSize headers inflight =
     -- Reusing 'deleteHeaderInFlight' rather than a direct impl still
     -- gives us O(n log m) which is fine
-    foldl' (flip (deleteHeaderInFlight blockFetchSize)) inflight headers
+    List.foldl' (flip (deleteHeaderInFlight blockFetchSize)) inflight headers
 
 
 newtype FetchRequest header =
@@ -352,7 +352,7 @@ instance HasHeader header => Semigroup (FetchRequest header) where
 
 fetchRequestMaxSlotNo :: HasHeader header => FetchRequest header -> MaxSlotNo
 fetchRequestMaxSlotNo (FetchRequest afs) =
-    foldl' max NoMaxSlotNo $ map MaxSlotNo $
+    List.foldl' max NoMaxSlotNo $ map MaxSlotNo $
       mapMaybe (withOriginToMaybe . AF.headSlot) afs
 
 -- | Tracing types for the various events that change the state

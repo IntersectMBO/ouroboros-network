@@ -36,7 +36,7 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, contramap, traceWith)
 
 import Data.ByteString.Lazy (ByteString)
-import Data.List (foldl')
+import Data.List as List (foldl')
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Void (Void, absurd)
@@ -166,7 +166,7 @@ with ServerArguments {
                           ]
           -- race all `acceptLoops` with `actionThread` and
           -- `inboundGovernorThread`
-          foldl' (\as io -> fn <$> as `race` io)
+          List.foldl' (\as io -> fn <$> as `race` io)
                  (fn <$> actionThread `waitEither` inboundGovernorThread)
                  acceptLoops
             `finally`

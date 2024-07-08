@@ -17,7 +17,7 @@ import Control.Monad.IOSim (runSimOrThrow)
 import Control.Monad.ST (runST)
 import Control.Tracer (nullTracer)
 import Data.ByteString.Lazy qualified as BL
-import Data.Foldable (foldl')
+import Data.Foldable as Foldable (foldl')
 import Data.Word (Word8)
 import Network.TypedProtocol.Codec (AnyMessage (..), AnyMessageAndAgency (..),
            Codec (..), PeerHasAgency (..), prop_codecM, prop_codec_splitsM)
@@ -72,7 +72,7 @@ prop_direct f l =
   runSimOrThrow
     (direct (peerSharingServerReplicate f)
             (peerSharingClientCollect l))
-  === (snd $ foldl' (\(n, r) (PeerSharingAmount amount)
+  === (snd $ Foldable.foldl' (\(n, r) (PeerSharingAmount amount)
                       -> (n + 1, replicate (applyFun f amount) n ++ r))
              (0, [])
              l)
@@ -88,7 +88,7 @@ prop_connect f l =
             (peerSharingClientPeer (peerSharingClientCollect l))
             (peerSharingServerPeer (peerSharingServerReplicate f))) of
      (ns, _, TerminalStates TokDone TokDone) ->
-       let compute = foldl' (\(x, r) (PeerSharingAmount amount)
+       let compute = Foldable.foldl' (\(x, r) (PeerSharingAmount amount)
                               -> (x + 1, replicate (applyFun f amount) x ++ r))
                             (0, [])
                             l
@@ -111,7 +111,7 @@ prop_channel f l = do
                                 nullTracer
                                 (codecPeerSharing CBOR.encodeInt CBOR.decodeInt)
                                 client server
-    let compute = foldl' (\(x, r) (PeerSharingAmount amount)
+    let compute = Foldable.foldl' (\(x, r) (PeerSharingAmount amount)
                            -> (x + 1, replicate (applyFun f amount) x ++ r))
                          (0, [])
                          l

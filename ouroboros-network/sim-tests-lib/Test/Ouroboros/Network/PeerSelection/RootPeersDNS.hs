@@ -26,7 +26,7 @@ import Control.Monad (forever, replicateM_)
 import Data.ByteString.Char8 (pack)
 import Data.Dynamic (Typeable, fromDynamic)
 import Data.Either (rights)
-import Data.Foldable (foldl')
+import Data.Foldable as Foldable (foldl')
 import Data.Function (fix)
 import Data.Functor (void)
 import Data.IP (fromHostAddress, toIPv4w, toSockAddr)
@@ -722,7 +722,7 @@ prop_local_updatesDomainsCorrectly mockRoots@(MockRoots lrp _ _ _)
                                         dnsTimeoutScript
                                         dnsLookupDelayScript
 
-        r = foldl' (\(b, (t, x)) (t', y) ->
+        r = Foldable.foldl' (\(b, (t, x)) (t', y) ->
                     case (x, y) of
                       -- Last result groups value, Current result groups value
                       (TraceLocalRootGroups lrpg, TraceLocalRootGroups lrpg') ->
