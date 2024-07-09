@@ -101,7 +101,15 @@ fetchDecisionsBulkSync
           currentChain
           candidatesAndPeers
 
-    -- Step 2: Select the peer to sync from. This eliminates peers that cannot
+    -- Step 2: Filter out from the chosen candidate fragment the blocks that
+    -- have already been downloaded, or that have a request in flight (except
+    -- for the requests in flight that are ignored).
+    let (theFragments :: FetchDecision (CandidateFragments header)) =
+          pure theCandidate
+            >>= filterNotAlreadyFetched fetchedBlocks fetchedMaxSlotNo
+            >>= filterNotAlreadyInFlightWithAnyPeerNonIgnored candidatesAndPeers
+
+    -- Step 3: Select the peer to sync from. This eliminates peers that cannot
     -- serve a reasonable batch of the candidate, then chooses the peer to sync
     -- from, then again declines the others.
     ( thePeerCandidate :: ChainSuffix header,
@@ -110,20 +118,16 @@ fetchDecisionsBulkSync
       MaybeT $
         selectThePeer
           fetchDecisionPolicy
-          fetchedBlocks
-          fetchedMaxSlotNo
           peersOrder
-          theCandidate
+          theFragments
           candidatesAndPeers'
 
-    -- Step 3: Fetch the candidate from the selected peer, potentially declining
+    -- Step 4: Fetch the candidate from the selected peer, potentially declining
     -- it (eg. if the peer is already too busy).
     MaybeT $
       fetchTheCandidate
         fetchDecisionPolicy
-        fetchedBlocks
-        fetchedMaxSlotNo
-        theCandidate
+        theFragments
         thePeer
         thePeerCandidate
     where
@@ -196,18 +200,15 @@ selectTheCandidate
 --
 -- PRECONDITION: The set of peers must be included in the peer order queue.
 selectThePeer ::
-  forall header block peer extra.
+  forall header peer extra.
   ( HasHeader header,
-    HeaderHash header ~ HeaderHash block,
     Eq peer
   ) =>
   FetchDecisionPolicy header ->
-  (Point block -> Bool) ->
-  MaxSlotNo ->
   PeersOrder peer ->
   -- | The candidate fragment that we have selected to sync from, as suffix of
   -- the immutable tip.
-  ChainSuffix header ->
+  FetchDecision (CandidateFragments header) ->
   -- | Association list of candidate fragments (as suffixes of the immutable
   -- tip) and their associated peers.
   [(ChainSuffix header, PeerInfo header peer extra)] ->
@@ -216,22 +217,9 @@ selectThePeer ::
     (Maybe (ChainSuffix header, PeerInfo header peer extra))
 selectThePeer
   FetchDecisionPolicy {blockFetchSize}
-  fetchedBlocks
-  fetchedMaxSlotNo
   peersOrder
-  theCandidate
+  theFragments
   candidates = do
-    -- Filter out from the chosen candidate fragment the blocks that have
-    -- already been downloaded, but keep the blocks that have a request in
-    -- flight.
-    let (fragments :: FetchDecision (CandidateFragments header)) =
-          filterNotAlreadyFetched
-            fetchedBlocks
-            fetchedMaxSlotNo
-            theCandidate
-            >>= filterNotAlreadyInFlightWithAnyPeerNonIgnored
-              candidates
-
     -- Create a fetch request for the blocks in question. The request is made
     -- to fit in 1MB but ignores everything else. It is gross in that sense.
     -- It will only be used to choose the peer to fetch from, but we will
@@ -244,7 +232,7 @@ selectThePeer
             0 -- bytes in flight
             (1024 * 1024) -- maximum bytes in flight; one megabyte
             . snd
-            <$> fragments
+            <$> theFragments
 
     -- For each peer, check whether its candidate contains the gross request
     -- in its entirety, otherwise decline it.
@@ -289,15 +277,12 @@ selectThePeer
 -- specific peer. We might take the 'FetchDecision' to decline the request, but
 -- only for “good” reasons, eg. if the peer is already too busy.
 fetchTheCandidate ::
-  ( HasHeader header,
-    HeaderHash header ~ HeaderHash block
+  ( HasHeader header
   ) =>
   FetchDecisionPolicy header ->
-  (Point block -> Bool) ->
-  MaxSlotNo ->
   -- | The candidate fragment that we have selected to sync from, as suffix of
   -- the immutable tip.
-  ChainSuffix header ->
+  FetchDecision (CandidateFragments header) ->
   -- | The peer that we have selected to sync from.
   PeerInfo header peer extra ->
   -- | Its candidate fragment as suffix of the immutable tip.
@@ -307,17 +292,13 @@ fetchTheCandidate ::
     (Maybe (FetchRequest header, PeerInfo header peer extra))
 fetchTheCandidate
   fetchDecisionPolicy
-  fetchedBlocks
-  fetchedMaxSlotNo
-  theCandidate
+  theFragments
   thePeer@(status, inflight, gsvs, _, _)
   thePeerCandidate =
     let theDecision = do
           -- Keep blocks that have not already been downloaded or that are not
           -- already in-flight with this peer.
-          fragments <-
-            filterNotAlreadyFetched fetchedBlocks fetchedMaxSlotNo theCandidate
-              >>= filterNotAlreadyInFlightWithPeer inflight
+          fragments <- filterNotAlreadyInFlightWithPeer inflight =<< theFragments
 
           -- Trim the fragments to the peer's candidate, keeping only blocks that
           -- they may actually serve.
@@ -352,7 +333,7 @@ fetchTheCandidate
 
 filterNotAlreadyInFlightWithAnyPeerNonIgnored ::
   (HasHeader header) =>
-  [(ChainSuffix header, PeerInfo header peer extra)] ->
+  [(any, PeerInfo header peer extra)] ->
   CandidateFragments header ->
   FetchDecision (CandidateFragments header)
 filterNotAlreadyInFlightWithAnyPeerNonIgnored candidates theCandidate = do
