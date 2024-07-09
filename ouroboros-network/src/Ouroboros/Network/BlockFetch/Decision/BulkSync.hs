@@ -14,16 +14,21 @@ import Control.Monad (filterM)
 import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
 import Control.Monad.Writer.CPS (Writer, runWriter, MonadWriter (tell))
 import Data.Bifunctor (first, Bifunctor (..))
+import Data.Foldable (foldl')
 import Data.List (sortOn)
 import Data.List.NonEmpty (nonEmpty)
 import qualified Data.List.NonEmpty as NE
+import qualified Data.Map.Strict as Map
 import Data.Maybe (catMaybes, mapMaybe)
+import qualified Data.Set as Set
 import Data.Ord (Down(Down))
+
+import Cardano.Prelude (guard)
 
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment, headBlockNo)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import Ouroboros.Network.Block
-import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..), PeersOrder (..), mcons)
+import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..), PeersOrder (..), mcons, PeerFetchBlockInFlight (..), PeerFetchStatus (..), PeerFetchInFlight (..))
 import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode(FetchModeBulkSync))
 import Ouroboros.Network.BlockFetch.DeltaQ (calculatePeerFetchInFlightLimits)
 
@@ -219,24 +224,26 @@ selectThePeer
     -- Filter out from the chosen candidate fragment the blocks that have
     -- already been downloaded, but keep the blocks that have a request in
     -- flight.
-    let fragments =
-          snd
-            <$> filterNotAlreadyFetched
-              fetchedBlocks
-              fetchedMaxSlotNo
-              theCandidate
+    let (fragments :: FetchDecision (CandidateFragments header)) =
+          filterNotAlreadyFetched
+            fetchedBlocks
+            fetchedMaxSlotNo
+            theCandidate
+            >>= filterNotAlreadyInFlightWithAnyPeerNonIgnored
+              candidates
 
-    -- Create a fetch request for the blocks in question The request is made
+    -- Create a fetch request for the blocks in question. The request is made
     -- to fit in 1MB but ignores everything else. It is gross in that sense.
     -- It will only be used to choose the peer to fetch from, but we will
     -- later craft a more refined request for that peer.
-    let grossRequest =
+    let (grossRequest :: FetchDecision (FetchRequest header)) =
           selectBlocksUpToLimits
             blockFetchSize
             0 -- number of request in flight
             maxBound -- maximum number of requests in flight
             0 -- bytes in flight
             (1024 * 1024) -- maximum bytes in flight; one megabyte
+            . snd
             <$> fragments
 
     -- For each peer, check whether its candidate contains the gross request
@@ -342,3 +349,38 @@ fetchTheCandidate
          in if null trimmedFragments
               then Left FetchDeclineAlreadyFetched
               else Right trimmedFragments
+
+filterNotAlreadyInFlightWithAnyPeerNonIgnored ::
+  (HasHeader header) =>
+  [(ChainSuffix header, PeerInfo header peer extra)] ->
+  CandidateFragments header ->
+  FetchDecision (CandidateFragments header)
+filterNotAlreadyInFlightWithAnyPeerNonIgnored candidates theCandidate = do
+  let theFragments =
+        concatMap
+          ( filterWithMaxSlotNo
+              notAlreadyInFlightNonIgnored
+              maxSlotNoInFlightWithPeers
+          )
+          (snd theCandidate)
+  guard (not (null theFragments)) ?! FetchDeclineInFlightOtherPeer
+  return $ (fst theCandidate, theFragments)
+  where
+    notAlreadyInFlightNonIgnored b =
+      blockPoint b `Set.notMember` blocksInFlightWithPeersNonIgnored
+    -- All the blocks that are already in-flight with all peers and not ignored.
+    blocksInFlightWithPeersNonIgnored =
+      Set.unions
+        [ case status of
+            PeerFetchStatusShutdown -> Set.empty
+            PeerFetchStatusStarting -> Set.empty
+            PeerFetchStatusAberrant -> Set.empty
+            _other -> Map.keysSet $ Map.filter (\(PeerFetchBlockInFlight b) -> not b) $ peerFetchBlocksInFlight inflight
+          | (_, (status, inflight, _, _, _)) <- candidates
+        ]
+    -- The highest slot number that is or has been in flight for any peer.
+    maxSlotNoInFlightWithPeers =
+      foldl'
+        max
+        NoMaxSlotNo
+        [peerFetchMaxSlotNo inflight | (_, (_, inflight, _, _, _)) <- candidates]
