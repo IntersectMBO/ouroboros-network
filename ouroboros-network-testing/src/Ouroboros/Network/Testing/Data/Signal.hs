@@ -16,7 +16,11 @@ module Ouroboros.Network.Testing.Data.Signal
   , TS (..)
   , E (..)
     -- * Signals
-  , Signal
+  , Signal (..)
+  , mergeSignals
+    -- ** Invariants
+  , eventsInvariant
+  , signalInvariant
     -- ** Construction and conversion
   , fromChangeEvents
   , toChangeEvents
@@ -131,6 +135,13 @@ selectEvents select (Events txs) =
 primitiveTransformEvents :: ([E a] -> [E b]) -> Events a -> Events b
 primitiveTransformEvents f (Events txs) = Events (f txs)
 
+-- | Events are all ordered by time and causal order
+--
+eventsInvariant :: Events a -> Bool
+eventsInvariant (Events [])  = True
+eventsInvariant (Events [_]) = True
+eventsInvariant (Events ((E (TS t i) _) : (E (TS t' i') _) : es)) =
+  t <= t' && i < i' && eventsInvariant (Events es)
 
 --
 -- Signals
@@ -139,12 +150,20 @@ primitiveTransformEvents f (Events txs) = Events (f txs)
 -- | A signal is a time-varying value. It has a value at all times. It changes
 -- value at discrete times, i.e. it is not continuous.
 --
-data Signal a = Signal a [E a]
+data Signal a = Signal a     -- ^ Initital signal value
+                       [E a] -- ^ List of discrete times at which the signal
+                             --   changes to a given value.
   deriving (Show, Functor)
 
 instance Applicative Signal where
     pure  x = Signal x []
     f <*> x = mergeSignals f x
+
+-- | Signal time changing events are all ordered by timestamp and causal order
+--
+signalInvariant :: Signal a -> Bool
+signalInvariant (Signal _ es) =
+  eventsInvariant (Events es)
 
 mergeSignals :: Signal (a -> b) -> Signal a -> Signal b
 mergeSignals (Signal f0 fs0) (Signal x0 xs0) =
