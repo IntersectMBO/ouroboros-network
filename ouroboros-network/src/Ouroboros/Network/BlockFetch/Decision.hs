@@ -91,7 +91,7 @@ fetchDecisions
     demoteCSJDynamoAndIgnoreInflightBlocks
     )
   candidatesAndPeers = do
-    peersOrder@PeersOrder {peersOrderCurrent, peersOrderOthers} <-
+    peersOrder <-
       -- Align the peers order with the actual peers; this consists in removing
       -- all peers from the peers order that are not in the actual peers list and
       -- adding at the end of the peers order all the actual peers that were not
@@ -120,18 +120,7 @@ fetchDecisions
     -- the peers order, then we have shifted our focus: we make the new peer our
     -- current one and we put back the previous current peer at the beginning of
     -- the queue; not the end, because it has not done anything wrong.
-    case theDecision of
-      Just (_, (_, _, _, thePeer, _))
-        | Just thePeer /= peersOrderCurrent -> do
-            peersOrderStart' <- getMonotonicTime
-            let peersOrder' =
-                  PeersOrder
-                    { peersOrderCurrent = Just thePeer,
-                      peersOrderStart = peersOrderStart',
-                      peersOrderOthers = mcons peersOrderCurrent (filter (/= thePeer) peersOrderOthers)
-                    }
-            writePeersOrder peersOrder'
-      _ -> pure ()
+    checkChangeOfCurrentPeer theDecision peersOrder
 
     pure $
       maybe [] (singleton . first Right) theDecision
@@ -170,3 +159,17 @@ fetchDecisions
                       }
               traverse_ demoteCSJDynamoAndIgnoreInflightBlocks peersOrderCurrent
               pure peersOrder'
+
+      checkChangeOfCurrentPeer :: Maybe (any, PeerInfo header peer extra) -> PeersOrder peer -> m ()
+      checkChangeOfCurrentPeer theDecision PeersOrder {peersOrderCurrent, peersOrderOthers} =
+        case theDecision of
+          Just (_, (_, _, _, thePeer, _))
+            | Just thePeer /= peersOrderCurrent -> do
+                peersOrderStart <- getMonotonicTime
+                writePeersOrder $
+                  PeersOrder
+                    { peersOrderCurrent = Just thePeer,
+                      peersOrderStart,
+                      peersOrderOthers = mcons peersOrderCurrent (filter (/= thePeer) peersOrderOthers)
+                    }
+          _ -> pure ()
