@@ -14,7 +14,6 @@ import Control.Monad (filterM)
 import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
 import Control.Monad.Writer.CPS (Writer, runWriter, MonadWriter (tell))
 import Data.Bifunctor (first, Bifunctor (..))
-import Data.Foldable (toList)
 import Data.List (sortOn)
 import Data.List.NonEmpty (nonEmpty)
 import qualified Data.List.NonEmpty as NE
@@ -43,9 +42,11 @@ instance Semigroup (ListConcat a) where
 instance Monoid (ListConcat a) where
   mempty = List []
 
-instance Foldable ListConcat where
-  foldMap f (List xs) = foldMap f xs
-  foldMap f (Concat x y) = foldMap f x <> foldMap f y
+listConcatToList :: ListConcat a -> [a]
+listConcatToList = flip go []
+  where
+    go (List xs) acc = xs ++ acc
+    go (Concat x y) acc = go x (go y acc)
 
 type WithDeclined peer = Writer (ListConcat (FetchDecline, peer))
 
@@ -126,7 +127,7 @@ fetchDecisionsBulkSync
         ( Maybe (a, peer),
           [(FetchDecline, peer)]
         )
-      combineWithDeclined = second toList . runWithDeclined . runMaybeT
+      combineWithDeclined = second listConcatToList . runWithDeclined . runMaybeT
 
 -- FIXME: The 'FetchDeclineConcurrencyLimit' should only be used for
 -- 'FetchModeDeadline', and 'FetchModeBulkSync' should have its own reasons.
