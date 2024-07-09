@@ -60,9 +60,6 @@ import           Control.Monad.Class.MonadTime.SI (DiffTime, Time (..), addTime)
 
 import           Test.QuickCheck
 
-
-
-
 --
 -- Time stamps and events
 --
@@ -162,7 +159,6 @@ mergeSignals (Signal f0 fs0) (Signal x0 xs0) =
 compareTimestamp :: E a -> E b -> Ordering
 compareTimestamp (E ts _) (E ts' _) = compare ts ts'
 
-
 -- | Construct a 'Signal' from an initial value and a time series of events
 -- that represent new values of the signal.
 --
@@ -170,7 +166,6 @@ compareTimestamp (E ts _) (E ts' _) = compare ts ts'
 --
 fromChangeEvents :: a -> Events a -> Signal a
 fromChangeEvents x (Events xs) = Signal x xs
-
 
 -- | Convert a 'Signal' into a time series of events when the signal value
 -- changes.
@@ -180,7 +175,6 @@ toChangeEvents = Events . toTimeSeries
 
 toTimeSeries :: Signal a -> [E a]
 toTimeSeries (Signal x xs) = E (TS (Time 0) 0) x : xs
-
 
 -- | Construct a 'Signal' that represents a time series of discrete events. The
 -- signal is @Just@ the event value at the time of the event, and is @Nothing@
@@ -228,7 +222,6 @@ stable (Signal x xs) =
 truncateAt :: Time -> Signal a -> Signal a
 truncateAt horizon (Signal x txs) =
     Signal x (takeWhile (\(E (TS t _) _) -> t < horizon) txs)
-
 
 -- | Sometimes the way a signal is constructed leads to duplicate signal values
 -- which can slow down signal processing. This tidies up the signal by
@@ -353,7 +346,6 @@ keyedLinger d activity =
             then E ts lingerSet' : go lingerSet' lingerPSQ' txs
             else                   go lingerSet' lingerPSQ' txs
 
-
 -- | Make a signal that says if a given event longed at least a certain time
 -- (timeout), based on observing an underlying signal.
 --
@@ -469,7 +461,6 @@ keyedUntil start stop stopAll =
         active'
           | stopAll x = Set.empty
           | otherwise = (active <> start x) Set.\\ stop x
-
 
 difference :: (a -> a -> b)
            -> Signal a
