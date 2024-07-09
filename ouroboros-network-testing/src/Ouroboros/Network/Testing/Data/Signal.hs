@@ -327,28 +327,30 @@ keyedLinger :: forall a b. Ord b
             -> (a -> Set b)  -- ^ The activity set signal
             -> Signal a
             -> Signal (Set b)
-keyedLinger d activity =
+keyedLinger d arm =
     Signal Set.empty
   . go Set.empty PSQ.empty
   . toTimeSeries
+  . fmap arm
   where
     go :: Set b
        -> OrdPSQ b Time ()
-       -> [E a]
        -> [E (Set b)]
-    go _ _ [] = []
+       -> [E (Set b)]
+    go !_ !_ [] = []
 
-    go lingerSet lingerPSQ (E ts@(TS t _) xs : txs)
-      | Just (x, t', _, lingerPSQ') <- PSQ.minView lingerPSQ
+    go !lingerSet !lingerPSQ (E ts@(TS t _) xs : txs)
+      | Just (y, t', _, lingerPSQ') <- PSQ.minView lingerPSQ
       , t' < t
-      , let lingerSet' = Set.delete x lingerSet
-      = E (TS t' 0) lingerSet' : go lingerSet' lingerPSQ' (E ts xs : txs)
+      , (ys, lingerPSQ'') <- PSQ.atMostView t' lingerPSQ'
+      , let armed = Set.fromList $ y : map (\(a, _, _) -> a) ys
+            lingerSet' = Set.difference lingerSet armed
+      = E (TS t' 0) lingerSet' : go lingerSet' lingerPSQ'' (E ts xs : txs)
 
-    go lingerSet lingerPSQ (E ts@(TS t _) x : txs) =
-      let ys         = activity x
-          lingerSet' = lingerSet <> ys
-          lingerPSQ' = Set.foldl' (\s y -> PSQ.insert y t' () s) lingerPSQ ys
+    go !lingerSet !lingerPSQ (E ts@(TS t _) x : txs) =
+      let lingerSet' = lingerSet <> x
           t'         = addTime d t
+          lingerPSQ' = Set.foldl' (\s y -> PSQ.insert y t' () s) lingerPSQ x
        in if lingerSet' /= lingerSet
             then E ts lingerSet' : go lingerSet' lingerPSQ' txs
             else                   go lingerSet' lingerPSQ' txs
@@ -391,78 +393,35 @@ keyedTimeout d arm =
     Signal Set.empty
   . go Set.empty PSQ.empty Set.empty
   . toTimeSeries
+  . fmap arm
   where
     go :: Set b
        -> OrdPSQ b Time ()
        -> Set b
-       -> [E a]
        -> [E (Set b)]
-    go !_ !armedPSQ !_ [] =
-      (\(b, t, _) -> E (TS t 0) (Set.singleton b))
-      `map`
-      PSQ.toList armedPSQ
+       -> [E (Set b)]
+    go !_ !_ !_ [] = []
 
     go !armedSet !armedPSQ !timedout (E ts@(TS t _) x : txs)
       | Just (y, t', _, armedPSQ') <- PSQ.minView armedPSQ
       , t' < t
-      , let armedSet' = Set.delete y armedSet
-            timedout' = Set.insert y timedout
-      = E (TS t' 0) timedout' : go armedSet' armedPSQ' timedout' (E ts x : txs)
+      , (xs, armedPSQ'') <- PSQ.atMostView t' armedPSQ'
+      , let armed = Set.fromList $ y : map (\(a, _, _) -> a) xs
+            armedSet' = Set.difference armedSet armed
+            timedout' = timedout <> armed
+      = E (TS t' 0) timedout' : go armedSet' armedPSQ'' timedout' (E ts x : txs)
 
     go !armedSet !armedPSQ !timedout (E ts@(TS t _) x : txs) =
-      let armedSet' = arm x
-          armedAdd  = armedSet' Set.\\ armedSet
-          armedDel  = armedSet  Set.\\ armedSet'
+      let armedAdd  = x        Set.\\ armedSet
+          armedDel  = armedSet Set.\\ x
+          t'        = addTime d t
           armedPSQ' = flip (Set.foldl' (\s y -> PSQ.insert y t' () s)) armedAdd
                     . flip (Set.foldl' (\s y -> PSQ.delete y       s)) armedDel
                     $ armedPSQ
-          t'        = addTime d t
-          timedout' = timedout `Set.intersection` armedSet'
+          timedout' = timedout `Set.intersection` x
        in if timedout' /= timedout
-            then E ts timedout' : go armedSet' armedPSQ' timedout' txs
-            else                  go armedSet' armedPSQ' timedout' txs
-
--- | This works exactly the same as 'keyedTimeout' but ignores any armed sets
--- and does not add any events to the signal when reaching the end of events.
---
--- This is useful for properties over infinite Signals that might get truncated.
---
-keyedTimeoutTruncated :: forall a b. Ord b
-             => DiffTime
-             -> (a -> Set b)  -- ^ The timeout arming set signal
-             -> Signal a
-             -> Signal (Set b)
-keyedTimeoutTruncated d arm =
-    Signal Set.empty
-  . go Set.empty PSQ.empty Set.empty
-  . toTimeSeries
-  where
-    go :: Set b
-       -> OrdPSQ b Time ()
-       -> Set b
-       -> [E a]
-       -> [E (Set b)]
-    go _ _ _ [] = []
-
-    go armedSet armedPSQ timedout (E ts@(TS t _) x : txs)
-      | Just (y, t', _, armedPSQ') <- PSQ.minView armedPSQ
-      , t' < t
-      , let armedSet' = Set.delete y armedSet
-            timedout' = Set.insert y timedout
-      = E (TS t' 0) timedout' : go armedSet' armedPSQ' timedout' (E ts x : txs)
-
-    go armedSet armedPSQ timedout (E ts@(TS t _) x : txs) =
-      let armedSet' = arm x
-          armedAdd  = armedSet' Set.\\ armedSet
-          armedDel  = armedSet  Set.\\ armedSet'
-          armedPSQ' = flip (Set.foldl' (\s y -> PSQ.insert y t' () s)) armedAdd
-                    . flip (Set.foldl' (\s y -> PSQ.delete y       s)) armedDel
-                    $ armedPSQ
-          t'        = addTime d t
-          timedout' = timedout `Set.intersection` armedSet'
-       in if timedout' /= timedout
-            then E ts timedout' : go armedSet' armedPSQ' timedout' txs
-            else                  go armedSet' armedPSQ' timedout' txs
+            then E ts timedout' : go x armedPSQ' timedout' txs
+            else                  go x armedPSQ' timedout' txs
 
 keyedUntil :: forall a b. Ord b
            => (a -> Set b)   -- ^ Start set signal

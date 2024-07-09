@@ -573,7 +573,7 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
 
           keepNonTrustablePeersTooLong :: Signal (Set NtNAddr)
           keepNonTrustablePeersTooLong =
-            Signal.keyedTimeoutTruncated
+            Signal.keyedTimeout
               -- Due to the possibilities of the node being reconfigured
               -- frequently and disconnection timeouts we have to increase
               -- this value
@@ -865,7 +865,7 @@ prop_track_coolingToCold_demotions ioSimTracer traceNumber =
 
           notInProgressDemoteToColdForTooLong =
             map (\addr ->
-                  Signal.keyedTimeoutTruncated
+                  Signal.keyedTimeout
                     120
                     (\case
                         Just s | Set.member addr s -> Set.singleton addr
@@ -1839,7 +1839,7 @@ prop_diffusion_target_established_local ioSimTrace traceNumber =
 
           promotionOpportunitiesIgnoredTooLong :: Signal (Set NtNAddr)
           promotionOpportunitiesIgnoredTooLong =
-            Signal.keyedTimeoutTruncated
+            Signal.keyedTimeout
               15 -- seconds
               id
               promotionOpportunities
@@ -2004,12 +2004,14 @@ prop_diffusion_target_active_below ioSimTrace traceNumber =
           -- want to promote any, since we'd then be above target for the local
           -- root peer group.
           --
-          promotionOpportunity target local established active recentFailures isAlive inProgressDemoteToCold
+          promotionOpportunity target local established active recentFailures isAlive
+                               inProgressDemoteToCold inProgressPromoteWarm
             | isAlive && Set.size active < target
             = established Set.\\ active
                           Set.\\ LocalRootPeers.keysSet local
                           Set.\\ recentFailures
                           Set.\\ inProgressDemoteToCold
+                          Set.\\ inProgressPromoteWarm
 
             | otherwise
             = Set.empty
@@ -2024,10 +2026,11 @@ prop_diffusion_target_active_below ioSimTrace traceNumber =
               <*> govActiveFailuresSig
               <*> trIsNodeAlive
               <*> govInProgressDemoteToColdSig
+              <*> govInProgressPromoteWarmSig
 
           promotionOpportunitiesIgnoredTooLong :: Signal (Set NtNAddr)
           promotionOpportunitiesIgnoredTooLong =
-            Signal.keyedTimeoutTruncated
+            Signal.keyedTimeout
               10 -- seconds
               id
               promotionOpportunities
@@ -2098,6 +2101,10 @@ prop_diffusion_target_active_local_below ioSimTrace traceNumber =
               Governor.inProgressDemoteToCold
               events
 
+          govInProgressPromoteWarmSig :: Signal (Set NtNAddr)
+          govInProgressPromoteWarmSig =
+            selectDiffusionPeerSelectionState Governor.inProgressPromoteWarm events
+
           trJoinKillSig :: Signal JoinedOrKilled
           trJoinKillSig =
               Signal.fromChangeEvents Killed -- Default to TrKillingNode
@@ -2160,7 +2167,7 @@ prop_diffusion_target_active_local_below ioSimTrace traceNumber =
 
           promotionOpportunities :: Signal (Set NtNAddr)
           promotionOpportunities =
-            (\local established active recentFailures isAlive inProgressDemoteToCold ->
+            (\local established active recentFailures isAlive inProgressDemoteToCold inProgressPromoteWarm ->
               if isAlive then
                 Set.unions
                   [ -- There are no opportunities if we're at or above target
@@ -2169,6 +2176,7 @@ prop_diffusion_target_active_local_below ioSimTrace traceNumber =
                        else groupEstablished Set.\\ active
                                              Set.\\ recentFailures
                                              Set.\\ inProgressDemoteToCold
+                                             Set.\\ inProgressPromoteWarm
                   | (HotValency hotTarget, _, group) <- LocalRootPeers.toGroupSets local
                   , let groupActive      = group `Set.intersection` active
                         groupEstablished = group `Set.intersection` established
@@ -2181,10 +2189,11 @@ prop_diffusion_target_active_local_below ioSimTrace traceNumber =
               <*> govActiveFailuresSig
               <*> trIsNodeAlive
               <*> govInProgressDemoteToColdSig
+              <*> govInProgressPromoteWarmSig
 
           promotionOpportunitiesIgnoredTooLong :: Signal (Set NtNAddr)
           promotionOpportunitiesIgnoredTooLong =
-            Signal.keyedTimeoutTruncated
+            Signal.keyedTimeout
               10 -- seconds
               id
               promotionOpportunities
@@ -2402,7 +2411,7 @@ prop_diffusion_async_demotions ioSimTrace traceNumber =
 
           demotionOpportunitiesTooLong :: Signal (Set NtNAddr)
           demotionOpportunitiesTooLong =
-              Signal.keyedTimeoutTruncated 1 id demotionOpportunities
+              Signal.keyedTimeout 1 id demotionOpportunities
 
       in signalProperty
             20 show Set.null
@@ -2517,7 +2526,7 @@ prop_diffusion_target_active_local_above ioSimTrace traceNumber =
 
           demotionOpportunitiesIgnoredTooLong :: Signal (Set NtNAddr)
           demotionOpportunitiesIgnoredTooLong =
-            Signal.keyedTimeoutTruncated
+            Signal.keyedTimeout
               100 -- seconds
               id
               demotionOpportunities
