@@ -146,7 +146,7 @@ fetchDecisions
                 _ -> Nothing
               peersOrderOthers' =
                 filter (`elem` actualPeers) peersOrderOthers
-                  ++ filter (`notElem` peersOrderOthers) actualPeers
+                  ++ filter (\peer -> peer `notElem` peersOrderOthers && Just peer /= peersOrderCurrent) actualPeers
            in PeersOrder
                 { peersOrderCurrent = peersOrderCurrent',
                   peersOrderOthers = peersOrderOthers',
