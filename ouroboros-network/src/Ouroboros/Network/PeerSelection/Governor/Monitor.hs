@@ -71,17 +71,39 @@ targetPeers :: (MonadSTM m, Ord peeraddr)
             => PeerSelectionActions peeraddr peerconn m
             -> PeerSelectionState peeraddr peerconn
             -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-targetPeers PeerSelectionActions{ readPeerSelectionTargets }
+targetPeers PeerSelectionActions{ readPeerSelectionTargets,
+                                  peerTargets = ConsensusModePeerTargets {
+                                    deadlineTargets,
+                                    syncTargets } }
             st@PeerSelectionState{
               publicRootPeers,
               localRootPeers,
               targets,
               bootstrapPeersFlag,
               hasOnlyBootstrapPeers,
-              ledgerStateJudgement
+              ledgerStateJudgement,
+              consensusMode
             } =
     Guarded Nothing $ do
-      targets'  <- readPeerSelectionTargets
+      churnTargets <- readPeerSelectionTargets
+      -- Genesis consensus mode:
+      -- we check if targets proposed by churn are stale
+      -- in the sense that they are the targets for
+      -- opposite value of the current ledger state judgement.
+      -- This indicates that we aren't churning currently, and
+      -- furthermore it means that the ledger state has flipped since
+      -- we last churned. Therefore we can't set the targets from
+      -- the TVar, and instead we set the appropriate targets
+      -- for the mode we are in.
+      let targets' =
+            case (ledgerStateJudgement, consensusMode) of
+              (YoungEnough, GenesisMode)
+                | churnTargets == syncTargets ->
+                  deadlineTargets
+              (TooOld, GenesisMode)
+                | churnTargets == deadlineTargets ->
+                  syncTargets
+              _otherwise -> churnTargets
 
       -- nb. first check is redundant in Genesis mode
       check (   isNodeAbleToMakeProgress bootstrapPeersFlag
@@ -578,10 +600,7 @@ monitorLedgerStateJudgement :: ( MonadSTM m
                             => PeerSelectionActions peeraddr peerconn m
                             -> PeerSelectionState peeraddr peerconn
                             -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-monitorLedgerStateJudgement PeerSelectionActions{ readLedgerStateJudgement,
-                                                  peerTargets = ConsensusModePeerTargets{
-                                                    deadlineTargets,
-                                                    syncTargets } }
+monitorLedgerStateJudgement PeerSelectionActions{ readLedgerStateJudgement }
                             st@PeerSelectionState{ bootstrapPeersFlag,
                                                    publicRootPeers,
                                                    knownPeers,
@@ -594,17 +613,13 @@ monitorLedgerStateJudgement PeerSelectionActions{ readLedgerStateJudgement,
     Guarded Nothing $ do
       lsj <- readLedgerStateJudgement
       check (lsj /= ledgerStateJudgement)
-      let targets = case lsj of
-            YoungEnough -> deadlineTargets
-            TooOld      -> syncTargets
 
       return $ \_now ->
         Decision {
           decisionTrace = [TraceLedgerStateJudgementChanged lsj],
           decisionJobs  = [],
           decisionState = st {
-              ledgerStateJudgement = lsj,
-              targets } }
+              ledgerStateJudgement = lsj } }
 
   | PraosMode <- consensusMode
   , isBootstrapPeersEnabled bootstrapPeersFlag =
