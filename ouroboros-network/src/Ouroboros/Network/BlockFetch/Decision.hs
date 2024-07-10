@@ -92,13 +92,13 @@ fetchDecisions
     )
   candidatesAndPeers = do
     peersOrder <-
-      -- Align the peers order with the actual peers; this consists in removing
-      -- all peers from the peers order that are not in the actual peers list and
-      -- adding at the end of the peers order all the actual peers that were not
-      -- there before.
-      alignPeersOrderWithActualPeers
-        peersOrder0
-        (map (\(_, (_, _, _, peer, _)) -> peer) candidatesAndPeers)
+      peersOrder0
+        -- Align the peers order with the actual peers; this consists in removing
+        -- all peers from the peers order that are not in the actual peers list and
+        -- adding at the end of the peers order all the actual peers that were not
+        -- there before.
+        & alignPeersOrderWithActualPeers
+          (map (\(_, (_, _, _, peer, _)) -> peer) candidatesAndPeers)
         -- If the chain selection has been starved recently, that is after the
         -- current peer started (and a grace period), then the current peer is
         -- bad. We push it at the end of the queue, demote it from CSJ dynamo,
@@ -126,10 +126,10 @@ fetchDecisions
       maybe [] (singleton . first Right) theDecision
         ++ map (first Left) declines
     where
-      alignPeersOrderWithActualPeers :: PeersOrder peer -> [peer] -> PeersOrder peer
+      alignPeersOrderWithActualPeers :: [peer] -> PeersOrder peer -> PeersOrder peer
       alignPeersOrderWithActualPeers
-        PeersOrder {peersOrderCurrent, peersOrderStart, peersOrderOthers}
-        actualPeers =
+        actualPeers
+        PeersOrder {peersOrderCurrent, peersOrderStart, peersOrderOthers} =
           let peersOrderCurrent' = case peersOrderCurrent of
                 Just peersOrderCurrent_ | peersOrderCurrent_ `elem` actualPeers -> peersOrderCurrent
                 _ -> Nothing
