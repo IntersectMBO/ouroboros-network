@@ -22,6 +22,7 @@ import Control.Monad.IOSim hiding (SimResult)
 import Control.Tracer (Tracer (..), nullTracer, traceWith)
 import Data.Aeson
 import Data.Aeson.Types as Aeson
+import Data.ByteString.Char8 qualified as BS
 import Data.IP qualified as IP
 import Data.List as List (foldl', intercalate, isPrefixOf, nub, sortOn)
 import Data.List.NonEmpty qualified as NonEmpty
@@ -55,7 +56,8 @@ tests = testGroup "Ouroboros.Network.LedgerPeers"
   , testProperty "Pick" prop_pick
   , testProperty "accBigPoolStake" prop_accBigPoolStake
   , testProperty "getLedgerPeers invariants" prop_getLedgerPeers
-  , testProperty "LedgerPeerSnapshot encode/decode version 1" prop_ledgerPeerSnapshotV1
+  , testProperty "LedgerPeerSnapshot CBOR version 1" prop_ledgerPeerSnapshotCBORV1
+  , testProperty "LedgerPeerSnapshot JSON version 1" prop_ledgerPeerSnapshotJSONV1
   ]
 
 newtype ArbitraryPortNumber = ArbitraryPortNumber { getArbitraryPortNumber :: PortNumber }
@@ -377,34 +379,87 @@ prop_getLedgerPeers (ArbitrarySlotNo curSlot)
                   (pure lsj)
                   (pure (Map.elems (accPoolStake lps)))
 
--- | Tests if the CBOR encoding is valid, and whether a round
--- trip results in the original peer snapshot value.
+-- | Checks validity of LedgerPeerSnapshot CBOR encoding, and whether
+--   round trip cycle is the identity function
 --
-prop_ledgerPeerSnapshotV1 :: ArbitrarySlotNo
-                          -> LedgerPools
-                          -> Property
-prop_ledgerPeerSnapshotV1 (ArbitrarySlotNo slot)
-                          (LedgerPools pools) =
+prop_ledgerPeerSnapshotCBORV1 :: ArbitrarySlotNo
+                              -> LedgerPools
+                              -> Property
+prop_ledgerPeerSnapshotCBORV1 slotNo
+                              ledgerPools =
   counterexample (show snapshot) $
-    conjoin [counterexample "Invalid CBOR encoding" $ validFlatTerm encoded,
-             either ((`counterexample` False) . ("JSON decode failed: " <>))
-                    (("CBOR round trip failed" `counterexample`) . (snapshot ==))
-                    decoded,
-             either ((`counterexample` False) . ("JSON decode failed: " <>))
-                    (("JSON round trip failed" `counterexample`) . (snapshot ==))
-                    decodedJSON]
+         counterexample ("Invalid CBOR encoding" <> show encoded)
+                        (validFlatTerm encoded)
+    .&&. either ((`counterexample` False) . ("CBOR decode failed: " <>))
+                (counterexample . ("CBOR round trip failed: " <>) . show <*> (snapshot ==))
+                decoded
+  where
+    snapshot = snapshotV1 slotNo ledgerPools
+    encoded = toFlatTerm . toCBOR $ snapshot
+    decoded = fromFlatTerm fromCBOR encoded
+
+-- | Tests if LedgerPeerSnapshot JSON round trip is the identity function
+--
+prop_ledgerPeerSnapshotJSONV1 :: ArbitrarySlotNo
+                              -> LedgerPools
+                              -> Property
+prop_ledgerPeerSnapshotJSONV1 slotNo
+                              ledgerPools =
+  counterexample (show snapshot) $
+     either ((`counterexample` False) . ("JSON decode failed: " <>))
+            (counterexample . ("JSON round trip failed: " <>) . show <*> nearlyEqualModuloFullyQualified snapshot)
+            roundTrip
+  where
+    snapshot = snapshotV1 slotNo ledgerPools
+    roundTrip = case fromJSON . toJSON $ snapshot of
+                  Aeson.Success s -> Right s
+                  Error str       -> Left str
+
+    nearlyEqualModuloFullyQualified snapshotOriginal snapshotRoundTripped =
+      let LedgerPeerSnapshotV1 (wOrigin, relaysWithAccStake) = snapshotOriginal
+          strippedRelaysWithAccStake = stripFQN <$> relaysWithAccStake
+          LedgerPeerSnapshotV1 (wOrigin', relaysWithAccStake') = snapshotRoundTripped
+          strippedRelaysWithAccStake' = stripFQN <$> relaysWithAccStake'
+      in
+             wOrigin === wOrigin'
+        .&&. counterexample "fully qualified name"
+                            (strippedRelaysWithAccStake === strippedRelaysWithAccStake')
+        .&&. counterexample "approximation error"
+                            (compareApprox relaysWithAccStake relaysWithAccStake')
+
+    stripFQN (_, (_, relays)) = step <$> relays
+    step it@(RelayAccessDomain domain port) =
+      case BS.unsnoc domain of
+        Just (prefix, '.') -> RelayAccessDomain prefix port
+        _otherwise         -> it
+    step it = it
+
+    compareApprox left right =
+      let left' = [(accStake, relativeStake)
+                  | (AccPoolStake accStake, (PoolStake relativeStake, _)) <- left]
+          right' = [(accStake, relativeStake)
+                   | (AccPoolStake accStake, (PoolStake relativeStake, _)) <- right]
+          go (accStake, relativeStake)
+             (accStake', relativeStake') =
+               accStake' / accStake > 999999 % 1000000
+            && accStake' / accStake < 1000001 % 1000000
+            && relativeStake' / relativeStake > 999999 % 1000000
+            && relativeStake' / relativeStake < 1000001 % 1000000
+
+      in all (uncurry go) (zip left' right')
+
+-- | helper functions for ledgerpeersnapshot encoding tests
+--
+snapshotV1 :: ArbitrarySlotNo
+           -> LedgerPools
+           -> LedgerPeerSnapshot
+snapshotV1 (ArbitrarySlotNo slot)
+           (LedgerPools pools) = LedgerPeerSnapshotV1 (originOrSlot, poolStakeWithAccumulation)
   where
     poolStakeWithAccumulation = Map.assocs . accPoolStake $ pools
     originOrSlot = if slot == 0
                    then Origin
                    else At slot
-    snapshot = LedgerPeerSnapshotV1 (originOrSlot, poolStakeWithAccumulation)
-    encoded = toFlatTerm . toCBOR $ snapshot
-    decoded = fromFlatTerm fromCBOR encoded
-    encodedJSON = toJSON snapshot
-    decodedJSON = case fromJSON encodedJSON of
-                    Aeson.Success s -> Right s
-                    Error str       -> Left str
 
 -- TODO: Belongs in iosim.
 data SimResult a = SimReturn a [String]
