@@ -240,12 +240,13 @@ selectThePeer
         )
         candidates
 
-    -- Order the peers according to the peer order that we have been given,
-    -- then separate between declined peers and the others.
+    -- Order the peers according to the peer order that we have been given, then
+    -- separate between declined peers and the others. NOTE: The order in which
+    -- we bind the lists in the comprehension is capital.
     let peersOrdered =
           [ (candidate, peerInfo)
-            | (candidate, peerInfo@(_, _, _, peer, _)) <- peers,
-              peer' <- mcons (peersOrderCurrent peersOrder) (peersOrderOthers peersOrder),
+            | peer' <- mcons (peersOrderCurrent peersOrder) (peersOrderOthers peersOrder),
+              (candidate, peerInfo@(_, _, _, peer, _)) <- peers,
               peer == peer'
           ]
 
