@@ -33,9 +33,6 @@ import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode(FetchModeBulkS
 import Ouroboros.Network.BlockFetch.DeltaQ (calculatePeerFetchInFlightLimits)
 
 import Ouroboros.Network.BlockFetch.Decision.Common
--- REVIEW: We should not import anything from 'Decision.Deadline'; if the need
--- arises, we should move the interesting piece of code to 'Decision.Common'.
--- This is to be done on demand.
 
 -- | A trivial foldable data structure with a 'Semigroup' instance that
 -- concatenates in @O(1)@. Only meant for short-term use, followed by one fold.
