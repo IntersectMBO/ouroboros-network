@@ -231,8 +231,9 @@ selectThePeer
             . snd
             <$> theFragments
 
-    -- For each peer, check whether its candidate contains the gross request
-    -- in its entirety, otherwise decline it.
+    -- For each peer, check whether its candidate contains the gross request in
+    -- its entirety, otherwise decline it. This will guarantee that the
+    -- remaining peers can serve the refine request that we will craft later.
     peers <-
       filterM
         ( \(candidate, peer) ->
