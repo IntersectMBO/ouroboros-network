@@ -8,6 +8,8 @@
 
 ### Non-breaking changes
 
+* Make it build with ghc-9.10
+
 ## 0.2.0.14 -- 2024-06-07
 
 ### Breaking changes

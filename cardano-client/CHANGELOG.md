@@ -6,6 +6,8 @@
 
 ### Non-breaking changes
 
+* Make it build with ghc-9.10
+
 ## 0.3.1.2
 
 ### Non-breaking changes

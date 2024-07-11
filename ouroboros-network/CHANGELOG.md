@@ -13,6 +13,7 @@
 * Refactored signature of `LedgerPeers.ledgerPeersThread` for concision
   and use of previously created records for shunting related values around.
 - Fixed block fetch client assertion failure
+* Make it build with ghc-9.10
 
 ## 0.16.1.1 -- 2024-06-28
 
