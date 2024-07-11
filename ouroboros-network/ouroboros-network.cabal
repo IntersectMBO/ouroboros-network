@@ -34,7 +34,6 @@ library
                        Ouroboros.Network.BlockFetch.ClientState
                        Ouroboros.Network.BlockFetch.Decision
                        Ouroboros.Network.BlockFetch.Decision.BulkSync
-                       Ouroboros.Network.BlockFetch.Decision.Common
                        Ouroboros.Network.BlockFetch.Decision.Deadline
                        Ouroboros.Network.BlockFetch.DeltaQ
                        Ouroboros.Network.BlockFetch.State
