@@ -12,6 +12,7 @@
 
 * Refactored signature of `LedgerPeers.ledgerPeersThread` for concision
   and use of previously created records for shunting related values around.
+- Refactored Testnet suite according to changed Signal API.
 
 ## 0.16.1.1 -- 2024-06-28
 

@@ -4,6 +4,8 @@
 
 ### Breaking changes
 
+- Improvements and bug fixes to Signal API
+
 ### Non-Breaking changes
 
 ## 0.6.2.0 -- 2024-06-07
