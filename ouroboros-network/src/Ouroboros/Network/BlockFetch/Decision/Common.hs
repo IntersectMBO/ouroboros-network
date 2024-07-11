@@ -395,12 +395,13 @@ of individual blocks without their relationship to each other.
 
 -}
 
--- | Find the fragments of the chain suffix that we still need to fetch, these
--- are the fragments covering blocks that have not yet been fetched and are
--- not currently in the process of being fetched from this peer.
+-- | Find the fragments of the chain suffix that we still need to fetch because
+-- they are covering blocks that have not yet been fetched.
 --
 -- Typically this is a single fragment forming a suffix of the chain, but in
 -- the general case we can get a bunch of discontiguous chain fragments.
+--
+-- See also 'filterNotAlreadyInFlightWithPeer'.
 filterNotAlreadyFetched ::
   (HasHeader header, HeaderHash header ~ HeaderHash block) =>
   (Point block -> Bool) ->
@@ -427,6 +428,14 @@ filterNotAlreadyFetched' alreadyDownloaded fetchedMaxSlotNo =
         ((filterNotAlreadyFetched alreadyDownloaded fetchedMaxSlotNo =<< mcandidate), peer)
     )
 
+-- | Find the fragments of the chain suffix that we still need to fetch because
+-- they are covering blocks that are not currently in the process of being
+-- fetched from this peer.
+--
+-- Typically this is a single fragment forming a suffix of the chain, but in
+-- the general case we can get a bunch of discontiguous chain fragments.
+--
+-- See also 'filterNotAlreadyFetched'
 filterNotAlreadyInFlightWithPeer ::
   (HasHeader header) =>
   PeerFetchInFlight header ->
