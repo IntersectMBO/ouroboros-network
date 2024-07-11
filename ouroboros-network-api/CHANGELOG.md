@@ -10,6 +10,8 @@
   `LedgerPeers` module to expose functionality that facilitates serializing
   of big ledger peers via LocalStateQuery miniprotocol.
 
+* Added `Measure` and `BoundedMeasure` instances for `SizeInBytes`.
+
 ## 0.7.3.0 -- 2024-06-07
 
 ### Breaking changes
@@ -18,6 +20,8 @@
 
 - Bump io-sim and io-classes
 * Added `ShowProxy SlotNo` instance
+* Added `AnchoredSeq.splitAtMeasure`
+* Added `AnchoredFragment.splitAtSlot`
 
 ## 0.7.2.0 -- 2024-05-07
 

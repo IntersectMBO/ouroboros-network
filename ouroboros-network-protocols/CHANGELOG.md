@@ -12,7 +12,8 @@
 
 ### Non-Breaking changes
 
-- Bump io-sim and io-classes
+* Bump io-sim and io-classes
+* Added a test for `AnchoredFragment.splitAtSlot`.
 
 ## 0.8.1.0 -- 2024-03-14
 

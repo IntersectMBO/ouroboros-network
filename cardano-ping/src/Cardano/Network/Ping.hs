@@ -42,7 +42,7 @@ import           Data.TDigest (insert, maximumValue, minimumValue, tdigest, mean
 import           Data.Text (unpack)
 import           Data.Time (DiffTime)
 import           Data.Time.Format.ISO8601 (iso8601Show)
-import           Data.Word (Word16, Word32)
+import           Data.Word (Word16, Word32, Word64)
 import           GHC.Generics
 import           Network.Mux.Bearer (MakeBearer (..), makeSocketBearer)
 import           Network.Mux.Timeout (TimeoutFn, withTimeoutSerial)
@@ -80,6 +80,8 @@ data PingOpts = PingOpts
     -- ^ Print output in JSON
   , pingOptsQuiet    :: Bool
     -- ^ Less verbose output
+  , pingOptsGetTip   :: Bool
+    -- ^ Get Tip after handshake
   } deriving (Eq, Show)
 
 mainnetMagic :: Word32
@@ -87,6 +89,9 @@ mainnetMagic = 764824073
 
 handshakeNum ::  MiniProtocolNum
 handshakeNum = MiniProtocolNum 0
+
+chainSyncNum :: MiniProtocolNum
+chainSyncNum = MiniProtocolNum 2
 
 keepaliveNum :: MiniProtocolNum
 keepaliveNum = MiniProtocolNum 8
@@ -98,18 +103,20 @@ data LogMsg = LogMsg ByteString
             | LogEnd
             deriving Show
 
-logger :: StrictTMVar IO LogMsg -> Bool -> Bool -> IO ()
-logger msgQueue json query = go True
+logger :: StrictTMVar IO LogMsg -> Bool -> Bool -> Bool -> IO ()
+logger msgQueue json query tip = go True
   where
     go first = do
       msg <- atomically $ takeTMVar  msgQueue
       case msg of
         LogMsg bs -> do
-          let bs' = case (json, first) of
-                (True, False)  -> LBS.Char.pack ",\n" <> bs
-                (True, True)   -> LBS.Char.pack "{ \"pongs\": [ " <> bs
-                (False, True)  -> LBS.Char.pack "timestamp,                      host,                         cookie,  sample,  median,     p90,    mean,     min,     max,     std\n" <> bs
-                (False, False) -> bs
+          let bs' = case (json, first, tip) of
+                (True, False, _)  -> LBS.Char.pack ",\n" <> bs
+                (True, True, False)   -> LBS.Char.pack "{ \"pongs\": [ " <> bs
+                (True, True, True)   -> LBS.Char.pack "{ \"tip\": [ " <> bs
+                (False, True, False)  -> LBS.Char.pack "timestamp,                      host,                         cookie,  sample,  median,     p90,    mean,     min,     max,     std\n" <> bs
+                (False, True, True) -> bs
+                (False, False, _) -> bs
 
           LBS.Char.putStr bs'
           go False
@@ -214,6 +221,30 @@ instance ToJSON NodeVersion where
         go4 version magic initiator peersharing = go3 version magic initiator <>
                                                     ["peersharing" .= toJSON peersharing]
 
+data PingTip = PingTip {
+    ptRtt     :: !Double
+  , ptHash    :: !ByteString
+  , ptBlockNo :: !Word64
+  , ptSlotNo  :: !Word64
+  }
+
+hexStr :: ByteString -> String
+hexStr = LBS.foldr (\b -> (<>) (printf "%02x" b)) ""
+
+instance Show PingTip where
+  show PingTip{..} =
+    printf "rtt: %f, hash %s, blockNo: %d slotNo: %d" ptRtt (hexStr ptHash)
+           ptBlockNo ptSlotNo
+
+instance ToJSON PingTip where
+  toJSON PingTip{..} =
+    object [
+        "rtt"     .= ptRtt
+      , "hash"    .= hexStr ptHash
+      , "blockNo" .= ptBlockNo
+      , "slotNo"  .= ptSlotNo
+      ]
+
 keepAliveReqEnc :: NodeVersion -> Word16 -> CBOR.Encoding
 keepAliveReqEnc v cookie | v >= NodeToNodeVersionV7 minBound minBound =
         CBOR.encodeListLen 2
@@ -235,6 +266,15 @@ keepAliveDone _ =
     CBOR.toLazyByteString $
       CBOR.encodeWord 2
 
+chainSyncFindIntersect :: ByteString
+chainSyncFindIntersect = CBOR.toLazyByteString findIntersectEnc
+ where
+  findIntersectEnc :: CBOR.Encoding
+  findIntersectEnc =
+       CBOR.encodeListLen 2
+    <> CBOR.encodeWord 4
+    <> CBOR.encodeListLenIndef
+    <> CBOR.encodeBreak
 
 handshakeReqEnc :: NonEmpty NodeVersion -> Bool -> CBOR.Encoding
 handshakeReqEnc versions query =
@@ -462,6 +502,20 @@ handshakeDec = do
         _query <- CBOR.decodeBool
         return $ Right $ vnFun magic mode peerSharing
 
+chainSyncIntersectNotFoundDec :: CBOR.Decoder s (Word64, Word64, ByteString)
+chainSyncIntersectNotFoundDec = do
+  len <- CBOR.decodeListLen
+  key <- CBOR.decodeWord
+  case (len, key) of
+       (2, 6) -> do
+         _ <- CBOR.decodeListLen
+         _ <- CBOR.decodeListLen
+         slotNo <- CBOR.decodeWord64
+         hash   <- CBOR.decodeBytes
+         blockNo <- CBOR.decodeWord64
+         return (slotNo, blockNo, LBS.fromStrict hash)
+       _ -> fail ("IntersectNotFound unexpected " ++ show key)
+
 wrap :: MiniProtocolNum -> MiniProtocolDir -> LBS.ByteString -> MuxSDU
 wrap ptclNum ptclDir blob = MuxSDU
   { msHeader = MuxSDUHeader
@@ -543,7 +597,7 @@ sduTimeout :: MT.DiffTime
 sduTimeout = 30
 
 pingClient :: Tracer IO LogMsg -> Tracer IO String -> PingOpts -> [NodeVersion] -> AddrInfo -> IO ()
-pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount, pingOptsHandshakeQuery} versions peer = bracket
+pingClient stdout stderr PingOpts{..} versions peer = bracket
   (Socket.socket (Socket.addrFamily peer) Socket.Stream Socket.defaultProtocol)
   Socket.close
   (\sd -> withTimeoutSerial $ \timeoutfn -> do
@@ -591,7 +645,9 @@ pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount, pi
               -- print query results if it was supported by the remote side
               TL.hPutStrLn IO.stdout $ peerStr' <> " " <> (showQueriedVersions recVersions)
             when (not pingOptsHandshakeQuery && not isUnixSocket) $ do
-              keepAlive bearer timeoutfn peerStr version (tdigest []) 0
+              if pingOptsGetTip
+                 then getTip bearer timeoutfn peerStr
+                 else keepAlive bearer timeoutfn peerStr version (tdigest []) 0
               -- send terminating message
               _ <- write bearer timeoutfn $ wrap keepaliveNum InitiatorDir (keepAliveDone version)
               return ()
@@ -685,6 +741,19 @@ pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount, pi
           MT.threadDelay keepAliveDelay
           keepAlive bearer timeoutfn peerStr version td' (cookie + 1)
 
+    getTip :: MuxBearer IO
+           -> TimeoutFn IO
+           -> String
+           -> IO ()
+    getTip bearer timeoutfn peerStr = do
+      !t_s <- write bearer timeoutfn $ wrap chainSyncNum InitiatorDir chainSyncFindIntersect
+      (!msg, !t_e) <- nextMsg bearer timeoutfn chainSyncNum
+      case CBOR.deserialiseFromBytes chainSyncIntersectNotFoundDec msg of
+           Left err -> eprint $ printf "%s findIntersect decoding error %s" peerStr (show err)
+           Right (_, (slotNo, blockNo, hash)) ->
+             let tip = PingTip (toSample t_e t_s) hash blockNo slotNo in
+             if pingOptsJson then traceWith stdout $ LogMsg (encode tip)
+                             else traceWith stdout $ LogMsg $ LBS.Char.pack $ show tip <> "\n"
 
 isSameVersionAndMagic :: NodeVersion -> NodeVersion -> Bool
 isSameVersionAndMagic v1 v2 = extract v1 == extract v2
