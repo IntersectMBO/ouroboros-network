@@ -24,7 +24,8 @@ module Ouroboros.Network.BlockFetch.Decision
 
 import Data.Bifunctor (Bifunctor(..))
 import Data.Hashable
-import Data.List (singleton, find)
+import Data.List (find)
+import Data.Maybe (maybeToList)
 import Data.Function ((&))
 import qualified Data.Map.Strict as Map
 import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime(..), addTime)
@@ -123,7 +124,7 @@ fetchDecisions
     checkChangeOfCurrentPeer theDecision peersOrder
 
     pure $
-      maybe [] (singleton . first Right) theDecision
+      map (first Right) (maybeToList theDecision)
         ++ map (first Left) declines
     where
       alignPeersOrderWithActualPeers :: [peer] -> PeersOrder peer -> PeersOrder peer
