@@ -19,11 +19,11 @@ import Data.List (sortOn)
 import Data.List.NonEmpty (nonEmpty)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as Map
-import Data.Maybe (catMaybes, mapMaybe)
+import Data.Maybe (mapMaybe)
 import qualified Data.Set as Set
 import Data.Ord (Down(Down))
 
-import Cardano.Prelude (guard)
+import Cardano.Prelude (guard, partitionEithers)
 
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment, headBlockNo)
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -172,19 +172,15 @@ selectTheCandidate
       . sortOn (Down . headBlockNo . fst)
     where
       -- Very ad-hoc helper.
+      -- Write all of the declined peers, and find the candidate fragment
+      -- if there is any.
       separateDeclinedAndStillInRace ::
         [(FetchDecision (ChainSuffix header), peerInfo)] ->
         WithDeclined peerInfo (Maybe (ChainSuffix header, [(ChainSuffix header, peerInfo)]))
       separateDeclinedAndStillInRace decisions = do
-        inRace <-
-          catMaybes
-            <$> traverse
-              ( \(decision, peer) ->
-                  case decision of
-                    Left reason -> tell (List [(reason, peer)]) >> pure Nothing
-                    Right candidate -> pure $ Just (candidate, peer)
-              )
-              decisions
+        let (declined, inRace) = partitionEithers
+              [ bimap ((,p)) ((,p)) d | (d, p) <- decisions ]
+        tell (List declined)
         return $ ((,inRace) . fst . NE.head) <$> nonEmpty inRace
 
 -- | Given _the_ candidate fragment to sync from, and a list of peers (with
