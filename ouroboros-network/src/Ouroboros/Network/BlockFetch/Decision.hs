@@ -24,14 +24,14 @@ module Ouroboros.Network.BlockFetch.Decision
 
 import Data.Bifunctor (Bifunctor(..))
 import Data.Hashable
-import Data.List (singleton)
-import Data.Foldable (traverse_)
+import Data.List (singleton, find)
 import Data.Function ((&))
+import qualified Data.Map.Strict as Map
 import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime(..), addTime)
 
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import Ouroboros.Network.Block
-import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..), PeersOrder (..), msnoc, mcons)
+import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..), PeersOrder (..), mcons, PeerFetchInFlight (..))
 import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..), ChainSelStarvation)
 
 import Ouroboros.Network.BlockFetch.Decision.Common (FetchDecisionPolicy (..), PeerInfo, FetchDecision, FetchDecline (..),
@@ -148,17 +148,20 @@ fetchDecisions
           lastStarvationTime <- case chainSelStarvation of
             ChainSelStarvationEndedAt time -> pure time
             ChainSelStarvationOngoing -> getMonotonicTime
-          if lastStarvationTime < addTime bulkSyncGracePeriod peersOrderStart
-            then pure peersOrder
-            else do
-              let peersOrder' =
-                    PeersOrder
-                      { peersOrderCurrent = Nothing,
-                        peersOrderOthers = msnoc peersOrderOthers peersOrderCurrent,
-                        peersOrderStart
-                      }
-              traverse_ demoteCSJDynamoAndIgnoreInflightBlocks peersOrderCurrent
-              pure peersOrder'
+          case peersOrderCurrent of
+            Just peersOrderCurrent_
+              | peerHasBlocksInFlight peersOrderCurrent_
+                  && lastStarvationTime >= addTime bulkSyncGracePeriod peersOrderStart ->
+                  do
+                    let peersOrder' =
+                          PeersOrder
+                            { peersOrderCurrent = Nothing,
+                              peersOrderOthers = snoc peersOrderOthers peersOrderCurrent_,
+                              peersOrderStart
+                            }
+                    demoteCSJDynamoAndIgnoreInflightBlocks peersOrderCurrent_
+                    pure peersOrder'
+            _ -> pure peersOrder
 
       checkChangeOfCurrentPeer :: Maybe (any, PeerInfo header peer extra) -> PeersOrder peer -> m ()
       checkChangeOfCurrentPeer theDecision PeersOrder {peersOrderCurrent, peersOrderOthers} =
@@ -173,3 +176,12 @@ fetchDecisions
                       peersOrderOthers = mcons peersOrderCurrent (filter (/= thePeer) peersOrderOthers)
                     }
           _ -> pure ()
+
+      peerHasBlocksInFlight peer =
+        case find (\(_, (_, _, _, peer', _)) -> peer == peer') candidatesAndPeers of
+          Just (_, (_, inflight, _, _, _)) -> not $ Map.null $ peerFetchBlocksInFlight inflight
+          Nothing -> error "blocksInFlightForPeer"
+
+snoc :: [a] -> a -> [a]
+snoc [] a = [a]
+snoc (x : xs) a = x : snoc xs a
