@@ -1,4 +1,5 @@
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE RankNTypes #-}
@@ -12,7 +13,7 @@ module Ouroboros.Network.BlockFetch.Decision.BulkSync (
 
 import Control.Monad (filterM)
 import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
-import Control.Monad.Writer.CPS (Writer, runWriter, MonadWriter (tell))
+import Control.Monad.Writer.Strict (Writer, runWriter, MonadWriter (tell))
 import Data.Bifunctor (first, Bifunctor (..))
 import Data.Foldable (foldl')
 import Data.List (sortOn)
