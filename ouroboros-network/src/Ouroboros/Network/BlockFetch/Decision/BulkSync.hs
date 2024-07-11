@@ -35,7 +35,7 @@ import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode(FetchModeBulkS
 import Ouroboros.Network.BlockFetch.DeltaQ (calculatePeerFetchInFlightLimits)
 import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation(..))
 
-import Ouroboros.Network.BlockFetch.Decision.Common
+import Ouroboros.Network.BlockFetch.Decision.Deadline
 
 -- | A trivial foldable data structure with a 'Semigroup' instance that
 -- concatenates in @O(1)@. Only meant for short-term use, followed by one fold.
