@@ -85,6 +85,26 @@
 --
 -- Terminate this iteration.
 --
+-- Interactions with ChainSync Jumping (CSJ)
+-- -----------------------------------------
+--
+-- This decision logic is not so obviously coupled with CSJ, but it is in some
+-- subtle ways:
+--
+-- - Because we always require our peers to be able to serve a gross request of
+--   oldest blocks, peers with longer chains have a better chance to pass this
+--   criteria and to be selected as current peer. The CSJ dynamo, being always
+--   ahead of jumpers, has therefore more chances to be selected as the current
+--   peer. It is still possible for a jumper or a disengaged peer to be
+--   selected.
+--
+-- - If the current peer is the CSJ dynamo, but it is a dishonest peer serving
+--   headers fast but retaining headers, it might be able to drastically leash
+--   us, because its ChainSync client will be stuck behind the forecast horizon
+--   (and therefore not subject to ChainSync punishments such as the Limit on
+--   Patience). This is why we need to consider starvation of ChainSel and
+--   demote peers that let us starve.
+--
 module Ouroboros.Network.BlockFetch.Decision.BulkSync (
   fetchDecisionsBulkSyncM
 ) where
