@@ -254,9 +254,7 @@ fetchDecisionsDeadline fetchDecisionPolicy@FetchDecisionPolicy {
                fetchedMaxSlotNo =
 
     -- Finally, make a decision for each (chain, peer) pair.
-    fetchRequestDecisions
-      fetchDecisionPolicy
-      FetchModeDeadline
+    fetchRequestDecisions fetchDecisionPolicy
   . map swizzleSIG
 
     -- Reorder chains based on consensus policy and network timing data.
@@ -800,7 +798,6 @@ fetchRequestDecisions
       , Ord peer
       )
   => FetchDecisionPolicy header
-  -> FetchMode
   -> [( FetchDecision [AnchoredFragment header]
       , PeerFetchStatus header
       , PeerFetchInFlight header
@@ -808,7 +805,7 @@ fetchRequestDecisions
       , peer
       , extra)]
   -> [(FetchDecision (FetchRequest header), extra)]
-fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
+fetchRequestDecisions fetchDecisionPolicy chains =
     go nConcurrentFetchPeers0 Set.empty NoMaxSlotNo chains
   where
     go :: Word
@@ -827,30 +824,14 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
       where
         decision = fetchRequestDecision
                      fetchDecisionPolicy
-                     fetchMode
+                     FetchModeDeadline
                      -- Permit the preferred peers to by pass any concurrency limits.
                      (if elem peer nPreferedPeers then 0
                                                   else nConcurrentFetchPeers)
                      (calculatePeerFetchInFlightLimits gsvs)
                      inflight
                      status
-                     mchainfragments'
-
-        mchainfragments' =
-          case fetchMode of
-            FetchModeDeadline -> mchainfragments
-            FetchModeBulkSync -> do
-                chainfragments <- mchainfragments
-                let fragments =
-                      concatMap (filterWithMaxSlotNo
-                                   notFetchedThisRound
-                                   maxSlotNoFetchedThisRound)
-                                chainfragments
-                guard (not (null fragments)) ?! FetchDeclineInFlightOtherPeer
-                return fragments
-              where
-                notFetchedThisRound h =
-                  blockPoint h `Set.notMember` blocksFetchedThisRound
+                     mchainfragments
 
         nConcurrentFetchPeers'
           -- increment if it was idle, and now will not be
@@ -900,16 +881,10 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
     nPreferedPeers :: [peer]
     nPreferedPeers =
         map snd
-      . take (fromIntegral maxConcurrentFetchPeers)
+      . take (fromIntegral $ maxConcurrencyDeadline fetchDecisionPolicy)
       . sortBy (\a b -> comparePeerGSV nActivePeers (peerSalt fetchDecisionPolicy) a b)
       . map (\(_, _, _, gsv, p, _) -> (gsv, p))
       $ chains
-
-    maxConcurrentFetchPeers :: Word
-    maxConcurrentFetchPeers =
-      case fetchMode of
-           FetchModeBulkSync -> maxConcurrencyBulkSync fetchDecisionPolicy
-           FetchModeDeadline -> maxConcurrencyDeadline fetchDecisionPolicy
 
 -- |
 --

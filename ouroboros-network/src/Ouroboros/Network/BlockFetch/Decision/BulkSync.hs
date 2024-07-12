@@ -519,7 +519,7 @@ fetchTheCandidate
             (calculatePeerFetchInFlightLimits gsvs)
             inflight
             status
-            (Right trimmedFragments) -- FIXME: This is a hack to avoid having to change the signature of 'fetchRequestDecisions'.
+            (Right trimmedFragments) -- FIXME: This is a hack to avoid having to change the signature of 'fetchRequestDecision'.
      in case theDecision of
           Left reason -> tell (List [(reason, thePeer)]) >> pure Nothing
           Right theRequest -> pure $ Just (theRequest, thePeer)
