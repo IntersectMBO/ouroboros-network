@@ -138,7 +138,7 @@ import qualified Data.List as List
 import Data.List.NonEmpty (nonEmpty)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as Map
-import Data.Maybe (mapMaybe, maybeToList, fromJust)
+import Data.Maybe (mapMaybe, maybeToList, isNothing)
 import qualified Data.Set as Set
 import Data.Ord (Down(Down))
 
@@ -230,7 +230,7 @@ fetchDecisionsBulkSyncM
 
     -- If there were no blocks in flight, then this will be the first request,
     -- so we take a new current time.
-    when (mCurrentPeer == Nothing) $ do
+    when (isNothing mCurrentPeer) $ do
       peersOrderStart <- getMonotonicTime
       writePeersOrder $ peersOrder {peersOrderStart}
 
@@ -257,7 +257,7 @@ fetchDecisionsBulkSyncM
             ChainSelStarvationEndedAt time -> pure time
             ChainSelStarvationOngoing -> getMonotonicTime
           case mCurrentPeer of
-            Just badPeer ->
+            Just (_,_,_,badPeer,_) ->
                 if lastStarvationTime >= addTime bulkSyncGracePeriod peersOrderStart
                   then do
                     demoteCSJDynamoAndIgnoreInflightBlocks badPeer
@@ -279,9 +279,9 @@ fetchDecisionsBulkSyncM
                 )
                 (map snd candidatesAndPeers)
          in case peersWithBlocksInFlightNonIgnored of
-              (_, _, _, peer, _) : otherPeersWithBlocksInFlightNonIgnored ->
+              peerInfo : otherPeersWithBlocksInFlightNonIgnored ->
                 assert (List.null otherPeersWithBlocksInFlightNonIgnored) $
-                  Just peer
+                  Just peerInfo
               _ -> Nothing
 
 -- | Given a list of candidate fragments and their associated peers, choose what
@@ -298,7 +298,7 @@ fetchDecisionsBulkSync ::
   MaxSlotNo ->
   PeersOrder peer ->
   -- | The current peer, if there is one.
-  Maybe peer ->
+  Maybe (PeerInfo header peer extra) ->
   -- | Association list of the candidate fragments and their associated peers.
   -- The candidate fragments are anchored in the current chain (not necessarily
   -- at the tip; and not necessarily forking off immediately).
@@ -432,7 +432,7 @@ selectThePeer ::
   FetchDecisionPolicy header ->
   PeersOrder peer ->
   -- | The current peer
-  Maybe peer ->
+  Maybe (PeerInfo header peer extra) ->
   -- | The candidate fragment that we have selected to sync from, as suffix of
   -- the immutable tip.
   FetchDecision (CandidateFragments header) ->
@@ -467,15 +467,17 @@ selectThePeer
     -- If there is a current peer, then that is the one we choose. Otherwise, we
     -- can choose any peer, so we choose a “good” one.
     case mCurrentPeer of
-      Just thePeer -> do
-          let ((thePeerCandidate, thePeerInfo), otherPeers) = fromJust $ extractFirstElem (\(_, (_, _, _, peer, _)) -> peer == thePeer) candidates
-          tell (List (map (first (const (FetchDeclineConcurrencyLimit FetchModeBulkSync 1))) otherPeers))
-          -- REVIEW: This is maybe overkill to check that the whole gross request
-          -- fits in the peer's candidate. Maybe just checking that there is one
-          -- block is sufficient.
-          case checkRequestInCandidate thePeerCandidate =<< grossRequest of
-            Left reason -> tell (List [(reason, thePeerInfo)]) >> return Nothing
-            Right () -> return $ Just (thePeerCandidate, thePeerInfo)
+      Just thePeerInfo -> do
+          case extractFirstElem (eqPeerInfo thePeerInfo . snd) candidates of
+            Nothing -> tell (List [(FetchDeclineChainNotPlausible, thePeerInfo)]) >> return Nothing
+            Just ((thePeerCandidate, _), otherPeers) -> do
+              tell (List (map (first (const (FetchDeclineConcurrencyLimit FetchModeBulkSync 1))) otherPeers))
+              -- REVIEW: This is maybe overkill to check that the whole gross request
+              -- fits in the peer's candidate. Maybe just checking that there is one
+              -- block is sufficient.
+              case checkRequestInCandidate thePeerCandidate =<< grossRequest of
+                Left reason -> tell (List [(reason, thePeerInfo)]) >> return Nothing
+                Right () -> return $ Just (thePeerCandidate, thePeerInfo)
 
       Nothing -> do
         -- For each peer, check whether its candidate contains the gross request in
@@ -518,13 +520,6 @@ selectThePeer
           isSubfragmentOfCandidate fragment =
             AF.withinFragmentBounds (AF.anchorPoint fragment) (getChainSuffix candidate)
               && AF.withinFragmentBounds (AF.headPoint fragment) (getChainSuffix candidate)
-
-      peersWithBlocksInFlightNonIgnored =
-        filter
-          ( \(_, inflight, _, _, _) ->
-              not $ Map.null $ Map.filter (\(PeerFetchBlockInFlight b) -> not b) $ peerFetchBlocksInFlight inflight
-          )
-          (map snd candidates)
 
 -- | Given a candidate and a peer to sync from, create a request for that
 -- specific peer. We might take the 'FetchDecision' to decline the request, but
@@ -625,3 +620,6 @@ extractFirstElem _ [] = Nothing
 extractFirstElem p (x : xs)
   | p x = Just (x, xs)
   | otherwise = second (x :) <$> extractFirstElem p xs
+
+eqPeerInfo :: Eq peer => PeerInfo header peer extra -> PeerInfo header peer extra -> Bool
+eqPeerInfo (_,_,_,p1,_) (_,_,_,p2,_) = p1 == p2
