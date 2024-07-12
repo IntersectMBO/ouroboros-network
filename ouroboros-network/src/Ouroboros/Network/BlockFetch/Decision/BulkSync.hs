@@ -311,7 +311,8 @@ fetchDecisionsBulkSync
 
     -- Step 2: Filter out from the chosen candidate fragment the blocks that
     -- have already been downloaded, or that have a request in flight (except
-    -- for the requests in flight that are ignored).
+    -- for the requests in flight that are ignored). NOTE: if not declined,
+    -- @theFragments@ is guaranteed to be non-empty.
     let (theFragments :: FetchDecision (CandidateFragments header)) =
           pure theCandidate
             >>= filterNotAlreadyFetched fetchedBlocks fetchedMaxSlotNo
@@ -403,6 +404,7 @@ selectTheCandidate
 -- the ordering passed as argument.
 --
 -- PRECONDITION: The set of peers must be included in the peer order queue.
+-- PRECONDITION: The given candidate fragments must not be empty.
 selectThePeer ::
   forall header peer extra.
   ( HasHeader header,
@@ -427,7 +429,8 @@ selectThePeer
     -- Create a fetch request for the blocks in question. The request is made to
     -- fit in 20 mebibytes but ignores everything else. It is gross in that
     -- sense. It will only be used to choose the peer to fetch from, but we will
-    -- later craft a more refined request for that peer.
+    -- later craft a more refined request for that peer. Because @theFragments@
+    -- is not empty, @grossRequest@ will not be empty.
     let (grossRequest :: FetchDecision (FetchRequest header)) =
           selectBlocksUpToLimits
             blockFetchSize
