@@ -347,9 +347,6 @@ fetchDecisionsBulkSync
         )
       combineWithDeclined = second listConcatToList . runWithDeclined . runMaybeT
 
--- FIXME: The 'FetchDeclineConcurrencyLimit' should only be used for
--- 'FetchModeDeadline', and 'FetchModeBulkSync' should have its own reasons.
-
 -- | Given a list of candidate fragments and their associated peers, select the
 -- candidate to sync from. Return this fragment, the list of peers that are
 -- still in race to serve it, and the list of peers that are already being
