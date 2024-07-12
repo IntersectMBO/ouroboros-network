@@ -114,7 +114,7 @@ fetchDecisionsBulkSyncM
     -- the peers order, then we have shifted our focus: we make the new peer our
     -- current one and we put back the previous current peer at the beginning of
     -- the queue; not the end, because it has not done anything wrong.
-    checkChangeOfCurrentPeer theDecision peersOrder
+    maybeSetCurrentPeer theDecision peersOrder
 
     pure $
       map (first Right) (maybeToList theDecision)
@@ -157,8 +157,8 @@ fetchDecisionsBulkSyncM
                     pure peersOrder'
             _ -> pure peersOrder
 
-      checkChangeOfCurrentPeer :: Maybe (any, PeerInfo header peer extra) -> PeersOrder peer -> m ()
-      checkChangeOfCurrentPeer theDecision PeersOrder {peersOrderCurrent, peersOrderOthers} =
+      maybeSetCurrentPeer :: Maybe (any, PeerInfo header peer extra) -> PeersOrder peer -> m ()
+      maybeSetCurrentPeer theDecision PeersOrder {peersOrderCurrent, peersOrderOthers} =
         case theDecision of
           Just (_, (_, _, _, thePeer, _))
             | Just thePeer /= peersOrderCurrent -> do
