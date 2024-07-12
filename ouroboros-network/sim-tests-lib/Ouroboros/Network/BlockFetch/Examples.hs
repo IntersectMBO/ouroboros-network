@@ -135,7 +135,6 @@ blockFetchExample0 decisionTracer clientStateTracer clientMsgTracer
           (sampleBlockFetchPolicy1 headerForgeUTCTime blockHeap currentChainHeaders candidateChainHeaders)
           registry
           (BlockFetchConfiguration {
-            bfcMaxConcurrencyBulkSync = 1,
             bfcMaxConcurrencyDeadline = 2,
             bfcMaxRequestsInflight    = 10,
             bfcDecisionLoopInterval   = 0.01,
@@ -245,7 +244,6 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
           (sampleBlockFetchPolicy1 headerForgeUTCTime blockHeap currentChainHeaders candidateChainHeaders)
           registry
           (BlockFetchConfiguration {
-            bfcMaxConcurrencyBulkSync = 1,
             bfcMaxConcurrencyDeadline = 2,
             bfcMaxRequestsInflight    = 10,
             bfcDecisionLoopInterval   = 0.01,
