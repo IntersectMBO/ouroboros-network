@@ -416,8 +416,9 @@ fetchTheCandidate
   thePeer@(status, inflight, gsvs, _, _)
   thePeerCandidate =
     let theDecision = do
-          -- Keep blocks that have not already been downloaded or that are not
-          -- already in-flight with this peer.
+          -- Keep blocks that are not already in-flight with this peer. NOTE: We
+          -- already filtered most of them (and more), but now we also filter
+          -- out then ones that are in-flight AND ignored.
           fragments <- filterNotAlreadyInFlightWithPeer inflight =<< theFragments
 
           -- Trim the fragments to the peer's candidate, keeping only blocks that
