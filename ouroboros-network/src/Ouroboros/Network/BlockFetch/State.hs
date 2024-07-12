@@ -17,6 +17,7 @@ module Ouroboros.Network.BlockFetch.State
   , TraceFetchClientState (..)
   ) where
 
+import Data.Foldable (for_)
 import Data.Functor.Contravariant (contramap)
 import Data.Hashable (Hashable)
 import Data.Map.Strict (Map)
@@ -24,6 +25,7 @@ import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Void
 
+import Control.Concurrent.Class.MonadSTM.Strict.TVar (modifyTVar)
 import Control.Concurrent.Class.MonadSTM.Strict.TVar.Checked (newTVarIO, StrictTVar, readTVarIO, writeTVar)
 import Control.Exception (assert)
 import Control.Monad.Class.MonadSTM
@@ -44,7 +46,6 @@ import Ouroboros.Network.BlockFetch.Decision (FetchDecision,
            PeerInfo, fetchDecisions)
 import Ouroboros.Network.BlockFetch.DeltaQ (PeerGSV (..))
 import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation)
-import Control.Concurrent.Class.MonadSTM.Strict.TVar (modifyTVar)
 
 
 fetchLogicIterations
@@ -181,14 +182,11 @@ fetchLogicIteration decisionTracer clientStateTracer
       demoteCSJDynamo peer
       atomically $ do
         peerStateVars <- readStatePeerStateVars fetchNonTriggerVariables
-        case Map.lookup peer peerStateVars of
-          Nothing -> return ()
-          Just peerStateVar ->
-            modifyTVar (fetchClientInFlightVar peerStateVar) $ \pfif ->
-              pfif
-                { peerFetchBlocksInFlight =
-                    fmap (const (PeerFetchBlockInFlight True)) (peerFetchBlocksInFlight pfif)
-                }
+        for_ peerStateVars $ \peerStateVar ->
+          modifyTVar (fetchClientInFlightVar peerStateVar) $ \pfif ->
+            pfif { peerFetchBlocksInFlight =
+                     fmap (const (PeerFetchBlockInFlight True)) (peerFetchBlocksInFlight pfif)
+                 }
 
 -- | Do a bit of rearranging of data before calling 'fetchDecisions' to do the
 -- real work.
