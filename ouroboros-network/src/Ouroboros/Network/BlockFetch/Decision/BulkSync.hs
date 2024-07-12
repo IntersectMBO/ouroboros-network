@@ -424,9 +424,9 @@ selectThePeer
   peersOrder
   theFragments
   candidates = do
-    -- Create a fetch request for the blocks in question. The request is made
-    -- to fit in 1MB but ignores everything else. It is gross in that sense.
-    -- It will only be used to choose the peer to fetch from, but we will
+    -- Create a fetch request for the blocks in question. The request is made to
+    -- fit in 20 mebibytes but ignores everything else. It is gross in that
+    -- sense. It will only be used to choose the peer to fetch from, but we will
     -- later craft a more refined request for that peer.
     let (grossRequest :: FetchDecision (FetchRequest header)) =
           selectBlocksUpToLimits
@@ -434,13 +434,13 @@ selectThePeer
             0 -- number of request in flight
             maxBound -- maximum number of requests in flight
             0 -- bytes in flight
-            (1024 * 1024) -- maximum bytes in flight; one megabyte
+            (20 * 1000 * 1000) -- maximum bytes in flight; 20 mebibyte
             . snd
             <$> theFragments
 
     -- For each peer, check whether its candidate contains the gross request in
     -- its entirety, otherwise decline it. This will guarantee that the
-    -- remaining peers can serve the refine request that we will craft later.
+    -- remaining peers can serve the refined request that we will craft later.
     peers <-
       filterM
         ( \(candidate, peer) ->
