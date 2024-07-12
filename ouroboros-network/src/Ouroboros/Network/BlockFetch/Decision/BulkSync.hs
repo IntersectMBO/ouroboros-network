@@ -473,7 +473,7 @@ selectThePeer
             0 -- number of request in flight
             maxBound -- maximum number of requests in flight
             0 -- bytes in flight
-            (20 * 1000 * 1000) -- maximum bytes in flight; 20 mebibyte
+            (20 * 1024 * 1024) -- maximum bytes in flight; 20 mebibyte
             . snd
             <$> theFragments
 
