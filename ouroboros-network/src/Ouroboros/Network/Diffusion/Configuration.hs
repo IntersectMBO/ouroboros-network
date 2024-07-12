@@ -91,7 +91,6 @@ defaultPeerSharing = PeerSharingDisabled
 defaultBlockFetchConfiguration :: Int -> BlockFetchConfiguration
 defaultBlockFetchConfiguration bfcSalt =
   BlockFetchConfiguration {
-    bfcMaxConcurrencyBulkSync = 1,
     bfcMaxConcurrencyDeadline = 1,
     bfcMaxRequestsInflight    = fromIntegral $ blockFetchPipeliningMax defaultMiniProtocolParameters,
     bfcDecisionLoopInterval   = 0.01, -- 10ms

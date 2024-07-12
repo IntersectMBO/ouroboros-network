@@ -291,7 +291,6 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
         (blockFetchPolicy nodeKernel)
         (nkFetchClientRegistry nodeKernel)
         (BlockFetchConfiguration {
-          bfcMaxConcurrencyBulkSync = 1,
           bfcMaxConcurrencyDeadline = 2,
           bfcMaxRequestsInflight    = 10,
           bfcDecisionLoopInterval   = 0.01,

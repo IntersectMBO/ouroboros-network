@@ -38,7 +38,6 @@ import Ouroboros.Network.BlockFetch.DeltaQ (PeerGSV (..), SizeInBytes, calculate
 data FetchDecisionPolicy header = FetchDecisionPolicy {
        maxInFlightReqsPerPeer  :: Word,  -- A protocol constant.
 
-       maxConcurrencyBulkSync  :: Word,
        maxConcurrencyDeadline  :: Word,
        decisionLoopInterval    :: DiffTime,
        peerSalt                :: Int,
@@ -206,7 +205,7 @@ data FetchDecline =
      --
      -- * the current 'FetchMode'
      -- * the corresponding configured limit constant, either
-     --   'maxConcurrencyBulkSync' or 'maxConcurrencyDeadline'
+     --   'maxConcurrencyDeadline', or 1 for bulk sync.
      --
    | FetchDeclineConcurrencyLimit   !FetchMode !Word
   deriving (Eq, Show)
@@ -955,7 +954,7 @@ fetchRequestDecision FetchDecisionPolicy {
 
     -- Refuse any blockrequest if we're above the concurrency limit.
   | let maxConcurrentFetchPeers = case fetchMode of
-                                    FetchModeBulkSync -> 1 -- FIXME: maxConcurrencyBulkSync has to be removed from the interface
+                                    FetchModeBulkSync -> 1
                                     FetchModeDeadline -> maxConcurrencyDeadline
   , nConcurrentFetchPeers > maxConcurrentFetchPeers
   = Left $ FetchDeclineConcurrencyLimit
@@ -964,7 +963,7 @@ fetchRequestDecision FetchDecisionPolicy {
     -- If we're at the concurrency limit refuse any additional peers.
   | peerFetchReqsInFlight == 0
   , let maxConcurrentFetchPeers = case fetchMode of
-                                    FetchModeBulkSync -> 1 -- FIXME: maxConcurrencyBulkSync has to be removed from the interface
+                                    FetchModeBulkSync -> 1
                                     FetchModeDeadline -> maxConcurrencyDeadline
   , nConcurrentFetchPeers == maxConcurrentFetchPeers
   = Left $ FetchDeclineConcurrencyLimit
