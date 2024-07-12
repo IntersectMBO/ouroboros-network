@@ -776,13 +776,11 @@ takeTFetchRequestVar v = (\(r,g,l) -> (r, getLast g, getLast l))
 
 -- | The order of peers for bulk sync fetch decisions.
 --
--- We could merge the current peer into the list of others, but we keep them
--- separate to make sure that we always consider it separately.
+-- FIXME: peersOrderStart would make much more sense as part of the in-flight
+-- stuff.
 data PeersOrder peer = PeersOrder
-  { peersOrderOthers :: [peer]
-    -- ^ All the other peers, from most preferred to least preferred.
-  , peersOrderCurrent :: Maybe peer
-    -- ^ The current peer that we are talking to.
+  { peersOrderAll :: [peer]
+    -- ^ All the peers, from most preferred to least preferred.
   , peersOrderStart :: Time
     -- ^ The time at which we started talking to that peer.
   }

@@ -127,17 +127,18 @@ module Ouroboros.Network.BlockFetch.Decision.BulkSync (
   fetchDecisionsBulkSyncM
 ) where
 
-import Control.Monad (filterM)
+import Control.Exception (assert)
+import Control.Monad (filterM, when)
 import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime (getMonotonicTime), addTime)
 import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
 import Control.Monad.Writer.Strict (Writer, runWriter, MonadWriter (tell))
 import Data.Bifunctor (first, Bifunctor (..))
 import Data.Foldable (foldl')
-import Data.List (sortOn, find)
+import qualified Data.List as List
 import Data.List.NonEmpty (nonEmpty)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as Map
-import Data.Maybe (mapMaybe, maybeToList)
+import Data.Maybe (mapMaybe, maybeToList, fromJust)
 import qualified Data.Set as Set
 import Data.Ord (Down(Down))
 
@@ -146,7 +147,7 @@ import Cardano.Prelude (guard, partitionEithers, (&))
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment, headBlockNo)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import Ouroboros.Network.Block
-import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..), PeersOrder (..), mcons, PeerFetchBlockInFlight (..), PeerFetchStatus (..), PeerFetchInFlight (..))
+import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..), PeersOrder (..), PeerFetchBlockInFlight (..), PeerFetchStatus (..), PeerFetchInFlight (..))
 import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode(FetchModeBulkSync))
 import Ouroboros.Network.BlockFetch.DeltaQ (calculatePeerFetchInFlightLimits)
 import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation(..))
@@ -226,11 +227,11 @@ fetchDecisionsBulkSyncM
             peersOrder
             candidatesAndPeers
 
-    -- If the peer that is supposed to fetch the block is not the current one in
-    -- the peers order, then we have shifted our focus: we make the new peer our
-    -- current one and we put back the previous current peer at the beginning of
-    -- the queue; not the end, because it has not done anything wrong.
-    maybeSetCurrentPeer theDecision peersOrder
+    -- If there were no blocks in flight, then this will be the first request,
+    -- so we take a new current time.
+    when (List.null peersWithBlocksInFlightNonIgnored) $ do
+      peersOrderStart <- getMonotonicTime
+      writePeersOrder $ peersOrder {peersOrderStart}
 
     pure $
       map (first Right) (maybeToList theDecision)
@@ -239,70 +240,41 @@ fetchDecisionsBulkSyncM
       alignPeersOrderWithActualPeers :: [peer] -> PeersOrder peer -> PeersOrder peer
       alignPeersOrderWithActualPeers
         actualPeers
-        PeersOrder {peersOrderCurrent, peersOrderStart, peersOrderOthers} =
-          let peersOrderCurrent' = case peersOrderCurrent of
-                Just peersOrderCurrent_ | peersOrderCurrent_ `elem` actualPeers -> peersOrderCurrent
-                _ -> Nothing
-              peersOrderOthers' =
-                filter (`elem` actualPeers) peersOrderOthers
-                  ++ filter (\peer -> peer `notElem` peersOrderOthers && Just peer /= peersOrderCurrent) actualPeers
+        PeersOrder {peersOrderStart, peersOrderAll} =
+          let peersOrderAll' =
+                filter (`elem` actualPeers) peersOrderAll
+                  ++ filter (\peer -> peer `notElem` peersOrderAll) actualPeers
            in PeersOrder
-                { peersOrderCurrent = peersOrderCurrent',
-                  peersOrderOthers = peersOrderOthers',
+                { peersOrderAll = peersOrderAll',
                   peersOrderStart
                 }
 
       checkLastChainSelStarvation :: PeersOrder peer -> m (PeersOrder peer)
       checkLastChainSelStarvation
-        peersOrder@PeersOrder {peersOrderCurrent, peersOrderStart, peersOrderOthers} = do
+        peersOrder@PeersOrder {peersOrderStart, peersOrderAll} = do
           lastStarvationTime <- case chainSelStarvation of
             ChainSelStarvationEndedAt time -> pure time
             ChainSelStarvationOngoing -> getMonotonicTime
-          case peersOrderCurrent of
-            Just peersOrderCurrent_
-              | peerHasBlocksInFlight peersOrderCurrent_
-                  && lastStarvationTime >= addTime bulkSyncGracePeriod peersOrderStart ->
+          case peersWithBlocksInFlightNonIgnored of
+            (_, _, _, badPeer, _) : _
+              | lastStarvationTime >= addTime bulkSyncGracePeriod peersOrderStart ->
                   do
+                    demoteCSJDynamoAndIgnoreInflightBlocks badPeer
                     let peersOrder' =
                           PeersOrder
-                            { peersOrderCurrent = Nothing,
-                              peersOrderOthers = snoc peersOrderOthers peersOrderCurrent_,
+                            { peersOrderAll = filter (/= badPeer) peersOrderAll ++ [badPeer],
                               peersOrderStart
                             }
-                    demoteCSJDynamoAndIgnoreInflightBlocks peersOrderCurrent_
+                    writePeersOrder peersOrder'
                     pure peersOrder'
             _ -> pure peersOrder
 
-      maybeSetCurrentPeer :: Maybe (any, PeerInfo header peer extra) -> PeersOrder peer -> m ()
-      maybeSetCurrentPeer theDecision PeersOrder {peersOrderCurrent, peersOrderOthers} =
-        case theDecision of
-          Just (_, (_, _, _, thePeer, _))
-            | Just thePeer /= peersOrderCurrent -> do
-                -- We chose a new peer: set the new peer as current, record a
-                -- new start time, and push the previous “current peer”, if any,
-                -- into the other peers.
-                peersOrderStart <- getMonotonicTime
-                writePeersOrder $
-                  PeersOrder
-                    { peersOrderCurrent = Just thePeer,
-                      peersOrderStart,
-                      peersOrderOthers = mcons peersOrderCurrent (filter (/= thePeer) peersOrderOthers)
-                    }
-            | not (peerHasBlocksInFlight thePeer) -> do
-                -- We chose the same peer as before but there were no more
-                -- blocks in flight for this peer: record a new start time.
-                peersOrderStart <- getMonotonicTime
-                writePeersOrder $ PeersOrder {peersOrderCurrent, peersOrderStart, peersOrderOthers}
-          _ -> pure ()
-
-      peerHasBlocksInFlight peer =
-        case find (\(_, (_, _, _, peer', _)) -> peer == peer') candidatesAndPeers of
-          Just (_, (_, inflight, _, _, _)) -> not $ Map.null $ peerFetchBlocksInFlight inflight
-          Nothing -> error "blocksInFlightForPeer"
-
-snoc :: [a] -> a -> [a]
-snoc [] a = [a]
-snoc (x : xs) a = x : snoc xs a
+      peersWithBlocksInFlightNonIgnored =
+        filter
+          ( \(_, inflight, _, _, _) ->
+              not $ Map.null $ Map.filter (\(PeerFetchBlockInFlight b) -> not b) $ peerFetchBlocksInFlight inflight
+          )
+          (map snd candidatesAndPeers)
 
 -- | Given a list of candidate fragments and their associated peers, choose what
 -- to sync from who in the bulk sync mode.
@@ -416,7 +388,7 @@ selectTheCandidate
       . filterPlausibleCandidates plausibleCandidateChain currentChain
       -- Sort the candidates by descending block number of their heads, that is
       -- consider longest fragments first.
-      . sortOn (Down . headBlockNo . fst)
+      . List.sortOn (Down . headBlockNo . fst)
     where
       -- Very ad-hoc helper.
       -- Write all of the declined peers, and find the candidate fragment
@@ -477,35 +449,53 @@ selectThePeer
             . snd
             <$> theFragments
 
-    -- For each peer, check whether its candidate contains the gross request in
-    -- its entirety, otherwise decline it. This will guarantee that the
-    -- remaining peers can serve the refined request that we will craft later.
-    peers <-
-      filterM
-        ( \(candidate, peer) ->
-            case checkRequestInCandidate candidate =<< grossRequest of
-              Left reason -> tell (List [(reason, peer)]) >> pure False
-              Right () -> pure True
-        )
-        candidates
+    -- If there are peers with blocks that are in-flight and not ignored, then
+    -- there must actually be just the one and that is the one we choose. If
+    -- there are no peers with blocks in-flight (except maybe ignored), then we
+    -- can choose any peer, so we choose a “good” one.
+    case peersWithBlocksInFlightNonIgnored of
 
-    -- Order the peers according to the peer order that we have been given, then
-    -- separate between declined peers and the others. NOTE: The order in which
-    -- we bind the lists in the comprehension is capital.
-    let peersOrdered =
-          [ (candidate, peerInfo)
-            | peer' <- mcons (peersOrderCurrent peersOrder) (peersOrderOthers peersOrder),
-              (candidate, peerInfo@(_, _, _, peer, _)) <- peers,
-              peer == peer'
-          ]
+      (_, _, _, thePeer, _) : theOtherPeersWithBlocksInFlightNonIgnored ->
+        assert (List.null theOtherPeersWithBlocksInFlightNonIgnored) $ do
+          let ((thePeerCandidate, thePeerInfo), otherPeers) = fromJust $ extractFirstElem (\(_, (_, _, _, peer, _)) -> peer == thePeer) candidates
+          tell (List (map (first (const (FetchDeclineConcurrencyLimit FetchModeBulkSync 1))) otherPeers))
+          -- REVIEW: This is maybe overkill to check that the whole gross request
+          -- fits in the peer's candidate. Maybe just checking that there is one
+          -- block is sufficient.
+          case checkRequestInCandidate thePeerCandidate =<< grossRequest of
+            Left reason -> tell (List [(reason, thePeerInfo)]) >> return Nothing
+            Right () -> return $ Just (thePeerCandidate, thePeerInfo)
 
-    -- Return the first peer in that order, and decline all the ones that were
-    -- not already declined.
-    case peersOrdered of
-      [] -> return Nothing
-      (thePeerCandidate, thePeer) : otherPeers -> do
-        tell $ List $ map (first (const (FetchDeclineConcurrencyLimit FetchModeBulkSync 1))) otherPeers
-        return $ Just (thePeerCandidate, thePeer)
+      [] -> do
+        -- For each peer, check whether its candidate contains the gross request in
+        -- its entirety, otherwise decline it. This will guarantee that the
+        -- remaining peers can serve the refined request that we will craft later.
+        peers <-
+          filterM
+            ( \(candidate, peer) ->
+                case checkRequestInCandidate candidate =<< grossRequest of
+                  Left reason -> tell (List [(reason, peer)]) >> pure False
+                  Right () -> pure True
+            )
+            candidates
+
+        -- Order the peers according to the peer order that we have been given, then
+        -- separate between declined peers and the others. NOTE: The order in which
+        -- we bind the lists in the comprehension is capital.
+        let peersOrdered =
+              [ (candidate, peerInfo)
+                | peer' <- peersOrderAll peersOrder,
+                  (candidate, peerInfo@(_, _, _, peer, _)) <- peers,
+                  peer == peer'
+              ]
+
+        -- Return the first peer in that order, and decline all the ones that were
+        -- not already declined.
+        case peersOrdered of
+          [] -> return Nothing
+          (thePeerCandidate, thePeer) : otherPeers -> do
+            tell $ List $ map (first (const (FetchDeclineConcurrencyLimit FetchModeBulkSync 1))) otherPeers
+            return $ Just (thePeerCandidate, thePeer)
     where
       checkRequestInCandidate ::
         ChainSuffix header -> FetchRequest header -> FetchDecision ()
@@ -517,6 +507,13 @@ selectThePeer
           isSubfragmentOfCandidate fragment =
             AF.withinFragmentBounds (AF.anchorPoint fragment) (getChainSuffix candidate)
               && AF.withinFragmentBounds (AF.headPoint fragment) (getChainSuffix candidate)
+
+      peersWithBlocksInFlightNonIgnored =
+        filter
+          ( \(_, inflight, _, _, _) ->
+              not $ Map.null $ Map.filter (\(PeerFetchBlockInFlight b) -> not b) $ peerFetchBlocksInFlight inflight
+          )
+          (map snd candidates)
 
 -- | Given a candidate and a peer to sync from, create a request for that
 -- specific peer. We might take the 'FetchDecision' to decline the request, but
@@ -611,3 +608,9 @@ filterNotAlreadyInFlightWithAnyPeerNonIgnored candidates theCandidate = do
         max
         NoMaxSlotNo
         [peerFetchMaxSlotNo inflight | (_, (_, inflight, _, _, _)) <- candidates]
+
+extractFirstElem :: (a -> Bool) -> [a] -> Maybe (a, [a])
+extractFirstElem _ [] = Nothing
+extractFirstElem p (x : xs)
+  | p x = Just (x, xs)
+  | otherwise = second (x :) <$> extractFirstElem p xs
