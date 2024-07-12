@@ -225,11 +225,12 @@ fetchDecisionsBulkSyncM
             fetchedBlocks
             fetchedMaxSlotNo
             peersOrder
+            mCurrentPeer
             candidatesAndPeers
 
     -- If there were no blocks in flight, then this will be the first request,
     -- so we take a new current time.
-    when (List.null peersWithBlocksInFlightNonIgnored) $ do
+    when (mCurrentPeer == Nothing) $ do
       peersOrderStart <- getMonotonicTime
       writePeersOrder $ peersOrder {peersOrderStart}
 
@@ -255,10 +256,10 @@ fetchDecisionsBulkSyncM
           lastStarvationTime <- case chainSelStarvation of
             ChainSelStarvationEndedAt time -> pure time
             ChainSelStarvationOngoing -> getMonotonicTime
-          case peersWithBlocksInFlightNonIgnored of
-            (_, _, _, badPeer, _) : _
-              | lastStarvationTime >= addTime bulkSyncGracePeriod peersOrderStart ->
-                  do
+          case mCurrentPeer of
+            Just badPeer ->
+                if lastStarvationTime >= addTime bulkSyncGracePeriod peersOrderStart
+                  then do
                     demoteCSJDynamoAndIgnoreInflightBlocks badPeer
                     let peersOrder' =
                           PeersOrder
@@ -267,14 +268,21 @@ fetchDecisionsBulkSyncM
                             }
                     writePeersOrder peersOrder'
                     pure peersOrder'
-            _ -> pure peersOrder
+                  else pure peersOrder
+            Nothing -> pure peersOrder
 
-      peersWithBlocksInFlightNonIgnored =
-        filter
-          ( \(_, inflight, _, _, _) ->
-              not $ Map.null $ Map.filter (\(PeerFetchBlockInFlight b) -> not b) $ peerFetchBlocksInFlight inflight
-          )
-          (map snd candidatesAndPeers)
+      mCurrentPeer =
+        let peersWithBlocksInFlightNonIgnored =
+              filter
+                ( \(_, inflight, _, _, _) ->
+                    not $ Map.null $ Map.filter (\(PeerFetchBlockInFlight b) -> not b) $ peerFetchBlocksInFlight inflight
+                )
+                (map snd candidatesAndPeers)
+         in case peersWithBlocksInFlightNonIgnored of
+              (_, _, _, peer, _) : otherPeersWithBlocksInFlightNonIgnored ->
+                assert (List.null otherPeersWithBlocksInFlightNonIgnored) $
+                  Just peer
+              _ -> Nothing
 
 -- | Given a list of candidate fragments and their associated peers, choose what
 -- to sync from who in the bulk sync mode.
@@ -289,6 +297,8 @@ fetchDecisionsBulkSync ::
   (Point block -> Bool) ->
   MaxSlotNo ->
   PeersOrder peer ->
+  -- | The current peer, if there is one.
+  Maybe peer ->
   -- | Association list of the candidate fragments and their associated peers.
   -- The candidate fragments are anchored in the current chain (not necessarily
   -- at the tip; and not necessarily forking off immediately).
@@ -306,6 +316,7 @@ fetchDecisionsBulkSync
   fetchedBlocks
   fetchedMaxSlotNo
   peersOrder
+  mCurrentPeer
   candidatesAndPeers = combineWithDeclined $ do
     -- Step 1: Select the candidate to sync from. This already eliminates peers
     -- that have an implausible candidate. It returns the remaining candidates
@@ -338,6 +349,7 @@ fetchDecisionsBulkSync
         selectThePeer
           fetchDecisionPolicy
           peersOrder
+          mCurrentPeer
           theFragments
           candidatesAndPeers'
 
@@ -419,6 +431,8 @@ selectThePeer ::
   ) =>
   FetchDecisionPolicy header ->
   PeersOrder peer ->
+  -- | The current peer
+  Maybe peer ->
   -- | The candidate fragment that we have selected to sync from, as suffix of
   -- the immutable tip.
   FetchDecision (CandidateFragments header) ->
@@ -431,6 +445,7 @@ selectThePeer ::
 selectThePeer
   FetchDecisionPolicy {blockFetchSize}
   peersOrder
+  mCurrentPeer
   theFragments
   candidates = do
     -- Create a fetch request for the blocks in question. The request is made to
@@ -449,14 +464,10 @@ selectThePeer
             . snd
             <$> theFragments
 
-    -- If there are peers with blocks that are in-flight and not ignored, then
-    -- there must actually be just the one and that is the one we choose. If
-    -- there are no peers with blocks in-flight (except maybe ignored), then we
+    -- If there is a current peer, then that is the one we choose. Otherwise, we
     -- can choose any peer, so we choose a “good” one.
-    case peersWithBlocksInFlightNonIgnored of
-
-      (_, _, _, thePeer, _) : theOtherPeersWithBlocksInFlightNonIgnored ->
-        assert (List.null theOtherPeersWithBlocksInFlightNonIgnored) $ do
+    case mCurrentPeer of
+      Just thePeer -> do
           let ((thePeerCandidate, thePeerInfo), otherPeers) = fromJust $ extractFirstElem (\(_, (_, _, _, peer, _)) -> peer == thePeer) candidates
           tell (List (map (first (const (FetchDeclineConcurrencyLimit FetchModeBulkSync 1))) otherPeers))
           -- REVIEW: This is maybe overkill to check that the whole gross request
@@ -466,7 +477,7 @@ selectThePeer
             Left reason -> tell (List [(reason, thePeerInfo)]) >> return Nothing
             Right () -> return $ Just (thePeerCandidate, thePeerInfo)
 
-      [] -> do
+      Nothing -> do
         -- For each peer, check whether its candidate contains the gross request in
         -- its entirety, otherwise decline it. This will guarantee that the
         -- remaining peers can serve the refined request that we will craft later.
