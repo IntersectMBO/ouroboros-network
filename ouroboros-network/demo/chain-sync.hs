@@ -511,7 +511,6 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
                       blockFetchPolicy
                       registry
                       (BlockFetchConfiguration {
-                        bfcMaxConcurrencyBulkSync = 1,
                         bfcMaxConcurrencyDeadline = 2,
                         bfcMaxRequestsInflight    = 10,
                         bfcDecisionLoopInterval   = 0.01,

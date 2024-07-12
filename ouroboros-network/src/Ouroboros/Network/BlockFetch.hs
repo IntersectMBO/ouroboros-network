@@ -128,9 +128,6 @@ import Ouroboros.Network.BlockFetch.State
 -- Should be determined by external local node config.
 data BlockFetchConfiguration =
      BlockFetchConfiguration {
-         -- | Maximum concurrent downloads during bulk syncing.
-         bfcMaxConcurrencyBulkSync :: !Word,
-
          -- | Maximum concurrent downloads during deadline syncing.
          bfcMaxConcurrencyDeadline :: !Word,
 
@@ -199,7 +196,6 @@ blockFetchLogic decisionTracer clientStateTracer
     fetchDecisionPolicy =
       FetchDecisionPolicy {
         maxInFlightReqsPerPeer   = bfcMaxRequestsInflight,
-        maxConcurrencyBulkSync   = bfcMaxConcurrencyBulkSync,
         maxConcurrencyDeadline   = bfcMaxConcurrencyDeadline,
         decisionLoopInterval     = bfcDecisionLoopInterval,
         peerSalt                 = bfcSalt,
