@@ -240,6 +240,9 @@ fetchDecisionsBulkSyncM
         case theDecision of
           Just (_, (_, _, _, thePeer, _))
             | Just thePeer /= peersOrderCurrent -> do
+                -- We chose a new peer: set the new peer as current, record a
+                -- new start time, and push the previous “current peer”, if any,
+                -- into the other peers.
                 peersOrderStart <- getMonotonicTime
                 writePeersOrder $
                   PeersOrder
@@ -247,6 +250,11 @@ fetchDecisionsBulkSyncM
                       peersOrderStart,
                       peersOrderOthers = mcons peersOrderCurrent (filter (/= thePeer) peersOrderOthers)
                     }
+            | not (peerHasBlocksInFlight thePeer) -> do
+                -- We chose the same peer as before but there were no more
+                -- blocks in flight for this peer: record a new start time.
+                peersOrderStart <- getMonotonicTime
+                writePeersOrder $ PeersOrder {peersOrderCurrent, peersOrderStart, peersOrderOthers}
           _ -> pure ()
 
       peerHasBlocksInFlight peer =
