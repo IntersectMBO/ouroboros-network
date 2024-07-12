@@ -105,6 +105,24 @@
 --   Patience). This is why we need to consider starvation of ChainSel and
 --   demote peers that let us starve.
 --
+-- About the gross request
+-- -----------------------
+--
+-- Morally, we want to select a peer that is able to serve us a batch of oldest
+-- blocks of @theCandidate@. However, the actual requests depend not only on the
+-- size of the blocks to fetch, but also on the network performances of the peer
+-- and what requests it already has in-flight. Looking at what peer can create
+-- an actual request for @theCandidate@ can be misleading: indeed, our
+-- @currentPeer@ might not be able to create a request simply because it is
+-- already busy answering other requests from us. This calls for the
+-- introduction of an objective criterium, which the gross request provides.
+--
+-- If the gross request is included in a peer's candidate, it means that this
+-- peer can serve at least the first 20 mebibytes of the blocks that we wish to
+-- fetch. The actual request might be smaller than that, depending on the actual
+-- in-flight limits, but it might also be bigger because the peer can have more
+-- blocks than just those.
+--
 module Ouroboros.Network.BlockFetch.Decision.BulkSync (
   fetchDecisionsBulkSyncM
 ) where
@@ -446,8 +464,9 @@ selectThePeer
     -- Create a fetch request for the blocks in question. The request is made to
     -- fit in 20 mebibytes but ignores everything else. It is gross in that
     -- sense. It will only be used to choose the peer to fetch from, but we will
-    -- later craft a more refined request for that peer. Because @theFragments@
-    -- is not empty, @grossRequest@ will not be empty.
+    -- later craft a more refined request for that peer. See [About the gross
+    -- request] in the module documentation. Because @theFragments@ is not
+    -- empty, @grossRequest@ will not be empty.
     let (grossRequest :: FetchDecision (FetchRequest header)) =
           selectBlocksUpToLimits
             blockFetchSize
