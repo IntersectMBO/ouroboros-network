@@ -71,9 +71,8 @@ fetchLogicIterations decisionTracer clientStateTracer
                      demoteCSJDynamo = do
 
     peersOrderVar <- newTVarIO $ PeersOrder {
-      peersOrderCurrent = Nothing,
       peersOrderStart = Time 0,
-      peersOrderOthers = []
+      peersOrderAll = []
       }
 
     iterateForever initialFetchStateFingerprint $ \stateFingerprint -> do
