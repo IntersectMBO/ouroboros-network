@@ -5,8 +5,86 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
--- | This module contains the part of the block fetch decisions process that is
--- specific to the bulk sync mode.
+-- | BulkSync decision logic
+--
+-- This module contains the part of the block fetch decisions process that is
+-- specific to the bulk sync mode. This logic reuses parts of the logic for the
+-- deadline mode, but it is inherently different.
+--
+-- Natural language specification
+-- ------------------------------
+--
+-- Definitions:
+--
+-- - Let @inflight :: peer -> Set blk@ be the outstanding blocks, those that
+--   have been requested and are expected to arrive but have not yet.
+--
+-- - Let @inflightIgnored :: Set blk@ be the outstanding blocks that have been
+--   ignored. We have that @inflightIgnored@ is included in the union for all
+--   peer @p@ of @inflight(p)@. We name @inflightNonIgnored@ the difference.
+--
+-- - Let @peersOrder@ be an order of preference among the peers. This order is
+--   not set in stone and will evolve as we go.
+--
+-- - Let @currentPeer :: Maybe peer@ be the “current peer” with which we are
+--   interacting. If it exists, this peer must be the best according to
+--   @peersOrder@, and the last fetch request must have been sent to them.
+--
+-- - Let @currentStart :: Time@ be the latest time a fetch request was sent
+--   while there were no outstanding blocks.
+--
+-- - Let @gracePeriod@ be a small duration (eg. 10s), during which a “cold” peer
+--   is allowed to warm up (eg. grow the TCP window) before being expected to
+--   feed blocks faster than we can validate them.
+--
+-- One iteration of this decision logic:
+--
+-- - If @inflight@ is non-empty and the block validation component has idled at
+--   any point after @currentStart@ plus @gracePeriod@, then the peer
+--   @currentPeer@ has failed to promptly serve @inflight(currentPeer)@, and:
+--
+--   - If @currentPeer@ is the ChainSync Jumping dynamo, then it must
+--     immediately be replaced as the dynamo.
+--
+--   - Assume @currentPeer@ will never finish replying to that fetch request and
+--     add all of @inflight(currentPeer)@ to @inflightIgnored@. REVIEW: Nick's
+--     description says to add all of @inflight@ (for all the peers) to
+--     @inflightIgnored@, probably because it assumes/enforces that @inflight ==
+--     inflight(currentPeer)@, that is only the current peer is allowed to have
+--     in-flight blocks.
+--
+--   - Stop considering the peer “current” and make them the worst according to
+--     the @peersOrder@.
+--
+-- - Let @theCandidate :: AnchoredFragment (Header blk)@ be the best candidate
+--   header chain among the ChainSync clients (eg. best raw tiebreaker among the
+--   longest).
+--
+-- - Let @grossRequest@ be the oldest blocks on @theCandidate@ that have not
+--   already been downloaded, are not in @inflightNonIgnored@, and total less
+--   than 20 mebibytes.
+--
+-- - If @grossRequest@ is empty, then terminate this iteration. Otherwise, pick
+--   the best peer (according to @peersOrder@) offering all of the blocks in
+--   @grossRequest@. We will call it @thePeer@. Because @currentPeer@, if it
+--   exists, is the best according to @peersOrder@, then it will be our
+--   preferred peer, as long as it can provide the @grossRequest@s.
+--
+-- - If the byte size of @inflight(thePeer)@ is below the low-water mark, then
+--   terminate this iteration. Otherwise, decide and send the actual next batch
+--   request, as influenced by exactly which blocks are actually already
+--   currently in-flight with the chosen peer.
+--
+-- - Update @currentPeer@ and @currentStart@, if needed. Namely:
+--
+--   - If @thePeer /= currentPeer@, then make @thePeer@ the current peer and the
+--     best according to @peersOrder@, and reset @currentStart@ to now.
+--
+--   - If @thePeer == currentPeer@, but @inflight(thePeer)@ is empty, the reset
+--     @currentStart@ to now.
+--
+-- Terminate this iteration.
+--
 module Ouroboros.Network.BlockFetch.Decision.BulkSync (
   fetchDecisionsBulkSyncM
 ) where
