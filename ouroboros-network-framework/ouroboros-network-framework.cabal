@@ -68,7 +68,7 @@ library
                        Simulation.Network.Snocket
 
   -- other-extensions:
-  build-depends:       base            >=4.12  && <4.20
+  build-depends:       base            >=4.12  && <4.21
                      , async           >=2.1   && <2.3
                      , bytestring      >=0.10  && <0.13
                      , cborg           >=0.2.1 && <0.3
@@ -91,7 +91,6 @@ library
                      , si-timers
                      , strict-stm
 
-                     , nothunks       ^>=0.1.4
                      , psqueues
                      -- ^ only to derive nothunk instances
 
@@ -135,7 +134,7 @@ library testlib
 
     other-modules:
 
-    build-depends:   base              >=4.14 && <4.20
+    build-depends:   base              >=4.14 && <4.21
                    , bytestring
                    , cborg
                    , containers
@@ -180,7 +179,7 @@ test-suite sim-tests
                        Test.Ouroboros.Network.RateLimiting
                        Test.Simulation.Network.Snocket
 
-  build-depends:       base              >=4.14 && <4.20
+  build-depends:       base              >=4.14 && <4.21
                      , bytestring
                      , cborg
                      , containers
@@ -249,7 +248,7 @@ test-suite io-tests
                        Test.Ouroboros.Network.Socket
                        Test.Ouroboros.Network.Subscription
 
-  build-depends:       base              >=4.14 && <4.20
+  build-depends:       base              >=4.14 && <4.21
                      , bytestring
                      , containers
                      , dns
@@ -298,7 +297,7 @@ test-suite io-tests
 executable demo-ping-pong
   hs-source-dirs:      demo
   main-is:             ping-pong.hs
-  build-depends:       base >=4.14 && <4.20,
+  build-depends:       base >=4.14 && <4.21,
                        async,
                        bytestring,
                        directory,
@@ -326,7 +325,7 @@ executable demo-ping-pong
 executable demo-connection-manager
   hs-source-dirs:      demo
   main-is:             connection-manager.hs
-  build-depends:       base >=4.14 && <4.20,
+  build-depends:       base >=4.14 && <4.21,
                        bytestring,
                        network,
                        optparse-applicative,

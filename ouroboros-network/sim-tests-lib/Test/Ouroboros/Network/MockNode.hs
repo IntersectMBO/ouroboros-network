@@ -19,7 +19,7 @@ import Data.Array
 import Data.Fixed (Micro)
 import Data.Functor (void)
 import Data.Graph
-import Data.List (foldl')
+import Data.List as List (foldl')
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (isNothing, listToMaybe)
@@ -84,7 +84,7 @@ test_blockGenerator chain slotDuration = do
     isValid startTime <$> withProbe (experiment slotDuration)
   where
     isValid :: Time -> [(Time, Block)] -> Property
-    isValid startTime = foldl'
+    isValid startTime = List.foldl'
       (\r (t, b) -> r .&&. counterexample (show t
                                            ++ " ≱ "
                                            ++ show (slotTime (blockSlot b)))
@@ -380,7 +380,7 @@ prop_networkGraph (NetworkTest g@(TestNetworkGraph graph cs) slotDuration coreTr
   let vs = vertices graph
       es = edges graph
       gs = map (\i -> removeEdge (minimum vs, maximum vs) (es !! i) es) [0..length es - 1]
-      (cc :: Int) = foldl' (\x y -> if isDisconnected y then x + 1 else x) 0 gs
+      (cc :: Int) = List.foldl' (\x y -> if isDisconnected y then x + 1 else x) 0 gs
 
       probes = Sim.runSimOrThrow $ withProbe $
                  networkGraphSim g slotDuration coreTrDelay relayTrDelay
@@ -406,7 +406,7 @@ prop_networkGraph (NetworkTest g@(TestNetworkGraph graph cs) slotDuration coreTr
     -- centrality](https://en.wikipedia.org/wiki/Closeness_centrality) of
     -- generated graphs; we'd like to have some nodes that are on average very far
     -- from other nodes.
-    $ Map.foldl' (\v c -> foldl' Chain.selectChain c chains == c && v) True dict
+    $ Map.foldl' (\v c -> List.foldl' Chain.selectChain c chains == c && v) True dict
   where
   -- remove two edges: `a -> b` and `b -> a`
   removeEdge :: Bounds -> Edge -> [Edge] -> Graph

@@ -94,7 +94,7 @@ library
                        TypeFamilies,
                        TypeInType
 
-  build-depends:       base              >=4.14 && <4.20,
+  build-depends:       base              >=4.14 && <4.21,
                        bytestring        >=0.10 && <0.13,
                        cborg             >=0.2.1 && <0.3,
                        deepseq,
@@ -168,7 +168,7 @@ library testlib
                        Test.ChainGenerators
                        Test.ChainProducerState
                        Test.Ouroboros.Network.Testing.Utils
-  build-depends:       base >=4.14 && <4.20,
+  build-depends:       base >=4.14 && <4.21,
                        bytestring,
                        cborg,
                        containers,
@@ -210,8 +210,14 @@ test-suite test
                        Test.Chain
   default-language:    Haskell2010
   default-extensions:  ImportQualifiedPost
-  build-depends:       base >=4.14 && <4.20,
-                       QuickCheck,
+  build-depends:       base >=4.14 && <4.21,
+                       QuickCheck ^>= 2.14,
+                       -- ^ QuickCheck 2.15 has a
+                       -- regression that makes
+                       -- codec 3-splits tests take too
+                       -- long and too much memory.
+                       -- Possibly due to ByteString
+                       -- generator changes.
                        tasty,
                        tasty-quickcheck,
 
@@ -235,7 +241,7 @@ test-suite cddl
     buildable: False
   default-language:    Haskell2010
   default-extensions:  ImportQualifiedPost
-  build-depends:       base >=4.14 && <4.20,
+  build-depends:       base >=4.14 && <4.21,
                        bytestring,
                        cborg,
                        containers,
@@ -275,7 +281,7 @@ test-suite bench
   hs-source-dirs:      bench-cddl
   main-is:             Main.hs
   default-language:    Haskell2010
-  build-depends:       base >=4.14 && <4.20,
+  build-depends:       base >=4.14 && <4.21,
                        bytestring,
                        cborg,
                        containers,

@@ -41,7 +41,7 @@ import Data.ByteString.Char8 qualified as BS
 import Data.Foldable (traverse_)
 import Data.Function (on)
 import Data.IP qualified as IP
-import Data.List (foldl', groupBy, intercalate)
+import Data.List as List (foldl', groupBy, intercalate)
 import Data.List.Trace qualified as Trace
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -475,7 +475,7 @@ prop_governor_nofail env =
     -- run in `IO` so we can catch the pure 'AssertionFailed' exception
     in ioProperty $ do
       r <-
-        evaluate ( foldl' (flip seq) True
+        evaluate ( List.foldl' (flip seq) True
                $ [ assertPeerSelectionState st ()
                  | (_, GovernorDebug (TraceGovernorState _ _ st)) <- trace ]
                )
@@ -1702,7 +1702,7 @@ recentPeerShareActivity d =
     go !recentSet !recentPSQ
         (E (TS t i) (GovernorEvent (TracePeerShareRequests _ _ _ _ addrs)) : txs) =
       let recentSet' = recentSet <> addrs
-          recentPSQ' = foldl' (\q a -> PSQ.insert a t' () q) recentPSQ addrs
+          recentPSQ' = List.foldl' (\q a -> PSQ.insert a t' () q) recentPSQ addrs
           t'         = d `addTime` t
        in E (TS t i)     (Just addrs, recentSet)
         : E (TS t (i+1)) (Nothing, recentSet') -- updated in next change at same time
@@ -1753,8 +1753,8 @@ recentPeerShareActivity d =
                                   (PeerCooling, _) -> k : r
                                   _                -> r
                                 ) [] m
-          recentSet' = foldl' (flip Set.delete) recentSet peersDemotedToCold
-          recentPSQ' = foldl' (flip PSQ.delete) recentPSQ peersDemotedToCold
+          recentSet' = List.foldl' (flip Set.delete) recentSet peersDemotedToCold
+          recentPSQ' = List.foldl' (flip PSQ.delete) recentPSQ peersDemotedToCold
        in E t (Nothing, recentSet')
         : go recentSet' recentPSQ' txs
 
@@ -1777,8 +1777,8 @@ recentPeerShareActivity d =
                                   (PeerCooling, _) -> k : r
                                   _                -> r
                                 ) [] m
-          recentSet' = foldl' (flip Set.delete) recentSet peersDemotedToCold
-          recentPSQ' = foldl' (flip PSQ.delete) recentPSQ peersDemotedToCold
+          recentSet' = List.foldl' (flip Set.delete) recentSet peersDemotedToCold
+          recentPSQ' = List.foldl' (flip PSQ.delete) recentPSQ peersDemotedToCold
        in E t (Nothing, recentSet')
         : go recentSet' recentPSQ' txs
 
@@ -1791,8 +1791,8 @@ recentPeerShareActivity d =
                                   (PeerCooling, _) -> k : r
                                   _                -> r
                                 ) [] m
-          recentSet' = foldl' (flip Set.delete) recentSet peersDemotedToCold
-          recentPSQ' = foldl' (flip PSQ.delete) recentPSQ peersDemotedToCold
+          recentSet' = List.foldl' (flip Set.delete) recentSet peersDemotedToCold
+          recentPSQ' = List.foldl' (flip PSQ.delete) recentPSQ peersDemotedToCold
        in E t (Nothing, recentSet')
         : go recentSet' recentPSQ' txs
 

@@ -27,7 +27,7 @@ import Data.Set qualified as Set
 
 import Data.Function (on)
 import Data.Hashable
-import Data.List (foldl', groupBy, sortBy, transpose)
+import Data.List as List (foldl', groupBy, sortBy, transpose)
 import Data.Maybe (mapMaybe)
 import Data.Set (Set)
 import GHC.Stack (HasCallStack)
@@ -667,7 +667,7 @@ filterNotAlreadyInFlightWithOtherPeers FetchModeBulkSync chains =
         | (_, status, inflight, _) <- chains ]
 
     -- The highest slot number that is or has been in flight for any peer.
-    maxSlotNoInFlightWithOtherPeers = foldl' max NoMaxSlotNo
+    maxSlotNoInFlightWithOtherPeers = List.foldl' max NoMaxSlotNo
       [ peerFetchMaxSlotNo inflight | (_, _, inflight, _) <- chains ]
 
 -- | Filter a fragment. This is an optimised variant that will behave the same
@@ -965,7 +965,7 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
                maxSlotNoFetchedThisRound `max` maxSlotNoFetchedThisDecision)
               where
                 maxSlotNoFetchedThisDecision =
-                  foldl' max NoMaxSlotNo $ map MaxSlotNo $
+                  List.foldl' max NoMaxSlotNo $ map MaxSlotNo $
                   mapMaybe (withOriginToMaybe . AF.headSlot) fragments
 
                 blocksFetchedThisDecision =

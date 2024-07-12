@@ -20,7 +20,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer (..), traceWith)
 
-import Data.Foldable (Foldable (foldl'), foldr')
+import Data.Foldable as Foldable (foldl', foldr')
 import Data.List (sortOn)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Merge.Strict qualified as Map
@@ -397,7 +397,7 @@ prop_bounded_size (Positive maxEntriesToTrack) script =
     number_of_peers :: Int
     number_of_peers = Set.size
                     . Set.fromList
-                    . foldl' (\as a -> eventPeer a : as) []
+                    . Foldable.foldl' (\as a -> eventPeer a : as) []
                     $ case getFixedScript script of
                         Script as -> as
 

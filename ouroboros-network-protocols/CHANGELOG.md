@@ -14,6 +14,7 @@
 
 * Bump io-sim and io-classes
 * Added a test for `AnchoredFragment.splitAtSlot`.
+* Make it build with ghc-9.10
 
 ## 0.8.1.0 -- 2024-03-14
 

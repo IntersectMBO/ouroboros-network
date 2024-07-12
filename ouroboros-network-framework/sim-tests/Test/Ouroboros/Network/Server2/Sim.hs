@@ -46,7 +46,7 @@ import Data.ByteString.Lazy (ByteString)
 import Data.Dynamic (fromDynamic)
 import Data.Foldable (foldMap')
 import Data.Functor (void, ($>), (<&>))
-import Data.List (delete, foldl', intercalate, nub, (\\))
+import Data.List as List (delete, foldl', intercalate, nub, (\\))
 import Data.List.Trace qualified as Trace
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -523,7 +523,7 @@ instance Arbitrary req =>
                                                        <*> genBundle
            let events = [ event, inboundConnection
                         , outboundConnection, inboundMiniprotocols]
-           (events ++) <$> go (foldl' (flip nextState) s events) (n - 1)
+           (events ++) <$> go (List.foldl' (flip nextState) s events) (n - 1)
 
          _ -> (event :) <$> go (nextState event s) (n - 1)
        where
@@ -1325,7 +1325,7 @@ prop_connection_manager_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
           -- time series of counter changes.
           connectionManagerCounters =
               foldMap' id
-            . foldl'
+            . List.foldl'
                (\ st ce -> case ce of
                  StartClient _ ta ->
                    Map.alter (let c = ConnectionManagerCounters 0 0 1 0 0 in
@@ -1350,7 +1350,7 @@ prop_connection_manager_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
           -- This calculation is right for the main node, because the simulation
           -- never attempts to make other connections that go to or from the
           -- main node.
-          networkStateCounters = foldl'
+          networkStateCounters = List.foldl'
                         (\cmc (ObservableNetworkState conns) ->
                           maxCounters cmc $
                           Map.foldl'
@@ -1785,7 +1785,7 @@ prop_inbound_governor_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                 mapWithoutServerAcc
 
         )
-        . foldl'
+        . List.foldl'
           (\ st ce -> case ce of
             StartClient _ ta ->
               Map.insertWith (<>) ta Map.empty st

@@ -43,7 +43,7 @@ import Control.Monad.Class.MonadTimer.SI (MonadDelay, MonadTimer)
 import Control.Monad.Fix (MonadFix)
 import Control.Tracer (Tracer (..), nullTracer)
 
-import Data.Foldable (foldl')
+import Data.Foldable as Foldable (foldl')
 import Data.IP (IP (..))
 import Data.Map (Map)
 import Data.Set (Set)
@@ -308,7 +308,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
                                    >>= (return . toAnchoredFragmentHeader . chainState),
           readFetchMode          = return FetchModeBulkSync,
           readFetchedBlocks      = flip Set.member <$> getBlockPointSet (nkChainDB nodeKernel),
-          readFetchedMaxSlotNo   = foldl' max NoMaxSlotNo .
+          readFetchedMaxSlotNo   = Foldable.foldl' max NoMaxSlotNo .
                                    map (maxSlotNoFromWithOrigin . pointSlot) .
                                    Set.elems <$>
                                    getBlockPointSet (nkChainDB nodeKernel),

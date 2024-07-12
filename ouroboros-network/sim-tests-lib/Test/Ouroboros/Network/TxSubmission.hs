@@ -32,7 +32,7 @@ import Codec.CBOR.Read qualified as CBOR
 
 import Data.ByteString.Lazy (ByteString)
 import Data.ByteString.Lazy qualified as BSL
-import Data.Foldable (find, foldl', toList)
+import Data.Foldable as Foldable (find, foldl', toList)
 import Data.Function (on)
 import Data.List (intercalate, nubBy)
 import Data.Maybe (fromMaybe, isJust)
@@ -161,7 +161,7 @@ getMempoolWriter (Mempool mempool) =
                                   getTxValid
                                && getTxId `Set.notMember` currentIds)
                          $ txs
-                mempoolTxs' = foldl' (Seq.|>) mempoolTxs validTxs
+                mempoolTxs' = Foldable.foldl' (Seq.|>) mempoolTxs validTxs
             writeTVar mempool mempoolTxs'
             return (map getTxId validTxs)
       }

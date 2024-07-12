@@ -16,7 +16,7 @@ module Ouroboros.Network.TxSubmission.Inbound
   , ProcessedTxCount (..)
   ) where
 
-import Data.Foldable (foldl', toList)
+import Data.Foldable as Foldable (foldl', toList)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -339,7 +339,7 @@ txSubmissionInbound tracer maxUnacked mpReader mpWriter _version =
                              [] acknowledgedTxIds
 
             -- And remove acknowledged txs from our buffer
-            bufferedTxs2 = foldl' (flip Map.delete)
+            bufferedTxs2 = Foldable.foldl' (flip Map.delete)
                                    bufferedTxs1 acknowledgedTxIds
 
             -- If we are acknowleding transactions that are still in unacknowledgedTxIds'
@@ -430,7 +430,7 @@ txSubmissionInbound tracer maxUnacked mpReader mpWriter _version =
         -- If so we can remove acknowledged txs from our buffer provided that they
         -- are not still in unacknowledgedTxIds''. This happens in case of duplicate
         -- txids.
-        bufferedTxs'' = forceElemsToWHNF $ foldl' (\m txid -> if elem txid unacknowledgedTxIds''
+        bufferedTxs'' = forceElemsToWHNF $ Foldable.foldl' (\m txid -> if elem txid unacknowledgedTxIds''
                                               then m
                                               else Map.delete txid m)
                                 bufferedTxs' acknowledgedTxIds

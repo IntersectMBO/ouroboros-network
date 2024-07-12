@@ -99,7 +99,7 @@ txSubmissionClient tracer txId txSize maxUnacked =
                  ++ "peer requested more txids than permitted"
 
           let unackedSeq' = Seq.drop (fromIntegral ackNo) unackedSeq
-              unackedMap' = foldl' (flip Map.delete) unackedMap
+              unackedMap' = Foldable.foldl' (flip Map.delete) unackedMap
                                    (Seq.take (fromIntegral ackNo) unackedSeq)
 
           case blocking of
@@ -343,7 +343,7 @@ txSubmissionServer tracer txId maxUnacked maxTxIdsToRequest maxTxToRequest =
                        acknowledgedTxIds
 
         -- And remove acknowledged txs from our buffer
-        bufferedTxs'' = foldl' (flip Map.delete) bufferedTxs' acknowledgedTxIds
+        bufferedTxs'' = Foldable.foldl' (flip Map.delete) bufferedTxs' acknowledgedTxIds
 
 
     serverReqTxs :: forall (n :: N).

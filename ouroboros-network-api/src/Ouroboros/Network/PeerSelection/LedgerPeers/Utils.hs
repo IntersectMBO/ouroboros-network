@@ -12,7 +12,7 @@ module Ouroboros.Network.PeerSelection.LedgerPeers.Utils
 
 import Control.Exception (assert)
 import Data.Bifunctor (first)
-import Data.List (foldl', sortOn)
+import Data.List as List (foldl', sortOn)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Ord (Down (..))
 import Data.Ratio ((%))
@@ -60,7 +60,7 @@ reRelativeStake :: LedgerPeersKind
                 -> [(PoolStake, NonEmpty RelayAccessPoint)]
 reRelativeStake ledgerPeersKind pl =
     let pl'   = first adjustment <$> pl
-        total = foldl' (+) 0 (fst <$> pl')
+        total = List.foldl' (+) 0 (fst <$> pl')
         pl''  = first (/ total) <$> pl'
     in
     assert (let total' = sum $ map fst pl''

@@ -14,7 +14,7 @@ module Ouroboros.Network.BlockFetch.Examples
 
 import Codec.Serialise (Serialise (..))
 import Data.ByteString.Lazy qualified as LBS
-import Data.List (foldl')
+import Data.List as List (foldl')
 import Data.Map (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
@@ -280,7 +280,7 @@ sampleBlockFetchPolicy1 headerFieldsForgeUTCTime blockHeap currentChain candidat
       readFetchMode          = return FetchModeBulkSync,
       readFetchedBlocks      = flip Set.member <$>
                                  getTestFetchedBlocks blockHeap,
-      readFetchedMaxSlotNo   = foldl' max NoMaxSlotNo .
+      readFetchedMaxSlotNo   = List.foldl' max NoMaxSlotNo .
                                map (maxSlotNoFromWithOrigin . pointSlot) .
                                Set.elems <$>
                                getTestFetchedBlocks blockHeap,

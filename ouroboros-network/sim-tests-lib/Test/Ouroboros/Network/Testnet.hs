@@ -23,7 +23,7 @@ import Data.Bifoldable (bifoldMap)
 
 import Data.Foldable (fold)
 import Data.IP qualified as IP
-import Data.List (find, foldl', intercalate, tails)
+import Data.List as List (find, foldl', intercalate, tails)
 import Data.List.Trace qualified as Trace
 import Data.Map (Map)
 import Data.Map qualified as Map
@@ -310,7 +310,7 @@ prop_diffusion_nofail ioSimTrace traceNumber =
    -- run in `IO` so we can catch the pure 'AssertionFailed' exception
    in ioProperty $ do
      r <-
-       evaluate ( foldl' (flip seq) True
+       evaluate ( List.foldl' (flip seq) True
               $ [ assertPeerSelectionState st ()
                 | (_, DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st)) <- trace ]
               )
