@@ -69,6 +69,7 @@ library
                        Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
                        Ouroboros.Network.PeerSharing
                        Ouroboros.Network.TxSubmission.Inbound
+                       Ouroboros.Network.TxSubmission.Inbound.Server
                        Ouroboros.Network.TxSubmission.Inbound.Decision
                        Ouroboros.Network.TxSubmission.Inbound.Policy
                        Ouroboros.Network.TxSubmission.Inbound.State
