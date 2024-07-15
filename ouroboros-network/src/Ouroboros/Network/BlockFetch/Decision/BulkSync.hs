@@ -80,7 +80,7 @@
 --   - If @thePeer /= currentPeer@, then make @thePeer@ the current peer and the
 --     best according to @peersOrder@, and reset @currentStart@ to now.
 --
---   - If @thePeer == currentPeer@, but @inflight(thePeer)@ is empty, the reset
+--   - If @thePeer == currentPeer@, but @inflight(thePeer)@ is empty, then reset
 --     @currentStart@ to now.
 --
 -- Terminate this iteration.
@@ -99,7 +99,7 @@
 --   selected.
 --
 -- - If the current peer is the CSJ dynamo, but it is a dishonest peer serving
---   headers fast but retaining headers, it might be able to drastically leash
+--   headers fast but retaining blocks, it might be able to drastically leash
 --   us, because its ChainSync client will be stuck behind the forecast horizon
 --   (and therefore not subject to ChainSync punishments such as the Limit on
 --   Patience). This is why we need to consider starvation of ChainSel and
