@@ -261,11 +261,11 @@ fetchDecisionsDeadline fetchDecisionPolicy@FetchDecisionPolicy {
   . map swizzleIG
 
     -- Filter to keep blocks that are not already in-flight for this peer.
-  . filterNotAlreadyInFlightWithPeer'
+  . dropAlreadyInFlightWithPeer'
   . map swizzleI
 
     -- Filter to keep blocks that have not already been downloaded.
-  . filterNotAlreadyFetched'
+  . dropAlreadyFetched'
       fetchedBlocks
       fetchedMaxSlotNo
 
@@ -541,14 +541,14 @@ of individual blocks without their relationship to each other.
 -- Typically this is a single fragment forming a suffix of the chain, but in
 -- the general case we can get a bunch of discontiguous chain fragments.
 --
--- See also 'filterNotAlreadyInFlightWithPeer'.
-filterNotAlreadyFetched ::
+-- See also 'dropAlreadyInFlightWithPeer'.
+dropAlreadyFetched ::
   (HasHeader header, HeaderHash header ~ HeaderHash block) =>
   (Point block -> Bool) ->
   MaxSlotNo ->
   ChainSuffix header ->
   FetchDecision (CandidateFragments header)
-filterNotAlreadyFetched alreadyDownloaded fetchedMaxSlotNo candidate =
+dropAlreadyFetched alreadyDownloaded fetchedMaxSlotNo candidate =
   if null fragments
     then Left FetchDeclineAlreadyFetched
     else Right (candidate, fragments)
@@ -556,16 +556,16 @@ filterNotAlreadyFetched alreadyDownloaded fetchedMaxSlotNo candidate =
     fragments = filterWithMaxSlotNo notAlreadyFetched fetchedMaxSlotNo (getChainSuffix candidate)
     notAlreadyFetched = not . alreadyDownloaded . castPoint . blockPoint
 
-filterNotAlreadyFetched' ::
+dropAlreadyFetched' ::
   (HasHeader header, HeaderHash header ~ HeaderHash block) =>
   (Point block -> Bool) ->
   MaxSlotNo ->
   [(FetchDecision (ChainSuffix header), peerinfo)] ->
   [(FetchDecision (CandidateFragments header), peerinfo)]
-filterNotAlreadyFetched' alreadyDownloaded fetchedMaxSlotNo =
+dropAlreadyFetched' alreadyDownloaded fetchedMaxSlotNo =
   map
     ( \(mcandidate, peer) ->
-        ((filterNotAlreadyFetched alreadyDownloaded fetchedMaxSlotNo =<< mcandidate), peer)
+        ((dropAlreadyFetched alreadyDownloaded fetchedMaxSlotNo =<< mcandidate), peer)
     )
 
 -- | Find the fragments of the chain suffix that we still need to fetch because
@@ -575,13 +575,13 @@ filterNotAlreadyFetched' alreadyDownloaded fetchedMaxSlotNo =
 -- Typically this is a single fragment forming a suffix of the chain, but in
 -- the general case we can get a bunch of discontiguous chain fragments.
 --
--- See also 'filterNotAlreadyFetched'
-filterNotAlreadyInFlightWithPeer ::
+-- See also 'dropAlreadyFetched'
+dropAlreadyInFlightWithPeer ::
   (HasHeader header) =>
   PeerFetchInFlight header ->
   CandidateFragments header ->
   FetchDecision (CandidateFragments header)
-filterNotAlreadyInFlightWithPeer inflight (candidate, chainfragments) =
+dropAlreadyInFlightWithPeer inflight (candidate, chainfragments) =
   if null fragments
     then Left FetchDeclineInFlightThisPeer
     else Right (candidate, fragments)
@@ -589,14 +589,14 @@ filterNotAlreadyInFlightWithPeer inflight (candidate, chainfragments) =
     fragments = concatMap (filterWithMaxSlotNo notAlreadyInFlight (peerFetchMaxSlotNo inflight)) chainfragments
     notAlreadyInFlight b = blockPoint b `Map.notMember` peerFetchBlocksInFlight inflight
 
-filterNotAlreadyInFlightWithPeer' ::
+dropAlreadyInFlightWithPeer' ::
   (HasHeader header) =>
   [(FetchDecision (CandidateFragments header), PeerFetchInFlight header, peerinfo)] ->
   [(FetchDecision (CandidateFragments header), peerinfo)]
-filterNotAlreadyInFlightWithPeer' =
+dropAlreadyInFlightWithPeer' =
   map
     ( \(mcandidatefragments, inflight, peer) ->
-        ((filterNotAlreadyInFlightWithPeer inflight =<< mcandidatefragments), peer)
+        ((dropAlreadyInFlightWithPeer inflight =<< mcandidatefragments), peer)
     )
 
 -- | Filter a fragment. This is an optimised variant that will behave the same
@@ -840,7 +840,7 @@ fetchRequestDecisions fetchDecisionPolicy chains =
 
         -- This is only for avoiding duplication between fetch requests in this
         -- round of decisions. Avoiding duplication with blocks that are already
-        -- in flight is handled by filterNotAlreadyInFlightWithOtherPeers
+        -- in flight is handled by dropAlreadyInFlightWithOtherPeers
         (blocksFetchedThisRound', maxSlotNoFetchedThisRound') =
           case decision of
             Left _                         ->
