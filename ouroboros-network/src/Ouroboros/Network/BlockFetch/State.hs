@@ -46,7 +46,7 @@ import Ouroboros.Network.BlockFetch.Decision (FetchDecision,
            PeerInfo, fetchDecisions)
 import Ouroboros.Network.BlockFetch.DeltaQ (PeerGSV (..))
 import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation)
-
+import Ouroboros.Network.BlockFetch.Decision.Trace
 
 fetchLogicIterations
   :: ( HasHeader header
@@ -57,7 +57,7 @@ fetchLogicIterations
      , Ord peer
      , Hashable peer
      )
-  => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
+  => Tracer m (TraceDecisionEvent peer header)
   -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
   -> FetchDecisionPolicy header
   -> FetchTriggerVariables peer header m
@@ -113,7 +113,7 @@ fetchLogicIteration
       HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block,
       MonadMonotonicTime m)
-  => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
+  => Tracer m (TraceDecisionEvent peer header)
   -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
   -> FetchDecisionPolicy header
   -> FetchTriggerVariables peer header m
@@ -155,7 +155,7 @@ fetchLogicIteration decisionTracer clientStateTracer
     -- _ <- evaluate (force decisions)
 
     -- Trace the batch of fetch decisions
-    traceWith decisionTracer
+    traceWith decisionTracer $ PeersFetch
       [ TraceLabelPeer peer (fmap fetchRequestPoints decision)
       | (decision, (_, _, _, peer, _)) <- decisions ]
 
