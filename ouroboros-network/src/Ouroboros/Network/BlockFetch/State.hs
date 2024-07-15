@@ -145,6 +145,7 @@ fetchLogicIteration decisionTracer clientStateTracer
 
     -- Make all the fetch decisions
     decisions <- fetchDecisionsForStateSnapshot
+                      decisionTracer
                       fetchDecisionPolicy
                       stateSnapshot
                       (peersOrder,
@@ -196,7 +197,8 @@ fetchDecisionsForStateSnapshot
       Ord peer,
       Hashable peer,
       MonadMonotonicTime m)
-  => FetchDecisionPolicy header
+  => Tracer m (TraceDecisionEvent peer header)
+  -> FetchDecisionPolicy header
   -> FetchStateSnapshot peer header block m
   -> ( PeersOrder peer
      , PeersOrder peer -> m ()
@@ -207,6 +209,7 @@ fetchDecisionsForStateSnapshot
       )]
 
 fetchDecisionsForStateSnapshot
+    tracer
     fetchDecisionPolicy
     FetchStateSnapshot {
       fetchStateCurrentChain,
@@ -226,6 +229,7 @@ fetchDecisionsForStateSnapshot
             `Set.isSubsetOf` Map.keysSet fetchStatePeerGSVs) $
 
     fetchDecisions
+      tracer
       fetchDecisionPolicy
       fetchStateFetchMode
       fetchStateCurrentChain
