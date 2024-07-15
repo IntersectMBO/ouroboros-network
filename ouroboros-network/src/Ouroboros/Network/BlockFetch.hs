@@ -121,6 +121,7 @@ import Ouroboros.Network.BlockFetch.ConsensusInterface
            (BlockFetchConsensusInterface (..), FromConsensus (..),
            WhetherReceivingTentativeBlocks (..))
 import Ouroboros.Network.BlockFetch.State
+import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
 
 
 
@@ -162,7 +163,7 @@ blockFetchLogic :: forall addr header block m.
                    , Ord addr
                    , Hashable addr
                    )
-                => Tracer m [TraceLabelPeer addr (FetchDecision [Point header])]
+                => Tracer m (TraceDecisionEvent addr header)
                 -> Tracer m (TraceLabelPeer addr (TraceFetchClientState header))
                 -> BlockFetchConsensusInterface addr header block m
                 -> FetchClientRegistry addr header block m
