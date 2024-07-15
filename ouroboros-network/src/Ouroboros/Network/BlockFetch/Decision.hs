@@ -16,8 +16,8 @@ module Ouroboros.Network.BlockFetch.Decision
     -- ** Components of the decision-making process
   , filterPlausibleCandidates
   , selectForkSuffixes
-  , filterNotAlreadyFetched
-  , filterNotAlreadyInFlightWithPeer
+  , dropAlreadyFetched
+  , dropAlreadyInFlightWithPeer
   , prioritisePeerChains
   , fetchRequestDecisions
   ) where
@@ -31,7 +31,7 @@ import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..), PeersOrder (
 import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..), ChainSelStarvation)
 
 import Ouroboros.Network.BlockFetch.Decision.Deadline (FetchDecisionPolicy (..), PeerInfo, FetchDecision, FetchDecline (..),
-                                                     filterPlausibleCandidates, filterNotAlreadyFetched, filterNotAlreadyInFlightWithPeer,
+                                                     filterPlausibleCandidates, dropAlreadyFetched, dropAlreadyInFlightWithPeer,
                                                      selectForkSuffixes, fetchDecisionsDeadline, prioritisePeerChains, fetchRequestDecisions)
 import Ouroboros.Network.BlockFetch.Decision.BulkSync (fetchDecisionsBulkSyncM)
 
