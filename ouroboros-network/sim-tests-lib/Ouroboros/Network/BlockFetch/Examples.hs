@@ -56,6 +56,7 @@ import Ouroboros.Network.Protocol.BlockFetch.Type
 import Ouroboros.Network.Util.ShowProxy
 
 import Ouroboros.Network.Mock.ConcreteBlock
+import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
 
 
 -- | Run a single block fetch protocol until the chain is downloaded.
@@ -64,8 +65,7 @@ blockFetchExample0 :: forall m.
                       (MonadSTM m, MonadST m, MonadAsync m, MonadDelay m,
                        MonadFork m, MonadTime m, MonadTimer m, MonadMask m,
                        MonadThrow (STM m))
-                   => Tracer m [TraceLabelPeer Int
-                                 (FetchDecision [Point BlockHeader])]
+                   => Tracer m (TraceDecisionEvent Int BlockHeader)
                    -> Tracer m (TraceLabelPeer Int
                                  (TraceFetchClientState BlockHeader))
                    -> Tracer m (TraceLabelPeer Int
@@ -173,8 +173,7 @@ blockFetchExample1 :: forall m.
                       (MonadSTM m, MonadST m, MonadAsync m, MonadDelay m,
                        MonadFork m, MonadTime m, MonadTimer m, MonadMask m,
                        MonadThrow (STM m))
-                   => Tracer m [TraceLabelPeer Int
-                                 (FetchDecision [Point BlockHeader])]
+                   => Tracer m (TraceDecisionEvent Int BlockHeader)
                    -> Tracer m (TraceLabelPeer Int
                                  (TraceFetchClientState BlockHeader))
                    -> Tracer m (TraceLabelPeer Int
