@@ -133,21 +133,19 @@ import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime (getMonotonicTime), 
 import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
 import Control.Monad.Writer.Strict (Writer, runWriter, MonadWriter (tell))
 import Data.Bifunctor (first, Bifunctor (..))
-import Data.Foldable (foldl')
 import qualified Data.List as List
 import Data.List.NonEmpty (nonEmpty)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as Map
 import Data.Maybe (mapMaybe, maybeToList, isNothing)
-import qualified Data.Set as Set
 import Data.Ord (Down(Down))
 
-import Cardano.Prelude (guard, partitionEithers, (&))
+import Cardano.Prelude (partitionEithers, (&))
 
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment, headBlockNo)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import Ouroboros.Network.Block
-import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..), PeersOrder (..), PeerFetchBlockInFlight (..), PeerFetchStatus (..), PeerFetchInFlight (..))
+import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..), PeersOrder (..), PeerFetchBlockInFlight (..), PeerFetchInFlight (..))
 import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode(FetchModeBulkSync))
 import Ouroboros.Network.BlockFetch.DeltaQ (calculatePeerFetchInFlightLimits)
 import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation(..))
@@ -331,13 +329,11 @@ fetchDecisionsBulkSync
           candidatesAndPeers
 
     -- Step 2: Filter out from the chosen candidate fragment the blocks that
-    -- have already been downloaded, or that have a request in flight (except
-    -- for the requests in flight that are ignored). NOTE: if not declined,
-    -- @theFragments@ is guaranteed to be non-empty.
+    -- have already been downloaded. NOTE: if not declined, @theFragments@ is
+    -- guaranteed to be non-empty.
     let (theFragments :: FetchDecision (CandidateFragments header)) =
           pure theCandidate
             >>= filterNotAlreadyFetched fetchedBlocks fetchedMaxSlotNo
-            >>= filterNotAlreadyInFlightWithAnyPeerNonIgnored candidatesAndPeers
 
     -- Step 3: Select the peer to sync from. This eliminates peers that cannot
     -- serve a reasonable batch of the candidate, then chooses the peer to sync
@@ -579,41 +575,6 @@ fetchTheCandidate
          in if null trimmedFragments
               then Left FetchDeclineAlreadyFetched
               else Right trimmedFragments
-
-filterNotAlreadyInFlightWithAnyPeerNonIgnored ::
-  (HasHeader header) =>
-  [(any, PeerInfo header peer extra)] ->
-  CandidateFragments header ->
-  FetchDecision (CandidateFragments header)
-filterNotAlreadyInFlightWithAnyPeerNonIgnored candidates theCandidate = do
-  let theFragments =
-        concatMap
-          ( filterWithMaxSlotNo
-              notAlreadyInFlightNonIgnored
-              maxSlotNoInFlightWithPeers
-          )
-          (snd theCandidate)
-  guard (not (null theFragments)) ?! FetchDeclineInFlightOtherPeer
-  return $ (fst theCandidate, theFragments)
-  where
-    notAlreadyInFlightNonIgnored b =
-      blockPoint b `Set.notMember` blocksInFlightWithPeersNonIgnored
-    -- All the blocks that are already in-flight with all peers and not ignored.
-    blocksInFlightWithPeersNonIgnored =
-      Set.unions
-        [ case status of
-            PeerFetchStatusShutdown -> Set.empty
-            PeerFetchStatusStarting -> Set.empty
-            PeerFetchStatusAberrant -> Set.empty
-            _other -> Map.keysSet $ Map.filter (\(PeerFetchBlockInFlight b) -> not b) $ peerFetchBlocksInFlight inflight
-          | (_, (status, inflight, _, _, _)) <- candidates
-        ]
-    -- The highest slot number that is or has been in flight for any peer.
-    maxSlotNoInFlightWithPeers =
-      foldl'
-        max
-        NoMaxSlotNo
-        [peerFetchMaxSlotNo inflight | (_, (_, inflight, _, _, _)) <- candidates]
 
 extractFirstElem :: (a -> Bool) -> [a] -> Maybe (a, [a])
 extractFirstElem _ [] = Nothing
