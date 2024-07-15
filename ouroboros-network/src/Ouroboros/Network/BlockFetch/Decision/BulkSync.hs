@@ -132,6 +132,7 @@ import Control.Monad (filterM, when)
 import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime (getMonotonicTime), addTime)
 import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
 import Control.Monad.Writer.Strict (Writer, runWriter, MonadWriter (tell))
+import Control.Tracer (Tracer, traceWith)
 import Data.Bifunctor (first, Bifunctor (..))
 import qualified Data.List as List
 import Data.List.NonEmpty (nonEmpty)
@@ -151,6 +152,7 @@ import Ouroboros.Network.BlockFetch.DeltaQ (calculatePeerFetchInFlightLimits)
 import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation(..))
 
 import Ouroboros.Network.BlockFetch.Decision.Deadline
+import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent (..))
 
 -- | A trivial foldable data structure with a 'Semigroup' instance that
 -- concatenates in @O(1)@. Only meant for short-term use, followed by one fold.
@@ -178,7 +180,8 @@ fetchDecisionsBulkSyncM
      (Ord peer,
       HasHeader header,
       HeaderHash header ~ HeaderHash block, MonadMonotonicTime m)
-  => FetchDecisionPolicy header
+  => Tracer m (TraceDecisionEvent peer header)
+  -> FetchDecisionPolicy header
   -> AnchoredFragment header
   -> (Point block -> Bool)
   -> MaxSlotNo
@@ -190,6 +193,7 @@ fetchDecisionsBulkSyncM
   -> [(AnchoredFragment header, PeerInfo header peer extra)]
   -> m [(FetchDecision (FetchRequest header), PeerInfo header peer extra)]
 fetchDecisionsBulkSyncM
+  tracer
   fetchDecisionPolicy@FetchDecisionPolicy {bulkSyncGracePeriod}
   currentChain
   fetchedBlocks
@@ -258,6 +262,7 @@ fetchDecisionsBulkSyncM
             Just (_,_,_,badPeer,_) ->
                 if lastStarvationTime >= addTime bulkSyncGracePeriod peersOrderStart
                   then do
+                    traceWith tracer $ PeerStarvedUs badPeer
                     demoteCSJDynamoAndIgnoreInflightBlocks badPeer
                     let peersOrder' =
                           PeersOrder

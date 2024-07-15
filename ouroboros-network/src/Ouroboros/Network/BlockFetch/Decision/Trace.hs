@@ -7,4 +7,5 @@ import Ouroboros.Network.BlockFetch.Decision.Deadline (FetchDecision)
 
 data TraceDecisionEvent peer header
   = PeersFetch [TraceLabelPeer peer (FetchDecision [Point header])]
+  | PeerStarvedUs peer
   deriving (Show)

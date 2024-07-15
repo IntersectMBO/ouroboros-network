@@ -24,6 +24,7 @@ module Ouroboros.Network.BlockFetch.Decision
 
 import Data.Hashable
 import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime(..))
+import Control.Tracer (Tracer)
 
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import Ouroboros.Network.Block
@@ -34,6 +35,7 @@ import Ouroboros.Network.BlockFetch.Decision.Deadline (FetchDecisionPolicy (..),
                                                      filterPlausibleCandidates, dropAlreadyFetched, dropAlreadyInFlightWithPeer,
                                                      selectForkSuffixes, fetchDecisionsDeadline, prioritisePeerChains, fetchRequestDecisions)
 import Ouroboros.Network.BlockFetch.Decision.BulkSync (fetchDecisionsBulkSyncM)
+import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
 
 fetchDecisions
   :: forall peer header block m extra.
@@ -41,7 +43,8 @@ fetchDecisions
       Hashable peer,
       HasHeader header,
       HeaderHash header ~ HeaderHash block, MonadMonotonicTime m)
-  => FetchDecisionPolicy header
+  => Tracer m (TraceDecisionEvent peer header)
+  -> FetchDecisionPolicy header
   -> FetchMode
   -> AnchoredFragment header
   -> (Point block -> Bool)
@@ -55,6 +58,7 @@ fetchDecisions
   -> m [(FetchDecision (FetchRequest header), PeerInfo header peer extra)]
 
 fetchDecisions
+  _tracer
   fetchDecisionPolicy
   FetchModeDeadline
   currentChain
@@ -73,6 +77,7 @@ fetchDecisions
         candidatesAndPeers
 
 fetchDecisions
+  tracer
   fetchDecisionPolicy
   FetchModeBulkSync
   currentChain
@@ -83,6 +88,7 @@ fetchDecisions
   candidatesAndPeers
   =
       fetchDecisionsBulkSyncM
+        tracer
         fetchDecisionPolicy
         currentChain
         fetchedBlocks
