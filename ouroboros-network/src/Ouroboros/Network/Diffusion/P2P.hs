@@ -1054,6 +1054,7 @@ runM Interfaces
                                  peerTargets            = daPeerTargets,
                                  pcaReadUseBootstrap    = daReadUseBootstrapPeers,
                                  pcaConsensusMode       = daConsensusMode,
+                                 getLedgerStateCtx      = daLedgerPeersCtx,
                                  getLocalRootHotTarget  =
                                        LocalRootPeers.hotTarget
                                      . LocalRootPeers.clampToTrustable

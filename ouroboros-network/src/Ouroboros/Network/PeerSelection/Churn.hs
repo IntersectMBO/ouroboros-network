@@ -37,6 +37,7 @@ import Ouroboros.Network.Diffusion.Policies (churnEstablishConnectionTimeout,
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Ouroboros.Network.PeerSelection.Governor.Types hiding (targets)
 import Ouroboros.Network.PeerSelection.PeerMetric
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..))
 
 -- | Tag indicating churning approach
@@ -53,6 +54,14 @@ data ChurnRegime = ChurnDefault
                  | ChurnBootstrapPraosSync
                  -- ^ Praos targets further reduced to conserve resources
                  -- when syncing
+
+getPeerSelectionTargets :: ConsensusMode -> LedgerStateJudgement -> ConsensusModePeerTargets -> PeerSelectionTargets
+getPeerSelectionTargets consensus lsj ConsensusModePeerTargets {
+                                        deadlineTargets,
+                                        syncTargets } =
+  case (consensus, lsj) of
+    (GenesisMode, TooOld) -> syncTargets
+    _otherwise            -> deadlineTargets
 
 pickChurnRegime :: ConsensusMode -> ChurnMode -> UseBootstrapPeers -> ChurnRegime
 pickChurnRegime consensus churn ubp =
@@ -78,16 +87,17 @@ data PeerChurnArgs m peeraddr = PeerChurnArgs {
   pcaPeerRequestTimeout  :: DiffTime,
   -- ^ the timeout for outbound governor to find new (thus
   -- cold) peers through peer sharing mechanism.
-  pcaMetrics               :: PeerMetrics m peeraddr,
-  pcaModeVar               :: StrictTVar m ChurnMode,
-  pcaRng                   :: StdGen,
-  pcaReadFetchMode         :: STM m FetchMode,
-  peerTargets              :: ConsensusModePeerTargets,
-  pcaPeerSelectionVar      :: StrictTVar m PeerSelectionTargets,
-  pcaReadCounters          :: STM m PeerSelectionCounters,
-  pcaReadUseBootstrap      :: STM m UseBootstrapPeers,
-  pcaConsensusMode         :: ConsensusMode,
-  getLocalRootHotTarget    :: STM m HotValency }
+  pcaMetrics             :: PeerMetrics m peeraddr,
+  pcaModeVar             :: StrictTVar m ChurnMode,
+  pcaRng                 :: StdGen,
+  pcaReadFetchMode       :: STM m FetchMode,
+  peerTargets            :: ConsensusModePeerTargets,
+  pcaPeerSelectionVar    :: StrictTVar m PeerSelectionTargets,
+  pcaReadCounters        :: STM m PeerSelectionCounters,
+  pcaReadUseBootstrap    :: STM m UseBootstrapPeers,
+  pcaConsensusMode       :: ConsensusMode,
+  getLedgerStateCtx      :: LedgerPeersConsensusInterface m,
+  getLocalRootHotTarget  :: STM m HotValency }
 
 -- | Churn governor.
 --
@@ -114,13 +124,13 @@ peerChurnGovernor PeerChurnArgs {
                     pcaModeVar             = churnModeVar,
                     pcaRng                 = inRng,
                     pcaReadFetchMode       = getFetchMode,
-                    peerTargets = ConsensusModePeerTargets {
-                        deadlineTargets,
-                        syncTargets },
+                    peerTargets,
                     pcaPeerSelectionVar    = peerSelectionVar,
                     pcaReadCounters        = readCounters,
                     pcaReadUseBootstrap    = getUseBootstrapPeers,
                     pcaConsensusMode       = consensusMode,
+                    getLedgerStateCtx = LedgerPeersConsensusInterface {
+                        lpGetLedgerStateJudgement },
                     getLocalRootHotTarget } = do
   -- Wait a while so that not only the closest peers have had the time
   -- to become warm.
@@ -130,17 +140,13 @@ peerChurnGovernor PeerChurnArgs {
   -- giving advantage to hostile and quick root peers.
   threadDelay 3
   atomically $ do
-    (churnMode, useBootstrapPeers, ltt)
-      <- (,,) <$> updateChurnMode <*> getUseBootstrapPeers <*> getLocalRootHotTarget
-    let regime = pickChurnRegime consensusMode churnMode useBootstrapPeers
-        base =
-          case (consensusMode, churnMode) of
-            (GenesisMode, ChurnModeBulkSync) -> syncTargets
-            (GenesisMode, ChurnModeNormal)   -> deadlineTargets
-            (PraosMode, _)                   -> deadlineTargets
+    (churnMode, ledgerStateJudgement, useBootstrapPeers, ltt)
+      <- (,,,) <$> updateChurnMode <*> lpGetLedgerStateJudgement <*> getUseBootstrapPeers <*> getLocalRootHotTarget
+    let regime  = pickChurnRegime consensusMode churnMode useBootstrapPeers
+        targets = getPeerSelectionTargets consensusMode ledgerStateJudgement peerTargets
 
-    modifyTVar peerSelectionVar ( increaseActivePeers regime ltt base
-                                . increaseEstablishedPeers regime ltt base)
+    modifyTVar peerSelectionVar ( increaseActivePeers regime ltt targets
+                                . increaseEstablishedPeers regime ltt targets)
 
   endTs0 <- getMonotonicTime
   fuzzyDelay inRng (endTs0 `diffTime` startTs0) >>= churnLoop
@@ -176,15 +182,12 @@ peerChurnGovernor PeerChurnArgs {
       (c, targets) <- atomically $ do
         churnMode <- updateChurnMode
         ltt       <- getLocalRootHotTarget
+        lsj       <- lpGetLedgerStateJudgement
         regime <- pickChurnRegime consensusMode churnMode <$> getUseBootstrapPeers
-        let base =
-              case (consensusMode, churnMode) of
-                (GenesisMode, ChurnModeBulkSync) -> syncTargets
-                (GenesisMode, ChurnModeNormal)   -> deadlineTargets
-                (PraosMode, _)                   -> deadlineTargets
+        let targets = getPeerSelectionTargets consensusMode lsj peerTargets
 
         (,) <$> (getCounter <$> readCounters)
-            <*> stateTVar peerSelectionVar ((\a -> (a, a)) . modifyTargets regime ltt base)
+            <*> stateTVar peerSelectionVar ((\a -> (a, a)) . modifyTargets regime ltt targets)
 
       -- create timeout and block on counters
       bracketOnError (registerDelayCancellable timeoutDelay)
