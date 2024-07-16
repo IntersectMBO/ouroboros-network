@@ -286,8 +286,8 @@ data PeerSelectionTargets = PeerSelectionTargets {
 -- for various syncing modes.
 --
 data ConsensusModePeerTargets = ConsensusModePeerTargets {
-  praosTargets       :: !PeerSelectionTargets,
-  genesisSyncTargets :: !PeerSelectionTargets }
+  deadlineTargets :: !PeerSelectionTargets,
+  syncTargets     :: !PeerSelectionTargets }
   deriving (Eq, Show)
 
 nullPeerSelectionTargets :: PeerSelectionTargets

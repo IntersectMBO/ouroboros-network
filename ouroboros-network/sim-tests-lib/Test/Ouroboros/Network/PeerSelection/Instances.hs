@@ -136,12 +136,12 @@ instance Arbitrary PeerSelectionTargets where
 instance Arbitrary ConsensusModePeerTargets where
   arbitrary = error "not implemented"
 
-  shrink ConsensusModePeerTargets { praosTargets, genesisSyncTargets } =
-    let genesisSyncTargets' = shrink genesisSyncTargets
-        praosTargets'       = shrink praosTargets
-    in [ConsensusModePeerTargets { praosTargets = praos, genesisSyncTargets = genesis }
-       | praos <- praosTargets',
-         genesis <- genesisSyncTargets']
+  shrink ConsensusModePeerTargets { deadlineTargets, syncTargets } =
+    let syncTargets'     = shrink syncTargets
+        deadlineTargets' = shrink deadlineTargets
+    in [ConsensusModePeerTargets { deadlineTargets = deadlineTargets'', syncTargets = syncTargets'' }
+       | deadlineTargets'' <- deadlineTargets',
+         syncTargets'' <- syncTargets']
 
 instance Arbitrary DomainAccessPoint where
   arbitrary =

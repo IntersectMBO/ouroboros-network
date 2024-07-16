@@ -202,7 +202,7 @@ validGovernorMockEnvironment GovernorMockEnvironment {
              property (PublicRootPeers.toSet publicRootPeers `Set.isSubsetOf` allPeersSet)
            , counterexample "failed peer selection targets sanity check" $
              property (foldl (\ !p (ConsensusModePeerTargets {..},_) ->
-                                p && all sanePeerSelectionTargets [praosTargets, genesisSyncTargets])
+                                p && all sanePeerSelectionTargets [deadlineTargets, syncTargets])
                         True
                         targets)
            , counterexample "big ledger peers not a subset of public roots"
@@ -246,7 +246,7 @@ governorAction mockEnv@GovernorMockEnvironment {
           lsjVar <- playTimedScript (contramap TraceEnvSetLedgerStateJudgement tracerMockEnv)
                                     (ledgerStateJudgement mockEnv)
           targetsVar <- playTimedScript (contramap TraceEnvSetTargets tracerMockEnv)
-                                        (first praosTargets <$> targets mockEnv)
+                                        (first deadlineTargets <$> targets mockEnv)
           mockPeerSelectionActions tracerMockEnv mockEnv
                                    initialPeerTargets
                                    (readTVar usbVar)
@@ -257,12 +257,12 @@ governorAction mockEnv@GovernorMockEnvironment {
         GenesisMode -> do
           let tandemLsjAndTargets =
                 Script $ NonEmpty.zipWith (\(lsj, delay) (ConsensusModePeerTargets {
-                                                             praosTargets,
-                                                             genesisSyncTargets}, _) ->
+                                                             deadlineTargets,
+                                                             syncTargets }, _) ->
                                              let pickTargets =
                                                    case lsj of
-                                                     TooOld -> genesisSyncTargets
-                                                     YoungEnough -> praosTargets
+                                                     TooOld -> syncTargets
+                                                     YoungEnough -> deadlineTargets
                                              in ((lsj, pickTargets), delay))
                                           ledgerStateJudgement'
                                           targets'
@@ -954,7 +954,7 @@ instance Arbitrary GovernorMockEnvironment where
                                                               <*> choose (1, min 100 genesisBigEst)
                           let targets =
                                 ConsensusModePeerTargets {
-                                  praosTargets = PeerSelectionTargets {
+                                  deadlineTargets = PeerSelectionTargets {
                                       targetNumberOfRootPeers = praosRootKnown,
                                       targetNumberOfKnownPeers = praosKnown,
                                       targetNumberOfEstablishedPeers = praosEst,
@@ -962,7 +962,7 @@ instance Arbitrary GovernorMockEnvironment where
                                       targetNumberOfKnownBigLedgerPeers = praosBigKnown,
                                       targetNumberOfEstablishedBigLedgerPeers = praosBigEst,
                                       targetNumberOfActiveBigLedgerPeers = praosBigAct },
-                                  genesisSyncTargets = PeerSelectionTargets {
+                                  syncTargets = PeerSelectionTargets {
                                       targetNumberOfRootPeers = genesisRootKnown,
                                       targetNumberOfKnownPeers = genesisKnown,
                                       targetNumberOfEstablishedPeers = genesisEst,
@@ -1088,12 +1088,12 @@ instance Arbitrary GovernorMockEnvironment where
           [shrunk
           | shrunk@(shrunkTarget, _) <- shrunkScript,
             let ConsensusModePeerTargets {
-                  praosTargets,
-                  genesisSyncTargets = genesisSyncTargets@PeerSelectionTargets {
+                  deadlineTargets,
+                  syncTargets = syncTargets@PeerSelectionTargets {
                       targetNumberOfKnownBigLedgerPeers = genesisBigKnown,
                       targetNumberOfEstablishedBigLedgerPeers = genesisBigEst,
                       targetNumberOfActiveBigLedgerPeers = genesisBigAct } } = shrunkTarget,
-            all checkTargets [praosTargets, genesisSyncTargets],
+            all checkTargets [deadlineTargets, syncTargets],
             genesisBigKnown >= 10 && genesisBigEst <= genesisBigKnown && genesisBigAct <= genesisBigEst,
             genesisBigEst * genesisBigAct /= 0]
         

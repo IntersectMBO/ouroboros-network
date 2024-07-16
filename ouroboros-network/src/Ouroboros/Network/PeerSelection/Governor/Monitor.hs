@@ -580,8 +580,8 @@ monitorLedgerStateJudgement :: ( MonadSTM m
                             -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
 monitorLedgerStateJudgement PeerSelectionActions{ readLedgerStateJudgement,
                                                   peerTargets = ConsensusModePeerTargets{
-                                                    praosTargets,
-                                                    genesisSyncTargets } }
+                                                    deadlineTargets,
+                                                    syncTargets } }
                             st@PeerSelectionState{ bootstrapPeersFlag,
                                                    publicRootPeers,
                                                    knownPeers,
@@ -595,8 +595,8 @@ monitorLedgerStateJudgement PeerSelectionActions{ readLedgerStateJudgement,
       lsj <- readLedgerStateJudgement
       check (lsj /= ledgerStateJudgement)
       let targets = case lsj of
-            YoungEnough -> praosTargets
-            TooOld      -> genesisSyncTargets
+            YoungEnough -> deadlineTargets
+            TooOld      -> syncTargets
 
       return $ \_now ->
         Decision {

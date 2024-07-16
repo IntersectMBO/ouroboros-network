@@ -727,7 +727,7 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
               ]
               (Script (LedgerPools [] :| []))
               ConsensusModePeerTargets {
-                praosTargets = nullPeerSelectionTargets {
+                deadlineTargets = nullPeerSelectionTargets {
                     targetNumberOfKnownPeers = 2,
                     targetNumberOfEstablishedPeers = 2,
                     targetNumberOfActivePeers = 1,
@@ -735,7 +735,7 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
                     targetNumberOfKnownBigLedgerPeers = 0,
                     targetNumberOfEstablishedBigLedgerPeers = 0,
                     targetNumberOfActiveBigLedgerPeers = 0 },
-                genesisSyncTargets = nullPeerSelectionTargets }
+                syncTargets = nullPeerSelectionTargets }
               (Script (DNSTimeout {getDNSTimeout = 0.239} :| [DNSTimeout {getDNSTimeout = 0.181},DNSTimeout {getDNSTimeout = 0.185},DNSTimeout {getDNSTimeout = 0.14},DNSTimeout {getDNSTimeout = 0.221}]))
               (Script (DNSLookupDelay {getDNSLookupDelay = 0.067} :| [DNSLookupDelay {getDNSLookupDelay = 0.097},DNSLookupDelay {getDNSLookupDelay = 0.101},DNSLookupDelay {getDNSLookupDelay = 0.096},DNSLookupDelay {getDNSLookupDelay = 0.051}]))
               Nothing
@@ -758,12 +758,12 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
              []
              (Script (LedgerPools [] :| []))
              ConsensusModePeerTargets {
-               praosTargets = nullPeerSelectionTargets {
+               deadlineTargets = nullPeerSelectionTargets {
                    targetNumberOfRootPeers = 2,
                    targetNumberOfKnownPeers = 5,
                    targetNumberOfEstablishedPeers = 1,
                    targetNumberOfActivePeers = 1 },
-               genesisSyncTargets = nullPeerSelectionTargets }
+               syncTargets = nullPeerSelectionTargets }
              (Script (DNSTimeout {getDNSTimeout = 0.28}
                   :| [DNSTimeout {getDNSTimeout = 0.204},
                       DNSTimeout {getDNSTimeout = 0.213}
@@ -1320,7 +1320,7 @@ unit_4191 = testWithIOSim prop_diffusion_dns_can_recover 125000 absInfo script
             ]
             (Script (LedgerPools [] :| []))
             ConsensusModePeerTargets {
-              praosTargets = PeerSelectionTargets
+              deadlineTargets = PeerSelectionTargets
                 { targetNumberOfRootPeers = 6,
                   targetNumberOfKnownPeers = 7,
                   targetNumberOfEstablishedPeers = 7,
@@ -1330,7 +1330,7 @@ unit_4191 = testWithIOSim prop_diffusion_dns_can_recover 125000 absInfo script
                   targetNumberOfEstablishedBigLedgerPeers = 0,
                   targetNumberOfActiveBigLedgerPeers = 0
                 },
-              genesisSyncTargets = nullPeerSelectionTargets }
+              syncTargets = nullPeerSelectionTargets }
             (Script (DNSTimeout {getDNSTimeout = 0.406} :| [ DNSTimeout {getDNSTimeout = 0.11}
                                                            , DNSTimeout {getDNSTimeout = 0.333}
                                                            , DNSTimeout {getDNSTimeout = 0.352}
@@ -2247,12 +2247,12 @@ async_demotion_network_script =
       [ ( common { naAddr                  = addr1,
                    naLocalRootPeers        = localRoots1,
                    naPeerTargets = ConsensusModePeerTargets {
-                     praosTargets = Governor.nullPeerSelectionTargets {
+                     deadlineTargets = Governor.nullPeerSelectionTargets {
                          targetNumberOfKnownPeers = 2,
                            targetNumberOfEstablishedPeers = 2,
                            targetNumberOfActivePeers = 2
                          },
-                     genesisSyncTargets = peerTargets }
+                     syncTargets = peerTargets }
                  }
         , [ JoinNetwork 0
             -- reconfigure the peer to trigger the outbound governor log
@@ -2302,8 +2302,8 @@ async_demotion_network_script =
         naLocalRootPeers   = undefined,
         naLedgerPeers      = Script (LedgerPools [] :| []),
         naPeerTargets      = ConsensusModePeerTargets {
-            praosTargets = peerTargets,
-            genesisSyncTargets = peerTargets },
+            deadlineTargets = peerTargets,
+            syncTargets     = peerTargets },
         naDNSTimeoutScript = singletonScript (DNSTimeout 3),
         naDNSLookupDelayScript
                            = singletonScript (DNSLookupDelay 0.2),
@@ -2740,12 +2740,12 @@ prop_unit_4258 =
              [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.8" 65531,(DoNotAdvertisePeer, IsNotTrustable))])]
              (Script (LedgerPools [] :| []))
              ConsensusModePeerTargets {
-               praosTargets = nullPeerSelectionTargets {
+               deadlineTargets = nullPeerSelectionTargets {
                  targetNumberOfRootPeers = 2,
                  targetNumberOfKnownPeers = 5,
                  targetNumberOfEstablishedPeers = 4,
                  targetNumberOfActivePeers = 1 },
-               genesisSyncTargets = nullPeerSelectionTargets }
+               syncTargets = nullPeerSelectionTargets }
              (Script (DNSTimeout {getDNSTimeout = 0.397}
                  :| [ DNSTimeout {getDNSTimeout = 0.382},
                       DNSTimeout {getDNSTimeout = 0.321},
@@ -2775,7 +2775,7 @@ prop_unit_4258 =
              [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,(DoNotAdvertisePeer, IsNotTrustable))])]
              (Script (LedgerPools [] :| []))
              ConsensusModePeerTargets {
-               praosTargets = nullPeerSelectionTargets {
+               deadlineTargets = nullPeerSelectionTargets {
                  targetNumberOfRootPeers = 4,
                  targetNumberOfKnownPeers = 5,
                  targetNumberOfEstablishedPeers = 3,
@@ -2785,7 +2785,7 @@ prop_unit_4258 =
                  targetNumberOfEstablishedBigLedgerPeers = 0,
                  targetNumberOfActiveBigLedgerPeers = 0
                },
-               genesisSyncTargets = nullPeerSelectionTargets }
+               syncTargets = nullPeerSelectionTargets }
              (Script (DNSTimeout {getDNSTimeout = 0.281}
                  :| [ DNSTimeout {getDNSTimeout = 0.177},
                       DNSTimeout {getDNSTimeout = 0.164},
@@ -2851,7 +2851,7 @@ prop_unit_reconnect =
               ]
               (Script (LedgerPools [] :| []))
               ConsensusModePeerTargets {
-                praosTargets = PeerSelectionTargets {
+                deadlineTargets = PeerSelectionTargets {
                     targetNumberOfRootPeers = 1,
                     targetNumberOfKnownPeers = 1,
                     targetNumberOfEstablishedPeers = 1,
@@ -2860,7 +2860,7 @@ prop_unit_reconnect =
                     targetNumberOfKnownBigLedgerPeers = 0,
                     targetNumberOfEstablishedBigLedgerPeers = 0,
                     targetNumberOfActiveBigLedgerPeers = 0 },
-                genesisSyncTargets = nullPeerSelectionTargets }
+                syncTargets = nullPeerSelectionTargets }
               (Script (DNSTimeout {getDNSTimeout = 10} :| []))
               (Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []))
               Nothing
@@ -2880,7 +2880,7 @@ prop_unit_reconnect =
                [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.0" 0,(DoNotAdvertisePeer, IsNotTrustable))])]
                (Script (LedgerPools [] :| []))
                ConsensusModePeerTargets {
-                 praosTargets = PeerSelectionTargets {
+                 deadlineTargets = PeerSelectionTargets {
                      targetNumberOfRootPeers = 1,
                      targetNumberOfKnownPeers = 1,
                      targetNumberOfEstablishedPeers = 1,
@@ -2889,7 +2889,7 @@ prop_unit_reconnect =
                      targetNumberOfKnownBigLedgerPeers = 0,
                      targetNumberOfEstablishedBigLedgerPeers = 0,
                      targetNumberOfActiveBigLedgerPeers = 0 },
-                 genesisSyncTargets = nullPeerSelectionTargets }
+                 syncTargets = nullPeerSelectionTargets }
              (Script (DNSTimeout {getDNSTimeout = 10} :| [ ]))
              (Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []))
              Nothing
@@ -3283,7 +3283,7 @@ unit_peer_sharing =
                           targetNumberOfKnownBigLedgerPeers = 0,
                           targetNumberOfEstablishedBigLedgerPeers = 0,
                           targetNumberOfActiveBigLedgerPeers = 0 }
-                in ConsensusModePeerTargets { praosTargets = t, genesisSyncTargets = t }
+                in ConsensusModePeerTargets { deadlineTargets = t, syncTargets = t }
 
 
     defaultNodeArgs naConsensusMode = NodeArgs {
@@ -3297,8 +3297,8 @@ unit_peer_sharing =
         naLocalRootPeers = undefined,
         naLedgerPeers = singletonScript (LedgerPools []),
         naPeerTargets = ConsensusModePeerTargets {
-            praosTargets = nullPeerSelectionTargets,
-            genesisSyncTargets = nullPeerSelectionTargets },
+            deadlineTargets = nullPeerSelectionTargets,
+            syncTargets = nullPeerSelectionTargets },
         naDNSTimeoutScript = singletonScript (DNSTimeout 300),
         naDNSLookupDelayScript = singletonScript (DNSLookupDelay 0.01),
         naChainSyncEarlyExit = False,
@@ -3841,10 +3841,11 @@ labelDiffusionScript (DiffusionScript args _ nodes) =
               ++ show (length nodes))
     . label ("Nº nodes in InitiatorOnlyDiffusionMode: "
               ++ show (length $ filter ((== InitiatorOnlyDiffusionMode) . naDiffusionMode . fst) $ nodes))
+    -- todo: add label for GenesisMode syncTargets
     . label ("Nº active peers: "
-              ++ show (sum . map (targetNumberOfActivePeers . praosTargets . naPeerTargets . fst) $ nodes))
+              ++ show (sum . map (targetNumberOfActivePeers . deadlineTargets . naPeerTargets . fst) $ nodes))
     . label ("Nº active big ledger peers: "
-              ++ show (sum . map (targetNumberOfActiveBigLedgerPeers . praosTargets . naPeerTargets . fst) $ nodes))
+              ++ show (sum . map (targetNumberOfActiveBigLedgerPeers . deadlineTargets . naPeerTargets . fst) $ nodes))
     . label ("average number of active local roots: "
               ++ show (average . map (sum . map (\(HotValency v,_,_) -> v) . naLocalRootPeers . fst) $ nodes))
   where

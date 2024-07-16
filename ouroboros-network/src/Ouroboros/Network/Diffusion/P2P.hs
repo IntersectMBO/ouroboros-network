@@ -828,8 +828,8 @@ runM Interfaces
 
       peerSelectionTargetsVar <- newTVarIO $
         case daConsensusMode of
-          PraosMode -> praosTargets daPeerTargets
-          GenesisMode -> genesisSyncTargets daPeerTargets        
+          PraosMode   -> deadlineTargets daPeerTargets
+          GenesisMode -> syncTargets daPeerTargets
 
       countersVar <- newTVarIO emptyPeerSelectionCounters
 

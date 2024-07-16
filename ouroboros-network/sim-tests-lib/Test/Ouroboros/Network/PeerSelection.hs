@@ -459,26 +459,26 @@ isEmptyEnv GovernorMockEnvironment {
     (LocalRootPeers.null localRootPeers
       || case consensusMode of
            PraosMode ->
-             all (\(praosTargets -> t,_) -> targetNumberOfKnownPeers t == 0)
+             all (\(deadlineTargets -> t,_) -> targetNumberOfKnownPeers t == 0)
                  targets
            GenesisMode ->
              all (\((t, _), (lsj, _)) ->
                     case lsj of
-                      TooOld -> 0 == (targetNumberOfKnownPeers . genesisSyncTargets $ t)
+                      TooOld -> 0 == (targetNumberOfKnownPeers . syncTargets $ t)
                       YoungEnough ->
-                        0 == (targetNumberOfKnownPeers . praosTargets $ t))
+                        0 == (targetNumberOfKnownPeers . deadlineTargets $ t))
                  $ NonEmpty.zip targets' ledgerStateJudgement')
  && (PublicRootPeers.null publicRootPeers
       || case consensusMode of
            PraosMode ->
-             all (\(praosTargets -> t,_) -> targetNumberOfRootPeers  t == 0)
+             all (\(deadlineTargets -> t,_) -> targetNumberOfRootPeers  t == 0)
                  targets
            GenesisMode ->
              all (\((t, _), (lsj, _)) ->
                     case lsj of
-                      TooOld -> 0 == (targetNumberOfRootPeers . genesisSyncTargets $ t)
+                      TooOld -> 0 == (targetNumberOfRootPeers . syncTargets $ t)
                       YoungEnough ->
-                        0 == (targetNumberOfRootPeers . praosTargets $ t))
+                        0 == (targetNumberOfRootPeers . deadlineTargets $ t))
                  $ NonEmpty.zip targets' ledgerStateJudgement')
 
 -- | As a basic property we run the governor to explore its state space a bit
@@ -3803,8 +3803,8 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
               }
 
     peerTargets = ConsensusModePeerTargets {
-      praosTargets = targets,
-      genesisSyncTargets = targets}
+      deadlineTargets = targets,
+      syncTargets     = targets}
 
     policy :: PeerSelectionPolicy SockAddr IO
     policy  = PeerSelectionPolicy {
@@ -3848,12 +3848,12 @@ prop_issue_3550 = prop_governor_target_established_below defaultMaxTime $
         ),
       targets = Script
         ((ConsensusModePeerTargets {
-            praosTargets = nullPeerSelectionTargets {
+            deadlineTargets = nullPeerSelectionTargets {
                 targetNumberOfRootPeers = 1,
                 targetNumberOfKnownPeers = 4,
                 targetNumberOfEstablishedPeers = 4,
                 targetNumberOfActivePeers = 3 },
-            genesisSyncTargets = nullPeerSelectionTargets },
+            syncTargets = nullPeerSelectionTargets },
          NoDelay) :| []),
       pickKnownPeersForPeerShare = Script (PickFirst :| []),
       pickColdPeersToPromote = Script (PickFirst :| []),
@@ -3909,8 +3909,8 @@ prop_issue_3515 = prop_governor_nolivelock $
        ( nullPeerSelectionTargets, NoDelay),
        ( nullPeerSelectionTargets { targetNumberOfKnownPeers = 1 }, NoDelay) ]
     targets'' =
-      [(ConsensusModePeerTargets { praosTargets, genesisSyncTargets = nullPeerSelectionTargets }, delay)
-      | (praosTargets, delay) <- targets']  
+      [(ConsensusModePeerTargets { deadlineTargets, syncTargets = nullPeerSelectionTargets }, delay)
+      | (deadlineTargets, delay) <- targets']
 
 -- | issue #3494
 --
@@ -3952,8 +3952,8 @@ prop_issue_3494 = prop_governor_nofail $
        (nullPeerSelectionTargets,NoDelay),
        (nullPeerSelectionTargets { targetNumberOfKnownPeers = 1 },NoDelay) ]
     targets'' =
-      [(ConsensusModePeerTargets { praosTargets, genesisSyncTargets = nullPeerSelectionTargets }, delay)
-      | (praosTargets, delay) <- targets']
+      [(ConsensusModePeerTargets { deadlineTargets, syncTargets = nullPeerSelectionTargets }, delay)
+      | (deadlineTargets, delay) <- targets']
 
 -- | issue #3233
 --
@@ -4012,8 +4012,8 @@ prop_issue_3233 = prop_governor_nolivelock $
            targetNumberOfActivePeers = 2
            }, NoDelay)]
     targets'' =
-      [(ConsensusModePeerTargets { praosTargets, genesisSyncTargets = nullPeerSelectionTargets }, delay)
-      | (praosTargets, delay) <- targets'] 
+      [(ConsensusModePeerTargets { deadlineTargets, syncTargets = nullPeerSelectionTargets }, delay)
+      | (deadlineTargets, delay) <- targets']
 
 -- | Verify that re-promote delay is applied with a fuzz.
 --

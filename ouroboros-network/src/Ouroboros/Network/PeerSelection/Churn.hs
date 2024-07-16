@@ -115,8 +115,8 @@ peerChurnGovernor PeerChurnArgs {
                     pcaRng                 = inRng,
                     pcaReadFetchMode       = getFetchMode,
                     peerTargets = ConsensusModePeerTargets {
-                        praosTargets,
-                        genesisSyncTargets },
+                        deadlineTargets,
+                        syncTargets },
                     pcaPeerSelectionVar    = peerSelectionVar,
                     pcaReadCounters        = readCounters,
                     pcaReadUseBootstrap    = getUseBootstrapPeers,
@@ -135,9 +135,9 @@ peerChurnGovernor PeerChurnArgs {
     let regime = pickChurnRegime consensusMode churnMode useBootstrapPeers
         base =
           case (consensusMode, churnMode) of
-            (GenesisMode, ChurnModeBulkSync) -> genesisSyncTargets
-            (GenesisMode, ChurnModeNormal)   -> praosTargets
-            (PraosMode, _)                   -> praosTargets
+            (GenesisMode, ChurnModeBulkSync) -> syncTargets
+            (GenesisMode, ChurnModeNormal)   -> deadlineTargets
+            (PraosMode, _)                   -> deadlineTargets
 
     modifyTVar peerSelectionVar ( increaseActivePeers regime ltt base
                                 . increaseEstablishedPeers regime ltt base)
@@ -179,9 +179,9 @@ peerChurnGovernor PeerChurnArgs {
         regime <- pickChurnRegime consensusMode churnMode <$> getUseBootstrapPeers
         let base =
               case (consensusMode, churnMode) of
-                (GenesisMode, ChurnModeBulkSync) -> genesisSyncTargets
-                (GenesisMode, ChurnModeNormal)   -> praosTargets
-                (PraosMode, _)                   -> praosTargets
+                (GenesisMode, ChurnModeBulkSync) -> syncTargets
+                (GenesisMode, ChurnModeNormal)   -> deadlineTargets
+                (PraosMode, _)                   -> deadlineTargets
 
         (,) <$> (getCounter <$> readCounters)
             <*> stateTVar peerSelectionVar ((\a -> (a, a)) . modifyTargets regime ltt base)

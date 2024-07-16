@@ -392,11 +392,11 @@ genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream
 
   -- Make sure our targets for active peers cover the maximum of peers
   -- one generated
-  SmallTargets praosTargets <- resize (length relays * 2) arbitrary
+  SmallTargets deadlineTargets <- resize (length relays * 2) arbitrary
                                        `suchThat` hasActive
-  SmallTargets genesisSyncTargets <- resize (length relays * 2) arbitrary
+  SmallTargets syncTargets <- resize (length relays * 2) arbitrary
                                        `suchThat` hasActive
-  let peerTargets = ConsensusModePeerTargets { praosTargets, genesisSyncTargets }                                       
+  let peerTargets = ConsensusModePeerTargets { deadlineTargets, syncTargets }
   dnsTimeout <- arbitrary
   dnsLookupDelay <- arbitrary
   chainSyncExitOnBlockNo
