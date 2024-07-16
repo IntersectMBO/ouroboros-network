@@ -143,7 +143,7 @@ module Ouroboros.Network.BlockFetch.Decision.BulkSync (
 
 import Control.Exception (assert)
 import Control.Monad (filterM, when)
-import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime (getMonotonicTime), addTime)
+import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime (getMonotonicTime), addTime, diffTime)
 import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
 import Control.Monad.Writer.Strict (Writer, runWriter, MonadWriter (tell))
 import Control.Tracer (Tracer, traceWith)
@@ -269,24 +269,25 @@ fetchDecisionsBulkSyncM
       checkLastChainSelStarvation :: PeersOrder peer -> m (PeersOrder peer)
       checkLastChainSelStarvation
         peersOrder@PeersOrder {peersOrderStart, peersOrderAll} = do
-          lastStarvationTime <- case chainSelStarvation of
-            ChainSelStarvationEndedAt time -> pure time
-            ChainSelStarvationOngoing -> getMonotonicTime
+          (duration, lastStarvationTime) <- case chainSelStarvation of
+            ChainSelStarvationEndedAt tf duration -> pure (duration, tf)
+            ChainSelStarvationStartedAt t0 -> do
+              now <- getMonotonicTime
+              pure (diffTime now t0, now)
           case mCurrentPeer of
-            Just (_,_,_,badPeer,_) ->
-                if lastStarvationTime >= addTime bulkSyncGracePeriod peersOrderStart
-                  then do
-                    traceWith tracer $ PeerStarvedUs badPeer
-                    demoteCSJDynamoAndIgnoreInflightBlocks badPeer
-                    let peersOrder' =
-                          PeersOrder
-                            { peersOrderAll = filter (/= badPeer) peersOrderAll ++ [badPeer],
-                              peersOrderStart
-                            }
-                    writePeersOrder peersOrder'
-                    pure peersOrder'
-                  else pure peersOrder
-            Nothing -> pure peersOrder
+            Just (_,_,_,badPeer,_)
+              | duration >= 0.10 && lastStarvationTime >= addTime bulkSyncGracePeriod peersOrderStart -> do
+                  traceWith tracer $ PeerStarvedUs badPeer
+                  demoteCSJDynamoAndIgnoreInflightBlocks badPeer
+                  let peersOrder' =
+                        PeersOrder
+                          { peersOrderAll = filter (/= badPeer) peersOrderAll ++ [badPeer],
+                            peersOrderStart
+                          }
+                  writePeersOrder peersOrder'
+                  pure peersOrder'
+            _ ->
+              pure peersOrder
 
       mCurrentPeer =
         let peersWithBlocksInFlightNonIgnored =

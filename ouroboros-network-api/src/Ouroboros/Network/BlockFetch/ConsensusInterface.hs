@@ -13,7 +13,7 @@ module Ouroboros.Network.BlockFetch.ConsensusInterface
 
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime (UTCTime)
-import Control.Monad.Class.MonadTime.SI (Time)
+import Control.Monad.Class.MonadTime.SI (DiffTime, Time)
 
 import Data.Map.Strict (Map)
 import GHC.Stack (HasCallStack)
@@ -183,8 +183,8 @@ data WhetherReceivingTentativeBlocks
 -- focused peer has starved ChainSel recently. This datatype is used to
 -- represent this piece of information.
 data ChainSelStarvation
-  = ChainSelStarvationOngoing
-  | ChainSelStarvationEndedAt Time
+  = ChainSelStarvationStartedAt Time
+  | ChainSelStarvationEndedAt Time DiffTime -- ^ End time and duration
   deriving (Eq, Show, NoThunks, Generic)
 
 {-------------------------------------------------------------------------------
