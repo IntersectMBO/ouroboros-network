@@ -31,7 +31,7 @@ import Numeric.Natural
 
 import System.IO qualified as IO (Handle, hFlush, hIsEOF)
 
-import Control.Concurrent.Class.MonadSTM
+import Control.Concurrent.Class.MonadSTM.Strict
 
 import Network.Mux.Channel qualified as Mx
 
@@ -137,8 +137,8 @@ fixedInputChannel xs0 = do
 -- writing.
 --
 mvarsAsChannel :: MonadSTM m
-               => TMVar m a
-               -> TMVar m a
+               => StrictTMVar m a
+               -> StrictTMVar m a
                -> Channel m a
 mvarsAsChannel bufferRead bufferWrite =
     Channel{send, recv}
