@@ -515,7 +515,9 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
                         bfcMaxRequestsInflight    = 10,
                         bfcDecisionLoopInterval   = 0.01,
                         bfcSalt                   = 0,
-                        bfcBulkSyncGracePeriod    = 10 -- seconds
+                        bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
+                          { gbfcBulkSyncGracePeriod = 10 -- seconds
+                          }
                         })
                  >> return ()
 
