@@ -9,8 +9,8 @@
 ### Non-breaking changes
 
 - Fix `InboundGovernorCounters`
-
 * Make it build with ghc-9.10
+* Improve memory footprint of tests by using strict version of STM
 
 ## 0.13.2.0 -- 2024-06-07
 
