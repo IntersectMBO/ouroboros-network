@@ -84,6 +84,7 @@ module Ouroboros.Network.BlockFetch
   ( blockFetchLogic
   , BlockFetchConfiguration (..)
   , BlockFetchConsensusInterface (..)
+  , GenesisBlockFetchConfiguration (..)
     -- ** Tracer types
   , FetchDecision
   , TraceFetchClientState (..)
@@ -141,11 +142,19 @@ data BlockFetchConfiguration =
          -- | Salt used when comparing peers
          bfcSalt                   :: !Int,
 
-         -- | Grace period when starting to talk to a peer in bulk sync mode
-         -- during which it is fine if the chain selection gets starved.
-         bfcBulkSyncGracePeriod    :: !DiffTime
+         -- | Genesis-specific parameters
+         bfcGenesisBFConfig        :: !GenesisBlockFetchConfiguration
      }
      deriving (Show)
+
+-- | BlockFetch configuration parameters specific to Genesis.
+data GenesisBlockFetchConfiguration =
+     GenesisBlockFetchConfiguration
+      { -- | Grace period when starting to talk to a peer in bulk sync mode
+        -- during which it is fine if the chain selection gets starved.
+        gbfcBulkSyncGracePeriod    :: !DiffTime
+      }
+      deriving (Show)
 
 -- | Execute the block fetch logic. It monitors the current chain and candidate
 -- chains. It decided which block bodies to fetch and manages the process of
@@ -200,7 +209,7 @@ blockFetchLogic decisionTracer clientStateTracer
         maxConcurrencyDeadline   = bfcMaxConcurrencyDeadline,
         decisionLoopInterval     = bfcDecisionLoopInterval,
         peerSalt                 = bfcSalt,
-        bulkSyncGracePeriod      = bfcBulkSyncGracePeriod,
+        bulkSyncGracePeriod      = gbfcBulkSyncGracePeriod bfcGenesisBFConfig,
 
         plausibleCandidateChain,
         compareCandidateChains,

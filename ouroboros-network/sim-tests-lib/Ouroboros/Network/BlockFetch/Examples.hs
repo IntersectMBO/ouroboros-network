@@ -139,7 +139,9 @@ blockFetchExample0 decisionTracer clientStateTracer clientMsgTracer
             bfcMaxRequestsInflight    = 10,
             bfcDecisionLoopInterval   = 0.01,
             bfcSalt                   = 0,
-            bfcBulkSyncGracePeriod    = 10 -- seconds
+            bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
+              { gbfcBulkSyncGracePeriod = 10 -- seconds
+              }
           })
         >> return ()
 
@@ -247,7 +249,9 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
             bfcMaxRequestsInflight    = 10,
             bfcDecisionLoopInterval   = 0.01,
             bfcSalt                   = 0,
-            bfcBulkSyncGracePeriod    = 10 -- seconds
+            bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
+              { gbfcBulkSyncGracePeriod = 10 -- seconds
+              }
           })
         >> return ()
 
