@@ -19,10 +19,6 @@
 -- - Let @inflight :: peer -> Set blk@ be the outstanding blocks, those that
 --   have been requested and are expected to arrive but have not yet.
 --
--- - Let @inflightIgnored :: Set blk@ be the outstanding blocks that have been
---   ignored. We have that @inflightIgnored@ is included in the union for all
---   peer @p@ of @inflight(p)@. We name @inflightNonIgnored@ the difference.
---
 -- - Let @peersOrder@ be an order of preference among the peers. This order is
 --   not set in stone and will evolve as we go.
 --
@@ -39,51 +35,69 @@
 --
 -- One iteration of this decision logic:
 --
--- - If @inflight@ is non-empty and the block validation component has idled at
---   any point after @currentStart@ plus @gracePeriod@, then the peer
---   @currentPeer@ has failed to promptly serve @inflight(currentPeer)@, and:
+-- 0. If @inflight(currentPeer)@ is non-empty and the block validation component
+--    has idled at any point after @currentStart@ plus @gracePeriod@, then the
+--    peer @currentPeer@ has failed to promptly serve @inflight(currentPeer)@,
+--    and:
 --
 --   - If @currentPeer@ is the ChainSync Jumping dynamo, then it must
 --     immediately be replaced as the dynamo.
 --
---   - Assume @currentPeer@ will never finish replying to that fetch request and
---     add all of @inflight(currentPeer)@ to @inflightIgnored@. REVIEW: Nick's
---     description says to add all of @inflight@ (for all the peers) to
---     @inflightIgnored@, probably because it assumes/enforces that @inflight ==
---     inflight(currentPeer)@, that is only the current peer is allowed to have
---     in-flight blocks.
---
 --   - Stop considering the peer “current” and make them the worst according to
 --     the @peersOrder@.
 --
--- - Let @theCandidate :: AnchoredFragment (Header blk)@ be the best candidate
---   header chain among the ChainSync clients (eg. best raw tiebreaker among the
---   longest).
+-- 1. Select @theCandidate :: AnchoredFragment (Header blk)@. This is the best
+--    candidate header chain among the ChainSync clients (eg. best raw
+--    tiebreaker among the longest).
 --
--- - Let @grossRequest@ be the oldest blocks on @theCandidate@ that have not
---   already been downloaded, are not in @inflightNonIgnored@, and total less
---   than 20 mebibytes.
+-- 2. Select @thePeer :: peer@. If @inflight(currentPeer)@ is not empty, then
+--    this is @currentPeer@. Otherwise:
 --
--- - If @grossRequest@ is empty, then terminate this iteration. Otherwise, pick
---   the best peer (according to @peersOrder@) offering all of the blocks in
---   @grossRequest@. We will call it @thePeer@. Because @currentPeer@, if it
---   exists, is the best according to @peersOrder@, then it will be our
---   preferred peer, as long as it can provide the @grossRequest@s.
+--    - Let @grossRequest@ be the oldest blocks on @theCandidate@ that have not
+--      already been downloaded and total less than 20 mebibytes.
 --
--- - If the byte size of @inflight(thePeer)@ is below the low-water mark, then
---   terminate this iteration. Otherwise, decide and send the actual next batch
---   request, as influenced by exactly which blocks are actually already
---   currently in-flight with the chosen peer.
+--    - If @grossRequest@ is empty, then terminate this iteration. Otherwise,
+--      pick the best peer (according to @peersOrder@) offering all of the
+--      blocks in @grossRequest@.
 --
--- - Update @currentPeer@ and @currentStart@, if needed. Namely:
+-- 3. Craft that actual request to @thePeer@ asking blocks of @theCandidate@:
 --
---   - If @thePeer /= currentPeer@, then make @thePeer@ the current peer and the
---     best according to @peersOrder@, and reset @currentStart@ to now.
+--    - If the byte size of @inflight(thePeer)@ is below the low-water mark,
+--      then terminate this iteration.
 --
---   - If @thePeer == currentPeer@, but @inflight(thePeer)@ is empty, then reset
---     @currentStart@ to now.
+--    - Decide and send the actual next batch request, as influenced by exactly
+--      which blocks are actually already currently in-flight with @thePeer@.
+--
+-- 4. If we went through the election of a new peer, replace @currentPeer@ and
+--    reset @currentStart@. REVIEW: Maybe this should just be done directly in
+--    step 2.
 --
 -- Terminate this iteration.
+--
+-- About ignored in-flight requests
+-- --------------------------------
+--
+-- One can note that in-flight requests are ignored when finding a new peer, but
+-- considered when crafting the actual request to a chosen peer. This is by
+-- design. The goal of this algorithm is to keep talking to the same peer unless
+-- it proves to be too weak; in that case, @inflight(p)@ will be empty for all
+-- @p /= currentPeer@.
+--
+-- If a peer proves too slow, then we give up on it (see point 0. above), even
+-- if it has requests in-flight. In subsequent selections of peers (point 2.),
+-- the blocks in these requests will not be removed from @theCandidate@ as, as
+-- far as we know, these requests might never return.
+--
+-- When crafting the actual request, we do need to consider the in-flight
+-- requests of the peer, to avoid clogging our network. If some of these
+-- in-flight requests date from when the peer was previously “current”, this
+-- means that we cycled through all the peers that provided @theCandidate@ and
+-- they all failed to serve our blocks promptly.
+--
+-- This is a degenerate case of the algorithm that might happen but only be
+-- transient. Soon enough, @theCandidate@ should be honest (if the consensus
+-- layer does its job correctly), and there should exist an honest peer ready to
+-- serve @theCandidate@ promptly.
 --
 -- Interactions with ChainSync Jumping (CSJ)
 -- -----------------------------------------
