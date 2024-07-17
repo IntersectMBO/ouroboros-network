@@ -14,7 +14,6 @@ import Control.Monad.Class.MonadTime.SI (DiffTime)
 import Data.Function (on)
 import Data.Hashable
 import Data.List (foldl', groupBy, sortBy, transpose)
-import qualified Data.Map.Strict as Map
 import Data.Maybe (mapMaybe)
 import Data.Set (Set)
 import Data.Set qualified as Set
@@ -587,7 +586,7 @@ dropAlreadyInFlightWithPeer inflight (candidate, chainfragments) =
     else Right (candidate, fragments)
   where
     fragments = concatMap (filterWithMaxSlotNo notAlreadyInFlight (peerFetchMaxSlotNo inflight)) chainfragments
-    notAlreadyInFlight b = blockPoint b `Map.notMember` peerFetchBlocksInFlight inflight
+    notAlreadyInFlight b = blockPoint b `Set.notMember` peerFetchBlocksInFlight inflight
 
 dropAlreadyInFlightWithPeer' ::
   (HasHeader header) =>

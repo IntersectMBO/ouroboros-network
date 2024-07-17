@@ -18,7 +18,6 @@ module Ouroboros.Network.BlockFetch.ClientState
   , PeerFetchStatus (..)
   , IsIdle (..)
   , PeerFetchInFlight (..)
-  , PeerFetchBlockInFlight (..)
   , initialPeerFetchInFlight
   , FetchRequest (..)
   , addNewFetchRequest
@@ -33,7 +32,6 @@ module Ouroboros.Network.BlockFetch.ClientState
     -- * Ancillary
   , FromConsensus (..)
   , WhetherReceivingTentativeBlocks (..)
-  , defaultPeerFetchBlockInFlight
   , PeersOrder(..)
   , mcons
   , msnoc
@@ -42,8 +40,7 @@ module Ouroboros.Network.BlockFetch.ClientState
 import Data.List (foldl')
 import Data.Maybe (mapMaybe)
 import Data.Semigroup (Last (..))
-import Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
+import Data.Set (Set)
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (assert)
@@ -64,6 +61,7 @@ import Ouroboros.Network.ControlMessage (ControlMessageSTM,
            timeoutWithControlMessage)
 import Ouroboros.Network.Point (withOriginToMaybe)
 import Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
+import qualified Data.Set as Set
 
 -- | The context that is passed into the block fetch protocol client when it
 -- is started.
@@ -182,7 +180,7 @@ data PeerFetchStatus header =
        -- considered ready to accept new requests.
        --
        -- The 'Set' is the blocks in flight.
-     | PeerFetchStatusReady (Map (Point header) PeerFetchBlockInFlight) IsIdle
+     | PeerFetchStatusReady (Set (Point header)) IsIdle
   deriving (Eq, Show)
 
 -- | Whether this mini protocol instance is in the @Idle@ State
@@ -224,7 +222,7 @@ data PeerFetchInFlight header = PeerFetchInFlight {
        -- fetch from which peers we take into account what blocks are already
        -- in-flight with peers.
        --
-       peerFetchBlocksInFlight :: Map (Point header) PeerFetchBlockInFlight,
+       peerFetchBlocksInFlight :: Set (Point header),
 
        -- | The maximum slot of a block that /has ever been/ in flight for
        -- this peer.
@@ -236,24 +234,12 @@ data PeerFetchInFlight header = PeerFetchInFlight {
      }
   deriving (Eq, Show)
 
--- | Information associated to a block in flight.
-data PeerFetchBlockInFlight = PeerFetchBlockInFlight
-  { -- | The block fetch decision logic might decide to ignore a block that is
-    -- in flight. It will only be ignored when taking decisions, by it can of
-    -- course not be ignored when computing the actual request.
-    peerFetchBlocksInFlightIgnoredByLogic :: !Bool
-  }
-  deriving (Eq, Show)
-
-defaultPeerFetchBlockInFlight :: PeerFetchBlockInFlight
-defaultPeerFetchBlockInFlight = PeerFetchBlockInFlight False
-
 initialPeerFetchInFlight :: PeerFetchInFlight header
 initialPeerFetchInFlight =
     PeerFetchInFlight {
       peerFetchReqsInFlight   = 0,
       peerFetchBytesInFlight  = 0,
-      peerFetchBlocksInFlight = Map.empty,
+      peerFetchBlocksInFlight = Set.empty,
       peerFetchMaxSlotNo      = NoMaxSlotNo
     }
 
@@ -275,7 +261,7 @@ addHeadersInFlight blockFetchSize oldReq addedReq mergedReq inflight =
     -- This assertion checks the pre-condition 'addNewFetchRequest' that all
     -- requested blocks are new. This is true irrespective of fetch-request
     -- command merging.
-    assert (and [ blockPoint header `Map.notMember` peerFetchBlocksInFlight inflight
+    assert (and [ blockPoint header `Set.notMember` peerFetchBlocksInFlight inflight
                 | fragment <- fetchRequestFragments addedReq
                 , header   <- AF.toOldestFirst fragment ]) $
 
@@ -297,15 +283,11 @@ addHeadersInFlight blockFetchSize oldReq addedReq mergedReq inflight =
                                     | fragment <- fetchRequestFragments addedReq
                                     , header   <- AF.toOldestFirst fragment ],
 
-      peerFetchBlocksInFlight =
-        Map.unionWith
-          (\_ _ -> error "addHeadersInFlight: precondition violated")
-          (peerFetchBlocksInFlight inflight)
-          ( Map.fromList
-                [ (blockPoint header, defaultPeerFetchBlockInFlight)
-                | fragment <- fetchRequestFragments addedReq
-                , header   <- AF.toOldestFirst fragment ]
-          ),
+      peerFetchBlocksInFlight = peerFetchBlocksInFlight inflight
+                    `Set.union` Set.fromList
+                                  [ blockPoint header
+                                  | fragment <- fetchRequestFragments addedReq
+                                  , header   <- AF.toOldestFirst fragment ],
 
       peerFetchMaxSlotNo      = peerFetchMaxSlotNo inflight
                           `max` fetchRequestMaxSlotNo addedReq
@@ -321,13 +303,13 @@ deleteHeaderInFlight :: HasHeader header
                      -> PeerFetchInFlight header
 deleteHeaderInFlight blockFetchSize header inflight =
     assert (peerFetchBytesInFlight inflight >= blockFetchSize header) $
-    assert (blockPoint header `Map.member` peerFetchBlocksInFlight inflight) $
+    assert (blockPoint header `Set.member` peerFetchBlocksInFlight inflight) $
     inflight {
       peerFetchBytesInFlight  = peerFetchBytesInFlight inflight
                               - blockFetchSize header,
 
       peerFetchBlocksInFlight = blockPoint header
-                   `Map.delete` peerFetchBlocksInFlight inflight
+                   `Set.delete` peerFetchBlocksInFlight inflight
     }
 
 deleteHeadersInFlight :: HasHeader header
@@ -613,7 +595,7 @@ completeFetchBatch tracer inflightlimits range
       let !inflight' =
             assert (if peerFetchReqsInFlight inflight == 1
                        then peerFetchBytesInFlight inflight == 0
-                         && Map.null (peerFetchBlocksInFlight inflight)
+                         && Set.null (peerFetchBlocksInFlight inflight)
                        else True)
             inflight {
               peerFetchReqsInFlight = peerFetchReqsInFlight inflight - 1
@@ -621,9 +603,9 @@ completeFetchBatch tracer inflightlimits range
       writeTVar fetchClientInFlightVar inflight'
       currentStatus' <- readTVar fetchClientStatusVar >>= \case
         PeerFetchStatusReady bs IsNotIdle
-          | Map.null bs
+          | Set.null bs
             && 0 == peerFetchReqsInFlight inflight'
-          -> let status = PeerFetchStatusReady Map.empty IsIdle
+          -> let status = PeerFetchStatusReady Set.empty IsIdle
              in status <$ writeTVar fetchClientStatusVar status
         currentStatus -> pure currentStatus
 
@@ -808,14 +790,13 @@ tryReadTMergeVar :: MonadSTM m
 tryReadTMergeVar (TMergeVar v) = tryReadTMVar v
 
 -- | The order of peers for bulk sync fetch decisions.
---
--- FIXME: peersOrderStart would make much more sense as part of the in-flight
--- stuff.
 data PeersOrder peer = PeersOrder
-  { peersOrderAll :: [peer]
+  { peersOrderCurrent :: Maybe peer
+    -- ^ The current peer we are fetching from, if there is one.
+  , peersOrderAll :: [peer]
     -- ^ All the peers, from most preferred to least preferred.
   , peersOrderStart :: Time
-    -- ^ The time at which we started talking to that peer.
+    -- ^ The time at which we started talking to the current peer.
   }
 
 mcons :: Maybe a -> [a] -> [a]

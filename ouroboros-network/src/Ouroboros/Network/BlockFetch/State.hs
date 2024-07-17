@@ -17,7 +17,6 @@ module Ouroboros.Network.BlockFetch.State
   , TraceFetchClientState (..)
   ) where
 
-import Data.Foldable (for_)
 import Data.Functor.Contravariant (contramap)
 import Data.Hashable (Hashable)
 import Data.Map.Strict (Map)
@@ -25,7 +24,6 @@ import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Void
 
-import Control.Concurrent.Class.MonadSTM.Strict.TVar (modifyTVar)
 import Control.Concurrent.Class.MonadSTM.Strict.TVar.Checked (newTVarIO, StrictTVar, readTVarIO, writeTVar)
 import Control.Exception (assert)
 import Control.Monad.Class.MonadSTM
@@ -40,7 +38,7 @@ import Ouroboros.Network.Block
 import Ouroboros.Network.BlockFetch.ClientState (FetchClientStateVars (..),
            FetchRequest (..), PeerFetchInFlight (..), PeerFetchStatus (..),
            TraceFetchClientState (..), TraceLabelPeer (..), addNewFetchRequest,
-           readFetchClientState, PeersOrder (..), PeerFetchBlockInFlight (..))
+           readFetchClientState, PeersOrder (..))
 import Ouroboros.Network.BlockFetch.Decision (FetchDecision,
            FetchDecisionPolicy (..), FetchDecline (..), FetchMode (..),
            PeerInfo, fetchDecisions)
@@ -71,6 +69,7 @@ fetchLogicIterations decisionTracer clientStateTracer
                      demoteCSJDynamo = do
 
     peersOrderVar <- newTVarIO $ PeersOrder {
+      peersOrderCurrent = Nothing,
       peersOrderStart = Time 0,
       peersOrderAll = []
       }
@@ -150,7 +149,7 @@ fetchLogicIteration decisionTracer clientStateTracer
                       stateSnapshot
                       (peersOrder,
                        atomically . writeTVar peersOrderVar,
-                       demoteCSJDynamoAndIgnoreInflightBlocks)
+                       demoteCSJDynamo)
 
     -- If we want to trace timings, we can do it here after forcing:
     -- _ <- evaluate (force decisions)
@@ -177,16 +176,6 @@ fetchLogicIteration decisionTracer clientStateTracer
       [ blockPoint header
       | headers <- headerss
       , header  <- AF.toOldestFirst headers ]
-
-    demoteCSJDynamoAndIgnoreInflightBlocks peer = do
-      demoteCSJDynamo peer
-      atomically $ do
-        peerStateVars <- readStatePeerStateVars fetchNonTriggerVariables
-        for_ peerStateVars $ \peerStateVar ->
-          modifyTVar (fetchClientInFlightVar peerStateVar) $ \pfif ->
-            pfif { peerFetchBlocksInFlight =
-                     fmap (const (PeerFetchBlockInFlight True)) (peerFetchBlocksInFlight pfif)
-                 }
 
 -- | Do a bit of rearranging of data before calling 'fetchDecisions' to do the
 -- real work.

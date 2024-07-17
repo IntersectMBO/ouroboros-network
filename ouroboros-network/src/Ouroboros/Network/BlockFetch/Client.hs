@@ -26,7 +26,7 @@ import Control.Monad (unless)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 
-import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
 
 import Control.Tracer (traceWith)
 
