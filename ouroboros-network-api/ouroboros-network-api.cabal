@@ -26,6 +26,7 @@ library
                        Ouroboros.Network.Block
                        Ouroboros.Network.Point
 
+                       Ouroboros.Network.BlockFetch.ChainSelStarvation
                        Ouroboros.Network.BlockFetch.ConsensusInterface
 
                        Ouroboros.Network.CodecCBORTerm
