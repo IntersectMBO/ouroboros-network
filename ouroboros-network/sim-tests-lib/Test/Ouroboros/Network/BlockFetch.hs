@@ -373,7 +373,7 @@ tracePropertyClientStateSanity es =
     saneStateValues PeerFetchInFlight {..} status =
         -- Here we know the fixed dummy block size so we know exactly what
         -- the bytes in flight should be.
-           Map.size peerFetchBlocksInFlight * 2000
+           Set.size peerFetchBlocksInFlight * 2000
         == fromIntegral peerFetchBytesInFlight
 
      && case status of
@@ -382,7 +382,7 @@ tracePropertyClientStateSanity es =
           _                      -> False -- not used in this test
 
      && if peerFetchReqsInFlight == 0
-           then Map.null peerFetchBlocksInFlight
+           then Set.null peerFetchBlocksInFlight
            else True
 
 
