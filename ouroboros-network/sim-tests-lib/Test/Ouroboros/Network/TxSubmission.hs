@@ -217,13 +217,14 @@ txSubmissionSimulation
 
      , txid ~ Int
      )
-  => NumTxIdsToAck
+  => NodeToNodeVersion
+  -> NumTxIdsToAck
   -> [Tx txid]
   -> ControlMessageSTM m
   -> Maybe DiffTime
   -> Maybe DiffTime
   -> m ([Tx txid], [Tx txid])
-txSubmissionSimulation maxUnacked outboundTxs
+txSubmissionSimulation version maxUnacked outboundTxs
                        controlMessageSTM
                        inboundDelay outboundDelay = do
 
@@ -261,7 +262,7 @@ txSubmissionSimulation maxUnacked outboundTxs
         nullTracer
         maxUnacked
         (getMempoolReader outboundMempool)
-        NodeToNodeV_7
+        version
         controlMessageSTM
 
     inboundPeer :: Mempool m txid -> TxSubmissionServerPipelined txid (Tx txid) m ()
@@ -271,7 +272,7 @@ txSubmissionSimulation maxUnacked outboundTxs
         maxUnacked
         (getMempoolReader inboundMempool)
         (getMempoolWriter inboundMempool)
-        NodeToNodeV_7
+        version
 
 
 newtype LargeNonEmptyList a = LargeNonEmpty { getLargeNonEmpty :: [a] }
@@ -281,14 +282,31 @@ instance Arbitrary a => Arbitrary (LargeNonEmptyList a) where
     arbitrary =
       LargeNonEmpty <$> suchThat (resize 500 (listOf arbitrary)) ((>25) . length)
 
-prop_txSubmission :: Positive Word16
+newtype ArbNodeToNodeVersion = ArbNodeToNodeVersion NodeToNodeVersion
+  deriving (Eq, Show)
+
+instance Arbitrary ArbNodeToNodeVersion where
+    arbitrary = ArbNodeToNodeVersion <$>
+                oneof [ pure NodeToNodeV_13,
+                        pure NodeToNodeV_14,
+                        pure maxBound
+                      ]
+
+    shrink (ArbNodeToNodeVersion v)
+      | v < NodeToNodeV_14
+      = []
+      | otherwise
+      = [ArbNodeToNodeVersion NodeToNodeV_13]
+
+prop_txSubmission :: ArbNodeToNodeVersion
+                  -> Positive Word16
                   -> NonEmptyList (Tx Int)
                   -> Maybe (Positive SmallDelay)
                   -- ^ The delay must be smaller (<) than 5s, so that overall
                   -- delay is less than 10s, otherwise 'smallDelay' in
                   -- 'timeLimitsTxSubmission2' will kick in.
                   -> Property
-prop_txSubmission (Positive maxUnacked) (NonEmpty outboundTxs) delay =
+prop_txSubmission (ArbNodeToNodeVersion version) (Positive maxUnacked) (NonEmpty outboundTxs) delay =
     let mbDelayTime = getSmallDelay . getPositive <$> delay
         tr = (runSimTrace $ do
             controlMessageVar <- newTVarIO Continue
@@ -299,6 +317,7 @@ prop_txSubmission (Positive maxUnacked) (NonEmpty outboundTxs) delay =
                     * realToFrac (length outboundTxs `div` 4))
                 atomically (writeTVar controlMessageVar Terminate)
             txSubmissionSimulation
+              version
               (NumTxIdsToAck maxUnacked) outboundTxs
               (readTVar controlMessageVar)
               mbDelayTime mbDelayTime

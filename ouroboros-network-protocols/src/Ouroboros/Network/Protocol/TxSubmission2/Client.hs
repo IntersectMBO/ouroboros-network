@@ -59,13 +59,19 @@ data ClientStIdle txid tx m a = ClientStIdle {
                              -> m (ClientStTxIds blocking txid tx m a),
 
     recvMsgRequestTxs        :: [txid]
-                             -> m (ClientStTxs txid tx m a)
+                             -> m (ClientStTxs txid tx m a),
+
+    recvMsgKThxBye           :: a
   }
 
 data ClientStTxIds blocking txid tx m a where
   SendMsgReplyTxIds :: BlockingReplyList blocking (txid, SizeInBytes)
                     -> ClientStIdle           txid tx m a
                     -> ClientStTxIds blocking txid tx m a
+
+  SendMsgReplyTxIdsKThxBye
+                    :: ClientStIdle txid tx m a
+                    -> ClientStTxIds StNonBlocking txid tx m a
 
   -- | In the blocking case, the client can terminate the protocol. This could
   -- be used when the client knows there will be no more transactions to submit.
@@ -90,7 +96,7 @@ txSubmissionClientPeer (TxSubmissionClient client) =
   where
     go :: ClientStIdle txid tx m a
        -> Peer (TxSubmission2 txid tx) AsClient StIdle m a
-    go ClientStIdle {recvMsgRequestTxIds, recvMsgRequestTxs} =
+    go ClientStIdle {recvMsgRequestTxIds, recvMsgRequestTxs, recvMsgKThxBye} =
       Await (ServerAgency TokIdle) $ \msg -> case msg of
         MsgRequestTxIds blocking ackNo reqNo -> Effect $ do
           reply <- recvMsgRequestTxIds blocking ackNo reqNo
@@ -98,6 +104,11 @@ txSubmissionClientPeer (TxSubmissionClient client) =
             SendMsgReplyTxIds txids k ->
               return $ Yield (ClientAgency (TokTxIds blocking))
                              (MsgReplyTxIds txids)
+                             (go k)
+
+            SendMsgReplyTxIdsKThxBye k ->
+              return $ Yield (ClientAgency (TokTxIds blocking))
+                              MsgReplyTxIdsKThxBye
                              (go k)
 
             SendMsgDone result ->
@@ -110,3 +121,6 @@ txSubmissionClientPeer (TxSubmissionClient client) =
           return $ Yield (ClientAgency TokTxs)
                          (MsgReplyTxs txs)
                          (go k)
+
+        MsgKThxBye -> Done TokDone recvMsgKThxBye
+

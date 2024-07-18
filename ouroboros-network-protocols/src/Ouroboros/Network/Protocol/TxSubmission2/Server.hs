@@ -44,7 +44,14 @@ data TxSubmissionServerPipelined txid tx m a where
 data Collect txid tx =
        -- | The result of 'SendMsgRequestTxIdsPipelined'. It also carries
        -- the number of txids originally requested.
+       --
+       -- The boolean flag indicates a request for protocol termination.
+       --
        CollectTxIds NumTxIdsToReq [(txid, SizeInBytes)]
+
+       -- | As the client requested to terminate the protocol.
+       --
+     | CollectTxIdsKThxBye
 
        -- | The result of 'SendMsgRequestTxsPipelined'. The actual reply only
        -- contains the transactions sent, but this pairs them up with the
@@ -79,6 +86,12 @@ data ServerStIdle (n :: N) txid tx m a where
     :: [txid]
     -> m (ServerStIdle (S n) txid tx m a)
     -> ServerStIdle       n  txid tx m a
+
+  -- | Terminate the protocol.
+  --
+  SendMsgKThxBye
+    :: a
+    -> ServerStIdle Z txid tx m a
 
   -- | Collect a pipelined result.
   --
@@ -131,7 +144,9 @@ txSubmissionServerPeerPipelined (TxSubmissionServerPipelined server) =
         (ReceiverAwait (ClientAgency (TokTxIds TokNonBlocking)) $ \msg ->
            case msg of
              MsgReplyTxIds (NonBlockingReply txids) ->
-               ReceiverDone (CollectTxIds reqNo txids))
+               ReceiverDone (CollectTxIds reqNo txids)
+             MsgReplyTxIdsKThxBye ->
+               ReceiverDone CollectTxIdsKThxBye)
         (SenderEffect (go <$> k))
 
     go (SendMsgRequestTxsPipelined txids k) =
@@ -146,5 +161,8 @@ txSubmissionServerPeerPipelined (TxSubmissionServerPipelined server) =
     go (CollectPipelined mNone collect) =
       SenderCollect
         (fmap go mNone)
-        (SenderEffect . fmap go . collect)
+        (SenderEffect . fmap go  .  collect)
+
+    go (SendMsgKThxBye a) = SenderYield (ServerAgency TokIdle) MsgKThxBye
+                          $ SenderDone TokDone a
 

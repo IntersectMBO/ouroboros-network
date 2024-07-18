@@ -9,17 +9,21 @@ txSubmission2Message
     = msgInit
     / msgRequestTxIds
     / msgReplyTxIds
+    / msgReplyTxIdsKThxBye
     / msgRequestTxs
     / msgReplyTxs
     / tsMsgDone
+    / msgKThxBye
 
 
-msgInit         = [6]
-msgRequestTxIds = [0, tsBlocking, txCount, txCount]
-msgReplyTxIds   = [1, [ *txIdAndSize] ]
-msgRequestTxs   = [2, txIdList ]
-msgReplyTxs     = [3, txList ]
-tsMsgDone       = [4]
+msgInit              = [6]
+msgRequestTxIds      = [0, tsBlocking, txCount, txCount]
+msgReplyTxIds        = [1, [ *txIdAndSize] ]
+msgReplyTxIdsKThxBye = [7]
+msgRequestTxs        = [2, txIdList ]
+msgReplyTxs          = [3, txList ]
+tsMsgDone            = [4]
+msgKThxBye           = [5]
 
 tsBlocking      = false / true
 txCount         = word16

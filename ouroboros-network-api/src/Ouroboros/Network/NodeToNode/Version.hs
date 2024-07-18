@@ -68,6 +68,10 @@ data NodeToNodeVersion
     -- * Fixed Codec to disable PeerSharing with buggy versions 11 and 12.
     -- * Disable PeerSharing with InitiatorOnly nodes, since they do not run
     --   peer sharing server side and can not reply to requests.
+    | NodeToNodeV_14
+    -- ^ Changes:
+    --
+    -- * `tx-submission` protocol termination for pipelined requests.
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable, Generic, NFData)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion

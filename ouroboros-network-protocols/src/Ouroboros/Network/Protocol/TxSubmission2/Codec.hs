@@ -131,6 +131,10 @@ encodeTxSubmission2 encodeTxId encodeTx = encode
                    BlockingReply    xs -> NonEmpty.toList xs
                    NonBlockingReply xs -> xs
 
+    encode (ClientAgency (TokTxIds _)) MsgReplyTxIdsKThxBye =
+        CBOR.encodeListLen 1
+     <> CBOR.encodeWord 7
+
     encode (ServerAgency TokIdle) (MsgRequestTxs txids) =
         CBOR.encodeListLen 2
      <> CBOR.encodeWord 2
@@ -146,6 +150,10 @@ encodeTxSubmission2 encodeTxId encodeTx = encode
     encode (ClientAgency (TokTxIds TokBlocking)) MsgDone =
         CBOR.encodeListLen 1
      <> CBOR.encodeWord 4
+
+    encode (ServerAgency TokIdle) MsgKThxBye =
+        CBOR.encodeListLen 1
+     <> CBOR.encodeWord 5
 
 
 decodeTxSubmission2
@@ -197,6 +205,8 @@ decodeTxSubmission2 decodeTxId decodeTx = decode
             (TokBlocking, []) ->
               fail "codecTxSubmission: MsgReplyTxIds: empty list not permitted"
 
+        (ClientAgency (TokTxIds TokNonBlocking), 1, 7) ->
+          return (SomeMessage MsgReplyTxIdsKThxBye)
 
         (ServerAgency TokIdle,       2, 2) -> do
           CBOR.decodeListLenIndef
@@ -210,6 +220,9 @@ decodeTxSubmission2 decodeTxId decodeTx = decode
 
         (ClientAgency (TokTxIds TokBlocking), 1, 4) ->
           return (SomeMessage MsgDone)
+
+        (ServerAgency TokIdle, 1, 5) ->
+          return (SomeMessage MsgKThxBye)
 
         --
         -- failures per protocol state
@@ -245,10 +258,12 @@ codecTxSubmission2Id = Codec { encode, decode }
     (ClientAgency TokInit,      Just (AnyMessage msg@MsgInit))              -> DecodeDone (SomeMessage msg) Nothing
     (ServerAgency TokIdle,      Just (AnyMessage msg@(MsgRequestTxIds {}))) -> DecodeDone (SomeMessage msg) Nothing
     (ServerAgency TokIdle,      Just (AnyMessage msg@(MsgRequestTxs {})))   -> DecodeDone (SomeMessage msg) Nothing
+    (ServerAgency TokIdle,      Just (AnyMessage msg@MsgKThxBye))           -> DecodeDone (SomeMessage msg) Nothing
     (ClientAgency TokTxs,       Just (AnyMessage msg@(MsgReplyTxs {})))     -> DecodeDone (SomeMessage msg) Nothing
     (ClientAgency (TokTxIds b), Just (AnyMessage msg)) -> case (b, msg) of
       (TokBlocking,    MsgReplyTxIds (BlockingReply {}))    -> DecodeDone (SomeMessage msg) Nothing
       (TokNonBlocking, MsgReplyTxIds (NonBlockingReply {})) -> DecodeDone (SomeMessage msg) Nothing
+      (TokNonBlocking, MsgReplyTxIdsKThxBye {})             -> DecodeDone (SomeMessage msg) Nothing
       (TokBlocking,    MsgDone {})                          -> DecodeDone (SomeMessage msg) Nothing
       (_, _) -> DecodeFail (CodecFailure "codecTxSubmissionId: no matching message")
     (_, _) -> DecodeFail (CodecFailure "codecTxSubmissionId: no matching message")

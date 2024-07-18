@@ -157,7 +157,12 @@ data ServerState txid tx = ServerState {
        -- for more transactions. The number here have already been removed from
        -- 'unacknowledgedTxIds'.
        --
-       numTxsToAcknowledge    :: !Word16
+       numTxsToAcknowledge    :: !Word16,
+
+       -- | The client requested termination of the mini-protocol via
+       -- `MsgReplyTxIdsKThxBye`.
+       --
+       kThxByeTermination     :: !Bool
      }
   deriving (Show, Generic)
 
@@ -166,7 +171,7 @@ instance ( NoThunks txid
          ) => NoThunks (ServerState txid tx)
 
 initialServerState :: ServerState txid tx
-initialServerState = ServerState 0 Seq.empty Map.empty Map.empty 0
+initialServerState = ServerState 0 Seq.empty Map.empty Map.empty 0 False
 
 
 txSubmissionInbound
@@ -204,7 +209,10 @@ txSubmissionInbound tracer (NumTxIdsToAck maxUnacked) mpReader mpWriter _version
                   Nat n
                -> StatefulM (ServerState txid tx) n txid tx m
     serverIdle n = StatefulM $ \st -> case n of
-        Zero -> do
+        Zero | kThxByeTermination st -> do
+          pure $ SendMsgKThxBye ()
+
+             | otherwise -> do
           if canRequestMoreTxs st
           then do
             -- There are no replies in flight, but we do know some more txs we
@@ -236,7 +244,8 @@ txSubmissionInbound tracer (NumTxIdsToAck maxUnacked) mpReader mpWriter _version
                 . CollectTxIds (NumTxIdsToReq numTxIdsToRequest)
                 . NonEmpty.toList)
 
-        Succ n' -> if canRequestMoreTxs st
+        Succ n' -> if not (kThxByeTermination st)
+                   && canRequestMoreTxs st
           then do
             -- We have replies in flight and we should eagerly collect them if
             -- available, but there are transactions to request too so we
@@ -295,6 +304,9 @@ txSubmissionInbound tracer (NumTxIdsToAck maxUnacked) mpReader mpWriter _version
         continueWithStateM
           (serverIdle n)
           (acknowledgeTxIds st' txidsSeq txidsMap mpSnapshot)
+
+      CollectTxIdsKThxBye ->
+        continueWithStateM (serverIdle n) st { kThxByeTermination = True }
 
       CollectTxs txids txs -> do
         -- To start with we have to verify that the txs they have sent us do

@@ -68,7 +68,7 @@ txSubmissionClient tracer txId txSize maxUnacked =
     client :: StrictSeq txid -> Map txid tx -> [tx] -> ClientStIdle txid tx m ()
     client !unackedSeq !unackedMap remainingTxs =
         assert invariant
-        ClientStIdle { recvMsgRequestTxIds, recvMsgRequestTxs }
+        ClientStIdle { recvMsgRequestTxIds, recvMsgRequestTxs, recvMsgKThxBye = () }
       where
         -- The entries in the unackedMap are a subset of those in the
         -- unackedSeq. The sequence is all of them, whereas we remove
@@ -212,6 +212,9 @@ initialServerState = ServerState 0 Seq.empty Map.empty Map.empty 0
 -- Note that this example does not respect any overall byte limit on pipelining
 -- and does not make any delta-Q info to optimises the pipelining decisions.
 --
+-- NOTE: this server implemntation doesn't handle `MsgReplyTxIdsKThxBye`, it
+-- just ignores it - which means it violates the protocol.
+--
 txSubmissionServer
   :: forall txid tx m.
      (Ord txid, Monad m)
@@ -302,6 +305,9 @@ txSubmissionServer tracer txId maxUnacked maxTxIdsToRequest maxTxToRequest =
         availableTxids         = availableTxids st
                               <> Map.fromList txids
       }
+
+    handleReply accum n st CollectTxIdsKThxBye =
+      return $ serverIdle accum n st
 
     handleReply accum n st (CollectTxs txids txs) =
       -- When we receive a batch of transactions, in general we get a subset of

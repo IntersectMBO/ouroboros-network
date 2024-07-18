@@ -173,7 +173,7 @@ instance Protocol (TxSubmission2 txid tx) where
     -- | Request a non-empty list of transaction identifiers from the client,
     -- and confirm a number of outstanding transaction identifiers.
     --
-    -- With 'TokBlocking' this is a a blocking operation: the response will
+    -- With 'TokBlocking' this is a blocking operation: the response will
     -- always have at least one transaction identifier, and it does not expect
     -- a prompt response: there is no timeout. This covers the case when there
     -- is nothing else to do but wait. For example this covers leaf nodes that
@@ -233,6 +233,22 @@ instance Protocol (TxSubmission2 txid tx) where
       :: BlockingReplyList blocking (txid, TxSizeInBytes)
       -> Message (TxSubmission2 txid tx) (StTxIds blocking) StIdle
 
+    -- | A reply, which indicates that the server side should send `MsgKThxBye`
+    -- as soon as possible, terminating the protocol.
+    --
+    -- The client cannot expect that the `MsgKThxBye` will be the next message,
+    -- as there might already be some requests inflight.  Hover the client
+    -- might have a timeout which will terminate the connection if the server
+    -- hasn't terminated the protocol in a timely manner.  Such a timer is
+    -- implemented in the outbound governor in ouroboros-network.
+    --
+    -- The client might reply with all outstanding `MsgReplyTxIds` with
+    -- `MsgReplyTxIdsKThxBye`, but it should still ohnestly reply to
+    -- `MsgRequestTxs`.
+    --
+    MsgReplyTxIdsKThxBye
+      :: Message (TxSubmission2 txid tx) (StTxIds StNonBlocking) StIdle
+
     -- | Request one or more transactions corresponding to the given
     -- transaction identifiers.
     --
@@ -270,6 +286,13 @@ instance Protocol (TxSubmission2 txid tx) where
     --
     MsgDone
       :: Message (TxSubmission2 txid tx) (StTxIds StBlocking) StDone
+
+    -- | Termination message, initiated by the server.  Sending this message,
+    -- without receiving `MsgReplyTxIdsDone` before is a protocol violation.
+    --
+    MsgKThxBye
+      :: Message (TxSubmission2 txid tx) StIdle StDone
+
 
 
   data ClientHasAgency st where
@@ -310,9 +333,11 @@ instance ( NFData txid
   rnf MsgInit                      = ()
   rnf (MsgRequestTxIds tkbs w1 w2) = rnf tkbs `seq` rnf w1 `seq` rnf w2
   rnf (MsgReplyTxIds brl)          = rnf brl
+  rnf MsgReplyTxIdsKThxBye         = ()
   rnf (MsgRequestTxs txids)        = rnf txids
   rnf (MsgReplyTxs txs)            = rnf txs
   rnf MsgDone                      = ()
+  rnf MsgKThxBye                   = ()
 
 -- | The value level equivalent of 'StBlockingStyle'.
 --

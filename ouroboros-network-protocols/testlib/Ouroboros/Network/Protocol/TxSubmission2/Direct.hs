@@ -47,6 +47,9 @@ directPipelined (TxSubmissionServerPipelined mserver)
         SendMsgReplyTxIds (NonBlockingReply txids) client' -> do
           server' <- serverNext
           directSender (enqueue (CollectTxIds reqNo txids) q) server' client'
+        SendMsgReplyTxIdsKThxBye client' -> do
+          server' <- serverNext
+          directSender (enqueue CollectTxIdsKThxBye q) server' client'
 
     directSender q (SendMsgRequestTxsPipelined txids serverNext)
                    ClientStIdle{recvMsgRequestTxs} = do
@@ -60,3 +63,6 @@ directPipelined (TxSubmissionServerPipelined mserver)
     directSender (ConsQ c q) (CollectPipelined _ collect) client = do
       server' <- collect c
       directSender q server' client
+
+    directSender EmptyQ (SendMsgKThxBye a) ClientStIdle{recvMsgKThxBye} =
+      return (a, recvMsgKThxBye)

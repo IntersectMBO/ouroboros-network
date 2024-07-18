@@ -267,6 +267,9 @@ instance Arbitrary (AnyMessageAndAgency (TxSubmission2 TxId Tx)) where
                                        <$> arbitrary)
 
     , AnyMessageAndAgency (ClientAgency (TokTxIds TokNonBlocking)) <$>
+        pure MsgReplyTxIdsKThxBye
+
+    , AnyMessageAndAgency (ClientAgency (TokTxIds TokNonBlocking)) <$>
         MsgReplyTxIds <$> (NonBlockingReply . map (second SizeInBytes) <$> arbitrary)
 
     , AnyMessageAndAgency (ServerAgency TokIdle) <$>
@@ -277,6 +280,9 @@ instance Arbitrary (AnyMessageAndAgency (TxSubmission2 TxId Tx)) where
 
     , AnyMessageAndAgency (ClientAgency (TokTxIds TokBlocking)) <$>
         pure MsgDone
+
+    , AnyMessageAndAgency (ServerAgency TokIdle) <$>
+        pure MsgKThxBye
     ]
 
 instance (Eq txid, Eq tx) => Eq (AnyMessage (TxSubmission2 txid tx)) where
@@ -296,6 +302,9 @@ instance (Eq txid, Eq tx) => Eq (AnyMessage (TxSubmission2 txid tx)) where
        (AnyMessage (MsgReplyTxIds (BlockingReply txids'))) =
     txids == txids'
 
+  (==) (AnyMessage MsgReplyTxIdsKThxBye)
+       (AnyMessage MsgReplyTxIdsKThxBye) = True
+
   (==) (AnyMessage (MsgReplyTxIds (NonBlockingReply txids)))
        (AnyMessage (MsgReplyTxIds (NonBlockingReply txids'))) =
     txids == txids'
@@ -308,6 +317,9 @@ instance (Eq txid, Eq tx) => Eq (AnyMessage (TxSubmission2 txid tx)) where
 
   (==) (AnyMessage MsgDone)
        (AnyMessage MsgDone) = True
+
+  (==) (AnyMessage MsgKThxBye)
+       (AnyMessage MsgKThxBye) = True
 
   _ == _ = False
 
@@ -391,4 +403,3 @@ instance (Eq a, Arbitrary a) => Arbitrary (DistinctList a) where
 
   shrink (DistinctList xs) =
     [ DistinctList (nub xs') | xs' <- shrink xs ]
-

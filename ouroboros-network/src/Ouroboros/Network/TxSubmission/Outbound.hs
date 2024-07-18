@@ -22,9 +22,9 @@ import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
 import Control.Tracer (Tracer, traceWith)
 
-import Ouroboros.Network.ControlMessage (ControlMessage, ControlMessageSTM,
+import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM,
            timeoutWithControlMessage)
-import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
+import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion (NodeToNodeV_14))
 import Ouroboros.Network.Protocol.TxSubmission2.Client
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
@@ -83,12 +83,15 @@ txSubmissionOutbound
   -> NodeToNodeVersion
   -> ControlMessageSTM m
   -> TxSubmissionClient txid tx m ()
-txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version controlMessageSTM =
+txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} version controlMessageSTM =
     TxSubmissionClient (pure (client Seq.empty mempoolZeroIdx))
   where
     client :: StrictSeq (txid, idx) -> idx -> ClientStIdle txid tx m ()
     client !unackedSeq !lastIdx =
-        ClientStIdle { recvMsgRequestTxIds, recvMsgRequestTxs }
+        ClientStIdle { recvMsgRequestTxIds,
+                       recvMsgRequestTxs,
+                       recvMsgKThxBye = ()
+                     }
       where
         recvMsgRequestTxIds :: forall blocking.
                                TokBlockingStyle blocking
@@ -157,13 +160,19 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
               when (Seq.null unackedSeq') $
                 throwIO ProtocolErrorRequestNonBlocking
 
-              txs <- atomically $ do
+              (txs, ctrlMsg) <- atomically $ do
                 MempoolSnapshot{mempoolTxIdsAfter} <- mempoolGetSnapshot
                 let txs = mempoolTxIdsAfter lastIdx
-                return (take (fromIntegral reqNo) txs)
+                ctrlMsg <- controlMessageSTM
+                return (take (fromIntegral reqNo) txs, ctrlMsg)
 
-              let !(txs', client') = update txs
-              pure (SendMsgReplyTxIds (NonBlockingReply txs') client')
+              case ctrlMsg of
+                Terminate | version >= NodeToNodeV_14 -> do
+                  let client' = client unackedSeq' lastIdx
+                  pure (SendMsgReplyTxIdsKThxBye client')
+                _ ->  do
+                  let (txs', client') = update txs
+                  pure (SendMsgReplyTxIds (NonBlockingReply txs') client')
 
         recvMsgRequestTxs :: [txid]
                           -> m (ClientStTxs txid tx m ())
