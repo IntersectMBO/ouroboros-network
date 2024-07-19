@@ -3,6 +3,7 @@
 ## Next version
 
 * Make it build with ghc-9.10
+  * fix base upper bound
 
 ## 0.1.0.0 -- 2024-06-07
 
