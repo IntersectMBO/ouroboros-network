@@ -132,10 +132,8 @@
 -- introduction of an objective criterium, which the gross request provides.
 --
 -- If the gross request is included in a peer's candidate, it means that this
--- peer can serve at least the first 20 mebibytes of the blocks that we wish to
--- fetch. The actual request might be smaller than that, depending on the actual
--- in-flight limits, but it might also be bigger because the peer can have more
--- blocks than just those.
+-- peer can serve at least 1 block that we wish to fetch. The actual request might
+-- be bigger than that because the peer can have more blocks.
 --
 module Ouroboros.Network.BlockFetch.Decision.BulkSync (
   fetchDecisionsBulkSyncM
@@ -363,7 +361,6 @@ fetchDecisionsBulkSync
       ) <-
       MaybeT $
         selectThePeer
-          fetchDecisionPolicy
           peersOrder
           mCurrentPeer
           theFragments
@@ -445,7 +442,6 @@ selectThePeer ::
   ( HasHeader header,
     Eq peer
   ) =>
-  FetchDecisionPolicy header ->
   PeersOrder peer ->
   -- | The current peer
   Maybe (PeerInfo header peer extra) ->
@@ -459,26 +455,17 @@ selectThePeer ::
     (PeerInfo header peer extra)
     (Maybe (ChainSuffix header, PeerInfo header peer extra))
 selectThePeer
-  FetchDecisionPolicy {blockFetchSize}
   peersOrder
   mCurrentPeer
   theFragments
   candidates = do
-    -- Create a fetch request for the blocks in question. The request is made to
-    -- fit in 20 mebibytes but ignores everything else. It is gross in that
-    -- sense. It will only be used to choose the peer to fetch from, but we will
+    -- Create a fetch request for the blocks in question. The request has exactly
+    -- 1 block. It will only be used to choose the peer to fetch from, but we will
     -- later craft a more refined request for that peer. See [About the gross
     -- request] in the module documentation. Because @theFragments@ is not
     -- empty, @grossRequest@ will not be empty.
-    let (grossRequest :: FetchDecision (FetchRequest header)) =
-          selectBlocksUpToLimits
-            blockFetchSize
-            0 -- number of request in flight
-            maxBound -- maximum number of requests in flight
-            0 -- bytes in flight
-            (20 * 1024 * 1024) -- maximum bytes in flight; 20 mebibyte
-            . snd
-            <$> theFragments
+    let firstBlock = FetchRequest . map (AF.takeOldest 1) . take 1 . filter (not . AF.null)
+        (grossRequest :: FetchDecision (FetchRequest header)) = firstBlock . snd <$> theFragments
 
     -- If there is a current peer, then that is the one we choose. Otherwise, we
     -- can choose any peer, so we choose a “good” one.
