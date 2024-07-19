@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
@@ -7,6 +8,7 @@
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE QuantifiedConstraints      #-}
 {-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -17,6 +19,7 @@ module Ouroboros.Network.Protocol.TxSubmission2.Test
   , TxId (..)
   ) where
 
+import Data.Bifunctor (second)
 import Data.ByteString.Lazy (ByteString)
 import Data.List (nub)
 import Data.List.NonEmpty qualified as NonEmpty
@@ -240,6 +243,10 @@ prop_pipe_IO params =
     ioProperty (prop_channel createPipeConnectedChannels params)
 
 
+deriving newtype instance Arbitrary NumTxIdsToAck
+deriving newtype instance Arbitrary NumTxIdsToReq
+
+
 instance Arbitrary (AnyMessageAndAgency (TxSubmission2 TxId Tx)) where
   arbitrary = oneof
     [ pure $ AnyMessageAndAgency (ClientAgency TokInit) MsgInit
@@ -255,11 +262,12 @@ instance Arbitrary (AnyMessageAndAgency (TxSubmission2 TxId Tx)) where
 
     , AnyMessageAndAgency (ClientAgency (TokTxIds TokBlocking)) <$>
         MsgReplyTxIds <$> (BlockingReply . NonEmpty.fromList
+                                         . map (second SizeInBytes)
                                          . QC.getNonEmpty
                                        <$> arbitrary)
 
     , AnyMessageAndAgency (ClientAgency (TokTxIds TokNonBlocking)) <$>
-        MsgReplyTxIds <$> (NonBlockingReply <$> arbitrary)
+        MsgReplyTxIds <$> (NonBlockingReply . map (second SizeInBytes) <$> arbitrary)
 
     , AnyMessageAndAgency (ServerAgency TokIdle) <$>
         MsgRequestTxs <$> arbitrary

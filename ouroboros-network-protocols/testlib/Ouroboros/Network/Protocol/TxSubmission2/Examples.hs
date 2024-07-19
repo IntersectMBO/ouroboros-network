@@ -30,6 +30,7 @@ import Network.TypedProtocol.Pipelined (N, Nat (..))
 
 import Ouroboros.Network.Protocol.TxSubmission2.Client
 import Ouroboros.Network.Protocol.TxSubmission2.Server
+import Ouroboros.Network.Protocol.TxSubmission2.Type
 
 
 --
@@ -37,7 +38,7 @@ import Ouroboros.Network.Protocol.TxSubmission2.Server
 --
 
 data TraceEventClient txid tx =
-     EventRecvMsgRequestTxIds (StrictSeq txid) (Map txid tx) [tx] Word16 Word16
+     EventRecvMsgRequestTxIds (StrictSeq txid) (Map txid tx) [tx] NumTxIdsToAck NumTxIdsToReq
    | EventRecvMsgRequestTxs   (StrictSeq txid) (Map txid tx) [tx] [txid]
   deriving Show
 
@@ -57,7 +58,7 @@ txSubmissionClient
      (Ord txid, Show txid, Monad m)
   => Tracer m (TraceEventClient txid tx)
   -> (tx -> txid)
-  -> (tx -> TxSizeInBytes)
+  -> (tx -> SizeInBytes)
   -> Word16  -- ^ Maximum number of unacknowledged txids allowed
   -> [tx]
   -> TxSubmissionClient txid tx m ()
@@ -81,8 +82,8 @@ txSubmissionClient tracer txId txSize maxUnacked =
 
         recvMsgRequestTxIds :: forall blocking.
                                TokBlockingStyle blocking
-                            -> Word16
-                            -> Word16
+                            -> NumTxIdsToAck
+                            -> NumTxIdsToReq
                             -> m (ClientStTxIds blocking txid tx m ())
         recvMsgRequestTxIds blocking ackNo reqNo = do
           traceWith tracer (EventRecvMsgRequestTxIds unackedSeq unackedMap
@@ -92,8 +93,8 @@ txSubmissionClient tracer txId txSize maxUnacked =
                  ++ "peer acknowledged more txids than possible"
 
           when (  fromIntegral (Seq.length unackedSeq)
-                - ackNo
-                + fromIntegral reqNo
+                - getNumTxIdsToAck ackNo
+                + getNumTxIdsToReq reqNo
                 > maxUnacked) $
             error $ "txSubmissionClientConst.recvMsgRequestTxIds: "
                  ++ "peer requested more txids than permitted"
@@ -157,8 +158,8 @@ txSubmissionClient tracer txId txSize maxUnacked =
 --
 
 data TraceEventServer txid tx =
-     EventRequestTxIdsBlocking  (ServerState txid tx) Word16 Word16
-   | EventRequestTxIdsPipelined (ServerState txid tx) Word16 Word16
+     EventRequestTxIdsBlocking  (ServerState txid tx) NumTxIdsToAck NumTxIdsToReq
+   | EventRequestTxIdsPipelined (ServerState txid tx) NumTxIdsToAck NumTxIdsToReq
    | EventRequestTxsPipelined   (ServerState txid tx) [txid]
 
 deriving instance (Show txid, Show tx) => Show (TraceEventServer txid tx)
@@ -168,7 +169,7 @@ data ServerState txid tx = ServerState {
        -- which have not yet been replied to. We need to track this it keep
        -- our requests within the limit on the number of unacknowledged txids.
        --
-       requestedTxIdsInFlight :: Word16,
+       requestedTxIdsInFlight :: NumTxIdsToReq,
 
        -- | Those transactions (by their identifier) that the client has told
        -- us about, and which we have not yet acknowledged. This is kept in
@@ -182,7 +183,7 @@ data ServerState txid tx = ServerState {
        -- requested. This is not ordered to illustrate the fact that we can
        -- request txs out of order. We also remember the sizes, though this
        -- example does not make use of the size information.
-       availableTxids         :: Map txid TxSizeInBytes,
+       availableTxids         :: Map txid SizeInBytes,
 
        -- | Transactions we have successfully downloaded but have not yet added
        -- to the mempool or acknowledged. This is needed because we request
@@ -195,7 +196,7 @@ data ServerState txid tx = ServerState {
        -- for more transactions. The number here have already been removed from
        -- 'unacknowledgedTxIds'.
        --
-       numTxsToAcknowledge    :: Word16
+       numTxsToAcknowledge    :: NumTxIdsToAck
      }
   deriving Show
 
@@ -238,7 +239,7 @@ txSubmissionServer tracer txId maxUnacked maxTxIdsToRequest maxTxToRequest =
         -- so the only remaining thing to do is to ask for more txids. Since
         -- this is the only thing to do now, we make this a blocking call.
       | otherwise
-      , let numTxIdsToRequest = maxTxIdsToRequest `min` maxUnacked
+      , let numTxIdsToRequest = NumTxIdsToReq $ maxTxIdsToRequest `min` maxUnacked
       = assert (requestedTxIdsInFlight st == 0
              && Seq.null (unacknowledgedTxIds st)
              && Map.null (availableTxids st)
@@ -389,7 +390,8 @@ txSubmissionServer tracer txId maxUnacked maxTxIdsToRequest maxTxToRequest =
         -- This definition is justified by the fact that the
         -- 'numTxsToAcknowledge' are not included in the 'unacknowledgedTxIds'.
         numTxIdsToRequest =
+          NumTxIdsToReq $
                 (maxUnacked
                   - fromIntegral (Seq.length (unacknowledgedTxIds st))
-                  - requestedTxIdsInFlight st)
+                  - getNumTxIdsToReq (requestedTxIdsInFlight st))
           `min` maxTxIdsToRequest

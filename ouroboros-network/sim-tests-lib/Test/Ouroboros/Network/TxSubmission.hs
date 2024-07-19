@@ -73,7 +73,7 @@ tests = testGroup "TxSubmission"
 
 data Tx txid = Tx {
     getTxId    :: txid,
-    getTxSize  :: TxSizeInBytes,
+    getTxSize  :: SizeInBytes,
     -- | If false this means that when this tx will be submitted to a remote
     -- mempool it will not be valid.  The outbound mempool might contain
     -- invalid tx's in this sense.
@@ -88,10 +88,20 @@ instance ShowProxy txid => ShowProxy (Tx txid) where
 instance Arbitrary txid => Arbitrary (Tx txid) where
     arbitrary =
       Tx <$> arbitrary
-         <*> arbitrary
+         <*> chooseEnum (0, maxTxSize)
+             -- note:
+             -- generating small tx sizes avoids overflow error when semigroup
+             -- instance of `SizeInBytes` is used (summing up all inflight tx
+             -- sizes).
          <*> frequency [ (3, pure True)
                        , (1, pure False)
                        ]
+
+
+-- maximal tx size
+maxTxSize :: SizeInBytes
+maxTxSize = 65536
+
 
 newtype Mempool m txid = Mempool (TVar m (Seq (Tx txid)))
 
@@ -109,7 +119,7 @@ newMempool = fmap Mempool
            . Seq.fromList
 
 readMempool :: MonadSTM m => Mempool m txid -> m [Tx txid]
-readMempool (Mempool mempool) = toList <$> atomically (readTVar mempool)
+readMempool (Mempool mempool) = toList <$> readTVarIO mempool
 
 
 getMempoolReader :: forall txid m.
@@ -136,7 +146,7 @@ getMempoolReader (Mempool mempool) =
           mempoolHasTx      = \txid -> isJust $ find (\tx -> getTxId tx == txid) seq
        }
 
-    f :: Int -> Tx txid -> (txid, Int, TxSizeInBytes)
+    f :: Int -> Tx txid -> (txid, Int, SizeInBytes)
     f idx Tx {getTxId, getTxSize} = (getTxId, idx, getTxSize)
 
 
@@ -177,13 +187,13 @@ txSubmissionCodec2 =
     encodeTx Tx {getTxId, getTxSize, getTxValid} =
          CBOR.encodeListLen 3
       <> CBOR.encodeInt getTxId
-      <> CBOR.encodeWord32 getTxSize
+      <> CBOR.encodeWord32 (getSizeInBytes getTxSize)
       <> CBOR.encodeBool getTxValid
 
     decodeTx = do
       _ <- CBOR.decodeListLen
       Tx <$> CBOR.decodeInt
-         <*> CBOR.decodeWord32
+         <*> (SizeInBytes <$> CBOR.decodeWord32)
          <*> CBOR.decodeBool
 
 
@@ -207,7 +217,7 @@ txSubmissionSimulation
 
      , txid ~ Int
      )
-  => Word16
+  => NumTxIdsToAck
   -> [Tx txid]
   -> ControlMessageSTM m
   -> Maybe DiffTime
@@ -226,7 +236,7 @@ txSubmissionSimulation maxUnacked outboundTxs
                 txSubmissionCodec2
                 (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
                 timeLimitsTxSubmission2
-                (fromMaybe id (delayChannel <$> outboundDelay) outboundChannel)
+                (maybe id delayChannel outboundDelay outboundChannel)
                 (txSubmissionClientPeer (outboundPeer outboundMempool))
 
     inboundAsync <-
@@ -235,7 +245,7 @@ txSubmissionSimulation maxUnacked outboundTxs
                 txSubmissionCodec2
                 (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
                 timeLimitsTxSubmission2
-                (fromMaybe id (delayChannel <$> inboundDelay) inboundChannel)
+                (maybe id delayChannel inboundDelay inboundChannel)
                 (txSubmissionServerPeerPipelined (inboundPeer inboundMempool))
 
     _ <- waitAnyCancel [ outboundAsync, inboundAsync ]
@@ -289,7 +299,7 @@ prop_txSubmission (Positive maxUnacked) (NonEmpty outboundTxs) delay =
                     * realToFrac (length outboundTxs `div` 4))
                 atomically (writeTVar controlMessageVar Terminate)
             txSubmissionSimulation
-              maxUnacked outboundTxs
+              (NumTxIdsToAck maxUnacked) outboundTxs
               (readTVar controlMessageVar)
               mbDelayTime mbDelayTime
             ) in

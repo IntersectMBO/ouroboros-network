@@ -6,7 +6,10 @@
 
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
-module Test.Ouroboros.Network.BlockFetch (tests) where
+module Test.Ouroboros.Network.BlockFetch
+  ( PeerGSVT (..)
+  , tests
+  ) where
 
 import Test.ChainGenerators (TestChainFork (..))
 import Test.QuickCheck
@@ -798,6 +801,8 @@ prop_terminate (TestChainFork _commonChain forkChain _forkChain) (Positive (Smal
 
     fork'  = chainToAnchoredFragment forkChain
 
+-- TODO: moved to some shared place (cannot be moved to
+-- `ouroboros-network-testing` which doesn't depend on `ouroboros-network`)
 newtype PeerGSVT = PeerGSVT {
       unPeerGSVT :: PeerGSV
     } deriving Show

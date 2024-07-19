@@ -27,8 +27,6 @@ module Ouroboros.Network.Protocol.TxSubmission2.Client
   , txSubmissionClientPeer
   ) where
 
-import Data.Word (Word16)
-
 import Network.TypedProtocol.Core
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type
@@ -56,8 +54,8 @@ data ClientStIdle txid tx m a = ClientStIdle {
 
     recvMsgRequestTxIds      :: forall blocking.
                                 TokBlockingStyle blocking
-                             -> Word16
-                             -> Word16
+                             -> NumTxIdsToAck
+                             -> NumTxIdsToReq
                              -> m (ClientStTxIds blocking txid tx m a),
 
     recvMsgRequestTxs        :: [txid]
@@ -65,7 +63,7 @@ data ClientStIdle txid tx m a = ClientStIdle {
   }
 
 data ClientStTxIds blocking txid tx m a where
-  SendMsgReplyTxIds :: BlockingReplyList blocking (txid, TxSizeInBytes)
+  SendMsgReplyTxIds :: BlockingReplyList blocking (txid, SizeInBytes)
                     -> ClientStIdle           txid tx m a
                     -> ClientStTxIds blocking txid tx m a
 

@@ -6,8 +6,7 @@ module Ouroboros.Network.TxSubmission.Mempool.Reader
   ) where
 
 import Control.Monad.Class.MonadSTM (MonadSTM, STM)
-
-import Ouroboros.Network.Protocol.TxSubmission2.Client (TxSizeInBytes)
+import Ouroboros.Network.SizeInBytes (SizeInBytes)
 
 -- | The consensus layer functionality that the inbound and outbound side of
 -- the tx submission logic requires.
@@ -53,7 +52,7 @@ mapTxSubmissionMempoolReader f rdr =
 --
 data MempoolSnapshot txid tx idx =
      MempoolSnapshot {
-       mempoolTxIdsAfter :: idx -> [(txid, idx, TxSizeInBytes)],
+       mempoolTxIdsAfter :: idx -> [(txid, idx, SizeInBytes)],
        mempoolLookupTx   :: idx -> Maybe tx,
        mempoolHasTx      :: txid -> Bool
      }

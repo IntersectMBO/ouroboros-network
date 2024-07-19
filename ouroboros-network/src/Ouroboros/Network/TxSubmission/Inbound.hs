@@ -40,6 +40,7 @@ import Network.TypedProtocol.Pipelined (N, Nat (..), natToInt)
 
 import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import Ouroboros.Network.Protocol.TxSubmission2.Server
+import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
            TxSubmissionMempoolReader (..))
 
@@ -118,7 +119,7 @@ data ServerState txid tx = ServerState {
        -- are a subset of the 'unacknowledgedTxIds' that we have not yet
        -- requested. This is not ordered to illustrate the fact that we can
        -- request txs out of order. We also remember the size.
-       availableTxids         :: !(Map txid TxSizeInBytes),
+       availableTxids         :: !(Map txid SizeInBytes),
 
        -- | Transactions we have successfully downloaded but have not yet added
        -- to the mempool or acknowledged. This needed because we can request
@@ -177,17 +178,17 @@ txSubmissionInbound
      , MonadThrow m
      )
   => Tracer m (TraceTxSubmissionInbound txid tx)
-  -> Word16         -- ^ Maximum number of unacknowledged txids allowed
+  -> NumTxIdsToAck  -- ^ Maximum number of unacknowledged txids allowed
   -> TxSubmissionMempoolReader txid tx idx m
   -> TxSubmissionMempoolWriter txid tx idx m
   -> NodeToNodeVersion
   -> TxSubmissionServerPipelined txid tx m ()
-txSubmissionInbound tracer maxUnacked mpReader mpWriter _version =
+txSubmissionInbound tracer (NumTxIdsToAck maxUnacked) mpReader mpWriter _version =
     TxSubmissionServerPipelined $
       continueWithStateM (serverIdle Zero) initialServerState
   where
     -- TODO #1656: replace these fixed limits by policies based on
-    -- TxSizeInBytes and delta-Q and the bandwidth/delay product.
+    -- SizeInBytes and delta-Q and the bandwidth/delay product.
     -- These numbers are for demo purposes only, the throughput will be low.
     maxTxIdsToRequest = 3 :: Word16
     maxTxToRequest    = 2 :: Word16
@@ -224,15 +225,15 @@ txSubmissionInbound tracer maxUnacked mpReader mpWriter _version =
                   && Map.null (bufferedTxs st)) $
               pure $
               SendMsgRequestTxIdsBlocking
-                (numTxsToAcknowledge st)
-                numTxIdsToRequest
+                (NumTxIdsToAck (numTxsToAcknowledge st))
+                (NumTxIdsToReq numTxIdsToRequest)
                 -- Our result if the client terminates the protocol
                 (traceWith tracer TraceTxInboundTerminated)
                 ( collectAndContinueWithState (handleReply Zero) st {
                     numTxsToAcknowledge    = 0,
                     requestedTxIdsInFlight = numTxIdsToRequest
                   }
-                . CollectTxIds numTxIdsToRequest
+                . CollectTxIds (NumTxIdsToReq numTxIdsToRequest)
                 . NonEmpty.toList)
 
         Succ n' -> if canRequestMoreTxs st
@@ -270,7 +271,7 @@ txSubmissionInbound tracer maxUnacked mpReader mpWriter _version =
                    Nat n
                 -> StatefulCollect (ServerState txid tx) n txid tx m
     handleReply n = StatefulCollect $ \st collect -> case collect of
-      CollectTxIds reqNo txids -> do
+      CollectTxIds (NumTxIdsToReq reqNo) txids -> do
         -- Check they didn't send more than we asked for. We don't need to
         -- check for a minimum: the blocking case checks for non-zero
         -- elsewhere, and for the non-blocking case it is quite normal for
@@ -342,12 +343,13 @@ txSubmissionInbound tracer maxUnacked mpReader mpWriter _version =
             bufferedTxs2 = Foldable.foldl' (flip Map.delete)
                                    bufferedTxs1 acknowledgedTxIds
 
-            -- If we are acknowleding transactions that are still in unacknowledgedTxIds'
-            -- we need to re-add them so that we also can acknowledge them again later.
-            -- This will happen incase of duplicate txids within the same window.
+            -- If we are acknowledging transactions that are still in
+            -- unacknowledgedTxIds' we need to re-add them so that we also can
+            -- acknowledge them again later. This will happen in case of
+            -- duplicate txids within the same window.
             live = filter (`elem` unacknowledgedTxIds') $ toList acknowledgedTxIds
             bufferedTxs3 = forceElemsToWHNF $ bufferedTxs2 <>
-                               (Map.fromList (zip live (repeat Nothing)))
+                               Map.fromList (zip live (repeat Nothing))
 
         let !collected = length txs
         traceWith tracer $
@@ -378,7 +380,7 @@ txSubmissionInbound tracer maxUnacked mpReader mpWriter _version =
     --
     acknowledgeTxIds :: ServerState txid tx
                      -> StrictSeq txid
-                     -> Map txid TxSizeInBytes
+                     -> Map txid SizeInBytes
                      -> MempoolSnapshot txid tx idx
                      -> ServerState txid tx
     acknowledgeTxIds st txidsSeq _ _ | Seq.null txidsSeq  = st
@@ -446,7 +448,7 @@ txSubmissionInbound tracer maxUnacked mpReader mpWriter _version =
         -- We will also uses the size of txs in bytes as our limit for
         -- upper and lower watermarks for pipelining. We'll also use the
         -- amount in flight and delta-Q to estimate when we're in danger of
-        -- becomming idle, and need to request stalled txs.
+        -- becoming idle, and need to request stalled txs.
         --
         let (txsToRequest, availableTxids') =
               Map.splitAt (fromIntegral maxTxToRequest) (availableTxids st)
@@ -472,8 +474,8 @@ txSubmissionInbound tracer maxUnacked mpReader mpWriter _version =
 
       if numTxIdsToRequest > 0
         then pure $ SendMsgRequestTxIdsPipelined
-          (numTxsToAcknowledge st)
-          numTxIdsToRequest
+          (NumTxIdsToAck (numTxsToAcknowledge st))
+          (NumTxIdsToReq numTxIdsToRequest)
           (continueWithStateM (serverIdle (Succ n)) st {
                 requestedTxIdsInFlight = requestedTxIdsInFlight st
                                        + numTxIdsToRequest,

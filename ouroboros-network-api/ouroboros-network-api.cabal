@@ -67,6 +67,7 @@ library
                        nothunks,
                        serialise         >=0.2   && <0.3,
                        text              >=1.2 && <2.2,
+                       quiet,
 
                        cardano-slotting,
                        cardano-strict-containers,

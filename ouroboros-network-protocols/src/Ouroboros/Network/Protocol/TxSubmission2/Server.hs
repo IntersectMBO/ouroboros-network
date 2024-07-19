@@ -17,13 +17,13 @@ module Ouroboros.Network.Protocol.TxSubmission2.Server
     TxSubmissionServerPipelined (..)
   , ServerStIdle (..)
   , Collect (..)
-  , TxSizeInBytes
     -- * Execution as a typed protocol
   , txSubmissionServerPeerPipelined
+    -- * deprecated API
+  , TxSizeInBytes
   ) where
 
 import Data.List.NonEmpty (NonEmpty)
-import Data.Word (Word16)
 
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Pipelined
@@ -44,7 +44,7 @@ data TxSubmissionServerPipelined txid tx m a where
 data Collect txid tx =
        -- | The result of 'SendMsgRequestTxIdsPipelined'. It also carries
        -- the number of txids originally requested.
-       CollectTxIds Word16 [(txid, TxSizeInBytes)]
+       CollectTxIds NumTxIdsToReq [(txid, SizeInBytes)]
 
        -- | The result of 'SendMsgRequestTxsPipelined'. The actual reply only
        -- contains the transactions sent, but this pairs them up with the
@@ -58,18 +58,18 @@ data ServerStIdle (n :: N) txid tx m a where
   -- |
   --
   SendMsgRequestTxIdsBlocking
-    :: Word16                               -- ^ number of txids to acknowledge
-    -> Word16                               -- ^ number of txids to request
+    :: NumTxIdsToAck                        -- ^ number of txids to acknowledge
+    -> NumTxIdsToReq                        -- ^ number of txids to request
     -> m a                                  -- ^ Result if done
-    -> (NonEmpty (txid, TxSizeInBytes)
+    -> (NonEmpty (txid, SizeInBytes)
         -> m (ServerStIdle Z txid tx m a))
     -> ServerStIdle        Z txid tx m a
 
   -- |
   --
   SendMsgRequestTxIdsPipelined
-    :: Word16
-    -> Word16
+    :: NumTxIdsToAck
+    -> NumTxIdsToReq
     -> m (ServerStIdle (S n) txid tx m a)
     -> ServerStIdle       n  txid tx m a
 

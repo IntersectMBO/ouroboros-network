@@ -12,10 +12,9 @@ module Ouroboros.Network.TxSubmission.Outbound
 
 import Data.Foldable (find)
 import Data.List.NonEmpty qualified as NonEmpty
-import Data.Maybe (catMaybes, isNothing)
+import Data.Maybe (catMaybes, isNothing, mapMaybe)
 import Data.Sequence.Strict (StrictSeq)
 import Data.Sequence.Strict qualified as Seq
-import Data.Word (Word16)
 
 import Control.Exception (assert)
 import Control.Monad (unless, when)
@@ -27,6 +26,7 @@ import Ouroboros.Network.ControlMessage (ControlMessage, ControlMessageSTM,
            timeoutWithControlMessage)
 import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import Ouroboros.Network.Protocol.TxSubmission2.Client
+import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
            TxSubmissionMempoolReader (..))
 
@@ -44,7 +44,7 @@ data TraceTxSubmissionOutbound txid tx
 data TxSubmissionProtocolError =
        ProtocolErrorAckedTooManyTxids
      | ProtocolErrorRequestedNothing
-     | ProtocolErrorRequestedTooManyTxids Word16 Word16
+     | ProtocolErrorRequestedTooManyTxids NumTxIdsToReq NumTxIdsToAck
      | ProtocolErrorRequestBlocking
      | ProtocolErrorRequestNonBlocking
      | ProtocolErrorRequestedUnavailableTx
@@ -78,7 +78,7 @@ txSubmissionOutbound
   :: forall txid tx idx m.
      (Ord txid, Ord idx, MonadSTM m, MonadThrow m)
   => Tracer m (TraceTxSubmissionOutbound txid tx)
-  -> Word16         -- ^ Maximum number of unacknowledged txids allowed
+  -> NumTxIdsToAck  -- ^ Maximum number of unacknowledged txids allowed
   -> TxSubmissionMempoolReader txid tx idx m
   -> NodeToNodeVersion
   -> ControlMessageSTM m
@@ -92,18 +92,18 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
       where
         recvMsgRequestTxIds :: forall blocking.
                                TokBlockingStyle blocking
-                            -> Word16
-                            -> Word16
+                            -> NumTxIdsToAck
+                            -> NumTxIdsToReq
                             -> m (ClientStTxIds blocking txid tx m ())
         recvMsgRequestTxIds blocking ackNo reqNo = do
 
-          when (ackNo > fromIntegral (Seq.length unackedSeq)) $
+          when (getNumTxIdsToAck ackNo > fromIntegral (Seq.length unackedSeq)) $
             throwIO ProtocolErrorAckedTooManyTxids
 
           when (  fromIntegral (Seq.length unackedSeq)
-                - ackNo
-                + reqNo
-                > maxUnacked) $
+                - getNumTxIdsToAck ackNo
+                + getNumTxIdsToReq reqNo
+                > getNumTxIdsToAck maxUnacked) $
             throwIO (ProtocolErrorRequestedTooManyTxids reqNo maxUnacked)
 
           -- Update our tracking state to remove the number of txids that the
@@ -119,7 +119,7 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
                       !lastIdx'
                         | null txs  = lastIdx
                         | otherwise = idx where (_, idx, _) = last txs
-                      txs'         :: [(txid, TxSizeInBytes)]
+                      txs'         :: [(txid, SizeInBytes)]
                       txs'          = [ (txid, size) | (txid, _, size) <- txs ]
                       client'       = client unackedSeq'' lastIdx'
                   in  (txs', client')
@@ -183,7 +183,7 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
           -- The 'mempoolLookupTx' will return nothing if the transaction is no
           -- longer in the mempool. This is good. Neither the sending nor
           -- receiving side wants to forward txs that are no longer of interest.
-          let txs          = catMaybes (map mempoolLookupTx txidxs')
+          let txs          = mapMaybe mempoolLookupTx txidxs'
               client'      = client unackedSeq lastIdx
 
           -- Trace the transactions to be sent in the response.

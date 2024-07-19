@@ -28,6 +28,7 @@ library
   -- At this experiment/prototype stage everything is exposed.
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:
+                       Control.Concurrent.Class.MonadSTM.Strict.TMergeVar
                        Ouroboros.Network.BlockFetch
                        Ouroboros.Network.BlockFetch.Client
                        Ouroboros.Network.BlockFetch.ClientRegistry
