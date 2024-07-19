@@ -16,7 +16,11 @@ module Ouroboros.Network.Testing.Data.Signal
   , TS (..)
   , E (..)
     -- * Signals
-  , Signal
+  , Signal (..)
+  , mergeSignals
+    -- ** Invariants
+  , eventsInvariant
+  , signalInvariant
     -- ** Construction and conversion
   , fromChangeEvents
   , toChangeEvents
@@ -35,16 +39,17 @@ module Ouroboros.Network.Testing.Data.Signal
   , until
   , difference
   , scanl
+  , always
   , eventually
     -- * Set-based temporal operations
   , keyedTimeout
-  , keyedTimeoutTruncated
   , keyedLinger
   , keyedUntil
   ) where
 
 import           Prelude hiding (scanl, until)
 
+import           Data.Bool (bool)
 import qualified Data.Foldable as Deque (toList)
 import           Data.List (groupBy)
 import           Data.Maybe (maybeToList)
@@ -59,9 +64,6 @@ import           Control.Monad.Class.MonadTime.SI (DiffTime, Time (..), addTime)
 
 
 import           Test.QuickCheck
-
-
-
 
 --
 -- Time stamps and events
@@ -108,18 +110,14 @@ eventsFromList txs =
     Events [ E (TS t i) x
            | ((t, x), i) <- zip txs [100, 102..] ]
 
-
 -- | Construct 'Events' from a time series.
 --
 -- The time series is truncated at (but not including) the given time. This is
 -- necessary to check properties over finite prefixes of infinite time series.
 --
 eventsFromListUpToTime :: Time -> [(Time, a)] -> Events a
-eventsFromListUpToTime horizon txs =
-    Events [ E (TS t i) x
-           | let txs' = takeWhile (\(t,_) -> t < horizon) txs
-           , ((t, x), i) <- zip txs' [100, 102..] ]
-
+eventsFromListUpToTime horizon =
+  eventsFromList . takeWhile (\(t,_) -> t < horizon)
 
 eventsToList :: Events a -> [(Time, a)]
 eventsToList (Events txs) = [ (t, x) | E (TS t _i) x <- txs ]
@@ -134,6 +132,13 @@ selectEvents select (Events txs) =
 primitiveTransformEvents :: ([E a] -> [E b]) -> Events a -> Events b
 primitiveTransformEvents f (Events txs) = Events (f txs)
 
+-- | Events are all ordered by time and causal order
+--
+eventsInvariant :: Events a -> Bool
+eventsInvariant (Events [])  = True
+eventsInvariant (Events [_]) = True
+eventsInvariant (Events ((E (TS t i) _) : (E (TS t' i') _) : es)) =
+  t <= t' && i < i' && eventsInvariant (Events es)
 
 --
 -- Signals
@@ -142,12 +147,20 @@ primitiveTransformEvents f (Events txs) = Events (f txs)
 -- | A signal is a time-varying value. It has a value at all times. It changes
 -- value at discrete times, i.e. it is not continuous.
 --
-data Signal a = Signal a [E a]
+data Signal a = Signal a     -- ^ Initital signal value
+                       [E a] -- ^ List of discrete times at which the signal
+                             --   changes to a given value.
   deriving (Show, Functor)
 
 instance Applicative Signal where
     pure  x = Signal x []
     f <*> x = mergeSignals f x
+
+-- | Signal time changing events are all ordered by timestamp and causal order
+--
+signalInvariant :: Signal a -> Bool
+signalInvariant (Signal _ es) =
+  eventsInvariant (Events es)
 
 mergeSignals :: Signal (a -> b) -> Signal a -> Signal b
 mergeSignals (Signal f0 fs0) (Signal x0 xs0) =
@@ -162,7 +175,6 @@ mergeSignals (Signal f0 fs0) (Signal x0 xs0) =
 compareTimestamp :: E a -> E b -> Ordering
 compareTimestamp (E ts _) (E ts' _) = compare ts ts'
 
-
 -- | Construct a 'Signal' from an initial value and a time series of events
 -- that represent new values of the signal.
 --
@@ -170,7 +182,6 @@ compareTimestamp (E ts _) (E ts' _) = compare ts ts'
 --
 fromChangeEvents :: a -> Events a -> Signal a
 fromChangeEvents x (Events xs) = Signal x xs
-
 
 -- | Convert a 'Signal' into a time series of events when the signal value
 -- changes.
@@ -180,7 +191,6 @@ toChangeEvents = Events . toTimeSeries
 
 toTimeSeries :: Signal a -> [E a]
 toTimeSeries (Signal x xs) = E (TS (Time 0) 0) x : xs
-
 
 -- | Construct a 'Signal' that represents a time series of discrete events. The
 -- signal is @Just@ the event value at the time of the event, and is @Nothing@
@@ -229,7 +239,6 @@ truncateAt :: Time -> Signal a -> Signal a
 truncateAt horizon (Signal x txs) =
     Signal x (takeWhile (\(E (TS t _) _) -> t < horizon) txs)
 
-
 -- | Sometimes the way a signal is constructed leads to duplicate signal values
 -- which can slow down signal processing. This tidies up the signal by
 -- eliminating the duplicates. This does not change the meaning (provided the
@@ -255,7 +264,9 @@ linger :: DiffTime
        -> (a -> Bool)
        -> Signal a
        -> Signal Bool
-linger = error "TODO: Signal.linger"
+linger d arm =
+    fmap (not . Set.null)
+  . keyedLinger d (bool Set.empty (Set.singleton ()) . arm)
 
 
 -- | Make a timeout signal, based on observing an underlying signal.
@@ -277,39 +288,19 @@ timeout :: forall a.
         -> Signal a
         -> Signal Bool
 timeout d arm =
-    Signal False
-  . disarmed
-  . toTimeSeries
-  where
-    disarmed :: [E a] -> [E Bool]
-    disarmed []          = []
-    disarmed (E ts@(TS t _) x : txs)
-      | arm x     = armed (d `addTime` t) (E ts x : txs)
-      | otherwise = E ts False : disarmed txs
-
-    armed :: Time -> [E a] -> [E Bool]
-    armed !expiry [] = [E expiryTS True] where expiryTS = TS expiry 0
-
-    armed !expiry (E ts@(TS t _) x : txs)
-      | t > expiry  = E expiryTS True  : expired (E ts x : txs)
-      | not (arm x) = E ts       False : disarmed txs
-      | t < expiry  = E ts       False : armed expiry txs
-      | otherwise   = E expiryTS True  : expired txs
-      where
-        expiryTS = TS expiry 0
-
-    expired :: [E a] -> [E Bool]
-    expired [] = []
-    expired (E t x : txs)
-      | arm x      = E t True  : expired  txs
-      | otherwise  = E t False : disarmed txs
+    fmap (not . Set.null)
+  . keyedTimeout d (bool Set.empty (Set.singleton ()) . arm)
 
 
 until :: (a -> Bool) -- ^ Start
       -> (a -> Bool) -- ^ Stop
       -> Signal a
       -> Signal Bool
-until _ = error "TODO: Signal.until"
+until start stop =
+    fmap (not . Set.null)
+  . keyedUntil (bool Set.empty (Set.singleton ()) . start)
+               (bool Set.empty (Set.singleton ()) . stop)
+               (const False)
 
 
 -- | Make a signal that keeps track of recent activity, based on observing an
@@ -322,37 +313,47 @@ until _ = error "TODO: Signal.until"
 -- then the expiry will be extended to the new deadline (it is not cumulative).
 -- The key will be removed from the result signal set when it expires.
 --
+-- Example: We cannot directly verify successful promotions due to certain
+-- constraints (network attenuations), but we can ensure that the system takes
+-- all promotion opportunities. To achieve this, we need to discard peers that
+-- we have attempted to connect during the backoff period. For every failure
+-- event in the input signal, we want to produce a signal that includes those
+-- events for a specified duration. This allows us to then combine the trace
+-- with all promotion opportunities and all the failed attempts and discard
+-- those. This allow us to correctly identify valid promotion opportunities.
+--
 keyedLinger :: forall a b. Ord b
             => DiffTime
             -> (a -> Set b)  -- ^ The activity set signal
             -> Signal a
             -> Signal (Set b)
-keyedLinger d activity =
+keyedLinger d arm =
     Signal Set.empty
   . go Set.empty PSQ.empty
   . toTimeSeries
+  . fmap arm
   where
     go :: Set b
        -> OrdPSQ b Time ()
-       -> [E a]
        -> [E (Set b)]
-    go _ _ [] = []
+       -> [E (Set b)]
+    go !_ !_ [] = []
 
-    go lingerSet lingerPSQ (E ts@(TS t _) xs : txs)
-      | Just (x, t', _, lingerPSQ') <- PSQ.minView lingerPSQ
+    go !lingerSet !lingerPSQ (E ts@(TS t _) xs : txs)
+      | Just (y, t', _, lingerPSQ') <- PSQ.minView lingerPSQ
       , t' < t
-      , let lingerSet' = Set.delete x lingerSet
-      = E (TS t' 0) lingerSet' : go lingerSet' lingerPSQ' (E ts xs : txs)
+      , (ys, lingerPSQ'') <- PSQ.atMostView t' lingerPSQ'
+      , let armed = Set.fromList $ y : map (\(a, _, _) -> a) ys
+            lingerSet' = Set.difference lingerSet armed
+      = E (TS t' 0) lingerSet' : go lingerSet' lingerPSQ'' (E ts xs : txs)
 
-    go lingerSet lingerPSQ (E ts@(TS t _) x : txs) =
-      let ys         = activity x
-          lingerSet' = lingerSet <> ys
-          lingerPSQ' = Set.foldl' (\s y -> PSQ.insert y t' () s) lingerPSQ ys
+    go !lingerSet !lingerPSQ (E ts@(TS t _) x : txs) =
+      let lingerSet' = lingerSet <> x
           t'         = addTime d t
+          lingerPSQ' = Set.foldl' (\s y -> PSQ.insert y t' () s) lingerPSQ x
        in if lingerSet' /= lingerSet
             then E ts lingerSet' : go lingerSet' lingerPSQ' txs
             else                   go lingerSet' lingerPSQ' txs
-
 
 -- | Make a signal that says if a given event longed at least a certain time
 -- (timeout), based on observing an underlying signal.
@@ -364,6 +365,25 @@ keyedLinger d activity =
 -- previous timeout, then the timeout is reset with the new event and the other
 -- one is discarded.
 --
+-- Example: We have a signal that tracks if a button is pressed or not, i.e.
+-- it's true if it is pressed and false otherwise. Then `timeout 5 id s` will
+-- return a signal that checks whether the button is left pressed for at least
+-- 5 seconds. So the output signal becomes true if the button remains pressed
+-- for 5 continuous seconds and is false if the buttom is released before 5
+-- seconds. However, if we wanted to analyse 3 buttons, we could combine the
+-- 3 button signals, but we still wouldn't be able to get a signal that
+-- would give us at what times each button was left pressed more than a given
+-- number of time units. We could only check if either any, all or a
+-- particular configuration of them as pressed for a duration. If we wanted to
+-- be able to know exactly which buttons were left pressed we would need to
+-- have a timeout for each button individually. That's the extra expressive
+-- power that `keyedTimeout` offers.
+-- offers
+--
+-- This function is often used in property tests with a negative predicate.
+-- E.g. The system doesn't stay in a wrong state more than 5 seconds =
+-- `all Set.null $ keyedTimeout 5s wrongState`
+--
 keyedTimeout :: forall a b. Ord b
              => DiffTime
              -> (a -> Set b)  -- ^ The timeout arming set signal
@@ -373,78 +393,35 @@ keyedTimeout d arm =
     Signal Set.empty
   . go Set.empty PSQ.empty Set.empty
   . toTimeSeries
+  . fmap arm
   where
     go :: Set b
        -> OrdPSQ b Time ()
        -> Set b
-       -> [E a]
        -> [E (Set b)]
-    go !_ !armedPSQ !_ [] =
-      (\(b, t, _) -> E (TS t 0) (Set.singleton b))
-      `map`
-      PSQ.toList armedPSQ
+       -> [E (Set b)]
+    go !_ !_ !_ [] = []
 
     go !armedSet !armedPSQ !timedout (E ts@(TS t _) x : txs)
       | Just (y, t', _, armedPSQ') <- PSQ.minView armedPSQ
       , t' < t
-      , let armedSet' = Set.delete y armedSet
-            timedout' = Set.insert y timedout
-      = E (TS t' 0) timedout' : go armedSet' armedPSQ' timedout' (E ts x : txs)
+      , (xs, armedPSQ'') <- PSQ.atMostView t' armedPSQ'
+      , let armed = Set.fromList $ y : map (\(a, _, _) -> a) xs
+            armedSet' = Set.difference armedSet armed
+            timedout' = timedout <> armed
+      = E (TS t' 0) timedout' : go armedSet' armedPSQ'' timedout' (E ts x : txs)
 
     go !armedSet !armedPSQ !timedout (E ts@(TS t _) x : txs) =
-      let armedSet' = arm x
-          armedAdd  = armedSet' Set.\\ armedSet
-          armedDel  = armedSet  Set.\\ armedSet'
+      let armedAdd  = x        Set.\\ armedSet
+          armedDel  = armedSet Set.\\ x
+          t'        = addTime d t
           armedPSQ' = flip (Set.foldl' (\s y -> PSQ.insert y t' () s)) armedAdd
                     . flip (Set.foldl' (\s y -> PSQ.delete y       s)) armedDel
                     $ armedPSQ
-          t'        = addTime d t
-          timedout' = timedout `Set.intersection` armedSet'
+          timedout' = timedout `Set.intersection` x
        in if timedout' /= timedout
-            then E ts timedout' : go armedSet' armedPSQ' timedout' txs
-            else                  go armedSet' armedPSQ' timedout' txs
-
--- | This works exactly the same as 'keyedTimeout' but ignores any armed sets
--- and does not add any events to the signal when reaching the end of events.
---
--- This is useful for properties over infinite Signals that might get truncated.
---
-keyedTimeoutTruncated :: forall a b. Ord b
-             => DiffTime
-             -> (a -> Set b)  -- ^ The timeout arming set signal
-             -> Signal a
-             -> Signal (Set b)
-keyedTimeoutTruncated d arm =
-    Signal Set.empty
-  . go Set.empty PSQ.empty Set.empty
-  . toTimeSeries
-  where
-    go :: Set b
-       -> OrdPSQ b Time ()
-       -> Set b
-       -> [E a]
-       -> [E (Set b)]
-    go _ _ _ [] = []
-
-    go armedSet armedPSQ timedout (E ts@(TS t _) x : txs)
-      | Just (y, t', _, armedPSQ') <- PSQ.minView armedPSQ
-      , t' < t
-      , let armedSet' = Set.delete y armedSet
-            timedout' = Set.insert y timedout
-      = E (TS t' 0) timedout' : go armedSet' armedPSQ' timedout' (E ts x : txs)
-
-    go armedSet armedPSQ timedout (E ts@(TS t _) x : txs) =
-      let armedSet' = arm x
-          armedAdd  = armedSet' Set.\\ armedSet
-          armedDel  = armedSet  Set.\\ armedSet'
-          armedPSQ' = flip (Set.foldl' (\s y -> PSQ.insert y t' () s)) armedAdd
-                    . flip (Set.foldl' (\s y -> PSQ.delete y       s)) armedDel
-                    $ armedPSQ
-          t'        = addTime d t
-          timedout' = timedout `Set.intersection` armedSet'
-       in if timedout' /= timedout
-            then E ts timedout' : go armedSet' armedPSQ' timedout' txs
-            else                  go armedSet' armedPSQ' timedout' txs
+            then E ts timedout' : go x armedPSQ' timedout' txs
+            else                  go x armedPSQ' timedout' txs
 
 keyedUntil :: forall a b. Ord b
            => (a -> Set b)   -- ^ Start set signal
@@ -470,7 +447,6 @@ keyedUntil start stop stopAll =
           | stopAll x = Set.empty
           | otherwise = (active <> start x) Set.\\ stop x
 
-
 difference :: (a -> a -> b)
            -> Signal a
            -> Signal (Maybe b)
@@ -492,6 +468,16 @@ scanl f z (Signal x0 txs0) =
     go !a (E ts x : txs) = E ts a' : go a' txs
                           where
                             a' = f a x
+
+-- | Starting on a given event does the predicate holds for all the trace.
+--
+-- If there's no events after the given time, return True
+always :: TS -> (b -> Bool) -> Signal b -> Bool
+always (TS time i) p (Signal x0 txs0)
+  | time <= Time 0 = p x0 && all (\(E _ b) -> p b) txs0
+  | otherwise = case dropWhile (\(E (TS time' i') _) -> time' <= time && i' < i) txs0 of
+    [] -> True
+    r  -> all (\(E _ b) -> p b) r
 
 -- | Starting on a given event does the predicate eventually holds.
 --

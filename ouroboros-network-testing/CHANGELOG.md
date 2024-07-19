@@ -4,6 +4,8 @@
 
 ### Breaking changes
 
+- Improvements and bug fixes to Signal API
+
 ### Non-Breaking changes
 
 * Make it build with ghc-9.10

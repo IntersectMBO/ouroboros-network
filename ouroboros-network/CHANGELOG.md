@@ -12,6 +12,7 @@
 
 * Refactored signature of `LedgerPeers.ledgerPeersThread` for concision
   and use of previously created records for shunting related values around.
+- Refactored Testnet suite according to changed Signal API.
 - Fixed block fetch client assertion failure
 * Make it build with ghc-9.10
 
