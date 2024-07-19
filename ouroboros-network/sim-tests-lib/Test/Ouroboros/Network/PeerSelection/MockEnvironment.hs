@@ -799,7 +799,7 @@ instance Arbitrary GovernorMockEnvironment where
       useBootstrapPeers       <- arbitrary
       useLedgerPeers          <- arbitrary
       ledgerStateJudgementList <- fmap getArbitraryLedgerStateJudgement <$> arbitrary
-      ledgerStateJudgementDelays <- listOf1 (elements [NoDelay, ShortDelay])
+      ledgerStateJudgementDelays <- listOf1 (Delay . fromInteger <$> choose (1, 5))
       let ledgerStateJudgementWithDelay =
             zip ledgerStateJudgementList ledgerStateJudgementDelays
             ++ [(YoungEnough, ShortDelay)]

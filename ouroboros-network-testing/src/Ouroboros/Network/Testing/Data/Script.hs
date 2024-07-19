@@ -150,7 +150,7 @@ instance Arbitrary ScriptDelay where
   shrink LongDelay  = [NoDelay, ShortDelay]
   shrink ShortDelay = [NoDelay]
   shrink NoDelay    = []
-  shrink (Delay _)  = []
+  shrink (Delay _)  = [LongDelay]
 
 playTimedScript :: (MonadAsync m, MonadDelay m)
                 => Tracer m a -> TimedScript a -> m (TVar m a)
