@@ -151,6 +151,7 @@ import qualified Data.List as List
 import Data.List.NonEmpty (nonEmpty)
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe (mapMaybe, maybeToList, isNothing)
+import qualified Data.Set as Set
 import Data.Ord (Down(Down))
 
 import Cardano.Prelude (partitionEithers, (&))
@@ -158,7 +159,7 @@ import Cardano.Prelude (partitionEithers, (&))
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment, headBlockNo)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import Ouroboros.Network.Block
-import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..), PeersOrder (..))
+import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..), PeersOrder (..), PeerFetchInFlight (..))
 import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode(FetchModeBulkSync))
 import Ouroboros.Network.BlockFetch.DeltaQ (calculatePeerFetchInFlightLimits)
 import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation(..))
@@ -213,7 +214,7 @@ fetchDecisionsBulkSyncM
   chainSelStarvation
   ( peersOrder0,
     writePeersOrder,
-    demoteCSJDynamoAndIgnoreInflightBlocks
+    demoteCSJDynamo
     )
   candidatesAndPeers = do
     peersOrder@PeersOrder{peersOrderCurrent} <-
@@ -232,7 +233,9 @@ fetchDecisionsBulkSyncM
 
     let peersOrderCurrentInfo =
           peersOrderCurrent >>= \peersOrderCurrent_ ->
-          List.find (eqPeerInfo' peersOrderCurrent_) $ map snd candidatesAndPeers
+          case List.find (eqPeerInfo' peersOrderCurrent_) $ map snd candidatesAndPeers of
+            Just peerCurrentInfo@(_,inflight,_,_,_) | not (Set.null (peerFetchBlocksInFlight inflight)) -> Just peerCurrentInfo
+            _ -> Nothing
 
     -- Compute the actual block fetch decision. This contains only declines and
     -- at most one request. 'theDecision' is therefore a 'Maybe'.
@@ -286,7 +289,7 @@ fetchDecisionsBulkSyncM
                 if lastStarvationTime >= addTime bulkSyncGracePeriod peersOrderStart
                   then do
                     traceWith tracer $ PeerStarvedUs peersOrderCurrent_
-                    demoteCSJDynamoAndIgnoreInflightBlocks peersOrderCurrent_
+                    demoteCSJDynamo peersOrderCurrent_
                     let peersOrder' =
                           PeersOrder
                             {
