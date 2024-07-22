@@ -480,10 +480,7 @@ selectThePeer
             (otherPeersB, (thePeerCandidate, _) : otherPeersA) -> do
               tell (List (map (first (const (FetchDeclineConcurrencyLimit FetchModeBulkSync 1))) otherPeersB))
               tell (List (map (first (const (FetchDeclineConcurrencyLimit FetchModeBulkSync 1))) otherPeersA))
-              -- REVIEW: This is maybe overkill to check that the whole gross request
-              -- fits in the peer's candidate. Maybe just checking that there is one
-              -- block is sufficient.
-              case checkRequestInCandidate thePeerCandidate =<< grossRequest of
+              case checkRequestHeadInCandidate thePeerCandidate =<< grossRequest of
                 Left reason -> tell (List [(reason, thePeerInfo)]) >> return Nothing
                 Right () -> return $ Just (thePeerCandidate, thePeerInfo)
 
@@ -494,7 +491,7 @@ selectThePeer
         peers <-
           filterM
             ( \(candidate, peer) ->
-                case checkRequestInCandidate candidate =<< grossRequest of
+                case checkRequestHeadInCandidate candidate =<< grossRequest of
                   Left reason -> tell (List [(reason, peer)]) >> pure False
                   Right () -> pure True
             )
@@ -518,16 +515,18 @@ selectThePeer
             tell $ List $ map (first (const (FetchDeclineConcurrencyLimit FetchModeBulkSync 1))) otherPeers
             return $ Just (thePeerCandidate, thePeer)
     where
-      checkRequestInCandidate ::
+      checkRequestHeadInCandidate ::
         ChainSuffix header -> FetchRequest header -> FetchDecision ()
-      checkRequestInCandidate candidate request =
-        if all isSubfragmentOfCandidate $ fetchRequestFragments request
-          then pure ()
-          else Left $ FetchDeclineAlreadyFetched -- FIXME: A custom decline reason for this?
-        where
-          isSubfragmentOfCandidate fragment =
-            AF.withinFragmentBounds (AF.anchorPoint fragment) (getChainSuffix candidate)
-              && AF.withinFragmentBounds (AF.headPoint fragment) (getChainSuffix candidate)
+      checkRequestHeadInCandidate candidate request =
+        case fetchRequestFragments request of
+          fragments@(_:_)
+            | AF.withinFragmentBounds
+                (AF.headPoint $ last fragments)
+                (getChainSuffix candidate)
+            ->
+              Right ()
+          _ ->
+              Left FetchDeclineAlreadyFetched
 
 -- | Given a candidate and a peer to sync from, create a request for that
 -- specific peer. We might take the 'FetchDecision' to decline the request, but
