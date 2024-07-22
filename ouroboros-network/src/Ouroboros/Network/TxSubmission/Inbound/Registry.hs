@@ -5,9 +5,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.TxSubmission.Inbound.Registry
-  ( SharedTxStateVar
-  , newSharedTxStateVar
+  ( TxChannels (..)
   , TxChannelsVar
+  , SharedTxStateVar
+  , newSharedTxStateVar
   , newTxChannelsVar
   , PeerTxAPI (..)
   , decisionLogicThread
@@ -76,7 +77,7 @@ data PeerTxAPI m txid tx = PeerTxAPI {
 -- `PeerTxStateAPI` is only safe inside the  `withPeer` scope.
 --
 withPeer
-    :: forall peeraddr txid tx idx m a.
+    :: forall tx peeraddr txid idx m a.
        ( MonadMask m
        , MonadMVar m
        , MonadSTM  m
