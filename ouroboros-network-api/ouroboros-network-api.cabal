@@ -69,6 +69,7 @@ library
                        text              >=1.2 && <2.2,
                        quiet,
 
+                       cardano-binary,
                        cardano-slotting,
                        cardano-strict-containers,
                        contra-tracer,
