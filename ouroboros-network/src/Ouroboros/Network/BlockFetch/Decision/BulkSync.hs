@@ -125,7 +125,7 @@ module Ouroboros.Network.BlockFetch.Decision.BulkSync (
   fetchDecisionsBulkSyncM
 ) where
 
-import Control.Monad (filterM, guard, when)
+import Control.Monad (filterM, guard)
 import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime (getMonotonicTime), addTime)
 import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
 import Control.Monad.Writer.Strict (Writer, runWriter, MonadWriter (tell))
@@ -135,8 +135,8 @@ import Data.Function (on)
 import qualified Data.List as List
 import Data.List.NonEmpty (nonEmpty)
 import qualified Data.List.NonEmpty as NE
-import Data.Maybe (listToMaybe, mapMaybe, maybeToList, isNothing)
 import qualified Data.Set as Set
+import Data.Maybe (mapMaybe, maybeToList)
 import Data.Ord (Down(Down))
 
 import Cardano.Prelude (partitionEithers)
@@ -144,7 +144,8 @@ import Cardano.Prelude (partitionEithers)
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment, headBlockNo)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import Ouroboros.Network.Block
-import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..), PeersOrder (..), PeerFetchInFlight (..))
+import Ouroboros.Network.BlockFetch.ClientState
+         (FetchRequest (..), PeersOrder (..), peerFetchBlocksInFlight)
 import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode(FetchModeBulkSync))
 import Ouroboros.Network.BlockFetch.DeltaQ (calculatePeerFetchInFlightLimits)
 import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation(..))
@@ -202,20 +203,11 @@ fetchDecisionsBulkSyncM
     demoteCSJDynamo
     )
   candidatesAndPeers = do
-    peersOrder@PeersOrder{peersOrderCurrent} <-
+    peersOrder <-
       checkLastChainSelStarvation $
       alignPeersOrderWithActualPeers
         (map (peerInfoPeer . snd) candidatesAndPeers)
         peersOrder0
-
-    let peersOrderCurrentInfo = do
-          currentPeer <- peersOrderCurrent
-          listToMaybe
-            [ peerCurrentInfo
-              | (_, peerCurrentInfo@(_, inflight, _, peer, _)) <- candidatesAndPeers
-              , peer == currentPeer
-              , not (Set.null (peerFetchBlocksInFlight inflight))
-            ]
 
     -- Compute the actual block fetch decision. This contains only declines and
     -- at most one request. 'theDecision' is therefore a 'Maybe'.
@@ -226,20 +218,20 @@ fetchDecisionsBulkSyncM
             fetchedBlocks
             fetchedMaxSlotNo
             peersOrder
-            peersOrderCurrentInfo
             candidatesAndPeers
 
     -- If there were no blocks in flight, then this will be the first request,
     -- so we take a new current time.
-    when (isNothing peersOrderCurrent) $
-      case theDecision of
-        Just (_, peerInfo) -> do
+    case theDecision of
+      Just (_, peerInfo@(_, inflight, _, _, _))
+        | Set.null (peerFetchBlocksInFlight inflight)
+       -> do
           peersOrderStart <- getMonotonicTime
           writePeersOrder $ peersOrder
             { peersOrderCurrent = Just (peerInfoPeer peerInfo),
               peersOrderStart
             }
-        _ -> pure ()
+      _ -> pure ()
 
     pure $
       map (first Right) (maybeToList theDecision)
@@ -307,8 +299,6 @@ fetchDecisionsBulkSync ::
   (Point block -> Bool) ->
   MaxSlotNo ->
   PeersOrder peer ->
-  -- | The current peer, if there is one.
-  Maybe (PeerInfo header peer extra) ->
   -- | Association list of the candidate fragments and their associated peers.
   -- The candidate fragments are anchored in the current chain (not necessarily
   -- at the tip; and not necessarily forking off immediately).
@@ -326,7 +316,6 @@ fetchDecisionsBulkSync
   fetchedBlocks
   fetchedMaxSlotNo
   peersOrder
-  mCurrentPeer
   candidatesAndPeers = combineWithDeclined $ do
     -- Step 1: Select the candidate to sync from. This already eliminates peers
     -- that have an implausible candidate. It returns the remaining candidates
@@ -355,7 +344,6 @@ fetchDecisionsBulkSync
       MaybeT $
         selectThePeer
           peersOrder
-          mCurrentPeer
           theFragments
           candidatesAndPeers'
 
@@ -435,8 +423,6 @@ selectThePeer ::
     Eq peer
   ) =>
   PeersOrder peer ->
-  -- | The current peer
-  Maybe (PeerInfo header peer extra) ->
   -- | The candidate fragment that we have selected to sync from, as suffix of
   -- the immutable tip.
   FetchDecision (CandidateFragments header) ->
@@ -448,7 +434,6 @@ selectThePeer ::
     (Maybe (ChainSuffix header, PeerInfo header peer extra))
 selectThePeer
   peersOrder
-  mCurrentPeer
   theFragments
   candidates = do
     -- Create a fetch request for the blocks in question. The request has exactly
@@ -459,9 +444,13 @@ selectThePeer
     let firstBlock = FetchRequest . map (AF.takeOldest 1) . take 1 . filter (not . AF.null)
         (grossRequest :: FetchDecision (FetchRequest header)) = firstBlock . snd <$> theFragments
 
+        peersOrderCurrentInfo = do
+          currentPeer <- peersOrderCurrent peersOrder
+          List.find ((currentPeer ==) . peerInfoPeer) $ map snd candidates
+
     -- If there is a current peer, then that is the one we choose. Otherwise, we
     -- can choose any peer, so we choose a “good” one.
-    case mCurrentPeer of
+    case peersOrderCurrentInfo of
       Just thePeerInfo -> do
           case List.break (((==) `on` peerInfoPeer) thePeerInfo . snd) candidates of
             (_, []) -> tell (List [(FetchDeclineChainNotPlausible, thePeerInfo)]) >> return Nothing
