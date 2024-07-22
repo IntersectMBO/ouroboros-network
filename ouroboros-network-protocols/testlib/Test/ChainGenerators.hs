@@ -50,6 +50,7 @@ import Ouroboros.Network.Point (WithOrigin (..), block, blockPointHash,
            blockPointSlot, fromWithOrigin, origin)
 import Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
 
+import Data.List (scanl')
 import Test.Cardano.Slotting.Arbitrary ()
 import Test.QuickCheck
 import Test.QuickCheck.Instances.ByteString ()
@@ -204,8 +205,7 @@ instance CoArbitrary ConcreteHeaderHash
 -- https://github.com/nick8325/quickcheck/issues/229
 --
 genNonNegative :: Gen Int
-genNonNegative = (abs <$> arbitrary) `suchThat` (>= 0)
-
+genNonNegative = (abs . getSmall <$> arbitrary) `suchThat` (>= 0)
 
 --
 -- Generators for chains
@@ -230,7 +230,7 @@ instance Arbitrary TestBlockChain where
         return (TestBlockChain chain)
       where
         mkSlots :: [Int] -> [SlotNo]
-        mkSlots = map toEnum . tail . scanl (+) 0
+        mkSlots = map toEnum . tail . scanl' (+) 0
 
     shrink (TestBlockChain c) =
         [ TestBlockChain (fixupChain fixupBlock c')
