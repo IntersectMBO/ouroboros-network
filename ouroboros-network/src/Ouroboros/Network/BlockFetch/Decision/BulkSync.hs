@@ -373,7 +373,7 @@ fetchDecisionsBulkSync
     -- Step 4: Fetch the candidate from the selected peer, potentially declining
     -- it (eg. if the peer is already too busy).
     MaybeT $
-      fetchTheCandidate
+      makeFetchRequest
         fetchDecisionPolicy
         theFragments
         thePeer
@@ -532,7 +532,7 @@ selectThePeer
 -- | Given a candidate and a peer to sync from, create a request for that
 -- specific peer. We might take the 'FetchDecision' to decline the request, but
 -- only for “good” reasons, eg. if the peer is already too busy.
-fetchTheCandidate ::
+makeFetchRequest ::
   ( HasHeader header
   ) =>
   FetchDecisionPolicy header ->
@@ -546,7 +546,7 @@ fetchTheCandidate ::
   WithDeclined
     (PeerInfo header peer extra)
     (Maybe (FetchRequest header, PeerInfo header peer extra))
-fetchTheCandidate
+makeFetchRequest
   fetchDecisionPolicy
   theFragments
   thePeer@(status, inflight, gsvs, _, _)
