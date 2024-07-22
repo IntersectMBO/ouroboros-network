@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -110,6 +111,8 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer)
 
+import GHC.Generics (Generic)
+
 import Ouroboros.Network.Block
 import Ouroboros.Network.SizeInBytes (SizeInBytes)
 
@@ -154,7 +157,7 @@ data GenesisBlockFetchConfiguration =
         -- during which it is fine if the chain selection gets starved.
         gbfcBulkSyncGracePeriod    :: !DiffTime
       }
-      deriving (Show)
+      deriving (Eq, Generic, Show)
 
 -- | Execute the block fetch logic. It monitors the current chain and candidate
 -- chains. It decided which block bodies to fetch and manages the process of
