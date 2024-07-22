@@ -254,6 +254,7 @@ library sim-tests-lib
     random,
     serialise,
     si-timers,
+    strict-mvar,
     strict-stm,
     tasty,
     tasty-hunit,
@@ -295,6 +296,9 @@ library sim-tests-lib
     Test.Ouroboros.Network.PeerSelection.RootPeersDNS
     Test.Ouroboros.Network.PeerState
     Test.Ouroboros.Network.TxSubmission
+    Test.Ouroboros.Network.TxSubmission.Common
+    Test.Ouroboros.Network.TxSubmission.TxSubmissionV1
+    Test.Ouroboros.Network.TxSubmission.TxSubmissionV2
     Test.Ouroboros.Network.Version
 
 -- Simulation tests, and IO tests which don't require native system calls.
