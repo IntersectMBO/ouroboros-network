@@ -138,6 +138,7 @@ import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.Protocol.Handshake.Codec
 import Ouroboros.Network.Protocol.Handshake.Type
 import Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
+import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..))
 import Ouroboros.Network.Snocket
 import Ouroboros.Network.Socket
 import Ouroboros.Network.Subscription.Dns (DnsSubscriptionParams,
@@ -150,7 +151,6 @@ import Ouroboros.Network.Subscription.Ip qualified as Subscription
 import Ouroboros.Network.Subscription.Worker (LocalAddresses (..),
            SubscriberError)
 import Ouroboros.Network.Tracers
-import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..))
 import Ouroboros.Network.TxSubmission.Inbound qualified as TxInbound
 import Ouroboros.Network.TxSubmission.Outbound qualified as TxOutbound
 import Ouroboros.Network.Util.ShowProxy (ShowProxy, showProxy)

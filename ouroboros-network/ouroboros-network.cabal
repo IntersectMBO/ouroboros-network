@@ -214,6 +214,7 @@ library sim-tests-lib
                        ouroboros-network-testing ^>= 0.6.0,
                        si-timers,
                        strict-stm,
+                       strict-mvar,
                        typed-protocols,
                        typed-protocols-examples,
   exposed-modules:     Ouroboros.Network.BlockFetch.Examples
@@ -245,6 +246,9 @@ library sim-tests-lib
                        Test.Ouroboros.Network.Testnet
                        Test.Ouroboros.Network.Testnet.Simulation.Node
                        Test.Ouroboros.Network.TxSubmission
+                       Test.Ouroboros.Network.TxSubmission.Common
+                       Test.Ouroboros.Network.TxSubmission.TxSubmissionV1
+                       Test.Ouroboros.Network.TxSubmission.TxSubmissionV2
                        Test.Ouroboros.Network.Version
 
   ghc-options:         -Wall
