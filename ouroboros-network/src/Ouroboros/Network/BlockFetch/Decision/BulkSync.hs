@@ -552,9 +552,7 @@ makeFetchRequest
   thePeer@(status, inflight, gsvs, _, _)
   thePeerCandidate =
     let theDecision = do
-          -- Keep blocks that are not already in-flight with this peer. NOTE: We
-          -- already filtered most of them (and more), but now we also filter
-          -- out then ones that are in-flight AND ignored.
+          -- Drop blocks that are already in-flight with this peer.
           fragments <- dropAlreadyInFlightWithPeer inflight =<< theFragments
 
           -- Trim the fragments to the peer's candidate, keeping only blocks that
@@ -565,11 +563,11 @@ makeFetchRequest
           fetchRequestDecision
             fetchDecisionPolicy
             FetchModeBulkSync
-            0 -- bypass all concurrency limits. REVIEW: is this really what we want?
+            0 -- bypass all concurrency limits.
             (calculatePeerFetchInFlightLimits gsvs)
             inflight
             status
-            (Right trimmedFragments) -- FIXME: This is a hack to avoid having to change the signature of 'fetchRequestDecision'.
+            (Right trimmedFragments)
      in case theDecision of
           Left reason -> tell (List [(reason, thePeer)]) >> pure Nothing
           Right theRequest -> pure $ Just (theRequest, thePeer)
