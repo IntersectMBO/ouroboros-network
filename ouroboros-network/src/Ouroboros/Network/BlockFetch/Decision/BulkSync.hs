@@ -353,9 +353,8 @@ fetchDecisionsBulkSync
     -- Step 2: Filter out from the chosen candidate fragment the blocks that
     -- have already been downloaded. NOTE: if not declined, @theFragments@ is
     -- guaranteed to be non-empty.
-    let (theFragments :: FetchDecision (CandidateFragments header)) =
-          pure theCandidate
-            >>= dropAlreadyFetched fetchedBlocks fetchedMaxSlotNo
+    let theFragments :: FetchDecision (CandidateFragments header)
+        theFragments = dropAlreadyFetched fetchedBlocks fetchedMaxSlotNo theCandidate
 
     -- Step 3: Select the peer to sync from. This eliminates peers that cannot
     -- serve a reasonable batch of the candidate, then chooses the peer to sync
