@@ -233,9 +233,12 @@ fetchDecisionsBulkSyncM
     -- so we take a new current time.
     when (isNothing peersOrderCurrent) $
       case theDecision of
-        Just (_, (_,_,_,thePeer,_)) -> do
+        Just (_, peerInfo) -> do
           peersOrderStart <- getMonotonicTime
-          writePeersOrder $ peersOrder {peersOrderCurrent = Just thePeer, peersOrderStart}
+          writePeersOrder $ peersOrder
+            { peersOrderCurrent = Just (peerInfoPeer peerInfo),
+              peersOrderStart
+            }
         _ -> pure ()
 
     pure $
@@ -487,9 +490,9 @@ selectThePeer
         -- we bind the lists in the comprehension is capital.
         let peersOrdered =
               [ (candidate, peerInfo)
-                | peer' <- peersOrderAll peersOrder,
-                  (candidate, peerInfo@(_, _, _, peer, _)) <- peers,
-                  peer == peer'
+                | peer <- peersOrderAll peersOrder,
+                  (candidate, peerInfo) <- peers,
+                  peerInfoPeer peerInfo == peer
               ]
 
         -- Return the first peer in that order, and decline all the ones that were
