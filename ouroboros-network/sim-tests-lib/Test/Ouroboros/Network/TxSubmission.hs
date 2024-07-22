@@ -66,9 +66,7 @@ import Ouroboros.Network.Protocol.TxSubmission2.Codec
 import Ouroboros.Network.Protocol.TxSubmission2.Server
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Inbound
-import Ouroboros.Network.TxSubmission.Inbound.Decision
 import Ouroboros.Network.TxSubmission.Inbound.Decision qualified as TXS
-import Ouroboros.Network.TxSubmission.Inbound.Policy
 import Ouroboros.Network.TxSubmission.Inbound.State (PeerTxState (..),
            SharedTxState (..))
 import Ouroboros.Network.TxSubmission.Inbound.State qualified as TXS
