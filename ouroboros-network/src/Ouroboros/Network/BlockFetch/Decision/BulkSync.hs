@@ -11,9 +11,6 @@
 -- specific to the bulk sync mode. This logic reuses parts of the logic for the
 -- deadline mode, but it is inherently different.
 --
--- Natural language specification
--- ------------------------------
---
 -- Definitions:
 --
 -- - Let @inflight :: peer -> Set blk@ be the outstanding blocks, those that
@@ -53,14 +50,14 @@
 -- 2. Select @thePeer :: peer@. If @inflight(currentPeer)@ is not empty, then
 --    this is @currentPeer@. Otherwise:
 --
---    - Let @grossRequest@ be the oldest blocks on @theCandidate@ that have not
---      already been downloaded and total less than 20 mebibytes.
+--    - Let @grossRequest@ be the oldest block on @theCandidate@ that has not
+--      already been downloaded.
 --
 --    - If @grossRequest@ is empty, then terminate this iteration. Otherwise,
---      pick the best peer (according to @peersOrder@) offering all of the
---      blocks in @grossRequest@.
+--      pick the best peer (according to @peersOrder@) offering the
+--      block in @grossRequest@.
 --
--- 3. Craft that actual request to @thePeer@ asking blocks of @theCandidate@:
+-- 3. Craft the actual request to @thePeer@ asking blocks of @theCandidate@:
 --
 --    - If the byte size of @inflight(thePeer)@ is below the low-water mark,
 --      then terminate this iteration.
@@ -69,19 +66,16 @@
 --      which blocks are actually already currently in-flight with @thePeer@.
 --
 -- 4. If we went through the election of a new peer, replace @currentPeer@ and
---    reset @currentStart@. REVIEW: Maybe this should just be done directly in
---    step 2.
+--    reset @currentStart@.
 --
 -- Terminate this iteration.
 --
--- About ignored in-flight requests
--- --------------------------------
+-- About the influence of in-flight requests
+-- -----------------------------------------
 --
 -- One can note that in-flight requests are ignored when finding a new peer, but
 -- considered when crafting the actual request to a chosen peer. This is by
--- design. The goal of this algorithm is to keep talking to the same peer unless
--- it proves to be too weak; in that case, @inflight(p)@ will be empty for all
--- @p /= currentPeer@.
+-- design. We explain the rationale here.
 --
 -- If a peer proves too slow, then we give up on it (see point 0. above), even
 -- if it has requests in-flight. In subsequent selections of peers (point 2.),
@@ -102,38 +96,30 @@
 -- Interactions with ChainSync Jumping (CSJ)
 -- -----------------------------------------
 --
--- This decision logic is not so obviously coupled with CSJ, but it is in some
--- subtle ways:
+-- Because we always require our peers to be able to serve a gross request
+-- with an old block, peers with longer chains have a better chance to pass
+-- this criteria and to be selected as current peer. The CSJ dynamo, being
+-- always ahead of jumpers, has therefore more chances to be selected as the
+-- current peer. It is still possible for a jumper or a disengaged peer to be
+-- selected.
 --
--- - Because we always require our peers to be able to serve a gross request of
---   oldest blocks, peers with longer chains have a better chance to pass this
---   criteria and to be selected as current peer. The CSJ dynamo, being always
---   ahead of jumpers, has therefore more chances to be selected as the current
---   peer. It is still possible for a jumper or a disengaged peer to be
---   selected.
---
--- - If the current peer is the CSJ dynamo, but it is a dishonest peer serving
---   headers fast but retaining blocks, it might be able to drastically leash
---   us, because its ChainSync client will be stuck behind the forecast horizon
---   (and therefore not subject to ChainSync punishments such as the Limit on
---   Patience). This is why we need to consider starvation of ChainSel and
---   demote peers that let us starve.
+-- If the current peer is the CSJ dynamo and it is a dishonest peer that retains
+-- blocks, it will get multiple opportunities to do so since it will be selected
+-- as the current peer more often. We therefore rotate the dynamo every time it
+-- is the current peer and it fails to serve blocks promptly.
 --
 -- About the gross request
 -- -----------------------
 --
--- Morally, we want to select a peer that is able to serve us a batch of oldest
--- blocks of @theCandidate@. However, the actual requests depend not only on the
--- size of the blocks to fetch, but also on the network performances of the peer
--- and what requests it already has in-flight. Looking at what peer can create
--- an actual request for @theCandidate@ can be misleading: indeed, our
--- @currentPeer@ might not be able to create a request simply because it is
--- already busy answering other requests from us. This calls for the
--- introduction of an objective criterium, which the gross request provides.
+-- We want to select a peer that is able to serve us a batch of oldest blocks
+-- of @theCandidate@. However, not every peer will be able to deliver these
+-- batches as they might be on different chains. We therefore select a peer only
+-- if its candidate fragment contains the block in the gross request. In this
+-- way, we ensure that the peer can serve at least one block that we wish to
+-- fetch.
 --
--- If the gross request is included in a peer's candidate, it means that this
--- peer can serve at least 1 block that we wish to fetch. The actual request might
--- be bigger than that because the peer can have more blocks.
+-- If the peer cannot offer any more blocks after that, it will be rotated out
+-- soon.
 --
 module Ouroboros.Network.BlockFetch.Decision.BulkSync (
   fetchDecisionsBulkSyncM
@@ -419,7 +405,6 @@ selectTheCandidate
       -- consider longest fragments first.
       . List.sortOn (Down . headBlockNo . fst)
     where
-      -- Very ad-hoc helper.
       -- Write all of the declined peers, and find the candidate fragment
       -- if there is any.
       separateDeclinedAndStillInRace ::
@@ -485,8 +470,8 @@ selectThePeer
                 Right () -> return $ Just (thePeerCandidate, thePeerInfo)
 
       Nothing -> do
-        -- For each peer, check whether its candidate contains the gross request in
-        -- its entirety, otherwise decline it. This will guarantee that the
+        -- For each peer, check whether its candidate contains the head of the
+        -- gross request, otherwise decline it. This will guarantee that the
         -- remaining peers can serve the refined request that we will craft later.
         peers <-
           filterM
