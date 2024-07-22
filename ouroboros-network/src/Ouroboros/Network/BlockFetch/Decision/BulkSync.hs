@@ -139,7 +139,7 @@ module Ouroboros.Network.BlockFetch.Decision.BulkSync (
   fetchDecisionsBulkSyncM
 ) where
 
-import Control.Monad (filterM, when)
+import Control.Monad (filterM, guard, when)
 import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime (getMonotonicTime), addTime)
 import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
 import Control.Monad.Writer.Strict (Writer, runWriter, MonadWriter (tell))
@@ -153,7 +153,7 @@ import Data.Maybe (listToMaybe, mapMaybe, maybeToList, isNothing)
 import qualified Data.Set as Set
 import Data.Ord (Down(Down))
 
-import Cardano.Prelude (partitionEithers, (&))
+import Cardano.Prelude (partitionEithers)
 
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment, headBlockNo)
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -217,18 +217,10 @@ fetchDecisionsBulkSyncM
     )
   candidatesAndPeers = do
     peersOrder@PeersOrder{peersOrderCurrent} <-
-      peersOrder0
-        -- Align the peers order with the actual peers; this consists in removing
-        -- all peers from the peers order that are not in the actual peers list and
-        -- adding at the end of the peers order all the actual peers that were not
-        -- there before.
-        & alignPeersOrderWithActualPeers
-          (map (\(_, (_, _, _, peer, _)) -> peer) candidatesAndPeers)
-        -- If the chain selection has been starved recently, that is after the
-        -- current peer started (and a grace period), then the current peer is
-        -- bad. We push it at the end of the queue, demote it from CSJ dynamo,
-        -- and ignore its in-flight blocks for the future.
-        & checkLastChainSelStarvation
+      checkLastChainSelStarvation $
+      alignPeersOrderWithActualPeers
+        (map (peerInfoPeer . snd) candidatesAndPeers)
+        peersOrder0
 
     let peersOrderCurrentInfo = do
           currentPeer <- peersOrderCurrent
@@ -264,22 +256,31 @@ fetchDecisionsBulkSyncM
       map (first Right) (maybeToList theDecision)
         ++ map (first Left) declines
     where
+      -- Align the peers order with the actual peers; this consists in removing
+      -- all peers from the peers order that are not in the actual peers list and
+      -- adding at the end of the peers order all the actual peers that were not
+      -- there before.
       alignPeersOrderWithActualPeers :: [peer] -> PeersOrder peer -> PeersOrder peer
       alignPeersOrderWithActualPeers
         actualPeers
         PeersOrder {peersOrderStart, peersOrderCurrent, peersOrderAll} =
-          let peersOrderCurrent' = case peersOrderCurrent of
-                                      Just peersOrderCurrent_ | peersOrderCurrent_`elem` actualPeers -> peersOrderCurrent
-                                      _ -> Nothing
+          let peersOrderCurrent' = do
+                peer <- peersOrderCurrent
+                guard (peer `elem` actualPeers)
+                pure peer
               peersOrderAll' =
                 filter (`elem` actualPeers) peersOrderAll
-                  ++ filter (\peer -> peer `notElem` peersOrderAll) actualPeers
+                  ++ filter (`notElem` peersOrderAll) actualPeers
            in PeersOrder
                 { peersOrderCurrent = peersOrderCurrent',
                   peersOrderAll = peersOrderAll',
                   peersOrderStart
                 }
 
+      -- If the chain selection has been starved recently, that is after the
+      -- current peer started (and a grace period), then the current peer is
+      -- bad. We push it at the end of the queue, demote it from CSJ dynamo,
+      -- and ignore its in-flight blocks for the future.
       checkLastChainSelStarvation :: PeersOrder peer -> m (PeersOrder peer)
       checkLastChainSelStarvation
         peersOrder@PeersOrder {peersOrderStart, peersOrderCurrent, peersOrderAll} = do
@@ -287,16 +288,16 @@ fetchDecisionsBulkSyncM
             ChainSelStarvationEndedAt time -> pure time
             ChainSelStarvationOngoing -> getMonotonicTime
           case peersOrderCurrent of
-            Just peersOrderCurrent_ ->
+            Just peer ->
                 if lastStarvationTime >= addTime bulkSyncGracePeriod peersOrderStart
                   then do
-                    traceWith tracer $ PeerStarvedUs peersOrderCurrent_
-                    demoteCSJDynamo peersOrderCurrent_
+                    traceWith tracer (PeerStarvedUs peer)
+                    demoteCSJDynamo peer
                     let peersOrder' =
                           PeersOrder
                             {
                               peersOrderCurrent = Nothing,
-                              peersOrderAll = filter (/= peersOrderCurrent_) peersOrderAll ++ [peersOrderCurrent_],
+                              peersOrderAll = filter (/= peer) peersOrderAll ++ [peer],
                               peersOrderStart
                             }
                     writePeersOrder peersOrder'
