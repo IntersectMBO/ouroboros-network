@@ -62,6 +62,9 @@ type PeerInfo header peer extra =
          extra
        )
 
+peerInfoPeer :: PeerInfo header peer extra -> peer
+peerInfoPeer (_, _, _, p, _) = p
+
 -- | Throughout the decision making process we accumulate reasons to decline
 -- to fetch any blocks. This type is used to wrap intermediate and final
 -- results.
