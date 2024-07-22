@@ -7,6 +7,8 @@
 module Ouroboros.Network.TxSubmission.Inbound.Registry
   ( SharedTxStateVar
   , newSharedTxStateVar
+  , TxChannelsVar
+  , newTxChannelsVar
   , PeerTxAPI (..)
   , decisionLogicThread
   , withPeer
@@ -42,6 +44,9 @@ newtype TxChannels m peeraddr txid tx = TxChannels {
     }
 
 type TxChannelsVar m peeraddr txid tx = StrictMVar m (TxChannels m peeraddr txid tx)
+
+newTxChannelsVar :: MonadMVar m => m (TxChannelsVar m peeraddr txid tx)
+newTxChannelsVar = newMVar (TxChannels Map.empty)
 
 -- | API to access `PeerTxState` inside `PeerTxStateVar`.
 --
