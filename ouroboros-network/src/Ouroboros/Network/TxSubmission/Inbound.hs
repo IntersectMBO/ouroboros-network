@@ -59,11 +59,11 @@ import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
 -- re-exports
 --
 
-import Ouroboros.Network.TxSubmission.Inbound.Types as Types
 import Ouroboros.Network.TxSubmission.Inbound.Decision as Decision
-import Ouroboros.Network.TxSubmission.Inbound.Registry as Registry
 import Ouroboros.Network.TxSubmission.Inbound.Policy as Policy
+import Ouroboros.Network.TxSubmission.Inbound.Registry as Registry
 import Ouroboros.Network.TxSubmission.Inbound.Server as Server
+import Ouroboros.Network.TxSubmission.Inbound.Types as Types
 
 
 -- | Information maintained internally in the 'txSubmissionInbound' server
