@@ -145,10 +145,11 @@ import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
 import Control.Monad.Writer.Strict (Writer, runWriter, MonadWriter (tell))
 import Control.Tracer (Tracer, traceWith)
 import Data.Bifunctor (first, Bifunctor (..))
+import Data.Function (on)
 import qualified Data.List as List
 import Data.List.NonEmpty (nonEmpty)
 import qualified Data.List.NonEmpty as NE
-import Data.Maybe (mapMaybe, maybeToList, isNothing)
+import Data.Maybe (listToMaybe, mapMaybe, maybeToList, isNothing)
 import qualified Data.Set as Set
 import Data.Ord (Down(Down))
 
@@ -229,11 +230,14 @@ fetchDecisionsBulkSyncM
         -- and ignore its in-flight blocks for the future.
         & checkLastChainSelStarvation
 
-    let peersOrderCurrentInfo =
-          peersOrderCurrent >>= \peersOrderCurrent_ ->
-          case List.find (eqPeerInfo' peersOrderCurrent_) $ map snd candidatesAndPeers of
-            Just peerCurrentInfo@(_,inflight,_,_,_) | not (Set.null (peerFetchBlocksInFlight inflight)) -> Just peerCurrentInfo
-            _ -> Nothing
+    let peersOrderCurrentInfo = do
+          currentPeer <- peersOrderCurrent
+          listToMaybe
+            [ peerCurrentInfo
+              | (_, peerCurrentInfo@(_, inflight, _, peer, _)) <- candidatesAndPeers
+              , peer == currentPeer
+              , not (Set.null (peerFetchBlocksInFlight inflight))
+            ]
 
     -- Compute the actual block fetch decision. This contains only declines and
     -- at most one request. 'theDecision' is therefore a 'Maybe'.
@@ -471,7 +475,7 @@ selectThePeer
     -- can choose any peer, so we choose a “good” one.
     case mCurrentPeer of
       Just thePeerInfo -> do
-          case List.break (eqPeerInfo thePeerInfo . snd) candidates of
+          case List.break (((==) `on` peerInfoPeer) thePeerInfo . snd) candidates of
             (_, []) -> tell (List [(FetchDeclineChainNotPlausible, thePeerInfo)]) >> return Nothing
             (otherPeersB, (thePeerCandidate, _) : otherPeersA) -> do
               tell (List (map (first (const (FetchDeclineConcurrencyLimit FetchModeBulkSync 1))) otherPeersB))
@@ -584,9 +588,3 @@ fetchTheCandidate
          in if null trimmedFragments
               then Left FetchDeclineAlreadyFetched
               else Right trimmedFragments
-
-eqPeerInfo :: Eq peer => PeerInfo header peer extra -> PeerInfo header peer extra -> Bool
-eqPeerInfo (_,_,_,p1,_) (_,_,_,p2,_) = p1 == p2
-
-eqPeerInfo' :: Eq peer => peer -> PeerInfo header peer extra -> Bool
-eqPeerInfo' p1 (_,_,_,p2,_) = p1 == p2
