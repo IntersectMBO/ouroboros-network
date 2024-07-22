@@ -571,6 +571,7 @@ fetchTheCandidate
     where
       trimFragmentsToCandidate candidate fragments =
         let trimmedFragments =
+              filter (not . AF.null) $
               mapMaybe
                 ( \fragment ->
                     -- 'candidate' is anchored at the immutable tip, so we don't
