@@ -471,10 +471,11 @@ selectThePeer
     -- can choose any peer, so we choose a “good” one.
     case mCurrentPeer of
       Just thePeerInfo -> do
-          case extractFirstElem (eqPeerInfo thePeerInfo . snd) candidates of
-            Nothing -> tell (List [(FetchDeclineChainNotPlausible, thePeerInfo)]) >> return Nothing
-            Just ((thePeerCandidate, _), otherPeers) -> do
-              tell (List (map (first (const (FetchDeclineConcurrencyLimit FetchModeBulkSync 1))) otherPeers))
+          case List.break (eqPeerInfo thePeerInfo . snd) candidates of
+            (_, []) -> tell (List [(FetchDeclineChainNotPlausible, thePeerInfo)]) >> return Nothing
+            (otherPeersB, (thePeerCandidate, _) : otherPeersA) -> do
+              tell (List (map (first (const (FetchDeclineConcurrencyLimit FetchModeBulkSync 1))) otherPeersB))
+              tell (List (map (first (const (FetchDeclineConcurrencyLimit FetchModeBulkSync 1))) otherPeersA))
               -- REVIEW: This is maybe overkill to check that the whole gross request
               -- fits in the peer's candidate. Maybe just checking that there is one
               -- block is sufficient.
@@ -583,12 +584,6 @@ fetchTheCandidate
          in if null trimmedFragments
               then Left FetchDeclineAlreadyFetched
               else Right trimmedFragments
-
-extractFirstElem :: (a -> Bool) -> [a] -> Maybe (a, [a])
-extractFirstElem _ [] = Nothing
-extractFirstElem p (x : xs)
-  | p x = Just (x, xs)
-  | otherwise = second (x :) <$> extractFirstElem p xs
 
 eqPeerInfo :: Eq peer => PeerInfo header peer extra -> PeerInfo header peer extra -> Bool
 eqPeerInfo (_,_,_,p1,_) (_,_,_,p2,_) = p1 == p2
