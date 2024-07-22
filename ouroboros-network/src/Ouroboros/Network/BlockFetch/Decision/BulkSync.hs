@@ -136,7 +136,7 @@ import qualified Data.List as List
 import Data.List.NonEmpty (nonEmpty)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Set as Set
-import Data.Maybe (mapMaybe, maybeToList)
+import Data.Maybe (maybeToList)
 import Data.Ord (Down(Down))
 
 import Cardano.Prelude (partitionEithers)
@@ -550,15 +550,11 @@ makeFetchRequest
     where
       trimFragmentsToCandidate candidate fragments =
         let trimmedFragments =
-              filter (not . AF.null) $
-              mapMaybe
-                ( \fragment ->
-                    -- 'candidate' is anchored at the immutable tip, so we don't
-                    -- need to look for something more complicated than this.
-                    (\(_, prefix, _, _) -> prefix)
-                      <$> AF.intersect (getChainSuffix candidate) fragment
-                )
-                fragments
+              [ prefix
+              | fragment <- fragments
+              , Just (_, prefix, _, _) <- [AF.intersect (getChainSuffix candidate) fragment]
+              , not (AF.null prefix)
+              ]
          in if null trimmedFragments
               then Left FetchDeclineAlreadyFetched
               else Right trimmedFragments
