@@ -13,7 +13,7 @@ import Control.Exception (assert)
 import Control.Monad.Class.MonadTime.SI (DiffTime)
 import Data.Function (on)
 import Data.Hashable
-import Data.List (foldl', groupBy, sortBy, transpose)
+import Data.List as List (foldl', groupBy, sortBy, transpose)
 import Data.Maybe (mapMaybe)
 import Data.Set (Set)
 import Data.Set qualified as Set
@@ -852,7 +852,7 @@ fetchRequestDecisions fetchDecisionPolicy chains =
                maxSlotNoFetchedThisRound `max` maxSlotNoFetchedThisDecision)
               where
                 maxSlotNoFetchedThisDecision =
-                  foldl' max NoMaxSlotNo $ map MaxSlotNo $
+                  List.foldl' max NoMaxSlotNo $ map MaxSlotNo $
                   mapMaybe (withOriginToMaybe . AF.headSlot) fragments
 
                 blocksFetchedThisDecision =
