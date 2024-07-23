@@ -26,8 +26,6 @@ import Control.Monad (unless)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 
-import qualified Data.Set as Set
-
 import Control.Tracer (traceWith)
 
 import Ouroboros.Network.Block
