@@ -390,16 +390,17 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
     mkArgsExtra :: StrictTVar m (Script UseBootstrapPeers)
                 -> Diff.P2P.ArgumentsExtra m
     mkArgsExtra ubpVar = Diff.P2P.ArgumentsExtra
-      { Diff.P2P.daPeerSelectionTargets  = aPeerSelectionTargets na
-      , Diff.P2P.daReadLocalRootPeers    = aReadLocalRootPeers na
-      , Diff.P2P.daReadPublicRootPeers   = aReadPublicRootPeers na
-      , Diff.P2P.daReadUseBootstrapPeers = stepScriptSTM' ubpVar
-      , Diff.P2P.daOwnPeerSharing        = aOwnPeerSharing na
-      , Diff.P2P.daReadUseLedgerPeers    = aReadUseLedgerPeers na
-      , Diff.P2P.daProtocolIdleTimeout   = aProtocolIdleTimeout na
-      , Diff.P2P.daTimeWaitTimeout       = aTimeWaitTimeout na
-      , Diff.P2P.daDeadlineChurnInterval = 3300
-      , Diff.P2P.daBulkChurnInterval     = 300
+      { Diff.P2P.daPeerSelectionTargets   = aPeerSelectionTargets na
+      , Diff.P2P.daReadLocalRootPeers     = aReadLocalRootPeers na
+      , Diff.P2P.daReadPublicRootPeers    = aReadPublicRootPeers na
+      , Diff.P2P.daReadUseBootstrapPeers  = stepScriptSTM' ubpVar
+      , Diff.P2P.daOwnPeerSharing         = aOwnPeerSharing na
+      , Diff.P2P.daReadUseLedgerPeers     = aReadUseLedgerPeers na
+      , Diff.P2P.daProtocolIdleTimeout    = aProtocolIdleTimeout na
+      , Diff.P2P.daTimeWaitTimeout        = aTimeWaitTimeout na
+      , Diff.P2P.daDeadlineChurnInterval  = 3300
+      , Diff.P2P.daBulkChurnInterval      = 300
+      , Diff.P2P.daReadLedgerPeerSnapshot = pure Nothing -- ^ tested independently
       }
 
     appArgs :: Node.AppArgs BlockHeader Block m

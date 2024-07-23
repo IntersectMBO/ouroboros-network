@@ -1,12 +1,13 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE CPP                 #-}
-{-# LANGUAGE DerivingStrategies  #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE BangPatterns          #-}
+{-# LANGUAGE CPP                   #-}
+{-# LANGUAGE DerivingStrategies    #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeApplications      #-}
 #if __GLASGOW_HASKELL__ >= 908
 {-# OPTIONS_GHC -Wno-x-partial #-}
 #endif
@@ -22,10 +23,13 @@ module Ouroboros.Network.PeerSelection.LedgerPeers
   , TraceLedgerPeers (..)
   , NumberOfPeers (..)
   , LedgerPeersKind (..)
+  , StakeMapOverSource (..)
     -- * Ledger Peers specific functions
   , accPoolStake
+  , accumulateBigLedgerStake
   , accBigPoolStakeMap
   , bigLedgerPeerQuota
+  , stakeMapWithSlotOverSource
     -- * DNS based provider for ledger root peers
   , WithLedgerPeersArgs (..)
   , withLedgerPeers
@@ -46,10 +50,11 @@ import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (isJust)
 import Data.Ratio
 import System.Random
 
-import Cardano.Slotting.Slot (WithOrigin (..))
+import Cardano.Slotting.Slot (SlotNo (..), WithOrigin (..))
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadThrow
 import Data.Set (Set)
@@ -59,8 +64,9 @@ import Data.Word (Word16, Word64)
 import Network.DNS qualified as DNS
 import Ouroboros.Network.PeerSelection.LedgerPeers.Common
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-import Ouroboros.Network.PeerSelection.LedgerPeers.Utils (accBigPoolStake,
-           bigLedgerPeerQuota, reRelativeStake)
+import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
+           (accumulateBigLedgerStake, bigLedgerPeerQuota,
+           recomputeRelativeStake)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS
 import Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
@@ -110,7 +116,7 @@ accPoolStake :: [(PoolStake, NonEmpty RelayAccessPoint)]
 accPoolStake =
       Map.fromList
     . List.foldl' fn []
-    . reRelativeStake AllLedgerPeers
+    . recomputeRelativeStake AllLedgerPeers
   where
     fn :: [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))]
        -> (PoolStake, NonEmpty RelayAccessPoint)
@@ -129,7 +135,7 @@ accBigPoolStakeMap :: [(PoolStake, NonEmpty RelayAccessPoint)]
                    -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
 accBigPoolStakeMap = Map.fromAscList      -- the input list is ordered by `AccPoolStake`, thus we
                                           -- can use `fromAscList`
-                     . accBigPoolStake
+                     . accumulateBigLedgerStake
 
 -- | Try to pick n random peers using stake distribution.
 --
@@ -224,17 +230,19 @@ ledgerPeersThread PeerActionsDNS {
                     wlpRng,
                     wlpConsensusInterface,
                     wlpTracer,
-                    wlpGetUseLedgerPeers }
+                    wlpGetUseLedgerPeers,
+                    wlpGetLedgerPeerSnapshot }
                   getReq
                   putResp = do
-    go wlpRng (Time 0) Map.empty Map.empty
+    go wlpRng (Time 0) Map.empty Map.empty Nothing
   where
     go :: StdGen
        -> Time
        -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
        -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
+       -> Maybe SlotNo
        -> m Void
-    go rng oldTs peerMap bigPeerMap = do
+    go rng oldTs peerMap bigPeerMap cachedSlot = do
         traceWith wlpTracer WaitingOnRequest
         -- wait until next request of ledger peers
         ((numRequested, ledgerPeersKind), useLedgerPeers) <- atomically $
@@ -248,32 +256,41 @@ ledgerPeersThread PeerActionsDNS {
         traceWith wlpTracer $ RequestForPeers numRequested
         !now <- getMonotonicTime
         let age = diffTime now oldTs
-        (peerMap', bigPeerMap', ts) <-
+        (peerMap', bigPeerMap', cachedSlot', ts) <-
           if age > peerListLifeTime
              then case useLedgerPeers of
                DontUseLedgerPeers -> do
                  traceWith wlpTracer DisabledLedgerPeers
-                 return (Map.empty, Map.empty, now)
+                 return (Map.empty, Map.empty, Nothing, now)
                UseLedgerPeers ula -> do
-                 peers <- (\case
-                            BeforeSlot          -> []
-                            LedgerPeers _ peers -> peers
-                          )
-                      <$> atomically (getLedgerPeers wlpConsensusInterface ula)
-                 let peersStake   = accPoolStake peers
-                     bigPeersStakeMap = accBigPoolStakeMap peers
-                 traceWith wlpTracer $ FetchingNewLedgerState (Map.size peersStake) (Map.size bigPeersStakeMap)
-                 return (peersStake, bigPeersStakeMap, now)
+                 (ledgerWithOrigin, ledgerPeers, peerSnapshot) <-
+                   atomically ((,,) <$> lpGetLatestSlot wlpConsensusInterface
+                                    <*> getLedgerPeers wlpConsensusInterface ula
+                                    <*> wlpGetLedgerPeerSnapshot)
+
+                 let (peersStakeMap, bigPeersStakeMap, cachedSlot'') =
+                       stakeMapWithSlotOverSource StakeMapOverSource {
+                                                    ledgerWithOrigin,
+                                                    ledgerPeers,
+                                                    peerSnapshot,
+                                                    cachedSlot,
+                                                    peerMap,
+                                                    bigPeerMap,
+                                                    ula}
+                 when (isJust cachedSlot'') $ traceWith wlpTracer UsingBigLedgerPeerSnapshot
+
+                 traceWith wlpTracer $ FetchingNewLedgerState (Map.size peersStakeMap) (Map.size bigPeersStakeMap)
+                 return (peersStakeMap, bigPeersStakeMap, cachedSlot'', now)
              else do
                traceWith wlpTracer $ ReusingLedgerState (Map.size peerMap) age
-               return (peerMap, bigPeerMap, oldTs)
+               return (peerMap, bigPeerMap, cachedSlot, oldTs)
 
-        if Map.null peerMap'
+        if all Map.null [peerMap', bigPeerMap']
            then do
                when (isLedgerPeersEnabled useLedgerPeers) $
                    traceWith wlpTracer FallingBackToPublicRootPeers
                atomically $ putResp Nothing
-               go rng ts peerMap' bigPeerMap'
+               go rng ts peerMap' bigPeerMap' cachedSlot'
            else do
                let ttl = 5 -- TTL, used as re-request interval by the governor.
 
@@ -312,7 +329,7 @@ ledgerPeersThread PeerActionsDNS {
                                   domainAddrs
 
                atomically $ putResp $ Just (pickedAddrs, ttl)
-               go rng'' ts peerMap' bigPeerMap'
+               go rng'' ts peerMap' bigPeerMap' cachedSlot'
 
     -- Randomly pick one of the addresses returned in the DNS result.
     pickDomainAddrs :: (StdGen, Set peerAddr)
@@ -338,16 +355,74 @@ ledgerPeersThread PeerActionsDNS {
           addrs' = Set.insert addr addrs
        in (addrs', domains)
 
+
+-- | Arguments record to stakeMapWithSlotOverSource function
+--
+data StakeMapOverSource = StakeMapOverSource {
+  ledgerWithOrigin :: WithOrigin SlotNo,
+  ledgerPeers      :: LedgerPeers,
+  peerSnapshot     :: Maybe LedgerPeerSnapshot,
+  cachedSlot       :: Maybe SlotNo,
+  peerMap          :: Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint),
+  bigPeerMap       :: Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint),
+  ula              :: AfterSlot }
+  deriving Show
+
+-- | Build up a stake map to sample ledger peers from. The SlotNo, if different from 0,
+-- indicates that the maps are the stake pools from the snapshot taken from the particular
+-- slot number.
+--
+stakeMapWithSlotOverSource :: StakeMapOverSource
+                           -> (Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint),
+                               Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint),
+                               Maybe SlotNo)
+stakeMapWithSlotOverSource StakeMapOverSource {
+                             ledgerWithOrigin,
+                             ledgerPeers,
+                             peerSnapshot,
+                             cachedSlot,
+                             peerMap,
+                             bigPeerMap,
+                             ula } =
+  case (ledgerWithOrigin, ledgerPeers, peerSnapshot) of
+    (At ledgerSlotNo, LedgerPeers _ ledgerRelays, Just (LedgerPeerSnapshot (At snapshotSlotNo, accSnapshotRelays)))
+      | snapshotSlotNo >= ledgerSlotNo -> -- ^ we cache the peers from the snapshot
+                                          -- to avoid unnecessary work
+        case cachedSlot of
+          Just thatSlot | thatSlot == snapshotSlotNo ->
+                          (peerMap, bigPeerMap, cachedSlot)
+          _otherwise -> ( accPoolStake (map snd accSnapshotRelays)
+                        , Map.fromAscList accSnapshotRelays
+                        , Just snapshotSlotNo)
+      | otherwise -> (accPoolStake ledgerRelays, accBigPoolStakeMap ledgerRelays, Nothing)
+
+    (_, LedgerPeers _ ledgerRelays, Nothing) -> ( accPoolStake ledgerRelays
+                                                , accBigPoolStakeMap ledgerRelays
+                                                , Nothing)
+
+    (_, _, Just (LedgerPeerSnapshot (At snapshotSlotNo, accSnapshotRelays)))
+      | After slot <- ula, snapshotSlotNo >= slot -> do
+        case cachedSlot of
+          Just thatSlot | thatSlot == snapshotSlotNo ->
+                          (peerMap, bigPeerMap, cachedSlot)
+          _otherwise -> ( accPoolStake (map snd accSnapshotRelays)
+                        , Map.fromAscList accSnapshotRelays
+                        , Just snapshotSlotNo)
+
+    _otherwise -> (Map.empty, Map.empty, Nothing)
+
 -- | Argument record for withLedgerPeers
 --
 data WithLedgerPeersArgs m = WithLedgerPeersArgs {
-  wlpRng                :: StdGen,
+  wlpRng                   :: StdGen,
   -- ^ Random generator for picking ledger peers
-  wlpConsensusInterface :: LedgerPeersConsensusInterface m,
-  wlpTracer             :: Tracer m TraceLedgerPeers,
+  wlpConsensusInterface    :: LedgerPeersConsensusInterface m,
+  wlpTracer                :: Tracer m TraceLedgerPeers,
   -- ^ Get Ledger Peers comes from here
-  wlpGetUseLedgerPeers  :: STM m UseLedgerPeers
+  wlpGetUseLedgerPeers     :: STM m UseLedgerPeers,
   -- ^ Get Use Ledger After value
+  wlpGetLedgerPeerSnapshot :: STM m (Maybe LedgerPeerSnapshot)
+  -- ^ Get ledger peer snapshot from file read by node
   }
 
 -- | For a LedgerPeers worker thread and submit request and receive responses.
