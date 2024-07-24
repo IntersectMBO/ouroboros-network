@@ -91,7 +91,7 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
         ClientStIdle { recvMsgRequestTxIds, recvMsgRequestTxs }
       where
         recvMsgRequestTxIds :: forall blocking.
-                               TokBlockingStyle blocking
+                               SingBlockingStyle blocking
                             -> NumTxIdsToAck
                             -> NumTxIdsToReq
                             -> m (ClientStTxIds blocking txid tx m ())
@@ -127,7 +127,7 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
           -- Grab info about any new txs after the last tx idx we've seen,
           -- up to the number that the peer has requested.
           case blocking of
-            TokBlocking -> do
+            SingBlocking -> do
               when (reqNo == 0) $
                 throwIO ProtocolErrorRequestedNothing
               unless (Seq.null unackedSeq') $
@@ -151,7 +151,7 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
                         Nothing -> error "txSubmissionOutbound: empty transaction's list"
                   in  pure (SendMsgReplyTxIds (BlockingReply txs'') client')
 
-            TokNonBlocking -> do
+            SingNonBlocking -> do
               when (reqNo == 0 && ackNo == 0) $
                 throwIO ProtocolErrorRequestedNothing
               when (Seq.null unackedSeq') $
