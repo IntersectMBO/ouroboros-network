@@ -240,8 +240,8 @@ tracePropertyBlocksRequestedAndRecievedPerPeer
   -> [Example1TraceEvent]
   -> Property
 tracePropertyBlocksRequestedAndRecievedPerPeer fork1 fork2 es =
-      requestedFetchPoints === requiredFetchPoints
- .&&. receivedFetchPoints  === requiredFetchPoints
+       counterexample "should request the expected blocks" (requestedFetchPoints === requiredFetchPoints)
+  .&&. counterexample "should receive the expected blocks" (receivedFetchPoints  === requiredFetchPoints)
   where
     requiredFetchPoints =
       Map.filter (not . Prelude.null) $
