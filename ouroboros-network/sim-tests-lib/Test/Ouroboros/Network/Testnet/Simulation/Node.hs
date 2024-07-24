@@ -19,6 +19,7 @@ module Test.Ouroboros.Network.Testnet.Simulation.Node
   , DiffusionSimulationTrace (..)
   , prop_diffusionScript_fixupCommands
   , prop_diffusionScript_commandScript_valid
+  , fixupCommands
   , diffusionSimulation
   , Command (..)
     -- * Tracing
@@ -51,6 +52,7 @@ import Data.ByteString.Char8 qualified as BSC
 import Data.ByteString.Lazy qualified as BL
 import Data.IP (IP (..))
 import Data.List (delete, nubBy)
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (catMaybes, fromMaybe, maybeToList)
@@ -69,6 +71,7 @@ import Network.TypedProtocol.PingPong.Type qualified as PingPong
 import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
 import Ouroboros.Network.ConnectionManager.Types (AbstractTransitionTrace,
            ConnectionManagerTrace)
+import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.Diffusion.P2P qualified as Diff.P2P
 import Ouroboros.Network.Driver.Limits (ProtocolSizeLimits (..),
            ProtocolTimeLimits (..))
@@ -76,8 +79,9 @@ import Ouroboros.Network.InboundGovernor (InboundGovernorTrace,
            RemoteTransitionTrace)
 import Ouroboros.Network.Mux (MiniProtocolLimits (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
-import Ouroboros.Network.PeerSelection.Governor (DebugPeerSelection (..),
-           PeerSelectionTargets (..), TracePeerSelection)
+import Ouroboros.Network.PeerSelection.Governor (ConsensusModePeerTargets (..),
+           DebugPeerSelection (..), PeerSelectionTargets (..),
+           TracePeerSelection)
 import Ouroboros.Network.PeerSelection.Governor qualified as PeerSelection
 import Ouroboros.Network.PeerSelection.LedgerPeers (AfterSlot (..),
            LedgerPeersConsensusInterface (..), LedgerStateJudgement (..),
@@ -192,6 +196,7 @@ data NodeArgs =
       -- ^ 'LimitsAndTimeouts' argument
     , naPublicRoots            :: Map RelayAccessPoint PeerAdvertise
       -- ^ 'Interfaces' relays auxiliary value
+    , naConsensusMode          :: ConsensusMode
     , naBootstrapPeers         :: Script UseBootstrapPeers
       -- ^ 'Interfaces' relays auxiliary value
     , naAddr                   :: NtNAddr
@@ -205,7 +210,7 @@ data NodeArgs =
                                    )]
     , naLedgerPeers            :: Script LedgerPools
       -- ^ 'Arguments' 'LocalRootPeers' values
-    , naLocalSelectionTargets  :: PeerSelectionTargets
+    , naPeerTargets            :: ConsensusModePeerTargets
       -- ^ 'Arguments' 'aLocalSelectionTargets' value
     , naDNSTimeoutScript       :: Script DNSTimeout
       -- ^ 'Arguments' 'aDNSTimeoutScript' value
@@ -218,24 +223,26 @@ data NodeArgs =
 
 instance Show NodeArgs where
     show NodeArgs { naSeed, naDiffusionMode, naMbTime, naBootstrapPeers, naPublicRoots,
-                   naAddr, naPeerSharing, naLocalRootPeers, naLocalSelectionTargets,
+                   naAddr, naPeerSharing, naLocalRootPeers, naPeerTargets,
                    naDNSTimeoutScript, naDNSLookupDelayScript, naChainSyncExitOnBlockNo,
-                   naChainSyncEarlyExit, naFetchModeScript } =
+                   naChainSyncEarlyExit, naFetchModeScript, naConsensusMode } =
       unwords [ "NodeArgs"
               , "(" ++ show naSeed ++ ")"
               , show naDiffusionMode
+              , show naConsensusMode
               , "(" ++ show naMbTime ++ ")"
               , "(" ++ show naPublicRoots ++ ")"
               , "(" ++ show naBootstrapPeers ++ ")"
               , "(" ++ show naAddr ++ ")"
               , show naPeerSharing
               , show naLocalRootPeers
-              , show naLocalSelectionTargets
+              , show naPeerTargets
               , "(" ++ show naDNSTimeoutScript ++ ")"
               , "(" ++ show naDNSLookupDelayScript ++ ")"
               , "(" ++ show naChainSyncExitOnBlockNo ++ ")"
               , show naChainSyncEarlyExit
               , show naFetchModeScript
+              , "============================================\n"
               ]
 
 data Command = JoinNetwork DiffTime
@@ -387,9 +394,11 @@ genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream
 
   -- Make sure our targets for active peers cover the maximum of peers
   -- one generated
-  SmallTargets peerSelectionTargets <- resize (length relays * 2) arbitrary
+  SmallTargets deadlineTargets <- resize (length relays * 2) arbitrary
                                        `suchThat` hasActive
-
+  SmallTargets syncTargets <- resize (length relays * 2) arbitrary
+                                       `suchThat` hasActive
+  let peerTargets = ConsensusModePeerTargets { deadlineTargets, syncTargets }
   dnsTimeout <- arbitrary
   dnsLookupDelay <- arbitrary
   chainSyncExitOnBlockNo
@@ -422,11 +431,11 @@ genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream
 
   fetchModeScript <- fmap (bool FetchModeBulkSync FetchModeDeadline) <$> arbitrary
 
-  firstBootstrapPeer <- maybe DontUseBootstrapPeers UseBootstrapPeers
-                      <$> arbitrary
-  bootstrapPeers <- listOf (maybe DontUseBootstrapPeers UseBootstrapPeers
-                           <$> arbitrary)
-  let bootstrapPeersDomain = Script (firstBootstrapPeer :| bootstrapPeers)
+  naConsensusMode <- arbitrary
+  bootstrapPeersDomain <-
+    case naConsensusMode of
+      GenesisMode -> pure . singletonScript $ DontUseBootstrapPeers
+      PraosMode   -> Script . NonEmpty.fromList <$> listOf1 arbitrary
 
   return
    $ NodeArgs
@@ -436,11 +445,12 @@ genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream
       , naPublicRoots            = publicRoots
         -- TODO: we haven't been using public root peers so far because we set
         -- `UseLedgerPeers 0`!
+      , naConsensusMode
       , naBootstrapPeers         = bootstrapPeersDomain
       , naAddr                   = makeNtNAddr relay
       , naLocalRootPeers         = localRootPeers
       , naLedgerPeers            = ledgerPeerPoolsScript
-      , naLocalSelectionTargets  = peerSelectionTargets
+      , naPeerTargets            = peerTargets
       , naDNSTimeoutScript       = dnsTimeout
       , naDNSLookupDelayScript   = dnsLookupDelay
       , naChainSyncExitOnBlockNo = chainSyncExitOnBlockNo
@@ -1052,10 +1062,11 @@ diffusionSimulation
             { naSeed                   = seed
             , naMbTime                 = mustReplyTimeout
             , naPublicRoots            = publicRoots
+            , naConsensusMode          = consensusMode
             , naBootstrapPeers         = bootstrapPeers
             , naAddr                   = addr
             , naLedgerPeers            = ledgerPeers
-            , naLocalSelectionTargets  = peerSelectionTargets
+            , naPeerTargets            = peerTargets
             , naDNSTimeoutScript       = dnsTimeout
             , naDNSLookupDelayScript   = dnsLookupDelay
             , naChainSyncExitOnBlockNo = chainSyncExitOnBlockNo
@@ -1180,11 +1191,12 @@ diffusionSimulation
               , NodeKernel.aDiffusionMode        = diffusionMode
               , NodeKernel.aKeepAliveInterval    = 10
               , NodeKernel.aPingPongInterval     = 10
-              , NodeKernel.aPeerSelectionTargets = peerSelectionTargets
+              , NodeKernel.aPeerTargets          = peerTargets
               , NodeKernel.aShouldChainSyncExit  = shouldChainSyncExit chainSyncExitVar
               , NodeKernel.aChainSyncEarlyExit   = chainSyncEarlyExit
               , NodeKernel.aReadLocalRootPeers   = readLocalRootPeers
               , NodeKernel.aReadPublicRootPeers  = readPublicRootPeers
+              , NodeKernel.aConsensusMode        = consensusMode
               , NodeKernel.aReadUseBootstrapPeers = bootstrapPeers
               , NodeKernel.aOwnPeerSharing       = peerSharing
               , NodeKernel.aReadUseLedgerPeers   = readUseLedgerPeers

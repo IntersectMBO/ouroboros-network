@@ -32,6 +32,7 @@ import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
 import System.Random (randomR)
 
+import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.ExitPolicy (RepromoteDelay)
 import Ouroboros.Network.ExitPolicy qualified as ExitPolicy
 import Ouroboros.Network.PeerSelection.Bootstrap (isBootstrapPeersEnabled,
@@ -63,27 +64,53 @@ governor_BOOTSTRAP_PEERS_TIMEOUT = 15 * 60
 -- state) then, until the node reaches a clean state, this monitoring action
 -- will be disabled and thus churning will be disabled as well.
 --
+-- On the other hand, if Genesis mode is on for the node, this action responds
+-- to changes in ledger state judgement monitoring actions to change the static
+-- set of target peers.
 targetPeers :: (MonadSTM m, Ord peeraddr)
             => PeerSelectionActions peeraddr peerconn m
             -> PeerSelectionState peeraddr peerconn
             -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-targetPeers PeerSelectionActions{readPeerSelectionTargets}
+targetPeers PeerSelectionActions{ readPeerSelectionTargets,
+                                  peerTargets = ConsensusModePeerTargets {
+                                    deadlineTargets,
+                                    syncTargets } }
             st@PeerSelectionState{
               publicRootPeers,
               localRootPeers,
               targets,
-              ledgerStateJudgement,
               bootstrapPeersFlag,
-              hasOnlyBootstrapPeers
+              hasOnlyBootstrapPeers,
+              ledgerStateJudgement,
+              consensusMode
             } =
     Guarded Nothing $ do
-      targets' <- readPeerSelectionTargets
-      check ( isNodeAbleToMakeProgress bootstrapPeersFlag
-                                       ledgerStateJudgement
-                                       hasOnlyBootstrapPeers
-            && targets' /= targets
-            && sanePeerSelectionTargets targets'
-            )
+      churnTargets <- readPeerSelectionTargets
+      -- Genesis consensus mode:
+      -- we check if targets proposed by churn are stale
+      -- in the sense that they are the targets for
+      -- opposite value of the current ledger state judgement.
+      -- This indicates that we aren't churning currently, and
+      -- furthermore it means that the ledger state has flipped since
+      -- we last churned. Therefore we can't set the targets from
+      -- the TVar, and instead we set the appropriate targets
+      -- for the mode we are in.
+      let targets' =
+            case (ledgerStateJudgement, consensusMode) of
+              (YoungEnough, GenesisMode)
+                | churnTargets == syncTargets ->
+                  deadlineTargets
+              (TooOld, GenesisMode)
+                | churnTargets == deadlineTargets ->
+                  syncTargets
+              _otherwise -> churnTargets
+
+      -- nb. first check is redundant in Genesis mode
+      check (   isNodeAbleToMakeProgress bootstrapPeersFlag
+                                         ledgerStateJudgement
+                                         hasOnlyBootstrapPeers
+             && targets /= targets'
+             && sanePeerSelectionTargets targets')
       -- We simply ignore target updates that are not "sane".
 
       let usingBootstrapPeers = requiresBootstrapPeers bootstrapPeersFlag
@@ -118,9 +145,7 @@ targetPeers PeerSelectionActions{readPeerSelectionTargets}
                           targets        = targets',
                           localRootPeers = localRootPeers',
                           publicRootPeers = publicRootPeers'
-                        }
-      }
-
+                        } }
 
 -- | Await for the first result from 'JobPool' and return its 'Decision'.
 --
@@ -425,9 +450,10 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
           -- doesn't really matter.
           --
           ledgerStateJudgement' =
-            if not hasOnlyBootstrapPeers'
-               then YoungEnough
-               else ledgerStateJudgement
+            if    requiresBootstrapPeers bootstrapPeersFlag ledgerStateJudgement
+               && not hasOnlyBootstrapPeers'
+            then YoungEnough
+            else ledgerStateJudgement
 
           -- If we are removing local roots and we have active connections to
           -- them then things are a little more complicated. We would typically
@@ -457,9 +483,7 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
         $ Decision {
             decisionTrace = TraceLocalRootPeersChanged localRootPeers localRootPeers'
                           : [ TraceLedgerStateJudgementChanged YoungEnough
-                            |  isBootstrapPeersEnabled bootstrapPeersFlag
-                            && not hasOnlyBootstrapPeers'
-                            && ledgerStateJudgement /= ledgerStateJudgement'
+                            | ledgerStateJudgement /= ledgerStateJudgement'
                             ],
             decisionState = st {
                               localRootPeers      = localRootPeers',
@@ -521,7 +545,10 @@ monitorBootstrapPeersFlag PeerSelectionActions { readUseBootstrapPeers }
                                                 , publicRootPeers
                                                 , inProgressPromoteCold
                                                 , inProgressPromoteWarm
-                                                } =
+                                                , consensusMode
+                                                }
+  | GenesisMode <- consensusMode = GuardedSkip Nothing
+  | otherwise =
   Guarded Nothing $ do
     ubp <- readUseBootstrapPeers
     check (ubp /= bootstrapPeersFlag)
@@ -551,11 +578,13 @@ monitorBootstrapPeersFlag PeerSelectionActions { readUseBootstrapPeers }
              }
       }
 
--- | Monitor 'LedgerStateJudgement', if it changes, depending on the value we
--- just need to update 'PeerSelectionTargets'. If the ledger state changed to
--- 'TooOld' we set all other targets to 0 and the governor waits for all
--- active connections to drop and then set the targets to sensible values for
--- getting caught up again.
+-- | Monitor 'LedgerStateJudgement', if it changes,
+--
+-- For Praos mode:
+-- If bootstrap peers are enabled, we need to update 'PeerSelectionTargets'.
+-- If the ledger state changed to 'TooOld' we set all other targets to 0
+-- and the governor waits for all active connections to drop and then set
+-- the targets to sensible values for getting caught up again.
 -- However if the state changes to 'YoungEnough' we reset the targets back to
 -- their original values.
 --
@@ -578,9 +607,22 @@ monitorLedgerStateJudgement PeerSelectionActions{ readLedgerStateJudgement }
                                                    establishedPeers,
                                                    inProgressPromoteCold,
                                                    inProgressPromoteWarm,
-                                                   ledgerStateJudgement
-                                                 }
-  | isBootstrapPeersEnabled bootstrapPeersFlag =
+                                                   ledgerStateJudgement,
+                                                   consensusMode }
+  | GenesisMode <- consensusMode =
+    Guarded Nothing $ do
+      lsj <- readLedgerStateJudgement
+      check (lsj /= ledgerStateJudgement)
+
+      return $ \_now ->
+        Decision {
+          decisionTrace = [TraceLedgerStateJudgementChanged lsj],
+          decisionJobs  = [],
+          decisionState = st {
+              ledgerStateJudgement = lsj } }
+
+  | PraosMode <- consensusMode
+  , isBootstrapPeersEnabled bootstrapPeersFlag =
     Guarded Nothing $ do
       lsj <- readLedgerStateJudgement
       check (lsj /= ledgerStateJudgement)

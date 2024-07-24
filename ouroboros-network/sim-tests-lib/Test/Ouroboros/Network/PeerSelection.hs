@@ -13,6 +13,7 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE ViewPatterns               #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 -- TODO: remove it once #3601 is fixed
@@ -42,6 +43,7 @@ import Data.Foldable (traverse_)
 import Data.Function (on)
 import Data.IP qualified as IP
 import Data.List as List (foldl', groupBy, intercalate)
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.List.Trace qualified as Trace
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -55,6 +57,7 @@ import System.Random (mkStdGen)
 import Network.DNS qualified as DNS (defaultResolvConf)
 import Network.Socket (SockAddr)
 
+import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
@@ -95,7 +98,6 @@ import Test.QuickCheck.Monoids
 import Test.Tasty
 import Test.Tasty.QuickCheck
 import Text.Pretty.Simple
-
 
 -- Exactly as named.
 unfHydra :: Int
@@ -178,17 +180,18 @@ tests =
       , testProperty "progresses towards active target (from above)"
                      prop_governor_target_active_big_ledger_peers_above
       ]
-    , testGroup "bootstrap peers"
+    ,
+      testGroup "bootstrap peers"
       [ testProperty "progress towards only bootstrap peers after changing to fallback state"
-                     prop_governor_only_bootstrap_peers_in_fallback_state
+                     $ prop_governor_only_bootstrap_peers_in_fallback_state . getMockEnv
       , testProperty "node does not learn about non trustable peers when in fallback state"
-                     prop_governor_no_non_trustable_peers_before_caught_up_state
+                     $ prop_governor_no_non_trustable_peers_before_caught_up_state . getMockEnv
       , testProperty "node only use bootstrap peers if in sensitive state"
-                     prop_governor_stops_using_bootstrap_peers
+                     $ prop_governor_stops_using_bootstrap_peers . getMockEnv
       , testProperty "node never uses non-trustable peers in clean state"
-                     prop_governor_only_bootstrap_peers_in_clean_state
+                     $ prop_governor_only_bootstrap_peers_in_clean_state . getMockEnv
       , testProperty "node uses ledger peers in non-sensitive mode"
-                     prop_governor_uses_ledger_peers
+                     $ prop_governor_uses_ledger_peers . getMockEnv
       ]
     , testProperty "association mode" prop_governor_association_mode
     ]
@@ -449,13 +452,34 @@ isEmptyEnv :: GovernorMockEnvironment -> Bool
 isEmptyEnv GovernorMockEnvironment {
              localRootPeers,
              publicRootPeers,
-             targets
+             targets = targets@(Script targets'),
+             consensusMode,
+             ledgerStateJudgement = Script ledgerStateJudgement'
            } =
     (LocalRootPeers.null localRootPeers
-      || all (\(t,_) -> targetNumberOfKnownPeers t == 0) targets)
+      || case consensusMode of
+           PraosMode ->
+             all (\(deadlineTargets -> t,_) -> targetNumberOfKnownPeers t == 0)
+                 targets
+           GenesisMode ->
+             all (\((t, _), (lsj, _)) ->
+                    case lsj of
+                      TooOld -> 0 == (targetNumberOfKnownPeers . syncTargets $ t)
+                      YoungEnough ->
+                        0 == (targetNumberOfKnownPeers . deadlineTargets $ t))
+                 $ NonEmpty.zip targets' ledgerStateJudgement')
  && (PublicRootPeers.null publicRootPeers
-      || all (\(t,_) -> targetNumberOfRootPeers  t == 0) targets)
-
+      || case consensusMode of
+           PraosMode ->
+             all (\(deadlineTargets -> t,_) -> targetNumberOfRootPeers  t == 0)
+                 targets
+           GenesisMode ->
+             all (\((t, _), (lsj, _)) ->
+                    case lsj of
+                      TooOld -> 0 == (targetNumberOfRootPeers . syncTargets $ t)
+                      YoungEnough ->
+                        0 == (targetNumberOfRootPeers . deadlineTargets $ t))
+                 $ NonEmpty.zip targets' ledgerStateJudgement')
 
 -- | As a basic property we run the governor to explore its state space a bit
 -- and check it does not throw any exceptions (assertions such as invariant
@@ -742,6 +766,19 @@ envEventCredits (TraceEnvSetTargets PeerSelectionTargets {
                           + targetNumberOfEstablishedPeers
                           + targetNumberOfActivePeers)
 
+-- todo: add big ledger peer terms?
+envEventCredits (TraceEnvGenesisLsjAndTargets (_, targets))
+  =   80
+    + 10 * (targetNumberOfKnownPeers
+    + targetNumberOfEstablishedPeers
+    + targetNumberOfActivePeers)
+  where
+    PeerSelectionTargets {
+      targetNumberOfRootPeers = _,
+      targetNumberOfKnownPeers,
+      targetNumberOfEstablishedPeers,
+      targetNumberOfActivePeers } = targets
+
 envEventCredits (TraceEnvPeersDemote Noop   _)    = 10
 envEventCredits (TraceEnvPeersDemote ToWarm _)    = 30
 envEventCredits (TraceEnvPeersDemote ToCooling _) = 30
@@ -979,7 +1016,7 @@ prop_governor_peershare_1hr env@GovernorMockEnvironment {
   where
     -- This test is only about testing peer sharing,
     -- so do not try to establish connections:
-    targets' :: PeerSelectionTargets
+    targets' :: ConsensusModePeerTargets
     targets' = fst (scriptHead targets)
 
     knownPeersAfter1Hour :: [(Time, TestTraceEvent)] -> Maybe (Set PeerAddr)
@@ -1073,15 +1110,15 @@ prop_governor_target_root_below env =
 
         govTargetsSig :: Signal Int
         govTargetsSig =
-          selectGovState (targetNumberOfRootPeers . Governor.targets) events
+          selectGovState (targetNumberOfRootPeers . Governor.targets) (consensusMode env) events
 
         govLocalRootPeersSig :: Signal (Set PeerAddr)
         govLocalRootPeersSig =
-          selectGovState (LocalRootPeers.keysSet . Governor.localRootPeers) events
+          selectGovState (LocalRootPeers.keysSet . Governor.localRootPeers) (consensusMode env) events
 
         govPublicRootPeersSig :: Signal (Set PeerAddr)
         govPublicRootPeersSig =
-          selectGovState (PublicRootPeers.toSet . Governor.publicRootPeers) events
+          selectGovState (PublicRootPeers.toSet . Governor.publicRootPeers) (consensusMode env) events
 
         govRootPeersSig :: Signal (Set PeerAddr)
         govRootPeersSig = Set.union <$> govLocalRootPeersSig <*> govPublicRootPeersSig
@@ -1138,18 +1175,21 @@ prop_governor_target_established_public (MaxTime maxTime) env =
         govPublicRootPeersSig :: Signal (Set PeerAddr)
         govPublicRootPeersSig =
           selectGovState (PublicRootPeers.toSet . Governor.publicRootPeers)
+                         (consensusMode env)
                          events
 
         govEstablishedPeersSig :: Signal (Set PeerAddr)
         govEstablishedPeersSig =
           selectGovState
             (EstablishedPeers.toSet . Governor.establishedPeers)
+            (consensusMode env)
             events
 
         govInProgressPromoteColdSig :: Signal (Set PeerAddr)
         govInProgressPromoteColdSig =
           selectGovState
             Governor.inProgressPromoteCold
+            (consensusMode env)
             events
 
         publicInEstablished :: Signal Bool
@@ -1196,23 +1236,27 @@ prop_governor_target_established_big_ledger_peers (MaxTime maxTime) env =
         govBigLedgerPeersSig :: Signal (Set PeerAddr)
         govBigLedgerPeersSig =
           selectGovState (PublicRootPeers.getBigLedgerPeers . Governor.publicRootPeers)
+                         (consensusMode env)
                          events
 
         govLedgerStateJudgement :: Signal LedgerStateJudgement
         govLedgerStateJudgement =
           selectGovState (Governor.ledgerStateJudgement)
+                         (consensusMode env)
                          events
 
         govEstablishedPeersSig :: Signal (Set PeerAddr)
         govEstablishedPeersSig =
           selectGovState
             (EstablishedPeers.toSet . Governor.establishedPeers)
+            (consensusMode env)
             events
 
         govInProgressPromoteColdSig :: Signal (Set PeerAddr)
         govInProgressPromoteColdSig =
           selectGovState
             Governor.inProgressPromoteCold
+            (consensusMode env)
             events
 
         bigLedgerPeersInEstablished :: Signal Bool
@@ -1259,11 +1303,13 @@ prop_governor_target_active_public (MaxTime maxTime) env =
 
         govPublicRootPeersSig :: Signal (Set PeerAddr)
         govPublicRootPeersSig =
-          selectGovState (PublicRootPeers.toSet . Governor.publicRootPeers) events
+          selectGovState (PublicRootPeers.toSet . Governor.publicRootPeers)
+                         (consensusMode env)
+                         events
 
         govActivePeersSig :: Signal (Set PeerAddr)
         govActivePeersSig =
-          selectGovState Governor.activePeers events
+          selectGovState Governor.activePeers (consensusMode env) events
 
         publicInActive :: Signal Bool
         publicInActive =
@@ -1471,7 +1517,7 @@ prop_governor_target_known_1_valid_subset (MaxTime maxTime) env =
 
         govKnownPeersSig :: Signal (Set PeerAddr)
         govKnownPeersSig =
-          selectGovState (KnownPeers.toSet . Governor.knownPeers) events
+          selectGovState (KnownPeers.toSet . Governor.knownPeers) (consensusMode env) events
 
         validState :: Set PeerAddr -> Set PeerAddr -> Bool
         validState knownPeersEnv knownPeersGov =
@@ -1525,11 +1571,11 @@ prop_governor_target_known_2_opportunity_taken (MaxTime maxTime) env =
 
         govTargetsSig :: Signal Int
         govTargetsSig =
-          selectGovState (targetNumberOfKnownPeers . Governor.targets) events
+          selectGovState (targetNumberOfKnownPeers . Governor.targets) (consensusMode env) events
 
         govKnownPeersSig :: Signal (Set PeerAddr)
         govKnownPeersSig =
-          selectGovState (KnownPeers.toSet . Governor.knownPeers) events
+          selectGovState (KnownPeers.toSet . Governor.knownPeers) (consensusMode env) events
 
         -- Available Established Peers are those who have correct PeerSharing
         -- permissions
@@ -1542,7 +1588,8 @@ prop_governor_target_known_2_opportunity_taken (MaxTime maxTime) env =
                                     (Governor.establishedPeers x)
                 Set.\\ (Governor.inProgressDemoteToCold x))
                 (Governor.knownPeers x))
-                events
+            (consensusMode env)
+            events
 
         -- Note that we only require that the governor try to peer share, it does
         -- not have to succeed.
@@ -1566,11 +1613,11 @@ prop_governor_target_known_2_opportunity_taken (MaxTime maxTime) env =
 
         govLedgerStateJudgementSig :: Signal LedgerStateJudgement
         govLedgerStateJudgementSig =
-          selectGovState Governor.ledgerStateJudgement events
+          selectGovState Governor.ledgerStateJudgement (consensusMode env) events
 
         govUseBootstrapPeersSig :: Signal UseBootstrapPeers
         govUseBootstrapPeersSig =
-          selectGovState Governor.bootstrapPeersFlag events
+          selectGovState Governor.bootstrapPeersFlag (consensusMode env) events
 
         -- We define the governor's peer sharing opportunities at any point in time
         -- to be the governor's set of established peers, less the ones we can see
@@ -1878,11 +1925,15 @@ prop_governor_target_known_4_results_used (MaxTime maxTime) env =
 
         govTargetsSig :: Signal Int
         govTargetsSig =
-          selectGovState (targetNumberOfKnownPeers . Governor.targets) events
+          selectGovState (targetNumberOfKnownPeers . Governor.targets)
+                         (consensusMode env)
+                         events
 
         govKnownPeersSig :: Signal (Set PeerAddr)
         govKnownPeersSig =
-          selectGovState (KnownPeers.toSet . Governor.knownPeers) events
+          selectGovState (KnownPeers.toSet . Governor.knownPeers)
+                         (consensusMode env)
+                         events
 
         envPeerShareResultsSig :: Signal (Set PeerAddr)
         envPeerShareResultsSig =
@@ -1952,20 +2003,26 @@ prop_governor_target_known_5_no_shrink_below (MaxTime maxTime) env =
 
         govTargetsSig :: Signal Int
         govTargetsSig =
-          selectGovState (targetNumberOfKnownPeers . Governor.targets) events
+          selectGovState (targetNumberOfKnownPeers . Governor.targets)
+                         (consensusMode env)
+                         events
 
         govKnownPeersSig :: Signal (Set PeerAddr)
         govKnownPeersSig =
-          selectGovState (KnownPeers.toSet . Governor.knownPeers) events
+          selectGovState (KnownPeers.toSet . Governor.knownPeers)
+                         (consensusMode env)
+                         events
 
         bigLedgerPeersSig :: Signal (Set PeerAddr)
         bigLedgerPeersSig =
           selectGovState (PublicRootPeers.getBigLedgerPeers . Governor.publicRootPeers)
+                         (consensusMode env)
                          events
 
         bootstrapPeersSig :: Signal (Set PeerAddr)
         bootstrapPeersSig =
           selectGovState (PublicRootPeers.getBootstrapPeers . Governor.publicRootPeers)
+                         (consensusMode env)
                          events
 
         knownPeersShrinksSig :: Signal (Set PeerAddr)
@@ -2024,12 +2081,16 @@ prop_governor_target_known_5_no_shrink_big_ledger_peers_below (MaxTime maxTime) 
 
         govTargetsSig :: Signal Int
         govTargetsSig =
-          selectGovState (targetNumberOfKnownBigLedgerPeers . Governor.targets) events
+          selectGovState (targetNumberOfKnownBigLedgerPeers . Governor.targets)
+                         (consensusMode env)
+                         events
 
         govKnownPeersSig :: Signal (Set PeerAddr)
         govKnownPeersSig =
           selectGovState (takeBigLedgerPeers $
-                            KnownPeers.toSet . Governor.knownPeers) events
+                            KnownPeers.toSet . Governor.knownPeers)
+                         (consensusMode env)
+                         events
 
         knownPeersShrinksSig :: Signal (Set PeerAddr)
         knownPeersShrinksSig =
@@ -2099,27 +2160,32 @@ prop_governor_target_known_above (MaxTime maxTime) env =
 
         govTargetsSig :: Signal PeerSelectionTargets
         govTargetsSig =
-          selectGovState Governor.targets events
+          selectGovState Governor.targets (consensusMode env) events
 
         govLocalRootPeersSig :: Signal (Set PeerAddr)
         govLocalRootPeersSig =
           selectGovState (LocalRootPeers.keysSet . Governor.localRootPeers)
+                         (consensusMode env)
                          events
 
         govPublicRootPeersSig :: Signal (Set PeerAddr)
         govPublicRootPeersSig =
-          selectGovState (PublicRootPeers.toSet . Governor.publicRootPeers) events
+          selectGovState (PublicRootPeers.toSet . Governor.publicRootPeers)
+                         (consensusMode env)
+                         events
 
         govKnownPeersSig :: Signal (Set PeerAddr)
         govKnownPeersSig =
           selectGovState (dropBigLedgerPeers $
                             KnownPeers.toSet . Governor.knownPeers)
+                         (consensusMode env)
                          events
 
         govEstablishedPeersSig :: Signal (Set PeerAddr)
         govEstablishedPeersSig =
           selectGovState (dropBigLedgerPeers $
                             EstablishedPeers.toSet . Governor.establishedPeers)
+                         (consensusMode env)
                          events
 
         -- There are no demotion opportunities if we're at or below target.
@@ -2189,18 +2255,20 @@ prop_governor_target_known_big_ledger_peers_above (MaxTime maxTime) env =
 
         govTargetsSig :: Signal PeerSelectionTargets
         govTargetsSig =
-          selectGovState Governor.targets events
+          selectGovState Governor.targets (consensusMode env) events
 
         govKnownPeersSig :: Signal (Set PeerAddr)
         govKnownPeersSig =
           selectGovState (takeBigLedgerPeers $
                             KnownPeers.toSet . Governor.knownPeers)
+                         (consensusMode env)
                          events
 
         govEstablishedPeersSig :: Signal (Set PeerAddr)
         govEstablishedPeersSig =
           selectGovState (takeBigLedgerPeers $
                             EstablishedPeers.toSet . Governor.establishedPeers)
+                         (consensusMode env)
                          events
 
         -- There are no demotion opportunities if we're at or below target.
@@ -2279,17 +2347,22 @@ prop_governor_target_established_below (MaxTime maxTime) env =
 
         govTargetsSig :: Signal Int
         govTargetsSig =
-          selectGovState (targetNumberOfEstablishedPeers . Governor.targets) events
+          selectGovState (targetNumberOfEstablishedPeers . Governor.targets)
+                         (consensusMode env)
+                         events
 
         govKnownPeersSig :: Signal (Set PeerAddr)
         govKnownPeersSig =
           selectGovState (dropBigLedgerPeers $
-                            KnownPeers.toSet . Governor.knownPeers) events
+                            KnownPeers.toSet . Governor.knownPeers)
+                         (consensusMode env)
+                         events
 
         govEstablishedPeersSig :: Signal (Set PeerAddr)
         govEstablishedPeersSig =
           selectGovState
             (EstablishedPeers.toSet . Governor.establishedPeers)
+            (consensusMode env)
             events
 
         govEstablishedFailuresSig :: Signal (Set PeerAddr)
@@ -2378,12 +2451,15 @@ prop_governor_target_established_big_ledger_peers_below (MaxTime maxTime) env =
 
         govTargetsSig :: Signal Int
         govTargetsSig =
-          selectGovState (targetNumberOfEstablishedBigLedgerPeers . Governor.targets) events
+          selectGovState (targetNumberOfEstablishedBigLedgerPeers . Governor.targets)
+                         (consensusMode env)
+                         events
 
         govKnownPeersSig :: Signal (Set PeerAddr)
         govKnownPeersSig =
           selectGovState (takeBigLedgerPeers $
                            KnownPeers.toSet . Governor.knownPeers)
+                         (consensusMode env)
                          events
 
         govEstablishedPeersSig :: Signal (Set PeerAddr)
@@ -2391,6 +2467,7 @@ prop_governor_target_established_big_ledger_peers_below (MaxTime maxTime) env =
           selectGovState
             (takeBigLedgerPeers $
               EstablishedPeers.toSet . Governor.establishedPeers)
+            (consensusMode env)
             events
 
         govEstablishedFailuresSig :: Signal (Set PeerAddr)
@@ -2480,26 +2557,35 @@ prop_governor_target_active_below (MaxTime maxTime) env =
 
         govTargetsSig :: Signal Int
         govTargetsSig =
-          selectGovState (targetNumberOfActivePeers . Governor.targets) events
+          selectGovState (targetNumberOfActivePeers . Governor.targets)
+                         (consensusMode env)
+                         events
 
         govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers PeerAddr)
         govLocalRootPeersSig =
-          selectGovState Governor.localRootPeers events
+          selectGovState Governor.localRootPeers
+                         (consensusMode env)
+                         events
 
         govInProgressDemoteToColdSig :: Signal (Set PeerAddr)
         govInProgressDemoteToColdSig =
-          selectGovState Governor.inProgressDemoteToCold events
+          selectGovState Governor.inProgressDemoteToCold
+                         (consensusMode env)
+                         events
 
         govEstablishedPeersSig :: Signal (Set PeerAddr)
         govEstablishedPeersSig =
           selectGovState
             (dropBigLedgerPeers $
                EstablishedPeers.toSet . Governor.establishedPeers)
+            (consensusMode env)
             events
 
         govActivePeersSig :: Signal (Set PeerAddr)
         govActivePeersSig =
-          selectGovState (dropBigLedgerPeers Governor.activePeers) events
+          selectGovState (dropBigLedgerPeers Governor.activePeers)
+                         (consensusMode env)
+                         events
 
         govActiveFailuresSig :: Signal (Set PeerAddr)
         govActiveFailuresSig =
@@ -2597,22 +2683,27 @@ prop_governor_target_active_big_ledger_peers_below (MaxTime maxTime) env =
 
         govTargetsSig :: Signal Int
         govTargetsSig =
-          selectGovState (targetNumberOfActiveBigLedgerPeers . Governor.targets) events
+          selectGovState (targetNumberOfActiveBigLedgerPeers . Governor.targets)
+                         (consensusMode env)
+                         events
 
         govEstablishedPeersSig :: Signal (Set PeerAddr)
         govEstablishedPeersSig =
           selectGovState
             (takeBigLedgerPeers $
               EstablishedPeers.toSet . Governor.establishedPeers)
+            (consensusMode env)
             events
 
         govInProgressDemoteToColdSig :: Signal (Set PeerAddr)
         govInProgressDemoteToColdSig =
-          selectGovState Governor.inProgressDemoteToCold events
+          selectGovState Governor.inProgressDemoteToCold (consensusMode env) events
 
         govActivePeersSig :: Signal (Set PeerAddr)
         govActivePeersSig =
-          selectGovState (takeBigLedgerPeers Governor.activePeers) events
+          selectGovState (takeBigLedgerPeers Governor.activePeers)
+                         (consensusMode env)
+                         events
 
         govActiveFailuresSig :: Signal (Set PeerAddr)
         govActiveFailuresSig =
@@ -2685,26 +2776,35 @@ prop_governor_target_established_above (MaxTime maxTime) env =
 
         govTargetsSig :: Signal Int
         govTargetsSig =
-          selectGovState (targetNumberOfEstablishedPeers . Governor.targets) events
+          selectGovState (targetNumberOfEstablishedPeers . Governor.targets)
+                         (consensusMode env)
+                         events
 
         govInProgressDemoteToColdSig :: Signal (Set PeerAddr)
         govInProgressDemoteToColdSig =
-          selectGovState Governor.inProgressDemoteToCold events
+          selectGovState Governor.inProgressDemoteToCold
+                         (consensusMode env)
+                         events
 
         govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers PeerAddr)
         govLocalRootPeersSig =
-          selectGovState Governor.localRootPeers events
+          selectGovState Governor.localRootPeers
+                         (consensusMode env)
+                         events
 
         govEstablishedPeersSig :: Signal (Set PeerAddr)
         govEstablishedPeersSig =
           selectGovState
             (dropBigLedgerPeers $
                EstablishedPeers.toSet . Governor.establishedPeers)
+            (consensusMode env)
             events
 
         govActivePeersSig :: Signal (Set PeerAddr)
         govActivePeersSig =
-          selectGovState (dropBigLedgerPeers Governor.activePeers) events
+          selectGovState (dropBigLedgerPeers Governor.activePeers)
+                         (consensusMode env)
+                         events
 
         -- There are no demotion opportunities if we're at or below target.
         -- Otherwise the demotion opportunities are the established peers that
@@ -2761,22 +2861,29 @@ prop_governor_target_established_big_ledger_peers_above (MaxTime maxTime) env =
 
         govTargetsSig :: Signal Int
         govTargetsSig =
-          selectGovState (targetNumberOfEstablishedBigLedgerPeers . Governor.targets) events
+          selectGovState (targetNumberOfEstablishedBigLedgerPeers . Governor.targets)
+                         (consensusMode env)
+                         events
 
         govEstablishedPeersSig :: Signal (Set PeerAddr)
         govEstablishedPeersSig =
           selectGovState
             (takeBigLedgerPeers $
               EstablishedPeers.toSet . Governor.establishedPeers)
+            (consensusMode env)
             events
 
         govInProgressDemoteToColdSig :: Signal (Set PeerAddr)
         govInProgressDemoteToColdSig =
-          selectGovState Governor.inProgressDemoteToCold events
+          selectGovState Governor.inProgressDemoteToCold
+                         (consensusMode env)
+                         events
 
         govActivePeersSig :: Signal (Set PeerAddr)
         govActivePeersSig =
-          selectGovState (takeBigLedgerPeers Governor.activePeers) events
+          selectGovState (takeBigLedgerPeers Governor.activePeers)
+                         (consensusMode env)
+                         events
 
         -- There are no demotion opportunities if we're at or below target.
         -- Otherwise the demotion opportunities are the established peers that
@@ -2826,19 +2933,27 @@ prop_governor_target_active_above (MaxTime maxTime) env =
 
         govTargetsSig :: Signal Int
         govTargetsSig =
-          selectGovState (targetNumberOfActivePeers . Governor.targets) events
+          selectGovState (targetNumberOfActivePeers . Governor.targets)
+                         (consensusMode env)
+                         events
 
         govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers PeerAddr)
         govLocalRootPeersSig =
-          selectGovState Governor.localRootPeers events
+          selectGovState Governor.localRootPeers
+                         (consensusMode env)
+                         events
 
         govActivePeersSig :: Signal (Set PeerAddr)
         govActivePeersSig =
-          selectGovState (dropBigLedgerPeers Governor.activePeers) events
+          selectGovState (dropBigLedgerPeers Governor.activePeers)
+                         (consensusMode env)
+                         events
 
         govInProgressDemoteToColdSig :: Signal (Set PeerAddr)
         govInProgressDemoteToColdSig =
-          selectGovState Governor.inProgressDemoteToCold events
+          selectGovState Governor.inProgressDemoteToCold
+                         (consensusMode env)
+                         events
 
         demotionOpportunity target local active inProgressDemoteToCold
           | (Set.size active - Set.size inProgressDemoteToCold) <= target
@@ -2888,11 +3003,15 @@ prop_governor_target_active_big_ledger_peers_above (MaxTime maxTime) env =
 
         govTargetsSig :: Signal Int
         govTargetsSig =
-          selectGovState (targetNumberOfActiveBigLedgerPeers . Governor.targets) events
+          selectGovState (targetNumberOfActiveBigLedgerPeers . Governor.targets)
+                         (consensusMode env)
+                         events
 
         govActivePeersSig :: Signal (Set PeerAddr)
         govActivePeersSig =
-          selectGovState (takeBigLedgerPeers Governor.activePeers) events
+          selectGovState (takeBigLedgerPeers Governor.activePeers)
+                         (consensusMode env)
+                         events
 
         demotionOpportunity target active
           | Set.size active <= target
@@ -2942,18 +3061,21 @@ prop_governor_target_established_local (MaxTime maxTime) env =
         govLocalRootPeersSig :: Signal (LocalRootPeers PeerAddr)
         govLocalRootPeersSig =
           selectGovState Governor.localRootPeers
+                         (consensusMode env)
                          events
 
         govEstablishedPeersSig :: Signal (Set PeerAddr)
         govEstablishedPeersSig =
           selectGovState
             (EstablishedPeers.toSet . Governor.establishedPeers)
+            (consensusMode env)
             events
 
         govInProgressPromoteColdSig :: Signal (Set PeerAddr)
         govInProgressPromoteColdSig =
           selectGovState
             Governor.inProgressPromoteCold
+            (consensusMode env)
             events
 
         govEstablishedFailuresSig :: Signal (Set PeerAddr)
@@ -3047,21 +3169,26 @@ prop_governor_target_active_local_below (MaxTime maxTime) env =
 
         govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers PeerAddr)
         govLocalRootPeersSig =
-          selectGovState Governor.localRootPeers events
+          selectGovState Governor.localRootPeers
+                         (consensusMode env)
+                         events
 
         govEstablishedPeersSig :: Signal (Set PeerAddr)
         govEstablishedPeersSig =
           selectGovState
             (EstablishedPeers.toSet . Governor.establishedPeers)
+            (consensusMode env)
             events
 
         govActivePeersSig :: Signal (Set PeerAddr)
         govActivePeersSig =
-          selectGovState Governor.activePeers events
+          selectGovState Governor.activePeers (consensusMode env) events
 
         govInProgressDemoteToColdSig :: Signal (Set PeerAddr)
         govInProgressDemoteToColdSig =
-          selectGovState Governor.inProgressDemoteToCold events
+          selectGovState Governor.inProgressDemoteToCold
+          (consensusMode env)
+          events
 
         govActiveFailuresSig :: Signal (Set PeerAddr)
         govActiveFailuresSig =
@@ -3139,11 +3266,11 @@ prop_governor_target_active_local_above (MaxTime maxTime) env =
 
         govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers PeerAddr)
         govLocalRootPeersSig =
-          selectGovState Governor.localRootPeers events
+          selectGovState Governor.localRootPeers (consensusMode env) events
 
         govActivePeersSig :: Signal (Set PeerAddr)
         govActivePeersSig =
-          selectGovState Governor.activePeers events
+          selectGovState Governor.activePeers (consensusMode env) events
 
         deomotionOpportunities :: Signal (Set PeerAddr)
         deomotionOpportunities =
@@ -3179,6 +3306,7 @@ prop_governor_target_active_local_above (MaxTime maxTime) env =
 
 -- | When in 'TooOld' state make sure we don't stay connected to non trustable
 -- peers for too long
+
 prop_governor_only_bootstrap_peers_in_fallback_state :: GovernorMockEnvironment -> Property
 prop_governor_only_bootstrap_peers_in_fallback_state env =
     let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
@@ -3188,22 +3316,26 @@ prop_governor_only_bootstrap_peers_in_fallback_state env =
 
         govUseBootstrapPeers :: Signal UseBootstrapPeers
         govUseBootstrapPeers =
-          selectGovState Governor.bootstrapPeersFlag events
+          selectGovState Governor.bootstrapPeersFlag (consensusMode env) events
 
         govLedgerStateJudgement :: Signal LedgerStateJudgement
         govLedgerStateJudgement =
-          selectGovState (Governor.ledgerStateJudgement) events
+          selectGovState Governor.ledgerStateJudgement (consensusMode env) events
 
         govKnownPeers :: Signal (Set PeerAddr)
         govKnownPeers =
-          selectGovState (KnownPeers.toSet . Governor.knownPeers) events
+          selectGovState (KnownPeers.toSet . Governor.knownPeers)
+                         (consensusMode env)
+                         events
 
         govTrustedPeers :: Signal (Set PeerAddr)
         govTrustedPeers =
           selectGovState
             (\st -> LocalRootPeers.keysSet (LocalRootPeers.clampToTrustable (Governor.localRootPeers st))
                  <> PublicRootPeers.getBootstrapPeers (Governor.publicRootPeers st)
-            ) events
+            )
+            (consensusMode env)
+            events
 
         keepNonTrustablePeersTooLong :: Signal (Set PeerAddr)
         keepNonTrustablePeersTooLong =
@@ -3236,26 +3368,30 @@ prop_governor_no_non_trustable_peers_before_caught_up_state env =
 
         govUseBootstrapPeers :: Signal UseBootstrapPeers
         govUseBootstrapPeers =
-          selectGovState Governor.bootstrapPeersFlag events
+          selectGovState Governor.bootstrapPeersFlag (consensusMode env) events
 
         govLedgerStateJudgement :: Signal LedgerStateJudgement
         govLedgerStateJudgement =
-          selectGovState (Governor.ledgerStateJudgement) events
+          selectGovState Governor.ledgerStateJudgement (consensusMode env) events
 
         govKnownPeers :: Signal (Set PeerAddr)
         govKnownPeers =
-          selectGovState (KnownPeers.toSet . Governor.knownPeers) events
+          selectGovState (KnownPeers.toSet . Governor.knownPeers) (consensusMode env) events
 
         govTrustedPeers :: Signal (Set PeerAddr)
         govTrustedPeers =
           selectGovState
             (\st -> LocalRootPeers.keysSet (LocalRootPeers.clampToTrustable (Governor.localRootPeers st))
                  <> PublicRootPeers.getBootstrapPeers (Governor.publicRootPeers st)
-            ) events
+            )
+            (consensusMode env)
+            events
 
         govHasOnlyBootstrapPeers :: Signal Bool
         govHasOnlyBootstrapPeers =
-          selectGovState Governor.hasOnlyBootstrapPeers events
+          selectGovState Governor.hasOnlyBootstrapPeers
+                         (consensusMode env)
+                         events
 
         keepNonTrustablePeersTooLong :: Signal (Set PeerAddr)
         keepNonTrustablePeersTooLong =
@@ -3278,6 +3414,7 @@ prop_governor_no_non_trustable_peers_before_caught_up_state env =
           Set.null
           keepNonTrustablePeersTooLong
 
+
 -- NOTE: the clean state is defined as a state in which we require bootstrap
 -- peers and the governor set the `hasOnlyBootstrapPeers` flag.
 --
@@ -3290,11 +3427,15 @@ prop_governor_only_bootstrap_peers_in_clean_state env =
 
         govUseBootstrapPeers :: Signal UseBootstrapPeers
         govUseBootstrapPeers =
-          selectGovState Governor.bootstrapPeersFlag events
+          selectGovState Governor.bootstrapPeersFlag
+                         (consensusMode env)
+                         events
 
         govLedgerStateJudgement :: Signal LedgerStateJudgement
         govLedgerStateJudgement =
-          selectGovState (Governor.ledgerStateJudgement) events
+          selectGovState Governor.ledgerStateJudgement
+                         (consensusMode env)
+                         events
 
         govKnownAndTrustedPeers :: Signal (Set PeerAddr, Set PeerAddr)
         govKnownAndTrustedPeers =
@@ -3305,15 +3446,17 @@ prop_governor_only_bootstrap_peers_in_clean_state env =
                       LocalRootPeers.keysSet (LocalRootPeers.clampToTrustable (Governor.localRootPeers st))
                    <> PublicRootPeers.getBootstrapPeers (Governor.publicRootPeers st)
                 )
-            ) events
+            )
+            (consensusMode env)
+            events
 
         govHasOnlyBootstrapPeers :: Signal Bool
         govHasOnlyBootstrapPeers =
-          selectGovState Governor.hasOnlyBootstrapPeers events
+          selectGovState Governor.hasOnlyBootstrapPeers (consensusMode env) events
 
         govTargets :: Signal PeerSelectionTargets
         govTargets =
-          selectGovState Governor.targets events
+          selectGovState Governor.targets (consensusMode env) events
 
         isInCleanState :: Signal Bool
         isInCleanState =
@@ -3356,25 +3499,29 @@ prop_governor_stops_using_bootstrap_peers env =
 
         govUseBootstrapPeers :: Signal UseBootstrapPeers
         govUseBootstrapPeers =
-          selectGovState Governor.bootstrapPeersFlag events
+          selectGovState Governor.bootstrapPeersFlag (consensusMode env) events
 
         govLedgerStateJudgement :: Signal LedgerStateJudgement
         govLedgerStateJudgement =
-          selectGovState (Governor.ledgerStateJudgement) events
+          selectGovState (Governor.ledgerStateJudgement) (consensusMode env) events
 
         govKnownPeers :: Signal (Set PeerAddr)
         govKnownPeers =
-          selectGovState (KnownPeers.toSet . Governor.knownPeers) events
+          selectGovState (KnownPeers.toSet . Governor.knownPeers) (consensusMode env) events
 
         govBootstrapPeers :: Signal (Set PeerAddr)
         govBootstrapPeers =
-          selectGovState (PublicRootPeers.getBootstrapPeers . Governor.publicRootPeers) events
+          selectGovState (PublicRootPeers.getBootstrapPeers . Governor.publicRootPeers)
+                         (consensusMode env)
+                         events
 
         govTrustableLocalRootPeers :: Signal (Set PeerAddr)
         govTrustableLocalRootPeers =
           selectGovState
             (\st -> LocalRootPeers.keysSet (LocalRootPeers.clampToTrustable (Governor.localRootPeers st))
-            ) events
+            )
+            (consensusMode env)
+            events
 
         keepBootstrapPeersTooLong :: Signal (Set ())
         keepBootstrapPeersTooLong =
@@ -3411,11 +3558,11 @@ prop_governor_uses_ledger_peers env =
 
         govUseBootstrapPeers :: Signal UseBootstrapPeers
         govUseBootstrapPeers =
-          selectGovState Governor.bootstrapPeersFlag events
+          selectGovState Governor.bootstrapPeersFlag (consensusMode env) events
 
         govLedgerStateJudgement :: Signal LedgerStateJudgement
         govLedgerStateJudgement =
-          selectGovState (Governor.ledgerStateJudgement) events
+          selectGovState Governor.ledgerStateJudgement (consensusMode env) events
 
         govPublicRootPeersResultsSig :: Signal (PublicRootPeers PeerAddr)
         govPublicRootPeersResultsSig =
@@ -3453,7 +3600,7 @@ prop_governor_association_mode env =
 
         counters :: Signal (PeerSelectionSetsWithSizes PeerAddr)
         counters =
-          selectGovState peerSelectionStateToView events
+          selectGovState peerSelectionStateToView (consensusMode env) events
 
         -- accumulate local roots
         localRoots :: Signal (Set PeerAddr)
@@ -3477,7 +3624,8 @@ prop_governor_association_mode env =
               (\_ -> Set.empty)
               (\_ -> False)
           . selectGovState Governor.publicRootPeers
-          $ events
+                           (consensusMode env)
+                           $ events
 
         associationMode :: Signal AssociationMode
         associationMode =
@@ -3548,12 +3696,13 @@ selectGovAssociationMode = Signal.selectEvents
 
 selectGovState :: Eq a
                => (forall peerconn. Governor.PeerSelectionState PeerAddr peerconn -> a)
+               -> ConsensusMode
                -> Events TestTraceEvent
                -> Signal a
-selectGovState f =
+selectGovState f consensusMode =
     Signal.nub
   -- TODO: #3182 Rng seed should come from quickcheck.
-  . Signal.fromChangeEvents (f $! Governor.emptyPeerSelectionState (mkStdGen 42))
+  . Signal.fromChangeEvents (f $! Governor.emptyPeerSelectionState (mkStdGen 42) consensusMode)
   . Signal.selectEvents
       (\case GovernorDebug (TraceGovernorState _ _ st) -> Just $! f st
              _                                         -> Nothing)
@@ -3587,11 +3736,12 @@ _governorFindingPublicRoots :: Int
                             -> STM IO LedgerStateJudgement
                             -> PeerSharing
                             -> StrictTVar IO OutboundConnectionsState
+                            -> ConsensusMode
                             -> IO Void
-_governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrapPeers readLedgerStateJudgement peerSharing olocVar = do
+_governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrapPeers readLedgerStateJudgement peerSharing olocVar consensusMode = do
     countersVar <- newTVarIO emptyPeerSelectionCounters
     publicStateVar <- makePublicPeerSelectionStateVar
-    debugStateVar <- newTVarIO $ emptyPeerSelectionState (mkStdGen 42)
+    debugStateVar <- newTVarIO $ emptyPeerSelectionState (mkStdGen 42) consensusMode
     dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
     let interfaces = PeerSelectionInterfaces {
             countersVar,
@@ -3599,6 +3749,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
             debugStateVar,
             readUseLedgerPeers = return DontUseLedgerPeers
           }
+
     publicRootPeersProvider
       tracer
       (curry IP.toSockAddr)
@@ -3610,6 +3761,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
           tracer tracer tracer
           -- TODO: #3182 Rng seed should come from quickcheck.
           (mkStdGen 42)
+          consensusMode
           actions
             { requestPublicRootPeers = \_ ->
                 transformPeerSelectionAction requestPublicRootPeers }
@@ -3621,11 +3773,12 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
 
     actions :: PeerSelectionActions SockAddr PeerSharing IO
     actions = PeerSelectionActions {
+                peerTargets,
                 readLocalRootPeers       = return [],
                 peerSharing              = peerSharing,
                 readPeerSelectionTargets = return targets,
                 requestPeerShare         = \_ _ -> return (PeerSharingResult []),
-                peerConnToPeerSharing    = \ps -> ps,
+                peerConnToPeerSharing    = id,
                 requestPublicRootPeers   = \_ _ -> return (PublicRootPeers.empty, 0),
                 peerStateActions         = PeerStateActions {
                   establishPeerConnection  = error "establishPeerConnection",
@@ -3648,6 +3801,10 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
                 targetNumberOfRootPeers  = targetNumberOfRootPeers,
                 targetNumberOfKnownPeers = targetNumberOfRootPeers
               }
+
+    peerTargets = ConsensusModePeerTargets {
+      deadlineTargets = targets,
+      syncTargets     = targets}
 
     policy :: PeerSelectionPolicy SockAddr IO
     policy  = PeerSelectionPolicy {
@@ -3690,12 +3847,14 @@ prop_issue_3550 = prop_governor_target_established_below defaultMaxTime $
                       ]
         ),
       targets = Script
-        ((nullPeerSelectionTargets {
-           targetNumberOfRootPeers = 1,
-           targetNumberOfKnownPeers = 4,
-           targetNumberOfEstablishedPeers = 4,
-           targetNumberOfActivePeers = 3
-         },NoDelay) :| []),
+        ((ConsensusModePeerTargets {
+            deadlineTargets = nullPeerSelectionTargets {
+                targetNumberOfRootPeers = 1,
+                targetNumberOfKnownPeers = 4,
+                targetNumberOfEstablishedPeers = 4,
+                targetNumberOfActivePeers = 3 },
+            syncTargets = nullPeerSelectionTargets },
+         NoDelay) :| []),
       pickKnownPeersForPeerShare = Script (PickFirst :| []),
       pickColdPeersToPromote = Script (PickFirst :| []),
       pickWarmPeersToPromote = Script (PickFirst :| []),
@@ -3704,6 +3863,7 @@ prop_issue_3550 = prop_governor_target_established_below defaultMaxTime $
       pickColdPeersToForget = Script (PickFirst :| []),
       pickInboundPeers      = Script (PickFirst :| []),
       peerSharingFlag = PeerSharingEnabled,
+      consensusMode = PraosMode,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       useLedgerPeers = Script ((UseLedgerPeers Always, NoDelay) :| []),
       ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
@@ -3728,12 +3888,7 @@ prop_issue_3515 = prop_governor_nolivelock $
                          })],
       localRootPeers = LocalRootPeers.fromGroups [(1,1,Map.fromList [(PeerAddr 10,(DoAdvertisePeer, IsNotTrustable))])],
       publicRootPeers = PublicRootPeers.empty,
-      targets = Script
-        (( nullPeerSelectionTargets { targetNumberOfKnownPeers = 1 }, ShortDelay)
-        :| [ ( nullPeerSelectionTargets { targetNumberOfKnownPeers = 1 }, ShortDelay),
-             ( nullPeerSelectionTargets, NoDelay),
-             ( nullPeerSelectionTargets { targetNumberOfKnownPeers = 1 }, NoDelay)
-           ]),
+      targets = Script . NonEmpty.fromList $ targets'',
       pickKnownPeersForPeerShare = Script (PickFirst :| []),
       pickColdPeersToPromote = Script (PickFirst :| []),
       pickWarmPeersToPromote = Script (PickFirst :| []),
@@ -3742,10 +3897,20 @@ prop_issue_3515 = prop_governor_nolivelock $
       pickColdPeersToForget = Script (PickFirst :| []),
       pickInboundPeers = Script (PickFirst :| []),
       peerSharingFlag = PeerSharingEnabled,
+      consensusMode = PraosMode,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       useLedgerPeers = Script ((UseLedgerPeers Always, NoDelay) :| []),
       ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
     }
+  where
+    targets' =
+      [( nullPeerSelectionTargets { targetNumberOfKnownPeers = 1 }, ShortDelay),
+       ( nullPeerSelectionTargets { targetNumberOfKnownPeers = 1 }, ShortDelay),
+       ( nullPeerSelectionTargets, NoDelay),
+       ( nullPeerSelectionTargets { targetNumberOfKnownPeers = 1 }, NoDelay) ]
+    targets'' =
+      [(ConsensusModePeerTargets { deadlineTargets, syncTargets = nullPeerSelectionTargets }, delay)
+      | (deadlineTargets, delay) <- targets']
 
 -- | issue #3494
 --
@@ -3764,14 +3929,7 @@ prop_issue_3494 = prop_governor_nofail $
                                               })],
       localRootPeers = LocalRootPeers.fromGroups [(1,1,Map.fromList [(PeerAddr 64, (DoAdvertisePeer, IsNotTrustable))])],
       publicRootPeers = PublicRootPeers.empty,
-      targets = Script
-        (( nullPeerSelectionTargets,NoDelay)
-        :| [ (nullPeerSelectionTargets { targetNumberOfKnownPeers = 1 },ShortDelay),
-             (nullPeerSelectionTargets { targetNumberOfKnownPeers = 1 },ShortDelay),
-             (nullPeerSelectionTargets,NoDelay),
-             (nullPeerSelectionTargets,NoDelay),
-             (nullPeerSelectionTargets { targetNumberOfKnownPeers = 1 },NoDelay)
-           ]),
+      targets = Script . NonEmpty.fromList $ targets'',
       pickKnownPeersForPeerShare = Script (PickFirst :| []),
       pickColdPeersToPromote = Script (PickFirst :| []),
       pickWarmPeersToPromote = Script (PickFirst :| []),
@@ -3780,10 +3938,22 @@ prop_issue_3494 = prop_governor_nofail $
       pickColdPeersToForget = Script (PickFirst :| []),
       pickInboundPeers = Script (PickFirst :| []),
       peerSharingFlag = PeerSharingEnabled,
+      consensusMode = PraosMode,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       useLedgerPeers = Script ((UseLedgerPeers Always, NoDelay) :| []),
       ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
     }
+  where
+    targets' =
+      [(nullPeerSelectionTargets,NoDelay),
+       (nullPeerSelectionTargets { targetNumberOfKnownPeers = 1 },ShortDelay),
+       (nullPeerSelectionTargets { targetNumberOfKnownPeers = 1 },ShortDelay),
+       (nullPeerSelectionTargets,NoDelay),
+       (nullPeerSelectionTargets,NoDelay),
+       (nullPeerSelectionTargets { targetNumberOfKnownPeers = 1 },NoDelay) ]
+    targets'' =
+      [(ConsensusModePeerTargets { deadlineTargets, syncTargets = nullPeerSelectionTargets }, delay)
+      | (deadlineTargets, delay) <- targets']
 
 -- | issue #3233
 --
@@ -3811,21 +3981,7 @@ prop_issue_3233 = prop_governor_nolivelock $
         ],
       publicRootPeers = PublicRootPeers.fromPublicRootPeers
         (Map.fromList [(PeerAddr 4, DoNotAdvertisePeer)]),
-      targets = Script
-        ((nullPeerSelectionTargets,NoDelay)
-        :| [(nullPeerSelectionTargets {
-               targetNumberOfRootPeers = 1,
-               targetNumberOfKnownPeers = 3,
-               targetNumberOfEstablishedPeers = 3
-             },LongDelay),
-            (nullPeerSelectionTargets,NoDelay),
-            (nullPeerSelectionTargets,NoDelay),
-            (nullPeerSelectionTargets {
-                targetNumberOfRootPeers = 1,
-                targetNumberOfKnownPeers = 3,
-                targetNumberOfEstablishedPeers = 3,
-                targetNumberOfActivePeers = 2
-             },NoDelay)]),
+      targets = Script . NonEmpty.fromList $ targets'',
       pickKnownPeersForPeerShare = Script (PickFirst :| []),
       pickColdPeersToPromote = Script (PickFirst :| []),
       pickWarmPeersToPromote = Script (PickFirst :| []),
@@ -3834,11 +3990,30 @@ prop_issue_3233 = prop_governor_nolivelock $
       pickColdPeersToForget = Script (PickFirst :| []),
       pickInboundPeers = Script (PickFirst :| []),
       peerSharingFlag = PeerSharingEnabled,
+      consensusMode = PraosMode,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       useLedgerPeers = Script ((UseLedgerPeers Always, NoDelay) :| []),
       ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
     }
-
+  where
+    targets' =
+      [(nullPeerSelectionTargets, NoDelay),
+       (nullPeerSelectionTargets {
+           targetNumberOfRootPeers = 1,
+           targetNumberOfKnownPeers = 3,
+           targetNumberOfEstablishedPeers = 3
+           }, LongDelay),
+       (nullPeerSelectionTargets, NoDelay),
+       (nullPeerSelectionTargets, NoDelay),
+       (nullPeerSelectionTargets {
+           targetNumberOfRootPeers = 1,
+           targetNumberOfKnownPeers = 3,
+           targetNumberOfEstablishedPeers = 3,
+           targetNumberOfActivePeers = 2
+           }, NoDelay)]
+    targets'' =
+      [(ConsensusModePeerTargets { deadlineTargets, syncTargets = nullPeerSelectionTargets }, delay)
+      | (deadlineTargets, delay) <- targets']
 
 -- | Verify that re-promote delay is applied with a fuzz.
 --

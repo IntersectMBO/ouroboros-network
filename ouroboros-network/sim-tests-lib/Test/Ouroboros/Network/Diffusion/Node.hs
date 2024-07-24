@@ -67,12 +67,13 @@ import Ouroboros.Network.Block (MaxSlotNo (..), maxSlotNoFromWithOrigin,
            pointSlot)
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
+import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.Diffusion qualified as Diff
 import Ouroboros.Network.Diffusion.P2P qualified as Diff.P2P
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
-import Ouroboros.Network.PeerSelection.Governor (PeerSelectionTargets (..),
-           PublicPeerSelectionState (..))
+import Ouroboros.Network.PeerSelection.Governor (ConsensusModePeerTargets,
+           PeerSelectionTargets (..), PublicPeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.PeerMetric
            (PeerMetricsConfiguration (..), newPeerMetric)
 import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
@@ -141,13 +142,14 @@ data Arguments m = Arguments
     , aShouldChainSyncExit  :: BlockHeader -> m Bool
     , aChainSyncEarlyExit   :: Bool
 
-    , aPeerSelectionTargets :: PeerSelectionTargets
+    , aPeerTargets          :: ConsensusModePeerTargets
     , aReadLocalRootPeers   :: STM m [( HotValency
                                       , WarmValency
                                       , Map RelayAccessPoint ( PeerAdvertise
                                                              , PeerTrustable))]
     , aReadPublicRootPeers  :: STM m (Map RelayAccessPoint PeerAdvertise)
     , aReadUseBootstrapPeers :: Script UseBootstrapPeers
+    , aConsensusMode        :: ConsensusMode
     , aOwnPeerSharing       :: PeerSharing
     , aReadUseLedgerPeers   :: STM m UseLedgerPeers
     , aProtocolIdleTimeout  :: DiffTime
@@ -390,7 +392,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
     mkArgsExtra :: StrictTVar m (Script UseBootstrapPeers)
                 -> Diff.P2P.ArgumentsExtra m
     mkArgsExtra ubpVar = Diff.P2P.ArgumentsExtra
-      { Diff.P2P.daPeerSelectionTargets   = aPeerSelectionTargets na
+      { Diff.P2P.daPeerTargets            = aPeerTargets na
       , Diff.P2P.daReadLocalRootPeers     = aReadLocalRootPeers na
       , Diff.P2P.daReadPublicRootPeers    = aReadPublicRootPeers na
       , Diff.P2P.daReadUseBootstrapPeers  = stepScriptSTM' ubpVar
@@ -401,6 +403,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
       , Diff.P2P.daDeadlineChurnInterval  = 3300
       , Diff.P2P.daBulkChurnInterval      = 300
       , Diff.P2P.daReadLedgerPeerSnapshot = pure Nothing -- ^ tested independently
+      , Diff.P2P.daConsensusMode          = aConsensusMode na
       }
 
     appArgs :: Node.AppArgs BlockHeader Block m

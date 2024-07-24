@@ -1,12 +1,13 @@
-{-# LANGUAGE CPP                 #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE CPP                      #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE DisambiguateRecordFields #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE KindSignatures           #-}
+{-# LANGUAGE NamedFieldPuns           #-}
+{-# LANGUAGE RankNTypes               #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE TypeOperators            #-}
 
 #if !defined(mingw32_HOST_OS)
 #define POSIX
@@ -100,10 +101,11 @@ import Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit (..),
            NodeToNodeVersionData (..), RemoteAddress)
 import Ouroboros.Network.NodeToNode qualified as NodeToNode
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
+import Ouroboros.Network.PeerSelection.Churn (PeerChurnArgs (..))
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.Governor.Types
-           (ChurnMode (ChurnModeNormal), DebugPeerSelection (..),
-           PeerSelectionActions, PeerSelectionCounters,
+           (ChurnMode (ChurnModeNormal), ConsensusModePeerTargets (..),
+           DebugPeerSelection (..), PeerSelectionActions, PeerSelectionCounters,
            PeerSelectionInterfaces (..), PeerSelectionPolicy (..),
            PeerSelectionState, TracePeerSelection (..),
            emptyPeerSelectionCounters, emptyPeerSelectionState)
@@ -121,6 +123,7 @@ import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics,
 #else
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 #endif
+import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.PeerSelection.PeerSelectionActions
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PeerStateActions (PeerConnectionHandle,
@@ -245,10 +248,16 @@ nullTracers =
 data ArgumentsExtra m = ArgumentsExtra {
       -- | selection targets for the peer governor
       --
-      daPeerSelectionTargets   :: PeerSelectionTargets
+      daPeerTargets            :: ConsensusModePeerTargets
 
     , daReadLocalRootPeers     :: STM m (LocalRootPeers.Config RelayAccessPoint)
     , daReadPublicRootPeers    :: STM m (Map RelayAccessPoint PeerAdvertise)
+    -- | When syncing up, ie. ledgerStateJudgement == TooOld,
+    -- when this is True we will maintain connection with many big ledger peers
+    -- to get a strong guarantee that when syncing up we will finish with a true
+    -- ledger state. When false, we will fall back on the previous algorithms
+    -- that leverage UseBootstrapPeers flag
+    , daConsensusMode          :: ConsensusMode
     , daReadUseBootstrapPeers  :: STM m UseBootstrapPeers
     -- | Depending on configuration, node may provide us with
     -- a snapshot of big ledger peers taken at some slot on the chain.
@@ -633,9 +642,10 @@ runM Interfaces
        , daPublicPeerSelectionVar
        }
      ArgumentsExtra
-       { daPeerSelectionTargets
+       { daPeerTargets
        , daReadLocalRootPeers
        , daReadPublicRootPeers
+       , daConsensusMode
        , daReadUseBootstrapPeers
        , daOwnPeerSharing
        , daReadUseLedgerPeers
@@ -816,7 +826,10 @@ runM Interfaces
 
       localRootsVar <- newTVarIO mempty
 
-      peerSelectionTargetsVar <- newTVarIO $ daPeerSelectionTargets
+      peerSelectionTargetsVar <- newTVarIO $
+        case daConsensusMode of
+          PraosMode   -> deadlineTargets daPeerTargets
+          GenesisMode -> syncTargets daPeerTargets
 
       countersVar <- newTVarIO emptyPeerSelectionCounters
 
@@ -988,7 +1001,8 @@ runM Interfaces
                                            case daOwnPeerSharing of
                                              PeerSharingDisabled -> pure Map.empty
                                              PeerSharingEnabled  -> readInboundPeers,
-                                         psUpdateOutboundConnectionsState = daUpdateOutboundConnectionsState }
+                                         psUpdateOutboundConnectionsState = daUpdateOutboundConnectionsState,
+                                         peerTargets = daPeerTargets }
                                        WithLedgerPeersArgs {
                                          wlpRng = ledgerPeersRng,
                                          wlpConsensusInterface = daLedgerPeersCtx,
@@ -1010,6 +1024,7 @@ runM Interfaces
               peerSelectionTracer
               dtTracePeerSelectionCounters
               fuzzRng
+              daConsensusMode
               peerSelectionActions
               peerSelectionPolicy
               PeerSelectionInterfaces {
@@ -1023,21 +1038,28 @@ runM Interfaces
       --
       -- The peer churn governor:
       --
-      let peerChurnGovernor' = Governor.peerChurnGovernor
-                                 dtTracePeerSelectionTracer
-                                 dtTraceChurnCounters
-                                 daDeadlineChurnInterval
-                                 daBulkChurnInterval
-                                 (policyPeerShareOverallTimeout peerSelectionPolicy)
-                                 daPeerMetrics
-                                 churnModeVar
-                                 churnRng
-                                 daBlockFetchMode
-                                 daPeerSelectionTargets
-                                 peerSelectionTargetsVar
-                                 (readTVar countersVar)
-                                 daReadUseBootstrapPeers
-                                 ((LocalRootPeers.hotTarget . LocalRootPeers.clampToTrustable . LocalRootPeers.fromGroups) <$> (readTVar localRootsVar))
+      let peerChurnGovernor' = Governor.peerChurnGovernor PeerChurnArgs {
+                                 pcaPeerSelectionTracer = dtTracePeerSelectionTracer,
+                                 pcaChurnTracer         = dtTraceChurnCounters,
+                                 pcaDeadlineInterval    = daDeadlineChurnInterval,
+                                 pcaBulkInterval        = daBulkChurnInterval,
+                                 pcaPeerRequestTimeout  = policyPeerShareOverallTimeout
+                                                            peerSelectionPolicy,
+                                 pcaMetrics             = daPeerMetrics,
+                                 pcaModeVar             = churnModeVar,
+                                 pcaRng                 = churnRng,
+                                 pcaReadFetchMode       = daBlockFetchMode,
+                                 pcaPeerSelectionVar    = peerSelectionTargetsVar,
+                                 pcaReadCounters        = readTVar countersVar,
+                                 peerTargets            = daPeerTargets,
+                                 pcaReadUseBootstrap    = daReadUseBootstrapPeers,
+                                 pcaConsensusMode       = daConsensusMode,
+                                 getLedgerStateCtx      = daLedgerPeersCtx,
+                                 getLocalRootHotTarget  =
+                                       LocalRootPeers.hotTarget
+                                     . LocalRootPeers.clampToTrustable
+                                     . LocalRootPeers.fromGroups
+                                   <$> readTVar localRootsVar }
 
       --
       -- Two functions only used in InitiatorAndResponder mode
@@ -1079,7 +1101,7 @@ runM Interfaces
         -- InitiatorOnly mode, run peer selection only:
         InitiatorOnlyDiffusionMode ->
           withConnectionManagerInitiatorOnlyMode $ \connectionManager-> do
-          debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng
+          debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng daConsensusMode
           diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
           withPeerStateActions' connectionManager $ \peerStateActions->
             withPeerSelectionActions'
@@ -1104,7 +1126,7 @@ runM Interfaces
             inboundInfoChannel $ \connectionManager ->
               withSockets' $ \sockets addresses -> do
                 withServer sockets connectionManager inboundInfoChannel $ \inboundGovernorThread readInboundState -> do
-                  debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng
+                  debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng daConsensusMode
                   diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
                   withPeerStateActions' connectionManager $ \peerStateActions ->
                     withPeerSelectionActions'
