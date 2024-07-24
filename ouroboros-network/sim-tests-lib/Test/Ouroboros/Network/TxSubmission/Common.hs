@@ -1118,8 +1118,8 @@ instance Arbitrary ArbTxDecisionPolicy where
     arbitrary =
           ArbTxDecisionPolicy . fixupTxDecisionPolicy
       <$> ( TxDecisionPolicy
-            <$> (getSmall <$> arbitrary)
-            <*> (getSmall <$> arbitrary)
+            <$> (getSmall . getPositive <$> arbitrary)
+            <*> (getSmall . getPositive <$> arbitrary)
             <*> (SizeInBytes . getPositive <$> arbitrary)
             <*> (SizeInBytes . getPositive <$> arbitrary)
             <*> (getPositive <$> arbitrary))
@@ -1130,17 +1130,17 @@ instance Arbitrary ArbTxDecisionPolicy where
               maxTxsSizeInflight,
               txInflightMultiplicity }) =
       [ ArbTxDecisionPolicy a { maxNumTxIdsToRequest = NumTxIdsToReq x }
-      | x <- shrink (getNumTxIdsToReq maxNumTxIdsToRequest)
+      | (Positive x) <- shrink (Positive (getNumTxIdsToReq maxNumTxIdsToRequest))
       ]
       ++
       [ ArbTxDecisionPolicy . fixupTxDecisionPolicy
       $ a { txsSizeInflightPerPeer = SizeInBytes s }
-      | s <- shrink (getSizeInBytes txsSizeInflightPerPeer)
+      | Positive s <- shrink (Positive (getSizeInBytes txsSizeInflightPerPeer))
       ]
       ++
       [ ArbTxDecisionPolicy . fixupTxDecisionPolicy
       $ a { maxTxsSizeInflight = SizeInBytes s }
-      | s <- shrink (getSizeInBytes maxTxsSizeInflight)
+      | Positive s <- shrink (Positive (getSizeInBytes maxTxsSizeInflight))
       ]
       ++
       [ ArbTxDecisionPolicy . fixupTxDecisionPolicy

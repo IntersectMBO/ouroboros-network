@@ -27,7 +27,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim hiding (SimResult)
-import Control.Tracer (Tracer (..), contramap, nullTracer)
+import Control.Tracer (Tracer (..), contramap)
 
 
 import Data.ByteString.Lazy (ByteString)
@@ -37,7 +37,6 @@ import Data.List (intercalate, nubBy)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
-import Data.Word (Word16)
 
 
 import Ouroboros.Network.Channel
@@ -76,6 +75,38 @@ tests = testGroup "Ouroboros.Network.TxSubmission.TxSubmissionV2"
   [ testProperty "txSubmission" prop_txSubmission
   ]
 
+data TxSubmissionV2State =
+  TxSubmissionV2State {
+      peerMap :: Map Int ( NonEmptyList (Tx Int)
+                         , Maybe (Positive SmallDelay)
+                         , Maybe (Positive SmallDelay)
+                         -- ^ The delay must be smaller (<) than 5s, so that overall
+                         -- delay is less than 10s, otherwise 'smallDelay' in
+                         -- 'timeLimitsTxSubmission2' will kick in.
+                         )
+    , decisionPolicy :: TxDecisionPolicy
+  } deriving (Show)
+
+instance Arbitrary TxSubmissionV2State where
+  arbitrary = do
+    ArbTxDecisionPolicy decisionPolicy <- arbitrary
+    peersN <- choose (1, 10)
+    peers <- vectorOf peersN arbitrary
+    peersState <- vectorOf peersN arbitrary
+    return (TxSubmissionV2State (Map.fromList (zip peers peersState)) decisionPolicy)
+  shrink (TxSubmissionV2State peerMap decisionPolicy) =
+    TxSubmissionV2State <$> shrinkMap1 peerMap
+                        <*> [ policy
+                          | ArbTxDecisionPolicy policy <- shrink (ArbTxDecisionPolicy decisionPolicy)
+                            ]
+    where
+      shrinkMap1 :: (Ord k, Arbitrary k, Arbitrary v) => Map k v -> [Map k v]
+      shrinkMap1 m
+        | Map.size m <= 1 = [m]
+        | otherwise       = [Map.delete k m | k <- Map.keys m] ++ singletonMaps
+        where
+          singletonMaps = [Map.singleton k v | (k, v) <- Map.toList m]
+
 txSubmissionSimulation
   :: forall m peeraddr txid.
      ( MonadAsync m
@@ -101,8 +132,7 @@ txSubmissionSimulation
      )
   => Tracer m (String, TraceSendRecv (TxSubmission2 txid (Tx txid)))
   -> Tracer m (DebugSharedTxState peeraddr txid (Tx txid))
-  -> Map peeraddr ( NumTxIdsToAck
-                  , [Tx txid]
+  -> Map peeraddr ( [Tx txid]
                   , ControlMessageSTM m
                   , Maybe DiffTime
                   , Maybe DiffTime
@@ -110,34 +140,36 @@ txSubmissionSimulation
   -> TxDecisionPolicy
   -> m ([Tx txid], [[Tx txid]])
 txSubmissionSimulation tracer tracerDST state txDecisionPolicy = do
-    state' <- traverse (\(a, b, c, d, e) -> do
-                                  mempool <- newMempool b
-                                  (outChannel, inChannel) <- createConnectedChannels
-                                  return (a, mempool, c, d, e, outChannel, inChannel)
-                                ) state
 
-    inboundMempool  <- emptyMempool
+    state' <- traverse (\(b, c, d, e) -> do
+        mempool <- newMempool b
+        (outChannel, inChannel) <- createConnectedChannels
+        return (mempool, c, d, e, outChannel, inChannel)
+        ) state
+
+    inboundMempool <- emptyMempool
 
     txChannelsMVar <- Strict.newMVar (TxChannels Map.empty)
     sharedTxStateVar <- newSharedTxStateVar
     gsvVar <- Strict.newTVarIO Map.empty
 
-    asyncs <- runTxSubmission state'
-                              txChannelsMVar
-                              sharedTxStateVar
-                              inboundMempool
-                              gsvVar
-                              (pure . snd)
+    runTxSubmission state'
+                    txChannelsMVar
+                    sharedTxStateVar
+                    inboundMempool
+                    gsvVar
+                    (\(a, as) -> do
+                      _ <- waitAnyCancel as
+                      cancel a
 
-    _ <- waitAnyCancel asyncs
+                      inmp <- readMempool inboundMempool
+                      outmp <- forM (Map.elems state')
+                                   (\(outMempool, _, _, _, _, _) -> readMempool outMempool)
+                      return (inmp, outmp)
+                    )
 
-    inmp <- readMempool inboundMempool
-    outmp <- forM (Map.elems state')
-                 (\(_, outMempool, _, _, _, _, _) -> readMempool outMempool)
-    return (inmp, outmp)
   where
-    runTxSubmission :: Map peeraddr ( NumTxIdsToAck
-                                    , Mempool m txid -- ^ Outbound mempool
+    runTxSubmission :: Map peeraddr ( Mempool m txid -- ^ Outbound mempool
                                     , ControlMessageSTM m
                                     , Maybe DiffTime -- ^ Outbound delay
                                     , Maybe DiffTime -- ^ Inbound delay
@@ -153,60 +185,45 @@ txSubmissionSimulation tracer tracerDST state txDecisionPolicy = do
     runTxSubmission st txChannelsVar sharedTxStateVar
                     inboundMempool gsvVar k =
       withAsync (decisionLogicThread tracerDST txDecisionPolicy gsvVar txChannelsVar sharedTxStateVar) $ \a -> do
-        -- Construct txSubmission outbound client
-        let clients = (\(maxUnacked, mempool, controlMessageSTM, outDelay, _, outChannel, _) ->
-                        ( outDelay
-                        , outChannel
-                        , txSubmissionOutbound nullTracer
-                                               maxUnacked
+            -- Construct txSubmission outbound client
+        let clients = (\(addr, (mempool, ctrlMsgSTM, outDelay, _, outChannel, _)) -> do
+                        let client = txSubmissionOutbound verboseTracer
+                                               (NumTxIdsToAck $ getNumTxIdsToReq
+                                                              $ maxUnacknowledgedTxIds
+                                                              $ txDecisionPolicy)
                                                (getMempoolReader mempool)
                                                NodeToNodeV_7
-                                               controlMessageSTM
-                        )
+                                               ctrlMsgSTM
+                        runPeerWithLimits (("OUTBOUND " ++ show addr,) `contramap` tracer)
+                                          txSubmissionCodec2
+                                          (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
+                                          timeLimitsTxSubmission2
+                                          (maybe id delayChannel outDelay outChannel)
+                                          (txSubmissionClientPeer client)
                       )
-                     <$> st
+                     <$> Map.assocs st
 
-        -- Construct txSubmission inbound server
-        servers <- Map.traverseWithKey
-                       (\addr (_, _, _, _, inDelay, _, inboundChannel) ->
+            -- Construct txSubmission inbound server
+            servers = (\(addr, (_, _, _, inDelay, _, inChannel)) ->
                          withPeer tracerDST
                                   txChannelsVar
                                   sharedTxStateVar
                                   (getMempoolReader inboundMempool)
-                                  addr $ \api ->
-                                    pure ( inDelay
-                                         , inboundChannel
-                                         , txSubmissionInboundV2 nullTracer
-                                                                 (getMempoolWriter inboundMempool)
-                                                                 api
-                                         )
-                       ) st
-
-            -- Construct txSubmission outbound client miniprotocol peer runner
-        let runPeerClients =
-             (\(addr, (outboundDelay, channel, client)) ->
-               runPeerWithLimits
-                 (("OUTBOUND " ++ show addr,) `contramap` tracer)
-                 txSubmissionCodec2
-                 (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
-                 timeLimitsTxSubmission2
-                 (maybe id delayChannel outboundDelay channel)
-                 (txSubmissionClientPeer client))
-                <$> Map.assocs clients
-            -- Construct txSubmission inbound server miniprotocol peer runner
-            runPeerServers =
-              (\(addr, (inboundDelay, channel, server)) ->
-                runPipelinedPeerWithLimits
-                  (("INBOUND " ++ show addr,) `contramap` verboseTracer)
-                  txSubmissionCodec2
-                  (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
-                  timeLimitsTxSubmission2
-                  (maybe id delayChannel inboundDelay channel)
-                  (txSubmissionServerPeerPipelined server))
-                <$> Map.assocs servers
+                                  addr $ \api -> do
+                                    let server = txSubmissionInboundV2 verboseTracer
+                                                                       (getMempoolWriter inboundMempool)
+                                                                       api
+                                    runPipelinedPeerWithLimits
+                                      (("INBOUND " ++ show addr,) `contramap` verboseTracer)
+                                      txSubmissionCodec2
+                                      (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
+                                      timeLimitsTxSubmission2
+                                      (maybe id delayChannel inDelay inChannel)
+                                      (txSubmissionServerPeerPipelined server)
+                      ) <$> Map.assocs st
 
         -- Run clients and servers
-        withAsyncAll (runPeerClients ++ runPeerServers) (\asyncs -> k (a, asyncs))
+        withAsyncAll (clients ++ servers) (\asyncs -> k (a, asyncs))
 
     withAsyncAll :: MonadAsync m => [m a] -> ([Async m a] -> m b) -> m b
     withAsyncAll xs0 action = go [] xs0
@@ -215,17 +232,9 @@ txSubmissionSimulation tracer tracerDST state txDecisionPolicy = do
         go as (x:xs) = withAsync x (\a -> go (a:as) xs)
 
 prop_txSubmission
-  :: Map Int ( Positive Word16
-             , NonEmptyList (Tx Int)
-             , Maybe (Positive SmallDelay)
-             , Maybe (Positive SmallDelay)
-             -- ^ The delay must be smaller (<) than 5s, so that overall
-             -- delay is less than 10s, otherwise 'smallDelay' in
-             -- 'timeLimitsTxSubmission2' will kick in.
-             )
-  -> ArbTxDecisionPolicy
+  :: TxSubmissionV2State
   -> Property
-prop_txSubmission state (ArbTxDecisionPolicy txDecisionPolicy) =
+prop_txSubmission (TxSubmissionV2State state txDecisionPolicy) =
   ioProperty $ do
     tr' <- evaluateTrace (runSimTrace sim)
     case tr' of
@@ -272,12 +281,11 @@ prop_txSubmission state (ArbTxDecisionPolicy txDecisionPolicy) =
   where
     sim :: forall s . IOSim s ([Tx Int], [[Tx Int]])
     sim = do
-      state' <- traverse (\(Positive maxUnacked, NonEmpty txs, mbOutDelay, mbInDelay) -> do
+      state' <- traverse (\(NonEmpty txs, mbOutDelay, mbInDelay) -> do
                           let mbOutDelayTime = getSmallDelay . getPositive <$> mbOutDelay
                               mbInDelayTime  = getSmallDelay . getPositive <$> mbInDelay
                           controlMessageVar <- newTVarIO Continue
-                          return ( NumTxIdsToAck maxUnacked
-                                 , txs
+                          return ( txs
                                  , controlMessageVar
                                  , mbOutDelayTime
                                  , mbInDelayTime
@@ -285,9 +293,8 @@ prop_txSubmission state (ArbTxDecisionPolicy txDecisionPolicy) =
                         )
                         state
 
-      state'' <- traverse (\(maxUnacked, txs, var, mbOutDelay, mbInDelay) -> do
-                           return ( maxUnacked
-                                  , txs
+      state'' <- traverse (\(txs, var, mbOutDelay, mbInDelay) -> do
+                           return ( txs
                                   , readTVar var
                                   , mbOutDelay
                                   , mbInDelay
@@ -295,17 +302,17 @@ prop_txSubmission state (ArbTxDecisionPolicy txDecisionPolicy) =
                         )
                         state'
 
-      let simDelayTime = Map.foldl' (\m (_, txs, _, mbInDelay, mbOutDelay) ->
+      let simDelayTime = Map.foldl' (\m (txs, _, mbInDelay, mbOutDelay) ->
                                       max m ( fromMaybe 1 (max <$> mbInDelay <*> mbOutDelay)
                                             * realToFrac (length txs `div` 4)
                                             )
                                     )
                                     0
-                       $ state'
-          controlMessageVars = (\(_, _, x, _, _) -> x)
+                       $ state''
+          controlMessageVars = (\(_, x, _, _) -> x)
                             <$> Map.elems state'
 
-      _ <- async $ do
+      _ <- async do
             threadDelay simDelayTime
             atomically (traverse_ (`writeTVar` Terminate) controlMessageVars)
 

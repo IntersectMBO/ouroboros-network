@@ -28,7 +28,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 
 import Data.Sequence.Strict qualified as StrictSeq
-import Ouroboros.Network.DeltaQ (PeerGSV (..), gsvRequestResponseDuration)
+import Ouroboros.Network.DeltaQ (PeerGSV (..), gsvRequestResponseDuration, defaultGSV)
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Inbound.Policy
 import Ouroboros.Network.TxSubmission.Inbound.State
@@ -148,7 +148,10 @@ orderByDeltaQ :: forall peeraddr txid tx.
 orderByDeltaQ dq =
         sortOn (\(peeraddr, _) ->
                    gsvRequestResponseDuration
-                     (dq Map.! peeraddr) reqSize respSize)
+                     (Map.findWithDefault defaultGSV peeraddr dq)
+                     reqSize
+                     respSize
+               )
       . Map.toList
     where
       -- according to calculations in `txSubmissionProtocolLimits`: sizes of

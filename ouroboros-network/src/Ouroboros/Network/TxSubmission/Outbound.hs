@@ -96,7 +96,6 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
                             -> NumTxIdsToReq
                             -> m (ClientStTxIds blocking txid tx m ())
         recvMsgRequestTxIds blocking ackNo reqNo = do
-
           when (getNumTxIdsToAck ackNo > fromIntegral (Seq.length unackedSeq)) $
             throwIO ProtocolErrorAckedTooManyTxids
 

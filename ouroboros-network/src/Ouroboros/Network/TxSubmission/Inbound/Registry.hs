@@ -215,6 +215,7 @@ decisionLogicThread
        ( MonadDelay m
        , MonadMVar  m
        , MonadSTM   m
+       , MonadMask m
        , Ord peeraddr
        , Ord txid
        )
@@ -248,8 +249,19 @@ decisionLogicThread tracer policy gsvVar txChannelsVar sharedStateVar = go
       traceWith tracer (DebugSharedTxState st)
       TxChannels { txChannelMap } <- readMVar txChannelsVar
       traverse_
-        (\(mvar, d) -> modifyMVar_ mvar (\d' -> pure (d' <> d)))
+        (\(mvar, d) -> modifyMVarWithDefault_ mvar d (\d' -> pure (d' <> d)))
         (Map.intersectionWith (,)
           txChannelMap
           decisions)
       go
+
+    -- Variant of modifyMVar_ that puts a default value if the MVar is empty.
+    modifyMVarWithDefault_ :: StrictMVar m a -> a -> (a -> m a) -> m ()
+    modifyMVarWithDefault_ m d io =
+      mask $ \restore -> do
+        mbA  <- tryTakeMVar m
+        case mbA of
+          Just a -> do
+            a' <- restore (io a) `onException` putMVar m a
+            putMVar m a'
+          Nothing -> putMVar m d
