@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -21,13 +22,14 @@ module Ouroboros.Network.Protocol.TxSubmission2.Client
   , ClientStTxIds (..)
   , ClientStTxs (..)
   , TxSizeInBytes
-  , TokBlockingStyle (..)
+  , SingBlockingStyle (..)
   , BlockingReplyList (..)
     -- * Execution as a typed protocol
   , txSubmissionClientPeer
   ) where
 
 import Network.TypedProtocol.Core
+import Network.TypedProtocol.Peer.Client
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 
@@ -53,7 +55,7 @@ newtype TxSubmissionClient txid tx m a = TxSubmissionClient {
 data ClientStIdle txid tx m a = ClientStIdle {
 
     recvMsgRequestTxIds      :: forall blocking.
-                                TokBlockingStyle blocking
+                                SingBlockingStyle blocking
                              -> NumTxIdsToAck
                              -> NumTxIdsToReq
                              -> m (ClientStTxIds blocking txid tx m a),
@@ -83,30 +85,32 @@ data ClientStTxs txid tx m a where
 --
 txSubmissionClientPeer :: forall txid tx m a. Monad m
                        => TxSubmissionClient txid tx m a
-                       -> Peer (TxSubmission2 txid tx) AsClient StInit m a
+                       -> Client (TxSubmission2 txid tx) NonPipelined StInit m a
 txSubmissionClientPeer (TxSubmissionClient client) =
-    Yield (ClientAgency TokInit) MsgInit $
+    Yield MsgInit $
     Effect $ go <$> client
   where
     go :: ClientStIdle txid tx m a
-       -> Peer (TxSubmission2 txid tx) AsClient StIdle m a
+       -> Client (TxSubmission2 txid tx) NonPipelined StIdle m a
     go ClientStIdle {recvMsgRequestTxIds, recvMsgRequestTxs} =
-      Await (ServerAgency TokIdle) $ \msg -> case msg of
+      Await $ \msg -> case msg of
         MsgRequestTxIds blocking ackNo reqNo -> Effect $ do
           reply <- recvMsgRequestTxIds blocking ackNo reqNo
           case reply of
             SendMsgReplyTxIds txids k ->
-              return $ Yield (ClientAgency (TokTxIds blocking))
-                             (MsgReplyTxIds txids)
-                             (go k)
+              -- TODO: investigate why GHC cannot infer `SingI`; it used to in
+              -- `coot/typed-protocols-rewrite` branch
+              return $ case blocking of
+                SingBlocking    -> Yield (MsgReplyTxIds txids)
+                                         (go k)
+                SingNonBlocking -> Yield (MsgReplyTxIds txids)
+                                         (go k)
 
             SendMsgDone result ->
-              return $ Yield (ClientAgency (TokTxIds TokBlocking))
-                              MsgDone
-                             (Done TokDone result)
+              return $ Yield MsgDone
+                             (Done result)
 
         MsgRequestTxs txids -> Effect $ do
           SendMsgReplyTxs txs k <- recvMsgRequestTxs txids
-          return $ Yield (ClientAgency TokTxs)
-                         (MsgReplyTxs txs)
+          return $ Yield (MsgReplyTxs txs)
                          (go k)

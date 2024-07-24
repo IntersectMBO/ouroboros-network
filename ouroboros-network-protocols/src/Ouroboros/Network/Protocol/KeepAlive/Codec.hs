@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PolyKinds           #-}
@@ -37,59 +38,63 @@ codecKeepAlive_v2
   => Codec KeepAlive CBOR.DeserialiseFailure m ByteString
 codecKeepAlive_v2 = mkCodecCborLazyBS encodeMsg decodeMsg
    where
-     encodeMsg :: forall (pr :: PeerRole) st st'.
-                  PeerHasAgency pr st
-               -> Message KeepAlive st st'
+     encodeMsg :: forall st st'.
+                  Message KeepAlive st st'
                -> CBOR.Encoding
-     encodeMsg (ClientAgency TokClient) (MsgKeepAlive (Cookie c)) =
+     encodeMsg (MsgKeepAlive (Cookie c)) =
           CBOR.encodeListLen 2
        <> CBOR.encodeWord 0
        <> CBOR.encodeWord16 c
-     encodeMsg (ServerAgency TokServer) (MsgKeepAliveResponse (Cookie c)) =
+     encodeMsg (MsgKeepAliveResponse (Cookie c)) =
           CBOR.encodeListLen 2
        <> CBOR.encodeWord 1
        <> CBOR.encodeWord16 c
-     encodeMsg (ClientAgency TokClient) MsgDone =
+     encodeMsg MsgDone =
           CBOR.encodeListLen 1
        <> CBOR.encodeWord 2
 
-     decodeMsg :: forall (pr :: PeerRole) s (st :: KeepAlive).
-                  PeerHasAgency pr st
+     decodeMsg :: forall s (st :: KeepAlive).
+                  ActiveState st
+               => StateToken st
                -> CBOR.Decoder s (SomeMessage st)
      decodeMsg stok = do
        len <- CBOR.decodeListLen
        key <- CBOR.decodeWord
        case (stok, len, key) of
-         (ClientAgency TokClient, 2, 0) -> do
+         (SingClient, 2, 0) -> do
              cookie <- CBOR.decodeWord16
              return (SomeMessage $ MsgKeepAlive $ Cookie cookie)
-         (ServerAgency TokServer, 2, 1) -> do
+         (SingServer, 2, 1) -> do
              cookie <- CBOR.decodeWord16
              return (SomeMessage $ MsgKeepAliveResponse $ Cookie cookie)
-         (ClientAgency TokClient, 1, 2) -> pure (SomeMessage MsgDone)
+         (SingClient, 1, 2) -> pure (SomeMessage MsgDone)
 
-         (ClientAgency TokClient, _, _) ->
-           fail (printf "codecKeepAlive (%s) unexpected key (%d, %d)" (show stok) key len)
-         (ServerAgency TokServer, _, _ ) ->
-           fail (printf "codecKeepAlive (%s) unexpected key (%d, %d)" (show stok) key len)
+         (SingDone, _, _) -> notActiveState stok
+
+         (_, _, _) ->
+           fail (printf "codecKeepAlive (%s, %s) unexpected key (%d, %d)" (show (activeAgency :: ActiveAgency st)) (show stok) key len)
 
 
 byteLimitsKeepAlive :: (bytes -> Word) -> ProtocolSizeLimits KeepAlive bytes
 byteLimitsKeepAlive = ProtocolSizeLimits sizeLimitForState
   where
-    sizeLimitForState :: PeerHasAgency (pr :: PeerRole) (st :: KeepAlive)
+    sizeLimitForState :: ActiveState st
+                      => StateToken (st :: KeepAlive)
                       -> Word
-    sizeLimitForState (ClientAgency TokClient) = smallByteLimit
-    sizeLimitForState (ServerAgency TokServer) = smallByteLimit
+    sizeLimitForState SingClient = smallByteLimit
+    sizeLimitForState SingServer = smallByteLimit
+    sizeLimitForState a@SingDone = notActiveState a
 
 
 timeLimitsKeepAlive :: ProtocolTimeLimits KeepAlive
 timeLimitsKeepAlive = ProtocolTimeLimits { timeLimitForState }
   where
-    timeLimitForState :: PeerHasAgency (pr :: PeerRole) (st :: KeepAlive)
+    timeLimitForState :: ActiveState st
+                      => StateToken (st :: KeepAlive)
                       -> Maybe DiffTime
-    timeLimitForState (ClientAgency TokClient) = Just 97
-    timeLimitForState (ServerAgency TokServer) = Just 60 -- TODO: #2505 should be 10s.
+    timeLimitForState SingClient = Just 97
+    timeLimitForState SingServer = Just 60 -- TODO: #2505 should be 10s.
+    timeLimitForState a@SingDone = notActiveState a
 
 
 codecKeepAliveId
@@ -99,22 +104,26 @@ codecKeepAliveId
   => Codec KeepAlive CodecFailure m (AnyMessage KeepAlive)
 codecKeepAliveId = Codec encodeMsg decodeMsg
    where
-     encodeMsg :: forall (pr :: PeerRole) st st'.
-                  PeerHasAgency pr st
-               -> Message KeepAlive st st'
+     encodeMsg :: forall st st'.
+                  StateTokenI st
+               => ActiveState st
+               => Message KeepAlive st st'
                -> AnyMessage KeepAlive
-     encodeMsg _ = AnyMessage
+     encodeMsg = AnyMessage
 
-     decodeMsg :: forall (pr :: PeerRole) (st :: KeepAlive).
-                  PeerHasAgency pr st
+     decodeMsg :: forall (st :: KeepAlive).
+                  ActiveState st
+               => StateToken st
                -> m (DecodeStep (AnyMessage KeepAlive)
-                          CodecFailure m (SomeMessage st))
+                                CodecFailure m (SomeMessage st))
      decodeMsg stok = return $ DecodePartial $ \bytes -> return $
-       case (stok, bytes) of
-         (ClientAgency TokClient, Just (AnyMessage msg@(MsgKeepAlive {})))
+        case (stok, bytes) of
+         (SingClient, Just (AnyMessage msg@(MsgKeepAlive {})))
              -> DecodeDone (SomeMessage msg) Nothing
-         (ServerAgency TokServer, Just (AnyMessage msg@(MsgKeepAliveResponse {})))
+         (SingServer, Just (AnyMessage msg@(MsgKeepAliveResponse {})))
              -> DecodeDone (SomeMessage msg) Nothing
-         (ClientAgency TokClient, Just (AnyMessage msg@(MsgDone)))
+         (SingClient, Just (AnyMessage msg@(MsgDone)))
              -> DecodeDone (SomeMessage msg) Nothing
+         (SingDone, _)
+             -> notActiveState stok
          (_, _) -> DecodeFail (CodecFailure "codecKeepAliveId: no matching message")

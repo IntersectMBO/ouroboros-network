@@ -1,14 +1,15 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DeriveAnyClass      #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE EmptyCase           #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE PolyKinds           #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE DeriveAnyClass           #-}
+{-# LANGUAGE DeriveGeneric            #-}
+{-# LANGUAGE EmptyCase                #-}
+{-# LANGUAGE FlexibleInstances        #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE LambdaCase               #-}
+{-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE StandaloneDeriving       #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeFamilies             #-}
 
 -- | The type of the local transaction monitoring protocol.
 --
@@ -46,6 +47,8 @@
 module Ouroboros.Network.Protocol.LocalTxMonitor.Type where
 
 
+import Data.Kind
+import Data.Singletons
 import Data.Word
 import GHC.Generics (Generic)
 
@@ -100,6 +103,25 @@ instance
       , showProxy (Proxy :: Proxy slot)
       ]
 
+type SingLocalTxMonitor :: LocalTxMonitor txid tx slot -> Type
+data SingLocalTxMonitor st where
+    SingIdle      :: SingLocalTxMonitor StIdle
+    SingAcquiring :: SingLocalTxMonitor StAcquiring
+    SingAcquired  :: SingLocalTxMonitor StAcquired
+    SingBusy      :: SingBusyKind k
+                  -> SingLocalTxMonitor (StBusy k)
+    SingDone      :: SingLocalTxMonitor StDone
+
+instance StateTokenI StIdle      where stateToken = SingIdle
+instance StateTokenI StAcquiring where stateToken = SingAcquiring
+instance StateTokenI StAcquired  where stateToken = SingAcquired
+instance SingI k =>
+         StateTokenI (StBusy k)  where stateToken = SingBusy (sing :: Sing k)
+instance StateTokenI StDone      where stateToken = SingDone
+
+deriving instance Show (SingLocalTxMonitor st)
+
+
 data StBusyKind where
   -- | The server is busy fetching the next transaction from the mempool
   NextTx :: StBusyKind
@@ -109,6 +131,19 @@ data StBusyKind where
   -- | The server is busy looking for the current size and max capacity of the
   -- mempool
   GetSizes :: StBusyKind
+
+type SingBusyKind :: StBusyKind -> Type
+data SingBusyKind st where
+    SingNextTx   :: SingBusyKind NextTx
+    SingHasTx    :: SingBusyKind HasTx
+    SingGetSizes :: SingBusyKind GetSizes
+
+type instance Sing = SingBusyKind
+instance SingI NextTx   where sing = SingNextTx
+instance SingI HasTx    where sing = SingHasTx
+instance SingI GetSizes where sing = SingGetSizes
+
+deriving instance Show (SingBusyKind st)
 
 -- | Describes the MemPool sizes and capacity for a given snapshot.
 data MempoolSizeAndCapacity = MempoolSizeAndCapacity
@@ -211,39 +246,14 @@ instance Protocol (LocalTxMonitor txid tx slot) where
     MsgDone
       :: Message (LocalTxMonitor txid tx slot) StIdle StDone
 
-  data ClientHasAgency st where
-    TokIdle     :: ClientHasAgency StIdle
-    TokAcquired :: ClientHasAgency StAcquired
+  type StateAgency StIdle      = ClientAgency
+  type StateAgency StAcquiring = ServerAgency
+  type StateAgency StAcquired  = ClientAgency
+  type StateAgency (StBusy _)  = ServerAgency
+  type StateAgency StDone      = NobodyAgency
 
-  data ServerHasAgency st where
-    TokAcquiring :: ServerHasAgency StAcquiring
-    TokBusy      :: TokBusyKind k -> ServerHasAgency (StBusy k)
+  type StateToken = SingLocalTxMonitor
 
-  data NobodyHasAgency st where
-    TokDone  :: NobodyHasAgency StDone
-
-  exclusionLemma_ClientAndServerHaveAgency TokIdle     tok = case tok of {}
-
-  exclusionLemma_ClientAndServerHaveAgency TokAcquired tok = case tok of {}
-
-  exclusionLemma_NobodyAndClientHaveAgency TokDone     tok = case tok of {}
-
-  exclusionLemma_NobodyAndServerHaveAgency TokDone tok = case tok of {}
-
-instance forall txid tx slot (st :: LocalTxMonitor txid tx slot). NFData (ClientHasAgency st) where
-  rnf TokIdle     = ()
-  rnf TokAcquired = ()
-
-instance forall txid tx slot (st :: LocalTxMonitor txid tx slot). NFData (ServerHasAgency st) where
-  rnf TokAcquiring = ()
-  rnf (TokBusy k)  = rnf k
-
-instance forall txid tx slot (st :: LocalTxMonitor txid tx slot). NFData (NobodyHasAgency st) where
-  rnf TokDone = ()
-
-instance forall txid tx slot (st :: LocalTxMonitor txid tx slot) pr. NFData (PeerHasAgency pr st) where
-  rnf (ClientAgency x) = rnf x
-  rnf (ServerAgency x) = rnf x
 
 instance ( NFData txid
          , NFData tx
@@ -273,15 +283,3 @@ instance NFData (TokBusyKind k) where
 
 deriving instance (Show txid, Show tx, Show slot)
   => Show (Message (LocalTxMonitor txid tx slot) from to)
-
-instance Show (ClientHasAgency (st :: LocalTxMonitor txid tx slot)) where
-  show = \case
-    TokIdle     -> "TokIdle"
-    TokAcquired -> "TokAcquired"
-
-instance Show (ServerHasAgency (st :: LocalTxMonitor txid tx slot)) where
-  show = \case
-    TokAcquiring        -> "TokAcquiring"
-    TokBusy TokNextTx   -> "TokBusy TokNextTx"
-    TokBusy TokHasTx    -> "TokBusy TokHasTx"
-    TokBusy TokGetSizes -> "TokBusy TokGetSizes"

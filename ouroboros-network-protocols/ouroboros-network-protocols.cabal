@@ -99,6 +99,7 @@ library
                        cborg             >=0.2.1 && <0.3,
                        deepseq,
                        quiet,
+                       singletons,
 
                        io-classes       ^>=1.5.0,
                        nothunks,
@@ -109,7 +110,9 @@ library
                        serialise,
                        typed-protocols  ^>=0.2,
                        typed-protocols-cborg
-                                        ^>=0.2
+                                        ^>=0.2,
+                       typed-protocols-stateful,
+                       typed-protocols-stateful-cborg
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
@@ -197,7 +200,8 @@ library testlib
                        ouroboros-network-protocols,
                        si-timers,
                        strict-stm,
-                       typed-protocols
+                       typed-protocols,
+                       typed-protocols-stateful
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
