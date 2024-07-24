@@ -64,6 +64,11 @@ library
                        Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
                        Ouroboros.Network.PeerSharing
                        Ouroboros.Network.TxSubmission.Inbound
+                       Ouroboros.Network.TxSubmission.Inbound.Server
+                       Ouroboros.Network.TxSubmission.Inbound.Decision
+                       Ouroboros.Network.TxSubmission.Inbound.Policy
+                       Ouroboros.Network.TxSubmission.Inbound.State
+                       Ouroboros.Network.TxSubmission.Inbound.Registry
                        Ouroboros.Network.TxSubmission.Mempool.Reader
                        Ouroboros.Network.TxSubmission.Outbound
   other-modules:       Ouroboros.Network.Diffusion.Common
@@ -134,6 +139,7 @@ library
                        io-classes-mtl   ^>=0.1,
                        network-mux,
                        si-timers,
+                       strict-mvar,
                        ouroboros-network-api       ^>=0.7.2,
                        ouroboros-network-framework ^>=0.13.1,
                        ouroboros-network-protocols ^>=0.9,
@@ -190,6 +196,7 @@ library sim-tests-lib
 
                        cardano-prelude,
                        cardano-slotting,
+                       cardano-strict-containers,
                        contra-tracer,
                        nothunks,
 

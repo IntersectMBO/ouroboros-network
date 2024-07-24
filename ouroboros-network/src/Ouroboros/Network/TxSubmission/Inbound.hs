@@ -8,6 +8,8 @@
 
 {-# OPTIONS_GHC -Wno-partial-fields #-}
 
+-- | Legacy `tx-submission` inbound peer.
+--
 module Ouroboros.Network.TxSubmission.Inbound
   ( txSubmissionInbound
   , TxSubmissionMempoolWriter (..)
@@ -41,6 +43,7 @@ import Network.TypedProtocol.Pipelined (N, Nat (..), natToInt)
 import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import Ouroboros.Network.Protocol.TxSubmission2.Server
 import Ouroboros.Network.Protocol.TxSubmission2.Type
+import Ouroboros.Network.TxSubmission.Inbound.Decision (TxDecision)
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
            TxSubmissionMempoolReader (..))
 
@@ -81,9 +84,17 @@ data TraceTxSubmissionInbound txid tx =
     -- | Just processed transaction pass/fail breakdown.
   | TraceTxSubmissionProcessed ProcessedTxCount
     -- | Server received 'MsgDone'
-  | TraceTxInboundTerminated
   | TraceTxInboundCanRequestMoreTxs Int
   | TraceTxInboundCannotRequestMoreTxs Int
+
+  --
+  -- messages emitted by the new implementation of the server in
+  -- "Ouroboros.Network.TxSubmission.Inbound.Server"; some of them are also
+  -- used in this module.
+  --
+
+  | TraceTxInboundTerminated
+  | TraceTxInboundDecision (TxDecision txid tx)
   deriving (Eq, Show)
 
 data TxSubmissionProtocolError =
@@ -252,7 +263,7 @@ txSubmissionInbound tracer (NumTxIdsToAck maxUnacked) mpReader mpWriter _version
             --
             traceWith tracer (TraceTxInboundCanRequestMoreTxs (natToInt n))
             pure $ CollectPipelined
-              (Just (continueWithState (serverReqTxs (Succ n')) st))
+              (Just (pure $ continueWithState (serverReqTxs (Succ n')) st))
               (collectAndContinueWithState (handleReply n') st)
 
           else do
