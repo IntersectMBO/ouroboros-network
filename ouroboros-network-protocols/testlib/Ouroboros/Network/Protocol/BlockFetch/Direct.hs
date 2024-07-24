@@ -10,7 +10,7 @@ module Ouroboros.Network.Protocol.BlockFetch.Direct
 
 import Control.Monad (join)
 
-import Network.TypedProtocol.Pipelined
+import Network.TypedProtocol.Core
 import Network.TypedProtocol.Proofs
 
 import Ouroboros.Network.Protocol.BlockFetch.Client

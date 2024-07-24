@@ -15,7 +15,7 @@ import Codec.Serialise.Class qualified as Serialise
 import Control.DeepSeq (NFData (..))
 import Data.ByteString.Lazy qualified as BL
 import GHC.Generics (Generic)
-import Network.TypedProtocol.Codec
+import Network.TypedProtocol.Stateful.Codec
 import Ouroboros.Network.Protocol.BlockFetch.Codec.CDDL (Block, BlockPoint)
 import Ouroboros.Network.Protocol.LocalStateQuery.Codec
 import Ouroboros.Network.Protocol.LocalStateQuery.Type
@@ -46,7 +46,7 @@ instance Arbitrary (Query Result) where
     arbitrary = Query <$> arbitrary
 
 localStateQueryCodec :: Codec (LocalStateQuery Block BlockPoint Query)
-                              CBOR.DeserialiseFailure IO BL.ByteString
+                              CBOR.DeserialiseFailure State IO BL.ByteString
 localStateQueryCodec =
     codecLocalStateQuery
       maxBound
