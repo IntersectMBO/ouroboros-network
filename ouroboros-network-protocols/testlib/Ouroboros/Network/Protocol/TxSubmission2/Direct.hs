@@ -7,7 +7,7 @@
 
 module Ouroboros.Network.Protocol.TxSubmission2.Direct (directPipelined) where
 
-import Network.TypedProtocol.Pipelined
+import Network.TypedProtocol.Core
 import Network.TypedProtocol.Proofs (Queue (..), enqueue)
 
 import Ouroboros.Network.Protocol.TxSubmission2.Client
@@ -33,7 +33,7 @@ directPipelined (TxSubmissionServerPipelined mserver)
                  -> m (a, b)
     directSender q (SendMsgRequestTxIdsBlocking ackNo reqNo a serverNext)
                    ClientStIdle{recvMsgRequestTxIds} = do
-      reply <- recvMsgRequestTxIds TokBlocking ackNo reqNo
+      reply <- recvMsgRequestTxIds SingBlocking ackNo reqNo
       case reply of
         SendMsgReplyTxIds (BlockingReply txids) client' -> do
           server' <- serverNext txids
@@ -42,7 +42,7 @@ directPipelined (TxSubmissionServerPipelined mserver)
 
     directSender q (SendMsgRequestTxIdsPipelined ackNo reqNo serverNext)
                    ClientStIdle{recvMsgRequestTxIds} = do
-      reply <- recvMsgRequestTxIds TokNonBlocking ackNo reqNo
+      reply <- recvMsgRequestTxIds SingNonBlocking ackNo reqNo
       case reply of
         SendMsgReplyTxIds (NonBlockingReply txids) client' -> do
           server' <- serverNext

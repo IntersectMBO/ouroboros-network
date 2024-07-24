@@ -333,80 +333,87 @@ propChainSyncPipelinedMinConnectIO cps choices (PipeliningDepth omax) =
 
 
 instance (Arbitrary header, Arbitrary point, Arbitrary tip)
-      => Arbitrary (AnyMessageAndAgency (ChainSync header point tip)) where
+      => Arbitrary (AnyMessage (ChainSync header point tip)) where
   arbitrary = oneof
-    [ return $ AnyMessageAndAgency (ClientAgency TokIdle) MsgRequestNext
-    , return $ AnyMessageAndAgency (ServerAgency (TokNext TokCanAwait)) MsgAwaitReply
+    [ return $ AnyMessage MsgRequestNext
+    , return $ AnyMessage MsgAwaitReply
 
-    , AnyMessageAndAgency (ServerAgency (TokNext TokCanAwait))
+    , AnyMessage
         <$> (MsgRollForward <$> arbitrary
-                            <*> arbitrary)
+                            <*> arbitrary
+              :: Gen (Message (ChainSync header point tip) (StNext StCanAwait) StIdle))
 
-    , AnyMessageAndAgency (ServerAgency (TokNext TokMustReply))
+    , AnyMessage
         <$> (MsgRollForward <$> arbitrary
-                            <*> arbitrary)
+                            <*> arbitrary
+              :: Gen (Message (ChainSync header point tip) (StNext StMustReply) StIdle))
 
-    , AnyMessageAndAgency (ServerAgency (TokNext TokCanAwait))
+    , AnyMessage
         <$> (MsgRollBackward <$> arbitrary
-                             <*> arbitrary)
+                             <*> arbitrary
+              :: Gen (Message (ChainSync header point tip) (StNext StCanAwait) StIdle))
 
-    , AnyMessageAndAgency (ServerAgency (TokNext TokMustReply))
+    , AnyMessage
         <$> (MsgRollBackward <$> arbitrary
-                             <*> arbitrary)
+                             <*> arbitrary
+              :: Gen (Message (ChainSync header point tip) (StNext StMustReply) StIdle))
 
-    , AnyMessageAndAgency (ClientAgency TokIdle) . MsgFindIntersect
+    , AnyMessage . MsgFindIntersect
         <$> listOf arbitrary
 
-    , AnyMessageAndAgency (ServerAgency TokIntersect)
+    , AnyMessage
         <$> (MsgIntersectFound <$> arbitrary
                                <*> arbitrary)
 
-    , AnyMessageAndAgency (ServerAgency TokIntersect)
+    , AnyMessage
         <$> (MsgIntersectNotFound <$> arbitrary)
 
-    , return $ AnyMessageAndAgency (ClientAgency TokIdle) MsgDone
+    , return $ AnyMessage MsgDone
     ]
 
-  shrink (AnyMessageAndAgency (ClientAgency TokIdle) MsgRequestNext) = []
-  shrink (AnyMessageAndAgency (ServerAgency (TokNext TokCanAwait)) MsgAwaitReply) = []
-  shrink (AnyMessageAndAgency a@(ServerAgency (TokNext TokCanAwait)) (MsgRollForward header tip)) =
-       [ AnyMessageAndAgency a (MsgRollForward header' tip)
+  shrink (AnyMessage MsgRequestNext) = []
+  shrink (AnyMessage MsgAwaitReply) = []
+  -- shrink (AnyMessage (MsgRollForward header tip)) = []
+  shrink (AnyMessage (MsgRollForward header  tip :: Message (ChainSync header point tip) st st')) =
+    -- NOTE: if `mkMsg` is inlined GHC-9.6.2 complains that there are multiple
+    -- incoherent instances in the scope to resolve `StateTokenI`.
+    let mkMsg :: header -> tip -> Message (ChainSync header point tip) st st'
+        mkMsg = MsgRollForward
+    in
+        [ AnyMessage (mkMsg header' tip)
+        | header' <- shrink header
+        ]
+     ++ [ AnyMessage (mkMsg header tip')
+        | tip' <- shrink tip
+        ]
+  shrink (AnyMessage (MsgRollBackward header tip :: Message (ChainSync header point tip) st st')) =
+    -- NOTE: if `mkMsg` is inlined GHC-9.6.2 complains that there are multiple
+    -- incoherent instances in the scope to resolve `StateTokenI`.
+    let mkMsg :: point -> tip -> Message (ChainSync header point tip) st st'
+        mkMsg = MsgRollBackward
+    in
+       [ AnyMessage (mkMsg header' tip)
        | header' <- shrink header
        ]
-    ++ [ AnyMessageAndAgency a (MsgRollForward header tip')
+    ++ [ AnyMessage (mkMsg header tip')
        | tip' <- shrink tip
        ]
-  -- TODO: with ghc-9.2 or later this and previous case can be merged into one
-  shrink (AnyMessageAndAgency a@(ServerAgency (TokNext TokMustReply)) (MsgRollForward header tip)) =
-       [ AnyMessageAndAgency a (MsgRollForward header' tip)
-       | header' <- shrink header
-       ]
-    ++ [ AnyMessageAndAgency a (MsgRollForward header tip')
-       | tip' <- shrink tip
-       ]
-  shrink (AnyMessageAndAgency a@(ServerAgency TokNext {}) (MsgRollBackward header tip)) =
-       [ AnyMessageAndAgency a (MsgRollBackward header' tip)
-       | header' <- shrink header
-       ]
-    ++ [ AnyMessageAndAgency a (MsgRollBackward header tip')
-       | tip' <- shrink tip
-       ]
-  shrink (AnyMessageAndAgency a@(ClientAgency TokIdle) (MsgFindIntersect points)) =
-       [ AnyMessageAndAgency a (MsgFindIntersect points')
+  shrink (AnyMessage (MsgFindIntersect points)) =
+       [ AnyMessage (MsgFindIntersect points')
        | points' <- shrink points
        ]
-  shrink (AnyMessageAndAgency a@(ServerAgency TokIntersect) (MsgIntersectFound point tip)) =
-       [ AnyMessageAndAgency a (MsgIntersectFound point' tip)
+  shrink (AnyMessage (MsgIntersectFound point tip)) =
+       [ AnyMessage (MsgIntersectFound point' tip)
        | point' <- shrink point
        ]
-    ++ [ AnyMessageAndAgency a (MsgIntersectFound point tip')
+    ++ [ AnyMessage (MsgIntersectFound point tip')
        | tip' <- shrink tip
        ]
-  shrink (AnyMessageAndAgency a@(ServerAgency TokIntersect) (MsgIntersectNotFound tip)) =
-       [ AnyMessageAndAgency a (MsgIntersectNotFound tip')
+  shrink (AnyMessage (MsgIntersectNotFound tip)) =
+       [ AnyMessage (MsgIntersectNotFound tip')
        | tip' <- shrink tip
        ]
-  shrink (AnyMessageAndAgency (ClientAgency TokIdle) MsgDone) = []
+  shrink (AnyMessage MsgDone) = []
 
 
 -- type aliases to keep sizes down
@@ -477,13 +484,13 @@ codecWrapped =
                    (encodeTip S.encode)      (decodeTip S.decode)
 
 prop_codec_ChainSync
-  :: AnyMessageAndAgency ChainSync_BlockHeader
+  :: AnyMessage ChainSync_BlockHeader
   -> Bool
 prop_codec_ChainSync msg =
     ST.runST $ prop_codecM codec msg
 
 prop_codec_splits2_ChainSync
-  :: AnyMessageAndAgency ChainSync_BlockHeader
+  :: AnyMessage ChainSync_BlockHeader
   -> Bool
 prop_codec_splits2_ChainSync msg =
     ST.runST $ prop_codec_splitsM
@@ -492,7 +499,7 @@ prop_codec_splits2_ChainSync msg =
       msg
 
 prop_codec_splits3_ChainSync
-  :: AnyMessageAndAgency ChainSync_BlockHeader
+  :: AnyMessage ChainSync_BlockHeader
   -> Bool
 prop_codec_splits3_ChainSync msg =
     ST.runST $ prop_codec_splitsM
@@ -501,13 +508,13 @@ prop_codec_splits3_ChainSync msg =
       msg
 
 prop_codec_cbor
-  :: AnyMessageAndAgency ChainSync_BlockHeader
+  :: AnyMessage ChainSync_BlockHeader
   -> Bool
 prop_codec_cbor msg =
     ST.runST (prop_codec_cborM codec msg)
 
 prop_codec_valid_cbor
-  :: AnyMessageAndAgency ChainSync_BlockHeader
+  :: AnyMessage ChainSync_BlockHeader
   -> Property
 prop_codec_valid_cbor = prop_codec_valid_cbor_encoding codec
 
@@ -524,13 +531,13 @@ codecSerialised = codecChainSync
     (encodeTip S.encode) (decodeTip S.decode)
 
 prop_codec_ChainSyncSerialised
-  :: AnyMessageAndAgency ChainSync_Serialised_BlockHeader
+  :: AnyMessage ChainSync_Serialised_BlockHeader
   -> Bool
 prop_codec_ChainSyncSerialised msg =
     ST.runST $ prop_codecM codecSerialised msg
 
 prop_codec_splits2_ChainSyncSerialised
-  :: AnyMessageAndAgency ChainSync_Serialised_BlockHeader
+  :: AnyMessage ChainSync_Serialised_BlockHeader
   -> Bool
 prop_codec_splits2_ChainSyncSerialised msg =
     ST.runST $ prop_codec_splitsM
@@ -539,7 +546,7 @@ prop_codec_splits2_ChainSyncSerialised msg =
       msg
 
 prop_codec_splits3_ChainSyncSerialised
-  :: AnyMessageAndAgency ChainSync_Serialised_BlockHeader
+  :: AnyMessage ChainSync_Serialised_BlockHeader
   -> Bool
 prop_codec_splits3_ChainSyncSerialised msg =
     ST.runST $ prop_codec_splitsM
@@ -548,42 +555,52 @@ prop_codec_splits3_ChainSyncSerialised msg =
       msg
 
 prop_codec_cbor_ChainSyncSerialised
-  :: AnyMessageAndAgency ChainSync_Serialised_BlockHeader
+  :: AnyMessage ChainSync_Serialised_BlockHeader
   -> Bool
 prop_codec_cbor_ChainSyncSerialised msg =
     ST.runST (prop_codec_cborM codecSerialised msg)
 
 prop_codec_binary_compat_ChainSync_ChainSyncSerialised
-  :: AnyMessageAndAgency ChainSync_BlockHeader
+  :: AnyMessage ChainSync_BlockHeader
   -> Bool
 prop_codec_binary_compat_ChainSync_ChainSyncSerialised msg =
     ST.runST (prop_codec_binary_compatM codecWrapped codecSerialised stokEq msg)
   where
     stokEq
-      :: forall pr (stA :: ChainSync_BlockHeader).
-         PeerHasAgency pr stA
-      -> SamePeerHasAgency pr ChainSync_Serialised_BlockHeader
-    stokEq (ClientAgency ca) = case ca of
-      TokIdle -> SamePeerHasAgency $ ClientAgency TokIdle
-    stokEq (ServerAgency sa) = case sa of
-      TokNext k    -> SamePeerHasAgency $ ServerAgency (TokNext k)
-      TokIntersect -> SamePeerHasAgency $ ServerAgency TokIntersect
+      :: forall (stA :: ChainSync_BlockHeader).
+         ActiveState stA
+      => StateToken stA
+      -> SomeState ChainSync_Serialised_BlockHeader
+    stokEq SingIdle =
+      SomeState SingIdle
+    stokEq (SingNext SingCanAwait) =
+      SomeState (SingNext SingCanAwait)
+    stokEq (SingNext SingMustReply) =
+      SomeState (SingNext SingMustReply)
+    stokEq SingIntersect =
+      SomeState SingIntersect
+    stokEq a@SingDone = notActiveState a
 
 prop_codec_binary_compat_ChainSyncSerialised_ChainSync
-  :: AnyMessageAndAgency ChainSync_Serialised_BlockHeader
+  :: AnyMessage ChainSync_Serialised_BlockHeader
   -> Bool
 prop_codec_binary_compat_ChainSyncSerialised_ChainSync msg =
     ST.runST (prop_codec_binary_compatM codecSerialised codecWrapped stokEq msg)
   where
     stokEq
-      :: forall pr (stA :: ChainSync_Serialised_BlockHeader).
-         PeerHasAgency pr stA
-      -> SamePeerHasAgency pr ChainSync_BlockHeader
-    stokEq (ClientAgency ca) = case ca of
-      TokIdle -> SamePeerHasAgency $ ClientAgency TokIdle
-    stokEq (ServerAgency sa) = case sa of
-      TokNext k    -> SamePeerHasAgency $ ServerAgency (TokNext k)
-      TokIntersect -> SamePeerHasAgency $ ServerAgency TokIntersect
+      :: forall (stA :: ChainSync_Serialised_BlockHeader).
+         ActiveState stA
+      => StateToken stA
+      -> SomeState ChainSync_BlockHeader
+    stokEq SingIdle =
+      SomeState SingIdle
+    stokEq (SingNext SingCanAwait) =
+      SomeState (SingNext SingCanAwait)
+    stokEq (SingNext SingMustReply) =
+      SomeState (SingNext SingMustReply)
+    stokEq SingIntersect =
+      SomeState SingIntersect
+    stokEq a@SingDone = notActiveState a
 
 chainSyncDemo
   :: forall m.

@@ -1,7 +1,8 @@
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs             #-}
-{-# LANGUAGE NamedFieldPuns    #-}
-{-# LANGUAGE TypeApplications  #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -86,7 +87,7 @@ prop_connect f (NonNegative n) =
             (keepAliveServerPeer   keepAliveServerCount)
             (keepAliveClientPeer $ keepAliveClientApply f 0 n))
 
-     of (s, c, TerminalStates TokDone TokDone) ->
+     of (s, c, TerminalStates SingDone SingDone) ->
           (s, c) == (n, foldr (.) id (replicate n f) 0)
 
 --
@@ -128,13 +129,13 @@ prop_channel_IO f (NonNegative n) =
 -- Codec tests
 --
 
-instance Arbitrary (AnyMessageAndAgency KeepAlive) where
+instance Arbitrary (AnyMessage KeepAlive) where
   arbitrary = do
     c <- arbitrary
     oneof
-      [ pure $ AnyMessageAndAgency (ClientAgency TokClient) (MsgKeepAlive $ Cookie c)
-      , pure $ AnyMessageAndAgency (ServerAgency TokServer) (MsgKeepAliveResponse $ Cookie c)
-      , pure $ AnyMessageAndAgency (ClientAgency TokClient) MsgDone
+      [ pure $ AnyMessage (MsgKeepAlive $ Cookie c)
+      , pure $ AnyMessage (MsgKeepAliveResponse $ Cookie c)
+      , pure $ AnyMessage MsgDone
       ]
 
 instance Eq (AnyMessage KeepAlive) where
@@ -143,27 +144,27 @@ instance Eq (AnyMessage KeepAlive) where
     AnyMessage MsgDone                        == AnyMessage MsgDone                        = True
     _ == _ = False
 
-prop_codec_v2 :: AnyMessageAndAgency KeepAlive -> Bool
+prop_codec_v2 :: AnyMessage KeepAlive -> Bool
 prop_codec_v2 msg =
     runST (prop_codecM codecKeepAlive_v2 msg)
 
-prop_codec_v2_splits2 :: AnyMessageAndAgency KeepAlive -> Bool
+prop_codec_v2_splits2 :: AnyMessage KeepAlive -> Bool
 prop_codec_v2_splits2 msg =
     runST (prop_codec_splitsM splits2 codecKeepAlive_v2 msg)
 
-prop_codec_v2_splits3 :: AnyMessageAndAgency KeepAlive -> Bool
+prop_codec_v2_splits3 :: AnyMessage KeepAlive -> Bool
 prop_codec_v2_splits3 msg =
     runST (prop_codec_splitsM splits3 codecKeepAlive_v2 msg)
 
-prop_codec_v2_valid_cbor :: AnyMessageAndAgency KeepAlive -> Property
+prop_codec_v2_valid_cbor :: AnyMessage KeepAlive -> Property
 prop_codec_v2_valid_cbor msg =
     prop_codec_valid_cbor_encoding codecKeepAlive_v2 msg
 
-prop_byteLimits :: AnyMessageAndAgency KeepAlive
-                         -> Bool
-prop_byteLimits (AnyMessageAndAgency agency msg) =
-        dataSize (encode agency msg)
-     <= sizeLimitForState agency
+prop_byteLimits :: AnyMessage KeepAlive
+                -> Bool
+prop_byteLimits (AnyMessage (msg :: Message KeepAlive st st')) =
+        dataSize (encode msg)
+     <= sizeLimitForState (stateToken :: StateToken st)
   where
-    Codec { encode } = (codecKeepAlive_v2 :: Codec KeepAlive CBOR.DeserialiseFailure IO ByteString)
+    Codec { encode } = codecKeepAlive_v2 :: Codec KeepAlive CBOR.DeserialiseFailure IO ByteString
     ProtocolSizeLimits { sizeLimitForState, dataSize } = byteLimitsKeepAlive (fromIntegral . BL.length)

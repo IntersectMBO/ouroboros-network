@@ -34,10 +34,10 @@ prop_codec_cborM
      , Eq (AnyMessage ps)
      )
   => Codec ps CBOR.DeserialiseFailure m LBS.ByteString
-  -> AnyMessageAndAgency ps
+  -> AnyMessage ps
   -> m Bool
-prop_codec_cborM codec (AnyMessageAndAgency stok msg)
-    = case CBOR.deserialiseFromBytes CBOR.decodeTerm $ encode codec stok msg of
+prop_codec_cborM codec (AnyMessage msg)
+    = case CBOR.deserialiseFromBytes CBOR.decodeTerm $ encode codec msg of
         Left _err               -> return False
         Right (leftover, _term) -> return $ LBS.null leftover
 
@@ -49,10 +49,10 @@ prop_codec_cborM codec (AnyMessageAndAgency stok msg)
 prop_codec_valid_cbor_encoding
   :: forall ps.
      Codec ps CBOR.DeserialiseFailure IO ByteString
-  -> AnyMessageAndAgency ps
+  -> AnyMessage ps
   -> Property
-prop_codec_valid_cbor_encoding Codec {encode} (AnyMessageAndAgency stok msg) =
-    case deserialise [] (encode stok msg) of
+prop_codec_valid_cbor_encoding Codec {encode} (AnyMessage msg) =
+    case deserialise [] (encode msg) of
       Left  e     -> counterexample (show e) False
       Right terms -> property (CBOR.validFlatTerm terms)
   where
