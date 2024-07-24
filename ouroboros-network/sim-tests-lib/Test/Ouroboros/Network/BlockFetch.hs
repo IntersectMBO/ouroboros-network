@@ -507,7 +507,7 @@ tracePropertyInFlight =
     checkTrace Nothing reqsInFlight []
       | reqsInFlight > 0
       = counterexample
-          ("traceProeprtyInFlight: reqsInFlight = " ++ show reqsInFlight ++ " ≠ 0")
+          ("tracePropertyInFlight: reqsInFlight = " ++ show reqsInFlight ++ " ≠ 0")
           False
       | otherwise
       = property True
