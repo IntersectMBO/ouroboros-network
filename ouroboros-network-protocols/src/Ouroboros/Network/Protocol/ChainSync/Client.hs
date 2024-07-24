@@ -31,6 +31,7 @@ import Control.Monad (forever)
 import Control.Monad.Class.MonadTimer
 
 import Network.TypedProtocol.Core
+import Network.TypedProtocol.Peer.Client
 
 import Ouroboros.Network.Protocol.ChainSync.Type
 
@@ -182,16 +183,16 @@ chainSyncClientPeer
   :: forall header point tip m a .
      Monad m
   => ChainSyncClient header point tip m a
-  -> Peer (ChainSync header point tip) AsClient StIdle m a
+  -> Client (ChainSync header point tip) NonPipelined StIdle m a
 chainSyncClientPeer (ChainSyncClient mclient) =
     Effect $ fmap chainSyncClientPeer_ mclient
   where
     chainSyncClientPeer_
       :: ClientStIdle header point tip m a
-      -> Peer (ChainSync header point tip) AsClient StIdle m a
+      -> Client (ChainSync header point tip) NonPipelined StIdle m a
     chainSyncClientPeer_ (SendMsgRequestNext stAwait stNext) =
-        Yield (ClientAgency TokIdle) MsgRequestNext $
-        Await (ServerAgency (TokNext TokCanAwait)) $ \resp ->
+        Yield MsgRequestNext $
+        Await $ \resp ->
         case resp of
           MsgRollForward header tip ->
               chainSyncClientPeer (recvMsgRollForward header tip)
@@ -208,7 +209,7 @@ chainSyncClientPeer (ChainSyncClient mclient) =
           MsgAwaitReply ->
             Effect $ do
               stAwait
-              pure $ Await (ServerAgency (TokNext TokMustReply)) $ \resp' ->
+              pure $ Await $ \resp' ->
                 case resp' of
                   MsgRollForward header tip ->
                       chainSyncClientPeer (recvMsgRollForward header tip)
@@ -220,8 +221,8 @@ chainSyncClientPeer (ChainSyncClient mclient) =
                       ClientStNext{recvMsgRollBackward} = stNext
 
     chainSyncClientPeer_ (SendMsgFindIntersect points stIntersect) =
-        Yield (ClientAgency TokIdle) (MsgFindIntersect points) $
-        Await (ServerAgency TokIntersect) $ \resp ->
+        Yield (MsgFindIntersect points) $
+        Await $ \resp ->
         case resp of
           MsgIntersectFound pIntersect tip ->
             chainSyncClientPeer (recvMsgIntersectFound pIntersect tip)
@@ -235,4 +236,4 @@ chainSyncClientPeer (ChainSyncClient mclient) =
         } = stIntersect
 
     chainSyncClientPeer_ (SendMsgDone a) =
-      Yield (ClientAgency TokIdle) MsgDone (Done TokDone a)
+      Yield MsgDone (Done a)

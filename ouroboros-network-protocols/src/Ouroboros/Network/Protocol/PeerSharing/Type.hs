@@ -11,11 +11,14 @@
 
 module Ouroboros.Network.Protocol.PeerSharing.Type where
 
-import Codec.Serialise.Class (Serialise)
 import Control.DeepSeq
+
+import Codec.Serialise.Class (Serialise)
 import Data.Word (Word8)
 import GHC.Generics (Generic)
-import Network.TypedProtocol.Core (PeerHasAgency (..), Protocol (..))
+
+import Network.TypedProtocol.Core
+
 import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 -- | PeerSharing amount new type.
@@ -54,6 +57,17 @@ data PeerSharing peerAddress where
 instance ShowProxy (PeerSharing peer) where
     showProxy _ = "PeerSharing"
 
+data SingPeerSharing (k :: PeerSharing peerAddress) where
+    SingIdle :: SingPeerSharing StIdle
+    SingBusy :: SingPeerSharing StBusy
+    SingDone :: SingPeerSharing StDone
+
+deriving instance Show (SingPeerSharing peerAddress)
+
+instance StateTokenI StIdle where stateToken = SingIdle
+instance StateTokenI StBusy where stateToken = SingBusy
+instance StateTokenI StDone where stateToken = SingDone
+
 instance Protocol (PeerSharing peerAddress) where
   data Message (PeerSharing peerAddress) from to where
     MsgShareRequest :: PeerSharingAmount
@@ -62,31 +76,11 @@ instance Protocol (PeerSharing peerAddress) where
                     -> Message (PeerSharing peerAddress) StBusy StIdle
     MsgDone         :: Message (PeerSharing peerAddress) StIdle StDone
 
-  data ClientHasAgency st where
-    TokIdle :: ClientHasAgency StIdle
+  type StateAgency StIdle = ClientAgency
+  type StateAgency StBusy = ServerAgency
+  type StateAgency StDone = NobodyAgency
 
-  data ServerHasAgency st where
-    TokBusy :: ServerHasAgency StBusy
-
-  data NobodyHasAgency st where
-    TokDone :: NobodyHasAgency StDone
-
-  exclusionLemma_ClientAndServerHaveAgency TokIdle tok = case tok of {}
-  exclusionLemma_NobodyAndClientHaveAgency TokDone tok = case tok of {}
-  exclusionLemma_NobodyAndServerHaveAgency TokDone tok = case tok of {}
-
-instance forall peerAddress (st :: PeerSharing peerAddress). NFData (ClientHasAgency st) where
-  rnf TokIdle = ()
-
-instance forall peerAddress (st :: PeerSharing peerAddress). NFData (ServerHasAgency st) where
-  rnf TokBusy = ()
-
-instance forall peerAddress (st :: PeerSharing peerAddress). NFData (NobodyHasAgency st) where
-  rnf TokDone = ()
-
-instance forall peerAddress (st :: PeerSharing peerAddress) pr. NFData (PeerHasAgency pr st) where
-  rnf (ClientAgency x) = rnf x
-  rnf (ServerAgency x) = rnf x
+  type StateToken = SingPeerSharing
 
 instance NFData peerAddress => NFData (Message (PeerSharing peerAddress) from to) where
   rnf (MsgShareRequest (PeerSharingAmount m)) = rnf m
@@ -101,10 +95,3 @@ instance Show peer => Show (Message (PeerSharing peer) from to) where
 deriving instance (Show peerAddress) => Show (PeerSharing peerAddress)
 
 deriving instance (Eq peerAddress) => Eq (PeerSharing peerAddress)
-
-instance Show (ClientHasAgency (st :: PeerSharing peerAddress)) where
-  show TokIdle = "TokIdle"
-
-instance Show (ServerHasAgency (st :: PeerSharing peerAddress)) where
-  show TokBusy = "TokBusy"
-

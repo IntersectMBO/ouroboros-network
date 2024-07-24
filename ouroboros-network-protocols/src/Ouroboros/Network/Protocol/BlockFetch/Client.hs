@@ -8,7 +8,7 @@
 module Ouroboros.Network.Protocol.BlockFetch.Client where
 
 import Network.TypedProtocol.Core
-import Network.TypedProtocol.Pipelined
+import Network.TypedProtocol.Peer.Client
 
 import Ouroboros.Network.Protocol.BlockFetch.Type
 
@@ -52,20 +52,19 @@ blockFetchClientPeer
   :: forall block point m a.
      Monad m
   => BlockFetchClient block point m a
-  -> Peer (BlockFetch block point) AsClient BFIdle m a
+  -> Client (BlockFetch block point) NonPipelined BFIdle m a
 blockFetchClientPeer (BlockFetchClient mclient) =
   Effect $ blockFetchRequestPeer <$> mclient
  where
   blockFetchRequestPeer
     :: BlockFetchRequest block point m a
-    -> Peer (BlockFetch block point) AsClient BFIdle m a
+    -> Client (BlockFetch block point) NonPipelined BFIdle m a
 
   blockFetchRequestPeer (SendMsgClientDone result) =
-    Yield (ClientAgency TokIdle) MsgClientDone (Done TokDone result)
+    Yield MsgClientDone (Done result)
 
   blockFetchRequestPeer (SendMsgRequestRange range resp next) =
     Yield
-      (ClientAgency TokIdle)
       (MsgRequestRange range)
       (blockFetchResponsePeer next resp)
 
@@ -73,18 +72,18 @@ blockFetchClientPeer (BlockFetchClient mclient) =
   blockFetchResponsePeer
     :: BlockFetchClient block point m a
     -> BlockFetchResponse block m a
-    -> Peer (BlockFetch block point) AsClient BFBusy m a
+    -> Client (BlockFetch block point) NonPipelined BFBusy m a
   blockFetchResponsePeer next BlockFetchResponse{handleNoBlocks, handleStartBatch} =
-    Await (ServerAgency TokBusy) $ \msg -> case msg of
+    Await $ \msg -> case msg of
       MsgStartBatch -> Effect $ blockReceiver next <$> handleStartBatch
       MsgNoBlocks   -> Effect $ handleNoBlocks >> (blockFetchRequestPeer <$> runBlockFetchClient next)
 
   blockReceiver
     :: BlockFetchClient block point m a
     -> BlockFetchReceiver block m
-    -> Peer (BlockFetch block point) AsClient BFStreaming m a
+    -> Client (BlockFetch block point) NonPipelined BFStreaming m a
   blockReceiver next BlockFetchReceiver{handleBlock, handleBatchDone} =
-    Await (ServerAgency TokStreaming) $ \msg -> case msg of
+    Await $ \msg -> case msg of
       MsgBlock block -> Effect $ blockReceiver next <$> handleBlock block
       MsgBatchDone   -> Effect $ do
         handleBatchDone
@@ -134,38 +133,34 @@ blockFetchClientPeerPipelined
   :: forall block point m a.
      Monad m
   => BlockFetchClientPipelined block point m a
-  -> PeerPipelined (BlockFetch block point) AsClient BFIdle m a
+  -> ClientPipelined (BlockFetch block point) BFIdle m a
 blockFetchClientPeerPipelined (BlockFetchClientPipelined sender) =
-  PeerPipelined (blockFetchClientPeerSender sender)
+  ClientPipelined $ blockFetchClientPeerSender sender
 
 blockFetchClientPeerSender
   :: forall n block point c m a.
      Monad m
   => BlockFetchSender n c block point m a
-  -> PeerSender (BlockFetch block point) AsClient BFIdle n c m a
+  -> Client (BlockFetch block point) (Pipelined n c) BFIdle m a
 
 blockFetchClientPeerSender (SendMsgDonePipelined result) =
   -- Send `MsgClientDone` and complete the protocol
-  SenderYield
-    (ClientAgency TokIdle)
-    MsgClientDone
-      (SenderDone TokDone result)
+  Yield MsgClientDone (Done result)
 
 blockFetchClientPeerSender (SendMsgRequestRangePipelined range c0 receive next) =
   -- Pipelined yield: send `MsgRequestRange`, return receicer which will
   -- consume a stream of blocks.
-  SenderPipeline
-    (ClientAgency TokIdle)
+  YieldPipelined
     (MsgRequestRange range)
-    (ReceiverAwait (ServerAgency TokBusy) $ \msg -> case msg of
+    (ReceiverAwait $ \msg -> case msg of
       MsgStartBatch -> receiveBlocks c0
       MsgNoBlocks   -> ReceiverDone c0)
     (blockFetchClientPeerSender next)
  where
   receiveBlocks
     :: c
-    -> PeerReceiver (BlockFetch block point) AsClient BFStreaming BFIdle m c
-  receiveBlocks c = ReceiverAwait (ServerAgency TokStreaming) $ \msg -> case msg of
+    -> Receiver (BlockFetch block point) BFStreaming BFIdle m c
+  receiveBlocks c = ReceiverAwait $ \msg -> case msg of
     -- received a block, run an acction and compute the result
     MsgBlock block -> ReceiverEffect $ do
       c' <- receive (Just block) c
@@ -173,6 +168,6 @@ blockFetchClientPeerSender (SendMsgRequestRangePipelined range c0 receive next) 
     MsgBatchDone  -> ReceiverDone c
 
 blockFetchClientPeerSender (CollectBlocksPipelined mNone collect) =
-  SenderCollect
+  Collect
     (fmap blockFetchClientPeerSender mNone)
     (blockFetchClientPeerSender . collect)

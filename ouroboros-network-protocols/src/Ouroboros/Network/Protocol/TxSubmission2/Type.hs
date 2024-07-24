@@ -9,6 +9,7 @@
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE StandaloneKindSignatures   #-}
 {-# LANGUAGE TypeFamilies               #-}
 
 -- | The type of the transaction submission protocol.
@@ -18,10 +19,8 @@
 module Ouroboros.Network.Protocol.TxSubmission2.Type
   ( TxSubmission2 (..)
   , Message (..)
-  , ClientHasAgency (..)
-  , ServerHasAgency (..)
-  , NobodyHasAgency (..)
-  , TokBlockingStyle (..)
+  , SingTxSubmission (..)
+  , SingBlockingStyle (..)
   , StBlockingStyle (..)
   , BlockingReplyList (..)
   , NumTxIdsToAck (..)
@@ -33,8 +32,10 @@ module Ouroboros.Network.Protocol.TxSubmission2.Type
   ) where
 
 import Control.DeepSeq
+import Data.Kind (Type)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Monoid (Sum (..))
+import Data.Singletons
 import Data.Word (Word16)
 import GHC.Generics
 import NoThunks.Class (NoThunks (..))
@@ -109,6 +110,26 @@ instance ( ShowProxy txid
 
 instance ShowProxy (StIdle :: TxSubmission2 txid tx) where
     showProxy _ = "StIdle"
+
+
+type SingTxSubmission :: TxSubmission2 txid tx
+                      -> Type
+data SingTxSubmission k where
+    SingInit  :: SingTxSubmission  StInit
+    SingIdle  :: SingTxSubmission  StIdle
+    SingTxIds :: SingBlockingStyle stBlocking
+              -> SingTxSubmission (StTxIds stBlocking)
+    SingTxs   :: SingTxSubmission  StTxs
+    SingDone  :: SingTxSubmission  StDone
+
+deriving instance Show (SingTxSubmission k)
+
+instance StateTokenI StInit               where stateToken = SingInit
+instance StateTokenI StIdle               where stateToken = SingIdle
+instance SingI stBlocking
+      => StateTokenI (StTxIds stBlocking) where stateToken = SingTxIds sing
+instance StateTokenI StTxs                where stateToken = SingTxs
+instance StateTokenI StDone               where stateToken = SingDone
 
 
 data StBlockingStyle where
@@ -209,7 +230,8 @@ instance Protocol (TxSubmission2 txid tx) where
     --   unacknowledged transactions.
     --
     MsgRequestTxIds
-      :: TokBlockingStyle blocking
+      :: forall (blocking :: StBlockingStyle) txid tx.
+         SingBlockingStyle blocking
       -> NumTxIdsToAck -- ^ Acknowledge this number of outstanding txids
       -> NumTxIdsToReq -- ^ Request up to this number of txids.
       -> Message (TxSubmission2 txid tx) StIdle (StTxIds blocking)
@@ -219,8 +241,8 @@ instance Protocol (TxSubmission2 txid tx) where
     --
     -- The list must not be longer than the maximum number requested.
     --
-    -- In the 'StTxIds' 'StBlocking' state the list must be non-empty while
-    -- in the 'StTxIds' 'StNonBlocking' state the list may be empty.
+    -- In the 'StTxIds' 'Blocking' state the list must be non-empty while
+    -- in the 'StTxIds' 'NonBlocking' state the list may be empty.
     --
     -- These transactions are added to the notional FIFO of outstanding
     -- transaction identifiers for the protocol.
@@ -272,37 +294,14 @@ instance Protocol (TxSubmission2 txid tx) where
       :: Message (TxSubmission2 txid tx) (StTxIds StBlocking) StDone
 
 
-  data ClientHasAgency st where
-    TokInit   :: ClientHasAgency StInit
-    TokTxIds  :: TokBlockingStyle b -> ClientHasAgency (StTxIds b)
-    TokTxs    :: ClientHasAgency StTxs
+  type StateAgency  StInit     = ClientAgency
+  type StateAgency (StTxIds b) = ClientAgency
+  type StateAgency  StTxs      = ClientAgency
+  type StateAgency  StIdle     = ServerAgency
+  type StateAgency  StDone     = NobodyAgency
 
-  data ServerHasAgency st where
-    TokIdle   :: ServerHasAgency StIdle
+  type StateToken = SingTxSubmission
 
-  data NobodyHasAgency st where
-    TokDone   :: NobodyHasAgency StDone
-
-  exclusionLemma_ClientAndServerHaveAgency tok TokIdle = case tok of {}
-
-  exclusionLemma_NobodyAndClientHaveAgency TokDone tok = case tok of {}
-
-  exclusionLemma_NobodyAndServerHaveAgency TokDone tok = case tok of {}
-
-instance forall txid tx (st :: TxSubmission2 txid tx). NFData (ClientHasAgency st) where
-  rnf TokInit      = ()
-  rnf (TokTxIds t) = rnf t
-  rnf TokTxs       = ()
-
-instance forall txid tx (st :: TxSubmission2 txid tx). NFData (ServerHasAgency st) where
-  rnf TokIdle = ()
-
-instance forall txid tx (st :: TxSubmission2 txid tx). NFData (NobodyHasAgency st) where
-  rnf TokDone = ()
-
-instance forall txid tx (st :: TxSubmission2 txid tx) pr. NFData (PeerHasAgency pr st) where
-  rnf (ClientAgency x) = rnf x
-  rnf (ServerAgency x) = rnf x
 
 instance ( NFData txid
          , NFData tx
@@ -314,21 +313,24 @@ instance ( NFData txid
   rnf (MsgReplyTxs txs)            = rnf txs
   rnf MsgDone                      = ()
 
--- | The value level equivalent of 'StBlockingStyle'.
+-- | The value level equivalent of 'BlockingStyle'.
 --
 -- This is also used in 'MsgRequestTxIds' where it is interpreted (and can be
 -- encoded) as a 'Bool' with 'True' for blocking, and 'False' for non-blocking.
 --
-data TokBlockingStyle (k :: StBlockingStyle) where
-  TokBlocking    :: TokBlockingStyle StBlocking
-  TokNonBlocking :: TokBlockingStyle StNonBlocking
+data SingBlockingStyle (k :: StBlockingStyle) where
+  SingBlocking    :: SingBlockingStyle StBlocking
+  SingNonBlocking :: SingBlockingStyle StNonBlocking
 
-deriving instance Eq   (TokBlockingStyle b)
-deriving instance Show (TokBlockingStyle b)
+deriving instance Eq   (SingBlockingStyle b)
+deriving instance Show (SingBlockingStyle b)
+type instance Sing = SingBlockingStyle
+instance SingI StBlocking    where sing = SingBlocking
+instance SingI StNonBlocking where sing = SingNonBlocking
 
-instance NFData (TokBlockingStyle b) where
-  rnf TokBlocking    = ()
-  rnf TokNonBlocking = ()
+instance NFData (SingBlockingStyle b) where
+  rnf SingBlocking    = ()
+  rnf SingNonBlocking = ()
 
 -- | We have requests for lists of things. In the blocking case the
 -- corresponding reply must be non-empty, whereas in the non-blocking case
@@ -350,12 +352,3 @@ deriving instance (Eq txid, Eq tx) =>
 
 deriving instance (Show txid, Show tx) =>
                   Show (Message (TxSubmission2 txid tx) from to)
-
-instance Show (ClientHasAgency (st :: TxSubmission2 txid tx)) where
-  show TokInit                   = "TokInit"
-  show (TokTxIds TokBlocking)    = "TokTxIds TokBlocking"
-  show (TokTxIds TokNonBlocking) = "TokTxIds TokNonBlocking"
-  show TokTxs                    = "TokTxs"
-
-instance Show (ServerHasAgency (st :: TxSubmission2 txid tx)) where
-  show TokIdle = "TokIdle"

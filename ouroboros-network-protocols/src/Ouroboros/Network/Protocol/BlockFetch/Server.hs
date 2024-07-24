@@ -4,7 +4,8 @@
 
 module Ouroboros.Network.Protocol.BlockFetch.Server where
 
-import Network.TypedProtocol.Core (Peer (..), PeerHasAgency (..), PeerRole (..))
+import Network.TypedProtocol.Core
+import Network.TypedProtocol.Peer.Server
 
 import Ouroboros.Network.Protocol.BlockFetch.Type
 
@@ -50,37 +51,37 @@ blockFetchServerPeer
   :: forall block point m a.
      Functor m
   => BlockFetchServer block point m a
-  -> Peer (BlockFetch block point) AsServer BFIdle m a
+  -> Server (BlockFetch block point) NonPipelined BFIdle m a
 blockFetchServerPeer (BlockFetchServer requestHandler result) =
-    Await (ClientAgency TokIdle) $ \msg -> case msg of
+    Await $ \msg -> case msg of
       MsgRequestRange range -> Effect $ sendBatch <$> requestHandler range
-      MsgClientDone         -> Done TokDone result
+      MsgClientDone         -> Done result
  where
   sendBatch
     :: BlockFetchBlockSender block point m a
-    -> Peer (BlockFetch block point) AsServer BFBusy m a
+    -> Server (BlockFetch block point) NonPipelined BFBusy m a
 
   sendBatch (SendMsgStartBatch mblocks) =
-    Yield (ServerAgency TokBusy) MsgStartBatch $
+    Yield MsgStartBatch $
     Effect $
       sendBlocks <$> mblocks
 
   sendBatch (SendMsgNoBlocks next) =
-    Yield (ServerAgency TokBusy) MsgNoBlocks $
+    Yield MsgNoBlocks $
     Effect $
       blockFetchServerPeer <$> next
 
 
   sendBlocks
     :: BlockFetchSendBlocks block point m a
-    -> Peer (BlockFetch block point) AsServer BFStreaming m a
+    -> Server (BlockFetch block point) NonPipelined BFStreaming m a
 
   sendBlocks (SendMsgBlock block next') =
-    Yield (ServerAgency TokStreaming) (MsgBlock block) $
+    Yield (MsgBlock block) $
     Effect $
       sendBlocks <$> next'
 
   sendBlocks (SendMsgBatchDone next) =
-    Yield (ServerAgency TokStreaming) MsgBatchDone $
+    Yield MsgBatchDone $
     Effect $
       blockFetchServerPeer <$> next

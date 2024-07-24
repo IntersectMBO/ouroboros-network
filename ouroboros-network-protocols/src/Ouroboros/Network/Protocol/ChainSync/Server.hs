@@ -24,7 +24,10 @@ module Ouroboros.Network.Protocol.ChainSync.Server
   , chainSyncServerPeer
   ) where
 
+import Data.Singletons
+
 import Network.TypedProtocol.Core
+import Network.TypedProtocol.Peer.Server
 
 import Ouroboros.Network.Protocol.ChainSync.Type
 
@@ -95,54 +98,50 @@ chainSyncServerPeer
   :: forall header point tip m a.
      Monad m
   => ChainSyncServer header point tip m a
-  -> Peer (ChainSync header point tip) AsServer StIdle m a
+  -> Server (ChainSync header point tip) NonPipelined StIdle m a
 chainSyncServerPeer (ChainSyncServer mterm) = Effect $ mterm >>=
     \(ServerStIdle{recvMsgRequestNext, recvMsgFindIntersect, recvMsgDoneClient}) ->
 
-    pure $ Await (ClientAgency TokIdle) $ \req ->
+    pure $ Await $ \req ->
     case req of
       MsgRequestNext -> Effect $ do
         mresp <- recvMsgRequestNext
         pure $ case mresp of
-          Left  resp    -> handleStNext TokCanAwait resp
-          Right waiting -> Yield (ServerAgency (TokNext TokCanAwait))
-                                 MsgAwaitReply $ Effect $ do
+          Left  resp    -> handleStNext SingCanAwait resp
+          Right waiting -> Yield MsgAwaitReply $ Effect $ do
                              resp <- waiting
-                             pure $ handleStNext TokMustReply resp
+                             pure $ handleStNext SingMustReply resp
 
       MsgFindIntersect points -> Effect $ do
         resp <- recvMsgFindIntersect points
         pure $ handleStIntersect resp
 
-      MsgDone -> Effect $ fmap (Done TokDone) recvMsgDoneClient
+      MsgDone -> Effect $ Done <$> recvMsgDoneClient
 
   where
     handleStNext
-      :: TokNextKind nextKind
+      :: SingI nextKind
+      => SingNextKind nextKind
       -> ServerStNext header point tip m a
-      -> Peer (ChainSync header point tip) AsServer (StNext nextKind) m a
+      -> Server (ChainSync header point tip) NonPipelined (StNext nextKind) m a
 
-    handleStNext toknextkind (SendMsgRollForward  header tip next) =
-      Yield (ServerAgency (TokNext toknextkind))
-            (MsgRollForward header tip)
+    handleStNext _ (SendMsgRollForward  header tip next) =
+      Yield (MsgRollForward header tip)
             (chainSyncServerPeer next)
 
-    handleStNext toknextkind (SendMsgRollBackward pIntersect tip next) =
-      Yield (ServerAgency (TokNext toknextkind))
-            (MsgRollBackward pIntersect tip)
+    handleStNext _ (SendMsgRollBackward pIntersect tip next) =
+      Yield (MsgRollBackward pIntersect tip)
             (chainSyncServerPeer next)
 
 
     handleStIntersect
       :: ServerStIntersect header point tip m a
-      -> Peer (ChainSync header point tip) AsServer StIntersect m a
+      -> Server (ChainSync header point tip) NonPipelined StIntersect m a
 
     handleStIntersect (SendMsgIntersectFound pIntersect tip next) =
-      Yield (ServerAgency TokIntersect)
-            (MsgIntersectFound pIntersect tip)
+      Yield (MsgIntersectFound pIntersect tip)
             (chainSyncServerPeer next)
 
     handleStIntersect (SendMsgIntersectNotFound tip next) =
-      Yield (ServerAgency TokIntersect)
-            (MsgIntersectNotFound tip)
+      Yield (MsgIntersectNotFound tip)
             (chainSyncServerPeer next)
