@@ -88,8 +88,8 @@ import Data.Void (Void)
 
 import Network.Mux (WithMuxBearer (..))
 import Network.Mux.Types (MuxRuntimeError (..))
-import Network.TypedProtocol (Peer)
-import Network.TypedProtocol.Codec
+import Network.TypedProtocol.Peer.Client
+import Network.TypedProtocol.Stateful.Peer.Client qualified as Stateful
 
 import Ouroboros.Network.Context
 import Ouroboros.Network.Driver (TraceSendRecv (..))
@@ -439,8 +439,8 @@ type LocalConnectionId = ConnectionId LocalAddress
 
 chainSyncPeerNull
     :: forall (header :: Type) (point :: Type) (tip :: Type) m a. MonadDelay m
-    => Peer (ChainSync.ChainSync header point tip)
-            AsClient ChainSync.StIdle m a
+    => Client (ChainSync.ChainSync header point tip)
+               NonPipelined ChainSync.StIdle m a
 chainSyncPeerNull =
     ChainSync.chainSyncClientPeer
       (ChainSync.ChainSyncClient untilTheCowsComeHome )
@@ -448,24 +448,24 @@ chainSyncPeerNull =
 localStateQueryPeerNull
     :: forall (block :: Type) (point :: Type) (query :: Type -> Type) m a.
        MonadDelay m
-    => Peer (LocalStateQuery.LocalStateQuery block point query)
-            AsClient LocalStateQuery.StIdle m a
+    => Stateful.Client (LocalStateQuery.LocalStateQuery block point query)
+                       LocalStateQuery.StIdle LocalStateQuery.State m a
 localStateQueryPeerNull =
     LocalStateQuery.localStateQueryClientPeer
       (LocalStateQuery.LocalStateQueryClient untilTheCowsComeHome)
 
 localTxSubmissionPeerNull
     :: forall (tx :: Type) (reject :: Type) m a. MonadDelay m
-    => Peer (LocalTxSubmission.LocalTxSubmission tx reject)
-            AsClient LocalTxSubmission.StIdle m a
+    => Client (LocalTxSubmission.LocalTxSubmission tx reject)
+              NonPipelined LocalTxSubmission.StIdle m a
 localTxSubmissionPeerNull =
     LocalTxSubmission.localTxSubmissionClientPeer
       (LocalTxSubmission.LocalTxSubmissionClient untilTheCowsComeHome)
 
 localTxMonitorPeerNull
     :: forall (txid :: Type) (tx :: Type) (slot :: Type) m a. MonadDelay m
-    => Peer (LocalTxMonitor.LocalTxMonitor txid tx slot)
-            AsClient LocalTxMonitor.StIdle m a
+    => Client (LocalTxMonitor.LocalTxMonitor txid tx slot)
+              NonPipelined LocalTxMonitor.StIdle m a
 localTxMonitorPeerNull =
     LocalTxMonitor.localTxMonitorClientPeer
       (LocalTxMonitor.LocalTxMonitorClient untilTheCowsComeHome)

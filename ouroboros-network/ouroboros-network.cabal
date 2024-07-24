@@ -163,6 +163,7 @@ library
                        ouroboros-network-protocols ^>=0.10,
                        strict-stm,
                        typed-protocols  ^>=0.2,
+                       typed-protocols-stateful
   if !os(windows)
     build-depends:     directory,
                        unix
