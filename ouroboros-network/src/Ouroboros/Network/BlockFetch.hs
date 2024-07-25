@@ -140,7 +140,12 @@ data BlockFetchConfiguration =
          bfcMaxRequestsInflight    :: !Word,
 
          -- | Desired interval between calls to fetchLogicIteration
-         bfcDecisionLoopInterval   :: !DiffTime,
+         -- in BulkSync mode
+         bfcDecisionLoopIntervalBulkSync :: !DiffTime,
+
+         -- | Desired interval between calls to fetchLogicIteration
+         -- in Deadline mode
+         bfcDecisionLoopIntervalDeadline :: !DiffTime,
 
          -- | Salt used when comparing peers
          bfcSalt                   :: !Int,
@@ -208,11 +213,12 @@ blockFetchLogic decisionTracer clientStateTracer
     fetchDecisionPolicy :: FetchDecisionPolicy header
     fetchDecisionPolicy =
       FetchDecisionPolicy {
-        maxInFlightReqsPerPeer   = bfcMaxRequestsInflight,
-        maxConcurrencyDeadline   = bfcMaxConcurrencyDeadline,
-        decisionLoopInterval     = bfcDecisionLoopInterval,
-        peerSalt                 = bfcSalt,
-        bulkSyncGracePeriod      = gbfcBulkSyncGracePeriod bfcGenesisBFConfig,
+        maxInFlightReqsPerPeer       = bfcMaxRequestsInflight,
+        maxConcurrencyDeadline       = bfcMaxConcurrencyDeadline,
+        decisionLoopIntervalBulkSync = bfcDecisionLoopIntervalBulkSync,
+        decisionLoopIntervalDeadline = bfcDecisionLoopIntervalDeadline,
+        peerSalt                     = bfcSalt,
+        bulkSyncGracePeriod          = gbfcBulkSyncGracePeriod bfcGenesisBFConfig,
 
         plausibleCandidateChain,
         compareCandidateChains,

@@ -38,7 +38,8 @@ data FetchDecisionPolicy header = FetchDecisionPolicy {
        maxInFlightReqsPerPeer  :: Word,  -- A protocol constant.
 
        maxConcurrencyDeadline  :: Word,
-       decisionLoopInterval    :: DiffTime,
+       decisionLoopIntervalBulkSync :: DiffTime,
+       decisionLoopIntervalDeadline :: DiffTime,
        peerSalt                :: Int,
        bulkSyncGracePeriod     :: DiffTime,
 

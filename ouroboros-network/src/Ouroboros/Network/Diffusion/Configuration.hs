@@ -93,7 +93,8 @@ defaultBlockFetchConfiguration bfcSalt =
   BlockFetchConfiguration
     { bfcMaxConcurrencyDeadline = 1
     , bfcMaxRequestsInflight    = fromIntegral $ blockFetchPipeliningMax defaultMiniProtocolParameters
-    , bfcDecisionLoopInterval   = 0.04 -- 40ms
+    , bfcDecisionLoopIntervalBulkSync = 0.04  -- 40ms
+    , bfcDecisionLoopIntervalDeadline = 0.01  -- 10ms
     , bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
       { gbfcBulkSyncGracePeriod = 10 -- seconds
       }
