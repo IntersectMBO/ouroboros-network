@@ -39,6 +39,7 @@ import Ouroboros.Network.Block
 
 import Network.TypedProtocol.Peer.Client
 
+import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.BlockFetch.Client
 import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation (..),
@@ -212,7 +213,7 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
     driverAsync <- async $ do
       threadId <- myThreadId
       labelThread threadId "block-fetch-driver"
-      driver blockHeap
+      downloadTimer
 
     -- Order of shutdown here is important for this example: must kill off the
     -- fetch thread before the peer threads.
@@ -262,14 +263,11 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
     headerForgeUTCTime (FromConsensus x) =
         pure $ convertSlotToTimeForTestsAssumingNoHardFork (blockSlot x)
 
-    driver :: TestFetchedBlockHeap m Block -> m ()
-    driver blockHeap = do
-      atomically $ do
-        heap <- getTestFetchedBlocks blockHeap
-        check $
-          all (\c -> AnchoredFragment.headPoint c `Set.member` heap)
-              candidateChains
-
+    -- | Terminates after 1 second per block in the candidate chains.
+    downloadTimer :: m ()
+    downloadTimer =
+      let totalBlocks = sum $ map AF.length candidateChains
+       in threadDelay (fromIntegral totalBlocks)
 
 --
 -- Sample block fetch configurations
