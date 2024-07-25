@@ -32,7 +32,7 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (nullTracer)
 
 import Network.TypedProtocol.Codec
-import Network.TypedProtocol.Core
+import Network.TypedProtocol.Peer.Server
 
 import Ouroboros.Network.Block
 import Ouroboros.Network.Channel
@@ -311,7 +311,7 @@ relayNode _nid initChain chans = do
                                    consumer
       return chainVar
 
-    startProducer :: Peer (ChainSync block (Point block) (Tip block)) AsServer StIdle m ()
+    startProducer :: Server (ChainSync block (Point block) (Tip block)) NonPipelined StIdle m ()
                   -> Int
                   -> Channel m (AnyMessage (ChainSync block (Point block) (Tip block)))
                   -> m ()

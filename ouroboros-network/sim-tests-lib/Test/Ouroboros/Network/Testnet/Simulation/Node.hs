@@ -65,7 +65,7 @@ import System.Random qualified as Random
 
 import Network.DNS (Domain, TTL)
 
-import Network.TypedProtocol.Core (PeerHasAgency (..))
+import Network.TypedProtocol.Core
 import Network.TypedProtocol.PingPong.Type qualified as PingPong
 
 import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
@@ -1320,8 +1320,9 @@ byteLimitsPingPong = ProtocolSizeLimits (const smallByteLimit) (fromIntegral . B
 
 timeLimitsPingPong :: ProtocolTimeLimits PingPong.PingPong
 timeLimitsPingPong = ProtocolTimeLimits $ \case
-    ClientAgency PingPong.TokIdle -> Nothing
-    ServerAgency PingPong.TokBusy -> Just 60
+    PingPong.SingIdle   -> Nothing
+    PingPong.SingBusy   -> Just 60
+    a@PingPong.SingDone -> notActiveState a
 
 --
 -- Utils
