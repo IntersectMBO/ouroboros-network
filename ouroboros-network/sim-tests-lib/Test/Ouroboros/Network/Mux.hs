@@ -1,10 +1,8 @@
-{-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE RankNTypes                 #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TypeApplications           #-}
-{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 {-# OPTIONS_GHC -Wno-orphans            #-}
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
@@ -30,6 +28,8 @@ import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
 
 import Network.TypedProtocol.Core
+import Network.TypedProtocol.Peer.Client (Client)
+import Network.TypedProtocol.Peer.Server (Server)
 
 import Ouroboros.Network.Block (Tip (..), decodeTip, encodeTip)
 import Ouroboros.Network.Context
@@ -125,8 +125,8 @@ demo chain0 updates delay = do
             , consumerPeer
             )
 
-        consumerPeer :: Peer (ChainSync.ChainSync block (Point block) (Tip block))
-                             AsClient ChainSync.StIdle m ()
+        consumerPeer :: Client (ChainSync.ChainSync block (Point block) (Tip block))
+                               'NonPipelined ChainSync.StIdle m ()
         consumerPeer = ChainSync.chainSyncClientPeer
                           (ChainSync.chainSyncClientExample consumerVar
                           (consumerClient done target consumerVar))
@@ -143,8 +143,8 @@ demo chain0 updates delay = do
             , producerPeer
             )
 
-        producerPeer :: Peer (ChainSync.ChainSync block (Point block) (Tip block))
-                        AsServer ChainSync.StIdle m ()
+        producerPeer :: Server (ChainSync.ChainSync block (Point block) (Tip block))
+                               'NonPipelined ChainSync.StIdle m ()
         producerPeer = ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar id)
 
     clientBearer <- Mx.getBearer Mx.makeQueueChannelBearer

@@ -441,7 +441,7 @@ applications debugTracer nodeKernel
                 (blockFetchSizeLimits limits)
                 (blockFetchTimeLimits limits)
                 channel
-                (forgetPipelined
+                (forgetPipelined []
                   $ blockFetchClient UnversionedProtocol controlMessageSTM
                                      nullTracer clientCtx)
 

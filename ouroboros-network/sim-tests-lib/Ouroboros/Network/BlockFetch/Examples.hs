@@ -37,8 +37,7 @@ import Ouroboros.Network.AnchoredFragment (AnchoredFragment, anchorPoint)
 import Ouroboros.Network.AnchoredFragment qualified as AnchoredFragment
 import Ouroboros.Network.Block
 
-import Network.TypedProtocol.Core
-import Network.TypedProtocol.Pipelined
+import Network.TypedProtocol.Peer.Client
 
 import Ouroboros.Network.ControlMessage (ControlMessageSTM)
 
@@ -329,7 +328,7 @@ runFetchClient :: (MonadAsync m, MonadDelay m, MonadFork m, MonadMask m,
                 -> peerid
                 -> Channel m LBS.ByteString
                 -> (  FetchClientContext header block m
-                   -> PeerPipelined (BlockFetch block point) AsClient BFIdle m a)
+                   -> ClientPipelined (BlockFetch block point) BFIdle m a)
                 -> m a
 runFetchClient tracer version isPipeliningEnabled registry peerid channel client =
     bracketFetchClient registry version isPipeliningEnabled peerid $ \clientCtx ->
@@ -374,7 +373,7 @@ runFetchClientAndServerAsync
                 -> FetchClientRegistry peerid header block m
                 -> peerid
                 -> (  FetchClientContext header block m
-                   -> PeerPipelined (BlockFetch block (Point block)) AsClient BFIdle m a)
+                   -> ClientPipelined (BlockFetch block (Point block)) BFIdle m a)
                 -> BlockFetchServer block (Point block) m b
                 -> m (Async m a, Async m b, Async m (), Async m ())
 runFetchClientAndServerAsync clientTracer serverTracer
