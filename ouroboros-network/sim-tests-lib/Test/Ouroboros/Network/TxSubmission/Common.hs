@@ -841,8 +841,8 @@ prop_receivedTxIds_generator (ArbReceivedTxIds _ someTxsToAck _peeraddr _ps st) 
 prop_acknowledgeTxIds :: ArbReceivedTxIds
                       -> Property
 prop_acknowledgeTxIds (ArbReceivedTxIds _mempoolHasTxFun _txs _peeraddr ps st) =
-    case TXS.acknowledgeTxIds st ps of
-      (numTxIdsToAck, txs, TXS.RefCountDiff { TXS.txIdsToAck }, ps') ->
+    case TXS.acknowledgeTxIds undefined st ps of
+      (numTxIdsToAck, _, txs, TXS.RefCountDiff { TXS.txIdsToAck }, ps') ->
              counterexample "number of tx ids to ack must agree with RefCountDiff"
              ( fromIntegral numTxIdsToAck
                ===
@@ -879,9 +879,9 @@ prop_hasTxIdsToAcknowledge
   -> Property
 prop_hasTxIdsToAcknowledge (ArbReceivedTxIds _mempoolHasTxFun _txs _peeraddr ps st) =
     case ( TXS.hasTxIdsToAcknowledge st ps
-         , TXS.acknowledgeTxIds st ps
+         , TXS.acknowledgeTxIds undefined st ps
          ) of
-      (canAck, (numTxIdsToAck, _, _, _)) ->
+      (canAck, (numTxIdsToAck, _, _, _, _)) ->
         canAck === (numTxIdsToAck > 0)
 
 
@@ -1609,8 +1609,8 @@ prop_makeDecisions_acknowledged
 
         ackFromState :: Map PeerAddr NumTxIdsToAck
         ackFromState =
-            Map.map (\ps -> case TXS.acknowledgeTxIds sharedTxState ps of
-                              (a, _, _, _) -> a)
+            Map.map (\ps -> case TXS.acknowledgeTxIds undefined sharedTxState ps of
+                              (a, _, _, _, _) -> a)
           . peerTxStates
           $ sharedTxState
 

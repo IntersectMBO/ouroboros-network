@@ -241,26 +241,44 @@ hasTxIdsToAcknowledge
 acknowledgeTxIds
     :: forall peeraddr tx txid.
        Ord txid
-    => SharedTxState peeraddr txid tx
+    => TxDecisionPolicy
+    -> SharedTxState peeraddr txid tx
     -> PeerTxState txid tx
-    -> (NumTxIdsToAck, [tx], RefCountDiff txid, PeerTxState txid tx)
+    -> (NumTxIdsToAck, NumTxIdsToReq, [tx], RefCountDiff txid, PeerTxState txid tx)
     -- ^ number of txid to acknowledge, txids to acknowledge with multiplicities,
     -- updated PeerTxState.
 {-# INLINE acknowledgeTxIds #-}
 
 acknowledgeTxIds
+    TxDecisionPolicy { maxNumTxIdsToRequest,
+                       maxUnacknowledgedTxIds }
     SharedTxState { bufferedTxs }
     ps@PeerTxState { availableTxIds,
                      unacknowledgedTxIds,
-                     unknownTxs }
+                     unknownTxs,
+                     requestedTxIdsInflight }
     =
-    ( fromIntegral $ StrictSeq.length acknowledgedTxIds
-    , txsToMempool
-    , refCountDiff
-    , ps { unacknowledgedTxIds = unacknowledgedTxIds',
-           availableTxIds      = availableTxIds',
-           unknownTxs          = unknownTxs' }
-    )
+    -- We can only acknowledge txids when we can request new ones, since
+    -- a `MsgRequestTxIds` for 0 txids is a protocol error.
+    if txIdsToRequest > 0
+      then
+      ( txIdsToAcknowledge
+      , txIdsToRequest
+      , txsToMempool
+      , refCountDiff
+      , ps { unacknowledgedTxIds    = unacknowledgedTxIds',
+             availableTxIds         = availableTxIds',
+             unknownTxs             = unknownTxs',
+             requestedTxIdsInflight = requestedTxIdsInflight
+                                    + txIdsToRequest }
+      )
+      else
+      ( 0
+      , 0
+      , []
+      , RefCountDiff Map.empty
+      , ps
+      )
   where
     -- Split `unacknowledgedTxIds'` into the longest prefix of `txid`s which
     -- can be acknowledged and the unacknowledged `txid`s.
@@ -296,6 +314,21 @@ acknowledgeTxIds
         fn :: Maybe Int -> Maybe Int
         fn Nothing  = Just 1
         fn (Just n) = Just $! n + 1
+
+    txIdsToAcknowledge :: NumTxIdsToAck
+    txIdsToAcknowledge = fromIntegral $ StrictSeq.length acknowledgedTxIds
+
+    txIdsToRequest, unacked, unackedAndRequested :: NumTxIdsToReq
+
+    txIdsToRequest =
+        assert (unackedAndRequested <= maxUnacknowledgedTxIds) $
+        assert (requestedTxIdsInflight <= maxNumTxIdsToRequest) $
+        (maxUnacknowledgedTxIds - unackedAndRequested + fromIntegral txIdsToAcknowledge)
+        `min`
+        (maxNumTxIdsToRequest - requestedTxIdsInflight)
+
+    unackedAndRequested = unacked + requestedTxIdsInflight
+    unacked = fromIntegral $ StrictSeq.length unacknowledgedTxIds
 
 
 -- | `RefCountDiff` represents a map of `txid` which can be acknowledged

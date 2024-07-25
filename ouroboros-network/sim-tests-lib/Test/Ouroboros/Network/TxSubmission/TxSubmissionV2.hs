@@ -317,3 +317,9 @@ prop_txSubmission (TxSubmissionV2State state txDecisionPolicy) =
             atomically (traverse_ (`writeTVar` Terminate) controlMessageVars)
 
       txSubmissionSimulation verboseTracer verboseTracer state'' txDecisionPolicy
+
+checkMempools :: Eq a => [a] -> [a] -> Property
+checkMempools [] _ = property True
+checkMempools as@(a : as') (b : bs) = if a == b then checkMempools as' bs
+                                                else checkMempools as  bs
+checkMempools _ [] = property False

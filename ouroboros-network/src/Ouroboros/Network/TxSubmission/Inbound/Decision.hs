@@ -251,14 +251,13 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
           sizeInflightOther = sizeInflightAll - requestedTxsInflightSize
 
       in if sizeInflightAll >= maxTxsSizeInflight
-        then let (numTxIdsToAck, txsToMempool, RefCountDiff { txIdsToAck }, peerTxState') =
-                    acknowledgeTxIds sharedState peerTxState
-                 (numTxIdsToReq, peerTxState'') = numTxIdsToRequest policy peerTxState'
+        then let (numTxIdsToAck, numTxIdsToReq, txsToMempool, RefCountDiff { txIdsToAck }, peerTxState') =
+                    acknowledgeTxIds policy sharedState peerTxState
 
                  stAcknowledged' = Map.unionWith (+) stAcknowledged txIdsToAck
              in
              ( st { stAcknowledged = stAcknowledged' }
-             , ( (peeraddr, peerTxState'')
+             , ( (peeraddr, peerTxState')
                , TxDecision { txdTxIdsToAcknowledge = numTxIdsToAck,
                               txdTxIdsToRequest     = numTxIdsToReq,
                               txdPipelineTxIds      = not
@@ -324,8 +323,8 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                                           <> txsToRequest
                 }
 
-              (numTxIdsToAck, txsToMempool, RefCountDiff { txIdsToAck }, peerTxState'') =
-                acknowledgeTxIds sharedState peerTxState'
+              (numTxIdsToAck, numTxIdsToReq, txsToMempool, RefCountDiff { txIdsToAck }, peerTxState'') =
+                acknowledgeTxIds policy sharedState peerTxState'
 
               stAcknowledged' = Map.unionWith (+) stAcknowledged txIdsToAck
 
@@ -337,18 +336,16 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
               stInflight' :: Map txid Int
               stInflight' = Map.unionWith (+) stInflightDelta stInflight
 
-              (numTxIdsToReq, peerTxState''') = numTxIdsToRequest policy peerTxState''
-
 
           in ( St { stInflight     = stInflight',
                     stInflightSize = sizeInflightOther + requestedTxsInflightSize',
                     stAcknowledged = stAcknowledged' }
-             , ( (peeraddr, peerTxState''')
+             , ( (peeraddr, peerTxState'')
                , TxDecision { txdTxIdsToAcknowledge = numTxIdsToAck,
                               txdPipelineTxIds      = not
                                                     . StrictSeq.null
                                                     . unacknowledgedTxIds
-                                                    $ peerTxState''',
+                                                    $ peerTxState'',
                               txdTxIdsToRequest     = numTxIdsToReq,
                               txdTxsToRequest       = txsToRequest,
                               txdTxsToMempool       = txsToMempool

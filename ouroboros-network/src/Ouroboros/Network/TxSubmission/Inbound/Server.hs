@@ -90,8 +90,7 @@ txSubmissionInboundV2
                    -> TxDecision txid tx
                    -> m (ServerStIdle n txid tx m ())
     serverReqTxIds
-      n TxDecision { txdTxIdsToAcknowledge = 0,
-                     txdTxIdsToRequest     = 0 }
+      n TxDecision { txdTxIdsToRequest = 0 }
       =
       case n of
         Zero   -> serverIdle
