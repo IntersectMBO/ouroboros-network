@@ -81,7 +81,7 @@ fetchLogicIterations decisionTracer clientStateTracer
       -- + wait for the state to change and make decisions for the new state
       -- + act on those decisions
       start <- getMonotonicTime
-      stateFingerprint' <- fetchLogicIteration
+      (stateFingerprint', fetchMode) <- fetchLogicIteration
         decisionTracer clientStateTracer
         fetchDecisionPolicy
         fetchTriggerVariables
@@ -90,9 +90,12 @@ fetchLogicIterations decisionTracer clientStateTracer
         (peersOrderVar, demoteCSJDynamo)
       end <- getMonotonicTime
       let delta = diffTime end start
+          loopInterval = case fetchMode of
+            FetchModeBulkSync -> decisionLoopIntervalBulkSync fetchDecisionPolicy
+            FetchModeDeadline -> decisionLoopIntervalDeadline fetchDecisionPolicy
       -- Limit decision is made once every decisionLoopInterval.
-      threadDelay $ decisionLoopInterval fetchDecisionPolicy - delta
-      return stateFingerprint'
+      threadDelay (loopInterval - delta)
+      pure stateFingerprint'
 
 
 iterateForever :: Monad m => a -> (a -> m a) -> m Void
@@ -119,7 +122,7 @@ fetchLogicIteration
   -> FetchNonTriggerVariables peer header block m
   -> FetchStateFingerprint peer header block
   -> (StrictTVar m (PeersOrder peer), peer -> m ())
-  -> m (FetchStateFingerprint peer header block)
+  -> m (FetchStateFingerprint peer header block, FetchMode)
 fetchLogicIteration decisionTracer clientStateTracer
                     fetchDecisionPolicy
                     fetchTriggerVariables
@@ -166,7 +169,7 @@ fetchLogicIteration decisionTracer clientStateTracer
     let !stateFingerprint'' =
           updateFetchStateFingerprintPeerStatus statusUpdates stateFingerprint'
 
-    return stateFingerprint''
+    return (stateFingerprint'', fetchStateFetchMode stateSnapshot)
   where
     swizzleReqVar (d,(_,_,g,_,(rq,p))) = (d,g,rq,p)
 
