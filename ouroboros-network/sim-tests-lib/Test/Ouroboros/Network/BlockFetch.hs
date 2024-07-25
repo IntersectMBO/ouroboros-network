@@ -89,8 +89,8 @@ tests = testGroup "BlockFetch"
 
 -- | In this test we have two candidates chains that are static throughout the
 -- run. The two chains share some common prefix (genesis in the degenerate
--- case). The test runs the block fetch logic to download all of both chain
--- candidates.
+-- case). The test runs the block fetch logic to download all blocks of the
+-- longest candidate chain (either of them if they are of equal length).
 --
 -- In this variant we set up the common prefix of the two candidates as the
 -- \"current\" chain. This means the block fetch only has to download the
@@ -226,7 +226,8 @@ instance Show Example1TraceEvent where
 -- blocks in the 'FetchRequest's added by the decision logic and the blocks
 -- received by the fetch clients; check that the ordered sequence of blocks
 -- requested and completed by both fetch clients is exactly the sequence
--- expected. The expected sequence is exactly the chain suffixes in order.
+-- expected. The expected sequence is exactly the longest chain suffix, or
+-- either of them if they are of equal length.
 --
 -- This property is stronger than 'tracePropertyBlocksRequestedAndRecievedAllPeers'
 -- since it works with sequences rather than sets and for each chain
@@ -243,15 +244,24 @@ tracePropertyBlocksRequestedAndRecievedPerPeer
   -> [Example1TraceEvent]
   -> Property
 tracePropertyBlocksRequestedAndRecievedPerPeer fork1 fork2 es =
-       counterexample "should request the expected blocks" (requestedFetchPoints === requiredFetchPoints)
-  .&&. counterexample "should receive the expected blocks" (receivedFetchPoints  === requiredFetchPoints)
+       counterexample "should request the expected blocks"
+         (disjoin $ map (requestedFetchPoints ===) requiredFetchPoints)
+  .&&. counterexample "should receive the expected blocks"
+         (disjoin $ map (receivedFetchPoints ===) requiredFetchPoints)
   where
     requiredFetchPoints =
+      if AnchoredFragment.length fork1 == AnchoredFragment.length fork2
+        then [ requiredFetchPointsFor 1 fork1
+             , requiredFetchPointsFor 2 fork2
+             , Map.union (requiredFetchPointsFor 1 fork1) (requiredFetchPointsFor 2 fork2)
+             ]
+        else if AnchoredFragment.length fork1 < AnchoredFragment.length fork2
+          then [requiredFetchPointsFor 2 fork2]
+          else [requiredFetchPointsFor 1 fork1]
+
+    requiredFetchPointsFor peer fork =
       Map.filter (not . Prelude.null) $
-      Map.fromList $
-        [ (1, chainPoints fork1)
-        , (2, chainPoints fork2)
-        ]
+      Map.fromList [ (peer, chainPoints fork) ]
 
     requestedFetchPoints :: Map Int [Point BlockHeader]
     requestedFetchPoints =
@@ -277,8 +287,8 @@ tracePropertyBlocksRequestedAndRecievedPerPeer fork1 fork2 es =
 -- blocks in the 'FetchRequest's added by the decision logic and the blocks
 -- received by the fetch clients; check that the set of all blocks requested
 -- across the two peers is the set of blocks we expect, and similarly for the
--- set of all blocks received. The expected set of blocks is the union of the
--- blocks on the two candidate chains.
+-- set of all blocks received. The expected set of blocks is the block of the
+-- longest candidate chain, or either of them if they have the same size.
 --
 -- This property is weaker than 'tracePropertyBlocksRequestedAndRecievedPerPeer'
 -- since it does not involve order or frequency, but it holds for the general
@@ -290,11 +300,23 @@ tracePropertyBlocksRequestedAndRecievedAllPeers
   -> [Example1TraceEvent]
   -> Property
 tracePropertyBlocksRequestedAndRecievedAllPeers fork1 fork2 es =
-      requestedFetchPoints === requiredFetchPoints
- .&&. receivedFetchPoints  === requiredFetchPoints
+       counterexample "should request the expected blocks"
+         (disjoin $ map (requestedFetchPoints ===) requiredFetchPoints)
+  .&&. counterexample "should receive the expected blocks"
+         (disjoin $ map (receivedFetchPoints ===) requiredFetchPoints)
   where
     requiredFetchPoints =
-      Set.fromList (chainPoints fork1 ++ chainPoints fork2)
+      if AnchoredFragment.length fork1 == AnchoredFragment.length fork2
+        then [ requiredFetchPointsFor fork1
+             , requiredFetchPointsFor fork2
+             , Set.union (requiredFetchPointsFor fork1) (requiredFetchPointsFor fork2)
+             ]
+        else if AnchoredFragment.length fork1 < AnchoredFragment.length fork2
+          then [requiredFetchPointsFor fork2]
+          else [requiredFetchPointsFor fork1]
+
+    requiredFetchPointsFor fork =
+      Set.fromList $ chainPoints fork
 
     requestedFetchPoints :: Set (Point BlockHeader)
     requestedFetchPoints =
