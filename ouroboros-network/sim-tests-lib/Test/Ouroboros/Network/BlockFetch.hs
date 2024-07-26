@@ -61,11 +61,11 @@ import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
 
 tests :: TestTree
 tests = testGroup "BlockFetch"
-  [ testProperty "static chains without overlap"
-                 prop_blockFetchStaticNoOverlap
+  [ testProperty "BulkSync static chains without overlap"
+                 prop_blockFetchBulkSyncStaticNoOverlap
 
-  , testProperty "static chains with overlap"
-                 prop_blockFetchStaticWithOverlap
+  , testProperty "BulkSync static chains with overlap"
+                 prop_blockFetchBulkSyncStaticWithOverlap
 
   , testCaseSteps "bracketSyncWithFetchClient"
                   unit_bracketSyncWithFetchClient
@@ -102,8 +102,8 @@ tests = testGroup "BlockFetch"
 -- * 'tracePropertyClientStateSanity'
 -- * 'tracePropertyInFlight'
 --
-prop_blockFetchStaticNoOverlap :: TestChainFork -> Property
-prop_blockFetchStaticNoOverlap (TestChainFork common fork1 fork2) =
+prop_blockFetchBulkSyncStaticNoOverlap :: TestChainFork -> Property
+prop_blockFetchBulkSyncStaticNoOverlap (TestChainFork common fork1 fork2) =
     let trace = selectTraceEventsDynamic (runSimTrace simulation)
 
      in counterexample ("\nTrace:\n" ++ unlines (map show trace)) $
@@ -157,10 +157,10 @@ prop_blockFetchStaticNoOverlap (TestChainFork common fork1 fork2) =
 -- * 'tracePropertyClientStateSanity'
 -- * 'tracePropertyInFlight'
 --
--- TODO: 'prop_blockFetchStaticWithOverlap' fails if we introduce delays. issue #2622
+-- TODO: 'prop_blockFetchBulkSyncStaticWithOverlap' fails if we introduce delays. issue #2622
 --
-prop_blockFetchStaticWithOverlap :: TestChainFork -> Property
-prop_blockFetchStaticWithOverlap (TestChainFork _common fork1 fork2) =
+prop_blockFetchBulkSyncStaticWithOverlap :: TestChainFork -> Property
+prop_blockFetchBulkSyncStaticWithOverlap (TestChainFork _common fork1 fork2) =
     let trace = selectTraceEventsDynamic (runSimTrace simulation)
 
      in counterexample ("\nTrace:\n" ++ unlines (map show trace)) $
