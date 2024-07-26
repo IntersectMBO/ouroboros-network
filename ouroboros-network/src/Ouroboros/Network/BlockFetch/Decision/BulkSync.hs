@@ -219,17 +219,22 @@ fetchDecisionsBulkSyncM
             peersOrder
             orderedCandidatesAndPeers
 
-    -- If there were no blocks in flight, then this will be the first request,
-    -- so we take a new current time.
     case theDecision of
       Just (_, peerInfo@(_, inflight, _, _, _))
         | Set.null (peerFetchBlocksInFlight inflight)
+       -- If there were no blocks in flight, then this will be the first request,
+       -- so we take a new current time.
        -> do
           peersOrderStart <- getMonotonicTime
           writePeersOrder $ peersOrder
             { peersOrderCurrent = Just (peerInfoPeer peerInfo),
               peersOrderStart
             }
+         | Just (peerInfoPeer peerInfo) /= peersOrderCurrent peersOrder
+         -- If the peer is not the current peer, then we update the current peer
+        ->
+          writePeersOrder $ peersOrder
+            { peersOrderCurrent = Just (peerInfoPeer peerInfo) }
       _ -> pure ()
 
     pure $
@@ -275,22 +280,17 @@ fetchDecisionsBulkSyncM
             ChainSelStarvationEndedAt time -> pure time
             ChainSelStarvationOngoing -> getMonotonicTime
           case peersOrderCurrent of
-            Just peer ->
-                if lastStarvationTime >= addTime bulkSyncGracePeriod peersOrderStart
-                  then do
-                    traceWith tracer (PeerStarvedUs peer)
-                    demoteCSJDynamo peer
-                    let peersOrder' =
-                          PeersOrder
-                            {
-                              peersOrderCurrent = Nothing,
-                              peersOrderAll = filter (/= peer) peersOrderAll ++ [peer],
-                              peersOrderStart
-                            }
-                    writePeersOrder peersOrder'
-                    pure peersOrder'
-                  else pure peersOrder
-            Nothing -> pure peersOrder
+            Just peer
+              | lastStarvationTime >= addTime bulkSyncGracePeriod peersOrderStart -> do
+                  traceWith tracer (PeerStarvedUs peer)
+                  demoteCSJDynamo peer
+                  pure PeersOrder
+                         {
+                           peersOrderCurrent = Nothing,
+                           peersOrderAll = filter (/= peer) peersOrderAll ++ [peer],
+                           peersOrderStart
+                         }
+            _ -> pure peersOrder
 
 -- | Given a list of candidate fragments and their associated peers, choose what
 -- to sync from who in the bulk sync mode.
