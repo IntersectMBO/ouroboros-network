@@ -795,6 +795,8 @@ data PeersOrder peer = PeersOrder
     -- ^ The current peer we are fetching from, if there is one.
   , peersOrderAll :: [peer]
     -- ^ All the peers, from most preferred to least preferred.
+    --
+    -- INVARIANT: If there is a current peer, it is always the head of this list.
   , peersOrderStart :: Time
     -- ^ The time at which we started talking to the current peer.
   }
