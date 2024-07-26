@@ -248,7 +248,10 @@ tracePropertyBlocksRequestedAndRecievedPerPeer fork1 fork2 es =
   where
     requiredFetchPoints =
       if AnchoredFragment.length fork1 == AnchoredFragment.length fork2
-        then [requiredFetchPointsFor 1 fork1, requiredFetchPointsFor 2 fork2]
+        then [ requiredFetchPointsFor 1 fork1
+             , requiredFetchPointsFor 2 fork2
+             , Map.union (requiredFetchPointsFor 1 fork1) (requiredFetchPointsFor 2 fork2)
+             ]
         else if AnchoredFragment.length fork1 < AnchoredFragment.length fork2
           then [requiredFetchPointsFor 2 fork2]
           else [requiredFetchPointsFor 1 fork1]
@@ -301,7 +304,10 @@ tracePropertyBlocksRequestedAndRecievedAllPeers fork1 fork2 es =
   where
     requiredFetchPoints =
       if AnchoredFragment.length fork1 == AnchoredFragment.length fork2
-        then [requiredFetchPointsFor fork1, requiredFetchPointsFor fork2]
+        then [ requiredFetchPointsFor fork1
+             , requiredFetchPointsFor fork2
+             , Set.union (requiredFetchPointsFor fork1) (requiredFetchPointsFor fork2)
+             ]
         else if AnchoredFragment.length fork1 < AnchoredFragment.length fork2
           then [requiredFetchPointsFor fork2]
           else [requiredFetchPointsFor fork1]
