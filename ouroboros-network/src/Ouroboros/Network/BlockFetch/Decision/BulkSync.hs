@@ -133,11 +133,8 @@ import Control.Tracer (Tracer, traceWith)
 import Data.Bifunctor (first, Bifunctor (..))
 import Data.Function (on)
 import qualified Data.List as List
-import Data.List.NonEmpty (nonEmpty)
-import qualified Data.List.NonEmpty as NE
 import qualified Data.Set as Set
 import Data.Maybe (maybeToList)
-import Data.Ord (Down(Down))
 
 import Cardano.Prelude (partitionEithers)
 
@@ -203,11 +200,13 @@ fetchDecisionsBulkSyncM
     demoteCSJDynamo
     )
   candidatesAndPeers = do
-    peersOrder <-
-      checkLastChainSelStarvation $
-      alignPeersOrderWithActualPeers
-        (map (peerInfoPeer . snd) candidatesAndPeers)
-        peersOrder0
+    let (peersOrder1, orderedCandidatesAndPeers) =
+          alignPeersOrderWithActualPeers
+            (peerInfoPeer . snd)
+            candidatesAndPeers
+            peersOrder0
+
+    peersOrder <- checkLastChainSelStarvation peersOrder1
 
     -- Compute the actual block fetch decision. This contains only declines and
     -- at most one request. 'theDecision' is therefore a 'Maybe'.
@@ -218,7 +217,7 @@ fetchDecisionsBulkSyncM
             fetchedBlocks
             fetchedMaxSlotNo
             peersOrder
-            candidatesAndPeers
+            orderedCandidatesAndPeers
 
     -- If there were no blocks in flight, then this will be the first request,
     -- so we take a new current time.
@@ -241,22 +240,29 @@ fetchDecisionsBulkSyncM
       -- all peers from the peers order that are not in the actual peers list and
       -- adding at the end of the peers order all the actual peers that were not
       -- there before.
-      alignPeersOrderWithActualPeers :: [peer] -> PeersOrder peer -> PeersOrder peer
+      alignPeersOrderWithActualPeers :: forall d.
+        (d -> peer) -> [d] -> PeersOrder peer -> (PeersOrder peer, [d])
       alignPeersOrderWithActualPeers
+        peerOf
         actualPeers
         PeersOrder {peersOrderStart, peersOrderCurrent, peersOrderAll} =
           let peersOrderCurrent' = do
                 peer <- peersOrderCurrent
-                guard (peer `elem` actualPeers)
+                guard (any ((peer ==) . peerOf) actualPeers)
                 pure peer
               peersOrderAll' =
-                filter (`elem` actualPeers) peersOrderAll
-                  ++ filter (`notElem` peersOrderAll) actualPeers
-           in PeersOrder
+                [ d
+                | p <- peersOrderAll
+                , Just d <- [List.find ((p ==) . peerOf) actualPeers]
+                ]
+                ++ filter ((`notElem` peersOrderAll) . peerOf) actualPeers
+           in (PeersOrder
                 { peersOrderCurrent = peersOrderCurrent',
-                  peersOrderAll = peersOrderAll',
+                  peersOrderAll = map peerOf peersOrderAll',
                   peersOrderStart
                 }
+              , peersOrderAll'
+              )
 
       -- If the chain selection has been starved recently, that is after the
       -- current peer started (and a grace period), then the current peer is
@@ -403,12 +409,9 @@ selectTheCandidate
       . selectForkSuffixes currentChain
       -- Filter to keep chains the consensus layer tells us are plausible.
       . filterPlausibleCandidates plausibleCandidateChain currentChain
-      -- Sort the candidates by descending block number of their heads, that is
-      -- consider longest fragments first.
-      . List.sortOn (Down . headBlockNo . fst)
     where
-      -- Write all of the declined peers, and find the candidate fragment
-      -- if there is any.
+      -- Write all of the declined peers, and find the longest candidate
+      -- fragment if there is any.
       separateDeclinedAndStillInRace ::
         [(FetchDecision (ChainSuffix header), peerInfo)] ->
         WithDeclined peerInfo (Maybe (ChainSuffix header, [(ChainSuffix header, peerInfo)]))
@@ -416,7 +419,12 @@ selectTheCandidate
         let (declined, inRace) = partitionEithers
               [ bimap ((,p)) ((,p)) d | (d, p) <- decisions ]
         tell (List declined)
-        return $ ((,inRace) . fst . NE.head) <$> nonEmpty inRace
+        case inRace of
+          [] -> pure Nothing
+          _ : _ -> do
+            let chainSfx = fst $
+                  List.maximumBy (compare `on` (headBlockNo . getChainSuffix . fst))  inRace
+            pure $ Just (chainSfx, inRace)
 
 -- | Given _the_ candidate fragment to sync from, and a list of peers (with
 -- their corresponding candidate fragments), choose which peer to sync _the_
@@ -485,19 +493,9 @@ selectThePeer
             )
             candidates
 
-        -- Order the peers according to the peer order that we have been given, then
-        -- separate between declined peers and the others. NOTE: The order in which
-        -- we bind the lists in the comprehension is capital.
-        let peersOrdered =
-              [ (candidate, peerInfo)
-                | peer <- peersOrderAll peersOrder,
-                  (candidate, peerInfo) <- peers,
-                  peerInfoPeer peerInfo == peer
-              ]
-
         -- Return the first peer in that order, and decline all the ones that were
         -- not already declined.
-        case peersOrdered of
+        case peers of
           [] -> return Nothing
           (thePeerCandidate, thePeer) : otherPeers -> do
             tell $ List $ map (first (const (FetchDeclineConcurrencyLimit FetchModeBulkSync 1))) otherPeers
