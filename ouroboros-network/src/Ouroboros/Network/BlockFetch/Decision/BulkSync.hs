@@ -134,7 +134,7 @@ import Data.Bifunctor (first, Bifunctor (..))
 import Data.Function (on)
 import qualified Data.List as List
 import qualified Data.Set as Set
-import Data.Maybe (fromMaybe, maybeToList)
+import Data.Maybe (maybeToList)
 
 import Cardano.Prelude (partitionEithers)
 
@@ -216,7 +216,6 @@ fetchDecisionsBulkSyncM
             currentChain
             fetchedBlocks
             fetchedMaxSlotNo
-            peersOrder
             orderedCandidatesAndPeers
 
     case theDecision of
@@ -226,15 +225,12 @@ fetchDecisionsBulkSyncM
        -- so we take a new current time.
        -> do
           peersOrderStart <- getMonotonicTime
-          writePeersOrder $ peersOrder
-            { peersOrderCurrent = Just (peerInfoPeer peerInfo),
-              peersOrderStart
-            }
+          writePeersOrder $ setCurrentPeer (peerInfoPeer peerInfo) peersOrder
+            { peersOrderStart }
          | Just (peerInfoPeer peerInfo) /= peersOrderCurrent peersOrder
          -- If the peer is not the current peer, then we update the current peer
         ->
-          writePeersOrder $ peersOrder
-            { peersOrderCurrent = Just (peerInfoPeer peerInfo) }
+          writePeersOrder $ setCurrentPeer (peerInfoPeer peerInfo) peersOrder
       _ -> pure ()
 
     pure $
@@ -251,18 +247,21 @@ fetchDecisionsBulkSyncM
         peerOf
         actualPeers
         PeersOrder {peersOrderStart, peersOrderCurrent, peersOrderAll} =
-          let peersOrderCurrent' = do
-                peer <- peersOrderCurrent
-                guard (any ((peer ==) . peerOf) actualPeers)
-                pure peer
-              peersOrderAll' =
+          let peersOrderAll' =
                 [ d
                 | p <- peersOrderAll
                 , Just d <- [List.find ((p ==) . peerOf) actualPeers]
                 ]
                 ++ filter ((`notElem` peersOrderAll) . peerOf) actualPeers
+              -- Set the current peer to Nothing if it is not at the front of
+              -- the list.
+              peersOrderCurrent' = do
+                peer <- peersOrderCurrent
+                guard (any ((peer ==) . peerOf) $ take 1 peersOrderAll')
+                pure peer
            in (PeersOrder
                 { peersOrderCurrent = peersOrderCurrent',
+                  -- INVARIANT met: Current peer is at the front if it exists
                   peersOrderAll = map peerOf peersOrderAll',
                   peersOrderStart
                 }
@@ -287,24 +286,34 @@ fetchDecisionsBulkSyncM
                   pure PeersOrder
                          {
                            peersOrderCurrent = Nothing,
-                           peersOrderAll = filter (/= peer) peersOrderAll ++ [peer],
+                           -- INVARIANT met: there is no current peer
+                           peersOrderAll = drop 1 peersOrderAll ++ [peer],
                            peersOrderStart
                          }
             _ -> pure peersOrder
+
+      setCurrentPeer :: peer -> PeersOrder peer -> PeersOrder peer
+      setCurrentPeer peer peersOrder =
+        case extract ((peer ==)) (peersOrderAll peersOrder) of
+          Just (p, xs) ->
+            peersOrder
+              { peersOrderCurrent = Just p,
+                -- INVARIANT met: Current peer is at the front
+                peersOrderAll = p : xs
+              }
+          Nothing -> peersOrder {peersOrderCurrent = Nothing}
 
 -- | Given a list of candidate fragments and their associated peers, choose what
 -- to sync from who in the bulk sync mode.
 fetchDecisionsBulkSync :: forall header block peer extra.
   ( HasHeader header,
-    HeaderHash header ~ HeaderHash block,
-    Eq peer
+    HeaderHash header ~ HeaderHash block
   ) =>
   FetchDecisionPolicy header ->
   -- | The current chain, anchored at the immutable tip.
   AnchoredFragment header ->
   (Point block -> Bool) ->
   MaxSlotNo ->
-  PeersOrder peer ->
   -- | Association list of the candidate fragments and their associated peers.
   -- The candidate fragments are anchored in the current chain (not necessarily
   -- at the tip; and not necessarily forking off immediately).
@@ -321,7 +330,6 @@ fetchDecisionsBulkSync
   currentChain
   fetchedBlocks
   fetchedMaxSlotNo
-  peersOrder
   candidatesAndPeers = combineWithDeclined $ do
     -- Step 1: Select the candidate to sync from. This already eliminates peers
     -- that have an implausible candidate. It returns the remaining candidates
@@ -347,11 +355,7 @@ fetchDecisionsBulkSync
     ( thePeerCandidate :: ChainSuffix header,
       thePeer :: PeerInfo header peer extra
       ) <-
-      MaybeT $
-        selectThePeer
-          peersOrder
-          theFragments
-          candidatesAndPeers'
+      MaybeT $ selectThePeer theFragments candidatesAndPeers'
 
     -- Step 4: Fetch the candidate from the selected peer, potentially declining
     -- it (eg. if the peer is already too busy).
@@ -438,10 +442,7 @@ selectTheCandidate
 -- PRECONDITION: The given candidate fragments must not be empty.
 selectThePeer ::
   forall header peer extra.
-  ( HasHeader header,
-    Eq peer
-  ) =>
-  PeersOrder peer ->
+  HasHeader header =>
   -- | The candidate fragment that we have selected to sync from, as suffix of
   -- the immutable tip.
   CandidateFragments header ->
@@ -452,7 +453,6 @@ selectThePeer ::
     (PeerInfo header peer extra)
     (Maybe (ChainSuffix header, PeerInfo header peer extra))
 selectThePeer
-  peersOrder
   theFragments
   candidates = do
     -- Create a fetch request for the blocks in question. The request has exactly
@@ -463,15 +463,9 @@ selectThePeer
     let firstBlock = FetchRequest . map (AF.takeOldest 1) . take 1 . filter (not . AF.null)
         (grossRequest :: FetchRequest header) = firstBlock $ snd theFragments
 
-        -- Put the current peer at the front of the list of candidate peers
-        currentPeerAtFront = fromMaybe candidates $ do
-          currentPeer <- peersOrderCurrent peersOrder
-          (c, xs) <- extract (((currentPeer ==) . peerInfoPeer) . snd) candidates
-          Just (c : xs)
-
     -- Return the first peer that can serve the gross request and decline
     -- the other peers.
-    go grossRequest currentPeerAtFront
+    go grossRequest candidates
   where
     go grossRequest (c@(candidate, peerInfo) : xs) = do
       if requestHeadInCandidate candidate grossRequest then do
