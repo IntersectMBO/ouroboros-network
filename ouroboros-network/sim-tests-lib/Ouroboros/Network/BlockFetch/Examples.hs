@@ -249,7 +249,8 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
           (BlockFetchConfiguration {
             bfcMaxConcurrencyDeadline = 2,
             bfcMaxRequestsInflight    = 10,
-            bfcDecisionLoopInterval   = 0.01,
+            bfcDecisionLoopIntervalBulkSync = 0.04,
+            bfcDecisionLoopIntervalDeadline = 0.01,
             bfcSalt                   = 0,
             bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
               { gbfcBulkSyncGracePeriod = 10 -- seconds
