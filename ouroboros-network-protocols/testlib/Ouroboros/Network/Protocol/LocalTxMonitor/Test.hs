@@ -35,6 +35,7 @@ import Ouroboros.Network.Protocol.LocalTxMonitor.Examples
 import Ouroboros.Network.Protocol.LocalTxMonitor.Server
 import Ouroboros.Network.Protocol.LocalTxMonitor.Type
 
+import Data.Text qualified as Text
 import Test.ChainGenerators ()
 import Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
            prop_codec_valid_cbor_encoding, splits2, splits3)
@@ -210,9 +211,49 @@ instance (Arbitrary txid, Arbitrary tx, Arbitrary slot)
       , AnyMessage . MsgReplyHasTx <$> arbitrary
       , pure $ AnyMessage MsgGetSizes
       , AnyMessage . MsgReplyGetSizes <$> arbitrary
+      , pure $ AnyMessage MsgGetMeasures
+      , AnyMessage . MsgReplyGetMeasures <$> arbitrary
       , pure $ AnyMessage MsgRelease
       , pure $ AnyMessage MsgDone
       ]
+
+instance Arbitrary MempoolMeasures where
+  arbitrary =
+    MempoolMeasures
+      <$> arbitrary
+      <*> arbitrary
+
+instance Arbitrary MeasureName where
+  arbitrary = frequency
+    [ (5, pure TransactionBytes)
+    , (5, pure ExUnitsMemory)
+    , (5, pure ExUnitsSteps)
+    , (5, pure ReferenceScriptsBytes)
+    , (1, MeasureNameFromFuture <$> genUnknownMeasureName)
+    ]
+    where
+      knownMeasureNames =
+        [ "transaction_bytes"
+        , "reference_scripts"
+        , "ex_units_memory"
+        , "ex_units_steps"
+        ]
+
+      -- We need to generate a measure name that is currently unknown (because
+      -- we support forward-compatibility in the protocol), because accidentally
+      -- generating a known measure name with `arbitrary` will cause the
+      -- deserialization to fail to roundtrip
+      genUnknownMeasureName = do
+        name <- arbitrary
+        if name `elem` knownMeasureNames
+          then discard
+          else pure $ UnknownMeasureName $ Text.pack name
+
+instance Arbitrary a => Arbitrary (SizeAndCapacity a) where
+  arbitrary =
+    SizeAndCapacity
+      <$> arbitrary
+      <*> arbitrary
 
 instance Arbitrary MempoolSizeAndCapacity where
   arbitrary =
@@ -224,15 +265,17 @@ instance Arbitrary MempoolSizeAndCapacity where
 instance (Eq txid, Eq tx, Eq slot)
     => Eq (AnyMessage (LocalTxMonitor txid tx slot))
   where
-    AnyMessage MsgAcquire           == AnyMessage MsgAcquire           = True
-    AnyMessage (MsgAcquired a)      == AnyMessage (MsgAcquired b)      = a == b
-    AnyMessage MsgAwaitAcquire      == AnyMessage MsgAwaitAcquire      = True
-    AnyMessage MsgNextTx            == AnyMessage MsgNextTx            = True
-    AnyMessage (MsgReplyNextTx a)   == AnyMessage (MsgReplyNextTx b)   = a == b
-    AnyMessage (MsgHasTx a)         == AnyMessage (MsgHasTx b)         = a == b
-    AnyMessage (MsgReplyHasTx a)    == AnyMessage (MsgReplyHasTx b)    = a == b
-    AnyMessage MsgGetSizes          == AnyMessage MsgGetSizes          = True
-    AnyMessage (MsgReplyGetSizes a) == AnyMessage (MsgReplyGetSizes b) = a == b
-    AnyMessage MsgRelease           == AnyMessage MsgRelease           = True
-    AnyMessage MsgDone              == AnyMessage MsgDone              = True
-    AnyMessage _                    == AnyMessage _                    = False
+    AnyMessage MsgAcquire              == AnyMessage MsgAcquire              = True
+    AnyMessage (MsgAcquired a)         == AnyMessage (MsgAcquired b)         = a == b
+    AnyMessage MsgAwaitAcquire         == AnyMessage MsgAwaitAcquire         = True
+    AnyMessage MsgNextTx               == AnyMessage MsgNextTx               = True
+    AnyMessage (MsgReplyNextTx a)      == AnyMessage (MsgReplyNextTx b)      = a == b
+    AnyMessage (MsgHasTx a)            == AnyMessage (MsgHasTx b)            = a == b
+    AnyMessage (MsgReplyHasTx a)       == AnyMessage (MsgReplyHasTx b)       = a == b
+    AnyMessage MsgGetSizes             == AnyMessage MsgGetSizes             = True
+    AnyMessage (MsgReplyGetSizes a)    == AnyMessage (MsgReplyGetSizes b)    = a == b
+    AnyMessage MsgGetMeasures          == AnyMessage MsgGetMeasures          = True
+    AnyMessage (MsgReplyGetMeasures a) == AnyMessage (MsgReplyGetMeasures b) = a == b
+    AnyMessage MsgRelease              == AnyMessage MsgRelease              = True
+    AnyMessage MsgDone                 == AnyMessage MsgDone                 = True
+    AnyMessage _                       == AnyMessage _                       = False
