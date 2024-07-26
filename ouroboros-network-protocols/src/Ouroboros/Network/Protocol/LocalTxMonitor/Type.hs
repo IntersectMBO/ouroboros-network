@@ -45,7 +45,8 @@
 -- @
 module Ouroboros.Network.Protocol.LocalTxMonitor.Type where
 
-
+import Data.Map.Strict (Map)
+import Data.Text (Text)
 import Data.Word
 import GHC.Generics (Generic)
 
@@ -109,6 +110,9 @@ data StBusyKind where
   -- | The server is busy looking for the current size and max capacity of the
   -- mempool
   GetSizes :: StBusyKind
+  -- | The server is busy looking for the current size and max capacity of the
+  -- mempool
+  GetMeasures :: StBusyKind
 
 -- | Describes the MemPool sizes and capacity for a given snapshot.
 data MempoolSizeAndCapacity = MempoolSizeAndCapacity
@@ -119,6 +123,30 @@ data MempoolSizeAndCapacity = MempoolSizeAndCapacity
     -- ^ The summed byte size of all the transactions in the mempool.
   , numberOfTxs     :: !Word32
     -- ^ The number of transactions in the mempool
+  } deriving (Generic, Eq, Show, NFData)
+
+data SizeAndCapacity a = SizeAndCapacity
+  { size     :: !a
+  , capacity :: !a
+  } deriving (Generic, Eq, Show, NFData)
+
+instance Functor SizeAndCapacity where
+  fmap f (SizeAndCapacity s c) = SizeAndCapacity (f s) (f c)
+
+data MeasureName
+  = TransactionBytes
+  | ExUnitsMemory
+  | ExUnitsSteps
+  | ReferenceScriptsBytes
+  | MeasureNameFromFuture !UnknownMeasureName
+  deriving (Generic, Eq, Ord, Show, NFData)
+
+newtype UnknownMeasureName = UnknownMeasureName Text
+  deriving (Generic, Eq, Ord, Show, NFData)
+
+data MempoolMeasures = MempoolMeasures
+  { txCount     :: !Word32
+  , measuresMap :: !(Map MeasureName (SizeAndCapacity Integer))
   } deriving (Generic, Eq, Show, NFData)
 
 instance Protocol (LocalTxMonitor txid tx slot) where
@@ -201,6 +229,16 @@ instance Protocol (LocalTxMonitor txid tx slot) where
       :: MempoolSizeAndCapacity
       -> Message (LocalTxMonitor txid tx slot) (StBusy GetSizes) StAcquired
 
+    -- | The client asks the server about the mempool current size and max
+    -- capacity
+    --
+    MsgGetMeasures
+      :: Message (LocalTxMonitor txid tx slot) StAcquired (StBusy GetMeasures)
+
+    MsgReplyGetMeasures
+      :: MempoolMeasures
+      -> Message (LocalTxMonitor txid tx slot) (StBusy GetMeasures) StAcquired
+
     -- | Release the acquired snapshot, in order to loop back to the idle state.
     --
     MsgRelease
@@ -249,27 +287,31 @@ instance ( NFData txid
          , NFData tx
          , NFData slot
          ) => NFData (Message (LocalTxMonitor txid tx slot) from to) where
-  rnf MsgAcquire             = ()
-  rnf (MsgAcquired slot)     = rnf slot
-  rnf MsgAwaitAcquire        = ()
-  rnf MsgNextTx              = ()
-  rnf (MsgReplyNextTx mbTx)  = rnf mbTx
-  rnf (MsgHasTx txid)        = rnf txid
-  rnf (MsgReplyHasTx b)      = rnf b
-  rnf MsgGetSizes            = ()
-  rnf (MsgReplyGetSizes msc) = rnf msc
-  rnf MsgRelease             = ()
-  rnf MsgDone                = ()
+  rnf MsgAcquire                = ()
+  rnf (MsgAcquired slot)        = rnf slot
+  rnf MsgAwaitAcquire           = ()
+  rnf MsgNextTx                 = ()
+  rnf (MsgReplyNextTx mbTx)     = rnf mbTx
+  rnf (MsgHasTx txid)           = rnf txid
+  rnf (MsgReplyHasTx b)         = rnf b
+  rnf MsgGetSizes               = ()
+  rnf (MsgReplyGetSizes msc)    = rnf msc
+  rnf MsgGetMeasures            = ()
+  rnf (MsgReplyGetMeasures msc) = rnf msc
+  rnf MsgRelease                = ()
+  rnf MsgDone                   = ()
 
 data TokBusyKind (k :: StBusyKind) where
-  TokNextTx   :: TokBusyKind NextTx
-  TokHasTx    :: TokBusyKind HasTx
-  TokGetSizes :: TokBusyKind GetSizes
+  TokNextTx      :: TokBusyKind NextTx
+  TokHasTx       :: TokBusyKind HasTx
+  TokGetSizes    :: TokBusyKind GetSizes
+  TokGetMeasures :: TokBusyKind GetMeasures
 
 instance NFData (TokBusyKind k) where
-  rnf TokNextTx   = ()
-  rnf TokHasTx    = ()
-  rnf TokGetSizes = ()
+  rnf TokNextTx      = ()
+  rnf TokHasTx       = ()
+  rnf TokGetSizes    = ()
+  rnf TokGetMeasures = ()
 
 deriving instance (Show txid, Show tx, Show slot)
   => Show (Message (LocalTxMonitor txid tx slot) from to)
@@ -281,7 +323,8 @@ instance Show (ClientHasAgency (st :: LocalTxMonitor txid tx slot)) where
 
 instance Show (ServerHasAgency (st :: LocalTxMonitor txid tx slot)) where
   show = \case
-    TokAcquiring        -> "TokAcquiring"
-    TokBusy TokNextTx   -> "TokBusy TokNextTx"
-    TokBusy TokHasTx    -> "TokBusy TokHasTx"
-    TokBusy TokGetSizes -> "TokBusy TokGetSizes"
+    TokAcquiring           -> "TokAcquiring"
+    TokBusy TokNextTx      -> "TokBusy TokNextTx"
+    TokBusy TokHasTx       -> "TokBusy TokHasTx"
+    TokBusy TokGetSizes    -> "TokBusy TokGetSizes"
+    TokBusy TokGetMeasures -> "TokBusy TokGetMeasures"
