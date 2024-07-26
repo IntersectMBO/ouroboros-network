@@ -3,6 +3,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -14,12 +15,16 @@ module Ouroboros.Network.Protocol.LocalTxMonitor.Codec
   , codecLocalTxMonitorId
   ) where
 
+import Control.Monad
 import Control.Monad.Class.MonadST
+import Data.Functor ((<&>))
 
 import Network.TypedProtocol.Codec.CBOR
 import Network.TypedProtocol.Core
 
 import Data.ByteString.Lazy (ByteString)
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
@@ -64,6 +69,8 @@ codecLocalTxMonitor encodeTxId decodeTxId
         CBOR.encodeListLen 2 <> CBOR.encodeWord 7 <> encodeTxId txid
       MsgGetSizes ->
         CBOR.encodeListLen 1 <> CBOR.encodeWord 9
+      MsgGetMeasures ->
+        CBOR.encodeListLen 1 <> CBOR.encodeWord 11
       MsgAcquired slot ->
         CBOR.encodeListLen 2 <> CBOR.encodeWord 2 <> encodeSlot slot
       MsgReplyNextTx Nothing ->
@@ -79,6 +86,12 @@ codecLocalTxMonitor encodeTxId decodeTxId
         <> CBOR.encodeWord32 (capacityInBytes sz)
         <> CBOR.encodeWord32 (sizeInBytes sz)
         <> CBOR.encodeWord32 (numberOfTxs sz)
+      MsgReplyGetMeasures measures ->
+           CBOR.encodeListLen 2
+        <> CBOR.encodeWord 12
+        <> CBOR.encodeListLen 2
+        <> CBOR.encodeWord32 (txCount measures)
+        <> encodeMeasureMap (measuresMap measures)
 
     decode ::
          forall s (st :: ptcl).
@@ -105,6 +118,8 @@ codecLocalTxMonitor encodeTxId decodeTxId
           return (SomeMessage (MsgHasTx txid))
         (SingAcquired, 1, 9) ->
           return (SomeMessage MsgGetSizes)
+        (SingAcquired, 1, 11) ->
+          return (SomeMessage MsgGetMeasures)
 
         (SingAcquiring, 2, 2) -> do
           slot <- decodeSlot
@@ -128,11 +143,62 @@ codecLocalTxMonitor encodeTxId decodeTxId
           let sizes = MempoolSizeAndCapacity { capacityInBytes, sizeInBytes, numberOfTxs }
           return (SomeMessage (MsgReplyGetSizes sizes))
 
+        (SingBusy SingGetMeasures, 2, 12) -> do
+          _len <- CBOR.decodeListLen
+          txCount <- CBOR.decodeWord32
+          measuresMap <- decodeMeasureMap
+          let measures = MempoolMeasures { txCount, measuresMap }
+          pure (SomeMessage (MsgReplyGetMeasures measures))
+
         (SingDone, _, _) -> notActiveState stok
 
         (_, _, _) ->
           fail (printf "codecLocalTxMonitor (%s, %s) unexpected key (%d, %d)"
                        (show (activeAgency :: ActiveAgency st)) (show stok) key len)
+
+encodeMeasureMap :: Map MeasureName (SizeAndCapacity Integer) -> CBOR.Encoding
+encodeMeasureMap m =
+  CBOR.encodeMapLen (fromIntegral (Map.size m)) <>
+  Map.foldMapWithKey f m
+  where
+    f mn sc =
+      encodeMeasureName mn <> encodeSizeAndCapacity sc
+
+decodeMeasureMap :: CBOR.Decoder s (Map MeasureName (SizeAndCapacity Integer))
+decodeMeasureMap = do
+  len <- CBOR.decodeMapLen
+  mapContents <- replicateM len $
+    (,) <$> decodeMeasureName <*> decodeSizeAndCapacity
+  pure $ Map.fromList mapContents
+
+encodeMeasureName :: MeasureName -> CBOR.Encoding
+encodeMeasureName = CBOR.encodeString . \case
+  TransactionBytes -> "transaction_bytes"
+  ExUnitsMemory -> "ex_units_memory"
+  ExUnitsSteps -> "ex_units_steps"
+  ReferenceScriptsBytes -> "reference_scripts_bytes"
+  MeasureNameFromFuture (UnknownMeasureName n) -> n
+
+decodeMeasureName :: CBOR.Decoder s MeasureName
+decodeMeasureName = CBOR.decodeString <&> \case
+  "transaction_bytes" -> TransactionBytes
+  "ex_units_memory" -> ExUnitsMemory
+  "ex_units_steps" -> ExUnitsSteps
+  "reference_scripts_bytes" -> ReferenceScriptsBytes
+  unknownKey -> MeasureNameFromFuture (UnknownMeasureName unknownKey)
+
+encodeSizeAndCapacity :: SizeAndCapacity Integer -> CBOR.Encoding
+encodeSizeAndCapacity sc =
+  CBOR.encodeListLen 2 <>
+  CBOR.encodeInteger (size sc) <>
+  CBOR.encodeInteger (capacity sc)
+
+decodeSizeAndCapacity :: CBOR.Decoder s (SizeAndCapacity Integer)
+decodeSizeAndCapacity = do
+  _len <- CBOR.decodeListLen
+  size <- CBOR.decodeInteger
+  capacity <- CBOR.decodeInteger
+  pure SizeAndCapacity { size, capacity }
 
 -- | An identity 'Codec' for the 'LocalTxMonitor' protocol. It does not do
 -- any serialisation. It keeps the typed messages, wrapped in 'AnyMessage'.
