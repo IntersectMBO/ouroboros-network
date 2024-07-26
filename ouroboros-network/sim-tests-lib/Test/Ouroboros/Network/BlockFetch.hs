@@ -61,20 +61,21 @@ import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
 
 tests :: TestTree
 tests = testGroup "BlockFetch"
-  [ testProperty "static chains without overlap"
-                 prop_blockFetchStaticNoOverlap
+  [ testGroup "BulkSync"
+    [ testProperty "static chains without overlap"
+                   prop_blockFetchStaticNoOverlap
 
-  , testProperty "static chains with overlap"
-                 prop_blockFetchStaticWithOverlap
+    , testProperty "static chains with overlap"
+                   prop_blockFetchStaticWithOverlap
 
+    --TODO: test where for any given delta-Q, check that we do achieve full
+    -- pipelining to keep the server busy and get decent enough batching of
+    -- requests (testing the high/low watermark mechanism).
+    , testProperty "termination"
+                   prop_terminate
+  ]
   , testCaseSteps "bracketSyncWithFetchClient"
                   unit_bracketSyncWithFetchClient
-
-  --TODO: test where for any given delta-Q, check that we do achieve full
-  -- pipelining to keep the server busy and get decent enough batching of
-  -- requests (testing the high/low watermark mechanism).
-  , testProperty "termination"
-                 prop_terminate
   , testProperty "compare comparePeerGSV" prop_comparePeerGSV
   , testProperty "eq comparePeerGSV" prop_comparePeerGSVEq
   ]
@@ -157,7 +158,7 @@ prop_blockFetchStaticNoOverlap (TestChainFork common fork1 fork2) =
 -- * 'tracePropertyClientStateSanity'
 -- * 'tracePropertyInFlight'
 --
--- TODO: 'prop_blockFetchStaticWithOverlap' fails if we introduce delays. issue #2622
+-- TODO: 'prop_blockFetchBulkSyncStaticWithOverlap' fails if we introduce delays. issue #2622
 --
 prop_blockFetchStaticWithOverlap :: TestChainFork -> Property
 prop_blockFetchStaticWithOverlap (TestChainFork _common fork1 fork2) =
