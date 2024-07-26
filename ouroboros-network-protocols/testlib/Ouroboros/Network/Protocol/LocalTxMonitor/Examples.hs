@@ -2,6 +2,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.Protocol.LocalTxMonitor.Examples
@@ -10,6 +11,7 @@ module Ouroboros.Network.Protocol.LocalTxMonitor.Examples
   ) where
 
 import Data.List (find)
+import Data.Map qualified as Map
 import Data.Maybe (isJust)
 
 import Ouroboros.Network.Protocol.LocalTxMonitor.Client
@@ -99,4 +101,13 @@ localTxMonitorServer txId (slot, allTxs) =
                 , numberOfTxs     = fromIntegral (length allTxs)
                 }
            in pure $ SendMsgReplyGetSizes sizes (serverStAcquired txs)
+      , recvMsgGetMeasures =
+          let measures = MempoolMeasures
+                { txCount = fromIntegral (length allTxs)
+                , measuresMap = Map.fromList
+                    [ (MeasureName "tx_size_bytes", SizeAndCapacity { size = 192, capacity = 1024 })
+                    , (MeasureName "ref_scripts_size_bytes", SizeAndCapacity { size = 1024, capacity = 4096 })
+                    ]
+                }
+          in pure $ SendMsgReplyGetMeasures measures (serverStAcquired txs)
       }

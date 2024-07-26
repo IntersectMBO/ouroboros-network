@@ -35,6 +35,7 @@ import Ouroboros.Network.Protocol.LocalTxMonitor.Examples
 import Ouroboros.Network.Protocol.LocalTxMonitor.Server
 import Ouroboros.Network.Protocol.LocalTxMonitor.Type
 
+import Data.Text qualified as Text
 import Test.ChainGenerators ()
 import Test.Ouroboros.Network.Protocol.Utils (prop_codec_cborM,
            prop_codec_valid_cbor_encoding, splits2, splits3)
@@ -50,6 +51,8 @@ tests = testGroup "Ouroboros.Network.Protocol"
     , testProperty "codec 3-splits" (prop_codec_splitsM_LocalTxMonitor splits3)
     , testProperty "codec cborM" prop_codec_cborM_LocalTxMonitor
     , testProperty "codec valid cbor encoding" prop_codec_valid_cbor_encoding_LocalTxMonitor
+
+    , testProperty "codecIdM" prop_codecIdM_LocalTxMonitor
 
     , testProperty "direct" prop_direct
     , testProperty "connect" prop_connect
@@ -72,6 +75,12 @@ codec = codecLocalTxMonitor
   S.encode S.decode
   S.encode S.decode
   S.encode S.decode
+
+codecId ::
+       ( MonadST m
+       )
+  => Codec (LocalTxMonitor TxId Tx SlotNo) CodecFailure m (AnyMessage (LocalTxMonitor TxId Tx SlotNo))
+codecId = codecLocalTxMonitorId
 
 --
 -- Properties
@@ -101,6 +110,12 @@ prop_codec_valid_cbor_encoding_LocalTxMonitor ::
   -> Property
 prop_codec_valid_cbor_encoding_LocalTxMonitor =
   prop_codec_valid_cbor_encoding codec
+
+prop_codecIdM_LocalTxMonitor ::
+     AnyMessage (LocalTxMonitor TxId Tx SlotNo)
+  -> Bool
+prop_codecIdM_LocalTxMonitor msg =
+    ST.runST $ prop_codecM codecId msg
 
 --
 -- Protocol Executions
@@ -210,9 +225,26 @@ instance (Arbitrary txid, Arbitrary tx, Arbitrary slot)
       , AnyMessage . MsgReplyHasTx <$> arbitrary
       , pure $ AnyMessage MsgGetSizes
       , AnyMessage . MsgReplyGetSizes <$> arbitrary
+      , pure $ AnyMessage MsgGetMeasures
+      , AnyMessage . MsgReplyGetMeasures <$> arbitrary
       , pure $ AnyMessage MsgRelease
       , pure $ AnyMessage MsgDone
       ]
+
+instance Arbitrary MempoolMeasures where
+  arbitrary = do
+    MempoolMeasures
+      <$> arbitrary
+      <*> scale (`div` 10) arbitrary
+
+instance Arbitrary MeasureName where
+  arbitrary = MeasureName . Text.pack <$> arbitrary
+
+instance Arbitrary (SizeAndCapacity Integer) where
+  arbitrary = do
+    Positive c <- arbitrary
+    s <- chooseInteger (0, c)
+    pure $ SizeAndCapacity s c
 
 instance Arbitrary MempoolSizeAndCapacity where
   arbitrary =
@@ -224,15 +256,17 @@ instance Arbitrary MempoolSizeAndCapacity where
 instance (Eq txid, Eq tx, Eq slot)
     => Eq (AnyMessage (LocalTxMonitor txid tx slot))
   where
-    AnyMessage MsgAcquire           == AnyMessage MsgAcquire           = True
-    AnyMessage (MsgAcquired a)      == AnyMessage (MsgAcquired b)      = a == b
-    AnyMessage MsgAwaitAcquire      == AnyMessage MsgAwaitAcquire      = True
-    AnyMessage MsgNextTx            == AnyMessage MsgNextTx            = True
-    AnyMessage (MsgReplyNextTx a)   == AnyMessage (MsgReplyNextTx b)   = a == b
-    AnyMessage (MsgHasTx a)         == AnyMessage (MsgHasTx b)         = a == b
-    AnyMessage (MsgReplyHasTx a)    == AnyMessage (MsgReplyHasTx b)    = a == b
-    AnyMessage MsgGetSizes          == AnyMessage MsgGetSizes          = True
-    AnyMessage (MsgReplyGetSizes a) == AnyMessage (MsgReplyGetSizes b) = a == b
-    AnyMessage MsgRelease           == AnyMessage MsgRelease           = True
-    AnyMessage MsgDone              == AnyMessage MsgDone              = True
-    AnyMessage _                    == AnyMessage _                    = False
+    AnyMessage MsgAcquire              == AnyMessage MsgAcquire              = True
+    AnyMessage (MsgAcquired a)         == AnyMessage (MsgAcquired b)         = a == b
+    AnyMessage MsgAwaitAcquire         == AnyMessage MsgAwaitAcquire         = True
+    AnyMessage MsgNextTx               == AnyMessage MsgNextTx               = True
+    AnyMessage (MsgReplyNextTx a)      == AnyMessage (MsgReplyNextTx b)      = a == b
+    AnyMessage (MsgHasTx a)            == AnyMessage (MsgHasTx b)            = a == b
+    AnyMessage (MsgReplyHasTx a)       == AnyMessage (MsgReplyHasTx b)       = a == b
+    AnyMessage MsgGetSizes             == AnyMessage MsgGetSizes             = True
+    AnyMessage (MsgReplyGetSizes a)    == AnyMessage (MsgReplyGetSizes b)    = a == b
+    AnyMessage MsgGetMeasures          == AnyMessage MsgGetMeasures          = True
+    AnyMessage (MsgReplyGetMeasures a) == AnyMessage (MsgReplyGetMeasures b) = a == b
+    AnyMessage MsgRelease              == AnyMessage MsgRelease              = True
+    AnyMessage MsgDone                 == AnyMessage MsgDone                 = True
+    AnyMessage _                       == AnyMessage _                       = False

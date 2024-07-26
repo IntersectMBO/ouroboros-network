@@ -915,6 +915,7 @@ unit_decodeLocalTxMonitor spec =
       , SomeAgency (LocalTxMonitor.SingBusy LocalTxMonitor.SingNextTx)
       , SomeAgency (LocalTxMonitor.SingBusy LocalTxMonitor.SingHasTx)
       , SomeAgency (LocalTxMonitor.SingBusy LocalTxMonitor.SingGetSizes)
+      , SomeAgency (LocalTxMonitor.SingBusy LocalTxMonitor.SingGetMeasures)
       ]
       100
 

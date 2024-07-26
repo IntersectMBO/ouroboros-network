@@ -91,6 +91,11 @@ data ClientStAcquired txid tx slot m a where
     :: (MempoolSizeAndCapacity -> m (ClientStAcquired txid tx slot m a))
     -> ClientStAcquired txid tx slot m a
 
+  -- | Ask the server about the current mempool's measures
+  SendMsgGetMeasures
+    :: (MempoolMeasures -> m (ClientStAcquired txid tx slot m a))
+    -> ClientStAcquired txid tx slot m a
+
   -- | Await for a new snapshot and acquire it.
   --
   SendMsgAwaitAcquire
@@ -145,6 +150,11 @@ localTxMonitorClientPeer (LocalTxMonitorClient mClient) =
           Await $ \case
             MsgReplyGetSizes sizes ->
               Effect $ handleStAcquired <$> stAcquired sizes
+      SendMsgGetMeasures stAcquired ->
+        Yield MsgGetMeasures $
+          Await $ \case
+            MsgReplyGetMeasures measures ->
+              Effect $ handleStAcquired <$> stAcquired measures
       SendMsgAwaitAcquire stAcquired ->
         Yield MsgAwaitAcquire $
           Await $ \case

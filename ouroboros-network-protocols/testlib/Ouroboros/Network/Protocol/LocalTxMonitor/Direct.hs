@@ -47,6 +47,7 @@ direct (LocalTxMonitorClient mClient) (LocalTxMonitorServer mServer) = do
       , recvMsgNextTx
       , recvMsgHasTx
       , recvMsgGetSizes
+      , recvMsgGetMeasures
       } = \case
         SendMsgRelease mClientStIdle -> do
           serverStIdle <- recvMsgRelease
@@ -69,5 +70,10 @@ direct (LocalTxMonitorClient mClient) (LocalTxMonitorServer mServer) = do
         SendMsgGetSizes mClientStAcquired -> do
           recvMsgGetSizes >>= \case
             SendMsgReplyGetSizes result serverStAcquired -> do
+              clientStAcquired <- mClientStAcquired result
+              directAcquired serverStAcquired clientStAcquired
+        SendMsgGetMeasures mClientStAcquired -> do
+          recvMsgGetMeasures >>= \case
+            SendMsgReplyGetMeasures result serverStAcquired -> do
               clientStAcquired <- mClientStAcquired result
               directAcquired serverStAcquired clientStAcquired

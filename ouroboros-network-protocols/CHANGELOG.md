@@ -12,6 +12,8 @@
   * `LocalTxMonitor`,
   * `LocalTxSubmission`.
 
+* Added new `GetMeasures` message to `LocalTxMonitor`
+
 ### Non-breaking changes
 
 ## 0.13.0.0 -- 2025-01-02
