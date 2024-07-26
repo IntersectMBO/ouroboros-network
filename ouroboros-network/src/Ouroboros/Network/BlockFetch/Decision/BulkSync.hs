@@ -125,7 +125,7 @@ module Ouroboros.Network.BlockFetch.Decision.BulkSync (
   fetchDecisionsBulkSyncM
 ) where
 
-import Control.Monad (filterM, guard)
+import Control.Monad (guard)
 import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime (getMonotonicTime), addTime)
 import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
 import Control.Monad.Writer.Strict (Writer, runWriter, MonadWriter (tell))
@@ -134,7 +134,7 @@ import Data.Bifunctor (first, Bifunctor (..))
 import Data.Function (on)
 import qualified Data.List as List
 import qualified Data.Set as Set
-import Data.Maybe (maybeToList)
+import Data.Maybe (fromMaybe, maybeToList)
 
 import Cardano.Prelude (partitionEithers)
 
@@ -463,56 +463,50 @@ selectThePeer
     let firstBlock = FetchRequest . map (AF.takeOldest 1) . take 1 . filter (not . AF.null)
         (grossRequest :: FetchRequest header) = firstBlock $ snd theFragments
 
-        peersOrderCurrentInfo = do
+        -- Put the current peer at the front of the list of candidate peers
+        currentPeerAtFront = fromMaybe candidates $ do
           currentPeer <- peersOrderCurrent peersOrder
-          List.find ((currentPeer ==) . peerInfoPeer) $ map snd candidates
+          (c, xs) <- extract (((currentPeer ==) . peerInfoPeer) . snd) candidates
+          Just (c : xs)
 
-    -- If there is a current peer, then that is the one we choose. Otherwise, we
-    -- can choose any peer, so we choose a “good” one.
-    case peersOrderCurrentInfo of
-      Just thePeerInfo -> do
-          case List.break (((==) `on` peerInfoPeer) thePeerInfo . snd) candidates of
-            (_, []) -> tell (List [(FetchDeclineChainNotPlausible, thePeerInfo)]) >> return Nothing
-            (otherPeersB, (thePeerCandidate, _) : otherPeersA) -> do
-              tell (List (map (first (const (FetchDeclineConcurrencyLimit FetchModeBulkSync 1))) otherPeersB))
-              tell (List (map (first (const (FetchDeclineConcurrencyLimit FetchModeBulkSync 1))) otherPeersA))
-              case checkRequestHeadInCandidate thePeerCandidate grossRequest of
-                Left reason -> tell (List [(reason, thePeerInfo)]) >> return Nothing
-                Right () -> return $ Just (thePeerCandidate, thePeerInfo)
+    -- Return the first peer that can serve the gross request and decline
+    -- the other peers.
+    go grossRequest currentPeerAtFront
+  where
+    go grossRequest (c@(candidate, peerInfo) : xs) = do
+      if requestHeadInCandidate candidate grossRequest then do
+        tell $ List
+          [(FetchDeclineConcurrencyLimit FetchModeBulkSync 1, pInfo)
+          | (_, pInfo) <- xs
+          ]
+        pure (Just c)
+      else do
+        tell $ List [(FetchDeclineAlreadyFetched, peerInfo)]
+        go grossRequest xs
+    go _grossRequest [] = pure Nothing
 
-      Nothing -> do
-        -- For each peer, check whether its candidate contains the head of the
-        -- gross request, otherwise decline it. This will guarantee that the
-        -- remaining peers can serve the refined request that we will craft later.
-        peers <-
-          filterM
-            ( \(candidate, peer) ->
-                case checkRequestHeadInCandidate candidate grossRequest of
-                  Left reason -> tell (List [(reason, peer)]) >> pure False
-                  Right () -> pure True
-            )
-            candidates
 
-        -- Return the first peer in that order, and decline all the ones that were
-        -- not already declined.
-        case peers of
-          [] -> return Nothing
-          (thePeerCandidate, thePeer) : otherPeers -> do
-            tell $ List $ map (first (const (FetchDeclineConcurrencyLimit FetchModeBulkSync 1))) otherPeers
-            return $ Just (thePeerCandidate, thePeer)
-    where
-      checkRequestHeadInCandidate ::
-        ChainSuffix header -> FetchRequest header -> FetchDecision ()
-      checkRequestHeadInCandidate candidate request =
-        case fetchRequestFragments request of
-          fragments@(_:_)
-            | AF.withinFragmentBounds
-                (AF.headPoint $ last fragments)
-                (getChainSuffix candidate)
-            ->
-              Right ()
-          _ ->
-              Left FetchDeclineAlreadyFetched
+    requestHeadInCandidate :: ChainSuffix header -> FetchRequest header -> Bool
+    requestHeadInCandidate candidate request =
+      case fetchRequestFragments request of
+        fragments@(_:_)
+          | AF.withinFragmentBounds
+              (AF.headPoint $ last fragments)
+              (getChainSuffix candidate)
+          ->
+            True
+        _ ->
+            False
+
+-- | Deletes the first element from the list that satisfies the predicate, and
+-- returns the element and the resulting list.
+extract :: (a -> Bool) -> [a] -> Maybe (a, [a])
+extract p = go id
+  where
+    go _acc [] = Nothing
+    go acc (x:xs)
+      | p x = Just (x, acc xs)
+      | otherwise = go (acc . (x:)) xs
 
 -- | Given a candidate and a peer to sync from, create a request for that
 -- specific peer. We might take the 'FetchDecision' to decline the request, but
