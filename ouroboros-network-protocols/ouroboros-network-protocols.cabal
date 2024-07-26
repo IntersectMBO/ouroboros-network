@@ -96,6 +96,7 @@ library
 
   build-depends:       base              >=4.14 && <4.20,
                        bytestring        >=0.10 && <0.13,
+                       containers,
                        cborg             >=0.2.1 && <0.3,
                        deepseq,
 
@@ -105,6 +106,7 @@ library
                        ouroboros-network-api
                                         ^>=0.7.0,
                        serialise,
+                       text,
                        typed-protocols  ^>=0.1.1,
                        typed-protocols-cborg
                                         ^>=0.1
