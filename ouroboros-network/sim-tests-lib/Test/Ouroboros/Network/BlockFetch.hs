@@ -281,8 +281,8 @@ tracePropertyBlocksRequestedAndRecievedPerPeer fork1 fork2 es =
 -- blocks in the 'FetchRequest's added by the decision logic and the blocks
 -- received by the fetch clients; check that the set of all blocks requested
 -- across the two peers is the set of blocks we expect, and similarly for the
--- set of all blocks received. The expected set of blocks is the union of the
--- blocks on the two candidate chains.
+-- set of all blocks received. The expected set of blocks is the block of the
+-- longest candidate chain, or either of them if they have the same size.
 --
 -- This property is weaker than 'tracePropertyBlocksRequestedAndRecievedPerPeer'
 -- since it does not involve order or frequency, but it holds for the general
@@ -294,11 +294,20 @@ tracePropertyBlocksRequestedAndRecievedAllPeers
   -> [Example1TraceEvent]
   -> Property
 tracePropertyBlocksRequestedAndRecievedAllPeers fork1 fork2 es =
-      requestedFetchPoints === requiredFetchPoints
- .&&. receivedFetchPoints  === requiredFetchPoints
+       counterexample "should request the expected blocks"
+         (disjoin $ map (requestedFetchPoints ===) requiredFetchPoints)
+  .&&. counterexample "should receive the expected blocks"
+         (disjoin $ map (receivedFetchPoints ===) requiredFetchPoints)
   where
     requiredFetchPoints =
-      Set.fromList (chainPoints fork1 ++ chainPoints fork2)
+      if AnchoredFragment.length fork1 == AnchoredFragment.length fork2
+        then [requiredFetchPointsFor fork1, requiredFetchPointsFor fork2]
+        else if AnchoredFragment.length fork1 < AnchoredFragment.length fork2
+          then [requiredFetchPointsFor fork2]
+          else [requiredFetchPointsFor fork1]
+
+    requiredFetchPointsFor fork =
+      Set.fromList $ chainPoints fork
 
     requestedFetchPoints :: Set (Point BlockHeader)
     requestedFetchPoints =
