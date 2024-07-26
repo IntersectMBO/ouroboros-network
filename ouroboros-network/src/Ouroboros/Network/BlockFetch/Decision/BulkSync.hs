@@ -288,7 +288,7 @@ fetchDecisionsBulkSyncM
 
 -- | Given a list of candidate fragments and their associated peers, choose what
 -- to sync from who in the bulk sync mode.
-fetchDecisionsBulkSync ::
+fetchDecisionsBulkSync :: forall header block peer extra.
   ( HasHeader header,
     HeaderHash header ~ HeaderHash block,
     Eq peer
@@ -332,8 +332,8 @@ fetchDecisionsBulkSync
     -- Step 2: Filter out from the chosen candidate fragment the blocks that
     -- have already been downloaded. NOTE: if not declined, @theFragments@ is
     -- guaranteed to be non-empty.
-    let theFragments :: FetchDecision (CandidateFragments header)
-        theFragments = dropAlreadyFetched fetchedBlocks fetchedMaxSlotNo theCandidate
+    theFragments :: CandidateFragments header
+      <- MaybeT $ dropAlreadyFetchedBlocks candidatesAndPeers' theCandidate
 
     -- Step 3: Select the peer to sync from. This eliminates peers that cannot
     -- serve a reasonable batch of the candidate, then chooses the peer to sync
@@ -356,12 +356,23 @@ fetchDecisionsBulkSync
         thePeer
         thePeerCandidate
     where
-      combineWithDeclined ::
-        MaybeT (WithDeclined peer) (a, peer) ->
-        ( Maybe (a, peer),
-          [(FetchDecline, peer)]
+      combineWithDeclined :: forall peerInfo a.
+        MaybeT (WithDeclined peerInfo) (a, peerInfo) ->
+        ( Maybe (a, peerInfo),
+          [(FetchDecline, peerInfo)]
         )
       combineWithDeclined = second listConcatToList . runWithDeclined . runMaybeT
+
+      dropAlreadyFetchedBlocks :: forall peerInfo.
+        [(ChainSuffix header, peerInfo)] ->
+        ChainSuffix header ->
+        WithDeclined peerInfo (Maybe (CandidateFragments header))
+      dropAlreadyFetchedBlocks candidatesAndPeers' theCandidate =
+        case dropAlreadyFetched fetchedBlocks fetchedMaxSlotNo theCandidate of
+          Left reason -> do
+            tell (List [(reason, peerInfo) | (_, peerInfo) <- candidatesAndPeers'])
+            pure Nothing
+          Right theFragments -> pure (Just theFragments)
 
 -- | Given a list of candidate fragments and their associated peers, select the
 -- candidate to sync from. Return this fragment, the list of peers that are
@@ -425,7 +436,7 @@ selectThePeer ::
   PeersOrder peer ->
   -- | The candidate fragment that we have selected to sync from, as suffix of
   -- the immutable tip.
-  FetchDecision (CandidateFragments header) ->
+  CandidateFragments header ->
   -- | Association list of candidate fragments (as suffixes of the immutable
   -- tip) and their associated peers.
   [(ChainSuffix header, PeerInfo header peer extra)] ->
@@ -442,7 +453,7 @@ selectThePeer
     -- request] in the module documentation. Because @theFragments@ is not
     -- empty, @grossRequest@ will not be empty.
     let firstBlock = FetchRequest . map (AF.takeOldest 1) . take 1 . filter (not . AF.null)
-        (grossRequest :: FetchDecision (FetchRequest header)) = firstBlock . snd <$> theFragments
+        (grossRequest :: FetchRequest header) = firstBlock $ snd theFragments
 
         peersOrderCurrentInfo = do
           currentPeer <- peersOrderCurrent peersOrder
@@ -457,7 +468,7 @@ selectThePeer
             (otherPeersB, (thePeerCandidate, _) : otherPeersA) -> do
               tell (List (map (first (const (FetchDeclineConcurrencyLimit FetchModeBulkSync 1))) otherPeersB))
               tell (List (map (first (const (FetchDeclineConcurrencyLimit FetchModeBulkSync 1))) otherPeersA))
-              case checkRequestHeadInCandidate thePeerCandidate =<< grossRequest of
+              case checkRequestHeadInCandidate thePeerCandidate grossRequest of
                 Left reason -> tell (List [(reason, thePeerInfo)]) >> return Nothing
                 Right () -> return $ Just (thePeerCandidate, thePeerInfo)
 
@@ -468,7 +479,7 @@ selectThePeer
         peers <-
           filterM
             ( \(candidate, peer) ->
-                case checkRequestHeadInCandidate candidate =<< grossRequest of
+                case checkRequestHeadInCandidate candidate grossRequest of
                   Left reason -> tell (List [(reason, peer)]) >> pure False
                   Right () -> pure True
             )
@@ -514,7 +525,7 @@ makeFetchRequest ::
   FetchDecisionPolicy header ->
   -- | The candidate fragment that we have selected to sync from, as suffix of
   -- the immutable tip.
-  FetchDecision (CandidateFragments header) ->
+  CandidateFragments header ->
   -- | The peer that we have selected to sync from.
   PeerInfo header peer extra ->
   -- | Its candidate fragment as suffix of the immutable tip.
@@ -529,7 +540,7 @@ makeFetchRequest
   thePeerCandidate =
     let theDecision = do
           -- Drop blocks that are already in-flight with this peer.
-          fragments <- dropAlreadyInFlightWithPeer inflight =<< theFragments
+          fragments <- dropAlreadyInFlightWithPeer inflight theFragments
 
           -- Trim the fragments to the peer's candidate, keeping only blocks that
           -- they may actually serve.
