@@ -294,14 +294,14 @@ fetchDecisionsBulkSyncM
 
       setCurrentPeer :: peer -> PeersOrder peer -> PeersOrder peer
       setCurrentPeer peer peersOrder =
-        case extract ((peer ==)) (peersOrderAll peersOrder) of
-          Just (p, xs) ->
+        case break ((peer ==)) (peersOrderAll peersOrder) of
+          (xs, p : ys) ->
             peersOrder
               { peersOrderCurrent = Just p,
                 -- INVARIANT met: Current peer is at the front
-                peersOrderAll = p : xs
+                peersOrderAll = p : xs ++ ys
               }
-          Nothing -> peersOrder {peersOrderCurrent = Nothing}
+          (_, []) -> peersOrder {peersOrderCurrent = Nothing}
 
 -- | Given a list of candidate fragments and their associated peers, choose what
 -- to sync from who in the bulk sync mode.
@@ -491,16 +491,6 @@ selectThePeer
             True
         _ ->
             False
-
--- | Deletes the first element from the list that satisfies the predicate, and
--- returns the element and the resulting list.
-extract :: (a -> Bool) -> [a] -> Maybe (a, [a])
-extract p = go id
-  where
-    go _acc [] = Nothing
-    go acc (x:xs)
-      | p x = Just (x, acc xs)
-      | otherwise = go (acc . (x:)) xs
 
 -- | Given a candidate and a peer to sync from, create a request for that
 -- specific peer. We might take the 'FetchDecision' to decline the request, but
