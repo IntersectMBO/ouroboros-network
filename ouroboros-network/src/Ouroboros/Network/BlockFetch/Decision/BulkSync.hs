@@ -47,15 +47,14 @@
 --    candidate header chain among the ChainSync clients (eg. best raw
 --    tiebreaker among the longest).
 --
--- 2. Select @thePeer :: peer@. If @inflight(currentPeer)@ is not empty, then
---    this is @currentPeer@. Otherwise:
+-- 2. Select @thePeer :: peer@.
 --
 --    - Let @grossRequest@ be the oldest block on @theCandidate@ that has not
 --      already been downloaded.
 --
 --    - If @grossRequest@ is empty, then terminate this iteration. Otherwise,
---      pick the best peer (according to @peersOrder@) offering the
---      block in @grossRequest@.
+--      pick the best peer (according to @peersOrder@) offering the block in
+--      @grossRequest@.
 --
 -- 3. Craft the actual request to @thePeer@ asking blocks of @theCandidate@:
 --
@@ -66,7 +65,8 @@
 --      which blocks are actually already currently in-flight with @thePeer@.
 --
 -- 4. If we went through the election of a new peer, replace @currentPeer@ and
---    reset @currentStart@.
+--    put the new peer at the front of @peersOrder@. Also reset @currentStart@
+--    if @inflights(thePeer)@ is empty.
 --
 -- Terminate this iteration.
 --
