@@ -218,19 +218,22 @@ fetchDecisionsBulkSyncM
             fetchedMaxSlotNo
             orderedCandidatesAndPeers
 
+        newCurrentPeer = peerInfoPeer . snd <$> theDecision
+
     case theDecision of
-      Just (_, peerInfo@(_, inflight, _, _, _))
+      Just (_, (_, inflight, _, _, _))
         | Set.null (peerFetchBlocksInFlight inflight)
        -- If there were no blocks in flight, then this will be the first request,
        -- so we take a new current time.
        -> do
           peersOrderStart <- getMonotonicTime
-          writePeersOrder $ setCurrentPeer (peerInfoPeer peerInfo) peersOrder
+          writePeersOrder $ setCurrentPeer newCurrentPeer peersOrder
             { peersOrderStart }
-         | Just (peerInfoPeer peerInfo) /= peersOrderCurrent peersOrder
-         -- If the peer is not the current peer, then we update the current peer
-        ->
-          writePeersOrder $ setCurrentPeer (peerInfoPeer peerInfo) peersOrder
+        | newCurrentPeer /= peersOrderCurrent peersOrder0
+       -- If the new current peer is not the old one, then we update the current
+       -- peer
+       ->
+          writePeersOrder $ setCurrentPeer newCurrentPeer peersOrder
       _ -> pure ()
 
     pure $
@@ -292,8 +295,9 @@ fetchDecisionsBulkSyncM
                          }
             _ -> pure peersOrder
 
-      setCurrentPeer :: peer -> PeersOrder peer -> PeersOrder peer
-      setCurrentPeer peer peersOrder =
+      setCurrentPeer :: Maybe peer -> PeersOrder peer -> PeersOrder peer
+      setCurrentPeer Nothing peersOrder = peersOrder {peersOrderCurrent = Nothing}
+      setCurrentPeer (Just peer) peersOrder =
         case break ((peer ==)) (peersOrderAll peersOrder) of
           (xs, p : ys) ->
             peersOrder
