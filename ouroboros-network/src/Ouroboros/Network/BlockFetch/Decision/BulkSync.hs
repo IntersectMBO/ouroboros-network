@@ -200,13 +200,13 @@ fetchDecisionsBulkSyncM
     demoteCSJDynamo
     )
   candidatesAndPeers = do
-    let (peersOrder1, orderedCandidatesAndPeers) =
+    peersOrder1 <- checkLastChainSelStarvation peersOrder0
+
+    let (peersOrder, orderedCandidatesAndPeers) =
           alignPeersOrderWithActualPeers
             (peerInfoPeer . snd)
             candidatesAndPeers
-            peersOrder0
-
-    peersOrder <- checkLastChainSelStarvation peersOrder1
+            peersOrder1
 
     -- Compute the actual block fetch decision. This contains only declines and
     -- at most one request. 'theDecision' is therefore a 'Maybe'.
