@@ -77,7 +77,7 @@ tests = testGroup "Ouroboros.Network.TxSubmission.TxSubmissionV2"
 
 data TxSubmissionV2State =
   TxSubmissionV2State {
-      peerMap :: Map Int ( NonEmptyList (Tx Int)
+      peerMap :: Map Int ( [Tx Int]
                          , Maybe (Positive SmallDelay)
                          , Maybe (Positive SmallDelay)
                          -- ^ The delay must be smaller (<) than 5s, so that overall
@@ -91,8 +91,12 @@ instance Arbitrary TxSubmissionV2State where
   arbitrary = do
     ArbTxDecisionPolicy decisionPolicy <- arbitrary
     peersN <- choose (1, 10)
+    txsN <- choose (1, 10)
+    txs <- divvy txsN . nubBy (on (==) getTxId) <$> vectorOf (peersN * txsN) arbitrary
     peers <- vectorOf peersN arbitrary
-    peersState <- vectorOf peersN arbitrary
+    peersState <- map (\(a, (b, c)) -> (a, b, c))
+                . zip txs
+              <$> vectorOf peersN arbitrary
     return (TxSubmissionV2State (Map.fromList (zip peers peersState)) decisionPolicy)
   shrink (TxSubmissionV2State peerMap decisionPolicy) =
     TxSubmissionV2State <$> shrinkMap1 peerMap
@@ -242,46 +246,46 @@ prop_txSubmission (TxSubmissionV2State state txDecisionPolicy) =
             return $ counterexample (intercalate "\n" $ show e : trace) False
          SimDeadLock trace -> do
              return $ counterexample (intercalate "\n" $ "Deadlock" : trace) False
-         SimReturn (inmp, outmp) _trace -> do
-             -- printf "Log: %s\n" (intercalate "\n" _trace)
-             let outUniqueTxIds = map (nubBy (on (==) getTxId)) outmp
-                 outValidTxs    = map (filter getTxValid) outmp
-             case ( length outUniqueTxIds == length outmp
-                  -- , all (\(a, b) -> length a == length b) (zip outUniqueTxIds outmp) ?
-                  , length outValidTxs == length outmp
-                  -- , all (\(a, b) -> length a == length b) (zip outValidTxs outmp) ?
-                  ) of
-                  (True, True) ->
-                    -- If we are presented with a stream of unique txids for valid
-                    -- transactions the inbound transactions should match the outbound
-                    -- transactions exactly.
-                    return $ conjoin
-                           $ (\(a, b) -> (a === take (length a) b))
-                         <$> (zip (repeat inmp) (outValidTxs))
+         SimReturn (inmp, outmps) _trace -> do
+             r <- mapM (\outmp -> do
+               let outUniqueTxIds = nubBy (on (==) getTxId) outmp
+                   outValidTxs    = filter getTxValid outmp
+               case ( length outUniqueTxIds == length outmp
+                    , length outValidTxs == length outmp
+                    ) of
+                 (True, True) ->
+                   -- If we are presented with a stream of unique txids for valid
+                   -- transactions the inbound transactions should match the outbound
+                   -- transactions exactly.
+                   return $ counterexample ("(True, True) " ++ show outmp)
+                          $ checkMempools inmp (take (length inmp) outValidTxs)
 
-                  (True, False) ->
-                    -- If we are presented with a stream of unique txids then we should have
-                    -- fetched all valid transactions.
-                    return $ conjoin
-                           $ (\(a, b) -> a === take (length a) b)
-                         <$> (zip (repeat inmp) (outValidTxs))
+                 (True, False) ->
+                   -- If we are presented with a stream of unique txids then we should have
+                   -- fetched all valid transactions.
+                   return $ counterexample ("(True, False) " ++ show outmp)
+                          $ checkMempools inmp (take (length inmp) outValidTxs)
 
-                  (False, True) ->
-                      -- If we are presented with a stream of valid txids then we should have
-                      -- fetched some version of those transactions.
-                      return $ conjoin
-                             $ (\(a, b) -> a === take (length a) b)
-                           <$> (zip (repeat (map getTxId inmp)) ((map getTxId . filter getTxValid) <$> outValidTxs))
+                 (False, True) ->
+                   -- If we are presented with a stream of valid txids then we should have
+                   -- fetched some version of those transactions.
+                   return $ counterexample ("(False, True) " ++ show outmp)
+                          $ checkMempools (map getTxId inmp)
+                                          (take (length inmp)
+                                                (map getTxId $ filter getTxValid outUniqueTxIds))
 
-                  (False, False)
-                       -- If we are presented with a stream of valid and invalid Txs with
-                       -- duplicate txids we're content with completing the protocol
-                       -- without error.
-                       -> return $ property True
+                 (False, False) ->
+                   -- If we are presented with a stream of valid and invalid Txs with
+                   -- duplicate txids we're content with completing the protocol
+                   -- without error.
+                   return $ property True)
+                     outmps
+             return $ counterexample (intercalate "\n" _trace)
+                    $ conjoin r
   where
     sim :: forall s . IOSim s ([Tx Int], [[Tx Int]])
     sim = do
-      state' <- traverse (\(NonEmpty txs, mbOutDelay, mbInDelay) -> do
+      state' <- traverse (\(txs, mbOutDelay, mbInDelay) -> do
                           let mbOutDelayTime = getSmallDelay . getPositive <$> mbOutDelay
                               mbInDelayTime  = getSmallDelay . getPositive <$> mbInDelay
                           controlMessageVar <- newTVarIO Continue
@@ -313,13 +317,23 @@ prop_txSubmission (TxSubmissionV2State state txDecisionPolicy) =
                             <$> Map.elems state'
 
       _ <- async do
-            threadDelay simDelayTime
+            threadDelay (simDelayTime + 100)
             atomically (traverse_ (`writeTVar` Terminate) controlMessageVars)
 
       txSubmissionSimulation verboseTracer verboseTracer state'' txDecisionPolicy
 
-checkMempools :: Eq a => [a] -> [a] -> Property
-checkMempools [] _ = property True
-checkMempools as@(a : as') (b : bs) = if a == b then checkMempools as' bs
-                                                else checkMempools as  bs
-checkMempools _ [] = property False
+checkMempools :: (Eq a, Show a) => [a] -> [a] -> Property
+checkMempools [] [] = property True
+checkMempools _ [] = property True
+checkMempools [] _ = property False
+checkMempools inp@(i : is) outp@(o : os) =
+  if o == i then counterexample (show inp ++ " " ++ show outp)
+               $ checkMempools is os
+           else counterexample (show inp ++ " " ++ show outp)
+              $ checkMempools is outp
+
+-- | Split a list into sub list of at most `n` elements.
+--
+divvy :: Int -> [a] -> [[a]]
+divvy _ [] = []
+divvy n as = take n as : divvy n (drop n as)

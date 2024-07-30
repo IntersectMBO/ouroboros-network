@@ -572,7 +572,7 @@ receivedTxIds
      (MonadSTM m, Ord txid, Ord peeraddr)
   => Tracer m (DebugSharedTxState peeraddr txid tx)
   -> SharedTxStateVar m peeraddr txid tx
-  -> MempoolSnapshot txid tx idx
+  -> STM m (MempoolSnapshot txid tx idx)
   -> peeraddr
   -> NumTxIdsToReq
   -- ^ number of requests to subtract from
@@ -582,8 +582,9 @@ receivedTxIds
   -> Map txid SizeInBytes
   -- ^ received `txid`s with sizes
   -> m ()
-receivedTxIds tracer sharedVar MempoolSnapshot{mempoolHasTx} peeraddr reqNo txidsSeq txidsMap = do
-  st <- atomically $
+receivedTxIds tracer sharedVar getMempoolSnapshot peeraddr reqNo txidsSeq txidsMap = do
+  st <- atomically $ do
+    MempoolSnapshot{mempoolHasTx} <- getMempoolSnapshot
     stateTVar sharedVar ((\a -> (a,a)) . receivedTxIdsImpl mempoolHasTx peeraddr reqNo txidsSeq txidsMap)
   traceWith tracer (DebugSharedTxState st)
 

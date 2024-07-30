@@ -28,7 +28,8 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 
 import Data.Sequence.Strict qualified as StrictSeq
-import Ouroboros.Network.DeltaQ (PeerGSV (..), gsvRequestResponseDuration, defaultGSV)
+import Ouroboros.Network.DeltaQ (PeerGSV (..), defaultGSV,
+           gsvRequestResponseDuration)
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Inbound.Policy
 import Ouroboros.Network.TxSubmission.Inbound.State
