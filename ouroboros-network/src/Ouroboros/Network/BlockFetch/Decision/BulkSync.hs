@@ -131,14 +131,13 @@ import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
 import Control.Monad.Writer.Strict (Writer, runWriter, MonadWriter (tell))
 import Control.Tracer (Tracer, traceWith)
 import Data.Bifunctor (first, Bifunctor (..))
-import Data.Function (on)
 import qualified Data.List as List
 import qualified Data.Set as Set
 import Data.Maybe (maybeToList)
 
 import Cardano.Prelude (partitionEithers)
 
-import Ouroboros.Network.AnchoredFragment (AnchoredFragment, headBlockNo)
+import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import Ouroboros.Network.Block
 import Ouroboros.Network.BlockFetch.ClientState
@@ -409,7 +408,7 @@ selectTheCandidate ::
     peerInfo
     (Maybe (ChainSuffix header, [(ChainSuffix header, peerInfo)]))
 selectTheCandidate
-  FetchDecisionPolicy {plausibleCandidateChain}
+  FetchDecisionPolicy {compareCandidateChains, plausibleCandidateChain}
   currentChain =
     separateDeclinedAndStillInRace
       -- Select the suffix up to the intersection with the current chain. This can
@@ -430,8 +429,13 @@ selectTheCandidate
         case inRace of
           [] -> pure Nothing
           _ : _ -> do
-            let chainSfx = fst $
-                  List.maximumBy (compare `on` (headBlockNo . getChainSuffix . fst))  inRace
+            let maxChainOn f c0 c1 = case compareCandidateChains (f c0) (f c1) of
+                  LT -> c1
+                  _ -> c0
+                -- maximumBy yields the last element in case of a tie while we
+                -- prefer the first one
+                chainSfx = fst $
+                  List.foldl1' (maxChainOn (getChainSuffix . fst)) inRace
             pure $ Just (chainSfx, inRace)
 
 -- | Given _the_ candidate fragment to sync from, and a list of peers (with
