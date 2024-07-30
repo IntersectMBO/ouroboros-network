@@ -18,6 +18,7 @@ import Control.Concurrent.Class.MonadMVar.Strict
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer (..), traceWith)
 
 import Data.Foldable (foldl', traverse_)
 import Data.Map.Strict (Map)
@@ -83,7 +84,8 @@ withPeer
        , Ord peeraddr
        , Show peeraddr
        )
-    => TxChannelsVar m peeraddr txid tx
+    => Tracer m (DebugSharedTxState peeraddr txid tx)
+    -> TxChannelsVar m peeraddr txid tx
     -> SharedTxStateVar m peeraddr txid tx
     -> TxSubmissionMempoolReader txid tx idx m
     -> peeraddr
@@ -91,7 +93,8 @@ withPeer
     -> (PeerTxAPI m txid tx -> m a)
     -- ^ callback which gives access to `PeerTxStateAPI`
     -> m a
-withPeer channelsVar
+withPeer tracer
+         channelsVar
          sharedStateVar
          TxSubmissionMempoolReader { mempoolGetSnapshot }
          peeraddr io =
@@ -187,7 +190,8 @@ withPeer channelsVar
       -- TODO: hide this inside `receivedTxIds` so it's run in the same STM
       -- transaction.
       mempoolSnapshot <- atomically mempoolGetSnapshot
-      receivedTxIds sharedStateVar
+      receivedTxIds tracer
+                    sharedStateVar
                     mempoolSnapshot
                     peeraddr
                     numTxIdsToReq
@@ -201,7 +205,7 @@ withPeer channelsVar
                       -- ^ received txs
                       -> m ()
     handleReceivedTxs txids txs =
-      collectTxs sharedStateVar peeraddr txids txs
+      collectTxs tracer sharedStateVar peeraddr txids txs
 
 
 decisionLogicThread
@@ -212,11 +216,12 @@ decisionLogicThread
        , Ord peeraddr
        , Ord txid
        )
-    => TxDecisionPolicy
+    => Tracer m (DebugSharedTxState peeraddr txid tx)
+    -> TxDecisionPolicy
     -> TxChannelsVar m peeraddr txid tx
     -> SharedTxStateVar m peeraddr txid tx
     -> m Void
-decisionLogicThread policy txChannelsVar sharedStateVar = go
+decisionLogicThread tracer policy txChannelsVar sharedStateVar = go
   where
     go :: m Void
     go = do
@@ -224,7 +229,7 @@ decisionLogicThread policy txChannelsVar sharedStateVar = go
       -- if there are too many inbound connections.
       threadDelay 0.005 -- 5ms
 
-      decisions <- atomically do
+      (decisions, st) <- atomically do
         sharedTxState <- readTVar sharedStateVar
         let activePeers = filterActivePeers policy sharedTxState
 
@@ -233,7 +238,8 @@ decisionLogicThread policy txChannelsVar sharedStateVar = go
 
         let (sharedState, decisions) = makeDecisions policy sharedTxState activePeers
         writeTVar sharedStateVar sharedState
-        return decisions
+        return (decisions, sharedState)
+      traceWith tracer (DebugSharedTxState st)
       TxChannels { txChannelMap } <- readMVar txChannelsVar
       traverse_
         (\(mvar, d) -> modifyMVar_ mvar (\d' -> pure (d' <> d)))
