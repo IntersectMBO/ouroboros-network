@@ -17,6 +17,8 @@ module Ouroboros.Network.TxSubmission.Inbound.State
   , collectTxs
   , acknowledgeTxIds
   , hasTxIdsToAcknowledge
+    -- * Debug output
+  , DebugSharedTxState (..)
     -- * Internals, only exported for testing purposes:
   , RefCountDiff (..)
   , updateRefCounts
@@ -26,6 +28,7 @@ module Ouroboros.Network.TxSubmission.Inbound.State
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (assert)
+import Control.Tracer (Tracer, traceWith)
 
 import Data.Foldable (fold,
 #if MIN_VERSION_base(4,20,0)
@@ -539,7 +542,8 @@ newSharedTxStateVar = newTVarIO SharedTxState { peerTxStates    = Map.empty,
 receivedTxIds
   :: forall m peeraddr idx tx txid.
      (MonadSTM m, Ord txid, Ord peeraddr)
-  => SharedTxStateVar m peeraddr txid tx
+  => Tracer m (DebugSharedTxState peeraddr txid tx)
+  -> SharedTxStateVar m peeraddr txid tx
   -> MempoolSnapshot txid tx idx
   -> peeraddr
   -> NumTxIdsToReq
@@ -550,9 +554,10 @@ receivedTxIds
   -> Map txid SizeInBytes
   -- ^ received `txid`s with sizes
   -> m ()
-receivedTxIds sharedVar MempoolSnapshot{mempoolHasTx} peeraddr reqNo txidsSeq txidsMap =
-  atomically $
-    modifyTVar sharedVar (receivedTxIdsImpl mempoolHasTx peeraddr reqNo txidsSeq txidsMap)
+receivedTxIds tracer sharedVar MempoolSnapshot{mempoolHasTx} peeraddr reqNo txidsSeq txidsMap = do
+  st <- atomically $
+    stateTVar sharedVar ((\a -> (a,a)) . receivedTxIdsImpl mempoolHasTx peeraddr reqNo txidsSeq txidsMap)
+  traceWith tracer (DebugSharedTxState st)
 
 
 -- | Include received `tx`s in `SharedTxState`.  Return number of `txids`
@@ -561,14 +566,25 @@ receivedTxIds sharedVar MempoolSnapshot{mempoolHasTx} peeraddr reqNo txidsSeq tx
 collectTxs
   :: forall m peeraddr tx txid.
      (MonadSTM m, Ord txid, Ord peeraddr)
-  => SharedTxStateVar m peeraddr txid tx
+  => Tracer m (DebugSharedTxState peeraddr txid tx)
+  -> SharedTxStateVar m peeraddr txid tx
   -> peeraddr
   -> Set txid    -- ^ set of requested txids
   -> Map txid tx -- ^ received txs
   -> m ()
   -- ^ number of txids to be acknowledged and txs to be added to the
   -- mempool
-collectTxs sharedVar peeraddr txidsRequested txsMap =
-  atomically $
-    modifyTVar sharedVar
-               (collectTxsImpl peeraddr txidsRequested txsMap)
+collectTxs tracer sharedVar peeraddr txidsRequested txsMap = do
+  st <- atomically $
+    stateTVar sharedVar
+      ((\a -> (a,a)) . collectTxsImpl peeraddr txidsRequested txsMap)
+  traceWith tracer (DebugSharedTxState st)
+
+--
+--
+--
+
+-- | Debug tracer.
+--
+newtype DebugSharedTxState peeraddr txid tx = DebugSharedTxState (SharedTxState peeraddr txid tx)
+  deriving Show
