@@ -176,7 +176,7 @@ blockFetchLogic :: forall addr header block m.
                    , HasHeader block
                    , HeaderHash header ~ HeaderHash block
                    , MonadDelay m
-                   , MonadSTM m
+                   , MonadTimer m
                    , Ord addr
                    , Hashable addr
                    )

@@ -24,6 +24,7 @@ import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Void
 
+import qualified Control.Monad.Class.MonadSTM.Internal as Internal.TVar
 import Control.Concurrent.Class.MonadSTM.Strict.TVar.Checked (newTVarIO, StrictTVar, readTVarIO, writeTVar)
 import Control.Exception (assert)
 import Control.Monad.Class.MonadSTM
@@ -51,7 +52,7 @@ fetchLogicIterations
      , HasHeader block
      , HeaderHash header ~ HeaderHash block
      , MonadDelay m
-     , MonadSTM m
+     , MonadTimer m
      , Ord peer
      , Hashable peer
      )
@@ -111,10 +112,10 @@ iterateForever x0 m = go x0 where go x = m x >>= go
 -- * deciding for each peer if we will initiate a new fetch request
 --
 fetchLogicIteration
-  :: (Hashable peer, MonadSTM m, Ord peer,
+  :: (Hashable peer, Ord peer,
       HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block,
-      MonadMonotonicTime m)
+      MonadTimer m)
   => Tracer m (TraceDecisionEvent peer header)
   -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
   -> FetchDecisionPolicy header
@@ -131,17 +132,24 @@ fetchLogicIteration decisionTracer clientStateTracer
                     (peersOrderVar, demoteCSJDynamo) = do
 
     -- Gather a snapshot of all the state we need.
-    (stateSnapshot, stateFingerprint') <-
+    --
+    -- The grace period is considered to retrigger the decision logic even
+    -- if no state has changed. This can help downloading blocks from a
+    -- different peer if all ChainSync clients are blocked on the forecast
+    -- horizon and the current peer of BlockFetch is not sending blocks.
+    gracePeriodTVar <- registerDelay (bulkSyncGracePeriod fetchDecisionPolicy)
+    (stateSnapshot, gracePeriodExpired, stateFingerprint') <-
       atomically $
         readStateVariables
           fetchTriggerVariables
           fetchNonTriggerVariables
+          gracePeriodTVar
           stateFingerprint
     peersOrder <- readTVarIO peersOrderVar
 
     -- TODO: allow for boring PeerFetchStatusBusy transitions where we go round
     -- again rather than re-evaluating everything.
-    assert (stateFingerprint' /= stateFingerprint) $ return ()
+    assert (gracePeriodExpired || stateFingerprint' /= stateFingerprint) $ return ()
 
     -- TODO: log the difference in the fingerprint that caused us to wake up
 
@@ -342,17 +350,21 @@ readStateVariables :: (MonadSTM m, Eq peer,
                        HeaderHash header ~ HeaderHash block)
                    => FetchTriggerVariables peer header m
                    -> FetchNonTriggerVariables peer header block m
+                   -> Internal.TVar.TVar m Bool
                    -> FetchStateFingerprint peer header block
                    -> STM m (FetchStateSnapshot peer header block m,
+                             Bool,
                              FetchStateFingerprint peer header block)
 readStateVariables FetchTriggerVariables{..}
                    FetchNonTriggerVariables{..}
+                   gracePeriodTVar
                    fetchStateFingerprint = do
 
     -- Read all the trigger state variables
     fetchStateCurrentChain  <- readStateCurrentChain
     fetchStatePeerChains    <- readStateCandidateChains
     fetchStatePeerStatus    <- readStatePeerStatus
+    gracePeriodExpired      <- Internal.TVar.readTVar gracePeriodTVar
 
     -- Construct the change detection fingerprint
     let !fetchStateFingerprint' =
@@ -362,7 +374,7 @@ readStateVariables FetchTriggerVariables{..}
             fetchStatePeerStatus
 
     -- Check the fingerprint changed, or block and wait until it does
-    check (fetchStateFingerprint' /= fetchStateFingerprint)
+    check (gracePeriodExpired || fetchStateFingerprint' /= fetchStateFingerprint)
 
     -- Now read all the non-trigger state variables
     fetchStatePeerStates       <- readStatePeerStateVars
@@ -386,4 +398,4 @@ readStateVariables FetchTriggerVariables{..}
             fetchStateChainSelStarvation
           }
 
-    return (fetchStateSnapshot, fetchStateFingerprint')
+    return (fetchStateSnapshot, gracePeriodExpired, fetchStateFingerprint')
