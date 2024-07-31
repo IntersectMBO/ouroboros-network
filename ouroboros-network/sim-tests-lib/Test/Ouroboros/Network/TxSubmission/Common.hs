@@ -303,6 +303,9 @@ verboseTracer :: forall a m.
                => Tracer m a
 verboseTracer = threadAndTimeTracer $ showTracing $ Tracer say
 
+debugTracer :: forall a s. Show a => Tracer (IOSim s) a
+debugTracer = threadAndTimeTracer $ showTracing $ Tracer (traceM . show)
+
 threadAndTimeTracer :: forall a m.
                        ( MonadAsync m
                        , MonadDelay m

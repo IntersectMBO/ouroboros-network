@@ -51,7 +51,7 @@ import Ouroboros.Network.TxSubmission.Inbound.Policy
 import Ouroboros.Network.TxSubmission.Outbound
 import Ouroboros.Network.Util.ShowProxy
 
-import Ouroboros.Network.Testing.Utils
+import Ouroboros.Network.Testing.Utils hiding (debugTracer)
 
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
@@ -73,6 +73,7 @@ import Test.Ouroboros.Network.TxSubmission.Common hiding (tests)
 tests :: TestTree
 tests = testGroup "Ouroboros.Network.TxSubmission.TxSubmissionV2"
   [ testProperty "txSubmission" prop_txSubmission
+  , testProperty "x" prop_x
   ]
 
 data TxSubmissionV2State =
@@ -320,7 +321,9 @@ prop_txSubmission (TxSubmissionV2State state txDecisionPolicy) =
             threadDelay (simDelayTime + 100)
             atomically (traverse_ (`writeTVar` Terminate) controlMessageVars)
 
-      txSubmissionSimulation verboseTracer verboseTracer state'' txDecisionPolicy
+      let tracer = verboseTracer <> debugTracer
+          tracer' = verboseTracer <> debugTracer
+      txSubmissionSimulation tracer tracer' state'' txDecisionPolicy
 
 checkMempools :: (Eq a, Show a) => [a] -> [a] -> Property
 checkMempools [] [] = property True
@@ -331,6 +334,10 @@ checkMempools inp@(i : is) outp@(o : os) =
                $ checkMempools is os
            else counterexample (show inp ++ " " ++ show outp)
               $ checkMempools is outp
+
+prop_x :: Property
+prop_x = prop_txSubmission
+  TxSubmissionV2State {peerMap = Map.fromList [(4,([Tx {getTxId = 0, getTxSize = SizeInBytes 34236, getTxValid = True},Tx {getTxId = 1, getTxSize = SizeInBytes 3153, getTxValid = True},Tx {getTxId = 4, getTxSize = SizeInBytes 65033, getTxValid = True},Tx {getTxId = 2, getTxSize = SizeInBytes 42190, getTxValid = True},Tx {getTxId = -3, getTxSize = SizeInBytes 44515, getTxValid = False},Tx {getTxId = -6, getTxSize = SizeInBytes 45992, getTxValid = True},Tx {getTxId = 3, getTxSize = SizeInBytes 2243, getTxValid = True},Tx {getTxId = -4, getTxSize = SizeInBytes 8535, getTxValid = False}],Just (Positive {getPositive = SmallDelay {getSmallDelay = 1.166666666666}}),Just (Positive {getPositive = SmallDelay {getSmallDelay = 1.888888888888}})))], decisionPolicy = TxDecisionPolicy {maxNumTxIdsToRequest = NumTxIdsToReq 2, maxUnacknowledgedTxIds = NumTxIdsToReq 2, txsSizeInflightPerPeer = SizeInBytes 1, maxTxsSizeInflight = SizeInBytes 1, txInflightMultiplicity = 1}}
 
 -- | Split a list into sub list of at most `n` elements.
 --
