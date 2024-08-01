@@ -131,6 +131,8 @@ import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
 import Control.Monad.Writer.Strict (Writer, runWriter, MonadWriter (tell))
 import Control.Tracer (Tracer, traceWith)
 import Data.Bifunctor (first, Bifunctor (..))
+import Data.DList (DList)
+import qualified Data.DList as DList
 import qualified Data.List as List
 import qualified Data.Set as Set
 import Data.Maybe (maybeToList)
@@ -149,25 +151,9 @@ import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation(..))
 import Ouroboros.Network.BlockFetch.Decision.Deadline
 import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent (..))
 
--- | A trivial foldable data structure with a 'Semigroup' instance that
--- concatenates in @O(1)@. Only meant for short-term use, followed by one fold.
-data ListConcat a = List [a] | Concat (ListConcat a) (ListConcat a)
+type WithDeclined peer = Writer (DList (FetchDecline, peer))
 
-instance Semigroup (ListConcat a) where
-  (<>) = Concat
-
-instance Monoid (ListConcat a) where
-  mempty = List []
-
-listConcatToList :: ListConcat a -> [a]
-listConcatToList = flip go []
-  where
-    go (List xs) acc = xs ++ acc
-    go (Concat x y) acc = go x (go y acc)
-
-type WithDeclined peer = Writer (ListConcat (FetchDecline, peer))
-
-runWithDeclined :: WithDeclined peer a -> (a, ListConcat (FetchDecline, peer))
+runWithDeclined :: WithDeclined peer a -> (a, DList (FetchDecline, peer))
 runWithDeclined = runWriter
 
 fetchDecisionsBulkSyncM
@@ -374,7 +360,7 @@ fetchDecisionsBulkSync
         ( Maybe (a, peerInfo),
           [(FetchDecline, peerInfo)]
         )
-      combineWithDeclined = second listConcatToList . runWithDeclined . runMaybeT
+      combineWithDeclined = second DList.toList . runWithDeclined . runMaybeT
 
       dropAlreadyFetchedBlocks :: forall peerInfo.
         [(ChainSuffix header, peerInfo)] ->
@@ -383,7 +369,7 @@ fetchDecisionsBulkSync
       dropAlreadyFetchedBlocks candidatesAndPeers' theCandidate =
         case dropAlreadyFetched fetchedBlocks fetchedMaxSlotNo theCandidate of
           Left reason -> do
-            tell (List [(reason, peerInfo) | (_, peerInfo) <- candidatesAndPeers'])
+            tell (DList.fromList [(reason, peerInfo) | (_, peerInfo) <- candidatesAndPeers'])
             pure Nothing
           Right theFragments -> pure (Just theFragments)
 
@@ -425,7 +411,7 @@ selectTheCandidate
       separateDeclinedAndStillInRace decisions = do
         let (declined, inRace) = partitionEithers
               [ bimap ((,p)) ((,p)) d | (d, p) <- decisions ]
-        tell (List declined)
+        tell (DList.fromList declined)
         case inRace of
           [] -> pure Nothing
           _ : _ -> do
@@ -477,13 +463,13 @@ selectThePeer
   where
     go grossRequest (c@(candidate, peerInfo) : xs) = do
       if requestHeadInCandidate candidate grossRequest then do
-        tell $ List
+        tell $ DList.fromList
           [(FetchDeclineConcurrencyLimit FetchModeBulkSync 1, pInfo)
           | (_, pInfo) <- xs
           ]
         pure (Just c)
       else do
-        tell $ List [(FetchDeclineAlreadyFetched, peerInfo)]
+        tell $ DList.fromList [(FetchDeclineAlreadyFetched, peerInfo)]
         go grossRequest xs
     go _grossRequest [] = pure Nothing
 
@@ -540,7 +526,7 @@ makeFetchRequest
             status
             (Right trimmedFragments)
      in case theDecision of
-          Left reason -> tell (List [(reason, thePeer)]) >> pure Nothing
+          Left reason -> tell (DList.fromList [(reason, thePeer)]) >> pure Nothing
           Right theRequest -> pure $ Just (theRequest, thePeer)
     where
       trimFragmentsToCandidate candidate fragments =
