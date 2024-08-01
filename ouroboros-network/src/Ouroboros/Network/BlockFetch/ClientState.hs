@@ -40,6 +40,7 @@ module Ouroboros.Network.BlockFetch.ClientState
 import Data.List (foldl')
 import Data.Maybe (mapMaybe)
 import Data.Semigroup (Last (..))
+import Data.Sequence (Seq, (|>), (<|))
 import Data.Set (Set)
 
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -793,7 +794,7 @@ tryReadTMergeVar (TMergeVar v) = tryReadTMVar v
 data PeersOrder peer = PeersOrder
   { peersOrderCurrent :: Maybe peer
     -- ^ The current peer we are fetching from, if there is one.
-  , peersOrderAll :: [peer]
+  , peersOrderAll :: Seq peer
     -- ^ All the peers, from most preferred to least preferred.
     --
     -- INVARIANT: If there is a current peer, it is always the head of this list.
@@ -801,10 +802,10 @@ data PeersOrder peer = PeersOrder
     -- ^ The time at which we started talking to the current peer.
   }
 
-mcons :: Maybe a -> [a] -> [a]
+mcons :: Maybe a -> Seq a -> Seq a
 mcons Nothing xs = xs
-mcons (Just x) xs = x : xs
+mcons (Just x) xs = x <| xs
 
-msnoc :: [a] -> Maybe a -> [a]
+msnoc :: Seq a -> Maybe a -> Seq a
 msnoc xs Nothing = xs
-msnoc xs (Just x) = xs ++ [x]
+msnoc xs (Just x) = xs |> x

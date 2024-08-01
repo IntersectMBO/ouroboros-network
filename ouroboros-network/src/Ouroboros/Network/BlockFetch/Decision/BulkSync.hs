@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
@@ -131,9 +132,12 @@ import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
 import Control.Monad.Writer.Strict (Writer, runWriter, MonadWriter (tell))
 import Control.Tracer (Tracer, traceWith)
 import Data.Bifunctor (first, Bifunctor (..))
+import Data.Foldable (toList)
 import Data.DList (DList)
 import qualified Data.DList as DList
 import qualified Data.List as List
+import Data.Sequence (Seq (..), (><), (<|), (|>))
+import qualified Data.Sequence as Sequence
 import qualified Data.Set as Set
 import Data.Maybe (maybeToList)
 
@@ -190,7 +194,7 @@ fetchDecisionsBulkSyncM
     let (peersOrder, orderedCandidatesAndPeers) =
           alignPeersOrderWithActualPeers
             (peerInfoPeer . snd)
-            candidatesAndPeers
+            (Sequence.fromList candidatesAndPeers)
             peersOrder1
 
     -- Compute the actual block fetch decision. This contains only declines and
@@ -201,7 +205,7 @@ fetchDecisionsBulkSyncM
             currentChain
             fetchedBlocks
             fetchedMaxSlotNo
-            orderedCandidatesAndPeers
+            (toList orderedCandidatesAndPeers)
 
         newCurrentPeer = peerInfoPeer . snd <$> theDecision
 
@@ -230,27 +234,27 @@ fetchDecisionsBulkSyncM
       -- adding at the end of the peers order all the actual peers that were not
       -- there before.
       alignPeersOrderWithActualPeers :: forall d.
-        (d -> peer) -> [d] -> PeersOrder peer -> (PeersOrder peer, [d])
+        (d -> peer) -> Seq d -> PeersOrder peer -> (PeersOrder peer, Seq d)
       alignPeersOrderWithActualPeers
         peerOf
         actualPeers
         PeersOrder {peersOrderStart, peersOrderCurrent, peersOrderAll} =
-          let peersOrderAll' =
-                [ d
-                | p <- peersOrderAll
-                , Just d <- [List.find ((p ==) . peerOf) actualPeers]
-                ]
-                ++ filter ((`notElem` peersOrderAll) . peerOf) actualPeers
+          let peersOrderAll' = ( do
+                  p <- peersOrderAll
+                  case List.find ((p ==) . peerOf) actualPeers of
+                    Just d -> pure d
+                    Nothing -> Empty
+                ) >< Sequence.filter ((`notElem` peersOrderAll) . peerOf) actualPeers
               -- Set the current peer to Nothing if it is not at the front of
               -- the list.
               peersOrderCurrent' = do
                 peer <- peersOrderCurrent
-                guard (any ((peer ==) . peerOf) $ take 1 peersOrderAll')
+                guard (any ((peer ==) . peerOf) $ Sequence.take 1 peersOrderAll')
                 pure peer
            in (PeersOrder
                 { peersOrderCurrent = peersOrderCurrent',
                   -- INVARIANT met: Current peer is at the front if it exists
-                  peersOrderAll = map peerOf peersOrderAll',
+                  peersOrderAll = fmap peerOf peersOrderAll',
                   peersOrderStart
                 }
               , peersOrderAll'
@@ -275,7 +279,7 @@ fetchDecisionsBulkSyncM
                          {
                            peersOrderCurrent = Nothing,
                            -- INVARIANT met: there is no current peer
-                           peersOrderAll = drop 1 peersOrderAll ++ [peer],
+                           peersOrderAll = Sequence.drop 1 peersOrderAll |> peer,
                            peersOrderStart
                          }
             _ -> pure peersOrder
@@ -283,14 +287,14 @@ fetchDecisionsBulkSyncM
       setCurrentPeer :: Maybe peer -> PeersOrder peer -> PeersOrder peer
       setCurrentPeer Nothing peersOrder = peersOrder {peersOrderCurrent = Nothing}
       setCurrentPeer (Just peer) peersOrder =
-        case break ((peer ==)) (peersOrderAll peersOrder) of
-          (xs, p : ys) ->
+        case Sequence.breakl ((peer ==)) (peersOrderAll peersOrder) of
+          (xs, p :<| ys) ->
             peersOrder
               { peersOrderCurrent = Just p,
                 -- INVARIANT met: Current peer is at the front
-                peersOrderAll = p : xs ++ ys
+                peersOrderAll = p <| xs >< ys
               }
-          (_, []) -> peersOrder {peersOrderCurrent = Nothing}
+          (_, Empty) -> peersOrder {peersOrderCurrent = Nothing}
 
 -- | Given a list of candidate fragments and their associated peers, choose what
 -- to sync from who in the bulk sync mode.
