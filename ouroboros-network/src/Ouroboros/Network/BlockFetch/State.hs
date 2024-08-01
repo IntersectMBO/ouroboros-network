@@ -21,6 +21,7 @@ import Data.Functor.Contravariant (contramap)
 import Data.Hashable (Hashable)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Sequence (Seq (Empty))
 import Data.Set qualified as Set
 import Data.Void
 
@@ -72,7 +73,7 @@ fetchLogicIterations decisionTracer clientStateTracer
     peersOrderVar <- newTVarIO $ PeersOrder {
       peersOrderCurrent = Nothing,
       peersOrderStart = Time 0,
-      peersOrderAll = []
+      peersOrderAll = Empty
       }
 
     iterateForever initialFetchStateFingerprint $ \stateFingerprint -> do
