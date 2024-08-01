@@ -126,6 +126,7 @@ module Ouroboros.Network.BlockFetch.Decision.BulkSync (
   fetchDecisionsBulkSyncM
 ) where
 
+import Control.Exception (assert)
 import Control.Monad (guard)
 import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime (getMonotonicTime), addTime)
 import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
@@ -457,9 +458,10 @@ selectThePeer
     -- 1 block. It will only be used to choose the peer to fetch from, but we will
     -- later craft a more refined request for that peer. See [About the gross
     -- request] in the module documentation. Because @theFragments@ is not
-    -- empty, @grossRequest@ will not be empty.
-    let firstBlock = FetchRequest . map (AF.takeOldest 1) . take 1 . filter (not . AF.null)
-        (grossRequest :: FetchRequest header) = firstBlock $ snd theFragments
+    -- empty, and does not contain empty fragments, @grossRequest@ will not be empty.
+    let firstBlock = map (AF.takeOldest 1) . take 1 . filter (not . AF.null)
+        requestBlock = firstBlock $ snd theFragments
+        grossRequest = FetchRequest $ assert (all (not . AF.null) requestBlock) requestBlock
 
     -- Return the first peer that can serve the gross request and decline
     -- the other peers.
