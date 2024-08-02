@@ -26,7 +26,7 @@ import Control.Monad (unless)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 
-import Data.Set qualified as Set
+import qualified Data.Set as Set
 
 import Control.Tracer (traceWith)
 

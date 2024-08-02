@@ -40,10 +40,12 @@ import Ouroboros.Network.Block
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Pipelined
 
+import qualified Ouroboros.Network.AnchoredFragment as AF
 import Ouroboros.Network.ControlMessage (ControlMessageSTM)
 
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.BlockFetch.Client
+import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation(..))
 import Ouroboros.Network.Channel
 import Ouroboros.Network.DeltaQ
 import Ouroboros.Network.Driver
@@ -55,6 +57,7 @@ import Ouroboros.Network.Protocol.BlockFetch.Type
 import Ouroboros.Network.Util.ShowProxy
 
 import Ouroboros.Network.Mock.ConcreteBlock
+import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
 
 
 -- | Run a single block fetch protocol until the chain is downloaded.
@@ -63,8 +66,7 @@ blockFetchExample0 :: forall m.
                       (MonadSTM m, MonadST m, MonadAsync m, MonadDelay m,
                        MonadFork m, MonadTime m, MonadTimer m, MonadMask m,
                        MonadThrow (STM m))
-                   => Tracer m [TraceLabelPeer Int
-                                 (FetchDecision [Point BlockHeader])]
+                   => Tracer m (TraceDecisionEvent Int BlockHeader)
                    -> Tracer m (TraceLabelPeer Int
                                  (TraceFetchClientState BlockHeader))
                    -> Tracer m (TraceLabelPeer Int
@@ -134,11 +136,14 @@ blockFetchExample0 decisionTracer clientStateTracer clientMsgTracer
           (sampleBlockFetchPolicy1 headerForgeUTCTime blockHeap currentChainHeaders candidateChainHeaders)
           registry
           (BlockFetchConfiguration {
-            bfcMaxConcurrencyBulkSync = 1,
             bfcMaxConcurrencyDeadline = 2,
             bfcMaxRequestsInflight    = 10,
-            bfcDecisionLoopInterval   = 0.01,
-            bfcSalt                   = 0
+            bfcDecisionLoopIntervalBulkSync = 0.04,
+            bfcDecisionLoopIntervalDeadline = 0.01,
+            bfcSalt                   = 0,
+            bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
+              { gbfcBulkSyncGracePeriod = 10 -- seconds
+              }
           })
         >> return ()
 
@@ -172,8 +177,7 @@ blockFetchExample1 :: forall m.
                       (MonadSTM m, MonadST m, MonadAsync m, MonadDelay m,
                        MonadFork m, MonadTime m, MonadTimer m, MonadMask m,
                        MonadThrow (STM m))
-                   => Tracer m [TraceLabelPeer Int
-                                 (FetchDecision [Point BlockHeader])]
+                   => Tracer m (TraceDecisionEvent Int BlockHeader)
                    -> Tracer m (TraceLabelPeer Int
                                  (TraceFetchClientState BlockHeader))
                    -> Tracer m (TraceLabelPeer Int
@@ -211,7 +215,7 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
     driverAsync <- async $ do
       threadId <- myThreadId
       labelThread threadId "block-fetch-driver"
-      driver blockHeap
+      downloadTimer
 
     -- Order of shutdown here is important for this example: must kill off the
     -- fetch thread before the peer threads.
@@ -243,25 +247,25 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
           (sampleBlockFetchPolicy1 headerForgeUTCTime blockHeap currentChainHeaders candidateChainHeaders)
           registry
           (BlockFetchConfiguration {
-            bfcMaxConcurrencyBulkSync = 1,
             bfcMaxConcurrencyDeadline = 2,
             bfcMaxRequestsInflight    = 10,
-            bfcDecisionLoopInterval   = 0.01,
-            bfcSalt                   = 0
+            bfcDecisionLoopIntervalBulkSync = 0.04,
+            bfcDecisionLoopIntervalDeadline = 0.01,
+            bfcSalt                   = 0,
+            bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
+              { gbfcBulkSyncGracePeriod = 10 -- seconds
+              }
           })
         >> return ()
 
     headerForgeUTCTime (FromConsensus x) =
         pure $ convertSlotToTimeForTestsAssumingNoHardFork (blockSlot x)
 
-    driver :: TestFetchedBlockHeap m Block -> m ()
-    driver blockHeap = do
-      atomically $ do
-        heap <- getTestFetchedBlocks blockHeap
-        check $
-          all (\c -> AnchoredFragment.headPoint c `Set.member` heap)
-              candidateChains
-
+    -- | Terminates after 1 second per block in the candidate chains.
+    downloadTimer :: m ()
+    downloadTimer =
+      let totalBlocks = sum $ map AF.length candidateChains
+       in threadDelay (fromIntegral totalBlocks)
 
 --
 -- Sample block fetch configurations
@@ -293,7 +297,10 @@ sampleBlockFetchPolicy1 headerFieldsForgeUTCTime blockHeap currentChain candidat
       blockMatchesHeader     = \_ _ -> True,
 
       headerForgeUTCTime     = headerFieldsForgeUTCTime,
-      blockForgeUTCTime      = headerFieldsForgeUTCTime
+      blockForgeUTCTime      = headerFieldsForgeUTCTime,
+
+      readChainSelStarvation = pure (ChainSelStarvationEndedAt (Time 0)),
+      demoteCSJDynamo = \_ -> pure ()
       }
   where
     plausibleCandidateChain cur candidate =

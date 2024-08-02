@@ -38,7 +38,7 @@ import Control.Monad.Class.MonadSay
 import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow (MonadEvaluate, MonadMask, MonadThrow,
            SomeException)
-import Control.Monad.Class.MonadTime.SI (DiffTime, MonadTime)
+import Control.Monad.Class.MonadTime.SI (DiffTime, MonadTime, Time (..))
 import Control.Monad.Class.MonadTimer.SI (MonadDelay, MonadTimer)
 import Control.Monad.Fix (MonadFix)
 import Control.Tracer (Tracer (..), nullTracer)
@@ -66,6 +66,7 @@ import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.Block (MaxSlotNo (..), maxSlotNoFromWithOrigin,
            pointSlot)
 import Ouroboros.Network.BlockFetch
+import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation(..))
 import Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
 import Ouroboros.Network.Diffusion qualified as Diff
 import Ouroboros.Network.Diffusion.P2P qualified as Diff.P2P
@@ -290,11 +291,14 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
         (blockFetchPolicy nodeKernel)
         (nkFetchClientRegistry nodeKernel)
         (BlockFetchConfiguration {
-          bfcMaxConcurrencyBulkSync = 1,
           bfcMaxConcurrencyDeadline = 2,
           bfcMaxRequestsInflight    = 10,
-          bfcDecisionLoopInterval   = 0.01,
-          bfcSalt                   = 0
+          bfcDecisionLoopIntervalBulkSync = 0.04,
+          bfcDecisionLoopIntervalDeadline = 0.01,
+          bfcSalt                   = 0,
+          bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
+            { gbfcBulkSyncGracePeriod = 10 -- seconds
+            }
         })
 
     blockFetchPolicy :: NodeKernel BlockHeader Block s m
@@ -323,7 +327,10 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
           blockMatchesHeader     = \_ _ -> True,
 
           headerForgeUTCTime,
-          blockForgeUTCTime      = headerForgeUTCTime . fmap blockHeader
+          blockForgeUTCTime      = headerForgeUTCTime . fmap blockHeader,
+
+          readChainSelStarvation = pure (ChainSelStarvationEndedAt (Time 0)),
+          demoteCSJDynamo = \_ -> pure ()
         }
       where
         plausibleCandidateChain cur candidate =

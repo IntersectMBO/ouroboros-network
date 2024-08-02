@@ -32,13 +32,16 @@ module Ouroboros.Network.BlockFetch.ClientState
     -- * Ancillary
   , FromConsensus (..)
   , WhetherReceivingTentativeBlocks (..)
+  , PeersOrder(..)
+  , mcons
+  , msnoc
   ) where
 
 import Data.List (foldl')
 import Data.Maybe (mapMaybe)
 import Data.Semigroup (Last (..))
+import Data.Sequence (Seq, (|>), (<|))
 import Data.Set (Set)
-import Data.Set qualified as Set
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (assert)
@@ -59,6 +62,7 @@ import Ouroboros.Network.ControlMessage (ControlMessageSTM,
            timeoutWithControlMessage)
 import Ouroboros.Network.Point (withOriginToMaybe)
 import Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
+import qualified Data.Set as Set
 
 -- | The context that is passed into the block fetch protocol client when it
 -- is started.
@@ -785,3 +789,23 @@ tryReadTMergeVar :: MonadSTM m
                  => TMergeVar m a
                  -> STM m (Maybe a)
 tryReadTMergeVar (TMergeVar v) = tryReadTMVar v
+
+-- | The order of peers for bulk sync fetch decisions.
+data PeersOrder peer = PeersOrder
+  { peersOrderCurrent :: Maybe peer
+    -- ^ The current peer we are fetching from, if there is one.
+  , peersOrderAll :: Seq peer
+    -- ^ All the peers, from most preferred to least preferred.
+    --
+    -- INVARIANT: If there is a current peer, it is always the head of this list.
+  , peersOrderStart :: Time
+    -- ^ The time at which we started talking to the current peer.
+  }
+
+mcons :: Maybe a -> Seq a -> Seq a
+mcons Nothing xs = xs
+mcons (Just x) xs = x <| xs
+
+msnoc :: Seq a -> Maybe a -> Seq a
+msnoc xs Nothing = xs
+msnoc xs (Just x) = xs |> x

@@ -52,6 +52,7 @@ import Ouroboros.Network.NodeToNode.Version (isPipeliningEnabled)
 import Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch)
 
 import Ouroboros.Network.Testing.Utils
+import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
 
 
 --
@@ -60,11 +61,11 @@ import Ouroboros.Network.Testing.Utils
 
 tests :: TestTree
 tests = testGroup "BlockFetch"
-  [ testProperty "static chains without overlap"
-                 prop_blockFetchStaticNoOverlap
+  [ testProperty "BulkSync static chains without overlap"
+                 prop_blockFetchBulkSyncStaticNoOverlap
 
-  , testProperty "static chains with overlap"
-                 prop_blockFetchStaticWithOverlap
+  , testProperty "BulkSync static chains with overlap"
+                 prop_blockFetchBulkSyncStaticWithOverlap
 
   , testCaseSteps "bracketSyncWithFetchClient"
                   unit_bracketSyncWithFetchClient
@@ -85,8 +86,8 @@ tests = testGroup "BlockFetch"
 
 -- | In this test we have two candidates chains that are static throughout the
 -- run. The two chains share some common prefix (genesis in the degenerate
--- case). The test runs the block fetch logic to download all of both chain
--- candidates.
+-- case). The test runs the block fetch logic to download all blocks of the
+-- longest candidate chain (either of them if they are of equal length).
 --
 -- In this variant we set up the common prefix of the two candidates as the
 -- \"current\" chain. This means the block fetch only has to download the
@@ -101,8 +102,8 @@ tests = testGroup "BlockFetch"
 -- * 'tracePropertyClientStateSanity'
 -- * 'tracePropertyInFlight'
 --
-prop_blockFetchStaticNoOverlap :: TestChainFork -> Property
-prop_blockFetchStaticNoOverlap (TestChainFork common fork1 fork2) =
+prop_blockFetchBulkSyncStaticNoOverlap :: TestChainFork -> Property
+prop_blockFetchBulkSyncStaticNoOverlap (TestChainFork common fork1 fork2) =
     let trace = selectTraceEventsDynamic (runSimTrace simulation)
 
      in counterexample ("\nTrace:\n" ++ unlines (map show trace)) $
@@ -156,10 +157,10 @@ prop_blockFetchStaticNoOverlap (TestChainFork common fork1 fork2) =
 -- * 'tracePropertyClientStateSanity'
 -- * 'tracePropertyInFlight'
 --
--- TODO: 'prop_blockFetchStaticWithOverlap' fails if we introduce delays. issue #2622
+-- TODO: 'prop_blockFetchBulkSyncStaticWithOverlap' fails if we introduce delays. issue #2622
 --
-prop_blockFetchStaticWithOverlap :: TestChainFork -> Property
-prop_blockFetchStaticWithOverlap (TestChainFork _common fork1 fork2) =
+prop_blockFetchBulkSyncStaticWithOverlap :: TestChainFork -> Property
+prop_blockFetchBulkSyncStaticWithOverlap (TestChainFork _common fork1 fork2) =
     let trace = selectTraceEventsDynamic (runSimTrace simulation)
 
      in counterexample ("\nTrace:\n" ++ unlines (map show trace)) $
@@ -206,8 +207,7 @@ chainPoints = map (castPoint . blockPoint)
             . AnchoredFragment.toOldestFirst
 
 data Example1TraceEvent =
-     TraceFetchDecision       [TraceLabelPeer Int
-                                (FetchDecision [Point BlockHeader])]
+     TraceFetchDecision       (TraceDecisionEvent Int BlockHeader)
    | TraceFetchClientState    (TraceLabelPeer Int
                                 (TraceFetchClientState BlockHeader))
    | TraceFetchClientSendRecv (TraceLabelPeer Int
@@ -223,7 +223,8 @@ instance Show Example1TraceEvent where
 -- blocks in the 'FetchRequest's added by the decision logic and the blocks
 -- received by the fetch clients; check that the ordered sequence of blocks
 -- requested and completed by both fetch clients is exactly the sequence
--- expected. The expected sequence is exactly the chain suffixes in order.
+-- expected. The expected sequence is exactly the longest chain suffix, or
+-- either of them if they are of equal length.
 --
 -- This property is stronger than 'tracePropertyBlocksRequestedAndRecievedAllPeers'
 -- since it works with sequences rather than sets and for each chain
@@ -240,15 +241,24 @@ tracePropertyBlocksRequestedAndRecievedPerPeer
   -> [Example1TraceEvent]
   -> Property
 tracePropertyBlocksRequestedAndRecievedPerPeer fork1 fork2 es =
-      requestedFetchPoints === requiredFetchPoints
- .&&. receivedFetchPoints  === requiredFetchPoints
+       counterexample "should request the expected blocks"
+         (disjoin $ map (requestedFetchPoints ===) requiredFetchPoints)
+  .&&. counterexample "should receive the expected blocks"
+         (disjoin $ map (receivedFetchPoints ===) requiredFetchPoints)
   where
     requiredFetchPoints =
+      if AnchoredFragment.length fork1 == AnchoredFragment.length fork2
+        then [ requiredFetchPointsFor 1 fork1
+             , requiredFetchPointsFor 2 fork2
+             , Map.union (requiredFetchPointsFor 1 fork1) (requiredFetchPointsFor 2 fork2)
+             ]
+        else if AnchoredFragment.length fork1 < AnchoredFragment.length fork2
+          then [requiredFetchPointsFor 2 fork2]
+          else [requiredFetchPointsFor 1 fork1]
+
+    requiredFetchPointsFor peer fork =
       Map.filter (not . Prelude.null) $
-      Map.fromList $
-        [ (1, chainPoints fork1)
-        , (2, chainPoints fork2)
-        ]
+      Map.fromList [ (peer, chainPoints fork) ]
 
     requestedFetchPoints :: Map Int [Point BlockHeader]
     requestedFetchPoints =
@@ -274,8 +284,8 @@ tracePropertyBlocksRequestedAndRecievedPerPeer fork1 fork2 es =
 -- blocks in the 'FetchRequest's added by the decision logic and the blocks
 -- received by the fetch clients; check that the set of all blocks requested
 -- across the two peers is the set of blocks we expect, and similarly for the
--- set of all blocks received. The expected set of blocks is the union of the
--- blocks on the two candidate chains.
+-- set of all blocks received. The expected set of blocks is the block of the
+-- longest candidate chain, or either of them if they have the same size.
 --
 -- This property is weaker than 'tracePropertyBlocksRequestedAndRecievedPerPeer'
 -- since it does not involve order or frequency, but it holds for the general
@@ -287,11 +297,23 @@ tracePropertyBlocksRequestedAndRecievedAllPeers
   -> [Example1TraceEvent]
   -> Property
 tracePropertyBlocksRequestedAndRecievedAllPeers fork1 fork2 es =
-      requestedFetchPoints === requiredFetchPoints
- .&&. receivedFetchPoints  === requiredFetchPoints
+       counterexample "should request the expected blocks"
+         (disjoin $ map (requestedFetchPoints ===) requiredFetchPoints)
+  .&&. counterexample "should receive the expected blocks"
+         (disjoin $ map (receivedFetchPoints ===) requiredFetchPoints)
   where
     requiredFetchPoints =
-      Set.fromList (chainPoints fork1 ++ chainPoints fork2)
+      if AnchoredFragment.length fork1 == AnchoredFragment.length fork2
+        then [ requiredFetchPointsFor fork1
+             , requiredFetchPointsFor fork2
+             , Set.union (requiredFetchPointsFor fork1) (requiredFetchPointsFor fork2)
+             ]
+        else if AnchoredFragment.length fork1 < AnchoredFragment.length fork2
+          then [requiredFetchPointsFor fork2]
+          else [requiredFetchPointsFor fork1]
+
+    requiredFetchPointsFor fork =
+      Set.fromList $ chainPoints fork
 
     requestedFetchPoints :: Set (Point BlockHeader)
     requestedFetchPoints =
@@ -504,7 +526,7 @@ tracePropertyInFlight =
     checkTrace Nothing reqsInFlight []
       | reqsInFlight > 0
       = counterexample
-          ("traceProeprtyInFlight: reqsInFlight = " ++ show reqsInFlight ++ " ≠ 0")
+          ("tracePropertyInFlight: reqsInFlight = " ++ show reqsInFlight ++ " ≠ 0")
           False
       | otherwise
       = property True
