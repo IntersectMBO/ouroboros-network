@@ -24,6 +24,10 @@
 
 * Make it build with ghc-9.10
 
+* added `compareLedgerPeerSnapshotApproximate` function which compares
+  two snapshots for approximate equality wrt stake distribution and
+  fully qualified domain names.
+
 ## 0.7.3.0 -- 2024-06-07
 
 ### Breaking changes

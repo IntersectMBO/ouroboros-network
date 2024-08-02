@@ -654,6 +654,13 @@ peerSelectionGovernorLoop tracer
 
       <> Monitor.connections          actions st
       <> Monitor.jobs                 jobPool st
+      -- This job monitors for changes in big ledger peer snapshot file (eg. reload)
+      -- and copies it into the governor's private state. When a change is detected,
+      -- it also flips private state LedgerStateJudgement to TooYoung so that it
+      -- can launch the appropriate verification task in the job pool when external
+      -- LedgerStateJudgement is TooOld. If the verification job detects a discrepancy
+      -- vs. big peers on the ledger, it throws and the node is shut down.
+      <> Monitor.ledgerPeerSnapshotChange st actions
       -- In Genesis consensus mode, this is responsible for settings targets on the basis
       -- of the ledger state judgement. It takes into account whether
       -- the churn governor is running via a tmvar such that targets are set

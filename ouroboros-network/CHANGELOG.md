@@ -39,7 +39,9 @@
   peers
 * Implemented separate configurable peer selection targets for Praos and
   Genesis consensus modes. Genesis mode may use more big ledger peers when
-  a node is syncing up. 
+* Implemented verification of big ledger peer snapshot when syncing reaches
+  the point at which the snapshot was taken. An error is raised when there's
+  a mismatch detected. 
 
 ## 0.16.1.1 -- 2024-06-28
 

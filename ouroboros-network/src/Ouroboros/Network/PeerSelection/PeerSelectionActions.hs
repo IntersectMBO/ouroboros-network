@@ -59,7 +59,7 @@ data PeerSelectionActionsArgs peeraddr peerconn exception m = PeerSelectionActio
   psReadTargets               :: STM m PeerSelectionTargets,
   peerTargets                 :: ConsensusModePeerTargets,
   -- ^ peer selection governor know, established and active targets
-  psJudgement                 :: STM m LedgerStateJudgement,
+  getLedgerStateCtx          :: LedgerPeersConsensusInterface m,
   -- ^ Is consensus close to current slot?
   psReadLocalRootPeers        :: STM m [(HotValency, WarmValency, Map RelayAccessPoint (PeerAdvertise, PeerTrustable))],
   psReadPublicRootPeers       :: STM m (Map RelayAccessPoint PeerAdvertise),
@@ -73,8 +73,9 @@ data PeerSelectionActionsArgs peeraddr peerconn exception m = PeerSelectionActio
   psUpdateOutboundConnectionsState
                               :: OutboundConnectionsState -> STM m (),
   -- ^ Callback which updates information about outbound connections state.
-  psReadInboundPeers          :: m (Map peeraddr PeerSharing)
+  psReadInboundPeers          :: m (Map peeraddr PeerSharing),
   -- ^ inbound duplex peers
+  readLedgerPeerSnapshot      :: STM m (Maybe LedgerPeerSnapshot)
   }
 
 -- | Record of remaining parameters for withPeerSelectionActions
@@ -114,7 +115,7 @@ withPeerSelectionActions
     psPublicRootPeersTracer = publicTracer,
     peerTargets,
     psReadTargets = selectionTargets,
-    psJudgement = judgement,
+    getLedgerStateCtx,
     psReadLocalRootPeers = localRootPeers,
     psReadPublicRootPeers = publicRootPeers,
     psReadUseBootstrapPeers = useBootstrapped,
@@ -122,7 +123,8 @@ withPeerSelectionActions
     psPeerConnToPeerSharing = peerConnToPeerSharing,
     psReadPeerSharingController = sharingController,
     psReadInboundPeers = readInboundPeers,
-    psUpdateOutboundConnectionsState = updateOutboundConnectionsState }
+    psUpdateOutboundConnectionsState = updateOutboundConnectionsState,
+    readLedgerPeerSnapshot }
   ledgerPeersArgs
   PeerSelectionActionsDiffusionMode { psPeerStateActions = peerStateActions }
   k = do
@@ -141,8 +143,9 @@ withPeerSelectionActions
                                        peerTargets,
                                        readUseBootstrapPeers = useBootstrapped,
                                        readInboundPeers,
-                                       readLedgerStateJudgement = judgement,
-                                       updateOutboundConnectionsState }
+                                       getLedgerStateCtx,
+                                       updateOutboundConnectionsState,
+                                       readLedgerPeerSnapshot }
           withAsync
             (localRootPeersProvider
               localTracer
@@ -167,7 +170,7 @@ withPeerSelectionActions
       -- Check if the node is in a sensitive state
       usingBootstrapPeers <- atomically
                            $ requiresBootstrapPeers <$> useBootstrapped
-                                                    <*> judgement
+                                                    <*> lpGetLedgerStateJudgement getLedgerStateCtx
       if usingBootstrapPeers
          then do
           -- If the ledger state is in sensitive state we should get trustable peers.

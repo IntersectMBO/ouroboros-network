@@ -1096,7 +1096,8 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
         show a
       peerSelectionTraceMap a@TraceChurnTimeout {}                   =
         show a
-
+      peerSelectionTraceMap (TraceVerifyPeerSnapshot result)         =
+        "TraceVerifyPeerSnapshot " <> show result
       eventsSeenNames = map peerSelectionTraceMap events
 
    -- TODO: Add checkCoverage here

@@ -25,6 +25,7 @@ module Ouroboros.Network.PeerSelection.LedgerPeers.Type
   , LedgerPeersKind (..)
   , LedgerPeerSnapshot (.., LedgerPeerSnapshot)
   , isLedgerPeersEnabled
+  , compareLedgerPeerSnapshotApproximate
   ) where
 
 import Control.Monad (forM)
@@ -63,6 +64,26 @@ pattern LedgerPeerSnapshot payload <- LedgerPeerSnapshotV1 payload where
   LedgerPeerSnapshot payload = LedgerPeerSnapshotV1 payload
 
 {-# COMPLETE LedgerPeerSnapshot #-}
+
+-- | Since ledger peer snapshot is serialised with all domain names
+--   fully qualified, and all stake values are approximate in floating
+--   point, comparison is necessarily approximate as well.
+--   The candidate argument is processed here to simulate a round trip
+--   by the serialisation mechanism and then compared to the baseline
+--   argument, which is assumed that it was actually processed this way
+--   when a snapshot was created earlier, and hence it is approximate as well.
+--   The two approximate values should be equal if they were created
+--   from the same 'faithful' data.
+--
+compareLedgerPeerSnapshotApproximate :: LedgerPeerSnapshot
+                                     -> LedgerPeerSnapshot
+                                     -> Bool
+compareLedgerPeerSnapshotApproximate baseline candidate =
+  case tripIt of
+    Success candidate' -> candidate' == baseline
+    Error _            -> False
+  where
+    tripIt = fromJSON . toJSON $ candidate
 
 -- | In case the format changes in the future, this function provides a migration functionality
 -- when possible.

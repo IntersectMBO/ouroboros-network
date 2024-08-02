@@ -145,10 +145,7 @@ import Control.Concurrent.Class.MonadSTM.Strict
 import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.ExitPolicy
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
-import Ouroboros.Network.PeerSelection.LedgerPeers (IsBigLedgerPeer,
-           LedgerPeersKind)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-           (LedgerStateJudgement (..), UseLedgerPeers (..))
 import Ouroboros.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
@@ -394,9 +391,9 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        -- | Read the current bootstrap peers flag
        readUseBootstrapPeers :: STM m UseBootstrapPeers,
 
-       -- | Read the current ledger state judgement
+       -- | Read the current ledger state
        --
-       readLedgerStateJudgement :: STM m LedgerStateJudgement,
+       getLedgerStateCtx :: LedgerPeersConsensusInterface m,
 
        -- | Callback provided by consensus to inform it if the node is
        -- connected to only local roots or also some external peers.
@@ -405,8 +402,11 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        -- simply refuse to transition from TooOld to YoungEnough while
        -- it only has local peers.
        --
-       updateOutboundConnectionsState :: OutboundConnectionsState -> STM m ()
+       updateOutboundConnectionsState :: OutboundConnectionsState -> STM m (),
 
+       -- | Read the current state of ledger peer snapshot
+       --
+       readLedgerPeerSnapshot :: STM m (Maybe LedgerPeerSnapshot)
      }
 
 -- | Interfaces required by the peer selection governor, which do not need to
@@ -579,9 +579,11 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
 
        -- | Time to query of inbound peers time.
        --
-       inboundPeersRetryTime       :: !Time
+       inboundPeersRetryTime       :: !Time,
 
-
+       -- | Internal state of ledger peer snapshot
+       --
+       ledgerPeerSnapshot          :: Maybe LedgerPeerSnapshot
 --     TODO: need something like this to distinguish between lots of bad peers
 --     and us getting disconnected from the network locally. We don't want a
 --     network disconnect to cause us to flush our full known peer set by
@@ -1232,7 +1234,8 @@ emptyPeerSelectionState rng consensusMode =
       bootstrapPeersFlag          = DontUseBootstrapPeers,
       hasOnlyBootstrapPeers       = False,
       bootstrapPeersTimeout       = Nothing,
-      inboundPeersRetryTime       = Time 0
+      inboundPeersRetryTime       = Time 0,
+      ledgerPeerSnapshot          = Nothing
     }
 
 
@@ -1707,6 +1710,7 @@ data TracePeerSelection peeraddr =
      | TraceOnlyBootstrapPeers
      | TraceBootstrapPeersFlagChangedWhilstInSensitiveState
      | TraceUseBootstrapPeersChanged UseBootstrapPeers
+     | TraceVerifyPeerSnapshot Bool
 
      --
      -- Critical Failures
