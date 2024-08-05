@@ -21,17 +21,18 @@ import GHC.Stack (HasCallStack)
 
 import Control.Monad (guard)
 
-import Ouroboros.Network.AnchoredFragment (AnchoredSeq (..), AnchoredFragment)
+import Ouroboros.Network.AnchoredFragment (AnchoredFragment, AnchoredSeq (..))
 import Ouroboros.Network.AnchoredFragment qualified as AF
-import Ouroboros.Network.BlockFetch.DeltaQ (PeerFetchInFlightLimits (..))
 import Ouroboros.Network.Block
+import Ouroboros.Network.BlockFetch.DeltaQ (PeerFetchInFlightLimits (..))
 import Ouroboros.Network.Point (withOriginToMaybe)
 
 import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..),
            PeerFetchInFlight (..), PeerFetchStatus (..))
 import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..))
-import Ouroboros.Network.BlockFetch.DeltaQ (PeerGSV (..), SizeInBytes, calculatePeerFetchInFlightLimits,
-           comparePeerGSV, comparePeerGSV', estimateResponseDeadlineProbability)
+import Ouroboros.Network.BlockFetch.DeltaQ (PeerGSV (..), SizeInBytes,
+           calculatePeerFetchInFlightLimits, comparePeerGSV, comparePeerGSV',
+           estimateResponseDeadlineProbability)
 
 
 data FetchDecisionPolicy header = FetchDecisionPolicy {

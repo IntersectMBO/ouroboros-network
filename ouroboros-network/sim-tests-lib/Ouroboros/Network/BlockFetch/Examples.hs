@@ -40,12 +40,12 @@ import Ouroboros.Network.Block
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Pipelined
 
-import qualified Ouroboros.Network.AnchoredFragment as AF
+import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.ControlMessage (ControlMessageSTM)
 
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.BlockFetch.Client
-import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation(..))
+import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation (..))
 import Ouroboros.Network.Channel
 import Ouroboros.Network.DeltaQ
 import Ouroboros.Network.Driver
@@ -56,8 +56,8 @@ import Ouroboros.Network.Protocol.BlockFetch.Server
 import Ouroboros.Network.Protocol.BlockFetch.Type
 import Ouroboros.Network.Util.ShowProxy
 
-import Ouroboros.Network.Mock.ConcreteBlock
 import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
+import Ouroboros.Network.Mock.ConcreteBlock
 
 
 -- | Run a single block fetch protocol until the chain is downloaded.

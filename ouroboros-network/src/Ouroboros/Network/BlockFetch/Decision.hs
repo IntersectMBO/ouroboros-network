@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -22,19 +21,23 @@ module Ouroboros.Network.BlockFetch.Decision
   , fetchRequestDecisions
   ) where
 
-import Data.Hashable
-import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime(..))
+import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime (..))
 import Control.Tracer (Tracer)
+import Data.Hashable
 
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import Ouroboros.Network.Block
-import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..), PeersOrder (..))
-import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..), ChainSelStarvation)
+import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..),
+           PeersOrder (..))
+import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation,
+           FetchMode (..))
 
-import Ouroboros.Network.BlockFetch.Decision.Deadline (FetchDecisionPolicy (..), PeerInfo, FetchDecision, FetchDecline (..),
-                                                     filterPlausibleCandidates, dropAlreadyFetched, dropAlreadyInFlightWithPeer,
-                                                     selectForkSuffixes, fetchDecisionsDeadline, prioritisePeerChains, fetchRequestDecisions)
 import Ouroboros.Network.BlockFetch.Decision.BulkSync (fetchDecisionsBulkSyncM)
+import Ouroboros.Network.BlockFetch.Decision.Deadline (FetchDecision,
+           FetchDecisionPolicy (..), FetchDecline (..), PeerInfo,
+           dropAlreadyFetched, dropAlreadyInFlightWithPeer,
+           fetchDecisionsDeadline, fetchRequestDecisions,
+           filterPlausibleCandidates, prioritisePeerChains, selectForkSuffixes)
 import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
 
 fetchDecisions
