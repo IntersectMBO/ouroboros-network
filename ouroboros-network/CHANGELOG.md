@@ -4,9 +4,6 @@
 
 ### Breaking changes
 
-* moved `accBigPoolStake` and `reRelativeStake` to ouroboros-networking-api
-  in order to expose functionality of creating snapshots of big ledger peers,
-  eg. for Genesis consensus mode.
 * Introduced `daReadLedgerPeerSnapshot` to `P2P.ArgumentsExtra` which holds
   a `Maybe LedgerPeerSnapshot` from a node's configuration. If present, it
   may be used to pick big ledger peers by the peer selection governor when
@@ -26,11 +23,6 @@
 
 ### Non-Breaking changes
 
-* Refactored signature of `LedgerPeers.ledgerPeersThread` for concision
-  and use of previously created records for shunting related values around.
-- Refactored Testnet suite according to changed Signal API.
-- Fixed block fetch client assertion failure
-* Make it build with ghc-9.10
 * Implemented provision of big ledger peers from the snapshot by `ledgerPeersThread`
 * Added property test checking if `ledgerPeersThread` is providing big ledger peers
   from the snapshot when appropriate conditions are met
@@ -42,6 +34,22 @@
 * Implemented verification of big ledger peer snapshot when syncing reaches
   the point at which the snapshot was taken. An error is raised when there's
   a mismatch detected. 
+
+## 0.17.0.0 -- 2024-08-07
+
+### Breaking changes
+
+* moved `accBigPoolStake` and `reRelativeStake` to ouroboros-networking-api
+  in order to expose functionality of creating snapshots of big ledger peers,
+  eg. for Genesis consensus mode.
+
+### Non-Breaking changes
+
+* Refactored signature of `LedgerPeers.ledgerPeersThread` for concision
+  and use of previously created records for shunting related values around.
+- Refactored Testnet suite according to changed Signal API.
+- Fixed block fetch client assertion failure
+* Make it build with ghc-9.10
 
 ## 0.16.1.1 -- 2024-06-28
 
