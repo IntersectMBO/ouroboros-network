@@ -1,6 +1,6 @@
 cabal-version:          3.0
 name:                   ouroboros-network-protocols
-version:                0.9.0.0
+version:                0.10.0.0
 synopsis:               Ouroboros Network Protocols
 description:            Ouroboros Network Protocols.
 license:                Apache-2.0
@@ -226,7 +226,7 @@ test-suite test
                        ouroboros-network-api,
                        ouroboros-network-mock,
                        ouroboros-network-protocols:testlib,
-                       ouroboros-network-testing ^>= 0.6.0
+                       ouroboros-network-testing ^>= 0.7.0
 
   ghc-options:         -threaded
                        -Wall

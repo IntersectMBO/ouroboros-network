@@ -2,6 +2,8 @@
 
 ## next release
 
+## 0.7.4.0 -- 2024-08
+
 ### Breaking changes
 
 ### Non-Breaking changes
@@ -18,6 +20,8 @@
 * Added `Measure` and `BoundedMeasure` instances for `SizeInBytes`.
 
 * Make it build with ghc-9.10
+
+* Added Monoid and Semigroup instances for `SizeInBytes`
 
 ## 0.7.3.0 -- 2024-06-07
 

@@ -2,6 +2,8 @@
 
 ## next version
 
+## 0.17.0.0 -- 2024-08
+
 ### Breaking changes
 
 * moved `accBigPoolStake` and `reRelativeStake` to ouroboros-networking-api

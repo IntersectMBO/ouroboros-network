@@ -2,6 +2,8 @@
 
 ## Next version
 
+## 0.1.0.1 -- 2024-08-
+
 * Make it build with ghc-9.10
   * fix base upper bound
 

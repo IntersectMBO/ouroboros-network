@@ -2,6 +2,8 @@
 
 ## next version
 
+## 0.3.1.3 -- 2024-08
+
 ### Breaking changes
 
 ### Non-breaking changes

@@ -1,6 +1,6 @@
 cabal-version:          3.0
 name:                   ouroboros-network
-version:                0.16.1.1
+version:                0.17.0.0
 synopsis:               A networking layer for the Ouroboros blockchain protocol
 description:            A networking layer for the Ouroboros blockchain protocol.
 license:                Apache-2.0
@@ -134,9 +134,9 @@ library
                        io-classes-mtl   ^>=0.1,
                        network-mux,
                        si-timers,
-                       ouroboros-network-api       ^>=0.7.2,
-                       ouroboros-network-framework ^>=0.13.1,
-                       ouroboros-network-protocols ^>=0.9,
+                       ouroboros-network-api       ^>=0.7.4,
+                       ouroboros-network-framework ^>=0.13.2.2,
+                       ouroboros-network-protocols ^>=0.10,
                        strict-stm,
                        typed-protocols  ^>=0.1.1,
   if !os(windows)
@@ -203,7 +203,7 @@ library sim-tests-lib
                        ouroboros-network-protocols,
                        ouroboros-network-protocols:testlib,
                        ouroboros-network-framework:testlib,
-                       ouroboros-network-testing ^>= 0.6.0,
+                       ouroboros-network-testing ^>= 0.7.0,
                        si-timers,
                        strict-stm,
                        typed-protocols,
@@ -304,7 +304,7 @@ test-suite io-tests
                        ouroboros-network-protocols,
                        ouroboros-network-protocols:testlib,
                        ouroboros-network-framework:testlib,
-                       ouroboros-network-testing ^>= 0.6.1.0,
+                       ouroboros-network-testing ^>= 0.7.0.0,
                        si-timers,
                        strict-stm,
                        with-utf8,
