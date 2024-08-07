@@ -586,7 +586,7 @@ receivedTxIds tracer sharedVar getMempoolSnapshot peeraddr reqNo txidsSeq txidsM
   st <- atomically $ do
     MempoolSnapshot{mempoolHasTx} <- getMempoolSnapshot
     stateTVar sharedVar ((\a -> (a,a)) . receivedTxIdsImpl mempoolHasTx peeraddr reqNo txidsSeq txidsMap)
-  traceWith tracer (DebugSharedTxState st)
+  traceWith tracer (DebugSharedTxState "receivedTxIds" st)
 
 
 -- | Include received `tx`s in `SharedTxState`.  Return number of `txids`
@@ -607,7 +607,7 @@ collectTxs tracer sharedVar peeraddr txidsRequested txsMap = do
   st <- atomically $
     stateTVar sharedVar
       ((\a -> (a,a)) . collectTxsImpl peeraddr txidsRequested txsMap)
-  traceWith tracer (DebugSharedTxState st)
+  traceWith tracer (DebugSharedTxState "collectTxs" st)
 
 --
 --
@@ -615,5 +615,5 @@ collectTxs tracer sharedVar peeraddr txidsRequested txsMap = do
 
 -- | Debug tracer.
 --
-newtype DebugSharedTxState peeraddr txid tx = DebugSharedTxState (SharedTxState peeraddr txid tx)
+data DebugSharedTxState peeraddr txid tx = DebugSharedTxState String (SharedTxState peeraddr txid tx)
   deriving Show

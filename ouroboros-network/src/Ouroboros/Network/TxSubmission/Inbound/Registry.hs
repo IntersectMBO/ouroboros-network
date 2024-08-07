@@ -247,7 +247,7 @@ decisionLogicThread tracer policy gsvVar txChannelsVar sharedStateVar = go
         let (sharedState, decisions) = makeDecisions policy sharedCtx activePeers
         writeTVar sharedStateVar sharedState
         return (decisions, sharedState)
-      traceWith tracer (DebugSharedTxState st)
+      traceWith tracer (DebugSharedTxState "decisionLogicThread" st)
       TxChannels { txChannelMap } <- readMVar txChannelsVar
       traverse_
         (\(mvar, d) -> modifyMVarWithDefault_ mvar d (\d' -> pure (d' <> d)))

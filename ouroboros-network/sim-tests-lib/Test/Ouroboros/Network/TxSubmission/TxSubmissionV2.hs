@@ -318,7 +318,7 @@ prop_txSubmission (TxSubmissionV2State state txDecisionPolicy) =
                             <$> Map.elems state'
 
       _ <- async do
-            threadDelay (simDelayTime + 100)
+            threadDelay (simDelayTime + 1000)
             atomically (traverse_ (`writeTVar` Terminate) controlMessageVars)
 
       let tracer = verboseTracer <> debugTracer

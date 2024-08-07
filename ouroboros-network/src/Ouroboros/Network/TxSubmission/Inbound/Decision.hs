@@ -266,7 +266,7 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
 
                  stAcknowledged' = Map.unionWith (+) stAcknowledged txIdsToAck
              in
-             if requestedTxIdsInflight peerTxState > 0
+             if requestedTxIdsInflight peerTxState' > 0
                then
                  ( st { stAcknowledged = stAcknowledged' }
                  , ( (peeraddr, peerTxState')
@@ -283,7 +283,7 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                  )
                else
                  ( st
-                 , ( (peeraddr, peerTxState)
+                 , ( (peeraddr, peerTxState')
                    , emptyTxDecision
                    )
                  )
@@ -354,7 +354,7 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
               stInflight' :: Map txid Int
               stInflight' = Map.unionWith (+) stInflightDelta stInflight
           in
-            if requestedTxIdsInflight peerTxState > 0
+            if requestedTxIdsInflight peerTxState'' > 0
               then
                 ( St { stInflight     = stInflight',
                        stInflightSize = sizeInflightOther + requestedTxsInflightSize',
@@ -375,7 +375,7 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                 ( st { stInflight     = stInflight',
                        stInflightSize = sizeInflightOther + requestedTxsInflightSize'
                      }
-                , ( (peeraddr, peerTxState')
+                , ( (peeraddr, peerTxState'')
                   , emptyTxDecision { txdTxsToRequest = txsToRequest }
                   )
                 )
@@ -445,10 +445,10 @@ filterActivePeers
                        txsSizeInflightPerPeer,
                        maxTxsSizeInflight,
                        txInflightMultiplicity }
-    st@SharedTxState { peerTxStates,
-                       bufferedTxs,
-                       inflightTxs,
-                       inflightTxsSize }
+    SharedTxState { peerTxStates,
+                    bufferedTxs,
+                    inflightTxs,
+                    inflightTxsSize }
     | overLimit
     = Map.filter fn peerTxStates
     | otherwise
@@ -459,24 +459,24 @@ filterActivePeers
                  <> Map.keysSet bufferedTxs
 
     fn :: PeerTxState txid tx -> Bool
-    fn ps@PeerTxState { unacknowledgedTxIds,
-                        requestedTxIdsInflight } =
+    fn PeerTxState { unacknowledgedTxIds,
+                     requestedTxIdsInflight } =
         --    hasTxIdsToAcknowledge st ps ||
            requestedTxIdsInflight == 0 -- document why it's not <= maxTxIdsInFlightPerPeer
-        && requestedTxIdsInflight + numOfUnacked < maxUnacknowledgedTxIds
+        && requestedTxIdsInflight + numOfUnacked <= maxUnacknowledgedTxIds
       where
         numOfUnacked   = fromIntegral (StrictSeq.length unacknowledgedTxIds)
 
     gn :: PeerTxState txid tx -> Bool
-    gn ps@PeerTxState { unacknowledgedTxIds,
-                        requestedTxIdsInflight,
-                        requestedTxsInflight,
-                        requestedTxsInflightSize,
-                        availableTxIds,
-                        unknownTxs } =
+    gn PeerTxState { unacknowledgedTxIds,
+                     requestedTxIdsInflight,
+                     requestedTxsInflight,
+                     requestedTxsInflightSize,
+                     availableTxIds,
+                     unknownTxs } =
         -- hasTxIdsToAcknowledge st ps ||
            (    requestedTxIdsInflight == 0
-             && requestedTxIdsInflight + numOfUnacked < maxUnacknowledgedTxIds
+             && requestedTxIdsInflight + numOfUnacked <= maxUnacknowledgedTxIds
            )
         || (underSizeLimit && not (Map.null downloadable))
       where
