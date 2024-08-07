@@ -3705,7 +3705,8 @@ selectGovState :: Eq a
 selectGovState f consensusMode =
     Signal.nub
   -- TODO: #3182 Rng seed should come from quickcheck.
-  . Signal.fromChangeEvents (f $! Governor.emptyPeerSelectionState (mkStdGen 42) consensusMode)
+  --       and `MinBigLedgerPeersForTrustedState`
+  . Signal.fromChangeEvents (f $! Governor.emptyPeerSelectionState (mkStdGen 42) consensusMode (MinBigLedgerPeersForTrustedState 0))
   . Signal.selectEvents
       (\case GovernorDebug (TraceGovernorState _ _ st) -> Just $! f st
              _                                         -> Nothing)
@@ -3744,7 +3745,7 @@ _governorFindingPublicRoots :: Int
 _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrapPeers readLedgerStateJudgement peerSharing olocVar consensusMode = do
     countersVar <- newTVarIO emptyPeerSelectionCounters
     publicStateVar <- makePublicPeerSelectionStateVar
-    debugStateVar <- newTVarIO $ emptyPeerSelectionState (mkStdGen 42) consensusMode
+    debugStateVar <- newTVarIO $ emptyPeerSelectionState (mkStdGen 42) consensusMode (MinBigLedgerPeersForTrustedState 0)
     dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
     let interfaces = PeerSelectionInterfaces {
             countersVar,
@@ -3765,6 +3766,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
           -- TODO: #3182 Rng seed should come from quickcheck.
           (mkStdGen 42)
           consensusMode
+          (MinBigLedgerPeersForTrustedState 0)
           actions
             { requestPublicRootPeers = \_ ->
                 transformPeerSelectionAction requestPublicRootPeers }

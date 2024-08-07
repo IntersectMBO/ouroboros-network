@@ -94,7 +94,8 @@ import Simulation.Network.Snocket (AddressType (..), FD)
 
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-           (LedgerPeersConsensusInterface, UseLedgerPeers)
+           (LedgerPeersConsensusInterface,
+           MinBigLedgerPeersForTrustedState (..), UseLedgerPeers)
 import Ouroboros.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
@@ -404,6 +405,8 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
       , Diff.P2P.daBulkChurnInterval      = 300
       , Diff.P2P.daReadLedgerPeerSnapshot = pure Nothing -- ^ tested independently
       , Diff.P2P.daConsensusMode          = aConsensusMode na
+      , Diff.P2P.daMinBigLedgerPeersForTrustedState
+          = MinBigLedgerPeersForTrustedState 0 -- ^ todo: fix
       }
 
     appArgs :: Node.AppArgs BlockHeader Block m
