@@ -2,9 +2,13 @@
 
 ## next release
 
-## 0.7.4.0 -- 2024-08
+## 0.8.0.0 -- 2024-08
 
 ### Breaking changes
+
+* `LedgerPeersKind` was transplanted here from o-network because this
+  functionality needs to be exposed in support of Genesis work and
+  generation of a big ledger peer snapshot.
 
 ### Non-Breaking changes
 
