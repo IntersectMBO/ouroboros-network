@@ -1214,35 +1214,37 @@ emptyPeerSelectionCounters =
 
 emptyPeerSelectionState :: StdGen
                         -> ConsensusMode
+                        -> MinBigLedgerPeersForTrustedState
                         -> PeerSelectionState peeraddr peerconn
-emptyPeerSelectionState rng consensusMode =
+emptyPeerSelectionState rng consensusMode minActiveBigLedgerPeers =
     PeerSelectionState {
-      targets                     = nullPeerSelectionTargets,
-      localRootPeers              = LocalRootPeers.empty,
-      publicRootPeers             = PublicRootPeers.empty,
-      knownPeers                  = KnownPeers.empty,
-      establishedPeers            = EstablishedPeers.empty,
-      activePeers                 = Set.empty,
-      publicRootBackoffs          = 0,
-      publicRootRetryTime         = Time 0,
-      inProgressPublicRootsReq    = False,
-      bigLedgerPeerBackoffs       = 0,
-      bigLedgerPeerRetryTime      = Time 0,
-      inProgressBigLedgerPeersReq = False,
-      inProgressPeerShareReqs     = 0,
-      inProgressPromoteCold       = Set.empty,
-      inProgressPromoteWarm       = Set.empty,
-      inProgressDemoteWarm        = Set.empty,
-      inProgressDemoteHot         = Set.empty,
-      inProgressDemoteToCold      = Set.empty,
-      stdGen                      = rng,
-      ledgerStateJudgement        = TooOld,
+      targets                          = nullPeerSelectionTargets,
+      localRootPeers                   = LocalRootPeers.empty,
+      publicRootPeers                  = PublicRootPeers.empty,
+      knownPeers                       = KnownPeers.empty,
+      establishedPeers                 = EstablishedPeers.empty,
+      activePeers                      = Set.empty,
+      publicRootBackoffs               = 0,
+      publicRootRetryTime              = Time 0,
+      inProgressPublicRootsReq         = False,
+      bigLedgerPeerBackoffs            = 0,
+      bigLedgerPeerRetryTime           = Time 0,
+      inProgressBigLedgerPeersReq      = False,
+      inProgressPeerShareReqs          = 0,
+      inProgressPromoteCold            = Set.empty,
+      inProgressPromoteWarm            = Set.empty,
+      inProgressDemoteWarm             = Set.empty,
+      inProgressDemoteHot              = Set.empty,
+      inProgressDemoteToCold           = Set.empty,
+      stdGen                           = rng,
+      ledgerStateJudgement             = TooOld,
       consensusMode,
-      bootstrapPeersFlag          = DontUseBootstrapPeers,
-      hasOnlyBootstrapPeers       = False,
-      bootstrapPeersTimeout       = Nothing,
-      inboundPeersRetryTime       = Time 0,
-      ledgerPeerSnapshot          = Nothing
+      bootstrapPeersFlag               = DontUseBootstrapPeers,
+      hasOnlyBootstrapPeers            = False,
+      bootstrapPeersTimeout            = Nothing,
+      inboundPeersRetryTime            = Time 0,
+      ledgerPeerSnapshot               = Nothing,
+      minBigLedgerPeersForTrustedState = minActiveBigLedgerPeers
     }
 
 

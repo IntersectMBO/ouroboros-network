@@ -477,11 +477,12 @@ peerSelectionGovernor :: ( Alternative (STM m)
                       -> Tracer m PeerSelectionCounters
                       -> StdGen
                       -> ConsensusMode
+                      -> MinBigLedgerPeersForTrustedState -- ^ Genesis parameter
                       -> PeerSelectionActions peeraddr peerconn m
                       -> PeerSelectionPolicy  peeraddr m
                       -> PeerSelectionInterfaces peeraddr peerconn m
                       -> m Void
-peerSelectionGovernor tracer debugTracer countersTracer fuzzRng consensusMode actions policy interfaces =
+peerSelectionGovernor tracer debugTracer countersTracer fuzzRng consensusMode minActiveBigLedgerPeers actions policy interfaces =
     JobPool.withJobPool $ \jobPool ->
       peerSelectionGovernorLoop
         tracer
@@ -491,7 +492,7 @@ peerSelectionGovernor tracer debugTracer countersTracer fuzzRng consensusMode ac
         policy
         interfaces
         jobPool
-        (emptyPeerSelectionState fuzzRng consensusMode)
+        (emptyPeerSelectionState fuzzRng consensusMode minActiveBigLedgerPeers)
 
 -- | Our pattern here is a loop with two sets of guarded actions:
 --
