@@ -2,7 +2,15 @@
 
 ## next release
 
+## 0.10.0.0 -- 2024-08-07
+
 ### Breaking changes
+
+* Use `SizeInBytes` newtype instead of the `TxSizeInBytes` type alias.
+  `TxSizeInBytes` is now deprecated.
+  NumTxIdsToAck
+* Use `NumTxIdsToAck` newtype wrapper for number of unacked txid's
+  in `txSubmissionInbound` and `txSubmissionOutbound`
 
 ## 0.9.0.0 -- 2024-06-07
 
@@ -26,8 +34,6 @@
 * Refactored CBOR mini-protocols codecs to a more modular structure
 * Added `deepseq` dependency and implemented `NFData` for `testlib` types.
 * Added miniprotocols codec benchmarks
-* Use `SizeInBytes` newtype instead of the `TxSizeInBytes` type aliase.
-  `TxSizeInBytes` is now deprecated.
 
 ## 0.8.0.0 -- 2024-02-21
 

@@ -2,6 +2,8 @@
 
 ## next version
 
+## 0.7.0.0 -- 2024-08-07
+
 ### Breaking changes
 
 - Improvements and bug fixes to Signal API

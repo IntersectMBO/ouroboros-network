@@ -4,6 +4,26 @@
 
 ### Breaking changes
 
+* Renamed:
+  * `accBigPoolStake` -> `accumulateBigLedgerStake`
+     and `reRelativeStake` -> `recomputeRelativeStake`
+
+### Non-breaking changes
+
+* Added `ConsensusMode` which must be passed to start diffusion in the
+  appropriate mode 
+* added `compareLedgerPeerSnapshotApproximate` function which compares
+  two snapshots for approximate equality wrt stake distribution and
+  fully qualified domain names. 
+
+## 0.8.0.0 -- 2024-08-07
+
+### Breaking changes
+
+* `LedgerPeersKind` was transplanted here from o-network because this
+  functionality needs to be exposed in support of Genesis work and
+  generation of a big ledger peer snapshot.
+
 ### Non-Breaking changes
 
 * Transplanted `accBigPoolStake` and `reRelativeStake` from ouroboros-network
@@ -14,19 +34,12 @@
   * New type supports CBOR & JSON for serialisation purposes.
   * Ledger peer snapshot is versioned in case changes need to be made to the
     encoding format in the future.
-* Renamed:
-  * `accBigPoolStake` -> `accumulateBigLedgerStake`
-     and `reRelativeStake` -> `recomputeRelativeStake`
-* Added `ConsensusMode` which must be passed to start diffusion in the
-  appropriate mode 
 
 * Added `Measure` and `BoundedMeasure` instances for `SizeInBytes`.
 
 * Make it build with ghc-9.10
 
-* added `compareLedgerPeerSnapshotApproximate` function which compares
-  two snapshots for approximate equality wrt stake distribution and
-  fully qualified domain names.
+* Added Monoid and Semigroup instances for `SizeInBytes`
 
 ## 0.7.3.0 -- 2024-06-07
 
