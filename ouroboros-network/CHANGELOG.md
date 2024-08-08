@@ -23,6 +23,9 @@
 * Added `daMinBigLedgerPeersForTrustedState` to `ArgumentsExtra` when starting diffusion.
   It is used by `outboundConnectionsState` when signaling trust state when syncing in
   Genesis mode. Default value is provided by the Configuration module.
+* `txSubmissionInbound` takes an additional callback which exposes
+  CBOR-encoded transaction size as it is when transmitted over the
+  network, except for some top level wrapping (cf. PR#4926 description)
 
 ### Non-Breaking changes
 
