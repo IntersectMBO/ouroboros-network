@@ -23,6 +23,9 @@
       governors should use. Genesis may use two different sets of targets
       depending on ledger state, while Praos uses only one set. Either set
       once active is appropriately churned. 
+* `txSubmissionInbound` and `txSubmissionOutbound` take an additional callback
+  which expose CBOR-encoded transaction size as it is when transmitted over the
+  network.
 
 ### Non-Breaking changes
 
