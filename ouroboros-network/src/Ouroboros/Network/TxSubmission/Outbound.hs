@@ -26,6 +26,7 @@ import Ouroboros.Network.ControlMessage (ControlMessage, ControlMessageSTM,
            timeoutWithControlMessage)
 import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import Ouroboros.Network.Protocol.TxSubmission2.Client
+import Ouroboros.Network.SizeInBytes
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
            TxSubmissionMempoolReader (..))
@@ -80,10 +81,11 @@ txSubmissionOutbound
   => Tracer m (TraceTxSubmissionOutbound txid tx)
   -> NumTxIdsToAck  -- ^ Maximum number of unacknowledged txids allowed
   -> TxSubmissionMempoolReader txid tx idx m
+  -> (tx -> SizeInBytes) -- ^ get size of CBOR encoded transaction
   -> NodeToNodeVersion
   -> ControlMessageSTM m
   -> TxSubmissionClient txid tx m ()
-txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version controlMessageSTM =
+txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _txSize _version controlMessageSTM =
     TxSubmissionClient (pure (client Seq.empty mempoolZeroIdx))
   where
     client :: StrictSeq (txid, idx) -> idx -> ClientStIdle txid tx m ()

@@ -40,6 +40,7 @@ import Network.TypedProtocol.Pipelined (N, Nat (..), natToInt)
 
 import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import Ouroboros.Network.Protocol.TxSubmission2.Server
+import Ouroboros.Network.SizeInBytes
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
            TxSubmissionMempoolReader (..))
@@ -181,9 +182,10 @@ txSubmissionInbound
   -> NumTxIdsToAck  -- ^ Maximum number of unacknowledged txids allowed
   -> TxSubmissionMempoolReader txid tx idx m
   -> TxSubmissionMempoolWriter txid tx idx m
+  -> (tx -> SizeInBytes) -- ^ get size of CBOR encoded transaction
   -> NodeToNodeVersion
   -> TxSubmissionServerPipelined txid tx m ()
-txSubmissionInbound tracer (NumTxIdsToAck maxUnacked) mpReader mpWriter _version =
+txSubmissionInbound tracer (NumTxIdsToAck maxUnacked) mpReader mpWriter _txSize _version =
     TxSubmissionServerPipelined $
       continueWithStateM (serverIdle Zero) initialServerState
   where
