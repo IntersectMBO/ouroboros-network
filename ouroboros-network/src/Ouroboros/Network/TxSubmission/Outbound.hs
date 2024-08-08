@@ -27,6 +27,7 @@ import Ouroboros.Network.ControlMessage (ControlMessage, ControlMessageSTM,
            timeoutWithControlMessage)
 import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import Ouroboros.Network.Protocol.TxSubmission2.Client
+import Ouroboros.Network.SizeInBytes
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
            TxSubmissionMempoolReader (..))

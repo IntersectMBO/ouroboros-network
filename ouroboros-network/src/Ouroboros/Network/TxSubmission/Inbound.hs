@@ -44,6 +44,7 @@ import Network.TypedProtocol.Pipelined (N, Nat (..), natToInt)
 import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import Ouroboros.Network.Protocol.Limits
 import Ouroboros.Network.Protocol.TxSubmission2.Server
+import Ouroboros.Network.SizeInBytes
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Inbound.Types (ProcessedTxCount (..),
            TraceTxSubmissionInbound (..), TxSubmissionMempoolWriter (..),
@@ -135,9 +136,10 @@ txSubmissionInbound
   -> NumTxIdsToAck  -- ^ Maximum number of unacknowledged txids allowed
   -> TxSubmissionMempoolReader txid tx idx m
   -> TxSubmissionMempoolWriter txid tx idx m
+  -> (tx -> SizeInBytes) -- ^ get size of CBOR encoded transaction
   -> NodeToNodeVersion
   -> TxSubmissionServerPipelined txid tx m ()
-txSubmissionInbound tracer (NumTxIdsToAck maxUnacked) mpReader mpWriter _version =
+txSubmissionInbound tracer (NumTxIdsToAck maxUnacked) mpReader mpWriter txSize _version =
     TxSubmissionServerPipelined $ do
 #ifdef TXSUBMISSION_DELAY
       -- make the client linger before asking for tx's and expending
@@ -262,8 +264,14 @@ txSubmissionInbound tracer (NumTxIdsToAck maxUnacked) mpReader mpWriter _version
         -- for. We should never get a tx we did not ask for. We take a strict
         -- approach to this and check it.
         --
-        let txsMap :: Map txid tx
-            txsMap = Map.fromList [ (txId tx, tx) | tx <- txs ]
+        let availableTxidsMap = availableTxids st
+            txsMap :: Map txid tx
+            txsMap = Map.fromList [ (txId', assert sizesMatch tx)
+                                  | tx <- txs
+                                  , let txId' = txId tx
+                                        calcSize = Just $ txSize tx
+                                        advertisedSize = availableTxidsMap Map.!? txId'
+                                        sizesMatch = calcSize == advertisedSize]
 
             txidsReceived  = Map.keysSet txsMap
             txidsRequested = Set.fromList txids
