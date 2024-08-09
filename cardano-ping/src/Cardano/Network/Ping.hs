@@ -25,7 +25,7 @@ module Cardano.Network.Ping
   , isSameVersionAndMagic
   ) where
 
-import           Control.Exception (bracket)
+import           Control.Exception (bracket, Exception (..), throwIO)
 import           Control.Monad (replicateM, unless, when)
 import           Control.Concurrent.Class.MonadSTM.Strict ( MonadSTM(atomically), takeTMVar, StrictTMVar )
 import           Control.Monad.Class.MonadTime.SI (UTCTime, diffTime, MonadMonotonicTime(getMonotonicTime), MonadTime(getCurrentTime), Time)
@@ -62,6 +62,7 @@ import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.IO as TL
 import qualified Network.Socket as Socket
 import qualified System.IO as IO
+import Codec.CBOR.Read (DeserialiseFailure)
 
 data PingOpts = PingOpts
   { pingOptsCount    :: Word32
@@ -596,6 +597,28 @@ idleTimeout = 5
 sduTimeout :: MT.DiffTime
 sduTimeout = 30
 
+data PingClientError = PingClientDeserialiseFailure DeserialiseFailure String
+                     | PingClientFindIntersectDeserialiseFailure DeserialiseFailure String
+                     | PingClientKeepAliveDeserialiseFailure DeserialiseFailure String
+                     | PingClientKeepAliveProtocolFailure KeepAliveFailure String
+                     | PingClientHandshakeFailure HandshakeFailure String
+                     | PingClientNegotiationError String [NodeVersion] String
+                     deriving Show
+
+instance Exception PingClientError where
+  displayException (PingClientDeserialiseFailure err peerStr) =
+    printf "%s Decoding error: %s" peerStr (show err)
+  displayException (PingClientFindIntersectDeserialiseFailure err peerStr) =
+    printf "%s findIntersect decoding error %s" peerStr (show err)
+  displayException (PingClientKeepAliveDeserialiseFailure err peerStr) =
+    printf "%s keepalive decoding error %s" peerStr (show err)
+  displayException (PingClientKeepAliveProtocolFailure err peerStr) =
+    printf "%s keepalive protocol error %s" peerStr (show err)
+  displayException (PingClientHandshakeFailure err peerStr) =
+    printf "%s Protocol error: %s" peerStr (show err)
+  displayException (PingClientNegotiationError err recVersions peerStr) =
+    printf "%s Version negotiation error %s\nReceived versions: %s\n" peerStr err (show recVersions)
+
 pingClient :: Tracer IO LogMsg -> Tracer IO String -> PingOpts -> [NodeVersion] -> AddrInfo -> IO ()
 pingClient stdout stderr PingOpts{..} versions peer = bracket
   (Socket.socket (Socket.addrFamily peer) Socket.Stream Socket.defaultProtocol)
@@ -623,12 +646,11 @@ pingClient stdout stderr PingOpts{..} versions peer = bracket
     unless pingOptsQuiet $ TL.hPutStrLn IO.stdout $ peerStr' <> " " <> (showHandshakeRtt $ diffTime t1_e t1_s)
 
     case CBOR.deserialiseFromBytes handshakeDec msg of
-      Left err -> eprint $ printf "%s Decoding error: %s" peerStr (show err)
-      Right (_, Left err) -> eprint $ printf "%s Protocol error: %s" peerStr (show err)
+      Left err -> throwIO (PingClientDeserialiseFailure err peerStr)
+      Right (_, Left err) -> throwIO (PingClientHandshakeFailure err peerStr)
       Right (_, Right recVersions) -> do
         case acceptVersions recVersions of
-          Left err -> do
-            eprint $ printf "%s Version negotiation error %s\nReceived versions: %s\n" peerStr err (show recVersions)
+          Left err -> throwIO (PingClientNegotiationError err recVersions peerStr)
           Right version -> do
             let isUnixSocket = case Socket.addrFamily peer of
                   Socket.AF_UNIX -> True
@@ -727,8 +749,8 @@ pingClient stdout stderr PingOpts{..} versions peer = bracket
       let rtt = toSample t_e t_s
           td' = insert rtt td
       case CBOR.deserialiseFromBytes (keepAliveRspDec version) msg of
-        Left err -> eprint $ printf "%s keepalive decoding error %s" peerStr (show err)
-        Right (_, Left err) -> eprint $ printf "%s keepalive protocol error %s" peerStr (show err)
+        Left err -> throwIO (PingClientKeepAliveDeserialiseFailure err peerStr)
+        Right (_, Left err) -> throwIO (PingClientKeepAliveProtocolFailure err peerStr)
         Right (_, Right cookie') -> do
           when (cookie' /= cookie16) $ eprint $ printf "%s cookie missmatch %d /= %d"
             peerStr cookie' cookie
@@ -749,7 +771,7 @@ pingClient stdout stderr PingOpts{..} versions peer = bracket
       !t_s <- write bearer timeoutfn $ wrap chainSyncNum InitiatorDir chainSyncFindIntersect
       (!msg, !t_e) <- nextMsg bearer timeoutfn chainSyncNum
       case CBOR.deserialiseFromBytes chainSyncIntersectNotFoundDec msg of
-           Left err -> eprint $ printf "%s findIntersect decoding error %s" peerStr (show err)
+           Left err -> throwIO (PingClientFindIntersectDeserialiseFailure err peerStr)
            Right (_, (slotNo, blockNo, hash)) ->
              let tip = PingTip (toSample t_e t_s) hash blockNo slotNo in
              if pingOptsJson then traceWith stdout $ LogMsg (encode tip)
