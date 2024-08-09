@@ -5,14 +5,17 @@
 
 module Ouroboros.Network.Diffusion.Configuration
   ( DefaultNumBootstrapPeers (..)
+  , MinBigLedgerPeersForTrustedState (..)
   , defaultNumBootstrapPeers
   , defaultAcceptedConnectionsLimit
   , defaultDiffusionMode
   , defaultPeerSharing
   , defaultBlockFetchConfiguration
   , defaultChainSyncTimeout
-  , defaultPraosTargets
-  , defaultGenesisSyncTargets
+  , defaultDeadlineTargets
+  , defaultSyncTargets
+  , defaultDeadlineChurnInterval
+  , defaultBulkChurnInterval
     -- re-exports
   , AcceptedConnectionsLimit (..)
   , BlockFetchConfiguration (..)
@@ -25,6 +28,7 @@ module Ouroboros.Network.Diffusion.Configuration
   , PeerSharing (..)
   , ConsensusMode (..)
   , defaultConsensusMode
+  , defaultMinBigLedgerPeersForTrustedState
   , defaultMiniProtocolParameters
   , deactivateTimeout
   , closeConnectionTimeout
@@ -37,6 +41,7 @@ module Ouroboros.Network.Diffusion.Configuration
   , ps_POLICY_PEER_SHARE_MAX_PEERS
   ) where
 
+import Control.Monad.Class.MonadTime.SI
 import System.Random (randomRIO)
 
 import Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
@@ -51,6 +56,8 @@ import Ouroboros.Network.NodeToNode (DiffusionMode (..),
            MiniProtocolParameters (..), defaultMiniProtocolParameters)
 import Ouroboros.Network.PeerSelection.Governor.Types
            (ConsensusModePeerTargets (..), PeerSelectionTargets (..))
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type
+           (MinBigLedgerPeersForTrustedState (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSharing (ps_POLICY_PEER_SHARE_MAX_PEERS,
            ps_POLICY_PEER_SHARE_STICKY_TIME)
@@ -58,6 +65,7 @@ import Ouroboros.Network.Protocol.ChainSync.Codec (ChainSyncTimeout (..))
 import Ouroboros.Network.Protocol.Handshake (handshake_QUERY_SHUTDOWN_DELAY)
 import Ouroboros.Network.Protocol.Limits (shortWait)
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
+
 
 -- | Default number of bootstrap peers
 --
@@ -73,8 +81,8 @@ defaultNumBootstrapPeers = DefaultNumBootstrapPeers 30
 
 -- | Default peer targets in Praos mode
 --
-defaultPraosTargets :: PeerSelectionTargets
-defaultPraosTargets =
+defaultDeadlineTargets :: PeerSelectionTargets
+defaultDeadlineTargets =
   PeerSelectionTargets {
     targetNumberOfRootPeers                 = 60,
     targetNumberOfKnownPeers                = 85,
@@ -87,13 +95,27 @@ defaultPraosTargets =
 -- | These targets are established when Genesis mode is enabled
 -- in node configuration and when the node is syncing up
 --
-defaultGenesisSyncTargets :: PeerSelectionTargets
-defaultGenesisSyncTargets =
-  defaultPraosTargets {
+defaultSyncTargets :: PeerSelectionTargets
+defaultSyncTargets =
+  defaultDeadlineTargets {
     targetNumberOfActivePeers               = 0,
     targetNumberOfKnownBigLedgerPeers       = 100,
     targetNumberOfEstablishedBigLedgerPeers = 50,
     targetNumberOfActiveBigLedgerPeers      = 30 }
+
+-- | This parameter controls the minimum number of active connections
+--   with big ledger peers that must be maintained when syncing in
+--   Genesis mode such that trusted state can be signalled to Consensus.
+--   Exiting syncing / entering deadline mode is predicated on this
+--   condition. This should be below `targetNumberOfActiveBigLedgerPeers`
+--   in `syncTargets` otherwise untrusted state will never be departed.
+--   This value is lower than the target, because in Genesis we may
+--   demote a big ledger peer for underperformance and not immediately
+--   promote one from the warm set in case there are adversaries
+--   whom are intentionally trying to slow us down.
+--
+defaultMinBigLedgerPeersForTrustedState :: MinBigLedgerPeersForTrustedState
+defaultMinBigLedgerPeersForTrustedState = MinBigLedgerPeersForTrustedState 5
 
 -- | Inbound governor targets
 --
@@ -151,3 +173,9 @@ defaultChainSyncTimeout = do
                               intersectTimeout = shortWait,
                               mustReplyTimeout,
                               idleTimeout      = Just 3673 }
+
+defaultDeadlineChurnInterval :: DiffTime
+defaultDeadlineChurnInterval = 3300
+
+defaultBulkChurnInterval :: DiffTime
+defaultBulkChurnInterval = 900

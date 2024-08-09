@@ -117,12 +117,13 @@ import Ouroboros.Network.PeerSelection.LedgerPeers (TraceLedgerPeers,
            WithLedgerPeersArgs (..))
 #ifdef POSIX
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
-           LedgerPeersConsensusInterface (..), UseLedgerPeers)
+           LedgerPeersConsensusInterface (..), MinBigLedgerPeersForTrustedState,
+           UseLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics,
            fetchynessBlocks, upstreamyness)
 #else
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
-           UseLedgerPeers)
+           MinBigLedgerPeersForTrustedState, UseLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 #endif
 import Ouroboros.Network.ConsensusMode
@@ -259,8 +260,12 @@ data ArgumentsExtra m = ArgumentsExtra {
     -- to get a strong guarantee that when syncing up we will finish with a true
     -- ledger state. When false, we will fall back on the previous algorithms
     -- that leverage UseBootstrapPeers flag
-    , daConsensusMode          :: ConsensusMode
-    , daReadUseBootstrapPeers  :: STM m UseBootstrapPeers
+    , daConsensusMode                    :: ConsensusMode
+    -- | For Genesis, this sets the floor for minimum number of
+    --   active big ledger peers we must be connected to in order
+    --   to be able to signal trusted state (OutboundConnectionsState)
+    , daMinBigLedgerPeersForTrustedState :: MinBigLedgerPeersForTrustedState
+    , daReadUseBootstrapPeers            :: STM m UseBootstrapPeers
     -- | Depending on configuration, node may provide us with
     -- a snapshot of big ledger peers taken at some slot on the chain.
     -- These peers may be selected by ledgerPeersThread when requested
@@ -648,6 +653,7 @@ runM Interfaces
        , daReadLocalRootPeers
        , daReadPublicRootPeers
        , daConsensusMode
+       , daMinBigLedgerPeersForTrustedState
        , daReadUseBootstrapPeers
        , daOwnPeerSharing
        , daReadUseLedgerPeers
@@ -1026,6 +1032,7 @@ runM Interfaces
               dtTracePeerSelectionCounters
               fuzzRng
               daConsensusMode
+              daMinBigLedgerPeersForTrustedState
               peerSelectionActions
               peerSelectionPolicy
               PeerSelectionInterfaces {
@@ -1102,7 +1109,7 @@ runM Interfaces
         -- InitiatorOnly mode, run peer selection only:
         InitiatorOnlyDiffusionMode ->
           withConnectionManagerInitiatorOnlyMode $ \connectionManager-> do
-          debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng daConsensusMode
+          debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng daConsensusMode daMinBigLedgerPeersForTrustedState
           diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
           withPeerStateActions' connectionManager $ \peerStateActions->
             withPeerSelectionActions'
@@ -1127,7 +1134,7 @@ runM Interfaces
             inboundInfoChannel $ \connectionManager ->
               withSockets' $ \sockets addresses -> do
                 withServer sockets connectionManager inboundInfoChannel $ \inboundGovernorThread readInboundState -> do
-                  debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng daConsensusMode
+                  debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng daConsensusMode daMinBigLedgerPeersForTrustedState
                   diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
                   withPeerStateActions' connectionManager $ \peerStateActions ->
                     withPeerSelectionActions'
