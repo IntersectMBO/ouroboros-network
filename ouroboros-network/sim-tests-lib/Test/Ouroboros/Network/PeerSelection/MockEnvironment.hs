@@ -233,7 +233,8 @@ governorAction mockEnv@GovernorMockEnvironment {
                              (useLedgerPeers mockEnv)
     usbVar <- playTimedScript (contramap TraceEnvSetUseBootstrapPeers tracerMockEnv)
                               (useBootstrapPeers mockEnv)
-    debugStateVar <- StrictTVar.newTVarIO (emptyPeerSelectionState (mkStdGen 42) consensusMode)
+    -- todo: make MinBigLedgerPeersForTrustedState come from quickcheck
+    debugStateVar <- StrictTVar.newTVarIO (emptyPeerSelectionState (mkStdGen 42) consensusMode (MinBigLedgerPeersForTrustedState 0))
     countersVar <- StrictTVar.newTVarIO emptyPeerSelectionCounters
     policy  <- mockPeerSelectionPolicy mockEnv
     let initialPeerTargets = fst . NonEmpty.head $ targets'
@@ -292,6 +293,7 @@ governorAction mockEnv@GovernorMockEnvironment {
         tracerTracePeerSelectionCounters
         (mkStdGen 42)
         consensusMode
+        (MinBigLedgerPeersForTrustedState 0) -- ^ todo: make this come from quickcheck
         actions
         policy
         interfaces

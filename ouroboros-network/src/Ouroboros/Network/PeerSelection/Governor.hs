@@ -81,7 +81,8 @@ import Ouroboros.Network.PeerSelection.Governor.KnownPeers qualified as KnownPee
 import Ouroboros.Network.PeerSelection.Governor.Monitor qualified as Monitor
 import Ouroboros.Network.PeerSelection.Governor.RootPeers qualified as RootPeers
 import Ouroboros.Network.PeerSelection.Governor.Types
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type (UseLedgerPeers (..))
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type
+           (MinBigLedgerPeersForTrustedState (..), UseLedgerPeers (..))
 import Ouroboros.Network.PeerSelection.LocalRootPeers
            (OutboundConnectionsState (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
@@ -476,11 +477,12 @@ peerSelectionGovernor :: ( Alternative (STM m)
                       -> Tracer m PeerSelectionCounters
                       -> StdGen
                       -> ConsensusMode
+                      -> MinBigLedgerPeersForTrustedState -- ^ Genesis parameter
                       -> PeerSelectionActions peeraddr peerconn m
                       -> PeerSelectionPolicy  peeraddr m
                       -> PeerSelectionInterfaces peeraddr peerconn m
                       -> m Void
-peerSelectionGovernor tracer debugTracer countersTracer fuzzRng consensusMode actions policy interfaces =
+peerSelectionGovernor tracer debugTracer countersTracer fuzzRng consensusMode minActiveBigLedgerPeers actions policy interfaces =
     JobPool.withJobPool $ \jobPool ->
       peerSelectionGovernorLoop
         tracer
@@ -490,7 +492,7 @@ peerSelectionGovernor tracer debugTracer countersTracer fuzzRng consensusMode ac
         policy
         interfaces
         jobPool
-        (emptyPeerSelectionState fuzzRng consensusMode)
+        (emptyPeerSelectionState fuzzRng consensusMode minActiveBigLedgerPeers)
 
 -- | Our pattern here is a loop with two sets of guarded actions:
 --
@@ -742,26 +744,18 @@ outboundConnectionsState
     PeerSelectionView {
       viewEstablishedPeers          = (viewEstablishedPeers, _),
       viewEstablishedBootstrapPeers = (viewEstablishedBootstrapPeers, _),
-      viewActiveBootstrapPeers      = (viewActiveBootstrapPeers, _)
+      viewActiveBootstrapPeers      = (viewActiveBootstrapPeers, _),
+      viewActiveBigLedgerPeers      = (_, activeNumBigLedgerPeers)
     }
     PeerSelectionState {
+      consensusMode,
       localRootPeers,
-      bootstrapPeersFlag
+      bootstrapPeersFlag,
+      minBigLedgerPeersForTrustedState
     }
     =
-    case (associationMode, bootstrapPeersFlag) of
-      {-
-       -- genesis mode
-       -- TODO: issue #4846
-      (LocalRootsOnly, _)
-        |  numberOfActiveBigLedgerPeers >= targetNumberOfActiveBigLedgerPeers
-        -> TrustedStateWithExternalPeers
-
-        |  otherwise
-        -> UntrustedState
-      -}
-
-      (LocalRootsOnly, _)
+    case (associationMode, bootstrapPeersFlag, consensusMode) of
+      (LocalRootsOnly, _, _)
         |  -- we are only connected to trusted local root
            -- peers
            viewEstablishedPeers `Set.isSubsetOf` trustableLocalRootSet
@@ -771,7 +765,7 @@ outboundConnectionsState
         -> UntrustedState
 
        -- bootstrap mode
-      (Unrestricted, UseBootstrapPeers {})
+      (Unrestricted, UseBootstrapPeers {}, _)
         |  -- we are only connected to trusted local root
            -- peers or bootstrap peers
            viewEstablishedPeers `Set.isSubsetOf` (viewEstablishedBootstrapPeers <> trustableLocalRootSet)
@@ -783,7 +777,15 @@ outboundConnectionsState
         -> UntrustedState
 
        -- praos mode with public roots
-      (Unrestricted, DontUseBootstrapPeers)
+      (Unrestricted, DontUseBootstrapPeers, PraosMode)
+        -> UntrustedState
+
+      -- Genesis mode
+      (Unrestricted, DontUseBootstrapPeers, GenesisMode)
+        |  activeNumBigLedgerPeers >= getMinBigLedgerPeersForTrustedState minBigLedgerPeersForTrustedState
+        -> TrustedStateWithExternalPeers
+
+        |  otherwise
         -> UntrustedState
   where
     trustableLocalRootSet = LocalRootPeers.trustableKeysSet localRootPeers

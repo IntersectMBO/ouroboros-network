@@ -3737,6 +3737,7 @@ selectDiffusionPeerSelectionState f =
       f $ Governor.emptyPeerSelectionState
             (mkStdGen 42)
             consensusMode
+            (MinBigLedgerPeersForTrustedState 0) -- ^ todo: fix
 
 selectDiffusionPeerSelectionState' :: Eq a
                                   => (forall peerconn. Governor.PeerSelectionState NtNAddr peerconn -> a)
@@ -3744,7 +3745,9 @@ selectDiffusionPeerSelectionState' :: Eq a
                                   -> Signal a
 selectDiffusionPeerSelectionState' f =
   -- TODO: #3182 Rng seed should come from quickcheck.
-    Signal.fromChangeEvents (f $ Governor.emptyPeerSelectionState (mkStdGen 42) PraosMode)
+    Signal.fromChangeEvents (f $ Governor.emptyPeerSelectionState (mkStdGen 42)
+                                                                  PraosMode
+                                                                  (MinBigLedgerPeersForTrustedState 0))
   . Signal.selectEvents
       (\case
         DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just (f st)
