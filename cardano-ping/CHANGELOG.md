@@ -2,6 +2,8 @@
 
 ## next version
 
+## 0.3.0.0 -- 2024-08-07
+
 ### Breaking changes
 
 * Add support for requesting tip from remote peer.
