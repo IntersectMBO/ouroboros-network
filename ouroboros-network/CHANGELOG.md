@@ -19,7 +19,10 @@
       or Genesis mode, which influences what `PeerSelectionTargets` both
       governors should use. Genesis may use two different sets of targets
       depending on ledger state, while Praos uses only one set. Either set
-      once active is appropriately churned. 
+      once active is appropriately churned.
+* Added `daMinBigLedgerPeersForTrustedState` to `ArgumentsExtra` when starting diffusion.
+  It is used by `outboundConnectionsState` when signaling trust state when syncing in
+  Genesis mode. Default value is provided by the Configuration module.
 
 ### Non-Breaking changes
 
@@ -31,9 +34,12 @@
   peers
 * Implemented separate configurable peer selection targets for Praos and
   Genesis consensus modes. Genesis mode may use more big ledger peers when
+  a node is syncing up.
 * Implemented verification of big ledger peer snapshot when syncing reaches
   the point at which the snapshot was taken. An error is raised when there's
   a mismatch detected. 
+* Added `defaultDeadlineChurnInterval` and `defaultBulkChurnInterval` to Configuration
+  module. Previously these were hard coded in node.
 
 ## 0.17.0.0 -- 2024-08-07
 

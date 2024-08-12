@@ -15,6 +15,9 @@
 * added `compareLedgerPeerSnapshotApproximate` function which compares
   two snapshots for approximate equality wrt stake distribution and
   fully qualified domain names. 
+* Added `MinBigLedgerPeersForTrustedState` type of values indicating
+  the minimum number of active big ledger peers needed to signal
+  trusted state when finishing syncing in Genesis mode.
 
 ## 0.8.0.0 -- 2024-08-07
 
