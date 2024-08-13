@@ -2,9 +2,12 @@
 
 ## next version
 
+## 0.4.0.0 -- 2024-08-21
+
 ### Breaking changes
 
 * Log remote address and port in tip message
+* Added `NodeToClientVersionV17`
 
 ### Non-breaking changes
 

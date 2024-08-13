@@ -2,7 +2,15 @@
 
 ## next release
 
-## 0.8.0.0 -- 2024-08
+## 0.9.0.0 -- 2024-08-13
+
+### Breaking changes
+
+* Added `NodeToClientV_17` to support new local state queries
+
+### Non-Breaking changes
+
+## 0.8.0.0 -- 2024-08-07
 
 ### Breaking changes
 
