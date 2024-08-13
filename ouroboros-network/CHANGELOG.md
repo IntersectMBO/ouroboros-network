@@ -40,6 +40,7 @@
   a mismatch detected. 
 * Added `defaultDeadlineChurnInterval` and `defaultBulkChurnInterval` to Configuration
   module. Previously these were hard coded in node.
+* Added initial delay before requesting transactions in TxSubmission protocol
 
 ## 0.17.0.0 -- 2024-08-07
 
