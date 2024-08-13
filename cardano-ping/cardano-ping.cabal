@@ -27,6 +27,7 @@ library
                         cborg                         >=0.2.8    && <0.3,
                         bytestring                    >=0.10     && <0.13,
                         contra-tracer                 >=0.1      && <0.3,
+                        iproute,
                         time,
 
                         si-timers                    ^>=1.5,

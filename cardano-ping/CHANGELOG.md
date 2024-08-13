@@ -2,9 +2,9 @@
 
 ## next version
 
-## 0.3.1.0 -- 2024-08-13
-
 ### Breaking changes
+
+* Log remote address and port in tip message
 
 ### Non-breaking changes
 

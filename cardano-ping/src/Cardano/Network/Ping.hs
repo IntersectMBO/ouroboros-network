@@ -36,6 +36,7 @@ import           Data.Aeson.Text (encodeToLazyText)
 import           Data.Bits (clearBit, setBit, testBit)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Foldable (toList)
+import           Data.IP
 import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Maybe (fromMaybe,)
 import           Data.TDigest (insert, maximumValue, minimumValue, tdigest, mean, quantile, stddev, TDigest)
@@ -225,7 +226,8 @@ instance ToJSON NodeVersion where
                                                     ["peersharing" .= toJSON peersharing]
 
 data PingTip = PingTip {
-    ptRtt     :: !Double
+    ptHost    :: !(IP, Socket.PortNumber)
+  , ptRtt     :: !Double
   , ptHash    :: !ByteString
   , ptBlockNo :: !Word64
   , ptSlotNo  :: !Word64
@@ -236,8 +238,8 @@ hexStr = LBS.foldr (\b -> (<>) (printf "%02x" b)) ""
 
 instance Show PingTip where
   show PingTip{..} =
-    printf "rtt: %f, hash %s, blockNo: %d slotNo: %d" ptRtt (hexStr ptHash)
-           ptBlockNo ptSlotNo
+    printf "host: %s:%d, rtt: %f, hash %s, blockNo: %d slotNo: %d" (show $ fst ptHost)
+           (fromIntegral $ snd ptHost :: Word16) ptRtt (hexStr ptHash) ptBlockNo ptSlotNo
 
 instance ToJSON PingTip where
   toJSON PingTip{..} =
@@ -246,6 +248,8 @@ instance ToJSON PingTip where
       , "hash"    .= hexStr ptHash
       , "blockNo" .= ptBlockNo
       , "slotNo"  .= ptSlotNo
+      , "addr"    .= (show $ fst $ ptHost :: String)
+      , "port"    .= (fromIntegral $ snd $ ptHost :: Word16)
       ]
 
 keepAliveReqEnc :: NodeVersion -> Word16 -> CBOR.Encoding
@@ -608,6 +612,7 @@ data PingClientError = PingClientDeserialiseFailure DeserialiseFailure String
                      | PingClientKeepAliveProtocolFailure KeepAliveFailure String
                      | PingClientHandshakeFailure HandshakeFailure String
                      | PingClientNegotiationError String [NodeVersion] String
+                     | PingClientIPAddressFailure String
                      deriving Show
 
 instance Exception PingClientError where
@@ -623,6 +628,8 @@ instance Exception PingClientError where
     printf "%s Protocol error: %s" peerStr (show err)
   displayException (PingClientNegotiationError err recVersions peerStr) =
     printf "%s Version negotiation error %s\nReceived versions: %s\n" peerStr err (show recVersions)
+  displayException (PingClientIPAddressFailure peerStr) =
+    printf "%s expected an IP address\n" peerStr
 
 pingClient :: Tracer IO LogMsg -> Tracer IO String -> PingOpts -> [NodeVersion] -> AddrInfo -> IO ()
 pingClient stdout stderr PingOpts{..} versions peer = bracket
@@ -778,9 +785,12 @@ pingClient stdout stderr PingOpts{..} versions peer = bracket
       case CBOR.deserialiseFromBytes chainSyncIntersectNotFoundDec msg of
            Left err -> throwIO (PingClientFindIntersectDeserialiseFailure err peerStr)
            Right (_, (slotNo, blockNo, hash)) ->
-             let tip = PingTip (toSample t_e t_s) hash blockNo slotNo in
-             if pingOptsJson then traceWith stdout $ LogMsg (encode tip)
-                             else traceWith stdout $ LogMsg $ LBS.Char.pack $ show tip <> "\n"
+             case fromSockAddr $ Socket.addrAddress peer of
+                  Nothing -> throwIO (PingClientIPAddressFailure peerStr)
+                  Just host ->
+                    let tip = PingTip host (toSample t_e t_s) hash blockNo slotNo in
+                    if pingOptsJson then traceWith stdout $ LogMsg (encode tip)
+                                    else traceWith stdout $ LogMsg $ LBS.Char.pack $ show tip <> "\n"
 
 isSameVersionAndMagic :: NodeVersion -> NodeVersion -> Bool
 isSameVersionAndMagic v1 v2 = extract v1 == extract v2
