@@ -2,7 +2,15 @@
 
 ## next version
 
-## 0.3.0.0 -- 2024-08-
+## 0.3.1.0 -- 2024-08-13
+
+### Breaking changes
+
+### Non-breaking changes
+
+* Make it error whenever there's a decoding error or similar
+
+## 0.3.0.0 -- 2024-08-07
 
 ### Breaking changes
 
@@ -11,7 +19,6 @@
 ### Non-breaking changes
 
 * Make it build with ghc-9.10
-* Make it error whenever there's a decoding error or similar
 
 ## 0.2.0.14 -- 2024-06-07
 
