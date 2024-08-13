@@ -7,6 +7,7 @@
 ### Breaking changes
 
 * Log remote address and port in tip message
+* Added `NodeToClientVersionV17`
 
 ### Non-breaking changes
 

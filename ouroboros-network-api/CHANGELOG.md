@@ -19,6 +19,14 @@
   the minimum number of active big ledger peers needed to signal
   trusted state when finishing syncing in Genesis mode.
 
+## 0.9.0.0 -- 2024-08-22
+
+### Breaking changes
+
+* Added `NodeToClientV_17` to support new local state queries
+
+### Non-Breaking changes
+
 ## 0.8.0.0 -- 2024-08-07
 
 ### Breaking changes
