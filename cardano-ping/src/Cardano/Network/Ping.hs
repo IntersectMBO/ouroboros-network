@@ -177,6 +177,7 @@ data NodeVersion
   | NodeToClientVersionV14 Word32
   | NodeToClientVersionV15 Word32
   | NodeToClientVersionV16 Word32
+  | NodeToClientVersionV17 Word32
   | NodeToNodeVersionV1    Word32
   | NodeToNodeVersionV2    Word32
   | NodeToNodeVersionV3    Word32
@@ -203,6 +204,7 @@ instance ToJSON NodeVersion where
       NodeToClientVersionV14 m -> go2 "NodeToClientVersionV14" m
       NodeToClientVersionV15 m -> go2 "NodeToClientVersionV15" m
       NodeToClientVersionV16 m -> go2 "NodeToClientVersionV16" m
+      NodeToClientVersionV17 m -> go2 "NodeToClientVersionV17" m
       NodeToNodeVersionV1    m -> go2 "NodeToNodeVersionV1" m
       NodeToNodeVersionV2    m -> go2 "NodeToNodeVersionV2" m
       NodeToNodeVersionV3    m -> go2 "NodeToNodeVersionV3" m
@@ -331,6 +333,9 @@ handshakeReqEnc versions query =
       <> nodeToClientDataWithQuery magic
     encodeVersion (NodeToClientVersionV16 magic) =
           CBOR.encodeWord (16 `setBit` nodeToClientVersionBit)
+      <>  nodeToClientDataWithQuery magic
+    encodeVersion (NodeToClientVersionV17 magic) =
+          CBOR.encodeWord (17 `setBit` nodeToClientVersionBit)
       <>  nodeToClientDataWithQuery magic
 
     -- node-to-node
@@ -788,6 +793,7 @@ isSameVersionAndMagic v1 v2 = extract v1 == extract v2
         extract (NodeToClientVersionV14 m) = (-14, m)
         extract (NodeToClientVersionV15 m) = (-15, m)
         extract (NodeToClientVersionV16 m) = (-16, m)
+        extract (NodeToClientVersionV17 m) = (-17, m)
         extract (NodeToNodeVersionV1 m)    = (1, m)
         extract (NodeToNodeVersionV2 m)    = (2, m)
         extract (NodeToNodeVersionV3 m)    = (3, m)
