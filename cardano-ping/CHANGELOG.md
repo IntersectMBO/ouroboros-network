@@ -2,9 +2,15 @@
 
 ## next version
 
+## 0.4.0.0 - 2024-08-22
+
 ### Breaking changes
 
 * Log remote address and port in tip message
+
+### Non-breaking changes
+
+* Make it error whenever there's a decoding error or similar
 
 ## 0.3.0.0 -- 2024-08-07
 
@@ -15,7 +21,6 @@
 ### Non-breaking changes
 
 * Make it build with ghc-9.10
-* Make it error whenever there's a decoding error or similar
 
 ## 0.2.0.14 -- 2024-06-07
 
