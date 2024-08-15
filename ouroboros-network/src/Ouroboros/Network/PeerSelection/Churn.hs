@@ -157,7 +157,7 @@ peerChurnGovernor PeerChurnArgs {
         fm <- getFetchMode
         let mode = case fm of
                      FetchModeDeadline -> ChurnModeNormal
-                     FetchModeBulkSync -> ChurnModeBulkSync
+                     FetchModeGenesis -> ChurnModeBulkSync
         writeTVar churnModeVar mode
         return mode
 

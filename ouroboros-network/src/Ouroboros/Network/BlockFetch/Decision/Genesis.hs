@@ -6,7 +6,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
--- | BulkSync decision logic
+-- | Genesis decision logic
 --
 -- This module contains the part of the block fetch decisions process that is
 -- specific to the bulk sync mode. This logic reuses parts of the logic for the
@@ -122,8 +122,8 @@
 -- If the peer cannot offer any more blocks after that, it will be rotated out
 -- soon.
 --
-module Ouroboros.Network.BlockFetch.Decision.BulkSync (
-  fetchDecisionsBulkSyncM
+module Ouroboros.Network.BlockFetch.Decision.Genesis (
+  fetchDecisionsGenesisM
 ) where
 
 import Control.Exception (assert)
@@ -149,7 +149,7 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import Ouroboros.Network.Block
 import Ouroboros.Network.BlockFetch.ClientState
          (FetchRequest (..), PeersOrder (..), peerFetchBlocksInFlight)
-import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode(FetchModeBulkSync))
+import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode(FetchModeGenesis))
 import Ouroboros.Network.BlockFetch.DeltaQ (calculatePeerFetchInFlightLimits)
 import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation(..))
 
@@ -161,7 +161,7 @@ type WithDeclined peer = Writer (DList (FetchDecline, peer))
 runWithDeclined :: WithDeclined peer a -> (a, DList (FetchDecline, peer))
 runWithDeclined = runWriter
 
-fetchDecisionsBulkSyncM
+fetchDecisionsGenesisM
   :: forall peer header block m extra.
      (Ord peer,
       HasHeader header,
@@ -178,7 +178,7 @@ fetchDecisionsBulkSyncM
      )
   -> [(AnchoredFragment header, PeerInfo header peer extra)]
   -> m [(FetchDecision (FetchRequest header), PeerInfo header peer extra)]
-fetchDecisionsBulkSyncM
+fetchDecisionsGenesisM
   tracer
   fetchDecisionPolicy@FetchDecisionPolicy {bulkSyncGracePeriod}
   currentChain
@@ -201,7 +201,7 @@ fetchDecisionsBulkSyncM
     -- Compute the actual block fetch decision. This contains only declines and
     -- at most one request. 'theDecision' is therefore a 'Maybe'.
     let (theDecision, declines) =
-          fetchDecisionsBulkSync
+          fetchDecisionsGenesis
             fetchDecisionPolicy
             currentChain
             fetchedBlocks
@@ -299,7 +299,7 @@ fetchDecisionsBulkSyncM
 
 -- | Given a list of candidate fragments and their associated peers, choose what
 -- to sync from who in the bulk sync mode.
-fetchDecisionsBulkSync :: forall header block peer extra.
+fetchDecisionsGenesis :: forall header block peer extra.
   ( HasHeader header,
     HeaderHash header ~ HeaderHash block
   ) =>
@@ -319,7 +319,7 @@ fetchDecisionsBulkSync :: forall header block peer extra.
   ( Maybe (FetchRequest header, PeerInfo header peer extra),
     [(FetchDecline, PeerInfo header peer extra)]
   )
-fetchDecisionsBulkSync
+fetchDecisionsGenesis
   fetchDecisionPolicy
   currentChain
   fetchedBlocks
@@ -470,7 +470,7 @@ selectThePeer
     go grossRequest (c@(candidate, peerInfo) : xs) = do
       if requestHeadInCandidate candidate grossRequest then do
         tell $ DList.fromList
-          [(FetchDeclineConcurrencyLimit FetchModeBulkSync 1, pInfo)
+          [(FetchDeclineConcurrencyLimit FetchModeGenesis 1, pInfo)
           | (_, pInfo) <- xs
           ]
         pure (Just c)
@@ -525,7 +525,7 @@ makeFetchRequest
           -- Try to create a request for those fragments.
           fetchRequestDecision
             fetchDecisionPolicy
-            FetchModeBulkSync
+            FetchModeGenesis
             0 -- bypass all concurrency limits.
             (calculatePeerFetchInFlightLimits gsvs)
             inflight

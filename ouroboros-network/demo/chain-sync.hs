@@ -426,7 +426,7 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
               readCandidateChains    = readTVar candidateChainsVar
                                        >>= traverse readTVar,
               readCurrentChain       = readTVar currentChainVar,
-              readFetchMode          = return FetchModeBulkSync,
+              readFetchMode          = return FetchModeGenesis,
               readFetchedBlocks      = (\h p -> castPoint p `Set.member` h) <$>
                                          getTestFetchedBlocks blockHeap,
               readFetchedMaxSlotNo   = maybe NoMaxSlotNo (maxSlotNoFromWithOrigin . pointSlot) <$>
@@ -513,11 +513,11 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
                       (BlockFetchConfiguration {
                         bfcMaxConcurrencyDeadline = 2,
                         bfcMaxRequestsInflight    = 10,
-                        bfcDecisionLoopIntervalBulkSync = 0.04,
+                        bfcDecisionLoopIntervalGenesis = 0.04,
                         bfcDecisionLoopIntervalDeadline = 0.01,
                         bfcSalt                   = 0,
                         bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
-                          { gbfcBulkSyncGracePeriod = 10 -- seconds
+                          { gbfcGenesisGracePeriod = 10 -- seconds
                           }
                         })
                  >> return ()

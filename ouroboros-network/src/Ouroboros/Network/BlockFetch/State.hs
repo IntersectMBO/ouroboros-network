@@ -93,7 +93,7 @@ fetchLogicIterations decisionTracer clientStateTracer
       end <- getMonotonicTime
       let delta = diffTime end start
           loopInterval = case fetchMode of
-            FetchModeBulkSync -> decisionLoopIntervalBulkSync fetchDecisionPolicy
+            FetchModeGenesis -> decisionLoopIntervalGenesis fetchDecisionPolicy
             FetchModeDeadline -> decisionLoopIntervalDeadline fetchDecisionPolicy
       -- Limit decision is made once every decisionLoopInterval.
       threadDelay (loopInterval - delta)

@@ -64,11 +64,11 @@ import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
 
 tests :: TestTree
 tests = testGroup "BlockFetch"
-  [ testProperty "BulkSync static chains without overlap"
-                 prop_blockFetchBulkSyncStaticNoOverlap
+  [ testProperty "Genesis static chains without overlap"
+                 prop_blockFetchGenesisStaticNoOverlap
 
-  , testProperty "BulkSync static chains with overlap"
-                 prop_blockFetchBulkSyncStaticWithOverlap
+  , testProperty "Genesis static chains with overlap"
+                 prop_blockFetchGenesisStaticWithOverlap
 
   , testCaseSteps "bracketSyncWithFetchClient"
                   unit_bracketSyncWithFetchClient
@@ -105,8 +105,8 @@ tests = testGroup "BlockFetch"
 -- * 'tracePropertyClientStateSanity'
 -- * 'tracePropertyInFlight'
 --
-prop_blockFetchBulkSyncStaticNoOverlap :: TestChainFork -> Property
-prop_blockFetchBulkSyncStaticNoOverlap (TestChainFork common fork1 fork2) =
+prop_blockFetchGenesisStaticNoOverlap :: TestChainFork -> Property
+prop_blockFetchGenesisStaticNoOverlap (TestChainFork common fork1 fork2) =
     let trace = selectTraceEventsDynamic (runSimTrace simulation)
 
      in counterexample ("\nTrace:\n" ++ unlines (map show trace)) $
@@ -160,10 +160,10 @@ prop_blockFetchBulkSyncStaticNoOverlap (TestChainFork common fork1 fork2) =
 -- * 'tracePropertyClientStateSanity'
 -- * 'tracePropertyInFlight'
 --
--- TODO: 'prop_blockFetchBulkSyncStaticWithOverlap' fails if we introduce delays. issue #2622
+-- TODO: 'prop_blockFetchGenesisStaticWithOverlap' fails if we introduce delays. issue #2622
 --
-prop_blockFetchBulkSyncStaticWithOverlap :: TestChainFork -> Property
-prop_blockFetchBulkSyncStaticWithOverlap (TestChainFork _common fork1 fork2) =
+prop_blockFetchGenesisStaticWithOverlap :: TestChainFork -> Property
+prop_blockFetchGenesisStaticWithOverlap (TestChainFork _common fork1 fork2) =
     let trace = selectTraceEventsDynamic (runSimTrace simulation)
 
      in counterexample ("\nTrace:\n" ++ unlines (map show trace)) $
@@ -345,7 +345,7 @@ tracePropertyBlocksRequestedAndRecievedAllPeers fork1 fork2 es =
 --
 -- This is a non-trivial property because in the general case, the chain
 -- suffixes do intersect by sharing a common prefix. This property therefore
--- demonstrates that in the 'FetchModeBulkSync' the decision logic is properly
+-- demonstrates that in the 'FetchModeGenesis' the decision logic is properly
 -- allocating fetch requests to different peers to avoid asking for duplicate
 -- blocks from different peers.
 --

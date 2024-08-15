@@ -138,11 +138,11 @@ blockFetchExample0 decisionTracer clientStateTracer clientMsgTracer
           (BlockFetchConfiguration {
             bfcMaxConcurrencyDeadline = 2,
             bfcMaxRequestsInflight    = 10,
-            bfcDecisionLoopIntervalBulkSync = 0.04,
+            bfcDecisionLoopIntervalGenesis = 0.04,
             bfcDecisionLoopIntervalDeadline = 0.01,
             bfcSalt                   = 0,
             bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
-              { gbfcBulkSyncGracePeriod = 10 -- seconds
+              { gbfcGenesisGracePeriod = 10 -- seconds
               }
           })
         >> return ()
@@ -249,11 +249,11 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
           (BlockFetchConfiguration {
             bfcMaxConcurrencyDeadline = 2,
             bfcMaxRequestsInflight    = 10,
-            bfcDecisionLoopIntervalBulkSync = 0.04,
+            bfcDecisionLoopIntervalGenesis = 0.04,
             bfcDecisionLoopIntervalDeadline = 0.01,
             bfcSalt                   = 0,
             bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
-              { gbfcBulkSyncGracePeriod = 10 -- seconds
+              { gbfcGenesisGracePeriod = 10 -- seconds
               }
           })
         >> return ()
@@ -281,7 +281,7 @@ sampleBlockFetchPolicy1 headerFieldsForgeUTCTime blockHeap currentChain candidat
     BlockFetchConsensusInterface {
       readCandidateChains    = return candidateChains,
       readCurrentChain       = return currentChain,
-      readFetchMode          = return FetchModeBulkSync,
+      readFetchMode          = return FetchModeGenesis,
       readFetchedBlocks      = flip Set.member <$>
                                  getTestFetchedBlocks blockHeap,
       readFetchedMaxSlotNo   = List.foldl' max NoMaxSlotNo .

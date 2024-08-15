@@ -30,7 +30,7 @@ data FetchMode =
        -- well behind. In this mode the fetch logic will optimise for
        -- throughput rather than latency.
        --
-       FetchModeBulkSync
+       FetchModeGenesis
 
        -- | Use this mode for block-producing nodes that have a known deadline
        -- to produce a block and need to get the best chain before that. In
@@ -74,7 +74,7 @@ data BlockFetchConsensusInterface peer header block m =
        -- | Read the current fetch mode that the block fetch logic should use.
        --
        -- The fetch mode is a dynamic part of the block fetch policy. In
-       -- 'FetchModeBulkSync' it follows a policy that optimises for expected
+       -- 'FetchModeGenesis' it follows a policy that optimises for expected
        -- bandwidth over latency to fetch any particular block, whereas in
        -- 'FetchModeDeadline' it follows a policy optimises for the latency
        -- to fetch blocks, at the expense of wasting bandwidth.

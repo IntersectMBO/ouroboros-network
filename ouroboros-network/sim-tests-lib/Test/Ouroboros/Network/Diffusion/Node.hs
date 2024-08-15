@@ -296,11 +296,11 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
         (BlockFetchConfiguration {
           bfcMaxConcurrencyDeadline = 2,
           bfcMaxRequestsInflight    = 10,
-          bfcDecisionLoopIntervalBulkSync = 0.04,
+          bfcDecisionLoopIntervalGenesis = 0.04,
           bfcDecisionLoopIntervalDeadline = 0.01,
           bfcSalt                   = 0,
           bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
-            { gbfcBulkSyncGracePeriod = 10 -- seconds
+            { gbfcGenesisGracePeriod = 10 -- seconds
             }
         })
 
@@ -313,7 +313,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
                                        >=> (return . toAnchoredFragment)),
           readCurrentChain       = readTVar (nkChainProducerState nodeKernel)
                                    >>= (return . toAnchoredFragmentHeader . chainState),
-          readFetchMode          = return FetchModeBulkSync,
+          readFetchMode          = return FetchModeGenesis,
           readFetchedBlocks      = flip Set.member <$> getBlockPointSet (nkChainDB nodeKernel),
           readFetchedMaxSlotNo   = Foldable.foldl' max NoMaxSlotNo .
                                    map (maxSlotNoFromWithOrigin . pointSlot) .

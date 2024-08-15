@@ -429,7 +429,7 @@ genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream
   firstLedgerPool <- arbitrary
   let ledgerPeerPoolsScript = Script (firstLedgerPool :| ledgerPeerPools)
 
-  fetchModeScript <- fmap (bool FetchModeBulkSync FetchModeDeadline) <$> arbitrary
+  fetchModeScript <- fmap (bool FetchModeGenesis FetchModeDeadline) <$> arbitrary
 
   naConsensusMode <- arbitrary
   bootstrapPeersDomain <-

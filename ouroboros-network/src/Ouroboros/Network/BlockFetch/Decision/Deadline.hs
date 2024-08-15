@@ -38,7 +38,7 @@ data FetchDecisionPolicy header = FetchDecisionPolicy {
        maxInFlightReqsPerPeer  :: Word,  -- A protocol constant.
 
        maxConcurrencyDeadline  :: Word,
-       decisionLoopIntervalBulkSync :: DiffTime,
+       decisionLoopIntervalGenesis :: DiffTime,
        decisionLoopIntervalDeadline :: DiffTime,
        peerSalt                :: Int,
        bulkSyncGracePeriod     :: DiffTime,
@@ -957,7 +957,7 @@ fetchRequestDecision FetchDecisionPolicy {
 
     -- Refuse any blockrequest if we're above the concurrency limit.
   | let maxConcurrentFetchPeers = case fetchMode of
-                                    FetchModeBulkSync -> 1
+                                    FetchModeGenesis -> 1
                                     FetchModeDeadline -> maxConcurrencyDeadline
   , nConcurrentFetchPeers > maxConcurrentFetchPeers
   = Left $ FetchDeclineConcurrencyLimit
@@ -966,7 +966,7 @@ fetchRequestDecision FetchDecisionPolicy {
     -- If we're at the concurrency limit refuse any additional peers.
   | peerFetchReqsInFlight == 0
   , let maxConcurrentFetchPeers = case fetchMode of
-                                    FetchModeBulkSync -> 1
+                                    FetchModeGenesis -> 1
                                     FetchModeDeadline -> maxConcurrencyDeadline
   , nConcurrentFetchPeers == maxConcurrentFetchPeers
   = Left $ FetchDeclineConcurrencyLimit

@@ -34,7 +34,7 @@ import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..), ChainSel
 import Ouroboros.Network.BlockFetch.Decision.Deadline (FetchDecisionPolicy (..), PeerInfo, FetchDecision, FetchDecline (..),
                                                      filterPlausibleCandidates, dropAlreadyFetched, dropAlreadyInFlightWithPeer,
                                                      selectForkSuffixes, fetchDecisionsDeadline, prioritisePeerChains, fetchRequestDecisions)
-import Ouroboros.Network.BlockFetch.Decision.BulkSync (fetchDecisionsBulkSyncM)
+import Ouroboros.Network.BlockFetch.Decision.Genesis (fetchDecisionsGenesisM)
 import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
 
 fetchDecisions
@@ -79,7 +79,7 @@ fetchDecisions
 fetchDecisions
   tracer
   fetchDecisionPolicy
-  FetchModeBulkSync
+  FetchModeGenesis
   currentChain
   fetchedBlocks
   fetchedMaxSlotNo
@@ -87,7 +87,7 @@ fetchDecisions
   peersOrderHandlers
   candidatesAndPeers
   =
-      fetchDecisionsBulkSyncM
+      fetchDecisionsGenesisM
         tracer
         fetchDecisionPolicy
         currentChain

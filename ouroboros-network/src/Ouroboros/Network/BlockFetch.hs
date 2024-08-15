@@ -140,8 +140,8 @@ data BlockFetchConfiguration =
          bfcMaxRequestsInflight    :: !Word,
 
          -- | Desired interval between calls to fetchLogicIteration
-         -- in BulkSync mode
-         bfcDecisionLoopIntervalBulkSync :: !DiffTime,
+         -- in Genesis mode
+         bfcDecisionLoopIntervalGenesis :: !DiffTime,
 
          -- | Desired interval between calls to fetchLogicIteration
          -- in Deadline mode
@@ -160,7 +160,7 @@ data GenesisBlockFetchConfiguration =
      GenesisBlockFetchConfiguration
       { -- | Grace period when starting to talk to a peer in bulk sync mode
         -- during which it is fine if the chain selection gets starved.
-        gbfcBulkSyncGracePeriod    :: !DiffTime
+        gbfcGenesisGracePeriod    :: !DiffTime
       }
       deriving (Eq, Generic, Show)
 
@@ -215,10 +215,10 @@ blockFetchLogic decisionTracer clientStateTracer
       FetchDecisionPolicy {
         maxInFlightReqsPerPeer       = bfcMaxRequestsInflight,
         maxConcurrencyDeadline       = bfcMaxConcurrencyDeadline,
-        decisionLoopIntervalBulkSync = bfcDecisionLoopIntervalBulkSync,
+        decisionLoopIntervalGenesis = bfcDecisionLoopIntervalGenesis,
         decisionLoopIntervalDeadline = bfcDecisionLoopIntervalDeadline,
         peerSalt                     = bfcSalt,
-        bulkSyncGracePeriod          = gbfcBulkSyncGracePeriod bfcGenesisBFConfig,
+        bulkSyncGracePeriod          = gbfcGenesisGracePeriod bfcGenesisBFConfig,
 
         plausibleCandidateChain,
         compareCandidateChains,
