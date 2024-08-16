@@ -54,6 +54,7 @@ import Ouroboros.Network.Mock.ConcreteBlock
 import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch)
 
+import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
 import Ouroboros.Network.Testing.Utils
 
 
@@ -207,8 +208,7 @@ chainPoints = map (castPoint . blockPoint)
             . AnchoredFragment.toOldestFirst
 
 data Example1TraceEvent =
-     TraceFetchDecision       [TraceLabelPeer Int
-                                (FetchDecision [Point BlockHeader])]
+     TraceFetchDecision       (TraceDecisionEvent Int BlockHeader)
    | TraceFetchClientState    (TraceLabelPeer Int
                                 (TraceFetchClientState BlockHeader))
    | TraceFetchClientSendRecv (TraceLabelPeer Int

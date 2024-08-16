@@ -31,6 +31,7 @@ import Control.Concurrent.Async
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception
 import Control.Monad (when)
+import Control.Monad.Class.MonadTime.SI (Time (..))
 import Control.Tracer
 
 import System.Directory
@@ -74,6 +75,8 @@ import Ouroboros.Network.Protocol.BlockFetch.Type qualified as BlockFetch
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.BlockFetch.Client
 import Ouroboros.Network.BlockFetch.ClientRegistry (FetchClientRegistry (..))
+import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation (..),
+           GenesisFetchMode (..))
 import Ouroboros.Network.DeltaQ (defaultGSV)
 
 
@@ -418,7 +421,7 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
               readCandidateChains    = readTVar candidateChainsVar
                                        >>= traverse readTVar,
               readCurrentChain       = readTVar currentChainVar,
-              readFetchMode          = return FetchModeBulkSync,
+              readFetchMode          = return $ PraosFetchMode FetchModeBulkSync,
               readFetchedBlocks      = (\h p -> castPoint p `Set.member` h) <$>
                                          getTestFetchedBlocks blockHeap,
               readFetchedMaxSlotNo   = maybe NoMaxSlotNo (maxSlotNoFromWithOrigin . pointSlot) <$>
@@ -434,7 +437,10 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
               blockMatchesHeader     = \_ _ -> True,
 
               headerForgeUTCTime,
-              blockForgeUTCTime      = headerForgeUTCTime . fmap blockHeader
+              blockForgeUTCTime      = headerForgeUTCTime . fmap blockHeader,
+              readChainSelStarvation = pure (ChainSelStarvationEndedAt (Time 0)),
+
+              demoteChainSyncJumpingDynamo = \_ -> pure ()
             }
           where
             plausibleCandidateChain cur candidate =
@@ -505,8 +511,12 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
                         bfcMaxConcurrencyBulkSync = 1,
                         bfcMaxConcurrencyDeadline = 2,
                         bfcMaxRequestsInflight    = 10,
-                        bfcDecisionLoopInterval   = 0.01,
-                        bfcSalt                   = 0
+                        bfcDecisionLoopIntervalGenesis = 0.04,
+                        bfcDecisionLoopIntervalPraos = 0.01,
+                        bfcSalt                   = 0,
+                        bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
+                          { gbfcGracePeriod = 10 -- seconds
+                          }
                         })
                  >> return ()
 
