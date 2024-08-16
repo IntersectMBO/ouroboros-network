@@ -44,6 +44,8 @@ import Ouroboros.Network.ControlMessage (ControlMessageSTM)
 
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.BlockFetch.Client
+import Ouroboros.Network.BlockFetch.ConsensusInterface
+           (ChainSelStarvation(..), GenesisFetchMode(..))
 import Ouroboros.Network.Channel
 import Ouroboros.Network.DeltaQ
 import Ouroboros.Network.Driver
@@ -55,6 +57,7 @@ import Ouroboros.Network.Protocol.BlockFetch.Type
 import Ouroboros.Network.Util.ShowProxy
 
 import Ouroboros.Network.Mock.ConcreteBlock
+import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
 
 
 -- | Run a single block fetch protocol until the chain is downloaded.
@@ -63,8 +66,7 @@ blockFetchExample0 :: forall m.
                       (MonadSTM m, MonadST m, MonadAsync m, MonadDelay m,
                        MonadFork m, MonadTime m, MonadTimer m, MonadMask m,
                        MonadThrow (STM m))
-                   => Tracer m [TraceLabelPeer Int
-                                 (FetchDecision [Point BlockHeader])]
+                   => Tracer m (TraceDecisionEvent Int BlockHeader)
                    -> Tracer m (TraceLabelPeer Int
                                  (TraceFetchClientState BlockHeader))
                    -> Tracer m (TraceLabelPeer Int
@@ -137,8 +139,12 @@ blockFetchExample0 decisionTracer clientStateTracer clientMsgTracer
             bfcMaxConcurrencyBulkSync = 1,
             bfcMaxConcurrencyDeadline = 2,
             bfcMaxRequestsInflight    = 10,
-            bfcDecisionLoopInterval   = 0.01,
-            bfcSalt                   = 0
+            bfcDecisionLoopIntervalGenesis = 0.04,
+            bfcDecisionLoopIntervalPraos = 0.01,
+            bfcSalt                   = 0,
+            bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
+              { gbfcGracePeriod = 10 -- seconds
+              }
           })
         >> return ()
 
@@ -172,8 +178,7 @@ blockFetchExample1 :: forall m.
                       (MonadSTM m, MonadST m, MonadAsync m, MonadDelay m,
                        MonadFork m, MonadTime m, MonadTimer m, MonadMask m,
                        MonadThrow (STM m))
-                   => Tracer m [TraceLabelPeer Int
-                                 (FetchDecision [Point BlockHeader])]
+                   => Tracer m (TraceDecisionEvent Int BlockHeader)
                    -> Tracer m (TraceLabelPeer Int
                                  (TraceFetchClientState BlockHeader))
                    -> Tracer m (TraceLabelPeer Int
@@ -246,8 +251,12 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
             bfcMaxConcurrencyBulkSync = 1,
             bfcMaxConcurrencyDeadline = 2,
             bfcMaxRequestsInflight    = 10,
-            bfcDecisionLoopInterval   = 0.01,
-            bfcSalt                   = 0
+            bfcDecisionLoopIntervalGenesis = 0.04,
+            bfcDecisionLoopIntervalPraos = 0.01,
+            bfcSalt                   = 0,
+            bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
+              { gbfcGracePeriod = 10 -- seconds
+              }
           })
         >> return ()
 
@@ -277,7 +286,7 @@ sampleBlockFetchPolicy1 headerFieldsForgeUTCTime blockHeap currentChain candidat
     BlockFetchConsensusInterface {
       readCandidateChains    = return candidateChains,
       readCurrentChain       = return currentChain,
-      readFetchMode          = return FetchModeBulkSync,
+      readFetchMode          = return $ PraosFetchMode FetchModeBulkSync,
       readFetchedBlocks      = flip Set.member <$>
                                  getTestFetchedBlocks blockHeap,
       readFetchedMaxSlotNo   = List.foldl' max NoMaxSlotNo .
@@ -293,7 +302,9 @@ sampleBlockFetchPolicy1 headerFieldsForgeUTCTime blockHeap currentChain candidat
       blockMatchesHeader     = \_ _ -> True,
 
       headerForgeUTCTime     = headerFieldsForgeUTCTime,
-      blockForgeUTCTime      = headerFieldsForgeUTCTime
+      blockForgeUTCTime      = headerFieldsForgeUTCTime,
+      readChainSelStarvation = pure (ChainSelStarvationEndedAt (Time 0)),
+      demoteCSJDynamo = \_ -> pure ()
       }
   where
     plausibleCandidateChain cur candidate =
