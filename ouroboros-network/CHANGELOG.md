@@ -4,6 +4,16 @@
 
 ### Breaking changes
 
+* A new Genesis fetch mode of BlockFetch has been implemented to penalize peers that
+  are slow enough to delay syncing. This is necessary to deflect attacks
+  targeting the synchronizing nodes.
+  The penalization consists in switching the serving peer when blocks are in
+  flight long enough that the syncing node is idle while waiting for more blocks
+  to validate.
+  Full details on the implementation are in
+  `ouroboros-network/src/Ouroboros/Network/BlockFetch/Decision/Genesis.hs`
+  [PR #4919](https://github.com/IntersectMBO/ouroboros-network/pull/4919).
+
 * moved `accBigPoolStake` and `reRelativeStake` to ouroboros-networking-api
   in order to expose functionality of creating snapshots of big ledger peers,
   eg. for Genesis consensus mode.

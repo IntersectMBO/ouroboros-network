@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -84,6 +85,7 @@ module Ouroboros.Network.BlockFetch
   ( blockFetchLogic
   , BlockFetchConfiguration (..)
   , BlockFetchConsensusInterface (..)
+  , GenesisBlockFetchConfiguration (..)
     -- ** Tracer types
   , FetchDecision
   , TraceFetchClientState (..)
@@ -109,6 +111,8 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer)
 
+import GHC.Generics (Generic)
+
 import Ouroboros.Network.Block
 import Ouroboros.Network.SizeInBytes (SizeInBytes)
 
@@ -121,7 +125,7 @@ import Ouroboros.Network.BlockFetch.ConsensusInterface
            (BlockFetchConsensusInterface (..), FromConsensus (..),
            WhetherReceivingTentativeBlocks (..))
 import Ouroboros.Network.BlockFetch.State
-
+import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
 
 
 -- | Configuration for FetchDecisionPolicy.
@@ -138,12 +142,29 @@ data BlockFetchConfiguration =
          bfcMaxRequestsInflight    :: !Word,
 
          -- | Desired interval between calls to fetchLogicIteration
-         bfcDecisionLoopInterval   :: !DiffTime,
+         -- in Genesis fetch mode
+         bfcDecisionLoopIntervalGenesis :: !DiffTime,
+
+         -- | Desired interval between calls to fetchLogicIteration
+         -- in Praos fetch modes
+         bfcDecisionLoopIntervalPraos :: !DiffTime,
 
          -- | Salt used when comparing peers
-         bfcSalt                   :: !Int
+         bfcSalt                   :: !Int,
+
+         -- | Genesis-specific parameters
+         bfcGenesisBFConfig        :: !GenesisBlockFetchConfiguration
      }
      deriving (Show)
+
+-- | BlockFetch configuration parameters specific to Genesis.
+data GenesisBlockFetchConfiguration =
+     GenesisBlockFetchConfiguration
+      { -- | Grace period when starting to talk to a peer in bulk sync mode
+        -- during which it is fine if the chain selection gets starved.
+        gbfcGenesisGracePeriod    :: !DiffTime
+      }
+      deriving (Eq, Generic, Show)
 
 -- | Execute the block fetch logic. It monitors the current chain and candidate
 -- chains. It decided which block bodies to fetch and manages the process of
@@ -157,11 +178,11 @@ blockFetchLogic :: forall addr header block m.
                    , HasHeader block
                    , HeaderHash header ~ HeaderHash block
                    , MonadDelay m
-                   , MonadSTM m
+                   , MonadTimer m
                    , Ord addr
                    , Hashable addr
                    )
-                => Tracer m [TraceLabelPeer addr (FetchDecision [Point header])]
+                => Tracer m (TraceDecisionEvent addr header)
                 -> Tracer m (TraceLabelPeer addr (TraceFetchClientState header))
                 -> BlockFetchConsensusInterface addr header block m
                 -> FetchClientRegistry addr header block m
@@ -179,6 +200,7 @@ blockFetchLogic decisionTracer clientStateTracer
       fetchDecisionPolicy
       fetchTriggerVariables
       fetchNonTriggerVariables
+      demoteCSJDynamo
   where
     mkFetchClientPolicy :: WhetherReceivingTentativeBlocks -> STM m (FetchClientPolicy header block m)
     mkFetchClientPolicy receivingTentativeBlocks = do
@@ -196,8 +218,10 @@ blockFetchLogic decisionTracer clientStateTracer
         maxInFlightReqsPerPeer   = bfcMaxRequestsInflight,
         maxConcurrencyBulkSync   = bfcMaxConcurrencyBulkSync,
         maxConcurrencyDeadline   = bfcMaxConcurrencyDeadline,
-        decisionLoopInterval     = bfcDecisionLoopInterval,
+        decisionLoopIntervalGenesis = bfcDecisionLoopIntervalGenesis,
+        decisionLoopIntervalPraos = bfcDecisionLoopIntervalPraos,
         peerSalt                 = bfcSalt,
+        bulkSyncGracePeriod = gbfcGenesisGracePeriod bfcGenesisBFConfig,
 
         plausibleCandidateChain,
         compareCandidateChains,
@@ -219,5 +243,6 @@ blockFetchLogic decisionTracer clientStateTracer
         readStatePeerStateVars    = readFetchClientsStateVars registry,
         readStatePeerGSVs         = readPeerGSVs registry,
         readStateFetchMode        = readFetchMode,
-        readStateFetchedMaxSlotNo = readFetchedMaxSlotNo
+        readStateFetchedMaxSlotNo = readFetchedMaxSlotNo,
+        readStateChainSelStarvation = readChainSelStarvation
       }

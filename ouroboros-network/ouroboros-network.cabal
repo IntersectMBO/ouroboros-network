@@ -33,6 +33,8 @@ library
                        Ouroboros.Network.BlockFetch.ClientRegistry
                        Ouroboros.Network.BlockFetch.ClientState
                        Ouroboros.Network.BlockFetch.Decision
+                       Ouroboros.Network.BlockFetch.Decision.Genesis
+                       Ouroboros.Network.BlockFetch.Decision.Trace
                        Ouroboros.Network.BlockFetch.DeltaQ
                        Ouroboros.Network.BlockFetch.State
                        Ouroboros.Network.DeltaQ
@@ -113,6 +115,7 @@ library
                        cborg             >=0.2.1 && <0.3,
                        containers,
                        deepseq,
+                       dlist,
                        dns,
                        hashable,
                        iproute,
@@ -121,6 +124,7 @@ library
                        nothunks,
                        psqueues          >=0.2.3 && <0.3,
                        random,
+                       transformers,
 
                        cardano-prelude,
                        cardano-slotting,
@@ -336,6 +340,7 @@ executable demo-chain-sync
 
                        contra-tracer,
 
+                       si-timers,
                        typed-protocols,
                        strict-stm,
                        ouroboros-network-api,

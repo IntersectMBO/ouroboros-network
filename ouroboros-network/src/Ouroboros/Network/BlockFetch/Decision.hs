@@ -11,15 +11,20 @@ module Ouroboros.Network.BlockFetch.Decision
   , FetchDecisionPolicy (..)
   , FetchMode (..)
   , PeerInfo
+  , peerInfoPeer
   , FetchDecision
   , FetchDecline (..)
     -- ** Components of the decision-making process
+  , ChainSuffix (..)
+  , CandidateFragments
   , filterPlausibleCandidates
   , selectForkSuffixes
   , filterNotAlreadyFetched
   , filterNotAlreadyInFlightWithPeer
+  , filterWithMaxSlotNo
   , prioritisePeerChains
   , filterNotAlreadyInFlightWithOtherPeers
+  , fetchRequestDecision
   , fetchRequestDecisions
   ) where
 
@@ -55,8 +60,10 @@ data FetchDecisionPolicy header = FetchDecisionPolicy {
 
        maxConcurrencyBulkSync  :: Word,
        maxConcurrencyDeadline  :: Word,
-       decisionLoopInterval    :: DiffTime,
+       decisionLoopIntervalGenesis :: DiffTime,
+       decisionLoopIntervalPraos :: DiffTime,
        peerSalt                :: Int,
+       bulkSyncGracePeriod     :: DiffTime,
 
        plausibleCandidateChain :: HasCallStack
                                => AnchoredFragment header
@@ -78,6 +85,9 @@ type PeerInfo header peer extra =
          peer,
          extra
        )
+
+peerInfoPeer :: PeerInfo header peer extra -> peer
+peerInfoPeer (_, _, _, p, _) = p
 
 -- | Throughout the decision making process we accumulate reasons to decline
 -- to fetch any blocks. This type is used to wrap intermediate and final
