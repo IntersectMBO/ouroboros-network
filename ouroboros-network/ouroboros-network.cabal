@@ -60,6 +60,8 @@ library
     Ouroboros.Network.BlockFetch.ClientRegistry
     Ouroboros.Network.BlockFetch.ClientState
     Ouroboros.Network.BlockFetch.Decision
+    Ouroboros.Network.BlockFetch.Decision.Genesis
+    Ouroboros.Network.BlockFetch.Decision.Trace
     Ouroboros.Network.BlockFetch.DeltaQ
     Ouroboros.Network.BlockFetch.State
     Ouroboros.Network.DeltaQ
@@ -151,6 +153,7 @@ library
     containers,
     contra-tracer,
     deepseq,
+    dlist,
     dns,
     hashable,
     io-classes ^>=1.5.0,
@@ -169,6 +172,7 @@ library
     si-timers,
     strict-checked-vars ^>=0.2,
     strict-stm,
+    transformers,
     typed-protocols ^>=0.3,
     typed-protocols-stateful,
 
@@ -366,6 +370,7 @@ executable demo-chain-sync
     ouroboros-network-protocols,
     random,
     serialise,
+    si-timers,
     strict-stm,
     typed-protocols,
 
