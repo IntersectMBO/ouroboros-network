@@ -67,7 +67,8 @@ blockFetchExample0 :: forall m.
                       (MonadSTM m, MonadST m, MonadAsync m, MonadDelay m,
                        MonadFork m, MonadTime m, MonadTimer m, MonadMask m,
                        MonadThrow (STM m))
-                   => Tracer m (TraceDecisionEvent Int BlockHeader)
+                   => GenesisFetchMode
+                   -> Tracer m (TraceDecisionEvent Int BlockHeader)
                    -> Tracer m (TraceLabelPeer Int
                                  (TraceFetchClientState BlockHeader))
                    -> Tracer m (TraceLabelPeer Int
@@ -78,7 +79,7 @@ blockFetchExample0 :: forall m.
                    -> AnchoredFragment Block -- ^ Fixed current chain
                    -> AnchoredFragment Block -- ^ Fixed candidate chain
                    -> m ()
-blockFetchExample0 decisionTracer clientStateTracer clientMsgTracer
+blockFetchExample0 fetchMode decisionTracer clientStateTracer clientMsgTracer
                    clientDelay serverDelay
                    controlMessageSTM
                    currentChain candidateChain = do
@@ -134,7 +135,7 @@ blockFetchExample0 decisionTracer clientStateTracer clientMsgTracer
     blockFetch registry blockHeap =
         blockFetchLogic
           decisionTracer clientStateTracer
-          (sampleBlockFetchPolicy1 headerForgeUTCTime blockHeap currentChainHeaders candidateChainHeaders)
+          (sampleBlockFetchPolicy1 fetchMode headerForgeUTCTime blockHeap currentChainHeaders candidateChainHeaders)
           registry
           (BlockFetchConfiguration {
             bfcMaxConcurrencyBulkSync = 1,
@@ -179,7 +180,8 @@ blockFetchExample1 :: forall m.
                       (MonadSTM m, MonadST m, MonadAsync m, MonadDelay m,
                        MonadFork m, MonadTime m, MonadTimer m, MonadMask m,
                        MonadThrow (STM m))
-                   => Tracer m (TraceDecisionEvent Int BlockHeader)
+                   => GenesisFetchMode
+                   -> Tracer m (TraceDecisionEvent Int BlockHeader)
                    -> Tracer m (TraceLabelPeer Int
                                  (TraceFetchClientState BlockHeader))
                    -> Tracer m (TraceLabelPeer Int
@@ -190,7 +192,7 @@ blockFetchExample1 :: forall m.
                    -> AnchoredFragment Block   -- ^ Fixed current chain
                    -> [AnchoredFragment Block] -- ^ Fixed candidate chains
                    -> m ()
-blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
+blockFetchExample1 fetchMode decisionTracer clientStateTracer clientMsgTracer
                    clientDelay serverDelay
                    controlMessageSTM
                    currentChain candidateChains = do
@@ -246,7 +248,7 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
     blockFetch registry blockHeap =
         blockFetchLogic
           decisionTracer clientStateTracer
-          (sampleBlockFetchPolicy1 headerForgeUTCTime blockHeap currentChainHeaders candidateChainHeaders)
+          (sampleBlockFetchPolicy1 fetchMode headerForgeUTCTime blockHeap currentChainHeaders candidateChainHeaders)
           registry
           (BlockFetchConfiguration {
             bfcMaxConcurrencyBulkSync = 1,
@@ -275,16 +277,17 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
 --
 
 sampleBlockFetchPolicy1 :: (MonadSTM m, HasHeader header, HasHeader block)
-                        => (forall x. HasHeader x => FromConsensus x -> STM m UTCTime)
+                        => GenesisFetchMode
+                        -> (forall x. HasHeader x => FromConsensus x -> STM m UTCTime)
                         -> TestFetchedBlockHeap m block
                         -> AnchoredFragment header
                         -> Map peer (AnchoredFragment header)
                         -> BlockFetchConsensusInterface peer header block m
-sampleBlockFetchPolicy1 headerFieldsForgeUTCTime blockHeap currentChain candidateChains =
+sampleBlockFetchPolicy1 fetchMode headerFieldsForgeUTCTime blockHeap currentChain candidateChains =
     BlockFetchConsensusInterface {
       readCandidateChains    = return candidateChains,
       readCurrentChain       = return currentChain,
-      readFetchMode          = return $ PraosFetchMode FetchModeBulkSync,
+      readFetchMode          = return fetchMode,
       readFetchedBlocks      = flip Set.member <$>
                                  getTestFetchedBlocks blockHeap,
       readFetchedMaxSlotNo   = List.foldl' max NoMaxSlotNo .

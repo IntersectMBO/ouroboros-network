@@ -46,6 +46,7 @@ import Ouroboros.Network.Block
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.BlockFetch.ClientRegistry
 import Ouroboros.Network.BlockFetch.ClientState
+import Ouroboros.Network.BlockFetch.ConsensusInterface (GenesisFetchMode (..))
 import Ouroboros.Network.BlockFetch.DeltaQ
 import Ouroboros.Network.BlockFetch.Examples
 import Ouroboros.Network.Driver (TraceSendRecv)
@@ -65,18 +66,18 @@ import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
 tests :: TestTree
 tests = testGroup "BlockFetch"
   [ testGroup "BulkSync"
-    [ testProperty "static chains without overlap"
-                   prop_blockFetchStaticNoOverlap
+    [ testProperty "static chains without overlap" $
+                   prop_blockFetchStaticNoOverlap (PraosFetchMode FetchModeBulkSync)
 
-    , testProperty "static chains with overlap"
-                   prop_blockFetchStaticWithOverlap
+    , testProperty "static chains with overlap" $
+                   prop_blockFetchStaticWithOverlap (PraosFetchMode FetchModeBulkSync)
 
     --TODO: test where for any given delta-Q, check that we do achieve full
     -- pipelining to keep the server busy and get decent enough batching of
     -- requests (testing the high/low watermark mechanism).
-    , testProperty "termination"
-                   prop_terminate
-  ]
+    , testProperty "termination" $
+                   prop_terminate (PraosFetchMode FetchModeBulkSync)
+    ]
   , testCaseSteps "bracketSyncWithFetchClient"
                   unit_bracketSyncWithFetchClient
   , testProperty "compare comparePeerGSV" prop_comparePeerGSV
@@ -106,8 +107,8 @@ tests = testGroup "BlockFetch"
 -- * 'tracePropertyClientStateSanity'
 -- * 'tracePropertyInFlight'
 --
-prop_blockFetchStaticNoOverlap :: TestChainFork -> Property
-prop_blockFetchStaticNoOverlap (TestChainFork common fork1 fork2) =
+prop_blockFetchStaticNoOverlap :: GenesisFetchMode -> TestChainFork -> Property
+prop_blockFetchStaticNoOverlap fetchMode (TestChainFork common fork1 fork2) =
     let trace = selectTraceEventsDynamic (runSimTrace simulation)
 
      in counterexample ("\nTrace:\n" ++ unlines (map show trace)) $
@@ -126,6 +127,7 @@ prop_blockFetchStaticNoOverlap (TestChainFork common fork1 fork2) =
     simulation :: IOSim s ()
     simulation =
       blockFetchExample1
+        fetchMode
         (contramap TraceFetchDecision       dynamicTracer)
         (contramap TraceFetchClientState    dynamicTracer)
         (contramap TraceFetchClientSendRecv dynamicTracer)
@@ -163,8 +165,8 @@ prop_blockFetchStaticNoOverlap (TestChainFork common fork1 fork2) =
 --
 -- TODO: 'prop_blockFetchBulkSyncStaticWithOverlap' fails if we introduce delays. issue #2622
 --
-prop_blockFetchStaticWithOverlap :: TestChainFork -> Property
-prop_blockFetchStaticWithOverlap (TestChainFork _common fork1 fork2) =
+prop_blockFetchStaticWithOverlap :: GenesisFetchMode -> TestChainFork -> Property
+prop_blockFetchStaticWithOverlap fetchMode (TestChainFork _common fork1 fork2) =
     let trace = selectTraceEventsDynamic (runSimTrace simulation)
 
      in counterexample ("\nTrace:\n" ++ unlines (map show trace)) $
@@ -187,6 +189,7 @@ prop_blockFetchStaticWithOverlap (TestChainFork _common fork1 fork2) =
     simulation :: forall s. IOSim s ()
     simulation =
       blockFetchExample1
+        fetchMode
         (contramap TraceFetchDecision       dynamicTracer)
         (contramap TraceFetchClientState    dynamicTracer)
         (contramap TraceFetchClientSendRecv dynamicTracer)
@@ -756,8 +759,8 @@ unit_bracketSyncWithFetchClient step = do
 -- make a proper calculation what should it be.  At the moment this test shows
 -- that the block fetch protocol can exit within some large time limit.
 --
-prop_terminate :: TestChainFork -> Positive SmallDelay -> Property
-prop_terminate (TestChainFork _commonChain forkChain _forkChain) (Positive (SmallDelay delay)) =
+prop_terminate :: GenesisFetchMode -> TestChainFork -> Positive SmallDelay -> Property
+prop_terminate fetchMode (TestChainFork _commonChain forkChain _forkChain) (Positive (SmallDelay delay)) =
     let tr = runSimTrace simulation
         trace :: [FetchRequestTrace]
         trace  = selectTraceEventsDynamic tr
@@ -785,6 +788,7 @@ prop_terminate (TestChainFork _commonChain forkChain _forkChain) (Positive (Smal
             threadId <- myThreadId
             labelThread threadId "block-fetch"
             blockFetchExample0
+              fetchMode
               (contramap TraceFetchDecision       dynamicTracer)
               (contramap TraceFetchClientState    dynamicTracer)
               (contramap TraceFetchClientSendRecv dynamicTracer)
