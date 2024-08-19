@@ -1,10 +1,10 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE TupleSections #-}
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE TypeOperators       #-}
 
 -- | Genesis decision logic
 --
@@ -122,35 +122,34 @@
 -- If the peer cannot offer any more blocks after that, it will be rotated out
 -- soon.
 --
-module Ouroboros.Network.BlockFetch.Decision.Genesis (
-  fetchDecisionsGenesisM
-) where
+module Ouroboros.Network.BlockFetch.Decision.Genesis (fetchDecisionsGenesisM) where
 
 import Control.Exception (assert)
 import Control.Monad (guard)
-import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime (getMonotonicTime), addTime)
+import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime (getMonotonicTime),
+           addTime)
 import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
-import Control.Monad.Writer.Strict (Writer, runWriter, MonadWriter (tell))
+import Control.Monad.Writer.Strict (MonadWriter (tell), Writer, runWriter)
 import Control.Tracer (Tracer, traceWith)
-import Data.Bifunctor (first, Bifunctor (..))
-import Data.Foldable (toList)
+import Data.Bifunctor (Bifunctor (..), first)
 import Data.DList (DList)
-import qualified Data.DList as DList
-import qualified Data.List as List
-import Data.Sequence (Seq (..), (><), (<|), (|>))
-import qualified Data.Sequence as Sequence
-import qualified Data.Set as Set
+import Data.DList qualified as DList
+import Data.Foldable (toList)
+import Data.List qualified as List
 import Data.Maybe (maybeToList)
+import Data.Sequence (Seq (..), (<|), (><), (|>))
+import Data.Sequence qualified as Sequence
+import Data.Set qualified as Set
 
 import Cardano.Prelude (partitionEithers)
 
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import qualified Ouroboros.Network.AnchoredFragment as AF
+import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.Block
-import Ouroboros.Network.BlockFetch.ClientState
-         (FetchRequest (..), PeersOrder (..), PeerFetchInFlight(..))
+import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..),
+           PeerFetchInFlight (..), PeersOrder (..))
+import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation (..))
 import Ouroboros.Network.BlockFetch.DeltaQ (calculatePeerFetchInFlightLimits)
-import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation(..))
 
 import Ouroboros.Network.BlockFetch.Decision
 import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent (..))
@@ -242,7 +241,7 @@ fetchDecisionsGenesisM
           let peersOrderAll' = ( do
                   p <- peersOrderAll
                   case List.find ((p ==) . peerOf) actualPeers of
-                    Just d -> pure d
+                    Just d  -> pure d
                     Nothing -> Empty
                 ) >< Sequence.filter ((`notElem` peersOrderAll) . peerOf) actualPeers
               -- Set the current peer to Nothing if it is not at the front of
@@ -269,7 +268,7 @@ fetchDecisionsGenesisM
         peersOrder@PeersOrder {peersOrderStart, peersOrderCurrent, peersOrderAll} = do
           lastStarvationTime <- case chainSelStarvation of
             ChainSelStarvationEndedAt time -> pure time
-            ChainSelStarvationOngoing -> getMonotonicTime
+            ChainSelStarvationOngoing      -> getMonotonicTime
           case peersOrderCurrent of
             Just peer
               | lastStarvationTime >= addTime bulkSyncGracePeriod peersOrderStart -> do
@@ -443,7 +442,7 @@ selectTheCandidate
           _ : _ -> do
             let maxChainOn f c0 c1 = case compareCandidateChains (f c0) (f c1) of
                   LT -> c1
-                  _ -> c0
+                  _  -> c0
                 -- maximumBy yields the last element in case of a tie while we
                 -- prefer the first one
                 chainSfx = fst $

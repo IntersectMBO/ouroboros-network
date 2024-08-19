@@ -25,11 +25,11 @@ import Data.Sequence (Seq (Empty))
 import Data.Set qualified as Set
 import Data.Void
 
-import qualified Control.Monad.Class.MonadSTM.Internal as Internal.TVar
-import Control.Concurrent.Class.MonadSTM.Strict.TVar.Checked
-           (newTVarIO, StrictTVar, readTVarIO, writeTVar)
+import Control.Concurrent.Class.MonadSTM.Strict.TVar.Checked (StrictTVar,
+           newTVarIO, readTVarIO, writeTVar)
 import Control.Exception (assert)
 import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadSTM.Internal qualified as Internal.TVar
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, traceWith)
@@ -40,16 +40,16 @@ import Ouroboros.Network.Block
 
 import Ouroboros.Network.BlockFetch.ClientState (FetchClientStateVars (..),
            FetchRequest (..), PeerFetchInFlight (..), PeerFetchStatus (..),
-           TraceFetchClientState (..), TraceLabelPeer (..), addNewFetchRequest,
-           readFetchClientState, PeersOrder (..))
+           PeersOrder (..), TraceFetchClientState (..), TraceLabelPeer (..),
+           addNewFetchRequest, readFetchClientState)
+import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation,
+           GenesisFetchMode (..))
 import Ouroboros.Network.BlockFetch.Decision (FetchDecision,
            FetchDecisionPolicy (..), FetchDecline (..), FetchMode (..),
            PeerInfo, fetchDecisions)
 import Ouroboros.Network.BlockFetch.Decision.Genesis (fetchDecisionsGenesisM)
-import Ouroboros.Network.BlockFetch.DeltaQ (PeerGSV (..))
-import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation,
-           GenesisFetchMode (..))
 import Ouroboros.Network.BlockFetch.Decision.Trace
+import Ouroboros.Network.BlockFetch.DeltaQ (PeerGSV (..))
 
 fetchLogicIterations
   :: ( HasHeader header

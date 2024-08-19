@@ -32,7 +32,7 @@ module Ouroboros.Network.BlockFetch.ClientState
     -- * Ancillary
   , FromConsensus (..)
   , WhetherReceivingTentativeBlocks (..)
-  , PeersOrder(..)
+  , PeersOrder (..)
   ) where
 
 import Data.List (foldl')
@@ -793,10 +793,10 @@ tryReadTMergeVar (TMergeVar v) = tryReadTMVar v
 data PeersOrder peer = PeersOrder
   { peersOrderCurrent :: Maybe peer
     -- ^ The current peer we are fetching from, if there is one.
-  , peersOrderAll :: Seq peer
+  , peersOrderAll     :: Seq peer
     -- ^ All the peers, from most preferred to least preferred.
     --
     -- INVARIANT: If there is a current peer, it is always the head of this list.
-  , peersOrderStart :: Time
+  , peersOrderStart   :: Time
     -- ^ The time at which we started talking to the current peer.
   }

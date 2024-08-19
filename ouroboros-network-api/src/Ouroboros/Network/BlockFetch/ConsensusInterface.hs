@@ -1,7 +1,7 @@
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE RankNTypes    #-}
 {-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveFunctor  #-}
+{-# LANGUAGE DeriveGeneric  #-}
+{-# LANGUAGE RankNTypes     #-}
 
 module Ouroboros.Network.BlockFetch.ConsensusInterface
   ( FetchMode (..)
@@ -17,8 +17,8 @@ import Control.Monad.Class.MonadTime (UTCTime)
 import Control.Monad.Class.MonadTime.SI (Time)
 
 import Data.Map.Strict (Map)
-import GHC.Stack (HasCallStack)
 import GHC.Generics (Generic)
+import GHC.Stack (HasCallStack)
 import NoThunks.Class (NoThunks)
 
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment)

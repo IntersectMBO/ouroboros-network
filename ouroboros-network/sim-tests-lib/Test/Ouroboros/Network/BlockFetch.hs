@@ -52,8 +52,8 @@ import Ouroboros.Network.Mock.ConcreteBlock
 import Ouroboros.Network.NodeToNode.Version (isPipeliningEnabled)
 import Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch)
 
-import Ouroboros.Network.Testing.Utils
 import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
+import Ouroboros.Network.Testing.Utils
 
 
 --

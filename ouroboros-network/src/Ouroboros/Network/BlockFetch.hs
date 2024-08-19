@@ -124,8 +124,8 @@ import Ouroboros.Network.BlockFetch.ClientRegistry (FetchClientPolicy (..),
 import Ouroboros.Network.BlockFetch.ConsensusInterface
            (BlockFetchConsensusInterface (..), FromConsensus (..),
            WhetherReceivingTentativeBlocks (..))
-import Ouroboros.Network.BlockFetch.State
 import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
+import Ouroboros.Network.BlockFetch.State
 
 
 -- | Configuration for FetchDecisionPolicy.
@@ -133,13 +133,13 @@ import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
 data BlockFetchConfiguration =
      BlockFetchConfiguration {
          -- | Maximum concurrent downloads during bulk syncing.
-         bfcMaxConcurrencyBulkSync :: !Word,
+         bfcMaxConcurrencyBulkSync      :: !Word,
 
          -- | Maximum concurrent downloads during deadline syncing.
-         bfcMaxConcurrencyDeadline :: !Word,
+         bfcMaxConcurrencyDeadline      :: !Word,
 
          -- | Maximum requests in flight per each peer.
-         bfcMaxRequestsInflight    :: !Word,
+         bfcMaxRequestsInflight         :: !Word,
 
          -- | Desired interval between calls to fetchLogicIteration
          -- in Genesis fetch mode
@@ -147,13 +147,13 @@ data BlockFetchConfiguration =
 
          -- | Desired interval between calls to fetchLogicIteration
          -- in Praos fetch modes
-         bfcDecisionLoopIntervalPraos :: !DiffTime,
+         bfcDecisionLoopIntervalPraos   :: !DiffTime,
 
          -- | Salt used when comparing peers
-         bfcSalt                   :: !Int,
+         bfcSalt                        :: !Int,
 
          -- | Genesis-specific parameters
-         bfcGenesisBFConfig        :: !GenesisBlockFetchConfiguration
+         bfcGenesisBFConfig             :: !GenesisBlockFetchConfiguration
      }
      deriving (Show)
 
