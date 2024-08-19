@@ -76,8 +76,8 @@ import Ouroboros.Network.Protocol.BlockFetch.Type qualified as BlockFetch
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.BlockFetch.Client
 import Ouroboros.Network.BlockFetch.ClientRegistry (FetchClientRegistry (..))
-import Ouroboros.Network.BlockFetch.ConsensusInterface
-           (ChainSelStarvation(..), GenesisFetchMode(..))
+import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation (..),
+           GenesisFetchMode (..))
 import Ouroboros.Network.DeltaQ (defaultGSV)
 
 

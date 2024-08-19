@@ -44,8 +44,8 @@ module Ouroboros.Network.Diffusion.Configuration
 import Control.Monad.Class.MonadTime.SI
 import System.Random (randomRIO)
 
-import Ouroboros.Network.BlockFetch
-           (BlockFetchConfiguration (..), GenesisBlockFetchConfiguration (..))
+import Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..),
+           GenesisBlockFetchConfiguration (..))
 import Ouroboros.Network.ConnectionManager.Core (defaultProtocolIdleTimeout,
            defaultResetTimeout, defaultTimeWaitTimeout)
 import Ouroboros.Network.ConsensusMode
