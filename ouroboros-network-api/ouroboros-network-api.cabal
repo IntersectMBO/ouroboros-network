@@ -71,6 +71,7 @@ library
                        quiet,
 
                        cardano-binary,
+                       cardano-ledger-binary,
                        cardano-slotting,
                        cardano-strict-containers,
                        contra-tracer,
