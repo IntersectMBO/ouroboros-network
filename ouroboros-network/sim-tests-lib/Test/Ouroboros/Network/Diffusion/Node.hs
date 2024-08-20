@@ -265,7 +265,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
                        (\ _ (_ :: SomeException) -> ShutdownNode)
               , Diff.P2P.daPeerMetrics            = peerMetrics
                 -- fetch mode is not used (no block-fetch mini-protocol)
-              , Diff.P2P.daBlockFetchMode         = pure FetchModeDeadline
+              , Diff.P2P.daBlockFetchMode         = pure $ PraosFetchMode FetchModeDeadline
               , Diff.P2P.daReturnPolicy           = \_ -> config_REPROMOTE_DELAY
               , Diff.P2P.daPeerSharingRegistry    = nkPeerSharingRegistry nodeKernel
               }
