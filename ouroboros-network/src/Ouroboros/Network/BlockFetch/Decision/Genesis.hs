@@ -148,7 +148,8 @@ import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.Block
 import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..),
            PeerFetchInFlight (..), PeersOrder (..))
-import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation (..))
+import Ouroboros.Network.BlockFetch.ConsensusInterface
+           (ChainSelStarvation (..), GenesisFetchMode (..))
 import Ouroboros.Network.BlockFetch.DeltaQ (calculatePeerFetchInFlightLimits)
 
 import Ouroboros.Network.BlockFetch.Decision
@@ -490,7 +491,7 @@ selectThePeer
     go grossRequest (c@(candidate, peerInfo) : xs) = do
       if requestHeadInCandidate candidate grossRequest then do
         tell $ DList.fromList
-          [(FetchDeclineConcurrencyLimit FetchModeBulkSync 1, pInfo)
+          [(FetchDeclineConcurrencyLimit FetchModeGenesis 1, pInfo)
           | (_, pInfo) <- xs
           ]
         pure (Just c)
