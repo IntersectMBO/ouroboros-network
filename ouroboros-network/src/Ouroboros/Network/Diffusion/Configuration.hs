@@ -98,7 +98,7 @@ defaultBlockFetchConfiguration bfcSalt =
     bfcDecisionLoopIntervalGenesis = 0.04,  -- 40ms
     bfcDecisionLoopIntervalPraos = 0.01,  -- 10ms
     bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
-      { gbfcGenesisGracePeriod = 10 },  -- seconds
+      { gbfcGracePeriod = 10 },  -- seconds
     bfcSalt }
 
 defaultChainSyncTimeout :: IO ChainSyncTimeout

@@ -299,7 +299,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
           bfcDecisionLoopIntervalPraos = 0.01,
           bfcSalt                   = 0,
           bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
-            { gbfcGenesisGracePeriod = 10 -- seconds
+            { gbfcGracePeriod = 10 -- seconds
             }
         })
 

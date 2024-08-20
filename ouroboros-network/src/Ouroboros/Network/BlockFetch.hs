@@ -160,9 +160,9 @@ data BlockFetchConfiguration =
 -- | BlockFetch configuration parameters specific to Genesis.
 data GenesisBlockFetchConfiguration =
      GenesisBlockFetchConfiguration
-      { -- | Grace period when starting to talk to a peer in bulk sync mode
+      { -- | Grace period when starting to talk to a peer in genesis mode
         -- during which it is fine if the chain selection gets starved.
-        gbfcGenesisGracePeriod    :: !DiffTime
+        gbfcGracePeriod :: !DiffTime
       }
       deriving (Eq, Generic, Show)
 
@@ -221,7 +221,7 @@ blockFetchLogic decisionTracer clientStateTracer
         decisionLoopIntervalGenesis = bfcDecisionLoopIntervalGenesis,
         decisionLoopIntervalPraos = bfcDecisionLoopIntervalPraos,
         peerSalt                 = bfcSalt,
-        bulkSyncGracePeriod = gbfcGenesisGracePeriod bfcGenesisBFConfig,
+        bulkSyncGracePeriod = gbfcGracePeriod bfcGenesisBFConfig,
 
         plausibleCandidateChain,
         compareCandidateChains,
