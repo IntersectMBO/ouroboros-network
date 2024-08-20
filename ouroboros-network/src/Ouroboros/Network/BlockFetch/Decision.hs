@@ -48,7 +48,8 @@ import Ouroboros.Network.Point (withOriginToMaybe)
 
 import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..),
            PeerFetchInFlight (..), PeerFetchStatus (..))
-import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..))
+import Ouroboros.Network.BlockFetch.ConsensusInterface
+           (FetchMode (..), GenesisFetchMode (..))
 import Ouroboros.Network.BlockFetch.DeltaQ (PeerFetchInFlightLimits (..),
            PeerGSV (..), SizeInBytes, calculatePeerFetchInFlightLimits,
            comparePeerGSV, comparePeerGSV', estimateExpectedResponseDuration,
@@ -233,7 +234,7 @@ data FetchDecline =
      -- * the corresponding configured limit constant, either
      --   'maxConcurrencyBulkSync' or 'maxConcurrencyDeadline'
      --
-   | FetchDeclineConcurrencyLimit   !FetchMode !Word
+   | FetchDeclineConcurrencyLimit   !GenesisFetchMode !Word
   deriving (Eq, Show)
 
 
@@ -1084,7 +1085,7 @@ fetchRequestDecision FetchDecisionPolicy {
                                     FetchModeDeadline -> maxConcurrencyDeadline
   , nConcurrentFetchPeers > maxConcurrentFetchPeers
   = Left $ FetchDeclineConcurrencyLimit
-             fetchMode maxConcurrentFetchPeers
+             (PraosFetchMode fetchMode) maxConcurrentFetchPeers
 
     -- If we're at the concurrency limit refuse any additional peers.
   | peerFetchReqsInFlight == 0
@@ -1093,7 +1094,7 @@ fetchRequestDecision FetchDecisionPolicy {
                                     FetchModeDeadline -> maxConcurrencyDeadline
   , nConcurrentFetchPeers == maxConcurrentFetchPeers
   = Left $ FetchDeclineConcurrencyLimit
-             fetchMode maxConcurrentFetchPeers
+             (PraosFetchMode fetchMode) maxConcurrentFetchPeers
 
     -- We've checked our request limit and our byte limit. We are then
     -- guaranteed to get at least one non-empty request range.
