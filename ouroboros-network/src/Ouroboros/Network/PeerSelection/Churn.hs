@@ -31,6 +31,7 @@ import Control.Applicative (Alternative)
 import Data.Functor (($>))
 import Data.Monoid.Synchronisation (FirstToFinish (..))
 import Ouroboros.Network.BlockFetch (FetchMode (..))
+import Ouroboros.Network.BlockFetch.ConsensusInterface (GenesisFetchMode (..))
 import Ouroboros.Network.ConsensusMode (ConsensusMode (..))
 import Ouroboros.Network.Diffusion.Policies (churnEstablishConnectionTimeout,
            closeConnectionTimeout, deactivateTimeout)
@@ -90,7 +91,7 @@ data PeerChurnArgs m peeraddr = PeerChurnArgs {
   pcaMetrics             :: PeerMetrics m peeraddr,
   pcaModeVar             :: StrictTVar m ChurnMode,
   pcaRng                 :: StdGen,
-  pcaReadFetchMode       :: STM m FetchMode,
+  pcaReadFetchMode       :: STM m GenesisFetchMode,
   peerTargets            :: ConsensusModePeerTargets,
   pcaPeerSelectionVar    :: StrictTVar m PeerSelectionTargets,
   pcaReadCounters        :: STM m PeerSelectionCounters,
@@ -156,8 +157,9 @@ peerChurnGovernor PeerChurnArgs {
     updateChurnMode = do
         fm <- getFetchMode
         let mode = case fm of
-                     FetchModeDeadline -> ChurnModeNormal
-                     FetchModeBulkSync -> ChurnModeBulkSync
+                     PraosFetchMode FetchModeDeadline -> ChurnModeNormal
+                     PraosFetchMode FetchModeBulkSync -> ChurnModeBulkSync
+                     FetchModeGenesis                 -> ChurnModeBulkSync
         writeTVar churnModeVar mode
         return mode
 
@@ -593,9 +595,9 @@ peerChurnGovernor PeerChurnArgs {
       mode <- atomically getFetchMode
       -- todo: is this right?
       case (mode, consensusMode) of
-        (FetchModeDeadline, _) -> longDelay rng execTime
-        (_, GenesisMode)       -> longDelay rng execTime
-        _otherwise             -> shortDelay rng execTime
+        (PraosFetchMode FetchModeDeadline, _) -> longDelay rng execTime
+        (_, GenesisMode)                      -> longDelay rng execTime
+        _otherwise                            -> shortDelay rng execTime
 
 
     fuzzyDelay' :: DiffTime -> Double -> StdGen -> DiffTime -> m StdGen
