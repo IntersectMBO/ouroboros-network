@@ -64,26 +64,30 @@ timeLimitsTxSubmission2 = ProtocolTimeLimits stateToLimit
 
 
 codecTxSubmission2
-  :: forall txid tx m.
+  :: forall txid tx annotator m.
      MonadST m
   => (txid -> CBOR.Encoding)
   -> (forall s . CBOR.Decoder s txid)
   -> (tx -> CBOR.Encoding)
   -> (forall s . CBOR.Decoder s tx)
-  -> Codec (TxSubmission2 txid tx) CBOR.DeserialiseFailure m ByteString
+  -- the codec is polymorphic in annotator.  The primary use case is an
+  -- `Identity` functor or `Annotator LBS.ByteString`.
+  -> (forall st. SomeMessage st -> annotator st)
+  -> Codec' (TxSubmission2 txid tx) CBOR.DeserialiseFailure m annotator ByteString
 codecTxSubmission2 encodeTxId decodeTxId
-                   encodeTx   decodeTx =
+                   encodeTx   decodeTx
+                   annotate =
     mkCodecCborLazyBS
       (encodeTxSubmission2 encodeTxId encodeTx)
       decode
   where
     decode :: forall (pr :: PeerRole) (st :: TxSubmission2 txid tx).
               PeerHasAgency pr st
-           -> forall s. CBOR.Decoder s (SomeMessage st)
+           -> forall s. CBOR.Decoder s (annotator st)
     decode stok = do
       len <- CBOR.decodeListLen
       key <- CBOR.decodeWord
-      decodeTxSubmission2 decodeTxId decodeTx stok len key
+      decodeTxSubmission2 decodeTxId decodeTx annotate stok len key
 
 encodeTxSubmission2
     :: forall txid tx.
@@ -149,30 +153,31 @@ encodeTxSubmission2 encodeTxId encodeTx = encode
 
 
 decodeTxSubmission2
-    :: forall txid tx.
+    :: forall txid tx annotator.
        (forall s . CBOR.Decoder s txid)
     -> (forall s . CBOR.Decoder s tx)
+    -> (forall st. SomeMessage st -> annotator st)
     -> (forall (pr :: PeerRole) (st :: TxSubmission2 txid tx) s.
                PeerHasAgency pr st
             -> Int
             -> Word
-            -> CBOR.Decoder s (SomeMessage st))
-decodeTxSubmission2 decodeTxId decodeTx = decode
+            -> CBOR.Decoder s (annotator st))
+decodeTxSubmission2 decodeTxId decodeTx annotate = decode
   where
     decode :: forall (pr :: PeerRole) s (st :: TxSubmission2 txid tx).
               PeerHasAgency pr st
            -> Int
            -> Word
-           -> CBOR.Decoder s (SomeMessage st)
+           -> CBOR.Decoder s (annotator st)
     decode stok len key = do
       case (stok, len, key) of
         (ClientAgency TokInit,       1, 6) ->
-          return (SomeMessage MsgInit)
+          return (annotate $ SomeMessage MsgInit)
         (ServerAgency TokIdle,       4, 0) -> do
           blocking <- CBOR.decodeBool
           ackNo    <- NumTxIdsToAck <$> CBOR.decodeWord16
           reqNo    <- NumTxIdsToReq <$> CBOR.decodeWord16
-          return $!
+          return $! annotate $
             if blocking
             then SomeMessage (MsgRequestTxIds TokBlocking    ackNo reqNo)
             else SomeMessage (MsgRequestTxIds TokNonBlocking ackNo reqNo)
@@ -187,11 +192,11 @@ decodeTxSubmission2 decodeTxId decodeTx = decode
                          return (txid, SizeInBytes sz))
           case (b, txids) of
             (TokBlocking, t:ts) ->
-              return $
+              return $ annotate $
                 SomeMessage (MsgReplyTxIds (BlockingReply (t NonEmpty.:| ts)))
 
             (TokNonBlocking, ts) ->
-              return $
+              return $ annotate $
                 SomeMessage (MsgReplyTxIds (NonBlockingReply ts))
 
             (TokBlocking, []) ->
@@ -201,15 +206,26 @@ decodeTxSubmission2 decodeTxId decodeTx = decode
         (ServerAgency TokIdle,       2, 2) -> do
           CBOR.decodeListLenIndef
           txids <- CBOR.decodeSequenceLenIndef (flip (:)) [] reverse decodeTxId
-          return (SomeMessage (MsgRequestTxs txids))
+          return (annotate $ SomeMessage (MsgRequestTxs txids))
 
         (ClientAgency TokTxs,     2, 3) -> do
           CBOR.decodeListLenIndef
           txids <- CBOR.decodeSequenceLenIndef (flip (:)) [] reverse decodeTx
-          return (SomeMessage (MsgReplyTxs txids))
+          -- ^ TODO: `txids -> txs` :grin:
+
+          -- TODO: here we have access to bytes from which the message was decoded.
+          -- we can use `Codec.CBOR.Decoding.decodeWithByteSpan`
+          -- around each `tx` and wrap each `tx` in `WithBytes`.
+          --
+          -- `decodeTxSubmission2` can be polymorphic by adding an
+          -- extra argument of type
+          -- `ByteString -> ByteOffSet -> ByteOffset -> tx -> a`
+          -- this way we could wrap `tx` in `WithBytes` or just
+          -- return `tx`.
+          return (annotate $ SomeMessage (MsgReplyTxs txids))
 
         (ClientAgency (TokTxIds TokBlocking), 1, 4) ->
-          return (SomeMessage MsgDone)
+          return (annotate $ SomeMessage MsgDone)
 
         --
         -- failures per protocol state
