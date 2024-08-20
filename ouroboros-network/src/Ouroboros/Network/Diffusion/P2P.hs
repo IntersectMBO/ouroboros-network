@@ -70,7 +70,7 @@ import Ouroboros.Network.Snocket (FileDescriptor, LocalAddress,
            makeLocalBearer, makeSocketBearer)
 import Ouroboros.Network.Snocket qualified as Snocket
 
-import Ouroboros.Network.BlockFetch
+import Ouroboros.Network.BlockFetch.ConsensusInterface (GenesisFetchMode)
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.Context (ExpandedInitiatorContext, ResponderContext)
 import Ouroboros.Network.Protocol.Handshake
@@ -340,7 +340,7 @@ data ApplicationsExtra ntnAddr m a =
 
     -- | Used by churn-governor
     --
-    , daBlockFetchMode      :: STM m FetchMode
+    , daBlockFetchMode      :: STM m GenesisFetchMode
 
     -- | Used for peer sharing protocol
     --

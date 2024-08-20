@@ -29,6 +29,7 @@ import Control.Applicative (Alternative)
 import Data.Functor (($>))
 import Data.Monoid.Synchronisation (FirstToFinish (..))
 import Ouroboros.Network.BlockFetch (FetchMode (..))
+import Ouroboros.Network.BlockFetch.ConsensusInterface (GenesisFetchMode (..))
 import Ouroboros.Network.Diffusion.Policies (churnEstablishConnectionTimeout,
            closeConnectionTimeout, deactivateTimeout)
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
@@ -68,7 +69,7 @@ peerChurnGovernor :: forall m peeraddr.
                   -> PeerMetrics m peeraddr
                   -> StrictTVar m ChurnMode
                   -> StdGen
-                  -> STM m FetchMode
+                  -> STM m GenesisFetchMode
                   -> PeerSelectionTargets
                   -- ^ base targets; set in a configuration file
                   -> StrictTVar m PeerSelectionTargets
@@ -109,8 +110,9 @@ peerChurnGovernor tracer churnTracer
     updateChurnMode = do
         fm <- getFetchMode
         let mode = case fm of
-                     FetchModeDeadline -> ChurnModeNormal
-                     FetchModeBulkSync -> ChurnModeBulkSync
+                     PraosFetchMode FetchModeDeadline -> ChurnModeNormal
+                     PraosFetchMode FetchModeBulkSync -> ChurnModeBulkSync
+                     FetchModeGenesis -> ChurnModeBulkSync
         writeTVar churnModeVar mode
         return mode
 
@@ -532,8 +534,9 @@ peerChurnGovernor tracer churnTracer
     fuzzyDelay rng execTime = do
       mode <- atomically getFetchMode
       case mode of
-           FetchModeDeadline -> longDelay rng execTime
-           FetchModeBulkSync -> shortDelay rng execTime
+           PraosFetchMode FetchModeDeadline -> longDelay rng execTime
+           PraosFetchMode FetchModeBulkSync -> shortDelay rng execTime
+           FetchModeGenesis -> shortDelay rng execTime
 
 
     fuzzyDelay' :: DiffTime -> Double -> StdGen -> DiffTime -> m StdGen
