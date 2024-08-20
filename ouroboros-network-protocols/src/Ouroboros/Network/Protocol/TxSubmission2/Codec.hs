@@ -9,6 +9,7 @@
 
 module Ouroboros.Network.Protocol.TxSubmission2.Codec
   ( codecTxSubmission2
+  , anncodecTxSubmission2
   , codecTxSubmission2Id
   , byteLimitsTxSubmission2
   , timeLimitsTxSubmission2
@@ -75,6 +76,34 @@ timeLimitsTxSubmission2 = ProtocolTimeLimits stateToLimit
     stateToLimit a@SingDone                  = notActiveState a
 
 
+anncodecTxSubmission2
+  :: forall (txid :: Type) (tx :: Type) m.
+     MonadST m
+  => (txid -> CBOR.Encoding)
+  -- ^ encode 'txid'
+  -> (forall s . CBOR.Decoder s txid)
+  -- ^ decode 'txid'
+  -> (tx -> CBOR.Encoding)
+  -- ^ encode transaction
+  -> (forall s . CBOR.Decoder s tx)
+  -- ^ decode transaction
+  -> AnnotatedCodec (TxSubmission2 txid tx) CBOR.DeserialiseFailure m ByteString
+anncodecTxSubmission2 encodeTxId decodeTxId
+                      encodeTx   decodeTx =
+    mkCodecCborLazyBS
+      (encodeTxSubmission2 encodeTxId encodeTx)
+      decode
+  where
+    decode :: forall (st :: TxSubmission2 txid tx).
+              ActiveState st
+           => StateToken st
+           -> forall s. CBOR.Decoder s (Annotator ByteString st)
+    decode stok = do
+      len <- CBOR.decodeListLen
+      key <- CBOR.decodeWord
+      decodeTxSubmission2 decodeTxId decodeTx stok len key
+
+
 codecTxSubmission2
   :: forall (txid :: Type) (tx :: Type) m.
      MonadST m
@@ -88,19 +117,10 @@ codecTxSubmission2
   -- ^ decode transaction
   -> Codec (TxSubmission2 txid tx) CBOR.DeserialiseFailure m ByteString
 codecTxSubmission2 encodeTxId decodeTxId
-                   encodeTx   decodeTx =
-    mkCodecCborLazyBS
-      (encodeTxSubmission2 encodeTxId encodeTx)
-      decode
-  where
-    decode :: forall (st :: TxSubmission2 txid tx).
-              ActiveState st
-           => StateToken st
-           -> forall s. CBOR.Decoder s (SomeMessage st)
-    decode stok = do
-      len <- CBOR.decodeListLen
-      key <- CBOR.decodeWord
-      decodeTxSubmission2 decodeTxId decodeTx stok len key
+                   encodeTx   decodeTx
+  = unAnnotateCodec (anncodecTxSubmission2 encodeTxId decodeTxId
+                                           encodeTx   decodeTx)
+
 
 encodeTxSubmission2
     :: forall (txid :: Type) (tx :: Type) (st :: TxSubmission2 txid tx) (st' :: TxSubmission2 txid tx).
@@ -171,7 +191,7 @@ decodeTxSubmission2
     -> StateToken st
     -> Int
     -> Word
-    -> CBOR.Decoder s (SomeMessage st)
+    -> CBOR.Decoder s (Annotator ByteString st)
 decodeTxSubmission2 decodeTxId decodeTx = decode
   where
     decode :: forall (st' :: TxSubmission2 txid tx).
@@ -179,18 +199,19 @@ decodeTxSubmission2 decodeTxId decodeTx = decode
            => StateToken st'
            -> Int
            -> Word
-           -> CBOR.Decoder s (SomeMessage st')
+           -> CBOR.Decoder s (Annotator ByteString st')
     decode stok len key = do
       case (stok, len, key) of
         (SingInit,       1, 6) ->
-          return (SomeMessage MsgInit)
+          return (Annotator $ \_ -> SomeMessage MsgInit)
         (SingIdle,       4, 0) -> do
           blocking <- CBOR.decodeBool
           ackNo    <- NumTxIdsToAck <$> CBOR.decodeWord16
           reqNo    <- NumTxIdsToReq <$> CBOR.decodeWord16
-          return $! case blocking of
-            True  -> SomeMessage (MsgRequestTxIds SingBlocking    ackNo reqNo)
-            False -> SomeMessage (MsgRequestTxIds SingNonBlocking ackNo reqNo)
+          return $!
+            if blocking
+            then Annotator $ \_ -> SomeMessage (MsgRequestTxIds SingBlocking    ackNo reqNo)
+            else Annotator $ \_ -> SomeMessage (MsgRequestTxIds SingNonBlocking ackNo reqNo)
 
         (SingTxIds b,  2, 1) -> do
           CBOR.decodeListLenIndef
@@ -202,11 +223,11 @@ decodeTxSubmission2 decodeTxId decodeTx = decode
                          return (txid, SizeInBytes sz))
           case (b, txids) of
             (SingBlocking, t:ts) ->
-              return $
+              return $ Annotator $ \_ ->
                 SomeMessage (MsgReplyTxIds (BlockingReply (t NonEmpty.:| ts)))
 
             (SingNonBlocking, ts) ->
-              return $
+              return $ Annotator $ \_ ->
                 SomeMessage (MsgReplyTxIds (NonBlockingReply ts))
 
             (SingBlocking, []) ->
@@ -216,15 +237,26 @@ decodeTxSubmission2 decodeTxId decodeTx = decode
         (SingIdle,       2, 2) -> do
           CBOR.decodeListLenIndef
           txids <- CBOR.decodeSequenceLenIndef (flip (:)) [] reverse decodeTxId
-          return (SomeMessage (MsgRequestTxs txids))
+          return (Annotator $ \_ -> SomeMessage (MsgRequestTxs txids))
 
         (SingTxs,     2, 3) -> do
           CBOR.decodeListLenIndef
           txids <- CBOR.decodeSequenceLenIndef (flip (:)) [] reverse decodeTx
-          return (SomeMessage (MsgReplyTxs txids))
+          -- ^ TODO: `txids -> txs` :grin:
+          return (Annotator $
+                    -- TODO: here we have access to bytes from which the message was decoded.
+                    -- we can use `Codec.CBOR.Decoding.decodeWithByteSpan`
+                    -- around each `tx` and wrap each `tx` in `WithBytes`.
+                    --
+                    -- `decodeTxSubmission2` can be polymorphic by adding an
+                    -- extra argument of type
+                    -- `ByteString -> ByteOffSet -> ByteOffset -> tx -> a`
+                    -- this way we could wrap `tx` in `WithBytes` or just
+                    -- return `tx`.
+                    \_bytes -> SomeMessage (MsgReplyTxs txids))
 
         (SingTxIds SingBlocking, 1, 4) ->
-          return (SomeMessage MsgDone)
+          return (Annotator $ \_ -> SomeMessage MsgDone)
 
         (SingDone, _, _) -> notActiveState stok
 
