@@ -145,7 +145,7 @@ blockFetchExample0 fetchMode decisionTracer clientStateTracer clientMsgTracer
             bfcDecisionLoopIntervalPraos = 0.01,
             bfcSalt                   = 0,
             bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
-              { gbfcGenesisGracePeriod = 10 -- seconds
+              { gbfcGracePeriod = 10 -- seconds
               }
           })
         >> return ()
@@ -258,7 +258,7 @@ blockFetchExample1 fetchMode decisionTracer clientStateTracer clientMsgTracer
             bfcDecisionLoopIntervalPraos = 0.01,
             bfcSalt                   = 0,
             bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
-              { gbfcGenesisGracePeriod = 10 -- seconds
+              { gbfcGracePeriod = 10 -- seconds
               }
           })
         >> return ()
