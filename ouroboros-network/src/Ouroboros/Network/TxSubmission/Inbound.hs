@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE GADTs               #-}
@@ -20,6 +21,7 @@ import Data.Foldable as Foldable (foldl', toList)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Maybe
 import Data.Sequence.Strict (StrictSeq)
 import Data.Sequence.Strict qualified as Seq
 import Data.Set qualified as Set
@@ -34,11 +36,13 @@ import Control.Exception (assert)
 import Control.Monad (unless)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, traceWith)
 
 import Network.TypedProtocol.Pipelined (N, Nat (..), natToInt)
 
 import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
+import Ouroboros.Network.Protocol.Limits
 import Ouroboros.Network.Protocol.TxSubmission2.Server
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
@@ -176,6 +180,7 @@ txSubmissionInbound
      , NoThunks tx
      , MonadSTM m
      , MonadThrow m
+     , MonadDelay m
      )
   => Tracer m (TraceTxSubmissionInbound txid tx)
   -> NumTxIdsToAck  -- ^ Maximum number of unacknowledged txids allowed
@@ -184,7 +189,12 @@ txSubmissionInbound
   -> NodeToNodeVersion
   -> TxSubmissionServerPipelined txid tx m ()
 txSubmissionInbound tracer (NumTxIdsToAck maxUnacked) mpReader mpWriter _version =
-    TxSubmissionServerPipelined $
+    TxSubmissionServerPipelined $ do
+#ifdef TXSUBMISSION_DELAY
+      -- make the client linger before asking for tx's and expending
+      -- our resources as well, as he may disconnect for some reason
+      threadDelay (fromMaybe (-1) longWait)
+#endif
       continueWithStateM (serverIdle Zero) initialServerState
   where
     -- TODO #1656: replace these fixed limits by policies based on

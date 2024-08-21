@@ -25,7 +25,7 @@ module Cardano.Network.Ping
   , isSameVersionAndMagic
   ) where
 
-import           Control.Exception (bracket)
+import           Control.Exception (bracket, Exception (..), throwIO)
 import           Control.Monad (replicateM, unless, when)
 import           Control.Concurrent.Class.MonadSTM.Strict ( MonadSTM(atomically), takeTMVar, StrictTMVar )
 import           Control.Monad.Class.MonadTime.SI (UTCTime, diffTime, MonadMonotonicTime(getMonotonicTime), MonadTime(getCurrentTime), Time)
@@ -36,6 +36,7 @@ import           Data.Aeson.Text (encodeToLazyText)
 import           Data.Bits (clearBit, setBit, testBit)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Foldable (toList)
+import           Data.IP
 import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Maybe (fromMaybe,)
 import           Data.TDigest (insert, maximumValue, minimumValue, tdigest, mean, quantile, stddev, TDigest)
@@ -62,6 +63,7 @@ import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.IO as TL
 import qualified Network.Socket as Socket
 import qualified System.IO as IO
+import Codec.CBOR.Read (DeserialiseFailure)
 
 data PingOpts = PingOpts
   { pingOptsCount    :: Word32
@@ -176,6 +178,7 @@ data NodeVersion
   | NodeToClientVersionV14 Word32
   | NodeToClientVersionV15 Word32
   | NodeToClientVersionV16 Word32
+  | NodeToClientVersionV17 Word32
   | NodeToNodeVersionV1    Word32
   | NodeToNodeVersionV2    Word32
   | NodeToNodeVersionV3    Word32
@@ -202,6 +205,7 @@ instance ToJSON NodeVersion where
       NodeToClientVersionV14 m -> go2 "NodeToClientVersionV14" m
       NodeToClientVersionV15 m -> go2 "NodeToClientVersionV15" m
       NodeToClientVersionV16 m -> go2 "NodeToClientVersionV16" m
+      NodeToClientVersionV17 m -> go2 "NodeToClientVersionV17" m
       NodeToNodeVersionV1    m -> go2 "NodeToNodeVersionV1" m
       NodeToNodeVersionV2    m -> go2 "NodeToNodeVersionV2" m
       NodeToNodeVersionV3    m -> go2 "NodeToNodeVersionV3" m
@@ -222,7 +226,8 @@ instance ToJSON NodeVersion where
                                                     ["peersharing" .= toJSON peersharing]
 
 data PingTip = PingTip {
-    ptRtt     :: !Double
+    ptHost    :: !(IP, Socket.PortNumber)
+  , ptRtt     :: !Double
   , ptHash    :: !ByteString
   , ptBlockNo :: !Word64
   , ptSlotNo  :: !Word64
@@ -233,8 +238,8 @@ hexStr = LBS.foldr (\b -> (<>) (printf "%02x" b)) ""
 
 instance Show PingTip where
   show PingTip{..} =
-    printf "rtt: %f, hash %s, blockNo: %d slotNo: %d" ptRtt (hexStr ptHash)
-           ptBlockNo ptSlotNo
+    printf "host: %s:%d, rtt: %f, hash %s, blockNo: %d slotNo: %d" (show $ fst ptHost)
+           (fromIntegral $ snd ptHost :: Word16) ptRtt (hexStr ptHash) ptBlockNo ptSlotNo
 
 instance ToJSON PingTip where
   toJSON PingTip{..} =
@@ -243,6 +248,8 @@ instance ToJSON PingTip where
       , "hash"    .= hexStr ptHash
       , "blockNo" .= ptBlockNo
       , "slotNo"  .= ptSlotNo
+      , "addr"    .= (show $ fst $ ptHost :: String)
+      , "port"    .= (fromIntegral $ snd $ ptHost :: Word16)
       ]
 
 keepAliveReqEnc :: NodeVersion -> Word16 -> CBOR.Encoding
@@ -330,6 +337,9 @@ handshakeReqEnc versions query =
       <> nodeToClientDataWithQuery magic
     encodeVersion (NodeToClientVersionV16 magic) =
           CBOR.encodeWord (16 `setBit` nodeToClientVersionBit)
+      <>  nodeToClientDataWithQuery magic
+    encodeVersion (NodeToClientVersionV17 magic) =
+          CBOR.encodeWord (17 `setBit` nodeToClientVersionBit)
       <>  nodeToClientDataWithQuery magic
 
     -- node-to-node
@@ -596,6 +606,31 @@ idleTimeout = 5
 sduTimeout :: MT.DiffTime
 sduTimeout = 30
 
+data PingClientError = PingClientDeserialiseFailure DeserialiseFailure String
+                     | PingClientFindIntersectDeserialiseFailure DeserialiseFailure String
+                     | PingClientKeepAliveDeserialiseFailure DeserialiseFailure String
+                     | PingClientKeepAliveProtocolFailure KeepAliveFailure String
+                     | PingClientHandshakeFailure HandshakeFailure String
+                     | PingClientNegotiationError String [NodeVersion] String
+                     | PingClientIPAddressFailure String
+                     deriving Show
+
+instance Exception PingClientError where
+  displayException (PingClientDeserialiseFailure err peerStr) =
+    printf "%s Decoding error: %s" peerStr (show err)
+  displayException (PingClientFindIntersectDeserialiseFailure err peerStr) =
+    printf "%s findIntersect decoding error %s" peerStr (show err)
+  displayException (PingClientKeepAliveDeserialiseFailure err peerStr) =
+    printf "%s keepalive decoding error %s" peerStr (show err)
+  displayException (PingClientKeepAliveProtocolFailure err peerStr) =
+    printf "%s keepalive protocol error %s" peerStr (show err)
+  displayException (PingClientHandshakeFailure err peerStr) =
+    printf "%s Protocol error: %s" peerStr (show err)
+  displayException (PingClientNegotiationError err recVersions peerStr) =
+    printf "%s Version negotiation error %s\nReceived versions: %s\n" peerStr err (show recVersions)
+  displayException (PingClientIPAddressFailure peerStr) =
+    printf "%s expected an IP address\n" peerStr
+
 pingClient :: Tracer IO LogMsg -> Tracer IO String -> PingOpts -> [NodeVersion] -> AddrInfo -> IO ()
 pingClient stdout stderr PingOpts{..} versions peer = bracket
   (Socket.socket (Socket.addrFamily peer) Socket.Stream Socket.defaultProtocol)
@@ -623,12 +658,11 @@ pingClient stdout stderr PingOpts{..} versions peer = bracket
     unless pingOptsQuiet $ TL.hPutStrLn IO.stdout $ peerStr' <> " " <> (showHandshakeRtt $ diffTime t1_e t1_s)
 
     case CBOR.deserialiseFromBytes handshakeDec msg of
-      Left err -> eprint $ printf "%s Decoding error: %s" peerStr (show err)
-      Right (_, Left err) -> eprint $ printf "%s Protocol error: %s" peerStr (show err)
+      Left err -> throwIO (PingClientDeserialiseFailure err peerStr)
+      Right (_, Left err) -> throwIO (PingClientHandshakeFailure err peerStr)
       Right (_, Right recVersions) -> do
         case acceptVersions recVersions of
-          Left err -> do
-            eprint $ printf "%s Version negotiation error %s\nReceived versions: %s\n" peerStr err (show recVersions)
+          Left err -> throwIO (PingClientNegotiationError err recVersions peerStr)
           Right version -> do
             let isUnixSocket = case Socket.addrFamily peer of
                   Socket.AF_UNIX -> True
@@ -727,8 +761,8 @@ pingClient stdout stderr PingOpts{..} versions peer = bracket
       let rtt = toSample t_e t_s
           td' = insert rtt td
       case CBOR.deserialiseFromBytes (keepAliveRspDec version) msg of
-        Left err -> eprint $ printf "%s keepalive decoding error %s" peerStr (show err)
-        Right (_, Left err) -> eprint $ printf "%s keepalive protocol error %s" peerStr (show err)
+        Left err -> throwIO (PingClientKeepAliveDeserialiseFailure err peerStr)
+        Right (_, Left err) -> throwIO (PingClientKeepAliveProtocolFailure err peerStr)
         Right (_, Right cookie') -> do
           when (cookie' /= cookie16) $ eprint $ printf "%s cookie missmatch %d /= %d"
             peerStr cookie' cookie
@@ -749,11 +783,14 @@ pingClient stdout stderr PingOpts{..} versions peer = bracket
       !t_s <- write bearer timeoutfn $ wrap chainSyncNum InitiatorDir chainSyncFindIntersect
       (!msg, !t_e) <- nextMsg bearer timeoutfn chainSyncNum
       case CBOR.deserialiseFromBytes chainSyncIntersectNotFoundDec msg of
-           Left err -> eprint $ printf "%s findIntersect decoding error %s" peerStr (show err)
+           Left err -> throwIO (PingClientFindIntersectDeserialiseFailure err peerStr)
            Right (_, (slotNo, blockNo, hash)) ->
-             let tip = PingTip (toSample t_e t_s) hash blockNo slotNo in
-             if pingOptsJson then traceWith stdout $ LogMsg (encode tip)
-                             else traceWith stdout $ LogMsg $ LBS.Char.pack $ show tip <> "\n"
+             case fromSockAddr $ Socket.addrAddress peer of
+                  Nothing -> throwIO (PingClientIPAddressFailure peerStr)
+                  Just host ->
+                    let tip = PingTip host (toSample t_e t_s) hash blockNo slotNo in
+                    if pingOptsJson then traceWith stdout $ LogMsg (encode tip)
+                                    else traceWith stdout $ LogMsg $ LBS.Char.pack $ show tip <> "\n"
 
 isSameVersionAndMagic :: NodeVersion -> NodeVersion -> Bool
 isSameVersionAndMagic v1 v2 = extract v1 == extract v2
@@ -766,6 +803,7 @@ isSameVersionAndMagic v1 v2 = extract v1 == extract v2
         extract (NodeToClientVersionV14 m) = (-14, m)
         extract (NodeToClientVersionV15 m) = (-15, m)
         extract (NodeToClientVersionV16 m) = (-16, m)
+        extract (NodeToClientVersionV17 m) = (-17, m)
         extract (NodeToNodeVersionV1 m)    = (1, m)
         extract (NodeToNodeVersionV2 m)    = (2, m)
         extract (NodeToNodeVersionV3 m)    = (3, m)

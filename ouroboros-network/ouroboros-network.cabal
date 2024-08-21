@@ -1,6 +1,6 @@
 cabal-version:          3.0
 name:                   ouroboros-network
-version:                0.17.0.0
+version:                0.17.1.0
 synopsis:               A networking layer for the Ouroboros blockchain protocol
 description:            A networking layer for the Ouroboros blockchain protocol.
 license:                Apache-2.0
@@ -17,6 +17,11 @@ flag asserts
   description: Enable assertions
   manual:      False
   default:     False
+
+flag txsubmission-delay
+  description: Delay initial request for transactions from outbound/client peer
+  manual:      True
+  default:     True
 
 source-repository head
   type:     git
@@ -134,7 +139,7 @@ library
                        io-classes-mtl   ^>=0.1,
                        network-mux,
                        si-timers,
-                       ouroboros-network-api       ^>=0.8.0,
+                       ouroboros-network-api       ^>=0.9.0,
                        ouroboros-network-framework ^>=0.13.2.2,
                        ouroboros-network-protocols ^>=0.10,
                        strict-stm,
@@ -154,6 +159,9 @@ library
                        -Wunused-packages
   if flag(asserts)
     ghc-options:       -fno-ignore-asserts
+
+  if flag(txsubmission-delay)
+    cpp-options:       -DTXSUBMISSION_DELAY
 
 
 -- Simulation Test Library

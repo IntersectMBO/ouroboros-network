@@ -2,7 +2,18 @@
 
 ## next version
 
-## 0.3.0.0 -- 2024-08-
+## 0.4.0.0 -- 2024-08-21
+
+### Breaking changes
+
+* Log remote address and port in tip message
+* Added `NodeToClientVersionV17`
+
+### Non-breaking changes
+
+* Make it error whenever there's a decoding error or similar
+
+## 0.3.0.0 -- 2024-08-07
 
 ### Breaking changes
 

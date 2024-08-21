@@ -2,6 +2,15 @@
 
 ## next version
 
+## 0.17.1.0 -- 2024-08-21
+
+### Breaking changes
+
+### Non-breaking changes
+
+* Bump o-n-api lower bound to 0.9 for new node to client query support
+* Added initial delay before requesting transactions in TxSubmission protocol
+
 ## 0.17.0.0 -- 2024-08
 
 ### Breaking changes
