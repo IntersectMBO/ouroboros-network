@@ -19,6 +19,14 @@
   the minimum number of active big ledger peers needed to signal
   trusted state when finishing syncing in Genesis mode.
 
+## 0.9.0.1 -- 2024-08-27
+
+### Breaking changes
+
+### Non-breaking changes
+
+* bump for bad ref in chap for 0.9.0.0
+
 ## 0.9.0.0 -- 2024-08-22
 
 ### Breaking changes

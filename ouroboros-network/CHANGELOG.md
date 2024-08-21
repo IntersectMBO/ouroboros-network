@@ -41,6 +41,14 @@
 * Added `defaultDeadlineChurnInterval` and `defaultBulkChurnInterval` to Configuration
   module. Previously these were hard coded in node.
 
+## 0.17.1.1 -- 2024-08-27
+
+### Breaking changes
+
+### Non-breaking changes
+
+* bump for bad ref in chap for 0.17.1.0
+
 ## 0.17.1.0 -- 2024-08-22
 
 ### Breaking changes
