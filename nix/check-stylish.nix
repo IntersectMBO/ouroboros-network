@@ -10,7 +10,7 @@ runCommand "check-stylish" {
 } ''
   unpackPhase
   cd $sourceRoot
-  bash ./scripts/ci/check-stylish.sh
+  bash ./scripts/ci/check-stylish.sh -g
   diff -ru $src .
 
   EXIT_CODE=$?
