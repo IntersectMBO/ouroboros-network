@@ -2,6 +2,14 @@
 
 ## next release
 
+## 0.13.2.3 -- 2024-08-22
+
+### Breaking changes
+
+### Non-breaking changes
+
+* version bump for build-deps
+
 ## 0.13.2.2 -- 2024-08
 
 ### Breaking changes
