@@ -7,7 +7,8 @@
 * Renamed:
   * `accBigPoolStake` -> `accumulateBigLedgerStake`
      and `reRelativeStake` -> `recomputeRelativeStake`
-- Added `NodeToClientVersionV18`
+* Added `NodeToClientVersionV18`
+* Using `typed-protocols-0.3.0.0`.
 
 ### Non-breaking changes
 

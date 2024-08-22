@@ -4,13 +4,14 @@
 
 ### Breaking changes
 
+* Added `createConnectedBufferedChannelsUnbounded`.
+* Use `typed-protocols-0.2.0.0`.
+
 ### Non-breaking changes
 
 * Added tracing on CM connVars for testing purposes.
 
 ## 0.13.2.4 -- 2024-08-27
-
-### Breaking changes
 
 ### Non-breaking changes
 
@@ -18,15 +19,11 @@
 
 ## 0.13.2.3 -- 2024-08-22
 
-### Breaking changes
-
 ### Non-breaking changes
 
 * version bump for build depends
 
 ## 0.13.2.2 -- 2024-08-07
-
-### Breaking changes
 
 ### Non-breaking changes
 
@@ -35,15 +32,11 @@
 
 ## 0.13.2.1 -- 2024-06-26
 
-### Breaking changes
-
 ### Non-breaking changes
 
 - Fix `InboundGovernorCounters`
 
 ## 0.13.2.0 -- 2024-06-07
-
-### Breaking changes
 
 ### Non-breaking changes
 
@@ -73,8 +66,6 @@
   & outbound governor; the outbound governor now can use the
   `PublichInboundGovernorState`.
 * Added `serverDebugInboundGovernor` tracer was added to `ServerArguments`.
-
-### Non-breaking changes
 
 ## 0.12.0.0 -- 2024-03-15
 
