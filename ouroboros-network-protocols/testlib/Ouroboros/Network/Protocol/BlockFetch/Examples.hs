@@ -73,7 +73,7 @@ blockFetchClientMap ranges = BlockFetchClient $ do
     atomically $ do
       x <- readTVar donevar
       unless (x <= 0) retry
-    SendMsgClientDone <$> atomically (readTVar var)
+    SendMsgClientDone <$> readTVarIO var
 
   goBlockFetch donevar var (r : rs) response  =
     return $ SendMsgRequestRange r response (BlockFetchClient $ goBlockFetch donevar var rs response)

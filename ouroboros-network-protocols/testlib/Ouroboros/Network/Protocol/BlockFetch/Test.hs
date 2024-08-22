@@ -205,11 +205,11 @@ connect_pipelined client chain cs = do
 -- | With a client with maximum pipelining we get all requests followed by
 -- all responses.
 --
-prop_connect_pipelined1 :: TestChainAndPoints -> [Bool] -> Bool
+prop_connect_pipelined1 :: TestChainAndPoints -> [Bool] -> Property
 prop_connect_pipelined1 (TestChainAndPoints chain points) choices =
     runSimOrThrow
       (connect_pipelined (testClientPipelinedMax chain points) chain choices)
- ==
+ ===
     map Left  (pointsToRanges      chain points)
  ++ map Right (receivedBlockBodies chain points)
 
@@ -217,11 +217,11 @@ prop_connect_pipelined1 (TestChainAndPoints chain points) choices =
 -- | With a client that collects eagerly and the driver chooses maximum
 -- pipelining then we get all requests followed by all responses.
 --
-prop_connect_pipelined2 :: TestChainAndPoints -> Bool
+prop_connect_pipelined2 :: TestChainAndPoints -> Property
 prop_connect_pipelined2 (TestChainAndPoints chain points) =
     runSimOrThrow
       (connect_pipelined (testClientPipelinedMin chain points) chain choices)
- ==
+ ===
     map Left  (pointsToRanges      chain points)
  ++ map Right (receivedBlockBodies chain points)
   where
@@ -231,11 +231,11 @@ prop_connect_pipelined2 (TestChainAndPoints chain points) =
 -- | With a client that collects eagerly and the driver chooses minimum
 -- pipelining then we get the interleaving of requests with responses.
 --
-prop_connect_pipelined3 :: TestChainAndPoints -> Bool
+prop_connect_pipelined3 :: TestChainAndPoints -> Property
 prop_connect_pipelined3 (TestChainAndPoints chain points) =
     runSimOrThrow
       (connect_pipelined (testClientPipelinedMin chain points) chain choices)
- ==
+ ===
     concat [ [Left l, Right r]
            | l <- pointsToRanges      chain points
            | r <- receivedBlockBodies chain points ]
@@ -247,11 +247,11 @@ prop_connect_pipelined3 (TestChainAndPoints chain points) =
 -- pipelining then we get complex interleavings given by the reference
 -- specification 'pipelineInterleaving'.
 --
-prop_connect_pipelined4 :: TestChainAndPoints -> [Bool] -> Bool
+prop_connect_pipelined4 :: TestChainAndPoints -> [Bool] -> Property
 prop_connect_pipelined4 (TestChainAndPoints chain points) choices =
     runSimOrThrow
       (connect_pipelined (testClientPipelinedMin chain points) chain choices)
- ==
+ ===
     pipelineInterleaving maxBound choices
                          (pointsToRanges      chain points)
                          (receivedBlockBodies chain points)
@@ -264,13 +264,13 @@ prop_connect_pipelined4 (TestChainAndPoints chain points) choices =
 -- outstanding messages.
 --
 prop_connect_pipelined5 :: TestChainAndPoints -> PipeliningDepth
-                        -> [Bool] -> Bool
+                        -> [Bool] -> Property
 prop_connect_pipelined5 (TestChainAndPoints chain points)
                         (PipeliningDepth omax) choices =
     runSimOrThrow
       (connect_pipelined (testClientPipelinedLimited omax chain points)
                          chain choices)
- ==
+ ===
     pipelineInterleaving (omax) choices
                          (pointsToRanges      chain points)
                          (receivedBlockBodies chain points)
