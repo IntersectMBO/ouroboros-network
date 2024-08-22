@@ -280,21 +280,36 @@ Linux, MacOS, and cross compiled to Windows using `wine` (on Linux).
 ## Releasing packages to CHaP
 
 New versions of packages are published on [CHaP].  To release packages to
-[CHaP] one should use `./scritp/release-to-chap.sh`.
+[CHaP] one should use `./script/release-to-chap.sh`.
 
 * First run `./script/release-to-chap.sh -r` to see which changes can be
   published.
 * Update versions in `*.cabal` files according to changes in `CHANGELOG.md`
   files.
 * Update `CHANGELOG.md` files.
-* Run `./script/release-to-chap.sh` which will create a PR in
+* Run `./script/release-to-chap.sh` which will create a branch in
   `cardano-haskell-packages` repo (pointed by `CARDANO_HASKELL_PACKAGES_DIR`
   environment variable or `/tmp/chap` if it's not defined).
+  * To enable pushing this branch, cd to the chap repo and execute:
+    `git remote set-url origin git@github.com:IntersectMBO/cardano-haskell-packages.git`
+    then return to the previous repo (`cd -`)
 * Before merging that branch, run `./script/build-with-chap.sh`.  It will use the new branch in
   `cardano-haskell-packages` to restore the `ourobors-network` repository to the
-  state published in `CHaP`.  One must resolve all compilation issues before
-  merging the `CHaP` branch.  On a successful run, the script will add a comment
-  on the `CHaP` PR.
+  state published in `CHaP`.
+  * If you need to re-run this script after fixing errors, you will need to delete the tags created
+    by the previous run. You can do so with the following command:
+    ```
+    git tag -d $(git tag --points-at)
+    ```
+    or manually, if you have applied new commits on top of the tags.
+  * If building fails at resolving dependencies step, it generally means that some component(s)
+    needs at least a patch version bump, even despite not having undergone any code changes.
+    For eg, if cabal build-depends had version bounds changes, then that component itself
+    may need a version bump.
+  * One must resolve all compilation issues before
+    merging the `CHaP` branch.  On a successful run, the script will create
+    relevant commit(s) in your local `CHaP` repo. You should push those and create
+    a PR now.
 * After the versions were published to `CHaP`, push the tags created by
   `./script/release-to-chap.sh` to `origin`.  Usually this command will push
   all the tags:
