@@ -2,12 +2,12 @@
 
 module Network.Mux.TCPInfo
   ( StructTCPInfo (..)
-#if os_HOST_linux
+#if linux_HOST_OS
   , SocketOption (TCPInfoSocketOption)
 #endif
   ) where
 
-#if os_HOST_linux
+#if linux_HOST_OS
 import           Network.Mux.TCPInfo.Linux
 #else
 data StructTCPInfo = TCPInfoUnavailable
