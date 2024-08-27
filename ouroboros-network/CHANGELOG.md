@@ -2,6 +2,14 @@
 
 ## next version
 
+## 0.17.1.1 -- 2024-08-27
+
+### Breaking changes
+
+### Non-breaking changes
+
+* bump for bad ref in chap for 0.17.1.0
+
 ## 0.17.1.0 -- 2024-08-21
 
 ### Breaking changes
