@@ -2,6 +2,12 @@
 
 ## next release
 
+### Breaking changes
+
+### Non-breaking changes
+
+* Fix compilation with `tracetcpinfo` flag.
+
 ## 0.4.5.3 -- 2024-08-07
 
 ### Breaking changes
