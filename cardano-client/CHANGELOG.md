@@ -2,6 +2,22 @@
 
 ## next version
 
+## 0.3.1.5 -- 2024-08-27
+
+### Breaking changes
+
+### Non-breaking changes
+
+* bump for bad ref in chap for 0.3.1.4
+
+## 0.3.1.4 -- 2024-08-22
+
+### Breaking changes
+
+### Non-breaking changes
+
+* version bump for build depends
+
 ## 0.3.1.3 -- 2024-08-07
 
 ### Breaking changes
