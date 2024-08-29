@@ -2,6 +2,22 @@
 
 ## next release
 
+## 0.13.2.4 -- 2024-08-27
+
+### Breaking changes
+
+### Non-breaking changes
+
+* bump for bad ref in chap for 0.13.2.3
+
+## 0.13.2.3 -- 2024-08-22
+
+### Breaking changes
+
+### Non-breaking changes
+
+* version bump for build depends
+
 ## 0.13.2.2 -- 2024-08-07
 
 ### Breaking changes
