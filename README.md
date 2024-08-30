@@ -71,7 +71,7 @@ Libraries:
 We have two documents which describe various levels of the networking layer of
 the Cardano Shelley implementation:
 
-* [Introduction to the design of Data Diffusion and Networking of Cardano Shelley](https://ouroboros-network.cardano.intersectmbo.org/pdfs/network-design)
+* [Introduction to the Design of Data Diffusion and Networking of Cardano Shelley](https://ouroboros-network.cardano.intersectmbo.org/pdfs/network-design)
 
   This document explains the technical requirements and key constraints for the networking
   layer of the _Cardano Shelley_ implementation of _Ouroboros Praos_.  This is

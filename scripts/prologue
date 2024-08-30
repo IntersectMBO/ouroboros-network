@@ -5,6 +5,12 @@
 This site contains Haskell documentation of __Ouroboros-Network__
 - networking component of the Haskell implementation of Ouroboros protocols.
 
+== Documentation
+
+* [Introduction to the Design of Data Diffusion and Networking of Cardano Shelley](/network-design.pdf)
+* [The Shelley Networking Protocol](/network-spec.pdf)
+* [Official Cardano Documentation](https://docs.cardano.org/en/latest/)
+
 == Packages
 
 ![Network packages dependencies](packages-network.svg)
