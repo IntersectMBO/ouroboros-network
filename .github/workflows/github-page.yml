@@ -65,7 +65,7 @@ jobs:
 
     - name: Build documents
       run: |
-        cabal haddock-project --prologue=./scripts/progolue --hackage all
+        cabal haddock-project --prologue=./scripts/prologue --hackage all
 
     - name: Copy diagram
       run: |
