@@ -224,30 +224,19 @@ instance Arbitrary MempoolMeasures where
       <*> arbitrary
 
 instance Arbitrary MeasureName where
-  arbitrary = frequency
-    [ (5, pure TransactionBytes)
-    , (5, pure ExUnitsMemory)
-    , (5, pure ExUnitsSteps)
-    , (5, pure ReferenceScriptsBytes)
-    , (1, MeasureNameFromFuture <$> genUnknownMeasureName)
+  arbitrary = MeasureName <$> frequency
+    [ (9, genKnownMeasureName)
+    , (1, genUnknownMeasureName)
     ]
     where
-      knownMeasureNames =
+      genKnownMeasureName =
+        Text.pack <$> elements
         [ "transaction_bytes"
         , "reference_scripts"
         , "ex_units_memory"
         , "ex_units_steps"
         ]
-
-      -- We need to generate a measure name that is currently unknown (because
-      -- we support forward-compatibility in the protocol), because accidentally
-      -- generating a known measure name with `arbitrary` will cause the
-      -- deserialization to fail to roundtrip
-      genUnknownMeasureName = do
-        name <- arbitrary
-        if name `elem` knownMeasureNames
-          then discard
-          else pure $ UnknownMeasureName $ Text.pack name
+      genUnknownMeasureName = Text.pack <$> arbitrary
 
 instance Arbitrary a => Arbitrary (SizeAndCapacity a) where
   arbitrary =

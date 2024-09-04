@@ -133,15 +133,7 @@ data SizeAndCapacity a = SizeAndCapacity
 instance Functor SizeAndCapacity where
   fmap f (SizeAndCapacity s c) = SizeAndCapacity (f s) (f c)
 
-data MeasureName
-  = TransactionBytes
-  | ExUnitsMemory
-  | ExUnitsSteps
-  | ReferenceScriptsBytes
-  | MeasureNameFromFuture !UnknownMeasureName
-  deriving (Generic, Eq, Ord, Show, NFData)
-
-newtype UnknownMeasureName = UnknownMeasureName Text
+newtype MeasureName = MeasureName Text
   deriving (Generic, Eq, Ord, Show, NFData)
 
 data MempoolMeasures = MempoolMeasures

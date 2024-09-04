@@ -2,7 +2,6 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -16,7 +15,6 @@ module Ouroboros.Network.Protocol.LocalTxMonitor.Codec
 
 import Control.Monad
 import Control.Monad.Class.MonadST
-import Data.Functor ((<&>))
 
 import Network.TypedProtocol.Codec.CBOR
 
@@ -185,20 +183,10 @@ decodeMeasureMap = do
   pure $ Map.fromList mapContents
 
 encodeMeasureName :: MeasureName -> CBOR.Encoding
-encodeMeasureName = CBOR.encodeString . \case
-  TransactionBytes -> "transaction_bytes"
-  ExUnitsMemory -> "ex_units_memory"
-  ExUnitsSteps -> "ex_units_steps"
-  ReferenceScriptsBytes -> "reference_scripts_bytes"
-  MeasureNameFromFuture (UnknownMeasureName n) -> n
+encodeMeasureName (MeasureName t) = CBOR.encodeString t
 
 decodeMeasureName :: CBOR.Decoder s MeasureName
-decodeMeasureName = CBOR.decodeString <&> \case
-  "transaction_bytes" -> TransactionBytes
-  "ex_units_memory" -> ExUnitsMemory
-  "ex_units_steps" -> ExUnitsSteps
-  "reference_scripts_bytes" -> ReferenceScriptsBytes
-  unknownKey -> MeasureNameFromFuture (UnknownMeasureName unknownKey)
+decodeMeasureName = MeasureName <$> CBOR.decodeString
 
 encodeSizeAndCapacity :: SizeAndCapacity Integer -> CBOR.Encoding
 encodeSizeAndCapacity sc =
