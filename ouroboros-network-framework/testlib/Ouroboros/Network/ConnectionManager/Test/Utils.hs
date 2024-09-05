@@ -284,6 +284,14 @@ abstractStateIsFinalTransition :: Transition' AbstractState -> Bool
 abstractStateIsFinalTransition (Transition _ UnknownConnectionSt) = True
 abstractStateIsFinalTransition _                                  = False
 
+-- | This function is necessary to check tests that only read from the
+-- `traceTVar` logging output. These `traceTVar` logs do not transition to
+-- 'UnknownConnectionSt'.
+--
+abstractStateIsFinalTransitionTVarTracing :: Transition' AbstractState -> Bool
+abstractStateIsFinalTransitionTVarTracing (Transition _ UnknownConnectionSt) = True
+abstractStateIsFinalTransitionTVarTracing _                                  = False
+
 
 connectionManagerTraceMap
   :: ConnectionManagerTrace
