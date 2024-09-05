@@ -2,6 +2,12 @@
 
 ## next release
 
+### Breaking changes
+
+### Non-breaking changes
+
+* Added tracing on CM connVars for testing purposes.
+
 ## 0.13.2.4 -- 2024-08-27
 
 ### Breaking changes
