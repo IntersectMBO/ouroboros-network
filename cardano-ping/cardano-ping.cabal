@@ -30,8 +30,7 @@ library
                         iproute,
                         time,
 
-                        si-timers                    ^>=1.5,
-                        strict-stm,
+                        io-classes:{si-timers,strict-stm} ^>=1.7,
 
                         network-mux                  ^>=0.4.5,
                         tdigest                      ^>=0.3,
