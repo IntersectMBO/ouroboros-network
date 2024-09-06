@@ -154,8 +154,7 @@ library
     dlist,
     dns,
     hashable,
-    io-classes ^>=1.5.0,
-    io-classes-mtl ^>=0.1,
+    io-classes:{io-classes, mtl, si-timers, strict-stm} ^>=1.7.0,
     iproute,
     monoidal-synchronisation,
     mtl,
@@ -167,9 +166,7 @@ library
     ouroboros-network-protocols ^>=0.14,
     psqueues >=0.2.3 && <0.3,
     random,
-    si-timers,
     strict-checked-vars ^>=0.2,
-    strict-stm >=1.0 && <1.6,
     transformers,
     typed-protocols ^>=0.3,
     typed-protocols-stateful,
@@ -289,15 +286,13 @@ library cardano-diffusion
     containers,
     contra-tracer,
     dns,
-    io-classes ^>=1.5.0,
+    io-classes:{io-classes, si-timers, strict-stm} ^>=1.7.0,
     monoidal-synchronisation,
     network ^>=3.2.7,
     ouroboros-network,
     ouroboros-network-api ^>=0.13,
     ouroboros-network-framework ^>=0.17,
     random,
-    si-timers,
-    strict-stm,
 
   if !os(windows)
     build-depends:
@@ -327,8 +322,8 @@ library testlib
     deepseq,
     dns,
     hashable,
-    io-classes,
-    io-sim ^>=1.5.1,
+    io-classes:{io-classes, si-timers, strict-stm},
+    io-sim,
     iproute,
     monoidal-synchronisation,
     mtl,
@@ -349,8 +344,6 @@ library testlib
     quickcheck-monoids,
     random,
     serialise,
-    si-timers,
-    strict-stm,
     tasty,
     tasty-hunit,
     tasty-quickcheck,
@@ -437,7 +430,7 @@ test-suite io-tests
     base >=4.14 && <4.22,
     bytestring,
     contra-tracer,
-    io-classes,
+    io-classes:{io-classes, si-timers, strict-stm},
     monoidal-synchronisation,
     network,
     network-mux,
@@ -449,8 +442,6 @@ test-suite io-tests
     ouroboros-network-protocols:testlib,
     ouroboros-network-testing ^>=0.8.1,
     serialise,
-    si-timers,
-    strict-stm,
     tasty,
     tasty-quickcheck,
     with-utf8,
@@ -481,6 +472,7 @@ executable demo-chain-sync
     contra-tracer,
     directory,
     infinite-list,
+    io-classes:{si-timers, strict-stm},
     network-mux,
     optparse-applicative,
     ouroboros-network,
@@ -490,13 +482,12 @@ executable demo-chain-sync
     ouroboros-network-protocols,
     random,
     serialise,
-    si-timers,
-    strict-stm,
     typed-protocols,
 
   default-language: Haskell2010
   default-extensions: ImportQualifiedPost
   ghc-options:
+    -Wall
     -threaded
     -rtsopts
 
