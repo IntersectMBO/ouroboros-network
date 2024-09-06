@@ -26,11 +26,11 @@ library
     cborg,
     containers,
     contra-tracer,
+    io-classes:si-timers,
     network-mux ^>=0.5,
     ouroboros-network ^>=0.18,
     ouroboros-network-api ^>=0.11,
     ouroboros-network-framework ^>=0.14,
-    si-timers,
 
   ghc-options:
     -Wall

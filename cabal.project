@@ -53,3 +53,19 @@ package network-mux
 
 package ouroboros-network
   flags: +asserts +cddl
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/typed-protocols
+  tag: 3d785bc6fbfc727b667ea8735a3b1c044b39db2b
+  --sha256: sha256-vhLYZ58gY2PPio1O81/mhFvv+iTMSU/FiM33RkRMbf0=
+  subdir: typed-protocols
+          typed-protocols-cborg
+          typed-protocols-examples
+
+source-repository-package
+  type: git
+  location: https://github.com/intersectmbo/cardano-base
+  tag: 173ca7c6add96c968120bf464c9f353659cfc1f8
+  --sha256: sha256-S1dUaecXIs+2w9IH7gQhg3V88d0okLiShC71SZFhVWw=
+  subdir: strict-checked-vars
