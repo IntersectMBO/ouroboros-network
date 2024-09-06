@@ -81,7 +81,7 @@ library
     deepseq >=1.0 && <1.6,
     dns >=1.0 && <4.3,
     hashable >=1.0 && <1.6,
-    io-classes ^>=1.5.0,
+    io-classes:{io-classes, si-timers, strict-stm} ^>=1.8,
     iproute ^>=1.7.15,
     monoidal-synchronisation >=0.1 && <0.2,
     network ^>=3.2.7,
@@ -93,10 +93,8 @@ library
     ouroboros-network-framework ^>=0.18,
     ouroboros-network-protocols ^>=0.14.0.1,
     random >=1 && <1.4,
-    si-timers ^>=1.5,
-    strict-stm >=1.0 && <1.6,
     text >=1.2.4 && <2.2,
-    typed-protocols ^>=0.3,
+    typed-protocols ^>=1.0,
 
   -- Directories containing source files.
   hs-source-dirs: src
