@@ -73,7 +73,7 @@ library
     contra-tracer,
     deepseq,
     hashable,
-    io-classes ^>=1.5.0,
+    io-classes:{io-classes, si-timers, strict-stm} ^>=1.8,
     monoidal-synchronisation ^>=0.1.0.6,
     network ^>=3.2.7,
     network-mux ^>=0.7,
@@ -84,12 +84,8 @@ library
     psqueues,
     quiet,
     random,
-    si-timers,
-    strict-stm,
     text,
-    typed-protocols ^>=0.3,
-    typed-protocols-cborg ^>=0.3,
-    typed-protocols-stateful ^>=0.3,
+    typed-protocols:{typed-protocols, cborg, stateful} ^>=1.0,
 
   if os(windows)
     build-depends: Win32 >=2.5.4.1 && <3.0
@@ -127,7 +123,7 @@ library testlib
     containers,
     contra-tracer,
     hashable,
-    io-classes,
+    io-classes:{io-classes, si-timers, strict-stm},
     io-sim,
     network-mux,
     ouroboros-network-api,
@@ -136,10 +132,7 @@ library testlib
     quickcheck-monoids,
     random,
     serialise,
-    si-timers,
-    strict-stm,
-    typed-protocols,
-    typed-protocols-examples,
+    typed-protocols:{typed-protocols, examples},
 
   default-language: Haskell2010
   default-extensions: ImportQualifiedPost
@@ -174,7 +167,7 @@ test-suite sim-tests
     containers,
     contra-tracer,
     directory,
-    io-classes,
+    io-classes:{io-classes, si-timers, strict-stm},
     io-sim,
     monoidal-synchronisation,
     network,
@@ -190,15 +183,11 @@ test-suite sim-tests
     quiet,
     random,
     serialise,
-    si-timers,
-    strict-stm,
     tasty,
     tasty-quickcheck,
     text,
     time,
-    typed-protocols,
-    typed-protocols-cborg,
-    typed-protocols-examples,
+    typed-protocols:{typed-protocols, cborg, examples},
     with-utf8,
 
   if os(windows)
@@ -240,7 +229,7 @@ test-suite io-tests
     bytestring,
     contra-tracer,
     directory,
-    io-classes,
+    io-classes:{io-classes, si-timers, strict-stm},
     io-sim,
     monoidal-synchronisation,
     network,
@@ -249,14 +238,10 @@ test-suite io-tests
     ouroboros-network-framework,
     ouroboros-network-framework:testlib,
     random,
-    si-timers,
-    strict-stm,
     tasty,
     tasty-quickcheck,
     time,
-    typed-protocols,
-    typed-protocols-examples >=0.5,
-    typed-protocols-stateful,
+    typed-protocols:{typed-protocols, examples, stateful},
     with-utf8,
 
   if os(windows)
@@ -288,7 +273,7 @@ executable demo-ping-pong
     network-mux,
     ouroboros-network-api,
     ouroboros-network-framework,
-    typed-protocols-examples,
+    typed-protocols:examples,
 
   default-language: Haskell2010
   default-extensions: ImportQualifiedPost
@@ -312,17 +297,14 @@ executable demo-connection-manager
     bytestring,
     contra-tracer,
     hashable,
-    io-classes,
+    io-classes:{io-classes, si-timers, strict-stm},
     network,
     network-mux,
     optparse-applicative,
     ouroboros-network-api,
     ouroboros-network-framework,
     random,
-    si-timers,
-    strict-stm,
-    typed-protocols,
-    typed-protocols-examples,
+    typed-protocols:{typed-protocols, examples},
 
   default-language: Haskell2010
   default-extensions: ImportQualifiedPost
