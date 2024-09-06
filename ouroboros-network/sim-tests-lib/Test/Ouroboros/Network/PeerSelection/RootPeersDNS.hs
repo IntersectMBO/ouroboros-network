@@ -47,8 +47,7 @@ import Control.Exception (throw)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadSay (MonadSay (..))
 import Control.Monad.Class.MonadThrow
-import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime (getMonotonicTime),
-           Time (..), addTime)
+import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Class.MonadTimer.SI qualified as MonadTimer
 import Control.Monad.IOSim

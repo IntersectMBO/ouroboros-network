@@ -18,8 +18,7 @@ module Test.Ouroboros.Network.Diffusion.Testnet.Cardano (tests) where
 import Control.Exception (AssertionFailed (..), catch, evaluate, fromException)
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadTest (exploreRaces)
-import Control.Monad.Class.MonadTime.SI (DiffTime, Time (Time), addTime,
-           diffTime)
+import Control.Monad.Class.MonadTime.SI
 import Control.Monad.IOSim
 
 import Data.Bifoldable (bifoldMap)

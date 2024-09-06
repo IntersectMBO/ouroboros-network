@@ -25,7 +25,7 @@ module Test.Ouroboros.Network.ConnectionManager.Timeouts
   , ppTransition
   ) where
 
-import Control.Monad.Class.MonadTime.SI (DiffTime, Time, diffTime)
+import Control.Monad.Class.MonadTime.SI (DiffTime, diffTime)
 import Control.Monad.IOSim
 
 import Data.Bifoldable (bifoldMap)
