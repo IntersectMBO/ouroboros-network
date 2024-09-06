@@ -120,7 +120,7 @@ mkSimpleDriver :: forall ps failure bytes m f annotator.
                  )
               => (forall a.
                       Channel m bytes
-                   -> Maybe bytes 
+                   -> Maybe bytes
                    -> DecodeStep bytes failure m (f a)
                    -> m (Either failure (a, Maybe bytes))
                  )
@@ -131,7 +131,7 @@ mkSimpleDriver :: forall ps failure bytes m f annotator.
               -- message
 
               -> Tracer m (TraceSendRecv ps)
-              -> Codec' ps failure m annotator bytes
+              -> CodecF ps failure m annotator bytes
               -> Channel m bytes
               -> Driver ps (Maybe bytes) m
 
@@ -308,10 +308,10 @@ runDecoderWithChannel :: Monad m
 
 runDecoderWithChannel Channel{recv} = go
   where
-    go _ (DecodeDone (Identity x) trailing)         = return (Right (x, trailing))
-    go _ (DecodeFail failure)            = return (Left failure)
-    go Nothing         (DecodePartial k) = recv >>= k        >>= go Nothing
-    go (Just trailing) (DecodePartial k) = k (Just trailing) >>= go Nothing
+    go _ (DecodeDone (Identity x) trailing) = return (Right (x, trailing))
+    go _ (DecodeFail failure)               = return (Left failure)
+    go Nothing (DecodePartial k) = recv >>= k >>= go Nothing
+    go queued  (DecodePartial k) = k queued   >>= go Nothing
 
 
 runAnnotatedDecoderWithChannel
@@ -324,13 +324,12 @@ runAnnotatedDecoderWithChannel
   -> DecodeStep bytes failure m (bytes -> a)
   -> m (Either failure (a, Maybe bytes))
 
-runAnnotatedDecoderWithChannel Channel{recv} bs0 = go (fromMaybe mempty bs0) bs0
+runAnnotatedDecoderWithChannel Channel{recv} = go <*> fromMaybe mempty
   where
-    go :: bytes -> Maybe bytes -> DecodeStep bytes failure m (bytes -> a) -> m (Either failure (a, Maybe bytes))
-    go bytes  _ (DecodeDone f trailing)        = return $ Right (f bytes, trailing)
-    go _bytes _ (DecodeFail failure)           = return (Left failure)
-    go bytes Nothing         (DecodePartial k) = recv >>= \bs -> k bs >>= go (bytes <> fromMaybe mempty bs) Nothing
-    go bytes (Just trailing) (DecodePartial k) = k (Just trailing) >>= go (bytes <> trailing) Nothing
+    go _       consumed (DecodeDone f trailing) = return $ Right (f consumed, trailing)
+    go _       _        (DecodeFail failure)    = return $ Left failure
+    go Nothing consumed (DecodePartial k) = recv >>= \bs -> k bs >>= go Nothing (consumed <> fromMaybe mempty bs)
+    go (Just queued) consumed (DecodePartial k) = k (Just queued)    >>= go Nothing (consumed <> queued)
 
 
 data Role = Client | Server
@@ -417,4 +416,3 @@ runConnectedPeersPipelined createChannels tracer codec client server =
   where
     tracerClient = contramap ((,) Client) tracer
     tracerServer = contramap ((,) Server) tracer
-

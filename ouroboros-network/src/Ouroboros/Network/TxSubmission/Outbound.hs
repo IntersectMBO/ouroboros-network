@@ -27,6 +27,7 @@ import Ouroboros.Network.ControlMessage (ControlMessage, ControlMessageSTM,
 import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import Ouroboros.Network.Protocol.TxSubmission2.Client
 import Ouroboros.Network.Protocol.TxSubmission2.Type
+import Ouroboros.Network.SizeInBytes (WithBytes (..))
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
            TxSubmissionMempoolReader (..))
 
@@ -187,6 +188,6 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
               client'      = client unackedSeq lastIdx
 
           -- Trace the transactions to be sent in the response.
-          traceWith tracer (TraceTxSubmissionOutboundSendMsgReplyTxs txs)
+          traceWith tracer (TraceTxSubmissionOutboundSendMsgReplyTxs $ wbValue <$> txs)
 
-          return $ SendMsgReplyTxs txs client'
+          return $ SendMsgReplyTxs undefined client'

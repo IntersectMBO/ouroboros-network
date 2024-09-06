@@ -19,9 +19,11 @@ module Ouroboros.Network.Driver.Limits
   , ProtocolLimitFailure (..)
     -- * Normal peers
   , runPeerWithLimits
+  , runAnnotatedPeerWithLimits
   , TraceSendRecv (..)
     -- * Pipelined peers
   , runPipelinedPeerWithLimits
+  , runPipelinedAnnotatedPeerWithLimits
     -- * Driver utilities
   , driverWithLimits
   ) where
@@ -46,25 +48,41 @@ import Ouroboros.Network.Protocol.Limits
 import Ouroboros.Network.Util.ShowProxy
 
 
-driverWithLimits :: forall ps failure bytes m.
+mkDriverWithLimits :: forall ps failure bytes m f annotator.
                     ( MonadThrow m
                     , Show failure
                     , ShowProxy ps
                     , forall (st' :: ps). Show (ClientHasAgency st')
                     , forall (st' :: ps). Show (ServerHasAgency st')
                     )
-                 => Tracer m (TraceSendRecv ps)
+                   => (forall message.
+                           Word
+                        -- ^ message size limit
+                        -> (bytes -> Word)
+                        -- ^ byte size
+                        -> Channel m bytes
+                        -> Maybe bytes
+                        -> DecodeStep bytes failure m (f message)
+                        -> m (Either (Maybe failure) (message, Maybe bytes))
+                      )
+                 -- ^ run incremental decoder against a channel
+
+                 -> (forall st. annotator st -> f (SomeMessage st))
+                 -- ^ transform annotator to a container holding the decoded
+                 -- message
+
+                 -> Tracer m (TraceSendRecv ps)
                  -> TimeoutFn m
-                 -> Codec ps failure m bytes
+                 -> CodecF ps failure m annotator bytes
                  -> ProtocolSizeLimits ps bytes
                  -> ProtocolTimeLimits ps
                  -> Channel m bytes
                  -> Driver ps (Maybe bytes) m
-driverWithLimits tracer timeoutFn
-                 Codec{encode, decode}
-                 ProtocolSizeLimits{sizeLimitForState, dataSize}
-                 ProtocolTimeLimits{timeLimitForState}
-                 channel@Channel{send} =
+mkDriverWithLimits runDecodeSteps nat tracer timeoutFn
+                   Codec{encode, decode}
+                   ProtocolSizeLimits{sizeLimitForState, dataSize}
+                   ProtocolTimeLimits{timeLimitForState}
+                   channel@Channel{send} =
     Driver { sendMessage, recvMessage, startDState = Nothing }
   where
     sendMessage :: forall (pr :: PeerRole) (st :: ps) (st' :: ps).
@@ -84,8 +102,8 @@ driverWithLimits tracer timeoutFn
       let sizeLimit = sizeLimitForState stok
           timeLimit = fromMaybe (-1) (timeLimitForState stok)
       result  <- timeoutFn timeLimit $
-                   runDecoderWithLimit sizeLimit dataSize
-                                       channel trailing decoder
+                   runDecodeSteps sizeLimit dataSize
+                                  channel trailing (nat <$> decoder)
       case result of
         Just (Right x@(SomeMessage msg, _trailing')) -> do
           traceWith tracer (TraceRecvMsg (AnyMessageAndAgency stok msg))
@@ -94,18 +112,55 @@ driverWithLimits tracer timeoutFn
         Just (Left Nothing)        -> throwIO (ExceededSizeLimit stok)
         Nothing                    -> throwIO (ExceededTimeLimit stok)
 
+driverWithLimits :: forall ps failure bytes m.
+                    ( MonadThrow m
+                    , Show failure
+                    , forall (st :: ps). Show (ClientHasAgency st)
+                    , forall (st :: ps). Show (ServerHasAgency st)
+                    , ShowProxy ps
+                    , Monoid bytes
+                    )
+                 => Tracer m (TraceSendRecv ps)
+                 -> TimeoutFn m
+                 -> Codec ps failure m bytes
+                 -> ProtocolSizeLimits ps bytes
+                 -> ProtocolTimeLimits ps
+                 -> Channel m bytes
+                 -> Driver ps (Maybe bytes) m
+driverWithLimits = mkDriverWithLimits (runDecoderWithLimit glue) const
+  where
+    glue _consumed _new = mempty
+
+annotatedDriverWithLimits :: forall ps failure bytes m.
+                             ( MonadThrow m
+                             , Show failure
+                             , forall (st :: ps). Show (ClientHasAgency st)
+                             , forall (st :: ps). Show (ServerHasAgency st)
+                             , ShowProxy ps
+                             , Monoid bytes
+                             )
+                          => Tracer m (TraceSendRecv ps)
+                          -> TimeoutFn m
+                          -> AnnotatedCodec ps failure m bytes
+                          -> ProtocolSizeLimits ps bytes
+                          -> ProtocolTimeLimits ps
+                          -> Channel m bytes
+                          -> Driver ps (Maybe bytes) m
+annotatedDriverWithLimits = mkDriverWithLimits (runDecoderWithLimit (<>)) runAnnotator
+
 runDecoderWithLimit
-    :: forall m bytes failure a. Monad m
-    => Word
+    :: forall m bytes failure a. (Monad m, Monoid bytes)
+    => (bytes -> bytes -> bytes)
+    -> Word
     -- ^ message size limit
     -> (bytes -> Word)
     -- ^ byte size
     -> Channel m bytes
     -> Maybe bytes
-    -> DecodeStep bytes failure m a
+    -> DecodeStep bytes failure m (bytes -> a)
     -> m (Either (Maybe failure) (a, Maybe bytes))
-runDecoderWithLimit limit size Channel{recv} =
-    go 0
+runDecoderWithLimit glue limit size Channel{recv} =
+    go 0 <*> fromMaybe mempty
   where
     -- Our strategy here is as follows...
     --
@@ -120,28 +175,27 @@ runDecoderWithLimit limit size Channel{recv} =
     -- This leaves just one special case: if the decoder finishes with that
     -- final chunk, we must check if it consumed too much of the final chunk.
     --
-    go :: Word        -- ^ size of consumed input so far
-       -> Maybe bytes -- ^ any trailing data
-       -> DecodeStep bytes failure m a
-       -> m (Either (Maybe failure) (a, Maybe bytes))
-
-    go !sz _ (DecodeDone x trailing)
+    go !sz _ consumed (DecodeDone toMessage trailing)
       | let sz' = sz - maybe 0 size trailing
-      , sz' > limit = return (Left Nothing)
-      | otherwise   = return (Right (x, trailing))
+      , sz' > limit = return $ Left Nothing
+      | otherwise   = return $ Right (toMessage consumed, trailing)
 
-    go !_ _  (DecodeFail failure) = return (Left (Just failure))
+    go !_ _ _ (DecodeFail failure) = return $ Left (Just failure)
 
-    go !sz trailing (DecodePartial k)
-      | sz > limit = return (Left Nothing)
-      | otherwise  = case trailing of
+    go !sz queued consumed (DecodePartial k)
+      | sz > limit = return $ Left Nothing
+      | otherwise  = case queued of
                        Nothing -> do mbs <- recv
                                      let !sz' = sz + maybe 0 size mbs
-                                     go sz' Nothing =<< k mbs
-                       Just bs -> do let sz' = sz + size bs
-                                     go sz' Nothing =<< k (Just bs)
+                                     go sz' Nothing (consumed `glue` fromMaybe mempty mbs) =<< k mbs
+                       Just queued' -> do let sz' = sz + size queued'
+                                          go sz' Nothing (consumed `glue` queued') =<< k (Just queued')
 
 
+-- | Run a peer with the given channel via the given codec.
+--
+-- This runs the peer to completion (if the protocol allows for termination).
+--
 runPeerWithLimits
   :: forall ps (st :: ps) pr failure bytes m a .
      ( MonadAsync m
@@ -153,6 +207,7 @@ runPeerWithLimits
      , forall (st' :: ps). Show (ServerHasAgency st')
      , ShowProxy ps
      , Show failure
+     , Monoid bytes
      )
   => Tracer m (TraceSendRecv ps)
   -> Codec ps failure m bytes
@@ -166,6 +221,34 @@ runPeerWithLimits tracer codec slimits tlimits channel peer =
       let driver = driverWithLimits tracer timeoutFn codec slimits tlimits channel
       in runPeerWithDriver driver peer (startDState driver)
 
+-- | Run a peer with the given channel via the given annotated codec.
+--
+-- This runs the peer to completion (if the protocol allows for termination).
+--
+runAnnotatedPeerWithLimits
+  :: forall ps (st :: ps) pr failure bytes m a .
+     ( MonadAsync m
+     , MonadFork m
+     , MonadMask m
+     , MonadThrow (STM m)
+     , MonadTimer m
+     , forall (st' :: ps). Show (ClientHasAgency st')
+     , forall (st' :: ps). Show (ServerHasAgency st')
+     , ShowProxy ps
+     , Show failure
+     , Monoid bytes
+     )
+  => Tracer m (TraceSendRecv ps)
+  -> AnnotatedCodec ps failure m bytes
+  -> ProtocolSizeLimits ps bytes
+  -> ProtocolTimeLimits ps
+  -> Channel m bytes
+  -> Peer ps pr st m a
+  -> m (a, Maybe bytes)
+runAnnotatedPeerWithLimits tracer codec slimits tlimits channel peer =
+    withTimeoutSerial $ \timeoutFn ->
+      let driver = annotatedDriverWithLimits tracer timeoutFn codec slimits tlimits channel
+      in runPeerWithDriver driver peer (startDState driver)
 
 -- | Run a pipelined peer with the given channel via the given codec.
 --
@@ -185,6 +268,7 @@ runPipelinedPeerWithLimits
      , forall (st' :: ps). Show (ServerHasAgency st')
      , ShowProxy ps
      , Show failure
+     , Monoid bytes
      )
   => Tracer m (TraceSendRecv ps)
   -> Codec ps failure m bytes
@@ -196,4 +280,36 @@ runPipelinedPeerWithLimits
 runPipelinedPeerWithLimits tracer codec slimits tlimits channel peer =
     withTimeoutSerial $ \timeoutFn ->
       let driver = driverWithLimits tracer timeoutFn codec slimits tlimits channel
+      in runPipelinedPeerWithDriver driver peer (startDState driver)
+
+-- | Run a pipelined peer with the given channel via the given annotated codec.
+--
+-- This runs the peer to completion (if the protocol allows for termination).
+--
+-- Unlike normal peers, running pipelined peers rely on concurrency, hence the
+-- 'MonadAsync' constraint.
+--
+runPipelinedAnnotatedPeerWithLimits
+  :: forall ps (st :: ps) pr failure bytes m a.
+     ( MonadAsync m
+     , MonadFork m
+     , MonadMask m
+     , MonadThrow (STM m)
+     , MonadTimer m
+     , forall (st' :: ps). Show (ClientHasAgency st')
+     , forall (st' :: ps). Show (ServerHasAgency st')
+     , ShowProxy ps
+     , Show failure
+     , Monoid bytes
+     )
+  => Tracer m (TraceSendRecv ps)
+  -> AnnotatedCodec ps failure m bytes
+  -> ProtocolSizeLimits ps bytes
+  -> ProtocolTimeLimits ps
+  -> Channel m bytes
+  -> PeerPipelined ps pr st m a
+  -> m (a, Maybe bytes)
+runPipelinedAnnotatedPeerWithLimits tracer codec slimits tlimits channel peer =
+    withTimeoutSerial $ \timeoutFn ->
+      let driver = annotatedDriverWithLimits tracer timeoutFn codec slimits tlimits channel
       in runPipelinedPeerWithDriver driver peer (startDState driver)

@@ -30,6 +30,7 @@ module Ouroboros.Network.Protocol.TxSubmission2.Client
 import Network.TypedProtocol.Core
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type
+import Ouroboros.Network.SizeInBytes
 
 
 -- | The client side of the transaction submission protocol.
@@ -74,7 +75,7 @@ data ClientStTxIds blocking txid tx m a where
 
 
 data ClientStTxs txid tx m a where
-  SendMsgReplyTxs   :: [tx]
+  SendMsgReplyTxs   :: [WithBytes tx]
                     -> ClientStIdle txid tx m a
                     -> ClientStTxs  txid tx m a
 
