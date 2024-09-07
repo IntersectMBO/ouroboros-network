@@ -145,6 +145,7 @@ supportedNodeToClientVersions magic =
   , NodeToClientVersionV14 magic
   , NodeToClientVersionV15 magic
   , NodeToClientVersionV16 magic
+  , NodeToClientVersionV17 magic
   ]
 
 data InitiatorOnly = InitiatorOnly | InitiatorAndResponder
@@ -484,6 +485,7 @@ handshakeDec = do
         (14, True)  -> Right . NodeToClientVersionV14 <$> CBOR.decodeWord32
         (15, True)  -> Right . NodeToClientVersionV15 <$> (CBOR.decodeListLen *> CBOR.decodeWord32 <* (modeFromBool <$> CBOR.decodeBool))
         (16, True)  -> Right . NodeToClientVersionV16 <$> (CBOR.decodeListLen *> CBOR.decodeWord32 <* (modeFromBool <$> CBOR.decodeBool))
+        (17, True)  -> Right . NodeToClientVersionV17 <$> (CBOR.decodeListLen *> CBOR.decodeWord32 <* (modeFromBool <$> CBOR.decodeBool))
         _           -> return $ Left $ UnknownVersionInRsp version
 
     decodeWithMode :: (Word32 -> InitiatorOnly -> NodeVersion) -> CBOR.Decoder s (Either HandshakeFailure NodeVersion)
