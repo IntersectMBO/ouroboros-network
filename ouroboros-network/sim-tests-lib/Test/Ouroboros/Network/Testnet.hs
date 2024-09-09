@@ -143,7 +143,7 @@ tests =
     , nightlyTest $ testProperty "connection manager valid transitions"
                       (testWithIOSimPOR prop_diffusion_cm_valid_transitions 10000)
     , nightlyTest $ testProperty "connection manager valid transition order"
-                      (testWithIOSimPOR prop_diffusion_cm_valid_transition_order 10000)
+                      (testWithIOSimPOR prop_diffusion_cm_valid_transition_order_iosim_por 10000)
     , nightlyTest $ testProperty "connection manager no dodgy traces"
                       (testWithIOSimPOR prop_diffusion_cm_no_dodgy_traces 10000)
     , nightlyTest $ testProperty "peer selection actions no dodgy traces"
@@ -167,7 +167,7 @@ tests =
                         (testWithIOSimPOR prop_churn_steps 10000)
       ]
     , testGroup "unit"
-      [ testProperty "unit cm" unit_cm_valid_transitions ]
+      [ nightlyTest $ testProperty "unit cm" unit_cm_valid_transitions ]
     ]
   , testGroup "IOSim"
     [ testProperty "no failure"
@@ -441,7 +441,7 @@ unit_cm_valid_transitions =
         exploreRaces
         diffusionSimulation (toBearerInfo bi) ds iosimTracer
   in exploreSimTrace (\a -> a { explorationReplay = Just s }) sim $ \_ ioSimTrace ->
-       prop_diffusion_cm_valid_transition_order ioSimTrace 10000
+       prop_diffusion_cm_valid_transition_order_iosim_por ioSimTrace 10000
 
 -- | As a basic property we run the governor to explore its state space a bit
 -- and check it does not throw any exceptions (assertions such as invariant
@@ -2824,20 +2824,29 @@ prop_diffusion_cm_valid_transitions ioSimTrace traceNumber =
 -- the logs for all nodes running will all appear in the trace and the test
 -- property should only be valid while a given node is up and running.
 --
-prop_diffusion_cm_valid_transition_order :: SimTrace Void
-                                         -> Int
-                                         -> Property
-prop_diffusion_cm_valid_transition_order ioSimTrace traceNumber =
+-- This test is meant to run with IOSimPOR. It gets the transitions from the
+-- traceTVar trace which can't be reordered, hence leading to false positives.
+--
+-- We can't reliably check for transitions to UnknownState but the IOSim tests
+-- already give us quite a lot confidence that there isn't any bugs there.
+--
+prop_diffusion_cm_valid_transition_order_iosim_por :: SimTrace Void
+                                                   -> Int
+                                                   -> Property
+prop_diffusion_cm_valid_transition_order_iosim_por ioSimTrace traceNumber =
     let events :: [Trace () (WithName NtNAddr (WithTime (AbstractTransitionTrace NtNAddr)))]
         events = Trace.toList
             . fmap (Trace.fromList ())
             . splitWithNameTrace
-            . fmap (\(t, tr@(TransitionTrace n _)) -> WithName n (WithTime t (fmap getKnown tr)))
             . traceSelectTraceEvents
                 (\t se ->
                   case se of
-                    EventLog dyn -> (t,) <$> fromDynamic dyn
-                    _            -> Nothing)
+                    EventLog dyn
+                      -- Traced by traceTVar
+                      | Just tr@(TransitionTrace n _)
+                        <- fromDynamic dyn
+                        -> Just (WithName n (WithTime t tr))
+                    _   -> Nothing)
             . Trace.take traceNumber
             $ ioSimTrace
 
@@ -2847,7 +2856,7 @@ prop_diffusion_cm_valid_transition_order ioSimTrace traceNumber =
             lastTime = (\(WithName _ (WithTime t _)) -> t)
                      . last
                      $ evsList
-         in counterexample (intercalate "\n" $ map show $ Trace.toList $ ev)
+         in counterexample (intercalate "\n" $ map show $ Trace.toList ev)
           $ classifySimulatedTime lastTime
           $ classifyNumberOfEvents (length evsList)
           $ verify_cm_valid_transition_order
@@ -2856,10 +2865,6 @@ prop_diffusion_cm_valid_transition_order ioSimTrace traceNumber =
         )
       <$> events
   where
-    getKnown :: MaybeUnknown a -> a
-    getKnown (Known a) = a
-    getKnown _         = error "impossible happened"
-
     verify_cm_valid_transition_order :: Trace () (AbstractTransitionTrace NtNAddr) -> Property
     verify_cm_valid_transition_order =
          property
@@ -2868,6 +2873,56 @@ prop_diffusion_cm_valid_transition_order ioSimTrace traceNumber =
           (verifyAbstractTransitionOrder False)
        . fmap (map ttTransition)
        . groupConns id abstractStateIsFinalTransitionTVarTracing
+
+-- | A variant of ouroboros-network-framework
+-- 'Test.Ouroboros.Network.Server2.prop_connection_manager_valid_transition_order'
+-- but for running on Diffusion. This means it has to have in consideration the
+-- the logs for all nodes running will all appear in the trace and the test
+-- property should only be valid while a given node is up and running.
+--
+prop_diffusion_cm_valid_transition_order :: SimTrace Void
+                                         -> Int
+                                         -> Property
+prop_diffusion_cm_valid_transition_order ioSimTrace traceNumber =
+    let events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
+        events = Trace.toList
+               . fmap (Trace.fromList ())
+               . splitWithNameTrace
+               . fmap (\(WithTime t (WithName name b))
+                       -> WithName name (WithTime t b))
+               . withTimeNameTraceEvents
+                  @DiffusionTestTrace
+                  @NtNAddr
+               . Trace.take traceNumber
+               $ ioSimTrace
+
+     in conjoin
+      $ (\ev ->
+        let evsList = Trace.toList ev
+            lastTime = (\(WithName _ (WithTime t _)) -> t)
+                     . last
+                     $ evsList
+         in classifySimulatedTime lastTime
+          $ classifyNumberOfEvents (length evsList)
+          $ verify_cm_valid_transition_order
+          $ (\(WithName _ (WithTime _ b)) -> b)
+          <$> ev
+        )
+      <$> events
+  where
+    verify_cm_valid_transition_order :: Trace () DiffusionTestTrace -> Property
+    verify_cm_valid_transition_order events =
+      let abstractTransitionEvents :: Trace () (AbstractTransitionTrace NtNAddr)
+          abstractTransitionEvents =
+            selectDiffusionConnectionManagerTransitionEvents events
+
+       in  property
+         . bifoldMap
+            (const mempty)
+            (verifyAbstractTransitionOrder False)
+         . fmap (map ttTransition)
+         . groupConns id abstractStateIsFinalTransition
+         $ abstractTransitionEvents
 
 -- | Unit test that checks issue 4258
 -- https://github.com/intersectmbo/ouroboros-network/issues/4258

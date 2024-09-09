@@ -67,6 +67,7 @@ import Ouroboros.Network.InboundGovernor.Event (NewConnectionInfo (..))
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket
+import Ouroboros.Network.Testing.Utils (WithName (..))
 
 
 -- | Arguments for a 'ConnectionManager' which are independent of 'MuxMode'.
@@ -227,14 +228,16 @@ newMutableConnState peerAddr freshIdSupply connState = do
                     let prevAbs = abstractState (Known prev)
                   , prevAbs /= currAbs -> pure
                                        $ TraceDynamic
+                                       $ WithName connStateId
                                        $ TransitionTrace peerAddr
-                                       $ mkTransition prevAbs
-                                                      currAbs
+                                       $ mkAbsTransition prevAbs
+                                                         currAbs
                 Nothing                -> pure
                                        $ TraceDynamic
+                                       $ WithName connStateId
                                        $ TransitionTrace peerAddr
-                                       $ mkTransition TerminatedSt
-                                                      currAbs
+                                       $ mkAbsTransition TerminatedSt
+                                                         currAbs
                 _                      -> pure DontTrace
         )
       return $ MutableConnState { connStateId, connVar }
@@ -482,7 +485,6 @@ abstractState = \case
     go DuplexState {}                 = DuplexSt
     go TerminatingState {}            = TerminatingSt
     go TerminatedState {}             = TerminatedSt
-
 
 -- | The default value for 'cmTimeWaitTimeout'.
 --

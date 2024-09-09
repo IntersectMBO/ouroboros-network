@@ -292,7 +292,6 @@ abstractStateIsFinalTransitionTVarTracing :: Transition' AbstractState -> Bool
 abstractStateIsFinalTransitionTVarTracing (Transition _ UnknownConnectionSt) = True
 abstractStateIsFinalTransitionTVarTracing _                                  = False
 
-
 connectionManagerTraceMap
   :: ConnectionManagerTrace
       ntnAddr
