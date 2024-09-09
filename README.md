@@ -17,30 +17,55 @@ The following graph shows the dependency tree.  The top-level package is
 that we abbreviate `ouroboros-{consensus,network}` to `o-{c,n}` in the labels.
 
 ```mermaid
-  flowchart TD
-    A[network-mux]       --> B[network / Win32-network]
-    M[cardano-ping]      --> A
+flowchart TB
+  subgraph ourobors-consensus
+    I[o-c-diffusion]
+    L[o-c]
+    click I "https://github.com/intersectmbo/ouroboros-consensus/" _blank
+    click L "https://github.com/intersectmbo/ouroboros-consensus/" _blank
+  end
+
+  subgraph ouroboros-network
+    M[cardano-ping]      --> A[network-mux]
     D[o-n-framework]     --> A
     D                    --> E[o-n-api]
-    E                    --> H[typed-protocols]
-    G                    --> H[typed-protocols]
-    G                    --> E
     F[ouroboros-network] --> D
     F                    --> G[o-n-protocols]
-    I[o-c-diffusion]     --> F
     J[cardano-client]    --> F
-    K[ntp-client]        --> B
+    I                    --> F
+    L                    --> E
+    G                    --> E
+    K[ntp-client]
 
-   click A "https://ouroboros-network.cardano.intersectmbo.org/network-mux/" _blank
-   click M "https://ouroboros-network.cardano.intersectmbo.org/cardano-ping/" _blank
-   click D "https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-framework/" _blank
-   click E "https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-api/" _blank
-   click F "https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/" _blank
-   click G "https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-protocols/" _blank
-   click I "https://github.com/intersectmbo/ouroboros-consensus/" _blank
-   click J "https://ouroboros-network.cardano.intersectmbo.org/cardano-client/" _blank
-   click K "https://ouroboros-network.cardano.intersectmbo.org/ntp-client/" _blank
-   click H "https://github.com/input-output-hk/typed-protocols/" _blank
+    click A "https://ouroboros-network.cardano.intersectmbo.org/network-mux/" _blank
+    click M "https://ouroboros-network.cardano.intersectmbo.org/cardano-ping/" _blank
+    click D "https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-framework/" _blank
+    click E "https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-api/" _blank
+    click F "https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/" _blank
+    click G "https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-protocols/" _blank
+    click J "https://ouroboros-network.cardano.intersectmbo.org/cardano-client/" _blank
+    click K "https://ouroboros-network.cardano.intersectmbo.org/ntp-client/" _blank
+  end
+
+  subgraph network
+    B[network]     
+    N[Win32-network]
+
+    click B "https://hackage.haskell.org/package/network" _blank
+    click N "https://input-output-hk.github.io/typed-protocols" _blank
+  end
+
+  subgraph typed-protocols
+    H[typed-protocols]
+
+    click H "https://github.com/input-output-hk/typed-protocols/" _blank
+  end
+
+  A --> network
+  K --> network
+
+  E --> typed-protocols
+  G --> typed-protocols
 ```
 
 * `network-mux` - implementation of a general network multiplexer.
