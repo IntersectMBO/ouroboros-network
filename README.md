@@ -13,22 +13,23 @@ protocols and applications for Ouroboros family of protocols, primiarly used by
 [cardano-node], [cardano-cli], [cardano-db-sync] or [cardano-wallet].
 
 The following graph shows the dependency tree.  The top-level package is
-`ouroboros-consensus-diffusion` which is part of [ouroboros-consensus]
+`ouroboros-consensus-diffusion` which is part of [ouroboros-consensus]. Note
+that we abbreviate `ouroboros-{consensus,network}` to `o-{c,n}` in the labels.
 
 ```mermaid
   flowchart TD
-    A[network-mux]                   --> B[network / Win32-network]
-    M[cardano-ping]                  --> A
-    D[ouroboros-network-framework]   --> A
-    D                                --> E[ouroboros-network-api]
-    E                                --> H[typed-protocols]
-    G                                --> H[typed-protocols]
-    G                                --> E
-    F[ouroboros-network]             --> D
-    F                                --> G[ouroboros-network-protocols]
-    I[ouroboros-consensus-diffusion] --> F
-    J[cardano-client]                --> F
-    K[ntp-client]                    --> B
+    A[network-mux]       --> B[network / Win32-network]
+    M[cardano-ping]      --> A
+    D[o-n-framework]     --> A
+    D                    --> E[o-n-api]
+    E                    --> H[typed-protocols]
+    G                    --> H[typed-protocols]
+    G                    --> E
+    F[ouroboros-network] --> D
+    F                    --> G[o-n-protocols]
+    I[o-c-diffusion]     --> F
+    J[cardano-client]    --> F
+    K[ntp-client]        --> B
 
    click A "https://ouroboros-network.cardano.intersectmbo.org/network-mux/" _blank
    click M "https://ouroboros-network.cardano.intersectmbo.org/cardano-ping/" _blank
