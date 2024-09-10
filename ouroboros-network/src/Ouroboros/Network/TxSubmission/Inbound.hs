@@ -41,6 +41,7 @@ import Network.TypedProtocol.Pipelined (N, Nat (..), natToInt)
 import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import Ouroboros.Network.Protocol.TxSubmission2.Server
 import Ouroboros.Network.Protocol.TxSubmission2.Type
+import Ouroboros.Network.SizeInBytes
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
            TxSubmissionMempoolReader (..))
 
@@ -304,7 +305,7 @@ txSubmissionInbound tracer (NumTxIdsToAck maxUnacked) mpReader mpWriter _version
         -- approach to this and check it.
         --
         let txsMap :: Map txid tx
-            txsMap = Map.fromList [ (txId tx, tx) | tx <- txs ]
+            txsMap = Map.fromList [(txId tx, tx) | WithBytes { wbValue = tx } <- txs]
 
             txidsReceived  = Map.keysSet txsMap
             txidsRequested = Set.fromList txids

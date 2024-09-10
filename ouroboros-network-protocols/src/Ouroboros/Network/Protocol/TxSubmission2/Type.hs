@@ -43,7 +43,7 @@ import Quiet (Quiet (..))
 
 import Network.TypedProtocol.Core
 
-import Ouroboros.Network.SizeInBytes (SizeInBytes (..))
+import Ouroboros.Network.SizeInBytes
 import Ouroboros.Network.Util.ShowProxy
 
 -- | Transactions are typically not big, but in principle in future we could
@@ -262,7 +262,7 @@ instance Protocol (TxSubmission2 txid tx) where
     -- be valid and available from another peer).
     --
     MsgReplyTxs
-      :: [tx]
+      :: [WithBytes tx]
       -> Message (TxSubmission2 txid tx) StTxs StIdle
 
     -- | Termination message, initiated by the client when the server is

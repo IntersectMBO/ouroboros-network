@@ -29,6 +29,7 @@ import Network.TypedProtocol.Core
 import Network.TypedProtocol.Pipelined
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type
+import Ouroboros.Network.SizeInBytes
 
 
 data TxSubmissionServerPipelined txid tx m a where
@@ -50,7 +51,7 @@ data Collect txid tx =
        -- contains the transactions sent, but this pairs them up with the
        -- transactions requested. This is because the peer can determine that
        -- some transactions are no longer needed.
-     | CollectTxs [txid] [tx]
+     | CollectTxs [txid] [WithBytes tx]
 
 
 data ServerStIdle (n :: N) txid tx m a where
