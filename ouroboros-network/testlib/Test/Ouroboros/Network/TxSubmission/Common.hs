@@ -257,13 +257,13 @@ instance Arbitrary a => Arbitrary (LargeNonEmptyList a) where
 
 
 -- TODO: Belongs in iosim.
-data SimResult a = SimReturn a [String]
-                 | SimException SomeException [String]
-                 | SimDeadLock [String]
+data SimResults a = SimReturn a [String]
+                  | SimException SomeException [String]
+                  | SimDeadLock [String]
 
 -- Traverses a list of trace events and returns the result along with all log messages.
 -- Incase of a pure exception, ie an assert, all tracers evaluated so far are returned.
-evaluateTrace :: SimTrace a -> IO (SimResult a)
+evaluateTrace :: SimTrace a -> IO (SimResults a)
 evaluateTrace = go []
   where
     go as tr = do
@@ -299,6 +299,9 @@ verboseTracer :: forall a m.
                        )
                => Tracer m a
 verboseTracer = threadAndTimeTracer $ showTracing $ Tracer say
+
+debugTracer :: forall a s. Show a => Tracer (IOSim s) a
+debugTracer = threadAndTimeTracer $ showTracing $ Tracer (traceM . show)
 
 threadAndTimeTracer :: forall a m.
                        ( MonadAsync m
@@ -1115,11 +1118,11 @@ instance Arbitrary ArbTxDecisionPolicy where
     arbitrary =
           ArbTxDecisionPolicy . fixupTxDecisionPolicy
       <$> ( TxDecisionPolicy
-            <$> (getSmall <$> arbitrary)
-            <*> (getSmall <$> arbitrary)
+            <$> (getSmall . getPositive <$> arbitrary)
+            <*> (getSmall . getPositive <$> arbitrary)
             <*> (SizeInBytes . getPositive <$> arbitrary)
             <*> (SizeInBytes . getPositive <$> arbitrary)
-            <*> (getPositive <$> arbitrary))
+            <*> (getSmall . getPositive <$> arbitrary))
 
     shrink (ArbTxDecisionPolicy a@TxDecisionPolicy {
               maxNumTxIdsToRequest,
@@ -1127,22 +1130,22 @@ instance Arbitrary ArbTxDecisionPolicy where
               maxTxsSizeInflight,
               txInflightMultiplicity }) =
       [ ArbTxDecisionPolicy a { maxNumTxIdsToRequest = NumTxIdsToReq x }
-      | x <- shrink (getNumTxIdsToReq maxNumTxIdsToRequest)
+      | (Positive (Small x)) <- shrink (Positive (Small (getNumTxIdsToReq maxNumTxIdsToRequest)))
       ]
       ++
       [ ArbTxDecisionPolicy . fixupTxDecisionPolicy
       $ a { txsSizeInflightPerPeer = SizeInBytes s }
-      | s <- shrink (getSizeInBytes txsSizeInflightPerPeer)
+      | Positive s <- shrink (Positive (getSizeInBytes txsSizeInflightPerPeer))
       ]
       ++
       [ ArbTxDecisionPolicy . fixupTxDecisionPolicy
       $ a { maxTxsSizeInflight = SizeInBytes s }
-      | s <- shrink (getSizeInBytes maxTxsSizeInflight)
+      | Positive s <- shrink (Positive (getSizeInBytes maxTxsSizeInflight))
       ]
       ++
       [ ArbTxDecisionPolicy . fixupTxDecisionPolicy
       $ a { txInflightMultiplicity = x }
-      | Positive x <- shrink (Positive txInflightMultiplicity)
+      | Positive (Small x) <- shrink (Positive (Small txInflightMultiplicity))
       ]
 
 
