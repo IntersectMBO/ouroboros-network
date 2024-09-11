@@ -91,7 +91,6 @@ tests = testGroup "Ouroboros.Network.TxSubmission"
         ]
       ]
     , testProperty "acknowledgeTxIds"           prop_acknowledgeTxIds
-    , testProperty "hasTxIdsToAcknowledge"      prop_hasTxIdsToAcknowledge
     , testProperty "receivedTxIdsImpl"          prop_receivedTxIdsImpl
     , testProperty "collectTxsImpl"             prop_collectTxsImpl
     , testProperty "numTxIdsToRequest"          prop_numTxIdsToRequest
@@ -831,11 +830,11 @@ prop_receivedTxIds_generator (ArbReceivedTxIds _ someTxsToAck _peeraddr _ps st) 
 -- by `prop_receivedTxIdsImpl`, `prop_collectTxsImpl` and
 -- `prop_makeDecisions_acknowledged`.
 --
-prop_acknowledgeTxIds :: ArbReceivedTxIds
+prop_acknowledgeTxIds :: ArbDecisionContextWithReceivedTxIds
                       -> Property
-prop_acknowledgeTxIds (ArbReceivedTxIds _mempoolHasTxFun _txs _peeraddr ps st) =
-    case TXS.acknowledgeTxIds st ps of
-      (numTxIdsToAck, txs, TXS.RefCountDiff { TXS.txIdsToAck }, ps') ->
+prop_acknowledgeTxIds (ArbDecisionContextWithReceivedTxIds policy st ps _ _ _) =
+    case TXS.acknowledgeTxIds policy st ps of
+      (numTxIdsToAck, txIdsToRequest, txs, TXS.RefCountDiff { TXS.txIdsToAck }, ps') | txIdsToRequest > 0 ->
              counterexample "number of tx ids to ack must agree with RefCountDiff"
              ( fromIntegral numTxIdsToAck
                ===
@@ -859,23 +858,11 @@ prop_acknowledgeTxIds (ArbReceivedTxIds _mempoolHasTxFun _txs _peeraddr ps st) =
                          , Just _ <- maybeToList $ txid `Map.lookup` bufferedTxs st
                          ]
              in getTxId `map` txs === acked)
+      _otherwise -> property True
   where
     stripSuffix :: Eq a => [a] -> [a] -> Maybe [a]
     stripSuffix as suffix =
         reverse <$> reverse suffix `stripPrefix` reverse as
-
-
--- | Verify that `hasTxIdsToAcknowledge` and `acknowledgeTxIds` are compatible.
---
-prop_hasTxIdsToAcknowledge
-  :: ArbReceivedTxIds
-  -> Property
-prop_hasTxIdsToAcknowledge (ArbReceivedTxIds _mempoolHasTxFun _txs _peeraddr ps st) =
-    case ( TXS.hasTxIdsToAcknowledge st ps
-         , TXS.acknowledgeTxIds st ps
-         ) of
-      (canAck, (numTxIdsToAck, _, _, _)) ->
-        canAck === (numTxIdsToAck > 0)
 
 
 -- | Verify 'inboundStateInvariant' when acknowledging a sequence of txs.
@@ -1498,9 +1485,9 @@ prop_makeDecisions_policy
       arbDecisionPolicy = policy@TxDecisionPolicy { maxTxsSizeInflight,
                                                     txsSizeInflightPerPeer,
                                                     txInflightMultiplicity },
-      arbSharedState    = sharedState
+      arbSharedState    = sharedTxState
     } =
-    let (sharedState', _decisions) = TXS.makeDecisions policy sharedState (peerTxStates sharedState)
+    let (sharedState', _decisions) = TXS.makeDecisions policy sharedTxState (peerTxStates sharedTxState)
         maxTxsSizeInflightEff      = maxTxsSizeInflight + maxTxSize
         txsSizeInflightPerPeerEff  = txsSizeInflightPerPeer + maxTxSize
 
@@ -1562,8 +1549,8 @@ prop_makeDecisions_acknowledged
 
         ackFromState :: Map PeerAddr NumTxIdsToAck
         ackFromState =
-            Map.map (\ps -> case TXS.acknowledgeTxIds sharedTxState ps of
-                              (a, _, _, _) -> a)
+            Map.map (\ps -> case TXS.acknowledgeTxIds policy sharedTxState ps of
+                              (a, _, _, _, _) -> a)
           . peerTxStates
           $ sharedTxState
 
@@ -1609,24 +1596,82 @@ prop_makeDecisions_exhaustive
    . counterexample ("state'':     " ++ show sharedTxState'')
    $ null decisions''
 
+data ArbDecisionContextWithReceivedTxIds = ArbDecisionContextWithReceivedTxIds {
+      adcrDecisionPolicy :: TxDecisionPolicy,
+      adcrSharedState    :: SharedTxState PeerAddr TxId (Tx TxId),
+      adcrPeerTxState    :: PeerTxState TxId (Tx TxId),
+      adcrMempoolHasTx   :: Fun TxId Bool,
+      adcrTxsToAck       :: [Tx TxId],
+      -- txids to acknowledge
+      adcrPeerAddr       :: PeerAddr
+      -- the peer which owns the acknowledged txids
+    }
+    deriving Show
+
+
+instance Arbitrary ArbDecisionContextWithReceivedTxIds where
+    arbitrary = do
+      ArbTxDecisionPolicy policy <- arbitrary
+      ArbReceivedTxIds mempoolHasTx
+                       txIdsToAck
+                       peeraddr
+                       ps
+                       st
+        <- arbitrary
+
+      let st' = fixupSharedTxStateForPolicy
+                  (apply mempoolHasTx)
+                  policy st
+          ps' = fixupPeerTxStateWithPolicy policy ps
+          txIdsToAck' = take (fromIntegral (TXS.requestedTxIdsInflight $ peerTxStates st' Map.! peeraddr)) txIdsToAck
+
+
+      return ArbDecisionContextWithReceivedTxIds {
+          adcrDecisionPolicy = policy,
+          adcrSharedState    = st',
+          adcrPeerTxState    = ps',
+          adcrMempoolHasTx   = mempoolHasTx,
+          adcrTxsToAck       = txIdsToAck',
+          adcrPeerAddr       = peeraddr
+        }
+
+    shrink ArbDecisionContextWithReceivedTxIds {
+        adcrDecisionPolicy = policy,
+        adcrSharedState    = st,
+        adcrPeerTxState    = ps,
+        adcrMempoolHasTx   = mempoolHasTx,
+        adcrTxsToAck       = txIdsToAck,
+        adcrPeerAddr       = peeraddr
+      }
+      =
+      [ ArbDecisionContextWithReceivedTxIds {
+          adcrDecisionPolicy = policy',
+          adcrSharedState    = st',
+          adcrPeerTxState    = ps,
+          adcrMempoolHasTx   = mempoolHasTx',
+          adcrTxsToAck       = txIdsToAck',
+          adcrPeerAddr       = peeraddr
+        }
+      | ArbDecisionContexts {
+          arbDecisionPolicy = policy',
+          arbSharedState    = st',
+          arbMempoolHasTx   = mempoolHasTx'
+        }
+          <- shrink ArbDecisionContexts {
+                 arbDecisionPolicy = policy,
+                 arbSharedState    = st,
+                 arbMempoolHasTx   = mempoolHasTx
+               }
+      , peeraddr `Map.member` peerTxStates st'
+      , let txIdsToAck' = take ( fromIntegral
+                               . TXS.requestedTxIdsInflight
+                               $ peerTxStates st' Map.! peeraddr
+                               )
+                               txIdsToAck
+      ]
+
 
 -- | `filterActivePeers` should not change decisions made by `makeDecisions`
---
---
--- This test checks the following properties:
---
--- In what follows, the set of active peers is defined as the keys of the map
--- returned by `filterActivePeers`.
---
--- 1. The set of active peers is a superset of peers for which a decision was
---    made;
--- 2. The set of active peer which can acknowledge txids is a subset of peers
---    for which a decision was made;
--- 3. Decisions made from the results of `filterActivePeers` is the same as from
---    the original set.
---
--- Ad 2. a stronger property is not possible. There can be a peer for which
--- a decision was not taken but which is an active peer.
 --
 prop_filterActivePeers_not_limitting_decisions
     :: ArbDecisionContexts TxId
@@ -1643,25 +1688,13 @@ prop_filterActivePeers_not_limitting_decisions
                    ,"active decisions: " ++ show decisionsOfActivePeers
                    ,"                  " ++ show activePeers]) $
 
-    counterexample ("found non-active peers for which decision can be made: "
-                     ++ show (decisionPeers  Set.\\ activePeers)
+    counterexample ("active peers does not restrict the total number of valid decisions available"
+                     ++ show (decisionsOfActivePeers  Map.\\ decisions)
                    )
-                   (decisionPeers  `Set.isSubsetOf` activePeers)
-    .&&.
-    counterexample ("found an active peer which can acknowledge txids "
-                     ++ "for which decision was not made: "
-                     ++ show (activePeersAck Set.\\ decisionPeers))
-                   (activePeersAck `Set.isSubsetOf` decisionPeers)
-    .&&.
-    counterexample "decisions from active peers are not equal to decisions from all peers"
-                   (decisions === decisionsOfActivePeers)
+                   (Map.keysSet decisionsOfActivePeers  `Set.isSubsetOf` Map.keysSet decisions)
   where
     activePeersMap    = TXS.filterActivePeers policy st
     activePeers       = Map.keysSet activePeersMap
-    -- peers which are active & can acknowledge txids
-    activePeersAck    = activePeers
-                        `Set.intersection`
-                        Map.keysSet (Map.filter (TXS.hasTxIdsToAcknowledge st) (peerTxStates st))
     (_, decisionsOfActivePeers)
                       = TXS.makeDecisions policy st activePeersMap
 
