@@ -8,6 +8,7 @@
 
 module Ouroboros.Network.TxSubmission.Inbound.Decision
   ( TxDecision (..)
+  , emptyTxDecision
     -- * Internal API exposed for testing
   , makeDecisions
   , filterActivePeers
@@ -88,6 +89,14 @@ instance Ord txid => Semigroup (TxDecision txid tx) where
                    txdTxsToMempool       = txdTxsToMempool ++ txdTxsToMempool'
                  }
 
+emptyTxDecision :: TxDecision txid tx
+emptyTxDecision = TxDecision {
+    txdTxIdsToAcknowledge = 0,
+    txdTxIdsToRequest     = 0,
+    txdPipelineTxIds      = False,
+    txdTxsToRequest       = Set.empty,
+    txdTxsToMempool       = []
+  }
 
 --
 -- Decision Logic
@@ -325,8 +334,8 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
           )
     gn
       ( St { stInflight,
-            stInflightSize,
-            stAcknowledged }
+             stInflightSize,
+             stAcknowledged }
       , as
       )
       =
