@@ -19,7 +19,6 @@ import Control.Concurrent.Class.MonadMVar.Strict
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer (..), traceWith)
 
 import Data.Foldable (foldl', traverse_)
 import Data.Map.Strict (Map)
@@ -31,6 +30,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Void (Void)
 
+import Control.Tracer (Tracer, traceWith)
 import Ouroboros.Network.DeltaQ (PeerGSV (..))
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Inbound.Decision
@@ -72,6 +72,10 @@ data PeerTxAPI m txid tx = PeerTxAPI {
     -- ^ handle received txs
   }
 
+
+data TraceDecision peeraddr txid tx =
+    TraceDecisions (Map peeraddr (TxDecision txid tx))
+  deriving (Eq, Show)
 
 -- | A bracket function which registers / de-registers a new peer in
 -- `SharedTxStateVar` and `PeerTxStateVar`s,  which exposes `PeerTxStateAPI`.
@@ -188,13 +192,10 @@ withPeer tracer
                         -> StrictSeq txid
                         -> Map txid SizeInBytes
                         -> m ()
-    handleReceivedTxIds numTxIdsToReq txidsSeq txidsMap = do
-      -- TODO: hide this inside `receivedTxIds` so it's run in the same STM
-      -- transaction.
-      mempoolSnapshot <- atomically mempoolGetSnapshot
+    handleReceivedTxIds numTxIdsToReq txidsSeq txidsMap =
       receivedTxIds tracer
                     sharedStateVar
-                    mempoolSnapshot
+                    mempoolGetSnapshot
                     peeraddr
                     numTxIdsToReq
                     txidsSeq
@@ -215,16 +216,17 @@ decisionLogicThread
        ( MonadDelay m
        , MonadMVar  m
        , MonadSTM   m
+       , MonadMask m
        , Ord peeraddr
        , Ord txid
        )
     => Tracer m (DebugSharedTxState peeraddr txid tx)
     -> TxDecisionPolicy
-    -> StrictTVar m (Map peeraddr PeerGSV)
+    -> STM m (Map peeraddr PeerGSV)
     -> TxChannelsVar m peeraddr txid tx
     -> SharedTxStateVar m peeraddr txid tx
     -> m Void
-decisionLogicThread tracer policy gsvVar txChannelsVar sharedStateVar = go
+decisionLogicThread tracer policy readGSVVar txChannelsVar sharedStateVar = go
   where
     go :: m Void
     go = do
@@ -235,7 +237,7 @@ decisionLogicThread tracer policy gsvVar txChannelsVar sharedStateVar = go
       (decisions, st) <- atomically do
         sharedCtx <-
               SharedDecisionContext
-          <$> readTVar gsvVar
+          <$> readGSVVar
           <*> readTVar sharedStateVar
         let activePeers = filterActivePeers policy (sdcSharedTxState sharedCtx)
 
@@ -245,11 +247,22 @@ decisionLogicThread tracer policy gsvVar txChannelsVar sharedStateVar = go
         let (sharedState, decisions) = makeDecisions policy sharedCtx activePeers
         writeTVar sharedStateVar sharedState
         return (decisions, sharedState)
-      traceWith tracer (DebugSharedTxState st)
+      traceWith tracer (DebugSharedTxState "decisionLogicThread" st)
       TxChannels { txChannelMap } <- readMVar txChannelsVar
       traverse_
-        (\(mvar, d) -> modifyMVar_ mvar (\d' -> pure (d' <> d)))
+        (\(mvar, d) -> modifyMVarWithDefault_ mvar d (\d' -> pure (d' <> d)))
         (Map.intersectionWith (,)
           txChannelMap
           decisions)
       go
+
+    -- Variant of modifyMVar_ that puts a default value if the MVar is empty.
+    modifyMVarWithDefault_ :: StrictMVar m a -> a -> (a -> m a) -> m ()
+    modifyMVarWithDefault_ m d io =
+      mask $ \restore -> do
+        mbA  <- tryTakeMVar m
+        case mbA of
+          Just a -> do
+            a' <- restore (io a) `onException` putMVar m a
+            putMVar m a'
+          Nothing -> putMVar m d
