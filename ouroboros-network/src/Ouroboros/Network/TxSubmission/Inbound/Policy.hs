@@ -1,4 +1,7 @@
-module Ouroboros.Network.TxSubmission.Inbound.Policy (TxDecisionPolicy (..)) where
+module Ouroboros.Network.TxSubmission.Inbound.Policy
+  ( TxDecisionPolicy (..)
+  , defaultTxDecisionPolicy
+  ) where
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToReq (..))
 import Ouroboros.Network.SizeInBytes (SizeInBytes (..))
@@ -30,3 +33,13 @@ data TxDecisionPolicy = TxDecisionPolicy {
       -- ^ from how many peers download the `txid` simultaneously
     }
   deriving Show
+
+defaultTxDecisionPolicy :: TxDecisionPolicy
+defaultTxDecisionPolicy =
+  TxDecisionPolicy {
+    maxNumTxIdsToRequest   = 1,
+    maxUnacknowledgedTxIds = 2,
+    txsSizeInflightPerPeer = 2,
+    maxTxsSizeInflight     = maxBound,
+    txInflightMultiplicity = 2
+  }
