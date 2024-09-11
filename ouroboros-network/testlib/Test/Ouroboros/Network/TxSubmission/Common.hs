@@ -56,7 +56,10 @@ import Network.TypedProtocol.Codec
 import Ouroboros.Network.Protocol.TxSubmission2.Codec
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Inbound
+import Ouroboros.Network.TxSubmission.Inbound.Decision
+           (SharedDecisionContext (..), TxDecision (..))
 import Ouroboros.Network.TxSubmission.Inbound.Decision qualified as TXS
+import Ouroboros.Network.TxSubmission.Inbound.Policy
 import Ouroboros.Network.TxSubmission.Inbound.State (PeerTxState (..),
            SharedTxState (..))
 import Ouroboros.Network.TxSubmission.Inbound.State qualified as TXS
@@ -1645,6 +1648,7 @@ prop_makeDecisions_exhaustive
    . counterexample ("decisions'': " ++ show decisions'')
    . counterexample ("state'':     " ++ show sharedTxState'')
    $ null decisions''
+
 
 data ArbDecisionContextWithReceivedTxIds = ArbDecisionContextWithReceivedTxIds {
       adcrDecisionPolicy :: TxDecisionPolicy,
