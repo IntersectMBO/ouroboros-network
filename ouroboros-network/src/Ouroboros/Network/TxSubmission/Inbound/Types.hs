@@ -51,6 +51,7 @@ data TraceTxSubmissionInbound txid tx =
     -- | Server received 'MsgDone'
   | TraceTxInboundCanRequestMoreTxs Int
   | TraceTxInboundCannotRequestMoreTxs Int
+  | TraceTxInboundAddedToMempool [txid]
 
   --
   -- messages emitted by the new implementation of the server in
