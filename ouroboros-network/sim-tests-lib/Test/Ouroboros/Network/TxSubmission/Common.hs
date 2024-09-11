@@ -56,7 +56,10 @@ import Network.TypedProtocol.Codec
 import Ouroboros.Network.Protocol.TxSubmission2.Codec
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Inbound
+import Ouroboros.Network.TxSubmission.Inbound.Decision
+           (SharedDecisionContext (..), TxDecision (..))
 import Ouroboros.Network.TxSubmission.Inbound.Decision qualified as TXS
+import Ouroboros.Network.TxSubmission.Inbound.Policy
 import Ouroboros.Network.TxSubmission.Inbound.State (PeerTxState (..),
            SharedTxState (..))
 import Ouroboros.Network.TxSubmission.Inbound.State qualified as TXS
@@ -1726,7 +1729,6 @@ instance Arbitrary ArbDecisionContextWithReceivedTxIds where
                                )
                                txIdsToAck
       ]
-
 
 
 -- | `filterActivePeers` should not change decisions made by `makeDecisions`
