@@ -15,12 +15,13 @@ import Data.List.NonEmpty qualified as NonEmpty
 import Data.Maybe (catMaybes, isNothing, mapMaybe)
 import Data.Sequence.Strict (StrictSeq)
 import Data.Sequence.Strict qualified as Seq
+import Data.Word (Word16)
 
 import Control.Exception (assert)
 import Control.Monad (unless, when)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
-import Control.Tracer (Tracer, traceWith)
+import Control.Tracer (Tracer (..), traceWith)
 
 import Ouroboros.Network.ControlMessage (ControlMessage, ControlMessageSTM,
            timeoutWithControlMessage)
@@ -44,7 +45,7 @@ data TraceTxSubmissionOutbound txid tx
 data TxSubmissionProtocolError =
        ProtocolErrorAckedTooManyTxids
      | ProtocolErrorRequestedNothing
-     | ProtocolErrorRequestedTooManyTxids NumTxIdsToReq NumTxIdsToAck
+     | ProtocolErrorRequestedTooManyTxids NumTxIdsToReq Word16 NumTxIdsToAck
      | ProtocolErrorRequestBlocking
      | ProtocolErrorRequestNonBlocking
      | ProtocolErrorRequestedUnavailableTx
@@ -54,7 +55,7 @@ instance Exception TxSubmissionProtocolError where
   displayException ProtocolErrorAckedTooManyTxids =
       "The peer tried to acknowledged more txids than are available to do so."
 
-  displayException (ProtocolErrorRequestedTooManyTxids reqNo maxUnacked) =
+  displayException (ProtocolErrorRequestedTooManyTxids reqNo _unackedNo maxUnacked) =
       "The peer requested " ++ show reqNo ++ " txids which would put the "
    ++ "total in flight over the limit of " ++ show maxUnacked
 
@@ -96,15 +97,15 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
                             -> NumTxIdsToReq
                             -> m (ClientStTxIds blocking txid tx m ())
         recvMsgRequestTxIds blocking ackNo reqNo = do
-
           when (getNumTxIdsToAck ackNo > fromIntegral (Seq.length unackedSeq)) $
             throwIO ProtocolErrorAckedTooManyTxids
 
-          when (  fromIntegral (Seq.length unackedSeq)
+          let unackedNo = fromIntegral (Seq.length unackedSeq)
+          when (  unackedNo
                 - getNumTxIdsToAck ackNo
                 + getNumTxIdsToReq reqNo
                 > getNumTxIdsToAck maxUnacked) $
-            throwIO (ProtocolErrorRequestedTooManyTxids reqNo maxUnacked)
+            throwIO (ProtocolErrorRequestedTooManyTxids reqNo unackedNo maxUnacked)
 
           -- Update our tracking state to remove the number of txids that the
           -- peer has acknowledged.
