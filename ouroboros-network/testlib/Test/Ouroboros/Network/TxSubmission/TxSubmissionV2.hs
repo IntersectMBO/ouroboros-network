@@ -5,6 +5,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -69,6 +70,7 @@ import Test.Tasty.QuickCheck (testProperty)
 tests :: TestTree
 tests = testGroup "Ouroboros.Network.TxSubmission.TxSubmissionV2"
   [ testProperty "txSubmission" prop_txSubmission
+  , testProperty "txSubmission inflight" prop_txSubmission_inflight
   ]
 
 data TxSubmissionState =
@@ -321,6 +323,46 @@ prop_txSubmission st =
                      outmps
              return $ counterexample (intercalate "\n" _trace)
                     $ conjoin r
+
+-- | This test checks that all txs are downloaded from all available peers if
+-- available.
+--
+-- This test takes advantage of the fact that the mempool implementation
+-- allows duplicates.
+--
+prop_txSubmission_inflight :: TxSubmissionState -> Property
+prop_txSubmission_inflight st@(TxSubmissionState state _) =
+  let trace = runSimTrace (txSubmissionSimulation st)
+      maxRepeatedValidTxs = Map.foldr (\(txs, _, _) r ->
+                                        foldr (\tx rr ->
+                                                if Map.member tx rr && getTxValid tx
+                                                   then Map.update (Just . succ @Int) tx rr
+                                                   else if getTxValid tx
+                                                           then Map.insert tx 1 rr
+                                                           else rr
+                                              )
+                                              r
+                                              txs
+                                      )
+                                      Map.empty
+                                      state
+
+   in case traceResult True trace of
+        Left err -> counterexample (ppTrace trace)
+                 $ counterexample (show err)
+                 $ property False
+        Right (inmp, _) ->
+          let resultRepeatedValidTxs =
+                foldr (\tx rr ->
+                        if Map.member tx rr && getTxValid tx
+                           then Map.update (Just . succ @Int) tx rr
+                           else if getTxValid tx
+                                   then Map.insert tx 1 rr
+                                   else rr
+                      )
+                      Map.empty
+                      inmp
+           in resultRepeatedValidTxs === maxRepeatedValidTxs
 
 checkMempools :: (Eq a, Show a) => [a] -> [a] -> Property
 checkMempools [] [] = property True
