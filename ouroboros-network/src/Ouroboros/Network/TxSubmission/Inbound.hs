@@ -9,17 +9,11 @@
 
 {-# OPTIONS_GHC -Wno-partial-fields #-}
 
--- | Legacy `tx-submission` inbound peer.
---
 module Ouroboros.Network.TxSubmission.Inbound
-  ( -- * New Tx-Submission server
-    module Server
-  , module Types
-  , module Decision
-  , module Registry
-  , module Policy
-    -- * Legacy Tx-Submission server
-  , txSubmissionInbound
+  ( txSubmissionInbound
+  , TxSubmissionMempoolWriter (..)
+  , TraceTxSubmissionInbound (..)
+  , TxSubmissionProtocolError (..)
   , ProcessedTxCount (..)
   ) where
 
@@ -54,17 +48,6 @@ import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Inbound.Types
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
            TxSubmissionMempoolReader (..))
-
---
--- re-exports
---
-
-import Ouroboros.Network.TxSubmission.Inbound.Decision as Decision
-import Ouroboros.Network.TxSubmission.Inbound.Policy as Policy
-import Ouroboros.Network.TxSubmission.Inbound.Registry as Registry
-import Ouroboros.Network.TxSubmission.Inbound.Server as Server
-import Ouroboros.Network.TxSubmission.Inbound.Types as Types
-
 
 -- | Information maintained internally in the 'txSubmissionInbound' server
 -- implementation.
