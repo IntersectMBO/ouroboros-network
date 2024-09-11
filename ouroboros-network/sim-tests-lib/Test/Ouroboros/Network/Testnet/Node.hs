@@ -66,6 +66,7 @@ import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.Block (MaxSlotNo (..), maxSlotNoFromWithOrigin,
            pointSlot)
 import Ouroboros.Network.BlockFetch
+import Ouroboros.Network.BlockFetch.ClientRegistry (readPeerGSVs)
 import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation (..))
 import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
@@ -74,10 +75,22 @@ import Ouroboros.Network.Diffusion qualified as Diff
 import Ouroboros.Network.Diffusion.P2P qualified as Diff.P2P
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
+import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
 import Ouroboros.Network.PeerSelection.Governor (ConsensusModePeerTargets,
            PeerSelectionTargets (..), PublicPeerSelectionState (..))
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type
+           (LedgerPeersConsensusInterface,
+           MinBigLedgerPeersForTrustedState (..), UseLedgerPeers)
+import Ouroboros.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
+import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerMetric
            (PeerMetricsConfiguration (..), newPeerMetric)
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint,
+           RelayAccessPoint)
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSLookupType)
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
+           LocalRootConfig, WarmValency)
 import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
 import Ouroboros.Network.Protocol.Handshake.Codec (VersionDataCodec (..),
            noTimeLimitsHandshake, timeLimitsHandshake)
@@ -89,31 +102,24 @@ import Ouroboros.Network.RethrowPolicy (ErrorCommand (ShutdownNode),
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (MakeBearer, Snocket, TestAddress (..),
            invalidFileDescriptor)
-
+import Ouroboros.Network.TxSubmission.Inbound.Policy (TxDecisionPolicy)
+import Ouroboros.Network.TxSubmission.Inbound.Registry (decisionLogicThread)
+import Ouroboros.Network.TxSubmission.Inbound.State (DebugSharedTxState)
+import Ouroboros.Network.TxSubmission.Inbound.Types (TraceTxSubmissionInbound)
 
 import Simulation.Network.Snocket (AddressType (..), FD)
 
-import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-           (LedgerPeersConsensusInterface,
-           MinBigLedgerPeersForTrustedState (..), UseLedgerPeers)
-import Ouroboros.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
-import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
-import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint,
-           RelayAccessPoint)
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSLookupType)
-import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
-           LocalRootConfig, WarmValency)
-
-import Test.Ouroboros.Network.Data.Script (Script (..), stepScriptSTM')
+import Test.Ouroboros.Network.Testnet.Node.ChainDB (addBlock,
+           getBlockPointSet)
+import Test.Ouroboros.Network.Testnet.Node.MiniProtocols qualified as Node
+import Test.Ouroboros.Network.Testnet.Node.Kernel (NodeKernel (..),
+           NtCAddr, NtCVersion, NtCVersionData, NtNAddr, NtNVersion,
+           NtNVersionData (..))
+import Test.Ouroboros.Network.Testnet.Node.Kernel qualified as Node
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay,
            DNSTimeout, mockDNSActions)
-import Test.Ouroboros.Network.Testnet.Node.ChainDB (addBlock, getBlockPointSet)
-import Test.Ouroboros.Network.Testnet.Node.Kernel (NodeKernel (..), NtCAddr,
-           NtCVersion, NtCVersionData, NtNAddr, NtNVersion, NtNVersionData (..))
-import Test.Ouroboros.Network.Testnet.Node.Kernel qualified as Node
-import Test.Ouroboros.Network.Testnet.Node.MiniProtocols qualified as Node
+import Test.Ouroboros.Network.TxSubmission.Common (Tx)
+import Test.Ouroboros.Network.Data.Script
 
 
 data Interfaces m = Interfaces
@@ -158,6 +164,8 @@ data Arguments m = Arguments
     , aDNSTimeoutScript     :: Script DNSTimeout
     , aDNSLookupDelayScript :: Script DNSLookupDelay
     , aDebugTracer          :: Tracer m String
+    , aTxDecisionPolicy     :: TxDecisionPolicy
+    , aTxs                  :: [Tx Int]
     }
 
 -- The 'mockDNSActions' is not using \/ specifying 'resolverException', thus we
@@ -193,9 +201,11 @@ run :: forall resolver m.
                              NtCAddr NtCVersion NtCVersionData
                              ResolverException m
     -> Tracer m (TraceLabelPeer NtNAddr (TraceFetchClientState BlockHeader))
+    -> Tracer m (TraceTxSubmissionInbound Int (Tx Int))
+    -> Tracer m (DebugSharedTxState NtNAddr Int (Tx Int))
     -> m Void
-run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
-    Node.withNodeKernelThread blockGeneratorArgs
+run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch tracerTxSubmissionInbound tracerTxSubmissionDebug =
+    Node.withNodeKernelThread blockGeneratorArgs (aTxs na)
       $ \ nodeKernel nodeKernelThread -> do
         dnsTimeoutScriptVar <- newTVarIO (aDNSTimeoutScript na)
         dnsLookupDelayScriptVar <- newTVarIO (aDNSLookupDelayScript na)
@@ -271,7 +281,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
               , Diff.P2P.daPeerSharingRegistry    = nkPeerSharingRegistry nodeKernel
               }
 
-        let apps = Node.applications (aDebugTracer na) nodeKernel Node.cborCodecs limits appArgs blockHeader
+        let apps = Node.applications (aDebugTracer na) tracerTxSubmissionInbound tracerTxSubmissionDebug nodeKernel Node.cborCodecs limits appArgs blockHeader
 
         withAsync
            (Diff.P2P.runM interfaces
@@ -281,11 +291,19 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
                           (mkArgsExtra useBootstrapPeersScriptVar) apps appsExtra)
            $ \ diffusionThread ->
                withAsync (blockFetch nodeKernel) $ \blockFetchLogicThread ->
-                 wait diffusionThread
-              <> wait blockFetchLogicThread
-              <> wait nodeKernelThread
+
+                 withAsync (decisionLogicThread
+                              tracerTxSubmissionDebug
+                              (aTxDecisionPolicy na)
+                              (readPeerGSVs (nkFetchClientRegistry nodeKernel))
+                              (nkTxChannelsVar nodeKernel)
+                              (nkSharedTxStateVar nodeKernel)) $ \decLogicThread ->
+                      wait diffusionThread
+                   <> wait blockFetchLogicThread
+                   <> wait nodeKernelThread
+                   <> wait decLogicThread
   where
-    blockFetch :: NodeKernel BlockHeader Block s m
+    blockFetch :: NodeKernel BlockHeader Block s txid m
                -> m Void
     blockFetch nodeKernel = do
       blockFetchLogic
@@ -305,7 +323,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
             }
         })
 
-    blockFetchPolicy :: NodeKernel BlockHeader Block s m
+    blockFetchPolicy :: NodeKernel BlockHeader Block s txid m
                      -> BlockFetchConsensusInterface NtNAddr BlockHeader Block m
     blockFetchPolicy nodeKernel =
         BlockFetchConsensusInterface {
@@ -429,6 +447,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
       , Node.aaOwnPeerSharing           = aOwnPeerSharing na
       , Node.aaUpdateOutboundConnectionsState =
           iUpdateOutboundConnectionsState ni
+      , Node.aaTxDecisionPolicy         = aTxDecisionPolicy na
       }
 
 --- Utils
