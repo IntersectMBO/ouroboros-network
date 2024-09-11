@@ -66,6 +66,8 @@ txSubmissionInboundV2
           <- readTxDecision
         traceWith tracer (TraceTxInboundDecision txd)
         txidsAccepted <- mempoolAddTxs txs
+        traceWith tracer $
+          TraceTxInboundAddedToMempool txidsAccepted
         let !collected = length txidsAccepted
         traceWith tracer $
           TraceTxSubmissionCollected collected
@@ -90,8 +92,7 @@ txSubmissionInboundV2
                    -> TxDecision txid tx
                    -> m (ServerStIdle n txid tx m ())
     serverReqTxIds
-      n TxDecision { txdTxIdsToAcknowledge = 0,
-                     txdTxIdsToRequest     = 0 }
+      n TxDecision { txdTxIdsToRequest = 0 }
       =
       case n of
         Zero   -> serverIdle
