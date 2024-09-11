@@ -81,7 +81,7 @@ import Ouroboros.Network.Mock.ProducerState
 import Ouroboros.Network.Mux
 import Ouroboros.Network.NodeToNode (blockFetchMiniProtocolNum,
            chainSyncMiniProtocolNum, keepAliveMiniProtocolNum,
-           peerSharingMiniProtocolNum)
+           peerSharingMiniProtocolNum, txSubmissionMiniProtocolNum)
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.PeerSharing qualified as PSTypes
@@ -91,9 +91,23 @@ import Ouroboros.Network.Protocol.PeerSharing.Client (peerSharingClientPeer)
 import Ouroboros.Network.Protocol.PeerSharing.Codec (codecPeerSharing)
 import Ouroboros.Network.Protocol.PeerSharing.Server (peerSharingServerPeer)
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharing)
+import Ouroboros.Network.Protocol.TxSubmission2.Client (txSubmissionClientPeer)
+import Ouroboros.Network.Protocol.TxSubmission2.Server
+           (txSubmissionServerPeerPipelined)
+import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..),
+           NumTxIdsToReq (..), TxSubmission2)
+import Ouroboros.Network.TxSubmission.Inbound.Policy (TxDecisionPolicy (..))
+import Ouroboros.Network.TxSubmission.Inbound.Registry (SharedTxStateVar,
+           TxChannelsVar, withPeer)
+import Ouroboros.Network.TxSubmission.Inbound.Server (txSubmissionInboundV2)
+import Ouroboros.Network.TxSubmission.Inbound.State (DebugSharedTxState)
+import Ouroboros.Network.TxSubmission.Inbound.Types (TraceTxSubmissionInbound)
+import Ouroboros.Network.TxSubmission.Outbound (txSubmissionOutbound)
 import Ouroboros.Network.Util.ShowProxy
 
 import Test.Ouroboros.Network.Diffusion.Node.Kernel
+import Test.Ouroboros.Network.TxSubmission.Common (Mempool, Tx,
+           getMempoolReader, getMempoolWriter, txSubmissionCodec2)
 
 
 -- | Protocol codecs.
@@ -109,6 +123,8 @@ data Codecs addr header block m = Codecs
                           CBOR.DeserialiseFailure m ByteString
   , peerSharingCodec :: Codec (PeerSharing addr)
                          CBOR.DeserialiseFailure m ByteString
+  , txSubmissionCodec :: Codec (TxSubmission2 Int (Tx Int))
+                            CBOR.DeserialiseFailure m ByteString
   }
 
 cborCodecs :: MonadST m => Codecs NtNAddr BlockHeader Block m
@@ -122,6 +138,7 @@ cborCodecs = Codecs
   , keepAliveCodec = codecKeepAlive_v2
   , pingPongCodec  = codecPingPong
   , peerSharingCodec  = codecPeerSharing encodeNtNAddr decodeNtNAddr
+  , txSubmissionCodec = txSubmissionCodec2
   }
 
 
@@ -175,6 +192,14 @@ data LimitsAndTimeouts header block = LimitsAndTimeouts
       :: ProtocolTimeLimits (PeerSharing NtNAddr)
   , peerSharingSizeLimits
       :: ProtocolSizeLimits (PeerSharing NtNAddr) ByteString
+
+    -- tx submission
+  , txSubmissionLimits
+      :: MiniProtocolLimits
+  , txSubmissionTimeLimits
+      :: ProtocolTimeLimits (TxSubmission2 Int (Tx Int))
+  , txSubmissionSizeLimits
+      :: ProtocolSizeLimits (TxSubmission2 Int (Tx Int)) ByteString
   }
 
 
@@ -203,6 +228,7 @@ data AppArgs extraAPI header block m = AppArgs
   , aaChainSyncEarlyExit  :: Bool
   , aaOwnPeerSharing
      :: PSTypes.PeerSharing
+  , aaTxDecisionPolicy :: TxDecisionPolicy
   }
 
 
@@ -228,7 +254,9 @@ applications :: forall extraAPI block header s m.
                 , RandomGen s
                 )
              => Tracer m String
-             -> NodeKernel header block s m
+             -> Tracer m (TraceTxSubmissionInbound Int (Tx Int))
+             -> Tracer m (DebugSharedTxState NtNAddr Int (Tx Int))
+             -> NodeKernel header block s Int m
              -> Codecs NtNAddr header block m
              -> LimitsAndTimeouts header block
              -> AppArgs extraAPI header block m
@@ -236,10 +264,11 @@ applications :: forall extraAPI block header s m.
              -> Common.Applications NtNAddr NtNVersion NtNVersionData
                                     NtCAddr NtCVersion NtCVersionData
                                     extraAPI m ()
-applications debugTracer nodeKernel
+applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug nodeKernel
              Codecs { chainSyncCodec, blockFetchCodec
                     , keepAliveCodec, pingPongCodec
                     , peerSharingCodec
+                    , txSubmissionCodec
                     }
              limits
              AppArgs
@@ -251,6 +280,7 @@ applications debugTracer nodeKernel
                , aaShouldChainSyncExit
                , aaChainSyncEarlyExit
                , aaOwnPeerSharing
+               , aaTxDecisionPolicy
                }
              toHeader =
     Common.Applications
@@ -313,6 +343,18 @@ applications debugTracer nodeKernel
                     blockFetchInitiator
                     blockFetchResponder
               }
+
+          , MiniProtocol {
+              miniProtocolNum    = txSubmissionMiniProtocolNum,
+              miniProtocolStart  = StartOnDemand,
+              miniProtocolLimits = txSubmissionLimits limits,
+              miniProtocolRun    =
+                  InitiatorAndResponderProtocol
+                    (txSubmissionInitiator aaTxDecisionPolicy (nkMempool nodeKernel))
+                    (txSubmissionResponder (nkMempool nodeKernel)
+                                          (nkTxChannelsVar nodeKernel)
+                                          (nkSharedTxStateVar nodeKernel))
+            }
           ]
       , withWarm = WithWarm
           [ MiniProtocol
@@ -601,6 +643,61 @@ applications debugTracer nodeKernel
         $ peerSharingServerPeer
         $ peerSharingServer psAPI
 
+    txSubmissionInitiator
+      :: TxDecisionPolicy
+      -> Mempool m Int
+      -> MiniProtocolCb (ExpandedInitiatorContext NtNAddr m) ByteString m ()
+    txSubmissionInitiator txDecisionPolicy mempool =
+      MiniProtocolCb $
+        \ ExpandedInitiatorContext {
+            eicConnectionId   = connId,
+            eicControlMessage = controlMessageSTM
+          }
+          channel
+        -> do
+          let client = txSubmissionOutbound
+                         ((show . (connId,)) `contramap` debugTracer)
+                         (NumTxIdsToAck $ getNumTxIdsToReq
+                                        $ maxUnacknowledgedTxIds
+                                        $ txDecisionPolicy)
+                         (getMempoolReader mempool)
+                         maxBound
+                         controlMessageSTM
+          labelThisThread "TxSubmissionClient"
+          runPeerWithLimits
+            ((show . (connId,)) `contramap` debugTracer)
+            txSubmissionCodec
+            (txSubmissionSizeLimits limits)
+            (txSubmissionTimeLimits limits)
+            channel
+            (txSubmissionClientPeer client)
+
+    txSubmissionResponder
+      :: Mempool m Int
+      -> TxChannelsVar m NtNAddr Int (Tx Int)
+      -> SharedTxStateVar m NtNAddr Int (Tx Int)
+      -> MiniProtocolCb (ResponderContext NtNAddr) ByteString m ()
+    txSubmissionResponder mempool txChannelsVar sharedTxStateVar =
+      MiniProtocolCb $
+        \ ResponderContext { rcConnectionId = connId@ConnectionId { remoteAddress = them }} channel
+        -> do
+          withPeer txSubmissionInboundDebug
+                   txChannelsVar
+                   sharedTxStateVar
+                   (getMempoolReader mempool)
+                   them $ \api -> do
+            let server = txSubmissionInboundV2
+                           txSubmissionInboundTracer
+                           (getMempoolWriter mempool)
+                           api
+            labelThisThread "TxSubmissionServer"
+            runPipelinedPeerWithLimits
+              ((show . (connId,)) `contramap` debugTracer)
+              txSubmissionCodec
+              (txSubmissionSizeLimits limits)
+              (txSubmissionTimeLimits limits)
+              channel
+              (txSubmissionServerPeerPipelined server)
 
 --
 -- Orphaned Instances

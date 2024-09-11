@@ -118,9 +118,14 @@ import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (MakeBearer, Snocket, TestAddress (..),
            invalidFileDescriptor)
 
+import Ouroboros.Network.TxSubmission.Inbound.Policy (TxDecisionPolicy)
+import Ouroboros.Network.TxSubmission.Inbound.Registry (decisionLogicThread)
+import Ouroboros.Network.TxSubmission.Inbound.State (DebugSharedTxState)
+import Ouroboros.Network.TxSubmission.Inbound.Types (TraceTxSubmissionInbound)
+
 import Simulation.Network.Snocket (AddressType (..), FD)
 
-import Test.Ouroboros.Network.Data.Script (Script)
+import Test.Ouroboros.Network.Data.Script
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB (addBlock,
            getBlockPointSet)
 import Test.Ouroboros.Network.Diffusion.Node.Kernel (NodeKernel (..), NtCAddr,
@@ -129,6 +134,7 @@ import Test.Ouroboros.Network.Diffusion.Node.Kernel qualified as Node
 import Test.Ouroboros.Network.Diffusion.Node.MiniProtocols qualified as Node
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay,
            DNSTimeout, mockDNSActions)
+import Test.Ouroboros.Network.TxSubmission.Common (Tx)
 
 
 data Interfaces extraAPI m = Interfaces
@@ -170,6 +176,8 @@ data Arguments extraChurnArgs extraFlags m = Arguments
     , aDNSLookupDelayScript :: Script DNSLookupDelay
     , aDebugTracer          :: Tracer m String
     , aExtraChurnArgs       :: extraChurnArgs
+    , aTxDecisionPolicy     :: TxDecisionPolicy
+    , aTxs                  :: [Tx Int]
     }
 
 -- The 'mockDNSActions' is not using \/ specifying 'resolverException', thus we
@@ -257,13 +265,15 @@ run :: forall extraState extraDebugState extraAPI
                         ResolverException extraState extraDebugState extraFlags
                         extraPeers extraCounters m
     -> Tracer m (TraceLabelPeer NtNAddr (TraceFetchClientState BlockHeader))
+    -> Tracer m (TraceTxSubmissionInbound Int (Tx Int))
+    -> Tracer m (DebugSharedTxState NtNAddr Int (Tx Int))
     -> m Void
 run blockGeneratorArgs limits ni na
     emptyExtraState emptyExtraCounters
     extraPeersAPI psArgs psToExtraCounters
     toExtraPeers requestPublicRootPeers peerChurnGovernor
-    tracersExtra tracerBlockFetch =
-    Node.withNodeKernelThread blockGeneratorArgs
+    tracers tracerBlockFetch tracerTxSubmissionInbound tracerTxSubmissionDebug =
+    Node.withNodeKernelThread blockGeneratorArgs (aTxs na)
       $ \ nodeKernel nodeKernelThread -> do
         dnsTimeoutScriptVar <- newTVarIO (aDNSTimeoutScript na)
         dnsLookupDelayScriptVar <- newTVarIO (aDNSLookupDelayScript na)
@@ -337,21 +347,36 @@ run blockGeneratorArgs limits ni na
               , P2P.daPeerSharingRegistry = nkPeerSharingRegistry nodeKernel
               }
 
-        let apps = Node.applications (aDebugTracer na) nodeKernel Node.cborCodecs limits appArgs blockHeader
+            apps = Node.applications
+                     (aDebugTracer na)
+                     tracerTxSubmissionInbound
+                     tracerTxSubmissionDebug
+                     nodeKernel
+                     Node.cborCodecs
+                     limits
+                     appArgs
+                     blockHeader
 
         withAsync
            (P2P.runM interfaces
                      Common.nullTracers
-                     tracersExtra
+                     tracers
                      (mkArgs (nkPublicPeerSelectionVar nodeKernel))
                      argsExtra apps appsExtra)
            $ \ diffusionThread ->
                withAsync (blockFetch nodeKernel) $ \blockFetchLogicThread ->
-                 wait diffusionThread
-              <> wait blockFetchLogicThread
-              <> wait nodeKernelThread
+
+                 withAsync (decisionLogicThread
+                              tracerTxSubmissionDebug
+                              (aTxDecisionPolicy na)
+                              (nkTxChannelsVar nodeKernel)
+                              (nkSharedTxStateVar nodeKernel)) $ \decLogicThread ->
+                      wait diffusionThread
+                   <> wait blockFetchLogicThread
+                   <> wait nodeKernelThread
+                   <> wait decLogicThread
   where
-    blockFetch :: NodeKernel BlockHeader Block s m
+    blockFetch :: NodeKernel BlockHeader Block s txid m
                -> m Void
     blockFetch nodeKernel = do
       blockFetchLogic
@@ -370,7 +395,7 @@ run blockGeneratorArgs limits ni na
           bfcSalt                   = 0
         })
 
-    blockFetchPolicy :: NodeKernel BlockHeader Block s m
+    blockFetchPolicy :: NodeKernel BlockHeader Block s txid m
                      -> BlockFetchConsensusInterface NtNAddr BlockHeader Block m
     blockFetchPolicy nodeKernel =
         BlockFetchConsensusInterface {
@@ -503,6 +528,7 @@ run blockGeneratorArgs limits ni na
       , Node.aaShouldChainSyncExit = aShouldChainSyncExit na
       , Node.aaChainSyncEarlyExit  = aChainSyncEarlyExit na
       , Node.aaOwnPeerSharing      = aOwnPeerSharing na
+      , Node.aaTxDecisionPolicy    = aTxDecisionPolicy na
       }
 
 --- Utils
