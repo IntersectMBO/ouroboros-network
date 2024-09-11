@@ -22,6 +22,7 @@ module Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Simulation
   , prop_diffusionScript_fixupCommands
   , prop_diffusionScript_commandScript_valid
   , fixupCommands
+  , TurbulentCommands (..)
   , diffusionSimulation
   , Command (..)
     -- * Tracing
@@ -113,8 +114,8 @@ import Ouroboros.Network.Driver.Limits (ProtocolSizeLimits (..),
 import Ouroboros.Network.Handshake.Acceptable (Acceptable (acceptableVersion))
 import Ouroboros.Network.InboundGovernor (RemoteTransitionTrace)
 import Ouroboros.Network.InboundGovernor qualified as IG
-import Ouroboros.Network.Mock.ConcreteBlock (Block (..), BlockHeader (..))
 import Ouroboros.Network.Mux (MiniProtocolLimits (..))
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection hiding (peerChurnGovernor,
            requestPublicRootPeers)
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
@@ -131,14 +132,23 @@ import Ouroboros.Network.Protocol.KeepAlive.Codec (byteLimitsKeepAlive,
 import Ouroboros.Network.Protocol.Limits (shortWait, smallByteLimit)
 import Ouroboros.Network.Protocol.PeerSharing.Codec (byteLimitsPeerSharing,
            timeLimitsPeerSharing)
+import Ouroboros.Network.Protocol.TxSubmission2.Codec (byteLimitsTxSubmission2,
+           timeLimitsTxSubmission2)
 import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Snocket (Snocket, TestAddress (..))
+import Ouroboros.Network.TxSubmission.Inbound.Policy (TxDecisionPolicy)
+import Ouroboros.Network.TxSubmission.Inbound.State (DebugSharedTxState)
+import Ouroboros.Network.TxSubmission.Inbound.Types (TraceTxSubmissionInbound)
 
+import Ouroboros.Network.Mock.ConcreteBlock (Block (..), BlockHeader (..))
 import Simulation.Network.Snocket (BearerInfo (..), FD, SnocketTrace,
            WithAddr (..), makeFDBearer, withSnocket)
 
 import Test.Ouroboros.Network.Data.Script
-import Test.Ouroboros.Network.Diffusion.Node as Node
+import Test.Ouroboros.Network.Diffusion.Node qualified as Node
+import Test.Ouroboros.Network.Diffusion.Node.Kernel (NtCAddr, NtCVersion,
+           NtCVersionData, NtNAddr, NtNAddr_ (IPAddr), NtNVersion,
+           NtNVersionData)
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..), cardanoSRVPrefix,
            genLedgerPoolsFrom)
 import Test.Ouroboros.Network.PeerSelection.Cardano.Instances ()
@@ -148,6 +158,8 @@ import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay (..),
            DNSTimeout (..), DomainAccessPoint (..), MockDNSMap, genDomainName)
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS qualified as PeerSelection hiding
            (tests)
+import Test.Ouroboros.Network.TxSubmission.Common (ArbTxDecisionPolicy (..),
+           Tx (..))
 import Test.Ouroboros.Network.Utils
 import Test.QuickCheck
 
@@ -158,17 +170,20 @@ import Test.QuickCheck
 --
 data SimArgs =
   SimArgs
-    { saSlot  :: DiffTime
+    { saSlot             :: DiffTime
       -- ^ 'randomBlockGenerationArgs' slot duration argument
-    , saQuota :: Int
+    , saQuota            :: Int
       -- ^ 'randomBlockGenerationArgs' quota value
+    , saTxDecisionPolicy :: TxDecisionPolicy
+      -- ^ Decision policy for tx submission protocol
     }
 
 instance Show SimArgs where
-    show SimArgs { saSlot, saQuota } =
+    show SimArgs { saSlot, saQuota, saTxDecisionPolicy } =
       unwords [ "SimArgs"
               , show saSlot
               , show saQuota
+              , "(" ++ show saTxDecisionPolicy ++ ")"
               ]
 
 data ServiceDomainName =
@@ -222,7 +237,8 @@ data NodeArgs =
       -- ^ 'Arguments' 'aDNSLookupDelayScript' value
     , naChainSyncExitOnBlockNo :: Maybe BlockNo
     , naChainSyncEarlyExit     :: Bool
-    , naFetchModeScript        :: Script PraosFetchMode
+    , naFetchModeScript        :: Script FetchMode
+    , naTxs                    :: [Tx Int]
     }
 
 instance Show NodeArgs where
@@ -230,7 +246,8 @@ instance Show NodeArgs where
                     naPublicRoots, naAddr, naPeerSharing, naLedgerPeers,
                     naLocalRootPeers, naPeerTargets, naDNSTimeoutScript,
                     naDNSLookupDelayScript, naChainSyncExitOnBlockNo,
-                    naChainSyncEarlyExit, naFetchModeScript, naConsensusMode } =
+                    naChainSyncEarlyExit, naFetchModeScript, naConsensusMode,
+                    naTxs } =
       unwords [ "NodeArgs"
               , "(" ++ show naSeed ++ ")"
               , show naDiffusionMode
@@ -247,6 +264,7 @@ instance Show NodeArgs where
               , "(" ++ show naChainSyncExitOnBlockNo ++ ")"
               , show naChainSyncEarlyExit
               , show naFetchModeScript
+              , show naTxs
               ]
 
 data Command = JoinNetwork DiffTime
@@ -316,6 +334,50 @@ fixupCommands (jn@(JoinNetwork _):t) = jn : go jn 0 t
         (_               , Reconfigure d c ) -> Reconfigure (d + accDelay) c : go cmd 0 cmds
 fixupCommands (_:t) = fixupCommands t
 
+-- | Turbulent commands have some turbulence by connecting and disconnecting
+-- the node, but eventually keeping the node online.
+--
+newtype TurbulentCommands = TurbulentCommands [Command]
+  deriving (Eq, Show)
+
+instance Arbitrary TurbulentCommands where
+  arbitrary = do
+    turbulenceNumber <- choose (2, 7)
+    -- Make sure turbulenceNumber is an even number
+    -- This simplifies making sure we keep the node online.
+    let turbulenceNumber' =
+          if odd turbulenceNumber
+             then turbulenceNumber + 1
+             else turbulenceNumber
+    delays <- vectorOf turbulenceNumber' delay
+    let commands = zipWith (\f d -> f d) (cycle [JoinNetwork, Kill]) delays
+                 ++ [JoinNetwork 0]
+    return (TurbulentCommands commands)
+    where
+      delay = frequency [ (3, genDelayWithPrecision 65)
+                        , (1, (/ 10) <$> genDelayWithPrecision 60)
+                        ]
+  shrink (TurbulentCommands xs) =
+    [ TurbulentCommands xs' | xs' <- shrinkList shrinkCommand xs, invariant xs' ] ++
+    [ TurbulentCommands (take n xs) | n <- [0, length xs - 3], n `mod` 3 == 0, invariant (take n xs) ]
+
+    where
+      shrinkDelay = map fromRational . shrink . toRational
+
+      shrinkCommand :: Command -> [Command]
+      shrinkCommand (JoinNetwork d)     = JoinNetwork <$> shrinkDelay d
+      shrinkCommand (Kill d)            = Kill        <$> shrinkDelay d
+      shrinkCommand (Reconfigure d lrp) =   Skip d
+                                          : (Reconfigure <$> shrinkDelay d
+                                                         <*> pure lrp)
+      shrinkCommand (Skip _d)           = []
+
+      invariant :: [Command] -> Bool
+      invariant [JoinNetwork _]                                 = True
+      invariant [JoinNetwork _, Kill _, JoinNetwork _]          = True
+      invariant (JoinNetwork _ : Kill _ : JoinNetwork _ : rest) = invariant rest
+      invariant _                                               = False
+
 -- | Simulation arguments.
 --
 -- Slot length needs to be greater than 0 else we get a livelock on the IOSim.
@@ -323,13 +385,16 @@ fixupCommands (_:t) = fixupCommands t
 -- Quota values matches mainnet, so a slot length of 1s and 1 / 20 chance that
 -- someone gets to make a block.
 --
-mainnetSimArgs :: Int -> SimArgs
-mainnetSimArgs numberOfNodes =
+mainnetSimArgs :: Int
+               -> TxDecisionPolicy
+               -> SimArgs
+mainnetSimArgs numberOfNodes txDecisionPolicy =
   SimArgs {
       saSlot  = secondsToDiffTime 1,
       saQuota = if numberOfNodes > 0
                 then 20 `div` numberOfNodes
-                else 100
+                else 100,
+      saTxDecisionPolicy = txDecisionPolicy
     }
 
 
@@ -373,8 +438,9 @@ genNodeArgs :: [TestnetRelayInfo]
             -> Int
             -> [(HotValency, WarmValency, Map RelayAccessPoint (LocalRootConfig PeerTrustable))]
             -> TestnetRelayInfo
+            -> [Tx Int]
             -> Gen NodeArgs
-genNodeArgs relays minConnected localRootPeers self = flip suchThat hasUpstream $ do
+genNodeArgs relays minConnected localRootPeers self txs = flip suchThat hasUpstream $ do
   -- Slot length needs to be greater than 0 else we get a livelock on
   -- the IOSim.
   --
@@ -429,7 +495,7 @@ genNodeArgs relays minConnected localRootPeers self = flip suchThat hasUpstream 
   ledgerPeersScript_ <- traverse genLedgerPoolsFrom ledgerPeers
   let ledgerPeersScript = Script (NonEmpty.fromList ledgerPeersScript_)
 
-  fetchModeScript <- fmap (bool FetchModeBulkSync FetchModeDeadline) <$> arbitrary
+  fetchModeScript <- fmap (PraosFetchMode . bool FetchModeBulkSync FetchModeDeadline) <$> arbitrary
 
   naConsensusMode <- arbitrary
   bootstrapPeersDomain <-
@@ -456,6 +522,7 @@ genNodeArgs relays minConnected localRootPeers self = flip suchThat hasUpstream 
       , naChainSyncEarlyExit     = chainSyncEarlyExit
       , naPeerSharing            = peerSharing
       , naFetchModeScript        = fetchModeScript
+      , naTxs                    = txs
       }
   where
     makeRelayAccessPoint (relay, _, _, _) = relay
@@ -623,18 +690,34 @@ genDiffusionScript :: (   [TestnetRelayInfo]
 genDiffusionScript genLocalRootPeers
                    relays
                    = do
-    let simArgs = mainnetSimArgs (length them)
+    ArbTxDecisionPolicy txDecisionPolicy <- arbitrary
+    let simArgs = mainnetSimArgs (length relays') txDecisionPolicy
     dnsMapScript <- genDomainMapScript relays
-    nodesWithCommands <- mapM go them
+    txs <- makeUniqueIds 0
+       <$> vectorOf (length relays') (choose (10, 100) >>= \c -> vectorOf c arbitrary)
+    nodesWithCommands <- mapM go (zip relays' txs)
     return (simArgs, dnsMapScript, nodesWithCommands)
   where
-    them = unTestnetRelays relays
-    go self = do
-      let otherRelays  = self `delete` them
-          minConnected = 3 `max` (length them - 1) -- ^ TODO is this ever different from 3?
-                                                   -- since we generate {2,3} relays?
-      localRts <- genLocalRootPeers otherRelays self
-      nodeArgs <- genNodeArgs them minConnected localRts self
+    relays' = unTestnetRelays relays
+
+    makeUniqueIds :: Int -> [[Tx Int]] -> [[Tx Int]]
+    makeUniqueIds _ [] = []
+    makeUniqueIds i (l:ls) =
+      let (r, i') = makeUniqueIds' l i
+       in r : makeUniqueIds i' ls
+
+    makeUniqueIds' :: [Tx Int] -> Int -> ([Tx Int], Int)
+    makeUniqueIds' l i = ( map (\(tx, x) -> tx {getTxId = x}) (zip l [i..])
+                         , i + length l + 1
+                         )
+
+    go :: (TestnetRelayInfo, [Tx Int]) -> Gen (NodeArgs, [Command])
+    go (relay, txs) = do
+      let otherRelays  = relay `delete` relays'
+          minConnected = 3 `max` (length relays' - 1) -- ^ TODO is this ever different from 3?
+                                                      -- since we generate {2,3} relays?
+      localRts <- genLocalRootPeers otherRelays relay
+      nodeArgs <- genNodeArgs relays' minConnected localRts relay txs
       commands <- genCommands localRts
       return (nodeArgs, commands)
 
@@ -932,6 +1015,8 @@ data DiffusionTestTrace =
     | DiffusionServerTrace (Server.Trace NtNAddr)
     | DiffusionFetchTrace (TraceFetchClientState BlockHeader)
     | DiffusionChurnModeTrace TraceChurnMode
+    | DiffusionTxSubmissionInbound (TraceTxSubmissionInbound Int (Tx Int))
+    | DiffusionTxSubmissionDebug (DebugSharedTxState NtNAddr Int (Tx Int))
     | DiffusionDebugTrace String
     | DiffusionDNSTrace DNSTrace
     | DiffusionMuxTrace (Mux.WithBearer (ConnectionId NtNAddr) Mux.Trace)
@@ -1077,6 +1162,7 @@ diffusionSimulation
     runNode SimArgs
             { saSlot                  = bgaSlotDuration
             , saQuota                 = quota
+            , saTxDecisionPolicy      = txDecisionPolicy
             }
             NodeArgs
             { naSeed                   = seed
@@ -1092,6 +1178,7 @@ diffusionSimulation
             , naChainSyncEarlyExit     = chainSyncEarlyExit
             , naPeerSharing            = peerSharing
             , naDiffusionMode          = diffusionMode
+            , naTxs                    = txs
             }
             ntnSnocket
             ntcSnocket
@@ -1107,7 +1194,7 @@ diffusionSimulation
       let readUseBootstrapPeers = stepScriptSTM' useBootstrapPeersScriptVar
           (bgaRng, rng) = Random.split $ mkStdGen seed
           acceptedConnectionsLimit =
-            AcceptedConnectionsLimit maxBound maxBound 0
+            Node.AcceptedConnectionsLimit maxBound maxBound 0
           readLocalRootPeers  = readTVar lrpVar
           readPublicRootPeers = return publicRoots
           readUseLedgerPeers  = return (UseLedgerPeers (After 0))
@@ -1126,13 +1213,13 @@ diffusionSimulation
           limitsAndTimeouts
             = Node.LimitsAndTimeouts
                 { Node.chainSyncLimits      = defaultMiniProtocolsLimit
-                , Node.chainSyncSizeLimits  = byteLimitsChainSync (const 0)
+                , Node.chainSyncSizeLimits  = byteLimitsChainSync (fromIntegral . BL.length)
                 , Node.chainSyncTimeLimits  = timeLimitsChainSync Cardano.defaultChainSyncIdleTimeout
                 , Node.blockFetchLimits     = defaultMiniProtocolsLimit
-                , Node.blockFetchSizeLimits = byteLimitsBlockFetch (const 0)
+                , Node.blockFetchSizeLimits = byteLimitsBlockFetch (fromIntegral . BL.length)
                 , Node.blockFetchTimeLimits = timeLimitsBlockFetch
                 , Node.keepAliveLimits      = defaultMiniProtocolsLimit
-                , Node.keepAliveSizeLimits  = byteLimitsKeepAlive (const 0)
+                , Node.keepAliveSizeLimits  = byteLimitsKeepAlive (fromIntegral . BL.length)
                 , Node.keepAliveTimeLimits  = timeLimitsKeepAlive
                 , Node.pingPongLimits       = defaultMiniProtocolsLimit
                 , Node.pingPongSizeLimits   = byteLimitsPingPong
@@ -1147,8 +1234,10 @@ diffusionSimulation
                 , Node.peerSharingTimeLimits =
                     timeLimitsPeerSharing
                 , Node.peerSharingSizeLimits =
-                    byteLimitsPeerSharing (const 0)
-
+                    byteLimitsPeerSharing (fromIntegral . BL.length)
+                , Node.txSubmissionLimits = defaultMiniProtocolsLimit
+                , Node.txSubmissionTimeLimits = timeLimitsTxSubmission2
+                , Node.txSubmissionSizeLimits = byteLimitsTxSubmission2 (fromIntegral . BL.length)
                 }
 
           interfaces :: Node.Interfaces (Cardano.LedgerPeersConsensusInterface m) m
@@ -1232,6 +1321,8 @@ diffusionSimulation
               , Node.aDebugTracer          = (\s -> WithTime (Time (-1)) (WithName addr (DiffusionDebugTrace s)))
                                                    `contramap` nodeTracer
               , Node.aExtraChurnArgs = cardanoChurnArgs
+              , Node.aTxDecisionPolicy     = txDecisionPolicy
+              , Node.aTxs                  = txs
               }
 
           tracers = mkTracers addr i
@@ -1260,6 +1351,14 @@ diffusionSimulation
           peerChurnGovernor
           tracers
           ( contramap (DiffusionFetchTrace . (\(TraceLabelPeer _ a) -> a))
+          . tracerWithName addr
+          . tracerWithTime
+          $ nodeTracer)
+          ( contramap DiffusionTxSubmissionInbound
+          . tracerWithName addr
+          . tracerWithTime
+          $ nodeTracer)
+          ( contramap DiffusionTxSubmissionDebug
           . tracerWithName addr
           . tracerWithTime
           $ nodeTracer)
