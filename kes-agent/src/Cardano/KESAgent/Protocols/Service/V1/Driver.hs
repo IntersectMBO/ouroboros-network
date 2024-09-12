@@ -51,7 +51,7 @@ import Control.Concurrent.Class.MonadSTM
 import Control.Concurrent.Class.MonadSTM.TChan
 import Control.Monad ( void, when, forever, forM_ )
 import Control.Monad.Class.MonadAsync
-import Control.Monad.Class.MonadMVar
+import Control.Concurrent.Class.MonadMVar
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow ( MonadThrow, bracket, throwIO, Exception )
 import Control.Monad.ST.Unsafe ( unsafeIOToST )

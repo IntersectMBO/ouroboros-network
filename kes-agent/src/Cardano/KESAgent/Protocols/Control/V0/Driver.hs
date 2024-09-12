@@ -45,7 +45,7 @@ import Cardano.Crypto.Libsodium.Memory
 import Ouroboros.Network.RawBearer
 
 import Control.Monad ( void, when, replicateM )
-import Control.Monad.Class.MonadMVar
+import Control.Concurrent.Class.MonadMVar
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow ( MonadThrow, bracket )

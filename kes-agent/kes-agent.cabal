@@ -29,7 +29,7 @@ common project-config
          -- -ddump-splices
 
 common base-dependencies
-    build-depends: base ^>=4.14.0.0
+    build-depends: base >=4.14.0.0 && <4.20.0.0
 
 library
     import: project-config
@@ -96,7 +96,7 @@ library
                  , extra >=1.7.12 && <1.8
                  , formatting
                  , ghc-prim
-                 , io-classes
+                 , io-classes >=1.5.0.0
                  , mtl
                  , network
                  , network-mux

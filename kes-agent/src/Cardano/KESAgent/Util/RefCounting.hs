@@ -136,8 +136,7 @@ newCRef :: (MonadST m, MonadSTM m, MonadThrow m) => (a -> m ()) -> a -> m (CRef 
 newCRef = newCRefWith nullTracer
 
 genCRefID :: (MonadST m) => m CRefID
-genCRefID = withLiftST $ \liftST ->
-  liftST . unsafeIOToST $ do
+genCRefID = stToIO . unsafeIOToST $ do
     n <- takeMVar nextCRefIDVar
     putMVar nextCRefIDVar (succ n)
     return n

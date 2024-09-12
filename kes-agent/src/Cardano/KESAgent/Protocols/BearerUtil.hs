@@ -60,7 +60,7 @@ withDuplexBearer s action = do
       recv' buf numBytes = do
           forM_ [0 .. numBytes-1] $ \n -> do
             b <- atomically $ readTChan recvChan
-            withLiftST $ \liftST -> liftST . unsafeIOToST $
+            stToIO . unsafeIOToST $
               poke (buf `plusPtr` n) b
           return numBytes
   let sender = action s'
