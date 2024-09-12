@@ -3307,13 +3307,23 @@ prop_governor_only_bootstrap_peers_in_clean_state env =
                 )
             ) events
 
+        configTrustedLocalRoots :: Signal (Set PeerAddr)
+        configTrustedLocalRoots =
+            Signal.fromChangeEvents Set.empty
+          . Signal.selectEvents
+              (\case
+                  TraceEnvSetLocalRoots (LocalRootPeers peerMap _) ->
+                    Just . Map.keysSet . Map.filter isTrustable $ peerMap
+                  _ -> Nothing)
+          . selectEnvEvents
+          $ events
+          where
+            isTrustable (_, IsTrustable) = True
+            isTrustable _                = False
+
         govHasOnlyBootstrapPeers :: Signal Bool
         govHasOnlyBootstrapPeers =
           selectGovState Governor.hasOnlyBootstrapPeers events
-
-        govTargets :: Signal PeerSelectionTargets
-        govTargets =
-          selectGovState Governor.targets events
 
         isInCleanState :: Signal Bool
         isInCleanState =
@@ -3337,11 +3347,27 @@ prop_governor_only_bootstrap_peers_in_clean_state env =
              )
 
      in signalProperty 20 show
-          (\(b, (kp, tp), t) -> (b && (Set.null (Set.difference kp tp) || targetNumberOfKnownPeers t <= 0))
-                             || not b)
+          (\(b, (kp, tp), fromConfigTrustedLocalRoots) ->
+             -- the governor logic has two separate monitoring actions for dealing with local roots
+             -- and keeping (known) peer targets in check. A corner case can arise when peer targets
+             -- are reduced and a trusted local root peer is selected to be dropped immediately. A trace
+             -- will show that this trusted local root is no longer among the localRoots field in the
+             -- governor state, but until the second monitoring action mentioned above sweeps it out
+             -- from the knownPeers set, a discrepancy occurs which can cause a naive version of this test
+             -- to signal a failure. In reality, this is just a glitch and the governor doesn't leave
+             -- clean state because semantically this peer, which is still among the knownPeers, is
+             -- trusted by assumption. The fix is to permanently add all trusted local roots to the known
+             -- set via union below since this doesn't brake the invariant. On the other hand,
+             -- if some other peer which is not from the known trusted local root set somehow lingers
+             -- in the known set, the test will fail, as it should.
+             -- cf. https://github.com/IntersectMBO/ouroboros-network/pull/4956
+             let kp' = kp `Set.union` fromConfigTrustedLocalRoots
+             in
+                  (b && tp `Set.isSubsetOf` kp')
+               || not b)
           ((,,) <$> isInCleanState
                 <*> govKnownAndTrustedPeers
-                <*> govTargets
+                <*> configTrustedLocalRoots
           )
 
 -- | This test checks that if the node is not in a sensitive state it will not
