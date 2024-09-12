@@ -3351,6 +3351,26 @@ prop_churn_notimeouts ioSimTrace traceNumber =
                   @NtNAddr
                . Trace.take traceNumber
                $ ioSimTrace
+
+       events' =   Signal.scanl nodeTracker Map.empty
+                 . Signal.fromEvents
+                 . Signal.selectEvents topoUpdate
+                 . Signal.eventsFromList
+                 . Trace.toList
+                 . fmap (\(WithTime t withName) -> (t, withName))
+                 . withTimeNameTraceEvents @DiffusionTestTrace @NtNAddr
+                 . Trace.take traceNumber
+                 $ ioSimTrace
+         where
+           topoUpdate (WithName name (DiffusionDiffusionSimulationTrace TrJoiningNetwork)) =
+             Just $ WithName name TrJoiningNetwork
+           topoUpdate (WithName name (DiffusionDiffusionSimulationTrace TrKillingNode))    =
+             Just $ WithName name TrKillingNode
+           nodeTracker map (Just (WithName name op)) =
+             case op of
+               TrJoiningNetwork -> Map.alter (const $ Just ()) name map
+               TrKillingNode    -> Map.alter (const Nothing)   name map
+           nodeTracker map Nothing = map
     in  conjoin
       $ (\evs ->
             let evsList :: [TracePeerSelection NtNAddr]
