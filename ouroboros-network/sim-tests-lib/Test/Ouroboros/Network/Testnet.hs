@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
@@ -5,6 +6,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE ViewPatterns        #-}
 
 #if defined(mingw32_HOST_OS)
 {-# OPTIONS_GHC -Wno-unused-top-binds #-}
@@ -15,13 +17,14 @@
 
 module Test.Ouroboros.Network.Testnet (tests) where
 
+import Debug.Trace as DTrace
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadTime.SI (DiffTime, Time (Time), addTime,
            diffTime)
 import Control.Monad.IOSim
 import Data.Bifoldable (bifoldMap)
 
-import Data.Foldable (fold)
+import Data.Foldable (fold, traverse_)
 import Data.IP qualified as IP
 import Data.List as List (find, foldl', intercalate, tails)
 import Data.List.Trace qualified as Trace
@@ -3352,7 +3355,7 @@ prop_churn_notimeouts ioSimTrace traceNumber =
                . Trace.take traceNumber
                $ ioSimTrace
 
-       events' =   Signal.scanl nodeTracker Map.empty
+       !events' =  Signal.scanl nodeTracker Map.empty
                  . Signal.fromEvents
                  . Signal.selectEvents topoUpdate
                  . Signal.eventsFromList
@@ -3366,17 +3369,25 @@ prop_churn_notimeouts ioSimTrace traceNumber =
              Just $ WithName name TrJoiningNetwork
            topoUpdate (WithName name (DiffusionDiffusionSimulationTrace TrKillingNode))    =
              Just $ WithName name TrKillingNode
-           nodeTracker map (Just (WithName name op)) =
+           topoUpdate _    = Nothing
+
+           nodeTracker liveNodes (Just (WithName name op)) =
              case op of
-               TrJoiningNetwork -> Map.alter (const $ Just ()) name map
-               TrKillingNode    -> Map.alter (const Nothing)   name map
-           nodeTracker map Nothing = map
-    in  conjoin
+               TrJoiningNetwork -> Map.alter (const $ Just ()) name liveNodes
+               TrKillingNode    -> Map.alter (const Nothing)   name liveNodes
+           nodeTracker liveNodes Nothing = liveNodes
+
+    in conjoin
       $ (\evs ->
-            let evsList :: [TracePeerSelection NtNAddr]
-                evsList = snd <$> eventsToList (selectDiffusionPeerSelectionEvents evs)
-            in property $ counterexample (intercalate "\n" (show <$> eventsToList evs))
-                        $ all noChurnTimeout evsList
+            let peerSelectionSignal = Signal.fromEvents (selectDiffusionPeerSelectionEvents evs)
+            in
+              signalProperty 20 show
+                 (\case
+                    (Nothing, _) -> True
+                    (Just (noChurnTimeout -> True), _) -> True
+                    (lll, map) -> False)
+                 ((,) <$> peerSelectionSignal
+                      <*> events')
         )
      <$> events
   where
