@@ -18,11 +18,8 @@ import Prelude hiding (seq)
 
 import NoThunks.Class
 
-import Control.Concurrent.Class.MonadMVar (MonadMVar)
-import Control.Concurrent.Class.MonadMVar.Strict qualified as Strict
-import Control.Concurrent.Class.MonadSTM
-import Control.Concurrent.Class.MonadSTM.Strict (StrictTVar)
-import Control.Concurrent.Class.MonadSTM.Strict qualified as Strict
+import Control.Concurrent.Class.MonadMVar.Strict
+import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad (forM)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
@@ -154,10 +151,10 @@ runTxSubmission tracer tracerDST tracerTxLogic state txDecisionPolicy = do
 
     inboundMempool <- emptyMempool
 
-    txChannelsMVar <- Strict.newMVar (TxChannels Map.empty)
+    txChannelsMVar <- newMVar (TxChannels Map.empty)
     sharedTxStateVar <- newSharedTxStateVar
     labelTVarIO sharedTxStateVar "shared-tx-state"
-    gsvVar <- Strict.newTVarIO Map.empty
+    gsvVar <- newTVarIO Map.empty
     labelTVarIO gsvVar "gsv"
 
     run state'
@@ -191,7 +188,7 @@ runTxSubmission tracer tracerDST tracerTxLogic state txDecisionPolicy = do
         -> m b
     run st txChannelsVar sharedTxStateVar
         inboundMempool gsvVar k =
-      withAsync (decisionLogicThread tracerTxLogic txDecisionPolicy (Strict.readTVar gsvVar) txChannelsVar sharedTxStateVar) $ \a -> do
+      withAsync (decisionLogicThread tracerTxLogic txDecisionPolicy (readTVar gsvVar) txChannelsVar sharedTxStateVar) $ \a -> do
             -- Construct txSubmission outbound client
         let clients = (\(addr, (mempool, ctrlMsgSTM, outDelay, _, outChannel, _)) -> do
                         let client = txSubmissionOutbound (Tracer $ say . show)
