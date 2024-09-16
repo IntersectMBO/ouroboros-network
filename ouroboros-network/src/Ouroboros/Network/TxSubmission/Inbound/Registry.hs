@@ -12,15 +12,17 @@ module Ouroboros.Network.TxSubmission.Inbound.Registry
   , newTxChannelsVar
   , PeerTxAPI (..)
   , decisionLogicThread
+  , DebugTxLogic (..)
   , withPeer
   ) where
 
 import Control.Concurrent.Class.MonadMVar.Strict
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI
 
-import Data.Foldable (foldl', traverse_)
+import Data.Foldable (traverse_)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
@@ -211,22 +213,32 @@ withPeer tracer
       collectTxs tracer sharedStateVar peeraddr txids txs
 
 
+-- | TODO: reorganise modules so there's just one `Debug` tracer.
+data DebugTxLogic peeraddr txid tx =
+       DebugTxLogicSharedTxState (SharedTxState peeraddr txid tx)
+     | DebugTxLogicDecisions (Map peeraddr (TxDecision txid tx))
+  deriving Show
+
+
 decisionLogicThread
     :: forall m peeraddr txid tx.
        ( MonadDelay m
        , MonadMVar  m
        , MonadSTM   m
-       , MonadMask m
+       , MonadMask  m
+       , MonadFork  m
        , Ord peeraddr
        , Ord txid
        )
-    => Tracer m (DebugSharedTxState peeraddr txid tx)
+    => Tracer m (DebugTxLogic peeraddr txid tx)
     -> TxDecisionPolicy
     -> STM m (Map peeraddr PeerGSV)
     -> TxChannelsVar m peeraddr txid tx
     -> SharedTxStateVar m peeraddr txid tx
     -> m Void
-decisionLogicThread tracer policy readGSVVar txChannelsVar sharedStateVar = go
+decisionLogicThread tracer policy readGSVVar txChannelsVar sharedStateVar = do
+    labelThisThread "tx-decision"
+    go
   where
     go :: m Void
     go = do
@@ -247,7 +259,8 @@ decisionLogicThread tracer policy readGSVVar txChannelsVar sharedStateVar = go
         let (sharedState, decisions) = makeDecisions policy sharedCtx activePeers
         writeTVar sharedStateVar sharedState
         return (decisions, sharedState)
-      traceWith tracer (DebugSharedTxState "decisionLogicThread" st)
+      traceWith tracer (DebugTxLogicSharedTxState st)
+      traceWith tracer (DebugTxLogicDecisions decisions)
       TxChannels { txChannelMap } <- readMVar txChannelsVar
       traverse_
         (\(mvar, d) -> modifyMVarWithDefault_ mvar d (\d' -> pure (d' <> d)))
