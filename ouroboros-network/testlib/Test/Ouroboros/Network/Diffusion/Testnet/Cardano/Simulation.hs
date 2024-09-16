@@ -137,6 +137,7 @@ import Ouroboros.Network.Protocol.TxSubmission2.Codec (byteLimitsTxSubmission2,
 import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Snocket (Snocket, TestAddress (..))
 import Ouroboros.Network.TxSubmission.Inbound.Policy (TxDecisionPolicy)
+import Ouroboros.Network.TxSubmission.Inbound.Registry (DebugTxLogic)
 import Ouroboros.Network.TxSubmission.Inbound.State (DebugSharedTxState)
 import Ouroboros.Network.TxSubmission.Inbound.Types (TraceTxSubmissionInbound)
 
@@ -1017,6 +1018,7 @@ data DiffusionTestTrace =
     | DiffusionChurnModeTrace TraceChurnMode
     | DiffusionTxSubmissionInbound (TraceTxSubmissionInbound Int (Tx Int))
     | DiffusionTxSubmissionDebug (DebugSharedTxState NtNAddr Int (Tx Int))
+    | DiffusionTxLogicDebug (DebugTxLogic NtNAddr Int (Tx Int))
     | DiffusionDebugTrace String
     | DiffusionDNSTrace DNSTrace
     | DiffusionMuxTrace (Mux.WithBearer (ConnectionId NtNAddr) Mux.Trace)
@@ -1359,6 +1361,10 @@ diffusionSimulation
           . tracerWithTime
           $ nodeTracer)
           ( contramap DiffusionTxSubmissionDebug
+          . tracerWithName addr
+          . tracerWithTime
+          $ nodeTracer)
+          ( contramap DiffusionTxLogicDebug
           . tracerWithName addr
           . tracerWithTime
           $ nodeTracer)
