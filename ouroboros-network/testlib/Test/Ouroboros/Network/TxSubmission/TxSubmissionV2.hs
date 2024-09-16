@@ -95,7 +95,9 @@ instance Arbitrary TxSubmissionState where
     peersState <- map (\(a, (b, c)) -> (a, b, c))
                 . zip txs
               <$> vectorOf peersN arbitrary
-    return (TxSubmissionState (Map.fromList (zip peers peersState)) decisionPolicy)
+    return TxSubmissionState  { peerMap = Map.fromList (zip peers peersState),
+                                decisionPolicy
+                              }
   shrink TxSubmissionState { peerMap, decisionPolicy } =
     TxSubmissionState <$> shrinkMap1 peerMap
                       <*> [ policy
@@ -134,6 +136,7 @@ runTxSubmission
      )
   => Tracer m (String, TraceSendRecv (TxSubmission2 txid (Tx txid)))
   -> Tracer m (DebugSharedTxState peeraddr txid (Tx txid))
+  -> Tracer m (DebugTxLogic peeraddr txid (Tx txid))
   -> Map peeraddr ( [Tx txid]
                   , ControlMessageSTM m
                   , Maybe DiffTime
@@ -141,7 +144,7 @@ runTxSubmission
                   )
   -> TxDecisionPolicy
   -> m ([Tx txid], [[Tx txid]])
-runTxSubmission tracer tracerDST state txDecisionPolicy = do
+runTxSubmission tracer tracerDST tracerTxLogic state txDecisionPolicy = do
 
     state' <- traverse (\(b, c, d, e) -> do
         mempool <- newMempool b
@@ -186,10 +189,10 @@ runTxSubmission tracer tracerDST state txDecisionPolicy = do
         -> m b
     run st txChannelsVar sharedTxStateVar
         inboundMempool gsvVar k =
-      withAsync (decisionLogicThread tracerDST txDecisionPolicy (Strict.readTVar gsvVar) txChannelsVar sharedTxStateVar) $ \a -> do
+      withAsync (decisionLogicThread tracerTxLogic txDecisionPolicy (Strict.readTVar gsvVar) txChannelsVar sharedTxStateVar) $ \a -> do
             -- Construct txSubmission outbound client
         let clients = (\(addr, (mempool, ctrlMsgSTM, outDelay, _, outChannel, _)) -> do
-                        let client = txSubmissionOutbound verboseTracer
+                        let client = txSubmissionOutbound (Tracer $ say . show)
                                                (NumTxIdsToAck $ getNumTxIdsToReq
                                                               $ maxUnacknowledgedTxIds
                                                               $ txDecisionPolicy)
@@ -270,9 +273,9 @@ txSubmissionSimulation (TxSubmissionState state txDecisionPolicy) = do
         threadDelay (simDelayTime + 1000)
         atomically (traverse_ (`writeTVar` Terminate) controlMessageVars)
 
-  let tracer = verboseTracer <> debugTracer
-      tracer' = verboseTracer <> debugTracer
-  runTxSubmission tracer tracer' state'' txDecisionPolicy
+  let tracer :: forall a. Show a => Tracer (IOSim s) a
+      tracer = verboseTracer <> debugTracer
+  runTxSubmission tracer tracer tracer state'' txDecisionPolicy
 
 -- | Tests overall tx submission semantics. The properties checked in this
 -- property test are the same as for tx submission v1. We need this to know we
