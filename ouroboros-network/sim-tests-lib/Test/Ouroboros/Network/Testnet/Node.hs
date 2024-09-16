@@ -103,7 +103,8 @@ import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (MakeBearer, Snocket, TestAddress (..),
            invalidFileDescriptor)
 import Ouroboros.Network.TxSubmission.Inbound.Policy (TxDecisionPolicy)
-import Ouroboros.Network.TxSubmission.Inbound.Registry (decisionLogicThread)
+import Ouroboros.Network.TxSubmission.Inbound.Registry (DebugTxLogic,
+           decisionLogicThread)
 import Ouroboros.Network.TxSubmission.Inbound.State (DebugSharedTxState)
 import Ouroboros.Network.TxSubmission.Inbound.Types (TraceTxSubmissionInbound)
 
@@ -203,8 +204,9 @@ run :: forall resolver m.
     -> Tracer m (TraceLabelPeer NtNAddr (TraceFetchClientState BlockHeader))
     -> Tracer m (TraceTxSubmissionInbound Int (Tx Int))
     -> Tracer m (DebugSharedTxState NtNAddr Int (Tx Int))
+    -> Tracer m (DebugTxLogic NtNAddr Int (Tx Int))
     -> m Void
-run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch tracerTxSubmissionInbound tracerTxSubmissionDebug =
+run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch tracerTxSubmissionInbound tracerTxSubmissionDebug tracerTxLogic =
     Node.withNodeKernelThread blockGeneratorArgs (aTxs na)
       $ \ nodeKernel nodeKernelThread -> do
         dnsTimeoutScriptVar <- newTVarIO (aDNSTimeoutScript na)
@@ -293,7 +295,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch tracerTxSubmis
                withAsync (blockFetch nodeKernel) $ \blockFetchLogicThread ->
 
                  withAsync (decisionLogicThread
-                              tracerTxSubmissionDebug
+                              tracerTxLogic
                               (aTxDecisionPolicy na)
                               (readPeerGSVs (nkFetchClientRegistry nodeKernel))
                               (nkTxChannelsVar nodeKernel)
