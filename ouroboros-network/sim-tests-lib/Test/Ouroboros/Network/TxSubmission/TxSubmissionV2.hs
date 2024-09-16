@@ -120,7 +120,7 @@ runTxSubmission
      , MonadMVar  m
      , MonadSay   m
      , MonadST    m
-     , MonadSTM   m
+     , MonadLabelledSTM m
      , MonadTimer m
      , MonadThrow m
      , MonadThrow (STM m)
@@ -156,7 +156,9 @@ runTxSubmission tracer tracerDST tracerTxLogic state txDecisionPolicy = do
 
     txChannelsMVar <- Strict.newMVar (TxChannels Map.empty)
     sharedTxStateVar <- newSharedTxStateVar
+    labelTVarIO sharedTxStateVar "shared-tx-state"
     gsvVar <- Strict.newTVarIO Map.empty
+    labelTVarIO gsvVar "gsv"
 
     run state'
         txChannelsMVar
