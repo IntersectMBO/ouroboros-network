@@ -138,6 +138,7 @@ runTxSubmissionV2
      )
   => Tracer m (String, TraceSendRecv (TxSubmission2 txid (Tx txid)))
   -> Tracer m (DebugSharedTxState peeraddr txid (Tx txid))
+  -> Tracer m (DebugTxLogic peeraddr txid (Tx txid))
   -> Map peeraddr ( [Tx txid]
                   , ControlMessageSTM m
                   , Maybe DiffTime
@@ -145,7 +146,7 @@ runTxSubmissionV2
                   )
   -> TxDecisionPolicy
   -> m ([Tx txid], [[Tx txid]])
-runTxSubmissionV2 tracer tracerDST state txDecisionPolicy = do
+runTxSubmissionV2 tracer tracerDST tracerTxLogic state txDecisionPolicy = do
 
     state' <- traverse (\(b, c, d, e) -> do
         mempool <- newMempool b
@@ -190,10 +191,10 @@ runTxSubmissionV2 tracer tracerDST state txDecisionPolicy = do
                     -> m b
     runTxSubmission st txChannelsVar sharedTxStateVar
                     inboundMempool gsvVar k =
-      withAsync (decisionLogicThread tracerDST txDecisionPolicy (Strict.readTVar gsvVar) txChannelsVar sharedTxStateVar) $ \a -> do
+      withAsync (decisionLogicThread tracerTxLogic txDecisionPolicy (Strict.readTVar gsvVar) txChannelsVar sharedTxStateVar) $ \a -> do
             -- Construct txSubmission outbound client
         let clients = (\(addr, (mempool, ctrlMsgSTM, outDelay, _, outChannel, _)) -> do
-                        let client = txSubmissionOutbound verboseTracer
+                        let client = txSubmissionOutbound (Tracer $ say . show)
                                                (NumTxIdsToAck $ getNumTxIdsToReq
                                                               $ maxUnacknowledgedTxIds
                                                               $ txDecisionPolicy)
@@ -274,9 +275,9 @@ txSubmissionV2Simulation (TxSubmissionV2State state txDecisionPolicy) = do
         threadDelay (simDelayTime + 1000)
         atomically (traverse_ (`writeTVar` Terminate) controlMessageVars)
 
-  let tracer = verboseTracer <> debugTracer
-      tracer' = verboseTracer <> debugTracer
-  runTxSubmissionV2 tracer tracer' state'' txDecisionPolicy
+  let tracer :: forall a. Show a => Tracer (IOSim s) a
+      tracer = verboseTracer <> debugTracer
+  runTxSubmissionV2 tracer tracer tracer state'' txDecisionPolicy
 
 -- | Tests overall tx submission semantics. The properties checked in this
 -- property test are the same as for tx submission v1. We need this to know we
