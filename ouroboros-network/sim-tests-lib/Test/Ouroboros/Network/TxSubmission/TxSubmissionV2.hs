@@ -19,6 +19,7 @@ import NoThunks.Class
 import Control.Concurrent.Class.MonadMVar (MonadMVar)
 import Control.Concurrent.Class.MonadMVar.Strict qualified as Strict
 import Control.Concurrent.Class.MonadSTM
+import Control.Concurrent.Class.MonadSTM.Strict qualified as Strict
 import Control.Monad (forM)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
@@ -118,7 +119,7 @@ runTxSubmission
      , MonadMVar  m
      , MonadSay   m
      , MonadST    m
-     , MonadSTM   m
+     , MonadLabelledSTM m
      , MonadTimer m
      , MonadThrow m
      , MonadThrow (STM m)
@@ -154,6 +155,7 @@ runTxSubmission tracer tracerDST tracerTxLogic state txDecisionPolicy = do
 
     txChannelsMVar <- Strict.newMVar (TxChannels Map.empty)
     sharedTxStateVar <- newSharedTxStateVar
+    Strict.labelTVarIO sharedTxStateVar "shared-tx-state"
 
     run state'
         txChannelsMVar
