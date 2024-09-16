@@ -140,6 +140,7 @@ import Ouroboros.Network.Protocol.PeerSharing.Codec (byteLimitsPeerSharing,
 import Ouroboros.Network.Protocol.TxSubmission2.Codec (byteLimitsTxSubmission2,
            timeLimitsTxSubmission2)
 import Ouroboros.Network.TxSubmission.Inbound.Policy (TxDecisionPolicy)
+import Ouroboros.Network.TxSubmission.Inbound.Registry (DebugTxLogic)
 import Ouroboros.Network.TxSubmission.Inbound.State (DebugSharedTxState)
 import Ouroboros.Network.TxSubmission.Inbound.Types (TraceTxSubmissionInbound)
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..), genLedgerPoolsFrom)
@@ -995,6 +996,7 @@ data DiffusionTestTrace =
     | DiffusionFetchTrace (TraceFetchClientState BlockHeader)
     | DiffusionTxSubmissionInbound (TraceTxSubmissionInbound Int (Tx Int))
     | DiffusionTxSubmissionDebug (DebugSharedTxState NtNAddr Int (Tx Int))
+    | DiffusionTxLogicDebug (DebugTxLogic NtNAddr Int (Tx Int))
     | DiffusionDebugTrace String
     deriving (Show)
 
@@ -1291,6 +1293,10 @@ diffusionSimulation
                      . tracerWithTime
                      $ nodeTracer)
                      ( contramap DiffusionTxSubmissionDebug
+                     . tracerWithName addr
+                     . tracerWithTime
+                     $ nodeTracer)
+                     ( contramap DiffusionTxLogicDebug
                      . tracerWithName addr
                      . tracerWithTime
                      $ nodeTracer)
