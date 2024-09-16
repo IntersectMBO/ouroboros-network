@@ -78,6 +78,7 @@ import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.Block (MaxSlotNo (..), maxSlotNoFromWithOrigin,
            pointSlot)
 import Ouroboros.Network.BlockFetch
+import Ouroboros.Network.BlockFetch.ClientRegistry (readPeerGSVs)
 import Ouroboros.Network.BlockFetch.ConsensusInterface
            (ChainSelStarvation (ChainSelStarvationEndedAt))
 import Ouroboros.Network.ConnectionManager.State (ConnStateIdSupply)
@@ -116,7 +117,8 @@ import Ouroboros.Network.Snocket (MakeBearer, Snocket, TestAddress (..),
            invalidFileDescriptor)
 
 import Ouroboros.Network.TxSubmission.Inbound.Policy (TxDecisionPolicy)
-import Ouroboros.Network.TxSubmission.Inbound.Registry (decisionLogicThread)
+import Ouroboros.Network.TxSubmission.Inbound.Registry (DebugTxLogic,
+           decisionLogicThread)
 import Ouroboros.Network.TxSubmission.Inbound.State (DebugSharedTxState)
 import Ouroboros.Network.TxSubmission.Inbound.Types (TraceTxSubmissionInbound)
 
@@ -264,12 +266,14 @@ run :: forall extraState extraDebugState extraAPI
     -> Tracer m (TraceLabelPeer NtNAddr (TraceFetchClientState BlockHeader))
     -> Tracer m (TraceTxSubmissionInbound Int (Tx Int))
     -> Tracer m (DebugSharedTxState NtNAddr Int (Tx Int))
+    -> Tracer m (DebugTxLogic NtNAddr Int (Tx Int))
     -> m Void
 run blockGeneratorArgs limits ni na
     emptyExtraState emptyExtraCounters
     extraPeersAPI psArgs psToExtraCounters
     toExtraPeers requestPublicRootPeers peerChurnGovernor
-    tracers tracerBlockFetch tracerTxSubmissionInbound tracerTxSubmissionDebug =
+    tracers tracerBlockFetch tracerTxSubmissionInbound tracerTxSubmissionDebug
+    tracerTxLogic =
     Node.withNodeKernelThread blockGeneratorArgs (aTxs na)
       $ \ nodeKernel nodeKernelThread -> do
         dnsTimeoutScriptVar <- newTVarIO (aDNSTimeoutScript na)
@@ -344,7 +348,7 @@ run blockGeneratorArgs limits ni na
                withAsync (blockFetch nodeKernel) $ \blockFetchLogicThread ->
 
                  withAsync (decisionLogicThread
-                              tracerTxSubmissionDebug
+                              tracerTxLogic
                               (aTxDecisionPolicy na)
                               (readPeerGSVs (nkFetchClientRegistry nodeKernel))
                               (nkTxChannelsVar nodeKernel)
