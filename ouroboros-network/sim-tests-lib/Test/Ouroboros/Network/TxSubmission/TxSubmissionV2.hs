@@ -19,7 +19,7 @@ import Prelude hiding (seq)
 import NoThunks.Class
 
 import Control.Concurrent.Class.MonadMVar (MonadMVar)
-import Control.Concurrent.Class.MonadSTM
+import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
@@ -34,7 +34,7 @@ import Control.Tracer (Tracer (..), contramap)
 import Data.ByteString.Lazy (ByteString)
 import Data.ByteString.Lazy qualified as BSL
 import Data.Function (on)
-import Data.List (intercalate, nubBy)
+import Data.List (nubBy)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
@@ -59,7 +59,6 @@ import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
 
 import Control.Concurrent.Class.MonadMVar.Strict qualified as Strict
-import Control.Concurrent.Class.MonadSTM.Strict (StrictTVar)
 import Control.Concurrent.Class.MonadSTM.Strict qualified as Strict
 import Control.Monad (forM)
 import Data.Foldable (traverse_)
@@ -287,49 +286,58 @@ txSubmissionV2Simulation (TxSubmissionV2State state txDecisionPolicy) = do
 --
 prop_txSubmission :: TxSubmissionV2State -> Property
 prop_txSubmission st =
-  ioProperty $ do
-    tr' <- evaluateTrace (runSimTrace (txSubmissionV2Simulation st))
-    case tr' of
-         SimException e trace -> do
-            return $ counterexample (intercalate "\n" $ show e : trace) False
-         SimDeadLock trace -> do
-             return $ counterexample (intercalate "\n" $ "Deadlock" : trace) False
-         SimReturn (inmp, outmps) _trace -> do
-             r <- mapM (\outmp -> do
-               let outUniqueTxIds = nubBy (on (==) getTxId) outmp
-                   outValidTxs    = filter getTxValid outmp
-               case ( length outUniqueTxIds == length outmp
-                    , length outValidTxs == length outmp
-                    ) of
-                 (True, True) ->
-                   -- If we are presented with a stream of unique txids for valid
-                   -- transactions the inbound transactions should match the outbound
-                   -- transactions exactly.
-                   return $ counterexample ("(True, True) " ++ show outmp)
-                          $ checkMempools inmp (take (length inmp) outValidTxs)
+    let tr = runSimTrace (txSubmissionV2Simulation st) in
+    case traceResult True tr of
+         Left e ->
+             counterexample (show e)
+           . counterexample (ppTrace tr)
+           $ False
+         Right (inmp, outmps) ->
+             counterexample (ppTrace tr)
+           $ conjoin (validate inmp `map` outmps)
+  where
+    validate :: [Tx Int] -- the inbound mempool
+             -> [Tx Int] -- one of the outbound mempools
+             -> Property
+    validate inmp outmp =
+       let outUniqueTxIds = nubBy (on (==) getTxId) outmp
+           outValidTxs    = filter getTxValid outmp
+       in
+       case ( length outUniqueTxIds == length outmp
+            , length outValidTxs == length outmp
+            ) of
+         x@(True, True) ->
+           -- If we are presented with a stream of unique txids for valid
+           -- transactions the inbound transactions should match the outbound
+           -- transactions exactly.
+             counterexample (show x)
+           . counterexample (show inmp)
+           . counterexample (show outmp)
+           $ checkMempools inmp (take (length inmp) outValidTxs)
 
-                 (True, False) ->
-                   -- If we are presented with a stream of unique txids then we should have
-                   -- fetched all valid transactions.
-                   return $ counterexample ("(True, False) " ++ show outmp)
-                          $ checkMempools inmp (take (length inmp) outValidTxs)
+         x@(True, False) ->
+           -- If we are presented with a stream of unique txids then we should have
+           -- fetched all valid transactions.
+             counterexample (show x)
+           . counterexample (show inmp)
+           . counterexample (show outmp)
+           $ checkMempools inmp (take (length inmp) outValidTxs)
 
-                 (False, True) ->
-                   -- If we are presented with a stream of valid txids then we should have
-                   -- fetched some version of those transactions.
-                   return $ counterexample ("(False, True) " ++ show outmp)
-                          $ checkMempools (map getTxId inmp)
-                                          (take (length inmp)
-                                                (map getTxId $ filter getTxValid outUniqueTxIds))
+         x@(False, True) ->
+           -- If we are presented with a stream of valid txids then we should have
+           -- fetched some version of those transactions.
+             counterexample (show x)
+           . counterexample (show inmp)
+           . counterexample (show outmp)
+           $ checkMempools (map getTxId inmp)
+                           (take (length inmp)
+                                 (map getTxId $ filter getTxValid outUniqueTxIds))
 
-                 (False, False) ->
-                   -- If we are presented with a stream of valid and invalid Txs with
-                   -- duplicate txids we're content with completing the protocol
-                   -- without error.
-                   return $ property True)
-                     outmps
-             return $ counterexample (intercalate "\n" _trace)
-                    $ conjoin r
+         (False, False) ->
+           -- If we are presented with a stream of valid and invalid Txs with
+           -- duplicate txids we're content with completing the protocol
+           -- without error.
+           property True
 
 -- | This test checks that all txs are downloaded from all available peers if
 -- available.
@@ -371,15 +379,26 @@ prop_txSubmission_inflight st@(TxSubmissionV2State state _) =
                       inmp
            in resultRepeatedValidTxs === maxRepeatedValidTxs
 
-checkMempools :: (Eq a, Show a) => [a] -> [a] -> Property
-checkMempools [] [] = property True
-checkMempools _ [] = property True
-checkMempools [] _ = property False
-checkMempools inp@(i : is) outp@(o : os) =
-  if o == i then counterexample (show inp ++ " " ++ show outp)
-               $ checkMempools is os
-           else counterexample (show inp ++ " " ++ show outp)
-              $ checkMempools is outp
+
+-- | Check that the inbound mempool contains all outbound `tx`s as a proper
+-- subsequence.  It might contain more `tx`s from other peers.
+--
+checkMempools :: Eq tx
+              => [tx] -- inbound mempool
+              -> [tx] -- outbound mempool
+              -> Bool
+checkMempools _  []    = True  -- all outbound `tx` were found in the inbound
+                               -- mempool
+checkMempools [] (_:_) = False -- outbound mempool contains `tx`s which were
+                               -- not transferred to the inbound mempool
+checkMempools (i : is') os@(o : os')
+  | i == o
+  = checkMempools is' os'
+
+  | otherwise
+  -- `_i` is not present in the outbound mempool, we can skip it.
+  = checkMempools is' os
+
 
 -- | Split a list into sub list of at most `n` elements.
 --
