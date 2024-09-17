@@ -119,10 +119,9 @@ import Ouroboros.Network.Snocket (MakeBearer, Snocket, TestAddress (..),
            invalidFileDescriptor)
 
 import Ouroboros.Network.TxSubmission.Inbound.Policy (TxDecisionPolicy)
-import Ouroboros.Network.TxSubmission.Inbound.Registry (DebugTxLogic,
-           decisionLogicThread)
-import Ouroboros.Network.TxSubmission.Inbound.State (DebugSharedTxState)
-import Ouroboros.Network.TxSubmission.Inbound.Types (TraceTxSubmissionInbound)
+import Ouroboros.Network.TxSubmission.Inbound.Registry (decisionLogicThread)
+import Ouroboros.Network.TxSubmission.Inbound.Types (TraceTxLogic,
+           TraceTxSubmissionInbound)
 
 import Simulation.Network.Snocket (AddressType (..), FD)
 
@@ -135,7 +134,7 @@ import Test.Ouroboros.Network.Diffusion.Node.Kernel qualified as Node
 import Test.Ouroboros.Network.Diffusion.Node.MiniProtocols qualified as Node
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay,
            DNSTimeout, mockDNSActions)
-import Test.Ouroboros.Network.TxSubmission.Common (Tx)
+import Test.Ouroboros.Network.TxSubmission.Types (Tx)
 
 
 data Interfaces extraAPI m = Interfaces
@@ -267,14 +266,13 @@ run :: forall extraState extraDebugState extraAPI
                         extraPeers extraCounters m
     -> Tracer m (TraceLabelPeer NtNAddr (TraceFetchClientState BlockHeader))
     -> Tracer m (TraceTxSubmissionInbound Int (Tx Int))
-    -> Tracer m (DebugSharedTxState NtNAddr Int (Tx Int))
-    -> Tracer m (DebugTxLogic NtNAddr Int (Tx Int))
+    -> Tracer m (TraceTxLogic NtNAddr Int (Tx Int))
     -> m Void
 run blockGeneratorArgs limits ni na
     emptyExtraState emptyExtraCounters
     extraPeersAPI psArgs psToExtraCounters
     toExtraPeers requestPublicRootPeers peerChurnGovernor
-    tracers tracerBlockFetch tracerTxSubmissionInbound tracerTxSubmissionDebug
+    tracers tracerBlockFetch tracerTxSubmissionInbound
     tracerTxLogic =
     Node.withNodeKernelThread blockGeneratorArgs (aTxs na)
       $ \ nodeKernel nodeKernelThread -> do
@@ -353,7 +351,7 @@ run blockGeneratorArgs limits ni na
             apps = Node.applications
                      (aDebugTracer na)
                      tracerTxSubmissionInbound
-                     tracerTxSubmissionDebug
+                     tracerTxLogic
                      nodeKernel
                      Node.cborCodecs
                      limits
