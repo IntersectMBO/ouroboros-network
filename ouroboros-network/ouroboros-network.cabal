@@ -399,9 +399,10 @@ library testlib
     Test.Ouroboros.Network.PeerSelection.PeerMetric
     Test.Ouroboros.Network.PeerSelection.RootPeersDNS
     Test.Ouroboros.Network.TxSubmission
-    Test.Ouroboros.Network.TxSubmission.Common
-    Test.Ouroboros.Network.TxSubmission.TxSubmissionV1
-    Test.Ouroboros.Network.TxSubmission.TxSubmissionV2
+    Test.Ouroboros.Network.TxSubmission.AppV1
+    Test.Ouroboros.Network.TxSubmission.AppV2
+    Test.Ouroboros.Network.TxSubmission.TxLogic
+    Test.Ouroboros.Network.TxSubmission.Types
     Test.Ouroboros.Network.Version
 
 -- Simulation tests, and IO tests which don't require native system calls.
