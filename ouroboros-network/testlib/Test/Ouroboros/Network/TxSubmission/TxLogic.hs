@@ -1,15 +1,14 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE BlockArguments      #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DerivingVia         #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE TypeOperators       #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -18,7 +17,6 @@ module Test.Ouroboros.Network.TxSubmission.TxLogic where
 import Prelude hiding (seq)
 
 import Control.Exception (assert)
-import Control.Monad.Class.MonadTime.SI (Time (..))
 
 import Data.Foldable as Foldable (fold, foldl', toList)
 import Data.List (intercalate, isPrefixOf, isSuffixOf, mapAccumR, nub,
@@ -26,24 +24,21 @@ import Data.List (intercalate, isPrefixOf, isSuffixOf, mapAccumR, nub,
 import Data.Map.Merge.Strict qualified as Map
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, maybeToList)
 import Data.Monoid (Sum (..))
 import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set (Set)
 import Data.Set qualified as Set
-import Data.Typeable
-import System.Random (StdGen, mkStdGen)
 
 import NoThunks.Class
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type
-import Ouroboros.Network.TxSubmission.Inbound.V2.Decision (TxDecision (..))
-import Ouroboros.Network.TxSubmission.Inbound.V2.Decision qualified as TXS
-import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
-import Ouroboros.Network.TxSubmission.Inbound.V2.State (PeerTxState (..),
+import Ouroboros.Network.TxSubmission.Inbound.Decision (TxDecision (..))
+import Ouroboros.Network.TxSubmission.Inbound.Decision qualified as TXS
+import Ouroboros.Network.TxSubmission.Inbound.Policy
+import Ouroboros.Network.TxSubmission.Inbound.State (PeerTxState (..),
            SharedTxState (..))
-import Ouroboros.Network.TxSubmission.Inbound.V2.State qualified as TXS
-import Ouroboros.Network.TxSubmission.Inbound.V2.Types qualified as TXS
+import Ouroboros.Network.TxSubmission.Inbound.State qualified as TXS
 
 import Test.Ouroboros.Network.TxSubmission.Types
 
@@ -114,7 +109,6 @@ sharedTxStateInvariant
   :: forall peeraddr txid tx.
      ( Ord txid
      , Show txid
-     , Show tx
      )
   => SharedTxState peeraddr txid tx
   -> Property
@@ -142,9 +136,9 @@ sharedTxStateInvariant SharedTxState {
     .&&. counterexample "referenceCounts invariant violation"
          ( referenceCounts
            ===
-           Foldable.foldl'
+           foldl'
              (\m PeerTxState { unacknowledgedTxIds = unacked } ->
-               Foldable.foldl'
+               foldl'
                  (flip $
                    Map.alter (\case
                                 Nothing  -> Just $! 1
@@ -204,12 +198,10 @@ sharedTxStateInvariant SharedTxState {
                               ++ show (unacknowledgedTxIdsSet
                                         Set.\\ availableTxIdsSet
                                         Set.\\ unknownTxs
-                                        Set.\\ bufferedTxsSet
-                                        Set.\\ downloadedTxsSet))
+                                        Set.\\ bufferedTxsSet))
              (unacknowledgedTxIdsSet
                  Set.\\ availableTxIdsSet
                  Set.\\ unknownTxs
-                 Set.\\ downloadedTxsSet
                `Set.isSubsetOf`
                bufferedTxsSet
              )
@@ -235,9 +227,6 @@ sharedTxStateInvariant SharedTxState {
 
         unacknowledgedTxIdsSet :: Set txid
         unacknowledgedTxIdsSet = Set.fromList (toList unacknowledgedTxIds)
-
-        downloadedTxsSet :: Set txid
-        downloadedTxsSet = Set.unions $ map (Map.keysSet . downloadedTxs) txStates
 
     bufferedTxsSet = Map.keysSet bufferedTxs     :: Set txid
     liveSet        = Map.keysSet referenceCounts :: Set txid
@@ -302,17 +291,13 @@ mkArbPeerTxState mempoolHasTxFun txIdsInflight unacked txMaskMap =
                     requestedTxIdsInflight,
                     requestedTxsInflight,
                     requestedTxsInflightSize,
-                    unknownTxs,
-                    score = 0,
-                    scoreTs = Time 0,
-                    downloadedTxs = Map.empty,
-                    toMempoolTxs = Map.empty }
+                    unknownTxs }
       (Set.fromList $ Map.elems inflightMap)
       bufferedMap
   where
     mempoolHasTx   = apply mempoolHasTxFun
     availableTxIds = Map.fromList
-                   [ (txid, getTxAdvSize tx) | (txid, TxAvailable tx _) <- Map.assocs txMaskMap
+                   [ (txid, getTxSize tx) | (txid, TxAvailable tx _) <- Map.assocs txMaskMap
                    , not (mempoolHasTx txid)
                    ]
     unknownTxs     = Set.fromList
@@ -321,7 +306,7 @@ mkArbPeerTxState mempoolHasTxFun txIdsInflight unacked txMaskMap =
                    ]
 
     requestedTxIdsInflight   = fromIntegral txIdsInflight
-    requestedTxsInflightSize = foldMap getTxAdvSize inflightMap
+    requestedTxsInflightSize = foldMap getTxSize inflightMap
     requestedTxsInflight     = Map.keysSet inflightMap
 
     -- exclude `txid`s which are already in the mempool, we never request such
@@ -386,7 +371,6 @@ genSharedTxState maxTxIdsInflight = do
     _mempoolHasTxFun@(Fun (_, _, x) _) <- arbitrary :: Gen (Fun Bool Bool)
     let mempoolHasTxFun = Fun (function (const False), False, x) (const False)
     pss <- listOf1 (genArbPeerTxState mempoolHasTxFun maxTxIdsInflight)
-    seed <- arbitrary
 
     let pss' :: [(PeerAddr, ArbPeerTxState txid (Tx txid))]
         pss' = [0..] `zip` pss
@@ -402,7 +386,7 @@ genSharedTxState maxTxIdsInflight = do
                                  | (peeraddr, ArbPeerTxState { arbPeerTxState })
                                    <- pss'
                                  ],
-                 inflightTxs     = Foldable.foldl' (Map.unionWith (+)) Map.empty
+                 inflightTxs     = foldl' (Map.unionWith (+)) Map.empty
                                  [ Map.fromSet (const 1) (Set.map getTxId arbInflightSet)
                                  | ArbPeerTxState { arbInflightSet }
                                    <- pss
@@ -413,11 +397,7 @@ genSharedTxState maxTxIdsInflight = do
                                  | ArbPeerTxState { arbBufferedMap }
                                    <- pss
                                  ],
-                 referenceCounts = Map.empty,
-                 timedTxs        = Map.empty,
-                 inSubmissionToMempoolTxs
-                                 = Map.empty,
-                 peerRng         = mkStdGen seed
+                 referenceCounts = Map.empty
                }
 
     return ( mempoolHasTxFun
@@ -475,9 +455,9 @@ fixupSharedTxState _mempoolHasTx st@SharedTxState { peerTxStates } =
 
 
     referenceCounts' =
-      Foldable.foldl'
+      foldl'
         (\m PeerTxState { unacknowledgedTxIds } ->
-          Foldable.foldl'
+          foldl'
             (flip $
               Map.alter (\case
                            Nothing  -> Just $! 1
@@ -644,7 +624,7 @@ prop_acknowledgeTxIds :: ArbDecisionContextWithReceivedTxIds
                       -> Property
 prop_acknowledgeTxIds (ArbDecisionContextWithReceivedTxIds policy st ps _ _ _) =
     case TXS.acknowledgeTxIds policy st ps of
-      (numTxIdsToAck, txIdsToRequest, TXS.TxsToMempool txIdsTxs, TXS.RefCountDiff { TXS.txIdsToAck }, ps') | txIdsToRequest > 0 ->
+      (numTxIdsToAck, txIdsToRequest, txs, TXS.RefCountDiff { TXS.txIdsToAck }, ps') | txIdsToRequest > 0 ->
              counterexample "number of tx ids to ack must agree with RefCountDiff"
              ( fromIntegral numTxIdsToAck
                ===
@@ -662,10 +642,12 @@ prop_acknowledgeTxIds (ArbDecisionContextWithReceivedTxIds policy st ps _ _ _) =
                     Map.fromListWith (+) ((,1) <$> txIdsToAck')
 
         .&&. counterexample "acknowledged txs" (counterexample ("numTxIdsToAck = " ++ show numTxIdsToAck)
-             let acked :: Set TxId
-                 acked = Set.fromList $ take (fromIntegral numTxIdsToAck) (toList $ unacknowledgedTxIds ps)
-             in property $ Set.isSubsetOf (Set.fromList $ map fst txIdsTxs) acked)
-
+             let acked :: [TxId]
+                 acked = [ txid
+                         | txid <- take (fromIntegral numTxIdsToAck) (toList $ unacknowledgedTxIds ps)
+                         , Just _ <- maybeToList $ txid `Map.lookup` bufferedTxs st
+                         ]
+             in getTxId `map` txs === acked)
       _otherwise -> property True
   where
     stripSuffix :: Eq a => [a] -> [a] -> Maybe [a]
@@ -768,20 +750,12 @@ instance Arbitrary ArbCollectTxs where
 
         receivedTx <- sublistOf requestedTxIds'
                   >>= traverse (\txid -> do
-                                  -- real size, which might be different from
-                                  -- the advertised size
-                                  size <- frequency [ (9, pure (availableTxIds Map.! txid))
-                                                    , (1, chooseEnum (0, maxTxSize))
-                                                    ]
-
                                   valid <- frequency [(4, pure True), (1, pure False)]
-                                  pure $ Tx { getTxId      = txid,
-                                              getTxSize    = size,
-                                              -- `availableTxIds` contains advertised sizes
-                                              getTxAdvSize = availableTxIds Map.! txid,
-                                              getTxValid   = valid })
+                                  pure $ Tx { getTxId = txid,
+                                              getTxSize = availableTxIds Map.! txid,
+                                              getTxValid = valid })
 
-        pure $ assert (foldMap getTxAdvSize receivedTx <= requestedTxsInflightSize)
+        pure $ assert (foldMap getTxSize receivedTx <= requestedTxsInflightSize)
              $ ArbCollectTxs mempoolHasTxFun
                               (Set.fromList requestedTxIds')
                               (Map.fromList [ (getTxId tx, tx) | tx <- receivedTx ])
@@ -873,53 +847,25 @@ prop_collectTxsImpl (ArbCollectTxs _mempoolHasTxFun txidsRequested txsReceived p
       label ("number of txids inflight "  ++ labelInt 25 5 (Map.size $ inflightTxs st)) $
       label ("number of txids requested " ++ labelInt 25 5 (Set.size txidsRequested)) $
       label ("number of txids received "  ++ labelInt 10 2 (Map.size txsReceived)) $
-      label ("hasTxSizeError " ++ show hasTxSizeErr) $
 
-      case TXS.collectTxsImpl getTxSize peeraddr txidsRequested txsReceived st of
-        Right st' | not hasTxSizeErr ->
-          let ps' = peerTxStates st' Map.! peeraddr in
-               -- InboundState invariant
-               counterexample
-                 (  "InboundState invariant violation:\n" ++ show st' ++ "\n"
-                 ++ show ps'
-                 )
-                 (sharedTxStateInvariant st')
+           -- InboundState invariant
+           counterexample
+             (  "InboundState invariant violation:\n" ++ show st' ++ "\n"
+             ++ show ps'
+             )
+             (sharedTxStateInvariant st')
 
-          .&&.
-               -- `collectTxsImpl` doesn't modify unacknowledged TxId's
-               counterexample "acknowledged property violation"
-               ( let unacked  = toList $ unacknowledgedTxIds ps
-                     unacked' = toList $ unacknowledgedTxIds ps'
-                 in unacked === unacked'
-               )
-
-        Right _ ->
-            counterexample "collectTxsImpl should return Left"
-          . counterexample (show txsReceived)
-          $ False
-        Left _ | not hasTxSizeErr ->
-          counterexample "collectTxsImpl should return Right" False
-
-        Left (TXS.ProtocolErrorTxSizeError as) ->
-            counterexample (show as)
-          $ Set.fromList ((\(txid, _, _) -> coerceTxId txid) `map` as)
-            ===
-            Map.keysSet (Map.filter (\tx -> getTxSize tx /= getTxAdvSize tx) txsReceived)
-        Left e ->
-          counterexample ("unexpected error: " ++ show e) False
+      .&&.
+           -- `collectTxsImpl` doesn't modify unacknowledged TxId's
+           counterexample "acknowledged property violation"
+           ( let unacked  = toList $ unacknowledgedTxIds ps
+                 unacked' = toList $ unacknowledgedTxIds ps'
+             in unacked === unacked'
+           )
   where
-    hasTxSizeErr = any (\tx -> getTxSize tx /= getTxAdvSize tx) txsReceived
+    st' = TXS.collectTxsImpl peeraddr txidsRequested txsReceived st
+    ps' = peerTxStates st' Map.! peeraddr
 
-    -- The `ProtocolErrorTxSizeError` type is an existential type.  We know that
-    -- the type of `txid` is `TxId`, we just don't have evidence for it.
-    coerceTxId :: Typeable txid => txid -> TxId
-    coerceTxId txid = case cast txid of
-      Just a  -> a
-      Nothing -> error "impossible happened! Is the test still using `TxId` for `txid`?"
-
-
-
-deriving via OnlyCheckWhnfNamed "StdGen" StdGen instance NoThunks StdGen
 
 -- | Verify that `SharedTxState` returned by `collectTxsImpl` if evaluated to
 -- WHNF, it doesn't contain any thunks.
@@ -928,11 +874,11 @@ prop_collectTxsImpl_nothunks
   :: ArbCollectTxs
   -> Property
 prop_collectTxsImpl_nothunks (ArbCollectTxs _mempoolHasTxFun txidsRequested txsReceived peeraddr _ st) =
-    case TXS.collectTxsImpl getTxSize peeraddr txidsRequested txsReceived st of
-      Right st' -> case unsafeNoThunks $! st' of
-        Nothing  -> property True
-        Just ctx -> counterexample (show ctx) False
-      Left _ -> property True
+    case unsafeNoThunks $! st' of
+      Nothing  -> property True
+      Just ctx -> counterexample (show ctx) False
+  where
+    st' = TXS.collectTxsImpl peeraddr txidsRequested txsReceived st
 
 
 newtype ArbTxDecisionPolicy = ArbTxDecisionPolicy TxDecisionPolicy
@@ -946,10 +892,7 @@ instance Arbitrary ArbTxDecisionPolicy where
             <*> (getSmall . getPositive <$> arbitrary)
             <*> (SizeInBytes . getPositive <$> arbitrary)
             <*> (SizeInBytes . getPositive <$> arbitrary)
-            <*> (getSmall . getPositive <$> arbitrary)
-            <*> (realToFrac <$> choose (0 :: Double, 2))
-            <*> (choose (0, 1))
-            <*> (choose (0, 1800)))
+            <*> (getSmall . getPositive <$> arbitrary))
 
     shrink (ArbTxDecisionPolicy a@TxDecisionPolicy {
               maxNumTxIdsToRequest,
@@ -1474,22 +1417,14 @@ instance Arbitrary ArbDecisionContextWithReceivedTxIds where
           ps' = fixupPeerTxStateWithPolicy policy ps
           txIdsToAck' = take (fromIntegral (TXS.requestedTxIdsInflight $ peerTxStates st' Map.! peeraddr)) txIdsToAck
 
-      downTxsNum <- choose (0, length txIdsToAck')
-      let downloadedTxs = Foldable.foldl' pruneTx Map.empty $ take downTxsNum $ Map.toList (bufferedTxs st')
-          ps'' = ps' { downloadedTxs = downloadedTxs }
-
       return ArbDecisionContextWithReceivedTxIds {
           adcrDecisionPolicy = policy,
           adcrSharedState    = st',
-          adcrPeerTxState    = ps'',
+          adcrPeerTxState    = ps',
           adcrMempoolHasTx   = mempoolHasTx,
           adcrTxsToAck       = txIdsToAck',
           adcrPeerAddr       = peeraddr
         }
-      where
-        pruneTx :: Map TxId tx -> (TxId, Maybe tx) -> Map TxId tx
-        pruneTx m (_, Nothing)    = m
-        pruneTx m (txid, Just tx) = Map.insert txid tx m
 
     shrink ArbDecisionContextWithReceivedTxIds {
         adcrDecisionPolicy = policy,
