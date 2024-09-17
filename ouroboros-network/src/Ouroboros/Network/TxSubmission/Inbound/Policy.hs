@@ -1,10 +1,26 @@
+{-# LANGUAGE NumericUnderscores #-}
+
 module Ouroboros.Network.TxSubmission.Inbound.Policy
   ( TxDecisionPolicy (..)
   , defaultTxDecisionPolicy
+  , max_TX_SIZE
   ) where
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToReq (..))
 import Ouroboros.Network.SizeInBytes (SizeInBytes (..))
+
+
+-- | Maximal tx size.
+--
+-- Affects:
+--
+-- * `TxDecisionPolicy`
+-- * `maximumIngressQueue` for `tx-submission` mini-protocol, see
+--   `Ouroboros.Network.NodeToNode.txSubmissionProtocolLimits`
+--
+max_TX_SIZE :: SizeInBytes
+max_TX_SIZE = 65_540
+
 
 -- | Policy for making decisions
 --
@@ -37,9 +53,10 @@ data TxDecisionPolicy = TxDecisionPolicy {
 defaultTxDecisionPolicy :: TxDecisionPolicy
 defaultTxDecisionPolicy =
   TxDecisionPolicy {
-    maxNumTxIdsToRequest   = 1,
-    maxUnacknowledgedTxIds = 2,
-    txsSizeInflightPerPeer = 2,
-    maxTxsSizeInflight     = maxBound,
-    txInflightMultiplicity = 2
+    maxNumTxIdsToRequest   = 3,
+    maxUnacknowledgedTxIds = 10, -- must be the same as txSubmissionMaxUnacked
+                                 -- TODO: we should take it `MiniProtocolParameters`.
+    txsSizeInflightPerPeer = max_TX_SIZE * 6,
+    maxTxsSizeInflight     = max_TX_SIZE * 20,
+    txInflightMultiplicity = 1
   }
