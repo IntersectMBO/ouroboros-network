@@ -4,6 +4,7 @@
 {-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -99,8 +100,10 @@ import Ouroboros.Network.Protocol.Handshake.Type
 import Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..))
 import Ouroboros.Network.Server.RateLimiting
+import Ouroboros.Network.SizeInBytes
 import Ouroboros.Network.Snocket
 import Ouroboros.Network.Socket
+import Ouroboros.Network.TxSubmission.Inbound.Policy (max_TX_SIZE)
 import Ouroboros.Network.Util.ShowProxy (ShowProxy, showProxy)
 
 
@@ -353,12 +356,12 @@ txSubmissionProtocolLimits MiniProtocolParameters { txSubmissionMaxUnacked } = M
       -- queue of 'txSubmissionOutbound' is bounded by the ingress side of
       -- the 'txSubmissionInbound'
       --
-      -- Currently the value of 'txSubmissionMaxUnacked' is '100', for
-      -- which the upper bound is `100 * (44 + 65_540) = 6_558_400`, we add
+      -- Currently the value of 'txSubmissionMaxUnacked' is '10', for
+      -- which the upper bound is `10 * (44 + 65_540) = 655_840`, we add
       -- 10% as a safety margin.
       --
       maximumIngressQueue = addSafetyMargin $
-          fromIntegral txSubmissionMaxUnacked * (44 + 65_540)
+          fromIntegral txSubmissionMaxUnacked * (44 + fromIntegral @SizeInBytes @Int max_TX_SIZE)
     }
 
 keepAliveProtocolLimits _ =
