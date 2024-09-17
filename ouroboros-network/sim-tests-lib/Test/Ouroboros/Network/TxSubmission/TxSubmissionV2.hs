@@ -69,8 +69,8 @@ tests = testGroup "Ouroboros.Network.TxSubmission.TxSubmissionV2"
   [ testProperty "txSubmission" prop_txSubmission
   ]
 
-data TxSubmissionV2State =
-  TxSubmissionV2State {
+data TxSubmissionState =
+  TxSubmissionState {
       peerMap :: Map Int ( [Tx Int]
                          , Maybe (Positive SmallDelay)
                          , Maybe (Positive SmallDelay)
@@ -81,7 +81,7 @@ data TxSubmissionV2State =
     , decisionPolicy :: TxDecisionPolicy
   } deriving (Show)
 
-instance Arbitrary TxSubmissionV2State where
+instance Arbitrary TxSubmissionState where
   arbitrary = do
     ArbTxDecisionPolicy decisionPolicy <- arbitrary
     peersN <- choose (1, 10)
@@ -91,12 +91,12 @@ instance Arbitrary TxSubmissionV2State where
     peersState <- map (\(a, (b, c)) -> (a, b, c))
                 . zip txs
               <$> vectorOf peersN arbitrary
-    return (TxSubmissionV2State (Map.fromList (zip peers peersState)) decisionPolicy)
-  shrink TxSubmissionV2State { peerMap, decisionPolicy } =
-    TxSubmissionV2State <$> shrinkMap1 peerMap
-                        <*> [ policy
-                            | ArbTxDecisionPolicy policy <- shrink (ArbTxDecisionPolicy decisionPolicy)
-                            ]
+    return (TxSubmissionState (Map.fromList (zip peers peersState)) decisionPolicy)
+  shrink TxSubmissionState { peerMap, decisionPolicy } =
+    TxSubmissionState <$> shrinkMap1 peerMap
+                      <*> [ policy
+                          | ArbTxDecisionPolicy policy <- shrink (ArbTxDecisionPolicy decisionPolicy)
+                          ]
     where
       shrinkMap1 :: (Ord k, Arbitrary k, Arbitrary v) => Map k v -> [Map k v]
       shrinkMap1 m
@@ -105,7 +105,7 @@ instance Arbitrary TxSubmissionV2State where
         where
           singletonMaps = [Map.singleton k v | (k, v) <- Map.toList m]
 
-runTxSubmissionV2
+runTxSubmission
   :: forall m peeraddr txid.
      ( MonadAsync m
      , MonadDelay m
@@ -137,7 +137,7 @@ runTxSubmissionV2
                   )
   -> TxDecisionPolicy
   -> m ([Tx txid], [[Tx txid]])
-runTxSubmissionV2 tracer tracerDST state txDecisionPolicy = do
+runTxSubmission tracer tracerDST state txDecisionPolicy = do
 
     state' <- traverse (\(b, c, d, e) -> do
         mempool <- newMempool b
@@ -150,35 +150,35 @@ runTxSubmissionV2 tracer tracerDST state txDecisionPolicy = do
     txChannelsMVar <- Strict.newMVar (TxChannels Map.empty)
     sharedTxStateVar <- newSharedTxStateVar
 
-    runTxSubmission state'
-                    txChannelsMVar
-                    sharedTxStateVar
-                    inboundMempool
-                    (\(a, as) -> do
-                      _ <- waitAnyCancel as
-                      cancel a
+    run state'
+        txChannelsMVar
+        sharedTxStateVar
+        inboundMempool
+        (\(a, as) -> do
+          _ <- waitAnyCancel as
+          cancel a
 
-                      inmp <- readMempool inboundMempool
-                      outmp <- forM (Map.elems state')
-                                   (\(outMempool, _, _, _, _, _) -> readMempool outMempool)
-                      return (inmp, outmp)
-                    )
+          inmp <- readMempool inboundMempool
+          outmp <- forM (Map.elems state')
+                       (\(outMempool, _, _, _, _, _) -> readMempool outMempool)
+          return (inmp, outmp)
+        )
 
   where
-    runTxSubmission :: Map peeraddr ( Mempool m txid -- ^ Outbound mempool
-                                    , ControlMessageSTM m
-                                    , Maybe DiffTime -- ^ Outbound delay
-                                    , Maybe DiffTime -- ^ Inbound delay
-                                    , Channel m ByteString -- ^ Outbound channel
-                                    , Channel m ByteString -- ^ Inbound channel
-                                    )
-                    -> TxChannelsVar m peeraddr txid (Tx txid)
-                    -> SharedTxStateVar m peeraddr txid (Tx txid)
-                    -> Mempool m txid -- ^ Inbound mempool
-                    -> ((Async m Void, [Async m ((), Maybe ByteString)]) -> m b)
-                    -> m b
-    runTxSubmission st txChannelsVar sharedTxStateVar
-                    inboundMempool k =
+    run :: Map peeraddr ( Mempool m txid -- ^ Outbound mempool
+                        , ControlMessageSTM m
+                        , Maybe DiffTime -- ^ Outbound delay
+                        , Maybe DiffTime -- ^ Inbound delay
+                        , Channel m ByteString -- ^ Outbound channel
+                        , Channel m ByteString -- ^ Inbound channel
+                        )
+        -> TxChannelsVar m peeraddr txid (Tx txid)
+        -> SharedTxStateVar m peeraddr txid (Tx txid)
+        -> Mempool m txid -- ^ Inbound mempool
+        -> ((Async m Void, [Async m ((), Maybe ByteString)]) -> m b)
+        -> m b
+    run st txChannelsVar sharedTxStateVar
+        inboundMempool k =
       withAsync (decisionLogicThread tracerDST txDecisionPolicy txChannelsVar sharedTxStateVar) $ \a -> do
             -- Construct txSubmission outbound client
         let clients = (\(addr, (mempool, ctrlMsgSTM, outDelay, _, outChannel, _)) -> do
@@ -226,8 +226,8 @@ runTxSubmissionV2 tracer tracerDST state txDecisionPolicy = do
         go as []     = action (reverse as)
         go as (x:xs) = withAsync x (\a -> go (a:as) xs)
 
-txSubmissionV2Simulation :: forall s . TxSubmissionV2State -> IOSim s ([Tx Int], [[Tx Int]])
-txSubmissionV2Simulation (TxSubmissionV2State state txDecisionPolicy) = do
+txSubmissionSimulation :: forall s . TxSubmissionState -> IOSim s ([Tx Int], [[Tx Int]])
+txSubmissionSimulation (TxSubmissionState state txDecisionPolicy) = do
   state' <- traverse (\(txs, mbOutDelay, mbInDelay) -> do
                       let mbOutDelayTime = getSmallDelay . getPositive <$> mbOutDelay
                           mbInDelayTime  = getSmallDelay . getPositive <$> mbInDelay
@@ -265,16 +265,16 @@ txSubmissionV2Simulation (TxSubmissionV2State state txDecisionPolicy) = do
 
   let tracer = verboseTracer <> debugTracer
       tracer' = verboseTracer <> debugTracer
-  runTxSubmissionV2 tracer tracer' state'' txDecisionPolicy
+  runTxSubmission tracer tracer' state'' txDecisionPolicy
 
 -- | Tests overall tx submission semantics. The properties checked in this
 -- property test are the same as for tx submission v1. We need this to know we
 -- didn't regress.
 --
-prop_txSubmission :: TxSubmissionV2State -> Property
+prop_txSubmission :: TxSubmissionState -> Property
 prop_txSubmission st =
   ioProperty $ do
-    tr' <- evaluateTrace (runSimTrace (txSubmissionV2Simulation st))
+    tr' <- evaluateTrace (runSimTrace (txSubmissionSimulation st))
     case tr' of
          SimException e trace -> do
             return $ counterexample (intercalate "\n" $ show e : trace) False
