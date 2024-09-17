@@ -105,8 +105,8 @@ import Ouroboros.Network.TxSubmission.Inbound.Policy (TxDecisionPolicy (..))
 import Ouroboros.Network.TxSubmission.Inbound.Registry (SharedTxStateVar,
            TxChannelsVar, withPeer)
 import Ouroboros.Network.TxSubmission.Inbound.Server (txSubmissionInboundV2)
-import Ouroboros.Network.TxSubmission.Inbound.State (DebugSharedTxState)
-import Ouroboros.Network.TxSubmission.Inbound.Types (TraceTxSubmissionInbound)
+import Ouroboros.Network.TxSubmission.Inbound.Types (TraceTxLogic,
+           TraceTxSubmissionInbound)
 import Ouroboros.Network.TxSubmission.Outbound (txSubmissionOutbound)
 import Test.Ouroboros.Network.Diffusion.Node.NodeKernel
 import Test.Ouroboros.Network.TxSubmission.Common (Mempool, Tx,
@@ -261,7 +261,7 @@ applications :: forall block header s m.
                 )
              => Tracer m String
              -> Tracer m (TraceTxSubmissionInbound Int (Tx Int))
-             -> Tracer m (DebugSharedTxState NtNAddr Int (Tx Int))
+             -> Tracer m (TraceTxLogic NtNAddr Int (Tx Int))
              -> NodeKernel header block s Int m
              -> Codecs NtNAddr header block m
              -> LimitsAndTimeouts header block
