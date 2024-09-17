@@ -103,10 +103,9 @@ import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (MakeBearer, Snocket, TestAddress (..),
            invalidFileDescriptor)
 import Ouroboros.Network.TxSubmission.Inbound.Policy (TxDecisionPolicy)
-import Ouroboros.Network.TxSubmission.Inbound.Registry (DebugTxLogic,
-           decisionLogicThread)
-import Ouroboros.Network.TxSubmission.Inbound.State (DebugSharedTxState)
-import Ouroboros.Network.TxSubmission.Inbound.Types (TraceTxSubmissionInbound)
+import Ouroboros.Network.TxSubmission.Inbound.Registry (decisionLogicThread)
+import Ouroboros.Network.TxSubmission.Inbound.Types (TraceTxLogic,
+           TraceTxSubmissionInbound)
 
 import Simulation.Network.Snocket (AddressType (..), FD)
 
@@ -118,7 +117,7 @@ import Test.Ouroboros.Network.Testnet.Node.Kernel (NodeKernel (..), NtCAddr,
            NtCVersion, NtCVersionData, NtNAddr, NtNVersion, NtNVersionData (..))
 import Test.Ouroboros.Network.Testnet.Node.Kernel qualified as Node
 import Test.Ouroboros.Network.Testnet.Node.MiniProtocols qualified as Node
-import Test.Ouroboros.Network.TxSubmission.Common (Tx)
+import Test.Ouroboros.Network.TxSubmission.Types (Tx)
 
 
 data Interfaces m = Interfaces
@@ -201,10 +200,9 @@ run :: forall resolver m.
                              ResolverException m
     -> Tracer m (TraceLabelPeer NtNAddr (TraceFetchClientState BlockHeader))
     -> Tracer m (TraceTxSubmissionInbound Int (Tx Int))
-    -> Tracer m (DebugSharedTxState NtNAddr Int (Tx Int))
-    -> Tracer m (DebugTxLogic NtNAddr Int (Tx Int))
+    -> Tracer m (TraceTxLogic NtNAddr Int (Tx Int))
     -> m Void
-run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch tracerTxSubmissionInbound tracerTxSubmissionDebug tracerTxLogic =
+run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch tracerTxSubmissionInbound tracerTxLogic =
     Node.withNodeKernelThread blockGeneratorArgs (aTxs na)
       $ \ nodeKernel nodeKernelThread -> do
         dnsTimeoutScriptVar <- newTVarIO (aDNSTimeoutScript na)
@@ -281,7 +279,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch tracerTxSubmis
               , Diff.P2P.daPeerSharingRegistry    = nkPeerSharingRegistry nodeKernel
               }
 
-        let apps = Node.applications (aDebugTracer na) tracerTxSubmissionInbound tracerTxSubmissionDebug nodeKernel Node.cborCodecs limits appArgs blockHeader
+        let apps = Node.applications (aDebugTracer na) tracerTxSubmissionInbound tracerTxLogic nodeKernel Node.cborCodecs limits appArgs blockHeader
 
         withAsync
            (Diff.P2P.runM interfaces

@@ -10,7 +10,7 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.Ouroboros.Network.TxSubmission.TxSubmissionV2 (tests) where
+module Test.Ouroboros.Network.TxSubmission.AppV2 (tests) where
 
 import Prelude hiding (seq)
 
@@ -52,11 +52,12 @@ import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Inbound.Policy
 import Ouroboros.Network.TxSubmission.Inbound.Registry
 import Ouroboros.Network.TxSubmission.Inbound.Server (txSubmissionInboundV2)
-import Ouroboros.Network.TxSubmission.Inbound.State
+import Ouroboros.Network.TxSubmission.Inbound.Types (TraceTxLogic)
 import Ouroboros.Network.TxSubmission.Outbound
 import Ouroboros.Network.Util.ShowProxy
 
-import Test.Ouroboros.Network.TxSubmission.Common hiding (tests)
+import Test.Ouroboros.Network.TxSubmission.TxLogic hiding (tests)
+import Test.Ouroboros.Network.TxSubmission.Types
 import Test.Ouroboros.Network.Utils hiding (debugTracer)
 
 import Test.QuickCheck
@@ -65,7 +66,7 @@ import Test.Tasty.QuickCheck (testProperty)
 
 
 tests :: TestTree
-tests = testGroup "Ouroboros.Network.TxSubmission.TxSubmissionV2"
+tests = testGroup "AppV2"
   [ testProperty "txSubmission" prop_txSubmission
   , testProperty "txSubmission inflight" prop_txSubmission_inflight
   ]
@@ -132,8 +133,7 @@ runTxSubmission
      , txid ~ Int
      )
   => Tracer m (String, TraceSendRecv (TxSubmission2 txid (Tx txid)))
-  -> Tracer m (DebugSharedTxState peeraddr txid (Tx txid))
-  -> Tracer m (DebugTxLogic peeraddr txid (Tx txid))
+  -> Tracer m (TraceTxLogic peeraddr txid (Tx txid))
   -> Map peeraddr ( [Tx txid]
                   , ControlMessageSTM m
                   , Maybe DiffTime
@@ -141,7 +141,7 @@ runTxSubmission
                   )
   -> TxDecisionPolicy
   -> m ([Tx txid], [[Tx txid]])
-runTxSubmission tracer tracerDST tracerTxLogic state txDecisionPolicy = do
+runTxSubmission tracer tracerTxLogic state txDecisionPolicy = do
 
     state' <- traverse (\(b, c, d, e) -> do
         mempool <- newMempool b
@@ -209,7 +209,7 @@ runTxSubmission tracer tracerDST tracerTxLogic state txDecisionPolicy = do
 
             -- Construct txSubmission inbound server
             servers = (\(addr, (_, _, _, inDelay, _, inChannel)) ->
-                         withPeer tracerDST
+                         withPeer tracerTxLogic
                                   txChannelsVar
                                   sharedTxStateVar
                                   (getMempoolReader inboundMempool)
@@ -274,7 +274,7 @@ txSubmissionSimulation (TxSubmissionState state txDecisionPolicy) = do
 
   let tracer :: forall a. Show a => Tracer (IOSim s) a
       tracer = verboseTracer <> debugTracer
-  runTxSubmission tracer tracer tracer state'' txDecisionPolicy
+  runTxSubmission tracer tracer state'' txDecisionPolicy
 
 -- | Tests overall tx submission semantics. The properties checked in this
 -- property test are the same as for tx submission v1. We need this to know we
