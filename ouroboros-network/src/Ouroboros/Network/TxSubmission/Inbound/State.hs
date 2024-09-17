@@ -16,8 +16,6 @@ module Ouroboros.Network.TxSubmission.Inbound.State
   , receivedTxIds
   , collectTxs
   , acknowledgeTxIds
-    -- * Debug output
-  , DebugSharedTxState (..)
     -- * Internals, only exported for testing purposes:
   , RefCountDiff (..)
   , updateRefCounts
@@ -42,61 +40,14 @@ import Data.Sequence.Strict (StrictSeq)
 import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set (Set)
 import Data.Set qualified as Set
-import GHC.Generics (Generic)
-
-import NoThunks.Class (NoThunks (..))
 
 import GHC.Stack (HasCallStack)
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..),
            NumTxIdsToReq (..))
 import Ouroboros.Network.SizeInBytes (SizeInBytes (..))
 import Ouroboros.Network.TxSubmission.Inbound.Policy
+import Ouroboros.Network.TxSubmission.Inbound.Types
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..))
-
-
-data PeerTxState txid tx = PeerTxState {
-       -- | Those transactions (by their identifier) that the client has told
-       -- us about, and which we have not yet acknowledged. This is kept in
-       -- the order in which the client gave them to us. This is the same order
-       -- in which we submit them to the mempool (or for this example, the final
-       -- result order). It is also the order we acknowledge in.
-       --
-       unacknowledgedTxIds      :: !(StrictSeq txid),
-
-       -- | Set of known transaction ids which can be requested from this peer.
-       --
-       availableTxIds           :: !(Map txid SizeInBytes),
-
-       -- | The number of transaction identifiers that we have requested but
-       -- which have not yet been replied to. We need to track this it keep
-       -- our requests within the limit on the number of unacknowledged txids.
-       --
-       requestedTxIdsInflight   :: !NumTxIdsToReq,
-
-       -- | The size in bytes of transactions that we have requested but which
-       -- have not yet been replied to. We need to track this it keep our
-       -- requests within the limit on the number of unacknowledged txids.
-       --
-       requestedTxsInflightSize :: !SizeInBytes,
-
-       -- | The set of requested `txid`s.
-       --
-       requestedTxsInflight     :: !(Set txid),
-
-       -- | A subset of `unacknowledgedTxIds` which were unknown to the peer.
-       -- We need to track these `txid`s since they need to be acknowledged.
-       --
-       -- We track these `txid` per peer, rather than in `bufferedTxs` map,
-       -- since that could potentially lead to corrupting the node, not being
-       -- able to download a `tx` which is needed & available from other nodes.
-       --
-       unknownTxs               :: !(Set txid)
-    }
-    deriving (Eq, Show, Generic)
-
-instance ( NoThunks txid
-         , NoThunks tx
-         ) => NoThunks (PeerTxState txid tx)
 
 
 -- | Compute number of `txids` to request respecting `TxDecisionPolicy`; update
@@ -134,90 +85,6 @@ numTxIdsToRequest
 
     unackedAndRequested = unacked + requestedTxIdsInflight
     unacked = fromIntegral $ StrictSeq.length unacknowledgedTxIds
-
-
--- | Shared state of all `TxSubmission` clients.
---
--- New `txid` enters `unacknowledgedTxIds` it is also added to `availableTxIds`
--- and `referenceCounts` (see `acknowledgeTxIdsImpl`).
---
--- When a `txid` id is selected to be downloaded, it's added to
--- `requestedTxsInflightSize` (see
--- `Ouroboros.Network.TxSubmission.Inbound.Decision.pickTxsToDownload`).
---
--- When the request arrives, the `txid` is removed from `inflightTxs`.  It
--- might be added to `unknownTxs` if the server didn't have that `txid`, or
--- it's added to `bufferedTxs` (see `collectTxsImpl`).
---
--- Whenever we choose `txid` to acknowledge (either in `acknowledtxsIdsImpl`,
--- `collectTxsImpl` or
--- `Ouroboros.Network.TxSubmission.Inbound.Decision.pickTxsToDownload`, we also
--- recalculate `referenceCounts` and only keep live `txid`s in other maps (e.g.
--- `availableTxIds`, `bufferedTxs`, `unknownTxs`).
---
-data SharedTxState peeraddr txid tx = SharedTxState {
-
-      -- | Map of peer states.
-      --
-      -- /Invariant:/ for peeraddr's which are registered using `withPeer`,
-      -- there's always an entry in this map even if the set of `txid`s is
-      -- empty.
-      --
-      peerTxStates    :: !(Map peeraddr (PeerTxState txid tx)),
-
-      -- | Set of transactions which are in-flight (have already been
-      -- requested) together with multiplicities (from how many peers it is
-      -- currently in-flight)
-      --
-      -- This set can intersect with `availableTxIds`.
-      --
-      inflightTxs     :: !(Map txid Int),
-
-      -- | Overall size of all `tx`s in-flight.
-      --
-      inflightTxsSize :: !SizeInBytes,
-
-      -- | Map of `tx` which:
-      --
-      --    * were downloaded,
-      --    * are already in the mempool (`Nothing` is inserted in that case),
-      --
-      -- We only keep live `txid`, e.g. ones which `txid` is unacknowledged by
-      -- at least one peer.
-      --
-      -- /Note:/ `txid`s which `tx` were unknown by a peer are tracked
-      -- separately in `unknownTxs`.
-      --
-      -- /Note:/ previous implementation also needed to explicitly tracked
-      -- `txid`s which were already acknowledged, but are still unacknowledged.
-      -- In this implementation, this is done due to reference counting.
-      --
-      -- This map is useful to acknowledge `txid`s, it's basically taking the
-      -- longest prefix which contains entries in `bufferedTxs` or `unknownTxs`.
-      --
-      bufferedTxs     :: !(Map txid (Maybe tx)),
-
-      -- | We track reference counts of all unacknowledged txids.  Once the
-      -- count reaches 0, a tx is removed from `bufferedTxs`.
-      --
-      -- The `bufferedTx` map contains a subset of `txid` which
-      -- `referenceCounts` contains.
-      --
-      -- /Invariants:/
-      --
-      --    * the txid count is equal to multiplicity of txid in all
-      --      `unacknowledgedTxIds` sequences;
-      --    * @Map.keysSet bufferedTxs `Set.isSubsetOf` Map.keysSet referenceCounts@;
-      --    * all counts are positive integers.
-      --
-      referenceCounts :: !(Map txid Int)
-    }
-    deriving (Eq, Show, Generic)
-
-instance ( NoThunks peeraddr
-         , NoThunks tx
-         , NoThunks txid
-         ) => NoThunks (SharedTxState peeraddr txid tx)
 
 --
 -- Pure public API
@@ -555,7 +422,7 @@ newSharedTxStateVar = newTVarIO SharedTxState { peerTxStates    = Map.empty,
 receivedTxIds
   :: forall m peeraddr idx tx txid.
      (MonadSTM m, Ord txid, Ord peeraddr)
-  => Tracer m (DebugSharedTxState peeraddr txid tx)
+  => Tracer m (TraceTxLogic peeraddr txid tx)
   -> SharedTxStateVar m peeraddr txid tx
   -> STM m (MempoolSnapshot txid tx idx)
   -> peeraddr
@@ -571,7 +438,7 @@ receivedTxIds tracer sharedVar getMempoolSnapshot peeraddr reqNo txidsSeq txidsM
   st <- atomically $ do
     MempoolSnapshot{mempoolHasTx} <- getMempoolSnapshot
     stateTVar sharedVar ((\a -> (a,a)) . receivedTxIdsImpl mempoolHasTx peeraddr reqNo txidsSeq txidsMap)
-  traceWith tracer (DebugSharedTxState "receivedTxIds" st)
+  traceWith tracer (TraceSharedTxState "receivedTxIds" st)
 
 
 -- | Include received `tx`s in `SharedTxState`.  Return number of `txids`
@@ -580,7 +447,7 @@ receivedTxIds tracer sharedVar getMempoolSnapshot peeraddr reqNo txidsSeq txidsM
 collectTxs
   :: forall m peeraddr tx txid.
      (MonadSTM m, Ord txid, Ord peeraddr)
-  => Tracer m (DebugSharedTxState peeraddr txid tx)
+  => Tracer m (TraceTxLogic peeraddr txid tx)
   -> SharedTxStateVar m peeraddr txid tx
   -> peeraddr
   -> Set txid    -- ^ set of requested txids
@@ -592,13 +459,4 @@ collectTxs tracer sharedVar peeraddr txidsRequested txsMap = do
   st <- atomically $
     stateTVar sharedVar
       ((\a -> (a,a)) . collectTxsImpl peeraddr txidsRequested txsMap)
-  traceWith tracer (DebugSharedTxState "collectTxs" st)
-
---
---
---
-
--- | Debug tracer.
---
-data DebugSharedTxState peeraddr txid tx = DebugSharedTxState String (SharedTxState peeraddr txid tx)
-  deriving Show
+  traceWith tracer (TraceSharedTxState "collectTxs" st)

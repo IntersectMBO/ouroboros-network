@@ -86,10 +86,9 @@ import Ouroboros.Network.PeerSharing (PeerSharingResult (..))
 import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.TxSubmission.Inbound.Policy (defaultTxDecisionPolicy,
            txInflightMultiplicity)
-import Ouroboros.Network.TxSubmission.Inbound.State (DebugSharedTxState (..),
-           inflightTxs)
-import Ouroboros.Network.TxSubmission.Inbound.Types
-           (TraceTxSubmissionInbound (..))
+import Ouroboros.Network.TxSubmission.Inbound.State (inflightTxs)
+import Ouroboros.Network.TxSubmission.Inbound.Types (TraceTxLogic (..),
+           TraceTxSubmissionInbound (..))
 import Ouroboros.Network.TxSubmission.Outbound (TxSubmissionProtocolError (..))
 
 import Simulation.Network.Snocket (BearerInfo (..), noAttenuation)
@@ -105,8 +104,8 @@ import Test.Ouroboros.Network.Diffusion.Node.Kernel
 import Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Simulation
 import Test.Ouroboros.Network.InboundGovernor.Utils
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..))
-import Test.Ouroboros.Network.TxSubmission.Common (ArbTxDecisionPolicy (..),
-           Tx (..))
+import Test.Ouroboros.Network.TxSubmission.TxLogic (ArbTxDecisionPolicy (..))
+import Test.Ouroboros.Network.TxSubmission.Types (Tx (..))
 import Test.Ouroboros.Network.Utils hiding (SmallDelay, debugTracer)
 
 
@@ -114,6 +113,7 @@ import Test.QuickCheck
 import Test.QuickCheck.Monoids
 import Test.Tasty
 import Test.Tasty.QuickCheck (testProperty)
+
 
 tests :: TestTree
 tests =
@@ -1051,8 +1051,8 @@ prop_check_inflight_ratio bi ds@(DiffusionScript simArgs _ _) =
         $ Signal.eventsToList
         $ Signal.selectEvents
            (\case
-               DiffusionTxSubmissionDebug (DebugSharedTxState _ d) -> Just (inflightTxs d)
-               _                                                   -> Nothing
+               DiffusionTxLogic (TraceSharedTxState _ d) -> Just (inflightTxs d)
+               _                                         -> Nothing
            )
         $ events
 
