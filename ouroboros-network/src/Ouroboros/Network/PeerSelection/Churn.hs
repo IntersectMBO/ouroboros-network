@@ -183,7 +183,7 @@ peerChurnGovernor PeerChurnArgs {
         churnMode <- updateChurnMode
         ltt       <- getLocalRootHotTarget
         lsj       <- lpGetLedgerStateJudgement
-        regime <- pickChurnRegime consensusMode churnMode <$> getUseBootstrapPeers
+        regime    <- pickChurnRegime consensusMode churnMode <$> getUseBootstrapPeers
         let targets = getPeerSelectionTargets consensusMode lsj peerTargets
 
         (,) <$> (getCounter <$> readCounters)
@@ -305,7 +305,7 @@ peerChurnGovernor PeerChurnArgs {
       targets {
         targetNumberOfEstablishedPeers =
           case regime of
-            ChurnBootstrapPraosSync -> min (targetNumberOfActivePeers targets)
+            ChurnBootstrapPraosSync -> min (targetNumberOfActivePeers base)
                                            (targetNumberOfEstablishedPeers base - 1)
             _otherwise ->   decrease (targetNumberOfEstablishedPeers base - targetNumberOfActivePeers base)
                           + targetNumberOfActivePeers base }
@@ -326,10 +326,10 @@ peerChurnGovernor PeerChurnArgs {
     increaseActiveBigLedgerPeers regime _ base targets =
       targets {
         targetNumberOfActiveBigLedgerPeers =
-          let praosSync = min 1 (targetNumberOfActiveBigLedgerPeers base)
+          let praosSyncTargets = min 1 (targetNumberOfActiveBigLedgerPeers base)
           in case regime of
-               ChurnBootstrapPraosSync -> praosSync
-               ChurnPraosSync -> praosSync
+               ChurnBootstrapPraosSync -> praosSyncTargets
+               ChurnPraosSync -> praosSyncTargets
                ChurnDefault -> targetNumberOfActiveBigLedgerPeers base }
 
     checkActiveBigLedgerPeersIncreased
@@ -347,10 +347,10 @@ peerChurnGovernor PeerChurnArgs {
     decreaseActiveBigLedgerPeers regime _ base targets =
       targets {
         targetNumberOfActiveBigLedgerPeers =
-          let praosSync = min 1 (targetNumberOfActiveBigLedgerPeers base)
+          let praosSyncTargets = min 1 (targetNumberOfActiveBigLedgerPeers base)
           in case regime of
-               ChurnBootstrapPraosSync -> praosSync
-               ChurnPraosSync -> praosSync
+               ChurnBootstrapPraosSync -> praosSyncTargets
+               ChurnPraosSync -> praosSyncTargets
                ChurnDefault -> decrease $ targetNumberOfActiveBigLedgerPeers base }
 
     checkActiveBigLedgerPeersDecreased
@@ -414,7 +414,7 @@ peerChurnGovernor PeerChurnArgs {
       -> HotValency
       -> PeerSelectionTargets
       -> ModifyPeerSelectionTargets
-    decreaseKnownBigLedgerPeers _ _ targets base =
+    decreaseKnownBigLedgerPeers _ _ base targets =
       targets {
           targetNumberOfKnownBigLedgerPeers =
             decrease (targetNumberOfKnownBigLedgerPeers base -
