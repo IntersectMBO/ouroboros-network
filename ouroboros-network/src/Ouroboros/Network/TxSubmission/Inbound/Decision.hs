@@ -92,6 +92,7 @@ instance Ord txid => Semigroup (TxDecision txid tx) where
                    txdTxsToMempool       = txdTxsToMempool ++ txdTxsToMempool'
                  }
 
+-- | A no-op decision.
 emptyTxDecision :: TxDecision txid tx
 emptyTxDecision = TxDecision {
     txdTxIdsToAcknowledge = 0,
@@ -268,6 +269,7 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
              in
              if requestedTxIdsInflight peerTxState' > 0
                then
+                 -- we have txids to request
                  ( st { stAcknowledged = stAcknowledged' }
                  , ( (peeraddr, peerTxState')
                      , TxDecision { txdTxIdsToAcknowledge = numTxIdsToAck,
@@ -282,6 +284,8 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                      )
                  )
                else
+                 -- there are no `txid`s to request, nor we can request `tx`s due
+                 -- to in-flight size limits
                  ( st
                  , ( (peeraddr, peerTxState')
                    , emptyTxDecision
@@ -356,6 +360,7 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
           in
             if requestedTxIdsInflight peerTxState'' > 0
               then
+                -- we can request `txid`s & `tx`s
                 ( St { stInflight     = stInflight',
                        stInflightSize = sizeInflightOther + requestedTxsInflightSize',
                        stAcknowledged = stAcknowledged' }
@@ -372,6 +377,7 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                   )
                 )
               else
+                -- there are no `txid`s to request, only `tx`s.
                 ( st { stInflight     = stInflight',
                        stInflightSize = sizeInflightOther + requestedTxsInflightSize'
                      }
@@ -494,7 +500,6 @@ filterActivePeers
                      requestedTxsInflightSize,
                      availableTxIds,
                      unknownTxs } =
-        -- hasTxIdsToAcknowledge st ps ||
           (    requestedTxIdsInflight == 0
             && requestedTxIdsInflight + numOfUnacked <= maxUnacknowledgedTxIds
             &&  txIdsToRequest > 0
