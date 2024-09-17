@@ -22,7 +22,6 @@ import Network.TypedProtocol
 
 import Control.Monad (unless)
 import Ouroboros.Network.Protocol.TxSubmission2.Server
-import Ouroboros.Network.TxSubmission.Inbound.Decision (TxDecision (..))
 import Ouroboros.Network.TxSubmission.Inbound.Registry (PeerTxAPI (..))
 import Ouroboros.Network.TxSubmission.Inbound.Types
 
