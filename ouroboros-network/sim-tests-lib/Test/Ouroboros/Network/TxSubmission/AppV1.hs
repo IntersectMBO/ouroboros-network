@@ -8,7 +8,7 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.Ouroboros.Network.TxSubmission.TxSubmissionV1 (tests) where
+module Test.Ouroboros.Network.TxSubmission.AppV1 (tests) where
 
 import Prelude hiding (seq)
 
@@ -44,17 +44,16 @@ import Ouroboros.Network.TxSubmission.Inbound
 import Ouroboros.Network.TxSubmission.Outbound
 import Ouroboros.Network.Util.ShowProxy
 
-
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
 
-import Test.Ouroboros.Network.TxSubmission.Common hiding (tests)
+import Test.Ouroboros.Network.TxSubmission.Types
 import Test.Ouroboros.Network.Utils
 
 
 tests :: TestTree
-tests = testGroup "Ouroboros.Network.TxSubmission.TxSubmissionV1"
+tests = testGroup "AppV1"
   [ testProperty "txSubmission" prop_txSubmission
   ]
 
