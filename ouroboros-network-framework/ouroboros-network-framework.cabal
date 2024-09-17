@@ -87,9 +87,7 @@ library
                      , cardano-prelude
                      , contra-tracer
 
-                     , io-classes     ^>=1.5.0
-                     , si-timers
-                     , strict-stm
+                     , io-classes:{io-classes,strict-stm,si-timers} ^>=1.7.0
 
                      , nothunks       ^>=0.2
                      , psqueues
@@ -147,10 +145,8 @@ library testlib
 
                    , contra-tracer
                    , io-sim
-                   , io-classes
+                   , io-classes:{io-classes,strict-stm,si-timers}
                    , network-mux
-                   , si-timers
-                   , strict-stm
                    , typed-protocols
                    , typed-protocols-examples
                    , ouroboros-network-api
@@ -205,9 +201,7 @@ test-suite sim-tests
                      , contra-tracer
 
                      , io-sim
-                     , io-classes
-                     , si-timers
-                     , strict-stm
+                     , io-classes:{io-classes,strict-stm,si-timers}
                      , network-mux
                      , monoidal-synchronisation
                      , ouroboros-network-framework
@@ -266,9 +260,7 @@ test-suite io-tests
                      , contra-tracer
 
                      , io-sim
-                     , io-classes
-                     , si-timers
-                     , strict-stm
+                     , io-classes:{io-classes,strict-stm,si-timers}
                      , network-mux
                      , ouroboros-network-framework
                      , ouroboros-network-framework:testlib
@@ -334,12 +326,10 @@ executable demo-connection-manager
 
                        contra-tracer,
 
-                       io-classes,
+                       io-classes:{io-classes,strict-stm,si-timers},
                        network-mux,
-                       si-timers,
                        ouroboros-network-api,
                        ouroboros-network-framework,
-                       strict-stm,
                        typed-protocols,
                        typed-protocols-examples
 

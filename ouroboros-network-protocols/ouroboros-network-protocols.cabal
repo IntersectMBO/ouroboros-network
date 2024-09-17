@@ -100,9 +100,8 @@ library
                        deepseq,
                        quiet,
 
-                       io-classes       ^>=1.5.0,
+                       io-classes:{io-classes,si-timers} ^>=1.7.0,
                        nothunks,
-                       si-timers,
 
                        ouroboros-network-api
                                         ^>=0.9.0,
@@ -188,15 +187,13 @@ library testlib
 
                        contra-tracer,
 
-                       io-classes,
+                       io-classes:{io-classes,strict-stm,si-timers},
                        io-sim,
                        network-mux,
                        ouroboros-network-api,
                        ouroboros-network-framework,
                        ouroboros-network-mock,
                        ouroboros-network-protocols,
-                       si-timers,
-                       strict-stm,
                        typed-protocols
 
   ghc-options:         -Wall

@@ -135,14 +135,11 @@ library
                        monoidal-synchronisation,
                        strict-checked-vars ^>= 0.2,
 
-                       io-classes       ^>=1.5.0,
-                       io-classes-mtl   ^>=0.1,
+                       io-classes:{io-classes,strict-stm,si-timers,mtl} ^>=1.7.0,
                        network-mux,
-                       si-timers,
                        ouroboros-network-api       ^>=0.9.0,
                        ouroboros-network-framework ^>=0.13.2.2,
                        ouroboros-network-protocols ^>=0.10,
-                       strict-stm,
                        typed-protocols  ^>=0.1.1,
   if !os(windows)
     build-depends:     directory,
@@ -201,7 +198,7 @@ library sim-tests-lib
                        contra-tracer,
                        nothunks,
 
-                       io-classes,
+                       io-classes:{io-classes,strict-stm,si-timers},
                        io-sim,
                        monoidal-synchronisation,
                        network-mux,
@@ -213,8 +210,6 @@ library sim-tests-lib
                        ouroboros-network-protocols:testlib,
                        ouroboros-network-framework:testlib,
                        ouroboros-network-testing ^>= 0.7.0,
-                       si-timers,
-                       strict-stm,
                        typed-protocols,
                        typed-protocols-examples,
   exposed-modules:     Ouroboros.Network.BlockFetch.Examples
@@ -304,7 +299,7 @@ test-suite io-tests
 
                        contra-tracer,
 
-                       io-classes,
+                       io-classes:{io-classes,strict-stm,si-timers},
                        network-mux,
                        ouroboros-network,
                        ouroboros-network-api,
@@ -314,8 +309,6 @@ test-suite io-tests
                        ouroboros-network-protocols:testlib,
                        ouroboros-network-framework:testlib,
                        ouroboros-network-testing ^>= 0.7.0.0,
-                       si-timers,
-                       strict-stm,
                        with-utf8,
   if os(windows)
     build-depends:     Win32-network                 <0.3.0.0,
@@ -347,7 +340,7 @@ executable demo-chain-sync
                        contra-tracer,
 
                        typed-protocols,
-                       strict-stm,
+                       io-classes:strict-stm,
                        ouroboros-network-api,
                        ouroboros-network-framework,
                        ouroboros-network-mock,
