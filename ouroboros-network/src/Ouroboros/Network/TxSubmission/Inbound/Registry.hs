@@ -12,7 +12,6 @@ module Ouroboros.Network.TxSubmission.Inbound.Registry
   , newTxChannelsVar
   , PeerTxAPI (..)
   , decisionLogicThread
-  , DebugTxLogic (..)
   , withPeer
   ) where
 
@@ -37,6 +36,7 @@ import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Inbound.Decision
 import Ouroboros.Network.TxSubmission.Inbound.Policy
 import Ouroboros.Network.TxSubmission.Inbound.State
+import Ouroboros.Network.TxSubmission.Inbound.Types
 import Ouroboros.Network.TxSubmission.Mempool.Reader
 
 -- | Communication channels between `TxSubmission` client mini-protocol and
@@ -74,10 +74,6 @@ data PeerTxAPI m txid tx = PeerTxAPI {
   }
 
 
-data TraceDecision peeraddr txid tx =
-    TraceDecisions (Map peeraddr (TxDecision txid tx))
-  deriving (Eq, Show)
-
 -- | A bracket function which registers / de-registers a new peer in
 -- `SharedTxStateVar` and `PeerTxStateVar`s,  which exposes `PeerTxStateAPI`.
 -- `PeerTxStateAPI` is only safe inside the  `withPeer` scope.
@@ -91,7 +87,7 @@ withPeer
        , Ord peeraddr
        , Show peeraddr
        )
-    => Tracer m (DebugSharedTxState peeraddr txid tx)
+    => Tracer m (TraceTxLogic peeraddr txid tx)
     -> TxChannelsVar m peeraddr txid tx
     -> SharedTxStateVar m peeraddr txid tx
     -> TxSubmissionMempoolReader txid tx idx m
@@ -212,13 +208,6 @@ withPeer tracer
       collectTxs tracer sharedStateVar peeraddr txids txs
 
 
--- | TODO: reorganise modules so there's just one `Debug` tracer.
-data DebugTxLogic peeraddr txid tx =
-       DebugTxLogicSharedTxState (SharedTxState peeraddr txid tx)
-     | DebugTxLogicDecisions (Map peeraddr (TxDecision txid tx))
-  deriving Show
-
-
 decisionLogicThread
     :: forall m peeraddr txid tx.
        ( MonadDelay m
@@ -229,7 +218,7 @@ decisionLogicThread
        , Ord peeraddr
        , Ord txid
        )
-    => Tracer m (DebugTxLogic peeraddr txid tx)
+    => Tracer m (TraceTxLogic peeraddr txid tx)
     -> TxDecisionPolicy
     -> TxChannelsVar m peeraddr txid tx
     -> SharedTxStateVar m peeraddr txid tx
@@ -254,8 +243,8 @@ decisionLogicThread tracer policy txChannelsVar sharedStateVar = do
         let (sharedState, decisions) = makeDecisions policy sharedTxState activePeers
         writeTVar sharedStateVar sharedState
         return (decisions, sharedState)
-      traceWith tracer (DebugTxLogicSharedTxState st)
-      traceWith tracer (DebugTxLogicDecisions decisions)
+      traceWith tracer (TraceSharedTxState "decisionLogicThread" st)
+      traceWith tracer (TraceTxDecisions decisions)
       TxChannels { txChannelMap } <- readMVar txChannelsVar
       traverse_
         (\(mvar, d) -> modifyMVarWithDefault_ mvar d (\d' -> pure (d' <> d)))
