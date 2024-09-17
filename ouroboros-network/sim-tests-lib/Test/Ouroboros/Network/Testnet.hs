@@ -105,10 +105,9 @@ import Test.Tasty.QuickCheck (testProperty)
 
 import Ouroboros.Network.TxSubmission.Inbound.Policy (defaultTxDecisionPolicy,
            txInflightMultiplicity)
-import Ouroboros.Network.TxSubmission.Inbound.State (DebugSharedTxState (..),
-           inflightTxs)
-import Ouroboros.Network.TxSubmission.Inbound.Types
-           (TraceTxSubmissionInbound (..))
+import Ouroboros.Network.TxSubmission.Inbound.State (inflightTxs)
+import Ouroboros.Network.TxSubmission.Inbound.Types (TraceTxLogic (..),
+           TraceTxSubmissionInbound (..))
 import Ouroboros.Network.TxSubmission.Outbound (TxSubmissionProtocolError (..))
 import Test.Ouroboros.Network.TxSubmission.Common (ArbTxDecisionPolicy (..),
            Tx (..))
@@ -856,8 +855,8 @@ prop_check_inflight_ratio bi ds@(DiffusionScript simArgs _ _) =
         $ Signal.eventsToList
         $ Signal.selectEvents
            (\case
-               DiffusionTxSubmissionDebug (DebugSharedTxState _ d) -> Just (inflightTxs d)
-               _                                                   -> Nothing
+               DiffusionTxLogic (TraceSharedTxState _ d) -> Just (inflightTxs d)
+               _                                         -> Nothing
            )
         $ events
 
