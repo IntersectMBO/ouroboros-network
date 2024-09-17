@@ -137,9 +137,8 @@ import Ouroboros.Network.Protocol.TxSubmission2.Codec (byteLimitsTxSubmission2,
 import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Snocket (Snocket, TestAddress (..))
 import Ouroboros.Network.TxSubmission.Inbound.Policy (TxDecisionPolicy)
-import Ouroboros.Network.TxSubmission.Inbound.Registry (DebugTxLogic)
-import Ouroboros.Network.TxSubmission.Inbound.State (DebugSharedTxState)
-import Ouroboros.Network.TxSubmission.Inbound.Types (TraceTxSubmissionInbound)
+import Ouroboros.Network.TxSubmission.Inbound.Types (TraceTxLogic,
+           TraceTxSubmissionInbound)
 
 import Ouroboros.Network.Mock.ConcreteBlock (Block (..), BlockHeader (..))
 import Simulation.Network.Snocket (BearerInfo (..), FD, SnocketTrace,
@@ -158,8 +157,8 @@ import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay (..),
            DNSTimeout (..))
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS qualified as PeerSelection hiding
            (tests)
-import Test.Ouroboros.Network.TxSubmission.Common (ArbTxDecisionPolicy (..),
-           Tx (..))
+import Test.Ouroboros.Network.TxSubmission.TxLogic (ArbTxDecisionPolicy (..))
+import Test.Ouroboros.Network.TxSubmission.Types (Tx (..))
 import Test.Ouroboros.Network.Utils
 import Test.QuickCheck
 
@@ -1016,8 +1015,7 @@ data DiffusionTestTrace =
     | DiffusionServerTrace (Server.Trace NtNAddr)
     | DiffusionFetchTrace (TraceFetchClientState BlockHeader)
     | DiffusionTxSubmissionInbound (TraceTxSubmissionInbound Int (Tx Int))
-    | DiffusionTxSubmissionDebug (DebugSharedTxState NtNAddr Int (Tx Int))
-    | DiffusionTxLogicDebug (DebugTxLogic NtNAddr Int (Tx Int))
+    | DiffusionTxLogic (TraceTxLogic NtNAddr Int (Tx Int))
     | DiffusionDebugTrace String
     deriving (Show)
 
@@ -1362,11 +1360,7 @@ diffusionSimulation
           . tracerWithName addr
           . tracerWithTime
           $ nodeTracer)
-          ( contramap DiffusionTxSubmissionDebug
-          . tracerWithName addr
-          . tracerWithTime
-          $ nodeTracer)
-          ( contramap DiffusionTxLogicDebug
+          ( contramap DiffusionTxLogic
           . tracerWithName addr
           . tracerWithTime
           $ nodeTracer)
