@@ -149,8 +149,8 @@ import Test.Ouroboros.Network.Testnet.Node qualified as Node
 import Test.Ouroboros.Network.Testnet.Node.Kernel (BlockGeneratorArgs, NtCAddr,
            NtCVersion, NtCVersionData, NtNAddr, NtNAddr_ (IPAddr), NtNVersion,
            NtNVersionData, ntnAddrToRelayAccessPoint, randomBlockGenerationArgs)
-import Test.Ouroboros.Network.TxSubmission.Common (ArbTxDecisionPolicy (..),
-           Tx (..))
+import Test.Ouroboros.Network.TxSubmission.TxLogic (ArbTxDecisionPolicy (..))
+import Test.Ouroboros.Network.TxSubmission.Types (Tx (..))
 import Test.Ouroboros.Network.Utils
 import Test.QuickCheck
 

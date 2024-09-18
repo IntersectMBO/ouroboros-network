@@ -109,6 +109,7 @@ import Ouroboros.Network.TxSubmission.Inbound.Types (TraceTxLogic,
 
 import Simulation.Network.Snocket (AddressType (..), FD)
 
+import Test.Ouroboros.Network.Data.Script
 import Test.Ouroboros.Network.Testnet.Node.ChainDB (addBlock,
            getBlockPointSet)
 import Test.Ouroboros.Network.Testnet.Node.MiniProtocols qualified as Node
@@ -118,8 +119,7 @@ import Test.Ouroboros.Network.Testnet.Node.Kernel (NodeKernel (..),
 import Test.Ouroboros.Network.Testnet.Node.Kernel qualified as Node
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay,
            DNSTimeout, mockDNSActions)
-import Test.Ouroboros.Network.TxSubmission.Common (Tx)
-import Test.Ouroboros.Network.Data.Script
+import Test.Ouroboros.Network.TxSubmission.Types (Tx)
 
 
 data Interfaces m = Interfaces
