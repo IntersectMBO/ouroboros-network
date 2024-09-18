@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE LambdaCase          #-}
@@ -21,7 +22,11 @@ import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI
 
-import Data.Foldable (traverse_)
+import Data.Foldable (traverse_
+#if !MIN_VERSION_base(4,20,0)
+                     , foldl'
+#endif
+                     )
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)

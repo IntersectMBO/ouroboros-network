@@ -28,7 +28,7 @@ import Control.Exception (assert)
 import Control.Tracer (Tracer, traceWith)
 
 import Data.Foldable (fold,
-#if MIN_VERSION_base(4,20,0)
+#if !MIN_VERSION_base(4,20,0)
          foldl',
 #endif
          toList)
