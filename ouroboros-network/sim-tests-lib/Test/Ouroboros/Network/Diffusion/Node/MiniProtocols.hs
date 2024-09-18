@@ -109,8 +109,8 @@ import Ouroboros.Network.TxSubmission.Inbound.Types (TraceTxLogic,
            TraceTxSubmissionInbound)
 import Ouroboros.Network.TxSubmission.Outbound (txSubmissionOutbound)
 import Test.Ouroboros.Network.Diffusion.Node.NodeKernel
-import Test.Ouroboros.Network.TxSubmission.Common (Mempool, Tx,
-           getMempoolReader, getMempoolWriter, txSubmissionCodec2)
+import Test.Ouroboros.Network.TxSubmission.Types (Mempool, Tx, getMempoolReader,
+           getMempoolWriter, txSubmissionCodec2)
 
 
 -- | Protocol codecs.
