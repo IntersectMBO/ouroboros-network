@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
@@ -11,10 +12,9 @@
 module Test.Ouroboros.Network.Driver (tests) where
 
 import Data.Bifunctor (bimap)
-import Data.Functor (($>))
 import Data.List (intercalate)
 import Data.List qualified as List
-import Data.Monoid (Endo (..))
+import Text.Read (readMaybe)
 
 import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Core
@@ -22,12 +22,14 @@ import Network.TypedProtocol.Peer.Client (Client)
 import Network.TypedProtocol.Peer.Server (Server)
 import Network.TypedProtocol.Stateful.Codec qualified as Stateful
 import Network.TypedProtocol.Stateful.Peer.Client qualified as Stateful
+import Network.TypedProtocol.Stateful.Peer.Server qualified as Stateful
 
 import Ouroboros.Network.Channel
 import Ouroboros.Network.Driver
 import Ouroboros.Network.Driver.Limits
 import Ouroboros.Network.Driver.Simple
 import Ouroboros.Network.Driver.Stateful qualified as Stateful
+import Ouroboros.Network.Util.ShowProxy
 
 import Network.TypedProtocol.ReqResp.Client
 import Network.TypedProtocol.ReqResp.Codec
@@ -35,9 +37,9 @@ import Network.TypedProtocol.ReqResp.Examples
 import Network.TypedProtocol.ReqResp.Server
 import Network.TypedProtocol.ReqResp.Type
 import Network.TypedProtocol.Stateful.ReqResp.Client qualified as Stateful
-import Network.TypedProtocol.Stateful.ReqResp.Examples
-           (ReqRespStateCallbacks (..))
-import Network.TypedProtocol.Stateful.ReqResp.Examples qualified as Stateful
+import Network.TypedProtocol.Stateful.ReqResp.Codec qualified as Stateful
+import Network.TypedProtocol.Stateful.ReqResp.Server qualified as Stateful
+import Network.TypedProtocol.Stateful.ReqResp.Type qualified as Stateful
 
 import Network.TypedProtocol.PingPong.Client
 import Network.TypedProtocol.PingPong.Codec
@@ -531,78 +533,102 @@ prop_channel_ping_pong_with_limits_ST a@(ArbDelaysAndTimeouts delay delay' timel
 -- Stateful Driver
 --
 
+-- | API for `Stateful.ReqResp` protocol.
+--
+data API result where
+    API :: String -> API String
 
-data ReqRespState a (st :: ReqResp req resp) where
-    ReqRespState :: a -> ReqRespState a st
+instance ShowProxy (Stateful.ReqResp API) where
+  showProxy _ = "ReqResp API"
 
-
-reqRespStateCallbacks :: (Int -> Int) -> ReqRespStateCallbacks (ReqRespState Int)
-reqRespStateCallbacks f =
-    ReqRespStateCallbacks {
-        rrBusyToIdle = \(ReqRespState a) -> ReqRespState $! f a
-      , rrBusyToBusy = id
-      , rrBusyToDone = \(ReqRespState a) -> ReqRespState $! f a
-      }
+instance Show (Message (Stateful.ReqResp API) st st') where
+  show (Stateful.MsgReq (API s))    = "MsgReq " ++ s
+  show (Stateful.MsgResp (API _) s) = "MsgResp "  ++ s
+  show Stateful.MsgDone             = "MsgDone"
 
 
 -- | Run the server peer using @runPeerWithByteLimit@, which will receive requests
 -- with the given payloads.
 --
 prop_channel_stateful_reqresp
-  :: forall m. ( MonadAsync m, MonadDelay m, MonadMask m)
-  => Tracer m (TraceSendRecv (ReqResp String ()))
+  :: forall m. (MonadAsync m, MonadDelay m, MonadMask m, MonadSay m)
+  => Bool -- turn on logging for channels
+  -> Tracer m (TraceSendRecv (Stateful.ReqResp API))
   -> [(String, DiffTime)]
   -- ^ request payloads
-  -> (Int -> Int)
   -> m Property
-prop_channel_stateful_reqresp tracer reqPayloads f = do
-      (c1, c2) <- createConnectedChannels
+prop_channel_stateful_reqresp logging tracer reqPayloads = do
+      (c, c') <- createConnectedChannels
+      let inbound  | logging   = loggingChannel "inbound" c
+                   | otherwise = c
+          outbound | logging   = loggingChannel "inbound" c'
+                   | otherwise = c'
 
       res <- try $
-        (fst <$> runPeer tracer codecReqResp c1 recvPeer)
+        (fst <$> Stateful.runPeer tracer codec outbound Stateful.StateIdle clientPeer)
           `concurrently`
-        ((\((_, ReqRespState a), _) -> a)
-             <$> Stateful.runPeer tracer (Stateful.liftCodec codecReqResp) c2 (ReqRespState 0) sendPeer)
+        (fst <$> Stateful.runPeer tracer codec inbound Stateful.StateIdle serverPeer)
 
-      pure $ case res :: Either ProtocolLimitFailure ([DiffTime], Int) of
-        Right (_, a)             -> a === appEndo (mconcat (reqPayloads $> Endo f)) 0
+      pure $ case res :: Either ProtocolLimitFailure ([String], ()) of
+        Right (as, _)            -> as === fst `map` reqPayloads
         Left ExceededSizeLimit{} -> property False
         Left ExceededTimeLimit{} -> property False
-
     where
-      sendPeer :: Stateful.Client (ReqResp String ()) StIdle (ReqRespState Int) m
-                                  ([()], ReqRespState Int (StDone :: ReqResp String ()))
-      sendPeer = Stateful.reqRespClientPeer
-               $ Stateful.reqRespClientMap
-                   (reqRespStateCallbacks f)
-                   (ReqRespState 0)
-                   (map fst reqPayloads)
+      client :: [String]
+             -> Stateful.ReqRespClient API m [String]
+      client = go []
+        where
+          go !resps []           = Stateful.SendMsgDone (reverse resps)
+          go !resps (req : reqs) = Stateful.SendMsgReq (API req)
+                                 $ \ !resp -> pure $ go (resp : resps) reqs
 
-      recvPeer :: Server (ReqResp String ()) NonPipelined StIdle m [DiffTime]
-      recvPeer = reqRespServerPeer $ reqRespServerMapAccumL
-        (\a _ -> case a of
-          [] -> error "prop_runPeerWithLimits: empty list"
-          delay : acc -> do
-            threadDelay delay
-            return (acc, ()))
-        (map snd reqPayloads)
+      clientPeer :: Stateful.Client (Stateful.ReqResp API) Stateful.StIdle Stateful.State m [String]
+      clientPeer = Stateful.reqRespClientPeer
+                 . client
+                 $ fst <$> reqPayloads
 
+      server :: [DiffTime]
+             -> Stateful.ReqRespServer API m ()
+      server as =
+        Stateful.ReqRespServer {
+          Stateful.reqRespHandleReq =
+            \(API req) ->
+              case as of
+                [ ] -> return (req, server as)
+                [a] -> do
+                  threadDelay a
+                  return (req, server as)
+                a : as' -> do
+                  threadDelay a
+                  return (req, server as'),
+          Stateful.reqRespServerDone = ()
+        }
+
+      serverPeer :: Stateful.Server (Stateful.ReqResp API) Stateful.StIdle Stateful.State m ()
+      serverPeer = void
+                 . Stateful.reqRespServerPeer
+                 . server
+                 $ snd <$> reqPayloads
+
+      codec :: Stateful.Codec (Stateful.ReqResp API) CodecFailure Stateful.State m String
+      codec = Stateful.codecReqResp
+        (\(API a) -> show a)
+        (\str -> Stateful.Some . API <$> readMaybe str)
+        (\API{} str -> show str)
+        (\API{} str -> readMaybe str)
 
 prop_channel_stateful_reqresp_ST
   :: ReqRespPayloadWithLimit
-  -> (Int -> Int)
   -> Property
-prop_channel_stateful_reqresp_ST (ReqRespPayloadWithLimit _limit payload) f =
-  let trace = runSimTrace (prop_channel_stateful_reqresp (Tracer (say . show)) [payload] f)
+prop_channel_stateful_reqresp_ST (ReqRespPayloadWithLimit _limit payload) =
+  let trace = runSimTrace (prop_channel_stateful_reqresp True (Tracer (say . show)) [payload])
   in counterexample (intercalate "\n" $ map show $ traceEvents trace)
    $ case traceResult True trace of
        Left e  -> throw e
        Right x -> x
 
-
 prop_channel_stateful_reqresp_IO
   :: ReqRespPayloadWithLimit
-  -> (Int -> Int)
   -> Property
-prop_channel_stateful_reqresp_IO (ReqRespPayloadWithLimit _limit payload) f =
-  ioProperty (prop_channel_stateful_reqresp nullTracer [payload] f)
+prop_channel_stateful_reqresp_IO (ReqRespPayloadWithLimit _limit payload) =
+  ioProperty (prop_channel_stateful_reqresp False nullTracer [payload])

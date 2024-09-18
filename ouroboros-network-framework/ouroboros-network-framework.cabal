@@ -273,11 +273,12 @@ test-suite io-tests
                      , si-timers
                      , strict-stm
                      , network-mux
+                     , ouroboros-network-api
                      , ouroboros-network-framework
                      , ouroboros-network-framework:testlib
                      , typed-protocols
                      , typed-protocols-stateful
-                     , typed-protocols-examples
+                     , typed-protocols-examples >= 0.4
 
   if os(windows)
     build-depends:     Win32-network <0.3
