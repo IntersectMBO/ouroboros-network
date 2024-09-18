@@ -90,7 +90,7 @@ import Ouroboros.Network.TxSubmission.Inbound.Registry (SharedTxStateVar,
            TxChannels (..), TxChannelsVar, newSharedTxStateVar)
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB (ChainDB (..))
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB qualified as ChainDB
-import Test.Ouroboros.Network.TxSubmission.Common (Mempool, Tx, newMempool)
+import Test.Ouroboros.Network.TxSubmission.Types (Mempool, Tx, newMempool)
 import Test.QuickCheck (Arbitrary (..), choose, chooseInt, frequency, oneof)
 
 
