@@ -117,7 +117,7 @@ import Test.Ouroboros.Network.Diffusion.Node.NodeKernel (NodeKernel (..),
 import Test.Ouroboros.Network.Diffusion.Node.NodeKernel qualified as Node
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay,
            DNSTimeout, mockDNSActions)
-import Test.Ouroboros.Network.TxSubmission.Common (Tx)
+import Test.Ouroboros.Network.TxSubmission.Types (Tx)
 
 
 data Interfaces m = Interfaces

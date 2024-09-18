@@ -12,7 +12,7 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.Ouroboros.Network.TxSubmission.TxSubmissionV2 (tests) where
+module Test.Ouroboros.Network.TxSubmission.AppV2 (tests) where
 
 import Prelude hiding (seq)
 
@@ -34,8 +34,8 @@ import Control.Tracer (Tracer (..), contramap)
 
 import Data.ByteString.Lazy (ByteString)
 import Data.ByteString.Lazy qualified as BSL
-import Data.Function (on)
 import Data.Foldable (traverse_)
+import Data.Function (on)
 import Data.List (nubBy)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -59,7 +59,8 @@ import Ouroboros.Network.TxSubmission.Outbound
 import Ouroboros.Network.Util.ShowProxy
 
 import Ouroboros.Network.Testing.Utils hiding (debugTracer)
-import Test.Ouroboros.Network.TxSubmission.Common hiding (tests)
+import Test.Ouroboros.Network.TxSubmission.TxLogic hiding (tests)
+import Test.Ouroboros.Network.TxSubmission.Types
 
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
@@ -67,7 +68,7 @@ import Test.Tasty.QuickCheck (testProperty)
 
 
 tests :: TestTree
-tests = testGroup "Ouroboros.Network.TxSubmission.TxSubmissionV2"
+tests = testGroup "AppV2"
   [ testProperty "txSubmission" prop_txSubmission
   , testProperty "txSubmission inflight" prop_txSubmission_inflight
   ]

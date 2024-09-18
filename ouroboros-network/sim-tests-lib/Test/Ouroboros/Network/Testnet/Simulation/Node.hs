@@ -144,8 +144,8 @@ import Ouroboros.Network.TxSubmission.Inbound.Types (TraceTxLogic,
            TraceTxSubmissionInbound)
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..), genLedgerPoolsFrom)
 import Test.Ouroboros.Network.PeerSelection.LocalRootPeers ()
-import Test.Ouroboros.Network.TxSubmission.Common (ArbTxDecisionPolicy (..),
-           Tx (..))
+import Test.Ouroboros.Network.TxSubmission.TxLogic (ArbTxDecisionPolicy (..))
+import Test.Ouroboros.Network.TxSubmission.Types (Tx (..))
 import Test.QuickCheck
 
 -- | Diffusion Simulator Arguments
