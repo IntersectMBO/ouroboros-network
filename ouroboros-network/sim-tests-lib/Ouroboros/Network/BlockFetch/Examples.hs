@@ -40,10 +40,13 @@ import Ouroboros.Network.Block
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Pipelined
 
+import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.ControlMessage (ControlMessageSTM)
 
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.BlockFetch.Client
+import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation (..),
+           GenesisFetchMode (..))
 import Ouroboros.Network.Channel
 import Ouroboros.Network.DeltaQ
 import Ouroboros.Network.Driver
@@ -54,6 +57,7 @@ import Ouroboros.Network.Protocol.BlockFetch.Server
 import Ouroboros.Network.Protocol.BlockFetch.Type
 import Ouroboros.Network.Util.ShowProxy
 
+import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
 import Ouroboros.Network.Mock.ConcreteBlock
 
 
@@ -63,8 +67,8 @@ blockFetchExample0 :: forall m.
                       (MonadSTM m, MonadST m, MonadAsync m, MonadDelay m,
                        MonadFork m, MonadTime m, MonadTimer m, MonadMask m,
                        MonadThrow (STM m))
-                   => Tracer m [TraceLabelPeer Int
-                                 (FetchDecision [Point BlockHeader])]
+                   => GenesisFetchMode
+                   -> Tracer m (TraceDecisionEvent Int BlockHeader)
                    -> Tracer m (TraceLabelPeer Int
                                  (TraceFetchClientState BlockHeader))
                    -> Tracer m (TraceLabelPeer Int
@@ -75,7 +79,7 @@ blockFetchExample0 :: forall m.
                    -> AnchoredFragment Block -- ^ Fixed current chain
                    -> AnchoredFragment Block -- ^ Fixed candidate chain
                    -> m ()
-blockFetchExample0 decisionTracer clientStateTracer clientMsgTracer
+blockFetchExample0 fetchMode decisionTracer clientStateTracer clientMsgTracer
                    clientDelay serverDelay
                    controlMessageSTM
                    currentChain candidateChain = do
@@ -131,14 +135,18 @@ blockFetchExample0 decisionTracer clientStateTracer clientMsgTracer
     blockFetch registry blockHeap =
         blockFetchLogic
           decisionTracer clientStateTracer
-          (sampleBlockFetchPolicy1 headerForgeUTCTime blockHeap currentChainHeaders candidateChainHeaders)
+          (sampleBlockFetchPolicy1 fetchMode headerForgeUTCTime blockHeap currentChainHeaders candidateChainHeaders)
           registry
           (BlockFetchConfiguration {
             bfcMaxConcurrencyBulkSync = 1,
             bfcMaxConcurrencyDeadline = 2,
             bfcMaxRequestsInflight    = 10,
-            bfcDecisionLoopInterval   = 0.01,
-            bfcSalt                   = 0
+            bfcDecisionLoopIntervalGenesis = 0.04,
+            bfcDecisionLoopIntervalPraos = 0.01,
+            bfcSalt                   = 0,
+            bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
+              { gbfcGracePeriod = 10 -- seconds
+              }
           })
         >> return ()
 
@@ -172,8 +180,8 @@ blockFetchExample1 :: forall m.
                       (MonadSTM m, MonadST m, MonadAsync m, MonadDelay m,
                        MonadFork m, MonadTime m, MonadTimer m, MonadMask m,
                        MonadThrow (STM m))
-                   => Tracer m [TraceLabelPeer Int
-                                 (FetchDecision [Point BlockHeader])]
+                   => GenesisFetchMode
+                   -> Tracer m (TraceDecisionEvent Int BlockHeader)
                    -> Tracer m (TraceLabelPeer Int
                                  (TraceFetchClientState BlockHeader))
                    -> Tracer m (TraceLabelPeer Int
@@ -184,7 +192,7 @@ blockFetchExample1 :: forall m.
                    -> AnchoredFragment Block   -- ^ Fixed current chain
                    -> [AnchoredFragment Block] -- ^ Fixed candidate chains
                    -> m ()
-blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
+blockFetchExample1 fetchMode decisionTracer clientStateTracer clientMsgTracer
                    clientDelay serverDelay
                    controlMessageSTM
                    currentChain candidateChains = do
@@ -211,7 +219,7 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
     driverAsync <- async $ do
       threadId <- myThreadId
       labelThread threadId "block-fetch-driver"
-      driver blockHeap
+      downloadTimer
 
     -- Order of shutdown here is important for this example: must kill off the
     -- fetch thread before the peer threads.
@@ -240,44 +248,46 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
     blockFetch registry blockHeap =
         blockFetchLogic
           decisionTracer clientStateTracer
-          (sampleBlockFetchPolicy1 headerForgeUTCTime blockHeap currentChainHeaders candidateChainHeaders)
+          (sampleBlockFetchPolicy1 fetchMode headerForgeUTCTime blockHeap currentChainHeaders candidateChainHeaders)
           registry
           (BlockFetchConfiguration {
             bfcMaxConcurrencyBulkSync = 1,
             bfcMaxConcurrencyDeadline = 2,
             bfcMaxRequestsInflight    = 10,
-            bfcDecisionLoopInterval   = 0.01,
-            bfcSalt                   = 0
+            bfcDecisionLoopIntervalGenesis = 0.04,
+            bfcDecisionLoopIntervalPraos = 0.01,
+            bfcSalt                   = 0,
+            bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
+              { gbfcGracePeriod = 10 -- seconds
+              }
           })
         >> return ()
 
     headerForgeUTCTime (FromConsensus x) =
         pure $ convertSlotToTimeForTestsAssumingNoHardFork (blockSlot x)
 
-    driver :: TestFetchedBlockHeap m Block -> m ()
-    driver blockHeap = do
-      atomically $ do
-        heap <- getTestFetchedBlocks blockHeap
-        check $
-          all (\c -> AnchoredFragment.headPoint c `Set.member` heap)
-              candidateChains
-
+    -- | Terminates after 1 second per block in the candidate chains.
+    downloadTimer :: m ()
+    downloadTimer =
+      let totalBlocks = sum $ map AF.length candidateChains
+       in threadDelay (fromIntegral totalBlocks)
 
 --
 -- Sample block fetch configurations
 --
 
 sampleBlockFetchPolicy1 :: (MonadSTM m, HasHeader header, HasHeader block)
-                        => (forall x. HasHeader x => FromConsensus x -> STM m UTCTime)
+                        => GenesisFetchMode
+                        -> (forall x. HasHeader x => FromConsensus x -> STM m UTCTime)
                         -> TestFetchedBlockHeap m block
                         -> AnchoredFragment header
                         -> Map peer (AnchoredFragment header)
                         -> BlockFetchConsensusInterface peer header block m
-sampleBlockFetchPolicy1 headerFieldsForgeUTCTime blockHeap currentChain candidateChains =
+sampleBlockFetchPolicy1 fetchMode headerFieldsForgeUTCTime blockHeap currentChain candidateChains =
     BlockFetchConsensusInterface {
       readCandidateChains    = return candidateChains,
       readCurrentChain       = return currentChain,
-      readFetchMode          = return FetchModeBulkSync,
+      readFetchMode          = return fetchMode,
       readFetchedBlocks      = flip Set.member <$>
                                  getTestFetchedBlocks blockHeap,
       readFetchedMaxSlotNo   = List.foldl' max NoMaxSlotNo .
@@ -293,7 +303,10 @@ sampleBlockFetchPolicy1 headerFieldsForgeUTCTime blockHeap currentChain candidat
       blockMatchesHeader     = \_ _ -> True,
 
       headerForgeUTCTime     = headerFieldsForgeUTCTime,
-      blockForgeUTCTime      = headerFieldsForgeUTCTime
+      blockForgeUTCTime      = headerFieldsForgeUTCTime,
+      readChainSelStarvation = pure (ChainSelStarvationEndedAt (Time 0)),
+
+      demoteChainSyncJumpingDynamo = \_ -> pure ()
       }
   where
     plausibleCandidateChain cur candidate =

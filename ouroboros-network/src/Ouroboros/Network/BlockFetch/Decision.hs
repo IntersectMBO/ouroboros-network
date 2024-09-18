@@ -11,15 +11,20 @@ module Ouroboros.Network.BlockFetch.Decision
   , FetchDecisionPolicy (..)
   , FetchMode (..)
   , PeerInfo
+  , peerInfoPeer
   , FetchDecision
   , FetchDecline (..)
     -- ** Components of the decision-making process
+  , ChainSuffix (..)
+  , CandidateFragments
   , filterPlausibleCandidates
   , selectForkSuffixes
   , filterNotAlreadyFetched
   , filterNotAlreadyInFlightWithPeer
+  , filterWithMaxSlotNo
   , prioritisePeerChains
   , filterNotAlreadyInFlightWithOtherPeers
+  , fetchRequestDecision
   , fetchRequestDecisions
   ) where
 
@@ -43,7 +48,8 @@ import Ouroboros.Network.Point (withOriginToMaybe)
 
 import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..),
            PeerFetchInFlight (..), PeerFetchStatus (..))
-import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..))
+import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..),
+           GenesisFetchMode (..))
 import Ouroboros.Network.BlockFetch.DeltaQ (PeerFetchInFlightLimits (..),
            PeerGSV (..), SizeInBytes, calculatePeerFetchInFlightLimits,
            comparePeerGSV, comparePeerGSV', estimateExpectedResponseDuration,
@@ -55,8 +61,10 @@ data FetchDecisionPolicy header = FetchDecisionPolicy {
 
        maxConcurrencyBulkSync  :: Word,
        maxConcurrencyDeadline  :: Word,
-       decisionLoopInterval    :: DiffTime,
+       decisionLoopIntervalGenesis :: DiffTime,
+       decisionLoopIntervalPraos :: DiffTime,
        peerSalt                :: Int,
+       bulkSyncGracePeriod     :: DiffTime,
 
        plausibleCandidateChain :: HasCallStack
                                => AnchoredFragment header
@@ -78,6 +86,9 @@ type PeerInfo header peer extra =
          peer,
          extra
        )
+
+peerInfoPeer :: PeerInfo header peer extra -> peer
+peerInfoPeer (_, _, _, p, _) = p
 
 -- | Throughout the decision making process we accumulate reasons to decline
 -- to fetch any blocks. This type is used to wrap intermediate and final
@@ -223,7 +234,7 @@ data FetchDecline =
      -- * the corresponding configured limit constant, either
      --   'maxConcurrencyBulkSync' or 'maxConcurrencyDeadline'
      --
-   | FetchDeclineConcurrencyLimit   !FetchMode !Word
+   | FetchDeclineConcurrencyLimit   !GenesisFetchMode !Word
   deriving (Eq, Show)
 
 
@@ -1074,7 +1085,7 @@ fetchRequestDecision FetchDecisionPolicy {
                                     FetchModeDeadline -> maxConcurrencyDeadline
   , nConcurrentFetchPeers > maxConcurrentFetchPeers
   = Left $ FetchDeclineConcurrencyLimit
-             fetchMode maxConcurrentFetchPeers
+             (PraosFetchMode fetchMode) maxConcurrentFetchPeers
 
     -- If we're at the concurrency limit refuse any additional peers.
   | peerFetchReqsInFlight == 0
@@ -1083,7 +1094,7 @@ fetchRequestDecision FetchDecisionPolicy {
                                     FetchModeDeadline -> maxConcurrencyDeadline
   , nConcurrentFetchPeers == maxConcurrentFetchPeers
   = Left $ FetchDeclineConcurrencyLimit
-             fetchMode maxConcurrentFetchPeers
+             (PraosFetchMode fetchMode) maxConcurrentFetchPeers
 
     -- We've checked our request limit and our byte limit. We are then
     -- guaranteed to get at least one non-empty request range.
