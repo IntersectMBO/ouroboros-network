@@ -111,8 +111,8 @@ import Ouroboros.Network.TxSubmission.Inbound.State (inflightTxs)
 import Ouroboros.Network.TxSubmission.Inbound.Types (TraceTxLogic (..),
            TraceTxSubmissionInbound (..))
 import Ouroboros.Network.TxSubmission.Outbound (TxSubmissionProtocolError (..))
-import Test.Ouroboros.Network.TxSubmission.Common (ArbTxDecisionPolicy (..),
-           Tx (..))
+import Test.Ouroboros.Network.TxSubmission.TxLogic (ArbTxDecisionPolicy (..))
+import Test.Ouroboros.Network.TxSubmission.Types (Tx (..))
 
 tests :: TestTree
 tests =

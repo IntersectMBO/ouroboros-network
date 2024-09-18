@@ -46,8 +46,8 @@ import Ouroboros.Network.Protocol.Limits
 import Ouroboros.Network.Protocol.TxSubmission2.Server
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Inbound.Types (ProcessedTxCount (..),
-         TxSubmissionMempoolWriter (..), TraceTxSubmissionInbound (..),
-         TxSubmissionProtocolError (..))
+           TraceTxSubmissionInbound (..), TxSubmissionMempoolWriter (..),
+           TxSubmissionProtocolError (..))
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
            TxSubmissionMempoolReader (..))
 
