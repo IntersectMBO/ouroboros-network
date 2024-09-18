@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE DeriveGeneric       #-}
@@ -18,7 +19,11 @@ import Prelude hiding (seq)
 
 import Control.Exception (assert)
 
-import Data.Foldable as Foldable (fold, toList)
+import Data.Foldable (fold,
+#if !MIN_VERSION_base(4,20,0)
+         foldl',
+#endif
+         toList)
 import Data.List (intercalate, isPrefixOf, isSuffixOf, mapAccumR, nub,
            stripPrefix)
 import Data.Map.Merge.Strict qualified as Map
