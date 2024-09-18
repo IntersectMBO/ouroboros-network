@@ -3,8 +3,12 @@ ouroboros-network-api/src/Ouroboros/Network/Protocol/Type.hs
 ouroboros-network/src/Ouroboros/Network/BlockFetch/Decision/Genesis.hs
 ouroboros-network/src/Ouroboros/Network/Diffusion/P2P.hs
 ouroboros-network/src/Ouroboros/Network/TxSubmission/Inbound/State.hs
+ouroboros-network/src/Ouroboros/Network/PeerSelection/Governor/TxLogic.hs
 ouroboros-network/src/Ouroboros/Network/PeerSelection/Governor/Types.hs
-ouroboros-network/sim-tests-lib/Test/Ouroboros/Network/Testnet.hs
+ouroboros-network/src/Ouroboros/Network/TxSubmission/Inbound/Registry.hs
+ouroboros-network/src/Ouroboros/Network/TxSubmission/Inbound/State.hs
+ouroboros-network/testlib/Test/Ouroboros/Network/Testnet.hs
+ouroboros-network/testlib/Test/Ouroboros/Network/TxSubmission/TxLogic.hs
 network-mux/src/Network/Mux/TCPInfo.hs
 network-mux/src/Network/Mux/Bearer.hs
 network-mux/src/Network/Mux/Bearer/Pipe.hs
