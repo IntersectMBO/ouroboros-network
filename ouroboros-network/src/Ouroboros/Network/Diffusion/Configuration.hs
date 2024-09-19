@@ -9,6 +9,7 @@ module Ouroboros.Network.Diffusion.Configuration
   , defaultPeerSharing
   , defaultBlockFetchConfiguration
   , defaultChainSyncTimeout
+  , defaultEnableNewTxSubmissionProtocol
     -- re-exports
   , AcceptedConnectionsLimit (..)
   , BlockFetchConfiguration (..)
@@ -49,6 +50,8 @@ import Ouroboros.Network.Protocol.ChainSync.Codec (ChainSyncTimeout (..))
 import Ouroboros.Network.Protocol.Handshake (handshake_QUERY_SHUTDOWN_DELAY)
 import Ouroboros.Network.Protocol.Limits (shortWait)
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
+import Ouroboros.Network.TxSubmission.Inbound.Server
+           (EnableNewTxSubmissionProtocol (..))
 
 
 newtype DefaultNumBootstrapPeers = DefaultNumBootstrapPeers { getDefaultNumBootstrapPeers :: Int }
@@ -123,3 +126,6 @@ defaultChainSyncTimeout = do
                               intersectTimeout = shortWait,
                               mustReplyTimeout,
                               idleTimeout      = Just 3673 }
+
+defaultEnableNewTxSubmissionProtocol :: EnableNewTxSubmissionProtocol
+defaultEnableNewTxSubmissionProtocol = DisableNewTxSubmissionProtocol
