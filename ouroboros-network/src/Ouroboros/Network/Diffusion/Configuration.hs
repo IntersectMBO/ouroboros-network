@@ -10,6 +10,7 @@ module Ouroboros.Network.Diffusion.Configuration
   , defaultDeadlineChurnInterval
   , defaultBulkChurnInterval
   , BlockProducerOrRelay (..)
+  , defaultEnableNewTxSubmissionProtocol
     -- re-exports
   , AcceptedConnectionsLimit (..)
   , DiffusionMode (..)
@@ -46,6 +47,8 @@ import Ouroboros.Network.PeerSharing (ps_POLICY_PEER_SHARE_MAX_PEERS,
            ps_POLICY_PEER_SHARE_STICKY_TIME)
 import Ouroboros.Network.Protocol.Handshake (handshake_QUERY_SHUTDOWN_DELAY)
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
+import Ouroboros.Network.TxSubmission.Inbound.Server
+           (EnableNewTxSubmissionProtocol (..))
 
 -- | Outbound governor targets
 -- Targets may vary depending on whether a node is operating in
@@ -114,3 +117,6 @@ local_TIME_WAIT_TIMEOUT = 0
 -- for tuning latency vs. network efficiency
 defaultEgressPollInterval :: DiffTime
 defaultEgressPollInterval = 0
+
+defaultEnableNewTxSubmissionProtocol :: EnableNewTxSubmissionProtocol
+defaultEnableNewTxSubmissionProtocol = DisableNewTxSubmissionProtocol
