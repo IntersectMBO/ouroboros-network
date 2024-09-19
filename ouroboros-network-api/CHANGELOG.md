@@ -7,14 +7,15 @@
 * Renamed:
   * `accBigPoolStake` -> `accumulateBigLedgerStake`
      and `reRelativeStake` -> `recomputeRelativeStake`
+- Added `NodeToClientVersionV18`
 
 ### Non-breaking changes
 
 * Added `ConsensusMode` which must be passed to start diffusion in the
-  appropriate mode 
+  appropriate mode
 * added `compareLedgerPeerSnapshotApproximate` function which compares
   two snapshots for approximate equality wrt stake distribution and
-  fully qualified domain names. 
+  fully qualified domain names.
 * Added `MinBigLedgerPeersForTrustedState` type of values indicating
   the minimum number of active big ledger peers needed to signal
   trusted state when finishing syncing in Genesis mode.
