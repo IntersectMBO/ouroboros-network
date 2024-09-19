@@ -16,6 +16,7 @@ module Ouroboros.Network.Diffusion.Configuration
   , defaultSyncTargets
   , defaultDeadlineChurnInterval
   , defaultBulkChurnInterval
+  , defaultEnableNewTxSubmissionProtocol
     -- re-exports
   , AcceptedConnectionsLimit (..)
   , BlockFetchConfiguration (..)
@@ -65,6 +66,8 @@ import Ouroboros.Network.Protocol.ChainSync.Codec (ChainSyncTimeout (..))
 import Ouroboros.Network.Protocol.Handshake (handshake_QUERY_SHUTDOWN_DELAY)
 import Ouroboros.Network.Protocol.Limits (shortWait)
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
+import Ouroboros.Network.TxSubmission.Inbound.Server
+           (EnableNewTxSubmissionProtocol (..))
 
 
 -- | Default number of bootstrap peers
@@ -179,3 +182,6 @@ defaultDeadlineChurnInterval = 3300
 
 defaultBulkChurnInterval :: DiffTime
 defaultBulkChurnInterval = 900
+
+defaultEnableNewTxSubmissionProtocol :: EnableNewTxSubmissionProtocol
+defaultEnableNewTxSubmissionProtocol = DisableNewTxSubmissionProtocol
