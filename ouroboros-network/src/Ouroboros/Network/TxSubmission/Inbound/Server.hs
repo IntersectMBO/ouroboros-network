@@ -25,6 +25,11 @@ import Ouroboros.Network.Protocol.TxSubmission2.Server
 import Ouroboros.Network.TxSubmission.Inbound.Registry (PeerTxAPI (..))
 import Ouroboros.Network.TxSubmission.Inbound.Types
 
+-- | Flag to enable/disable the usage of the new tx submission protocol
+--
+data EnableNewTxSubmissionProtocol =
+      EnableNewTxSubmissionProtocol
+    | DisableNewTxSubmissionProtocol
 
 -- | A tx-submission outbound side (server, sic!).
 --
