@@ -23,7 +23,7 @@ versionTable = { * oldVersionNumber => oldNodeToClientVersionData
 ; Version 15 introduces the version query flag
 ; as of version 2 (which is no longer supported) we set 15th bit to 1
 ;               15    / 16    / 17
-versionNumber = 32783 / 32784 / 32785
+versionNumber = 32783 / 32784 / 32785 / 32786
 
 ; as of version 2 (which is no longer supported) we set 15th bit to 1
 ;                  9     / 10    / 11    / 12    / 13    / 14
