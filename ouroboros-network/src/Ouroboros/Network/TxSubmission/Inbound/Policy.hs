@@ -55,7 +55,6 @@ defaultTxDecisionPolicy =
   TxDecisionPolicy {
     maxNumTxIdsToRequest   = 3,
     maxUnacknowledgedTxIds = 10, -- must be the same as txSubmissionMaxUnacked
-                                 -- TODO: we should take it `MiniProtocolParameters`.
     txsSizeInflightPerPeer = max_TX_SIZE * 6,
     maxTxsSizeInflight     = max_TX_SIZE * 20,
     txInflightMultiplicity = 1
