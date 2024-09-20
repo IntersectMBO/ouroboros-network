@@ -9,7 +9,7 @@ function usage {
   echo "        -u                        only check files uncommitted"
   echo "        -c                        only check files committed in HEAD"
   echo "        -h                        this help message"
-  echo "        -g                        don't use git"
+  echo "        -g                        don't show the diff with git"
   exit
 }
 
@@ -31,14 +31,8 @@ while getopts ${optstring} arg; do
     c)
       PATHS=$(git show --pretty='' --name-only HEAD)
       for path in $PATHS; do
-        if [ "${path##*.}" == "hs" ]; then
-          if grep -qE '^#' $path; then
-            echo "$path contains CPP.  Skipping."
-          else
-            echo $path
-            stylish-haskell $STYLISH_HASKELL_ARGS $path
-          fi
-        fi
+        echo $path
+        fd -e hs --ignore-file ./scripts/ci/check-stylish-ignore --full-path $path -X stylish-haskell $STYLISH_HASKELL_ARGS
       done
       if [ $USE_GIT == 1 ]; then
         git --no-pager diff --exit-code
@@ -49,12 +43,8 @@ while getopts ${optstring} arg; do
       PATHS=$(git diff --name-only HEAD)
       for path in $PATHS; do
         if [ "${path##*.}" == "hs" ]; then
-          if grep -qE '^#' $path; then
-            echo "$path contains CPP.  Skipping."
-          else
-            echo $path
-            stylish-haskell $STYLISH_HASKELL_ARGS $path
-          fi
+          echo $path
+          fd -e hs --ignore-file ./scripts/ci/check-stylish-ignore --full-path $path -X stylish-haskell $STYLISH_HASKELL_ARGS
         fi
       done
       if [ $USE_GIT == 1 ]; then
