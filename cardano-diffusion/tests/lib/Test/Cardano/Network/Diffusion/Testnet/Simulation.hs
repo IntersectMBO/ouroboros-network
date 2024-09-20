@@ -1195,7 +1195,7 @@ diffusionSimulationM
       ledgerPeersVar <- initScript' ledgerPeers
       onlyOutboundConnectionsStateVar <- newTVarIO UntrustedState
       useBootstrapPeersScriptVar <- newTVarIO bootstrapPeers
-      churnModeVar <- newTVarIO ChurnModeNormal
+      churnModeVar <- newTVarIO (ChurnMode (PraosFetchMode FetchModeDeadline))
       peerMetrics <- newPeerMetric PeerMetricsConfiguration { maxEntriesToTrack = 180 }
       policyStdGenVar <- newTVarIO (mkStdGen 12)
       duplicateTxVar <- LazySTM.newTVarIO []

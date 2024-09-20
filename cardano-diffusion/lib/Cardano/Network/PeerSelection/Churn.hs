@@ -1,5 +1,8 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE DerivingStrategies  #-}
+{-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
@@ -30,6 +33,8 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, traceWith)
 import Data.Functor (void, ($>))
 import Data.Monoid.Synchronisation (FirstToFinish (..))
+import GHC.Generics (Generic)
+import Quiet (Quiet (..))
 import System.Random
 
 import Cardano.Network.ConsensusMode (ConsensusMode (..))
@@ -46,9 +51,15 @@ import Ouroboros.Network.PeerSelection.Governor.Types hiding (targets)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..))
 
-data ChurnMode = ChurnModeBulkSync
-               | ChurnModeNormal
-               deriving Show
+-- | Churn mode is set by `churn` and available in peer selection policy.  It
+-- follows `FetchMode`, thus it's a newtype wrapper.
+--
+-- It is shared using its own `TVar` to make sure the value available in peer
+-- selection policy is consistent with the value available in churn actions.
+--
+newtype ChurnMode = ChurnMode { getFetchMode :: FetchMode }
+  deriving stock Generic
+  deriving Show via Quiet ChurnMode
 
 newtype TraceChurnMode = TraceChurnMode ChurnMode
   deriving Show
@@ -65,11 +76,14 @@ data ExtraArguments m =
   , tracerChurnMode    :: Tracer m TraceChurnMode
   }
 
--- | Tag indicating churning approach
--- There are three syncing methods that networking layer supports, the legacy
--- method with or without bootstrap peers, and the Genesis method that relies
--- on chain skipping optimization courtesy of consensus, which also provides
 
+-- | Tag indicating churning approach.
+--
+-- There are three syncing methods supported by ouroboros-network:
+--
+-- * the legacy method (praos mode) without bootstrap peers,
+-- * bootstrap peers, and
+-- * the Genesis method which is using it's own targets for syncing.
 --
 data ChurnRegime = ChurnDefault
                  -- ^ tag to use Praos targets when caught up, or Genesis
@@ -91,13 +105,13 @@ getPeerSelectionTargets consensus lsj deadlineTargets syncTargets =
     (GenesisMode, TooOld) -> syncTargets
     _otherwise            -> deadlineTargets
 
-pickChurnRegime :: ConsensusMode -> ChurnMode -> UseBootstrapPeers -> ChurnRegime
-pickChurnRegime consensus churn ubp =
-  case (churn, ubp, consensus) of
-    (ChurnModeNormal, _, _)                     -> ChurnDefault
-    (_, _, GenesisMode)                         -> ChurnDefault
-    (ChurnModeBulkSync, UseBootstrapPeers _, _) -> ChurnBootstrapPraosSync
-    (ChurnModeBulkSync, _, _)                   -> ChurnPraosSync
+pickChurnRegime :: ChurnMode -> UseBootstrapPeers -> ChurnRegime
+pickChurnRegime churn bootstrap =
+  case (churn, bootstrap) of
+    (ChurnMode FetchModeGenesis,                   _)                     -> ChurnDefault
+    (ChurnMode (PraosFetchMode FetchModeDeadline), _)                     -> ChurnDefault
+    (ChurnMode (PraosFetchMode FetchModeBulkSync), DontUseBootstrapPeers) -> ChurnPraosSync
+    (ChurnMode (PraosFetchMode FetchModeBulkSync), UseBootstrapPeers{})   -> ChurnBootstrapPraosSync
 
 -- | Churn governor.
 --
@@ -183,11 +197,7 @@ peerChurnGovernor PeerChurnArgs {
   where
     updateChurnMode :: STM m ChurnMode
     updateChurnMode = do
-        fm <- readFetchMode
-        let mode = case fm of
-                     PraosFetchMode FetchModeDeadline -> ChurnModeNormal
-                     PraosFetchMode FetchModeBulkSync -> ChurnModeBulkSync
-                     FetchModeGenesis                 -> ChurnModeBulkSync
+        mode <- ChurnMode <$> readFetchMode
         writeTVar churnModeVar mode
         return mode
 
@@ -213,7 +223,7 @@ peerChurnGovernor PeerChurnArgs {
         churnMode <- updateChurnMode
         ltt       <- getLocalRootHotTarget
         lsj       <- getLedgerStateJudgement
-        regime    <- pickChurnRegime consensusMode churnMode <$> getUseBootstrapPeers
+        regime    <- pickChurnRegime churnMode <$> getUseBootstrapPeers
         let targets = getPeerSelectionTargets consensusMode lsj
                                               peerSelectionTargets
                                               genesisPeerSelectionTargets
