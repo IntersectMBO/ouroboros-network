@@ -2,6 +2,10 @@
 
 ## next release
 
+### Breaking changes
+
+* Adapt the `versionNumber` cddl definition to account for `NodeToClientVersionV18`.
+
 ## 0.10.0.2 -- 2024-08-27
 
 ### Breaking changes

@@ -10,7 +10,7 @@
 
 * bump for bad ref in chap for 0.9.0.0
 
-## 0.9.0.0 -- 2024-08-13
+## 0.9.0.0 -- 2024-08-22
 
 ### Breaking changes
 

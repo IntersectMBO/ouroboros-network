@@ -2,6 +2,10 @@
 
 ## next version
 
+### Breaking changes
+
+* Added `NodeToClientVersionV18`
+
 ## 0.4.0.1 -- 2024-08-27
 
 ### Breaking changes
