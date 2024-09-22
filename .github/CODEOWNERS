@@ -3,12 +3,8 @@
 # Default
 *                  @intersectmbo/ouroboros-network-maintainers
 
-# Docs
-docs               @bolt12 @njd42 @peterwthompson @intersectmbo/ouroboros-network-maintainers
-
-
 # CICD
-nix/                         @intersectmbo/core-tech-release-1 @intersectmbo/ouroboros-network-maintainers
-*.nix                        @intersectmbo/core-tech-release-1 @intersectmbo/ouroboros-network-maintainers
-.github/workflows/ @newhoggy @intersectmbo/core-tech-release-1 @intersectmbo/ouroboros-network-maintainers
-scripts/ci         @newhoggy @intersectmbo/core-tech-release-1 @intersectmbo/ouroboros-network-maintainers
+nix/               @intersectmbo/core-tech-release-1 @intersectmbo/ouroboros-network-maintainers
+*.nix              @intersectmbo/core-tech-release-1 @intersectmbo/ouroboros-network-maintainers
+.github/workflows/ @intersectmbo/core-tech-release-1 @intersectmbo/ouroboros-network-maintainers
+scripts/ci         @intersectmbo/core-tech-release-1 @intersectmbo/ouroboros-network-maintainers
