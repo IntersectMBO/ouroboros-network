@@ -182,8 +182,9 @@ txSubmissionInboundV2
 
         unless (Map.keysSet received `Set.isSubsetOf` requested) $
           throwIO ProtocolErrorTxNotRequested
-        -- TODO: all sizes of txs which were announced earlier with
-        -- `MsgReplyTxIds` must be verified.
 
-        handleReceivedTxs requested received
-        k
+        mbe <- handleReceivedTxs requested received
+        case mbe of
+          -- one of `tx`s had a wrong size
+          Just e  -> throwIO e
+          Nothing -> k
