@@ -55,12 +55,13 @@ import Text.Printf
 
 
 data Tx txid = Tx {
-    getTxId    :: !txid,
-    getTxSize  :: !SizeInBytes,
+    getTxId      :: !txid,
+    getTxSize    :: !SizeInBytes,
+    getTxAdvSize :: !SizeInBytes,
     -- | If false this means that when this tx will be submitted to a remote
     -- mempool it will not be valid.  The outbound mempool might contain
     -- invalid tx's in this sense.
-    getTxValid :: !Bool
+    getTxValid   :: !Bool
   }
   deriving (Eq, Ord, Show, Generic)
 
@@ -69,13 +70,17 @@ instance ShowProxy txid => ShowProxy (Tx txid) where
     showProxy _ = "Tx " ++ showProxy (Proxy :: Proxy txid)
 
 instance Arbitrary txid => Arbitrary (Tx txid) where
-    arbitrary =
+    arbitrary = do
+      -- note:
+      -- generating small tx sizes avoids overflow error when semigroup
+      -- instance of `SizeInBytes` is used (summing up all inflight tx
+      -- sizes).
+      (size, advSize) <- frequency [ (9, (\a -> (a,a)) <$> chooseEnum (0, maxTxSize))
+                                   , (1, (,) <$> chooseEnum (0, maxTxSize) <*> chooseEnum (0, maxTxSize))
+                                   ]
       Tx <$> arbitrary
-         <*> chooseEnum (0, maxTxSize)
-             -- note:
-             -- generating small tx sizes avoids overflow error when semigroup
-             -- instance of `SizeInBytes` is used (summing up all inflight tx
-             -- sizes).
+         <*> pure size
+         <*> pure advSize
          <*> frequency [ (3, pure True)
                        , (1, pure False)
                        ]
@@ -167,15 +172,17 @@ txSubmissionCodec2 =
     codecTxSubmission2 CBOR.encodeInt CBOR.decodeInt
                        encodeTx decodeTx
   where
-    encodeTx Tx {getTxId, getTxSize, getTxValid} =
-         CBOR.encodeListLen 3
+    encodeTx Tx {getTxId, getTxSize, getTxAdvSize, getTxValid} =
+         CBOR.encodeListLen 4
       <> CBOR.encodeInt getTxId
       <> CBOR.encodeWord32 (getSizeInBytes getTxSize)
+      <> CBOR.encodeWord32 (getSizeInBytes getTxAdvSize)
       <> CBOR.encodeBool getTxValid
 
     decodeTx = do
       _ <- CBOR.decodeListLen
       Tx <$> CBOR.decodeInt
+         <*> (SizeInBytes <$> CBOR.decodeWord32)
          <*> (SizeInBytes <$> CBOR.decodeWord32)
          <*> CBOR.decodeBool
 

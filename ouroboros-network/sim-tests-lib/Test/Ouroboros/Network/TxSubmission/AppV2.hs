@@ -209,6 +209,7 @@ runTxSubmission tracer tracerTxLogic state txDecisionPolicy = do
                                   txChannelsVar
                                   sharedTxStateVar
                                   (getMempoolReader inboundMempool)
+                                  getTxSize
                                   addr $ \api -> do
                                     let server = txSubmissionInboundV2 verboseTracer
                                                                        (getMempoolWriter inboundMempool)
