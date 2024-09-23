@@ -75,7 +75,7 @@ data PeerTxAPI m txid tx = PeerTxAPI {
                         -- ^ requested txids
                         -> Map txid tx
                         -- ^ received txs
-                        -> m ()
+                        -> m (Maybe TxSubmissionProtocolError)
     -- ^ handle received txs
   }
 
@@ -90,6 +90,7 @@ withPeer
        , MonadMVar m
        , MonadSTM  m
        , Ord txid
+       , Show txid
        , Ord peeraddr
        , Show peeraddr
        )
@@ -97,6 +98,7 @@ withPeer
     -> TxChannelsVar m peeraddr txid tx
     -> SharedTxStateVar m peeraddr txid tx
     -> TxSubmissionMempoolReader txid tx idx m
+    -> (tx -> SizeInBytes)
     -> peeraddr
     --  ^ new peer
     -> (PeerTxAPI m txid tx -> m a)
@@ -106,6 +108,7 @@ withPeer tracer
          channelsVar
          sharedStateVar
          TxSubmissionMempoolReader { mempoolGetSnapshot }
+         txSize
          peeraddr io =
     bracket
       (do -- create a communication channel
@@ -209,9 +212,9 @@ withPeer tracer
                       -- ^ requested txids
                       -> Map txid tx
                       -- ^ received txs
-                      -> m ()
+                      -> m (Maybe TxSubmissionProtocolError)
     handleReceivedTxs txids txs =
-      collectTxs tracer sharedStateVar peeraddr txids txs
+      collectTxs tracer txSize sharedStateVar peeraddr txids txs
 
 
 decisionLogicThread

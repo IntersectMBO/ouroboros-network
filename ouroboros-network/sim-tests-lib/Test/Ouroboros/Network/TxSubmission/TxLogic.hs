@@ -35,6 +35,7 @@ import Data.Monoid (Sum (..))
 import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set (Set)
 import Data.Set qualified as Set
+import Data.Typeable
 
 import NoThunks.Class
 
@@ -46,6 +47,7 @@ import Ouroboros.Network.TxSubmission.Inbound.Policy
 import Ouroboros.Network.TxSubmission.Inbound.State (PeerTxState (..),
            SharedTxState (..))
 import Ouroboros.Network.TxSubmission.Inbound.State qualified as TXS
+import Ouroboros.Network.TxSubmission.Inbound.Types qualified as TXS
 
 import Test.Ouroboros.Network.BlockFetch (PeerGSVT (..))
 import Test.Ouroboros.Network.TxSubmission.Types
@@ -306,7 +308,7 @@ mkArbPeerTxState mempoolHasTxFun txIdsInflight unacked txMaskMap =
   where
     mempoolHasTx   = apply mempoolHasTxFun
     availableTxIds = Map.fromList
-                   [ (txid, getTxSize tx) | (txid, TxAvailable tx _) <- Map.assocs txMaskMap
+                   [ (txid, getTxAdvSize tx) | (txid, TxAvailable tx _) <- Map.assocs txMaskMap
                    , not (mempoolHasTx txid)
                    ]
     unknownTxs     = Set.fromList
@@ -315,7 +317,7 @@ mkArbPeerTxState mempoolHasTxFun txIdsInflight unacked txMaskMap =
                    ]
 
     requestedTxIdsInflight   = fromIntegral txIdsInflight
-    requestedTxsInflightSize = foldMap getTxSize inflightMap
+    requestedTxsInflightSize = foldMap getTxAdvSize inflightMap
     requestedTxsInflight     = Map.keysSet inflightMap
 
     -- exclude `txid`s which are already in the mempool, we never request such
@@ -759,12 +761,20 @@ instance Arbitrary ArbCollectTxs where
 
         receivedTx <- sublistOf requestedTxIds'
                   >>= traverse (\txid -> do
-                                  valid <- frequency [(4, pure True), (1, pure False)]
-                                  pure $ Tx { getTxId = txid,
-                                              getTxSize = availableTxIds Map.! txid,
-                                              getTxValid = valid })
+                                  -- real size, which might be different from
+                                  -- the advertised size
+                                  size <- frequency [ (9, pure (availableTxIds Map.! txid))
+                                                    , (1, chooseEnum (0, maxTxSize))
+                                                    ]
 
-        pure $ assert (foldMap getTxSize receivedTx <= requestedTxsInflightSize)
+                                  valid <- frequency [(4, pure True), (1, pure False)]
+                                  pure $ Tx { getTxId      = txid,
+                                              getTxSize    = size,
+                                              -- `availableTxIds` contains advertised sizes
+                                              getTxAdvSize = availableTxIds Map.! txid,
+                                              getTxValid   = valid })
+
+        pure $ assert (foldMap getTxAdvSize receivedTx <= requestedTxsInflightSize)
              $ ArbCollectTxs mempoolHasTxFun
                               (Set.fromList requestedTxIds')
                               (Map.fromList [ (getTxId tx, tx) | tx <- receivedTx ])
@@ -856,24 +866,49 @@ prop_collectTxsImpl (ArbCollectTxs _mempoolHasTxFun txidsRequested txsReceived p
       label ("number of txids inflight "  ++ labelInt 25 5 (Map.size $ inflightTxs st)) $
       label ("number of txids requested " ++ labelInt 25 5 (Set.size txidsRequested)) $
       label ("number of txids received "  ++ labelInt 10 2 (Map.size txsReceived)) $
+      label ("hasTxSizeError " ++ show hasTxSizeErr) $
 
-           -- InboundState invariant
-           counterexample
-             (  "InboundState invariant violation:\n" ++ show st' ++ "\n"
-             ++ show ps'
-             )
-             (sharedTxStateInvariant st')
+      case TXS.collectTxsImpl getTxSize peeraddr txidsRequested txsReceived st of
+        Right st' | not hasTxSizeErr ->
+          let ps' = peerTxStates st' Map.! peeraddr in
+               -- InboundState invariant
+               counterexample
+                 (  "InboundState invariant violation:\n" ++ show st' ++ "\n"
+                 ++ show ps'
+                 )
+                 (sharedTxStateInvariant st')
 
-      .&&.
-           -- `collectTxsImpl` doesn't modify unacknowledged TxId's
-           counterexample "acknowledged property violation"
-           ( let unacked  = toList $ unacknowledgedTxIds ps
-                 unacked' = toList $ unacknowledgedTxIds ps'
-             in unacked === unacked'
-           )
+          .&&.
+               -- `collectTxsImpl` doesn't modify unacknowledged TxId's
+               counterexample "acknowledged property violation"
+               ( let unacked  = toList $ unacknowledgedTxIds ps
+                     unacked' = toList $ unacknowledgedTxIds ps'
+                 in unacked === unacked'
+               )
+
+        Right _ ->
+            counterexample "collectTxsImpl should return Left"
+          . counterexample (show txsReceived)
+          $ False
+        Left _ | not hasTxSizeErr ->
+          counterexample "collectTxsImpl should return Right" False
+
+        Left (TXS.ProtocolErrorTxSizeError as) ->
+            counterexample (show as)
+          $ Set.fromList ((\(txid, _, _) -> coerceTxId txid) `map` as)
+            ===
+            Map.keysSet (Map.filter (\tx -> getTxSize tx /= getTxAdvSize tx) txsReceived)
+        Left e ->
+          counterexample ("unexpected error: " ++ show e) False
   where
-    st' = TXS.collectTxsImpl peeraddr txidsRequested txsReceived st
-    ps' = peerTxStates st' Map.! peeraddr
+    hasTxSizeErr = any (\tx -> getTxSize tx /= getTxAdvSize tx) txsReceived
+
+    -- The `ProtocolErrorTxSizeError` type is an existential type.  We know that
+    -- the type of `txid` is `TxId`, we just don't have evidence for it.
+    coerceTxId :: Typeable txid => txid -> TxId
+    coerceTxId txid = case cast txid of
+      Just a  -> a
+      Nothing -> error "impossible happened! Is the test still using `TxId` for `txid`?"
 
 
 -- | Verify that `SharedTxState` returned by `collectTxsImpl` if evaluated to
@@ -883,11 +918,11 @@ prop_collectTxsImpl_nothunks
   :: ArbCollectTxs
   -> Property
 prop_collectTxsImpl_nothunks (ArbCollectTxs _mempoolHasTxFun txidsRequested txsReceived peeraddr _ st) =
-    case unsafeNoThunks $! st' of
-      Nothing  -> property True
-      Just ctx -> counterexample (show ctx) False
-  where
-    st' = TXS.collectTxsImpl peeraddr txidsRequested txsReceived st
+    case TXS.collectTxsImpl getTxSize peeraddr txidsRequested txsReceived st of
+      Right st' -> case unsafeNoThunks $! st' of
+        Nothing  -> property True
+        Just ctx -> counterexample (show ctx) False
+      Left _ -> property True
 
 
 newtype ArbTxDecisionPolicy = ArbTxDecisionPolicy TxDecisionPolicy

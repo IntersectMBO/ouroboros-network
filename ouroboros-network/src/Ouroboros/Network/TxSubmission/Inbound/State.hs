@@ -32,6 +32,7 @@ import Data.Foldable (fold,
          foldl',
 #endif
          toList)
+import Data.Functor (($>))
 import Data.Map.Merge.Strict qualified as Map
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -214,7 +215,8 @@ updateRefCounts referenceCounts (RefCountDiff diff) =
 receivedTxIdsImpl
     :: forall peeraddr tx txid.
        (Ord txid, Ord peeraddr, HasCallStack)
-    => (txid -> Bool) -- ^ check if txid is in the mempool, ref 'mempoolHasTx'
+    => (txid -> Bool)      -- ^ check if txid is in the mempool, ref
+                           -- 'mempoolHasTx'
     -> peeraddr
     -> NumTxIdsToReq
     -- ^ number of requests to subtract from
@@ -302,33 +304,65 @@ receivedTxIdsImpl
 
 collectTxsImpl
     :: forall peeraddr tx txid.
-       (Ord txid, Ord peeraddr)
-    => peeraddr
+       ( Ord peeraddr
+       , Ord txid
+       , Show txid
+       )
+    => (tx -> SizeInBytes) -- ^ compute tx size
+    -> peeraddr
     -> Set txid    -- ^ set of requested txids
     -> Map txid tx -- ^ received txs
     -> SharedTxState peeraddr txid tx
-    -> SharedTxState peeraddr txid tx
-    -- ^ number of `txid`s to be acknowledged, `tx`s to be added to
-    -- the mempool and updated state.
-collectTxsImpl peeraddr requestedTxIds receivedTxs
+    -> Either TxSubmissionProtocolError
+              (SharedTxState peeraddr txid tx)
+    -- ^ Return list of `txid` which sizes didn't match or a new state.
+    -- If one of the `tx` has wrong size, we return an error.  The
+    -- mini-protocol will throw, which will clean the state map from this peer.
+collectTxsImpl txSize peeraddr requestedTxIds receivedTxs
                st@SharedTxState { peerTxStates } =
 
     -- using `alterF` so the update of `PeerTxState` is done in one lookup
     case Map.alterF (fmap Just . fn . fromJust)
                     peeraddr
                     peerTxStates of
-      (st', peerTxStates') ->
-        st' { peerTxStates = peerTxStates' }
+      (Right st', peerTxStates') ->
+        Right st' { peerTxStates = peerTxStates' }
+      (Left e, _) ->
+        Left $ ProtocolErrorTxSizeError e
 
   where
     -- Update `PeerTxState` and partially update `SharedTxState` (except of
     -- `peerTxStates`).
     fn :: PeerTxState txid tx
-       -> ( SharedTxState peeraddr txid tx
+       -> ( Either [(txid, SizeInBytes, SizeInBytes)]
+                   (SharedTxState peeraddr txid tx)
           , PeerTxState txid tx
           )
-    fn ps = (st'', ps'')
+    fn ps =
+        case wrongSizedTxs of
+          [] -> ( Right st''
+                , ps''
+                )
+          _  -> ( Left wrongSizedTxs
+                , ps
+                )
       where
+        wrongSizedTxs :: [(txid, SizeInBytes, SizeInBytes)]
+        wrongSizedTxs =
+            map (\(a, (b,c)) -> (a,b,c))
+          . Map.toList
+          $ Map.merge
+              (Map.mapMaybeMissing \_ _ -> Nothing)
+              (Map.mapMaybeMissing \_ _ -> Nothing)
+              (Map.zipWithMaybeMatched \_ receivedSize advertisedSize ->
+                if receivedSize == advertisedSize
+                  then Nothing
+                  else Just (receivedSize, advertisedSize)
+              )
+              (txSize `Map.map` receivedTxs)
+              (availableTxIds ps)
+
+
         notReceived = requestedTxIds Set.\\ Map.keysSet receivedTxs
 
         -- add received `tx`s to buffered map
@@ -446,17 +480,25 @@ receivedTxIds tracer sharedVar getMempoolSnapshot peeraddr reqNo txidsSeq txidsM
 --
 collectTxs
   :: forall m peeraddr tx txid.
-     (MonadSTM m, Ord txid, Ord peeraddr)
+     (MonadSTM m, Ord txid, Ord peeraddr,
+      Show txid)
   => Tracer m (TraceTxLogic peeraddr txid tx)
+  -> (tx -> SizeInBytes)
   -> SharedTxStateVar m peeraddr txid tx
   -> peeraddr
   -> Set txid    -- ^ set of requested txids
   -> Map txid tx -- ^ received txs
-  -> m ()
+  -> m (Maybe TxSubmissionProtocolError)
   -- ^ number of txids to be acknowledged and txs to be added to the
   -- mempool
-collectTxs tracer sharedVar peeraddr txidsRequested txsMap = do
-  st <- atomically $
-    stateTVar sharedVar
-      ((\a -> (a,a)) . collectTxsImpl peeraddr txidsRequested txsMap)
-  traceWith tracer (TraceSharedTxState "collectTxs" st)
+collectTxs tracer txSize sharedVar peeraddr txidsRequested txsMap = do
+  r <- atomically $ do
+    st <- readTVar sharedVar
+    case collectTxsImpl txSize peeraddr txidsRequested txsMap st of
+      r@(Right st') -> writeTVar sharedVar st'
+                    $> r
+      r@Left {}     -> pure r
+  case r of
+    Right st -> traceWith tracer (TraceSharedTxState "collectTxs" st)
+             $> Nothing
+    Left e   -> return (Just e)
