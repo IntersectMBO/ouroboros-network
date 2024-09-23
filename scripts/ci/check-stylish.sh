@@ -9,46 +9,47 @@ function usage {
   echo "        -u                        only check files uncommitted"
   echo "        -c                        only check files committed in HEAD"
   echo "        -h                        this help message"
+  echo "        -g                        don't show the diff with git"
   exit
 }
 
 export LC_ALL=C.UTF-8
 
 STYLISH_HASKELL_ARGS="-c .stylish-haskell-network.yaml -i"
+USE_GIT=1
 
-optstring=":uch"
+optstring=":uchg"
 while getopts ${optstring} arg; do
   case ${arg} in
     h)
       usage;
       exit 0
       ;;
+    g)
+      USE_GIT=0
+      ;;
     c)
       PATHS=$(git show --pretty='' --name-only HEAD)
       for path in $PATHS; do
-        if [ "${path##*.}" == "hs" ]; then
-          if grep -qE '^#' $path; then
-            echo "$path contains CPP.  Skipping."
-          else
-            echo $path
-            stylish-haskell $STYLISH_HASKELL_ARGS $path
-          fi
-        fi
+        echo $path
+        fd -e hs --ignore-file ./scripts/ci/check-stylish-ignore --full-path $path -X stylish-haskell $STYLISH_HASKELL_ARGS
       done
+      if [ $USE_GIT == 1 ]; then
+        git --no-pager diff --exit-code
+      fi
       exit 0
       ;;
     u)
       PATHS=$(git diff --name-only HEAD)
       for path in $PATHS; do
         if [ "${path##*.}" == "hs" ]; then
-          if grep -qE '^#' $path; then
-            echo "$path contains CPP.  Skipping."
-          else
-            echo $path
-            stylish-haskell $STYLISH_HASKELL_ARGS $path
-          fi
+          echo $path
+          fd -e hs --ignore-file ./scripts/ci/check-stylish-ignore --full-path $path -X stylish-haskell $STYLISH_HASKELL_ARGS
         fi
       done
+      if [ $USE_GIT == 1 ]; then
+        git --no-pager diff --exit-code
+      fi
       exit 0
       ;;
     ?)
@@ -69,3 +70,7 @@ fd . './ouroboros-network-mock'      $FD_OPTS
 fd . './ouroboros-network-protocols' $FD_OPTS
 fd . './ouroboros-network'           $FD_OPTS
 fd . './cardano-client'              $FD_OPTS
+
+if [ $USE_GIT == 1 ]; then
+git --no-pager diff --exit-code
+fi
