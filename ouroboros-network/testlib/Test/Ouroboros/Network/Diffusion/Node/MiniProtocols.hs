@@ -1,3 +1,4 @@
+{-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
@@ -111,8 +112,8 @@ import Ouroboros.Network.Util.ShowProxy
 
 import Ouroboros.Network.Diffusion.Policies (simplePeerSelectionPolicy)
 import Test.Ouroboros.Network.Diffusion.Node.Kernel
-import Test.Ouroboros.Network.TxSubmission.Types (Mempool, Tx, getMempoolReader,
-           getMempoolWriter, txSubmissionCodec2)
+import Test.Ouroboros.Network.TxSubmission.Types (Mempool, Tx (..),
+           getMempoolReader, getMempoolWriter, txSubmissionCodec2)
 
 
 -- | Protocol codecs.
@@ -598,11 +599,11 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
                  -- value (which must be 'False') so it does not matter which branch is
                  -- picked.
                  continue <- atomically $ runFirstToFinish $
-                      ( FirstToFinish $ do
-                          LazySTM.readTVar v >>= check
-                          continueSTM )
-                   <> ( FirstToFinish $ do
-                          continueSTM >>= \b -> check (not b) $> b )
+                      FirstToFinish do
+                        LazySTM.readTVar v >>= check
+                        continueSTM
+                   <> FirstToFinish do
+                        continueSTM >>= \b -> check (not b) $> b
                  if continue
                    then return   pingPongClient
                    else return $ PingPong.SendMsgDone ()
@@ -704,6 +705,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
                    txChannelsVar
                    sharedTxStateVar
                    (getMempoolReader mempool)
+                   getTxSize
                    them $ \api -> do
             let server = txSubmissionInboundV2
                            txSubmissionInboundTracer

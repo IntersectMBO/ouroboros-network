@@ -1,5 +1,7 @@
-{-# LANGUAGE DeriveGeneric  #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE DeriveGeneric             #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE StandaloneDeriving        #-}
 
 module Ouroboros.Network.TxSubmission.Inbound.Types
   ( -- * PeerTxState
@@ -310,10 +312,17 @@ data TraceTxSubmissionInbound txid tx =
 data TxSubmissionProtocolError =
        ProtocolErrorTxNotRequested
      | ProtocolErrorTxIdsNotRequested
-  deriving Show
+     | forall txid. (Show txid)
+       => ProtocolErrorTxSizeError [(txid, SizeInBytes, SizeInBytes)]
+     -- ^ a list of txid for which the received size and advertised size didn't
+     -- match.
+
+deriving instance Show TxSubmissionProtocolError
 
 instance Exception TxSubmissionProtocolError where
   displayException ProtocolErrorTxNotRequested =
       "The peer replied with a transaction we did not ask for."
   displayException ProtocolErrorTxIdsNotRequested =
       "The peer replied with more txids than we asked for."
+  displayException (ProtocolErrorTxSizeError txids) =
+      "The peer received txs with wrong sizes " ++ show txids
