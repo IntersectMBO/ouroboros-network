@@ -159,19 +159,11 @@ main = defaultMain
             | msg <- localTxMonitorMessages
             ]
     , bgroup "LocalStateQuery Codec" $
-        let printMsg :: Stateful.AnyMessage (LocalStateQuery Block BlockPoint Query) State
-                     -> String
-            printMsg msg = case msg of
-               Stateful.AnyMessageAndAgency tok _ _ (LocalStateQuery.MsgAcquire _) -> show tok ++ " MsgAcquire"
-               Stateful.AnyMessageAndAgency tok _ _ (MsgQuery _)                   -> show tok ++ " MsgQuery"
-               Stateful.AnyMessageAndAgency SingQuerying _ _ (MsgResult _ _)       -> "ServerAgency TokQuerying Query MsgResult"
-               Stateful.AnyMessageAndAgency tok _ _ (MsgReAcquire _)               -> show tok ++ " MsgReAcquire"
-               Stateful.AnyMessageAndAgency tok _ _ message                        -> show tok ++ " " ++ show message
-         in concat
-              [ benchmarkCodecSt ("LocalStateQuery " ++ printMsg msg)
-                                 (const localStateQueryCodec) maxBound msg
-              | msg <- getAnyMessageWithResult <$> localStateQueryMessages
-              ]
+        concat
+          [ benchmarkCodecSt ("LocalStateQuery " ++ show msg)
+                             (const localStateQueryCodec) maxBound msg
+          | msg <- getAnyMessageWithResult <$> localStateQueryMessages
+          ]
     , bgroup "PeerSharing Codec" $
         let printMsg :: AnyMessage (PeerSharing SockAddr) -> String
             printMsg msg = case msg of
@@ -320,40 +312,40 @@ localStateQueryMessages :: [AnyMessageWithResult Block BlockPoint Query Result]
 localStateQueryMessages =
   [ AnyMessageWithResult
       (Stateful.AnyMessage
-        StateIdle StateAcquiring
+        StateIdle
         (LocalStateQuery.MsgAcquire
         (SpecificPoint (BlockPoint largeCBORBS))))
   , AnyMessageWithResult
       (Stateful.AnyMessage
-        StateAcquiring StateAcquired
+        StateAcquiring
         LocalStateQuery.MsgAcquired)
   , AnyMessageWithResult
       (Stateful.AnyMessage
-         StateAcquiring StateIdle
+         StateAcquiring
         (LocalStateQuery.MsgFailure LocalStateQuery.AcquireFailurePointNotOnChain))
   , AnyMessageWithResult
       (Stateful.AnyMessage
-        StateAcquiring StateIdle
+        StateAcquiring
         (LocalStateQuery.MsgFailure LocalStateQuery.AcquireFailurePointTooOld))
   , AnyMessageWithResult
       (Stateful.AnyMessage
-        StateAcquired (StateQuerying (Query largeCBORBS))
+        StateAcquired
         (MsgQuery (Query largeCBORBS)))
   , AnyMessageWithResult
       (Stateful.AnyMessage
-        (StateQuerying (Query largeCBORBS)) StateAcquired
-        (MsgResult (Query largeCBORBS) (Result (Any CBOR.TNull))))
+        (StateQuerying (Query largeCBORBS))
+        (MsgResult (Result (Any CBOR.TNull))))
   , AnyMessageWithResult
       (Stateful.AnyMessage
-        StateAcquired StateIdle
+        StateAcquired
         LocalStateQuery.MsgRelease)
   , AnyMessageWithResult
       (Stateful.AnyMessage
-        StateAcquired StateAcquiring
+        StateAcquired
         (MsgReAcquire (SpecificPoint (BlockPoint largeCBORBS))))
   , AnyMessageWithResult
       (Stateful.AnyMessage
-        StateIdle StateDone
+        StateIdle
         LocalStateQuery.MsgDone)
   ]
   where
@@ -448,10 +440,10 @@ benchmarkEncodeSt :: (forall (st :: ps) (st' :: ps). NFData (Message ps st st'))
                   -> NodeToNodeVersion
                   -> Stateful.AnyMessage ps f
                   -> Benchmark
-benchmarkEncodeSt title getCodec ntnVersion (Stateful.AnyMessage _f f' msg) =
+benchmarkEncodeSt title getCodec ntnVersion (Stateful.AnyMessage f msg) =
   let Stateful.Codec { Stateful.encode } = getCodec ntnVersion
    in env (pure msg) $ \message ->
-        bench title $ nf (encode f') message
+        bench title $ nf (encode f) message
 
 -- TODO: We don't force the agency along with the message because this leads
 -- to a weird error that could be a tasty-bench bug.
@@ -466,10 +458,10 @@ benchmarkDecodeSt :: forall ps f.
                   -> NodeToNodeVersion
                   -> Stateful.AnyMessage ps f
                   -> Benchmark
-benchmarkDecodeSt title getCodec ntnVersion (Stateful.AnyMessageAndAgency !stok !f !f' msg) =
+benchmarkDecodeSt title getCodec ntnVersion (Stateful.AnyMessageAndAgency !stok !f msg) =
   let Stateful.Codec { Stateful.encode
                      , Stateful.decode } = getCodec ntnVersion
-   in env (pure (encode f' msg)) $ \encodedMessage ->
+   in env (pure (encode f msg)) $ \encodedMessage ->
         bench title $ nfIO (do
                               decoder <- decode stok f
                               res <- runDecoder [encodedMessage] decoder

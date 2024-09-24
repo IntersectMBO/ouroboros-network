@@ -387,7 +387,7 @@ mkMiniProtocolCbFromPeerSt
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
      , Show failure
      )
-  => (ctx -> ( Tracer m (TraceSendRecv ps)
+  => (ctx -> ( Tracer m (Stateful.TraceSendRecv ps f)
              , Stateful.Codec ps failure f m bytes
              , f st
              , Stateful.Peer ps pr st f m a

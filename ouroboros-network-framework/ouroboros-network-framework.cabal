@@ -103,11 +103,11 @@ library
                      , ouroboros-network-api
                                       ^>=0.9.0
                      , ouroboros-network-testing
-                     , typed-protocols ^>=0.2
+                     , typed-protocols ^>=0.3
                      , typed-protocols-stateful
-                                       ^>=0.2
+                                       ^>=0.3
                      , typed-protocols-cborg
-                                      ^>=0.2
+                                      ^>=0.3
                      , Win32-network  ^>=0.2
 
   if os(windows)
@@ -278,7 +278,7 @@ test-suite io-tests
                      , ouroboros-network-framework:testlib
                      , typed-protocols
                      , typed-protocols-stateful
-                     , typed-protocols-examples >= 0.4
+                     , typed-protocols-examples >= 0.5
 
   if os(windows)
     build-depends:     Win32-network <0.3

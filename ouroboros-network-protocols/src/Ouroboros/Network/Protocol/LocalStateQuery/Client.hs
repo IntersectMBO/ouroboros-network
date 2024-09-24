@@ -169,11 +169,11 @@ localStateQueryClientPeer (LocalStateQueryClient handler) =
       -> Client (LocalStateQuery block point query) StIdle State m a
     handleStIdle req = case req of
       SendMsgAcquire tgt stAcquiring ->
-        Yield StateAcquiring
+        Yield StateIdle StateAcquiring
               (MsgAcquire tgt)
               (handleStAcquiring stAcquiring)
       SendMsgDone a ->
-        Yield StateDone MsgDone (Done a)
+        Yield StateIdle StateDone MsgDone (Done a)
 
     handleStAcquiring
       :: ClientStAcquiring block point query m a
@@ -192,15 +192,15 @@ localStateQueryClientPeer (LocalStateQueryClient handler) =
       -> Client (LocalStateQuery block point query) StAcquired State m a
     handleStAcquired req = case req of
       SendMsgQuery query stQuerying ->
-        Yield (StateQuerying query)
+        Yield StateAcquired (StateQuerying query)
               (MsgQuery query)
               (handleStQuerying query stQuerying)
       SendMsgReAcquire tgt stAcquiring ->
-        Yield StateAcquiring
+        Yield StateAcquired StateAcquiring
               (MsgReAcquire tgt)
               (handleStAcquiring stAcquiring)
       SendMsgRelease stIdle ->
-        Yield StateIdle
+        Yield StateAcquired StateIdle
               MsgRelease
               (Effect (handleStIdle <$> stIdle))
 
@@ -210,6 +210,6 @@ localStateQueryClientPeer (LocalStateQueryClient handler) =
       -> Client (LocalStateQuery block point query) (StQuerying result) State m a
     handleStQuerying _ ClientStQuerying{recvMsgResult} =
       Await $ \_ req -> case req of
-        MsgResult _ result -> ( Effect (handleStAcquired <$> recvMsgResult result)
-                              , StateAcquired
-                              )
+        MsgResult result -> ( Effect (handleStAcquired <$> recvMsgResult result)
+                            , StateAcquired
+                            )

@@ -113,11 +113,11 @@ localStateQueryServerPeer (LocalStateQueryServer handler) =
       -> Server (LocalStateQuery block point query) StAcquiring State m a
     handleStAcquiring req = case req of
       SendMsgAcquired stAcquired    ->
-        Yield StateAcquired
+        Yield StateAcquiring StateAcquired
               MsgAcquired
               (handleStAcquired stAcquired)
       SendMsgFailure failure stIdle ->
-        Yield StateIdle
+        Yield StateAcquiring StateIdle
               (MsgFailure failure)
               (handleStIdle stIdle)
 
@@ -141,6 +141,6 @@ localStateQueryServerPeer (LocalStateQueryServer handler) =
       -> ServerStQuerying block point query m a result
       -> Server (LocalStateQuery block point query) (StQuerying result) State m a
     handleStQuerying query (SendMsgResult result stAcquired) =
-      Yield StateAcquired
-            (MsgResult query result)
+      Yield (StateQuerying query) StateAcquired
+            (MsgResult result)
             (handleStAcquired stAcquired)

@@ -162,7 +162,7 @@ library
                        ouroboros-network-framework ^>=0.13.2.2,
                        ouroboros-network-protocols ^>=0.10,
                        strict-stm,
-                       typed-protocols  ^>=0.2,
+                       typed-protocols  ^>=0.3,
                        typed-protocols-stateful
   if !os(windows)
     build-depends:     directory,

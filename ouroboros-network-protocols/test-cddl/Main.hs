@@ -413,7 +413,7 @@ validateEncoderSt
     -> Property
 validateEncoderSt spec
                   Stateful.Codec { Stateful.encode }
-                  (Stateful.AnyMessage _ f msg) =
+                  (Stateful.AnyMessage f msg) =
     counterexample sterms $
     ioProperty $
       either (\err -> counterexample err False)

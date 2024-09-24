@@ -33,7 +33,6 @@ import Codec.Serialise (DeserialiseFailure)
 import Codec.Serialise qualified as Serialise (decode, encode)
 import Codec.Serialise.Class qualified as SerialiseClass
 
-import Network.TypedProtocol.Codec (AnyMessage (..))
 import Network.TypedProtocol.Stateful.Codec qualified as Stateful
 import Network.TypedProtocol.Stateful.Proofs qualified as Stateful
 
@@ -291,9 +290,9 @@ instance ( Arbitrary point
       arbitrary = oneof
         [ AnyMessageWithResult . getAnyMessageV7 <$> (arbitrary :: Gen (AnyMessageV7 block point query result))
 
-        , AnyMessageWithResult . Stateful.AnyMessage StateIdle StateAcquiring . MsgAcquire <$> arbitrary
+        , AnyMessageWithResult . Stateful.AnyMessage StateIdle . MsgAcquire <$> arbitrary
 
-        , AnyMessageWithResult . Stateful.AnyMessage StateAcquired StateAcquiring . MsgReAcquire <$> arbitrary
+        , AnyMessageWithResult . Stateful.AnyMessage StateAcquired . MsgReAcquire <$> arbitrary
         ]
 
 -- Newtype wrapper which generates only valid data for 'NodeToClientV7' protocol.
@@ -310,66 +309,64 @@ instance ( Arbitrary point
          )
       => Arbitrary (AnyMessageV7 block point query result) where
   arbitrary = AnyMessageV7 <$> oneof
-    [ Stateful.AnyMessage StateIdle StateAcquiring
+    [ Stateful.AnyMessage StateIdle
         <$> (MsgAcquire <$> arbitrary)
 
-    , pure (Stateful.AnyMessage StateAcquiring StateAcquired MsgAcquired)
+    , pure (Stateful.AnyMessage StateAcquiring MsgAcquired)
 
-    , Stateful.AnyMessage StateAcquiring StateIdle
+    , Stateful.AnyMessage StateAcquiring
         <$> (MsgFailure <$> arbitrary)
 
     , (\query ->
         Stateful.AnyMessage StateAcquired
-                            (StateQuerying query)
                             (MsgQuery query))
         <$> (arbitrary :: Gen (query result))
 
     , (\(QueryWithResult query result) ->
         Stateful.AnyMessage (StateQuerying query)
-                            StateAcquired
-                            (MsgResult query result))
+                            (MsgResult result))
         <$> (arbitrary :: Gen (QueryWithResult query result))
 
-    , pure (Stateful.AnyMessage StateAcquired StateIdle MsgRelease)
+    , pure (Stateful.AnyMessage StateAcquired MsgRelease)
 
-    , Stateful.AnyMessage StateAcquired StateAcquiring
+    , Stateful.AnyMessage StateAcquired
       <$> (MsgReAcquire <$> arbitrary)
 
-    , pure (Stateful.AnyMessage StateIdle StateDone MsgDone)
+    , pure (Stateful.AnyMessage StateIdle MsgDone)
     ]
 
 instance ShowQuery Query where
   showResult GetTheLedgerState = show
 
-instance  Eq (AnyMessage (LocalStateQuery Block (Point Block) Query)) where
+instance  Eq (Stateful.AnyMessage (LocalStateQuery Block (Point Block) Query) State) where
 
-  (==) (AnyMessage (MsgAcquire tgt))
-       (AnyMessage (MsgAcquire tgt')) = tgt == tgt'
+  (==) (Stateful.AnyMessage _ (MsgAcquire tgt))
+       (Stateful.AnyMessage _ (MsgAcquire tgt')) = tgt == tgt'
 
-  (==) (AnyMessage MsgAcquired)
-       (AnyMessage MsgAcquired) = True
+  (==) (Stateful.AnyMessage _ MsgAcquired)
+       (Stateful.AnyMessage _ MsgAcquired) = True
 
-  (==) (AnyMessage (MsgFailure failure))
-       (AnyMessage (MsgFailure failure')) = failure == failure'
+  (==) (Stateful.AnyMessage _ (MsgFailure failure))
+       (Stateful.AnyMessage _ (MsgFailure failure')) = failure == failure'
 
-  (==) (AnyMessage (MsgQuery query))
-       (AnyMessage (MsgQuery query')) =
+  (==) (Stateful.AnyMessage _ (MsgQuery query))
+       (Stateful.AnyMessage _ (MsgQuery query')) =
          case (query, query') of
            (GetTheLedgerState, GetTheLedgerState) -> True
 
-  (==) (AnyMessage (MsgResult query  result))
-       (AnyMessage (MsgResult query' result')) =
+  (==) (Stateful.AnyMessage (StateQuerying query)  (MsgResult result))
+       (Stateful.AnyMessage (StateQuerying query') (MsgResult result')) =
          case (query, query') of
            (GetTheLedgerState, GetTheLedgerState) -> result == result'
 
-  (==) (AnyMessage MsgRelease)
-       (AnyMessage MsgRelease) = True
+  (==) (Stateful.AnyMessage _ MsgRelease)
+       (Stateful.AnyMessage _ MsgRelease) = True
 
-  (==) (AnyMessage (MsgReAcquire tgt))
-       (AnyMessage (MsgReAcquire tgt')) = tgt == tgt'
+  (==) (Stateful.AnyMessage _ (MsgReAcquire tgt))
+       (Stateful.AnyMessage _ (MsgReAcquire tgt')) = tgt == tgt'
 
-  (==) (AnyMessage MsgDone)
-       (AnyMessage MsgDone) = True
+  (==) (Stateful.AnyMessage _ MsgDone)
+       (Stateful.AnyMessage _ MsgDone) = True
 
   _ == _ = False
 

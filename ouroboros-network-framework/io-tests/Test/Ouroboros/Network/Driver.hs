@@ -12,6 +12,7 @@
 module Test.Ouroboros.Network.Driver (tests) where
 
 import Data.Bifunctor (bimap)
+import Data.Kind (Type)
 import Data.List (intercalate)
 import Data.List qualified as List
 import Text.Read (readMaybe)
@@ -541,11 +542,12 @@ data API result where
 instance ShowProxy (Stateful.ReqResp API) where
   showProxy _ = "ReqResp API"
 
-instance Show (Message (Stateful.ReqResp API) st st') where
-  show (Stateful.MsgReq (API s))    = "MsgReq " ++ s
-  show (Stateful.MsgResp (API _) s) = "MsgResp "  ++ s
-  show Stateful.MsgDone             = "MsgDone"
-
+instance Show (Stateful.AnyMessage (Stateful.ReqResp API) Stateful.State) where
+  show msg =
+    case msg of
+      Stateful.AnyMessage _                            (Stateful.MsgReq (API s)) -> "MsgReq " ++ s
+      Stateful.AnyMessage (Stateful.StateBusy (API _)) (Stateful.MsgResp resp)   -> "MsgResp " ++ resp
+      Stateful.AnyMessage _                             Stateful.MsgDone         -> "MsgDone"
 
 -- | Run the server peer using @runPeerWithByteLimit@, which will receive requests
 -- with the given payloads.
@@ -553,21 +555,32 @@ instance Show (Message (Stateful.ReqResp API) st st') where
 prop_channel_stateful_reqresp
   :: forall m. (MonadAsync m, MonadDelay m, MonadMask m, MonadSay m)
   => Bool -- turn on logging for channels
-  -> Tracer m (TraceSendRecv (Stateful.ReqResp API))
+  -> Tracer m (Stateful.TraceSendRecv
+                (Stateful.ReqResp API)
+                (Stateful.State :: Stateful.ReqResp API -> Type)
+                -- NOTE: the kind signature is necessary, GHC (9.10.1 at the
+                -- time of writing this memo) infers a more general kind
+                -- `Stateful.ReqResp req -> Type` and has trouble to instantiate
+                -- `req` to `API`.
+              )
   -> [(String, DiffTime)]
   -- ^ request payloads
   -> m Property
 prop_channel_stateful_reqresp logging tracer reqPayloads = do
       (c, c') <- createConnectedChannels
-      let inbound  | logging   = loggingChannel "inbound" c
+      let inbound,outbound :: Channel m String
+          inbound  | logging   = loggingChannel "inbound" c
                    | otherwise = c
           outbound | logging   = loggingChannel "inbound" c'
                    | otherwise = c'
 
+          initialState :: Stateful.State (Stateful.StIdle :: Stateful.ReqResp API)
+          initialState = Stateful.StateIdle
+
       res <- try $
-        (fst <$> Stateful.runPeer tracer codec outbound Stateful.StateIdle clientPeer)
+        (fst <$> Stateful.runPeer tracer codec outbound initialState clientPeer)
           `concurrently`
-        (fst <$> Stateful.runPeer tracer codec inbound Stateful.StateIdle serverPeer)
+        (fst <$> Stateful.runPeer tracer codec inbound initialState serverPeer)
 
       pure $ case res :: Either ProtocolLimitFailure ([String], ()) of
         Right (as, _)            -> as === fst `map` reqPayloads

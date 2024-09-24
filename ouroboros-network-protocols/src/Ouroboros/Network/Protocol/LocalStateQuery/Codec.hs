@@ -23,8 +23,8 @@ import Data.Kind (Type)
 import Data.Singletons.Decide
 import Text.Printf
 
-import Network.TypedProtocol.Codec (AnyMessage (..), CodecFailure (..),
-           DecodeStep (..), SomeMessage (..))
+import Network.TypedProtocol.Codec (CodecFailure (..), DecodeStep (..),
+           SomeMessage (..))
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Stateful.Codec qualified as Stateful
 import Network.TypedProtocol.Stateful.Codec.CBOR qualified as Stateful
@@ -72,7 +72,7 @@ codecLocalStateQuery version
 
     encode :: forall (st  :: LocalStateQuery block point query)
                      (st' :: LocalStateQuery block point query).
-              State st'
+              State st
            -> Message (LocalStateQuery block point query) st st'
            -> CBOR.Encoding
     encode _ (MsgAcquire (SpecificPoint pt)) =
@@ -107,7 +107,7 @@ codecLocalStateQuery version
      <> CBOR.encodeWord 3
      <> encodeQuery query
 
-    encode _ (MsgResult query result) =
+    encode (StateQuerying query) (MsgResult result) =
         CBOR.encodeListLen 2
      <> CBOR.encodeWord 4
      <> encodeResult query result
@@ -170,7 +170,7 @@ codecLocalStateQuery version
 
         (SingQuerying, StateQuerying query, 2, 4) -> do
           result <- decodeResult query
-          return (SomeMessage (MsgResult query result))
+          return (SomeMessage (MsgResult result))
 
         (SingAcquired, _, 1, 5) ->
           return (SomeMessage MsgRelease)
@@ -208,45 +208,45 @@ codecLocalStateQuery version
 -- any serialisation. It keeps the typed messages, wrapped in 'AnyMessage'.
 --
 codecLocalStateQueryId
-  :: forall block point (query :: Type -> Type) m.
+  :: forall (block :: Type) (point :: Type) (query :: Type -> Type) m.
      Monad m
-  => (forall result1 result2.
+     => (forall (result1 :: Type) (result2 :: Type).
           query result1
        -> query result2
        -> Maybe (result1 :~: result2)
      )
   -> Stateful.Codec (LocalStateQuery block point query)
                     CodecFailure State m
-                    (AnyMessage (LocalStateQuery block point query))
+                    (Stateful.AnyMessage (LocalStateQuery block point query) State)
 codecLocalStateQueryId eqQuery =
    Stateful.Codec { Stateful.encode, Stateful.decode }
  where
    encode :: forall st st'.
              ActiveState st
           => StateTokenI st
-          => State st'
+          => State st
           -> Message (LocalStateQuery block point query) st st'
-          -> AnyMessage (LocalStateQuery block point query)
-   encode _ = AnyMessage
+          -> Stateful.AnyMessage (LocalStateQuery block point query) State
+   encode = Stateful.AnyMessage
 
    decode :: forall (st :: LocalStateQuery block point query).
              ActiveState st
           => StateToken st
           -> State st
-          -> m (DecodeStep (AnyMessage (LocalStateQuery block point query))
+          -> m (DecodeStep (Stateful.AnyMessage (LocalStateQuery block point query) State)
                            CodecFailure m (SomeMessage st))
    decode stok f = return $ DecodePartial $ \bytes ->
      return $ case (stok, f, bytes) of
-       (SingIdle,       _, Just (AnyMessage msg@(MsgAcquire{})))   -> DecodeDone (SomeMessage msg) Nothing
-       (SingIdle,       _, Just (AnyMessage msg@(MsgDone{})))      -> DecodeDone (SomeMessage msg) Nothing
-       (SingAcquired,   _, Just (AnyMessage msg@(MsgQuery{})))     -> DecodeDone (SomeMessage msg) Nothing
-       (SingAcquired,   _, Just (AnyMessage msg@(MsgReAcquire{}))) -> DecodeDone (SomeMessage msg) Nothing
-       (SingAcquired,   _, Just (AnyMessage msg@(MsgRelease{})))   -> DecodeDone (SomeMessage msg) Nothing
-       (SingAcquiring,  _, Just (AnyMessage msg@(MsgAcquired{})))  -> DecodeDone (SomeMessage msg) Nothing
-       (SingAcquiring,  _, Just (AnyMessage msg@(MsgFailure{})))   -> DecodeDone (SomeMessage msg) Nothing
-       (SingQuerying,   StateQuerying q, Just (AnyMessage msg@(MsgResult query _)))
-          | Just Refl <- eqQuery q query
-          -> DecodeDone (SomeMessage msg) Nothing
+       (SingIdle,       _, Just (Stateful.AnyMessage _ msg@(MsgAcquire{})))   -> DecodeDone (SomeMessage msg) Nothing
+       (SingIdle,       _, Just (Stateful.AnyMessage _ msg@(MsgDone{})))      -> DecodeDone (SomeMessage msg) Nothing
+       (SingAcquired,   _, Just (Stateful.AnyMessage _ msg@(MsgQuery{})))     -> DecodeDone (SomeMessage msg) Nothing
+       (SingAcquired,   _, Just (Stateful.AnyMessage _ msg@(MsgReAcquire{}))) -> DecodeDone (SomeMessage msg) Nothing
+       (SingAcquired,   _, Just (Stateful.AnyMessage _ msg@(MsgRelease{})))   -> DecodeDone (SomeMessage msg) Nothing
+       (SingAcquiring,  _, Just (Stateful.AnyMessage _ msg@(MsgAcquired{})))  -> DecodeDone (SomeMessage msg) Nothing
+       (SingAcquiring,  _, Just (Stateful.AnyMessage _ msg@(MsgFailure{})))   -> DecodeDone (SomeMessage msg) Nothing
+       (SingQuerying,  StateQuerying q, Just (Stateful.AnyMessage (StateQuerying q') msg@(MsgResult _)))
+            |  Just Refl <- q `eqQuery` q'
+            -> DecodeDone (SomeMessage msg) Nothing
        (SingDone, _, _) -> notActiveState stok
        (_, _, Nothing) -> DecodeFail CodecFailureOutOfInput
        (_, _, _)       -> DecodeFail (CodecFailure failmsg)

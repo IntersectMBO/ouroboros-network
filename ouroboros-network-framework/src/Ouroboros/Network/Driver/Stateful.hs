@@ -11,6 +11,8 @@
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
 
+{-# LANGUAGE UndecidableInstances  #-}
+
 -- | Drivers for running 'Peer's with a 'Codec' and a 'Channel'.
 --
 -- This module should be imported qualified.
@@ -31,15 +33,13 @@ module Ouroboros.Network.Driver.Stateful
 
 import Data.Kind (Type)
 
-import Network.TypedProtocol.Codec (AnyMessage (..))
 import Network.TypedProtocol.Core
-import Network.TypedProtocol.Stateful.Codec hiding (AnyMessage (..))
+import Network.TypedProtocol.Stateful.Codec
 import Network.TypedProtocol.Stateful.Driver
 import Network.TypedProtocol.Stateful.Peer
 
 import Ouroboros.Network.Channel
-import Ouroboros.Network.Driver.Simple (DecoderFailure (..), Role (..),
-           TraceSendRecv (..))
+import Ouroboros.Network.Driver.Simple (DecoderFailure (..), Role (..))
 import Ouroboros.Network.Util.ShowProxy
 
 import Control.Monad.Class.MonadAsync
@@ -81,7 +81,7 @@ driverStateful :: forall ps (pr :: PeerRole) failure bytes (f :: ps -> Type) m.
                 , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
                 , ShowProxy ps
                 )
-             => Tracer m (TraceSendRecv ps)
+             => Tracer m (TraceSendRecv ps f)
              -> Codec ps failure f m bytes
              -> Channel m bytes
              -> Driver ps pr bytes failure (Maybe bytes) f m
@@ -97,12 +97,12 @@ driverStateful tracer Codec{encode, decode} channel@Channel{send} = do
                 => ReflRelativeAgency (StateAgency st)
                                        WeHaveAgency
                                       (Relative pr (StateAgency st))
-                -> f st'
+                -> f st
                 -> Message ps st st'
                 -> m ()
     sendMessage !_ f msg = do
       send (encode f msg)
-      traceWith tracer (TraceSendMsg (AnyMessage msg))
+      traceWith tracer (TraceSendMsg (AnyMessage f msg))
 
     recvMessage :: forall (st :: ps).
                    StateTokenI st
@@ -119,7 +119,7 @@ driverStateful tracer Codec{encode, decode} channel@Channel{send} = do
       result  <- runDecoderWithChannel channel trailing decoder
       case result of
         Right x@(SomeMessage msg, _trailing') -> do
-          traceWith tracer (TraceRecvMsg (AnyMessage msg))
+          traceWith tracer (TraceRecvMsg (AnyMessage f msg))
           return x
         Left failure ->
           throwIO (DecoderFailure tok failure)
@@ -137,7 +137,7 @@ runPeer
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
      , ShowProxy ps
      )
-  => Tracer m (TraceSendRecv ps)
+  => Tracer m (TraceSendRecv ps f)
   -> Codec ps failure f m bytes
   -> Channel m bytes
   -> f st
@@ -186,7 +186,7 @@ runConnectedPeers :: forall ps pr st failure bytes f m a b.
                      , ShowProxy ps
                      )
                   => m (Channel m bytes, Channel m bytes)
-                  -> Tracer m (Role, TraceSendRecv ps)
+                  -> Tracer m (Role, TraceSendRecv ps f)
                   -> Codec ps failure f m bytes
                   -> f st
                   -> Peer ps             pr  st f m a
@@ -218,7 +218,7 @@ runConnectedPeersAsymmetric
        , ShowProxy ps
        )
     => m (Channel m bytes, Channel m bytes)
-    -> Tracer m (Role, TraceSendRecv ps)
+    -> Tracer m (Role, TraceSendRecv ps f)
     -> Codec ps failure f m bytes
     -> Codec ps failure f m bytes
     -> f st
@@ -235,3 +235,11 @@ runConnectedPeersAsymmetric createChannels tracer codec codec' f client server =
     tracerClient = contramap (Client,) tracer
     tracerServer = contramap (Server,) tracer
 
+
+data TraceSendRecv ps (f :: ps -> Type) where
+  TraceSendMsg :: AnyMessage ps f -> TraceSendRecv ps f
+  TraceRecvMsg :: AnyMessage ps f -> TraceSendRecv ps f
+
+instance Show (AnyMessage ps f) => Show (TraceSendRecv ps f) where
+  show (TraceSendMsg msg) = "Send " ++ show msg
+  show (TraceRecvMsg msg) = "Recv " ++ show msg
