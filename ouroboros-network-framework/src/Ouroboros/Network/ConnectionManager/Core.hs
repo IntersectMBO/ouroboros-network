@@ -214,11 +214,6 @@ newMutableConnState peerAddr freshIdSupply connState = do
       -- capabilities. These trace messages won't be reordered by IOSimPOR
       -- since these happen atomically in STM.
       --
-      -- Another thing to note is that this trace differs from the IO one in
-      -- the fact that all connections terminate with a trace to
-      -- 'UnknownConnectionSt', since we can't do that here we limit ourselves
-      -- to 'TerminatedSt'.
-      --
       traceTVar
         (Proxy @m) connVar
         (\mbPrev curr ->

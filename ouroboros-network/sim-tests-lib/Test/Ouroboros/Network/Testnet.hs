@@ -2830,6 +2830,11 @@ prop_diffusion_cm_valid_transitions ioSimTrace traceNumber =
 -- We can't reliably check for transitions to UnknownState but the IOSim tests
 -- already give us quite a lot confidence that there isn't any bugs there.
 --
+-- Another thing to note is that this trace differs from the IO one in
+-- the fact that all connections terminate with a trace to
+-- 'UnknownConnectionSt', since we can't do that here we limit ourselves
+-- to 'TerminatedSt'.
+--
 prop_diffusion_cm_valid_transition_order_iosim_por :: SimTrace Void
                                                    -> Int
                                                    -> Property
