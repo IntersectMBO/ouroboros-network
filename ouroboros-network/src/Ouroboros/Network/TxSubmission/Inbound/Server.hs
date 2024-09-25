@@ -30,6 +30,7 @@ import Ouroboros.Network.TxSubmission.Inbound.Types
 data EnableNewTxSubmissionProtocol =
       EnableNewTxSubmissionProtocol
     | DisableNewTxSubmissionProtocol
+    deriving (Eq, Show)
 
 -- | A tx-submission outbound side (server, sic!).
 --
