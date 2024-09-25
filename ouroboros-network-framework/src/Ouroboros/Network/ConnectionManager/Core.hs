@@ -10,6 +10,7 @@
 {-# LANGUAGE TupleSections         #-}
 -- Undecidable instances are need for 'Show' instance of 'ConnectionState'.
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
 -- | The implementation of connection manager.
@@ -66,6 +67,7 @@ import Ouroboros.Network.InboundGovernor.Event (NewConnectionInfo (..))
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket
+import Ouroboros.Network.Testing.Utils (WithName (..))
 
 
 -- | Arguments for a 'ConnectionManager' which are independent of 'MuxMode'.
@@ -188,15 +190,51 @@ newFreshIdSupply _ = do
     return $ FreshIdSupply { getFreshId }
 
 
-newMutableConnState :: MonadSTM m
-                    => FreshIdSupply m
+newMutableConnState :: forall peerAddr handle handleError version m.
+                      ( MonadTraceSTM m
+                      , Typeable peerAddr
+                      )
+                    => peerAddr
+                    -> FreshIdSupply m
                     -> ConnectionState peerAddr handle handleError
                                        version m
                     -> STM m (MutableConnState peerAddr handle handleError
                                                version m)
-newMutableConnState freshIdSupply connState = do
+newMutableConnState peerAddr freshIdSupply connState = do
       connStateId <- getFreshId freshIdSupply
       connVar <- newTVar connState
+      -- This tracing is a no op in IO.
+      --
+      -- We need this for IOSimPOR testing of connection manager state
+      -- transition tests. It can happen that the transitions happen
+      -- correctly but IOSimPOR reorders the threads that log the transitions.
+      -- This is a false positive and we don't want that to happen.
+      --
+      -- The simplest way to do so is to leverage the `traceTVar` IOSim
+      -- capabilities. These trace messages won't be reordered by IOSimPOR
+      -- since these happen atomically in STM.
+      --
+      traceTVar
+        (Proxy @m) connVar
+        (\mbPrev curr ->
+          let currAbs = abstractState (Known curr)
+           in case mbPrev of
+                Just prev |
+                    let prevAbs = abstractState (Known prev)
+                  , prevAbs /= currAbs -> pure
+                                       $ TraceDynamic
+                                       $ WithName connStateId
+                                       $ TransitionTrace peerAddr
+                                       $ mkAbsTransition prevAbs
+                                                         currAbs
+                Nothing                -> pure
+                                       $ TraceDynamic
+                                       $ WithName connStateId
+                                       $ TransitionTrace peerAddr
+                                       $ mkAbsTransition TerminatedSt
+                                                         currAbs
+                _                      -> pure DontTrace
+        )
       return $ MutableConnState { connStateId, connVar }
 
 
@@ -442,7 +480,6 @@ abstractState = \case
     go DuplexState {}                 = DuplexSt
     go TerminatingState {}            = TerminatingSt
     go TerminatedState {}             = TerminatedSt
-
 
 -- | The default value for 'cmTimeWaitTimeout'.
 --
@@ -1101,7 +1138,7 @@ withConnectionManager args@ConnectionManagerArguments {
                     case v0 of
                       Nothing -> do
                         -- 'Accepted'
-                        v <- newMutableConnState freshIdSupply connState'
+                        v <- newMutableConnState peerAddr freshIdSupply connState'
                         labelTVar (connVar v) ("conn-state-" ++ show connId)
                         return (v, Nothing)
                       Just v -> do
@@ -1129,8 +1166,8 @@ withConnectionManager args@ConnectionManagerArguments {
                            InboundState          {} -> writeTVar (connVar v) connState'
                                                     $> assert False v
 
-                           TerminatingState      {} -> newMutableConnState freshIdSupply connState'
-                           TerminatedState       {} -> newMutableConnState freshIdSupply connState'
+                           TerminatingState      {} -> newMutableConnState peerAddr freshIdSupply connState'
+                           TerminatedState       {} -> newMutableConnState peerAddr freshIdSupply connState'
 
                         labelTVar (connVar v') ("conn-state-" ++ show connId)
                         return (v', Just connState0')
@@ -1623,7 +1660,7 @@ withConnectionManager args@ConnectionManagerArguments {
               let connState' = ReservedOutboundState
               (mutableConnState :: MutableConnState peerAddr handle handleError
                                                     version m)
-                <- newMutableConnState freshIdSupply connState'
+                <- newMutableConnState peerAddr freshIdSupply connState'
               -- TODO: label `connVar` using 'ConnectionId'
               labelTVar (connVar mutableConnState) ("conn-state-" ++ show peerAddr)
 

@@ -4,6 +4,7 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
 
 #if defined(mingw32_HOST_OS)
@@ -77,7 +78,8 @@ import Ouroboros.Network.ConnectionManager.Test.Timeouts (TestProperty (..),
            classifyNegotiatedDataFlow, classifyPrunings, classifyTermination,
            groupConns, mkProperty, ppTransition, verifyAllTimeouts)
 import Ouroboros.Network.ConnectionManager.Test.Utils
-           (abstractStateIsFinalTransition, connectionManagerTraceMap,
+           (abstractStateIsFinalTransition,
+           abstractStateIsFinalTransitionTVarTracing, connectionManagerTraceMap,
            validTransitionMap, verifyAbstractTransition,
            verifyAbstractTransitionOrder)
 import Ouroboros.Network.ConsensusMode
@@ -99,6 +101,8 @@ import Ouroboros.Network.PeerSharing (PeerSharingResult (..))
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..))
 
 import Control.Monad.Class.MonadTest (exploreRaces)
+import Data.Dynamic (fromDynamic)
+import Ouroboros.Network.Block (BlockNo (..))
 import Ouroboros.Network.PeerSelection.Bootstrap (requiresBootstrapPeers)
 import Ouroboros.Network.PeerSelection.LedgerPeers
 
@@ -139,7 +143,7 @@ tests =
     , nightlyTest $ testProperty "connection manager valid transitions"
                       (testWithIOSimPOR prop_diffusion_cm_valid_transitions 10000)
     , nightlyTest $ testProperty "connection manager valid transition order"
-                      (testWithIOSimPOR prop_diffusion_cm_valid_transition_order 10000)
+                      (testWithIOSimPOR prop_diffusion_cm_valid_transition_order_iosim_por 10000)
     , nightlyTest $ testProperty "connection manager no dodgy traces"
                       (testWithIOSimPOR prop_diffusion_cm_no_dodgy_traces 10000)
     , nightlyTest $ testProperty "peer selection actions no dodgy traces"
@@ -162,6 +166,8 @@ tests =
       , nightlyTest $ testProperty "steps"
                         (testWithIOSimPOR prop_churn_steps 10000)
       ]
+    , testGroup "unit"
+      [ nightlyTest $ testProperty "unit cm" unit_cm_valid_transitions ]
     ]
   , testGroup "IOSim"
     [ testProperty "no failure"
@@ -287,6 +293,155 @@ testWithIOSimPOR f traceNumber bi ds =
    in labelDiffusionScript ds
     $ exploreSimTrace id sim $ \_ ioSimTrace ->
         f ioSimTrace  traceNumber
+
+-- | This test checks a IOSimPOR false positive bug with the connection
+-- manager state transition traces no longer happens.
+--
+unit_cm_valid_transitions :: Property
+unit_cm_valid_transitions =
+  let bi = AbsBearerInfo
+            { abiConnectionDelay         = SmallDelay
+            , abiInboundAttenuation      = NoAttenuation FastSpeed
+            , abiOutboundAttenuation     = NoAttenuation FastSpeed
+            , abiInboundWriteFailure     = Nothing
+            , abiOutboundWriteFailure    = Just 0
+            , abiAcceptFailure           = Nothing
+            , abiSDUSize                 = LargeSDU
+            }
+      ds = DiffusionScript
+            (SimArgs 1 10)
+            (Script ((Map.empty, ShortDelay) :| [(Map.empty, LongDelay)]))
+            [ ( NodeArgs
+                  (-2)
+                  InitiatorAndResponderDiffusionMode
+                  (Just 269)
+                  (Map.fromList [(RelayAccessAddress "0:71:0:1:0:1:0:1" 65534,
+                                  DoAdvertisePeer)])
+                  GenesisMode
+                  (Script (DontUseBootstrapPeers :| []))
+                  (TestAddress (IPAddr (read "0:79::1:0:0") 3))
+                  PeerSharingDisabled
+                  [ (HotValency {getHotValency = 1},
+                     WarmValency {getWarmValency = 1},
+                     Map.fromList [(RelayAccessAddress "0:71:0:1:0:1:0:1" 65534,
+                                    (DoAdvertisePeer, IsTrustable))])
+                   ]
+                  (Script (LedgerPools [] :| []))
+                  (ConsensusModePeerTargets
+                    { deadlineTargets = PeerSelectionTargets
+                        { targetNumberOfRootPeers                 = 4
+                        , targetNumberOfKnownPeers                = 4
+                        , targetNumberOfEstablishedPeers          = 3
+                        , targetNumberOfActivePeers               = 2
+                        , targetNumberOfKnownBigLedgerPeers       = 4
+                        , targetNumberOfEstablishedBigLedgerPeers = 1
+                        , targetNumberOfActiveBigLedgerPeers      = 1
+                        }
+                    , syncTargets = PeerSelectionTargets
+                        { targetNumberOfRootPeers                 = 0
+                        , targetNumberOfKnownPeers                = 4
+                        , targetNumberOfEstablishedPeers          = 0
+                        , targetNumberOfActivePeers               = 0
+                        , targetNumberOfKnownBigLedgerPeers       = 4
+                        , targetNumberOfEstablishedBigLedgerPeers = 4
+                        , targetNumberOfActiveBigLedgerPeers      = 3
+                        }
+                    })
+                  (Script (DNSTimeout {getDNSTimeout = 0.325} :| []))
+                  (Script (DNSLookupDelay {getDNSLookupDelay = 0.1} :|
+                    [DNSLookupDelay {getDNSLookupDelay = 0.072}]))
+                  Nothing
+                  False
+                  (Script (FetchModeBulkSync :| [FetchModeBulkSync]))
+                  , [JoinNetwork 0.5]
+                )
+              , ( NodeArgs
+                  0
+                  InitiatorAndResponderDiffusionMode
+                  (Just 90)
+                  Map.empty
+                  GenesisMode
+                  (Script (DontUseBootstrapPeers :| []))
+                  (TestAddress (IPAddr (read "0:71:0:1:0:1:0:1") 65534))
+                  PeerSharingEnabled
+                  [ (HotValency {getHotValency = 1},
+                     WarmValency {getWarmValency = 1},
+                     Map.fromList [(RelayAccessAddress "0:79::1:0:0" 3,
+                                    (DoNotAdvertisePeer, IsTrustable))])
+                   ]
+                  (Script (LedgerPools [] :| []))
+                  (ConsensusModePeerTargets
+                    { deadlineTargets = PeerSelectionTargets
+                        { targetNumberOfRootPeers                 = 1
+                        , targetNumberOfKnownPeers                = 1
+                        , targetNumberOfEstablishedPeers          = 1
+                        , targetNumberOfActivePeers               = 1
+                        , targetNumberOfKnownBigLedgerPeers       = 4
+                        , targetNumberOfEstablishedBigLedgerPeers = 3
+                        , targetNumberOfActiveBigLedgerPeers      = 3
+                        }
+                    , syncTargets = PeerSelectionTargets
+                        { targetNumberOfRootPeers                 = 0
+                        , targetNumberOfKnownPeers                = 1
+                        , targetNumberOfEstablishedPeers          = 1
+                        , targetNumberOfActivePeers               = 1
+                        , targetNumberOfKnownBigLedgerPeers       = 4
+                        , targetNumberOfEstablishedBigLedgerPeers = 2
+                        , targetNumberOfActiveBigLedgerPeers      = 2
+                        }
+                    })
+                  (Script (DNSTimeout {getDNSTimeout = 0.18} :| []))
+                  (Script (DNSLookupDelay {getDNSLookupDelay = 0.125} :| []))
+                  (Just (BlockNo 2))
+                  False
+                  (Script (FetchModeDeadline :| []))
+                  , [JoinNetwork 1.484848484848]
+                )
+            ]
+      s = ControlAwait
+            [ ScheduleMod
+                (RacyThreadId [3,1,3,1,2,3,2,1], 7)
+                ControlDefault
+                [ (RacyThreadId [3,1,3,1,2,3,2], 32)
+                , (RacyThreadId [3,1,3,1,2,3,2], 33)
+                , (RacyThreadId [2,1,3,1,4], 8)
+                , (RacyThreadId [2,1,3,1,4], 9)
+                , (RacyThreadId [2,1,3,1,4], 10)
+                , (RacyThreadId [2,1,3,1,4], 11)
+                , (RacyThreadId [2,1,3,1,4], 12)
+                , (RacyThreadId [2,1,3,1,4,1], 0)
+                , (RacyThreadId [2,1,3,1,4,1], 1)
+                , (RacyThreadId [2,1,3,1,4,1], 2)
+                , (RacyThreadId [2,1,3,1,4,1], 3)
+                , (RacyThreadId [2,1,3,1,4,1], 4)
+                , (RacyThreadId [2,1,3,1,4,1], 5)
+                , (RacyThreadId [2,1,3,1,4,1], 6)
+                , (RacyThreadId [2,1,3,1,4,1], 7)
+                , (RacyThreadId [2,1,3,1,4,1], 8)
+                , (RacyThreadId [2,1,3,1,4,1,1], 0)
+                , (RacyThreadId [2,1,3,1,4,1,1], 1)
+                , (RacyThreadId [2,1,3,1,4,1,1], 2)
+                , (RacyThreadId [2,1,3,1,4,1,1], 3)
+                , (RacyThreadId [2,1,3,1,4,1], 9)
+                , (RacyThreadId [2,1,3,1,4,1], 10)
+                , (RacyThreadId [2,1,3,1,4,1], 11)
+                , (RacyThreadId [2,1,3,1,4,1], 12)
+                , (RacyThreadId [2,1,3,1,4,1], 13)
+                , (RacyThreadId [2,1,3,1,4,1], 14)
+                , (RacyThreadId [2,1,3,1,4,1], 15)
+                , (RacyThreadId [2,1,3,1,4], 13)
+                , (RacyThreadId [2,1,3,1,4], 14)
+                , (RacyThreadId [2,1,3,1,4], 15)
+                , (RacyThreadId [2,1,3,1,4], 16)
+                , (RacyThreadId [3,1,3,1,2,3,2], 34)
+                ]
+            ]
+      sim :: forall s. IOSim s Void
+      sim = do
+        exploreRaces
+        diffusionSimulation (toBearerInfo bi) ds iosimTracer
+  in exploreSimTrace (\a -> a { explorationReplay = Just s }) sim $ \_ ioSimTrace ->
+       prop_diffusion_cm_valid_transition_order_iosim_por ioSimTrace 10000
 
 -- | As a basic property we run the governor to explore its state space a bit
 -- and check it does not throw any exceptions (assertions such as invariant
@@ -2662,6 +2817,67 @@ prop_diffusion_cm_valid_transitions ioSimTrace traceNumber =
         . groupConns id abstractStateIsFinalTransition
         $ abstractTransitionEvents
 
+
+-- | A variant of ouroboros-network-framework
+-- 'Test.Ouroboros.Network.Server2.prop_connection_manager_valid_transition_order'
+-- but for running on Diffusion. This means it has to have in consideration the
+-- the logs for all nodes running will all appear in the trace and the test
+-- property should only be valid while a given node is up and running.
+--
+-- This test is meant to run with IOSimPOR. It gets the transitions from the
+-- traceTVar trace which can't be reordered, hence leading to false positives.
+--
+-- We can't reliably check for transitions to UnknownState but the IOSim tests
+-- already give us quite a lot confidence that there isn't any bugs there.
+--
+-- Another thing to note is that this trace differs from the IO one in
+-- the fact that all connections terminate with a trace to
+-- 'UnknownConnectionSt', since we can't do that here we limit ourselves
+-- to 'TerminatedSt'.
+--
+prop_diffusion_cm_valid_transition_order_iosim_por :: SimTrace Void
+                                                   -> Int
+                                                   -> Property
+prop_diffusion_cm_valid_transition_order_iosim_por ioSimTrace traceNumber =
+    let events :: [Trace () (WithName NtNAddr (WithTime (AbstractTransitionTrace NtNAddr)))]
+        events = Trace.toList
+            . fmap (Trace.fromList ())
+            . splitWithNameTrace
+            . traceSelectTraceEvents
+                (\t se ->
+                  case se of
+                    EventLog dyn
+                      -- Traced by traceTVar
+                      | Just tr@(TransitionTrace n _)
+                        <- fromDynamic dyn
+                        -> Just (WithName n (WithTime t tr))
+                    _   -> Nothing)
+            . Trace.take traceNumber
+            $ ioSimTrace
+
+     in conjoin
+      $ (\ev ->
+        let evsList = Trace.toList ev
+            lastTime = (\(WithName _ (WithTime t _)) -> t)
+                     . last
+                     $ evsList
+         in counterexample (intercalate "\n" $ map show $ Trace.toList ev)
+          $ classifySimulatedTime lastTime
+          $ classifyNumberOfEvents (length evsList)
+          $ verify_cm_valid_transition_order
+          $ (\(WithName _ (WithTime _ b)) -> b)
+          <$> ev
+        )
+      <$> events
+  where
+    verify_cm_valid_transition_order :: Trace () (AbstractTransitionTrace NtNAddr) -> Property
+    verify_cm_valid_transition_order =
+         property
+       . bifoldMap
+          (const mempty)
+          (verifyAbstractTransitionOrder False)
+       . fmap (map ttTransition)
+       . groupConns id abstractStateIsFinalTransitionTVarTracing
 
 -- | A variant of ouroboros-network-framework
 -- 'Test.Ouroboros.Network.Server2.prop_connection_manager_valid_transition_order'

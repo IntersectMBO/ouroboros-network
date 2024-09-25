@@ -152,6 +152,7 @@ module Ouroboros.Network.ConnectionManager.Types
   , Transition
   , AbstractTransition
   , mkTransition
+  , mkAbsTransition
   , TransitionTrace
   , TransitionTrace' (..)
   , AbstractTransitionTrace
@@ -909,6 +910,10 @@ mkTransition from to = Transition { fromState = Known from
                                   , toState   = Known to
                                   }
 
+mkAbsTransition :: AbstractState -> AbstractState -> AbstractTransition
+mkAbsTransition from to = Transition { fromState = from
+                                     , toState   = to
+                                     }
 
 data TransitionTrace' peerAddr state = TransitionTrace
     { ttPeerAddr   :: peerAddr
