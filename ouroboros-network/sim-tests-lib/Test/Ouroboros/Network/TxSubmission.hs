@@ -109,9 +109,7 @@ newtype Mempool m txid = Mempool (TVar m (Seq (Tx txid)))
 emptyMempool :: MonadSTM m => m (Mempool m txid)
 emptyMempool = Mempool <$> newTVarIO Seq.empty
 
-newMempool :: ( MonadSTM m
-              , Eq txid
-              )
+newMempool :: MonadSTM m
            => [Tx txid]
            -> m (Mempool m txid)
 newMempool = fmap Mempool
@@ -125,7 +123,6 @@ readMempool (Mempool mempool) = toList <$> readTVarIO mempool
 getMempoolReader :: forall txid m.
                     ( MonadSTM m
                     , Eq txid
-                    , Show txid
                     )
                  => Mempool m txid
                  -> TxSubmissionMempoolReader txid (Tx txid) Int m
@@ -153,7 +150,6 @@ getMempoolReader (Mempool mempool) =
 getMempoolWriter :: forall txid m.
                     ( MonadSTM m
                     , Ord txid
-                    , Eq txid
                     )
                  => Mempool m txid
                  -> TxSubmissionMempoolWriter txid (Tx txid) Int m
@@ -205,13 +201,9 @@ txSubmissionSimulation
      , MonadMask  m
      , MonadSay   m
      , MonadST    m
-     , MonadSTM   m
      , MonadTimer m
-     , MonadThrow m
      , MonadThrow (STM m)
-     , MonadMonotonicTime m
      , Ord txid
-     , Eq  txid
      , ShowProxy txid
      , NoThunks (Tx txid)
 
@@ -372,7 +364,6 @@ instance (Show a) => Show (WithThreadAndTime a) where
 
 verboseTracer :: forall a m.
                        ( MonadAsync m
-                       , MonadDelay m
                        , MonadSay m
                        , MonadMonotonicTime m
                        , Show a
@@ -382,7 +373,6 @@ verboseTracer = threadAndTimeTracer $ showTracing $ Tracer say
 
 threadAndTimeTracer :: forall a m.
                        ( MonadAsync m
-                       , MonadDelay m
                        , MonadMonotonicTime m
                        )
                     => Tracer m (WithThreadAndTime a) -> Tracer m a

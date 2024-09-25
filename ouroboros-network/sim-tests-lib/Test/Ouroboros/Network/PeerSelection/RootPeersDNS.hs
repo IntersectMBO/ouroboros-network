@@ -289,8 +289,7 @@ instance Arbitrary DNSLookupDelay where
 -- Adds DNS Lookup function for IOSim with different timeout and lookup
 -- delays for every attempt.
 mockDNSActions :: forall exception m.
-                  ( MonadSTM   m
-                  , MonadDelay m
+                  ( MonadDelay m
                   , MonadTimer m
                   )
                => StrictTVar m (Map Domain [(IP, TTL)])
@@ -338,7 +337,6 @@ mockLocalRootPeersProvider :: forall m.
                               , MonadTimer    m
                               , MonadTraceSTM m
                               , MonadLabelledSTM m
-                              , Eq (Async m Void)
                               )
                            => Tracer m (TraceLocalRootPeers SockAddr Failure)
                            -> MockRoots

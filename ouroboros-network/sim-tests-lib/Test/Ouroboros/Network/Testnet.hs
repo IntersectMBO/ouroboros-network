@@ -3739,8 +3739,7 @@ selectDiffusionPeerSelectionState f =
             consensusMode
             (MinBigLedgerPeersForTrustedState 0) -- ^ todo: fix
 
-selectDiffusionPeerSelectionState' :: Eq a
-                                  => (forall peerconn. Governor.PeerSelectionState NtNAddr peerconn -> a)
+selectDiffusionPeerSelectionState' :: (forall peerconn. Governor.PeerSelectionState NtNAddr peerconn -> a)
                                   -> Events DiffusionTestTrace
                                   -> Signal a
 selectDiffusionPeerSelectionState' f =

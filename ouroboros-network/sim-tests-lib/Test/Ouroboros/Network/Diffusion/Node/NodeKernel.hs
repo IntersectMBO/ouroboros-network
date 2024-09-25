@@ -271,9 +271,7 @@ data NodeKernel header block s m = NodeKernel {
       nkPublicPeerSelectionVar :: StrictTVar m (PublicPeerSelectionState NtNAddr)
     }
 
-newNodeKernel :: ( MonadSTM m
-                 , RandomGen s
-                 )
+newNodeKernel :: MonadSTM m
               => s -> m (NodeKernel header block s m)
 newNodeKernel rng = do
     publicStateVar <- makePublicPeerSelectionStateVar
@@ -312,7 +310,6 @@ unregisterClientChains NodeKernel { nkClientChains } peerAddr = atomically $
 withSlotTime :: forall m a.
                 ( MonadAsync         m
                 , MonadDelay         m
-                , MonadMonotonicTime m
                 )
              => DiffTime
              -> ((SlotNo -> STM m SlotNo) -> m a)
@@ -360,8 +357,6 @@ withNodeKernelThread
      ( Alternative (STM m)
      , MonadAsync         m
      , MonadDelay         m
-     , MonadMonotonicTime m
-     , MonadTimer         m
      , MonadThrow         m
      , MonadThrow    (STM m)
      , HasFullHeader block

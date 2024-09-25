@@ -125,7 +125,6 @@ createOneWaySubscriptionChannels
   :: forall block tip m.
      ( MonadSTM m
      , MonadDelay m
-     , MonadTimer m
      )
   => DiffTime
   -> DiffTime
@@ -149,7 +148,6 @@ createOneWaySubscriptionChannels trDelay1 trDelay2 = do
 createTwoWaySubscriptionChannels
   :: forall block tip m.
      ( MonadDelay m
-     , MonadSTM m
      , MonadTimer m
      )
   => DiffTime
@@ -167,7 +165,6 @@ blockGenerator :: forall block m.
                   , MonadDelay m
                   , MonadSTM m
                   , MonadFork m
-                  , MonadTimer m
                   )
                => DiffTime
                -- ^ slot duration
@@ -270,8 +267,7 @@ forkRelayKernel upstream cpsVar = do
 -- @StrictTVar ('ChainProducerState' block)@. This allows to extend the relay
 -- node to a core node.
 relayNode :: forall m block.
-             ( MonadSTM m
-             , MonadFork m
+             ( MonadFork m
              , MonadTimer m
              , MonadThrow m
              , MonadSay m
@@ -341,7 +337,6 @@ relayNode _nid initChain chans = do
 forkCoreKernel :: forall block m.
                   ( HasFullHeader block
                   , MonadDelay m
-                  , MonadSTM m
                   , MonadFork m
                   , MonadTimer m
                   )
@@ -388,7 +383,6 @@ forkCoreKernel slotDuration gchain fixupBlock cpsVar = do
 --
 coreNode :: forall m.
         ( MonadDelay m
-        , MonadSTM m
         , MonadFork m
         , MonadThrow m
         , MonadTimer m

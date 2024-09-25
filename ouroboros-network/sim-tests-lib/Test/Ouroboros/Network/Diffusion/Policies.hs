@@ -142,10 +142,7 @@ prop_hotToWarm :: ArbitraryPolicyArguments
 prop_hotToWarm args seed = runSimOrThrow $ prop_hotToWarmM args seed
 
 -- Verify that there are no peers worse than the peers picked for demotion.
-prop_hotToWarmM :: forall m.
-                   ( MonadLabelledSTM m
-                   , Monad (STM m)
-                   )
+prop_hotToWarmM :: forall m. MonadLabelledSTM m
                  => ArbitraryPolicyArguments
                  -> Int
                  -> m Property
@@ -209,10 +206,7 @@ prop_randomDemotion args seed = runSimOrThrow $ prop_randomDemotionM args seed
 
 -- Verifies that Tepid (formerly hot) or failing peers are more likely to get
 -- demoted/forgotten.
-prop_randomDemotionM :: forall m.
-                        ( MonadLabelledSTM m
-                        , Monad (STM m)
-                        )
+prop_randomDemotionM :: forall m. MonadLabelledSTM m
                      => ArbitraryPolicyArguments
                      -> Int
                      -> m Property
