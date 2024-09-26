@@ -21,12 +21,17 @@ let
   otherCompilers = [ "ghc810" ];
 
   # from https://github.com/input-output-hk/haskell.nix/issues/298#issuecomment-767936405
-  forAllProjectPackages = cfg: args@{ lib, ... }: {
-    options.packages = lib.mkOption {
-      type = lib.types.attrsOf (lib.types.submodule ({ config, ... }: {
-        config = lib.mkIf config.package.isProject (cfg args);
-      }));
-    };
+  forAllProjectPackages = cfg: args@{ config, lib, ... }: {
+    options.packages =
+      lib.genAttrs config.package-keys (_:
+        lib.mkOption {
+          type = lib.types.submodule ({ config, ... }:
+            {
+              config = lib.mkIf config.package.isProject (cfg args);
+            }
+          );
+        }
+      );
   };
 
   # We use cabalProject' to ensure we don't build the plan for
