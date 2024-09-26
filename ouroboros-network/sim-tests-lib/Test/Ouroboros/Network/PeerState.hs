@@ -109,9 +109,7 @@ instance Arbitrary (ArbPeerState m) where
 --
 
 prop_SuspendDecisionSemigroup
-    :: ( Ord t
-       , Eq t
-       )
+    :: Ord t
     => ArbSuspendDecision t
     -> ArbSuspendDecision t
     -> ArbSuspendDecision t

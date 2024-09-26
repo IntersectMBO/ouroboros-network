@@ -47,9 +47,7 @@ runKeepAliveClient
         ( MonadAsync m
         , MonadFork m
         , MonadMask m
-        , MonadMonotonicTime m
         , MonadST m
-        , MonadSTM m
         , MonadTimer m
         , MonadThrow (STM m)
         , Ord peer)
@@ -77,9 +75,7 @@ runKeepAliveServer
         ( MonadAsync m
         , MonadFork m
         , MonadMask m
-        , MonadMonotonicTime m
         , MonadST m
-        , MonadSTM m
         , MonadTimer m
         , MonadThrow (STM m)
         )
@@ -101,14 +97,12 @@ runKeepAliveClientAndServer
         , MonadDelay m
         , MonadFork m
         , MonadMask m
-        , MonadMonotonicTime m
         , MonadSay m
         , MonadST m
-        , MonadSTM m
         , MonadTimer m
         , MonadThrow (STM m)
         , Ord peer
-        , Show peer)
+        )
     => NetworkDelay
     -> Int
     -> Tracer m (TraceKeepAliveClient peer)
@@ -136,15 +130,12 @@ instance Arbitrary NetworkDelay where
 
 prop_keepAlive_convergenceM
     :: forall m.
-        ( Eq (Async m ())
-        , MonadAsync m
+        ( MonadAsync m
         , MonadDelay m
         , MonadFork m
         , MonadMask m
-        , MonadMonotonicTime m
         , MonadSay m
         , MonadST m
-        , MonadSTM m
         , MonadTimer m
         , MonadThrow (STM m)
         )

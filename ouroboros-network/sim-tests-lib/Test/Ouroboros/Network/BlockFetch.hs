@@ -668,7 +668,7 @@ unit_bracketSyncWithFetchClient step = do
 
     testSkeleton :: forall m a b d.
                     (MonadAsync m, MonadDelay m, MonadFork m, MonadMask m,
-                     MonadThrow m, MonadThrow (STM m), MonadTimer m)
+                     MonadThrow (STM m), MonadTimer m)
                  => ((forall c. m c -> m c) -> m a)
                  -> ((forall c. m c -> m c) -> m b)
                  -> ((forall c. m c -> m c) -> m d)

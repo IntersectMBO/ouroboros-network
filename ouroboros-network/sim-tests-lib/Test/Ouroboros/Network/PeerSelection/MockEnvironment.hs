@@ -334,8 +334,8 @@ data TraceMockEnv = TraceEnvAddPeers       !PeerGraph
   deriving Show
 
 mockPeerSelectionActions :: forall m.
-                            (MonadAsync m, MonadDelay m, MonadTimer m,
-                             Fail.MonadFail m, MonadThrow (STM m), MonadTraceSTM m)
+                            (MonadAsync m, MonadDelay m, Fail.MonadFail m,
+                             MonadThrow (STM m), MonadTraceSTM m)
                          => Tracer m TraceMockEnv
                          -> GovernorMockEnvironment
                          -> ConsensusModePeerTargets
@@ -403,7 +403,7 @@ instance Exception TransitionError where
 
 
 mockPeerSelectionActions' :: forall m.
-                             (MonadAsync m, MonadDelay m, MonadSTM m, MonadTimer m, Fail.MonadFail m,
+                             (MonadAsync m, MonadDelay m, Fail.MonadFail m,
                               MonadThrow (STM m))
                           => Tracer m TraceMockEnv
                           -> GovernorMockEnvironment

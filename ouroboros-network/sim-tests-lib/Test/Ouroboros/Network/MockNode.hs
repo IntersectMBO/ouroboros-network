@@ -72,7 +72,6 @@ test_blockGenerator
   :: forall m.
      ( MonadDelay m
      , MonadFork m
-     , MonadSTM m
      , MonadTime m
      , MonadTimer m
      )
@@ -99,12 +98,7 @@ test_blockGenerator chain slotDuration = do
         slotTime s = (realToFrac (unSlotNo s) * slotDuration) `addTime` startTime
 
     experiment
-      :: ( MonadSTM m
-         , MonadFork m
-         , MonadTime m
-         , MonadTimer m
-         )
-      => DiffTime
+      :: DiffTime
       -> Probe m (Time, Block)
       -> m ()
     experiment slotDur p = do
@@ -134,10 +128,8 @@ prop_blockGenerator_IO (TestBlockChain chain) (Positive slotDuration) =
 
 coreToRelaySim :: ( MonadDelay m
                   , MonadFork m
-                  , MonadSTM m
                   , MonadSay m
                   , MonadThrow m
-                  , MonadTime m
                   , MonadTimer m
                   )
                => Bool              -- ^ two way subscription
@@ -216,11 +208,9 @@ prop_coreToRelay (TestNodeSim chain slotDuration coreTrDelay relayTrDelay) =
 
 -- Node graph: c → r → r
 coreToRelaySim2 :: ( MonadDelay m
-                   , MonadSTM m
                    , MonadFork m
                    , MonadThrow m
                    , MonadSay m
-                   , MonadTime m
                    , MonadTimer m
                    )
                 => Chain Block
@@ -314,11 +304,9 @@ instance Arbitrary TestNetworkGraph where
 
 networkGraphSim :: forall m.
                   ( MonadDelay m
-                  , MonadSTM m
                   , MonadFork m
                   , MonadThrow m
                   , MonadSay m
-                  , MonadTime m
                   , MonadTimer m
                   )
                 => TestNetworkGraph
