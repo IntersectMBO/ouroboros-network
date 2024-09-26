@@ -106,7 +106,7 @@ let
         # to discover space leaks Once #4698 and #4699 are done we can
         # further constrain the heap size.
         preCheck = lib.mkForce ''
-        export GHCRTS=-M200M
+        export GHCRTS=-M250M
         '';
 
         # pkgs are instantiated for the host platform
