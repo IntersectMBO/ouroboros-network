@@ -3683,8 +3683,7 @@ selectDiffusionPeerSelectionState f =
         DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just (f st)
         _                                                            -> Nothing)
 
-selectDiffusionPeerSelectionState' :: Eq a
-                                  => (forall peerconn. Governor.PeerSelectionState NtNAddr peerconn -> a)
+selectDiffusionPeerSelectionState' :: (forall peerconn. Governor.PeerSelectionState NtNAddr peerconn -> a)
                                   -> Events DiffusionTestTrace
                                   -> Signal a
 selectDiffusionPeerSelectionState' f =

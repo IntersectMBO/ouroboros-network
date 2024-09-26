@@ -403,12 +403,7 @@ instance (Show a) => Show (WithThreadAndTime a) where
     show WithThreadAndTime {wtatOccuredAt, wtatWithinThread, wtatEvent} =
         printf "%s: %s: %s" (show wtatOccuredAt) (show wtatWithinThread) (show wtatEvent)
 
-verboseTracer :: forall a m.
-                       ( MonadAsync m
-                       , MonadSay m
-                       , MonadMonotonicTime m
-                       , Show a
-                       )
+verboseTracer :: forall a m. (MonadSay m, Show a)
                => Tracer m a
 verboseTracer = nullTracer -- threadAndTimeTracer $ Tracer (say . show)
 

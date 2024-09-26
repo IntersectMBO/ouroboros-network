@@ -32,7 +32,7 @@ import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadMVar (MonadMVar)
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad ((>=>))
-import Control.Monad.Class.MonadAsync (MonadAsync (Async, wait, withAsync))
+import Control.Monad.Class.MonadAsync (MonadAsync (wait, withAsync))
 import Control.Monad.Class.MonadFork (MonadFork)
 import Control.Monad.Class.MonadSay
 import Control.Monad.Class.MonadST (MonadST)
@@ -176,13 +176,11 @@ run :: forall resolver m.
        , MonadST          m
        , MonadTime        m
        , MonadTimer       m
-       , MonadThrow       m
        , MonadThrow       (STM m)
        , MonadMVar        m
 
        , resolver ~ ()
        , forall a. Semigroup a => Semigroup (m a)
-       , Eq (Async m Void)
        )
     => Node.BlockGeneratorArgs Block StdGen
     -> Node.LimitsAndTimeouts BlockHeader Block

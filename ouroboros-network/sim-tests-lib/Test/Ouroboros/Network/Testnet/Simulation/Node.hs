@@ -943,13 +943,11 @@ diffusionSimulation
                , MonadEvaluate    m
                , MonadLabelledSTM m
                , MonadTraceSTM    m
-               , MonadCatch       m
                , MonadMask        m
                , MonadTime        m
                , MonadTimer       m
                , MonadThrow  (STM m)
                , MonadMVar        m
-               , Eq (Async m Void)
                , forall a. Semigroup a => Semigroup (m a)
                )
   => BearerInfo

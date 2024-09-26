@@ -162,10 +162,7 @@ data PeerMetricsTrace = PeerMetricsTrace {
 simulatePeerMetricScript
   :: forall m.
      ( MonadDelay m
-     , MonadTimer m
-     , MonadMonotonicTime m
      , MonadLabelledSTM m
-     , MonadTraceSTM m
      )
   => Tracer m PeerMetricsTrace
   -> PeerMetricsConfiguration

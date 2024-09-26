@@ -16,7 +16,7 @@ import Data.ByteString.Char8 qualified as BSC
 import Data.ByteString.Lazy qualified as LBS
 import Data.Foldable (traverse_)
 import Data.Functor (void)
-import Data.List
+import Data.List (maximumBy)
 import Data.List.Infinite (Infinite ((:<)))
 import Data.List.Infinite qualified as Inf
 import Data.Map qualified as Map
@@ -34,8 +34,6 @@ import Control.Monad (when)
 import Control.Tracer
 
 import System.Directory
-import System.Exit
-import System.IO
 import System.Random
 
 import Options.Applicative qualified as Opts
@@ -188,15 +186,8 @@ main = do
     parserInfo = Opts.info (optionsParser Opts.<**> Opts.helper)
                            (Opts.fullDesc <> Opts.progDesc "Run chain-sync / block-fetch demo")
 
-usage :: IO ()
-usage = do
-    hPutStrLn stderr "usage: demo-chain-sync [chainsync|blockfetch] {client|server} [addr]"
-    exitFailure
 
 defaultLocalSocketAddrPath :: FilePath
-
-
-
 defaultLocalSocketAddrPath =  "./demo-chain-sync.sock"
 
 defaultLocalSocketAddr :: LocalAddress

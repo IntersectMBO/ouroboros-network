@@ -27,7 +27,26 @@ source-repository head
   type:     git
   location: https://github.com/intersectmbo/ouroboros-network
 
+common ghc-options
+  ghc-options:         -Wall
+                       -Wno-unticked-promoted-constructors
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
+                       -Wunused-packages
+
+-- in tests librararies redundant constraints are sometimes useful (e.g.
+-- by default truned off debug tracing might require extra constraints like
+-- `Show` or `MonadSay`).
+common ghc-options-tests
+  import:              ghc-options
+  ghc-options:        -Wno-redundant-constraints
+
 library
+  import:              ghc-options
   hs-source-dirs:      src
 
   -- At this experiment/prototype stage everything is exposed.
@@ -147,16 +166,6 @@ library
   if !os(windows)
     build-depends:     directory,
                        unix
-
-  ghc-options:         -Wall
-                       -Wno-unticked-promoted-constructors
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
-                       -Wunused-packages
   if flag(asserts)
     ghc-options:       -fno-ignore-asserts
 
@@ -166,6 +175,7 @@ library
 
 -- Simulation Test Library
 library sim-tests-lib
+  import:              ghc-options-tests
   default-language:    Haskell2010
   default-extensions:  ImportQualifiedPost
   visibility:          public
@@ -247,20 +257,11 @@ library sim-tests-lib
                        Test.Ouroboros.Network.TxSubmission
                        Test.Ouroboros.Network.Version
 
-  ghc-options:         -Wall
-                       -Wno-unticked-promoted-constructors
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wunused-packages
-                       -fno-ignore-asserts
-
 -- Simulation tests, and IO tests which don't require native system calls.
 -- (i.e. they don't require system call API provided by `Win32-network` or
 -- `network` dependency).  test-suite sim-tests
 test-suite sim-tests
+  import:              ghc-options-tests
   default-language:    Haskell2010
   default-extensions:  ImportQualifiedPost
   type:                exitcode-stdio-1.0
@@ -268,15 +269,11 @@ test-suite sim-tests
   main-is:             Main.hs
   build-depends:       base >=4.14 && <4.21,
                        tasty,
-                       tasty-hunit,
-                       tasty-quickcheck,
                        with-utf8,
 
                        ouroboros-network-protocols:testlib,
                        ouroboros-network:sim-tests-lib
-  ghc-options:         -Wall
-                       -Wno-unticked-promoted-constructors
-                       -fno-ignore-asserts
+  ghc-options:         -fno-ignore-asserts
                        -threaded
                        -rtsopts
                        +RTS -T -RTS
@@ -286,6 +283,7 @@ test-suite sim-tests
 -- platforms: x86_64-w64-mingw32 (Windows), x86_64-linux, x86-64-darwin and
 -- aarch64-darwin.
 test-suite io-tests
+  import:              ghc-options-tests
   type:                exitcode-stdio-1.0
   hs-source-dirs:      io-tests
   main-is:             Main.hs
@@ -311,7 +309,6 @@ test-suite io-tests
                        ouroboros-network-mock,
                        ouroboros-network-protocols,
                        ouroboros-network-protocols:testlib,
-                       ouroboros-network-framework:testlib,
                        ouroboros-network-testing ^>= 0.7.0.0,
                        si-timers,
                        strict-stm,
@@ -322,14 +319,12 @@ test-suite io-tests
   else
     build-depends:     process
 
-  ghc-options:         -Wall
-                       -Wno-unticked-promoted-constructors
-                       -fno-ignore-asserts
-                       -threaded
+  ghc-options:         -threaded
                        -rtsopts
                        +RTS -T -RTS
 
 executable demo-chain-sync
+  import:              ghc-options
   hs-source-dirs:      demo
   main-is:             chain-sync.hs
   build-depends:       base >=4.14 && <4.21,
@@ -341,7 +336,6 @@ executable demo-chain-sync
                        optparse-applicative,
                        random,
                        serialise,
-                       stm,
 
                        contra-tracer,
 
@@ -355,11 +349,11 @@ executable demo-chain-sync
 
   default-language:    Haskell2010
   default-extensions:  ImportQualifiedPost
-  ghc-options:         -Wall
-                       -threaded
+  ghc-options:         -threaded
                        -rtsopts
 
 benchmark sim-benchmarks
+  import:              ghc-options-tests
   default-language:    Haskell2010
   default-extensions:  ImportQualifiedPost
   type:                exitcode-stdio-1.0
@@ -370,15 +364,7 @@ benchmark sim-benchmarks
 
                        ouroboros-network:sim-tests-lib
 
-  ghc-options:         -Wall
-                       -Wno-unticked-promoted-constructors
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wunused-packages
-                       -fno-ignore-asserts
+  ghc-options:         -fno-ignore-asserts
                        -with-rtsopts=-A32m
                        +RTS -T -RTS
 
