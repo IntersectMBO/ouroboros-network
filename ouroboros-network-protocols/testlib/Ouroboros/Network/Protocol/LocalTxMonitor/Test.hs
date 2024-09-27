@@ -78,26 +78,26 @@ codec = codecLocalTxMonitor
 --
 
 prop_codecM_LocalTxMonitor ::
-     AnyMessageAndAgency (LocalTxMonitor TxId Tx SlotNo)
+     AnyMessage (LocalTxMonitor TxId Tx SlotNo)
   -> Bool
 prop_codecM_LocalTxMonitor msg =
     ST.runST $ prop_codecM codec msg
 
 prop_codec_cborM_LocalTxMonitor ::
-     AnyMessageAndAgency (LocalTxMonitor TxId Tx SlotNo)
+     AnyMessage (LocalTxMonitor TxId Tx SlotNo)
   -> Bool
 prop_codec_cborM_LocalTxMonitor msg =
   ST.runST $ prop_codec_cborM codec msg
 
 prop_codec_splitsM_LocalTxMonitor ::
      (ByteString -> [[ByteString]])
-  -> AnyMessageAndAgency (LocalTxMonitor TxId Tx SlotNo)
+  -> AnyMessage (LocalTxMonitor TxId Tx SlotNo)
   -> Bool
 prop_codec_splitsM_LocalTxMonitor splitN msg =
   ST.runST $ prop_codec_splitsM splitN codec msg
 
 prop_codec_valid_cbor_encoding_LocalTxMonitor ::
-     AnyMessageAndAgency (LocalTxMonitor TxId Tx SlotNo)
+     AnyMessage (LocalTxMonitor TxId Tx SlotNo)
   -> Property
 prop_codec_valid_cbor_encoding_LocalTxMonitor =
   prop_codec_valid_cbor_encoding codec
@@ -141,7 +141,7 @@ prop_connect (slot, txs) =
              (localTxMonitorServerPeer $
                 localTxMonitorServer txId (slot, txs))) of
 
-      ((txs', _), (), TerminalStates TokDone TokDone) ->
+      ((txs', _), (), TerminalStates SingDone SingDone) ->
         txs' == [ (tx, True) | tx <- txs ]
 
 -- | Run a local tx-monitor client and server using connected channels.
@@ -198,20 +198,20 @@ instance ShowProxy TxId where
 --
 
 instance (Arbitrary txid, Arbitrary tx, Arbitrary slot)
-    => Arbitrary (AnyMessageAndAgency (LocalTxMonitor txid tx slot))
+    => Arbitrary (AnyMessage (LocalTxMonitor txid tx slot))
   where
     arbitrary = oneof
-      [ pure $ AnyMessageAndAgency (ClientAgency TokIdle) MsgAcquire
-      , AnyMessageAndAgency (ServerAgency TokAcquiring) . MsgAcquired <$> arbitrary
-      , pure $ AnyMessageAndAgency (ClientAgency TokAcquired) MsgAwaitAcquire
-      , pure $ AnyMessageAndAgency (ClientAgency TokAcquired) MsgNextTx
-      , AnyMessageAndAgency (ServerAgency (TokBusy TokNextTx)) . MsgReplyNextTx <$> arbitrary
-      , AnyMessageAndAgency (ClientAgency TokAcquired) . MsgHasTx <$> arbitrary
-      , AnyMessageAndAgency (ServerAgency (TokBusy TokHasTx)) . MsgReplyHasTx <$> arbitrary
-      , pure $ AnyMessageAndAgency (ClientAgency TokAcquired) MsgGetSizes
-      , AnyMessageAndAgency (ServerAgency (TokBusy TokGetSizes)) . MsgReplyGetSizes <$> arbitrary
-      , pure $ AnyMessageAndAgency (ClientAgency TokAcquired) MsgRelease
-      , pure $ AnyMessageAndAgency (ClientAgency TokIdle) MsgDone
+      [ pure $ AnyMessage MsgAcquire
+      , AnyMessage . MsgAcquired <$> arbitrary
+      , pure $ AnyMessage MsgAwaitAcquire
+      , pure $ AnyMessage MsgNextTx
+      , AnyMessage . MsgReplyNextTx <$> arbitrary
+      , AnyMessage . MsgHasTx <$> arbitrary
+      , AnyMessage . MsgReplyHasTx <$> arbitrary
+      , pure $ AnyMessage MsgGetSizes
+      , AnyMessage . MsgReplyGetSizes <$> arbitrary
+      , pure $ AnyMessage MsgRelease
+      , pure $ AnyMessage MsgDone
       ]
 
 instance Arbitrary MempoolSizeAndCapacity where

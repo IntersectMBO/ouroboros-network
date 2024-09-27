@@ -16,7 +16,7 @@ module Ouroboros.Network.Protocol.ChainSync.PipelineDecision
 import Control.Exception (assert)
 import Data.Word (Word16)
 
-import Network.TypedProtocol.Pipelined
+import Network.TypedProtocol.Peer (N (..), Nat (..), natToInt)
 
 import Ouroboros.Network.Block (BlockNo)
 import Ouroboros.Network.Point (WithOrigin (..))

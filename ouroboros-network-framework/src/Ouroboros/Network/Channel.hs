@@ -13,6 +13,7 @@ module Ouroboros.Network.Channel
   , mvarsAsChannel
   , handlesAsChannel
   , createConnectedChannels
+  , createConnectedBufferedChannelsUnbounded
   , createConnectedBufferedChannels
   , createConnectedBufferedChannelsSTM
   , createPipelineTestChannels
@@ -162,6 +163,28 @@ createConnectedChannels = do
             mvarsAsChannel bufferA bufferB)
 
 
+-- | Create a pair of channels that are connected via two unbounded buffers.
+--
+-- This is primarily useful for testing protocols.
+--
+createConnectedBufferedChannelsUnbounded :: forall m a. MonadSTM m
+                                         => m (Channel m a, Channel m a)
+createConnectedBufferedChannelsUnbounded = do
+    -- Create two TQueues to act as the channel buffers (one for each
+    -- direction) and use them to make both ends of a bidirectional channel
+    bufferA <- atomically $ newTQueue
+    bufferB <- atomically $ newTQueue
+
+    return (queuesAsChannel bufferB bufferA,
+            queuesAsChannel bufferA bufferB)
+  where
+    queuesAsChannel bufferRead bufferWrite =
+        Channel{send, recv}
+      where
+        send x = atomically (writeTQueue bufferWrite x)
+        recv   = atomically (Just <$> readTQueue bufferRead)
+
+
 -- | Create a pair of channels that are connected via N-place buffers.
 --
 -- This variant /blocks/ when 'send' would exceed the maximum buffer size.
@@ -170,7 +193,7 @@ createConnectedChannels = do
 --
 -- This is primarily useful for testing protocols.
 --
-createConnectedBufferedChannels :: forall m a. MonadSTM m
+createConnectedBufferedChannels :: forall m a. MonadLabelledSTM m
                                 => Natural -> m (Channel m a, Channel m a)
 createConnectedBufferedChannels sz = do
     (chan1, chan2) <- atomically $ createConnectedBufferedChannelsSTM sz
@@ -178,20 +201,22 @@ createConnectedBufferedChannels sz = do
   where
     wrap :: Channel (STM m) a -> Channel m a
     wrap Channel{send, recv} = Channel
-      { send = atomically . send
-      , recv = atomically recv
+      { send    = atomically . send
+      , recv    = atomically recv
       }
 
 -- | As 'createConnectedBufferedChannels', but in 'STM'.
 --
 -- TODO: it should return a pair of `Channel m a`.
-createConnectedBufferedChannelsSTM :: MonadSTM m
+createConnectedBufferedChannelsSTM :: MonadLabelledSTM m
                                    => Natural -> STM m (Channel (STM m) a, Channel (STM m) a)
 createConnectedBufferedChannelsSTM sz = do
     -- Create two TBQueues to act as the channel buffers (one for each
     -- direction) and use them to make both ends of a bidirectional channel
     bufferA <- newTBQueue sz
+    labelTBQueue bufferA "chann-a"
     bufferB <- newTBQueue sz
+    labelTBQueue bufferB "chann-b"
 
     return (queuesAsChannel bufferB bufferA,
             queuesAsChannel bufferA bufferB)
@@ -199,8 +224,8 @@ createConnectedBufferedChannelsSTM sz = do
     queuesAsChannel bufferRead bufferWrite =
         Channel{send, recv}
       where
-        send x = writeTBQueue bufferWrite x
-        recv   = Just <$> readTBQueue bufferRead
+        send x  = writeTBQueue bufferWrite x
+        recv    = Just <$> readTBQueue bufferRead
 
 
 -- | Create a pair of channels that are connected via N-place buffers.
@@ -294,8 +319,13 @@ delayChannel :: MonadDelay m
              => DiffTime
              -> Channel m a
              -> Channel m a
-delayChannel delay = channelEffect (\_ -> return ())
-                                   (\_ -> threadDelay delay)
+delayChannel delay Channel{send, recv} =
+    Channel { send
+            , recv    = threadDelay (delay / 2)
+                     >> recv
+                     <* threadDelay (delay / 2)
+            }
+
 
 
 -- | Channel which logs sent and received messages.
@@ -309,8 +339,8 @@ loggingChannel :: ( MonadSay m
                -> Channel m a
 loggingChannel ident Channel{send,recv} =
   Channel {
-    send = loggingSend,
-    recv = loggingRecv
+    send    = loggingSend,
+    recv    = loggingRecv
   }
  where
   loggingSend a = do

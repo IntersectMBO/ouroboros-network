@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -17,7 +18,7 @@ module Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined
 import Control.Concurrent.Class.MonadSTM.Strict
 import Data.Word (Word16)
 
-import Network.TypedProtocol.Pipelined
+import Network.TypedProtocol.Core
 
 import Ouroboros.Network.Block (BlockNo, HasHeader (..), Tip (..), blockNo,
            getTipBlockNo)
@@ -51,10 +52,10 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
       -- found an intersection or not. If not, we'll just sync from genesis.
       ClientPipelinedStIntersect {
         recvMsgIntersectFound    = \_ srvTip -> do
-          cliTipBlockNo <- Chain.headBlockNo <$> atomically (readTVar chainvar)
+          cliTipBlockNo <- Chain.headBlockNo <$> readTVarIO chainvar
           pure $ go mkPipelineDecision0 Zero cliTipBlockNo srvTip client,
         recvMsgIntersectNotFound = \  srvTip -> do
-          cliTipBlockNo <- Chain.headBlockNo <$> atomically (readTVar chainvar)
+          cliTipBlockNo <- Chain.headBlockNo <$> readTVarIO chainvar
           pure $ go mkPipelineDecision0 Zero cliTipBlockNo srvTip client
       }
 
@@ -139,7 +140,7 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
               }
 
 
-    -- Recursievly collect all outstanding responses, but do nothing with them.
+    -- Recursively collect all outstanding responses, but do nothing with them.
     -- If 'CollectResponse' returns an error when applying
     -- roll forward or roll backward instruction, we collect all the
     -- outstanding responses and send 'MsgDone'.
@@ -162,7 +163,7 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
     getChainPoints :: Client header (Point header) (Tip header) m a
                    -> m (Either a ([Point header], Client header (Point header) (Tip header) m a))
     getChainPoints client = do
-      pts <- Chain.selectPoints recentOffsets <$> atomically (readTVar chainvar)
+      pts <- Chain.selectPoints recentOffsets <$> readTVarIO chainvar
       choice <- points client pts
       pure $ case choice of
         Left a        -> Left a

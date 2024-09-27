@@ -18,7 +18,7 @@ module Ouroboros.Network.Protocol.LocalStateQuery.Server
   ) where
 
 import Data.Kind (Type)
-import Network.TypedProtocol.Core
+import Network.TypedProtocol.Stateful.Peer.Server
 
 import Ouroboros.Network.Protocol.LocalStateQuery.Type
 
@@ -92,47 +92,55 @@ localStateQueryServerPeer
   :: forall block point (query :: Type -> Type) m a.
      Monad m
   => LocalStateQueryServer block point query m a
-  -> Peer (LocalStateQuery block point query) AsServer StIdle m a
+  -> Server (LocalStateQuery block point query) StIdle State m a
 localStateQueryServerPeer (LocalStateQueryServer handler) =
     Effect $ handleStIdle <$> handler
   where
     handleStIdle
       :: ServerStIdle block point query m a
-      -> Peer (LocalStateQuery block point query) AsServer StIdle m a
+      -> Server (LocalStateQuery block point query) StIdle State m a
     handleStIdle ServerStIdle{recvMsgAcquire, recvMsgDone} =
-      Await (ClientAgency TokIdle) $ \req -> case req of
-        MsgAcquire tgt -> Effect $
-          handleStAcquiring <$> recvMsgAcquire tgt
-        MsgDone        -> Effect $
-          Done TokDone <$> recvMsgDone
+      Await $ \_ req -> case req of
+        MsgAcquire pt -> ( Effect $ handleStAcquiring <$> recvMsgAcquire pt
+                         , StateAcquiring
+                         )
+        MsgDone -> ( Effect $ Done <$> recvMsgDone
+                   , StateDone
+                   )
 
     handleStAcquiring
       :: ServerStAcquiring block point query m a
-      -> Peer (LocalStateQuery block point query) AsServer StAcquiring m a
+      -> Server (LocalStateQuery block point query) StAcquiring State m a
     handleStAcquiring req = case req of
       SendMsgAcquired stAcquired    ->
-        Yield (ServerAgency TokAcquiring)
+        Yield StateAcquiring StateAcquired
               MsgAcquired
               (handleStAcquired stAcquired)
       SendMsgFailure failure stIdle ->
-        Yield (ServerAgency TokAcquiring)
+        Yield StateAcquiring StateIdle
               (MsgFailure failure)
               (handleStIdle stIdle)
 
     handleStAcquired
       :: ServerStAcquired block point query m a
-      -> Peer (LocalStateQuery block point query) AsServer StAcquired m a
+      -> Server (LocalStateQuery block point query) StAcquired State m a
     handleStAcquired ServerStAcquired{recvMsgQuery, recvMsgReAcquire, recvMsgRelease} =
-      Await (ClientAgency TokAcquired) $ \req -> case req of
-        MsgQuery query   -> Effect $ handleStQuerying query <$> recvMsgQuery query
-        MsgReAcquire tgt -> Effect $ handleStAcquiring      <$> recvMsgReAcquire tgt
-        MsgRelease       -> Effect $ handleStIdle           <$> recvMsgRelease
+      Await $ \_ req -> case req of
+        MsgQuery query  -> ( Effect $ handleStQuerying query <$> recvMsgQuery query
+                           , StateQuerying query
+                           )
+        MsgReAcquire pt -> ( Effect $ handleStAcquiring      <$> recvMsgReAcquire pt
+                           , StateAcquiring
+                           )
+        MsgRelease      -> ( Effect $ handleStIdle           <$> recvMsgRelease
+                           , StateIdle
+                           )
 
     handleStQuerying
       :: query result
       -> ServerStQuerying block point query m a result
-      -> Peer (LocalStateQuery block point query) AsServer (StQuerying result) m a
+      -> Server (LocalStateQuery block point query) (StQuerying result) State m a
     handleStQuerying query (SendMsgResult result stAcquired) =
-      Yield (ServerAgency (TokQuerying query))
-            (MsgResult query result)
+      Yield (StateQuerying query) StateAcquired
+            (MsgResult result)
             (handleStAcquired stAcquired)

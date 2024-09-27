@@ -32,7 +32,7 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (nullTracer)
 
 import Network.TypedProtocol.Codec
-import Network.TypedProtocol.Core
+import Network.TypedProtocol.Peer.Server
 
 import Ouroboros.Network.Block
 import Ouroboros.Network.Channel
@@ -148,6 +148,7 @@ createOneWaySubscriptionChannels trDelay1 trDelay2 = do
 createTwoWaySubscriptionChannels
   :: forall block tip m.
      ( MonadDelay m
+     , MonadLabelledSTM m
      , MonadTimer m
      )
   => DiffTime
@@ -311,7 +312,7 @@ relayNode _nid initChain chans = do
                                    consumer
       return chainVar
 
-    startProducer :: Peer (ChainSync block (Point block) (Tip block)) AsServer StIdle m ()
+    startProducer :: Server (ChainSync block (Point block) (Tip block)) NonPipelined StIdle m ()
                   -> Int
                   -> Channel m (AnyMessage (ChainSync block (Point block) (Tip block)))
                   -> m ()
@@ -337,6 +338,7 @@ relayNode _nid initChain chans = do
 forkCoreKernel :: forall block m.
                   ( HasFullHeader block
                   , MonadDelay m
+                  , MonadLabelledSTM m
                   , MonadFork m
                   , MonadTimer m
                   )
@@ -383,6 +385,7 @@ forkCoreKernel slotDuration gchain fixupBlock cpsVar = do
 --
 coreNode :: forall m.
         ( MonadDelay m
+        , MonadLabelledSTM m
         , MonadFork m
         , MonadThrow m
         , MonadTimer m

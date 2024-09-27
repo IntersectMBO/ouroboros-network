@@ -31,6 +31,7 @@ import Control.Monad (forever)
 import Control.Monad.Class.MonadTimer
 
 import Network.TypedProtocol.Core
+import Network.TypedProtocol.Peer.Client
 
 import Ouroboros.Network.Protocol.LocalTxSubmission.Type
 
@@ -99,21 +100,18 @@ mapLocalTxSubmissionClient ftx frej =
 localTxSubmissionClientPeer
   :: forall tx reject m a. Monad m
   => LocalTxSubmissionClient tx reject m a
-  -> Peer (LocalTxSubmission tx reject) AsClient StIdle m a
+  -> Client (LocalTxSubmission tx reject) NonPipelined StIdle m a
 localTxSubmissionClientPeer (LocalTxSubmissionClient client) =
     Effect $ go <$> client
   where
     go :: LocalTxClientStIdle tx reject m a
-       -> Peer (LocalTxSubmission tx reject) AsClient StIdle m a
+       -> Client (LocalTxSubmission tx reject) NonPipelined StIdle m a
     go (SendMsgSubmitTx tx k) =
-      Yield (ClientAgency TokIdle)
-            (MsgSubmitTx tx) $
-      Await (ServerAgency TokBusy) $ \msg -> case msg of
+      Yield (MsgSubmitTx tx) $
+      Await $ \msg -> case msg of
         MsgAcceptTx        -> Effect (go <$> k SubmitSuccess)
         MsgRejectTx reject -> Effect (go <$> k (SubmitFail reject))
 
     go (SendMsgDone a) =
-      Yield (ClientAgency TokIdle)
-            MsgDone
-            (Done TokDone a)
+      Yield MsgDone (Done a)
 

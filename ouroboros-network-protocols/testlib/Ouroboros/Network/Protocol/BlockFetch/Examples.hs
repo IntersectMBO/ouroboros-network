@@ -1,6 +1,11 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
+
 module Ouroboros.Network.Protocol.BlockFetch.Examples where
 
 import Control.Monad (unless)
@@ -10,7 +15,7 @@ import Pipes qualified
 
 import Control.Concurrent.Class.MonadSTM.Strict
 
-import Network.TypedProtocol.Pipelined
+import Network.TypedProtocol.Peer
 
 import Ouroboros.Network.Mock.Chain (Chain, HasHeader, Point)
 import Ouroboros.Network.Mock.Chain qualified as Chain
@@ -68,7 +73,7 @@ blockFetchClientMap ranges = BlockFetchClient $ do
     atomically $ do
       x <- readTVar donevar
       unless (x <= 0) retry
-    SendMsgClientDone <$> atomically (readTVar var)
+    SendMsgClientDone <$> readTVarIO var
 
   goBlockFetch donevar var (r : rs) response  =
     return $ SendMsgRequestRange r response (BlockFetchClient $ goBlockFetch donevar var rs response)

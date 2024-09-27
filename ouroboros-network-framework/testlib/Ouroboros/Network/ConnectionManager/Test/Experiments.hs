@@ -1,14 +1,11 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE ConstraintKinds     #-}
 {-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
-{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -66,12 +63,13 @@ import Codec.CBOR.Term (Term)
 import Network.Mux qualified as Mux
 import Network.Mux.Types (MuxRuntimeError)
 import Network.TypedProtocol.Core
+import Network.TypedProtocol.Peer.Client
 
 import Network.TypedProtocol.ReqResp.Client
 import Network.TypedProtocol.ReqResp.Codec.CBOR
 import Network.TypedProtocol.ReqResp.Examples
 import Network.TypedProtocol.ReqResp.Server
-import Network.TypedProtocol.ReqResp.Type
+import Network.TypedProtocol.ReqResp.Type as ReqResp
 
 import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionId
@@ -597,17 +595,19 @@ reqRespSizeLimits = ProtocolSizeLimits
     , dataSize = fromIntegral . LBS.length
     }
   where
-    sizeLimitForState :: forall (pr :: PeerRole) (st :: ReqResp req resp).
-                         PeerHasAgency pr st -> Word
+    sizeLimitForState :: forall (st :: ReqResp req resp).
+                         StateToken st -> Word
     sizeLimitForState _ = maxBound
 
 reqRespTimeLimits :: forall req resp. ProtocolTimeLimits (ReqResp req resp)
 reqRespTimeLimits = ProtocolTimeLimits { timeLimitForState }
   where
-    timeLimitForState :: forall (pr :: PeerRole) (st :: ReqResp req resp).
-                         PeerHasAgency pr st -> Maybe DiffTime
-    timeLimitForState (ClientAgency TokIdle) = Nothing
-    timeLimitForState (ServerAgency TokBusy) = Just 60
+    timeLimitForState :: forall (st :: ReqResp req resp).
+                         ActiveState st
+                      => StateToken st -> Maybe DiffTime
+    timeLimitForState SingIdle           = Nothing
+    timeLimitForState SingBusy           = Just 60
+    timeLimitForState a@ReqResp.SingDone = notActiveState a
 
 
 
@@ -623,12 +623,14 @@ reqRespTimeLimits = ProtocolTimeLimits { timeLimitForState }
 runInitiatorProtocols
     :: forall muxMode addr m a b.
        ( Alternative (STM m)
-       , MonadAsync      m
-       , MonadCatch      m
-       , MonadSTM        m
-       , MonadThrow (STM m)
+       , MonadAsync       m
+       , MonadCatch       m
+       , MonadLabelledSTM m
+       , MonadMask        m
+       , MonadSTM         m
+       , MonadThrow  (STM m)
        , HasInitiator muxMode ~ True
-       , MonadSay        m
+       , MonadSay         m
        )
     => SingMuxMode muxMode
     -> Mux.Mux muxMode m

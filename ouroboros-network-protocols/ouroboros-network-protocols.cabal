@@ -99,6 +99,7 @@ library
                        cborg             >=0.2.1 && <0.3,
                        deepseq,
                        quiet,
+                       singletons,
 
                        io-classes       ^>=1.5.0,
                        nothunks,
@@ -107,9 +108,11 @@ library
                        ouroboros-network-api
                                         ^>=0.9.0,
                        serialise,
-                       typed-protocols  ^>=0.1.1,
+                       typed-protocols  ^>=0.3,
                        typed-protocols-cborg
-                                        ^>=0.1
+                                        ^>=0.3,
+                       typed-protocols-stateful,
+                       typed-protocols-stateful-cborg
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
@@ -197,7 +200,8 @@ library testlib
                        ouroboros-network-protocols,
                        si-timers,
                        strict-stm,
-                       typed-protocols
+                       typed-protocols,
+                       typed-protocols-stateful
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
@@ -263,6 +267,7 @@ test-suite cddl
                        tasty-quickcheck,
 
                        typed-protocols,
+                       typed-protocols-stateful,
                        ouroboros-network-api,
                        ouroboros-network-framework,
                        ouroboros-network-mock,
@@ -293,6 +298,7 @@ test-suite bench
                        tasty-bench,
 
                        typed-protocols,
+                       typed-protocols-stateful,
                        ouroboros-network-api,
                        ouroboros-network-framework,
                        ouroboros-network-protocols,

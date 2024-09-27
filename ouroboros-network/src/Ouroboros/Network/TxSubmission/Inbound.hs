@@ -39,7 +39,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, traceWith)
 
-import Network.TypedProtocol.Pipelined (N, Nat (..), natToInt)
+import Network.TypedProtocol.Core (N, Nat (..), natToInt)
 
 import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import Ouroboros.Network.Protocol.Limits

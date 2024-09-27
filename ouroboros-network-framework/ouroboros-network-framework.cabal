@@ -27,6 +27,7 @@ library
                        Ouroboros.Network.Driver
                        Ouroboros.Network.Driver.Simple
                        Ouroboros.Network.Driver.Limits
+                       Ouroboros.Network.Driver.Stateful
                        Ouroboros.Network.ErrorPolicy
                        Ouroboros.Network.IOManager
                        Ouroboros.Network.Mux
@@ -91,7 +92,7 @@ library
                      , si-timers
                      , strict-stm
 
-                     , nothunks       ^>=0.2
+                     , nothunks      ^>=0.1.4 || ^>=0.2
                      , psqueues
                      -- ^ only to derive nothunk instances
 
@@ -102,9 +103,11 @@ library
                      , ouroboros-network-api
                                       ^>=0.9.0
                      , ouroboros-network-testing
-                     , typed-protocols ^>=0.1.1
+                     , typed-protocols ^>=0.3
+                     , typed-protocols-stateful
+                                       ^>=0.3
                      , typed-protocols-cborg
-                                      ^>=0.1
+                                      ^>=0.3
                      , Win32-network  ^>=0.2
 
   if os(windows)
@@ -270,10 +273,12 @@ test-suite io-tests
                      , si-timers
                      , strict-stm
                      , network-mux
+                     , ouroboros-network-api
                      , ouroboros-network-framework
                      , ouroboros-network-framework:testlib
                      , typed-protocols
-                     , typed-protocols-examples
+                     , typed-protocols-stateful
+                     , typed-protocols-examples >= 0.5
 
   if os(windows)
     build-depends:     Win32-network <0.3
@@ -307,7 +312,6 @@ executable demo-ping-pong
 
                        ouroboros-network-api,
                        ouroboros-network-framework,
-                       typed-protocols,
                        typed-protocols-examples
 
   default-language:    Haskell2010

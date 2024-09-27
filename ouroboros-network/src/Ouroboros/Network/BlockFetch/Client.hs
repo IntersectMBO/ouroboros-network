@@ -31,7 +31,7 @@ import Control.Tracer (traceWith)
 import Ouroboros.Network.Block
 
 import Network.TypedProtocol.Core
-import Network.TypedProtocol.Pipelined
+import Network.TypedProtocol.Peer.Client
 import Ouroboros.Network.ControlMessage (ControlMessageSTM)
 import Ouroboros.Network.Protocol.BlockFetch.Type
 
@@ -62,7 +62,7 @@ instance Exception BlockFetchProtocolFailure
 --         to avoid large types leaking into the consensus layer.
 type BlockFetchClient header block m a =
   FetchClientContext header block m ->
-  PeerPipelined (BlockFetch block (Point block)) AsClient BFIdle m a
+  ClientPipelined (BlockFetch block (Point block)) BFIdle m a
 
 -- | The implementation of the client side of block fetch protocol designed to
 -- work in conjunction with our fetch logic.
@@ -75,7 +75,7 @@ blockFetchClient :: forall header block versionNumber m.
                  -> ControlMessageSTM m
                  -> FetchedMetricsTracer m
                  -> FetchClientContext header block m
-                 -> PeerPipelined (BlockFetch block (Point block)) AsClient BFIdle m ()
+                 -> ClientPipelined (BlockFetch block (Point block)) BFIdle m ()
 blockFetchClient _version controlMessageSTM reportFetched
                  FetchClientContext {
                    fetchClientCtxTracer    = tracer,
@@ -87,29 +87,28 @@ blockFetchClient _version controlMessageSTM reportFetched
                                              },
                    fetchClientCtxStateVars = stateVars
                  } =
-    PeerPipelined (senderAwait Zero)
+    ClientPipelined (senderAwait Zero)
   where
     senderIdle :: forall n.
                   Nat n
-               -> PeerSender (BlockFetch block (Point block)) AsClient
-                             BFIdle n () m ()
+               -> Client (BlockFetch block (Point block)) (Pipelined n ())
+                         BFIdle m ()
 
     -- We have no requests to send. Check if we have any pending pipelined
     -- results to collect. If so, go round and collect any more. If not, block
     -- and wait for some new requests.
     senderIdle (Succ outstanding) =
-      SenderCollect (Just (senderAwait (Succ outstanding)))
-                    (\_ -> senderIdle outstanding)
+      Collect (Just (senderAwait (Succ outstanding)))
+              (\_ -> senderIdle outstanding)
 
     -- And similarly if there are no pending pipelined results at all.
     senderIdle Zero = senderAwait Zero
 
     senderAwait :: forall n.
                    Nat n
-                -> PeerSender (BlockFetch block (Point block)) AsClient
-                              BFIdle n () m ()
+                -> Client (BlockFetch block (Point block)) (Pipelined n ()) BFIdle m ()
     senderAwait outstanding =
-      SenderEffect $ do
+      Effect $ do
       -- Atomically grab our next request and update our tracking state.
       -- We have now accepted this request.
       --
@@ -136,13 +135,12 @@ blockFetchClient _version controlMessageSTM reportFetched
                  -> PeerGSV
                  -> PeerFetchInFlightLimits
                  -> [AnchoredFragment header]
-                 -> PeerSender (BlockFetch block (Point block)) AsClient
-                               BFIdle n () m ()
+                 -> Client (BlockFetch block (Point block)) (Pipelined n ()) BFIdle m ()
 
     -- We now do have some requests that we have accepted but have yet to
     -- actually send out. Lets send out the first one.
     senderActive outstanding gsvs inflightlimits (fragment:fragments) =
-      SenderEffect $ do
+      Effect $ do
         {-
         now <- getMonotonicTime
         --TODO: should we pair this up with the senderAwait earlier?
@@ -170,8 +168,7 @@ blockFetchClient _version controlMessageSTM reportFetched
 
         traceWith tracer (SendFetchRequest fragment gsvs)
         return $
-          SenderPipeline
-            (ClientAgency TokIdle)
+          YieldPipelined
             (MsgRequestRange (castRange range))
             (receiverBusy range fragment inflightlimits)
             (senderActive (Succ outstanding) gsvs inflightlimits fragments)
@@ -183,25 +180,21 @@ blockFetchClient _version controlMessageSTM reportFetched
     -- Terminate the sender; 'controlMessageSTM' returned 'Terminate'.
     senderTerminate :: forall n.
                        Nat n
-                    -> PeerSender (BlockFetch block (Point block)) AsClient
-                                  BFIdle n () m ()
+                    -> Client (BlockFetch block (Point block)) (Pipelined n ()) BFIdle m ()
     senderTerminate Zero =
-      SenderYield (ClientAgency TokIdle)
-                  MsgClientDone
-                  (SenderDone TokDone ())
+      Yield MsgClientDone (Done ())
     senderTerminate (Succ n) =
-      SenderCollect Nothing
-                    (\_ -> senderTerminate n)
+      Collect Nothing
+              (\_ -> senderTerminate n)
 
 
     receiverBusy :: ChainRange (Point header)
                  -> AnchoredFragment header
                  -> PeerFetchInFlightLimits
-                 -> PeerReceiver (BlockFetch block (Point block)) AsClient
-                                 BFBusy BFIdle m ()
+                 -> Receiver (BlockFetch block (Point block))
+                             BFBusy BFIdle m ()
     receiverBusy range fragment inflightlimits =
-      ReceiverAwait
-        (ServerAgency TokBusy) $ \msg ->
+      ReceiverAwait $ \msg ->
         case msg of
           -- The server is reporting that the range we asked for does not exist.
           -- This can happen (even if we didn't make any mistakes) if their
@@ -232,11 +225,10 @@ blockFetchClient _version controlMessageSTM reportFetched
     receiverStreaming :: PeerFetchInFlightLimits
                       -> ChainRange (Point header)
                       -> [header]
-                      -> PeerReceiver (BlockFetch block (Point block)) AsClient
-                                      BFStreaming BFIdle m ()
+                      -> Receiver (BlockFetch block (Point block))
+                                  BFStreaming BFIdle m ()
     receiverStreaming inflightlimits range headers =
-      ReceiverAwait
-        (ServerAgency TokStreaming) $ \msg ->
+      ReceiverAwait $ \msg ->
         case (msg, headers) of
           (MsgBatchDone, []) -> ReceiverEffect $ do
             completeFetchBatch tracer inflightlimits range stateVars

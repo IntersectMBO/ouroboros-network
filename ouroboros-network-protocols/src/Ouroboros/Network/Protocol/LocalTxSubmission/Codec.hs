@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PolyKinds           #-}
@@ -35,51 +36,54 @@ codecLocalTxSubmission
 codecLocalTxSubmission encodeTx decodeTx encodeReject decodeReject =
     mkCodecCborLazyBS encode decode
   where
-    encode :: forall (pr :: PeerRole) st st'.
-              PeerHasAgency pr st
-           -> Message (LocalTxSubmission tx reject) st st'
+    encode :: forall st st'.
+              Message (LocalTxSubmission tx reject) st st'
            -> CBOR.Encoding
-    encode (ClientAgency TokIdle) (MsgSubmitTx tx) =
+    encode (MsgSubmitTx tx) =
         CBOR.encodeListLen 2
      <> CBOR.encodeWord 0
      <> encodeTx tx
 
-    encode (ServerAgency TokBusy) MsgAcceptTx =
+    encode MsgAcceptTx =
         CBOR.encodeListLen 1
      <> CBOR.encodeWord 1
 
-    encode (ServerAgency TokBusy) (MsgRejectTx reject) =
+    encode (MsgRejectTx reject) =
         CBOR.encodeListLen 2
      <> CBOR.encodeWord 2
      <> encodeReject reject
 
-    encode (ClientAgency TokIdle) MsgDone =
+    encode MsgDone =
         CBOR.encodeListLen 1
      <> CBOR.encodeWord 3
 
 
-    decode :: forall (pr :: PeerRole) s (st :: LocalTxSubmission tx reject).
-              PeerHasAgency pr st
+    decode :: forall s (st :: LocalTxSubmission tx reject).
+              ActiveState st
+           => StateToken st
            -> CBOR.Decoder s (SomeMessage st)
     decode stok = do
       len <- CBOR.decodeListLen
       key <- CBOR.decodeWord
       case (stok, len, key) of
-        (ClientAgency TokIdle, 2, 0) -> do
+        (SingIdle, 2, 0) -> do
           tx <- decodeTx
           return (SomeMessage (MsgSubmitTx tx))
 
-        (ServerAgency TokBusy, 1, 1) ->
+        (SingBusy, 1, 1) ->
           return (SomeMessage MsgAcceptTx)
 
-        (ServerAgency TokBusy, 2, 2) -> do
+        (SingBusy, 2, 2) -> do
           reject <- decodeReject
           return (SomeMessage (MsgRejectTx reject))
 
-        (ClientAgency TokIdle, 1, 3) ->
+        (SingIdle, 1, 3) ->
           return (SomeMessage MsgDone)
 
-        _ -> fail (printf "codecLocalTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
+        (SingDone, _, _) -> notActiveState stok
+
+        (_, _, _) -> fail (printf "codecLocalTxSubmission (%s, %s) unexpected key (%d, %d)"
+                                  (show (activeAgency :: ActiveAgency st)) (show stok) key len)
 
 codecLocalTxSubmissionId
   :: forall tx reject m.
@@ -88,23 +92,26 @@ codecLocalTxSubmissionId
             CodecFailure m
            (AnyMessage (LocalTxSubmission tx reject))
 codecLocalTxSubmissionId =
-    Codec { encode, decode }
+    Codec encode decode
   where
-    encode :: forall (pr :: PeerRole) st st'.
-              PeerHasAgency pr st
-           -> Message (LocalTxSubmission tx reject) st st'
+    encode :: forall st st'.
+              ActiveState st
+           => StateTokenI st
+           => Message (LocalTxSubmission tx reject) st st'
            -> AnyMessage (LocalTxSubmission tx reject)
-    encode _ = AnyMessage
+    encode = AnyMessage
 
-    decode :: forall (pr :: PeerRole) (st :: LocalTxSubmission tx reject).
-              PeerHasAgency pr st
+    decode :: forall (st :: LocalTxSubmission tx reject).
+              ActiveState st
+           => StateToken st
            -> m (DecodeStep (AnyMessage (LocalTxSubmission tx reject))
                             CodecFailure m (SomeMessage st))
     decode stok = return $ DecodePartial $ \bytes -> case (stok, bytes) of
-      (ClientAgency TokIdle, Just (AnyMessage msg@(MsgSubmitTx{}))) -> res msg
-      (ServerAgency TokBusy, Just (AnyMessage msg@(MsgAcceptTx{}))) -> res msg
-      (ServerAgency TokBusy, Just (AnyMessage msg@(MsgRejectTx{}))) -> res msg
-      (ClientAgency TokIdle, Just (AnyMessage msg@(MsgDone{})))     -> res msg
+      (SingIdle, Just (AnyMessage msg@(MsgSubmitTx{}))) -> res msg
+      (SingBusy, Just (AnyMessage msg@(MsgAcceptTx{}))) -> res msg
+      (SingBusy, Just (AnyMessage msg@(MsgRejectTx{}))) -> res msg
+      (SingIdle, Just (AnyMessage msg@(MsgDone{})))     -> res msg
+      (SingDone, _)                                     -> notActiveState stok
       (_, Nothing) -> return (DecodeFail CodecFailureOutOfInput)
       (_, _)       -> return (DecodeFail (CodecFailure failmsg))
     res msg = return (DecodeDone (SomeMessage msg) Nothing)

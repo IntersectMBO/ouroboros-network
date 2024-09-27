@@ -1,16 +1,17 @@
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE DeriveAnyClass        #-}
-{-# LANGUAGE DeriveGeneric         #-}
-{-# LANGUAGE DeriveTraversable     #-}
-{-# LANGUAGE EmptyCase             #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE PolyKinds             #-}
-{-# LANGUAGE QuantifiedConstraints #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE DeriveAnyClass           #-}
+{-# LANGUAGE DeriveGeneric            #-}
+{-# LANGUAGE DeriveTraversable        #-}
+{-# LANGUAGE EmptyCase                #-}
+{-# LANGUAGE FlexibleInstances        #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE QuantifiedConstraints    #-}
+{-# LANGUAGE RankNTypes               #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeFamilies             #-}
+{-# LANGUAGE UndecidableInstances     #-}
 
 -- | The type of the local ledger state query protocol.
 --
@@ -20,9 +21,10 @@
 module Ouroboros.Network.Protocol.LocalStateQuery.Type where
 
 import Data.Kind (Type)
-import Data.Proxy (Proxy (..))
+import Data.Singletons
 
 import Network.TypedProtocol.Core
+import Network.TypedProtocol.Stateful.Codec (AnyMessage (..))
 
 import Control.DeepSeq
 import GHC.Generics
@@ -35,7 +37,11 @@ import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 -- It is parametrised over the type of block (for points), the type of queries
 -- and query results.
 --
-data LocalStateQuery block point (query :: Type -> Type) where
+type LocalStateQuery :: Type           -- ^ block
+                     -> Type           -- ^ point
+                     -> (Type -> Type) -- ^ query
+                     -> Type
+data LocalStateQuery block point query where
 
   -- | The client has agency. It can ask to acquire a state or terminate.
   --
@@ -43,7 +49,7 @@ data LocalStateQuery block point (query :: Type -> Type) where
   --
   StIdle :: LocalStateQuery block point query
 
-  -- | The server has agency. it must acquire the state at the requested point
+  -- | The server has agency. It must acquire the state at the requested point
   -- or report a failure.
   --
   -- There is a timeout in this state.
@@ -57,7 +63,7 @@ data LocalStateQuery block point (query :: Type -> Type) where
 
   -- | The server has agency. It must respond with the query result.
   --
-  StQuerying :: result -> LocalStateQuery block point query
+  StQuerying :: forall block point query (result :: Type). result -> LocalStateQuery block point query
 
   -- | Nobody has agency. The terminal state.
   --
@@ -72,6 +78,38 @@ instance ( ShowProxy block
       , " "
       , showProxy (Proxy :: Proxy query)
       ]
+
+
+-- | Singletons for 'LocalStateQuery' state types.
+--
+type SingLocalStateQuery :: forall (block :: Type) (point :: Type) (query :: Type -> Type).
+                            LocalStateQuery block point query
+                         -> Type
+data SingLocalStateQuery k where
+    SingIdle      :: SingLocalStateQuery StIdle
+    SingAcquiring :: SingLocalStateQuery StAcquiring
+    SingAcquired  :: SingLocalStateQuery StAcquired
+    SingQuerying  :: forall (block :: Type) (point :: Type) (query :: Type -> Type) (result :: Type).
+                     SingLocalStateQuery (StQuerying result
+                                            :: LocalStateQuery block point query)
+    SingDone      :: SingLocalStateQuery StDone
+
+instance StateTokenI StIdle              where stateToken = SingIdle
+instance StateTokenI StAcquiring         where stateToken = SingAcquiring
+instance StateTokenI StAcquired          where stateToken = SingAcquired
+instance StateTokenI (StQuerying (result :: Type))
+                                         where stateToken = SingQuerying
+instance StateTokenI StDone              where stateToken = SingDone
+
+
+instance (forall result. Show (query result))
+      => Show (SingLocalStateQuery (k :: LocalStateQuery block point query)) where
+    show SingIdle      = "SingIdle"
+    show SingAcquiring = "SingAcuiring"
+    show SingAcquired  = "SingAcquired"
+    show SingQuerying  = "SingQuerying"
+    show SingDone      = "SingDone"
+
 
 data Target point = -- | The tip of the volatile chain
                     --
@@ -90,7 +128,7 @@ data Target point = -- | The tip of the volatile chain
                   | ImmutableTip
   deriving (Eq, Foldable, Functor, Generic, Ord, Show, Traversable, NFData)
 
-instance Protocol (LocalStateQuery block point query) where
+instance Protocol (LocalStateQuery (block :: Type) (point :: Type) (query :: Type -> Type)) where
 
   -- | The messages in the state query protocol.
   --
@@ -126,10 +164,7 @@ instance Protocol (LocalStateQuery block point query) where
     -- | The server must reply with the queries.
     --
     MsgResult
-      :: query result
-         -- ^ The query will not be sent across the network, it is solely used
-         -- as evidence that @result@ is a valid type index of @query@.
-      -> result
+      :: result
       -> Message (LocalStateQuery block point query) (StQuerying result) StAcquired
 
     -- | The client can instruct the server to release the state. This lets
@@ -156,41 +191,14 @@ instance Protocol (LocalStateQuery block point query) where
       :: Message (LocalStateQuery block point query) StIdle StDone
 
 
-  data ClientHasAgency st where
-    TokIdle      :: ClientHasAgency StIdle
-    TokAcquired  :: ClientHasAgency StAcquired
+  type StateAgency StIdle              = ClientAgency
+  type StateAgency StAcquired          = ClientAgency
+  type StateAgency StAcquiring         = ServerAgency
+  type StateAgency (StQuerying result) = ServerAgency
+  type StateAgency StDone              = NobodyAgency
 
-  data ServerHasAgency st where
-    TokAcquiring  :: ServerHasAgency StAcquiring
-    TokQuerying   :: query result
-                  -> ServerHasAgency (StQuerying result :: LocalStateQuery block point query)
+  type StateToken = SingLocalStateQuery
 
-  data NobodyHasAgency st where
-    TokDone  :: NobodyHasAgency StDone
-
-  exclusionLemma_ClientAndServerHaveAgency TokIdle     tok = case tok of {}
-  exclusionLemma_ClientAndServerHaveAgency TokAcquired tok = case tok of {}
-
-  exclusionLemma_NobodyAndClientHaveAgency TokDone tok = case tok of {}
-
-  exclusionLemma_NobodyAndServerHaveAgency TokDone tok = case tok of {}
-
-instance forall block point query (st :: LocalStateQuery block point query). NFData (ClientHasAgency st) where
-  rnf TokIdle     = ()
-  rnf TokAcquired = ()
-
-instance forall block point query (st :: LocalStateQuery block point query).
-         (forall result. NFData (query result)) => NFData (ServerHasAgency st) where
-  rnf TokAcquiring     = ()
-  rnf (TokQuerying qr) = rnf qr
-
-instance forall block point query (st :: LocalStateQuery block point query). NFData (NobodyHasAgency st) where
-  rnf TokDone = ()
-
-instance forall block point query (st :: LocalStateQuery block point query) pr.
-         (forall result. NFData (query result)) => NFData (PeerHasAgency pr st) where
-  rnf (ClientAgency x) = rnf x
-  rnf (ServerAgency x) = rnf x
 
 instance ( forall result. NFData (query result)
          , NFData point
@@ -200,7 +208,7 @@ instance ( forall result. NFData (query result)
   rnf MsgAcquired            = ()
   rnf (MsgFailure af)        = rnf af
   rnf (MsgQuery qr)          = rnf qr
-  rnf (MsgResult qr r)       = rnf qr `seq` rwhnf r
+  rnf (MsgResult r)          = rwhnf r
   rnf MsgRelease             = ()
   rnf (MsgReAcquire mbPoint) = rnf mbPoint
   rnf MsgDone                = ()
@@ -209,14 +217,6 @@ data AcquireFailure = AcquireFailurePointTooOld
                     | AcquireFailurePointNotOnChain
   deriving (Eq, Enum, Show, Generic, NFData)
 
-instance Show (ClientHasAgency (st :: LocalStateQuery block point query)) where
-  show TokIdle     = "TokIdle"
-  show TokAcquired = "TokAcquired"
-
-instance (forall result. Show (query result))
-    => Show (ServerHasAgency (st :: LocalStateQuery block point query)) where
-  show TokAcquiring        = "TokAcquiring"
-  show (TokQuerying query) = "TokQuerying " ++ show query
 
 -- | To implement 'Show' for:
 --
@@ -231,26 +231,48 @@ class (forall result. Show (query result)) => ShowQuery query where
     showResult :: forall result. query result -> result -> String
 
 instance (ShowQuery query, Show point)
-      => Show (Message (LocalStateQuery block point query) st st') where
+      => Show (AnyMessage (LocalStateQuery block point query) State) where
   showsPrec p msg = case msg of
-      MsgAcquire tgt -> showParen (p >= 11) $
+      AnyMessage _f (MsgAcquire pt) ->
+        showParen (p >= 11) $
         showString "MsgAcquire " .
-        showsPrec 11 tgt
-      MsgAcquired ->
+        showsPrec 11 pt
+      AnyMessage _f MsgAcquired ->
         showString "MsgAcquired"
-      MsgFailure failure -> showParen (p >= 11) $
+      AnyMessage _f (MsgFailure failure) ->
+        showParen (p >= 11) $
         showString "MsgFailure " .
         showsPrec 11 failure
-      MsgQuery query -> showParen (p >= 11) $
+      AnyMessage _f (MsgQuery query) ->
+        showParen (p >= 11) $
         showString "MsgQuery " .
         showsPrec 11 query
-      MsgResult query result -> showParen (p >= 11) $
+      AnyMessage (StateQuerying query) (MsgResult result) ->
+        showParen (p >= 11) $
         showString "MsgResult " .
         showParen True (showString (showResult query result))
-      MsgRelease ->
+      AnyMessage _f MsgRelease ->
         showString "MsgRelease"
-      MsgReAcquire tgt -> showParen (p >= 11) $
+      AnyMessage _f (MsgReAcquire pt) ->
+        showParen (p >= 11) $
         showString "MsgReAcquire " .
-        showsPrec 11 tgt
-      MsgDone ->
+        showsPrec 11 pt
+      AnyMessage _f MsgDone ->
         showString "MsgDone"
+
+
+type State :: LocalStateQuery block point query -> Type
+data State st where
+    StateIdle      :: State StIdle
+    StateAcquiring :: State StAcquiring
+    StateAcquired  :: State StAcquired
+    StateQuerying  :: query result
+                    -> State (StQuerying result :: LocalStateQuery block point query)
+    StateDone      :: State StDone
+
+instance Show (State st) where
+    show StateIdle         = "StateIdle"
+    show StateAcquiring    = "StateAcquiring"
+    show StateAcquired     = "StateAcquired"
+    show (StateQuerying _) = "StateQuerying *"
+    show StateDone         = "StateDone"

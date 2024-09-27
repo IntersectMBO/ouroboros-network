@@ -26,7 +26,7 @@ import Control.Exception (assert)
 import Control.Monad (when)
 import Control.Tracer (Tracer, traceWith)
 
-import Network.TypedProtocol.Pipelined (N, Nat (..))
+import Network.TypedProtocol.Core (N, Nat (..))
 
 import Ouroboros.Network.Protocol.TxSubmission2.Client
 import Ouroboros.Network.Protocol.TxSubmission2.Server
@@ -81,7 +81,7 @@ txSubmissionClient tracer txId txSize maxUnacked =
             (Map.fromList [ (x, ()) | x <- Foldable.toList unackedSeq ])
 
         recvMsgRequestTxIds :: forall blocking.
-                               TokBlockingStyle blocking
+                               SingBlockingStyle blocking
                             -> NumTxIdsToAck
                             -> NumTxIdsToReq
                             -> m (ClientStTxIds blocking txid tx m ())
@@ -104,7 +104,7 @@ txSubmissionClient tracer txId txSize maxUnacked =
                                    (Seq.take (fromIntegral ackNo) unackedSeq)
 
           case blocking of
-            TokBlocking | not (Seq.null unackedSeq')
+            SingBlocking | not (Seq.null unackedSeq')
               -> error $ "txSubmissionClientConst.recvMsgRequestTxIds: "
                       ++ "peer made a blocking request for more txids when "
                       ++ "there are still unacknowledged txids."
@@ -122,15 +122,15 @@ txSubmissionClient tracer txId txSize maxUnacked =
               txIdAndSize tx = (txId tx, txSize tx)
 
           return $! case (blocking, unackedExtra) of
-            (TokBlocking, []) ->
+            (SingBlocking, []) ->
               SendMsgDone ()
 
-            (TokBlocking, tx:txs) ->
+            (SingBlocking, tx:txs) ->
               SendMsgReplyTxIds
                 (BlockingReply (fmap txIdAndSize (tx :| txs)))
                 (client unackedSeq'' unackedMap'' remainingTxs')
 
-            (TokNonBlocking, txs) ->
+            (SingNonBlocking, txs) ->
               SendMsgReplyTxIds
                 (NonBlockingReply (map txIdAndSize txs))
                 (client unackedSeq'' unackedMap'' remainingTxs')

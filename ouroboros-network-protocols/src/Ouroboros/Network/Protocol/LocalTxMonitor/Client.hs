@@ -25,6 +25,7 @@ module Ouroboros.Network.Protocol.LocalTxMonitor.Client
   ) where
 
 import Network.TypedProtocol.Core
+import Network.TypedProtocol.Peer.Client
 
 import Ouroboros.Network.Protocol.LocalTxMonitor.Type
 
@@ -110,45 +111,45 @@ localTxMonitorClientPeer ::
      ( Monad m
      )
   => LocalTxMonitorClient txid tx slot m a
-  -> Peer (LocalTxMonitor txid tx slot) AsClient StIdle m a
+  -> Client (LocalTxMonitor txid tx slot) NonPipelined StIdle m a
 localTxMonitorClientPeer (LocalTxMonitorClient mClient) =
     Effect $ handleStIdle <$> mClient
   where
     handleStIdle ::
          ClientStIdle txid tx slot m a
-      -> Peer (LocalTxMonitor txid tx slot) AsClient StIdle m a
+      -> Client (LocalTxMonitor txid tx slot) NonPipelined StIdle m a
     handleStIdle = \case
       SendMsgAcquire stAcquired ->
-        Yield (ClientAgency TokIdle) MsgAcquire $
-          Await (ServerAgency TokAcquiring) $ \case
+        Yield MsgAcquire $
+          Await $ \case
             MsgAcquired slot -> Effect $ handleStAcquired <$> stAcquired slot
       SendMsgDone a ->
-        Yield (ClientAgency TokIdle) MsgDone (Done TokDone a)
+        Yield MsgDone (Done a)
 
     handleStAcquired ::
          ClientStAcquired txid tx slot m a
-      -> Peer (LocalTxMonitor txid tx slot) AsClient StAcquired m a
+      -> Client (LocalTxMonitor txid tx slot) NonPipelined StAcquired m a
     handleStAcquired = \case
       SendMsgNextTx stAcquired ->
-        Yield (ClientAgency TokAcquired) MsgNextTx $
-          Await (ServerAgency (TokBusy TokNextTx)) $ \case
+        Yield MsgNextTx $
+          Await $ \case
             MsgReplyNextTx tx ->
               Effect $ handleStAcquired <$> stAcquired tx
       SendMsgHasTx txid stAcquired ->
-        Yield (ClientAgency TokAcquired) (MsgHasTx txid) $
-          Await (ServerAgency (TokBusy TokHasTx)) $ \case
+        Yield (MsgHasTx txid) $
+          Await $ \case
             MsgReplyHasTx res ->
               Effect $ handleStAcquired <$> stAcquired res
       SendMsgGetSizes stAcquired ->
-        Yield (ClientAgency TokAcquired) MsgGetSizes $
-          Await (ServerAgency (TokBusy TokGetSizes)) $ \case
+        Yield MsgGetSizes $
+          Await $ \case
             MsgReplyGetSizes sizes ->
               Effect $ handleStAcquired <$> stAcquired sizes
       SendMsgAwaitAcquire stAcquired ->
-        Yield (ClientAgency TokAcquired) MsgAwaitAcquire $
-          Await (ServerAgency TokAcquiring) $ \case
+        Yield MsgAwaitAcquire $
+          Await $ \case
             MsgAcquired slot ->
               Effect $ handleStAcquired <$> stAcquired slot
       SendMsgRelease stIdle ->
-        Yield (ClientAgency TokAcquired) MsgRelease $
+        Yield MsgRelease $
           Effect $ handleStIdle <$> stIdle

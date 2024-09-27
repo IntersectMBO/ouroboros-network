@@ -1,10 +1,12 @@
-{-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs             #-}
-{-# LANGUAGE KindSignatures    #-}
-{-# LANGUAGE ParallelListComp  #-}
-{-# LANGUAGE RankNTypes        #-}
-{-# LANGUAGE TypeApplications  #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE ParallelListComp    #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -178,20 +180,22 @@ prop_connect (TestChainAndPoints chain points) =
            (connect
              (blockFetchClientPeer (testClient chain points))
              (blockFetchServerPeer (testServer chain))) of
-      (bodies, (), TerminalStates TokDone TokDone) ->
+      (bodies, (), TerminalStates SingBFDone SingBFDone) ->
         reverse bodies == concat (receivedBlockBodies chain points)
 
 
 -- | Run a pipelined block-fetch client against a server, going via the 'Peer'
 -- representation, but without going via a channel.
 --
-connect_pipelined :: MonadSTM m
+connect_pipelined :: ( MonadSTM  m
+                     , MonadFail m
+                     )
                   => TestClientPipelined m
                   -> Chain Block
                   -> [Bool]
                   -> m [Either (ChainRange (Point Block)) [Block]]
 connect_pipelined client chain cs = do
-    (res, _, TerminalStates TokDone TokDone)
+    (res, _, TerminalStates SingBFDone SingBFDone)
       <- connectPipelined cs
            (blockFetchClientPeerPipelined client)
            (blockFetchServerPeer (testServer chain))
@@ -201,11 +205,11 @@ connect_pipelined client chain cs = do
 -- | With a client with maximum pipelining we get all requests followed by
 -- all responses.
 --
-prop_connect_pipelined1 :: TestChainAndPoints -> [Bool] -> Bool
+prop_connect_pipelined1 :: TestChainAndPoints -> [Bool] -> Property
 prop_connect_pipelined1 (TestChainAndPoints chain points) choices =
     runSimOrThrow
       (connect_pipelined (testClientPipelinedMax chain points) chain choices)
- ==
+ ===
     map Left  (pointsToRanges      chain points)
  ++ map Right (receivedBlockBodies chain points)
 
@@ -213,11 +217,11 @@ prop_connect_pipelined1 (TestChainAndPoints chain points) choices =
 -- | With a client that collects eagerly and the driver chooses maximum
 -- pipelining then we get all requests followed by all responses.
 --
-prop_connect_pipelined2 :: TestChainAndPoints -> Bool
+prop_connect_pipelined2 :: TestChainAndPoints -> Property
 prop_connect_pipelined2 (TestChainAndPoints chain points) =
     runSimOrThrow
       (connect_pipelined (testClientPipelinedMin chain points) chain choices)
- ==
+ ===
     map Left  (pointsToRanges      chain points)
  ++ map Right (receivedBlockBodies chain points)
   where
@@ -227,11 +231,11 @@ prop_connect_pipelined2 (TestChainAndPoints chain points) =
 -- | With a client that collects eagerly and the driver chooses minimum
 -- pipelining then we get the interleaving of requests with responses.
 --
-prop_connect_pipelined3 :: TestChainAndPoints -> Bool
+prop_connect_pipelined3 :: TestChainAndPoints -> Property
 prop_connect_pipelined3 (TestChainAndPoints chain points) =
     runSimOrThrow
       (connect_pipelined (testClientPipelinedMin chain points) chain choices)
- ==
+ ===
     concat [ [Left l, Right r]
            | l <- pointsToRanges      chain points
            | r <- receivedBlockBodies chain points ]
@@ -243,11 +247,11 @@ prop_connect_pipelined3 (TestChainAndPoints chain points) =
 -- pipelining then we get complex interleavings given by the reference
 -- specification 'pipelineInterleaving'.
 --
-prop_connect_pipelined4 :: TestChainAndPoints -> [Bool] -> Bool
+prop_connect_pipelined4 :: TestChainAndPoints -> [Bool] -> Property
 prop_connect_pipelined4 (TestChainAndPoints chain points) choices =
     runSimOrThrow
       (connect_pipelined (testClientPipelinedMin chain points) chain choices)
- ==
+ ===
     pipelineInterleaving maxBound choices
                          (pointsToRanges      chain points)
                          (receivedBlockBodies chain points)
@@ -260,13 +264,13 @@ prop_connect_pipelined4 (TestChainAndPoints chain points) choices =
 -- outstanding messages.
 --
 prop_connect_pipelined5 :: TestChainAndPoints -> PipeliningDepth
-                        -> [Bool] -> Bool
+                        -> [Bool] -> Property
 prop_connect_pipelined5 (TestChainAndPoints chain points)
                         (PipeliningDepth omax) choices =
     runSimOrThrow
       (connect_pipelined (testClientPipelinedLimited omax chain points)
                          chain choices)
- ==
+ ===
     pipelineInterleaving (omax) choices
                          (pointsToRanges      chain points)
                          (receivedBlockBodies chain points)
@@ -353,28 +357,28 @@ instance Arbitrary point => Arbitrary (ChainRange point) where
     ]
 
 instance (Arbitrary block, Arbitrary point)
-      => Arbitrary (AnyMessageAndAgency (BlockFetch block point)) where
+      => Arbitrary (AnyMessage (BlockFetch block point)) where
   arbitrary = oneof
-    [ AnyMessageAndAgency (ClientAgency TokIdle) <$> MsgRequestRange <$> arbitrary
-    , return $ AnyMessageAndAgency (ServerAgency TokBusy) MsgStartBatch
-    , return $ AnyMessageAndAgency (ServerAgency TokBusy) MsgNoBlocks
-    , AnyMessageAndAgency (ServerAgency TokStreaming) <$> MsgBlock <$> arbitrary
-    , return $ AnyMessageAndAgency (ServerAgency TokStreaming) MsgBatchDone
-    , return $ AnyMessageAndAgency (ClientAgency TokIdle) MsgClientDone
+    [ AnyMessage . MsgRequestRange <$> arbitrary
+    , return $ AnyMessage MsgStartBatch
+    , return $ AnyMessage MsgNoBlocks
+    , AnyMessage . MsgBlock <$> arbitrary
+    , return $ AnyMessage MsgBatchDone
+    , return $ AnyMessage MsgClientDone
     ]
 
-  shrink (AnyMessageAndAgency a@(ClientAgency TokIdle) (MsgRequestRange range)) =
-    [ AnyMessageAndAgency a (MsgRequestRange range')
+  shrink (AnyMessage (MsgRequestRange range)) =
+    [ AnyMessage (MsgRequestRange range')
     | range' <- shrink range
     ]
-  shrink (AnyMessageAndAgency (ServerAgency TokBusy) MsgStartBatch) = []
-  shrink (AnyMessageAndAgency (ServerAgency TokBusy) MsgNoBlocks) = []
-  shrink (AnyMessageAndAgency a@(ServerAgency TokStreaming) (MsgBlock block)) =
-    [ AnyMessageAndAgency a (MsgBlock block')
+  shrink (AnyMessage MsgStartBatch) = []
+  shrink (AnyMessage MsgNoBlocks) = []
+  shrink (AnyMessage (MsgBlock block)) =
+    [ AnyMessage (MsgBlock block')
     | block' <- shrink block
     ]
-  shrink (AnyMessageAndAgency (ServerAgency TokStreaming) MsgBatchDone) = []
-  shrink (AnyMessageAndAgency (ClientAgency TokIdle) MsgClientDone) = []
+  shrink (AnyMessage MsgBatchDone) = []
+  shrink (AnyMessage MsgClientDone) = []
 
 
 instance (Eq block, Eq point) =>
@@ -394,90 +398,90 @@ instance Arbitrary (Serialised Block) where
     Serialised . S.serialise @Block <$> shrink (S.deserialise block)
 
 prop_codec_BlockFetch
-  :: AnyMessageAndAgency (BlockFetch Block (Point Block))
+  :: AnyMessage (BlockFetch Block (Point Block))
   -> Bool
 prop_codec_BlockFetch msg =
   runST (prop_codecM codec msg)
 
 prop_codec_splits2_BlockFetch
-  :: AnyMessageAndAgency (BlockFetch Block (Point Block))
+  :: AnyMessage (BlockFetch Block (Point Block))
   -> Bool
 prop_codec_splits2_BlockFetch msg =
   runST (prop_codec_splitsM splits2 codec msg)
 
 prop_codec_splits3_BlockFetch
-  :: AnyMessageAndAgency (BlockFetch Block (Point Block))
+  :: AnyMessage (BlockFetch Block (Point Block))
   -> Bool
 prop_codec_splits3_BlockFetch msg =
   runST (prop_codec_splitsM splits3 codec msg)
 
 prop_codec_cbor_BlockFetch
-  :: AnyMessageAndAgency (BlockFetch Block (Point Block))
+  :: AnyMessage (BlockFetch Block (Point Block))
   -> Bool
 prop_codec_cbor_BlockFetch msg =
   runST (prop_codec_cborM codec msg)
 
 prop_codec_valid_cbor_BlockFetch
-  :: AnyMessageAndAgency (BlockFetch Block (Point Block))
+  :: AnyMessage (BlockFetch Block (Point Block))
   -> Property
 prop_codec_valid_cbor_BlockFetch = prop_codec_valid_cbor_encoding codec
 
 prop_codec_BlockFetchSerialised
-  :: AnyMessageAndAgency (BlockFetch (Serialised Block) (Point Block))
+  :: AnyMessage (BlockFetch (Serialised Block) (Point Block))
   -> Bool
 prop_codec_BlockFetchSerialised msg =
   runST (prop_codecM codecSerialised msg)
 
 prop_codec_splits2_BlockFetchSerialised
-  :: AnyMessageAndAgency (BlockFetch (Serialised Block) (Point Block))
+  :: AnyMessage (BlockFetch (Serialised Block) (Point Block))
   -> Bool
 prop_codec_splits2_BlockFetchSerialised msg =
   runST (prop_codec_splitsM splits2 codecSerialised msg)
 
 prop_codec_splits3_BlockFetchSerialised
-  :: AnyMessageAndAgency (BlockFetch (Serialised Block) (Point Block))
+  :: AnyMessage (BlockFetch (Serialised Block) (Point Block))
   -> Bool
 prop_codec_splits3_BlockFetchSerialised msg =
   runST (prop_codec_splitsM splits3 codecSerialised msg)
 
 prop_codec_cbor_BlockFetchSerialised
-  :: AnyMessageAndAgency (BlockFetch (Serialised Block) (Point Block))
+  :: AnyMessage (BlockFetch (Serialised Block) (Point Block))
   -> Bool
 prop_codec_cbor_BlockFetchSerialised msg =
   runST (prop_codec_cborM codecSerialised msg)
 
 
 prop_codec_binary_compat_BlockFetch_BlockFetchSerialised
-  :: AnyMessageAndAgency (BlockFetch Block (Point Block))
+  :: AnyMessage (BlockFetch Block (Point Block))
   -> Bool
 prop_codec_binary_compat_BlockFetch_BlockFetchSerialised msg =
     runST (prop_codec_binary_compatM codecWrapped codecSerialised stokEq msg)
   where
     stokEq
-      :: forall pr (stA :: BlockFetch Block (Point Block)).
-         PeerHasAgency pr stA
-      -> SamePeerHasAgency pr (BlockFetch (Serialised Block) (Point Block))
-    stokEq (ClientAgency ca) = case ca of
-      TokIdle -> SamePeerHasAgency $ ClientAgency TokIdle
-    stokEq (ServerAgency sa) = case sa of
-      TokBusy      -> SamePeerHasAgency $ ServerAgency TokBusy
-      TokStreaming -> SamePeerHasAgency $ ServerAgency TokStreaming
+      :: forall (stA :: BlockFetch Block (Point Block)).
+         ActiveState stA
+      => StateToken stA
+      -> SomeState (BlockFetch (Serialised Block) (Point Block))
+    stokEq SingBFIdle      = SomeState SingBFIdle
+    stokEq SingBFBusy      = SomeState SingBFBusy
+    stokEq SingBFStreaming = SomeState SingBFStreaming
+    stokEq a@SingBFDone    = notActiveState a
 
 prop_codec_binary_compat_BlockFetchSerialised_BlockFetch
-  :: AnyMessageAndAgency (BlockFetch (Serialised Block) (Point Block))
+  :: AnyMessage (BlockFetch (Serialised Block) (Point Block))
   -> Bool
 prop_codec_binary_compat_BlockFetchSerialised_BlockFetch msg =
     runST (prop_codec_binary_compatM codecSerialised codecWrapped stokEq msg)
   where
     stokEq
-      :: forall pr (stA :: BlockFetch (Serialised Block) (Point Block)).
-         PeerHasAgency pr stA
-      -> SamePeerHasAgency pr (BlockFetch Block (Point Block))
-    stokEq (ClientAgency ca) = case ca of
-      TokIdle -> SamePeerHasAgency $ ClientAgency TokIdle
-    stokEq (ServerAgency sa) = case sa of
-      TokBusy      -> SamePeerHasAgency $ ServerAgency TokBusy
-      TokStreaming -> SamePeerHasAgency $ ServerAgency TokStreaming
+      :: forall (stA :: BlockFetch (Serialised Block) (Point Block)).
+         ActiveState stA
+      => StateToken stA
+      -> SomeState (BlockFetch Block (Point Block))
+    stokEq SingBFIdle      = SomeState SingBFIdle
+    stokEq SingBFBusy      = SomeState SingBFBusy
+    stokEq SingBFStreaming = SomeState SingBFStreaming
+    stokEq a@SingBFDone    = notActiveState a
 
 --
 -- Auxiliary functions
@@ -506,7 +510,7 @@ pointsToRanges chain points =
 
 -- | Compute list of received block bodies from a chain and points.
 -- This is the reference function against which we compare block-fetch
--- protocol.  The @'ponitsToRanges'@ function is used to compute the ranges,
+-- protocol.  The @'pointsToRanges'@ function is used to compute the ranges,
 -- and then the results are then read from the chain directly.  Thus this is
 -- the prototypical function for the block-fetch protocol.
 --

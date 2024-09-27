@@ -12,6 +12,7 @@
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TypeOperators         #-}
 
 module Ouroboros.Network.Mux
   ( -- * Basic notions
@@ -30,6 +31,7 @@ module Ouroboros.Network.Mux
   , runMiniProtocolCb
   , mkMiniProtocolCbFromPeer
   , mkMiniProtocolCbFromPeerPipelined
+  , mkMiniProtocolCbFromPeerSt
     -- * Mux mini-protocol callback in MuxMode
   , RunMiniProtocol (..)
   , RunMiniProtocolWithExpandedCtx
@@ -67,11 +69,14 @@ import Control.Tracer (Tracer)
 
 import Data.ByteString.Lazy qualified as LBS
 import Data.Foldable (fold)
+import Data.Kind (Type)
 import Data.Void (Void)
 
 import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Core
-import Network.TypedProtocol.Pipelined
+import Network.TypedProtocol.Peer
+import Network.TypedProtocol.Stateful.Codec qualified as Stateful
+import Network.TypedProtocol.Stateful.Peer qualified as Stateful
 
 import Network.Mux (HasInitiator, HasResponder, MiniProtocolBundle (..),
            MiniProtocolInfo, MiniProtocolLimits (..), MiniProtocolNum,
@@ -84,9 +89,8 @@ import Ouroboros.Network.Channel
 import Ouroboros.Network.Context (ExpandedInitiatorContext,
            MinimalInitiatorContext, ResponderContext)
 import Ouroboros.Network.Driver
+import Ouroboros.Network.Driver.Stateful qualified as Stateful
 import Ouroboros.Network.Util.ShowProxy (ShowProxy)
-
-
 
 
 -- |  There are three kinds of applications: warm, hot and established (ones
@@ -310,23 +314,21 @@ data MiniProtocolCb ctx bytes m a where
 
     MuxPeer
       :: forall (pr :: PeerRole) ps (st :: ps) failure ctx bytes m a.
-         ( Show failure
-         , forall (st' :: ps). Show (ClientHasAgency st')
-         , forall (st' :: ps). Show (ServerHasAgency st')
-         , ShowProxy ps
+         ( ShowProxy ps
+         , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
+         , Show failure
          )
       => (ctx -> ( Tracer m (TraceSendRecv ps)
                  , Codec ps failure m bytes
-                 , Peer ps pr st m a
+                 , Peer ps pr NonPipelined st m a
                  ))
       -> MiniProtocolCb ctx bytes m a
 
     MuxPeerPipelined
       :: forall (pr :: PeerRole) ps (st :: ps) failure ctx bytes m a.
-         ( Show failure
-         , forall (st' :: ps). Show (ClientHasAgency st')
-         , forall (st' :: ps). Show (ServerHasAgency st')
-         , ShowProxy ps
+         ( ShowProxy ps
+         , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
+         , Show failure
          )
       => (ctx -> ( Tracer m (TraceSendRecv ps)
                  , Codec ps failure m bytes
@@ -359,14 +361,13 @@ pattern MuxPeerRaw { runMuxPeer } = MiniProtocolCb runMuxPeer
 mkMiniProtocolCbFromPeer
   :: forall (pr :: PeerRole) ps (st :: ps) failure bytes ctx m a.
      ( MonadThrow m
-     , Show failure
-     , forall (st' :: ps). Show (ClientHasAgency st')
-     , forall (st' :: ps). Show (ServerHasAgency st')
      , ShowProxy ps
+     , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , Show failure
      )
   => (ctx -> ( Tracer m (TraceSendRecv ps)
              , Codec ps failure m bytes
-             , Peer ps pr st m a
+             , Peer ps pr NonPipelined st m a
              )
      )
   -> MiniProtocolCb ctx bytes m a
@@ -376,6 +377,29 @@ mkMiniProtocolCbFromPeer fn =
         (tracer, codec, peer) ->
           runPeer tracer codec channel peer
 
+-- | Create a 'MuxPeer' from a tracer, codec and 'Stateful.Peer'.
+--
+mkMiniProtocolCbFromPeerSt
+  :: forall (pr :: PeerRole) ps (f :: ps -> Type) (st :: ps) failure bytes ctx m a.
+     ( MonadAsync m
+     , MonadMask  m
+     , ShowProxy ps
+     , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , Show failure
+     )
+  => (ctx -> ( Tracer m (Stateful.TraceSendRecv ps f)
+             , Stateful.Codec ps failure f m bytes
+             , f st
+             , Stateful.Peer ps pr st f m a
+             )
+     )
+  -> MiniProtocolCb ctx bytes m a
+mkMiniProtocolCbFromPeerSt fn =
+    MiniProtocolCb $ \ctx channel ->
+      case fn ctx of
+        (tracer, codec, f, peer) ->
+          Stateful.runPeer tracer codec channel f peer
+
 
 -- | Create a 'MuxPeer' from a tracer, codec and 'PeerPipelined'.
 --
@@ -383,10 +407,9 @@ mkMiniProtocolCbFromPeerPipelined
   :: forall (pr :: PeerRole) ps (st :: ps) failure ctx bytes m a.
      ( MonadAsync m
      , MonadThrow m
-     , Show failure
-     , forall (st' :: ps). Show (ClientHasAgency st')
-     , forall (st' :: ps). Show (ServerHasAgency st')
      , ShowProxy ps
+     , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , Show failure
      )
   => (ctx -> ( Tracer m (TraceSendRecv ps)
              , Codec ps failure m bytes
@@ -463,7 +486,9 @@ contramapInitiatorCtx f (OuroborosApplication ptcls) = OuroborosApplication
 --
 -- Note that callbacks will always receive `IsNotBigLedgerPeer`.
 toApplication :: forall mode initiatorCtx responderCtx m a b.
-                 (MonadAsync m, MonadThrow m)
+                 ( MonadAsync m
+                 , MonadThrow m
+                 )
               => initiatorCtx
               -> responderCtx
               -> OuroborosApplication mode initiatorCtx responderCtx LBS.ByteString m a b

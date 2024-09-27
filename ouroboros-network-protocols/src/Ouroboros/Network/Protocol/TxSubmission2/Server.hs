@@ -2,6 +2,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 -- | A view of the transaction submission protocol from the point of view of
 -- the server.
@@ -26,7 +27,7 @@ module Ouroboros.Network.Protocol.TxSubmission2.Server
 import Data.List.NonEmpty (NonEmpty)
 
 import Network.TypedProtocol.Core
-import Network.TypedProtocol.Pipelined
+import Network.TypedProtocol.Peer.Server
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 
@@ -94,57 +95,47 @@ txSubmissionServerPeerPipelined
     :: forall txid tx m a.
        Functor m
     => TxSubmissionServerPipelined txid tx m a
-    -> PeerPipelined (TxSubmission2 txid tx) AsServer StInit m a
+    -> ServerPipelined (TxSubmission2 txid tx) StInit m a
 txSubmissionServerPeerPipelined (TxSubmissionServerPipelined server) =
-    PeerPipelined ( goInit
-                  $ SenderEffect (go <$> server)
-                  )
+    ServerPipelined $
+      -- We need to assist GHC to infer the existentially quantified `c` as
+      -- `Collect txid tx`
+      Await @_ @(Pipelined Z (Collect txid tx))
+            (\MsgInit -> Effect (go <$> server))
   where
-    goInit :: PeerSender (TxSubmission2 txid tx) AsServer StIdle
-                         Z (Collect txid tx) m a
-           -> PeerSender (TxSubmission2 txid tx) AsServer StInit
-                         Z (Collect txid tx) m a
-    goInit k = SenderAwait (ClientAgency TokInit) $ \MsgInit -> k
-
     go :: forall (n :: N).
           ServerStIdle n txid tx m a
-       -> PeerSender (TxSubmission2 txid tx) AsServer StIdle
-                     n (Collect txid tx) m a
+       -> Server (TxSubmission2 txid tx) (Pipelined n (Collect txid tx)) StIdle m a
 
     go (SendMsgRequestTxIdsBlocking ackNo reqNo kDone k) =
-      SenderYield
-        (ServerAgency TokIdle)
-        (MsgRequestTxIds TokBlocking ackNo reqNo) $
-      SenderAwait
-        (ClientAgency (TokTxIds TokBlocking)) $ \msg ->
+      Yield
+        (MsgRequestTxIds SingBlocking ackNo reqNo) $
+      Await $ \msg ->
         case msg of
           MsgDone ->
-            SenderEffect (SenderDone TokDone <$> kDone)
+            Effect (Done <$> kDone)
 
           MsgReplyTxIds (BlockingReply txids) ->
-            SenderEffect (go <$> k txids)
+            Effect (go <$> k txids)
 
     go (SendMsgRequestTxIdsPipelined ackNo reqNo k) =
-      SenderPipeline
-        (ServerAgency TokIdle)
-        (MsgRequestTxIds TokNonBlocking ackNo reqNo)
-        (ReceiverAwait (ClientAgency (TokTxIds TokNonBlocking)) $ \msg ->
+      YieldPipelined
+        (MsgRequestTxIds SingNonBlocking ackNo reqNo)
+        (ReceiverAwait $ \msg ->
            case msg of
              MsgReplyTxIds (NonBlockingReply txids) ->
                ReceiverDone (CollectTxIds reqNo txids))
-        (SenderEffect (go <$> k))
+        (Effect (go <$> k))
 
     go (SendMsgRequestTxsPipelined txids k) =
-      SenderPipeline
-        (ServerAgency TokIdle)
+      YieldPipelined
         (MsgRequestTxs txids)
-        (ReceiverAwait (ClientAgency TokTxs) $ \msg ->
+        (ReceiverAwait $ \msg ->
            case msg of
              MsgReplyTxs txs -> ReceiverDone (CollectTxs txids txs))
-        (SenderEffect (go <$> k))
+        (Effect (go <$> k))
 
     go (CollectPipelined mNone collect) =
-      SenderCollect
-        (fmap go mNone)
-        (SenderEffect . fmap go . collect)
+      Collect (fmap go mNone)
+              (Effect . fmap go . collect)
 

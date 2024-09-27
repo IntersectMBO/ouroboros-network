@@ -14,6 +14,7 @@ module Ouroboros.Network.BlockFetch.Examples
 
 import Codec.Serialise (Serialise (..))
 import Data.ByteString.Lazy qualified as LBS
+import Data.Foldable (traverse_)
 import Data.List as List (foldl')
 import Data.Map (Map)
 import Data.Map.Strict qualified as Map
@@ -36,14 +37,12 @@ import Ouroboros.Network.AnchoredFragment (AnchoredFragment, anchorPoint)
 import Ouroboros.Network.AnchoredFragment qualified as AnchoredFragment
 import Ouroboros.Network.Block
 
-import Network.TypedProtocol.Core
-import Network.TypedProtocol.Pipelined
-
-import Ouroboros.Network.ControlMessage (ControlMessageSTM)
+import Network.TypedProtocol.Peer.Client
 
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.BlockFetch.Client
 import Ouroboros.Network.Channel
+import Ouroboros.Network.ControlMessage
 import Ouroboros.Network.DeltaQ
 import Ouroboros.Network.Driver
 import Ouroboros.Network.NodeToNode (NodeToNodeVersion (..))
@@ -101,11 +100,14 @@ blockFetchExample0 decisionTracer clientStateTracer clientMsgTracer
       labelThread threadId "driver"
       driver blockHeap
 
-    -- Order of shutdown here is important for this example: must kill off the
-    -- fetch thread before the peer threads.
-    _ <- waitAnyCancel $ [ fetchAsync, driverAsync,
-                           clientAsync, serverAsync,
-                           syncClientAsync, keepAliveAsync]
+    -- Order of shutdown is important for this example: must kill the fetch
+    -- thread before the peer threads, or otherwise the first assertion in
+    -- `fetchDecisionsForStateSnapshot` can be triggered.
+    atomically $ controlMessageSTM >>= check . (Terminate ==)
+    cancel fetchAsync
+    _ <- waitAnyCancel [ driverAsync, clientAsync, serverAsync
+                       , syncClientAsync, keepAliveAsync
+                       ]
     return ()
 
   where
@@ -177,14 +179,14 @@ blockFetchExample1 :: forall m.
                                  (TraceSendRecv (BlockFetch Block (Point Block))))
                    -> Maybe DiffTime -- ^ client's channel delay
                    -> Maybe DiffTime -- ^ server's channel delay
-                   -> ControlMessageSTM m
                    -> AnchoredFragment Block   -- ^ Fixed current chain
                    -> [AnchoredFragment Block] -- ^ Fixed candidate chains
                    -> m ()
 blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
                    clientDelay serverDelay
-                   controlMessageSTM
                    currentChain candidateChains = do
+    controlMessageVar <- newTVarIO Continue
+    let controlMessageSTM = readTVar controlMessageVar
 
     registry    <- newFetchClientRegistry
     blockHeap   <- mkTestFetchedBlockHeap (anchoredChainPoints currentChain)
@@ -214,9 +216,12 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
     -- fetch thread before the peer threads.
     _ <- waitAnyCancel $ [ fetchAsync, driverAsync ]
                       ++ [ peerAsync
-                         | (client, server, sync, ks) <- peerAsyncs
-                         , peerAsync <- [client, server, sync, ks] ]
-    return ()
+                         | (_, server, sync, ks) <- peerAsyncs
+                         , peerAsync <- [server, sync, ks] ]
+
+    -- let the client side protocols terminate gracefully.
+    atomically $ writeTVar controlMessageVar Terminate
+    traverse_ (\(client,_,_,_) -> waitCatch client) peerAsyncs
 
   where
     serverMsgTracer = nullTracer
@@ -325,7 +330,7 @@ runFetchClient :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
                 -> peerid
                 -> Channel m LBS.ByteString
                 -> (  FetchClientContext header block m
-                   -> PeerPipelined (BlockFetch block point) AsClient BFIdle m a)
+                   -> ClientPipelined (BlockFetch block point) BFIdle m a)
                 -> m a
 runFetchClient tracer version isPipeliningEnabled registry peerid channel client =
     bracketFetchClient registry version isPipeliningEnabled peerid $ \clientCtx ->
@@ -367,7 +372,7 @@ runFetchClientAndServerAsync
                 -> FetchClientRegistry peerid header block m
                 -> peerid
                 -> (  FetchClientContext header block m
-                   -> PeerPipelined (BlockFetch block (Point block)) AsClient BFIdle m a)
+                   -> ClientPipelined (BlockFetch block (Point block)) BFIdle m a)
                 -> BlockFetchServer block (Point block) m b
                 -> m (Async m a, Async m b, Async m (), Async m ())
 runFetchClientAndServerAsync clientTracer serverTracer

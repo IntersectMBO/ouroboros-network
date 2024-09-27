@@ -24,7 +24,7 @@ module Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import Data.Kind (Type)
 
 import Network.TypedProtocol.Core
-import Network.TypedProtocol.Pipelined
+import Network.TypedProtocol.Peer.Client
 
 import Ouroboros.Network.Protocol.ChainSync.Type
 
@@ -184,10 +184,10 @@ chainSyncClientPeerPipelined
     :: forall header point tip m a.
        Monad m
     => ChainSyncClientPipelined header point tip m a
-    -> PeerPipelined (ChainSync header point tip) AsClient StIdle m a
+    -> ClientPipelined (ChainSync header point tip) StIdle m a
 
 chainSyncClientPeerPipelined (ChainSyncClientPipelined mclient) =
-    PeerPipelined $ SenderEffect $ chainSyncClientPeerSender Zero <$> mclient
+    ClientPipelined $ Effect $ chainSyncClientPeerSender Zero <$> mclient
 
 
 chainSyncClientPeerSender
@@ -195,60 +195,49 @@ chainSyncClientPeerSender
        Monad m
     => Nat n
     -> ClientPipelinedStIdle n header point tip m a
-    -> PeerSender (ChainSync header point tip)
-                  AsClient StIdle n
-                  (ChainSyncInstruction header point tip)
-                  m a
+    -> Client (ChainSync header point tip)
+              (Pipelined n (ChainSyncInstruction header point tip)) StIdle
+              m a
 
 chainSyncClientPeerSender n@Zero (SendMsgRequestNext stAwait stNext) =
 
-    SenderYield
-      (ClientAgency TokIdle)
+    Yield
       MsgRequestNext
-      (SenderAwait
-        (ServerAgency (TokNext TokCanAwait))
-          $ \case
-            MsgRollForward header tip ->
-              SenderEffect $
-                  chainSyncClientPeerSender n
-                    <$> recvMsgRollForward header tip
-                where
-                  ClientStNext {recvMsgRollForward} = stNext
+      (Await $ \case
+        MsgRollForward header tip -> Effect $
+            chainSyncClientPeerSender n
+              <$> recvMsgRollForward header tip
+          where
+            ClientStNext {recvMsgRollForward} = stNext
 
-            MsgRollBackward pRollback tip ->
-              SenderEffect $
-                  chainSyncClientPeerSender n
-                    <$> recvMsgRollBackward pRollback tip
-                where
-                  ClientStNext {recvMsgRollBackward} = stNext
+        MsgRollBackward pRollback tip -> Effect $
+            chainSyncClientPeerSender n
+              <$> recvMsgRollBackward pRollback tip
+          where
+            ClientStNext {recvMsgRollBackward} = stNext
 
-            MsgAwaitReply ->
-              SenderEffect $ do
-                stAwait
-                pure $ SenderAwait
-                  (ServerAgency (TokNext TokMustReply))
-                  $ \case
-                    MsgRollForward header tip -> SenderEffect $
-                        chainSyncClientPeerSender n
-                          <$> recvMsgRollForward header tip
-                      where
-                        ClientStNext {recvMsgRollForward} = stNext
+        MsgAwaitReply -> Effect $ do
+          stAwait
+          pure $ Await $ \case
+            MsgRollForward header tip -> Effect $
+                chainSyncClientPeerSender n
+                  <$> recvMsgRollForward header tip
+              where
+                ClientStNext {recvMsgRollForward} = stNext
 
-                    MsgRollBackward pRollback tip -> SenderEffect $
-                        chainSyncClientPeerSender n
-                          <$> recvMsgRollBackward pRollback tip
-                      where
-                        ClientStNext {recvMsgRollBackward} = stNext)
+            MsgRollBackward pRollback tip -> Effect $
+                chainSyncClientPeerSender n
+                  <$> recvMsgRollBackward pRollback tip
+              where
+                ClientStNext {recvMsgRollBackward} = stNext)
 
 
 chainSyncClientPeerSender n (SendMsgRequestNextPipelined await next) =
 
     -- pipeline 'MsgRequestNext', the receiver will await for an instruction.
-    SenderPipeline
-      (ClientAgency TokIdle)
+    YieldPipelined
       MsgRequestNext
-
-      (ReceiverAwait (ServerAgency (TokNext TokCanAwait))
+      (ReceiverAwait
         -- await for the reply
         $ \case
           MsgRollForward  header    tip -> ReceiverDone (RollForward header tip)
@@ -258,7 +247,7 @@ chainSyncClientPeerSender n (SendMsgRequestNextPipelined await next) =
           -- an instruction
           MsgAwaitReply -> ReceiverEffect $ do
             await
-            pure $ ReceiverAwait (ServerAgency (TokNext TokMustReply)) $ \case
+            pure $ ReceiverAwait $ \case
               MsgRollForward  header    tip -> ReceiverDone (RollForward header tip)
               MsgRollBackward pRollback tip -> ReceiverDone (RollBackward pRollback tip))
 
@@ -271,17 +260,14 @@ chainSyncClientPeerSender n (SendMsgFindIntersect points
                                 }) =
 
     -- non pipelined 'MsgFindIntersect'
-    SenderYield
-      (ClientAgency TokIdle)
+    Yield
       (MsgFindIntersect points)
-      (SenderAwait (ServerAgency TokIntersect)
+      (Await
         -- await for the response and recurse
         $ \case
-          MsgIntersectFound pIntersect tip ->
-            SenderEffect $
+          MsgIntersectFound pIntersect tip -> Effect $
               chainSyncClientPeerSender n <$> recvMsgIntersectFound pIntersect tip
-          MsgIntersectNotFound tip ->
-            SenderEffect $
+          MsgIntersectNotFound tip -> Effect $
               chainSyncClientPeerSender n <$> recvMsgIntersectNotFound tip
           )
 
@@ -292,9 +278,9 @@ chainSyncClientPeerSender n@(Succ n')
                               , recvMsgRollBackward
                               }) =
 
-    SenderCollect
-      (SenderEffect . fmap (chainSyncClientPeerSender n) <$> mStIdle)
-      (\instr -> SenderEffect $ chainSyncClientPeerSender n' <$> collect instr)
+    Collect
+      (Effect . fmap (chainSyncClientPeerSender n) <$> mStIdle)
+      (\instr -> Effect $ chainSyncClientPeerSender n' <$> collect instr)
     where
       collect (RollForward header point) =
         recvMsgRollForward header point
@@ -302,7 +288,4 @@ chainSyncClientPeerSender n@(Succ n')
         recvMsgRollBackward pRollback tip
 
 chainSyncClientPeerSender Zero (SendMsgDone a) =
-    SenderYield
-      (ClientAgency TokIdle)
-      MsgDone
-      (SenderDone TokDone a)
+    Yield MsgDone (Done a)
