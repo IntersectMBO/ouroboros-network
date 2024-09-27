@@ -45,14 +45,35 @@
           overlays = [
             # haskellNix.overlay can be configured by later overlays, so need to come before them.
             inputs.haskellNix.overlay
+            (import ./nix/tools.nix inputs)
             (import ./nix/ouroboros-network.nix inputs)
+            (import ./nix/network-docs.nix inputs)
           ];
         };
-        inherit (pkgs) lib;
 
         flake = pkgs.ouroboros-network.flake {};
-        network-docs = pkgs.callPackage ./nix/network-docs.nix { };
         check-stylish = pkgs.callPackage ./nix/check-stylish.nix { };
+        inherit (pkgs) lib network-docs;
+
+        # shells accessible through `nix develop`,
+        # `nix develop .\#devShells.x86_64-linux.ghc810`, etc.
+        devShells = rec {
+          default  = import ./nix/shell.nix { hls = true;
+                                              inherit inputs pkgs;
+                                              ouroboros-network = pkgs.ouroboros-network; };
+          profiled = import ./nix/shell.nix { hls = true;
+                                              inherit inputs pkgs;
+                                              ouroboros-network = pkgs.ouroboros-network.projectVariants.profiled; };
+          ghc810   = import ./nix/shell.nix { hls = false; # hls-2.7.0.0 cannot be compiled for `ghc-8.10`
+                                              inherit inputs pkgs;
+                                              ouroboros-network = pkgs.ouroboros-network.projectVariants.ghc810; };
+          ghc810-profiled
+                   = import ./nix/shell.nix { hls = false;
+                                              inherit inputs pkgs;
+                                              ouroboros-network = pkgs.ouroboros-network.projectVariants.ghc810-profiled; };
+        };
+
+        # jobs executed on hydra
         hydraJobs =
           pkgs.callPackages inputs.iohkNix.utils.ciJobsAggregates
             {
@@ -62,34 +83,22 @@
                   # This ensure hydra send a status for the required job (even if no change other than commit hash)
                   revision = pkgs.writeText "revision" (inputs.self.rev or "dirty");
                   inherit network-docs check-stylish;
+                  devShell = devShells.default;
                 };
             }
           # add network-docs & check-stylish to support
           # `nix build .\#hydraJobs.x86_64-linux.network-docs` and
           # `nix build .\#hydraJobs.x86_64-linux.check-stylis`.
           // { inherit network-docs check-stylish; };
-        # also provide hydraJobs through legacyPackages to allow building without system prefix, e.g.
+
+        # Provide hydraJobs through legacyPackages to allow building without system prefix, e.g.
         # `nix build .\#network-mux:lib:network-mux`
         # `nix build .\#network-docs`
         legacyPackages = { inherit hydraJobs network-docs check-stylish; };
       in
       lib.recursiveUpdate flake rec {
         project = pkgs.ouroboros-network;
-        inherit hydraJobs;
-        inherit legacyPackages;
-        devShells = let
-          profillingShell = p: {
-            # `nix develop .#profiling`
-            profiling = (p.appendModule {modules = [{enableLibraryProfiling = true;}];}).shell;
-          };
-        in
-          profillingShell pkgs.ouroboros-network
-          # Additional shells for every GHC version supported by haskell.nix, eg. `nix develop .#ghc927`
-          // lib.mapAttrs (compiler-nix-name: _: let
-            p = pkgs.ouroboros-network.appendModule {inherit compiler-nix-name;};
-          in
-            p.shell // (profillingShell p))
-          pkgs.haskell-nix.compiler;
+        inherit hydraJobs legacyPackages devShells;
         # formatter used by nix fmt
         formatter = pkgs.alejandra;
       }

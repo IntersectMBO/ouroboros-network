@@ -54,8 +54,11 @@ let
     # --------
 
     # using different compilers
-    flake.variants = (lib.genAttrs otherCompilers
-                        (compiler-nix-name: { inherit compiler-nix-name; }));
+    flake.variants =
+      # otherCompilers
+      (lib.genAttrs otherCompilers
+        (compiler-nix-name: { inherit compiler-nix-name; }));
+
     #
     # CHaP
     # ----
@@ -68,28 +71,6 @@ let
     inputMap = {
       "https://chap.intersectmbo.org/" = inputs.CHaP;
     };
-
-    #
-    # SHELL
-    # -----
-
-    # tools we want in our shell, from hackage
-    shell.tools =
-      {
-        cabal = "3.12.1.0";
-        ghcid = "0.8.9";
-      }
-      // lib.optionalAttrs (config.compiler-nix-name == defaultCompiler) {
-        # tools that work only with default compiler
-        stylish-haskell = "0.14.6.0";
-        haskell-language-server = "2.7.0.0";
-      };
-    # and from nixpkgs or other inputs
-    shell.nativeBuildInputs = [];
-    # disable Hoogle until someone request it
-    shell.withHoogle = false;
-    # Skip cross compilers for the shell
-    shell.crossPlatforms = _: [];
 
     #
     # MODULES
