@@ -8,7 +8,7 @@ as possible.
 
 Please provide a clear and concise description of the vulnerability, including:
 
-* the affected version(s) of Open-Source-Office,
+* the affected version(s) of all packages included in ouroboros-network repository,
 * steps that can be followed to exercise the vulnerability,
 * any workarounds or mitigations
 
