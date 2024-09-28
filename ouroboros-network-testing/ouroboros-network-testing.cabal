@@ -1,119 +1,122 @@
-cabal-version:       3.0
+cabal-version: 3.0
+name: ouroboros-network-testing
+version: 0.7.0.0
+synopsis: Common modules used for testing in ouroboros-network and ouroboros-consensus
+description: Common modules used for testing in ouroboros-network and ouroboros-consensus.
+license: Apache-2.0
+license-files:
+  LICENSE
+  NOTICE
 
-name:                   ouroboros-network-testing
-version:                0.7.0.0
-synopsis:               Common modules used for testing in ouroboros-network and ouroboros-consensus
-description:            Common modules used for testing in ouroboros-network and ouroboros-consensus.
-license:                Apache-2.0
-license-files:          LICENSE
-                        NOTICE
-copyright:              2019-2023 Input Output Global Inc (IOG), 2023-2024 Intersect
-author:                 Alexander Vieth, Marcin Szamotulski, Duncan Coutts, Karl Knuttson
-maintainer:             marcin.szamotulski@iohk.io
-category:               Network
-build-type:             Simple
-extra-doc-files:        CHANGELOG.md
+copyright: 2019-2023 Input Output Global Inc (IOG), 2023-2024 Intersect
+author: Alexander Vieth, Marcin Szamotulski, Duncan Coutts, Karl Knuttson
+maintainer: marcin.szamotulski@iohk.io
+category: Network
+build-type: Simple
+extra-doc-files: CHANGELOG.md
 
 source-repository head
-  type:     git
+  type: git
   location: https://github.com/intersectmbo/ouroboros-network
 
 flag nightly
-  Description: Enable nightly tests
-  Manual:      False
-  Default:     False
+  description: Enable nightly tests
+  manual: False
+  default: False
 
 library
-  hs-source-dirs:      src
-
+  hs-source-dirs: src
   -- At this experiment/prototype stage everything is exposed.
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:
-                       Ouroboros.Network.Testing.Serialise
-                       Ouroboros.Network.Testing.QuickCheck
-                       Ouroboros.Network.Testing.Utils
-                       Ouroboros.Network.Testing.Data.Signal
-                       Ouroboros.Network.Testing.Data.Script
-                       Ouroboros.Network.Testing.Data.AbsBearerInfo
-  default-language:    Haskell2010
-  default-extensions:  ImportQualifiedPost
-  other-extensions:    BangPatterns,
-                       DataKinds,
-                       EmptyCase,
-                       ExistentialQuantification,
-                       FlexibleContexts,
-                       FlexibleInstances,
-                       FunctionalDependencies,
-                       GADTs,
-                       GADTSyntax,
-                       GeneralizedNewtypeDeriving,
-                       MultiParamTypeClasses,
-                       NamedFieldPuns,
-                       OverloadedStrings,
-                       PolyKinds,
-                       RankNTypes,
-                       RecordWildCards,
-                       ScopedTypeVariables,
-                       TemplateHaskell,
-                       TupleSections,
-                       TypeApplications,
-                       TypeFamilies,
-                       TypeInType
-  build-depends:       base              >=4.14 && <4.21,
-                       containers,
-                       contra-tracer,
-                       deque            ^>=0.4,
-                       io-classes       ^>=1.5.0,
-                       io-sim,
-                       pretty-simple,
-                       strict-stm,
-                       psqueues          >=0.2.3 && <0.3,
-                       si-timers,
-                       tasty,
-                       tasty-expected-failure,
+    Ouroboros.Network.Testing.Data.AbsBearerInfo
+    Ouroboros.Network.Testing.Data.Script
+    Ouroboros.Network.Testing.Data.Signal
+    Ouroboros.Network.Testing.QuickCheck
+    Ouroboros.Network.Testing.Serialise
+    Ouroboros.Network.Testing.Utils
 
-                       cborg             >=0.2.1 && <0.3,
-                       serialise         >=0.2 && <0.3,
-                       network-mux,
-                       QuickCheck
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  other-extensions:
+    BangPatterns
+    DataKinds
+    EmptyCase
+    ExistentialQuantification
+    FlexibleContexts
+    FlexibleInstances
+    FunctionalDependencies
+    GADTSyntax
+    GADTs
+    GeneralizedNewtypeDeriving
+    MultiParamTypeClasses
+    NamedFieldPuns
+    OverloadedStrings
+    PolyKinds
+    RankNTypes
+    RecordWildCards
+    ScopedTypeVariables
+    TemplateHaskell
+    TupleSections
+    TypeApplications
+    TypeFamilies
+    TypeInType
 
-  ghc-options:         -Wall
-                       -Wno-unticked-promoted-constructors
-                       -fno-ignore-asserts
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
+  build-depends:
+    QuickCheck,
+    base >=4.14 && <4.21,
+    cborg >=0.2.1 && <0.3,
+    containers,
+    contra-tracer,
+    deque ^>=0.4,
+    io-classes ^>=1.5.0,
+    io-sim,
+    network-mux,
+    pretty-simple,
+    psqueues >=0.2.3 && <0.3,
+    serialise >=0.2 && <0.3,
+    si-timers,
+    strict-stm,
+    tasty,
+    tasty-expected-failure,
+
+  ghc-options:
+    -Wall
+    -Wno-unticked-promoted-constructors
+    -fno-ignore-asserts
+    -Wcompat
+    -Wincomplete-uni-patterns
+    -Wincomplete-record-updates
+    -Wpartial-fields
+    -Widentities
+    -Wredundant-constraints
 
   if flag(nightly)
-    cpp-options:       -DNIGHTLY
+    cpp-options: -DNIGHTLY
 
 test-suite test
-  type:                exitcode-stdio-1.0
-  main-is:             Main.hs
-  hs-source-dirs:      test
-  other-modules:       Test.Ouroboros.Network.Testing.Data.AbsBearerInfo
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs: test
+  other-modules: Test.Ouroboros.Network.Testing.Data.AbsBearerInfo
+  build-depends:
+    QuickCheck,
+    base >=4.14 && <4.21,
+    ouroboros-network-testing,
+    tasty,
+    tasty-quickcheck,
 
-  build-depends:       base              >=4.14 && <4.21
-
-                     , QuickCheck
-                     , tasty
-                     , tasty-quickcheck
-
-                     , ouroboros-network-testing
-
-  default-language:    Haskell2010
-  default-extensions:  ImportQualifiedPost
-  ghc-options:         -rtsopts
-                       -threaded
-                       -Wall
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
-                       -Wno-unticked-promoted-constructors
-                       -Wunused-packages
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  ghc-options:
+    -rtsopts
+    -threaded
+    -Wall
+    -Wcompat
+    -Wincomplete-uni-patterns
+    -Wincomplete-record-updates
+    -Wpartial-fields
+    -Widentities
+    -Wredundant-constraints
+    -Wno-unticked-promoted-constructors
+    -Wunused-packages
