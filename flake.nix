@@ -97,8 +97,6 @@
       lib.recursiveUpdate flake rec {
         project = pkgs.ouroboros-network;
         inherit hydraJobs legacyPackages devShells;
-        # formatter used by nix fmt
-        formatter = pkgs.alejandra;
       }
     );
 }
