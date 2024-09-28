@@ -6,6 +6,7 @@ in
 ouroboros-network.shellFor {
   nativeBuildInputs = [
     pkgs.cabal
+    pkgs.cabal-gild
     pkgs.fd
     pkgs.nixpkgs-fmt
     pkgs.stylish-haskell
