@@ -52,7 +52,7 @@
         };
 
         flake = pkgs.ouroboros-network.flake {};
-        check-stylish = pkgs.callPackage ./nix/check-stylish.nix { };
+        format = pkgs.callPackage ./nix/formatting.nix pkgs;
         inherit (pkgs) lib network-docs;
 
         # shells accessible through `nix develop`,
@@ -82,19 +82,23 @@
                 // {
                   # This ensure hydra send a status for the required job (even if no change other than commit hash)
                   revision = pkgs.writeText "revision" (inputs.self.rev or "dirty");
-                  inherit network-docs check-stylish;
+                  inherit network-docs;
                   devShell = devShells.default;
+                  inherit format network-docs;
                 };
             }
           # add network-docs & check-stylish to support
           # `nix build .\#hydraJobs.x86_64-linux.network-docs` and
           # `nix build .\#hydraJobs.x86_64-linux.check-stylis`.
-          // { inherit network-docs check-stylish; };
+          // { inherit network-docs;
+               # check formatting but only on a `x86_64-linux` system
+               format = lib.optionalAttrs (pkgs.buildPlatform.system == "x86_64-linux") format;
+             };
 
         # Provide hydraJobs through legacyPackages to allow building without system prefix, e.g.
         # `nix build .\#network-mux:lib:network-mux`
         # `nix build .\#network-docs`
-        legacyPackages = { inherit hydraJobs network-docs check-stylish; };
+        legacyPackages = { inherit hydraJobs network-docs format; };
       in
       lib.recursiveUpdate flake rec {
         project = pkgs.ouroboros-network;
