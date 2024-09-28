@@ -12,36 +12,38 @@ inputs: final: prev: {
       })
     ];
     buildPhase =
-    let src = ../.;
-        cddl-specs = ../ouroboros-network-protocols/test-cddl/specs; in 
-    ''
-      for d in network-design network-spec; do
-        mkdir -p docs/$d
-        ln -s ${src}/$d/* docs/$d/
-      done
+      let
+        src = ../.;
+        cddl-specs = ../ouroboros-network-protocols/test-cddl/specs;
+      in
+      ''
+        for d in network-design network-spec; do
+          mkdir -p docs/$d
+          ln -s ${src}/$d/* docs/$d/
+        done
 
-      mkdir -p ouroboros-network-protocols/test-cddl/specs
-      cp ${cddl-specs}/*.cddl ouroboros-network-protocols/test-cddl/specs
+        mkdir -p ouroboros-network-protocols/test-cddl/specs
+        cp ${cddl-specs}/*.cddl ouroboros-network-protocols/test-cddl/specs
 
-      mkdir -p $out
+        mkdir -p $out
 
-      (
-        cd docs/network-design
-        latexmk -pdf -pdflatex="pdflatex -interaction=nonstopmode"
-        cp -a *.pdf $out/
-      )
+        (
+          cd docs/network-design
+          latexmk -pdf -pdflatex="pdflatex -interaction=nonstopmode"
+          cp -a *.pdf $out/
+        )
 
-      (
-        cd docs/network-spec
-        make all
-        cp -a *.pdf $out/
-      )
+        (
+          cd docs/network-spec
+          make all
+          cp -a *.pdf $out/
+        )
 
-      mkdir -p $out/nix-support
+        mkdir -p $out/nix-support
 
-      for pdf in $out/*.pdf; do
-        echo "file binary-dist $pdf" >> $out/nix-support/hydra-build-products
-      done
-    '';
+        for pdf in $out/*.pdf; do
+          echo "file binary-dist $pdf" >> $out/nix-support/hydra-build-products
+        done
+      '';
   };
 }

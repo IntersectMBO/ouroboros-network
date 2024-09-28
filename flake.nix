@@ -28,11 +28,11 @@
 
   outputs = inputs:
     let # all platforms on which we build
-        supportedSystems = [
-          "x86_64-linux"
-          "x86_64-darwin"
-          "aarch64-darwin"
-        ];
+      supportedSystems = [
+        "x86_64-linux"
+        "x86_64-darwin"
+        "aarch64-darwin"
+      ];
     in
     inputs.flake-utils.lib.eachSystem supportedSystems (
       system:
@@ -51,26 +51,19 @@
           ];
         };
 
-        flake = pkgs.ouroboros-network.flake {};
+        buildSystem = pkgs.buildPlatform.system;
+        flake = pkgs.ouroboros-network.flake { };
         format = pkgs.callPackage ./nix/formatting.nix pkgs;
         inherit (pkgs) lib network-docs;
 
         # shells accessible through `nix develop`,
         # `nix develop .\#devShells.x86_64-linux.ghc810`, etc.
         devShells = rec {
-          default  = import ./nix/shell.nix { hls = true;
-                                              inherit inputs pkgs;
-                                              ouroboros-network = pkgs.ouroboros-network; };
-          profiled = import ./nix/shell.nix { hls = true;
-                                              inherit inputs pkgs;
-                                              ouroboros-network = pkgs.ouroboros-network.projectVariants.profiled; };
-          ghc810   = import ./nix/shell.nix { hls = false; # hls-2.7.0.0 cannot be compiled for `ghc-8.10`
-                                              inherit inputs pkgs;
-                                              ouroboros-network = pkgs.ouroboros-network.projectVariants.ghc810; };
-          ghc810-profiled
-                   = import ./nix/shell.nix { hls = false;
-                                              inherit inputs pkgs;
-                                              ouroboros-network = pkgs.ouroboros-network.projectVariants.ghc810-profiled; };
+          default = import ./nix/shell.nix {
+            hls = true;
+            inherit inputs pkgs;
+            ouroboros-network = pkgs.ouroboros-network;
+          };
         };
 
         # jobs executed on hydra
@@ -90,10 +83,11 @@
           # add network-docs & check-stylish to support
           # `nix build .\#hydraJobs.x86_64-linux.network-docs` and
           # `nix build .\#hydraJobs.x86_64-linux.check-stylis`.
-          // { inherit network-docs;
-               # check formatting but only on a `x86_64-linux` system
-               format = lib.optionalAttrs (pkgs.buildPlatform.system == "x86_64-linux") format;
-             };
+          // {
+            inherit network-docs;
+            # check formatting but only on a `x86_64-linux` system
+            format = lib.optionalAttrs (pkgs.buildPlatform.system == "x86_64-linux") format;
+          };
 
         # Provide hydraJobs through legacyPackages to allow building without system prefix, e.g.
         # `nix build .\#network-mux:lib:network-mux`

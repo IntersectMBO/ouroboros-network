@@ -23,12 +23,12 @@ ouroboros-network.shellFor {
   # version as used in ouroboros-network.
   tools =
     lib.optionalAttrs hls
-    {
-      haskell-language-server = {
-        src = inputs.haskellNix.inputs."hls-2.7";
-        configureArgs = "--disable-benchmarks --disable-tests";
+      {
+        haskell-language-server = {
+          src = inputs.haskellNix.inputs."hls-2.7";
+          configureArgs = "--disable-benchmarks --disable-tests";
+        };
       };
-    };
 
   shellHook = ''
     export LANG="en_US.UTF-8"
