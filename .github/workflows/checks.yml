@@ -9,18 +9,6 @@ on:
   merge_group:
 
 jobs:
-  check-git-dependencies:
-    name: Check git dependencies
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash
-
-    steps:
-    - uses: actions/checkout@v4
-    - name: Check Dependencies
-      run: ./scripts/ci/check-git-dependencies.sh
-
   check-changelogs:
     name: Check changelogs
     runs-on: ubuntu-latest
