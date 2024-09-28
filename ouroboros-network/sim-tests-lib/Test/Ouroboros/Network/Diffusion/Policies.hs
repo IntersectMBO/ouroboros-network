@@ -24,6 +24,7 @@ import System.Random
 import NoThunks.Class.Orphans ()
 
 import Cardano.Slotting.Slot (SlotNo (..))
+import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..))
 import Ouroboros.Network.Diffusion.Policies
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.PeerSelection.Governor
@@ -84,8 +85,12 @@ instance Arbitrary ArbitraryDemotion where
 newtype ArbitraryChurnMode = ArbitraryChurnMode ChurnMode deriving Show
 
 instance Arbitrary ArbitraryChurnMode where
-    arbitrary = ArbitraryChurnMode <$>
-        elements [ChurnModeNormal, ChurnModeBulkSync]
+    arbitrary = ArbitraryChurnMode . ChurnMode <$>
+      elements [FetchModeDeadline, FetchModeBulkSync]
+    shrink (ArbitraryChurnMode (ChurnMode FetchModeDeadline)) =
+      [ArbitraryChurnMode (ChurnMode FetchModeBulkSync)]
+    shrink (ArbitraryChurnMode (ChurnMode FetchModeBulkSync)) =
+      []
 
 instance Arbitrary ArbitraryPolicyArguments where
     arbitrary = do
@@ -179,11 +184,11 @@ prop_hotToWarmM ArbitraryPolicyArguments{..} seed = do
               -> m Property
     noneWorse metrics pickedSet = do
         scores <- atomically $ case apaChurnMode of
-                      ChurnModeNormal -> do
+                      ChurnMode FetchModeDeadline -> do
                           hup <- upstreamyness metrics
                           bup <- fetchynessBlocks metrics
                           return $ Map.unionWith (+) hup bup
-                      ChurnModeBulkSync ->
+                      ChurnMode FetchModeBulkSync ->
                           fetchynessBytes metrics
         let (picked, notPicked) = Map.partitionWithKey fn scores
             maxPicked = maximum $ Map.elems picked

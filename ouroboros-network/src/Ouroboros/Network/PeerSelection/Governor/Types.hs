@@ -1,6 +1,9 @@
 {-# LANGUAGE BangPatterns              #-}
 {-# LANGUAGE CPP                       #-}
 {-# LANGUAGE DeriveFunctor             #-}
+{-# LANGUAGE DeriveGeneric             #-}
+{-# LANGUAGE DerivingStrategies        #-}
+{-# LANGUAGE DerivingVia               #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTs                     #-}
@@ -33,6 +36,7 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , PeerSelectionActions (..)
   , PeerSelectionInterfaces (..)
   , ChurnMode (..)
+  , FetchMode (..)
     -- * P2P governor internals
   , PeerSelectionState (..)
   , emptyPeerSelectionState
@@ -133,15 +137,17 @@ import Data.Semigroup (Min (..))
 import Data.Set (Set)
 import Data.Set qualified as Set
 import GHC.Stack (HasCallStack)
+import GHC.Generics (Generic (..))
+import Quiet (Quiet (..))
 
 import Control.Applicative (Alternative)
+import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Concurrent.JobPool (Job)
 import Control.Exception (Exception (..), SomeException, assert)
-import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
 import System.Random (StdGen)
 
-import Control.Concurrent.Class.MonadSTM.Strict
+import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..))
 import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.ExitPolicy
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
@@ -1768,6 +1774,13 @@ data DebugPeerSelection peeraddr where
 deriving instance (Ord peeraddr, Show peeraddr)
                => Show (DebugPeerSelection peeraddr)
 
-data ChurnMode = ChurnModeBulkSync
-               | ChurnModeNormal deriving Show
+-- | Churn mode is set by `churn` and available in peer selection policy.  It
+-- follows `FetchMode`, thus it's a newtype wrapper.
+--
+-- It is shared using its own `TVar` to make sure the value available in peer
+-- selection policy is consistent with the value available in churn actions.
+--
+newtype ChurnMode = ChurnMode { getFetchMode :: FetchMode }
+  deriving stock Generic
+  deriving Show via Quiet ChurnMode
 

@@ -103,9 +103,9 @@ import Ouroboros.Network.NodeToNode qualified as NodeToNode
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
 import Ouroboros.Network.PeerSelection.Churn (PeerChurnArgs (..))
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
-import Ouroboros.Network.PeerSelection.Governor.Types
-           (ChurnMode (ChurnModeNormal), ConsensusModePeerTargets (..),
-           DebugPeerSelection (..), PeerSelectionActions, PeerSelectionCounters,
+import Ouroboros.Network.PeerSelection.Governor.Types (ChurnMode (..),
+           ConsensusModePeerTargets (..), DebugPeerSelection (..),
+           PeerSelectionActions, PeerSelectionCounters,
            PeerSelectionInterfaces (..), PeerSelectionPolicy (..),
            PeerSelectionState, TracePeerSelection (..),
            emptyPeerSelectionCounters, emptyPeerSelectionState)
@@ -828,7 +828,7 @@ runM Interfaces
       -- demoting/promoting peers.
       policyRngVar <- newTVarIO policyRng
 
-      churnModeVar <- newTVarIO ChurnModeNormal
+      churnModeVar <- newTVarIO (ChurnMode FetchModeDeadline)
 
       localRootsVar <- newTVarIO mempty
 

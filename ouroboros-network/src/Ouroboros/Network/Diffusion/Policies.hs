@@ -150,13 +150,13 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics errorDelay = PeerSelection
     hotDemotionPolicy _ _ _ available pickNum = do
         mode <- getChurnMode
         scores <- case mode of
-                       ChurnModeNormal -> do
+                       ChurnMode FetchModeDeadline -> do
                            jpm <- joinedPeerMetricAt metrics
                            hup <- upstreamyness metrics
                            bup <- fetchynessBlocks metrics
                            return $ Map.unionWith (+) hup bup `optionalMerge` jpm
 
-                       ChurnModeBulkSync -> do
+                       ChurnMode FetchModeBulkSync -> do
                            jpm <- joinedPeerMetricAt metrics
                            bup <- fetchynessBytes metrics
                            return $ bup `optionalMerge` jpm

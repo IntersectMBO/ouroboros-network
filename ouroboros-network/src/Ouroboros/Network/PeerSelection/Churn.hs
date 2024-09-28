@@ -30,7 +30,6 @@ import System.Random
 import Control.Applicative (Alternative)
 import Data.Functor (($>))
 import Data.Monoid.Synchronisation (FirstToFinish (..))
-import Ouroboros.Network.BlockFetch (FetchMode (..))
 import Ouroboros.Network.ConsensusMode (ConsensusMode (..))
 import Ouroboros.Network.Diffusion.Policies (churnEstablishConnectionTimeout,
            closeConnectionTimeout, deactivateTimeout)
@@ -40,11 +39,13 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.PeerMetric
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..))
 
--- | Tag indicating churning approach
--- There are three syncing methods that networking layer supports, the legacy
--- method with or without bootstrap peers, and the Genesis method that relies
--- on chain skipping optimization courtesy of consensus, which also provides
-
+-- | Tag indicating churning approach.
+--
+-- There are three syncing methods supported by ouroboros-network:
+--
+-- * the legacy method (praos mode) without bootstrap peers,
+-- * bootstrap peers, and
+-- * the Genesis method which is using it's own targets for syncing.
 --
 data ChurnRegime = ChurnDefault
                  -- ^ tag to use Praos targets when caught up, or Genesis
@@ -64,12 +65,12 @@ getPeerSelectionTargets consensus lsj ConsensusModePeerTargets {
     _otherwise            -> deadlineTargets
 
 pickChurnRegime :: ConsensusMode -> ChurnMode -> UseBootstrapPeers -> ChurnRegime
-pickChurnRegime consensus churn ubp =
-  case (churn, ubp, consensus) of
-    (ChurnModeNormal, _, _)                     -> ChurnDefault
-    (_, _, GenesisMode)                         -> ChurnDefault
-    (ChurnModeBulkSync, UseBootstrapPeers _, _) -> ChurnBootstrapPraosSync
-    (ChurnModeBulkSync, _, _)                   -> ChurnPraosSync
+pickChurnRegime consensus churn bootstrap =
+  case (consensus, churn, bootstrap) of
+    (GenesisMode, _, _)                                     -> ChurnDefault
+    (_, ChurnMode FetchModeDeadline, _)                     -> ChurnDefault
+    (_, ChurnMode FetchModeBulkSync, DontUseBootstrapPeers) -> ChurnPraosSync
+    (_, ChurnMode FetchModeBulkSync, UseBootstrapPeers{})   -> ChurnBootstrapPraosSync
 
 -- | Facilitates composing updates to various targets via back-to-back pipeline
 type ModifyPeerSelectionTargets = PeerSelectionTargets -> PeerSelectionTargets
@@ -154,10 +155,7 @@ peerChurnGovernor PeerChurnArgs {
   where
     updateChurnMode :: STM m ChurnMode
     updateChurnMode = do
-        fm <- getFetchMode
-        let mode = case fm of
-                     FetchModeDeadline -> ChurnModeNormal
-                     FetchModeBulkSync -> ChurnModeBulkSync
+        mode <- ChurnMode <$> getFetchMode
         writeTVar churnModeVar mode
         return mode
 
