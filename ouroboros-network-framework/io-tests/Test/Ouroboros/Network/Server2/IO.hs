@@ -1,18 +1,11 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE ConstraintKinds     #-}
 {-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeOperators       #-}
 
 #if __GLASGOW_HASKELL__ >= 908
 {-# OPTIONS_GHC -Wno-x-partial #-}
@@ -42,8 +35,8 @@ tests :: TestTree
 tests =
   testGroup "Ouroboros.Network"
   [ testGroup "Server2"
-    [ testProperty "unidirectional IO"      prop_unidirectional_IO
-    , testProperty "bidirectional IO"       prop_bidirectional_IO
+    [ testProperty "unidirectional IO" prop_unidirectional_IO
+    , testProperty "bidirectional IO"  prop_bidirectional_IO
     ]
   ]
 
@@ -72,7 +65,7 @@ prop_unidirectional_IO (Fixed rnd) clientAndServerData =
                 ioTimeouts
                 (socketSnocket iomgr)
                 Mux.makeSocketBearer
-                (flip configureSocket Nothing)
+                (`configureSocket` Nothing)
                 socket
                 clientAndServerData
 
@@ -116,7 +109,7 @@ prop_bidirectional_IO (Fixed rnd) data0 data1 =
               ioTimeouts
               (socketSnocket iomgr)
               Mux.makeSocketBearer
-              (flip configureSocket Nothing)
+              (`configureSocket` Nothing)
               socket0
               socket1
               addr0'
