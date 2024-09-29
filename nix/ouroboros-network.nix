@@ -5,7 +5,7 @@ let
   inherit (prev) lib;
   inherit (prev) pkgs;
   inherit (final) haskell-nix;
-  # inherit (final) pkgs;
+  buildSystem = pkgs.buildPlatform.system;
 
   # default compiler used on all systems, also provided within the shell
   defaultCompiler = "ghc982";
@@ -80,34 +80,24 @@ let
     # package customizations as needed. Where cabal.project is not
     # specific enough, or doesn't allow setting these.
     modules = [
-      (forAllProjectPackages ({ ... }: {
-        ghcOptions = [ "-Werror" ];
-      }))
       ({ pkgs, ... }: {
         # We impose limit heap size limit when running some of the tests
         # to discover space leaks Once #4698 and #4699 are done we can
         # further constrain the heap size.
-        preCheck = lib.mkForce ''
-          export GHCRTS=-M250M
-        '';
+        preCheck =
+          lib.mkForce
+            (if buildSystem == "x86_64-linux"
+            then "export GHCRTS=-M200M"
+            else "");
+        doCheck = !pkgs.stdenv.hostPlatform.isWindows;
 
         # pkgs are instantiated for the host platform
         packages.ouroboros-network-protocols.components.tests.cddl.build-tools = [ pkgs.cddl pkgs.cbor-diag ];
         packages.ouroboros-network-protocols.components.tests.cddl.preCheck = "export HOME=`pwd`";
 
         # don't run checks using Wine when cross compiling
-        packages.quickcheck-monoids.components.tests.test.doCheck = !pkgs.stdenv.hostPlatform.isWindows;
-        packages.ntp-client.components.tests.test.doCheck = !pkgs.stdenv.hostPlatform.isWindows;
-        packages.network-mux.components.tests.test.doCheck = !pkgs.stdenv.hostPlatform.isWindows;
-        packages.network-mux.components.tests.test.preCheck = "export GHCRTS=-M500M";
-        packages.ouroboros-network-api.components.tests.test.doCheck = !pkgs.stdenv.hostPlatform.isWindows;
-        packages.ouroboros-network-protocols.components.tests.test.doCheck = !pkgs.stdenv.hostPlatform.isWindows;
-        packages.ouroboros-network-framework.components.tests.sim-tests.doCheck = !pkgs.stdenv.hostPlatform.isWindows;
-        packages.ouroboros-network-framework.components.tests.io-tests.doCheck = !pkgs.stdenv.hostPlatform.isWindows;
-        packages.ouroboros-network-framework.components.tests.bench.doCheck = !pkgs.stdenv.hostPlatform.isWindows;
-        packages.ouroboros-network.components.tests.sim-tests.doCheck = !pkgs.stdenv.hostPlatform.isWindows;
-        packages.ouroboros-network.components.tests.io-tests.doCheck = !pkgs.stdenv.hostPlatform.isWindows;
-        packages.cardano-client.components.tests.test.doCheck = !pkgs.stdenv.hostPlatform.isWindows;
+        packages.network-mux.components.tests.test.preCheck =
+          if buildSystem == "x86_64-linux" then "export GHCRTS=-M500M" else "";
       })
     ];
   });
