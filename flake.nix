@@ -93,7 +93,17 @@
         # Provide hydraJobs through legacyPackages to allow building without system prefix, e.g.
         # `nix build .\#network-mux:lib:network-mux`
         # `nix build .\#network-docs`
-        legacyPackages = { inherit hydraJobs network-docs format; };
+        legacyPackages = {
+          inherit hydraJobs network-docs;
+          format = format
+            // {
+            all = pkgs.releaseTools.aggregate {
+              name = "network-format";
+              meta.description = "Run all formatters";
+              constituents = lib.collect lib.isDerivation format;
+            };
+          };
+        };
       in
       lib.recursiveUpdate flake rec {
         project = pkgs.ouroboros-network;
