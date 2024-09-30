@@ -51,7 +51,6 @@
           ];
         };
 
-        buildSystem = pkgs.buildPlatform.system;
         flake = pkgs.ouroboros-network.flake { };
         format = pkgs.callPackage ./nix/formatting.nix pkgs;
         inherit (pkgs) lib network-docs;
@@ -84,7 +83,7 @@
                   # if no change other than commit hash)
                   revision = pkgs.writeText "revision" (inputs.self.rev or "dirty");
                 }
-                // lib.optionalAttrs (buildSystem == "x86_64-linux") {
+                // lib.optionalAttrs (system == "x86_64-linux") {
                   devShell = devShells.default;
                   inherit format network-docs;
                 };
