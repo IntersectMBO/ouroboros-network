@@ -61,6 +61,13 @@
         devShells = rec {
           default = import ./nix/shell.nix {
             hls = true;
+            profiling = false;
+            inherit inputs pkgs;
+            ouroboros-network = pkgs.ouroboros-network;
+          };
+          profiling = import ./nix/shell.nix {
+            hls = true;
+            profiling = true;
             inherit inputs pkgs;
             ouroboros-network = pkgs.ouroboros-network;
           };

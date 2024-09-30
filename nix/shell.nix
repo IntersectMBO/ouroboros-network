@@ -1,9 +1,24 @@
-{ hls, inputs, pkgs, ouroboros-network }:
+{ hls, profiling, inputs, pkgs, ouroboros-network }:
 
 let
   inherit (pkgs) lib;
+  mkProfiling = pkg:
+    pkg.appendModule {
+      modules = [{
+        enableProfiling = true;
+        enableLibraryProfiling = true;
+        # https://well-typed.com/blog/2023/03/prof-late/
+        # note 'late' profiling is only available since `GHC-9.2`
+        profilingDetail = "late";
+      }];
+    };
+
+  hsPkgs =
+    if profiling
+    then mkProfiling ouroboros-network
+    else ouroboros-network;
 in
-ouroboros-network.shellFor {
+hsPkgs.shellFor {
   nativeBuildInputs = [
     pkgs.cabal
     pkgs.cabal-gild
