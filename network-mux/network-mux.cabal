@@ -1,183 +1,198 @@
 cabal-version: 3.0
+name: network-mux
+version: 0.4.5.3
+synopsis: Multiplexing library
+description: Multiplexing library.
+license: Apache-2.0
+license-files:
+  LICENSE
+  NOTICE
 
-name:                   network-mux
-version:                0.4.5.3
-synopsis:               Multiplexing library
-description:            Multiplexing library.
-license:                Apache-2.0
-license-files:          LICENSE
-                        NOTICE
-copyright:              2019-2023 Input Output Global Inc (IOG), 2023-2024 Intersect
-author:                 Duncan Coutts, Marc Fontaine, Karl Knutsson, Marcin Szamotulski, Alexander Vieth, Neil Davies
-maintainer:             marcin.szamotulski@iohk.io
-category:               Network
-build-type:             Simple
-extra-doc-files:        README.md
-                        CHANGELOG.md
+copyright: 2019-2023 Input Output Global Inc (IOG), 2023-2024 Intersect
+author: Duncan Coutts, Marc Fontaine, Karl Knutsson, Marcin Szamotulski, Alexander Vieth, Neil Davies
+maintainer: marcin.szamotulski@iohk.io
+category: Network
+build-type: Simple
+extra-doc-files:
+  CHANGELOG.md
+  README.md
 
-Flag ipv6
-  Description: Enable IPv6 test cases
-  Manual: True
+flag ipv6
+  description: Enable IPv6 test cases
+  manual: True
   -- Default to False since travis lacks IPv6 support
-  Default: False
+  default: False
 
-Flag tracetcpinfo
-  Description: Enable costly Linux only tracing of the kernel's tcpinfo
-  Manual: True
-  Default: False
+flag tracetcpinfo
+  description: Enable costly Linux only tracing of the kernel's tcpinfo
+  manual: True
+  default: False
 
 common demo-deps
-  default-language:    Haskell2010
-  default-extensions:  ImportQualifiedPost
-  ghc-options:         -threaded
-                       -Wall
-                       -fno-ignore-asserts
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
-                       -Wunused-packages
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  ghc-options:
+    -threaded
+    -Wall
+    -fno-ignore-asserts
+    -Wcompat
+    -Wincomplete-uni-patterns
+    -Wincomplete-record-updates
+    -Wpartial-fields
+    -Widentities
+    -Wredundant-constraints
+    -Wunused-packages
 
 library
-  build-depends:       base            >=4.14 && <4.21,
-                       io-classes     ^>=1.5.0,
-                       strict-stm,
-                       si-timers,
-                       contra-tracer   >=0.1 && <0.2,
-                       monoidal-synchronisation
-                                       >=0.1 && <0.2,
-
-                       array           >=0.5 && <0.6,
-                       binary          >=0.8 && <0.11,
-                       bytestring      >=0.10 && <0.13,
-                       containers      >=0.5 && <0.8,
-                       -- The Windows version of network-3.1.2 is missing
-                       -- functions, see
-                       -- https://github.com/haskell/network/issues/484
-                       network        ^>=3.1.4,
-                       process        ^>=1.6,
-                       statistics-linreg
-                                       >=0.3 && <0.4,
-                       vector          >=0.12 && <0.14,
-                       time            >=1.9.1 && <1.14,
-                       quiet
+  build-depends:
+    -- The Windows version of network-3.1.2 is missing
+    -- functions, see
+    -- https://github.com/haskell/network/issues/484
+    array >=0.5 && <0.6,
+    base >=4.14 && <4.21,
+    binary >=0.8 && <0.11,
+    bytestring >=0.10 && <0.13,
+    containers >=0.5 && <0.8,
+    contra-tracer >=0.1 && <0.2,
+    io-classes ^>=1.5.0,
+    monoidal-synchronisation >=0.1 && <0.2,
+    network ^>=3.1.4,
+    process ^>=1.6,
+    quiet,
+    si-timers,
+    statistics-linreg >=0.3 && <0.4,
+    strict-stm,
+    time >=1.9.1 && <1.14,
+    vector >=0.12 && <0.14,
 
   if os(windows)
-    build-depends:     Win32           >= 2.5.4.1 && <3.0,
-                       Win32-network   >=0.2 && <0.3
+    build-depends:
+      Win32 >=2.5.4.1 && <3.0,
+      Win32-network >=0.2 && <0.3,
 
   if flag(tracetcpinfo)
-    cpp-options:       -DMUX_TRACE_TCPINFO
-  hs-source-dirs:      src
-  exposed-modules:     Network.Mux
-                       Network.Mux.Channel
-                       Network.Mux.Codec
-                       Network.Mux.Compat
-                       Network.Mux.Egress
-                       Network.Mux.Ingress
-                       Network.Mux.Time
-                       Network.Mux.Timeout
-                       Network.Mux.Types
-                       Network.Mux.Trace
-                       Network.Mux.Bearer
-                       Network.Mux.Bearer.AttenuatedChannel
-                       Network.Mux.Bearer.Pipe
-                       Network.Mux.Bearer.Queues
-                       Network.Mux.Bearer.Socket
-                       Network.Mux.DeltaQ.TraceStats
-                       Network.Mux.DeltaQ.TraceStatsSupport
-                       Network.Mux.DeltaQ.TraceTransformer
-                       Network.Mux.DeltaQ.TraceTypes
-                       Network.Mux.TCPInfo
-                       Control.Concurrent.JobPool
+    cpp-options: -DMUX_TRACE_TCPINFO
+  hs-source-dirs: src
+  exposed-modules:
+    Control.Concurrent.JobPool
+    Network.Mux
+    Network.Mux.Bearer
+    Network.Mux.Bearer.AttenuatedChannel
+    Network.Mux.Bearer.Pipe
+    Network.Mux.Bearer.Queues
+    Network.Mux.Bearer.Socket
+    Network.Mux.Channel
+    Network.Mux.Codec
+    Network.Mux.Compat
+    Network.Mux.DeltaQ.TraceStats
+    Network.Mux.DeltaQ.TraceStatsSupport
+    Network.Mux.DeltaQ.TraceTransformer
+    Network.Mux.DeltaQ.TraceTypes
+    Network.Mux.Egress
+    Network.Mux.Ingress
+    Network.Mux.TCPInfo
+    Network.Mux.Time
+    Network.Mux.Timeout
+    Network.Mux.Trace
+    Network.Mux.Types
 
   if os(linux)
-    other-modules:     Network.Mux.TCPInfo.Linux
+    other-modules: Network.Mux.TCPInfo.Linux
 
   if os(windows)
     exposed-modules:
-                       Network.Mux.Bearer.NamedPipe
-  default-language:    Haskell2010
-  default-extensions:  ImportQualifiedPost
-  ghc-options:         -Wall
-                       -Wcompat
-                       -Widentities
-                       -Wincomplete-record-updates
-                       -Wincomplete-uni-patterns
-                       -Wno-unticked-promoted-constructors
-                       -Wpartial-fields
-                       -Wredundant-constraints
-                       -Wunused-packages
+      Network.Mux.Bearer.NamedPipe
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  ghc-options:
+    -Wall
+    -Wcompat
+    -Widentities
+    -Wincomplete-record-updates
+    -Wincomplete-uni-patterns
+    -Wno-unticked-promoted-constructors
+    -Wpartial-fields
+    -Wredundant-constraints
+    -Wunused-packages
 
 test-suite test
-  type:                exitcode-stdio-1.0
-  hs-source-dirs:      test
-  main-is:             Main.hs
-  other-modules:       Test.Mux
-                       Test.Mux.ReqResp
-                       Test.Mux.Timeout
-  default-language:    Haskell2010
-  default-extensions:  ImportQualifiedPost
-  build-depends:       base >=4.14 && <4.21,
-                       io-classes,
-                       si-timers,
-                       strict-stm,
-                       io-sim,
-                       contra-tracer,
-                       network-mux,
-                       Win32-network,
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: Main.hs
+  other-modules:
+    Test.Mux
+    Test.Mux.ReqResp
+    Test.Mux.Timeout
 
-                       binary,
-                       bytestring,
-                       cborg,
-                       containers,
-                       network,
-                       QuickCheck,
-                       splitmix,
-                       serialise,
-                       tasty,
-                       tasty-quickcheck,
-                       primitive,
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  build-depends:
+    QuickCheck,
+    Win32-network,
+    base >=4.14 && <4.21,
+    binary,
+    bytestring,
+    cborg,
+    containers,
+    contra-tracer,
+    io-classes,
+    io-sim,
+    network,
+    network-mux,
+    primitive,
+    serialise,
+    si-timers,
+    splitmix,
+    strict-stm,
+    tasty,
+    tasty-quickcheck,
 
   if os(windows)
-    build-depends:     Win32           >= 2.5.4.1 && <3.0,
+    build-depends: Win32 >=2.5.4.1 && <3.0
   else
-    build-depends:     process
-  ghc-options:         -threaded
-                       -rtsopts
-                       -Wall
-                       -fno-ignore-asserts
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
-                       -Wno-unticked-promoted-constructors
-                       -Wunused-packages
+    build-depends: process
+
+  ghc-options:
+    -threaded
+    -rtsopts
+    -Wall
+    -fno-ignore-asserts
+    -Wcompat
+    -Wincomplete-uni-patterns
+    -Wincomplete-record-updates
+    -Wpartial-fields
+    -Widentities
+    -Wredundant-constraints
+    -Wno-unticked-promoted-constructors
+    -Wunused-packages
+
   if flag(ipv6)
-    cpp-options:       -DOUROBOROS_NETWORK_IPV6
+    cpp-options: -DOUROBOROS_NETWORK_IPV6
 
 executable mux-demo
-  import:              demo-deps
-  hs-source-dirs:      demo, test
-  main-is:             mux-demo.hs
-  other-modules:       Test.Mux.ReqResp
-  build-depends:       base >=4.14 && <4.21,
-                       network-mux,
-                       io-classes,
-                       contra-tracer,
-                       stm,
+  import: demo-deps
+  hs-source-dirs:
+    demo
+    test
 
-                       bytestring,
-                       cborg,
-                       serialise,
-                       primitive
+  main-is: mux-demo.hs
+  other-modules: Test.Mux.ReqResp
+  build-depends:
+    base >=4.14 && <4.21,
+    bytestring,
+    cborg,
+    contra-tracer,
+    io-classes,
+    network-mux,
+    primitive,
+    serialise,
+    stm,
+
   if os(windows)
-    build-depends:     Win32,
-                       Win32-network
+    build-depends:
+      Win32,
+      Win32-network,
   else
-    build-depends:     directory,
-                       network
+    build-depends:
+      directory,
+      network,

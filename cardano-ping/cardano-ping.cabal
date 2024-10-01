@@ -1,59 +1,60 @@
-cabal-version:          3.0
-name:                   cardano-ping
-version:                0.4.0.2
-synopsis:               Utility for pinging cardano nodes
-description:            Utility for pinging cardano nodes.
-license:                Apache-2.0
-license-files:          LICENSE
-                        NOTICE
-copyright:              2019-2023 Input Output Global Inc (IOG), 2023-2024 Intersect
-author:                 Karl Knutsson
-maintainer:             karl.knutsson-ext@cardanofoundation.org marcin.szamotulski@iohk.io
-category:               Network
-build-type:             Simple
-extra-doc-files:        README.md
-                        CHANGELOG.md
+cabal-version: 3.0
+name: cardano-ping
+version: 0.4.0.2
+synopsis: Utility for pinging cardano nodes
+description: Utility for pinging cardano nodes.
+license: Apache-2.0
+license-files:
+  LICENSE
+  NOTICE
+
+copyright: 2019-2023 Input Output Global Inc (IOG), 2023-2024 Intersect
+author: Karl Knutsson
+maintainer: karl.knutsson-ext@cardanofoundation.org marcin.szamotulski@iohk.io
+category: Network
+build-type: Simple
+extra-doc-files:
+  CHANGELOG.md
+  README.md
 
 flag asserts
-  description:        Enable assertions
-  manual:             False
-  default:            False
+  description: Enable assertions
+  manual: False
+  default: False
 
 library
-  hs-source-dirs:       src
-  exposed-modules:      Cardano.Network.Ping
-  build-depends:        base                          >=4.14     && <4.21,
-                        aeson                         >=2.1.1.0  && <3,
-                        cborg                         >=0.2.8    && <0.3,
-                        bytestring                    >=0.10     && <0.13,
-                        contra-tracer                 >=0.1      && <0.3,
-                        iproute,
-                        time,
-
-                        si-timers                    ^>=1.5,
-                        strict-stm,
-
-                        network-mux                  ^>=0.4.5,
-                        tdigest                      ^>=0.3,
-                        text                          >=1.2.4    && <2.2,
-                        transformers                  >=0.5      && <0.7,
-
-                        -- The Windows version of network-3.1.2 is missing
-                        -- functions, see
-                        -- https://github.com/haskell/network/issues/484
-                        network                       >= 3.1.2.2  && < 3.2,
+  hs-source-dirs: src
+  exposed-modules: Cardano.Network.Ping
+  build-depends:
+    -- The Windows version of network-3.1.2 is missing
+    -- functions, see
+    -- https://github.com/haskell/network/issues/484
+    aeson >=2.1.1.0 && <3,
+    base >=4.14 && <4.21,
+    bytestring >=0.10 && <0.13,
+    cborg >=0.2.8 && <0.3,
+    contra-tracer >=0.1 && <0.3,
+    iproute,
+    network >=3.1.2.2 && <3.2,
+    network-mux ^>=0.4.5,
+    si-timers ^>=1.5,
+    strict-stm,
+    tdigest ^>=0.3,
+    text >=1.2.4 && <2.2,
+    time,
+    transformers >=0.5 && <0.7,
 
   if flag(asserts)
-     ghc-options:       -fno-ignore-asserts
-
-  default-language:     Haskell2010
-  default-extensions:   ImportQualifiedPost
-  ghc-options:          -Wall
-                        -Wcompat
-                        -Widentities
-                        -Wincomplete-record-updates
-                        -Wincomplete-uni-patterns
-                        -Wno-unticked-promoted-constructors
-                        -Wpartial-fields
-                        -Wredundant-constraints
-                        -Wunused-packages
+    ghc-options: -fno-ignore-asserts
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  ghc-options:
+    -Wall
+    -Wcompat
+    -Widentities
+    -Wincomplete-record-updates
+    -Wincomplete-uni-patterns
+    -Wno-unticked-promoted-constructors
+    -Wpartial-fields
+    -Wredundant-constraints
+    -Wunused-packages

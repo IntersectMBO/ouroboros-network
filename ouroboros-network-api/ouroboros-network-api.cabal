@@ -1,94 +1,94 @@
-cabal-version:          3.0
-name:                   ouroboros-network-api
-version:                0.9.0.1
-synopsis:               A networking api shared with ouroboros-consensus
-description:            A networking api shared with ouroboros-consensus.
-license:                Apache-2.0
-license-files:          LICENSE
-                        NOTICE
-copyright:              2019-2023 Input Output Global Inc (IOG), 2023-2024 Intersect
-author:                 Alexander Vieth, Marcin Szamotulski, Duncan Coutts, Karl Knutsson
-maintainer:             marcin.szamotulski@iohk.io
-category:               Network
-build-type:             Simple
-extra-doc-files:        CHANGELOG.md
+cabal-version: 3.0
+name: ouroboros-network-api
+version: 0.9.0.1
+synopsis: A networking api shared with ouroboros-consensus
+description: A networking api shared with ouroboros-consensus.
+license: Apache-2.0
+license-files:
+  LICENSE
+  NOTICE
+
+copyright: 2019-2023 Input Output Global Inc (IOG), 2023-2024 Intersect
+author: Alexander Vieth, Marcin Szamotulski, Duncan Coutts, Karl Knutsson
+maintainer: marcin.szamotulski@iohk.io
+category: Network
+build-type: Simple
+extra-doc-files: CHANGELOG.md
 
 flag asserts
   description: Enable assertions
-  manual:      False
-  default:     False
-
+  manual: False
+  default: False
 
 library
-  hs-source-dirs:      src
-  exposed-modules:     Ouroboros.Network.AnchoredFragment
-                       Ouroboros.Network.AnchoredSeq
-                       Ouroboros.Network.Block
-                       Ouroboros.Network.Point
+  hs-source-dirs: src
+  exposed-modules:
+    Ouroboros.Network.AnchoredFragment
+    Ouroboros.Network.AnchoredSeq
+    Ouroboros.Network.Block
+    Ouroboros.Network.BlockFetch.ConsensusInterface
+    Ouroboros.Network.CodecCBORTerm
+    Ouroboros.Network.ConsensusMode
+    Ouroboros.Network.ControlMessage
+    Ouroboros.Network.Handshake
+    Ouroboros.Network.Handshake.Acceptable
+    Ouroboros.Network.Handshake.Queryable
+    Ouroboros.Network.Magic
+    Ouroboros.Network.NodeToClient.Version
+    Ouroboros.Network.NodeToNode.Version
+    Ouroboros.Network.PeerSelection.Bootstrap
+    Ouroboros.Network.PeerSelection.LedgerPeers.Type
+    Ouroboros.Network.PeerSelection.LedgerPeers.Utils
+    Ouroboros.Network.PeerSelection.LocalRootPeers
+    Ouroboros.Network.PeerSelection.PeerAdvertise
+    Ouroboros.Network.PeerSelection.PeerMetric.Type
+    Ouroboros.Network.PeerSelection.PeerSharing
+    Ouroboros.Network.PeerSelection.PeerSharing.Codec
+    Ouroboros.Network.PeerSelection.PeerTrustable
+    Ouroboros.Network.PeerSelection.RelayAccessPoint
+    Ouroboros.Network.Point
+    Ouroboros.Network.Protocol.Limits
+    Ouroboros.Network.SizeInBytes
+    Ouroboros.Network.Util.ShowProxy
 
-                       Ouroboros.Network.BlockFetch.ConsensusInterface
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  build-depends:
+    aeson,
+    base >=4.14 && <4.21,
+    base16-bytestring,
+    bytestring >=0.10 && <0.13,
+    cardano-binary,
+    cardano-slotting,
+    cardano-strict-containers,
+    cborg >=0.2.1 && <0.3,
+    containers,
+    contra-tracer,
+    deepseq,
+    dns,
+    io-classes ^>=1.5.0,
+    iproute,
+    measures,
+    network >=3.1.2 && <3.2,
+    network-mux ^>=0.4.5,
+    nothunks,
+    quiet,
+    serialise >=0.2 && <0.3,
+    si-timers,
+    strict-stm,
+    text >=1.2 && <2.2,
+    typed-protocols ^>=0.3,
 
-                       Ouroboros.Network.CodecCBORTerm
-                       Ouroboros.Network.ConsensusMode
-                       Ouroboros.Network.ControlMessage
-                       Ouroboros.Network.Handshake
-                       Ouroboros.Network.Handshake.Acceptable
-                       Ouroboros.Network.Handshake.Queryable
-                       Ouroboros.Network.Magic
-                       Ouroboros.Network.NodeToClient.Version
-                       Ouroboros.Network.NodeToNode.Version
-                       Ouroboros.Network.SizeInBytes
-                       Ouroboros.Network.Util.ShowProxy
+  ghc-options:
+    -Wall
+    -Wno-unticked-promoted-constructors
+    -Wcompat
+    -Wincomplete-uni-patterns
+    -Wincomplete-record-updates
+    -Wpartial-fields
+    -Widentities
+    -Wredundant-constraints
+    -Wunused-packages
 
-                       Ouroboros.Network.Protocol.Limits
-
-                       Ouroboros.Network.PeerSelection.Bootstrap
-                       Ouroboros.Network.PeerSelection.LedgerPeers.Type
-                       Ouroboros.Network.PeerSelection.LedgerPeers.Utils
-                       Ouroboros.Network.PeerSelection.LocalRootPeers
-                       Ouroboros.Network.PeerSelection.PeerMetric.Type
-                       Ouroboros.Network.PeerSelection.PeerAdvertise
-                       Ouroboros.Network.PeerSelection.PeerTrustable
-                       Ouroboros.Network.PeerSelection.PeerSharing
-                       Ouroboros.Network.PeerSelection.PeerSharing.Codec
-                       Ouroboros.Network.PeerSelection.RelayAccessPoint
-  default-language:    Haskell2010
-  default-extensions:  ImportQualifiedPost
-  build-depends:       base              >=4.14 && <4.21,
-                       aeson,
-                       base16-bytestring,
-                       bytestring        >=0.10 && <0.13,
-                       cborg             >=0.2.1 && <0.3,
-                       containers,
-                       deepseq,
-                       dns,
-                       iproute,
-                       measures,
-                       network           >=3.1.2 && <3.2,
-                       nothunks,
-                       serialise         >=0.2   && <0.3,
-                       text              >=1.2 && <2.2,
-                       quiet,
-
-                       cardano-binary,
-                       cardano-slotting,
-                       cardano-strict-containers,
-                       contra-tracer,
-
-                       io-classes       ^>=1.5.0,
-                       network-mux      ^>=0.4.5,
-                       strict-stm,
-                       si-timers,
-                       typed-protocols  ^>=0.3,
-
-  ghc-options:         -Wall
-                       -Wno-unticked-promoted-constructors
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
-                       -Wunused-packages
   if flag(asserts)
-    ghc-options:       -fno-ignore-asserts
+    ghc-options: -fno-ignore-asserts

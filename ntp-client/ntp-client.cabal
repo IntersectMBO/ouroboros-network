@@ -1,18 +1,20 @@
 cabal-version: 3.0
+name: ntp-client
+version: 0.0.1.6
+synopsis: NTP client
+description: NTP client.
+license: Apache-2.0
+license-files:
+  LICENSE
+  NOTICE
 
-name:                   ntp-client
-version:                0.0.1.6
-synopsis:               NTP client
-description:            NTP client.
-license:                Apache-2.0
-license-files:          LICENSE
-                        NOTICE
-copyright:              2019-2023 Input Output Global Inc (IOG), 2023-2024 Intersect
-maintainer:             operations@iohk.io
-category:               Network
-build-type:             Simple
-extra-doc-files:        README.md
-                        CHANGELOG.md
+copyright: 2019-2023 Input Output Global Inc (IOG), 2023-2024 Intersect
+maintainer: operations@iohk.io
+category: Network
+build-type: Simple
+extra-doc-files:
+  CHANGELOG.md
+  README.md
 
 flag demo
   description: Build a demo application
@@ -20,64 +22,80 @@ flag demo
   manual: True
 
 library
-  exposed-modules:      Network.NTP.Client
-  other-modules:        Network.NTP.Client.Packet
-                        Network.NTP.Client.Query
-  build-depends:        async           >=2.2 && <2.3
-                      , base            >=4.14 && <4.21
-                      , binary          >=0.8 && <0.11
-                      , bytestring      >=0.10 && <0.13
-                      , contra-tracer   >=0.1 && <0.2
-                      , network         >= 3.1.2 && <3.2
-                      , stm             >=2.4 && <2.6
-                      , time            >=1.9.1 && <1.14
-                      , Win32-network   >=0.1 && <0.3
+  exposed-modules: Network.NTP.Client
+  other-modules:
+    Network.NTP.Client.Packet
+    Network.NTP.Client.Query
 
-  hs-source-dirs:       src
-  default-language:     Haskell2010
-  default-extensions:   ImportQualifiedPost
-  ghc-options:          -Wall
-                        -Wcompat
-                        -Wincomplete-uni-patterns
-                        -Wincomplete-record-updates
-                        -Wpartial-fields
-                        -Widentities
-                        -Wredundant-constraints
-                        -Wunused-packages
-  default-extensions:   GeneralizedNewtypeDeriving
+  build-depends:
+    Win32-network >=0.1 && <0.3,
+    async >=2.2 && <2.3,
+    base >=4.14 && <4.21,
+    binary >=0.8 && <0.11,
+    bytestring >=0.10 && <0.13,
+    contra-tracer >=0.1 && <0.2,
+    network >=3.1.2 && <3.2,
+    stm >=2.4 && <2.6,
+    time >=1.9.1 && <1.14,
+
+  hs-source-dirs: src
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  ghc-options:
+    -Wall
+    -Wcompat
+    -Wincomplete-uni-patterns
+    -Wincomplete-record-updates
+    -Wpartial-fields
+    -Widentities
+    -Wredundant-constraints
+    -Wunused-packages
+
+  default-extensions: GeneralizedNewtypeDeriving
 
 test-suite test
-  hs-source-dirs:     test, src
-  main-is:            Test.hs
-  other-modules:        Network.NTP.Client.Packet
-  type:               exitcode-stdio-1.0
-  build-depends:        base            >=4.14 && <4.21
-                      , binary          >=0.8 && <0.11
-                      , time            >=1.9.1 && <1.14
-                      , QuickCheck
-                      , tasty
-                      , tasty-quickcheck
-  default-language:   Haskell2010
+  hs-source-dirs:
+    test
+    src
+
+  main-is: Test.hs
+  other-modules: Network.NTP.Client.Packet
+  type: exitcode-stdio-1.0
+  build-depends:
+    QuickCheck,
+    base >=4.14 && <4.21,
+    binary >=0.8 && <0.11,
+    tasty,
+    tasty-quickcheck,
+    time >=1.9.1 && <1.14,
+
+  default-language: Haskell2010
   default-extensions: ImportQualifiedPost
-  ghc-options:        -Wall
-                      -Wunused-packages
-                      -threaded
-                      -rtsopts
+  ghc-options:
+    -Wall
+    -Wunused-packages
+    -threaded
+    -rtsopts
 
 executable demo-ntp-client
-  hs-source-dirs:     demo
-  main-is:            Main.hs
+  hs-source-dirs: demo
+  main-is: Main.hs
+
   if flag(demo)
-     buildable: True
+    buildable: True
   else
-     buildable: False
-  build-depends:        async           >=2.2 && <2.3
-                      , base            >=4.14 && <4.21
-                      , contra-tracer   >=0.1 && <0.2
-                      , Win32-network   >=0.1 && <0.3
-                      , ntp-client
-  default-language:   Haskell2010
+    buildable: False
+
+  build-depends:
+    Win32-network >=0.1 && <0.3,
+    async >=2.2 && <2.3,
+    base >=4.14 && <4.21,
+    contra-tracer >=0.1 && <0.2,
+    ntp-client,
+
+  default-language: Haskell2010
   default-extensions: ImportQualifiedPost
-  ghc-options:        -Wall
-                      -threaded
-                      -Wunused-packages
+  ghc-options:
+    -Wall
+    -threaded
+    -Wunused-packages

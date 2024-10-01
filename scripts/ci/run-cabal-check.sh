@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-FD="$(which fdfind 2>/dev/null || which fd 2>/dev/null)"
-
 set -eo pipefail
+
+FD="$(which fdfind 2>/dev/null || which fd 2>/dev/null)"
 
 for x in $($FD -e cabal); do
   (
