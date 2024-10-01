@@ -253,15 +253,17 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
         (unversionedProtocol (SomeResponderApplication responderApp))
         nullErrorPolicies
         $ \_ _ -> do
-          connectToNode
+          void $ connectToNode
             snocket
             Mx.makeSocketBearer
-            (flip configureSock Nothing)
-            unversionedHandshakeCodec
-            noTimeLimitsHandshake
-            unversionedProtocolDataCodec
-            (NetworkConnectTracers activeMuxTracer nullTracer)
-            (HandshakeCallbacks acceptableVersion queryVersion)
+            ConnectToArgs {
+              ctaHandshakeCodec      = unversionedHandshakeCodec,
+              ctaHandshakeTimeLimits = noTimeLimitsHandshake,
+              ctaVersionDataCodec    = unversionedProtocolDataCodec,
+              ctaConnectTracers      = NetworkConnectTracers activeMuxTracer nullTracer,
+              ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+            }
+            (`configureSock` Nothing)
             (unversionedProtocol initiatorApp)
             (Just initiatorAddr)
             responderAddr
@@ -520,12 +522,14 @@ prop_socket_client_connect_error _ xs =
       <- try $ False <$ connectToNode
         (socketSnocket iomgr)
         Mx.makeSocketBearer
-        (flip configureSocket Nothing)
-        unversionedHandshakeCodec
-        noTimeLimitsHandshake
-        unversionedProtocolDataCodec
-        nullNetworkConnectTracers
-        (HandshakeCallbacks acceptableVersion queryVersion)
+        ConnectToArgs {
+          ctaHandshakeCodec      = unversionedHandshakeCodec,
+          ctaHandshakeTimeLimits = noTimeLimitsHandshake,
+          ctaVersionDataCodec    = unversionedProtocolDataCodec,
+          ctaConnectTracers      = nullNetworkConnectTracers,
+          ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+        }
+        (`configureSocket` Nothing)
         (unversionedProtocol app)
         (Just $ Socket.addrAddress clientAddr)
         (Socket.addrAddress serverAddr)
