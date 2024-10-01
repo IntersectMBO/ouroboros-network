@@ -18,6 +18,7 @@ module Ouroboros.Network.NodeToClient
   , NetworkConnectTracers (..)
   , nullNetworkConnectTracers
   , connectTo
+  , connectToWithMux
   , NetworkServerTracers (..)
   , nullNetworkServerTracers
   , NetworkMutableState (..)
@@ -87,6 +88,7 @@ import Data.Kind (Type)
 import Data.Void (Void)
 
 import Network.Mux (WithMuxBearer (..))
+import Network.Mux qualified as Mx
 import Network.Mux.Types (MuxRuntimeError (..))
 import Network.TypedProtocol.Peer.Client
 import Network.TypedProtocol.Stateful.Peer.Client qualified as Stateful
@@ -256,6 +258,52 @@ connectTo snocket tracers versions path =
                   versions
                   Nothing
                   (localAddressFromPath path)
+
+-- | A version of `connectTo` which exposes `Mx.Mux` interfaces which allows to
+-- run mini-protocols and handle their termination (e.g. restart them when they
+-- terminate or error).
+--
+connectToWithMux
+  :: LocalSnocket
+  -- ^ callback constructed by 'Ouroboros.Network.IOManager.withIOManager'
+  -> NetworkConnectTracers LocalAddress NodeToClientVersion
+  -> Versions NodeToClientVersion
+              NodeToClientVersionData
+              (OuroborosApplicationWithMinimalCtx
+                 InitiatorMode LocalAddress BL.ByteString IO a b)
+  -- ^ A dictionary of protocol versions & applications to run on an established
+  -- connection.  The application to run will be chosen by initial handshake
+  -- protocol (the highest shared version will be chosen).
+  -> FilePath
+  -- ^ path of the unix socket or named pipe
+  -> (    ConnectionId LocalAddress
+       -> NodeToClientVersion
+       -> NodeToClientVersionData
+       -> OuroborosApplicationWithMinimalCtx InitiatorMode LocalAddress BL.ByteString IO a b
+       -> Mx.Mux InitiatorMode IO
+       -> Async.Async ()
+       -> IO x)
+  -- ^ callback which has access to negotiated protocols and mux handle created for
+  -- that connection.  The `Async` is a handle the the thread which runs
+  -- `Mx.runMux`.  The `Mux` handle allows schedule mini-protocols.
+  --
+  -- NOTE: when the callback returns or errors, the mux thread will be killed.
+  -> IO x
+connectToWithMux snocket tracers versions path k =
+  connectToNodeWithMux
+    snocket
+    makeLocalBearer
+    mempty
+    nodeToClientHandshakeCodec
+    noTimeLimitsHandshake
+    (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
+    tracers
+    (HandshakeCallbacks acceptableVersion queryVersion)
+    versions
+    Nothing
+    (localAddressFromPath path)
+    k
+
 
 
 -- | A specialised version of 'Ouroboros.Network.Socket.withServerNode'.

@@ -34,8 +34,10 @@ module Ouroboros.Network.Socket
   , withServerNode
   , withServerNode'
   , connectToNode
+  , connectToNodeWithMux
   , connectToNodeSocket
   , connectToNode'
+  , connectToNodeWithMux'
     -- * Socket configuration
   , configureSocket
   , configureSystemdSocket
@@ -81,6 +83,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.STM qualified as STM
 import Data.ByteString.Lazy qualified as BL
+import Data.Foldable (traverse_)
 import Data.Functor (void)
 import Data.Hashable
 import Data.Monoid.Synchronisation (FirstToFinish (..))
@@ -248,21 +251,20 @@ sduHandshakeTimeout :: DiffTime
 sduHandshakeTimeout = 10
 
 
--- |
--- Connect to a remote node.  It is using bracket to enclose the underlying
+-- | Connect to a remote node.  It is using bracket to enclose the underlying
 -- socket acquisition.  This implies that when the continuation exits the
 -- underlying bearer will get closed.
 --
 -- The connection will start with handshake protocol sending @Versions@ to the
 -- remote peer.  It must fit into @'maxTransmissionUnit'@ (~5k bytes).
 --
--- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
+-- Exceptions thrown by 'MuxApplication' are rethrown by 'connectToNode'.
 connectToNode
-  :: forall appType vNumber vData fd addr a b.
+  :: forall muxMode vNumber vData fd addr a b.
      ( Ord vNumber
      , Typeable vNumber
      , Show vNumber
-     , Mx.HasInitiator appType ~ True
+     , Mx.HasInitiator muxMode ~ True
      )
   => Snocket IO fd addr
   -> Mx.MakeBearer IO fd
@@ -272,7 +274,7 @@ connectToNode
   -> VersionDataCodec CBOR.Term vNumber vData
   -> NetworkConnectTracers addr vNumber
   -> HandshakeCallbacks vData
-  -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx appType addr BL.ByteString IO a b)
+  -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b)
   -- ^ application to run over the connection
   -> Maybe addr
   -- ^ local address; the created socket will bind to it
@@ -280,20 +282,58 @@ connectToNode
   -- ^ remote address
   -> IO ()
 connectToNode sn makeBearer configureSock handshakeCodec handshakeTimeLimits versionDataCodec tracers handshakeCallbacks versions localAddr remoteAddr =
-    bracket
-      (Snocket.openToConnect sn remoteAddr)
-      (Snocket.close sn)
-      (\sd -> do
-          configureSock sd
-          case localAddr of
-            Just addr -> Snocket.bind sn sd addr
-            Nothing   -> return ()
-          Snocket.connect sn sd remoteAddr
-          connectToNode' sn makeBearer handshakeCodec handshakeTimeLimits versionDataCodec tracers handshakeCallbacks versions sd
-      )
+  connectToNodeWithMux sn makeBearer configureSock handshakeCodec handshakeTimeLimits versionDataCodec tracers handshakeCallbacks versions localAddr remoteAddr simpleMuxCallback
 
--- |
--- Connect to a remote node using an existing socket. It is up to to caller to
+
+-- | A version `connectToNode` which allows one to control which mini-protocols
+-- to execute on a given connection.
+connectToNodeWithMux
+  :: forall muxMode vNumber vData fd addr a b x.
+     ( Ord vNumber
+     , Typeable vNumber
+     , Show vNumber
+     , Mx.HasInitiator muxMode ~ True
+     )
+  => Snocket IO fd addr
+  -> Mx.MakeBearer IO fd
+  -> (fd -> IO ()) -- ^ configure a socket
+  -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
+  -> ProtocolTimeLimits (Handshake vNumber CBOR.Term)
+  -> VersionDataCodec CBOR.Term vNumber vData
+  -> NetworkConnectTracers addr vNumber
+  -> HandshakeCallbacks vData
+  -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b)
+  -- ^ application to run over the connection
+  -> Maybe addr
+  -- ^ local address; the created socket will bind to it
+  -> addr
+  -- ^ remote address
+  -> (    ConnectionId addr
+       -> vNumber
+       -> vData
+       -> OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b
+       -> Mx.Mux muxMode IO
+       -> Async ()
+       -> IO x)
+  -- ^ callback which has access to ConnectionId, negotiated protocols, mux
+  -- handle created for that connection and an `Async` handle to the thread
+  -- which runs `Mx.runMux`.  The `Mux` handle allows schedule mini-protocols.
+  --
+  -- NOTE: when the callback returns or errors, the mux thread will be killed.
+  -> IO x
+connectToNodeWithMux sn makeBearer configureSock handshakeCodec handshakeTimeLimits versionDataCodec tracers handshakeCallbacks versions localAddr remoteAddr k =
+  bracket
+    (Snocket.openToConnect sn remoteAddr)
+    (Snocket.close sn)
+    (\sd -> do
+      configureSock sd
+      traverse_ (Snocket.bind sn sd) localAddr
+      Snocket.connect sn sd remoteAddr
+      connectToNodeWithMux' sn makeBearer handshakeCodec handshakeTimeLimits versionDataCodec tracers handshakeCallbacks versions sd k
+    )
+
+
+-- | Connect to a remote node using an existing socket. It is up to to caller to
 -- ensure that the socket is closed in case of an exception.
 --
 -- The connection will start with handshake protocol sending @Versions@ to the
@@ -301,11 +341,11 @@ connectToNode sn makeBearer configureSock handshakeCodec handshakeTimeLimits ver
 --
 -- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
 connectToNode'
-  :: forall appType vNumber vData fd addr a b.
+  :: forall muxMode vNumber vData fd addr a b.
      ( Ord vNumber
      , Typeable vNumber
      , Show vNumber
-     , Mx.HasInitiator appType ~ True
+     , Mx.HasInitiator muxMode ~ True
      )
   => Snocket IO fd addr
   -> Mx.MakeBearer IO fd
@@ -314,12 +354,56 @@ connectToNode'
   -> VersionDataCodec CBOR.Term vNumber vData
   -> NetworkConnectTracers addr vNumber
   -> HandshakeCallbacks vData
-  -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx appType addr BL.ByteString IO a b)
+  -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b)
   -- ^ application to run over the connection
   -> fd
   -- ^ a configured socket to use to connect to a remote service provider
   -> IO ()
-connectToNode' sn makeBearer handshakeCodec handshakeTimeLimits versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHandshakeTracer } handshakeCallbacks versions sd = do
+connectToNode' sn makeBearer handshakeCodec handshakeTimeLimits versionDataCodec tracers handshakeCallbacks versions sd =
+  connectToNodeWithMux' sn makeBearer handshakeCodec handshakeTimeLimits versionDataCodec tracers handshakeCallbacks versions sd simpleMuxCallback
+
+
+connectToNodeWithMux'
+  :: forall muxMode vNumber vData fd addr a b x.
+     ( Ord vNumber
+     , Typeable vNumber
+     , Show vNumber
+     , Mx.HasInitiator muxMode ~ True
+     )
+  => Snocket IO fd addr
+  -> Mx.MakeBearer IO fd
+  -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
+  -> ProtocolTimeLimits (Handshake vNumber CBOR.Term)
+  -> VersionDataCodec CBOR.Term vNumber vData
+  -> NetworkConnectTracers addr vNumber
+  -> HandshakeCallbacks vData
+  -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b)
+  -- ^ application to run over the connection
+  -> fd
+  -- ^ a configured socket to use to connect to a remote service provider
+  -> (    ConnectionId addr
+       -> vNumber
+       -> vData
+       -> OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b
+       -> Mx.Mux muxMode IO
+       -> Async ()
+       -> IO x)
+  -- ^ callback which has access to ConnectionId, negotiated protocols, mux
+  -- handle created for that connection and an `Async` handle to the thread
+  -- which runs `Mx.runMux`.  The `Mux` handle allows schedule mini-protocols.
+  --
+  -- NOTE: when the callback returns or errors, the mux thread will be killed.
+  -> IO x
+connectToNodeWithMux' sn makeBearer
+                      handshakeCodec
+                      handshakeTimeLimits
+                      versionDataCodec
+                      NetworkConnectTracers {
+                        nctMuxTracer,
+                        nctHandshakeTracer
+                      }
+                      handshakeCallbacks
+                      versions sd k = do
     connectionId <- (\localAddress remoteAddress -> ConnectionId { localAddress, remoteAddress })
                 <$> Snocket.getLocalAddr sn sd <*> Snocket.getRemoteAddr sn sd
     muxTracer <- initDeltaQTracer' $ Mx.WithMuxBearer connectionId `contramap` nctMuxTracer
@@ -342,24 +426,24 @@ connectToNode' sn makeBearer handshakeCodec handshakeTimeLimits versionDataCodec
         versions
     ts_end <- getMonotonicTime
     case app_e of
-         Left (HandshakeProtocolLimit err) -> do
-             traceWith muxTracer $ Mx.MuxTraceHandshakeClientError err (diffTime ts_end ts_start)
-             throwIO err
+       Left (HandshakeProtocolLimit err) -> do
+         traceWith muxTracer $ Mx.MuxTraceHandshakeClientError err (diffTime ts_end ts_start)
+         throwIO err
 
-         Left (HandshakeProtocolError err) -> do
-             traceWith muxTracer $ Mx.MuxTraceHandshakeClientError err (diffTime ts_end ts_start)
-             throwIO err
+       Left (HandshakeProtocolError err) -> do
+         traceWith muxTracer $ Mx.MuxTraceHandshakeClientError err (diffTime ts_end ts_start)
+         throwIO err
 
-         Right (HandshakeNegotiationResult app versionNumber agreedOptions) -> do
-             traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
-             bearer <- Mx.getBearer makeBearer sduTimeout muxTracer sd
-             mux <- Mx.newMux (toMiniProtocolInfos app)
-             withAsync (Mx.runMux muxTracer mux bearer) $ \aid ->
-               simpleMuxCallback connectionId versionNumber agreedOptions app mux aid
+       Right (HandshakeNegotiationResult app versionNumber agreedOptions) -> do
+         traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
+         bearer <- Mx.getBearer makeBearer sduTimeout muxTracer sd
+         mux <- Mx.newMux (toMiniProtocolInfos app)
+         withAsync (Mx.runMux muxTracer mux bearer) $ \aid ->
+           k connectionId versionNumber agreedOptions app mux aid
 
-         Right (HandshakeQueryResult _vMap) -> do
-             traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
-             throwIO (QueryNotSupported @vNumber)
+       Right (HandshakeQueryResult _vMap) -> do
+         traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
+         throwIO (QueryNotSupported @vNumber)
 
 
 -- | An internal mux callback which starts all mini-protocols and blocks
@@ -412,11 +496,11 @@ simpleMuxCallback connectionId _ _ app mux aid = do
 
 -- Wraps a Socket inside a Snocket and calls connectToNode'
 connectToNodeSocket
-  :: forall appType vNumber vData a b.
+  :: forall muxMode vNumber vData a b.
      ( Ord vNumber
      , Typeable vNumber
      , Show vNumber
-     , Mx.HasInitiator appType ~ True
+     , Mx.HasInitiator muxMode ~ True
      )
   => IOManager
   -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
@@ -424,7 +508,7 @@ connectToNodeSocket
   -> VersionDataCodec CBOR.Term vNumber vData
   -> NetworkConnectTracers Socket.SockAddr vNumber
   -> HandshakeCallbacks vData
-  -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx appType Socket.SockAddr BL.ByteString IO a b)
+  -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode Socket.SockAddr BL.ByteString IO a b)
   -- ^ application to run over the connection
   -> Socket.Socket
   -> IO ()
@@ -445,9 +529,9 @@ connectToNodeSocket iocp handshakeCodec handshakeTimeLimits versionDataCodec tra
 --
 data SomeResponderApplication addr bytes m b where
      SomeResponderApplication
-       :: forall appType addr bytes m a b.
-          Mx.HasResponder appType ~ True
-       => (OuroborosApplicationWithMinimalCtx appType addr bytes m a b)
+       :: forall muxMode addr bytes m a b.
+          Mx.HasResponder muxMode ~ True
+       => (OuroborosApplicationWithMinimalCtx muxMode addr bytes m a b)
        -> SomeResponderApplication addr bytes m b
 
 -- |
