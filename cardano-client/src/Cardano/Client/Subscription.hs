@@ -1,24 +1,40 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
 
 module Cardano.Client.Subscription
-  ( subscribe
+  ( -- * Subscription API
+    subscribe
+  , SubscriptionParams (..)
+  , SubscriptionTracers (..)
+  , SubscriptionTrace (..)
+    -- * Re-exports
+    -- ** Mux
   , MuxMode (..)
-  , ConnectionId
-  , LocalAddress
+  , MuxTrace
+  , WithMuxBearer
+    -- ** Connections
+  , ConnectionId (..)
+  , LocalAddress (..)
+    -- ** Protocol API
   , NodeToClientProtocols (..)
   , MiniProtocolCb (..)
-  , MuxTrace
   , RunMiniProtocol (..)
-  , WithMuxBearer
   , ControlMessage (..)
   ) where
 
+import Codec.CBOR.Term qualified as CBOR
+import Control.Exception
+import Control.Monad (join)
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer, traceWith)
 import Data.ByteString.Lazy qualified as BSL
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (fromMaybe)
 import Data.Void (Void)
 
 import Network.Mux.Trace (MuxTrace, WithMuxBearer)
@@ -27,14 +43,46 @@ import Ouroboros.Network.ControlMessage (ControlMessage (..))
 import Ouroboros.Network.Magic (NetworkMagic)
 import Ouroboros.Network.Mux (MiniProtocolCb (..), MuxMode (..),
            OuroborosApplicationWithMinimalCtx, RunMiniProtocol (..))
-import Ouroboros.Network.NodeToClient (ClientSubscriptionParams (..),
-           ConnectionId, LocalAddress, NetworkClientSubcriptionTracers,
-           NodeToClientProtocols (..), NodeToClientVersion,
-           NodeToClientVersionData (NodeToClientVersionData),
-           ncSubscriptionWorker, newNetworkMutableState,
-           versionedNodeToClientProtocols)
-import Ouroboros.Network.Protocol.Handshake.Version (Versions, foldMapVersions)
+
+import Ouroboros.Network.ConnectionId (ConnectionId (..))
+import Ouroboros.Network.NodeToClient (Handshake, LocalAddress (..),
+           NetworkConnectTracers (..), NodeToClientProtocols,
+           NodeToClientVersion, NodeToClientVersionData (..), TraceSendRecv,
+           Versions)
+import Ouroboros.Network.NodeToClient qualified as NtC
 import Ouroboros.Network.Snocket qualified as Snocket
+
+data SubscriptionParams a = SubscriptionParams
+  { spAddress           :: !LocalAddress
+  -- ^ unix socket or named pipe address
+  , spReconnectionDelay :: !(Maybe DiffTime)
+  -- ^ delay between connection attempts.  The default value is `5s`.
+  , spCompleteCb        :: Either SomeException a -> Decision
+  }
+
+data Decision =
+    Abort
+    -- ^ abort subscription loop
+  | Reconnect
+    -- ^ reconnect
+
+data SubscriptionTracers a = SubscriptionTracers {
+      stMuxTracer          :: Tracer IO (WithMuxBearer (ConnectionId LocalAddress) MuxTrace),
+      -- ^ low level mux-network tracer, which logs mux sdu (send and received)
+      -- and other low level multiplexing events.
+      stHandshakeTracer    :: Tracer IO (WithMuxBearer (ConnectionId LocalAddress)
+                                            (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term))),
+      -- ^ handshake protocol tracer; it is important for analysing version
+      -- negotation mismatches.
+      stSubscriptionTracer :: Tracer IO (SubscriptionTrace a)
+    }
+
+data SubscriptionTrace a =
+    SubscriptionResult a
+  | SubscriptionError SomeException
+  | SubscriptionReconnect
+  | SubscriptionTerminate
+  deriving Show
 
 -- | Subscribe using `node-to-client` mini-protocol.
 --
@@ -44,34 +92,66 @@ import Ouroboros.Network.Snocket qualified as Snocket
 -- `Ouroboros.Consensus.Network.NodeToClient.clientCodecs`.
 --
 subscribe
-  :: forall blockVersion x y.
+  :: forall blockVersion a.
      Snocket.LocalSnocket
   -> NetworkMagic
   -> Map NodeToClientVersion blockVersion
   -- ^ Use `supportedNodeToClientVersions` from `ouroboros-consensus`.
-  -> NetworkClientSubcriptionTracers
-  -> ClientSubscriptionParams ()
+  -> SubscriptionTracers a
+  -> SubscriptionParams a
   -> (   NodeToClientVersion
       -> blockVersion
-      -> NodeToClientProtocols 'InitiatorMode LocalAddress BSL.ByteString IO x y)
-  -> IO Void
-subscribe snocket networkMagic supportedVersions tracers subscriptionParams protocols = do
-    networkState <- newNetworkMutableState
-    ncSubscriptionWorker
-      snocket
-      tracers
-      networkState
-      subscriptionParams
-      (versionedProtocols networkMagic supportedVersions protocols)
+      -> NodeToClientProtocols 'InitiatorMode LocalAddress BSL.ByteString IO a Void)
+  -> IO ()
+subscribe snocket networkMagic supportedVersions
+                  SubscriptionTracers {
+                    stMuxTracer = muxTracer,
+                    stHandshakeTracer = handshakeTracer,
+                    stSubscriptionTracer = tracer
+                  }
+                  SubscriptionParams {
+                    spAddress = addr,
+                    spReconnectionDelay = reConnDelay,
+                    spCompleteCb = completeCb
+                  }
+                  protocols =
+    mask $ \unmask ->
+      loop unmask $
+        NtC.connectTo
+          snocket
+          NetworkConnectTracers {
+            nctMuxTracer       = muxTracer,
+            nctHandshakeTracer = handshakeTracer
+          }
+          (versionedProtocols networkMagic supportedVersions protocols)
+          (getFilePath addr)
+  where
+    loop :: (forall x. IO x -> IO x) -> IO (Either SomeException a) -> IO ()
+    loop unmask act = do
+      r <- squashLefts <$> try (unmask act)
+      case r of
+        Right a -> traceWith tracer (SubscriptionResult a)
+        Left  e -> traceWith tracer (SubscriptionError e)
+      case completeCb r of
+        Abort ->
+          traceWith tracer SubscriptionTerminate
+        Reconnect -> do
+          traceWith tracer SubscriptionReconnect
+          threadDelay (fromMaybe 5 reConnDelay)
+          loop unmask act
+
+    squashLefts :: forall x y. Either x (Either x y) -> Either x y
+    squashLefts = join
+
 
 versionedProtocols ::
-     forall m appType bytes blockVersion a b.
+     forall m appType bytes blockVersion a.
      NetworkMagic
   -> Map NodeToClientVersion blockVersion
   -- ^ Use `supportedNodeToClientVersions` from `ouroboros-consensus`.
   -> (   NodeToClientVersion
       -> blockVersion
-      -> NodeToClientProtocols appType LocalAddress bytes m a b)
+      -> NodeToClientProtocols appType LocalAddress bytes m a Void)
      -- ^ callback which receives codecs, connection id and STM action which
      -- can be checked if the networking runtime system requests the protocols
      -- to stop.
@@ -82,18 +162,21 @@ versionedProtocols ::
   -> Versions
        NodeToClientVersion
        NodeToClientVersionData
-       (OuroborosApplicationWithMinimalCtx appType LocalAddress bytes m a b)
+       (OuroborosApplicationWithMinimalCtx appType LocalAddress bytes m a Void)
 versionedProtocols networkMagic supportedVersions callback =
-    foldMapVersions applyVersion $ Map.toList supportedVersions
+    NtC.foldMapVersions applyVersion (Map.toList supportedVersions)
   where
     applyVersion
       :: (NodeToClientVersion, blockVersion)
       -> Versions
            NodeToClientVersion
            NodeToClientVersionData
-           (OuroborosApplicationWithMinimalCtx appType LocalAddress bytes m a b)
+           (OuroborosApplicationWithMinimalCtx appType LocalAddress bytes m a Void)
     applyVersion (version, blockVersion) =
-      versionedNodeToClientProtocols
+      NtC.versionedNodeToClientProtocols
         version
-        (NodeToClientVersionData networkMagic False)
+        NodeToClientVersionData {
+          networkMagic,
+          query = False
+        }
         (callback version blockVersion)
