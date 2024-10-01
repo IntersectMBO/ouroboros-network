@@ -83,7 +83,7 @@
                   # if no change other than commit hash)
                   revision = pkgs.writeText "revision" (inputs.self.rev or "dirty");
                 }
-                // lib.optionalAttrs (system == "x86_64-linux") {
+                // {
                   devShell = devShells.default;
                   inherit format network-docs;
                 };
