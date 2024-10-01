@@ -76,16 +76,17 @@ module Ouroboros.Network.NodeToClient
 import Cardano.Prelude (FatalError)
 
 import Control.Concurrent.Async qualified as Async
-import Control.Exception (ErrorCall, IOException)
+import Control.Exception (ErrorCall, IOException, SomeException)
 import Control.Monad (forever)
 import Control.Monad.Class.MonadTimer.SI
 
 import Codec.CBOR.Term qualified as CBOR
 import Data.ByteString.Lazy qualified as BL
+import Data.Functor (void)
 import Data.Functor.Contravariant (contramap)
 import Data.Functor.Identity (Identity (..))
 import Data.Kind (Type)
-import Data.Void (Void)
+import Data.Void (Void, absurd)
 
 import Network.Mux (WithMuxBearer (..))
 import Network.Mux qualified as Mx
@@ -239,25 +240,32 @@ connectTo
   -> Versions NodeToClientVersion
               NodeToClientVersionData
               (OuroborosApplicationWithMinimalCtx
-                 InitiatorMode LocalAddress BL.ByteString IO a b)
+                 InitiatorMode LocalAddress BL.ByteString IO a Void)
   -- ^ A dictionary of protocol versions & applications to run on an established
   -- connection.  The application to run will be chosen by initial handshake
   -- protocol (the highest shared version will be chosen).
   -> FilePath
   -- ^ path of the unix socket or named pipe
-  -> IO ()
+  -> IO (Either SomeException a)
 connectTo snocket tracers versions path =
-    connectToNode snocket
-                  makeLocalBearer
-                  mempty
-                  nodeToClientHandshakeCodec
-                  noTimeLimitsHandshake
-                  (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
-                  tracers
-                  (HandshakeCallbacks acceptableVersion queryVersion)
-                  versions
-                  Nothing
-                  (localAddressFromPath path)
+    fmap fn <$>
+    connectToNode
+      snocket
+      makeLocalBearer
+      ConnectToArgs {
+        ctaHandshakeCodec      = nodeToClientHandshakeCodec,
+        ctaHandshakeTimeLimits = noTimeLimitsHandshake,
+        ctaVersionDataCodec    = cborTermVersionDataCodec nodeToClientCodecCBORTerm,
+        ctaConnectTracers      = tracers,
+        ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+      }
+      mempty
+      versions
+      Nothing
+      (localAddressFromPath path)
+  where
+    fn :: forall x. Either x Void -> x
+    fn = either id absurd
 
 -- | A version of `connectTo` which exposes `Mx.Mux` interfaces which allows to
 -- run mini-protocols and handle their termination (e.g. restart them when they
@@ -293,12 +301,14 @@ connectToWithMux snocket tracers versions path k =
   connectToNodeWithMux
     snocket
     makeLocalBearer
+    ConnectToArgs {
+      ctaHandshakeCodec      = nodeToClientHandshakeCodec,
+      ctaHandshakeTimeLimits = noTimeLimitsHandshake,
+      ctaVersionDataCodec    = cborTermVersionDataCodec nodeToClientCodecCBORTerm,
+      ctaConnectTracers      = tracers,
+      ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+    }
     mempty
-    nodeToClientHandshakeCodec
-    noTimeLimitsHandshake
-    (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
-    tracers
-    (HandshakeCallbacks acceptableVersion queryVersion)
     versions
     Nothing
     (localAddressFromPath path)
@@ -375,14 +385,16 @@ ncSubscriptionWorker
         nsErrorPolicyTracer
         networkState
         subscriptionParams
-        (connectToNode'
+        (void . connectToNode'
           sn
           makeLocalBearer
-          nodeToClientHandshakeCodec
-          noTimeLimitsHandshake
-          (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
-          (NetworkConnectTracers nsMuxTracer nsHandshakeTracer)
-          (HandshakeCallbacks acceptableVersion queryVersion)
+          ConnectToArgs {
+            ctaHandshakeCodec      = nodeToClientHandshakeCodec,
+            ctaHandshakeTimeLimits = noTimeLimitsHandshake,
+            ctaVersionDataCodec    = cborTermVersionDataCodec nodeToClientCodecCBORTerm,
+            ctaConnectTracers      = NetworkConnectTracers nsMuxTracer nsHandshakeTracer,
+            ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+          }
           versions)
 
 -- | 'ErrorPolicies' for client application.  Additional rules can be added by

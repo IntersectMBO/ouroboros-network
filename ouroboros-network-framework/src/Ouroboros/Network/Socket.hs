@@ -33,6 +33,7 @@ module Ouroboros.Network.Socket
   , ConnectionId (..)
   , withServerNode
   , withServerNode'
+  , ConnectToArgs (..)
   , connectToNode
   , connectToNodeWithMux
   , connectToNodeSocket
@@ -82,6 +83,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.STM qualified as STM
+import Data.Bifunctor (first)
 import Data.ByteString.Lazy qualified as BL
 import Data.Foldable (traverse_)
 import Data.Functor (void)
@@ -250,6 +252,16 @@ sduTimeout = 30
 sduHandshakeTimeout :: DiffTime
 sduHandshakeTimeout = 10
 
+-- | Common arguments of various variants of `connectToNode`.
+--
+data ConnectToArgs fd addr vNumber vData = ConnectToArgs {
+    ctaHandshakeCodec      :: Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString,
+    ctaHandshakeTimeLimits :: ProtocolTimeLimits (Handshake vNumber CBOR.Term),
+    ctaVersionDataCodec    :: VersionDataCodec CBOR.Term vNumber vData,
+    ctaConnectTracers      :: NetworkConnectTracers addr vNumber,
+    ctaHandshakeCallbacks  :: HandshakeCallbacks vData
+  }
+
 
 -- | Connect to a remote node.  It is using bracket to enclose the underlying
 -- socket acquisition.  This implies that when the continuation exits the
@@ -268,21 +280,16 @@ connectToNode
      )
   => Snocket IO fd addr
   -> Mx.MakeBearer IO fd
-  -> (fd -> IO ()) -- ^ configure a socket
-  -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
-  -> ProtocolTimeLimits (Handshake vNumber CBOR.Term)
-  -> VersionDataCodec CBOR.Term vNumber vData
-  -> NetworkConnectTracers addr vNumber
-  -> HandshakeCallbacks vData
+  -> ConnectToArgs fd addr vNumber vData
+  -> (fd -> IO ()) -- ^ configure socket
   -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b)
-  -- ^ application to run over the connection
   -> Maybe addr
   -- ^ local address; the created socket will bind to it
   -> addr
   -- ^ remote address
-  -> IO ()
-connectToNode sn makeBearer configureSock handshakeCodec handshakeTimeLimits versionDataCodec tracers handshakeCallbacks versions localAddr remoteAddr =
-  connectToNodeWithMux sn makeBearer configureSock handshakeCodec handshakeTimeLimits versionDataCodec tracers handshakeCallbacks versions localAddr remoteAddr simpleMuxCallback
+  -> IO (Either SomeException (Either a b))
+connectToNode sn mkBearer args configureSock versions localAddr remoteAddr =
+  connectToNodeWithMux sn mkBearer args configureSock versions localAddr remoteAddr simpleMuxCallback
 
 
 -- | A version `connectToNode` which allows one to control which mini-protocols
@@ -296,18 +303,13 @@ connectToNodeWithMux
      )
   => Snocket IO fd addr
   -> Mx.MakeBearer IO fd
-  -> (fd -> IO ()) -- ^ configure a socket
-  -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
-  -> ProtocolTimeLimits (Handshake vNumber CBOR.Term)
-  -> VersionDataCodec CBOR.Term vNumber vData
-  -> NetworkConnectTracers addr vNumber
-  -> HandshakeCallbacks vData
+  -> ConnectToArgs fd addr vNumber vData
+  -> (fd -> IO ()) -- ^ configure socket
   -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b)
   -- ^ application to run over the connection
-  -> Maybe addr
-  -- ^ local address; the created socket will bind to it
-  -> addr
   -- ^ remote address
+  -> Maybe addr
+  -> addr
   -> (    ConnectionId addr
        -> vNumber
        -> vData
@@ -321,7 +323,8 @@ connectToNodeWithMux
   --
   -- NOTE: when the callback returns or errors, the mux thread will be killed.
   -> IO x
-connectToNodeWithMux sn makeBearer configureSock handshakeCodec handshakeTimeLimits versionDataCodec tracers handshakeCallbacks versions localAddr remoteAddr k =
+connectToNodeWithMux sn mkBearer args configureSock versions localAddr remoteAddr k
+  =
   bracket
     (Snocket.openToConnect sn remoteAddr)
     (Snocket.close sn)
@@ -329,7 +332,7 @@ connectToNodeWithMux sn makeBearer configureSock handshakeCodec handshakeTimeLim
       configureSock sd
       traverse_ (Snocket.bind sn sd) localAddr
       Snocket.connect sn sd remoteAddr
-      connectToNodeWithMux' sn makeBearer handshakeCodec handshakeTimeLimits versionDataCodec tracers handshakeCallbacks versions sd k
+      connectToNodeWithMux' sn mkBearer args versions sd k
     )
 
 
@@ -349,18 +352,14 @@ connectToNode'
      )
   => Snocket IO fd addr
   -> Mx.MakeBearer IO fd
-  -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
-  -> ProtocolTimeLimits (Handshake vNumber CBOR.Term)
-  -> VersionDataCodec CBOR.Term vNumber vData
-  -> NetworkConnectTracers addr vNumber
-  -> HandshakeCallbacks vData
+  -> ConnectToArgs fd addr vNumber vData
+  -- ^ a configured socket to use to connect to a remote service provider
   -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b)
   -- ^ application to run over the connection
   -> fd
-  -- ^ a configured socket to use to connect to a remote service provider
-  -> IO ()
-connectToNode' sn makeBearer handshakeCodec handshakeTimeLimits versionDataCodec tracers handshakeCallbacks versions sd =
-  connectToNodeWithMux' sn makeBearer handshakeCodec handshakeTimeLimits versionDataCodec tracers handshakeCallbacks versions sd simpleMuxCallback
+  -> IO (Either SomeException (Either a b))
+connectToNode' sn mkBearer args versions as =
+  connectToNodeWithMux' sn mkBearer args versions as simpleMuxCallback
 
 
 connectToNodeWithMux'
@@ -372,15 +371,11 @@ connectToNodeWithMux'
      )
   => Snocket IO fd addr
   -> Mx.MakeBearer IO fd
-  -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
-  -> ProtocolTimeLimits (Handshake vNumber CBOR.Term)
-  -> VersionDataCodec CBOR.Term vNumber vData
-  -> NetworkConnectTracers addr vNumber
-  -> HandshakeCallbacks vData
+  -> ConnectToArgs fd addr vNumber vData
   -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b)
   -- ^ application to run over the connection
-  -> fd
   -- ^ a configured socket to use to connect to a remote service provider
+  -> fd
   -> (    ConnectionId addr
        -> vNumber
        -> vData
@@ -394,16 +389,20 @@ connectToNodeWithMux'
   --
   -- NOTE: when the callback returns or errors, the mux thread will be killed.
   -> IO x
-connectToNodeWithMux' sn makeBearer
-                      handshakeCodec
-                      handshakeTimeLimits
-                      versionDataCodec
-                      NetworkConnectTracers {
-                        nctMuxTracer,
-                        nctHandshakeTracer
-                      }
-                      handshakeCallbacks
-                      versions sd k = do
+connectToNodeWithMux'
+  sn makeBearer
+  ConnectToArgs {
+      ctaHandshakeCodec      = handshakeCodec,
+      ctaHandshakeTimeLimits = handshakeTimeLimits,
+      ctaVersionDataCodec    = versionDataCodec,
+      ctaConnectTracers      =
+        NetworkConnectTracers {
+          nctMuxTracer,
+          nctHandshakeTracer
+        },
+      ctaHandshakeCallbacks  = handshakeCallbacks
+  }
+  versions sd k = do
     connectionId <- (\localAddress remoteAddress -> ConnectionId { localAddress, remoteAddress })
                 <$> Snocket.getLocalAddr sn sd <*> Snocket.getRemoteAddr sn sd
     muxTracer <- initDeltaQTracer' $ Mx.WithMuxBearer connectionId `contramap` nctMuxTracer
@@ -457,7 +456,7 @@ simpleMuxCallback
   -> OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b
   -> Mx.Mux muxMode IO
   -> Async ()
-  -> IO ()
+  -> IO (Either SomeException (Either a b))
 simpleMuxCallback connectionId _ _ app mux aid = do
     let initCtx = MinimalInitiatorContext connectionId
         respCtx = ResponderContext connectionId
@@ -474,24 +473,22 @@ simpleMuxCallback connectionId _ _ app mux aid = do
       , (miniProtocolDir, action) <-
           case miniProtocolRun of
             InitiatorProtocolOnly initiator ->
-              [(Mx.InitiatorDirectionOnly, fmap fn . runMiniProtocolCb initiator initCtx)]
+              [(Mx.InitiatorDirectionOnly, fmap (first Left) . runMiniProtocolCb initiator initCtx)]
             ResponderProtocolOnly responder ->
-              [(Mx.ResponderDirectionOnly, fmap fn . runMiniProtocolCb responder respCtx)]
+              [(Mx.ResponderDirectionOnly, fmap (first Right) . runMiniProtocolCb responder respCtx)]
             InitiatorAndResponderProtocol initiator responder ->
-              [(Mx.InitiatorDirection, fmap fn . runMiniProtocolCb initiator initCtx)
-              ,(Mx.ResponderDirection, fmap fn . runMiniProtocolCb responder respCtx)]
+              [(Mx.InitiatorDirection, fmap (first Left) . runMiniProtocolCb initiator initCtx)
+              ,(Mx.ResponderDirection, fmap (first Right) . runMiniProtocolCb responder respCtx)]
       ]
 
     -- Wait for the first MuxApplication to finish, then stop the mux.
-    waitOnAny resOps
+    r <- waitOnAny resOps
     Mx.stopMux mux
     wait aid
+    return r
   where
-    waitOnAny :: [STM IO (Either SomeException  ())] -> IO ()
-    waitOnAny = void . atomically . runFirstToFinish . foldMap FirstToFinish
-
-    fn :: forall x bytes. (x, bytes) -> ((), bytes)
-    fn (_, bytes) = ((), bytes)
+    waitOnAny :: [STM IO (Either SomeException x)] -> IO (Either SomeException x)
+    waitOnAny = atomically . runFirstToFinish . foldMap FirstToFinish
 
 
 -- Wraps a Socket inside a Snocket and calls connectToNode'
@@ -503,24 +500,16 @@ connectToNodeSocket
      , Mx.HasInitiator muxMode ~ True
      )
   => IOManager
-  -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
-  -> ProtocolTimeLimits (Handshake vNumber CBOR.Term)
-  -> VersionDataCodec CBOR.Term vNumber vData
-  -> NetworkConnectTracers Socket.SockAddr vNumber
-  -> HandshakeCallbacks vData
+  -> ConnectToArgs Socket.Socket Socket.SockAddr vNumber vData
   -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode Socket.SockAddr BL.ByteString IO a b)
   -- ^ application to run over the connection
   -> Socket.Socket
-  -> IO ()
-connectToNodeSocket iocp handshakeCodec handshakeTimeLimits versionDataCodec tracers handshakeCallbacks versions sd =
+  -> IO (Either SomeException (Either a b))
+connectToNodeSocket iocp args versions sd =
     connectToNode'
       (Snocket.socketSnocket iocp)
       Mx.makeSocketBearer
-      handshakeCodec
-      handshakeTimeLimits
-      versionDataCodec
-      tracers
-      handshakeCallbacks
+      args
       versions
       sd
 
@@ -616,7 +605,7 @@ beginConnection makeBearer muxTracer handshakeTracer handshakeCodec handshakeTim
                  bearer <- Mx.getBearer makeBearer sduTimeout muxTracer' sd
                  mux <- Mx.newMux (toMiniProtocolInfos app)
                  withAsync (Mx.runMux muxTracer' mux bearer) $ \aid ->
-                   simpleMuxCallback connectionId versionNumber agreedOptions app mux aid
+                   void $ simpleMuxCallback connectionId versionNumber agreedOptions app mux aid
 
              Right (HandshakeQueryResult _vMap) -> do
                  traceWith muxTracer' Mx.MuxTraceHandshakeServerEnd

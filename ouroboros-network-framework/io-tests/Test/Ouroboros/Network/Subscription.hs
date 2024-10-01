@@ -632,13 +632,15 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
                   }
                 (\_ -> waitSiblingSTM siblingVar)
                 (connectToNodeSocket
-                    iocp
-                    unversionedHandshakeCodec
-                    noTimeLimitsHandshake
-                    unversionedProtocolDataCodec
-                    nullNetworkConnectTracers
-                    (HandshakeCallbacks acceptableVersion queryVersion)
-                    (unversionedProtocol initiatorApp))
+                  iocp
+                  ConnectToArgs {
+                    ctaHandshakeCodec      = unversionedHandshakeCodec,
+                    ctaHandshakeTimeLimits = noTimeLimitsHandshake,
+                    ctaVersionDataCodec    = unversionedProtocolDataCodec,
+                    ctaConnectTracers      = nullNetworkConnectTracers,
+                    ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+                  }
+                  (unversionedProtocol initiatorApp))
 
         res <- atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
         return (res == L.mapAccumL f 0 xs)
@@ -806,13 +808,15 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
               nullErrorPolicies
               (\_ -> waitSiblingSTM (rrcSiblingVar rrcfg))
               (connectToNodeSocket
-                  iocp
-                  unversionedHandshakeCodec
-                  noTimeLimitsHandshake
-                  unversionedProtocolDataCodec
-                  nullNetworkConnectTracers
-                  (HandshakeCallbacks acceptableVersion queryVersion)
-                  (unversionedProtocol (appX rrcfg)))
+                iocp
+                ConnectToArgs {
+                  ctaHandshakeCodec      = unversionedHandshakeCodec,
+                  ctaHandshakeTimeLimits = noTimeLimitsHandshake,
+                  ctaVersionDataCodec    = unversionedProtocolDataCodec,
+                  ctaConnectTracers      = nullNetworkConnectTracers,
+                  ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+                }
+                (unversionedProtocol (appX rrcfg)))
 
             atomically $ (,) <$> takeTMVar (rrcServerVar rrcfg)
                              <*> takeTMVar (rrcClientVar rrcfg)
@@ -879,13 +883,15 @@ _demo = ioProperty $ withIOManager $ \iocp -> do
 
               }
             (connectToNodeSocket
-                iocp
-                unversionedHandshakeCodec
-                noTimeLimitsHandshake
-                unversionedProtocolDataCodec
-                nullNetworkConnectTracers
-                (HandshakeCallbacks acceptableVersion queryVersion)
-                (unversionedProtocol appReq))
+              iocp
+              ConnectToArgs {
+                ctaHandshakeCodec      = unversionedHandshakeCodec,
+                ctaHandshakeTimeLimits = noTimeLimitsHandshake,
+                ctaVersionDataCodec    = unversionedProtocolDataCodec,
+                ctaConnectTracers      = nullNetworkConnectTracers,
+                ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+              }
+              (unversionedProtocol appReq))
 
     threadDelay 130
     -- bring the servers back again

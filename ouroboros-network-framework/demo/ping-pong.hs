@@ -114,15 +114,18 @@ demoProtocol0 pingPong =
 clientPingPong :: Bool -> IO ()
 clientPingPong pipelined =
     withIOManager $ \iomgr ->
+    void $
     connectToNode
       (Snocket.localSnocket iomgr)
       makeLocalBearer
+      ConnectToArgs {
+        ctaHandshakeCodec      = unversionedHandshakeCodec,
+        ctaHandshakeTimeLimits = noTimeLimitsHandshake,
+        ctaVersionDataCodec    = unversionedProtocolDataCodec,
+        ctaConnectTracers      = nullNetworkConnectTracers,
+        ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+      }
       mempty
-      unversionedHandshakeCodec
-      noTimeLimitsHandshake
-      unversionedProtocolDataCodec
-      nullNetworkConnectTracers
-      (HandshakeCallbacks acceptableVersion queryVersion)
       (unversionedProtocol app)
       Nothing
       defaultLocalSocketAddr
@@ -206,16 +209,18 @@ demoProtocol1 pingPong pingPong' =
 
 clientPingPong2 :: IO ()
 clientPingPong2 =
-    withIOManager $ \iomgr -> do
+    withIOManager $ \iomgr -> void $ do
     connectToNode
       (Snocket.localSnocket iomgr)
       makeLocalBearer
+      ConnectToArgs {
+        ctaHandshakeCodec      = unversionedHandshakeCodec,
+        ctaHandshakeTimeLimits = noTimeLimitsHandshake,
+        ctaVersionDataCodec    = unversionedProtocolDataCodec,
+        ctaConnectTracers      = nullNetworkConnectTracers,
+        ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+      }
       mempty
-      unversionedHandshakeCodec
-      noTimeLimitsHandshake
-      unversionedProtocolDataCodec
-      nullNetworkConnectTracers
-      (HandshakeCallbacks acceptableVersion queryVersion)
       (unversionedProtocol app)
       Nothing
       defaultLocalSocketAddr

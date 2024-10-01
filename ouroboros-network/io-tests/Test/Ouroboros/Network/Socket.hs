@@ -180,12 +180,14 @@ demo chain0 updates = withIOManager $ \iocp -> do
         (connectToNode
           (socketSnocket iocp)
           makeSocketBearer
-          (flip configureSocket Nothing)
-          nodeToNodeHandshakeCodec
-          noTimeLimitsHandshake
-          (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
-          nullNetworkConnectTracers
-          (HandshakeCallbacks acceptableVersion queryVersion)
+          ConnectToArgs {
+            ctaHandshakeCodec      = nodeToNodeHandshakeCodec,
+            ctaHandshakeTimeLimits = noTimeLimitsHandshake,
+            ctaVersionDataCodec    = cborTermVersionDataCodec nodeToNodeCodecCBORTerm,
+            ctaConnectTracers      = nullNetworkConnectTracers,
+            ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+          }
+          (`configureSocket` Nothing)
           (simpleSingletonVersions
             (maxBound :: NodeToNodeVersion)
             (NodeToNodeVersionData {

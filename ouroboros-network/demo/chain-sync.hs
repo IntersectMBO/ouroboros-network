@@ -229,15 +229,17 @@ clientChainSync :: [FilePath]
 clientChainSync sockPaths maxSlotNo = withIOManager $ \iocp ->
     forConcurrently_ (zip [0..] sockPaths) $ \(index, sockPath) -> do
       threadDelay (50000 * index)
-      connectToNode
+      void $ connectToNode
         (localSnocket iocp)
         makeLocalBearer
+        ConnectToArgs {
+          ctaHandshakeCodec      = unversionedHandshakeCodec,
+          ctaHandshakeTimeLimits = noTimeLimitsHandshake,
+          ctaVersionDataCodec    = unversionedProtocolDataCodec,
+          ctaConnectTracers      = nullNetworkConnectTracers,
+          ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+        }
         mempty
-        unversionedHandshakeCodec
-        noTimeLimitsHandshake
-        unversionedProtocolDataCodec
-        nullNetworkConnectTracers
-        (HandshakeCallbacks acceptableVersion queryVersion)
         (simpleSingletonVersions
            UnversionedProtocol
            UnversionedProtocolData
@@ -471,16 +473,18 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
           chainSelection fingerprint'
 
     peerAsyncs <- sequence
-                    [ async $
+                    [ async . void $
                         connectToNode
                           (localSnocket iocp)
                           makeLocalBearer
+                          ConnectToArgs {
+                            ctaHandshakeCodec      = unversionedHandshakeCodec,
+                            ctaHandshakeTimeLimits = noTimeLimitsHandshake,
+                            ctaVersionDataCodec    = unversionedProtocolDataCodec,
+                            ctaConnectTracers      = nullNetworkConnectTracers,
+                            ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+                          }
                           mempty
-                          unversionedHandshakeCodec
-                          noTimeLimitsHandshake
-                          unversionedProtocolDataCodec
-                          nullNetworkConnectTracers
-                          (HandshakeCallbacks acceptableVersion queryVersion)
                           (simpleSingletonVersions
                             UnversionedProtocol
                             UnversionedProtocolData
