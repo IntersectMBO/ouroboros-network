@@ -85,7 +85,8 @@
                 }
                 // {
                   devShell = devShells.default;
-                  inherit format network-docs;
+                  packages.network-docs = network-docs;
+                  inherit format;
                 };
             };
 
