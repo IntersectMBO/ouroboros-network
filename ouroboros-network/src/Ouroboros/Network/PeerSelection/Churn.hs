@@ -268,6 +268,10 @@ peerChurnGovernor PeerChurnArgs {
           case regime of
             ChurnBootstrapPraosSync -> min (targetNumberOfActivePeers targets + 1)
                                            (targetNumberOfEstablishedPeers base)
+            -- ^ In this mode, we are only connected to a handful of bootstrap peers.
+            -- The original churn strategy was to increase the targets by small
+            -- fixed amount (e.g. 1). Therefore, we use
+            -- targets to calculate the upper bound, ie. active + 1 here.
             _otherwise -> targetNumberOfEstablishedPeers base }
 
     checkEstablishedPeersIncreased :: CheckPeerSelectionCounters
@@ -305,8 +309,14 @@ peerChurnGovernor PeerChurnArgs {
       targets {
         targetNumberOfEstablishedPeers =
           case regime of
-            ChurnBootstrapPraosSync -> min (targetNumberOfActivePeers base)
+            ChurnBootstrapPraosSync -> min (targetNumberOfActivePeers targets)
                                            (targetNumberOfEstablishedPeers base - 1)
+            -- ^ In this mode, we are only connected to a handful of bootstrap peers.
+            -- The original churn strategy was to decrease the targets by small
+            -- fixed amount (e.g. 1) and then increase it back, and to churn out
+            -- all warm peers to speed up the time to find the best performers.
+            -- That is why we use the number of active peers in current targets
+            -- as the upper bound on the number of established peers during this action.
             _otherwise ->   decrease (targetNumberOfEstablishedPeers base - targetNumberOfActivePeers base)
                           + targetNumberOfActivePeers base }
 
