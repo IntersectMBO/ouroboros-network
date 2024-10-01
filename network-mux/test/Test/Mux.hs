@@ -352,9 +352,9 @@ prop_mux_snd_recv (DummyRun messages) = ioProperty $ do
                        miniProtocolLimits = defaultMiniProtocolLimits
                      }
 
-    clientMux <- newMux $ MiniProtocolBundle [clientApp]
+    clientMux <- newMux [clientApp]
 
-    serverMux <- newMux $ MiniProtocolBundle [serverApp]
+    serverMux <- newMux [serverApp]
 
     withAsync (runMux clientTracer clientMux clientBearer) $ \clientAsync ->
       withAsync (runMux serverTracer serverMux serverBearer) $ \serverAsync -> do
@@ -431,10 +431,10 @@ prop_mux_snd_recv_bi (DummyRun messages) = ioProperty $ do
                      ]
 
 
-    clientMux <- newMux $ MiniProtocolBundle clientApps
+    clientMux <- newMux clientApps
     clientAsync <- async $ runMux clientTracer clientMux clientBearer
 
-    serverMux <- newMux $ MiniProtocolBundle serverApps
+    serverMux <- newMux serverApps
     serverAsync <- async $ runMux serverTracer serverMux serverBearer
 
     r <- step clientMux clientApps serverMux serverApps messages
@@ -514,23 +514,17 @@ prop_mux_snd_recv_compat messages = ioProperty $ do
     (verify, client_mp, server_mp) <- setupMiniReqRspCompat
                                         (return ()) endMpsVar messages
 
-    let clientBundle = MiniProtocolBundle
-                     [ MiniProtocolInfo {
-                         miniProtocolNum    = MiniProtocolNum 2,
-                         miniProtocolLimits = defaultMiniProtocolLimits,
-                         miniProtocolDir    = InitiatorDirectionOnly
-                         -- miniProtocolRun    = InitiatorProtocolOnly client_mp
-                       }
-                     ]
+    let clientBundle = [ MiniProtocolInfo {
+                           miniProtocolNum    = MiniProtocolNum 2,
+                           miniProtocolLimits = defaultMiniProtocolLimits,
+                           miniProtocolDir    = InitiatorDirectionOnly }
+                       ]
 
-        serverBundle = MiniProtocolBundle
-                      [ MiniProtocolInfo {
-                          miniProtocolNum    = MiniProtocolNum 2,
-                          miniProtocolLimits = defaultMiniProtocolLimits,
-                          miniProtocolDir    = ResponderDirectionOnly
-                          -- miniProtocolRun    = ResponderProtocolOnly server_mp
-                        }
-                      ]
+        serverBundle = [ MiniProtocolInfo {
+                           miniProtocolNum    = MiniProtocolNum 2,
+                           miniProtocolLimits = defaultMiniProtocolLimits,
+                           miniProtocolDir    = ResponderDirectionOnly }
+                       ]
 
     clientAsync <- async $ do
       clientMux <- newMux clientBundle
@@ -720,7 +714,7 @@ runMuxApplication initApps initBearer respApps respBearer = do
         respApps' = zip protNum respApps
         initApps' = zip protNum initApps
 
-    respMux <- newMux $ MiniProtocolBundle $ map (\(pn,_) ->
+    respMux <- newMux $ map (\(pn,_) ->
         MiniProtocolInfo (MiniProtocolNum pn) ResponderDirectionOnly defaultMiniProtocolLimits)
         respApps'
     respAsync <- async $ runMux serverTracer respMux respBearer
@@ -733,7 +727,7 @@ runMuxApplication initApps initBearer respApps respBearer = do
                            | (pn, app) <- respApps'
                            ]
 
-    initMux <- newMux $ MiniProtocolBundle $ map (\(pn,_) ->
+    initMux <- newMux $ map (\(pn,_) ->
         MiniProtocolInfo (MiniProtocolNum pn) InitiatorDirectionOnly defaultMiniProtocolLimits)
         initApps'
     initAsync <- async $ runMux clientTracer initMux initBearer
@@ -955,14 +949,14 @@ prop_mux_starvation (Uneven response0 response1) =
                          miniProtocolLimits = defaultMiniProtocolLimits
                        }
 
-    serverMux <- newMux $ MiniProtocolBundle [serverApp2, serverApp3]
+    serverMux <- newMux [serverApp2, serverApp3]
     serverMux_aid <- async $ runMux serverTracer serverMux serverBearer
     serverRes2 <- runMiniProtocol serverMux (miniProtocolNum serverApp2) (miniProtocolDir serverApp2)
                    StartOnDemand server_short
     serverRes3 <- runMiniProtocol serverMux (miniProtocolNum serverApp3) (miniProtocolDir serverApp3)
                    StartOnDemand server_long
 
-    clientMux <- newMux $ MiniProtocolBundle [clientApp2, clientApp3]
+    clientMux <- newMux [clientApp2, clientApp3]
     clientMux_aid <- async $ runMux (clientTracer <> headerTracer) clientMux clientBearer
     clientRes2 <- runMiniProtocol clientMux (miniProtocolNum clientApp2) (miniProtocolDir clientApp2)
                    StartEagerly client_short
@@ -1152,7 +1146,7 @@ prop_demux_sdu a = do
                                          readQueue  = server_r
                                        }
 
-        serverMux <- newMux $ MiniProtocolBundle [serverApp]
+        serverMux <- newMux [serverApp]
         serverRes <- runMiniProtocol serverMux (miniProtocolNum serverApp) (miniProtocolDir serverApp)
                  StartEagerly server_mp
 
@@ -1428,9 +1422,9 @@ prop_mux_restart_m (DummyRestartingInitiatorApps apps) = do
                 (-1)
                 nullTracer
                 QueueChannel { writeQueue = mux_w, readQueue = mux_r }
-    let MiniProtocolBundle minis = MiniProtocolBundle $ map (appToInfo InitiatorDirectionOnly . fst) apps
+    let minis = map (appToInfo InitiatorDirectionOnly . fst) apps
 
-    mux <- newMux $ MiniProtocolBundle minis
+    mux <- newMux minis
     mux_aid <- async $ runMux nullTracer mux bearer
     getRes <- sequence [ runMiniProtocol
                            mux
@@ -1475,9 +1469,9 @@ prop_mux_restart_m (DummyRestartingResponderApps rapps) = do
         nullTracer
         QueueChannel { writeQueue = mux_r, readQueue = mux_w }
     let apps = map fst rapps
-        MiniProtocolBundle minis = MiniProtocolBundle $ map (appToInfo ResponderDirectionOnly) apps
+        minis = map (appToInfo ResponderDirectionOnly) apps
 
-    mux <- newMux $ MiniProtocolBundle minis
+    mux <- newMux minis
     mux_aid <- async $ runMux nullTracer mux bearer
     getRes <- sequence [ runMiniProtocol
                            mux
@@ -1526,7 +1520,7 @@ prop_mux_restart_m (DummyRestartingInitiatorResponderApps rapps) = do
         initMinis = map (appToInfo InitiatorDirection) apps
         respMinis = map (appToInfo ResponderDirection) apps
 
-    mux <- newMux $ MiniProtocolBundle $ initMinis ++ respMinis
+    mux <- newMux $ initMinis ++ respMinis
     mux_aid <- async $ runMux nullTracer mux bearer
     getInitRes <- sequence [ runMiniProtocol
                                mux
@@ -1598,10 +1592,10 @@ prop_mux_start_m :: forall m.
                     -> DiffTime
                     -> m Property
 prop_mux_start_m bearer _ checkRes (DummyInitiatorApps apps) runTime = do
-    let MiniProtocolBundle minis = MiniProtocolBundle $ map (appToInfo InitiatorDirectionOnly) apps
+    let minis = map (appToInfo InitiatorDirectionOnly) apps
         minRunTime = minimum $ runTime : (map daRunTime $ filter (\app -> daAction app == DummyAppFail) apps)
 
-    mux <- newMux $ MiniProtocolBundle minis
+    mux <- newMux minis
     mux_aid <- async $ runMux nullTracer mux bearer
     killer <- async $ (threadDelay runTime) >> stopMux mux
     getRes <- sequence [ runMiniProtocol
@@ -1619,10 +1613,10 @@ prop_mux_start_m bearer _ checkRes (DummyInitiatorApps apps) runTime = do
     return (conjoin $ map fst rc)
 
 prop_mux_start_m bearer trigger checkRes (DummyResponderApps apps) runTime = do
-    let MiniProtocolBundle minis = MiniProtocolBundle $ map (appToInfo ResponderDirectionOnly) apps
+    let minis = map (appToInfo ResponderDirectionOnly) apps
         minRunTime = minimum $ runTime : (map (\a -> daRunTime a + daStartAfter a) $ filter (\app -> daAction app == DummyAppFail) apps)
 
-    mux <- newMux $ MiniProtocolBundle minis
+    mux <- newMux minis
     mux_aid <- async $ runMux verboseTracer mux bearer
     getRes <- sequence [ runMiniProtocol
                            mux
@@ -1646,9 +1640,9 @@ prop_mux_start_m bearer _trigger _checkRes (DummyResponderAppsKillMux apps) runT
     -- Start a mini-protocol on demand, but kill mux before the application is
     -- triggered.  This test assures that mini-protocol completion action does
     -- not deadlocks.
-    let MiniProtocolBundle minis = MiniProtocolBundle $ map (appToInfo ResponderDirectionOnly) apps
+    let minis = map (appToInfo ResponderDirectionOnly) apps
 
-    mux <- newMux $ MiniProtocolBundle minis
+    mux <- newMux minis
     mux_aid <- async $ runMux verboseTracer mux bearer
     getRes <- sequence [ runMiniProtocol
                            mux
@@ -1671,7 +1665,7 @@ prop_mux_start_m bearer trigger checkRes (DummyInitiatorResponderApps apps) runT
         respMinis = map (appToInfo ResponderDirection) apps
         minRunTime = minimum $ runTime : (map (\a -> daRunTime a) $ filter (\app -> daAction app == DummyAppFail) apps)
 
-    mux <- newMux $ MiniProtocolBundle $ initMinis ++ respMinis
+    mux <- newMux $ initMinis ++ respMinis
     mux_aid <- async $ runMux verboseTracer mux bearer
     getInitRes <- sequence [ runMiniProtocol
                                mux
@@ -1826,8 +1820,7 @@ close_experiment
       fault tracer muxTracer clientCtx serverCtx reqs0 fn acc0 = do
     withAsync
       -- run client thread
-      (bracket (newMux $ MiniProtocolBundle
-                       [ MiniProtocolInfo {
+      (bracket (newMux [ MiniProtocolInfo {
                            miniProtocolNum,
                            miniProtocolDir = InitiatorDirectionOnly,
                            miniProtocolLimits = MiniProtocolLimits maxBound
@@ -1845,8 +1838,7 @@ close_experiment
       $ \clientAsync ->
         withAsync
           -- run server thread
-          (bracket ( newMux $ MiniProtocolBundle
-                            [ MiniProtocolInfo {
+          (bracket ( newMux [ MiniProtocolInfo {
                                 miniProtocolNum,
                                 miniProtocolDir = ResponderDirectionOnly,
                                 miniProtocolLimits = MiniProtocolLimits maxBound

@@ -1,11 +1,9 @@
 {-# LANGUAGE BangPatterns          #-}
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE DeriveTraversable     #-}
-{-# LANGUAGE ExplicitNamespaces    #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE KindSignatures        #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE PatternSynonyms       #-}
 {-# LANGUAGE PolyKinds             #-}
@@ -49,9 +47,9 @@ module Ouroboros.Network.Mux
     -- * Non-P2P API
   , OuroborosApplication (..)
   , OuroborosApplicationWithMinimalCtx
-  , mkMiniProtocolBundle
+  , mkMiniProtocolInfos
   , fromOuroborosBundle
-  , toMiniProtocolBundle
+  , toMiniProtocolInfos
   , contramapInitiatorCtx
     -- * Re-exports
     -- | from "Network.Mux"
@@ -79,9 +77,9 @@ import Network.TypedProtocol.Peer
 import Network.TypedProtocol.Stateful.Codec qualified as Stateful
 import Network.TypedProtocol.Stateful.Peer qualified as Stateful
 
-import Network.Mux (HasInitiator, HasResponder, MiniProtocolBundle (..),
-           MiniProtocolInfo, MiniProtocolLimits (..), MiniProtocolNum,
-           MuxError (..), MuxErrorType (..), MuxMode (..))
+import Network.Mux (HasInitiator, HasResponder, MiniProtocolInfo,
+           MiniProtocolLimits (..), MiniProtocolNum, MuxError (..),
+           MuxErrorType (..), MuxMode (..))
 import Network.Mux.Channel qualified as Mux
 import Network.Mux.Types qualified as Mux
 
@@ -493,10 +491,10 @@ fromOuroborosBundle :: OuroborosBundle      mode initiatorCtx responderCtx bytes
 fromOuroborosBundle = OuroborosApplication . fold
 
 
-toMiniProtocolBundle :: OuroborosApplication mode initiatorCtx responderCtx bytes m a b
-                     -> MiniProtocolBundle mode
-toMiniProtocolBundle =
-    MiniProtocolBundle . foldMap mkMiniProtocolInfo . getOuroborosApplication
+toMiniProtocolInfos :: OuroborosApplication mode initiatorCtx responderCtx bytes m a b
+                    -> [MiniProtocolInfo mode]
+toMiniProtocolInfos =
+    foldMap mkMiniProtocolInfo . getOuroborosApplication
 
 
 contramapInitiatorCtx :: (initiatorCtx' -> initiatorCtx)
@@ -519,6 +517,6 @@ contramapInitiatorCtx f (OuroborosApplication ptcls) = OuroborosApplication
 -- | Make 'MiniProtocolBundle', which is used to create a mux interface with
 -- 'newMux'.
 --
-mkMiniProtocolBundle :: OuroborosBundle mode initiatorCtx responderCtx bytes m a b
-                     -> MiniProtocolBundle mode
-mkMiniProtocolBundle = MiniProtocolBundle . foldMap (foldMap mkMiniProtocolInfo)
+mkMiniProtocolInfos :: OuroborosBundle mode initiatorCtx responderCtx bytes m a b
+                    -> [MiniProtocolInfo mode]
+mkMiniProtocolInfos = foldMap (foldMap mkMiniProtocolInfo)

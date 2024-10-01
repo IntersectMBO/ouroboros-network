@@ -3,7 +3,6 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTSyntax                #-}
-{-# LANGUAGE KindSignatures            #-}
 {-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
@@ -16,7 +15,6 @@ module Network.Mux
   , MuxMode (..)
   , HasInitiator
   , HasResponder
-  , MiniProtocolBundle (..)
   , MiniProtocolInfo (..)
   , MiniProtocolNum (..)
   , MiniProtocolDirection (..)
@@ -113,8 +111,15 @@ data MuxStatus
     | MuxStopped
 
 
-newMux :: MonadSTM m  => MiniProtocolBundle mode -> m (Mux mode m)
-newMux (MiniProtocolBundle ptcls) = do
+-- | Create a mux handle.
+--
+newMux :: forall (mode :: MuxMode) m.
+          MonadSTM m
+       => [MiniProtocolInfo mode]
+       -- ^ description of protocols run by the mux layer.  Only these protocols
+       -- one will be able to execute.
+       -> m (Mux mode m)
+newMux ptcls = do
     muxMiniProtocols   <- mkMiniProtocolStateMap ptcls
     muxControlCmdQueue <- atomically newTQueue
     muxStatus <- newTVarIO MuxReady
