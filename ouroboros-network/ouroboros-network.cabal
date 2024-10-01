@@ -315,6 +315,7 @@ test-suite io-tests
     bytestring,
     contra-tracer,
     io-classes,
+    monoidal-synchronisation,
     network,
     network-mux,
     ouroboros-network,

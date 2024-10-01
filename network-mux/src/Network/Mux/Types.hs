@@ -127,7 +127,7 @@ type family HasResponder (mode :: MuxMode) :: Bool where
 --   updates from upstream peers using client side of each of the protocols.
 --
 newtype MiniProtocolBundle (mode :: MuxMode) =
-        MiniProtocolBundle [MiniProtocolInfo mode]
+        MiniProtocolBundle { getMiniProtocolBundle :: [MiniProtocolInfo mode] }
 
 data MiniProtocolInfo (mode :: MuxMode) =
      MiniProtocolInfo {

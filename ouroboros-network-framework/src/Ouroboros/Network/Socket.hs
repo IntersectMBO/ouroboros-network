@@ -81,7 +81,9 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.STM qualified as STM
 import Data.ByteString.Lazy qualified as BL
+import Data.Functor (void)
 import Data.Hashable
+import Data.Monoid.Synchronisation (FirstToFinish (..))
 import Data.Typeable (Typeable)
 import Data.Void
 import Data.Word (Word16)
@@ -95,8 +97,8 @@ import Network.Socket qualified as Socket
 
 import Control.Tracer
 
+import Network.Mux qualified as Mx
 import Network.Mux.Bearer qualified as Mx
-import Network.Mux.Compat qualified as Mx
 import Network.Mux.DeltaQ.TraceTransformer
 import Network.TypedProtocol.Codec hiding (decode, encode)
 
@@ -348,19 +350,64 @@ connectToNode' sn makeBearer handshakeCodec handshakeTimeLimits versionDataCodec
              traceWith muxTracer $ Mx.MuxTraceHandshakeClientError err (diffTime ts_end ts_start)
              throwIO err
 
-         Right (HandshakeNegotiationResult app _versionNumber _agreedOptions) -> do
+         Right (HandshakeNegotiationResult app versionNumber agreedOptions) -> do
              traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
              bearer <- Mx.getBearer makeBearer sduTimeout muxTracer sd
-             Mx.muxStart
-               muxTracer
-               (toApplication MinimalInitiatorContext { micConnectionId = connectionId }
-                              ResponderContext { rcConnectionId = connectionId }
-                              app)
-               bearer
+             mux <- Mx.newMux (toMiniProtocolBundle app)
+             withAsync (Mx.runMux muxTracer mux bearer) $ \aid ->
+               simpleMuxCallback connectionId versionNumber agreedOptions app mux aid
 
          Right (HandshakeQueryResult _vMap) -> do
              traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
              throwIO (QueryNotSupported @vNumber)
+
+
+-- | An internal mux callback which starts all mini-protocols and blocks
+-- until the first one terminates.  It returns the result (or error) of the
+-- first terminated mini-protocol.
+--
+simpleMuxCallback
+  :: ConnectionId addr
+  -> vNumber
+  -> vData
+  -> OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b
+  -> Mx.Mux muxMode IO
+  -> Async ()
+  -> IO ()
+simpleMuxCallback connectionId _ _ app mux aid = do
+    let initCtx = MinimalInitiatorContext connectionId
+        respCtx = ResponderContext connectionId
+
+    resOps <- sequence
+      [ Mx.runMiniProtocol
+          mux
+          miniProtocolNum
+          miniProtocolDir
+          Mx.StartEagerly
+          action
+      | MiniProtocol{miniProtocolNum, miniProtocolRun}
+          <- getOuroborosApplication app
+      , (miniProtocolDir, action) <-
+          case miniProtocolRun of
+            InitiatorProtocolOnly initiator ->
+              [(Mx.InitiatorDirectionOnly, fmap fn . runMiniProtocolCb initiator initCtx)]
+            ResponderProtocolOnly responder ->
+              [(Mx.ResponderDirectionOnly, fmap fn . runMiniProtocolCb responder respCtx)]
+            InitiatorAndResponderProtocol initiator responder ->
+              [(Mx.InitiatorDirection, fmap fn . runMiniProtocolCb initiator initCtx)
+              ,(Mx.ResponderDirection, fmap fn . runMiniProtocolCb responder respCtx)]
+      ]
+
+    -- Wait for the first MuxApplication to finish, then stop the mux.
+    waitOnAny resOps
+    Mx.stopMux mux
+    wait aid
+  where
+    waitOnAny :: [STM IO (Either SomeException  ())] -> IO ()
+    waitOnAny = void . atomically . runFirstToFinish . foldMap FirstToFinish
+
+    fn :: forall x bytes. (x, bytes) -> ((), bytes)
+    fn (_, bytes) = ((), bytes)
 
 
 -- Wraps a Socket inside a Snocket and calls connectToNode'
@@ -429,9 +476,8 @@ data AcceptConnection st vNumber vData peerid m bytes where
       -> AcceptConnection st vNumber vData peerid m bytes
 
 
--- |
--- Accept or reject incoming connection based on the current state and address
--- of the incoming connection.
+-- | Accept or reject incoming connection based on the current state and
+-- address of the incoming connection.
 --
 beginConnection
     :: forall vNumber vData addr st fd.
@@ -481,15 +527,12 @@ beginConnection makeBearer muxTracer handshakeTracer handshakeCodec handshakeTim
                  traceWith muxTracer' $ Mx.MuxTraceHandshakeServerError err
                  throwIO err
 
-             Right (HandshakeNegotiationResult (SomeResponderApplication app) _versionNumber _agreedOptions) -> do
-                 traceWith muxTracer' $ Mx.MuxTraceHandshakeServerEnd
+             Right (HandshakeNegotiationResult (SomeResponderApplication app) versionNumber agreedOptions) -> do
+                 traceWith muxTracer' Mx.MuxTraceHandshakeServerEnd
                  bearer <- Mx.getBearer makeBearer sduTimeout muxTracer' sd
-                 Mx.muxStart
-                   muxTracer'
-                   (toApplication MinimalInitiatorContext { micConnectionId = connectionId }
-                                  ResponderContext { rcConnectionId = connectionId }
-                                  app)
-                   bearer
+                 mux <- Mx.newMux (toMiniProtocolBundle app)
+                 withAsync (Mx.runMux muxTracer' mux bearer) $ \aid ->
+                   simpleMuxCallback connectionId versionNumber agreedOptions app mux aid
 
              Right (HandshakeQueryResult _vMap) -> do
                  traceWith muxTracer' Mx.MuxTraceHandshakeServerEnd
@@ -497,6 +540,7 @@ beginConnection makeBearer muxTracer handshakeTracer handshakeCodec handshakeTim
                  threadDelay handshake_QUERY_SHUTDOWN_DELAY
 
       RejectConnection st' _peerid -> pure $ Server.Reject st'
+
 
 mkListeningSocket
     :: Snocket IO fd addr

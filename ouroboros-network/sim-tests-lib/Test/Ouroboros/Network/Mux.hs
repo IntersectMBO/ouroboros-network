@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
@@ -9,6 +10,8 @@
 module Test.Ouroboros.Network.Mux (tests) where
 
 import Codec.Serialise (Serialise (..))
+import Data.Functor (void)
+import Data.Monoid.Synchronisation (FirstToFinish (..))
 
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -43,9 +46,9 @@ import Ouroboros.Network.Protocol.ChainSync.Server qualified as ChainSync
 import Ouroboros.Network.Protocol.ChainSync.Type qualified as ChainSync
 import Ouroboros.Network.Util.ShowProxy
 
+import Network.Mux qualified as Mx
 import Network.Mux.Bearer qualified as Mx
 import Network.Mux.Bearer.Queues qualified as Mx
-import Network.Mux.Compat qualified as Mx (muxStart)
 import Ouroboros.Network.Mux as Mx
 
 
@@ -105,9 +108,9 @@ demo chain0 updates delay = do
     client_r <- atomically $ newTBQueue 10
     let server_w = client_r
         server_r = client_w
-    producerVar <- atomically $ newTVar (CPS.initChainProducerState chain0)
-    consumerVar <- atomically $ newTVar chain0
-    done <- atomically newEmptyTMVar
+    producerVar <- newTVarIO (CPS.initChainProducerState chain0)
+    consumerVar <- newTVarIO chain0
+    done <- newEmptyTMVarIO
 
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
@@ -160,22 +163,55 @@ demo chain0 updates delay = do
                                          Mx.readQueue = server_r
                                        }
 
-    clientAsync <- async $
-      Mx.muxStart
-        activeTracer
-        (Mx.toApplication
-          MinimalInitiatorContext { micConnectionId = ConnectionId "client" "server" }
-          ResponderContext { rcConnectionId = ConnectionId "client" "server" }
-          consumerApp)
-        clientBearer
-    serverAsync <- async $
-      Mx.muxStart
-        activeTracer
-        (Mx.toApplication
-          MinimalInitiatorContext { micConnectionId = ConnectionId "server" "client" }
-          ResponderContext { rcConnectionId = ConnectionId "server" "client" }
-          producerApp)
-        serverBearer
+    clientAsync <- async $ do
+      clientMux <- Mx.newMux (toMiniProtocolBundle consumerApp)
+      let initCtx = MinimalInitiatorContext (ConnectionId "consumer" "producer")
+      resOps <- sequence
+        [ Mx.runMiniProtocol
+            clientMux
+            miniProtocolNum
+            miniProtocolDir
+            Mx.StartEagerly
+            (\a -> do
+              r <- action a
+              return (r, Nothing)
+            )
+        | MiniProtocol{miniProtocolNum, miniProtocolRun}
+            <- getOuroborosApplication consumerApp
+        , (miniProtocolDir, action) <-
+            case miniProtocolRun of
+              InitiatorProtocolOnly initiator ->
+                [(Mx.InitiatorDirectionOnly, void . runMiniProtocolCb initiator initCtx)]
+        ]
+      withAsync (Mx.runMux nullTracer clientMux clientBearer) $ \aid -> do
+        _ <- atomically $ runFirstToFinish $ foldMap FirstToFinish resOps
+        Mx.stopMux clientMux
+        wait aid
+
+    serverAsync <- async $ do
+      serverMux <- Mx.newMux (toMiniProtocolBundle producerApp)
+      let respCtx = ResponderContext (ConnectionId "producer" "consumer")
+      resOps <- sequence
+        [ Mx.runMiniProtocol
+            serverMux
+            miniProtocolNum
+            miniProtocolDir
+            Mx.StartEagerly
+            (\a -> do
+              r <- action a
+              return (r, Nothing)
+            )
+        | MiniProtocol{miniProtocolNum, miniProtocolRun}
+            <- getOuroborosApplication producerApp
+        , (miniProtocolDir, action) <-
+            case miniProtocolRun of
+              ResponderProtocolOnly responder ->
+                [(Mx.ResponderDirectionOnly, void . runMiniProtocolCb responder respCtx)]
+        ]
+      withAsync (Mx.runMux nullTracer serverMux serverBearer) $ \aid -> do
+        _ <- atomically $ runFirstToFinish $ foldMap FirstToFinish resOps
+        Mx.stopMux serverMux
+        wait aid
 
     updateAid <- async $ sequence_
         [ do

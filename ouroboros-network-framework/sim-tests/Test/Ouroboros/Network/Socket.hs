@@ -3,6 +3,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
@@ -14,6 +15,7 @@ module Test.Ouroboros.Network.Socket (tests) where
 import Data.Bifoldable (bitraverse_)
 import Data.ByteString.Lazy qualified as BL
 import Data.List (mapAccumL)
+import Data.Monoid.Synchronisation (FirstToFinish (..))
 import Data.Time.Clock (UTCTime, getCurrentTime)
 import Data.Void (Void)
 #ifndef mingw32_HOST_OS
@@ -55,9 +57,8 @@ import Ouroboros.Network.Socket
 -- TODO: remove Mx prefixes
 import Ouroboros.Network.Mux
 
-import Network.Mux qualified as Mx (MuxError (..), MuxErrorType (..))
+import Network.Mux qualified as Mx
 import Network.Mux.Bearer qualified as Mx
-import Network.Mux.Compat qualified as Mx (muxStart)
 import Network.Mux.Timeout
 import Network.Mux.Types (MiniProtocolDir (..), MuxSDU (..), MuxSDUHeader (..),
            RemoteClockModel (..), write)
@@ -352,10 +353,30 @@ prop_socket_recv_error f rerr =
                     _ <- async $ do
                       threadDelay 0.1
                       atomically $ putTMVar lock ()
-                    Mx.muxStart nullTracer (toApplication MinimalInitiatorContext { micConnectionId = connectionId }
-                                                          ResponderContext { rcConnectionId = connectionId }
-                                                          app)
-                                           bearer
+                    mux <- Mx.newMux (toMiniProtocolBundle app)
+                    let respCtx = ResponderContext connectionId
+                    resOps <- sequence
+                      [ Mx.runMiniProtocol
+                          mux
+                          miniProtocolNum
+                          miniProtocolDir
+                          Mx.StartEagerly
+                          (\a -> do
+                            r <- action a
+                            return (r, Nothing)
+                          )
+                      | MiniProtocol{miniProtocolNum, miniProtocolRun}
+                          <- getOuroborosApplication app
+                      , (miniProtocolDir, action) <-
+                          case miniProtocolRun of
+                            ResponderProtocolOnly initiator ->
+                              [(Mx.ResponderDirectionOnly, void . runMiniProtocolCb initiator respCtx)]
+                      ]
+
+                    withAsync (Mx.runMux nullTracer mux bearer) $ \aid -> do
+                      _ <- atomically $ runFirstToFinish $ foldMap FirstToFinish resOps
+                      Mx.stopMux mux
+                      wait aid
           )
           $ \muxAsync -> do
 
