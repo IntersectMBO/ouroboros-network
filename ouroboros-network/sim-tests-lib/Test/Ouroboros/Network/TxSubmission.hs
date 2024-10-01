@@ -68,12 +68,13 @@ import Text.Printf
 tests :: TestTree
 tests = testGroup "TxSubmission"
   [ testProperty "txSubmission" prop_txSubmission
+  , testProperty "x" prop_x
   ]
 
 
 data Tx txid = Tx {
     getTxId    :: txid,
-    getTxSize  :: SizeInBytes,
+    getTxSize  :: !SizeInBytes,
     -- | If false this means that when this tx will be submitted to a remote
     -- mempool it will not be valid.  The outbound mempool might contain
     -- invalid tx's in this sense.
@@ -327,6 +328,11 @@ prop_txSubmission (Positive maxUnacked) (NonEmpty outboundTxs) delay =
                            -- without error.
                            -> return $ property True
 
+prop_x :: Property
+prop_x = prop_txSubmission
+  Positive {getPositive = 3}
+  NonEmpty {getNonEmpty = [Tx {getTxId = -83, getTxSize = SizeInBytes 62352, getTxValid = True},Tx {getTxId = 66, getTxSize = SizeInBytes 37084, getTxValid = True},Tx {getTxId = 55, getTxSize = SizeInBytes 54825, getTxValid = False},Tx {getTxId = -94, getTxSize = SizeInBytes 54298, getTxValid = True},Tx {getTxId = -83, getTxSize = SizeInBytes 30932, getTxValid = True},Tx {getTxId = 33, getTxSize = SizeInBytes 40377, getTxValid = True},Tx {getTxId = 87, getTxSize = SizeInBytes 42883, getTxValid = False},Tx {getTxId = -87, getTxSize = SizeInBytes 21529, getTxValid = True},Tx {getTxId = 85, getTxSize = SizeInBytes 15222, getTxValid = True},Tx {getTxId = -13, getTxSize = SizeInBytes 529, getTxValid = True},Tx {getTxId = -21, getTxSize = SizeInBytes 14755, getTxValid = True},Tx {getTxId = 37, getTxSize = SizeInBytes 3921, getTxValid = True},Tx {getTxId = -44, getTxSize = SizeInBytes 42390, getTxValid = True},Tx {getTxId = 47, getTxSize = SizeInBytes 27061, getTxValid = False},Tx {getTxId = 64, getTxSize = SizeInBytes 8540, getTxValid = True},Tx {getTxId = -85, getTxSize = SizeInBytes 15138, getTxValid = False},Tx {getTxId = -23, getTxSize = SizeInBytes 16317, getTxValid = False},Tx {getTxId = -35, getTxSize = SizeInBytes 4372, getTxValid = True},Tx {getTxId = -11, getTxSize = SizeInBytes 13524, getTxValid = True},Tx {getTxId = 98, getTxSize = SizeInBytes 62024, getTxValid = True},Tx {getTxId = -42, getTxSize = SizeInBytes 63227, getTxValid = False},Tx {getTxId = 74, getTxSize = SizeInBytes 31476, getTxValid = True},Tx {getTxId = 72, getTxSize = SizeInBytes 42959, getTxValid = True},Tx {getTxId = 72, getTxSize = SizeInBytes 53084, getTxValid = True},Tx {getTxId = 6, getTxSize = SizeInBytes 5013, getTxValid = True},Tx {getTxId = -62, getTxSize = SizeInBytes 52590, getTxValid = True},Tx {getTxId = -18, getTxSize = SizeInBytes 59325, getTxValid = False},Tx {getTxId = 70, getTxSize = SizeInBytes 40956, getTxValid = True},Tx {getTxId = -82, getTxSize = SizeInBytes 33213, getTxValid = True},Tx {getTxId = -73, getTxSize = SizeInBytes 31026, getTxValid = True},Tx {getTxId = -4, getTxSize = SizeInBytes 19421, getTxValid = True},Tx {getTxId = 68, getTxSize = SizeInBytes 37501, getTxValid = False},Tx {getTxId = 47, getTxSize = SizeInBytes 25707, getTxValid = False},Tx {getTxId = -99, getTxSize = SizeInBytes 58538, getTxValid = False},Tx {getTxId = 86, getTxSize = SizeInBytes 63432, getTxValid = False},Tx {getTxId = -73, getTxSize = SizeInBytes 32185, getTxValid = True},Tx {getTxId = 52, getTxSize = SizeInBytes 55174, getTxValid = False},Tx {getTxId = 52, getTxSize = SizeInBytes 20715, getTxValid = False},Tx {getTxId = -21, getTxSize = SizeInBytes 37063, getTxValid = False},Tx {getTxId = 15, getTxSize = SizeInBytes 63172, getTxValid = True},Tx {getTxId = -26, getTxSize = SizeInBytes 51314, getTxValid = True},Tx {getTxId = 19, getTxSize = SizeInBytes 5042, getTxValid = True},Tx {getTxId = 36, getTxSize = SizeInBytes 40532, getTxValid = True},Tx {getTxId = -30, getTxSize = SizeInBytes 18812, getTxValid = True},Tx {getTxId = 22, getTxSize = SizeInBytes 61634, getTxValid = True},Tx {getTxId = 89, getTxSize = SizeInBytes 44309, getTxValid = True},Tx {getTxId = -98, getTxSize = SizeInBytes 61700, getTxValid = True},Tx {getTxId = -17, getTxSize = SizeInBytes 46606, getTxValid = True},Tx {getTxId = -37, getTxSize = SizeInBytes 25004, getTxValid = False},Tx {getTxId = -53, getTxSize = SizeInBytes 51991, getTxValid = False},Tx {getTxId = -88, getTxSize = SizeInBytes 17941, getTxValid = True},Tx {getTxId = 24, getTxSize = SizeInBytes 19866, getTxValid = True},Tx {getTxId = -99, getTxSize = SizeInBytes 52082, getTxValid = True},Tx {getTxId = 50, getTxSize = SizeInBytes 48715, getTxValid = True},Tx {getTxId = -8, getTxSize = SizeInBytes 24522, getTxValid = True},Tx {getTxId = 92, getTxSize = SizeInBytes 53516, getTxValid = True},Tx {getTxId = 59, getTxSize = SizeInBytes 16151, getTxValid = False},Tx {getTxId = -85, getTxSize = SizeInBytes 57386, getTxValid = True},Tx {getTxId = 23, getTxSize = SizeInBytes 36444, getTxValid = False},Tx {getTxId = -59, getTxSize = SizeInBytes 63727, getTxValid = False},Tx {getTxId = -59, getTxSize = SizeInBytes 12656, getTxValid = True},Tx {getTxId = 13, getTxSize = SizeInBytes 19160, getTxValid = False},Tx {getTxId = -35, getTxSize = SizeInBytes 1681, getTxValid = True},Tx {getTxId = -13, getTxSize = SizeInBytes 46705, getTxValid = False}]}
+  (Just (Positive {getPositive = SmallDelay {getSmallDelay = 4.3}}))
 
 -- TODO: Belongs in iosim.
 data SimResult a = SimReturn a [String]

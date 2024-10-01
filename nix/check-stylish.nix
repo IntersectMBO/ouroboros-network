@@ -1,6 +1,7 @@
 { runCommand, fd, lib, stylish-haskell, haskell-nix }:
 
-runCommand "check-stylish" {
+runCommand "check-stylish"
+{
   meta.platforms = with lib.platforms; [ linux ];
   buildInputs = [ fd stylish-haskell ];
   src = haskell-nix.haskellLib.cleanGit {

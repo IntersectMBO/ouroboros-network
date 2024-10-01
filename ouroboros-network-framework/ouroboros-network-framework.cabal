@@ -1,357 +1,347 @@
-cabal-version:          3.0
-name:                   ouroboros-network-framework
-version:                0.13.2.4
-synopsis:               Ouroboros network framework
-description:            Ouroboros network framework.
-license:                Apache-2.0
-license-files:          LICENSE
-                        NOTICE
-copyright:              2019-2023 Input Output Global Inc (IOG), 2023-2024 Intersect
-author:                 Alexander Vieth, Duncan Coutts, Marcin Szamotulski
-maintainer:             marcin.szamotulski@iohk.io
-category:               Network
-build-type:             Simple
-extra-doc-files:        CHANGELOG.md
+cabal-version: 3.0
+name: ouroboros-network-framework
+version: 0.13.2.4
+synopsis: Ouroboros network framework
+description: Ouroboros network framework.
+license: Apache-2.0
+license-files:
+  LICENSE
+  NOTICE
 
-Flag ipv6
-  Description: Enable IPv6 test cases
-  Manual: True
+copyright: 2019-2023 Input Output Global Inc (IOG), 2023-2024 Intersect
+author: Alexander Vieth, Duncan Coutts, Marcin Szamotulski
+maintainer: marcin.szamotulski@iohk.io
+category: Network
+build-type: Simple
+extra-doc-files: CHANGELOG.md
+
+flag ipv6
+  description: Enable IPv6 test cases
+  manual: True
   -- Default to False since travis lacks IPv6 support
-  Default: False
+  default: False
 
 library
-  exposed-modules:     Data.Cache
-                       Data.Wedge
-                       NoThunks.Class.Orphans
-                       Ouroboros.Network.Channel
-                       Ouroboros.Network.Driver
-                       Ouroboros.Network.Driver.Simple
-                       Ouroboros.Network.Driver.Limits
-                       Ouroboros.Network.ErrorPolicy
-                       Ouroboros.Network.IOManager
-                       Ouroboros.Network.Mux
-                       Ouroboros.Network.MuxMode
-
-                       Ouroboros.Network.Protocol.Handshake
-                       Ouroboros.Network.Protocol.Handshake.Type
-                       Ouroboros.Network.Protocol.Handshake.Codec
-                       Ouroboros.Network.Protocol.Handshake.Client
-                       Ouroboros.Network.Protocol.Handshake.Server
-                       Ouroboros.Network.Protocol.Handshake.Version
-                       Ouroboros.Network.Protocol.Handshake.Unversioned
-
-                       Ouroboros.Network.ConnectionHandler
-                       Ouroboros.Network.ConnectionId
-                       Ouroboros.Network.ConnectionManager.Core
-                       Ouroboros.Network.ConnectionManager.InformationChannel
-                       Ouroboros.Network.ConnectionManager.Types
-                       Ouroboros.Network.Context
-                       Ouroboros.Network.InboundGovernor
-                       Ouroboros.Network.InboundGovernor.Event
-                       Ouroboros.Network.InboundGovernor.State
-                       Ouroboros.Network.RethrowPolicy
-                       Ouroboros.Network.Server.ConnectionTable
-                       Ouroboros.Network.Server.Socket
-                       Ouroboros.Network.Server.RateLimiting
-                       Ouroboros.Network.Server2
-                       Ouroboros.Network.Snocket
-                       Ouroboros.Network.Socket
-
-                       Ouroboros.Network.Subscription
-                       Ouroboros.Network.Subscription.Client
-                       Ouroboros.Network.Subscription.Dns
-                       Ouroboros.Network.Subscription.Ip
-                       Ouroboros.Network.Subscription.PeerState
-                       Ouroboros.Network.Subscription.Subscriber
-                       Ouroboros.Network.Subscription.Worker
-
-                       Simulation.Network.Snocket
+  exposed-modules:
+    Data.Cache
+    Data.Wedge
+    NoThunks.Class.Orphans
+    Ouroboros.Network.Channel
+    Ouroboros.Network.ConnectionHandler
+    Ouroboros.Network.ConnectionId
+    Ouroboros.Network.ConnectionManager.Core
+    Ouroboros.Network.ConnectionManager.InformationChannel
+    Ouroboros.Network.ConnectionManager.Types
+    Ouroboros.Network.Context
+    Ouroboros.Network.Driver
+    Ouroboros.Network.Driver.Limits
+    Ouroboros.Network.Driver.Simple
+    Ouroboros.Network.ErrorPolicy
+    Ouroboros.Network.IOManager
+    Ouroboros.Network.InboundGovernor
+    Ouroboros.Network.InboundGovernor.Event
+    Ouroboros.Network.InboundGovernor.State
+    Ouroboros.Network.Mux
+    Ouroboros.Network.MuxMode
+    Ouroboros.Network.Protocol.Handshake
+    Ouroboros.Network.Protocol.Handshake.Client
+    Ouroboros.Network.Protocol.Handshake.Codec
+    Ouroboros.Network.Protocol.Handshake.Server
+    Ouroboros.Network.Protocol.Handshake.Type
+    Ouroboros.Network.Protocol.Handshake.Unversioned
+    Ouroboros.Network.Protocol.Handshake.Version
+    Ouroboros.Network.RethrowPolicy
+    Ouroboros.Network.Server.ConnectionTable
+    Ouroboros.Network.Server.RateLimiting
+    Ouroboros.Network.Server.Socket
+    Ouroboros.Network.Server2
+    Ouroboros.Network.Snocket
+    Ouroboros.Network.Socket
+    Ouroboros.Network.Subscription
+    Ouroboros.Network.Subscription.Client
+    Ouroboros.Network.Subscription.Dns
+    Ouroboros.Network.Subscription.Ip
+    Ouroboros.Network.Subscription.PeerState
+    Ouroboros.Network.Subscription.Subscriber
+    Ouroboros.Network.Subscription.Worker
+    Simulation.Network.Snocket
 
   -- other-extensions:
-  build-depends:       base            >=4.12  && <4.21
-                     , async           >=2.1   && <2.3
-                     , bytestring      >=0.10  && <0.13
-                     , cborg           >=0.2.1 && <0.3
-                     , containers      >=0.5   && <0.8
-                     , deepseq
-                     , dns                        < 4.3
-                     , iproute         >=1.7   && < 1.8
-                     , hashable
-                     , mtl
-                     , nothunks
-                     , random
-                     , stm
-                     , text
-                     , quiet
-
-                     , cardano-prelude
-                     , contra-tracer
-
-                     , io-classes     ^>=1.5.0
-                     , si-timers
-                     , strict-stm
-
-                     , nothunks       ^>=0.2
-                     , psqueues
-                     -- ^ only to derive nothunk instances
-
-                     , monoidal-synchronisation
-                                      ^>=0.1.0.5
-                     , network        ^>=3.1.4
-                     , network-mux    ^>=0.4.5
-                     , ouroboros-network-api
-                                      ^>=0.9.0
-                     , ouroboros-network-testing
-                     , typed-protocols ^>=0.1.1
-                     , typed-protocols-cborg
-                                      ^>=0.1
-                     , Win32-network  ^>=0.2
+  build-depends:
+    -- ^ only to derive nothunk instances
+    Win32-network ^>=0.2,
+    async >=2.1 && <2.3,
+    base >=4.12 && <4.21,
+    bytestring >=0.10 && <0.13,
+    cardano-prelude,
+    cborg >=0.2.1 && <0.3,
+    containers >=0.5 && <0.8,
+    contra-tracer,
+    deepseq,
+    dns <4.3,
+    hashable,
+    io-classes ^>=1.5.0,
+    iproute >=1.7 && <1.8,
+    monoidal-synchronisation ^>=0.1.0.5,
+    mtl,
+    network ^>=3.1.4,
+    network-mux ^>=0.4.5,
+    nothunks,
+    nothunks ^>=0.1.4 || ^>=0.2,
+    ouroboros-network-api ^>=0.9.0,
+    ouroboros-network-testing,
+    psqueues,
+    quiet,
+    random,
+    si-timers,
+    stm,
+    strict-stm,
+    text,
+    typed-protocols ^>=0.1.1,
+    typed-protocols-cborg ^>=0.1,
 
   if os(windows)
-    build-depends:     Win32           >= 2.5.4.1 && <3.0
-
-  hs-source-dirs:      src
-  default-language:    Haskell2010
-  default-extensions:  ImportQualifiedPost
-  ghc-options:         -Wall
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
-                       -Wno-unticked-promoted-constructors
-                       -Wunused-packages
+    build-depends: Win32 >=2.5.4.1 && <3.0
+  hs-source-dirs: src
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  ghc-options:
+    -Wall
+    -Wcompat
+    -Wincomplete-uni-patterns
+    -Wincomplete-record-updates
+    -Wpartial-fields
+    -Widentities
+    -Wredundant-constraints
+    -Wno-unticked-promoted-constructors
+    -Wunused-packages
 
 library testlib
-    visibility: public
-    hs-source-dirs: testlib
+  visibility: public
+  hs-source-dirs: testlib
+  exposed-modules:
+    Ouroboros.Network.ConnectionManager.Test.Experiments
+    Ouroboros.Network.ConnectionManager.Test.Timeouts
+    Ouroboros.Network.ConnectionManager.Test.Utils
+    Ouroboros.Network.InboundGovernor.Test.Utils
+    Ouroboros.Network.Test.Orphans
 
-    exposed-modules: Ouroboros.Network.ConnectionManager.Test.Experiments
-                     Ouroboros.Network.ConnectionManager.Test.Timeouts
-                     Ouroboros.Network.ConnectionManager.Test.Utils
-                     Ouroboros.Network.InboundGovernor.Test.Utils
-                     Ouroboros.Network.Test.Orphans
+  other-modules:
+  build-depends:
+    QuickCheck,
+    base >=4.14 && <4.21,
+    bytestring,
+    cborg,
+    containers,
+    contra-tracer,
+    io-classes,
+    io-sim,
+    network-mux,
+    ouroboros-network-api,
+    ouroboros-network-framework,
+    ouroboros-network-testing,
+    quickcheck-monoids,
+    random,
+    serialise,
+    si-timers,
+    strict-stm,
+    typed-protocols,
+    typed-protocols-examples,
 
-    other-modules:
-
-    build-depends:   base              >=4.14 && <4.21
-                   , bytestring
-                   , cborg
-                   , containers
-                   , random
-                   , serialise
-
-                   , QuickCheck
-                   , quickcheck-monoids
-
-                   , contra-tracer
-                   , io-sim
-                   , io-classes
-                   , network-mux
-                   , si-timers
-                   , strict-stm
-                   , typed-protocols
-                   , typed-protocols-examples
-                   , ouroboros-network-api
-                   , ouroboros-network-framework
-                   , ouroboros-network-testing
-
-  default-language:  Haskell2010
-  default-extensions:ImportQualifiedPost
-  ghc-options:       -Wall
-                     -Wcompat
-                     -Wincomplete-uni-patterns
-                     -Wincomplete-record-updates
-                     -Wpartial-fields
-                     -Widentities
-                     -Wredundant-constraints
-                     -Wno-unticked-promoted-constructors
-                     -Wunused-packages
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  ghc-options:
+    -Wall
+    -Wcompat
+    -Wincomplete-uni-patterns
+    -Wincomplete-record-updates
+    -Wpartial-fields
+    -Widentities
+    -Wredundant-constraints
+    -Wno-unticked-promoted-constructors
+    -Wunused-packages
 
 test-suite sim-tests
-  type:                exitcode-stdio-1.0
-  main-is:             Main.hs
-  hs-source-dirs:      sim-tests
-  other-modules:       Test.Ouroboros.Network.ConnectionManager
-                       Test.Ouroboros.Network.Server2.Sim
-                       Test.Ouroboros.Network.Socket
-                       Test.Ouroboros.Network.Subscription
-                       Test.Ouroboros.Network.RateLimiting
-                       Test.Simulation.Network.Snocket
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs: sim-tests
+  other-modules:
+    Test.Ouroboros.Network.ConnectionManager
+    Test.Ouroboros.Network.RateLimiting
+    Test.Ouroboros.Network.Server2.Sim
+    Test.Ouroboros.Network.Socket
+    Test.Ouroboros.Network.Subscription
+    Test.Simulation.Network.Snocket
 
-  build-depends:       base              >=4.14 && <4.21
-                     , bytestring
-                     , cborg
-                     , containers
-                     , dns
-                     , iproute
-                     , network
-                     , pretty-simple
-                     , psqueues
-                     , random
-                     , serialise
-                     , text
-                     , time
-                     , quiet
-                     , with-utf8
-
-                     , QuickCheck
-                     , quickcheck-instances
-                     , quickcheck-monoids
-                     , tasty
-                     , tasty-quickcheck
-
-                     , contra-tracer
-
-                     , io-sim
-                     , io-classes
-                     , si-timers
-                     , strict-stm
-                     , network-mux
-                     , monoidal-synchronisation
-                     , ouroboros-network-framework
-                     , ouroboros-network-framework:testlib
-                     , ouroboros-network-testing
-                     , typed-protocols
-                     , typed-protocols-cborg
-                     , typed-protocols-examples
+  build-depends:
+    QuickCheck,
+    base >=4.14 && <4.21,
+    bytestring,
+    cborg,
+    containers,
+    contra-tracer,
+    dns,
+    io-classes,
+    io-sim,
+    iproute,
+    monoidal-synchronisation,
+    network,
+    network-mux,
+    ouroboros-network-framework,
+    ouroboros-network-framework:testlib,
+    ouroboros-network-testing,
+    pretty-simple,
+    psqueues,
+    quickcheck-instances,
+    quickcheck-monoids,
+    quiet,
+    random,
+    serialise,
+    si-timers,
+    strict-stm,
+    tasty,
+    tasty-quickcheck,
+    text,
+    time,
+    typed-protocols,
+    typed-protocols-cborg,
+    typed-protocols-examples,
+    with-utf8,
 
   if os(windows)
-    build-depends:     Win32-network <0.3
+    build-depends: Win32-network <0.3
   else
-    build-depends:     directory
+    build-depends: directory
 
-  default-language:    Haskell2010
-  default-extensions:  ImportQualifiedPost
-  ghc-options:         -rtsopts
-                       -threaded
-                       -Wall
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
-                       -Wno-unticked-promoted-constructors
-                       -Wunused-packages
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  ghc-options:
+    -rtsopts
+    -threaded
+    -Wall
+    -Wcompat
+    -Wincomplete-uni-patterns
+    -Wincomplete-record-updates
+    -Wpartial-fields
+    -Widentities
+    -Wredundant-constraints
+    -Wno-unticked-promoted-constructors
+    -Wunused-packages
 
   if flag(ipv6)
-    cpp-options:       -DOUROBOROS_NETWORK_IPV6
+    cpp-options: -DOUROBOROS_NETWORK_IPV6
 
 test-suite io-tests
-  type:                exitcode-stdio-1.0
-  main-is:             Main.hs
-  hs-source-dirs:      io-tests
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs: io-tests
   other-modules:
-                       Test.Ouroboros.Network.Driver
-                       Test.Ouroboros.Network.Server2.IO
-                       Test.Ouroboros.Network.Socket
-                       Test.Ouroboros.Network.Subscription
+    Test.Ouroboros.Network.Driver
+    Test.Ouroboros.Network.Server2.IO
+    Test.Ouroboros.Network.Socket
+    Test.Ouroboros.Network.Subscription
 
-  build-depends:       base              >=4.14 && <4.21
-                     , bytestring
-                     , containers
-                     , dns
-                     , iproute
-                     , network
-                     , random
-                     , time
-                     , with-utf8
-
-                     , QuickCheck
-                     , tasty
-                     , tasty-quickcheck
-
-                     , contra-tracer
-
-                     , io-sim
-                     , io-classes
-                     , si-timers
-                     , strict-stm
-                     , network-mux
-                     , ouroboros-network-framework
-                     , ouroboros-network-framework:testlib
-                     , typed-protocols
-                     , typed-protocols-examples
+  build-depends:
+    QuickCheck,
+    base >=4.14 && <4.21,
+    bytestring,
+    containers,
+    contra-tracer,
+    dns,
+    io-classes,
+    io-sim,
+    iproute,
+    network,
+    network-mux,
+    ouroboros-network-framework,
+    ouroboros-network-framework:testlib,
+    random,
+    si-timers,
+    strict-stm,
+    tasty,
+    tasty-quickcheck,
+    time,
+    typed-protocols,
+    typed-protocols-examples,
+    with-utf8,
 
   if os(windows)
-    build-depends:     Win32-network <0.3
+    build-depends: Win32-network <0.3
   else
-    build-depends:     directory
+    build-depends: directory
 
-  default-language:    Haskell2010
-  default-extensions:  ImportQualifiedPost
-  ghc-options:         -rtsopts
-                       -threaded
-                       -Wall
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
-                       -Wno-unticked-promoted-constructors
-                       -Wunused-packages
-
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  ghc-options:
+    -rtsopts
+    -threaded
+    -Wall
+    -Wcompat
+    -Wincomplete-uni-patterns
+    -Wincomplete-record-updates
+    -Wpartial-fields
+    -Widentities
+    -Wredundant-constraints
+    -Wno-unticked-promoted-constructors
+    -Wunused-packages
 
 executable demo-ping-pong
-  hs-source-dirs:      demo
-  main-is:             ping-pong.hs
-  build-depends:       base >=4.14 && <4.21,
-                       async,
-                       bytestring,
-                       directory,
+  hs-source-dirs: demo
+  main-is: ping-pong.hs
+  build-depends:
+    async,
+    base >=4.14 && <4.21,
+    bytestring,
+    contra-tracer,
+    directory,
+    ouroboros-network-api,
+    ouroboros-network-framework,
+    typed-protocols,
+    typed-protocols-examples,
 
-                       contra-tracer,
-
-                       ouroboros-network-api,
-                       ouroboros-network-framework,
-                       typed-protocols,
-                       typed-protocols-examples
-
-  default-language:    Haskell2010
-  default-extensions:  ImportQualifiedPost
-  ghc-options:         -Wall
-                       -threaded
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
-                       -Wno-unticked-promoted-constructors
-                       -Wunused-packages
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  ghc-options:
+    -Wall
+    -threaded
+    -Wcompat
+    -Wincomplete-uni-patterns
+    -Wincomplete-record-updates
+    -Wpartial-fields
+    -Widentities
+    -Wredundant-constraints
+    -Wno-unticked-promoted-constructors
+    -Wunused-packages
 
 executable demo-connection-manager
-  hs-source-dirs:      demo
-  main-is:             connection-manager.hs
-  build-depends:       base >=4.14 && <4.21,
-                       bytestring,
-                       network,
-                       optparse-applicative,
-                       random,
+  hs-source-dirs: demo
+  main-is: connection-manager.hs
+  build-depends:
+    base >=4.14 && <4.21,
+    bytestring,
+    contra-tracer,
+    io-classes,
+    network,
+    network-mux,
+    optparse-applicative,
+    ouroboros-network-api,
+    ouroboros-network-framework,
+    random,
+    si-timers,
+    strict-stm,
+    typed-protocols,
+    typed-protocols-examples,
 
-                       contra-tracer,
-
-                       io-classes,
-                       network-mux,
-                       si-timers,
-                       ouroboros-network-api,
-                       ouroboros-network-framework,
-                       strict-stm,
-                       typed-protocols,
-                       typed-protocols-examples
-
-  default-language:    Haskell2010
-  default-extensions:  ImportQualifiedPost
-  ghc-options:         -Wall
-                       -threaded
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
-                       -Wno-unticked-promoted-constructors
-                       -Wunused-packages
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  ghc-options:
+    -Wall
+    -threaded
+    -Wcompat
+    -Wincomplete-uni-patterns
+    -Wincomplete-record-updates
+    -Wpartial-fields
+    -Widentities
+    -Wredundant-constraints
+    -Wno-unticked-promoted-constructors
+    -Wunused-packages

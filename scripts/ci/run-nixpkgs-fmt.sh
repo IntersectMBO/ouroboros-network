@@ -2,4 +2,4 @@
 
 set -euo pipefail
 
-fd -e nix -X nixfmt
+fd -e nix -X nixpkgs-fmt

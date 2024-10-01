@@ -1,372 +1,395 @@
-cabal-version:          3.0
-name:                   ouroboros-network
-version:                0.17.1.1
-synopsis:               A networking layer for the Ouroboros blockchain protocol
-description:            A networking layer for the Ouroboros blockchain protocol.
-license:                Apache-2.0
-license-files:          LICENSE
-                        NOTICE
-copyright:              2019-2023 Input Output Global Inc (IOG), 2023-2024 Intersect
-author:                 Alexander Vieth, Marcin Szamotulski, Duncan Coutts
-maintainer:             marcin.szamotulski@iohk.io
-category:               Network
-build-type:             Simple
-extra-doc-files:        CHANGELOG.md
+cabal-version: 3.0
+name: ouroboros-network
+version: 0.17.1.1
+synopsis: A networking layer for the Ouroboros blockchain protocol
+description: A networking layer for the Ouroboros blockchain protocol.
+license: Apache-2.0
+license-files:
+  LICENSE
+  NOTICE
+
+copyright: 2019-2023 Input Output Global Inc (IOG), 2023-2024 Intersect
+author: Alexander Vieth, Marcin Szamotulski, Duncan Coutts
+maintainer: marcin.szamotulski@iohk.io
+category: Network
+build-type: Simple
+extra-doc-files: CHANGELOG.md
 
 flag asserts
   description: Enable assertions
-  manual:      False
-  default:     False
+  manual: False
+  default: False
 
 flag txsubmission-delay
   description: Delay initial request for transactions from outbound/client peer
-  manual:      True
-  default:     True
+  manual: True
+  default: True
 
 source-repository head
-  type:     git
+  type: git
   location: https://github.com/intersectmbo/ouroboros-network
 
 common ghc-options
-  ghc-options:         -Wall
-                       -Wno-unticked-promoted-constructors
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
-                       -Wunused-packages
+  ghc-options:
+    -Wall
+    -Wno-unticked-promoted-constructors
+    -Wcompat
+    -Wincomplete-uni-patterns
+    -Wincomplete-record-updates
+    -Wpartial-fields
+    -Widentities
+    -Wredundant-constraints
+    -Wunused-packages
 
 -- in tests librararies redundant constraints are sometimes useful (e.g.
 -- by default truned off debug tracing might require extra constraints like
 -- `Show` or `MonadSay`).
 common ghc-options-tests
-  import:              ghc-options
-  ghc-options:        -Wno-redundant-constraints
+  import: ghc-options
+  ghc-options: -Wno-redundant-constraints
 
 library
-  import:              ghc-options
-  hs-source-dirs:      src
-
+  import: ghc-options
+  hs-source-dirs: src
   -- At this experiment/prototype stage everything is exposed.
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:
-                       Control.Concurrent.Class.MonadSTM.Strict.TMergeVar
-                       Ouroboros.Network.BlockFetch
-                       Ouroboros.Network.BlockFetch.Client
-                       Ouroboros.Network.BlockFetch.ClientRegistry
-                       Ouroboros.Network.BlockFetch.ClientState
-                       Ouroboros.Network.BlockFetch.Decision
-                       Ouroboros.Network.BlockFetch.DeltaQ
-                       Ouroboros.Network.BlockFetch.State
-                       Ouroboros.Network.DeltaQ
-                       Ouroboros.Network.Diffusion
-                       Ouroboros.Network.Diffusion.Configuration
-                       Ouroboros.Network.Diffusion.P2P
-                       Ouroboros.Network.Diffusion.NonP2P
-                       Ouroboros.Network.Diffusion.Policies
-                       Ouroboros.Network.ExitPolicy
-                       Ouroboros.Network.KeepAlive
-                       Ouroboros.Network.NodeToNode
-                       Ouroboros.Network.NodeToClient
-                       Ouroboros.Network.Tracers
-                       Ouroboros.Network.PeerSelection.Types
-                       Ouroboros.Network.PeerSelection.LedgerPeers
-                       Ouroboros.Network.PeerSelection.PublicRootPeers
-                       Ouroboros.Network.PeerSelection.PeerMetric
-                       Ouroboros.Network.PeerSelection.PeerSelectionActions
-                       Ouroboros.Network.PeerSelection.PeerStateActions
-                       Ouroboros.Network.PeerSelection.Governor
-                       Ouroboros.Network.PeerSelection.State.EstablishedPeers
-                       Ouroboros.Network.PeerSelection.State.KnownPeers
-                       Ouroboros.Network.PeerSelection.State.LocalRootPeers
-                       Ouroboros.Network.PeerSelection.RootPeersDNS
-                       Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
-                       Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
-                       Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
-                       Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
-                       Ouroboros.Network.PeerSharing
-                       Ouroboros.Network.TxSubmission.Inbound
-                       Ouroboros.Network.TxSubmission.Mempool.Reader
-                       Ouroboros.Network.TxSubmission.Outbound
-  other-modules:       Ouroboros.Network.Diffusion.Common
-                       Ouroboros.Network.PeerSelection.Governor.ActivePeers
-                       Ouroboros.Network.PeerSelection.Governor.EstablishedPeers
-                       Ouroboros.Network.PeerSelection.Governor.KnownPeers
-                       Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers
-                       Ouroboros.Network.PeerSelection.Governor.Monitor
-                       Ouroboros.Network.PeerSelection.Governor.RootPeers
-                       Ouroboros.Network.PeerSelection.Governor.Types
-                       Ouroboros.Network.PeerSelection.LedgerPeers.Common
-                       Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
-                       Ouroboros.Network.PeerSelection.Churn
-                       Ouroboros.Network.Diffusion.Utils
-  reexported-modules:  Ouroboros.Network.AnchoredFragment,
-                       Ouroboros.Network.AnchoredSeq,
-                       Ouroboros.Network.Magic,
-                       Ouroboros.Network.NodeToClient.Version,
-                       Ouroboros.Network.NodeToNode.Version
+    Control.Concurrent.Class.MonadSTM.Strict.TMergeVar
+    Ouroboros.Network.BlockFetch
+    Ouroboros.Network.BlockFetch.Client
+    Ouroboros.Network.BlockFetch.ClientRegistry
+    Ouroboros.Network.BlockFetch.ClientState
+    Ouroboros.Network.BlockFetch.Decision
+    Ouroboros.Network.BlockFetch.DeltaQ
+    Ouroboros.Network.BlockFetch.State
+    Ouroboros.Network.DeltaQ
+    Ouroboros.Network.Diffusion
+    Ouroboros.Network.Diffusion.Configuration
+    Ouroboros.Network.Diffusion.NonP2P
+    Ouroboros.Network.Diffusion.P2P
+    Ouroboros.Network.Diffusion.Policies
+    Ouroboros.Network.ExitPolicy
+    Ouroboros.Network.KeepAlive
+    Ouroboros.Network.NodeToClient
+    Ouroboros.Network.NodeToNode
+    Ouroboros.Network.PeerSelection.Governor
+    Ouroboros.Network.PeerSelection.LedgerPeers
+    Ouroboros.Network.PeerSelection.PeerMetric
+    Ouroboros.Network.PeerSelection.PeerSelectionActions
+    Ouroboros.Network.PeerSelection.PeerStateActions
+    Ouroboros.Network.PeerSelection.PublicRootPeers
+    Ouroboros.Network.PeerSelection.RootPeersDNS
+    Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
+    Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
+    Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
+    Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
+    Ouroboros.Network.PeerSelection.State.EstablishedPeers
+    Ouroboros.Network.PeerSelection.State.KnownPeers
+    Ouroboros.Network.PeerSelection.State.LocalRootPeers
+    Ouroboros.Network.PeerSelection.Types
+    Ouroboros.Network.PeerSharing
+    Ouroboros.Network.Tracers
+    Ouroboros.Network.TxSubmission.Inbound
+    Ouroboros.Network.TxSubmission.Mempool.Reader
+    Ouroboros.Network.TxSubmission.Outbound
 
-  default-language:    Haskell2010
-  default-extensions:  ImportQualifiedPost
-  other-extensions:    BangPatterns,
-                       DataKinds,
-                       EmptyCase,
-                       ExistentialQuantification,
-                       FlexibleContexts,
-                       FlexibleInstances,
-                       FunctionalDependencies,
-                       GADTs,
-                       GADTSyntax,
-                       GeneralizedNewtypeDeriving,
-                       MultiParamTypeClasses,
-                       NamedFieldPuns,
-                       OverloadedStrings,
-                       PolyKinds,
-                       RankNTypes,
-                       RecordWildCards,
-                       ScopedTypeVariables,
-                       TemplateHaskell,
-                       TupleSections,
-                       TypeApplications,
-                       TypeFamilies,
-                       TypeInType
-  build-depends:       base              >=4.14 && <4.21,
-                       async             >=2.2 && <2.3,
-                       bytestring        >=0.10 && <0.13,
-                       cborg             >=0.2.1 && <0.3,
-                       containers,
-                       deepseq,
-                       dns,
-                       hashable,
-                       iproute,
-                       mtl,
-                       network          ^>=3.1.4,
-                       nothunks,
-                       psqueues          >=0.2.3 && <0.3,
-                       random,
+  other-modules:
+    Ouroboros.Network.Diffusion.Common
+    Ouroboros.Network.Diffusion.Utils
+    Ouroboros.Network.PeerSelection.Churn
+    Ouroboros.Network.PeerSelection.Governor.ActivePeers
+    Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers
+    Ouroboros.Network.PeerSelection.Governor.EstablishedPeers
+    Ouroboros.Network.PeerSelection.Governor.KnownPeers
+    Ouroboros.Network.PeerSelection.Governor.Monitor
+    Ouroboros.Network.PeerSelection.Governor.RootPeers
+    Ouroboros.Network.PeerSelection.Governor.Types
+    Ouroboros.Network.PeerSelection.LedgerPeers.Common
+    Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
 
-                       cardano-prelude,
-                       cardano-slotting,
-                       cardano-strict-containers,
-                       contra-tracer,
-                       monoidal-synchronisation,
-                       strict-checked-vars ^>= 0.2,
+  reexported-modules:
+    Ouroboros.Network.AnchoredFragment,
+    Ouroboros.Network.AnchoredSeq,
+    Ouroboros.Network.Magic,
+    Ouroboros.Network.NodeToClient.Version,
+    Ouroboros.Network.NodeToNode.Version,
 
-                       io-classes       ^>=1.5.0,
-                       io-classes-mtl   ^>=0.1,
-                       network-mux,
-                       si-timers,
-                       ouroboros-network-api       ^>=0.9.0,
-                       ouroboros-network-framework ^>=0.13.2.2,
-                       ouroboros-network-protocols ^>=0.10,
-                       strict-stm,
-                       typed-protocols  ^>=0.1.1,
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  other-extensions:
+    BangPatterns
+    DataKinds
+    EmptyCase
+    ExistentialQuantification
+    FlexibleContexts
+    FlexibleInstances
+    FunctionalDependencies
+    GADTSyntax
+    GADTs
+    GeneralizedNewtypeDeriving
+    MultiParamTypeClasses
+    NamedFieldPuns
+    OverloadedStrings
+    PolyKinds
+    RankNTypes
+    RecordWildCards
+    ScopedTypeVariables
+    TemplateHaskell
+    TupleSections
+    TypeApplications
+    TypeFamilies
+    TypeInType
+
+  build-depends:
+    async >=2.2 && <2.3,
+    base >=4.14 && <4.21,
+    bytestring >=0.10 && <0.13,
+    cardano-prelude,
+    cardano-slotting,
+    cardano-strict-containers,
+    cborg >=0.2.1 && <0.3,
+    containers,
+    contra-tracer,
+    deepseq,
+    dns,
+    hashable,
+    io-classes ^>=1.5.0,
+    io-classes-mtl ^>=0.1,
+    iproute,
+    monoidal-synchronisation,
+    mtl,
+    network ^>=3.1.4,
+    network-mux,
+    nothunks,
+    ouroboros-network-api ^>=0.9.0,
+    ouroboros-network-framework ^>=0.13.2.2,
+    ouroboros-network-protocols ^>=0.10,
+    psqueues >=0.2.3 && <0.3,
+    random,
+    si-timers,
+    strict-checked-vars ^>=0.2,
+    strict-stm,
+    typed-protocols ^>=0.1.1,
+
   if !os(windows)
-    build-depends:     directory,
-                       unix
+    build-depends:
+      directory,
+      unix,
+
   if flag(asserts)
-    ghc-options:       -fno-ignore-asserts
+    ghc-options: -fno-ignore-asserts
 
   if flag(txsubmission-delay)
-    cpp-options:       -DTXSUBMISSION_DELAY
-
+    cpp-options: -DTXSUBMISSION_DELAY
 
 -- Simulation Test Library
 library sim-tests-lib
-  import:              ghc-options-tests
-  default-language:    Haskell2010
-  default-extensions:  ImportQualifiedPost
-  visibility:          public
-  hs-source-dirs:      sim-tests-lib
-  build-depends:       base >=4.14 && <4.21,
-                       bytestring,
-                       QuickCheck,
-                       quickcheck-monoids,
-                       aeson,
-                       array,
-                       cborg,
-                       containers,
-                       deepseq,
-                       dns,
-                       hashable,
-                       iproute,
-                       mtl,
-                       network,
-                       pipes,
-                       pretty-simple,
-                       psqueues,
-                       random,
-                       serialise,
-                       tasty,
-                       tasty-hunit,
-                       tasty-quickcheck,
-                       text,
-                       time,
+  import: ghc-options-tests
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  visibility: public
+  hs-source-dirs: sim-tests-lib
+  build-depends:
+    QuickCheck,
+    aeson,
+    array,
+    base >=4.14 && <4.21,
+    bytestring,
+    cardano-prelude,
+    cardano-slotting,
+    cborg,
+    containers,
+    contra-tracer,
+    deepseq,
+    dns,
+    hashable,
+    io-classes,
+    io-sim,
+    iproute,
+    monoidal-synchronisation,
+    mtl,
+    network,
+    network-mux,
+    nothunks,
+    ouroboros-network,
+    ouroboros-network-api,
+    ouroboros-network-framework,
+    ouroboros-network-framework:testlib,
+    ouroboros-network-mock,
+    ouroboros-network-protocols,
+    ouroboros-network-protocols:testlib,
+    ouroboros-network-testing ^>=0.7.0,
+    pipes,
+    pretty-simple,
+    psqueues,
+    quickcheck-monoids,
+    random,
+    serialise,
+    si-timers,
+    strict-stm,
+    tasty,
+    tasty-hunit,
+    tasty-quickcheck,
+    text,
+    time,
+    typed-protocols,
+    typed-protocols-examples,
 
-                       cardano-prelude,
-                       cardano-slotting,
-                       contra-tracer,
-                       nothunks,
-
-                       io-classes,
-                       io-sim,
-                       monoidal-synchronisation,
-                       network-mux,
-                       ouroboros-network,
-                       ouroboros-network-api,
-                       ouroboros-network-framework,
-                       ouroboros-network-mock,
-                       ouroboros-network-protocols,
-                       ouroboros-network-protocols:testlib,
-                       ouroboros-network-framework:testlib,
-                       ouroboros-network-testing ^>= 0.7.0,
-                       si-timers,
-                       strict-stm,
-                       typed-protocols,
-                       typed-protocols-examples,
-  exposed-modules:     Ouroboros.Network.BlockFetch.Examples
-                       Ouroboros.Network.MockNode
-                       Test.Ouroboros.Network.BlockFetch
-                       Test.Ouroboros.Network.Diffusion.Node
-                       Test.Ouroboros.Network.Diffusion.Node.ChainDB
-                       Test.Ouroboros.Network.Diffusion.Node.MiniProtocols
-                       Test.Ouroboros.Network.Diffusion.Node.NodeKernel
-                       Test.Ouroboros.Network.Diffusion.Policies
-                       Test.Ouroboros.Network.KeepAlive
-                       Test.Ouroboros.Network.LedgerPeers
-                       Test.Ouroboros.Network.MockNode
-                       Test.Ouroboros.Network.Mux
-                       Test.Ouroboros.Network.NodeToClient.Version
-                       Test.Ouroboros.Network.NodeToNode.Version
-                       Test.Ouroboros.Network.Orphans
-                       Test.Ouroboros.Network.PeerSelection
-                       Test.Ouroboros.Network.PeerSelection.Instances
-                       Test.Ouroboros.Network.PeerSelection.Json
-                       Test.Ouroboros.Network.PeerSelection.KnownPeers
-                       Test.Ouroboros.Network.PeerSelection.LocalRootPeers
-                       Test.Ouroboros.Network.PeerSelection.MockEnvironment
-                       Test.Ouroboros.Network.PeerSelection.PeerGraph
-                       Test.Ouroboros.Network.PeerSelection.PeerMetric
-                       Test.Ouroboros.Network.PeerSelection.RootPeersDNS
-                       Test.Ouroboros.Network.PeerSelection.PublicRootPeers
-                       Test.Ouroboros.Network.PeerState
-                       Test.Ouroboros.Network.Testnet
-                       Test.Ouroboros.Network.Testnet.Simulation.Node
-                       Test.Ouroboros.Network.TxSubmission
-                       Test.Ouroboros.Network.Version
+  exposed-modules:
+    Ouroboros.Network.BlockFetch.Examples
+    Ouroboros.Network.MockNode
+    Test.Ouroboros.Network.BlockFetch
+    Test.Ouroboros.Network.Diffusion.Node
+    Test.Ouroboros.Network.Diffusion.Node.ChainDB
+    Test.Ouroboros.Network.Diffusion.Node.MiniProtocols
+    Test.Ouroboros.Network.Diffusion.Node.NodeKernel
+    Test.Ouroboros.Network.Diffusion.Policies
+    Test.Ouroboros.Network.KeepAlive
+    Test.Ouroboros.Network.LedgerPeers
+    Test.Ouroboros.Network.MockNode
+    Test.Ouroboros.Network.Mux
+    Test.Ouroboros.Network.NodeToClient.Version
+    Test.Ouroboros.Network.NodeToNode.Version
+    Test.Ouroboros.Network.Orphans
+    Test.Ouroboros.Network.PeerSelection
+    Test.Ouroboros.Network.PeerSelection.Instances
+    Test.Ouroboros.Network.PeerSelection.Json
+    Test.Ouroboros.Network.PeerSelection.KnownPeers
+    Test.Ouroboros.Network.PeerSelection.LocalRootPeers
+    Test.Ouroboros.Network.PeerSelection.MockEnvironment
+    Test.Ouroboros.Network.PeerSelection.PeerGraph
+    Test.Ouroboros.Network.PeerSelection.PeerMetric
+    Test.Ouroboros.Network.PeerSelection.PublicRootPeers
+    Test.Ouroboros.Network.PeerSelection.RootPeersDNS
+    Test.Ouroboros.Network.PeerState
+    Test.Ouroboros.Network.Testnet
+    Test.Ouroboros.Network.Testnet.Simulation.Node
+    Test.Ouroboros.Network.TxSubmission
+    Test.Ouroboros.Network.Version
 
 -- Simulation tests, and IO tests which don't require native system calls.
 -- (i.e. they don't require system call API provided by `Win32-network` or
 -- `network` dependency).  test-suite sim-tests
 test-suite sim-tests
-  import:              ghc-options-tests
-  default-language:    Haskell2010
-  default-extensions:  ImportQualifiedPost
-  type:                exitcode-stdio-1.0
-  hs-source-dirs:      sim-tests
-  main-is:             Main.hs
-  build-depends:       base >=4.14 && <4.21,
-                       tasty,
-                       with-utf8,
+  import: ghc-options-tests
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  type: exitcode-stdio-1.0
+  hs-source-dirs: sim-tests
+  main-is: Main.hs
+  build-depends:
+    base >=4.14 && <4.21,
+    ouroboros-network:sim-tests-lib,
+    ouroboros-network-protocols:testlib,
+    tasty,
+    with-utf8,
 
-                       ouroboros-network-protocols:testlib,
-                       ouroboros-network:sim-tests-lib
-  ghc-options:         -fno-ignore-asserts
-                       -threaded
-                       -rtsopts
-                       +RTS -T -RTS
+  ghc-options:
+    -fno-ignore-asserts
+    -threaded
+    -rtsopts
+    +RTS
+    -T
+    -RTS
 
 -- Tests which require system calls provided by `Win32-network` or `network`
 -- library.  These tests are compiled natively & run on all supported
 -- platforms: x86_64-w64-mingw32 (Windows), x86_64-linux, x86-64-darwin and
 -- aarch64-darwin.
 test-suite io-tests
-  import:              ghc-options-tests
-  type:                exitcode-stdio-1.0
-  hs-source-dirs:      io-tests
-  main-is:             Main.hs
-  other-modules:       Test.Ouroboros.Network.Pipe
-                       Test.Ouroboros.Network.Socket
-  default-language:    Haskell2010
-  default-extensions:  ImportQualifiedPost
-  build-depends:       base >=4.14 && <4.21,
-                       bytestring,
-                       QuickCheck,
-                       network,
-                       serialise,
-                       tasty,
-                       tasty-quickcheck,
+  import: ghc-options-tests
+  type: exitcode-stdio-1.0
+  hs-source-dirs: io-tests
+  main-is: Main.hs
+  other-modules:
+    Test.Ouroboros.Network.Pipe
+    Test.Ouroboros.Network.Socket
 
-                       contra-tracer,
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  build-depends:
+    QuickCheck,
+    base >=4.14 && <4.21,
+    bytestring,
+    contra-tracer,
+    io-classes,
+    network,
+    network-mux,
+    ouroboros-network,
+    ouroboros-network-api,
+    ouroboros-network-framework,
+    ouroboros-network-mock,
+    ouroboros-network-protocols,
+    ouroboros-network-protocols:testlib,
+    ouroboros-network-testing ^>=0.7.0.0,
+    serialise,
+    si-timers,
+    strict-stm,
+    tasty,
+    tasty-quickcheck,
+    with-utf8,
 
-                       io-classes,
-                       network-mux,
-                       ouroboros-network,
-                       ouroboros-network-api,
-                       ouroboros-network-framework,
-                       ouroboros-network-mock,
-                       ouroboros-network-protocols,
-                       ouroboros-network-protocols:testlib,
-                       ouroboros-network-testing ^>= 0.7.0.0,
-                       si-timers,
-                       strict-stm,
-                       with-utf8,
   if os(windows)
-    build-depends:     Win32-network                 <0.3.0.0,
-                       Win32           >= 2.5.4.1 && <3.0
+    build-depends:
+      Win32 >=2.5.4.1 && <3.0,
+      Win32-network <0.3.0.0,
   else
-    build-depends:     process
+    build-depends: process
 
-  ghc-options:         -threaded
-                       -rtsopts
-                       +RTS -T -RTS
+  ghc-options:
+    -threaded
+    -rtsopts
+    +RTS
+    -T
+    -RTS
 
 executable demo-chain-sync
-  import:              ghc-options
-  hs-source-dirs:      demo
-  main-is:             chain-sync.hs
-  build-depends:       base >=4.14 && <4.21,
-                       async,
-                       bytestring,
-                       containers,
-                       directory,
-                       infinite-list,
-                       optparse-applicative,
-                       random,
-                       serialise,
+  import: ghc-options
+  hs-source-dirs: demo
+  main-is: chain-sync.hs
+  build-depends:
+    async,
+    base >=4.14 && <4.21,
+    bytestring,
+    containers,
+    contra-tracer,
+    directory,
+    infinite-list,
+    optparse-applicative,
+    ouroboros-network,
+    ouroboros-network-api,
+    ouroboros-network-framework,
+    ouroboros-network-mock,
+    ouroboros-network-protocols,
+    random,
+    serialise,
+    strict-stm,
+    typed-protocols,
 
-                       contra-tracer,
-
-                       typed-protocols,
-                       strict-stm,
-                       ouroboros-network-api,
-                       ouroboros-network-framework,
-                       ouroboros-network-mock,
-                       ouroboros-network-protocols,
-                       ouroboros-network
-
-  default-language:    Haskell2010
-  default-extensions:  ImportQualifiedPost
-  ghc-options:         -threaded
-                       -rtsopts
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  ghc-options:
+    -threaded
+    -rtsopts
 
 benchmark sim-benchmarks
-  import:              ghc-options-tests
-  default-language:    Haskell2010
-  default-extensions:  ImportQualifiedPost
-  type:                exitcode-stdio-1.0
-  hs-source-dirs:      bench
-  main-is:             Main.hs
-  build-depends:       base,
-                       tasty-bench >=0.3.5,
+  import: ghc-options-tests
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  type: exitcode-stdio-1.0
+  hs-source-dirs: bench
+  main-is: Main.hs
+  build-depends:
+    base,
+    ouroboros-network:sim-tests-lib,
+    tasty-bench >=0.3.5,
 
-                       ouroboros-network:sim-tests-lib
-
-  ghc-options:         -fno-ignore-asserts
-                       -with-rtsopts=-A32m
-                       +RTS -T -RTS
+  ghc-options:
+    -fno-ignore-asserts
+    -with-rtsopts=-A32m
+    +RTS
+    -T
+    -RTS
 
   -- We use this option to avoid skewed results due to changes in cache-line
   -- alignment. See
