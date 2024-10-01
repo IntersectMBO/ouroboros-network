@@ -41,6 +41,7 @@
   a mismatch detected. 
 * Added `defaultDeadlineChurnInterval` and `defaultBulkChurnInterval` to Configuration
   module. Previously these were hard coded in node.
+* Updated tests for `network-mux` changes.
 
 ## 0.17.1.1 -- 2024-08-27
 
