@@ -205,6 +205,8 @@ data MuxBearer m = MuxBearer {
     , read    :: TimeoutFn m -> m (MuxSDU, Time)
     -- | Return a suitable MuxSDU payload size.
     , sduSize :: SDUSize
+    -- | Name of the bearer
+    , name    :: String
     }
 
 newtype SDUSize = SDUSize { getSDUSize :: Word16 }
