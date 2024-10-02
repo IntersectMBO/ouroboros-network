@@ -73,9 +73,16 @@ txSubmissionInboundV2
         txidsAccepted <- mempoolAddTxs txs
         traceWith tracer $
           TraceTxInboundAddedToMempool txidsAccepted
-        let !collected = length txidsAccepted
+        let !collected = length txs
+        let !accepted = length txidsAccepted
         traceWith tracer $
           TraceTxSubmissionCollected collected
+
+        traceWith tracer $ TraceTxSubmissionProcessed ProcessedTxCount {
+            ptxcAccepted = accepted
+          , ptxcRejected = collected - accepted
+          }
+
         -- TODO:
         -- We can update the state so that other `tx-submission` servers will
         -- not try to add these txs to the mempool.
