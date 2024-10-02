@@ -454,9 +454,9 @@ runMiniProtocolCb :: ( MonadAsync m
                      )
                   => MiniProtocolCb ctx LBS.ByteString m a
                   -> ctx
-                  -> Mux.Channel m
+                  -> Mux.ByteChannel m
                   -> m (a, Maybe LBS.ByteString)
-runMiniProtocolCb (MiniProtocolCb run)  !ctx = run ctx . fromChannel
+runMiniProtocolCb (MiniProtocolCb run)  !ctx = run ctx
 runMiniProtocolCb (MuxPeer fn)          !ctx = runMiniProtocolCb (mkMiniProtocolCbFromPeer fn) ctx
 runMiniProtocolCb (MuxPeerPipelined fn) !ctx = runMiniProtocolCb (mkMiniProtocolCbFromPeerPipelined fn) ctx
 

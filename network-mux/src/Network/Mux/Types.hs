@@ -52,7 +52,7 @@ import GHC.Generics (Generic)
 import Control.Concurrent.Class.MonadSTM.Strict (StrictTVar)
 import Control.Monad.Class.MonadTime.SI
 
-import Network.Mux.Channel (Channel (..))
+import Network.Mux.Channel (ByteChannel, Channel (..))
 import Network.Mux.Timeout (TimeoutFn)
 
 
@@ -219,7 +219,7 @@ muxBearerAsChannel
   => MuxBearer m
   -> MiniProtocolNum
   -> MiniProtocolDir
-  -> Channel m
+  -> ByteChannel m
 muxBearerAsChannel bearer ptclNum ptclDir =
       Channel {
         send = \blob -> void $ write bearer noTimeout (wrap blob),

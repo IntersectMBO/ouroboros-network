@@ -23,6 +23,8 @@ module Network.Mux
   , runMux
   , runMiniProtocol
   , StartOnDemandOrEagerly (..)
+  , ByteChannel
+  , Channel (..)
   , stopMux
     -- * Bearer
   , MuxBearer
@@ -329,7 +331,7 @@ data StartOnDemandOrEagerly = StartOnDemand | StartEagerly
   deriving Eq
 
 data MiniProtocolAction m where
-     MiniProtocolAction :: (Channel m -> m (a, Maybe BL.ByteString)) -- ^ Action
+     MiniProtocolAction :: (ByteChannel m -> m (a, Maybe BL.ByteString)) -- ^ Action
                         -> StrictTMVar m (Either SomeException a)    -- ^ Completion var
                         -> MiniProtocolAction m
 
@@ -551,7 +553,7 @@ muxChannel
     -> MiniProtocolNum
     -> MiniProtocolDir
     -> IngressQueue m
-    -> Channel m
+    -> ByteChannel m
 muxChannel tracer egressQueue want@(Wanton w) mc md q =
     Channel { send, recv}
   where
@@ -638,7 +640,7 @@ runMiniProtocol :: forall mode m a.
                 -> MiniProtocolNum
                 -> MiniProtocolDirection mode
                 -> StartOnDemandOrEagerly
-                -> (Channel m -> m (a, Maybe BL.ByteString))
+                -> (ByteChannel m -> m (a, Maybe BL.ByteString))
                 -> m (STM m (Either SomeException a))
 runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue , muxStatus}
                 ptclNum ptclDir startMode protocolAction
