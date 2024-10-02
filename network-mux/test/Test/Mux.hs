@@ -66,7 +66,6 @@ import Network.Mux.Bearer
 import Network.Mux.Bearer.AttenuatedChannel as AttenuatedChannel
 import Network.Mux.Bearer.Pipe
 import Network.Mux.Bearer.Queues
-import Network.Mux.Channel
 import Network.Mux.Codec
 import Network.Mux.Types
 import Network.Socket qualified as Socket
@@ -576,8 +575,8 @@ setupMiniReqRspCompat :: IO ()
                       -> DummyTrace
                       -- ^ Trace of messages
                       -> IO ( IO Bool
-                            , Channel IO -> IO ((), Maybe BL.ByteString)
-                            , Channel IO -> IO ((), Maybe BL.ByteString)
+                            , ByteChannel IO -> IO ((), Maybe BL.ByteString)
+                            , ByteChannel IO -> IO ((), Maybe BL.ByteString)
                             )
 setupMiniReqRspCompat serverAction mpsEndVar (DummyTrace msgs) = do
     serverResultVar <- newEmptyTMVarIO
@@ -616,7 +615,7 @@ setupMiniReqRspCompat serverAction mpsEndVar (DummyTrace msgs) = do
         go resps (req:reqs) = SendMsgReq req $ \resp -> return (go (resp:resps) reqs)
 
     clientApp :: StrictTMVar IO Bool
-              -> Channel IO
+              -> ByteChannel IO
               -> IO ((), Maybe BL.ByteString)
     clientApp clientResultVar clientChan = do
         (result, trailing) <- runClient nullTracer clientChan (reqRespClient requests)
@@ -624,7 +623,7 @@ setupMiniReqRspCompat serverAction mpsEndVar (DummyTrace msgs) = do
         (,trailing) <$> end
 
     serverApp :: StrictTMVar IO Bool
-              -> Channel IO
+              -> ByteChannel IO
               -> IO ((), Maybe BL.ByteString)
     serverApp serverResultVar serverChan = do
         (result, trailing) <- runServer nullTracer serverChan (reqRespServer responses)
@@ -651,8 +650,8 @@ setupMiniReqRsp :: IO ()
                 -- ^ Action performed by responder before processing the response
                 -> DummyTrace
                 -- ^ Trace of messages
-                -> IO ( Channel IO -> IO (Bool, Maybe BL.ByteString)
-                      , Channel IO -> IO (Bool, Maybe BL.ByteString)
+                -> IO ( ByteChannel IO -> IO (Bool, Maybe BL.ByteString)
+                      , ByteChannel IO -> IO (Bool, Maybe BL.ByteString)
                       )
 setupMiniReqRsp serverAction (DummyTrace msgs) = do
 
@@ -683,11 +682,11 @@ setupMiniReqRsp serverAction (DummyTrace msgs) = do
         go resps []         = SendMsgDone (pure $ reverse resps == responses)
         go resps (req:reqs) = SendMsgReq req $ \resp -> return (go (resp:resps) reqs)
 
-    clientApp :: Channel IO
+    clientApp :: ByteChannel IO
               -> IO (Bool, Maybe BL.ByteString)
     clientApp clientChan = runClient nullTracer clientChan (reqRespClient requests)
 
-    serverApp :: Channel IO
+    serverApp :: ByteChannel IO
               -> IO (Bool, Maybe BL.ByteString)
     serverApp serverChan = runServer nullTracer serverChan (reqRespServer responses)
 
@@ -697,14 +696,14 @@ setupMiniReqRsp serverAction (DummyTrace msgs) = do
 
 -- Run applications continuation
 type RunMuxApplications
-    =  [Channel IO -> IO (Bool, Maybe BL.ByteString)]
-    -> [Channel IO -> IO (Bool, Maybe BL.ByteString)]
+    =  [ByteChannel IO -> IO (Bool, Maybe BL.ByteString)]
+    -> [ByteChannel IO -> IO (Bool, Maybe BL.ByteString)]
     -> IO Bool
 
 
-runMuxApplication :: [Channel IO -> IO (Bool, Maybe BL.ByteString)]
+runMuxApplication :: [ByteChannel IO -> IO (Bool, Maybe BL.ByteString)]
                   -> MuxBearer IO
-                  -> [Channel IO -> IO (Bool, Maybe BL.ByteString)]
+                  -> [ByteChannel IO -> IO (Bool, Maybe BL.ByteString)]
                   -> MuxBearer IO
                   -> IO Bool
 runMuxApplication initApps initBearer respApps respBearer = do
@@ -1285,7 +1284,7 @@ dummyAppToChannel :: forall m.
                      , MonadCatch m
                      )
                   => DummyApp
-                  -> (Channel m -> m ((), Maybe BL.ByteString))
+                  -> (ByteChannel m -> m ((), Maybe BL.ByteString))
 dummyAppToChannel DummyApp {daAction, daRunTime} = \_ -> do
     threadDelay daRunTime
     case daAction of
@@ -1320,7 +1319,7 @@ dummyRestartingAppToChannel :: forall a m.
                      , MonadDelay m
                      )
                   => (DummyApp, a)
-                  -> (Channel m -> m ((DummyApp, a), Maybe BL.ByteString))
+                  -> (ByteChannel m -> m ((DummyApp, a), Maybe BL.ByteString))
 dummyRestartingAppToChannel (app, r) = \_ -> do
     threadDelay $ daRunTime app
     case daAction app of

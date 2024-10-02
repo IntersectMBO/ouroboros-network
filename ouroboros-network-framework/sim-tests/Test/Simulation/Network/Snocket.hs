@@ -47,7 +47,6 @@ import Text.Printf
 import Foreign.C.Error
 import GHC.IO.Exception
 
-import Ouroboros.Network.Channel
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.Driver.Simple
 import Ouroboros.Network.Snocket
@@ -264,7 +263,7 @@ clientServerSimulation payloads =
                           ResponderDirectionOnly
                           StartOnDemand
                           (\channel -> runPeer tr codecReqResp
-                                               (fromChannel channel)
+                                               channel
                                                serverPeer)
               withAsync
                 (do labelThisThread "server-mux"
@@ -305,7 +304,7 @@ clientServerSimulation payloads =
                               InitiatorDirectionOnly
                               StartEagerly
                               (\channel -> runPeer tr codecReqResp
-                                                   (fromChannel channel)
+                                                   channel
                                                    clientPeer)
                   bearer <- Mx.getBearer makeFDBearer 10 nullTracer fd
 

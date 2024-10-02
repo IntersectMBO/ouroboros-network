@@ -1,45 +1,67 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | An extension of 'Network.TypedProtocol.Channel', with additional 'Channel'
 -- implementations.
 --
 module Network.Mux.Channel
-  ( Channel (..)
+  ( -- * Channel
+    Channel (..)
+    -- ** Channel API
+  , isoKleisliChannel
+  , hoistChannel
+  , channelEffect
+  , delayChannel
+  , loggingChannel
+    -- ** create a `Channel`
+  , mvarsAsChannel
+    -- **  connected `Channel`s
+  , createConnectedChannels
+    -- * `ByteChannel`
+  , ByteChannel
+    -- ** create a `ByteChannel`
+  , handlesAsChannel
+  , withFifosAsChannel
+  , socketAsChannel
+    -- ** connected `ByteChannel`s
   , createBufferConnectedChannels
   , createPipeConnectedChannels
 #if !defined(mingw32_HOST_OS)
   , createSocketConnectedChannels
 #endif
-  , withFifosAsChannel
-  , socketAsChannel
-  , channelEffect
-  , delayChannel
-  , loggingChannel
   ) where
 
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as LBS
-import qualified Data.ByteString.Lazy.Internal as LBS (smallChunkSize)
-import qualified Network.Socket as Socket
-import qualified Network.Socket.ByteString as Socket
-import qualified System.IO as IO (Handle, IOMode (..), hFlush, hIsEOF, withFile)
-import qualified System.Process as IO (createPipe)
+import Data.ByteString qualified as BS
+import Data.ByteString.Lazy qualified as LBS
+import Data.ByteString.Lazy.Internal qualified as LBS (smallChunkSize)
+import Network.Socket qualified as Socket
+import Network.Socket.ByteString qualified as Socket
+import System.IO qualified as IO (Handle, IOMode (..), hFlush, hIsEOF, withFile)
+import System.Process qualified as IO (createPipe)
 
-import           Control.Concurrent.Class.MonadSTM
-import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadTimer.SI
+import Control.Concurrent.Class.MonadSTM
+import Control.Concurrent.Class.MonadSTM.Strict qualified as StrictSTM
+import Control.Monad ((>=>))
+import Control.Monad.Class.MonadSay
+import Control.Monad.Class.MonadTimer.SI
 
 
-data Channel m = Channel {
+-- | A channel which can send and receive values.
+--
+-- It is more general than what `network-mux` requires, see `ByteChannel`
+-- instead.  However this is useful for testing purposes when one is either
+-- using `mux` or connecting two ends directly.
+--
+data Channel m a = Channel {
 
     -- | Write bytes to the channel.
     --
     -- It maybe raise exceptions.
     --
-    send :: LBS.ByteString -> m (),
+    send :: a -> m (),
 
     -- | Read some input from the channel, or @Nothing@ to indicate EOF.
     --
@@ -49,8 +71,125 @@ data Channel m = Channel {
     -- It may raise exceptions (as appropriate for the monad and kind of
     -- channel).
     --
-    recv :: m (Maybe LBS.ByteString)
+    recv :: m (Maybe a)
   }
+
+-- | Given an isomorphism between @a@ and @b@ (in Kleisli category), transform
+-- a @'Channel' m a@ into @'Channel' m b@.
+--
+isoKleisliChannel
+  :: forall a b m. Monad m
+  => (a -> m b)
+  -> (b -> m a)
+  -> Channel m a
+  -> Channel m b
+isoKleisliChannel f finv Channel{send, recv} = Channel {
+    send = finv >=> send,
+    recv = recv >>= traverse f
+  }
+
+
+hoistChannel
+  :: (forall x . m x -> n x)
+  -> Channel m a
+  -> Channel n a
+hoistChannel nat channel = Channel
+  { send = nat . send channel
+  , recv = nat (recv channel)
+  }
+
+channelEffect :: forall m a.
+                 Monad m
+              => (a -> m ())       -- ^ Action before 'send'
+              -> (Maybe a -> m ()) -- ^ Action after 'recv'
+              -> Channel m a
+              -> Channel m a
+channelEffect beforeSend afterRecv Channel{send, recv} =
+    Channel{
+      send = \x -> do
+        beforeSend x
+        send x
+
+    , recv = do
+        mx <- recv
+        afterRecv mx
+        return mx
+    }
+
+-- | Delay a channel on the receiver end.
+--
+-- This is intended for testing, as a crude approximation of network delays.
+-- More accurate models along these lines are of course possible.
+--
+delayChannel :: MonadDelay m
+             => DiffTime
+             -> Channel m a
+             -> Channel m a
+delayChannel delay = channelEffect (\_ -> return ())
+                                   (\_ -> threadDelay delay)
+
+-- | Channel which logs sent and received messages.
+--
+loggingChannel :: ( MonadSay m
+                  , Show id
+                  , Show a
+                  )
+               => id
+               -> Channel m a
+               -> Channel m a
+loggingChannel ident Channel{send,recv} =
+    Channel {
+      send = loggingSend,
+      recv = loggingRecv
+    }
+  where
+    loggingSend a = do
+      say (show ident ++ ":send:" ++ show a)
+      send a
+  
+    loggingRecv = do
+      msg <- recv
+      case msg of
+        Nothing -> return ()
+        Just a  -> say (show ident ++ ":recv:" ++ show a)
+      return msg
+
+
+-- | Make a 'Channel' from a pair of 'TMVar's, one for reading and one for
+-- writing.
+--
+mvarsAsChannel :: MonadSTM m
+               => StrictSTM.StrictTMVar m a
+               -> StrictSTM.StrictTMVar m a
+               -> Channel m a
+mvarsAsChannel bufferRead bufferWrite =
+    Channel{send, recv}
+  where
+    send x = atomically (StrictSTM.putTMVar bufferWrite x)
+    recv   = atomically (Just <$> StrictSTM.takeTMVar bufferRead)
+
+
+-- | Create a pair of channels that are connected via one-place buffers.
+--
+-- This is primarily useful for testing protocols.
+--
+createConnectedChannels :: MonadSTM m => m (Channel m a, Channel m a)
+createConnectedChannels = do
+    -- Create two TMVars to act as the channel buffer (one for each direction)
+    -- and use them to make both ends of a bidirectional channel
+    bufferA <- StrictSTM.newEmptyTMVarIO
+    bufferB <- StrictSTM.newEmptyTMVarIO
+
+    return (mvarsAsChannel bufferB bufferA,
+            mvarsAsChannel bufferA bufferB)
+
+--
+-- ByteChannel
+--
+
+-- | Channel using `LBS.ByteString`.
+--
+type ByteChannel m = Channel m LBS.ByteString
 
 
 -- | Make a 'Channel' from a pair of IO 'Handle's, one for reading and one
@@ -64,7 +203,7 @@ data Channel m = Channel {
 --
 handlesAsChannel :: IO.Handle -- ^ Read handle
                  -> IO.Handle -- ^ Write handle
-                 -> Channel IO
+                 -> Channel IO LBS.ByteString
 handlesAsChannel hndRead hndWrite =
     Channel{send, recv}
   where
@@ -90,8 +229,8 @@ handlesAsChannel hndRead hndWrite =
 -- takes place on the /writer side and not the reader side/.
 --
 createBufferConnectedChannels :: forall m. MonadSTM m
-                              => m (Channel m,
-                                    Channel m)
+                              => m (ByteChannel m,
+                                    ByteChannel m)
 createBufferConnectedChannels = do
     bufferA <- newEmptyTMVarIO
     bufferB <- newEmptyTMVarIO
@@ -117,8 +256,8 @@ createBufferConnectedChannels = do
 --
 -- This is primarily for testing purposes since it does not allow actual IPC.
 --
-createPipeConnectedChannels :: IO (Channel IO,
-                                   Channel IO)
+createPipeConnectedChannels :: IO (ByteChannel IO,
+                                   ByteChannel IO)
 createPipeConnectedChannels = do
     -- Create two pipes (each one is unidirectional) to make both ends of
     -- a bidirectional channel
@@ -138,7 +277,7 @@ createPipeConnectedChannels = do
 --
 withFifosAsChannel :: FilePath -- ^ FIFO for reading
                    -> FilePath -- ^ FIFO for writing
-                   -> (Channel IO -> IO a) -> IO a
+                   -> (ByteChannel IO -> IO a) -> IO a
 withFifosAsChannel fifoPathRead fifoPathWrite action =
     IO.withFile fifoPathRead  IO.ReadMode  $ \hndRead  ->
     IO.withFile fifoPathWrite IO.WriteMode $ \hndWrite ->
@@ -149,7 +288,7 @@ withFifosAsChannel fifoPathRead fifoPathWrite action =
 -- | Make a 'Channel' from a 'Socket'. The socket must be a stream socket
 --- type and status connected.
 ---
-socketAsChannel :: Socket.Socket -> Channel IO
+socketAsChannel :: Socket.Socket -> ByteChannel IO
 socketAsChannel socket =
     Channel{send, recv}
   where
@@ -175,8 +314,8 @@ socketAsChannel socket =
 --- This is primarily for testing purposes since it does not allow actual IPC.
 ---
 createSocketConnectedChannels :: Socket.Family -- ^ Usually AF_UNIX or AF_INET
-                              -> IO (Channel IO,
-                                     Channel IO)
+                              -> IO (ByteChannel IO,
+                                     ByteChannel IO)
 createSocketConnectedChannels family = do
    -- Create a socket pair to make both ends of a bidirectional channel
    (socketA, socketB) <- Socket.socketPair family Socket.Stream
@@ -185,58 +324,3 @@ createSocketConnectedChannels family = do
    return (socketAsChannel socketA,
            socketAsChannel socketB)
 #endif
-
-channelEffect :: forall m.
-                 Monad m
-              => (LBS.ByteString -> m ())       -- ^ Action before 'send'
-              -> (Maybe LBS.ByteString -> m ()) -- ^ Action after 'recv'
-              -> Channel m
-              -> Channel m
-channelEffect beforeSend afterRecv Channel{send, recv} =
-    Channel{
-      send = \x -> do
-        beforeSend x
-        send x
-
-    , recv = do
-        mx <- recv
-        afterRecv mx
-        return mx
-    }
-
--- | Delay a channel on the receiver end.
---
--- This is intended for testing, as a crude approximation of network delays.
--- More accurate models along these lines are of course possible.
---
-delayChannel :: MonadDelay m
-             => DiffTime
-             -> Channel m
-             -> Channel m
-delayChannel delay = channelEffect (\_ -> return ())
-                                   (\_ -> threadDelay delay)
-
--- | Channel which logs sent and received messages.
---
-loggingChannel :: ( MonadSay m
-                  , Show id
-                  )
-               => id
-               -> Channel m
-               -> Channel m
-loggingChannel ident Channel{send,recv} =
-  Channel {
-    send = loggingSend,
-    recv = loggingRecv
-  }
- where
-  loggingSend a = do
-    say (show ident ++ ":send:" ++ show a)
-    send a
-
-  loggingRecv = do
-    msg <- recv
-    case msg of
-      Nothing -> return ()
-      Just a  -> say (show ident ++ ":recv:" ++ show a)
-    return msg
