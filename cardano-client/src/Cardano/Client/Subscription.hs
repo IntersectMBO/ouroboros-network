@@ -5,15 +5,23 @@
 {-# LANGUAGE TypeFamilies        #-}
 
 module Cardano.Client.Subscription
-  ( subscribe
+  ( -- * Subscription API
+    subscribe
+  , SubscriptionParams (..)
+  , SubscriptionTracers (..)
+  , SubscriptionTrace (..)
+    -- * Re-exports
+    -- ** Mux
   , MuxMode (..)
-  , ConnectionId
-  , LocalAddress
+  , MuxTrace
+  , WithMuxBearer
+    -- ** Connections
+  , ConnectionId (..)
+  , LocalAddress (..)
+    -- ** Protocol API
   , NodeToClientProtocols (..)
   , MiniProtocolCb (..)
-  , MuxTrace
   , RunMiniProtocol (..)
-  , WithMuxBearer
   , ControlMessage (..)
   ) where
 
@@ -80,7 +88,7 @@ data SubscriptionTrace = SubscriptionError SomeException
 -- `Ouroboros.Consensus.Network.NodeToClient.clientCodecs`.
 --
 subscribe
-  :: forall blockVersion x y.
+  :: forall blockVersion a.
      Snocket.LocalSnocket
   -> NetworkMagic
   -> Map NodeToClientVersion blockVersion

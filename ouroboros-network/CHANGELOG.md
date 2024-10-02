@@ -24,6 +24,14 @@
   It is used by `outboundConnectionsState` when signaling trust state when syncing in
   Genesis mode. Default value is provided by the Configuration module.
 * Using `typed-protocols-0.2.0.0`.
+* `Ouroboros.Network.NodeToClient.connectTo` takes
+  `OuroborosApplicationWithMinimalCtx` which is using `Void` type for responder
+  protocols.  It anyway only accepts `InitiatorMode`, and thus no responder
+  protocols can be specified, nontheless this might require changing type
+  signature of the applications passed to it.  `connectTo` returns now either
+  an error or the result of the first terminated mini-protocol.
+* `Ouroboros.Network.NodeToNode.connectTo` returns either an error or the
+  result of the first terminated mini-protocol.
 
 ### Non-Breaking changes
 

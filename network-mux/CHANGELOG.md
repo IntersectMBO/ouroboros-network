@@ -9,6 +9,10 @@
 * `Ouroboros.Network.Mux.mkMiniProtocolBundle` was renamed to
   `mkMiniProtocolInfos`, its type changed.
 * Removed `MiniProtocolBundle` newtype wrapper.
+* Generalised `Channel` type and provide `ByteChannel` type alias.
+* Provide additional APIs in the `Network.Mux.Channel` for creating channels
+  and byte channels.
+* `MuxBearer` has a `name` field.
 
 ### Non-breaking changes
 
