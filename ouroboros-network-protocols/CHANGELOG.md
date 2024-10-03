@@ -6,6 +6,11 @@
 
 * Adapt the `versionNumber` cddl definition to account for `NodeToClientVersionV18`.
 * Use `typed-protocols-0.3.0.0`.
+* `Ouroboros.Network.Protocols.TxSubmission2.Codec.{encode,decode}TxSubmission2` are no longer exported.
+
+### Non-breaking changes
+
+* Improved haddocks of `node-to-node` mini-protocol codecs.
 
 ## 0.10.0.2 -- 2024-08-27
 
