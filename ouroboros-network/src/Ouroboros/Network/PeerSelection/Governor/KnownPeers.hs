@@ -237,8 +237,9 @@ jobPeerShare :: forall m peeraddr peerconn.
              -> [peeraddr]
              -> Job () m (Completion m peeraddr peerconn)
 jobPeerShare PeerSelectionActions{requestPeerShare}
-             PeerSelectionPolicy{..} salt maxAmount =
-    \amount peers -> Job (jobPhase1 amount peers) (handler peers) () "peerSharePhase1"
+             PeerSelectionPolicy{..} salt maxAmount
+             requestAmount =
+    \peers -> Job (jobPhase1 peers) (handler peers) () "peerSharePhase1"
   where
     -- Return n random peers from a list of peers.
     --
@@ -261,14 +262,14 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                  decisionJobs = []
                }
 
-    jobPhase1 :: PeerSharingAmount -> [peeraddr] -> m (Completion m peeraddr peerconn)
-    jobPhase1 amount peers = do
+    jobPhase1 :: [peeraddr] -> m (Completion m peeraddr peerconn)
+    jobPhase1 peers = do
       -- In the typical case, where most requests return within a short
       -- timeout we want to collect all the responses into a batch and
       -- add them to the known peers set in one go.
       --
       -- So fire them all off in one go:
-      peerShares <- sequence [ async (requestPeerShare amount peer)
+      peerShares <- sequence [ async (requestPeerShare requestAmount peer)
                              | peer <- peers ]
 
       -- First to finish synchronisation between /all/ the peer share requests

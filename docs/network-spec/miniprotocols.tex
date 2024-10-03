@@ -1373,7 +1373,7 @@ will share a subset of their Known Peers.
 \subsection{Client Implementation Details}
 
 The initiator side will have to be running indefinitely since protocol termination means
-either an error or peer demotion. Because of this the protocol won't be able to be run as
+either an error or peer demotion. Because of this, the protocol won't be able to be run as
 a simple request-response protocol. To overcome this the client side implementation will
 use a registry so that each connected peer gets registered and assigned a controller with
 a request mailbox. This controller will be used to issue requests to the client
@@ -1381,6 +1381,41 @@ implementation which will be waiting for the queue to be filled up to send a
 \MsgShareRequest. After sending a request, the result is put into a local result mailbox.
 
 If a peer gets disconnected, it should get unregistered.
+
+\subsubsection{Deciding to whom to request peers to (and how many)}
+
+First of all peer sharing requests should only be issued if:
+
+\begin{itemize}
+  \item The current number of known peers is less than the target for known peers;
+  \item The rate limit value for peer sharing requests isn't exceeded;
+  \item There are available peers to issue requests too;
+\end{itemize}
+
+If these conditions hold then we can pick a set of peers to issue requests to.
+Ideally this set respects the rate limit value for peer sharing requests.
+
+If a peer has \texttt{PeerSharingDisabled} flag value do not ask it for peers.
+This peer won't even have the Peer Sharing miniprotocol server running.
+
+The amount of peers to request to each upstream peer should aim to fullfill
+the target for known peers. This number should be split for the current peer
+target objective across all peer sharing candidates for efficiency and
+diversity reasons.
+
+\subsubsection{Picking peers from the response}
+
+Apart from managing the Outbound Governor state correctly, the final result
+set should be a random distribution of the original set.
+
+This selection should be done in such a way that when the same initial PRNG
+state is used, the selected set does not significantly vary with small
+perturbations in the set of published peers.
+
+The intention of this selection method is that the selection should give
+approximately the same replies to the same peers over the course of multiple
+requests from the same peer. This is to deliberately slow the rate at which
+peers can discover and map out the entire network.
 
 \subsection{Server Implementation Details}
 
@@ -1390,20 +1425,10 @@ from the Known Peer set according to the following constraints:
 
 \begin{itemize}
   \item Only pick peers that we managed to connect-to at some point
-  \item Pick not known-to-be-ledger peers
-  \item Pick peers that have a public willingness information (e.g. \texttt{PeerSharingPublic}).
+  \item Don't pick known-to-be-ledger peers
+  \item Pick peers that have a public willingness information (e.g. \texttt{DoAdvertisePeer}).
+  \item Pick peers that haven't behaved badly (e.g. \texttt{PeerFailCount == 0})
 \end{itemize}
-
-If a peer has \texttt{NoPeerSharing} flag value do not ask it for peers. This peer
-won't even have the Peer Sharing miniprotocol server running.
-
-If a given peer has \texttt{PeerSharingPublic} and \texttt{DoNotAdvertise} flags enabled
-at the same time, \texttt{DoNotAdvertisePeer} should have priority, so the peer shouldn't
-be shared. Also if a peer has \texttt{PeerSharingPrivate} and \texttt{DoAdvertisePeer}
-enabled at the same time, \texttt{PeerSharingPrivate} should be respected. Given this, if
-a local/remote peer has expressed that its address should be private, when building the
-response set one should respect that privacy even if some other public flag conflicts with
-it.
 
 Computing the result (i.e. random sampling of available peers) needs access to the
 \texttt{PeerSelectionState} which is specific to the \texttt{peerSelectionGovernorLoop}. However when
