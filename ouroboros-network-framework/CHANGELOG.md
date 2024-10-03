@@ -20,6 +20,7 @@
 ### Non-breaking changes
 
 * Added tracing on CM connVars for testing purposes.
+* Improved haddocks of `Hanshake` protocol codec.
 
 ## 0.13.2.4 -- 2024-08-27
 
