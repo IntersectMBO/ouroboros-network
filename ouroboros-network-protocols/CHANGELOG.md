@@ -4,7 +4,14 @@
 
 ### Breaking changes
 
+* Chain-sync protocol is providing `ProtocolTimeLimitsWithRnd`.  It now must be
+  run using either `runPeerWithLimitsRnd` or `runPipelinedPeerWithLimitsRnd`.
+* `Ouroboros.Network.Protocols.TxSubmission2.Codec.{encode,decode}TxSubmission2`
+  are no longer exported.
+
 ### Non-breaking changes
+
+* Improved haddocks of `node-to-node` mini-protocol codecs.
 
 ## 0.14.0.1 -- 2025-05-13
 
