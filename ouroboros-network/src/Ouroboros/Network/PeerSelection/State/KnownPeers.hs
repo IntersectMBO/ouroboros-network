@@ -208,7 +208,7 @@ member peeraddr KnownPeers {allPeers} =
 -- in the known peers set, then its values will only be overwritten if they
 -- are a 'Just'. Otherwise the current information will be preserved. On the
 -- other hand if there's an entry for a peer that isn't a member of the known
--- peer set, the 'Nothing' values will default to 'NoPeerSharing',
+-- peer set, the 'Nothing' values will default to 'PeerSharingDisabled',
 -- 'DoNotAdvertisePeer' and 'IsNotLedgerPeer', respectively, unless a 'Just'
 -- value is used.
 --
@@ -431,7 +431,7 @@ setConnectTimes times
 --
 
 -- Only make Peer Share requests to peers which wish to participate in
--- PeerSharing, i.e. have non-'NoPeerSharing' 'PeerSharing' values.
+-- PeerSharing, i.e. have non-'PeerSharingDisabled' 'PeerSharing' values.
 --
 canPeerShareRequest :: Ord peeraddr => peeraddr -> KnownPeers peeraddr -> Bool
 canPeerShareRequest pa KnownPeers { allPeers } =

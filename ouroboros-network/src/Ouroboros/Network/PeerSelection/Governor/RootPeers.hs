@@ -123,7 +123,7 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
             -- Add bootstrapPeers peers
             knownPeers' = KnownPeers.insert
                             -- When we don't know about the PeerSharing information
-                            -- we default to NoPeerSharing. I.e. we only pass
+                            -- we default to PeerSharingDisabled. I.e. we only pass
                             -- a Just value if we want a different value than
                             -- the the default one.
                             ( Map.fromList
