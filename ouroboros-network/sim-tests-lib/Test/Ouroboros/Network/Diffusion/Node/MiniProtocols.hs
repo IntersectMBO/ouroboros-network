@@ -713,6 +713,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
                    them $ \api -> do
             let server = txSubmissionInboundV2
                            txSubmissionInboundTracer
+                           (getMempoolReader mempool)
                            (getMempoolWriter mempool)
                            api
             labelThisThread "TxSubmissionServer"
