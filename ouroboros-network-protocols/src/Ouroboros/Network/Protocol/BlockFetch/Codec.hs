@@ -31,7 +31,7 @@ import Ouroboros.Network.Protocol.Limits
 
 -- | Byte Limit.
 byteLimitsBlockFetch :: forall bytes block point.
-                        (bytes -> Word)
+                        (bytes -> Word) -- ^ compute size of bytes
                      -> ProtocolSizeLimits (BlockFetch block point) bytes
 byteLimitsBlockFetch = ProtocolSizeLimits stateToLimit
   where
@@ -44,10 +44,16 @@ byteLimitsBlockFetch = ProtocolSizeLimits stateToLimit
 
 -- | Time Limits
 --
--- `TokIdle' No timeout
--- `TokBusy` `longWait` timeout
--- `TokStreaming` `longWait` timeout
-timeLimitsBlockFetch :: forall block point.
+-- +------------------+---------------+
+-- | BlockFetch state | timeout (s)   |
+-- +==================+===============+
+-- | `BFIdle`         | `waitForever` |
+-- +------------------+---------------+
+-- | `BFBusy`         | `longWait`    |
+-- +------------------+---------------+
+-- | `BFStreaming`    | `longWait`    |
+-- +------------------+---------------+
+--
                         ProtocolTimeLimits (BlockFetch block point)
 timeLimitsBlockFetch = ProtocolTimeLimits stateToLimit
   where
@@ -58,17 +64,21 @@ timeLimitsBlockFetch = ProtocolTimeLimits stateToLimit
     stateToLimit SingBFStreaming = longWait
     stateToLimit a@SingBFDone    = notActiveState a
 
--- | Codec for chain sync that encodes/decodes blocks
+-- | Codec for chain sync that encodes/decodes blocks and points.
 --
--- NOTE: See 'wrapCBORinCBOR' and 'unwrapCBORinCBOR' if you want to use this
+-- /NOTE:/ See 'wrapCBORinCBOR' and 'unwrapCBORinCBOR' if you want to use this
 -- with a block type that has annotations.
 codecBlockFetch
   :: forall block point m.
      MonadST m
   => (block            -> CBOR.Encoding)
+  -- ^ encode block
   -> (forall s. CBOR.Decoder s block)
+  -- ^ decode block
   -> (point -> CBOR.Encoding)
+  -- ^ encode point
   -> (forall s. CBOR.Decoder s point)
+  -- ^ decode point
   -> Codec (BlockFetch block point) CBOR.DeserialiseFailure m LBS.ByteString
 codecBlockFetch encodeBlock decodeBlock
                 encodePoint decodePoint =
