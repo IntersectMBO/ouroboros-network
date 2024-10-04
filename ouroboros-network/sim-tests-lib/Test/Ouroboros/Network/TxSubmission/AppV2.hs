@@ -36,11 +36,13 @@ import Data.ByteString.Lazy (ByteString)
 import Data.ByteString.Lazy qualified as BSL
 import Data.Foldable (traverse_)
 import Data.Function (on)
+import Data.Hashable
 import Data.List (nubBy)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Void (Void)
+import System.Random (mkStdGen)
 
 import Ouroboros.Network.Channel
 import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)
@@ -129,6 +131,7 @@ runTxSubmission
      , NoThunks (Tx txid)
      , Show peeraddr
      , Ord peeraddr
+     , Hashable peeraddr
 
      , txid ~ Int
      )
@@ -150,15 +153,18 @@ runTxSubmission tracer tracerTxLogic state txDecisionPolicy = do
         ) state
 
     inboundMempool <- emptyMempool
+    let txRng = mkStdGen 42 -- TODO
 
     txChannelsMVar <- newMVar (TxChannels Map.empty)
-    sharedTxStateVar <- newSharedTxStateVar
+    txMempoolSem <- newTxMempoolSem
+    sharedTxStateVar <- newSharedTxStateVar txRng
     labelTVarIO sharedTxStateVar "shared-tx-state"
     gsvVar <- newTVarIO Map.empty
     labelTVarIO gsvVar "gsv"
 
     run state'
         txChannelsMVar
+        txMempoolSem
         sharedTxStateVar
         inboundMempool
         gsvVar
@@ -181,12 +187,13 @@ runTxSubmission tracer tracerTxLogic state txDecisionPolicy = do
                         , Channel m ByteString -- ^ Inbound channel
                         )
         -> TxChannelsVar m peeraddr txid (Tx txid)
+        -> TxMempoolSem m
         -> SharedTxStateVar m peeraddr txid (Tx txid)
         -> Mempool m txid -- ^ Inbound mempool
         -> StrictTVar m (Map peeraddr PeerGSV)
         -> ((Async m Void, [Async m ((), Maybe ByteString)]) -> m b)
         -> m b
-    run st txChannelsVar sharedTxStateVar
+    run st txChannelsVar txMempoolSem sharedTxStateVar
         inboundMempool gsvVar k =
       withAsync (decisionLogicThread tracerTxLogic txDecisionPolicy (readTVar gsvVar) txChannelsVar sharedTxStateVar) $ \a -> do
             -- Construct txSubmission outbound client
@@ -211,10 +218,13 @@ runTxSubmission tracer tracerTxLogic state txDecisionPolicy = do
             servers = (\(addr, (_, _, _, inDelay, _, inChannel)) ->
                          withPeer tracerTxLogic
                                   txChannelsVar
+                                  txMempoolSem
+                                  txDecisionPolicy
                                   sharedTxStateVar
                                   (getMempoolReader inboundMempool)
                                   addr $ \api -> do
                                     let server = txSubmissionInboundV2 verboseTracer
+                                                                       (getMempoolReader inboundMempool)
                                                                        (getMempoolWriter inboundMempool)
                                                                        api
                                     runPipelinedPeerWithLimits

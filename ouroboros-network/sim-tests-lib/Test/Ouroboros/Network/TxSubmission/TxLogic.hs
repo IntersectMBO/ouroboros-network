@@ -1,13 +1,16 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeOperators       #-}
 
@@ -17,6 +20,7 @@ module Test.Ouroboros.Network.TxSubmission.TxLogic where
 
 import Prelude hiding (seq)
 
+import Control.Monad.Class.MonadTime.SI (Time (..))
 import Control.Exception (assert)
 
 import Data.Foldable (fold,
@@ -29,11 +33,12 @@ import Data.List (intercalate, isPrefixOf, isSuffixOf, mapAccumR, nub,
 import Data.Map.Merge.Strict qualified as Map
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe, maybeToList)
+import Data.Maybe (fromMaybe)
 import Data.Monoid (Sum (..))
 import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set (Set)
 import Data.Set qualified as Set
+import System.Random (mkStdGen, StdGen)
 
 import NoThunks.Class
 
@@ -117,6 +122,7 @@ sharedTxStateInvariant
   :: forall peeraddr txid tx.
      ( Ord txid
      , Show txid
+     , Show tx
      )
   => SharedTxState peeraddr txid tx
   -> Property
@@ -206,10 +212,12 @@ sharedTxStateInvariant SharedTxState {
                               ++ show (unacknowledgedTxIdsSet
                                         Set.\\ availableTxIdsSet
                                         Set.\\ unknownTxs
-                                        Set.\\ bufferedTxsSet))
+                                        Set.\\ bufferedTxsSet
+                                        Set.\\ downloadedTxsSet))
              (unacknowledgedTxIdsSet
                  Set.\\ availableTxIdsSet
                  Set.\\ unknownTxs
+                 Set.\\ downloadedTxsSet
                `Set.isSubsetOf`
                bufferedTxsSet
              )
@@ -235,6 +243,9 @@ sharedTxStateInvariant SharedTxState {
 
         unacknowledgedTxIdsSet :: Set txid
         unacknowledgedTxIdsSet = Set.fromList (toList unacknowledgedTxIds)
+
+        downloadedTxsSet :: Set txid
+        downloadedTxsSet = Set.unions $ map (Map.keysSet . downloadedTxs) txStates
 
     bufferedTxsSet = Map.keysSet bufferedTxs     :: Set txid
     liveSet        = Map.keysSet referenceCounts :: Set txid
@@ -299,7 +310,11 @@ mkArbPeerTxState mempoolHasTxFun txIdsInflight unacked txMaskMap =
                     requestedTxIdsInflight,
                     requestedTxsInflight,
                     requestedTxsInflightSize,
-                    unknownTxs }
+                    unknownTxs,
+                    score = 0,
+                    scoreTs = Time 0,
+                    downloadedTxs = Map.empty,
+                    toMempoolTxs = Map.empty }
       (Set.fromList $ Map.elems inflightMap)
       bufferedMap
   where
@@ -379,6 +394,7 @@ genSharedTxState maxTxIdsInflight = do
     _mempoolHasTxFun@(Fun (_, _, x) _) <- arbitrary :: Gen (Fun Bool Bool)
     let mempoolHasTxFun = Fun (function (const False), False, x) (const False)
     pss <- listOf1 (genArbPeerTxState mempoolHasTxFun maxTxIdsInflight)
+    seed <- arbitrary
 
     let pss' :: [(PeerAddr, ArbPeerTxState txid (Tx txid))]
         pss' = [0..] `zip` pss
@@ -405,7 +421,10 @@ genSharedTxState maxTxIdsInflight = do
                                  | ArbPeerTxState { arbBufferedMap }
                                    <- pss
                                  ],
-                 referenceCounts = Map.empty
+                 referenceCounts = Map.empty,
+                 timedTxs        = Map.empty,
+                 limboTxs        = Map.empty,
+                 peerRng         = mkStdGen seed
                }
 
     return ( mempoolHasTxFun
@@ -632,7 +651,7 @@ prop_acknowledgeTxIds :: ArbDecisionContextWithReceivedTxIds
                       -> Property
 prop_acknowledgeTxIds (ArbDecisionContextWithReceivedTxIds policy SharedDecisionContext { sdcSharedTxState = st } ps _ _ _) =
     case TXS.acknowledgeTxIds policy st ps of
-      (numTxIdsToAck, txIdsToRequest, txs, TXS.RefCountDiff { TXS.txIdsToAck }, ps') | txIdsToRequest > 0 ->
+      (numTxIdsToAck, txIdsToRequest, txIdsTxs, TXS.RefCountDiff { TXS.txIdsToAck }, ps') | txIdsToRequest > 0 ->
              counterexample "number of tx ids to ack must agree with RefCountDiff"
              ( fromIntegral numTxIdsToAck
                ===
@@ -650,12 +669,10 @@ prop_acknowledgeTxIds (ArbDecisionContextWithReceivedTxIds policy SharedDecision
                     Map.fromListWith (+) ((,1) <$> txIdsToAck')
 
         .&&. counterexample "acknowledged txs" (counterexample ("numTxIdsToAck = " ++ show numTxIdsToAck)
-             let acked :: [TxId]
-                 acked = [ txid
-                         | txid <- take (fromIntegral numTxIdsToAck) (toList $ unacknowledgedTxIds ps)
-                         , Just _ <- maybeToList $ txid `Map.lookup` bufferedTxs st
-                         ]
-             in getTxId `map` txs === acked)
+             let acked :: Set TxId
+                 acked = Set.fromList $ take (fromIntegral numTxIdsToAck) (toList $ unacknowledgedTxIds ps)
+             in property $ Set.isSubsetOf (Set.fromList $ map fst txIdsTxs) acked)
+
       _otherwise -> property True
   where
     stripSuffix :: Eq a => [a] -> [a] -> Maybe [a]
@@ -875,6 +892,9 @@ prop_collectTxsImpl (ArbCollectTxs _mempoolHasTxFun txidsRequested txsReceived p
     ps' = peerTxStates st' Map.! peeraddr
 
 
+
+deriving via OnlyCheckWhnfNamed "StdGen" StdGen instance NoThunks StdGen
+
 -- | Verify that `SharedTxState` returned by `collectTxsImpl` if evaluated to
 -- WHNF, it doesn't contain any thunks.
 --
@@ -900,7 +920,10 @@ instance Arbitrary ArbTxDecisionPolicy where
             <*> (getSmall . getPositive <$> arbitrary)
             <*> (SizeInBytes . getPositive <$> arbitrary)
             <*> (SizeInBytes . getPositive <$> arbitrary)
-            <*> (getSmall . getPositive <$> arbitrary))
+            <*> (getSmall . getPositive <$> arbitrary)
+            <*> (realToFrac <$> choose (0 :: Double, 2))
+            <*> (choose (0, 1))
+            <*> (choose (0, 1800)))
 
     shrink (ArbTxDecisionPolicy a@TxDecisionPolicy {
               maxNumTxIdsToRequest,
@@ -1468,6 +1491,10 @@ instance Arbitrary ArbDecisionContextWithReceivedTxIds where
           txIdsToAck' = take (fromIntegral (TXS.requestedTxIdsInflight $ peerTxStates st' Map.! peeraddr)) txIdsToAck
           peers = Map.keys (peerTxStates st')
 
+      downTxsNum <- choose (0, length txIdsToAck')
+      let downloadedTxs = foldl' pruneTx Map.empty $ take downTxsNum $ Map.toList (bufferedTxs st')
+          ps'' = ps' { downloadedTxs = downloadedTxs }
+
       gsvs <- zip peers
           <$> infiniteListOf (unPeerGSVT <$> arbitrary)
 
@@ -1477,11 +1504,15 @@ instance Arbitrary ArbDecisionContextWithReceivedTxIds where
               sdcPeerGSV       = Map.fromList gsvs,
               sdcSharedTxState = st'
             },
-          adcrPeerTxState    = ps',
+          adcrPeerTxState    = ps'',
           adcrMempoolHasTx   = mempoolHasTx,
           adcrTxsToAck       = txIdsToAck',
           adcrPeerAddr       = peeraddr
         }
+      where
+        pruneTx :: Map TxId tx -> (TxId, Maybe tx) -> Map TxId tx
+        pruneTx m (_, Nothing) = m
+        pruneTx m (txid, Just tx) = Map.insert txid tx m
 
     shrink ArbDecisionContextWithReceivedTxIds {
         adcrDecisionPolicy = policy,

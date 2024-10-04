@@ -21,10 +21,11 @@ import Control.Tracer (Tracer, traceWith)
 
 import Network.TypedProtocol.Pipelined
 
-import Control.Monad (unless)
+import Control.Monad (unless, when)
 import Ouroboros.Network.Protocol.TxSubmission2.Server
 import Ouroboros.Network.TxSubmission.Inbound.Registry (PeerTxAPI (..))
 import Ouroboros.Network.TxSubmission.Inbound.Types
+import Ouroboros.Network.TxSubmission.Mempool.Reader
 
 -- | Flag to enable/disable the usage of the new tx submission protocol
 --
@@ -48,11 +49,15 @@ txSubmissionInboundV2
      , Ord txid
      )
   => Tracer m (TraceTxSubmissionInbound txid tx)
+  -> TxSubmissionMempoolReader txid tx idx m
   -> TxSubmissionMempoolWriter txid tx idx m
   -> PeerTxAPI m txid tx
   -> TxSubmissionServerPipelined txid tx m ()
 txSubmissionInboundV2
     tracer
+    TxSubmissionMempoolReader{
+      mempoolGetSnapshot
+    }
     TxSubmissionMempoolWriter {
       txId,
       mempoolAddTxs
@@ -60,7 +65,9 @@ txSubmissionInboundV2
     PeerTxAPI {
       readTxDecision,
       handleReceivedTxIds,
-      handleReceivedTxs
+      handleReceivedTxs,
+      countRejectedTxs,
+      withMempoolSem
     }
     =
     TxSubmissionServerPipelined serverIdle
@@ -73,23 +80,14 @@ txSubmissionInboundV2
           <- readTxDecision
         traceWith tracer (TraceTxInboundDecision txd)
 
-        !start <- getMonotonicTime
-        txidsAccepted <- mempoolAddTxs txs
-        !end <- getMonotonicTime
-        let duration = diffTime end start
-
-        traceWith tracer $
-          TraceTxInboundAddedToMempool txidsAccepted duration
-
         let !collected = length txs
-        let !accepted = length txidsAccepted
-        traceWith tracer $
-          TraceTxSubmissionCollected collected
 
-        traceWith tracer $ TraceTxSubmissionProcessed ProcessedTxCount {
-            ptxcAccepted = accepted
-          , ptxcRejected = collected - accepted
-          }
+        -- Only attempt to add TXs if we have some work to do
+        when (collected > 0) $ do
+            mapM_ (withMempoolSem . addTx) txs
+
+            traceWith tracer $
+              TraceTxSubmissionCollected collected
 
         -- TODO:
         -- We can update the state so that other `tx-submission` servers will
@@ -98,6 +96,48 @@ txSubmissionInboundV2
           then serverReqTxIds Zero txd
           else serverReqTxs txd
 
+    addTx :: (txid,tx) -> m (Either (txid, tx) (txid, tx))
+    addTx (txid,tx) = do
+      mpSnapshot <- atomically mempoolGetSnapshot
+
+      -- Note that checking if the mempool contains a TX before
+      -- spending several ms attempting to add it to the pool has
+      -- been judged immoral. 
+      if mempoolHasTx mpSnapshot txid
+         then do
+           !now <- getMonotonicTime
+           !s <- countRejectedTxs now 1
+           traceWith tracer $ TraceTxSubmissionProcessed ProcessedTxCount {
+                ptxcAccepted = 0
+              , ptxcRejected = 1
+              , ptxcScore    = s
+              }
+           return $ Left (txid, tx)
+         else do
+           !start <- getMonotonicTime
+           acceptedTxs <- mempoolAddTxs [tx]
+           !end <- getMonotonicTime
+           let duration = diffTime end start
+
+           traceWith tracer $
+             TraceTxInboundAddedToMempool acceptedTxs duration
+           if null acceptedTxs
+              then do
+                  !s <- countRejectedTxs end 1
+                  traceWith tracer $ TraceTxSubmissionProcessed ProcessedTxCount {
+                      ptxcAccepted = 0
+                    , ptxcRejected = 1
+                    , ptxcScore    = s
+                    }
+                  return $ Left (txid, tx)
+              else do
+                  !s <- countRejectedTxs end 0
+                  traceWith tracer $ TraceTxSubmissionProcessed ProcessedTxCount {
+                      ptxcAccepted = 1
+                    , ptxcRejected = 0
+                    , ptxcScore    = s
+                    }
+                  return $ Right (txid, tx)
 
     -- Pipelined request of txs
     serverReqTxs :: TxDecision txid tx
