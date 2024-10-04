@@ -36,6 +36,7 @@ import Control.Exception (assert)
 import Control.Monad (unless)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, traceWith)
 
@@ -314,13 +315,18 @@ txSubmissionInbound tracer (NumTxIdsToAck maxUnacked) mpReader mpWriter _version
         traceWith tracer $
           TraceTxSubmissionCollected collected
 
+        !start <- getMonotonicTime
         txidsAccepted <- mempoolAddTxs txsReady
-
+        !end <- getMonotonicTime
+        let duration = diffTime end start
+        traceWith tracer $
+          TraceTxInboundAddedToMempool txidsAccepted duration
         let !accepted = length txidsAccepted
 
         traceWith tracer $ TraceTxSubmissionProcessed ProcessedTxCount {
             ptxcAccepted = accepted
           , ptxcRejected = collected - accepted
+          , ptxcScore    = 0 -- This implementatin does not track score
           }
 
         continueWithStateM (serverIdle n) st {
