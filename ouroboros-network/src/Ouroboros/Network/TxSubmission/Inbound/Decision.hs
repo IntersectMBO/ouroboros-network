@@ -59,12 +59,12 @@ makeDecisions
        , Map peeraddr (TxDecision txid tx)
        )
 makeDecisions policy SharedDecisionContext {
-      sdcPeerGSV = peerGSV,
+      sdcPeerGSV = _peerGSV,
       sdcSharedTxState = st
     }
     = fn
     . pickTxsToDownload policy st
-    . orderByDeltaQ peerGSV
+    . orderByRejections
   where
     fn :: forall a.
           (a, [(peeraddr, TxDecision txid tx)])
@@ -72,14 +72,27 @@ makeDecisions policy SharedDecisionContext {
     fn (a, as) = (a, Map.fromList as)
 
 
+-- | Order peers by how useful the TXs they have provided are.
+--
+-- TXs delivered late will fail to apply because they where included in
+-- a recently adopted block. Peers can race against each other by setting
+-- `txInflightMultiplicity` to > 1.
+--
+-- TODO: Should not depend on plain `peeraddr` as a tie breaker.
+orderByRejections :: Map peeraddr (PeerTxState txid tx)
+                  -> [ (peeraddr, PeerTxState txid tx)]
+orderByRejections =
+        sortOn (\(_peeraddr, ps) -> rejectedTxs ps)
+      . Map.toList
+
 -- | Order peers by `DeltaQ`.
 --
-orderByDeltaQ :: forall peeraddr txid tx.
+_orderByDeltaQ :: forall peeraddr txid tx.
                  Ord peeraddr
               => Map peeraddr PeerGSV
               -> Map peeraddr (PeerTxState txid tx)
               -> [(peeraddr, PeerTxState txid tx)]
-orderByDeltaQ dq =
+_orderByDeltaQ dq =
         sortOn (\(peeraddr, _) ->
                    gsvRequestResponseDuration
                      (Map.findWithDefault defaultGSV peeraddr dq)

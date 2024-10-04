@@ -21,10 +21,11 @@ import Control.Tracer (Tracer, traceWith)
 
 import Network.TypedProtocol.Pipelined
 
-import Control.Monad (unless)
+import Control.Monad (unless, when)
 import Ouroboros.Network.Protocol.TxSubmission2.Server
 import Ouroboros.Network.TxSubmission.Inbound.Registry (PeerTxAPI (..))
 import Ouroboros.Network.TxSubmission.Inbound.Types
+import Ouroboros.Network.TxSubmission.Mempool.Reader
 
 -- | Flag to enable/disable the usage of the new tx submission protocol
 --
@@ -48,11 +49,15 @@ txSubmissionInboundV2
      , Ord txid
      )
   => Tracer m (TraceTxSubmissionInbound txid tx)
+  -> TxSubmissionMempoolReader txid tx idx m
   -> TxSubmissionMempoolWriter txid tx idx m
   -> PeerTxAPI m txid tx
   -> TxSubmissionServerPipelined txid tx m ()
 txSubmissionInboundV2
     tracer
+    TxSubmissionMempoolReader{
+      mempoolGetSnapshot
+    }
     TxSubmissionMempoolWriter {
       txId,
       mempoolAddTxs
@@ -60,7 +65,9 @@ txSubmissionInboundV2
     PeerTxAPI {
       readTxDecision,
       handleReceivedTxIds,
-      handleReceivedTxs
+      handleReceivedTxs,
+      countRejectedTxs,
+      consumeFetchedTxs
     }
     =
     TxSubmissionServerPipelined serverIdle
@@ -73,23 +80,52 @@ txSubmissionInboundV2
           <- readTxDecision
         traceWith tracer (TraceTxInboundDecision txd)
 
-        !start <- getMonotonicTime
-        txidsAccepted <- mempoolAddTxs txs
-        !end <- getMonotonicTime
-        let duration = diffTime end start
-
-        traceWith tracer $
-          TraceTxInboundAddedToMempool txidsAccepted duration
-
         let !collected = length txs
-        let !accepted = length txidsAccepted
-        traceWith tracer $
-          TraceTxSubmissionCollected collected
+        mpSnapshot <- atomically mempoolGetSnapshot
+        let receivedL = [ (txId tx, tx) | tx <- txs ]
+        fetchedSet <- consumeFetchedTxs (Set.fromList (map fst receivedL))
 
-        traceWith tracer $ TraceTxSubmissionProcessed ProcessedTxCount {
-            ptxcAccepted = accepted
-          , ptxcRejected = collected - accepted
-          }
+        -- Only attempt to add TXs if we actually has fetched some.
+        when (not $ Set.null fetchedSet) $ do
+            let fetched = filter 
+                            (\(txid, _) -> Set.member txid fetchedSet)
+                            receivedL
+                fetchedS = Set.fromList $ map fst fetched
+
+            -- Note that checking if the mempool contains a TX before
+            -- spending several ms attempting to add it to the pool has
+            -- been judged immoral.
+            let fresh = filter
+                          (\(txid, _) -> not $ mempoolHasTx mpSnapshot txid)
+                          receivedL
+
+            !start <- getMonotonicTime
+            txidsAccepted <- mempoolAddTxs $ map snd fresh
+            !end <- getMonotonicTime
+            let duration = diffTime end start
+
+            let acceptedS = Set.fromList txidsAccepted
+                acceptedFetched = Set.intersection fetchedS acceptedS
+                !accepted = Set.size acceptedFetched
+                !rejected = Set.size fetchedS - accepted
+
+            traceWith tracer $
+              TraceTxInboundAddedToMempool txidsAccepted duration
+            traceWith tracer $
+              TraceTxSubmissionCollected collected
+
+            -- Accepted TXs are discounted from rejected.
+            --
+            -- The number of rejected TXs may be too high.
+            -- The reason for that is that any peer which has downloaded a
+            -- TX is permitted to add TXs for all TXids hit has offered.
+            -- This is done to preserve TX ordering.
+            !s <- countRejectedTxs (rejected - accepted) -- accepted TXs are discounted
+            traceWith tracer $ TraceTxSubmissionProcessed ProcessedTxCount {
+                ptxcAccepted = accepted
+              , ptxcRejected = rejected
+              , ptxcScore    = s
+              }
 
         -- TODO:
         -- We can update the state so that other `tx-submission` servers will

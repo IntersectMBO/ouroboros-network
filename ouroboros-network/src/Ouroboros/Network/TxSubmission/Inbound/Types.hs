@@ -74,7 +74,11 @@ data PeerTxState txid tx = PeerTxState {
        -- since that could potentially lead to corrupting the node, not being
        -- able to download a `tx` which is needed & available from other nodes.
        --
-       unknownTxs               :: !(Set txid)
+       unknownTxs               :: !(Set txid),
+
+       rejectedTxs              :: !Int,
+
+       fetchedTxs               :: !(Set txid)
     }
     deriving (Eq, Show, Generic)
 
@@ -259,6 +263,7 @@ data ProcessedTxCount = ProcessedTxCount {
       ptxcAccepted :: Int
       -- | Just rejected this many transactions.
     , ptxcRejected :: Int
+    , ptxcScore :: Int
     }
   deriving (Eq, Show)
 
