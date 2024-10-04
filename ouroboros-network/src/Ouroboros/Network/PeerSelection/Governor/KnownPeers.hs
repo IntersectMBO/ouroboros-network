@@ -237,7 +237,10 @@ jobPeerShare :: forall m peeraddr peerconn.
              -> [peeraddr]
              -> Job () m (Completion m peeraddr peerconn)
 jobPeerShare PeerSelectionActions{requestPeerShare}
-             PeerSelectionPolicy{..} salt maxAmount
+             PeerSelectionPolicy { policyPeerShareBatchWaitTime
+                                 , policyPeerShareOverallTimeout
+                                 }
+             salt maxAmount
              requestAmount =
     \peers -> Job (jobPhase1 peers) (handler peers) () "peerSharePhase1"
   where
