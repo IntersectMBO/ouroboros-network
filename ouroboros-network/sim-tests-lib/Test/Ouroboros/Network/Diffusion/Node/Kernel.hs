@@ -52,7 +52,7 @@ import Data.Monoid.Synchronisation
 import Data.Void (Void)
 import GHC.Generics (Generic)
 import Numeric.Natural (Natural)
-import System.Random (RandomGen, StdGen, randomR, split)
+import System.Random (RandomGen, StdGen, mkStdGen, random, randomR, split)
 
 import Network.Socket (PortNumber)
 
@@ -82,9 +82,8 @@ import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry (..),
 import Ouroboros.Network.Protocol.Handshake.Unversioned
 import Ouroboros.Network.Snocket (TestAddress (..))
 import Ouroboros.Network.TxSubmission.Inbound.Registry (SharedTxStateVar,
-           TxChannels (..), TxChannelsVar, newSharedTxStateVar)
-
-
+           TxChannels (..), TxChannelsVar, TxMempoolSem, newSharedTxStateVar,
+           newTxMempoolSem)
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB (ChainDB (..))
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB qualified as ChainDB
 import Test.Ouroboros.Network.Orphans ()
@@ -293,6 +292,8 @@ data NodeKernel header block s txid m = NodeKernel {
 
       nkTxChannelsVar :: TxChannelsVar m NtNAddr txid (Tx txid),
 
+      nkTxMempoolSem :: TxMempoolSem m,
+
       nkSharedTxStateVar :: SharedTxStateVar m NtNAddr txid (Tx txid)
     }
 
@@ -302,9 +303,10 @@ newNodeKernel :: ( MonadSTM m
                  , Eq txid
                  )
               => s
+              -> Int
               -> [Tx txid]
               -> m (NodeKernel header block s txid m)
-newNodeKernel rng txs = do
+newNodeKernel psRng txSeed txs = do
     publicStateVar <- makePublicPeerSelectionStateVar
     NodeKernel
       <$> newTVarIO Map.empty
@@ -312,13 +314,14 @@ newNodeKernel rng txs = do
       <*> newFetchClientRegistry
       <*> newPeerSharingRegistry
       <*> ChainDB.newChainDB
-      <*> newPeerSharingAPI publicStateVar rng
+      <*> newPeerSharingAPI publicStateVar psRng
                             ps_POLICY_PEER_SHARE_STICKY_TIME
                             ps_POLICY_PEER_SHARE_MAX_PEERS
       <*> pure publicStateVar
       <*> newMempool txs
       <*> Strict.newMVar (TxChannels Map.empty)
-      <*> newSharedTxStateVar
+      <*> newTxMempoolSem
+      <*> newSharedTxStateVar (mkStdGen txSeed)
 
 -- | Register a new upstream chain-sync client.
 --
@@ -407,11 +410,12 @@ withNodeKernelThread
 withNodeKernelThread BlockGeneratorArgs { bgaSlotDuration, bgaBlockGenerator, bgaSeed }
                      txs
                      k = do
-    kernel <- newNodeKernel psSeed txs
+    kernel <- newNodeKernel psSeed txSeed txs
     withSlotTime bgaSlotDuration $ \waitForSlot ->
       withAsync (blockProducerThread kernel waitForSlot) (k kernel)
   where
-    (bpSeed, psSeed) = split bgaSeed
+    (bpSeed, rng) = split bgaSeed
+    (txSeed, psSeed) = random rng
 
     blockProducerThread :: NodeKernel header block seed txid m
                         -> (SlotNo -> STM m SlotNo)
