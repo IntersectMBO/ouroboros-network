@@ -6,6 +6,7 @@ module Ouroboros.Network.TxSubmission.Inbound.Policy
   , max_TX_SIZE
   ) where
 
+import Control.Monad.Class.MonadTime.SI
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToReq (..))
 import Ouroboros.Network.SizeInBytes (SizeInBytes (..))
 
@@ -45,8 +46,19 @@ data TxDecisionPolicy = TxDecisionPolicy {
       -- ^ a limit of tx size in-flight from all peers.
       -- It can be exceed by max tx size.
 
-      txInflightMultiplicity :: !Int
+      txInflightMultiplicity :: !Int,
       -- ^ from how many peers download the `txid` simultaneously
+
+      bufferedTxsMinLifetime :: !DiffTime,
+      -- ^ how long TXs that have been added to the mempool will be
+      -- keept in the `bufferedTxs` cache.
+
+      scoreRate              :: !Double,
+      -- ^ rate at which "rejected" TXs drain. Unit: TX/seconds.
+
+      scoreMax               :: !Double
+      -- ^ Maximum number of "rejections". Unit: seconds
+
     }
   deriving Show
 
@@ -57,5 +69,8 @@ defaultTxDecisionPolicy =
     maxUnacknowledgedTxIds = 10, -- must be the same as txSubmissionMaxUnacked
     txsSizeInflightPerPeer = max_TX_SIZE * 6,
     maxTxsSizeInflight     = max_TX_SIZE * 20,
-    txInflightMultiplicity = 1
+    txInflightMultiplicity = 2,
+    bufferedTxsMinLifetime = 2,
+    scoreRate              = 0.1,
+    scoreMax               = 15 * 60
   }
