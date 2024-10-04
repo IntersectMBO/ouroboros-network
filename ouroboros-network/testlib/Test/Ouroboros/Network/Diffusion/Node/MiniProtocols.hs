@@ -103,7 +103,7 @@ import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..),
 import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.TxSubmission.Inbound.Policy (TxDecisionPolicy (..))
 import Ouroboros.Network.TxSubmission.Inbound.Registry (SharedTxStateVar,
-           TxChannelsVar, withPeer)
+           TxChannelsVar, TxMempoolSem, withPeer)
 import Ouroboros.Network.TxSubmission.Inbound.Server (txSubmissionInboundV2)
 import Ouroboros.Network.TxSubmission.Inbound.Types (TraceTxLogic,
            TraceTxSubmissionInbound)
@@ -373,6 +373,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
                     (txSubmissionInitiator aaTxDecisionPolicy (nkMempool nodeKernel))
                     (txSubmissionResponder (nkMempool nodeKernel)
                                           (nkTxChannelsVar nodeKernel)
+                                          (nkTxMempoolSem nodeKernel)
                                           (nkSharedTxStateVar nodeKernel))
             }
           ]
@@ -695,20 +696,24 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
     txSubmissionResponder
       :: Mempool m Int
       -> TxChannelsVar m NtNAddr Int (Tx Int)
+      -> TxMempoolSem m
       -> SharedTxStateVar m NtNAddr Int (Tx Int)
       -> MiniProtocolCb (ResponderContext NtNAddr) ByteString m ()
-    txSubmissionResponder mempool txChannelsVar sharedTxStateVar =
+    txSubmissionResponder mempool txChannelsVar txMempoolSem sharedTxStateVar =
       MiniProtocolCb $
         \ ResponderContext { rcConnectionId = connId@ConnectionId { remoteAddress = them }} channel
         -> do
           withPeer txSubmissionInboundDebug
                    txChannelsVar
+                   txMempoolSem
+                   aaTxDecisionPolicy
                    sharedTxStateVar
                    (getMempoolReader mempool)
                    getTxSize
                    them $ \api -> do
             let server = txSubmissionInboundV2
                            txSubmissionInboundTracer
+                           (getMempoolReader mempool)
                            (getMempoolWriter mempool)
                            api
             labelThisThread "TxSubmissionServer"
