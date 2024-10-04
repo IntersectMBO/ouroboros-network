@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 
@@ -31,6 +32,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
+import System.Random (StdGen)
 
 import NoThunks.Class (NoThunks (..))
 
@@ -77,7 +79,25 @@ data PeerTxState txid tx = PeerTxState {
        -- since that could potentially lead to corrupting the node, not being
        -- able to download a `tx` which is needed & available from other nodes.
        --
-       unknownTxs               :: !(Set txid)
+       unknownTxs               :: !(Set txid),
+
+
+       -- | Score is a metric that tracks how usefull a peer has been.
+       -- The larger the value the less usefull peer. It slowly decays towards
+       -- zero.
+       score                    :: !Double,
+
+       -- | Timestamp for the last time `score` was drained.
+       scoreTs                  :: !Time,
+
+       -- | A set of TXs downloaded from the peer. They are not yet
+       -- acknowledged and hasn't been sent to the mempool yet.
+       downloadedTxs            :: !(Map txid tx),
+
+       -- | A set of TXs on their way to the mempool.
+       -- Tracked here so that we can cleanup `limboTxs` if the peer dies.
+       toMempoolTxs             :: !(Map txid tx)
+
     }
     deriving (Eq, Show, Generic)
 
@@ -129,11 +149,11 @@ data SharedTxState peeraddr txid tx = SharedTxState {
 
       -- | Map of `tx` which:
       --
-      --    * were downloaded,
+      --    * were downloaded and added to the mempool,
       --    * are already in the mempool (`Nothing` is inserted in that case),
       --
       -- We only keep live `txid`, e.g. ones which `txid` is unacknowledged by
-      -- at least one peer.
+      -- at least one peer or has a `timedTxs` entry.
       --
       -- /Note:/ `txid`s which `tx` were unknown by a peer are tracked
       -- separately in `unknownTxs`.
@@ -147,8 +167,8 @@ data SharedTxState peeraddr txid tx = SharedTxState {
       --
       bufferedTxs     :: !(Map txid (Maybe tx)),
 
-      -- | We track reference counts of all unacknowledged txids.  Once the
-      -- count reaches 0, a tx is removed from `bufferedTxs`.
+      -- | We track reference counts of all unacknowledged and timedTxs txids.
+      -- Once the count reaches 0, a tx is removed from `bufferedTxs`.
       --
       -- The `bufferedTx` map contains a subset of `txid` which
       -- `referenceCounts` contains.
@@ -160,13 +180,28 @@ data SharedTxState peeraddr txid tx = SharedTxState {
       --    * @Map.keysSet bufferedTxs `Set.isSubsetOf` Map.keysSet referenceCounts@;
       --    * all counts are positive integers.
       --
-      referenceCounts :: !(Map txid Int)
+      referenceCounts :: !(Map txid Int),
+
+
+      -- | A set of timeouts for txids that have been added to bufferedTxs after being
+      -- inserted into the mempool.
+      -- Evenry txid entry has a reference count in `referenceCounts`.
+      timedTxs        :: (Map Time [txid]),
+
+      -- | A set of txids that have been downloaded by a peer and are on their
+      -- way to the mempool. We won't issue further fetchrequests for TXs in this
+      -- state.
+      limboTxs        :: !(Map txid Int),
+
+      -- | Rng used to randomly order peers
+      peerRng         :: !StdGen
     }
     deriving (Eq, Show, Generic)
 
 instance ( NoThunks peeraddr
          , NoThunks tx
          , NoThunks txid
+         , NoThunks StdGen
          ) => NoThunks (SharedTxState peeraddr txid tx)
 
 
@@ -200,7 +235,7 @@ data TxDecision txid tx = TxDecision {
     txdTxsToRequest       :: !(Set txid),
     -- ^ txid's to download.
 
-    txdTxsToMempool       :: ![tx]
+    txdTxsToMempool       :: ![(txid,tx)]
     -- ^ list of `tx`s to submit to the mempool.
   }
   deriving (Show, Eq)
@@ -262,6 +297,7 @@ data ProcessedTxCount = ProcessedTxCount {
       ptxcAccepted :: Int
       -- | Just rejected this many transactions.
     , ptxcRejected :: Int
+    , ptxcScore    :: Double
     }
   deriving (Eq, Show)
 
