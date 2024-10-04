@@ -16,6 +16,7 @@ module Ouroboros.Network.TxSubmission.Inbound.State
   , receivedTxIds
   , collectTxs
   , acknowledgeTxIds
+  , tickTimedTxs
     -- * Internals, only exported for testing purposes:
   , RefCountDiff (..)
   , updateRefCounts
@@ -24,6 +25,7 @@ module Ouroboros.Network.TxSubmission.Inbound.State
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadTime.SI
 import Control.Exception (assert)
 import Control.Tracer (Tracer, traceWith)
 
@@ -41,6 +43,7 @@ import Data.Sequence.Strict (StrictSeq)
 import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set (Set)
 import Data.Set qualified as Set
+import System.Random (StdGen)
 
 import GHC.Stack (HasCallStack)
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..),
@@ -97,7 +100,7 @@ acknowledgeTxIds
     => TxDecisionPolicy
     -> SharedTxState peeraddr txid tx
     -> PeerTxState txid tx
-    -> (NumTxIdsToAck, NumTxIdsToReq, [tx], RefCountDiff txid, PeerTxState txid tx)
+    -> (NumTxIdsToAck, NumTxIdsToReq, [(txid,tx)], RefCountDiff txid, PeerTxState txid tx)
     -- ^ number of txid to acknowledge, txids to acknowledge with multiplicities,
     -- updated PeerTxState.
 {-# INLINE acknowledgeTxIds #-}
@@ -109,7 +112,11 @@ acknowledgeTxIds
     ps@PeerTxState { availableTxIds,
                      unacknowledgedTxIds,
                      unknownTxs,
-                     requestedTxIdsInflight }
+                     requestedTxIdsInflight,
+                     downloadedTxs,
+                     score,
+                     toMempoolTxs,
+                     requestedTxsInflight }
     =
     -- We can only acknowledge txids when we can request new ones, since
     -- a `MsgRequestTxIds` for 0 txids is a protocol error.
@@ -123,7 +130,10 @@ acknowledgeTxIds
              availableTxIds         = availableTxIds',
              unknownTxs             = unknownTxs',
              requestedTxIdsInflight = requestedTxIdsInflight
-                                    + txIdsToRequest }
+                                    + txIdsToRequest,
+             downloadedTxs          = downloadedTxs',
+             score                  = score',
+             toMempoolTxs           = toMempoolTxs' }
       )
       else
       ( 0
@@ -136,16 +146,29 @@ acknowledgeTxIds
     -- Split `unacknowledgedTxIds'` into the longest prefix of `txid`s which
     -- can be acknowledged and the unacknowledged `txid`s.
     (acknowledgedTxIds, unacknowledgedTxIds') =
-      StrictSeq.spanl (\txid -> txid `Map.member` bufferedTxs
+      StrictSeq.spanl (\txid -> (txid `Map.member` bufferedTxs
                              || txid `Set.member` unknownTxs
+                             || txid `Map.member` downloadedTxs)
+                             && txid `Set.notMember` requestedTxsInflight
                       )
                       unacknowledgedTxIds
 
-    txsToMempool :: [tx]
-    txsToMempool = [ tx
-                   | txid <- toList acknowledgedTxIds
-                   , Just tx <- maybeToList $ txid `Map.lookup` bufferedTxs
+    txsToMempool = [ (txid,tx)
+                   | txid <- toList toMempoolTxIds
+                   , tx <- maybeToList $ txid `Map.lookup` downloadedTxs
                    ]
+    (toMempoolTxIds, _) =
+      StrictSeq.spanl (\txid -> txid `Map.member` downloadedTxs
+                             && txid `Map.notMember` bufferedTxs)
+                      acknowledgedTxIds
+    txsToMempoolMap = Map.fromList txsToMempool
+
+    toMempoolTxs' = toMempoolTxs <> txsToMempoolMap
+
+    (downloadedTxs', ackedDownloadedTxs) = Map.partitionWithKey (\txid _ -> Set.member txid liveSet) downloadedTxs
+    lateTxs = Map.filterWithKey (\txid _ -> Map.notMember txid txsToMempoolMap) ackedDownloadedTxs
+    score' = score + (fromIntegral $ Map.size lateTxs)
+
 
     -- the set of live `txids`
     liveSet  = Set.fromList (toList unacknowledgedTxIds')
@@ -204,6 +227,43 @@ updateRefCounts referenceCounts (RefCountDiff diff) =
               referenceCounts
               diff
 
+tickTimedTxs :: forall peeraddr tx txid.
+                (Ord txid)
+             => Time
+             -> SharedTxState peeraddr txid tx
+             -> SharedTxState peeraddr txid tx
+tickTimedTxs now st@SharedTxState{ timedTxs
+                                 , referenceCounts
+                                 , bufferedTxs } =
+    let (expiredTxs, timedTxs') = Map.split now timedTxs
+        expiredTxs'             =  -- Map.split doesn't include the `now` entry in any map
+                                  case Map.lookup now timedTxs of
+                                       (Just txids) -> expiredTxs <> (Map.singleton now txids)
+                                       Nothing      -> expiredTxs
+        refDiff = Map.foldl fn Map.empty expiredTxs'
+        referenceCounts' = updateRefCounts referenceCounts (RefCountDiff refDiff)
+        liveSet = Map.keysSet referenceCounts'
+        bufferedTxs' = bufferedTxs `Map.restrictKeys` liveSet in
+    st { timedTxs        = timedTxs'
+       , referenceCounts = referenceCounts'
+       , bufferedTxs     = bufferedTxs'
+       }
+
+  where
+    fn :: Map txid Int
+       -> [txid]
+       -> Map txid Int
+    fn m txids = foldl' gn m txids
+
+    gn :: Map txid Int
+       -> txid
+       -> Map txid Int
+    gn m txid = Map.alter af txid m
+
+    af :: Maybe Int
+       -> Maybe Int
+    af Nothing  = Just 1
+    af (Just n) = Just $! succ n
 
 --
 -- Pure internal API
@@ -340,7 +400,7 @@ collectTxsImpl txSize peeraddr requestedTxIds receivedTxs
           )
     fn ps =
         case wrongSizedTxs of
-          [] -> ( Right st''
+          [] -> ( Right st'
                 , ps''
                 )
           _  -> ( Left wrongSizedTxs
@@ -365,9 +425,7 @@ collectTxsImpl txSize peeraddr requestedTxIds receivedTxs
 
         notReceived = requestedTxIds Set.\\ Map.keysSet receivedTxs
 
-        -- add received `tx`s to buffered map
-        bufferedTxs' = bufferedTxs st
-                    <> Map.map Just receivedTxs
+        downloadedTxs' = downloadedTxs ps <> receivedTxs
 
         -- Add not received txs to `unknownTxs` before acknowledging txids.
         unknownTxs'  = unknownTxs ps <> notReceived
@@ -383,8 +441,6 @@ collectTxsImpl txSize peeraddr requestedTxIds receivedTxs
           assert (requestedTxsInflightSize ps >= requestedSize) $
           requestedTxsInflightSize ps - requestedSize
 
-        st' = st { bufferedTxs = bufferedTxs' }
-
         -- subtract requested from in-flight
         inflightTxs'' =
           Map.merge
@@ -395,15 +451,15 @@ collectTxsImpl txSize peeraddr requestedTxIds receivedTxs
                                                if z > 0
                                                then Just z
                                                else Nothing)
-            (inflightTxs st')
+            (inflightTxs st)
             (Map.fromSet (const 1) requestedTxIds)
 
-        inflightTxsSize'' = assert (inflightTxsSize st' >= requestedSize) $
-                            inflightTxsSize st' - requestedSize
+        inflightTxsSize'' = assert (inflightTxsSize st >= requestedSize) $
+                            inflightTxsSize st - requestedSize
 
-        st'' = st' { inflightTxs     = inflightTxs'',
+        st' = st { inflightTxs     = inflightTxs'',
                      inflightTxsSize = inflightTxsSize''
-                   }
+                 }
 
         --
         -- Update PeerTxState
@@ -433,7 +489,8 @@ collectTxsImpl txSize peeraddr requestedTxIds receivedTxs
         ps'' = ps { availableTxIds           = availableTxIds'',
                     unknownTxs               = unknownTxs'',
                     requestedTxsInflightSize = requestedTxsInflightSize',
-                    requestedTxsInflight     = requestedTxsInflight' }
+                    requestedTxsInflight     = requestedTxsInflight',
+                    downloadedTxs            =  downloadedTxs'}
 
 --
 -- Monadic public API
@@ -442,12 +499,16 @@ collectTxsImpl txSize peeraddr requestedTxIds receivedTxs
 type SharedTxStateVar m peeraddr txid tx = StrictTVar m (SharedTxState peeraddr txid tx)
 
 newSharedTxStateVar :: MonadSTM m
-                    => m (SharedTxStateVar m peeraddr txid tx)
-newSharedTxStateVar = newTVarIO SharedTxState { peerTxStates    = Map.empty,
+                    => StdGen
+                    -> m (SharedTxStateVar m peeraddr txid tx)
+newSharedTxStateVar rng = newTVarIO SharedTxState { peerTxStates    = Map.empty,
                                                 inflightTxs     = Map.empty,
                                                 inflightTxsSize = 0,
                                                 bufferedTxs     = Map.empty,
-                                                referenceCounts = Map.empty }
+                                                referenceCounts = Map.empty,
+                                                timedTxs        = Map.empty,
+                                                limboTxs        = Map.empty,
+                                                peerRng         = rng }
 
 
 -- | Acknowledge `txid`s, return the number of `txids` to be acknowledged to the
