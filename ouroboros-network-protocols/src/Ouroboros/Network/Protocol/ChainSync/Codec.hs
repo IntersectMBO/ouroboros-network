@@ -23,6 +23,7 @@ import Ouroboros.Network.Protocol.ChainSync.Type
 import Ouroboros.Network.Protocol.Limits
 
 import Data.ByteString.Lazy qualified as LBS
+import Data.Kind (Type)
 import Data.Singletons (withSingI)
 import System.Random (StdGen, randomR)
 
@@ -78,7 +79,7 @@ maxChainSyncTimeout = 269
 -- | @'StIntersect'@            | 'shortWait'                                                 |
 -- +----------------------------+-------------------------------------------------------------+
 --
-timeLimitsChainSync :: forall header point tip.
+timeLimitsChainSync :: forall (header :: Type) (point :: Type) (tip :: Type).
                        StdGen
                     -> ProtocolTimeLimits (ChainSync header point tip)
 timeLimitsChainSync rnd = ProtocolTimeLimits stateToLimit

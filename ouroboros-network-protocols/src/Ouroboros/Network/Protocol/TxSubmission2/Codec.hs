@@ -10,21 +10,20 @@
 module Ouroboros.Network.Protocol.TxSubmission2.Codec
   ( codecTxSubmission2
   , codecTxSubmission2Id
-  , encodeTxSubmission2
-  , decodeTxSubmission2
   , byteLimitsTxSubmission2
   , timeLimitsTxSubmission2
   ) where
 
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadTime.SI
+import Data.ByteString.Lazy (ByteString)
+import Data.Kind (Type)
 import Data.List.NonEmpty qualified as NonEmpty
+import Text.Printf
 
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
-import Data.ByteString.Lazy (ByteString)
-import Text.Printf
 
 import Network.TypedProtocol.Codec.CBOR
 
@@ -63,6 +62,7 @@ byteLimitsTxSubmission2 = ProtocolSizeLimits stateToLimit
 -- | `StTxs`                     | `shortWait`   |
 -- +-----------------------------+---------------+
 --
+timeLimitsTxSubmission2 :: forall (txid :: Type) (tx :: Type). ProtocolTimeLimits (TxSubmission2 txid tx)
 timeLimitsTxSubmission2 = ProtocolTimeLimits stateToLimit
   where
     stateToLimit :: forall (st :: TxSubmission2 txid tx).
@@ -76,7 +76,7 @@ timeLimitsTxSubmission2 = ProtocolTimeLimits stateToLimit
 
 
 codecTxSubmission2
-  :: forall txid tx m.
+  :: forall (txid :: Type) (tx :: Type) m.
      MonadST m
   => (txid -> CBOR.Encoding)
   -- ^ encode 'txid'
@@ -103,7 +103,7 @@ codecTxSubmission2 encodeTxId decodeTxId
       decodeTxSubmission2 decodeTxId decodeTx stok len key
 
 encodeTxSubmission2
-    :: forall txid tx (st :: TxSubmission2 txid tx) (st' :: TxSubmission2 txid tx).
+    :: forall (txid :: Type) (tx :: Type) (st :: TxSubmission2 txid tx) (st' :: TxSubmission2 txid tx).
        (txid -> CBOR.Encoding)
     -- ^ encode 'txid'
     -> (tx -> CBOR.Encoding)
