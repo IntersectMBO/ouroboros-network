@@ -26,11 +26,13 @@ import Ouroboros.Network.Protocol.PeerSharing.Type
 codecPeerSharing :: forall m peerAddress.
                     MonadST m
                  => (peerAddress -> CBOR.Encoding)
+                 -- ^ encode 'peerAddress'
                  -> (forall s . CBOR.Decoder s peerAddress)
+                 -- ^ decode 'peerAddress'
                  -> Codec (PeerSharing peerAddress)
-                         CBOR.DeserialiseFailure
-                         m
-                         ByteString
+                          CBOR.DeserialiseFailure
+                          m
+                          ByteString
 codecPeerSharing encodeAddress decodeAddress = mkCodecCborLazyBS encodeMsg decodeMsg
   where
     encodeMsg :: Message (PeerSharing peerAddress) st st'
@@ -120,7 +122,7 @@ maxTransmissionUnit :: Word
 maxTransmissionUnit = 4 * 1440
 
 byteLimitsPeerSharing :: forall peerAddress bytes.
-                         (bytes -> Word)
+                         (bytes -> Word) -- ^ compute size of bytes
                       -> ProtocolSizeLimits (PeerSharing peerAddress) bytes
 byteLimitsPeerSharing = ProtocolSizeLimits sizeLimitForState
   where
@@ -132,7 +134,16 @@ byteLimitsPeerSharing = ProtocolSizeLimits sizeLimitForState
     sizeLimitForState a@SingDone = notActiveState a
 
 
-timeLimitsPeerSharing :: forall peerAddress. ProtocolTimeLimits (PeerSharing peerAddress)
+-- | 'PeerSharing' timeouts.
+--
+-- +----------------------+---------------+
+-- | 'PeerSharing' state  | timeout (s)   |
+-- +======================+===============+
+-- | `StIdle`             | `waitForever` |
+-- +----------------------+---------------+
+-- | `StBusy`             | `longWait`    |
+-- +----------------------+---------------+
+--
 timeLimitsPeerSharing = ProtocolTimeLimits { timeLimitForState }
   where
     timeLimitForState :: forall (st :: PeerSharing peerAddress).

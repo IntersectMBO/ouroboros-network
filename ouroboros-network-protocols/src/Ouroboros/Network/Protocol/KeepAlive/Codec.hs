@@ -86,6 +86,16 @@ byteLimitsKeepAlive = ProtocolSizeLimits sizeLimitForState
     sizeLimitForState a@SingDone = notActiveState a
 
 
+-- | 'KeepAlive' time limits.
+--
+-- +--------------------+---------------+
+-- | 'KeepAlive' state  | timeout (s)   |
+-- +====================+===============+
+-- | `StClient`         | @Just 97@     |
+-- +--------------------+---------------+
+-- | `StServer`         | @Just 60@     |
+-- +--------------------+---------------+
+--
 timeLimitsKeepAlive :: ProtocolTimeLimits KeepAlive
 timeLimitsKeepAlive = ProtocolTimeLimits { timeLimitForState }
   where

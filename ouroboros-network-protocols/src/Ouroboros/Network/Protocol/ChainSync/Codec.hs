@@ -35,8 +35,8 @@ import Text.Printf
 
 
 -- | Byte Limits
-byteLimitsChainSync :: forall bytes header point tip .
-                       (bytes -> Word)
+byteLimitsChainSync :: forall bytes (header :: Type) (point :: Type) (tip :: Type) .
+                       (bytes -> Word) -- ^ compute size of `bytes`
                     -> ProtocolSizeLimits (ChainSync header point tip) bytes
 byteLimitsChainSync = ProtocolSizeLimits stateToLimit
   where
@@ -63,10 +63,21 @@ maxChainSyncTimeout = 269
 
 -- | Time Limits
 --
--- > 'TokIdle'               'waitForever' (ie never times out)
--- > 'TokNext TokCanAwait'   the given 'canAwaitTimeout'
--- > 'TokNext TokMustReply'  the given 'mustReplyTimeout'
--- > 'TokIntersect'          the given 'intersectTimeout'
+-- +----------------------------+-------------------------------------------------------------+
+-- | ChainSync State            | timeout (s)                                                 |
+-- +============================+=============================================================+
+-- | @'StIdle'@                 | 'waitForever' (i.e. never times out)                        |
+-- +----------------------------+-------------------------------------------------------------+
+-- | @'StNext' 'StCanAwait'@    | 'shortWait'                                                 |
+-- +----------------------------+-------------------------------------------------------------+
+-- | @'StNext' 'StMustReply'@   | randomly picked using uniform distribution from             |
+-- |                            | the range @('minChainSyncTimeout', 'maxChainSyncTimeout')@, |
+-- |                            | which corresponds to a chance of an empty streak of slots   |
+-- |                            | between `0.0001%` and `1%` probability.                     |
+-- +----------------------------+-------------------------------------------------------------+
+-- | @'StIntersect'@            | 'shortWait'                                                 |
+-- +----------------------------+-------------------------------------------------------------+
+--
 timeLimitsChainSync :: forall header point tip.
                        StdGen
                     -> ProtocolTimeLimits (ChainSync header point tip)
@@ -97,18 +108,26 @@ timeLimitsChainSync rnd = ProtocolTimeLimits stateToLimit
                   $ rnd
       in Just timeout
     stateToLimit a@SingDone = notActiveState a
+
+-- | Codec for chain sync that encodes/decodes headers, points & tips.
 --
--- NOTE: See 'wrapCBORinCBOR' and 'unwrapCBORinCBOR' if you want to use this
+-- /NOTE:/ See 'wrapCBORinCBOR' and 'unwrapCBORinCBOR' if you want to use this
 -- with a header type that has annotations.
 codecChainSync
   :: forall header point tip m.
      (MonadST m)
   => (header -> CBOR.Encoding)
+  -- ^ encode header
   -> (forall s . CBOR.Decoder s header)
+  -- ^ decode header
   -> (point -> CBOR.Encoding)
+  -- ^ encode point
   -> (forall s . CBOR.Decoder s point)
+  -- ^ decode point
   -> (tip -> CBOR.Encoding)
+  -- ^ encode tip
   -> (forall s. CBOR.Decoder s tip)
+  -- ^ decode tip
   -> Codec (ChainSync header point tip)
            CBOR.DeserialiseFailure m LBS.ByteString
 codecChainSync encodeHeader decodeHeader
@@ -230,7 +249,7 @@ decodeList dec = do
 -- | An identity 'Codec' for the 'ChainSync' protocol. It does not do any
 -- serialisation. It keeps the typed messages, wrapped in 'AnyMessage'.
 --
-codecChainSyncId :: forall header point tip m. Monad m
+codecChainSyncId :: forall (header :: Type) (point :: Type) (tip :: Type) m. Monad m
                  => Codec (ChainSync header point tip)
                           CodecFailure m (AnyMessage (ChainSync header point tip))
 codecChainSyncId = Codec encode decode
