@@ -40,7 +40,7 @@ import Data.Maybe (fromMaybe)
 import Data.Monoid.Synchronisation
 import Data.Void (Void)
 import Pipes qualified
-import System.Random (RandomGen, StdGen)
+import System.Random (RandomGen, StdGen, mkStdGen)
 
 import Network.Mux qualified as Mx
 import Network.TypedProtocol
@@ -139,7 +139,7 @@ data LimitsAndTimeouts header block = LimitsAndTimeouts
       :: ProtocolSizeLimits (ChainSync header (Point block) (Tip block))
                             ByteString
   , chainSyncTimeLimits
-      :: ProtocolTimeLimits (ChainSync header (Point block) (Tip block))
+      :: StdGen -> ProtocolTimeLimits (ChainSync header (Point block) (Tip block))
 
     -- block-fetch
   , blockFetchLimits
@@ -415,8 +415,9 @@ applications debugTracer nodeKernel
                   bracket (registerClientChains nodeKernel (remoteAddress connId))
                           (\_ -> unregisterClientChains nodeKernel (remoteAddress connId))
                           (\chainVar ->
-                            runPeerWithLimits
+                            runPeerWithLimitsRnd
                               nullTracer
+                              (mkStdGen 0) -- TODO
                               chainSyncCodec
                               (chainSyncSizeLimits limits)
                               (chainSyncTimeLimits limits)
@@ -431,8 +432,9 @@ applications debugTracer nodeKernel
       :: MiniProtocolCb (ResponderContext NtNAddr) ByteString m ()
     chainSyncResponder = MiniProtocolCb $ \_ctx channel -> do
       labelThisThread "ChainSyncServer"
-      runPeerWithLimits
+      runPeerWithLimitsRnd
         nullTracer
+        (mkStdGen 0)
         chainSyncCodec
         (chainSyncSizeLimits limits)
         (chainSyncTimeLimits limits)

@@ -1,7 +1,6 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
-{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -11,19 +10,21 @@ module Ouroboros.Network.Protocol.ChainSync.Codec
   , codecChainSyncId
   , byteLimitsChainSync
   , timeLimitsChainSync
-  , ChainSyncTimeout (..)
+  , maxChainSyncTimeout
+  , minChainSyncTimeout
   ) where
 
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadTime.SI
 
-import Network.TypedProtocol.Codec.CBOR
+import Network.TypedProtocol.Codec.CBOR hiding (decode, encode)
 
 import Ouroboros.Network.Protocol.ChainSync.Type
 import Ouroboros.Network.Protocol.Limits
 
 import Data.ByteString.Lazy qualified as LBS
 import Data.Singletons (withSingI)
+import System.Random (StdGen, randomR)
 
 import Codec.CBOR.Decoding (decodeListLen, decodeWord)
 import Codec.CBOR.Decoding qualified as CBOR
@@ -47,20 +48,18 @@ byteLimitsChainSync = ProtocolSizeLimits stateToLimit
     stateToLimit SingIntersect            = smallByteLimit
     stateToLimit a@SingDone               = notActiveState a
 
--- | Configurable timeouts
+
+-- | Chain sync `mustReplayTimeout` lower bound.
 --
--- These are configurable for at least the following reasons.
+minChainSyncTimeout :: DiffTime
+minChainSyncTimeout = 135
+
+
+-- | Chain sync `mustReplayTimeout` upper bound.
 --
--- o So that deployment and testing can use different values.
---
--- o So that a net running Praos can better cope with streaks of empty slots.
---   (See @intersectmbo/ouroboros-network#2245@.)
-data ChainSyncTimeout = ChainSyncTimeout
-  { canAwaitTimeout  :: Maybe DiffTime
-  , intersectTimeout :: Maybe DiffTime
-  , mustReplyTimeout :: Maybe DiffTime
-  , idleTimeout      :: Maybe DiffTime
-  }
+maxChainSyncTimeout :: DiffTime
+maxChainSyncTimeout = 269
+
 
 -- | Time Limits
 --
@@ -69,26 +68,35 @@ data ChainSyncTimeout = ChainSyncTimeout
 -- > 'TokNext TokMustReply'  the given 'mustReplyTimeout'
 -- > 'TokIntersect'          the given 'intersectTimeout'
 timeLimitsChainSync :: forall header point tip.
-                       ChainSyncTimeout
+                       StdGen
                     -> ProtocolTimeLimits (ChainSync header point tip)
-timeLimitsChainSync csTimeouts = ProtocolTimeLimits stateToLimit
+timeLimitsChainSync rnd = ProtocolTimeLimits stateToLimit
   where
-    ChainSyncTimeout
-      { canAwaitTimeout
-      , intersectTimeout
-      , mustReplyTimeout
-      , idleTimeout
-      } = csTimeouts
-
     stateToLimit :: forall (st :: ChainSync header point tip).
                     ActiveState st => StateToken st -> Maybe DiffTime
-    stateToLimit SingIdle                 = idleTimeout
-    stateToLimit (SingNext SingCanAwait)  = canAwaitTimeout
-    stateToLimit (SingNext SingMustReply) = mustReplyTimeout
-    stateToLimit SingIntersect            = intersectTimeout
-    stateToLimit a@SingDone               = notActiveState a
-
--- | Codec for chain sync that encodes/decodes headers
+    stateToLimit SingIdle                 = Just 3673
+    stateToLimit SingIntersect            = shortWait
+    stateToLimit (SingNext SingCanAwait)  = shortWait
+    stateToLimit (SingNext SingMustReply) =
+      -- We draw from a range for which streaks of empty slots ranges
+      -- from 0.0001% up to 1% probability.
+      -- t = T_s [log (1-Y) / log (1-f)]
+      -- Y = [0.99, 0.999...]
+      -- T_s = slot length of 1s.
+      -- f = 0.05
+      -- The timeout is randomly picked per state to avoid all peers go down at
+      -- the same time in case of a long streak of empty slots, and thus to
+      -- avoid global synchronisation.  The timeout is picked uniformly from
+      -- the interval 135 - 269, which corresponds to 99.9% to
+      -- 99.9999% thresholds.
+      let timeout :: DiffTime
+          timeout = realToFrac . fst
+                  . randomR ( realToFrac minChainSyncTimeout :: Double
+                            , realToFrac maxChainSyncTimeout :: Double
+                            )
+                  $ rnd
+      in Just timeout
+    stateToLimit a@SingDone = notActiveState a
 --
 -- NOTE: See 'wrapCBORinCBOR' and 'unwrapCBORinCBOR' if you want to use this
 -- with a header type that has annotations.

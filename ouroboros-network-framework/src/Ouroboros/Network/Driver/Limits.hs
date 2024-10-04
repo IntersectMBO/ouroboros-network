@@ -22,14 +22,19 @@ module Ouroboros.Network.Driver.Limits
     -- * Normal peers
   , runPeerWithLimits
   , runPipelinedPeerWithLimits
+  , runPeerWithLimitsRnd
+  , runPipelinedPeerWithLimitsRnd
   , TraceSendRecv (..)
     -- * Driver utilities
   , driverWithLimits
   , runConnectedPeersWithLimits
   , runConnectedPipelinedPeersWithLimits
+  , runConnectedPeersWithLimitsRnd
+  , runConnectedPipelinedPeersWithLimitsRnd
   ) where
 
 import Data.Maybe (fromMaybe)
+import System.Random
 
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
@@ -105,6 +110,68 @@ driverWithLimits tracer timeoutFn
         Nothing                    -> throwIO (ExceededTimeLimit tok)
 
 
+-- | Like 'driverWithLimits' but gives access to `StdGen` to generate
+-- `ProtocolTimeouts` for the next state.
+--
+driverWithLimitsRnd :: forall ps (pr :: PeerRole) failure bytes m.
+                       ( MonadThrow m
+                       , ShowProxy ps
+                       , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
+                       , Show failure
+                       )
+                    => Tracer m (TraceSendRecv ps)
+                    -> TimeoutFn m
+                    -> StdGen
+                    -> Codec ps failure m bytes
+                    -> ProtocolSizeLimits ps bytes
+                    -> (StdGen -> ProtocolTimeLimits ps)
+                    -> Channel m bytes
+                    -> Driver ps pr (Maybe bytes, StdGen) m
+driverWithLimitsRnd tracer timeoutFn rnd0
+                    Codec{encode, decode}
+                    ProtocolSizeLimits{sizeLimitForState, dataSize}
+                    genProtocolTimeLimits
+                    channel@Channel{send} =
+    Driver { sendMessage, recvMessage, initialDState = (Nothing, rnd0) }
+  where
+    sendMessage :: forall (st :: ps) (st' :: ps).
+                   StateTokenI st
+                => ActiveState st
+                => WeHaveAgencyProof pr st
+                -> Message ps st st'
+                -> m ()
+    sendMessage !_ msg = do
+      send (encode msg)
+      traceWith tracer (TraceSendMsg (AnyMessage msg))
+
+
+    recvMessage :: forall (st :: ps).
+                   StateTokenI st
+                => ActiveState st
+                => TheyHaveAgencyProof pr st
+                -> (Maybe bytes, StdGen)
+                -> m (SomeMessage st, (Maybe bytes, StdGen))
+    recvMessage !_ (trailing, !rnd) = do
+      let tok = stateToken
+      decoder <- decode tok
+      let sizeLimit = sizeLimitForState @st stateToken
+
+      let (rnd', rnd'') = split rnd
+          ProtocolTimeLimits{timeLimitForState} = genProtocolTimeLimits rnd''
+          timeLimit = fromMaybe (-1) $ timeLimitForState @st stateToken
+      result  <- timeoutFn timeLimit $
+                   runDecoderWithLimit sizeLimit dataSize
+                                       channel trailing decoder
+
+      case result of
+        Just (Right (x@(SomeMessage msg), trailing')) -> do
+          traceWith tracer (TraceRecvMsg (AnyMessage msg))
+          return (x, (trailing', rnd'))
+        Just (Left (Just failure)) -> throwIO (DecoderFailure tok failure)
+        Just (Left Nothing)        -> throwIO (ExceededSizeLimit tok)
+        Nothing                    -> throwIO (ExceededTimeLimit tok)
+
+
 runDecoderWithLimit
     :: forall m bytes failure a. Monad m
     => Word
@@ -152,7 +219,8 @@ runDecoderWithLimit limit size Channel{recv} =
                        Just bs -> do let sz' = sz + size bs
                                      go sz' Nothing =<< k (Just bs)
 
-
+-- | Run a peer with limits.
+--
 runPeerWithLimits
   :: forall ps (st :: ps) pr failure bytes m a .
      ( MonadAsync m
@@ -175,6 +243,37 @@ runPeerWithLimits tracer codec slimits tlimits channel peer =
     withTimeoutSerial $ \timeoutFn ->
       let driver = driverWithLimits tracer timeoutFn codec slimits tlimits channel
       in runPeerWithDriver driver peer
+
+
+-- | Run a peer with limits.  'ProtocolTimeLimits' have access to
+-- a pseudorandom generator.
+--
+runPeerWithLimitsRnd
+  :: forall ps (st :: ps) pr failure bytes m a .
+     ( MonadAsync m
+     , MonadFork m
+     , MonadMask m
+     , MonadThrow (STM m)
+     , MonadTimer m
+     , ShowProxy ps
+     , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , Show failure
+     )
+  => Tracer m (TraceSendRecv ps)
+  -> StdGen
+  -> Codec ps failure m bytes
+  -> ProtocolSizeLimits ps bytes
+  -> (StdGen -> ProtocolTimeLimits ps)
+  -> Channel m bytes
+  -> Peer ps pr NonPipelined st m a
+  -> m (a, Maybe bytes)
+runPeerWithLimitsRnd tracer rnd codec slimits tlimits channel peer =
+    withTimeoutSerial $ \timeoutFn ->
+      let driver = driverWithLimitsRnd tracer timeoutFn rnd codec slimits tlimits channel
+      in     (\(a, (trailing, _)) -> (a, trailing))
+         <$> runPeerWithDriver driver peer
+
+
 -- | Run a pipelined peer with the given channel via the given codec.
 --
 -- This runs the peer to completion (if the protocol allows for termination).
@@ -204,6 +303,35 @@ runPipelinedPeerWithLimits tracer codec slimits tlimits channel peer =
     withTimeoutSerial $ \timeoutFn ->
       let driver = driverWithLimits tracer timeoutFn codec slimits tlimits channel
       in runPipelinedPeerWithDriver driver peer
+
+
+-- | Like 'runPipelinedPeerWithLimits' but time limits have access to
+-- a pseudorandom generator.
+--
+runPipelinedPeerWithLimitsRnd
+  :: forall ps (st :: ps) pr failure bytes m a.
+     ( MonadAsync m
+     , MonadFork m
+     , MonadMask m
+     , MonadTimer m
+     , MonadThrow (STM m)
+     , ShowProxy ps
+     , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , Show failure
+     )
+  => Tracer m (TraceSendRecv ps)
+  -> StdGen
+  -> Codec ps failure m bytes
+  -> ProtocolSizeLimits ps bytes
+  -> (StdGen -> ProtocolTimeLimits ps)
+  -> Channel m bytes
+  -> PeerPipelined ps pr st m a
+  -> m (a, Maybe bytes)
+runPipelinedPeerWithLimitsRnd tracer rnd codec slimits tlimits channel peer =
+    withTimeoutSerial $ \timeoutFn ->
+      let driver = driverWithLimitsRnd tracer timeoutFn rnd codec slimits tlimits channel
+      in     (\(a, (trailing, _)) -> (a, trailing))
+         <$> runPipelinedPeerWithDriver driver peer
 
 
 -- | Run two 'Peer's via a pair of connected 'Channel's and a common 'Codec'.
@@ -248,6 +376,41 @@ runConnectedPeersWithLimits createChannels tracer codec slimits tlimits client s
     tracerServer = contramap ((,) Server) tracer
 
 
+runConnectedPeersWithLimitsRnd
+  :: forall ps pr st failure bytes m a b.
+     ( MonadAsync       m
+     , MonadFork        m
+     , MonadMask        m
+     , MonadTimer       m
+     , MonadThrow  (STM m)
+     , Exception failure
+     , ShowProxy ps
+     , forall (st' :: ps) sing. sing ~ StateToken st' => Show sing
+     )
+  => m (Channel m bytes, Channel m bytes)
+  -> Tracer m (Role, TraceSendRecv ps)
+  -> StdGen
+  -> Codec ps failure m bytes
+  -> ProtocolSizeLimits ps bytes
+  -> (StdGen -> ProtocolTimeLimits ps)
+  -> Peer ps             pr  NonPipelined st m a
+  -> Peer ps (FlipAgency pr) NonPipelined st m b
+  -> m (a, b)
+runConnectedPeersWithLimitsRnd createChannels tracer rnd codec slimits tlimits client server =
+    createChannels >>= \(clientChannel, serverChannel) ->
+
+    (do labelThisThread "client"
+        fst <$> runPeerWithLimitsRnd
+                        tracerClient rnd codec slimits tlimits
+                                     clientChannel client)
+      `concurrently`
+    (do labelThisThread "server"
+        fst <$> runPeer tracerServer codec serverChannel server)
+  where
+    tracerClient = contramap ((,) Client) tracer
+    tracerServer = contramap ((,) Server) tracer
+
+
 -- | Run two 'Peer's via a pair of connected 'Channel's and a common 'Codec'.
 -- The client side is using 'driverWithLimits'.
 --
@@ -280,6 +443,39 @@ runConnectedPipelinedPeersWithLimits createChannels tracer codec slimits tlimits
 
     (fst <$> runPipelinedPeerWithLimits
                      tracerClient codec slimits tlimits
+                                        clientChannel client)
+      `concurrently`
+    (fst <$> runPeer tracerServer codec serverChannel server)
+  where
+    tracerClient = contramap ((,) Client) tracer
+    tracerServer = contramap ((,) Server) tracer
+
+
+runConnectedPipelinedPeersWithLimitsRnd
+  :: forall ps pr st failure bytes m a b.
+     ( MonadAsync      m
+     , MonadFork       m
+     , MonadMask       m
+     , MonadTimer      m
+     , MonadThrow (STM m)
+     , Exception failure
+     , ShowProxy ps
+     , forall (st' :: ps) sing. sing ~ StateToken st' => Show sing
+     )
+  => m (Channel m bytes, Channel m bytes)
+  -> Tracer m (Role, TraceSendRecv ps)
+  -> StdGen
+  -> Codec ps failure m bytes
+  -> ProtocolSizeLimits ps bytes
+  -> (StdGen -> ProtocolTimeLimits ps)
+  -> PeerPipelined ps    pr               st m a
+  -> Peer ps (FlipAgency pr) NonPipelined st m b
+  -> m (a, b)
+runConnectedPipelinedPeersWithLimitsRnd createChannels tracer rnd codec slimits tlimits client server =
+    createChannels >>= \(clientChannel, serverChannel) ->
+
+    (fst <$> runPipelinedPeerWithLimitsRnd
+                     tracerClient rnd codec slimits tlimits
                                         clientChannel client)
       `concurrently`
     (fst <$> runPeer tracerServer codec serverChannel server)
