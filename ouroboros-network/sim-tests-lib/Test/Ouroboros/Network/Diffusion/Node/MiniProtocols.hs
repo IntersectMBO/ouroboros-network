@@ -33,7 +33,7 @@ import Data.ByteString.Lazy (ByteString)
 import Data.Functor (($>))
 import Data.Maybe (fromMaybe)
 import Data.Void (Void)
-import System.Random (RandomGen, StdGen)
+import System.Random (RandomGen, StdGen, mkStdGen)
 
 import Codec.CBOR.Read qualified as CBOR
 import Codec.Serialise qualified as Serialise
@@ -137,7 +137,7 @@ data LimitsAndTimeouts header block = LimitsAndTimeouts
       :: ProtocolSizeLimits (ChainSync header (Point block) (Tip block))
                             ByteString
   , chainSyncTimeLimits
-      :: ProtocolTimeLimits (ChainSync header (Point block) (Tip block))
+      :: StdGen -> ProtocolTimeLimits (ChainSync header (Point block) (Tip block))
 
     -- block-fetch
   , blockFetchLimits
@@ -394,8 +394,9 @@ applications debugTracer nodeKernel
                   bracket (registerClientChains nodeKernel (remoteAddress connId))
                           (\_ -> unregisterClientChains nodeKernel (remoteAddress connId))
                           (\chainVar ->
-                            runPeerWithLimits
+                            runPeerWithLimitsRnd
                               nullTracer
+                              (mkStdGen 0) -- TODO
                               chainSyncCodec
                               (chainSyncSizeLimits limits)
                               (chainSyncTimeLimits limits)
@@ -410,8 +411,9 @@ applications debugTracer nodeKernel
       :: MiniProtocolCb (ResponderContext NtNAddr) ByteString m ()
     chainSyncResponder = MiniProtocolCb $ \_ctx channel -> do
       labelThisThread "ChainSyncServer"
-      runPeerWithLimits
+      runPeerWithLimitsRnd
         nullTracer
+        (mkStdGen 0)
         chainSyncCodec
         (chainSyncSizeLimits limits)
         (chainSyncTimeLimits limits)
