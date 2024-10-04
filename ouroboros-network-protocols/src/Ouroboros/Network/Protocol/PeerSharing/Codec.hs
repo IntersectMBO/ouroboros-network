@@ -6,12 +6,18 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.Protocol.PeerSharing.Codec where
+module Ouroboros.Network.Protocol.PeerSharing.Codec
+  ( codecPeerSharing
+  , codecPeerSharingId
+  , byteLimitsPeerSharing
+  , timeLimitsPeerSharing
+  ) where
 
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadTime.SI (DiffTime)
 
 import Data.ByteString.Lazy (ByteString)
+import Data.Kind (Type)
 
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
@@ -23,7 +29,7 @@ import Network.TypedProtocol.Codec.CBOR
 import Ouroboros.Network.Protocol.Limits
 import Ouroboros.Network.Protocol.PeerSharing.Type
 
-codecPeerSharing :: forall m peerAddress.
+codecPeerSharing :: forall m (peerAddress :: Type).
                     MonadST m
                  => (peerAddress -> CBOR.Encoding)
                  -- ^ encode 'peerAddress'
@@ -87,7 +93,7 @@ codecPeerSharing encodeAddress decodeAddress = mkCodecCborLazyBS encodeMsg decod
           Just n  -> CBOR.decodeSequenceLenN     (flip (:)) [] reverse n dec
 
 codecPeerSharingId
-  :: forall peerAddress m.
+  :: forall (peerAddress :: Type) m.
      Monad m
   => Codec (PeerSharing peerAddress) CodecFailure m (AnyMessage (PeerSharing peerAddress))
 codecPeerSharingId = Codec encodeMsg decodeMsg
@@ -121,7 +127,7 @@ codecPeerSharingId = Codec encodeMsg decodeMsg
 maxTransmissionUnit :: Word
 maxTransmissionUnit = 4 * 1440
 
-byteLimitsPeerSharing :: forall peerAddress bytes.
+byteLimitsPeerSharing :: forall (peerAddress :: Type) bytes.
                          (bytes -> Word) -- ^ compute size of bytes
                       -> ProtocolSizeLimits (PeerSharing peerAddress) bytes
 byteLimitsPeerSharing = ProtocolSizeLimits sizeLimitForState
@@ -144,6 +150,7 @@ byteLimitsPeerSharing = ProtocolSizeLimits sizeLimitForState
 -- | `StBusy`             | `longWait`    |
 -- +----------------------+---------------+
 --
+timeLimitsPeerSharing :: forall (peerAddress :: Type). ProtocolTimeLimits (PeerSharing peerAddress)
 timeLimitsPeerSharing = ProtocolTimeLimits { timeLimitForState }
   where
     timeLimitForState :: forall (st :: PeerSharing peerAddress).
