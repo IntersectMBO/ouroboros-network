@@ -16,6 +16,7 @@ import Data.Set qualified as Set
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (assert)
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
 import Control.Tracer (Tracer, traceWith)
 
 import Network.TypedProtocol.Pipelined
@@ -43,6 +44,7 @@ txSubmissionInboundV2
   :: forall txid tx idx m.
      ( MonadSTM   m
      , MonadThrow m
+     , MonadMonotonicTime m
      , Ord txid
      )
   => Tracer m (TraceTxSubmissionInbound txid tx)
@@ -70,9 +72,15 @@ txSubmissionInboundV2
         txd@TxDecision { txdTxsToRequest = txsToReq, txdTxsToMempool = txs }
           <- readTxDecision
         traceWith tracer (TraceTxInboundDecision txd)
+
+        !start <- getMonotonicTime
         txidsAccepted <- mempoolAddTxs txs
+        !end <- getMonotonicTime
+        let duration = diffTime end start
+
         traceWith tracer $
-          TraceTxInboundAddedToMempool txidsAccepted
+          TraceTxInboundAddedToMempool txidsAccepted duration
+
         let !collected = length txs
         let !accepted = length txidsAccepted
         traceWith tracer $

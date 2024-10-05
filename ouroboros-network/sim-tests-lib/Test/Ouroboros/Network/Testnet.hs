@@ -588,7 +588,7 @@ unit_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
                   case x of
                     -- When we add txids to the mempool, we collect them
                     -- into the map
-                    DiffusionTxSubmissionInbound (TraceTxInboundAddedToMempool txids) ->
+                    DiffusionTxSubmissionInbound (TraceTxInboundAddedToMempool txids _) ->
                       Map.alter (maybe (Just []) (Just . sort . (txids ++))) n rr
                     -- When the node is shutdown we have to reset the accepted
                     -- txids list
