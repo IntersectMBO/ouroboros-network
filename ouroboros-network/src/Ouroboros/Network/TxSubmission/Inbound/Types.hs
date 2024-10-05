@@ -24,6 +24,7 @@ module Ouroboros.Network.TxSubmission.Inbound.Types
   ) where
 
 import Control.Exception (Exception (..))
+import Control.Monad.Class.MonadTime.SI
 import Data.Map.Strict (Map)
 import Data.Sequence.Strict (StrictSeq)
 import Data.Set (Set)
@@ -297,7 +298,7 @@ data TraceTxSubmissionInbound txid tx =
     -- | Server received 'MsgDone'
   | TraceTxInboundCanRequestMoreTxs Int
   | TraceTxInboundCannotRequestMoreTxs Int
-  | TraceTxInboundAddedToMempool [txid]
+  | TraceTxInboundAddedToMempool [txid] DiffTime
 
   --
   -- messages emitted by the new implementation of the server in
