@@ -4,7 +4,6 @@
 module Ouroboros.Network.BlockFetch.ConsensusInterface
   ( FetchMode (..)
   , BlockFetchConsensusInterface (..)
-  , WhetherReceivingTentativeBlocks (..)
   , FromConsensus (..)
   ) where
 
@@ -86,8 +85,7 @@ data BlockFetchConsensusInterface peer header block m =
        -- That function and 'readFetchedBlocks' are required to be linked. Upon
        -- successful completion of @addFetchedBlock@ it must be the case that
        -- 'readFetchedBlocks' reports the block.
-       mkAddFetchedBlock      :: WhetherReceivingTentativeBlocks
-                              -> STM m (Point block -> block -> m ()),
+       mkAddFetchedBlock      :: STM m (Point block -> block -> m ()),
 
        -- | The highest stored/downloaded slot number.
        --
@@ -151,13 +149,6 @@ data BlockFetchConsensusInterface peer header block m =
        -- WARNING: Same as 'headerForgeUTCTime'.
        blockForgeUTCTime  :: FromConsensus block -> STM m UTCTime
      }
-
-
--- | Whether the block fetch peer is sending tentative blocks, which are
--- understood to possibly be invalid
-data WhetherReceivingTentativeBlocks
-  = ReceivingTentativeBlocks
-  | NotReceivingTentativeBlocks
 
 {-------------------------------------------------------------------------------
   Syntactic indicator of key precondition about Consensus time conversions

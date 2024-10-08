@@ -10,7 +10,6 @@ module Ouroboros.Network.NodeToNode.Version
   , ConnectionMode (..)
   , nodeToNodeVersionCodec
   , nodeToNodeCodecCBORTerm
-  , isPipeliningEnabled
   ) where
 
 import Data.Text (Text)
@@ -21,8 +20,6 @@ import Codec.CBOR.Term qualified as CBOR
 
 import Control.DeepSeq
 import GHC.Generics
-import Ouroboros.Network.BlockFetch.ConsensusInterface
-           (WhetherReceivingTentativeBlocks (..))
 import Ouroboros.Network.CodecCBORTerm
 import Ouroboros.Network.Handshake.Acceptable (Accept (..), Acceptable (..))
 import Ouroboros.Network.Handshake.Queryable (Queryable (..))

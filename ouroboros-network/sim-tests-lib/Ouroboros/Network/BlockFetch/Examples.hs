@@ -46,7 +46,6 @@ import Ouroboros.Network.ControlMessage
 import Ouroboros.Network.DeltaQ
 import Ouroboros.Network.Driver
 import Ouroboros.Network.NodeToNode (NodeToNodeVersion (..))
-import Ouroboros.Network.NodeToNode.Version qualified as NodeToNode
 import Ouroboros.Network.Protocol.BlockFetch.Codec
 import Ouroboros.Network.Protocol.BlockFetch.Server
 import Ouroboros.Network.Protocol.BlockFetch.Type
@@ -85,7 +84,6 @@ blockFetchExample0 decisionTracer clientStateTracer clientMsgTracer
                     (contramap (TraceLabelPeer peerno) clientMsgTracer)
                     (contramap (TraceLabelPeer peerno) serverMsgTracer)
                     (maxBound :: NodeToNodeVersion)
-                    NodeToNode.isPipeliningEnabled
                     clientDelay serverDelay
                     registry peerno
                     (blockFetchClient (maxBound :: NodeToNodeVersion) controlMessageSTM nullTracer)
@@ -285,7 +283,7 @@ sampleBlockFetchPolicy1 headerFieldsForgeUTCTime blockHeap currentChain candidat
                                map (maxSlotNoFromWithOrigin . pointSlot) .
                                Set.elems <$>
                                getTestFetchedBlocks blockHeap,
-      mkAddFetchedBlock      = \_enablePipelining -> pure $ addTestFetchedBlock blockHeap,
+      mkAddFetchedBlock      = pure $ addTestFetchedBlock blockHeap,
 
       plausibleCandidateChain,
       compareCandidateChains,
@@ -324,15 +322,14 @@ runFetchClient :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
                    block, Serialise point, ShowProxy block)
                 => Tracer m (TraceSendRecv (BlockFetch block point))
                 -> version
-                -> (version -> WhetherReceivingTentativeBlocks)
                 -> FetchClientRegistry peerid header block m
                 -> peerid
                 -> Channel m LBS.ByteString
                 -> (  FetchClientContext header block m
                    -> ClientPipelined (BlockFetch block point) BFIdle m a)
                 -> m a
-runFetchClient tracer version isPipeliningEnabled registry peerid channel client =
-    bracketFetchClient registry version isPipeliningEnabled peerid $ \clientCtx ->
+runFetchClient tracer version registry peerid channel client =
+    bracketFetchClient registry version peerid $ \clientCtx ->
       fst <$>
         runPipelinedPeerWithLimits tracer codec (byteLimitsBlockFetch (fromIntegral . LBS.length))
           timeLimitsBlockFetch channel (client clientCtx)
@@ -364,8 +361,6 @@ runFetchClientAndServerAsync
                 => Tracer m (TraceSendRecv (BlockFetch block (Point block)))
                 -> Tracer m (TraceSendRecv (BlockFetch block (Point block)))
                 -> version
-                -> (version -> WhetherReceivingTentativeBlocks)
-                -- ^ is pipelining enabled function
                 -> Maybe DiffTime -- ^ client's channel delay
                 -> Maybe DiffTime -- ^ server's channel delay
                 -> FetchClientRegistry peerid header block m
@@ -375,7 +370,7 @@ runFetchClientAndServerAsync
                 -> BlockFetchServer block (Point block) m b
                 -> m (Async m a, Async m b, Async m (), Async m ())
 runFetchClientAndServerAsync clientTracer serverTracer
-                             version      isPipeliningEnabled
+                             version
                              clientDelay  serverDelay
                              registry peerid client server = do
     (clientChannel, serverChannel) <- createConnectedChannels
@@ -386,7 +381,6 @@ runFetchClientAndServerAsync clientTracer serverTracer
       runFetchClient
         clientTracer
         version
-        isPipeliningEnabled
         registry peerid
         (fromMaybe id (delayChannel <$> clientDelay) clientChannel)
         client
