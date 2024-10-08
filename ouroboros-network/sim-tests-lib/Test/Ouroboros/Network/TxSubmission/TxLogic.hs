@@ -299,7 +299,9 @@ mkArbPeerTxState mempoolHasTxFun txIdsInflight unacked txMaskMap =
                     requestedTxIdsInflight,
                     requestedTxsInflight,
                     requestedTxsInflightSize,
-                    unknownTxs }
+                    unknownTxs,
+                    rejectedTxs = 0,
+                    fetchedTxs = Set.empty }
       (Set.fromList $ Map.elems inflightMap)
       bufferedMap
   where

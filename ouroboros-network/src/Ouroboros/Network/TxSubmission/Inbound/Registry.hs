@@ -27,6 +27,7 @@ import Data.Foldable (traverse_
                      , foldl'
 #endif
                      )
+import Data.Functor (void)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
@@ -75,8 +76,14 @@ data PeerTxAPI m txid tx = PeerTxAPI {
                         -- ^ requested txids
                         -> Map txid tx
                         -- ^ received txs
-                        -> m ()
+                        -> m (),
     -- ^ handle received txs
+
+    countRejectedTxs    :: Int
+                        -> m Int,
+
+    consumeFetchedTxs   :: Set txid
+                        -> m (Set txid)
   }
 
 
@@ -123,7 +130,9 @@ withPeer tracer
                   ( TxChannels { txChannelMap = txChannelMap' }
                   , PeerTxAPI { readTxDecision = takeMVar chann',
                                 handleReceivedTxIds,
-                                handleReceivedTxs }
+                                handleReceivedTxs,
+                                countRejectedTxs,
+                                consumeFetchedTxs }
                   )
 
           atomically $ modifyTVar sharedStateVar registerPeer
@@ -151,7 +160,9 @@ withPeer tracer
                  requestedTxsInflightSize = 0,
                  requestedTxsInflight     = Set.empty,
                  unacknowledgedTxIds      = StrictSeq.empty,
-                 unknownTxs               = Set.empty }
+                 unknownTxs               = Set.empty,
+                 rejectedTxs              = 0,
+                 fetchedTxs               = Set.empty }
                peerTxStates
          }
 
@@ -210,8 +221,43 @@ withPeer tracer
                       -> Map txid tx
                       -- ^ received txs
                       -> m ()
-    handleReceivedTxs txids txs =
+    handleReceivedTxs txids txs = do
+      void $ atomically $ modifyTVar sharedStateVar addFethed
       collectTxs tracer sharedStateVar peeraddr txids txs
+       where
+        addFethed :: SharedTxState peeraddr txid tx
+                  -> SharedTxState peeraddr txid tx
+        addFethed st@SharedTxState { peerTxStates } =
+          let peerTxStates' = Map.update (\ps -> Just $! ps { fetchedTxs = Set.union (fetchedTxs ps) txids }) peeraddr peerTxStates in
+          st {peerTxStates = peerTxStates' }
+
+    countRejectedTxs :: Int
+                     -> m Int
+    countRejectedTxs n = atomically $ do
+      modifyTVar sharedStateVar cntRejects
+      st <- readTVar sharedStateVar
+      case Map.lookup peeraddr (peerTxStates st)  of
+           Nothing -> error "missing peer updated"
+           Just ps -> return $ rejectedTxs ps
+       where
+        cntRejects :: SharedTxState peeraddr txid tx
+                   -> SharedTxState peeraddr txid tx
+        cntRejects st@SharedTxState { peerTxStates } =
+          let peerTxStates' = Map.update (\ps -> Just $! ps { rejectedTxs = min 42 (max (-42) (rejectedTxs ps + n)) }) peeraddr peerTxStates in
+          st {peerTxStates    = peerTxStates'}
+
+    consumeFetchedTxs :: Set txid
+                      -> m (Set txid)
+    consumeFetchedTxs otxids = atomically $ do
+      st <- readTVar sharedStateVar
+      case Map.lookup peeraddr (peerTxStates st) of
+           Nothing -> error "missing peer in consumeFetchedTxs"
+           Just ps -> do
+             let o = Set.intersection (fetchedTxs ps) otxids
+                 r = Set.difference (fetchedTxs ps) otxids
+                 st' = st { peerTxStates = Map.update (\ps' -> Just $! ps' { fetchedTxs = r }) peeraddr (peerTxStates st) }
+             writeTVar sharedStateVar st'
+             return o
 
 
 decisionLogicThread
