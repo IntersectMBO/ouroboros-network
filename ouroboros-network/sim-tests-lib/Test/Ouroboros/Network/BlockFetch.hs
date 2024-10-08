@@ -3,6 +3,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
@@ -51,7 +52,7 @@ import Ouroboros.Network.BlockFetch.Examples
 import Ouroboros.Network.Driver (TraceSendRecv)
 import Ouroboros.Network.Mock.Chain qualified as Chain
 import Ouroboros.Network.Mock.ConcreteBlock
-import Ouroboros.Network.NodeToNode.Version (isPipeliningEnabled)
+import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch)
 
 import Ouroboros.Network.Testing.Utils
@@ -675,14 +676,14 @@ unit_bracketSyncWithFetchClient step = do
                  -> m (Either SomeException a, Either SomeException b)
     testSkeleton withFetchTestAction withSyncTestAction withKeepAliveTestAction = do
       registry <- newFetchClientRegistry
-      setFetchClientContext registry nullTracer (const dummyPolicy)
+      setFetchClientContext registry nullTracer dummyPolicy
 
       fetchStatePeerChainsVar <- newTVarIO Map.empty
 
       let peer  = "thepeer"
           fetch :: m a
           fetch = withFetchTestAction $ \body ->
-                    bracketFetchClient registry maxBound isPipeliningEnabled peer $ \_ ->
+                    bracketFetchClient registry (maxBound @NodeToNodeVersion) peer $ \_ ->
                       body
 
           sync :: m b

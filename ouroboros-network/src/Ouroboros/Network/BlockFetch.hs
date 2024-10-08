@@ -98,7 +98,6 @@ module Ouroboros.Network.BlockFetch
   , FetchMode (..)
   , FromConsensus (..)
   , SizeInBytes
-  , WhetherReceivingTentativeBlocks (..)
   ) where
 
 import Data.Hashable (Hashable)
@@ -118,8 +117,7 @@ import Ouroboros.Network.BlockFetch.ClientRegistry (FetchClientPolicy (..),
            readFetchClientsStateVars, readFetchClientsStatus, readPeerGSVs,
            setFetchClientContext)
 import Ouroboros.Network.BlockFetch.ConsensusInterface
-           (BlockFetchConsensusInterface (..), FromConsensus (..),
-           WhetherReceivingTentativeBlocks (..))
+           (BlockFetchConsensusInterface (..), FromConsensus (..))
 import Ouroboros.Network.BlockFetch.State
 
 
@@ -180,9 +178,9 @@ blockFetchLogic decisionTracer clientStateTracer
       fetchTriggerVariables
       fetchNonTriggerVariables
   where
-    mkFetchClientPolicy :: WhetherReceivingTentativeBlocks -> STM m (FetchClientPolicy header block m)
-    mkFetchClientPolicy receivingTentativeBlocks = do
-      addFetchedBlock <- mkAddFetchedBlock receivingTentativeBlocks
+    mkFetchClientPolicy :: STM m (FetchClientPolicy header block m)
+    mkFetchClientPolicy = do
+      addFetchedBlock <- mkAddFetchedBlock
       pure FetchClientPolicy {
           blockFetchSize,
           blockMatchesHeader,

@@ -310,7 +310,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
                                    map (maxSlotNoFromWithOrigin . pointSlot) .
                                    Set.elems <$>
                                    getBlockPointSet (nkChainDB nodeKernel),
-          mkAddFetchedBlock        = \_enablePipelining ->
+          mkAddFetchedBlock        =
               pure $ \_p b ->
                 atomically (addBlock b (nkChainDB nodeKernel)),
 

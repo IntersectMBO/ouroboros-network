@@ -51,8 +51,7 @@ data FetchClientRegistry peer header block m =
        fcrCtxVar
          :: StrictTMVar
               m ( Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
-                , WhetherReceivingTentativeBlocks
-                    -> STM m (FetchClientPolicy header block m)
+                , STM m (FetchClientPolicy header block m)
                 ),
        fcrFetchRegistry
          :: StrictTVar  m (Map peer (FetchClientStateVars m header)),
@@ -85,14 +84,12 @@ bracketFetchClient :: forall m a peer header block version.
                       (MonadFork m, MonadMask m, MonadTimer m, Ord peer)
                    => FetchClientRegistry peer header block m
                    -> version
-                   -> (version -> WhetherReceivingTentativeBlocks)
-                   -- ^ is pipelining enabled function
                    -> peer
                    -> (FetchClientContext header block m -> m a)
                    -> m a
 bracketFetchClient (FetchClientRegistry ctxVar
                       fetchRegistry syncRegistry dqRegistry keepRegistry dyingRegistry)
-                   version isPipeliningEnabled peer action = do
+                   _version peer action = do
     ksVar <- newEmptyTMVarIO
     bracket (register ksVar) (uncurry (unregister ksVar)) (action . fst)
   where
@@ -121,9 +118,7 @@ bracketFetchClient (FetchClientRegistry ctxVar
           Map.insert peer (tid, ksVar) m
 
         -- allocate the policy specific for this peer's negotiated version
-        policy <- do
-          let pipeliningEnabled = isPipeliningEnabled version
-          mkPolicy pipeliningEnabled
+        policy <- mkPolicy
 
         stateVars <- newFetchClientStateVars
         modifyTVar fetchRegistry $ \m ->
@@ -322,9 +317,7 @@ bracketKeepAliveClient(FetchClientRegistry _ctxVar
 setFetchClientContext :: MonadSTM m
                       => FetchClientRegistry peer header block m
                       -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
-                      -> (   WhetherReceivingTentativeBlocks
-                          -> STM m (FetchClientPolicy header block m)
-                         )
+                      -> STM m (FetchClientPolicy header block m)
                       -> m ()
 setFetchClientContext (FetchClientRegistry ctxVar _ _ _ _ _) tracer mkPolicy =
     atomically $ do
