@@ -2,6 +2,16 @@
 
 ## next release
 
+### Breaking changes
+
+* Removed `NodeToNodeV_12` and older as these are unable
+  to cross the hard fork boundary.
+* Removed `WhetherReceivingTentativeBlocks` used to
+  distinguish whether a node version is pipelining-enabled,
+  used in older `NodeToNodeVersion`
+
+### Non-breaking changes
+
 ## 0.9.0.1 -- 2024-08-27
 
 ### Breaking changes
