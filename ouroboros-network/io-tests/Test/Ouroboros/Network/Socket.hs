@@ -167,7 +167,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
       (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
       (HandshakeCallbacks acceptableVersion queryVersion)
       (simpleSingletonVersions
-        NodeToNodeV_7
+        (maxBound :: NodeToNodeVersion)
         (NodeToNodeVersionData {
           networkMagic  = NetworkMagic 0,
           diffusionMode = InitiatorAndResponderDiffusionMode,
@@ -187,7 +187,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
           nullNetworkConnectTracers
           (HandshakeCallbacks acceptableVersion queryVersion)
           (simpleSingletonVersions
-            NodeToNodeV_7
+            (maxBound :: NodeToNodeVersion)
             (NodeToNodeVersionData {
               networkMagic  = NetworkMagic 0,
               diffusionMode = InitiatorOnlyDiffusionMode,

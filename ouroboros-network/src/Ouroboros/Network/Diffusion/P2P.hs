@@ -1286,8 +1286,7 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
 nodeDataFlow :: NodeToNodeVersion
              -> NodeToNodeVersionData
              -> DataFlow
-nodeDataFlow v NodeToNodeVersionData { diffusionMode = InitiatorAndResponderDiffusionMode }
-                 | v >= NodeToNodeV_10
+nodeDataFlow _v NodeToNodeVersionData { diffusionMode = InitiatorAndResponderDiffusionMode }
                  = Duplex
 nodeDataFlow _ _ = Unidirectional
 

@@ -88,7 +88,7 @@ blockFetchExample0 decisionTracer clientStateTracer clientMsgTracer
                     NodeToNode.isPipeliningEnabled
                     clientDelay serverDelay
                     registry peerno
-                    (blockFetchClient NodeToNodeV_7 controlMessageSTM nullTracer)
+                    (blockFetchClient (maxBound :: NodeToNodeVersion) controlMessageSTM nullTracer)
                     (mockBlockFetchServer1 candidateChain)
 
     fetchAsync  <- async $ do
@@ -196,10 +196,9 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
                         (contramap (TraceLabelPeer peerno) clientMsgTracer)
                         (contramap (TraceLabelPeer peerno) serverMsgTracer)
                         (maxBound :: NodeToNodeVersion)
-                        NodeToNode.isPipeliningEnabled
                         clientDelay serverDelay
                         registry peerno
-                        (blockFetchClient NodeToNodeV_7 controlMessageSTM nullTracer)
+                        (blockFetchClient (maxBound :: NodeToNodeVersion) controlMessageSTM nullTracer)
                         (mockBlockFetchServer1 candidateChain)
                     | (peerno, candidateChain) <- zip [1..] candidateChains
                     ]
