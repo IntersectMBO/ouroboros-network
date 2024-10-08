@@ -244,7 +244,7 @@ nodeToNodeProtocols
   -> NodeToNodeVersion
   -> PeerSharing -- ^ Node's own PeerSharing value
   -> OuroborosBundle muxMode initiatorCtx responderCtx bytes m a b
-nodeToNodeProtocols miniProtocolParameters protocols version ownPeerSharing =
+nodeToNodeProtocols miniProtocolParameters protocols _version ownPeerSharing =
     TemperatureBundle
       -- Hot protocols: 'chain-sync', 'block-fetch' and 'tx-submission'.
       (WithHot $
@@ -276,10 +276,8 @@ nodeToNodeProtocols miniProtocolParameters protocols version ownPeerSharing =
       -- Established protocols: 'keep-alive'.
       (WithEstablished $
         case protocols of
-          -- Only register PeerSharing Protocol if version >= NodeToNodeV_11 and if peer
-          -- has PeerSharing enabled
           NodeToNodeProtocols { keepAliveProtocol, peerSharingProtocol }
-            | version >= NodeToNodeV_11 && ownPeerSharing /= PeerSharingDisabled ->
+            | ownPeerSharing /= PeerSharingDisabled ->
             [ MiniProtocol {
                 miniProtocolNum    = keepAliveMiniProtocolNum,
                 miniProtocolLimits = keepAliveProtocolLimits miniProtocolParameters,
