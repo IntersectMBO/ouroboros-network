@@ -327,7 +327,6 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
           blockMatchesHeader     = \_ _ -> True,
 
           headerForgeUTCTime,
-          blockForgeUTCTime      = headerForgeUTCTime . fmap blockHeader,
 
           readChainSelStarvation       = pure (ChainSelStarvationEndedAt (Time 0)),
           demoteChainSyncJumpingDynamo = \_ -> pure ()

@@ -301,7 +301,6 @@ sampleBlockFetchPolicy1 fetchMode headerFieldsForgeUTCTime blockHeap currentChai
       blockMatchesHeader     = \_ _ -> True,
 
       headerForgeUTCTime     = headerFieldsForgeUTCTime,
-      blockForgeUTCTime      = headerFieldsForgeUTCTime,
       readChainSelStarvation = pure (ChainSelStarvationEndedAt (Time 0)),
 
       demoteChainSyncJumpingDynamo = \_ -> pure ()

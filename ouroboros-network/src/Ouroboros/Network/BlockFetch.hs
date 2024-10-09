@@ -208,7 +208,7 @@ blockFetchLogic decisionTracer clientStateTracer
           blockFetchSize,
           blockMatchesHeader,
           addFetchedBlock,
-          blockForgeUTCTime
+          headerForgeUTCTime
         }
 
     fetchDecisionPolicy :: FetchDecisionPolicy header
