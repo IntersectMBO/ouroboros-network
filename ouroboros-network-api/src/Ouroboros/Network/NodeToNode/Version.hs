@@ -60,21 +60,25 @@ data NodeToNodeVersion =
     -- --
     -- -- (In the past, this enabled Conway, but the negotiated 'NodeToNodeVersion'
     -- -- no longer en-/disables eras.)
-    NodeToNodeV_13
+      NodeToNodeV_13
     -- ^ Changes:
     --
     -- * Removed PeerSharingPrivate constructor
     -- * Fixed Codec to disable PeerSharing with buggy versions 11 and 12.
     -- * Disable PeerSharing with InitiatorOnly nodes, since they do not run
     --   peer sharing server side and can not reply to requests.
+    | NodeToNodeV_14
+    -- ^ Chang+1 HF
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable, Generic, NFData)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
 nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
   where
     encodeTerm NodeToNodeV_13 = CBOR.TInt 13
+    encodeTerm NodeToNodeV_14 = CBOR.TInt 14
 
     decodeTerm (CBOR.TInt 13) = Right NodeToNodeV_13
+    decodeTerm (CBOR.TInt 14) = Right NodeToNodeV_14
     decodeTerm (CBOR.TInt n) = Left ( T.pack "decode NodeToNodeVersion: unknown tag: "
                                         <> T.pack (show n)
                                     , Just n
@@ -147,6 +151,7 @@ nodeToNodeCodecCBORTerm :: NodeToNodeVersion -> CodecCBORTerm Text NodeToNodeVer
 nodeToNodeCodecCBORTerm =
   \case
     NodeToNodeV_13 -> v13
+    NodeToNodeV_14 -> v13
 
   where
     v13 = CodecCBORTerm { encodeTerm = encodeTerm13, decodeTerm = decodeTerm13 }
