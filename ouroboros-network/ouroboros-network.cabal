@@ -90,6 +90,12 @@ library
     Ouroboros.Network.PeerSharing
     Ouroboros.Network.Tracers
     Ouroboros.Network.TxSubmission.Inbound
+    Ouroboros.Network.TxSubmission.Inbound.Decision
+    Ouroboros.Network.TxSubmission.Inbound.Policy
+    Ouroboros.Network.TxSubmission.Inbound.Registry
+    Ouroboros.Network.TxSubmission.Inbound.Server
+    Ouroboros.Network.TxSubmission.Inbound.State
+    Ouroboros.Network.TxSubmission.Inbound.Types
     Ouroboros.Network.TxSubmission.Mempool.Reader
     Ouroboros.Network.TxSubmission.Outbound
 
@@ -168,6 +174,7 @@ library
     random,
     si-timers,
     strict-checked-vars ^>=0.2,
+    strict-mvar,
     strict-stm,
     typed-protocols ^>=0.3,
     typed-protocols-stateful,
@@ -199,6 +206,7 @@ library sim-tests-lib
     cardano-binary,
     cardano-prelude,
     cardano-slotting,
+    cardano-strict-containers,
     cborg,
     containers,
     contra-tracer,
@@ -228,6 +236,7 @@ library sim-tests-lib
     random,
     serialise,
     si-timers,
+    strict-mvar,
     strict-stm,
     tasty,
     tasty-hunit,
@@ -267,6 +276,10 @@ library sim-tests-lib
     Test.Ouroboros.Network.Testnet
     Test.Ouroboros.Network.Testnet.Simulation.Node
     Test.Ouroboros.Network.TxSubmission
+    Test.Ouroboros.Network.TxSubmission.AppV1
+    Test.Ouroboros.Network.TxSubmission.AppV2
+    Test.Ouroboros.Network.TxSubmission.TxLogic
+    Test.Ouroboros.Network.TxSubmission.Types
     Test.Ouroboros.Network.Version
 
 -- Simulation tests, and IO tests which don't require native system calls.
