@@ -46,7 +46,7 @@ data NodeToClientVersion
     | NodeToClientV_17
     -- ^ added @GetProposals@ and @GetRatifyState@ queries
     | NodeToClientV_18
-    -- ^ added @GetFuturePParams@ query
+    -- ^ added @GetFuturePParams@ and @GetBigLedgerPeerSnapshot@ queries
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable, Generic, NFData)
 
 -- | We set 16ths bit to distinguish `NodeToNodeVersion` and

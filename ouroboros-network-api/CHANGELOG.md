@@ -7,7 +7,8 @@
 * Renamed:
   * `accBigPoolStake` -> `accumulateBigLedgerStake`
      and `reRelativeStake` -> `recomputeRelativeStake`
-* Added `NodeToClientVersionV18`
+* Added `NodeToClient_V18`
+  * New queries: `GetFuturePParams` and `GetBigLedgerPeerSnapshot`
 * Using `typed-protocols-0.3.0.0`.
 
 ### Non-breaking changes
