@@ -142,14 +142,8 @@ data BlockFetchConsensusInterface peer header block m =
        -- and consider its meaning at each call to this function. Relatedly,
        -- preserve that argument wrapper as much as possible when deriving
        -- ancillary functions\/interfaces from this function.
-       headerForgeUTCTime :: FromConsensus header -> STM m UTCTime,
+       headerForgeUTCTime :: FromConsensus header -> STM m UTCTime
 
-       -- | Calculate when a block was forged.
-       --
-       -- PRECONDITION: Same as 'headerForgeUTCTime'.
-       --
-       -- WARNING: Same as 'headerForgeUTCTime'.
-       blockForgeUTCTime  :: FromConsensus block -> STM m UTCTime
      }
 
 

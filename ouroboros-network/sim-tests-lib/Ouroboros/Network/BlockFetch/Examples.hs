@@ -294,8 +294,7 @@ sampleBlockFetchPolicy1 headerFieldsForgeUTCTime blockHeap currentChain candidat
       blockFetchSize         = \_ -> 2000,
       blockMatchesHeader     = \_ _ -> True,
 
-      headerForgeUTCTime     = headerFieldsForgeUTCTime,
-      blockForgeUTCTime      = headerFieldsForgeUTCTime
+      headerForgeUTCTime     = headerFieldsForgeUTCTime
       }
   where
     plausibleCandidateChain cur candidate =
