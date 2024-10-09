@@ -5,6 +5,7 @@
 ### Breaking changes
 
 * Added `NodeToClientVersionV18`
+* Added `NodeToNodeVersion14`
 
 ## 0.4.0.1 -- 2024-08-27
 
