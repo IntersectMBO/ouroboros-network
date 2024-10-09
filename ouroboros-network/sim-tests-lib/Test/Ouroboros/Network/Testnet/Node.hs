@@ -321,8 +321,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
           blockFetchSize         = \_ -> 1000,
           blockMatchesHeader     = \_ _ -> True,
 
-          headerForgeUTCTime,
-          blockForgeUTCTime      = headerForgeUTCTime . fmap blockHeader
+          headerForgeUTCTime
         }
       where
         plausibleCandidateChain cur candidate =
