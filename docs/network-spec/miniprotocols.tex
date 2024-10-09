@@ -1469,24 +1469,15 @@ in table~\ref{table:node-to-node-protocol-versions}.
   \begin{center}
     \begin{tabular}{l|l}
       version         & description \\\hline\hline
-      $NodeToNodeV\_1*$ & initial version \\\hline
-      $NodeToNodeV\_2*$ & block size hints \\\hline
-      $NodeToNodeV\_3*$ & introduction of keep-alive mini-protocol \\\hline
-      $NodeToNodeV\_4*$ & introduction of diffusion mode in handshake mini-protocol \\\hline
-      $NodeToNodeV\_5*$ & \\\hline
-      $NodeToNodeV\_6*$ & transaction submission version 2 \\\hline
-      $NodeToNodeV\_7$ & new keep-alive, Alonzo ledger era \\\hline
-      $NodeToNodeV\_8$ & chain-sync \& block-fetch pipelining \\\hline
-      $NodeToNodeV\_9$ & Babbage ledger era \\\hline
-      $NodeToNodeV\_10$ & Full duplex connections \\\hline
-      $NodeToNodeV\_11$ & Peer sharing willingness \\\hline
-      $NodeToNodeV\_12$ & No observable changes \\\hline
       $NodeToNodeV\_13$ & Disabled peer sharing for buggy V11 \& V12 and for InitiatorOnly nodes \\\hline
+      $NodeToNodeV\_14$ & No changes, identifies Chang+1 HF nodes\\\hline
     \end{tabular}
-    \caption{Node-to-node protocol versions (* - support removed)}
+    \caption{Node-to-node protocol versions}
     \label{table:node-to-node-protocol-versions}
   \end{center}
 \end{figure}
+\newline
+Previously supported node-to-node versions are listed in table \ref{table:historical-node-to-node-protocol-versions}.
 
 \section{Node-to-client protocol}
 \label{section:node-to-client-protocol}
@@ -1505,14 +1496,6 @@ table~\ref{table:node-to-client-protocol-versions}.
   \begin{center}
     \begin{tabular}{l|l}
       version & description \\\hline\hline
-      $NodeToClientV\_1*$ & initial version\\\hline
-      $NodeToClientV\_2*$ & added local-query mini-protocol\\\hline
-      $NodeToClientV\_3*$ & \\\hline
-      $NodeToClientV\_4*$ & new queries added to local state query mini-protocol\\\hline
-      $NodeToClientV\_5*$ & allegra \\\hline
-      $NodeToClientV\_6*$ & mary \\\hline
-      $NodeToClientV\_7*$ & new queries added to local state query mini-protocol\\\hline
-      $NodeToClientV\_8*$ & codec changed for local state query mini-protocol\\\hline
       $NodeToClientV\_9$ & alonzo \\\hline
       $NodeToClientV\_10$ & GetChainBlock \& GetChainPoint queries \\\hline
       $NodeToClientV\_11$ & GetRewardInfoPools query \\\hline
@@ -1522,8 +1505,11 @@ table~\ref{table:node-to-client-protocol-versions}.
       $NodeToClientV\_15$ & internal changes \\\hline
       $NodeToClientV\_16$ & Add ImmutableTip to LocalStateQuery, conway, GetStakeDelegDeposits query \\\hline
       $NodeToClientV\_17$ & GetProposals, GetRatifyState queries \\\hline
+      $NodeToClientV\_18$ & GetFuturePParams query \\\hline
     \end{tabular}
-    \caption{Node-to-client protocol versions (* - support removed)}
+    \caption{Node-to-client protocol versions}
     \label{table:node-to-client-protocol-versions}
   \end{center}
 \end{figure}
+\newline
+Previously supported node-to-client versions are listed in table \ref{table:historical-node-to-client-protocol-versions}.
