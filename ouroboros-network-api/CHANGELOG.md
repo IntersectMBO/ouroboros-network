@@ -14,6 +14,7 @@
 * Removed `WhetherReceivingTentativeBlocks` used to
   distinguish whether a node version is pipelining-enabled,
   used in older `NodeToNodeVersion`
+* Added NodeToNodeV_14 to identify nodes supporting Chang+1 HF
 
 ### Non-breaking changes
 

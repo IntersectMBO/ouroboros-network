@@ -195,9 +195,57 @@
 % \include{rest}
 
 \appendix
+
 \chapter{Common CDDL definitions}
 \label{cddl-common}
 \lstinputlisting[style=cddl]{../../ouroboros-network-protocols/test-cddl/specs/common.cddl}
+
+\chapter{Historical protocol versions}
+\label{historical-protocol-versions}
+
+Previously supported versions of the \textit{node-to-node protocol} are listed
+in table~\ref{table:historical-node-to-node-protocol-versions}.
+\begin{figure}[h]
+  \begin{center}
+    \begin{tabular}{l|l}
+      version         & description \\\hline\hline
+      $NodeToNodeV\_1$ & initial version \\\hline
+      $NodeToNodeV\_2$ & block size hints \\\hline
+      $NodeToNodeV\_3$ & introduction of keep-alive mini-protocol \\\hline
+      $NodeToNodeV\_4$ & introduction of diffusion mode in handshake mini-protocol \\\hline
+      $NodeToNodeV\_5$ & \\\hline
+      $NodeToNodeV\_6$ & transaction submission version 2 \\\hline
+      $NodeToNodeV\_7$ & new keep-alive, Alonzo ledger era \\\hline
+      $NodeToNodeV\_8$ & chain-sync \& block-fetch pipelining \\\hline
+      $NodeToNodeV\_9$ & Babbage ledger era \\\hline
+      $NodeToNodeV\_10$ & Full duplex connections \\\hline
+      $NodeToNodeV\_11$ & Peer sharing willingness \\\hline
+      $NodeToNodeV\_12$ & No observable changes \\\hline
+    \end{tabular}
+    \caption{Node-to-node protocol versions}
+    \label{table:historical-node-to-node-protocol-versions}
+  \end{center}
+\end{figure}
+
+Previously supported versions of the \textit{node-to-client protocol} are listed
+in table~\ref{table:historical-node-to-client-protocol-versions}.
+\begin{figure}[h]
+  \begin{center}
+    \begin{tabular}{l|l}
+      version         & description \\\hline\hline
+      $NodeToClientV\_1$ & initial version\\\hline
+      $NodeToClientV\_2$ & added local-query mini-protocol\\\hline
+      $NodeToClientV\_3$ & \\\hline
+      $NodeToClientV\_4$ & new queries added to local state query mini-protocol\\\hline
+      $NodeToClientV\_5$ & allegra \\\hline
+      $NodeToClientV\_6$ & mary \\\hline
+      $NodeToClientV\_7$ & new queries added to local state query mini-protocol\\\hline
+      $NodeToClientV\_8$ & codec changed for local state query mini-protocol\\\hline
+    \end{tabular}
+    \caption{Node-to-client protocol versions}
+    \label{table:historical-node-to-client-protocol-versions}
+  \end{center}
+\end{figure}
 
 \bibliographystyle{apalike}
 \bibliography{references}
