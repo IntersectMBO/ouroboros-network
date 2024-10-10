@@ -10,8 +10,7 @@
 {-# LANGUAGE TypeFamilies               #-}
 
 module Network.Mux.Types
-  ( MiniProtocolBundle (..)
-  , MiniProtocolInfo (..)
+  ( MiniProtocolInfo (..)
   , MiniProtocolNum (..)
   , MiniProtocolDirection (..)
   , MiniProtocolLimits (..)
@@ -53,7 +52,7 @@ import GHC.Generics (Generic)
 import Control.Concurrent.Class.MonadSTM.Strict (StrictTVar)
 import Control.Monad.Class.MonadTime.SI
 
-import Network.Mux.Channel (Channel (..))
+import Network.Mux.Channel (ByteChannel, Channel (..))
 import Network.Mux.Timeout (TimeoutFn)
 
 
@@ -113,27 +112,16 @@ type family HasResponder (mode :: MuxMode) :: Bool where
     HasResponder ResponderMode          = True
     HasResponder InitiatorResponderMode = True
 
--- | Application run by mux layer.
+-- | A static description of a mini-protocol.
 --
--- * enumeration of client application, e.g. a wallet application communicating
---   with a node using ChainSync and TxSubmission protocols; this only requires
---   to run client side of each protocol.
---
--- * enumeration of server applications: this application type is mostly useful
---   tests.
---
--- * enumeration of both client and server applications, e.g. a full node
---   serving downstream peers using server side of each protocol and getting
---   updates from upstream peers using client side of each of the protocols.
---
-newtype MiniProtocolBundle (mode :: MuxMode) =
-        MiniProtocolBundle [MiniProtocolInfo mode]
-
 data MiniProtocolInfo (mode :: MuxMode) =
      MiniProtocolInfo {
        miniProtocolNum    :: !MiniProtocolNum,
+       -- ^ Unique mini-protocol number.
        miniProtocolDir    :: !(MiniProtocolDirection mode),
+       -- ^ Mini-protocol direction.
        miniProtocolLimits :: !MiniProtocolLimits
+       -- ^ ingress queue limits for the protocol
      }
 
 data MiniProtocolDirection (mode :: MuxMode) where
@@ -217,6 +205,8 @@ data MuxBearer m = MuxBearer {
     , read    :: TimeoutFn m -> m (MuxSDU, Time)
     -- | Return a suitable MuxSDU payload size.
     , sduSize :: SDUSize
+    -- | Name of the bearer
+    , name    :: String
     }
 
 newtype SDUSize = SDUSize { getSDUSize :: Word16 }
@@ -231,7 +221,7 @@ muxBearerAsChannel
   => MuxBearer m
   -> MiniProtocolNum
   -> MiniProtocolDir
-  -> Channel m
+  -> ByteChannel m
 muxBearerAsChannel bearer ptclNum ptclDir =
       Channel {
         send = \blob -> void $ write bearer noTimeout (wrap blob),

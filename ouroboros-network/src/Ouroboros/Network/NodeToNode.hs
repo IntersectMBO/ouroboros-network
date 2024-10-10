@@ -107,12 +107,13 @@ module Ouroboros.Network.NodeToNode
   ) where
 
 import Control.Concurrent.Async qualified as Async
-import Control.Exception (IOException)
+import Control.Exception (IOException, SomeException)
 import Control.Monad.Class.MonadTime.SI (DiffTime)
 
 import Codec.CBOR.Read qualified as CBOR
 import Codec.CBOR.Term qualified as CBOR
 import Data.ByteString.Lazy qualified as BL
+import Data.Functor (void)
 import Data.Void (Void)
 import Data.Word
 import Network.Mux (WithMuxBearer (..))
@@ -450,11 +451,17 @@ connectTo
                  InitiatorMode Socket.SockAddr BL.ByteString IO a b)
   -> Maybe Socket.SockAddr
   -> Socket.SockAddr
-  -> IO ()
+  -> IO (Either SomeException (Either a b))
 connectTo sn tr =
-    connectToNode sn makeSocketBearer configureOutboundSocket nodeToNodeHandshakeCodec timeLimitsHandshake
-                  (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
-                  tr (HandshakeCallbacks acceptableVersion queryVersion)
+    connectToNode sn makeSocketBearer
+                  ConnectToArgs {
+                    ctaHandshakeCodec      = nodeToNodeHandshakeCodec,
+                    ctaHandshakeTimeLimits = timeLimitsHandshake,
+                    ctaVersionDataCodec    = cborTermVersionDataCodec nodeToNodeCodecCBORTerm,
+                    ctaConnectTracers      = tr,
+                    ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+                  }
+                  configureOutboundSocket
   where
     configureOutboundSocket :: Socket -> IO ()
     configureOutboundSocket sock = do
@@ -537,14 +544,16 @@ ipSubscriptionWorker
         nsErrorPolicyTracer
         networkState
         subscriptionParams
-        (connectToNode'
+        (void . connectToNode'
           sn
           makeSocketBearer
-          nodeToNodeHandshakeCodec
-          timeLimitsHandshake
-          (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
-          (NetworkConnectTracers nsMuxTracer nsHandshakeTracer)
-          (HandshakeCallbacks acceptableVersion queryVersion)
+          ConnectToArgs {
+            ctaHandshakeCodec      = nodeToNodeHandshakeCodec,
+            ctaHandshakeTimeLimits = timeLimitsHandshake,
+            ctaVersionDataCodec    = cborTermVersionDataCodec nodeToNodeCodecCBORTerm,
+            ctaConnectTracers      = NetworkConnectTracers nsMuxTracer nsHandshakeTracer,
+            ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+          }
           versions)
 
 
@@ -583,14 +592,16 @@ dnsSubscriptionWorker
       ndstErrorPolicyTracer
       networkState
       subscriptionParams
-      (connectToNode'
+      (void . connectToNode'
         sn
         makeSocketBearer
-        nodeToNodeHandshakeCodec
-        timeLimitsHandshake
-        (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
-        (NetworkConnectTracers ndstMuxTracer ndstHandshakeTracer)
-        (HandshakeCallbacks acceptableVersion queryVersion)
+        ConnectToArgs {
+          ctaHandshakeCodec      = nodeToNodeHandshakeCodec,
+          ctaHandshakeTimeLimits = timeLimitsHandshake,
+          ctaVersionDataCodec    = cborTermVersionDataCodec nodeToNodeCodecCBORTerm,
+          ctaConnectTracers      = NetworkConnectTracers ndstMuxTracer ndstHandshakeTracer,
+          ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+        }
         versions)
 
 

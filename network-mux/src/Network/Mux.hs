@@ -3,7 +3,6 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTSyntax                #-}
-{-# LANGUAGE KindSignatures            #-}
 {-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
@@ -16,7 +15,6 @@ module Network.Mux
   , MuxMode (..)
   , HasInitiator
   , HasResponder
-  , MiniProtocolBundle (..)
   , MiniProtocolInfo (..)
   , MiniProtocolNum (..)
   , MiniProtocolDirection (..)
@@ -25,6 +23,8 @@ module Network.Mux
   , runMux
   , runMiniProtocol
   , StartOnDemandOrEagerly (..)
+  , ByteChannel
+  , Channel (..)
   , stopMux
     -- * Bearer
   , MuxBearer
@@ -113,8 +113,15 @@ data MuxStatus
     | MuxStopped
 
 
-newMux :: MonadSTM m  => MiniProtocolBundle mode -> m (Mux mode m)
-newMux (MiniProtocolBundle ptcls) = do
+-- | Create a mux handle.
+--
+newMux :: forall (mode :: MuxMode) m.
+          MonadLabelledSTM m
+       => [MiniProtocolInfo mode]
+       -- ^ description of protocols run by the mux layer.  Only these protocols
+       -- one will be able to execute.
+       -> m (Mux mode m)
+newMux ptcls = do
     muxMiniProtocols   <- mkMiniProtocolStateMap ptcls
     muxControlCmdQueue <- atomically newTQueue
     muxStatus <- newTVarIO MuxReady
@@ -210,9 +217,13 @@ runMux :: forall m mode.
        -> Mux mode m
        -> MuxBearer m
        -> m ()
-runMux tracer Mux {muxMiniProtocols, muxControlCmdQueue, muxStatus} bearer = do
+runMux tracer Mux {muxMiniProtocols, muxControlCmdQueue, muxStatus} bearer@MuxBearer {name} = do
     egressQueue <- atomically $ newTBQueue 100
-    labelTBQueueIO egressQueue "mux-eq"
+
+    -- label shared variables
+    labelTBQueueIO egressQueue (name ++ "-mux-egress")
+    labelTVarIO muxStatus (name ++ "-mux-status")
+    labelTQueueIO muxControlCmdQueue (name ++ "-mux-ctrl")
 
     JobPool.withJobPool
       (\jobpool -> do
@@ -241,13 +252,13 @@ runMux tracer Mux {muxMiniProtocols, muxControlCmdQueue, muxStatus} bearer = do
       JobPool.Job (muxer egressQueue bearer)
                   (return . MuxerException)
                   MuxJob
-                  "muxer"
+                  (name ++ "-muxer")
 
     demuxerJob =
       JobPool.Job (demuxer (Map.elems muxMiniProtocols) bearer)
                   (return . DemuxerException)
                   MuxJob
-                  "demuxer"
+                  (name ++ "-demuxer")
 
 miniProtocolJob
   :: forall mode m.
@@ -324,7 +335,7 @@ data StartOnDemandOrEagerly = StartOnDemand | StartEagerly
   deriving Eq
 
 data MiniProtocolAction m where
-     MiniProtocolAction :: (Channel m -> m (a, Maybe BL.ByteString)) -- ^ Action
+     MiniProtocolAction :: (ByteChannel m -> m (a, Maybe BL.ByteString)) -- ^ Action
                         -> StrictTMVar m (Either SomeException a)    -- ^ Completion var
                         -> MiniProtocolAction m
 
@@ -333,8 +344,8 @@ type MiniProtocolKey = (MiniProtocolNum, MiniProtocolDir)
 newtype MonitorCtx m mode = MonitorCtx {
     -- | Mini-Protocols started on demand and waiting to be scheduled.
     --
-    mcOnDemandProtocols :: (Map MiniProtocolKey
-                                (MiniProtocolState mode m, MiniProtocolAction m))
+    mcOnDemandProtocols :: Map MiniProtocolKey
+                               (MiniProtocolState mode m, MiniProtocolAction m)
 
   }
 
@@ -364,10 +375,10 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
     go !monitorCtx@MonitorCtx { mcOnDemandProtocols } = do
       result <- atomically $ runFirstToFinish $
             -- wait for a mini-protocol thread to terminate
-           (FirstToFinish $ EventJobResult <$> JobPool.waitForJob jobpool)
+           FirstToFinish (EventJobResult <$> JobPool.waitForJob jobpool)
 
             -- wait for a new control command
-        <> (FirstToFinish $ EventControlCmd <$> readTQueue cmdQueue)
+        <> FirstToFinish (EventControlCmd <$> readTQueue cmdQueue)
 
             -- or wait for data to arrive on the channels that do not yet have
             -- responder threads running
@@ -546,7 +557,7 @@ muxChannel
     -> MiniProtocolNum
     -> MiniProtocolDir
     -> IngressQueue m
-    -> Channel m
+    -> ByteChannel m
 muxChannel tracer egressQueue want@(Wanton w) mc md q =
     Channel { send, recv}
   where
@@ -633,7 +644,7 @@ runMiniProtocol :: forall mode m a.
                 -> MiniProtocolNum
                 -> MiniProtocolDirection mode
                 -> StartOnDemandOrEagerly
-                -> (Channel m -> m (a, Maybe BL.ByteString))
+                -> (ByteChannel m -> m (a, Maybe BL.ByteString))
                 -> m (STM m (Either SomeException a))
 runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue , muxStatus}
                 ptclNum ptclDir startMode protocolAction

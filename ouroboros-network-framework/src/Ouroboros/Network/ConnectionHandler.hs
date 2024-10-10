@@ -318,7 +318,7 @@ makeConnectionHandler muxTracer singMuxMode
                         <$> newTVarIO Continue
                         <*> newTVarIO Continue
                         <*> newTVarIO Continue
-                  mux <- newMux (mkMiniProtocolBundle app)
+                  mux <- newMux (mkMiniProtocolInfos app)
                   let !handle = Handle {
                           hMux            = mux,
                           hMuxBundle      = app,
@@ -385,7 +385,8 @@ makeConnectionHandler muxTracer singMuxMode
                         <$> newTVarIO Continue
                         <*> newTVarIO Continue
                         <*> newTVarIO Continue
-                  mux <- newMux (mkMiniProtocolBundle app)
+                  mux <- newMux (mkMiniProtocolInfos app)
+
                   let !handle = Handle {
                           hMux            = mux,
                           hMuxBundle      = app,
