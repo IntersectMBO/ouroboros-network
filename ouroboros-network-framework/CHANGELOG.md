@@ -2,6 +2,18 @@
 
 ## next release
 
+### Breaking changes
+
+### Non-breaking changes
+
+## 0.13.2.5 -- 2024-10-10
+
+### Breaking changes
+
+### Non-breaking changes
+
+* bump for version bounds
+
 ## 0.13.2.4 -- 2024-08-27
 
 ### Breaking changes

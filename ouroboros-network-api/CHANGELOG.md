@@ -4,6 +4,12 @@
 
 ### Breaking changes
 
+### Non-breaking changes
+
+## 0.10.0.0
+
+### Breaking changes
+
 * Removed `NodeToNodeV_12` and older as these are unable
   to cross the hard fork boundary.
 * Removed `WhetherReceivingTentativeBlocks` used to
