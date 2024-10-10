@@ -5,7 +5,7 @@
 ### Breaking changes
 
 * Added `createConnectedBufferedChannelsUnbounded`.
-* Use `typed-protocols-0.2.0.0`.
+* Use `typed-protocols-0.3.0.0`.
 * Removed `Ouroboros.Network.Mux.toApplication`
 * Renamed `Ouroboros.Network.Mux.mkMiniProtocolBundle` as `mkMiniProtocolInfos`
   (its type has changed).
@@ -20,6 +20,14 @@
 ### Non-breaking changes
 
 * Added tracing on CM connVars for testing purposes.
+
+## 0.13.2.5 -- 2024-10-11
+
+### Breaking changes
+
+### Non-breaking changes
+
+* bump for version bounds
 
 ## 0.13.2.4 -- 2024-08-27
 

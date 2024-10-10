@@ -7,14 +7,7 @@
 * Renamed:
   * `accBigPoolStake` -> `accumulateBigLedgerStake`
      and `reRelativeStake` -> `recomputeRelativeStake`
-* Added `NodeToClientVersionV18`
 * Using `typed-protocols-0.3.0.0`.
-* Removed `NodeToNodeV_12` and older as these are unable
-  to cross the hard fork boundary.
-* Removed `WhetherReceivingTentativeBlocks` used to
-  distinguish whether a node version is pipelining-enabled,
-  used in older `NodeToNodeVersion`
-* Added NodeToNodeV_14 to identify nodes supporting Chang+1 HF
 
 ### Non-breaking changes
 
@@ -26,6 +19,20 @@
 * Added `MinBigLedgerPeersForTrustedState` type of values indicating
   the minimum number of active big ledger peers needed to signal
   trusted state when finishing syncing in Genesis mode.
+
+## 0.10.0.0 -- 2024-10-11
+
+### Breaking changes
+
+* Removed `NodeToNodeV_12` and older as these are unable
+  to cross the hard fork boundary.
+* Removed `WhetherReceivingTentativeBlocks` used to
+  distinguish whether a node version is pipelining-enabled,
+  used in older `NodeToNodeVersion`
+* Added `NodeToNodeV_14` to identify nodes supporting Chang+1 HF
+* Added `NodeToClientV_18`
+
+### Non-breaking changes
 
 ## 0.9.0.1 -- 2024-08-27
 
