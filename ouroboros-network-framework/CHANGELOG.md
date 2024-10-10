@@ -6,10 +6,21 @@
 
 * Added `createConnectedBufferedChannelsUnbounded`.
 * Use `typed-protocols-0.2.0.0`.
+* Removed `Ouroboros.Network.Mux.toApplication`
+* Renamed `Ouroboros.Network.Mux.mkMiniProtocolBundle` as `mkMiniProtocolInfos`
+  (its type has changed).
+* Added `Ouroboros.Network.Mux.toMiniProtocolInfos`.
+* Added `ConnectToArgs` for `Ouroboros.Network.Socket.connectToNode` & friends.
+* `Ouroboros.Network.Socket.connectToNode` & friends return result (or an
+  error) of the first terminated mini-protocol.
+* Added `Ouroboros.Network.Socket.connectToNodeWithMux` and
+  `connectToNodeWithMux'`.  They give control over running mux, e.g. one can
+  start some of the mini-protocols, or implement a re-start policy.
 
 ### Non-breaking changes
 
 * Added tracing on CM connVars for testing purposes.
+* Improved haddocks of `Hanshake` protocol codec.
 
 ## 0.13.2.4 -- 2024-08-27
 

@@ -262,7 +262,8 @@ attenuationChannelAsMuxBearer sduSize sduTimeout muxTracer chan =
     MuxBearer {
       read    = readMux,
       write   = writeMux,
-      sduSize
+      sduSize,
+      name    = "attenuation-channel"
     }
   where
     readMux :: TimeoutFn m -> m (MuxSDU, Time)

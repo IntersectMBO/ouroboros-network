@@ -47,7 +47,6 @@ import Text.Printf
 import Foreign.C.Error
 import GHC.IO.Exception
 
-import Ouroboros.Network.Channel
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.Driver.Simple
 import Ouroboros.Network.Snocket
@@ -218,7 +217,7 @@ clientServerSimulation payloads =
                   listen snocket fd
                   accept snocket fd >>= acceptLoop threadsVar)
           `finally` do
-            threads <- atomically (readTVar threadsVar)
+            threads <- readTVarIO threadsVar
             traverse_ cancel threads
       where
         acceptLoop :: StrictTVar m (Set (Async m ()))
@@ -242,13 +241,12 @@ clientServerSimulation payloads =
         handleConnection bearer remoteAddr = do
           labelThisThread "server-handler"
           bracket
-            (newMux (MiniProtocolBundle
-                      [ MiniProtocolInfo {
-                            miniProtocolNum    = reqRespProtocolNum,
-                            miniProtocolDir    = ResponderDirectionOnly,
-                            miniProtocolLimits = MiniProtocolLimits maxBound
-                          }
-                      ]))
+            (newMux [ MiniProtocolInfo {
+                        miniProtocolNum    = reqRespProtocolNum,
+                        miniProtocolDir    = ResponderDirectionOnly,
+                        miniProtocolLimits = MiniProtocolLimits maxBound
+                      }
+                    ])
             stopMux
             $ \mux -> do
               let connId = ConnectionId {
@@ -265,7 +263,7 @@ clientServerSimulation payloads =
                           ResponderDirectionOnly
                           StartOnDemand
                           (\channel -> runPeer tr codecReqResp
-                                               (fromChannel channel)
+                                               channel
                                                serverPeer)
               withAsync
                 (do labelThisThread "server-mux"
@@ -286,13 +284,12 @@ clientServerSimulation payloads =
                 (close snocket)
                 $ \fd -> do
                   connect snocket fd serverAddr
-                  mux <- newMux (MiniProtocolBundle
-                                  [ MiniProtocolInfo {
-                                        miniProtocolNum    = reqRespProtocolNum,
-                                        miniProtocolDir    = InitiatorDirectionOnly,
-                                        miniProtocolLimits = MiniProtocolLimits maxBound
-                                      }
-                                  ])
+                  mux <- newMux [ MiniProtocolInfo {
+                                    miniProtocolNum    = reqRespProtocolNum,
+                                    miniProtocolDir    = InitiatorDirectionOnly,
+                                    miniProtocolLimits = MiniProtocolLimits maxBound
+                                  }
+                                ]
                   localAddr <- getLocalAddr snocket fd
                   let connId = ConnectionId {
                           localAddress  = localAddr,
@@ -307,7 +304,7 @@ clientServerSimulation payloads =
                               InitiatorDirectionOnly
                               StartEagerly
                               (\channel -> runPeer tr codecReqResp
-                                                   (fromChannel channel)
+                                                   channel
                                                    clientPeer)
                   bearer <- Mx.getBearer makeFDBearer 10 nullTracer fd
 

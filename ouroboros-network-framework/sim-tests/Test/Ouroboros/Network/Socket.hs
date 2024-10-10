@@ -3,6 +3,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
@@ -14,6 +15,7 @@ module Test.Ouroboros.Network.Socket (tests) where
 import Data.Bifoldable (bitraverse_)
 import Data.ByteString.Lazy qualified as BL
 import Data.List (mapAccumL)
+import Data.Monoid.Synchronisation (FirstToFinish (..))
 import Data.Time.Clock (UTCTime, getCurrentTime)
 import Data.Void (Void)
 #ifndef mingw32_HOST_OS
@@ -55,9 +57,8 @@ import Ouroboros.Network.Socket
 -- TODO: remove Mx prefixes
 import Ouroboros.Network.Mux
 
-import Network.Mux qualified as Mx (MuxError (..), MuxErrorType (..))
+import Network.Mux qualified as Mx
 import Network.Mux.Bearer qualified as Mx
-import Network.Mux.Compat qualified as Mx (muxStart)
 import Network.Mux.Timeout
 import Network.Mux.Types (MiniProtocolDir (..), MuxSDU (..), MuxSDUHeader (..),
            RemoteClockModel (..), write)
@@ -254,15 +255,17 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
         (unversionedProtocol (SomeResponderApplication responderApp))
         nullErrorPolicies
         $ \_ _ -> do
-          connectToNode
+          void $ connectToNode
             snocket
             Mx.makeSocketBearer
-            (flip configureSock Nothing)
-            unversionedHandshakeCodec
-            noTimeLimitsHandshake
-            unversionedProtocolDataCodec
-            (NetworkConnectTracers activeMuxTracer nullTracer)
-            (HandshakeCallbacks acceptableVersion queryVersion)
+            ConnectToArgs {
+              ctaHandshakeCodec      = unversionedHandshakeCodec,
+              ctaHandshakeTimeLimits = noTimeLimitsHandshake,
+              ctaVersionDataCodec    = unversionedProtocolDataCodec,
+              ctaConnectTracers      = NetworkConnectTracers activeMuxTracer nullTracer,
+              ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+            }
+            (`configureSock` Nothing)
             (unversionedProtocol initiatorApp)
             (Just initiatorAddr)
             responderAddr
@@ -352,10 +355,30 @@ prop_socket_recv_error f rerr =
                     _ <- async $ do
                       threadDelay 0.1
                       atomically $ putTMVar lock ()
-                    Mx.muxStart nullTracer (toApplication MinimalInitiatorContext { micConnectionId = connectionId }
-                                                          ResponderContext { rcConnectionId = connectionId }
-                                                          app)
-                                           bearer
+                    mux <- Mx.newMux (toMiniProtocolInfos app)
+                    let respCtx = ResponderContext connectionId
+                    resOps <- sequence
+                      [ Mx.runMiniProtocol
+                          mux
+                          miniProtocolNum
+                          miniProtocolDir
+                          Mx.StartEagerly
+                          (\a -> do
+                            r <- action a
+                            return (r, Nothing)
+                          )
+                      | MiniProtocol{miniProtocolNum, miniProtocolRun}
+                          <- getOuroborosApplication app
+                      , (miniProtocolDir, action) <-
+                          case miniProtocolRun of
+                            ResponderProtocolOnly initiator ->
+                              [(Mx.ResponderDirectionOnly, void . runMiniProtocolCb initiator respCtx)]
+                      ]
+
+                    withAsync (Mx.runMux nullTracer mux bearer) $ \aid -> do
+                      _ <- atomically $ runFirstToFinish $ foldMap FirstToFinish resOps
+                      Mx.stopMux mux
+                      wait aid
           )
           $ \muxAsync -> do
 
@@ -502,12 +525,14 @@ prop_socket_client_connect_error _ xs =
       <- try $ False <$ connectToNode
         (socketSnocket iomgr)
         Mx.makeSocketBearer
+        ConnectToArgs {
+          ctaHandshakeCodec      = unversionedHandshakeCodec,
+          ctaHandshakeTimeLimits = noTimeLimitsHandshake,
+          ctaVersionDataCodec    = unversionedProtocolDataCodec,
+          ctaConnectTracers      = NetworkConnectTracers activeMuxTracer nullTracer,
+          ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+        }
         (flip configureSocket Nothing)
-        unversionedHandshakeCodec
-        noTimeLimitsHandshake
-        unversionedProtocolDataCodec
-        nullNetworkConnectTracers
-        (HandshakeCallbacks acceptableVersion queryVersion)
         (unversionedProtocol app)
         (Just $ Socket.addrAddress clientAddr)
         (Socket.addrAddress serverAddr)
