@@ -135,9 +135,8 @@ serverWorker bearer = do
 
     runMux nullTracer mux bearer
   where
-    ptcls ::  MiniProtocolBundle ResponderMode
-    ptcls = MiniProtocolBundle
-            [ MiniProtocolInfo {
+    ptcls :: [MiniProtocolInfo ResponderMode]
+    ptcls = [ MiniProtocolInfo {
                 miniProtocolNum    = MiniProtocolNum 2,
                 miniProtocolDir    = ResponderDirectionOnly,
                 miniProtocolLimits = defaultProtocolLimits
@@ -195,9 +194,8 @@ clientWorker bearer n msg = do
 
     runMux nullTracer mux bearer
   where
-    ptcls :: MiniProtocolBundle InitiatorMode
-    ptcls = MiniProtocolBundle
-            [ MiniProtocolInfo {
+    ptcls :: [MiniProtocolInfo InitiatorMode]
+    ptcls = [ MiniProtocolInfo {
                 miniProtocolNum    = MiniProtocolNum 2,
                 miniProtocolDir    = InitiatorDirectionOnly,
                 miniProtocolLimits = defaultProtocolLimits

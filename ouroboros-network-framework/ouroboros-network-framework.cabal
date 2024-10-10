@@ -253,6 +253,7 @@ test-suite io-tests
     io-classes,
     io-sim,
     iproute,
+    monoidal-synchronisation,
     network,
     network-mux,
     ouroboros-network-api,

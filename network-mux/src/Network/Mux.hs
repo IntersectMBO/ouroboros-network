@@ -3,7 +3,6 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTSyntax                #-}
-{-# LANGUAGE KindSignatures            #-}
 {-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
@@ -16,7 +15,6 @@ module Network.Mux
   , MuxMode (..)
   , HasInitiator
   , HasResponder
-  , MiniProtocolBundle (..)
   , MiniProtocolInfo (..)
   , MiniProtocolNum (..)
   , MiniProtocolDirection (..)
@@ -113,8 +111,15 @@ data MuxStatus
     | MuxStopped
 
 
-newMux :: MonadSTM m  => MiniProtocolBundle mode -> m (Mux mode m)
-newMux (MiniProtocolBundle ptcls) = do
+-- | Create a mux handle.
+--
+newMux :: forall (mode :: MuxMode) m.
+          MonadSTM m
+       => [MiniProtocolInfo mode]
+       -- ^ description of protocols run by the mux layer.  Only these protocols
+       -- one will be able to execute.
+       -> m (Mux mode m)
+newMux ptcls = do
     muxMiniProtocols   <- mkMiniProtocolStateMap ptcls
     muxControlCmdQueue <- atomically newTQueue
     muxStatus <- newTVarIO MuxReady
@@ -333,8 +338,8 @@ type MiniProtocolKey = (MiniProtocolNum, MiniProtocolDir)
 newtype MonitorCtx m mode = MonitorCtx {
     -- | Mini-Protocols started on demand and waiting to be scheduled.
     --
-    mcOnDemandProtocols :: (Map MiniProtocolKey
-                                (MiniProtocolState mode m, MiniProtocolAction m))
+    mcOnDemandProtocols :: Map MiniProtocolKey
+                               (MiniProtocolState mode m, MiniProtocolAction m)
 
   }
 
@@ -364,10 +369,10 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
     go !monitorCtx@MonitorCtx { mcOnDemandProtocols } = do
       result <- atomically $ runFirstToFinish $
             -- wait for a mini-protocol thread to terminate
-           (FirstToFinish $ EventJobResult <$> JobPool.waitForJob jobpool)
+           FirstToFinish (EventJobResult <$> JobPool.waitForJob jobpool)
 
             -- wait for a new control command
-        <> (FirstToFinish $ EventControlCmd <$> readTQueue cmdQueue)
+        <> FirstToFinish (EventControlCmd <$> readTQueue cmdQueue)
 
             -- or wait for data to arrive on the channels that do not yet have
             -- responder threads running

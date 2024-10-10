@@ -6,6 +6,10 @@
 
 * Added `createConnectedBufferedChannelsUnbounded`.
 * Use `typed-protocols-0.2.0.0`.
+* Removed `Ouroboros.Network.Mux.toApplication`
+* Renamed `Ouroboros.Network.Mux.mkMiniProtocolBundle` as `mkMiniProtocolInfos`
+  (its type has changed).
+* Added `Ouroboros.Network.Mux.toMiniProtocolInfos`.
 
 ### Non-breaking changes
 

@@ -4,6 +4,12 @@
 
 ### Breaking changes
 
+* Removed `Netowrk.Mux.Compat` module with legacy API.
+* `Ouroboros.Network.Mux.toApplication` was removed. 
+* `Ouroboros.Network.Mux.mkMiniProtocolBundle` was renamed to
+  `mkMiniProtocolInfos`, its type changed.
+* Removed `MiniProtocolBundle` newtype wrapper.
+
 ### Non-breaking changes
 
 * Fix compilation with `tracetcpinfo` flag.

@@ -3,17 +3,18 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
-{-# LANGUAGE TypeApplications    #-}
 
 {-# OPTIONS_GHC -Wno-orphans     #-}
 module Test.Ouroboros.Network.Socket (tests) where
 
 import Data.Bifoldable (bitraverse_)
 import Data.ByteString.Lazy qualified as BL
+import Data.Either (fromRight)
 import Data.List (mapAccumL)
+import Data.Monoid.Synchronisation (FirstToFinish (..))
 import Data.Time.Clock (UTCTime, getCurrentTime)
 import Data.Void (Void)
 #ifndef mingw32_HOST_OS
@@ -55,12 +56,10 @@ import Ouroboros.Network.Socket
 -- TODO: remove Mx prefixes
 import Ouroboros.Network.Mux
 
-import Network.Mux qualified as Mx (MuxError (..), MuxErrorType (..))
+import Network.Mux qualified as Mx
 import Network.Mux.Bearer qualified as Mx
-import Network.Mux.Compat qualified as Mx (muxStart)
-import Network.Mux.Timeout
-import Network.Mux.Types (MiniProtocolDir (..), MuxSDU (..), MuxSDUHeader (..),
-           RemoteClockModel (..), write)
+import Network.Mux.Timeout qualified as Mx
+import Network.Mux.Types qualified as Mx
 
 import Ouroboros.Network.Protocol.Handshake.Codec
 import Ouroboros.Network.Protocol.Handshake.Unversioned
@@ -174,7 +173,7 @@ prop_socket_send_recv_unix request response = ioProperty $ do
                                mempty request response
     cleanUp serverName
     cleanUp clientName
-    return $ r
+    return r
   where
     cleanUp name = do
         catchJust (\e -> if isDoesNotExistErrorType (ioeGetErrorType e) then Just () else Nothing)
@@ -352,10 +351,30 @@ prop_socket_recv_error f rerr =
                     _ <- async $ do
                       threadDelay 0.1
                       atomically $ putTMVar lock ()
-                    Mx.muxStart nullTracer (toApplication MinimalInitiatorContext { micConnectionId = connectionId }
-                                                          ResponderContext { rcConnectionId = connectionId }
-                                                          app)
-                                           bearer
+                    mux <- Mx.newMux (toMiniProtocolInfos app)
+                    let respCtx = ResponderContext connectionId
+                    resOps <- sequence
+                      [ Mx.runMiniProtocol
+                          mux
+                          miniProtocolNum
+                          miniProtocolDir
+                          Mx.StartEagerly
+                          (\a -> do
+                            r <- action a
+                            return (r, Nothing)
+                          )
+                      | MiniProtocol{miniProtocolNum, miniProtocolRun}
+                          <- getOuroborosApplication app
+                      , (miniProtocolDir, action) <-
+                          case miniProtocolRun of
+                            ResponderProtocolOnly initiator ->
+                              [(Mx.ResponderDirectionOnly, void . runMiniProtocolCb initiator respCtx)]
+                      ]
+
+                    withAsync (Mx.runMux nullTracer mux bearer) $ \aid -> do
+                      _ <- atomically $ runFirstToFinish $ foldMap FirstToFinish resOps
+                      Mx.stopMux mux
+                      wait aid
           )
           $ \muxAsync -> do
 
@@ -429,10 +448,10 @@ prop_socket_send_error rerr =
                                                                else (-1) -- No timeout
                         blob = BL.pack $ replicate 0xffff 0xa5
                     bearer <- Mx.getBearer Mx.makeSocketBearer sduTimeout nullTracer sd'
-                    withTimeoutSerial $ \timeout ->
+                    Mx.withTimeoutSerial $ \timeout ->
                       -- send maximum mux sdus until we've filled the window.
                       replicateM 100 $ do
-                        ((), Nothing) <$ write bearer timeout (wrap blob ResponderDir (MiniProtocolNum 0))
+                        ((), Nothing) <$ Mx.write bearer timeout (wrap blob Mx.ResponderDir (MiniProtocolNum 0))
           )
           $ \muxAsync -> do
 
@@ -459,16 +478,16 @@ prop_socket_send_error rerr =
           return result
   where
       -- wrap a 'ByteString' as 'MuxSDU'
-      wrap :: BL.ByteString -> MiniProtocolDir -> MiniProtocolNum -> MuxSDU
-      wrap blob ptclDir ptclNum = MuxSDU {
+      wrap :: BL.ByteString -> Mx.MiniProtocolDir -> MiniProtocolNum -> Mx.MuxSDU
+      wrap blob ptclDir ptclNum = Mx.MuxSDU {
             -- it will be filled when the 'MuxSDU' is send by the 'bearer'
-            msHeader = MuxSDUHeader {
-                mhTimestamp = RemoteClockModel 0,
-                mhNum       = ptclNum,
-                mhDir       = ptclDir,
-                mhLength    = fromIntegral $ BL.length blob
+            Mx.msHeader = Mx.MuxSDUHeader {
+                Mx.mhTimestamp = Mx.RemoteClockModel 0,
+                Mx.mhNum       = ptclNum,
+                Mx.mhDir       = ptclDir,
+                Mx.mhLength    = fromIntegral $ BL.length blob
               },
-            msBlob = blob
+            Mx.msBlob = blob
           }
 
 prop_socket_client_connect_error :: (Int -> Int -> (Int, Int))
@@ -512,7 +531,7 @@ prop_socket_client_connect_error _ xs =
         (Socket.addrAddress serverAddr)
 
     -- XXX Disregarding the exact exception type
-    pure $ either (const True) id res
+    pure $ fromRight True res
 
 
 
