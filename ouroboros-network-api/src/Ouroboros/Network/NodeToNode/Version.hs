@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric  #-}
+{-# LANGUAGE LambdaCase     #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
 module Ouroboros.Network.NodeToNode.Version
@@ -9,7 +10,6 @@ module Ouroboros.Network.NodeToNode.Version
   , ConnectionMode (..)
   , nodeToNodeVersionCodec
   , nodeToNodeCodecCBORTerm
-  , isPipeliningEnabled
   ) where
 
 import Data.Text (Text)
@@ -20,8 +20,6 @@ import Codec.CBOR.Term qualified as CBOR
 
 import Control.DeepSeq
 import GHC.Generics
-import Ouroboros.Network.BlockFetch.ConsensusInterface
-           (WhetherReceivingTentativeBlocks (..))
 import Ouroboros.Network.CodecCBORTerm
 import Ouroboros.Network.Handshake.Acceptable (Accept (..), Acceptable (..))
 import Ouroboros.Network.Handshake.Queryable (Queryable (..))
@@ -30,38 +28,39 @@ import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 
 -- | Enumeration of node to node protocol versions.
 --
-data NodeToNodeVersion
-    = NodeToNodeV_7
-    -- ^ Changes:
-    --
-    -- * new 'KeepAlive' codec
-    -- * Enable @CardanoNodeToNodeVersion5@, i.e., Alonzo
-    | NodeToNodeV_8
-    -- ^ Changes:
-    --
-    -- * Enable block diffusion pipelining in ChainSync and BlockFetch logic.
-    | NodeToNodeV_9
-    -- ^ Changes:
-    --
-    -- * Enable @CardanoNodeToNodeVersion6@, i.e., Babbage
-    | NodeToNodeV_10
-    -- ^ Changes:
-    --
-    -- * Enable full duplex connections.
-    | NodeToNodeV_11
-    -- ^ Changes:
-    --
-    -- * Adds a new extra parameter to handshake: PeerSharing
-    --   This version is needed to support the new  Peer Sharing miniprotocol
-    --   older versions that are negotiated will appear as not participating
-    --   in Peer Sharing to newer versions.
-    -- * Adds `query` to NodeToClientVersionData.
-    | NodeToNodeV_12
-    -- ^ No changes.
-    --
-    -- (In the past, this enabled Conway, but the negotiated 'NodeToNodeVersion'
-    -- no longer en-/disables eras.)
-    | NodeToNodeV_13
+data NodeToNodeVersion =
+    -- commented out versions that can't cross into the current HF era
+    -- NodeToNodeV_7
+    -- -- ^ Changes:
+    -- --
+    -- -- * new 'KeepAlive' codec
+    -- -- * Enable @CardanoNodeToNodeVersion5@, i.e., Alonzo
+    -- | NodeToNodeV_8
+    -- -- ^ Changes:
+    -- --
+    -- -- * Enable block diffusion pipelining in ChainSync and BlockFetch logic.
+    -- | NodeToNodeV_9
+    -- -- ^ Changes:
+    -- --
+    -- -- * Enable @CardanoNodeToNodeVersion6@, i.e., Babbage
+    -- | NodeToNodeV_10
+    -- -- ^ Changes:
+    -- --
+    -- -- * Enable full duplex connections.
+    -- | NodeToNodeV_11
+    -- -- ^ Changes:
+    -- --
+    -- -- * Adds a new extra parameter to handshake: PeerSharing
+    -- --   This version is needed to support the new  Peer Sharing miniprotocol
+    -- --   older versions that are negotiated will appear as not participating
+    -- --   in Peer Sharing to newer versions.
+    -- -- * Adds `query` to NodeToClientVersionData.
+    -- | NodeToNodeV_12
+    -- -- ^ No changes.
+    -- --
+    -- -- (In the past, this enabled Conway, but the negotiated 'NodeToNodeVersion'
+    -- -- no longer en-/disables eras.)
+    NodeToNodeV_13
     -- ^ Changes:
     --
     -- * Removed PeerSharingPrivate constructor
@@ -73,22 +72,10 @@ data NodeToNodeVersion
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
 nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
   where
-    encodeTerm NodeToNodeV_7  = CBOR.TInt 7
-    encodeTerm NodeToNodeV_8  = CBOR.TInt 8
-    encodeTerm NodeToNodeV_9  = CBOR.TInt 9
-    encodeTerm NodeToNodeV_10 = CBOR.TInt 10
-    encodeTerm NodeToNodeV_11 = CBOR.TInt 11
-    encodeTerm NodeToNodeV_12 = CBOR.TInt 12
     encodeTerm NodeToNodeV_13 = CBOR.TInt 13
 
-    decodeTerm (CBOR.TInt 7) = Right NodeToNodeV_7
-    decodeTerm (CBOR.TInt 8) = Right NodeToNodeV_8
-    decodeTerm (CBOR.TInt 9) = Right NodeToNodeV_9
-    decodeTerm (CBOR.TInt 10) = Right NodeToNodeV_10
-    decodeTerm (CBOR.TInt 11) = Right NodeToNodeV_11
-    decodeTerm (CBOR.TInt 12) = Right NodeToNodeV_12
     decodeTerm (CBOR.TInt 13) = Right NodeToNodeV_13
-    decodeTerm (CBOR.TInt n) = Left ( T.pack "decode NodeToNodeVersion: unknonw tag: "
+    decodeTerm (CBOR.TInt n) = Left ( T.pack "decode NodeToNodeVersion: unknown tag: "
                                         <> T.pack (show n)
                                     , Just n
                                     )
@@ -157,121 +144,49 @@ instance Queryable NodeToNodeVersionData where
     queryVersion = query
 
 nodeToNodeCodecCBORTerm :: NodeToNodeVersion -> CodecCBORTerm Text NodeToNodeVersionData
-nodeToNodeCodecCBORTerm version
-  | version >= NodeToNodeV_13 =
-    let encodeTerm :: NodeToNodeVersionData -> CBOR.Term
-        encodeTerm NodeToNodeVersionData { networkMagic, diffusionMode, peerSharing, query }
-          = CBOR.TList
-              [ CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
-              , CBOR.TBool (case diffusionMode of
-                             InitiatorOnlyDiffusionMode         -> True
-                             InitiatorAndResponderDiffusionMode -> False)
-              , CBOR.TInt (case peerSharing of
-                             PeerSharingDisabled -> 0
-                             PeerSharingEnabled  -> 1)
-              , CBOR.TBool query
-              ]
+nodeToNodeCodecCBORTerm =
+  \case
+    NodeToNodeV_13 -> v13
 
-        decodeTerm :: CBOR.Term -> Either Text NodeToNodeVersionData
-        decodeTerm (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode, CBOR.TInt peerSharing, CBOR.TBool query])
-          | x >= 0
-          , x <= 0xffffffff
-          , Just ps <- case peerSharing of
-                        0 -> Just PeerSharingDisabled
-                        1 -> Just PeerSharingEnabled
-                        _ -> Nothing
-          = Right
-              NodeToNodeVersionData {
-                  networkMagic = NetworkMagic (fromIntegral x),
-                  diffusionMode = if diffusionMode
-                                  then InitiatorOnlyDiffusionMode
-                                  else InitiatorAndResponderDiffusionMode,
-                  peerSharing = ps,
-                  query = query
-                }
-          | x < 0 || x > 0xffffffff
-          = Left $ T.pack $ "networkMagic out of bound: " <> show x
-          | otherwise -- peerSharing < 0 || peerSharing > 1
-          = Left $ T.pack $ "peerSharing is out of bound: " <> show peerSharing
-        decodeTerm t
-          = Left $ T.pack $ "unknown encoding: " ++ show t
-     in CodecCBORTerm { encodeTerm, decodeTerm }
-  | version >= NodeToNodeV_11
-  , version <= NodeToNodeV_12 =
-    let encodeTerm :: NodeToNodeVersionData -> CBOR.Term
-        encodeTerm NodeToNodeVersionData { networkMagic, diffusionMode, query }
-          = CBOR.TList
-              [ CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
-              , CBOR.TBool (case diffusionMode of
-                             InitiatorOnlyDiffusionMode         -> True
-                             InitiatorAndResponderDiffusionMode -> False)
-                              -- There's a bug in this versions where the
-                              -- agreed PeerSharing value on the remote side
-                              -- is whatever that got proposed, so we have to
-                              -- disable peer sharing with such nodes to avoid
-                              -- protocol violations
-              , CBOR.TInt 0 -- 0 corresponds to PeerSharingDisabled
-              , CBOR.TBool query
-              ]
+  where
+    v13 = CodecCBORTerm { encodeTerm = encodeTerm13, decodeTerm = decodeTerm13 }
 
-        decodeTerm :: CBOR.Term -> Either Text NodeToNodeVersionData
-        decodeTerm (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode, CBOR.TInt _, CBOR.TBool query])
-          | x >= 0
-          , x <= 0xffffffff
-          = Right
-              NodeToNodeVersionData {
-                  networkMagic = NetworkMagic (fromIntegral x),
-                  diffusionMode = if diffusionMode
-                                  then InitiatorOnlyDiffusionMode
-                                  else InitiatorAndResponderDiffusionMode,
-                  peerSharing = PeerSharingDisabled,
-                  query = query
-                }
-          | x < 0 || x > 0xffffffff
-          = Left $ T.pack $ "networkMagic out of bound: " <> show x
-        decodeTerm t
-          = Left $ T.pack $ "unknown encoding: " ++ show t
-     in CodecCBORTerm { encodeTerm, decodeTerm }
-  | otherwise =
-    let encodeTerm :: NodeToNodeVersionData -> CBOR.Term
-        encodeTerm NodeToNodeVersionData { networkMagic, diffusionMode }
-          = CBOR.TList
-                  [ CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
-                  , CBOR.TBool (case diffusionMode of
-                                 InitiatorOnlyDiffusionMode         -> True
-                                 InitiatorAndResponderDiffusionMode -> False)
-                  ]
+    encodeTerm13 :: NodeToNodeVersionData -> CBOR.Term
+    encodeTerm13 NodeToNodeVersionData { networkMagic, diffusionMode, peerSharing, query }
+      = CBOR.TList
+          [ CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
+          , CBOR.TBool (case diffusionMode of
+                         InitiatorOnlyDiffusionMode         -> True
+                         InitiatorAndResponderDiffusionMode -> False)
+          , CBOR.TInt (case peerSharing of
+                         PeerSharingDisabled -> 0
+                         PeerSharingEnabled  -> 1)
+          , CBOR.TBool query
+          ]
 
-        decodeTerm :: CBOR.Term -> Either Text NodeToNodeVersionData
-        decodeTerm (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode])
-          | x >= 0
-          , x <= 0xffffffff
-          = Right
-              NodeToNodeVersionData {
-                  networkMagic  = NetworkMagic (fromIntegral x)
-                , diffusionMode = if diffusionMode
-                                  then InitiatorOnlyDiffusionMode
-                                  else InitiatorAndResponderDiffusionMode
-                  -- By default older versions do not participate in Peer
-                  -- Sharing, since they do not support the new miniprotocol
-                , peerSharing = PeerSharingDisabled
-                , query = False
-                }
-          | otherwise
-          = Left $ T.pack $ "networkMagic out of bound: " <> show x
-        decodeTerm t
-          = Left $ T.pack $ "unknown encoding: " ++ show t
-     in CodecCBORTerm { encodeTerm, decodeTerm }
+    decodeTerm13 :: CBOR.Term -> Either Text NodeToNodeVersionData
+    decodeTerm13 (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode, CBOR.TInt peerSharing, CBOR.TBool query])
+      | x >= 0
+      , x <= 0xffffffff
+      , Just ps <- case peerSharing of
+                    0 -> Just PeerSharingDisabled
+                    1 -> Just PeerSharingEnabled
+                    _ -> Nothing
+      = Right
+          NodeToNodeVersionData {
+              networkMagic = NetworkMagic (fromIntegral x),
+              diffusionMode = if diffusionMode
+                              then InitiatorOnlyDiffusionMode
+                              else InitiatorAndResponderDiffusionMode,
+              peerSharing = ps,
+              query = query
+            }
+      | x < 0 || x > 0xffffffff
+      = Left $ T.pack $ "networkMagic out of bound: " <> show x
+      | otherwise -- peerSharing < 0 || peerSharing > 1
+      = Left $ T.pack $ "peerSharing is out of bound: " <> show peerSharing
+    decodeTerm13 t
+      = Left $ T.pack $ "unknown encoding: " ++ show t
 
 
 data ConnectionMode = UnidirectionalMode | DuplexMode
-
--- | Check whether a version enabling diffusion pipelining has been
--- negotiated.
---
--- TODO: this ought to be defined in `ouroboros-consensus` or
--- `ouroboros-consensus-diffusion`
-isPipeliningEnabled :: NodeToNodeVersion -> WhetherReceivingTentativeBlocks
-isPipeliningEnabled v
-  | v >= NodeToNodeV_8 = ReceivingTentativeBlocks
-  | otherwise          = NotReceivingTentativeBlocks

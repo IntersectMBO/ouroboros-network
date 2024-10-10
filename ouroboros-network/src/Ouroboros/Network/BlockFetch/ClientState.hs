@@ -31,7 +31,6 @@ module Ouroboros.Network.BlockFetch.ClientState
   , ChainRange (..)
     -- * Ancillary
   , FromConsensus (..)
-  , WhetherReceivingTentativeBlocks (..)
   ) where
 
 import Data.List as List (foldl')
@@ -52,8 +51,7 @@ import Network.Mux.Trace (TraceLabelPeer (..))
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.Block (HasHeader, MaxSlotNo (..), Point, blockPoint)
-import Ouroboros.Network.BlockFetch.ConsensusInterface (FromConsensus (..),
-           WhetherReceivingTentativeBlocks (..))
+import Ouroboros.Network.BlockFetch.ConsensusInterface (FromConsensus (..))
 import Ouroboros.Network.BlockFetch.DeltaQ (PeerFetchInFlightLimits (..),
            PeerGSV, SizeInBytes, calculatePeerFetchInFlightLimits)
 import Ouroboros.Network.ControlMessage (ControlMessageSTM,

@@ -51,7 +51,6 @@ import Ouroboros.Network.Mock.ConcreteBlock
 import Ouroboros.Network.Mux
 import Ouroboros.Network.NodeToClient (LocalConnectionId)
 import Ouroboros.Network.NodeToNode
-import Ouroboros.Network.NodeToNode.Version (isPipeliningEnabled)
 import Ouroboros.Network.Point (WithOrigin (..))
 import Ouroboros.Network.Snocket
 import Ouroboros.Network.Socket
@@ -399,7 +398,7 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
           InitiatorProtocolOnly $
             MiniProtocolCb $ \MinimalInitiatorContext { micConnectionId = connId } channel ->
               bracketDqRegistry registry connId $
-              bracketFetchClient registry maxBound isPipeliningEnabled connId $ \clientCtx -> do
+              bracketFetchClient registry (maxBound :: NodeToNodeVersion) connId $ \clientCtx -> do
                 threadDelay 1000000
                 runPipelinedPeer
                   nullTracer -- (contramap (show . TraceLabelPeer ("block-fetch", getFilePath $ remoteAddress connId)) stdoutTracer)
@@ -420,7 +419,7 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
                                          getTestFetchedBlocks blockHeap,
               readFetchedMaxSlotNo   = maybe NoMaxSlotNo (maxSlotNoFromWithOrigin . pointSlot) <$>
                                          getLastFetchedPoint blockHeap,
-              mkAddFetchedBlock        = \_enablePipelining -> do
+              mkAddFetchedBlock      = do
                   pure $ \p b ->
                     addTestFetchedBlock blockHeap (castPoint p) (blockHeader b),
 

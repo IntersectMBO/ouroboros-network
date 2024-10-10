@@ -432,7 +432,6 @@ applications debugTracer nodeKernel
       -> do labelThisThread "BlockFetchClient"
             bracketFetchClient (nkFetchClientRegistry nodeKernel)
                                UnversionedProtocol
-                               (const NotReceivingTentativeBlocks)
                                remoteAddress
                                $ \clientCtx ->
               runPeerWithLimits

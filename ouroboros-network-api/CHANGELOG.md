@@ -9,6 +9,11 @@
      and `reRelativeStake` -> `recomputeRelativeStake`
 * Added `NodeToClientVersionV18`
 * Using `typed-protocols-0.3.0.0`.
+* Removed `NodeToNodeV_12` and older as these are unable
+  to cross the hard fork boundary.
+* Removed `WhetherReceivingTentativeBlocks` used to
+  distinguish whether a node version is pipelining-enabled,
+  used in older `NodeToNodeVersion`
 
 ### Non-breaking changes
 
