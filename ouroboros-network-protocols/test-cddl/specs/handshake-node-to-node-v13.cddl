@@ -14,7 +14,7 @@ msgQueryReply      = [3, versionTable]
 
 versionTable = { * versionNumber => nodeToNodeVersionData }
 
-versionNumber = 13
+versionNumber = 13 / 14
 
 nodeToNodeVersionData = [ networkMagic, initiatorOnlyDiffusionMode, peerSharing, query ]
 
@@ -33,4 +33,3 @@ refuseReason
 refuseReasonVersionMismatch      = [0, [ *versionNumber ] ]
 refuseReasonHandshakeDecodeError = [1, versionNumber, tstr]
 refuseReasonRefused              = [2, versionNumber, tstr]
-
