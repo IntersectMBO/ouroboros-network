@@ -165,7 +165,6 @@ library testlib
     Ouroboros.Network.Protocol.TxSubmission2.Direct
     Ouroboros.Network.Protocol.TxSubmission2.Examples
     Ouroboros.Network.Protocol.TxSubmission2.Test
-
     Test.ChainGenerators
     Test.ChainProducerState
     Test.Data.CDDL

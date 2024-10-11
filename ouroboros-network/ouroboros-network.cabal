@@ -162,7 +162,7 @@ library
     network-mux,
     nothunks,
     ouroboros-network-api ^>=0.10.0,
-    ouroboros-network-framework ^>=0.13.2.4,
+    ouroboros-network-framework ^>=0.13.2.5,
     ouroboros-network-protocols ^>=0.11,
     psqueues >=0.2.3 && <0.3,
     random,
