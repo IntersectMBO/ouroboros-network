@@ -1,11 +1,9 @@
 {-# LANGUAGE BangPatterns          #-}
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE DeriveTraversable     #-}
-{-# LANGUAGE ExplicitNamespaces    #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE KindSignatures        #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE PatternSynonyms       #-}
 {-# LANGUAGE PolyKinds             #-}
@@ -45,12 +43,13 @@ module Ouroboros.Network.Mux
     -- * MiniProtocol bundle
   , OuroborosBundle
   , OuroborosBundleWithExpandedCtx
+  , OuroborosBundleWithMinimalCtx
     -- * Non-P2P API
   , OuroborosApplication (..)
   , OuroborosApplicationWithMinimalCtx
-  , toApplication
-  , mkMiniProtocolBundle
+  , mkMiniProtocolInfos
   , fromOuroborosBundle
+  , toMiniProtocolInfos
   , contramapInitiatorCtx
     -- * Re-exports
     -- | from "Network.Mux"
@@ -78,11 +77,10 @@ import Network.TypedProtocol.Peer
 import Network.TypedProtocol.Stateful.Codec qualified as Stateful
 import Network.TypedProtocol.Stateful.Peer qualified as Stateful
 
-import Network.Mux (HasInitiator, HasResponder, MiniProtocolBundle (..),
-           MiniProtocolInfo, MiniProtocolLimits (..), MiniProtocolNum,
-           MuxError (..), MuxErrorType (..), MuxMode (..))
+import Network.Mux (HasInitiator, HasResponder, MiniProtocolInfo,
+           MiniProtocolLimits (..), MiniProtocolNum, MuxError (..),
+           MuxErrorType (..), MuxMode (..))
 import Network.Mux.Channel qualified as Mux
-import Network.Mux.Compat qualified as Mux.Compat
 import Network.Mux.Types qualified as Mux
 
 import Ouroboros.Network.Channel
@@ -231,6 +229,12 @@ type OuroborosBundleWithExpandedCtx (mode :: MuxMode) peerAddr bytes m a b =
                      (ResponderContext peerAddr)
                      bytes m a b
 
+type OuroborosBundleWithMinimalCtx (mode :: MuxMode) peerAddr bytes m a b =
+     OuroborosBundle mode
+                     (MinimalInitiatorContext peerAddr)
+                     (ResponderContext peerAddr)
+                     bytes m a b
+
 
 -- | Each mini-protocol is represented by its
 --
@@ -244,6 +248,25 @@ data MiniProtocol (mode :: MuxMode) initiatorCtx responderCtx bytes m a b =
        miniProtocolLimits :: !MiniProtocolLimits,
        miniProtocolRun    :: !(RunMiniProtocol mode initiatorCtx responderCtx bytes m a b)
      }
+
+mkMiniProtocolInfo :: MiniProtocol mode initiatorCtx responderCtx bytes m a b -> [MiniProtocolInfo mode]
+mkMiniProtocolInfo MiniProtocol {
+     miniProtocolNum,
+     miniProtocolLimits,
+     miniProtocolRun
+   }
+  =
+  [ Mux.MiniProtocolInfo {
+      Mux.miniProtocolNum,
+      Mux.miniProtocolDir = dir,
+      Mux.miniProtocolLimits
+    }
+  | dir <- case miniProtocolRun of
+             InitiatorProtocolOnly{}         -> [ Mux.InitiatorDirectionOnly ]
+             ResponderProtocolOnly{}         -> [ Mux.ResponderDirectionOnly ]
+             InitiatorAndResponderProtocol{} -> [ Mux.InitiatorDirection
+                                                , Mux.ResponderDirection ]
+  ]
 
 
 -- | 'MiniProtocol' type used in P2P.
@@ -450,7 +473,10 @@ contramapMiniProtocolCbCtx f (MuxPeerPipelined cb) = MuxPeerPipelined (cb . f)
 --
 -- Note: Only used in some non-P2P contexts.
 newtype OuroborosApplication  (mode :: MuxMode) initiatorCtx responderCtx bytes m a b =
-        OuroborosApplication [MiniProtocol mode initiatorCtx responderCtx bytes m a b]
+  OuroborosApplication {
+    getOuroborosApplication
+      :: [MiniProtocol mode initiatorCtx responderCtx bytes m a b]
+  }
 
 -- | 'OuroborosApplication' used in NonP2P mode.
 --
@@ -463,6 +489,12 @@ type OuroborosApplicationWithMinimalCtx mode peerAddr bytes m a b =
 fromOuroborosBundle :: OuroborosBundle      mode initiatorCtx responderCtx bytes m a b
                     -> OuroborosApplication mode initiatorCtx responderCtx bytes m a b
 fromOuroborosBundle = OuroborosApplication . fold
+
+
+toMiniProtocolInfos :: OuroborosApplication mode initiatorCtx responderCtx bytes m a b
+                    -> [MiniProtocolInfo mode]
+toMiniProtocolInfos =
+    foldMap mkMiniProtocolInfo . getOuroborosApplication
 
 
 contramapInitiatorCtx :: (initiatorCtx' -> initiatorCtx)
@@ -482,61 +514,9 @@ contramapInitiatorCtx f (OuroborosApplication ptcls) = OuroborosApplication
   ]
 
 
--- | Create non p2p mux application.
---
--- Note that callbacks will always receive `IsNotBigLedgerPeer`.
-toApplication :: forall mode initiatorCtx responderCtx m a b.
-                 ( MonadAsync m
-                 , MonadThrow m
-                 )
-              => initiatorCtx
-              -> responderCtx
-              -> OuroborosApplication mode initiatorCtx responderCtx LBS.ByteString m a b
-              -> Mux.Compat.MuxApplication mode m a b
-toApplication initiatorContext responderContext (OuroborosApplication ptcls) =
-    Mux.Compat.MuxApplication
-      [ Mux.Compat.MuxMiniProtocol {
-          Mux.Compat.miniProtocolNum    = miniProtocolNum ptcl,
-          Mux.Compat.miniProtocolLimits = miniProtocolLimits ptcl,
-          Mux.Compat.miniProtocolRun    = toMuxRunMiniProtocol (miniProtocolRun ptcl)
-        }
-      | ptcl <- ptcls ]
-  where
-    toMuxRunMiniProtocol :: RunMiniProtocol mode initiatorCtx responderCtx LBS.ByteString m a b
-                         -> Mux.Compat.RunMiniProtocol mode m a b
-    toMuxRunMiniProtocol (InitiatorProtocolOnly i) =
-      Mux.Compat.InitiatorProtocolOnly
-        (runMiniProtocolCb i initiatorContext)
-    toMuxRunMiniProtocol (ResponderProtocolOnly r) =
-      Mux.Compat.ResponderProtocolOnly
-        (runMiniProtocolCb r responderContext)
-    toMuxRunMiniProtocol (InitiatorAndResponderProtocol i r) =
-      Mux.Compat.InitiatorAndResponderProtocol
-        (runMiniProtocolCb i initiatorContext)
-        (runMiniProtocolCb r responderContext)
-
-
 -- | Make 'MiniProtocolBundle', which is used to create a mux interface with
 -- 'newMux'.
 --
-mkMiniProtocolBundle :: OuroborosBundle mode initiatorCtx responderCtx bytes m a b
-                     -> MiniProtocolBundle mode
-mkMiniProtocolBundle = MiniProtocolBundle . foldMap fn
-  where
-    fn :: [MiniProtocol mode initiatorCtx responderCtx bytes m a b] -> [MiniProtocolInfo mode]
-    fn ptcls = [ Mux.MiniProtocolInfo
-                   { Mux.miniProtocolNum
-                   , Mux.miniProtocolDir = dir
-                   , Mux.miniProtocolLimits
-                   }
-               | MiniProtocol { miniProtocolNum
-                              , miniProtocolLimits
-                              , miniProtocolRun
-                              }
-                   <- ptcls
-               , dir <- case miniProtocolRun of
-                   InitiatorProtocolOnly{}         -> [ Mux.InitiatorDirectionOnly ]
-                   ResponderProtocolOnly{}         -> [ Mux.ResponderDirectionOnly ]
-                   InitiatorAndResponderProtocol{} -> [ Mux.InitiatorDirection
-                                                      , Mux.ResponderDirection ]
-               ]
+mkMiniProtocolInfos :: OuroborosBundle mode initiatorCtx responderCtx bytes m a b
+                    -> [MiniProtocolInfo mode]
+mkMiniProtocolInfos = foldMap (foldMap mkMiniProtocolInfo)

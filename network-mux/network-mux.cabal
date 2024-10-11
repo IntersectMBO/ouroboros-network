@@ -83,7 +83,6 @@ library
     Network.Mux.Bearer.Socket
     Network.Mux.Channel
     Network.Mux.Codec
-    Network.Mux.Compat
     Network.Mux.DeltaQ.TraceStats
     Network.Mux.DeltaQ.TraceStatsSupport
     Network.Mux.DeltaQ.TraceTransformer
