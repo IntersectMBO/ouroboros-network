@@ -10,6 +10,12 @@
 * Renamed `Ouroboros.Network.Mux.mkMiniProtocolBundle` as `mkMiniProtocolInfos`
   (its type has changed).
 * Added `Ouroboros.Network.Mux.toMiniProtocolInfos`.
+* Added `ConnectToArgs` for `Ouroboros.Network.Socket.connectToNode` & friends.
+* `Ouroboros.Network.Socket.connectToNode` & friends return result (or an
+  error) of the first terminated mini-protocol.
+* Added `Ouroboros.Network.Socket.connectToNodeWithMux` and
+  `connectToNodeWithMux'`.  They give control over running mux, e.g. one can
+  start some of the mini-protocols, or implement a re-start policy.
 
 ### Non-breaking changes
 

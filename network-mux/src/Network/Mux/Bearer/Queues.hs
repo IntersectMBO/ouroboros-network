@@ -42,7 +42,8 @@ queueChannelAsMuxBearer sduSize tracer QueueChannel { writeQueue, readQueue } = 
       Mx.MuxBearer {
         Mx.read    = readMux,
         Mx.write   = writeMux,
-        Mx.sduSize = sduSize
+        Mx.sduSize = sduSize,
+        Mx.name    = "queue-channel"
       }
     where
       readMux :: Mx.TimeoutFn m -> m (Mx.MuxSDU, Time)

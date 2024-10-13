@@ -32,7 +32,6 @@ import Network.Mux.Trace
 import Network.Mux.Types
 import Network.TypedProtocol.Codec
 
-import Ouroboros.Network.Channel
 import Ouroboros.Network.Driver.Limits
 
 import Ouroboros.Network.Protocol.Handshake.Client
@@ -143,7 +142,7 @@ runHandshakeClient bearer
           haHandshakeCodec
           byteLimitsHandshake
           haTimeLimits
-          (fromChannel (muxBearerAsChannel bearer handshakeProtocolNum InitiatorDir))
+          (muxBearerAsChannel bearer handshakeProtocolNum InitiatorDir)
           (handshakeClientPeer haVersionDataCodec haAcceptVersion versions))
 
 
@@ -181,7 +180,7 @@ runHandshakeServer bearer
           haHandshakeCodec
           byteLimitsHandshake
           haTimeLimits
-          (fromChannel (muxBearerAsChannel bearer handshakeProtocolNum ResponderDir))
+          (muxBearerAsChannel bearer handshakeProtocolNum ResponderDir)
           (handshakeServerPeer haVersionDataCodec haAcceptVersion haQueryVersion versions))
 
 -- | A 20s delay after query result was send back, before we close the

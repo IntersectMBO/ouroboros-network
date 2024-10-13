@@ -79,7 +79,7 @@ data TraceSendRecv msg
 
 runDecoderWithChannel :: forall m a.
                          MonadST m
-                      => Channel m
+                      => ByteChannel m
                       -> Maybe LBS.ByteString
                       -> Decoder (PrimState m) a
                       -> m (Either CBOR.DeserialiseFailure (a, Maybe LBS.ByteString))
@@ -104,7 +104,7 @@ runDecoderWithChannel Channel{recv} trailing decoder =
 
 
 
--- | Run a client using a byte 'Channel'.
+-- | Run a client using a byte 'ByteChannel'.
 --
 runClient :: forall req resp m a.
              ( MonadST m
@@ -114,7 +114,7 @@ runClient :: forall req resp m a.
              , Show resp
              )
           => Tracer m (TraceSendRecv (MsgReqResp req resp))
-          -> Channel m
+          -> ByteChannel m
           -> ReqRespClient req resp m a
           -> m (a, Maybe LBS.ByteString)
 
@@ -177,7 +177,7 @@ runServer :: forall req resp m a.
              , Show resp
              )
           => Tracer m (TraceSendRecv (MsgReqResp req resp))
-          -> Channel m
+          -> ByteChannel m
           -> ReqRespServer req resp m a
           -> m (a, Maybe LBS.ByteString)
 

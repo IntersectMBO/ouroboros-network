@@ -77,7 +77,8 @@ pipeAsMuxBearer sduSize tracer channel =
       Mx.MuxBearer {
           Mx.read    = readPipe,
           Mx.write   = writePipe,
-          Mx.sduSize = sduSize
+          Mx.sduSize = sduSize,
+          Mx.name    = "pipe"
         }
     where
       readPipe :: Mx.TimeoutFn IO -> IO (Mx.MuxSDU, Time)

@@ -6,110 +6,31 @@ module Ouroboros.Network.Channel
   ( Channel (..)
   , toChannel
   , fromChannel
-  , createPipeConnectedChannels
-  , hoistChannel
-  , isoKleisliChannel
+  , module Mx
   , fixedInputChannel
-  , mvarsAsChannel
-  , handlesAsChannel
-  , createConnectedChannels
   , createConnectedBufferedChannelsUnbounded
   , createConnectedBufferedChannels
   , createConnectedBufferedChannelsSTM
   , createPipelineTestChannels
-  , channelEffect
-  , delayChannel
-  , loggingChannel
   ) where
 
-import Control.Monad ((>=>))
-import Control.Monad.Class.MonadSay
-import Control.Monad.Class.MonadTimer.SI
-import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
-import Data.ByteString.Lazy.Internal (smallChunkSize)
 import Numeric.Natural
-
-import System.IO qualified as IO (Handle, hFlush, hIsEOF)
 
 import Control.Concurrent.Class.MonadSTM.Strict
 
-import Network.Mux.Channel qualified as Mx
+import Network.Mux.Channel as Mx
 
-
--- | One end of a duplex channel. It is a reliable, ordered channel of some
--- medium. The medium does not imply message boundaries, it can be just bytes.
---
-data Channel m a = Channel {
-
-       -- | Write output to the channel.
-       --
-       -- It may raise exceptions (as appropriate for the monad and kind of
-       -- channel).
-       --
-       send :: a -> m (),
-
-       -- | Read some input from the channel, or @Nothing@ to indicate EOF.
-       --
-       -- Note that having received EOF it is still possible to send.
-       -- The EOF condition is however monotonic.
-       --
-       -- It may raise exceptions (as appropriate for the monad and kind of
-       -- channel).
-       --
-       recv :: m (Maybe a)
-     }
-
--- TODO: eliminate the second Channel type and these conversion functions.
-
-fromChannel :: Mx.Channel m
+fromChannel :: Mx.ByteChannel m
             -> Channel m LBS.ByteString
-fromChannel Mx.Channel { Mx.send, Mx.recv } = Channel {
-    send = send,
-    recv = recv
-  }
+fromChannel = id
+{-# DEPRECATED fromChannel "Not needed, use `id` instead." #-}
 
 toChannel :: Channel m LBS.ByteString
-          -> Mx.Channel m
-toChannel Channel { send, recv } = Mx.Channel {
-    Mx.send = send,
-    Mx.recv = recv
-  }
+          -> Mx.ByteChannel m
+toChannel = id
+{-# DEPRECATED toChannel "Not needed, use `id` instead." #-}
 
--- | Create a local pipe, with both ends in this process, and expose that as
--- a pair of 'Channel's, one for each end.
---
--- This is primarily for testing purposes since it does not allow actual IPC.
---
-createPipeConnectedChannels :: IO (Channel IO LBS.ByteString,
-                                   Channel IO LBS.ByteString)
-createPipeConnectedChannels =
-    (\(a, b) -> (fromChannel a, fromChannel b))
-    <$> Mx.createPipeConnectedChannels
-
--- | Given an isomorphism between @a@ and @b@ (in Kleisli category), transform
--- a @'Channel' m a@ into @'Channel' m b@.
---
-isoKleisliChannel
-  :: forall a b m. Monad m
-  => (a -> m b)
-  -> (b -> m a)
-  -> Channel m a
-  -> Channel m b
-isoKleisliChannel f finv Channel{send, recv} = Channel {
-    send = finv >=> send,
-    recv = recv >>= traverse f
-  }
-
-
-hoistChannel
-  :: (forall x . m x -> n x)
-  -> Channel m a
-  -> Channel n a
-hoistChannel nat channel = Channel
-  { send = nat . send channel
-  , recv = nat (recv channel)
-  }
 
 -- | A 'Channel' with a fixed input, and where all output is discarded.
 --
@@ -134,34 +55,6 @@ fixedInputChannel xs0 = do
     send _ = return ()
 
 
--- | Make a 'Channel' from a pair of 'TMVar's, one for reading and one for
--- writing.
---
-mvarsAsChannel :: MonadSTM m
-               => StrictTMVar m a
-               -> StrictTMVar m a
-               -> Channel m a
-mvarsAsChannel bufferRead bufferWrite =
-    Channel{send, recv}
-  where
-    send x = atomically (putTMVar bufferWrite x)
-    recv   = atomically (Just <$> takeTMVar bufferRead)
-
-
--- | Create a pair of channels that are connected via one-place buffers.
---
--- This is primarily useful for testing protocols.
---
-createConnectedChannels :: MonadSTM m => m (Channel m a, Channel m a)
-createConnectedChannels = do
-    -- Create two TMVars to act as the channel buffer (one for each direction)
-    -- and use them to make both ends of a bidirectional channel
-    bufferA <- newEmptyTMVarIO
-    bufferB <- newEmptyTMVarIO
-
-    return (mvarsAsChannel bufferB bufferA,
-            mvarsAsChannel bufferA bufferB)
-
 
 -- | Create a pair of channels that are connected via two unbounded buffers.
 --
@@ -172,8 +65,8 @@ createConnectedBufferedChannelsUnbounded :: forall m a. MonadSTM m
 createConnectedBufferedChannelsUnbounded = do
     -- Create two TQueues to act as the channel buffers (one for each
     -- direction) and use them to make both ends of a bidirectional channel
-    bufferA <- atomically $ newTQueue
-    bufferB <- atomically $ newTQueue
+    bufferA <- atomically newTQueue
+    bufferB <- atomically newTQueue
 
     return (queuesAsChannel bufferB bufferA,
             queuesAsChannel bufferA bufferB)
@@ -259,97 +152,3 @@ createPipelineTestChannels sz = do
 
     failureMsg = "createPipelineTestChannels: "
               ++ "maximum pipeline depth exceeded: " ++ show sz
-
-
--- | Make a 'Channel' from a pair of IO 'Handle's, one for reading and one
--- for writing.
---
--- The Handles should be open in the appropriate read or write mode, and in
--- binary mode. Writes are flushed after each write, so it is safe to use
--- a buffering mode.
---
--- For bidirectional handles it is safe to pass the same handle for both.
---
-handlesAsChannel :: IO.Handle -- ^ Read handle
-                 -> IO.Handle -- ^ Write handle
-                 -> Channel IO LBS.ByteString
-handlesAsChannel hndRead hndWrite =
-    Channel{send, recv}
-  where
-    send :: LBS.ByteString -> IO ()
-    send chunk = do
-      LBS.hPut hndWrite chunk
-      IO.hFlush hndWrite
-
-    recv :: IO (Maybe LBS.ByteString)
-    recv = do
-      eof <- IO.hIsEOF hndRead
-      if eof
-        then return Nothing
-        else Just . LBS.fromStrict <$> BS.hGetSome hndRead smallChunkSize
-
-
--- | Transform a channel to add an extra action before /every/ send and after
--- /every/ receive.
---
-channelEffect :: forall m a.
-                 Monad m
-              => (a -> m ())        -- ^ Action before 'send'
-              -> (Maybe a -> m ())  -- ^ Action after 'recv'
-              -> Channel m a
-              -> Channel m a
-channelEffect beforeSend afterRecv Channel{send, recv} =
-    Channel{
-      send = \x -> do
-        beforeSend x
-        send x
-
-    , recv = do
-        mx <- recv
-        afterRecv mx
-        return mx
-    }
-
--- | Delay a channel on the receiver end.
---
--- This is intended for testing, as a crude approximation of network delays.
--- More accurate models along these lines are of course possible.
---
-delayChannel :: MonadDelay m
-             => DiffTime
-             -> Channel m a
-             -> Channel m a
-delayChannel delay Channel{send, recv} =
-    Channel { send
-            , recv    = threadDelay (delay / 2)
-                     >> recv
-                     <* threadDelay (delay / 2)
-            }
-
-
-
--- | Channel which logs sent and received messages.
---
-loggingChannel :: ( MonadSay m
-                  , Show id
-                  , Show a
-                  )
-               => id
-               -> Channel m a
-               -> Channel m a
-loggingChannel ident Channel{send,recv} =
-  Channel {
-    send    = loggingSend,
-    recv    = loggingRecv
-  }
- where
-  loggingSend a = do
-    say (show ident ++ ":send:" ++ show a)
-    send a
-
-  loggingRecv = do
-    msg <- recv
-    case msg of
-      Nothing -> return ()
-      Just a  -> say (show ident ++ ":recv:" ++ show a)
-    return msg

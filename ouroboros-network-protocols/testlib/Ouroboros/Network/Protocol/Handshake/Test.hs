@@ -1342,10 +1342,8 @@ prop_channel_simultaneous_open_sim codec versionDataCodec
                         nullTracer
                         -- (("server",) `contramap` Tracer Debug.traceShowM)
                         fdConn'
-            let chann  = fromChannel
-                       $ muxBearerAsChannel bearer  (MiniProtocolNum 0) InitiatorDir
-                chann' = fromChannel
-                       $ muxBearerAsChannel bearer' (MiniProtocolNum 0) InitiatorDir
+            let chann  = muxBearerAsChannel bearer  (MiniProtocolNum 0) InitiatorDir
+                chann' = muxBearerAsChannel bearer' (MiniProtocolNum 0) InitiatorDir
             res <- prop_channel_simultaneous_open
               (pure (chann, chann'))
               codec
