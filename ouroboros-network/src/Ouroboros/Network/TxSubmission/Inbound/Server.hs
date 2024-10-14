@@ -82,14 +82,13 @@ txSubmissionInboundV2
 
         let !collected = length txs
         mpSnapshot <- atomically mempoolGetSnapshot
-        let receivedL = [ (txId tx, tx) | tx <- txs ]
-        fetchedSet <- consumeFetchedTxs (Set.fromList (map fst receivedL))
+        fetchedSet <- consumeFetchedTxs (Set.fromList (map fst txs))
 
         -- Only attempt to add TXs if we actually has fetched some.
         when (not $ Set.null fetchedSet) $ do
             let fetched = filter 
                             (\(txid, _) -> Set.member txid fetchedSet)
-                            receivedL
+                            txs
                 fetchedS = Set.fromList $ map fst fetched
 
             -- Note that checking if the mempool contains a TX before
@@ -97,7 +96,7 @@ txSubmissionInboundV2
             -- been judged immoral.
             let fresh = filter
                           (\(txid, _) -> not $ mempoolHasTx mpSnapshot txid)
-                          receivedL
+                          txs
 
             !start <- getMonotonicTime
             txidsAccepted <- mempoolAddTxs $ map snd fresh
@@ -120,7 +119,9 @@ txSubmissionInboundV2
             -- The reason for that is that any peer which has downloaded a
             -- TX is permitted to add TXs for all TXids hit has offered.
             -- This is done to preserve TX ordering.
-            !s <- countRejectedTxs (rejected - accepted) -- accepted TXs are discounted
+            -- Accepted TXs are discounted
+            !s <- countRejectedTxs end $ fromIntegral (rejected - accepted)
+
             traceWith tracer $ TraceTxSubmissionProcessed ProcessedTxCount {
                 ptxcAccepted = accepted
               , ptxcRejected = rejected

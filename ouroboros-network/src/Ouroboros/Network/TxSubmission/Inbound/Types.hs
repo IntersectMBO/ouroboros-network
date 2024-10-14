@@ -1,5 +1,6 @@
-{-# LANGUAGE DeriveGeneric  #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE DeriveGeneric    #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE NamedFieldPuns   #-}
 
 module Ouroboros.Network.TxSubmission.Inbound.Types
   ( -- * PeerTxState
@@ -28,6 +29,7 @@ import Data.Sequence.Strict (StrictSeq)
 import Data.Set (Set)
 import Data.Set qualified as Set
 import GHC.Generics (Generic)
+import System.Random (StdGen)
 
 import NoThunks.Class (NoThunks (..))
 
@@ -76,7 +78,8 @@ data PeerTxState txid tx = PeerTxState {
        --
        unknownTxs               :: !(Set txid),
 
-       rejectedTxs              :: !Int,
+       rejectedTxs              :: !Double,
+       rejectedTxsTs            :: !Time,
 
        fetchedTxs               :: !(Set txid)
     }
@@ -161,13 +164,17 @@ data SharedTxState peeraddr txid tx = SharedTxState {
       --    * @Map.keysSet bufferedTxs `Set.isSubsetOf` Map.keysSet referenceCounts@;
       --    * all counts are positive integers.
       --
-      referenceCounts :: !(Map txid Int)
+      referenceCounts :: !(Map txid Int),
+
+      -- | Rng used to randomly order peers
+      peerRng :: !StdGen
     }
     deriving (Eq, Show, Generic)
 
 instance ( NoThunks peeraddr
          , NoThunks tx
          , NoThunks txid
+         , NoThunks StdGen
          ) => NoThunks (SharedTxState peeraddr txid tx)
 
 
@@ -201,7 +208,7 @@ data TxDecision txid tx = TxDecision {
     txdTxsToRequest       :: !(Set txid),
     -- ^ txid's to download.
 
-    txdTxsToMempool       :: ![tx]
+    txdTxsToMempool       :: ![(txid,tx)]
     -- ^ list of `tx`s to submit to the mempool.
   }
   deriving (Show, Eq)
@@ -263,7 +270,7 @@ data ProcessedTxCount = ProcessedTxCount {
       ptxcAccepted :: Int
       -- | Just rejected this many transactions.
     , ptxcRejected :: Int
-    , ptxcScore :: Int
+    , ptxcScore    :: Double
     }
   deriving (Eq, Show)
 

@@ -36,11 +36,13 @@ import Data.ByteString.Lazy (ByteString)
 import Data.ByteString.Lazy qualified as BSL
 import Data.Foldable (traverse_)
 import Data.Function (on)
+import Data.Hashable
 import Data.List (nubBy)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Void (Void)
+import System.Random (mkStdGen)
 
 import Ouroboros.Network.Channel
 import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)
@@ -129,6 +131,7 @@ runTxSubmission
      , NoThunks (Tx txid)
      , Show peeraddr
      , Ord peeraddr
+     , Hashable peeraddr
 
      , txid ~ Int
      )
@@ -150,9 +153,10 @@ runTxSubmission tracer tracerTxLogic state txDecisionPolicy = do
         ) state
 
     inboundMempool <- emptyMempool
+    let txRng = mkStdGen 42 -- TODO
 
     txChannelsMVar <- newMVar (TxChannels Map.empty)
-    sharedTxStateVar <- newSharedTxStateVar
+    sharedTxStateVar <- newSharedTxStateVar txRng
     labelTVarIO sharedTxStateVar "shared-tx-state"
     gsvVar <- newTVarIO Map.empty
     labelTVarIO gsvVar "gsv"
