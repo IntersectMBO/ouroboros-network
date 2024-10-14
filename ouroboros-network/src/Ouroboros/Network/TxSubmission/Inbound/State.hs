@@ -42,6 +42,7 @@ import Data.Sequence.Strict (StrictSeq)
 import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set (Set)
 import Data.Set qualified as Set
+import System.Random (StdGen)
 
 import GHC.Stack (HasCallStack)
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..),
@@ -98,7 +99,7 @@ acknowledgeTxIds
     => TxDecisionPolicy
     -> SharedTxState peeraddr txid tx
     -> PeerTxState txid tx
-    -> (NumTxIdsToAck, NumTxIdsToReq, [tx], RefCountDiff txid, PeerTxState txid tx)
+    -> (NumTxIdsToAck, NumTxIdsToReq, [(txid,tx)], RefCountDiff txid, PeerTxState txid tx)
     -- ^ number of txid to acknowledge, txids to acknowledge with multiplicities,
     -- updated PeerTxState.
 {-# INLINE acknowledgeTxIds #-}
@@ -142,8 +143,8 @@ acknowledgeTxIds
                       )
                       unacknowledgedTxIds
 
-    txsToMempool :: [tx]
-    txsToMempool = [ tx
+    txsToMempool :: [(txid, tx)]
+    txsToMempool = [ (txid,tx)
                    | txid <- toList acknowledgedTxIds
                    , Just tx <- maybeToList $ txid `Map.lookup` bufferedTxs
                    ]
@@ -441,12 +442,14 @@ collectTxsImpl txSize peeraddr requestedTxIds receivedTxs
 type SharedTxStateVar m peeraddr txid tx = StrictTVar m (SharedTxState peeraddr txid tx)
 
 newSharedTxStateVar :: MonadSTM m
-                    => m (SharedTxStateVar m peeraddr txid tx)
-newSharedTxStateVar = newTVarIO SharedTxState { peerTxStates    = Map.empty,
+                    => StdGen
+                    -> m (SharedTxStateVar m peeraddr txid tx)
+newSharedTxStateVar rng = newTVarIO SharedTxState { peerTxStates    = Map.empty,
                                                 inflightTxs     = Map.empty,
                                                 inflightTxsSize = 0,
                                                 bufferedTxs     = Map.empty,
-                                                referenceCounts = Map.empty }
+                                                referenceCounts = Map.empty,
+                                                peerRng         = rng }
 
 
 -- | Acknowledge `txid`s, return the number of `txids` to be acknowledged to the
