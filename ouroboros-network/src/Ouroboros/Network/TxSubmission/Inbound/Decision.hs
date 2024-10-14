@@ -20,6 +20,7 @@ import Control.Arrow ((>>>))
 import Control.Exception (assert)
 
 import Data.Bifunctor (second)
+import Data.Hashable
 import Data.List (mapAccumR, sortOn)
 import Data.Map.Merge.Strict qualified as Map
 import Data.Map.Strict (Map)
@@ -27,6 +28,7 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (mapMaybe)
 import Data.Set (Set)
 import Data.Set qualified as Set
+import System.Random (random)
 
 import Data.Sequence.Strict qualified as StrictSeq
 import Ouroboros.Network.DeltaQ (PeerGSV (..), defaultGSV,
@@ -43,6 +45,7 @@ makeDecisions
     :: forall peeraddr txid tx.
        ( Ord peeraddr
        , Ord txid
+       , Hashable peeraddr
        )
     => TxDecisionPolicy
     -- ^ decision policy
@@ -62,9 +65,11 @@ makeDecisions policy SharedDecisionContext {
       sdcPeerGSV = _peerGSV,
       sdcSharedTxState = st
     }
-    = fn
-    . pickTxsToDownload policy st
-    . orderByRejections
+    = let (salt, rng') = random (peerRng st)
+          st' = st { peerRng = rng' } in
+    fn
+    . pickTxsToDownload policy st'
+    . orderByRejections salt
   where
     fn :: forall a.
           (a, [(peeraddr, TxDecision txid tx)])
@@ -76,13 +81,16 @@ makeDecisions policy SharedDecisionContext {
 --
 -- TXs delivered late will fail to apply because they where included in
 -- a recently adopted block. Peers can race against each other by setting
--- `txInflightMultiplicity` to > 1.
+-- `txInflightMultiplicity` to > 1. In case of a tie a hash of the peeraddr
+-- is used as a tie breaker. Since every invocation use a new salt a given
+-- peeraddr does not have an advantage over time.
 --
--- TODO: Should not depend on plain `peeraddr` as a tie breaker.
-orderByRejections :: Map peeraddr (PeerTxState txid tx)
+orderByRejections :: Hashable peeraddr
+                  => Int
+                  -> Map peeraddr (PeerTxState txid tx)
                   -> [ (peeraddr, PeerTxState txid tx)]
-orderByRejections =
-        sortOn (\(_peeraddr, ps) -> rejectedTxs ps)
+orderByRejections salt =
+        sortOn (\(peeraddr, ps) -> (rejectedTxs ps, hashWithSalt salt peeraddr))
       . Map.toList
 
 -- | Order peers by `DeltaQ`.
