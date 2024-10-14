@@ -13,6 +13,7 @@ module Ouroboros.Network.TxSubmission.Inbound.Registry
   , newTxChannelsVar
   , PeerTxAPI (..)
   , decisionLogicThread
+  , drainRejectionThread
   , withPeer
   ) where
 
@@ -21,13 +22,14 @@ import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.Class.MonadTime.SI
 
 import Data.Foldable (traverse_
 #if !MIN_VERSION_base(4,20,0)
                      , foldl'
 #endif
                      )
-import Data.Typeable (Typeable)
+import Data.Hashable
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
@@ -35,6 +37,7 @@ import Data.Sequence.Strict (StrictSeq)
 import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set (Set)
 import Data.Set qualified as Set
+import Data.Typeable (Typeable)
 import Data.Void (Void)
 
 import Control.Tracer (Tracer, traceWith)
@@ -79,8 +82,11 @@ data PeerTxAPI m txid tx = PeerTxAPI {
                         -> m (Maybe TxSubmissionProtocolError),
     -- ^ handle received txs
 
-    countRejectedTxs    :: Int
-                        -> m Int,
+    countRejectedTxs    :: Time
+                        -> Double
+                        -> m Double,
+    -- ^ updated score.  The `Double` is difference between accepted and
+    -- rejected transactions.
 
     consumeFetchedTxs   :: Set txid
                         -> m (Set txid)
@@ -166,6 +172,7 @@ withPeer tracer
                  unacknowledgedTxIds      = StrictSeq.empty,
                  unknownTxs               = Set.empty,
                  rejectedTxs              = 0,
+                 rejectedTxsTs            = Time 0,
                  fetchedTxs               = Set.empty }
                peerTxStates
          }
@@ -238,9 +245,11 @@ withPeer tracer
                   peeraddr peerTxStates
           in st {peerTxStates = peerTxStates' }
 
-    countRejectedTxs :: Int
-                     -> m Int
-    countRejectedTxs n = atomically $ do
+
+    countRejectedTxs :: Time
+                     -> Double
+                     -> m Double
+    countRejectedTxs now n = atomically $ do
       modifyTVar sharedStateVar cntRejects
       st <- readTVar sharedStateVar
       case Map.lookup peeraddr (peerTxStates st)  of
@@ -251,10 +260,10 @@ withPeer tracer
                    -> SharedTxState peeraddr txid tx
         cntRejects st@SharedTxState { peerTxStates } =
           let peerTxStates' =
-                Map.update
-                  (\ps -> Just $! ps { rejectedTxs = min 42 (max (-42) (rejectedTxs ps + n)) })
-                  peeraddr peerTxStates
-          in st { peerTxStates = peerTxStates' }
+                Map.update (\ps -> Just $! (updateRejects now n ps))
+                peeraddr peerTxStates
+          in st {peerTxStates = peerTxStates'}
+
 
     consumeFetchedTxs :: Set txid
                       -> m (Set txid)
@@ -274,6 +283,48 @@ withPeer tracer
              return o
 
 
+updateRejects
+  :: Time
+  -> Double
+  -> PeerTxState txid tx
+  -> PeerTxState txid tx
+updateRejects now 0 pts | rejectedTxs pts == 0
+                        = pts {rejectedTxsTs = now}
+updateRejects now n pts@PeerTxState { rejectedTxs, rejectedTxsTs } =
+    let duration = diffTime now rejectedTxsTs
+        rate = 0.1                 -- 0.1 rejected tx/s
+        maxTokens = 15 * 60 * rate -- 15 minutes worth of rejections
+        !drain = realToFrac duration * rate
+        !drained = max 0 $ rejectedTxs - drain in
+    pts { rejectedTxs = max 0 $ min maxTokens $ drained + n
+        , rejectedTxsTs = now }
+
+
+drainRejectionThread
+  :: forall m peeraddr txid tx.
+     ( MonadDelay m
+     , MonadSTM m
+     , MonadThread m
+     )
+  => SharedTxStateVar m peeraddr txid tx
+  -> m Void
+drainRejectionThread sharedStateVar = do
+    labelThisThread "tx-rejection-drain"
+    go
+  where
+    go :: m Void
+    go = do
+      threadDelay 7
+
+      !now <- getMonotonicTime
+      atomically $ do
+        st <- readTVar sharedStateVar
+        let ptss = Map.map (\pts -> updateRejects now 0 pts) (peerTxStates st)
+        writeTVar sharedStateVar (st { peerTxStates = ptss })
+
+      go
+
+
 decisionLogicThread
     :: forall m peeraddr txid tx.
        ( MonadDelay m
@@ -283,6 +334,7 @@ decisionLogicThread
        , MonadFork  m
        , Ord peeraddr
        , Ord txid
+       , Hashable peeraddr
        )
     => Tracer m (TraceTxLogic peeraddr txid tx)
     -> TxDecisionPolicy

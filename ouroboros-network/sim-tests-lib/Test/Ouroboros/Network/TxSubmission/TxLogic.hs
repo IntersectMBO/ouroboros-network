@@ -1,13 +1,16 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeOperators       #-}
 
@@ -17,6 +20,7 @@ module Test.Ouroboros.Network.TxSubmission.TxLogic where
 
 import Prelude hiding (seq)
 
+import Control.Monad.Class.MonadTime.SI (Time (..))
 import Control.Exception (assert)
 
 import Data.Foldable (
@@ -36,6 +40,7 @@ import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Typeable
+import System.Random (mkStdGen, StdGen)
 
 import NoThunks.Class
 
@@ -304,6 +309,7 @@ mkArbPeerTxState mempoolHasTxFun txIdsInflight unacked txMaskMap =
                     requestedTxsInflightSize,
                     unknownTxs,
                     rejectedTxs = 0,
+                    rejectedTxsTs = Time 0,
                     fetchedTxs = Set.empty }
       (Set.fromList $ Map.elems inflightMap)
       bufferedMap
@@ -384,6 +390,7 @@ genSharedTxState maxTxIdsInflight = do
     _mempoolHasTxFun@(Fun (_, _, x) _) <- arbitrary :: Gen (Fun Bool Bool)
     let mempoolHasTxFun = Fun (function (const False), False, x) (const False)
     pss <- listOf1 (genArbPeerTxState mempoolHasTxFun maxTxIdsInflight)
+    seed <- arbitrary
 
     let pss' :: [(PeerAddr, ArbPeerTxState txid (Tx txid))]
         pss' = [0..] `zip` pss
@@ -410,7 +417,8 @@ genSharedTxState maxTxIdsInflight = do
                                  | ArbPeerTxState { arbBufferedMap }
                                    <- pss
                                  ],
-                 referenceCounts = Map.empty
+                 referenceCounts = Map.empty,
+                 peerRng         = mkStdGen seed
                }
 
     return ( mempoolHasTxFun
@@ -637,7 +645,7 @@ prop_acknowledgeTxIds :: ArbDecisionContextWithReceivedTxIds
                       -> Property
 prop_acknowledgeTxIds (ArbDecisionContextWithReceivedTxIds policy SharedDecisionContext { sdcSharedTxState = st } ps _ _ _) =
     case TXS.acknowledgeTxIds policy st ps of
-      (numTxIdsToAck, txIdsToRequest, txs, TXS.RefCountDiff { TXS.txIdsToAck }, ps') | txIdsToRequest > 0 ->
+      (numTxIdsToAck, txIdsToRequest, txIdsTxs, TXS.RefCountDiff { TXS.txIdsToAck }, ps') | txIdsToRequest > 0 ->
              counterexample "number of tx ids to ack must agree with RefCountDiff"
              ( fromIntegral numTxIdsToAck
                ===
@@ -660,7 +668,7 @@ prop_acknowledgeTxIds (ArbDecisionContextWithReceivedTxIds policy SharedDecision
                          | txid <- take (fromIntegral numTxIdsToAck) (toList $ unacknowledgedTxIds ps)
                          , Just _ <- maybeToList $ txid `Map.lookup` bufferedTxs st
                          ]
-             in getTxId `map` txs === acked)
+             in map (getTxId . snd) txIdsTxs === acked)
       _otherwise -> property True
   where
     stripSuffix :: Eq a => [a] -> [a] -> Maybe [a]
@@ -912,6 +920,9 @@ prop_collectTxsImpl (ArbCollectTxs _mempoolHasTxFun txidsRequested txsReceived p
       Just a  -> a
       Nothing -> error "impossible happened! Is the test still using `TxId` for `txid`?"
 
+
+
+deriving via OnlyCheckWhnfNamed "StdGen" StdGen instance NoThunks StdGen
 
 -- | Verify that `SharedTxState` returned by `collectTxsImpl` if evaluated to
 -- WHNF, it doesn't contain any thunks.
