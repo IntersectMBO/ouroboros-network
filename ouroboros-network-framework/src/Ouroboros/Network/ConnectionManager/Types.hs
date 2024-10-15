@@ -204,6 +204,11 @@ data Provenance =
 -- | Each connection negotiates if it is uni- or bi-directional.  'DataFlow'
 -- is a life time property of a connection, once negotiated it never changes.
 --
+-- NOTE: This type is isomorphic to `DiffusionMode` for `node-to-node`
+-- connections (see `Ouroboros.Network.Diffusion.P2P.ntnDataFlow`), but it isn't
+-- for `node-to-client` connections (see
+-- `Ouroboros.Network.Diffusion.P2P.ntcDataFlow).
+--
 data DataFlow
     = Unidirectional
     | Duplex

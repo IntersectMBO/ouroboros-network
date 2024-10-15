@@ -760,7 +760,7 @@ runM Interfaces
                   cmConfigureSocket     = \_ _ -> return (),
                   cmTimeWaitTimeout     = local_TIME_WAIT_TIMEOUT,
                   cmOutboundIdleTimeout = local_PROTOCOL_IDLE_TIMEOUT,
-                  connectionDataFlow    = localDataFlow,
+                  connectionDataFlow    = ntcDataFlow,
                   cmPrunePolicy         = Diffusion.Policies.prunePolicy,
                   cmStdGen              = cmLocalStdGen,
                   cmConnectionsLimits   = localConnectionLimits
@@ -789,7 +789,7 @@ runM Interfaces
                   serverInboundIdleTimeout    = Nothing,
                   serverConnectionLimits      = localConnectionLimits,
                   serverConnectionManager     = localConnectionManager,
-                  serverConnectionDataFlow    = localDataFlow,
+                  serverConnectionDataFlow    = ntcDataFlow,
                   serverInboundInfoChannel    = localInbInfoChannel
                 }
               (\inboundGovernorThread _ -> Async.wait inboundGovernorThread)
@@ -1256,7 +1256,7 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                      (SystemdSocketConfiguration `contramap` tracer),
                  diNtnHandshakeArguments,
                  diNtnAddressType = socketAddressType,
-                 diNtnDataFlow = nodeDataFlow,
+                 diNtnDataFlow = ntnDataFlow,
                  diNtnPeerSharing = peerSharing,
                  diNtnToPeerAddr = curry IP.toSockAddr,
 
@@ -1276,20 +1276,17 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
 -- Data flow
 --
 
--- | For Node-To-Node protocol, any connection which negotiated at least
--- 'NodeToNodeV_10' version and did not declare 'InitiatorOnlyDiffusionMode'
--- will run in 'Duplex' mode.   All connections from lower versions or one that
--- declared themselves as 'InitiatorOnly' will run in 'UnidirectionalMode'
+-- | Node-To-Node protocol connections which negotiated
+-- `InitiatorAndResponderDiffusionMode` are `Duplex`.
 --
-nodeDataFlow :: NodeToNodeVersionData -> DataFlow
-nodeDataFlow NodeToNodeVersionData { diffusionMode } =
+ntnDataFlow :: NodeToNodeVersionData -> DataFlow
+ntnDataFlow NodeToNodeVersionData { diffusionMode } =
   case diffusionMode of
     InitiatorAndResponderDiffusionMode -> Duplex
     InitiatorOnlyDiffusionMode         -> Unidirectional
 
 
--- | For Node-To-Client protocol all connection are considered 'Unidirectional'.
+-- | All Node-To-Client protocol connections are considered 'Unidirectional'.
 --
-localDataFlow :: ntcVersionData
-              -> DataFlow
-localDataFlow _ = Unidirectional
+ntcDataFlow :: ntcVersionData -> DataFlow
+ntcDataFlow _ = Unidirectional
