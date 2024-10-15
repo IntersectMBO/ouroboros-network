@@ -465,6 +465,10 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
 
         -- | node-to-node socket configuration
         --
+        -- It is used by both inbound and outbound connection.  The address is
+        -- the local address that we can bind to if given (NOTE: for
+        -- node-to-node connection `Just` is always given).
+        --
         diNtnConfigureSocket
           :: ntnFd -> Maybe ntnAddr -> m (),
 
@@ -774,7 +778,7 @@ runM Interfaces
             traceWith tracer . RunLocalServer
               =<< Snocket.getLocalAddr diNtcSnocket localSocket
 
-            (Server.with
+            Server.with
               ServerArguments {
                   serverSockets               = localSocket :| [],
                   serverSnocket               = diNtcSnocket,
@@ -787,7 +791,7 @@ runM Interfaces
                   serverConnectionManager     = localConnectionManager,
                   serverConnectionDataFlow    = localDataFlow,
                   serverInboundInfoChannel    = localInbInfoChannel
-                })
+                }
               (\inboundGovernorThread _ -> Async.wait inboundGovernorThread)
 
 
@@ -976,7 +980,7 @@ runM Interfaces
       --
       let withPeerSelectionActions'
             :: forall muxMode responderCtx bytes a1 b c.
-               (m (Map ntnAddr PeerSharing))
+               m (Map ntnAddr PeerSharing)
             -> PeerSelectionActionsDiffusionMode ntnAddr (PeerConnectionHandle muxMode responderCtx ntnAddr ntnVersionData bytes m a1 b) m
             -> (   (Async m Void, Async m Void)
                 -> PeerSelectionActions
@@ -1071,42 +1075,6 @@ runM Interfaces
                                    <$> readTVar localRootsVar }
 
       --
-      -- Two functions only used in InitiatorAndResponder mode
-      --
-      let
-          --
-          -- node-to-node server
-          --
-
-          -- create sockets
-          withSockets' f =
-            withSockets tracer diNtnSnocket
-              (\sock addr -> diNtnConfigureSocket sock (Just addr))
-              (\sock addr -> diNtnConfigureSystemdSocket sock addr)
-              ( catMaybes
-                [ daIPv4Address
-                , daIPv6Address
-                ]
-              )
-              f
-
-          withServer sockets connectionManager inboundInfoChannel connectionDataFlow =
-            Server.with
-              ServerArguments {
-                  serverSockets               = sockets,
-                  serverSnocket               = diNtnSnocket,
-                  serverTracer                = dtServerTracer,
-                  serverTrTracer              = dtInboundGovernorTransitionTracer,
-                  serverDebugInboundGovernor  = nullTracer,
-                  serverInboundGovernorTracer = dtInboundGovernorTracer,
-                  serverConnectionLimits      = daAcceptedConnectionsLimit,
-                  serverConnectionManager     = connectionManager,
-                  serverConnectionDataFlow    = connectionDataFlow,
-                  serverInboundIdleTimeout    = Just daProtocolIdleTimeout,
-                  serverInboundInfoChannel    = inboundInfoChannel
-                }
-
-      --
       -- Part (b): capturing the major control-flow of runM:
       --
       case diffusionMode of
@@ -1137,23 +1105,48 @@ runM Interfaces
           inboundInfoChannel  <- newInformationChannel
           withConnectionManagerInitiatorAndResponderMode
             inboundInfoChannel $ \connectionManager ->
-              withSockets' $ \sockets addresses -> do
-                withServer sockets connectionManager inboundInfoChannel diNtnDataFlow $ \inboundGovernorThread readInboundState -> do
-                  debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng daConsensusMode daMinBigLedgerPeersForTrustedState
-                  diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
-                  withPeerStateActions' connectionManager $ \peerStateActions ->
-                    withPeerSelectionActions'
-                      (mkInboundPeersMap <$> readInboundState)
-                      PeerSelectionActionsDiffusionMode { psPeerStateActions = peerStateActions } $
-                        \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions ->
-                          Async.withAsync
-                            (peerSelectionGovernor' dtDebugPeerSelectionInitiatorResponderTracer debugStateVar peerSelectionActions) $ \governorThread -> do
-                              -- begin, unique to InitiatorAndResponder mode:
-                              traceWith tracer (RunServer addresses)
-                              -- end, unique to ...
-                              Async.withAsync peerChurnGovernor' $ \churnGovernorThread ->
-                                -- wait for any thread to fail:
-                                snd <$> Async.waitAny [ledgerPeersThread, localRootPeersProvider, governorThread, churnGovernorThread, inboundGovernorThread]
+              --
+              -- node-to-node sockets
+              --
+              withSockets
+                tracer
+                diNtnSnocket
+                (\sock addr -> diNtnConfigureSocket sock (Just addr))
+                (\sock addr -> diNtnConfigureSystemdSocket sock addr)
+                (catMaybes [daIPv4Address, daIPv6Address])
+                $ \sockets addresses ->
+                  --
+                  -- node-to-node server
+                  --
+                  Server.with
+                    ServerArguments {
+                        serverSockets               = sockets,
+                        serverSnocket               = diNtnSnocket,
+                        serverTracer                = dtServerTracer,
+                        serverTrTracer              = dtInboundGovernorTransitionTracer,
+                        serverDebugInboundGovernor  = nullTracer,
+                        serverInboundGovernorTracer = dtInboundGovernorTracer,
+                        serverConnectionLimits      = daAcceptedConnectionsLimit,
+                        serverConnectionManager     = connectionManager,
+                        serverConnectionDataFlow    = diNtnDataFlow,
+                        serverInboundIdleTimeout    = Just daProtocolIdleTimeout,
+                        serverInboundInfoChannel    = inboundInfoChannel
+                      } $ \inboundGovernorThread readInboundState -> do
+                    debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng daConsensusMode daMinBigLedgerPeersForTrustedState
+                    diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
+                    withPeerStateActions' connectionManager $ \peerStateActions ->
+                      withPeerSelectionActions'
+                        (mkInboundPeersMap <$> readInboundState)
+                        PeerSelectionActionsDiffusionMode { psPeerStateActions = peerStateActions } $
+                          \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions ->
+                            Async.withAsync
+                              (peerSelectionGovernor' dtDebugPeerSelectionInitiatorResponderTracer debugStateVar peerSelectionActions) $ \governorThread -> do
+                                -- begin, unique to InitiatorAndResponder mode:
+                                traceWith tracer (RunServer addresses)
+                                -- end, unique to ...
+                                Async.withAsync peerChurnGovernor' $ \churnGovernorThread ->
+                                  -- wait for any thread to fail:
+                                  snd <$> Async.waitAny [ledgerPeersThread, localRootPeersProvider, governorThread, churnGovernorThread, inboundGovernorThread]
 
 -- | Main entry point for data diffusion service.  It allows to:
 --
