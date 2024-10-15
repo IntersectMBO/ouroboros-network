@@ -116,13 +116,14 @@ withInboundGovernor :: forall (muxMode :: MuxMode) socket initiatorCtx peerAddr 
                    )
                 => Tracer m (RemoteTransitionTrace peerAddr)
                 -> Tracer m (InboundGovernorTrace peerAddr)
-                -> Tracer m (DebugInboundGovernor peerAddr)
+                -> Tracer m (DebugInboundGovernor peerAddr versionData)
+                -> (versionData -> DataFlow)
                 -> InboundGovernorInfoChannel muxMode initiatorCtx peerAddr versionData ByteString m a b
                 -> Maybe DiffTime -- protocol idle timeout
                 -> MuxConnectionManager muxMode socket initiatorCtx (ResponderContext peerAddr) peerAddr versionData versionNumber ByteString m a b
                 -> (Async m Void -> m (PublicInboundGovernorState peerAddr versionData) -> m x)
                 -> m x
-withInboundGovernor trTracer tracer debugTracer inboundInfoChannel
+withInboundGovernor trTracer tracer debugTracer connDataFlow inboundInfoChannel
                     inboundIdleTimeout connectionManager k = do
     var <- newTVarIO (mkPublicInboundGovernorState emptyState)
     withAsync (inboundGovernorLoop var emptyState
@@ -178,7 +179,7 @@ withInboundGovernor trTracer tracer debugTracer inboundInfoChannel
                )
             <> Map.foldMapWithKey
                  (    firstMuxToFinish
-                   <> firstMiniProtocolToFinish
+                   <> firstMiniProtocolToFinish connDataFlow
                    <> firstPeerPromotedToWarm
                    <> firstPeerPromotedToHot
                    <> firstPeerDemotedToWarm
@@ -204,7 +205,7 @@ withInboundGovernor trTracer tracer debugTracer inboundInfoChannel
           (NewConnectionInfo
             provenance
             connId
-            csDataFlow
+            dataFlow
             Handle {
               hMux         = csMux,
               hMuxBundle   = muxBundle,
@@ -215,104 +216,100 @@ withInboundGovernor trTracer tracer debugTracer inboundInfoChannel
               let responderContext = ResponderContext { rcConnectionId = connId }
 
               igsConnections <- Map.alterF
-                      (\case
-                        -- connection
-                        Nothing -> do
-                          let csMPMHot =
-                                [ ( miniProtocolNum mpH
-                                  , MiniProtocolData mpH responderContext Hot
-                                  )
-                                | mpH <- projectBundle SingHot muxBundle
-                                ]
-                              csMPMWarm =
-                                [ ( miniProtocolNum mpW
-                                  , MiniProtocolData mpW responderContext Warm
-                                  )
-                                | mpW <- projectBundle SingWarm muxBundle
-                                ]
-                              csMPMEstablished =
-                                [ ( miniProtocolNum mpE
-                                  , MiniProtocolData mpE responderContext Established
-                                  )
-                                | mpE <- projectBundle SingEstablished muxBundle
-                                ]
-                              csMiniProtocolMap =
-                                  Map.fromList
-                                  (csMPMHot ++ csMPMWarm ++ csMPMEstablished)
+                (\case
+                  -- connection
+                  Nothing -> do
+                    let csMPMHot =
+                          [ ( miniProtocolNum mpH
+                            , MiniProtocolData mpH responderContext Hot
+                            )
+                          | mpH <- projectBundle SingHot muxBundle
+                          ]
+                        csMPMWarm =
+                          [ ( miniProtocolNum mpW
+                            , MiniProtocolData mpW responderContext Warm
+                            )
+                          | mpW <- projectBundle SingWarm muxBundle
+                          ]
+                        csMPMEstablished =
+                          [ ( miniProtocolNum mpE
+                            , MiniProtocolData mpE responderContext Established
+                            )
+                          | mpE <- projectBundle SingEstablished muxBundle
+                          ]
+                        csMiniProtocolMap =
+                            Map.fromList
+                            (csMPMHot ++ csMPMWarm ++ csMPMEstablished)
 
-                          mCompletionMap
-                            <-
-                            foldM
-                              (\acc mpd@MiniProtocolData { mpdMiniProtocol } -> do
-                                 result <- runResponder
-                                             csMux mpd
-                                             Mux.StartOnDemand
-                                 case result of
-                                   -- synchronous exceptions when starting
-                                   -- a mini-protocol are non-recoverable; we
-                                   -- close the connection and allow the server
-                                   -- to continue.
-                                   Left err -> do
-                                     traceWith tracer (TrResponderStartFailure connId (miniProtocolNum mpdMiniProtocol) err)
-                                     Mux.stopMux csMux
-                                     return Nothing
+                    mCompletionMap
+                      <-
+                      foldM
+                        (\acc mpd@MiniProtocolData { mpdMiniProtocol } ->
+                          runResponder csMux mpd Mux.StartOnDemand >>= \case
+                            -- synchronous exceptions when starting
+                            -- a mini-protocol are non-recoverable; we
+                            -- close the connection and allow the server
+                            -- to continue.
+                            Left err -> do
+                              traceWith tracer (TrResponderStartFailure connId (miniProtocolNum mpdMiniProtocol) err)
+                              Mux.stopMux csMux
+                              return Nothing
 
-                                   Right completion ->  do
-                                     let acc' = Map.insert (miniProtocolNum mpdMiniProtocol)
-                                                           completion
-                                            <$> acc
-                                     -- force under lazy 'Maybe'
-                                     case acc' of
-                                       Just !_ -> return acc'
-                                       Nothing -> return acc'
-                              )
-                              (Just Map.empty)
-                              csMiniProtocolMap
+                            Right completion ->  do
+                              let acc' = Map.insert (miniProtocolNum mpdMiniProtocol)
+                                                    completion
+                                     <$> acc
+                              -- force under lazy 'Maybe'
+                              case acc' of
+                                Just !_ -> return acc'
+                                Nothing -> return acc'
+                        )
+                        (Just Map.empty)
+                        csMiniProtocolMap
 
-                          case mCompletionMap of
-                            -- there was an error when starting one of the
-                            -- responders, we let the server continue without this
-                            -- connection.
-                            Nothing -> return Nothing
+                    case mCompletionMap of
+                      -- there was an error when starting one of the
+                      -- responders, we let the server continue without this
+                      -- connection.
+                      Nothing -> return Nothing
 
-                            Just csCompletionMap -> do
-                              mv <- traverse registerDelay inboundIdleTimeout
-                              let -- initial state is 'RemoteIdle', if the remote end will not
-                                  -- start any responders this will unregister the inbound side.
-                                  csRemoteState :: RemoteState m
-                                  csRemoteState = RemoteIdle (case mv of
-                                                                Nothing -> retry
-                                                                Just v  -> LazySTM.readTVar v >>= check)
+                      Just csCompletionMap -> do
+                        mv <- traverse registerDelay inboundIdleTimeout
+                        let -- initial state is 'RemoteIdle', if the remote end will not
+                            -- start any responders this will unregister the inbound side.
+                            csRemoteState :: RemoteState m
+                            csRemoteState = RemoteIdle (case mv of
+                                                          Nothing -> retry
+                                                          Just v  -> LazySTM.readTVar v >>= check)
 
-                                  connState = ConnectionState {
-                                      csMux,
-                                      csDataFlow,
-                                      csVersionData,
-                                      csMiniProtocolMap,
-                                      csCompletionMap,
-                                      csRemoteState
-                                    }
+                            connState = ConnectionState {
+                                csMux,
+                                csVersionData,
+                                csMiniProtocolMap,
+                                csCompletionMap,
+                                csRemoteState
+                              }
 
-                              return (Just connState)
+                        return (Just connState)
 
-                        -- inbound governor might be notified about a connection
-                        -- which is already tracked.  In such case we preserve its
-                        -- state.
-                        --
-                        -- In particular we preserve an ongoing timeout on
-                        -- 'RemoteIdle' state.
-                        Just connState -> return (Just connState)
+                  -- inbound governor might be notified about a connection
+                  -- which is already tracked.  In such case we preserve its
+                  -- state.
+                  --
+                  -- In particular we preserve an ongoing timeout on
+                  -- 'RemoteIdle' state.
+                  Just connState -> return (Just connState)
 
-                      )
-                      connId
-                      (igsConnections state)
+                )
+                connId
+                (igsConnections state)
 
               time' <- getMonotonicTime
               -- update state and continue the recursive loop
               let state' = state {
                       igsConnections,
                       igsFreshDuplexPeers =
-                        case csDataFlow of
+                        case dataFlow of
                           Unidirectional -> igsFreshDuplexPeers state
                           Duplex         -> OrdPSQ.insert (remoteAddress connId) time' csVersionData
                                                           (igsFreshDuplexPeers state)
@@ -348,10 +345,8 @@ withInboundGovernor trTracer tracer debugTracer inboundInfoChannel
               let state' = unregisterConnection tConnId state
               return (Just tConnId, state')
 
-            Right _ -> do
-              result
-                <- runResponder tMux mpd Mux.StartOnDemand
-              case result of
+            Right _ ->
+              runResponder tMux mpd Mux.StartOnDemand >>= \case
                 Right completionAction -> do
                   traceWith tracer (TrResponderRestarted tConnId num)
                   let state' = updateMiniProtocol tConnId num completionAction state
@@ -555,10 +550,10 @@ runResponder :: forall (mode :: MuxMode) initiatorCtx peerAddr m a b.
               -> Mux.StartOnDemandOrEagerly
               -> m (Either SomeException (STM m (Either SomeException b)))
 runResponder mux
-              MiniProtocolData {
-                  mpdMiniProtocol     = miniProtocol,
-                  mpdResponderContext = responderContext
-                }
+             MiniProtocolData {
+               mpdMiniProtocol     = miniProtocol,
+               mpdResponderContext = responderContext
+             }
              startStrategy =
     -- do not catch asynchronous exceptions, which are non recoverable
     tryJust (\e -> case fromException e of
@@ -647,5 +642,5 @@ data InboundGovernorTrace peerAddr
   deriving Show
 
 
-data DebugInboundGovernor peerAddr = forall muxMode initiatorCtx versionData m a b.
+data DebugInboundGovernor peerAddr versionData = forall muxMode initiatorCtx m a b.
     DebugInboundGovernor (InboundGovernorState muxMode initiatorCtx peerAddr versionData m a b)

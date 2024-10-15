@@ -158,12 +158,14 @@ data Terminated muxMode initiatorCtx peerAddr m a b = Terminated {
 -- /triggers:/ 'MiniProtocolTerminated'.
 --
 firstMiniProtocolToFinish :: Alternative (STM m)
-                          => EventSignal muxMode initiatorCtx peerAddr versionData m a b
+                          => (versionData -> DataFlow)
+                          -> EventSignal muxMode initiatorCtx peerAddr versionData m a b
 firstMiniProtocolToFinish
+    connDataFlow
     connId
     ConnectionState { csMux,
+                      csVersionData,
                       csMiniProtocolMap,
-                      csDataFlow,
                       csCompletionMap
                     }
     = Map.foldMapWithKey
@@ -172,7 +174,7 @@ firstMiniProtocolToFinish
                     tConnId           = connId,
                     tMux              = csMux,
                     tMiniProtocolData = csMiniProtocolMap Map.! miniProtocolNum,
-                    tDataFlow         = csDataFlow,
+                    tDataFlow         = connDataFlow csVersionData,
                     tResult
                   }
               )

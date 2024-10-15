@@ -487,7 +487,7 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         -- negotiated connections
         --
         diNtnDataFlow
-          :: ntnVersion -> ntnVersionData -> DataFlow,
+          :: ntnVersionData -> DataFlow,
 
         -- | remote side peer sharing information used by peer selection governor
         -- to decide which peers are available for performing peer sharing
@@ -769,7 +769,7 @@ runM Interfaces
           (InResponderMode localInbInfoChannel)
           $ \localConnectionManager-> do
             --
-            -- run local server
+            -- node-to-client server
             --
             traceWith tracer . RunLocalServer
               =<< Snocket.getLocalAddr diNtcSnocket localSocket
@@ -785,6 +785,7 @@ runM Interfaces
                   serverInboundIdleTimeout    = Nothing,
                   serverConnectionLimits      = localConnectionLimits,
                   serverConnectionManager     = localConnectionManager,
+                  serverConnectionDataFlow    = localDataFlow,
                   serverInboundInfoChannel    = localInbInfoChannel
                 })
               (\inboundGovernorThread _ -> Async.wait inboundGovernorThread)
@@ -1073,6 +1074,10 @@ runM Interfaces
       -- Two functions only used in InitiatorAndResponder mode
       --
       let
+          --
+          -- node-to-node server
+          --
+
           -- create sockets
           withSockets' f =
             withSockets tracer diNtnSnocket
@@ -1085,8 +1090,7 @@ runM Interfaces
               )
               f
 
-          -- run server
-          withServer sockets connectionManager inboundInfoChannel =
+          withServer sockets connectionManager inboundInfoChannel connectionDataFlow =
             Server.with
               ServerArguments {
                   serverSockets               = sockets,
@@ -1097,6 +1101,7 @@ runM Interfaces
                   serverInboundGovernorTracer = dtInboundGovernorTracer,
                   serverConnectionLimits      = daAcceptedConnectionsLimit,
                   serverConnectionManager     = connectionManager,
+                  serverConnectionDataFlow    = connectionDataFlow,
                   serverInboundIdleTimeout    = Just daProtocolIdleTimeout,
                   serverInboundInfoChannel    = inboundInfoChannel
                 }
@@ -1133,7 +1138,7 @@ runM Interfaces
           withConnectionManagerInitiatorAndResponderMode
             inboundInfoChannel $ \connectionManager ->
               withSockets' $ \sockets addresses -> do
-                withServer sockets connectionManager inboundInfoChannel $ \inboundGovernorThread readInboundState -> do
+                withServer sockets connectionManager inboundInfoChannel diNtnDataFlow $ \inboundGovernorThread readInboundState -> do
                   debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng daConsensusMode daMinBigLedgerPeersForTrustedState
                   diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
                   withPeerStateActions' connectionManager $ \peerStateActions ->
@@ -1283,17 +1288,15 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
 -- will run in 'Duplex' mode.   All connections from lower versions or one that
 -- declared themselves as 'InitiatorOnly' will run in 'UnidirectionalMode'
 --
-nodeDataFlow :: NodeToNodeVersion
-             -> NodeToNodeVersionData
-             -> DataFlow
-nodeDataFlow _v NodeToNodeVersionData { diffusionMode = InitiatorAndResponderDiffusionMode }
-                 = Duplex
-nodeDataFlow _ _ = Unidirectional
+nodeDataFlow :: NodeToNodeVersionData -> DataFlow
+nodeDataFlow NodeToNodeVersionData { diffusionMode } =
+  case diffusionMode of
+    InitiatorAndResponderDiffusionMode -> Duplex
+    InitiatorOnlyDiffusionMode         -> Unidirectional
 
 
 -- | For Node-To-Client protocol all connection are considered 'Unidirectional'.
 --
-localDataFlow :: ntcVersion
-              -> ntcVersionData
+localDataFlow :: ntcVersionData
               -> DataFlow
-localDataFlow _ _ = Unidirectional
+localDataFlow _ = Unidirectional

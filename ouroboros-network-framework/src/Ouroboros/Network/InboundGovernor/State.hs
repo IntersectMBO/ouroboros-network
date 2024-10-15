@@ -38,7 +38,6 @@ import Data.OrdPSQ as OrdPSQ
 
 import Network.Mux qualified as Mux
 
-import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context
 import Ouroboros.Network.Mux
 
@@ -166,14 +165,6 @@ data ConnectionState muxMode initiatorCtx peerAddr versionData m a b = Connectio
       -- | Mux interface.
       --
       csMux             :: !(Mux.Mux muxMode m),
-
-      -- | Connection data flow.
-      --
-      -- TODO: once we will be able able to compute `DataFlow` from
-      -- `versionData`, e.g. the oldest supported version is greater than
-      -- `NodeToNodeV_10`,  we will no longer need this field.
-      --
-      csDataFlow        :: !DataFlow,
 
       -- | version data negotiated on the connection.
       --

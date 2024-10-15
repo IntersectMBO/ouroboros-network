@@ -637,7 +637,7 @@ multinodeExperiment
     -> Tracer m (WithName (Name peerAddr)
                           (InboundGovernorTrace peerAddr))
     -> Tracer m (WithName (Name peerAddr)
-                          (DebugInboundGovernor peerAddr))
+                          (DebugInboundGovernor peerAddr DataFlowProtocolData))
     -> Tracer m (WithName (Name peerAddr)
                           (ConnectionManagerTrace
                             peerAddr
@@ -1822,7 +1822,7 @@ prop_inbound_governor_state (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                             mns@(MultiNodeScript events attenuationMap) =
   let trace = runSimTrace sim
 
-      evs :: Trace (SimResult ()) (DebugInboundGovernor SimAddr)
+      evs :: Trace (SimResult ()) (DebugInboundGovernor SimAddr DataFlowProtocolData)
       evs = traceWithNameTraceEvents trace
 
       -- inboundGovernorEvents :: Trace (SimResult ()) (InboundGovernorTrace SimAddr)
@@ -1844,7 +1844,7 @@ prop_inbound_governor_state (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                        events
                        attenuationMap
 
-    inboundGovernorStateInvariant :: DebugInboundGovernor SimAddr
+    inboundGovernorStateInvariant :: DebugInboundGovernor SimAddr DataFlowProtocolData
                                   -> Property
     inboundGovernorStateInvariant
         (DebugInboundGovernor InboundGovernorState { igsConnections,
@@ -1855,7 +1855,7 @@ prop_inbound_governor_state (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
       where
         keys  = Set.map remoteAddress
               . Map.keysSet
-              . Map.filter (\ConnectionState { csDataFlow } -> csDataFlow == Duplex)
+              . Map.filter (\ConnectionState { csVersionData } -> getProtocolDataFlow csVersionData == Duplex)
               $ igsConnections
 
         keys' = Set.fromList (OrdPSQ.keys igsFreshDuplexPeers)
@@ -2251,7 +2251,7 @@ multiNodeSimTracer :: ( Alternative (STM m), Monad m, MonadFix m
                    -> Tracer m
                       (WithName (Name SimAddr) (InboundGovernorTrace SimAddr))
                    -> Tracer m
-                      (WithName (Name SimAddr) (DebugInboundGovernor SimAddr))
+                      (WithName (Name SimAddr) (DebugInboundGovernor SimAddr DataFlowProtocolData))
                    -> Tracer m
                       (WithName
                        (Name SimAddr)

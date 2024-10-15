@@ -575,9 +575,8 @@ data Handle m = Handle { hScheduleEntry :: RefinedScheduleEntry
                        , hThreadId      :: ThreadId m
                        }
 
--- | Version use by the handshake.
---
-data Version = Version DataFlow
+type Version = ()
+type VersionData = DataFlow
 
 -- | A connection handler.  It will block for 'seHandshakeDelay' before
 -- notifying handshake negotiation and then block until the connection is closed.
@@ -598,7 +597,7 @@ mkConnectionHandler :: forall m handlerTrace.
                     -> ConnectionHandler InitiatorResponderMode
                                          handlerTrace (FD m)
                                          Addr (Handle m)
-                                         Void (Version, ())
+                                         Void (Version, VersionData)
                                          m
 mkConnectionHandler snocket =
     ConnectionHandler $
@@ -606,7 +605,7 @@ mkConnectionHandler snocket =
         handler
         handler
   where
-    handler :: ConnectionHandlerFn handlerTrace (FD m) Addr (Handle m) Void (Version, ()) m
+    handler :: ConnectionHandlerFn handlerTrace (FD m) Addr (Handle m) Void (Version, VersionData) m
     handler fd promise _ ConnectionId { remoteAddress } _ =
       MaskedAction $ \unmask ->
         do threadId <- myThreadId
@@ -619,7 +618,7 @@ mkConnectionHandler snocket =
                                  Handle { hScheduleEntry = se
                                         , hThreadId = threadId
                                         }
-                                 (Version (seDataFlow se), ())
+                                 ((), seDataFlow se)
                                )))
 
            -- The connection manager throws async exception to kill the
@@ -764,7 +763,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
               cmSnocket = snocket,
               cmMakeBearer = makeFDBearer,
               cmConfigureSocket = \_ _ -> return (),
-              connectionDataFlow = \(Version df) _ -> df,
+              connectionDataFlow = id,
               cmPrunePolicy = simplePrunePolicy,
               cmStdGen = Random.mkStdGen rnd,
               cmConnectionsLimits = AcceptedConnectionsLimit {

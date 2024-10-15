@@ -236,7 +236,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
           cmConfigureSocket = \_ _ -> return (),
           cmTimeWaitTimeout = timeWaitTimeout,
           cmOutboundIdleTimeout = protocolIdleTimeout,
-          connectionDataFlow = \_ _ -> Duplex,
+          connectionDataFlow = \_ -> Duplex,
           cmPrunePolicy = simplePrunePolicy,
           cmStdGen      = stdGen,
           cmConnectionsLimits = AcceptedConnectionsLimit {
@@ -277,6 +277,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
                   serverDebugInboundGovernor = nullTracer,
                   serverConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0,
                   serverConnectionManager = connectionManager,
+                  serverConnectionDataFlow = \_ -> Duplex,
                   serverInboundIdleTimeout = Just protocolIdleTimeout,
                   serverInboundInfoChannel = inbgovInfoChannel
                 }

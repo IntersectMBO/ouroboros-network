@@ -134,7 +134,7 @@ data ConnectionManagerArguments handlerTrace socket peerAddr handle handleError 
         -- | Given a version number and respective version data, get the
         -- 'DataFlow'.
         --
-        connectionDataFlow    :: versionNumber -> versionData -> DataFlow,
+        connectionDataFlow    :: versionData -> DataFlow,
 
         -- | Prune policy
         --
@@ -1205,8 +1205,8 @@ withConnectionManager args@ConnectionManagerArguments {
               Right HandshakeConnectionQuery -> do
                 terminateInboundWithErrorOrQuery connId connVar connThread peerAddr stateVar mutableConnState Nothing
 
-              Right (HandshakeConnectionResult handle (version, versionData)) -> do
-                let dataFlow = connectionDataFlow version versionData
+              Right (HandshakeConnectionResult handle (_version, versionData)) -> do
+                let dataFlow = connectionDataFlow versionData
                 (connected, mbTransition, provenance) <- atomically $ do
                   connState <- readTVar connVar
                   case connState of
@@ -1862,8 +1862,8 @@ withConnectionManager args@ConnectionManagerArguments {
               Right HandshakeConnectionQuery -> do
                 terminateOutboundWithErrorOrQuery connId connVar connThread peerAddr stateVar mutableConnState Nothing
 
-              Right (HandshakeConnectionResult handle (version, versionData)) -> do
-                let dataFlow = connectionDataFlow version versionData
+              Right (HandshakeConnectionResult handle (_version, versionData)) -> do
+                let dataFlow = connectionDataFlow versionData
                 -- We can safely overwrite the state: after successful
                 -- `connect` it's not possible to have a race condition
                 -- with any other inbound thread.  We are also guaranteed

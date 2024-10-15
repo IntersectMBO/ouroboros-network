@@ -290,7 +290,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer cmTracer cmStdGen snoc
           cmSnocket = snocket,
           cmMakeBearer = makeBearer,
           cmConfigureSocket = \_ _ -> return (),
-          connectionDataFlow = \_ (DataFlowProtocolData df _) -> df,
+          connectionDataFlow = \(DataFlowProtocolData df _) -> df,
           cmPrunePolicy = simplePrunePolicy,
           cmStdGen,
           cmConnectionsLimits = acceptedConnLimit,
@@ -424,7 +424,7 @@ withBidirectionalConnectionManager
                             peerAddr
                             (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
     -> Tracer m (WithName name (InboundGovernorTrace peerAddr))
-    -> Tracer m (WithName name (DebugInboundGovernor peerAddr))
+    -> Tracer m (WithName name (DebugInboundGovernor peerAddr DataFlowProtocolData))
     -> StdGen
     -> Snocket m socket peerAddr
     -> Mux.MakeBearer m socket
@@ -479,7 +479,7 @@ withBidirectionalConnectionManager name timeouts
           cmConfigureSocket = \sock _ -> confSock sock,
           cmTimeWaitTimeout = tTimeWaitTimeout timeouts,
           cmOutboundIdleTimeout = tOutboundIdleTimeout timeouts,
-          connectionDataFlow = \_ (DataFlowProtocolData df _) -> df,
+          connectionDataFlow = \(DataFlowProtocolData df _) -> df,
           cmPrunePolicy = simplePrunePolicy,
           cmStdGen,
           cmConnectionsLimits = acceptedConnLimit
@@ -520,6 +520,7 @@ withBidirectionalConnectionManager name timeouts
                     WithName name `contramap` inboundTracer, -- InboundGovernorTrace
                   serverConnectionLimits = acceptedConnLimit,
                   serverConnectionManager = connectionManager,
+                  serverConnectionDataFlow = \(DataFlowProtocolData df _) -> df,
                   serverInboundIdleTimeout = Just (tProtocolIdleTimeout timeouts),
                   serverInboundInfoChannel = inbgovInfoChannel
                 }

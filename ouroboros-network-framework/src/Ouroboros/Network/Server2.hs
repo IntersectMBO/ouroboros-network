@@ -70,7 +70,7 @@ data ServerArguments (muxMode  :: MuxMode) socket initiatorCtx peerAddr versionD
       serverTracer                :: Tracer m (ServerTrace peerAddr),
       serverTrTracer              :: Tracer m (RemoteTransitionTrace peerAddr),
       serverInboundGovernorTracer :: Tracer m (InboundGovernorTrace peerAddr),
-      serverDebugInboundGovernor  :: Tracer m (DebugInboundGovernor peerAddr),
+      serverDebugInboundGovernor  :: Tracer m (DebugInboundGovernor peerAddr versionData),
       serverConnectionLimits      :: AcceptedConnectionsLimit,
       serverConnectionManager     :: MuxConnectionManager muxMode socket initiatorCtx (ResponderContext peerAddr)
                                                           peerAddr versionData versionNumber bytes m a b,
@@ -79,6 +79,8 @@ data ServerArguments (muxMode  :: MuxMode) socket initiatorCtx peerAddr versionD
       -- 'DemotedToCold' transition.
       --
       serverInboundIdleTimeout    :: Maybe DiffTime,
+
+      serverConnectionDataFlow    :: versionData -> DataFlow,
 
       -- | Server control var is passed as an argument; this allows to use the
       -- server to run and manage responders which needs to be started on
@@ -143,6 +145,7 @@ with ServerArguments {
         serverLimits@AcceptedConnectionsLimit { acceptedConnectionsHardLimit = hardLimit },
       serverInboundIdleTimeout,
       serverConnectionManager,
+      serverConnectionDataFlow,
       serverInboundInfoChannel
     }
     k = do
@@ -152,6 +155,7 @@ with ServerArguments {
       withInboundGovernor serverTrTracer
                           inboundGovernorTracer
                           serverDebugInboundGovernor
+                          serverConnectionDataFlow
                           serverInboundInfoChannel
                           serverInboundIdleTimeout
                           serverConnectionManager
