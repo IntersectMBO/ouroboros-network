@@ -6,8 +6,8 @@ function usage {
   echo "Usage $(basename "$0") [-ch]"
   echo "Check files with 'stylish-haskell'; by default check all files."
   echo
-  echo "        -u                        only check files uncommitted"
-  echo "        -c                        only check files committed in HEAD"
+  echo "        -u                        only check uncommitted files"
+  echo "        -c                        only check committed files in HEAD"
   echo "        -h                        this help message"
   echo "        -g                        don't show the diff with git"
   exit
