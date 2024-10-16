@@ -45,7 +45,7 @@ import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
-import Ouroboros.Network.InboundGovernor hiding (TrUnexpectedlyFalseAssertion)
+import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.PeerStateActions
@@ -54,7 +54,7 @@ import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as Estab
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSelection.Types
-import Ouroboros.Network.Server2 (ServerTrace (..))
+import Ouroboros.Network.Server2 qualified as Server
 import Ouroboros.Network.Testing.Data.AbsBearerInfo
 import Ouroboros.Network.Testing.Data.Script
 import Ouroboros.Network.Testing.Data.Signal
@@ -555,7 +555,7 @@ prop_inbound_governor_trace_coverage defaultBearerInfo diffScript =
                                 diffScript
                                 iosimTracer
 
-      events :: [InboundGovernorTrace NtNAddr]
+      events :: [IG.Trace NtNAddr]
       events = mapMaybe (\case DiffusionInboundGovernorTrace st -> Just st
                                _                                -> Nothing
                         )
@@ -584,7 +584,7 @@ prop_inbound_governor_transitions_coverage defaultBearerInfo diffScript =
                                 diffScript
                                 iosimTracer
 
-      events :: [RemoteTransitionTrace NtNAddr]
+      events :: [IG.RemoteTransitionTrace NtNAddr]
       events = mapMaybe (\case DiffusionInboundGovernorTransitionTrace st ->
                                     Just st
                                _ -> Nothing
@@ -1055,7 +1055,7 @@ prop_server_trace_coverage defaultBearerInfo diffScript =
                                 diffScript
                                 iosimTracer
 
-      events :: [ServerTrace NtNAddr]
+      events :: [Server.Trace NtNAddr]
       events = mapMaybe (\case DiffusionServerTrace st -> Just st
                                _                       -> Nothing
                         )
@@ -3753,7 +3753,7 @@ prop_diffusion_ig_valid_transitions ioSimTrace traceNumber =
   where
     verify_ig_valid_transitions :: Trace () DiffusionTestTrace -> Property
     verify_ig_valid_transitions events =
-      let remoteTransitionTraceEvents :: Trace () (RemoteTransitionTrace NtNAddr)
+      let remoteTransitionTraceEvents :: Trace () (IG.RemoteTransitionTrace NtNAddr)
           remoteTransitionTraceEvents =
             selectDiffusionInboundGovernorTransitionEvents events
 
@@ -3813,7 +3813,7 @@ prop_diffusion_ig_valid_transition_order ioSimTrace traceNumber =
     verify_ig_valid_transition_order :: Trace () DiffusionTestTrace -> Property
     verify_ig_valid_transition_order events =
 
-      let remoteTransitionTraceEvents :: Trace () (RemoteTransitionTrace NtNAddr)
+      let remoteTransitionTraceEvents :: Trace () (IG.RemoteTransitionTrace NtNAddr)
           remoteTransitionTraceEvents =
             selectDiffusionInboundGovernorTransitionEvents events
 
@@ -4015,7 +4015,7 @@ selectDiffusionConnectionManagerTransitionEventsTime =
 
 selectDiffusionInboundGovernorTransitionEvents
   :: Trace () DiffusionTestTrace
-  -> Trace () (RemoteTransitionTrace NtNAddr)
+  -> Trace () (IG.RemoteTransitionTrace NtNAddr)
 selectDiffusionInboundGovernorTransitionEvents =
   Trace.fromList ()
   . mapMaybe

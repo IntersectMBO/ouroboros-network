@@ -8,10 +8,10 @@ import Test.QuickCheck
 import Test.QuickCheck.Monoids
 
 import Ouroboros.Network.ConnectionManager.Types
-import Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..),
-           RemoteSt (..))
+import Ouroboros.Network.InboundGovernor (RemoteSt (..))
 import Ouroboros.Network.InboundGovernor qualified as IG
-import Ouroboros.Network.Server2 (RemoteTransition, ServerTrace (..))
+import Ouroboros.Network.Server2 (RemoteTransition)
+import Ouroboros.Network.Server2 qualified as Server
 
 
 -- | Pattern synonym which matches either 'RemoteHotEst' or 'RemoteWarmSt'.
@@ -169,52 +169,52 @@ remoteStrIsFinalTransition :: Transition' (Maybe RemoteSt) -> Bool
 remoteStrIsFinalTransition (Transition _ Nothing) = True
 remoteStrIsFinalTransition _                      = False
 
-inboundGovernorTraceMap :: InboundGovernorTrace ntnAddr -> String
-inboundGovernorTraceMap (TrNewConnection p _)            =
+inboundGovernorTraceMap :: IG.Trace ntnAddr -> String
+inboundGovernorTraceMap (IG.TrNewConnection p _)            =
   "TrNewConnection " ++ show p
-inboundGovernorTraceMap (TrResponderRestarted _ mpn)         =
+inboundGovernorTraceMap (IG.TrResponderRestarted _ mpn)         =
   "TrResponderRestarted " ++ show mpn
-inboundGovernorTraceMap (TrResponderStartFailure _ mpn se)   =
+inboundGovernorTraceMap (IG.TrResponderStartFailure _ mpn se)   =
   "TrResponderStartFailure " ++ show mpn ++ " " ++ show se
-inboundGovernorTraceMap (TrResponderErrored _ mpn se)        =
+inboundGovernorTraceMap (IG.TrResponderErrored _ mpn se)        =
   "TrResponderErrored " ++ show mpn ++ " " ++ show se
-inboundGovernorTraceMap (TrResponderStarted _ mpn)           =
+inboundGovernorTraceMap (IG.TrResponderStarted _ mpn)           =
   "TrResponderStarted " ++ show mpn
-inboundGovernorTraceMap (TrResponderTerminated _ mpn)        =
+inboundGovernorTraceMap (IG.TrResponderTerminated _ mpn)        =
   "TrResponderTerminated " ++ show mpn
-inboundGovernorTraceMap (TrPromotedToWarmRemote _ ora)        =
+inboundGovernorTraceMap (IG.TrPromotedToWarmRemote _ ora)        =
   "TrPromotedToWarmRemote " ++ show ora
-inboundGovernorTraceMap (TrPromotedToHotRemote _)            =
+inboundGovernorTraceMap (IG.TrPromotedToHotRemote _)            =
   "TrPromotedToHotRemote"
-inboundGovernorTraceMap (TrDemotedToWarmRemote _)            =
+inboundGovernorTraceMap (IG.TrDemotedToWarmRemote _)            =
   "TrDemotedToWarmRemote"
-inboundGovernorTraceMap (TrDemotedToColdRemote _ ora)         =
+inboundGovernorTraceMap (IG.TrDemotedToColdRemote _ ora)         =
   "TrDemotedToColdRemote " ++ show ora
-inboundGovernorTraceMap (TrWaitIdleRemote _ ora)              =
+inboundGovernorTraceMap (IG.TrWaitIdleRemote _ ora)              =
   "TrWaitIdleRemote " ++ show ora
-inboundGovernorTraceMap (TrMuxCleanExit _)                   =
+inboundGovernorTraceMap (IG.TrMuxCleanExit _)                   =
   "TrMuxCleanExit"
-inboundGovernorTraceMap (TrMuxErrored _ se)                  =
+inboundGovernorTraceMap (IG.TrMuxErrored _ se)                  =
   "TrMuxErrored " ++ show se
-inboundGovernorTraceMap (TrInboundGovernorCounters _)       =
+inboundGovernorTraceMap (IG.TrInboundGovernorCounters _)       =
   "TrInboundGovernorCounters"
-inboundGovernorTraceMap (TrRemoteState _)                   =
+inboundGovernorTraceMap (IG.TrRemoteState _)                   =
   "TrRemoteState"
 inboundGovernorTraceMap (IG.TrUnexpectedlyFalseAssertion _) =
   "TrUnexpectedlyFalseAssertion"
-inboundGovernorTraceMap (TrInboundGovernorError se)           =
+inboundGovernorTraceMap (IG.TrInboundGovernorError se)           =
   "TrInboundGovernorError " ++ show se
-inboundGovernorTraceMap TrMaturedConnections {}            =
+inboundGovernorTraceMap IG.TrMaturedConnections {}            =
   "TrMaturedConnections"
-inboundGovernorTraceMap TrInactive {}                      =
+inboundGovernorTraceMap IG.TrInactive {}                      =
   "TrMaturedConnections"
 
 
-serverTraceMap :: Show ntnAddr => ServerTrace ntnAddr -> String
-serverTraceMap (TrAcceptConnection _)     = "TrAcceptConnection"
-serverTraceMap st@(TrAcceptError _)       = show st
-serverTraceMap st@(TrAcceptPolicyTrace _) = show st
-serverTraceMap (TrServerStarted _)        = "TrServerStarted"
-serverTraceMap st@TrServerStopped         = show st
-serverTraceMap st@(TrServerError _)       = show st
+serverTraceMap :: Show ntnAddr => Server.Trace ntnAddr -> String
+serverTraceMap (Server.TrAcceptConnection _)     = "TrAcceptConnection"
+serverTraceMap st@(Server.TrAcceptError _)       = show st
+serverTraceMap st@(Server.TrAcceptPolicyTrace _) = show st
+serverTraceMap (Server.TrServerStarted _)        = "TrServerStarted"
+serverTraceMap st@Server.TrServerStopped         = show st
+serverTraceMap st@(Server.TrServerError _)       = show st
 

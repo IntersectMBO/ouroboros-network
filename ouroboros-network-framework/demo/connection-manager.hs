@@ -72,7 +72,6 @@ import Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..),
            Queryable (..))
 import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
-import Ouroboros.Network.Server2 (ServerArguments (..))
 import Ouroboros.Network.Server2 qualified as Server
 import Ouroboros.Network.Snocket (Snocket, socketSnocket)
 import Ouroboros.Network.Snocket qualified as Snocket
@@ -268,18 +267,18 @@ withBidirectionalConnectionManager snocket makeBearer socket
       $ \connectionManager -> do
             serverAddr <- Snocket.getLocalAddr snocket socket
             Server.with
-              ServerArguments {
-                  serverSockets = socket :| [],
-                  serverSnocket = snocket,
-                  serverTracer = ("server",) `contramap` debugTracer, -- ServerTrace
-                  serverTrTracer = nullTracer,
-                  serverInboundGovernorTracer = ("inbound-governor",) `contramap` debugTracer,
-                  serverDebugInboundGovernor = nullTracer,
-                  serverConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0,
-                  serverConnectionManager = connectionManager,
-                  serverConnectionDataFlow = \_ -> Duplex,
-                  serverInboundIdleTimeout = Just protocolIdleTimeout,
-                  serverInboundInfoChannel = inbgovInfoChannel
+              Server.Arguments {
+                  Server.sockets = socket :| [],
+                  Server.snocket = snocket,
+                  Server.tracer = ("server",) `contramap` debugTracer, -- ServerTrace
+                  Server.trTracer = nullTracer,
+                  Server.inboundGovernorTracer = ("inbound-governor",) `contramap` debugTracer,
+                  Server.debugInboundGovernor = nullTracer,
+                  Server.connectionLimits = AcceptedConnectionsLimit maxBound maxBound 0,
+                  Server.connectionManager = connectionManager,
+                  Server.connectionDataFlow = \_ -> Duplex,
+                  Server.inboundIdleTimeout = Just protocolIdleTimeout,
+                  Server.inboundInfoChannel = inbgovInfoChannel
                 }
               (\_ _ -> k connectionManager serverAddr)
   where

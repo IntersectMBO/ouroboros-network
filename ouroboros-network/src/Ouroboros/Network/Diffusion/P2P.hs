@@ -88,8 +88,8 @@ import Ouroboros.Network.Diffusion.Common hiding (nullTracers)
 import Ouroboros.Network.Diffusion.Policies qualified as Diffusion.Policies
 import Ouroboros.Network.Diffusion.Utils
 import Ouroboros.Network.ExitPolicy
-import Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..),
-           RemoteTransitionTrace)
+import Ouroboros.Network.InboundGovernor (RemoteTransitionTrace)
+import Ouroboros.Network.InboundGovernor qualified as InboundGovernor
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.Mux hiding (MiniProtocol (..))
 import Ouroboros.Network.MuxMode
@@ -143,7 +143,6 @@ import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
 import Ouroboros.Network.RethrowPolicy
-import Ouroboros.Network.Server2 (ServerArguments (..), ServerTrace (..))
 import Ouroboros.Network.Server2 qualified as Server
 
 -- | P2P DiffusionTracers Extras
@@ -192,10 +191,10 @@ data TracersExtra ntnAddr ntnVersion ntnVersionData
         :: Tracer m (AbstractTransitionTrace ntnAddr)
 
     , dtServerTracer
-        :: Tracer m (ServerTrace ntnAddr)
+        :: Tracer m (Server.Trace ntnAddr)
 
     , dtInboundGovernorTracer
-        :: Tracer m (InboundGovernorTrace ntnAddr)
+        :: Tracer m (InboundGovernor.Trace ntnAddr)
 
     , dtInboundGovernorTransitionTracer
         :: Tracer m (RemoteTransitionTrace ntnAddr)
@@ -214,11 +213,11 @@ data TracersExtra ntnAddr ntnVersion ntnVersionData
 
       -- | Server tracer for local clients
     , dtLocalServerTracer
-        :: Tracer m (ServerTrace ntcAddr)
+        :: Tracer m (Server.Trace ntcAddr)
 
       -- | Inbound protocol governor tracer for local clients
     , dtLocalInboundGovernorTracer
-        :: Tracer m (InboundGovernorTrace ntcAddr)
+        :: Tracer m (InboundGovernor.Trace ntcAddr)
     }
 
 nullTracers :: Applicative m
@@ -702,10 +701,10 @@ runM Interfaces
     (cmStdGen1, cmStdGen2) = split rng5
 
 
-    mkInboundPeersMap :: Server.PublicInboundGovernorState ntnAddr ntnVersionData
+    mkInboundPeersMap :: InboundGovernor.PublicState ntnAddr ntnVersionData
                       -> Map ntnAddr PeerSharing
     mkInboundPeersMap
-      Server.PublicInboundGovernorState { Server.inboundDuplexPeers }
+      InboundGovernor.PublicState { InboundGovernor.inboundDuplexPeers }
       =
       Map.map diNtnPeerSharing inboundDuplexPeers
 
@@ -779,18 +778,18 @@ runM Interfaces
               =<< Snocket.getLocalAddr diNtcSnocket localSocket
 
             Server.with
-              ServerArguments {
-                  serverSockets               = localSocket :| [],
-                  serverSnocket               = diNtcSnocket,
-                  serverTracer                = dtLocalServerTracer,
-                  serverTrTracer              = nullTracer, -- TODO: issue #3320
-                  serverDebugInboundGovernor  = nullTracer,
-                  serverInboundGovernorTracer = dtLocalInboundGovernorTracer,
-                  serverInboundIdleTimeout    = Nothing,
-                  serverConnectionLimits      = localConnectionLimits,
-                  serverConnectionManager     = localConnectionManager,
-                  serverConnectionDataFlow    = ntcDataFlow,
-                  serverInboundInfoChannel    = localInbInfoChannel
+              Server.Arguments {
+                  Server.sockets               = localSocket :| [],
+                  Server.snocket               = diNtcSnocket,
+                  Server.tracer                = dtLocalServerTracer,
+                  Server.trTracer              = nullTracer, -- TODO: issue #3320
+                  Server.debugInboundGovernor  = nullTracer,
+                  Server.inboundGovernorTracer = dtLocalInboundGovernorTracer,
+                  Server.inboundIdleTimeout    = Nothing,
+                  Server.connectionLimits      = localConnectionLimits,
+                  Server.connectionManager     = localConnectionManager,
+                  Server.connectionDataFlow    = ntcDataFlow,
+                  Server.inboundInfoChannel    = localInbInfoChannel
                 }
               (\inboundGovernorThread _ -> Async.wait inboundGovernorThread)
 
@@ -1119,18 +1118,18 @@ runM Interfaces
                   -- node-to-node server
                   --
                   Server.with
-                    ServerArguments {
-                        serverSockets               = sockets,
-                        serverSnocket               = diNtnSnocket,
-                        serverTracer                = dtServerTracer,
-                        serverTrTracer              = dtInboundGovernorTransitionTracer,
-                        serverDebugInboundGovernor  = nullTracer,
-                        serverInboundGovernorTracer = dtInboundGovernorTracer,
-                        serverConnectionLimits      = daAcceptedConnectionsLimit,
-                        serverConnectionManager     = connectionManager,
-                        serverConnectionDataFlow    = diNtnDataFlow,
-                        serverInboundIdleTimeout    = Just daProtocolIdleTimeout,
-                        serverInboundInfoChannel    = inboundInfoChannel
+                    Server.Arguments {
+                        Server.sockets               = sockets,
+                        Server.snocket               = diNtnSnocket,
+                        Server.tracer                = dtServerTracer,
+                        Server.trTracer              = dtInboundGovernorTransitionTracer,
+                        Server.debugInboundGovernor  = nullTracer,
+                        Server.inboundGovernorTracer = dtInboundGovernorTracer,
+                        Server.connectionLimits      = daAcceptedConnectionsLimit,
+                        Server.connectionManager     = connectionManager,
+                        Server.connectionDataFlow    = diNtnDataFlow,
+                        Server.inboundIdleTimeout    = Just daProtocolIdleTimeout,
+                        Server.inboundInfoChannel    = inboundInfoChannel
                       } $ \inboundGovernorThread readInboundState -> do
                     debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng daConsensusMode daMinBigLedgerPeersForTrustedState
                     diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics

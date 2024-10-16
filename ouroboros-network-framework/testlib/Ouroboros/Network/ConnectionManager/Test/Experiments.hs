@@ -78,8 +78,7 @@ import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context
 import Ouroboros.Network.ControlMessage
 import Ouroboros.Network.Driver.Limits
-import Ouroboros.Network.InboundGovernor (DebugInboundGovernor (..),
-           InboundGovernorTrace (..))
+import Ouroboros.Network.InboundGovernor qualified as InboundGovernor
 import Ouroboros.Network.Mux
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.Protocol.Handshake
@@ -91,7 +90,7 @@ import Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..),
            Queryable (..))
 import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
-import Ouroboros.Network.Server2 (RemoteTransitionTrace, ServerArguments (..))
+import Ouroboros.Network.Server2 (RemoteTransitionTrace)
 import Ouroboros.Network.Server2 qualified as Server
 import Ouroboros.Network.Snocket (Snocket)
 import Ouroboros.Network.Snocket qualified as Snocket
@@ -423,8 +422,8 @@ withBidirectionalConnectionManager
                           (ConnectionManagerTrace
                             peerAddr
                             (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
-    -> Tracer m (WithName name (InboundGovernorTrace peerAddr))
-    -> Tracer m (WithName name (DebugInboundGovernor peerAddr DataFlowProtocolData))
+    -> Tracer m (WithName name (InboundGovernor.Trace peerAddr))
+    -> Tracer m (WithName name (InboundGovernor.Debug peerAddr DataFlowProtocolData))
     -> StdGen
     -> Snocket m socket peerAddr
     -> Mux.MakeBearer m socket
@@ -507,22 +506,22 @@ withBidirectionalConnectionManager name timeouts
           do
             serverAddr <- Snocket.getLocalAddr snocket socket
             Server.with
-              ServerArguments {
-                  serverSockets = socket :| [],
-                  serverSnocket = snocket,
-                  serverTrTracer =
+              Server.Arguments {
+                  Server.sockets = socket :| [],
+                  Server.snocket = snocket,
+                  Server.trTracer =
                     WithName name `contramap` inboundTrTracer,
-                  serverTracer =
+                  Server.tracer =
                     WithName name `contramap` nullTracer, -- ServerTrace
-                  serverDebugInboundGovernor =
+                  Server.debugInboundGovernor =
                     WithName name `contramap` debugTracer,
-                  serverInboundGovernorTracer =
+                  Server.inboundGovernorTracer =
                     WithName name `contramap` inboundTracer, -- InboundGovernorTrace
-                  serverConnectionLimits = acceptedConnLimit,
-                  serverConnectionManager = connectionManager,
-                  serverConnectionDataFlow = \(DataFlowProtocolData df _) -> df,
-                  serverInboundIdleTimeout = Just (tProtocolIdleTimeout timeouts),
-                  serverInboundInfoChannel = inbgovInfoChannel
+                  Server.connectionLimits = acceptedConnLimit,
+                  Server.connectionManager = connectionManager,
+                  Server.connectionDataFlow = \(DataFlowProtocolData df _) -> df,
+                  Server.inboundIdleTimeout = Just (tProtocolIdleTimeout timeouts),
+                  Server.inboundInfoChannel = inbgovInfoChannel
                 }
               (\inboundGovernorAsync _ -> k connectionManager serverAddr inboundGovernorAsync)
           `catch` \(e :: SomeException) -> do

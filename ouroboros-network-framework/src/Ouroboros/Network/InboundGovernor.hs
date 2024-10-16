@@ -15,14 +15,16 @@
 
 -- | Server implementation based on 'ConnectionManager'
 --
+-- This module should be imported qualified.
+--
 module Ouroboros.Network.InboundGovernor
   ( -- * Run Inbound Protocol Governor
-    PublicInboundGovernorState (..)
-  , InboundGovernorArguments (..)
-  , withInboundGovernor
+    PublicState (..)
+  , Arguments (..)
+  , with
     -- * Trace
-  , InboundGovernorTrace (..)
-  , DebugInboundGovernor (..)
+  , Trace (..)
+  , Debug (..)
   , RemoteSt (..)
   , RemoteTransition
   , RemoteTransitionTrace
@@ -73,7 +75,7 @@ import Ouroboros.Network.Server.RateLimiting
 
 
 -- | Period of time after which a peer transitions from a fresh to a mature one,
--- see `igsMatureDuplexPeers` and `igsFreshDuplexPeers`.
+-- see `matureDuplexPeers` and `freshDuplexPeers`.
 --
 inboundMaturePeerDelay :: DiffTime
 inboundMaturePeerDelay = 15 * 60
@@ -86,22 +88,22 @@ inactionTimeout :: DiffTime
 inactionTimeout = 31.415927
 
 
-data InboundGovernorArguments muxMode socket initiatorCtx peerAddr versionNumber versionData m a b = InboundGovernorArguments {
-      igaTransitionTracer   :: Tracer m (RemoteTransitionTrace peerAddr),
+data Arguments muxMode socket initiatorCtx peerAddr versionNumber versionData m a b = Arguments {
+      transitionTracer   :: Tracer m (RemoteTransitionTrace peerAddr),
       -- ^ transition tracer
-      igaTracer             :: Tracer m (InboundGovernorTrace peerAddr),
+      tracer             :: Tracer m (Trace peerAddr),
       -- ^ main inbound governor tracer
-      igaDebugTracer        :: Tracer m (DebugInboundGovernor peerAddr versionData),
+      debugTracer        :: Tracer m (Debug peerAddr versionData),
       -- ^ debug inbound governor tracer
-      igaConnectionDataFlow :: versionData -> DataFlow,
+      connectionDataFlow :: versionData -> DataFlow,
       -- ^ connection data flow
-      igaInfoChannel        :: InboundGovernorInfoChannel muxMode initiatorCtx peerAddr versionData ByteString m a b,
+      infoChannel        :: InboundGovernorInfoChannel muxMode initiatorCtx peerAddr versionData ByteString m a b,
       -- ^ 'InformationChannel' which passes 'NewConnectionInfo' for outbound
       -- connections from connection manager to the inbound governor.
-      igaIdleTimeout        :: Maybe DiffTime,
+      idleTimeout        :: Maybe DiffTime,
       -- ^ protocol idle timeout.  The remote site must restart a mini-protocol
       -- within given timeframe (Nothing indicates no timeout).
-      igaConnectionManager  :: MuxConnectionManager muxMode socket initiatorCtx
+      connectionManager  :: MuxConnectionManager muxMode socket initiatorCtx
                                                     (ResponderContext peerAddr) peerAddr
                                                     versionData versionNumber
                                                     ByteString m a b
@@ -124,57 +126,57 @@ data InboundGovernorArguments muxMode socket initiatorCtx peerAddr versionNumber
 -- The first one is used in data diffusion for /Node-To-Node protocol/, while the
 -- other is useful for running a server for the /Node-To-Client protocol/.
 --
-withInboundGovernor :: forall (muxMode :: MuxMode) socket initiatorCtx peerAddr versionData versionNumber m a b x.
-                   ( Alternative (STM m)
-                   , MonadAsync       m
-                   , MonadCatch       m
-                   , MonadEvaluate    m
-                   , MonadLabelledSTM m
-                   , MonadThrow       m
-                   , MonadThrow  (STM m)
-                   , MonadTime        m
-                   , MonadTimer       m
-                   , MonadMask        m
-                   , Ord peerAddr
-                   , HasResponder muxMode ~ True
-                   )
-                => InboundGovernorArguments muxMode socket initiatorCtx peerAddr versionNumber versionData m a b
-                -> (Async m Void -> m (PublicInboundGovernorState peerAddr versionData) -> m x)
-                -> m x
-withInboundGovernor
-    InboundGovernorArguments {
-      igaTransitionTracer   = trTracer,
-      igaTracer             = tracer,
-      igaDebugTracer        = debugTracer,
-      igaConnectionDataFlow = connectionDataFlow,
-      igaInfoChannel        = infoChannel,
-      igaIdleTimeout        = idleTimeout,
-      igaConnectionManager  = connectionManager
+with :: forall (muxMode :: MuxMode) socket initiatorCtx peerAddr versionData versionNumber m a b x.
+        ( Alternative (STM m)
+        , MonadAsync       m
+        , MonadCatch       m
+        , MonadEvaluate    m
+        , MonadLabelledSTM m
+        , MonadThrow       m
+        , MonadThrow  (STM m)
+        , MonadTime        m
+        , MonadTimer       m
+        , MonadMask        m
+        , Ord peerAddr
+        , HasResponder muxMode ~ True
+        )
+     => Arguments muxMode socket initiatorCtx peerAddr versionNumber versionData m a b
+     -> (Async m Void -> m (PublicState peerAddr versionData) -> m x)
+     -> m x
+with
+    Arguments {
+      transitionTracer   = trTracer,
+      tracer             = tracer,
+      debugTracer        = debugTracer,
+      connectionDataFlow = connectionDataFlow,
+      infoChannel        = infoChannel,
+      idleTimeout        = idleTimeout,
+      connectionManager  = connectionManager
     }
     k
     = do
-    var <- newTVarIO (mkPublicInboundGovernorState emptyState)
+    var <- newTVarIO (mkPublicState emptyState)
     withAsync (inboundGovernorLoop var emptyState
                 `catch`
                handleError var) $
       \thread ->
         k thread (readTVarIO var)
   where
-    emptyState :: InboundGovernorState muxMode initiatorCtx peerAddr versionData m a b
-    emptyState = InboundGovernorState {
-        igsConnections       = Map.empty,
-        igsMatureDuplexPeers = Map.empty,
-        igsFreshDuplexPeers  = OrdPSQ.empty,
-        igsCountersCache     = mempty
+    emptyState :: State muxMode initiatorCtx peerAddr versionData m a b
+    emptyState = State {
+        connections       = Map.empty,
+        matureDuplexPeers = Map.empty,
+        freshDuplexPeers  = OrdPSQ.empty,
+        countersCache     = mempty
       }
 
     -- trace final transition, mostly for testing purposes
     handleError
-      :: StrictTVar m (PublicInboundGovernorState peerAddr versionData)
+      :: StrictTVar m (PublicState peerAddr versionData)
       -> SomeException
       -> m Void
     handleError var e = do
-      PublicInboundGovernorState { remoteStateMap } <- readTVarIO var
+      PublicState { remoteStateMap } <- readTVarIO var
       _ <- Map.traverseWithKey
              (\connId remoteSt ->
                traceWith trTracer $
@@ -185,12 +187,12 @@ withInboundGovernor
              remoteStateMap
       throwIO e
 
-    -- The inbound protocol governor recursive loop.  The 'igsConnections' is
+    -- The inbound protocol governor recursive loop.  The 'connections' is
     -- updated as we recurse.
     --
     inboundGovernorLoop
-      :: StrictTVar m (PublicInboundGovernorState peerAddr versionData)
-      -> InboundGovernorState muxMode initiatorCtx peerAddr versionData m a b
+      :: StrictTVar m (PublicState peerAddr versionData)
+      -> State muxMode initiatorCtx peerAddr versionData m a b
       -> m Void
     inboundGovernorLoop var !state = do
       time <- getMonotonicTime
@@ -200,7 +202,7 @@ withInboundGovernor
         <- atomically $ runFirstToFinish $
                FirstToFinish  (
                  -- mark connections as mature
-                 case maturedPeers time (igsFreshDuplexPeers state) of
+                 case maturedPeers time (freshDuplexPeers state) of
                    (as, _)     | Map.null as
                                -> retry
                    (as, fresh) -> pure $ MaturedDuplexPeers as fresh
@@ -216,7 +218,7 @@ withInboundGovernor
 
                    :: EventSignal muxMode initiatorCtx peerAddr versionData m a b
                  )
-                 (igsConnections state)
+                 (connections state)
             <> FirstToFinish (
                  NewConnection <$> InfoChannel.readMessage infoChannel
                )
@@ -243,7 +245,7 @@ withInboundGovernor
               traceWith tracer (TrNewConnection provenance connId)
               let responderContext = ResponderContext { rcConnectionId = connId }
 
-              igsConnections <- Map.alterF
+              connections <- Map.alterF
                 (\case
                   -- connection
                   Nothing -> do
@@ -330,17 +332,17 @@ withInboundGovernor
 
                 )
                 connId
-                (igsConnections state)
+                (connections state)
 
               time' <- getMonotonicTime
               -- update state and continue the recursive loop
               let state' = state {
-                      igsConnections,
-                      igsFreshDuplexPeers =
+                      connections,
+                      freshDuplexPeers =
                         case dataFlow of
-                          Unidirectional -> igsFreshDuplexPeers state
+                          Unidirectional -> freshDuplexPeers state
                           Duplex         -> OrdPSQ.insert (remoteAddress connId) time' csVersionData
-                                                          (igsFreshDuplexPeers state)
+                                                          (freshDuplexPeers state)
                     }
               return (Just connId, state')
 
@@ -366,7 +368,7 @@ withInboundGovernor
             Left e -> do
               -- a mini-protocol errored.  In this case mux will shutdown, and
               -- the connection manager will tear down the socket.  We can just
-              -- forget the connection from 'InboundGovernorState'.
+              -- forget the connection from 'State'.
               traceWith tracer $
                 TrResponderErrored tConnId num e
 
@@ -524,36 +526,36 @@ withInboundGovernor
 
                   return (Just connId, state')
 
-        MaturedDuplexPeers newMatureDuplexPeers igsFreshDuplexPeers -> do
+        MaturedDuplexPeers newMatureDuplexPeers freshDuplexPeers -> do
           traceWith tracer $ TrMaturedConnections (Map.keysSet newMatureDuplexPeers)
-                                                  (Set.fromList $ OrdPSQ.keys  igsFreshDuplexPeers)
-          pure (Nothing, state { igsMatureDuplexPeers = newMatureDuplexPeers
-                                                     <> igsMatureDuplexPeers state,
-                                 igsFreshDuplexPeers })
+                                                  (Set.fromList $ OrdPSQ.keys freshDuplexPeers)
+          pure (Nothing, state { matureDuplexPeers = newMatureDuplexPeers
+                                                  <> matureDuplexPeers state,
+                                 freshDuplexPeers })
 
         InactivityTimeout -> do
-          traceWith tracer $ TrInactive ((\(a,b,_) -> (a,b)) <$> OrdPSQ.toList (igsFreshDuplexPeers state))
+          traceWith tracer $ TrInactive ((\(a,b,_) -> (a,b)) <$> OrdPSQ.toList (freshDuplexPeers state))
           pure (Nothing, state)
 
       mask_ $ do
-        atomically $ writeTVar var (mkPublicInboundGovernorState state')
-        traceWith debugTracer (DebugInboundGovernor state')
+        atomically $ writeTVar var (mkPublicState state')
+        traceWith debugTracer (Debug state')
         case mbConnId of
           Just cid -> traceWith trTracer (mkRemoteTransitionTrace cid state state')
           Nothing  -> pure ()
 
       mapTraceWithCache TrInboundGovernorCounters
                         tracer
-                        (igsCountersCache state')
-                        (inboundGovernorCounters state')
+                        (countersCache state')
+                        (counters state')
       traceWith tracer $ TrRemoteState $
             mkRemoteSt . csRemoteState
-        <$> igsConnections state'
+        <$> connections state'
 
       -- Update Inbound Governor Counters cache values
-      let newCounters       = inboundGovernorCounters state'
-          Cache oldCounters = igsCountersCache state'
-          state'' | newCounters /= oldCounters = state' { igsCountersCache = Cache newCounters }
+      let newCounters       = counters state'
+          Cache oldCounters = countersCache state'
+          state'' | newCounters /= oldCounters = state' { countersCache = Cache newCounters }
                   | otherwise                 = state'
 
       inboundGovernorLoop var state''
@@ -625,18 +627,18 @@ type RemoteTransitionTrace peerAddr = TransitionTrace' peerAddr (Maybe RemoteSt)
 
 mkRemoteTransitionTrace :: Ord peerAddr
                         => ConnectionId peerAddr
-                        -> InboundGovernorState muxMode initiatorCtx peerAddr versionData m a b
-                        -> InboundGovernorState muxMode initiatorCtx peerAddr versionData m a b
+                        -> State muxMode initiatorCtx peerAddr versionData m a b
+                        -> State muxMode initiatorCtx peerAddr versionData m a b
                         -> RemoteTransitionTrace peerAddr
 mkRemoteTransitionTrace connId fromState toState =
     TransitionTrace
       (remoteAddress connId)
       Transition { fromState = mkRemoteSt
                              . csRemoteState
-                           <$> Map.lookup connId (igsConnections fromState)
+                           <$> Map.lookup connId (connections fromState)
                  , toState   = mkRemoteSt
                              . csRemoteState
-                           <$> Map.lookup connId (igsConnections toState)
+                           <$> Map.lookup connId (connections toState)
                  }
 
 
@@ -644,7 +646,7 @@ data IGAssertionLocation peerAddr
   = InboundGovernorLoop !(Maybe (ConnectionId peerAddr)) !AbstractState
   deriving Show
 
-data InboundGovernorTrace peerAddr
+data Trace peerAddr
     = TrNewConnection                !Provenance !(ConnectionId peerAddr)
     | TrResponderRestarted           !(ConnectionId peerAddr) !MiniProtocolNum
     | TrResponderStartFailure        !(ConnectionId peerAddr) !MiniProtocolNum !SomeException
@@ -660,7 +662,7 @@ data InboundGovernorTrace peerAddr
     | TrWaitIdleRemote               !(ConnectionId peerAddr) !(OperationResult AbstractState)
     | TrMuxCleanExit                 !(ConnectionId peerAddr)
     | TrMuxErrored                   !(ConnectionId peerAddr) SomeException
-    | TrInboundGovernorCounters      !InboundGovernorCounters
+    | TrInboundGovernorCounters      !Counters
     | TrRemoteState                  !(Map (ConnectionId peerAddr) RemoteSt)
     | TrUnexpectedlyFalseAssertion   !(IGAssertionLocation peerAddr)
     -- ^ This case is unexpected at call site.
@@ -670,5 +672,5 @@ data InboundGovernorTrace peerAddr
   deriving Show
 
 
-data DebugInboundGovernor peerAddr versionData = forall muxMode initiatorCtx m a b.
-    DebugInboundGovernor (InboundGovernorState muxMode initiatorCtx peerAddr versionData m a b)
+data Debug peerAddr versionData = forall muxMode initiatorCtx m a b.
+    Debug (State muxMode initiatorCtx peerAddr versionData m a b)
