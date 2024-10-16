@@ -51,6 +51,14 @@
   module. Previously these were hard coded in node.
 * Updated tests for `network-mux` changes.
 
+## 0.17.1.2 -- 2024-10-11
+
+### Breaking changes
+
+### Non-breaking changes
+
+* bump for version bounds
+
 ## 0.17.1.1 -- 2024-08-27
 
 ### Breaking changes

@@ -4,8 +4,15 @@
 
 ### Breaking changes
 
-* Adapt the `versionNumber` cddl definition to account for `NodeToClientVersionV18`.
 * Use `typed-protocols-0.3.0.0`.
+
+### Non-breaking changes
+
+## 0.11.0.0 -- 2024-10-11
+
+### Breaking changes
+
+* Adapt the `versionNumber` cddl definition to account for `NodeToClientV_18`.
 
 ## 0.10.0.2 -- 2024-08-27
 

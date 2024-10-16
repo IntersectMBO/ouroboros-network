@@ -4,13 +4,21 @@
 
 ### Breaking changes
 
-* Reimplemntation of `subscribe` without relaying on non-p2p stack.  Its
+* Reimplementation of `subscribe` without relaying on non-p2p stack.  Its
   arguments have changed.  Note that the `NodeToClientProtocols` and
   `OuroborosApplicationWithMinimalCtx` specify `Void` as return type of the
   responder side.
 * The default reconnect delay was increased from `0.025s` to `5s`.
 
 ### Non-breaking changes
+
+## 0.3.1.6 -- 2024-10-11
+
+### Breaking changes
+
+### Non-breaking changes
+
+* bump for version bounds
 
 ## 0.3.1.5 -- 2024-08-27
 
