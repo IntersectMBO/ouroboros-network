@@ -32,6 +32,7 @@
   an error or the result of the first terminated mini-protocol.
 * `Ouroboros.Network.NodeToNode.connectTo` returns either an error or the
   result of the first terminated mini-protocol.
+* Adjusted for changes in `ouroboros-network-framework` (PR #4990)
 
 ### Non-Breaking changes
 
