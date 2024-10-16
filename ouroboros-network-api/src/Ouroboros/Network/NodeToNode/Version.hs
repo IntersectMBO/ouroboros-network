@@ -3,13 +3,17 @@
 {-# LANGUAGE LambdaCase     #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
+-- | NodeToNode Version & VersionData
+--
+-- The module is supposed to be imported qualified.
+--
 module Ouroboros.Network.NodeToNode.Version
-  ( NodeToNodeVersion (..)
-  , NodeToNodeVersionData (..)
+  ( Version (..)
+  , VersionData (..)
   , DiffusionMode (..)
   , ConnectionMode (..)
-  , nodeToNodeVersionCodec
-  , nodeToNodeCodecCBORTerm
+  , versionCodec
+  , codecCBORTerm
   ) where
 
 import Data.Text (Text)
@@ -28,7 +32,7 @@ import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 
 -- | Enumeration of node to node protocol versions.
 --
-data NodeToNodeVersion =
+data Version =
     -- commented out versions that can't cross into the current HF era
     -- NodeToNodeV_7
     -- -- ^ Changes:
@@ -60,25 +64,25 @@ data NodeToNodeVersion =
     -- --
     -- -- (In the past, this enabled Conway, but the negotiated 'NodeToNodeVersion'
     -- -- no longer en-/disables eras.)
-      NodeToNodeV_13
+      V_13
     -- ^ Changes:
     --
     -- * Removed PeerSharingPrivate constructor
     -- * Fixed Codec to disable PeerSharing with buggy versions 11 and 12.
     -- * Disable PeerSharing with InitiatorOnly nodes, since they do not run
     --   peer sharing server side and can not reply to requests.
-    | NodeToNodeV_14
+    | V_14
     -- ^ Chang+1 HF
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable, Generic, NFData)
 
-nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
-nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
+versionCodec :: CodecCBORTerm (Text, Maybe Int) Version
+versionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
   where
-    encodeTerm NodeToNodeV_13 = CBOR.TInt 13
-    encodeTerm NodeToNodeV_14 = CBOR.TInt 14
+    encodeTerm V_13 = CBOR.TInt 13
+    encodeTerm V_14 = CBOR.TInt 14
 
-    decodeTerm (CBOR.TInt 13) = Right NodeToNodeV_13
-    decodeTerm (CBOR.TInt 14) = Right NodeToNodeV_14
+    decodeTerm (CBOR.TInt 13) = Right V_13
+    decodeTerm (CBOR.TInt 14) = Right V_14
     decodeTerm (CBOR.TInt n) = Left ( T.pack "decode NodeToNodeVersion: unknown tag: "
                                         <> T.pack (show n)
                                     , Just n
@@ -110,7 +114,7 @@ data DiffusionMode
 
 -- | Version data for NodeToNode protocol
 --
-data NodeToNodeVersionData = NodeToNodeVersionData
+data VersionData = VersionData
   { networkMagic  :: !NetworkMagic
   , diffusionMode :: !DiffusionMode
   , peerSharing   :: !PeerSharing
@@ -120,7 +124,7 @@ data NodeToNodeVersionData = NodeToNodeVersionData
   -- 'Eq' instance is not provided, it is not what we need in version
   -- negotiation (see 'Acceptable' instance below).
 
-instance Acceptable NodeToNodeVersionData where
+instance Acceptable VersionData where
     -- | Check that both side use the same 'networkMagic'.  Choose smaller one
     -- from both 'diffusionMode's, e.g. if one is running in 'InitiatorOnlyMode'
     -- agree on it. Agree on the same 'PeerSharing' value, if the negotiated
@@ -129,7 +133,7 @@ instance Acceptable NodeToNodeVersionData where
     acceptableVersion local remote
       | networkMagic local == networkMagic remote
       = let acceptedDiffusionMode = diffusionMode local `min` diffusionMode remote
-         in Accept NodeToNodeVersionData
+         in Accept VersionData
               { networkMagic  = networkMagic local
               , diffusionMode = acceptedDiffusionMode
               , peerSharing   = case acceptedDiffusionMode of
@@ -144,20 +148,20 @@ instance Acceptable NodeToNodeVersionData where
                        ++ show local
                        ++ " /= " ++ show remote
 
-instance Queryable NodeToNodeVersionData where
+instance Queryable VersionData where
     queryVersion = query
 
-nodeToNodeCodecCBORTerm :: NodeToNodeVersion -> CodecCBORTerm Text NodeToNodeVersionData
-nodeToNodeCodecCBORTerm =
+codecCBORTerm :: Version -> CodecCBORTerm Text VersionData
+codecCBORTerm =
   \case
-    NodeToNodeV_13 -> v13
-    NodeToNodeV_14 -> v13
+    V_13 -> v13
+    V_14 -> v13
 
   where
     v13 = CodecCBORTerm { encodeTerm = encodeTerm13, decodeTerm = decodeTerm13 }
 
-    encodeTerm13 :: NodeToNodeVersionData -> CBOR.Term
-    encodeTerm13 NodeToNodeVersionData { networkMagic, diffusionMode, peerSharing, query }
+    encodeTerm13 :: VersionData -> CBOR.Term
+    encodeTerm13 VersionData { networkMagic, diffusionMode, peerSharing, query }
       = CBOR.TList
           [ CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
           , CBOR.TBool (case diffusionMode of
@@ -169,7 +173,7 @@ nodeToNodeCodecCBORTerm =
           , CBOR.TBool query
           ]
 
-    decodeTerm13 :: CBOR.Term -> Either Text NodeToNodeVersionData
+    decodeTerm13 :: CBOR.Term -> Either Text VersionData
     decodeTerm13 (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode, CBOR.TInt peerSharing, CBOR.TBool query])
       | x >= 0
       , x <= 0xffffffff
@@ -178,7 +182,7 @@ nodeToNodeCodecCBORTerm =
                     1 -> Just PeerSharingEnabled
                     _ -> Nothing
       = Right
-          NodeToNodeVersionData {
+          VersionData {
               networkMagic = NetworkMagic (fromIntegral x),
               diffusionMode = if diffusionMode
                               then InitiatorOnlyDiffusionMode

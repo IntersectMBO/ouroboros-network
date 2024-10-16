@@ -3,10 +3,10 @@
 {-# LANGUAGE NamedFieldPuns #-}
 
 module Ouroboros.Network.NodeToClient.Version
-  ( NodeToClientVersion (..)
-  , NodeToClientVersionData (..)
-  , nodeToClientCodecCBORTerm
-  , nodeToClientVersionCodec
+  ( Version (..)
+  , VersionData (..)
+  , codecCBORTerm
+  , versionCodec
   ) where
 
 import Codec.CBOR.Term qualified as CBOR
@@ -24,28 +24,28 @@ import Ouroboros.Network.Magic
 
 -- | Enumeration of node to client protocol versions.
 --
-data NodeToClientVersion
-    = NodeToClientV_9
+data Version
+    = V_9
     -- ^ enabled @CardanoNodeToClientVersion7@, i.e., Alonzo
-    | NodeToClientV_10
+    | V_10
     -- ^ added 'GetChainBlockNo' and 'GetChainPoint' queries
-    | NodeToClientV_11
+    | V_11
     -- ^ added 'GetRewardInfoPools` Block query
-    | NodeToClientV_12
+    | V_12
     -- ^ added 'LocalTxMonitor' mini-protocol
-    | NodeToClientV_13
+    | V_13
     -- ^ enabled @CardanoNodeToClientVersion9@, i.e., Babbage
-    | NodeToClientV_14
+    | V_14
     -- ^ added @GetPoolDistr@, @GetPoolState@, @GetSnapshots@
-    | NodeToClientV_15
+    | V_15
     -- ^ added `query` to NodeToClientVersionData
-    | NodeToClientV_16
+    | V_16
     -- ^ added @ImmutableTip@ to @LocalStateQuery@, enabled
     -- @CardanoNodeToClientVersion11@, i.e., Conway and
     -- @GetStakeDelegDeposits@.
-    | NodeToClientV_17
+    | V_17
     -- ^ added @GetProposals@ and @GetRatifyState@ queries
-    | NodeToClientV_18
+    | V_18
     -- ^ added @GetFuturePParams@ query
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable, Generic, NFData)
 
@@ -56,34 +56,34 @@ data NodeToClientVersion
 -- This is done in backward compatible way, so `NodeToClientV_1` encoding is not
 -- changed.
 --
-nodeToClientVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToClientVersion
-nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
+versionCodec :: CodecCBORTerm (Text, Maybe Int) Version
+versionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
     where
-      encodeTerm NodeToClientV_9  = CBOR.TInt (9  `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_10 = CBOR.TInt (10 `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_11 = CBOR.TInt (11 `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_12 = CBOR.TInt (12 `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_13 = CBOR.TInt (13 `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_14 = CBOR.TInt (14 `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_15 = CBOR.TInt (15 `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_16 = CBOR.TInt (16 `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_17 = CBOR.TInt (17 `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_18 = CBOR.TInt (18 `setBit` nodeToClientVersionBit)
+      encodeTerm V_9  = CBOR.TInt (9  `setBit` nodeToClientVersionBit)
+      encodeTerm V_10 = CBOR.TInt (10 `setBit` nodeToClientVersionBit)
+      encodeTerm V_11 = CBOR.TInt (11 `setBit` nodeToClientVersionBit)
+      encodeTerm V_12 = CBOR.TInt (12 `setBit` nodeToClientVersionBit)
+      encodeTerm V_13 = CBOR.TInt (13 `setBit` nodeToClientVersionBit)
+      encodeTerm V_14 = CBOR.TInt (14 `setBit` nodeToClientVersionBit)
+      encodeTerm V_15 = CBOR.TInt (15 `setBit` nodeToClientVersionBit)
+      encodeTerm V_16 = CBOR.TInt (16 `setBit` nodeToClientVersionBit)
+      encodeTerm V_17 = CBOR.TInt (17 `setBit` nodeToClientVersionBit)
+      encodeTerm V_18 = CBOR.TInt (18 `setBit` nodeToClientVersionBit)
 
       decodeTerm (CBOR.TInt tag) =
        case ( tag `clearBit` nodeToClientVersionBit
             , tag `testBit`  nodeToClientVersionBit
             ) of
-        (9, True)  -> Right NodeToClientV_9
-        (10, True) -> Right NodeToClientV_10
-        (11, True) -> Right NodeToClientV_11
-        (12, True) -> Right NodeToClientV_12
-        (13, True) -> Right NodeToClientV_13
-        (14, True) -> Right NodeToClientV_14
-        (15, True) -> Right NodeToClientV_15
-        (16, True) -> Right NodeToClientV_16
-        (17, True) -> Right NodeToClientV_17
-        (18, True) -> Right NodeToClientV_18
+        (9, True)  -> Right V_9
+        (10, True) -> Right V_10
+        (11, True) -> Right V_11
+        (12, True) -> Right V_12
+        (13, True) -> Right V_13
+        (14, True) -> Right V_14
+        (15, True) -> Right V_15
+        (16, True) -> Right V_16
+        (17, True) -> Right V_17
+        (18, True) -> Right V_18
         (n, _)     -> Left ( T.pack "decode NodeToClientVersion: unknown tag: " <> T.pack (show tag)
                             , Just n)
       decodeTerm _  = Left ( T.pack "decode NodeToClientVersion: unexpected term"
@@ -96,16 +96,16 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
 
 -- | Version data for NodeToClient protocol v1
 --
-data NodeToClientVersionData = NodeToClientVersionData
+data VersionData = VersionData
   { networkMagic :: !NetworkMagic
   , query        :: !Bool
   }
   deriving (Eq, Show, Typeable)
 
-instance Acceptable NodeToClientVersionData where
+instance Acceptable VersionData where
     acceptableVersion local remote
       | networkMagic local == networkMagic remote
-      = Accept NodeToClientVersionData
+      = Accept VersionData
           { networkMagic  = networkMagic local
           , query         = query local || query remote
           }
@@ -113,29 +113,29 @@ instance Acceptable NodeToClientVersionData where
                                     ++ show local
                                     ++ " /= " ++ show remote
 
-instance Queryable NodeToClientVersionData where
+instance Queryable VersionData where
     queryVersion = query
 
-nodeToClientCodecCBORTerm :: NodeToClientVersion -> CodecCBORTerm Text NodeToClientVersionData
-nodeToClientCodecCBORTerm v = CodecCBORTerm {encodeTerm, decodeTerm}
+codecCBORTerm :: Version -> CodecCBORTerm Text VersionData
+codecCBORTerm v = CodecCBORTerm {encodeTerm, decodeTerm}
     where
-      encodeTerm :: NodeToClientVersionData -> CBOR.Term
-      encodeTerm NodeToClientVersionData { networkMagic, query }
-        | v >= NodeToClientV_15
+      encodeTerm :: VersionData -> CBOR.Term
+      encodeTerm VersionData { networkMagic, query }
+        | v >= V_15
         = CBOR.TList [CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic), CBOR.TBool query]
         | otherwise
         = CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
 
-      decodeTerm :: CBOR.Term -> Either Text NodeToClientVersionData
+      decodeTerm :: CBOR.Term -> Either Text VersionData
       decodeTerm (CBOR.TList [CBOR.TInt x, CBOR.TBool query])
-        | v >= NodeToClientV_15
+        | v >= V_15
         = decoder x query
       decodeTerm (CBOR.TInt x)
-        | v < NodeToClientV_15
+        | v < V_15
         = decoder x False
       decodeTerm t
         = Left $ T.pack $ "unknown encoding: " ++ show t
 
-      decoder :: Int -> Bool -> Either Text NodeToClientVersionData
-      decoder x query | x >= 0 && x <= 0xffffffff = Right (NodeToClientVersionData (NetworkMagic $ fromIntegral x) query)
+      decoder :: Int -> Bool -> Either Text VersionData
+      decoder x query | x >= 0 && x <= 0xffffffff = Right (VersionData (NetworkMagic $ fromIntegral x) query)
                       | otherwise                 = Left $ T.pack $ "networkMagic out of bound: " <> show x

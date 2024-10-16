@@ -44,13 +44,14 @@ import Network.TypedProtocol.Codec
 
 import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.Block
-import Ouroboros.Network.ControlMessage (continueForever)
+import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM,
+           continueForever)
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.Mock.Chain qualified as Chain
 import Ouroboros.Network.Mock.ConcreteBlock
 import Ouroboros.Network.Mux
 import Ouroboros.Network.NodeToClient (LocalConnectionId)
-import Ouroboros.Network.NodeToNode
+import Ouroboros.Network.NodeToNode qualified as NtN
 import Ouroboros.Network.Point (WithOrigin (..))
 import Ouroboros.Network.Snocket
 import Ouroboros.Network.Socket
@@ -284,7 +285,7 @@ serverChainSync sockAddr slotLength seed = withIOManager $ \iocp -> do
         UnversionedProtocol
         UnversionedProtocolData
         (SomeResponderApplication (app prng)))
-      nullErrorPolicies
+      NtN.nullErrorPolicies
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
@@ -376,7 +377,7 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
                        InitiatorMode LocalAddress LBS.ByteString IO () Void
         chainSync =
           InitiatorProtocolOnly $
-            MiniProtocolCb $ \MinimalInitiatorContext { micConnectionId = connId } channel ->
+            MiniProtocolCb $ \NtN.MinimalInitiatorContext { NtN.micConnectionId = connId } channel ->
               let register = atomically $ do
                              chainvar <- newTVar genesisAnchoredFragment
                              modifyTVar candidateChainsVar
@@ -398,15 +399,15 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
                         InitiatorMode LocalAddress LBS.ByteString IO () Void
         blockFetch =
           InitiatorProtocolOnly $
-            MiniProtocolCb $ \MinimalInitiatorContext { micConnectionId = connId } channel ->
+            MiniProtocolCb $ \NtN.MinimalInitiatorContext { NtN.micConnectionId = connId } channel ->
               bracketDqRegistry registry connId $
-              bracketFetchClient registry (maxBound :: NodeToNodeVersion) connId $ \clientCtx -> do
+              bracketFetchClient registry (maxBound :: NtN.Version) connId $ \clientCtx -> do
                 threadDelay 1000000
                 runPipelinedPeer
                   nullTracer -- (contramap (show . TraceLabelPeer ("block-fetch", getFilePath $ remoteAddress connId)) stdoutTracer)
                   codecBlockFetch
                   channel
-                  (blockFetchClient (maxBound :: NodeToNodeVersion) continueUntilMaxSlot
+                  (blockFetchClient (maxBound :: NtN.Version) continueUntilMaxSlot
                                     nullTracer clientCtx)
 
         blockFetchPolicy :: BlockFetchConsensusInterface
@@ -552,7 +553,7 @@ serverBlockFetch sockAddr slotLength seed = withIOManager $ \iocp -> do
         UnversionedProtocol
         UnversionedProtocolData
         (SomeResponderApplication (app prng)))
-      nullErrorPolicies
+      NtN.nullErrorPolicies
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where

@@ -29,7 +29,7 @@ import Network.TypedProtocol.Core
 import Network.TypedProtocol.Stateful.Codec qualified as Stateful
 import Network.TypedProtocol.Stateful.Codec.CBOR qualified as Stateful
 
-import Ouroboros.Network.NodeToClient.Version qualified as V
+import Ouroboros.Network.NodeToClient.Version qualified as NodeToClient
 import Ouroboros.Network.Protocol.LocalStateQuery.Type
 
 
@@ -41,7 +41,7 @@ codecLocalStateQuery
      ( MonadST m
      , ShowQuery query
      )
-  => V.NodeToClientVersion
+  => NodeToClient.Version
      -- ^ eg whether to allow 'ImmutableTip' in @'MsgAcquire'
   -> (point -> CBOR.Encoding)
   -> (forall s . CBOR.Decoder s point)
@@ -56,7 +56,7 @@ codecLocalStateQuery version
                      encodeResult decodeResult =
     Stateful.mkCodecCborLazyBS encode decode
   where
-    canAcquireImmutable = version >= V.NodeToClientV_16
+    canAcquireImmutable = version >= NodeToClient.V_16
 
     encodeFailure :: AcquireFailure -> CBOR.Encoding
     encodeFailure AcquireFailurePointTooOld     = CBOR.encodeWord8 0

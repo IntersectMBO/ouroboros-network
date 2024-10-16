@@ -5,7 +5,7 @@ module Test.Ouroboros.Network.NodeToClient.Version (tests) where
 
 import Ouroboros.Network.CodecCBORTerm
 import Ouroboros.Network.Magic
-import Ouroboros.Network.NodeToClient.Version
+import Ouroboros.Network.NodeToClient.Version qualified as NodeToClient
 
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
@@ -18,19 +18,19 @@ tests = testGroup "Ouroboros.Network.NodeToClient.Version"
     ]
 
 data VersionAndVersionData =
-    VersionAndVersionData NodeToClientVersion NodeToClientVersionData
+    VersionAndVersionData NodeToClient.Version NodeToClient.VersionData
   deriving Show
 
 instance Arbitrary VersionAndVersionData where
     arbitrary =
       VersionAndVersionData
         <$> elements [ minBound .. maxBound]
-        <*> (NodeToClientVersionData . NetworkMagic <$> arbitrary <*> arbitrary)
+        <*> (NodeToClient.VersionData . NetworkMagic <$> arbitrary <*> arbitrary)
 
 prop_nodeToClientCodec :: VersionAndVersionData -> Bool
 prop_nodeToClientCodec (VersionAndVersionData vNumber vData) =
       case decodeTerm (encodeTerm vData) of
-        Right vData' -> networkMagic vData' == networkMagic vData
+        Right vData' -> NodeToClient.networkMagic vData' == NodeToClient.networkMagic vData
         Left {}      -> False
     where
-      CodecCBORTerm { encodeTerm, decodeTerm } = nodeToClientCodecCBORTerm vNumber
+      CodecCBORTerm { encodeTerm, decodeTerm } = NodeToClient.codecCBORTerm vNumber

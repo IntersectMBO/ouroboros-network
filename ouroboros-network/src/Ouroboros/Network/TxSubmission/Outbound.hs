@@ -24,7 +24,7 @@ import Control.Tracer (Tracer, traceWith)
 
 import Ouroboros.Network.ControlMessage (ControlMessage, ControlMessageSTM,
            timeoutWithControlMessage)
-import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
+import Ouroboros.Network.NodeToNode.Version qualified as NodeToNode
 import Ouroboros.Network.Protocol.TxSubmission2.Client
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
@@ -80,7 +80,7 @@ txSubmissionOutbound
   => Tracer m (TraceTxSubmissionOutbound txid tx)
   -> NumTxIdsToAck  -- ^ Maximum number of unacknowledged txids allowed
   -> TxSubmissionMempoolReader txid tx idx m
-  -> NodeToNodeVersion
+  -> NodeToNode.Version
   -> ControlMessageSTM m
   -> TxSubmissionClient txid tx m ()
 txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version controlMessageSTM =

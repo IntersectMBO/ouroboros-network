@@ -35,7 +35,7 @@ import Ouroboros.Network.Magic
 import Ouroboros.Network.Mock.Chain (Chain, ChainUpdate, Point)
 import Ouroboros.Network.Mock.Chain qualified as Chain
 import Ouroboros.Network.Mock.ProducerState qualified as CPS
-import Ouroboros.Network.NodeToNode
+import Ouroboros.Network.NodeToNode qualified as NtN
 import Ouroboros.Network.Protocol.ChainSync.Client qualified as ChainSync
 import Ouroboros.Network.Protocol.ChainSync.Codec qualified as ChainSync
 import Ouroboros.Network.Protocol.ChainSync.Examples qualified as ChainSync
@@ -115,7 +115,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
 
     producerVar <- newTVarIO (CPS.initChainProducerState chain0)
     consumerVar <- newTVarIO chain0
-    done <- atomically newEmptyTMVar
+    done <- newEmptyTMVarIO
     networkState <- newNetworkMutableState
 
     let Just expectedChain = Chain.applyChainUpdates updates chain0
@@ -162,39 +162,39 @@ demo chain0 updates = withIOManager $ \iocp -> do
       networkState
       (AcceptedConnectionsLimit maxBound maxBound 0)
       producerAddress
-      nodeToNodeHandshakeCodec
+      NtN.nodeToNodeHandshakeCodec
       noTimeLimitsHandshake
-      (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
+      (cborTermVersionDataCodec NtN.codecCBORTerm)
       (HandshakeCallbacks acceptableVersion queryVersion)
-      (simpleSingletonVersions
-        (maxBound :: NodeToNodeVersion)
-        (NodeToNodeVersionData {
-          networkMagic  = NetworkMagic 0,
-          diffusionMode = InitiatorAndResponderDiffusionMode,
-          peerSharing = PeerSharingDisabled,
-          query = False })
+      (NtN.simpleSingletonVersions
+        (maxBound :: NtN.Version)
+        (NtN.VersionData {
+          NtN.networkMagic  = NetworkMagic 0,
+          NtN.diffusionMode = NtN.InitiatorAndResponderDiffusionMode,
+          NtN.peerSharing = PeerSharingDisabled,
+          NtN.query = False })
         (SomeResponderApplication responderApp))
-      nullErrorPolicies
+      NtN.nullErrorPolicies
       $ \realProducerAddress _ -> do
       withAsync
         (connectToNode
           (socketSnocket iocp)
           makeSocketBearer
           ConnectToArgs {
-            ctaHandshakeCodec      = nodeToNodeHandshakeCodec,
+            ctaHandshakeCodec      = NtN.nodeToNodeHandshakeCodec,
             ctaHandshakeTimeLimits = noTimeLimitsHandshake,
-            ctaVersionDataCodec    = cborTermVersionDataCodec nodeToNodeCodecCBORTerm,
+            ctaVersionDataCodec    = cborTermVersionDataCodec NtN.codecCBORTerm,
             ctaConnectTracers      = nullNetworkConnectTracers,
             ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
           }
           (`configureSocket` Nothing)
-          (simpleSingletonVersions
-            (maxBound :: NodeToNodeVersion)
-            (NodeToNodeVersionData {
-              networkMagic  = NetworkMagic 0,
-              diffusionMode = InitiatorOnlyDiffusionMode,
-              peerSharing = PeerSharingDisabled,
-              query = False })
+          (NtN.simpleSingletonVersions
+            (maxBound :: NtN.Version)
+            (NtN.VersionData {
+              NtN.networkMagic  = NetworkMagic 0,
+              NtN.diffusionMode = NtN.InitiatorOnlyDiffusionMode,
+              NtN.peerSharing = PeerSharingDisabled,
+              NtN.query = False })
             initiatorApp)
           (Just consumerAddress)
           realProducerAddress)

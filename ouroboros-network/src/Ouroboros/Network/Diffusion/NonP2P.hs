@@ -29,8 +29,8 @@ import System.Exit (ExitCode)
 import Network.Socket (SockAddr, Socket)
 import Network.Socket qualified as Socket
 
-import Ouroboros.Network.Snocket (LocalAddress, LocalSnocket, LocalSocket (..),
-           SocketSnocket, localSocketFileDescriptor)
+import Ouroboros.Network.Snocket (LocalSnocket, LocalSocket (..), SocketSnocket,
+           localSocketFileDescriptor)
 import Ouroboros.Network.Snocket qualified as Snocket
 import Ouroboros.Network.Socket (NetworkMutableState, NetworkServerTracers (..),
            cleanNetworkMutableState, configureSocket, configureSystemdSocket,
@@ -43,12 +43,7 @@ import Ouroboros.Network.Diffusion.Common hiding (nullTracers)
 import Ouroboros.Network.ErrorPolicy
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.Mux
-import Ouroboros.Network.NodeToClient (NodeToClientVersion,
-           NodeToClientVersionData)
 import Ouroboros.Network.NodeToClient qualified as NodeToClient
-import Ouroboros.Network.NodeToNode (AcceptConnectionsPolicyTrace (..),
-           DiffusionMode (..), NodeToNodeVersion, NodeToNodeVersionData,
-           RemoteAddress)
 import Ouroboros.Network.NodeToNode qualified as NodeToNode
 import Ouroboros.Network.Subscription.Dns
 import Ouroboros.Network.Subscription.Ip
@@ -74,15 +69,15 @@ data TracersExtra = TracersExtra {
         :: Tracer IO (WithDomainName DnsTrace)
 
     , dtErrorPolicyTracer
-        :: Tracer IO (WithAddr SockAddr     ErrorPolicyTrace)
+        :: Tracer IO (WithAddr NodeToNode.Address   ErrorPolicyTrace)
 
     , dtLocalErrorPolicyTracer
-        :: Tracer IO (WithAddr LocalAddress ErrorPolicyTrace)
+        :: Tracer IO (WithAddr NodeToClient.Address ErrorPolicyTrace)
 
       -- | Trace rate limiting of accepted connections
       --
     , dtAcceptPolicyTracer
-        :: Tracer IO AcceptConnectionsPolicyTrace
+        :: Tracer IO NodeToNode.AcceptConnectionsPolicyTrace
     }
 
 nullTracers :: TracersExtra
@@ -144,18 +139,18 @@ mkResponderApp bundle =
 
 run
     :: Tracers
-         RemoteAddress NodeToNodeVersion
-         LocalAddress  NodeToClientVersion
+         NodeToNode.Address NodeToNode.Version
+         NodeToClient.Address NodeToClient.Version
          IO
     -> TracersExtra
     -> Arguments
          IO
-         Socket      RemoteAddress
-         LocalSocket LocalAddress
+         Socket      NodeToNode.Address
+         LocalSocket NodeToClient.Address
     -> ArgumentsExtra
     -> Applications
-         RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
-         LocalAddress  NodeToClientVersion NodeToClientVersionData
+         NodeToNode.Address NodeToNode.Version   NodeToNode.VersionData
+         NodeToClient.Address  NodeToClient.Version NodeToClient.VersionData
          IO a
     -> ApplicationsExtra
     -> IO ()
@@ -208,9 +203,9 @@ run Tracers
           <$> daDnsProducers
 
         serverActions = case diffusionMode of
-          InitiatorAndResponderDiffusionMode ->
+          NodeToNode.InitiatorAndResponderDiffusionMode ->
             runServer snocket networkState <$> addresses
-          InitiatorOnlyDiffusionMode -> []
+          NodeToNode.InitiatorOnlyDiffusionMode -> []
 
         localServerAction = runLocalServer localSnocket networkLocalState
           <$> maybeToList daLocalAddress
@@ -316,8 +311,8 @@ run Tracers
     localErrorPolicy  = NodeToNode.localNetworkErrorPolicy <> daErrorPolicies
 
     runLocalServer :: LocalSnocket
-                   -> NetworkMutableState LocalAddress
-                   -> Either LocalSocket  LocalAddress
+                   -> NetworkMutableState NodeToClient.Address
+                   -> Either LocalSocket  NodeToClient.Address
                    -> IO ()
     runLocalServer sn networkLocalState localAddress =
       bracket
@@ -498,8 +493,8 @@ run Tracers
 
 -- | Contramap context from `ExpandedInitiatorContext` to `MinimalInitiatorContext`.
 --
-expandContext :: MinimalInitiatorContext  RemoteAddress
-              -> ExpandedInitiatorContext RemoteAddress IO
+expandContext :: MinimalInitiatorContext  NodeToNode.Address
+              -> ExpandedInitiatorContext NodeToNode.Address IO
 expandContext MinimalInitiatorContext { micConnectionId = connId } =
               ExpandedInitiatorContext {
                 eicConnectionId    = connId,

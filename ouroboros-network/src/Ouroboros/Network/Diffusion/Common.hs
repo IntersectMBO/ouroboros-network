@@ -86,7 +86,7 @@ data Tracers ntnAddr ntnVersion ntcAddr ntcVersion m = Tracers {
 
       -- | Handshake protocol tracer
     , dtHandshakeTracer
-        :: Tracer m (NodeToNode.HandshakeTr ntnAddr ntnVersion)
+        :: Tracer m (NodeToNode.HandshakeTr' ntnAddr ntnVersion)
 
       --
       -- NodeToClient tracers
@@ -98,7 +98,7 @@ data Tracers ntnAddr ntnVersion ntcAddr ntcVersion m = Tracers {
 
       -- | Handshake protocol tracer for local clients
     , dtLocalHandshakeTracer
-        :: Tracer m (NodeToClient.HandshakeTr ntcAddr ntcVersion)
+        :: Tracer m (NodeToClient.HandshakeTr' ntcAddr ntcVersion)
 
       -- | Diffusion initialisation tracer
     , dtDiffusionTracer

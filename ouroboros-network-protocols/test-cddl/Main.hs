@@ -62,11 +62,9 @@ import Ouroboros.Network.CodecCBORTerm
 import Ouroboros.Network.Magic
 import Ouroboros.Network.Mock.ConcreteBlock qualified as Concrete (Block)
 
-import Ouroboros.Network.NodeToClient.Version (NodeToClientVersion,
-           NodeToClientVersionData (..), nodeToClientCodecCBORTerm)
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..),
-           NodeToNodeVersion (..), NodeToNodeVersionData (..),
-           nodeToNodeCodecCBORTerm)
+import Ouroboros.Network.NodeToClient.Version qualified as NodeToClient
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
+import Ouroboros.Network.NodeToNode.Version qualified as NodeToNode
 
 import Ouroboros.Network.NodeToClient.Version qualified as NtCVersion
 import Ouroboros.Network.NodeToNode.Version qualified as NtNVersion
@@ -230,8 +228,8 @@ tests CDDLSpecs { cddlChainSync
 newtype CDDLSpec ps = CDDLSpec BL.ByteString
 
 data CDDLSpecs = CDDLSpecs {
-    cddlHandshakeNodeToClient        :: CDDLSpec (Handshake NodeToClientVersion CBOR.Term),
-    cddlHandshakeNodeToNodeV13ToLast :: CDDLSpec (Handshake NodeToNodeVersion   CBOR.Term),
+    cddlHandshakeNodeToClient        :: CDDLSpec (Handshake NodeToClient.Version CBOR.Term),
+    cddlHandshakeNodeToNodeV13ToLast :: CDDLSpec (Handshake NodeToNode.Version   CBOR.Term),
     cddlChainSync                    :: CDDLSpec (ChainSync BlockHeader HeaderPoint HeaderTip),
     cddlBlockFetch                   :: CDDLSpec (BlockFetch Block BlockPoint),
     cddlTxSubmission2                :: CDDLSpec (TxSubmission2 TxId Tx),
@@ -244,7 +242,7 @@ data CDDLSpecs = CDDLSpecs {
 
     cddlPeerSharingNodeToNodeV13ToLast :: CDDLSpec (PeerSharing.PeerSharing SockAddr),
 
-    cddlNodeToNodeVersionDataV13ToLast :: CDDLSpec NodeToNodeVersionData
+    cddlNodeToNodeVersionDataV13ToLast :: CDDLSpec NodeToNode.VersionData
   }
 
 
@@ -413,21 +411,21 @@ validateCBOR (CDDLSpec spec) blob =
 --
 newtype NtNHandshakeV13ToLast =
   NtNHandshakeV13ToLast
-    (AnyMessage (Handshake NodeToNodeVersion CBOR.Term))
+    (AnyMessage (Handshake NodeToNode.Version CBOR.Term))
     deriving Show
 
-genNtNHandshake :: Gen NodeToNodeVersion
-                -> Gen (AnyMessage (Handshake NodeToNodeVersion Term))
+genNtNHandshake :: Gen NodeToNode.Version
+                -> Gen (AnyMessage (Handshake NodeToNode.Version Term))
 genNtNHandshake genVersion = oneof
     [     AnyMessage
         . Handshake.MsgProposeVersions
         . Map.fromList
-        . map (\(v, d) -> (v, encodeTerm (nodeToNodeCodecCBORTerm v) d))
+        . map (\(v, d) -> (v, encodeTerm (NodeToNode.codecCBORTerm v) d))
       <$> listOf ((,) <$> genVersion <*> genData)
 
     ,     AnyMessage
         . uncurry Handshake.MsgAcceptVersion
-        . (\(v, d) -> (v, encodeTerm (nodeToNodeCodecCBORTerm v) d))
+        . (\(v, d) -> (v, encodeTerm (NodeToNode.codecCBORTerm v) d))
       <$> ((,) <$> genVersion <*> genData)
 
     ,     AnyMessage
@@ -435,8 +433,8 @@ genNtNHandshake genVersion = oneof
       <$> genRefuseReason
     ]
   where
-    genData :: Gen NodeToNodeVersionData
-    genData = NodeToNodeVersionData
+    genData :: Gen NodeToNode.VersionData
+    genData = NodeToNode.VersionData
           <$> (NetworkMagic <$> arbitrary)
           <*> oneof
                 [ pure InitiatorOnlyDiffusionMode
@@ -447,7 +445,7 @@ genNtNHandshake genVersion = oneof
                       ]
           <*> arbitrary
 
-    genRefuseReason :: Gen (Handshake.RefuseReason NodeToNodeVersion)
+    genRefuseReason :: Gen (Handshake.RefuseReason NodeToNode.Version)
     genRefuseReason = oneof
       [ Handshake.VersionMismatch
           <$> listOf genVersion
@@ -462,30 +460,30 @@ genNtNHandshake genVersion = oneof
 
 instance Arbitrary NtNHandshakeV13ToLast where
   arbitrary = do
-    let genVersion = elements [NodeToNodeV_13 ..]
+    let genVersion = elements [NodeToNode.V_13 ..]
     NtNHandshakeV13ToLast <$> genNtNHandshake genVersion
 
 prop_encodeHandshakeNodeToNodeV13ToLast
-    :: CDDLSpec            (Handshake NodeToNodeVersion CBOR.Term)
+    :: CDDLSpec            (Handshake NodeToNode.Version CBOR.Term)
     -> NtNHandshakeV13ToLast
     -> Property
 prop_encodeHandshakeNodeToNodeV13ToLast spec (NtNHandshakeV13ToLast x) =
   validateEncoder spec nodeToNodeHandshakeCodec x
 
--- TODO: add our regular tests for `Handshake NodeToClientVerision CBOR.Term`
+-- TODO: add our regular tests for `Handshake NodeToClient.Verision CBOR.Term`
 -- codec.
 --
-instance Arbitrary (AnyMessage (Handshake NodeToClientVersion CBOR.Term)) where
+instance Arbitrary (AnyMessage (Handshake NodeToClient.Version CBOR.Term)) where
     arbitrary = oneof
         [     AnyMessage
             . Handshake.MsgProposeVersions
             . Map.fromList
-            . map (\(v, d) -> (v, encodeTerm (nodeToClientCodecCBORTerm v) d))
+            . map (\(v, d) -> (v, encodeTerm (NodeToClient.codecCBORTerm v) d))
           <$> listOf ((,) <$> genVersion <*> genData)
 
         ,     AnyMessage
             . uncurry Handshake.MsgAcceptVersion
-            . (\(v, d) -> (v, encodeTerm (nodeToClientCodecCBORTerm v) d))
+            . (\(v, d) -> (v, encodeTerm (NodeToClient.codecCBORTerm v) d))
           <$> ((,) <$> genVersion <*> genData)
 
         ,     AnyMessage
@@ -493,15 +491,15 @@ instance Arbitrary (AnyMessage (Handshake NodeToClientVersion CBOR.Term)) where
           <$> genRefuseReason
         ]
       where
-        genVersion :: Gen NodeToClientVersion
+        genVersion :: Gen NodeToClient.Version
         genVersion = elements [minBound .. maxBound]
 
-        genData :: Gen NodeToClientVersionData
-        genData = NodeToClientVersionData
+        genData :: Gen NodeToClient.VersionData
+        genData = NodeToClient.VersionData
               <$> (NetworkMagic <$> arbitrary)
               <*> arbitrary
 
-        genRefuseReason :: Gen (Handshake.RefuseReason NodeToClientVersion)
+        genRefuseReason :: Gen (Handshake.RefuseReason NodeToClient.Version)
         genRefuseReason = oneof
           [ Handshake.VersionMismatch
               <$> listOf genVersion
@@ -516,8 +514,8 @@ instance Arbitrary (AnyMessage (Handshake NodeToClientVersion CBOR.Term)) where
 
 
 prop_encodeHandshakeNodeToClient
-    :: CDDLSpec   (Handshake NodeToClientVersion CBOR.Term)
-    -> AnyMessage (Handshake NodeToClientVersion CBOR.Term)
+    :: CDDLSpec   (Handshake NodeToClient.Version CBOR.Term)
+    -> AnyMessage (Handshake NodeToClient.Version CBOR.Term)
     -> Property
 prop_encodeHandshakeNodeToClient spec = validateEncoder spec nodeToClientHandshakeCodec
 
@@ -596,15 +594,15 @@ prop_encodePeerSharingV13ToLast
 prop_encodePeerSharingV13ToLast spec (NtNVersionV13ToLast ntnVersion) =
   validateEncoder spec (peerSharingCodec ntnVersion)
 
-newtype NtNVersionV13ToLast = NtNVersionV13ToLast NodeToNodeVersion
+newtype NtNVersionV13ToLast = NtNVersionV13ToLast NodeToNode.Version
   deriving Show
 
 instance Arbitrary NtNVersionV13ToLast where
-  arbitrary = NtNVersionV13ToLast <$> elements [NodeToNodeV_13 ..]
+  arbitrary = NtNVersionV13ToLast <$> elements [NodeToNode.V_13 ..]
 
-instance Arbitrary NodeToNodeVersionData where
+instance Arbitrary NodeToNode.VersionData where
     arbitrary =
-      NodeToNodeVersionData
+      NodeToNode.VersionData
         <$> (NetworkMagic <$> arbitrary)
         <*> oneof [ pure InitiatorOnlyDiffusionMode
                   , pure InitiatorAndResponderDiffusionMode
@@ -614,7 +612,7 @@ instance Arbitrary NodeToNodeVersionData where
                      ]
         <*> arbitrary
 
-newtype NtNVersionDataV13ToLast = NtNVersionDataV13ToLast (NodeToNodeVersion, NodeToNodeVersionData)
+newtype NtNVersionDataV13ToLast = NtNVersionDataV13ToLast (NodeToNode.Version, NodeToNode.VersionData)
   deriving Show
 
 instance Arbitrary NtNVersionDataV13ToLast where
@@ -624,11 +622,11 @@ instance Arbitrary NtNVersionDataV13ToLast where
     return (NtNVersionDataV13ToLast (ntnVersion, ntnVersionData))
 
 prop_encodeNodeToNodeVersionDataV13ToLast
-    :: CDDLSpec NodeToNodeVersionData
+    :: CDDLSpec NodeToNode.VersionData
     -> NtNVersionDataV13ToLast
     -> Property
 prop_encodeNodeToNodeVersionDataV13ToLast spec (NtNVersionDataV13ToLast (v, a)) =
-  validateCBORTermEncoder spec (nodeToNodeCodecCBORTerm v) a
+  validateCBORTermEncoder spec (NodeToNode.codecCBORTerm v) a
 
 --
 -- Test decoders
@@ -816,7 +814,7 @@ decodeMsgSt codec stoks bs =
           Right {} -> Nothing
 
 unit_decodeHandshakeNodeToNode
-    :: CDDLSpec (Handshake NodeToNodeVersion CBOR.Term)
+    :: CDDLSpec (Handshake NodeToNode.Version CBOR.Term)
     -> Assertion
 unit_decodeHandshakeNodeToNode spec =
     validateDecoder (Just handshakeFix)
@@ -828,7 +826,7 @@ unit_decodeHandshakeNodeToNode spec =
 
 
 unit_decodeHandshakeNodeToClient
-    :: CDDLSpec (Handshake NodeToClientVersion CBOR.Term)
+    :: CDDLSpec (Handshake NodeToClient.Version CBOR.Term)
     -> Assertion
 unit_decodeHandshakeNodeToClient spec =
     validateDecoder (Just handshakeFix)
@@ -848,7 +846,7 @@ unit_decodeChainSync spec =
       [ SomeAgency ChainSync.SingIdle
       , SomeAgency (ChainSync.SingNext ChainSync.SingCanAwait)
       , SomeAgency (ChainSync.SingNext ChainSync.SingMustReply)
-      , SomeAgency (ChainSync.SingIntersect)
+      , SomeAgency ChainSync.SingIntersect
       ]
       100
 
@@ -875,8 +873,8 @@ unit_decodeTxSubmission2 spec =
       [ SomeAgency TxSubmission2.SingInit
       , SomeAgency $ TxSubmission2.SingTxIds TxSubmission2.SingBlocking
       , SomeAgency $ TxSubmission2.SingTxIds TxSubmission2.SingNonBlocking
-      , SomeAgency $ TxSubmission2.SingTxs
-      , SomeAgency $ TxSubmission2.SingIdle
+      , SomeAgency   TxSubmission2.SingTxs
+      , SomeAgency   TxSubmission2.SingIdle
       ]
       100
 
@@ -944,7 +942,7 @@ unit_decodePeerSharingV13ToLast
     :: CDDLSpec (PeerSharing.PeerSharing SockAddr)
     -> Assertion
 unit_decodePeerSharingV13ToLast spec =
-    forM_ [NodeToNodeV_13 ..] $ \v ->
+    forM_ [NodeToNode.V_13 ..] $ \v ->
     validateDecoder Nothing
       spec (peerSharingCodec v)
       [ SomeAgency PeerSharing.SingIdle
@@ -953,11 +951,11 @@ unit_decodePeerSharingV13ToLast spec =
       100
 
 unit_decodeNodeToNodeVersionDataV13ToLast
-    :: CDDLSpec NodeToNodeVersionData
+    :: CDDLSpec NodeToNode.VersionData
     -> Assertion
 unit_decodeNodeToNodeVersionDataV13ToLast spec =
-    forM_ [NodeToNodeV_13 ..] $ \v ->
-    validateCBORTermDecoder Nothing spec (nodeToNodeCodecCBORTerm v) 100
+    forM_ [NodeToNode.V_13 ..] $ \v ->
+    validateCBORTermDecoder Nothing spec (NodeToNode.codecCBORTerm v) 100
 
 --
 -- Utils

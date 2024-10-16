@@ -22,8 +22,8 @@ import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Stateful.Codec qualified as Stateful
 
 import Ouroboros.Network.Block (SlotNo)
-import Ouroboros.Network.NodeToClient.Version
-import Ouroboros.Network.NodeToNode.Version
+import Ouroboros.Network.NodeToClient.Version qualified as NodeToClient
+import Ouroboros.Network.NodeToNode.Version qualified as NodeToNode
 import Ouroboros.Network.Protocol.BlockFetch.Codec.CDDL
 import Ouroboros.Network.Protocol.BlockFetch.Type
 import Ouroboros.Network.Protocol.ChainSync.Codec.CDDL
@@ -58,7 +58,7 @@ main :: IO ()
 main = defaultMain
   [ bgroup "CBOR Codec Benchmarks"
     [ bgroup "NodeToNode Handshake Codec Encode" $
-        let printMsg :: AnyMessage (Handshake NodeToNodeVersion CBOR.Term)
+        let printMsg :: AnyMessage (Handshake NodeToNode.Version CBOR.Term)
                      -> String
             printMsg msg = case msg of
                AnyMessageAndAgency tok (MsgProposeVersions _) -> show tok ++ " MsgProposeVersions"
@@ -72,7 +72,7 @@ main = defaultMain
             | msg <- handshakeMessages
             ]
     , bgroup "NodeToClient Handshake Codec Encode" $
-        let printMsg :: AnyMessage (Handshake NodeToClientVersion CBOR.Term)
+        let printMsg :: AnyMessage (Handshake NodeToClient.Version CBOR.Term)
                      -> String
             printMsg msg = case msg of
                AnyMessageAndAgency tok (MsgProposeVersions _) -> show tok ++ " MsgProposeVersions"
@@ -364,8 +364,8 @@ peerSharingMessages =
 benchmarkCodec :: ( forall (st :: ps) (st' :: ps). NFData (Message ps st st')
                   )
                => String
-               -> (NodeToNodeVersion -> Codec ps DeserialiseFailure IO ByteString)
-               -> NodeToNodeVersion
+               -> (NodeToNode.Version -> Codec ps DeserialiseFailure IO ByteString)
+               -> NodeToNode.Version
                -> AnyMessage ps
                -> [Benchmark]
 benchmarkCodec title getCodec ntnVersion msg =
@@ -375,8 +375,8 @@ benchmarkCodec title getCodec ntnVersion msg =
 
 benchmarkCodecSt :: (forall (st :: ps) (st' :: ps). NFData (Message ps st st'))
                  => String
-                 -> (NodeToNodeVersion -> Stateful.Codec ps DeserialiseFailure f IO ByteString)
-                 -> NodeToNodeVersion
+                 -> (NodeToNode.Version -> Stateful.Codec ps DeserialiseFailure f IO ByteString)
+                 -> NodeToNode.Version
                  -> Stateful.AnyMessage ps f
                  -> [Benchmark]
 benchmarkCodecSt title getCodec ntnVersion msg =
@@ -393,8 +393,8 @@ benchmarkCodecSt title getCodec ntnVersion msg =
 benchmarkEncode :: ( forall (st :: ps) (st' :: ps). NFData (Message ps st st')
                    )
                 => String
-                -> (NodeToNodeVersion -> Codec ps DeserialiseFailure IO ByteString)
-                -> NodeToNodeVersion
+                -> (NodeToNode.Version -> Codec ps DeserialiseFailure IO ByteString)
+                -> NodeToNode.Version
                 -> AnyMessage ps
                 -> Benchmark
 benchmarkEncode title getCodec ntnVersion (AnyMessage msg) =
@@ -411,8 +411,8 @@ benchmarkEncode title getCodec ntnVersion (AnyMessage msg) =
 benchmarkDecode :: forall ps.
                    (forall (st :: ps) (st' :: ps). NFData (Message ps st st'))
                 => String
-                -> (NodeToNodeVersion -> Codec ps DeserialiseFailure IO ByteString)
-                -> NodeToNodeVersion
+                -> (NodeToNode.Version -> Codec ps DeserialiseFailure IO ByteString)
+                -> NodeToNode.Version
                 -> AnyMessage ps
                 -> Benchmark
 benchmarkDecode title getCodec ntnVersion (AnyMessageAndAgency !stok msg) =
@@ -436,8 +436,8 @@ benchmarkDecode title getCodec ntnVersion (AnyMessageAndAgency !stok msg) =
 -- shouldn't be too problematic.
 benchmarkEncodeSt :: (forall (st :: ps) (st' :: ps). NFData (Message ps st st'))
                   => String
-                  -> (NodeToNodeVersion -> Stateful.Codec ps DeserialiseFailure f IO ByteString)
-                  -> NodeToNodeVersion
+                  -> (NodeToNode.Version -> Stateful.Codec ps DeserialiseFailure f IO ByteString)
+                  -> NodeToNode.Version
                   -> Stateful.AnyMessage ps f
                   -> Benchmark
 benchmarkEncodeSt title getCodec ntnVersion (Stateful.AnyMessage f msg) =
@@ -454,8 +454,8 @@ benchmarkEncodeSt title getCodec ntnVersion (Stateful.AnyMessage f msg) =
 benchmarkDecodeSt :: forall ps f.
                      (forall (st :: ps) (st' :: ps). NFData (Message ps st st'))
                   => String
-                  -> (NodeToNodeVersion -> Stateful.Codec ps DeserialiseFailure f IO ByteString)
-                  -> NodeToNodeVersion
+                  -> (NodeToNode.Version -> Stateful.Codec ps DeserialiseFailure f IO ByteString)
+                  -> NodeToNode.Version
                   -> Stateful.AnyMessage ps f
                   -> Benchmark
 benchmarkDecodeSt title getCodec ntnVersion (Stateful.AnyMessageAndAgency !stok !f msg) =

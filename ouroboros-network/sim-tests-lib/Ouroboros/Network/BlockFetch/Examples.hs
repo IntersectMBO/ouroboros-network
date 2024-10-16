@@ -45,7 +45,7 @@ import Ouroboros.Network.Channel
 import Ouroboros.Network.ControlMessage
 import Ouroboros.Network.DeltaQ
 import Ouroboros.Network.Driver
-import Ouroboros.Network.NodeToNode (NodeToNodeVersion (..))
+import Ouroboros.Network.NodeToNode.Version qualified as NodeToNode
 import Ouroboros.Network.Protocol.BlockFetch.Codec
 import Ouroboros.Network.Protocol.BlockFetch.Server
 import Ouroboros.Network.Protocol.BlockFetch.Type
@@ -83,10 +83,10 @@ blockFetchExample0 decisionTracer clientStateTracer clientMsgTracer
                 <- runFetchClientAndServerAsync
                     (contramap (TraceLabelPeer peerno) clientMsgTracer)
                     (contramap (TraceLabelPeer peerno) serverMsgTracer)
-                    (maxBound :: NodeToNodeVersion)
+                    (maxBound :: NodeToNode.Version)
                     clientDelay serverDelay
                     registry peerno
-                    (blockFetchClient (maxBound :: NodeToNodeVersion) controlMessageSTM nullTracer)
+                    (blockFetchClient (maxBound :: NodeToNode.Version) controlMessageSTM nullTracer)
                     (mockBlockFetchServer1 candidateChain)
 
     fetchAsync  <- async $ do
@@ -193,10 +193,10 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
                     [ runFetchClientAndServerAsync
                         (contramap (TraceLabelPeer peerno) clientMsgTracer)
                         (contramap (TraceLabelPeer peerno) serverMsgTracer)
-                        (maxBound :: NodeToNodeVersion)
+                        (maxBound :: NodeToNode.Version)
                         clientDelay serverDelay
                         registry peerno
-                        (blockFetchClient (maxBound :: NodeToNodeVersion) controlMessageSTM nullTracer)
+                        (blockFetchClient (maxBound :: NodeToNode.Version) controlMessageSTM nullTracer)
                         (mockBlockFetchServer1 candidateChain)
                     | (peerno, candidateChain) <- zip [1..] candidateChains
                     ]

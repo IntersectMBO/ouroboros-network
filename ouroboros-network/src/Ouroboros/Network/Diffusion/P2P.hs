@@ -20,7 +20,7 @@ module Ouroboros.Network.Diffusion.P2P
   ( TracersExtra (..)
   , nullTracers
   , ArgumentsExtra (..)
-  , AcceptedConnectionsLimit (..)
+  , NodeToNode.AcceptedConnectionsLimit (..)
   , ApplicationsExtra (..)
   , run
   , Interfaces (..)
@@ -66,9 +66,8 @@ import Network.Socket qualified as Socket
 
 import Network.Mux as Mx (MakeBearer)
 
-import Ouroboros.Network.Snocket (FileDescriptor, LocalAddress,
-           LocalSocket (..), Snocket, localSocketFileDescriptor,
-           makeLocalBearer, makeSocketBearer)
+import Ouroboros.Network.Snocket (FileDescriptor, Snocket,
+           localSocketFileDescriptor, makeLocalBearer, makeSocketBearer)
 import Ouroboros.Network.Snocket qualified as Snocket
 
 import Ouroboros.Network.BlockFetch
@@ -93,39 +92,16 @@ import Ouroboros.Network.InboundGovernor qualified as InboundGovernor
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.Mux hiding (MiniProtocol (..))
 import Ouroboros.Network.MuxMode
-import Ouroboros.Network.NodeToClient (NodeToClientVersion (..),
-           NodeToClientVersionData)
 import Ouroboros.Network.NodeToClient qualified as NodeToClient
-import Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit (..),
-           DiffusionMode (..), NodeToNodeVersion (..),
-           NodeToNodeVersionData (..), RemoteAddress)
 import Ouroboros.Network.NodeToNode qualified as NodeToNode
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
 import Ouroboros.Network.PeerSelection.Churn (PeerChurnArgs (..))
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.Governor.Types
-           (ChurnMode (ChurnModeNormal), ConsensusModePeerTargets (..),
-           DebugPeerSelection (..), PeerSelectionActions, PeerSelectionCounters,
-           PeerSelectionInterfaces (..), PeerSelectionPolicy (..),
-           PeerSelectionState, TracePeerSelection (..),
-           emptyPeerSelectionCounters, emptyPeerSelectionState)
-#ifdef POSIX
-import Ouroboros.Network.PeerSelection.Governor.Types
-           (makeDebugPeerSelectionState)
-#endif
 import Ouroboros.Network.PeerSelection.LedgerPeers (TraceLedgerPeers,
            WithLedgerPeersArgs (..))
-#ifdef POSIX
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
-           LedgerPeersConsensusInterface (..), MinBigLedgerPeersForTrustedState,
-           UseLedgerPeers)
-import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics,
-           fetchynessBlocks, upstreamyness)
-#else
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
-           MinBigLedgerPeersForTrustedState, UseLedgerPeers)
-import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
-#endif
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type
+import Ouroboros.Network.PeerSelection.PeerMetric
 import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.PeerSelection.PeerSelectionActions
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
@@ -726,7 +702,7 @@ runM Interfaces
       $ \localSocket -> do
         localInbInfoChannel <- newInformationChannel
 
-        let localConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0
+        let localConnectionLimits = NodeToNode.AcceptedConnectionsLimit maxBound maxBound 0
 
             localConnectionHandler :: NodeToClientConnectionHandler
                                         ntcFd ntcAddr ntcVersion ntcVersionData m
@@ -1079,7 +1055,7 @@ runM Interfaces
       case diffusionMode of
 
         -- InitiatorOnly mode, run peer selection only:
-        InitiatorOnlyDiffusionMode ->
+        NodeToNode.InitiatorOnlyDiffusionMode ->
           withConnectionManagerInitiatorOnlyMode $ \connectionManager-> do
           debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng daConsensusMode daMinBigLedgerPeersForTrustedState
           diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
@@ -1100,7 +1076,7 @@ runM Interfaces
                                 [ledgerPeersThread, localRootPeersProvider, governorThread, churnGovernorThread]
 
         -- InitiatorAndResponder mode, run peer selection and the server:
-        InitiatorAndResponderDiffusionMode -> do
+        NodeToNode.InitiatorAndResponderDiffusionMode -> do
           inboundInfoChannel  <- newInformationChannel
           withConnectionManagerInitiatorAndResponderMode
             inboundInfoChannel $ \connectionManager ->
@@ -1157,21 +1133,21 @@ runM Interfaces
 --   a wallet and a like local services.
 --
 run
-    :: Tracers RemoteAddress NodeToNodeVersion
-               LocalAddress  NodeToClientVersion
+    :: Tracers NodeToNode.Address NodeToNode.Version
+               NodeToClient.LocalAddress  NodeToClient.Version
                IO
-    -> TracersExtra RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
-                    LocalAddress  NodeToClientVersion NodeToClientVersionData
+    -> TracersExtra NodeToNode.Address NodeToNode.Version   NodeToNode.VersionData
+                    NodeToClient.LocalAddress  NodeToClient.Version NodeToClient.VersionData
                     IOException IO
     -> Arguments IO
-                 Socket      RemoteAddress
-                 LocalSocket LocalAddress
+                 NodeToNode.Socket        NodeToNode.Address
+                 NodeToClient.LocalSocket NodeToClient.LocalAddress
     -> ArgumentsExtra IO
     -> Applications
-         RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
-         LocalAddress  NodeToClientVersion NodeToClientVersionData
+         NodeToNode.Address NodeToNode.Version   NodeToNode.VersionData
+         NodeToClient.LocalAddress  NodeToClient.Version NodeToClient.VersionData
          IO a
-    -> ApplicationsExtra RemoteAddress IO a
+    -> ApplicationsExtra NodeToNode.Address IO a
     -> IO Void
 run tracers tracersExtra args argsExtra apps appsExtra = do
     let tracer = dtDiffusionTracer tracers
@@ -1191,7 +1167,7 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                        haHandshakeCodec  = NodeToNode.nodeToNodeHandshakeCodec,
                        haVersionDataCodec =
                          cborTermVersionDataCodec
-                           NodeToNode.nodeToNodeCodecCBORTerm,
+                           NodeToNode.codecCBORTerm,
                        haAcceptVersion = acceptableVersion,
                        haQueryVersion = queryVersion,
                        haTimeLimits = timeLimitsHandshake
@@ -1202,7 +1178,7 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                        haHandshakeCodec   = NodeToClient.nodeToClientHandshakeCodec,
                        haVersionDataCodec =
                          cborTermVersionDataCodec
-                           NodeToClient.nodeToClientCodecCBORTerm,
+                           NodeToClient.codecCBORTerm,
                        haAcceptVersion = acceptableVersion,
                        haQueryVersion = queryVersion,
                        haTimeLimits = noTimeLimitsHandshake
@@ -1210,10 +1186,10 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
 
                  diInstallSigUSR1Handler
                    :: forall mode x y ntnconn.
-                      NodeToNodeConnectionManager mode Socket RemoteAddress
-                                                  NodeToNodeVersionData NodeToNodeVersion IO x y
-                   -> StrictTVar IO (PeerSelectionState RemoteAddress ntnconn)
-                   -> PeerMetrics IO RemoteAddress
+                      NodeToNodeConnectionManager mode Socket NodeToNode.Address
+                                                  NodeToNode.VersionData NodeToNode.Version IO x y
+                   -> StrictTVar IO (PeerSelectionState NodeToNode.Address ntnconn)
+                   -> PeerMetrics IO NodeToNode.Address
                    -> IO ()
 #ifdef POSIX
                  diInstallSigUSR1Handler = \connectionManager dbgStateVar metrics -> do
@@ -1256,7 +1232,7 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                  diNtnHandshakeArguments,
                  diNtnAddressType = socketAddressType,
                  diNtnDataFlow = ntnDataFlow,
-                 diNtnPeerSharing = peerSharing,
+                 diNtnPeerSharing = NodeToNode.peerSharing,
                  diNtnToPeerAddr = curry IP.toSockAddr,
 
                  diNtcSnocket = Snocket.localSnocket iocp,
@@ -1278,11 +1254,11 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
 -- | Node-To-Node protocol connections which negotiated
 -- `InitiatorAndResponderDiffusionMode` are `Duplex`.
 --
-ntnDataFlow :: NodeToNodeVersionData -> DataFlow
-ntnDataFlow NodeToNodeVersionData { diffusionMode } =
+ntnDataFlow :: NodeToNode.VersionData -> DataFlow
+ntnDataFlow NodeToNode.VersionData { NodeToNode.diffusionMode } =
   case diffusionMode of
-    InitiatorAndResponderDiffusionMode -> Duplex
-    InitiatorOnlyDiffusionMode         -> Unidirectional
+    NodeToNode.InitiatorAndResponderDiffusionMode -> Duplex
+    NodeToNode.InitiatorOnlyDiffusionMode         -> Unidirectional
 
 
 -- | All Node-To-Client protocol connections are considered 'Unidirectional'.

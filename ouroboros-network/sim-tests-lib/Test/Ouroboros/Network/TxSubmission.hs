@@ -47,7 +47,7 @@ import Network.TypedProtocol.Codec
 import Ouroboros.Network.Channel
 import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)
 import Ouroboros.Network.Driver
-import Ouroboros.Network.NodeToNode (NodeToNodeVersion (..))
+import Ouroboros.Network.NodeToNode.Version qualified as NodeToNode
 import Ouroboros.Network.Protocol.TxSubmission2.Client
 import Ouroboros.Network.Protocol.TxSubmission2.Codec
 import Ouroboros.Network.Protocol.TxSubmission2.Server
@@ -256,7 +256,7 @@ txSubmissionSimulation maxUnacked outboundTxs
         nullTracer
         maxUnacked
         (getMempoolReader outboundMempool)
-        (maxBound :: NodeToNodeVersion)
+        (maxBound :: NodeToNode.Version)
         controlMessageSTM
 
     inboundPeer :: Mempool m txid -> TxSubmissionServerPipelined txid (Tx txid) m ()
@@ -266,7 +266,7 @@ txSubmissionSimulation maxUnacked outboundTxs
         maxUnacked
         (getMempoolReader inboundMempool)
         (getMempoolWriter inboundMempool)
-        (maxBound :: NodeToNodeVersion)
+        (maxBound :: NodeToNode.Version)
 
 
 newtype LargeNonEmptyList a = LargeNonEmpty { getLargeNonEmpty :: [a] }

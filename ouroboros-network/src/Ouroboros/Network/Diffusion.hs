@@ -26,12 +26,8 @@ module Ouroboros.Network.Diffusion
 import Control.Exception (IOException)
 import Data.Functor (void)
 
-import Network.Socket (Socket)
-
-import Ouroboros.Network.NodeToClient (LocalAddress, LocalSocket,
-           NodeToClientVersion, NodeToClientVersionData)
-import Ouroboros.Network.NodeToNode (NodeToNodeVersion, NodeToNodeVersionData,
-           RemoteAddress)
+import Ouroboros.Network.NodeToClient qualified as NodeToClient
+import Ouroboros.Network.NodeToNode qualified as NodeToNode
 import Ouroboros.Network.PeerSelection.Governor.Types
 
 import Ouroboros.Network.Diffusion.Common as Common
@@ -47,8 +43,8 @@ data P2P = P2P | NonP2P
 data ExtraTracers (p2p :: P2P) where
   P2PTracers
     :: P2P.TracersExtra
-           RemoteAddress  NodeToNodeVersion   NodeToNodeVersionData
-           LocalAddress   NodeToClientVersion NodeToClientVersionData
+           NodeToNode.Address  NodeToNode.Version   NodeToNode.VersionData
+           NodeToClient.Address   NodeToClient.Version NodeToClient.VersionData
            IOException IO
     -> ExtraTracers 'P2P
 
@@ -85,20 +81,20 @@ data ExtraApplications (p2p :: P2P) ntnAddr m a where
 --
 run :: forall (p2p :: P2P) a.
        Tracers
-         RemoteAddress NodeToNodeVersion
-         LocalAddress  NodeToClientVersion
+         NodeToNode.Address   NodeToNode.Version
+         NodeToClient.Address NodeToClient.Version
          IO
     -> ExtraTracers p2p
     -> Arguments
          IO
-         Socket      RemoteAddress
-         LocalSocket LocalAddress
+         NodeToNode.Socket        NodeToNode.Address
+         NodeToClient.LocalSocket NodeToClient.Address
     -> ExtraArguments p2p IO
     -> Applications
-         RemoteAddress  NodeToNodeVersion   NodeToNodeVersionData
-         LocalAddress   NodeToClientVersion NodeToClientVersionData
+         NodeToNode.Address   NodeToNode.Version   NodeToNode.VersionData
+         NodeToClient.Address NodeToClient.Version NodeToClient.VersionData
          IO a
-    -> ExtraApplications p2p RemoteAddress IO a
+    -> ExtraApplications p2p NodeToNode.Address IO a
     -> IO ()
 run tracers (P2PTracers tracersExtra)
             args (P2PArguments argsExtra)

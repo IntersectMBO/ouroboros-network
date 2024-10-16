@@ -41,7 +41,7 @@ import Control.Tracer (Tracer, traceWith)
 
 import Network.TypedProtocol.Core (N, Nat (..), natToInt)
 
-import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
+import Ouroboros.Network.NodeToNode.Version qualified as NodeToNode
 import Ouroboros.Network.Protocol.Limits
 import Ouroboros.Network.Protocol.TxSubmission2.Server
 import Ouroboros.Network.Protocol.TxSubmission2.Type
@@ -186,7 +186,7 @@ txSubmissionInbound
   -> NumTxIdsToAck  -- ^ Maximum number of unacknowledged txids allowed
   -> TxSubmissionMempoolReader txid tx idx m
   -> TxSubmissionMempoolWriter txid tx idx m
-  -> NodeToNodeVersion
+  -> NodeToNode.Version
   -> TxSubmissionServerPipelined txid tx m ()
 txSubmissionInbound tracer (NumTxIdsToAck maxUnacked) mpReader mpWriter _version =
     TxSubmissionServerPipelined $ do

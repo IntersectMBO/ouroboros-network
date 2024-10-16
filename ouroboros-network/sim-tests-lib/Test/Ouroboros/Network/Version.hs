@@ -5,10 +5,8 @@
 module Test.Ouroboros.Network.Version (tests) where
 
 import Ouroboros.Network.CodecCBORTerm
-import Ouroboros.Network.NodeToClient (NodeToClientVersion (..),
-           nodeToClientVersionCodec)
-import Ouroboros.Network.NodeToNode (NodeToNodeVersion (..),
-           nodeToNodeVersionCodec)
+import Ouroboros.Network.NodeToClient qualified as NodeToClient
+import Ouroboros.Network.NodeToNode qualified as NodeToNode
 
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit
@@ -19,21 +17,21 @@ tests =
   testGroup "Ouroboros.Network.Protocol.Handshake.Version"
     [ testGroup "NodeToClientVersion"
       [ testCase "NodeToClientVersion round-trip codec property"
-                 (roundTripPropAll nodeToClientVersionCodec)
+                 (roundTripPropAll NodeToClient.versionCodec)
       , testCase "NodeToClientVersion should not deserialise as NodeToNode"
                  (crossFailurePropAll
-                   nodeToClientVersionCodec
-                   nodeToNodeVersionCodec
-                   ([minBound .. maxBound] :: [NodeToClientVersion]))
+                   NodeToClient.versionCodec
+                   NodeToNode.versionCodec
+                   ([minBound .. maxBound] :: [NodeToClient.Version]))
       ]
     , testGroup "NodeToNodeVersion"
       [ testCase "NodeToNodeVersion round-trip codec property"
-                 (roundTripPropAll nodeToNodeVersionCodec)
+                 (roundTripPropAll NodeToNode.versionCodec)
       , testCase "NodeToNodeVersion should not deserialise as NodeToClient"
                  (crossFailurePropAll
-                   nodeToNodeVersionCodec
-                   nodeToClientVersionCodec
-                   ([minBound .. maxBound] :: [NodeToNodeVersion]))
+                   NodeToNode.versionCodec
+                   NodeToClient.versionCodec
+                   ([minBound .. maxBound] :: [NodeToNode.Version]))
       ]
     ]
 

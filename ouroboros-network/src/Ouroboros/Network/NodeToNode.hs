@@ -13,18 +13,18 @@
 -- overall node to node protocol, as a collection of mini-protocols.
 --
 module Ouroboros.Network.NodeToNode
-  ( nodeToNodeProtocols
-  , NodeToNodeProtocols (..)
-  , NodeToNodeProtocolsWithExpandedCtx
-  , NodeToNodeProtocolsWithMinimalCtx
+  ( mkOuroborosBundle
+  , Protocols (..)
+  , ProtocolsWithExpandedCtx
+  , ProtocolsWithMinimalCtx
   , MiniProtocolParameters (..)
   , chainSyncProtocolLimits
   , blockFetchProtocolLimits
   , txSubmissionProtocolLimits
   , keepAliveProtocolLimits
   , defaultMiniProtocolParameters
-  , NodeToNodeVersion (..)
-  , NodeToNodeVersionData (..)
+  , NodeToNode.Version (..)
+  , NodeToNode.VersionData (..)
   , NetworkConnectTracers (..)
   , nullNetworkConnectTracers
   , connectTo
@@ -56,14 +56,18 @@ module Ouroboros.Network.NodeToNode
   , dnsSubscriptionWorker
     -- ** Versions
   , Versions (..)
-  , DiffusionMode (..)
+  , NodeToNode.DiffusionMode (..)
   , simpleSingletonVersions
   , foldMapVersions
   , combineVersions
     -- *** Codecs
   , nodeToNodeHandshakeCodec
-  , nodeToNodeVersionCodec
-  , nodeToNodeCodecCBORTerm
+  , NodeToNode.versionCodec
+  , NodeToNode.codecCBORTerm
+    -- ** Handshake
+  , Handshake
+  , HandshakeTr
+  , HandshakeTr'
     -- * Re-exports
   , ExpandedInitiatorContext (..)
   , MinimalInitiatorContext (..)
@@ -71,12 +75,11 @@ module Ouroboros.Network.NodeToNode
   , ConnectionId (..)
   , ControlMessage (..)
   , ControlMessageSTM
-  , RemoteAddress
+  , Address
   , RemoteConnectionId
   , IsBigLedgerPeer (..)
   , NumTxIdsToAck (..)
   , ProtocolLimitFailure
-  , Handshake
   , LocalAddresses (..)
   , Socket
     -- ** Exceptions
@@ -97,7 +100,6 @@ module Ouroboros.Network.NodeToNode
   , WithIPList (..)
   , WithDomainName (..)
   , WithAddr (..)
-  , HandshakeTr
     -- * For Consensus ThreadNet Tests
   , chainSyncMiniProtocolNum
   , blockFetchMiniProtocolNum
@@ -131,13 +133,13 @@ import Ouroboros.Network.Driver.Simple (DecoderFailure)
 import Ouroboros.Network.ErrorPolicy
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.Mux
-import Ouroboros.Network.NodeToNode.Version
+import Ouroboros.Network.NodeToNode.Version qualified as NodeToNode
 import Ouroboros.Network.PeerSelection.Governor.Types
            (PeerSelectionTargets (..))
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.Protocol.Handshake.Codec
-import Ouroboros.Network.Protocol.Handshake.Type
+import Ouroboros.Network.Protocol.Handshake.Type qualified as H
 import Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..))
 import Ouroboros.Network.Snocket
@@ -157,13 +159,22 @@ import Ouroboros.Network.TxSubmission.Outbound qualified as TxOutbound
 import Ouroboros.Network.Util.ShowProxy (ShowProxy, showProxy)
 
 
+-- | A node-to-node handshake protocol type.
+--
+type Handshake = H.Handshake NodeToNode.Version CBOR.Term
+
 -- The Handshake tracer types are simply terrible.
-type HandshakeTr ntnAddr ntnVersion =
+
+-- | A node-to-node polymorphic `H.Handshake` trace.
+type HandshakeTr' ntnAddr ntnVersion =
     WithMuxBearer (ConnectionId ntnAddr)
-                  (TraceSendRecv (Handshake ntnVersion CBOR.Term))
+                  (TraceSendRecv (H.Handshake ntnVersion CBOR.Term))
+
+-- | A node-to-node `Handshake` trace.
+type HandshakeTr = HandshakeTr' Address NodeToNode.Version
 
 
-data NodeToNodeProtocols appType initiatorCtx responderCtx bytes m a b = NodeToNodeProtocols {
+data Protocols appType initiatorCtx responderCtx bytes m a b = Protocols {
     -- | chain-sync mini-protocol
     --
     chainSyncProtocol    :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b,
@@ -186,10 +197,10 @@ data NodeToNodeProtocols appType initiatorCtx responderCtx bytes m a b = NodeToN
 
   }
 
-type NodeToNodeProtocolsWithExpandedCtx appType ntnAddr bytes m a b =
-    NodeToNodeProtocols appType (ExpandedInitiatorContext ntnAddr m) (ResponderContext ntnAddr) bytes m a b
-type NodeToNodeProtocolsWithMinimalCtx  appType ntnAddr bytes m a b =
-    NodeToNodeProtocols appType (MinimalInitiatorContext ntnAddr)  (ResponderContext ntnAddr) bytes m a b
+type ProtocolsWithExpandedCtx appType ntnAddr bytes m a b =
+    Protocols appType (ExpandedInitiatorContext ntnAddr m) (ResponderContext ntnAddr) bytes m a b
+type ProtocolsWithMinimalCtx  appType ntnAddr bytes m a b =
+    Protocols appType (MinimalInitiatorContext ntnAddr)  (ResponderContext ntnAddr) bytes m a b
 
 
 data MiniProtocolParameters = MiniProtocolParameters {
@@ -229,9 +240,9 @@ defaultMiniProtocolParameters = MiniProtocolParameters {
 -- This function specifies the wire format protocol numbers.
 --
 -- The application specific protocol numbers start from 2.  The
--- @'MiniProtocolNum' 0@ is reserved for the 'Handshake' protocol, while
+-- @'MiniProtocolNum' 0@ is reserved for the 'H.Handshake' protocol, while
 -- @'MiniProtocolNum' 1@ is reserved for DeltaQ messages.
--- 'Handshake' protocol is not included in 'NodeToNodeProtocols' as it runs
+-- 'H.Handshake' protocol is not included in 'NodeToNodeProtocols' as it runs
 -- before mux is started but it reusing 'MuxBearer' to send and receive
 -- messages.  Only when the handshake protocol succeeds, we will know which
 -- protocols to run / multiplex.
@@ -241,21 +252,21 @@ defaultMiniProtocolParameters = MiniProtocolParameters {
 -- is helpful to allow a single shared implementation of tools that can analyse
 -- both protocols, e.g.  wireshark plugins.
 --
-nodeToNodeProtocols
+mkOuroborosBundle
   :: MiniProtocolParameters
-  -> NodeToNodeProtocols muxMode initiatorCtx responderCtx bytes m a b
-  -> NodeToNodeVersion
+  -> Protocols muxMode initiatorCtx responderCtx bytes m a b
+  -> NodeToNode.Version
   -> PeerSharing -- ^ Node's own PeerSharing value
   -> OuroborosBundle muxMode initiatorCtx responderCtx bytes m a b
-nodeToNodeProtocols miniProtocolParameters protocols _version ownPeerSharing =
+mkOuroborosBundle miniProtocolParameters protocols _version ownPeerSharing =
     TemperatureBundle
       -- Hot protocols: 'chain-sync', 'block-fetch' and 'tx-submission'.
       (WithHot $
         case protocols of
-          NodeToNodeProtocols { chainSyncProtocol,
-                                blockFetchProtocol,
-                                txSubmissionProtocol
-                              } ->
+          Protocols { chainSyncProtocol,
+                      blockFetchProtocol,
+                      txSubmissionProtocol
+                    } ->
             [ MiniProtocol {
                 miniProtocolNum    = chainSyncMiniProtocolNum,
                 miniProtocolLimits = chainSyncProtocolLimits miniProtocolParameters,
@@ -279,7 +290,7 @@ nodeToNodeProtocols miniProtocolParameters protocols _version ownPeerSharing =
       -- Established protocols: 'keep-alive'.
       (WithEstablished $
         case protocols of
-          NodeToNodeProtocols { keepAliveProtocol, peerSharingProtocol }
+          Protocols { keepAliveProtocol, peerSharingProtocol }
             | ownPeerSharing /= PeerSharingDisabled ->
             [ MiniProtocol {
                 miniProtocolNum    = keepAliveMiniProtocolNum,
@@ -292,7 +303,7 @@ nodeToNodeProtocols miniProtocolParameters protocols _version ownPeerSharing =
                 miniProtocolRun    = peerSharingProtocol
               }
             ]
-          NodeToNodeProtocols { keepAliveProtocol }
+          Protocols { keepAliveProtocol }
             | otherwise ->
             [ MiniProtocol {
                 miniProtocolNum    = keepAliveMiniProtocolNum,
@@ -444,9 +455,9 @@ peerSharingMiniProtocolNum = MiniProtocolNum 10
 --
 connectTo
   :: Snocket IO Socket.Socket Socket.SockAddr
-  -> NetworkConnectTracers Socket.SockAddr NodeToNodeVersion
-  -> Versions NodeToNodeVersion
-              NodeToNodeVersionData
+  -> NetworkConnectTracers Socket.SockAddr NodeToNode.Version
+  -> Versions NodeToNode.Version
+              NodeToNode.VersionData
               (OuroborosApplicationWithMinimalCtx
                  InitiatorMode Socket.SockAddr BL.ByteString IO a b)
   -> Maybe Socket.SockAddr
@@ -457,7 +468,7 @@ connectTo sn tr =
                   ConnectToArgs {
                     ctaHandshakeCodec      = nodeToNodeHandshakeCodec,
                     ctaHandshakeTimeLimits = timeLimitsHandshake,
-                    ctaVersionDataCodec    = cborTermVersionDataCodec nodeToNodeCodecCBORTerm,
+                    ctaVersionDataCodec    = cborTermVersionDataCodec NodeToNode.codecCBORTerm,
                     ctaConnectTracers      = tr,
                     ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
                   }
@@ -481,15 +492,15 @@ connectTo sn tr =
 --
 withServer
   :: SocketSnocket
-  -> NetworkServerTracers Socket.SockAddr NodeToNodeVersion
+  -> NetworkServerTracers Socket.SockAddr NodeToNode.Version
   -> NetworkMutableState Socket.SockAddr
   -> AcceptedConnectionsLimit
   -> Socket.Socket
   -- ^ a configured socket to be used be the server.  The server will call
   -- `bind` and `listen` methods but it will not set any socket or tcp options
   -- on it.
-  -> Versions NodeToNodeVersion
-              NodeToNodeVersionData
+  -> Versions NodeToNode.Version
+              NodeToNode.VersionData
               (OuroborosApplicationWithMinimalCtx
                  ResponderMode Socket.SockAddr BL.ByteString IO a b)
   -> ErrorPolicies
@@ -504,7 +515,7 @@ withServer sn tracers networkState acceptedConnectionsLimit sd versions errPolic
     sd
     nodeToNodeHandshakeCodec
     timeLimitsHandshake
-    (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
+    (cborTermVersionDataCodec NodeToNode.codecCBORTerm)
     (HandshakeCallbacks acceptableVersion queryVersion)
     (SomeResponderApplication <$> versions)
     errPolicies
@@ -518,12 +529,12 @@ ipSubscriptionWorker
     :: forall mode x y.
        ( HasInitiator mode ~ True )
     => SocketSnocket
-    -> NetworkIPSubscriptionTracers Socket.SockAddr NodeToNodeVersion
+    -> NetworkIPSubscriptionTracers Socket.SockAddr NodeToNode.Version
     -> NetworkMutableState Socket.SockAddr
     -> IPSubscriptionParams ()
     -> Versions
-        NodeToNodeVersion
-        NodeToNodeVersionData
+        NodeToNode.Version
+        NodeToNode.VersionData
         (OuroborosApplicationWithMinimalCtx
            mode Socket.SockAddr BL.ByteString IO x y)
     -> IO Void
@@ -550,7 +561,7 @@ ipSubscriptionWorker
           ConnectToArgs {
             ctaHandshakeCodec      = nodeToNodeHandshakeCodec,
             ctaHandshakeTimeLimits = timeLimitsHandshake,
-            ctaVersionDataCodec    = cborTermVersionDataCodec nodeToNodeCodecCBORTerm,
+            ctaVersionDataCodec    = cborTermVersionDataCodec NodeToNode.codecCBORTerm,
             ctaConnectTracers      = NetworkConnectTracers nsMuxTracer nsHandshakeTracer,
             ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
           }
@@ -564,12 +575,12 @@ dnsSubscriptionWorker
     :: forall mode x y.
        ( HasInitiator mode ~ True )
     => SocketSnocket
-    -> NetworkDNSSubscriptionTracers NodeToNodeVersion Socket.SockAddr
+    -> NetworkDNSSubscriptionTracers NodeToNode.Version Socket.SockAddr
     -> NetworkMutableState Socket.SockAddr
     -> DnsSubscriptionParams ()
     -> Versions
-        NodeToNodeVersion
-        NodeToNodeVersionData
+        NodeToNode.Version
+        NodeToNode.VersionData
         (OuroborosApplicationWithMinimalCtx
            mode Socket.SockAddr BL.ByteString IO x y)
     -> IO Void
@@ -598,7 +609,7 @@ dnsSubscriptionWorker
         ConnectToArgs {
           ctaHandshakeCodec      = nodeToNodeHandshakeCodec,
           ctaHandshakeTimeLimits = timeLimitsHandshake,
-          ctaVersionDataCodec    = cborTermVersionDataCodec nodeToNodeCodecCBORTerm,
+          ctaVersionDataCodec    = cborTermVersionDataCodec NodeToNode.codecCBORTerm,
           ctaConnectTracers      = NetworkConnectTracers ndstMuxTracer ndstHandshakeTracer,
           ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
         }
@@ -615,7 +626,7 @@ remoteNetworkErrorPolicy = ErrorPolicies {
           -- version or we refused it.  This is only for outbound connections,
           -- thus we suspend the consumer.
           ErrorPolicy
-            $ \(_ :: HandshakeProtocolError NodeToNodeVersion)
+            $ \(_ :: H.HandshakeProtocolError NodeToNode.Version)
                   -> Just misconfiguredPeer
 
           -- deserialisation failure; this means that the remote peer is either
@@ -750,9 +761,9 @@ localNetworkErrorPolicy = ErrorPolicies {
       epConErrorPolicies = []
     }
 
-type RemoteAddress      = Socket.SockAddr
+type Address = Socket.SockAddr
 
-instance ShowProxy RemoteAddress where
+instance ShowProxy Address where
   showProxy _ = "SockAddr"
 
-type RemoteConnectionId = ConnectionId RemoteAddress
+type RemoteConnectionId = ConnectionId Address

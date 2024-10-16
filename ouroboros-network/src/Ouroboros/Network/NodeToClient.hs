@@ -11,10 +11,10 @@
 -- overall node to client protocol, as a collection of mini-protocols.
 --
 module Ouroboros.Network.NodeToClient
-  ( nodeToClientProtocols
-  , NodeToClientProtocols (..)
-  , NodeToClientVersion (..)
-  , NodeToClientVersionData (..)
+  ( mkOuroborosBundle
+  , Protocols (..)
+  , NodeToClient.Version (..)
+  , NodeToClient.VersionData (..)
   , NetworkConnectTracers (..)
   , nullNetworkConnectTracers
   , connectTo
@@ -42,17 +42,22 @@ module Ouroboros.Network.NodeToClient
   , LocalSnocket
   , localSnocket
   , LocalSocket (..)
+  , Address
   , LocalAddress (..)
     -- * Versions
   , Versions (..)
-  , versionedNodeToClientProtocols
+  , versionedProtocols
   , simpleSingletonVersions
   , foldMapVersions
   , combineVersions
     -- ** Codecs
   , nodeToClientHandshakeCodec
-  , nodeToClientVersionCodec
-  , nodeToClientCodecCBORTerm
+  , NodeToClient.versionCodec
+  , NodeToClient.codecCBORTerm
+    -- ** Handshake
+  , Handshake
+  , HandshakeTr'
+  , HandshakeTr
     -- * Re-exports
   , ConnectionId (..)
   , MinimalInitiatorContext (..)
@@ -67,10 +72,8 @@ module Ouroboros.Network.NodeToClient
   , SuspendDecision (..)
   , TraceSendRecv (..)
   , ProtocolLimitFailure
-  , Handshake
   , LocalAddresses (..)
   , SubscriptionTrace (..)
-  , HandshakeTr
   ) where
 
 import Cardano.Prelude (FatalError)
@@ -101,11 +104,11 @@ import Ouroboros.Network.Driver.Simple (DecoderFailure)
 import Ouroboros.Network.ErrorPolicy
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.Mux
-import Ouroboros.Network.NodeToClient.Version
+import Ouroboros.Network.NodeToClient.Version qualified as NodeToClient
 import Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
 import Ouroboros.Network.Protocol.ChainSync.Type qualified as ChainSync
 import Ouroboros.Network.Protocol.Handshake.Codec
-import Ouroboros.Network.Protocol.Handshake.Type
+import Ouroboros.Network.Protocol.Handshake.Type qualified as H
 import Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
 import Ouroboros.Network.Protocol.LocalStateQuery.Client as LocalStateQuery
 import Ouroboros.Network.Protocol.LocalStateQuery.Type qualified as LocalStateQuery
@@ -121,15 +124,23 @@ import Ouroboros.Network.Subscription.Ip (SubscriptionTrace (..))
 import Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
 import Ouroboros.Network.Tracers
 
+-- | A node-to-client handshake protocol type.
+--
+type Handshake = H.Handshake NodeToClient.Version CBOR.Term
+
 -- The Handshake tracer types are simply terrible.
-type HandshakeTr ntcAddr ntcVersion =
+
+-- | A node-to-client polymorphic `H.Handshake` trace.
+type HandshakeTr' ntcAddr ntcVersion =
     WithMuxBearer (ConnectionId ntcAddr)
-                  (TraceSendRecv (Handshake ntcVersion CBOR.Term))
+                  (TraceSendRecv (H.Handshake ntcVersion CBOR.Term))
+-- | A node-to-client `Handshake` trace.
+type HandshakeTr = HandshakeTr' Address NodeToClient.Version
 
 
 -- | Record of node-to-client mini protocols.
 --
-data NodeToClientProtocols appType ntcAddr bytes m a b = NodeToClientProtocols {
+data Protocols appType ntcAddr bytes m a b = Protocols {
     -- | local chain-sync mini-protocol
     --
     localChainSyncProtocol    :: RunMiniProtocolWithMinimalCtx
@@ -163,14 +174,14 @@ data NodeToClientProtocols appType ntcAddr bytes m a b = NodeToClientProtocols {
 -- shared implementation of tools that can analyse both protocols, e.g.
 -- wireshark plugins.
 --
-nodeToClientProtocols
-  :: NodeToClientProtocols appType addr bytes m a b
-  -> NodeToClientVersion
+mkOuroborosBundle
+  :: Protocols appType addr bytes m a b
+  -> NodeToClient.Version
   -> OuroborosApplicationWithMinimalCtx appType addr bytes m a b
-nodeToClientProtocols protocols version =
+mkOuroborosBundle protocols version =
     OuroborosApplication $
       case protocols of
-        NodeToClientProtocols {
+        Protocols {
             localChainSyncProtocol,
             localTxSubmissionProtocol,
             localStateQueryProtocol,
@@ -182,7 +193,7 @@ nodeToClientProtocols protocols version =
           [ localStateQueryMiniProtocol localStateQueryProtocol
           ] <>
           [ localTxMonitorMiniProtocol localTxMonitorProtocol
-          | version >= NodeToClientV_12
+          | version >= NodeToClient.V_12
           ]
 
   where
@@ -216,18 +227,18 @@ maximumMiniProtocolLimits =
 
 -- | 'Versions' containing a single version of 'nodeToClientProtocols'.
 --
-versionedNodeToClientProtocols
-    :: NodeToClientVersion
-    -> NodeToClientVersionData
-    -> NodeToClientProtocols appType LocalAddress bytes m a b
-    -> Versions NodeToClientVersion
-                NodeToClientVersionData
-                (OuroborosApplicationWithMinimalCtx appType LocalAddress bytes m a b)
-versionedNodeToClientProtocols versionNumber versionData protocols =
+versionedProtocols
+    :: NodeToClient.Version
+    -> NodeToClient.VersionData
+    -> Protocols appType Address bytes m a b
+    -> Versions NodeToClient.Version
+                NodeToClient.VersionData
+                (OuroborosApplicationWithMinimalCtx appType Address bytes m a b)
+versionedProtocols versionNumber versionData protocols =
     simpleSingletonVersions
       versionNumber
       versionData
-      (nodeToClientProtocols protocols versionNumber)
+      (mkOuroborosBundle protocols versionNumber)
 
 -- | A specialised version of 'Ouroboros.Network.Socket.connectToNode'.  It is
 -- a general purpose function which can connect using any version of the
@@ -236,11 +247,11 @@ versionedNodeToClientProtocols versionNumber versionData protocols =
 connectTo
   :: LocalSnocket
   -- ^ callback constructed by 'Ouroboros.Network.IOManager.withIOManager'
-  -> NetworkConnectTracers LocalAddress NodeToClientVersion
-  -> Versions NodeToClientVersion
-              NodeToClientVersionData
+  -> NetworkConnectTracers Address NodeToClient.Version
+  -> Versions NodeToClient.Version
+              NodeToClient.VersionData
               (OuroborosApplicationWithMinimalCtx
-                 InitiatorMode LocalAddress BL.ByteString IO a Void)
+                 InitiatorMode Address BL.ByteString IO a Void)
   -- ^ A dictionary of protocol versions & applications to run on an established
   -- connection.  The application to run will be chosen by initial handshake
   -- protocol (the highest shared version will be chosen).
@@ -255,7 +266,7 @@ connectTo snocket tracers versions path =
       ConnectToArgs {
         ctaHandshakeCodec      = nodeToClientHandshakeCodec,
         ctaHandshakeTimeLimits = noTimeLimitsHandshake,
-        ctaVersionDataCodec    = cborTermVersionDataCodec nodeToClientCodecCBORTerm,
+        ctaVersionDataCodec    = cborTermVersionDataCodec NodeToClient.codecCBORTerm,
         ctaConnectTracers      = tracers,
         ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
       }
@@ -274,20 +285,20 @@ connectTo snocket tracers versions path =
 connectToWithMux
   :: LocalSnocket
   -- ^ callback constructed by 'Ouroboros.Network.IOManager.withIOManager'
-  -> NetworkConnectTracers LocalAddress NodeToClientVersion
-  -> Versions NodeToClientVersion
-              NodeToClientVersionData
+  -> NetworkConnectTracers Address NodeToClient.Version
+  -> Versions NodeToClient.Version
+              NodeToClient.VersionData
               (OuroborosApplicationWithMinimalCtx
-                 InitiatorMode LocalAddress BL.ByteString IO a b)
+                 InitiatorMode Address BL.ByteString IO a b)
   -- ^ A dictionary of protocol versions & applications to run on an established
   -- connection.  The application to run will be chosen by initial handshake
   -- protocol (the highest shared version will be chosen).
   -> FilePath
   -- ^ path of the unix socket or named pipe
-  -> (    ConnectionId LocalAddress
-       -> NodeToClientVersion
-       -> NodeToClientVersionData
-       -> OuroborosApplicationWithMinimalCtx InitiatorMode LocalAddress BL.ByteString IO a b
+  -> (    ConnectionId Address
+       -> NodeToClient.Version
+       -> NodeToClient.VersionData
+       -> OuroborosApplicationWithMinimalCtx InitiatorMode Address BL.ByteString IO a b
        -> Mx.Mux InitiatorMode IO
        -> Async.Async ()
        -> IO x)
@@ -304,7 +315,7 @@ connectToWithMux snocket tracers versions path k =
     ConnectToArgs {
       ctaHandshakeCodec      = nodeToClientHandshakeCodec,
       ctaHandshakeTimeLimits = noTimeLimitsHandshake,
-      ctaVersionDataCodec    = cborTermVersionDataCodec nodeToClientCodecCBORTerm,
+      ctaVersionDataCodec    = cborTermVersionDataCodec NodeToClient.codecCBORTerm,
       ctaConnectTracers      = tracers,
       ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
     }
@@ -322,13 +333,13 @@ connectToWithMux snocket tracers versions path k =
 --
 withServer
   :: LocalSnocket
-  -> NetworkServerTracers LocalAddress NodeToClientVersion
-  -> NetworkMutableState LocalAddress
+  -> NetworkServerTracers Address NodeToClient.Version
+  -> NetworkMutableState Address
   -> LocalSocket
-  -> Versions NodeToClientVersion
-              NodeToClientVersionData
+  -> Versions NodeToClient.Version
+              NodeToClient.VersionData
               (OuroborosApplicationWithMinimalCtx
-                 ResponderMode LocalAddress BL.ByteString IO a b)
+                 ResponderMode Address BL.ByteString IO a b)
   -> ErrorPolicies
   -> IO Void
 withServer sn tracers networkState sd versions errPolicies =
@@ -341,14 +352,14 @@ withServer sn tracers networkState sd versions errPolicies =
     sd
     nodeToClientHandshakeCodec
     noTimeLimitsHandshake
-    (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
+    (cborTermVersionDataCodec NodeToClient.codecCBORTerm)
     (HandshakeCallbacks acceptableVersion queryVersion)
     (SomeResponderApplication <$> versions)
     errPolicies
     (\_ async -> Async.wait async)
 
 type NetworkClientSubcriptionTracers
-    = NetworkSubscriptionTracers Identity LocalAddress NodeToClientVersion
+    = NetworkSubscriptionTracers Identity Address NodeToClient.Version
 
 
 -- | 'ncSubscriptionWorker' which starts given application versions on each
@@ -360,13 +371,13 @@ ncSubscriptionWorker
        )
     => LocalSnocket
     -> NetworkClientSubcriptionTracers
-    -> NetworkMutableState LocalAddress
+    -> NetworkMutableState Address
     -> ClientSubscriptionParams ()
     -> Versions
-        NodeToClientVersion
-        NodeToClientVersionData
+        NodeToClient.Version
+        NodeToClient.VersionData
         (OuroborosApplicationWithMinimalCtx
-           mode LocalAddress BL.ByteString IO x y)
+           mode Address BL.ByteString IO x y)
     -> IO Void
 ncSubscriptionWorker
   sn
@@ -391,7 +402,7 @@ ncSubscriptionWorker
           ConnectToArgs {
             ctaHandshakeCodec      = nodeToClientHandshakeCodec,
             ctaHandshakeTimeLimits = noTimeLimitsHandshake,
-            ctaVersionDataCodec    = cborTermVersionDataCodec nodeToClientCodecCBORTerm,
+            ctaVersionDataCodec    = cborTermVersionDataCodec NodeToClient.codecCBORTerm,
             ctaConnectTracers      = NetworkConnectTracers nsMuxTracer nsHandshakeTracer,
             ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
           }
@@ -415,7 +426,7 @@ networkErrorPolicies = ErrorPolicies
         -- version or we refused it.  This is only for outbound connections to
         -- a local node, thus we throw the exception.
         ErrorPolicy
-          $ \(_ :: HandshakeProtocolError NodeToClientVersion)
+          $ \(_ :: H.HandshakeProtocolError NodeToClient.Version)
                 -> Just ourBug
 
         -- exception thrown by `runPeerWithLimits`
@@ -491,7 +502,8 @@ networkErrorPolicies = ErrorPolicies
     shortDelay :: DiffTime
     shortDelay = 20 -- seconds
 
-type LocalConnectionId = ConnectionId LocalAddress
+type LocalConnectionId = ConnectionId Address
+type Address = LocalAddress
 
 --
 -- Null Protocol Peers
