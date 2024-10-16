@@ -57,7 +57,7 @@ import Network.TypedProtocol.ReqResp.Server
 import Network.TypedProtocol.ReqResp.Type (ReqResp)
 
 import Ouroboros.Network.ConnectionHandler
-import Ouroboros.Network.ConnectionManager.Core
+import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.InformationChannel
            (newInformationChannel)
 import Ouroboros.Network.ConnectionManager.Types
@@ -220,25 +220,25 @@ withBidirectionalConnectionManager snocket makeBearer socket
     establishedRequestsVar <- LazySTM.newTVarIO establishedInitiatorRequests
     let muxTracer = ("mux",) `contramap` nullTracer -- mux tracer
 
-    withConnectionManager
-      ConnectionManagerArguments {
+    CM.with
+      CM.Arguments {
           -- ConnectionManagerTrace
-          cmTracer       = (("cm",) `contramap` debugTracer),
-          cmTrTracer     = (("cm-state",) `contramap` debugTracer),
+          CM.tracer       = ("cm",) `contramap` debugTracer,
+          CM.trTracer     = ("cm-state",) `contramap` debugTracer,
           -- MuxTracer
-          cmMuxTracer    = muxTracer,
-          cmIPv4Address  = localAddress,
-          cmIPv6Address  = Nothing,
-          cmAddressType  = \_ -> Just IPv4Address,
-          cmSnocket      = snocket,
-          cmMakeBearer   = makeBearer,
-          cmConfigureSocket = \_ _ -> return (),
-          cmTimeWaitTimeout = timeWaitTimeout,
-          cmOutboundIdleTimeout = protocolIdleTimeout,
-          connectionDataFlow = \_ -> Duplex,
-          cmPrunePolicy = simplePrunePolicy,
-          cmStdGen      = stdGen,
-          cmConnectionsLimits = AcceptedConnectionsLimit {
+          CM.muxTracer    = muxTracer,
+          CM.ipv4Address  = localAddress,
+          CM.ipv6Address  = Nothing,
+          CM.addressType  = \_ -> Just IPv4Address,
+          CM.snocket      = snocket,
+          CM.makeBearer   = makeBearer,
+          CM.configureSocket = \_ _ -> return (),
+          CM.timeWaitTimeout = timeWaitTimeout,
+          CM.outboundIdleTimeout = protocolIdleTimeout,
+          CM.connectionDataFlow = \_ -> Duplex,
+          CM.prunePolicy = simplePrunePolicy,
+          CM.stdGen      = stdGen,
+          CM.connectionsLimits = AcceptedConnectionsLimit {
               acceptedConnectionsHardLimit = maxBound,
               acceptedConnectionsSoftLimit = maxBound,
               acceptedConnectionsDelay     = 0

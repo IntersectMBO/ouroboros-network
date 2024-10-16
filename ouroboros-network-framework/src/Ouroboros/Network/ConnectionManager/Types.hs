@@ -146,7 +146,6 @@ module Ouroboros.Network.ConnectionManager.Types
   , PromiseWriterException (..)
     -- * Tracing
   , AssertionLocation (..)
-  , ConnectionManagerTrace (..)
   , MaybeUnknown (..)
   , Transition' (..)
   , Transition
@@ -842,39 +841,6 @@ data AssertionLocation peerAddr
   | UnregisterOutboundConnection !(Maybe (ConnectionId peerAddr)) !AbstractState
   | PromotedToWarmRemote         !(Maybe (ConnectionId peerAddr)) !AbstractState
   | DemotedToColdRemote          !(Maybe (ConnectionId peerAddr)) !AbstractState
-  deriving Show
-
--- | 'ConnectionManagerTrace' contains a hole for a trace of single connection
--- which is filled with 'ConnectionHandlerTrace'.
---
-data ConnectionManagerTrace peerAddr handlerTrace
-  = TrIncludeConnection            Provenance peerAddr
-  | TrUnregisterConnection         Provenance peerAddr
-  | TrConnect                      (Maybe peerAddr) -- ^ local address
-                                   peerAddr         -- ^ remote address
-  | TrConnectError                 (Maybe peerAddr) -- ^ local address
-                                   peerAddr         -- ^ remote address
-                                   SomeException
-  | TrTerminatingConnection        Provenance (ConnectionId peerAddr)
-  | TrTerminatedConnection         Provenance peerAddr
-  | TrConnectionHandler            (ConnectionId peerAddr) handlerTrace
-  | TrShutdown
-  | TrConnectionExists             Provenance peerAddr    AbstractState
-  | TrForbiddenConnection          (ConnectionId peerAddr)
-  | TrConnectionFailure            (ConnectionId peerAddr)
-  | TrConnectionNotFound           Provenance peerAddr
-  | TrForbiddenOperation           peerAddr                AbstractState
-  | TrPruneConnections             (Set peerAddr) -- ^ pruning set
-                                   Int            -- ^ number connections that must be pruned
-                                   (Set peerAddr) -- ^ choice set
-  | TrConnectionCleanup            (ConnectionId peerAddr)
-  | TrConnectionTimeWait           (ConnectionId peerAddr)
-  | TrConnectionTimeWaitDone       (ConnectionId peerAddr)
-  | TrConnectionManagerCounters    ConnectionManagerCounters
-  | TrState                        (Map peerAddr AbstractState)
-  -- ^ traced on SIGUSR1 signal, installed in 'runDataDiffusion'
-  | TrUnexpectedlyFalseAssertion   (AssertionLocation peerAddr)
-  -- ^ This case is unexpected at call site.
   deriving Show
 
 

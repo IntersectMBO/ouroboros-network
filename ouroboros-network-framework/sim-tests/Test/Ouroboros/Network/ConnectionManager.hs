@@ -58,7 +58,7 @@ import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
 
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
-import Ouroboros.Network.ConnectionManager.Core
+import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.Test.Utils (verifyAbstractTransition)
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.MuxMode
@@ -646,8 +646,8 @@ mkConnectionHandler snocket =
 -- Consistent type aliases for observed traces.
 --
 
-type TestConnectionState m       = ConnectionState Addr (Handle m) Void Version m
-type TestConnectionManagerTrace  = ConnectionManagerTrace Addr ()
+type TestConnectionState m       = CM.ConnectionState Addr (Handle m) Void Version m
+type TestConnectionManagerTrace  = CM.Trace Addr ()
 type TestTransitionTrace m       = TransitionTrace  Addr (TestConnectionState m)
 type TestAbstractTransitionTrace = AbstractTransitionTrace Addr
 
@@ -729,8 +729,8 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
     experiment = do
         labelThisThread "th-main"
         snocket <- mkSnocket scheduleMap
-        let cmTracer :: Tracer (IOSim s) TestConnectionManagerTrace
-            cmTracer = Tracer (say . show)
+        let tracer :: Tracer (IOSim s) TestConnectionManagerTrace
+            tracer = Tracer (say . show)
                     {--
                       - <> Tracer (\msg -> do
                       -             t <- getMonotonicTime
@@ -739,9 +739,9 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
             -- The above is a useful trick for getting simulation logs in
             -- a ghci session.
 
-            cmTrTracer :: Tracer (IOSim s) (TestTransitionTrace (IOSim s))
-            cmTrTracer =
-              fmap abstractState `contramap`
+            trTracer :: Tracer (IOSim s) (TestTransitionTrace (IOSim s))
+            trTracer =
+              fmap CM.abstractState `contramap`
                    Tracer traceM
                 <> Tracer (say . show)
                 {--
@@ -752,27 +752,27 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
 
         inbgovInfoChannel <- newInformationChannel
         let connectionHandler = mkConnectionHandler snocket
-        result <- withConnectionManager
-          ConnectionManagerArguments {
-              cmTracer,
-              cmTrTracer,
-              cmMuxTracer = nullTracer,
-              cmIPv4Address = myAddress,
-              cmIPv6Address = Nothing,
-              cmAddressType = \_ -> Just IPv4Address,
-              cmSnocket = snocket,
-              cmMakeBearer = makeFDBearer,
-              cmConfigureSocket = \_ _ -> return (),
-              connectionDataFlow = id,
-              cmPrunePolicy = simplePrunePolicy,
-              cmStdGen = Random.mkStdGen rnd,
-              cmConnectionsLimits = AcceptedConnectionsLimit {
+        result <- CM.with
+          CM.Arguments {
+              CM.tracer,
+              CM.trTracer,
+              CM.muxTracer = nullTracer,
+              CM.ipv4Address = myAddress,
+              CM.ipv6Address = Nothing,
+              CM.addressType = \_ -> Just IPv4Address,
+              CM.snocket = snocket,
+              CM.makeBearer = makeFDBearer,
+              CM.configureSocket = \_ _ -> return (),
+              CM.connectionDataFlow = id,
+              CM.prunePolicy = simplePrunePolicy,
+              CM.stdGen = Random.mkStdGen rnd,
+              CM.connectionsLimits = AcceptedConnectionsLimit {
                   acceptedConnectionsHardLimit = maxBound,
                   acceptedConnectionsSoftLimit = maxBound,
                   acceptedConnectionsDelay     = 0
                 },
-              cmTimeWaitTimeout = testTimeWaitTimeout,
-              cmOutboundIdleTimeout = testOutboundIdleTimeout
+              CM.timeWaitTimeout = testTimeWaitTimeout,
+              CM.outboundIdleTimeout = testOutboundIdleTimeout
             }
             connectionHandler
             (\_ -> HandshakeFailure)

@@ -65,8 +65,7 @@ import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionManager.InformationChannel
            (InboundGovernorInfoChannel)
 import Ouroboros.Network.ConnectionManager.InformationChannel qualified as InfoChannel
-import Ouroboros.Network.ConnectionManager.Types hiding
-           (TrUnexpectedlyFalseAssertion)
+import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context
 import Ouroboros.Network.InboundGovernor.Event
 import Ouroboros.Network.InboundGovernor.State

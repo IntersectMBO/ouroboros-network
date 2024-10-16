@@ -43,6 +43,7 @@ import Network.DNS.Types qualified as DNS
 
 import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
 import Ouroboros.Network.ConnectionId
+import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.InboundGovernor qualified as IG
@@ -478,7 +479,7 @@ prop_diffusion_nofail ioSimTrace traceNumber =
          -- the ioSimTrace is infinite, but it will terminate with `AssertionFailed`
          error "impossible!"
 
--- | This test coverage of ConnectionManagerTrace constructors.
+-- | This test coverage of 'CM.Trace' constructors.
 --
 prop_connection_manager_trace_coverage :: AbsBearerInfo
                                        -> DiffusionScript
@@ -490,7 +491,7 @@ prop_connection_manager_trace_coverage defaultBearerInfo diffScript =
                                 diffScript
                                 iosimTracer
 
-      events :: [ConnectionManagerTrace
+      events :: [CM.Trace
                   NtNAddr
                   (ConnectionHandlerTrace NtNVersion NtNVersionData)]
       events = mapMaybe (\case DiffusionConnectionManagerTrace st -> Just st
@@ -2530,7 +2531,7 @@ prop_diffusion_async_demotions ioSimTrace traceNumber =
                            Just $ Right demotions
                          where
                            demotions = Set.singleton (remoteAddress connId)
-                       DiffusionConnectionManagerTrace (TrConnectionCleanup connId) ->
+                       DiffusionConnectionManagerTrace (CM.TrConnectionCleanup connId) ->
                            Just $ Left failures
                          where
                            failures = Just $ Set.singleton (remoteAddress connId)
@@ -2586,7 +2587,7 @@ prop_diffusion_async_demotions ioSimTrace traceNumber =
                            Just $ Left (Just failures)
                          where
                            failures = Set.singleton peeraddr
-                       DiffusionConnectionManagerTrace TrShutdown ->
+                       DiffusionConnectionManagerTrace CM.TrShutdown ->
                            Just $ Left Nothing
 
                        _ -> Nothing
@@ -2773,7 +2774,7 @@ prop_diffusion_cm_valid_transitions ioSimTrace traceNumber =
           abstractTransitionEvents =
             selectDiffusionConnectionManagerTransitionEvents events
 
-          connectionManagerEvents :: [ConnectionManagerTrace
+          connectionManagerEvents :: [CM.Trace
                                         NtNAddr
                                         (ConnectionHandlerTrace
                                           NtNVersion
@@ -3200,7 +3201,7 @@ prop_diffusion_cm_no_dodgy_traces ioSimTrace traceNumber =
   where
     verify_cm_traces :: Trace () DiffusionTestTrace -> Property
     verify_cm_traces events =
-      let connectionManagerEvents :: [ConnectionManagerTrace
+      let connectionManagerEvents :: [CM.Trace
                                         NtNAddr
                                         (ConnectionHandlerTrace
                                           NtNVersion
@@ -3212,9 +3213,9 @@ prop_diffusion_cm_no_dodgy_traces ioSimTrace traceNumber =
 
         in conjoin $ map
              (\ev -> case ev of
-               TrConnectionExists {}    -> counterexample (show ev) False
-               TrForbiddenConnection {} -> counterexample (show ev) False
-               _                        -> property True
+               CM.TrConnectionExists {}    -> counterexample (show ev) False
+               CM.TrForbiddenConnection {} -> counterexample (show ev) False
+               _                           -> property True
              ) connectionManagerEvents
 
 
@@ -3970,7 +3971,7 @@ selectDiffusionPeerSelectionState' f =
 
 selectDiffusionConnectionManagerEvents
   :: Trace () DiffusionTestTrace
-  -> Trace () (ConnectionManagerTrace NtNAddr
+  -> Trace () (CM.Trace NtNAddr
                  (ConnectionHandlerTrace
                     NtNVersion
                     NtNVersionData))

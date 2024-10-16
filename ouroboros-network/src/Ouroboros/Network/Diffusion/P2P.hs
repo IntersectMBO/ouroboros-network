@@ -80,7 +80,7 @@ import Ouroboros.Network.Protocol.Handshake.Version
 import Ouroboros.Network.Socket (configureSocket, configureSystemdSocket)
 
 import Ouroboros.Network.ConnectionHandler
-import Ouroboros.Network.ConnectionManager.Core
+import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.InformationChannel
            (newInformationChannel)
 import Ouroboros.Network.ConnectionManager.Types
@@ -181,7 +181,7 @@ data TracersExtra ntnAddr ntnVersion ntnVersionData
         :: Tracer m (PeerSelectionActionsTrace ntnAddr ntnVersion)
 
     , dtConnectionManagerTracer
-        :: Tracer m (ConnectionManagerTrace
+        :: Tracer m (CM.Trace
                       ntnAddr
                       (ConnectionHandlerTrace
                          ntnVersion
@@ -205,7 +205,7 @@ data TracersExtra ntnAddr ntnVersion ntnVersionData
 
       -- | Connection manager tracer for local clients
     , dtLocalConnectionManagerTracer
-        :: Tracer m (ConnectionManagerTrace
+        :: Tracer m (CM.Trace
                        ntcAddr
                        (ConnectionHandlerTrace
                           ntcVersion
@@ -395,7 +395,7 @@ type NodeToClientConnectionHandler
 
 type NodeToClientConnectionManagerArguments
       ntcFd ntcAddr ntcVersion ntcVersionData m =
-    ConnectionManagerArguments
+    CM.Arguments
       (ConnectionHandlerTrace ntcVersion ntcVersionData)
       ntcFd
       ntcAddr
@@ -747,25 +747,25 @@ runM Interfaces
               :: NodeToClientConnectionManagerArguments
                    ntcFd ntcAddr ntcVersion ntcVersionData m
             localConnectionManagerArguments =
-              ConnectionManagerArguments {
-                  cmTracer              = dtLocalConnectionManagerTracer,
-                  cmTrTracer            = nullTracer, -- TODO: issue #3320
-                  cmMuxTracer           = dtLocalMuxTracer,
-                  cmIPv4Address         = Nothing,
-                  cmIPv6Address         = Nothing,
-                  cmAddressType         = const Nothing,
-                  cmSnocket             = diNtcSnocket,
-                  cmMakeBearer          = diNtcBearer,
-                  cmConfigureSocket     = \_ _ -> return (),
-                  cmTimeWaitTimeout     = local_TIME_WAIT_TIMEOUT,
-                  cmOutboundIdleTimeout = local_PROTOCOL_IDLE_TIMEOUT,
-                  connectionDataFlow    = ntcDataFlow,
-                  cmPrunePolicy         = Diffusion.Policies.prunePolicy,
-                  cmStdGen              = cmLocalStdGen,
-                  cmConnectionsLimits   = localConnectionLimits
+              CM.Arguments {
+                  CM.tracer              = dtLocalConnectionManagerTracer,
+                  CM.trTracer            = nullTracer, -- TODO: issue #3320
+                  CM.muxTracer           = dtLocalMuxTracer,
+                  CM.ipv4Address         = Nothing,
+                  CM.ipv6Address         = Nothing,
+                  CM.addressType         = const Nothing,
+                  CM.snocket             = diNtcSnocket,
+                  CM.makeBearer          = diNtcBearer,
+                  CM.configureSocket     = \_ _ -> return (),
+                  CM.timeWaitTimeout     = local_TIME_WAIT_TIMEOUT,
+                  CM.outboundIdleTimeout = local_PROTOCOL_IDLE_TIMEOUT,
+                  CM.connectionDataFlow    = ntcDataFlow,
+                  CM.prunePolicy         = Diffusion.Policies.prunePolicy,
+                  CM.stdGen              = cmLocalStdGen,
+                  CM.connectionsLimits   = localConnectionLimits
                 }
 
-        withConnectionManager
+        CM.with
           localConnectionManagerArguments
           localConnectionHandler
           classifyHandleError
@@ -802,27 +802,27 @@ runM Interfaces
         exitPolicy :: ExitPolicy a
         exitPolicy = stdExitPolicy daReturnPolicy
 
-      cmIPv4Address
+      ipv4Address
         <- traverse (either (Snocket.getLocalAddr diNtnSnocket) pure)
                     daIPv4Address
-      case cmIPv4Address of
+      case ipv4Address of
         Just addr | Just IPv4Address <- diNtnAddressType addr
                   -> pure ()
                   | otherwise
                   -> throwIO (UnexpectedIPv4Address addr)
         Nothing   -> pure ()
 
-      cmIPv6Address
+      ipv6Address
         <- traverse (either (Snocket.getLocalAddr diNtnSnocket) pure)
                     daIPv6Address
-      case cmIPv6Address of
+      case ipv6Address of
         Just addr | Just IPv6Address <- diNtnAddressType addr
                   -> pure ()
                   | otherwise
                   -> throwIO (UnexpectedIPv6Address addr)
         Nothing   -> pure ()
 
-      lookupReqs <- case (cmIPv4Address, cmIPv6Address) of
+      lookupReqs <- case (ipv4Address, ipv6Address) of
                            (Just _ , Nothing) -> return LookupReqAOnly
                            (Nothing, Just _ ) -> return LookupReqAAAAOnly
                            (Just _ , Just _ ) -> return LookupReqAAndAAAA
@@ -870,28 +870,28 @@ runM Interfaces
             :: forall handle handleError.
                PrunePolicy ntnAddr
             -> StdGen
-            -> ConnectionManagerArguments
+            -> CM.Arguments
                  (ConnectionHandlerTrace ntnVersion ntnVersionData)
                  ntnFd ntnAddr handle handleError ntnVersion ntnVersionData m
-          connectionManagerArguments' prunePolicy cmStdGen =
-            ConnectionManagerArguments {
-                cmTracer              = dtConnectionManagerTracer,
-                cmTrTracer            =
-                  fmap abstractState
+          connectionManagerArguments' prunePolicy stdGen =
+            CM.Arguments {
+                CM.tracer              = dtConnectionManagerTracer,
+                CM.trTracer            =
+                  fmap CM.abstractState
                   `contramap` dtConnectionManagerTransitionTracer,
-                cmMuxTracer           = dtMuxTracer,
-                cmIPv4Address,
-                cmIPv6Address,
-                cmAddressType         = diNtnAddressType,
-                cmSnocket             = diNtnSnocket,
-                cmMakeBearer          = diNtnBearer,
-                cmConfigureSocket     = diNtnConfigureSocket,
-                connectionDataFlow    = diNtnDataFlow,
-                cmPrunePolicy         = prunePolicy,
-                cmStdGen,
-                cmConnectionsLimits   = daAcceptedConnectionsLimit,
-                cmTimeWaitTimeout     = daTimeWaitTimeout,
-                cmOutboundIdleTimeout = daProtocolIdleTimeout
+                CM.muxTracer           = dtMuxTracer,
+                CM.ipv4Address,
+                CM.ipv6Address,
+                CM.addressType         = diNtnAddressType,
+                CM.snocket             = diNtnSnocket,
+                CM.makeBearer          = diNtnBearer,
+                CM.configureSocket     = diNtnConfigureSocket,
+                CM.connectionDataFlow    = diNtnDataFlow,
+                CM.prunePolicy         = prunePolicy,
+                CM.stdGen,
+                CM.connectionsLimits   = daAcceptedConnectionsLimit,
+                CM.timeWaitTimeout     = daTimeWaitTimeout,
+                CM.outboundIdleTimeout = daProtocolIdleTimeout
               }
 
       let peerSelectionPolicy = Diffusion.Policies.simplePeerSelectionPolicy
@@ -918,7 +918,7 @@ runM Interfaces
           --   withConnectionManager:
 
           withConnectionManagerInitiatorOnlyMode =
-            withConnectionManager
+            CM.with
               (connectionManagerArguments' simplePrunePolicy cmStdGen1)
                  -- Server is not running, it will not be able to
                  -- advise which connections to prune.  It's also not
@@ -932,7 +932,7 @@ runM Interfaces
 
           withConnectionManagerInitiatorAndResponderMode
             inbndInfoChannel =
-              withConnectionManager
+              CM.with
                 (connectionManagerArguments' Diffusion.Policies.prunePolicy cmStdGen2)
                 (makeConnectionHandler'
                    SingInitiatorResponderMode
@@ -1222,7 +1222,7 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                      (Signals.Catch
                        (do state <- atomically $ readState connectionManager
                            traceWith (dtConnectionManagerTracer tracersExtra)
-                                     (TrState state)
+                                     (CM.TrState state)
                            ps <- readTVarIO dbgStateVar
                            now <- getMonotonicTime
                            (up, bp, lsj, am) <- atomically $

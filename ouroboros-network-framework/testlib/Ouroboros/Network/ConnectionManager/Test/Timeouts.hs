@@ -21,6 +21,7 @@ import Test.QuickCheck (Arbitrary (..), Property, choose, counterexample, cover,
 import Test.QuickCheck.Monoids (All (..))
 
 import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
+import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Driver.Limits (ProtocolTimeLimits (..))
 import Ouroboros.Network.Protocol.Handshake.Codec (timeLimitsHandshake)
@@ -504,7 +505,7 @@ classifyActivityType as =
     Just {} -> ActiveConn
 
 -- classify negotiated data flow
-classifyPrunings :: [ConnectionManagerTrace
+classifyPrunings :: [CM.Trace
                       addr
                       (ConnectionHandlerTrace
                         prctl
@@ -514,16 +515,16 @@ classifyPrunings =
   Sum
   . length
   . filter ( \ case
-               TrPruneConnections {} -> True
-               _                     -> False
+               CM.TrPruneConnections {} -> True
+               _                        -> False
            )
 
 
 classifyPruning
-  :: ConnectionManagerTrace addr (ConnectionHandlerTrace prctl dataflow)
+  :: CM.Trace addr (ConnectionHandlerTrace prctl dataflow)
   -> Sum Int
-classifyPruning TrPruneConnections {} = Sum 1
-classifyPruning _                     = Sum 0
+classifyPruning CM.TrPruneConnections {} = Sum 1
+classifyPruning _                        = Sum 0
 
 newtype ArbDataFlow = ArbDataFlow DataFlow
   deriving Show

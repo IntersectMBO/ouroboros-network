@@ -69,8 +69,8 @@ import Network.TypedProtocol.Core
 import Network.TypedProtocol.PingPong.Type qualified as PingPong
 
 import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
-import Ouroboros.Network.ConnectionManager.Types (AbstractTransitionTrace,
-           ConnectionManagerTrace)
+import Ouroboros.Network.ConnectionManager.Core qualified as CM
+import Ouroboros.Network.ConnectionManager.Types (AbstractTransitionTrace)
 import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.Diffusion.P2P qualified as Diff.P2P
 import Ouroboros.Network.Driver.Limits (ProtocolSizeLimits (..),
@@ -917,7 +917,7 @@ data DiffusionTestTrace =
     | DiffusionPeerSelectionActionsTrace (PeerSelectionActionsTrace NtNAddr NtNVersion)
     | DiffusionDebugPeerSelectionTrace (DebugPeerSelection NtNAddr)
     | DiffusionConnectionManagerTrace
-        (ConnectionManagerTrace NtNAddr
+        (CM.Trace NtNAddr
           (ConnectionHandlerTrace NtNVersion NtNVersionData))
     | DiffusionDiffusionSimulationTrace DiffusionSimulationTrace
     | DiffusionConnectionManagerTransitionTrace

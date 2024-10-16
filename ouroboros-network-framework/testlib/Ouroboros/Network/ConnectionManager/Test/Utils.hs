@@ -5,6 +5,7 @@ module Ouroboros.Network.ConnectionManager.Test.Utils where
 import Prelude hiding (read)
 
 import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
+import Ouroboros.Network.ConnectionManager.Core as CM
 import Ouroboros.Network.ConnectionManager.Types
 
 import Test.QuickCheck (counterexample, property)
@@ -293,7 +294,7 @@ abstractStateIsFinalTransitionTVarTracing (Transition _ UnknownConnectionSt) = T
 abstractStateIsFinalTransitionTVarTracing _                                  = False
 
 connectionManagerTraceMap
-  :: ConnectionManagerTrace
+  :: CM.Trace
       ntnAddr
       (ConnectionHandlerTrace ntnVersion ntnVersionData)
   -> String

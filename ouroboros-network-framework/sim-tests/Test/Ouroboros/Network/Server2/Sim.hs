@@ -73,8 +73,8 @@ import Network.Mux qualified as Mux
 
 import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionId
+import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.Types
-import Ouroboros.Network.ConnectionManager.Types qualified as CM
 import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.InboundGovernor.State (ConnectionState (..))
 import Ouroboros.Network.InboundGovernor.State qualified as IG
@@ -636,7 +636,7 @@ multinodeExperiment
     -> Tracer m (WithName (Name peerAddr)
                           (IG.Debug peerAddr DataFlowProtocolData))
     -> Tracer m (WithName (Name peerAddr)
-                          (ConnectionManagerTrace
+                          (CM.Trace
                             peerAddr
                             (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
     -> StdGen
@@ -991,7 +991,7 @@ validate_transitions mns@(MultiNodeScript events _) trace =
     -- abstractTransitionEvents = traceWithNameTraceEvents trace
 
     evs :: Trace (SimResult ()) (Either (AbstractTransitionTrace SimAddr)
-                                        (ConnectionManagerTrace SimAddr (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
+                                        (CM.Trace SimAddr (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
     evs = fmap (bimap wnEvent wnEvent)
         . Trace.filter ((MainServer ==) . either wnName wnName)
         . traceSelectTraceEvents fn
@@ -999,7 +999,7 @@ validate_transitions mns@(MultiNodeScript events _) trace =
       where
         fn :: Time -> SimEventType
            -> Maybe (Either (WithName (Name SimAddr) (AbstractTransitionTrace SimAddr))
-                            (WithName (Name SimAddr) (ConnectionManagerTrace SimAddr
+                            (WithName (Name SimAddr) (CM.Trace SimAddr
                                                         (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData))))
         fn _ (EventLog dyn) = Left  <$> fromDynamic dyn
                           <|> Right <$> fromDynamic dyn
@@ -1105,7 +1105,7 @@ prop_connection_manager_no_invalid_traces (Fixed rnd) serverAcc (ArbDataFlow dat
   let trace = runSimTrace sim
 
       connectionManagerEvents :: Trace (SimResult ())
-                                       (ConnectionManagerTrace
+                                       (CM.Trace
                                          SimAddr
                                          (ConnectionHandlerTrace
                                            UnversionedProtocol
@@ -1247,7 +1247,7 @@ prop_connection_manager_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
   let trace = runSimTrace sim
 
       connectionManagerEvents :: Trace (SimResult ())
-                                       (ConnectionManagerTrace
+                                       (CM.Trace
                                          SimAddr
                                          (ConnectionHandlerTrace
                                            UnversionedProtocol
@@ -1274,7 +1274,7 @@ prop_connection_manager_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                             $ counterexample (show v) False
        )
        ( \ case
-          TrConnectionManagerCounters cmc ->
+          CM.TrConnectionManagerCounters cmc ->
             All
               $ counterexample
                   ("Upper bound is: " ++ show upperBound
@@ -1878,7 +1878,7 @@ prop_connection_manager_pruning (Fixed rnd) serverAcc
   let trace = runSimTrace sim
 
       evs :: Trace (SimResult ()) (Either (AbstractTransitionTrace SimAddr)
-                                          (ConnectionManagerTrace SimAddr (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
+                                          (CM.Trace SimAddr (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
       evs = fmap (bimap wnEvent wnEvent)
           . Trace.filter ((MainServer ==) . either wnName wnName)
           . traceSelectTraceEvents fn
@@ -1886,7 +1886,7 @@ prop_connection_manager_pruning (Fixed rnd) serverAcc
         where
           fn :: Time -> SimEventType
              -> Maybe (Either (WithName (Name SimAddr) (AbstractTransitionTrace SimAddr))
-                              (WithName (Name SimAddr) (ConnectionManagerTrace SimAddr
+                              (WithName (Name SimAddr) (CM.Trace SimAddr
                                                           (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData))))
           fn _ (EventLog dyn) = Left  <$> fromDynamic dyn
                             <|> Right <$> fromDynamic dyn
@@ -2086,7 +2086,7 @@ prop_never_above_hardlimit (Fixed rnd) serverAcc
   let trace = runSimTrace sim
 
       connectionManagerEvents :: Trace (SimResult ())
-                                       (ConnectionManagerTrace
+                                       (CM.Trace
                                          SimAddr
                                          (ConnectionHandlerTrace
                                            UnversionedProtocol
@@ -2111,7 +2111,7 @@ prop_never_above_hardlimit (Fixed rnd) serverAcc
             _             -> All False
         )
         ( \ case
-            (TrConnectionManagerCounters cmc) ->
+            (CM.TrConnectionManagerCounters cmc) ->
                   All
                 . counterexample ("HardLimit: " ++ show hardlimit ++
                                   ", but got: " ++ show (inboundConns cmc) ++
@@ -2119,7 +2119,7 @@ prop_never_above_hardlimit (Fixed rnd) serverAcc
                                   show cmc
                                  )
                 $! inboundConns cmc <= fromIntegral hardlimit
-            (TrPruneConnections prunnedSet numberToPrune choiceSet) ->
+            (CM.TrPruneConnections prunnedSet numberToPrune choiceSet) ->
               ( All
               . counterexample (concat
                                [ "prunned set too small: "
@@ -2251,7 +2251,7 @@ multiNodeSimTracer :: ( Alternative (STM m), Monad m, MonadFix m
                    -> Tracer m
                       (WithName
                        (Name SimAddr)
-                        (ConnectionManagerTrace
+                        (CM.Trace
                          SimAddr
                           (ConnectionHandlerTrace
                             UnversionedProtocol DataFlowProtocolData)))
