@@ -18,6 +18,7 @@
 module Ouroboros.Network.InboundGovernor
   ( -- * Run Inbound Protocol Governor
     PublicInboundGovernorState (..)
+  , InboundGovernorArguments (..)
   , withInboundGovernor
     -- * Trace
   , InboundGovernorTrace (..)
@@ -85,6 +86,29 @@ inactionTimeout :: DiffTime
 inactionTimeout = 31.415927
 
 
+data InboundGovernorArguments muxMode socket initiatorCtx peerAddr versionNumber versionData m a b = InboundGovernorArguments {
+      igaTransitionTracer   :: Tracer m (RemoteTransitionTrace peerAddr),
+      -- ^ transition tracer
+      igaTracer             :: Tracer m (InboundGovernorTrace peerAddr),
+      -- ^ main inbound governor tracer
+      igaDebugTracer        :: Tracer m (DebugInboundGovernor peerAddr versionData),
+      -- ^ debug inbound governor tracer
+      igaConnectionDataFlow :: versionData -> DataFlow,
+      -- ^ connection data flow
+      igaInfoChannel        :: InboundGovernorInfoChannel muxMode initiatorCtx peerAddr versionData ByteString m a b,
+      -- ^ 'InformationChannel' which passes 'NewConnectionInfo' for outbound
+      -- connections from connection manager to the inbound governor.
+      igaIdleTimeout        :: Maybe DiffTime,
+      -- ^ protocol idle timeout.  The remote site must restart a mini-protocol
+      -- within given timeframe (Nothing indicates no timeout).
+      igaConnectionManager  :: MuxConnectionManager muxMode socket initiatorCtx
+                                                    (ResponderContext peerAddr) peerAddr
+                                                    versionData versionNumber
+                                                    ByteString m a b
+      -- ^ connection manager
+    }
+
+
 -- | Run the server, which consists of the following components:
 --
 -- * /inbound governor/, it corresponds to p2p-governor on outbound side
@@ -114,17 +138,21 @@ withInboundGovernor :: forall (muxMode :: MuxMode) socket initiatorCtx peerAddr 
                    , Ord peerAddr
                    , HasResponder muxMode ~ True
                    )
-                => Tracer m (RemoteTransitionTrace peerAddr)
-                -> Tracer m (InboundGovernorTrace peerAddr)
-                -> Tracer m (DebugInboundGovernor peerAddr versionData)
-                -> (versionData -> DataFlow)
-                -> InboundGovernorInfoChannel muxMode initiatorCtx peerAddr versionData ByteString m a b
-                -> Maybe DiffTime -- protocol idle timeout
-                -> MuxConnectionManager muxMode socket initiatorCtx (ResponderContext peerAddr) peerAddr versionData versionNumber ByteString m a b
+                => InboundGovernorArguments muxMode socket initiatorCtx peerAddr versionNumber versionData m a b
                 -> (Async m Void -> m (PublicInboundGovernorState peerAddr versionData) -> m x)
                 -> m x
-withInboundGovernor trTracer tracer debugTracer connDataFlow inboundInfoChannel
-                    inboundIdleTimeout connectionManager k = do
+withInboundGovernor
+    InboundGovernorArguments {
+      igaTransitionTracer   = trTracer,
+      igaTracer             = tracer,
+      igaDebugTracer        = debugTracer,
+      igaConnectionDataFlow = connectionDataFlow,
+      igaInfoChannel        = infoChannel,
+      igaIdleTimeout        = idleTimeout,
+      igaConnectionManager  = connectionManager
+    }
+    k
+    = do
     var <- newTVarIO (mkPublicInboundGovernorState emptyState)
     withAsync (inboundGovernorLoop var emptyState
                 `catch`
@@ -179,7 +207,7 @@ withInboundGovernor trTracer tracer debugTracer connDataFlow inboundInfoChannel
                )
             <> Map.foldMapWithKey
                  (    firstMuxToFinish
-                   <> firstMiniProtocolToFinish connDataFlow
+                   <> firstMiniProtocolToFinish connectionDataFlow
                    <> firstPeerPromotedToWarm
                    <> firstPeerPromotedToHot
                    <> firstPeerDemotedToWarm
@@ -190,7 +218,7 @@ withInboundGovernor trTracer tracer debugTracer connDataFlow inboundInfoChannel
                  )
                  (igsConnections state)
             <> FirstToFinish (
-                 NewConnection <$> InfoChannel.readMessage inboundInfoChannel
+                 NewConnection <$> InfoChannel.readMessage infoChannel
                )
             <> FirstToFinish (
                   -- spin the inbound governor loop; it will re-run with new
@@ -274,7 +302,7 @@ withInboundGovernor trTracer tracer debugTracer connDataFlow inboundInfoChannel
                       Nothing -> return Nothing
 
                       Just csCompletionMap -> do
-                        mv <- traverse registerDelay inboundIdleTimeout
+                        mv <- traverse registerDelay idleTimeout
                         let -- initial state is 'RemoteIdle', if the remote end will not
                             -- start any responders this will unregister the inbound side.
                             csRemoteState :: RemoteState m
@@ -377,7 +405,7 @@ withInboundGovernor trTracer tracer debugTracer connDataFlow inboundInfoChannel
               let state' = unregisterConnection connId state
               return (Just connId, state')
             OperationSuccess {}  -> do
-              mv <- traverse registerDelay inboundIdleTimeout
+              mv <- traverse registerDelay idleTimeout
               let timeoutSTM :: STM m ()
                   !timeoutSTM = case mv of
                     Nothing -> retry

@@ -152,15 +152,16 @@ with ServerArguments {
       let sockets = NonEmpty.toList serverSockets
       localAddresses <- traverse (getLocalAddr serverSnocket) sockets
       traceWith tracer (TrServerStarted localAddresses)
-      withInboundGovernor serverTrTracer
-                          inboundGovernorTracer
-                          serverDebugInboundGovernor
-                          serverConnectionDataFlow
-                          serverInboundInfoChannel
-                          serverInboundIdleTimeout
-                          serverConnectionManager
-                        $ \inboundGovernorThread
-                           readPublicInboundState ->
+      withInboundGovernor
+        InboundGovernorArguments {
+          igaTransitionTracer   = serverTrTracer,
+          igaTracer             = inboundGovernorTracer,
+          igaDebugTracer        = serverDebugInboundGovernor,
+          igaConnectionDataFlow = serverConnectionDataFlow,
+          igaInfoChannel        = serverInboundInfoChannel,
+          igaIdleTimeout        = serverInboundIdleTimeout,
+          igaConnectionManager  = serverConnectionManager
+        } $ \inboundGovernorThread readPublicInboundState ->
         withAsync (k inboundGovernorThread readPublicInboundState) $ \actionThread -> do
           let acceptLoops :: [m Void]
               acceptLoops =
