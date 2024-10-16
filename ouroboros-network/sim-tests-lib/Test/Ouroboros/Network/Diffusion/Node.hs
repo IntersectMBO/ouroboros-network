@@ -223,7 +223,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
                     , haTimeLimits           = timeLimitsHandshake
                     }
               , Diff.P2P.diNtnAddressType    = ntnAddressType
-              , Diff.P2P.diNtnDataFlow       = \_ NtNVersionData { ntnDiffusionMode } ->
+              , Diff.P2P.diNtnDataFlow       = \NtNVersionData { ntnDiffusionMode } ->
                   case ntnDiffusionMode of
                     InitiatorOnlyDiffusionMode         -> Unidirectional
                     InitiatorAndResponderDiffusionMode -> Duplex

@@ -1,7 +1,11 @@
 {-# LANGUAGE DataKinds      #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE RankNTypes     #-}
-module Ouroboros.Network.ConnectionManager.InformationChannel where
+module Ouroboros.Network.ConnectionManager.InformationChannel
+  ( InformationChannel (..)
+  , InboundGovernorInfoChannel
+  , newInformationChannel
+  ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
 
@@ -11,7 +15,6 @@ import Ouroboros.Network.ConnectionHandler (Handle)
 import Ouroboros.Network.Context (ResponderContext)
 import Ouroboros.Network.InboundGovernor.Event (NewConnectionInfo)
 import Ouroboros.Network.Mux (MuxMode)
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 
 -- | Information channel.
 --
@@ -26,27 +29,19 @@ data InformationChannel a m =
     writeMessage :: a -> STM m ()
   }
 
--- | A Server control channel which instantiates to 'NewConnection' and 'Handle'.
+-- | A channel which instantiates to 'NewConnectionInfo' and
+-- 'Handle'.
 --
--- It allows to pass 'STM' transactions which will resolve to 'NewConnection'.
--- Server's monitoring thread is the consumer of these messages; there are two
--- producers: accept loop and connection handler for outbound connections.
+-- * /Producer:/ connection manger for duplex outbound connections.
+-- * /Consumer:/ inbound governor.
 --
 type InboundGovernorInfoChannel (muxMode :: MuxMode) initiatorCtx peerAddr versionData bytes m a b =
     InformationChannel (NewConnectionInfo peerAddr (Handle muxMode initiatorCtx (ResponderContext peerAddr) versionData bytes m a b)) m
 
--- | Control Channel between Server and Outbound Governor.
---
--- Control channel that is meant to share inbound connections with the Peer
--- Selection Governor. So the consumer is the Governor and Producer is the
--- Server.
---
-type OutboundGovernorInfoChannel peerAddr m =
-    InformationChannel (peerAddr, PeerSharing) m
 
-
-newInformationChannel :: forall a m.
-                        MonadLabelledSTM m
+-- | Create a new 'InformationChannel' backed by a `TBQueue`.
+--
+newInformationChannel :: forall a m. MonadLabelledSTM m
                       => m (InformationChannel a m)
 newInformationChannel = do
     channel <-
@@ -57,6 +52,7 @@ newInformationChannel = do
         readMessage  = readTBQueue channel,
         writeMessage = writeTBQueue channel
       }
+
 
 -- | The 'InformationChannel's 'TBQueue' depth.
 --

@@ -73,13 +73,12 @@ import Network.TypedProtocol.ReqResp.Type as ReqResp
 
 import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionId
-import Ouroboros.Network.ConnectionManager.Core
+import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context
 import Ouroboros.Network.ControlMessage
 import Ouroboros.Network.Driver.Limits
-import Ouroboros.Network.InboundGovernor (DebugInboundGovernor (..),
-           InboundGovernorTrace (..))
+import Ouroboros.Network.InboundGovernor qualified as InboundGovernor
 import Ouroboros.Network.Mux
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.Protocol.Handshake
@@ -91,7 +90,7 @@ import Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..),
            Queryable (..))
 import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
-import Ouroboros.Network.Server2 (RemoteTransitionTrace, ServerArguments (..))
+import Ouroboros.Network.Server2 (RemoteTransitionTrace)
 import Ouroboros.Network.Server2 qualified as Server
 import Ouroboros.Network.Snocket (Snocket)
 import Ouroboros.Network.Snocket qualified as Snocket
@@ -252,7 +251,7 @@ withInitiatorOnlyConnectionManager
     -> Timeouts
     -> Tracer m (WithName name (AbstractTransitionTrace peerAddr))
     -> Tracer m (WithName name
-                          (ConnectionManagerTrace
+                          (CM.Trace
                             peerAddr
                             (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
     -> StdGen
@@ -271,31 +270,31 @@ withInitiatorOnlyConnectionManager
           DataFlowProtocolData UnversionedProtocol ByteString m [resp] Void
        -> m a)
     -> m a
-withInitiatorOnlyConnectionManager name timeouts trTracer cmTracer cmStdGen snocket makeBearer localAddr
+withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket makeBearer localAddr
                                    nextRequests handshakeTimeLimits acceptedConnLimit k = do
     mainThreadId <- myThreadId
     let muxTracer = (name,) `contramap` nullTracer -- mux tracer
-    withConnectionManager
-      ConnectionManagerArguments {
+    CM.with
+      CM.Arguments {
           -- ConnectionManagerTrace
-          cmTracer    = WithName name
-                        `contramap` cmTracer,
-          cmTrTracer  = (WithName name . fmap abstractState)
+          CM.tracer    = WithName name
+                        `contramap` tracer,
+          CM.trTracer  = (WithName name . fmap CM.abstractState)
                         `contramap` trTracer,
          -- MuxTracer
-          cmMuxTracer = muxTracer,
-          cmIPv4Address = localAddr,
-          cmIPv6Address = Nothing,
-          cmAddressType = \_ -> Just IPv4Address,
-          cmSnocket = snocket,
-          cmMakeBearer = makeBearer,
-          cmConfigureSocket = \_ _ -> return (),
-          connectionDataFlow = \_ (DataFlowProtocolData df _) -> df,
-          cmPrunePolicy = simplePrunePolicy,
-          cmStdGen,
-          cmConnectionsLimits = acceptedConnLimit,
-          cmTimeWaitTimeout = tTimeWaitTimeout timeouts,
-          cmOutboundIdleTimeout = tOutboundIdleTimeout timeouts
+          CM.muxTracer = muxTracer,
+          CM.ipv4Address = localAddr,
+          CM.ipv6Address = Nothing,
+          CM.addressType = \_ -> Just IPv4Address,
+          CM.snocket = snocket,
+          CM.makeBearer = makeBearer,
+          CM.configureSocket = \_ _ -> return (),
+          CM.connectionDataFlow = \(DataFlowProtocolData df _) -> df,
+          CM.prunePolicy = simplePrunePolicy,
+          CM.stdGen,
+          CM.connectionsLimits = acceptedConnLimit,
+          CM.timeWaitTimeout = tTimeWaitTimeout timeouts,
+          CM.outboundIdleTimeout = tOutboundIdleTimeout timeouts
         }
       (makeConnectionHandler
         muxTracer
@@ -420,11 +419,11 @@ withBidirectionalConnectionManager
     -> Tracer m (WithName name (RemoteTransitionTrace peerAddr))
     -> Tracer m (WithName name (AbstractTransitionTrace peerAddr))
     -> Tracer m (WithName name
-                          (ConnectionManagerTrace
+                          (CM.Trace
                             peerAddr
                             (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
-    -> Tracer m (WithName name (InboundGovernorTrace peerAddr))
-    -> Tracer m (WithName name (DebugInboundGovernor peerAddr))
+    -> Tracer m (WithName name (InboundGovernor.Trace peerAddr))
+    -> Tracer m (WithName name (InboundGovernor.Debug peerAddr DataFlowProtocolData))
     -> StdGen
     -> Snocket m socket peerAddr
     -> Mux.MakeBearer m socket
@@ -450,8 +449,8 @@ withBidirectionalConnectionManager
     -> m a
 withBidirectionalConnectionManager name timeouts
                                    inboundTrTracer trTracer
-                                   cmTracer inboundTracer debugTracer
-                                   cmStdGen
+                                   tracer inboundTracer debugTracer
+                                   stdGen
                                    snocket makeBearer
                                    confSock socket
                                    localAddress
@@ -462,27 +461,27 @@ withBidirectionalConnectionManager name timeouts
     inbgovInfoChannel <- newInformationChannel
     let muxTracer = WithName name `contramap` nullTracer -- mux tracer
 
-    withConnectionManager
-      ConnectionManagerArguments {
+    CM.with
+      CM.Arguments {
           -- ConnectionManagerTrace
-          cmTracer    = WithName name
-                        `contramap` cmTracer,
-          cmTrTracer  = (WithName name . fmap abstractState)
+          CM.tracer    = WithName name
+                        `contramap` tracer,
+          CM.trTracer  = (WithName name . fmap CM.abstractState)
                         `contramap` trTracer,
           -- MuxTracer
-          cmMuxTracer    = muxTracer,
-          cmIPv4Address  = localAddress,
-          cmIPv6Address  = Nothing,
-          cmAddressType  = \_ -> Just IPv4Address,
-          cmSnocket      = snocket,
-          cmMakeBearer   = makeBearer,
-          cmConfigureSocket = \sock _ -> confSock sock,
-          cmTimeWaitTimeout = tTimeWaitTimeout timeouts,
-          cmOutboundIdleTimeout = tOutboundIdleTimeout timeouts,
-          connectionDataFlow = \_ (DataFlowProtocolData df _) -> df,
-          cmPrunePolicy = simplePrunePolicy,
-          cmStdGen,
-          cmConnectionsLimits = acceptedConnLimit
+          CM.muxTracer    = muxTracer,
+          CM.ipv4Address  = localAddress,
+          CM.ipv6Address  = Nothing,
+          CM.addressType  = \_ -> Just IPv4Address,
+          CM.snocket      = snocket,
+          CM.makeBearer   = makeBearer,
+          CM.configureSocket = \sock _ -> confSock sock,
+          CM.timeWaitTimeout = tTimeWaitTimeout timeouts,
+          CM.outboundIdleTimeout = tOutboundIdleTimeout timeouts,
+          CM.connectionDataFlow = \(DataFlowProtocolData df _) -> df,
+          CM.prunePolicy = simplePrunePolicy,
+          CM.stdGen,
+          CM.connectionsLimits = acceptedConnLimit
         }
         (makeConnectionHandler
           muxTracer
@@ -507,21 +506,22 @@ withBidirectionalConnectionManager name timeouts
           do
             serverAddr <- Snocket.getLocalAddr snocket socket
             Server.with
-              ServerArguments {
-                  serverSockets = socket :| [],
-                  serverSnocket = snocket,
-                  serverTrTracer =
+              Server.Arguments {
+                  Server.sockets = socket :| [],
+                  Server.snocket = snocket,
+                  Server.trTracer =
                     WithName name `contramap` inboundTrTracer,
-                  serverTracer =
+                  Server.tracer =
                     WithName name `contramap` nullTracer, -- ServerTrace
-                  serverDebugInboundGovernor =
+                  Server.debugInboundGovernor =
                     WithName name `contramap` debugTracer,
-                  serverInboundGovernorTracer =
+                  Server.inboundGovernorTracer =
                     WithName name `contramap` inboundTracer, -- InboundGovernorTrace
-                  serverConnectionLimits = acceptedConnLimit,
-                  serverConnectionManager = connectionManager,
-                  serverInboundIdleTimeout = Just (tProtocolIdleTimeout timeouts),
-                  serverInboundInfoChannel = inbgovInfoChannel
+                  Server.connectionLimits = acceptedConnLimit,
+                  Server.connectionManager = connectionManager,
+                  Server.connectionDataFlow = \(DataFlowProtocolData df _) -> df,
+                  Server.inboundIdleTimeout = Just (tProtocolIdleTimeout timeouts),
+                  Server.inboundInfoChannel = inbgovInfoChannel
                 }
               (\inboundGovernorAsync _ -> k connectionManager serverAddr inboundGovernorAsync)
           `catch` \(e :: SomeException) -> do

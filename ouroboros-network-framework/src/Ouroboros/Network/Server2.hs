@@ -13,17 +13,18 @@
 
 -- | Server implementation based on 'ConnectionManager'
 --
+-- This module should be imported qualified.
+--
 module Ouroboros.Network.Server2
-  ( ServerArguments (..)
-  , PublicInboundGovernorState (..)
+  ( Arguments (..)
     -- * Run server
   , with
     -- * Trace
-  , ServerTrace (..)
+  , Trace (..)
   , AcceptConnectionsPolicyTrace (..)
-  , RemoteSt (..)
-  , RemoteTransition
-  , RemoteTransitionTrace
+  , InboundGovernor.RemoteSt (..)
+  , InboundGovernor.RemoteTransition
+  , InboundGovernor.RemoteTransitionTrace
   ) where
 
 import Control.Applicative (Alternative)
@@ -50,7 +51,7 @@ import Ouroboros.Network.ConnectionManager.InformationChannel
            (InboundGovernorInfoChannel)
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context (ResponderContext)
-import Ouroboros.Network.InboundGovernor
+import Ouroboros.Network.InboundGovernor qualified as InboundGovernor
 import Ouroboros.Network.Mux
 import Ouroboros.Network.Server.RateLimiting
 import Ouroboros.Network.Snocket
@@ -63,28 +64,30 @@ import Ouroboros.Network.Snocket
 
 -- | Server static configuration.
 --
-data ServerArguments (muxMode  :: MuxMode) socket initiatorCtx peerAddr versionData versionNumber bytes m a b =
-    ServerArguments {
-      serverSockets               :: NonEmpty socket,
-      serverSnocket               :: Snocket m socket peerAddr,
-      serverTracer                :: Tracer m (ServerTrace peerAddr),
-      serverTrTracer              :: Tracer m (RemoteTransitionTrace peerAddr),
-      serverInboundGovernorTracer :: Tracer m (InboundGovernorTrace peerAddr),
-      serverDebugInboundGovernor  :: Tracer m (DebugInboundGovernor peerAddr),
-      serverConnectionLimits      :: AcceptedConnectionsLimit,
-      serverConnectionManager     :: MuxConnectionManager muxMode socket initiatorCtx (ResponderContext peerAddr)
+data Arguments (muxMode  :: MuxMode) socket initiatorCtx peerAddr versionData versionNumber bytes m a b =
+    Arguments {
+      sockets               :: NonEmpty socket,
+      snocket               :: Snocket m socket peerAddr,
+      tracer                :: Tracer m (Trace peerAddr),
+      trTracer              :: Tracer m (InboundGovernor.RemoteTransitionTrace peerAddr),
+      inboundGovernorTracer :: Tracer m (InboundGovernor.Trace peerAddr),
+      debugInboundGovernor  :: Tracer m (InboundGovernor.Debug peerAddr versionData),
+      connectionLimits      :: AcceptedConnectionsLimit,
+      connectionManager     :: MuxConnectionManager muxMode socket initiatorCtx (ResponderContext peerAddr)
                                                           peerAddr versionData versionNumber bytes m a b,
 
       -- | Time for which all protocols need to be idle to trigger
       -- 'DemotedToCold' transition.
       --
-      serverInboundIdleTimeout    :: Maybe DiffTime,
+      inboundIdleTimeout    :: Maybe DiffTime,
+
+      connectionDataFlow    :: versionData -> DataFlow,
 
       -- | Server control var is passed as an argument; this allows to use the
       -- server to run and manage responders which needs to be started on
       -- inbound connections.
       --
-      serverInboundInfoChannel    :: InboundGovernorInfoChannel muxMode initiatorCtx peerAddr versionData
+      inboundInfoChannel    :: InboundGovernorInfoChannel muxMode initiatorCtx peerAddr versionData
                                                                 bytes m a b
     }
 
@@ -123,45 +126,48 @@ with :: forall muxMode socket initiatorCtx peerAddr versionData versionNumber m 
        , Ord      peerAddr
        , Show     peerAddr
        )
-    => ServerArguments muxMode socket initiatorCtx peerAddr versionData versionNumber ByteString m a b
+    => Arguments muxMode socket initiatorCtx peerAddr versionData versionNumber ByteString m a b
     -- ^ record which holds all server arguments
-    -> (Async m Void -> m (PublicInboundGovernorState peerAddr versionData) -> m x)
+    -> (Async m Void -> m (InboundGovernor.PublicState peerAddr versionData) -> m x)
     -- ^ a callback which receives a handle to inbound governor thread and can
-    -- read `PublicInboundGovernorState`.
+    -- read `PublicState`.
     --
     -- Note that as soon as the callback returns, all threads run by the server
     -- will be stopped.
     -> m x
-with ServerArguments {
-      serverSockets,
-      serverSnocket,
-      serverTrTracer,
-      serverTracer = tracer,
-      serverInboundGovernorTracer = inboundGovernorTracer,
-      serverDebugInboundGovernor,
-      serverConnectionLimits =
-        serverLimits@AcceptedConnectionsLimit { acceptedConnectionsHardLimit = hardLimit },
-      serverInboundIdleTimeout,
-      serverConnectionManager,
-      serverInboundInfoChannel
+with Arguments {
+      sockets = socks,
+      snocket,
+      trTracer,
+      tracer = tracer,
+      inboundGovernorTracer = inboundGovernorTracer,
+      debugInboundGovernor,
+      connectionLimits =
+        limits@AcceptedConnectionsLimit { acceptedConnectionsHardLimit = hardLimit },
+      inboundIdleTimeout,
+      connectionManager,
+      connectionDataFlow,
+      inboundInfoChannel
     }
     k = do
-      let sockets = NonEmpty.toList serverSockets
-      localAddresses <- traverse (getLocalAddr serverSnocket) sockets
+      let sockets = NonEmpty.toList socks
+      localAddresses <- traverse (getLocalAddr snocket) sockets
       traceWith tracer (TrServerStarted localAddresses)
-      withInboundGovernor serverTrTracer
-                          inboundGovernorTracer
-                          serverDebugInboundGovernor
-                          serverInboundInfoChannel
-                          serverInboundIdleTimeout
-                          serverConnectionManager
-                        $ \inboundGovernorThread
-                           readPublicInboundState ->
+      InboundGovernor.with
+        InboundGovernor.Arguments {
+          InboundGovernor.transitionTracer   = trTracer,
+          InboundGovernor.tracer             = inboundGovernorTracer,
+          InboundGovernor.debugTracer        = debugInboundGovernor,
+          InboundGovernor.connectionDataFlow = connectionDataFlow,
+          InboundGovernor.infoChannel        = inboundInfoChannel,
+          InboundGovernor.idleTimeout        = inboundIdleTimeout,
+          InboundGovernor.connectionManager  = connectionManager
+        } $ \inboundGovernorThread readPublicInboundState ->
         withAsync (k inboundGovernorThread readPublicInboundState) $ \actionThread -> do
           let acceptLoops :: [m Void]
               acceptLoops =
-                          [ (accept serverSnocket socket >>= acceptLoop localAddress)
-                              `finally` close serverSnocket socket
+                          [ (accept snocket socket >>= acceptLoop localAddress)
+                              `finally` close snocket socket
                           | (localAddress, socket) <- localAddresses `zip` sockets
                           ]
           -- race all `acceptLoops` with `actionThread` and
@@ -229,8 +235,8 @@ with ServerArguments {
           result <- unmask $ do
             runConnectionRateLimits
               (TrAcceptPolicyTrace `contramap` tracer)
-              (numberOfConnections serverConnectionManager)
-              serverLimits
+              (numberOfConnections connectionManager)
+              limits
             runAccept acceptOne
 
           case result of
@@ -256,17 +262,17 @@ with ServerArguments {
                     do a <-
                          unmask
                            (includeInboundConnection
-                             serverConnectionManager
+                             connectionManager
                              hardLimit socket peerAddr)
                        case a of
                          Connected {}    -> pure ()
                          Disconnected {} -> do
-                           close serverSnocket socket
+                           close snocket socket
                            pure ()
                     `onException`
-                      close serverSnocket socket
+                      close snocket socket
               `onException`
-                 close serverSnocket socket
+                 close snocket socket
               )
               >> go unmask acceptNext
 
@@ -274,7 +280,7 @@ with ServerArguments {
 -- Trace
 --
 
-data ServerTrace peerAddr
+data Trace peerAddr
     = TrAcceptConnection            peerAddr
     | TrAcceptError                 SomeException
     | TrAcceptPolicyTrace           AcceptConnectionsPolicyTrace

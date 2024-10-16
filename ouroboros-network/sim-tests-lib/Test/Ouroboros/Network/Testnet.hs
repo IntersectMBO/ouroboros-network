@@ -43,9 +43,10 @@ import Network.DNS.Types qualified as DNS
 
 import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
 import Ouroboros.Network.ConnectionId
+import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
-import Ouroboros.Network.InboundGovernor hiding (TrUnexpectedlyFalseAssertion)
+import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.PeerStateActions
@@ -54,7 +55,7 @@ import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as Estab
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSelection.Types
-import Ouroboros.Network.Server2 (ServerTrace (..))
+import Ouroboros.Network.Server2 qualified as Server
 import Ouroboros.Network.Testing.Data.AbsBearerInfo
 import Ouroboros.Network.Testing.Data.Script
 import Ouroboros.Network.Testing.Data.Signal
@@ -478,7 +479,7 @@ prop_diffusion_nofail ioSimTrace traceNumber =
          -- the ioSimTrace is infinite, but it will terminate with `AssertionFailed`
          error "impossible!"
 
--- | This test coverage of ConnectionManagerTrace constructors.
+-- | This test coverage of 'CM.Trace' constructors.
 --
 prop_connection_manager_trace_coverage :: AbsBearerInfo
                                        -> DiffusionScript
@@ -490,7 +491,7 @@ prop_connection_manager_trace_coverage defaultBearerInfo diffScript =
                                 diffScript
                                 iosimTracer
 
-      events :: [ConnectionManagerTrace
+      events :: [CM.Trace
                   NtNAddr
                   (ConnectionHandlerTrace NtNVersion NtNVersionData)]
       events = mapMaybe (\case DiffusionConnectionManagerTrace st -> Just st
@@ -555,7 +556,7 @@ prop_inbound_governor_trace_coverage defaultBearerInfo diffScript =
                                 diffScript
                                 iosimTracer
 
-      events :: [InboundGovernorTrace NtNAddr]
+      events :: [IG.Trace NtNAddr]
       events = mapMaybe (\case DiffusionInboundGovernorTrace st -> Just st
                                _                                -> Nothing
                         )
@@ -584,7 +585,7 @@ prop_inbound_governor_transitions_coverage defaultBearerInfo diffScript =
                                 diffScript
                                 iosimTracer
 
-      events :: [RemoteTransitionTrace NtNAddr]
+      events :: [IG.RemoteTransitionTrace NtNAddr]
       events = mapMaybe (\case DiffusionInboundGovernorTransitionTrace st ->
                                     Just st
                                _ -> Nothing
@@ -1055,7 +1056,7 @@ prop_server_trace_coverage defaultBearerInfo diffScript =
                                 diffScript
                                 iosimTracer
 
-      events :: [ServerTrace NtNAddr]
+      events :: [Server.Trace NtNAddr]
       events = mapMaybe (\case DiffusionServerTrace st -> Just st
                                _                       -> Nothing
                         )
@@ -2530,7 +2531,7 @@ prop_diffusion_async_demotions ioSimTrace traceNumber =
                            Just $ Right demotions
                          where
                            demotions = Set.singleton (remoteAddress connId)
-                       DiffusionConnectionManagerTrace (TrConnectionCleanup connId) ->
+                       DiffusionConnectionManagerTrace (CM.TrConnectionCleanup connId) ->
                            Just $ Left failures
                          where
                            failures = Just $ Set.singleton (remoteAddress connId)
@@ -2586,7 +2587,7 @@ prop_diffusion_async_demotions ioSimTrace traceNumber =
                            Just $ Left (Just failures)
                          where
                            failures = Set.singleton peeraddr
-                       DiffusionConnectionManagerTrace TrShutdown ->
+                       DiffusionConnectionManagerTrace CM.TrShutdown ->
                            Just $ Left Nothing
 
                        _ -> Nothing
@@ -2773,7 +2774,7 @@ prop_diffusion_cm_valid_transitions ioSimTrace traceNumber =
           abstractTransitionEvents =
             selectDiffusionConnectionManagerTransitionEvents events
 
-          connectionManagerEvents :: [ConnectionManagerTrace
+          connectionManagerEvents :: [CM.Trace
                                         NtNAddr
                                         (ConnectionHandlerTrace
                                           NtNVersion
@@ -3200,7 +3201,7 @@ prop_diffusion_cm_no_dodgy_traces ioSimTrace traceNumber =
   where
     verify_cm_traces :: Trace () DiffusionTestTrace -> Property
     verify_cm_traces events =
-      let connectionManagerEvents :: [ConnectionManagerTrace
+      let connectionManagerEvents :: [CM.Trace
                                         NtNAddr
                                         (ConnectionHandlerTrace
                                           NtNVersion
@@ -3212,9 +3213,9 @@ prop_diffusion_cm_no_dodgy_traces ioSimTrace traceNumber =
 
         in conjoin $ map
              (\ev -> case ev of
-               TrConnectionExists {}    -> counterexample (show ev) False
-               TrForbiddenConnection {} -> counterexample (show ev) False
-               _                        -> property True
+               CM.TrConnectionExists {}    -> counterexample (show ev) False
+               CM.TrForbiddenConnection {} -> counterexample (show ev) False
+               _                           -> property True
              ) connectionManagerEvents
 
 
@@ -3753,7 +3754,7 @@ prop_diffusion_ig_valid_transitions ioSimTrace traceNumber =
   where
     verify_ig_valid_transitions :: Trace () DiffusionTestTrace -> Property
     verify_ig_valid_transitions events =
-      let remoteTransitionTraceEvents :: Trace () (RemoteTransitionTrace NtNAddr)
+      let remoteTransitionTraceEvents :: Trace () (IG.RemoteTransitionTrace NtNAddr)
           remoteTransitionTraceEvents =
             selectDiffusionInboundGovernorTransitionEvents events
 
@@ -3813,7 +3814,7 @@ prop_diffusion_ig_valid_transition_order ioSimTrace traceNumber =
     verify_ig_valid_transition_order :: Trace () DiffusionTestTrace -> Property
     verify_ig_valid_transition_order events =
 
-      let remoteTransitionTraceEvents :: Trace () (RemoteTransitionTrace NtNAddr)
+      let remoteTransitionTraceEvents :: Trace () (IG.RemoteTransitionTrace NtNAddr)
           remoteTransitionTraceEvents =
             selectDiffusionInboundGovernorTransitionEvents events
 
@@ -3970,7 +3971,7 @@ selectDiffusionPeerSelectionState' f =
 
 selectDiffusionConnectionManagerEvents
   :: Trace () DiffusionTestTrace
-  -> Trace () (ConnectionManagerTrace NtNAddr
+  -> Trace () (CM.Trace NtNAddr
                  (ConnectionHandlerTrace
                     NtNVersion
                     NtNVersionData))
@@ -4015,7 +4016,7 @@ selectDiffusionConnectionManagerTransitionEventsTime =
 
 selectDiffusionInboundGovernorTransitionEvents
   :: Trace () DiffusionTestTrace
-  -> Trace () (RemoteTransitionTrace NtNAddr)
+  -> Trace () (IG.RemoteTransitionTrace NtNAddr)
 selectDiffusionInboundGovernorTransitionEvents =
   Trace.fromList ()
   . mapMaybe

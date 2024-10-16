@@ -16,6 +16,18 @@
 * Added `Ouroboros.Network.Socket.connectToNodeWithMux` and
   `connectToNodeWithMux'`.  They give control over running mux, e.g. one can
   start some of the mini-protocols, or implement a re-start policy.
+* `Ouroboros.Network.InboundGovernor` module is supposed to be imported
+  qualified. Type names and record fields were modified.
+* Added `Ouroboros.Network.InboundGovernor.Arguments` record type.
+* `Ouroboros.Network.Server2` module is supposed to be imported qualified.
+  Type names and record fields were modified.
+* `Ouroboros.Network.ConnectionManager.InformationChannel.OutboundGovernorInfoChannel` was removed.
+* `Ouroboros.Network.ConnectionManager.ConnectionManagerArguments`:
+  `connectionDataFlow` doesn't take `versionNumber` as an argument.
+* `Ouroboros.Network.ConnectionManager.Core` must be imported qualified.
+* `ConnectionManagerTrace` moved from `Ouroboros.Network.ConnectionManager.Types`
+  to the `Core` module & renamed as `Trace`.
+
 
 ### Non-breaking changes
 

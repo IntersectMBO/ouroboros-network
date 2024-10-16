@@ -73,13 +73,11 @@ import Network.Mux qualified as Mux
 
 import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionId
+import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.Types
-import Ouroboros.Network.ConnectionManager.Types qualified as CM
-import Ouroboros.Network.InboundGovernor (DebugInboundGovernor (..),
-           InboundGovernorTrace (..))
 import Ouroboros.Network.InboundGovernor qualified as IG
-import Ouroboros.Network.InboundGovernor.State (ConnectionState (..),
-           InboundGovernorCounters (..))
+import Ouroboros.Network.InboundGovernor.State (ConnectionState (..))
+import Ouroboros.Network.InboundGovernor.State qualified as IG
 import Ouroboros.Network.Mux
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.Protocol.Handshake.Codec (noTimeLimitsHandshake,
@@ -105,7 +103,6 @@ import Ouroboros.Network.ConnectionManager.Test.Utils
            (abstractStateIsFinalTransition, allValidTransitionsNames,
            validTransitionMap, verifyAbstractTransition,
            verifyAbstractTransitionOrder)
-import Ouroboros.Network.InboundGovernor.State (InboundGovernorState (..))
 import Ouroboros.Network.InboundGovernor.Test.Utils
            (allValidRemoteTransitionsNames, remoteStrIsFinalTransition,
            validRemoteTransitionMap, verifyRemoteTransition,
@@ -635,11 +632,11 @@ multinodeExperiment
     -> Tracer m (WithName (Name peerAddr)
                           (AbstractTransitionTrace peerAddr))
     -> Tracer m (WithName (Name peerAddr)
-                          (InboundGovernorTrace peerAddr))
+                          (IG.Trace peerAddr))
     -> Tracer m (WithName (Name peerAddr)
-                          (DebugInboundGovernor peerAddr))
+                          (IG.Debug peerAddr DataFlowProtocolData))
     -> Tracer m (WithName (Name peerAddr)
-                          (ConnectionManagerTrace
+                          (CM.Trace
                             peerAddr
                             (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
     -> StdGen
@@ -994,7 +991,7 @@ validate_transitions mns@(MultiNodeScript events _) trace =
     -- abstractTransitionEvents = traceWithNameTraceEvents trace
 
     evs :: Trace (SimResult ()) (Either (AbstractTransitionTrace SimAddr)
-                                        (ConnectionManagerTrace SimAddr (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
+                                        (CM.Trace SimAddr (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
     evs = fmap (bimap wnEvent wnEvent)
         . Trace.filter ((MainServer ==) . either wnName wnName)
         . traceSelectTraceEvents fn
@@ -1002,7 +999,7 @@ validate_transitions mns@(MultiNodeScript events _) trace =
       where
         fn :: Time -> SimEventType
            -> Maybe (Either (WithName (Name SimAddr) (AbstractTransitionTrace SimAddr))
-                            (WithName (Name SimAddr) (ConnectionManagerTrace SimAddr
+                            (WithName (Name SimAddr) (CM.Trace SimAddr
                                                         (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData))))
         fn _ (EventLog dyn) = Left  <$> fromDynamic dyn
                           <|> Right <$> fromDynamic dyn
@@ -1108,7 +1105,7 @@ prop_connection_manager_no_invalid_traces (Fixed rnd) serverAcc (ArbDataFlow dat
   let trace = runSimTrace sim
 
       connectionManagerEvents :: Trace (SimResult ())
-                                       (ConnectionManagerTrace
+                                       (CM.Trace
                                          SimAddr
                                          (ConnectionHandlerTrace
                                            UnversionedProtocol
@@ -1250,7 +1247,7 @@ prop_connection_manager_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
   let trace = runSimTrace sim
 
       connectionManagerEvents :: Trace (SimResult ())
-                                       (ConnectionManagerTrace
+                                       (CM.Trace
                                          SimAddr
                                          (ConnectionHandlerTrace
                                            UnversionedProtocol
@@ -1277,7 +1274,7 @@ prop_connection_manager_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                             $ counterexample (show v) False
        )
        ( \ case
-          TrConnectionManagerCounters cmc ->
+          CM.TrConnectionManagerCounters cmc ->
             All
               $ counterexample
                   ("Upper bound is: " ++ show upperBound
@@ -1543,7 +1540,7 @@ prop_inbound_governor_no_unsupported_state (Fixed rnd) serverAcc (ArbDataFlow da
   let trace = runSimTrace sim
 
       inboundGovernorEvents :: Trace (SimResult ())
-                                     (InboundGovernorTrace SimAddr)
+                                     (IG.Trace SimAddr)
       inboundGovernorEvents = traceWithNameTraceEvents trace
 
   in tabulate "ConnectionEvents" (map showConnectionEvents events)
@@ -1556,7 +1553,7 @@ prop_inbound_governor_no_unsupported_state (Fixed rnd) serverAcc (ArbDataFlow da
         ( \ tr -> case tr of
             -- verify that 'unregisterInboundConnection' does not return
             -- 'UnsupportedState'.
-            TrDemotedToColdRemote _ res ->
+            IG.TrDemotedToColdRemote _ res ->
               case res of
                 UnsupportedState {}
                   -> All (counterexample (show tr) False)
@@ -1564,7 +1561,7 @@ prop_inbound_governor_no_unsupported_state (Fixed rnd) serverAcc (ArbDataFlow da
 
             -- verify that 'demotedToColdRemote' does not return
             -- 'UnsupportedState'
-            TrWaitIdleRemote _ res ->
+            IG.TrWaitIdleRemote _ res ->
               case res of
                 UnsupportedState {}
                   -> All (counterexample (show tr) False)
@@ -1598,7 +1595,7 @@ prop_inbound_governor_no_invalid_traces (Fixed rnd) serverAcc (ArbDataFlow dataF
                                                              attenuationMap) =
   let trace = runSimTrace sim
 
-      inboundGovernorEvents :: Trace (SimResult ()) (InboundGovernorTrace SimAddr)
+      inboundGovernorEvents :: Trace (SimResult ()) (IG.Trace SimAddr)
       inboundGovernorEvents = traceWithNameTraceEvents trace
 
   in tabulate "ConnectionEvents" (map showConnectionEvents events)
@@ -1727,8 +1724,7 @@ prop_inbound_governor_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
   let trace = runSimTrace sim
 
       inboundGovernorEvents :: Trace (SimResult ())
-                                     (InboundGovernorTrace
-                                       SimAddr)
+                                     (IG.Trace SimAddr)
       inboundGovernorEvents = traceWithNameTraceEvents trace
 
       upperBound = multiNodeScriptToCounters events
@@ -1743,31 +1739,31 @@ prop_inbound_governor_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                          $ counterexample (show v) (property False)
        )
        (\ case
-          TrInboundGovernorCounters igc ->
+          IG.TrInboundGovernorCounters igc ->
             All
               $ counterexample
                   ("Upper bound is: " ++ show upperBound
                   ++ "\n But got: " ++ show igc)
-                  (    warmPeersRemote igc <= warmPeersRemote upperBound
-                  .&&. hotPeersRemote  igc <= hotPeersRemote  upperBound
+                  (    IG.warmPeersRemote igc <= IG.warmPeersRemote upperBound
+                  .&&. IG.hotPeersRemote  igc <= IG.hotPeersRemote  upperBound
                   )
           _ -> mempty
        )
     $ inboundGovernorEvents
   where
     -- Note that this is only valid in the case of no attenuation.
-    bundleToCounters :: TemperatureBundle [Int] -> InboundGovernorCounters
+    bundleToCounters :: TemperatureBundle [Int] -> IG.Counters
     bundleToCounters (TemperatureBundle hot warm _) =
       let warmRemote = bool 1 0 (null warm)
           hotRemote  = bool 1 0 (null hot)
-       in InboundGovernorCounters 0 0 warmRemote hotRemote
+       in IG.Counters 0 0 warmRemote hotRemote
 
     -- We check for starting of miniprotocols that can potentially lead to
     -- inbound governor states of remote warm or remote hot connections. An
     -- upper bound is established because it is not possible to predict whether
     -- some failure will occur.
     multiNodeScriptToCounters :: [ConnectionEvent Int TestAddr]
-                              -> InboundGovernorCounters
+                              -> IG.Counters
     multiNodeScriptToCounters =
       let taServerAcc = TestAddr (TestAddress 0)
        in
@@ -1822,7 +1818,7 @@ prop_inbound_governor_state (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                             mns@(MultiNodeScript events attenuationMap) =
   let trace = runSimTrace sim
 
-      evs :: Trace (SimResult ()) (DebugInboundGovernor SimAddr)
+      evs :: Trace (SimResult ()) (IG.Debug SimAddr DataFlowProtocolData)
       evs = traceWithNameTraceEvents trace
 
       -- inboundGovernorEvents :: Trace (SimResult ()) (InboundGovernorTrace SimAddr)
@@ -1844,22 +1840,22 @@ prop_inbound_governor_state (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                        events
                        attenuationMap
 
-    inboundGovernorStateInvariant :: DebugInboundGovernor SimAddr
+    inboundGovernorStateInvariant :: IG.Debug SimAddr DataFlowProtocolData
                                   -> Property
     inboundGovernorStateInvariant
-        (DebugInboundGovernor InboundGovernorState { igsConnections,
-                                                     igsMatureDuplexPeers,
-                                                     igsFreshDuplexPeers })
+        (IG.Debug IG.State { IG.connections,
+                             IG.matureDuplexPeers,
+                             IG.freshDuplexPeers })
         =
         keys === keys'
       where
         keys  = Set.map remoteAddress
               . Map.keysSet
-              . Map.filter (\ConnectionState { csDataFlow } -> csDataFlow == Duplex)
-              $ igsConnections
+              . Map.filter (\ConnectionState { csVersionData } -> getProtocolDataFlow csVersionData == Duplex)
+              $ connections
 
-        keys' = Set.fromList (OrdPSQ.keys igsFreshDuplexPeers)
-             <> Map.keysSet igsMatureDuplexPeers
+        keys' = Set.fromList (OrdPSQ.keys freshDuplexPeers)
+             <> Map.keysSet matureDuplexPeers
 
 
 
@@ -1882,7 +1878,7 @@ prop_connection_manager_pruning (Fixed rnd) serverAcc
   let trace = runSimTrace sim
 
       evs :: Trace (SimResult ()) (Either (AbstractTransitionTrace SimAddr)
-                                          (ConnectionManagerTrace SimAddr (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
+                                          (CM.Trace SimAddr (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
       evs = fmap (bimap wnEvent wnEvent)
           . Trace.filter ((MainServer ==) . either wnName wnName)
           . traceSelectTraceEvents fn
@@ -1890,7 +1886,7 @@ prop_connection_manager_pruning (Fixed rnd) serverAcc
         where
           fn :: Time -> SimEventType
              -> Maybe (Either (WithName (Name SimAddr) (AbstractTransitionTrace SimAddr))
-                              (WithName (Name SimAddr) (ConnectionManagerTrace SimAddr
+                              (WithName (Name SimAddr) (CM.Trace SimAddr
                                                           (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData))))
           fn _ (EventLog dyn) = Left  <$> fromDynamic dyn
                             <|> Right <$> fromDynamic dyn
@@ -1963,14 +1959,14 @@ prop_inbound_governor_pruning (Fixed rnd) serverAcc
                                 attenuationMap) =
   let trace = runSimTrace sim
 
-      evs :: Trace (SimResult ()) (Either (InboundGovernorTrace SimAddr)
+      evs :: Trace (SimResult ()) (Either (IG.Trace SimAddr)
                                           (RemoteTransitionTrace SimAddr))
       evs = fmap (bimap wnEvent wnEvent)
           . Trace.filter ((MainServer ==) . either wnName wnName)
           . traceSelectTraceEvents fn
           $ trace
         where
-          fn :: Time -> SimEventType -> Maybe (Either (WithName (Name SimAddr) (InboundGovernorTrace SimAddr))
+          fn :: Time -> SimEventType -> Maybe (Either (WithName (Name SimAddr) (IG.Trace SimAddr))
                                                       (WithName (Name SimAddr) (RemoteTransitionTrace SimAddr)))
           fn _ (EventLog dyn) = Left  <$> fromDynamic dyn
                             <|> Right <$> fromDynamic dyn
@@ -1986,7 +1982,7 @@ prop_inbound_governor_pruning (Fixed rnd) serverAcc
              case tr of
                -- verify that 'unregisterInboundConnection' does not return
                -- 'UnsupportedState'.
-               TrDemotedToColdRemote _ res ->
+               IG.TrDemotedToColdRemote _ res ->
                  case res of
                    UnsupportedState {} ->
                      All
@@ -1999,7 +1995,7 @@ prop_inbound_governor_pruning (Fixed rnd) serverAcc
 
                -- verify that 'demotedToColdRemote' does not return
                -- 'UnsupportedState'
-               TrWaitIdleRemote _ UnsupportedState {} ->
+               IG.TrWaitIdleRemote _ UnsupportedState {} ->
                  All
                    $ counterexample
                        ("Unexpected UnsupportedState "
@@ -2090,7 +2086,7 @@ prop_never_above_hardlimit (Fixed rnd) serverAcc
   let trace = runSimTrace sim
 
       connectionManagerEvents :: Trace (SimResult ())
-                                       (ConnectionManagerTrace
+                                       (CM.Trace
                                          SimAddr
                                          (ConnectionHandlerTrace
                                            UnversionedProtocol
@@ -2115,7 +2111,7 @@ prop_never_above_hardlimit (Fixed rnd) serverAcc
             _             -> All False
         )
         ( \ case
-            (TrConnectionManagerCounters cmc) ->
+            (CM.TrConnectionManagerCounters cmc) ->
                   All
                 . counterexample ("HardLimit: " ++ show hardlimit ++
                                   ", but got: " ++ show (inboundConns cmc) ++
@@ -2123,7 +2119,7 @@ prop_never_above_hardlimit (Fixed rnd) serverAcc
                                   show cmc
                                  )
                 $! inboundConns cmc <= fromIntegral hardlimit
-            (TrPruneConnections prunnedSet numberToPrune choiceSet) ->
+            (CM.TrPruneConnections prunnedSet numberToPrune choiceSet) ->
               ( All
               . counterexample (concat
                                [ "prunned set too small: "
@@ -2249,13 +2245,13 @@ multiNodeSimTracer :: ( Alternative (STM m), Monad m, MonadFix m
                    -> Tracer m
                       (WithName (Name SimAddr) (AbstractTransitionTrace SimAddr))
                    -> Tracer m
-                      (WithName (Name SimAddr) (InboundGovernorTrace SimAddr))
+                      (WithName (Name SimAddr) (IG.Trace SimAddr))
                    -> Tracer m
-                      (WithName (Name SimAddr) (DebugInboundGovernor SimAddr))
+                      (WithName (Name SimAddr) (IG.Debug SimAddr DataFlowProtocolData))
                    -> Tracer m
                       (WithName
                        (Name SimAddr)
-                        (ConnectionManagerTrace
+                        (CM.Trace
                          SimAddr
                           (ConnectionHandlerTrace
                             UnversionedProtocol DataFlowProtocolData)))

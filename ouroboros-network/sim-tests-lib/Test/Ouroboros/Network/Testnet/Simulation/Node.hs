@@ -69,14 +69,13 @@ import Network.TypedProtocol.Core
 import Network.TypedProtocol.PingPong.Type qualified as PingPong
 
 import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
-import Ouroboros.Network.ConnectionManager.Types (AbstractTransitionTrace,
-           ConnectionManagerTrace)
+import Ouroboros.Network.ConnectionManager.Core qualified as CM
+import Ouroboros.Network.ConnectionManager.Types (AbstractTransitionTrace)
 import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.Diffusion.P2P qualified as Diff.P2P
 import Ouroboros.Network.Driver.Limits (ProtocolSizeLimits (..),
            ProtocolTimeLimits (..))
-import Ouroboros.Network.InboundGovernor (InboundGovernorTrace,
-           RemoteTransitionTrace)
+import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.Mux (MiniProtocolLimits (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.Governor (ConsensusModePeerTargets (..),
@@ -97,7 +96,7 @@ import Ouroboros.Network.Protocol.KeepAlive.Codec (byteLimitsKeepAlive,
            timeLimitsKeepAlive)
 import Ouroboros.Network.Protocol.Limits (shortWait, smallByteLimit)
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
-import Ouroboros.Network.Server2 (ServerTrace)
+import Ouroboros.Network.Server2 qualified as Server
 import Ouroboros.Network.Snocket (Snocket, TestAddress (..))
 
 import Ouroboros.Network.Block (BlockNo)
@@ -918,15 +917,15 @@ data DiffusionTestTrace =
     | DiffusionPeerSelectionActionsTrace (PeerSelectionActionsTrace NtNAddr NtNVersion)
     | DiffusionDebugPeerSelectionTrace (DebugPeerSelection NtNAddr)
     | DiffusionConnectionManagerTrace
-        (ConnectionManagerTrace NtNAddr
+        (CM.Trace NtNAddr
           (ConnectionHandlerTrace NtNVersion NtNVersionData))
     | DiffusionDiffusionSimulationTrace DiffusionSimulationTrace
     | DiffusionConnectionManagerTransitionTrace
         (AbstractTransitionTrace NtNAddr)
     | DiffusionInboundGovernorTransitionTrace
-        (RemoteTransitionTrace NtNAddr)
-    | DiffusionInboundGovernorTrace (InboundGovernorTrace NtNAddr)
-    | DiffusionServerTrace (ServerTrace NtNAddr)
+        (IG.RemoteTransitionTrace NtNAddr)
+    | DiffusionInboundGovernorTrace (IG.Trace NtNAddr)
+    | DiffusionServerTrace (Server.Trace NtNAddr)
     | DiffusionFetchTrace (TraceFetchClientState BlockHeader)
     | DiffusionDebugTrace String
     deriving (Show)
