@@ -1,6 +1,12 @@
 # Revision history for cardano-client
 
-## next version
+## next release
+
+### Breaking changes
+
+### Non-breaking changes
+
+## 0.4.0.0 -- 2024-10-17
 
 ### Breaking changes
 
@@ -9,8 +15,6 @@
   `OuroborosApplicationWithMinimalCtx` specify `Void` as return type of the
   responder side.
 * The default reconnect delay was increased from `0.025s` to `5s`.
-
-### Non-breaking changes
 
 ## 0.3.1.6 -- 2024-10-11
 

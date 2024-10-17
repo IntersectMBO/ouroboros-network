@@ -4,10 +4,17 @@
 
 ### Breaking changes
 
+### Non-breaking changes
+
+## 0.11.0.0 -- 2024-10-17
+
+### Breaking changes
+
 * Renamed:
   * `accBigPoolStake` -> `accumulateBigLedgerStake`
      and `reRelativeStake` -> `recomputeRelativeStake`
 * Using `typed-protocols-0.3.0.0`.
+* Added `NodeToClientV_19`. 
 
 ### Non-breaking changes
 
