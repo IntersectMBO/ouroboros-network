@@ -46,6 +46,7 @@ import Data.ByteString.Lazy (ByteString)
 import Data.Dynamic (fromDynamic)
 import Data.Foldable (foldMap')
 import Data.Functor (void, ($>), (<&>))
+import Data.Hashable
 import Data.List as List (delete, foldl', intercalate, nub, (\\))
 import Data.List.Trace qualified as Trace
 import Data.Map.Strict (Map)
@@ -625,7 +626,7 @@ multinodeExperiment
        , MonadTraceSTM m
        , MonadSay m
        , acc ~ [req], resp ~ [req]
-       , Ord peerAddr, Show peerAddr, Typeable peerAddr, Eq peerAddr
+       , Ord peerAddr, Show peerAddr, Typeable peerAddr, Eq peerAddr, Hashable peerAddr
        , Serialise req, Show req
        , Serialise resp, Show resp, Eq resp
        , Typeable req, Typeable resp
