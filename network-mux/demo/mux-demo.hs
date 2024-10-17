@@ -133,7 +133,7 @@ serverWorker bearer = do
       putStrLn $ "Result: " ++ show result
       stopMux mux
 
-    runMux nullTracer mux bearer
+    runMux nullTracer 1 mux bearer
   where
     ptcls ::  MiniProtocolBundle ResponderMode
     ptcls = MiniProtocolBundle
@@ -193,7 +193,7 @@ clientWorker bearer n msg = do
       putStrLn $ "Result: " ++ show result
       stopMux mux
 
-    runMux nullTracer mux bearer
+    runMux nullTracer 0 mux bearer
   where
     ptcls :: MiniProtocolBundle InitiatorMode
     ptcls = MiniProtocolBundle
