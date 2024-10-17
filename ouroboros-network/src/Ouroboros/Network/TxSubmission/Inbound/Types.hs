@@ -1,5 +1,6 @@
-{-# LANGUAGE DeriveGeneric  #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE DeriveGeneric    #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE NamedFieldPuns   #-}
 
 module Ouroboros.Network.TxSubmission.Inbound.Types
   ( -- * PeerTxState
@@ -22,11 +23,13 @@ module Ouroboros.Network.TxSubmission.Inbound.Types
   ) where
 
 import Control.Exception (Exception (..))
+import Control.Monad.Class.MonadTime.SI
 import Data.Map.Strict (Map)
 import Data.Sequence.Strict (StrictSeq)
 import Data.Set (Set)
 import Data.Set qualified as Set
 import GHC.Generics (Generic)
+import System.Random (StdGen)
 
 import NoThunks.Class (NoThunks (..))
 
@@ -73,7 +76,12 @@ data PeerTxState txid tx = PeerTxState {
        -- since that could potentially lead to corrupting the node, not being
        -- able to download a `tx` which is needed & available from other nodes.
        --
-       unknownTxs               :: !(Set txid)
+       unknownTxs               :: !(Set txid),
+
+       rejectedTxs              :: !Double,
+       rejectedTxsTs            :: !Time,
+
+       fetchedTxs               :: !(Set txid)
     }
     deriving (Eq, Show, Generic)
 
@@ -156,13 +164,17 @@ data SharedTxState peeraddr txid tx = SharedTxState {
       --    * @Map.keysSet bufferedTxs `Set.isSubsetOf` Map.keysSet referenceCounts@;
       --    * all counts are positive integers.
       --
-      referenceCounts :: !(Map txid Int)
+      referenceCounts :: !(Map txid Int),
+
+      -- | Rng used to randomly order peers
+      peerRng :: !StdGen
     }
     deriving (Eq, Show, Generic)
 
 instance ( NoThunks peeraddr
          , NoThunks tx
          , NoThunks txid
+         , NoThunks StdGen
          ) => NoThunks (SharedTxState peeraddr txid tx)
 
 
@@ -196,7 +208,7 @@ data TxDecision txid tx = TxDecision {
     txdTxsToRequest       :: !(Set txid),
     -- ^ txid's to download.
 
-    txdTxsToMempool       :: ![tx]
+    txdTxsToMempool       :: ![(txid,tx)]
     -- ^ list of `tx`s to submit to the mempool.
   }
   deriving (Show, Eq)
@@ -258,6 +270,7 @@ data ProcessedTxCount = ProcessedTxCount {
       ptxcAccepted :: Int
       -- | Just rejected this many transactions.
     , ptxcRejected :: Int
+    , ptxcScore    :: Double
     }
   deriving (Eq, Show)
 
@@ -294,7 +307,7 @@ data TraceTxSubmissionInbound txid tx =
     -- | Server received 'MsgDone'
   | TraceTxInboundCanRequestMoreTxs Int
   | TraceTxInboundCannotRequestMoreTxs Int
-  | TraceTxInboundAddedToMempool [txid]
+  | TraceTxInboundAddedToMempool [txid] DiffTime
 
   --
   -- messages emitted by the new implementation of the server in

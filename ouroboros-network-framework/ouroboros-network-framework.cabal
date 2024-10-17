@@ -139,6 +139,7 @@ library testlib
                    , bytestring
                    , cborg
                    , containers
+                   , hashable
                    , random
                    , serialise
 
@@ -185,6 +186,7 @@ test-suite sim-tests
                      , cborg
                      , containers
                      , dns
+                     , hashable
                      , iproute
                      , network
                      , pretty-simple
@@ -328,6 +330,7 @@ executable demo-connection-manager
   main-is:             connection-manager.hs
   build-depends:       base >=4.14 && <4.21,
                        bytestring,
+                       hashable,
                        network,
                        optparse-applicative,
                        random,

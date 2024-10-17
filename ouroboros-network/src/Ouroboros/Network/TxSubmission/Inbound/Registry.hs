@@ -13,6 +13,7 @@ module Ouroboros.Network.TxSubmission.Inbound.Registry
   , newTxChannelsVar
   , PeerTxAPI (..)
   , decisionLogicThread
+  , drainRejectionThread
   , withPeer
   ) where
 
@@ -21,12 +22,15 @@ import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.Class.MonadTime.SI
 
 import Data.Foldable (traverse_
 #if !MIN_VERSION_base(4,20,0)
                      , foldl'
 #endif
                      )
+import Data.Functor (void)
+import Data.Hashable
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
@@ -75,8 +79,15 @@ data PeerTxAPI m txid tx = PeerTxAPI {
                         -- ^ requested txids
                         -> Map txid tx
                         -- ^ received txs
-                        -> m ()
+                        -> m (),
     -- ^ handle received txs
+
+    countRejectedTxs    :: Time
+                        -> Double
+                        -> m Double,
+
+    consumeFetchedTxs   :: Set txid
+                        -> m (Set txid)
   }
 
 
@@ -123,7 +134,9 @@ withPeer tracer
                   ( TxChannels { txChannelMap = txChannelMap' }
                   , PeerTxAPI { readTxDecision = takeMVar chann',
                                 handleReceivedTxIds,
-                                handleReceivedTxs }
+                                handleReceivedTxs,
+                                countRejectedTxs,
+                                consumeFetchedTxs }
                   )
 
           atomically $ modifyTVar sharedStateVar registerPeer
@@ -151,7 +164,10 @@ withPeer tracer
                  requestedTxsInflightSize = 0,
                  requestedTxsInflight     = Set.empty,
                  unacknowledgedTxIds      = StrictSeq.empty,
-                 unknownTxs               = Set.empty }
+                 unknownTxs               = Set.empty,
+                 rejectedTxs              = 0,
+                 rejectedTxsTs            = Time 0,
+                 fetchedTxs               = Set.empty }
                peerTxStates
          }
 
@@ -210,9 +226,79 @@ withPeer tracer
                       -> Map txid tx
                       -- ^ received txs
                       -> m ()
-    handleReceivedTxs txids txs =
+    handleReceivedTxs txids txs = do
+      void $ atomically $ modifyTVar sharedStateVar addFethed
       collectTxs tracer sharedStateVar peeraddr txids txs
+       where
+        addFethed :: SharedTxState peeraddr txid tx
+                  -> SharedTxState peeraddr txid tx
+        addFethed st@SharedTxState { peerTxStates } =
+          let peerTxStates' = Map.update (\ps -> Just $! ps { fetchedTxs = Set.union (fetchedTxs ps) txids }) peeraddr peerTxStates in
+          st {peerTxStates = peerTxStates' }
 
+    countRejectedTxs :: Time
+                     -> Double
+                     -> m Double
+    countRejectedTxs now n = atomically $ do
+      modifyTVar sharedStateVar cntRejects
+      st <- readTVar sharedStateVar
+      case Map.lookup peeraddr (peerTxStates st)  of
+           Nothing -> error "missing peer updated"
+           Just ps -> return $ rejectedTxs ps
+       where
+        cntRejects :: SharedTxState peeraddr txid tx
+                   -> SharedTxState peeraddr txid tx
+        cntRejects st@SharedTxState { peerTxStates } =
+          let peerTxStates' = Map.update (\ps -> Just $! (updateRejects now n ps)) peeraddr peerTxStates in
+          st {peerTxStates    = peerTxStates'}
+
+    consumeFetchedTxs :: Set txid
+                      -> m (Set txid)
+    consumeFetchedTxs otxids = atomically $ do
+      st <- readTVar sharedStateVar
+      case Map.lookup peeraddr (peerTxStates st) of
+           Nothing -> error "missing peer in consumeFetchedTxs"
+           Just ps -> do
+             let o = Set.intersection (fetchedTxs ps) otxids
+                 r = Set.difference (fetchedTxs ps) otxids
+                 st' = st { peerTxStates = Map.update (\ps' -> Just $! ps' { fetchedTxs = r }) peeraddr (peerTxStates st) }
+             writeTVar sharedStateVar st'
+             return o
+
+updateRejects :: Time -> Double -> PeerTxState txid tx -> PeerTxState txid tx
+updateRejects now 0 pts | rejectedTxs pts == 0 = pts {rejectedTxsTs = now}
+updateRejects now n pts@PeerTxState { rejectedTxs, rejectedTxsTs } =
+    let duration = diffTime now rejectedTxsTs
+        rate = 0.1                 -- 0.1 rejected tx/s
+        maxTokens = 15 * 60 / rate -- 15 minutes worth of rejections
+        !drain = realToFrac duration * rate
+        !drained = max 0 $ rejectedTxs - drain in
+    pts { rejectedTxs = max 0 $ min maxTokens $ drained + n
+        , rejectedTxsTs = now }
+
+drainRejectionThread
+    :: forall m peeraddr txid tx.
+       ( MonadDelay m
+       , MonadSTM m
+       , MonadThread m
+       )
+    => SharedTxStateVar m peeraddr txid tx
+    -> m Void
+drainRejectionThread sharedStateVar = do
+    labelThisThread "tx-rejection-drain"
+    go
+  where
+    go :: m Void
+    go = do
+      threadDelay 7
+
+      !now <- getMonotonicTime
+      atomically $ do
+        st <- readTVar sharedStateVar
+        let ptss = Map.map (\pts -> updateRejects now 0 pts) (peerTxStates st)
+        writeTVar sharedStateVar (st { peerTxStates = ptss })
+
+      go
 
 decisionLogicThread
     :: forall m peeraddr txid tx.
@@ -223,6 +309,7 @@ decisionLogicThread
        , MonadFork  m
        , Ord peeraddr
        , Ord txid
+       , Hashable peeraddr
        )
     => Tracer m (TraceTxLogic peeraddr txid tx)
     -> TxDecisionPolicy

@@ -37,6 +37,7 @@ import Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 import Data.ByteString.Lazy (ByteString)
 import Data.Either (partitionEithers)
 import Data.Functor (($>))
+import Data.Hashable
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Typeable (Typeable)
 
@@ -77,6 +78,7 @@ import Ouroboros.Network.Server2 qualified as Server
 import Ouroboros.Network.Snocket (Snocket, socketSnocket)
 import Ouroboros.Network.Snocket qualified as Snocket
 import Ouroboros.Network.Util.ShowProxy
+import Ouroboros.Network.Socket
 
 
 instance ShowProxy (ReqResp req resp) where
@@ -173,7 +175,7 @@ withBidirectionalConnectionManager
     :: forall peerAddr socket m a.
        ( ConnectionManagerMonad m
 
-       , Ord peerAddr, Show peerAddr, Typeable peerAddr
+       , Ord peerAddr, Show peerAddr, Typeable peerAddr, Hashable peerAddr
 
        -- debugging
        , MonadFix m
@@ -438,6 +440,7 @@ bidirectionalExperiment
        , Show peerAddr
        , Typeable peerAddr
        , Eq peerAddr
+       , Hashable peerAddr
        )
     => Snocket IO socket peerAddr
     -> Mux.MakeBearer IO socket
@@ -617,7 +620,6 @@ optionParser =
             <> value 60
             <> showDefault
             )
-
 
 run :: (Addr, Port)
     -> (Addr, Port)

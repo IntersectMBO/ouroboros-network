@@ -20,6 +20,7 @@ import Control.Arrow ((>>>))
 import Control.Exception (assert)
 
 import Data.Bifunctor (second)
+import Data.Hashable
 import Data.List (mapAccumR, sortOn)
 import Data.Map.Merge.Strict qualified as Map
 import Data.Map.Strict (Map)
@@ -27,6 +28,7 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (mapMaybe)
 import Data.Set (Set)
 import Data.Set qualified as Set
+import System.Random (random)
 
 import Data.Sequence.Strict qualified as StrictSeq
 import Ouroboros.Network.DeltaQ (PeerGSV (..), defaultGSV,
@@ -43,6 +45,7 @@ makeDecisions
     :: forall peeraddr txid tx.
        ( Ord peeraddr
        , Ord txid
+       , Hashable peeraddr
        )
     => TxDecisionPolicy
     -- ^ decision policy
@@ -59,12 +62,14 @@ makeDecisions
        , Map peeraddr (TxDecision txid tx)
        )
 makeDecisions policy SharedDecisionContext {
-      sdcPeerGSV = peerGSV,
+      sdcPeerGSV = _peerGSV,
       sdcSharedTxState = st
     }
-    = fn
-    . pickTxsToDownload policy st
-    . orderByDeltaQ peerGSV
+    = let (salt, rng') = random (peerRng st)
+          st' = st { peerRng = rng' } in
+    fn
+    . pickTxsToDownload policy st'
+    . orderByRejections salt
   where
     fn :: forall a.
           (a, [(peeraddr, TxDecision txid tx)])
@@ -72,14 +77,30 @@ makeDecisions policy SharedDecisionContext {
     fn (a, as) = (a, Map.fromList as)
 
 
+-- | Order peers by how useful the TXs they have provided are.
+--
+-- TXs delivered late will fail to apply because they where included in
+-- a recently adopted block. Peers can race against each other by setting
+-- `txInflightMultiplicity` to > 1. In case of a tie a hash of the peeraddr
+-- is used as a tie breaker. Since every invocation use a new salt a given
+-- peeraddr does not have an advantage over time.
+--
+orderByRejections :: Hashable peeraddr
+                  => Int
+                  -> Map peeraddr (PeerTxState txid tx)
+                  -> [ (peeraddr, PeerTxState txid tx)]
+orderByRejections salt =
+        sortOn (\(peeraddr, ps) -> (rejectedTxs ps, hashWithSalt salt peeraddr))
+      . Map.toList
+
 -- | Order peers by `DeltaQ`.
 --
-orderByDeltaQ :: forall peeraddr txid tx.
+_orderByDeltaQ :: forall peeraddr txid tx.
                  Ord peeraddr
               => Map peeraddr PeerGSV
               -> Map peeraddr (PeerTxState txid tx)
               -> [(peeraddr, PeerTxState txid tx)]
-orderByDeltaQ dq =
+_orderByDeltaQ dq =
         sortOn (\(peeraddr, _) ->
                    gsvRequestResponseDuration
                      (Map.findWithDefault defaultGSV peeraddr dq)

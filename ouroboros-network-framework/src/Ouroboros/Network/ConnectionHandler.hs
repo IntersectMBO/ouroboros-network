@@ -49,6 +49,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, contramap, traceWith)
 
+import Data.Hashable
 import Data.ByteString.Lazy (ByteString)
 import Data.Map (Map)
 import Data.Text (Text)
@@ -217,6 +218,7 @@ makeConnectionHandler
        , Ord      versionNumber
        , Show     peerAddr
        , Typeable peerAddr
+       , Hashable peerAddr
        )
     => Tracer m (WithMuxBearer (ConnectionId peerAddr) MuxTrace)
     -> SingMuxMode muxMode
@@ -327,8 +329,8 @@ makeConnectionHandler muxTracer singMuxMode
                         }
                   atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
                   bearer <- mkMuxBearer sduTimeout socket
-                  runMux (WithMuxBearer connectionId `contramap` muxTracer)
-                         mux bearer
+                  -- XXX Salt should be a random value drawn at startup.
+                  runMux (WithMuxBearer connectionId `contramap` muxTracer) (hashWithSalt 42 remoteAddress) mux bearer
 
               Right (HandshakeQueryResult vMap) -> do
                 atomically $ writePromise (Right HandshakeConnectionQuery)
@@ -394,8 +396,9 @@ makeConnectionHandler muxTracer singMuxMode
                         }
                   atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
                   bearer <- mkMuxBearer sduTimeout socket
-                  runMux (WithMuxBearer connectionId `contramap` muxTracer)
-                             mux bearer
+                  -- XXX Salt should be a random value drawn at startup.
+                  runMux (WithMuxBearer connectionId `contramap` muxTracer) (hashWithSalt 42 remoteAddress) mux bearer
+
               Right (HandshakeQueryResult vMap) -> do
                 atomically $ writePromise (Right HandshakeConnectionQuery)
                 traceWith tracer $ TrHandshakeQuery vMap

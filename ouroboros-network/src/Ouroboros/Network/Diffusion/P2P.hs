@@ -569,6 +569,7 @@ runM
        , Typeable  ntcAddr
        , Ord       ntcAddr
        , Show      ntcAddr
+       , Hashable  ntcAddr
        , Ord       ntcVersion
        , Exception resolverError
        )
