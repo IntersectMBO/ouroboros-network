@@ -117,7 +117,7 @@ muxStart tracer muxapp bearer = do
       ]
 
     -- Wait for the first MuxApplication to finish, then stop the mux.
-    withAsync (runMux tracer mux bearer) $ \aid -> do
+    withAsync (runMux tracer 0 mux bearer) $ \aid -> do
       waitOnAny resOps
       stopMux mux
       wait aid

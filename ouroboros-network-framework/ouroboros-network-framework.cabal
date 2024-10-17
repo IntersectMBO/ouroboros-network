@@ -139,6 +139,7 @@ library testlib
                    , bytestring
                    , cborg
                    , containers
+                   , hashable
                    , random
                    , serialise
 
