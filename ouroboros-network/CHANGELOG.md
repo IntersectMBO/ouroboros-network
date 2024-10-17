@@ -4,6 +4,12 @@
 
 ### Breaking changes
 
+### Non-Breaking changes
+
+## 0.18.0.0 -- 2024-10-17
+
+### Breaking changes
+
 * Introduced `daReadLedgerPeerSnapshot` to `P2P.ArgumentsExtra` which holds
   a `Maybe LedgerPeerSnapshot` from a node's configuration. If present, it
   may be used to pick big ledger peers by the peer selection governor when

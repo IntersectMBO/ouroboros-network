@@ -1,6 +1,6 @@
 # Revision history for ouroboros-network-protocols
 
-## next release
+## 0.12.0.0 -- 2024-10-17
 
 ### Breaking changes
 
