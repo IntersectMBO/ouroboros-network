@@ -271,7 +271,7 @@ clientServerSimulation payloads =
                     runMux (("server", connId,)
                              `contramap`
                              traceTime (Tracer (say . show)))
-                           mux bearer)
+                           0 mux bearer)
                 $ \_muxThread -> do
                   res <- atomically resSTM
                   say $ "SERVER HANDLER " ++ show res
@@ -316,7 +316,7 @@ clientServerSimulation payloads =
                         runMux (("client", connId,)
                                  `contramap`
                                  traceTime (Tracer (say . show)))
-                               mux bearer)
+                               1 mux bearer)
                     $ \_ -> do
                       res <- atomically resSTM
                       stopMux mux
