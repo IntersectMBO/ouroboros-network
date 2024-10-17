@@ -6,7 +6,7 @@
 
 ### Breaking changes
 
-- Improvements and bug fixes to Signal API
+* Improvements and bug fixes to Signal API
 
 ### Non-Breaking changes
 

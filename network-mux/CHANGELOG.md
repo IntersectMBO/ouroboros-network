@@ -4,6 +4,12 @@
 
 ### Breaking changes
 
+### Non-breaking changes
+
+## 0.5.0.0 -- 2024-10-17
+
+### Breaking changes
+
 * Removed `Netowrk.Mux.Compat` module with legacy API.
 * `Ouroboros.Network.Mux.toApplication` was removed. 
 * `Ouroboros.Network.Mux.mkMiniProtocolBundle` was renamed to
