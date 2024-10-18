@@ -123,7 +123,8 @@ clientPingPong pipelined =
         ctaHandshakeTimeLimits = noTimeLimitsHandshake,
         ctaVersionDataCodec    = unversionedProtocolDataCodec,
         ctaConnectTracers      = nullNetworkConnectTracers,
-        ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+        ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion,
+        ctaDeprecatedVersion   = Nothing
       }
       mempty
       (unversionedProtocol app)
@@ -218,7 +219,8 @@ clientPingPong2 =
         ctaHandshakeTimeLimits = noTimeLimitsHandshake,
         ctaVersionDataCodec    = unversionedProtocolDataCodec,
         ctaConnectTracers      = nullNetworkConnectTracers,
-        ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+        ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion,
+        ctaDeprecatedVersion   = Nothing
       }
       mempty
       (unversionedProtocol app)

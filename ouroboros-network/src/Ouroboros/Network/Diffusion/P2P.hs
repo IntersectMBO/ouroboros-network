@@ -94,7 +94,7 @@ import Ouroboros.Network.IOManager
 import Ouroboros.Network.Mux hiding (MiniProtocol (..))
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.NodeToClient (NodeToClientVersion (..),
-           NodeToClientVersionData)
+           NodeToClientVersionData, nodeToClientDeprecatedVersion)
 import Ouroboros.Network.NodeToClient qualified as NodeToClient
 import Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit (..),
            DiffusionMode (..), NodeToNodeVersion (..),
@@ -1194,7 +1194,8 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                            NodeToNode.nodeToNodeCodecCBORTerm,
                        haAcceptVersion = acceptableVersion,
                        haQueryVersion = queryVersion,
-                       haTimeLimits = timeLimitsHandshake
+                       haTimeLimits = timeLimitsHandshake,
+                       haDeprecatedVersion = Nothing
                      }
                  diNtcHandshakeArguments =
                    HandshakeArguments {
@@ -1205,7 +1206,8 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                            NodeToClient.nodeToClientCodecCBORTerm,
                        haAcceptVersion = acceptableVersion,
                        haQueryVersion = queryVersion,
-                       haTimeLimits = noTimeLimitsHandshake
+                       haTimeLimits = noTimeLimitsHandshake,
+                       haDeprecatedVersion = nodeToClientDeprecatedVersion
                      }
 
                  diInstallSigUSR1Handler

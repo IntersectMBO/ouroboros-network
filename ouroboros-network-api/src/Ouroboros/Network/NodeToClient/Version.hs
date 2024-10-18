@@ -8,6 +8,7 @@ module Ouroboros.Network.NodeToClient.Version
   , NodeToClientVersionData (..)
   , nodeToClientCodecCBORTerm
   , nodeToClientVersionCodec
+  , nodeToClientDeprecatedVersion
   ) where
 
 import Codec.CBOR.Term qualified as CBOR
@@ -52,6 +53,10 @@ data NodeToClientVersion
     | NodeToClientV_19
     -- ^ added @GetLedgerPeerSnapshot@
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable, Generic, NFData)
+
+
+nodeToClientDeprecatedVersion :: Maybe NodeToClientVersion
+nodeToClientDeprecatedVersion = Just NodeToClientV_12
 
 -- | We set 16ths bit to distinguish `NodeToNodeVersion` and
 -- `NodeToClientVersion`.  This way connecting wrong protocol suite will fail

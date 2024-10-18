@@ -9,6 +9,7 @@ module Ouroboros.Network.Protocol.Handshake
   ( runHandshakeClient
   , runHandshakeServer
   , HandshakeArguments (..)
+  , HandshakeTracer (..)
   , Versions (..)
   , HandshakeException (..)
   , HandshakeProtocolError (..)
@@ -82,8 +83,7 @@ tryHandshake doHandshake = do
 data HandshakeArguments connectionId vNumber vData m = HandshakeArguments {
       -- | 'Handshake' tracer
       --
-      haHandshakeTracer :: Tracer m (WithMuxBearer connectionId
-                                     (TraceSendRecv (Handshake vNumber CBOR.Term))),
+      haHandshakeTracer :: Tracer m (WithMuxBearer connectionId (HandshakeTracer vNumber)),
       -- | Codec for protocol messages.
       --
       haHandshakeCodec
@@ -105,7 +105,13 @@ data HandshakeArguments connectionId vNumber vData m = HandshakeArguments {
       -- | 'Driver' timeouts for 'Handshake' protocol.
       --
       haTimeLimits
-        :: ProtocolTimeLimits (Handshake vNumber CBOR.Term)
+        :: ProtocolTimeLimits (Handshake vNumber CBOR.Term),
+
+      -- | We emit a deprecation warning for all versions lower than
+      -- `haDeprecatedVersion`.
+      --
+      haDeprecatedVersion
+        :: Maybe vNumber
     }
 
 
@@ -132,18 +138,26 @@ runHandshakeClient bearer
                      haHandshakeCodec,
                      haVersionDataCodec,
                      haAcceptVersion,
-                     haTimeLimits
+                     haTimeLimits,
+                     haDeprecatedVersion
                    }
                    versions  =
     tryHandshake
       (fst <$>
         runPeerWithLimits
-          (WithMuxBearer connectionId `contramap` haHandshakeTracer)
+          ((WithMuxBearer connectionId . HandshakeTraceSendRecv)
+           `contramap` haHandshakeTracer)
           haHandshakeCodec
           byteLimitsHandshake
           haTimeLimits
           (muxBearerAsChannel bearer handshakeProtocolNum InitiatorDir)
-          (handshakeClientPeer haVersionDataCodec haAcceptVersion versions))
+          (handshakeClientPeer
+            ((WithMuxBearer connectionId . HandshakeMessage)
+             `contramap` haHandshakeTracer)
+            haDeprecatedVersion
+            haVersionDataCodec
+            haAcceptVersion
+            versions))
 
 
 -- | Run server side of the 'Handshake' protocol.
@@ -176,7 +190,7 @@ runHandshakeServer bearer
     tryHandshake
       (fst <$>
         runPeerWithLimits
-          (WithMuxBearer connectionId `contramap` haHandshakeTracer)
+          ((WithMuxBearer connectionId . HandshakeTraceSendRecv) `contramap` haHandshakeTracer)
           haHandshakeCodec
           byteLimitsHandshake
           haTimeLimits

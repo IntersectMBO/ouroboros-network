@@ -447,6 +447,8 @@ prop_connect (ArbitraryVersions clientVersions serverVersions) =
   in case runSimOrThrow
            (connect
               (handshakeClientPeer
+                nullTracer
+                Nothing
                 (cborTermVersionDataCodec dataCodecCBORTerm)
                 acceptableVersion
                 clientVersions)
@@ -488,6 +490,8 @@ prop_channel createChannels clientVersions serverVersions =
       runConnectedPeers
         createChannels nullTracer versionNumberHandshakeCodec
         (handshakeClientPeer
+          nullTracer
+          Nothing
           (cborTermVersionDataCodec dataCodecCBORTerm)
           acceptableVersion
           clientVersions)
@@ -565,6 +569,8 @@ prop_channel_asymmetric createChannels clientVersions = do
         versionNumberHandshakeCodec
         (codecHandshake versionNumberCodec')
         (handshakeClientPeer
+          nullTracer
+          Nothing
           (cborTermVersionDataCodec dataCodecCBORTerm)
           acceptableVersion
           clientVersions)
@@ -960,6 +966,8 @@ prop_query_version createChannels codec versionDataCodec clientVersions serverVe
     runConnectedPeers
       createChannels nullTracer codec
       (handshakeClientPeer
+        nullTracer
+        Nothing
         versionDataCodec
         acceptableVersion
         clientVersions')
@@ -1003,6 +1011,8 @@ prop_peerSharing_symmetric createChannels codec versionDataCodec clientVersions 
     runConnectedPeers
       createChannels nullTracer codec
       (handshakeClientPeer
+        nullTracer
+        Nothing
         versionDataCodec
         acceptableVersion
         clientVersions)
@@ -1153,10 +1163,14 @@ prop_channel_simultaneous_open createChannels codec versionDataCodec clientVersi
   in do
     (clientChannel, serverChannel) <- createChannels
     let client  = handshakeClientPeer
+                    nullTracer
+                    Nothing
                     versionDataCodec
                     acceptableVersion
                     clientVersions
         client' = handshakeClientPeer
+                    nullTracer
+                    Nothing
                     versionDataCodec
                     acceptableVersion
                     serverVersions

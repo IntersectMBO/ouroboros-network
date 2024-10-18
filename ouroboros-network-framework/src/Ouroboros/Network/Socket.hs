@@ -134,7 +134,7 @@ data NetworkConnectTracers addr vNumber = NetworkConnectTracers {
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
       nctHandshakeTracer   :: Tracer IO (Mx.WithMuxBearer (ConnectionId addr)
-                                          (TraceSendRecv (Handshake vNumber CBOR.Term)))
+                                          (HandshakeTracer vNumber))
       -- ^ handshake protocol tracer; it is important for analysing version
       -- negotiation mismatches.
     }
@@ -259,7 +259,9 @@ data ConnectToArgs fd addr vNumber vData = ConnectToArgs {
     ctaHandshakeTimeLimits :: ProtocolTimeLimits (Handshake vNumber CBOR.Term),
     ctaVersionDataCodec    :: VersionDataCodec CBOR.Term vNumber vData,
     ctaConnectTracers      :: NetworkConnectTracers addr vNumber,
-    ctaHandshakeCallbacks  :: HandshakeCallbacks vData
+    ctaHandshakeCallbacks  :: HandshakeCallbacks vData,
+    ctaDeprecatedVersion   :: Maybe vNumber
+    -- ^ largest deprecated version number
   }
 
 
@@ -400,7 +402,8 @@ connectToNodeWithMux'
           nctMuxTracer,
           nctHandshakeTracer
         },
-      ctaHandshakeCallbacks  = handshakeCallbacks
+      ctaHandshakeCallbacks  = handshakeCallbacks,
+      ctaDeprecatedVersion
   }
   versions sd k = do
     connectionId <- (\localAddress remoteAddress -> ConnectionId { localAddress, remoteAddress })
@@ -415,12 +418,13 @@ connectToNodeWithMux'
         connectionId
         -- TODO: push 'HandshakeArguments' up the call stack.
         HandshakeArguments {
-          haHandshakeTracer  = nctHandshakeTracer,
-          haHandshakeCodec   = handshakeCodec,
-          haVersionDataCodec = versionDataCodec,
-          haAcceptVersion    = acceptCb handshakeCallbacks,
-          haQueryVersion     = queryCb handshakeCallbacks,
-          haTimeLimits       = handshakeTimeLimits
+          haHandshakeTracer   = nctHandshakeTracer,
+          haHandshakeCodec    = handshakeCodec,
+          haVersionDataCodec  = versionDataCodec,
+          haAcceptVersion     = acceptCb handshakeCallbacks,
+          haQueryVersion      = queryCb handshakeCallbacks,
+          haTimeLimits        = handshakeTimeLimits,
+          haDeprecatedVersion = ctaDeprecatedVersion
         }
         versions
     ts_end <- getMonotonicTime
@@ -560,7 +564,7 @@ beginConnection
        )
     => Mx.MakeBearer IO fd
     -> Tracer IO (Mx.WithMuxBearer (ConnectionId addr) Mx.MuxTrace)
-    -> Tracer IO (Mx.WithMuxBearer (ConnectionId addr) (TraceSendRecv (Handshake vNumber CBOR.Term)))
+    -> Tracer IO (Mx.WithMuxBearer (ConnectionId addr) (HandshakeTracer vNumber))
     -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
     -> ProtocolTimeLimits (Handshake vNumber CBOR.Term)
     -> VersionDataCodec CBOR.Term vNumber vData
@@ -582,12 +586,13 @@ beginConnection makeBearer muxTracer handshakeTracer handshakeCodec handshakeTim
             handshakeBearer
             connectionId
             HandshakeArguments {
-              haHandshakeTracer  = handshakeTracer,
-              haHandshakeCodec   = handshakeCodec,
-              haVersionDataCodec = versionDataCodec,
-              haAcceptVersion    = acceptCb handshakeCallbacks,
-              haQueryVersion     = queryCb handshakeCallbacks,
-              haTimeLimits       = handshakeTimeLimits
+              haHandshakeTracer   = handshakeTracer,
+              haHandshakeCodec    = handshakeCodec,
+              haVersionDataCodec  = versionDataCodec,
+              haAcceptVersion     = acceptCb handshakeCallbacks,
+              haQueryVersion      = queryCb handshakeCallbacks,
+              haTimeLimits        = handshakeTimeLimits,
+              haDeprecatedVersion = Nothing -- deprecations are only issued on the handshake client side
             }
            versions
 
@@ -664,7 +669,7 @@ data NetworkServerTracers addr vNumber = NetworkServerTracers {
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
       nstHandshakeTracer   :: Tracer IO (Mx.WithMuxBearer (ConnectionId addr)
-                                          (TraceSendRecv (Handshake vNumber CBOR.Term))),
+                                          (HandshakeTracer vNumber)),
       -- ^ handshake protocol tracer; it is important for analysing version
       -- negotation mismatches.
       nstErrorPolicyTracer :: Tracer IO (WithAddr addr ErrorPolicyTrace),

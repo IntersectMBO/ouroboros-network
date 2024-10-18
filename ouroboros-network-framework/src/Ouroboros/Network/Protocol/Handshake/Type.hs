@@ -1,16 +1,13 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE EmptyCase           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
-{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
 
 module Ouroboros.Network.Protocol.Handshake.Type
@@ -22,17 +19,21 @@ module Ouroboros.Network.Protocol.Handshake.Type
   , RefuseReason (..)
   , HandshakeProtocolError (..)
   , HandshakeResult (..)
+  , HandshakeTracer (..)
+  , HandshakeMessage (..)
   ) where
 
 
-import Control.Exception
 import Data.Map (Map)
 import Data.Text (Text)
 import Data.Typeable (Typeable)
 
+import Codec.CBOR.Term qualified as CBOR
 import Control.DeepSeq
+import Control.Exception
 import GHC.Generics
 import Network.TypedProtocol.Core
+import Ouroboros.Network.Driver.Simple (TraceSendRecv)
 import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 -- |
@@ -177,3 +178,14 @@ data HandshakeResult r vNumber vData
 
 instance (Typeable vNumber, Show vNumber)
     => Exception (HandshakeProtocolError vNumber)
+
+data HandshakeTracer vNumber =
+    HandshakeMessage (HandshakeMessage vNumber)
+    -- ^ Handshake negotiated a deprecated version.
+  | HandshakeTraceSendRecv (TraceSendRecv (Handshake vNumber CBOR.Term))
+  deriving Show
+
+data HandshakeMessage vNumber =
+   DeprecationWarning vNumber -- negotiated version
+                      vNumber -- largest deprecated version
+   deriving Show

@@ -4,7 +4,6 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
 
 module Ouroboros.Network.Protocol.Handshake.Client
   ( handshakeClientPeer
@@ -13,8 +12,11 @@ module Ouroboros.Network.Protocol.Handshake.Client
   , acceptOrRefuse
   ) where
 
+import Control.Tracer (Tracer, traceWith)
+import Control.Monad (when)
 import Data.Map (Map)
 import Data.Map qualified as Map
+import Data.Maybe (fromJust)
 import Data.Text (Text)
 
 import Codec.CBOR.Term qualified as CBOR
@@ -32,9 +34,13 @@ import Ouroboros.Network.Protocol.Handshake.Version
 -- TODO: GADT encoding of the client (@Handshake.Client@ module).
 --
 handshakeClientPeer
-  :: ( Ord vNumber
+  :: ( Monad m
+     , Ord vNumber
      )
-  => VersionDataCodec CBOR.Term vNumber vData
+  => Tracer m (HandshakeMessage vNumber)
+  -> Maybe vNumber
+  -- ^ largest deprecated version
+  -> VersionDataCodec CBOR.Term vNumber vData
   -> (vData -> vData -> Accept vData)
   -> Versions vNumber vData r
   -> Client (Handshake vNumber CBOR.Term)
@@ -42,7 +48,8 @@ handshakeClientPeer
             (Either
               (HandshakeProtocolError vNumber)
               (HandshakeResult r vNumber vData))
-handshakeClientPeer codec@VersionDataCodec {encodeData, decodeData}
+handshakeClientPeer tracer deprecatedSince
+                    codec@VersionDataCodec {encodeData, decodeData}
                     acceptVersion versions =
   -- send known versions
   Yield (MsgProposeVersions $ encodeVersions encodeData versions) $
@@ -64,8 +71,10 @@ handshakeClientPeer codec@VersionDataCodec {encodeData, decodeData}
 
       -- the server accepted a version, sent back the version number and its
       -- version data blob
-      MsgAcceptVersion vNumber vParams ->
-        case vNumber `Map.lookup` getVersions versions of
+      MsgAcceptVersion vNumber vParams -> Effect $ do
+        when (Just vNumber <= deprecatedSince) $ do
+          traceWith tracer (DeprecationWarning vNumber (fromJust deprecatedSince))
+        return $ case vNumber `Map.lookup` getVersions versions of
           Nothing -> Done (Left $ NotRecognisedVersion vNumber)
           Just (Version app vData) ->
             case decodeData vNumber vParams of

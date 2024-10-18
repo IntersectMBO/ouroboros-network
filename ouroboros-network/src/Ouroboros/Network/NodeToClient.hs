@@ -14,6 +14,7 @@ module Ouroboros.Network.NodeToClient
   ( nodeToClientProtocols
   , NodeToClientProtocols (..)
   , NodeToClientVersion (..)
+  , nodeToClientDeprecatedVersion
   , NodeToClientVersionData (..)
   , NetworkConnectTracers (..)
   , nullNetworkConnectTracers
@@ -80,7 +81,6 @@ import Control.Exception (ErrorCall, IOException, SomeException)
 import Control.Monad (forever)
 import Control.Monad.Class.MonadTimer.SI
 
-import Codec.CBOR.Term qualified as CBOR
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
 import Data.Functor.Contravariant (contramap)
@@ -124,7 +124,7 @@ import Ouroboros.Network.Tracers
 -- The Handshake tracer types are simply terrible.
 type HandshakeTr ntcAddr ntcVersion =
     WithMuxBearer (ConnectionId ntcAddr)
-                  (TraceSendRecv (Handshake ntcVersion CBOR.Term))
+                  (HandshakeTracer ntcVersion)
 
 
 -- | Record of node-to-client mini protocols.
@@ -257,7 +257,8 @@ connectTo snocket tracers versions path =
         ctaHandshakeTimeLimits = noTimeLimitsHandshake,
         ctaVersionDataCodec    = cborTermVersionDataCodec nodeToClientCodecCBORTerm,
         ctaConnectTracers      = tracers,
-        ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+        ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion,
+        ctaDeprecatedVersion   = nodeToClientDeprecatedVersion
       }
       mempty
       versions
@@ -306,7 +307,8 @@ connectToWithMux snocket tracers versions path k =
       ctaHandshakeTimeLimits = noTimeLimitsHandshake,
       ctaVersionDataCodec    = cborTermVersionDataCodec nodeToClientCodecCBORTerm,
       ctaConnectTracers      = tracers,
-      ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+      ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion,
+      ctaDeprecatedVersion   = nodeToClientDeprecatedVersion
     }
     mempty
     versions
@@ -393,7 +395,8 @@ ncSubscriptionWorker
             ctaHandshakeTimeLimits = noTimeLimitsHandshake,
             ctaVersionDataCodec    = cborTermVersionDataCodec nodeToClientCodecCBORTerm,
             ctaConnectTracers      = NetworkConnectTracers nsMuxTracer nsHandshakeTracer,
-            ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+            ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion,
+            ctaDeprecatedVersion   = nodeToClientDeprecatedVersion
           }
           versions)
 

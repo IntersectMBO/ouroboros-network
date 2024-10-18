@@ -111,7 +111,6 @@ import Control.Exception (IOException, SomeException)
 import Control.Monad.Class.MonadTime.SI (DiffTime)
 
 import Codec.CBOR.Read qualified as CBOR
-import Codec.CBOR.Term qualified as CBOR
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
 import Data.Void (Void)
@@ -160,7 +159,7 @@ import Ouroboros.Network.Util.ShowProxy (ShowProxy, showProxy)
 -- The Handshake tracer types are simply terrible.
 type HandshakeTr ntnAddr ntnVersion =
     WithMuxBearer (ConnectionId ntnAddr)
-                  (TraceSendRecv (Handshake ntnVersion CBOR.Term))
+                  (HandshakeTracer ntnVersion)
 
 
 data NodeToNodeProtocols appType initiatorCtx responderCtx bytes m a b = NodeToNodeProtocols {
@@ -459,7 +458,8 @@ connectTo sn tr =
                     ctaHandshakeTimeLimits = timeLimitsHandshake,
                     ctaVersionDataCodec    = cborTermVersionDataCodec nodeToNodeCodecCBORTerm,
                     ctaConnectTracers      = tr,
-                    ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+                    ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion,
+                    ctaDeprecatedVersion   = Nothing
                   }
                   configureOutboundSocket
   where
@@ -552,7 +552,8 @@ ipSubscriptionWorker
             ctaHandshakeTimeLimits = timeLimitsHandshake,
             ctaVersionDataCodec    = cborTermVersionDataCodec nodeToNodeCodecCBORTerm,
             ctaConnectTracers      = NetworkConnectTracers nsMuxTracer nsHandshakeTracer,
-            ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+            ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion,
+            ctaDeprecatedVersion   = Nothing
           }
           versions)
 
@@ -600,7 +601,8 @@ dnsSubscriptionWorker
           ctaHandshakeTimeLimits = timeLimitsHandshake,
           ctaVersionDataCodec    = cborTermVersionDataCodec nodeToNodeCodecCBORTerm,
           ctaConnectTracers      = NetworkConnectTracers ndstMuxTracer ndstHandshakeTracer,
-          ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+          ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion,
+          ctaDeprecatedVersion   = Nothing
         }
         versions)
 

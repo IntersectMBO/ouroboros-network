@@ -254,7 +254,8 @@ withBidirectionalConnectionManager snocket makeBearer socket
               haVersionDataCodec = unversionedProtocolDataCodec,
               haAcceptVersion = acceptableVersion,
               haQueryVersion = queryVersion,
-              haTimeLimits = timeLimitsHandshake
+              haTimeLimits = timeLimitsHandshake,
+              haDeprecatedVersion = Nothing
             }
           (unversionedProtocol
              (serverApplication hotRequestsVar

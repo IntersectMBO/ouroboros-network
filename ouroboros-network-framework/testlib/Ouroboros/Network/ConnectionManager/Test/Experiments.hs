@@ -306,7 +306,8 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
             haVersionDataCodec = cborTermVersionDataCodec dataFlowProtocolDataCodec,
             haAcceptVersion = acceptableVersion,
             haQueryVersion = queryVersion,
-            haTimeLimits = handshakeTimeLimits
+            haTimeLimits = handshakeTimeLimits,
+            haDeprecatedVersion = Nothing
           }
         (dataFlowProtocol Unidirectional clientApplication)
         (mainThreadId, debugMuxErrorRethrowPolicy
@@ -493,7 +494,8 @@ withBidirectionalConnectionManager name timeouts
               haVersionDataCodec = cborTermVersionDataCodec dataFlowProtocolDataCodec,
               haAcceptVersion = acceptableVersion,
               haQueryVersion = queryVersion,
-              haTimeLimits = handshakeTimeLimits
+              haTimeLimits = handshakeTimeLimits,
+              haDeprecatedVersion = Nothing
             }
           (dataFlowProtocol Duplex serverApplication)
           (mainThreadId,   debugMuxErrorRethrowPolicy

@@ -261,7 +261,8 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
               ctaHandshakeTimeLimits = noTimeLimitsHandshake,
               ctaVersionDataCodec    = unversionedProtocolDataCodec,
               ctaConnectTracers      = NetworkConnectTracers activeMuxTracer nullTracer,
-              ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+              ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion,
+              ctaDeprecatedVersion   = Nothing
             }
             (`configureSock` Nothing)
             (unversionedProtocol initiatorApp)
@@ -527,7 +528,8 @@ prop_socket_client_connect_error _ xs =
           ctaHandshakeTimeLimits = noTimeLimitsHandshake,
           ctaVersionDataCodec    = unversionedProtocolDataCodec,
           ctaConnectTracers      = nullNetworkConnectTracers,
-          ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+          ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion,
+          ctaDeprecatedVersion   = Nothing
         }
         (`configureSocket` Nothing)
         (unversionedProtocol app)
