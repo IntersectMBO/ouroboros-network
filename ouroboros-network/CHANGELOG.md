@@ -4,6 +4,12 @@
 
 ### Breaking changes
 
+### Non-Breaking changes
+
+## 0.18.0.0 -- 2024-10-17
+
+### Breaking changes
+
 * Introduced `daReadLedgerPeerSnapshot` to `P2P.ArgumentsExtra` which holds
   a `Maybe LedgerPeerSnapshot` from a node's configuration. If present, it
   may be used to pick big ledger peers by the peer selection governor when
@@ -23,7 +29,7 @@
 * Added `daMinBigLedgerPeersForTrustedState` to `ArgumentsExtra` when starting diffusion.
   It is used by `outboundConnectionsState` when signaling trust state when syncing in
   Genesis mode. Default value is provided by the Configuration module.
-* Using `typed-protocols-0.2.0.0`.
+* Using `typed-protocols-0.3.0.0`.
 * `Ouroboros.Network.NodeToClient.connectTo` takes
   `OuroborosApplicationWithMinimalCtx` which is using `Void` type for responder
   protocols.  It anyway only accepts `InitiatorMode`, and thus no responder

@@ -3,14 +3,12 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
-{-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE QuantifiedConstraints      #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
@@ -270,8 +268,8 @@ readCDDLSpecs = do
     -- append common definitions; they must be appended since the first
     -- definition is the entry point for a cddl spec.
     return CDDLSpecs {
-        cddlHandshakeNodeToClient        = CDDLSpec $ handshakeNodeToClient,
-        cddlHandshakeNodeToNodeV13ToLast = CDDLSpec $ handshakeNodeToNodeV13ToLast,
+        cddlHandshakeNodeToClient        = CDDLSpec   handshakeNodeToClient,
+        cddlHandshakeNodeToNodeV13ToLast = CDDLSpec   handshakeNodeToNodeV13ToLast,
         cddlChainSync                    = CDDLSpec $ chainSync
                                                    <> common,
         cddlBlockFetch                   = CDDLSpec $ blockFetch

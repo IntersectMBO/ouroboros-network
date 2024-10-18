@@ -1,6 +1,12 @@
 # Revision history for ouroboros-network-framework
 
-## next release
+# next release
+
+### Breaking changes
+
+### Non-breaking changes
+
+## 0.14.0.0 -- 2024-10-17
 
 ### Breaking changes
 
@@ -27,7 +33,6 @@
 * `Ouroboros.Network.ConnectionManager.Core` must be imported qualified.
 * `ConnectionManagerTrace` moved from `Ouroboros.Network.ConnectionManager.Types`
   to the `Core` module & renamed as `Trace`.
-
 
 ### Non-breaking changes
 
