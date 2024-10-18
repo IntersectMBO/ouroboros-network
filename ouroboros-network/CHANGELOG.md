@@ -29,7 +29,7 @@
 * Added `daMinBigLedgerPeersForTrustedState` to `ArgumentsExtra` when starting diffusion.
   It is used by `outboundConnectionsState` when signaling trust state when syncing in
   Genesis mode. Default value is provided by the Configuration module.
-* Using `typed-protocols-0.2.0.0`.
+* Using `typed-protocols-0.3.0.0`.
 * `Ouroboros.Network.NodeToClient.connectTo` takes
   `OuroborosApplicationWithMinimalCtx` which is using `Void` type for responder
   protocols.  It anyway only accepts `InitiatorMode`, and thus no responder
