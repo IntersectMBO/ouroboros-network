@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric  #-}
+{-# LANGUAGE LambdaCase     #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
 module Ouroboros.Network.NodeToClient.Version
@@ -10,6 +11,7 @@ module Ouroboros.Network.NodeToClient.Version
   ) where
 
 import Codec.CBOR.Term qualified as CBOR
+import Control.Monad ((>=>))
 import Control.DeepSeq
 import Data.Bits (clearBit, setBit, testBit)
 import Data.Text (Text)
@@ -59,35 +61,45 @@ data NodeToClientVersion
 nodeToClientVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToClientVersion
 nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
     where
-      encodeTerm NodeToClientV_9  = CBOR.TInt (9  `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_10 = CBOR.TInt (10 `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_11 = CBOR.TInt (11 `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_12 = CBOR.TInt (12 `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_13 = CBOR.TInt (13 `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_14 = CBOR.TInt (14 `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_15 = CBOR.TInt (15 `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_16 = CBOR.TInt (16 `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_17 = CBOR.TInt (17 `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_18 = CBOR.TInt (18 `setBit` nodeToClientVersionBit)
+      encodeTerm = \case
+          NodeToClientV_9  -> enc 9
+          NodeToClientV_10 -> enc 10
+          NodeToClientV_11 -> enc 11
+          NodeToClientV_12 -> enc 12
+          NodeToClientV_13 -> enc 13
+          NodeToClientV_14 -> enc 14
+          NodeToClientV_15 -> enc 15
+          NodeToClientV_16 -> enc 16
+          NodeToClientV_17 -> enc 17
+          NodeToClientV_18 -> enc 18
+        where
+          enc :: Int -> CBOR.Term
+          enc = CBOR.TInt . (`setBit` nodeToClientVersionBit)
 
-      decodeTerm (CBOR.TInt tag) =
-       case ( tag `clearBit` nodeToClientVersionBit
-            , tag `testBit`  nodeToClientVersionBit
-            ) of
-        (9, True)  -> Right NodeToClientV_9
-        (10, True) -> Right NodeToClientV_10
-        (11, True) -> Right NodeToClientV_11
-        (12, True) -> Right NodeToClientV_12
-        (13, True) -> Right NodeToClientV_13
-        (14, True) -> Right NodeToClientV_14
-        (15, True) -> Right NodeToClientV_15
-        (16, True) -> Right NodeToClientV_16
-        (17, True) -> Right NodeToClientV_17
-        (18, True) -> Right NodeToClientV_18
-        (n, _)     -> Left ( T.pack "decode NodeToClientVersion: unknown tag: " <> T.pack (show tag)
-                            , Just n)
-      decodeTerm _  = Left ( T.pack "decode NodeToClientVersion: unexpected term"
-                           , Nothing)
+      decodeTerm =
+          dec >=> \case
+            9  -> Right NodeToClientV_9
+            10 -> Right NodeToClientV_10
+            11 -> Right NodeToClientV_11
+            12 -> Right NodeToClientV_12
+            13 -> Right NodeToClientV_13
+            14 -> Right NodeToClientV_14
+            15 -> Right NodeToClientV_15
+            16 -> Right NodeToClientV_16
+            17 -> Right NodeToClientV_17
+            18 -> Right NodeToClientV_18
+            n  -> Left (unknownTag n)
+        where
+          dec :: CBOR.Term -> Either (Text, Maybe Int) Int
+          dec (CBOR.TInt x) | x `testBit` nodeToClientVersionBit
+                            = Right (x `clearBit` nodeToClientVersionBit)
+                            | otherwise
+                            = Left (unknownTag x)
+          dec _             = Left ( T.pack "decode NodeToClientVersion: unexpected term"
+                                   , Nothing
+                                   )
+
+          unknownTag x = ( T.pack "decode NodeToClientVersion: unknown tag: " <> T.pack (show x), Just x)
 
       -- The 16th bit to distinguish `NodeToNodeVersion` and `NodeToClientVersion`.
       nodeToClientVersionBit :: Int
