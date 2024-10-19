@@ -14,7 +14,7 @@ inputs: final: prev: {
     buildPhase =
       let
         src = ../.;
-        cddl-specs = ../ouroboros-network-protocols/test-cddl/specs;
+        cddl-specs = ../ouroboros-network-protocols/cddl/specs;
       in
       ''
         for d in network-design network-spec; do
@@ -22,8 +22,8 @@ inputs: final: prev: {
           ln -s ${src}/$d/* docs/$d/
         done
 
-        mkdir -p ouroboros-network-protocols/test-cddl/specs
-        cp ${cddl-specs}/*.cddl ouroboros-network-protocols/test-cddl/specs
+        mkdir -p ouroboros-network-protocols/cddl/specs
+        cp ${cddl-specs}/*.cddl ouroboros-network-protocols/cddl/specs
 
         mkdir -p $out
 

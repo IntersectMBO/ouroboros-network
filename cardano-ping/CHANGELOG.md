@@ -1,8 +1,10 @@
 # Revision history for cardano-ping
 
-## next version
+## 0.5.0.1 -- 2024-10-17
 
-### Breaking changes
+### Non-breaking changes
+
+* Use `network-mux-0.5`.
 
 ### Non-breaking changes
 

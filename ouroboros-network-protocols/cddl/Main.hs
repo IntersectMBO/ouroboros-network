@@ -1,21 +1,19 @@
-{-# LANGUAGE CPP                        #-}
-{-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE GADTs                      #-}
-{-# LANGUAGE GeneralisedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE PolyKinds                  #-}
-{-# LANGUAGE QuantifiedConstraints      #-}
-{-# LANGUAGE RankNTypes                 #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE TupleSections              #-}
-{-# LANGUAGE TypeApplications           #-}
-{-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE TypeOperators              #-}
-{-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE CPP                   #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE PolyKinds             #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TupleSections         #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 {-# OPTIONS_GHC -Wno-orphans        #-}
 {-# OPTIONS_GHC -Wno-unused-imports #-}
@@ -250,8 +248,8 @@ data CDDLSpecs = CDDLSpecs {
 
 readCDDLSpecs :: IO CDDLSpecs
 readCDDLSpecs = do
-    dir <- bool (                                  "test-cddl" </> "specs") -- False
-                ("ouroboros-network-protocols" </> "test-cddl" </> "specs") -- True
+    dir <- bool (                                  "cddl" </> "specs") -- False
+                ("ouroboros-network-protocols" </> "cddl" </> "specs") -- True
        <$> doesDirectoryExist "ouroboros-network-protocols"
     common                <- BL.readFile (dir </> "common.cddl")
     handshakeNodeToClient <- BL.readFile (dir </> "handshake-node-to-client.cddl")
@@ -270,8 +268,8 @@ readCDDLSpecs = do
     -- append common definitions; they must be appended since the first
     -- definition is the entry point for a cddl spec.
     return CDDLSpecs {
-        cddlHandshakeNodeToClient        = CDDLSpec $ handshakeNodeToClient,
-        cddlHandshakeNodeToNodeV13ToLast = CDDLSpec $ handshakeNodeToNodeV13ToLast,
+        cddlHandshakeNodeToClient        = CDDLSpec   handshakeNodeToClient,
+        cddlHandshakeNodeToNodeV13ToLast = CDDLSpec   handshakeNodeToNodeV13ToLast,
         cddlChainSync                    = CDDLSpec $ chainSync
                                                    <> common,
         cddlBlockFetch                   = CDDLSpec $ blockFetch

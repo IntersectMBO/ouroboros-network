@@ -581,20 +581,20 @@ messages.  First one is used by the node to node protocol the other by node to
 client protocol.
 
 \subsubsection{Node to node handshake mini-protocol}
-\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/test-cddl/specs/handshake-node-to-node.cddl}
+\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/handshake-node-to-node.cddl}
 \subsubsection{Node to client handshake mini-protocol}
 \label{sec:nodetoclientcddl}
-\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/test-cddl/specs/handshake-node-to-client.cddl}
+\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/handshake-node-to-client.cddl}
 
 \subsection{CDDL encoding specification ($11$ to $12$)}\label{handshake-cddl}
 
 \subsubsection{Node to node handshake mini-protocol}
-\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/test-cddl/specs/handshake-node-to-node-v11-12.cddl}
+\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/handshake-node-to-node-v11-12.cddl}
 
 \subsection{CDDL encoding specification ($\geq 13$)}\label{handshake-cddl}
 
 \subsubsection{Node to node handshake mini-protocol}
-\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/test-cddl/specs/handshake-node-to-node-v13.cddl}
+\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/handshake-node-to-node-v13.cddl}
 
 \section{Chain-Sync mini-protocol}
 \label{chain-sync-protocol}
@@ -877,7 +877,7 @@ Here are some cases to consider:
 \end{description}
 
 \subsection{CDDL encoding specification}
-\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/test-cddl/specs/chain-sync.cddl}
+\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/chain-sync.cddl}
 See appendix \ref{cddl-common} for common definitions.
 
 \section{Block-Fetch mini-protocol}
@@ -965,7 +965,7 @@ Transition table is shown in table~\ref{table:block-fetch}.
 \end{table}
 
 \subsection{CDDL encoding specification}
-\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/test-cddl/specs/block-fetch.cddl}
+\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/block-fetch.cddl}
 See appendix \ref{cddl-common} for common definitions.
 
 \section{Tx-Submission mini-protocol}
@@ -1068,7 +1068,7 @@ The version 2 is used by version 6 and higher of node-to-node protocol.
   \caption{Tx-Submission mini-protocol (version 2) messages.}
 \end{table}
 \subsubsection{CDDL encoding specification}\label{tx-submission2-cddl}
-\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/test-cddl/specs/tx-submission2.cddl}
+\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/tx-submission2.cddl}
 See version 1 of the mini-protocol in section~\ref{tx-submission-cddl} and
 appendix \ref{cddl-common} for common definitions.
 
@@ -1166,7 +1166,7 @@ measurements.
 \end{description}
 
 \subsection{CDDL encoding specification}
-\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/test-cddl/specs/keep-alive.cddl}
+\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/keep-alive.cddl}
 
 \section{Local Tx-Submission mini-protocol}
 \haddockref{Ouroboros.Network.Protocol.LocalTxSubmission.Type}{ouroboros-network/Ouroboros-Network-Protocol-LocalTxSubmission-Type\#t:LocalTxSubmission}
@@ -1316,7 +1316,7 @@ $ImmutableTip$ are necessarily not subject rollback.
 \end{figure}
 
 \subsection{CDDL encoding specification}
-\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/test-cddl/specs/local-state-query.cddl}
+\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/local-state-query.cddl}
 See appendix \ref{cddl-common} for common definitions.
 
 \section{Peer Sharing mini-protocol}
@@ -1438,10 +1438,10 @@ function application all the way to diffusion and share the relevant parts of
 \texttt{PeerSelectionState} with this function via a \texttt{TVar}.
 
 \subsection{CDDL encoding specification ($11$ to $12$)}\label{peersharing-cddl}
-\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/test-cddl/specs/peer-sharing-v11-12.cddl}
+\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/peer-sharing-v11-12.cddl}
 
 \subsection{CDDL encoding specification ($\geq 13$)}\label{peersharing-cddl}
-\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/test-cddl/specs/peer-sharing-v13.cddl}
+\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/peer-sharing-v13.cddl}
 
 \section{Pipelining of Mini Protocols}
 \label{pipelining}

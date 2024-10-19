@@ -1,6 +1,6 @@
 cabal-version: 3.0
 name: ouroboros-network-protocols
-version: 0.11.0.0
+version: 0.12.0.0
 synopsis: Ouroboros Network Protocols
 description: Ouroboros Network Protocols.
 license: Apache-2.0
@@ -103,7 +103,7 @@ library
     deepseq,
     io-classes ^>=1.5.0,
     nothunks,
-    ouroboros-network-api ^>=0.10,
+    ouroboros-network-api ^>=0.11,
     quiet,
     serialise,
     si-timers,
@@ -243,7 +243,7 @@ test-suite test
 
 test-suite cddl
   type: exitcode-stdio-1.0
-  hs-source-dirs: test-cddl
+  hs-source-dirs: cddl
   main-is: Main.hs
 
   if flag(cddl)
