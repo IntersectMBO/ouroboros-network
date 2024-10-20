@@ -11,12 +11,14 @@ function usage {
   echo "Release packages to CHaP and create a PR."
   echo "-h help message "
   echo "-r report unreleased changes"
+  echo "-t build a release from a custom branch rather than master or release/* branches"
   echo "Set CHAP_DIR env variable to point to CHaP direcotory, if not set '/tmp/chap' will be used."
 }
 
 REPORT=0
+TEST=0
 
-optstring="hr"
+optstring="hrt"
 while getopts ${optstring} arg; do
   case ${arg} in
     h)
@@ -26,11 +28,15 @@ while getopts ${optstring} arg; do
     r)
       REPORT=1
       ;;
+    t)
+      TEST=1
+      ;;
     ?)
       echo "Invalid option '-${arg}'."
       exit 2
   esac
 done
+echo "TEST=$TEST"
 
 REPO_URL="https://github.com/intersectmbo/ouroboros-network"
 
@@ -57,8 +63,8 @@ if [[ $REPORT == 1 ]] then
 else
 
   branch=$(git rev-parse --abbrev-ref HEAD)
-  if [[ !($branch =~ ^(master|release/.*)$) ]]; then
-    echo "error: one must release from master or a release/* branch"
+  if [[ !($TEST) && !($branch =~ ^(master|release/.*)$) ]]; then
+    echo "error: one must release from master or a release/* branch, pass a -t switch to skip this test"
     exit 1
   fi
 
@@ -76,7 +82,11 @@ else
     git switch main
     git pull
   fi
-  git switch -c network/release-$(date -I)
+  BRANCH="network/release-$(date -I)"
+  if [[ $TEST ]];then
+    BRANCH="${BRANCH}-DO_NOT_MERGE"
+  fi
+  git switch -c $BRANCH
 
   for cf in $cabal_files; do
     name=$(cat $cf | grep '^name:' | awk '{ print $2 }')
@@ -85,16 +95,20 @@ else
     if [[ !(-d $dir) ]];then
       trace "publishing $name-$version"
       ./scripts/add-from-github.sh $REPO_URL $gitsha $name
-      git --git-dir "$gitdir/.git" tag "$name-$version" $gitsha
+      if [[ !($TEST) ]];then
+        git --git-dir "$gitdir/.git" tag "$name-$version" $gitsha
+      fi
     fi
   done
 
   git --no-pager log --oneline origin/main..HEAD
 
   popd > /dev/null
-  trace "created tags:"
-  git tag --points-at=HEAD
-  trace "please run ./scripts/build-with-chap.sh"
-  trace "once published, please push tags with:"
-  echo "git push origin \$(git tag --points-at=HEAD)"
+  if [[ !($TEST) ]];then
+    trace "created tags:"
+    git tag --points-at=HEAD
+    trace "please run ./scripts/build-with-chap.sh"
+    trace "once published, please push tags with:"
+    echo "git push origin \$(git tag --points-at=HEAD)"
+  fi
 fi

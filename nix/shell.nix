@@ -33,6 +33,10 @@ hsPkgs.shellFor {
         collection-mathscience
         latexmk;
     })
+    # requirements of release scripts
+    pkgs.jq
+    pkgs.yq-go
+    pkgs.gh
   ];
 
   # This is the place for tools that are required to be built with the same GHC
