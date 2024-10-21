@@ -279,8 +279,20 @@ Linux, MacOS, and cross compiled to Windows using `wine` (on Linux).
 
 ## Releasing packages to CHaP
 
-New versions of packages are published on [CHaP].  To release packages to
-[CHaP] one should use `./script/release-to-chap.sh`.
+New versions of packages are published to [CHaP].
+
+### Checking a pre-release branch
+
+If you have a branch which you want to check if it's releasable, you can run:
+```sh
+./scripts/release-to-chap.sh -t
+./scripts/build-with-chap.sh
+```
+The last command should fail with an error that the current revision is not on
+the `master` or a `release/*` branch.  After running both commands, you will
+need to delete branch created in `cardano-haskell-packages`.
+
+### Release from master or release/* branch
 
 * First run `./script/release-to-chap.sh -r` to see which changes can be
   published.

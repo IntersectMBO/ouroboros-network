@@ -8,6 +8,8 @@ set -eo pipefail
 
 # fail if `gh` is not installed
 which gh
+# fail if `yq` is not installed
+which yq # https://github.com/mikefarah/yq#install
 
 CHAP_DIR=${CARDANO_HASKELL_PACKAGES_DIR:-"/tmp/chap"}
 
@@ -20,9 +22,9 @@ cabal_files=$(fd -ae 'cabal')
 for cf in $cabal_files; do
   name=$(cat $cf | grep '^name:' | awk '{ print $2 }')
   version=$(ls -1 $CHAP_DIR/_sources/$name | sort -V | tail -1)
-  tag="$name-$version"
-  echo "$tag ($(git rev-parse $tag))"
-  git restore --source="$name-$version" -- $name
+  rev=$(yq .github.rev $CHAP_DIR/_sources/$name/$version/meta.toml)
+  git restore --source=$rev -- $name
+  tb=0
   revdir="$CHAP_DIR/_sources/$name/$version/revisions"
   if [[ -d $revdir ]]; then
     rev=$(ls $revdir | sort -V | tail -1)
@@ -33,6 +35,18 @@ done
 
 cabal build all
 git reset --hard HEAD
+
+# check that all revs are on `master` or `release\/*` branches.
+for cf in $cabal_files; do
+  name=$(cat $cf | grep '^name:' | awk '{ print $2 }')
+  version=$(ls -1 $CHAP_DIR/_sources/$name | sort -V | tail -1)
+  rev=$(yq .github.rev $CHAP_DIR/_sources/$name/$version/meta.toml)
+  ! { git branch -l --contains $rev --format="%(refname:short)" | grep -e '^\(master\|release//\)'; }
+  if [[ $? == 0 ]]; then
+    echo "$name: revision $rev is not on the master or a 'release/*' branch."
+    exit 1
+  fi
+done
 
 pushd $CHAP_DIR
 git symbolic-ref --short HEAD
