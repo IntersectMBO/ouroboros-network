@@ -33,6 +33,7 @@
 * `Ouroboros.Network.ConnectionManager.Core` must be imported qualified.
 * `ConnectionManagerTrace` moved from `Ouroboros.Network.ConnectionManager.Types`
   to the `Core` module & renamed as `Trace`.
+* RawBearer API (typeclass and instances) added.
 
 ### Non-breaking changes
 

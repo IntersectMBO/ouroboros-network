@@ -21,6 +21,7 @@ module Ouroboros.Network.Snocket
   , AddressFamily (..)
   , Snocket (..)
   , makeSocketBearer
+  , makeLocalRawBearer
     -- ** Socket based Snockets
   , SocketSnocket
   , socketSnocket
@@ -68,6 +69,7 @@ import Network.Socket qualified as Socket
 import Network.Mux.Bearer
 
 import Ouroboros.Network.IOManager
+import Ouroboros.Network.RawBearer
 
 
 -- | Named pipes and Berkeley sockets have different API when accepting
@@ -393,11 +395,21 @@ data LocalSocket = LocalSocket { getLocalHandle :: !LocalHandle
                                }
     deriving (Eq, Generic)
     deriving Show via Quiet LocalSocket
+
+localSocketToRawBearer :: LocalSocket -> RawBearer IO
+localSocketToRawBearer = win32HandleToRawBearer . getLocalHandle
+
 #else
 newtype LocalSocket  = LocalSocket { getLocalHandle :: LocalHandle }
     deriving (Eq, Generic)
     deriving Show via Quiet LocalSocket
+
+localSocketToRawBearer :: LocalSocket -> RawBearer IO
+localSocketToRawBearer = socketToRawBearer . getLocalHandle
 #endif
+
+makeLocalRawBearer :: MakeRawBearer IO LocalSocket
+makeLocalRawBearer = MakeRawBearer (return . localSocketToRawBearer)
 
 makeLocalBearer :: MakeBearer IO LocalSocket
 #if defined(mingw32_HOST_OS)
