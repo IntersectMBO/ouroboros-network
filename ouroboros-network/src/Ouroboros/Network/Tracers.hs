@@ -9,7 +9,7 @@ module Ouroboros.Network.Tracers
 import Codec.CBOR.Term qualified as CBOR
 import Control.Tracer (Tracer, nullTracer)
 
-import Network.Mux.Trace
+import Network.Mux.Trace qualified as Mx
 
 import Ouroboros.Network.Driver (TraceSendRecv)
 import Ouroboros.Network.ErrorPolicy
@@ -21,10 +21,10 @@ import Ouroboros.Network.Subscription.Ip
 -- | IP subscription tracers.
 --
 data NetworkSubscriptionTracers withIPList addr vNumber = NetworkSubscriptionTracers {
-      nsMuxTracer          :: Tracer IO (WithMuxBearer (ConnectionId addr) MuxTrace),
+      nsMuxTracer          :: Tracer IO (Mx.WithBearer (ConnectionId addr) Mx.Trace),
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
-      nsHandshakeTracer    :: Tracer IO (WithMuxBearer (ConnectionId addr)
+      nsHandshakeTracer    :: Tracer IO (Mx.WithBearer (ConnectionId addr)
                                             (TraceSendRecv (Handshake vNumber CBOR.Term))),
       -- ^ handshake protocol tracer; it is important for analysing version
       -- negotation mismatches.
@@ -51,10 +51,10 @@ nullNetworkSubscriptionTracers = NetworkSubscriptionTracers {
 -- | DNS subscription tracers.
 --
 data NetworkDNSSubscriptionTracers vNumber addr = NetworkDNSSubscriptionTracers {
-      ndstMuxTracer          :: Tracer IO (WithMuxBearer (ConnectionId addr) MuxTrace),
+      ndstMuxTracer          :: Tracer IO (Mx.WithBearer (ConnectionId addr) Mx.Trace),
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
-      ndstHandshakeTracer    :: Tracer IO (WithMuxBearer (ConnectionId addr)
+      ndstHandshakeTracer    :: Tracer IO (Mx.WithBearer (ConnectionId addr)
                                             (TraceSendRecv (Handshake vNumber CBOR.Term))),
       -- ^ handshake protocol tracer; it is important for analysing version
       -- negotation mismatches.

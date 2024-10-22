@@ -25,6 +25,8 @@ import System.Exit
 import System.IO
 import Text.Printf (printf)
 
+import Network.Mux qualified as Mx
+
 import Ouroboros.Network.ErrorPolicy
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.Mux
@@ -131,7 +133,7 @@ clientPingPong pipelined =
       defaultLocalSocketAddr
   where
     app :: OuroborosApplicationWithMinimalCtx
-             InitiatorMode LocalAddress LBS.ByteString IO () Void
+             Mx.InitiatorMode LocalAddress LBS.ByteString IO () Void
     app = demoProtocol0 pingPongInitiator
 
     pingPongInitiator | pipelined =
@@ -174,7 +176,7 @@ serverPingPong =
         wait serverAsync   -- block until async exception
   where
     app :: OuroborosApplicationWithMinimalCtx
-             ResponderMode LocalAddress LBS.ByteString IO Void ()
+             Mx.ResponderMode LocalAddress LBS.ByteString IO Void ()
     app = demoProtocol0 pingPongResponder
 
     pingPongResponder =
@@ -226,7 +228,7 @@ clientPingPong2 =
       defaultLocalSocketAddr
   where
     app :: OuroborosApplicationWithMinimalCtx
-             InitiatorMode addr LBS.ByteString IO  () Void
+             Mx.InitiatorMode addr LBS.ByteString IO  () Void
     app = demoProtocol1 pingpong pingpong'
 
     pingpong =
@@ -269,7 +271,7 @@ serverPingPong2 =
         wait serverAsync   -- block until async exception
   where
     app :: OuroborosApplicationWithMinimalCtx
-             ResponderMode addr LBS.ByteString IO Void ()
+             Mx.ResponderMode addr LBS.ByteString IO Void ()
     app = demoProtocol1 pingpong pingpong'
 
     pingpong =

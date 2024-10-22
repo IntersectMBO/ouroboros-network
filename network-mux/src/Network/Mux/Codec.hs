@@ -12,9 +12,9 @@ import Network.Mux.Trace
 import Network.Mux.Types
 
 
--- | Encode a 'MuxSDU' as a 'ByteString'.
+-- | Encode a 'SDU' as a 'ByteString'.
 --
--- > Binary format used by 'encodeMuxSDU' and 'decodeMuxSDUHeader'
+-- > Binary format used by 'encodeSDU' and 'decodeSDUHeader'
 -- >  0                   1                   2                   3
 -- >  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 -- > +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -25,8 +25,8 @@ import Network.Mux.Types
 --
 -- All fields are in big endian byte order.
 --
-encodeMuxSDU :: MuxSDU -> BL.ByteString
-encodeMuxSDU sdu =
+encodeSDU :: SDU -> BL.ByteString
+encodeSDU sdu =
   let hdr = Bin.runPut enc in
   BL.append hdr $ msBlob sdu
   where
@@ -40,14 +40,14 @@ encodeMuxSDU sdu =
     putNumAndMode (MiniProtocolNum n) ResponderDir = n .|. 0x8000
 
 
--- | Decode a 'MuSDU' header.  A left inverse of 'encodeMuxSDU'.
+-- | Decode a 'MuSDU' header.  A left inverse of 'encodeSDU'.
 --
-decodeMuxSDU :: BL.ByteString -> Either MuxError MuxSDU
-decodeMuxSDU buf =
+decodeSDU :: BL.ByteString -> Either Error SDU
+decodeSDU buf =
     case Bin.runGetOrFail dec buf of
-         Left  (_, _, e)  -> Left $ MuxError MuxDecodeError e
+         Left  (_, _, e)  -> Left $ Error DecodeError e
          Right (_, _, h) ->
-             Right $ MuxSDU {
+             Right $ SDU {
                    msHeader = h
                  , msBlob   = BL.empty
                  }
@@ -58,7 +58,7 @@ decodeMuxSDU buf =
         mhLength <- Bin.getWord16be
         let mhDir  = getDir a
             mhNum  = MiniProtocolNum (a .&. 0x7fff)
-        return $ MuxSDUHeader {
+        return $ SDUHeader {
             mhTimestamp,
             mhNum,
             mhDir,

@@ -5,7 +5,7 @@
 
 module Network.Mux.Bearer.Queues
   ( QueueChannel (..)
-  , queueChannelAsMuxBearer
+  , queueChannelAsBearer
   ) where
 
 import Data.ByteString.Lazy qualified as BL
@@ -19,7 +19,7 @@ import Network.Mux.Codec qualified as Mx
 import Network.Mux.Time as Mx
 import Network.Mux.Timeout qualified as Mx
 import Network.Mux.Trace qualified as Mx
-import Network.Mux.Types (MuxBearer)
+import Network.Mux.Types (Bearer)
 import Network.Mux.Types qualified as Mx
 
 data QueueChannel m = QueueChannel {
@@ -28,45 +28,45 @@ data QueueChannel m = QueueChannel {
   }
 
 
-queueChannelAsMuxBearer
+queueChannelAsBearer
   :: forall m.
      ( MonadSTM   m
      , MonadMonotonicTime m
      , MonadThrow m
      )
   => Mx.SDUSize
-  -> Tracer m Mx.MuxTrace
+  -> Tracer m Mx.Trace
   -> QueueChannel m
-  -> MuxBearer m
-queueChannelAsMuxBearer sduSize tracer QueueChannel { writeQueue, readQueue } = do
-      Mx.MuxBearer {
+  -> Bearer m
+queueChannelAsBearer sduSize tracer QueueChannel { writeQueue, readQueue } = do
+      Mx.Bearer {
         Mx.read    = readMux,
         Mx.write   = writeMux,
         Mx.sduSize = sduSize,
         Mx.name    = "queue-channel"
       }
     where
-      readMux :: Mx.TimeoutFn m -> m (Mx.MuxSDU, Time)
+      readMux :: Mx.TimeoutFn m -> m (Mx.SDU, Time)
       readMux _ = do
-          traceWith tracer Mx.MuxTraceRecvHeaderStart
+          traceWith tracer Mx.TraceRecvHeaderStart
           buf <- atomically $ readTBQueue readQueue
           let (hbuf, payload) = BL.splitAt 8 buf
-          case Mx.decodeMuxSDU hbuf of
+          case Mx.decodeSDU hbuf of
               Left  e      -> throwIO e
               Right header -> do
-                  traceWith tracer $ Mx.MuxTraceRecvHeaderEnd (Mx.msHeader header)
+                  traceWith tracer $ Mx.TraceRecvHeaderEnd (Mx.msHeader header)
                   ts <- getMonotonicTime
-                  traceWith tracer $ Mx.MuxTraceRecvDeltaQObservation (Mx.msHeader header) ts
+                  traceWith tracer $ Mx.TraceRecvDeltaQObservation (Mx.msHeader header) ts
                   return (header {Mx.msBlob = payload}, ts)
 
-      writeMux :: Mx.TimeoutFn m -> Mx.MuxSDU -> m Time
+      writeMux :: Mx.TimeoutFn m -> Mx.SDU -> m Time
       writeMux _ sdu = do
           ts <- getMonotonicTime
           let ts32 = Mx.timestampMicrosecondsLow32Bits ts
               sdu' = Mx.setTimestamp sdu (Mx.RemoteClockModel ts32)
-              buf  = Mx.encodeMuxSDU sdu'
-          traceWith tracer $ Mx.MuxTraceSendStart (Mx.msHeader sdu')
+              buf  = Mx.encodeSDU sdu'
+          traceWith tracer $ Mx.TraceSendStart (Mx.msHeader sdu')
           atomically $ writeTBQueue writeQueue buf
-          traceWith tracer Mx.MuxTraceSendEnd
+          traceWith tracer Mx.TraceSendEnd
           return ts
 

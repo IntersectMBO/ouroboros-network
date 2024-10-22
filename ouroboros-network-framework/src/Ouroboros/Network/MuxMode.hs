@@ -19,12 +19,12 @@ module Ouroboros.Network.MuxMode
   , InResponderMode (..)
   ) where
 
-import Network.Mux.Types
+import Network.Mux.Types as Mux
 
 
 -- | Singletons for matching the 'MuxMode' at term level.
 --
-data SingMuxMode (mode :: MuxMode) where
+data SingMuxMode (mode :: Mux.Mode) where
     SingInitiatorMode          :: SingMuxMode InitiatorMode
     SingResponderMode          :: SingMuxMode ResponderMode
     SingInitiatorResponderMode :: SingMuxMode InitiatorResponderMode
@@ -32,7 +32,7 @@ data SingMuxMode (mode :: MuxMode) where
 
 -- | Singleton for to match the @'HasInitiator' mode ~ True@ constraint.
 --
-data SingHasInitiator (mode :: MuxMode) where
+data SingHasInitiator (mode :: Mux.Mode) where
     SingHasInitiator :: HasInitiator mode ~ True
                   => SingHasInitiator mode
 
@@ -45,7 +45,7 @@ hasInitiatorMode SingInitiatorMode          = SingHasInitiator
 hasInitiatorMode SingInitiatorResponderMode = SingHasInitiator
 hasInitiatorMode SingResponderMode          = SingNoInitiator
 
-data WithMuxMode (mode :: MuxMode) a b where
+data WithMuxMode (mode :: Mux.Mode) a b where
     WithInitiatorMode          :: a -> WithMuxMode InitiatorMode a b
     WithResponderMode          :: b -> WithMuxMode ResponderMode a b
     WithInitiatorResponderMode :: a -> b -> WithMuxMode InitiatorResponderMode a b
@@ -66,7 +66,7 @@ withResponderMode (WithResponderMode            b) = b
 withResponderMode (WithInitiatorResponderMode _ b) = b
 
 
-data InResponderMode (mode :: MuxMode) a where
+data InResponderMode (mode :: Mux.Mode) a where
     InResponderMode    :: HasResponder mode ~ True
                        => a
                        -> InResponderMode mode a

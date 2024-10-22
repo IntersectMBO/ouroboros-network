@@ -4,6 +4,8 @@
 
 ### Breaking changes
 
+* Addapted to `network-mux` changes in https://github.com/IntersectMBO/ouroboros-network/pull/4997
+
 ### Non-Breaking changes
 
 ## 0.18.0.0 -- 2024-10-17

@@ -130,10 +130,10 @@ import Ouroboros.Network.Subscription.PeerState
 -- 'Ouroboros.Network.NodeToClient.connectTo).
 --
 data NetworkConnectTracers addr vNumber = NetworkConnectTracers {
-      nctMuxTracer         :: Tracer IO (Mx.WithMuxBearer (ConnectionId addr)  Mx.MuxTrace),
+      nctMuxTracer         :: Tracer IO (Mx.WithBearer (ConnectionId addr)  Mx.Trace),
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
-      nctHandshakeTracer   :: Tracer IO (Mx.WithMuxBearer (ConnectionId addr)
+      nctHandshakeTracer   :: Tracer IO (Mx.WithBearer (ConnectionId addr)
                                           (TraceSendRecv (Handshake vNumber CBOR.Term)))
       -- ^ handshake protocol tracer; it is important for analysing version
       -- negotiation mismatches.
@@ -405,7 +405,7 @@ connectToNodeWithMux'
   versions sd k = do
     connectionId <- (\localAddress remoteAddress -> ConnectionId { localAddress, remoteAddress })
                 <$> Snocket.getLocalAddr sn sd <*> Snocket.getRemoteAddr sn sd
-    muxTracer <- initDeltaQTracer' $ Mx.WithMuxBearer connectionId `contramap` nctMuxTracer
+    muxTracer <- initDeltaQTracer' $ Mx.WithBearer connectionId `contramap` nctMuxTracer
     ts_start <- getMonotonicTime
 
     handshakeBearer <- Mx.getBearer makeBearer sduHandshakeTimeout muxTracer sd
@@ -426,22 +426,22 @@ connectToNodeWithMux'
     ts_end <- getMonotonicTime
     case app_e of
        Left (HandshakeProtocolLimit err) -> do
-         traceWith muxTracer $ Mx.MuxTraceHandshakeClientError err (diffTime ts_end ts_start)
+         traceWith muxTracer $ Mx.TraceHandshakeClientError err (diffTime ts_end ts_start)
          throwIO err
 
        Left (HandshakeProtocolError err) -> do
-         traceWith muxTracer $ Mx.MuxTraceHandshakeClientError err (diffTime ts_end ts_start)
+         traceWith muxTracer $ Mx.TraceHandshakeClientError err (diffTime ts_end ts_start)
          throwIO err
 
        Right (HandshakeNegotiationResult app versionNumber agreedOptions) -> do
-         traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
+         traceWith muxTracer $ Mx.TraceHandshakeClientEnd (diffTime ts_end ts_start)
          bearer <- Mx.getBearer makeBearer sduTimeout muxTracer sd
-         mux <- Mx.newMux (toMiniProtocolInfos app)
-         withAsync (Mx.runMux muxTracer mux bearer) $ \aid ->
+         mux <- Mx.new (toMiniProtocolInfos app)
+         withAsync (Mx.run muxTracer mux bearer) $ \aid ->
            k connectionId versionNumber agreedOptions app mux aid
 
        Right (HandshakeQueryResult _vMap) -> do
-         traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
+         traceWith muxTracer $ Mx.TraceHandshakeClientEnd (diffTime ts_end ts_start)
          throwIO (QueryNotSupported @vNumber)
 
 
@@ -483,7 +483,7 @@ simpleMuxCallback connectionId _ _ app mux aid = do
 
     -- Wait for the first MuxApplication to finish, then stop the mux.
     r <- waitOnAny resOps
-    Mx.stopMux mux
+    Mx.stop mux
     wait aid
     return r
   where
@@ -559,8 +559,8 @@ beginConnection
        , Show vNumber
        )
     => Mx.MakeBearer IO fd
-    -> Tracer IO (Mx.WithMuxBearer (ConnectionId addr) Mx.MuxTrace)
-    -> Tracer IO (Mx.WithMuxBearer (ConnectionId addr) (TraceSendRecv (Handshake vNumber CBOR.Term)))
+    -> Tracer IO (Mx.WithBearer (ConnectionId addr) Mx.Trace)
+    -> Tracer IO (Mx.WithBearer (ConnectionId addr) (TraceSendRecv (Handshake vNumber CBOR.Term)))
     -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
     -> ProtocolTimeLimits (Handshake vNumber CBOR.Term)
     -> VersionDataCodec CBOR.Term vNumber vData
@@ -572,9 +572,9 @@ beginConnection makeBearer muxTracer handshakeTracer handshakeCodec handshakeTim
     accept <- fn t addr st
     case accept of
       AcceptConnection st' connectionId versions -> pure $ Server.Accept st' $ \sd -> do
-        muxTracer' <- initDeltaQTracer' $ Mx.WithMuxBearer connectionId `contramap` muxTracer
+        muxTracer' <- initDeltaQTracer' $ Mx.WithBearer connectionId `contramap` muxTracer
 
-        traceWith muxTracer' $ Mx.MuxTraceHandshakeStart
+        traceWith muxTracer' $ Mx.TraceHandshakeStart
 
         handshakeBearer <- Mx.getBearer makeBearer sduHandshakeTimeout muxTracer' sd
         app_e <-
@@ -593,22 +593,22 @@ beginConnection makeBearer muxTracer handshakeTracer handshakeCodec handshakeTim
 
         case app_e of
              Left (HandshakeProtocolLimit err) -> do
-                 traceWith muxTracer' $ Mx.MuxTraceHandshakeServerError err
+                 traceWith muxTracer' $ Mx.TraceHandshakeServerError err
                  throwIO err
 
              Left (HandshakeProtocolError err) -> do
-                 traceWith muxTracer' $ Mx.MuxTraceHandshakeServerError err
+                 traceWith muxTracer' $ Mx.TraceHandshakeServerError err
                  throwIO err
 
              Right (HandshakeNegotiationResult (SomeResponderApplication app) versionNumber agreedOptions) -> do
-                 traceWith muxTracer' Mx.MuxTraceHandshakeServerEnd
+                 traceWith muxTracer' Mx.TraceHandshakeServerEnd
                  bearer <- Mx.getBearer makeBearer sduTimeout muxTracer' sd
-                 mux <- Mx.newMux (toMiniProtocolInfos app)
-                 withAsync (Mx.runMux muxTracer' mux bearer) $ \aid ->
+                 mux <- Mx.new (toMiniProtocolInfos app)
+                 withAsync (Mx.run muxTracer' mux bearer) $ \aid ->
                    void $ simpleMuxCallback connectionId versionNumber agreedOptions app mux aid
 
              Right (HandshakeQueryResult _vMap) -> do
-                 traceWith muxTracer' Mx.MuxTraceHandshakeServerEnd
+                 traceWith muxTracer' Mx.TraceHandshakeServerEnd
                  -- Wait 20s for client to receive response, who should close the connection.
                  threadDelay handshake_QUERY_SHUTDOWN_DELAY
 
@@ -660,10 +660,10 @@ fromSnocket tblVar sn sd = go <$> Snocket.accept sn sd
 -- | Tracers required by a server which handles inbound connections.
 --
 data NetworkServerTracers addr vNumber = NetworkServerTracers {
-      nstMuxTracer         :: Tracer IO (Mx.WithMuxBearer (ConnectionId addr) Mx.MuxTrace),
+      nstMuxTracer         :: Tracer IO (Mx.WithBearer (ConnectionId addr) Mx.Trace),
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
-      nstHandshakeTracer   :: Tracer IO (Mx.WithMuxBearer (ConnectionId addr)
+      nstHandshakeTracer   :: Tracer IO (Mx.WithBearer (ConnectionId addr)
                                           (TraceSendRecv (Handshake vNumber CBOR.Term))),
       -- ^ handshake protocol tracer; it is important for analysing version
       -- negotation mismatches.

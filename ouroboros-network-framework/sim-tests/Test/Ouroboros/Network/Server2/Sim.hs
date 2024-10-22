@@ -831,7 +831,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
         classifyError :: SomeException -> Maybe SomeException
         classifyError e =
                 SomeException <$> (fromException e :: Maybe IOError)
-            <|> SomeException <$> (fromException e :: Maybe MuxError)
+            <|> SomeException <$> (fromException e :: Maybe Mux.Error)
             <|> SomeException <$> (fromException e >>= \(ExceptionInHandler _ e') ->
                                                         classifyError e')
             <|> SomeException <$> (fromException e >>= \(ExceptionInLinkedThread _ e') ->

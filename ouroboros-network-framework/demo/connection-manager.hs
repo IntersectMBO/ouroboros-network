@@ -149,11 +149,11 @@ type ConnectionManagerMonad m =
 debugMuxErrorRethrowPolicy :: RethrowPolicy
 debugMuxErrorRethrowPolicy =
     mkRethrowPolicy $
-      \_ MuxError { errorType } ->
+      \_ Mux.Error { Mux.errorType } ->
         case errorType of
-          MuxIOException _ -> ShutdownPeer
-          MuxBearerClosed  -> ShutdownPeer
-          _                -> ShutdownNode
+          Mux.IOException _ -> ShutdownPeer
+          Mux.BearerClosed  -> ShutdownPeer
+          _                 -> ShutdownNode
 
 debugIOErrorRethrowPolicy :: RethrowPolicy
 debugIOErrorRethrowPolicy =
@@ -194,7 +194,7 @@ withBidirectionalConnectionManager
     -- ^ series of request possible to do with the bidirectional connection
     -- manager towards some peer.
     -> (ConnectionManagerWithExpandedCtx
-          InitiatorResponderMode socket peerAddr UnversionedProtocolData
+          Mux.InitiatorResponderMode socket peerAddr UnversionedProtocolData
           UnversionedProtocol ByteString m () ()
        -> peerAddr
        -> m a)
@@ -287,7 +287,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
                       -> LazySTM.TVar m [[Int]]
                       -> TemperatureBundle
                           ([MiniProtocolWithExpandedCtx
-                              InitiatorResponderMode peerAddr ByteString m () ()])
+                              Mux.InitiatorResponderMode peerAddr ByteString m () ()])
     serverApplication hotRequestsVar
                       warmRequestsVar
                       establishedRequestsVar
@@ -331,7 +331,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
       :: Mux.MiniProtocolNum
       -> LazySTM.TVar m [[Int]]
       -> RunMiniProtocolWithExpandedCtx
-           InitiatorResponderMode peerAddr ByteString m () ()
+           Mux.InitiatorResponderMode peerAddr ByteString m () ()
     reqRespInitiatorAndResponder protocolNum requestsVar =
       InitiatorAndResponderProtocol
         (mkMiniProtocolCbFromPeer
@@ -529,16 +529,16 @@ bidirectionalExperiment
   where
     connect :: Int
             -> ConnectionManagerWithExpandedCtx
-                 InitiatorResponderMode
+                 Mux.InitiatorResponderMode
                  socket peerAddr UnversionedProtocolData
                  UnversionedProtocol ByteString
                  IO () ()
             -> IO (Connected peerAddr
                             (HandleWithExpandedCtx
-                              InitiatorResponderMode peerAddr
+                              Mux.InitiatorResponderMode peerAddr
                               UnversionedProtocolData ByteString IO () ())
                             (HandleError
-                              InitiatorResponderMode
+                              Mux.InitiatorResponderMode
                               UnversionedProtocol))
     connect n cm | n <= 1 =
       requestOutboundConnection cm remoteAddr
@@ -546,7 +546,7 @@ bidirectionalExperiment
       requestOutboundConnection cm remoteAddr
         `catch` \(_ :: IOException) -> threadDelay 1
                                     >> connect (pred n) cm
-        `catch` \(_ :: MuxError)    -> threadDelay 1
+        `catch` \(_ :: Mux.Error)   -> threadDelay 1
                                     >> connect (pred n) cm
 
 type Addr = String
@@ -691,7 +691,7 @@ main = do
 forever' :: MonadCatch m => m a -> m b
 forever' io = do
     _ <- io `catch` (\(_ :: IOException) -> forever' io)
-            `catch` (\(_ :: MuxError)    -> forever' io)
+            `catch` (\(_ :: Mux.Error)   -> forever' io)
     forever' io
 
 

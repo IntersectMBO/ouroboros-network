@@ -9,7 +9,7 @@ module Network.Mux.Bearer.AttenuatedChannel
   , SuccessOrFailure (..)
   , Attenuation (..)
   , newConnectedAttenuatedChannelPair
-  , attenuationChannelAsMuxBearer
+  , attenuationChannelAsBearer
     -- * Trace
   , AttenuatedChannelTrace (..)
     -- * Utils
@@ -178,14 +178,14 @@ newAttenuatedChannel tr Attenuation { aReadAttenuation,
       msg <- readQueueChannel qc
       t <- getMonotonicTime
       case msg of
-        -- match the 'Bearer.Snocket' behaviour and throw 'MuxError'
+        -- match the 'Bearer.Snocket' behaviour and throw 'Error'
         -- when null byte is received from the network.
         MsgClose -> do
           case aReadAttenuation t 1 of
             ( d, _       ) -> traceWith tr AttChannRemoteClose
                            >> threadDelay d
-                           >> throwIO (MuxError MuxBearerClosed
-                                                "closed when reading data")
+                           >> throwIO (Error BearerClosed
+                                             "closed when reading data")
         MsgBytes bs ->
           case aReadAttenuation t (BL.length bs) of
             ( d, Success ) -> threadDelay d
@@ -249,53 +249,53 @@ newConnectedAttenuatedChannelPair tr tr' attenuation attenuation' = do
     b' <- newAttenuatedChannel tr' attenuation' c'
     return (b, b')
 
-attenuationChannelAsMuxBearer :: forall m.
-                                 ( MonadThrow         m
-                                 , MonadMonotonicTime m
-                                 )
-                              => SDUSize
-                              -> DiffTime
-                              -> Tracer m MuxTrace
-                              -> AttenuatedChannel m
-                              -> MuxBearer m
-attenuationChannelAsMuxBearer sduSize sduTimeout muxTracer chan =
-    MuxBearer {
+attenuationChannelAsBearer :: forall m.
+                              ( MonadThrow         m
+                              , MonadMonotonicTime m
+                              )
+                           => SDUSize
+                           -> DiffTime
+                           -> Tracer m Trace
+                           -> AttenuatedChannel m
+                           -> Bearer m
+attenuationChannelAsBearer sduSize sduTimeout muxTracer chan =
+    Bearer {
       read    = readMux,
       write   = writeMux,
       sduSize,
       name    = "attenuation-channel"
     }
   where
-    readMux :: TimeoutFn m -> m (MuxSDU, Time)
+    readMux :: TimeoutFn m -> m (SDU, Time)
     readMux timeoutFn = do
-      traceWith muxTracer MuxTraceRecvHeaderStart
+      traceWith muxTracer TraceRecvHeaderStart
       mbuf <- timeoutFn sduTimeout $ acRead chan
       case mbuf of
         Nothing -> do
-          traceWith muxTracer MuxTraceSDUReadTimeoutException
-          throwIO (MuxError MuxSDUReadTimeout "Mux SDU Timeout")
+          traceWith muxTracer TraceSDUReadTimeoutException
+          throwIO (Error SDUReadTimeout "Mux SDU Timeout")
 
         Just buf -> do
           let (hbuf, payload) = BL.splitAt 8 buf
-          case decodeMuxSDU hbuf of
+          case decodeSDU hbuf of
             Left  e      -> throwIO e
             Right muxsdu -> do
               let header = msHeader muxsdu
-              traceWith muxTracer $ MuxTraceRecvHeaderEnd header
+              traceWith muxTracer $ TraceRecvHeaderEnd header
               ts <- getMonotonicTime
-              traceWith muxTracer $ MuxTraceRecvDeltaQObservation header ts
+              traceWith muxTracer $ TraceRecvDeltaQObservation header ts
               return (muxsdu {msBlob = payload}, ts)
 
-    writeMux :: TimeoutFn m -> MuxSDU -> m Time
+    writeMux :: TimeoutFn m -> SDU -> m Time
     writeMux _ sdu = do
       ts <- getMonotonicTime
       let ts32 = timestampMicrosecondsLow32Bits ts
           sdu' = setTimestamp sdu (RemoteClockModel ts32)
-          buf  = encodeMuxSDU sdu'
-      traceWith muxTracer $ MuxTraceSendStart (msHeader sdu')
+          buf  = encodeSDU sdu'
+      traceWith muxTracer $ TraceSendStart (msHeader sdu')
       acWrite chan buf
 
-      traceWith muxTracer MuxTraceSendEnd
+      traceWith muxTracer TraceSendEnd
       return ts
 
 --

@@ -18,28 +18,28 @@ import Network.Mux.Types
 --   `MuxTraceRecvDeltaQSample` no more frequently than every 10
 --   seconds (when in use).
 initDeltaQTracer :: MonadSTM m
-                 => m (Tracer m MuxTrace -> Tracer m MuxTrace)
+                 => m (Tracer m Trace -> Tracer m Trace)
 initDeltaQTracer = newTVarIO initialStatsA >>= pure . dqTracer
 
 initDeltaQTracer' :: MonadSTM m
-                  => Tracer m MuxTrace
-                  -> m (Tracer m MuxTrace)
+                  => Tracer m Trace
+                  -> m (Tracer m Trace)
 initDeltaQTracer' tr = do
     v <- newTVarIO initialStatsA
     return $ dqTracer v tr
 
 dqTracer :: MonadSTM m
          => StrictTVar m StatsA
-         -> Tracer m MuxTrace
-         -> Tracer m MuxTrace
+         -> Tracer m Trace
+         -> Tracer m Trace
 dqTracer sTvar tr = Tracer go
   where
-    go (MuxTraceRecvDeltaQObservation MuxSDUHeader { mhTimestamp, mhLength } t)
+    go (TraceRecvDeltaQObservation SDUHeader { mhTimestamp, mhLength } t)
       = update mhTimestamp t (fromIntegral mhLength)
         >>= maybe (return ()) (traceWith tr . formatSample)
-    go te@(MuxTraceCleanExit {})
+    go te@(TraceCleanExit {})
        = emitSample >> traceWith tr te
-    go te@(MuxTraceExceptionExit {})
+    go te@(TraceExceptionExit {})
        = emitSample >> traceWith tr te
     go x
       = traceWith tr x
@@ -55,6 +55,6 @@ dqTracer sTvar tr = Tracer go
       = (constructSample s, initialStatsA)
 
     formatSample (OneWaySample {..})
-      = MuxTraceRecvDeltaQSample duration sumPackets sumTotalSDU
-                                 estDeltaQS estDeltaQVMean estDeltaQVVar
-                                 estR sizeDist
+      = TraceRecvDeltaQSample duration sumPackets sumTotalSDU
+                              estDeltaQS estDeltaQVMean estDeltaQVVar
+                              estR sizeDist

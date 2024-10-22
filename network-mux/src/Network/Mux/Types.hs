@@ -9,12 +9,14 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 
+-- | Types used by the multiplexer.
+--
 module Network.Mux.Types
   ( MiniProtocolInfo (..)
   , MiniProtocolNum (..)
   , MiniProtocolDirection (..)
   , MiniProtocolLimits (..)
-  , MuxMode (..)
+  , Mode (..)
   , HasInitiator
   , HasResponder
   , IngressQueue
@@ -23,10 +25,10 @@ module Network.Mux.Types
   , protocolDirEnum
   , MiniProtocolState (..)
   , MiniProtocolStatus (..)
-  , MuxBearer (..)
-  , muxBearerAsChannel
-  , MuxSDU (..)
-  , MuxSDUHeader (..)
+  , Bearer (..)
+  , bearerAsChannel
+  , SDU (..)
+  , SDUHeader (..)
   , SDUSize (..)
   , msTimestamp
   , setTimestamp
@@ -35,7 +37,7 @@ module Network.Mux.Types
   , msLength
   , RemoteClockModel (..)
   , remoteClockPrecision
-  , MuxRuntimeError (..)
+  , RuntimeError (..)
   ) where
 
 import Prelude hiding (read)
@@ -97,24 +99,24 @@ newtype MiniProtocolLimits =
 --   a function that runs the mux layer on it.
 --
 
-data MuxMode where
-    InitiatorMode          :: MuxMode
-    ResponderMode          :: MuxMode
-    InitiatorResponderMode :: MuxMode
+data Mode where
+    InitiatorMode          :: Mode
+    ResponderMode          :: Mode
+    InitiatorResponderMode :: Mode
 
-type family HasInitiator (mode :: MuxMode) :: Bool where
+type family HasInitiator (mode :: Mode) :: Bool where
     HasInitiator InitiatorMode          = True
     HasInitiator ResponderMode          = False
     HasInitiator InitiatorResponderMode = True
 
-type family HasResponder (mode :: MuxMode) :: Bool where
+type family HasResponder (mode :: Mode) :: Bool where
     HasResponder InitiatorMode          = False
     HasResponder ResponderMode          = True
     HasResponder InitiatorResponderMode = True
 
 -- | A static description of a mini-protocol.
 --
-data MiniProtocolInfo (mode :: MuxMode) =
+data MiniProtocolInfo (mode :: Mode) =
      MiniProtocolInfo {
        miniProtocolNum    :: !MiniProtocolNum,
        -- ^ Unique mini-protocol number.
@@ -124,14 +126,14 @@ data MiniProtocolInfo (mode :: MuxMode) =
        -- ^ ingress queue limits for the protocol
      }
 
-data MiniProtocolDirection (mode :: MuxMode) where
+data MiniProtocolDirection (mode :: Mode) where
     InitiatorDirectionOnly :: MiniProtocolDirection InitiatorMode
     ResponderDirectionOnly :: MiniProtocolDirection ResponderMode
     InitiatorDirection     :: MiniProtocolDirection InitiatorResponderMode
     ResponderDirection     :: MiniProtocolDirection InitiatorResponderMode
 
-deriving instance Eq (MiniProtocolDirection (mode :: MuxMode))
-deriving instance Ord (MiniProtocolDirection (mode :: MuxMode))
+deriving instance Eq (MiniProtocolDirection (mode :: Mode))
+deriving instance Ord (MiniProtocolDirection (mode :: Mode))
 
 --
 -- Mux internal types
@@ -161,7 +163,7 @@ data MiniProtocolState mode m = MiniProtocolState {
 data MiniProtocolStatus = StatusIdle | StatusStartOnDemand | StatusRunning
   deriving (Eq, Show)
 
-data MuxSDUHeader = MuxSDUHeader {
+data SDUHeader = SDUHeader {
       mhTimestamp :: !RemoteClockModel
     , mhNum       :: !MiniProtocolNum
     , mhDir       :: !MiniProtocolDir
@@ -169,41 +171,41 @@ data MuxSDUHeader = MuxSDUHeader {
     }
 
 
-data MuxSDU = MuxSDU {
-      msHeader :: !MuxSDUHeader
+data SDU = SDU {
+      msHeader :: !SDUHeader
     , msBlob   :: !BL.ByteString
     }
 
-msTimestamp :: MuxSDU -> RemoteClockModel
+msTimestamp :: SDU -> RemoteClockModel
 msTimestamp = mhTimestamp . msHeader
 
-setTimestamp :: MuxSDU -> RemoteClockModel -> MuxSDU
-setTimestamp sdu@MuxSDU { msHeader } mhTimestamp =
+setTimestamp :: SDU -> RemoteClockModel -> SDU
+setTimestamp sdu@SDU { msHeader } mhTimestamp =
     sdu { msHeader = msHeader { mhTimestamp } }
 
-msNum :: MuxSDU -> MiniProtocolNum
+msNum :: SDU -> MiniProtocolNum
 msNum = mhNum . msHeader
 
-msDir :: MuxSDU -> MiniProtocolDir
+msDir :: SDU -> MiniProtocolDir
 msDir = mhDir . msHeader
 
-msLength :: MuxSDU -> Word16
+msLength :: SDU -> Word16
 msLength = mhLength . msHeader
 
 
 -- | Low level access to underlying socket or pipe.  There are three smart
 -- constructors:
 --
--- * 'Network.Socket.socketAsMuxBearer'
--- * 'Network.Pipe.pipeAsMuxBearer'
--- * @Test.Mux.queuesAsMuxBearer@
+-- * 'Network.Socket.socketAsBearer'
+-- * 'Network.Pipe.pipeAsBearer'
+-- * @Test.Mux.queuesAsBearer@
 --
-data MuxBearer m = MuxBearer {
-    -- | Timestamp and send MuxSDU.
-      write   :: TimeoutFn m -> MuxSDU -> m Time
-    -- | Read a MuxSDU
-    , read    :: TimeoutFn m -> m (MuxSDU, Time)
-    -- | Return a suitable MuxSDU payload size.
+data Bearer m = Bearer {
+    -- | Timestamp and send SDU.
+      write   :: TimeoutFn m -> SDU -> m Time
+    -- | Read a SDU
+    , read    :: TimeoutFn m -> m (SDU, Time)
+    -- | Return a suitable SDU payload size.
     , sduSize :: SDUSize
     -- | Name of the bearer
     , name    :: String
@@ -213,26 +215,26 @@ newtype SDUSize = SDUSize { getSDUSize :: Word16 }
   deriving Generic
   deriving Show via Quiet SDUSize
 
--- | A channel which wraps each message as an 'MuxSDU' using giving
+-- | A channel which wraps each message as an 'SDU' using giving
 -- 'MiniProtocolNum' and 'MiniProtocolDir'.
 --
-muxBearerAsChannel
+bearerAsChannel
   :: forall m. Functor m
-  => MuxBearer m
+  => Bearer m
   -> MiniProtocolNum
   -> MiniProtocolDir
   -> ByteChannel m
-muxBearerAsChannel bearer ptclNum ptclDir =
+bearerAsChannel bearer ptclNum ptclDir =
       Channel {
         send = \blob -> void $ write bearer noTimeout (wrap blob),
         recv = Just . msBlob . fst <$> read bearer noTimeout
       }
     where
-      -- wrap a 'ByteString' as 'MuxSDU'
-      wrap :: BL.ByteString -> MuxSDU
-      wrap blob = MuxSDU {
-            -- it will be filled when the 'MuxSDU' is send by the 'bearer'
-            msHeader = MuxSDUHeader {
+      -- wrap a 'ByteString' as 'SDU'
+      wrap :: BL.ByteString -> SDU
+      wrap blob = SDU {
+            -- it will be filled when the 'SDU' is send by the 'bearer'
+            msHeader = SDUHeader {
                 mhTimestamp = RemoteClockModel 0,
                 mhNum       = ptclNum,
                 mhDir       = ptclDir,
@@ -248,10 +250,10 @@ muxBearerAsChannel bearer ptclNum ptclDir =
 -- Errors
 --
 
-data MuxRuntimeError =
+data RuntimeError =
     ProtocolAlreadyRunning       !MiniProtocolNum !MiniProtocolDir !MiniProtocolStatus
   | UnknownProtocolInternalError !MiniProtocolNum !MiniProtocolDir
-  | MuxBlockedOnCompletionVar    !MiniProtocolNum
+  | BlockedOnCompletionVar       !MiniProtocolNum
   deriving Show
 
-instance Exception MuxRuntimeError
+instance Exception RuntimeError

@@ -82,6 +82,8 @@ import Ouroboros.Network.Mock.ConcreteBlock
 
 import Network.TypedProtocol
 
+import Network.Mux qualified as Mx
+
 import Pipes qualified
 
 import Ouroboros.Network.NodeToNode (blockFetchMiniProtocolNum,
@@ -279,12 +281,12 @@ applications debugTracer nodeKernel
       }
   where
     initiatorApp
-      :: OuroborosBundleWithExpandedCtx InitiatorMode NtNAddr ByteString m () Void
+      :: OuroborosBundleWithExpandedCtx Mx.InitiatorMode NtNAddr ByteString m () Void
     -- initiator mode will never run a peer sharing responder side
     initiatorApp = fmap f <$> initiatorAndResponderApp
       where
-        f :: MiniProtocolWithExpandedCtx InitiatorResponderMode NtNAddr ByteString m () ()
-          -> MiniProtocolWithExpandedCtx InitiatorMode          NtNAddr ByteString m () Void
+        f :: MiniProtocolWithExpandedCtx Mx.InitiatorResponderMode NtNAddr ByteString m () ()
+          -> MiniProtocolWithExpandedCtx Mx.InitiatorMode          NtNAddr ByteString m () Void
         f MiniProtocol { miniProtocolNum
                        , miniProtocolLimits
                        , miniProtocolRun } =
@@ -297,7 +299,7 @@ applications debugTracer nodeKernel
                        }
 
     initiatorAndResponderApp
-      :: OuroborosBundleWithExpandedCtx InitiatorResponderMode NtNAddr ByteString m () ()
+      :: OuroborosBundleWithExpandedCtx Mx.InitiatorResponderMode NtNAddr ByteString m () ()
     initiatorAndResponderApp = TemperatureBundle
       { withHot = WithHot
           [ MiniProtocol
@@ -351,7 +353,7 @@ applications debugTracer nodeKernel
 
     localResponderApp
       :: OuroborosApplicationWithMinimalCtx
-           ResponderMode NtCAddr ByteString m Void ()
+           Mx.ResponderMode NtCAddr ByteString m Void ()
     localResponderApp = OuroborosApplication []
 
     chainSyncInitiator

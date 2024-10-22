@@ -58,8 +58,8 @@ import Data.Set (Set)
 import Data.Wedge
 import Data.Word (Word32)
 
-import Network.Mux.Trace (MuxTrace, WithMuxBearer (..))
-import Network.Mux.Types (MuxMode)
+import Network.Mux.Trace qualified as Mx
+import Network.Mux.Types qualified as Mx
 
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.InformationChannel
@@ -88,7 +88,7 @@ data Arguments handlerTrace socket peerAddr handle handleError versionNumber ver
 
         -- | Mux trace.
         --
-        muxTracer           :: Tracer m (WithMuxBearer (ConnectionId peerAddr) MuxTrace),
+        muxTracer           :: Tracer m (Mx.WithBearer (ConnectionId peerAddr) Mx.Trace),
 
         -- | @IPv4@ address of the connection manager.  If given, outbound
         -- connections to an @IPv4@ address will bound to it.  To use
@@ -574,7 +574,7 @@ data DemoteToColdLocal peerAddr handlerTrace handle handleError version m
 -- is responsible for the resource.
 --
 with
-    :: forall (muxMode :: MuxMode) peerAddr socket handlerTrace handle handleError version versionData m a.
+    :: forall (muxMode :: Mx.Mode) peerAddr socket handlerTrace handle handleError version versionData m a.
        ( Alternative (STM m)
        , MonadLabelledSTM   m
        , MonadTraceSTM      m
@@ -856,7 +856,7 @@ with args@Arguments {
                      (\bearerTimeout ->
                        getBearer makeBearer
                          bearerTimeout
-                         (WithMuxBearer connId `contramap` muxTracer)))
+                         (Mx.WithBearer connId `contramap` muxTracer)))
             unmask
           `finally` cleanup
       where

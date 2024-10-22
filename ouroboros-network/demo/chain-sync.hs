@@ -42,6 +42,8 @@ import Codec.Serialise qualified as CBOR
 
 import Network.TypedProtocol.Codec
 
+import Network.Mux qualified as Mx
+
 import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.Block
 import Ouroboros.Network.ControlMessage (continueForever)
@@ -248,7 +250,7 @@ clientChainSync sockPaths maxSlotNo = withIOManager $ \iocp ->
         (localAddressFromPath sockPath)
 
   where
-    app :: OuroborosApplicationWithMinimalCtx InitiatorMode addr LBS.ByteString IO () Void
+    app :: OuroborosApplicationWithMinimalCtx Mx.InitiatorMode addr LBS.ByteString IO () Void
     app = demoProtocol2 $
           InitiatorProtocolOnly $
           mkMiniProtocolCbFromPeer $ \_ctx ->
@@ -289,7 +291,7 @@ serverChainSync sockAddr slotLength seed = withIOManager $ \iocp -> do
         wait serverAsync   -- block until async exception
   where
     app :: StdGen
-        -> OuroborosApplicationWithMinimalCtx ResponderMode addr LBS.ByteString IO Void ()
+        -> OuroborosApplicationWithMinimalCtx Mx.ResponderMode addr LBS.ByteString IO Void ()
     app prng = demoProtocol2 $
           ResponderProtocolOnly $
           mkMiniProtocolCbFromPeer $ \_ctx ->
@@ -369,11 +371,11 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
 
 
         app :: OuroborosApplicationWithMinimalCtx
-                 InitiatorMode LocalAddress LBS.ByteString IO () Void
+                 Mx.InitiatorMode LocalAddress LBS.ByteString IO () Void
         app = demoProtocol3 chainSync blockFetch
 
         chainSync :: RunMiniProtocolWithMinimalCtx
-                       InitiatorMode LocalAddress LBS.ByteString IO () Void
+                       Mx.InitiatorMode LocalAddress LBS.ByteString IO () Void
         chainSync =
           InitiatorProtocolOnly $
             MiniProtocolCb $ \MinimalInitiatorContext { micConnectionId = connId } channel ->
@@ -395,7 +397,7 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
                      (chainSyncClient' continueUntilMaxSlot  maxSlotNo syncTracer currentChainVar chainVar))
 
         blockFetch :: RunMiniProtocolWithMinimalCtx
-                        InitiatorMode LocalAddress LBS.ByteString IO () Void
+                        Mx.InitiatorMode LocalAddress LBS.ByteString IO () Void
         blockFetch =
           InitiatorProtocolOnly $
             MiniProtocolCb $ \MinimalInitiatorContext { micConnectionId = connId } channel ->
@@ -558,12 +560,12 @@ serverBlockFetch sockAddr slotLength seed = withIOManager $ \iocp -> do
   where
     app :: StdGen
         -> OuroborosApplicationWithMinimalCtx
-             ResponderMode LocalAddress LBS.ByteString IO Void ()
+             Mx.ResponderMode LocalAddress LBS.ByteString IO Void ()
     app prng = demoProtocol3 (chainSync prng) (blockFetch prng)
 
     chainSync :: StdGen
               -> RunMiniProtocolWithMinimalCtx
-                   ResponderMode LocalAddress LBS.ByteString IO Void ()
+                   Mx.ResponderMode LocalAddress LBS.ByteString IO Void ()
     chainSync prng =
       ResponderProtocolOnly $
       mkMiniProtocolCbFromPeer $ \_ctx ->
@@ -574,7 +576,7 @@ serverBlockFetch sockAddr slotLength seed = withIOManager $ \iocp -> do
 
     blockFetch :: StdGen
                -> RunMiniProtocolWithMinimalCtx
-                    ResponderMode LocalAddress LBS.ByteString IO Void ()
+                    Mx.ResponderMode LocalAddress LBS.ByteString IO Void ()
     blockFetch prng =
       ResponderProtocolOnly $
       mkMiniProtocolCbFromPeer $ \_ctx ->

@@ -45,9 +45,11 @@ import           Data.Time (DiffTime)
 import           Data.Time.Format.ISO8601 (iso8601Show)
 import           Data.Word (Word16, Word32, Word64)
 import           GHC.Generics
+import qualified Network.Mux as Mx
 import           Network.Mux.Bearer (MakeBearer (..), makeSocketBearer)
 import           Network.Mux.Timeout (TimeoutFn, withTimeoutSerial)
-import           Network.Mux.Types (MuxSDUHeader(MuxSDUHeader, mhTimestamp, mhDir, mhLength, mhNum), MiniProtocolNum(..), MiniProtocolDir(InitiatorDir), MuxBearer(read, write), MuxSDU(..), RemoteClockModel(RemoteClockModel))
+import           Network.Mux.Types (MiniProtocolNum(..), MiniProtocolDir(InitiatorDir), Bearer(read, write), RemoteClockModel(RemoteClockModel))
+import qualified Network.Mux.Types as Mx
 import           Network.Socket (AddrInfo, StructLinger (..))
 import           Text.Printf (printf)
 
@@ -547,15 +549,15 @@ chainSyncIntersectNotFoundDec = do
          return (slotNo, blockNo, LBS.fromStrict hash)
        _ -> fail ("IntersectNotFound unexpected " ++ show key)
 
-wrap :: MiniProtocolNum -> MiniProtocolDir -> LBS.ByteString -> MuxSDU
-wrap ptclNum ptclDir blob = MuxSDU
-  { msHeader = MuxSDUHeader
-    { mhTimestamp = RemoteClockModel 0
-    , mhNum       = ptclNum
-    , mhDir       = ptclDir
-    , mhLength    = fromIntegral $ LBS.length blob
+wrap :: MiniProtocolNum -> MiniProtocolDir -> LBS.ByteString -> Mx.SDU
+wrap ptclNum ptclDir blob = Mx.SDU
+  { Mx.msHeader = Mx.SDUHeader
+    { Mx.mhTimestamp = RemoteClockModel 0
+    , Mx.mhNum       = ptclNum
+    , Mx.mhDir       = ptclDir
+    , Mx.mhLength    = fromIntegral $ LBS.length blob
     }
-  , msBlob = blob
+  , Mx.msBlob = blob
   }
 
 
@@ -760,14 +762,14 @@ pingClient stdout stderr PingOpts{..} versions peer = bracket
     eprint :: String -> IO ()
     eprint = traceWith stderr
 
-    nextMsg ::  MuxBearer IO -> TimeoutFn IO -> MiniProtocolNum -> IO (LBS.ByteString, Time)
+    nextMsg ::  Mx.Bearer IO -> TimeoutFn IO -> MiniProtocolNum -> IO (LBS.ByteString, Time)
     nextMsg bearer timeoutfn ptclNum = do
       (sdu, t_e) <- Network.Mux.Types.read bearer timeoutfn
-      if mhNum (msHeader sdu) == ptclNum
-        then return (msBlob sdu, t_e)
+      if Mx.mhNum (Mx.msHeader sdu) == ptclNum
+        then return (Mx.msBlob sdu, t_e)
         else nextMsg bearer timeoutfn ptclNum
 
-    keepAlive :: MuxBearer IO
+    keepAlive :: Mx.Bearer IO
               -> TimeoutFn IO
               -> String
               -> NodeVersion
@@ -796,7 +798,7 @@ pingClient stdout stderr PingOpts{..} versions peer = bracket
           MT.threadDelay keepAliveDelay
           keepAlive bearer timeoutfn peerStr version td' (cookie + 1)
 
-    getTip :: MuxBearer IO
+    getTip :: Mx.Bearer IO
            -> TimeoutFn IO
            -> String
            -> IO ()

@@ -52,9 +52,11 @@
 
 ### Breaking changes
 
+* Addapted to `network-mux` changes in https://github.com/IntersectMBO/ouroboros-network/pull/4997
+
 ### Non-breaking changes
 
-- Bump io-sim and io-classes
+* Bump io-sim and io-classes
 
 ## 0.2.0.13
 

@@ -28,8 +28,8 @@ import Codec.CBOR.Term qualified as CBOR
 import Control.Tracer (Tracer, contramap)
 import Data.ByteString.Lazy qualified as BL
 
-import Network.Mux.Trace
-import Network.Mux.Types
+import Network.Mux.Trace qualified as Mx
+import Network.Mux.Types qualified as Mx
 import Network.TypedProtocol.Codec
 
 import Ouroboros.Network.Driver.Limits
@@ -43,8 +43,8 @@ import Ouroboros.Network.Protocol.Handshake.Version
 
 -- | The handshake protocol number.
 --
-handshakeProtocolNum :: MiniProtocolNum
-handshakeProtocolNum = MiniProtocolNum 0
+handshakeProtocolNum :: Mx.MiniProtocolNum
+handshakeProtocolNum = Mx.MiniProtocolNum 0
 
 -- | Wrapper around initiator and responder errors experienced by tryHandshake.
 --
@@ -82,7 +82,7 @@ tryHandshake doHandshake = do
 data HandshakeArguments connectionId vNumber vData m = HandshakeArguments {
       -- | 'Handshake' tracer
       --
-      haHandshakeTracer :: Tracer m (WithMuxBearer connectionId
+      haHandshakeTracer :: Tracer m (Mx.WithBearer connectionId
                                      (TraceSendRecv (Handshake vNumber CBOR.Term))),
       -- | Codec for protocol messages.
       --
@@ -119,7 +119,7 @@ runHandshakeClient
        , MonadThrow (STM m)
        , Ord vNumber
        )
-    => MuxBearer m
+    => Mx.Bearer m
     -> connectionId
     -> HandshakeArguments connectionId vNumber vData m
     -> Versions vNumber vData application
@@ -138,11 +138,11 @@ runHandshakeClient bearer
     tryHandshake
       (fst <$>
         runPeerWithLimits
-          (WithMuxBearer connectionId `contramap` haHandshakeTracer)
+          (Mx.WithBearer connectionId `contramap` haHandshakeTracer)
           haHandshakeCodec
           byteLimitsHandshake
           haTimeLimits
-          (muxBearerAsChannel bearer handshakeProtocolNum InitiatorDir)
+          (Mx.bearerAsChannel bearer handshakeProtocolNum Mx.InitiatorDir)
           (handshakeClientPeer haVersionDataCodec haAcceptVersion versions))
 
 
@@ -156,7 +156,7 @@ runHandshakeServer
        , MonadThrow (STM m)
        , Ord vNumber
        )
-    => MuxBearer m
+    => Mx.Bearer m
     -> connectionId
     -> HandshakeArguments connectionId vNumber vData m
     -> Versions vNumber vData application
@@ -176,11 +176,11 @@ runHandshakeServer bearer
     tryHandshake
       (fst <$>
         runPeerWithLimits
-          (WithMuxBearer connectionId `contramap` haHandshakeTracer)
+          (Mx.WithBearer connectionId `contramap` haHandshakeTracer)
           haHandshakeCodec
           byteLimitsHandshake
           haTimeLimits
-          (muxBearerAsChannel bearer handshakeProtocolNum ResponderDir)
+          (Mx.bearerAsChannel bearer handshakeProtocolNum Mx.ResponderDir)
           (handshakeServerPeer haVersionDataCodec haAcceptVersion haQueryVersion versions))
 
 -- | A 20s delay after query result was send back, before we close the

@@ -117,7 +117,7 @@ data Arguments muxMode socket initiatorCtx peerAddr versionNumber versionData m 
 --   address and up to one ipv6 address, i.e. an ipv6 enabled node will run two
 --   accept loops on listening on different addresses with shared /inbound governor/.
 --
--- The server can be run in either of two 'MuxMode'-es:
+-- The server can be run in either of two 'Network.Mux.Mode'-es:
 --
 -- * 'InitiatorResponderMode'
 -- * 'ResponderMode'
@@ -125,7 +125,7 @@ data Arguments muxMode socket initiatorCtx peerAddr versionNumber versionData m 
 -- The first one is used in data diffusion for /Node-To-Node protocol/, while the
 -- other is useful for running a server for the /Node-To-Client protocol/.
 --
-with :: forall (muxMode :: MuxMode) socket initiatorCtx peerAddr versionData versionNumber m a b x.
+with :: forall (muxMode :: Mux.Mode) socket initiatorCtx peerAddr versionData versionNumber m a b x.
         ( Alternative (STM m)
         , MonadAsync       m
         , MonadCatch       m
@@ -281,7 +281,7 @@ with
                             -- to continue.
                             Left err -> do
                               traceWith tracer (TrResponderStartFailure connId (miniProtocolNum mpdMiniProtocol) err)
-                              Mux.stopMux csMux
+                              Mux.stop csMux
                               return Nothing
 
                             Right completion ->  do
@@ -386,7 +386,7 @@ with
                   -- stop mux which allows to close resources held by
                   -- connection manager.
                   traceWith tracer (TrResponderStartFailure tConnId num err)
-                  Mux.stopMux tMux
+                  Mux.stop tMux
 
                   let state' = unregisterConnection tConnId state
 
@@ -565,7 +565,7 @@ with
 -- @'HasResponder' mode ~ True@ is used to rule out
 -- 'InitiatorProtocolOnly' case.
 --
-runResponder :: forall (mode :: MuxMode) initiatorCtx peerAddr m a b.
+runResponder :: forall (mode :: Mux.Mode) initiatorCtx peerAddr m a b.
                  ( Alternative (STM m)
                  , HasResponder mode ~ True
                  , MonadAsync       m

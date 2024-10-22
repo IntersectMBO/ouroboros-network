@@ -74,7 +74,7 @@ instance Show peerAddr
 
 -- | Edge triggered events to which the /inbound protocol governor/ reacts.
 --
-data Event (muxMode :: MuxMode) initiatorCtx peerAddr versionData m a b
+data Event (muxMode :: Mux.Mode) initiatorCtx peerAddr versionData m a b
     -- | A request to start mini-protocol bundle, either from the server or from
     -- connection manager after a duplex connection was negotiated.
     --
@@ -127,7 +127,7 @@ data Event (muxMode :: MuxMode) initiatorCtx peerAddr versionData m a b
 -- | A signal which returns an 'Event'.  Signals are combined together and
 -- passed used to fold the current state map.
 --
-type EventSignal (muxMode :: MuxMode) initiatorCtx peerAddr versionData m a b =
+type EventSignal (muxMode :: Mux.Mode) initiatorCtx peerAddr versionData m a b =
         ConnectionId peerAddr
      -> ConnectionState muxMode initiatorCtx peerAddr versionData m a b
      -> FirstToFinish (STM m) (Event muxMode initiatorCtx peerAddr versionData m a b)
@@ -137,7 +137,7 @@ type EventSignal (muxMode :: MuxMode) initiatorCtx peerAddr versionData m a b =
 firstMuxToFinish :: MonadSTM m
                  => EventSignal muxMode initiatorCtx peerAddr versionData m a b
 firstMuxToFinish connId ConnectionState { csMux } =
-    FirstToFinish $ MuxFinished connId <$> Mux.muxStopped csMux
+    FirstToFinish $ MuxFinished connId <$> Mux.stopped csMux
 
 
 -- | When a mini-protocol terminates we take 'Terminated' out of 'ConnectionState

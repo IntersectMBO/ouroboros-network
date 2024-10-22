@@ -25,6 +25,8 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer
 
+import Network.Mux qualified as Mx
+
 import Ouroboros.Network.Mux
 import Ouroboros.Network.Snocket
 import Ouroboros.Network.Socket
@@ -122,7 +124,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
         target = Chain.headPoint expectedChain
 
         initiatorApp
-          :: OuroborosApplicationWithMinimalCtx InitiatorMode Socket.SockAddr
+          :: OuroborosApplicationWithMinimalCtx Mx.InitiatorMode Socket.SockAddr
                                                 BL.ByteString IO () Void
         initiatorApp = testProtocols1 chainSyncInitator
 
@@ -139,7 +141,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
         server = ChainSync.chainSyncServerExample () producerVar id
 
         responderApp
-          :: OuroborosApplicationWithMinimalCtx ResponderMode Socket.SockAddr
+          :: OuroborosApplicationWithMinimalCtx Mx.ResponderMode Socket.SockAddr
                                                 BL.ByteString IO Void ()
         responderApp = testProtocols1 chainSyncResponder
 

@@ -35,8 +35,8 @@ import Network.Socket qualified as Socket
 import System.Directory
 #endif
 
-import Network.Mux
-import Network.Mux.Bearer
+import Network.Mux as Mx
+import Network.Mux.Bearer qualified as Mx
 
 import Test.Mux.ReqResp
 
@@ -113,15 +113,15 @@ server = do
     forever $ do
       (sock', _addr) <- Socket.accept sock
       void $ forkIO $ do
-        bearer <- getBearer makeSocketBearer 1.0 nullTracer sock'
+        bearer <- getBearer Mx.makeSocketBearer 1.0 nullTracer sock'
         serverWorker bearer
           `finally` Socket.close sock'
 #endif
 
 
-serverWorker :: MuxBearer IO -> IO ()
+serverWorker :: Bearer IO -> IO ()
 serverWorker bearer = do
-    mux <- newMux ptcls
+    mux <- Mx.new ptcls
 
     void $ forkIO $ do
       awaitResult <-
@@ -131,9 +131,9 @@ serverWorker bearer = do
           runServer debugTracer channel (echoServer 0)
       result <- atomically awaitResult
       putStrLn $ "Result: " ++ show result
-      stopMux mux
+      Mx.stop mux
 
-    runMux nullTracer mux bearer
+    Mx.run nullTracer mux bearer
   where
     ptcls :: [MiniProtocolInfo ResponderMode]
     ptcls = [ MiniProtocolInfo {
@@ -173,14 +173,14 @@ client n msg =
 client n msg = do
     sock <- Socket.socket AF_UNIX Socket.Stream Socket.defaultProtocol
     Socket.connect sock (SockAddrUnix pipeName)
-    bearer <- getBearer makeSocketBearer 1.0 nullTracer sock
+    bearer <- getBearer Mx.makeSocketBearer 1.0 nullTracer sock
     clientWorker bearer n msg
 #endif
 
 
-clientWorker :: MuxBearer IO -> Int -> String -> IO ()
+clientWorker :: Mx.Bearer IO -> Int -> String -> IO ()
 clientWorker bearer n msg = do
-    mux <- newMux ptcls
+    mux <- Mx.new ptcls
 
     void $ forkIO $ do
       awaitResult <-
@@ -190,11 +190,11 @@ clientWorker bearer n msg = do
           runClient debugTracer channel (echoClient 0 n (BSC.pack msg))
       result <- atomically awaitResult
       putStrLn $ "Result: " ++ show result
-      stopMux mux
+      Mx.stop mux
 
-    runMux nullTracer mux bearer
+    Mx.run nullTracer mux bearer
   where
-    ptcls :: [MiniProtocolInfo InitiatorMode]
+    ptcls :: [MiniProtocolInfo Mx.InitiatorMode]
     ptcls = [ MiniProtocolInfo {
                 miniProtocolNum    = MiniProtocolNum 2,
                 miniProtocolDir    = InitiatorDirectionOnly,

@@ -88,9 +88,7 @@ import Data.Functor.Identity (Identity (..))
 import Data.Kind (Type)
 import Data.Void (Void, absurd)
 
-import Network.Mux (WithMuxBearer (..))
 import Network.Mux qualified as Mx
-import Network.Mux.Types (MuxRuntimeError (..))
 import Network.TypedProtocol.Peer.Client
 import Network.TypedProtocol.Stateful.Peer.Client qualified as Stateful
 
@@ -123,7 +121,7 @@ import Ouroboros.Network.Tracers
 
 -- The Handshake tracer types are simply terrible.
 type HandshakeTr ntcAddr ntcVersion =
-    WithMuxBearer (ConnectionId ntcAddr)
+    Mx.WithBearer (ConnectionId ntcAddr)
                   (TraceSendRecv (Handshake ntcVersion CBOR.Term))
 
 
@@ -240,7 +238,7 @@ connectTo
   -> Versions NodeToClientVersion
               NodeToClientVersionData
               (OuroborosApplicationWithMinimalCtx
-                 InitiatorMode LocalAddress BL.ByteString IO a Void)
+                 Mx.InitiatorMode LocalAddress BL.ByteString IO a Void)
   -- ^ A dictionary of protocol versions & applications to run on an established
   -- connection.  The application to run will be chosen by initial handshake
   -- protocol (the highest shared version will be chosen).
@@ -278,7 +276,7 @@ connectToWithMux
   -> Versions NodeToClientVersion
               NodeToClientVersionData
               (OuroborosApplicationWithMinimalCtx
-                 InitiatorMode LocalAddress BL.ByteString IO a b)
+                 Mx.InitiatorMode LocalAddress BL.ByteString IO a b)
   -- ^ A dictionary of protocol versions & applications to run on an established
   -- connection.  The application to run will be chosen by initial handshake
   -- protocol (the highest shared version will be chosen).
@@ -287,8 +285,8 @@ connectToWithMux
   -> (    ConnectionId LocalAddress
        -> NodeToClientVersion
        -> NodeToClientVersionData
-       -> OuroborosApplicationWithMinimalCtx InitiatorMode LocalAddress BL.ByteString IO a b
-       -> Mx.Mux InitiatorMode IO
+       -> OuroborosApplicationWithMinimalCtx Mx.InitiatorMode LocalAddress BL.ByteString IO a b
+       -> Mx.Mux Mx.InitiatorMode IO
        -> Async.Async ()
        -> IO x)
   -- ^ callback which has access to negotiated protocols and mux handle created for
@@ -328,7 +326,7 @@ withServer
   -> Versions NodeToClientVersion
               NodeToClientVersionData
               (OuroborosApplicationWithMinimalCtx
-                 ResponderMode LocalAddress BL.ByteString IO a b)
+                 Mx.ResponderMode LocalAddress BL.ByteString IO a b)
   -> ErrorPolicies
   -> IO Void
 withServer sn tracers networkState sd versions errPolicies =
@@ -430,31 +428,31 @@ networkErrorPolicies = ErrorPolicies
                -> Just ourBug
 
       , ErrorPolicy
-          $ \(e :: MuxError)
-                -> case errorType e of
-                      MuxUnknownMiniProtocol       -> Just ourBug
-                      MuxDecodeError               -> Just ourBug
-                      MuxIngressQueueOverRun       -> Just ourBug
-                      MuxInitiatorOnly             -> Just ourBug
-                      MuxShutdown {}               -> Just ourBug
-                      MuxCleanShutdown             -> Just ourBug
+          $ \(e :: Mx.Error)
+                -> case Mx.errorType e of
+                      Mx.UnknownMiniProtocol       -> Just ourBug
+                      Mx.DecodeError               -> Just ourBug
+                      Mx.IngressQueueOverRun       -> Just ourBug
+                      Mx.InitiatorOnly             -> Just ourBug
+                      Mx.Shutdown {}               -> Just ourBug
+                      Mx.CleanShutdown             -> Just ourBug
 
                       -- in case of bearer closed / or IOException we suspend
                       -- the peer for a short time
                       --
                       -- TODO: the same notes apply as to
                       -- 'NodeToNode.networkErrorPolicies'
-                      MuxBearerClosed         -> Just (SuspendPeer shortDelay shortDelay)
-                      MuxIOException{}        -> Just (SuspendPeer shortDelay shortDelay)
-                      MuxSDUReadTimeout       -> Just (SuspendPeer shortDelay shortDelay)
-                      MuxSDUWriteTimeout      -> Just (SuspendPeer shortDelay shortDelay)
+                      Mx.BearerClosed         -> Just (SuspendPeer shortDelay shortDelay)
+                      Mx.IOException{}        -> Just (SuspendPeer shortDelay shortDelay)
+                      Mx.SDUReadTimeout       -> Just (SuspendPeer shortDelay shortDelay)
+                      Mx.SDUWriteTimeout      -> Just (SuspendPeer shortDelay shortDelay)
 
       , ErrorPolicy
-          $ \(e :: MuxRuntimeError)
+          $ \(e :: Mx.RuntimeError)
                 -> case e of
-                     ProtocolAlreadyRunning       {} -> Just ourBug
-                     UnknownProtocolInternalError {} -> Just ourBug
-                     MuxBlockedOnCompletionVar    {} -> Just ourBug
+                     Mx.ProtocolAlreadyRunning       {} -> Just ourBug
+                     Mx.UnknownProtocolInternalError {} -> Just ourBug
+                     Mx.BlockedOnCompletionVar       {} -> Just ourBug
 
         -- Error thrown by 'IOManager', this is fatal on Windows, and it will
         -- never fire on other platofrms.

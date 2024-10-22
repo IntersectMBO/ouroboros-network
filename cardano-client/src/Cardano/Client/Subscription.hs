@@ -12,9 +12,9 @@ module Cardano.Client.Subscription
   , SubscriptionTrace (..)
     -- * Re-exports
     -- ** Mux
-  , MuxMode (..)
+  , MuxMode
   , MuxTrace
-  , WithMuxBearer
+  , Mx.WithBearer
     -- ** Connections
   , ConnectionId (..)
   , LocalAddress (..)
@@ -37,11 +37,11 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Void (Void)
 
-import Network.Mux.Trace (MuxTrace, WithMuxBearer)
+import Network.Mux qualified as Mx
 
 import Ouroboros.Network.ControlMessage (ControlMessage (..))
 import Ouroboros.Network.Magic (NetworkMagic)
-import Ouroboros.Network.Mux (MiniProtocolCb (..), MuxMode (..),
+import Ouroboros.Network.Mux (MiniProtocolCb (..),
            OuroborosApplicationWithMinimalCtx, RunMiniProtocol (..))
 
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
@@ -51,6 +51,9 @@ import Ouroboros.Network.NodeToClient (Handshake, LocalAddress (..),
            Versions)
 import Ouroboros.Network.NodeToClient qualified as NtC
 import Ouroboros.Network.Snocket qualified as Snocket
+
+type MuxMode  = Mx.Mode
+type MuxTrace = Mx.Trace
 
 data SubscriptionParams a = SubscriptionParams
   { spAddress           :: !LocalAddress
@@ -67,10 +70,10 @@ data Decision =
     -- ^ reconnect
 
 data SubscriptionTracers a = SubscriptionTracers {
-      stMuxTracer          :: Tracer IO (WithMuxBearer (ConnectionId LocalAddress) MuxTrace),
+      stMuxTracer          :: Tracer IO (Mx.WithBearer (ConnectionId LocalAddress) MuxTrace),
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
-      stHandshakeTracer    :: Tracer IO (WithMuxBearer (ConnectionId LocalAddress)
+      stHandshakeTracer    :: Tracer IO (Mx.WithBearer (ConnectionId LocalAddress)
                                             (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term))),
       -- ^ handshake protocol tracer; it is important for analysing version
       -- negotation mismatches.
@@ -101,7 +104,7 @@ subscribe
   -> SubscriptionParams a
   -> (   NodeToClientVersion
       -> blockVersion
-      -> NodeToClientProtocols 'InitiatorMode LocalAddress BSL.ByteString IO a Void)
+      -> NodeToClientProtocols Mx.InitiatorMode LocalAddress BSL.ByteString IO a Void)
   -> IO ()
 subscribe snocket networkMagic supportedVersions
                   SubscriptionTracers {

@@ -61,13 +61,15 @@ import System.IOManager
 
 import Test.Mux.ReqResp
 
-import Network.Mux
-import Network.Mux.Bearer
+import Network.Mux (Mux)
+import Network.Mux qualified as Mx
+import Network.Mux.Bearer as Mx
 import Network.Mux.Bearer.AttenuatedChannel as AttenuatedChannel
-import Network.Mux.Bearer.Pipe
-import Network.Mux.Bearer.Queues
-import Network.Mux.Codec
-import Network.Mux.Types
+import Network.Mux.Bearer.Pipe qualified as Mx
+import Network.Mux.Bearer.Queues as Mx
+import Network.Mux.Codec qualified as Mx
+import Network.Mux.Types (MiniProtocolInfo (..), MiniProtocolLimits (..))
+import Network.Mux.Types qualified as Mx
 import Network.Socket qualified as Socket
 import Text.Show.Functions ()
 -- import qualified Debug.Trace as Debug
@@ -218,7 +220,7 @@ instance Arbitrary DummyRun where
         map DummyRun $ filter (not . null) a'
 
 data InvalidSDU = InvalidSDU {
-      isTimestamp  :: !RemoteClockModel
+      isTimestamp  :: !Mx.RemoteClockModel
     , isIdAndMode  :: !Word16
     , isLength     :: !Word16
     , isRealLength :: !Int
@@ -227,14 +229,14 @@ data InvalidSDU = InvalidSDU {
 
 instance Show InvalidSDU where
     show a = printf "InvalidSDU 0x%08x 0x%04x 0x%04x 0x%04x 0x%02x\n"
-                    (unRemoteClockModel $ isTimestamp a)
+                    (Mx.unRemoteClockModel $ isTimestamp a)
                     (isIdAndMode a)
                     (isLength a)
                     (isRealLength a)
                     (isPattern a)
 
-data ArbitrarySDU = ArbitraryInvalidSDU InvalidSDU MuxErrorType
-                  | ArbitraryValidSDU DummyPayload (Maybe MuxErrorType)
+data ArbitrarySDU = ArbitraryInvalidSDU InvalidSDU Mx.ErrorType
+                  | ArbitraryValidSDU DummyPayload (Maybe Mx.ErrorType)
                   deriving Show
 
 instance Arbitrary ArbitrarySDU where
@@ -256,7 +258,7 @@ instance Arbitrary ArbitrarySDU where
             -- This SDU is still considered valid, since the header itself will
             -- not cause a trouble, the error will be triggered by the fact that
             -- it is sent as a single message.
-            return $ ArbitraryValidSDU (DummyPayload pl) (Just MuxIngressQueueOverRun)
+            return $ ArbitraryValidSDU (DummyPayload pl) (Just Mx.IngressQueueOverRun)
 
         unknownMiniProtocol = do
             ts  <- arbitrary
@@ -265,9 +267,9 @@ instance Arbitrary ArbitrarySDU where
             len <- arbitrary
             p <- arbitrary
 
-            return $ ArbitraryInvalidSDU (InvalidSDU (RemoteClockModel ts) (mid .|. mode) len
+            return $ ArbitraryInvalidSDU (InvalidSDU (Mx.RemoteClockModel ts) (mid .|. mode) len
                                           (8 + fromIntegral len) p)
-                                         MuxUnknownMiniProtocol
+                                         Mx.UnknownMiniProtocol
         invalidLenght = do
             ts  <- arbitrary
             mid <- arbitrary
@@ -275,11 +277,11 @@ instance Arbitrary ArbitrarySDU where
             realLen <- choose (0, 7) -- Size of mux header is 8
             p <- arbitrary
 
-            return $ ArbitraryInvalidSDU (InvalidSDU (RemoteClockModel ts) mid len realLen p)
-                                         MuxDecodeError
+            return $ ArbitraryInvalidSDU (InvalidSDU (Mx.RemoteClockModel ts) mid len realLen p)
+                                         Mx.DecodeError
 
-instance Arbitrary MuxBearerState where
-     arbitrary = elements [Mature, Dead]
+instance Arbitrary Mx.BearerState where
+     arbitrary = elements [Mx.Mature, Mx.Dead]
 
 
 
@@ -319,7 +321,7 @@ instance Arbitrary Uneven where
 prop_mux_snd_recv :: DummyRun
                   -> Property
 prop_mux_snd_recv (DummyRun messages) = ioProperty $ do
-    let sduLen = SDUSize 1260
+    let sduLen = Mx.SDUSize 1260
 
     client_w <- atomically $ newTBQueue 10
     client_r <- atomically $ newTBQueue 10
@@ -327,40 +329,40 @@ prop_mux_snd_recv (DummyRun messages) = ioProperty $ do
     let server_w = client_r
         server_r = client_w
 
-        clientBearer = queueChannelAsMuxBearer
+        clientBearer = queueChannelAsBearer
                          sduLen
                          clientTracer
                          QueueChannel { writeQueue = client_w, readQueue = client_r }
-        serverBearer = queueChannelAsMuxBearer
+        serverBearer = queueChannelAsBearer
                          sduLen
                          serverTracer
                          QueueChannel { writeQueue = server_w, readQueue = server_r }
 
-        clientTracer = contramap (WithMuxBearer "client") activeTracer
-        serverTracer = contramap (WithMuxBearer "server") activeTracer
+        clientTracer = contramap (Mx.WithBearer "client") activeTracer
+        serverTracer = contramap (Mx.WithBearer "server") activeTracer
 
         clientApp = MiniProtocolInfo {
-                       miniProtocolNum = MiniProtocolNum 2,
-                       miniProtocolDir = InitiatorDirectionOnly,
+                       miniProtocolNum = Mx.MiniProtocolNum 2,
+                       miniProtocolDir = Mx.InitiatorDirectionOnly,
                        miniProtocolLimits = defaultMiniProtocolLimits
                      }
 
         serverApp = MiniProtocolInfo {
-                       miniProtocolNum = MiniProtocolNum 2,
-                       miniProtocolDir = ResponderDirectionOnly,
+                       miniProtocolNum = Mx.MiniProtocolNum 2,
+                       miniProtocolDir = Mx.ResponderDirectionOnly,
                        miniProtocolLimits = defaultMiniProtocolLimits
                      }
 
-    clientMux <- newMux [clientApp]
+    clientMux <- Mx.new [clientApp]
 
-    serverMux <- newMux [serverApp]
+    serverMux <- Mx.new [serverApp]
 
-    withAsync (runMux clientTracer clientMux clientBearer) $ \clientAsync ->
-      withAsync (runMux serverTracer serverMux serverBearer) $ \serverAsync -> do
+    withAsync (Mx.run clientTracer clientMux clientBearer) $ \clientAsync ->
+      withAsync (Mx.run serverTracer serverMux serverBearer) $ \serverAsync -> do
 
         r <- step clientMux clientApp serverMux serverApp messages
-        stopMux serverMux
-        stopMux clientMux
+        Mx.stop serverMux
+        Mx.stop clientMux
         wait serverAsync
         wait clientAsync
         return $ r
@@ -370,10 +372,10 @@ prop_mux_snd_recv (DummyRun messages) = ioProperty $ do
     step clientMux clientApp serverMux serverApp (msgs:msgss) = do
         (client_mp, server_mp) <- setupMiniReqRsp (return ()) msgs
 
-        clientRes <- runMiniProtocol clientMux (miniProtocolNum clientApp) (miniProtocolDir clientApp)
-                   StartEagerly client_mp
-        serverRes <- runMiniProtocol serverMux (miniProtocolNum serverApp) (miniProtocolDir serverApp)
-                   StartEagerly server_mp
+        clientRes <- Mx.runMiniProtocol clientMux (Mx.miniProtocolNum clientApp) (Mx.miniProtocolDir clientApp)
+                   Mx.StartEagerly client_mp
+        serverRes <- Mx.runMiniProtocol serverMux (Mx.miniProtocolNum serverApp) (Mx.miniProtocolDir serverApp)
+                   Mx.StartEagerly server_mp
         rs_e <- atomically serverRes
         rc_e <- atomically clientRes
         case (rs_e, rc_e) of
@@ -393,8 +395,8 @@ prop_mux_snd_recv_bi (DummyRun messages) = ioProperty $ do
     let server_w = client_r
         server_r = client_w
 
-        clientTracer = contramap (WithMuxBearer "client") activeTracer
-        serverTracer = contramap (WithMuxBearer "server") activeTracer
+        clientTracer = contramap (Mx.WithBearer "client") activeTracer
+        serverTracer = contramap (Mx.WithBearer "server") activeTracer
 
     clientBearer <- getBearer makeQueueChannelBearer
                       (-1)
@@ -406,39 +408,39 @@ prop_mux_snd_recv_bi (DummyRun messages) = ioProperty $ do
                       QueueChannel { writeQueue = server_w, readQueue = server_r }
 
     let clientApps = [ MiniProtocolInfo {
-                        miniProtocolNum = MiniProtocolNum 2,
-                        miniProtocolDir = InitiatorDirection,
+                        miniProtocolNum = Mx.MiniProtocolNum 2,
+                        miniProtocolDir = Mx.InitiatorDirection,
                         miniProtocolLimits = defaultMiniProtocolLimits
                        }
                      , MiniProtocolInfo {
-                        miniProtocolNum = MiniProtocolNum 2,
-                        miniProtocolDir = ResponderDirection,
+                        miniProtocolNum = Mx.MiniProtocolNum 2,
+                        miniProtocolDir = Mx.ResponderDirection,
                         miniProtocolLimits = defaultMiniProtocolLimits
                       }
                      ]
 
         serverApps = [ MiniProtocolInfo {
-                        miniProtocolNum = MiniProtocolNum 2,
-                        miniProtocolDir = ResponderDirection,
+                        miniProtocolNum = Mx.MiniProtocolNum 2,
+                        miniProtocolDir = Mx.ResponderDirection,
                         miniProtocolLimits = defaultMiniProtocolLimits
                        }
                      , MiniProtocolInfo {
-                        miniProtocolNum = MiniProtocolNum 2,
-                        miniProtocolDir = InitiatorDirection,
+                        miniProtocolNum = Mx.MiniProtocolNum 2,
+                        miniProtocolDir = Mx.InitiatorDirection,
                         miniProtocolLimits = defaultMiniProtocolLimits
                        }
                      ]
 
 
-    clientMux <- newMux clientApps
-    clientAsync <- async $ runMux clientTracer clientMux clientBearer
+    clientMux <- Mx.new clientApps
+    clientAsync <- async $ Mx.run clientTracer clientMux clientBearer
 
-    serverMux <- newMux serverApps
-    serverAsync <- async $ runMux serverTracer serverMux serverBearer
+    serverMux <- Mx.new serverApps
+    serverAsync <- async $ Mx.run serverTracer serverMux serverBearer
 
     r <- step clientMux clientApps serverMux serverApps messages
-    stopMux clientMux
-    stopMux serverMux
+    Mx.stop clientMux
+    Mx.stop serverMux
     wait serverAsync
     wait clientAsync
     return r
@@ -448,7 +450,7 @@ prop_mux_snd_recv_bi (DummyRun messages) = ioProperty $ do
     step clientMux clientApps serverMux serverApps (msgs:msgss) = do
         (client_mp, server_mp) <- setupMiniReqRsp (return ()) msgs
         clientRes <- sequence
-          [ runMiniProtocol
+          [ Mx.runMiniProtocol
             clientMux
             miniProtocolNum
             miniProtocolDir
@@ -456,11 +458,11 @@ prop_mux_snd_recv_bi (DummyRun messages) = ioProperty $ do
             chan
           | MiniProtocolInfo {miniProtocolNum, miniProtocolDir} <- clientApps
           , (strat, chan) <- case miniProtocolDir of
-                              InitiatorDirection -> [(StartEagerly, client_mp)]
-                              _                  -> [(StartOnDemand, server_mp)]
+                              Mx.InitiatorDirection -> [(Mx.StartEagerly, client_mp)]
+                              _                     -> [(Mx.StartOnDemand, server_mp)]
           ]
         serverRes <- sequence
-          [ runMiniProtocol
+          [ Mx.runMiniProtocol
             serverMux
             miniProtocolNum
             miniProtocolDir
@@ -468,8 +470,8 @@ prop_mux_snd_recv_bi (DummyRun messages) = ioProperty $ do
             chan
           | MiniProtocolInfo {miniProtocolNum, miniProtocolDir} <- serverApps
           , (strat, chan) <- case miniProtocolDir of
-                              InitiatorDirection -> [(StartEagerly, client_mp)]
-                              _                  -> [(StartOnDemand, server_mp)]
+                              Mx.InitiatorDirection -> [(Mx.StartEagerly, client_mp)]
+                              _                     -> [(Mx.StartOnDemand, server_mp)]
           ]
 
         rs <- mapM getResult serverRes
@@ -498,8 +500,8 @@ prop_mux_snd_recv_compat messages = ioProperty $ do
     let server_w = client_r
         server_r = client_w
 
-        clientTracer = contramap (WithMuxBearer "client") activeTracer
-        serverTracer = contramap (WithMuxBearer "server") activeTracer
+        clientTracer = contramap (Mx.WithBearer "client") activeTracer
+        serverTracer = contramap (Mx.WithBearer "server") activeTracer
 
 
     clientBearer <- getBearer makeQueueChannelBearer
@@ -514,51 +516,51 @@ prop_mux_snd_recv_compat messages = ioProperty $ do
                                         (return ()) endMpsVar messages
 
     let clientBundle = [ MiniProtocolInfo {
-                           miniProtocolNum    = MiniProtocolNum 2,
+                           miniProtocolNum    = Mx.MiniProtocolNum 2,
                            miniProtocolLimits = defaultMiniProtocolLimits,
-                           miniProtocolDir    = InitiatorDirectionOnly }
+                           miniProtocolDir    = Mx.InitiatorDirectionOnly }
                        ]
 
         serverBundle = [ MiniProtocolInfo {
-                           miniProtocolNum    = MiniProtocolNum 2,
+                           miniProtocolNum    = Mx.MiniProtocolNum 2,
                            miniProtocolLimits = defaultMiniProtocolLimits,
-                           miniProtocolDir    = ResponderDirectionOnly }
+                           miniProtocolDir    = Mx.ResponderDirectionOnly }
                        ]
 
     clientAsync <- async $ do
-      clientMux <- newMux clientBundle
-      res <- runMiniProtocol
+      clientMux <- Mx.new clientBundle
+      res <- Mx.runMiniProtocol
         clientMux
-        (MiniProtocolNum 2)
-        InitiatorDirectionOnly
-        StartEagerly
+        (Mx.MiniProtocolNum 2)
+        Mx.InitiatorDirectionOnly
+        Mx.StartEagerly
         (\chann -> do
           r <- client_mp chann
           return (r, Nothing)
         )
 
       -- Wait for the first MuxApplication to finish, then stop the mux.
-      withAsync (runMux clientTracer clientMux clientBearer) $ \aid -> do
+      withAsync (Mx.run clientTracer clientMux clientBearer) $ \aid -> do
         _ <- atomically res
-        stopMux clientMux
+        Mx.stop clientMux
         wait aid
 
     serverAsync <- async $ do
-      serverMux <- newMux serverBundle
-      res <- runMiniProtocol
+      serverMux <- Mx.new serverBundle
+      res <- Mx.runMiniProtocol
         serverMux
-        (MiniProtocolNum 2)
-        ResponderDirectionOnly
-        StartEagerly
+        (Mx.MiniProtocolNum 2)
+        Mx.ResponderDirectionOnly
+        Mx.StartEagerly
         (\chann -> do
           r <- server_mp chann
           return (r, Nothing)
         )
 
       -- Wait for the first MuxApplication to finish, then stop the mux.
-      withAsync (runMux serverTracer serverMux serverBearer) $ \aid -> do
+      withAsync (Mx.run serverTracer serverMux serverBearer) $ \aid -> do
         _ <- atomically res
-        stopMux serverMux
+        Mx.stop serverMux
         wait aid
 
     _ <- waitBoth clientAsync serverAsync
@@ -575,8 +577,8 @@ setupMiniReqRspCompat :: IO ()
                       -> DummyTrace
                       -- ^ Trace of messages
                       -> IO ( IO Bool
-                            , ByteChannel IO -> IO ((), Maybe BL.ByteString)
-                            , ByteChannel IO -> IO ((), Maybe BL.ByteString)
+                            , Mx.ByteChannel IO -> IO ((), Maybe BL.ByteString)
+                            , Mx.ByteChannel IO -> IO ((), Maybe BL.ByteString)
                             )
 setupMiniReqRspCompat serverAction mpsEndVar (DummyTrace msgs) = do
     serverResultVar <- newEmptyTMVarIO
@@ -615,7 +617,7 @@ setupMiniReqRspCompat serverAction mpsEndVar (DummyTrace msgs) = do
         go resps (req:reqs) = SendMsgReq req $ \resp -> return (go (resp:resps) reqs)
 
     clientApp :: StrictTMVar IO Bool
-              -> ByteChannel IO
+              -> Mx.ByteChannel IO
               -> IO ((), Maybe BL.ByteString)
     clientApp clientResultVar clientChan = do
         (result, trailing) <- runClient nullTracer clientChan (reqRespClient requests)
@@ -623,7 +625,7 @@ setupMiniReqRspCompat serverAction mpsEndVar (DummyTrace msgs) = do
         (,trailing) <$> end
 
     serverApp :: StrictTMVar IO Bool
-              -> ByteChannel IO
+              -> Mx.ByteChannel IO
               -> IO ((), Maybe BL.ByteString)
     serverApp serverResultVar serverChan = do
         (result, trailing) <- runServer nullTracer serverChan (reqRespServer responses)
@@ -650,8 +652,8 @@ setupMiniReqRsp :: IO ()
                 -- ^ Action performed by responder before processing the response
                 -> DummyTrace
                 -- ^ Trace of messages
-                -> IO ( ByteChannel IO -> IO (Bool, Maybe BL.ByteString)
-                      , ByteChannel IO -> IO (Bool, Maybe BL.ByteString)
+                -> IO ( Mx.ByteChannel IO -> IO (Bool, Maybe BL.ByteString)
+                      , Mx.ByteChannel IO -> IO (Bool, Maybe BL.ByteString)
                       )
 setupMiniReqRsp serverAction (DummyTrace msgs) = do
 
@@ -682,11 +684,11 @@ setupMiniReqRsp serverAction (DummyTrace msgs) = do
         go resps []         = SendMsgDone (pure $ reverse resps == responses)
         go resps (req:reqs) = SendMsgReq req $ \resp -> return (go (resp:resps) reqs)
 
-    clientApp :: ByteChannel IO
+    clientApp :: Mx.ByteChannel IO
               -> IO (Bool, Maybe BL.ByteString)
     clientApp clientChan = runClient nullTracer clientChan (reqRespClient requests)
 
-    serverApp :: ByteChannel IO
+    serverApp :: Mx.ByteChannel IO
               -> IO (Bool, Maybe BL.ByteString)
     serverApp serverChan = runServer nullTracer serverChan (reqRespServer responses)
 
@@ -696,53 +698,53 @@ setupMiniReqRsp serverAction (DummyTrace msgs) = do
 
 -- Run applications continuation
 type RunMuxApplications
-    =  [ByteChannel IO -> IO (Bool, Maybe BL.ByteString)]
-    -> [ByteChannel IO -> IO (Bool, Maybe BL.ByteString)]
+    =  [Mx.ByteChannel IO -> IO (Bool, Maybe BL.ByteString)]
+    -> [Mx.ByteChannel IO -> IO (Bool, Maybe BL.ByteString)]
     -> IO Bool
 
 
-runMuxApplication :: [ByteChannel IO -> IO (Bool, Maybe BL.ByteString)]
-                  -> MuxBearer IO
-                  -> [ByteChannel IO -> IO (Bool, Maybe BL.ByteString)]
-                  -> MuxBearer IO
+runMuxApplication :: [Mx.ByteChannel IO -> IO (Bool, Maybe BL.ByteString)]
+                  -> Mx.Bearer IO
+                  -> [Mx.ByteChannel IO -> IO (Bool, Maybe BL.ByteString)]
+                  -> Mx.Bearer IO
                   -> IO Bool
 runMuxApplication initApps initBearer respApps respBearer = do
-    let clientTracer = contramap (WithMuxBearer "client") activeTracer
-        serverTracer = contramap (WithMuxBearer "server") activeTracer
+    let clientTracer = contramap (Mx.WithBearer "client") activeTracer
+        serverTracer = contramap (Mx.WithBearer "server") activeTracer
         protNum = [1..]
         respApps' = zip protNum respApps
         initApps' = zip protNum initApps
 
-    respMux <- newMux $ map (\(pn,_) ->
-        MiniProtocolInfo (MiniProtocolNum pn) ResponderDirectionOnly defaultMiniProtocolLimits)
+    respMux <- Mx.new $ map (\(pn,_) ->
+        MiniProtocolInfo (Mx.MiniProtocolNum pn) Mx.ResponderDirectionOnly defaultMiniProtocolLimits)
         respApps'
-    respAsync <- async $ runMux serverTracer respMux respBearer
-    getRespRes <- sequence [ runMiniProtocol
+    respAsync <- async $ Mx.run serverTracer respMux respBearer
+    getRespRes <- sequence [ Mx.runMiniProtocol
                               respMux
-                              (MiniProtocolNum pn)
-                              ResponderDirectionOnly
-                              StartOnDemand
+                              (Mx.MiniProtocolNum pn)
+                              Mx.ResponderDirectionOnly
+                              Mx.StartOnDemand
                               app
                            | (pn, app) <- respApps'
                            ]
 
-    initMux <- newMux $ map (\(pn,_) ->
-        MiniProtocolInfo (MiniProtocolNum pn) InitiatorDirectionOnly defaultMiniProtocolLimits)
+    initMux <- Mx.new $ map (\(pn,_) ->
+        MiniProtocolInfo (Mx.MiniProtocolNum pn) Mx.InitiatorDirectionOnly defaultMiniProtocolLimits)
         initApps'
-    initAsync <- async $ runMux clientTracer initMux initBearer
-    getInitRes <- sequence [ runMiniProtocol
+    initAsync <- async $ Mx.run clientTracer initMux initBearer
+    getInitRes <- sequence [ Mx.runMiniProtocol
                               initMux
-                              (MiniProtocolNum pn)
-                              InitiatorDirectionOnly
-                              StartEagerly
+                              (Mx.MiniProtocolNum pn)
+                              Mx.InitiatorDirectionOnly
+                              Mx.StartEagerly
                               app
                            | (pn, app) <- initApps'
                            ]
 
     initRes <- mapM getResult getInitRes
     respRes <- mapM getResult getRespRes
-    stopMux initMux
-    stopMux respMux
+    Mx.stop initMux
+    Mx.stop respMux
     void $ waitBoth initAsync respAsync
 
     return $ and $ initRes ++ respRes
@@ -762,8 +764,8 @@ runWithQueues initApps respApps = do
     let server_w = client_r
         server_r = client_w
 
-        clientTracer = contramap (WithMuxBearer "client") activeTracer
-        serverTracer = contramap (WithMuxBearer "server") activeTracer
+        clientTracer = contramap (Mx.WithBearer "client") activeTracer
+        serverTracer = contramap (Mx.WithBearer "server") activeTracer
 
     clientBearer <- getBearer makeQueueChannelBearer
                       (-1)
@@ -805,8 +807,8 @@ runWithPipe initApps respApps =
              associateWithIOManager ioManager (Left hSrv)
              associateWithIOManager ioManager (Left hCli)
 
-             let clientChannel = pipeChannelFromNamedPipe hCli
-                 serverChannel = pipeChannelFromNamedPipe hSrv
+             let clientChannel = Mx.pipeChannelFromNamedPipe hCli
+                 serverChannel = Mx.pipeChannelFromNamedPipe hSrv
 
              clientBearer <- getBearer makePipeChannelBearer (-1) clientTracer clientChannel
              serverBearer <- getBearer makePipeChannelBearer (-1) serverTracer serverChannel
@@ -822,8 +824,8 @@ runWithPipe initApps respApps =
         hClose rSrv
         hClose wSrv)
       $ \ ((rCli, wCli), (rSrv, wSrv)) -> do
-        let clientChannel = pipeChannelFromHandles rCli wSrv
-            serverChannel = pipeChannelFromHandles rSrv wCli
+        let clientChannel = Mx.pipeChannelFromHandles rCli wSrv
+            serverChannel = Mx.pipeChannelFromHandles rSrv wCli
 
         clientBearer <- getBearer makePipeChannelBearer (-1) clientTracer clientChannel
         serverBearer <- getBearer makePipeChannelBearer (-1) serverTracer serverChannel
@@ -831,8 +833,8 @@ runWithPipe initApps respApps =
 
 #endif
   where
-    clientTracer = contramap (WithMuxBearer "client") activeTracer
-    serverTracer = contramap (WithMuxBearer "server") activeTracer
+    clientTracer = contramap (Mx.WithBearer "client") activeTracer
+    serverTracer = contramap (Mx.WithBearer "server") activeTracer
 
 
 -- | Verify that it is possible to run two miniprotocols over the same bearer.
@@ -887,9 +889,9 @@ prop_mux_2_minis_Pipe a b = ioProperty $ test_mux_2_minis runWithPipe a b
 prop_mux_starvation :: Uneven
                     -> Property
 prop_mux_starvation (Uneven response0 response1) =
-    let sduLen = SDUSize 1280 in
-    (BL.length (unDummyPayload response0) > 2 * fromIntegral (getSDUSize sduLen)) &&
-    (BL.length (unDummyPayload response1) > 2 * fromIntegral (getSDUSize sduLen)) ==>
+    let sduLen = Mx.SDUSize 1280 in
+    (BL.length (unDummyPayload response0) > 2 * fromIntegral (Mx.getSDUSize sduLen)) &&
+    (BL.length (unDummyPayload response1) > 2 * fromIntegral (Mx.getSDUSize sduLen)) ==>
     ioProperty $ do
     let request       = DummyPayload $ BL.replicate 4 0xa
 
@@ -899,15 +901,15 @@ prop_mux_starvation (Uneven response0 response1) =
     traceHeaderVar <- newTVarIO []
     let headerTracer =
           Tracer $ \e -> case e of
-            MuxTraceRecvHeaderEnd header
+            Mx.TraceRecvHeaderEnd header
               -> atomically (modifyTVar traceHeaderVar (header:))
             _ -> return ()
 
     let server_w = client_r
         server_r = client_w
 
-        clientTracer = contramap (WithMuxBearer "client") activeTracer
-        serverTracer = contramap (WithMuxBearer "server") activeTracer
+        clientTracer = contramap (Mx.WithBearer "client") activeTracer
+        serverTracer = contramap (Mx.WithBearer "server") activeTracer
 
 
     clientBearer <- getBearer makeQueueChannelBearer
@@ -927,40 +929,40 @@ prop_mux_starvation (Uneven response0 response1) =
 
 
     let clientApp2 = MiniProtocolInfo {
-                         miniProtocolNum = MiniProtocolNum 2,
-                         miniProtocolDir = InitiatorDirectionOnly,
+                         miniProtocolNum = Mx.MiniProtocolNum 2,
+                         miniProtocolDir = Mx.InitiatorDirectionOnly,
                          miniProtocolLimits = defaultMiniProtocolLimits
                        }
         clientApp3 = MiniProtocolInfo {
-                         miniProtocolNum = MiniProtocolNum 3,
-                         miniProtocolDir = InitiatorDirectionOnly,
+                         miniProtocolNum = Mx.MiniProtocolNum 3,
+                         miniProtocolDir = Mx.InitiatorDirectionOnly,
                          miniProtocolLimits = defaultMiniProtocolLimits
                        }
 
         serverApp2 = MiniProtocolInfo {
-                         miniProtocolNum = MiniProtocolNum 2,
-                         miniProtocolDir = ResponderDirectionOnly,
+                         miniProtocolNum = Mx.MiniProtocolNum 2,
+                         miniProtocolDir = Mx.ResponderDirectionOnly,
                          miniProtocolLimits = defaultMiniProtocolLimits
                        }
         serverApp3 = MiniProtocolInfo {
-                         miniProtocolNum = MiniProtocolNum 3,
-                         miniProtocolDir = ResponderDirectionOnly,
+                         miniProtocolNum = Mx.MiniProtocolNum 3,
+                         miniProtocolDir = Mx.ResponderDirectionOnly,
                          miniProtocolLimits = defaultMiniProtocolLimits
                        }
 
-    serverMux <- newMux [serverApp2, serverApp3]
-    serverMux_aid <- async $ runMux serverTracer serverMux serverBearer
-    serverRes2 <- runMiniProtocol serverMux (miniProtocolNum serverApp2) (miniProtocolDir serverApp2)
-                   StartOnDemand server_short
-    serverRes3 <- runMiniProtocol serverMux (miniProtocolNum serverApp3) (miniProtocolDir serverApp3)
-                   StartOnDemand server_long
+    serverMux <- Mx.new [serverApp2, serverApp3]
+    serverMux_aid <- async $ Mx.run serverTracer serverMux serverBearer
+    serverRes2 <- Mx.runMiniProtocol serverMux (miniProtocolNum serverApp2) (miniProtocolDir serverApp2)
+                   Mx.StartOnDemand server_short
+    serverRes3 <- Mx.runMiniProtocol serverMux (miniProtocolNum serverApp3) (miniProtocolDir serverApp3)
+                   Mx.StartOnDemand server_long
 
-    clientMux <- newMux [clientApp2, clientApp3]
-    clientMux_aid <- async $ runMux (clientTracer <> headerTracer) clientMux clientBearer
-    clientRes2 <- runMiniProtocol clientMux (miniProtocolNum clientApp2) (miniProtocolDir clientApp2)
-                   StartEagerly client_short
-    clientRes3 <- runMiniProtocol clientMux (miniProtocolNum clientApp3) (miniProtocolDir clientApp3)
-                   StartEagerly client_long
+    clientMux <- Mx.new [clientApp2, clientApp3]
+    clientMux_aid <- async $ Mx.run (clientTracer <> headerTracer) clientMux clientBearer
+    clientRes2 <- Mx.runMiniProtocol clientMux (Mx.miniProtocolNum clientApp2) (Mx.miniProtocolDir clientApp2)
+                   Mx.StartEagerly client_short
+    clientRes3 <- Mx.runMiniProtocol clientMux (Mx.miniProtocolNum clientApp3) (Mx.miniProtocolDir clientApp3)
+                   Mx.StartEagerly client_long
 
 
     -- Fetch results
@@ -979,13 +981,13 @@ prop_mux_starvation (Uneven response0 response1) =
                          (_, Left _)        -> False
                          (Right a, Right b) -> a && b
 
-    stopMux serverMux
-    stopMux clientMux
+    Mx.stop serverMux
+    Mx.stop clientMux
     _ <- waitBoth serverMux_aid clientMux_aid
 
     -- Then look at the message trace to check for starvation.
     trace <- atomically $ readTVar traceHeaderVar
-    let es = map mhNum (take 100 (reverse trace))
+    let es = map Mx.mhNum (take 100 (reverse trace))
         ls = dropWhile (\e -> e == head es) es
         fair = verifyStarvation ls
     return $ res_short .&&. res_long .&&. fair
@@ -1026,7 +1028,7 @@ encodeInvalidMuxSDU sdu =
     BL.append header $ BL.replicate (fromIntegral $ isLength sdu) (isPattern sdu)
   where
     enc = do
-        Bin.putWord32be $ unRemoteClockModel $ isTimestamp sdu
+        Bin.putWord32be $ Mx.unRemoteClockModel $ isTimestamp sdu
         Bin.putWord16be $ isIdAndMode sdu
         Bin.putWord16be $ isLength sdu
 
@@ -1049,15 +1051,15 @@ prop_demux_sdu a = do
     return $ tabulate "SDU type" [stateLabel a] $
              tabulate "SDU Violation " [violationLabel a] r
   where
-    run (ArbitraryValidSDU sdu (Just MuxIngressQueueOverRun)) = do
+    run (ArbitraryValidSDU sdu (Just Mx.IngressQueueOverRun)) = do
         stopVar <- newEmptyTMVarIO
 
         -- To trigger MuxIngressQueueOverRun we use a special test protocol
         -- with an ingress queue which is less than 0xffff so that it can be
         -- triggered by a single segment.
         let server_mps = MiniProtocolInfo {
-                           miniProtocolNum = MiniProtocolNum 2,
-                           miniProtocolDir = ResponderDirectionOnly,
+                           miniProtocolNum = Mx.MiniProtocolNum 2,
+                           miniProtocolDir = Mx.ResponderDirectionOnly,
                            miniProtocolLimits = smallMiniProtocolLimits
                          }
 
@@ -1068,12 +1070,12 @@ prop_demux_sdu a = do
         atomically $! putTMVar stopVar $ unDummyPayload sdu
 
         _ <- atomically waitServerRes
-        stopMux mux
+        Mx.stop mux
         res <- waitCatch said
         case res of
             Left e  ->
                 case fromException e of
-                    Just me -> return $ errorType me === MuxIngressQueueOverRun
+                    Just me -> return $ Mx.errorType me === Mx.IngressQueueOverRun
                     Nothing -> return $ property False
             Right _ -> return $ property False
 
@@ -1081,8 +1083,8 @@ prop_demux_sdu a = do
         stopVar <- newEmptyTMVarIO
 
         let server_mps = MiniProtocolInfo {
-                            miniProtocolNum = MiniProtocolNum 2,
-                            miniProtocolDir = ResponderDirectionOnly,
+                            miniProtocolNum = Mx.MiniProtocolNum 2,
+                            miniProtocolDir = Mx.ResponderDirectionOnly,
                             miniProtocolLimits = defaultMiniProtocolLimits
                           }
 
@@ -1092,13 +1094,13 @@ prop_demux_sdu a = do
         writeSdu client_w $ unDummyPayload sdu
 
         _ <- atomically waitServerRes
-        stopMux mux
+        Mx.stop mux
         res <- waitCatch said
         case res of
             Left e  ->
                 case fromException e of
                     Just me -> case err_m of
-                                    Just err -> return $ errorType me === err
+                                    Just err -> return $ Mx.errorType me === err
                                     Nothing  -> return $ property False
                     Nothing -> return $ property False
             Right _ -> return $ err_m === Nothing
@@ -1107,8 +1109,8 @@ prop_demux_sdu a = do
         stopVar <- newEmptyTMVarIO
 
         let server_mps = MiniProtocolInfo {
-                            miniProtocolNum = MiniProtocolNum 2,
-                            miniProtocolDir = ResponderDirectionOnly,
+                            miniProtocolNum = Mx.MiniProtocolNum 2,
+                            miniProtocolDir = Mx.ResponderDirectionOnly,
                             miniProtocolLimits = defaultMiniProtocolLimits
                           }
 
@@ -1123,12 +1125,12 @@ prop_demux_sdu a = do
         atomically $ putTMVar stopVar $ BL.replicate (max (fromIntegral $ isLength badSdu) 1) 0xa
 
         _ <- atomically waitServerRes
-        stopMux mux
+        Mx.stop mux
         res <- waitCatch said
         case res of
             Left e  ->
                 case fromException e of
-                    Just me -> return $ errorType me === err
+                    Just me -> return $ Mx.errorType me === err
                     Nothing -> return $ counterexample ("unexpected: " ++ show e) False
             Right _ -> return $ counterexample "expected an exception" False
 
@@ -1136,7 +1138,7 @@ prop_demux_sdu a = do
         server_w <- atomically $ newTBQueue 10
         server_r <- atomically $ newTBQueue 10
 
-        let serverTracer = contramap (WithMuxBearer "server") activeTracer
+        let serverTracer = contramap (Mx.WithBearer "server") activeTracer
 
         serverBearer <- getBearer makeQueueChannelBearer
                           (-1)
@@ -1145,11 +1147,11 @@ prop_demux_sdu a = do
                                          readQueue  = server_r
                                        }
 
-        serverMux <- newMux [serverApp]
-        serverRes <- runMiniProtocol serverMux (miniProtocolNum serverApp) (miniProtocolDir serverApp)
-                 StartEagerly server_mp
+        serverMux <- Mx.new [serverApp]
+        serverRes <- Mx.runMiniProtocol serverMux (Mx.miniProtocolNum serverApp) (Mx.miniProtocolDir serverApp)
+                 Mx.StartEagerly server_mp
 
-        said <- async $ runMux serverTracer serverMux serverBearer
+        said <- async $ Mx.run serverTracer serverMux serverBearer
         return (server_r, said, serverRes, serverMux)
 
     -- Server that expects to receive a specific ByteString.
@@ -1159,7 +1161,7 @@ prop_demux_sdu a = do
       where
         loop e | e == BL.empty = return ((), Nothing)
         loop e = do
-            msg_m <- recv chan
+            msg_m <- Mx.recv chan
             case msg_m of
                  Just msg ->
                      case BL.stripPrefix msg e of
@@ -1170,14 +1172,14 @@ prop_demux_sdu a = do
     writeSdu _ payload | payload == BL.empty = return ()
     writeSdu queue payload = do
         let (!frag, !rest) = BL.splitAt 0xffff payload
-            sdu' = MuxSDU
-                    (MuxSDUHeader
-                      (RemoteClockModel 0)
-                      (MiniProtocolNum 2)
-                      InitiatorDir
+            sdu' = Mx.SDU
+                    (Mx.SDUHeader
+                      (Mx.RemoteClockModel 0)
+                      (Mx.MiniProtocolNum 2)
+                      Mx.InitiatorDir
                       (fromIntegral $ BL.length frag))
                     frag
-            !pkt = encodeMuxSDU (sdu' :: MuxSDU)
+            !pkt = Mx.encodeSDU (sdu' :: Mx.SDU)
 
         atomically $ writeTBQueue queue pkt
         writeSdu queue rest
@@ -1188,14 +1190,14 @@ prop_demux_sdu a = do
     violationLabel (ArbitraryValidSDU _ err_m) = sduViolation err_m
     violationLabel (ArbitraryInvalidSDU _ err) = sduViolation $ Just err
 
-    sduViolation (Just MuxUnknownMiniProtocol) = "unknown miniprotocol"
-    sduViolation (Just MuxDecodeError        ) = "decode error"
-    sduViolation (Just MuxIngressQueueOverRun) = "ingress queue overrun"
+    sduViolation (Just Mx.UnknownMiniProtocol) = "unknown miniprotocol"
+    sduViolation (Just Mx.DecodeError        ) = "decode error"
+    sduViolation (Just Mx.IngressQueueOverRun) = "ingress queue overrun"
     sduViolation (Just _                     ) = "unknown violation"
     sduViolation Nothing                       = "none"
 
 prop_demux_sdu_sim :: ArbitrarySDU
-                     -> Property
+                   -> Property
 prop_demux_sdu_sim badSdu =
     let r_e =  runSimStrictShutdown $ prop_demux_sdu badSdu in
     case r_e of
@@ -1203,21 +1205,21 @@ prop_demux_sdu_sim badSdu =
          Right r -> r
 
 prop_demux_sdu_io :: ArbitrarySDU
-                    -> Property
+                  -> Property
 prop_demux_sdu_io badSdu = ioProperty $ prop_demux_sdu badSdu
 
-instance Arbitrary MiniProtocolNum where
+instance Arbitrary Mx.MiniProtocolNum where
     arbitrary = do
         n <- arbitrary
-        return $ MiniProtocolNum $ 0x7fff .&. n
+        return $ Mx.MiniProtocolNum $ 0x7fff .&. n
 
-    shrink (MiniProtocolNum n) = MiniProtocolNum <$> shrink n
+    shrink (Mx.MiniProtocolNum n) = Mx.MiniProtocolNum <$> shrink n
 
-instance Arbitrary MuxMode where
-    arbitrary = elements [InitiatorMode, ResponderMode, InitiatorResponderMode]
+instance Arbitrary Mx.Mode where
+    arbitrary = elements [Mx.InitiatorMode, Mx.ResponderMode, Mx.InitiatorResponderMode]
 
-    shrink InitiatorResponderMode = [InitiatorMode, ResponderMode]
-    shrink _                      = []
+    shrink Mx.InitiatorResponderMode = [Mx.InitiatorMode, Mx.ResponderMode]
+    shrink _                         = []
 
 data DummyAppResult = DummyAppSucceed | DummyAppFail deriving (Eq, Show)
 
@@ -1233,7 +1235,7 @@ instance Arbitrary DiffTime where
            . toRational
 
 data DummyApp = DummyApp {
-      daNum        :: !MiniProtocolNum
+      daNum        :: !Mx.MiniProtocolNum
     , daAction     :: !DummyAppResult
     , daRunTime    :: !DiffTime
     , daStartAfter :: !DiffTime
@@ -1255,11 +1257,11 @@ instance Arbitrary DummyApps where
         apps <- mapM genApp $ nub nums
         mode <- arbitrary
         case mode of
-             InitiatorMode          -> return $ DummyInitiatorApps apps
-             ResponderMode          -> frequency [ (3, return $ DummyResponderApps apps)
-                                                 , (1, return $ DummyResponderAppsKillMux apps)
-                                                 ]
-             InitiatorResponderMode -> return $ DummyInitiatorResponderApps apps
+             Mx.InitiatorMode          -> return $ DummyInitiatorApps apps
+             Mx.ResponderMode          -> frequency [ (3, return $ DummyResponderApps apps)
+                                                    , (1, return $ DummyResponderAppsKillMux apps)
+                                                    ]
+             Mx.InitiatorResponderMode -> return $ DummyInitiatorResponderApps apps
 
       where
         genApp num = DummyApp num <$> arbitrary <*> arbitrary <*> arbitrary
@@ -1284,12 +1286,12 @@ dummyAppToChannel :: forall m.
                      , MonadCatch m
                      )
                   => DummyApp
-                  -> (ByteChannel m -> m ((), Maybe BL.ByteString))
+                  -> (Mx.ByteChannel m -> m ((), Maybe BL.ByteString))
 dummyAppToChannel DummyApp {daAction, daRunTime} = \_ -> do
     threadDelay daRunTime
     case daAction of
          DummyAppSucceed -> return ((), Nothing)
-         DummyAppFail    -> throwIO $ MuxError (MuxShutdown Nothing) "App Fail"
+         DummyAppFail    -> throwIO $ Mx.Error (Mx.Shutdown Nothing) "App Fail"
 
 data DummyRestartingApps =
     DummyRestartingResponderApps [(DummyApp, Int)]
@@ -1303,9 +1305,9 @@ instance Arbitrary DummyRestartingApps where
         apps <- mapM genApp $ nub nums
         mode <- arbitrary
         case mode of
-             InitiatorMode          -> return $ DummyRestartingInitiatorApps apps
-             ResponderMode          -> return $ DummyRestartingResponderApps apps
-             InitiatorResponderMode -> return $ DummyRestartingInitiatorResponderApps apps
+             Mx.InitiatorMode          -> return $ DummyRestartingInitiatorApps apps
+             Mx.ResponderMode          -> return $ DummyRestartingResponderApps apps
+             Mx.InitiatorResponderMode -> return $ DummyRestartingInitiatorResponderApps apps
       where
         genApp num = do
             app <- DummyApp num DummyAppSucceed <$> arbitrary <*> arbitrary
@@ -1319,15 +1321,15 @@ dummyRestartingAppToChannel :: forall a m.
                      , MonadDelay m
                      )
                   => (DummyApp, a)
-                  -> (ByteChannel m -> m ((DummyApp, a), Maybe BL.ByteString))
+                  -> (Mx.ByteChannel m -> m ((DummyApp, a), Maybe BL.ByteString))
 dummyRestartingAppToChannel (app, r) = \_ -> do
     threadDelay $ daRunTime app
     case daAction app of
          DummyAppSucceed -> return ((app, r), Nothing)
-         DummyAppFail    -> throwIO $ MuxError (MuxShutdown Nothing) "App Fail"
+         DummyAppFail    -> throwIO $ Mx.Error (Mx.Shutdown Nothing) "App Fail"
 
 
-appToInfo :: MiniProtocolDirection mode -> DummyApp -> MiniProtocolInfo mode
+appToInfo :: Mx.MiniProtocolDirection mode -> DummyApp -> MiniProtocolInfo mode
 appToInfo d da = MiniProtocolInfo (daNum da) d defaultMiniProtocolLimits
 
 triggerApp :: forall m.
@@ -1335,15 +1337,15 @@ triggerApp :: forall m.
               , MonadDelay m
               , MonadSay m
               )
-            => MuxBearer m
+            => Mx.Bearer m
             -> DummyApp
             -> m ()
 triggerApp bearer app = do
-    let chan = muxBearerAsChannel bearer (daNum app) InitiatorDir
+    let chan = Mx.bearerAsChannel bearer (daNum app) Mx.InitiatorDir
     traceWith verboseTracer $ "app waiting " ++ (show $ daNum app)
     threadDelay (daStartAfter app)
     traceWith verboseTracer $ "app starting " ++ (show $ daNum app)
-    send chan $ BL.singleton 0xa5
+    Mx.send chan $ BL.singleton 0xa5
     return ()
 
 prop_mux_start_mX :: forall m.
@@ -1376,14 +1378,14 @@ prop_mux_start_mX apps runTime = do
     prop_mux_start_m bearer (triggerApp peerBearer) checkRes apps runTime
 
   where
-    checkRes :: StartOnDemandOrEagerly
+    checkRes :: Mx.StartOnDemandOrEagerly
              -> DiffTime
              -> ((STM m (Either SomeException ())), DummyApp)
              -> m (Property, Either SomeException ())
     checkRes startStrat minRunTime (get,da) = do
         let totTime = case startStrat of
-                           StartOnDemand -> daRunTime da + daStartAfter da
-                           StartEagerly  -> daRunTime da
+                           Mx.StartOnDemand -> daRunTime da + daStartAfter da
+                           Mx.StartEagerly  -> daRunTime da
         r <- atomically get
         case daAction da of
              DummyAppSucceed ->
@@ -1417,30 +1419,30 @@ prop_mux_restart_m :: forall m.
 prop_mux_restart_m (DummyRestartingInitiatorApps apps) = do
     mux_w <- atomically $ newTBQueue 10
     mux_r <- atomically $ newTBQueue 10
-    bearer <- getBearer makeQueueChannelBearer
+    bearer <- getBearer Mx.makeQueueChannelBearer
                 (-1)
                 nullTracer
                 QueueChannel { writeQueue = mux_w, readQueue = mux_r }
-    let minis = map (appToInfo InitiatorDirectionOnly . fst) apps
+    let minis = map (appToInfo Mx.InitiatorDirectionOnly . fst) apps
 
-    mux <- newMux minis
-    mux_aid <- async $ runMux nullTracer mux bearer
-    getRes <- sequence [ runMiniProtocol
+    mux <- Mx.new minis
+    mux_aid <- async $ Mx.run nullTracer mux bearer
+    getRes <- sequence [ Mx.runMiniProtocol
                            mux
                           (daNum $ fst app)
-                          InitiatorDirectionOnly
-                          StartEagerly
+                          Mx.InitiatorDirectionOnly
+                          Mx.StartEagerly
                           (dummyRestartingAppToChannel app)
                        | app <- apps
                        ]
     r <- runRestartingApps mux $ M.fromList $ zip (map (daNum . fst) apps) getRes
-    stopMux mux
+    Mx.stop mux
     void $ waitCatch mux_aid
     return $ property r
 
   where
-    runRestartingApps :: Mux InitiatorMode m
-                      -> M.Map MiniProtocolNum (STM m (Either SomeException (DummyApp, Int)))
+    runRestartingApps :: Mux Mx.InitiatorMode m
+                      -> M.Map Mx.MiniProtocolNum (STM m (Either SomeException (DummyApp, Int)))
                       -> m Bool
     runRestartingApps _ ops | M.null ops = return True
     runRestartingApps mux ops = do
@@ -1450,7 +1452,7 @@ prop_mux_restart_m (DummyRestartingInitiatorApps apps) = do
              Right (app, 0) -> do
                  runRestartingApps mux $ M.delete (daNum app) ops
              Right (app, restarts) -> do
-                 op <- runMiniProtocol mux (daNum app) InitiatorDirectionOnly StartEagerly
+                 op <- Mx.runMiniProtocol mux (daNum app) Mx.InitiatorDirectionOnly Mx.StartEagerly
                          (dummyRestartingAppToChannel (app, restarts - 1))
                  runRestartingApps mux $ M.insert (daNum app) op ops
 
@@ -1468,27 +1470,27 @@ prop_mux_restart_m (DummyRestartingResponderApps rapps) = do
         nullTracer
         QueueChannel { writeQueue = mux_r, readQueue = mux_w }
     let apps = map fst rapps
-        minis = map (appToInfo ResponderDirectionOnly) apps
+        minis = map (appToInfo Mx.ResponderDirectionOnly) apps
 
-    mux <- newMux minis
-    mux_aid <- async $ runMux nullTracer mux bearer
-    getRes <- sequence [ runMiniProtocol
+    mux <- Mx.new minis
+    mux_aid <- async $ Mx.run nullTracer mux bearer
+    getRes <- sequence [ Mx.runMiniProtocol
                            mux
                           (daNum $ fst app)
-                          ResponderDirectionOnly
-                          StartEagerly
+                          Mx.ResponderDirectionOnly
+                          Mx.StartEagerly
                           (dummyRestartingAppToChannel app)
                        | app <- rapps
                        ]
     triggers <- mapM (async . (triggerApp peerBearer)) apps
     r <- runRestartingApps mux $ M.fromList $ zip (map daNum apps) getRes
-    stopMux mux
+    Mx.stop mux
     void $ waitCatch mux_aid
     mapM_ cancel triggers
     return $ property r
   where
-    runRestartingApps :: Mux ResponderMode m
-                      -> M.Map MiniProtocolNum (STM m (Either SomeException (DummyApp, Int)))
+    runRestartingApps :: Mux Mx.ResponderMode m
+                      -> M.Map Mx.MiniProtocolNum (STM m (Either SomeException (DummyApp, Int)))
                       -> m Bool
     runRestartingApps _ ops | M.null ops = return True
     runRestartingApps mux ops = do
@@ -1498,7 +1500,7 @@ prop_mux_restart_m (DummyRestartingResponderApps rapps) = do
              Right (app, 0) -> do
                  runRestartingApps mux $ M.delete (daNum app) ops
              Right (app, restarts) -> do
-                 op <- runMiniProtocol mux (daNum app) ResponderDirectionOnly StartOnDemand
+                 op <- Mx.runMiniProtocol mux (daNum app) Mx.ResponderDirectionOnly Mx.StartOnDemand
                            (dummyRestartingAppToChannel (app, restarts - 1))
                  runRestartingApps mux $ M.insert (daNum app) op ops
 
@@ -1516,40 +1518,40 @@ prop_mux_restart_m (DummyRestartingInitiatorResponderApps rapps) = do
         nullTracer
         QueueChannel { writeQueue = mux_r, readQueue = mux_w }
     let apps = map fst rapps
-        initMinis = map (appToInfo InitiatorDirection) apps
-        respMinis = map (appToInfo ResponderDirection) apps
+        initMinis = map (appToInfo Mx.InitiatorDirection) apps
+        respMinis = map (appToInfo Mx.ResponderDirection) apps
 
-    mux <- newMux $ initMinis ++ respMinis
-    mux_aid <- async $ runMux nullTracer mux bearer
-    getInitRes <- sequence [ runMiniProtocol
+    mux <- Mx.new $ initMinis ++ respMinis
+    mux_aid <- async $ Mx.run nullTracer mux bearer
+    getInitRes <- sequence [ Mx.runMiniProtocol
                                mux
                                (daNum $ fst app)
-                               InitiatorDirection
-                               StartEagerly
-                               (dummyRestartingAppToChannel (fst app, (InitiatorDirection, snd app)))
+                               Mx.InitiatorDirection
+                               Mx.StartEagerly
+                               (dummyRestartingAppToChannel (fst app, (Mx.InitiatorDirection, snd app)))
                            | app <- rapps
                            ]
-    getRespRes <- sequence [ runMiniProtocol
+    getRespRes <- sequence [ Mx.runMiniProtocol
                                mux
                                (daNum $ fst app)
-                               ResponderDirection
-                               StartOnDemand
-                               (dummyRestartingAppToChannel (fst app, (ResponderDirection, snd app)))
+                               Mx.ResponderDirection
+                               Mx.StartOnDemand
+                               (dummyRestartingAppToChannel (fst app, (Mx.ResponderDirection, snd app)))
                            | app <- rapps
                            ]
 
     triggers <- mapM (async . triggerApp peerBearer) apps
-    let gi = M.fromList $ map (\(n, g) -> ((InitiatorDirection, n), g)) $ zip (map daNum apps) getInitRes
-        gr = M.fromList $ map (\(n, g) -> ((ResponderDirection, n), g)) $ zip (map daNum apps) getRespRes
+    let gi = M.fromList $ map (\(n, g) -> ((Mx.InitiatorDirection, n), g)) $ zip (map daNum apps) getInitRes
+        gr = M.fromList $ map (\(n, g) -> ((Mx.ResponderDirection, n), g)) $ zip (map daNum apps) getRespRes
     r <- runRestartingApps mux $ gi <> gr
-    stopMux mux
+    Mx.stop mux
     void $ waitCatch mux_aid
     mapM_ cancel triggers
     return $ property r
   where
-    runRestartingApps :: Mux InitiatorResponderMode m
-                      -> M.Map (MiniProtocolDirection InitiatorResponderMode, MiniProtocolNum)
-                               (STM m (Either SomeException (DummyApp, (MiniProtocolDirection InitiatorResponderMode, Int))))
+    runRestartingApps :: Mx.Mux Mx.InitiatorResponderMode m
+                      -> M.Map (Mx.MiniProtocolDirection Mx.InitiatorResponderMode, Mx.MiniProtocolNum)
+                               (STM m (Either SomeException (DummyApp, (Mx.MiniProtocolDirection Mx.InitiatorResponderMode, Int))))
                       -> m Bool
     runRestartingApps _ ops | M.null ops = return True
     runRestartingApps mux ops = do
@@ -1562,9 +1564,9 @@ prop_mux_restart_m (DummyRestartingInitiatorResponderApps rapps) = do
              Right (app, (dir, restarts)) -> do
                  let opKey = (dir, daNum app)
                      strat = case dir of
-                                  InitiatorDirection -> StartEagerly
-                                  ResponderDirection -> StartOnDemand
-                 op <- runMiniProtocol mux (daNum app) dir strat (dummyRestartingAppToChannel (app, (dir, restarts - 1)))
+                                  Mx.InitiatorDirection -> Mx.StartEagerly
+                                  Mx.ResponderDirection -> Mx.StartOnDemand
+                 op <- Mx.runMiniProtocol mux (daNum app) dir strat (dummyRestartingAppToChannel (app, (dir, restarts - 1)))
                  runRestartingApps mux $ M.insert opKey op ops
 
 
@@ -1580,9 +1582,9 @@ prop_mux_start_m :: forall m.
                        , MonadThrow (STM m)
                        , MonadTimer m
                        )
-                    => MuxBearer m
+                    => Mx.Bearer m
                     -> (DummyApp -> m ())
-                    -> (    StartOnDemandOrEagerly
+                    -> (    Mx.StartOnDemandOrEagerly
                          -> DiffTime
                          -> ((STM m (Either SomeException ())), DummyApp)
                          -> m (Property, Either SomeException ())
@@ -1591,44 +1593,44 @@ prop_mux_start_m :: forall m.
                     -> DiffTime
                     -> m Property
 prop_mux_start_m bearer _ checkRes (DummyInitiatorApps apps) runTime = do
-    let minis = map (appToInfo InitiatorDirectionOnly) apps
+    let minis = map (appToInfo Mx.InitiatorDirectionOnly) apps
         minRunTime = minimum $ runTime : (map daRunTime $ filter (\app -> daAction app == DummyAppFail) apps)
 
-    mux <- newMux minis
-    mux_aid <- async $ runMux nullTracer mux bearer
-    killer <- async $ (threadDelay runTime) >> stopMux mux
-    getRes <- sequence [ runMiniProtocol
+    mux <- Mx.new minis
+    mux_aid <- async $ Mx.run nullTracer mux bearer
+    killer <- async $ (threadDelay runTime) >> Mx.stop mux
+    getRes <- sequence [ Mx.runMiniProtocol
                            mux
                           (daNum app)
-                          InitiatorDirectionOnly
-                          StartEagerly
+                          Mx.InitiatorDirectionOnly
+                          Mx.StartEagerly
                           (dummyAppToChannel app)
                        | app <- apps
                        ]
-    rc <- mapM (checkRes StartEagerly minRunTime) $ zip getRes apps
+    rc <- mapM (checkRes Mx.StartEagerly minRunTime) $ zip getRes apps
     wait killer
     void $ waitCatch mux_aid
 
     return (conjoin $ map fst rc)
 
 prop_mux_start_m bearer trigger checkRes (DummyResponderApps apps) runTime = do
-    let minis = map (appToInfo ResponderDirectionOnly) apps
+    let minis = map (appToInfo Mx.ResponderDirectionOnly) apps
         minRunTime = minimum $ runTime : (map (\a -> daRunTime a + daStartAfter a) $ filter (\app -> daAction app == DummyAppFail) apps)
 
-    mux <- newMux minis
-    mux_aid <- async $ runMux verboseTracer mux bearer
-    getRes <- sequence [ runMiniProtocol
+    mux <- Mx.new minis
+    mux_aid <- async $ Mx.run verboseTracer mux bearer
+    getRes <- sequence [ Mx.runMiniProtocol
                            mux
                           (daNum app)
-                          ResponderDirectionOnly
-                          StartOnDemand
+                          Mx.ResponderDirectionOnly
+                          Mx.StartOnDemand
                           (dummyAppToChannel app)
                        | app <- apps
                        ]
 
     triggers <- mapM (async . trigger) $ filter (\app -> daStartAfter app <= minRunTime) apps
-    killer <- async $ (threadDelay runTime) >> stopMux mux
-    rc <- mapM (checkRes StartOnDemand minRunTime) $ zip getRes apps
+    killer <- async $ (threadDelay runTime) >> Mx.stop mux
+    rc <- mapM (checkRes Mx.StartOnDemand minRunTime) $ zip getRes apps
     wait killer
     mapM_ cancel triggers
     void $ waitCatch mux_aid
@@ -1639,15 +1641,15 @@ prop_mux_start_m bearer _trigger _checkRes (DummyResponderAppsKillMux apps) runT
     -- Start a mini-protocol on demand, but kill mux before the application is
     -- triggered.  This test assures that mini-protocol completion action does
     -- not deadlocks.
-    let minis = map (appToInfo ResponderDirectionOnly) apps
+    let minis = map (appToInfo Mx.ResponderDirectionOnly) apps
 
-    mux <- newMux minis
-    mux_aid <- async $ runMux verboseTracer mux bearer
-    getRes <- sequence [ runMiniProtocol
+    mux <- Mx.new minis
+    mux_aid <- async $ Mx.run verboseTracer mux bearer
+    getRes <- sequence [ Mx.runMiniProtocol
                            mux
                           (daNum app)
-                          ResponderDirectionOnly
-                          StartOnDemand
+                          Mx.ResponderDirectionOnly
+                          Mx.StartOnDemand
                           (dummyAppToChannel app)
                        | app <- apps
                        ]
@@ -1660,33 +1662,33 @@ prop_mux_start_m bearer _trigger _checkRes (DummyResponderAppsKillMux apps) runT
     return (property True)
 
 prop_mux_start_m bearer trigger checkRes (DummyInitiatorResponderApps apps) runTime = do
-    let initMinis = map (appToInfo InitiatorDirection) apps
-        respMinis = map (appToInfo ResponderDirection) apps
+    let initMinis = map (appToInfo Mx.InitiatorDirection) apps
+        respMinis = map (appToInfo Mx.ResponderDirection) apps
         minRunTime = minimum $ runTime : (map (\a -> daRunTime a) $ filter (\app -> daAction app == DummyAppFail) apps)
 
-    mux <- newMux $ initMinis ++ respMinis
-    mux_aid <- async $ runMux verboseTracer mux bearer
-    getInitRes <- sequence [ runMiniProtocol
+    mux <- Mx.new $ initMinis ++ respMinis
+    mux_aid <- async $ Mx.run verboseTracer mux bearer
+    getInitRes <- sequence [ Mx.runMiniProtocol
                                mux
                                (daNum app)
-                               InitiatorDirection
-                               StartEagerly
+                               Mx.InitiatorDirection
+                               Mx.StartEagerly
                                (dummyAppToChannel app)
                            | app <- apps
                            ]
-    getRespRes <- sequence [ runMiniProtocol
+    getRespRes <- sequence [ Mx.runMiniProtocol
                                mux
                                (daNum app)
-                               ResponderDirection
-                               StartOnDemand
+                               Mx.ResponderDirection
+                               Mx.StartOnDemand
                                (dummyAppToChannel app)
                            | app <- apps
                            ]
 
     triggers <- mapM (async . trigger) $ filter (\app -> daStartAfter app <= minRunTime) apps
-    killer <- async $ (threadDelay runTime) >> stopMux mux
-    !rcInit <- mapM (checkRes StartEagerly minRunTime) $ zip getInitRes apps
-    !rcResp <- mapM (checkRes StartOnDemand minRunTime) $ zip getRespRes apps
+    killer <- async $ (threadDelay runTime) >> Mx.stop mux
+    !rcInit <- mapM (checkRes Mx.StartEagerly minRunTime) $ zip getInitRes apps
+    !rcResp <- mapM (checkRes Mx.StartOnDemand minRunTime) $ zip getRespRes apps
     wait killer
     mapM_ cancel triggers
     void $ waitCatch mux_aid
@@ -1775,11 +1777,11 @@ data ClientOrServer = Client | Server
 data NetworkCtx sock m = NetworkCtx {
     ncSocket    :: m sock,
     ncClose     :: sock -> m (),
-    ncMuxBearer :: sock -> m (MuxBearer m)
+    ncMuxBearer :: sock -> m (Mx.Bearer m)
   }
 
 
-withNetworkCtx :: MonadThrow m => NetworkCtx sock m -> (MuxBearer m -> m a) -> m a
+withNetworkCtx :: MonadThrow m => NetworkCtx sock m -> (Mx.Bearer m -> m a) -> m a
 withNetworkCtx NetworkCtx { ncSocket, ncClose, ncMuxBearer } k =
     bracket ncSocket ncClose (\sock -> ncMuxBearer sock >>= k)
 
@@ -1803,7 +1805,7 @@ close_experiment
     => Bool -- 'True' for @m ~ IO@
     -> FaultInjection
     -> Tracer m (ClientOrServer, TraceSendRecv (MsgReqResp req resp))
-    -> Tracer m (ClientOrServer, MuxTrace)
+    -> Tracer m (ClientOrServer, Mx.Trace)
     -> NetworkCtx sock m
     -> NetworkCtx sock m
     -> [req]
@@ -1819,36 +1821,36 @@ close_experiment
       fault tracer muxTracer clientCtx serverCtx reqs0 fn acc0 = do
     withAsync
       -- run client thread
-      (bracket (newMux [ MiniProtocolInfo {
+      (bracket (Mx.new [ MiniProtocolInfo {
                            miniProtocolNum,
-                           miniProtocolDir = InitiatorDirectionOnly,
-                           miniProtocolLimits = MiniProtocolLimits maxBound
+                           miniProtocolDir = Mx.InitiatorDirectionOnly,
+                           miniProtocolLimits = Mx.MiniProtocolLimits maxBound
                          }
                        ])
-                stopMux $ \mux ->
+                Mx.stop $ \mux ->
         withNetworkCtx clientCtx $ \clientBearer ->
-          withAsync (runMux ((Client,) `contramap` muxTracer) mux clientBearer) $ \_muxAsync ->
-                runMiniProtocol
+          withAsync (Mx.run ((Client,) `contramap` muxTracer) mux clientBearer) $ \_muxAsync ->
+                Mx.runMiniProtocol
                   mux miniProtocolNum
-                  InitiatorDirectionOnly StartEagerly
+                  Mx.InitiatorDirectionOnly Mx.StartEagerly
                   (\chan -> mkClient >>= runClient clientTracer chan)
             >>= atomically
       )
       $ \clientAsync ->
         withAsync
           -- run server thread
-          (bracket ( newMux [ MiniProtocolInfo {
+          (bracket ( Mx.new [ MiniProtocolInfo {
                                 miniProtocolNum,
-                                miniProtocolDir = ResponderDirectionOnly,
-                                miniProtocolLimits = MiniProtocolLimits maxBound
+                                miniProtocolDir = Mx.ResponderDirectionOnly,
+                                miniProtocolLimits = Mx.MiniProtocolLimits maxBound
                               }
                             ])
-                    stopMux $ \mux ->
+                    Mx.stop $ \mux ->
           withNetworkCtx serverCtx $ \serverBearer  ->
-            withAsync (runMux ((Server,) `contramap` muxTracer) mux serverBearer) $ \_muxAsync -> do
-                  runMiniProtocol
+            withAsync (Mx.run ((Server,) `contramap` muxTracer) mux serverBearer) $ \_muxAsync -> do
+                  Mx.runMiniProtocol
                     mux miniProtocolNum
-                    ResponderDirectionOnly StartOnDemand
+                    Mx.ResponderDirectionOnly Mx.StartOnDemand
                     (\chan -> runServer serverTracer chan (server acc0))
               >>= atomically
           )
@@ -1891,10 +1893,10 @@ close_experiment
               (CloseOnWrite, Right (Left resps), Left serverError)
                  | expected <- expectedResps (List.length resps)
                  , resps == expected
-                 , Just (MuxError errType _) <- fromException (collapsE serverError)
+                 , Just (Mx.Error errType _) <- fromException (collapsE serverError)
                  , case errType of
-                     MuxShutdown _   -> True
-                     MuxBearerClosed -> True
+                     Mx.Shutdown _   -> True
+                     Mx.BearerClosed -> True
                      _               -> False
                 -> return $ property True
 
@@ -1916,10 +1918,10 @@ close_experiment
               (CloseOnRead, Right (Left resps), Left serverError)
                  | expected <- expectedResps (List.length resps)
                  , resps == expected
-                 , Just (MuxError errType _) <- fromException (collapsE serverError)
+                 , Just (Mx.Error errType _) <- fromException (collapsE serverError)
                  , case errType of
-                     MuxShutdown _   -> True
-                     MuxBearerClosed -> True
+                     Mx.Shutdown _   -> True
+                     Mx.BearerClosed -> True
                      _               -> False
                 -> return $ property True
 
@@ -1942,7 +1944,7 @@ close_experiment
               -- this fails on Windows for ~1% of cases
               (_, Right _, Left (Right serverError))
                  | iotest
-                 , Just (MuxError (MuxShutdown (Just (MuxIOException {}))) _) <- fromException serverError
+                 , Just (Mx.Error (Mx.Shutdown (Just (Mx.IOException {}))) _) <- fromException serverError
                 -> return $ label ("server-error: " ++ show fault) True
 #endif
 
@@ -1971,8 +1973,8 @@ close_experiment
     expectedResps :: Int -> [resp]
     expectedResps n = snd $ List.mapAccumL fn acc0 (take n reqs0)
 
-    miniProtocolNum :: MiniProtocolNum
-    miniProtocolNum = MiniProtocolNum 1
+    miniProtocolNum :: Mx.MiniProtocolNum
+    miniProtocolNum = Mx.MiniProtocolNum 1
 
     -- client application; after sending all requests it will either terminate
     -- the protocol (clean shutdown) or close the connection and do early exit.
@@ -2099,13 +2101,13 @@ prop_mux_close_sim fault (Positive sduSize_) reqs fn acc =
               --}
             noAttenuation
             noAttenuation
-      let sduSize = SDUSize sduSize_
+      let sduSize = Mx.SDUSize sduSize_
           sduTimeout = 10
           clientCtx = NetworkCtx {
               ncSocket = return chann,
               ncClose  = acClose,
               ncMuxBearer = pure
-                          . attenuationChannelAsMuxBearer
+                          . attenuationChannelAsBearer
                               sduSize sduTimeout
                               nullTracer
             }
@@ -2113,7 +2115,7 @@ prop_mux_close_sim fault (Positive sduSize_) reqs fn acc =
               ncSocket = return chann',
               ncClose  = acClose,
               ncMuxBearer = pure
-                          . attenuationChannelAsMuxBearer
+                          . attenuationChannelAsBearer
                               sduSize sduTimeout
                               nullTracer
             }

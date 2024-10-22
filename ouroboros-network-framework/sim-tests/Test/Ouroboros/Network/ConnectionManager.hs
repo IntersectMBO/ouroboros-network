@@ -51,7 +51,7 @@ import System.Random qualified as Random
 import Text.Pretty.Simple (defaultOutputOptionsNoColor, pShowOpt)
 
 import Network.Mux.Bearer
-import Network.Mux.Types
+import Network.Mux.Types qualified as Mx
 
 import Test.QuickCheck hiding (shrinkMap)
 import Test.Tasty (TestTree, testGroup)
@@ -342,11 +342,11 @@ newtype FD m = FD { fdState :: StrictTVar m FDState }
 makeFDBearer :: MonadDelay m
              => MakeBearer m (FD m)
 makeFDBearer = MakeBearer $ \_ _ _ ->
-      return MuxBearer {
-          write   = \_ _ -> getMonotonicTime,
-          read    = \_ -> forever (threadDelay 3600),
-          sduSize = SDUSize 1500,
-          name    = "FD"
+      return Mx.Bearer {
+          Mx.write   = \_ _ -> getMonotonicTime,
+          Mx.read    = \_ -> forever (threadDelay 3600),
+          Mx.sduSize = Mx.SDUSize 1500,
+          Mx.name    = "FD"
         }
 
 -- | We only keep exceptions here which should not be handled by the test
@@ -594,7 +594,7 @@ mkConnectionHandler :: forall m handlerTrace.
                        , MonadFail        m
                        )
                     => Snocket m (FD m) Addr
-                    -> ConnectionHandler InitiatorResponderMode
+                    -> ConnectionHandler Mx.InitiatorResponderMode
                                          handlerTrace (FD m)
                                          Addr (Handle m)
                                          Void (Version, VersionData)
@@ -778,7 +778,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
             (\_ -> HandshakeFailure)
             (InResponderMode inbgovInfoChannel)
           $ \(connectionManager
-                :: ConnectionManager InitiatorResponderMode (FD (IOSim s))
+                :: ConnectionManager Mx.InitiatorResponderMode (FD (IOSim s))
                                      Addr (Handle m) Void (IOSim s)) -> do
             fd <- open snocket TestFamily
             case myAddress of

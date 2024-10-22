@@ -11,10 +11,10 @@ import Control.Concurrent.Class.MonadSTM.Strict
 
 import Data.Functor (($>))
 import GHC.Natural (Natural)
+import Network.Mux qualified as Mux
 import Ouroboros.Network.ConnectionHandler (Handle)
 import Ouroboros.Network.Context (ResponderContext)
 import Ouroboros.Network.InboundGovernor.Event (NewConnectionInfo)
-import Ouroboros.Network.Mux (MuxMode)
 
 -- | Information channel.
 --
@@ -35,7 +35,7 @@ data InformationChannel a m =
 -- * /Producer:/ connection manger for duplex outbound connections.
 -- * /Consumer:/ inbound governor.
 --
-type InboundGovernorInfoChannel (muxMode :: MuxMode) initiatorCtx peerAddr versionData bytes m a b =
+type InboundGovernorInfoChannel (muxMode :: Mux.Mode) initiatorCtx peerAddr versionData bytes m a b =
     InformationChannel (NewConnectionInfo peerAddr (Handle muxMode initiatorCtx (ResponderContext peerAddr) versionData bytes m a b)) m
 
 

@@ -550,9 +550,9 @@ makeFDBearer = MakeBearer $ \sduTimeout muxTracer FD { fdVar } -> do
           FDConnecting _ _ -> do
             throwIO (invalidError fd_)
           FDConnected _ conn -> do
-            return $ attenuationChannelAsMuxBearer (connSDUSize conn)
-                                                   sduTimeout muxTracer
-                                                   (connChannelLocal conn)
+            return $ attenuationChannelAsBearer (connSDUSize conn)
+                                                sduTimeout muxTracer
+                                                (connChannelLocal conn)
           FDClosed {} ->
             throwIO (invalidError fd_)
       where

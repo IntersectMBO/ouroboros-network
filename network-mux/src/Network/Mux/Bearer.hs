@@ -7,7 +7,8 @@
 {-# LANGUAGE UndecidableInstances   #-}
 
 module Network.Mux.Bearer
-  ( MakeBearer (..)
+  ( Bearer (..)
+  , MakeBearer (..)
   , makeSocketBearer
   , makePipeChannelBearer
   , makeQueueChannelBearer
@@ -38,28 +39,28 @@ import           Network.Mux.Bearer.NamedPipe
 newtype MakeBearer m fd = MakeBearer {
     getBearer
       :: DiffTime
-      -- timeout for reading an SDUMux segment, if negative no
+      -- timeout for reading an SDU segment, if negative no
       -- timeout is applied.
-      -> Tracer m MuxTrace
+      -> Tracer m Trace
       -- tracer
       -> fd
       -- file descriptor
-      -> m (MuxBearer m)
+      -> m (Bearer m)
   }
 
 
 pureBearer :: Applicative m
-           => (DiffTime -> Tracer m MuxTrace -> fd ->    MuxBearer m)
-           ->  DiffTime -> Tracer m MuxTrace -> fd -> m (MuxBearer m)
+           => (DiffTime -> Tracer m Trace -> fd ->    Bearer m)
+           ->  DiffTime -> Tracer m Trace -> fd -> m (Bearer m)
 pureBearer f = \sduTimeout tr fd -> pure (f sduTimeout tr fd)
 
 makeSocketBearer :: MakeBearer IO Socket
-makeSocketBearer = MakeBearer $ pureBearer (socketAsMuxBearer size)
+makeSocketBearer = MakeBearer $ pureBearer (socketAsBearer size)
   where
     size = SDUSize 12_288
 
 makePipeChannelBearer :: MakeBearer IO PipeChannel
-makePipeChannelBearer = MakeBearer $ pureBearer (\_ -> pipeAsMuxBearer size)
+makePipeChannelBearer = MakeBearer $ pureBearer (\_ -> pipeAsBearer size)
   where
     size = SDUSize 32_768
 
@@ -68,7 +69,7 @@ makeQueueChannelBearer :: ( MonadSTM   m
                           , MonadThrow m
                           )
                        => MakeBearer m (QueueChannel m)
-makeQueueChannelBearer = MakeBearer $ pureBearer (\_ -> queueChannelAsMuxBearer size)
+makeQueueChannelBearer = MakeBearer $ pureBearer (\_ -> queueChannelAsBearer size)
   where
     size = SDUSize 1_280
 
