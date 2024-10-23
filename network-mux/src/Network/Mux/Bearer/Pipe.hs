@@ -12,7 +12,7 @@ module Network.Mux.Bearer.Pipe (
 #if defined(mingw32_HOST_OS)
   , pipeChannelFromNamedPipe
 #endif
-  , pipeAsMuxBearer
+  , pipeAsBearer
   ) where
 
 import           Control.Monad.Class.MonadThrow
@@ -28,7 +28,7 @@ import qualified System.Win32.Types as Win32 (HANDLE)
 import qualified System.Win32.Async as Win32.Async
 #endif
 
-import           Network.Mux.Types (MuxBearer)
+import           Network.Mux.Types (Bearer)
 import qualified Network.Mux.Types as Mx
 import qualified Network.Mux.Trace as Mx
 import qualified Network.Mux.Codec as Mx
@@ -68,53 +68,53 @@ pipeChannelFromNamedPipe h = PipeChannel {
     }
 #endif
 
-pipeAsMuxBearer
+pipeAsBearer
   :: Mx.SDUSize
-  -> Tracer IO Mx.MuxTrace
+  -> Tracer IO Mx.Trace
   -> PipeChannel
-  -> MuxBearer IO
-pipeAsMuxBearer sduSize tracer channel =
-      Mx.MuxBearer {
+  -> Bearer IO
+pipeAsBearer sduSize tracer channel =
+      Mx.Bearer {
           Mx.read    = readPipe,
           Mx.write   = writePipe,
           Mx.sduSize = sduSize,
           Mx.name    = "pipe"
         }
     where
-      readPipe :: Mx.TimeoutFn IO -> IO (Mx.MuxSDU, Time)
+      readPipe :: Mx.TimeoutFn IO -> IO (Mx.SDU, Time)
       readPipe _ = do
-          traceWith tracer Mx.MuxTraceRecvHeaderStart
+          traceWith tracer Mx.TraceRecvHeaderStart
           hbuf <- recvLen' 8 []
-          case Mx.decodeMuxSDU hbuf of
+          case Mx.decodeSDU hbuf of
               Left e -> throwIO e
-              Right header@Mx.MuxSDU { Mx.msHeader } -> do
-                  traceWith tracer $ Mx.MuxTraceRecvHeaderEnd msHeader
+              Right header@Mx.SDU { Mx.msHeader } -> do
+                  traceWith tracer $ Mx.TraceRecvHeaderEnd msHeader
                   blob <- recvLen' (fromIntegral $ Mx.mhLength msHeader) []
                   ts <- getMonotonicTime
-                  traceWith tracer (Mx.MuxTraceRecvDeltaQObservation msHeader ts)
+                  traceWith tracer (Mx.TraceRecvDeltaQObservation msHeader ts)
                   return (header {Mx.msBlob = blob}, ts)
 
       recvLen' :: Int -> [BL.ByteString] -> IO BL.ByteString
       recvLen' 0 bufs = return $ BL.concat $ reverse bufs
       recvLen' l bufs = do
-          traceWith tracer $ Mx.MuxTraceRecvStart l
+          traceWith tracer $ Mx.TraceRecvStart l
           buf <- readHandle channel l
                     `catch` Mx.handleIOException "readHandle errored"
           if BL.null buf
-              then throwIO $ Mx.MuxError Mx.MuxBearerClosed "Pipe closed when reading data"
+              then throwIO $ Mx.Error Mx.BearerClosed "Pipe closed when reading data"
               else do
-                  traceWith tracer $ Mx.MuxTraceRecvEnd (fromIntegral $ BL.length buf)
+                  traceWith tracer $ Mx.TraceRecvEnd (fromIntegral $ BL.length buf)
                   recvLen' (l - fromIntegral (BL.length buf)) (buf : bufs)
 
-      writePipe :: Mx.TimeoutFn IO -> Mx.MuxSDU -> IO Time
+      writePipe :: Mx.TimeoutFn IO -> Mx.SDU -> IO Time
       writePipe _ sdu = do
           ts <- getMonotonicTime
           let ts32 = Mx.timestampMicrosecondsLow32Bits ts
               sdu' = Mx.setTimestamp sdu (Mx.RemoteClockModel ts32)
-              buf  = Mx.encodeMuxSDU sdu'
-          traceWith tracer $ Mx.MuxTraceSendStart (Mx.msHeader sdu')
+              buf  = Mx.encodeSDU sdu'
+          traceWith tracer $ Mx.TraceSendStart (Mx.msHeader sdu')
           writeHandle channel buf
             `catch` Mx.handleIOException "writeHandle errored"
-          traceWith tracer Mx.MuxTraceSendEnd
+          traceWith tracer Mx.TraceSendEnd
           return ts
 

@@ -46,6 +46,7 @@ import GHC.IO.Exception
 import Foreign.C.Error
 #endif
 
+import Network.Mux qualified as Mx
 import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionManager.InformationChannel
            (InboundGovernorInfoChannel)
@@ -64,7 +65,7 @@ import Ouroboros.Network.Snocket
 
 -- | Server static configuration.
 --
-data Arguments (muxMode  :: MuxMode) socket initiatorCtx peerAddr versionData versionNumber bytes m a b =
+data Arguments (muxMode  :: Mx.Mode) socket initiatorCtx peerAddr versionData versionNumber bytes m a b =
     Arguments {
       sockets               :: NonEmpty socket,
       snocket               :: Snocket m socket peerAddr,

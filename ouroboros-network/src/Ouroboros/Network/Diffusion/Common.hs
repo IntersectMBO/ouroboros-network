@@ -22,7 +22,7 @@ import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (Exception, SomeException)
 import Control.Tracer (Tracer, nullTracer)
 
-import Network.Mux (MuxMode (..), MuxTrace, WithMuxBearer)
+import Network.Mux qualified as Mx
 
 import Ouroboros.Network.Mux (OuroborosApplicationWithMinimalCtx,
            OuroborosBundleWithExpandedCtx)
@@ -82,7 +82,7 @@ instance Exception Failure
 data Tracers ntnAddr ntnVersion ntcAddr ntcVersion m = Tracers {
       -- | Mux tracer
       dtMuxTracer
-        :: Tracer m (WithMuxBearer (ConnectionId ntnAddr) MuxTrace)
+        :: Tracer m (Mx.WithBearer (ConnectionId ntnAddr) Mx.Trace)
 
       -- | Handshake protocol tracer
     , dtHandshakeTracer
@@ -94,7 +94,7 @@ data Tracers ntnAddr ntnVersion ntcAddr ntcVersion m = Tracers {
 
       -- | Mux tracer for local clients
     , dtLocalMuxTracer
-        :: Tracer m (WithMuxBearer (ConnectionId ntcAddr) MuxTrace)
+        :: Tracer m (Mx.WithBearer (ConnectionId ntcAddr) Mx.Trace)
 
       -- | Handshake protocol tracer for local clients
     , dtLocalHandshakeTracer
@@ -166,7 +166,7 @@ data Applications ntnAddr ntnVersion ntnVersionData
         :: Versions ntnVersion
                     ntnVersionData
                       (OuroborosBundleWithExpandedCtx
-                      InitiatorMode ntnAddr
+                      Mx.InitiatorMode ntnAddr
                       ByteString m a Void)
 
       -- | NodeToNode initiator & responder applications for bidirectional mode.
@@ -176,7 +176,7 @@ data Applications ntnAddr ntnVersion ntnVersionData
         :: Versions ntnVersion
                     ntnVersionData
                     (OuroborosBundleWithExpandedCtx
-                      InitiatorResponderMode ntnAddr
+                      Mx.InitiatorResponderMode ntnAddr
                       ByteString m a ())
 
       -- | NodeToClient responder application (server role)
@@ -187,7 +187,7 @@ data Applications ntnAddr ntnVersion ntnVersionData
         :: Versions ntcVersion
                     ntcVersionData
                      (OuroborosApplicationWithMinimalCtx
-                      ResponderMode ntcAddr
+                      Mx.ResponderMode ntcAddr
                       ByteString m Void ())
 
       -- | Interface used to get peers from the current ledger.

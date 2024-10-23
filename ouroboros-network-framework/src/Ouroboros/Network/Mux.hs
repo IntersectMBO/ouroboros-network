@@ -14,8 +14,7 @@
 
 module Ouroboros.Network.Mux
   ( -- * Basic notions
-    MuxMode (..)
-  , ProtocolTemperature (..)
+    ProtocolTemperature (..)
   , SingProtocolTemperature (..)
   , SomeTokProtocolTemperature (..)
   , WithProtocolTemperature (..)
@@ -53,10 +52,8 @@ module Ouroboros.Network.Mux
   , contramapInitiatorCtx
     -- * Re-exports
     -- | from "Network.Mux"
-  , MuxError (..)
-  , MuxErrorType (..)
-  , HasInitiator
-  , HasResponder
+  , Mux.HasInitiator
+  , Mux.HasResponder
     -- * Deprecated APIs
   , type MuxPeer
   , runMuxPeer
@@ -77,11 +74,9 @@ import Network.TypedProtocol.Peer
 import Network.TypedProtocol.Stateful.Codec qualified as Stateful
 import Network.TypedProtocol.Stateful.Peer qualified as Stateful
 
-import Network.Mux (HasInitiator, HasResponder, MiniProtocolInfo,
-           MiniProtocolLimits (..), MiniProtocolNum, MuxError (..),
-           MuxErrorType (..), MuxMode (..))
-import Network.Mux.Channel qualified as Mux
-import Network.Mux.Types qualified as Mux
+import Network.Mux qualified as Mux
+import Network.Mux.Types (MiniProtocolInfo, MiniProtocolLimits,
+           MiniProtocolNum (..))
 
 import Ouroboros.Network.Channel
 import Ouroboros.Network.Context (ExpandedInitiatorContext,
@@ -218,18 +213,18 @@ instance Applicative TemperatureBundle where
 -- Useful type synonyms
 --
 
-type OuroborosBundle   (mode :: MuxMode) initiatorCtx responderCtx bytes m a b =
+type OuroborosBundle   (mode :: Mux.Mode) initiatorCtx responderCtx bytes m a b =
     TemperatureBundle [MiniProtocol mode initiatorCtx responderCtx bytes m a b]
 
 -- | 'OuroborosBundle' used in P2P.
 --
-type OuroborosBundleWithExpandedCtx (mode :: MuxMode) peerAddr bytes m a b =
+type OuroborosBundleWithExpandedCtx (mode :: Mux.Mode) peerAddr bytes m a b =
      OuroborosBundle mode
                      (ExpandedInitiatorContext peerAddr m)
                      (ResponderContext peerAddr)
                      bytes m a b
 
-type OuroborosBundleWithMinimalCtx (mode :: MuxMode) peerAddr bytes m a b =
+type OuroborosBundleWithMinimalCtx (mode :: Mux.Mode) peerAddr bytes m a b =
      OuroborosBundle mode
                      (MinimalInitiatorContext peerAddr)
                      (ResponderContext peerAddr)
@@ -242,7 +237,7 @@ type OuroborosBundleWithMinimalCtx (mode :: MuxMode) peerAddr bytes m a b =
 -- * ingress size limit, and
 -- * callbacks.
 --
-data MiniProtocol (mode :: MuxMode) initiatorCtx responderCtx bytes m a b =
+data MiniProtocol (mode :: Mux.Mode) initiatorCtx responderCtx bytes m a b =
      MiniProtocol {
        miniProtocolNum    :: !MiniProtocolNum,
        miniProtocolLimits :: !MiniProtocolLimits,
@@ -287,19 +282,19 @@ type MiniProtocolWithMinimalCtx mode peerAddr bytes m a b =
 -- | 'RunMiniProtocol'.  It also capture context (the `IsBigLedgerPeer`) which
 -- is passed to the mini-protocol when a mini-protocol is started.
 --
-data RunMiniProtocol (mode :: MuxMode) initiatorCtx responderCtx bytes m a b where
+data RunMiniProtocol (mode :: Mux.Mode) initiatorCtx responderCtx bytes m a b where
      InitiatorProtocolOnly
        :: (MiniProtocolCb initiatorCtx bytes m a)
-       -> RunMiniProtocol InitiatorMode initiatorCtx responderCtx bytes m a Void
+       -> RunMiniProtocol Mux.InitiatorMode initiatorCtx responderCtx bytes m a Void
 
      ResponderProtocolOnly
        :: (MiniProtocolCb responderCtx bytes m b)
-       -> RunMiniProtocol ResponderMode initiatorCtx responderCtx bytes m Void b
+       -> RunMiniProtocol Mux.ResponderMode initiatorCtx responderCtx bytes m Void b
 
      InitiatorAndResponderProtocol
        :: (MiniProtocolCb initiatorCtx bytes m a)
        -> (MiniProtocolCb responderCtx bytes m b)
-       -> RunMiniProtocol InitiatorResponderMode initiatorCtx responderCtx bytes m a b
+       -> RunMiniProtocol Mux.InitiatorResponderMode initiatorCtx responderCtx bytes m a b
 
 
 -- | 'RunMiniProtocol' with 'ExpandedInitiatorContext' and 'ResponderContext'.
@@ -472,7 +467,7 @@ contramapMiniProtocolCbCtx f (MuxPeerPipelined cb) = MuxPeerPipelined (cb . f)
 -- @Channel -> m a@ action.
 --
 -- Note: Only used in some non-P2P contexts.
-newtype OuroborosApplication  (mode :: MuxMode) initiatorCtx responderCtx bytes m a b =
+newtype OuroborosApplication  (mode :: Mux.Mode) initiatorCtx responderCtx bytes m a b =
   OuroborosApplication {
     getOuroborosApplication
       :: [MiniProtocol mode initiatorCtx responderCtx bytes m a b]

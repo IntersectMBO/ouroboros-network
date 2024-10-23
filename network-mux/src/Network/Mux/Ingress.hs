@@ -43,7 +43,7 @@ flipMiniProtocolDir ResponderDir = InitiatorDir
 -- >         ░│ Bearer.read() │░ Mux Bearer implementation (Socket, Pipes, etc.)
 -- >         ░└───────────────┘░
 -- >         ░░░░░░░░░│░░░░░░░░░
--- >                 ░│░         MuxSDUs
+-- >                 ░│░         SDUs
 -- >         ░░░░░░░░░▼░░░░░░░░░
 -- >         ░┌───────────────┐░
 -- >         ░│     demux     │░ For a given Mux Bearer there is a single demux
@@ -54,7 +54,7 @@ flipMiniProtocolDir ResponderDir = InitiatorDir
 -- >        ░ ╭────┬────┬─────╮ ░ There is a limited queue (in bytes) for each mode
 -- >        ░ │    │    │     │ ░ (responder/initiator) per miniprotocol. Overflowing
 -- >        ░ ▼    ▼    ▼     ▼ ░ a queue is a protocol violation and a
--- >        ░│  │ │  │ │  │ │  │░ MuxIngressQueueOverRun exception is thrown
+-- >        ░│  │ │  │ │  │ │  │░ IngressQueueOverRun exception is thrown
 -- >        ░│ci│ │  │ │bi│ │br│░ and the bearer torn down.
 -- >        ░│ci│ │cr│ │bi│ │br│░
 -- >        ░└──┘ └──┘ └──┘ └──┘░ Every ingress queue has a dedicated thread which will
@@ -93,12 +93,12 @@ data MiniProtocolDispatchInfo m =
    | MiniProtocolDirUnused
 
 
--- | demux runs as a single separate thread and reads complete 'MuxSDU's from
--- the underlying Mux Bearer and forwards it to the matching ingress queue.
+-- | demux runs as a single separate thread and reads complete 'SDU's from
+-- the underlying Bearer and forwards it to the matching ingress queue.
 demuxer :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
             MonadTimer m)
       => [MiniProtocolState mode m]
-      -> MuxBearer m
+      -> Bearer m
       -> m void
 demuxer ptcls bearer =
   let !dispatchTable = setupDispatchTable ptcls in
@@ -111,17 +111,17 @@ demuxer ptcls bearer =
                             -- Notice the mode reversal, ResponderDir is
                             -- delivered to InitiatorDir and vice versa:
                             (flipMiniProtocolDir $ msDir sdu) of
-      Nothing   -> throwIO (MuxError MuxUnknownMiniProtocol
+      Nothing   -> throwIO (Error UnknownMiniProtocol
                            ("id = " ++ show (msNum sdu)))
       Just MiniProtocolDirUnused ->
-                   throwIO (MuxError MuxInitiatorOnly
+                   throwIO (Error InitiatorOnly
                            ("id = " ++ show (msNum sdu)))
       Just (MiniProtocolDispatchInfo q qMax) ->
         atomically $ do
           buf <- readTVar q
           if BL.length buf + BL.length (msBlob sdu) <= fromIntegral qMax
               then writeTVar q $ BL.append buf (msBlob sdu)
-              else throwSTM $ MuxError MuxIngressQueueOverRun
+              else throwSTM $ Error IngressQueueOverRun
                                 (printf "Ingress Queue overrun on %s %s"
                                 (show $ msNum sdu) (show $ msDir sdu))
 

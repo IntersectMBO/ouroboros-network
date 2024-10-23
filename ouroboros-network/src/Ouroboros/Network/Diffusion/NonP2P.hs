@@ -29,6 +29,8 @@ import System.Exit (ExitCode)
 import Network.Socket (SockAddr, Socket)
 import Network.Socket qualified as Socket
 
+import Network.Mux qualified as Mx
+
 import Ouroboros.Network.Snocket (LocalAddress, LocalSnocket, LocalSocket (..),
            SocketSnocket, localSocketFileDescriptor)
 import Ouroboros.Network.Snocket qualified as Snocket
@@ -124,14 +126,14 @@ newtype ApplicationsExtra = ApplicationsExtra {
 -- Useful for sharing the same Applications modes.
 --
 mkResponderApp
-    :: OuroborosBundleWithExpandedCtx     InitiatorResponderMode addr bs m a    b
-    -> OuroborosApplicationWithMinimalCtx ResponderMode          addr bs m Void b
+    :: OuroborosBundleWithExpandedCtx     Mx.InitiatorResponderMode addr bs m a    b
+    -> OuroborosApplicationWithMinimalCtx Mx.ResponderMode          addr bs m Void b
 mkResponderApp bundle =
     OuroborosApplication $
       foldMap (fmap f) bundle
   where
-    f :: MiniProtocolWithExpandedCtx InitiatorResponderMode bs addr m a    b
-      -> MiniProtocolWithMinimalCtx  ResponderMode          bs addr m Void b
+    f :: MiniProtocolWithExpandedCtx Mx.InitiatorResponderMode bs addr m a    b
+      -> MiniProtocolWithMinimalCtx  Mx.ResponderMode          bs addr m Void b
     f MiniProtocol { miniProtocolNum
                    , miniProtocolLimits
                    , miniProtocolRun = InitiatorAndResponderProtocol _initiator

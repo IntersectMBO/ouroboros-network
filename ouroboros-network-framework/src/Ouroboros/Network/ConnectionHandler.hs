@@ -54,7 +54,8 @@ import Data.Map (Map)
 import Data.Text (Text)
 import Data.Typeable (Typeable)
 
-import Network.Mux hiding (miniProtocolNum)
+import Network.Mux (Mux)
+import Network.Mux qualified as Mx
 
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.ConnectionManager.Types
@@ -104,7 +105,7 @@ sduHandshakeTimeout = 10
 -- * 'HandleError'
 --                - the multiplexer thrown 'MuxError'.
 --
-data Handle (muxMode :: MuxMode) initiatorCtx responderCtx versionData bytes m a b =
+data Handle (muxMode :: Mx.Mode) initiatorCtx responderCtx versionData bytes m a b =
     Handle {
         hMux            :: !(Mux muxMode m),
         hMuxBundle      :: !(OuroborosBundle muxMode initiatorCtx responderCtx bytes m a b),
@@ -130,7 +131,7 @@ type HandleWithMinimalCtx muxMode peerAddr versionData bytes m a b =
                           (ResponderContext peerAddr)
                           versionData bytes m a b
 
-data HandleError (muxMode :: MuxMode) versionNumber where
+data HandleError (muxMode :: Mx.Mode) versionNumber where
     HandleHandshakeClientError
       :: HasInitiator muxMode ~ True
       => !(HandshakeException versionNumber)
@@ -218,7 +219,7 @@ makeConnectionHandler
        , Show     peerAddr
        , Typeable peerAddr
        )
-    => Tracer m (WithMuxBearer (ConnectionId peerAddr) MuxTrace)
+    => Tracer m (Mx.WithBearer (ConnectionId peerAddr) Mx.Trace)
     -> SingMuxMode muxMode
     -- ^ describe whether this is outbound or inbound connection, and bring
     -- evidence that we can use mux with it.
@@ -318,7 +319,7 @@ makeConnectionHandler muxTracer singMuxMode
                         <$> newTVarIO Continue
                         <*> newTVarIO Continue
                         <*> newTVarIO Continue
-                  mux <- newMux (mkMiniProtocolInfos app)
+                  mux <- Mx.new (mkMiniProtocolInfos app)
                   let !handle = Handle {
                           hMux            = mux,
                           hMuxBundle      = app,
@@ -327,7 +328,7 @@ makeConnectionHandler muxTracer singMuxMode
                         }
                   atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
                   bearer <- mkMuxBearer sduTimeout socket
-                  runMux (WithMuxBearer connectionId `contramap` muxTracer)
+                  Mx.run (Mx.WithBearer connectionId `contramap` muxTracer)
                          mux bearer
 
               Right (HandshakeQueryResult vMap) -> do
@@ -385,7 +386,7 @@ makeConnectionHandler muxTracer singMuxMode
                         <$> newTVarIO Continue
                         <*> newTVarIO Continue
                         <*> newTVarIO Continue
-                  mux <- newMux (mkMiniProtocolInfos app)
+                  mux <- Mx.new (mkMiniProtocolInfos app)
 
                   let !handle = Handle {
                           hMux            = mux,
@@ -395,7 +396,7 @@ makeConnectionHandler muxTracer singMuxMode
                         }
                   atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
                   bearer <- mkMuxBearer sduTimeout socket
-                  runMux (WithMuxBearer connectionId `contramap` muxTracer)
+                  Mx.run (Mx.WithBearer connectionId `contramap` muxTracer)
                              mux bearer
               Right (HandshakeQueryResult vMap) -> do
                 atomically $ writePromise (Right HandshakeConnectionQuery)

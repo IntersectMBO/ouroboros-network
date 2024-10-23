@@ -358,6 +358,7 @@ executable demo-chain-sync
     contra-tracer,
     directory,
     infinite-list,
+    network-mux,
     optparse-applicative,
     ouroboros-network,
     ouroboros-network-api,

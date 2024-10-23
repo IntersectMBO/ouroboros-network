@@ -206,7 +206,7 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
 
     let -- Server Node; only req-resp server
         responderApp :: OuroborosApplicationWithMinimalCtx
-                          ResponderMode Socket.SockAddr BL.ByteString IO Void ()
+                          Mx.ResponderMode Socket.SockAddr BL.ByteString IO Void ()
         responderApp = testProtocols2 reqRespResponder
 
         reqRespResponder =
@@ -222,7 +222,7 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
 
         -- Client Node; only req-resp client
         initiatorApp :: OuroborosApplicationWithMinimalCtx
-                          InitiatorMode Socket.SockAddr BL.ByteString IO () Void
+                          Mx.InitiatorMode Socket.SockAddr BL.ByteString IO () Void
         initiatorApp = testProtocols2 reqRespInitiator
 
         reqRespInitiator =
@@ -305,7 +305,7 @@ prop_socket_recv_error f rerr =
     sv   <- newEmptyTMVarIO
 
     let app :: OuroborosApplicationWithMinimalCtx
-                 ResponderMode Socket.SockAddr BL.ByteString IO Void ()
+                 Mx.ResponderMode Socket.SockAddr BL.ByteString IO Void ()
         app = testProtocols2 reqRespResponder
 
         reqRespResponder =
@@ -353,7 +353,7 @@ prop_socket_recv_error f rerr =
                     _ <- async $ do
                       threadDelay 0.1
                       atomically $ putTMVar lock ()
-                    mux <- Mx.newMux (toMiniProtocolInfos app)
+                    mux <- Mx.new (toMiniProtocolInfos app)
                     let respCtx = ResponderContext connectionId
                     resOps <- sequence
                       [ Mx.runMiniProtocol
@@ -373,9 +373,9 @@ prop_socket_recv_error f rerr =
                               [(Mx.ResponderDirectionOnly, void . runMiniProtocolCb initiator respCtx)]
                       ]
 
-                    withAsync (Mx.runMux nullTracer mux bearer) $ \aid -> do
+                    withAsync (Mx.run nullTracer mux bearer) $ \aid -> do
                       _ <- atomically $ runFirstToFinish $ foldMap FirstToFinish resOps
-                      Mx.stopMux mux
+                      Mx.stop mux
                       wait aid
           )
           $ \muxAsync -> do
@@ -400,9 +400,9 @@ prop_socket_recv_error f rerr =
                   case fromException e of
                         Just me -> return $
                             case Mx.errorType me of
-                                 Mx.MuxBearerClosed -> rerr === RecvSocketClosed
-                                 MuxSDUReadTimeout  -> rerr === RecvSDUTimeout
-                                 _                  -> counterexample (show $ Mx.errorType me) False
+                                 Mx.BearerClosed   -> rerr === RecvSocketClosed
+                                 Mx.SDUReadTimeout -> rerr === RecvSDUTimeout
+                                 _                 -> counterexample (show $ Mx.errorType me) False
                         Nothing -> return $ counterexample (show e) False
               Right _ -> return $ counterexample "expected error" False
 
@@ -470,20 +470,20 @@ prop_socket_send_error rerr =
                   case fromException e of
                         Just me -> return $
                             case Mx.errorType me of
-                                 Mx.MuxIOException _ -> rerr === SendSocketClosed
-                                 MuxSDUWriteTimeout  -> rerr === SendSDUTimeout
-                                 _                   -> property False
+                                 Mx.IOException _   -> rerr === SendSocketClosed
+                                 Mx.SDUWriteTimeout -> rerr === SendSDUTimeout
+                                 _                  -> property False
                         Nothing -> return $ counterexample (show e) False
               Right _ -> return $ property False
 
           when (rerr /= SendSocketClosed) $ Socket.close sd'
           return result
   where
-      -- wrap a 'ByteString' as 'MuxSDU'
-      wrap :: BL.ByteString -> Mx.MiniProtocolDir -> MiniProtocolNum -> Mx.MuxSDU
-      wrap blob ptclDir ptclNum = Mx.MuxSDU {
-            -- it will be filled when the 'MuxSDU' is send by the 'bearer'
-            Mx.msHeader = Mx.MuxSDUHeader {
+      -- wrap a 'ByteString' as 'Mx.SDU'
+      wrap :: BL.ByteString -> Mx.MiniProtocolDir -> MiniProtocolNum -> Mx.SDU
+      wrap blob ptclDir ptclNum = Mx.SDU {
+            -- it will be filled when the 'SDU' is send by the 'bearer'
+            Mx.msHeader = Mx.SDUHeader {
                 Mx.mhTimestamp = Mx.RemoteClockModel 0,
                 Mx.mhNum       = ptclNum,
                 Mx.mhDir       = ptclDir,
@@ -504,7 +504,7 @@ prop_socket_client_connect_error _ xs =
     cv <- newEmptyTMVarIO
 
     let app :: OuroborosApplicationWithMinimalCtx
-                 InitiatorMode Socket.SockAddr BL.ByteString IO () Void
+                 Mx.InitiatorMode Socket.SockAddr BL.ByteString IO () Void
         app = testProtocols2 reqRespInitiator
 
         reqRespInitiator =

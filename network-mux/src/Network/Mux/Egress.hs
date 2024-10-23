@@ -138,7 +138,7 @@ muxer
        , MonadTimer m
        )
     => EgressQueue m
-    -> MuxBearer m
+    -> Bearer m
     -> m void
 muxer egressQueue bearer =
     withTimeoutSerial $ \timeout ->
@@ -152,13 +152,13 @@ muxer egressQueue bearer =
 -- first.
 processSingleWanton :: MonadSTM m
                     => EgressQueue m
-                    -> MuxBearer m
+                    -> Bearer m
                     -> TimeoutFn m
                     -> MiniProtocolNum
                     -> MiniProtocolDir
                     -> Wanton m
                     -> m ()
-processSingleWanton egressQueue MuxBearer { write, sduSize }
+processSingleWanton egressQueue Bearer { write, sduSize }
                     timeout mpc md wanton = do
     blob <- atomically $ do
       -- extract next SDU
@@ -175,8 +175,8 @@ processSingleWanton egressQueue MuxBearer { write, sduSize }
           writeTBQueue egressQueue (TLSRDemand mpc md wanton)
       -- return data to send
       pure frag
-    let sdu = MuxSDU {
-                msHeader = MuxSDUHeader {
+    let sdu = SDU {
+                msHeader = SDUHeader {
                     mhTimestamp = (RemoteClockModel 0),
                     mhNum       = mpc,
                     mhDir       = md,

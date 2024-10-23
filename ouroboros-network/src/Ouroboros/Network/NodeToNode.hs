@@ -116,8 +116,7 @@ import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
 import Data.Void (Void)
 import Data.Word
-import Network.Mux (WithMuxBearer (..))
-import Network.Mux.Types (MuxRuntimeError (..))
+import Network.Mux qualified as Mx
 import Network.Socket (Socket, StructLinger (..))
 import Network.Socket qualified as Socket
 
@@ -159,7 +158,7 @@ import Ouroboros.Network.Util.ShowProxy (ShowProxy, showProxy)
 
 -- The Handshake tracer types are simply terrible.
 type HandshakeTr ntnAddr ntnVersion =
-    WithMuxBearer (ConnectionId ntnAddr)
+    Mx.WithBearer (ConnectionId ntnAddr)
                   (TraceSendRecv (Handshake ntnVersion CBOR.Term))
 
 
@@ -448,7 +447,7 @@ connectTo
   -> Versions NodeToNodeVersion
               NodeToNodeVersionData
               (OuroborosApplicationWithMinimalCtx
-                 InitiatorMode Socket.SockAddr BL.ByteString IO a b)
+                 Mx.InitiatorMode Socket.SockAddr BL.ByteString IO a b)
   -> Maybe Socket.SockAddr
   -> Socket.SockAddr
   -> IO (Either SomeException (Either a b))
@@ -491,7 +490,7 @@ withServer
   -> Versions NodeToNodeVersion
               NodeToNodeVersionData
               (OuroborosApplicationWithMinimalCtx
-                 ResponderMode Socket.SockAddr BL.ByteString IO a b)
+                 Mx.ResponderMode Socket.SockAddr BL.ByteString IO a b)
   -> ErrorPolicies
   -> IO Void
 withServer sn tracers networkState acceptedConnectionsLimit sd versions errPolicies =
@@ -636,12 +635,12 @@ remoteNetworkErrorPolicy = ErrorPolicies {
           -- the connection was unexpectedly closed, we suspend the peer for
           -- a 'shortDelay'
         , ErrorPolicy
-            $ \(e :: MuxError)
-                  -> case errorType e of
-                        MuxUnknownMiniProtocol  -> Just theyBuggyOrEvil
-                        MuxDecodeError          -> Just theyBuggyOrEvil
-                        MuxIngressQueueOverRun  -> Just theyBuggyOrEvil
-                        MuxInitiatorOnly        -> Just theyBuggyOrEvil
+            $ \(e :: Mx.Error)
+                  -> case Mx.errorType e of
+                        Mx.UnknownMiniProtocol  -> Just theyBuggyOrEvil
+                        Mx.DecodeError          -> Just theyBuggyOrEvil
+                        Mx.IngressQueueOverRun  -> Just theyBuggyOrEvil
+                        Mx.InitiatorOnly        -> Just theyBuggyOrEvil
 
                         -- in case of bearer closed / or IOException we suspend
                         -- the peer for a short time
@@ -651,19 +650,19 @@ remoteNetworkErrorPolicy = ErrorPolicies {
                         -- 'responder'.  If a 'responder' throws 'MuxError' we
                         -- might not want to shutdown the consumer (which is
                         -- using different connection), as we do below:
-                        MuxBearerClosed              -> Just (SuspendPeer veryShortDelay shortDelay)
-                        MuxIOException{}             -> Just (SuspendPeer veryShortDelay shortDelay)
-                        MuxSDUReadTimeout            -> Just (SuspendPeer veryShortDelay shortDelay)
-                        MuxSDUWriteTimeout           -> Just (SuspendPeer veryShortDelay shortDelay)
-                        MuxShutdown {}               -> Just (SuspendPeer veryShortDelay shortDelay)
-                        MuxCleanShutdown             -> Just (SuspendPeer veryShortDelay shortDelay)
+                        Mx.BearerClosed              -> Just (SuspendPeer veryShortDelay shortDelay)
+                        Mx.IOException{}             -> Just (SuspendPeer veryShortDelay shortDelay)
+                        Mx.SDUReadTimeout            -> Just (SuspendPeer veryShortDelay shortDelay)
+                        Mx.SDUWriteTimeout           -> Just (SuspendPeer veryShortDelay shortDelay)
+                        Mx.Shutdown {}               -> Just (SuspendPeer veryShortDelay shortDelay)
+                        Mx.CleanShutdown             -> Just (SuspendPeer veryShortDelay shortDelay)
 
         , ErrorPolicy
-            $ \(e :: MuxRuntimeError)
+            $ \(e :: Mx.RuntimeError)
                   -> case e of
-                       ProtocolAlreadyRunning       {} -> Just (SuspendPeer shortDelay shortDelay)
-                       UnknownProtocolInternalError {} -> Just Throw
-                       MuxBlockedOnCompletionVar    {} -> Just (SuspendPeer shortDelay shortDelay)
+                       Mx.ProtocolAlreadyRunning       {} -> Just (SuspendPeer shortDelay shortDelay)
+                       Mx.UnknownProtocolInternalError {} -> Just Throw
+                       Mx.BlockedOnCompletionVar       {} -> Just (SuspendPeer shortDelay shortDelay)
 
           -- Error policy for TxSubmission protocol: outbound side (client role)
         , ErrorPolicy
@@ -743,7 +742,7 @@ localNetworkErrorPolicy = ErrorPolicies {
           -- the connection was unexpectedly closed, we suspend the peer for
           -- a 'shortDelay'
         , ErrorPolicy
-          $ \(_ :: MuxError) -> Nothing
+          $ \(_ :: Mx.Error) -> Nothing
         ],
 
       -- The node never connects to a local client

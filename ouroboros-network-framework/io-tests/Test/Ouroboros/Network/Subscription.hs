@@ -38,6 +38,7 @@ import Network.Socket qualified as Socket
 import Network.Socket.ByteString.Lazy qualified as Socket (recv, sendAll)
 #endif
 
+import Network.Mux qualified as Mx
 import Network.Mux.Bearer qualified as Mx
 --TODO: time utils should come from elsewhere
 import Network.Mux.Time (microsecondsToDiffTime)
@@ -568,7 +569,7 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
 
         let -- Server Node; only req-resp server
             responderApp :: OuroborosApplicationWithMinimalCtx
-                              ResponderMode Socket.SockAddr BL.ByteString IO Void ()
+                              Mx.ResponderMode Socket.SockAddr BL.ByteString IO Void ()
             responderApp = testProtocols2 reqRespResponder
 
             reqRespResponder =
@@ -584,7 +585,7 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
 
             -- Client Node; only req-resp client
             initiatorApp :: OuroborosApplicationWithMinimalCtx
-                              InitiatorMode Socket.SockAddr BL.ByteString IO () Void
+                              Mx.InitiatorMode Socket.SockAddr BL.ByteString IO () Void
             initiatorApp = testProtocols2 reqRespInitiator
 
             reqRespInitiator =
@@ -723,7 +724,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
 
     appX :: ReqRspCfg
          -> OuroborosApplicationWithMinimalCtx
-              InitiatorResponderMode Socket.SockAddr BL.ByteString IO () ()
+              Mx.InitiatorResponderMode Socket.SockAddr BL.ByteString IO () ()
     appX cfg = testProtocols2 (reqResp cfg)
 
     reqResp ReqRspCfg {rrcTag, rrcServerVar, rrcClientVar, rrcSiblingVar} =

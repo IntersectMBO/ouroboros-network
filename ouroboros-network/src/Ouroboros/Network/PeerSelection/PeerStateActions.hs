@@ -422,7 +422,7 @@ awaitAllResults tok bundle = do
 -- 'Mux', three bundles of miniprotocols: for hot, warm and established peers
 -- together with their state 'StrictTVar's.
 --
-data PeerConnectionHandle (muxMode :: MuxMode) responderCtx peerAddr versionData bytes m a b = PeerConnectionHandle {
+data PeerConnectionHandle (muxMode :: Mux.Mode) responderCtx peerAddr versionData bytes m a b = PeerConnectionHandle {
     pchConnectionId :: ConnectionId peerAddr,
     pchPeerStatus   :: StrictTVar m PeerStatus,
     pchMux          :: Mux.Mux muxMode m,
@@ -558,7 +558,7 @@ data PeerStateActionsArguments muxMode socket responderCtx peerAddr versionData 
 
 
 withPeerStateActions
-    :: forall (muxMode :: MuxMode) socket responderCtx peerAddr versionData versionNumber m a b x.
+    :: forall (muxMode :: Mux.Mode) socket responderCtx peerAddr versionData versionNumber m a b x.
        ( Alternative (STM m)
        , MonadAsync         m
        , MonadCatch         m
@@ -943,7 +943,7 @@ withPeerStateActions PeerStateActionsArguments {
                 (atomically $ awaitAllResults SingHot pchAppHandles)
       case res of
         Nothing -> do
-          Mux.stopMux pchMux
+          Mux.stop pchMux
           atomically (writeTVar pchPeerStatus PeerCooling)
           traceWith spsTracer (PeerStatusChangeFailure
                                 (HotToCooling pchConnectionId)
@@ -1014,7 +1014,7 @@ withPeerStateActions PeerStateActionsArguments {
       case res of
         Nothing -> do
           -- timeout fired
-          Mux.stopMux pchMux
+          Mux.stop pchMux
           wasWarm <- atomically (updateUnlessCoolingOrCold pchPeerStatus PeerCooling)
           when wasWarm $
             traceWith spsTracer (PeerStatusChangeFailure
@@ -1055,7 +1055,7 @@ withPeerStateActions PeerStateActionsArguments {
 -- | Smart constructor for 'ApplicationHandle'.
 --
 mkApplicationHandleBundle
-    :: forall (muxMode :: MuxMode) responderCtx peerAddr bytes m a b.
+    :: forall (muxMode :: Mux.Mode) responderCtx peerAddr bytes m a b.
        OuroborosBundle muxMode (ExpandedInitiatorContext peerAddr m)
                                responderCtx bytes m a b
     -- ^ mux application
@@ -1088,7 +1088,7 @@ mkApplicationHandleBundle muxBundle controlMessageBundle awaitVarsBundle =
 -- | Given a singleton 'SingProtocolTemperature' and 'PeerConnectionHandle' start the mux
 -- protocol bundle indicated by the type of the first argument.
 --
-startProtocols :: forall (muxMode :: MuxMode) (pt :: ProtocolTemperature)
+startProtocols :: forall (muxMode :: Mux.Mode) (pt :: ProtocolTemperature)
                          responderCtx peerAddr versionData m a b.
                   ( Alternative (STM m)
                   , MonadAsync m

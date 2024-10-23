@@ -64,7 +64,7 @@ import System.Posix.Signals qualified as Signals
 import Network.Socket (Socket)
 import Network.Socket qualified as Socket
 
-import Network.Mux as Mx (MakeBearer)
+import Network.Mux qualified as Mx
 
 import Ouroboros.Network.Snocket (FileDescriptor, LocalAddress,
            LocalSocket (..), Snocket, localSocketFileDescriptor,
@@ -376,15 +376,15 @@ data ApplicationsExtra ntnAddr m a =
 --
 
 type NodeToClientHandle ntcAddr versionData m =
-    HandleWithMinimalCtx ResponderMode ntcAddr versionData ByteString m Void ()
+    HandleWithMinimalCtx Mx.ResponderMode ntcAddr versionData ByteString m Void ()
 
 type NodeToClientHandleError ntcVersion =
-    HandleError ResponderMode ntcVersion
+    HandleError Mx.ResponderMode ntcVersion
 
 type NodeToClientConnectionHandler
       ntcFd ntcAddr ntcVersion ntcVersionData m =
     ConnectionHandler
-      ResponderMode
+      Mx.ResponderMode
       (ConnectionHandlerTrace ntcVersion ntcVersionData)
       ntcFd
       ntcAddr
@@ -413,12 +413,12 @@ type NodeToClientConnectionManagerArguments
 --
 
 type NodeToNodeHandle
-       (mode :: MuxMode)
+       (mode :: Mx.Mode)
        ntnAddr ntnVersionData m a b =
     HandleWithExpandedCtx mode ntnAddr ntnVersionData ByteString m a b
 
 type NodeToNodeConnectionManager
-       (mode :: MuxMode)
+       (mode :: Mx.Mode)
        ntnFd ntnAddr ntnVersionData ntnVersion m a b =
     ConnectionManager
       mode
@@ -432,7 +432,7 @@ type NodeToNodeConnectionManager
 -- Governor type aliases
 --
 
-type NodeToNodePeerConnectionHandle (mode :: MuxMode) ntnAddr ntnVersionData m a b =
+type NodeToNodePeerConnectionHandle (mode :: Mx.Mode) ntnAddr ntnVersionData m a b =
     PeerConnectionHandle
       mode
       (ResponderContext ntnAddr)
@@ -441,7 +441,7 @@ type NodeToNodePeerConnectionHandle (mode :: MuxMode) ntnAddr ntnVersionData m a
       ByteString
       m a b
 
-type NodeToNodePeerSelectionActions (mode :: MuxMode) ntnAddr ntnVersionData m a b =
+type NodeToNodePeerSelectionActions (mode :: Mx.Mode) ntnAddr ntnVersionData m a b =
     PeerSelectionActions
       ntnAddr
       (NodeToNodePeerConnectionHandle mode ntnAddr ntnVersionData m a b)
@@ -949,7 +949,7 @@ runM Interfaces
 
       let -- | parameterized version of 'withPeerStateActions'
           withPeerStateActions'
-            :: forall (muxMode :: MuxMode) responderCtx socket b c.
+            :: forall (muxMode :: Mx.Mode) responderCtx socket b c.
                HasInitiator muxMode ~ True
             => MuxConnectionManager
                  muxMode socket (ExpandedInitiatorContext ntnAddr m)
@@ -1022,7 +1022,7 @@ runM Interfaces
                                          wlpGetLedgerPeerSnapshot = daReadLedgerPeerSnapshot }
 
           peerSelectionGovernor'
-            :: forall (muxMode :: MuxMode) b.
+            :: forall (muxMode :: Mx.Mode) b.
                Tracer m (DebugPeerSelection ntnAddr)
             -> StrictTVar m (PeerSelectionState ntnAddr
                               (NodeToNodePeerConnectionHandle

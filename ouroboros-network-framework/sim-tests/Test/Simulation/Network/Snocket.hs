@@ -237,17 +237,17 @@ clientServerSimulation payloads =
             AcceptFailure _err ->
               acceptLoop threadsVar accept1
 
-        handleConnection :: MuxBearer m -> TestAddr -> m ()
+        handleConnection :: Mx.Bearer m -> TestAddr -> m ()
         handleConnection bearer remoteAddr = do
           labelThisThread "server-handler"
           bracket
-            (newMux [ MiniProtocolInfo {
+            (Mx.new [ MiniProtocolInfo {
                         miniProtocolNum    = reqRespProtocolNum,
-                        miniProtocolDir    = ResponderDirectionOnly,
-                        miniProtocolLimits = MiniProtocolLimits maxBound
+                        miniProtocolDir    = Mx.ResponderDirectionOnly,
+                        miniProtocolLimits = Mx.MiniProtocolLimits maxBound
                       }
                     ])
-            stopMux
+            Mx.stop
             $ \mux -> do
               let connId = ConnectionId {
                       localAddress  = serverAddr,
@@ -260,14 +260,14 @@ clientServerSimulation payloads =
 
               resSTM <- runMiniProtocol
                           mux reqRespProtocolNum
-                          ResponderDirectionOnly
-                          StartOnDemand
+                          Mx.ResponderDirectionOnly
+                          Mx.StartOnDemand
                           (\channel -> runPeer tr codecReqResp
                                                channel
                                                serverPeer)
               withAsync
                 (do labelThisThread "server-mux"
-                    runMux (("server", connId,)
+                    Mx.run (("server", connId,)
                              `contramap`
                              traceTime (Tracer (say . show)))
                            mux bearer)
@@ -284,10 +284,10 @@ clientServerSimulation payloads =
                 (close snocket)
                 $ \fd -> do
                   connect snocket fd serverAddr
-                  mux <- newMux [ MiniProtocolInfo {
+                  mux <- Mx.new [ MiniProtocolInfo {
                                     miniProtocolNum    = reqRespProtocolNum,
-                                    miniProtocolDir    = InitiatorDirectionOnly,
-                                    miniProtocolLimits = MiniProtocolLimits maxBound
+                                    miniProtocolDir    = Mx.InitiatorDirectionOnly,
+                                    miniProtocolLimits = Mx.MiniProtocolLimits maxBound
                                   }
                                 ]
                   localAddr <- getLocalAddr snocket fd
@@ -311,13 +311,13 @@ clientServerSimulation payloads =
                   -- kill mux as soon as the client returns
                   withAsync
                     (do labelThisThread "client-mux"
-                        runMux (("client", connId,)
+                        Mx.run (("client", connId,)
                                  `contramap`
                                  traceTime (Tracer (say . show)))
                                mux bearer)
                     $ \_ -> do
                       res <- atomically resSTM
-                      stopMux mux
+                      Mx.stop mux
                       case res of
                         (Left err) -> throwIO err
                         (Right b)  -> return b

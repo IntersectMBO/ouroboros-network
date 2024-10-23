@@ -41,7 +41,7 @@ import Control.Tracer (nullTracer)
 
 import Network.Mux.Bearer qualified as Mx
 import Network.Mux.Types (MiniProtocolDir (..), MiniProtocolNum (..),
-           muxBearerAsChannel)
+           bearerAsChannel)
 import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Proofs
 
@@ -1342,8 +1342,8 @@ prop_channel_simultaneous_open_sim codec versionDataCodec
                         nullTracer
                         -- (("server",) `contramap` Tracer Debug.traceShowM)
                         fdConn'
-            let chann  = muxBearerAsChannel bearer  (MiniProtocolNum 0) InitiatorDir
-                chann' = muxBearerAsChannel bearer' (MiniProtocolNum 0) InitiatorDir
+            let chann  = bearerAsChannel bearer  (MiniProtocolNum 0) InitiatorDir
+                chann' = bearerAsChannel bearer' (MiniProtocolNum 0) InitiatorDir
             res <- prop_channel_simultaneous_open
               (pure (chann, chann'))
               codec

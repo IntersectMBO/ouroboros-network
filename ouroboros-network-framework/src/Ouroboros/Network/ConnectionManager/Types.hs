@@ -36,7 +36,8 @@
 --
 -- * keep inbound connections under limits.
 --
--- Connection manager is designed to work for any 'MuxMode', though the most useful ones are 'ResponderMode' and 'InitiatorResponderMode':
+-- Connection manager is designed to work for any 'Network.Mux.Mode', though
+-- the most useful ones are 'Mux.ResponderMode' and 'Mux.InitiatorResponderMode':
 --
 -- * 'InitiatorResponderMode' - useful for node-to-node applications, which
 --                              needs to create outbound connections as well as
@@ -173,8 +174,8 @@ import Data.Word (Word32)
 import GHC.Stack (CallStack, prettyCallStack)
 import System.Random (StdGen)
 
-import Network.Mux.Types (HasInitiator, HasResponder, MiniProtocolDir,
-           MuxBearer, MuxMode (..))
+import Network.Mux.Types (HasInitiator, HasResponder, MiniProtocolDir)
+import Network.Mux.Types qualified as Mux
 
 import Ouroboros.Network.ConnectionId (ConnectionId)
 import Ouroboros.Network.MuxMode
@@ -327,7 +328,7 @@ newEmptyPromiseIO = atomically newEmptyPromise
 --   provided by the connection manager.
 -- [@'ConnectionHandler'@]:
 --   is a newtype wrapper which provides inbound \/ outbound handlers depending
---   on @'MuxMode'@.
+--   on @'Network.Mux.Mode'@.
 --
 
 
@@ -352,7 +353,7 @@ type ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version
     -> PromiseWriter m (Either handleError (HandshakeConnectionResult handle version))
     -> Tracer m handlerTrace
     -> ConnectionId peerAddr
-    -> (DiffTime -> socket -> m (MuxBearer m))
+    -> (DiffTime -> socket -> m (Mux.Bearer m))
     -> MaskedAction m ()
 
 data HandshakeConnectionResult handle version
@@ -364,7 +365,7 @@ data HandshakeConnectionResult handle version
   --
   | HandshakeConnectionResult handle version
 
--- | Connection handler action.  It is index by @muxMode :: 'MuxMode'@.
+-- | Connection handler action.  It is index by @muxMode :: 'Network.Mux.Mode'@.
 -- There's one 'ConnectionHandlerFn' per provenance, possibly limited by
 -- @muxMode@.
 --
@@ -504,7 +505,7 @@ type IncludeInboundConnection socket peerAddr handle handleError m
 
 -- | Outbound connection manager API.
 --
-data OutboundConnectionManager (muxMode :: MuxMode) socket peerAddr handle handleError m where
+data OutboundConnectionManager (muxMode :: Mux.Mode) socket peerAddr handle handleError m where
     OutboundConnectionManager
       :: HasInitiator muxMode ~ True
       => { ocmRequestConnection    :: RequestOutboundConnection peerAddr handle handleError m
@@ -517,7 +518,7 @@ data OutboundConnectionManager (muxMode :: MuxMode) socket peerAddr handle handl
 --
 -- This type is an internal detail of 'Ouroboros.Network.ConnectionManager'
 --
-data InboundConnectionManager (muxMode :: MuxMode) socket peerAddr handle handleError m where
+data InboundConnectionManager (muxMode :: Mux.Mode) socket peerAddr handle handleError m where
     InboundConnectionManager
       :: HasResponder muxMode ~ True
       => { icmIncludeConnection    :: IncludeInboundConnection socket peerAddr handle handleError m
@@ -538,7 +539,7 @@ data InboundConnectionManager (muxMode :: MuxMode) socket peerAddr handle handle
 -- local addresses.  It is safe to share a connection manager with multiple
 -- listening sockets.
 --
-data ConnectionManager (muxMode :: MuxMode) socket peerAddr handle handleError m =
+data ConnectionManager (muxMode :: Mux.Mode) socket peerAddr handle handleError m =
     ConnectionManager {
         getConnectionManager
           :: WithMuxMode

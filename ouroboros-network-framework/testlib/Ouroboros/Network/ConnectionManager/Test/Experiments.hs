@@ -60,8 +60,7 @@ import Test.QuickCheck
 
 import Codec.CBOR.Term (Term)
 
-import Network.Mux qualified as Mux
-import Network.Mux.Types (MuxRuntimeError)
+import Network.Mux qualified as Mx
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Peer.Client
 
@@ -256,7 +255,7 @@ withInitiatorOnlyConnectionManager
                             (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
     -> StdGen
     -> Snocket m socket peerAddr
-    -> Mux.MakeBearer m socket
+    -> Mx.MakeBearer m socket
     -- ^ series of request possible to do with the bidirectional connection
     -- manager towards some peer.
     -> Maybe peerAddr
@@ -266,7 +265,7 @@ withInitiatorOnlyConnectionManager
     -- ^ Handshake time limits
     -> AcceptedConnectionsLimit
     -> (ConnectionManagerWithExpandedCtx
-          InitiatorMode socket peerAddr
+          Mx.InitiatorMode socket peerAddr
           DataFlowProtocolData UnversionedProtocol ByteString m [resp] Void
        -> m a)
     -> m a
@@ -319,25 +318,25 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
         k cm `catch` \(e :: SomeException) -> throwIO e)
   where
     clientApplication :: TemperatureBundle
-                           [MiniProtocol InitiatorMode
+                           [MiniProtocol Mx.InitiatorMode
                                          (ExpandedInitiatorContext peerAddr m)
                                          (ResponderContext peerAddr)
                                          ByteString m [resp] Void]
-    clientApplication = mkProto <$> (Mux.MiniProtocolNum <$> nums)
+    clientApplication = mkProto <$> (Mx.MiniProtocolNum <$> nums)
                                 <*> nextRequests
 
       where nums = TemperatureBundle (WithHot 1) (WithWarm 2) (WithEstablished 3)
             mkProto miniProtocolNum nextRequest =
               [MiniProtocol {
                   miniProtocolNum,
-                  miniProtocolLimits = Mux.MiniProtocolLimits maxBound,
+                  miniProtocolLimits = Mx.MiniProtocolLimits maxBound,
                   miniProtocolRun = reqRespInitiator miniProtocolNum
                                                      nextRequest
                 }]
 
-    reqRespInitiator :: Mux.MiniProtocolNum
+    reqRespInitiator :: Mx.MiniProtocolNum
                      -> (ConnectionId peerAddr -> STM m [req])
-                     -> RunMiniProtocol InitiatorMode
+                     -> RunMiniProtocol Mx.InitiatorMode
                                         (ExpandedInitiatorContext peerAddr m)
                                         (ResponderContext peerAddr)
                                         ByteString m [resp] Void
@@ -363,18 +362,18 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
 debugMuxErrorRethrowPolicy :: RethrowPolicy
 debugMuxErrorRethrowPolicy =
     mkRethrowPolicy $
-      \_ MuxError { errorType } ->
+      \_ Mx.Error { Mx.errorType } ->
         case errorType of
-          MuxIOException _   -> ShutdownPeer
-          MuxBearerClosed    -> ShutdownPeer
-          MuxSDUReadTimeout  -> ShutdownPeer
-          MuxSDUWriteTimeout -> ShutdownPeer
+          Mx.IOException _   -> ShutdownPeer
+          Mx.BearerClosed    -> ShutdownPeer
+          Mx.SDUReadTimeout  -> ShutdownPeer
+          Mx.SDUWriteTimeout -> ShutdownPeer
           _                  -> ShutdownNode
 
 debugMuxRuntimeErrorRethrowPolicy :: RethrowPolicy
 debugMuxRuntimeErrorRethrowPolicy =
     mkRethrowPolicy $
-      \_ (_ :: MuxRuntimeError) -> ShutdownPeer
+      \_ (_ :: Mx.RuntimeError) -> ShutdownPeer
 
 debugIOErrorRethrowPolicy :: RethrowPolicy
 debugIOErrorRethrowPolicy =
@@ -426,7 +425,7 @@ withBidirectionalConnectionManager
     -> Tracer m (WithName name (InboundGovernor.Debug peerAddr DataFlowProtocolData))
     -> StdGen
     -> Snocket m socket peerAddr
-    -> Mux.MakeBearer m socket
+    -> Mx.MakeBearer m socket
     -> (socket -> m ()) -- ^ configure socket
     -> socket
     -- ^ listening socket
@@ -441,7 +440,7 @@ withBidirectionalConnectionManager
     -- ^ Handshake time limits
     -> AcceptedConnectionsLimit
     -> (ConnectionManagerWithExpandedCtx
-          InitiatorResponderMode socket peerAddr
+          Mx.InitiatorResponderMode socket peerAddr
           DataFlowProtocolData UnversionedProtocol ByteString m [resp] acc
        -> peerAddr
        -> Async m Void
@@ -528,16 +527,16 @@ withBidirectionalConnectionManager name timeouts
             throwIO e
   where
     serverApplication :: TemperatureBundle
-                          [MiniProtocol InitiatorResponderMode
+                          [MiniProtocol Mx.InitiatorResponderMode
                                         (ExpandedInitiatorContext peerAddr m)
                                         (ResponderContext peerAddr)
                                         ByteString m [resp] acc]
-    serverApplication = mkProto <$> (Mux.MiniProtocolNum <$> nums) <*> nextRequests
+    serverApplication = mkProto <$> (Mx.MiniProtocolNum <$> nums) <*> nextRequests
       where nums = TemperatureBundle (WithHot 1) (WithWarm 2) (WithEstablished 3)
             mkProto miniProtocolNum nextRequest =
               [MiniProtocol {
                   miniProtocolNum,
-                  miniProtocolLimits = Mux.MiniProtocolLimits maxBound,
+                  miniProtocolLimits = Mx.MiniProtocolLimits maxBound,
                   miniProtocolRun = reqRespInitiatorAndResponder
                                         miniProtocolNum
                                         accumulatorInit
@@ -545,10 +544,10 @@ withBidirectionalConnectionManager name timeouts
               }]
 
     reqRespInitiatorAndResponder
-      :: Mux.MiniProtocolNum
+      :: Mx.MiniProtocolNum
       -> acc
       -> (ConnectionId peerAddr -> STM m [req])
-      -> RunMiniProtocol InitiatorResponderMode
+      -> RunMiniProtocol Mx.InitiatorResponderMode
                          (ExpandedInitiatorContext peerAddr m)
                          (ResponderContext peerAddr)
                          ByteString m [resp] acc
@@ -633,7 +632,7 @@ runInitiatorProtocols
        , MonadSay         m
        )
     => SingMuxMode muxMode
-    -> Mux.Mux muxMode m
+    -> Mx.Mux muxMode m
     -> OuroborosBundle muxMode (ExpandedInitiatorContext addr m)
                                (ResponderContext addr)
                                ByteString m a b
@@ -652,13 +651,13 @@ runInitiatorProtocols singMuxMode mux bundle controlBundle connId = do
                  -> ControlMessageSTM m
                  -> m (STM m (Either SomeException a))
     runInitiator ptcl controlMessage =
-        Mux.runMiniProtocol
+        Mx.runMiniProtocol
           mux
           (miniProtocolNum ptcl)
           (case singMuxMode of
-            SingInitiatorMode          -> Mux.InitiatorDirectionOnly
-            SingInitiatorResponderMode -> Mux.InitiatorDirection)
-          Mux.StartEagerly
+            SingInitiatorMode          -> Mx.InitiatorDirectionOnly
+            SingInitiatorResponderMode -> Mx.InitiatorDirection)
+          Mx.StartEagerly
           (runMiniProtocolCb
             (case miniProtocolRun ptcl of
               InitiatorProtocolOnly initiator           -> initiator
@@ -707,7 +706,7 @@ unidirectionalExperiment
     => StdGen
     -> Timeouts
     -> Snocket m socket peerAddr
-    -> Mux.MakeBearer m socket
+    -> Mx.MakeBearer m socket
     -> (socket -> m ())
     -> socket
     -> ClientAndServerData req
@@ -740,7 +739,7 @@ unidirectionalExperiment stdGen timeouts snocket makeBearer confSock socket clie
                      (\connHandle -> do
                       case connHandle of
                         Connected connId _ (Handle mux muxBundle controlBundle _
-                                        :: HandleWithExpandedCtx InitiatorMode peerAddr
+                                        :: HandleWithExpandedCtx Mx.InitiatorMode peerAddr
                                               DataFlowProtocolData ByteString m [resp] Void) ->
                           try @_ @SomeException $
                             (runInitiatorProtocols
@@ -784,7 +783,7 @@ bidirectionalExperiment
     -> StdGen
     -> Timeouts
     -> Snocket m socket peerAddr
-    -> Mux.MakeBearer m socket
+    -> Mx.MakeBearer m socket
     -> (socket -> m ()) -- ^ configure socket
     -> socket
     -> socket

@@ -4,6 +4,9 @@
 
 ### Breaking changes
 
+* Removed `Mux` prefix from many data types & functions.  Mux library should be
+  imported qualified.
+
 ### Non-breaking changes
 
 ## 0.5.0.0 -- 2024-10-17
