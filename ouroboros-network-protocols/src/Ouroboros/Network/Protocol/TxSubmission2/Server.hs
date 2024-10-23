@@ -20,8 +20,6 @@ module Ouroboros.Network.Protocol.TxSubmission2.Server
   , Collect (..)
     -- * Execution as a typed protocol
   , txSubmissionServerPeerPipelined
-    -- * deprecated API
-  , TxSizeInBytes
   ) where
 
 import Data.List.NonEmpty (NonEmpty)

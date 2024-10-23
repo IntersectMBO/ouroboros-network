@@ -4,7 +4,6 @@
 
 module Ouroboros.Network.ExitPolicy
   ( RepromoteDelay (..)
-  , ReconnectDelay
   , ExitPolicy (..)
   , stdExitPolicy
   , ReturnPolicy
@@ -23,9 +22,6 @@ newtype RepromoteDelay = RepromoteDelay { repromoteDelay :: DiffTime }
   deriving newtype Fractional
   deriving Semigroup via Max DiffTime
 
--- | Deprecated in `ouroboros-network-0.11.0.0`
-type ReconnectDelay = RepromoteDelay
-{-# DEPRECATED ReconnectDelay "Use RepromoteDelay instead" #-}
 
 -- It ought to be derived via 'Quiet' but 'Difftime' lacks 'Generic' instance.
 instance Show RepromoteDelay where

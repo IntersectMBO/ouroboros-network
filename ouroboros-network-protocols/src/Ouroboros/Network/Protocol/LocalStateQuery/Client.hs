@@ -15,15 +15,11 @@ module Ouroboros.Network.Protocol.LocalStateQuery.Client
   , ClientStQuerying (..)
     -- * Execution as a typed protocol
   , localStateQueryClientPeer
-    -- * Null local state query client
-  , localStateQueryClientNull
     -- * Utilities
   , mapLocalStateQueryClient
   , Some (..)
   ) where
 
-import Control.Monad (forever)
-import Control.Monad.Class.MonadTimer
 import Data.Kind (Type)
 
 import Network.TypedProtocol.Stateful.Peer.Client
@@ -36,12 +32,6 @@ newtype LocalStateQueryClient block point (query :: Type -> Type) m a =
     LocalStateQueryClient {
       runLocalStateQueryClient :: m (ClientStIdle block point query m a)
     }
-
-localStateQueryClientNull :: MonadTimer m => LocalStateQueryClient block point query m a
-localStateQueryClientNull =
-    LocalStateQueryClient $ forever $ threadDelay 43200 {- day in seconds -}
-
-{-# DEPRECATED localStateQueryClientNull "Use Ouroboros.Network.NodeToClient.localStateQueryPeerNull" #-}
 
 -- | In the 'StIdle' protocol state, the client has agency and must send:
 --

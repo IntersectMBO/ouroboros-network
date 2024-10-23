@@ -27,8 +27,6 @@ module Ouroboros.Network.Protocol.TxSubmission2.Type
   , NumTxIdsToReq (..)
     -- re-exports
   , SizeInBytes (..)
-    -- deprecated API
-  , TxSizeInBytes
   ) where
 
 import Control.DeepSeq
@@ -46,12 +44,6 @@ import Network.TypedProtocol.Core
 
 import Ouroboros.Network.SizeInBytes (SizeInBytes (..))
 import Ouroboros.Network.Util.ShowProxy
-
--- | Transactions are typically not big, but in principle in future we could
--- have ones over 64k large.
---
-type TxSizeInBytes = SizeInBytes
-{-# DEPRECATED TxSizeInBytes "Use 'Ouroboros.Network.SizeInBytes.SizeInBytes' instead" #-}
 
 -- | The kind of the transaction-submission protocol, and the types of the
 -- states in the protocol state machine.
@@ -252,7 +244,7 @@ instance Protocol (TxSubmission2 txid tx) where
     -- dependent transactions.
     --
     MsgReplyTxIds
-      :: BlockingReplyList blocking (txid, TxSizeInBytes)
+      :: BlockingReplyList blocking (txid, SizeInBytes)
       -> Message (TxSubmission2 txid tx) (StTxIds blocking) StIdle
 
     -- | Request one or more transactions corresponding to the given
