@@ -3,14 +3,14 @@
 
 module Ouroboros.Network.RawBearer where
 
-import           Data.Word (Word8)
-import           Foreign.Ptr (Ptr)
-import           Network.Socket (Socket)
-import qualified Network.Socket as Socket
+import Data.Word (Word8)
+import Foreign.Ptr (Ptr)
+import Network.Socket (Socket)
+import Network.Socket qualified as Socket
 
 #if defined(mingw32_HOST_OS)
-import           Foreign.Ptr (castPtr)
-import qualified System.Win32 as Win32
+import Foreign.Ptr (castPtr)
+import System.Win32 qualified as Win32
 #endif
 
 -- | Generalized API for sending and receiving raw bytes over a file

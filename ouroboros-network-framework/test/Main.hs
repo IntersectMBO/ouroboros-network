@@ -1,15 +1,15 @@
 module Main (main) where
 
-import           Test.Tasty
+import Test.Tasty
 
-import qualified Test.Ouroboros.Network.ConnectionManager as ConnectionManager
-import qualified Test.Ouroboros.Network.Driver as Driver
-import qualified Test.Ouroboros.Network.RateLimiting as RateLimiting
-import qualified Test.Ouroboros.Network.RawBearer as RawBearer
-import qualified Test.Ouroboros.Network.Server2 as Server2
-import qualified Test.Ouroboros.Network.Socket as Socket
-import qualified Test.Ouroboros.Network.Subscription as Subscription
-import qualified Test.Simulation.Network.Snocket as Snocket
+import Test.Ouroboros.Network.ConnectionManager qualified as ConnectionManager
+import Test.Ouroboros.Network.Driver qualified as Driver
+import Test.Ouroboros.Network.RateLimiting qualified as RateLimiting
+import Test.Ouroboros.Network.RawBearer qualified as RawBearer
+import Test.Ouroboros.Network.Server2 qualified as Server2
+import Test.Ouroboros.Network.Socket qualified as Socket
+import Test.Ouroboros.Network.Subscription qualified as Subscription
+import Test.Simulation.Network.Snocket qualified as Snocket
 
 main :: IO ()
 main = defaultMain tests

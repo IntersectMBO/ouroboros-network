@@ -6,37 +6,37 @@
 
 module Test.Ouroboros.Network.RawBearer where
 
-import           Ouroboros.Network.IOManager
-import           Ouroboros.Network.RawBearer
-import           Ouroboros.Network.Snocket
-import           Ouroboros.Network.Testing.Data.AbsBearerInfo
+import Ouroboros.Network.IOManager
+import Ouroboros.Network.RawBearer
+import Ouroboros.Network.Snocket
+import Ouroboros.Network.Testing.Data.AbsBearerInfo
 
-import           Control.Concurrent.Class.MonadMVar
-import           Control.Exception (Exception)
-import           Control.Monad (when)
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork (labelThisThread)
-import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadST (MonadST, withLiftST)
-import           Control.Monad.Class.MonadThrow (MonadThrow, bracket, catchJust,
-                     finally, throwIO)
-import           Control.Monad.IOSim hiding (liftST)
-import           Control.Monad.ST.Unsafe (unsafeIOToST)
-import           Control.Tracer (Tracer (..), nullTracer, traceWith)
-import           Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
-import           Data.Word (Word32)
-import           Foreign.Marshal (copyBytes, free, mallocBytes)
-import           Foreign.Ptr (castPtr, plusPtr)
-import qualified Network.Socket as Socket
-import           Simulation.Network.Snocket as SimSnocket
-import           System.Directory (removeFile)
-import           System.IO.Error (ioeGetErrorType, isDoesNotExistErrorType)
-import           System.IO.Unsafe
+import Control.Concurrent.Class.MonadMVar
+import Control.Exception (Exception)
+import Control.Monad (when)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork (labelThisThread)
+import Control.Monad.Class.MonadSay
+import Control.Monad.Class.MonadST (MonadST, withLiftST)
+import Control.Monad.Class.MonadThrow (MonadThrow, bracket, catchJust, finally,
+           throwIO)
+import Control.Monad.IOSim hiding (liftST)
+import Control.Monad.ST.Unsafe (unsafeIOToST)
+import Control.Tracer (Tracer (..), nullTracer, traceWith)
+import Data.ByteString (ByteString)
+import Data.ByteString qualified as BS
+import Data.Word (Word32)
+import Foreign.Marshal (copyBytes, free, mallocBytes)
+import Foreign.Ptr (castPtr, plusPtr)
+import Network.Socket qualified as Socket
+import Simulation.Network.Snocket as SimSnocket
+import System.Directory (removeFile)
+import System.IO.Error (ioeGetErrorType, isDoesNotExistErrorType)
+import System.IO.Unsafe
 
-import           Test.Simulation.Network.Snocket (toBearerInfo)
-import           Test.Tasty
-import           Test.Tasty.QuickCheck
+import Test.Simulation.Network.Snocket (toBearerInfo)
+import Test.Tasty
+import Test.Tasty.QuickCheck
 
 tests :: TestTree
 tests = testGroup "Ouroboros.Network.RawBearer"

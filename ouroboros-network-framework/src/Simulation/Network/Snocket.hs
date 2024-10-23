@@ -50,20 +50,20 @@ import Prelude hiding (read)
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad (when)
 import Control.Monad.Class.MonadSay
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
-import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.ST.Unsafe (unsafeIOToST)
-import Control.Monad (when)
 import Control.Tracer (Tracer, contramap, contramapM, traceWith)
 
 import GHC.IO.Exception
 
 import Data.Bifoldable (bitraverse_)
-import Data.ByteString.Lazy qualified as LBS
 import Data.ByteString qualified as BS
+import Data.ByteString.Lazy qualified as LBS
 import Data.Foldable (traverse_)
 import Data.Functor (($>))
 import Data.Map.Strict (Map)
