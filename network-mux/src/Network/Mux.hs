@@ -25,11 +25,12 @@ module Network.Mux
   , MiniProtocolLimits (..)
     -- * Running the Mux
   , run
+  , stop
+    -- ** Run a mini-protocol
   , runMiniProtocol
   , StartOnDemandOrEagerly (..)
   , ByteChannel
   , Channel (..)
-  , stop
     -- * Bearer
   , Bearer
   , MakeBearer (..)
@@ -75,6 +76,12 @@ import Network.Mux.Trace
 import Network.Mux.Types
 
 
+-- | Mux handle which allows to control the multiplexer, e.g.
+--
+-- * `run`: run the multiplexer
+-- * `runMiniProtocol`: start a mini-protocol (eagerly or lazily)
+-- * `stop`: stop the multiplexer, causing `run` to return.
+--
 data Mux (mode :: Mode) m =
      Mux {
        muxMiniProtocols   :: !(Map (MiniProtocolNum, MiniProtocolDir)
@@ -84,6 +91,8 @@ data Mux (mode :: Mode) m =
      }
 
 
+-- | Get information about all statically registered mini-protocols.
+--
 miniProtocolStateMap :: MonadSTM m
                      => Mux mode m
                      -> Map (MiniProtocolNum, MiniProtocolDir)
@@ -118,7 +127,7 @@ data Status
     | Stopped
 
 
--- | Create a mux handle.
+-- | Create a mux handle in `Mode` and register mini-protocols.
 --
 new :: forall (mode :: Mode) m.
        MonadLabelledSTM m
@@ -265,6 +274,8 @@ run tracer Mux {muxMiniProtocols, muxControlCmdQueue, muxStatus} bearer@Bearer {
                   MuxJob
                   (name ++ "-demuxer")
 
+-- | Mini-protocol thread executed by `JobPool` which executes `protocolAction`.
+--
 miniProtocolJob
   :: forall mode m.
      ( MonadSTM m
@@ -286,7 +297,10 @@ miniProtocolJob tracer egressQueue
                   miniProtocolIngressQueue,
                   miniProtocolStatusVar
                 }
-                (MiniProtocolAction protocolAction completionVar) =
+               MiniProtocolAction {
+                 miniProtocolAction,
+                 completionVar
+               } =
     JobPool.Job jobAction
                 jobHandler
                 MiniProtocolJob
@@ -299,7 +313,7 @@ miniProtocolJob tracer egressQueue
       let chan = muxChannel tracer egressQueue (Wanton w)
                             miniProtocolNum miniProtocolDirEnum
                             miniProtocolIngressQueue
-      (result, remainder) <- protocolAction chan
+      (result, remainder) <- miniProtocolAction chan
       traceWith tracer (TraceTerminating miniProtocolNum miniProtocolDirEnum)
       atomically $ do
         -- The Wanton w is the SDUs that are queued but not yet sent for this job.
@@ -336,13 +350,25 @@ data ControlCmd mode m =
        !(MiniProtocolAction m)
    | CmdShutdown
 
-data StartOnDemandOrEagerly = StartOnDemand | StartEagerly
+-- | Strategy how to start a mini-protocol.
+--
+data StartOnDemandOrEagerly =
+    -- | Start a mini-protocol promptly.
+    StartEagerly
+    -- | Start a mini-protocol when data is received for the given
+    -- mini-protocol.  Must be used only when initial message is sent by the
+    -- remote side.
+  | StartOnDemand
   deriving Eq
 
 data MiniProtocolAction m where
-     MiniProtocolAction :: (ByteChannel m -> m (a, Maybe BL.ByteString)) -- ^ Action
-                        -> StrictTMVar m (Either SomeException a)    -- ^ Completion var
-                        -> MiniProtocolAction m
+    MiniProtocolAction :: forall m a.
+      { miniProtocolAction :: ByteChannel m -> m (a, Maybe BL.ByteString),
+        -- ^ mini-protocol action
+        completionVar      :: StrictTMVar m (Either SomeException a)
+        -- ^ Completion var
+      }
+      -> MiniProtocolAction m
 
 type MiniProtocolKey = (MiniProtocolNum, MiniProtocolDir)
 

@@ -99,9 +99,17 @@ newtype MiniProtocolLimits =
 --   a function that runs the mux layer on it.
 --
 
+-- | Statically configured multiplexer mode.
+--
 data Mode where
+    -- | Only execute initiator protocols.  In this mode the multiplexer will
+    -- only run its egress side.
     InitiatorMode          :: Mode
+    -- | Only execute responder protocols.  It this mode the multiplexer will
+    -- only run its ingress side.
     ResponderMode          :: Mode
+    -- | Execute initiator and responder protocols.  In this mode the
+    -- multiplexer will run both ingress and egress sides.
     InitiatorResponderMode :: Mode
 
 type family HasInitiator (mode :: Mode) :: Bool where

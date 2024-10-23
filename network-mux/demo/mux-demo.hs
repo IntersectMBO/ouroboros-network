@@ -101,7 +101,7 @@ server =
     associateWithIOManager ioManager (Left hpipe)
     Win32.Async.connectNamedPipe hpipe
     void $ forkIO $ do
-      bearer <- getBearer makeNamedPipeBearer (-1) nullTracer hpipe
+      bearer <- getBearer Mx.makeNamedPipeBearer (-1) nullTracer hpipe
       serverWorker bearer
         `finally` closeHandle hpipe
 #else
@@ -167,7 +167,7 @@ client n msg =
                         fILE_FLAG_OVERLAPPED
                         Nothing
     associateWithIOManager ioManager (Left hpipe)
-    bearer <- getBearer makeNamedPipeBearer (-1) nullTracer hpipe
+    bearer <- getBearer Mx.makeNamedPipeBearer (-1) nullTracer hpipe
     clientWorker bearer n msg
 #else
 client n msg = do
