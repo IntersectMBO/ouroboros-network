@@ -17,7 +17,7 @@ import Control.Monad (when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork (labelThisThread)
 import Control.Monad.Class.MonadSay
-import Control.Monad.Class.MonadST (MonadST, withLiftST)
+import Control.Monad.Class.MonadST (MonadST, stToIO)
 import Control.Monad.Class.MonadThrow (MonadThrow, bracket, catchJust, finally,
            throwIO)
 import Control.Monad.IOSim hiding (liftST)
@@ -183,9 +183,8 @@ rawBearerSendAndReceive :: forall m fd addr
                         -> Maybe addr
                         -> Message
                         -> m Property
-rawBearerSendAndReceive tracer snocket mkrb serverAddr mclientAddr msg =
-  withLiftST $ \liftST -> do
-    let io = liftST . unsafeIOToST
+rawBearerSendAndReceive tracer snocket mkrb serverAddr mclientAddr msg = do
+    let io = stToIO . unsafeIOToST
     let size = BS.length (messageBytes msg)
     retVar <- newEmptyMVar
     senderDone <- newEmptyMVar
