@@ -51,7 +51,6 @@ import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad (when)
-import Control.Monad.Class.MonadSay
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
@@ -595,8 +594,7 @@ makeFDRawBearer tracer = MakeRawBearer go
                     fd_ <- readTVarIO fdVar
                     case fd_ of
                       FDConnected _ conn -> do
-                        bs <- withLiftST $ \liftST ->
-                          liftST . unsafeIOToST $ BS.packCStringLen (castPtr src, srcSize)
+                        bs <- stToIO . unsafeIOToST $ BS.packCStringLen (castPtr src, srcSize)
                         let bsl = LBS.fromStrict bs
                         acWrite (connChannelLocal conn) bsl
                         traceSend $ SentBytes srcSize
@@ -631,8 +629,7 @@ makeFDRawBearer tracer = MakeRawBearer go
                         else do
                           traceRecv Copying
                           let bs = LBS.toStrict lhs
-                          withLiftST $ \liftST ->
-                            liftST . unsafeIOToST $ BS.useAsCStringLen bs $ \(src, srcSize) -> do
+                          stToIO . unsafeIOToST $ BS.useAsCStringLen bs $ \(src, srcSize) -> do
                               copyBytes dst (castPtr src) srcSize
                               return srcSize
                       _ ->
