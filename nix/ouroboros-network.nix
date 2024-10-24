@@ -80,6 +80,9 @@ let
     # package customizations as needed. Where cabal.project is not
     # specific enough, or doesn't allow setting these.
     modules = [
+      (forAllProjectPackages ({ ... }: {
+        ghcOptions = [ "-Werror" "-fno-ignore-asserts" ];
+      }))
       ({ pkgs, ... }: {
         # We impose limit heap size limit when running some of the tests
         # to discover space leaks Once #4698 and #4699 are done we can
