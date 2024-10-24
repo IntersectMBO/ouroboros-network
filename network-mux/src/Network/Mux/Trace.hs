@@ -3,11 +3,11 @@
 {-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE DerivingVia               #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE NamedFieldPuns            #-}
 
 module Network.Mux.Trace
   ( Error (..)
-  , ErrorType (..)
   , handleIOException
   , Trace (..)
   , BearerState (..)
@@ -35,47 +35,46 @@ import Network.Mux.Types
 -- Errors
 --
 
--- | Error type used in across the mux layer.
---
-data Error = Error {
-      errorType :: !ErrorType
-    , errorMsg  :: !String
-    }
-  deriving Generic
-  deriving Show via Quiet Error
-
-
 -- | Enumeration of error conditions.
 --
-data ErrorType = UnknownMiniProtocol
-               -- ^ returned by 'decodeSDUHeader', thrown by 'Bearer'.
-               | DecodeError
-               -- ^ return by 'decodeSDUHeader', thrown by 'Bearer'.
-               | BearerClosed
-               -- ^ thrown by 'Bearer' when received a null byte.
-               | IngressQueueOverRun
-               -- ^ thrown by 'demux' when violating 'maximumIngressQueue'
-               -- byte limit.
-               | InitiatorOnly
-               -- ^ thrown when data arrives on a responder channel when the
-               -- mux was set up as an 'InitiatorApp'.
-               | IOException IOException
-               -- ^ 'IOException' thrown by
-               | SDUReadTimeout
-               -- ^ thrown when reading of a single SDU takes too long
-               | SDUWriteTimeout
-               -- ^ thrown when writing a single SDU takes too long
-               | Shutdown !(Maybe ErrorType)
-               -- ^ Result of runMiniProtocol's completionAction in case of
-               -- an error or mux being closed while a mini-protocol was
-               -- still running, this is not a clean exit.
-               | CleanShutdown
-               -- ^ Mux stopped by 'Network.Mux.stop'
-               deriving (Show, Eq)
+data Error = UnknownMiniProtocol MiniProtocolNum
+           -- ^ returned by 'decodeSDUHeader', thrown by 'Bearer'.
+           | BearerClosed String
+           -- ^ thrown by 'Bearer' when received a null byte.
+           | IngressQueueOverRun MiniProtocolNum MiniProtocolDir
+           -- ^ thrown by 'demux' when violating 'maximumIngressQueue'
+           -- byte limit.
+           | InitiatorOnly MiniProtocolNum
+           -- ^ thrown when data arrives on a responder channel when the
+           -- mux was set up as an 'InitiatorApp'.
+           | IOException IOException String
+           -- ^ 'IOException' thrown by
+
+           | SDUDecodeError String
+           -- ^ return by 'decodeSDUHeader', thrown by 'Bearer'.
+           | SDUReadTimeout
+           -- ^ thrown when reading of a single SDU takes too long
+           | SDUWriteTimeout
+           -- ^ thrown when writing a single SDU takes too long
+
+           | Shutdown (Maybe SomeException) Status
+           -- ^ Result of runMiniProtocol's completionAction in case of
+           -- an error or mux being closed while a mini-protocol was
+           -- still running, this is not a clean exit.
+           deriving Show
 
 instance Exception Error where
-    displayException Error{errorType, errorMsg}
-      = show errorType ++ " " ++ show errorMsg
+  displayException = \case
+    UnknownMiniProtocol pnum      -> printf "unknown mini-protocol %s" (show pnum)
+    BearerClosed msg              -> printf "bearer closed: %s" (show msg)
+    IngressQueueOverRun pnum pdir -> printf "ingress queue overrun for %s %s " (show pnum) (show pdir)
+    InitiatorOnly pnum            -> printf "received data on initiator only protocol %s" (show pnum)
+    IOException e msg             -> displayException e ++ ": " ++ msg
+    SDUDecodeError msg            -> printf "SDU decode error: %s" msg
+    SDUReadTimeout                -> "SDU read timeout expired"
+    SDUWriteTimeout               -> "SDU write timeout expired"
+    Shutdown Nothing st           -> printf "mux shutdown error in state %s" (show st)
+    Shutdown (Just e) st          -> printf "mux shutdown error (%s) in state %s " (displayException e) (show st)
 
 -- | Handler for 'IOException's which wraps them in 'Error'.
 --
@@ -84,10 +83,7 @@ instance Exception Error where
 -- * 'pipeAsBearer'
 --
 handleIOException :: MonadThrow m => String -> IOException -> m a
-handleIOException errorMsg e = throwIO Error {
-    errorType  = IOException e,
-    errorMsg   = '(' : errorMsg ++ ")"
-  }
+handleIOException msg e = throwIO (IOException e msg)
 
 
 --

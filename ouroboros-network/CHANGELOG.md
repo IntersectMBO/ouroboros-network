@@ -5,6 +5,7 @@
 ### Breaking changes
 
 * Removed deprecated `ReconnectDelay` type alias.
+* Addapted to `network-mux` changes in https://github.com/IntersectMBO/ouroboros-network/pull/4999
 * Addapted to `network-mux` changes in https://github.com/IntersectMBO/ouroboros-network/pull/4997
 
 ### Non-Breaking changes

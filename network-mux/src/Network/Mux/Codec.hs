@@ -45,7 +45,7 @@ encodeSDU sdu =
 decodeSDU :: BL.ByteString -> Either Error SDU
 decodeSDU buf =
     case Bin.runGetOrFail dec buf of
-         Left  (_, _, e)  -> Left $ Error DecodeError e
+         Left  (_, _, e)  -> Left $ SDUDecodeError e
          Right (_, _, h) ->
              Right $ SDU {
                    msHeader = h

@@ -19,6 +19,7 @@ module Network.Mux.Types
   , Mode (..)
   , HasInitiator
   , HasResponder
+  , Status (..)
   , IngressQueue
   , MiniProtocolIx
   , MiniProtocolDir (..)
@@ -42,7 +43,7 @@ module Network.Mux.Types
 
 import Prelude hiding (read)
 
-import Control.Exception (Exception)
+import Control.Exception (Exception, SomeException)
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
 import Data.Ix (Ix (..))
@@ -144,6 +145,26 @@ deriving instance Eq (MiniProtocolDirection (mode :: Mode))
 deriving instance Ord (MiniProtocolDirection (mode :: Mode))
 
 --
+-- Mux status
+--
+
+data Status
+    -- | Initial mux state, mux is ready to accept requests.  It does not
+    -- indicate weather mux thread was started or not.
+    = Ready
+
+    -- | Mux failed with 'SomeException'
+    | Failed SomeException
+
+    -- | Mux is being stopped; mux will not accept any new mini-protocols to
+    -- start.
+    | Stopping
+
+     -- | Mux stopped.
+    | Stopped
+    deriving Show
+
+--
 -- Mux internal types
 --
 
@@ -222,6 +243,8 @@ data Bearer m = Bearer {
 newtype SDUSize = SDUSize { getSDUSize :: Word16 }
   deriving Generic
   deriving Show via Quiet SDUSize
+  deriving (Eq, Ord, Enum)
+  deriving (Num, Real, Integral)
 
 -- | A channel which wraps each message as an 'SDU' using giving
 -- 'MiniProtocolNum' and 'MiniProtocolDir'.

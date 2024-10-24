@@ -401,10 +401,10 @@ prop_socket_recv_error f rerr =
               Left e  ->
                   case fromException e of
                         Just me -> return $
-                            case Mx.errorType me of
-                                 Mx.BearerClosed -> rerr === RecvSocketClosed
+                            case me of
+                                 Mx.BearerClosed {} -> rerr === RecvSocketClosed
                                  Mx.SDUReadTimeout  -> rerr === RecvSDUTimeout
-                                 _                  -> counterexample (show $ Mx.errorType me) False
+                                 _                  -> counterexample (show me) False
                         Nothing -> return $ counterexample (show e) False
               Right _ -> return $ counterexample "expected error" False
 
@@ -471,10 +471,10 @@ prop_socket_send_error rerr =
               Left e  ->
                   case fromException e of
                         Just me -> return $
-                            case Mx.errorType me of
-                                 Mx.IOException _   -> rerr === SendSocketClosed
+                            case me of
+                                 Mx.IOException {}  -> rerr === SendSocketClosed
                                  Mx.SDUWriteTimeout -> rerr === SendSDUTimeout
-                                 _                  -> property False
+                                 _                  -> counterexample (show me) False
                         Nothing -> return $ counterexample (show e) False
               Right _ -> return $ property False
 

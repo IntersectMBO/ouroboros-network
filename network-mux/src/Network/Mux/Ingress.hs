@@ -14,7 +14,6 @@ module Network.Mux.Ingress
 import Data.Array
 import Data.ByteString.Lazy qualified as BL
 import Data.List (nub)
-import Text.Printf
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad
@@ -24,7 +23,7 @@ import Control.Monad.Class.MonadTimer.SI hiding (timeout)
 
 import Network.Mux.Timeout
 import Network.Mux.Trace
-import Network.Mux.Types
+import Network.Mux.Types as Mx
 
 
 flipMiniProtocolDir :: MiniProtocolDir -> MiniProtocolDir
@@ -104,26 +103,22 @@ demuxer ptcls bearer =
   let !dispatchTable = setupDispatchTable ptcls in
   withTimeoutSerial $ \timeout ->
   forever $ do
-    (sdu, _) <- Network.Mux.Types.read bearer timeout
+    (sdu, _) <- Mx.read bearer timeout
     -- say $ printf "demuxing sdu on mid %s mode %s lenght %d " (show $ msId sdu) (show $ msDir sdu)
     --             (BL.length $ msBlob sdu)
     case lookupMiniProtocol dispatchTable (msNum sdu)
                             -- Notice the mode reversal, ResponderDir is
                             -- delivered to InitiatorDir and vice versa:
                             (flipMiniProtocolDir $ msDir sdu) of
-      Nothing   -> throwIO (Error UnknownMiniProtocol
-                           ("id = " ++ show (msNum sdu)))
+      Nothing   -> throwIO (UnknownMiniProtocol (msNum sdu))
       Just MiniProtocolDirUnused ->
-                   throwIO (Error InitiatorOnly
-                           ("id = " ++ show (msNum sdu)))
+                   throwIO (InitiatorOnly (msNum sdu))
       Just (MiniProtocolDispatchInfo q qMax) ->
         atomically $ do
           buf <- readTVar q
           if BL.length buf + BL.length (msBlob sdu) <= fromIntegral qMax
               then writeTVar q $ BL.append buf (msBlob sdu)
-              else throwSTM $ Error IngressQueueOverRun
-                                (printf "Ingress Queue overrun on %s %s"
-                                (show $ msNum sdu) (show $ msDir sdu))
+              else throwSTM $ IngressQueueOverRun (msNum sdu) (msDir sdu)
 
 lookupMiniProtocol :: MiniProtocolDispatch m
                    -> MiniProtocolNum

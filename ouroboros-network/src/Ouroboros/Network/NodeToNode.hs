@@ -635,27 +635,25 @@ remoteNetworkErrorPolicy = ErrorPolicies {
           -- the connection was unexpectedly closed, we suspend the peer for
           -- a 'shortDelay'
         , ErrorPolicy
-            $ \(e :: Mx.Error)
-                  -> case Mx.errorType e of
-                        Mx.UnknownMiniProtocol  -> Just theyBuggyOrEvil
-                        Mx.DecodeError          -> Just theyBuggyOrEvil
-                        Mx.IngressQueueOverRun  -> Just theyBuggyOrEvil
-                        Mx.InitiatorOnly        -> Just theyBuggyOrEvil
+            $ \e -> case e of
+              Mx.UnknownMiniProtocol {} -> Just theyBuggyOrEvil
+              Mx.IngressQueueOverRun {} -> Just theyBuggyOrEvil
+              Mx.InitiatorOnly {}       -> Just theyBuggyOrEvil
 
-                        -- in case of bearer closed / or IOException we suspend
-                        -- the peer for a short time
-                        --
-                        -- TODO: an exponential backoff would be nicer than a fixed 20s
-                        -- TODO: right now we cannot suspend just the
-                        -- 'responder'.  If a 'responder' throws 'MuxError' we
-                        -- might not want to shutdown the consumer (which is
-                        -- using different connection), as we do below:
-                        Mx.BearerClosed              -> Just (SuspendPeer veryShortDelay shortDelay)
-                        Mx.IOException{}             -> Just (SuspendPeer veryShortDelay shortDelay)
-                        Mx.SDUReadTimeout            -> Just (SuspendPeer veryShortDelay shortDelay)
-                        Mx.SDUWriteTimeout           -> Just (SuspendPeer veryShortDelay shortDelay)
-                        Mx.Shutdown {}               -> Just (SuspendPeer veryShortDelay shortDelay)
-                        Mx.CleanShutdown             -> Just (SuspendPeer veryShortDelay shortDelay)
+              -- in case of bearer closed / or IOException we suspend
+              -- the peer for a short time
+              --
+              -- TODO: an exponential backoff would be nicer than a fixed 20s
+              -- TODO: right now we cannot suspend just the
+              -- 'responder'.  If a 'responder' throws 'MuxError' we
+              -- might not want to shutdown the consumer (which is
+              -- using different connection), as we do below:
+              Mx.BearerClosed {}           -> Just (SuspendPeer veryShortDelay shortDelay)
+              Mx.IOException {}            -> Just (SuspendPeer veryShortDelay shortDelay)
+              Mx.SDUDecodeError {}         -> Just theyBuggyOrEvil
+              Mx.SDUReadTimeout            -> Just (SuspendPeer veryShortDelay shortDelay)
+              Mx.SDUWriteTimeout           -> Just (SuspendPeer veryShortDelay shortDelay)
+              Mx.Shutdown {}               -> Just (SuspendPeer veryShortDelay shortDelay)
 
         , ErrorPolicy
             $ \(e :: Mx.RuntimeError)

@@ -149,11 +149,11 @@ type ConnectionManagerMonad m =
 debugMuxErrorRethrowPolicy :: RethrowPolicy
 debugMuxErrorRethrowPolicy =
     mkRethrowPolicy $
-      \_ Mux.Error { Mux.errorType } ->
-        case errorType of
-          Mux.IOException _ -> ShutdownPeer
-          Mux.BearerClosed  -> ShutdownPeer
-          _                 -> ShutdownNode
+      \_ e ->
+        case e of
+          Mux.IOException {}  -> ShutdownPeer
+          Mux.BearerClosed {} -> ShutdownPeer
+          _                   -> ShutdownNode
 
 debugIOErrorRethrowPolicy :: RethrowPolicy
 debugIOErrorRethrowPolicy =

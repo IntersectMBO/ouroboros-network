@@ -184,8 +184,7 @@ newAttenuatedChannel tr Attenuation { aReadAttenuation,
           case aReadAttenuation t 1 of
             ( d, _       ) -> traceWith tr AttChannRemoteClose
                            >> threadDelay d
-                           >> throwIO (Error BearerClosed
-                                             "closed when reading data")
+                           >> throwIO (BearerClosed "closed when reading data")
         MsgBytes bs ->
           case aReadAttenuation t (BL.length bs) of
             ( d, Success ) -> threadDelay d
@@ -273,7 +272,7 @@ attenuationChannelAsBearer sduSize sduTimeout muxTracer chan =
       case mbuf of
         Nothing -> do
           traceWith muxTracer TraceSDUReadTimeoutException
-          throwIO (Error SDUReadTimeout "Mux SDU Timeout")
+          throwIO SDUReadTimeout
 
         Just buf -> do
           let (hbuf, payload) = BL.splitAt 8 buf
