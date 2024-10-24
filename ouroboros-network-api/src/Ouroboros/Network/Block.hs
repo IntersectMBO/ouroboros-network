@@ -48,10 +48,7 @@ module Ouroboros.Network.Block
   , getTipPoint
   , getTipBlockNo
   , getTipSlotNo
-  , getLegacyTipBlockNo
   , tipFromHeader
-  , legacyTip
-  , toLegacyTip
   , encodeTip
   , decodeTip
   , ChainUpdate (..)
@@ -291,30 +288,6 @@ tipFromHeader a = Tip headerFieldSlot headerFieldHash headerFieldBlockNo
                  } = getHeaderFields a
 
 
--- | Get the block number associated with a 'Tip', or 'genesisBlockNo' otherwise
---
--- TODO: This is /wrong/. There /is/ no block number if we are at genesis
--- ('genesisBlockNo' is the block number of the first block on the chain).
--- Usage of this function should be phased out.
-getLegacyTipBlockNo :: Tip b -> BlockNo
-getLegacyTipBlockNo = fromWithOrigin genesisBlockNo . getTipBlockNo
-  where
-    genesisBlockNo = BlockNo 0
-{-# DEPRECATED getLegacyTipBlockNo "Use getTipBlockNo" #-}
-
--- | Translate to the format it was before (to maintain binary compatibility)
-toLegacyTip :: Tip b -> (Point b, BlockNo)
-toLegacyTip tip = (getTipPoint tip, getLegacyTipBlockNo tip)
-{-# DEPRECATED toLegacyTip "Use getTipPoint and getTipBlockNo" #-}
-
--- | Inverse of 'toLegacyTip'
---
--- TODO: This should be phased out, since it makes no sense to have a
--- 'BlockNo' for the genesis point.
-legacyTip :: Point b -> BlockNo -> Tip b
-legacyTip GenesisPoint     _ = TipGenesis -- Ignore block number
-legacyTip (BlockPoint s h) b = Tip s h b
-{-# DEPRECATED legacyTip "Use tipFromHeader instead" #-}
 
 encodeTip :: (HeaderHash blk -> Encoding)
           -> (Tip        blk -> Encoding)

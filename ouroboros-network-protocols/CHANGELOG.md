@@ -4,6 +4,11 @@
 
 ### Breaking changes
 
+* Removed deprecated APIs:
+  * `chainSyncClientNull`
+  * `localStateQueryClientNull`
+  * `localTxSubmissionClientNull`
+  * `TxSizeInBytes`
 * Use `typed-protocols-0.3.0.0`.
 
 ### Non-breaking changes

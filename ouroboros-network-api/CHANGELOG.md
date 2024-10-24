@@ -4,6 +4,11 @@
 
 ### Breaking changes
 
+* Removed deprecated APIs
+  * `getLegacyTipBlockNo`
+  * `legacyTip`
+  * `toLegacyTip`
+
 ### Non-breaking changes
 
 ## 0.11.0.0 -- 2024-10-17

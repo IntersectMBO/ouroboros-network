@@ -21,7 +21,6 @@ module Ouroboros.Network.Protocol.TxSubmission2.Client
   , ClientStIdle (..)
   , ClientStTxIds (..)
   , ClientStTxs (..)
-  , TxSizeInBytes
   , SingBlockingStyle (..)
   , BlockingReplyList (..)
     -- * Execution as a typed protocol

@@ -4,8 +4,6 @@
 
 module Ouroboros.Network.Channel
   ( Channel (..)
-  , toChannel
-  , fromChannel
   , module Mx
   , fixedInputChannel
   , createConnectedBufferedChannelsUnbounded
@@ -14,22 +12,11 @@ module Ouroboros.Network.Channel
   , createPipelineTestChannels
   ) where
 
-import Data.ByteString.Lazy qualified as LBS
 import Numeric.Natural
 
 import Control.Concurrent.Class.MonadSTM.Strict
 
 import Network.Mux.Channel as Mx
-
-fromChannel :: Mx.ByteChannel m
-            -> Channel m LBS.ByteString
-fromChannel = id
-{-# DEPRECATED fromChannel "Not needed, use `id` instead." #-}
-
-toChannel :: Channel m LBS.ByteString
-          -> Mx.ByteChannel m
-toChannel = id
-{-# DEPRECATED toChannel "Not needed, use `id` instead." #-}
 
 
 -- | A 'Channel' with a fixed input, and where all output is discarded.
