@@ -62,7 +62,7 @@ namedPipeAsBearer sduSize tracer h =
         then do
           when waitingOnNextHeader
             $ threadDelay 1
-          throwIO $ Mx.Error Mx.BearerClosed (show h ++
+          throwIO $ Mx.BearerClosed (show h ++
               " closed when reading data, waiting on next header " ++
               show waitingOnNextHeader)
         else do

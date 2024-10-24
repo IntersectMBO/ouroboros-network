@@ -30,6 +30,7 @@ import Data.ByteString.Lazy.Char8 qualified as BL8 (pack)
 import Data.List (dropWhileEnd, nub)
 import Data.List qualified as List
 import Data.Map qualified as M
+import Data.Maybe (isNothing)
 import Data.Tuple (swap)
 import Data.Word
 import System.Random.SplitMix qualified as SM
@@ -235,8 +236,8 @@ instance Show InvalidSDU where
                     (isRealLength a)
                     (isPattern a)
 
-data ArbitrarySDU = ArbitraryInvalidSDU InvalidSDU Mx.ErrorType
-                  | ArbitraryValidSDU DummyPayload (Maybe Mx.ErrorType)
+data ArbitrarySDU = ArbitraryInvalidSDU InvalidSDU Mx.Error
+                  | ArbitraryValidSDU DummyPayload (Maybe Mx.Error)
                   deriving Show
 
 instance Arbitrary ArbitrarySDU where
@@ -258,7 +259,7 @@ instance Arbitrary ArbitrarySDU where
             -- This SDU is still considered valid, since the header itself will
             -- not cause a trouble, the error will be triggered by the fact that
             -- it is sent as a single message.
-            return $ ArbitraryValidSDU (DummyPayload pl) (Just Mx.IngressQueueOverRun)
+            return $ ArbitraryValidSDU (DummyPayload pl) (Just (Mx.IngressQueueOverRun (Mx.MiniProtocolNum 0) Mx.InitiatorDir))
 
         unknownMiniProtocol = do
             ts  <- arbitrary
@@ -269,7 +270,7 @@ instance Arbitrary ArbitrarySDU where
 
             return $ ArbitraryInvalidSDU (InvalidSDU (Mx.RemoteClockModel ts) (mid .|. mode) len
                                           (8 + fromIntegral len) p)
-                                         Mx.UnknownMiniProtocol
+                                         (Mx.UnknownMiniProtocol (Mx.MiniProtocolNum 0))
         invalidLenght = do
             ts  <- arbitrary
             mid <- arbitrary
@@ -278,7 +279,7 @@ instance Arbitrary ArbitrarySDU where
             p <- arbitrary
 
             return $ ArbitraryInvalidSDU (InvalidSDU (Mx.RemoteClockModel ts) mid len realLen p)
-                                         Mx.DecodeError
+                                         (Mx.SDUDecodeError "")
 
 instance Arbitrary Mx.BearerState where
      arbitrary = elements [Mx.Mature, Mx.Dead]
@@ -1051,7 +1052,7 @@ prop_demux_sdu a = do
     return $ tabulate "SDU type" [stateLabel a] $
              tabulate "SDU Violation " [violationLabel a] r
   where
-    run (ArbitraryValidSDU sdu (Just Mx.IngressQueueOverRun)) = do
+    run (ArbitraryValidSDU sdu (Just Mx.IngressQueueOverRun {})) = do
         stopVar <- newEmptyTMVarIO
 
         -- To trigger MuxIngressQueueOverRun we use a special test protocol
@@ -1075,9 +1076,12 @@ prop_demux_sdu a = do
         case res of
             Left e  ->
                 case fromException e of
-                    Just me -> return $ Mx.errorType me === Mx.IngressQueueOverRun
-                    Nothing -> return $ property False
-            Right _ -> return $ property False
+                    Just me ->
+                      return $ case me of
+                        Mx.IngressQueueOverRun {} -> property True
+                        _ -> counterexample (show me) False
+                    Nothing -> return $ counterexample (show e) False
+            Right _ -> return $ counterexample "expected an exception" False
 
     run (ArbitraryValidSDU sdu err_m) = do
         stopVar <- newEmptyTMVarIO
@@ -1100,10 +1104,11 @@ prop_demux_sdu a = do
             Left e  ->
                 case fromException e of
                     Just me -> case err_m of
-                                    Just err -> return $ Mx.errorType me === err
-                                    Nothing  -> return $ property False
-                    Nothing -> return $ property False
-            Right _ -> return $ err_m === Nothing
+                                    Just err -> return $ counterexample (show me)
+                                                       $ me `compareErrors` err
+                                    Nothing  -> return $ counterexample (show me) False
+                    Nothing -> return $ counterexample (show e) False
+            Right _ -> return $ counterexample "expected an exception" $ isNothing err_m
 
     run (ArbitraryInvalidSDU badSdu err) = do
         stopVar <- newEmptyTMVarIO
@@ -1130,8 +1135,9 @@ prop_demux_sdu a = do
         case res of
             Left e  ->
                 case fromException e of
-                    Just me -> return $ Mx.errorType me === err
-                    Nothing -> return $ counterexample ("unexpected: " ++ show e) False
+                    Just me -> return $ counterexample (show me)
+                                      $ me `compareErrors` err
+                    Nothing -> return $ counterexample (show e) False
             Right _ -> return $ counterexample "expected an exception" False
 
     plainServer serverApp server_mp = do
@@ -1190,18 +1196,18 @@ prop_demux_sdu a = do
     violationLabel (ArbitraryValidSDU _ err_m) = sduViolation err_m
     violationLabel (ArbitraryInvalidSDU _ err) = sduViolation $ Just err
 
-    sduViolation (Just Mx.UnknownMiniProtocol) = "unknown miniprotocol"
-    sduViolation (Just Mx.DecodeError        ) = "decode error"
-    sduViolation (Just Mx.IngressQueueOverRun) = "ingress queue overrun"
-    sduViolation (Just _                     ) = "unknown violation"
-    sduViolation Nothing                       = "none"
+    sduViolation (Just Mx.UnknownMiniProtocol {}) = "unknown miniprotocol"
+    sduViolation (Just Mx.SDUDecodeError {})      = "decode error"
+    sduViolation (Just Mx.IngressQueueOverRun {}) = "ingress queue overrun"
+    sduViolation (Just _)                         = "unknown violation"
+    sduViolation Nothing                          = "none"
 
 prop_demux_sdu_sim :: ArbitrarySDU
                    -> Property
 prop_demux_sdu_sim badSdu =
     let r_e =  runSimStrictShutdown $ prop_demux_sdu badSdu in
     case r_e of
-         Left  _ -> property False
+         Left  e -> counterexample (show e) False
          Right r -> r
 
 prop_demux_sdu_io :: ArbitrarySDU
@@ -1291,7 +1297,7 @@ dummyAppToChannel DummyApp {daAction, daRunTime} = \_ -> do
     threadDelay daRunTime
     case daAction of
          DummyAppSucceed -> return ((), Nothing)
-         DummyAppFail    -> throwIO $ Mx.Error (Mx.Shutdown Nothing) "App Fail"
+         DummyAppFail    -> throwIO $ Mx.Shutdown Nothing Mx.Ready
 
 data DummyRestartingApps =
     DummyRestartingResponderApps [(DummyApp, Int)]
@@ -1326,7 +1332,7 @@ dummyRestartingAppToChannel (app, r) = \_ -> do
     threadDelay $ daRunTime app
     case daAction app of
          DummyAppSucceed -> return ((app, r), Nothing)
-         DummyAppFail    -> throwIO $ Mx.Error (Mx.Shutdown Nothing) "App Fail"
+         DummyAppFail    -> throwIO $ Mx.Shutdown Nothing Mx.Ready
 
 
 appToInfo :: Mx.MiniProtocolDirection mode -> DummyApp -> MiniProtocolInfo mode
@@ -1893,11 +1899,11 @@ close_experiment
               (CloseOnWrite, Right (Left resps), Left serverError)
                  | expected <- expectedResps (List.length resps)
                  , resps == expected
-                 , Just (Mx.Error errType _) <- fromException (collapsE serverError)
-                 , case errType of
-                     Mx.Shutdown _   -> True
-                     Mx.BearerClosed -> True
-                     _               -> False
+                 , Just e <- fromException (collapsE serverError)
+                 , case e of
+                     Mx.Shutdown {}     -> True
+                     Mx.BearerClosed {} -> True
+                     _                  -> False
                 -> return $ property True
 
                  | expected <- expectedResps (List.length resps)
@@ -1918,11 +1924,11 @@ close_experiment
               (CloseOnRead, Right (Left resps), Left serverError)
                  | expected <- expectedResps (List.length resps)
                  , resps == expected
-                 , Just (Mx.Error errType _) <- fromException (collapsE serverError)
-                 , case errType of
-                     Mx.Shutdown _   -> True
-                     Mx.BearerClosed -> True
-                     _               -> False
+                 , Just e <- fromException (collapsE serverError)
+                 , case e of
+                     Mx.Shutdown {}     -> True
+                     Mx.BearerClosed {} -> True
+                     _                  -> False
                 -> return $ property True
 
                  | expected <- expectedResps (List.length resps)
@@ -1944,7 +1950,8 @@ close_experiment
               -- this fails on Windows for ~1% of cases
               (_, Right _, Left (Right serverError))
                  | iotest
-                 , Just (Mx.Error (Mx.Shutdown (Just (Mx.IOException {}))) _) <- fromException serverError
+                 , Just (Mx.Shutdown (Just e) _) <- fromException serverError
+                 , Just Mx.IOException {} <- fromException e
                 -> return $ label ("server-error: " ++ show fault) True
 #endif
 
@@ -2143,3 +2150,16 @@ prop_mux_close_sim fault (Positive sduSize_) reqs fn acc =
         aWriteAttenuation = Nothing
       }
 
+
+-- compare error types, not the payloads
+compareErrors :: Mx.Error -> Mx.Error -> Bool
+compareErrors Mx.UnknownMiniProtocol {} Mx.UnknownMiniProtocol {} = True
+compareErrors Mx.BearerClosed {}        Mx.BearerClosed {}        = True
+compareErrors Mx.IngressQueueOverRun {} Mx.IngressQueueOverRun {} = True
+compareErrors Mx.InitiatorOnly {}       Mx.InitiatorOnly {}       = True
+compareErrors Mx.IOException {}         Mx.IOException {}         = True
+compareErrors Mx.SDUDecodeError {}      Mx.SDUDecodeError {}      = True
+compareErrors Mx.SDUReadTimeout {}      Mx.SDUReadTimeout {}      = True
+compareErrors Mx.SDUWriteTimeout {}     Mx.SDUWriteTimeout {}     = True
+compareErrors Mx.Shutdown {}            Mx.Shutdown {}            = True
+compareErrors _ _                                                 = False

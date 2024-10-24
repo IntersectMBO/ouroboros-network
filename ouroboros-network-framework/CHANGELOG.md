@@ -4,6 +4,7 @@
 
 ### Breaking changes
 
+* Addapted to `network-mux` changes in https://github.com/IntersectMBO/ouroboros-network/pull/4999
 * Addapted to `network-mux` changes in https://github.com/IntersectMBO/ouroboros-network/pull/4997
 * Removed deprecated `Ouroboros.Network.Channel.{to,from}Channel` functions.
 

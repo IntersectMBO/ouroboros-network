@@ -101,7 +101,7 @@ pipeAsBearer sduSize tracer channel =
           buf <- readHandle channel l
                     `catch` Mx.handleIOException "readHandle errored"
           if BL.null buf
-              then throwIO $ Mx.Error Mx.BearerClosed "Pipe closed when reading data"
+              then throwIO $ Mx.BearerClosed "Pipe closed when reading data"
               else do
                   traceWith tracer $ Mx.TraceRecvEnd (fromIntegral $ BL.length buf)
                   recvLen' (l - fromIntegral (BL.length buf)) (buf : bufs)

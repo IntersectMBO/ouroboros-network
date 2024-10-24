@@ -424,28 +424,26 @@ networkErrorPolicies = ErrorPolicies
 
         -- deserialisation failure of a message from a trusted node
       , ErrorPolicy
-         $ \(_ :: DecoderFailure)
-               -> Just ourBug
+          $ \(_ :: DecoderFailure)
+                -> Just ourBug
 
       , ErrorPolicy
-          $ \(e :: Mx.Error)
-                -> case Mx.errorType e of
-                      Mx.UnknownMiniProtocol       -> Just ourBug
-                      Mx.DecodeError               -> Just ourBug
-                      Mx.IngressQueueOverRun       -> Just ourBug
-                      Mx.InitiatorOnly             -> Just ourBug
-                      Mx.Shutdown {}               -> Just ourBug
-                      Mx.CleanShutdown             -> Just ourBug
+          $ \e -> case e of
+            Mx.UnknownMiniProtocol {}    -> Just ourBug
+            Mx.IngressQueueOverRun {}    -> Just ourBug
+            Mx.InitiatorOnly {}          -> Just ourBug
+            Mx.Shutdown {}               -> Just ourBug
 
-                      -- in case of bearer closed / or IOException we suspend
-                      -- the peer for a short time
-                      --
-                      -- TODO: the same notes apply as to
-                      -- 'NodeToNode.networkErrorPolicies'
-                      Mx.BearerClosed         -> Just (SuspendPeer shortDelay shortDelay)
-                      Mx.IOException{}        -> Just (SuspendPeer shortDelay shortDelay)
-                      Mx.SDUReadTimeout       -> Just (SuspendPeer shortDelay shortDelay)
-                      Mx.SDUWriteTimeout      -> Just (SuspendPeer shortDelay shortDelay)
+            -- in case of bearer closed / or IOException we suspend
+            -- the peer for a short time
+            --
+            -- TODO: the same notes apply as to
+            -- 'NodeToNode.networkErrorPolicies'
+            Mx.BearerClosed {}      -> Just (SuspendPeer shortDelay shortDelay)
+            Mx.IOException {}       -> Just (SuspendPeer shortDelay shortDelay)
+            Mx.SDUDecodeError {}    -> Just ourBug
+            Mx.SDUReadTimeout       -> Just (SuspendPeer shortDelay shortDelay)
+            Mx.SDUWriteTimeout      -> Just (SuspendPeer shortDelay shortDelay)
 
       , ErrorPolicy
           $ \(e :: Mx.RuntimeError)

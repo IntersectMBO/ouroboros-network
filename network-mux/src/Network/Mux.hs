@@ -40,7 +40,6 @@ module Network.Mux
   , stopped
     -- * Errors
   , Error (..)
-  , ErrorType (..)
   , RuntimeError (..)
     -- * Tracing
   , traceBearerState
@@ -109,22 +108,6 @@ stopped Mux { muxStatus } =
       Failed err -> return (Just err)
       Stopping   -> retry
       Stopped    -> return Nothing
-
-
-data Status
-    -- | Initial mux state, mux is ready to accept requests.  It does not
-    -- indicate weather mux thread was started or not.
-    = Ready
-
-    -- | Mux failed with 'SomeException'
-    | Failed SomeException
-
-    -- | Mux is being stopped; mux will not accept any new mini-protocols to
-    -- start.
-    | Stopping
-
-     -- | Mux stopped.
-    | Stopped
 
 
 -- | Create a mux handle in `Mode` and register mini-protocols.
@@ -434,7 +417,7 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
           throwIO e
 
         -- These two cover internal and protocol errors.  The muxer exception is
-        -- always fatal.  The demuxer exception 'Error BearerClosed' when all
+        -- always fatal.  The demuxer exception 'BearerClosed' when all
         -- mini-protocols stopped indicates a normal shutdown and thus it is not
         -- propagated.
         --
@@ -450,7 +433,7 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
           r <- atomically $ do
             size <- JobPool.readGroupSize jobpool MiniProtocolJob
             case size of
-              0  | Just (Error BearerClosed _) <- fromException e
+              0  | Just BearerClosed {} <- fromException e
                 -> writeTVar muxStatus Stopped
                 >> return True
               _ -> writeTVar muxStatus (Failed e)
@@ -687,8 +670,8 @@ runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue , muxStatus}
   = atomically $ do
       st <- readTVar muxStatus
       case st of
-        Stopping -> throwSTM (Error  (Shutdown Nothing) "mux stopping")
-        Stopped  -> throwSTM (Error  (Shutdown Nothing) "mux stopped")
+        Stopping -> throwSTM (Shutdown Nothing st)
+        Stopped  -> throwSTM (Shutdown Nothing st)
         _        -> return ()
 
       -- Make sure no thread is currently running, and update the status to
@@ -727,14 +710,9 @@ runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue , muxStatus}
       case st of
            Ready    -> readTMVar completionVar
            Stopping -> readTMVar completionVar
-                   <|> return (Left $ toException (Error (Shutdown Nothing) "mux stopping"))
+                   <|> return (Left $ toException (Shutdown Nothing st))
            Stopped  -> readTMVar completionVar
-                   <|> return (Left $ toException (Error (Shutdown Nothing) "mux stopped"))
+                   <|> return (Left $ toException (Shutdown Nothing st))
            Failed e -> readTMVar completionVar
-                   <|> return (Left $ toException $
-                         case fromException e of
-                           Just e'@Error { errorType } ->
-                             e' { errorType = Shutdown (Just errorType) }
-                           Nothing ->
-                             Error (Shutdown Nothing) (show e))
+                   <|> return (Left $ toException (Shutdown (Just e) st))
 

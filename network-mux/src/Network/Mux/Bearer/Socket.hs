@@ -71,7 +71,7 @@ socketAsBearer sduSize sduTimeout tracer sd =
           case r_m of
                 Nothing -> do
                     traceWith tracer Mx.TraceSDUReadTimeoutException
-                    throwIO $ Mx.Error Mx.SDUReadTimeout "Mux SDU Timeout"
+                    throwIO $ Mx.SDUReadTimeout
                 Just r -> return r
 
       recvRem :: BL.ByteString -> IO (Mx.SDU, Time)
@@ -111,7 +111,7 @@ socketAsBearer sduSize sduTimeout tracer sd =
                        - a clean up and exit.
                        -}
                       threadDelay 1
-                  throwIO $ Mx.Error Mx.BearerClosed (show sd ++
+                  throwIO $ Mx.BearerClosed (show sd ++
                       " closed when reading data, waiting on next header " ++
                       show waitingOnNxtHeader)
               else do
@@ -135,7 +135,7 @@ socketAsBearer sduSize sduTimeout tracer sd =
           case r of
                Nothing -> do
                     traceWith tracer Mx.TraceSDUWriteTimeoutException
-                    throwIO $ Mx.Error Mx.SDUWriteTimeout "Mux SDU Timeout"
+                    throwIO Mx.SDUWriteTimeout
                Just _ -> do
                    traceWith tracer Mx.TraceSendEnd
 #if defined(linux_HOST_OS) && defined(MUX_TRACE_TCPINFO)

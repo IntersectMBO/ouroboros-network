@@ -362,10 +362,10 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
 debugMuxErrorRethrowPolicy :: RethrowPolicy
 debugMuxErrorRethrowPolicy =
     mkRethrowPolicy $
-      \_ Mx.Error { Mx.errorType } ->
-        case errorType of
-          Mx.IOException _   -> ShutdownPeer
-          Mx.BearerClosed    -> ShutdownPeer
+    \_ e ->
+        case e of
+          Mx.IOException {}  -> ShutdownPeer
+          Mx.BearerClosed {} -> ShutdownPeer
           Mx.SDUReadTimeout  -> ShutdownPeer
           Mx.SDUWriteTimeout -> ShutdownPeer
           _                  -> ShutdownNode
