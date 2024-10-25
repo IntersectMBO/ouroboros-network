@@ -469,8 +469,8 @@ with
           return (Just connId, state')
 
         CommitRemote connId -> do
-          res <- unregisterInboundConnection connectionManager
-                                             (remoteAddress connId)
+          res <- releaseInboundConnection connectionManager
+                                          (remoteAddress connId)
           traceWith tracer $ TrDemotedToColdRemote connId res
           case res of
             UnsupportedState {} -> do

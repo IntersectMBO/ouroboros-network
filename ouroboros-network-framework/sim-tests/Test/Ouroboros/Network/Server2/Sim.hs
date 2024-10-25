@@ -873,7 +873,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
                                        case fromException e of
                                          Just SomeAsyncException {} -> Nothing
                                          _                          -> Just e)
-                          $ requestOutboundConnection cm remoteAddr
+                          $ acquireOutboundConnection cm remoteAddr
             case connHandle of
               Left _ ->
                 go connMap
@@ -888,7 +888,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
               m <- readTVar connVar
               check (Map.member (connId remoteAddr) m)
               writeTVar connVar (Map.delete (connId remoteAddr) m)
-            void (unregisterOutboundConnection cm remoteAddr)
+            void (releaseOutboundConnection cm remoteAddr)
             go (Map.delete remoteAddr connMap)
           RunMiniProtocols remoteAddr reqs -> do
             atomically $ do

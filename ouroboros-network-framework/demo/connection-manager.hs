@@ -484,7 +484,7 @@ bidirectionalExperiment
                            })
                   muxBundle
               res <-
-                unregisterOutboundConnection
+                releaseOutboundConnection
                   connectionManager remoteAddr
               case res of
                 UnsupportedState inState -> do
@@ -541,9 +541,9 @@ bidirectionalExperiment
                               Mux.InitiatorResponderMode
                               UnversionedProtocol))
     connect n cm | n <= 1 =
-      requestOutboundConnection cm remoteAddr
+      acquireOutboundConnection cm remoteAddr
     connect n cm =
-      requestOutboundConnection cm remoteAddr
+      acquireOutboundConnection cm remoteAddr
         `catch` \(_ :: IOException) -> threadDelay 1
                                     >> connect (pred n) cm
         `catch` \(_ :: Mux.Error)   -> threadDelay 1
