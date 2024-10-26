@@ -55,6 +55,7 @@ launch-*
 /docs/**/*.pdf
 /docs/**/*.synctex.gz
 /docs/**/*.toc
+/docs/**/*.tdo
 
 # emacs
 .auctex-auto
