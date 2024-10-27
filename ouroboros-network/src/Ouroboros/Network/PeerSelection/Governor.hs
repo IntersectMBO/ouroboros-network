@@ -1,3 +1,19 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE BlockArguments        #-}
+{-# LANGUAGE Arrows #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE BangPatterns          #-}
 {-# LANGUAGE CPP                   #-}
 {-# LANGUAGE DuplicateRecordFields #-}
@@ -9,6 +25,7 @@
 
 #if __GLASGOW_HASKELL__ < 904
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
+{-# LANGUAGE InstanceSigs #-}
 #endif
 
 -- | This subsystem manages the discovery and selection of /upstream/ peers.
@@ -53,6 +70,21 @@ module Ouroboros.Network.PeerSelection.Governor
   , peerSelectionStateToView
   ) where
 
+import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
+import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
+import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
+import GHC.TypeNats
+import Control.Monad.Schedule.Class
+import Control.Concurrent.Chan
+import Control.Monad.Reader
+import Control.Monad.State ( evalStateT, StateT )
+import Control.Monad.State qualified as State
+import FRP.Rhine qualified as Rhine (Time, try)
+import FRP.Rhine hiding (diffTime, addTime)-- qualified as Rhine
+import Data.Automaton.Trans.Except (dSwitch)
+-- import FRP.Rhine.Clock
+-- import FRP.Rhine.Clock qualified as Rhine
 import Data.Foldable (traverse_)
 import Data.Hashable
 import Data.Map.Strict (Map)
@@ -67,7 +99,7 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer (..), traceWith)
+import Control.Tracer (Tracer (..), traceWith, natTracer)
 import System.Random
 
 import Ouroboros.Network.ConsensusMode
@@ -82,13 +114,14 @@ import Ouroboros.Network.PeerSelection.Governor.Monitor qualified as Monitor
 import Ouroboros.Network.PeerSelection.Governor.RootPeers qualified as RootPeers
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-           (MinBigLedgerPeersForTrustedState (..), UseLedgerPeers (..))
+           (MinBigLedgerPeersForTrustedState (..), UseLedgerPeers (..), LedgerStateJudgement (..))
 import Ouroboros.Network.PeerSelection.LocalRootPeers
            (OutboundConnectionsState (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
+
 
 {- $overview
 
@@ -460,6 +493,8 @@ base our decision on include:
 
 -}
 
+data PeerSelectionInPin = LedgerChange LedgerStateJudgement | BPChange UseBootstrapPeers
+
 -- |
 --
 peerSelectionGovernor :: ( Alternative (STM m)
@@ -493,6 +528,228 @@ peerSelectionGovernor tracer debugTracer countersTracer fuzzRng consensusMode mi
         interfaces
         jobPool
         (emptyPeerSelectionState fuzzRng consensusMode minActiveBigLedgerPeers)
+
+instance (Monad m, MonadSchedule m) => MonadSchedule (StateT s m) where
+  schedule actions = undefined
+
+
+liftClock2 :: (Monad (t1 m), MonadTrans t2) => cl -> LiftClock (t1 m) t2 cl
+liftClock2 unhoistedClock =
+  HoistClock
+    { monadMorphism = lift
+    , ..
+    }
+
+peerSelectionGovernor' :: forall peeraddr peerconn m. ( Alternative (STM m)
+                         , MonadAsync m
+                         , MonadDelay m
+                         , MonadLabelledSTM m
+                         , MonadMask m
+                         , MonadTimer m
+                         , Ord peeraddr
+                         , Show peerconn
+                         , Hashable peeraddr
+                         , MonadIO m
+                         , MonadSchedule m
+                         , (m ~ STM m)
+                         , Clock m (Millisecond 1)
+                         )
+                      => Tracer m (TracePeerSelection peeraddr)
+                      -> Tracer m (DebugPeerSelection peeraddr)
+                      -> Tracer m PeerSelectionCounters
+                      -> StdGen
+                      -> ConsensusMode
+                      -> MinBigLedgerPeersForTrustedState -- ^ Genesis parameter
+                      -> PeerSelectionActions peeraddr peerconn m
+                      -> PeerSelectionPolicy  peeraddr m
+                      -> PeerSelectionInterfaces peeraddr peerconn m
+                      -> m Void
+peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode minActiveBigLedgerPeers actions policy interfaces =
+  JobPool.withJobPool $ \jobPool ->
+                            flip evalStateT (emptyPeerSelectionState fuzzRng consensusMode minActiveBigLedgerPeers)
+                          . runEventChanT . flow $
+                                  feedbackRhine (keepLast initialState)
+                                                (cardanoSpecific >-- keepLast (Nothing, False) --> handlers)
+
+  where
+    initialState = emptyPeerSelectionState fuzzRng consensusMode minActiveBigLedgerPeers
+
+    quiesceTimeout :: ClSF m (MyClock n) (Maybe Quiesce) ()
+    quiesceTimeout =
+      safely do
+        Rhine.try $ proc command -> do
+          case command of
+            Just _ -> do
+              elapsed <- sinceStart -< ()
+              if elapsed > 10
+                then error "crap, bailing out!!!" -< ()
+                else returnA -< ()
+            Nothing -> -- reset timer
+              throwS -< ()
+        safe quiesceTimeout
+
+    handlers = cardano
+      where
+        cardano =     quiesce @@ MyClock @60000 waitClock
+                  |@|
+                      attemptCardanoChurn @@ EventClock
+
+        quiesce = arr fst >>> (liftClSF . liftClSF $ quiesceTimeout)
+
+        attemptCardanoChurn :: ClSF (App2 peeraddr peerconn m) (EventClock PeerSelectionInPin) (Maybe Quiesce, Bool) ()
+        attemptCardanoChurn = (churnPreflight `dSwitch` const attemptCardanoChurn) >>> setTargets
+        churnPreflight = proc (quiesce, hasOnlyBootstrapPeers) -> do
+          case (quiesce, hasOnlyBootstrapPeers) of
+            (Just _, False) -> returnA -< ((), quiesce)
+            _otherwise      -> do
+              tagS >>> arrMCl (churn (natTracer (lift . lift) tracer)) -< ()
+              returnA -< ((), Nothing)
+
+        churn :: Tracer (App2 peeraddr peerconn m) (TracePeerSelection peeraddr)
+              -> PeerSelectionInPin
+              -> App2 peeraddr peerconn m ()
+        churn tracer targets = do
+          if sanePeerSelectionTargets undefined
+            then
+              traceWith tracer $ TraceTargetsChanged undefined undefined
+            else
+              undefined
+
+    setTargets :: BehaviorF (App2 peeraddr peerconn m) time () ()
+    setTargets = impl
+      where
+        impl = proc input -> do
+          st <- constMCl State.get -< ()
+          let input' = (st, input)
+
+          _ <- arr $ uncurry forEstablished -< input'
+          returnA -< ()
+
+        forEstablished PeerSelectionState {
+                         establishedPeers }
+                       inputs = ()
+
+
+    chaseEstablishedPeersTarget :: BehaviorF (App2 peeraddr peerconn m) time (Int, Set.Set peeraddr) ()
+    chaseEstablishedPeersTarget = proc a -> do
+      case signum (fst a) of
+        -1 -> arrMCl below -< a
+        0  -> returnA -< ()
+        1  -> arrMCl above -< a
+      where
+        -- TODO lift this definition out
+        tracer' = natTracer (lift . lift) tracer
+
+        -- TODO above and below can be refactored
+        above (numPeersToDemote, availableToDemote) = do
+          st@PeerSelectionState {
+            targets =
+              PeerSelectionTargets {
+                targetNumberOfEstablishedPeers } } <- State.get
+
+          let PeerSelectionView {
+            viewEstablishedPeers        = (_, numEstablishedPeers)
+          } = peerSelectionStateToView st
+
+          selectedToDemote <- (lift . lift) $ pickPeers st
+                                (policyPickWarmPeersToDemote policy)
+                                availableToDemote
+                                numPeersToDemote
+          traceWith tracer' $ TraceDemoteWarmPeers targetNumberOfEstablishedPeers
+                                                   numEstablishedPeers selectedToDemote
+
+        below (numPeersToPromote, availableToPromote) = do
+          st@PeerSelectionState {
+            targets =
+              PeerSelectionTargets {
+                targetNumberOfEstablishedPeers } } <- State.get
+
+          let PeerSelectionView {
+            viewEstablishedPeers        = (_, numEstablishedPeers)
+          } = peerSelectionStateToView st
+
+          selectedToPromote <- (lift . lift) $ pickPeers st
+                                 (policyPickColdPeersToPromote policy)
+                                 availableToPromote
+                                 numPeersToPromote
+          traceWith tracer' $ TracePromoteColdPeers targetNumberOfEstablishedPeers
+                                                    numEstablishedPeers selectedToPromote
+
+
+
+    -- ClSignal (App2 peeraddr peerconn m) (EventClock PeerSelectionInPin) ()
+    cardanoSpecific :: Rhine (App2 peeraddr peerconn m) (EventClock PeerSelectionInPin) arb (Maybe Quiesce, Bool)
+    cardanoSpecific = feedback initialState (tagS `overAndSequence` arrMCl (uncurry monitor)) @@ EventClock
+      where
+        overAndSequence left right = proc (a, c) -> do
+          l' <- left -< a
+          r' <- right -< (l', c)
+          returnA -< r'
+
+        monitor event state = do
+            currentLsj <- monitorLedger' (natTracer (lift . lift) tracer) event
+            currentBP  <- monitorBootstrapPeers (natTracer (lift . lift) tracer) event
+
+            let quiesce =
+                  case (currentLsj, currentBP) of
+                    (TooOld, UseBootstrapPeers {}) -> Just Quiesce
+                    _otherwise -> Nothing
+
+            return ((quiesce, True), state)
+
+data Quiesce = Quiesce
+
+newtype MyClock (n :: Nat)= MyClock { aaa :: Millisecond n }
+  deriving GetClockProxy
+
+instance Clock m (MyClock n) where
+  type Time (MyClock n) = UTCTime
+  initClock = undefined
+
+monitorLedger' :: (Monad m)
+               => Tracer (App2 peeraddr peerconn m) (TracePeerSelection peeraddr)
+               -> PeerSelectionInPin
+               -> App2 peeraddr peerconn m LedgerStateJudgement
+monitorLedger' tracer event = do
+  state@(PeerSelectionState { ledgerStateJudgement }) <- State.get
+
+  case event of
+    LedgerChange lsj -> do
+      traceWith tracer $ TraceLedgerStateJudgementChanged lsj
+      State.put (state { ledgerStateJudgement = lsj })
+      return lsj
+    _otherwise   -> return ledgerStateJudgement
+
+monitorBootstrapPeers :: (Monad m
+                         , Ord peeraddr)
+                      => Tracer (App2 peeraddr peerconn m) (TracePeerSelection peeraddr)
+                      -> PeerSelectionInPin
+                      -> App2 peeraddr peerconn m UseBootstrapPeers -- ClSF (App2 peeraddr peerconn m) (EventClock PeerSelectionInPin) PeerSelectionInPin UseBootstrapPeers
+monitorBootstrapPeers tracer event = do
+  state@PeerSelectionState { consensusMode
+                           , bootstrapPeersFlag -- ^ todo maybe remove?
+                           , publicRootPeers
+                           , establishedPeers
+                           , knownPeers } <- State.get
+
+  case (consensusMode, event) of
+    (PraosMode, BPChange ubp) -> do
+       traceWith tracer $ TraceUseBootstrapPeersChanged ubp
+       let nonEstablishedBootstrapPeers =
+             PublicRootPeers.getBootstrapPeers publicRootPeers
+             `Set.difference`
+             EstablishedPeers.toSet establishedPeers
+             -- TODO remove in progress
+       -- TODO hoist this out?
+       State.put (state { knownPeers = KnownPeers.delete nonEstablishedBootstrapPeers knownPeers
+                        , publicRootPeers = PublicRootPeers.difference
+                                              publicRootPeers
+                                              nonEstablishedBootstrapPeers })
+       return ubp
+    _otherwise     -> return bootstrapPeersFlag
+
+--type App2 peeraddr peerconn m = (StateT (PeerSelectionState peeraddr peerconn) m)
+type App2 peeraddr peerconn m = ReaderT (Chan PeerSelectionInPin) (StateT (PeerSelectionState peeraddr peerconn) m)
 
 -- | Our pattern here is a loop with two sets of guarded actions:
 --
@@ -539,161 +796,161 @@ peerSelectionGovernorLoop tracer
                             debugStateVar
                           }
                           jobPool
-                          pst = do
-    loop pst (Time 0) `catch` (\e -> traceWith tracer (TraceOutboundGovernorCriticalFailure e) >> throwIO e)
-  where
-    loop :: PeerSelectionState peeraddr peerconn
-         -> Time
-         -> m Void
-    loop !st !dbgUpdateAt = assertPeerSelectionState st $ do
-      -- Update public state using 'toPublicState' to compute available peers
-      -- to share for peer sharing
-      atomically $ writeTVar publicStateVar (toPublicState st)
+                          pst = undefined
+  --   loop pst (Time 0) `catch` (\e -> traceWith tracer (TraceOutboundGovernorCriticalFailure e) >> throwIO e)
+  -- where
+  --   loop :: PeerSelectionState peeraddr peerconn
+  --        -> Time
+  --        -> m Void
+  --   loop !st !dbgUpdateAt = assertPeerSelectionState st $ do
+  --     -- Update public state using 'toPublicState' to compute available peers
+  --     -- to share for peer sharing
+  --     atomically $ writeTVar publicStateVar (toPublicState st)
 
-      blockedAt <- getMonotonicTime
+  --     blockedAt <- getMonotonicTime
 
-      -- If by any chance the node takes more than 15 minutes to converge to a
-      -- clean state, we crash the node. This could happen in very rare
-      -- conditions such as a global network issue, DNS, or a bug in the code.
-      -- In any case crashing the node will force the node to be restarted,
-      -- starting in the correct state for it to make progress.
-      case bootstrapPeersTimeout st of
-        Nothing -> pure ()
-        Just t
-          | blockedAt >= t -> throwIO BootstrapPeersCriticalTimeoutError
-          | otherwise      -> pure ()
+  --     -- If by any chance the node takes more than 15 minutes to converge to a
+  --     -- clean state, we crash the node. This could happen in very rare
+  --     -- conditions such as a global network issue, DNS, or a bug in the code.
+  --     -- In any case crashing the node will force the node to be restarted,
+  --     -- starting in the correct state for it to make progress.
+  --     case bootstrapPeersTimeout st of
+  --       Nothing -> pure ()
+  --       Just t
+  --         | blockedAt >= t -> throwIO BootstrapPeersCriticalTimeoutError
+  --         | otherwise      -> pure ()
 
-      dbgUpdateAt' <- if dbgUpdateAt <= blockedAt
-                         then do
-                           atomically $ writeTVar debugStateVar st
-                           return $ 83 `addTime` blockedAt
-                         else return dbgUpdateAt
-      let knownPeers'       = KnownPeers.setCurrentTime blockedAt (knownPeers st)
-          establishedPeers' = EstablishedPeers.setCurrentTime blockedAt (establishedPeers st)
-          st'               = st { knownPeers       = knownPeers',
-                                   establishedPeers = establishedPeers' }
+  --     dbgUpdateAt' <- if dbgUpdateAt <= blockedAt
+  --                        then do
+  --                          atomically $ writeTVar debugStateVar st
+  --                          return $ 83 `addTime` blockedAt
+  --                        else return dbgUpdateAt
+  --     let knownPeers'       = KnownPeers.setCurrentTime blockedAt (knownPeers st)
+  --         establishedPeers' = EstablishedPeers.setCurrentTime blockedAt (establishedPeers st)
+  --         st'               = st { knownPeers       = knownPeers',
+  --                                  establishedPeers = establishedPeers' }
 
-      timedDecision <- evalGuardedDecisions blockedAt st'
+  --     timedDecision <- evalGuardedDecisions blockedAt st'
 
-      -- get the current time after the governor returned from the blocking
-      -- 'evalGuardedDecisions' call.
-      now <- getMonotonicTime
+  --     -- get the current time after the governor returned from the blocking
+  --     -- 'evalGuardedDecisions' call.
+  --     now <- getMonotonicTime
 
-      let Decision { decisionTrace, decisionJobs, decisionState = st'' } =
-            timedDecision now
+  --     let Decision { decisionTrace, decisionJobs, decisionState = st'' } =
+  --           timedDecision now
 
-      mbCounters <- atomically $ do
-        -- Update outbound connections state
-        let peerSelectionView = peerSelectionStateToView st''
-        associationMode <- readAssociationMode (readUseLedgerPeers interfaces)
-                                               (peerSharing actions)
-                                               (bootstrapPeersFlag st'')
-        updateOutboundConnectionsState
-          actions
-          (outboundConnectionsState associationMode peerSelectionView st'')
+  --     mbCounters <- atomically $ do
+  --       -- Update outbound connections state
+  --       let peerSelectionView = peerSelectionStateToView st''
+  --       associationMode <- readAssociationMode (readUseLedgerPeers interfaces)
+  --                                              (peerSharing actions)
+  --                                              (bootstrapPeersFlag st'')
+  --       updateOutboundConnectionsState
+  --         actions
+  --         (outboundConnectionsState associationMode peerSelectionView st'')
 
-        -- Update counters
-        counters <- readTVar countersVar
-        let !counters' = snd <$> peerSelectionView
-        if counters' /= counters
-          then writeTVar countersVar counters'
-            >> return (Just counters')
-          else return Nothing
+  --       -- Update counters
+  --       counters <- readTVar countersVar
+  --       let !counters' = snd <$> peerSelectionView
+  --       if counters' /= counters
+  --         then writeTVar countersVar counters'
+  --           >> return (Just counters')
+  --         else return Nothing
 
-      -- Trace counters
-      traverse_ (traceWith countersTracer) mbCounters
-      -- Trace peer selection
-      traverse_ (traceWith tracer) decisionTrace
+  --     -- Trace counters
+  --     traverse_ (traceWith countersTracer) mbCounters
+  --     -- Trace peer selection
+  --     traverse_ (traceWith tracer) decisionTrace
 
-      mapM_ (JobPool.forkJob jobPool) decisionJobs
-      loop st'' dbgUpdateAt'
+  --     mapM_ (JobPool.forkJob jobPool) decisionJobs
+  --     loop st'' dbgUpdateAt'
 
-    evalGuardedDecisions :: Time
-                         -> PeerSelectionState peeraddr peerconn
-                         -> m (TimedDecision m peeraddr peerconn)
-    evalGuardedDecisions blockedAt st = do
-      inboundPeers <- readInboundPeers actions
-      case guardedDecisions blockedAt st inboundPeers of
-        GuardedSkip _ ->
-          -- impossible since guardedDecisions always has something to wait for
-          error "peerSelectionGovernorLoop: impossible: nothing to do"
+  --   evalGuardedDecisions :: Time
+  --                        -> PeerSelectionState peeraddr peerconn
+  --                        -> m (TimedDecision m peeraddr peerconn)
+  --   evalGuardedDecisions blockedAt st = do
+  --     inboundPeers <- readInboundPeers actions
+  --     case guardedDecisions blockedAt st inboundPeers of
+  --       GuardedSkip _ ->
+  --         -- impossible since guardedDecisions always has something to wait for
+  --         error "peerSelectionGovernorLoop: impossible: nothing to do"
 
-        Guarded Nothing decisionAction -> do
-          traceWith debugTracer (TraceGovernorState blockedAt Nothing st)
-          atomically decisionAction
+  --       Guarded Nothing decisionAction -> do
+  --         traceWith debugTracer (TraceGovernorState blockedAt Nothing st)
+  --         atomically decisionAction
 
-        Guarded (Just wakeupAt) decisionAction -> do
-          let wakeupIn = diffTime wakeupAt blockedAt
-          traceWith debugTracer (TraceGovernorState blockedAt (Just wakeupIn) st)
-          (readTimeout, cancelTimeout) <- registerDelayCancellable wakeupIn
-          let wakeup = readTimeout >>= (\case TimeoutPending -> retry
-                                              _              -> pure (wakeupDecision st))
-          timedDecision <- atomically (decisionAction <|> wakeup)
-          cancelTimeout
-          return timedDecision
+  --       Guarded (Just wakeupAt) decisionAction -> do
+  --         let wakeupIn = diffTime wakeupAt blockedAt
+  --         traceWith debugTracer (TraceGovernorState blockedAt (Just wakeupIn) st)
+  --         (readTimeout, cancelTimeout) <- registerDelayCancellable wakeupIn
+  --         let wakeup = readTimeout >>= (\case TimeoutPending -> retry
+  --                                             _              -> pure (wakeupDecision st))
+  --         timedDecision <- atomically (decisionAction <|> wakeup)
+  --         cancelTimeout
+  --         return timedDecision
 
-    guardedDecisions :: Time
-                     -> PeerSelectionState peeraddr peerconn
-                     -> Map peeraddr PeerSharing
-                     -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-    guardedDecisions blockedAt st inboundPeers =
-      -- All the alternative potentially-blocking decisions.
+  --   guardedDecisions :: Time
+  --                    -> PeerSelectionState peeraddr peerconn
+  --                    -> Map peeraddr PeerSharing
+  --                    -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
+  --   guardedDecisions blockedAt st inboundPeers =
+  --     -- All the alternative potentially-blocking decisions.
 
-      -- In Praos consensus mode, The Governor needs to react to changes in the bootstrap
-      -- peer flag, since this influences the behavior of the other monitoring actions.
-         Monitor.monitorBootstrapPeersFlag   actions st
-      -- The Governor needs to react to ledger state changes as soon as possible.
-      -- in Praos mode:
-      --   Check the definition site for more details, but in short, when the
-      --   node changes to 'TooOld' state it will go through a purging phase which
-      --   the 'waitForTheSystemToQuiesce' monitoring action will wait for.
-      <> Monitor.monitorLedgerStateJudgement actions st
-      -- In Praos consensus mode,
-      -- When the node transitions to 'TooOld' state the node will wait until
-      -- it reaches a clean (quiesced) state free of non-trusted peers, before
-      -- resuming making progress again connected to only trusted peers.
-      <> Monitor.waitForSystemToQuiesce              st
+  --     -- In Praos consensus mode, The Governor needs to react to changes in the bootstrap
+  --     -- peer flag, since this influences the behavior of the other monitoring actions.
+  --        Monitor.monitorBootstrapPeersFlag   actions st
+  --     -- The Governor needs to react to ledger state changes as soon as possible.
+  --     -- in Praos mode:
+  --     --   Check the definition site for more details, but in short, when the
+  --     --   node changes to 'TooOld' state it will go through a purging phase which
+  --     --   the 'waitForTheSystemToQuiesce' monitoring action will wait for.
+  --     <> Monitor.monitorLedgerStateJudgement actions st
+  --     -- In Praos consensus mode,
+  --     -- When the node transitions to 'TooOld' state the node will wait until
+  --     -- it reaches a clean (quiesced) state free of non-trusted peers, before
+  --     -- resuming making progress again connected to only trusted peers.
+  --     <> Monitor.waitForSystemToQuiesce              st
 
-      <> Monitor.connections          actions st
-      <> Monitor.jobs                 jobPool st
-      -- This job monitors for changes in big ledger peer snapshot file (eg. reload)
-      -- and copies it into the governor's private state. When a change is detected,
-      -- it also flips private state LedgerStateJudgement to TooYoung so that it
-      -- can launch the appropriate verification task in the job pool when external
-      -- LedgerStateJudgement is TooOld. If the verification job detects a discrepancy
-      -- vs. big peers on the ledger, it throws and the node is shut down.
-      <> Monitor.ledgerPeerSnapshotChange st actions
-      -- In Genesis consensus mode, this is responsible for settings targets on the basis
-      -- of the ledger state judgement. It takes into account whether
-      -- the churn governor is running via a tmvar such that targets are set
-      -- in a consistent manner. For non-Genesis, it follows the simpler
-      -- legacy protocol.
-      <> Monitor.targetPeers          actions st
-      <> Monitor.localRoots           actions st
+  --     <> Monitor.connections          actions st
+  --     <> Monitor.jobs                 jobPool st
+  --     -- This job monitors for changes in big ledger peer snapshot file (eg. reload)
+  --     -- and copies it into the governor's private state. When a change is detected,
+  --     -- it also flips private state LedgerStateJudgement to TooYoung so that it
+  --     -- can launch the appropriate verification task in the job pool when external
+  --     -- LedgerStateJudgement is TooOld. If the verification job detects a discrepancy
+  --     -- vs. big peers on the ledger, it throws and the node is shut down.
+  --     <> Monitor.ledgerPeerSnapshotChange st actions
+  --     -- In Genesis consensus mode, this is responsible for settings targets on the basis
+  --     -- of the ledger state judgement. It takes into account whether
+  --     -- the churn governor is running via a tmvar such that targets are set
+  --     -- in a consistent manner. For non-Genesis, it follows the simpler
+  --     -- legacy protocol.
+  --     <> Monitor.targetPeers          actions st
+  --     <> Monitor.localRoots           actions st
 
-      -- The non-blocking decisions regarding (known) big ledger peers
-      <> BigLedgerPeers.belowTarget   actions blockedAt        st
-      <> BigLedgerPeers.aboveTarget                     policy st
+  --     -- The non-blocking decisions regarding (known) big ledger peers
+  --     <> BigLedgerPeers.belowTarget   actions blockedAt        st
+  --     <> BigLedgerPeers.aboveTarget                     policy st
 
-      -- All the alternative non-blocking internal decisions.
-      <> RootPeers.belowTarget        actions blockedAt           st
-      <> KnownPeers.belowTarget       actions blockedAt
-                                              inboundPeers policy st
-      <> KnownPeers.aboveTarget                            policy st
-      <> EstablishedPeers.belowTarget actions              policy st
-      <> EstablishedPeers.aboveTarget actions              policy st
-      <> ActivePeers.belowTarget      actions              policy st
-      <> ActivePeers.aboveTarget      actions              policy st
+  --     -- All the alternative non-blocking internal decisions.
+  --     <> RootPeers.belowTarget        actions blockedAt           st
+  --     <> KnownPeers.belowTarget       actions blockedAt
+  --                                             inboundPeers policy st
+  --     <> KnownPeers.aboveTarget                            policy st
+  --     <> EstablishedPeers.belowTarget actions              policy st
+  --     <> EstablishedPeers.aboveTarget actions              policy st
+  --     <> ActivePeers.belowTarget      actions              policy st
+  --     <> ActivePeers.aboveTarget      actions              policy st
 
-      -- There is no rootPeersAboveTarget since the roots target is one sided.
+  --     -- There is no rootPeersAboveTarget since the roots target is one sided.
 
-      -- The changedTargets needs to come before the changedLocalRootPeers in
-      -- the list of alternates above because our invariant requires that
-      -- the number of root nodes be less than our target for known peers,
-      -- but at startup our initial targets are 0, so we need to read and set
-      -- the targets before we set the root peer set. Otherwise we violate our
-      -- invariant (and if we ignored that, we'd try to immediately forget
-      -- roots peers because we'd be above target for known peers).
+  --     -- The changedTargets needs to come before the changedLocalRootPeers in
+  --     -- the list of alternates above because our invariant requires that
+  --     -- the number of root nodes be less than our target for known peers,
+  --     -- but at startup our initial targets are 0, so we need to read and set
+  --     -- the targets before we set the root peer set. Otherwise we violate our
+  --     -- invariant (and if we ignored that, we'd try to immediately forget
+  --     -- roots peers because we'd be above target for known peers).
 
 
 wakeupDecision :: PeerSelectionState peeraddr peerconn

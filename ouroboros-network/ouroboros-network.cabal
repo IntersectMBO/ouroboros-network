@@ -142,6 +142,7 @@ library
 
   build-depends:
     async >=2.2 && <2.3,
+    automaton,
     base >=4.14 && <4.21,
     bytestring >=0.10 && <0.13,
     cardano-prelude,
@@ -156,6 +157,7 @@ library
     io-classes ^>=1.5.0,
     io-classes-mtl ^>=0.1,
     iproute,
+    monad-schedule,
     monoidal-synchronisation,
     mtl,
     network ^>=3.1.4,
@@ -166,6 +168,7 @@ library
     ouroboros-network-protocols ^>=0.12,
     psqueues >=0.2.3 && <0.3,
     random,
+    rhine,
     si-timers,
     strict-checked-vars ^>=0.2,
     strict-stm,
