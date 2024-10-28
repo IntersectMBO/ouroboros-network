@@ -540,6 +540,15 @@ liftClock2 unhoistedClock =
     , ..
     }
 
+data CardanoState = CardanoState {
+  -- cardanoQuiesce               :: !(Maybe Quiesce),
+  -- cardanoHasOnlyBootstrapPeers :: !Bool
+  cardanoLedgerStateJudgement :: !LedgerStateJudgement
+  }
+
+data CardanoSignal = CardanoSignal {
+  cardanoQuiesce :: !(Maybe Quiesce) }
+
 peerSelectionGovernor' :: forall peeraddr peerconn m. ( Alternative (STM m)
                          , MonadAsync m
                          , MonadDelay m
@@ -566,13 +575,14 @@ peerSelectionGovernor' :: forall peeraddr peerconn m. ( Alternative (STM m)
                       -> m Void
 peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode minActiveBigLedgerPeers actions policy interfaces =
   JobPool.withJobPool $ \jobPool ->
-                            flip evalStateT (emptyPeerSelectionState fuzzRng consensusMode minActiveBigLedgerPeers)
-                          . runEventChanT . flow $
-                                  feedbackRhine (keepLast initialState)
-                                                (cardanoSpecific >-- keepLast (Nothing, False) --> handlers)
+                            flip evalStateT initialState
+                          . runEventChanT . flow
+                          $ cardanoTopLevel >-- keepLast initialCardanoSignal --> cardanoHandlers
 
   where
     initialState = emptyPeerSelectionState fuzzRng consensusMode minActiveBigLedgerPeers
+    initialCardanoState = CardanoState { cardanoLedgerStateJudgement = TooOld }
+    initialCardanoSignal = CardanoSignal { cardanoQuiesce = Nothing }
 
     quiesceTimeout :: ClSF m (MyClock n) (Maybe Quiesce) ()
     quiesceTimeout =
@@ -588,19 +598,20 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
               throwS -< ()
         safe quiesceTimeout
 
-    handlers = cardano
+    cardanoHandlers = handlers
       where
-        cardano =     quiesce @@ MyClock @60000 waitClock
+        handlers =    quiesce @@ MyClock @60000 waitClock
                   |@|
                       attemptCardanoChurn @@ EventClock
 
-        quiesce = arr fst >>> (liftClSF . liftClSF $ quiesceTimeout)
+        quiesce = arr cardanoQuiesce >>> (liftClSF . liftClSF $ quiesceTimeout)
 
-        attemptCardanoChurn :: ClSF (App2 peeraddr peerconn m) (EventClock PeerSelectionInPin) (Maybe Quiesce, Bool) ()
+        attemptCardanoChurn :: ClSF (App2 peeraddr peerconn m) (EventClock PeerSelectionInPin) CardanoSignal ()
         attemptCardanoChurn = (churnPreflight `dSwitch` const attemptCardanoChurn) >>> setTargets
-        churnPreflight = proc (quiesce, hasOnlyBootstrapPeers) -> do
-          case (quiesce, hasOnlyBootstrapPeers) of
-            (Just _, False) -> returnA -< ((), quiesce)
+
+        churnPreflight = proc CardanoSignal { cardanoQuiesce } -> do
+          case (cardanoQuiesce, True) of
+            (Just _, False) -> returnA -< ((), cardanoQuiesce)
             _otherwise      -> do
               tagS >>> arrMCl (churn (natTracer (lift . lift) tracer)) -< ()
               returnA -< ((), Nothing)
@@ -678,24 +689,20 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
 
 
     -- ClSignal (App2 peeraddr peerconn m) (EventClock PeerSelectionInPin) ()
-    cardanoSpecific :: Rhine (App2 peeraddr peerconn m) (EventClock PeerSelectionInPin) arb (Maybe Quiesce, Bool)
-    cardanoSpecific = feedback initialState (tagS `overAndSequence` arrMCl (uncurry monitor)) @@ EventClock
+    cardanoTopLevel :: Rhine (App2 peeraddr peerconn m) (EventClock PeerSelectionInPin) arb CardanoSignal
+    cardanoTopLevel = tagS >-> feedback initialCardanoState (arrMCl (uncurry monitor)) @@ EventClock
       where
-        overAndSequence left right = proc (a, c) -> do
-          l' <- left -< a
-          r' <- right -< (l', c)
-          returnA -< r'
-
         monitor event state = do
             currentLsj <- monitorLedger' (natTracer (lift . lift) tracer) event
             currentBP  <- monitorBootstrapPeers (natTracer (lift . lift) tracer) event
 
-            let quiesce =
+            let cardanoQuiesce =
                   case (currentLsj, currentBP) of
                     (TooOld, UseBootstrapPeers {}) -> Just Quiesce
                     _otherwise -> Nothing
+                signal = CardanoSignal { cardanoQuiesce  }
 
-            return ((quiesce, True), state)
+            return (signal, state)
 
 data Quiesce = Quiesce
 
