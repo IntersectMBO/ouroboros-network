@@ -1,8 +1,8 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DerivingStrategies  #-}
-{-# LANGUAGE DerivingVia         #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
 -- | Rethrow policy for 'MuxConnectionHandler'.
 --
@@ -83,13 +83,11 @@ data ErrorContext = OutboundError
     deriving Show
 
 
-type RethrowPolicy_ = ErrorContext -> SomeException -> ErrorCommand
-
 newtype RethrowPolicy = RethrowPolicy {
-    runRethrowPolicy :: RethrowPolicy_
+    runRethrowPolicy :: ErrorContext -> SomeException -> ErrorCommand
   }
-  deriving Semigroup via RethrowPolicy_
-  deriving Monoid    via RethrowPolicy_
+  deriving newtype Semigroup
+  deriving newtype Monoid
 
 
 -- | Smart constructor for 'RethrowPolicy'.
