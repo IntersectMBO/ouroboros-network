@@ -388,6 +388,28 @@ no longer needed in either direction and hence not needed at all.
 In the next couple sections we will review what the inbound and outbound sides
 need to be able to do, and what service the connection manager needs to provide.
 
+\section{Exception Processing}
+\label{sec:exceptions}
+
+We maintain a one-to-one correspondence between peers and connections, which
+simplifies exception handling since if there's a single mini-protocol
+violation, we need to shut down the thread that handles that particular
+connection.  Although multiple threads handle a single connection: two
+threads per a pipelined mini-protocol, one thread per a non-pipelined one, plus
+two multiplexer threads (muxer \& demuxer threads).  However, all these threads
+are spawned and managed by the multiplexer, which has the property that if any
+of the threads throws an exception, all of the threads will be killed.  This
+property allows us to have a single error handling policy (called
+\href{https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-framework/Ouroboros-Network-RethrowPolicy.html\#t:RethrowPolicy}{\texttt{RethrowPolicy}})
+per connection handler thread. A \texttt{RethrowPolicy} classifies exceptions
+into two categories, depending on whether an exception should terminate the
+connection or be propagated to terminate the whole process.
+\texttt{RethrowPolicy}-ies can be composed in terms of a semi-group.  Network
+code only makes \texttt{IOManagerError}s fatal.  On top of that consensus
+introduces its own
+\href{https://ouroboros-consensus.cardano.intersectmbo.org/haddocks/ouroboros-consensus-diffusion/Ouroboros-Consensus-Node-RethrowPolicy.html\#v:consensusRethrowPolicy}{\texttt{consensusRethrowPolicy}}
+for the \texttt{node-to-node} protocol.
+
 \section{Outbound side: the outbound governor}
 
 A key component of the design for decentralisation is the outbound governor. It
