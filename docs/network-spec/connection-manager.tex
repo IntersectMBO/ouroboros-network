@@ -174,27 +174,8 @@
 \def\True{\texttt{True}}
 \def\False{\texttt{False}}
 
-% Utils
-
 % TODO notes for the implementation
 \newcommand{\todoimpl}[1]{\todo[backgroundcolor=red,linecolor=red]{#1}}
-\newenvironment{detail}
-  {
-    \begin{center}
-    \begin{minipage}{0.9\textwidth}
-      \begin{shaded}
-      \small
-      \noindent Implementation detail
-      \vspace{0.3em}
-      \newline
-      \itshape
-  }
-  {
-  \end{shaded}
-  \end{minipage}
-  \end{center}
-  \vspace{1em}
-  }
 
 \section{Introduction}
 
@@ -408,7 +389,27 @@ connection or be propagated to terminate the whole process.
 code only makes \texttt{IOManagerError}s fatal.  On top of that consensus
 introduces its own
 \href{https://ouroboros-consensus.cardano.intersectmbo.org/haddocks/ouroboros-consensus-diffusion/Ouroboros-Consensus-Node-RethrowPolicy.html\#v:consensusRethrowPolicy}{\texttt{consensusRethrowPolicy}}
-for the \texttt{node-to-node} protocol.
+for the Node-To-Node protocol.
+
+\section{Mini-protocol return values}
+\label{sec:mini-protocol-return-values}
+
+Handling of mini-protocol return values is a complementary feature to exception
+processing, hence it's described here, although it is done at the
+Outbound-Governor level rather Connection-Manager level, which is primarily
+described in this part of the documentation.
+
+We classifying mini-protocol return values for initiator/client mini-protocols
+(this feature is only needed for the \textit{chain-sync
+mini-protocol}). For a given return value, we compute the re-promotion delay used by
+the Outbound-Governor. Here is the
+\href{https://ouroboros-consensus.cardano.intersectmbo.org/haddocks/ouroboros-consensus-diffusion/Ouroboros-Consensus-Node-ExitPolicy.html\#v:returnPolicy}{\texttt{returnPolicy}}.
+introduced in Ouroboros-Consensus for the Node-To-Node protocol.  Cardano-Node
+is not managing outbound Node-To-Client connection, hence a policy for
+Node-To-Client protocol is not needed.
+
+The outbound governor is also given a policy which controls how long to wait
+until re-promote a peer after an exception (for now we use a fixed delay).
 
 \section{Outbound side: the outbound governor}
 
@@ -1787,7 +1788,7 @@ States indicated with a \textsuperscript{$\dagger$} are forbidden by \TCP{}.
 
 \begin{table}
   \begin{tabular}[h]{llll}
-    \textit{StateIn}         & \textit{StateOut} & \textit{transition} \\\hline\\[2pt]
+    \textit{StateIn}         & \textit{StateOut} & \textit{Transition} \\\hline\\[2pt]
     \InitialState{}          & - & \\[8pt]
     \ReservedOutboundState{} & - & \\[8pt]
     \UnnegotiatedStateAny{}  & - & \\[8pt]
@@ -1807,7 +1808,7 @@ States indicated with a \textsuperscript{$\dagger$} are forbidden by \TCP{}.
 
 \begin{table}
   \begin{tabular}[h]{lll}
-    \textit{StateIn}         & \textit{StateOut} & \textit{transition} \\\hline\\[2pt]
+    \textit{StateIn}         & \textit{StateOut} & \textit{Transition} \\\hline\\[2pt]
     \ReservedOutboundState{} & - & - \\[8pt]
     \UnnegotiatedStateAny{}  & - & - \\[8pt]
     \OutboundStateAny{}      & - & - \\[8pt]
@@ -1823,26 +1824,20 @@ States indicated with a \textsuperscript{$\dagger$} are forbidden by \TCP{}.
 
 \begin{table}
   \begin{tabular}[h]{llll}
-    \textit{StateIn}         & \textit{StateOut} & \textit{transition} & \textit{Returned Value}\\\hline\\[2pt]
-    \InitialState{}          & - & & - \\[8pt]
-    \ReservedOutboundState{} & - & & - \\[8pt]
-    \UnnegotiatedStateAny{}  & - & & - \\[8pt]
-    \OutboundStateUniTau{}   & $\dagger$ & & - \\[8pt]
-    \OutboundStateUni{}      & $\dagger$ & & - \\[8pt]
-    \OutboundStateDupTau{}   & \OutboundStateDup{} & & - \\[8pt]
-    \OutboundStateDup{}      & $\dagger$ & & - \\[8pt]
-    \InboundIdleStateAny{}   & \TerminatingState{} & & \True \\[8pt]
-    \InboundStateAny{}       & \TerminatingState{}\textsuperscript{$\dagger$} &
-      \begin{minipage}[t]{5cm}
-        \begin{itemize}
-          \item \DemotedToColdAnyRem{}
-          \item \CommitAnyRem{}
-        \end{itemize}
-      \end{minipage}
-        & \True \\[8pt]
-    \DuplexState{}           & \OutboundStateDup{} & \DemotedToColdDupRem{}  & \False \\[8pt]
-    \TerminatingState{}      & - & & - \\[8pt]
-    \TerminatedState{}       & - & & - \\[8pt]
+    \textit{StateIn}         & \textit{StateOut} & \textit{Returned Value} & \textit{Transition(s)}\\\hline\\[2pt]
+    \InitialState{}          & - & - & \\[8pt]
+    \ReservedOutboundState{} & - & - & \\[8pt]
+    \UnnegotiatedStateAny{}  & - & - & \\[8pt]
+    \OutboundStateUniTau{}   & $\dagger$ & - & \\[8pt]
+    \OutboundStateUni{}      & $\dagger$ & - & \\[8pt]
+    \OutboundStateDupTau{}   & \OutboundStateDup{} & - & \\[8pt]
+    \OutboundStateDup{}      & $\dagger$ & - & \\[8pt]
+    \InboundIdleStateAny{}   & \TerminatingState{} & \True & \\[8pt]
+    \InboundStateAny{}       & \TerminatingState{}\textsuperscript{$\dagger$} & \True & \DemotedToColdAnyRem{} \\[8pt]
+                             &                                                &       & \CommitAnyRem{} \\[8pt]
+    \DuplexState{}           & \OutboundStateDup{} & \False & \DemotedToColdDupRem{} \\[8pt]
+    \TerminatingState{}      & - & - & \\[8pt]
+    \TerminatedState{}       & - & - & \\[8pt]
   \end{tabular}
   \caption{\texttt{unregisterInboundConnection}}
   \label{table:unregisterInboundConnection}
