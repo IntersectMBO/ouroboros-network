@@ -67,7 +67,7 @@ library
     deepseq,
     dns,
     io-classes ^>=1.5.0,
-    iproute,
+    iproute ^>=1.7.15,
     measures,
     network >=3.1.2 && <3.2,
     network-mux ^>=0.5,
