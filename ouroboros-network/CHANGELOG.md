@@ -61,6 +61,7 @@
 * Added `defaultDeadlineChurnInterval` and `defaultBulkChurnInterval` to Configuration
   module. Previously these were hard coded in node.
 * Updated tests for `network-mux` changes.
+* Dropped all node-to-client versions < `NodeToClientV_16`.
 
 ## 0.17.1.2 -- 2024-10-11
 

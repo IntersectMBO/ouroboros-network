@@ -8,6 +8,7 @@
   * `getLegacyTipBlockNo`
   * `legacyTip`
   * `toLegacyTip`
+* Dropped all node-to-client versions < `NodeToClientV_16`.
 
 ### Non-breaking changes
 

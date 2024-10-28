@@ -833,7 +833,6 @@ prop_query_version_NodeToNode_ST
                     (cborTermVersionDataCodec (fmap transformNodeToNodeVersionData nodeToNodeCodecCBORTerm))
                     clientVersions
                     serverVersions
-                    (>= NodeToNodeV_13)
                     (\(ArbitraryNodeToNodeVersionData vd) ->
                       ArbitraryNodeToNodeVersionData $
                         vd { NTN.query = True
@@ -854,7 +853,6 @@ prop_query_version_NodeToNode_IO
                     (cborTermVersionDataCodec (fmap transformNodeToNodeVersionData nodeToNodeCodecCBORTerm))
                     clientVersions
                     serverVersions
-                    (>= NodeToNodeV_13)
                     (\(ArbitraryNodeToNodeVersionData vd) ->
                       ArbitraryNodeToNodeVersionData $
                         vd { NTN.query = True
@@ -875,7 +873,6 @@ prop_query_version_NodeToNode_SimNet
                     (cborTermVersionDataCodec (fmap transformNodeToNodeVersionData nodeToNodeCodecCBORTerm))
                     clientVersions
                     serverVersions
-                    (>= NodeToNodeV_13)
                     (\(ArbitraryNodeToNodeVersionData vd) ->
                       ArbitraryNodeToNodeVersionData $
                         vd { NTN.query = True
@@ -896,7 +893,6 @@ prop_query_version_NodeToClient_ST
                     (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
                     clientVersions
                     serverVersions
-                    (>= NodeToClientV_15)
                     (\vd -> vd {NTC.query = True})
 
 -- | Run 'prop_query_version' in the IO monad.
@@ -913,7 +909,6 @@ prop_query_version_NodeToClient_IO
                     (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
                     clientVersions
                     serverVersions
-                    (>= NodeToClientV_15)
                     (\vd -> vd {NTC.query = True})
 
 -- | Run 'prop_query_version' with SimNet.
@@ -930,7 +925,6 @@ prop_query_version_NodeToClient_SimNet
                     (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
                     clientVersions
                     serverVersions
-                    (>= NodeToClientV_15)
                     (\vd -> vd {NTC.query = True})
 
 
@@ -952,10 +946,9 @@ prop_query_version :: ( MonadAsync m
                    -> VersionDataCodec CBOR.Term vNumber vData
                    -> Versions vNumber vData Bool
                    -> Versions vNumber vData Bool
-                   -> (vNumber -> Bool)
                    -> (vData -> vData)
                    -> m Property
-prop_query_version createChannels codec versionDataCodec clientVersions serverVersions supportsQuery setQuery = do
+prop_query_version createChannels codec versionDataCodec clientVersions serverVersions setQuery = do
   (clientRes, _serverRes) <-
     runConnectedPeers
       createChannels nullTracer codec
@@ -973,15 +966,15 @@ prop_query_version createChannels codec versionDataCodec clientVersions serverVe
     Left _ ->
       property True
     -- We should receive the queried versions.
-    Right (HandshakeNegotiationResult _ k _) ->
+    Right HandshakeNegotiationResult {} ->
       -- We will only receive a negotiated result if the negotiated version does not support queries.
-      property $ not $ supportsQuery k
+      property False
     -- On successful handshakes, the received versions should match the server versions (ignoring `query`).
     Right (HandshakeQueryResult serverVersions') ->
       setQueryAll serverVersions' === setQueryAll (Right . versionData <$> getVersions serverVersions)
   where
     setQueryAll vs = (setQuery <$>) <$> vs
-    setQueryVersions (Versions vs) = Versions $ (\k v -> if supportsQuery k then v { versionData = setQuery (versionData v) } else v) `Map.mapWithKey` vs
+    setQueryVersions (Versions vs) = Versions $ (\_k v -> v { versionData = setQuery (versionData v) }) `Map.mapWithKey` vs
     clientVersions' = setQueryVersions clientVersions
 
 
