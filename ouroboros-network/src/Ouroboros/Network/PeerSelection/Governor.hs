@@ -543,7 +543,9 @@ liftClock2 unhoistedClock =
 data CardanoState = CardanoState {
   -- cardanoQuiesce               :: !(Maybe Quiesce),
   -- cardanoHasOnlyBootstrapPeers :: !Bool
-  cardanoLedgerStateJudgement :: !LedgerStateJudgement
+  cardanoLedgerStateJudgement :: !LedgerStateJudgement,
+  cardanoUseBootstrapPeers    :: !UseBootstrapPeers,
+  cardanoConsensusMode        :: !ConsensusMode
   }
 
 data CardanoSignal = CardanoSignal {
@@ -581,7 +583,9 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
 
   where
     initialState = emptyPeerSelectionState fuzzRng consensusMode minActiveBigLedgerPeers
-    initialCardanoState = CardanoState { cardanoLedgerStateJudgement = TooOld }
+    initialCardanoState =  CardanoState { cardanoLedgerStateJudgement = TooOld,
+                                          cardanoConsensusMode = PraosMode,
+                                          cardanoUseBootstrapPeers = DontUseBootstrapPeers }
     initialCardanoSignal = CardanoSignal { cardanoQuiesce = Nothing }
 
     quiesceTimeout :: ClSF m (MyClock n) (Maybe Quiesce) ()
@@ -616,15 +620,15 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
               tagS >>> arrMCl (churn (natTracer (lift . lift) tracer)) -< ()
               returnA -< ((), Nothing)
 
-        churn :: Tracer (App2 peeraddr peerconn m) (TracePeerSelection peeraddr)
-              -> PeerSelectionInPin
-              -> App2 peeraddr peerconn m ()
-        churn tracer targets = do
-          if sanePeerSelectionTargets undefined
-            then
-              traceWith tracer $ TraceTargetsChanged undefined undefined
-            else
-              undefined
+    churn :: Tracer (App2 peeraddr peerconn m) (TracePeerSelection peeraddr)
+          -> PeerSelectionInPin
+          -> App2 peeraddr peerconn m ()
+    churn tracer targets = do
+      if sanePeerSelectionTargets undefined
+        then
+          traceWith tracer $ TraceTargetsChanged undefined undefined
+        else
+          undefined
 
     setTargets :: BehaviorF (App2 peeraddr peerconn m) time () ()
     setTargets = impl
@@ -693,16 +697,16 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
     cardanoTopLevel = tagS >-> feedback initialCardanoState (arrMCl (uncurry monitor)) @@ EventClock
       where
         monitor event state = do
-            currentLsj <- monitorLedger' (natTracer (lift . lift) tracer) event
-            currentBP  <- monitorBootstrapPeers (natTracer (lift . lift) tracer) event
+            cardanoLedgerStateJudgement <- monitorLedger' (natTracer (lift . lift) tracer) event state
+            cardanoUseBootstrapPeers    <- monitorBootstrapPeers (natTracer (lift . lift) tracer) event state
 
             let cardanoQuiesce =
-                  case (currentLsj, currentBP) of
+                  case (cardanoLedgerStateJudgement, cardanoUseBootstrapPeers) of
                     (TooOld, UseBootstrapPeers {}) -> Just Quiesce
                     _otherwise -> Nothing
                 signal = CardanoSignal { cardanoQuiesce  }
 
-            return (signal, state)
+            return (signal, state { cardanoLedgerStateJudgement, cardanoUseBootstrapPeers })
 
 data Quiesce = Quiesce
 
@@ -716,30 +720,28 @@ instance Clock m (MyClock n) where
 monitorLedger' :: (Monad m)
                => Tracer (App2 peeraddr peerconn m) (TracePeerSelection peeraddr)
                -> PeerSelectionInPin
+               -> CardanoState
                -> App2 peeraddr peerconn m LedgerStateJudgement
-monitorLedger' tracer event = do
-  state@(PeerSelectionState { ledgerStateJudgement }) <- State.get
-
+monitorLedger' tracer event CardanoState { cardanoLedgerStateJudgement }= do
   case event of
     LedgerChange lsj -> do
       traceWith tracer $ TraceLedgerStateJudgementChanged lsj
-      State.put (state { ledgerStateJudgement = lsj })
       return lsj
-    _otherwise   -> return ledgerStateJudgement
+    _otherwise   -> return cardanoLedgerStateJudgement
 
 monitorBootstrapPeers :: (Monad m
                          , Ord peeraddr)
                       => Tracer (App2 peeraddr peerconn m) (TracePeerSelection peeraddr)
                       -> PeerSelectionInPin
+                      -> CardanoState
                       -> App2 peeraddr peerconn m UseBootstrapPeers -- ClSF (App2 peeraddr peerconn m) (EventClock PeerSelectionInPin) PeerSelectionInPin UseBootstrapPeers
-monitorBootstrapPeers tracer event = do
-  state@PeerSelectionState { consensusMode
-                           , bootstrapPeersFlag -- ^ todo maybe remove?
-                           , publicRootPeers
+monitorBootstrapPeers tracer event CardanoState { cardanoUseBootstrapPeers,
+                                                  cardanoConsensusMode } = do
+  state@PeerSelectionState { publicRootPeers
                            , establishedPeers
                            , knownPeers } <- State.get
 
-  case (consensusMode, event) of
+  case (cardanoConsensusMode, event) of
     (PraosMode, BPChange ubp) -> do
        traceWith tracer $ TraceUseBootstrapPeersChanged ubp
        let nonEstablishedBootstrapPeers =
@@ -753,7 +755,7 @@ monitorBootstrapPeers tracer event = do
                                               publicRootPeers
                                               nonEstablishedBootstrapPeers })
        return ubp
-    _otherwise     -> return bootstrapPeersFlag
+    _otherwise     -> return cardanoUseBootstrapPeers
 
 --type App2 peeraddr peerconn m = (StateT (PeerSelectionState peeraddr peerconn) m)
 type App2 peeraddr peerconn m = ReaderT (Chan PeerSelectionInPin) (StateT (PeerSelectionState peeraddr peerconn) m)
