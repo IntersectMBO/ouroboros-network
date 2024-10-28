@@ -10,6 +10,8 @@
 
 ### Non-breaking changes
 
+* Dropped all node-to-client versions < `NodeToClientV_16`.
+
 ## 0.14.0.0 -- 2024-10-17
 
 ### Breaking changes

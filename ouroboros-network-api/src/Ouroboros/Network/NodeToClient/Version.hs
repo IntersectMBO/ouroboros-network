@@ -27,21 +27,21 @@ import Ouroboros.Network.Magic
 -- | Enumeration of node to client protocol versions.
 --
 data NodeToClientVersion
-    = NodeToClientV_9
-    -- ^ enabled @CardanoNodeToClientVersion7@, i.e., Alonzo
-    | NodeToClientV_10
-    -- ^ added 'GetChainBlockNo' and 'GetChainPoint' queries
-    | NodeToClientV_11
-    -- ^ added 'GetRewardInfoPools` Block query
-    | NodeToClientV_12
-    -- ^ added 'LocalTxMonitor' mini-protocol
-    | NodeToClientV_13
-    -- ^ enabled @CardanoNodeToClientVersion9@, i.e., Babbage
-    | NodeToClientV_14
-    -- ^ added @GetPoolDistr@, @GetPoolState@, @GetSnapshots@
-    | NodeToClientV_15
-    -- ^ added `query` to NodeToClientVersionData
-    | NodeToClientV_16
+    -- = NodeToClientV_9
+    -- -- ^ enabled @CardanoNodeToClientVersion7@, i.e., Alonzo
+    -- | NodeToClientV_10
+    -- -- ^ added 'GetChainBlockNo' and 'GetChainPoint' queries
+    -- | NodeToClientV_11
+    -- -- ^ added 'GetRewardInfoPools` Block query
+    -- | NodeToClientV_12
+    -- -- ^ added 'LocalTxMonitor' mini-protocol
+    -- | NodeToClientV_13
+    -- -- ^ enabled @CardanoNodeToClientVersion9@, i.e., Babbage
+    -- | NodeToClientV_14
+    -- -- ^ added @GetPoolDistr@, @GetPoolState@, @GetSnapshots@
+    -- | NodeToClientV_15
+    -- -- ^ added `query` to NodeToClientVersionData
+    = NodeToClientV_16
     -- ^ added @ImmutableTip@ to @LocalStateQuery@, enabled
     -- @CardanoNodeToClientVersion11@, i.e., Conway and
     -- @GetStakeDelegDeposits@.
@@ -64,13 +64,6 @@ nodeToClientVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToClientVersion
 nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
     where
       encodeTerm = \case
-          NodeToClientV_9  -> enc 9
-          NodeToClientV_10 -> enc 10
-          NodeToClientV_11 -> enc 11
-          NodeToClientV_12 -> enc 12
-          NodeToClientV_13 -> enc 13
-          NodeToClientV_14 -> enc 14
-          NodeToClientV_15 -> enc 15
           NodeToClientV_16 -> enc 16
           NodeToClientV_17 -> enc 17
           NodeToClientV_18 -> enc 18
@@ -81,13 +74,6 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
 
       decodeTerm =
           dec >=> \case
-            9  -> Right NodeToClientV_9
-            10 -> Right NodeToClientV_10
-            11 -> Right NodeToClientV_11
-            12 -> Right NodeToClientV_12
-            13 -> Right NodeToClientV_13
-            14 -> Right NodeToClientV_14
-            15 -> Right NodeToClientV_15
             16 -> Right NodeToClientV_16
             17 -> Right NodeToClientV_17
             18 -> Right NodeToClientV_18
@@ -133,22 +119,15 @@ instance Queryable NodeToClientVersionData where
     queryVersion = query
 
 nodeToClientCodecCBORTerm :: NodeToClientVersion -> CodecCBORTerm Text NodeToClientVersionData
-nodeToClientCodecCBORTerm v = CodecCBORTerm {encodeTerm, decodeTerm}
+nodeToClientCodecCBORTerm _v = CodecCBORTerm {encodeTerm, decodeTerm}
     where
       encodeTerm :: NodeToClientVersionData -> CBOR.Term
       encodeTerm NodeToClientVersionData { networkMagic, query }
-        | v >= NodeToClientV_15
         = CBOR.TList [CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic), CBOR.TBool query]
-        | otherwise
-        = CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
 
       decodeTerm :: CBOR.Term -> Either Text NodeToClientVersionData
       decodeTerm (CBOR.TList [CBOR.TInt x, CBOR.TBool query])
-        | v >= NodeToClientV_15
         = decoder x query
-      decodeTerm (CBOR.TInt x)
-        | v < NodeToClientV_15
-        = decoder x False
       decodeTerm t
         = Left $ T.pack $ "unknown encoding: " ++ show t
 

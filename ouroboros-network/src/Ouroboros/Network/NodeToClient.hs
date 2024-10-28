@@ -165,7 +165,7 @@ nodeToClientProtocols
   :: NodeToClientProtocols appType addr bytes m a b
   -> NodeToClientVersion
   -> OuroborosApplicationWithMinimalCtx appType addr bytes m a b
-nodeToClientProtocols protocols version =
+nodeToClientProtocols protocols _version =
     OuroborosApplication $
       case protocols of
         NodeToClientProtocols {
@@ -176,11 +176,8 @@ nodeToClientProtocols protocols version =
           } ->
           [ localChainSyncMiniProtocol localChainSyncProtocol
           , localTxSubmissionMiniProtocol localTxSubmissionProtocol
-          ] <>
-          [ localStateQueryMiniProtocol localStateQueryProtocol
-          ] <>
-          [ localTxMonitorMiniProtocol localTxMonitorProtocol
-          | version >= NodeToClientV_12
+          , localStateQueryMiniProtocol localStateQueryProtocol
+          , localTxMonitorMiniProtocol localTxMonitorProtocol
           ]
 
   where
