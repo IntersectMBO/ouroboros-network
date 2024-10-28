@@ -22,8 +22,5 @@ jobs:
 
     - uses: actions/checkout@v4
 
-    - name: git fetch
-      run: git fetch origin master:master
-
     - name: Check changelogs
       run: ./scripts/ci/check-changelogs.sh

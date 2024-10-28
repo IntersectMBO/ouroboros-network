@@ -9,8 +9,8 @@ RESULT=0
 function check_project () {
   project=$1
   n=$()
-  if [[ -n $(git diff --name-only origin/master..HEAD -- $project) ]];then
-    if [[ -z $(git diff --name-only origin/master..HEAD -- $project/CHANGELOG.md) ]]; then
+  if [[ -n $(git diff --name-only origin/main..HEAD -- $project) ]];then
+    if [[ -z $(git diff --name-only origin/main..HEAD -- $project/CHANGELOG.md) ]]; then
       echo "$project was modified but its CHANGELOG was not updated"
       RESULT=1
     fi
