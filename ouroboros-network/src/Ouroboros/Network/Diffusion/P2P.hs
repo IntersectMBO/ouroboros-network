@@ -1013,7 +1013,9 @@ runM Interfaces
                     spsCloseConnectionTimeout =
                       Diffusion.Policies.closeConnectionTimeout,
                     spsConnectionManager = connectionManager,
-                    spsExitPolicy = exitPolicy
+                    spsExitPolicy = exitPolicy,
+                    spsRethrowPolicy = rethrowPolicy,
+                    spsMainThreadId = mainThreadId
                   }
 
       dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore

@@ -1099,14 +1099,16 @@ prop_peer_selection_action_trace_coverage defaultBearerInfo diffScript =
 
       peerSelectionActionsTraceMap :: PeerSelectionActionsTrace NtNAddr NtNVersion
                                    -> String
-      peerSelectionActionsTraceMap (PeerStatusChanged _)             =
+      peerSelectionActionsTraceMap (PeerStatusChanged _)          =
         "PeerStatusChanged"
       peerSelectionActionsTraceMap (PeerStatusChangeFailure _ ft) =
         "PeerStatusChangeFailure " ++ show ft
-      peerSelectionActionsTraceMap (PeerMonitoringError _ se)        =
+      peerSelectionActionsTraceMap (PeerMonitoringError _ se)     =
         "PeerMonitoringError " ++ show se
-      peerSelectionActionsTraceMap (PeerMonitoringResult _ wspt)     =
+      peerSelectionActionsTraceMap (PeerMonitoringResult _ wspt)  =
         "PeerMonitoringResult " ++ show wspt
+      peerSelectionActionsTraceMap (AcquireConnectionError e)      =
+        "AcquireConnectionError " ++ show e
 
       eventsSeenNames = map peerSelectionActionsTraceMap events
 
@@ -3391,7 +3393,8 @@ prop_diffusion_peer_selection_actions_no_dodgy_traces ioSimTrace traceNumber =
                 WithTime _ (PeerStatusChanged type_)         -> getConnId type_
                 WithTime _ (PeerStatusChangeFailure type_ _) -> getConnId type_
                 WithTime _ (PeerMonitoringError connId _)    -> Just connId
-                WithTime _ (PeerMonitoringResult connId _)   -> Just connId)
+                WithTime _ (PeerMonitoringResult connId _)   -> Just connId
+                WithTime _ (AcquireConnectionError _)        -> Nothing)
          $ peerSelectionActionsEvents
          )
 
