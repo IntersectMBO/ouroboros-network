@@ -81,7 +81,7 @@ import Control.Monad.Reader
 import Control.Monad.State ( evalStateT, StateT )
 import Control.Monad.State qualified as State
 import FRP.Rhine qualified as Rhine (Time, try)
-import FRP.Rhine hiding (diffTime, addTime)-- qualified as Rhine
+import FRP.Rhine hiding (diffTime, addTime, Time)-- qualified as Rhine
 import Data.Automaton.Trans.Except (dSwitch)
 -- import FRP.Rhine.Clock
 -- import FRP.Rhine.Clock qualified as Rhine
@@ -556,6 +556,8 @@ data TargetsIntermediate = TargetsIntermediate {
   bbb :: !(Maybe Int)
   }
 
+targetsIntermediate = TargetsIntermediate Nothing Nothing
+
 peerSelectionGovernor' :: forall peeraddr peerconn m. ( Alternative (STM m)
                          , MonadAsync m
                          , MonadDelay m
@@ -627,8 +629,9 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
               tagS >>> arrMCl (churn (natTracer (lift . lift) tracer)) -< ()
               returnA -< ((), Nothing)
 
+    -- abstract churn, independent of cardano-specifics such as lsj or bootstrap peers or consensus mode
     churn :: Tracer (App2 peeraddr peerconn m) (TracePeerSelection peeraddr)
-          -> PeerSelectionInPin
+          -> PeerSelectionInPin -- ^ todo replace this
           -> App2 peeraddr peerconn m ()
     churn tracer targets = do
       if sanePeerSelectionTargets undefined
@@ -640,20 +643,27 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
     setTargets :: BehaviorF (App2 peeraddr peerconn m) time () ()
     setTargets = arrMCl impl
       where
-        -- TODO we could use input for something
+        -- TODO maybe we don't need input?
         impl input = do
+          chan <- ask
           st <- State.get
           let view = peerSelectionStateToView st
 
           -- _ <- arr $ forKnown       st view -< input'
-          forEstablished st view input `onSuccessElseRetryTime` chaseEstablishedPeersTarget
+          forEstablished st view input `onSuccessElseRetryTime` (lift . lift . (chaseEstablishedPeersTarget st))
           return ()
 
+        forEstablished :: PeerSelectionState peeraddr peerconn
+                       -> PeerSelectionView (Set.Set peeraddr, Int)
+                       -> a
+                       -> Guarded m (PeerSelectionView (Set.Set peeraddr, Int))
         forEstablished st@PeerSelectionState {
                          establishedPeers,
+                         knownPeers,
                          targets = PeerSelectionTargets {
                              targetNumberOfEstablishedPeers} }
-                       PeerSelectionView {
+                       view@PeerSelectionView {
+                         viewKnownBigLedgerPeers     = (bigLedgerPeersSet, _),
                          viewEstablishedPeers        = (_, numEstablishedPeers),
                          viewColdPeersPromotions     = (_, numConnectInProgress),
                          viewAvailableToConnectPeers = (availableToConnect, numAvailableToConnect)
@@ -662,62 +672,66 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
           | numEstablishedPeers + numConnectInProgress < targetNumberOfEstablishedPeers
           , numAvailableToConnect - numEstablishedPeers - numConnectInProgress > 0
           = Guarded Nothing do
-              return undefined
+              return view
+          | numEstablishedPeers + numConnectInProgress < targetNumberOfEstablishedPeers
+          = GuardedSkip (KnownPeers.minConnectTime knownPeers (`Set.notMember` bigLedgerPeersSet))
 
         onSuccessElseRetryTime left right =
           case left of
-            Guarded _a b -> right b
-            GuardedSkip {} -> left
+            Guarded _a b -> right b >> return (GuardedSkip Nothing)
+            GuardedSkip {} -> return left
 
         -- forKnown       PeerSelectionState {
         --                  knownPeers }
         --                input = ()
 
 
-    -- chaseEstablishedPeersTarget :: BehaviorF (App2 peeraddr peerconn m) time (Int, Set.Set peeraddr) ()
-    chaseEstablishedPeersTarget a =
-      case signum (fst a) of
-        -1 -> below a
-        0  -> return ()
-        1  -> above a
+    chaseEstablishedPeersTarget :: PeerSelectionState peeradd peerconn
+                                -> m (PeerSelectionView (Set.Set peeraddr, Int))
+                                -> m ()
+    chaseEstablishedPeersTarget = undefined
+      -- case signum (fst a) of
+      --   -1 -> below a
+      --   0  -> return ()
+      --   1  -> above a
       where
-        -- TODO lift this definition out
-        tracer' = natTracer (lift . lift) tracer
+        -- -- TODO lift this definition out
+        -- tracer' = natTracer (lift . lift) tracer
 
-        -- TODO above and below can be refactored
-        above (numPeersToDemote, availableToDemote) = do
-          st@PeerSelectionState {
-            targets =
-              PeerSelectionTargets {
-                targetNumberOfEstablishedPeers } } <- State.get
+        -- -- TODO above and below can be refactored
+        -- above (numPeersToDemote, availableToDemote) = do
+        --   st@PeerSelectionState {
+        --     targets =
+        --       PeerSelectionTargets {
+        --         targetNumberOfEstablishedPeers } } <- State.get
 
-          let PeerSelectionView {
-            viewEstablishedPeers        = (_, numEstablishedPeers)
-          } = peerSelectionStateToView st
+        --   let PeerSelectionView {
+        --     viewEstablishedPeers        = (_, numEstablishedPeers)
+        --   } = peerSelectionStateToView st
 
-          selectedToDemote <- (lift . lift) $ pickPeers st
-                                (policyPickWarmPeersToDemote policy)
-                                availableToDemote
-                                numPeersToDemote
-          traceWith tracer' $ TraceDemoteWarmPeers targetNumberOfEstablishedPeers
-                                                   numEstablishedPeers selectedToDemote
+        --   selectedToDemote <- (lift . lift) $ pickPeers st
+        --                         (policyPickWarmPeersToDemote policy)
+        --                         availableToDemote
+        --                         numPeersToDemote
+        --   traceWith tracer' $ TraceDemoteWarmPeers targetNumberOfEstablishedPeers
+        --                                            numEstablishedPeers selectedToDemote
 
-        below (numPeersToPromote, availableToPromote) = do
-          st@PeerSelectionState {
-            targets =
-              PeerSelectionTargets {
-                targetNumberOfEstablishedPeers } } <- State.get
+        -- below (numPeersToPromote, availableToPromote) = do
+        --   st@PeerSelectionState {
+        --     targets =
+        --       PeerSelectionTargets {
+        --         targetNumberOfEstablishedPeers } } <- State.get
 
-          let PeerSelectionView {
-            viewEstablishedPeers        = (_, numEstablishedPeers)
-          } = peerSelectionStateToView st
+        --   let PeerSelectionView {
+        --     viewEstablishedPeers        = (_, numEstablishedPeers)
+        --   } = peerSelectionStateToView st
 
-          selectedToPromote <- (lift . lift) $ pickPeers st
-                                 (policyPickColdPeersToPromote policy)
-                                 availableToPromote
-                                 numPeersToPromote
-          traceWith tracer' $ TracePromoteColdPeers targetNumberOfEstablishedPeers
-                                                    numEstablishedPeers selectedToPromote
+        --   selectedToPromote <- (lift . lift) $ pickPeers st
+        --                          (policyPickColdPeersToPromote policy)
+        --                          availableToPromote
+        --                          numPeersToPromote
+        --   traceWith tracer' $ TracePromoteColdPeers targetNumberOfEstablishedPeers
+        --                                             numEstablishedPeers selectedToPromote
 
 
 
