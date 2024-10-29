@@ -1018,6 +1018,7 @@ the rules below, it is good practice to update the code's style to match them.
     -Widentities
     -Wredundant-constraints
     -Wmissing-export-lists
+    -Wunused-packages
     -Wno-unticked-promoted-constructors
     ```
 
@@ -1053,7 +1054,7 @@ the rules below, it is good practice to update the code's style to match them.
     foo = foo_
     ```
 
-    Without the extra wrapper `foo`, the call stack would only start at `_foo`,
+    Without the extra wrapper `foo`, the call stack would only start at `foo_`,
     which is rather useless.
 
 22. __Ambiguous types__: we avoid `AllowAmbiguousTypes`. Instead, we add a
