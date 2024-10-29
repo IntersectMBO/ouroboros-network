@@ -10,6 +10,11 @@
   * `localTxSubmissionClientNull`
   * `TxSizeInBytes`
 * Use `typed-protocols-0.3.0.0`.
+* `Ouroboros.Network.Protocols.TxSubmission2.Codec.{encode,decode}TxSubmission2` are no longer exported.
+
+### Non-breaking changes
+
+* Improved haddocks of `node-to-node` mini-protocol codecs.
 
 ### Non-breaking changes
 
