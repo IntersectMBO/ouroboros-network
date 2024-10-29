@@ -551,6 +551,11 @@ data CardanoState = CardanoState {
 data CardanoSignal = CardanoSignal {
   cardanoQuiesce :: !(Maybe Quiesce) }
 
+data TargetsIntermediate = TargetsIntermediate {
+  aaa :: !(Maybe Int),
+  bbb :: !(Maybe Int)
+  }
+
 peerSelectionGovernor' :: forall peeraddr peerconn m. ( Alternative (STM m)
                          , MonadAsync m
                          , MonadDelay m
@@ -577,6 +582,8 @@ peerSelectionGovernor' :: forall peeraddr peerconn m. ( Alternative (STM m)
                       -> m Void
 peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode minActiveBigLedgerPeers actions policy interfaces =
   JobPool.withJobPool $ \jobPool ->
+                          -- TODO this can be made stateless in a clever way
+                          -- TODO move cardano-specific code to a separate module
                             flip evalStateT initialState
                           . runEventChanT . flow
                           $ cardanoTopLevel >-- keepLast initialCardanoSignal --> cardanoHandlers
@@ -631,26 +638,48 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
           undefined
 
     setTargets :: BehaviorF (App2 peeraddr peerconn m) time () ()
-    setTargets = impl
+    setTargets = arrMCl impl
       where
-        impl = proc input -> do
-          st <- constMCl State.get -< ()
-          let input' = (st, input)
+        -- TODO we could use input for something
+        impl input = do
+          st <- State.get
+          let view = peerSelectionStateToView st
 
-          _ <- arr $ uncurry forEstablished -< input'
-          returnA -< ()
+          -- _ <- arr $ forKnown       st view -< input'
+          forEstablished st view input `onSuccessElseRetryTime` chaseEstablishedPeersTarget
+          return ()
 
-        forEstablished PeerSelectionState {
-                         establishedPeers }
-                       inputs = ()
+        forEstablished st@PeerSelectionState {
+                         establishedPeers,
+                         targets = PeerSelectionTargets {
+                             targetNumberOfEstablishedPeers} }
+                       PeerSelectionView {
+                         viewEstablishedPeers        = (_, numEstablishedPeers),
+                         viewColdPeersPromotions     = (_, numConnectInProgress),
+                         viewAvailableToConnectPeers = (availableToConnect, numAvailableToConnect)
+                       }
+                       input
+          | numEstablishedPeers + numConnectInProgress < targetNumberOfEstablishedPeers
+          , numAvailableToConnect - numEstablishedPeers - numConnectInProgress > 0
+          = Guarded Nothing do
+              return undefined
+
+        onSuccessElseRetryTime left right =
+          case left of
+            Guarded _a b -> right b
+            GuardedSkip {} -> left
+
+        -- forKnown       PeerSelectionState {
+        --                  knownPeers }
+        --                input = ()
 
 
-    chaseEstablishedPeersTarget :: BehaviorF (App2 peeraddr peerconn m) time (Int, Set.Set peeraddr) ()
-    chaseEstablishedPeersTarget = proc a -> do
+    -- chaseEstablishedPeersTarget :: BehaviorF (App2 peeraddr peerconn m) time (Int, Set.Set peeraddr) ()
+    chaseEstablishedPeersTarget a =
       case signum (fst a) of
-        -1 -> arrMCl below -< a
-        0  -> returnA -< ()
-        1  -> arrMCl above -< a
+        -1 -> below a
+        0  -> return ()
+        1  -> above a
       where
         -- TODO lift this definition out
         tracer' = natTracer (lift . lift) tracer
@@ -694,8 +723,15 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
 
     -- ClSignal (App2 peeraddr peerconn m) (EventClock PeerSelectionInPin) ()
     cardanoTopLevel :: Rhine (App2 peeraddr peerconn m) (EventClock PeerSelectionInPin) arb CardanoSignal
-    cardanoTopLevel = tagS >-> feedback initialCardanoState (arrMCl (uncurry monitor)) @@ EventClock
+    cardanoTopLevel = tagS >-> feedback initialCardanoState (arrMCl (uncurry monitor) >>> cardanoTargets) @@ EventClock
       where
+        cardanoTargets = proc a@(signal, _) -> do
+          case cardanoQuiesce signal of
+            Just Quiesce  -> setTargets -< ()
+            _otherwise    -> returnA -< ()
+
+          returnA -< a
+
         monitor event state = do
             cardanoLedgerStateJudgement <- monitorLedger' (natTracer (lift . lift) tracer) event state
             cardanoUseBootstrapPeers    <- monitorBootstrapPeers (natTracer (lift . lift) tracer) event state
@@ -744,12 +780,12 @@ monitorBootstrapPeers tracer event CardanoState { cardanoUseBootstrapPeers,
   case (cardanoConsensusMode, event) of
     (PraosMode, BPChange ubp) -> do
        traceWith tracer $ TraceUseBootstrapPeersChanged ubp
+       -- TODO not sure if the following should be performed here
        let nonEstablishedBootstrapPeers =
              PublicRootPeers.getBootstrapPeers publicRootPeers
              `Set.difference`
              EstablishedPeers.toSet establishedPeers
-             -- TODO remove in progress
-       -- TODO hoist this out?
+       -- In a stateless version, we would output a TMVar to the resampling buffer
        State.put (state { knownPeers = KnownPeers.delete nonEstablishedBootstrapPeers knownPeers
                         , publicRootPeers = PublicRootPeers.difference
                                               publicRootPeers
