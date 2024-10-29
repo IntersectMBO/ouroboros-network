@@ -728,7 +728,7 @@ withPeerStateActions PeerStateActionsArguments {
         (newTVarIO PeerCold)
         (\peerStateVar -> atomically $ writeTVar peerStateVar PeerCold)
         $ \peerStateVar -> do
-          res <- requestOutboundConnection spsConnectionManager remotePeerAddr
+          res <- acquireOutboundConnection spsConnectionManager remotePeerAddr
           case res of
             Connected connectionId@ConnectionId { localAddress, remoteAddress }
                       _dataFlow
@@ -1041,7 +1041,7 @@ withPeerStateActions PeerStateActionsArguments {
           -- 'unregisterOutboundConnection' could only fail to demote the peer if
           -- connection manager would simultaneously promote it, but this is not
           -- possible.
-          _ <- unregisterOutboundConnection spsConnectionManager (remoteAddress pchConnectionId)
+          _ <- releaseOutboundConnection spsConnectionManager (remoteAddress pchConnectionId)
           wasWarm <- atomically (updateUnlessCoolingOrCold pchPeerStatus PeerCooling)
           when wasWarm $
             traceWith spsTracer (PeerStatusChanged (WarmToCooling pchConnectionId))

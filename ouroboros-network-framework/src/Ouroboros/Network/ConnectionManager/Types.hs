@@ -48,7 +48,7 @@
 -- * 'InitiatorMode'          - could be used on client side of node-to-client
 --                              applications.
 --
--- The calls 'requestOutboundConnection' and 'includeInboundConnection' return
+-- The calls 'acquireOutboundConnection' and 'includeInboundConnection' return
 -- once a connection has been negotiated.  The returned 'handle' contains all
 -- the information that is needed to start and monitor mini-protocols through
 -- the mux interface.
@@ -113,16 +113,16 @@ module Ouroboros.Network.ConnectionManager.Types
   , OperationResult (..)
   , resultInState
   , DemotedToColdRemoteTr (..)
-  , RequestOutboundConnection
+  , AcquireOutboundConnection
   , IncludeInboundConnection
     -- *** Outbound side
-  , requestOutboundConnection
+  , acquireOutboundConnection
   , promotedToWarmRemote
   , demotedToColdRemote
-  , unregisterOutboundConnection
+  , releaseOutboundConnection
     -- *** Inbound side
   , includeInboundConnection
-  , unregisterInboundConnection
+  , releaseInboundConnection
   , numberOfConnections
     -- ** Private API
     -- Includes all constructors required to create a 'ConnectionManager'.
@@ -457,7 +457,7 @@ resultInState (OperationSuccess     st) = st
 resultInState (TerminatedConnection st) = st
 
 
--- | Return value of 'unregisterInboundConnection' to inform the caller about
+-- | Return value of 'releaseInboundConnection' to inform the caller about
 -- the transition.
 --
 data DemotedToColdRemoteTr =
@@ -472,7 +472,7 @@ data DemotedToColdRemoteTr =
   deriving Show
 
 
--- | Result of 'requestOutboundConnection' or 'includeInboundConnection'.
+-- | Result of 'acquireOutboundConnection' or 'includeInboundConnection'.
 --
 data Connected peerAddr handle handleError =
     -- | We are connected and mux is running.
@@ -483,7 +483,7 @@ data Connected peerAddr handle handleError =
     --
     -- /Implementation detail:/ we return @'Maybe' handleError@, rather than
     -- 'handleError'.  In case of an existing inbound connection, the
-    -- implementation of 'requestOutboundConnection' is awaiting on handshake
+    -- implementation of 'acquireOutboundConnection' is awaiting on handshake
     -- through the connection state.  The 'TerminatingState' or
     -- 'TerminatedState' are not only used for handshake errors, but also for
     -- normal termination, hence the @'Maybe'@.  We could await on
@@ -493,7 +493,7 @@ data Connected peerAddr handle handleError =
   | Disconnected !(ConnectionId peerAddr) !(Maybe handleError)
 
 
-type RequestOutboundConnection peerAddr handle handleError m
+type AcquireOutboundConnection peerAddr handle handleError m
     =            peerAddr -> m (Connected peerAddr handle handleError)
 type IncludeInboundConnection socket peerAddr handle handleError m
     = Word32
@@ -508,8 +508,8 @@ type IncludeInboundConnection socket peerAddr handle handleError m
 data OutboundConnectionManager (muxMode :: Mux.Mode) socket peerAddr handle handleError m where
     OutboundConnectionManager
       :: HasInitiator muxMode ~ True
-      => { ocmRequestConnection    :: RequestOutboundConnection peerAddr handle handleError m
-         , ocmUnregisterConnection :: peerAddr -> m (OperationResult AbstractState)
+      => { ocmAcquireConnection :: AcquireOutboundConnection peerAddr handle handleError m
+         , ocmReleaseConnection :: peerAddr -> m (OperationResult AbstractState)
          }
       -> OutboundConnectionManager muxMode socket peerAddr handle handleError m
 
@@ -522,7 +522,7 @@ data InboundConnectionManager (muxMode :: Mux.Mode) socket peerAddr handle handl
     InboundConnectionManager
       :: HasResponder muxMode ~ True
       => { icmIncludeConnection    :: IncludeInboundConnection socket peerAddr handle handleError m
-         , icmUnregisterConnection :: peerAddr -> m (OperationResult DemotedToColdRemoteTr)
+         , icmReleaseConnection    :: peerAddr -> m (OperationResult DemotedToColdRemoteTr)
          , icmPromotedToWarmRemote :: peerAddr -> m (OperationResult AbstractState)
          , icmDemotedToColdRemote
                                    :: peerAddr -> m (OperationResult AbstractState)
@@ -569,26 +569,26 @@ data ConnectionManager (muxMode :: Mux.Mode) socket peerAddr handle handleError 
 -- * \(Reserve\) to \(Negotiated^{*}_{Outbound}\) transitions
 -- * \(PromotedToWarm^{Duplex}_{Local}\) transition
 -- * \(Awake^{Duplex}_{Local}\) transition
-requestOutboundConnection
+acquireOutboundConnection
     :: HasInitiator muxMode ~ True
     => ConnectionManager muxMode socket peerAddr handle handleError m
-    -> RequestOutboundConnection        peerAddr handle handleError m
-requestOutboundConnection =
-    ocmRequestConnection . withInitiatorMode . getConnectionManager
+    -> AcquireOutboundConnection        peerAddr handle handleError m
+acquireOutboundConnection =
+    ocmAcquireConnection . withInitiatorMode . getConnectionManager
 
--- | Unregister outbound connection.
+-- | Release outbound connection.
 --
 --   This executes:
 --
 -- * \(DemotedToCold^{*}_{Local}\) transitions
-unregisterOutboundConnection
+releaseOutboundConnection
     :: HasInitiator muxMode ~ True
     => ConnectionManager muxMode socket peerAddr handle handleError m
     -> peerAddr
     -> m (OperationResult AbstractState)
     -- ^ reports the from-state.
-unregisterOutboundConnection =
-    ocmUnregisterConnection . withInitiatorMode . getConnectionManager
+releaseOutboundConnection =
+    ocmReleaseConnection . withInitiatorMode . getConnectionManager
 
 -- | Notify the 'ConnectionManager' that a remote end promoted us to a
 -- /warm peer/.
@@ -636,18 +636,18 @@ includeInboundConnection
 includeInboundConnection =
     icmIncludeConnection . withResponderMode . getConnectionManager
 
--- | Unregister outbound connection. Returns if the operation was successful.
+-- | Release outbound connection. Returns if the operation was successful.
 --
 -- This executes:
 --
 -- * \(Commit*{*}\) transition
 -- * \(TimeoutExpired\) transition
-unregisterInboundConnection
+releaseInboundConnection
     :: HasResponder muxMode ~ True
     => ConnectionManager muxMode socket peerAddr handle handleError m
     -> peerAddr -> m (OperationResult DemotedToColdRemoteTr)
-unregisterInboundConnection =
-    icmUnregisterConnection . withResponderMode . getConnectionManager
+releaseInboundConnection =
+    icmReleaseConnection . withResponderMode . getConnectionManager
 
 -- | Number of connections tracked by the server.
 --
@@ -837,9 +837,9 @@ connectionManagerErrorFromException x = do
 -- one can be sure where the assertion came from as well as the all relevant information.
 --
 data AssertionLocation peerAddr
-  = UnregisterInboundConnection  !(Maybe (ConnectionId peerAddr)) !AbstractState
-  | RequestOutboundConnection    !(Maybe (ConnectionId peerAddr)) !AbstractState
-  | UnregisterOutboundConnection !(Maybe (ConnectionId peerAddr)) !AbstractState
+  = ReleaseInboundConnection  !(Maybe (ConnectionId peerAddr)) !AbstractState
+  | AcquireOutboundConnection    !(Maybe (ConnectionId peerAddr)) !AbstractState
+  | ReleaseOutboundConnection !(Maybe (ConnectionId peerAddr)) !AbstractState
   | PromotedToWarmRemote         !(Maybe (ConnectionId peerAddr)) !AbstractState
   | DemotedToColdRemote          !(Maybe (ConnectionId peerAddr)) !AbstractState
   deriving Show

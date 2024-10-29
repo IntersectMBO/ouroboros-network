@@ -501,7 +501,7 @@ defaultResetTimeout = 5
 
 newtype PruneAction m = PruneAction { runPruneAction :: m () }
 
--- | Instruction used internally in @unregisterOutboundConnectionImpl@, e.g. in
+-- | Instruction used internally in @releaseOutboundConnectionImpl@, e.g. in
 -- the implementation of one of the two  @DemotedToCold^{dataFlow}_{Local}@
 -- transitions.
 --
@@ -690,11 +690,11 @@ with args@Arguments {
                 getConnectionManager =
                   WithInitiatorMode
                     OutboundConnectionManager {
-                        ocmRequestConnection =
-                          requestOutboundConnectionImpl freshIdSupply stateVar
+                        ocmAcquireConnection =
+                          acquireOutboundConnectionImpl freshIdSupply stateVar
                                                         outboundHandler,
-                        ocmUnregisterConnection =
-                          unregisterOutboundConnectionImpl stateVar stdGenVar
+                        ocmReleaseConnection =
+                          releaseOutboundConnectionImpl stateVar stdGenVar
                       },
                 readState,
                 waitForOutboundDemotion
@@ -708,8 +708,8 @@ with args@Arguments {
                         icmIncludeConnection =
                           includeInboundConnectionImpl freshIdSupply stateVar
                                                        inboundHandler,
-                        icmUnregisterConnection =
-                          unregisterInboundConnectionImpl stateVar,
+                        icmReleaseConnection =
+                          releaseInboundConnectionImpl stateVar,
                         icmPromotedToWarmRemote =
                           promotedToWarmRemoteImpl stateVar stdGenVar,
                         icmDemotedToColdRemote =
@@ -726,18 +726,18 @@ with args@Arguments {
                 getConnectionManager =
                   WithInitiatorResponderMode
                     OutboundConnectionManager {
-                        ocmRequestConnection =
-                          requestOutboundConnectionImpl freshIdSupply stateVar
+                        ocmAcquireConnection =
+                          acquireOutboundConnectionImpl freshIdSupply stateVar
                                                         outboundHandler,
-                        ocmUnregisterConnection =
-                          unregisterOutboundConnectionImpl stateVar stdGenVar
+                        ocmReleaseConnection =
+                          releaseOutboundConnectionImpl stateVar stdGenVar
                       }
                     InboundConnectionManager {
                         icmIncludeConnection =
                           includeInboundConnectionImpl freshIdSupply stateVar
                                                        inboundHandler,
-                        icmUnregisterConnection =
-                          unregisterInboundConnectionImpl stateVar,
+                        icmReleaseConnection =
+                          releaseInboundConnectionImpl stateVar,
                         icmPromotedToWarmRemote =
                           promotedToWarmRemoteImpl stateVar stdGenVar,
                         icmDemotedToColdRemote =
@@ -863,7 +863,7 @@ with args@Arguments {
         cleanup :: m ()
         cleanup =
           -- We must ensure that we update 'connVar',
-          -- `requestOutboundConnection` might be blocked on it awaiting for:
+          -- `acquireOutboundConnection` might be blocked on it awaiting for:
           -- - handshake negotiation; or
           -- - `Terminate: TerminatingState → TerminatedState` transition.
           -- That's why we use 'uninterruptibleMask'. Note that this cleanup
@@ -959,7 +959,7 @@ with args@Arguments {
                      in forceThreadDelay timeWaitTimeout
                 `finally` do
                   -- We must ensure that we update 'connVar',
-                  -- `requestOutboundConnection` might be blocked on it awaiting for:
+                  -- `acquireOutboundConnection` might be blocked on it awaiting for:
                   -- - handshake negotiation; or
                   -- - `Terminate: TerminatingState → TerminatedState` transition.
                   traceWith tracer (TrConnectionTimeWaitDone connId)
@@ -1125,7 +1125,7 @@ with args@Arguments {
                 --
                 -- This is subtle part, which needs to handle a near simultaneous
                 -- open.  We cannot rely on 'ReservedOutboundState' state as
-                -- a lock.  It may happen that the `requestOutboundConnection`
+                -- a lock.  It may happen that the `acquireOutboundConnection`
                 -- will put 'ReservedOutboundState', but before it will call `connect`
                 -- the `accept` call will return.  We overwrite the state and
                 -- replace the connection state 'TVar' with a fresh one.  Nothing
@@ -1223,7 +1223,7 @@ with args@Arguments {
                     --
                     -- Note: we don't set an explicit timeout here.  The
                     -- server will set a timeout and call
-                    -- 'unregisterInboundConnection' when it expires.
+                    -- 'releaseInboundConnection' when it expires.
                     --
                     UnnegotiatedState {} -> do
                       let connState' = InboundIdleState
@@ -1278,7 +1278,7 @@ with args@Arguments {
                 -- @
                 -- This is not needed!  When we return from this call, the inbound
                 -- protocol governor will monitor the connection.  Once it becomes
-                -- idle, it will call 'unregisterInboundConnection' which will
+                -- idle, it will call 'releaseInboundConnection' which will
                 -- perform the aforementioned @Commit@ transition.
 
                 if connected
@@ -1378,12 +1378,12 @@ with args@Arguments {
     -- We need 'mask' in order to guarantee that the traces are logged if an
     -- async exception lands between the successful STM action and the logging
     -- action.
-    unregisterInboundConnectionImpl
+    releaseInboundConnectionImpl
         :: StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
         -> peerAddr
         -> m (OperationResult DemotedToColdRemoteTr)
-    unregisterInboundConnectionImpl stateVar peerAddr = mask_ $ do
-      traceWith tracer (TrUnregisterConnection Inbound peerAddr)
+    releaseInboundConnectionImpl stateVar peerAddr = mask_ $ do
+      traceWith tracer (TrReleaseConnection Inbound peerAddr)
       (mbThread, mbTransition, result, mbAssertion) <- atomically $ do
         state <- readTMVar stateVar
         case Map.lookup peerAddr state of
@@ -1400,7 +1400,7 @@ with args@Arguments {
             connState <- readTVar connVar
             let st = abstractState (Known connState)
             case connState of
-              -- In any of the following two states unregistering is not
+              -- In any of the following two states releasing is not
               -- supported.  'includeInboundConnection' is a synchronous
               -- operation which returns only once the connection is
               -- negotiated.
@@ -1435,8 +1435,8 @@ with args@Arguments {
                        , Nothing
                        , OperationSuccess KeepTr
                        , Just (TrUnexpectedlyFalseAssertion
-                                 (UnregisterInboundConnection (Just connId)
-                                                              st)
+                                 (ReleaseInboundConnection (Just connId)
+                                                           st)
                                  )
                        )
 
@@ -1454,8 +1454,8 @@ with args@Arguments {
                        , Nothing
                        , OperationSuccess CommitTr
                        , Just (TrUnexpectedlyFalseAssertion
-                                 (UnregisterInboundConnection (Just connId)
-                                                              st)
+                                 (ReleaseInboundConnection (Just connId)
+                                                           st)
                                  )
                        )
 
@@ -1483,8 +1483,8 @@ with args@Arguments {
                        , Just (mkTransition connState connState')
                        , UnsupportedState st
                        , Just (TrUnexpectedlyFalseAssertion
-                                 (UnregisterInboundConnection (Just connId)
-                                                              st)
+                                 (ReleaseInboundConnection (Just connId)
+                                                           st)
                                  )
                        )
 
@@ -1497,13 +1497,13 @@ with args@Arguments {
                        , Just (mkTransition connState connState')
                        , UnsupportedState st
                        , Just (TrUnexpectedlyFalseAssertion
-                                 (UnregisterInboundConnection (Just connId)
-                                                              st)
+                                 (ReleaseInboundConnection (Just connId)
+                                                           st)
                                  )
                        )
 
-              -- If 'unregisterOutboundConnection' is called just before
-              -- 'unregisterInboundConnection', the latter one might observe
+              -- If 'releaseOutboundConnection' is called just before
+              -- 'releaseInboundConnection', the latter one might observe
               -- 'TerminatingState'.
               TerminatingState _connId _connThread _handleError ->
                 return ( Nothing
@@ -1512,7 +1512,7 @@ with args@Arguments {
                        , Nothing
                        )
               -- However, 'TerminatedState' should not be observable by
-              -- 'unregisterInboundConnection', unless 'timeWaitTimeout' is
+              -- 'releaseInboundConnection', unless 'timeWaitTimeout' is
               -- close to 'serverProtocolIdleTimeout'.
               TerminatedState _handleError ->
                 return ( Nothing
@@ -1535,14 +1535,14 @@ with args@Arguments {
 
       return result
 
-    requestOutboundConnectionImpl
+    acquireOutboundConnectionImpl
         :: HasCallStack
         => FreshIdSupply m
         -> StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
         -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError (version, versionData) m
         -> peerAddr
         -> m (Connected peerAddr handle handleError)
-    requestOutboundConnectionImpl freshIdSupply stateVar handler peerAddr = do
+    acquireOutboundConnectionImpl freshIdSupply stateVar handler peerAddr = do
         let provenance = Outbound
         traceWith tracer (TrIncludeConnection provenance peerAddr)
         (trace, mutableConnState@MutableConnState { connVar }
@@ -1845,7 +1845,7 @@ with args@Arguments {
                 _ ->
                   return ( Nothing
                          , Just (TrUnexpectedlyFalseAssertion
-                                   (RequestOutboundConnection
+                                   (AcquireOutboundConnection
                                      (Just connId)
                                      (abstractState (Known connState))
                                    )
@@ -1975,7 +1975,7 @@ with args@Arguments {
                   --                          → OutboundState^\tau Duplex
                   -- @
                   -- This transition can happen if there are concurrent
-                  -- `includeInboundConnection` and `requestOutboundConnection`
+                  -- `includeInboundConnection` and `acquireOutboundConnection`
                   -- calls.
                   let connState' = OutboundDupState connId connThread handle Ticking
                   writeTVar connVar connState'
@@ -2117,20 +2117,20 @@ with args@Arguments {
         return (Disconnected connId handleErrorM)
 
 
-    unregisterOutboundConnectionImpl
+    releaseOutboundConnectionImpl
         :: StrictTMVar m
             (ConnectionManagerState peerAddr handle handleError version m)
         -> StrictTVar m StdGen
         -> peerAddr
         -> m (OperationResult AbstractState)
-    unregisterOutboundConnectionImpl stateVar stdGenVar peerAddr = do
-      traceWith tracer (TrUnregisterConnection Outbound peerAddr)
+    releaseOutboundConnectionImpl stateVar stdGenVar peerAddr = do
+      traceWith tracer (TrReleaseConnection Outbound peerAddr)
       (transition, mbAssertion)
         <- atomically $ do
         state <- readTMVar stateVar
         case Map.lookup peerAddr state of
           -- if the connection errored, it will remove itself from the state.
-          -- Calling 'unregisterOutboundConnection' is a no-op in this case.
+          -- Calling 'releaseOutboundConnection' is a no-op in this case.
           Nothing -> pure ( DemoteToColdLocalNoop Nothing UnknownConnectionSt
                           , Nothing)
 
@@ -2138,8 +2138,8 @@ with args@Arguments {
             connState <- readTVar connVar
             let st = abstractState (Known connState)
             case connState of
-              -- In any of the following three states unregistering is not
-              -- supported.  'requestOutboundConnection' is a synchronous
+              -- In any of the following three states releaseing is not
+              -- supported.  'acquireOutboundConnection' is a synchronous
               -- operation which returns only once the connection is
               -- negotiated.
               ReservedOutboundState ->
@@ -2240,7 +2240,7 @@ with args@Arguments {
                       if dataFlow == Duplex
                          then Nothing
                          else Just (TrUnexpectedlyFalseAssertion
-                                      (UnregisterOutboundConnection
+                                      (ReleaseOutboundConnection
                                         (Just connId)
                                         st)
                                    )
@@ -2697,7 +2697,7 @@ withCallStack k = k callStack
 --
 data Trace peerAddr handlerTrace
   = TrIncludeConnection            Provenance peerAddr
-  | TrUnregisterConnection         Provenance peerAddr
+  | TrReleaseConnection            Provenance peerAddr
   | TrConnect                      (Maybe peerAddr) -- ^ local address
                                    peerAddr         -- ^ remote address
   | TrConnectError                 (Maybe peerAddr) -- ^ local address

@@ -300,7 +300,7 @@ connectionManagerTraceMap
   -> String
 connectionManagerTraceMap (TrIncludeConnection p _)        =
   "TrIncludeConnection " ++ show p
-connectionManagerTraceMap (TrUnregisterConnection p _)     =
+connectionManagerTraceMap (TrReleaseConnection p _)     =
   "TrUnregisterConnection " ++ show p
 connectionManagerTraceMap (TrConnect _ _)                  =
   "TrConnect"

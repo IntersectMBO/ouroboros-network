@@ -810,7 +810,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
                                 -- another 5s is the longest delay for
                                 -- handshake negotiation.
                                 timeout (1 + 5 + testTimeWaitTimeout)
-                                  (requestOutboundConnection
+                                  (acquireOutboundConnection
                                     connectionManager addr))
                             `catches`
                               [ Handler $ \(e :: IOException) -> return (Left (toException e))
@@ -849,11 +849,11 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
                                     -- 'unregisterOutboundConnection' to be
                                     -- successful.
                                     void $
-                                      unregisterInboundConnection
+                                      releaseInboundConnection
                                         connectionManager addr
 
                                   res <-
-                                      unregisterOutboundConnection
+                                      releaseOutboundConnection
                                         connectionManager addr
                                   case res of
                                     UnsupportedState st ->
@@ -929,7 +929,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
                                 Left _ ->
                                   -- TODO: should we run 'unregisterInboundConnection' depending on 'seActiveDelay'
                                   void $
-                                    unregisterInboundConnection
+                                    releaseInboundConnection
                                       connectionManager addr
                           go (thread : threads) acceptNext conns'
                         (AcceptFailure err, _acceptNext) ->

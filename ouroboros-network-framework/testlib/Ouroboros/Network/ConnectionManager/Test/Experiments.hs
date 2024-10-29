@@ -734,8 +734,8 @@ unidirectionalExperiment stdGen timeouts snocket makeBearer confSock socket clie
                 replicateM
                   (numberOfRounds clientAndServerData)
                   (bracket
-                     (requestOutboundConnection connectionManager serverAddr)
-                     (\_ -> unregisterOutboundConnection connectionManager serverAddr)
+                     (acquireOutboundConnection connectionManager serverAddr)
+                     (\_ -> releaseOutboundConnection connectionManager serverAddr)
                      (\connHandle -> do
                       case connHandle of
                         Connected connId _ (Handle mux muxBundle controlBundle _
@@ -831,11 +831,11 @@ bidirectionalExperiment
                   (numberOfRounds clientAndServerData0)
                   (bracket
                     (withLock useLock lock
-                      (requestOutboundConnection
+                      (acquireOutboundConnection
                         connectionManager0
                         localAddr1))
                     (\_ ->
-                      unregisterOutboundConnection
+                      releaseOutboundConnection
                         connectionManager0
                         localAddr1)
                     (\connHandle ->
@@ -853,11 +853,11 @@ bidirectionalExperiment
                   (numberOfRounds clientAndServerData1)
                   (bracket
                     (withLock useLock lock
-                      (requestOutboundConnection
+                      (acquireOutboundConnection
                         connectionManager1
                         localAddr0))
                     (\_ ->
-                      unregisterOutboundConnection
+                      releaseOutboundConnection
                         connectionManager1
                         localAddr0)
                     (\connHandle ->
