@@ -174,27 +174,8 @@
 \def\True{\texttt{True}}
 \def\False{\texttt{False}}
 
-% Utils
-
 % TODO notes for the implementation
 \newcommand{\todoimpl}[1]{\todo[backgroundcolor=red,linecolor=red]{#1}}
-\newenvironment{detail}
-  {
-    \begin{center}
-    \begin{minipage}{0.9\textwidth}
-      \begin{shaded}
-      \small
-      \noindent Implementation detail
-      \vspace{0.3em}
-      \newline
-      \itshape
-  }
-  {
-  \end{shaded}
-  \end{minipage}
-  \end{center}
-  \vspace{1em}
-  }
 
 \section{Introduction}
 
@@ -214,42 +195,45 @@ Knowing this, it would be good to make the most of each connection and, in order
 \Connmngr{} was designed.
 
 \section{Components}
-
-Figure \ref{tik:components} illustrates the 3 main components of the decentralization
+Figure \ref{tik:components} illustrates the three main components of the decentralization
 process, from the perspective of a local node. In the \texttt{Outbound} side, the
 \ptopgov{}, as said previously, takes care of all connection initiation (outbound
 connections) and decides which mini-protocols to run (\established{}, \warm{} or \hot{}).
 In the \texttt{Inbound} side, the \texttt{Server} is just a simple loop, responsible for accepting incoming
-connections; and the \texttt{Inbound Protocol Governor} role is to detect if its local peer was
-added as a \warm{}/\hot{} peer in some other remote node, starting/restarting the required
-mini-protocols. Another role of the \texttt{Inbound Protocol Governor} is to setup timers in
-some cases, e.g. if the remote end opened a connection, and did not sent any message, the
-\texttt{Inbound Protocol Governor} will timeout after some time and close the connection.
-The arrows in Figure \ref{tik:components} represent dependencies between components:
-server accepts a connection which is then given to \Connmngr{}. \Connmngr{} exposes methods to update its state,
-whenever the \texttt{Inbound Protocol Governor} notices that the connection was used
-(could be used due to \warm{}\\hot{} transitions).
+connections; and the \texttt{Inbound Protocol Governor} role is starting/restarting the required
+mini-protocols, to detect if its local peer was added as a \warm{}/\hot{}
+peer in some other remote node and to setup timers in some cases, e.g. if the
+remote end opened a connection, and did not sent any message, the
+\texttt{Inbound Protocol Governor} will timeout after some time and close the
+connection. The arrows in Figure \ref{tik:components} represent dependencies
+between components: server accepts a connection which is then given to
+\Connmngr{}. \Connmngr{} exposes methods to update its state, whenever the
+\texttt{Inbound Protocol Governor} notices that the connection was used (could
+be used due to \warm{}\\hot{} transitions).  If peer sharing is enabled, the
+incoming address will eventually be added to the known set of the outbound
+governor.
 
 \begin{figure}[h]
   \footnotesize
   \def\xa{-2.0}
   \def\xb{2.0}
   \begin{tikzpicture}
-    \node at (-3.25, 0)  {\textit{Outbound side}};
-    \node at ( 3.25, 0)  {\textit{Inbound side}};
+    \node at (-3.25, 1.6)  {\textit{Outbound side}};
+    \node at ( 3.25, 1.6)  {\textit{Inbound side}};
 
-    \node[rounded corners, rectangle, draw, minimum height=3cm,anchor=east, text width=4cm] (p2p_governor) at (\xa, -3)
+    \node[rounded corners, rectangle, draw, minimum height=3cm,anchor=east, text width=4cm] (outbound_governor) at (\xa, -3)
      {
-       \hfil\textbf{Peer-to-Peer Governor}\hfil\\
+       \hfil\textbf{Outbound Governor}\hfil\\
        \setlength{\leftmargini}{15pt}
        \begin{itemize}
         \item manages connection initiation (dual of connection acception)
         \item runs and monitors initiator protocols on unidirectional or duplex connections
+        \item notify the inbound governor about outbound duplex connections
       \end{itemize}
       \vspace{5pt}
       };
 
-    \node[rounded corners, rectangle, draw, anchor=west, text width=4cm] (server) at (\xb, -1.80)
+    \node[rounded corners, rectangle, draw, anchor=west, text width=4cm] (server) at (\xb, 0.30)
       {
         \hfill{\textbf{Server}}\hfill
         \vspace{0.2em}
@@ -261,7 +245,7 @@ whenever the \texttt{Inbound Protocol Governor} notices that the connection was 
         \vspace{5pt}
       };
 
-    \node[rounded corners, rectangle, draw, anchor=west, text width=4cm] (inbound_governor) at (\xb, -4)
+    \node[rounded corners, rectangle, draw, anchor=west, text width=4cm] (inbound_governor) at (\xb, -5)
       {
         \hfill{\textbf{Inbound Protocol Governor}}\hfill
         \vspace{0.2em}
@@ -269,6 +253,12 @@ whenever the \texttt{Inbound Protocol Governor} notices that the connection was 
         \begin{itemize}
           \item start/restart responder mini-protocols on inbound and
             outbound duplex connections
+          \item detects when all server/responder
+            mini-protocols are idle, after an inactivity period, connection
+            manager is notified
+          \item detect inactivity on just accepted connections, and ask the
+            connection manager to release it if a timeout expired
+          \item pass addresses of inbound connections to the outbound governor (light peer sharing)
         \end{itemize}
         \vspace{5pt}
       };
@@ -279,15 +269,276 @@ whenever the \texttt{Inbound Protocol Governor} notices that the connection was 
         \hfil\textbf{Manager}\hfil
       };
 
-    \draw[<-] (p2p_governor)           -- (connection_manager);
-    \draw[->] (server.west)            -- (connection_manager.5);
-    \draw[->] (connection_manager.355) -- (inbound_governor.west);
+    \draw[<-] (outbound_governor)            -- (connection_manager);
+    \draw[->] (server)                       -- (inbound_governor);
+    \draw[<->] (connection_manager.355)      -- (inbound_governor.138);
+    \draw[->,dashed] (inbound_governor.170)  --node[below]{\footnotesize{light peer sharing}} (outbound_governor.322);
   \end{tikzpicture}
-  \caption{3 main components}
+  \caption{Main components}
   \label{tik:components}
 \end{figure}
 
-One simple illustration of how these 3 components interact together:
+Using a TCP connection in both directions rather than two independent TCP
+connections is good for efficient use of network resources, but more importantly
+it is crucial to support certain important scenarios where one node is behind a
+firewall that blocks incoming TCP connections. For example it is good practice
+to have a block-producing node be behind a firewall, while deploying relay nodes
+outside the firewall. If the node behind the firewall can establish an outbound
+TCP connection to its relays but still have those relays select the
+block-producing node as an upstream peer then it means that node operators do
+not need to configure any holes and/or port forwarding in the firewall. If we
+were to only support running mini-protocols in one direction then this scenario
+would require a hole in the firewall to allow the relays to establish incoming
+connections to the block-producing node. That would be both less secure and also
+require more configuration and probably dynamic configuration at that.
+
+Consider however what is required to make this scenario work.
+\begin{enumerate}
+\item We must start with an outbound connection being established from the
+      block-producing node to a relay.
+\item The block-producing node wants the relay as an upstream peer -- to
+      receive blocks from the rest of the network -- so the normal
+      mini-protocols need to be run with the block-producing node in the client
+      role and relay in the server role. So initially at least the relay had to
+      act as a server to accept the connection and to run the server side of
+      the mini-protocols.
+\item Next however we want the relay to be able to select the block-producing
+      node as an upstream peer, and we want it to do so by reusing the existing
+      connection since we know the firewall makes it impossible to establish a
+      new outbound connection to the block-producing node. Thus we must be able
+      to have the relay start the client side of the usual mini-protocols and
+      the block-producer must be running the server side of them.
+\item So notice that this means we have started with just running the
+      mini-protocols in one direction and transitioned to running them in both
+      directions, what we call full \emph{duplex}.
+\item Furthermore, such transitions are not a one-off event. It is entirely
+      possible for a node to select another peer as an upstream peer and later
+      change its mind. This means we could transition from duplex back to
+      unidirectional -- and that unidirectional direction need not even be the
+      same as the initial direction!
+\end{enumerate}
+This leads to a couple observations:
+\begin{enumerate}
+\item that in the general case we need to support any number of transitions
+      between unidirectional and duplex use of a connection; and
+\item that once a bearer has been established the relationship between the two
+      ends is mostly symmetric: the original direction hardly matters.
+\end{enumerate}
+
+A consequence of all this is that we cannot use a classic client/server design.
+We are decoupling the ongoing role of the connection from who initiated it.
+That is, we cannot just run a server component that manages all the connections
+and threads for the server (inbound) side of things, and a separate component
+that manages the connections and threads for the client (outbound) side of
+things. The connections have to be a shared resource between the inbound and
+outbound sides so that we can use connections in either or both directions
+over the lifetime of a connection.
+
+Although actual TCP connections must be a shared resource we do not wish to
+intermingle the code for handling the inbound and outbound directions. As noted
+above the selection of upstream (outbound) peers is quite complicated and we
+would not want to add to that complexity by mixing it with a lot of other
+concerns, and vice versa.
+To minimise complexity it would be preferable if the code that manages
+the outbound side would be completely unaware of the inbound side and vice
+versa. Yet we still want the inbound and outbound sides to opportunistically
+share TCP connections where possible. This appears to be eminently achievable
+given that we are using multiplexing to run mini-protocols in either direction
+and concurrency for mini-protocol handlers to achieve a degree of modularity.
+
+The use of a single TCP connection helps with simplifying exception processing
+and timely mitigation of poor peer performance (whether connection related or
+otherwise). This is covered in more detail in \cref{sec:exceptions}.
+
+These ideas lead to the design illustrated in \cref{tik:components}. In this
+design there is an outbound and inbound side -- which are completely unaware of
+each other -- mediated by a shared \emph{connection manager} component.
+
+The connection manager is there to manage the underlying TCP connection
+resources. It has to provide an interface to the outbound side to enable the
+use of connections in an outbound direction. Correspondingly it must provide an
+interface to the inbound side to enable the use of connections in an inbound
+direction. Internally it must deal with connections being used in a
+unidirectional or duplex way, and the transitions between. Of course it
+can be the case that connections are no longer required in either direction,
+and such connections should be closed in an orderly manner. This must be a
+responsibility of the connection manager since it is the only component that
+can see both inbound and outbound sides to be able to see that a connection is
+no longer needed in either direction and hence not needed at all.
+
+In the next couple sections we will review what the inbound and outbound sides
+need to be able to do, and what service the connection manager needs to provide.
+
+\section{Exception Processing}
+\label{sec:exceptions}
+
+We maintain a one-to-one correspondence between peers and connections, which
+simplifies exception handling since if there's a single mini-protocol
+violation, we need to shut down the thread that handles that particular
+connection.  Although multiple threads handle a single connection: two
+threads per a pipelined mini-protocol, one thread per a non-pipelined one, plus
+two multiplexer threads (muxer \& demuxer threads).  However, all these threads
+are spawned and managed by the multiplexer, which has the property that if any
+of the threads throws an exception, all of the threads will be killed.  This
+property allows us to have a single error handling policy (called
+\href{https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-framework/Ouroboros-Network-RethrowPolicy.html\#t:RethrowPolicy}{\texttt{RethrowPolicy}})
+per connection handler thread. A \texttt{RethrowPolicy} classifies exceptions
+into two categories, depending on whether an exception should terminate the
+connection or be propagated to terminate the whole process.
+\texttt{RethrowPolicy}-ies can be composed in terms of a semi-group.  Network
+code only makes \texttt{IOManagerError}s fatal.  On top of that consensus
+introduces its own
+\href{https://ouroboros-consensus.cardano.intersectmbo.org/haddocks/ouroboros-consensus-diffusion/Ouroboros-Consensus-Node-RethrowPolicy.html\#v:consensusRethrowPolicy}{\texttt{consensusRethrowPolicy}}
+for the Node-To-Node protocol.
+
+\section{Mini-protocol return values}
+\label{sec:mini-protocol-return-values}
+
+Handling of mini-protocol return values is a complementary feature to exception
+processing, hence it's described here, although it is done at the
+Outbound-Governor level rather Connection-Manager level, which is primarily
+described in this part of the documentation.
+
+We classifying mini-protocol return values for initiator/client mini-protocols
+(this feature is only needed for the \textit{chain-sync
+mini-protocol}). For a given return value, we compute the re-promotion delay used by
+the Outbound-Governor. Here is the
+\href{https://ouroboros-consensus.cardano.intersectmbo.org/haddocks/ouroboros-consensus-diffusion/Ouroboros-Consensus-Node-ExitPolicy.html\#v:returnPolicy}{\texttt{returnPolicy}}.
+introduced in Ouroboros-Consensus for the Node-To-Node protocol.  Cardano-Node
+is not managing outbound Node-To-Client connection, hence a policy for
+Node-To-Client protocol is not needed.
+
+The outbound governor is also given a policy which controls how long to wait
+until re-promote a peer after an exception (for now we use a fixed delay).
+
+\section{Outbound side: the outbound governor}
+
+A key component of the design for decentralisation is the outbound governor. It
+is responsible for:
+\begin{itemize}
+\item managing the selection of upstream peers;
+\item managing the transitions of upstream peers between cold/warm/hot states;
+\item continuously making progress towards the target number of peers in each
+      state; and
+\item adjusting these targets over time to achieve a degree of `churn'.
+      \todo[inline]{cross reference}
+\end{itemize}
+Taken together, and with appropriate policies, a network of nodes should be
+able to self-organise and achieve the desired properties. We have simulation
+results that give us a good degree of confidence that this is indeed the case,
+at a large scale.
+
+Fortunately, while the outbound governor's decision making procedures are relatively
+complex, its use of connections is quite simple. The governor needs only two
+interactions.
+\begin{description}
+\item[Acquire a connection.] The governor decides when to promote a peer from
+  cold to warm. To perform the promotion it needs to acquire access to a
+  connection -- either fresh or pre-existing. To complete the promotion it will
+  start the client side of particular mini-protocols on the connection.
+
+\item[Release a connection.] The governor also decides when to demote a peer to
+  cold. As part of the demotion the client side mini-protocols are terminated.
+  The connection is then no longer needed by the governor and is released.
+\end{description}
+
+It is worth noting again that the outbound governor does not require exclusive
+access to the TCP bearer. It has no special TCP-specific needs in the setup or
+shutdown.
+It needs access to the multiplexer to be able to run a set of
+mini-protocols in one direction. So in a sense it needs exclusive access to
+`half' a multiplexer for a connection, but it does not need coordinate with or
+even to be aware of any use of the other `half' of the multiplexer. It is this
+separation of concerns that enables a modular design and implementation.
+
+
+\section{Inbound side: the server}
+
+The inbound side has a less complex task than the outbound governor, but its
+interactions with the connection manager are slightly more complicated.
+
+The inbound side is split into two components: the server and inbound governor.
+
+The server is responsible for accepting new TCP connections on the listening
+socket. It is responsible for not exceeding resource limits by accepting too
+many new connections. It is also responsible for a little bit of DoS protection:
+limiting the rate of accepting new connections.
+
+The server component is much simpler than in most network server applications
+because it does not need to manage the connection resources once created. The
+server hands new connections over to the connection manager as soon as they are
+accepted. The server's responsibilities end there. The server needs only two
+interactions with the the connection manager.
+\begin{description}
+\item[Query number of connections] The server component needs to query the
+  connection manager to find the current number of connections. It uses this
+  information to decide if any new connections can be accepted or if we are
+  at the resource limits. Below the hard limits, the current number can be used
+  as part of rate limiting decisions.
+
+\item[Hand over a new connection] Once the server component has successfully
+  accepted a new connection, it needs to hand over responsibility for it to
+  the connection manager.
+  \todo[inline]{be clearer in the responsiblities and the conditions that should hold}
+\end{description}
+
+
+\section{Inbound side: the inbound governor}
+\todo[inline]{this section needs to be clearer about assumed pre-conditions and
+      intended post-conditions}
+
+The inbound governor is responsible for starting, restarting and monitoring the
+server side of the mini-protocols.
+
+One of the high level design choices is that when a server side mini-protocol
+terminates cleanly (usually because the client chose to terminate it) then the
+server side of the mini-protocol should be restarted in its initial state in
+case the client wishes to use the protocol again later. It is the inbound
+governor that is responsible for doing this.
+
+\todo[inline]{this mux interaction lifetime may benefit from a seperate (sub-)section}
+The mux component provides a mechanism to start mini-protocol handlers on a
+connection for a specific mini-protocol number in a particular direction. These
+handlers can then be monitored to see when they terminate. The inbound governor
+relies on this mechanism to monitor when the protocol handler terminates
+cleanly. When it does terminate cleanly the governor restarts the mini-protocol
+handler.
+
+All the mini-protocols have the property that agency starts with the
+client/initiator side\footnote{Originally transaction submission protocol had
+agency start with the responder/server side. A later protocol update reversed
+the initial agency so that they are now all consistent.}. This allows all of
+the server/responder side protocols to be started in the mux `on-demand' mode.
+In the on-demand mode the protocol handler thread is not started until the
+first message arrives from the client. \todo[inline]{this lack of active
+processing locally is used as a witness of remote peer idleness - where should
+we be explicit about that?}
+
+The inbound governor gets informed of new connections that it should monitor
+either via by the server or by the connection manager. The server informs the
+governor about fresh inbound connections. The connection manager informs the
+governor about connections that it started due to a request for an outbound
+connection -- at least for those connections that are to be available to use in
+duplex mode.
+
+% \begin{designalternative}
+As illustrated in \cref{tik:components}, both the connection manager and server
+components communicate with the inbound governor directly. They do this to
+inform the inbound governor about new connections so that it can start to run
+and monitor the server side protocols. The server notifies about new connections
+established inbound, while the connection manager acquires new connections
+established outbound (at least the duplex ones) through connection manager API.
+A slight simplification would be to have only one of these routes of
+notification.
+% The more obvious choice would be for the connection manager to inform the
+% inbound governor about all new connections. Then the server would only
+% interact with the connection manager and not with the inbound governor.
+% \end{designalternative}
+
+The inbound governor \todo[inline]{capture interfaces to other services}
+\todo[inline]{express intended sequencing more clearly}
+
+One simple illustration of how these three components interact together:
 
 \begin{itemize}
     \item Server accepts a connection;
@@ -306,20 +557,6 @@ One simple illustration of how these 3 components interact together:
 
 You can find more information about the possible different connection states in section
 \ref{sec:connection-state}.
-
-\begin{figure}
-    \centering
-    \includegraphics[width=\linewidth]{figure/ConnectionManagerInteractions.pdf}
-    \caption{High-level architecture of how the 3 components interact}
-    \label{fig:high-level-arch}
-\end{figure}
-
-Figure \ref{fig:high-level-arch} shows the high-level architecture of how the 3 components mentioned interact
-with each other. A single \Connmngr{} is shared between the \emph{Server} and \ptopgov{},
-where, in case of an \emph{Outbound Duplex} connection is negotiated, the \emph{Server} is
-notified via a control channel. Although in this document we will use Server and IPG
-interchangeably, it is worth to keep them separate concepts for possible future
-developments.
 
 \section{Connection Manager}
 
@@ -1551,7 +1788,7 @@ States indicated with a \textsuperscript{$\dagger$} are forbidden by \TCP{}.
 
 \begin{table}
   \begin{tabular}[h]{llll}
-    \textit{StateIn}         & \textit{StateOut} & \textit{transition} \\\hline\\[2pt]
+    \textit{StateIn}         & \textit{StateOut} & \textit{Transition} \\\hline\\[2pt]
     \InitialState{}          & - & \\[8pt]
     \ReservedOutboundState{} & - & \\[8pt]
     \UnnegotiatedStateAny{}  & - & \\[8pt]
@@ -1571,7 +1808,7 @@ States indicated with a \textsuperscript{$\dagger$} are forbidden by \TCP{}.
 
 \begin{table}
   \begin{tabular}[h]{lll}
-    \textit{StateIn}         & \textit{StateOut} & \textit{transition} \\\hline\\[2pt]
+    \textit{StateIn}         & \textit{StateOut} & \textit{Transition} \\\hline\\[2pt]
     \ReservedOutboundState{} & - & - \\[8pt]
     \UnnegotiatedStateAny{}  & - & - \\[8pt]
     \OutboundStateAny{}      & - & - \\[8pt]
@@ -1587,26 +1824,20 @@ States indicated with a \textsuperscript{$\dagger$} are forbidden by \TCP{}.
 
 \begin{table}
   \begin{tabular}[h]{llll}
-    \textit{StateIn}         & \textit{StateOut} & \textit{transition} & \textit{Returned Value}\\\hline\\[2pt]
-    \InitialState{}          & - & & - \\[8pt]
-    \ReservedOutboundState{} & - & & - \\[8pt]
-    \UnnegotiatedStateAny{}  & - & & - \\[8pt]
-    \OutboundStateUniTau{}   & $\dagger$ & & - \\[8pt]
-    \OutboundStateUni{}      & $\dagger$ & & - \\[8pt]
-    \OutboundStateDupTau{}   & \OutboundStateDup{} & & - \\[8pt]
-    \OutboundStateDup{}      & $\dagger$ & & - \\[8pt]
-    \InboundIdleStateAny{}   & \TerminatingState{} & & \True \\[8pt]
-    \InboundStateAny{}       & \TerminatingState{}\textsuperscript{$\dagger$} &
-      \begin{minipage}[t]{5cm}
-        \begin{itemize}
-          \item \DemotedToColdAnyRem{}
-          \item \CommitAnyRem{}
-        \end{itemize}
-      \end{minipage}
-        & \True \\[8pt]
-    \DuplexState{}           & \OutboundStateDup{} & \DemotedToColdDupRem{}  & \False \\[8pt]
-    \TerminatingState{}      & - & & - \\[8pt]
-    \TerminatedState{}       & - & & - \\[8pt]
+    \textit{StateIn}         & \textit{StateOut} & \textit{Returned Value} & \textit{Transition(s)}\\\hline\\[2pt]
+    \InitialState{}          & - & - & \\[8pt]
+    \ReservedOutboundState{} & - & - & \\[8pt]
+    \UnnegotiatedStateAny{}  & - & - & \\[8pt]
+    \OutboundStateUniTau{}   & $\dagger$ & - & \\[8pt]
+    \OutboundStateUni{}      & $\dagger$ & - & \\[8pt]
+    \OutboundStateDupTau{}   & \OutboundStateDup{} & - & \\[8pt]
+    \OutboundStateDup{}      & $\dagger$ & - & \\[8pt]
+    \InboundIdleStateAny{}   & \TerminatingState{} & \True & \\[8pt]
+    \InboundStateAny{}       & \TerminatingState{}\textsuperscript{$\dagger$} & \True & \DemotedToColdAnyRem{} \\[8pt]
+                             &                                                &       & \CommitAnyRem{} \\[8pt]
+    \DuplexState{}           & \OutboundStateDup{} & \False & \DemotedToColdDupRem{} \\[8pt]
+    \TerminatingState{}      & - & - & \\[8pt]
+    \TerminatedState{}       & - & - & \\[8pt]
   \end{tabular}
   \caption{\texttt{unregisterInboundConnection}}
   \label{table:unregisterInboundConnection}

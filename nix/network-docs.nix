@@ -22,6 +22,8 @@ inputs: final: prev: {
           ln -s ${src}/$d/* docs/$d/
         done
 
+        touch docs/network-spec/.isRelease
+
         mkdir -p ouroboros-network-protocols/cddl/specs
         cp ${cddl-specs}/*.cddl ouroboros-network-protocols/cddl/specs
 

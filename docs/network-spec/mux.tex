@@ -1,6 +1,21 @@
 \chapter{Multiplexing mini-protocols}
 \label{chapter:multiplexer}
 
+The role of the multiplexing layer is to take an established underlying
+point-to-point bearer (e.g.~a TCP connection, a UNIX socket or similar) and
+offer a multiplexed, sequenced-record, delivery service for a fixed-collection of
+services (fixed after negotiation). 
+
+Carrying all the related services between two peers has several advantages over
+multiple TCP connections: It reduces overheads (in the kernel and network path),
+improves congestion window management both by minimising network capacity
+over-allocation during periods of congestion while, at the same time, gaining
+more dynamic responsiveness to changing end-to-end transport conditions.
+
+Finally it helps with performance exception detection and mitigation by creating
+a logical unit-of-failure - if a single component should `fail' all the
+associated services on that peer can be failed together.
+
 \section{The Multiplexing Layer}
 \label{multiplexing-section}
 Multiplexing is used to run several mini protocols in parallel over
@@ -136,8 +151,9 @@ and~\ref{table:node-to-client-protocol-numbers}.
       \hyperref[handshake-protocol]{Handshake}                           & 0  \\
       \hyperref[chain-sync-protocol]{Chain-Sync} \small{(instantiated to headers)} & 2  \\
       \hyperref[block-fetch-protocol]{Block-Fetch}                       & 3  \\
-      \hyperref[tx-submission-protocol]{TxSubmission}                    & 4  \\
+      \hyperref[tx-submission-protocol2]{TxSubmission}                   & 4  \\
       \hyperref[keep-alive-protocol]{Keep-alive}                         & 8  \\
+      \hyperref[peer-sharing-protocol]{Peer-Sharing} \small{(optional)}  & 10 \\
     \end{tabular}
   \end{center}
   \caption{Node-to-node protocol numbers}
