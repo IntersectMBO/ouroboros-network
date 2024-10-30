@@ -64,9 +64,9 @@ import Ouroboros.Network.Testing.Utils hiding (SmallDelay, debugTracer)
 
 import Simulation.Network.Snocket (BearerInfo (..))
 
-import Test.Ouroboros.Network.Diffusion.Node (config_REPROMOTE_DELAY)
-import Test.Ouroboros.Network.Diffusion.Node.NodeKernel
-import Test.Ouroboros.Network.Testnet.Simulation.Node
+import Test.Ouroboros.Network.Testnet.Internal
+import Test.Ouroboros.Network.Testnet.Node (config_REPROMOTE_DELAY)
+import Test.Ouroboros.Network.Testnet.Node.Kernel
 import Test.QuickCheck
 import Test.QuickCheck.Monoids
 import Test.Tasty

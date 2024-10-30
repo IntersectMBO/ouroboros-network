@@ -5,7 +5,6 @@ import Test.Tasty
 
 import Test.ChainProducerState qualified (tests)
 import Test.Ouroboros.Network.BlockFetch qualified (tests)
-import Test.Ouroboros.Network.Diffusion.Policies qualified (tests)
 import Test.Ouroboros.Network.KeepAlive qualified (tests)
 import Test.Ouroboros.Network.LedgerPeers qualified (tests)
 import Test.Ouroboros.Network.MockNode qualified (tests)
@@ -21,6 +20,7 @@ import Test.Ouroboros.Network.PeerSelection.PublicRootPeers qualified
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS qualified
 import Test.Ouroboros.Network.PeerState qualified (tests)
 import Test.Ouroboros.Network.Testnet qualified (tests)
+import Test.Ouroboros.Network.Testnet.Policies qualified (tests)
 import Test.Ouroboros.Network.TxSubmission qualified (tests)
 import Test.Ouroboros.Network.Version qualified (tests)
 
@@ -51,7 +51,7 @@ tests =
   , Test.Ouroboros.Network.NodeToClient.Version.tests
   , Test.Ouroboros.Network.Testnet.tests
   , Test.Ouroboros.Network.LedgerPeers.tests
-  , Test.Ouroboros.Network.Diffusion.Policies.tests
+  , Test.Ouroboros.Network.Testnet.Policies.tests
 
     -- pseudo system-level
   , Test.Ouroboros.Network.MockNode.tests

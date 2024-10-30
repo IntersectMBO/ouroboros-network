@@ -6,7 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 
-module Test.Ouroboros.Network.Diffusion.Policies where
+module Test.Ouroboros.Network.Testnet.Policies where
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadTime.SI

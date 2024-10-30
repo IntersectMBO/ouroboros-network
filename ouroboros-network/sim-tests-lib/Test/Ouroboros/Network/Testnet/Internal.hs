@@ -9,20 +9,23 @@
 
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
-module Test.Ouroboros.Network.Testnet.Simulation.Node
-  ( SimArgs (..)
+-- | Diffusion simulation.
+--
+module Test.Ouroboros.Network.Testnet.Internal
+  ( -- * Run diffusion simulation
+    diffusionSimulation
+  , DiffusionScript (..)
+  , SimArgs (..)
   , mainnetSimArgs
   , NodeArgs (..)
   , ServiceDomainName (..)
-  , DiffusionScript (..)
+  , Command (..)
   , HotDiffusionScript (..)
-  , DiffusionSimulationTrace (..)
+    -- * QuickCheck properties
   , prop_diffusionScript_fixupCommands
   , prop_diffusionScript_commandScript_valid
-  , fixupCommands
-  , diffusionSimulation
-  , Command (..)
     -- * Tracing
+  , DiffusionSimulationTrace (..)
   , DiffusionTestTrace (..)
   , iosimTracer
     -- * Re-exports
@@ -106,16 +109,15 @@ import Ouroboros.Network.Testing.Utils
 import Simulation.Network.Snocket (BearerInfo (..), FD, SnocketTrace,
            WithAddr (..), makeFDBearer, withSnocket)
 
-import Test.Ouroboros.Network.Diffusion.Node qualified as NodeKernel
-import Test.Ouroboros.Network.Diffusion.Node.NodeKernel (BlockGeneratorArgs,
-           NtCAddr, NtCVersion, NtCVersionData, NtNAddr, NtNAddr_ (IPAddr),
-           NtNVersion, NtNVersionData, ntnAddrToRelayAccessPoint,
-           randomBlockGenerationArgs)
 import Test.Ouroboros.Network.PeerSelection.Instances qualified as PeerSelection
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay (..),
            DNSTimeout (..))
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS qualified as PeerSelection hiding
            (tests)
+import Test.Ouroboros.Network.Testnet.Node qualified as Node
+import Test.Ouroboros.Network.Testnet.Node.Kernel (BlockGeneratorArgs, NtCAddr,
+           NtCVersion, NtCVersionData, NtNAddr, NtNAddr_ (IPAddr), NtNVersion,
+           NtNVersionData, ntnAddrToRelayAccessPoint, randomBlockGenerationArgs)
 
 import Data.Bool (bool)
 import Data.Function (on)
@@ -1106,48 +1108,48 @@ diffusionSimulation
                 , idleTimeout      = Nothing
                 }
 
-          limitsAndTimeouts :: NodeKernel.LimitsAndTimeouts BlockHeader Block
+          limitsAndTimeouts :: Node.LimitsAndTimeouts BlockHeader Block
           limitsAndTimeouts
-            = NodeKernel.LimitsAndTimeouts
-                { NodeKernel.chainSyncLimits      = defaultMiniProtocolsLimit
-                , NodeKernel.chainSyncSizeLimits  = byteLimitsChainSync (const 0)
-                , NodeKernel.chainSyncTimeLimits  =
+            = Node.LimitsAndTimeouts
+                { Node.chainSyncLimits      = defaultMiniProtocolsLimit
+                , Node.chainSyncSizeLimits  = byteLimitsChainSync (const 0)
+                , Node.chainSyncTimeLimits  =
                     timeLimitsChainSync stdChainSyncTimeout
-                , NodeKernel.blockFetchLimits     = defaultMiniProtocolsLimit
-                , NodeKernel.blockFetchSizeLimits = byteLimitsBlockFetch (const 0)
-                , NodeKernel.blockFetchTimeLimits = timeLimitsBlockFetch
-                , NodeKernel.keepAliveLimits      = defaultMiniProtocolsLimit
-                , NodeKernel.keepAliveSizeLimits  = byteLimitsKeepAlive (const 0)
-                , NodeKernel.keepAliveTimeLimits  = timeLimitsKeepAlive
-                , NodeKernel.pingPongLimits       = defaultMiniProtocolsLimit
-                , NodeKernel.pingPongSizeLimits   = byteLimitsPingPong
-                , NodeKernel.pingPongTimeLimits   = timeLimitsPingPong
-                , NodeKernel.handshakeLimits      = defaultMiniProtocolsLimit
-                , NodeKernel.handshakeTimeLimits  =
+                , Node.blockFetchLimits     = defaultMiniProtocolsLimit
+                , Node.blockFetchSizeLimits = byteLimitsBlockFetch (const 0)
+                , Node.blockFetchTimeLimits = timeLimitsBlockFetch
+                , Node.keepAliveLimits      = defaultMiniProtocolsLimit
+                , Node.keepAliveSizeLimits  = byteLimitsKeepAlive (const 0)
+                , Node.keepAliveTimeLimits  = timeLimitsKeepAlive
+                , Node.pingPongLimits       = defaultMiniProtocolsLimit
+                , Node.pingPongSizeLimits   = byteLimitsPingPong
+                , Node.pingPongTimeLimits   = timeLimitsPingPong
+                , Node.handshakeLimits      = defaultMiniProtocolsLimit
+                , Node.handshakeTimeLimits  =
                     ProtocolTimeLimits (const shortWait)
-                , NodeKernel.handhsakeSizeLimits  =
+                , Node.handhsakeSizeLimits  =
                     ProtocolSizeLimits (const (4 * 1440))
                                        (fromIntegral . BL.length)
-                , NodeKernel.peerSharingLimits     = defaultMiniProtocolsLimit
-                , NodeKernel.peerSharingTimeLimits =
+                , Node.peerSharingLimits     = defaultMiniProtocolsLimit
+                , Node.peerSharingTimeLimits =
                     timeLimitsPeerSharing
-                , NodeKernel.peerSharingSizeLimits =
+                , Node.peerSharingSizeLimits =
                     byteLimitsPeerSharing (const 0)
 
                 }
 
-          interfaces :: NodeKernel.Interfaces m
+          interfaces :: Node.Interfaces m
           interfaces =
-            NodeKernel.Interfaces
-              { NodeKernel.iNtnSnocket        = ntnSnocket
-              , NodeKernel.iNtnBearer         = makeFDBearer
-              , NodeKernel.iAcceptVersion     = acceptVersion
-              , NodeKernel.iNtnDomainResolver = domainResolver dMapVar
-              , NodeKernel.iNtcSnocket        = ntcSnocket
-              , NodeKernel.iNtcBearer         = makeFDBearer
-              , NodeKernel.iRng               = rng
-              , NodeKernel.iDomainMap         = dMapVar
-              , NodeKernel.iLedgerPeersConsensusInterface
+            Node.Interfaces
+              { Node.iNtnSnocket        = ntnSnocket
+              , Node.iNtnBearer         = makeFDBearer
+              , Node.iAcceptVersion     = acceptVersion
+              , Node.iNtnDomainResolver = domainResolver dMapVar
+              , Node.iNtcSnocket        = ntcSnocket
+              , Node.iNtcBearer         = makeFDBearer
+              , Node.iRng               = rng
+              , Node.iDomainMap         = dMapVar
+              , Node.iLedgerPeersConsensusInterface
                                         =
                   LedgerPeersConsensusInterface
                     (pure maxBound)
@@ -1158,7 +1160,7 @@ diffusionSimulation
                              $ accPoolStake
                              $ getLedgerPools
                              $ ledgerPools)
-              , NodeKernel.iUpdateOutboundConnectionsState =
+              , Node.iUpdateOutboundConnectionsState =
                   \a -> do
                     a' <- readTVar onlyOutboundConnectionsStateVar
                     when (a /= a') $
@@ -1180,40 +1182,40 @@ diffusionSimulation
                            | otherwise ->
                 return False
 
-          arguments :: NodeKernel.Arguments m
+          arguments :: Node.Arguments m
           arguments =
-            NodeKernel.Arguments
-              { NodeKernel.aIPAddress            = addr
-              , NodeKernel.aAcceptedLimits       = acceptedConnectionsLimit
-              , NodeKernel.aDiffusionMode        = diffusionMode
-              , NodeKernel.aKeepAliveInterval    = 10
-              , NodeKernel.aPingPongInterval     = 10
-              , NodeKernel.aPeerTargets          = peerTargets
-              , NodeKernel.aShouldChainSyncExit  = shouldChainSyncExit chainSyncExitVar
-              , NodeKernel.aChainSyncEarlyExit   = chainSyncEarlyExit
-              , NodeKernel.aReadLocalRootPeers   = readLocalRootPeers
-              , NodeKernel.aReadPublicRootPeers  = readPublicRootPeers
-              , NodeKernel.aConsensusMode        = consensusMode
-              , NodeKernel.aReadUseBootstrapPeers = bootstrapPeers
-              , NodeKernel.aOwnPeerSharing       = peerSharing
-              , NodeKernel.aReadUseLedgerPeers   = readUseLedgerPeers
-              , NodeKernel.aProtocolIdleTimeout  = 5
-              , NodeKernel.aTimeWaitTimeout      = 30
-              , NodeKernel.aDNSTimeoutScript     = dnsTimeout
-              , NodeKernel.aDNSLookupDelayScript = dnsLookupDelay
-              , NodeKernel.aDebugTracer          = (\s -> WithTime (Time (-1)) (WithName addr (DiffusionDebugTrace s)))
+            Node.Arguments
+              { Node.aIPAddress            = addr
+              , Node.aAcceptedLimits       = acceptedConnectionsLimit
+              , Node.aDiffusionMode        = diffusionMode
+              , Node.aKeepAliveInterval    = 10
+              , Node.aPingPongInterval     = 10
+              , Node.aPeerTargets          = peerTargets
+              , Node.aShouldChainSyncExit  = shouldChainSyncExit chainSyncExitVar
+              , Node.aChainSyncEarlyExit   = chainSyncEarlyExit
+              , Node.aReadLocalRootPeers   = readLocalRootPeers
+              , Node.aReadPublicRootPeers  = readPublicRootPeers
+              , Node.aConsensusMode        = consensusMode
+              , Node.aReadUseBootstrapPeers = bootstrapPeers
+              , Node.aOwnPeerSharing       = peerSharing
+              , Node.aReadUseLedgerPeers   = readUseLedgerPeers
+              , Node.aProtocolIdleTimeout  = 5
+              , Node.aTimeWaitTimeout      = 30
+              , Node.aDNSTimeoutScript     = dnsTimeout
+              , Node.aDNSLookupDelayScript = dnsLookupDelay
+              , Node.aDebugTracer          = (\s -> WithTime (Time (-1)) (WithName addr (DiffusionDebugTrace s)))
                                                    `contramap` nodeTracer
               }
 
-      NodeKernel.run blockGeneratorArgs
-                     limitsAndTimeouts
-                     interfaces
-                     arguments
-                     (tracersExtra addr)
-                     ( contramap (DiffusionFetchTrace . (\(TraceLabelPeer _ a) -> a))
-                     . tracerWithName addr
-                     . tracerWithTime
-                     $ nodeTracer)
+      Node.run blockGeneratorArgs
+               limitsAndTimeouts
+               interfaces
+               arguments
+               (tracersExtra addr)
+               ( contramap (DiffusionFetchTrace . (\(TraceLabelPeer _ a) -> a))
+               . tracerWithName addr
+               . tracerWithTime
+               $ nodeTracer)
 
     domainResolver :: StrictTVar m (Map Domain [(IP, TTL)])
                    -> DNSLookupType
