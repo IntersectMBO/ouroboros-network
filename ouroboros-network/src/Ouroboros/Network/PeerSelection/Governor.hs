@@ -555,6 +555,7 @@ data CardanoSignal = CardanoSignal {
 
 data UpOrDown = Up | Down
 data ChaseTargets peeraddr = ChaseTargets !UpOrDown !Int !Int !Int (Set.Set peeraddr)
+type TargetsInput peeraddr peerconn event = (PeerSelectionState peeraddr peerconn, PeerSelectionView (Set.Set peeraddr, Int), Chan event)
 
 peerSelectionGovernor' :: forall peeraddr peerconn m. ( Alternative (STM m)
                          , MonadAsync m
@@ -640,56 +641,92 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
         else
           undefined
 
-    setTargets :: BehaviorF (App2 peeraddr peerconn m) time () ()
-    setTargets = constMCl getEnv >>> (liftClSF . liftClSF $ arrMCl impl)
+    cardanoSetTargets :: BehaviorF (App2 peeraddr peerconn m) time () ()
+    cardanoSetTargets = constMCl getEnv >>> (liftClSF . liftClSF $ impl)
       where
-        getEnv = asks (,) <*> State.get
+        getEnv = (\chan st -> (chan, st, peerSelectionStateToView st)) <$> ask <*> State.get
 
-        impl :: (Chan PeerSelectionEvent, PeerSelectionState peeraddr peerconn) -> m ()
-        impl (chan, st) = do
-          let view = peerSelectionStateToView st
+        impl = proc (chan, state, view) -> do
 
-          -- _ <- arr $ forKnown       st view -< input'
+          _ <- forKnown       st view `onSuccessElseRetryTime` undefined --chaseKnown st
           _ <- forEstablished st view `onSuccessElseRetryTime` chaseEstablishedPeersTarget st
           return ()
 
-        forEstablished :: PeerSelectionState peeraddr peerconn
-                       -> PeerSelectionView (Set.Set peeraddr, Int)
-                       -> Either (Maybe (Min Time)) (ChaseTargets peeraddr)
-        forEstablished st@PeerSelectionState {
-                         establishedPeers,
-                         knownPeers,
-                         inProgressPromoteCold,
-                         targets = PeerSelectionTargets {
-                             targetNumberOfEstablishedPeers} }
-                       view@PeerSelectionView {
-                         viewKnownBigLedgerPeers     = (bigLedgerPeersSet, _),
-                         viewEstablishedPeers        = (_, numEstablishedPeers),
-                         viewColdPeersPromotions     = (_, numConnectInProgress),
-                         viewAvailableToConnectPeers = (availableToConnect, numAvailableToConnect)
-                       }
-          | numEstablishedPeers + numConnectInProgress < targetNumberOfEstablishedPeers
-          , numAvailableToConnect - numEstablishedPeers - numConnectInProgress > 0
-          = return $!
-              let availableToPromote = availableToConnect
-                                       `Set.difference` EstablishedPeers.toSet establishedPeers
-                                       `Set.difference` inProgressPromoteCold
-                  numPeersToPromote  = targetNumberOfEstablishedPeers
-                                     - numEstablishedPeers
-                                     - numConnectInProgress
-              in ChaseTargets Up targetNumberOfEstablishedPeers numEstablishedPeers numPeersToPromote availableToPromote
+    establishedPeers :: BehaviorF m time (TargetsInput peeraddr peerconn event) (Maybe (Min Time))
+    establishedPeers = arrMCl impl
+      where
+        impl (state, view, chan) = do
+          forEstablished state view `onSuccessElseRetryTime` chaseEstablishedPeersTarget state
 
-          | numEstablishedPeers + numConnectInProgress < targetNumberOfEstablishedPeers
-          = Left $ Min <$> KnownPeers.minConnectTime knownPeers  (`Set.member` bigLedgerPeersSet)
-          | otherwise
-          = Left Nothing
+    knownPeers :: BehaviorF m time (TargetsInput peeraddr peerconn event) (Maybe (Min Time))
+    knownPeers = arrMCl impl
+      where
+        impl (state, view, chan) = do
+          forKnown state view `onSuccessElseRetryTime` chaseKnownPeersTarget state
 
-        onSuccessElseRetryTime left right = either return right left
+    onSuccessElseRetryTime left right = either return right left
 
-        -- forKnown       PeerSelectionState {
-        --                  knownPeers }
-        --                input = ()
+    forEstablished :: PeerSelectionState peeraddr peerconn
+                   -> PeerSelectionView (Set.Set peeraddr, Int)
+                   -> Either (Maybe (Min Time)) (ChaseTargets peeraddr)
+    forEstablished PeerSelectionState {
+                    establishedPeers,
+                    knownPeers,
+                    inProgressPromoteCold,
+                    targets = PeerSelectionTargets {
+                        targetNumberOfEstablishedPeers} }
+                   PeerSelectionView {
+                     viewKnownBigLedgerPeers     = (bigLedgerPeersSet, _),
+                     viewEstablishedPeers        = (_, numEstablishedPeers),
+                     viewColdPeersPromotions     = (_, numConnectInProgress),
+                     viewAvailableToConnectPeers = (availableToConnect, numAvailableToConnect)
+                   }
+      | numEstablishedPeers + numConnectInProgress < targetNumberOfEstablishedPeers
+      , numAvailableToConnect - numEstablishedPeers - numConnectInProgress > 0
+      = return $!
+          let availableToPromote = availableToConnect
+                                   `Set.difference` EstablishedPeers.toSet establishedPeers
+                                   `Set.difference` inProgressPromoteCold
+              numPeersToPromote  = targetNumberOfEstablishedPeers
+                                 - numEstablishedPeers
+                                 - numConnectInProgress
+          in ChaseTargets Up targetNumberOfEstablishedPeers numEstablishedPeers numPeersToPromote availableToPromote
 
+      | numEstablishedPeers + numConnectInProgress < targetNumberOfEstablishedPeers
+      = Left $ Min <$> KnownPeers.minConnectTime knownPeers  (`Set.member` bigLedgerPeersSet)
+      | otherwise
+      = Left Nothing
+
+    forKnown :: PeerSelectionState peeraddr peerconn
+             -> PeerSelectionView (Set.Set peeraddr, Int)
+             -> Either (Maybe (Min Time)) (ChaseTargets peeraddr)
+    forKnown PeerSelectionState {
+               establishedPeers,
+               knownPeers,
+               inProgressPromoteCold,
+               targets = PeerSelectionTargets {
+                   targetNumberOfEstablishedPeers} }
+             PeerSelectionView {
+               viewKnownBigLedgerPeers     = (bigLedgerPeersSet, _),
+               viewEstablishedPeers        = (_, numEstablishedPeers),
+               viewColdPeersPromotions     = (_, numConnectInProgress),
+               viewAvailableToConnectPeers = (availableToConnect, numAvailableToConnect)
+               }
+      | numEstablishedPeers + numConnectInProgress < targetNumberOfEstablishedPeers
+      , numAvailableToConnect - numEstablishedPeers - numConnectInProgress > 0
+      = return $!
+          let availableToPromote = availableToConnect
+                                   `Set.difference` EstablishedPeers.toSet establishedPeers
+                                   `Set.difference` inProgressPromoteCold
+              numPeersToPromote  = targetNumberOfEstablishedPeers
+                                 - numEstablishedPeers
+                                 - numConnectInProgress
+          in ChaseTargets Up targetNumberOfEstablishedPeers numEstablishedPeers numPeersToPromote availableToPromote
+
+      | numEstablishedPeers + numConnectInProgress < targetNumberOfEstablishedPeers
+      = Left $ Min <$> KnownPeers.minConnectTime knownPeers  (`Set.member` bigLedgerPeersSet)
+      | otherwise
+      = Left Nothing
 
     chaseEstablishedPeersTarget :: PeerSelectionState peeraddr peerconn
                                 -> ChaseTargets peeraddr
@@ -703,6 +740,7 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
                                 (policyPickWarmPeersToDemote policy)
                                 availableToDemote
                                 numPeersToDemote
+          -- spin up job
           traceWith tracer $ TraceDemoteWarmPeers target numEstablishedPeers selectedToDemote
 
         below target numEstablishedPeers numPeersToPromote availableToPromote = do
@@ -710,6 +748,7 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
                                  (policyPickColdPeersToPromote policy)
                                  availableToPromote
                                  numPeersToPromote
+          -- spin up job
           traceWith tracer $ TracePromoteColdPeers target numEstablishedPeers selectedToPromote
 
 
