@@ -1,5 +1,6 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia        #-}
+{-# LANGUAGE NamedFieldPuns     #-}
 {-# LANGUAGE NumericUnderscores #-}
 
 module Ouroboros.Network.Testing.Data.AbsBearerInfo
@@ -14,6 +15,7 @@ module Ouroboros.Network.Testing.Data.AbsBearerInfo
   , delayAtSpeed
   , AbsSDUSize (..)
   , toSduSize
+  , AbsIOError (..)
   , AbsAttenuation (..)
   , attenuation
   , absNoAttenuation
@@ -27,6 +29,8 @@ import           Control.Monad.Class.MonadTime.SI (DiffTime, Time (..), addTime)
 import qualified Data.List as List
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Monoid (Any (..))
+import           GHC.IO.Exception (IOException (..), IOErrorType (..))
+import           Foreign.C.Error (Errno (..), eCONNABORTED)
 
 import           Network.Mux.Bearer.AttenuatedChannel (Size,
                      SuccessOrFailure (..))
@@ -35,8 +39,8 @@ import           Network.Mux.Types (SDUSize (..))
 import           Ouroboros.Network.Testing.Data.Script (Script (..))
 import           Ouroboros.Network.Testing.Utils (Delay (..))
 
-import           Test.QuickCheck (Arbitrary (..), Gen, arbitrarySizedNatural,
-                     elements, frequency, listOf1, resize, shrinkList, suchThat)
+import           Test.QuickCheck hiding (Result (..))
+
 
 data AbsDelay = SmallDelay
               | NormalDelay
@@ -103,7 +107,7 @@ toSduSize LargeSDU  = SDUSize 32_768
 data AbsAttenuation =
     NoAttenuation    AbsSpeed
   | SpeedAttenuation AbsSpeed Time DiffTime
-  | ErrorInterval    AbsSpeed Time DiffTime
+  | ErrorInterval    AbsSpeed Time DiffTime IOError
   deriving (Eq, Show)
 
 -- | At most `Time 20s`.
@@ -116,19 +120,57 @@ genTime = Time . getDelay <$> arbitrary
 genLongDelay :: Gen DiffTime
 genLongDelay = getDelay <$> resize 1_000 arbitrary
 
+newtype AbsIOError = AbsIOError { getIOError :: IOError }
+  deriving Show
+
+instance Arbitrary AbsIOError where
+  arbitrary = AbsIOError <$> elements
+      [ mkIOError ResourceVanished
+      , mkIOError ResourceExhausted
+      , mkIOError UnsupportedOperation
+      , mkIOError InvalidArgument
+      , mkIOError ProtocolError
+      , connectionAbortedError
+      ]
+    where
+      -- `ECONNABORTED` error which appears in `Ouroboros.Network.Server2`
+      connectionAbortedError :: IOError
+      connectionAbortedError = IOError
+        { ioe_handle      = Nothing
+        , ioe_type        = OtherError
+        , ioe_location    = "Ouroboros.Network.Snocket.Sim.accept"
+          -- Note: this matches the `iseCONNABORTED` on Windows, see
+          -- 'Ouroboros.Network.Server2`
+        , ioe_description = "Software caused connection abort (WSAECONNABORTED)"
+        , ioe_errno       = Just (case eCONNABORTED of Errno errno -> errno)
+        , ioe_filename    = Nothing
+        }
+
+      mkIOError :: IOErrorType -> IOError
+      mkIOError ioe_type = IOError
+        { ioe_handle      = Nothing
+        , ioe_type
+        , ioe_location    = "AttenuationChannel"
+        , ioe_description = "attenuation"
+        , ioe_errno       = Nothing
+        , ioe_filename    = Nothing
+        }
+
 instance Arbitrary AbsAttenuation where
     arbitrary =
-      frequency
-        [ (2, NoAttenuation <$> arbitrary)
-        , (1, SpeedAttenuation <$> arbitrary `suchThat` (> SlowSpeed)
-                               <*> genTime
-                               <*> genLongDelay
-          )
-        , (1, ErrorInterval <$> arbitrary
-                            <*> genTime
-                            <*> genLongDelay
-          )
-        ]
+        frequency
+          [ (2, NoAttenuation <$> arbitrary)
+          , (1, SpeedAttenuation <$> arbitrary `suchThat` (> SlowSpeed)
+                                 <*> genTime
+                                 <*> genLongDelay
+            )
+          , (1, ErrorInterval <$> arbitrary
+                              <*> genTime
+                              <*> genLongDelay
+                              <*> (getIOError <$> arbitrary)
+            )
+          ]
+      where
 
     shrink (NoAttenuation speed) =
       [NoAttenuation speed' | speed' <- shrink speed ]
@@ -138,7 +180,7 @@ instance Arbitrary AbsAttenuation where
          else SpeedAttenuation speed time len'
       | Delay len' <- shrink (Delay len)
       ]
-    shrink (ErrorInterval speed time len) =
+    shrink (ErrorInterval speed time len _ioe) =
       [ if len' < 1
          then NoAttenuation speed
          else SpeedAttenuation speed time len'
@@ -158,12 +200,12 @@ attenuation (SpeedAttenuation normalSpeed from len) =
       in ( delayAtSpeed speed size
          , Success
          )
-attenuation (ErrorInterval speed from len) =
+attenuation (ErrorInterval speed from len ioe) =
     \t size ->
         ( delayAtSpeed speed size
         , if t < from || t >= len `addTime` from
             then Success
-            else Failure
+            else Failure ioe
         )
 
 data AbsIOErrType = AbsIOErrConnectionAborted
@@ -183,9 +225,7 @@ data AbsBearerInfo = AbsBearerInfo
     , abiOutboundAttenuation  :: !AbsAttenuation
     , abiInboundWriteFailure  :: !(Maybe Int)
     , abiOutboundWriteFailure :: !(Maybe Int)
-    , abiAcceptFailure        :: !(Maybe ( AbsDelay
-                                         , AbsIOErrType
-                                         ))
+    , abiAcceptFailure        :: !(Maybe (AbsDelay, IOError))
     , abiSDUSize              :: !AbsSDUSize
     }
   deriving (Eq, Show)
@@ -237,7 +277,9 @@ instance Arbitrary AbsBearerInfo where
         genAcceptFailure =
           frequency
             [ (2, pure Nothing)
-            , (1, (\a b -> Just (a,b)) <$> arbitrary <*> arbitrary)
+            , (1, (\a b -> Just (a,b))
+                <$> arbitrary
+                <*> (getIOError <$> arbitrary))
             ]
 
     shrink abi =
@@ -310,9 +352,9 @@ toNonFailingAbsBearerInfo script =
          , abiAcceptFailure        = Nothing
          }
 
-    unfailAtt (ErrorInterval    speed _ _) = NoAttenuation speed
-    unfailAtt (SpeedAttenuation speed _ _) = NoAttenuation speed
-    unfailAtt a                            = a
+    unfailAtt (ErrorInterval    speed _ _ _) = NoAttenuation speed
+    unfailAtt (SpeedAttenuation speed _ _)   = NoAttenuation speed
+    unfailAtt a                              = a
 
 instance Arbitrary NonFailingAbsBearerInfo where
   arbitrary = toNonFailingAbsBearerInfo <$> arbitrary

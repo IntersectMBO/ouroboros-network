@@ -37,6 +37,7 @@ import Data.Typeable (Typeable)
 import Data.Void (Void)
 import Data.Word (Word32)
 
+import GHC.IO.Exception as GHC (IOErrorType (..), IOException (..))
 import System.Random (mkStdGen)
 
 import Network.DNS.Types qualified as DNS
@@ -50,7 +51,8 @@ import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.PeerStateActions
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions hiding
+           (DNSorIOError (IOError))
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
@@ -1441,11 +1443,20 @@ prop_diffusion_dns_can_recover ioSimTrace traceNumber =
 unit_4191 :: Property
 unit_4191 = testWithIOSim prop_diffusion_dns_can_recover 125000 absInfo script
   where
+    ioerr =
+      IOError
+        { ioe_handle      = Nothing,
+          ioe_type        = ResourceVanished,
+          ioe_location    = "AttenuationChannel",
+          ioe_description = "attenuation",
+          ioe_errno       = Nothing,
+          ioe_filename    = Nothing
+        }
     absInfo =
       AbsBearerInfo
         { abiConnectionDelay = SmallDelay,
           abiInboundAttenuation = NoAttenuation NormalSpeed,
-          abiOutboundAttenuation = ErrorInterval NormalSpeed (Time 17.666666666666) 888,
+          abiOutboundAttenuation = ErrorInterval NormalSpeed (Time 17.666666666666) 888 ioerr,
           abiInboundWriteFailure = Nothing,
           abiOutboundWriteFailure = Just 2,
           abiAcceptFailure = Nothing, abiSDUSize = LargeSDU
@@ -2939,13 +2950,22 @@ prop_diffusion_cm_valid_transition_order ioSimTrace traceNumber =
 -- change.
 prop_unit_4258 :: Property
 prop_unit_4258 =
-  let bearerInfo = AbsBearerInfo {
+  let ioerr = IOError
+        { ioe_handle      = Nothing
+        , ioe_type        = ResourceExhausted
+        , ioe_location    = "AttenuationChannel"
+        , ioe_description = "attenuation"
+        , ioe_errno       = Nothing
+        , ioe_filename    = Nothing
+        }
+
+      bearerInfo = AbsBearerInfo {
                      abiConnectionDelay = NormalDelay,
                      abiInboundAttenuation = NoAttenuation FastSpeed,
                      abiOutboundAttenuation = NoAttenuation FastSpeed,
                      abiInboundWriteFailure = Nothing,
                      abiOutboundWriteFailure = Nothing,
-                     abiAcceptFailure = Just (SmallDelay,AbsIOErrResourceExhausted),
+                     abiAcceptFailure = Just (SmallDelay,ioerr),
                      abiSDUSize = LargeSDU
                    }
       diffScript = DiffusionScript
@@ -4035,7 +4055,7 @@ toBearerInfo abi =
         biOutboundAttenuation  = attenuation (abiOutboundAttenuation abi),
         biInboundWriteFailure  = abiInboundWriteFailure abi,
         biOutboundWriteFailure = abiOutboundWriteFailure abi,
-        biAcceptFailures       = Nothing, -- TODO
+        biAcceptFailures       = (\(errDelay, ioErr) -> (delay errDelay, ioErr)) <$> abiAcceptFailure abi,
         biSDUSize              = toSduSize (abiSDUSize abi)
       }
 

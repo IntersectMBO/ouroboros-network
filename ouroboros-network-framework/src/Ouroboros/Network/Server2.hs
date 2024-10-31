@@ -25,6 +25,7 @@ module Ouroboros.Network.Server2
   , InboundGovernor.RemoteSt (..)
   , InboundGovernor.RemoteTransition
   , InboundGovernor.RemoteTransitionTrace
+  , isECONNABORTED
   ) where
 
 import Control.Applicative (Alternative)

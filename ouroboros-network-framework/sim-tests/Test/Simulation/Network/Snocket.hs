@@ -44,9 +44,6 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Text.Printf
 
-import Foreign.C.Error
-import GHC.IO.Exception
-
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.Driver.Simple
 import Ouroboros.Network.Snocket
@@ -340,13 +337,7 @@ toBearerInfo abi =
         biOutboundAttenuation  = attenuation (abiOutboundAttenuation abi),
         biInboundWriteFailure  = abiInboundWriteFailure abi,
         biOutboundWriteFailure = abiOutboundWriteFailure abi,
-        biAcceptFailures       = (\(errDelay, errType) ->
-                                   ( delay errDelay
-                                   , case errType of
-                                      AbsIOErrConnectionAborted -> IOErrConnectionAborted
-                                      AbsIOErrResourceExhausted -> IOErrResourceExhausted
-                                   )
-                                 ) <$> abiAcceptFailure abi,
+        biAcceptFailures       = (\(errDelay, ioErr) -> (delay errDelay, ioErr)) <$> abiAcceptFailure abi,
         biSDUSize              = toSduSize (abiSDUSize abi)
       }
 
@@ -423,17 +414,11 @@ prop_connect_to_accepting_socket defaultBearerInfo =
             r <- wait serverAsync
             return $
               case (r, abiAcceptFailure defaultBearerInfo) of
-                (Left (UnexpectedError e), Just (_, AbsIOErrConnectionAborted)) ->
-                  case fromException e of
-                    Just ioe | Just errno <- ioe_errno ioe
-                             , errno == (case eCONNABORTED of Errno a -> a)
-                            -> Right ()
-                    _       -> r
-                (Left (UnexpectedError e), Just (_, AbsIOErrResourceExhausted)) ->
-                  case fromException e of
-                    Just ioe | ResourceExhausted <- ioe_type ioe
-                            -> Right ()
-                    _       -> r
+                (Left (UnexpectedError e), Just (_, ioe)) ->
+                  case fromException e :: Maybe IOError of
+                    Just ioe' | ioe' == ioe
+                              -> Right ()
+                    _         -> r
 
                 (Right {}, Just {}) -> Left UnexpectedOutcome
                 _                   -> r

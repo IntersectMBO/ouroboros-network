@@ -140,7 +140,7 @@ data AttenuatedChannel m = AttenuatedChannel {
 
 
 
-data SuccessOrFailure = Success | Failure
+data SuccessOrFailure = Success | Failure IOError
 
 type Size = Int64
 
@@ -187,13 +187,11 @@ newAttenuatedChannel tr Attenuation { aReadAttenuation,
                            >> throwIO (BearerClosed "closed when reading data")
         MsgBytes bs ->
           case aReadAttenuation t (BL.length bs) of
-            ( d, Success ) -> threadDelay d
-                           >> return bs
+            ( d, Success )    -> threadDelay d
+                              >> return bs
 
-            ( d, Failure ) -> threadDelay d
-                           >> throwIO (resourceVanishedIOError
-                                        "AttenuatedChannel.read"
-                                        "read attenuation")
+            ( d, Failure ioe) -> threadDelay d
+                              >> throwIO ioe
 
     acWrite :: StrictTVar m Int
             -> BL.ByteString
