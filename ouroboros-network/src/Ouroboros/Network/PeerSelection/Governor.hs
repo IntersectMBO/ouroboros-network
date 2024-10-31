@@ -495,7 +495,7 @@ base our decision on include:
 -}
 
 -- NB this type must be custom to the specific application
-data PeerSelectionEvent = LedgerChange !LedgerStateJudgement | BPChange !UseBootstrapPeers | Churn !Bool
+data PeerSelectionEvent = LedgerChange !LedgerStateJudgement | BPChange !UseBootstrapPeers | Churn
 
 -- |
 --
@@ -600,7 +600,7 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
 
     quiesceTimeout :: ClSF m (MyClock n) (Maybe Quiesce) ()
     quiesceTimeout =
-      safely do
+      forever $
         Rhine.try $ proc command -> do
           case command of
             Just _ -> do
@@ -610,25 +610,32 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
                 else returnA -< ()
             Nothing -> -- reset timer
               throwS -< ()
-        safe quiesceTimeout
 
     cardanoHandlers = handlers
       where
         handlers =    quiesce @@ MyClock @60000 waitClock
-                  |@|
+                   |@|
                       attemptCardanoChurn @@ EventClock
 
         quiesce = arr cardanoQuiesce >>> (liftClSF . liftClSF $ quiesceTimeout)
 
         attemptCardanoChurn :: ClSF (App2 peeraddr peerconn m) (EventClock PeerSelectionEvent) CardanoSignal ()
-        attemptCardanoChurn = (churnPreflight `dSwitch` const attemptCardanoChurn) >>> setTargets
-
-        churnPreflight = proc CardanoSignal { cardanoQuiesce } -> do
-          case (cardanoQuiesce, True) of
-            (Just _, False) -> returnA -< ((), cardanoQuiesce)
-            _otherwise -> do
-              -- tagS >>> arrMCl (churn (natTracer (lift . lift) tracer)) -< ()
-              returnA -< ((), Nothing)
+        attemptCardanoChurn = liftClSF . liftClSF $ impl
+          where
+            impl =
+              -- churn <- tagS -< ()
+              safely do
+                Rhine.try $ churnPreflight -- >>> cardanoSetTargets
+                safe impl
+              where
+                churnPreflight = undefined
+                -- churnPreflight = proc (CardanoSignal {cardanoQuiesce}, churn) -> do
+                --   throwOn () -< churn || isJust cardanoQuiesce
+                --   -- churn <- tagS -< ()
+                --   -- case (cardanoQuiesce, churn) of
+                --   --   (Just _, _) -> returnA -< ()
+                --   --   -- (_, Churn) -> arrMCl (churn tracer) >-> arr (const undefined) -< undefined
+                --   --   _otherwise -> returnA -< ()
 
     -- abstract churn, independent of cardano-specifics such as lsj or bootstrap peers or consensus mode
     churn :: Tracer (App2 peeraddr peerconn m) (TracePeerSelection peeraddr)
@@ -641,16 +648,16 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
         else
           undefined
 
-    cardanoSetTargets :: BehaviorF (App2 peeraddr peerconn m) time () ()
+    cardanoSetTargets :: BehaviorF (App2 peeraddr peerconn m) time Bool ()
     cardanoSetTargets = constMCl getEnv >>> (liftClSF . liftClSF $ impl)
       where
-        getEnv = (\chan st -> (chan, st, peerSelectionStateToView st)) <$> ask <*> State.get
+        getEnv = asks (\chan st -> (st, peerSelectionStateToView st, chan)) <*> State.get
 
-        impl = proc (chan, state, view) -> do
+        impl = proc a@(state, view, chan) -> do
 
-          _ <- forKnown       st view `onSuccessElseRetryTime` undefined --chaseKnown st
-          _ <- forEstablished st view `onSuccessElseRetryTime` chaseEstablishedPeersTarget st
-          return ()
+          -- _ <- knownPeers -< a
+          _ <- establishedPeers -< a
+          returnA -< ()
 
     establishedPeers :: BehaviorF m time (TargetsInput peeraddr peerconn event) (Maybe (Min Time))
     establishedPeers = arrMCl impl
@@ -759,7 +766,7 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
       where
         cardanoTargets = proc a@(signal, _) -> do
           case cardanoQuiesce signal of
-            Just Quiesce  -> setTargets -< ()
+            Just Quiesce  -> cardanoSetTargets -< undefined -- ()
             _otherwise    -> returnA -< ()
 
           returnA -< a
