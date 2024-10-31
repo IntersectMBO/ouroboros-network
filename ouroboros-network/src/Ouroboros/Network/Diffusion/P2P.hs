@@ -759,6 +759,14 @@ runM Interfaces
 
               _                    -> mempty
           Nothing -> mempty)
+      <>
+      RethrowPolicy (\ctx err -> case  (ctx, fromException err) of
+                        -- mux unknown mini-protocol errors on the outbound
+                        -- side are fatal, since this is misconfiguration of the
+                        -- ouroboros-network stack.
+                        (OutboundError, Just Mx.UnknownMiniProtocol {})
+                          -> ShutdownNode
+                        _ -> mempty)
 
 
     -- | mkLocalThread - create local connection manager
