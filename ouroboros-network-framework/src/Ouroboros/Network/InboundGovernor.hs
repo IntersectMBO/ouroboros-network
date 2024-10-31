@@ -169,7 +169,10 @@ with
         countersCache     = mempty
       }
 
-    -- trace final transition, mostly for testing purposes
+    -- Trace final transition mostly for testing purposes.
+    --
+    -- NOTE: `inboundGovernorLoop` doesn't throw synchronous exceptions, this is
+    -- just need to handle asynchronous exceptions.
     handleError
       :: StrictTVar m (PublicState peerAddr versionData)
       -> SomeException
@@ -398,6 +401,8 @@ with
           --    DemotedToCold^{dataFlow}_{Remote} : InboundState Duplex
           --                                      → InboundIdleState Duplex
           -- @
+          -- NOTE: `demotedToColdRemote` doesn't throw, hence exception handling
+          -- is not needed.
           res <- demotedToColdRemote connectionManager
                                      (remoteAddress connId)
           traceWith tracer (TrWaitIdleRemote connId res)
@@ -437,6 +442,9 @@ with
         -- first message that arrives is terminating a mini-protocol.
         AwakeRemote connId -> do
           -- notify the connection manager about the transition
+          --
+          -- NOTE: `promotedToWarmRemote` doesn't throw, hence exception handling
+          -- is not needed.
           res <- promotedToWarmRemote connectionManager
                                       (remoteAddress connId)
           traceWith tracer (TrPromotedToWarmRemote connId res)
@@ -469,6 +477,8 @@ with
           return (Just connId, state')
 
         CommitRemote connId -> do
+          -- NOTE: `releaseInboundConnection` doesn't throw, hence exception
+          -- handling is not needed.
           res <- releaseInboundConnection connectionManager
                                           (remoteAddress connId)
           traceWith tracer $ TrDemotedToColdRemote connId res
