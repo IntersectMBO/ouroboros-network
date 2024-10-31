@@ -85,6 +85,7 @@ import Ouroboros.Network.Protocol.Handshake.Codec (noTimeLimitsHandshake,
 import Ouroboros.Network.Protocol.Handshake.Unversioned
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Server2 (RemoteTransitionTrace)
+import Ouroboros.Network.Server2 qualified as Server
 import Ouroboros.Network.Snocket (Snocket, TestAddress (..))
 import Ouroboros.Network.Snocket qualified as Snocket
 
@@ -139,12 +140,7 @@ tests =
     [ testProperty "unidirectional Sim"     prop_unidirectional_Sim
     , testProperty "bidirectional Sim"      prop_bidirectional_Sim
     , testProperty "never above hardlimit"  prop_never_above_hardlimit
-    , testGroup      "accept errors"
-      [ testProperty "ConnectionAborted"
-                    (flip unit_server_accept_error IOErrConnectionAborted)
-      , testProperty "ResourceExhausted"
-                    (flip unit_server_accept_error IOErrResourceExhausted)
-      ]
+    , testProperty "accept errors"          prop_server_accept_error
     ]
   , testProperty "connection terminated when negotiating"
                  unit_connection_terminated_when_negotiating
@@ -2150,15 +2146,15 @@ prop_never_above_hardlimit (Fixed rnd) serverAcc
 
 -- | Checks that the server re-throws exceptions returned by an 'accept' call.
 --
-unit_server_accept_error :: Fixed Int -> IOErrType -> Property
-unit_server_accept_error (Fixed rnd) ioErrType =
+prop_server_accept_error :: Fixed Int -> AbsIOError -> Property
+prop_server_accept_error (Fixed rnd) (AbsIOError ioerr) =
     runSimOrThrow sim
   where
     -- The following attenuation make sure that the `accept` call will throw.
     --
     bearerAttenuation :: BearerInfo
     bearerAttenuation =
-      noAttenuation { biAcceptFailures = Just (0, ioErrType) }
+      noAttenuation { biAcceptFailures = Just (0, ioerr) }
 
     sim :: IOSim s Property
     sim = handle (\e -> return $ case fromException e :: Maybe IOError of
@@ -2209,7 +2205,7 @@ unit_server_accept_error (Fixed rnd) ioErrType =
                          FirstToFinish (LazySTM.readTVar v >>= \a -> check a $> Nothing)
                    return $ case r of
                      Nothing        -> counterexample "server did not throw"
-                                         (ioErrType == IOErrConnectionAborted)
+                                         (Server.isECONNABORTED ioerr)
                      Just (Right _) -> counterexample "unexpected value" False
                      Just (Left e)  -- If we throw exceptions, any IO exception
                                     -- can go through; the check for

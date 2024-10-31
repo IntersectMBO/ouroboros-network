@@ -6,7 +6,7 @@
 
 -- | Node kernel which does chain selection and block production.
 --
-module Test.Ouroboros.Network.Diffusion.Node.NodeKernel
+module Test.Ouroboros.Network.Testnet.Node.Kernel
   ( -- * Common types
     NtNAddr
   , NtNAddr_ (..)
@@ -85,8 +85,8 @@ import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint (..))
 import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry (..),
            newPeerSharingAPI, newPeerSharingRegistry,
            ps_POLICY_PEER_SHARE_MAX_PEERS, ps_POLICY_PEER_SHARE_STICKY_TIME)
-import Test.Ouroboros.Network.Diffusion.Node.ChainDB (ChainDB (..))
-import Test.Ouroboros.Network.Diffusion.Node.ChainDB qualified as ChainDB
+import Test.Ouroboros.Network.Testnet.Node.ChainDB (ChainDB (..))
+import Test.Ouroboros.Network.Testnet.Node.ChainDB qualified as ChainDB
 import Test.QuickCheck (Arbitrary (..), choose, chooseInt, frequency, oneof)
 
 

@@ -37,6 +37,7 @@ import Data.Typeable (Typeable)
 import Data.Void (Void)
 import Data.Word (Word32)
 
+import GHC.IO.Exception as GHC (IOErrorType (..), IOException (..))
 import System.Random (mkStdGen)
 
 import Network.DNS.Types qualified as DNS
@@ -50,7 +51,8 @@ import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.PeerStateActions
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions hiding
+           (DNSorIOError (IOError))
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
@@ -64,15 +66,15 @@ import Ouroboros.Network.Testing.Utils hiding (SmallDelay, debugTracer)
 
 import Simulation.Network.Snocket (BearerInfo (..))
 
-import Test.Ouroboros.Network.Diffusion.Node (config_REPROMOTE_DELAY)
-import Test.Ouroboros.Network.Diffusion.Node.NodeKernel
-import Test.Ouroboros.Network.Testnet.Simulation.Node
+import Test.Ouroboros.Network.Testnet.Internal
+import Test.Ouroboros.Network.Testnet.Node (config_REPROMOTE_DELAY)
+import Test.Ouroboros.Network.Testnet.Node.Kernel
 import Test.QuickCheck
 import Test.QuickCheck.Monoids
 import Test.Tasty
 import Test.Tasty.QuickCheck (testProperty)
 
-import Control.Exception (AssertionFailed (..), catch, evaluate)
+import Control.Exception (AssertionFailed (..), catch, evaluate, fromException)
 import Ouroboros.Network.BlockFetch (FetchMode (..), TraceFetchClientState (..))
 import Ouroboros.Network.ConnectionManager.Test.Timeouts (TestProperty (..),
            classifyActivityType, classifyEffectiveDataFlow,
@@ -220,6 +222,8 @@ tests =
     , testProperty "any Cold async demotion"
                    (testWithIOSim prop_track_coolingToCold_demotions 125000)
     , testProperty "unit #4177" unit_4177
+    , testProperty "connect failure" prop_connect_failure
+    , testProperty "accept failure" prop_accept_failure
     , testProperty "only bootstrap peers in fallback state"
                    (testWithIOSim prop_only_bootstrap_peers_in_fallback_state 125000)
     , testProperty "no non trustable peers before caught up state"
@@ -1099,14 +1103,16 @@ prop_peer_selection_action_trace_coverage defaultBearerInfo diffScript =
 
       peerSelectionActionsTraceMap :: PeerSelectionActionsTrace NtNAddr NtNVersion
                                    -> String
-      peerSelectionActionsTraceMap (PeerStatusChanged _)             =
+      peerSelectionActionsTraceMap (PeerStatusChanged _)          =
         "PeerStatusChanged"
       peerSelectionActionsTraceMap (PeerStatusChangeFailure _ ft) =
         "PeerStatusChangeFailure " ++ show ft
-      peerSelectionActionsTraceMap (PeerMonitoringError _ se)        =
+      peerSelectionActionsTraceMap (PeerMonitoringError _ se)     =
         "PeerMonitoringError " ++ show se
-      peerSelectionActionsTraceMap (PeerMonitoringResult _ wspt)     =
+      peerSelectionActionsTraceMap (PeerMonitoringResult _ wspt)  =
         "PeerMonitoringResult " ++ show wspt
+      peerSelectionActionsTraceMap (AcquireConnectionError e)      =
+        "AcquireConnectionError " ++ show e
 
       eventsSeenNames = map peerSelectionActionsTraceMap events
 
@@ -1439,11 +1445,20 @@ prop_diffusion_dns_can_recover ioSimTrace traceNumber =
 unit_4191 :: Property
 unit_4191 = testWithIOSim prop_diffusion_dns_can_recover 125000 absInfo script
   where
+    ioerr =
+      IOError
+        { ioe_handle      = Nothing,
+          ioe_type        = ResourceVanished,
+          ioe_location    = "AttenuationChannel",
+          ioe_description = "attenuation",
+          ioe_errno       = Nothing,
+          ioe_filename    = Nothing
+        }
     absInfo =
       AbsBearerInfo
         { abiConnectionDelay = SmallDelay,
           abiInboundAttenuation = NoAttenuation NormalSpeed,
-          abiOutboundAttenuation = ErrorInterval NormalSpeed (Time 17.666666666666) 888,
+          abiOutboundAttenuation = ErrorInterval NormalSpeed (Time 17.666666666666) 888 ioerr,
           abiInboundWriteFailure = Nothing,
           abiOutboundWriteFailure = Just 2,
           abiAcceptFailure = Nothing, abiSDUSize = LargeSDU
@@ -1527,6 +1542,275 @@ unit_4191 = testWithIOSim prop_diffusion_dns_can_recover 125000 absInfo script
               , Reconfigure 82.85714285714 []
               ])
         ]
+
+
+-- | Verify that some connect failures are fatal.
+--
+prop_connect_failure :: AbsIOError -> Property
+prop_connect_failure (AbsIOError ioerr) =
+  label (if isFatal (ioe_type ioerr) then "fatal IOError" else "non-fatal IOError") $
+  testWithIOSim
+    (\trace _ ->
+       let -- events generated by `nodeAddr`
+           events :: Events DiffusionTestTrace
+           events = Signal.eventsFromList
+                  . map (\(WithTime t b) -> (t, b))
+                  . Trace.toList
+                  . fmap (\(WithTime t (WithName _ b)) -> (WithTime t b))
+                  . Trace.filter (\(WithTime _ (WithName name _)) -> name == nodeAddr)
+                  . withTimeNameTraceEvents
+                     @DiffusionTestTrace
+                     @NtNAddr
+                  . Trace.take noEvents
+                  $ trace
+           evs = eventsToList (selectDiffusionSimulationTrace events)
+       in  counterexample (Trace.ppTrace show (ppSimEvent 0 0 0) . Trace.take noEvents $ trace)
+         . counterexample (show evs)
+         . (if isFatal (ioe_type ioerr)
+           then -- verify that the node was killed by the right exception
+                any (\case
+                      TrErrored e | Just (ExceptionInHandler _ e') <- fromException e
+                                  , Just e'' <- fromException e'
+                                  , e'' == ioerr
+                                  -> True
+                      _           -> False)
+           else -- verify that the ndoe was not killed by the `ioerr` exception
+                all (\case
+                      TrErrored {} -> False
+                      _            -> True)
+           )
+         . map snd
+         $ evs
+    ) noEvents absInfo script
+  where
+    -- must be in sync with rethrowPolicy in `Ouroboros.Network.Diffusion.P2P`
+    isFatal :: IOErrorType -> Bool
+    isFatal ResourceExhausted    = True
+    isFatal UnsupportedOperation = True
+    isFatal InvalidArgument      = True
+    isFatal ProtocolError        = True
+    isFatal _                    = False
+
+    noEvents = 5000
+    absInfo =
+      AbsBearerInfo
+        { abiConnectionDelay = SmallDelay,
+          abiInboundAttenuation = NoAttenuation NormalSpeed,
+          abiOutboundAttenuation = ErrorInterval NormalSpeed (Time 0) 1000 ioerr,
+          abiInboundWriteFailure = Nothing,
+          abiOutboundWriteFailure = Nothing,
+          abiAcceptFailure = Nothing, abiSDUSize = LargeSDU
+        }
+
+    nodeIP   = read "10.0.0.0"
+    nodePort = 1
+    nodeAddr = TestAddress (IPAddr nodeIP nodePort)
+
+    relayIP   = read "10.0.0.1"
+    relayPort = 1
+
+    script =
+      DiffusionScript
+        (SimArgs 1 20)
+        (singletonTimedScript Map.empty)
+        [ (NodeArgs {
+            naSeed = 0,
+            naDiffusionMode = InitiatorAndResponderDiffusionMode,
+            naMbTime = Just 224,
+            naPublicRoots = Map.empty,
+            naConsensusMode = PraosMode,
+            naBootstrapPeers = Script (DontUseBootstrapPeers :| []),
+            naAddr = TestAddress (IPAddr nodeIP nodePort),
+            naPeerSharing = PeerSharingDisabled,
+            naLocalRootPeers = [(1,1,Map.fromList [(RelayAccessAddress relayIP relayPort,(DoNotAdvertisePeer, IsNotTrustable))])],
+            naLedgerPeers = Script (LedgerPools [] :| []),
+            naPeerTargets = ConsensusModePeerTargets {
+              deadlineTargets = PeerSelectionTargets {
+                targetNumberOfRootPeers = 1,
+                targetNumberOfKnownPeers = 1,
+                targetNumberOfEstablishedPeers = 1,
+                targetNumberOfActivePeers = 1,
+
+                targetNumberOfKnownBigLedgerPeers = 0,
+                targetNumberOfEstablishedBigLedgerPeers = 0,
+                targetNumberOfActiveBigLedgerPeers = 0
+              },
+              syncTargets = nullPeerSelectionTargets
+            },
+            naDNSTimeoutScript = Script (DNSTimeout {getDNSTimeout = 0} :| []),
+            naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []),
+            naChainSyncExitOnBlockNo = Nothing,
+            naChainSyncEarlyExit = False,
+            naFetchModeScript = Script (FetchModeDeadline :| [])
+          }
+          , [JoinNetwork 10]
+          ),
+          (NodeArgs {
+            naSeed = 0,
+            naDiffusionMode = InitiatorAndResponderDiffusionMode,
+            naMbTime = Just 224,
+            naPublicRoots = Map.empty,
+            naConsensusMode = PraosMode,
+            naBootstrapPeers = Script (DontUseBootstrapPeers :| []),
+            naAddr = TestAddress (IPAddr relayIP relayPort),
+            naPeerSharing = PeerSharingDisabled,
+            naLocalRootPeers = [],
+            naLedgerPeers = Script (LedgerPools [] :| []),
+            naPeerTargets = ConsensusModePeerTargets {
+              deadlineTargets = PeerSelectionTargets {
+                targetNumberOfRootPeers = 0,
+                targetNumberOfKnownPeers = 0,
+                targetNumberOfEstablishedPeers = 0,
+                targetNumberOfActivePeers = 0,
+
+                targetNumberOfKnownBigLedgerPeers = 0,
+                targetNumberOfEstablishedBigLedgerPeers = 0,
+                targetNumberOfActiveBigLedgerPeers = 0
+              },
+              syncTargets = nullPeerSelectionTargets
+            },
+            naDNSTimeoutScript = Script (DNSTimeout {getDNSTimeout = 0} :| []),
+            naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []),
+            naChainSyncExitOnBlockNo = Nothing,
+            naChainSyncEarlyExit = False,
+            naFetchModeScript = Script (FetchModeDeadline :| [])
+          }
+          , [JoinNetwork 0]
+          )
+        ]
+
+
+-- | Verify that some connect failures are fatal.
+--
+prop_accept_failure :: AbsIOError -> Property
+prop_accept_failure (AbsIOError ioerr) =
+  label (if isFatal ioerr then "fatal IOError" else "non-fatal IOError") $
+  testWithIOSim
+    (\trace _ ->
+       let -- events generated by `nodeAddr`
+           events :: Events DiffusionTestTrace
+           events = Signal.eventsFromList
+                  . map (\(WithTime t b) -> (t, b))
+                  . Trace.toList
+                  . fmap (\(WithTime t (WithName _ b)) -> (WithTime t b))
+                  . Trace.filter (\(WithTime _ (WithName name _)) -> name == relayAddr)
+                  . withTimeNameTraceEvents
+                     @DiffusionTestTrace
+                     @NtNAddr
+                  . Trace.take noEvents
+                  $ trace
+           evs = eventsToList (selectDiffusionSimulationTrace events)
+       in  -- counterexample (Trace.ppTrace show (ppSimEvent 0 0 0) . Trace.take noEvents $ trace)
+           counterexample (show evs)
+         . (if isFatal ioerr
+           then -- verify that the node was killed by the right exception
+                any (\case
+                      TrErrored e | Just e' <- fromException e
+                                  , e' == ioerr
+                                  -> True
+                      _           -> False)
+           else -- verify that the node was not killed by the `ioerr` exception
+                all (\case
+                      TrErrored {} -> False
+                      _            -> True)
+           )
+         . map snd
+         $ evs
+    ) noEvents absInfo script
+  where
+    -- only ECONNABORTED errors are not fatal
+    isFatal :: IOError -> Bool
+    isFatal = not . Server.isECONNABORTED
+
+    noEvents = 10000
+    absInfo =
+      AbsBearerInfo
+        { abiConnectionDelay = SmallDelay,
+          abiInboundAttenuation = NoAttenuation NormalSpeed,
+          abiOutboundAttenuation = NoAttenuation NormalSpeed,
+          abiInboundWriteFailure = Nothing,
+          abiOutboundWriteFailure = Nothing,
+          abiAcceptFailure = Just (SmallDelay, ioerr),
+          abiSDUSize = LargeSDU
+        }
+
+    nodeIP   = read "10.0.0.0"
+    nodePort = 1
+
+    relayIP   = read "10.0.0.1"
+    relayPort = 1
+    relayAddr = TestAddress (IPAddr relayIP relayPort)
+
+    script =
+      DiffusionScript
+        (SimArgs 1 20)
+        (singletonTimedScript Map.empty)
+        [ (NodeArgs {
+            naSeed = 0,
+            naDiffusionMode = InitiatorAndResponderDiffusionMode,
+            naMbTime = Just 224,
+            naPublicRoots = Map.empty,
+            naConsensusMode = PraosMode,
+            naBootstrapPeers = Script (DontUseBootstrapPeers :| []),
+            naAddr = TestAddress (IPAddr nodeIP nodePort),
+            naPeerSharing = PeerSharingDisabled,
+            naLocalRootPeers = [(1,1,Map.fromList [(RelayAccessAddress relayIP relayPort,(DoNotAdvertisePeer, IsNotTrustable))])],
+            naLedgerPeers = Script (LedgerPools [] :| []),
+            naPeerTargets = ConsensusModePeerTargets {
+              deadlineTargets = PeerSelectionTargets {
+                targetNumberOfRootPeers = 1,
+                targetNumberOfKnownPeers = 1,
+                targetNumberOfEstablishedPeers = 1,
+                targetNumberOfActivePeers = 1,
+
+                targetNumberOfKnownBigLedgerPeers = 0,
+                targetNumberOfEstablishedBigLedgerPeers = 0,
+                targetNumberOfActiveBigLedgerPeers = 0
+              },
+              syncTargets = nullPeerSelectionTargets
+            },
+            naDNSTimeoutScript = Script (DNSTimeout {getDNSTimeout = 0} :| []),
+            naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []),
+            naChainSyncExitOnBlockNo = Nothing,
+            naChainSyncEarlyExit = False,
+            naFetchModeScript = Script (FetchModeDeadline :| [])
+          }
+          , [JoinNetwork 10]
+          ),
+          (NodeArgs {
+            naSeed = 0,
+            naDiffusionMode = InitiatorAndResponderDiffusionMode,
+            naMbTime = Just 224,
+            naPublicRoots = Map.empty,
+            naConsensusMode = PraosMode,
+            naBootstrapPeers = Script (DontUseBootstrapPeers :| []),
+            naAddr = TestAddress (IPAddr relayIP relayPort),
+            naPeerSharing = PeerSharingDisabled,
+            naLocalRootPeers = [],
+            naLedgerPeers = Script (LedgerPools [] :| []),
+            naPeerTargets = ConsensusModePeerTargets {
+              deadlineTargets = PeerSelectionTargets {
+                targetNumberOfRootPeers = 0,
+                targetNumberOfKnownPeers = 0,
+                targetNumberOfEstablishedPeers = 0,
+                targetNumberOfActivePeers = 0,
+
+                targetNumberOfKnownBigLedgerPeers = 0,
+                targetNumberOfEstablishedBigLedgerPeers = 0,
+                targetNumberOfActiveBigLedgerPeers = 0
+              },
+              syncTargets = nullPeerSelectionTargets
+            },
+            naDNSTimeoutScript = Script (DNSTimeout {getDNSTimeout = 0} :| []),
+            naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []),
+            naChainSyncExitOnBlockNo = Nothing,
+            naChainSyncEarlyExit = False,
+            naFetchModeScript = Script (FetchModeDeadline :| [])
+          }
+          , [JoinNetwork 0]
+          )
+        ]
+
 
 -- | A variant of
 -- 'Test.Ouroboros.Network.PeerSelection.prop_governor_target_established_public'
@@ -2937,13 +3221,22 @@ prop_diffusion_cm_valid_transition_order ioSimTrace traceNumber =
 -- change.
 prop_unit_4258 :: Property
 prop_unit_4258 =
-  let bearerInfo = AbsBearerInfo {
+  let ioerr = IOError
+        { ioe_handle      = Nothing
+        , ioe_type        = ResourceExhausted
+        , ioe_location    = "AttenuationChannel"
+        , ioe_description = "attenuation"
+        , ioe_errno       = Nothing
+        , ioe_filename    = Nothing
+        }
+
+      bearerInfo = AbsBearerInfo {
                      abiConnectionDelay = NormalDelay,
                      abiInboundAttenuation = NoAttenuation FastSpeed,
                      abiOutboundAttenuation = NoAttenuation FastSpeed,
                      abiInboundWriteFailure = Nothing,
                      abiOutboundWriteFailure = Nothing,
-                     abiAcceptFailure = Just (SmallDelay,AbsIOErrResourceExhausted),
+                     abiAcceptFailure = Just (SmallDelay,ioerr),
                      abiSDUSize = LargeSDU
                    }
       diffScript = DiffusionScript
@@ -3391,7 +3684,8 @@ prop_diffusion_peer_selection_actions_no_dodgy_traces ioSimTrace traceNumber =
                 WithTime _ (PeerStatusChanged type_)         -> getConnId type_
                 WithTime _ (PeerStatusChangeFailure type_ _) -> getConnId type_
                 WithTime _ (PeerMonitoringError connId _)    -> Just connId
-                WithTime _ (PeerMonitoringResult connId _)   -> Just connId)
+                WithTime _ (PeerMonitoringResult connId _)   -> Just connId
+                WithTime _ (AcquireConnectionError _)        -> Nothing)
          $ peerSelectionActionsEvents
          )
 
@@ -4032,7 +4326,7 @@ toBearerInfo abi =
         biOutboundAttenuation  = attenuation (abiOutboundAttenuation abi),
         biInboundWriteFailure  = abiInboundWriteFailure abi,
         biOutboundWriteFailure = abiOutboundWriteFailure abi,
-        biAcceptFailures       = Nothing, -- TODO
+        biAcceptFailures       = (\(errDelay, ioErr) -> (delay errDelay, ioErr)) <$> abiAcceptFailure abi,
         biSDUSize              = toSduSize (abiSDUSize abi)
       }
 

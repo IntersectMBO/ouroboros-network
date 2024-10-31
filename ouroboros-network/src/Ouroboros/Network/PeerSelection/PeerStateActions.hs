@@ -35,6 +35,7 @@ import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (SomeAsyncException (..), assert)
 import Control.Monad (when, (<=<))
 import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI
 
@@ -56,6 +57,7 @@ import Ouroboros.Network.ExitPolicy
 import Ouroboros.Network.Mux
 import Ouroboros.Network.PeerSelection.Governor (PeerStateActions (..))
 import Ouroboros.Network.Protocol.Handshake (HandshakeException)
+import Ouroboros.Network.RethrowPolicy
 
 import Ouroboros.Network.ConnectionHandler (Handle (..), HandleError (..),
            MuxConnectionManager)
@@ -553,7 +555,9 @@ data PeerStateActionsArguments muxMode socket responderCtx peerAddr versionData 
                                                         versionData versionNumber
                                                         ByteString m a b,
 
-      spsExitPolicy             :: ExitPolicy a
+      spsExitPolicy             :: ExitPolicy a,
+      spsRethrowPolicy          :: RethrowPolicy,
+      spsMainThreadId           :: ThreadId m
     }
 
 
@@ -563,6 +567,7 @@ withPeerStateActions
        , MonadAsync         m
        , MonadCatch         m
        , MonadLabelledSTM   m
+       , MonadFork          m
        , MonadMask          m
        , MonadTimer         m
        , MonadThrow         (STM m)
@@ -586,7 +591,9 @@ withPeerStateActions PeerStateActionsArguments {
                        spsCloseConnectionTimeout,
                        spsTracer,
                        spsConnectionManager,
-                       spsExitPolicy
+                       spsExitPolicy,
+                       spsRethrowPolicy,
+                       spsMainThreadId
                      }
                      k =
     JobPool.withJobPool $ \jobPool ->
@@ -728,11 +735,18 @@ withPeerStateActions PeerStateActionsArguments {
         (newTVarIO PeerCold)
         (\peerStateVar -> atomically $ writeTVar peerStateVar PeerCold)
         $ \peerStateVar -> do
-          res <- acquireOutboundConnection spsConnectionManager remotePeerAddr
+          res <- try $ acquireOutboundConnection spsConnectionManager remotePeerAddr
           case res of
-            Connected connectionId@ConnectionId { localAddress, remoteAddress }
-                      _dataFlow
-                      (Handle mux muxBundle controlMessageBundle versionData) -> do
+            Left e -> do
+              traceWith spsTracer (AcquireConnectionError e)
+              case runRethrowPolicy spsRethrowPolicy OutboundError e of
+                ShutdownNode -> throwTo spsMainThreadId e
+                             >> throwIO e
+                ShutdownPeer -> throwIO e
+
+            Right (Connected connectionId@ConnectionId { localAddress, remoteAddress }
+                             _dataFlow
+                            (Handle mux muxBundle controlMessageBundle versionData)) -> do
 
               atomically $ do
                 writeTVar (projectBundle SingHot         controlMessageBundle) Terminate
@@ -778,11 +792,11 @@ withPeerStateActions PeerStateActionsArguments {
                                    ("peerMonitoringLoop " ++ show remoteAddress))
               pure connHandle
 
-            Disconnected _ Nothing ->
+            Right (Disconnected _ Nothing) ->
               -- Disconnected in 'TerminatingState' or 'TerminatedState' without
               -- an exception.
               throwIO $ userError "establishPeerConnection: Disconnected"
-            Disconnected _ (Just reason) ->
+            Right (Disconnected _ (Just reason)) ->
               case reason of
                 HandleHandshakeClientError err -> do
                   traceWith spsTracer (PeerStatusChangeFailure
@@ -1177,4 +1191,5 @@ data PeerSelectionActionsTrace peerAddr vNumber =
     | PeerStatusChangeFailure (PeerStatusChangeType peerAddr) (FailureType vNumber)
     | PeerMonitoringError     (ConnectionId peerAddr) SomeException
     | PeerMonitoringResult    (ConnectionId peerAddr) (Maybe (WithSomeProtocolTemperature FirstToFinishResult))
+    | AcquireConnectionError  SomeException
   deriving Show

@@ -241,11 +241,6 @@ library sim-tests-lib
     Ouroboros.Network.BlockFetch.Examples
     Ouroboros.Network.MockNode
     Test.Ouroboros.Network.BlockFetch
-    Test.Ouroboros.Network.Diffusion.Node
-    Test.Ouroboros.Network.Diffusion.Node.ChainDB
-    Test.Ouroboros.Network.Diffusion.Node.MiniProtocols
-    Test.Ouroboros.Network.Diffusion.Node.NodeKernel
-    Test.Ouroboros.Network.Diffusion.Policies
     Test.Ouroboros.Network.KeepAlive
     Test.Ouroboros.Network.LedgerPeers
     Test.Ouroboros.Network.MockNode
@@ -265,7 +260,12 @@ library sim-tests-lib
     Test.Ouroboros.Network.PeerSelection.RootPeersDNS
     Test.Ouroboros.Network.PeerState
     Test.Ouroboros.Network.Testnet
-    Test.Ouroboros.Network.Testnet.Simulation.Node
+    Test.Ouroboros.Network.Testnet.Internal
+    Test.Ouroboros.Network.Testnet.Node
+    Test.Ouroboros.Network.Testnet.Node.ChainDB
+    Test.Ouroboros.Network.Testnet.Node.Kernel
+    Test.Ouroboros.Network.Testnet.Node.MiniProtocols
+    Test.Ouroboros.Network.Testnet.Policies
     Test.Ouroboros.Network.TxSubmission
     Test.Ouroboros.Network.Version
 

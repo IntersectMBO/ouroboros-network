@@ -7,7 +7,7 @@
 {-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
-module Test.Ouroboros.Network.Diffusion.Node
+module Test.Ouroboros.Network.Testnet.Node
   ( -- * run a node
     Node.BlockGeneratorArgs (..)
   , Node.LimitsAndTimeouts (..)
@@ -105,15 +105,13 @@ import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint,
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSLookupType)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
            WarmValency)
-import Test.Ouroboros.Network.Diffusion.Node.ChainDB (addBlock,
-           getBlockPointSet)
-import Test.Ouroboros.Network.Diffusion.Node.MiniProtocols qualified as Node
-import Test.Ouroboros.Network.Diffusion.Node.NodeKernel (NodeKernel (..),
-           NtCAddr, NtCVersion, NtCVersionData, NtNAddr, NtNVersion,
-           NtNVersionData (..))
-import Test.Ouroboros.Network.Diffusion.Node.NodeKernel qualified as Node
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay,
            DNSTimeout, mockDNSActions)
+import Test.Ouroboros.Network.Testnet.Node.ChainDB (addBlock, getBlockPointSet)
+import Test.Ouroboros.Network.Testnet.Node.Kernel (NodeKernel (..), NtCAddr,
+           NtCVersion, NtCVersionData, NtNAddr, NtNVersion, NtNVersionData (..))
+import Test.Ouroboros.Network.Testnet.Node.Kernel qualified as Node
+import Test.Ouroboros.Network.Testnet.Node.MiniProtocols qualified as Node
 
 
 data Interfaces m = Interfaces

@@ -63,7 +63,6 @@ import Data.Functor (($>))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Typeable (Typeable)
-import Foreign.C.Error
 import Numeric.Natural (Natural)
 import Text.Printf (printf)
 
@@ -267,7 +266,7 @@ data BearerInfo = BearerInfo
       -- which would be caught, and delivered to the application via
       -- 'AcceptFailure'.
       --
-    , biAcceptFailures       :: !(Maybe (DiffTime, IOErrType))
+    , biAcceptFailures       :: !(Maybe (DiffTime, IOError))
 
       -- | SDU size of the bearer; it will be shared between outbound and inbound
       -- sides.
@@ -279,7 +278,7 @@ data BearerInfo = BearerInfo
     }
 
 instance Show BearerInfo where
-    show BearerInfo {biConnectionDelay, biInboundWriteFailure, biOutboundWriteFailure, biSDUSize} =
+    show BearerInfo {biConnectionDelay, biInboundWriteFailure, biOutboundWriteFailure, biAcceptFailures, biSDUSize} =
       concat
         [ "BearerInfo "
         , show biConnectionDelay
@@ -287,8 +286,11 @@ instance Show BearerInfo where
         , show biInboundWriteFailure
         , ") ("
         , show biOutboundWriteFailure
-        , ") "
+        , ") ("
+        , show biAcceptFailures
+        , ") ("
         , show biSDUSize
+        , ")"
         ]
 
 
@@ -1109,10 +1111,10 @@ mkSnocket state tr = Snocket { getLocalAddr
                return False
 
         accept_ :: Time
-                -> Maybe (DiffTime, IOErrType)
+                -> Maybe (DiffTime, IOError)
                 -> Accept m (FD m (TestAddress addr))
                                   (TestAddress addr)
-        accept_ time deltaAndIOErrType = Accept $ do
+        accept_ time deltaAndIOErr = Accept $ do
             ctime <- getMonotonicTime
             bracketOnError
               (atomically $ do
@@ -1149,23 +1151,15 @@ mkSnocket state tr = Snocket { getLocalAddr
                     let connId = ConnectionId { localAddress,
                                                 remoteAddress = cwiAddress cwi }
 
-                    case deltaAndIOErrType of
+                    case deltaAndIOErr of
                       -- the `ctime` is the time when we issued 'accept' not
                       -- when read something from the queue.
-                      Just (delta, ioErrType) | delta `addTime` time >= ctime ->
-                        case ioErrType of
-                          IOErrConnectionAborted ->
-                            return $ Left ( toException connectionAbortedError
-                                          , Just localAddress
-                                          , Just (connId, cwiChannelLocal cwi)
-                                          , mkSockType fd
-                                          )
-                          IOErrResourceExhausted ->
-                            return $ Left ( toException $ resourceExhaustedError fd
-                                          , Just localAddress
-                                          , Just (connId, cwiChannelLocal cwi)
-                                          , mkSockType fd
-                                          )
+                      Just (delta, ioErr) | delta `addTime` time >= ctime ->
+                          return $ Left ( toException ioErr
+                                        , Just localAddress
+                                        , Just (connId, cwiChannelLocal cwi)
+                                        , mkSockType fd
+                                        )
                       _  -> return $ Right ( cwi
                                            , connId
                                            )
@@ -1210,7 +1204,7 @@ mkSnocket state tr = Snocket { getLocalAddr
                                 )
                                 mbConnIdAndChann
                     traceWith tr (WithAddr mbLocalAddr Nothing (STAcceptFailure fdType err))
-                    return (AcceptFailure err, accept_ time deltaAndIOErrType)
+                    return (AcceptFailure err, accept_ time deltaAndIOErr)
 
                   Right (chann, connId@ConnectionId { localAddress, remoteAddress }) -> do
                     traceWith tr (WithAddr (Just localAddress) (Just remoteAddress)
@@ -1240,7 +1234,7 @@ mkSnocket state tr = Snocket { getLocalAddr
                     traceWith tr (WithAddr (Just localAddress) Nothing
                                            (STAccepted remoteAddress))
 
-                    return (Accepted fdRemote remoteAddress, accept_ time deltaAndIOErrType)
+                    return (Accepted fdRemote remoteAddress, accept_ time deltaAndIOErr)
 
 
         invalidError :: FD_ m (TestAddress addr) -> IOError
@@ -1249,28 +1243,6 @@ mkSnocket state tr = Snocket { getLocalAddr
           , ioe_type        = InvalidArgument
           , ioe_location    = "Ouroboros.Network.Snocket.Sim.accept"
           , ioe_description = printf "Invalid argument (%s)" (show fd)
-          , ioe_errno       = Nothing
-          , ioe_filename    = Nothing
-          }
-
-        connectionAbortedError :: IOError
-        connectionAbortedError = IOError
-          { ioe_handle      = Nothing
-          , ioe_type        = OtherError
-          , ioe_location    = "Ouroboros.Network.Snocket.Sim.accept"
-            -- Note: this matches the `iseCONNABORTED` on Windows, see
-            -- 'Ouroboros.Network.Server2`
-          , ioe_description = "Software caused connection abort (WSAECONNABORTED)"
-          , ioe_errno       = Just (case eCONNABORTED of Errno errno -> errno)
-          , ioe_filename    = Nothing
-          }
-
-        resourceExhaustedError :: FD_ m (TestAddress addr) -> IOError
-        resourceExhaustedError fd = IOError
-          { ioe_handle      = Nothing
-          , ioe_type        = ResourceExhausted
-          , ioe_location    = "Ouroboros.Network.Snocket.Sim.accept"
-          , ioe_description = printf "Resource exhausted (%s)" (show fd)
           , ioe_errno       = Nothing
           , ioe_filename    = Nothing
           }
