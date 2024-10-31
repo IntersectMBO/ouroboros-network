@@ -902,6 +902,7 @@ data DiffusionSimulationTrace
   | TrReconfiguringNode
   | TrUpdatingDNS
   | TrRunning
+  | TrErrored SomeException
   deriving (Show)
 
 -- Warning: be careful with writing properties that rely
@@ -970,6 +971,8 @@ diffusionSimulation
   defaultBearerInfo
   (DiffusionScript simArgs dnsMapScript nodeArgs)
   nodeTracer =
+    -- TODO: we should use `snocket` per node, this will allow us to set up
+    -- bearer info per node
     withSnocket netSimTracer defaultBearerInfo Map.empty
       $ \ntnSnocket _ ->
         withSnocket nullTracer defaultBearerInfo Map.empty
@@ -1216,6 +1219,8 @@ diffusionSimulation
                . tracerWithName addr
                . tracerWithTime
                $ nodeTracer)
+        `catch` \e -> traceWith (diffSimTracer addr) (TrErrored e)
+                   >> throwIO e
 
     domainResolver :: StrictTVar m (Map Domain [(IP, TTL)])
                    -> DNSLookupType
