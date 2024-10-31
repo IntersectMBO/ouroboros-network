@@ -2,6 +2,14 @@
 
 ## next version
 
+### Breaking changes
+
+* Added `IOError` field to `ErrorInterval :: AbsAttenuation` constructor.
+
+### Non-Breaking changes
+
+* Added `AbsIOError` quickcheck generator for `IOError`s.
+
 ## 0.7.0.0 -- 2024-08-07
 
 ### Breaking changes
