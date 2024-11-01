@@ -80,11 +80,9 @@ library
     Ouroboros.Network.BlockFetch.State
     Ouroboros.Network.DeltaQ
     Ouroboros.Network.Diffusion
-    Ouroboros.Network.Diffusion.Common
     Ouroboros.Network.Diffusion.Configuration
-    Ouroboros.Network.Diffusion.NonP2P
-    Ouroboros.Network.Diffusion.P2P
     Ouroboros.Network.Diffusion.Policies
+    Ouroboros.Network.Diffusion.Types
     Ouroboros.Network.ExitPolicy
     Ouroboros.Network.KeepAlive
     Ouroboros.Network.NodeToClient

@@ -11,7 +11,7 @@ import Cardano.Network.Types (LedgerStateJudgement)
 import Control.Concurrent.Class.MonadSTM.Strict
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
 import Ouroboros.Network.ConnectionManager.Types
-import Ouroboros.Network.Diffusion.P2P (TracersExtra (..))
+import Ouroboros.Network.Diffusion.Types (Tracers (..))
 import Ouroboros.Network.PeerSelection.Governor
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (UseLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerMetric
@@ -28,12 +28,12 @@ import System.Posix.Signals qualified as Signals
 #ifdef POSIX
 sigUSR1Handler
   :: Ord ntnAddr
-  => TracersExtra ntnAddr ntnVersion ntnVersionData
-                  ntcAddr ntcVersion ntcVersionData
-                  resolverError extraState
-                  Cardano.DebugPeerSelectionState
-                  extraFlags extraPeers extraCounters
-                  IO
+  => Tracers ntnAddr ntnVersion ntnVersionData
+             ntcAddr ntcVersion ntcVersionData
+             resolverError extraState
+             Cardano.DebugPeerSelectionState
+             extraFlags extraPeers extraCounters
+             IO
   -> STM IO UseLedgerPeers
   -> PeerSharing
   -> STM IO UseBootstrapPeers
@@ -76,12 +76,12 @@ sigUSR1Handler tracersExtra getUseLedgerPeers ownPeerSharing getBootstrapPeers
   return ()
 #else
 sigUSR1Handler
-  :: TracersExtra ntnAddr ntnVersion ntnVersionData
-                  ntcAddr ntcVersion ntcVersionData
-                  resolverError extraState
-                  Cardano.DebugPeerSelectionState
-                  extraFlags extraPeers extraCounters
-                  IO
+  :: Tracers ntnAddr ntnVersion ntnVersionData
+             ntcAddr ntcVersion ntcVersionData
+             resolverError extraState
+             Cardano.DebugPeerSelectionState
+             extraFlags extraPeers extraCounters
+             IO
   -> STM IO UseLedgerPeers
   -> PeerSharing
   -> UseBootstrapPeers
