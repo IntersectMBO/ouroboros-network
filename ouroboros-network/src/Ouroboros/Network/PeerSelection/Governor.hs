@@ -27,6 +27,7 @@ module Ouroboros.Network.PeerSelection.Governor
   , TracePeerSelection (..)
   , ChurnAction (..)
   , DebugPeerSelection (..)
+  , makeDebugPeerSelectionState
   , AssociationMode (..)
   , readAssociationMode
   , DebugPeerSelectionState (..)

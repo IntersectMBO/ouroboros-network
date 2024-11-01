@@ -21,7 +21,7 @@ import Data.Typeable (Typeable)
 import Ouroboros.Network.Snocket (FileDescriptor, Snocket)
 import Ouroboros.Network.Snocket qualified as Snocket
 
-import Ouroboros.Network.Diffusion.Common
+import Ouroboros.Network.Diffusion.Types
 
 --
 -- Socket utility functions
