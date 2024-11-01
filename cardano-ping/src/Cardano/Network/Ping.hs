@@ -8,6 +8,8 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+{-# OPTIONS_GHC -Wno-orphans  #-}
+
 module Cardano.Network.Ping
   ( PingOpts(..)
   , LogMsg(..)
@@ -31,16 +33,17 @@ import           Control.Concurrent.Class.MonadSTM.Strict ( MonadSTM(atomically)
 import           Control.Monad.Class.MonadTime.SI (UTCTime, diffTime, MonadMonotonicTime(getMonotonicTime), MonadTime(getCurrentTime), Time)
 import           Control.Monad.Trans.Except
 import           Control.Tracer (Tracer (..), nullTracer, traceWith)
-import           Data.Aeson (Value, ToJSON(toJSON, toJSONList), object, encode, KeyValue((.=)))
+import           Data.Aeson (Value (..), ToJSON(toJSON, toJSONList), object, encode, KeyValue((.=)))
 import           Data.Aeson.Text (encodeToLazyText)
 import           Data.Bits (clearBit, setBit, testBit)
 import           Data.ByteString.Lazy (ByteString)
+import qualified Data.ByteString.Lazy as LB
 import           Data.Foldable (toList)
 import           Data.IP
 import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Maybe (fromMaybe,)
 import           Data.TDigest (insert, maximumValue, minimumValue, tdigest, mean, quantile, stddev, TDigest)
-import           Data.Text (unpack)
+import           Data.Text (pack,unpack)
 import           Data.Time (DiffTime)
 import           Data.Time.Format.ISO8601 (iso8601Show)
 import           Data.Word (Word16, Word32, Word64)
@@ -50,7 +53,7 @@ import           Network.Mux.Bearer (MakeBearer (..), makeSocketBearer)
 import           Network.Mux.Timeout (TimeoutFn, withTimeoutSerial)
 import           Network.Mux.Types (MiniProtocolNum(..), MiniProtocolDir(InitiatorDir), Bearer(read, write), RemoteClockModel(RemoteClockModel))
 import qualified Network.Mux.Types as Mx
-import           Network.Socket (AddrInfo, StructLinger (..))
+import           Network.Socket (AddrInfo, PortNumber, StructLinger (..), SockAddr (..))
 import           Text.Printf (printf)
 
 import qualified Codec.CBOR.Decoding as CBOR
@@ -86,6 +89,8 @@ data PingOpts = PingOpts
     -- ^ Less verbose output
   , pingOptsGetTip   :: Bool
     -- ^ Get Tip after handshake
+  , pingOptsPeerShare :: Bool
+    -- ^ Send a single peershare request instead of keepalive messages
   } deriving (Eq, Show)
 
 mainnetMagic :: Word32
@@ -100,6 +105,9 @@ chainSyncNum = MiniProtocolNum 2
 keepaliveNum :: MiniProtocolNum
 keepaliveNum = MiniProtocolNum 8
 
+peerShareNum :: MiniProtocolNum
+peerShareNum = MiniProtocolNum 10
+
 nodeToClientVersionBit :: Int
 nodeToClientVersionBit = 15
 
@@ -107,20 +115,20 @@ data LogMsg = LogMsg ByteString
             | LogEnd
             deriving Show
 
-logger :: StrictTMVar IO LogMsg -> Bool -> Bool -> Bool -> IO ()
-logger msgQueue json query tip = go True
+logger :: StrictTMVar IO LogMsg -> Bool -> Bool -> Bool -> Bool -> IO ()
+logger msgQueue json query tip ps = go True
   where
     go first = do
       msg <- atomically $ takeTMVar  msgQueue
       case msg of
         LogMsg bs -> do
-          let bs' = case (json, first, tip) of
-                (True, False, _)  -> LBS.Char.pack ",\n" <> bs
-                (True, True, False)   -> LBS.Char.pack "{ \"pongs\": [ " <> bs
-                (True, True, True)   -> LBS.Char.pack "{ \"tip\": [ " <> bs
-                (False, True, False)  -> LBS.Char.pack "timestamp,                      host,                         cookie,  sample,  median,     p90,    mean,     min,     max,     std\n" <> bs
-                (False, True, True) -> bs
-                (False, False, _) -> bs
+          let bs' = case (json, first, tip, ps) of
+                (True, False, _, _)  -> LBS.Char.pack ",\n" <> bs
+                (True, True, False, False)   -> LBS.Char.pack "{ \"pongs\": [ " <> bs
+                (True, True, _, True)   -> LBS.Char.pack "{ \"addresses\": [ " <> bs
+                (True, True, True, False)   -> LBS.Char.pack "{ \"tip\": [ " <> bs
+                (False, True, _, _ )  -> LBS.Char.pack "timestamp,                      host,                         cookie,  sample,  median,     p90,    mean,     min,     max,     std\n" <> bs
+                (False, False, _, _) -> bs
 
           LBS.Char.putStr bs'
           go False
@@ -134,8 +142,8 @@ supportedNodeToNodeVersions magic =
   , NodeToNodeVersionV10 magic InitiatorOnly
   , NodeToNodeVersionV11 magic InitiatorOnly
   , NodeToNodeVersionV12 magic InitiatorOnly
-  , NodeToNodeVersionV13 magic InitiatorOnly PeerSharingDisabled
-  , NodeToNodeVersionV14 magic InitiatorOnly PeerSharingDisabled
+  , NodeToNodeVersionV13 magic InitiatorAndResponder PeerSharingEnabled
+  , NodeToNodeVersionV14 magic InitiatorAndResponder PeerSharingEnabled
   ]
 
 supportedNodeToClientVersions :: Word32 -> [NodeVersion]
@@ -288,6 +296,15 @@ keepAliveDone _ =
     CBOR.toLazyByteString $
       CBOR.encodeWord 2
 
+peerShareReq :: Word -> ByteString
+peerShareReq amount = CBOR.toLazyByteString $ peerShareReqEnc
+ where
+  peerShareReqEnc :: CBOR.Encoding
+  peerShareReqEnc =
+       CBOR.encodeListLen 2
+    <> CBOR.encodeWord 0
+    <> CBOR.encodeWord amount
+
 chainSyncFindIntersect :: ByteString
 chainSyncFindIntersect = CBOR.toLazyByteString findIntersectEnc
  where
@@ -297,6 +314,7 @@ chainSyncFindIntersect = CBOR.toLazyByteString findIntersectEnc
     <> CBOR.encodeWord 4
     <> CBOR.encodeListLenIndef
     <> CBOR.encodeBreak
+
 
 handshakeReqEnc :: NonEmpty NodeVersion -> Bool -> CBOR.Encoding
 handshakeReqEnc versions query =
@@ -401,7 +419,7 @@ handshakeReqEnc versions query =
        <> CBOR.encodeListLen 4
        <> CBOR.encodeInt (fromIntegral magic)
        <> CBOR.encodeBool (modeToBool mode)
-       <> CBOR.encodeInt 0 -- NoPeerSharing
+       <> CBOR.encodeInt 1 -- NoPeerSharing
        <> CBOR.encodeBool query
       | vn >= 11 =
           CBOR.encodeWord vn
@@ -444,6 +462,59 @@ keepAliveRspDec _ = do
   case key of
     1 -> Right <$> CBOR.decodeWord16
     k -> return $ Left $ KeepAliveFailureKey k
+
+chainSyncIntersectNotFoundDec :: CBOR.Decoder s (Word64, Word64, ByteString)
+chainSyncIntersectNotFoundDec = do
+  len <- CBOR.decodeListLen
+  key <- CBOR.decodeWord
+  case (len, key) of
+       (2, 6) -> do
+         _ <- CBOR.decodeListLen
+         _ <- CBOR.decodeListLen
+         slotNo <- CBOR.decodeWord64
+         hash   <- CBOR.decodeBytes
+         blockNo <- CBOR.decodeWord64
+         return (slotNo, blockNo, LB.fromStrict hash)
+       _ -> fail ("IntersectNotFound unexpected " ++ show key)
+          
+
+peerShareRspDec :: CBOR.Decoder s [SockAddr]
+peerShareRspDec = do
+  len <- CBOR.decodeListLen
+  key <- CBOR.decodeWord
+  case (len, key) of
+       (2, 1) -> do
+         mn <- CBOR.decodeListLenOrIndef
+         case mn of
+              -- Nothing -> CBOR.decodeSequenceLenIndef (flip (:)) [] reverse decodeAddress
+              Nothing -> CBOR.decodeSequenceLenIndef (flip (:)) [] id decodeAddress
+              Just n  ->  CBOR.decodeSequenceLenN    (flip (:)) [] reverse n decodeAddress
+       _ -> fail ("Peershare key unexpected " ++ show key) 
+
+ where
+  decodePortNumber :: CBOR.Decoder s PortNumber
+  decodePortNumber = fromIntegral <$> CBOR.decodeWord16
+
+  decodeAddress :: CBOR.Decoder s SockAddr
+  decodeAddress = do
+    _ <- CBOR.decodeListLen
+    tok <- CBOR.decodeWord
+    case tok of
+         0 -> do
+           w <- CBOR.decodeWord32
+           pn <- decodePortNumber
+           return (SockAddrInet pn w)
+         1 -> do
+           w1 <- CBOR.decodeWord32
+           w2 <- CBOR.decodeWord32
+           w3 <- CBOR.decodeWord32
+           w4 <- CBOR.decodeWord32
+           pn <- decodePortNumber
+           return (SockAddrInet6 pn 0 (w1, w2, w3, w4) 0)
+         _ -> fail ("Serialise.decode.SockAddr unexpected tok " ++ show tok)
+
+     
+  
 
 handshakeDec :: CBOR.Decoder s (Either HandshakeFailure [NodeVersion])
 handshakeDec = do
@@ -542,20 +613,6 @@ handshakeDec = do
         _query <- CBOR.decodeBool
         return $ Right $ vnFun magic mode peerSharing
 
-chainSyncIntersectNotFoundDec :: CBOR.Decoder s (Word64, Word64, ByteString)
-chainSyncIntersectNotFoundDec = do
-  len <- CBOR.decodeListLen
-  key <- CBOR.decodeWord
-  case (len, key) of
-       (2, 6) -> do
-         _ <- CBOR.decodeListLen
-         _ <- CBOR.decodeListLen
-         slotNo <- CBOR.decodeWord64
-         hash   <- CBOR.decodeBytes
-         blockNo <- CBOR.decodeWord64
-         return (slotNo, blockNo, LBS.fromStrict hash)
-       _ -> fail ("IntersectNotFound unexpected " ++ show key)
-
 wrap :: MiniProtocolNum -> MiniProtocolDir -> LBS.ByteString -> Mx.SDU
 wrap ptclNum ptclDir blob = Mx.SDU
   { Mx.msHeader = Mx.SDUHeader
@@ -601,6 +658,30 @@ instance ToJSON StatPoint where
       , "min"       .= spMin
       , "max"       .= spMax
       ]
+
+instance ToJSON IPv4 where
+  toJSON ip = String (pack $ show $ ip)
+
+instance ToJSON IPv6 where
+  toJSON ip = String (pack $ show $ ip)
+
+instance ToJSON PortNumber where
+  toJSON port = Number $ fromIntegral port
+
+instance ToJSON SockAddr where
+    toJSON (SockAddrInet port addr) =
+        let ip = fromHostAddress addr in
+        object [ "address" .= toJSON ip
+                     , "port" .= toJSON port
+                     ]
+    toJSON (SockAddrInet6 port _ addr _) =
+        let ip = fromHostAddress6 addr in
+        object [ "address" .= toJSON ip
+                     , "port" .= toJSON port
+                     ]
+    toJSON (SockAddrUnix path) =
+        object [ "socketPath" .= show path ]
+
 
 toStatPoint :: UTCTime -> String -> Word16 -> Double -> TDigest 5 -> StatPoint
 toStatPoint ts host cookie sample td =
@@ -699,6 +780,7 @@ pingClient stdout stderr PingOpts{..} versions peer = bracket
                   _              -> False
                 querySupported = not isUnixSocket && (version >= NodeToNodeVersionV11 minBound minBound)
                               ||     isUnixSocket && (version >= NodeToClientVersionV15 minBound)
+                possiblePeerSharing = not isUnixSocket && (version >= NodeToNodeVersionV13 minBound minBound minBound)
 
             when (   (not pingOptsHandshakeQuery && not pingOptsQuiet)
                   || (    pingOptsHandshakeQuery && not querySupported)) $
@@ -709,9 +791,14 @@ pingClient stdout stderr PingOpts{..} versions peer = bracket
               -- print query results if it was supported by the remote side
               TL.hPutStrLn IO.stdout $ peerStr' <> " " <> (showQueriedVersions recVersions)
             when (not pingOptsHandshakeQuery && not isUnixSocket) $ do
-              if pingOptsGetTip
-                 then getTip bearer timeoutfn peerStr
+              when pingOptsGetTip $
+                 getTip bearer timeoutfn peerStr
+              if pingOptsPeerShare
+                 then if possiblePeerSharing
+                         then peerShare bearer timeoutfn peerStr
+                         else eprint $ printf "%s can't support peersharing, not trying" peerStr
                  else keepAlive bearer timeoutfn peerStr version (tdigest []) 0
+
               -- send terminating message
               _ <- write bearer timeoutfn $ wrap keepaliveNum InitiatorDir (keepAliveDone version)
               return ()
@@ -804,6 +891,20 @@ pingClient stdout stderr PingOpts{..} versions peer = bracket
             else traceWith stdout $ LogMsg $ LBS.Char.pack $ show point <> "\n"
           MT.threadDelay keepAliveDelay
           keepAlive bearer timeoutfn peerStr version td' (cookie + 1)
+
+    peerShare :: Mx.Bearer IO
+              -> TimeoutFn IO
+              -> String
+              -> IO ()
+    peerShare bearer timeoutfn peerStr = do
+      !_t_s <- write bearer timeoutfn $ wrap peerShareNum InitiatorDir (peerShareReq 10)
+      (!msg, !_t_e) <- nextMsg bearer timeoutfn peerShareNum
+      case CBOR.deserialiseFromBytes peerShareRspDec msg of
+           Left err -> eprint $ printf "%s peershare decoding error %s" peerStr (show err)
+           Right (_, addrs) ->
+               if pingOptsJson
+                  then traceWith stdout $ LogMsg (encode $ addrs)
+                  else traceWith stdout $ LogMsg $ LBS.Char.pack $ show addrs <> "\n"
 
     getTip :: Mx.Bearer IO
            -> TimeoutFn IO
