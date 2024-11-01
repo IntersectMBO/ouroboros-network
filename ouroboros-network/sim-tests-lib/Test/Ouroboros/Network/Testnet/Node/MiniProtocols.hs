@@ -15,6 +15,8 @@ module Test.Ouroboros.Network.Testnet.Node.MiniProtocols
   , LimitsAndTimeouts (..)
   , AppArgs (..)
   , applications
+    -- * configuration constants
+  , config_REPROMOTE_DELAY
   ) where
 
 import Control.Applicative (Alternative)
@@ -71,11 +73,15 @@ import Ouroboros.Network.Context
 import Ouroboros.Network.ControlMessage (ControlMessage (..))
 import Ouroboros.Network.Diffusion qualified as Diff (Applications (..))
 import Ouroboros.Network.Driver.Limits
+import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.KeepAlive
 import Ouroboros.Network.Mock.Chain qualified as Chain
 import Ouroboros.Network.Mock.ProducerState
 import Ouroboros.Network.Mux
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
+import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
+import Ouroboros.Network.RethrowPolicy (ErrorCommand (ShutdownNode),
+           ioErrorRethrowPolicy, mkRethrowPolicy, muxErrorRethrowPolicy)
 import Ouroboros.Network.Util.ShowProxy
 
 import Ouroboros.Network.Mock.ConcreteBlock
@@ -210,6 +216,8 @@ data AppArgs header block m = AppArgs
      :: PSTypes.PeerSharing
   , aaUpdateOutboundConnectionsState
      :: OutboundConnectionsState -> STM m ()
+  , aaPeerMetrics
+     :: PeerMetrics m NtNAddr
   }
 
 
@@ -259,6 +267,7 @@ applications debugTracer nodeKernel
                , aaChainSyncEarlyExit
                , aaOwnPeerSharing
                , aaUpdateOutboundConnectionsState
+               , aaPeerMetrics
                }
              toHeader =
     Diff.Applications
@@ -278,6 +287,21 @@ applications debugTracer nodeKernel
           aaLedgerPeersConsensusInterface
       , Diff.daUpdateOutboundConnectionsState =
           aaUpdateOutboundConnectionsState
+
+      , Diff.daRethrowPolicy          =
+             muxErrorRethrowPolicy
+          <> ioErrorRethrowPolicy
+
+        -- we are not using local connections, so we can make all the
+        -- errors fatal.
+      , Diff.daLocalRethrowPolicy     =
+             mkRethrowPolicy
+               (\ _ (_ :: SomeException) -> ShutdownNode)
+      , Diff.daPeerMetrics            = aaPeerMetrics
+        -- fetch mode is not used (no block-fetch mini-protocol)
+      , Diff.daBlockFetchMode         = pure FetchModeDeadline
+      , Diff.daReturnPolicy           = \_ -> config_REPROMOTE_DELAY
+      , Diff.daPeerSharingRegistry    = nkPeerSharingRegistry nodeKernel
       }
   where
     initiatorApp
@@ -608,3 +632,10 @@ applications debugTracer nodeKernel
 
 instance ShowProxy PingPong where
     showProxy Proxy = "PingPong"
+
+--
+-- Constants
+--
+
+config_REPROMOTE_DELAY :: RepromoteDelay
+config_REPROMOTE_DELAY = 10

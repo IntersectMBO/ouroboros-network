@@ -65,8 +65,6 @@ library
     Ouroboros.Network.DeltaQ
     Ouroboros.Network.Diffusion
     Ouroboros.Network.Diffusion.Configuration
-    Ouroboros.Network.Diffusion.NonP2P
-    Ouroboros.Network.Diffusion.P2P
     Ouroboros.Network.Diffusion.Policies
     Ouroboros.Network.ExitPolicy
     Ouroboros.Network.KeepAlive
@@ -94,7 +92,7 @@ library
     Ouroboros.Network.TxSubmission.Outbound
 
   other-modules:
-    Ouroboros.Network.Diffusion.Common
+    Ouroboros.Network.Diffusion.Types
     Ouroboros.Network.Diffusion.Utils
     Ouroboros.Network.PeerSelection.Churn
     Ouroboros.Network.PeerSelection.Governor.ActivePeers
