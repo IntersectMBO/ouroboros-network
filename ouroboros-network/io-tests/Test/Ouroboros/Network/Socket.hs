@@ -38,10 +38,12 @@ import Ouroboros.Network.Mock.Chain (Chain, ChainUpdate, Point)
 import Ouroboros.Network.Mock.Chain qualified as Chain
 import Ouroboros.Network.Mock.ProducerState qualified as CPS
 import Ouroboros.Network.NodeToNode
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.Protocol.ChainSync.Client qualified as ChainSync
 import Ouroboros.Network.Protocol.ChainSync.Codec qualified as ChainSync
 import Ouroboros.Network.Protocol.ChainSync.Examples qualified as ChainSync
 import Ouroboros.Network.Protocol.ChainSync.Server qualified as ChainSync
+import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
 import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
            noTimeLimitsHandshake)
 import Ouroboros.Network.Protocol.Handshake.Version (acceptableVersion,
@@ -50,8 +52,8 @@ import Ouroboros.Network.Util.ShowProxy
 
 import Test.ChainGenerators (TestBlockChainAndUpdates (..))
 import Test.Ouroboros.Network.Serialise
+import Test.Ouroboros.Network.Server qualified as Test.Server
 
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
@@ -118,8 +120,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
 
     producerVar <- newTVarIO (CPS.initChainProducerState chain0)
     consumerVar <- newTVarIO chain0
-    done <- atomically newEmptyTMVar
-    networkState <- newNetworkMutableState
+    done <- newEmptyTMVarIO
 
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
@@ -157,18 +158,20 @@ demo chain0 updates = withIOManager $ \iocp -> do
                                                   encode             decode
                                                   (encodeTip encode) (decodeTip decode)
 
-    withServerNode
+    Test.Server.with
       (socketSnocket iocp)
       makeSocketBearer
       ((. Just) <$> configureSocket)
-      nullNetworkServerTracers
-      networkState
-      (AcceptedConnectionsLimit maxBound maxBound 0)
       producerAddress
-      nodeToNodeHandshakeCodec
-      noTimeLimitsHandshake
-      (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
-      (HandshakeCallbacks acceptableVersion queryVersion)
+      HandshakeArguments {
+        haHandshakeTracer  = nullTracer,
+        haHandshakeCodec   = nodeToNodeHandshakeCodec,
+        haVersionDataCodec = cborTermVersionDataCodec nodeToNodeCodecCBORTerm,
+        haAcceptVersion    = acceptableVersion,
+        haQueryVersion     = queryVersion,
+        haTimeLimits       = noTimeLimitsHandshake
+
+      }
       (simpleSingletonVersions
         (maxBound :: NodeToNodeVersion)
         (NodeToNodeVersionData {
@@ -177,8 +180,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
           peerSharing = PeerSharingDisabled,
           query = False })
         (\_ -> SomeResponderApplication responderApp))
-      nullErrorPolicies
-      $ \realProducerAddress _ -> do
+      $ \producerAddress' _ -> do
       withAsync
         (connectToNode
           (socketSnocket iocp)
@@ -200,7 +202,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
               query = False })
             (\_ -> initiatorApp))
           (Just consumerAddress)
-          realProducerAddress)
+          producerAddress')
         $ \ _connAsync -> do
           void $ forkIO $ sequence_
               [ do

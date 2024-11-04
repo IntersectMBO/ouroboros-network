@@ -106,7 +106,6 @@ library
     Ouroboros.Network.PeerSelection.State.LocalRootPeers
     Ouroboros.Network.PeerSelection.Types
     Ouroboros.Network.PeerSharing
-    Ouroboros.Network.Tracers
     Ouroboros.Network.TxSubmission.Inbound
     Ouroboros.Network.TxSubmission.Mempool.Reader
     Ouroboros.Network.TxSubmission.Outbound
@@ -213,7 +212,6 @@ library sim-tests-lib
     base >=4.14 && <4.21,
     bytestring,
     cardano-binary,
-    cardano-prelude,
     cardano-slotting,
     cborg,
     containers,
@@ -283,7 +281,6 @@ library sim-tests-lib
     Test.Ouroboros.Network.PeerSelection.PeerGraph
     Test.Ouroboros.Network.PeerSelection.PeerMetric
     Test.Ouroboros.Network.PeerSelection.RootPeersDNS
-    Test.Ouroboros.Network.PeerState
     Test.Ouroboros.Network.TxSubmission
     Test.Ouroboros.Network.Version
 
@@ -339,6 +336,7 @@ test-suite io-tests
     ouroboros-network,
     ouroboros-network-api,
     ouroboros-network-framework,
+    ouroboros-network-framework:testlib,
     ouroboros-network-mock,
     ouroboros-network-protocols,
     ouroboros-network-protocols:testlib,
@@ -381,6 +379,7 @@ executable demo-chain-sync
     ouroboros-network,
     ouroboros-network-api,
     ouroboros-network-framework,
+    ouroboros-network-framework:testlib,
     ouroboros-network-mock,
     ouroboros-network-protocols,
     random,
