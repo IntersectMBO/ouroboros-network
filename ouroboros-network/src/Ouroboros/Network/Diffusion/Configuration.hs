@@ -20,7 +20,6 @@ module Ouroboros.Network.Diffusion.Configuration
   , AcceptedConnectionsLimit (..)
   , BlockFetchConfiguration (..)
   , ChainSyncTimeout (..)
-  , ConsensusModePeerTargets (..)
   , DiffusionMode (..)
   , MiniProtocolParameters (..)
   , P2P (..)
@@ -56,7 +55,7 @@ import Ouroboros.Network.Diffusion.Policies (closeConnectionTimeout,
 import Ouroboros.Network.NodeToNode (DiffusionMode (..),
            MiniProtocolParameters (..), defaultMiniProtocolParameters)
 import Ouroboros.Network.PeerSelection.Governor.Types
-           (ConsensusModePeerTargets (..), PeerSelectionTargets (..))
+           (PeerSelectionTargets (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSharing (ps_POLICY_PEER_SHARE_MAX_PEERS,
            ps_POLICY_PEER_SHARE_STICKY_TIME)

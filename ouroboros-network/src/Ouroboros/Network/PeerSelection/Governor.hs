@@ -20,7 +20,6 @@ module Ouroboros.Network.PeerSelection.Governor
     -- $peer-selection-governor
     PeerSelectionPolicy (..)
   , PeerSelectionTargets (..)
-  , ConsensusModePeerTargets (..)
   , PeerSelectionActions (..)
   , PeerSelectionInterfaces (..)
   , PeerStateActions (..)

@@ -27,6 +27,7 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer (..), traceWith)
 import System.Random
 
+import Cardano.Node.ArgumentsExtra (ConsensusModePeerTargets (..))
 import Cardano.Node.ConsensusMode (ConsensusMode (..))
 import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Cardano.Node.PeerSelection.Types (ChurnMode (..))

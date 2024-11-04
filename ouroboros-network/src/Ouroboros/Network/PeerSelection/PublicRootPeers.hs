@@ -23,8 +23,6 @@ module Ouroboros.Network.PeerSelection.PublicRootPeers
   , insertBigLedgerPeer
   , fromPublicRootPeers
   , fromBootstrapPeers
-  , fromLedgerPeers
-  , fromBigLedgerPeers
   , fromMapAndSet
   ) where
 

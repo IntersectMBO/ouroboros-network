@@ -33,6 +33,7 @@ import Data.Void (Void)
 
 import Network.DNS qualified as DNS
 
+import Cardano.Node.ArgumentsExtra (ConsensusModePeerTargets)
 import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
 import Cardano.Node.PeerSelection.LocalRootPeers (OutboundConnectionsState)
