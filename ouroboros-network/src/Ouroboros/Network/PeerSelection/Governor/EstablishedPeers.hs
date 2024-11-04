@@ -21,7 +21,7 @@ import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
 import System.Random (randomR)
 
-import Ouroboros.Network.PeerSelection.Bootstrap (requiresBootstrapPeers)
+import Cardano.Node.PeerSelection.Bootstrap (requiresBootstrapPeers)
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (IsBigLedgerPeer (..))
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))

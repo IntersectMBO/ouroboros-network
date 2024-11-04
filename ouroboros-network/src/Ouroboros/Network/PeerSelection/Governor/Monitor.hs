@@ -34,20 +34,21 @@ import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
 import System.Random (randomR)
 
-import Ouroboros.Network.ConsensusMode
+import Cardano.Node.ConsensusMode
+import Cardano.Node.PeerSelection.Bootstrap (isBootstrapPeersEnabled,
+           isNodeAbleToMakeProgress, requiresBootstrapPeers)
+import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable (..))
+import Cardano.Node.Types (LedgerStateJudgement (..))
 import Ouroboros.Network.ExitPolicy (RepromoteDelay)
 import Ouroboros.Network.ExitPolicy qualified as ExitPolicy
-import Ouroboros.Network.PeerSelection.Bootstrap (isBootstrapPeersEnabled,
-           isNodeAbleToMakeProgress, requiresBootstrapPeers)
 import Ouroboros.Network.PeerSelection.Governor.ActivePeers
            (jobDemoteActivePeer)
 import Ouroboros.Network.PeerSelection.Governor.Types hiding
            (PeerSelectionCounters)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeerSnapshot (..), LedgerPeersConsensusInterface (..),
-           LedgerStateJudgement (..), compareLedgerPeerSnapshotApproximate)
+           compareLedgerPeerSnapshotApproximate)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
-import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers

@@ -7,6 +7,7 @@ import Control.Monad.Class.MonadTime.SI
 import Data.Word (Word16)
 import Text.Printf
 
+import Cardano.Node.Types (LedgerStateJudgement)
 import Data.List.NonEmpty (NonEmpty)
 import Network.DNS qualified as DNS
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type

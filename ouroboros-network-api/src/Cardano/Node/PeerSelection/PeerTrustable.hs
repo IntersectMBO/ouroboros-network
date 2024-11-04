@@ -1,6 +1,6 @@
 {-# LANGUAGE DeriveGeneric #-}
 
-module Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..)) where
+module Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable (..)) where
 
 import GHC.Generics (Generic)
 
