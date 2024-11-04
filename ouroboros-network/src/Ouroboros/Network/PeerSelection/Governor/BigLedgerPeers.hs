@@ -19,6 +19,9 @@ import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
 
 import Cardano.Node.PeerSelection.Bootstrap (requiresBootstrapPeers)
+import Cardano.Node.PeerSelection.Governor.PeerSelectionState
+           (CardanoPeerSelectionState (..))
+import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.LedgerPeers (LedgerPeersKind (..))
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
@@ -29,10 +32,10 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRo
 
 
 belowTarget :: (MonadSTM m, Ord peeraddr)
-            => PeerSelectionActions peeraddr peerconn m
+            => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI peeraddr peerconn m
             -> Time
-            -> PeerSelectionState peeraddr peerconn
-            -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
+            -> PeerSelectionState CardanoPeerSelectionState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn
+            -> Guarded (STM m) (TimedDecision m CardanoPeerSelectionState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
 belowTarget actions
             blockedAt
             st@PeerSelectionState {
@@ -41,12 +44,14 @@ belowTarget actions
               targets = PeerSelectionTargets {
                           targetNumberOfKnownBigLedgerPeers
                         },
-              ledgerStateJudgement,
-              bootstrapPeersFlag
+              extraState = CardanoPeerSelectionState {
+                cpstLedgerStateJudgement
+              , cpstBootstrapPeersFlag
+              }
             }
       -- Are we in a sensitive state? We shouldn't attempt to fetch ledger peers
       -- in a sensitive state since we only want to connect to trustable peers.
-    | not (requiresBootstrapPeers bootstrapPeersFlag ledgerStateJudgement)
+    | not (requiresBootstrapPeers cpstBootstrapPeersFlag cpstLedgerStateJudgement)
 
       -- Do we need more big ledger peers?
     , maxExtraBigLedgerPeers > 0
@@ -76,16 +81,16 @@ belowTarget actions
                            - numBigLedgerPeers
 
 
-jobReqBigLedgerPeers :: forall m peeraddr peerconn.
+jobReqBigLedgerPeers :: forall m extraActions extraState extraFlags extraAPI peeraddr peerconn.
                         (MonadSTM m, Ord peeraddr)
-                     => PeerSelectionActions peeraddr peerconn m
+                     => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI peeraddr peerconn m
                      -> Int
-                     -> Job () m (Completion m peeraddr peerconn)
+                     -> Job () m (Completion m extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
 jobReqBigLedgerPeers PeerSelectionActions{ requestPublicRootPeers }
                      numExtraAllowed =
     Job job (return . handler) () "reqBigLedgerPeers"
   where
-    handler :: SomeException -> Completion m peeraddr peerconn
+    handler :: SomeException -> Completion m extraState extraFlags extraPeers peeraddr peerconn
     handler e =
       Completion $ \st now ->
       -- This is a failure, so move the backoff counter one in the failure
@@ -113,13 +118,13 @@ jobReqBigLedgerPeers PeerSelectionActions{ requestPublicRootPeers }
             decisionJobs  = []
           }
 
-    job :: m (Completion m peeraddr peerconn)
+    job :: m (Completion m extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
     job = do
       (results, ttl) <- requestPublicRootPeers BigLedgerPeers numExtraAllowed
       return $ Completion $ \st now ->
         let -- We make sure the set of big ledger peers disjoint from the sum
             -- of local, public and ledger peers.
-            newPeers :: PublicRootPeers peeraddr
+            newPeers :: PublicRootPeers (CardanoPublicRootPeers peeraddr) peeraddr
             newPeers = results
                        `PublicRootPeers.difference`
                        (   LocalRootPeers.keysSet (localRootPeers st)
@@ -175,9 +180,9 @@ jobReqBigLedgerPeers PeerSelectionActions{ requestPublicRootPeers }
              }
 
 
-aboveTarget :: forall m peeraddr peerconn.
+aboveTarget :: forall m extraState extraFlags peeraddr peerconn.
                (Alternative (STM m), MonadSTM m, Ord peeraddr, HasCallStack)
-            => MkGuardedDecision peeraddr peerconn m
+            => MkGuardedDecision extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn m
 aboveTarget PeerSelectionPolicy {policyPickColdPeersToForget}
             st@PeerSelectionState {
                  publicRootPeers,

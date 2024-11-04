@@ -33,11 +33,14 @@ import Data.Void (Void)
 
 import Network.DNS qualified as DNS
 
-import Cardano.Node.ArgumentsExtra (ConsensusModePeerTargets)
+import Cardano.Node.LedgerPeerConsensusInterface
+           (CardanoLedgerPeersConsensusInterface (..))
 import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
-import Cardano.Node.PeerSelection.LocalRootPeers (OutboundConnectionsState)
+import Cardano.Node.PeerSelection.Governor.PeerSelectionActions
+           (CardanoPeerSelectionActions (..))
 import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable)
+import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
 import Data.Bifunctor (first)
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.LedgerPeers hiding (getLedgerPeers)
@@ -54,29 +57,25 @@ import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount (..))
 
 -- | Record of parameters for withPeerSelectionActions independent of diffusion mode
 --
-data PeerSelectionActionsArgs peeraddr peerconn exception m = PeerSelectionActionsArgs {
-  psLocalRootPeersTracer      :: Tracer m (TraceLocalRootPeers peeraddr exception),
+data PeerSelectionActionsArgs extraActions extraAPI extraPeers extraFlags peeraddr peerconn exception m = PeerSelectionActionsArgs {
+  psLocalRootPeersTracer      :: Tracer m (TraceLocalRootPeers extraFlags peeraddr exception),
   psPublicRootPeersTracer     :: Tracer m TracePublicRootPeers,
   psReadTargets               :: STM m PeerSelectionTargets,
-  peerTargets                 :: ConsensusModePeerTargets,
   -- ^ peer selection governor know, established and active targets
-  getLedgerStateCtx          :: LedgerPeersConsensusInterface m,
+  getLedgerStateCtx          :: LedgerPeersConsensusInterface extraAPI m,
   -- ^ Is consensus close to current slot?
-  psReadLocalRootPeers        :: STM m [(HotValency, WarmValency, Map RelayAccessPoint (PeerAdvertise, PeerTrustable))],
+  psReadLocalRootPeers        :: STM m [(HotValency, WarmValency, Map RelayAccessPoint (PeerAdvertise, extraFlags))],
   psReadPublicRootPeers       :: STM m (Map RelayAccessPoint PeerAdvertise),
-  psReadUseBootstrapPeers     :: STM m UseBootstrapPeers,
   psPeerSharing               :: PeerSharing,
   -- ^ peer sharing configured value
   psPeerConnToPeerSharing     :: peerconn -> PeerSharing,
   -- ^ Extract peer sharing information from peerconn
   psReadPeerSharingController :: STM m (Map peeraddr (PeerSharingController peeraddr m)),
-  -- ^ peer sharing registry
-  psUpdateOutboundConnectionsState
-                              :: OutboundConnectionsState -> STM m (),
   -- ^ Callback which updates information about outbound connections state.
   psReadInboundPeers          :: m (Map peeraddr PeerSharing),
   -- ^ inbound duplex peers
-  readLedgerPeerSnapshot      :: STM m (Maybe LedgerPeerSnapshot)
+  readLedgerPeerSnapshot      :: STM m (Maybe LedgerPeerSnapshot),
+  psExtraActions              :: extraActions
   }
 
 -- | Record of remaining parameters for withPeerSelectionActions
@@ -97,13 +96,13 @@ withPeerSelectionActions
      , Ord peeraddr
      , Exception exception
      )
-  => StrictTVar m (Config peeraddr)
+  => StrictTVar m (Config extraFlags peeraddr)
   -> PeerActionsDNS peeraddr resolver exception m
-  -> PeerSelectionActionsArgs peeraddr peerconn exception m
-  -> WithLedgerPeersArgs m
+  -> PeerSelectionActionsArgs (CardanoPeerSelectionActions m) (CardanoLedgerPeersConsensusInterface m) (CardanoPublicRootPeers peeraddr) PeerTrustable peeraddr peerconn exception m
+  -> WithLedgerPeersArgs (CardanoLedgerPeersConsensusInterface m) m
   -> PeerSelectionActionsDiffusionMode peeraddr peerconn m
   -> (   (Async m Void, Async m Void)
-      -> PeerSelectionActions peeraddr peerconn m
+      -> PeerSelectionActions (CardanoPeerSelectionActions m) (CardanoPublicRootPeers peeraddr) PeerTrustable (CardanoLedgerPeersConsensusInterface m) peeraddr peerconn m
       -> m a)
   -- ^ continuation, receives a handle to the local roots peer provider thread
   -- (only if local root peers were non-empty).
@@ -114,18 +113,23 @@ withPeerSelectionActions
   PeerSelectionActionsArgs {
     psLocalRootPeersTracer = localTracer,
     psPublicRootPeersTracer = publicTracer,
-    peerTargets,
     psReadTargets = selectionTargets,
-    getLedgerStateCtx,
+    getLedgerStateCtx = lpsci@LedgerPeersConsensusInterface {
+      lpExtraAPI = CardanoLedgerPeersConsensusInterface {
+        clpciGetLedgerStateJudgement
+      }
+    },
     psReadLocalRootPeers = localRootPeers,
     psReadPublicRootPeers = publicRootPeers,
-    psReadUseBootstrapPeers = useBootstrapped,
     psPeerSharing = sharing,
     psPeerConnToPeerSharing = peerConnToPeerSharing,
     psReadPeerSharingController = sharingController,
     psReadInboundPeers = readInboundPeers,
-    psUpdateOutboundConnectionsState = updateOutboundConnectionsState,
-    readLedgerPeerSnapshot }
+    readLedgerPeerSnapshot,
+    psExtraActions = cpsa@CardanoPeerSelectionActions {
+      cpsaReadUseBootstrapPeers = useBootstrapped
+    }
+  }
   ledgerPeersArgs
   PeerSelectionActionsDiffusionMode { psPeerStateActions = peerStateActions }
   k = do
@@ -141,12 +145,11 @@ withPeerSelectionActions
                                        requestPublicRootPeers = \lpk n -> requestPublicRootPeers lpk n getLedgerPeers,
                                        requestPeerShare,
                                        peerStateActions,
-                                       peerTargets,
-                                       readUseBootstrapPeers = useBootstrapped,
                                        readInboundPeers,
-                                       getLedgerStateCtx,
-                                       updateOutboundConnectionsState,
-                                       readLedgerPeerSnapshot }
+                                       getLedgerStateCtx = lpsci,
+                                       readLedgerPeerSnapshot,
+                                       extraActions = cpsa
+                                     }
           withAsync
             (localRootPeersProvider
               localTracer
@@ -166,12 +169,12 @@ withPeerSelectionActions
       :: LedgerPeersKind
       -> Int
       -> (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
-      -> m (PublicRootPeers peeraddr, DiffTime)
+      -> m (PublicRootPeers (CardanoPublicRootPeers peeraddr) peeraddr, DiffTime)
     requestPublicRootPeers ledgerPeersKind n getLedgerPeers = do
       -- Check if the node is in a sensitive state
       usingBootstrapPeers <- atomically
                            $ requiresBootstrapPeers <$> useBootstrapped
-                                                    <*> lpGetLedgerStateJudgement getLedgerStateCtx
+                                                    <*> clpciGetLedgerStateJudgement
       if usingBootstrapPeers
          then do
           -- If the ledger state is in sensitive state we should get trustable peers.

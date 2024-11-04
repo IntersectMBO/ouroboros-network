@@ -7,7 +7,6 @@ import Control.Monad.Class.MonadTime.SI
 import Data.Word (Word16)
 import Text.Printf
 
-import Cardano.Node.Types (LedgerStateJudgement)
 import Data.List.NonEmpty (NonEmpty)
 import Network.DNS qualified as DNS
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
@@ -24,12 +23,13 @@ data IsLedgerPeer = IsLedgerPeer
 
 -- | Ledger Peer request result
 --
-data LedgerPeers = LedgerPeers LedgerStateJudgement -- ^ Current ledger state
-                               [(PoolStake, NonEmpty RelayAccessPoint)]
-                               -- ^ Ledger peers
-                 | BeforeSlot -- ^ No result because the node is still
-                              -- before the configured UseLedgerAfter slot
-                              -- number
+data LedgerPeers =
+    LedgerPeers [(PoolStake, NonEmpty RelayAccessPoint)]
+                -- ^ Ledger peers
+  | BeforeSlot
+    -- ^ No result because the node is still
+    -- before the configured UseLedgerAfter slot
+    -- number
   deriving (Eq, Show)
 
 -- | Trace LedgerPeers events.

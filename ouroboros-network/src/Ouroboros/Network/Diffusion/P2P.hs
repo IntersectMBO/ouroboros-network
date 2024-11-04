@@ -105,7 +105,7 @@ import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.Governor.Types (DebugPeerSelection (..),
            PeerSelectionActions, PeerSelectionCounters,
            PeerSelectionInterfaces (..), PeerSelectionPolicy (..),
-           PeerSelectionState, TracePeerSelection (..),
+           PeerSelectionState (..), TracePeerSelection (..),
            emptyPeerSelectionCounters, emptyPeerSelectionState)
 #ifdef POSIX
 import Ouroboros.Network.PeerSelection.Governor.Types
@@ -126,9 +126,18 @@ import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 import Cardano.Node.ArgumentsExtra (CardanoArgumentsExtra (..),
            ConsensusModePeerTargets (..))
 import Cardano.Node.ConsensusMode
-import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers)
+import Cardano.Node.LedgerPeerConsensusInterface
+           (CardanoLedgerPeersConsensusInterface (..))
+import Cardano.Node.PeerSelection.Governor.PeerSelectionActions
+           (CardanoPeerSelectionActions (..))
+import Cardano.Node.PeerSelection.Governor.PeerSelectionState
+           (CardanoPeerSelectionState (..))
+import Cardano.Node.PeerSelection.Governor.PeerSelectionState qualified as CPST
+import Cardano.Node.PeerSelection.PeerChurnArgs (CardanoPeerChurnArgs (..))
+import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable)
 import Cardano.Node.PeerSelection.Types (ChurnMode (..))
-import Cardano.Node.Types (MinBigLedgerPeersForTrustedState)
+import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
+import Cardano.Node.PublicRootPeers qualified as CPRP
 import Ouroboros.Network.PeerSelection.PeerSelectionActions
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PeerStateActions (PeerConnectionHandle,
@@ -152,10 +161,11 @@ import Ouroboros.Network.Server2 qualified as Server
 --
 data TracersExtra ntnAddr ntnVersion ntnVersionData
                   ntcAddr ntcVersion ntcVersionData
-                  resolverError m =
+                  resolverError extraState extraDebugState
+                  extraFlags extraPeers m =
     TracersExtra {
       dtTraceLocalRootPeersTracer
-        :: Tracer m (TraceLocalRootPeers ntnAddr resolverError)
+        :: Tracer m (TraceLocalRootPeers extraFlags ntnAddr resolverError)
 
     , dtTracePublicRootPeersTracer
         :: Tracer m TracePublicRootPeers
@@ -165,14 +175,14 @@ data TracersExtra ntnAddr ntnVersion ntnVersionData
         :: Tracer m TraceLedgerPeers
 
     , dtTracePeerSelectionTracer
-        :: Tracer m (TracePeerSelection ntnAddr)
+        :: Tracer m (TracePeerSelection extraDebugState extraFlags extraPeers ntnAddr)
 
     , dtDebugPeerSelectionInitiatorTracer
-        :: Tracer m (DebugPeerSelection ntnAddr)
+        :: Tracer m (DebugPeerSelection extraState extraFlags extraPeers ntnAddr)
 
       -- TODO: can be unified with the previous one
     , dtDebugPeerSelectionInitiatorResponderTracer
-        :: Tracer m (DebugPeerSelection ntnAddr)
+        :: Tracer m (DebugPeerSelection extraState extraFlags extraPeers ntnAddr)
 
     , dtTracePeerSelectionCounters
         :: Tracer m PeerSelectionCounters
@@ -226,7 +236,8 @@ data TracersExtra ntnAddr ntnVersion ntnVersionData
 nullTracers :: Applicative m
             => TracersExtra ntnAddr ntnVersion ntnVersionData
                             ntcAddr ntcVersion ntcVersionData
-                            resolverError m
+                            resolverError extraState extraDebugState
+                            extraFlags extraPeers m
 nullTracers =
     TracersExtra {
         dtTraceLocalRootPeersTracer                  = nullTracer
@@ -250,24 +261,10 @@ nullTracers =
 
 -- | P2P Arguments Extras
 --
-data ArgumentsExtra m = ArgumentsExtra {
-      -- | selection targets for the peer governor
-      --
-      daPeerTargets            :: ConsensusModePeerTargets
-
-    , daReadLocalRootPeers     :: STM m (LocalRootPeers.Config RelayAccessPoint)
+data ArgumentsExtra extraArgs extraFlags m = ArgumentsExtra {
+      daReadLocalRootPeers     :: STM m (LocalRootPeers.Config extraFlags RelayAccessPoint)
     , daReadPublicRootPeers    :: STM m (Map RelayAccessPoint PeerAdvertise)
-    -- | When syncing up, ie. ledgerStateJudgement == TooOld,
-    -- when this is True we will maintain connection with many big ledger peers
-    -- to get a strong guarantee that when syncing up we will finish with a true
-    -- ledger state. When false, we will fall back on the previous algorithms
-    -- that leverage UseBootstrapPeers flag
-    , daConsensusMode                    :: ConsensusMode
-    -- | For Genesis, this sets the floor for minimum number of
-    --   active big ledger peers we must be connected to in order
-    --   to be able to signal trusted state (OutboundConnectionsState)
-    , daMinBigLedgerPeersForTrustedState :: MinBigLedgerPeersForTrustedState
-    , daReadUseBootstrapPeers            :: STM m UseBootstrapPeers
+
     -- | Depending on configuration, node may provide us with
     -- a snapshot of big ledger peers taken at some slot on the chain.
     -- These peers may be selected by ledgerPeersThread when requested
@@ -315,6 +312,10 @@ data ArgumentsExtra m = ArgumentsExtra {
       -- By default it is set to 300 seconds.
       --
     , daBulkChurnInterval      :: DiffTime
+
+      -- | Extension point for third party users to be able to add more
+      -- arguments.
+    , daExtraArgs              :: extraArgs
     }
 
 --
@@ -363,7 +364,8 @@ data ApplicationsExtra ntnAddr m a =
     , daPeerMetrics         :: PeerMetrics m ntnAddr
 
     -- | Used by churn-governor
-    --
+    -- TODO: Pull out (along with ouroboros-network-api/Ouroboros/Network/BlockFetch ->
+    -- ouroboros-network-api/Cardano/Node/BlockFetch)
     , daBlockFetchMode      :: STM m FetchMode
 
     -- | Used for peer sharing protocol
@@ -444,8 +446,10 @@ type NodeToNodePeerConnectionHandle (mode :: MuxMode) ntnAddr ntnVersionData m a
       ByteString
       m a b
 
-type NodeToNodePeerSelectionActions (mode :: MuxMode) ntnAddr ntnVersionData m a b =
+type NodeToNodePeerSelectionActions extraActions extraPeers extraFlags extraAPI
+                                    (mode :: MuxMode) ntnAddr ntnVersionData m a b =
     PeerSelectionActions
+      extraActions extraPeers extraFlags extraAPI
       ntnAddr
       (NodeToNodePeerConnectionHandle mode ntnAddr ntnVersionData m a b)
       m
@@ -453,6 +457,7 @@ type NodeToNodePeerSelectionActions (mode :: MuxMode) ntnAddr ntnVersionData m a
 data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
                 ntcFd ntcAddr ntcVersion ntcVersionData
                 resolver resolverError
+                extraState extraFlags extraPeers
                 m =
     Interfaces {
         -- | node-to-node snocket
@@ -532,7 +537,8 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         diInstallSigUSR1Handler
           :: forall mode x y.
              NodeToNodeConnectionManager mode ntnFd ntnAddr ntnVersionData ntnVersion  m x y
-          -> StrictTVar m (PeerSelectionState ntnAddr (NodeToNodePeerConnectionHandle
+          -> StrictTVar m (PeerSelectionState extraState extraFlags extraPeers
+                               ntnAddr (NodeToNodePeerConnectionHandle
                                mode ntnAddr ntnVersionData m x y))
           -> PeerMetrics m ntnAddr
           -> m (),
@@ -578,7 +584,7 @@ runM
        Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
                   ntcFd ntcAddr ntcVersion ntcVersionData
                   resolver resolverError
-                  m
+                  CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers ntnAddr) m
     -> -- | tracers
        Tracers ntnAddr ntnVersion
                ntcAddr ntcVersion
@@ -586,17 +592,18 @@ runM
     -> -- | p2p tracers
        TracersExtra ntnAddr ntnVersion ntnVersionData
                     ntcAddr ntcVersion ntcVersionData
-                    resolverError m
+                    resolverError CardanoPeerSelectionState CardanoPeerSelectionState
+                    PeerTrustable (CardanoPublicRootPeers ntnAddr) m
     -> -- | configuration
        Arguments m ntnFd ntnAddr
                    ntcFd ntcAddr
     -> -- | p2p configuration
-       ArgumentsExtra m
+       ArgumentsExtra (CardanoArgumentsExtra m) PeerTrustable m
 
     -> -- | protocol handlers
        Applications ntnAddr ntnVersion ntnVersionData
                     ntcAddr ntcVersion ntcVersionData
-                    m a
+                    (CardanoLedgerPeersConsensusInterface m) m a
     -> -- | p2p protocol handlers
        ApplicationsExtra ntnAddr m a
     -> m Void
@@ -651,12 +658,8 @@ runM Interfaces
        , daPublicPeerSelectionVar
        }
      ArgumentsExtra
-       { daPeerTargets
-       , daReadLocalRootPeers
+       { daReadLocalRootPeers
        , daReadPublicRootPeers
-       , daConsensusMode
-       , daMinBigLedgerPeersForTrustedState
-       , daReadUseBootstrapPeers
        , daOwnPeerSharing
        , daReadUseLedgerPeers
        , daProtocolIdleTimeout
@@ -664,13 +667,18 @@ runM Interfaces
        , daDeadlineChurnInterval
        , daBulkChurnInterval
        , daReadLedgerPeerSnapshot
+       , daExtraArgs = CardanoArgumentsExtra {
+           caePeerTargets
+         , caeMinBigLedgerPeersForTrustedState
+         , caeConsensusMode
+         , caeReadUseBootstrapPeers
+         }
        }
      Applications
        { daApplicationInitiatorMode
        , daApplicationInitiatorResponderMode
        , daLocalResponderApplication
        , daLedgerPeersCtx
-       , daUpdateOutboundConnectionsState
        }
      ApplicationsExtra
        { daRethrowPolicy
@@ -835,9 +843,9 @@ runM Interfaces
       localRootsVar <- newTVarIO mempty
 
       peerSelectionTargetsVar <- newTVarIO $
-        case daConsensusMode of
-          PraosMode   -> deadlineTargets daPeerTargets
-          GenesisMode -> syncTargets daPeerTargets
+        case caeConsensusMode of
+          PraosMode   -> deadlineTargets caePeerTargets
+          GenesisMode -> syncTargets caePeerTargets
 
       countersVar <- newTVarIO emptyPeerSelectionCounters
 
@@ -981,6 +989,7 @@ runM Interfaces
             -> PeerSelectionActionsDiffusionMode ntnAddr (PeerConnectionHandle muxMode responderCtx ntnAddr ntnVersionData bytes m a1 b) m
             -> (   (Async m Void, Async m Void)
                 -> PeerSelectionActions
+                     (CardanoPeerSelectionActions m) (CardanoPublicRootPeers ntnAddr) PeerTrustable (CardanoLedgerPeersConsensusInterface m)
                      ntnAddr
                      (PeerConnectionHandle
                         muxMode responderCtx ntnAddr ntnVersionData bytes m a1 b)
@@ -1001,7 +1010,6 @@ runM Interfaces
                                          getLedgerStateCtx = daLedgerPeersCtx,
                                          psReadLocalRootPeers = daReadLocalRootPeers,
                                          psReadPublicRootPeers = daReadPublicRootPeers,
-                                         psReadUseBootstrapPeers = daReadUseBootstrapPeers,
                                          psPeerSharing = daOwnPeerSharing,
                                          psPeerConnToPeerSharing = pchPeerSharing diNtnPeerSharing,
                                          psReadPeerSharingController = readTVar (getPeerSharingRegistry daPeerSharingRegistry),
@@ -1009,9 +1017,12 @@ runM Interfaces
                                            case daOwnPeerSharing of
                                              PeerSharingDisabled -> pure Map.empty
                                              PeerSharingEnabled  -> readInboundPeers,
-                                         psUpdateOutboundConnectionsState = daUpdateOutboundConnectionsState,
-                                         peerTargets = daPeerTargets,
-                                         readLedgerPeerSnapshot = daReadLedgerPeerSnapshot }
+                                         readLedgerPeerSnapshot = daReadLedgerPeerSnapshot,
+                                         psExtraActions = CardanoPeerSelectionActions {
+                                           cpsaPeerTargets = caePeerTargets,
+                                           cpsaReadUseBootstrapPeers = caeReadUseBootstrapPeers
+                                         }
+                                       }
                                        WithLedgerPeersArgs {
                                          wlpRng = ledgerPeersRng,
                                          wlpConsensusInterface = daLedgerPeersCtx,
@@ -1021,11 +1032,12 @@ runM Interfaces
 
           peerSelectionGovernor'
             :: forall (muxMode :: MuxMode) b.
-               Tracer m (DebugPeerSelection ntnAddr)
-            -> StrictTVar m (PeerSelectionState ntnAddr
+               Tracer m (DebugPeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers ntnAddr) ntnAddr)
+            -> StrictTVar m (PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers ntnAddr) ntnAddr
                               (NodeToNodePeerConnectionHandle
                                muxMode ntnAddr ntnVersionData m a b))
-            -> NodeToNodePeerSelectionActions muxMode ntnAddr ntnVersionData m a b
+            -> NodeToNodePeerSelectionActions (CardanoPeerSelectionActions m) (CardanoPublicRootPeers ntnAddr) PeerTrustable (CardanoLedgerPeersConsensusInterface m)
+                                              muxMode ntnAddr ntnVersionData m a b
             -> m Void
           peerSelectionGovernor' peerSelectionTracer dbgVar peerSelectionActions =
             Governor.peerSelectionGovernor
@@ -1033,8 +1045,8 @@ runM Interfaces
               peerSelectionTracer
               dtTracePeerSelectionCounters
               fuzzRng
-              daConsensusMode
-              daMinBigLedgerPeersForTrustedState
+              (CPST.empty caeConsensusMode caeMinBigLedgerPeersForTrustedState)
+              CPRP.empty
               peerSelectionActions
               peerSelectionPolicy
               PeerSelectionInterfaces {
@@ -1056,20 +1068,23 @@ runM Interfaces
                                  pcaPeerRequestTimeout  = policyPeerShareOverallTimeout
                                                             peerSelectionPolicy,
                                  pcaMetrics             = daPeerMetrics,
-                                 pcaModeVar             = churnModeVar,
                                  pcaRng                 = churnRng,
-                                 pcaReadFetchMode       = daBlockFetchMode,
                                  pcaPeerSelectionVar    = peerSelectionTargetsVar,
                                  pcaReadCounters        = readTVar countersVar,
-                                 peerTargets            = daPeerTargets,
-                                 pcaReadUseBootstrap    = daReadUseBootstrapPeers,
-                                 pcaConsensusMode       = daConsensusMode,
                                  getLedgerStateCtx      = daLedgerPeersCtx,
                                  getLocalRootHotTarget  =
                                        LocalRootPeers.hotTarget
                                      . LocalRootPeers.clampToTrustable
                                      . LocalRootPeers.fromGroups
-                                   <$> readTVar localRootsVar }
+                                   <$> readTVar localRootsVar,
+                                 getExtraArgs = CardanoPeerChurnArgs {
+                                   cpcaModeVar          = churnModeVar,
+                                   cpcaReadFetchMode    = daBlockFetchMode,
+                                   cpcaPeerTargets      = caePeerTargets,
+                                   cpcaReadUseBootstrap = caeReadUseBootstrapPeers,
+                                   cpcaConsensusMode    = caeConsensusMode
+                                 }
+                               }
 
       --
       -- Two functions only used in InitiatorAndResponder mode
@@ -1111,7 +1126,7 @@ runM Interfaces
         -- InitiatorOnly mode, run peer selection only:
         InitiatorOnlyDiffusionMode ->
           withConnectionManagerInitiatorOnlyMode $ \connectionManager-> do
-          debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng daConsensusMode daMinBigLedgerPeersForTrustedState
+          debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng (CPST.empty caeConsensusMode caeMinBigLedgerPeersForTrustedState) CPRP.empty
           diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
           withPeerStateActions' connectionManager $ \peerStateActions->
             withPeerSelectionActions'
@@ -1136,7 +1151,7 @@ runM Interfaces
             inboundInfoChannel $ \connectionManager ->
               withSockets' $ \sockets addresses -> do
                 withServer sockets connectionManager inboundInfoChannel $ \inboundGovernorThread readInboundState -> do
-                  debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng daConsensusMode daMinBigLedgerPeersForTrustedState
+                  debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng (CPST.empty caeConsensusMode caeMinBigLedgerPeersForTrustedState) CPRP.empty
                   diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
                   withPeerStateActions' connectionManager $ \peerStateActions ->
                     withPeerSelectionActions'
@@ -1162,20 +1177,22 @@ runM Interfaces
 --   a wallet and a like local services.
 --
 run
-    :: Tracers RemoteAddress NodeToNodeVersion
+    :: forall a .
+      Tracers RemoteAddress NodeToNodeVersion
                LocalAddress  NodeToClientVersion
                IO
     -> TracersExtra RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
                     LocalAddress  NodeToClientVersion NodeToClientVersionData
-                    IOException IO
+                    IOException CardanoPeerSelectionState CardanoPeerSelectionState
+                    PeerTrustable (CardanoPublicRootPeers RemoteAddress) IO
     -> Arguments IO
                  Socket      RemoteAddress
                  LocalSocket LocalAddress
-    -> ArgumentsExtra IO
+    -> ArgumentsExtra (CardanoArgumentsExtra IO) PeerTrustable IO
     -> Applications
          RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
          LocalAddress  NodeToClientVersion NodeToClientVersionData
-         IO a
+         (CardanoLedgerPeersConsensusInterface IO) IO a
     -> ApplicationsExtra RemoteAddress IO a
     -> IO Void
 run tracers tracersExtra args argsExtra apps appsExtra = do
@@ -1217,7 +1234,7 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                    :: forall mode x y ntnconn.
                       NodeToNodeConnectionManager mode Socket RemoteAddress
                                                   NodeToNodeVersionData NodeToNodeVersion IO x y
-                   -> StrictTVar IO (PeerSelectionState RemoteAddress ntnconn)
+                   -> StrictTVar IO (PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers RemoteAddress) RemoteAddress ntnconn)
                    -> PeerMetrics IO RemoteAddress
                    -> IO ()
 #ifdef POSIX
@@ -1233,12 +1250,14 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                            (up, bp, lsj, am) <- atomically $
                                                   (,,,) <$> upstreamyness metrics
                                                         <*> fetchynessBlocks metrics
-                                                        <*> lpGetLedgerStateJudgement (daLedgerPeersCtx apps)
+                                                        <*> clpciGetLedgerStateJudgement (lpExtraAPI (daLedgerPeersCtx apps))
                                                         <*> Governor.readAssociationMode
                                                               (daReadUseLedgerPeers argsExtra)
                                                               (daOwnPeerSharing argsExtra)
-                                                              (Governor.bootstrapPeersFlag ps)
-                           let dbgState = makeDebugPeerSelectionState ps up bp lsj am
+                                                              (cpstBootstrapPeersFlag (extraState ps))
+                           let cardanoExtraArgs = daExtraArgs argsExtra
+                               (cm, mblp)       = (caeConsensusMode cardanoExtraArgs, caeMinBigLedgerPeersForTrustedState cardanoExtraArgs)
+                               dbgState         = makeDebugPeerSelectionState ps up bp ((CPST.empty cm mblp) { cpstLedgerStateJudgement = lsj }) am
                            traceWith (dtTracePeerSelectionTracer tracersExtra)
                                      (TraceDebugState now dbgState)
                        )
