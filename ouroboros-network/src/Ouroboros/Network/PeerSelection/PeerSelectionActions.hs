@@ -33,15 +33,17 @@ import Data.Void (Void)
 
 import Network.DNS qualified as DNS
 
-import Data.Bifunctor (first)
-import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
+import Cardano.Node.LedgerPeerConsensusInterface
+           (CardanoLedgerPeersConsensusInterface (..))
+import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
+import Cardano.Node.PeerSelection.LocalRootPeers (OutboundConnectionsState)
+import Cardano.Node.PeerSelection.Governor.PeerSelectionActions
+           (CardanoPeerSelectionActions (..))
+import Data.Bifunctor (first)
+import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.LedgerPeers hiding (getLedgerPeers)
-import Ouroboros.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
-import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
-import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.RootPeersDNS

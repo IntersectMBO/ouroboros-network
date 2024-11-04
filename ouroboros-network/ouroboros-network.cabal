@@ -54,6 +54,19 @@ library
   -- At this experiment/prototype stage everything is exposed.
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:
+    Cardano.Diffusion.Configuration
+    Cardano.Diffusion.Policies
+    Cardano.Network.ArgumentsExtra
+    Cardano.Network.LedgerPeerConsensusInterface
+    Cardano.Network.PeerSelection.Governor.Monitor
+    Cardano.Network.PeerSelection.Governor.PeerSelectionActions
+    Cardano.Network.PeerSelection.Governor.PeerSelectionState
+    Cardano.Network.PeerSelection.Governor.Types
+    Cardano.Network.PeerSelection.PeerChurnArgs
+    Cardano.Network.PeerSelection.Types
+    Cardano.Network.PublicRootPeers
+    Cardano.PeerSelection.Churn
+    Cardano.PeerSelection.PeerSelectionActions
     Control.Concurrent.Class.MonadSTM.Strict.TMergeVar
     Ouroboros.Network.BlockFetch
     Ouroboros.Network.BlockFetch.Client

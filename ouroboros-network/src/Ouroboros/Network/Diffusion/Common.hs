@@ -24,9 +24,6 @@ import Control.Tracer (Tracer, nullTracer)
 
 import Network.Mux qualified as Mx
 
-import Ouroboros.Network.Mux (OuroborosApplicationWithMinimalCtx,
-           OuroborosBundleWithExpandedCtx)
-import Ouroboros.Network.NodeToClient (Versions)
 import Ouroboros.Network.NodeToClient qualified as NodeToClient
 import Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit, ConnectionId,
            DiffusionMode)
@@ -34,7 +31,6 @@ import Ouroboros.Network.NodeToNode qualified as NodeToNode
 import Ouroboros.Network.PeerSelection.Governor.Types (PublicPeerSelectionState)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeersConsensusInterface)
-import Ouroboros.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
 import Ouroboros.Network.Snocket (FileDescriptor)
 import Ouroboros.Network.Socket (SystemdSocketTracer)
 

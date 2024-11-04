@@ -44,10 +44,10 @@ module Ouroboros.Network.Diffusion.Configuration
 import Control.Monad.Class.MonadTime.SI
 import System.Random (randomRIO)
 
+import Cardano.Network.ConsensusMode
 import Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
 import Ouroboros.Network.ConnectionManager.Core (defaultProtocolIdleTimeout,
            defaultResetTimeout, defaultTimeWaitTimeout)
-import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.Diffusion (P2P (..))
 import Ouroboros.Network.Diffusion.Policies (closeConnectionTimeout,
            deactivateTimeout, maxChainSyncTimeout, minChainSyncTimeout,
@@ -55,9 +55,7 @@ import Ouroboros.Network.Diffusion.Policies (closeConnectionTimeout,
 import Ouroboros.Network.NodeToNode (DiffusionMode (..),
            MiniProtocolParameters (..), defaultMiniProtocolParameters)
 import Ouroboros.Network.PeerSelection.Governor.Types
-           (ConsensusModePeerTargets (..), PeerSelectionTargets (..))
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-           (MinBigLedgerPeersForTrustedState (..))
+           (PeerSelectionTargets (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSharing (ps_POLICY_PEER_SHARE_MAX_PEERS,
            ps_POLICY_PEER_SHARE_STICKY_TIME)
