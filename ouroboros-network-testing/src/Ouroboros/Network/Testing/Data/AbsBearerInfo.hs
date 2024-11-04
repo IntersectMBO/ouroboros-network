@@ -24,22 +24,21 @@ module Ouroboros.Network.Testing.Data.AbsBearerInfo
   , AbsIOErrType (..)
   ) where
 
-import           Control.Monad.Class.MonadTime.SI (DiffTime, Time (..), addTime)
+import Control.Monad.Class.MonadTime.SI (DiffTime, Time (..), addTime)
 
-import qualified Data.List as List
-import qualified Data.List.NonEmpty as NonEmpty
-import           Data.Monoid (Any (..))
-import           GHC.IO.Exception (IOException (..), IOErrorType (..))
-import           Foreign.C.Error (Errno (..), eCONNABORTED)
+import Data.List qualified as List
+import Data.List.NonEmpty qualified as NonEmpty
+import Data.Monoid (Any (..))
+import Foreign.C.Error (Errno (..), eCONNABORTED)
+import GHC.IO.Exception (IOErrorType (..), IOException (..))
 
-import           Network.Mux.Bearer.AttenuatedChannel (Size,
-                     SuccessOrFailure (..))
-import           Network.Mux.Types (SDUSize (..))
+import Network.Mux.Bearer.AttenuatedChannel (Size, SuccessOrFailure (..))
+import Network.Mux.Types (SDUSize (..))
 
-import           Ouroboros.Network.Testing.Data.Script (Script (..))
-import           Ouroboros.Network.Testing.Utils (Delay (..))
+import Ouroboros.Network.Testing.Data.Script (Script (..))
+import Ouroboros.Network.Testing.Utils (Delay (..))
 
-import           Test.QuickCheck hiding (Result (..))
+import Test.QuickCheck hiding (Result (..))
 
 
 data AbsDelay = SmallDelay
@@ -133,14 +132,14 @@ instance Arbitrary AbsIOError where
       , connectionAbortedError
       ]
     where
-      -- `ECONNABORTED` error which appears in `Ouroboros.Network.Server2`
+      -- `ECONNABORTED` error which appears in `Ouroboros.Network.Server`
       connectionAbortedError :: IOError
       connectionAbortedError = IOError
         { ioe_handle      = Nothing
         , ioe_type        = OtherError
         , ioe_location    = "Ouroboros.Network.Snocket.Sim.accept"
           -- Note: this matches the `iseCONNABORTED` on Windows, see
-          -- 'Ouroboros.Network.Server2`
+          -- 'Ouroboros.Network.Server`
         , ioe_description = "Software caused connection abort (WSAECONNABORTED)"
         , ioe_errno       = Just (case eCONNABORTED of Errno errno -> errno)
         , ioe_filename    = Nothing
