@@ -36,7 +36,7 @@ import Ouroboros.Network.Protocol.PeerSharing.Examples
            (peerSharingClientCollect, peerSharingServerReplicate)
 import Ouroboros.Network.Protocol.PeerSharing.Server (peerSharingServerPeer)
 import Ouroboros.Network.Protocol.PeerSharing.Type
-import Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
+import Test.Ouroboros.Network.Protocol.Utils (prop_codec_cborM,
            prop_codec_valid_cbor_encoding, splits2, splits3)
 import Test.QuickCheck.Function (Fun, applyFun)
 import Test.Tasty (TestTree, testGroup)
