@@ -98,19 +98,18 @@ import Ouroboros.Network.Testing.Data.AbsBearerInfo hiding (delay)
 import Ouroboros.Network.Testing.Utils (WithName (..), WithTime (..),
            genDelayWithPrecision, nightlyTest, sayTracer, tracerWithTime)
 
-import Ouroboros.Network.Test.Orphans ()
-import Test.Simulation.Network.Snocket hiding (tests)
-
-import Ouroboros.Network.ConnectionManager.Test.Experiments
-import Ouroboros.Network.ConnectionManager.Test.Timeouts
-import Ouroboros.Network.ConnectionManager.Test.Utils
+import Test.Ouroboros.Network.ConnectionManager.Experiments
+import Test.Ouroboros.Network.ConnectionManager.Timeouts
+import Test.Ouroboros.Network.ConnectionManager.Utils
            (abstractStateIsFinalTransition, allValidTransitionsNames,
            validTransitionMap, verifyAbstractTransition,
            verifyAbstractTransitionOrder)
-import Ouroboros.Network.InboundGovernor.Test.Utils
+import Test.Ouroboros.Network.InboundGovernor.Utils
            (allValidRemoteTransitionsNames, remoteStrIsFinalTransition,
            validRemoteTransitionMap, verifyRemoteTransition,
            verifyRemoteTransitionOrder)
+import Test.Ouroboros.Network.Orphans ()
+import Test.Simulation.Network.Snocket hiding (tests)
 
 tests :: TestTree
 tests =

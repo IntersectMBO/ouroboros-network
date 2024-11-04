@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase     #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
-module Ouroboros.Network.ConnectionManager.Test.Timeouts
+module Test.Ouroboros.Network.ConnectionManager.Timeouts
   ( verifyAllTimeouts
   , SimAddr
   , SimAddr_

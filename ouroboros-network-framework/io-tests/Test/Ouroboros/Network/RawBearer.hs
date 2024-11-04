@@ -8,8 +8,8 @@ module Test.Ouroboros.Network.RawBearer where
 
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.RawBearer
-import Ouroboros.Network.RawBearer.Test.Utils
 import Ouroboros.Network.Snocket
+import Test.Ouroboros.Network.RawBearer.Utils
 
 import Control.Concurrent.Class.MonadMVar
 import Control.Monad.Class.MonadThrow (catchJust, finally)
