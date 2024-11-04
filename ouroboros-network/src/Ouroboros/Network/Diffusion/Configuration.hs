@@ -8,7 +8,6 @@ module Ouroboros.Network.Diffusion.Configuration
   , MinBigLedgerPeersForTrustedState (..)
   , defaultNumBootstrapPeers
   , defaultAcceptedConnectionsLimit
-  , defaultDiffusionMode
   , defaultPeerSharing
   , defaultBlockFetchConfiguration
   , defaultChainSyncTimeout
@@ -23,7 +22,6 @@ module Ouroboros.Network.Diffusion.Configuration
   , ConsensusModePeerTargets (..)
   , DiffusionMode (..)
   , MiniProtocolParameters (..)
-  , P2P (..)
   , PeerSelectionTargets (..)
   , PeerSharing (..)
   , ConsensusMode (..)
@@ -48,7 +46,6 @@ import Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
 import Ouroboros.Network.ConnectionManager.Core (defaultProtocolIdleTimeout,
            defaultResetTimeout, defaultTimeWaitTimeout)
 import Ouroboros.Network.ConsensusMode
-import Ouroboros.Network.Diffusion (P2P (..))
 import Ouroboros.Network.Diffusion.Policies (closeConnectionTimeout,
            deactivateTimeout, maxChainSyncTimeout, minChainSyncTimeout,
            peerMetricsConfiguration)
@@ -125,11 +122,6 @@ defaultAcceptedConnectionsLimit =
     acceptedConnectionsHardLimit = 512,
     acceptedConnectionsSoftLimit = 384,
     acceptedConnectionsDelay     = 5 }
-
--- | Principal mode of network operation
---
-defaultDiffusionMode :: P2P
-defaultDiffusionMode = NonP2P
 
 -- | Node's peer sharing participation flag
 --

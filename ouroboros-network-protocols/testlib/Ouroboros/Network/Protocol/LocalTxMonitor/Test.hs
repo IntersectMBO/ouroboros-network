@@ -36,7 +36,7 @@ import Ouroboros.Network.Protocol.LocalTxMonitor.Server
 import Ouroboros.Network.Protocol.LocalTxMonitor.Type
 
 import Test.ChainGenerators ()
-import Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
+import Test.Ouroboros.Network.Protocol.Utils (prop_codec_cborM,
            prop_codec_valid_cbor_encoding, splits2, splits3)
 import Test.QuickCheck hiding (Result)
 import Test.Tasty (TestTree, testGroup)

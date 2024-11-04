@@ -18,9 +18,9 @@ import Test.Tasty.QuickCheck (testProperty)
 import Ouroboros.Network.Block (blockPrevHash, pattern GenesisPoint, pointHash)
 import Ouroboros.Network.Mock.Chain (Chain (..))
 import Ouroboros.Network.Mock.Chain qualified as Chain
-import Ouroboros.Network.Testing.Serialise (prop_serialise)
 
 import Test.ChainGenerators hiding (tests)
+import Test.Ouroboros.Network.Serialise (prop_serialise)
 
 
 --

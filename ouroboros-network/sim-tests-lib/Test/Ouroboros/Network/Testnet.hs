@@ -57,18 +57,18 @@ import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as Estab
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSelection.Types
-import Ouroboros.Network.Server2 qualified as Server
-import Ouroboros.Network.Testing.Data.AbsBearerInfo
-import Ouroboros.Network.Testing.Data.Script
-import Ouroboros.Network.Testing.Data.Signal
-import Ouroboros.Network.Testing.Data.Signal qualified as Signal
-import Ouroboros.Network.Testing.Utils hiding (SmallDelay, debugTracer)
+import Ouroboros.Network.Server qualified as Server
 
 import Simulation.Network.Snocket (BearerInfo (..))
 
+import Test.Ouroboros.Network.Data.AbsBearerInfo
+import Test.Ouroboros.Network.Data.Script
+import Test.Ouroboros.Network.Data.Signal
+import Test.Ouroboros.Network.Data.Signal qualified as Signal
 import Test.Ouroboros.Network.Testnet.Internal
 import Test.Ouroboros.Network.Testnet.Node (config_REPROMOTE_DELAY)
 import Test.Ouroboros.Network.Testnet.Node.Kernel
+import Test.Ouroboros.Network.Utils hiding (SmallDelay, debugTracer)
 import Test.QuickCheck
 import Test.QuickCheck.Monoids
 import Test.Tasty
@@ -76,19 +76,7 @@ import Test.Tasty.QuickCheck (testProperty)
 
 import Control.Exception (AssertionFailed (..), catch, evaluate, fromException)
 import Ouroboros.Network.BlockFetch (FetchMode (..), TraceFetchClientState (..))
-import Ouroboros.Network.ConnectionManager.Test.Timeouts (TestProperty (..),
-           classifyActivityType, classifyEffectiveDataFlow,
-           classifyNegotiatedDataFlow, classifyPrunings, classifyTermination,
-           groupConns, mkProperty, ppTransition, verifyAllTimeouts)
-import Ouroboros.Network.ConnectionManager.Test.Utils
-           (abstractStateIsFinalTransition,
-           abstractStateIsFinalTransitionTVarTracing, connectionManagerTraceMap,
-           validTransitionMap, verifyAbstractTransition,
-           verifyAbstractTransitionOrder)
 import Ouroboros.Network.ConsensusMode
-import Ouroboros.Network.InboundGovernor.Test.Utils (inboundGovernorTraceMap,
-           remoteStrIsFinalTransition, serverTraceMap, validRemoteTransitionMap,
-           verifyRemoteTransition, verifyRemoteTransitionOrder)
 import Ouroboros.Network.Mock.ConcreteBlock (BlockHeader)
 import Ouroboros.Network.NodeToNode (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
@@ -101,6 +89,19 @@ import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
            WarmValency (..))
 import Ouroboros.Network.PeerSharing (PeerSharingResult (..))
+
+import Test.Ouroboros.Network.ConnectionManager.Timeouts (TestProperty (..),
+           classifyActivityType, classifyEffectiveDataFlow,
+           classifyNegotiatedDataFlow, classifyPrunings, classifyTermination,
+           groupConns, mkProperty, ppTransition, verifyAllTimeouts)
+import Test.Ouroboros.Network.ConnectionManager.Utils
+           (abstractStateIsFinalTransition,
+           abstractStateIsFinalTransitionTVarTracing, connectionManagerTraceMap,
+           validTransitionMap, verifyAbstractTransition,
+           verifyAbstractTransitionOrder)
+import Test.Ouroboros.Network.InboundGovernor.Utils (inboundGovernorTraceMap,
+           remoteStrIsFinalTransition, serverTraceMap, validRemoteTransitionMap,
+           verifyRemoteTransition, verifyRemoteTransitionOrder)
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..))
 
 import Control.Monad.Class.MonadTest (exploreRaces)
@@ -3016,7 +3017,7 @@ prop_diffusion_target_active_local_above ioSimTrace traceNumber =
 
 
 -- | A variant of ouroboros-network-framework
--- 'Test.Ouroboros.Network.Server2.prop_connection_manager_valid_transitions'
+-- 'Test.Ouroboros.Network.Server.prop_connection_manager_valid_transitions'
 -- but for running on Diffusion. This means it has to have in consideration
 -- that the logs for all nodes running will all appear in the trace and the test
 -- property should only be valid while a given node is up and running.
@@ -3104,7 +3105,7 @@ prop_diffusion_cm_valid_transitions ioSimTrace traceNumber =
 
 
 -- | A variant of ouroboros-network-framework
--- 'Test.Ouroboros.Network.Server2.prop_connection_manager_valid_transition_order'
+-- 'Test.Ouroboros.Network.Server.prop_connection_manager_valid_transition_order'
 -- but for running on Diffusion. This means it has to have in consideration the
 -- the logs for all nodes running will all appear in the trace and the test
 -- property should only be valid while a given node is up and running.
@@ -3165,7 +3166,7 @@ prop_diffusion_cm_valid_transition_order_iosim_por ioSimTrace traceNumber =
        . groupConns id abstractStateIsFinalTransitionTVarTracing
 
 -- | A variant of ouroboros-network-framework
--- 'Test.Ouroboros.Network.Server2.prop_connection_manager_valid_transition_order'
+-- 'Test.Ouroboros.Network.Server.prop_connection_manager_valid_transition_order'
 -- but for running on Diffusion. This means it has to have in consideration the
 -- the logs for all nodes running will all appear in the trace and the test
 -- property should only be valid while a given node is up and running.
@@ -4010,7 +4011,7 @@ prop_splitWith f as = foldr (++) [] (splitWith f as) === as
 
 
 -- | A variant of ouroboros-network-framework
--- 'Test.Ouroboros.Network.Server2.prop_inbound_governor_valid_transitions'
+-- 'Test.Ouroboros.Network.Server.prop_inbound_governor_valid_transitions'
 -- but for running on Diffusion. This means it has to have in consideration the
 -- the logs for all nodes running will all appear in the trace and the test
 -- property should only be valid while a given node is up and running.
@@ -4068,7 +4069,7 @@ prop_diffusion_ig_valid_transitions ioSimTrace traceNumber =
          $ remoteTransitionTraceEvents
 
 -- | A variant of ouroboros-network-framework
--- 'Test.Ouroboros.Network.Server2.prop_inbound_governor_valid_transition_order'
+-- 'Test.Ouroboros.Network.Server.prop_inbound_governor_valid_transition_order'
 -- but for running on Diffusion. This means it has to have in consideration the
 -- the logs for all nodes running will all appear in the trace and the test
 -- property should only be valid while a given node is up and running.
@@ -4121,7 +4122,7 @@ prop_diffusion_ig_valid_transition_order ioSimTrace traceNumber =
         $ remoteTransitionTraceEvents
 
 -- | A variant of ouroboros-network-framework
--- 'Test.Ouroboros.Network.Server2.prop_timeouts_enforced'
+-- 'Test.Ouroboros.Network.Server.prop_timeouts_enforced'
 -- but for running on Diffusion. This means it has to have in consideration the
 -- the logs for all nodes running will all appear in the trace and the test
 -- property should only be valid while a given node is up and running.

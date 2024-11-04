@@ -34,11 +34,11 @@ import Data.Tree qualified as Tree
 
 import Control.Monad.Class.MonadTime.SI
 
-import Ouroboros.Network.Testing.Data.Script (Script (..),
-           ScriptDelay (NoDelay), TimedScript, arbitraryScriptOf)
-import Ouroboros.Network.Testing.Utils (ShrinkCarefully (..),
-           prop_shrink_nonequal, prop_shrink_valid, renderRanges)
+import Test.Ouroboros.Network.Data.Script (Script (..), ScriptDelay (NoDelay),
+           TimedScript, arbitraryScriptOf)
 import Test.Ouroboros.Network.PeerSelection.Instances
+import Test.Ouroboros.Network.Utils (ShrinkCarefully (..), prop_shrink_nonequal,
+           prop_shrink_valid, renderRanges)
 
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import Test.QuickCheck

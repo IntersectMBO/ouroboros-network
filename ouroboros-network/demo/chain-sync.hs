@@ -58,6 +58,7 @@ import Ouroboros.Network.Snocket
 import Ouroboros.Network.Socket
 
 import Ouroboros.Network.Driver
+import Ouroboros.Network.Protocol.Handshake
 import Ouroboros.Network.Protocol.Handshake.Codec
 import Ouroboros.Network.Protocol.Handshake.Unversioned
 import Ouroboros.Network.Protocol.Handshake.Version
@@ -75,6 +76,8 @@ import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.BlockFetch.Client
 import Ouroboros.Network.BlockFetch.ClientRegistry (FetchClientRegistry (..))
 import Ouroboros.Network.DeltaQ (defaultGSV)
+
+import Test.Ouroboros.Network.Server qualified as Test.Server
 
 
 data Options = Options {
@@ -268,25 +271,23 @@ serverChainSync sockAddr slotLength seed = withIOManager $ \iocp -> do
     prng <- case seed of
       Nothing -> initStdGen
       Just a  -> return (mkStdGen a)
-    networkState <- newNetworkMutableState
-    _ <- async $ cleanNetworkMutableState networkState
-    withServerNode
+    Test.Server.with
       (localSnocket iocp)
       makeLocalBearer
       mempty
-      nullNetworkServerTracers
-      networkState
-      (AcceptedConnectionsLimit maxBound maxBound 0)
       (localAddressFromPath sockAddr)
-      unversionedHandshakeCodec
-      noTimeLimitsHandshake
-      unversionedProtocolDataCodec
-      (HandshakeCallbacks acceptableVersion queryVersion)
+      HandshakeArguments {
+        haHandshakeTracer  = nullTracer,
+        haHandshakeCodec   = unversionedHandshakeCodec,
+        haVersionDataCodec = unversionedProtocolDataCodec,
+        haAcceptVersion    = acceptableVersion,
+        haQueryVersion     = queryVersion,
+        haTimeLimits       = noTimeLimitsHandshake
+      }
       (simpleSingletonVersions
         UnversionedProtocol
         UnversionedProtocolData
         (SomeResponderApplication (app prng)))
-      nullErrorPolicies
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
@@ -536,25 +537,23 @@ serverBlockFetch sockAddr slotLength seed = withIOManager $ \iocp -> do
     prng <- case seed of
       Nothing -> initStdGen
       Just a  -> return (mkStdGen a)
-    networkState <- newNetworkMutableState
-    _ <- async $ cleanNetworkMutableState networkState
-    withServerNode
+    Test.Server.with
       (localSnocket iocp)
       makeLocalBearer
       mempty
-      nullNetworkServerTracers
-      networkState
-      (AcceptedConnectionsLimit maxBound maxBound 0)
       (localAddressFromPath sockAddr)
-      unversionedHandshakeCodec
-      noTimeLimitsHandshake
-      unversionedProtocolDataCodec
-      (HandshakeCallbacks acceptableVersion queryVersion)
+      HandshakeArguments {
+        haHandshakeTracer  = nullTracer,
+        haHandshakeCodec   = unversionedHandshakeCodec,
+        haVersionDataCodec = unversionedProtocolDataCodec,
+        haAcceptVersion    = acceptableVersion,
+        haQueryVersion     = queryVersion,
+        haTimeLimits       = noTimeLimitsHandshake
+      }
       (simpleSingletonVersions
         UnversionedProtocol
         UnversionedProtocolData
         (SomeResponderApplication (app prng)))
-      nullErrorPolicies
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where

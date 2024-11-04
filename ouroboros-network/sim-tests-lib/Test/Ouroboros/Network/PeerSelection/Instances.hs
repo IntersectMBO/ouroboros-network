@@ -35,7 +35,8 @@ import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint (..),
            RelayAccessPoint (..))
-import Ouroboros.Network.Testing.Utils (ShrinkCarefully, prop_shrink_nonequal,
+
+import Test.Ouroboros.Network.Utils (ShrinkCarefully, prop_shrink_nonequal,
            prop_shrink_valid)
 import Test.QuickCheck
 
