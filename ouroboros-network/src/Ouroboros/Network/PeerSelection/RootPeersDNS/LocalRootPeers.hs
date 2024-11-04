@@ -29,9 +29,9 @@ import Control.Tracer (Tracer (..), contramap, traceWith)
 import Network.DNS qualified as DNS
 import Network.Socket qualified as Socket
 
+import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable)
 import Data.Bifunctor (second)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
-import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore,

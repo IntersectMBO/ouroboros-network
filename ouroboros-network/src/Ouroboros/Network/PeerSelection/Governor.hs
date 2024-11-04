@@ -49,7 +49,6 @@ module Ouroboros.Network.PeerSelection.Governor
   , emptyPeerSelectionCounters
   , nullPeerSelectionTargets
   , emptyPeerSelectionState
-  , ChurnMode (..)
   , peerSelectionStateToView
   ) where
 
@@ -70,8 +69,10 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer (..), traceWith)
 import System.Random
 
-import Ouroboros.Network.ConsensusMode
-import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
+import Cardano.Node.ConsensusMode
+import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers (..))
+import Cardano.Node.PeerSelection.LocalRootPeers (OutboundConnectionsState (..))
+import Cardano.Node.Types
 import Ouroboros.Network.PeerSelection.Churn (ChurnCounters (..),
            PeerChurnArgs (..), peerChurnGovernor)
 import Ouroboros.Network.PeerSelection.Governor.ActivePeers qualified as ActivePeers
@@ -81,10 +82,7 @@ import Ouroboros.Network.PeerSelection.Governor.KnownPeers qualified as KnownPee
 import Ouroboros.Network.PeerSelection.Governor.Monitor qualified as Monitor
 import Ouroboros.Network.PeerSelection.Governor.RootPeers qualified as RootPeers
 import Ouroboros.Network.PeerSelection.Governor.Types
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-           (MinBigLedgerPeersForTrustedState (..), UseLedgerPeers (..))
-import Ouroboros.Network.PeerSelection.LocalRootPeers
-           (OutboundConnectionsState (..))
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type (UseLedgerPeers (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers

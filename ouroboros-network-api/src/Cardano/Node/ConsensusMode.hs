@@ -1,7 +1,7 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric  #-}
 
-module Ouroboros.Network.ConsensusMode where
+module Cardano.Node.ConsensusMode where
 
 import Data.Aeson
 import GHC.Generics (Generic)

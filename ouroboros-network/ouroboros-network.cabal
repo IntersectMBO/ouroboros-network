@@ -54,6 +54,7 @@ library
   -- At this experiment/prototype stage everything is exposed.
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:
+    Cardano.Node.PeerSelection.Types
     Control.Concurrent.Class.MonadSTM.Strict.TMergeVar
     Ouroboros.Network.BlockFetch
     Ouroboros.Network.BlockFetch.Client
