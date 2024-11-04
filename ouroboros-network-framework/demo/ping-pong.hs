@@ -27,7 +27,6 @@ import Text.Printf (printf)
 
 import Network.Mux qualified as Mx
 
-import Ouroboros.Network.ErrorPolicy
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.Mux
 import Ouroboros.Network.Snocket
@@ -35,9 +34,11 @@ import Ouroboros.Network.Snocket qualified as Snocket
 import Ouroboros.Network.Socket
 import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
+import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
 import Ouroboros.Network.Protocol.Handshake.Codec
 import Ouroboros.Network.Protocol.Handshake.Unversioned
 import Ouroboros.Network.Protocol.Handshake.Version
+import Test.Ouroboros.Network.Server qualified as Test.Server
 
 import Network.TypedProtocol.PingPong.Client as PingPong
 import Network.TypedProtocol.PingPong.Codec.CBOR as PingPong
@@ -157,24 +158,21 @@ clientPingPong pipelined =
 serverPingPong :: IO Void
 serverPingPong =
     withIOManager $ \iomgr -> do
-    networkState <- newNetworkMutableState
-    _ <- async $ cleanNetworkMutableState networkState
-    withServerNode
+    Test.Server.with
       (Snocket.localSnocket iomgr)
       makeLocalBearer
       mempty
-      nullNetworkServerTracers
-      networkState
-      (AcceptedConnectionsLimit maxBound maxBound 0)
       defaultLocalSocketAddr
-      unversionedHandshakeCodec
-      noTimeLimitsHandshake
-      unversionedProtocolDataCodec
-      (HandshakeCallbacks acceptableVersion queryVersion)
+      HandshakeArguments {
+        haHandshakeTracer  = nullTracer,
+        haHandshakeCodec   = unversionedHandshakeCodec,
+        haVersionDataCodec = unversionedProtocolDataCodec,
+        haAcceptVersion    = acceptableVersion,
+        haQueryVersion     = queryVersion,
+        haTimeLimits       = noTimeLimitsHandshake
+      }
       (unversionedProtocol (SomeResponderApplication app))
-      nullErrorPolicies
-      $ \_ serverAsync ->
-        wait serverAsync   -- block until async exception
+      $ \_ serverAsync -> wait serverAsync -- block until server finishes
   where
     app :: OuroborosApplicationWithMinimalCtx
              Mx.ResponderMode LocalAddress LBS.ByteString IO Void ()
@@ -254,24 +252,21 @@ clientPingPong2 =
 serverPingPong2 :: IO Void
 serverPingPong2 =
     withIOManager $ \iomgr -> do
-    networkState <- newNetworkMutableState
-    _ <- async $ cleanNetworkMutableState networkState
-    withServerNode
+    Test.Server.with
       (Snocket.localSnocket iomgr)
       makeLocalBearer
       mempty
-      nullNetworkServerTracers
-      networkState
-      (AcceptedConnectionsLimit maxBound maxBound 0)
       defaultLocalSocketAddr
-      unversionedHandshakeCodec
-      noTimeLimitsHandshake
-      unversionedProtocolDataCodec
-      (HandshakeCallbacks acceptableVersion queryVersion)
+      HandshakeArguments {
+        haHandshakeTracer  = nullTracer,
+        haHandshakeCodec   = unversionedHandshakeCodec,
+        haVersionDataCodec = unversionedProtocolDataCodec,
+        haAcceptVersion    = acceptableVersion,
+        haQueryVersion     = queryVersion,
+        haTimeLimits       = noTimeLimitsHandshake
+      }
       (unversionedProtocol (SomeResponderApplication app))
-      nullErrorPolicies
-      $ \_ serverAsync ->
-        wait serverAsync   -- block until async exception
+      $ \_ serverAsync -> wait serverAsync -- block until async exception
   where
     app :: OuroborosApplicationWithMinimalCtx
              Mx.ResponderMode addr LBS.ByteString IO Void ()

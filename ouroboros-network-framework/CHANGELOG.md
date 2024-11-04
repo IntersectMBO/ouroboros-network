@@ -5,6 +5,16 @@
 ### Breaking changes
 
 *  Add `miniProtocolStart` to `MiniProtocol` to control starting strategy.
+* `Ouroboros.Network.Subscription` removed.
+* `Ouroboros.Network.ErrorPolicy` removed.
+* APIs removed from `Ouroboros.Network.Socket`:
+  * `NetworkMutableState` & friends,
+  * `withServerNode`,
+  * `NetworkServerTracers`,
+  * `fromSnocket`,
+  * `beginConnection`
+* `Ouroboros.Network.Server.Socket` replaced with a simpler server
+  implementation in `Test.Ouroboros.Network.Server` (in `ouroboros-network:testlib` component).
 
 ### Non-breaking changes
 

@@ -48,6 +48,9 @@ handshakeProtocolNum = Mx.MiniProtocolNum 0
 
 -- | Wrapper around initiator and responder errors experienced by tryHandshake.
 --
+-- TODO: should we have `Exception` instance?
+-- It would be handly in `prop_socket_send_recgtv`.
+--
 data HandshakeException vNumber =
     HandshakeProtocolLimit ProtocolLimitFailure
   | HandshakeProtocolError (HandshakeProtocolError vNumber)
