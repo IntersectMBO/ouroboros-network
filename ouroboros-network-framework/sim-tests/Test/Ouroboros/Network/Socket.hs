@@ -68,7 +68,7 @@ import Ouroboros.Network.Protocol.Handshake.Codec
 import Ouroboros.Network.Protocol.Handshake.Unversioned
 import Ouroboros.Network.Protocol.Handshake.Version
 
-import Ouroboros.Network.Test.Orphans ()
+import Test.Ouroboros.Network.Orphans ()
 import Test.Ouroboros.Network.Server qualified as Test.Server
 
 import Test.QuickCheck

@@ -4,6 +4,12 @@
 
 ### Breaking changes
 
+* Renamed modules in `ouroboros-network:testlib`:
+  `Ouroboros.Network.Test.Orphans -> Test.Ouroboros.Network.Orphans`
+  `Ouroboros.Network.ConnectionManager.Test.Experiments -> Test.Ouroboros.Network.ConnectionManager.Experiments`
+  `Ouroboros.Network.ConnectionManager.Test.Timeouts -> Test.Ouroboros.Network.ConnectionManager.Timeouts`
+  `Ouroboros.Network.ConnectionManager.Test.Utils -> Test.Ouroboros.Network.ConnectionManager.Utils`
+  `Ouroboros.Network.InboundGovernor.Test.Utils -> Test.Ouroboros.Network.InboundGovernor.Utils`
 * `Ouroboros.Network.Subscription` removed.
 * `Ouroboros.Network.ErrorPolicy` removed.
 * APIs removed from `Ouroboros.Network.Socket`:

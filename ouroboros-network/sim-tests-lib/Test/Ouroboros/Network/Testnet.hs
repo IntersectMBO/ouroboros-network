@@ -47,30 +47,18 @@ import Network.DNS.Types qualified as DNS
 
 import Ouroboros.Network.BlockFetch (PraosFetchMode (..),
            TraceFetchClientState (..))
+import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace (..))
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.State qualified as CM
-import Ouroboros.Network.ConnectionManager.Test.Timeouts (TestProperty (..),
-           classifyActivityType, classifyEffectiveDataFlow,
-           classifyNegotiatedDataFlow, classifyPrunings, classifyTermination,
-           groupConns, mkProperty, ppTransition, verifyAllTimeouts)
-import Ouroboros.Network.ConnectionManager.Test.Utils
-           (abstractStateIsFinalTransition,
-           abstractStateIsFinalTransitionTVarTracing, connectionManagerTraceMap,
-           validTransitionMap, verifyAbstractTransition,
-           verifyAbstractTransitionOrder)
 import Ouroboros.Network.ConnectionManager.Types
-import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
-import Ouroboros.Network.InboundGovernor qualified as IG
-import Ouroboros.Network.InboundGovernor.Test.Utils (inboundGovernorTraceMap,
-           remoteStrIsFinalTransition, serverTraceMap, validRemoteTransitionMap,
-           verifyRemoteTransition, verifyRemoteTransitionOrder)
 import Ouroboros.Network.Mock.ConcreteBlock (BlockHeader)
 import Ouroboros.Network.NodeToNode (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
+import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.LedgerPeers
@@ -99,6 +87,9 @@ import Ouroboros.Network.Testing.Utils hiding (SmallDelay, debugTracer)
 
 import Simulation.Network.Snocket (BearerInfo (..))
 
+import Test.Ouroboros.Network.ConnectionManager.Timeouts
+import Test.Ouroboros.Network.ConnectionManager.Utils
+import Test.Ouroboros.Network.InboundGovernor.Utils
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..))
 import Test.Ouroboros.Network.Testnet.Internal
 import Test.Ouroboros.Network.Testnet.Node (config_REPROMOTE_DELAY)
@@ -106,7 +97,7 @@ import Test.Ouroboros.Network.Testnet.Node.Kernel
 import Test.QuickCheck
 import Test.QuickCheck.Monoids
 import Test.Tasty
-import Test.Tasty.QuickCheck (testProperty)
+import Test.Tasty.QuickCheck
 
 tests :: TestTree
 tests =
