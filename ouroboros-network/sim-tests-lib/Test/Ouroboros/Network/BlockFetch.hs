@@ -46,6 +46,7 @@ import Ouroboros.Network.Block
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.BlockFetch.ClientRegistry
 import Ouroboros.Network.BlockFetch.ClientState
+import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
 import Ouroboros.Network.BlockFetch.DeltaQ
 import Ouroboros.Network.BlockFetch.Examples
 import Ouroboros.Network.Driver (TraceSendRecv)
@@ -54,8 +55,7 @@ import Ouroboros.Network.Mock.ConcreteBlock
 import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch)
 
-import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
-import Ouroboros.Network.Testing.Utils
+import Test.Ouroboros.Network.Utils
 
 
 --

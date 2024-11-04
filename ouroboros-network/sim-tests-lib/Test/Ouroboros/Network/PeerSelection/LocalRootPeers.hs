@@ -22,9 +22,9 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
            LocalRootConfig (..), LocalRootPeers (..), WarmValency (..))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 
-import Ouroboros.Network.Testing.Utils (ShrinkCarefully, prop_shrink_nonequal,
-           prop_shrink_valid, renderRanges)
 import Test.Ouroboros.Network.PeerSelection.Instances
+import Test.Ouroboros.Network.Utils (ShrinkCarefully, prop_shrink_nonequal,
+           prop_shrink_valid, renderRanges)
 
 
 import Test.QuickCheck

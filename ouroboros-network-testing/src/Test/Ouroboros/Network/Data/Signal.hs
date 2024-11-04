@@ -1,9 +1,9 @@
 {-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE DeriveFoldable      #-}
+{-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.Testing.Data.Signal
+module Test.Ouroboros.Network.Data.Signal
   ( -- * Events
     Events
   , eventsFromList
@@ -47,23 +47,23 @@ module Ouroboros.Network.Testing.Data.Signal
   , keyedUntil
   ) where
 
-import           Prelude hiding (scanl, until)
+import Prelude hiding (scanl, until)
 
-import           Data.Bool (bool)
-import qualified Data.Foldable as Deque (toList)
-import           Data.List (groupBy)
-import           Data.Maybe (maybeToList)
-import           Data.OrdPSQ (OrdPSQ)
-import qualified Data.OrdPSQ as PSQ
-import           Data.Set (Set)
-import qualified Data.Set as Set
-import           Deque.Lazy (Deque)
-import qualified Deque.Lazy as Deque
+import Data.Bool (bool)
+import Data.Foldable qualified as Deque (toList)
+import Data.List (groupBy)
+import Data.Maybe (maybeToList)
+import Data.OrdPSQ (OrdPSQ)
+import Data.OrdPSQ qualified as PSQ
+import Data.Set (Set)
+import Data.Set qualified as Set
+import Deque.Lazy (Deque)
+import Deque.Lazy qualified as Deque
 
-import           Control.Monad.Class.MonadTime.SI (DiffTime, Time (..), addTime)
+import Control.Monad.Class.MonadTime.SI (DiffTime, Time (..), addTime)
 
 
-import           Test.QuickCheck
+import Test.QuickCheck
 
 --
 -- Time stamps and events

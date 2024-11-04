@@ -84,7 +84,7 @@ import Ouroboros.Network.ConnectionManager.Types (AddressType (..))
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket
 
-import Ouroboros.Network.Testing.Data.Script (Script (..), stepScriptSTM)
+import Test.Ouroboros.Network.Data.Script (Script (..), stepScriptSTM)
 
 data Connection m addr = Connection
     { -- | Attenuated channels of a connection.

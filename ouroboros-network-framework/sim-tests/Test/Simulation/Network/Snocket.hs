@@ -59,7 +59,7 @@ import Network.TypedProtocol.ReqResp.Client
 import Network.TypedProtocol.ReqResp.Server
 import Network.TypedProtocol.ReqResp.Type
 
-import Ouroboros.Network.Testing.Data.AbsBearerInfo
+import Test.Ouroboros.Network.Data.AbsBearerInfo
 import Test.Ouroboros.Network.Orphans ()
 
 import Test.QuickCheck hiding (Result (..))
