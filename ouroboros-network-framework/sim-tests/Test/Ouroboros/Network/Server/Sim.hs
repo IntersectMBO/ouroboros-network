@@ -19,7 +19,7 @@
 -- for 'debugTracer'
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
-module Test.Ouroboros.Network.Server2.Sim (tests) where
+module Test.Ouroboros.Network.Server.Sim (tests) where
 
 import Control.Applicative (Alternative ((<|>)))
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
@@ -86,9 +86,9 @@ import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.Protocol.Handshake.Codec (noTimeLimitsHandshake,
            timeLimitsHandshake)
 import Ouroboros.Network.Protocol.Handshake.Unversioned
+import Ouroboros.Network.Server (RemoteTransitionTrace)
+import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
-import Ouroboros.Network.Server2 (RemoteTransitionTrace)
-import Ouroboros.Network.Server2 qualified as Server
 import Ouroboros.Network.Snocket (Snocket, TestAddress (..))
 import Ouroboros.Network.Snocket qualified as Snocket
 
@@ -137,7 +137,7 @@ tests =
     , testProperty "matured peers"          prop_inbound_governor_maturedPeers
     , testProperty "timeouts enforced"      prop_timeouts_enforced
     ]
-  , testGroup "Server2"
+  , testGroup "Server"
     [ testProperty "unidirectional Sim"     prop_unidirectional_Sim
     , testProperty "bidirectional Sim"      prop_bidirectional_Sim
     , testProperty "never above hardlimit"  prop_never_above_hardlimit
