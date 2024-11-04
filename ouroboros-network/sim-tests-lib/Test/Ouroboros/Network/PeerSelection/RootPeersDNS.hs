@@ -66,7 +66,8 @@ import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
 import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
            WarmValency (..))
-import Ouroboros.Network.Testing.Data.Script (Script (Script), initScript',
+
+import Test.Ouroboros.Network.Data.Script (Script (Script), initScript',
            scriptHead, singletonScript, stepScript')
 import Test.Ouroboros.Network.PeerSelection.Instances ()
 import Test.QuickCheck

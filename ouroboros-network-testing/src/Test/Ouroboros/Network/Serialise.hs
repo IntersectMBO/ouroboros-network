@@ -1,5 +1,5 @@
 {-# LANGUAGE CPP #-}
-module Ouroboros.Network.Testing.Serialise
+module Test.Ouroboros.Network.Serialise
   ( -- * Class
     Serialise (..)
   , prop_serialise
@@ -7,10 +7,9 @@ module Ouroboros.Network.Testing.Serialise
   , prop_serialise_roundtrip
   ) where
 
-import           Codec.CBOR.FlatTerm
-import           Codec.Serialise
-import           Test.QuickCheck (Property, counterexample, property, (.&&.),
-                     (===))
+import Codec.CBOR.FlatTerm
+import Codec.Serialise
+import Test.QuickCheck (Property, counterexample, property, (.&&.), (===))
 
 -- Class properties
 --

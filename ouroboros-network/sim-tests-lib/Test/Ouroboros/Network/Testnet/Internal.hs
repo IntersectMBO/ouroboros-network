@@ -98,17 +98,16 @@ import Ouroboros.Network.Protocol.Handshake.Version (Accept (Accept))
 import Ouroboros.Network.Protocol.KeepAlive.Codec (byteLimitsKeepAlive,
            timeLimitsKeepAlive)
 import Ouroboros.Network.Protocol.Limits (shortWait, smallByteLimit)
-import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Server qualified as Server
+import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (Snocket, TestAddress (..))
 
 import Ouroboros.Network.Block (BlockNo)
 import Ouroboros.Network.Mock.ConcreteBlock (Block (..), BlockHeader (..))
-import Ouroboros.Network.Testing.Data.Script
-import Ouroboros.Network.Testing.Utils
 import Simulation.Network.Snocket (BearerInfo (..), FD, SnocketTrace,
            WithAddr (..), makeFDBearer, withSnocket)
 
+import Test.Ouroboros.Network.Data.Script
 import Test.Ouroboros.Network.PeerSelection.Instances qualified as PeerSelection
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay (..),
            DNSTimeout (..))
@@ -118,6 +117,7 @@ import Test.Ouroboros.Network.Testnet.Node qualified as Node
 import Test.Ouroboros.Network.Testnet.Node.Kernel (BlockGeneratorArgs, NtCAddr,
            NtCVersion, NtCVersionData, NtNAddr, NtNAddr_ (IPAddr), NtNVersion,
            NtNVersionData, ntnAddrToRelayAccessPoint, randomBlockGenerationArgs)
+import Test.Ouroboros.Network.Utils
 
 import Data.Bool (bool)
 import Data.Function (on)

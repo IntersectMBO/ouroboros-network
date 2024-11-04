@@ -58,17 +58,17 @@ import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSelection.Types
 import Ouroboros.Network.Server qualified as Server
-import Ouroboros.Network.Testing.Data.AbsBearerInfo
-import Ouroboros.Network.Testing.Data.Script
-import Ouroboros.Network.Testing.Data.Signal
-import Ouroboros.Network.Testing.Data.Signal qualified as Signal
-import Ouroboros.Network.Testing.Utils hiding (SmallDelay, debugTracer)
 
 import Simulation.Network.Snocket (BearerInfo (..))
 
+import Test.Ouroboros.Network.Data.AbsBearerInfo
+import Test.Ouroboros.Network.Data.Script
+import Test.Ouroboros.Network.Data.Signal
+import Test.Ouroboros.Network.Data.Signal qualified as Signal
 import Test.Ouroboros.Network.Testnet.Internal
 import Test.Ouroboros.Network.Testnet.Node (config_REPROMOTE_DELAY)
 import Test.Ouroboros.Network.Testnet.Node.Kernel
+import Test.Ouroboros.Network.Utils hiding (SmallDelay, debugTracer)
 import Test.QuickCheck
 import Test.QuickCheck.Monoids
 import Test.Tasty

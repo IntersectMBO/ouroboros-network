@@ -54,7 +54,7 @@ import Ouroboros.Network.Mock.ConcreteBlock
 import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch)
 
-import Ouroboros.Network.Testing.Utils
+import Test.Ouroboros.Network.Utils
 
 
 --

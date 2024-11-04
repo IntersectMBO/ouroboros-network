@@ -44,7 +44,8 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
            (recomputeRelativeStake)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS
-import Ouroboros.Network.Testing.Data.Script
+
+import Test.Ouroboros.Network.Data.Script
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS
 import Test.QuickCheck
 import Test.Tasty

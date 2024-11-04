@@ -83,29 +83,28 @@ import Ouroboros.Network.MuxMode
 import Ouroboros.Network.Protocol.Handshake.Codec (noTimeLimitsHandshake,
            timeLimitsHandshake)
 import Ouroboros.Network.Protocol.Handshake.Unversioned
-import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Server (RemoteTransitionTrace)
 import Ouroboros.Network.Server qualified as Server
+import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (Snocket, TestAddress (..))
 import Ouroboros.Network.Snocket qualified as Snocket
 
 import Simulation.Network.Snocket
 
-import Ouroboros.Network.Testing.Data.AbsBearerInfo hiding (delay)
-import Ouroboros.Network.Testing.Utils (WithName (..), WithTime (..),
-           genDelayWithPrecision, nightlyTest, sayTracer, tracerWithTime)
-
-import Test.Ouroboros.Network.Orphans ()
 import Test.Ouroboros.Network.ConnectionManager.Experiments
 import Test.Ouroboros.Network.ConnectionManager.Timeouts
 import Test.Ouroboros.Network.ConnectionManager.Utils
            (abstractStateIsFinalTransition, allValidTransitionsNames,
            validTransitionMap, verifyAbstractTransition,
            verifyAbstractTransitionOrder)
+import Test.Ouroboros.Network.Data.AbsBearerInfo hiding (delay)
 import Test.Ouroboros.Network.InboundGovernor.Utils
            (allValidRemoteTransitionsNames, remoteStrIsFinalTransition,
            validRemoteTransitionMap, verifyRemoteTransition,
            verifyRemoteTransitionOrder)
+import Test.Ouroboros.Network.Orphans ()
+import Test.Ouroboros.Network.Utils (WithName (..), WithTime (..),
+           genDelayWithPrecision, nightlyTest, sayTracer, tracerWithTime)
 import Test.Simulation.Network.Snocket hiding (tests)
 
 tests :: TestTree

@@ -84,7 +84,6 @@ import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (MakeBearer, Snocket, TestAddress (..),
            invalidFileDescriptor)
 
-import Ouroboros.Network.Testing.Data.Script (Script (..), stepScriptSTM')
 
 import Simulation.Network.Snocket (AddressType (..), FD)
 
@@ -101,6 +100,8 @@ import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint,
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSLookupType)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
            WarmValency)
+
+import Test.Ouroboros.Network.Data.Script (Script (..), stepScriptSTM')
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay,
            DNSTimeout, mockDNSActions)
 import Test.Ouroboros.Network.Testnet.Node.ChainDB (addBlock, getBlockPointSet)

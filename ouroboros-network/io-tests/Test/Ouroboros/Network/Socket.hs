@@ -50,7 +50,7 @@ import Ouroboros.Network.Protocol.Handshake.Version (acceptableVersion,
            queryVersion)
 import Ouroboros.Network.Util.ShowProxy
 
-import Ouroboros.Network.Testing.Serialise
+import Test.Ouroboros.Network.Serialise
 import Test.Ouroboros.Network.Server qualified as Test.Server
 
 import Test.ChainGenerators (TestBlockChainAndUpdates (..))

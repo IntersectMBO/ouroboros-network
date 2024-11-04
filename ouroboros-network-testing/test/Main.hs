@@ -1,8 +1,8 @@
 module Main (main) where
 
-import           Test.Tasty
+import Test.Tasty
 
-import qualified Test.Ouroboros.Network.Testing.Data.AbsBearerInfo as AbsBearerInfo
+import Test.Ouroboros.Network.Data.AbsBearerInfo.Test qualified as AbsBearerInfo
 
 main :: IO ()
 main = defaultMain tests

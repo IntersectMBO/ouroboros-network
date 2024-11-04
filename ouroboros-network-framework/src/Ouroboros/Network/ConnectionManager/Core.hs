@@ -70,7 +70,8 @@ import Ouroboros.Network.InboundGovernor.Event (NewConnectionInfo (..))
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket
-import Ouroboros.Network.Testing.Utils (WithName (..))
+
+import Test.Ouroboros.Network.Utils (WithName (..))
 
 
 -- | Arguments for a 'ConnectionManager' which are independent of 'MuxMode'.

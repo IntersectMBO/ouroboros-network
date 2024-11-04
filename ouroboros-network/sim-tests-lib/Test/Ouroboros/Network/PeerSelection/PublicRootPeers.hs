@@ -13,9 +13,9 @@ import Data.Set qualified as Set
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 
-import Ouroboros.Network.Testing.Utils (ShrinkCarefully, prop_shrink_nonequal,
-           prop_shrink_valid)
 import Test.Ouroboros.Network.PeerSelection.Instances
+import Test.Ouroboros.Network.Utils (ShrinkCarefully, prop_shrink_nonequal,
+           prop_shrink_valid)
 
 
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
