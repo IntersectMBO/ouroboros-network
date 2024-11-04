@@ -77,7 +77,7 @@ tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.ConnectionManager"
   [ -- generators, shrinkers properties
-    -- TODO: replace these tests with 'Test.Ouroboros.Network.Server2' simulation.
+    -- TODO: replace these tests with 'Test.Ouroboros.Network.Server' simulation.
     testProperty "overwritten"                    unit_overwritten
   , testProperty "timeoutExpired"                 unit_timeoutExpired
   ]

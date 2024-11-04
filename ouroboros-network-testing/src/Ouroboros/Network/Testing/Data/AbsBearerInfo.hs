@@ -133,14 +133,14 @@ instance Arbitrary AbsIOError where
       , connectionAbortedError
       ]
     where
-      -- `ECONNABORTED` error which appears in `Ouroboros.Network.Server2`
+      -- `ECONNABORTED` error which appears in `Ouroboros.Network.Server`
       connectionAbortedError :: IOError
       connectionAbortedError = IOError
         { ioe_handle      = Nothing
         , ioe_type        = OtherError
         , ioe_location    = "Ouroboros.Network.Snocket.Sim.accept"
           -- Note: this matches the `iseCONNABORTED` on Windows, see
-          -- 'Ouroboros.Network.Server2`
+          -- 'Ouroboros.Network.Server`
         , ioe_description = "Software caused connection abort (WSAECONNABORTED)"
         , ioe_errno       = Just (case eCONNABORTED of Errno errno -> errno)
         , ioe_filename    = Nothing
