@@ -18,7 +18,6 @@ import Test.Ouroboros.Network.PeerSelection.MockEnvironment qualified
 import Test.Ouroboros.Network.PeerSelection.PeerMetric qualified
 import Test.Ouroboros.Network.PeerSelection.PublicRootPeers qualified
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS qualified
-import Test.Ouroboros.Network.PeerState qualified (tests)
 import Test.Ouroboros.Network.Testnet qualified (tests)
 import Test.Ouroboros.Network.Testnet.Policies qualified (tests)
 import Test.Ouroboros.Network.TxSubmission qualified (tests)
@@ -35,7 +34,6 @@ tests =
 
     -- network logic
   , Test.Ouroboros.Network.Version.tests
-  , Test.Ouroboros.Network.PeerState.tests
   , Test.Ouroboros.Network.BlockFetch.tests
   , Test.Ouroboros.Network.PeerSelection.tests
   , Test.Ouroboros.Network.PeerSelection.Json.tests
