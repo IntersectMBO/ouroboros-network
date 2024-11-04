@@ -172,7 +172,7 @@ library testlib
     Test.ChainProducerState
     Test.Data.CDDL
     Test.Data.PipeliningDepth
-    Test.Ouroboros.Network.Testing.Utils
+    Test.Ouroboros.Network.Protocol.Utils
 
   build-depends:
     QuickCheck,

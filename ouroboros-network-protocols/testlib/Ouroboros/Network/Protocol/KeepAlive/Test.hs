@@ -34,7 +34,7 @@ import Ouroboros.Network.Protocol.KeepAlive.Examples
 import Ouroboros.Network.Protocol.KeepAlive.Server
 import Ouroboros.Network.Protocol.KeepAlive.Type
 
-import Test.Ouroboros.Network.Testing.Utils (prop_codec_valid_cbor_encoding,
+import Test.Ouroboros.Network.Protocol.Utils (prop_codec_valid_cbor_encoding,
            splits2, splits3)
 
 

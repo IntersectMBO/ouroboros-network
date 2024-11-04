@@ -45,7 +45,7 @@ import Ouroboros.Network.Protocol.BlockFetch.Type
 import Test.Data.PipeliningDepth (PipeliningDepth (..))
 
 import Test.ChainGenerators (TestChainAndPoints (..))
-import Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
+import Test.Ouroboros.Network.Protocol.Utils (prop_codec_cborM,
            prop_codec_valid_cbor_encoding, splits2, splits3)
 
 import Test.QuickCheck
