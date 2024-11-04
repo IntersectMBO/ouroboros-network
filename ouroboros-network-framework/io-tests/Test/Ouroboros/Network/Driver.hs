@@ -60,7 +60,7 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim
 import Control.Tracer
 
-import Ouroboros.Network.Test.Orphans ()
+import Test.Ouroboros.Network.Orphans ()
 
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)

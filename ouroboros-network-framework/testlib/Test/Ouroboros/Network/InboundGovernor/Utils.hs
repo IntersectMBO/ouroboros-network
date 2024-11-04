@@ -2,7 +2,8 @@
 {-# LANGUAGE NamedFieldPuns  #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns    #-}
-module Ouroboros.Network.InboundGovernor.Test.Utils where
+
+module Test.Ouroboros.Network.InboundGovernor.Utils where
 
 import Test.QuickCheck
 import Test.QuickCheck.Monoids

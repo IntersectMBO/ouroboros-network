@@ -20,7 +20,7 @@
 -- | This module contains experiments which can be executed either in `IO` or
 -- in `IOSim`.
 --
-module Ouroboros.Network.ConnectionManager.Test.Experiments
+module Test.Ouroboros.Network.ConnectionManager.Experiments
   ( ClientAndServerData (..)
   , unidirectionalExperiment
   , bidirectionalExperiment
@@ -95,12 +95,11 @@ import Ouroboros.Network.Snocket (Snocket)
 import Ouroboros.Network.Snocket qualified as Snocket
 import Ouroboros.Network.Testing.Utils (WithName (..))
 
-import Ouroboros.Network.Test.Orphans ()
--- import           Test.Simulation.Network.Snocket hiding (tests)
+import Test.Ouroboros.Network.ConnectionManager.Timeouts
+import Test.Ouroboros.Network.Orphans ()
 
 import Ouroboros.Network.ConnectionManager.InformationChannel
            (newInformationChannel)
-import Ouroboros.Network.ConnectionManager.Test.Timeouts
 
 
 --
