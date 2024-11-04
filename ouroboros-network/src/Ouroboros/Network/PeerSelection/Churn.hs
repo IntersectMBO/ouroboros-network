@@ -29,7 +29,10 @@ import System.Random
 
 import Cardano.Node.ArgumentsExtra (ConsensusModePeerTargets (..))
 import Cardano.Node.ConsensusMode (ConsensusMode (..))
+import Cardano.Node.LedgerPeerConsensusInterface
+           (CardanoLedgerPeersConsensusInterface (..))
 import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers (..))
+import Cardano.Node.PeerSelection.PeerChurnArgs (CardanoPeerChurnArgs (..))
 import Cardano.Node.PeerSelection.Types (ChurnMode (..))
 import Cardano.Node.Types (LedgerStateJudgement (..))
 import Control.Applicative (Alternative)
@@ -82,8 +85,8 @@ data ChurnCounters = ChurnCounter ChurnAction Int
 
 -- | Record of arguments for peer churn governor
 --
-data PeerChurnArgs m peeraddr = PeerChurnArgs {
-  pcaPeerSelectionTracer :: Tracer m (TracePeerSelection peeraddr),
+data PeerChurnArgs m extraArgs extraDebugState extraFlags extraPeers extraAPI peeraddr = PeerChurnArgs {
+  pcaPeerSelectionTracer :: Tracer m (TracePeerSelection extraDebugState extraFlags extraPeers peeraddr),
   pcaChurnTracer         :: Tracer m ChurnCounters,
   pcaDeadlineInterval    :: DiffTime,
   pcaBulkInterval        :: DiffTime,
@@ -91,16 +94,12 @@ data PeerChurnArgs m peeraddr = PeerChurnArgs {
   -- ^ the timeout for outbound governor to find new (thus
   -- cold) peers through peer sharing mechanism.
   pcaMetrics             :: PeerMetrics m peeraddr,
-  pcaModeVar             :: StrictTVar m ChurnMode,
   pcaRng                 :: StdGen,
-  pcaReadFetchMode       :: STM m FetchMode,
-  peerTargets            :: ConsensusModePeerTargets,
   pcaPeerSelectionVar    :: StrictTVar m PeerSelectionTargets,
   pcaReadCounters        :: STM m PeerSelectionCounters,
-  pcaReadUseBootstrap    :: STM m UseBootstrapPeers,
-  pcaConsensusMode       :: ConsensusMode,
-  getLedgerStateCtx      :: LedgerPeersConsensusInterface m,
-  getLocalRootHotTarget  :: STM m HotValency }
+  getLedgerStateCtx      :: LedgerPeersConsensusInterface extraAPI m,
+  getLocalRootHotTarget  :: STM m HotValency,
+  getExtraArgs           :: extraArgs }
 
 -- | Churn governor.
 --
@@ -110,13 +109,13 @@ data PeerChurnArgs m peeraddr = PeerChurnArgs {
 -- On startup the churn governor gives a head start to local root peers over
 -- root peers.
 --
-peerChurnGovernor :: forall m peeraddr.
+peerChurnGovernor :: forall m extraDebugState extraFlags extraPeers peeraddr.
                      ( MonadDelay m
                      , Alternative (STM m)
                      , MonadTimer m
                      , MonadCatch m
                      )
-                  => PeerChurnArgs m peeraddr
+                  => PeerChurnArgs m (CardanoPeerChurnArgs m) extraDebugState extraFlags extraPeers (CardanoLedgerPeersConsensusInterface m) peeraddr
                   -> m Void
 peerChurnGovernor PeerChurnArgs {
                     pcaPeerSelectionTracer = tracer,
@@ -124,17 +123,23 @@ peerChurnGovernor PeerChurnArgs {
                     pcaDeadlineInterval    = deadlineChurnInterval,
                     pcaBulkInterval        = bulkChurnInterval,
                     pcaPeerRequestTimeout  = requestPeersTimeout,
-                    pcaModeVar             = churnModeVar,
                     pcaRng                 = inRng,
-                    pcaReadFetchMode       = getFetchMode,
-                    peerTargets,
                     pcaPeerSelectionVar    = peerSelectionVar,
                     pcaReadCounters        = readCounters,
-                    pcaReadUseBootstrap    = getUseBootstrapPeers,
-                    pcaConsensusMode       = consensusMode,
                     getLedgerStateCtx = LedgerPeersConsensusInterface {
-                        lpGetLedgerStateJudgement },
-                    getLocalRootHotTarget } = do
+                      lpExtraAPI = CardanoLedgerPeersConsensusInterface {
+                        clpciGetLedgerStateJudgement
+                      }
+                    },
+                    getLocalRootHotTarget,
+                    getExtraArgs = CardanoPeerChurnArgs {
+                      cpcaModeVar             = churnModeVar,
+                      cpcaReadFetchMode       = getFetchMode,
+                      cpcaPeerTargets,
+                      cpcaReadUseBootstrap    = getUseBootstrapPeers,
+                      cpcaConsensusMode       = consensusMode
+                    }
+                  } = do
   -- Wait a while so that not only the closest peers have had the time
   -- to become warm.
   startTs0 <- getMonotonicTime
@@ -144,9 +149,9 @@ peerChurnGovernor PeerChurnArgs {
   threadDelay 3
   atomically $ do
     (churnMode, ledgerStateJudgement, useBootstrapPeers, ltt)
-      <- (,,,) <$> updateChurnMode <*> lpGetLedgerStateJudgement <*> getUseBootstrapPeers <*> getLocalRootHotTarget
+      <- (,,,) <$> updateChurnMode <*> clpciGetLedgerStateJudgement <*> getUseBootstrapPeers <*> getLocalRootHotTarget
     let regime  = pickChurnRegime consensusMode churnMode useBootstrapPeers
-        targets = getPeerSelectionTargets consensusMode ledgerStateJudgement peerTargets
+        targets = getPeerSelectionTargets consensusMode ledgerStateJudgement cpcaPeerTargets
 
     modifyTVar peerSelectionVar ( increaseActivePeers regime ltt targets
                                 . increaseEstablishedPeers regime ltt targets)
@@ -185,9 +190,9 @@ peerChurnGovernor PeerChurnArgs {
       (c, targets) <- atomically $ do
         churnMode <- updateChurnMode
         ltt       <- getLocalRootHotTarget
-        lsj       <- lpGetLedgerStateJudgement
+        lsj       <- clpciGetLedgerStateJudgement
         regime    <- pickChurnRegime consensusMode churnMode <$> getUseBootstrapPeers
-        let targets = getPeerSelectionTargets consensusMode lsj peerTargets
+        let targets = getPeerSelectionTargets consensusMode lsj cpcaPeerTargets
 
         (,) <$> (getCounter <$> readCounters)
             <*> stateTVar peerSelectionVar ((\a -> (a, a)) . modifyTargets regime ltt targets)

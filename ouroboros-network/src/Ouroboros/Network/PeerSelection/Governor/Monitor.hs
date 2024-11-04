@@ -36,9 +36,16 @@ import System.Random (randomR)
 
 import Cardano.Node.ArgumentsExtra (ConsensusModePeerTargets (..))
 import Cardano.Node.ConsensusMode
+import Cardano.Node.LedgerPeerConsensusInterface
+           (CardanoLedgerPeersConsensusInterface (..))
 import Cardano.Node.PeerSelection.Bootstrap (isBootstrapPeersEnabled,
            isNodeAbleToMakeProgress, requiresBootstrapPeers)
+import Cardano.Node.PeerSelection.Governor.PeerSelectionActions
+           (CardanoPeerSelectionActions (..))
+import Cardano.Node.PeerSelection.Governor.PeerSelectionState
+           (CardanoPeerSelectionState (..))
 import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable (..))
+import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
 import Cardano.Node.Types (LedgerStateJudgement (..))
 import Ouroboros.Network.ExitPolicy (RepromoteDelay)
 import Ouroboros.Network.ExitPolicy qualified as ExitPolicy
@@ -74,21 +81,27 @@ governor_BOOTSTRAP_PEERS_TIMEOUT = 15 * 60
 -- to changes in ledger state judgement monitoring actions to change the static
 -- set of target peers.
 targetPeers :: (MonadSTM m, Ord peeraddr)
-            => PeerSelectionActions peeraddr peerconn m
-            -> PeerSelectionState peeraddr peerconn
-            -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
+            => PeerSelectionActions (CardanoPeerSelectionActions m) extraPeers extraFlags extraAPI peeraddr peerconn m
+            -> PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn
+            -> Guarded (STM m) (TimedDecision m CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
 targetPeers PeerSelectionActions{ readPeerSelectionTargets,
-                                  peerTargets = ConsensusModePeerTargets {
-                                    deadlineTargets,
-                                    syncTargets } }
+                                  extraActions = CardanoPeerSelectionActions {
+                                    cpsaPeerTargets = ConsensusModePeerTargets {
+                                      deadlineTargets,
+                                      syncTargets
+                                    }
+                                  }
+                                }
             st@PeerSelectionState{
               publicRootPeers,
               localRootPeers,
               targets,
-              bootstrapPeersFlag,
-              hasOnlyBootstrapPeers,
-              ledgerStateJudgement,
-              consensusMode
+              extraState = CardanoPeerSelectionState {
+                cpstBootstrapPeersFlag,
+                cpstHasOnlyBootstrapPeers,
+                cpstLedgerStateJudgement,
+                cpstConsensusMode
+              }
             } =
     Guarded Nothing $ do
       churnTargets <- readPeerSelectionTargets
@@ -102,7 +115,7 @@ targetPeers PeerSelectionActions{ readPeerSelectionTargets,
       -- the TVar, and instead we set the appropriate targets
       -- for the mode we are in.
       let targets' =
-            case (ledgerStateJudgement, consensusMode) of
+            case (cpstLedgerStateJudgement, cpstConsensusMode) of
               (YoungEnough, GenesisMode)
                 | churnTargets == syncTargets ->
                   deadlineTargets
@@ -112,15 +125,15 @@ targetPeers PeerSelectionActions{ readPeerSelectionTargets,
               _otherwise -> churnTargets
 
       -- nb. first check is redundant in Genesis mode
-      check (   isNodeAbleToMakeProgress bootstrapPeersFlag
-                                         ledgerStateJudgement
-                                         hasOnlyBootstrapPeers
+      check (   isNodeAbleToMakeProgress cpstBootstrapPeersFlag
+                                         cpstLedgerStateJudgement
+                                         cpstHasOnlyBootstrapPeers
              && targets /= targets'
              && sanePeerSelectionTargets targets')
       -- We simply ignore target updates that are not "sane".
 
-      let usingBootstrapPeers = requiresBootstrapPeers bootstrapPeersFlag
-                                                       ledgerStateJudgement
+      let usingBootstrapPeers = requiresBootstrapPeers cpstBootstrapPeersFlag
+                                                       cpstLedgerStateJudgement
           -- We have to enforce the invariant that the number of root peers is
           -- not more than the target number of known peers. It's unlikely in
           -- practice so it's ok to resolve it arbitrarily using clampToLimit.
@@ -156,9 +169,9 @@ targetPeers PeerSelectionActions{ readPeerSelectionTargets,
 -- | Await for the first result from 'JobPool' and return its 'Decision'.
 --
 jobs :: MonadSTM m
-     => JobPool () m (Completion m peeraddr peerconn)
-     -> PeerSelectionState peeraddr peerconn
-     -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
+     => JobPool () m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
+     -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+     -> Guarded (STM m) (TimedDecision m extraState extraFlags extraPeers peeraddr peerconn)
 jobs jobPool st =
     -- This case is simple because the job pool returns a 'Completion' which is
     -- just a function from the current state to a new 'Decision'.
@@ -169,11 +182,11 @@ jobs jobPool st =
 
 -- | Monitor connections.
 --
-connections :: forall m peeraddr peerconn.
+connections :: forall m extraActions extraState extraFlags extraPeers extraAPI peeraddr peerconn.
                (MonadSTM m, Ord peeraddr)
-            => PeerSelectionActions peeraddr peerconn m
-            -> PeerSelectionState peeraddr peerconn
-            -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
+            => PeerSelectionActions extraActions extraPeers extraFlags extraAPI peeraddr peerconn m
+            -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+            -> Guarded (STM m) (TimedDecision m extraState extraFlags extraPeers peeraddr peerconn)
 connections PeerSelectionActions{
               peerStateActions = PeerStateActions {monitorPeerConnection}
             }
@@ -372,11 +385,11 @@ connections PeerSelectionActions{
 -- peers to the following set: A*, B, C*, D*, E. Notice that B is no longer
 -- trusted, however we will keep a connection to it until the outbound
 -- governor notices it and disconnects from it.
-localRoots :: forall peeraddr peerconn m.
+localRoots :: forall extraActions extraAPI peeraddr peerconn m.
               (MonadSTM m, Ord peeraddr)
-           => PeerSelectionActions peeraddr peerconn m
-           -> PeerSelectionState peeraddr peerconn
-           -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
+            => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) PeerTrustable extraAPI peeraddr peerconn m
+            -> PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn
+           -> Guarded (STM m) (TimedDecision m CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
 localRoots actions@PeerSelectionActions{ readLocalRootPeers
                                        }
            st@PeerSelectionState{
@@ -388,11 +401,15 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
              inProgressDemoteHot,
              inProgressDemoteToCold,
              targets = PeerSelectionTargets{targetNumberOfKnownPeers},
-             ledgerStateJudgement,
-             bootstrapPeersFlag,
-             hasOnlyBootstrapPeers
+             extraState = cpst@CardanoPeerSelectionState {
+               cpstBootstrapPeersFlag,
+               cpstHasOnlyBootstrapPeers,
+               cpstLedgerStateJudgement
+             }
            }
-  | isNodeAbleToMakeProgress bootstrapPeersFlag ledgerStateJudgement hasOnlyBootstrapPeers =
+  | isNodeAbleToMakeProgress cpstBootstrapPeersFlag
+                             cpstLedgerStateJudgement
+                             cpstHasOnlyBootstrapPeers =
     Guarded Nothing $ do
       -- We have to enforce the invariant that the number of root peers is
       -- not more than the target number of known peers. It's unlikely in
@@ -401,7 +418,7 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
       -- Here we need to make sure that we prioritise the trustable peers
       -- by clamping to trustable first.
       localRootPeersRaw <- readLocalRootPeers
-      let inSensitiveState = requiresBootstrapPeers bootstrapPeersFlag ledgerStateJudgement
+      let inSensitiveState = requiresBootstrapPeers cpstBootstrapPeersFlag cpstLedgerStateJudgement
           localRootPeers' = LocalRootPeers.clampToLimit
                               targetNumberOfKnownPeers
                           . (if inSensitiveState
@@ -456,10 +473,10 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
           -- doesn't really matter.
           --
           ledgerStateJudgement' =
-            if    requiresBootstrapPeers bootstrapPeersFlag ledgerStateJudgement
+            if    requiresBootstrapPeers cpstBootstrapPeersFlag cpstLedgerStateJudgement
                && not hasOnlyBootstrapPeers'
             then YoungEnough
-            else ledgerStateJudgement
+            else cpstLedgerStateJudgement
 
           -- If we are removing local roots and we have active connections to
           -- them then things are a little more complicated. We would typically
@@ -489,7 +506,7 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
         $ Decision {
             decisionTrace = TraceLocalRootPeersChanged localRootPeers localRootPeers'
                           : [ TraceLedgerStateJudgementChanged YoungEnough
-                            | ledgerStateJudgement /= ledgerStateJudgement'
+                            | cpstLedgerStateJudgement /= ledgerStateJudgement'
                             ],
             decisionState = st {
                               localRootPeers      = localRootPeers',
@@ -497,8 +514,10 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
                               knownPeers          = knownPeers',
                               inProgressDemoteHot = inProgressDemoteHot
                                                  <> selectedToDemote,
-                              hasOnlyBootstrapPeers = hasOnlyBootstrapPeers',
-                              ledgerStateJudgement  = ledgerStateJudgement'
+                              extraState = cpst {
+                                cpstHasOnlyBootstrapPeers = hasOnlyBootstrapPeers',
+                                cpstLedgerStateJudgement  = ledgerStateJudgement'
+                              }
                             },
             decisionJobs  = [ jobDemoteActivePeer actions peeraddr peerconn
                           | (peeraddr, peerconn) <- Map.assocs selectedToDemote' ]
@@ -541,23 +560,25 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
 monitorBootstrapPeersFlag :: ( MonadSTM m
                              , Ord peeraddr
                              )
-                          => PeerSelectionActions peeraddr peerconn m
-                          -> PeerSelectionState peeraddr peerconn
-                          -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-monitorBootstrapPeersFlag PeerSelectionActions { readUseBootstrapPeers }
-                          st@PeerSelectionState { bootstrapPeersFlag
-                                                , knownPeers
+                          => PeerSelectionActions (CardanoPeerSelectionActions m) (CardanoPublicRootPeers peeraddr) extraFlags extraAPI peeraddr peerconn m
+                          -> PeerSelectionState CardanoPeerSelectionState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn
+                          -> Guarded (STM m) (TimedDecision m CardanoPeerSelectionState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
+monitorBootstrapPeersFlag PeerSelectionActions { extraActions = CardanoPeerSelectionActions { cpsaReadUseBootstrapPeers } }
+                          st@PeerSelectionState { knownPeers
                                                 , establishedPeers
                                                 , publicRootPeers
                                                 , inProgressPromoteCold
                                                 , inProgressPromoteWarm
-                                                , consensusMode
+                                                , extraState = cpst@CardanoPeerSelectionState {
+                                                    cpstBootstrapPeersFlag,
+                                                    cpstConsensusMode
+                                                  }
                                                 }
-  | GenesisMode <- consensusMode = GuardedSkip Nothing
+  | GenesisMode <- cpstConsensusMode = GuardedSkip Nothing
   | otherwise =
   Guarded Nothing $ do
-    ubp <- readUseBootstrapPeers
-    check (ubp /= bootstrapPeersFlag)
+    ubp <- cpsaReadUseBootstrapPeers
+    check (ubp /= cpstBootstrapPeersFlag)
     let nonEstablishedBootstrapPeers =
           PublicRootPeers.getBootstrapPeers publicRootPeers
           Set.\\
@@ -569,11 +590,7 @@ monitorBootstrapPeersFlag PeerSelectionActions { readUseBootstrapPeers }
         decisionTrace = [TraceUseBootstrapPeersChanged ubp],
         decisionJobs  = [],
         decisionState =
-          st { bootstrapPeersFlag    = ubp
-             , ledgerStateJudgement  = YoungEnough
-             , hasOnlyBootstrapPeers = False
-             , bootstrapPeersTimeout = Nothing
-             , knownPeers =
+          st { knownPeers =
                  KnownPeers.delete
                    nonEstablishedBootstrapPeers
                    knownPeers
@@ -581,6 +598,12 @@ monitorBootstrapPeersFlag PeerSelectionActions { readUseBootstrapPeers }
                  PublicRootPeers.difference
                    publicRootPeers
                    nonEstablishedBootstrapPeers
+             , extraState = cpst {
+                 cpstBootstrapPeersFlag    = ubp
+               , cpstLedgerStateJudgement  = YoungEnough
+               , cpstHasOnlyBootstrapPeers = False
+               , cpstBootstrapPeersTimeout = Nothing
+               }
              }
       }
 
@@ -603,24 +626,32 @@ monitorBootstrapPeersFlag PeerSelectionActions { readUseBootstrapPeers }
 monitorLedgerStateJudgement :: ( MonadSTM m
                                , Ord peeraddr
                                )
-                            => PeerSelectionActions peeraddr peerconn m
-                            -> PeerSelectionState peeraddr peerconn
-                            -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-monitorLedgerStateJudgement PeerSelectionActions{ getLedgerStateCtx = ledgerCtx@LedgerPeersConsensusInterface {
-                                                    lpGetLedgerStateJudgement = readLedgerStateJudgement } }
-                            st@PeerSelectionState{ bootstrapPeersFlag,
-                                                   publicRootPeers,
+                            => PeerSelectionActions (CardanoPeerSelectionActions m) (CardanoPublicRootPeers peeraddr) extraFlags (CardanoLedgerPeersConsensusInterface m) peeraddr peerconn m
+                            -> PeerSelectionState CardanoPeerSelectionState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn
+                            -> Guarded (STM m) (TimedDecision m CardanoPeerSelectionState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
+monitorLedgerStateJudgement PeerSelectionActions{
+                              getLedgerStateCtx = ledgerCtx@LedgerPeersConsensusInterface {
+                                lpExtraAPI = CardanoLedgerPeersConsensusInterface {
+                                  clpciGetLedgerStateJudgement = readLedgerStateJudgement
+                                }
+                              }
+                            }
+                            st@PeerSelectionState{ publicRootPeers,
                                                    knownPeers,
                                                    establishedPeers,
                                                    inProgressPromoteCold,
                                                    inProgressPromoteWarm,
-                                                   ledgerStateJudgement,
-                                                   consensusMode,
-                                                   ledgerPeerSnapshot }
-  | GenesisMode <- consensusMode =
+                                                   ledgerPeerSnapshot,
+                                                   extraState = cpst@CardanoPeerSelectionState {
+                                                     cpstBootstrapPeersFlag,
+                                                     cpstLedgerStateJudgement,
+                                                     cpstConsensusMode
+                                                   }
+                                                 }
+  | GenesisMode <- cpstConsensusMode =
     Guarded Nothing $ do
       lsj <- readLedgerStateJudgement
-      check (lsj /= ledgerStateJudgement)
+      check (lsj /= cpstLedgerStateJudgement)
 
       return $ \_now ->
         Decision {
@@ -630,18 +661,21 @@ monitorLedgerStateJudgement PeerSelectionActions{ getLedgerStateCtx = ledgerCtx@
                              [jobVerifyPeerSnapshot ledgerPeerSnapshot' ledgerCtx]
                            _otherwise -> [],
           decisionState = st {
-              ledgerStateJudgement = lsj } }
+            extraState = cpst {
+              cpstLedgerStateJudgement = lsj
+            }
+          }
+        }
 
-  | PraosMode <- consensusMode
-  , isBootstrapPeersEnabled bootstrapPeersFlag =
+  | PraosMode <- cpstConsensusMode
+  , isBootstrapPeersEnabled cpstBootstrapPeersFlag =
     Guarded Nothing $ do
       lsj <- readLedgerStateJudgement
-      check (lsj /= ledgerStateJudgement)
+      check (lsj /= cpstLedgerStateJudgement)
       st' <- case lsj of
         TooOld      -> do
           return (\now -> st
-            { ledgerStateJudgement = lsj
-            , targets =
+            { targets =
                 PeerSelectionTargets
                   { targetNumberOfRootPeers                 = 0
                   , targetNumberOfKnownPeers                = 0
@@ -655,10 +689,13 @@ monitorLedgerStateJudgement PeerSelectionActions{ getLedgerStateCtx = ledgerCtx@
             -- not more than the target number of known peers. It's unlikely in
             -- practice so it's ok to resolve it arbitrarily using clampToLimit.
             , localRootPeers = LocalRootPeers.empty
-            , hasOnlyBootstrapPeers = False
-            , bootstrapPeersTimeout = Just (addTime governor_BOOTSTRAP_PEERS_TIMEOUT now)
             , publicRootBackoffs = 0
             , publicRootRetryTime = now
+            , extraState = cpst {
+                cpstLedgerStateJudgement = lsj
+              , cpstHasOnlyBootstrapPeers = False
+              , cpstBootstrapPeersTimeout = Just (addTime governor_BOOTSTRAP_PEERS_TIMEOUT now)
+              }
             })
         YoungEnough -> do
           let nonEstablishedBootstrapPeers =
@@ -668,10 +705,7 @@ monitorLedgerStateJudgement PeerSelectionActions{ getLedgerStateCtx = ledgerCtx@
                 Set.\\
                 (inProgressPromoteCold <> inProgressPromoteWarm)
           return (\now -> st
-            { ledgerStateJudgement  = lsj
-            , hasOnlyBootstrapPeers = False
-            , bootstrapPeersTimeout = Nothing
-            , knownPeers =
+            { knownPeers =
                 KnownPeers.delete
                   nonEstablishedBootstrapPeers
                   knownPeers
@@ -681,6 +715,11 @@ monitorLedgerStateJudgement PeerSelectionActions{ getLedgerStateCtx = ledgerCtx@
                   nonEstablishedBootstrapPeers
             , publicRootBackoffs = 0
             , publicRootRetryTime = now
+            , extraState = cpst {
+                cpstLedgerStateJudgement  = lsj
+              , cpstHasOnlyBootstrapPeers = False
+              , cpstBootstrapPeersTimeout = Nothing
+              }
             })
       return $ \now ->
         Decision {
@@ -709,12 +748,10 @@ monitorLedgerStateJudgement PeerSelectionActions{ getLedgerStateCtx = ledgerCtx@
 waitForSystemToQuiesce :: ( MonadSTM m
                           , Ord peeraddr
                           )
-                       => PeerSelectionState peeraddr peerconn
-                       -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
+                       => PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn
+                       -> Guarded (STM m) (TimedDecision m CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
 waitForSystemToQuiesce st@PeerSelectionState{
-                            ledgerStateJudgement
-                          , bootstrapPeersFlag
-                          , knownPeers
+                            knownPeers
                           , localRootPeers
                           , publicRootPeers
                           , inProgressPromoteCold
@@ -722,12 +759,16 @@ waitForSystemToQuiesce st@PeerSelectionState{
                           , inProgressPeerShareReqs
                           , inProgressPublicRootsReq
                           , inProgressBigLedgerPeersReq
-                          , hasOnlyBootstrapPeers
+                          , extraState = cpst@CardanoPeerSelectionState {
+                              cpstLedgerStateJudgement
+                            , cpstBootstrapPeersFlag
+                            , cpstHasOnlyBootstrapPeers
+                            }
                           }
   -- Is the node in sensitive state?
-  | requiresBootstrapPeers bootstrapPeersFlag ledgerStateJudgement
+  | requiresBootstrapPeers cpstBootstrapPeersFlag cpstLedgerStateJudgement
   -- Has the node still haven't reached a clean state
-  , not hasOnlyBootstrapPeers
+  , not cpstHasOnlyBootstrapPeers
   -- Are the local root peers all trustable?
   , all (\case
             (_, IsTrustable) -> True
@@ -750,8 +791,10 @@ waitForSystemToQuiesce st@PeerSelectionState{
       return $ \_now ->
         Decision { decisionTrace = [TraceOnlyBootstrapPeers],
                    decisionJobs  = [],
-                   decisionState = st { hasOnlyBootstrapPeers = True
-                                      , bootstrapPeersTimeout = Nothing
+                   decisionState = st { extraState = cpst {
+                                          cpstHasOnlyBootstrapPeers = True
+                                        , cpstBootstrapPeersTimeout = Nothing
+                                        }
                                       }
         }
   | otherwise = GuardedSkip Nothing
@@ -763,8 +806,8 @@ waitForSystemToQuiesce st@PeerSelectionState{
 --
 jobVerifyPeerSnapshot :: ( MonadSTM m )
                       => LedgerPeerSnapshot
-                      -> LedgerPeersConsensusInterface m
-                      -> Job () m (Completion m peeraddr peerconn)
+                      -> LedgerPeersConsensusInterface extraAPI m
+                      -> Job () m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
 jobVerifyPeerSnapshot baseline@(LedgerPeerSnapshot (slot, _))
                       LedgerPeersConsensusInterface {
                         lpGetLatestSlot,
@@ -790,13 +833,16 @@ jobVerifyPeerSnapshot baseline@(LedgerPeerSnapshot (slot, _))
 -- can launch `jobVerifyPeerSnapshot`
 --
 ledgerPeerSnapshotChange :: (MonadSTM m)
-                         => PeerSelectionState peeraddr peerconn
-                         -> PeerSelectionActions peeraddr peerconn m
-                         -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-ledgerPeerSnapshotChange st@PeerSelectionState {
-                              ledgerPeerSnapshot }
-                         PeerSelectionActions {
-                           readLedgerPeerSnapshot } =
+                         => PeerSelectionActions extraActions extraPeers extraFlags extraAPI peeraddr peerconn m
+                         -> PeerSelectionState CardanoPeerSelectionState extraFlags extraPeers peeraddr peerconn
+                         -> Guarded (STM m) (TimedDecision m CardanoPeerSelectionState extraFlags extraPeers peeraddr peerconn)
+ledgerPeerSnapshotChange PeerSelectionActions {
+                           readLedgerPeerSnapshot
+                         }
+                         st@PeerSelectionState {
+                           ledgerPeerSnapshot,
+                           extraState = cpst
+                         } =
   Guarded Nothing $ do
     ledgerPeerSnapshot' <- readLedgerPeerSnapshot
     case (ledgerPeerSnapshot', ledgerPeerSnapshot) of
@@ -808,6 +854,9 @@ ledgerPeerSnapshotChange st@PeerSelectionState {
                    Decision { decisionTrace = [],
                               decisionJobs  = [],
                               decisionState = st {
-                                ledgerStateJudgement = YoungEnough,
-                                ledgerPeerSnapshot = ledgerPeerSnapshot' } }
-
+                                extraState = cpst {
+                                  cpstLedgerStateJudgement = YoungEnough
+                                },
+                                ledgerPeerSnapshot = ledgerPeerSnapshot'
+                              }
+                            }

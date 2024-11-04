@@ -22,6 +22,9 @@ import Control.Monad.Class.MonadTime.SI
 import System.Random (randomR)
 
 import Cardano.Node.PeerSelection.Bootstrap (requiresBootstrapPeers)
+import Cardano.Node.PeerSelection.Governor.PeerSelectionState
+           (CardanoPeerSelectionState (..))
+import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (IsBigLedgerPeer (..))
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
@@ -56,23 +59,23 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRo
 -- do go over target then the action to demote will be triggered. The demote
 -- action never picks local root peers.
 --
-belowTarget :: forall peeraddr peerconn m.
+belowTarget :: forall extraActions extraFlags extraAPI peeraddr peerconn m.
                ( Alternative (STM m)
                , MonadSTM m
                , Ord peeraddr
                )
-            => PeerSelectionActions peeraddr peerconn m
-            -> MkGuardedDecision peeraddr peerconn m
-belowTarget =  belowTargetBigLedgerPeers <> belowTargetLocal <> belowTargetOther
+            => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI peeraddr peerconn m
+            -> MkGuardedDecision CardanoPeerSelectionState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn m
+belowTarget = belowTargetBigLedgerPeers <> belowTargetLocal <> belowTargetOther
 
 
 -- | For locally configured root peers we have the explicit target that comes from local
 -- configuration.
 --
-belowTargetLocal :: forall peeraddr peerconn m.
+belowTargetLocal :: forall extraActions extraState extraFlags extraAPI peeraddr peerconn m.
                     (MonadSTM m, Ord peeraddr, HasCallStack)
-                 => PeerSelectionActions peeraddr peerconn m
-                 -> MkGuardedDecision peeraddr peerconn m
+                 => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI peeraddr peerconn m
+                 -> MkGuardedDecision extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn m
 belowTargetLocal actions
                  policy@PeerSelectionPolicy {
                    policyPickColdPeersToPromote
@@ -163,10 +166,10 @@ belowTargetLocal actions
       } = peerSelectionStateToView st
 
 
-belowTargetOther :: forall peeraddr peerconn m.
+belowTargetOther :: forall extraActions extraState extraFlags extraAPI peeraddr peerconn m.
                     (MonadSTM m, Ord peeraddr, HasCallStack)
-                 => PeerSelectionActions peeraddr peerconn m
-                 -> MkGuardedDecision peeraddr peerconn m
+                 => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI peeraddr peerconn m
+                 -> MkGuardedDecision extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn m
 belowTargetOther actions
                  policy@PeerSelectionPolicy {
                    policyPickColdPeersToPromote
@@ -245,10 +248,10 @@ belowTargetOther actions
 -- It should be noted if the node is in bootstrap mode (i.e. in a sensitive
 -- state) then this monitoring action will be disabled.
 --
-belowTargetBigLedgerPeers :: forall peeraddr peerconn m.
+belowTargetBigLedgerPeers :: forall extraActions extraFlags extraAPI peeraddr peerconn m.
                              (MonadSTM m, Ord peeraddr, HasCallStack)
-                          => PeerSelectionActions peeraddr peerconn m
-                          -> MkGuardedDecision peeraddr peerconn m
+                          => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI peeraddr peerconn m
+                          -> MkGuardedDecision CardanoPeerSelectionState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn m
 belowTargetBigLedgerPeers actions
                           policy@PeerSelectionPolicy {
                             policyPickColdPeersToPromote
@@ -260,8 +263,10 @@ belowTargetBigLedgerPeers actions
                             targets = PeerSelectionTargets {
                                         targetNumberOfEstablishedBigLedgerPeers
                                       },
-                            ledgerStateJudgement,
-                            bootstrapPeersFlag
+                            extraState = CardanoPeerSelectionState {
+                              cpstLedgerStateJudgement
+                            , cpstBootstrapPeersFlag
+                            }
                           }
     -- Are we below the target for number of established peers?
   | numEstablishedPeers + numConnectInProgress
@@ -275,7 +280,7 @@ belowTargetBigLedgerPeers actions
   , numAvailableToConnect - numEstablishedPeers - numConnectInProgress > 0
 
     -- Are we in insensitive state, i.e. using bootstrap peers?
-  , not (requiresBootstrapPeers bootstrapPeersFlag ledgerStateJudgement)
+  , not (requiresBootstrapPeers cpstBootstrapPeersFlag cpstLedgerStateJudgement)
   = Guarded Nothing $ do
       -- The availableToPromote here is non-empty due to the second guard.
       -- The known peers map restricted to the connect set is the same size as
@@ -337,13 +342,13 @@ maxColdPeerRetryBackoff :: Int
 maxColdPeerRetryBackoff = 5
 
 
-jobPromoteColdPeer :: forall peeraddr peerconn m.
+jobPromoteColdPeer :: forall extraActions extraState extraFlags extraAPI peeraddr peerconn m.
                        (Monad m, Ord peeraddr)
-                   => PeerSelectionActions peeraddr peerconn m
+                   => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI peeraddr peerconn m
                    -> PeerSelectionPolicy peeraddr m
                    -> peeraddr
                    -> IsBigLedgerPeer
-                   -> Job () m (Completion m peeraddr peerconn)
+                   -> Job () m (Completion m extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
 jobPromoteColdPeer PeerSelectionActions {
                      peerStateActions = PeerStateActions {establishPeerConnection},
                      peerConnToPeerSharing
@@ -352,7 +357,7 @@ jobPromoteColdPeer PeerSelectionActions {
                    peeraddr isBigLedgerPeer =
     Job job handler () "promoteColdPeer"
   where
-    handler :: SomeException -> m (Completion m peeraddr peerconn)
+    handler :: SomeException -> m (Completion m extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
     handler e = return $
       Completion $ \st@PeerSelectionState {
                       publicRootPeers,
@@ -404,7 +409,7 @@ jobPromoteColdPeer PeerSelectionActions {
             decisionJobs  = []
           }
 
-    job :: m (Completion m peeraddr peerconn)
+    job :: m (Completion m extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
     job = do
       --TODO: decide if we should do timeouts here or if we should make that
       -- the responsibility of establishPeerConnection
@@ -481,16 +486,16 @@ jobPromoteColdPeer PeerSelectionActions {
 -- | If we are above the target of /established peers/ we demote some of the
 -- /warm peers/ to the cold state, according to 'policyPickWarmPeersToDemote'.
 --
-aboveTarget :: forall peeraddr peerconn m.
+aboveTarget :: forall extraActions extraState extraFlags extraAPI peeraddr peerconn m.
                (Alternative (STM m), MonadSTM m, Ord peeraddr)
-            => PeerSelectionActions peeraddr peerconn m
-            -> MkGuardedDecision peeraddr peerconn m
+            => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI peeraddr peerconn m
+            -> MkGuardedDecision extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn m
 aboveTarget =  aboveTargetBigLedgerPeers <> aboveTargetOther
 
-aboveTargetOther :: forall peeraddr peerconn m.
+aboveTargetOther :: forall extraActions extraState extraFlags extraAPI peeraddr peerconn m.
                (MonadSTM m, Ord peeraddr, HasCallStack)
-            => PeerSelectionActions peeraddr peerconn m
-            -> MkGuardedDecision peeraddr peerconn m
+            => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI peeraddr peerconn m
+            -> MkGuardedDecision extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn m
 aboveTargetOther actions
                  PeerSelectionPolicy {
                    policyPickWarmPeersToDemote
@@ -574,10 +579,10 @@ aboveTargetOther actions
   = GuardedSkip Nothing
 
 
-aboveTargetBigLedgerPeers :: forall peeraddr peerconn m.
+aboveTargetBigLedgerPeers :: forall extraActions extraState extraFlags extraAPI peeraddr peerconn m.
                              (MonadSTM m, Ord peeraddr, HasCallStack)
-                          => PeerSelectionActions peeraddr peerconn m
-                          -> MkGuardedDecision peeraddr peerconn m
+                          => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI peeraddr peerconn m
+                          -> MkGuardedDecision extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn m
 aboveTargetBigLedgerPeers actions
                           PeerSelectionPolicy {
                             policyPickWarmPeersToDemote
@@ -653,17 +658,17 @@ aboveTargetBigLedgerPeers actions
   = GuardedSkip Nothing
 
 
-jobDemoteEstablishedPeer :: forall peeraddr peerconn m.
+jobDemoteEstablishedPeer :: forall extraActions extraState extraFlags extraPeers extraAPI peeraddr peerconn m.
                             (Monad m, Ord peeraddr)
-                         => PeerSelectionActions peeraddr peerconn m
+                         => PeerSelectionActions extraActions extraPeers extraFlags extraAPI peeraddr peerconn m
                          -> peeraddr
                          -> peerconn
-                         -> Job () m (Completion m peeraddr peerconn)
+                         -> Job () m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
 jobDemoteEstablishedPeer PeerSelectionActions{peerStateActions = PeerStateActions {closePeerConnection}}
                          peeraddr peerconn =
     Job job handler () "demoteEstablishedPeer"
   where
-    handler :: SomeException -> m (Completion m peeraddr peerconn)
+    handler :: SomeException -> m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
     handler e = return $
       -- It's quite bad if closing fails. The peer is cooling so
       -- we can't remove it from the set of established peers.
@@ -700,7 +705,7 @@ jobDemoteEstablishedPeer PeerSelectionActions{peerStateActions = PeerStateAction
           decisionJobs  = []
       }
 
-    job :: m (Completion m peeraddr peerconn)
+    job :: m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
     job = do
       closePeerConnection peerconn
       return $ Completion $ \st@PeerSelectionState {

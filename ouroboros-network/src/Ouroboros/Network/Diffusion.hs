@@ -34,9 +34,17 @@ import Ouroboros.Network.NodeToNode (NodeToNodeVersion, NodeToNodeVersionData,
            RemoteAddress)
 import Ouroboros.Network.PeerSelection.Governor.Types
 
+import Cardano.Node.ArgumentsExtra (CardanoArgumentsExtra)
+import Cardano.Node.LedgerPeerConsensusInterface
+           (CardanoLedgerPeersConsensusInterface)
+import Cardano.Node.PeerSelection.Governor.PeerSelectionState
+           (CardanoPeerSelectionState)
+import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable)
+import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
 import Ouroboros.Network.Diffusion.Common as Common
 import Ouroboros.Network.Diffusion.NonP2P qualified as NonP2P
 import Ouroboros.Network.Diffusion.P2P qualified as P2P
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type (mapExtraAPI)
 
 -- | Promoted data types.
 --
@@ -47,9 +55,10 @@ data P2P = P2P | NonP2P
 data ExtraTracers (p2p :: P2P) where
   P2PTracers
     :: P2P.TracersExtra
-           RemoteAddress  NodeToNodeVersion   NodeToNodeVersionData
-           LocalAddress   NodeToClientVersion NodeToClientVersionData
-           IOException IO
+           RemoteAddress NodeToNodeVersion         NodeToNodeVersionData
+           LocalAddress  NodeToClientVersion       NodeToClientVersionData
+           IOException   CardanoPeerSelectionState CardanoPeerSelectionState
+           PeerTrustable (CardanoPublicRootPeers RemoteAddress) IO
     -> ExtraTracers 'P2P
 
   NonP2PTracers
@@ -61,7 +70,7 @@ data ExtraTracers (p2p :: P2P) where
 --
 data ExtraArguments (p2p :: P2P) m where
   P2PArguments
-    :: P2P.ArgumentsExtra m
+    :: P2P.ArgumentsExtra (CardanoArgumentsExtra m) PeerTrustable m
     -> ExtraArguments 'P2P m
 
   NonP2PArguments
@@ -97,7 +106,7 @@ run :: forall (p2p :: P2P) a.
     -> Applications
          RemoteAddress  NodeToNodeVersion   NodeToNodeVersionData
          LocalAddress   NodeToClientVersion NodeToClientVersionData
-         IO a
+         (CardanoLedgerPeersConsensusInterface IO) IO a
     -> ExtraApplications p2p RemoteAddress IO a
     -> IO ()
 run tracers (P2PTracers tracersExtra)
@@ -109,7 +118,10 @@ run tracers (P2PTracers tracersExtra)
             apps appsExtra
 run tracers (NonP2PTracers tracersExtra)
             args (NonP2PArguments argsExtra)
-            apps (NonP2PApplications appsExtra) =
+            apps (NonP2PApplications appsExtra) = do
+    let appsUnit = apps {
+          daLedgerPeersCtx = mapExtraAPI (const ()) (daLedgerPeersCtx apps)
+        }
     NonP2P.run tracers tracersExtra
                args argsExtra
-               apps appsExtra
+               appsUnit appsExtra
