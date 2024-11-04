@@ -4,6 +4,22 @@
 
 ### Breaking changes
 
+* APIs removed from `Ouroboros.Network.{NodeToClient,NodeToNode}` modules:
+  * NetworkServerTracers
+  * NetworkMutableState APIs
+  * withServer 
+  * ErrorPolicies
+  * WithAddr
+  * SuspendDecision
+* APIs removed from `Ouroboros.Network.NodeToNode` module:
+  * IPSubscriptionTarget
+  * NetworkIPSubscription
+  * NetworkSubscriptionTracers
+  * SubscriptionParams
+  * DnsSubscriptionTarget
+  * DnsSubscriptioinParams
+  * NetworkDNSSubscriptionTracers
+  * dnsSubscriptionWorker
 * Added `AcquireConnectionError` to `PeerSelectionActionsTrace`
 * Removed deprecated `ReconnectDelay` type alias.
 * Addapted to `network-mux` changes in https://github.com/IntersectMBO/ouroboros-network/pull/4999
