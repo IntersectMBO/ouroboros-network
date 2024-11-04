@@ -65,7 +65,7 @@ import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.Mux qualified as Mx
 import Ouroboros.Network.Protocol.Handshake (HandshakeArguments, Versions)
 import Ouroboros.Network.RethrowPolicy
-import Ouroboros.Network.Server2 qualified as Server
+import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Snocket (FileDescriptor, Snocket)
 import Ouroboros.Network.Socket (SystemdSocketTracer)
 

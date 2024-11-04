@@ -98,7 +98,7 @@ import Ouroboros.Network.Protocol.Handshake
 import Ouroboros.Network.Protocol.Handshake.Codec
 import Ouroboros.Network.Protocol.Handshake.Version
 import Ouroboros.Network.RethrowPolicy
-import Ouroboros.Network.Server2 qualified as Server
+import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Snocket (LocalAddress, LocalSocket (..),
            localSocketFileDescriptor, makeLocalBearer, makeSocketBearer)
 import Ouroboros.Network.Snocket qualified as Snocket

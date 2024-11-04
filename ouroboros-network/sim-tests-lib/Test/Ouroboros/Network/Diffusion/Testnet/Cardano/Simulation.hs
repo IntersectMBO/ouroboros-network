@@ -136,7 +136,7 @@ import Ouroboros.Network.Protocol.KeepAlive.Codec (byteLimitsKeepAlive,
 import Ouroboros.Network.Protocol.Limits (shortWait, smallByteLimit)
 import Ouroboros.Network.Protocol.PeerSharing.Codec (byteLimitsPeerSharing,
            timeLimitsPeerSharing)
-import Ouroboros.Network.Server2 qualified as Server
+import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Snocket (Snocket, TestAddress (..))
 
 import Simulation.Network.Snocket (BearerInfo (..), FD, SnocketTrace,

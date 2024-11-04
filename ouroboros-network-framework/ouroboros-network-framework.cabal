@@ -54,9 +54,9 @@ library
     Ouroboros.Network.Protocol.Handshake.Version
     Ouroboros.Network.RawBearer
     Ouroboros.Network.RethrowPolicy
+    Ouroboros.Network.Server
     Ouroboros.Network.Server.ConnectionTable
     Ouroboros.Network.Server.RateLimiting
-    Ouroboros.Network.Server2
     Ouroboros.Network.Snocket
     Ouroboros.Network.Socket
     Simulation.Network.Snocket
@@ -162,7 +162,7 @@ test-suite sim-tests
     Test.Ouroboros.Network.ConnectionManager
     Test.Ouroboros.Network.RateLimiting
     Test.Ouroboros.Network.RawBearer
-    Test.Ouroboros.Network.Server2.Sim
+    Test.Ouroboros.Network.Server.Sim
     Test.Ouroboros.Network.Socket
     Test.Simulation.Network.Snocket
 
@@ -231,7 +231,7 @@ test-suite io-tests
   other-modules:
     Test.Ouroboros.Network.Driver
     Test.Ouroboros.Network.RawBearer
-    Test.Ouroboros.Network.Server2.IO
+    Test.Ouroboros.Network.Server.IO
     Test.Ouroboros.Network.Socket
 
   build-depends:

@@ -11,7 +11,7 @@
 {-# OPTIONS_GHC -Wno-x-partial #-}
 #endif
 
-module Test.Ouroboros.Network.Server2.IO (tests) where
+module Test.Ouroboros.Network.Server.IO (tests) where
 
 import Control.Monad.Class.MonadThrow
 import System.Random (mkStdGen)
@@ -34,7 +34,7 @@ import Test.Ouroboros.Network.Orphans ()
 tests :: TestTree
 tests =
   testGroup "Ouroboros.Network"
-  [ testGroup "Server2"
+  [ testGroup "Server"
     [ testProperty "unidirectional IO" prop_unidirectional_IO
     , testProperty "bidirectional IO"  prop_bidirectional_IO
     ]
