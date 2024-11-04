@@ -19,17 +19,6 @@ module Ouroboros.Network.NodeToClient
   , nullNetworkConnectTracers
   , connectTo
   , connectToWithMux
-  , NetworkServerTracers (..)
-  , nullNetworkServerTracers
-  , NetworkMutableState (..)
-  , newNetworkMutableState
-  , newNetworkMutableStateSTM
-  , cleanNetworkMutableState
-  , withServer
-  , NetworkClientSubcriptionTracers
-  , NetworkSubscriptionTracers (..)
-  , ClientSubscriptionParams (..)
-  , ncSubscriptionWorker
     -- * Null Protocol Peers
   , chainSyncPeerNull
   , localStateQueryPeerNull
@@ -43,6 +32,7 @@ module Ouroboros.Network.NodeToClient
   , localSnocket
   , LocalSocket (..)
   , LocalAddress (..)
+  , LocalConnectionId
     -- * Versions
   , Versions (..)
   , versionedNodeToClientProtocols
@@ -57,34 +47,19 @@ module Ouroboros.Network.NodeToClient
   , ConnectionId (..)
   , MinimalInitiatorContext (..)
   , ResponderContext (..)
-  , LocalConnectionId
-  , ErrorPolicies (..)
-  , networkErrorPolicies
-  , nullErrorPolicies
-  , ErrorPolicy (..)
-  , ErrorPolicyTrace (..)
-  , WithAddr (..)
-  , SuspendDecision (..)
   , TraceSendRecv (..)
   , ProtocolLimitFailure
   , Handshake
-  , LocalAddresses (..)
-  , SubscriptionTrace (..)
   , HandshakeTr
   ) where
 
-import Cardano.Prelude (FatalError)
-
 import Control.Concurrent.Async qualified as Async
-import Control.Exception (ErrorCall, IOException, SomeException)
+import Control.Exception (SomeException)
 import Control.Monad (forever)
 import Control.Monad.Class.MonadTimer.SI
 
 import Codec.CBOR.Term qualified as CBOR
 import Data.ByteString.Lazy qualified as BL
-import Data.Functor (void)
-import Data.Functor.Contravariant (contramap)
-import Data.Functor.Identity (Identity (..))
 import Data.Kind (Type)
 import Data.Void (Void, absurd)
 
@@ -95,8 +70,6 @@ import Network.TypedProtocol.Stateful.Peer.Client qualified as Stateful
 import Ouroboros.Network.Context
 import Ouroboros.Network.Driver (TraceSendRecv (..))
 import Ouroboros.Network.Driver.Limits (ProtocolLimitFailure (..))
-import Ouroboros.Network.Driver.Simple (DecoderFailure)
-import Ouroboros.Network.ErrorPolicy
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.Mux
 import Ouroboros.Network.NodeToClient.Version
@@ -113,11 +86,6 @@ import Ouroboros.Network.Protocol.LocalTxSubmission.Client as LocalTxSubmission
 import Ouroboros.Network.Protocol.LocalTxSubmission.Type qualified as LocalTxSubmission
 import Ouroboros.Network.Snocket
 import Ouroboros.Network.Socket
-import Ouroboros.Network.Subscription.Client (ClientSubscriptionParams (..))
-import Ouroboros.Network.Subscription.Client qualified as Subscription
-import Ouroboros.Network.Subscription.Ip (SubscriptionTrace (..))
-import Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
-import Ouroboros.Network.Tracers
 
 -- The Handshake tracer types are simply terrible.
 type HandshakeTr ntcAddr ntcVersion =
@@ -309,180 +277,6 @@ connectToWithMux snocket tracers versions path k =
     (localAddressFromPath path)
     k
 
-
-
--- | A specialised version of 'Ouroboros.Network.Socket.withServerNode'.
---
--- Comments to 'Ouroboros.Network.NodeToNode.withServer' apply here as well.
---
-withServer
-  :: LocalSnocket
-  -> NetworkServerTracers LocalAddress NodeToClientVersion
-  -> NetworkMutableState LocalAddress
-  -> LocalSocket
-  -> Versions NodeToClientVersion
-              NodeToClientVersionData
-              (OuroborosApplicationWithMinimalCtx
-                 Mx.ResponderMode LocalAddress BL.ByteString IO a b)
-  -> ErrorPolicies
-  -> IO Void
-withServer sn tracers networkState sd versions errPolicies =
-  withServerNode'
-    sn
-    makeLocalBearer
-    tracers
-    networkState
-    (AcceptedConnectionsLimit maxBound maxBound 0)
-    sd
-    nodeToClientHandshakeCodec
-    noTimeLimitsHandshake
-    (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
-    (HandshakeCallbacks acceptableVersion queryVersion)
-    (SomeResponderApplication <$> versions)
-    errPolicies
-    (\_ async -> Async.wait async)
-
-type NetworkClientSubcriptionTracers
-    = NetworkSubscriptionTracers Identity LocalAddress NodeToClientVersion
-
-
--- | 'ncSubscriptionWorker' which starts given application versions on each
--- established connection.
---
-ncSubscriptionWorker
-    :: forall mode x y.
-       ( HasInitiator mode ~ True
-       )
-    => LocalSnocket
-    -> NetworkClientSubcriptionTracers
-    -> NetworkMutableState LocalAddress
-    -> ClientSubscriptionParams ()
-    -> Versions
-        NodeToClientVersion
-        NodeToClientVersionData
-        (OuroborosApplicationWithMinimalCtx
-           mode LocalAddress BL.ByteString IO x y)
-    -> IO Void
-ncSubscriptionWorker
-  sn
-  NetworkSubscriptionTracers
-    { nsSubscriptionTracer
-    , nsMuxTracer
-    , nsHandshakeTracer
-    , nsErrorPolicyTracer
-    }
-  networkState
-  subscriptionParams
-  versions
-    = Subscription.clientSubscriptionWorker
-        sn
-        (Identity `contramap` nsSubscriptionTracer)
-        nsErrorPolicyTracer
-        networkState
-        subscriptionParams
-        (void . connectToNode'
-          sn
-          makeLocalBearer
-          ConnectToArgs {
-            ctaHandshakeCodec      = nodeToClientHandshakeCodec,
-            ctaHandshakeTimeLimits = noTimeLimitsHandshake,
-            ctaVersionDataCodec    = cborTermVersionDataCodec nodeToClientCodecCBORTerm,
-            ctaConnectTracers      = NetworkConnectTracers nsMuxTracer nsHandshakeTracer,
-            ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
-          }
-          versions)
-
--- | 'ErrorPolicies' for client application.  Additional rules can be added by
--- means of a 'Semigroup' instance of 'ErrorPolicies'.
---
--- This error policies will try to preserve `subscriptionWorker`, e.g. if the
--- connect function throws an `IOException` we will suspend it for
--- a 'shortDelay', and try to re-connect.
---
--- This allows to recover from a situation where a node temporarily shutsdown,
--- or running a client application which is subscribed two more than one node
--- (possibly over network).
---
-networkErrorPolicies :: ErrorPolicies
-networkErrorPolicies = ErrorPolicies
-    { epAppErrorPolicies = [
-        -- Handshake client protocol error: we either did not recognise received
-        -- version or we refused it.  This is only for outbound connections to
-        -- a local node, thus we throw the exception.
-        ErrorPolicy
-          $ \(_ :: HandshakeProtocolError NodeToClientVersion)
-                -> Just ourBug
-
-        -- exception thrown by `runPeerWithLimits`
-        -- trusted node send too much input
-      , ErrorPolicy
-          $ \(_ :: ProtocolLimitFailure)
-                -> Just ourBug
-
-        -- deserialisation failure of a message from a trusted node
-      , ErrorPolicy
-          $ \(_ :: DecoderFailure)
-                -> Just ourBug
-
-      , ErrorPolicy
-          $ \e -> case e of
-            Mx.UnknownMiniProtocol {}    -> Just ourBug
-            Mx.IngressQueueOverRun {}    -> Just ourBug
-            Mx.InitiatorOnly {}          -> Just ourBug
-            Mx.Shutdown {}               -> Just ourBug
-
-            -- in case of bearer closed / or IOException we suspend
-            -- the peer for a short time
-            --
-            -- TODO: the same notes apply as to
-            -- 'NodeToNode.networkErrorPolicies'
-            Mx.BearerClosed {}      -> Just (SuspendPeer shortDelay shortDelay)
-            Mx.IOException {}       -> Just (SuspendPeer shortDelay shortDelay)
-            Mx.SDUDecodeError {}    -> Just ourBug
-            Mx.SDUReadTimeout       -> Just (SuspendPeer shortDelay shortDelay)
-            Mx.SDUWriteTimeout      -> Just (SuspendPeer shortDelay shortDelay)
-
-      , ErrorPolicy
-          $ \(e :: Mx.RuntimeError)
-                -> case e of
-                     Mx.ProtocolAlreadyRunning       {} -> Just ourBug
-                     Mx.UnknownProtocolInternalError {} -> Just ourBug
-                     Mx.BlockedOnCompletionVar       {} -> Just ourBug
-
-        -- Error thrown by 'IOManager', this is fatal on Windows, and it will
-        -- never fire on other platofrms.
-      , ErrorPolicy
-          $ \(_ :: IOManagerError)
-                -> Just Throw
-
-        -- Using 'error' throws.
-      , ErrorPolicy
-          $ \(_ :: ErrorCall)
-                -> Just Throw
-
-        -- Using 'panic' throws.
-      , ErrorPolicy
-          $ \(_ :: FatalError)
-                -> Just Throw
-      ]
-    , epConErrorPolicies = [
-        -- If an 'IOException' is thrown by the 'connect' call we suspend the
-        -- peer for 'shortDelay' and we will try to re-connect to it after that
-        -- period.
-        ErrorPolicy $ \(_ :: IOException) -> Just $
-          SuspendPeer shortDelay shortDelay
-
-      , ErrorPolicy
-          $ \(_ :: IOManagerError)
-                -> Just Throw
-      ]
-    }
-  where
-    ourBug :: SuspendDecision DiffTime
-    ourBug = Throw
-
-    shortDelay :: DiffTime
-    shortDelay = 20 -- seconds
 
 type LocalConnectionId = ConnectionId LocalAddress
 

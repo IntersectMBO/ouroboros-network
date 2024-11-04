@@ -28,32 +28,11 @@ module Ouroboros.Network.NodeToNode
   , NetworkConnectTracers (..)
   , nullNetworkConnectTracers
   , connectTo
-  , NetworkServerTracers (..)
-  , nullNetworkServerTracers
-  , NetworkMutableState (..)
   , AcceptedConnectionsLimit (..)
-  , newNetworkMutableState
-  , newNetworkMutableStateSTM
-  , cleanNetworkMutableState
-  , withServer
     -- * P2P Governor
   , PeerAdvertise (..)
   , PeerSelectionTargets (..)
     -- * Subscription Workers
-    -- ** IP subscription worker
-  , IPSubscriptionTarget (..)
-  , NetworkIPSubscriptionTracers
-  , NetworkSubscriptionTracers (..)
-  , nullNetworkSubscriptionTracers
-  , SubscriptionParams (..)
-  , IPSubscriptionParams
-  , ipSubscriptionWorker
-    -- ** DNS subscription worker
-  , DnsSubscriptionTarget (..)
-  , DnsSubscriptionParams
-  , NetworkDNSSubscriptionTracers (..)
-  , nullNetworkDNSSubscriptionTracers
-  , dnsSubscriptionWorker
     -- ** Versions
   , Versions (..)
   , DiffusionMode (..)
@@ -77,26 +56,12 @@ module Ouroboros.Network.NodeToNode
   , NumTxIdsToAck (..)
   , ProtocolLimitFailure
   , Handshake
-  , LocalAddresses (..)
   , Socket
     -- ** Exceptions
   , ExceptionInHandler (..)
-    -- ** Error Policies and Peer state
-  , ErrorPolicies (..)
-  , remoteNetworkErrorPolicy
-  , localNetworkErrorPolicy
-  , nullErrorPolicies
-  , ErrorPolicy (..)
-  , SuspendDecision (..)
     -- ** Traces
   , AcceptConnectionsPolicyTrace (..)
   , TraceSendRecv (..)
-  , SubscriptionTrace (..)
-  , DnsTrace (..)
-  , ErrorPolicyTrace (..)
-  , WithIPList (..)
-  , WithDomainName (..)
-  , WithAddr (..)
   , HandshakeTr
     -- * For Consensus ThreadNet Tests
   , chainSyncMiniProtocolNum
@@ -106,29 +71,20 @@ module Ouroboros.Network.NodeToNode
   , peerSharingMiniProtocolNum
   ) where
 
-import Control.Concurrent.Async qualified as Async
-import Control.Exception (IOException, SomeException)
-import Control.Monad.Class.MonadTime.SI (DiffTime)
+import Control.Exception (SomeException)
 
-import Codec.CBOR.Read qualified as CBOR
 import Codec.CBOR.Term qualified as CBOR
 import Data.ByteString.Lazy qualified as BL
-import Data.Functor (void)
-import Data.Void (Void)
 import Data.Word
 import Network.Mux qualified as Mx
 import Network.Socket (Socket, StructLinger (..))
 import Network.Socket qualified as Socket
 
-import Ouroboros.Network.BlockFetch.Client (BlockFetchProtocolFailure)
 import Ouroboros.Network.ConnectionManager.Types (ExceptionInHandler (..))
 import Ouroboros.Network.Context
 import Ouroboros.Network.ControlMessage (ControlMessage (..))
 import Ouroboros.Network.Driver (TraceSendRecv (..))
 import Ouroboros.Network.Driver.Limits (ProtocolLimitFailure (..))
-import Ouroboros.Network.Driver.Simple (DecoderFailure)
-import Ouroboros.Network.ErrorPolicy
-import Ouroboros.Network.IOManager
 import Ouroboros.Network.Mux
 import Ouroboros.Network.NodeToNode.Version
 import Ouroboros.Network.PeerSelection.Governor.Types
@@ -139,20 +95,9 @@ import Ouroboros.Network.Protocol.Handshake.Codec
 import Ouroboros.Network.Protocol.Handshake.Type
 import Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..))
+import Ouroboros.Network.Server.RateLimiting
 import Ouroboros.Network.Snocket
 import Ouroboros.Network.Socket
-import Ouroboros.Network.Subscription.Dns (DnsSubscriptionParams,
-           DnsSubscriptionTarget (..), DnsTrace (..), WithDomainName (..))
-import Ouroboros.Network.Subscription.Dns qualified as Subscription
-import Ouroboros.Network.Subscription.Ip (IPSubscriptionParams,
-           IPSubscriptionTarget (..), SubscriptionParams (..),
-           SubscriptionTrace (..), WithIPList (..))
-import Ouroboros.Network.Subscription.Ip qualified as Subscription
-import Ouroboros.Network.Subscription.Worker (LocalAddresses (..),
-           SubscriberError)
-import Ouroboros.Network.Tracers
-import Ouroboros.Network.TxSubmission.Inbound qualified as TxInbound
-import Ouroboros.Network.TxSubmission.Outbound qualified as TxOutbound
 import Ouroboros.Network.Util.ShowProxy (ShowProxy, showProxy)
 
 
@@ -469,283 +414,6 @@ connectTo sn tr =
                               (StructLinger { sl_onoff  = 1,
                                               sl_linger = 0 })
 
-
--- | A specialised version of @'Ouroboros.Network.Socket.withServerNode'@.
--- It forks a thread which runs an accept loop (server thread):
---
--- * when the server thread throws an exception the main thread rethrows
---   it (by 'Async.wait')
--- * when an async exception is thrown to kill the main thread the server thread
---   will be cancelled as well (by 'withAsync')
---
-withServer
-  :: SocketSnocket
-  -> NetworkServerTracers Socket.SockAddr NodeToNodeVersion
-  -> NetworkMutableState Socket.SockAddr
-  -> AcceptedConnectionsLimit
-  -> Socket.Socket
-  -- ^ a configured socket to be used be the server.  The server will call
-  -- `bind` and `listen` methods but it will not set any socket or tcp options
-  -- on it.
-  -> Versions NodeToNodeVersion
-              NodeToNodeVersionData
-              (OuroborosApplicationWithMinimalCtx
-                 Mx.ResponderMode Socket.SockAddr BL.ByteString IO a b)
-  -> ErrorPolicies
-  -> IO Void
-withServer sn tracers networkState acceptedConnectionsLimit sd versions errPolicies =
-  withServerNode'
-    sn
-    makeSocketBearer
-    tracers
-    networkState
-    acceptedConnectionsLimit
-    sd
-    nodeToNodeHandshakeCodec
-    timeLimitsHandshake
-    (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
-    (HandshakeCallbacks acceptableVersion queryVersion)
-    (SomeResponderApplication <$> versions)
-    errPolicies
-    (\_ async -> Async.wait async)
-
-
--- | 'ipSubscriptionWorker' which starts given application versions on each
--- established connection.
---
-ipSubscriptionWorker
-    :: forall mode x y.
-       ( HasInitiator mode ~ True )
-    => SocketSnocket
-    -> NetworkIPSubscriptionTracers Socket.SockAddr NodeToNodeVersion
-    -> NetworkMutableState Socket.SockAddr
-    -> IPSubscriptionParams ()
-    -> Versions
-        NodeToNodeVersion
-        NodeToNodeVersionData
-        (OuroborosApplicationWithMinimalCtx
-           mode Socket.SockAddr BL.ByteString IO x y)
-    -> IO Void
-ipSubscriptionWorker
-  sn
-  NetworkSubscriptionTracers
-    { nsSubscriptionTracer
-    , nsMuxTracer
-    , nsHandshakeTracer
-    , nsErrorPolicyTracer
-    }
-  networkState
-  subscriptionParams
-  versions
-    = Subscription.ipSubscriptionWorker
-        sn
-        nsSubscriptionTracer
-        nsErrorPolicyTracer
-        networkState
-        subscriptionParams
-        (void . connectToNode'
-          sn
-          makeSocketBearer
-          ConnectToArgs {
-            ctaHandshakeCodec      = nodeToNodeHandshakeCodec,
-            ctaHandshakeTimeLimits = timeLimitsHandshake,
-            ctaVersionDataCodec    = cborTermVersionDataCodec nodeToNodeCodecCBORTerm,
-            ctaConnectTracers      = NetworkConnectTracers nsMuxTracer nsHandshakeTracer,
-            ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
-          }
-          versions)
-
-
--- | 'dnsSubscriptionWorker' which starts given application versions on each
--- established connection.
---
-dnsSubscriptionWorker
-    :: forall mode x y.
-       ( HasInitiator mode ~ True )
-    => SocketSnocket
-    -> NetworkDNSSubscriptionTracers NodeToNodeVersion Socket.SockAddr
-    -> NetworkMutableState Socket.SockAddr
-    -> DnsSubscriptionParams ()
-    -> Versions
-        NodeToNodeVersion
-        NodeToNodeVersionData
-        (OuroborosApplicationWithMinimalCtx
-           mode Socket.SockAddr BL.ByteString IO x y)
-    -> IO Void
-dnsSubscriptionWorker
-  sn
-  NetworkDNSSubscriptionTracers
-    { ndstSubscriptionTracer
-    , ndstDnsTracer
-    , ndstMuxTracer
-    , ndstHandshakeTracer
-    , ndstErrorPolicyTracer
-    }
-  networkState
-  subscriptionParams
-  versions =
-    Subscription.dnsSubscriptionWorker
-      sn
-      ndstSubscriptionTracer
-      ndstDnsTracer
-      ndstErrorPolicyTracer
-      networkState
-      subscriptionParams
-      (void . connectToNode'
-        sn
-        makeSocketBearer
-        ConnectToArgs {
-          ctaHandshakeCodec      = nodeToNodeHandshakeCodec,
-          ctaHandshakeTimeLimits = timeLimitsHandshake,
-          ctaVersionDataCodec    = cborTermVersionDataCodec nodeToNodeCodecCBORTerm,
-          ctaConnectTracers      = NetworkConnectTracers ndstMuxTracer ndstHandshakeTracer,
-          ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
-        }
-        versions)
-
-
--- | A minimal error policy for remote peers, which only handles exceptions
--- raised by `ouroboros-network`.
---
-remoteNetworkErrorPolicy :: ErrorPolicies
-remoteNetworkErrorPolicy = ErrorPolicies {
-      epAppErrorPolicies = [
-          -- Handshake client protocol error: we either did not recognise received
-          -- version or we refused it.  This is only for outbound connections,
-          -- thus we suspend the consumer.
-          ErrorPolicy
-            $ \(_ :: HandshakeProtocolError NodeToNodeVersion)
-                  -> Just misconfiguredPeer
-
-          -- deserialisation failure; this means that the remote peer is either
-          -- buggy, adversarial, or the connection return garbage.  In the last
-          -- case it's also good to shutdown both the consumer and the
-          -- producer, as it's likely that the other side of the connection
-          -- will return garbage as well.
-        , ErrorPolicy
-           $ \(_ :: DecoderFailure)
-                 -> Just theyBuggyOrEvil
-
-        , ErrorPolicy
-          $ \(msg :: ProtocolLimitFailure)
-                  -> case msg of
-                      ExceededSizeLimit{} -> Just theyBuggyOrEvil
-                      ExceededTimeLimit{} -> Just (SuspendConsumer shortDelay)
-
-          -- the connection was unexpectedly closed, we suspend the peer for
-          -- a 'shortDelay'
-        , ErrorPolicy
-            $ \e -> case e of
-              Mx.UnknownMiniProtocol {} -> Just theyBuggyOrEvil
-              Mx.IngressQueueOverRun {} -> Just theyBuggyOrEvil
-              Mx.InitiatorOnly {}       -> Just theyBuggyOrEvil
-
-              -- in case of bearer closed / or IOException we suspend
-              -- the peer for a short time
-              --
-              -- TODO: an exponential backoff would be nicer than a fixed 20s
-              -- TODO: right now we cannot suspend just the
-              -- 'responder'.  If a 'responder' throws 'MuxError' we
-              -- might not want to shutdown the consumer (which is
-              -- using different connection), as we do below:
-              Mx.BearerClosed {}           -> Just (SuspendPeer veryShortDelay shortDelay)
-              Mx.IOException {}            -> Just (SuspendPeer veryShortDelay shortDelay)
-              Mx.SDUDecodeError {}         -> Just theyBuggyOrEvil
-              Mx.SDUReadTimeout            -> Just (SuspendPeer veryShortDelay shortDelay)
-              Mx.SDUWriteTimeout           -> Just (SuspendPeer veryShortDelay shortDelay)
-              Mx.Shutdown {}               -> Just (SuspendPeer veryShortDelay shortDelay)
-
-        , ErrorPolicy
-            $ \(e :: Mx.RuntimeError)
-                  -> case e of
-                       Mx.ProtocolAlreadyRunning       {} -> Just (SuspendPeer shortDelay shortDelay)
-                       Mx.UnknownProtocolInternalError {} -> Just Throw
-                       Mx.BlockedOnCompletionVar       {} -> Just (SuspendPeer shortDelay shortDelay)
-
-          -- Error policy for TxSubmission protocol: outbound side (client role)
-        , ErrorPolicy
-            $ \(_ :: TxOutbound.TxSubmissionProtocolError)
-                  -> Just theyBuggyOrEvil
-
-          -- Error policy for TxSubmission protocol: inbound side (server role)
-        , ErrorPolicy
-            $ \(_ :: TxInbound.TxSubmissionProtocolError)
-                  -> Just theyBuggyOrEvil
-
-          -- Error policy for BlockFetch protocol: consumer side (client role)
-        , ErrorPolicy
-            $ \(_ :: BlockFetchProtocolFailure)
-                  -> Just theyBuggyOrEvil
-
-          -- Error thrown by 'IOManager', this is fatal on Windows, and it will
-          -- never fire on other platforms.
-        , ErrorPolicy
-            $ \(_ :: IOManagerError)
-                  -> Just Throw
-        ],
-
-      -- Exception raised during connect; suspend connecting to that peer for
-      -- a 'shortDelay'
-      epConErrorPolicies = [
-          ErrorPolicy $ \(_ :: IOException) -> Just $
-            SuspendConsumer shortDelay
-
-        , ErrorPolicy
-            $ \(_ :: IOManagerError)
-                  -> Just Throw
-        , ErrorPolicy
-          -- Multiple connection attempts are run in parallel and the last to
-          -- finish are cancelled. There may be nothing wrong with the peer,
-          -- it could just be slow to respond.
-          $ \(_ :: SubscriberError)
-                -> Just (SuspendConsumer veryShortDelay)
-        ]
-    }
-  where
-    theyBuggyOrEvil :: SuspendDecision DiffTime
-    theyBuggyOrEvil = SuspendPeer defaultDelay defaultDelay
-
-    misconfiguredPeer :: SuspendDecision DiffTime
-    misconfiguredPeer = SuspendConsumer defaultDelay
-
-    defaultDelay :: DiffTime
-    defaultDelay = 200 -- seconds
-
-    shortDelay :: DiffTime
-    shortDelay = 20 -- seconds
-
-    veryShortDelay :: DiffTime
-    veryShortDelay = 1 -- seconds
-
--- | Error policy for local clients.  This is equivalent to
--- 'nullErrorPolicies', but explicit in the errors which can be caught.
---
--- We are very permissive here, and very strict in the
--- `NodeToClient.networkErrorPolicy`.  After any failure the client will be
--- killed and not penalised by this policy.  This allows to restart the local
--- client without a delay.
---
-localNetworkErrorPolicy :: ErrorPolicies
-localNetworkErrorPolicy = ErrorPolicies {
-      epAppErrorPolicies = [
-          -- exception thrown by `runPeerWithLimits`
-          ErrorPolicy
-            $ \(_ :: ProtocolLimitFailure)
-                  -> Nothing
-
-          -- deserialisation failure
-        , ErrorPolicy
-            $ \(_ :: CBOR.DeserialiseFailure) -> Nothing
-
-          -- the connection was unexpectedly closed, we suspend the peer for
-          -- a 'shortDelay'
-        , ErrorPolicy
-          $ \(_ :: Mx.Error) -> Nothing
-        ],
-
-      -- The node never connects to a local client
-      epConErrorPolicies = []
-    }
 
 type RemoteAddress      = Socket.SockAddr
 
