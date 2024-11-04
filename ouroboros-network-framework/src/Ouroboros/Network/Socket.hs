@@ -72,9 +72,10 @@ module Ouroboros.Network.Socket
   , sockAddrFamily
   ) where
 
-import Control.Concurrent.Async
+import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (SomeException (..))
+import Control.Monad.Class.MonadAsync
 -- TODO: remove this, it will not be needed when `orElse` PR will be merged.
 import Codec.CBOR.Read qualified as CBOR
 import Codec.CBOR.Term qualified as CBOR
@@ -315,7 +316,7 @@ connectToNodeWithMux
        -> vData
        -> OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b
        -> Mx.Mux muxMode IO
-       -> Async ()
+       -> Async IO ()
        -> IO x)
   -- ^ callback which has access to ConnectionId, negotiated protocols, mux
   -- handle created for that connection and an `Async` handle to the thread
@@ -381,7 +382,7 @@ connectToNodeWithMux'
        -> vData
        -> OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b
        -> Mx.Mux muxMode IO
-       -> Async ()
+       -> Async IO ()
        -> IO x)
   -- ^ callback which has access to ConnectionId, negotiated protocols, mux
   -- handle created for that connection and an `Async` handle to the thread
@@ -450,13 +451,20 @@ connectToNodeWithMux'
 -- first terminated mini-protocol.
 --
 simpleMuxCallback
-  :: ConnectionId addr
+  :: forall muxMode addr vNumber vData m a b.
+     ( Alternative (STM m)
+     , MonadAsync m
+     , MonadSTM   m
+     , MonadThrow m
+     , MonadThrow (STM m)
+     )
+  => ConnectionId addr
   -> vNumber
   -> vData
-  -> OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b
-  -> Mx.Mux muxMode IO
-  -> Async ()
-  -> IO (Either SomeException (Either a b))
+  -> OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString m a b
+  -> Mx.Mux muxMode m
+  -> Async m ()
+  -> m (Either SomeException (Either a b))
 simpleMuxCallback connectionId _ _ app mux aid = do
     let initCtx = MinimalInitiatorContext connectionId
         respCtx = ResponderContext connectionId
@@ -487,7 +495,7 @@ simpleMuxCallback connectionId _ _ app mux aid = do
     wait aid
     return r
   where
-    waitOnAny :: [STM IO (Either SomeException x)] -> IO (Either SomeException x)
+    waitOnAny :: [STM m (Either SomeException x)] -> m (Either SomeException x)
     waitOnAny = atomically . runFirstToFinish . foldMap FirstToFinish
 
 
@@ -862,7 +870,7 @@ withServerNode
     -- a given address.  Note that if @'MuxClientAndServerApplication'@ is
     -- returned, the connection will run a full duplex set of mini-protocols.
     -> ErrorPolicies
-    -> (addr -> Async Void -> IO t)
+    -> (addr -> Async IO Void -> IO t)
     -- ^ callback which takes the @Async@ of the thread that is running the server.
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
@@ -937,7 +945,7 @@ withServerNode'
     -- a given address.  Note that if @'MuxClientAndServerApplication'@ is
     -- returned, the connection will run a full duplex set of mini-protocols.
     -> ErrorPolicies
-    -> (addr -> Async Void -> IO t)
+    -> (addr -> Async IO Void -> IO t)
     -- ^ callback which takes the @Async@ of the thread that is running the server.
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
