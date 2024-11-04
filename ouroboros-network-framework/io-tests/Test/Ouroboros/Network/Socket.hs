@@ -49,7 +49,6 @@ import Network.TypedProtocol.ReqResp.Type qualified as ReqResp
 
 import Ouroboros.Network.Context
 import Ouroboros.Network.Driver
-import Ouroboros.Network.ErrorPolicy
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.Snocket
 import Ouroboros.Network.Socket
@@ -61,11 +60,13 @@ import Network.Mux.Bearer qualified as Mx
 import Network.Mux.Timeout qualified as Mx
 import Network.Mux.Types qualified as Mx
 
+import Ouroboros.Network.Protocol.Handshake
 import Ouroboros.Network.Protocol.Handshake.Codec
 import Ouroboros.Network.Protocol.Handshake.Unversioned
 import Ouroboros.Network.Protocol.Handshake.Version
 
 import Ouroboros.Network.Test.Orphans ()
+import Test.Ouroboros.Network.Server qualified as Test.Server
 
 import Test.QuickCheck
 import Test.Tasty (DependencyType (..), TestTree, after, testGroup)
@@ -196,7 +197,6 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
 
     cv <- newEmptyTMVarIO
     sv <- newEmptyTMVarIO
-    networkState <- newNetworkMutableState
 
     {- The siblingVar is used by the initiator and responder to wait on each other before exiting.
      - Without this wait there is a risk that one side will finish first causing the Muxbearer to
@@ -238,20 +238,21 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
 
     let snocket = socketSnocket iomgr
     res <-
-      withServerNode
+      Test.Server.with
         snocket
         Mx.makeSocketBearer
         ((. Just) <$> configureSock)
-        networkTracers
-        networkState
-        (AcceptedConnectionsLimit maxBound maxBound 0)
         responderAddr
-        unversionedHandshakeCodec
-        noTimeLimitsHandshake
-        unversionedProtocolDataCodec
-        (HandshakeCallbacks acceptableVersion queryVersion)
+        HandshakeArguments {
+          haHandshakeTracer  = nullTracer,
+          haHandshakeCodec   = unversionedHandshakeCodec,
+          haVersionDataCodec = unversionedProtocolDataCodec,
+          haAcceptVersion    = acceptableVersion,
+          haQueryVersion     = queryVersion,
+          haTimeLimits       = noTimeLimitsHandshake
+
+        }
         (unversionedProtocol (SomeResponderApplication responderApp))
-        nullErrorPolicies
         $ \_ _ -> do
           void $ connectToNode
             snocket
@@ -272,14 +273,6 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
     return (res == mapAccumL f 0 xs)
 
   where
-    networkTracers = NetworkServerTracers {
-        nstMuxTracer          = activeMuxTracer,
-        nstHandshakeTracer    = nullTracer,
-        nstErrorPolicyTracer  = showTracing stdoutTracer,
-        nstAcceptPolicyTracer = nullTracer
-      }
-
-
     waitSibling :: StrictTVar IO Int -> IO ()
     waitSibling cntVar = do
         atomically $ modifyTVar cntVar (\a -> a - 1)

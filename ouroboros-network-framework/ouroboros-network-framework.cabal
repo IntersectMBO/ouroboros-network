@@ -37,7 +37,6 @@ library
     Ouroboros.Network.Driver.Limits
     Ouroboros.Network.Driver.Simple
     Ouroboros.Network.Driver.Stateful
-    Ouroboros.Network.ErrorPolicy
     Ouroboros.Network.IOManager
     Ouroboros.Network.InboundGovernor
     Ouroboros.Network.InboundGovernor.Event
@@ -54,37 +53,24 @@ library
     Ouroboros.Network.RethrowPolicy
     Ouroboros.Network.Server.ConnectionTable
     Ouroboros.Network.Server.RateLimiting
-    Ouroboros.Network.Server.Socket
     Ouroboros.Network.Server2
     Ouroboros.Network.Snocket
     Ouroboros.Network.Socket
-    Ouroboros.Network.Subscription
-    Ouroboros.Network.Subscription.Client
-    Ouroboros.Network.Subscription.Dns
-    Ouroboros.Network.Subscription.Ip
-    Ouroboros.Network.Subscription.PeerState
-    Ouroboros.Network.Subscription.Subscriber
-    Ouroboros.Network.Subscription.Worker
     Simulation.Network.Snocket
 
   -- other-extensions:
   build-depends:
     -- ^ only to derive nothunk instances
     Win32-network ^>=0.2,
-    async >=2.1 && <2.3,
     base >=4.12 && <4.21,
     bytestring >=0.10 && <0.13,
-    cardano-prelude,
     cborg >=0.2.1 && <0.3,
     containers >=0.5 && <0.8,
     contra-tracer,
     deepseq,
-    dns <4.3,
     hashable,
     io-classes ^>=1.5.0,
-    iproute >=1.7 && <1.8,
     monoidal-synchronisation ^>=0.1.0.5,
-    mtl,
     network ^>=3.1.4,
     network-mux ^>=0.5,
     nothunks,
@@ -95,7 +81,6 @@ library
     quiet,
     random,
     si-timers,
-    stm,
     strict-stm,
     text,
     typed-protocols ^>=0.3,
@@ -127,6 +112,7 @@ library testlib
     Ouroboros.Network.ConnectionManager.Test.Utils
     Ouroboros.Network.InboundGovernor.Test.Utils
     Ouroboros.Network.Test.Orphans
+    Test.Ouroboros.Network.Server
 
   other-modules:
   build-depends:
@@ -172,7 +158,6 @@ test-suite sim-tests
     Test.Ouroboros.Network.RateLimiting
     Test.Ouroboros.Network.Server2.Sim
     Test.Ouroboros.Network.Socket
-    Test.Ouroboros.Network.Subscription
     Test.Simulation.Network.Snocket
 
   build-depends:
@@ -182,10 +167,8 @@ test-suite sim-tests
     cborg,
     containers,
     contra-tracer,
-    dns,
     io-classes,
     io-sim,
-    iproute,
     monoidal-synchronisation,
     network,
     network-mux,
@@ -241,18 +224,14 @@ test-suite io-tests
     Test.Ouroboros.Network.Driver
     Test.Ouroboros.Network.Server2.IO
     Test.Ouroboros.Network.Socket
-    Test.Ouroboros.Network.Subscription
 
   build-depends:
     QuickCheck,
     base >=4.14 && <4.21,
     bytestring,
-    containers,
     contra-tracer,
-    dns,
     io-classes,
     io-sim,
-    iproute,
     monoidal-synchronisation,
     network,
     network-mux,
@@ -302,6 +281,7 @@ executable demo-ping-pong
     network-mux,
     ouroboros-network-api,
     ouroboros-network-framework,
+    ouroboros-network-framework:testlib,
     typed-protocols-examples,
 
   default-language: Haskell2010
