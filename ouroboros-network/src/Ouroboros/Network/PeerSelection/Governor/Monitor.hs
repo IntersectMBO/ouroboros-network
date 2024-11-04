@@ -34,6 +34,7 @@ import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
 import System.Random (randomR)
 
+import Cardano.Node.ArgumentsExtra (ConsensusModePeerTargets (..))
 import Cardano.Node.ConsensusMode
 import Cardano.Node.PeerSelection.Bootstrap (isBootstrapPeersEnabled,
            isNodeAbleToMakeProgress, requiresBootstrapPeers)

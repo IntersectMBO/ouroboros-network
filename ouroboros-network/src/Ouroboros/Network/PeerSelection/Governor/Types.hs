@@ -21,7 +21,6 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   ( -- * P2P governor policies
     PeerSelectionPolicy (..)
   , PeerSelectionTargets (..)
-  , ConsensusModePeerTargets (..)
   , nullPeerSelectionTargets
   , sanePeerSelectionTargets
   , PickPolicy
@@ -277,14 +276,6 @@ data PeerSelectionTargets = PeerSelectionTargets {
 --     targetChurnIntervalEstablishedPeers :: !DiffTime,
 --     targetChurnIntervalActivePeers      :: !DiffTime
      }
-  deriving (Eq, Show)
-
--- | Provides alternate peer selection targets
--- for various syncing modes.
---
-data ConsensusModePeerTargets = ConsensusModePeerTargets {
-  deadlineTargets :: !PeerSelectionTargets,
-  syncTargets     :: !PeerSelectionTargets }
   deriving (Eq, Show)
 
 nullPeerSelectionTargets :: PeerSelectionTargets

@@ -102,8 +102,7 @@ import Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit (..),
 import Ouroboros.Network.NodeToNode qualified as NodeToNode
 import Ouroboros.Network.PeerSelection.Churn (PeerChurnArgs (..))
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
-import Ouroboros.Network.PeerSelection.Governor.Types
-           (ConsensusModePeerTargets (..), DebugPeerSelection (..),
+import Ouroboros.Network.PeerSelection.Governor.Types (DebugPeerSelection (..),
            PeerSelectionActions, PeerSelectionCounters,
            PeerSelectionInterfaces (..), PeerSelectionPolicy (..),
            PeerSelectionState, TracePeerSelection (..),
@@ -124,6 +123,8 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
            MinBigLedgerPeersForTrustedState, UseLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 #endif
+import Cardano.Node.ArgumentsExtra (CardanoArgumentsExtra (..),
+           ConsensusModePeerTargets (..))
 import Cardano.Node.ConsensusMode
 import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers)
 import Cardano.Node.PeerSelection.Types (ChurnMode (..))
