@@ -38,7 +38,7 @@ import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.ConnMap as ConnMap
 import Ouroboros.Network.ConnectionManager.Types
 
-import Ouroboros.Network.Testing.Utils (WithName (..))
+import Test.Ouroboros.Network.Utils (WithName (..))
 
 -- | 'ConnectionManager' state: for each peer we keep a 'ConnectionState' in
 -- a mutable variable, which reduces congestion on the 'TMVar' which keeps

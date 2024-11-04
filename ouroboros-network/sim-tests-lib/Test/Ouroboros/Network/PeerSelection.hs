@@ -83,15 +83,15 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRo
 import Ouroboros.Network.Point
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingResult (..))
 
-import Ouroboros.Network.Testing.Data.Script
-import Ouroboros.Network.Testing.Data.Signal (E (E), Events, Signal, TS (TS),
+import Test.Ouroboros.Network.Data.Script
+import Test.Ouroboros.Network.Data.Signal (E (E), Events, Signal, TS (TS),
            signalProperty)
-import Ouroboros.Network.Testing.Data.Signal qualified as Signal
-import Ouroboros.Network.Testing.Utils (disjointSetsProperty, isSubsetProperty,
-           nightlyTest)
+import Test.Ouroboros.Network.Data.Signal qualified as Signal
 import Test.Ouroboros.Network.PeerSelection.Instances
 import Test.Ouroboros.Network.PeerSelection.MockEnvironment hiding (tests)
 import Test.Ouroboros.Network.PeerSelection.PeerGraph
+import Test.Ouroboros.Network.Utils (disjointSetsProperty, isSubsetProperty,
+           nightlyTest)
 
 import Control.Monad.IOSim
 

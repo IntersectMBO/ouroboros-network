@@ -2,7 +2,7 @@
 {-# LANGUAGE DerivingVia       #-}
 {-# LANGUAGE TupleSections     #-}
 
-module Ouroboros.Network.Testing.Data.Script
+module Test.Ouroboros.Network.Data.Script
   ( -- * Test scripts
     Script (..)
   , NonEmpty (..)
@@ -31,23 +31,23 @@ module Ouroboros.Network.Testing.Data.Script
   , interpretPickScript
   ) where
 
-import           Data.Functor (($>))
-import           Data.List.NonEmpty (NonEmpty (..))
-import qualified Data.List.NonEmpty as NonEmpty
-import           Data.Set (Set)
-import qualified Data.Set as Set
+import Data.Functor (($>))
+import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.NonEmpty qualified as NonEmpty
+import Data.Set (Set)
+import Data.Set qualified as Set
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Concurrent.Class.MonadSTM (TVar)
-import qualified Control.Concurrent.Class.MonadSTM as LazySTM
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Tracer (Tracer, traceWith)
+import Control.Concurrent.Class.MonadSTM (TVar)
+import Control.Concurrent.Class.MonadSTM qualified as LazySTM
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer, traceWith)
 
-import           Ouroboros.Network.Testing.Utils (ShrinkCarefully,
-                     prop_shrink_nonequal, shrinkVector)
-import           Test.QuickCheck
+import Test.Ouroboros.Network.Utils (ShrinkCarefully, prop_shrink_nonequal,
+           shrinkVector)
+import Test.QuickCheck
 
 --
 -- Test script abstraction

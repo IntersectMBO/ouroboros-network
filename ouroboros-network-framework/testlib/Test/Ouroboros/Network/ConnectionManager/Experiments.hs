@@ -97,10 +97,10 @@ import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (Snocket)
 import Ouroboros.Network.Snocket qualified as Snocket
-import Ouroboros.Network.Testing.Utils (WithName (..))
 
 import Test.Ouroboros.Network.ConnectionManager.Timeouts
 import Test.Ouroboros.Network.Orphans ()
+import Test.Ouroboros.Network.Utils (WithName (..))
 
 import Ouroboros.Network.ConnectionManager.InformationChannel
            (newInformationChannel)

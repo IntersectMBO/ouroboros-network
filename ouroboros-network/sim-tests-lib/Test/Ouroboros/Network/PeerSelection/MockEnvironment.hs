@@ -24,7 +24,7 @@ module Test.Ouroboros.Network.PeerSelection.MockEnvironment
   , selectPeerSelectionTraceEvents
   , selectPeerSelectionTraceEventsUntil
   , peerShareReachablePeers
-  , module Ouroboros.Network.Testing.Data.Script
+  , module Test.Ouroboros.Network.Data.Script
   , module Ouroboros.Network.PeerSelection.Types
   , tests
   , prop_shrink_nonequal_GovernorMockEnvironment
@@ -66,19 +66,18 @@ import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.Point
 
-import Ouroboros.Network.Testing.Data.Script (PickScript, Script (..),
+import Test.Ouroboros.Network.Data.Script (PickScript, Script (..),
            ScriptDelay (..), TimedScript, arbitraryPickScript,
            arbitraryScriptOf, initScript, initScript', interpretPickScript,
            playTimedScript, prop_shrink_Script, shrinkScriptWith,
            singletonScript, singletonTimedScript, stepScript, stepScriptSTM,
            stepScriptSTM')
-import Ouroboros.Network.Testing.Utils (ShrinkCarefully, arbitrarySubset,
-           nightlyTest, prop_shrink_nonequal, prop_shrink_valid)
-
 import Test.Ouroboros.Network.PeerSelection.Instances
 import Test.Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers hiding
            (tests)
 import Test.Ouroboros.Network.PeerSelection.PeerGraph
+import Test.Ouroboros.Network.Utils (ShrinkCarefully, arbitrarySubset,
+           nightlyTest, prop_shrink_nonequal, prop_shrink_valid)
 
 import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),

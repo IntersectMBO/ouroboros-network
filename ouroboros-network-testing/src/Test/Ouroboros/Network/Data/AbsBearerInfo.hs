@@ -3,7 +3,7 @@
 {-# LANGUAGE NamedFieldPuns     #-}
 {-# LANGUAGE NumericUnderscores #-}
 
-module Ouroboros.Network.Testing.Data.AbsBearerInfo
+module Test.Ouroboros.Network.Data.AbsBearerInfo
   ( AbsBearerInfoScript (..)
   , canFail
   , NonFailingAbsBearerInfo (..)
@@ -35,8 +35,8 @@ import GHC.IO.Exception (IOErrorType (..), IOException (..))
 import Network.Mux.Bearer.AttenuatedChannel (Size, SuccessOrFailure (..))
 import Network.Mux.Types (SDUSize (..))
 
-import Ouroboros.Network.Testing.Data.Script (Script (..))
-import Ouroboros.Network.Testing.Utils (Delay (..))
+import Test.Ouroboros.Network.Data.Script (Script (..))
+import Test.Ouroboros.Network.Utils (Delay (..))
 
 import Test.QuickCheck hiding (Result (..))
 
