@@ -53,3 +53,11 @@ package network-mux
 
 package ouroboros-network
   flags: +asserts +cddl
+
+source-repository-package
+  type: git
+  location: https://github.com/turion/rhine
+  tag: fcaec156c02842db803113e1242a79065aa527ce
+  subdir:
+    rhine
+    automaton

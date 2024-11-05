@@ -81,7 +81,7 @@ import Control.Concurrent.Chan
 import Control.Monad.Reader
 import Control.Monad.State ( evalStateT, StateT )
 import Control.Monad.State qualified as State
-import FRP.Rhine qualified as Rhine (Time, try)
+import FRP.Rhine qualified as Rhine (Time, try, forever)
 import FRP.Rhine hiding (diffTime, addTime, Time)-- qualified as Rhine
 import Data.Automaton.Trans.Except (dSwitch)
 -- import FRP.Rhine.Clock
@@ -555,7 +555,7 @@ data CardanoSignal = CardanoSignal {
 
 data UpOrDown = Up | Down
 data ChaseTargets peeraddr = ChaseTargets !UpOrDown !Int !Int !Int (Set.Set peeraddr)
-type TargetsInput peeraddr peerconn event = (PeerSelectionState peeraddr peerconn, PeerSelectionView (Set.Set peeraddr, Int), Chan event)
+type TargetsInput peeraddr peerconn event = (PeerSelectionState peeraddr peerconn, PeerSelectionView (Set.Set peeraddr, Int))
 
 peerSelectionGovernor' :: forall peeraddr peerconn m. ( Alternative (STM m)
                          , MonadAsync m
@@ -600,16 +600,15 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
 
     quiesceTimeout :: ClSF m (MyClock n) (Maybe Quiesce) ()
     quiesceTimeout =
-      forever $
-        Rhine.try $ proc command -> do
-          case command of
-            Just _ -> do
-              elapsed <- sinceStart -< ()
-              if elapsed > 10
-                then error "crap, bailing out!!!" -< ()
-                else returnA -< ()
-            Nothing -> -- reset timer
-              throwS -< ()
+      Rhine.forever . Rhine.try $ proc command -> do
+        case command of
+          Just _ -> do
+            elapsed <- sinceStart -< ()
+            if elapsed > 10
+              then error "crap, bailing out!!!" -< ()
+              else returnA -< ()
+          Nothing -> -- reset timer
+            throwS -< ()
 
     cardanoHandlers = handlers
       where
@@ -620,22 +619,12 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
         quiesce = arr cardanoQuiesce >>> (liftClSF . liftClSF $ quiesceTimeout)
 
         attemptCardanoChurn :: ClSF (App2 peeraddr peerconn m) (EventClock PeerSelectionEvent) CardanoSignal ()
-        attemptCardanoChurn = liftClSF . liftClSF $ impl
-          where
-            impl =
-              -- churn <- tagS -< ()
-              safely do
-                Rhine.try $ churnPreflight -- >>> cardanoSetTargets
-                safe impl
-              where
-                churnPreflight = undefined
-                -- churnPreflight = proc (CardanoSignal {cardanoQuiesce}, churn) -> do
-                --   throwOn () -< churn || isJust cardanoQuiesce
-                --   -- churn <- tagS -< ()
-                --   -- case (cardanoQuiesce, churn) of
-                --   --   (Just _, _) -> returnA -< ()
-                --   --   -- (_, Churn) -> arrMCl (churn tracer) >-> arr (const undefined) -< undefined
-                --   --   _otherwise -> returnA -< ()
+        attemptCardanoChurn = proc sig -> do
+          event <- tagS -< ()
+          case (event, cardanoQuiesce sig) of
+            (Churn, Nothing) -> cardanoSetTargets -< ()
+            _otherwise       -> returnA -< ()
+
 
     -- abstract churn, independent of cardano-specifics such as lsj or bootstrap peers or consensus mode
     churn :: Tracer (App2 peeraddr peerconn m) (TracePeerSelection peeraddr)
@@ -648,30 +637,41 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
         else
           undefined
 
-    cardanoSetTargets :: BehaviorF (App2 peeraddr peerconn m) time Bool ()
+    cardanoSetTargets :: BehaviorF (App2 peeraddr peerconn m) time () ()
     cardanoSetTargets = constMCl getEnv >>> (liftClSF . liftClSF $ impl)
       where
-        getEnv = asks (\chan st -> (st, peerSelectionStateToView st, chan)) <*> State.get
+        getEnv = asks (\chan st -> (chan, (st, peerSelectionStateToView st))) <*> State.get
 
-        impl = proc a@(state, view, chan) -> do
+        impl = proc (chan, bundle@(st, view)) -> do
 
-          -- _ <- knownPeers -< a
-          _ <- establishedPeers -< a
+          -- _ <- cardanoKnownPeers -< (sig, bundle)
+          _ <- establishedPeers  -< bundle
           returnA -< ()
 
-    establishedPeers :: BehaviorF m time (TargetsInput peeraddr peerconn event) (Maybe (Min Time))
-    establishedPeers = arrMCl impl
+    cardanoKnownPeers :: BehaviorF m time (CardanoSignal, TargetsInput peeraddr peerconn event) (Either (Maybe (Min Time)) (m ()))
+    cardanoKnownPeers = proc (sig, stateAndView) -> do
+      case cardanoQuiesce sig of
+        Nothing    -> knownPeers -< stateAndView
+        _otherwise -> returnA -< Left Nothing
+
+    establishedPeers :: BehaviorF m time (TargetsInput peeraddr peerconn event) (Either (Maybe (Min Time)) (m ()))
+    establishedPeers = arr go
       where
-        impl (state, view, chan) = do
+        go (state, view) =
           forEstablished state view `onSuccessElseRetryTime` chaseEstablishedPeersTarget state
 
-    knownPeers :: BehaviorF m time (TargetsInput peeraddr peerconn event) (Maybe (Min Time))
-    knownPeers = arrMCl impl
+    knownPeers :: BehaviorF m time (TargetsInput peeraddr peerconn event) (Either (Maybe (Min Time)) (m ()))
+    knownPeers = withTime >>> arr go
       where
-        impl (state, view, chan) = do
-          forKnown state view `onSuccessElseRetryTime` chaseKnownPeersTarget state
+        withTime = proc (st, view) -> do
+          now <- absoluteS -< ()
+          returnA -< (now, st, view)
+        go (now, state, view) =
+          forKnown state view now `onSuccessElseRetryTime` chaseKnownPeersTarget state
 
-    onSuccessElseRetryTime left right = either return right left
+    onSuccessElseRetryTime guards set = do
+      inputs <- guards
+      set inputs
 
     forEstablished :: PeerSelectionState peeraddr peerconn
                    -> PeerSelectionView (Set.Set peeraddr, Int)
@@ -681,7 +681,7 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
                     knownPeers,
                     inProgressPromoteCold,
                     targets = PeerSelectionTargets {
-                        targetNumberOfEstablishedPeers} }
+                        targetNumberOfEstablishedPeers } }
                    PeerSelectionView {
                      viewKnownBigLedgerPeers     = (bigLedgerPeersSet, _),
                      viewEstablishedPeers        = (_, numEstablishedPeers),
@@ -706,21 +706,25 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
 
     forKnown :: PeerSelectionState peeraddr peerconn
              -> PeerSelectionView (Set.Set peeraddr, Int)
+             -> Time
              -> Either (Maybe (Min Time)) (ChaseTargets peeraddr)
     forKnown PeerSelectionState {
                establishedPeers,
                knownPeers,
                inProgressPromoteCold,
+               inboundPeersRetryTime,
                targets = PeerSelectionTargets {
-                   targetNumberOfEstablishedPeers} }
+                   targetNumberOfEstablishedPeers } }
              PeerSelectionView {
                viewKnownBigLedgerPeers     = (bigLedgerPeersSet, _),
                viewEstablishedPeers        = (_, numEstablishedPeers),
                viewColdPeersPromotions     = (_, numConnectInProgress),
                viewAvailableToConnectPeers = (availableToConnect, numAvailableToConnect)
                }
+             now
       | numEstablishedPeers + numConnectInProgress < targetNumberOfEstablishedPeers
       , numAvailableToConnect - numEstablishedPeers - numConnectInProgress > 0
+      , now >= inboundPeersRetryTime
       = return $!
           let availableToPromote = availableToConnect
                                    `Set.difference` EstablishedPeers.toSet establishedPeers
@@ -737,10 +741,33 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
 
     chaseEstablishedPeersTarget :: PeerSelectionState peeraddr peerconn
                                 -> ChaseTargets peeraddr
-                                -> m (Maybe a)
+                                -> Either a (m ())
     chaseEstablishedPeersTarget st = \case
-      ChaseTargets Up   target numEst numPromote peers -> Nothing <$ below target numEst numPromote peers
-      ChaseTargets Down target numEst numDemote peers  -> Nothing <$ above target numEst numDemote peers
+      ChaseTargets Up   target numEst numPromote peers -> return $! below target numEst numPromote peers
+      ChaseTargets Down target numEst numDemote peers  -> return $! above target numEst numDemote peers
+      where
+        above target numEstablishedPeers numPeersToDemote availableToDemote = do
+          selectedToDemote <- pickPeers st
+                                (policyPickWarmPeersToDemote policy)
+                                availableToDemote
+                                numPeersToDemote
+          -- spin up job
+          traceWith tracer $ TraceDemoteWarmPeers target numEstablishedPeers selectedToDemote
+
+        below target numEstablishedPeers numPeersToPromote availableToPromote = do
+          selectedToPromote <- pickPeers st
+                                 (policyPickColdPeersToPromote policy)
+                                 availableToPromote
+                                 numPeersToPromote
+          -- spin up job
+          traceWith tracer $ TracePromoteColdPeers target numEstablishedPeers selectedToPromote
+
+    chaseKnownPeersTarget :: PeerSelectionState peeraddr peerconn
+                          -> ChaseTargets peeraddr
+                          -> Either a (m ())
+    chaseKnownPeersTarget st = \case
+      ChaseTargets Up   target numEst numPromote peers -> return $! below target numEst numPromote peers
+      ChaseTargets Down target numEst numDemote peers  -> return $! above target numEst numDemote peers
       where
         above target numEstablishedPeers numPeersToDemote availableToDemote = do
           selectedToDemote <- pickPeers st
