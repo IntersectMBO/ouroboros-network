@@ -60,6 +60,9 @@ import Network.Socket (SockAddr)
 import Cardano.Node.ConsensusMode
 import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
+import Cardano.Node.PeerSelection.LocalRootPeers (OutboundConnectionsState)
+import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable (..))
+import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..),
            peerSharing)
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
@@ -91,6 +94,18 @@ import Test.Ouroboros.Network.PeerSelection.PeerGraph
 
 import Control.Monad.IOSim
 
+import Cardano.Node.ArgumentsExtra (ConsensusModePeerTargets (..))
+import Cardano.Node.LedgerPeerConsensusInterface
+           (CardanoLedgerPeersConsensusInterface (..))
+import Cardano.Node.PeerSelection.Governor.PeerSelectionActions
+           (CardanoPeerSelectionActions (..))
+import Cardano.Node.PeerSelection.Governor.PeerSelectionState
+           (CardanoPeerSelectionState)
+import Cardano.Node.PeerSelection.Governor.PeerSelectionState qualified as CPST
+import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
+import Cardano.Node.PublicRootPeers qualified as CPRP
+import Cardano.Node.Types (LedgerStateJudgement (..),
+           MinBigLedgerPeersForTrustedState (..))
 import Test.QuickCheck
 import Test.QuickCheck.Monoids
 import Test.Tasty

@@ -13,7 +13,7 @@
 {-# OPTIONS_GHC -Wno-x-partial #-}
 #endif
 
-module Test.Ouroboros.Network.Testnet (tests) where
+module Test.Ouroboros.Network.Diffusion.Testnet.Cardano (tests) where
 
 import Control.Exception (AssertionFailed (..), catch, evaluate, fromException)
 import Control.Monad.Class.MonadFork
@@ -51,16 +51,14 @@ import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
-import Ouroboros.Network.InboundGovernor hiding (TrUnexpectedlyFalseAssertion)
 import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.PeerStateActions
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions hiding (IOError)
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSelection.Types
-import Ouroboros.Network.Server2 (ServerTrace (..))
 import Ouroboros.Network.Testing.Data.AbsBearerInfo
 import Ouroboros.Network.Testing.Data.Script
 import Ouroboros.Network.Testing.Data.Signal
@@ -70,8 +68,8 @@ import Ouroboros.Network.Testing.Utils hiding (SmallDelay, debugTracer)
 import Simulation.Network.Snocket (BearerInfo (..))
 
 import Test.Ouroboros.Network.Diffusion.Node (config_REPROMOTE_DELAY)
-import Test.Ouroboros.Network.Diffusion.Node.NodeKernel
-import Test.Ouroboros.Network.Testnet.Simulation.Node
+import Test.Ouroboros.Network.Diffusion.Node.Kernel
+import Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Node
 import Test.QuickCheck
 import Test.QuickCheck.Monoids
 import Test.Tasty
@@ -79,8 +77,6 @@ import Test.Tasty.QuickCheck (testProperty)
 
 import Cardano.Node.ConsensusMode
 import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable (..))
-import Control.Exception (AssertionFailed (..), catch, evaluate)
-import Ouroboros.Network.BlockFetch (FetchMode (..), TraceFetchClientState (..))
 import Ouroboros.Network.ConnectionManager.Test.Timeouts (TestProperty (..),
            classifyActivityType, classifyEffectiveDataFlow,
            classifyNegotiatedDataFlow, classifyPrunings, classifyTermination,
@@ -90,9 +86,6 @@ import Ouroboros.Network.ConnectionManager.Test.Utils
            abstractStateIsFinalTransitionTVarTracing, connectionManagerTraceMap,
            validTransitionMap, verifyAbstractTransition,
            verifyAbstractTransitionOrder)
-import Ouroboros.Network.ConnectionManager.Types
-import Ouroboros.Network.ConsensusMode
-import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.InboundGovernor.Test.Utils (inboundGovernorTraceMap,
            remoteStrIsFinalTransition, serverTraceMap, validRemoteTransitionMap,
@@ -102,23 +95,12 @@ import Ouroboros.Network.NodeToNode (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions hiding
-           (DNSorIOError (IOError))
 import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
            (TraceLocalRootPeers (..))
-import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
-import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
            WarmValency (..))
-import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
-import Ouroboros.Network.PeerSelection.Types
 import Ouroboros.Network.PeerSharing (PeerSharingResult (..))
 import Ouroboros.Network.Server2 qualified as Server
-import Ouroboros.Network.Testing.Data.AbsBearerInfo
-import Ouroboros.Network.Testing.Data.Script
-import Ouroboros.Network.Testing.Data.Signal
-import Ouroboros.Network.Testing.Data.Signal qualified as Signal
-import Ouroboros.Network.Testing.Utils hiding (SmallDelay, debugTracer)
 
 import Cardano.Node.ArgumentsExtra (ConsensusModePeerTargets (..))
 import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers (..),
@@ -130,10 +112,8 @@ import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
 import Cardano.Node.PublicRootPeers qualified as CPRP
 import Cardano.Node.Types (LedgerStateJudgement,
            MinBigLedgerPeersForTrustedState (..))
-import Control.Monad.Class.MonadTest (exploreRaces)
-import Data.Dynamic (fromDynamic)
-import Ouroboros.Network.Block (BlockNo (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
+import Test.Ouroboros.Network.LedgerPeers (LedgerPools(..))
 
 tests :: TestTree
 tests =

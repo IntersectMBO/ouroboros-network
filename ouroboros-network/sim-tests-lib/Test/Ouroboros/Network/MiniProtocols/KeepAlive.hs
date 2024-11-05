@@ -5,7 +5,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Test.Ouroboros.Network.KeepAlive (tests) where
+module Test.Ouroboros.Network.MiniProtocols.KeepAlive (tests) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad (void)

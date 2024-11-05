@@ -59,6 +59,7 @@ import Control.Monad.Fail qualified as Fail
 import Control.Monad.IOSim
 import Control.Tracer (Tracer (..), contramap, traceWith)
 
+import Cardano.Node.PeerSelection.Governor.PeerSelectionState qualified as CPST
 import Ouroboros.Network.ExitPolicy
 import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
@@ -85,6 +86,16 @@ import Cardano.Node.LedgerPeerConsensusInterface
            (CardanoLedgerPeersConsensusInterface (..))
 import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
+import Cardano.Node.PeerSelection.Governor.PeerSelectionActions
+           (CardanoPeerSelectionActions (..))
+import Cardano.Node.PeerSelection.Governor.PeerSelectionState
+           (CardanoPeerSelectionState (..))
+import Cardano.Node.PeerSelection.LocalRootPeers (OutboundConnectionsState (..))
+import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable)
+import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
+import Cardano.Node.PublicRootPeers qualified as CPRP
+import Cardano.Node.Types (LedgerStateJudgement (..),
+           MinBigLedgerPeersForTrustedState (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers (..))

@@ -11,7 +11,7 @@
 
 -- | Diffusion simulation.
 --
-module Test.Ouroboros.Network.Testnet.Internal
+module Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Node
   ( -- * Run diffusion simulation
     diffusionSimulation
   , DiffusionScript (..)
@@ -75,7 +75,6 @@ import Cardano.Node.ConsensusMode
 import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.Types (AbstractTransitionTrace)
-import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.Diffusion.P2P qualified as Diff.P2P
 import Ouroboros.Network.Driver.Limits (ProtocolSizeLimits (..),
            ProtocolTimeLimits (..))
@@ -114,8 +113,8 @@ import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay (..),
            DNSTimeout (..))
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS qualified as PeerSelection hiding
            (tests)
-import Test.Ouroboros.Network.Testnet.Node qualified as Node
-import Test.Ouroboros.Network.Testnet.Node.Kernel (BlockGeneratorArgs, NtCAddr,
+import Test.Ouroboros.Network.Diffusion.Node qualified as Node
+import Test.Ouroboros.Network.Diffusion.Node.Kernel (BlockGeneratorArgs, NtCAddr,
            NtCVersion, NtCVersionData, NtNAddr, NtNAddr_ (IPAddr), NtNVersion,
            NtNVersionData, ntnAddrToRelayAccessPoint, randomBlockGenerationArgs)
 
@@ -919,7 +918,7 @@ data DiffusionSimulationTrace
 -- that check conditions synchronously.
 --
 data DiffusionTestTrace =
-      DiffusionLocalRootPeerTrace (TraceLocalRootPeers NtNAddr SomeException)
+      DiffusionLocalRootPeerTrace (TraceLocalRootPeers PeerTrustable NtNAddr SomeException)
     | DiffusionPublicRootPeerTrace TracePublicRootPeers
     | DiffusionLedgerPeersTrace TraceLedgerPeers
     | DiffusionPeerSelectionTrace (TracePeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers NtNAddr) NtNAddr)
@@ -1147,7 +1146,7 @@ diffusionSimulation
 
                 }
 
-          interfaces :: NodeKernel.Interfaces (CardanoLedgerPeersConsensusInterface m) m
+          interfaces :: Node.Interfaces (CardanoLedgerPeersConsensusInterface m) m
           interfaces =
             Node.Interfaces
               { Node.iNtnSnocket        = ntnSnocket

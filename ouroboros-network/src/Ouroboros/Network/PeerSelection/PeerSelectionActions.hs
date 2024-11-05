@@ -96,7 +96,7 @@ withPeerSelectionActions
      , Ord peeraddr
      , Exception exception
      )
-  => StrictTVar m (Config extraFlags peeraddr)
+  => StrictTVar m (Config PeerTrustable peeraddr)
   -> PeerActionsDNS peeraddr resolver exception m
   -> PeerSelectionActionsArgs (CardanoPeerSelectionActions m) (CardanoLedgerPeersConsensusInterface m) (CardanoPublicRootPeers peeraddr) PeerTrustable peeraddr peerconn exception m
   -> WithLedgerPeersArgs (CardanoLedgerPeersConsensusInterface m) m

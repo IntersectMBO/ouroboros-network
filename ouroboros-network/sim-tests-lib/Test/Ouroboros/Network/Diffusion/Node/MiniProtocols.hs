@@ -9,7 +9,7 @@
 -- orphaned 'ShowProxy PingPong' instance.
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.Ouroboros.Network.Testnet.Node.MiniProtocols
+module Test.Ouroboros.Network.Diffusion.Node.MiniProtocols
   ( Codecs
   , cborCodecs
   , LimitsAndTimeouts (..)
@@ -97,7 +97,7 @@ import Ouroboros.Network.Protocol.PeerSharing.Client (peerSharingClientPeer)
 import Ouroboros.Network.Protocol.PeerSharing.Codec (codecPeerSharing)
 import Ouroboros.Network.Protocol.PeerSharing.Server (peerSharingServerPeer)
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharing)
-import Test.Ouroboros.Network.Testnet.Node.Kernel
+import Test.Ouroboros.Network.Diffusion.Node.Kernel
 
 
 -- | Protocol codecs.

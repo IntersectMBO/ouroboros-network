@@ -7,7 +7,7 @@
 {-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
-module Test.Ouroboros.Network.Testnet.Node
+module Test.Ouroboros.Network.Diffusion.Node
   ( -- * run a node
     Node.BlockGeneratorArgs (..)
   , Node.LimitsAndTimeouts (..)
@@ -62,6 +62,7 @@ import Ouroboros.Network.Mock.ConcreteBlock (Block (..), BlockHeader (..),
            convertSlotToTimeForTestsAssumingNoHardFork)
 import Ouroboros.Network.Mock.ProducerState (ChainProducerState (..))
 
+import Cardano.Node.ConsensusMode
 import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.Block (MaxSlotNo (..), maxSlotNoFromWithOrigin,
            pointSlot)
@@ -112,11 +113,11 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
            WarmValency)
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay,
            DNSTimeout, mockDNSActions)
-import Test.Ouroboros.Network.Testnet.Node.ChainDB (addBlock, getBlockPointSet)
-import Test.Ouroboros.Network.Testnet.Node.Kernel (NodeKernel (..), NtCAddr,
+import Test.Ouroboros.Network.Diffusion.Node.ChainDB (addBlock, getBlockPointSet)
+import Test.Ouroboros.Network.Diffusion.Node.Kernel (NodeKernel (..), NtCAddr,
            NtCVersion, NtCVersionData, NtNAddr, NtNVersion, NtNVersionData (..))
-import Test.Ouroboros.Network.Testnet.Node.Kernel qualified as Node
-import Test.Ouroboros.Network.Testnet.Node.MiniProtocols qualified as Node
+import Test.Ouroboros.Network.Diffusion.Node.Kernel qualified as Node
+import Test.Ouroboros.Network.Diffusion.Node.MiniProtocols qualified as Node
 
 
 data Interfaces extraAPI m = Interfaces
