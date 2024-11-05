@@ -71,7 +71,6 @@ import Test.Ouroboros.Network.PeerSelection.Instances ()
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
-import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable (..))
 
 tests :: TestTree
 tests =
@@ -104,7 +103,10 @@ tests =
 data MockRoots = MockRoots {
     mockLocalRootPeers        :: [( HotValency
                                   , WarmValency
-                                  , Map RelayAccessPoint (PeerAdvertise, PeerTrustable))]
+                                  , Map RelayAccessPoint (PeerAdvertise, ()))
+                                  -- ^ extraFlags isn't used here since it is
+                                  -- not required for testing.
+                                 ]
   , mockLocalRootPeersDNSMap  :: Script (Map Domain [(IP, TTL)])
   , mockPublicRootPeers       :: Map RelayAccessPoint PeerAdvertise
   , mockPublicRootPeersDNSMap :: Script (Map Domain [(IP, TTL)])
@@ -238,10 +240,10 @@ simpleMockRoots = MockRoots localRootPeers dnsMap Map.empty (singletonScript Map
       [ ( 2, 2
         , Map.fromList
           [ ( RelayAccessAddress (read "192.0.2.1") (read "3333")
-            , (DoAdvertisePeer, IsNotTrustable)
+            , (DoAdvertisePeer, ())
             )
           , ( RelayAccessDomain  "test.domain"      (read "4444")
-            , (DoNotAdvertisePeer, IsNotTrustable)
+            , (DoNotAdvertisePeer, ())
             )
           ]
         )
@@ -338,7 +340,7 @@ mockLocalRootPeersProvider :: forall m.
                               , MonadTraceSTM m
                               , MonadLabelledSTM m
                               )
-                           => Tracer m (TraceLocalRootPeers PeerTrustable SockAddr Failure)
+                           => Tracer m (TraceLocalRootPeers () SockAddr Failure)
                            -> MockRoots
                            -> Script DNSTimeout
                            -> Script DNSLookupDelay
@@ -462,12 +464,12 @@ mockResolveLedgerPeers tracer (MockRoots _ _ publicRootPeers dnsMapScript)
 -- Utils for properties
 --
 
-data TestTraceEvent = RootPeerDNSLocal  (TraceLocalRootPeers PeerTrustable SockAddr Failure)
-                    | LocalRootPeersResults [(HotValency, WarmValency, Map SockAddr (PeerAdvertise, PeerTrustable))]
+data TestTraceEvent = RootPeerDNSLocal  (TraceLocalRootPeers () SockAddr Failure)
+                    | LocalRootPeersResults [(HotValency, WarmValency, Map SockAddr (PeerAdvertise, ()))]
                     | RootPeerDNSPublic TracePublicRootPeers
   deriving (Show, Typeable)
 
-tracerTraceLocalRoots :: Tracer (IOSim s) (TraceLocalRootPeers PeerTrustable SockAddr Failure)
+tracerTraceLocalRoots :: Tracer (IOSim s) (TraceLocalRootPeers () SockAddr Failure)
 tracerTraceLocalRoots = contramap RootPeerDNSLocal tracerTestTraceEvent
 
 tracerTracePublicRoots :: Tracer (IOSim s) TracePublicRootPeers
@@ -495,20 +497,20 @@ selectRootPeerDNSTraceEvents = go
     go TraceLoop                     = error "IOSimPOR step time limit exceeded"
 
 selectLocalRootPeersEvents :: [(Time, TestTraceEvent)]
-                           -> [(Time, TraceLocalRootPeers PeerTrustable SockAddr Failure)]
+                           -> [(Time, TraceLocalRootPeers () SockAddr Failure)]
 selectLocalRootPeersEvents trace = [ (t, e) | (t, RootPeerDNSLocal e) <- trace ]
 
 selectLocalRootPeersResults :: [(Time, TestTraceEvent)]
-                            -> [(Time, [(HotValency, WarmValency, Map SockAddr (PeerAdvertise, PeerTrustable))])]
+                            -> [(Time, [(HotValency, WarmValency, Map SockAddr (PeerAdvertise, ()))])]
 selectLocalRootPeersResults trace = [ (t, r) | (t, LocalRootPeersResults r) <- trace ]
 
-selectLocalRootGroupsEvents :: [(Time, TraceLocalRootPeers PeerTrustable SockAddr Failure)]
+selectLocalRootGroupsEvents :: [(Time, TraceLocalRootPeers () SockAddr Failure)]
                             -> [(Time, [( HotValency
                                         , WarmValency
-                                        , Map SockAddr (PeerAdvertise, PeerTrustable))])]
+                                        , Map SockAddr (PeerAdvertise, ()))])]
 selectLocalRootGroupsEvents trace = [ (t, e) | (t, TraceLocalRootGroups e) <- trace ]
 
-selectLocalRootResultEvents :: [(Time, TraceLocalRootPeers PeerTrustable SockAddr Failure)]
+selectLocalRootResultEvents :: [(Time, TraceLocalRootPeers () SockAddr Failure)]
                             -> [(Time, (Domain, [IP]))]
 selectLocalRootResultEvents trace = [ (t, (domain, map fst r))
                                     | (t, TraceLocalRootResult (DomainAccessPoint domain _) r) <- trace ]
@@ -555,13 +557,13 @@ prop_local_preservesIPs mockRoots@(MockRoots localRoots _ _ _)
   where
     checkAll :: [(Time, [( HotValency
                          , WarmValency
-                         , Map SockAddr (PeerAdvertise, PeerTrustable))])]
+                         , Map SockAddr (PeerAdvertise, ()))])]
              -> Property
     checkAll [] = property True
     checkAll (x:t) =
       let thrd (_, _, c) = c
           -- get local root ip addresses
-          localRootAddresses :: [(a, b, Map RelayAccessPoint (PeerAdvertise, PeerTrustable))]
+          localRootAddresses :: [(a, b, Map RelayAccessPoint (PeerAdvertise, ()))]
                              -> Set SockAddr
           localRootAddresses lrp =
             Set.fromList
@@ -573,7 +575,7 @@ prop_local_preservesIPs mockRoots@(MockRoots localRoots _ _ _)
           -- get ip addresses out of LocalRootGroup trace events
           localGroupEventsAddresses :: (a, [( HotValency
                                             , WarmValency
-                                            , Map SockAddr (PeerAdvertise, PeerTrustable))])
+                                            , Map SockAddr (PeerAdvertise, ()))])
                                     -> Set SockAddr
           localGroupEventsAddresses (_, s) =
               Set.fromList
