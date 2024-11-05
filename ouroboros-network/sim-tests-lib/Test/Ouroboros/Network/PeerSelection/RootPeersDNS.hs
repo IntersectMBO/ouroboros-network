@@ -59,7 +59,6 @@ import Data.List (intercalate)
 import Data.List.NonEmpty (NonEmpty (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
-import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
 import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
