@@ -2832,15 +2832,27 @@ prop_diffusion_async_demotions ioSimTrace traceNumber =
                       TraceDemoteAsynchronous status ->
                           Just $ Stop failures
                         where
-                          failures = Map.keysSet (Map.filter ((==PeerCooling) . fst) status)
+                          failures = Map.keysSet (Map.filter (\case
+                                                                 (PeerCold, _   ) -> True
+                                                                 (PeerCooling, _) -> True
+                                                                 _                -> False
+                                                             ) status)
                       TraceDemoteBigLedgerPeersAsynchronous status ->
                           Just $ Stop failures
                         where
-                          failures = Map.keysSet (Map.filter ((==PeerCooling) . fst) status)
+                          failures = Map.keysSet (Map.filter (\case
+                                                                 (PeerCold, _   ) -> True
+                                                                 (PeerCooling, _) -> True
+                                                                 _                -> False
+                                                             ) status)
                       TraceDemoteLocalAsynchronous status ->
                           Just $ Stop failures
                         where
-                          failures = Map.keysSet (Map.filter ((==PeerCooling) . fst) status)
+                          failures = Map.keysSet (Map.filter (\case
+                                                                 (PeerCold, _   ) -> True
+                                                                 (PeerCooling, _) -> True
+                                                                 _                -> False
+                                                             ) status)
                       TraceDemoteHotFailed _ _ peeraddr _ ->
                           Just $ Stop failures
                         where
