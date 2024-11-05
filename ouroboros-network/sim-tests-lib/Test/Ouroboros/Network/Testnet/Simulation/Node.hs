@@ -68,10 +68,10 @@ import Network.DNS (Domain, TTL)
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.PingPong.Type qualified as PingPong
 
+import Cardano.Node.ConsensusMode
 import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
 import Ouroboros.Network.ConnectionManager.Types (AbstractTransitionTrace,
            ConnectionManagerTrace)
-import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.Diffusion.P2P qualified as Diff.P2P
 import Ouroboros.Network.Driver.Limits (ProtocolSizeLimits (..),
            ProtocolTimeLimits (..))
@@ -79,13 +79,12 @@ import Ouroboros.Network.InboundGovernor (InboundGovernorTrace,
            RemoteTransitionTrace)
 import Ouroboros.Network.Mux (MiniProtocolLimits (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
-import Ouroboros.Network.PeerSelection.Governor (ConsensusModePeerTargets (..),
-           DebugPeerSelection (..), PeerSelectionTargets (..),
-           TracePeerSelection)
+import Ouroboros.Network.PeerSelection.Governor (DebugPeerSelection (..),
+           PeerSelectionTargets (..), TracePeerSelection)
 import Ouroboros.Network.PeerSelection.Governor qualified as PeerSelection
 import Ouroboros.Network.PeerSelection.LedgerPeers (AfterSlot (..),
-           LedgerPeersConsensusInterface (..), LedgerStateJudgement (..),
-           TraceLedgerPeers, UseLedgerPeers (..), accPoolStake)
+           LedgerPeersConsensusInterface (..), TraceLedgerPeers,
+           UseLedgerPeers (..), accPoolStake)
 import Ouroboros.Network.PeerSelection.PeerStateActions
            (PeerSelectionActionsTrace)
 import Ouroboros.Network.Protocol.BlockFetch.Codec (byteLimitsBlockFetch,
@@ -118,17 +117,23 @@ import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay (..),
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS qualified as PeerSelection hiding
            (tests)
 
+import Cardano.Node.ArgumentsExtra (ConsensusModePeerTargets (..))
+import Cardano.Node.LedgerPeerConsensusInterface
+           (CardanoLedgerPeersConsensusInterface (..))
+import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers (..))
+import Cardano.Node.PeerSelection.Governor.PeerSelectionState
+           (CardanoPeerSelectionState)
+import Cardano.Node.PeerSelection.LocalRootPeers (OutboundConnectionsState (..))
+import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable)
+import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
+import Cardano.Node.Types (LedgerStateJudgement (..))
 import Data.Bool (bool)
 import Data.Function (on)
 import Data.Typeable (Typeable)
 import Ouroboros.Network.BlockFetch (FetchMode (..), TraceFetchClientState,
            TraceLabelPeer (..))
-import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
-import Ouroboros.Network.PeerSelection.LocalRootPeers
-           (OutboundConnectionsState (..))
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
-import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint (..),
            PortNumber, RelayAccessPoint (..))
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSLookupType)
@@ -914,9 +919,9 @@ data DiffusionTestTrace =
       DiffusionLocalRootPeerTrace (TraceLocalRootPeers NtNAddr SomeException)
     | DiffusionPublicRootPeerTrace TracePublicRootPeers
     | DiffusionLedgerPeersTrace TraceLedgerPeers
-    | DiffusionPeerSelectionTrace (TracePeerSelection NtNAddr)
+    | DiffusionPeerSelectionTrace (TracePeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers NtNAddr) NtNAddr)
     | DiffusionPeerSelectionActionsTrace (PeerSelectionActionsTrace NtNAddr NtNVersion)
-    | DiffusionDebugPeerSelectionTrace (DebugPeerSelection NtNAddr)
+    | DiffusionDebugPeerSelectionTrace (DebugPeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers NtNAddr) NtNAddr)
     | DiffusionConnectionManagerTrace
         (ConnectionManagerTrace NtNAddr
           (ConnectionHandlerTrace NtNVersion NtNVersionData))
@@ -1137,7 +1142,7 @@ diffusionSimulation
 
                 }
 
-          interfaces :: NodeKernel.Interfaces m
+          interfaces :: NodeKernel.Interfaces (CardanoLedgerPeersConsensusInterface m) m
           interfaces =
             NodeKernel.Interfaces
               { NodeKernel.iNtnSnocket        = ntnSnocket
@@ -1152,18 +1157,20 @@ diffusionSimulation
                                         =
                   LedgerPeersConsensusInterface
                     (pure maxBound)
-                    (pure TooOld)
                     (do
                       ledgerPools <- stepScriptSTM' ledgerPeersVar
                       return $ Map.elems
                              $ accPoolStake
                              $ getLedgerPools
                              $ ledgerPools)
-              , NodeKernel.iUpdateOutboundConnectionsState =
-                  \a -> do
-                    a' <- readTVar onlyOutboundConnectionsStateVar
-                    when (a /= a') $
-                      writeTVar onlyOutboundConnectionsStateVar a
+                    CardanoLedgerPeersConsensusInterface {
+                      clpciGetLedgerStateJudgement = pure TooOld
+                    , clpciUpdateOutboundConnectionsState =
+                        \a -> do
+                          a' <- readTVar onlyOutboundConnectionsStateVar
+                          when (a /= a') $
+                            writeTVar onlyOutboundConnectionsStateVar a
+                    }
               }
 
           shouldChainSyncExit :: StrictTVar m (Maybe BlockNo) -> BlockHeader -> m Bool
@@ -1243,7 +1250,9 @@ diffusionSimulation
       :: NtNAddr
       -> Diff.P2P.TracersExtra NtNAddr NtNVersion NtNVersionData
                                NtCAddr NtCVersion NtCVersionData
-                               SomeException m
+                               SomeException CardanoPeerSelectionState
+                               CardanoPeerSelectionState PeerTrustable
+                               (CardanoPublicRootPeers NtNAddr) m
     tracersExtra ntnAddr =
       Diff.P2P.TracersExtra {
           Diff.P2P.dtTraceLocalRootPeersTracer         = contramap DiffusionLocalRootPeerTrace
