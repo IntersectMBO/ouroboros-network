@@ -9,7 +9,7 @@
 
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
-module Test.Ouroboros.Network.Testnet.Simulation.Node
+module Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Node
   ( SimArgs (..)
   , mainnetSimArgs
   , NodeArgs (..)
@@ -111,6 +111,7 @@ import Test.Ouroboros.Network.Diffusion.Node.NodeKernel (BlockGeneratorArgs,
            NtCAddr, NtCVersion, NtCVersionData, NtNAddr, NtNAddr_ (IPAddr),
            NtNVersion, NtNVersionData, ntnAddrToRelayAccessPoint,
            randomBlockGenerationArgs)
+import Test.Ouroboros.Network.PeerSelection.Cardano.Instances ()
 import Test.Ouroboros.Network.PeerSelection.Instances qualified as PeerSelection
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay (..),
            DNSTimeout (..))
@@ -916,7 +917,7 @@ data DiffusionSimulationTrace
 -- that check conditions synchronously.
 --
 data DiffusionTestTrace =
-      DiffusionLocalRootPeerTrace (TraceLocalRootPeers NtNAddr SomeException)
+      DiffusionLocalRootPeerTrace (TraceLocalRootPeers PeerTrustable NtNAddr SomeException)
     | DiffusionPublicRootPeerTrace TracePublicRootPeers
     | DiffusionLedgerPeersTrace TraceLedgerPeers
     | DiffusionPeerSelectionTrace (TracePeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers NtNAddr) NtNAddr)

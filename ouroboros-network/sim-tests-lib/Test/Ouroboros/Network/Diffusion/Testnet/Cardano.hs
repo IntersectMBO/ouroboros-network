@@ -14,7 +14,7 @@
 {-# OPTIONS_GHC -Wno-x-partial #-}
 #endif
 
-module Test.Ouroboros.Network.Testnet (tests) where
+module Test.Ouroboros.Network.Diffusion.Testnet.Cardano (tests) where
 
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadTime.SI (DiffTime, Time (Time), addTime,
@@ -65,7 +65,7 @@ import Simulation.Network.Snocket (BearerInfo (..))
 
 import Test.Ouroboros.Network.Diffusion.Node (config_REPROMOTE_DELAY)
 import Test.Ouroboros.Network.Diffusion.Node.NodeKernel
-import Test.Ouroboros.Network.Testnet.Simulation.Node
+import Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Node
 import Test.QuickCheck
 import Test.QuickCheck.Monoids
 import Test.Tasty
