@@ -2807,74 +2807,86 @@ prop_diffusion_async_demotions ioSimTrace traceNumber =
                        _            -> False)
             . Signal.fromEventsWith (Right Set.empty)
             . Signal.selectEvents
-                (\case DiffusionPeerSelectionActionsTrace (PeerStatusChanged (HotToCooling connId)) ->
-                           Just $ Right demotions
-                         where
-                           demotions = Set.singleton (remoteAddress connId)
-                       DiffusionPeerSelectionActionsTrace (PeerStatusChanged (WarmToCooling connId)) ->
-                           Just $ Right demotions
-                         where
-                           demotions = Set.singleton (remoteAddress connId)
-                       DiffusionConnectionManagerTrace (CM.TrConnectionCleanup connId) ->
-                           Just $ Left failures
-                         where
-                           failures = Just $ Set.singleton (remoteAddress connId)
-                       DiffusionPeerSelectionTrace (TraceDemoteAsynchronous status) ->
-                           Just $ Left (Just failures)
-                         where
-                           failures = Map.keysSet (Map.filter ((==PeerCooling) . fst) status)
-                       DiffusionPeerSelectionTrace (TraceDemoteBigLedgerPeersAsynchronous status) ->
-                           Just $ Left (Just failures)
-                         where
-                           failures = Map.keysSet (Map.filter ((==PeerCooling) . fst) status)
-                       DiffusionPeerSelectionTrace (TraceDemoteLocalAsynchronous status) ->
-                           Just $ Left (Just failures)
-                         where
-                           failures = Map.keysSet (Map.filter ((==PeerCooling) . fst) status)
-                       DiffusionPeerSelectionTrace (TraceDemoteHotFailed _ _ peeraddr _) ->
-                           Just $ Left (Just failures)
-                         where
-                           failures = Set.singleton peeraddr
-                       DiffusionPeerSelectionTrace (TraceDemoteWarmFailed _ _ peeraddr _) ->
-                           Just $ Left (Just failures)
-                         where
-                           failures = Set.singleton peeraddr
-                       DiffusionPeerSelectionTrace (TracePromoteColdFailed _ _ peeraddr _ _) ->
-                           Just $ Left (Just failures)
-                         where
-                           failures = Set.singleton peeraddr
-                       DiffusionPeerSelectionTrace (TracePromoteWarmFailed _ _ peeraddr _) ->
-                           Just $ Left (Just failures)
-                         where
-                           failures = Set.singleton peeraddr
-                       DiffusionPeerSelectionTrace (TraceDemoteWarmDone _ _ peeraddr) ->
-                           Just $ Left (Just failures)
-                         where
-                           failures = Set.singleton peeraddr
-                       DiffusionPeerSelectionTrace (TracePromoteColdBigLedgerPeerFailed _ _ peeraddr _ _) ->
-                           Just $ Left (Just failures)
-                         where
-                           failures = Set.singleton peeraddr
-                       DiffusionPeerSelectionTrace (TracePromoteWarmBigLedgerPeerFailed _ _ peeraddr _) ->
-                           Just $ Left (Just failures)
-                         where
-                           failures = Set.singleton peeraddr
-                       DiffusionPeerSelectionTrace (TraceDemoteHotBigLedgerPeerFailed _ _ peeraddr _) ->
-                           Just $ Left (Just failures)
-                         where
-                           failures = Set.singleton peeraddr
-                       DiffusionPeerSelectionTrace (TraceDemoteWarmBigLedgerPeerFailed _ _ peeraddr _) ->
-                           Just $ Left (Just failures)
-                         where
-                           failures = Set.singleton peeraddr
-                       DiffusionPeerSelectionTrace (TraceDemoteWarmBigLedgerPeerDone _ _ peeraddr) ->
-                           Just $ Left (Just failures)
-                         where
-                           failures = Set.singleton peeraddr
-                       DiffusionConnectionManagerTrace CM.TrShutdown ->
-                           Just $ Left Nothing
+                (\case
+                  DiffusionPeerSelectionActionsTrace a ->
+                    case a of
+                      PeerStatusChanged (HotToCooling connId) ->
+                          Just $ Right demotions
+                        where
+                          demotions = Set.singleton (remoteAddress connId)
+                      PeerStatusChanged (WarmToCooling connId) ->
+                          Just $ Right demotions
+                        where
+                          demotions = Set.singleton (remoteAddress connId)
+                      _ -> Nothing
 
-                       _ -> Nothing
+                  DiffusionPeerSelectionTrace a ->
+                    case a of
+                      TraceDemoteAsynchronous status ->
+                          Just $ Left (Just failures)
+                        where
+                          failures = Map.keysSet (Map.filter ((==PeerCooling) . fst) status)
+                      TraceDemoteBigLedgerPeersAsynchronous status ->
+                          Just $ Left (Just failures)
+                        where
+                          failures = Map.keysSet (Map.filter ((==PeerCooling) . fst) status)
+                      TraceDemoteLocalAsynchronous status ->
+                          Just $ Left (Just failures)
+                        where
+                          failures = Map.keysSet (Map.filter ((==PeerCooling) . fst) status)
+                      TraceDemoteHotFailed _ _ peeraddr _ ->
+                          Just $ Left (Just failures)
+                        where
+                          failures = Set.singleton peeraddr
+                      TraceDemoteWarmFailed _ _ peeraddr _ ->
+                          Just $ Left (Just failures)
+                        where
+                          failures = Set.singleton peeraddr
+                      TracePromoteColdFailed _ _ peeraddr _ _ ->
+                          Just $ Left (Just failures)
+                        where
+                          failures = Set.singleton peeraddr
+                      TracePromoteWarmFailed _ _ peeraddr _ ->
+                          Just $ Left (Just failures)
+                        where
+                          failures = Set.singleton peeraddr
+                      TraceDemoteWarmDone _ _ peeraddr ->
+                          Just $ Left (Just failures)
+                        where
+                          failures = Set.singleton peeraddr
+                      TracePromoteColdBigLedgerPeerFailed _ _ peeraddr _ _ ->
+                          Just $ Left (Just failures)
+                        where
+                          failures = Set.singleton peeraddr
+                      TracePromoteWarmBigLedgerPeerFailed _ _ peeraddr _ ->
+                          Just $ Left (Just failures)
+                        where
+                          failures = Set.singleton peeraddr
+                      TraceDemoteHotBigLedgerPeerFailed _ _ peeraddr _ ->
+                          Just $ Left (Just failures)
+                        where
+                          failures = Set.singleton peeraddr
+                      TraceDemoteWarmBigLedgerPeerFailed _ _ peeraddr _ ->
+                          Just $ Left (Just failures)
+                        where
+                          failures = Set.singleton peeraddr
+                      TraceDemoteWarmBigLedgerPeerDone _ _ peeraddr ->
+                          Just $ Left (Just failures)
+                        where
+                          failures = Set.singleton peeraddr
+                      _ -> Nothing
+
+                  DiffusionConnectionManagerTrace a ->
+                    case a of
+                      CM.TrConnectionCleanup connId ->
+                          Just $ Left failures
+                        where
+                          failures = Just $ Set.singleton (remoteAddress connId)
+                      CM.TrShutdown ->
+                          Just $ Left Nothing
+                      _ -> Nothing
+
+                  _ -> Nothing
                 )
             $ events
 
