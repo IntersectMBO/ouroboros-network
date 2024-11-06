@@ -88,8 +88,9 @@ import Ouroboros.Network.Testing.Data.Signal (E (E), Events, Signal, TS (TS),
 import Ouroboros.Network.Testing.Data.Signal qualified as Signal
 import Ouroboros.Network.Testing.Utils (disjointSetsProperty, isSubsetProperty,
            nightlyTest)
+import Test.Ouroboros.Network.PeerSelection.Cardano.MockEnvironment hiding
+           (tests)
 import Test.Ouroboros.Network.PeerSelection.Instances
-import Test.Ouroboros.Network.PeerSelection.MockEnvironment hiding (tests)
 import Test.Ouroboros.Network.PeerSelection.PeerGraph
 
 import Control.Monad.IOSim

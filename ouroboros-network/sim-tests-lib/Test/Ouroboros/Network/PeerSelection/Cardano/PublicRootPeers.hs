@@ -1,7 +1,7 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# LANGUAGE TypeOperators #-}
 
-module Test.Ouroboros.Network.PeerSelection.PublicRootPeers
+module Test.Ouroboros.Network.PeerSelection.Cardano.PublicRootPeers
   ( arbitraryCardanoPublicRootPeers
   , tests
   ) where
