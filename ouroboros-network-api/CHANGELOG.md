@@ -20,7 +20,8 @@
   * `accBigPoolStake` -> `accumulateBigLedgerStake`
      and `reRelativeStake` -> `recomputeRelativeStake`
 * Using `typed-protocols-0.3.0.0`.
-* Added `NodeToClientV_19`. 
+* Added `NodeToClientV_19`.
+* Removed `blockForgeUTCTime` from `BlockFetchConsensusInterface`.
 
 ### Non-breaking changes
 
