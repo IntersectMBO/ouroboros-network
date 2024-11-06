@@ -70,6 +70,9 @@ module Ouroboros.Network.PeerSelection.Governor
   , peerSelectionStateToView
   ) where
 
+import Ouroboros.Network.Diffusion.Policies qualified as Policies
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 import Data.Semigroup (Min (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
@@ -494,6 +497,7 @@ base our decision on include:
 
 -}
 
+data Churn
 -- NB this type must be custom to the specific application
 data PeerSelectionEvent = LedgerChange !LedgerStateJudgement | BPChange !UseBootstrapPeers | Churn
 
@@ -552,6 +556,8 @@ data CardanoState = CardanoState {
 
 data CardanoSignal = CardanoSignal {
   cardanoQuiesce :: !(Maybe Quiesce) }
+
+type ChurnClock = SelectClock (EventClock PeerSelectionEvent) PeerSelectionEvent
 
 data UpOrDown = Up | Down
 data ChaseTargets peeraddr = ChaseTargets !UpOrDown !Int !Int !Int (Set.Set peeraddr)
@@ -614,17 +620,21 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
       where
         handlers =    quiesce @@ MyClock @60000 waitClock
                    |@|
-                      attemptCardanoChurn @@ EventClock
+                      attemptCardanoChurn @@ churnClock
+
 
         quiesce = arr cardanoQuiesce >>> (liftClSF . liftClSF $ quiesceTimeout)
 
-        attemptCardanoChurn :: ClSF (App2 peeraddr peerconn m) (EventClock PeerSelectionEvent) CardanoSignal ()
+        attemptCardanoChurn :: ClSF (App2 peeraddr peerconn m) ChurnClock CardanoSignal ()
         attemptCardanoChurn = proc sig -> do
-          event <- tagS -< ()
-          case (event, cardanoQuiesce sig) of
-            (Churn, Nothing) -> cardanoSetTargets -< ()
-            _otherwise       -> returnA -< ()
+          case cardanoQuiesce sig of
+            Nothing    -> cardanoSetTargets -< Nothing
+            _otherwise -> returnA -< ()
 
+    churnClock :: ChurnClock
+    churnClock = SelectClock { mainClock = EventClock, select }
+      where
+        select = undefined
 
     -- abstract churn, independent of cardano-specifics such as lsj or bootstrap peers or consensus mode
     churn :: Tracer (App2 peeraddr peerconn m) (TracePeerSelection peeraddr)
@@ -637,22 +647,21 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
         else
           undefined
 
-    cardanoSetTargets :: BehaviorF (App2 peeraddr peerconn m) time () ()
-    cardanoSetTargets = constMCl getEnv >>> (liftClSF . liftClSF $ impl)
+    cardanoSetTargets :: BehaviorF (App2 peeraddr peerconn m) time (Maybe Quiesce) ()
+    cardanoSetTargets = arrMCl getEnv >>> (liftClSF . liftClSF $ impl)
       where
-        getEnv = asks (\chan st -> (chan, (st, peerSelectionStateToView st))) <*> State.get
+        getEnv sig = asks (\chan st -> (sig, chan, (st, peerSelectionStateToView st))) <*> State.get
 
-        impl = proc (chan, bundle@(st, view)) -> do
-
-          -- _ <- cardanoKnownPeers -< (sig, bundle)
+        impl = proc (sig, chan, bundle@(st, view)) -> do
+          _ <- cardanoKnownPeers -< (sig, bundle)
           _ <- establishedPeers  -< bundle
           returnA -< ()
 
-    cardanoKnownPeers :: BehaviorF m time (CardanoSignal, TargetsInput peeraddr peerconn event) (Either (Maybe (Min Time)) (m ()))
-    cardanoKnownPeers = proc (sig, stateAndView) -> do
-      case cardanoQuiesce sig of
+    cardanoKnownPeers :: BehaviorF m time (Maybe Quiesce, TargetsInput peeraddr peerconn event) (Either (Maybe (Min Time)) (m ()))
+    cardanoKnownPeers = proc (quiesce, stateAndView) -> do
+      case quiesce of
         Nothing    -> knownPeers -< stateAndView
-        _otherwise -> returnA -< Left Nothing
+        _otherwise -> returnA    -< Left Nothing
 
     establishedPeers :: BehaviorF m time (TargetsInput peeraddr peerconn event) (Either (Maybe (Min Time)) (m ()))
     establishedPeers = arr go
@@ -666,8 +675,8 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
         withTime = proc (st, view) -> do
           now <- absoluteS -< ()
           returnA -< (now, st, view)
-        go (now, state, view) =
-          forKnown state view now `onSuccessElseRetryTime` chaseKnownPeersTarget state
+        go (now, state, view) = undefined
+          -- forKnown state view now `onSuccessElseRetryTime` chaseKnownPeersTarget state
 
     onSuccessElseRetryTime guards set = do
       inputs <- guards
@@ -690,7 +699,7 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
                    }
       | numEstablishedPeers + numConnectInProgress < targetNumberOfEstablishedPeers
       , numAvailableToConnect - numEstablishedPeers - numConnectInProgress > 0
-      = return $!
+      = return
           let availableToPromote = availableToConnect
                                    `Set.difference` EstablishedPeers.toSet establishedPeers
                                    `Set.difference` inProgressPromoteCold
@@ -706,38 +715,52 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
 
     forKnown :: PeerSelectionState peeraddr peerconn
              -> PeerSelectionView (Set.Set peeraddr, Int)
-             -> Time
+             -> time
+             -> Map peeraddr PeerSharing
              -> Either (Maybe (Min Time)) (ChaseTargets peeraddr)
     forKnown PeerSelectionState {
-               establishedPeers,
-               knownPeers,
-               inProgressPromoteCold,
-               inboundPeersRetryTime,
-               targets = PeerSelectionTargets {
-                   targetNumberOfEstablishedPeers } }
+              knownPeers,
+              establishedPeers,
+              inProgressPeerShareReqs,
+              inProgressDemoteToCold,
+              inboundPeersRetryTime,
+              targets = PeerSelectionTargets {
+                          targetNumberOfKnownPeers
+                        },
+              stdGen }
              PeerSelectionView {
                viewKnownBigLedgerPeers     = (bigLedgerPeersSet, _),
+               viewKnownPeers              = (_, numKnownPeers),
                viewEstablishedPeers        = (_, numEstablishedPeers),
                viewColdPeersPromotions     = (_, numConnectInProgress),
                viewAvailableToConnectPeers = (availableToConnect, numAvailableToConnect)
                }
              now
-      | numEstablishedPeers + numConnectInProgress < targetNumberOfEstablishedPeers
-      , numAvailableToConnect - numEstablishedPeers - numConnectInProgress > 0
-      , now >= inboundPeersRetryTime
+             inboundPeers
+      | numKnownPeers < targetNumberOfKnownPeers
+      , inProgressPeerShareReqs <= 0
+      , numPeerShareReqsPossible > 0
+      -- , now >= inboundPeersRetryTime
+      -- Use inbound peers either if it won the coin flip or if there are no
+      -- available peers to do peer sharing.
+      , useInboundPeers || Set.null availableForPeerShare
+      , let availablePeers = Map.keysSet inboundPeers
+                             Set.\\ KnownPeers.toSet knownPeers
+      , not (Set.null availablePeers)
       = return $!
-          let availableToPromote = availableToConnect
-                                   `Set.difference` EstablishedPeers.toSet establishedPeers
-                                   `Set.difference` inProgressPromoteCold
-              numPeersToPromote  = targetNumberOfEstablishedPeers
-                                 - numEstablishedPeers
-                                 - numConnectInProgress
-          in ChaseTargets Up targetNumberOfEstablishedPeers numEstablishedPeers numPeersToPromote availableToPromote
+          let numPeersToPromote  = (Policies.maxInboundPeers `min` (targetNumberOfKnownPeers - numKnownPeers))
+          in ChaseTargets Up targetNumberOfKnownPeers numKnownPeers numPeersToPromote availablePeers
 
-      | numEstablishedPeers + numConnectInProgress < targetNumberOfEstablishedPeers
-      = Left $ Min <$> KnownPeers.minConnectTime knownPeers  (`Set.member` bigLedgerPeersSet)
+      -- | numEstablishedPeers + numConnectInProgress < targetNumberOfEstablishedPeers
+      -- = Left $ Min <$> KnownPeers.minConnectTime knownPeers  (`Set.member` bigLedgerPeersSet)
       | otherwise
       = Left Nothing
+      where
+        (useInboundPeers, stdGen') = random stdGen
+        numPeerShareReqsPossible = policyMaxInProgressPeerShareReqs policy
+                                 - inProgressPeerShareReqs
+        availableForPeerShare    = EstablishedPeers.availableForPeerShare establishedPeers
+                                   Set.\\ inProgressDemoteToCold
 
     chaseEstablishedPeersTarget :: PeerSelectionState peeraddr peerconn
                                 -> ChaseTargets peeraddr
@@ -751,7 +774,6 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
                                 (policyPickWarmPeersToDemote policy)
                                 availableToDemote
                                 numPeersToDemote
-          -- spin up job
           traceWith tracer $ TraceDemoteWarmPeers target numEstablishedPeers selectedToDemote
 
         below target numEstablishedPeers numPeersToPromote availableToPromote = do
@@ -759,30 +781,27 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
                                  (policyPickColdPeersToPromote policy)
                                  availableToPromote
                                  numPeersToPromote
-          -- spin up job
           traceWith tracer $ TracePromoteColdPeers target numEstablishedPeers selectedToPromote
 
     chaseKnownPeersTarget :: PeerSelectionState peeraddr peerconn
                           -> ChaseTargets peeraddr
                           -> Either a (m ())
     chaseKnownPeersTarget st = \case
-      ChaseTargets Up   target numEst numPromote peers -> return $! below target numEst numPromote peers
-      ChaseTargets Down target numEst numDemote peers  -> return $! above target numEst numDemote peers
+      ChaseTargets Up   target numKnown numPromote peers -> return $! below target numKnown numPromote peers
+      ChaseTargets Down target numKnown numForget peers  -> return $! above target numKnown numForget  peers
       where
-        above target numEstablishedPeers numPeersToDemote availableToDemote = do
+        above target numEstablishedPeers numPeersToDemote availableToForget = do
           selectedToDemote <- pickPeers st
                                 (policyPickWarmPeersToDemote policy)
-                                availableToDemote
+                                availableToForget
                                 numPeersToDemote
-          -- spin up job
           traceWith tracer $ TraceDemoteWarmPeers target numEstablishedPeers selectedToDemote
 
         below target numEstablishedPeers numPeersToPromote availableToPromote = do
-          selectedToPromote <- pickPeers st
-                                 (policyPickColdPeersToPromote policy)
+          selectedToPromote <- pickUnknownPeers st
+                                 (policyPickInboundPeers policy)
                                  availableToPromote
                                  numPeersToPromote
-          -- spin up job
           traceWith tracer $ TracePromoteColdPeers target numEstablishedPeers selectedToPromote
 
 
