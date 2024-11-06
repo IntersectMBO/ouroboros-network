@@ -10,7 +10,7 @@
 {-# OPTIONS_GHC -Wno-deferred-out-of-scope-variables #-}
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
-module Test.Ouroboros.Network.PeerSelection.MockEnvironment
+module Test.Ouroboros.Network.PeerSelection.Cardano.MockEnvironment
   ( PeerGraph (..)
   , GovernorMockEnvironment (..)
   , GovernorPraosMockEnvironment (..)
@@ -103,7 +103,9 @@ import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPe
 import Ouroboros.Network.PeerSelection.Types (PeerStatus (..))
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
            PeerSharingResult (..))
-import Test.Ouroboros.Network.PeerSelection.PublicRootPeers ()
+import Test.Ouroboros.Network.PeerSelection.Cardano.Instances
+           (ArbitraryLedgerStateJudgement (..))
+import Test.Ouroboros.Network.PeerSelection.Cardano.PublicRootPeers ()
 import Test.QuickCheck
 import Test.Tasty (TestTree, localOption, testGroup)
 import Test.Tasty.QuickCheck (QuickCheckMaxSize (..), testProperty)

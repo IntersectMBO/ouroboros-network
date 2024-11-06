@@ -247,13 +247,13 @@ library sim-tests-lib
   exposed-modules:
     Ouroboros.Network.BlockFetch.Examples
     Ouroboros.Network.MockNode
-    Test.Ouroboros.Network.Diffusion.Node
     Test.Ouroboros.Network.Diffusion.Node.ChainDB
     Test.Ouroboros.Network.Diffusion.Node.MiniProtocols
     Test.Ouroboros.Network.Diffusion.Node.Kernel
     Test.Ouroboros.Network.Diffusion.Policies
     Test.Ouroboros.Network.Diffusion.Testnet.Cardano
     Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Node
+    Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Simulation
     Test.Ouroboros.Network.LedgerPeers
     Test.Ouroboros.Network.MiniProtocols.BlockFetch
     Test.Ouroboros.Network.MiniProtocols.KeepAlive
@@ -264,14 +264,16 @@ library sim-tests-lib
     Test.Ouroboros.Network.NodeToNode.Version
     Test.Ouroboros.Network.Orphans
     Test.Ouroboros.Network.PeerSelection
+    Test.Ouroboros.Network.PeerSelection.Cardano.Instances
+    Test.Ouroboros.Network.PeerSelection.Cardano.LocalRootPeers
+    Test.Ouroboros.Network.PeerSelection.Cardano.MockEnvironment
+    Test.Ouroboros.Network.PeerSelection.Cardano.PublicRootPeers
     Test.Ouroboros.Network.PeerSelection.Instances
     Test.Ouroboros.Network.PeerSelection.Json
     Test.Ouroboros.Network.PeerSelection.KnownPeers
     Test.Ouroboros.Network.PeerSelection.LocalRootPeers
-    Test.Ouroboros.Network.PeerSelection.MockEnvironment
     Test.Ouroboros.Network.PeerSelection.PeerGraph
     Test.Ouroboros.Network.PeerSelection.PeerMetric
-    Test.Ouroboros.Network.PeerSelection.PublicRootPeers
     Test.Ouroboros.Network.PeerSelection.RootPeersDNS
     Test.Ouroboros.Network.PeerState
     Test.Ouroboros.Network.Version

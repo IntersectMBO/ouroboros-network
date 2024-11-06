@@ -71,34 +71,16 @@ instance Arbitrary PeerSharing where
   shrink PeerSharingDisabled = []
   shrink PeerSharingEnabled  = [PeerSharingDisabled]
 
-instance Arbitrary ConsensusMode where
-  arbitrary = elements [PraosMode, GenesisMode]
-  shrink GenesisMode = [PraosMode]
-  shrink PraosMode   = []
-
 instance Arbitrary AfterSlot where
   arbitrary = oneof [ pure Always
                     , After <$> arbitrary
                     ]
-
-instance Arbitrary UseBootstrapPeers where
-  arbitrary = frequency [ (1, pure DontUseBootstrapPeers)
-                        , (1, UseBootstrapPeers <$> arbitrary)
-                        ]
-
-  shrink DontUseBootstrapPeers = []
-  shrink (UseBootstrapPeers bp) | [] <- bp = [DontUseBootstrapPeers]
-                                | [_] <- bp = [DontUseBootstrapPeers]
-  shrink (UseBootstrapPeers (hd : _)) = [UseBootstrapPeers [hd]]
 
 instance Arbitrary UseLedgerPeers where
     arbitrary = frequency
       [ (2, pure DontUseLedgerPeers)
       , (8, UseLedgerPeers <$> arbitrary)
       ]
-
-instance Arbitrary PeerTrustable where
-  arbitrary = elements [ IsNotTrustable, IsTrustable ]
 
 instance Arbitrary PeerSelectionTargets where
   arbitrary = do
@@ -129,20 +111,6 @@ instance Arbitrary PeerSelectionTargets where
     | (r',k',e',a',kb',eb',ab') <- shrink (r,k,e,a,kb,eb,ab)
     , let targets' = PeerSelectionTargets r' k' e' a' kb' eb' ab'
     , sanePeerSelectionTargets targets' ]
-
--- GovernorMockEnvironment is responsible for generating valid targets
--- which account for local roots from random peer graph, but a shrink
--- is useful here for recursively shrinking TimedScript.
---
-instance Arbitrary ConsensusModePeerTargets where
-  arbitrary = error "not implemented"
-
-  shrink ConsensusModePeerTargets { deadlineTargets, syncTargets } =
-    let syncTargets'     = shrink syncTargets
-        deadlineTargets' = shrink deadlineTargets
-    in [ConsensusModePeerTargets { deadlineTargets = deadlineTargets'', syncTargets = syncTargets'' }
-       | deadlineTargets'' <- deadlineTargets',
-         syncTargets'' <- syncTargets']
 
 instance Arbitrary DomainAccessPoint where
   arbitrary =

@@ -70,6 +70,8 @@ import Simulation.Network.Snocket (BearerInfo (..))
 import Test.Ouroboros.Network.Diffusion.Node (config_REPROMOTE_DELAY)
 import Test.Ouroboros.Network.Diffusion.Node.Kernel
 import Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Node
+           (config_REPROMOTE_DELAY)
+import Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Simulation
 import Test.QuickCheck
 import Test.QuickCheck.Monoids
 import Test.Tasty
