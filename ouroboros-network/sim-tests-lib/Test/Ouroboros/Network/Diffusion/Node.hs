@@ -298,7 +298,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
         })
 
     blockFetchPolicy :: NodeKernel BlockHeader Block s m
-                     -> BlockFetchConsensusInterface NtNAddr BlockHeader Block m
+                     -> BlockFetchConsensusInterface NtNAddr BlockHeader BlockHeader Block m
     blockFetchPolicy nodeKernel =
         BlockFetchConsensusInterface {
           readCandidateChains    = readTVar (nkClientChains nodeKernel)

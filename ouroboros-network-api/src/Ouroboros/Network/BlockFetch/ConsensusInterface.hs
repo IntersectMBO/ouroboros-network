@@ -47,7 +47,8 @@ data FetchMode =
 --
 -- These are provided as input to the block fetch by the consensus layer.
 --
-data BlockFetchConsensusInterface peer header block m =
+-- REVIEW: Explain why we have two types of headers.
+data BlockFetchConsensusInterface peer selectionHeader header block m =
      BlockFetchConsensusInterface {
 
        -- | Read the K-suffixes of the candidate chains.
@@ -63,7 +64,7 @@ data BlockFetchConsensusInterface peer header block m =
        -- This must contain info on the last @K@ blocks (unless we're near
        -- the chain genesis of course).
        --
-       readCurrentChain       :: STM m (AnchoredFragment header),
+       readCurrentChain       :: STM m (AnchoredFragment selectionHeader),
 
        -- | Read the current fetch mode that the block fetch logic should use.
        --
@@ -105,7 +106,7 @@ data BlockFetchConsensusInterface peer header block m =
        -- we would consider a chain of equal length to the current chain.
        --
        plausibleCandidateChain :: HasCallStack
-                               => AnchoredFragment header
+                               => AnchoredFragment selectionHeader
                                -> AnchoredFragment header -> Bool,
 
        -- | Compare two candidate chains and return a preference ordering.

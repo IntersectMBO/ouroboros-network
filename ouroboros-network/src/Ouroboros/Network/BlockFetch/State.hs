@@ -45,9 +45,11 @@ import Ouroboros.Network.BlockFetch.DeltaQ (PeerGSV (..))
 
 
 fetchLogicIterations
-  :: ( HasHeader header
+  :: ( HasHeader selectionHeader
      , HasHeader block
+     , HeaderHash selectionHeader ~ HeaderHash block
      , HeaderHash header ~ HeaderHash block
+     , HasHeader header
      , MonadDelay m
      , MonadSTM m
      , Ord peer
@@ -55,8 +57,8 @@ fetchLogicIterations
      )
   => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
   -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
-  -> FetchDecisionPolicy header
-  -> FetchTriggerVariables peer header m
+  -> FetchDecisionPolicy selectionHeader header
+  -> FetchTriggerVariables peer selectionHeader header m
   -> FetchNonTriggerVariables peer header block m
   -> m Void
 fetchLogicIterations decisionTracer clientStateTracer
@@ -98,12 +100,15 @@ iterateForever x0 m = go x0 where go x = m x >>= go
 --
 fetchLogicIteration
   :: (Hashable peer, MonadSTM m, Ord peer,
-      HasHeader header, HasHeader block,
-      HeaderHash header ~ HeaderHash block)
+      HeaderHash header ~ HeaderHash block,
+      HasHeader header,
+      HasHeader selectionHeader, HasHeader block,
+      HeaderHash selectionHeader ~ HeaderHash block
+     )
   => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
   -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
-  -> FetchDecisionPolicy header
-  -> FetchTriggerVariables peer header m
+  -> FetchDecisionPolicy selectionHeader header
+  -> FetchTriggerVariables peer selectionHeader header m
   -> FetchNonTriggerVariables peer header block m
   -> FetchStateFingerprint peer header block
   -> m (FetchStateFingerprint peer header block)
@@ -163,11 +168,13 @@ fetchLogicIteration decisionTracer clientStateTracer
 --
 fetchDecisionsForStateSnapshot
   :: (HasHeader header,
+      HasHeader selectionHeader,
+      HeaderHash selectionHeader ~ HeaderHash block,
       HeaderHash header ~ HeaderHash block,
       Ord peer,
       Hashable peer)
-  => FetchDecisionPolicy header
-  -> FetchStateSnapshot peer header block m
+  => FetchDecisionPolicy selectionHeader header
+  -> FetchStateSnapshot peer selectionHeader header block m
   -> [( FetchDecision (FetchRequest header),
         PeerInfo header peer (FetchClientStateVars m header, peer)
       )]
@@ -213,7 +220,7 @@ fetchDecisionsForStateSnapshot
 --
 fetchLogicIterationAct :: (MonadSTM m, HasHeader header)
                        => Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
-                       -> FetchDecisionPolicy header
+                       -> FetchDecisionPolicy selectionHeader header
                        -> [(FetchDecision (FetchRequest header),
                             PeerGSV,
                             FetchClientStateVars m header,
@@ -240,8 +247,8 @@ fetchLogicIterationAct clientStateTracer FetchDecisionPolicy{blockFetchSize}
 -- and it is not necessary to determine exactly what changed, just that there
 -- was some change.
 --
-data FetchTriggerVariables peer header m = FetchTriggerVariables {
-       readStateCurrentChain    :: STM m (AnchoredFragment header),
+data FetchTriggerVariables peer selectionHeader header m = FetchTriggerVariables {
+       readStateCurrentChain    :: STM m (AnchoredFragment selectionHeader),
        readStateCandidateChains :: STM m (Map peer (AnchoredFragment header)),
        readStatePeerStatus      :: STM m (Map peer (PeerFetchStatus header))
      }
@@ -289,8 +296,8 @@ updateFetchStateFingerprintPeerStatus statuses'
 -- Note that the domain of 'fetchStatePeerChains' is a subset of the domain
 -- of 'fetchStatePeerStates' and 'fetchStatePeerReqVars'.
 --
-data FetchStateSnapshot peer header block m = FetchStateSnapshot {
-       fetchStateCurrentChain     :: AnchoredFragment header,
+data FetchStateSnapshot peer selectionHeader header block m = FetchStateSnapshot {
+       fetchStateCurrentChain     :: AnchoredFragment selectionHeader,
        fetchStatePeerChains       :: Map peer (AnchoredFragment header),
        fetchStatePeerStates       :: Map peer (PeerFetchStatus   header,
                                                PeerFetchInFlight header,
@@ -302,12 +309,14 @@ data FetchStateSnapshot peer header block m = FetchStateSnapshot {
      }
 
 readStateVariables :: (MonadSTM m, Eq peer,
-                       HasHeader header, HasHeader block,
-                       HeaderHash header ~ HeaderHash block)
-                   => FetchTriggerVariables peer header m
+                       HasHeader selectionHeader, HasHeader block,
+                       HeaderHash selectionHeader ~ HeaderHash block,
+                       HasHeader header
+                      )
+                   => FetchTriggerVariables peer selectionHeader header m
                    -> FetchNonTriggerVariables peer header block m
                    -> FetchStateFingerprint peer header block
-                   -> STM m (FetchStateSnapshot peer header block m,
+                   -> STM m (FetchStateSnapshot peer selectionHeader header block m,
                              FetchStateFingerprint peer header block)
 readStateVariables FetchTriggerVariables{..}
                    FetchNonTriggerVariables{..}

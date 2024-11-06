@@ -50,7 +50,7 @@ import Ouroboros.Network.BlockFetch.DeltaQ (PeerFetchInFlightLimits (..),
            estimateResponseDeadlineProbability)
 
 
-data FetchDecisionPolicy header = FetchDecisionPolicy {
+data FetchDecisionPolicy selectionHeader header = FetchDecisionPolicy {
        maxInFlightReqsPerPeer  :: Word,  -- A protocol constant.
 
        maxConcurrencyBulkSync  :: Word,
@@ -59,7 +59,7 @@ data FetchDecisionPolicy header = FetchDecisionPolicy {
        peerSalt                :: Int,
 
        plausibleCandidateChain :: HasCallStack
-                               => AnchoredFragment header
+                               => AnchoredFragment selectionHeader
                                -> AnchoredFragment header -> Bool,
 
        compareCandidateChains  :: HasCallStack
@@ -251,10 +251,13 @@ fetchDecisions
   :: (Ord peer,
       Hashable peer,
       HasHeader header,
-      HeaderHash header ~ HeaderHash block)
-  => FetchDecisionPolicy header
+      HeaderHash header ~ HeaderHash block,
+      HeaderHash selectionHeader ~ HeaderHash block,
+      HasHeader selectionHeader
+     )
+  => FetchDecisionPolicy selectionHeader header
   -> FetchMode
-  -> AnchoredFragment header
+  -> AnchoredFragment selectionHeader
   -> (Point block -> Bool)
   -> MaxSlotNo
   -> [(AnchoredFragment header, PeerInfo header peer extra)]
@@ -399,8 +402,8 @@ current chain. So our first task is to filter down to this set.
 -- the current chain.
 --
 filterPlausibleCandidates
-  :: (AnchoredFragment block -> AnchoredFragment header -> Bool)
-  -> AnchoredFragment block  -- ^ The current chain
+  :: (AnchoredFragment selectionHeader -> AnchoredFragment header -> Bool)
+  -> AnchoredFragment selectionHeader  -- ^ The current chain
   -> [(AnchoredFragment header, peerinfo)]
   -> [(FetchDecision (AnchoredFragment header), peerinfo)]
 filterPlausibleCandidates plausibleCandidateChain currentChain chains =
@@ -507,11 +510,11 @@ interested in this candidate at all.
 -- current chain.
 --
 chainForkSuffix
-  :: (HasHeader header, HasHeader block,
-      HeaderHash header ~ HeaderHash block)
-  => AnchoredFragment block  -- ^ Current chain.
-  -> AnchoredFragment header -- ^ Candidate chain
-  -> Maybe (ChainSuffix header)
+  :: (HasHeader header1, HasHeader header2,
+      HeaderHash header1 ~ HeaderHash header2)
+  => AnchoredFragment header2 -- ^ Current chain.
+  -> AnchoredFragment header1 -- ^ Candidate chain
+  -> Maybe (ChainSuffix header1)
 chainForkSuffix current candidate =
     case AF.intersect current candidate of
       Nothing                         -> Nothing
@@ -523,9 +526,9 @@ chainForkSuffix current candidate =
         Just (ChainSuffix candidateSuffix)
 
 selectForkSuffixes
-  :: (HasHeader header, HasHeader block,
-      HeaderHash header ~ HeaderHash block)
-  => AnchoredFragment block
+  :: (HasHeader selectionHeader, HasHeader header,
+      HeaderHash selectionHeader ~ HeaderHash header)
+  => AnchoredFragment selectionHeader
   -> [(FetchDecision (AnchoredFragment header), peerinfo)]
   -> [(FetchDecision (ChainSuffix      header), peerinfo)]
 selectForkSuffixes current chains =
@@ -889,12 +892,12 @@ obviously take that into account when considering later peer chains.
 
 
 fetchRequestDecisions
-  :: forall extra header peer.
+  :: forall extra selectionHeader header peer.
       ( Hashable peer
       , HasHeader header
       , Ord peer
       )
-  => FetchDecisionPolicy header
+  => FetchDecisionPolicy selectionHeader header
   -> FetchMode
   -> [( FetchDecision [AnchoredFragment header]
       , PeerFetchStatus header
@@ -1009,7 +1012,7 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
 
 fetchRequestDecision
   :: HasHeader header
-  => FetchDecisionPolicy header
+  => FetchDecisionPolicy selectionHeader header
   -> FetchMode
   -> Word
   -> PeerFetchInFlightLimits

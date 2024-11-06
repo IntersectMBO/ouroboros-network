@@ -152,9 +152,11 @@ data BlockFetchConfiguration =
 --
 -- This runs forever and should be shut down using mechanisms such as async.
 --
-blockFetchLogic :: forall addr header block m.
-                   ( HasHeader header
+blockFetchLogic :: forall addr selectionHeader header block m.
+                   ( HasHeader selectionHeader
+                   , HasHeader header
                    , HasHeader block
+                   , HeaderHash selectionHeader ~ HeaderHash block
                    , HeaderHash header ~ HeaderHash block
                    , MonadDelay m
                    , MonadSTM m
@@ -163,7 +165,7 @@ blockFetchLogic :: forall addr header block m.
                    )
                 => Tracer m [TraceLabelPeer addr (FetchDecision [Point header])]
                 -> Tracer m (TraceLabelPeer addr (TraceFetchClientState header))
-                -> BlockFetchConsensusInterface addr header block m
+                -> BlockFetchConsensusInterface addr selectionHeader header block m
                 -> FetchClientRegistry addr header block m
                 -> BlockFetchConfiguration
                 -> m Void
@@ -190,7 +192,7 @@ blockFetchLogic decisionTracer clientStateTracer
           blockForgeUTCTime
         }
 
-    fetchDecisionPolicy :: FetchDecisionPolicy header
+    fetchDecisionPolicy :: FetchDecisionPolicy selectionHeader header
     fetchDecisionPolicy =
       FetchDecisionPolicy {
         maxInFlightReqsPerPeer   = bfcMaxRequestsInflight,
@@ -204,7 +206,7 @@ blockFetchLogic decisionTracer clientStateTracer
         blockFetchSize
       }
 
-    fetchTriggerVariables :: FetchTriggerVariables addr header m
+    fetchTriggerVariables :: FetchTriggerVariables addr selectionHeader header m
     fetchTriggerVariables =
       FetchTriggerVariables {
         readStateCurrentChain    = readCurrentChain,

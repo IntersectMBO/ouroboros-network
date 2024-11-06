@@ -418,7 +418,7 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
                                     nullTracer clientCtx)
 
         blockFetchPolicy :: BlockFetchConsensusInterface
-                             LocalConnectionId BlockHeader Block IO
+                             LocalConnectionId BlockHeader BlockHeader Block IO
         blockFetchPolicy =
             BlockFetchConsensusInterface {
               readCandidateChains    = readTVar candidateChainsVar

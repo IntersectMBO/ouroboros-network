@@ -272,7 +272,7 @@ sampleBlockFetchPolicy1 :: (MonadSTM m, HasHeader header, HasHeader block)
                         -> TestFetchedBlockHeap m block
                         -> AnchoredFragment header
                         -> Map peer (AnchoredFragment header)
-                        -> BlockFetchConsensusInterface peer header block m
+                        -> BlockFetchConsensusInterface peer header header block m
 sampleBlockFetchPolicy1 headerFieldsForgeUTCTime blockHeap currentChain candidateChains =
     BlockFetchConsensusInterface {
       readCandidateChains    = return candidateChains,
