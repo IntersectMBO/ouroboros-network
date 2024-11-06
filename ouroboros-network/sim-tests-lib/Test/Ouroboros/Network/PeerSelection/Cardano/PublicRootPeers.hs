@@ -1,7 +1,7 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# LANGUAGE TypeOperators #-}
 
-module Test.Ouroboros.Network.PeerSelection.PublicRootPeers
+module Test.Ouroboros.Network.PeerSelection.Cardano.PublicRootPeers
   ( arbitraryCardanoPublicRootPeers
   , tests
   ) where
@@ -19,8 +19,9 @@ import Ouroboros.Network.Testing.Utils (ShrinkCarefully, prop_shrink_nonequal,
 import Test.Ouroboros.Network.PeerSelection.Instances
 
 
-import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers (..))
-import Cardano.Node.PublicRootPeers qualified as CNPRP
+import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers (..))
+import Cardano.Network.PublicRootPeers qualified as CNPRP
+import Cardano.Network.PublicRootPeers qualified as CPRP
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers (..))
 import Test.QuickCheck
@@ -46,10 +47,10 @@ tests =
     ]
   ]
 
-arbitraryCardanoPublicRootPeers :: Ord peeraddr
-                                => Set peeraddr
-                                -> Gen (PublicRootPeers (CardanoPublicRootPeers peeraddr) peeraddr)
-arbitraryCardanoPublicRootPeers peeraddrs = do
+arbitraryCardanoPublicRootPeers :: (Ord peeraddr, Arbitrary peeraddr)
+                                => Gen (PublicRootPeers (CardanoPublicRootPeers peeraddr) peeraddr)
+arbitraryCardanoPublicRootPeers = do
+  peeraddrs <- arbitrary
   let peersSize = Set.size peeraddrs
       (publicConfigPeers, otherPeers) = Set.splitAt (peersSize `div` 2) peeraddrs
       (bootstrapPeers, ledgerPeers) = Set.splitAt (Set.size otherPeers `div` 2) otherPeers
@@ -66,9 +67,7 @@ instance ( Arbitrary peeraddr
          , Ord peeraddr
          , extraPeers ~ CardanoPublicRootPeers peeraddr
          ) => Arbitrary (PublicRootPeers extraPeers peeraddr) where
-    arbitrary = do
-        peeraddrs <- arbitrary
-        arbitraryCardanoPublicRootPeers peeraddrs
+    arbitrary = arbitraryCardanoPublicRootPeers
 
     shrink (PublicRootPeers lp blp (CardanoPublicRootPeers pp bsp)) =
         PublicRootPeers.fromMapAndSet <$> shrink pp
@@ -77,12 +76,12 @@ instance ( Arbitrary peeraddr
                                       <*> shrink blp
 
 prop_arbitrary_CardanoPublicRootPeers :: PublicRootPeers (CardanoPublicRootPeers PeerAddr) PeerAddr -> Property
-prop_arbitrary_CardanoPublicRootPeers = property . PublicRootPeers.invariant
+prop_arbitrary_CardanoPublicRootPeers = property . PublicRootPeers.invariant CPRP.invariant CPRP.toSet
 
 
 prop_shrink_CardanoPublicRootPeers :: ShrinkCarefully (PublicRootPeers (CardanoPublicRootPeers PeerAddr) PeerAddr) -> Property
 prop_shrink_CardanoPublicRootPeers x =
-      prop_shrink_valid PublicRootPeers.invariant x
+      prop_shrink_valid (PublicRootPeers.invariant CPRP.invariant CPRP.toSet) x
  .&&. prop_shrink_nonequal x
 
 prop_fromMapAndSet :: Map PeerAddr PeerAdvertise
@@ -90,8 +89,10 @@ prop_fromMapAndSet :: Map PeerAddr PeerAdvertise
                    -> Set PeerAddr
                    -> Set PeerAddr
                    -> Bool
-prop_fromMapAndSet pp bsp lp = PublicRootPeers.invariant
-                             . PublicRootPeers.fromMapAndSet pp bsp lp
+prop_fromMapAndSet pp bsp lp =
+  let newPP = pp `Map.withoutKeys` bsp
+   in PublicRootPeers.invariant CPRP.invariant CPRP.toSet
+    . PublicRootPeers.fromMapAndSet newPP bsp lp
 
 prop_fromToMapAndSet :: PublicRootPeers (CardanoPublicRootPeers PeerAddr) PeerAddr -> Bool
 prop_fromToMapAndSet prp@(PublicRootPeers lp blp (CardanoPublicRootPeers pp bsp)) =
@@ -101,22 +102,22 @@ prop_fromMapAndSet' :: Map PeerAddr PeerAdvertise
                    -> Set PeerAddr
                    -> Set PeerAddr
                    -> Set PeerAddr
-                   -> Bool
+                   -> Property
 prop_fromMapAndSet' pp bsp lp blp =
   -- Make sets disjoint
   let pp'  = Map.withoutKeys pp (bsp <> lp <> blp)
       bsp' = Set.difference bsp (lp <> blp)
       lp'  = Set.difference lp blp
       prp = PublicRootPeers.fromMapAndSet pp' bsp' lp' blp
-   in  PublicRootPeers.getPublicConfigPeers prp == pp'
-    && PublicRootPeers.getBootstrapPeers prp    == bsp'
-    && PublicRootPeers.getLedgerPeers prp       == lp'
-    && PublicRootPeers.getBigLedgerPeers prp    == blp
+   in  PublicRootPeers.getPublicConfigPeers prp === pp'
+    .&&. PublicRootPeers.getBootstrapPeers prp  === bsp'
+    .&&. PublicRootPeers.getLedgerPeers prp       === lp'
+    .&&. PublicRootPeers.getBigLedgerPeers prp    === blp
 
 prop_merge :: PublicRootPeers (CardanoPublicRootPeers PeerAddr) PeerAddr
            -> PublicRootPeers (CardanoPublicRootPeers PeerAddr) PeerAddr
            -> Bool
-prop_merge prp = PublicRootPeers.invariant
+prop_merge prp = PublicRootPeers.invariant CPRP.invariant CPRP.toSet
                . (<> prp)
 
 prop_insertPublicConfigPeer :: PublicRootPeers (CardanoPublicRootPeers PeerAddr) PeerAddr
@@ -124,25 +125,25 @@ prop_insertPublicConfigPeer :: PublicRootPeers (CardanoPublicRootPeers PeerAddr)
                             -> PeerAdvertise
                             -> Bool
 prop_insertPublicConfigPeer prp p pa =
-  PublicRootPeers.invariant (PublicRootPeers.insertPublicConfigPeer p pa prp)
+  PublicRootPeers.invariant CPRP.invariant CPRP.toSet (PublicRootPeers.insertPublicConfigPeer p pa prp)
 
 prop_insertBootstrapPeer :: PublicRootPeers (CardanoPublicRootPeers PeerAddr) PeerAddr
                          -> PeerAddr
                          -> Bool
 prop_insertBootstrapPeer prp p =
-  PublicRootPeers.invariant (PublicRootPeers.insertBootstrapPeer p prp)
+  PublicRootPeers.invariant CPRP.invariant CPRP.toSet (PublicRootPeers.insertBootstrapPeer p prp)
 
 prop_insertLedgerPeer :: PublicRootPeers (CardanoPublicRootPeers PeerAddr) PeerAddr
                       -> PeerAddr
                       -> Bool
 prop_insertLedgerPeer prp p =
-  PublicRootPeers.invariant (PublicRootPeers.insertLedgerPeer p prp)
+  PublicRootPeers.invariant CPRP.invariant CPRP.toSet (PublicRootPeers.insertLedgerPeer p prp)
 
 prop_insertBigLedgerPeer :: PublicRootPeers (CardanoPublicRootPeers PeerAddr) PeerAddr
                          -> PeerAddr
                          -> Bool
 prop_insertBigLedgerPeer prp p =
-  PublicRootPeers.invariant (PublicRootPeers.insertBigLedgerPeer p prp)
+  PublicRootPeers.invariant CPRP.invariant CPRP.toSet (PublicRootPeers.insertBigLedgerPeer p prp)
 
 prop_fromPeers :: PeerAddr
                -> PeerAdvertise
