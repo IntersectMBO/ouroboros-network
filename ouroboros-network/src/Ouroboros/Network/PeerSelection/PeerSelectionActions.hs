@@ -62,7 +62,7 @@ data PeerSelectionActionsArgs extraActions extraAPI extraPeers extraFlags peerad
   psPublicRootPeersTracer     :: Tracer m TracePublicRootPeers,
   psReadTargets               :: STM m PeerSelectionTargets,
   -- ^ peer selection governor know, established and active targets
-  getLedgerStateCtx          :: LedgerPeersConsensusInterface extraAPI m,
+  getLedgerStateCtx           :: LedgerPeersConsensusInterface extraAPI m,
   -- ^ Is consensus close to current slot?
   psReadLocalRootPeers        :: STM m [(HotValency, WarmValency, Map RelayAccessPoint (PeerAdvertise, extraFlags))],
   psReadPublicRootPeers       :: STM m (Map RelayAccessPoint PeerAdvertise),

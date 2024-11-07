@@ -54,6 +54,9 @@ library
   -- At this experiment/prototype stage everything is exposed.
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:
+    Cardano.Diffusion.Configuration
+    Cardano.Diffusion.P2P
+    Cardano.Diffusion.Policies
     Cardano.Node.ArgumentsExtra
     Cardano.Node.LedgerPeerConsensusInterface
     Cardano.Node.PeerSelection.Governor.PeerSelectionActions
@@ -71,9 +74,9 @@ library
     Ouroboros.Network.BlockFetch.State
     Ouroboros.Network.DeltaQ
     Ouroboros.Network.Diffusion
+    Ouroboros.Network.Diffusion.Common
     Ouroboros.Network.Diffusion.Configuration
     Ouroboros.Network.Diffusion.NonP2P
-    Ouroboros.Network.Diffusion.P2P
     Ouroboros.Network.Diffusion.Policies
     Ouroboros.Network.ExitPolicy
     Ouroboros.Network.KeepAlive
@@ -101,7 +104,6 @@ library
     Ouroboros.Network.TxSubmission.Outbound
 
   other-modules:
-    Ouroboros.Network.Diffusion.Common
     Ouroboros.Network.Diffusion.Utils
     Ouroboros.Network.PeerSelection.Churn
     Ouroboros.Network.PeerSelection.Governor.ActivePeers
@@ -254,6 +256,7 @@ library sim-tests-lib
     Test.Ouroboros.Network.Diffusion.Testnet.Cardano
     Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Node
     Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Simulation
+    Test.Ouroboros.Network.Diffusion.Testnet.Minimal.Node
     Test.Ouroboros.Network.LedgerPeers
     Test.Ouroboros.Network.MiniProtocols.BlockFetch
     Test.Ouroboros.Network.MiniProtocols.KeepAlive
