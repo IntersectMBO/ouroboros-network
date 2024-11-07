@@ -4,7 +4,6 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
 
 #if defined(mingw32_HOST_OS)
@@ -16,12 +15,15 @@
 
 module Test.Ouroboros.Network.Testnet (tests) where
 
+import Control.Exception (AssertionFailed (..), catch, evaluate, fromException)
 import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadTest (exploreRaces)
 import Control.Monad.Class.MonadTime.SI (DiffTime, Time (Time), addTime,
            diffTime)
 import Control.Monad.IOSim
-import Data.Bifoldable (bifoldMap)
 
+import Data.Bifoldable (bifoldMap)
+import Data.Dynamic (fromDynamic)
 import Data.Foldable (fold)
 import Data.IP qualified as IP
 import Data.List as List (find, foldl', intercalate, tails)
@@ -42,40 +44,11 @@ import System.Random (mkStdGen)
 
 import Network.DNS.Types qualified as DNS
 
+import Ouroboros.Network.Block (BlockNo (..))
+import Ouroboros.Network.BlockFetch (FetchMode (..), TraceFetchClientState (..))
 import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
-import Ouroboros.Network.ConnectionManager.Types
-import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
-import Ouroboros.Network.InboundGovernor qualified as IG
-import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..))
-import Ouroboros.Network.PeerSelection.Governor qualified as Governor
-import Ouroboros.Network.PeerSelection.PeerStateActions
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions hiding
-           (DNSorIOError (IOError))
-import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
-import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
-import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
-import Ouroboros.Network.PeerSelection.Types
-import Ouroboros.Network.Server2 qualified as Server
-import Ouroboros.Network.Testing.Data.AbsBearerInfo
-import Ouroboros.Network.Testing.Data.Script
-import Ouroboros.Network.Testing.Data.Signal
-import Ouroboros.Network.Testing.Data.Signal qualified as Signal
-import Ouroboros.Network.Testing.Utils hiding (SmallDelay, debugTracer)
-
-import Simulation.Network.Snocket (BearerInfo (..))
-
-import Test.Ouroboros.Network.Testnet.Internal
-import Test.Ouroboros.Network.Testnet.Node (config_REPROMOTE_DELAY)
-import Test.Ouroboros.Network.Testnet.Node.Kernel
-import Test.QuickCheck
-import Test.QuickCheck.Monoids
-import Test.Tasty
-import Test.Tasty.QuickCheck (testProperty)
-
-import Control.Exception (AssertionFailed (..), catch, evaluate, fromException)
-import Ouroboros.Network.BlockFetch (FetchMode (..), TraceFetchClientState (..))
 import Ouroboros.Network.ConnectionManager.Test.Timeouts (TestProperty (..),
            classifyActivityType, classifyEffectiveDataFlow,
            classifyNegotiatedDataFlow, classifyPrunings, classifyTermination,
@@ -85,29 +58,53 @@ import Ouroboros.Network.ConnectionManager.Test.Utils
            abstractStateIsFinalTransitionTVarTracing, connectionManagerTraceMap,
            validTransitionMap, verifyAbstractTransition,
            verifyAbstractTransitionOrder)
+import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.ConsensusMode
+import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
+import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.InboundGovernor.Test.Utils (inboundGovernorTraceMap,
            remoteStrIsFinalTransition, serverTraceMap, validRemoteTransitionMap,
            verifyRemoteTransition, verifyRemoteTransitionOrder)
 import Ouroboros.Network.Mock.ConcreteBlock (BlockHeader)
 import Ouroboros.Network.NodeToNode (DiffusionMode (..))
-import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
+import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
+           requiresBootstrapPeers)
+import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..))
+import Ouroboros.Network.PeerSelection.Governor qualified as Governor
+import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import Ouroboros.Network.PeerSelection.PeerStateActions
 import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions hiding
+           (DNSorIOError (IOError))
 import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
            (TraceLocalRootPeers (..))
+import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
+import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
            WarmValency (..))
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
+import Ouroboros.Network.PeerSelection.Types
 import Ouroboros.Network.PeerSharing (PeerSharingResult (..))
-import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..))
+import Ouroboros.Network.Server2 qualified as Server
+import Ouroboros.Network.Testing.Data.AbsBearerInfo
+import Ouroboros.Network.Testing.Data.Script
+import Ouroboros.Network.Testing.Data.Signal
+import Ouroboros.Network.Testing.Data.Signal qualified as Signal
+import Ouroboros.Network.Testing.Utils hiding (SmallDelay, debugTracer)
 
-import Control.Monad.Class.MonadTest (exploreRaces)
-import Data.Dynamic (fromDynamic)
-import Ouroboros.Network.Block (BlockNo (..))
-import Ouroboros.Network.PeerSelection.Bootstrap (requiresBootstrapPeers)
-import Ouroboros.Network.PeerSelection.LedgerPeers
+import Simulation.Network.Snocket (BearerInfo (..))
+
+import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..))
+import Test.Ouroboros.Network.Testnet.Internal
+import Test.Ouroboros.Network.Testnet.Node (config_REPROMOTE_DELAY)
+import Test.Ouroboros.Network.Testnet.Node.Kernel
+import Test.QuickCheck
+import Test.QuickCheck.Monoids
+import Test.Tasty
+import Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests =
