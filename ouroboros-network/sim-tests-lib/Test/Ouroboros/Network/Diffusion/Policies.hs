@@ -24,13 +24,13 @@ import System.Random
 import NoThunks.Class.Orphans ()
 
 import Cardano.Slotting.Slot (SlotNo (..))
-import Ouroboros.Network.Diffusion.Policies
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.PeerSelection.Governor
 import Ouroboros.Network.PeerSelection.PeerMetric
 import Ouroboros.Network.PeerSelection.Types (PeerSource (..))
 import Ouroboros.Network.SizeInBytes
 
+import Cardano.Diffusion.Policies (simpleChurnModePeerSelectionPolicy)
 import Cardano.Node.PeerSelection.Types (ChurnMode (..))
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
@@ -154,11 +154,12 @@ prop_hotToWarmM ArbitraryPolicyArguments{..} seed = do
     metrics <- newPeerMetric' apaHeaderMetric apaFetchedMetric
                               PeerMetricsConfiguration { maxEntriesToTrack = 180 }
 
-    let policies = simplePeerSelectionPolicy
-                        rngVar
-                        (readTVar cmVar)
-                        metrics
-                        (RepromoteDelay 10)
+    let policies =
+          simpleChurnModePeerSelectionPolicy
+            rngVar
+            (readTVar cmVar)
+            metrics
+            (RepromoteDelay 10)
     picked <- atomically $ policyPickHotPeersToDemote policies
                   (const PeerSourceLocalRoot)
                   peerConnectFailCount
@@ -218,11 +219,12 @@ prop_randomDemotionM ArbitraryPolicyArguments{..} seed = do
     metrics <- newPeerMetric' apaHeaderMetric apaFetchedMetric
                               PeerMetricsConfiguration { maxEntriesToTrack = 180 }
 
-    let policies = simplePeerSelectionPolicy
-                        rngVar
-                        (readTVar cmVar)
-                        metrics
-                        (RepromoteDelay 10)
+    let policies =
+          simpleChurnModePeerSelectionPolicy
+            rngVar
+            (readTVar cmVar)
+            metrics
+            (RepromoteDelay 10)
     doDemotion numberOfTries policies Map.empty
 
 

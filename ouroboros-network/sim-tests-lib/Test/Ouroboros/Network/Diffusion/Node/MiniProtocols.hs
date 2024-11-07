@@ -69,7 +69,6 @@ import Ouroboros.Network.Block (HasHeader, HeaderHash, Point)
 import Ouroboros.Network.Block qualified as Block
 import Ouroboros.Network.Context
 import Ouroboros.Network.ControlMessage (ControlMessage (..))
-import Ouroboros.Network.Diffusion qualified as Diff (Applications (..))
 import Ouroboros.Network.Driver.Limits
 import Ouroboros.Network.KeepAlive
 import Ouroboros.Network.Mock.Chain qualified as Chain
@@ -84,6 +83,7 @@ import Network.TypedProtocol
 
 import Pipes qualified
 
+import Ouroboros.Network.Diffusion.Common qualified as Common
 import Ouroboros.Network.NodeToNode (blockFetchMiniProtocolNum,
            chainSyncMiniProtocolNum, keepAliveMiniProtocolNum,
            peerSharingMiniProtocolNum)
@@ -235,9 +235,9 @@ applications :: forall extraAPI block header s m.
              -> LimitsAndTimeouts header block
              -> AppArgs extraAPI header block m
              -> (block -> header)
-             -> Diff.Applications NtNAddr NtNVersion NtNVersionData
-                                  NtCAddr NtCVersion NtCVersionData
-                                  extraAPI m ()
+             -> Common.Applications NtNAddr NtNVersion NtNVersionData
+                                    NtCAddr NtCVersion NtCVersionData
+                                    extraAPI m ()
 applications debugTracer nodeKernel
              Codecs { chainSyncCodec, blockFetchCodec
                     , keepAliveCodec, pingPongCodec
@@ -255,20 +255,20 @@ applications debugTracer nodeKernel
                , aaOwnPeerSharing
                }
              toHeader =
-    Diff.Applications
-      { Diff.daApplicationInitiatorMode =
+    Common.Applications
+      { Common.daApplicationInitiatorMode =
           simpleSingletonVersions UnversionedProtocol
                                   (NtNVersionData InitiatorOnlyDiffusionMode aaOwnPeerSharing)
                                   initiatorApp
-      , Diff.daApplicationInitiatorResponderMode =
+      , Common.daApplicationInitiatorResponderMode =
           simpleSingletonVersions UnversionedProtocol
                                   (NtNVersionData aaDiffusionMode aaOwnPeerSharing)
                                   initiatorAndResponderApp
-      , Diff.daLocalResponderApplication =
+      , Common.daLocalResponderApplication =
           simpleSingletonVersions UnversionedProtocol
                                   UnversionedProtocolData
                                   localResponderApp
-      , Diff.daLedgerPeersCtx =
+      , Common.daLedgerPeersCtx =
           aaLedgerPeersConsensusInterface
       }
   where
