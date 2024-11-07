@@ -2754,6 +2754,16 @@ async_demotion_network_script =
       }
 
 
+-- | Data type designed for interpretation with `Signal.keyedUntil`.
+--
+data StartStop a =
+    -- | start event
+    Start (Set a)
+    -- | stop event
+  | Stop (Set a)
+    -- | stop all
+  | StopAll
+
 -- | Show that outbound governor reacts to asynchronous demotions
 --
 prop_diffusion_async_demotions :: SimTrace Void
@@ -2796,23 +2806,23 @@ prop_diffusion_async_demotions ioSimTrace traceNumber =
       let demotionOpportunities :: Signal (Set NtNAddr)
           demotionOpportunities =
               Signal.keyedUntil
-                (\case Right a -> a
+                (\case Start a -> a
                        _       -> Set.empty)
-                (\case Left (Just a) -> a
-                       _             -> Set.empty)
-                (\case Left Nothing -> True
-                       _            -> False)
-            . Signal.fromEventsWith (Right Set.empty)
+                (\case Stop a  -> a
+                       _       -> Set.empty)
+                (\case StopAll -> True
+                       _       -> False)
+            . Signal.fromEventsWith (Start Set.empty)
             . Signal.selectEvents
                 (\case
                   DiffusionPeerSelectionActionsTrace a ->
                     case a of
                       PeerStatusChanged (HotToCooling connId) ->
-                          Just $ Right demotions
+                          Just $ Start demotions
                         where
                           demotions = Set.singleton (remoteAddress connId)
                       PeerStatusChanged (WarmToCooling connId) ->
-                          Just $ Right demotions
+                          Just $ Start demotions
                         where
                           demotions = Set.singleton (remoteAddress connId)
                       _ -> Nothing
@@ -2820,55 +2830,55 @@ prop_diffusion_async_demotions ioSimTrace traceNumber =
                   DiffusionPeerSelectionTrace a ->
                     case a of
                       TraceDemoteAsynchronous status ->
-                          Just $ Left (Just failures)
+                          Just $ Stop failures
                         where
                           failures = Map.keysSet (Map.filter ((==PeerCooling) . fst) status)
                       TraceDemoteBigLedgerPeersAsynchronous status ->
-                          Just $ Left (Just failures)
+                          Just $ Stop failures
                         where
                           failures = Map.keysSet (Map.filter ((==PeerCooling) . fst) status)
                       TraceDemoteLocalAsynchronous status ->
-                          Just $ Left (Just failures)
+                          Just $ Stop failures
                         where
                           failures = Map.keysSet (Map.filter ((==PeerCooling) . fst) status)
                       TraceDemoteHotFailed _ _ peeraddr _ ->
-                          Just $ Left (Just failures)
+                          Just $ Stop failures
                         where
                           failures = Set.singleton peeraddr
                       TraceDemoteWarmFailed _ _ peeraddr _ ->
-                          Just $ Left (Just failures)
+                          Just $ Stop failures
                         where
                           failures = Set.singleton peeraddr
                       TracePromoteColdFailed _ _ peeraddr _ _ ->
-                          Just $ Left (Just failures)
+                          Just $ Stop failures
                         where
                           failures = Set.singleton peeraddr
                       TracePromoteWarmFailed _ _ peeraddr _ ->
-                          Just $ Left (Just failures)
+                          Just $ Stop failures
                         where
                           failures = Set.singleton peeraddr
                       TraceDemoteWarmDone _ _ peeraddr ->
-                          Just $ Left (Just failures)
+                          Just $ Stop failures
                         where
                           failures = Set.singleton peeraddr
                       TracePromoteColdBigLedgerPeerFailed _ _ peeraddr _ _ ->
-                          Just $ Left (Just failures)
+                          Just $ Stop failures
                         where
                           failures = Set.singleton peeraddr
                       TracePromoteWarmBigLedgerPeerFailed _ _ peeraddr _ ->
-                          Just $ Left (Just failures)
+                          Just $ Stop failures
                         where
                           failures = Set.singleton peeraddr
                       TraceDemoteHotBigLedgerPeerFailed _ _ peeraddr _ ->
-                          Just $ Left (Just failures)
+                          Just $ Stop failures
                         where
                           failures = Set.singleton peeraddr
                       TraceDemoteWarmBigLedgerPeerFailed _ _ peeraddr _ ->
-                          Just $ Left (Just failures)
+                          Just $ Stop failures
                         where
                           failures = Set.singleton peeraddr
                       TraceDemoteWarmBigLedgerPeerDone _ _ peeraddr ->
-                          Just $ Left (Just failures)
+                          Just $ Stop failures
                         where
                           failures = Set.singleton peeraddr
                       _ -> Nothing
@@ -2876,11 +2886,11 @@ prop_diffusion_async_demotions ioSimTrace traceNumber =
                   DiffusionConnectionManagerTrace a ->
                     case a of
                       CM.TrConnectionCleanup connId ->
-                          Just $ Left failures
+                          Just $ Stop failures
                         where
-                          failures = Just $ Set.singleton (remoteAddress connId)
+                          failures = Set.singleton (remoteAddress connId)
                       CM.TrShutdown ->
-                          Just $ Left Nothing
+                          Just StopAll
                       _ -> Nothing
 
                   _ -> Nothing
