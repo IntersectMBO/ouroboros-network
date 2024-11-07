@@ -473,12 +473,12 @@ prop_diffusion_nofail ioSimTrace traceNumber =
                 | (_, DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st)) <- trace ]
               )
        `catch` \(AssertionFailed _) -> return False
-     case r of
-       True  -> return $ property True
-       False -> do
-         putStrLn $ intercalate "\n" $ map show trace
-         -- the ioSimTrace is infinite, but it will terminate with `AssertionFailed`
-         error "impossible!"
+     if r
+     then return $ property True
+     else do
+       putStrLn $ intercalate "\n" $ map show trace
+       -- the ioSimTrace is infinite, but it will terminate with `AssertionFailed`
+       error "impossible!"
 
 -- | This test coverage of 'CM.Trace' constructors.
 --
@@ -685,11 +685,11 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
     verify_only_bootstrap_peers_in_fallback_state events =
       let govUseBootstrapPeers :: Signal UseBootstrapPeers
           govUseBootstrapPeers =
-            selectDiffusionPeerSelectionState (Governor.bootstrapPeersFlag) events
+            selectDiffusionPeerSelectionState Governor.bootstrapPeersFlag events
 
           govLedgerStateJudgement :: Signal LedgerStateJudgement
           govLedgerStateJudgement =
-            selectDiffusionPeerSelectionState (Governor.ledgerStateJudgement) events
+            selectDiffusionPeerSelectionState Governor.ledgerStateJudgement events
 
           trJoinKillSig :: Signal JoinedOrKilled
           trJoinKillSig =
@@ -787,12 +787,12 @@ prop_no_non_trustable_peers_before_caught_up_state ioSimTrace traceNumber =
     verify_no_non_trustable_peers_before_caught_up_state events =
       let govUseBootstrapPeers :: Signal UseBootstrapPeers
           govUseBootstrapPeers =
-            selectDiffusionPeerSelectionState (Governor.bootstrapPeersFlag)
+            selectDiffusionPeerSelectionState Governor.bootstrapPeersFlag
                                               events
 
           govLedgerStateJudgement :: Signal LedgerStateJudgement
           govLedgerStateJudgement =
-            selectDiffusionPeerSelectionState (Governor.ledgerStateJudgement)
+            selectDiffusionPeerSelectionState Governor.ledgerStateJudgement
                                               events
 
           govKnownPeers :: Signal (Set NtNAddr)
@@ -876,7 +876,7 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
         [ ( NodeArgs (-6) InitiatorAndResponderDiffusionMode (Just 180)
               (Map.fromList [(RelayAccessDomain "test2" 65535, DoAdvertisePeer)])
               PraosMode
-              (Script ((UseBootstrapPeers [RelayAccessDomain "bootstrap" 00000]) :| []))
+              (Script (UseBootstrapPeers [RelayAccessDomain "bootstrap" 00000] :| []))
               (TestAddress (IPAddr (read "0:7:0:7::") 65533))
               PeerSharingDisabled
               [ (1,1,Map.fromList [(RelayAccessDomain "test2" 65535,(DoNotAdvertisePeer, IsNotTrustable))
@@ -902,14 +902,14 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
             ,Reconfigure 6.33333333333 [(1,1,Map.fromList [(RelayAccessDomain "test2" 65535,(DoAdvertisePeer, IsNotTrustable))]),
                                         (1,1,Map.fromList [(RelayAccessAddress "0:6:0:3:0:6:0:5" 65530,(DoAdvertisePeer, IsNotTrustable))
                                        ])]
-            ,Reconfigure 23.88888888888 [(1,1,Map.fromList []),(1,1,Map.fromList [(RelayAccessAddress "0:6:0:3:0:6:0:5" 65530,(DoAdvertisePeer, IsNotTrustable))])]
+            ,Reconfigure 23.88888888888 [(1,1,Map.empty),(1,1,Map.fromList [(RelayAccessAddress "0:6:0:3:0:6:0:5" 65530,(DoAdvertisePeer, IsNotTrustable))])]
             ,Reconfigure 4.870967741935 [(1,1,Map.fromList [(RelayAccessDomain "test2" 65535,(DoAdvertisePeer, IsNotTrustable))])]
             ]
           )
-        , ( NodeArgs (1) InitiatorAndResponderDiffusionMode (Just 135)
+        , ( NodeArgs 1 InitiatorAndResponderDiffusionMode (Just 135)
              (Map.fromList [(RelayAccessAddress "0:7:0:7::" 65533, DoAdvertisePeer)])
              PraosMode
-              (Script ((UseBootstrapPeers [RelayAccessDomain "bootstrap" 00000]) :| []))
+              (Script (UseBootstrapPeers [RelayAccessDomain "bootstrap" 00000] :| []))
              (TestAddress (IPAddr (read "0:6:0:3:0:6:0:5") 65530))
              PeerSharingDisabled
              []
@@ -933,7 +933,7 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
              False
              (Script (FetchModeDeadline :| []))
           , [JoinNetwork 0.183783783783
-            ,Reconfigure 4.533333333333 [(1,1,Map.fromList [])]
+            ,Reconfigure 4.533333333333 [(1,1,Map.empty)]
             ]
           )
         ]
@@ -1345,7 +1345,7 @@ prop_diffusion_dns_can_recover ioSimTrace traceNumber =
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                       )
                . splitWithNameTrace
-               . fmap (\(WithTime t (WithName name b)) -> (WithName name (WithTime t b)))
+               . fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
@@ -1481,7 +1481,7 @@ unit_4191 = testWithIOSim prop_diffusion_dns_can_recover 125000 absInfo script
             (Just 224)
             Map.empty
             PraosMode
-            (Script ((UseBootstrapPeers [RelayAccessDomain "bootstrap" 00000]) :| []))
+            (Script (UseBootstrapPeers [RelayAccessDomain "bootstrap" 00000] :| []))
             (TestAddress (IPAddr (read "0.0.1.236") 65527))
             PeerSharingDisabled
             [ (2,2,Map.fromList [ (RelayAccessDomain "test2" 15,(DoNotAdvertisePeer, IsNotTrustable))
@@ -1532,9 +1532,9 @@ unit_4191 = testWithIOSim prop_diffusion_dns_can_recover 125000 absInfo script
             , [ JoinNetwork 6.710144927536
               , Kill 7.454545454545
               , JoinNetwork 10.763157894736
-              , Reconfigure 0.415384615384 [(1,1,Map.fromList [])
-              , (1,1,Map.fromList [])]
-              , Reconfigure 15.550561797752 [(1,1,Map.fromList [])
+              , Reconfigure 0.415384615384 [(1,1,Map.empty)
+              , (1,1,Map.empty)]
+              , Reconfigure 15.550561797752 [(1,1,Map.empty)
               , (1,1,Map.fromList [(RelayAccessDomain "test2" 15,(DoAdvertisePeer, IsNotTrustable))])]
               , Reconfigure 82.85714285714 []
               ])
@@ -1553,7 +1553,7 @@ prop_connect_failure (AbsIOError ioerr) =
            events = Signal.eventsFromList
                   . map (\(WithTime t b) -> (t, b))
                   . Trace.toList
-                  . fmap (\(WithTime t (WithName _ b)) -> (WithTime t b))
+                  . fmap (\(WithTime t (WithName _ b)) -> WithTime t b)
                   . Trace.filter (\(WithTime _ (WithName name _)) -> name == nodeAddr)
                   . withTimeNameTraceEvents
                      @DiffusionTestTrace
@@ -1689,7 +1689,7 @@ prop_accept_failure (AbsIOError ioerr) =
            events = Signal.eventsFromList
                   . map (\(WithTime t b) -> (t, b))
                   . Trace.toList
-                  . fmap (\(WithTime t (WithName _ b)) -> (WithTime t b))
+                  . fmap (\(WithTime t (WithName _ b)) -> WithTime t b)
                   . Trace.filter (\(WithTime _ (WithName name _)) -> name == relayAddr)
                   . withTimeNameTraceEvents
                      @DiffusionTestTrace
@@ -1893,7 +1893,7 @@ prop_diffusion_target_established_public ioSimTrace traceNumber =
         $ coverTable "established public peers"
                      [("PublicPeers in Established Set", 1)]
         $ tabulate "established public peers" valuesList
-        $ True
+          True
 
 -- | A variant of
 -- 'Test.Ouroboros.Network.PeerSelection.prop_governor_target_active_public'
@@ -1967,7 +1967,7 @@ prop_diffusion_target_active_public ioSimTrace traceNumber =
           $ coverTable "active public peers"
                        [("PublicPeers in Active Set", 1)]
           $ tabulate "active public peers" valuesList
-          $ True
+            True
 
 
 -- | This test checks the percentage of local root peers that, at some point,
@@ -2039,7 +2039,7 @@ prop_diffusion_target_active_local ioSimTrace traceNumber =
           $ coverTable "active local peers"
                        [("LocalPeers in Active Set", 1)]
           $ tabulate "active local peers" valuesList
-          $ True
+            True
 
 -- | This test checks that there's at least one root or local root peers in the
 -- active set.  This is a statistical tests which is not enforced.
@@ -2120,7 +2120,7 @@ prop_diffusion_target_active_root ioSimTrace traceNumber =
           $ coverTable "active root peers"
                        [("Root Peers in Active Set", 1)]
           $ tabulate "active root peers" valuesList
-          $ True
+            True
 
 
 -- | This test checks the percentage of public root peers that, at some point,
@@ -2449,7 +2449,7 @@ prop_diffusion_target_active_below ioSimTrace traceNumber =
             <$> Signal.keyedUntil (fromJoinedOrKilled (Set.singleton ())
                                                       Set.empty)
                                   (fromJoinedOrKilled Set.empty
-                                                      (Set.singleton()))
+                                                      (Set.singleton ()))
                                   (const False)
                                   trJoinKillSig
 
@@ -2735,7 +2735,7 @@ async_demotion_network_script =
         naMbTime           = Just 1,
         naPublicRoots      = Map.empty,
         naConsensusMode    = PraosMode,
-        naBootstrapPeers   = (Script ((UseBootstrapPeers [RelayAccessDomain "bootstrap" 00000]) :| [])),
+        naBootstrapPeers   = Script (UseBootstrapPeers [RelayAccessDomain "bootstrap" 00000] :| []),
         naAddr             = undefined,
         naLocalRootPeers   = undefined,
         naLedgerPeers      = Script (LedgerPools [] :| []),
@@ -3262,9 +3262,9 @@ prop_unit_4258 =
         (SimArgs 1 10)
         (singletonTimedScript Map.empty)
         [( NodeArgs (-3) InitiatorAndResponderDiffusionMode (Just 224)
-             (Map.fromList [])
+             Map.empty
              PraosMode
-             (Script ((UseBootstrapPeers [RelayAccessDomain "bootstrap" 00000]) :| []))
+             (Script (UseBootstrapPeers [RelayAccessDomain "bootstrap" 00000] :| []))
              (TestAddress (IPAddr (read "0.0.0.4") 9))
              PeerSharingDisabled
              [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.8" 65531,(DoNotAdvertisePeer, IsNotTrustable))])]
@@ -3299,7 +3299,7 @@ prop_unit_4258 =
          ( NodeArgs (-5) InitiatorAndResponderDiffusionMode (Just 269)
              (Map.fromList [(RelayAccessAddress "0.0.0.4" 9, DoAdvertisePeer)])
              PraosMode
-             (Script ((UseBootstrapPeers [RelayAccessDomain "bootstrap" 00000]) :| []))
+             (Script (UseBootstrapPeers [RelayAccessDomain "bootstrap" 00000] :| []))
              (TestAddress (IPAddr (read "0.0.0.8") 65531))
              PeerSharingDisabled
              [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,(DoNotAdvertisePeer, IsNotTrustable))])]
@@ -3559,7 +3559,7 @@ prop_diffusion_peer_selection_actions_no_dodgy_traces ioSimTrace traceNumber =
           $ classifyNumberOfEvents (length evsList)
           $ verify_psa_traces
           $ fmap (\(WithName _ b) -> b)
-          $ ev
+            ev
         )
       <$> events
 
@@ -3640,7 +3640,7 @@ prop_diffusion_peer_selection_actions_no_dodgy_traces ioSimTrace traceNumber =
                 )
                -> counterexample (show ev)
                 $ counterexample (unlines $ map show peerSelectionActionsEvents)
-                $ False
+                  False
              _ -> property True
              )
          $ zip       peerSelectionActionsEvents
@@ -3659,7 +3659,7 @@ prop_diffusion_peer_selection_actions_no_dodgy_traces ioSimTrace traceNumber =
 
                    Nothing                         -> property True
                    Just (WithTime promotionTime _) -> counterexample (show as)
-                                                    $ ( promotionTime `diffTime` demotionTime
+                                                      ( promotionTime `diffTime` demotionTime
                                                      >= repromoteDelay config_REPROMOTE_DELAY
                                                       )
                g as@(WithTime demotionTime (PeerStatusChanged WarmToCooling{}) : as') =
@@ -3670,7 +3670,7 @@ prop_diffusion_peer_selection_actions_no_dodgy_traces ioSimTrace traceNumber =
 
                    Nothing                         -> property True
                    Just (WithTime promotionTime _) -> counterexample (show as)
-                                                    $ ( promotionTime `diffTime` demotionTime
+                                                      ( promotionTime `diffTime` demotionTime
                                                      >= repromoteDelay config_REPROMOTE_DELAY
                                                       )
                g _ = property True
@@ -3950,8 +3950,7 @@ prop_churn_steps ioSimTrace traceNumber =
     churnTracePredicate as =
         all (\(a, b) -> a == b)
       . zip as
-      . concat
-      . repeat
+      . cycle
       $ [ DecreasedActivePeers
         , IncreasedActivePeers
         , DecreasedActiveBigLedgerPeers
@@ -4174,7 +4173,7 @@ prop_diffusion_timeouts_enforced ioSimTrace traceNumber =
          in classifySimulatedTime lastTime
           $ classifyNumberOfEvents (length evsList)
           $ verify_timeouts
-          $ ev
+            ev
         )
       <$> events
 
@@ -4373,7 +4372,7 @@ labelDiffusionScript (DiffusionScript args _ nodes) =
     . label ("Nº nodes: "
               ++ show (length nodes))
     . label ("Nº nodes in InitiatorOnlyDiffusionMode: "
-              ++ show (length $ filter ((== InitiatorOnlyDiffusionMode) . naDiffusionMode . fst) $ nodes))
+              ++ show (length $ filter ((== InitiatorOnlyDiffusionMode) . naDiffusionMode . fst) nodes))
     -- todo: add label for GenesisMode syncTargets
     . label ("Nº active peers: "
               ++ show (sum . map (targetNumberOfActivePeers . deadlineTargets . naPeerTargets . fst) $ nodes))
