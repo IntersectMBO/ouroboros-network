@@ -64,6 +64,8 @@ library
     Cardano.Node.PeerSelection.PeerChurnArgs
     Cardano.Node.PeerSelection.Types
     Cardano.Node.PublicRootPeers
+    Cardano.PeerSelection.Churn
+    Cardano.PeerSelection.PeerSelectionActions
     Control.Concurrent.Class.MonadSTM.Strict.TMergeVar
     Ouroboros.Network.BlockFetch
     Ouroboros.Network.BlockFetch.Client
@@ -76,12 +78,14 @@ library
     Ouroboros.Network.Diffusion
     Ouroboros.Network.Diffusion.Common
     Ouroboros.Network.Diffusion.Configuration
+    Ouroboros.Network.Diffusion.MinimalP2P
     Ouroboros.Network.Diffusion.NonP2P
     Ouroboros.Network.Diffusion.Policies
     Ouroboros.Network.ExitPolicy
     Ouroboros.Network.KeepAlive
     Ouroboros.Network.NodeToClient
     Ouroboros.Network.NodeToNode
+    Ouroboros.Network.PeerSelection.Churn
     Ouroboros.Network.PeerSelection.Governor
     Ouroboros.Network.PeerSelection.LedgerPeers
     Ouroboros.Network.PeerSelection.PeerMetric
@@ -105,7 +109,6 @@ library
 
   other-modules:
     Ouroboros.Network.Diffusion.Utils
-    Ouroboros.Network.PeerSelection.Churn
     Ouroboros.Network.PeerSelection.Governor.ActivePeers
     Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers
     Ouroboros.Network.PeerSelection.Governor.EstablishedPeers

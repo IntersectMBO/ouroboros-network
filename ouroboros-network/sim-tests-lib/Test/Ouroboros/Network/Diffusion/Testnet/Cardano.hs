@@ -39,7 +39,7 @@ import Data.Typeable (Typeable)
 import Data.Void (Void)
 import Data.Word (Word32)
 
-import GHC.IO.Exception as GHC (IOErrorType (..), IOException (..))
+import GHC.IO.Exception (IOErrorType (..), IOException (..))
 import System.Random (mkStdGen)
 
 import Network.DNS.Types qualified as DNS
@@ -67,7 +67,6 @@ import Ouroboros.Network.Testing.Utils hiding (SmallDelay, debugTracer)
 
 import Simulation.Network.Snocket (BearerInfo (..))
 
-import Test.Ouroboros.Network.Diffusion.Node (config_REPROMOTE_DELAY)
 import Test.Ouroboros.Network.Diffusion.Node.Kernel
 import Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Node
            (config_REPROMOTE_DELAY)

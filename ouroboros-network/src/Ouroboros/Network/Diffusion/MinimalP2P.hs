@@ -15,7 +15,7 @@
 -- | This module is expected to be imported qualified (it will clash
 -- with the "Ouroboros.Network.Diffusion.NonP2P").
 --
-module Cardano.Diffusion.P2P
+module Ouroboros.Network.Diffusion.MinimalP2P
   ( run
   , runM
   ) where
@@ -24,6 +24,7 @@ module Cardano.Diffusion.P2P
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadMVar (MonadMVar)
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Exception (IOException)
 import Control.Monad.Class.MonadAsync (Async, MonadAsync)
 import Control.Monad.Class.MonadAsync qualified as Async
 import Control.Monad.Class.MonadFork
@@ -42,7 +43,6 @@ import Data.Map qualified as Map
 import Data.Maybe (catMaybes, maybeToList)
 import Data.Typeable (Typeable)
 import Data.Void (Void)
-import GHC.IO.Exception (IOException (..), IOErrorType (..))
 import Network.Socket (Socket)
 import Ouroboros.Network.Snocket (LocalAddress, LocalSocket (..),
            localSocketFileDescriptor, makeLocalBearer, makeSocketBearer)
@@ -50,26 +50,33 @@ import Ouroboros.Network.Snocket qualified as Snocket
 import System.Exit (ExitCode)
 import System.Random (StdGen, newStdGen, split)
 
-
-import Network.Mux qualified as Mx
-
-
 import Ouroboros.Network.Context (ExpandedInitiatorContext)
 import Ouroboros.Network.Protocol.Handshake
 import Ouroboros.Network.Protocol.Handshake.Codec
 import Ouroboros.Network.Protocol.Handshake.Version
 import Ouroboros.Network.Socket (configureSocket, configureSystemdSocket)
 
+import Cardano.Node.ArgumentsExtra (CardanoArgumentsExtra (..))
+import Cardano.Node.LedgerPeerConsensusInterface
+           (CardanoLedgerPeersConsensusInterface (..))
+import Cardano.Node.PeerSelection.Governor.PeerSelectionActions
+           (CardanoPeerSelectionActions (..))
+import Cardano.Node.PeerSelection.Governor.PeerSelectionState
+           (CardanoPeerSelectionState (..))
+import Cardano.Node.PeerSelection.Governor.PeerSelectionState qualified as CPST
+import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable)
+import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
+import Cardano.Node.PublicRootPeers qualified as CPRP
 import Ouroboros.Network.ConnectionHandler
-import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.InformationChannel
            (newInformationChannel)
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Diffusion.Common hiding (nullTracers)
+import Ouroboros.Network.Diffusion.Common qualified as Common
+import Ouroboros.Network.Diffusion.Configuration
 import Ouroboros.Network.Diffusion.Policies qualified as Diffusion.Policies
 import Ouroboros.Network.Diffusion.Utils
 import Ouroboros.Network.ExitPolicy
-import Ouroboros.Network.InboundGovernor qualified as InboundGovernor
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.Mux hiding (MiniProtocol (..))
 import Ouroboros.Network.MuxMode
@@ -81,37 +88,9 @@ import Ouroboros.Network.NodeToNode (NodeToNodeVersion (..),
 import Ouroboros.Network.NodeToNode qualified as NodeToNode
 import Ouroboros.Network.PeerSelection.Churn (PeerChurnArgs (..))
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
-#ifdef POSIX
-#endif
+import Ouroboros.Network.PeerSelection.Governor.Types hiding (peerSharing)
 import Ouroboros.Network.PeerSelection.LedgerPeers (WithLedgerPeersArgs (..))
-#ifdef POSIX
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeersConsensusInterface (..))
-import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics,
-           fetchynessBlocks, upstreamyness)
-#else
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
-           MinBigLedgerPeersForTrustedState, UseLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
-#endif
-import Cardano.Diffusion.Policies (simpleChurnModePeerSelectionPolicy)
-import Cardano.Node.ArgumentsExtra (CardanoArgumentsExtra (..),
-           ConsensusModePeerTargets (..))
-import Cardano.Node.LedgerPeerConsensusInterface
-           (CardanoLedgerPeersConsensusInterface (..))
-import Cardano.Node.PeerSelection.Governor.PeerSelectionActions
-           (CardanoPeerSelectionActions (..))
-import Cardano.Node.PeerSelection.Governor.PeerSelectionState
-           (CardanoPeerSelectionState (..))
-import Cardano.Node.PeerSelection.Governor.PeerSelectionState qualified as CPST
-import Cardano.Node.PeerSelection.PeerChurnArgs (CardanoPeerChurnArgs (..))
-import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable)
-import Cardano.Node.PeerSelection.Types (ChurnMode (..))
-import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
-import Cardano.Node.PublicRootPeers qualified as CPRP
-import Ouroboros.Network.Diffusion.Common qualified as Common
-import Ouroboros.Network.Diffusion.Configuration
-import Ouroboros.Network.PeerSelection.Governor.Types hiding (requestPublicRootPeers, peerSharing)
-import Cardano.PeerSelection.Churn qualified as CardanoChurn
 import Ouroboros.Network.PeerSelection.PeerSelectionActions
 import Ouroboros.Network.PeerSelection.PeerStateActions (PeerConnectionHandle,
            PeerStateActionsArguments (..), pchPeerSharing, withPeerStateActions)
@@ -126,12 +105,19 @@ import Ouroboros.Network.Server2 qualified as Server
 import System.Posix.Signals qualified as Signals
 #endif
 #ifdef POSIX
+import Ouroboros.Network.Diffusion.Policies (simplePeerSelectionPolicy)
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type
+           (LedgerPeersConsensusInterface (..))
+import Ouroboros.Network.PeerSelection.PeerMetric (fetchynessBlocks,
+           upstreamyness)
+import qualified Ouroboros.Network.InboundGovernor as IG
+import qualified Ouroboros.Network.ConnectionManager.Core as CM
+import qualified Network.Mux as Mx
 #else
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
            MinBigLedgerPeersForTrustedState, UseLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 #endif
-import Cardano.PeerSelection.PeerSelectionActions
 
 runM
     :: forall m ntnFd ntnAddr ntnVersion ntnVersionData
@@ -244,7 +230,8 @@ runM Interfaces
        , daPublicPeerSelectionVar
        }
      ArgumentsExtra
-       { daReadLocalRootPeers
+       { daPeerSelectionTargets
+       , daReadLocalRootPeers
        , daReadPublicRootPeers
        , daOwnPeerSharing
        , daReadUseLedgerPeers
@@ -264,18 +251,13 @@ runM Interfaces
        { daApplicationInitiatorMode
        , daApplicationInitiatorResponderMode
        , daLocalResponderApplication
-       , daLedgerPeersCtx = lpcsi@LedgerPeersConsensusInterface {
-          lpExtraAPI = CardanoLedgerPeersConsensusInterface {
-            clpciGetLedgerStateJudgement
-          }
-         }
+       , daLedgerPeersCtx
        }
      ApplicationsExtra
        { daRethrowPolicy
        , daLocalRethrowPolicy
        , daReturnPolicy
        , daPeerMetrics
-       , daBlockFetchMode
        , daPeerSharingRegistry
        }
   = do
@@ -298,72 +280,21 @@ runM Interfaces
     (cmStdGen1, cmStdGen2) = split rng5
 
 
-    mkInboundPeersMap :: InboundGovernor.PublicState ntnAddr ntnVersionData
+    mkInboundPeersMap :: IG.PublicState ntnAddr ntnVersionData
                       -> Map ntnAddr PeerSharing
     mkInboundPeersMap
-      InboundGovernor.PublicState { InboundGovernor.inboundDuplexPeers }
+      IG.PublicState { IG.inboundDuplexPeers }
       =
       Map.map diNtnPeerSharing inboundDuplexPeers
 
-    -- TODO: this policy should also be used in `PeerStateActions` and
-    -- `InboundGovernor` (when creating or accepting connections)
+    -- Only the 'IOManagerError's are fatal, all the other exceptions in the
+    -- networking code will only shutdown the bearer (see 'ShutdownPeer' why
+    -- this is so).
     rethrowPolicy =
-      -- Only the 'IOManagerError's are fatal, all the other exceptions in the
-      -- networking code will only shutdown the bearer (see 'ShutdownPeer' why
-      -- this is so).
-      RethrowPolicy (\_ctx err ->
+      RethrowPolicy $ \_ctx err ->
         case fromException err of
           Just (_ :: IOManagerError) -> ShutdownNode
-          Nothing                    -> mempty)
-      <>
-      RethrowPolicy (\_ctx err ->
-        case fromException err of
-          -- if we are out of file descriptors (either because we exhausted
-          -- process or system limit) we should shut down the node and let the
-          -- operator investigate.
-          --
-          -- Refs:
-          -- * https://hackage.haskell.org/package/ghc-internal-9.1001.0/docs/src/GHC.Internal.Foreign.C.Error.html#errnoToIOError
-          -- * man socket.2
-          -- * man connect.2
-          -- * man accept.2
-          -- NOTE: many `connect` and `accept` exceptions are classified as
-          -- `OtherError`, here we only distinguish fatal IO errors (e.g.
-          -- ones that propagate to the main thread).
-          -- NOTE: we don't use the rethrow policy for `accept` calls, where
-          -- all but `ECONNABORTED` are fatal exceptions.
-          Just IOError { ioe_type } ->
-            case ioe_type of
-              ResourceExhausted    -> ShutdownNode
-              -- EAGAIN            -- connect, accept
-              -- EMFILE            -- socket, accept
-              -- ENFILE            -- socket, accept
-              -- ENOBUFS           -- socket, accept
-              -- ENOMEM            -- socket, accept
-
-              UnsupportedOperation -> ShutdownNode
-              -- EADDRNOTAVAIL     -- connect
-              -- EAFNOSUPPRT       -- connect
-
-              InvalidArgument      -> ShutdownNode
-              -- EINVAL            -- socket, accept
-              -- ENOTSOCK          -- connect
-              -- EBADF             -- connect, accept
-
-              ProtocolError        -> ShutdownNode
-              -- EPROTONOSUPPOPRT  -- socket
-              -- EPROTO            -- accept
-
-              _                    -> mempty
-          Nothing -> mempty)
-      <>
-      RethrowPolicy (\ctx err -> case  (ctx, fromException err) of
-                        -- mux unknown mini-protocol errors on the outbound
-                        -- side are fatal, since this is misconfiguration of the
-                        -- ouroboros-network stack.
-                        (OutboundError, Just Mx.UnknownMiniProtocol {})
-                          -> ShutdownNode
-                        _ -> mempty)
+          Nothing                    -> mempty
 
 
     -- | mkLocalThread - create local connection manager
@@ -407,11 +338,11 @@ runM Interfaces
                   CM.configureSocket     = \_ _ -> return (),
                   CM.timeWaitTimeout     = local_TIME_WAIT_TIMEOUT,
                   CM.outboundIdleTimeout = local_PROTOCOL_IDLE_TIMEOUT,
-                  CM.connectionDataFlow    = ntcDataFlow,
+                  CM.connectionDataFlow  = ntcDataFlow,
                   CM.prunePolicy         = Diffusion.Policies.prunePolicy,
                   CM.stdGen              = cmLocalStdGen,
                   CM.connectionsLimits   = localConnectionLimits
-                }
+              }
 
         CM.with
           localConnectionManagerArguments
@@ -420,12 +351,12 @@ runM Interfaces
           (InResponderMode localInbInfoChannel)
           $ \localConnectionManager-> do
             --
-            -- node-to-client server
+            -- run local server
             --
             traceWith tracer . RunLocalServer
               =<< Snocket.getLocalAddr diNtcSnocket localSocket
 
-            Server.with
+            (Server.with
               Server.Arguments {
                   Server.sockets               = localSocket :| [],
                   Server.snocket               = diNtcSnocket,
@@ -438,7 +369,7 @@ runM Interfaces
                   Server.connectionManager     = localConnectionManager,
                   Server.connectionDataFlow    = ntcDataFlow,
                   Server.inboundInfoChannel    = localInbInfoChannel
-                }
+                })
               (\inboundGovernorThread _ -> Async.wait inboundGovernorThread)
 
 
@@ -480,14 +411,9 @@ runM Interfaces
       -- demoting/promoting peers.
       policyRngVar <- newTVarIO policyRng
 
-      churnModeVar <- newTVarIO ChurnModeNormal
-
       localRootsVar <- newTVarIO mempty
 
-      peerSelectionTargetsVar <- newTVarIO $
-        case caeConsensusMode of
-          PraosMode   -> deadlineTargets caePeerTargets
-          GenesisMode -> syncTargets caePeerTargets
+      peerSelectionTargetsVar <- newTVarIO daPeerSelectionTargets
 
       countersVar <- newTVarIO emptyPeerSelectionCounters
 
@@ -540,11 +466,11 @@ runM Interfaces
                 CM.connectionsLimits   = daAcceptedConnectionsLimit,
                 CM.timeWaitTimeout     = daTimeWaitTimeout,
                 CM.outboundIdleTimeout = daProtocolIdleTimeout
-              }
+            }
 
-      let peerSelectionPolicy = simpleChurnModePeerSelectionPolicy
-                                  policyRngVar (readTVar churnModeVar)
-                                  daPeerMetrics (epErrorDelay exitPolicy)
+      let peerSelectionPolicy =
+            simplePeerSelectionPolicy
+              policyRngVar daPeerMetrics (epErrorDelay exitPolicy)
 
       let makeConnectionHandler'
             :: forall muxMode socket initiatorCtx responderCtx b c.
@@ -627,21 +553,14 @@ runM Interfaces
       --
       -- Run peer selection (p2p governor)
       --
-      let requestPublicRootPeers' =
-            requestPublicRootPeers dtTracePublicRootPeersTracer
-                                   caeReadUseBootstrapPeers
-                                   clpciGetLedgerStateJudgement
-                                   diNtnToPeerAddr
-                                   dnsSemaphore
-                                   daReadPublicRootPeers
-                                   (diDnsActions lookupReqs)
-          withPeerSelectionActions'
-            :: forall muxMode responderCtx bytes a1 b c.
-               m (Map ntnAddr PeerSharing)
+      let withPeerSelectionActions'
+            :: forall extraPeers muxMode responderCtx bytes a1 b c.
+              (Monoid extraPeers)
+            => m (Map ntnAddr PeerSharing)
             -> PeerSelectionActionsDiffusionMode ntnAddr (PeerConnectionHandle muxMode responderCtx ntnAddr ntnVersionData bytes m a1 b) m
             -> (   (Async m Void, Async m Void)
                 -> PeerSelectionActions
-                     (CardanoPeerSelectionActions m) (CardanoPublicRootPeers ntnAddr) PeerTrustable (CardanoLedgerPeersConsensusInterface m)
+                     (CardanoPeerSelectionActions m) extraPeers PeerTrustable (CardanoLedgerPeersConsensusInterface m)
                      ntnAddr
                      (PeerConnectionHandle
                         muxMode responderCtx ntnAddr ntnVersionData bytes m a1 b)
@@ -656,16 +575,16 @@ runM Interfaces
                                          paDnsActions = diDnsActions lookupReqs,
                                          paDnsSemaphore = dnsSemaphore }
                                        PeerSelectionActionsArgs {
-                                         psLocalRootPeersTracer      = dtTraceLocalRootPeersTracer,
-                                         psPublicRootPeersTracer     = dtTracePublicRootPeersTracer,
-                                         psReadTargets               = readTVar peerSelectionTargetsVar,
-                                         getLedgerStateCtx           = lpcsi,
-                                         psReadLocalRootPeers        = daReadLocalRootPeers,
-                                         psReadPublicRootPeers       = daReadPublicRootPeers,
-                                         psPeerSharing               = daOwnPeerSharing,
-                                         psPeerConnToPeerSharing     = pchPeerSharing diNtnPeerSharing,
+                                         psLocalRootPeersTracer = dtTraceLocalRootPeersTracer,
+                                         psPublicRootPeersTracer = dtTracePublicRootPeersTracer,
+                                         psReadTargets = readTVar peerSelectionTargetsVar,
+                                         getLedgerStateCtx = daLedgerPeersCtx,
+                                         psReadLocalRootPeers = daReadLocalRootPeers,
+                                         psReadPublicRootPeers = daReadPublicRootPeers,
+                                         psPeerSharing = daOwnPeerSharing,
+                                         psPeerConnToPeerSharing = pchPeerSharing diNtnPeerSharing,
                                          psReadPeerSharingController = readTVar (getPeerSharingRegistry daPeerSharingRegistry),
-                                         psRequestPublicRootPeers    = requestPublicRootPeers',
+                                         psRequestPublicRootPeers = getPublicRootPeers (const (pure (mempty, 5))),
                                          psReadInboundPeers =
                                            case daOwnPeerSharing of
                                              PeerSharingDisabled -> pure Map.empty
@@ -678,7 +597,7 @@ runM Interfaces
                                        }
                                        WithLedgerPeersArgs {
                                          wlpRng = ledgerPeersRng,
-                                         wlpConsensusInterface = lpcsi,
+                                         wlpConsensusInterface = daLedgerPeersCtx,
                                          wlpTracer = dtTraceLedgerPeersTracer,
                                          wlpGetUseLedgerPeers = daReadUseLedgerPeers,
                                          wlpGetLedgerPeerSnapshot = daReadLedgerPeerSnapshot }
@@ -713,31 +632,59 @@ runM Interfaces
       --
       -- The peer churn governor:
       --
-      let peerChurnGovernor' = CardanoChurn.peerChurnGovernor PeerChurnArgs {
-                                 pcaPeerSelectionTracer = dtTracePeerSelectionTracer,
-                                 pcaChurnTracer         = dtTraceChurnCounters,
-                                 pcaDeadlineInterval    = daDeadlineChurnInterval,
-                                 pcaBulkInterval        = daBulkChurnInterval,
-                                 pcaPeerRequestTimeout  = policyPeerShareOverallTimeout
-                                                            peerSelectionPolicy,
-                                 pcaMetrics             = daPeerMetrics,
-                                 pcaRng                 = churnRng,
-                                 pcaPeerSelectionVar    = peerSelectionTargetsVar,
-                                 pcaReadCounters        = readTVar countersVar,
-                                 getLedgerStateCtx      = lpcsi,
-                                 getLocalRootHotTarget  =
-                                       LocalRootPeers.hotTarget
-                                     . LocalRootPeers.clampToTrustable
-                                     . LocalRootPeers.fromGroups
-                                   <$> readTVar localRootsVar,
-                                 getExtraArgs = CardanoPeerChurnArgs {
-                                   cpcaModeVar          = churnModeVar,
-                                   cpcaReadFetchMode    = daBlockFetchMode,
-                                   cpcaPeerTargets      = caePeerTargets,
-                                   cpcaReadUseBootstrap = caeReadUseBootstrapPeers,
-                                   cpcaConsensusMode    = caeConsensusMode
-                                 }
-                               }
+      let peerChurnGovernor' =
+            Governor.peerChurnGovernor
+              PeerChurnArgs {
+                pcaPeerSelectionTracer = dtTracePeerSelectionTracer
+              , pcaChurnTracer         = dtTraceChurnCounters
+              , pcaDeadlineInterval    = daDeadlineChurnInterval
+              , pcaBulkInterval        = daBulkChurnInterval
+              , pcaPeerRequestTimeout  = policyPeerShareOverallTimeout peerSelectionPolicy
+              , pcaMetrics             = daPeerMetrics
+              , pcaRng                 = churnRng
+              , pcaPeerSelectionVar    = peerSelectionTargetsVar
+              , pcaReadCounters        = readTVar countersVar
+              , getLedgerStateCtx      = daLedgerPeersCtx
+              , getLocalRootHotTarget  =
+                   LocalRootPeers.hotTarget
+                 . LocalRootPeers.clampToTrustable
+                 . LocalRootPeers.fromGroups
+                 <$> readTVar localRootsVar
+              , getExtraArgs = ()
+              }
+
+      --
+      -- Two functions only used in InitiatorAndResponder mode
+      --
+      let
+          -- create sockets
+          withSockets' f =
+            withSockets tracer diNtnSnocket
+              (\sock addr -> diNtnConfigureSocket sock (Just addr))
+              (\sock addr -> diNtnConfigureSystemdSocket sock addr)
+              ( catMaybes
+                [ daIPv4Address
+                , daIPv6Address
+                ]
+              )
+              f
+
+          -- run server
+          withServer sockets connectionManager inboundInfoChannel =
+            Server.with
+              Server.Arguments {
+                  Server.sockets               = sockets,
+                  Server.snocket               = diNtnSnocket,
+                  Server.tracer                = dtServerTracer,
+                  Server.trTracer              = dtInboundGovernorTransitionTracer,
+                  Server.debugInboundGovernor  = nullTracer,
+                  Server.inboundGovernorTracer = dtInboundGovernorTracer,
+                  Server.connectionLimits      = daAcceptedConnectionsLimit,
+                  Server.connectionManager     = connectionManager,
+                  Server.connectionDataFlow    = diNtnDataFlow,
+                  Server.inboundIdleTimeout    = Just daProtocolIdleTimeout,
+                  Server.inboundInfoChannel    = inboundInfoChannel
+                }
 
       --
       -- Part (b): capturing the major control-flow of runM:
@@ -770,48 +717,23 @@ runM Interfaces
           inboundInfoChannel  <- newInformationChannel
           withConnectionManagerInitiatorAndResponderMode
             inboundInfoChannel $ \connectionManager ->
-              --
-              -- node-to-node sockets
-              --
-              withSockets
-                tracer
-                diNtnSnocket
-                (\sock addr -> diNtnConfigureSocket sock (Just addr))
-                (\sock addr -> diNtnConfigureSystemdSocket sock addr)
-                (catMaybes [daIPv4Address, daIPv6Address])
-                $ \sockets addresses ->
-                  --
-                  -- node-to-node server
-                  --
-                  Server.with
-                    Server.Arguments {
-                        Server.sockets               = sockets,
-                        Server.snocket               = diNtnSnocket,
-                        Server.tracer                = dtServerTracer,
-                        Server.trTracer              = dtInboundGovernorTransitionTracer,
-                        Server.debugInboundGovernor  = nullTracer,
-                        Server.inboundGovernorTracer = dtInboundGovernorTracer,
-                        Server.connectionLimits      = daAcceptedConnectionsLimit,
-                        Server.connectionManager     = connectionManager,
-                        Server.connectionDataFlow    = diNtnDataFlow,
-                        Server.inboundIdleTimeout    = Just daProtocolIdleTimeout,
-                        Server.inboundInfoChannel    = inboundInfoChannel
-                      } $ \inboundGovernorThread readInboundState -> do
-                    debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng (CPST.empty caeConsensusMode caeMinBigLedgerPeersForTrustedState) CPRP.empty
-                    diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
-                    withPeerStateActions' connectionManager $ \peerStateActions ->
-                      withPeerSelectionActions'
-                        (mkInboundPeersMap <$> readInboundState)
-                        PeerSelectionActionsDiffusionMode { psPeerStateActions = peerStateActions } $
-                          \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions ->
-                            Async.withAsync
-                              (peerSelectionGovernor' dtDebugPeerSelectionInitiatorResponderTracer debugStateVar peerSelectionActions) $ \governorThread -> do
-                                -- begin, unique to InitiatorAndResponder mode:
-                                traceWith tracer (RunServer addresses)
-                                -- end, unique to ...
-                                Async.withAsync peerChurnGovernor' $ \churnGovernorThread ->
-                                  -- wait for any thread to fail:
-                                  snd <$> Async.waitAny [ledgerPeersThread, localRootPeersProvider, governorThread, churnGovernorThread, inboundGovernorThread]
+              withSockets' $ \sockets addresses -> do
+                withServer sockets connectionManager inboundInfoChannel $ \inboundGovernorThread readInboundState -> do
+                  debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng (CPST.empty caeConsensusMode caeMinBigLedgerPeersForTrustedState) CPRP.empty
+                  diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
+                  withPeerStateActions' connectionManager $ \peerStateActions ->
+                    withPeerSelectionActions'
+                      (mkInboundPeersMap <$> readInboundState)
+                      PeerSelectionActionsDiffusionMode { psPeerStateActions = peerStateActions } $
+                        \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions ->
+                          Async.withAsync
+                            (peerSelectionGovernor' dtDebugPeerSelectionInitiatorResponderTracer debugStateVar peerSelectionActions) $ \governorThread -> do
+                              -- begin, unique to InitiatorAndResponder mode:
+                              traceWith tracer (RunServer addresses)
+                              -- end, unique to ...
+                              Async.withAsync peerChurnGovernor' $ \churnGovernorThread ->
+                                -- wait for any thread to fail:
+                                snd <$> Async.waitAny [ledgerPeersThread, localRootPeersProvider, governorThread, churnGovernorThread, inboundGovernorThread]
 
 -- | Main entry point for data diffusion service.  It allows to:
 --

@@ -70,12 +70,10 @@ import Network.TypedProtocol.PingPong.Type qualified as PingPong
 
 import Cardano.Node.ConsensusMode
 import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
-import Ouroboros.Network.ConnectionManager.Types (AbstractTransitionTrace,
-           ConnectionManagerTrace)
+import Ouroboros.Network.ConnectionManager.Types (AbstractTransitionTrace)
 import Ouroboros.Network.Driver.Limits (ProtocolSizeLimits (..),
            ProtocolTimeLimits (..))
-import Ouroboros.Network.InboundGovernor (InboundGovernorTrace,
-           RemoteTransitionTrace)
+import Ouroboros.Network.InboundGovernor (RemoteTransitionTrace)
 import Ouroboros.Network.Mux (MiniProtocolLimits (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.Governor (DebugPeerSelection (..),
@@ -95,7 +93,6 @@ import Ouroboros.Network.Protocol.KeepAlive.Codec (byteLimitsKeepAlive,
            timeLimitsKeepAlive)
 import Ouroboros.Network.Protocol.Limits (shortWait, smallByteLimit)
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
-import Ouroboros.Network.Server2 (ServerTrace)
 import Ouroboros.Network.Snocket (Snocket, TestAddress (..))
 
 import Ouroboros.Network.Block (BlockNo)
@@ -105,7 +102,7 @@ import Ouroboros.Network.Testing.Utils
 import Simulation.Network.Snocket (BearerInfo (..), FD, SnocketTrace,
            WithAddr (..), makeFDBearer, withSnocket)
 
-import Test.Ouroboros.Network.Diffusion.Node.NodeKernel (BlockGeneratorArgs,
+import Test.Ouroboros.Network.Diffusion.Node.Kernel (BlockGeneratorArgs,
            NtCAddr, NtCVersion, NtCVersionData, NtNAddr, NtNAddr_ (IPAddr),
            NtNVersion, NtNVersionData, ntnAddrToRelayAccessPoint,
            randomBlockGenerationArgs)
@@ -149,6 +146,9 @@ import Ouroboros.Network.Protocol.PeerSharing.Codec (byteLimitsPeerSharing,
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..), genLedgerPoolsFrom)
 import Test.Ouroboros.Network.PeerSelection.LocalRootPeers ()
 import Test.QuickCheck
+import qualified Ouroboros.Network.ConnectionManager.Core as CM
+import qualified Ouroboros.Network.Server2 as Server
+import qualified Ouroboros.Network.InboundGovernor as IG
 
 -- | Diffusion Simulator Arguments
 --
@@ -907,6 +907,7 @@ data DiffusionSimulationTrace
   | TrReconfiguringNode
   | TrUpdatingDNS
   | TrRunning
+  | TrErrored SomeException
   deriving (Show)
 
 -- Warning: be careful with writing properties that rely
@@ -924,15 +925,15 @@ data DiffusionTestTrace =
     | DiffusionPeerSelectionActionsTrace (PeerSelectionActionsTrace NtNAddr NtNVersion)
     | DiffusionDebugPeerSelectionTrace (DebugPeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers NtNAddr) NtNAddr)
     | DiffusionConnectionManagerTrace
-        (ConnectionManagerTrace NtNAddr
+        (CM.Trace NtNAddr
           (ConnectionHandlerTrace NtNVersion NtNVersionData))
     | DiffusionDiffusionSimulationTrace DiffusionSimulationTrace
     | DiffusionConnectionManagerTransitionTrace
         (AbstractTransitionTrace NtNAddr)
     | DiffusionInboundGovernorTransitionTrace
         (RemoteTransitionTrace NtNAddr)
-    | DiffusionInboundGovernorTrace (InboundGovernorTrace NtNAddr)
-    | DiffusionServerTrace (ServerTrace NtNAddr)
+    | DiffusionInboundGovernorTrace (IG.Trace NtNAddr)
+    | DiffusionServerTrace (Server.Trace NtNAddr)
     | DiffusionFetchTrace (TraceFetchClientState BlockHeader)
     | DiffusionDebugTrace String
     deriving (Show)
@@ -1215,14 +1216,16 @@ diffusionSimulation
               }
 
       NodeKernel.run blockGeneratorArgs
-                     limitsAndTimeouts
-                     interfaces
-                     arguments
-                     (tracersExtra addr)
-                     ( contramap (DiffusionFetchTrace . (\(TraceLabelPeer _ a) -> a))
-                     . tracerWithName addr
-                     . tracerWithTime
-                     $ nodeTracer)
+               limitsAndTimeouts
+               interfaces
+               arguments
+               (tracersExtra addr)
+               ( contramap (DiffusionFetchTrace . (\(TraceLabelPeer _ a) -> a))
+               . tracerWithName addr
+               . tracerWithTime
+               $ nodeTracer)
+        `catch` \e -> traceWith (diffSimTracer addr) (TrErrored e)
+                   >> throwIO e
 
     domainResolver :: StrictTVar m (Map Domain [(IP, TTL)])
                    -> DNSLookupType

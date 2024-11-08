@@ -35,10 +35,6 @@ import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint (..),
 import Ouroboros.Network.Testing.Utils (ShrinkCarefully, prop_shrink_nonequal,
            prop_shrink_valid)
 import Test.QuickCheck
-import Cardano.Node.ConsensusMode (ConsensusMode(..))
-import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers(..))
-import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable(..))
-import Cardano.Node.ArgumentsExtra (ConsensusModePeerTargets(..))
 
 
 --

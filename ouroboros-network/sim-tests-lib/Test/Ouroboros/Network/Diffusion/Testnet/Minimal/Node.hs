@@ -103,10 +103,10 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB (addBlock,
            getBlockPointSet)
 import Test.Ouroboros.Network.Diffusion.Node.MiniProtocols qualified as Node
-import Test.Ouroboros.Network.Diffusion.Node.NodeKernel (NodeKernel (..),
+import Test.Ouroboros.Network.Diffusion.Node.Kernel (NodeKernel (..),
            NtCAddr, NtCVersion, NtCVersionData, NtNAddr, NtNVersion,
            NtNVersionData (..))
-import Test.Ouroboros.Network.Diffusion.Node.NodeKernel qualified as Node
+import Test.Ouroboros.Network.Diffusion.Node.Kernel qualified as Node
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay,
            DNSTimeout, mockDNSActions)
 
@@ -211,7 +211,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
                     , haTimeLimits       = timeLimitsHandshake
                     }
               , Common.diNtnAddressType = ntnAddressType
-              , Common.diNtnDataFlow    = \_ NtNVersionData { ntnDiffusionMode } ->
+              , Common.diNtnDataFlow    = \NtNVersionData { ntnDiffusionMode } ->
                   case ntnDiffusionMode of
                     InitiatorOnlyDiffusionMode         -> Unidirectional
                     InitiatorAndResponderDiffusionMode -> Duplex
@@ -301,7 +301,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
                                    map (maxSlotNoFromWithOrigin . pointSlot) .
                                    Set.elems <$>
                                    getBlockPointSet (nkChainDB nodeKernel),
-          mkAddFetchedBlock        = \_enablePipelining ->
+          mkAddFetchedBlock        =
               pure $ \_p b ->
                 atomically (addBlock b (nkChainDB nodeKernel)),
 
