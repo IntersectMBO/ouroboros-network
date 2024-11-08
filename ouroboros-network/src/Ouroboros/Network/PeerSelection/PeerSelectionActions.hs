@@ -9,9 +9,8 @@
 
 module Ouroboros.Network.PeerSelection.PeerSelectionActions
   ( withPeerSelectionActions
-    -- * Re-exports
-  , PeerSelectionTargets (..)
-  , PeerAdvertise (..)
+  , getPeerShare
+  , getPublicRootPeers
   , PeerSelectionActionsArgs (..)
   , PeerSelectionActionsDiffusionMode (..)
   ) where
@@ -33,15 +32,6 @@ import Data.Void (Void)
 
 import Network.DNS qualified as DNS
 
-import Cardano.Node.LedgerPeerConsensusInterface
-           (CardanoLedgerPeersConsensusInterface (..))
-import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers (..),
-           requiresBootstrapPeers)
-import Cardano.Node.PeerSelection.Governor.PeerSelectionActions
-           (CardanoPeerSelectionActions (..))
-import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable)
-import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
-import Data.Bifunctor (first)
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.LedgerPeers hiding (getLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
@@ -75,6 +65,8 @@ data PeerSelectionActionsArgs extraActions extraAPI extraPeers extraFlags peerad
   psReadInboundPeers          :: m (Map peeraddr PeerSharing),
   -- ^ inbound duplex peers
   readLedgerPeerSnapshot      :: STM m (Maybe LedgerPeerSnapshot),
+  psRequestPublicRootPeers    :: (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
+                              -> LedgerPeersKind -> Int -> m (PublicRootPeers extraPeers peeraddr, DiffTime),
   psExtraActions              :: extraActions
   }
 
@@ -87,7 +79,7 @@ newtype PeerSelectionActionsDiffusionMode peeraddr peerhandle m = PeerSelectionA
   }
 
 withPeerSelectionActions
-  :: forall peeraddr peerconn resolver exception m a.
+  :: forall extraActions extraPeers extraFlags extraAPI peeraddr peerconn resolver exception m a.
      ( Alternative (STM m)
      , MonadAsync m
      , MonadDelay m
@@ -95,40 +87,34 @@ withPeerSelectionActions
      , MonadMVar  m
      , Ord peeraddr
      , Exception exception
+     , Eq extraFlags
      )
   => StrictTVar m (Config extraFlags peeraddr)
   -> PeerActionsDNS peeraddr resolver exception m
-  -> PeerSelectionActionsArgs (CardanoPeerSelectionActions m) (CardanoLedgerPeersConsensusInterface m) (CardanoPublicRootPeers peeraddr) PeerTrustable peeraddr peerconn exception m
-  -> WithLedgerPeersArgs (CardanoLedgerPeersConsensusInterface m) m
+  -> PeerSelectionActionsArgs extraActions extraAPI extraPeers extraFlags peeraddr peerconn exception m
+  -> WithLedgerPeersArgs extraAPI m
   -> PeerSelectionActionsDiffusionMode peeraddr peerconn m
   -> (   (Async m Void, Async m Void)
-      -> PeerSelectionActions (CardanoPeerSelectionActions m) (CardanoPublicRootPeers peeraddr) PeerTrustable (CardanoLedgerPeersConsensusInterface m) peeraddr peerconn m
+      -> PeerSelectionActions extraActions extraPeers extraFlags extraAPI peeraddr peerconn m
       -> m a)
   -- ^ continuation, receives a handle to the local roots peer provider thread
   -- (only if local root peers were non-empty).
   -> m a
 withPeerSelectionActions
   localRootsVar
-  paDNS@PeerActionsDNS { paToPeerAddr = toPeerAddr, paDnsActions = dnsActions, paDnsSemaphore = dnsSemaphore }
+  paDNS@PeerActionsDNS { paToPeerAddr = toPeerAddr, paDnsActions = dnsActions }
   PeerSelectionActionsArgs {
-    psLocalRootPeersTracer = localTracer,
-    psPublicRootPeersTracer = publicTracer,
-    psReadTargets = selectionTargets,
-    getLedgerStateCtx = lpsci@LedgerPeersConsensusInterface {
-      lpExtraAPI = CardanoLedgerPeersConsensusInterface {
-        clpciGetLedgerStateJudgement
-      }
-    },
-    psReadLocalRootPeers = localRootPeers,
-    psReadPublicRootPeers = publicRootPeers,
-    psPeerSharing = sharing,
-    psPeerConnToPeerSharing = peerConnToPeerSharing,
+    psLocalRootPeersTracer      = localTracer,
+    psReadTargets               = selectionTargets,
+    psReadLocalRootPeers        = localRootPeers,
+    psPeerSharing               = sharing,
+    psPeerConnToPeerSharing     = peerConnToPeerSharing,
     psReadPeerSharingController = sharingController,
-    psReadInboundPeers = readInboundPeers,
+    psReadInboundPeers          = readInboundPeers,
+    psRequestPublicRootPeers,
+    psExtraActions,
     readLedgerPeerSnapshot,
-    psExtraActions = cpsa@CardanoPeerSelectionActions {
-      cpsaReadUseBootstrapPeers = useBootstrapped
-    }
+    getLedgerStateCtx
   }
   ledgerPeersArgs
   PeerSelectionActionsDiffusionMode { psPeerStateActions = peerStateActions }
@@ -137,19 +123,20 @@ withPeerSelectionActions
       paDNS
       ledgerPeersArgs
       (\getLedgerPeers lpThread -> do
-          let peerSelectionActions = PeerSelectionActions {
-                                       readPeerSelectionTargets = selectionTargets,
-                                       readLocalRootPeers = readTVar localRootsVar,
-                                       peerSharing = sharing,
-                                       peerConnToPeerSharing = peerConnToPeerSharing,
-                                       requestPublicRootPeers = \lpk n -> requestPublicRootPeers lpk n getLedgerPeers,
-                                       requestPeerShare,
-                                       peerStateActions,
-                                       readInboundPeers,
-                                       getLedgerStateCtx = lpsci,
-                                       readLedgerPeerSnapshot,
-                                       extraActions = cpsa
-                                     }
+          let peerSelectionActions =
+                PeerSelectionActions {
+                  readPeerSelectionTargets = selectionTargets
+                , readLocalRootPeers       = readTVar localRootsVar
+                , peerSharing              = sharing
+                , peerConnToPeerSharing    = peerConnToPeerSharing
+                , requestPublicRootPeers   = psRequestPublicRootPeers getLedgerPeers
+                , extraActions             = psExtraActions
+                , requestPeerShare         = getPeerShare sharingController
+                , peerStateActions
+                , readInboundPeers
+                , getLedgerStateCtx
+                , readLedgerPeerSnapshot
+                }
           withAsync
             (localRootPeersProvider
               localTracer
@@ -161,87 +148,50 @@ withPeerSelectionActions
               localRootPeers
               localRootsVar)
             (\lrppThread -> k (lpThread, lrppThread) peerSelectionActions))
-  where
-    -- We start by reading the current ledger state judgement, if it is
-    -- YoungEnough we only care about fetching for ledger peers, otherwise we
-    -- aim to fetch bootstrap peers.
-    requestPublicRootPeers
-      :: LedgerPeersKind
-      -> Int
-      -> (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
-      -> m (PublicRootPeers (CardanoPublicRootPeers peeraddr) peeraddr, DiffTime)
-    requestPublicRootPeers ledgerPeersKind n getLedgerPeers = do
-      -- Check if the node is in a sensitive state
-      usingBootstrapPeers <- atomically
-                           $ requiresBootstrapPeers <$> useBootstrapped
-                                                    <*> clpciGetLedgerStateJudgement
-      if usingBootstrapPeers
-         then do
-          -- If the ledger state is in sensitive state we should get trustable peers.
-          (bootstrapPeers, dt) <- requestConfiguredBootstrapPeers n
-          pure (PublicRootPeers.fromBootstrapPeers bootstrapPeers, dt)
-         else do
-          -- If the ledger state is not in a sensitive state we should get ledger
-          -- peers, the Nothing case should not happen but there can be a race
-          -- condition. If that's the case we try again soon enough.
-          mbLedgerPeers <- getLedgerPeers (NumberOfPeers $ fromIntegral n) ledgerPeersKind
-          case mbLedgerPeers of
-            -- no peers from the ledger
-            Nothing -> do
-              (publicRootPeers', dt) <- requestConfiguredPublicRootPeers n
-              pure (PublicRootPeers.fromPublicRootPeers publicRootPeers', dt)
-            Just (ledgerPeers, dt) ->
-              case ledgerPeersKind of
-                AllLedgerPeers ->
-                  pure (PublicRootPeers.fromLedgerPeers ledgerPeers, dt)
-                BigLedgerPeers ->
-                  pure (PublicRootPeers.fromBigLedgerPeers ledgerPeers, dt)
 
-    -- For each call we re-initialise the dns library which forces reading
-    -- `/etc/resolv.conf`:
-    -- https://github.com/intersectmbo/cardano-node/issues/731
-    requestConfiguredPublicRootPeers :: Int -> m (Map peeraddr PeerAdvertise, DiffTime)
-    requestConfiguredPublicRootPeers n =
-      -- NOTE: we don't set `resolvConcurrent` because of
-      -- https://github.com/kazu-yamamoto/dns/issues/174
-      publicRootPeersProvider publicTracer
-                              toPeerAddr
-                              dnsSemaphore
-                              -- NOTE: we don't set `resolveConcurrent` because
-                              -- of https://github.com/kazu-yamamoto/dns/issues/174
-                              DNS.defaultResolvConf
-                              publicRootPeers
-                              dnsActions
-                              ($ n)
+getPeerShare :: ( MonadSTM m
+                , MonadMVar m
+                , Ord peeraddr
+                )
+             => STM m (Map peeraddr (PeerSharingController peeraddr m))
+             -> PeerSharingAmount
+             -> peeraddr
+             -> m (PeerSharingResult peeraddr)
+getPeerShare sharingController amount peer = do
+  controllerMap <- atomically sharingController
+  case Map.lookup peer controllerMap of
+    -- Peer Registering happens asynchronously with respect to
+    -- requestPeerShare. This means that there's a possible race where the
+    -- Peer Selection Governor can decide to peer share request to a peer
+    -- for the peer is registered. When this happens this map lookup is
+    -- going to fail, so instead of erroring we report this to the governor
+    -- so it can deal with this particular case accordingly.
+    Nothing -> return PeerSharingNotRegisteredYet
+    Just psController ->
+      PeerSharingResult <$> requestPeers psController amount
 
-    requestConfiguredBootstrapPeers :: Int -> m (Set peeraddr, DiffTime)
-    requestConfiguredBootstrapPeers n = do
-      let readBootstrapPeersMap =
-            fmap (\case
-                    DontUseBootstrapPeers     -> Map.empty
-                    UseBootstrapPeers domains ->
-                      Map.fromList ((,DoNotAdvertisePeer) <$> domains)
-                 )
-                 useBootstrapped
-
-      publicRootPeersProvider publicTracer
-                              toPeerAddr
-                              dnsSemaphore
-                              DNS.defaultResolvConf
-                              readBootstrapPeersMap
-                              dnsActions
-                              (fmap (first Map.keysSet) . ($ n))
-
-    requestPeerShare :: PeerSharingAmount -> peeraddr -> m (PeerSharingResult peeraddr)
-    requestPeerShare amount peer = do
-      controllerMap <- atomically sharingController
-      case Map.lookup peer controllerMap of
-        -- Peer Registering happens asynchronously with respect to
-        -- requestPeerShare. This means that there's a possible race where the
-        -- Peer Selection Governor can decide to peer share request to a peer
-        -- for the peer is registered. When this happens this map lookup is
-        -- going to fail, so instead of erroring we report this to the governor
-        -- so it can deal with this particular case accordingly.
-        Nothing -> return PeerSharingNotRegisteredYet
-        Just psController ->
-          PeerSharingResult <$> requestPeers psController amount
+-- We start by reading the current ledger state judgement, if it is
+-- YoungEnough we only care about fetching for ledger peers, otherwise we
+-- aim to fetch bootstrap peers.
+getPublicRootPeers
+  :: ( Monad m
+     , Monoid extraPeers
+     )
+  => (NumberOfPeers -> m (extraPeers, DiffTime))
+  -> (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
+  -> LedgerPeersKind
+  -> Int
+  -> m (PublicRootPeers extraPeers peeraddr, DiffTime)
+getPublicRootPeers getExtraPeers getLedgerPeers  ledgerPeersKind n = do
+  mbLedgerPeers <- getLedgerPeers (NumberOfPeers $ fromIntegral n) ledgerPeersKind
+  case mbLedgerPeers of
+    -- no peers from the ledger
+    Nothing -> do
+      (extraPeers, dt) <- getExtraPeers (NumberOfPeers $ fromIntegral n)
+      pure (PublicRootPeers.empty extraPeers, dt)
+    Just (ledgerPeers, dt) ->
+      case ledgerPeersKind of
+        AllLedgerPeers ->
+          pure (PublicRootPeers.fromLedgerPeers ledgerPeers, dt)
+        BigLedgerPeers ->
+          pure (PublicRootPeers.fromBigLedgerPeers ledgerPeers, dt)

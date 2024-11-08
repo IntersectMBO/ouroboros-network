@@ -15,7 +15,7 @@
 -- | This module is expected to be imported qualified (it will clash
 -- with the "Ouroboros.Network.Diffusion.NonP2P").
 --
-module Cardano.Diffusion.P2P
+module Ouroboros.Network.Diffusion.MinimalP2P
   ( run
   , runM
   ) where
@@ -56,9 +56,7 @@ import Ouroboros.Network.Protocol.Handshake.Codec
 import Ouroboros.Network.Protocol.Handshake.Version
 import Ouroboros.Network.Socket (configureSocket, configureSystemdSocket)
 
-import Cardano.Diffusion.Policies (simpleChurnModePeerSelectionPolicy)
-import Cardano.Node.ArgumentsExtra (CardanoArgumentsExtra (..),
-           ConsensusModePeerTargets (..))
+import Cardano.Node.ArgumentsExtra (CardanoArgumentsExtra (..))
 import Cardano.Node.LedgerPeerConsensusInterface
            (CardanoLedgerPeersConsensusInterface (..))
 import Cardano.Node.PeerSelection.Governor.PeerSelectionActions
@@ -66,9 +64,7 @@ import Cardano.Node.PeerSelection.Governor.PeerSelectionActions
 import Cardano.Node.PeerSelection.Governor.PeerSelectionState
            (CardanoPeerSelectionState (..))
 import Cardano.Node.PeerSelection.Governor.PeerSelectionState qualified as CPST
-import Cardano.Node.PeerSelection.PeerChurnArgs (CardanoPeerChurnArgs (..))
 import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable)
-import Cardano.Node.PeerSelection.Types (ChurnMode (..))
 import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
 import Cardano.Node.PublicRootPeers qualified as CPRP
 import Ouroboros.Network.ConnectionHandler
@@ -92,10 +88,8 @@ import Ouroboros.Network.NodeToNode (NodeToNodeVersion (..),
            NodeToNodeVersionData (..), RemoteAddress)
 import Ouroboros.Network.NodeToNode qualified as NodeToNode
 import Ouroboros.Network.PeerSelection.Churn (PeerChurnArgs (..))
-import Cardano.PeerSelection.Churn qualified as CardanoChurn
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
-import Ouroboros.Network.PeerSelection.Governor.Types hiding (peerSharing,
-           requestPublicRootPeers)
+import Ouroboros.Network.PeerSelection.Governor.Types hiding (peerSharing)
 import Ouroboros.Network.PeerSelection.LedgerPeers (WithLedgerPeersArgs (..))
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 import Ouroboros.Network.PeerSelection.PeerSelectionActions
@@ -113,6 +107,7 @@ import Ouroboros.Network.Server2 qualified as Server
 import System.Posix.Signals qualified as Signals
 #endif
 #ifdef POSIX
+import Ouroboros.Network.Diffusion.Policies (simplePeerSelectionPolicy)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeersConsensusInterface (..))
 import Ouroboros.Network.PeerSelection.PeerMetric (fetchynessBlocks,
@@ -122,7 +117,6 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
            MinBigLedgerPeersForTrustedState, UseLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 #endif
-import Cardano.PeerSelection.PeerSelectionActions
 
 runM
     :: forall m ntnFd ntnAddr ntnVersion ntnVersionData
@@ -235,7 +229,8 @@ runM Interfaces
        , daPublicPeerSelectionVar
        }
      ArgumentsExtra
-       { daReadLocalRootPeers
+       { daPeerSelectionTargets
+       , daReadLocalRootPeers
        , daReadPublicRootPeers
        , daOwnPeerSharing
        , daReadUseLedgerPeers
@@ -255,18 +250,13 @@ runM Interfaces
        { daApplicationInitiatorMode
        , daApplicationInitiatorResponderMode
        , daLocalResponderApplication
-       , daLedgerPeersCtx = lpcsi@LedgerPeersConsensusInterface {
-          lpExtraAPI = CardanoLedgerPeersConsensusInterface {
-            clpciGetLedgerStateJudgement
-          }
-         }
+       , daLedgerPeersCtx
        }
      ApplicationsExtra
        { daRethrowPolicy
        , daLocalRethrowPolicy
        , daReturnPolicy
        , daPeerMetrics
-       , daBlockFetchMode
        , daPeerSharingRegistry
        }
   = do
@@ -419,14 +409,9 @@ runM Interfaces
       -- demoting/promoting peers.
       policyRngVar <- newTVarIO policyRng
 
-      churnModeVar <- newTVarIO ChurnModeNormal
-
       localRootsVar <- newTVarIO mempty
 
-      peerSelectionTargetsVar <- newTVarIO $
-        case caeConsensusMode of
-          PraosMode   -> deadlineTargets caePeerTargets
-          GenesisMode -> syncTargets caePeerTargets
+      peerSelectionTargetsVar <- newTVarIO daPeerSelectionTargets
 
       countersVar <- newTVarIO emptyPeerSelectionCounters
 
@@ -481,9 +466,9 @@ runM Interfaces
                 cmOutboundIdleTimeout = daProtocolIdleTimeout
               }
 
-      let peerSelectionPolicy = simpleChurnModePeerSelectionPolicy
-                                  policyRngVar (readTVar churnModeVar)
-                                  daPeerMetrics (epErrorDelay exitPolicy)
+      let peerSelectionPolicy =
+            simplePeerSelectionPolicy
+              policyRngVar daPeerMetrics (epErrorDelay exitPolicy)
 
       let makeConnectionHandler'
             :: forall muxMode socket initiatorCtx responderCtx b c.
@@ -564,21 +549,14 @@ runM Interfaces
       --
       -- Run peer selection (p2p governor)
       --
-      let requestPublicRootPeers' =
-            requestPublicRootPeers dtTracePublicRootPeersTracer
-                                   caeReadUseBootstrapPeers
-                                   clpciGetLedgerStateJudgement
-                                   diNtnToPeerAddr
-                                   dnsSemaphore
-                                   daReadPublicRootPeers
-                                   (diDnsActions lookupReqs)
-          withPeerSelectionActions'
-            :: forall muxMode responderCtx bytes a1 b c.
-               (m (Map ntnAddr PeerSharing))
+      let withPeerSelectionActions'
+            :: forall extraPeers muxMode responderCtx bytes a1 b c.
+              (Monoid extraPeers)
+            => m (Map ntnAddr PeerSharing)
             -> PeerSelectionActionsDiffusionMode ntnAddr (PeerConnectionHandle muxMode responderCtx ntnAddr ntnVersionData bytes m a1 b) m
             -> (   (Async m Void, Async m Void)
                 -> PeerSelectionActions
-                     (CardanoPeerSelectionActions m) (CardanoPublicRootPeers ntnAddr) PeerTrustable (CardanoLedgerPeersConsensusInterface m)
+                     (CardanoPeerSelectionActions m) extraPeers PeerTrustable (CardanoLedgerPeersConsensusInterface m)
                      ntnAddr
                      (PeerConnectionHandle
                         muxMode responderCtx ntnAddr ntnVersionData bytes m a1 b)
@@ -593,16 +571,16 @@ runM Interfaces
                                          paDnsActions = diDnsActions lookupReqs,
                                          paDnsSemaphore = dnsSemaphore }
                                        PeerSelectionActionsArgs {
-                                         psLocalRootPeersTracer      = dtTraceLocalRootPeersTracer,
-                                         psPublicRootPeersTracer     = dtTracePublicRootPeersTracer,
-                                         psReadTargets               = readTVar peerSelectionTargetsVar,
-                                         getLedgerStateCtx           = lpcsi,
-                                         psReadLocalRootPeers        = daReadLocalRootPeers,
-                                         psReadPublicRootPeers       = daReadPublicRootPeers,
-                                         psPeerSharing               = daOwnPeerSharing,
-                                         psPeerConnToPeerSharing     = pchPeerSharing diNtnPeerSharing,
+                                         psLocalRootPeersTracer = dtTraceLocalRootPeersTracer,
+                                         psPublicRootPeersTracer = dtTracePublicRootPeersTracer,
+                                         psReadTargets = readTVar peerSelectionTargetsVar,
+                                         getLedgerStateCtx = daLedgerPeersCtx,
+                                         psReadLocalRootPeers = daReadLocalRootPeers,
+                                         psReadPublicRootPeers = daReadPublicRootPeers,
+                                         psPeerSharing = daOwnPeerSharing,
+                                         psPeerConnToPeerSharing = pchPeerSharing diNtnPeerSharing,
                                          psReadPeerSharingController = readTVar (getPeerSharingRegistry daPeerSharingRegistry),
-                                         psRequestPublicRootPeers    = requestPublicRootPeers',
+                                         psRequestPublicRootPeers = getPublicRootPeers (const (pure (mempty, 5))),
                                          psReadInboundPeers =
                                            case daOwnPeerSharing of
                                              PeerSharingDisabled -> pure Map.empty
@@ -615,7 +593,7 @@ runM Interfaces
                                        }
                                        WithLedgerPeersArgs {
                                          wlpRng = ledgerPeersRng,
-                                         wlpConsensusInterface = lpcsi,
+                                         wlpConsensusInterface = daLedgerPeersCtx,
                                          wlpTracer = dtTraceLedgerPeersTracer,
                                          wlpGetUseLedgerPeers = daReadUseLedgerPeers,
                                          wlpGetLedgerPeerSnapshot = daReadLedgerPeerSnapshot }
@@ -650,31 +628,26 @@ runM Interfaces
       --
       -- The peer churn governor:
       --
-      let peerChurnGovernor' = CardanoChurn.peerChurnGovernor PeerChurnArgs {
-                                 pcaPeerSelectionTracer = dtTracePeerSelectionTracer,
-                                 pcaChurnTracer         = dtTraceChurnCounters,
-                                 pcaDeadlineInterval    = daDeadlineChurnInterval,
-                                 pcaBulkInterval        = daBulkChurnInterval,
-                                 pcaPeerRequestTimeout  = policyPeerShareOverallTimeout
-                                                            peerSelectionPolicy,
-                                 pcaMetrics             = daPeerMetrics,
-                                 pcaRng                 = churnRng,
-                                 pcaPeerSelectionVar    = peerSelectionTargetsVar,
-                                 pcaReadCounters        = readTVar countersVar,
-                                 getLedgerStateCtx      = lpcsi,
-                                 getLocalRootHotTarget  =
-                                       LocalRootPeers.hotTarget
-                                     . LocalRootPeers.clampToTrustable
-                                     . LocalRootPeers.fromGroups
-                                   <$> readTVar localRootsVar,
-                                 getExtraArgs = CardanoPeerChurnArgs {
-                                   cpcaModeVar          = churnModeVar,
-                                   cpcaReadFetchMode    = daBlockFetchMode,
-                                   cpcaPeerTargets      = caePeerTargets,
-                                   cpcaReadUseBootstrap = caeReadUseBootstrapPeers,
-                                   cpcaConsensusMode    = caeConsensusMode
-                                 }
-                               }
+      let peerChurnGovernor' =
+            Governor.peerChurnGovernor
+              PeerChurnArgs {
+                pcaPeerSelectionTracer = dtTracePeerSelectionTracer
+              , pcaChurnTracer         = dtTraceChurnCounters
+              , pcaDeadlineInterval    = daDeadlineChurnInterval
+              , pcaBulkInterval        = daBulkChurnInterval
+              , pcaPeerRequestTimeout  = policyPeerShareOverallTimeout peerSelectionPolicy
+              , pcaMetrics             = daPeerMetrics
+              , pcaRng                 = churnRng
+              , pcaPeerSelectionVar    = peerSelectionTargetsVar
+              , pcaReadCounters        = readTVar countersVar
+              , getLedgerStateCtx      = daLedgerPeersCtx
+              , getLocalRootHotTarget  =
+                   LocalRootPeers.hotTarget
+                 . LocalRootPeers.clampToTrustable
+                 . LocalRootPeers.fromGroups
+                 <$> readTVar localRootsVar
+              , getExtraArgs = ()
+              }
 
       --
       -- Two functions only used in InitiatorAndResponder mode
