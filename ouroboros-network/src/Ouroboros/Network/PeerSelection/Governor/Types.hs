@@ -1,3 +1,4 @@
+{-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE BangPatterns              #-}
 {-# LANGUAGE CPP                       #-}
 {-# LANGUAGE DeriveFunctor             #-}
@@ -49,6 +50,7 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , TimedDecision
   , MkGuardedDecision
   , Completion (..)
+  , Completion' (..)
   , PeerSelectionView
       ( ..,
         PeerSelectionCounters,
@@ -124,6 +126,8 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , BootstrapPeersCriticalTimeoutError (..)
   ) where
 
+-- import FRP.Rhine qualified as Rhine (Time, try, forever)
+import FRP.Rhine hiding (diffTime, addTime, Time)-- qualified as Rhine
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
@@ -789,7 +793,7 @@ data PeerSelectionView a = PeerSelectionView {
 
       --
       -- Non-Root Peers
-      -- 
+      --
 
       viewKnownNonRootPeers                 :: a,
       -- ^ number of known non root peers.  These are mostly peers received
@@ -1543,6 +1547,9 @@ newtype Completion m peeraddr peerconn =
         Completion (PeerSelectionState peeraddr peerconn
                  -> Time -> Decision m peeraddr peerconn)
 
+type Completion' m time peeraddr peerconn =
+  BehaviorF m time (PeerSelectionState peeraddr peerconn) (PeerSelectionState peeraddr peerconn)
+
 data TracePeerSelection peeraddr =
        TraceLocalRootPeersChanged (LocalRootPeers peeraddr)
                                   (LocalRootPeers peeraddr)
@@ -1770,4 +1777,3 @@ deriving instance (Ord peeraddr, Show peeraddr)
 
 data ChurnMode = ChurnModeBulkSync
                | ChurnModeNormal deriving Show
-

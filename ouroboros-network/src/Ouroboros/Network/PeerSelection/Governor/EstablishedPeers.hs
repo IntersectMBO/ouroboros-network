@@ -1,3 +1,4 @@
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
@@ -412,6 +413,140 @@ jobPromoteColdPeer PeerSelectionActions {
       let !peerSharing = peerConnToPeerSharing peerconn
 
       return $ Completion $ \st@PeerSelectionState {
+                               publicRootPeers,
+                               establishedPeers,
+                               knownPeers,
+                               targets = PeerSelectionTargets {
+                                           targetNumberOfEstablishedPeers,
+                                           targetNumberOfEstablishedBigLedgerPeers
+                                         }
+                             }
+                             now ->
+        let psTime = case peerSharing of
+                          PeerSharingEnabled  -> Just (addTime policyPeerShareActivationDelay now)
+                          PeerSharingDisabled -> Nothing
+            establishedPeers' = EstablishedPeers.insert peeraddr peerconn psTime establishedPeers
+            advertise = case peerSharing of
+                          PeerSharingEnabled  -> DoAdvertisePeer
+                          PeerSharingDisabled -> DoNotAdvertisePeer
+            -- Update PeerSharing value in KnownPeers
+            knownPeers'       = KnownPeers.alter
+                                  (\x -> case x of
+                                    Nothing ->
+                                      KnownPeers.alterKnownPeerInfo
+                                        (Just peerSharing, Just advertise)
+                                        x
+                                    Just _ ->
+                                      KnownPeers.alterKnownPeerInfo
+                                        (Just peerSharing, Nothing)
+                                        x
+                                  )
+                                  (Set.singleton peeraddr)
+                              $ KnownPeers.setSuccessfulConnectionFlag (Set.singleton peeraddr)
+                              $ KnownPeers.clearTepidFlag peeraddr $
+                                    KnownPeers.resetFailCount
+                                        peeraddr
+                                        knownPeers
+            bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
+
+            st' = st { establishedPeers      = establishedPeers',
+                       inProgressPromoteCold = Set.delete peeraddr
+                                               (inProgressPromoteCold st),
+                       knownPeers            = knownPeers'
+                     }
+            cs' = peerSelectionStateToCounters st'
+
+        in Decision {
+             decisionTrace = if peeraddr `Set.member` bigLedgerPeersSet
+                             then [TracePromoteColdBigLedgerPeerDone
+                                    targetNumberOfEstablishedBigLedgerPeers
+                                    (case cs' of
+                                      PeerSelectionCounters { numberOfEstablishedBigLedgerPeers = a } -> a)
+                                    peeraddr]
+                             else [TracePromoteColdDone
+                                    targetNumberOfEstablishedPeers
+                                    (case cs' of
+                                      PeerSelectionCounters { numberOfEstablishedPeers = a } ->  a)
+                                    peeraddr],
+             decisionState = st',
+             decisionJobs  = []
+           }
+
+jobPromoteColdPeer' :: forall peeraddr peerconn time m.
+                       (Monad m, Ord peeraddr)
+                   => PeerSelectionActions peeraddr peerconn m
+                   -> PeerSelectionPolicy peeraddr m
+                   -> peeraddr
+                   -> IsBigLedgerPeer
+                   -> Job () m (Completion' m time peeraddr peerconn) --(PeerSelectionState peeraddr peerconn)
+jobPromoteColdPeer' PeerSelectionActions {
+                     peerStateActions = PeerStateActions {establishPeerConnection},
+                     peerConnToPeerSharing
+                   }
+                   PeerSelectionPolicy { policyPeerShareActivationDelay }
+                   peeraddr isBigLedgerPeer =
+    Job job handler () "promoteColdPeer"
+  where
+    -- handler :: SomeException -> m (Completion m peeraddr peerconn)
+    handler e = undefined -- return $
+      -- Completion $ \st@PeerSelectionState {
+      --                 publicRootPeers,
+      --                 stdGen,
+      --                 targets = PeerSelectionTargets {
+      --                             targetNumberOfEstablishedPeers,
+      --                             targetNumberOfEstablishedBigLedgerPeers
+      --                           }
+      --               }
+      --               now ->
+      --   let (failCount, knownPeers') = KnownPeers.incrementFailCount
+      --                                    peeraddr
+      --                                    (knownPeers st)
+      --       (fuzz, stdGen') = randomR (-2, 2 :: Double) stdGen
+
+      --       -- exponential backoff: 5s, 10s, 20s, 40s, 80s, 160s.
+      --       delay :: DiffTime
+      --       delay = realToFrac fuzz
+      --             + fromIntegral
+      --                 ( baseColdPeerRetryDiffTime
+      --                 * 2 ^ (pred failCount `min` maxColdPeerRetryBackoff)
+      --                 )
+      --       bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
+
+      --       st' = st { knownPeers            = KnownPeers.setConnectTimes
+      --                                            (Map.singleton
+      --                                              peeraddr
+      --                                              (delay `addTime` now))
+      --                                            knownPeers',
+      --                  inProgressPromoteCold = Set.delete peeraddr
+      --                                            (inProgressPromoteCold st),
+      --                  stdGen = stdGen'
+      --                }
+      --       cs' = peerSelectionStateToCounters st'
+      --   in
+      --     Decision {
+      --       decisionTrace = if peeraddr `Set.member` bigLedgerPeersSet
+      --                       then [TracePromoteColdBigLedgerPeerFailed
+      --                              targetNumberOfEstablishedBigLedgerPeers
+      --                              (case cs' of
+      --                                PeerSelectionCounters { numberOfEstablishedBigLedgerPeers = a } -> a)
+      --                              peeraddr delay e]
+      --                       else [TracePromoteColdFailed
+      --                              targetNumberOfEstablishedPeers
+      --                              (case cs' of
+      --                                PeerSelectionCounters { numberOfEstablishedPeers = a } -> a)
+      --                              peeraddr delay e],
+      --       decisionState = st',
+      --       decisionJobs  = []
+      --     }
+
+    job :: m (Completion' m time peeraddr peerconn)
+    job = do
+      --TODO: decide if we should do timeouts here or if we should make that
+      -- the responsibility of establishPeerConnection
+      peerconn <- establishPeerConnection isBigLedgerPeer peeraddr
+      let !peerSharing = peerConnToPeerSharing peerconn
+
+      return . Completion' $ \st@PeerSelectionState {
                                publicRootPeers,
                                establishedPeers,
                                knownPeers,
