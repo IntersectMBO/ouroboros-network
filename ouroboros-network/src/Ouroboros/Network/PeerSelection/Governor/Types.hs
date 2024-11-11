@@ -166,6 +166,7 @@ import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
 import Cardano.Node.Types (LedgerStateJudgement (..))
 import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
 import Cardano.Node.PeerSelection.Types (ChurnMode)
+import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
 
 -- | A peer pick policy is an action that picks a subset of elements from a
 -- map of peers.
@@ -323,7 +324,13 @@ sanePeerSelectionTargets PeerSelectionTargets{..} =
 --
 data PeerSelectionActions extraActions extraPeers extraFlags extraAPI peeraddr peerconn m =
   PeerSelectionActions {
-       readPeerSelectionTargets :: STM m PeerSelectionTargets,
+       readPeerSelectionTargets   :: STM m PeerSelectionTargets,
+
+       -- | Read the original set of locally or privately known root peers.
+       --
+       -- This should come from 'ArgumentsExtra' when initializing Diffusion
+       --
+       readOriginalLocalRootPeers :: STM m (LocalRootPeers.Config extraFlags RelayAccessPoint),
 
        -- | Read the current set of locally or privately known root peers.
        --
@@ -335,7 +342,7 @@ data PeerSelectionActions extraActions extraPeers extraFlags extraAPI peeraddr p
        -- It is structured as a collection of (non-overlapping) groups of peers
        -- where we are supposed to select n from each group.
        --
-       readLocalRootPeers       :: STM m (LocalRootPeers.Config extraFlags peeraddr),
+       readLocalRootPeers     :: STM m (LocalRootPeers.Config extraFlags peeraddr),
 
        -- | Read inbound peers which negotiated duplex connection.
        --

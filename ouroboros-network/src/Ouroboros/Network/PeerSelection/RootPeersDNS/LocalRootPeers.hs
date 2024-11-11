@@ -27,11 +27,11 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer (..), contramap, traceWith)
 
 import Network.DNS qualified as DNS
-import Network.Socket qualified as Socket
 
 import Data.Bifunctor (second)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
+import Ouroboros.Network.PeerSelection.RootPeersDNS (PeerActionsDNS (..))
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore,
            newDNSLocalRootSemaphore, withDNSSemaphore)
@@ -70,9 +70,8 @@ localRootPeersProvider
      , Eq extraFlags
      )
   => Tracer m (TraceLocalRootPeers extraFlags peerAddr exception)
-  -> (IP -> Socket.PortNumber -> peerAddr)
+  -> PeerActionsDNS peerAddr resolver exception m
   -> DNS.ResolvConf
-  -> DNSActions resolver exception m
   -> STM m [( HotValency
             , WarmValency
             , Map RelayAccessPoint (PeerAdvertise, extraFlags))]
@@ -83,12 +82,14 @@ localRootPeersProvider
   -- ^ output 'TVar'
   -> m Void
 localRootPeersProvider tracer
-                       toPeerAddr
-                       resolvConf
-                       DNSActions {
-                         dnsAsyncResolverResource,
-                         dnsLookupWithTTL
+                       PeerActionsDNS {
+                         paToPeerAddr,
+                         paDnsActions = DNSActions {
+                           dnsAsyncResolverResource,
+                           dnsLookupWithTTL
+                         }
                        }
+                       resolvConf
                        readLocalRootPeers
                        rootPeersGroupVar =
         atomically (do domainsGroups <- readLocalRootPeers
@@ -178,7 +179,7 @@ localRootPeersProvider tracer
       if null errs
          then do
            traceWith tracer (TraceLocalRootResult domain results)
-           return $ Right [ ( toPeerAddr addr dapPortNumber
+           return $ Right [ ( paToPeerAddr addr dapPortNumber
                             , _ttl)
                           | (addr, _ttl) <- results ]
          else return $ Left errs
@@ -277,7 +278,7 @@ localRootPeersProvider tracer
                       (\accMap rap pa
                          -> case rap of
                              RelayAccessAddress ip port ->
-                               Map.insert (toPeerAddr ip port) pa accMap
+                               Map.insert (paToPeerAddr ip port) pa accMap
                              RelayDomainAccessPoint dap ->
                                let newEntries = maybe Map.empty
                                                       Map.fromList

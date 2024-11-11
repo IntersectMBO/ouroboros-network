@@ -11,8 +11,6 @@ module Ouroboros.Network.PeerSelection.PeerSelectionActions
   ( withPeerSelectionActions
   , getPeerShare
   , getPublicRootPeers
-  , PeerSelectionActionsArgs (..)
-  , PeerSelectionActionsDiffusionMode (..)
   ) where
 
 
@@ -34,49 +32,13 @@ import Network.DNS qualified as DNS
 
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.LedgerPeers hiding (getLedgerPeers)
-import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.RootPeersDNS
 import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
-import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers
 import Ouroboros.Network.PeerSharing (PeerSharingController, requestPeers)
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount (..))
-
--- | Record of parameters for withPeerSelectionActions independent of diffusion mode
---
-data PeerSelectionActionsArgs extraActions extraAPI extraPeers extraFlags peeraddr peerconn exception m = PeerSelectionActionsArgs {
-  psLocalRootPeersTracer      :: Tracer m (TraceLocalRootPeers extraFlags peeraddr exception),
-  psPublicRootPeersTracer     :: Tracer m TracePublicRootPeers,
-  psReadTargets               :: STM m PeerSelectionTargets,
-  -- ^ peer selection governor know, established and active targets
-  getLedgerStateCtx           :: LedgerPeersConsensusInterface extraAPI m,
-  -- ^ Is consensus close to current slot?
-  psReadLocalRootPeers        :: STM m [(HotValency, WarmValency, Map RelayAccessPoint (PeerAdvertise, extraFlags))],
-  psReadPublicRootPeers       :: STM m (Map RelayAccessPoint PeerAdvertise),
-  psPeerSharing               :: PeerSharing,
-  -- ^ peer sharing configured value
-  psPeerConnToPeerSharing     :: peerconn -> PeerSharing,
-  -- ^ Extract peer sharing information from peerconn
-  psReadPeerSharingController :: STM m (Map peeraddr (PeerSharingController peeraddr m)),
-  -- ^ Callback which updates information about outbound connections state.
-  psReadInboundPeers          :: m (Map peeraddr PeerSharing),
-  -- ^ inbound duplex peers
-  readLedgerPeerSnapshot      :: STM m (Maybe LedgerPeerSnapshot),
-  psRequestPublicRootPeers    :: (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
-                              -> LedgerPeersKind -> Int -> m (PublicRootPeers extraPeers peeraddr, DiffTime),
-  psExtraActions              :: extraActions
-  }
-
--- | Record of remaining parameters for withPeerSelectionActions
--- that were extracted out since the following vary based on the diffusion mode
---
-newtype PeerSelectionActionsDiffusionMode peeraddr peerhandle m = PeerSelectionActionsDiffusionMode {
-  psPeerStateActions :: PeerStateActions peeraddr peerhandle m
-  -- ^ callbacks for peer state changes
-  }
 
 withPeerSelectionActions
   :: forall extraActions extraPeers extraFlags extraAPI peeraddr peerconn resolver exception m a.
@@ -84,16 +46,16 @@ withPeerSelectionActions
      , MonadAsync m
      , MonadDelay m
      , MonadThrow m
-     , MonadMVar  m
      , Ord peeraddr
      , Exception exception
      , Eq extraFlags
      )
-  => StrictTVar m (Config extraFlags peeraddr)
+  => Tracer m (TraceLocalRootPeers extraFlags peeraddr exception)
+  -> StrictTVar m (Config extraFlags peeraddr)
   -> PeerActionsDNS peeraddr resolver exception m
-  -> PeerSelectionActionsArgs extraActions extraAPI extraPeers extraFlags peeraddr peerconn exception m
+  -> ( (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
+     -> PeerSelectionActions extraActions extraPeers extraFlags extraAPI peeraddr peerconn m)
   -> WithLedgerPeersArgs extraAPI m
-  -> PeerSelectionActionsDiffusionMode peeraddr peerconn m
   -> (   (Async m Void, Async m Void)
       -> PeerSelectionActions extraActions extraPeers extraFlags extraAPI peeraddr peerconn m
       -> m a)
@@ -101,51 +63,27 @@ withPeerSelectionActions
   -- (only if local root peers were non-empty).
   -> m a
 withPeerSelectionActions
+  localTracer
   localRootsVar
-  paDNS@PeerActionsDNS { paToPeerAddr = toPeerAddr, paDnsActions = dnsActions }
-  PeerSelectionActionsArgs {
-    psLocalRootPeersTracer      = localTracer,
-    psReadTargets               = selectionTargets,
-    psReadLocalRootPeers        = localRootPeers,
-    psPeerSharing               = sharing,
-    psPeerConnToPeerSharing     = peerConnToPeerSharing,
-    psReadPeerSharingController = sharingController,
-    psReadInboundPeers          = readInboundPeers,
-    psRequestPublicRootPeers,
-    psExtraActions,
-    readLedgerPeerSnapshot,
-    getLedgerStateCtx
-  }
+  paDNS
+  getPeerSelectionActions
   ledgerPeersArgs
-  PeerSelectionActionsDiffusionMode { psPeerStateActions = peerStateActions }
   k = do
     withLedgerPeers
       paDNS
       ledgerPeersArgs
       (\getLedgerPeers lpThread -> do
-          let peerSelectionActions =
-                PeerSelectionActions {
-                  readPeerSelectionTargets = selectionTargets
-                , readLocalRootPeers       = readTVar localRootsVar
-                , peerSharing              = sharing
-                , peerConnToPeerSharing    = peerConnToPeerSharing
-                , requestPublicRootPeers   = psRequestPublicRootPeers getLedgerPeers
-                , extraActions             = psExtraActions
-                , requestPeerShare         = getPeerShare sharingController
-                , peerStateActions
-                , readInboundPeers
-                , getLedgerStateCtx
-                , readLedgerPeerSnapshot
-                }
+          let peerSelectionActions@PeerSelectionActions
+                { readOriginalLocalRootPeers
+                } = getPeerSelectionActions getLedgerPeers
           withAsync
             (localRootPeersProvider
               localTracer
-              toPeerAddr
+              paDNS
               -- NOTE: we don't set `resolvConcurrent` because
               -- of https://github.com/kazu-yamamoto/dns/issues/174
               DNS.defaultResolvConf
-              dnsActions
-              localRootPeers
+              readOriginalLocalRootPeers
               localRootsVar)
             (\lrppThread -> k (lpThread, lrppThread) peerSelectionActions))
 
@@ -182,7 +120,7 @@ getPublicRootPeers
   -> LedgerPeersKind
   -> Int
   -> m (PublicRootPeers extraPeers peeraddr, DiffTime)
-getPublicRootPeers getExtraPeers getLedgerPeers  ledgerPeersKind n = do
+getPublicRootPeers getExtraPeers getLedgerPeers ledgerPeersKind n = do
   mbLedgerPeers <- getLedgerPeers (NumberOfPeers $ fromIntegral n) ledgerPeersKind
   case mbLedgerPeers of
     -- no peers from the ledger
