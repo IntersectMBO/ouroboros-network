@@ -326,7 +326,20 @@ sanePeerSelectionTargets PeerSelectionTargets{..} =
 --
 data PeerSelectionActions extraActions extraPeers extraFlags extraAPI peeraddr peerconn m =
   PeerSelectionActions {
-       readPeerSelectionTargets :: STM m PeerSelectionTargets,
+       -- | These are the original targets as seen in the static configuration
+       --
+       originalPeerSelectionTargets :: PeerSelectionTargets,
+
+       -- | Read current Peer Selection Targets these can be changed by Churn
+       -- Governor
+       --
+       readPeerSelectionTargets   :: STM m PeerSelectionTargets,
+
+       -- | Read the original set of locally or privately known root peers.
+       --
+       -- This should come from 'ArgumentsExtra' when initializing Diffusion
+       --
+       readOriginalLocalRootPeers :: STM m (LocalRootPeers.Config extraFlags RelayAccessPoint),
 
        -- | Read the current set of locally or privately known root peers.
        --
@@ -338,8 +351,8 @@ data PeerSelectionActions extraActions extraPeers extraFlags extraAPI peeraddr p
        -- It is structured as a collection of (non-overlapping) groups of peers
        -- where we are supposed to select n from each group.
        --
-       readLocalRootPeers       :: STM m (LocalRootPeers.Config extraFlags peeraddr),
        readLocalRootPeers     :: STM m (LocalRootPeers.Config extraFlags peeraddr),
+
        -- | Read inbound peers which negotiated duplex connection.
        --
        readInboundPeers       :: m (Map peeraddr PeerSharing),

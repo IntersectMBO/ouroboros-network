@@ -4036,6 +4036,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
                   deactivatePeerConnection = error "deactivatePeerConnection",
                   closePeerConnection      = error "closePeerConnection"
                 },
+                readOriginalLocalRootPeers = return [],
                 readInboundPeers = pure Map.empty,
                 getLedgerStateCtx =
                   LedgerPeersConsensusInterface {

@@ -69,6 +69,7 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
            recomputeRelativeStake)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore)
 import Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
            (resolveLedgerPeers)
 
@@ -221,14 +222,16 @@ ledgerPeersThread :: forall m peerAddr resolver extraAPI exception.
                   -> m Void
 ledgerPeersThread PeerActionsDNS {
                     paToPeerAddr,
-                    paDnsActions,
-                    paDnsSemaphore }
+                    paDnsActions
+                  }
                   WithLedgerPeersArgs {
                     wlpRng,
                     wlpConsensusInterface,
                     wlpTracer,
                     wlpGetUseLedgerPeers,
-                    wlpGetLedgerPeerSnapshot }
+                    wlpGetLedgerPeerSnapshot,
+                    wlpSemaphore
+                  }
                   getReq
                   putResp = do
     go wlpRng (Time 0) Map.empty Map.empty Nothing
@@ -314,7 +317,7 @@ ledgerPeersThread PeerActionsDNS {
                -- of https://github.com/kazu-yamamoto/dns/issues/174
                domainAddrs <- resolveLedgerPeers wlpTracer
                                                  paToPeerAddr
-                                                 paDnsSemaphore
+                                                 wlpSemaphore
                                                  DNS.defaultResolvConf
                                                  paDnsActions
                                                  domains
@@ -418,8 +421,9 @@ data WithLedgerPeersArgs extraAPI m = WithLedgerPeersArgs {
   -- ^ Get Ledger Peers comes from here
   wlpGetUseLedgerPeers     :: STM m UseLedgerPeers,
   -- ^ Get Use Ledger After value
-  wlpGetLedgerPeerSnapshot :: STM m (Maybe LedgerPeerSnapshot)
+  wlpGetLedgerPeerSnapshot :: STM m (Maybe LedgerPeerSnapshot),
   -- ^ Get ledger peer snapshot from file read by node
+  wlpSemaphore             :: DNSSemaphore m
   }
 
 -- | For a LedgerPeers worker thread and submit request and receive responses.

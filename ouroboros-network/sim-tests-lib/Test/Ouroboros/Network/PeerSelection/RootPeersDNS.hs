@@ -362,11 +362,14 @@ mockLocalRootPeersProvider tracer (MockRoots localRootPeers dnsMapScript _ _)
       withAsync (updateDNSMap dnsMapScriptVar dnsMapVar) $ \_ -> do
         void $ MonadTimer.timeout 3600 $
           localRootPeersProvider tracer
-                                 (curry toSockAddr)
+                                 PeerActionsDNS {
+                                   paToPeerAddr = curry toSockAddr,
+                                   paDnsActions =
+                                     mockDNSActions dnsMapVar
+                                                    dnsTimeoutScriptVar
+                                                    dnsLookupDelayScriptVar
+                                 }
                                  DNSResolver.defaultResolvConf
-                                 (mockDNSActions dnsMapVar
-                                                 dnsTimeoutScriptVar
-                                                 dnsLookupDelayScriptVar)
                                  (readTVar localRootPeersVar)
                                  resultVar
         -- if there's no dns domain, `localRootPeersProvider` will never write

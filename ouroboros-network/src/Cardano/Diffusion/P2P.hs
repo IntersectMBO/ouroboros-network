@@ -664,28 +664,18 @@ runM Interfaces
                  m
             -> ((Async m Void, Async m Void)
                 -> PeerSelectionActions
-                     (CardanoPeerSelectionActions m) (CardanoPublicRootPeers ntnAddr) PeerTrustable (CardanoLedgerPeersConsensusInterface m)
-                     ntnAddr
-                     (PeerConnectionHandle
-                        muxMode responderCtx ntnAddr ntnVersionData bytes m a1 b)
+                     CardanoPeerSelectionState
                      (CardanoPeerSelectionActions m)
                      (CardanoPublicRootPeers ntnAddr)
                      PeerTrustable
                      (CardanoLedgerPeersConsensusInterface m)
-                -> m c)
-            -- ^ continuation, receives a handle to the local roots peer provider thread
+                     ntnAddr
+                     (PeerConnectionHandle
+                     (CardanoPeerSelectionView ntnAddr)
                         muxMode responderCtx peerAddr ntnVersionData bytes m a b)
                      m
-          withPeerSelectionActions' readInboundPeers =
-                                         paDnsActions = diDnsActions lookupReqs,
-                                         paDnsSemaphore = dnsSemaphore }
-                                       PeerSelectionActionsArgs {
-                                         psLocalRootPeersTracer      = dtTraceLocalRootPeersTracer,
-                                         psPublicRootPeersTracer     = dtTracePublicRootPeersTracer,
-                                         psReadTargets               = readTVar peerSelectionTargetsVar,
-                                         getLedgerStateCtx           = lpcsi,
-                                         psReadLocalRootPeers        = daReadLocalRootPeers,
-                                         psReadPublicRootPeers       = daReadPublicRootPeers,
+                -> m c)
+            -> m c
           withPeerSelectionActions' readInboundPeers peerStateActions =
               withPeerSelectionActions dtTraceLocalRootPeersTracer
                                        localRootsVar
@@ -697,14 +687,21 @@ runM Interfaces
                                          readLocalRootPeers         = readTVar localRootsVar,
                                          peerSharing                = daOwnPeerSharing,
                                          peerConnToPeerSharing      = pchPeerSharing diNtnPeerSharing,
+                                         requestPeerShare           =
+                                           getPeerShare (readTVar (getPeerSharingRegistry daPeerSharingRegistry)),
+                                         requestPublicRootPeers = requestPublicRootPeers' getLedgerPeers,
+                                         readInboundPeers =
+                                           case daOwnPeerSharing of
+                                             PeerSharingDisabled -> pure Map.empty
+                                             PeerSharingEnabled  -> readInboundPeers,
+                                         readLedgerPeerSnapshot = daReadLedgerPeerSnapshot,
                                          extraActions = CardanoPeerSelectionActions {
                                            cpsaPeerTargets           = caePeerTargets,
-                                         requestPublicRootPeers = requestPublicRootPeers' getLedgerPeers,
+                                           cpsaSyncPeerTargets       = caeSyncPeerTargets,
                                          },
                                          peerStateActions
                                        })
                                        WithLedgerPeersArgs {
-                                         extraStateToExtraCounters = cardanoPeerSelectionStatetoCounters,
                                          wlpRng                   = ledgerPeersRng,
                                          wlpConsensusInterface    = lpcsi,
                                          wlpTracer                = dtTraceLedgerPeersTracer,
@@ -712,6 +709,67 @@ runM Interfaces
                                          wlpGetLedgerPeerSnapshot = daReadLedgerPeerSnapshot,
                                          wlpSemaphore             = dnsSemaphore
                                        }
+
+          peerSelectionGovernor'
+            :: forall (muxMode :: Mx.Mode) b.
+          peerSelectionGovernorArgs
+            :: PeerSelectionGovernorArgs
+                 CardanoPeerSelectionState
+                 (CardanoPeerSelectionActions m)
+                 (CardanoPublicRootPeers ntnAddr)
+                 (CardanoLedgerPeersConsensusInterface m)
+                 PeerTrustable
+                 (CardanoPeerSelectionView ntnAddr)
+                 ntnAddr
+                 (PeerConnectionHandle
+                        muxMode responderCtx peerAddr ntnVersionData bytes m a b)
+                 BootstrapPeersCriticalTimeoutError
+                 m
+          peerSelectionGovernorArgs = PeerSelectionGovernorArgs {
+            -- If by any chance the node takes more than 15 minutes to converge to a
+            -- clean state, we crash the node. This could happen in very rare
+            -- conditions such as a global network issue, DNS, or a bug in the code.
+            -- In any case crashing the node will force the node to be restarted,
+            -- starting in the correct state for it to make progress.
+            abortGovernor   = \st ->
+              case cpstBootstrapPeersTimeout (extraState st) of
+                Nothing -> Nothing
+                Just t
+                  | cpstBlockedAt (extraState st) >= t -> Just BootstrapPeersCriticalTimeoutError
+                  | otherwise                         -> Nothing
+          , updateWithState = \psv st -> do
+              associationMode <- readAssociationMode daReadUseLedgerPeers
+                                                     daOwnPeerSharing
+                                                     (cpstBootstrapPeersFlag (extraState st))
+              clpciUpdateOutboundConnectionsState (lpExtraAPI lpcsi)
+                (outboundConnectionsState associationMode psv st)
+          , extraDecisions  =
+              ExtraGuardedDecisions {
+                preBlocking     =
+                  [ \_ psa pst -> monitorBootstrapPeersFlag   psa pst
+                  , \_ psa pst -> monitorLedgerStateJudgement psa pst
+                  , \_ _   pst -> waitForSystemToQuiesce          pst
+                  ]
+              , postBlocking    = []
+              , preNonBlocking  = []
+              , postNonBlocking = []
+              }
+          }
+
+               Tracer m (DebugPeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers ntnAddr) ntnAddr)
+            -> StrictTVar m (PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers ntnAddr) ntnAddr
+                              (NodeToNodePeerConnectionHandle
+                               muxMode ntnAddr ntnVersionData m a b))
+            -> NodeToNodePeerSelectionActions (CardanoPeerSelectionActions m) (CardanoPublicRootPeers ntnAddr) PeerTrustable (CardanoLedgerPeersConsensusInterface m)
+                                              muxMode ntnAddr ntnVersionData m a b
+            -> NodeToNodePeerSelectionActions
+                CardanoPeerSelectionState
+                (CardanoPeerSelectionActions m)
+                (CardanoPublicRootPeers ntnAddr)
+                PeerTrustable
+                (CardanoLedgerPeersConsensusInterface m)
+                (CardanoPeerSelectionView ntnAddr)
+                muxMode ntnAddr ntnVersionData m a b
             Governor.peerSelectionGovernor
               dtTracePeerSelectionTracer
               peerSelectionTracer
@@ -772,12 +830,12 @@ runM Interfaces
           withPeerStateActions' connectionManager $ \peerStateActions->
             withPeerSelectionActions'
               (return Map.empty)
-              PeerSelectionActionsDiffusionMode { psPeerStateActions = peerStateActions } $
-              \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions->
-                Async.withAsync
-                  (peerSelectionGovernor'
               peerStateActions $
               \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions ->
+                Async.withAsync
+                  (peerSelectionGovernor'
+                    dtDebugPeerSelectionInitiatorTracer
+                    debugStateVar
                     peerSelectionActions) $ \governorThread ->
                     Async.withAsync
                       peerChurnGovernor' $ \churnGovernorThread ->
@@ -822,11 +880,11 @@ runM Interfaces
                     withPeerStateActions' connectionManager $ \peerStateActions ->
                       withPeerSelectionActions'
                         (mkInboundPeersMap <$> readInboundState)
-                        PeerSelectionActionsDiffusionMode { psPeerStateActions = peerStateActions } $
+                        peerStateActions $
                           \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions ->
                             Async.withAsync
                               (peerSelectionGovernor' dtDebugPeerSelectionInitiatorResponderTracer debugStateVar peerSelectionActions) $ \governorThread -> do
-                        peerStateActions $
+                                -- begin, unique to InitiatorAndResponder mode:
                                 traceWith tracer (RunServer addresses)
                                 -- end, unique to ...
                                 Async.withAsync peerChurnGovernor' $ \churnGovernorThread ->

@@ -44,6 +44,7 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
            (recomputeRelativeStake)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
 import Ouroboros.Network.Testing.Data.Script
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS
 import Test.QuickCheck
@@ -269,13 +270,15 @@ prop_pick100 seed (NonNegative n) (ArbLedgerPeersKind ledgerPeersKind) (MockRoot
 
           withLedgerPeers
                 PeerActionsDNS { paToPeerAddr = curry IP.toSockAddr,
-                                 paDnsActions = (mockDNSActions @SomeException dnsMapVar dnsTimeoutScriptVar dnsLookupDelayScriptVar),
-                                 paDnsSemaphore = dnsSemaphore }
+                                 paDnsActions = (mockDNSActions @SomeException dnsMapVar dnsTimeoutScriptVar dnsLookupDelayScriptVar)
+                               }
                 WithLedgerPeersArgs { wlpRng = rng,
                                       wlpConsensusInterface = interface,
                                       wlpTracer = verboseTracer,
                                       wlpGetUseLedgerPeers = pure $ UseLedgerPeers Always,
-                                      wlpGetLedgerPeerSnapshot = pure Nothing }
+                                      wlpGetLedgerPeerSnapshot = pure Nothing,
+                                      wlpSemaphore = dnsSemaphore
+                                    }
                 (\request _ -> do
                   threadDelay 1900 -- we need to invalidate ledger peer's cache
                   resp <- request (NumberOfPeers 1) ledgerPeersKind
@@ -335,7 +338,9 @@ prop_pick (LedgerPools lps) (ArbLedgerPeersKind ledgerPeersKind) count seed (Moc
                                       wlpConsensusInterface = interface,
                                       wlpTracer = verboseTracer,
                                       wlpGetUseLedgerPeers = pure $ UseLedgerPeers (After 0),
-                                      wlpGetLedgerPeerSnapshot = pure Nothing }
+                                      wlpGetLedgerPeerSnapshot = pure Nothing,
+                                      wlpSemaphore = dnsSemaphore
+                                    }
                 (\request _ -> do
                   threadDelay 1900 -- we need to invalidate ledger peer's cache
                   resp <- request (NumberOfPeers count) ledgerPeersKind
