@@ -63,6 +63,7 @@ import Ouroboros.Network.ConnectionManager.InformationChannel
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context
 import Ouroboros.Network.IOManager
+import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.Mux
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.Protocol.Handshake
@@ -278,16 +279,19 @@ withBidirectionalConnectionManager snocket makeBearer socket
                   Server.connectionManager = connectionManager,
                   Server.connectionDataFlow = \_ -> Duplex,
                   Server.inboundIdleTimeout = Just protocolIdleTimeout,
-                  Server.inboundInfoChannel = inbgovInfoChannel
+                  Server.inboundInfoChannel = inbgovInfoChannel,
+                  Server.readPublicState    = return IG.emptyPublicState,
+                  Server.writePublicState   = \_ -> return ()
+
                 }
-              (\_ _ -> k connectionManager serverAddr)
+              (\_ -> k connectionManager serverAddr)
   where
     serverApplication :: LazySTM.TVar m [[Int]]
                       -> LazySTM.TVar m [[Int]]
                       -> LazySTM.TVar m [[Int]]
                       -> TemperatureBundle
-                          ([MiniProtocolWithExpandedCtx
-                              Mux.InitiatorResponderMode peerAddr ByteString m () ()])
+                          [MiniProtocolWithExpandedCtx
+                             Mux.InitiatorResponderMode peerAddr ByteString m () ()]
     serverApplication hotRequestsVar
                       warmRequestsVar
                       establishedRequestsVar
