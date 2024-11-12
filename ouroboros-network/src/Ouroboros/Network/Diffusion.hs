@@ -770,18 +770,27 @@ runM Interfaces
               --
               withSockets' $ \sockets addresses -> do
                 --
-                -- node-to-node server
+                -- node-to-node server / inbound governor
                 --
                 withServer sockets connectionManager inboundInfoChannel $
                   \inboundGovernorThread readInboundState -> do
+                    --
+                    -- 1. peer state actions
+                    --
                     debugStateVar <- newTVarIO $ Governor.emptyPeerSelectionState fuzzRng daEmptyExtraState mempty
                     diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
                     withPeerStateActions' connectionManager $
+                      --
+                      -- 2. peer selection actions
+                      --
                       \peerStateActions ->
                         withPeerSelectionActions'
                           (mkInboundPeersMap <$> readInboundState)
                           peerStateActions $
                             \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions ->
+                              --
+                              -- 3. outbound governor
+                              --
                               Async.withAsync
                                 (do
                                   labelThisThread "Peer selection governor"
