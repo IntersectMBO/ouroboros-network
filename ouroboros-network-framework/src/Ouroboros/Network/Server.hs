@@ -67,7 +67,7 @@ import Ouroboros.Network.Snocket
 
 -- | Server static configuration.
 --
-data Arguments (muxMode  :: Mx.Mode) socket initiatorCtx peerAddr versionData versionNumber bytes m a b =
+data Arguments (muxMode  :: Mx.Mode) socket initiatorCtx networkState peerAddr versionData versionNumber bytes m a b =
     Arguments {
       sockets               :: NonEmpty socket,
       snocket               :: Snocket m socket peerAddr,
@@ -77,7 +77,7 @@ data Arguments (muxMode  :: Mx.Mode) socket initiatorCtx peerAddr versionData ve
       debugInboundGovernor  :: Tracer m (InboundGovernor.Debug peerAddr versionData),
       connectionLimits      :: AcceptedConnectionsLimit,
       connectionManager     :: MuxConnectionManager muxMode socket initiatorCtx (ResponderContext peerAddr)
-                                                          peerAddr versionData versionNumber bytes m a b,
+                                                            peerAddr versionData versionNumber bytes m a b,
 
       -- | Time for which all protocols need to be idle to trigger
       -- 'DemotedToCold' transition.
@@ -91,7 +91,10 @@ data Arguments (muxMode  :: Mx.Mode) socket initiatorCtx peerAddr versionData ve
       -- inbound connections.
       --
       inboundInfoChannel    :: InboundGovernorInfoChannel muxMode initiatorCtx peerAddr versionData
-                                                                bytes m a b
+                                                                bytes m a b,
+
+      -- | read public state
+      readNetworkState      :: STM m networkState
     }
 
 -- | Server pauses accepting connections after an 'CONNABORTED' error.
@@ -114,7 +117,7 @@ server_CONNABORTED_DELAY = 0.5
 -- The first one is used in data diffusion for /Node-To-Node protocol/, while the
 -- other is useful for running a server for the /Node-To-Client protocol/.
 --
-with :: forall muxMode socket initiatorCtx peerAddr versionData versionNumber m a b x.
+with :: forall muxMode socket initiatorCtx networkState peerAddr versionData versionNumber m a b x.
        ( Alternative (STM m)
        , MonadAsync    m
        , MonadDelay    m
@@ -129,9 +132,11 @@ with :: forall muxMode socket initiatorCtx peerAddr versionData versionNumber m 
        , Ord      peerAddr
        , Show     peerAddr
        )
-    => Arguments muxMode socket initiatorCtx peerAddr versionData versionNumber ByteString m a b
+    => Arguments muxMode socket initiatorCtx networkState peerAddr versionData versionNumber ByteString m a b
     -- ^ record which holds all server arguments
-    -> (Async m Void -> m (InboundGovernor.PublicState peerAddr versionData) -> m x)
+    -> (   Async m Void
+        -> STM m (InboundGovernor.PublicState peerAddr versionData)
+        -> m x)
     -- ^ a callback which receives a handle to inbound governor thread and can
     -- read `PublicState`.
     --
@@ -150,7 +155,8 @@ with Arguments {
       inboundIdleTimeout,
       connectionManager,
       connectionDataFlow,
-      inboundInfoChannel
+      inboundInfoChannel,
+      readNetworkState
     }
     k = do
       let sockets = NonEmpty.toList socks
@@ -164,9 +170,10 @@ with Arguments {
           InboundGovernor.connectionDataFlow = connectionDataFlow,
           InboundGovernor.infoChannel        = inboundInfoChannel,
           InboundGovernor.idleTimeout        = inboundIdleTimeout,
-          InboundGovernor.connectionManager  = connectionManager
-        } $ \inboundGovernorThread readPublicInboundState ->
-        withAsync (k inboundGovernorThread readPublicInboundState) $ \actionThread -> do
+          InboundGovernor.connectionManager  = connectionManager,
+          InboundGovernor.readNetworkState   = readNetworkState
+        } $ \inboundGovernorThread readInboundGovState ->
+        withAsync (k inboundGovernorThread readInboundGovState) $ \actionThread -> do
           let acceptLoops :: [m Void]
               acceptLoops =
                           [ (accept snocket socket >>= acceptLoop localAddress)

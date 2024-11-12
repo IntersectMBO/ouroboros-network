@@ -620,9 +620,10 @@ runM Interfaces
                   Server.connectionLimits      = localConnectionLimits,
                   Server.connectionManager     = localConnectionManager,
                   Server.connectionDataFlow    = ntcDataFlow,
-                  Server.inboundInfoChannel    = localInbInfoChannel
+                  Server.inboundInfoChannel    = localInbInfoChannel,
+                  Server.readNetworkState      = return ()
                 }
-              (\inboundGovernorThread _ -> Async.wait inboundGovernorThread)
+              (\thread _ -> Async.wait thread)
 
 
     -- | mkRemoteThread - create remote connection manager
@@ -948,24 +949,26 @@ runM Interfaces
                 (\sock addr -> diNtnConfigureSocket sock (Just addr))
                 (\sock addr -> diNtnConfigureSystemdSocket sock addr)
                 (catMaybes [daIPv4Address, daIPv6Address])
-                $ \sockets addresses ->
+                $ \sockets addresses -> do
                   --
                   -- node-to-node server / inbound governor
                   --
+                  var <- InboundGovernor.newPublicStateVar
                   Server.with
                     Server.Arguments {
-                        Server.sockets               = sockets,
-                        Server.snocket               = diNtnSnocket,
-                        Server.tracer                = dtServerTracer,
-                        Server.trTracer              = dtInboundGovernorTransitionTracer,
-                        Server.debugInboundGovernor  = nullTracer,
-                        Server.inboundGovernorTracer = dtInboundGovernorTracer,
-                        Server.connectionLimits      = daAcceptedConnectionsLimit,
-                        Server.connectionManager     = connectionManager,
-                        Server.connectionDataFlow    = diNtnDataFlow,
-                        Server.inboundIdleTimeout    = Just daProtocolIdleTimeout,
-                        Server.inboundInfoChannel    = inboundInfoChannel
-                      } $ \inboundGovernorThread readInboundState -> do
+                        Server.sockets                = sockets,
+                        Server.snocket                = diNtnSnocket,
+                        Server.tracer                 = dtServerTracer,
+                        Server.trTracer               = dtInboundGovernorTransitionTracer,
+                        Server.debugInboundGovernor   = nullTracer,
+                        Server.inboundGovernorTracer  = dtInboundGovernorTracer,
+                        Server.connectionLimits       = daAcceptedConnectionsLimit,
+                        Server.connectionManager      = connectionManager,
+                        Server.connectionDataFlow     = diNtnDataFlow,
+                        Server.inboundIdleTimeout     = Just daProtocolIdleTimeout,
+                        Server.inboundInfoChannel     = inboundInfoChannel,
+                        Server.readNetworkState       = return ()
+                      } $ \inboundGovernorThread _readInboundGovState -> do
                     --
                     -- node-to-node outbound governor
                     --
@@ -978,7 +981,7 @@ runM Interfaces
                     -- 2. peer selection actions
                     --
                       withPeerSelectionActions'
-                        (mkInboundPeersMap <$> readInboundState)
+                        (mkInboundPeersMap <$> readTVarIO var)
                         PeerSelectionActionsDiffusionMode { psPeerStateActions = peerStateActions } $
                           \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions ->
                     --
