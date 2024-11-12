@@ -20,6 +20,8 @@
 module Ouroboros.Network.InboundGovernor
   ( -- * Run Inbound Protocol Governor
     PublicState (..)
+  , newPublicStateVar
+  , emptyPublicState
   , Arguments (..)
   , with
     -- * Trace
@@ -88,7 +90,7 @@ inactionTimeout :: DiffTime
 inactionTimeout = 31.415927
 
 
-data Arguments muxMode socket initiatorCtx peerAddr versionNumber versionData m a b = Arguments {
+data Arguments muxMode socket initiatorCtx networkState peerAddr versionNumber versionData m a b = Arguments {
       transitionTracer   :: Tracer m (RemoteTransitionTrace peerAddr),
       -- ^ transition tracer
       tracer             :: Tracer m (Trace peerAddr),
@@ -106,8 +108,9 @@ data Arguments muxMode socket initiatorCtx peerAddr versionNumber versionData m 
       connectionManager  :: MuxConnectionManager muxMode socket initiatorCtx
                                                     (ResponderContext peerAddr) peerAddr
                                                     versionData versionNumber
-                                                    ByteString m a b
+                                                    ByteString m a b,
       -- ^ connection manager
+      readNetworkState   :: m networkState
     }
 
 
@@ -126,7 +129,7 @@ data Arguments muxMode socket initiatorCtx peerAddr versionNumber versionData m 
 -- The first one is used in data diffusion for /Node-To-Node protocol/, while the
 -- other is useful for running a server for the /Node-To-Client protocol/.
 --
-with :: forall (muxMode :: Mux.Mode) socket initiatorCtx peerAddr versionData versionNumber m a b x.
+with :: forall (muxMode :: Mux.Mode) socket initiatorCtx networkState peerAddr versionData versionNumber m a b x.
         ( Alternative (STM m)
         , MonadAsync       m
         , MonadCatch       m
@@ -140,39 +143,33 @@ with :: forall (muxMode :: Mux.Mode) socket initiatorCtx peerAddr versionData ve
         , Ord peerAddr
         , HasResponder muxMode ~ True
         )
-     => Arguments muxMode socket initiatorCtx peerAddr versionNumber versionData m a b
-     -> (Async m Void -> m (PublicState peerAddr versionData) -> m x)
+     => Arguments muxMode socket initiatorCtx networkState peerAddr versionNumber versionData m a b
+     -> (   Async m Void
+         -> STM m (PublicState peerAddr versionData)
+         -> m x)
      -> m x
 with
     Arguments {
-      transitionTracer   = trTracer,
-      tracer             = tracer,
-      debugTracer        = debugTracer,
-      connectionDataFlow = connectionDataFlow,
-      infoChannel        = infoChannel,
-      idleTimeout        = idleTimeout,
-      connectionManager  = connectionManager
+      transitionTracer = trTracer,
+      tracer,
+      debugTracer,
+      connectionDataFlow,
+      infoChannel,
+      idleTimeout,
+      connectionManager
     }
     k
     = do
     labelThisThread "inbound-governor"
+    -- TODO: avoid a `TVar`.
     var <- newTVarIO (mkPublicState emptyState)
     withAsync ((do
                labelThisThread "inbound-governor-loop"
                inboundGovernorLoop var emptyState)
                 `catch`
                handleError var) $
-      \thread ->
-        k thread (readTVarIO var)
+      \thread -> k thread (readTVar var)
   where
-    emptyState :: State muxMode initiatorCtx peerAddr versionData m a b
-    emptyState = State {
-        connections       = Map.empty,
-        matureDuplexPeers = Map.empty,
-        freshDuplexPeers  = OrdPSQ.empty,
-        countersCache     = mempty
-      }
-
     -- Trace final transition mostly for testing purposes.
     --
     -- NOTE: `inboundGovernorLoop` doesn't throw synchronous exceptions, this is
