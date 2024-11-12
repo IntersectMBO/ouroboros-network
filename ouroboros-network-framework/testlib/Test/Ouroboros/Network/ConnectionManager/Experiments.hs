@@ -534,9 +534,11 @@ withBidirectionalConnectionManager name timeouts
                   Server.connectionManager = connectionManager,
                   Server.connectionDataFlow = \(DataFlowProtocolData df _) -> df,
                   Server.inboundIdleTimeout = Just (tProtocolIdleTimeout timeouts),
-                  Server.inboundInfoChannel = inbgovInfoChannel
+                  Server.inboundInfoChannel = inbgovInfoChannel,
+                  Server.readPublicState = return InboundGovernor.emptyPublicState,
+                  Server.writePublicState = \_ -> return ()
                 }
-              (\inboundGovernorAsync _ -> k connectionManager serverAddr inboundGovernorAsync)
+              (\inboundGovernorAsync -> k connectionManager serverAddr inboundGovernorAsync)
           `catch` \(e :: SomeException) -> do
             throwIO e
   where

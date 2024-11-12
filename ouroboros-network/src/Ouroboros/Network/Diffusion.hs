@@ -620,9 +620,11 @@ runM Interfaces
                   Server.connectionLimits      = localConnectionLimits,
                   Server.connectionManager     = localConnectionManager,
                   Server.connectionDataFlow    = ntcDataFlow,
-                  Server.inboundInfoChannel    = localInbInfoChannel
+                  Server.inboundInfoChannel    = localInbInfoChannel,
+                  Server.readPublicState       = return InboundGovernor.emptyPublicState,
+                  Server.writePublicState      = \_ -> return ()
                 }
-              (\inboundGovernorThread _ -> Async.wait inboundGovernorThread)
+              Async.wait
 
 
     -- | mkRemoteThread - create remote connection manager
@@ -948,10 +950,11 @@ runM Interfaces
                 (\sock addr -> diNtnConfigureSocket sock (Just addr))
                 (\sock addr -> diNtnConfigureSystemdSocket sock addr)
                 (catMaybes [daIPv4Address, daIPv6Address])
-                $ \sockets addresses ->
+                $ \sockets addresses -> do
                   --
                   -- node-to-node server / inbound governor
                   --
+                  var <- InboundGovernor.newPublicStateVar
                   Server.with
                     Server.Arguments {
                         Server.sockets               = sockets,
@@ -964,8 +967,10 @@ runM Interfaces
                         Server.connectionManager     = connectionManager,
                         Server.connectionDataFlow    = diNtnDataFlow,
                         Server.inboundIdleTimeout    = Just daProtocolIdleTimeout,
-                        Server.inboundInfoChannel    = inboundInfoChannel
-                      } $ \inboundGovernorThread readInboundState -> do
+                        Server.inboundInfoChannel    = inboundInfoChannel,
+                        Server.readPublicState       = readTVarIO var,
+                        Server.writePublicState      = atomically . writeTVar var
+                      } $ \inboundGovernorThread -> do
                     --
                     -- node-to-node outbound governor
                     --
@@ -978,7 +983,7 @@ runM Interfaces
                     -- 2. peer selection actions
                     --
                       withPeerSelectionActions'
-                        (mkInboundPeersMap <$> readInboundState)
+                        (mkInboundPeersMap <$> readTVarIO var)
                         PeerSelectionActionsDiffusionMode { psPeerStateActions = peerStateActions } $
                           \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions ->
                     --

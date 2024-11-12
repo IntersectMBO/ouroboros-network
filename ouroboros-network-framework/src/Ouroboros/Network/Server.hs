@@ -91,7 +91,12 @@ data Arguments (muxMode  :: Mx.Mode) socket initiatorCtx peerAddr versionData ve
       -- inbound connections.
       --
       inboundInfoChannel    :: InboundGovernorInfoChannel muxMode initiatorCtx peerAddr versionData
-                                                                bytes m a b
+                                                                bytes m a b,
+
+      -- | read public state
+      readPublicState       :: m (InboundGovernor.PublicState peerAddr versionData),
+      -- | write public state
+      writePublicState      :: InboundGovernor.PublicState peerAddr versionData -> m ()
     }
 
 -- | Server pauses accepting connections after an 'CONNABORTED' error.
@@ -131,7 +136,7 @@ with :: forall muxMode socket initiatorCtx peerAddr versionData versionNumber m 
        )
     => Arguments muxMode socket initiatorCtx peerAddr versionData versionNumber ByteString m a b
     -- ^ record which holds all server arguments
-    -> (Async m Void -> m (InboundGovernor.PublicState peerAddr versionData) -> m x)
+    -> (Async m Void -> m x)
     -- ^ a callback which receives a handle to inbound governor thread and can
     -- read `PublicState`.
     --
@@ -150,7 +155,9 @@ with Arguments {
       inboundIdleTimeout,
       connectionManager,
       connectionDataFlow,
-      inboundInfoChannel
+      inboundInfoChannel,
+      readPublicState,
+      writePublicState
     }
     k = do
       let sockets = NonEmpty.toList socks
@@ -164,9 +171,11 @@ with Arguments {
           InboundGovernor.connectionDataFlow = connectionDataFlow,
           InboundGovernor.infoChannel        = inboundInfoChannel,
           InboundGovernor.idleTimeout        = inboundIdleTimeout,
-          InboundGovernor.connectionManager  = connectionManager
-        } $ \inboundGovernorThread readPublicInboundState ->
-        withAsync (k inboundGovernorThread readPublicInboundState) $ \actionThread -> do
+          InboundGovernor.connectionManager  = connectionManager,
+          InboundGovernor.readPublicState    = readPublicState,
+          InboundGovernor.writePublicState   = writePublicState
+        } $ \inboundGovernorThread ->
+        withAsync (k inboundGovernorThread) $ \actionThread -> do
           let acceptLoops :: [m Void]
               acceptLoops =
                           [ (accept snocket socket >>= acceptLoop localAddress)

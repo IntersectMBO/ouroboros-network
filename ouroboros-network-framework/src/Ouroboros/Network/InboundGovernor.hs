@@ -20,6 +20,8 @@
 module Ouroboros.Network.InboundGovernor
   ( -- * Run Inbound Protocol Governor
     PublicState (..)
+  , newPublicStateVar
+  , emptyPublicState
   , Arguments (..)
   , with
     -- * Trace
@@ -105,8 +107,12 @@ data Arguments muxMode socket initiatorCtx peerAddr versionNumber versionData m 
       connectionManager  :: MuxConnectionManager muxMode socket initiatorCtx
                                                     (ResponderContext peerAddr) peerAddr
                                                     versionData versionNumber
-                                                    ByteString m a b
+                                                    ByteString m a b,
       -- ^ connection manager
+      readPublicState    :: m (PublicState peerAddr versionData),
+      -- ^ read public state
+      writePublicState   :: PublicState peerAddr versionData -> m ()
+      -- ^ write public state
     }
 
 
@@ -140,45 +146,34 @@ with :: forall (muxMode :: Mux.Mode) socket initiatorCtx peerAddr versionData ve
         , HasResponder muxMode ~ True
         )
      => Arguments muxMode socket initiatorCtx peerAddr versionNumber versionData m a b
-     -> (Async m Void -> m (PublicState peerAddr versionData) -> m x)
+     -> (Async m Void -> m x)
      -> m x
 with
     Arguments {
-      transitionTracer   = trTracer,
-      tracer             = tracer,
-      debugTracer        = debugTracer,
-      connectionDataFlow = connectionDataFlow,
-      infoChannel        = infoChannel,
-      idleTimeout        = idleTimeout,
-      connectionManager  = connectionManager
+      transitionTracer = trTracer,
+      tracer,
+      debugTracer,
+      connectionDataFlow,
+      infoChannel,
+      idleTimeout,
+      connectionManager,
+      writePublicState,
+      readPublicState
     }
     k
-    = do
-    var <- newTVarIO (mkPublicState emptyState)
-    withAsync (inboundGovernorLoop var emptyState
+    =
+    withAsync (inboundGovernorLoop emptyState
                 `catch`
-               handleError var) $
-      \thread ->
-        k thread (readTVarIO var)
+               handleError)
+              k
   where
-    emptyState :: State muxMode initiatorCtx peerAddr versionData m a b
-    emptyState = State {
-        connections       = Map.empty,
-        matureDuplexPeers = Map.empty,
-        freshDuplexPeers  = OrdPSQ.empty,
-        countersCache     = mempty
-      }
-
     -- Trace final transition mostly for testing purposes.
     --
     -- NOTE: `inboundGovernorLoop` doesn't throw synchronous exceptions, this is
     -- just need to handle asynchronous exceptions.
-    handleError
-      :: StrictTVar m (PublicState peerAddr versionData)
-      -> SomeException
-      -> m Void
-    handleError var e = do
-      PublicState { remoteStateMap } <- readTVarIO var
+    handleError :: SomeException -> m Void
+    handleError e = do
+      PublicState { remoteStateMap } <- readPublicState
       _ <- Map.traverseWithKey
              (\connId remoteSt ->
                traceWith trTracer $
@@ -193,10 +188,9 @@ with
     -- updated as we recurse.
     --
     inboundGovernorLoop
-      :: StrictTVar m (PublicState peerAddr versionData)
-      -> State muxMode initiatorCtx peerAddr versionData m a b
+      :: State muxMode initiatorCtx peerAddr versionData m a b
       -> m Void
-    inboundGovernorLoop var !state = do
+    inboundGovernorLoop !state = do
       time <- getMonotonicTime
       inactivityVar <- registerDelay inactionTimeout
 
@@ -540,7 +534,7 @@ with
           pure (Nothing, state)
 
       mask_ $ do
-        atomically $ writeTVar var (mkPublicState state')
+        writePublicState (mkPublicState state')
         traceWith debugTracer (Debug state')
         case mbConnId of
           Just cid -> traceWith trTracer (mkRemoteTransitionTrace cid state state')
@@ -560,7 +554,7 @@ with
           state'' | newCounters /= oldCounters = state' { countersCache = Cache newCounters }
                   | otherwise                 = state'
 
-      inboundGovernorLoop var state''
+      inboundGovernorLoop state''
 
 
 -- | Run a responder mini-protocol.
