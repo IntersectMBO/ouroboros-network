@@ -1547,8 +1547,8 @@ newtype Completion m peeraddr peerconn =
         Completion (PeerSelectionState peeraddr peerconn
                  -> Time -> Decision m peeraddr peerconn)
 
-type Completion' m time peeraddr peerconn =
-  BehaviorF m time (PeerSelectionState peeraddr peerconn) (PeerSelectionState peeraddr peerconn)
+type Completion' m peeraddr peerconn =
+  PeerSelectionState peeraddr peerconn -> m (PeerSelectionState peeraddr peerconn)
 
 data TracePeerSelection peeraddr =
        TraceLocalRootPeersChanged (LocalRootPeers peeraddr)
