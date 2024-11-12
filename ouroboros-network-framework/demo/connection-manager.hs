@@ -284,7 +284,8 @@ withBidirectionalConnectionManager snocket makeBearer socket
                   Server.connectionManager = connectionManager,
                   Server.connectionDataFlow = \_ -> Duplex,
                   Server.inboundIdleTimeout = Just protocolIdleTimeout,
-                  Server.inboundInfoChannel = inbgovInfoChannel
+                  Server.inboundInfoChannel = inbgovInfoChannel,
+                  Server.readNetworkState = return ()
                 }
               (\_ _ -> k connectionManager serverAddr)
   where
@@ -292,8 +293,8 @@ withBidirectionalConnectionManager snocket makeBearer socket
                       -> LazySTM.TVar m [[Int]]
                       -> LazySTM.TVar m [[Int]]
                       -> TemperatureBundle
-                          ([MiniProtocolWithExpandedCtx
-                              Mux.InitiatorResponderMode peerAddr ByteString m () ()])
+                          [MiniProtocolWithExpandedCtx
+                             Mux.InitiatorResponderMode peerAddr ByteString m () ()]
     serverApplication hotRequestsVar
                       warmRequestsVar
                       establishedRequestsVar
