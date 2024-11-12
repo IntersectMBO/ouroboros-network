@@ -929,7 +929,7 @@ runM Interfaces
                 (catMaybes [daIPv4Address, daIPv6Address])
                 $ \sockets addresses ->
                   --
-                  -- node-to-node server
+                  -- node-to-node server / inbound governor
                   --
                   Server.with
                     Server.Arguments {
@@ -945,18 +945,30 @@ runM Interfaces
                         Server.inboundIdleTimeout    = Just daProtocolIdleTimeout,
                         Server.inboundInfoChannel    = inboundInfoChannel
                       } $ \inboundGovernorThread readInboundState -> do
+                    --
+                    -- node-to-node outbound governor
+                    --
+                    -- 1. peer state actions
+                    --
                     debugStateVar <- newTVarIO $ Governor.emptyPeerSelectionState fuzzRng daConsensusMode daMinBigLedgerPeersForTrustedState
                     diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
                     withPeerStateActions' connectionManager $ \peerStateActions ->
+                    --
+                    -- 2. peer selection actions
+                    --
                       withPeerSelectionActions'
                         (mkInboundPeersMap <$> readInboundState)
                         PeerSelectionActionsDiffusionMode { psPeerStateActions = peerStateActions } $
                           \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions ->
+                    --
+                    -- 3. outbound governor
+                    --
                             Async.withAsync
                               (peerSelectionGovernor' dtDebugPeerSelectionInitiatorResponderTracer debugStateVar peerSelectionActions) $ \governorThread -> do
-                                -- begin, unique to InitiatorAndResponder mode:
                                 traceWith tracer (RunServer addresses)
-                                -- end, unique to ...
+                                --
+                                -- node-to-node churn governor
+                                --
                                 Async.withAsync peerChurnGovernor' $ \churnGovernorThread ->
                                   -- wait for any thread to fail:
                                   snd <$> Async.waitAny [ledgerPeersThread, localRootPeersProvider, governorThread, churnGovernorThread, inboundGovernorThread]
