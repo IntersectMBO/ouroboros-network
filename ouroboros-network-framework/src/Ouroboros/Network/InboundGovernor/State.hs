@@ -11,9 +11,12 @@
 --
 module Ouroboros.Network.InboundGovernor.State
   ( PublicState (..)
+  , emptyPublicState
+  , newPublicStateVar
     -- * Internals
   , mkPublicState
   , State (..)
+  , emptyState
   , ConnectionState (..)
   , Counters (..)
   , counters
@@ -62,6 +65,14 @@ data PublicState peerAddr versionData = PublicState {
 
     }
 
+emptyPublicState :: PublicState peerAddr versionData
+emptyPublicState = PublicState {
+    inboundDuplexPeers = Map.empty,
+    remoteStateMap     = Map.empty
+  }
+
+newPublicStateVar :: MonadSTM m => m (StrictTVar m (PublicState peerAddr versionData))
+newPublicStateVar = newTVarIO emptyPublicState
 
 -- | Smart constructor for `PublicState`.
 --
@@ -110,6 +121,14 @@ data State muxMode initiatorCtx peerAddr versionData m a b =
         -- necessary.
         countersCache :: !(Cache Counters)
       }
+
+emptyState :: State muxMode initiatorCtx peerAddr versionData m a b
+emptyState = State {
+    connections       = Map.empty,
+    matureDuplexPeers = Map.empty,
+    freshDuplexPeers  = OrdPSQ.empty,
+    countersCache     = mempty
+  }
 
 -- | Counters for tracing and analysis purposes
 --

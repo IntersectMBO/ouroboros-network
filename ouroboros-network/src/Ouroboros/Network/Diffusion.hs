@@ -388,9 +388,10 @@ runM Interfaces
                   Server.connectionLimits      = localConnectionLimits,
                   Server.connectionManager     = localConnectionManager,
                   Server.connectionDataFlow    = ntcDataFlow,
-                  Server.inboundInfoChannel    = localInbInfoChannel
+                  Server.inboundInfoChannel    = localInbInfoChannel,
+                  Server.readNetworkState      = return ()
                 }
-              (\inboundGovernorThread _ -> Async.wait inboundGovernorThread)
+              (\thread _ -> Async.wait thread)
 
 
     -- | mkRemoteThread - create remote connection manager
@@ -731,7 +732,8 @@ runM Interfaces
                   Server.connectionManager     = connectionManager,
                   Server.connectionDataFlow    = diNtnDataFlow,
                   Server.inboundIdleTimeout    = Just daProtocolIdleTimeout,
-                  Server.inboundInfoChannel    = inboundInfoChannel
+                  Server.inboundInfoChannel    = inboundInfoChannel,
+                  Server.readNetworkState      = return ()
                 }
 
       --
@@ -785,7 +787,7 @@ runM Interfaces
                       --
                       \peerStateActions ->
                         withPeerSelectionActions'
-                          (mkInboundPeersMap <$> readInboundState)
+                          (mkInboundPeersMap <$> atomically readInboundState)
                           peerStateActions $
                             \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions ->
                               --
