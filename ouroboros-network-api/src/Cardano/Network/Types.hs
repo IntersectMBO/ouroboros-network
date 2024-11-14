@@ -2,7 +2,7 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module Cardano.Node.Types where
+module Cardano.Network.Types where
 
 import Data.Aeson (FromJSON)
 import GHC.Generics (Generic)

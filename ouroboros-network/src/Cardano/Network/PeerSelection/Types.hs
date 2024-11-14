@@ -1,4 +1,4 @@
-module Cardano.Node.PeerSelection.Types where
+module Cardano.Network.PeerSelection.Types where
 
 data ChurnMode = ChurnModeBulkSync
                | ChurnModeNormal

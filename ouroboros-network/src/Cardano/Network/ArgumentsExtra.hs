@@ -1,8 +1,8 @@
-module Cardano.Node.ArgumentsExtra where
+module Cardano.Network.ArgumentsExtra where
 
-import Cardano.Node.ConsensusMode (ConsensusMode)
-import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers)
-import Cardano.Node.Types (MinBigLedgerPeersForTrustedState)
+import Cardano.Network.ConsensusMode (ConsensusMode)
+import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
+import Cardano.Network.Types (MinBigLedgerPeersForTrustedState)
 import Control.Concurrent.Class.MonadSTM (MonadSTM (..))
 import Ouroboros.Network.PeerSelection.Governor.Types
            (PeerSelectionTargets (..))
@@ -12,7 +12,7 @@ import Ouroboros.Network.PeerSelection.Governor.Types
 data CardanoArgumentsExtra m =
   CardanoArgumentsExtra {
     -- | selection targets for the peer governor
-    caePeerTargets                      :: ConsensusModePeerTargets
+    caeSyncPeerTargets                  :: PeerSelectionTargets
   , caeReadUseBootstrapPeers            :: STM m UseBootstrapPeers
 
   -- | For Genesis, this sets the floor for minimum number of
@@ -26,12 +26,3 @@ data CardanoArgumentsExtra m =
     -- that leverage UseBootstrapPeers flag
   , caeConsensusMode                    :: ConsensusMode
   }
-
--- | Provides alternate peer selection targets
--- for various syncing modes.
---
-data ConsensusModePeerTargets = ConsensusModePeerTargets {
-  deadlineTargets :: !PeerSelectionTargets,
-  syncTargets     :: !PeerSelectionTargets
-  }
-  deriving (Eq, Show)

@@ -1,7 +1,7 @@
-module Cardano.Node.LedgerPeerConsensusInterface where
+module Cardano.Network.LedgerPeerConsensusInterface where
 
-import Cardano.Node.PeerSelection.LocalRootPeers (OutboundConnectionsState)
-import Cardano.Node.Types (LedgerStateJudgement)
+import Cardano.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
+import Cardano.Network.Types (LedgerStateJudgement)
 import Control.Concurrent.Class.MonadSTM (MonadSTM (..))
 
 -- | Cardano Node specific consensus interface actions.
