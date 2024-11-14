@@ -1,7 +1,7 @@
-module Cardano.Node.PeerSelection.Governor.PeerSelectionActions where
+module Cardano.Network.PeerSelection.Governor.PeerSelectionActions where
 
-import Cardano.Node.ArgumentsExtra (ConsensusModePeerTargets)
-import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers)
+import Cardano.Network.ArgumentsExtra (ConsensusModePeerTargets)
+import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
 import Control.Concurrent.Class.MonadSTM
 
 -- | Cardano Node PeerSelection Actions extension data type.

@@ -64,7 +64,7 @@ import Ouroboros.Network.Mock.ConcreteBlock (Block (..), BlockHeader (..),
            convertSlotToTimeForTestsAssumingNoHardFork)
 import Ouroboros.Network.Mock.ProducerState (ChainProducerState (..))
 
-import Cardano.Node.ConsensusMode
+import Cardano.Network.ConsensusMode
 import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.Block (MaxSlotNo (..), maxSlotNoFromWithOrigin,
            pointSlot)
@@ -93,16 +93,16 @@ import Ouroboros.Network.Testing.Data.Script (Script (..), stepScriptSTM')
 import Simulation.Network.Snocket (AddressType (..), FD)
 
 import Cardano.Diffusion.P2P (runM)
-import Cardano.Node.ArgumentsExtra (CardanoArgumentsExtra (..),
+import Cardano.Network.ArgumentsExtra (CardanoArgumentsExtra (..),
            ConsensusModePeerTargets (..))
-import Cardano.Node.LedgerPeerConsensusInterface
+import Cardano.Network.LedgerPeerConsensusInterface
            (CardanoLedgerPeersConsensusInterface)
-import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers)
-import Cardano.Node.PeerSelection.Governor.PeerSelectionState
+import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState
            (CardanoPeerSelectionState)
-import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable)
-import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
-import Cardano.Node.Types (MinBigLedgerPeersForTrustedState (..))
+import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
+import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
+import Cardano.Network.Types (MinBigLedgerPeersForTrustedState (..))
 import Ouroboros.Network.Diffusion.Common qualified as Common
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeersConsensusInterface, UseLedgerPeers)

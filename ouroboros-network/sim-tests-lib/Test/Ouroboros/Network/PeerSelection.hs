@@ -57,11 +57,11 @@ import System.Random (mkStdGen)
 import Network.DNS qualified as DNS (defaultResolvConf)
 import Network.Socket (SockAddr)
 
-import Cardano.Node.ConsensusMode
-import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers (..),
+import Cardano.Network.ConsensusMode
+import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
-import Cardano.Node.PeerSelection.LocalRootPeers (OutboundConnectionsState)
-import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable (..))
+import Cardano.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
+import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..),
            peerSharing)
@@ -95,17 +95,17 @@ import Test.Ouroboros.Network.PeerSelection.PeerGraph
 
 import Control.Monad.IOSim
 
-import Cardano.Node.ArgumentsExtra (ConsensusModePeerTargets (..))
-import Cardano.Node.LedgerPeerConsensusInterface
+import Cardano.Network.ArgumentsExtra (ConsensusModePeerTargets (..))
+import Cardano.Network.LedgerPeerConsensusInterface
            (CardanoLedgerPeersConsensusInterface (..))
-import Cardano.Node.PeerSelection.Governor.PeerSelectionActions
+import Cardano.Network.PeerSelection.Governor.PeerSelectionActions
            (CardanoPeerSelectionActions (..))
-import Cardano.Node.PeerSelection.Governor.PeerSelectionState
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState
            (CardanoPeerSelectionState)
-import Cardano.Node.PeerSelection.Governor.PeerSelectionState qualified as CPST
-import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
-import Cardano.Node.PublicRootPeers qualified as CPRP
-import Cardano.Node.Types (LedgerStateJudgement (..),
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as CPST
+import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
+import Cardano.Network.PublicRootPeers qualified as CPRP
+import Cardano.Network.Types (LedgerStateJudgement (..),
            MinBigLedgerPeersForTrustedState (..))
 import Test.QuickCheck
 import Test.QuickCheck.Monoids

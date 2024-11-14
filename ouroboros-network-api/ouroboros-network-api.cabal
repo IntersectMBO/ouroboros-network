@@ -23,11 +23,11 @@ flag asserts
 library
   hs-source-dirs: src
   exposed-modules:
-    Cardano.Node.ConsensusMode
-    Cardano.Node.PeerSelection.Bootstrap
-    Cardano.Node.PeerSelection.LocalRootPeers
-    Cardano.Node.PeerSelection.PeerTrustable
-    Cardano.Node.Types
+    Cardano.Network.ConsensusMode
+    Cardano.Network.PeerSelection.Bootstrap
+    Cardano.Network.PeerSelection.LocalRootPeers
+    Cardano.Network.PeerSelection.PeerTrustable
+    Cardano.Network.Types
     Ouroboros.Network.AnchoredFragment
     Ouroboros.Network.AnchoredSeq
     Ouroboros.Network.Block

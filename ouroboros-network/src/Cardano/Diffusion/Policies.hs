@@ -5,7 +5,7 @@ module Cardano.Diffusion.Policies where
 
 import Control.Concurrent.Class.MonadSTM.Strict
 
-import Cardano.Node.PeerSelection.Types (ChurnMode (..))
+import Cardano.Network.PeerSelection.Types (ChurnMode (..))
 import Data.List (sortOn)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set

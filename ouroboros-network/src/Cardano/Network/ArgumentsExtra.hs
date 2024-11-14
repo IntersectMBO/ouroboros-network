@@ -1,8 +1,8 @@
-module Cardano.Node.ArgumentsExtra where
+module Cardano.Network.ArgumentsExtra where
 
-import Cardano.Node.ConsensusMode (ConsensusMode)
-import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers)
-import Cardano.Node.Types (MinBigLedgerPeersForTrustedState)
+import Cardano.Network.ConsensusMode (ConsensusMode)
+import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
+import Cardano.Network.Types (MinBigLedgerPeersForTrustedState)
 import Control.Concurrent.Class.MonadSTM (MonadSTM (..))
 import Ouroboros.Network.PeerSelection.Governor.Types
            (PeerSelectionTargets (..))

@@ -94,24 +94,24 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 #endif
 import Cardano.Diffusion.Policies (simpleChurnModePeerSelectionPolicy)
-import Cardano.Node.ArgumentsExtra (CardanoArgumentsExtra (..),
+import Cardano.Network.ArgumentsExtra (CardanoArgumentsExtra (..),
            ConsensusModePeerTargets (..))
-import Cardano.Node.LedgerPeerConsensusInterface
+import Cardano.Network.LedgerPeerConsensusInterface
            (CardanoLedgerPeersConsensusInterface (..))
-import Cardano.Node.PeerSelection.Governor.PeerSelectionActions
+import Cardano.Network.PeerSelection.Governor.PeerSelectionActions
            (CardanoPeerSelectionActions (..))
-import Cardano.Node.PeerSelection.Governor.PeerSelectionState
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState
            (CardanoPeerSelectionState (..))
-import Cardano.Node.PeerSelection.Governor.PeerSelectionState qualified as CPST
-import Cardano.Node.PeerSelection.PeerChurnArgs (CardanoPeerChurnArgs (..))
-import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable)
-import Cardano.Node.PeerSelection.Types (ChurnMode (..))
-import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
-import Cardano.Node.PublicRootPeers qualified as CPRP
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as CPST
+import Cardano.Network.PeerSelection.PeerChurnArgs (CardanoPeerChurnArgs (..))
+import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
+import Cardano.Network.PeerSelection.Types (ChurnMode (..))
+import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
+import Cardano.Network.PublicRootPeers qualified as CPRP
+import Cardano.PeerSelection.Churn qualified as CardanoChurn
 import Ouroboros.Network.Diffusion.Common qualified as Common
 import Ouroboros.Network.Diffusion.Configuration
 import Ouroboros.Network.PeerSelection.Governor.Types hiding (requestPublicRootPeers, peerSharing)
-import Cardano.PeerSelection.Churn qualified as CardanoChurn
 import Ouroboros.Network.PeerSelection.PeerSelectionActions
 import Ouroboros.Network.PeerSelection.PeerStateActions (PeerConnectionHandle,
            PeerStateActionsArguments (..), pchPeerSharing, withPeerStateActions)
