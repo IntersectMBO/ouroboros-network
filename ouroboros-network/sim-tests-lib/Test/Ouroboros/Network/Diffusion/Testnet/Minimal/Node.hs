@@ -62,7 +62,7 @@ import Ouroboros.Network.Mock.ConcreteBlock (Block (..), BlockHeader (..),
            convertSlotToTimeForTestsAssumingNoHardFork)
 import Ouroboros.Network.Mock.ProducerState (ChainProducerState (..))
 
-import Cardano.Node.ConsensusMode
+import Cardano.Network.ConsensusMode
 import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.Block (MaxSlotNo (..), maxSlotNoFromWithOrigin,
            pointSlot)

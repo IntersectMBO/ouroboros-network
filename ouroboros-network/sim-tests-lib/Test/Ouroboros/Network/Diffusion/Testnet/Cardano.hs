@@ -72,8 +72,8 @@ import Test.QuickCheck.Monoids
 import Test.Tasty
 import Test.Tasty.QuickCheck (testProperty)
 
-import Cardano.Node.ConsensusMode
-import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable (..))
+import Cardano.Network.ConsensusMode
+import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 import Control.Exception (AssertionFailed (..), catch, evaluate)
 import Ouroboros.Network.BlockFetch (FetchMode (..), TraceFetchClientState (..))
 import Ouroboros.Network.ConnectionManager.Test.Timeouts (TestProperty (..),
@@ -100,15 +100,15 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
 import Ouroboros.Network.PeerSharing (PeerSharingResult (..))
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..))
 
-import Cardano.Node.ArgumentsExtra (ConsensusModePeerTargets (..))
-import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers (..),
+import Cardano.Network.ArgumentsExtra (ConsensusModePeerTargets (..))
+import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
-import Cardano.Node.PeerSelection.Governor.PeerSelectionState
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState
            (CardanoPeerSelectionState)
-import Cardano.Node.PeerSelection.Governor.PeerSelectionState qualified as CPST
-import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
-import Cardano.Node.PublicRootPeers qualified as CPRP
-import Cardano.Node.Types (LedgerStateJudgement,
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as CPST
+import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
+import Cardano.Network.PublicRootPeers qualified as CPRP
+import Cardano.Network.Types (LedgerStateJudgement,
            MinBigLedgerPeersForTrustedState (..))
 import Control.Monad.Class.MonadTest (exploreRaces)
 import Data.Dynamic (fromDynamic)

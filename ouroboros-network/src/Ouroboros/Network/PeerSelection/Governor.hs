@@ -68,18 +68,18 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer (..), traceWith)
 import System.Random
 
-import Cardano.Node.ConsensusMode
-import Cardano.Node.LedgerPeerConsensusInterface
+import Cardano.Network.ConsensusMode
+import Cardano.Network.LedgerPeerConsensusInterface
            (CardanoLedgerPeersConsensusInterface (..))
-import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers (..))
-import Cardano.Node.PeerSelection.Governor.PeerSelectionActions
+import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
+import Cardano.Network.PeerSelection.Governor.PeerSelectionActions
            (CardanoPeerSelectionActions)
-import Cardano.Node.PeerSelection.Governor.PeerSelectionState
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState
            (CardanoPeerSelectionState (..))
-import Cardano.Node.PeerSelection.LocalRootPeers (OutboundConnectionsState (..))
-import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable)
-import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
-import Cardano.Node.Types
+import Cardano.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState (..))
+import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
+import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
+import Cardano.Network.Types
 import Ouroboros.Network.PeerSelection.Churn (ChurnCounters (..),
            PeerChurnArgs (..), peerChurnGovernor)
 import Ouroboros.Network.PeerSelection.Governor.ActivePeers qualified as ActivePeers

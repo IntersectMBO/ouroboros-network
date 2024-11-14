@@ -56,17 +56,17 @@ import Ouroboros.Network.Protocol.Handshake.Codec
 import Ouroboros.Network.Protocol.Handshake.Version
 import Ouroboros.Network.Socket (configureSocket, configureSystemdSocket)
 
-import Cardano.Node.ArgumentsExtra (CardanoArgumentsExtra (..))
-import Cardano.Node.LedgerPeerConsensusInterface
+import Cardano.Network.ArgumentsExtra (CardanoArgumentsExtra (..))
+import Cardano.Network.LedgerPeerConsensusInterface
            (CardanoLedgerPeersConsensusInterface (..))
-import Cardano.Node.PeerSelection.Governor.PeerSelectionActions
+import Cardano.Network.PeerSelection.Governor.PeerSelectionActions
            (CardanoPeerSelectionActions (..))
-import Cardano.Node.PeerSelection.Governor.PeerSelectionState
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState
            (CardanoPeerSelectionState (..))
-import Cardano.Node.PeerSelection.Governor.PeerSelectionState qualified as CPST
-import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable)
-import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
-import Cardano.Node.PublicRootPeers qualified as CPRP
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as CPST
+import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
+import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
+import Cardano.Network.PublicRootPeers qualified as CPRP
 import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionManager.Core
 import Ouroboros.Network.ConnectionManager.InformationChannel

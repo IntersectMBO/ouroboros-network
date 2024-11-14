@@ -147,7 +147,7 @@ import System.Random (StdGen)
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Ouroboros.Network.ExitPolicy
-import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers (..))
+import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
@@ -163,9 +163,9 @@ import Ouroboros.Network.PeerSelection.Types (PeerSource (..),
            PeerStatus (PeerHot, PeerWarm))
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
            PeerSharingResult (..))
-import Cardano.Node.Types (LedgerStateJudgement (..))
-import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
-import Cardano.Node.PeerSelection.Types (ChurnMode)
+import Cardano.Network.Types (LedgerStateJudgement (..))
+import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
+import Cardano.Network.PeerSelection.Types (ChurnMode)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
 
 -- | A peer pick policy is an action that picks a subset of elements from a

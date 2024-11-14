@@ -59,7 +59,7 @@ import Control.Monad.Fail qualified as Fail
 import Control.Monad.IOSim
 import Control.Tracer (Tracer (..), contramap, traceWith)
 
-import Cardano.Node.PeerSelection.Governor.PeerSelectionState qualified as CPST
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as CPST
 import Ouroboros.Network.ExitPolicy
 import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
@@ -80,21 +80,21 @@ import Test.Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers hid
            (tests)
 import Test.Ouroboros.Network.PeerSelection.PeerGraph
 
-import Cardano.Node.ArgumentsExtra (ConsensusModePeerTargets (..))
-import Cardano.Node.ConsensusMode
-import Cardano.Node.LedgerPeerConsensusInterface
+import Cardano.Network.ArgumentsExtra (ConsensusModePeerTargets (..))
+import Cardano.Network.ConsensusMode
+import Cardano.Network.LedgerPeerConsensusInterface
            (CardanoLedgerPeersConsensusInterface (..))
-import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers (..),
+import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
-import Cardano.Node.PeerSelection.Governor.PeerSelectionActions
+import Cardano.Network.PeerSelection.Governor.PeerSelectionActions
            (CardanoPeerSelectionActions (..))
-import Cardano.Node.PeerSelection.Governor.PeerSelectionState
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState
            (CardanoPeerSelectionState (..))
-import Cardano.Node.PeerSelection.LocalRootPeers (OutboundConnectionsState (..))
-import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable)
-import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
-import Cardano.Node.PublicRootPeers qualified as CPRP
-import Cardano.Node.Types (LedgerStateJudgement (..),
+import Cardano.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState (..))
+import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
+import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
+import Cardano.Network.PublicRootPeers qualified as CPRP
+import Cardano.Network.Types (LedgerStateJudgement (..),
            MinBigLedgerPeersForTrustedState (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
@@ -439,6 +439,7 @@ mockPeerSelectionActions' tracer
                           connsVar
                           outboundConnectionsStateVar =
     PeerSelectionActions {
+      readOriginalLocalRootPeers = return (LocalRootPeers.toGroups localRootPeers),
       readLocalRootPeers       = return (LocalRootPeers.toGroups localRootPeers),
       peerSharing              = peerSharingFlag,
       peerConnToPeerSharing    = \(PeerConn _ ps _) -> ps,

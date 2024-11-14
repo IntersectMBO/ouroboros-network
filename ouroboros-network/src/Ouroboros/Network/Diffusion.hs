@@ -15,13 +15,13 @@ module Ouroboros.Network.Diffusion
   ) where
 
 import Cardano.Diffusion.P2P qualified as P2P
-import Cardano.Node.ArgumentsExtra (CardanoArgumentsExtra)
-import Cardano.Node.LedgerPeerConsensusInterface
+import Cardano.Network.ArgumentsExtra (CardanoArgumentsExtra)
+import Cardano.Network.LedgerPeerConsensusInterface
            (CardanoLedgerPeersConsensusInterface)
-import Cardano.Node.PeerSelection.Governor.PeerSelectionState
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState
            (CardanoPeerSelectionState)
-import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable)
-import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
+import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
+import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
 import Control.Exception (IOException)
 import Data.Functor (void)
 import Network.Socket (Socket)

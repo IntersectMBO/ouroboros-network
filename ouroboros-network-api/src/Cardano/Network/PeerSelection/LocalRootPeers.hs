@@ -1,6 +1,6 @@
 {-# LANGUAGE DeriveGeneric #-}
 
-module Cardano.Node.PeerSelection.LocalRootPeers (OutboundConnectionsState (..)) where
+module Cardano.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState (..)) where
 
 import GHC.Generics
 import NoThunks.Class
