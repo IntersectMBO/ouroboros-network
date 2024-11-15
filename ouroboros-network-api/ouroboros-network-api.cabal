@@ -48,6 +48,7 @@ library
     Ouroboros.Network.PeerSelection.RelayAccessPoint
     Ouroboros.Network.Point
     Ouroboros.Network.Protocol.Limits
+    Ouroboros.Network.PublicState
     Ouroboros.Network.SizeInBytes
     Ouroboros.Network.Util.ShowProxy
 
