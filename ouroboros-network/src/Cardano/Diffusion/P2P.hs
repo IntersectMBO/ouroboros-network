@@ -94,8 +94,7 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 #endif
 import Cardano.Diffusion.Policies (simpleChurnModePeerSelectionPolicy)
-import Cardano.Network.ArgumentsExtra (CardanoArgumentsExtra (..),
-           ConsensusModePeerTargets (..))
+import Cardano.Network.ArgumentsExtra (CardanoArgumentsExtra (..))
 import Cardano.Network.LedgerPeerConsensusInterface
            (CardanoLedgerPeersConsensusInterface (..))
 import Cardano.Network.PeerSelection.Governor.PeerSelectionActions
@@ -246,7 +245,8 @@ runM Interfaces
        , daPublicPeerSelectionVar
        }
      ArgumentsExtra
-       { daReadLocalRootPeers
+       { daPeerSelectionTargets
+       , daReadLocalRootPeers
        , daReadPublicRootPeers
        , daOwnPeerSharing
        , daReadUseLedgerPeers
@@ -256,7 +256,7 @@ runM Interfaces
        , daBulkChurnInterval
        , daReadLedgerPeerSnapshot
        , daExtraArgs = CardanoArgumentsExtra {
-           caePeerTargets
+           caeSyncPeerTargets
          , caeMinBigLedgerPeersForTrustedState
          , caeConsensusMode
          , caeReadUseBootstrapPeers
@@ -488,8 +488,8 @@ runM Interfaces
 
       peerSelectionTargetsVar <- newTVarIO $
         case caeConsensusMode of
-          PraosMode   -> deadlineTargets caePeerTargets
-          GenesisMode -> syncTargets caePeerTargets
+          PraosMode   -> daPeerSelectionTargets
+          GenesisMode -> caeSyncPeerTargets
 
       countersVar <- newTVarIO emptyPeerSelectionCounters
 
@@ -667,6 +667,7 @@ runM Interfaces
                                        localRootsVar
                                        dnsActions
                                        (\getLedgerPeers -> PeerSelectionActions {
+                                         originalPeerSelectionTargets = daPeerSelectionTargets,
                                          readPeerSelectionTargets   = readTVar peerSelectionTargetsVar,
                                          getLedgerStateCtx          = lpcsi,
                                          readOriginalLocalRootPeers = daReadLocalRootPeers,
@@ -682,7 +683,7 @@ runM Interfaces
                                              PeerSharingEnabled  -> readInboundPeers,
                                          readLedgerPeerSnapshot = daReadLedgerPeerSnapshot,
                                          extraActions = CardanoPeerSelectionActions {
-                                           cpsaPeerTargets           = caePeerTargets,
+                                           cpsaSyncPeerTargets       = caeSyncPeerTargets,
                                            cpsaReadUseBootstrapPeers = caeReadUseBootstrapPeers
                                          },
                                          peerStateActions
@@ -743,10 +744,11 @@ runM Interfaces
                                      . LocalRootPeers.clampToTrustable
                                      . LocalRootPeers.fromGroups
                                    <$> readTVar localRootsVar,
+                                 getOriginalPeerTargets = daPeerSelectionTargets,
                                  getExtraArgs = CardanoPeerChurnArgs {
                                    cpcaModeVar          = churnModeVar,
                                    cpcaReadFetchMode    = daBlockFetchMode,
-                                   cpcaPeerTargets      = caePeerTargets,
+                                   cpcaSyncPeerTargets  = caeSyncPeerTargets,
                                    cpcaReadUseBootstrap = caeReadUseBootstrapPeers,
                                    cpcaConsensusMode    = caeConsensusMode
                                  }

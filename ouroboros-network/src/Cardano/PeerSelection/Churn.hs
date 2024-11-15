@@ -23,7 +23,6 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (traceWith)
 import System.Random
 
-import Cardano.Network.ArgumentsExtra (ConsensusModePeerTargets (..))
 import Cardano.Network.ConsensusMode (ConsensusMode (..))
 import Cardano.Network.LedgerPeerConsensusInterface
            (CardanoLedgerPeersConsensusInterface (..))
@@ -58,10 +57,8 @@ data ChurnRegime = ChurnDefault
                  -- ^ Praos targets further reduced to conserve resources
                  -- when syncing
 
-getPeerSelectionTargets :: ConsensusMode -> LedgerStateJudgement -> ConsensusModePeerTargets -> PeerSelectionTargets
-getPeerSelectionTargets consensus lsj ConsensusModePeerTargets {
-                                        deadlineTargets,
-                                        syncTargets } =
+getPeerSelectionTargets :: ConsensusMode -> LedgerStateJudgement -> PeerSelectionTargets -> PeerSelectionTargets -> PeerSelectionTargets
+getPeerSelectionTargets consensus lsj deadlineTargets syncTargets =
   case (consensus, lsj) of
     (GenesisMode, TooOld) -> syncTargets
     _otherwise            -> deadlineTargets
@@ -109,10 +106,11 @@ peerChurnGovernor PeerChurnArgs {
                       }
                     },
                     getLocalRootHotTarget,
+                    getOriginalPeerTargets,
                     getExtraArgs = CardanoPeerChurnArgs {
                       cpcaModeVar             = churnModeVar,
                       cpcaReadFetchMode       = getFetchMode,
-                      cpcaPeerTargets,
+                      cpcaSyncPeerTargets,
                       cpcaReadUseBootstrap    = getUseBootstrapPeers,
                       cpcaConsensusMode       = consensusMode
                     }
@@ -128,7 +126,7 @@ peerChurnGovernor PeerChurnArgs {
     (churnMode, ledgerStateJudgement, useBootstrapPeers, ltt)
       <- (,,,) <$> updateChurnMode <*> clpciGetLedgerStateJudgement <*> getUseBootstrapPeers <*> getLocalRootHotTarget
     let regime  = pickChurnRegime consensusMode churnMode useBootstrapPeers
-        targets = getPeerSelectionTargets consensusMode ledgerStateJudgement cpcaPeerTargets
+        targets = getPeerSelectionTargets consensusMode ledgerStateJudgement getOriginalPeerTargets cpcaSyncPeerTargets
 
     modifyTVar peerSelectionVar ( increaseActivePeers regime ltt targets
                                 . increaseEstablishedPeers regime ltt targets)
@@ -169,7 +167,7 @@ peerChurnGovernor PeerChurnArgs {
         ltt       <- getLocalRootHotTarget
         lsj       <- clpciGetLedgerStateJudgement
         regime    <- pickChurnRegime consensusMode churnMode <$> getUseBootstrapPeers
-        let targets = getPeerSelectionTargets consensusMode lsj cpcaPeerTargets
+        let targets = getPeerSelectionTargets consensusMode lsj getOriginalPeerTargets cpcaSyncPeerTargets
 
         (,) <$> (getCounter <$> readCounters)
             <*> stateTVar peerSelectionVar ((\a -> (a, a)) . modifyTargets regime ltt targets)

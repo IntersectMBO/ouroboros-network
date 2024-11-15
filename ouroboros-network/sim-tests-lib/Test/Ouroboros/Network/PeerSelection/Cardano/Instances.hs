@@ -8,7 +8,6 @@
 
 module Test.Ouroboros.Network.PeerSelection.Cardano.Instances where
 
-import Cardano.Network.ArgumentsExtra (ConsensusModePeerTargets (..))
 import Cardano.Network.ConsensusMode (ConsensusMode (..))
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
@@ -36,24 +35,6 @@ instance Arbitrary ArbitraryLedgerStateJudgement where
       [ArbitraryLedgerStateJudgement TooOld]
     shrink (ArbitraryLedgerStateJudgement TooOld)      =
       []
-
---
--- Arbitrary ConsensusModePeerTargets instance
---
-
--- GovernorMockEnvironment is responsible for generating valid targets
--- which account for local roots from random peer graph, but a shrink
--- is useful here for recursively shrinking TimedScript.
---
-instance Arbitrary ConsensusModePeerTargets where
-  arbitrary = error "not implemented"
-
-  shrink ConsensusModePeerTargets { deadlineTargets, syncTargets } =
-    let syncTargets'     = shrink syncTargets
-        deadlineTargets' = shrink deadlineTargets
-    in [ConsensusModePeerTargets { deadlineTargets = deadlineTargets'', syncTargets = syncTargets'' }
-       | deadlineTargets'' <- deadlineTargets',
-         syncTargets'' <- syncTargets']
 
 --
 -- Arbitrary PeerTrustable instance

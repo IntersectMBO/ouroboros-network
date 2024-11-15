@@ -80,7 +80,6 @@ import Test.Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers hid
            (tests)
 import Test.Ouroboros.Network.PeerSelection.PeerGraph
 
-import Cardano.Network.ArgumentsExtra (ConsensusModePeerTargets (..))
 import Cardano.Network.ConsensusMode
 import Cardano.Network.LedgerPeerConsensusInterface
            (CardanoLedgerPeersConsensusInterface (..))
@@ -90,12 +89,14 @@ import Cardano.Network.PeerSelection.Governor.PeerSelectionActions
            (CardanoPeerSelectionActions (..))
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState
            (CardanoPeerSelectionState (..))
-import Cardano.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState (..))
+import Cardano.Network.PeerSelection.LocalRootPeers
+           (OutboundConnectionsState (..))
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
 import Cardano.Network.PublicRootPeers qualified as CPRP
 import Cardano.Network.Types (LedgerStateJudgement (..),
            MinBigLedgerPeersForTrustedState (..))
+import Data.IP (toIPv4w)
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers (..))
@@ -147,7 +148,7 @@ data GovernorMockEnvironment = GovernorMockEnvironment {
        peerGraph                  :: !PeerGraph,
        localRootPeers             :: !(LocalRootPeers PeerTrustable PeerAddr),
        publicRootPeers            :: !(PublicRootPeers (CardanoPublicRootPeers PeerAddr) PeerAddr),
-       targets                    :: !(TimedScript ConsensusModePeerTargets),
+       targets                    :: !(TimedScript (PeerSelectionTargets, PeerSelectionTargets)),
        pickKnownPeersForPeerShare :: !(PickScript PeerAddr),
        pickColdPeersToPromote     :: !(PickScript PeerAddr),
        pickWarmPeersToPromote     :: !(PickScript PeerAddr),
@@ -212,8 +213,7 @@ validGovernorMockEnvironment GovernorMockEnvironment {
            , counterexample "public root peers not a subset of  all peers" $
              property (PublicRootPeers.toSet publicRootPeers `Set.isSubsetOf` allPeersSet)
            , counterexample "failed peer selection targets sanity check" $
-             property (foldl (\ !p (ConsensusModePeerTargets {..},_) ->
-                                p && all sanePeerSelectionTargets [deadlineTargets, syncTargets])
+             property (foldl (\ !p ((t, t'), _) -> p && all sanePeerSelectionTargets [t, t'])
                         True
                         targets)
            , counterexample "big ledger peers not a subset of public roots"
@@ -257,7 +257,7 @@ governorAction mockEnv@GovernorMockEnvironment {
           lsjVar <- playTimedScript (contramap TraceEnvSetLedgerStateJudgement tracerMockEnv)
                                     (ledgerStateJudgement mockEnv)
           targetsVar <- playTimedScript (contramap TraceEnvSetTargets tracerMockEnv)
-                                        (first deadlineTargets <$> targets mockEnv)
+                                        (first fst <$> targets mockEnv)
           mockPeerSelectionActions tracerMockEnv mockEnv
                                    initialPeerTargets
                                    (readTVar usbVar)
@@ -266,9 +266,7 @@ governorAction mockEnv@GovernorMockEnvironment {
                                    (readTVar targetsVar)
         GenesisMode -> do
           let tandemLsjAndTargets =
-                Script $ NonEmpty.zipWith (\(lsj, delay) (ConsensusModePeerTargets {
-                                                             deadlineTargets,
-                                                             syncTargets }, _) ->
+                Script $ NonEmpty.zipWith (\(lsj, delay) ((deadlineTargets, syncTargets) , _) ->
                                              let pickTargets =
                                                    case lsj of
                                                      TooOld -> syncTargets
@@ -348,7 +346,7 @@ mockPeerSelectionActions :: forall m.
                              MonadThrow (STM m), MonadTraceSTM m)
                          => Tracer m TraceMockEnv
                          -> GovernorMockEnvironment
-                         -> ConsensusModePeerTargets
+                         -> (PeerSelectionTargets, PeerSelectionTargets)
                          -> STM m UseBootstrapPeers
                          -> STM m UseLedgerPeers
                          -> STM m LedgerStateJudgement
@@ -415,7 +413,7 @@ mockPeerSelectionActions' :: forall m.
                               MonadThrow (STM m))
                           => Tracer m TraceMockEnv
                           -> GovernorMockEnvironment
-                          -> ConsensusModePeerTargets
+                          -> (PeerSelectionTargets, PeerSelectionTargets)
                           -> Map PeerAddr (TVar m PeerShareScript, TVar m PeerSharingScript, TVar m ConnectionScript)
                           -> STM m PeerSelectionTargets
                           -> STM m UseBootstrapPeers
@@ -430,7 +428,7 @@ mockPeerSelectionActions' tracer
                             publicRootPeers,
                             peerSharingFlag
                           }
-                          peerTargets
+                          (originalPeerTargets, peerTargets)
                           scripts
                           readTargets
                           readUseBootstrapPeers
@@ -439,7 +437,15 @@ mockPeerSelectionActions' tracer
                           connsVar
                           outboundConnectionsStateVar =
     PeerSelectionActions {
-      readOriginalLocalRootPeers = return (LocalRootPeers.toGroups localRootPeers),
+      readOriginalLocalRootPeers
+        = return
+        $ LocalRootPeers.toGroups
+        $ LocalRootPeers.mapPeers
+            (\(PeerAddr addr) ->
+                RelayAccessAddress (IPv4 (toIPv4w (fromIntegral addr)))
+                                   (fromIntegral addr)
+            )
+            localRootPeers,
       readLocalRootPeers       = return (LocalRootPeers.toGroups localRootPeers),
       peerSharing              = peerSharingFlag,
       peerConnToPeerSharing    = \(PeerConn _ ps _) -> ps,
@@ -466,8 +472,9 @@ mockPeerSelectionActions' tracer
       },
       readInboundPeers = pure Map.empty,
       readLedgerPeerSnapshot = pure Nothing,
+      originalPeerSelectionTargets = originalPeerTargets,
       extraActions = CardanoPeerSelectionActions {
-        cpsaPeerTargets = peerTargets,
+        cpsaSyncPeerTargets = peerTargets,
         cpsaReadUseBootstrapPeers = readUseBootstrapPeers
       }
     }
@@ -980,29 +987,27 @@ instance Arbitrary GovernorMockEnvironment where
                                                               <*> choose (1, min 1000 genesisBigKnown)
                           (praosBigAct, genesisBigAct) <- (,) <$> choose (0, min 100 praosBigEst)
                                                               <*> choose (1, min 100 genesisBigEst)
-                          let targets =
-                                ConsensusModePeerTargets {
-                                  deadlineTargets = PeerSelectionTargets {
+                          let deadlineTargets = PeerSelectionTargets {
                                       targetNumberOfRootPeers = praosRootKnown,
                                       targetNumberOfKnownPeers = praosKnown,
                                       targetNumberOfEstablishedPeers = praosEst,
                                       targetNumberOfActivePeers = praosAct,
                                       targetNumberOfKnownBigLedgerPeers = praosBigKnown,
                                       targetNumberOfEstablishedBigLedgerPeers = praosBigEst,
-                                      targetNumberOfActiveBigLedgerPeers = praosBigAct },
-                                  syncTargets = PeerSelectionTargets {
-                                      targetNumberOfRootPeers = genesisRootKnown,
-                                      targetNumberOfKnownPeers = genesisKnown,
-                                      targetNumberOfEstablishedPeers = genesisEst,
-                                      targetNumberOfActivePeers = genesisAct,
-                                      targetNumberOfKnownBigLedgerPeers = genesisBigKnown,
-                                      targetNumberOfEstablishedBigLedgerPeers = genesisBigKnown,
-                                      targetNumberOfActiveBigLedgerPeers = genesisBigAct } }
+                                      targetNumberOfActiveBigLedgerPeers = praosBigAct }
+                              syncTargets = PeerSelectionTargets {
+                                  targetNumberOfRootPeers = genesisRootKnown,
+                                  targetNumberOfKnownPeers = genesisKnown,
+                                  targetNumberOfEstablishedPeers = genesisEst,
+                                  targetNumberOfActivePeers = genesisAct,
+                                  targetNumberOfKnownBigLedgerPeers = genesisBigKnown,
+                                  targetNumberOfEstablishedBigLedgerPeers = genesisBigKnown,
+                                  targetNumberOfActiveBigLedgerPeers = genesisBigAct }
                           let lsjWithDelay = (,) lsj <$> elements [ShortDelay, NoDelay]
                               -- synchronize target basis with ledger state judgement
                               -- so we can use tests which check if the right targets
                               -- are selected
-                              targetsWithDelay =     (,) targets
+                              targetsWithDelay =     (,) (deadlineTargets, syncTargets)
                                                  <$> case consensusMode of
                                                        PraosMode -> elements [ShortDelay, NoDelay]
                                                        GenesisMode -> snd <$> lsjWithDelay
@@ -1115,13 +1120,13 @@ instance Arbitrary GovernorMockEnvironment where
         in
           [shrunk
           | shrunk@(shrunkTarget, _) <- shrunkScript,
-            let ConsensusModePeerTargets {
-                  deadlineTargets,
-                  syncTargets = syncTargets@PeerSelectionTargets {
+            let ( deadlineTargets,
+                  syncTargets@PeerSelectionTargets {
                       targetNumberOfKnownBigLedgerPeers = genesisBigKnown,
                       targetNumberOfEstablishedBigLedgerPeers = genesisBigEst,
-                      targetNumberOfActiveBigLedgerPeers = genesisBigAct } } = shrunkTarget,
-            all checkTargets [deadlineTargets, syncTargets],
+                      targetNumberOfActiveBigLedgerPeers = genesisBigAct }) = shrunkTarget,
+            checkTargets deadlineTargets,
+            checkTargets syncTargets,
             genesisBigKnown >= 10 && genesisBigEst <= genesisBigKnown && genesisBigAct <= genesisBigEst,
             genesisBigEst * genesisBigAct /= 0]
 
