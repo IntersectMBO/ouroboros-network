@@ -127,9 +127,9 @@ debuggingNetworkConnectTracers = NetworkConnectTracers {
 sockAddrFamily
     :: Socket.SockAddr
     -> Socket.Family
-sockAddrFamily (Socket.SockAddrInet  _ _    ) = Socket.AF_INET
-sockAddrFamily (Socket.SockAddrInet6 _ _ _ _) = Socket.AF_INET6
-sockAddrFamily (Socket.SockAddrUnix _       ) = Socket.AF_UNIX
+sockAddrFamily Socket.SockAddrInet{}  = Socket.AF_INET
+sockAddrFamily Socket.SockAddrInet6{} = Socket.AF_INET6
+sockAddrFamily Socket.SockAddrUnix{}  = Socket.AF_UNIX
 
 
 -- | Configure a socket.  Either 'Socket.AF_INET' or 'Socket.AF_INET6' socket
@@ -243,7 +243,7 @@ data ConnectToArgs fd addr vNumber vData = ConnectToArgs {
 --
 -- Exceptions thrown by 'MuxApplication' are rethrown by 'connectToNode'.
 connectToNode
-  :: forall muxMode vNumber vData fd addr a b.
+  :: forall muxMode networkState vNumber vData fd addr a b.
      ( Ord vNumber
      , Typeable vNumber
      , Show vNumber
@@ -253,7 +253,7 @@ connectToNode
   -> Mx.MakeBearer IO fd
   -> ConnectToArgs fd addr vNumber vData
   -> (fd -> IO ()) -- ^ configure socket
-  -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b)
+  -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode networkState addr BL.ByteString IO a b)
   -> Maybe addr
   -- ^ local address; the created socket will bind to it
   -> addr
@@ -266,7 +266,7 @@ connectToNode sn mkBearer args configureSock versions localAddr remoteAddr =
 -- | A version `connectToNode` which allows one to control which mini-protocols
 -- to execute on a given connection.
 connectToNodeWithMux
-  :: forall muxMode vNumber vData fd addr a b x.
+  :: forall muxMode networkState vNumber vData fd addr a b x.
      ( Ord vNumber
      , Typeable vNumber
      , Show vNumber
@@ -276,7 +276,7 @@ connectToNodeWithMux
   -> Mx.MakeBearer IO fd
   -> ConnectToArgs fd addr vNumber vData
   -> (fd -> IO ()) -- ^ configure socket
-  -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b)
+  -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode networkState addr BL.ByteString IO a b)
   -- ^ application to run over the connection
   -- ^ remote address
   -> Maybe addr
@@ -284,7 +284,7 @@ connectToNodeWithMux
   -> (    ConnectionId addr
        -> vNumber
        -> vData
-       -> OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b
+       -> OuroborosApplicationWithMinimalCtx muxMode networkState addr BL.ByteString IO a b
        -> Mx.Mux muxMode IO
        -> Async IO ()
        -> IO x)
@@ -315,7 +315,7 @@ connectToNodeWithMux sn mkBearer args configureSock versions localAddr remoteAdd
 --
 -- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
 connectToNode'
-  :: forall muxMode vNumber vData fd addr a b.
+  :: forall muxMode networkState vNumber vData fd addr a b.
      ( Ord vNumber
      , Typeable vNumber
      , Show vNumber
@@ -325,7 +325,7 @@ connectToNode'
   -> Mx.MakeBearer IO fd
   -> ConnectToArgs fd addr vNumber vData
   -- ^ a configured socket to use to connect to a remote service provider
-  -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b)
+  -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode networkState addr BL.ByteString IO a b)
   -- ^ application to run over the connection
   -> fd
   -> IO (Either SomeException (Either a b))
@@ -334,7 +334,7 @@ connectToNode' sn mkBearer args versions as =
 
 
 connectToNodeWithMux'
-  :: forall muxMode vNumber vData fd addr a b x.
+  :: forall muxMode networkState vNumber vData fd addr a b x.
      ( Ord vNumber
      , Typeable vNumber
      , Show vNumber
@@ -343,14 +343,14 @@ connectToNodeWithMux'
   => Snocket IO fd addr
   -> Mx.MakeBearer IO fd
   -> ConnectToArgs fd addr vNumber vData
-  -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b)
+  -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode networkState addr BL.ByteString IO a b)
   -- ^ application to run over the connection
   -- ^ a configured socket to use to connect to a remote service provider
   -> fd
   -> (    ConnectionId addr
        -> vNumber
        -> vData
-       -> OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b
+       -> OuroborosApplicationWithMinimalCtx muxMode networkState addr BL.ByteString IO a b
        -> Mx.Mux muxMode IO
        -> Async IO ()
        -> IO x)
@@ -420,8 +420,10 @@ connectToNodeWithMux'
 -- until the first one terminates.  It returns the result (or error) of the
 -- first terminated mini-protocol.
 --
+-- NOTE: `simpleMuxCallback` does not support `ResponderProtocolOnlyWithState`.
+--
 simpleMuxCallback
-  :: forall muxMode addr vNumber vData m a b.
+  :: forall muxMode networkState addr vNumber vData m a b.
      ( Alternative (STM m)
      , MonadAsync m
      , MonadSTM   m
@@ -431,7 +433,7 @@ simpleMuxCallback
   => ConnectionId addr
   -> vNumber
   -> vData
-  -> OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString m a b
+  -> OuroborosApplicationWithMinimalCtx muxMode networkState addr BL.ByteString m a b
   -> Mx.Mux muxMode m
   -> Async m ()
   -> m (Either SomeException (Either a b))
@@ -454,6 +456,8 @@ simpleMuxCallback connectionId _ _ app mux aid = do
               [(Mx.InitiatorDirectionOnly, fmap (first Left) . runMiniProtocolCb initiator initCtx)]
             ResponderProtocolOnly responder ->
               [(Mx.ResponderDirectionOnly, fmap (first Right) . runMiniProtocolCb responder respCtx)]
+            ResponderProtocolOnlyWithState _ ->
+              error "simpleMuxCallback: does not support ResponderProtocolOnlyWithState"
             InitiatorAndResponderProtocol initiator responder ->
               [(Mx.InitiatorDirection, fmap (first Left) . runMiniProtocolCb initiator initCtx)
               ,(Mx.ResponderDirection, fmap (first Right) . runMiniProtocolCb responder respCtx)]
@@ -471,7 +475,7 @@ simpleMuxCallback connectionId _ _ app mux aid = do
 
 -- Wraps a Socket inside a Snocket and calls connectToNode'
 connectToNodeSocket
-  :: forall muxMode vNumber vData a b.
+  :: forall muxMode networkState vNumber vData a b.
      ( Ord vNumber
      , Typeable vNumber
      , Show vNumber
@@ -479,7 +483,7 @@ connectToNodeSocket
      )
   => IOManager
   -> ConnectToArgs Socket.Socket Socket.SockAddr vNumber vData
-  -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode Socket.SockAddr BL.ByteString IO a b)
+  -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode networkState Socket.SockAddr BL.ByteString IO a b)
   -- ^ application to run over the connection
   -> Socket.Socket
   -> IO (Either SomeException (Either a b))
@@ -496,7 +500,7 @@ connectToNodeSocket iocp args versions sd =
 --
 data SomeResponderApplication addr bytes m b where
      SomeResponderApplication
-       :: forall muxMode addr bytes m a b.
+       :: forall muxMode networkState addr bytes m a b.
           Mx.HasResponder muxMode ~ True
-       => (OuroborosApplicationWithMinimalCtx muxMode addr bytes m a b)
+       => (OuroborosApplicationWithMinimalCtx muxMode networkState addr bytes m a b)
        -> SomeResponderApplication addr bytes m b

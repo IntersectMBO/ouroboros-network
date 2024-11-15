@@ -76,8 +76,8 @@ data Arguments (muxMode  :: Mx.Mode) socket initiatorCtx networkState peerAddr v
       inboundGovernorTracer :: Tracer m (InboundGovernor.Trace peerAddr),
       debugInboundGovernor  :: Tracer m (InboundGovernor.Debug peerAddr versionData),
       connectionLimits      :: AcceptedConnectionsLimit,
-      connectionManager     :: MuxConnectionManager muxMode socket initiatorCtx (ResponderContext peerAddr)
-                                                            peerAddr versionData versionNumber bytes m a b,
+      connectionManager     :: MuxConnectionManager muxMode socket initiatorCtx (ResponderContext peerAddr) networkState
+                                                    peerAddr versionData versionNumber bytes m a b,
 
       -- | Time for which all protocols need to be idle to trigger
       -- 'DemotedToCold' transition.
@@ -90,8 +90,8 @@ data Arguments (muxMode  :: Mx.Mode) socket initiatorCtx networkState peerAddr v
       -- server to run and manage responders which needs to be started on
       -- inbound connections.
       --
-      inboundInfoChannel    :: InboundGovernorInfoChannel muxMode initiatorCtx peerAddr versionData
-                                                                bytes m a b,
+      inboundInfoChannel    :: InboundGovernorInfoChannel muxMode initiatorCtx networkState peerAddr versionData
+                                                          bytes m a b,
 
       -- | read public state
       readNetworkState      :: STM m networkState

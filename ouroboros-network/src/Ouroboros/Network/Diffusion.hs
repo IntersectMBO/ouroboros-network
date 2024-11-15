@@ -147,6 +147,8 @@ socketAddressType Socket.SockAddrInet6 {} = Just IPv6Address
 socketAddressType Socket.SockAddrUnix {}  = Nothing
 
 
+type NetworkState = ()
+
 --
 -- Node-To-Client type aliases
 --
@@ -154,7 +156,7 @@ socketAddressType Socket.SockAddrUnix {}  = Nothing
 --
 
 type NodeToClientHandle ntcAddr versionData m =
-    HandleWithMinimalCtx Mx.ResponderMode ntcAddr versionData ByteString m Void ()
+    HandleWithMinimalCtx Mx.ResponderMode NetworkState ntcAddr versionData ByteString m Void ()
 
 type NodeToClientHandleError ntcVersion =
     HandleError Mx.ResponderMode ntcVersion
@@ -194,7 +196,7 @@ type NodeToClientConnectionManagerArguments
 type NodeToNodeHandle
        (mode :: Mx.Mode)
        ntnAddr ntnVersionData m a b =
-    HandleWithExpandedCtx mode ntnAddr ntnVersionData ByteString m a b
+    HandleWithExpandedCtx mode NetworkState ntnAddr ntnVersionData ByteString m a b
 
 type NodeToNodeConnectionManager
        (mode :: Mx.Mode)
@@ -215,6 +217,7 @@ type NodeToNodePeerConnectionHandle (mode :: Mx.Mode) ntnAddr ntnVersionData m a
     PeerConnectionHandle
       mode
       (ResponderContext ntnAddr)
+      NetworkState
       ntnAddr
       ntnVersionData
       ByteString
@@ -736,9 +739,9 @@ runM Interfaces
             :: forall muxMode socket initiatorCtx responderCtx b c.
                SingMuxMode muxMode
             -> Versions ntnVersion ntnVersionData
-                 (OuroborosBundle muxMode initiatorCtx responderCtx ByteString m b c)
+                 (OuroborosBundle muxMode initiatorCtx responderCtx NetworkState ByteString m b c)
             -> MuxConnectionHandler
-                 muxMode socket initiatorCtx responderCtx ntnAddr
+                 muxMode socket initiatorCtx responderCtx NetworkState ntnAddr
                  ntnVersion ntnVersionData ByteString m b c
           makeConnectionHandler' muxMode versions =
             makeConnectionHandler
@@ -787,11 +790,11 @@ runM Interfaces
                HasInitiator muxMode ~ True
             => MuxConnectionManager
                  muxMode socket (ExpandedInitiatorContext ntnAddr m)
-                 responderCtx ntnAddr ntnVersionData ntnVersion
+                 responderCtx NetworkState ntnAddr ntnVersionData ntnVersion
                  ByteString m a b
             -> (Governor.PeerStateActions
                   ntnAddr
-                  (PeerConnectionHandle muxMode responderCtx ntnAddr
+                  (PeerConnectionHandle muxMode responderCtx NetworkState ntnAddr
                      ntnVersionData ByteString m a b)
                   m
                 -> m c)
@@ -816,12 +819,12 @@ runM Interfaces
       let withPeerSelectionActions'
             :: forall muxMode responderCtx bytes a1 b c.
                m (Map ntnAddr PeerSharing)
-            -> PeerSelectionActionsDiffusionMode ntnAddr (PeerConnectionHandle muxMode responderCtx ntnAddr ntnVersionData bytes m a1 b) m
+            -> PeerSelectionActionsDiffusionMode ntnAddr (PeerConnectionHandle muxMode responderCtx NetworkState ntnAddr ntnVersionData bytes m a1 b) m
             -> (   (Async m Void, Async m Void)
                 -> Governor.PeerSelectionActions
                      ntnAddr
                      (PeerConnectionHandle
-                        muxMode responderCtx ntnAddr ntnVersionData bytes m a1 b)
+                        muxMode responderCtx NetworkState ntnAddr ntnVersionData bytes m a1 b)
                       m
                 -> m c)
             -- ^ continuation, receives a handle to the local roots peer provider thread
@@ -956,19 +959,19 @@ runM Interfaces
                   var <- InboundGovernor.newPublicStateVar
                   Server.with
                     Server.Arguments {
-                        Server.sockets                = sockets,
-                        Server.snocket                = diNtnSnocket,
-                        Server.tracer                 = dtServerTracer,
-                        Server.trTracer               = dtInboundGovernorTransitionTracer,
-                        Server.debugInboundGovernor   = nullTracer,
-                        Server.inboundGovernorTracer  = dtInboundGovernorTracer,
-                        Server.connectionLimits       = daAcceptedConnectionsLimit,
-                        Server.connectionManager      = connectionManager,
-                        Server.connectionDataFlow     = diNtnDataFlow,
-                        Server.inboundIdleTimeout     = Just daProtocolIdleTimeout,
-                        Server.inboundInfoChannel     = inboundInfoChannel,
-                        Server.readNetworkState       = return ()
-                      } $ \inboundGovernorThread _readInboundGovState -> do
+                        Server.sockets               = sockets,
+                        Server.snocket               = diNtnSnocket,
+                        Server.tracer                = dtServerTracer,
+                        Server.trTracer              = dtInboundGovernorTransitionTracer,
+                        Server.debugInboundGovernor  = nullTracer,
+                        Server.inboundGovernorTracer = dtInboundGovernorTracer,
+                        Server.connectionLimits      = daAcceptedConnectionsLimit,
+                        Server.connectionManager     = connectionManager,
+                        Server.connectionDataFlow    = diNtnDataFlow,
+                        Server.inboundIdleTimeout    = Just daProtocolIdleTimeout,
+                        Server.inboundInfoChannel    = inboundInfoChannel,
+                        Server.readNetworkState      = return ()
+                      } $ \inboundGovernorThread _ -> do
                     --
                     -- node-to-node outbound governor
                     --
