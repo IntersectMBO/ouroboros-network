@@ -691,16 +691,23 @@ makeDebugPeerSelectionState PeerSelectionState {..} up bp lsj am =
 -- This data type should not expose too much information and keep only
 -- essential data needed for computing the peer sharing request result
 --
-newtype PublicPeerSelectionState peeraddr =
+data PublicPeerSelectionState peeraddr =
   PublicPeerSelectionState {
-    availableToShare :: Set peeraddr
-  }
+    availableToShare :: Set peeraddr,
+    knownSet         :: Set peeraddr,
+    establishedSet   :: Set peeraddr,
+    activeSet        :: Set peeraddr
+  } 
+  deriving Show
 
 emptyPublicPeerSelectionState :: Ord peeraddr
                               => PublicPeerSelectionState peeraddr
 emptyPublicPeerSelectionState =
   PublicPeerSelectionState {
-    availableToShare = mempty
+    availableToShare = mempty,
+    knownSet         = mempty,
+    establishedSet   = mempty,
+    activeSet        = mempty
   }
 
 makePublicPeerSelectionStateVar
@@ -715,10 +722,13 @@ makePublicPeerSelectionStateVar = newTVarIO emptyPublicPeerSelectionState
 --
 toPublicState :: PeerSelectionState peeraddr peerconn
               -> PublicPeerSelectionState peeraddr
-toPublicState PeerSelectionState { knownPeers } =
+toPublicState PeerSelectionState { knownPeers, establishedPeers, activePeers } =
    PublicPeerSelectionState {
      availableToShare =
-       KnownPeers.getPeerSharingResponsePeers knownPeers
+       KnownPeers.getPeerSharingResponsePeers knownPeers,
+     knownSet         = KnownPeers.toSet knownPeers,
+     establishedSet   = EstablishedPeers.toSet establishedPeers,
+     activeSet        = activePeers
    }
 
 -- | Peer selection view.

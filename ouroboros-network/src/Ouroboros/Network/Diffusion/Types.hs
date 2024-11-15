@@ -354,7 +354,7 @@ data Applications ntnAddr ntnVersion ntnVersionData
         :: Versions ntnVersion
                     ntnVersionData
                       (OuroborosBundleWithExpandedCtx
-                      Mx.InitiatorMode ntnAddr
+                      Mx.InitiatorMode () ntnAddr
                       ByteString m a Void)
 
       -- | NodeToNode initiator & responder applications for bidirectional mode.
@@ -364,7 +364,7 @@ data Applications ntnAddr ntnVersion ntnVersionData
         :: Versions ntnVersion
                     ntnVersionData
                     (OuroborosBundleWithExpandedCtx
-                      Mx.InitiatorResponderMode ntnAddr
+                      Mx.InitiatorResponderMode () ntnAddr
                       ByteString m a ())
 
       -- | NodeToClient responder application (server role)
@@ -375,7 +375,7 @@ data Applications ntnAddr ntnVersion ntnVersionData
         :: Versions ntcVersion
                     ntcVersionData
                      (OuroborosApplicationWithMinimalCtx
-                      Mx.ResponderMode ntcAddr
+                      Mx.ResponderMode () ntcAddr
                       ByteString m Void ())
 
       -- | Interface used to get peers from the current ledger.
