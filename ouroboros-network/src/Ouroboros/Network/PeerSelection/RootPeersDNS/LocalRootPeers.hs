@@ -30,14 +30,12 @@ import Network.DNS qualified as DNS
 import Network.Socket qualified as Socket
 
 import Data.Bifunctor (second)
-import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
-import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore,
            newDNSLocalRootSemaphore, withDNSSemaphore)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
-           WarmValency)
+           LocalRootConfig, WarmValency)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 
 data TraceLocalRootPeers peerAddr exception =
@@ -75,11 +73,11 @@ localRootPeersProvider
   -> DNSActions resolver exception m
   -> STM m [( HotValency
             , WarmValency
-            , Map RelayAccessPoint (PeerAdvertise, PeerTrustable))]
+            , Map RelayAccessPoint LocalRootConfig)]
   -- ^ input
   -> StrictTVar m [( HotValency
                    , WarmValency
-                   , Map peerAddr (PeerAdvertise, PeerTrustable))]
+                   , Map peerAddr LocalRootConfig)]
   -- ^ output 'TVar'
   -> m Void
 localRootPeersProvider tracer
@@ -101,7 +99,7 @@ localRootPeersProvider tracer
     -- if either these threads fail or detects the local configuration changed.
     --
     loop :: DNSSemaphore m
-         -> [(HotValency, WarmValency, Map RelayAccessPoint (PeerAdvertise, PeerTrustable))]
+         -> [(HotValency, WarmValency, Map RelayAccessPoint LocalRootConfig)]
          -> m Void
     loop dnsSemaphore domainsGroups = do
       traceWith tracer (TraceLocalRootDomains domainsGroups)
@@ -260,10 +258,10 @@ localRootPeersProvider tracer
     getLocalRootPeersGroups :: Map DomainAccessPoint [peerAddr]
                             -> [( HotValency
                                 , WarmValency
-                                , Map RelayAccessPoint (PeerAdvertise, PeerTrustable))]
+                                , Map RelayAccessPoint LocalRootConfig)]
                             -> [( HotValency
                                 , WarmValency
-                                , Map peerAddr (PeerAdvertise, PeerTrustable))]
+                                , Map peerAddr LocalRootConfig)]
     getLocalRootPeersGroups dnsMap =
       -- The idea is to traverse the static configuration. Enter each local
       -- group and check if any of the RelayAccessPoint has a Domain Name.
