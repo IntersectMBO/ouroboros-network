@@ -324,6 +324,13 @@ sanePeerSelectionTargets PeerSelectionTargets{..} =
 --
 data PeerSelectionActions extraActions extraPeers extraFlags extraAPI peeraddr peerconn m =
   PeerSelectionActions {
+       -- | These are the original targets as seen in the static configuration
+       --
+       originalPeerSelectionTargets :: PeerSelectionTargets,
+
+       -- | Read current Peer Selection Targets these can be changed by Churn
+       -- Governor
+       --
        readPeerSelectionTargets   :: STM m PeerSelectionTargets,
 
        -- | Read the original set of locally or privately known root peers.

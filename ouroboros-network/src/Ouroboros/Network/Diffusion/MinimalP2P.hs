@@ -240,7 +240,7 @@ runM Interfaces
        , daBulkChurnInterval
        , daReadLedgerPeerSnapshot
        , daExtraArgs = CardanoArgumentsExtra {
-           caePeerTargets
+           caeSyncPeerTargets
          , caeMinBigLedgerPeersForTrustedState
          , caeConsensusMode
          , caeReadUseBootstrapPeers
@@ -579,6 +579,7 @@ runM Interfaces
                                        localRootsVar
                                        dnsActions
                                        (\getLedgerPeers -> PeerSelectionActions {
+                                         originalPeerSelectionTargets = daPeerSelectionTargets,
                                          readPeerSelectionTargets   = readTVar peerSelectionTargetsVar,
                                          getLedgerStateCtx          = daLedgerPeersCtx,
                                          readOriginalLocalRootPeers = daReadLocalRootPeers,
@@ -594,7 +595,7 @@ runM Interfaces
                                              PeerSharingEnabled  -> readInboundPeers,
                                          readLedgerPeerSnapshot = daReadLedgerPeerSnapshot,
                                          extraActions = CardanoPeerSelectionActions {
-                                           cpsaPeerTargets           = caePeerTargets,
+                                           cpsaSyncPeerTargets       = caeSyncPeerTargets,
                                            cpsaReadUseBootstrapPeers = caeReadUseBootstrapPeers
                                          },
                                          peerStateActions
@@ -655,6 +656,7 @@ runM Interfaces
                    LocalRootPeers.hotTarget
                  . LocalRootPeers.fromGroups
                  <$> readTVar localRootsVar
+              , getOriginalPeerTargets = daPeerSelectionTargets
               , getExtraArgs = ()
               }
 

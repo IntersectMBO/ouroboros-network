@@ -34,7 +34,6 @@ import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
 import System.Random (randomR)
 
-import Cardano.Network.ArgumentsExtra (ConsensusModePeerTargets (..))
 import Cardano.Network.ConsensusMode
 import Cardano.Network.LedgerPeerConsensusInterface
            (CardanoLedgerPeersConsensusInterface (..))
@@ -84,12 +83,10 @@ targetPeers :: (MonadSTM m, Ord peeraddr)
             => PeerSelectionActions (CardanoPeerSelectionActions m) extraPeers extraFlags extraAPI peeraddr peerconn m
             -> PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn
             -> Guarded (STM m) (TimedDecision m CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
-targetPeers PeerSelectionActions{ readPeerSelectionTargets,
+targetPeers PeerSelectionActions{ originalPeerSelectionTargets,
+                                  readPeerSelectionTargets,
                                   extraActions = CardanoPeerSelectionActions {
-                                    cpsaPeerTargets = ConsensusModePeerTargets {
-                                      deadlineTargets,
-                                      syncTargets
-                                    }
+                                    cpsaSyncPeerTargets
                                   }
                                 }
             st@PeerSelectionState{
@@ -117,11 +114,11 @@ targetPeers PeerSelectionActions{ readPeerSelectionTargets,
       let targets' =
             case (cpstLedgerStateJudgement, cpstConsensusMode) of
               (YoungEnough, GenesisMode)
-                | churnTargets == syncTargets ->
-                  deadlineTargets
+                | churnTargets == cpsaSyncPeerTargets ->
+                  originalPeerSelectionTargets
               (TooOld, GenesisMode)
-                | churnTargets == deadlineTargets ->
-                  syncTargets
+                | churnTargets == originalPeerSelectionTargets ->
+                  cpsaSyncPeerTargets
               _otherwise -> churnTargets
 
       -- nb. first check is redundant in Genesis mode

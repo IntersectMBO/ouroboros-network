@@ -91,8 +91,7 @@ import Ouroboros.Network.Testing.Data.Script (Script (..), stepScriptSTM')
 import Simulation.Network.Snocket (AddressType (..), FD)
 
 import Cardano.Diffusion.P2P (runM)
-import Cardano.Network.ArgumentsExtra (CardanoArgumentsExtra (..),
-           ConsensusModePeerTargets (..))
+import Cardano.Network.ArgumentsExtra (CardanoArgumentsExtra (..))
 import Cardano.Network.LedgerPeerConsensusInterface
            (CardanoLedgerPeersConsensusInterface)
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
@@ -147,7 +146,7 @@ data Arguments m = Arguments
     , aShouldChainSyncExit  :: BlockHeader -> m Bool
     , aChainSyncEarlyExit   :: Bool
 
-    , aPeerTargets          :: ConsensusModePeerTargets
+    , aPeerTargets          :: (PeerSelectionTargets, PeerSelectionTargets)
     , aReadLocalRootPeers   :: STM m [( HotValency
                                       , WarmValency
                                       , Map RelayAccessPoint ( PeerAdvertise
@@ -396,7 +395,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
     mkArgsExtra :: StrictTVar m (Script UseBootstrapPeers)
                 -> Common.ArgumentsExtra (CardanoArgumentsExtra m) PeerTrustable m
     mkArgsExtra ubpVar = Common.ArgumentsExtra
-      { Common.daPeerSelectionTargets   = deadlineTargets (aPeerTargets na)
+      { Common.daPeerSelectionTargets   = fst (aPeerTargets na)
       , Common.daReadLocalRootPeers     = aReadLocalRootPeers na
       , Common.daReadPublicRootPeers    = aReadPublicRootPeers na
       , Common.daOwnPeerSharing         = aOwnPeerSharing na
@@ -409,7 +408,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
       , Common.daExtraArgs              = CardanoArgumentsExtra {
           caeReadUseBootstrapPeers  = stepScriptSTM' ubpVar
         , caeConsensusMode          = aConsensusMode na
-        , caePeerTargets            = aPeerTargets na
+        , caeSyncPeerTargets        = snd (aPeerTargets na)
         , caeMinBigLedgerPeersForTrustedState
             = MinBigLedgerPeersForTrustedState 0 -- ^ todo: fix
         }

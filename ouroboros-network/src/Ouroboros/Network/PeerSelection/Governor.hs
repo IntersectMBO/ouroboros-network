@@ -76,7 +76,8 @@ import Cardano.Network.PeerSelection.Governor.PeerSelectionActions
            (CardanoPeerSelectionActions)
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState
            (CardanoPeerSelectionState (..))
-import Cardano.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState (..))
+import Cardano.Network.PeerSelection.LocalRootPeers
+           (OutboundConnectionsState (..))
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
 import Cardano.Network.Types
