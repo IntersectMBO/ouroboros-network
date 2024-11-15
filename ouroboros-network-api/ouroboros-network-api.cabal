@@ -33,6 +33,8 @@ library
     Ouroboros.Network.Block
     Ouroboros.Network.BlockFetch.ConsensusInterface
     Ouroboros.Network.CodecCBORTerm
+    Ouroboros.Network.ConnectionId
+    Ouroboros.Network.ConnectionManager.Public
     Ouroboros.Network.ControlMessage
     Ouroboros.Network.Handshake
     Ouroboros.Network.Handshake.Acceptable
@@ -49,6 +51,7 @@ library
     Ouroboros.Network.PeerSelection.RelayAccessPoint
     Ouroboros.Network.Point
     Ouroboros.Network.Protocol.Limits
+    Ouroboros.Network.PublicState
     Ouroboros.Network.SizeInBytes
     Ouroboros.Network.Util.ShowProxy
 
@@ -67,6 +70,7 @@ library
     contra-tracer,
     deepseq,
     dns,
+    hashable,
     io-classes ^>=1.5.0,
     iproute ^>=1.7.15,
     measures,
