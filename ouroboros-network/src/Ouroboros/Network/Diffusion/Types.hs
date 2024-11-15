@@ -23,6 +23,7 @@ module Ouroboros.Network.Diffusion.Types
   , NodeToClientConnectionHandler
   , NodeToClientConnectionManagerArguments
     -- * NodeToNode type aliases
+  , NetworkState
   , NodeToNodeHandle
   , NodeToNodeConnectionManager
   , NodeToNodePeerConnectionHandle
@@ -121,6 +122,8 @@ data DiffusionTracer ntnAddr ntcAddr
   | DiffusionErrored SomeException
   | SystemdSocketConfiguration SystemdSocketTracer
     deriving Show
+
+type NetworkState = ()
 
 -- TODO: add a tracer for these misconfiguration
 data Failure where
@@ -367,7 +370,7 @@ data Arguments extraState extraDebugState extraFlags extraPeers
            PeerSelectionGovernorArgs extraState extraDebugState extraFlags extraPeers
                                      extraAPI extraCounters
                                      ntnAddr (PeerConnectionHandle
-                                                muxMode responderCtx ntnAddr
+                                                muxMode responderCtx NetworkState ntnAddr
                                                 ntnVersionData bytes m a b)
                                      exception m
 
@@ -377,7 +380,7 @@ data Arguments extraState extraDebugState extraFlags extraPeers
         :: forall muxMode responderCtx ntnVersionData bytes a b .
            PeerSelectionState extraState extraFlags extraPeers
                               ntnAddr (PeerConnectionHandle
-                                         muxMode responderCtx ntnAddr
+                                         muxMode responderCtx NetworkState ntnAddr
                                          ntnVersionData bytes m a b)
         -> extraCounters
 
@@ -448,7 +451,7 @@ data Applications ntnAddr ntnVersion ntnVersionData
         :: Versions ntnVersion
                     ntnVersionData
                       (OuroborosBundleWithExpandedCtx
-                      Mx.InitiatorMode ntnAddr
+                      Mx.InitiatorMode () ntnAddr
                       ByteString m a Void)
 
       -- | NodeToNode initiator & responder applications for bidirectional mode.
@@ -458,7 +461,7 @@ data Applications ntnAddr ntnVersion ntnVersionData
         :: Versions ntnVersion
                     ntnVersionData
                     (OuroborosBundleWithExpandedCtx
-                      Mx.InitiatorResponderMode ntnAddr
+                      Mx.InitiatorResponderMode () ntnAddr
                       ByteString m a ())
 
       -- | NodeToClient responder application (server role)
@@ -469,7 +472,7 @@ data Applications ntnAddr ntnVersion ntnVersionData
         :: Versions ntcVersion
                     ntcVersionData
                      (OuroborosApplicationWithMinimalCtx
-                      Mx.ResponderMode ntcAddr
+                      Mx.ResponderMode () ntcAddr
                       ByteString m Void ())
 
       -- | Interface used to get peers from the current ledger.
@@ -511,7 +514,7 @@ data Applications ntnAddr ntnVersion ntnVersionData
 --
 
 type NodeToClientHandle ntcAddr versionData m =
-    HandleWithMinimalCtx Mx.ResponderMode ntcAddr versionData ByteString m Void ()
+    HandleWithMinimalCtx Mx.ResponderMode NetworkState ntcAddr versionData ByteString m Void ()
 
 type NodeToClientHandleError ntcVersion =
     HandleError Mx.ResponderMode ntcVersion
@@ -551,7 +554,7 @@ type NodeToClientConnectionManagerArguments
 type NodeToNodeHandle
        (mode :: Mx.Mode)
        ntnAddr ntnVersionData m a b =
-    HandleWithExpandedCtx mode ntnAddr ntnVersionData ByteString m a b
+    HandleWithExpandedCtx mode NetworkState ntnAddr ntnVersionData ByteString m a b
 
 type NodeToNodeConnectionManager
        (mode :: Mx.Mode)
@@ -572,6 +575,7 @@ type NodeToNodePeerConnectionHandle (mode :: Mx.Mode) ntnAddr ntnVersionData m a
     PeerConnectionHandle
       mode
       (ResponderContext ntnAddr)
+      NetworkState
       ntnAddr
       ntnVersionData
       ByteString

@@ -99,22 +99,22 @@ data NodeToClientProtocols appType ntcAddr bytes m a b = NodeToClientProtocols {
     -- | local chain-sync mini-protocol
     --
     localChainSyncProtocol    :: RunMiniProtocolWithMinimalCtx
-                                   appType ntcAddr bytes m a b,
+                                   appType () ntcAddr bytes m a b,
 
     -- | local tx-submission mini-protocol
     --
     localTxSubmissionProtocol :: RunMiniProtocolWithMinimalCtx
-                                   appType ntcAddr bytes m a b,
+                                   appType () ntcAddr bytes m a b,
 
     -- | local state-query mini-protocol
     --
     localStateQueryProtocol   :: RunMiniProtocolWithMinimalCtx
-                                   appType ntcAddr bytes m a b,
+                                   appType () ntcAddr bytes m a b,
 
     -- | local tx-monitor mini-protocol
     --
     localTxMonitorProtocol    :: RunMiniProtocolWithMinimalCtx
-                                   appType ntcAddr bytes m a b
+                                   appType () ntcAddr bytes m a b
   }
 
 
@@ -133,7 +133,7 @@ nodeToClientProtocols
   :: NodeToClientProtocols appType addr bytes m a b
   -> NodeToClientVersion
   -> NodeToClientVersionData
-  -> OuroborosApplicationWithMinimalCtx appType addr bytes m a b
+  -> OuroborosApplicationWithMinimalCtx appType () addr bytes m a b
 nodeToClientProtocols protocols _version _versionData =
     OuroborosApplication $
       case protocols of
@@ -190,7 +190,7 @@ versionedNodeToClientProtocols
     -> NodeToClientProtocols appType LocalAddress bytes m a b
     -> Versions NodeToClientVersion
                 NodeToClientVersionData
-                (OuroborosApplicationWithMinimalCtx appType LocalAddress bytes m a b)
+                (OuroborosApplicationWithMinimalCtx appType () LocalAddress bytes m a b)
 versionedNodeToClientProtocols versionNumber versionData protocols =
     simpleSingletonVersions
       versionNumber
@@ -208,7 +208,7 @@ connectTo
   -> Versions NodeToClientVersion
               NodeToClientVersionData
               (OuroborosApplicationWithMinimalCtx
-                 Mx.InitiatorMode LocalAddress BL.ByteString IO a Void)
+                 Mx.InitiatorMode () LocalAddress BL.ByteString IO a Void)
   -- ^ A dictionary of protocol versions & applications to run on an established
   -- connection.  The application to run will be chosen by initial handshake
   -- protocol (the highest shared version will be chosen).
@@ -246,7 +246,7 @@ connectToWithMux
   -> Versions NodeToClientVersion
               NodeToClientVersionData
               (OuroborosApplicationWithMinimalCtx
-                 Mx.InitiatorMode LocalAddress BL.ByteString IO a b)
+                 Mx.InitiatorMode () LocalAddress BL.ByteString IO a b)
   -- ^ A dictionary of protocol versions & applications to run on an established
   -- connection.  The application to run will be chosen by initial handshake
   -- protocol (the highest shared version will be chosen).
@@ -255,7 +255,7 @@ connectToWithMux
   -> (    ConnectionId LocalAddress
        -> NodeToClientVersion
        -> NodeToClientVersionData
-       -> OuroborosApplicationWithMinimalCtx Mx.InitiatorMode LocalAddress BL.ByteString IO a b
+       -> OuroborosApplicationWithMinimalCtx Mx.InitiatorMode () LocalAddress BL.ByteString IO a b
        -> Mx.Mux Mx.InitiatorMode IO
        -> Async.Async ()
        -> IO x)
