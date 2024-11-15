@@ -618,7 +618,7 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
           Just _ -> do
             elapsed <- sinceStart -< ()
             if elapsed > 10
-              then error "crap, bailing out!!!" -< ()
+              then error "oh snap, bailing out!!!" -< ()
               else returnA -< ()
           Nothing -> -- reset timer
             throwS -< ()
@@ -627,7 +627,7 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
       where
         handlers =   ( quiesce @@ MyClock @60000 waitClock
                    |@|
-                      performCardanoChurn @@ churnClock)
+                      performCardanoChurn  @@ churnClock)
                    |@|
                       constMCl State.get >-> (liftClSF . liftClSF $ monitorJobPool) >-> arrMCl State.put @@ jobArrivedClock
 
@@ -663,43 +663,39 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
           Rhine.forever do
             Rhine.try $ proc (sig, chan, st) -> do
               throwOnCond (not . sanePeerSelectionTargets) () -< targets st
-              -- constMCl (traceWith tracer $ TraceTargetsChanged undefined undefined) -< ()
-              mapAccumM f st [cardanoKnownPeers sig] -< ()
-              -- _ <- liftClSF cardanoKnownPeers -< st
-              -- _ <- liftClSF establishedPeers  -< st
+              liftClSF $ constMCl (traceWith tracer $ TraceTargetsChanged undefined undefined) -< ()
+              (nextWakeup, finalState) <- liftClSF (stepActions [cardanoKnownPeers]) -< (sig, st)
               returnA -< ()
 
-        mapAccumM :: a -> b -> c -> ClSF m cl () ()
-        mapAccumM = undefined --go (Nothing, s) ta
-        go (minTime, state) (act:acts) = undefined
-        f = undefined
+        stepActions ::
+          [ClSF m cl (Maybe Quiesce, PeerSelectionState peeraddr peerconn) (Either (Maybe (Min Time)) (m (PeerSelectionState peeraddr peerconn)))]
+          -> ClSF m cl (Maybe Quiesce, PeerSelectionState peeraddr peerconn) (Maybe (Min Time), m (PeerSelectionState peeraddr peerconn))
+        stepActions [] = arr \(_s, st) -> (Nothing, return st)
+        stepActions (act:acts) = proc (sig, st) -> do
+          result <- act -< (sig, st)
+          case result of
+            Left t -> do
+              (lefts, actions) <- stepActions acts -< (sig, st)
+              returnA -< (t <> lefts, actions)
+            Right mact -> do
+              st' <- arrMCl id -< mact
+              stepActions acts -< (sig, st')
 
-    cardanoKnownPeers :: Maybe Quiesce -> BehaviorF m time (PeerSelectionState peeraddr peerconn) (Either (Maybe (Min Time)) (m (PeerSelectionState peeraddr peerconn)))
-    cardanoKnownPeers quiesce = proc state -> do
+    cardanoKnownPeers :: BehaviorF m time (Maybe Quiesce, PeerSelectionState peeraddr peerconn) (Either (Maybe (Min Time)) (m (PeerSelectionState peeraddr peerconn)))
+    cardanoKnownPeers = proc (quiesce, state) -> do
       case quiesce of
         Nothing    -> knownPeers -< state
         _otherwise -> returnA    -< Left Nothing
-    -- cardanoKnownPeers :: BehaviorF m time (Maybe Quiesce, TargetsInput peeraddr peerconn event) (Either (Maybe (Min Time)) (m (PeerSelectionState peeraddr peerconn)))
-    -- cardanoKnownPeers quiesce state =
-    --   case quiesce of
-    --     Nothing    ->
-    --     _otherwise -> returnA    -< Left Nothing
 
-    establishedPeers :: BehaviorF m time (PeerSelectionState peeraddr peerconn) (Either (Maybe (Min Time)) (m (PeerSelectionState peeraddr peerconn)))
-    establishedPeers = arr forEstablished
+    -- establishedPeers :: BehaviorF m time (a, PeerSelectionState peeraddr peerconn) (Either (Maybe (Min Time)) (m (PeerSelectionState peeraddr peerconn)))
+    -- establishedPeers = arr forEstablished
 
     knownPeers :: BehaviorF m time (PeerSelectionState peeraddr peerconn) (Either (Maybe (Min Time)) (m (PeerSelectionState peeraddr peerconn)))
-    knownPeers = undefined --withTime >>> arr go
-      -- where
-      --   withTime = proc (st, view) -> do
-      --     now <- absoluteS -< ()
-      --     returnA -< (now, st, view)
-      --   go (now, state, view) = undefined
-      --     forKnown state now `onSuccessElseRetryTime` chaseKnownPeersTarget state
-
-    onSuccessElseRetryTime guards set = do
-      inputs <- guards
-      set inputs
+    knownPeers = withTime >>> arrMCl (\(now, state) -> forKnown state now <$> readInboundPeers actions)
+      where
+        withTime = proc st -> do
+          now <- absoluteS -< ()
+          returnA -< (now, st)
 
     forEstablished :: PeerSelectionState peeraddr peerconn
                    -> Either (Maybe (Min Time)) (m (PeerSelectionState peeraddr peerconn))
@@ -747,7 +743,7 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
     forKnown :: PeerSelectionState peeraddr peerconn
              -> time
              -> Map peeraddr PeerSharing
-             -> Either (Maybe (Min Time)) (ChaseTargets peeraddr)
+             -> Either (Maybe (Min Time)) (m (PeerSelectionState peeraddr peerconn))
     forKnown st@PeerSelectionState {
               knownPeers,
               establishedPeers,
@@ -771,20 +767,25 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
       , let availablePeers = Map.keysSet inboundPeers
                              Set.\\ KnownPeers.toSet knownPeers
       , not (Set.null availablePeers)
-      = return
-          let numPeersToPromote  = (Policies.maxInboundPeers `min` (targetNumberOfKnownPeers - numKnownPeers))
-              afterSelectHook selected =
-                let filtered = Map.keysSet inboundPeers `Set.intersection` selected
-                    trace    = TracePickInboundPeers
+      = Right do
+          let numPeersToPromote  = Policies.maxInboundPeers `min` (targetNumberOfKnownPeers - numKnownPeers)
+          selectedToPromote <- pickUnknownPeers
+                                 st
+                                 (policyPickInboundPeers policy)
+                                 availablePeers
+                                 numPeersToPromote
+          let selectedMap = inboundPeers `Map.restrictKeys` selectedToPromote
+          traceWith tracer $ TracePickInboundPeers
                                  targetNumberOfKnownPeers
                                  numKnownPeers
-                                 undefined
-                                 -- filtered
+                                 selectedMap
                                  availablePeers
-                in (filtered, trace)
-          in ChaseTargets Up afterSelectHook numPeersToPromote availablePeers
+          return $ st { knownPeers = KnownPeers.setSuccessfulConnectionFlag selectedToPromote
+                                     $ KnownPeers.insert
+                                         (Map.map (\ps -> (Just ps, Just DoAdvertisePeer)) undefined)
+                                         undefined }
 
-      | PeerSharingEnabled <- peerSharing
+      | PeerSharingEnabled <- peerSharing actions
         -- Are we under target for number of known peers?
       , numKnownPeers < targetNumberOfKnownPeers
 
@@ -795,9 +796,46 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
         -- We can only ask ones where we have not asked them within a certain time.
       , not (Set.null availableForPeerShare)
 
-      = return
-          let afterSelectHook selected = undefined
-          in ChaseTargets Up afterSelectHook numPeerShareReqsPossible availableForPeerShare
+      = Right do
+        -- Max selected should be <= numPeerShareReqsPossible
+        selectedForPeerShare <- pickPeers st
+                                policyPickKnownPeersForPeerShare
+                                availableForPeerShare
+                                numPeerShareReqsPossible
+
+        let -- Should be <= numPeerShareReqsPossible
+            numPeerShareReqs = Set.size selectedForPeerShare
+            objective        = targetNumberOfKnownPeers - numKnownPeers
+            -- Split current peer target objective across all peer sharing
+            -- candidates. If the objective is smaller than the number of
+            -- peer share requests available, ask for at 1 peer to each.
+            --
+            -- This is to increase diversity.
+            -- numPeersToReq :: PeerSharingAmount
+            !numPeersToReq = fromIntegral
+                           $ min 255 (max 8 (objective `div` numPeerShareReqs))
+            (salt, stdGen'') = random stdGen'
+        traceWith tracer $ TracePeerShareRequests
+                             targetNumberOfKnownPeers
+                             numKnownPeers
+                             numPeersToReq
+                             availableForPeerShare
+                             selectedForPeerShare
+        return st {
+          inProgressPeerShareReqs = inProgressPeerShareReqs
+                                    + numPeerShareReqs,
+          establishedPeers = EstablishedPeers.setPeerShareTime
+                               selectedForPeerShare
+                               undefined -- (addTime policyPeerShareRetryTime now)
+                               establishedPeers,
+          stdGen = stdGen'' }
+
+        -- If we could peer share except that there are none currently available
+        -- then we return the next wakeup time (if any)
+      | numKnownPeers < targetNumberOfKnownPeers
+      , numPeerShareReqsPossible > 0
+      , Set.null availableForPeerShare
+      = Left . Just $ fmap Min $ EstablishedPeers.minPeerShareTime establishedPeers
 
       | otherwise
       = Left Nothing
