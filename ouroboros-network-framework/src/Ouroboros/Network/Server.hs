@@ -67,7 +67,7 @@ import Ouroboros.Network.Snocket
 
 -- | Server static configuration.
 --
-data Arguments (muxMode  :: Mx.Mode) socket initiatorCtx peerAddr versionData versionNumber bytes m a b =
+data Arguments (muxMode  :: Mx.Mode) socket initiatorCtx networkState peerAddr versionData versionNumber bytes m a b =
     Arguments {
       sockets               :: NonEmpty socket,
       snocket               :: Snocket m socket peerAddr,
@@ -76,8 +76,8 @@ data Arguments (muxMode  :: Mx.Mode) socket initiatorCtx peerAddr versionData ve
       inboundGovernorTracer :: Tracer m (InboundGovernor.Trace peerAddr),
       debugInboundGovernor  :: Tracer m (InboundGovernor.Debug peerAddr versionData),
       connectionLimits      :: AcceptedConnectionsLimit,
-      connectionManager     :: MuxConnectionManager muxMode socket initiatorCtx (ResponderContext peerAddr)
-                                                          peerAddr versionData versionNumber bytes m a b,
+      connectionManager     :: MuxConnectionManager muxMode socket initiatorCtx (ResponderContext peerAddr) networkState
+                                                    peerAddr versionData versionNumber bytes m a b,
 
       -- | Time for which all protocols need to be idle to trigger
       -- 'DemotedToCold' transition.
@@ -90,13 +90,15 @@ data Arguments (muxMode  :: Mx.Mode) socket initiatorCtx peerAddr versionData ve
       -- server to run and manage responders which needs to be started on
       -- inbound connections.
       --
-      inboundInfoChannel    :: InboundGovernorInfoChannel muxMode initiatorCtx peerAddr versionData
+      inboundInfoChannel    :: InboundGovernorInfoChannel muxMode initiatorCtx networkState peerAddr versionData
                                                                 bytes m a b,
 
       -- | read public state
-      readPublicState       :: m (InboundGovernor.PublicState peerAddr versionData),
+      readPublicState       :: STM m (InboundGovernor.PublicState peerAddr versionData),
       -- | write public state
-      writePublicState      :: InboundGovernor.PublicState peerAddr versionData -> m ()
+      writePublicState      :: InboundGovernor.PublicState peerAddr versionData -> STM m (),
+
+      networkStateSTM       :: STM m networkState
     }
 
 -- | Server pauses accepting connections after an 'CONNABORTED' error.
@@ -119,7 +121,7 @@ server_CONNABORTED_DELAY = 0.5
 -- The first one is used in data diffusion for /Node-To-Node protocol/, while the
 -- other is useful for running a server for the /Node-To-Client protocol/.
 --
-with :: forall muxMode socket initiatorCtx peerAddr versionData versionNumber m a b x.
+with :: forall muxMode socket initiatorCtx networkState peerAddr versionData versionNumber m a b x.
        ( Alternative (STM m)
        , MonadAsync    m
        , MonadDelay    m
@@ -134,7 +136,7 @@ with :: forall muxMode socket initiatorCtx peerAddr versionData versionNumber m 
        , Ord      peerAddr
        , Show     peerAddr
        )
-    => Arguments muxMode socket initiatorCtx peerAddr versionData versionNumber ByteString m a b
+    => Arguments muxMode socket initiatorCtx networkState peerAddr versionData versionNumber ByteString m a b
     -- ^ record which holds all server arguments
     -> (Async m Void -> m x)
     -- ^ a callback which receives a handle to inbound governor thread and can
@@ -157,7 +159,8 @@ with Arguments {
       connectionDataFlow,
       inboundInfoChannel,
       readPublicState,
-      writePublicState
+      writePublicState,
+      networkStateSTM
     }
     k = do
       let sockets = NonEmpty.toList socks
@@ -173,7 +176,8 @@ with Arguments {
           InboundGovernor.idleTimeout        = inboundIdleTimeout,
           InboundGovernor.connectionManager  = connectionManager,
           InboundGovernor.readPublicState    = readPublicState,
-          InboundGovernor.writePublicState   = writePublicState
+          InboundGovernor.writePublicState   = writePublicState,
+          InboundGovernor.networkStateSTM    = networkStateSTM
         } $ \inboundGovernorThread ->
         withAsync (k inboundGovernorThread) $ \actionThread -> do
           let acceptLoops :: [m Void]
