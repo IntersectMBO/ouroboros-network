@@ -40,7 +40,6 @@ import Ouroboros.Network.PeerSelection.LedgerPeers hiding (getLedgerPeers)
 import Ouroboros.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
-import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.RootPeersDNS
@@ -59,7 +58,7 @@ data PeerSelectionActionsArgs peeraddr peerconn exception m = PeerSelectionActio
   -- ^ peer selection governor know, established and active targets
   psJudgement                 :: STM m LedgerStateJudgement,
   -- ^ Is consensus close to current slot?
-  psReadLocalRootPeers        :: STM m [(HotValency, WarmValency, Map RelayAccessPoint (PeerAdvertise, PeerTrustable))],
+  psReadLocalRootPeers        :: STM m [(HotValency, WarmValency, Map RelayAccessPoint LocalRootConfig)],
   psReadPublicRootPeers       :: STM m (Map RelayAccessPoint PeerAdvertise),
   psReadUseBootstrapPeers     :: STM m UseBootstrapPeers,
   psPeerSharing               :: PeerSharing,
