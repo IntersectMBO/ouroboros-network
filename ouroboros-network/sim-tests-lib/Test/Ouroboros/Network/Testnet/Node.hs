@@ -100,12 +100,11 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
-import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint,
            RelayAccessPoint)
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSLookupType)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
-           WarmValency)
+           LocalRootConfig, WarmValency)
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay,
            DNSTimeout, mockDNSActions)
 import Test.Ouroboros.Network.Testnet.Node.ChainDB (addBlock, getBlockPointSet)
@@ -145,8 +144,7 @@ data Arguments m = Arguments
     , aPeerTargets          :: ConsensusModePeerTargets
     , aReadLocalRootPeers   :: STM m [( HotValency
                                       , WarmValency
-                                      , Map RelayAccessPoint ( PeerAdvertise
-                                                             , PeerTrustable))]
+                                      , Map RelayAccessPoint LocalRootConfig)]
     , aReadPublicRootPeers  :: STM m (Map RelayAccessPoint PeerAdvertise)
     , aReadUseBootstrapPeers :: Script UseBootstrapPeers
     , aConsensusMode        :: ConsensusMode
