@@ -122,6 +122,7 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , newCapturePublicStateVar
   , requestPublicState
   , handlePublicStateRequest
+  , toOutboundState
     -- * Traces
   , TracePeerSelection (..)
   , ChurnAction (..)
@@ -168,6 +169,7 @@ import Ouroboros.Network.PeerSelection.Types (PeerSource (..),
            PeerStatus (PeerHot, PeerWarm))
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
            PeerSharingResult (..))
+import Ouroboros.Network.PublicState qualified as PS
 
 
 -- | A peer pick policy is an action that picks a subset of elements from a
@@ -1834,3 +1836,17 @@ handlePublicStateRequest (CapturePublicStateVar v) st = do
     case a of
       RequestState      -> writeTMVar v (CapturedState st)
       (CapturedState _) -> retry
+
+toOutboundState :: Ord peeraddr
+                => PublicPeerSelectionState peeraddr
+                -> PS.OutboundState peeraddr
+toOutboundState PublicPeerSelectionState {
+    knownSet,
+    establishedSet,
+    activeSet
+  } =
+  PS.OutboundState {
+    PS.coldPeers = knownSet `Set.difference` establishedSet,
+    PS.warmPeers = establishedSet `Set.difference` activeSet,
+    PS.hotPeers  = activeSet
+  }
