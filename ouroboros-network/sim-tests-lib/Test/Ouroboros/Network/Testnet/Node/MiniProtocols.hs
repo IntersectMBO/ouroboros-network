@@ -107,6 +107,9 @@ import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharing)
 import Test.Ouroboros.Network.Testnet.Node.Kernel
 
 
+type NetworkState = ()
+
+
 -- | Protocol codecs.
 --
 data Codecs addr header block m = Codecs
@@ -305,12 +308,12 @@ applications debugTracer nodeKernel
       }
   where
     initiatorApp
-      :: OuroborosBundleWithExpandedCtx Mx.InitiatorMode NtNAddr ByteString m () Void
+      :: OuroborosBundleWithExpandedCtx Mx.InitiatorMode NetworkState NtNAddr ByteString m () Void
     -- initiator mode will never run a peer sharing responder side
     initiatorApp = fmap f <$> initiatorAndResponderApp
       where
-        f :: MiniProtocolWithExpandedCtx Mx.InitiatorResponderMode NtNAddr ByteString m () ()
-          -> MiniProtocolWithExpandedCtx Mx.InitiatorMode          NtNAddr ByteString m () Void
+        f :: MiniProtocolWithExpandedCtx Mx.InitiatorResponderMode NetworkState NtNAddr ByteString m () ()
+          -> MiniProtocolWithExpandedCtx Mx.InitiatorMode          NetworkState NtNAddr ByteString m () Void
         f MiniProtocol { miniProtocolNum
                        , miniProtocolLimits
                        , miniProtocolRun } =
@@ -323,7 +326,7 @@ applications debugTracer nodeKernel
                        }
 
     initiatorAndResponderApp
-      :: OuroborosBundleWithExpandedCtx Mx.InitiatorResponderMode NtNAddr ByteString m () ()
+      :: OuroborosBundleWithExpandedCtx Mx.InitiatorResponderMode NetworkState NtNAddr ByteString m () ()
     initiatorAndResponderApp = TemperatureBundle
       { withHot = WithHot
           [ MiniProtocol
@@ -377,7 +380,7 @@ applications debugTracer nodeKernel
 
     localResponderApp
       :: OuroborosApplicationWithMinimalCtx
-           Mx.ResponderMode NtCAddr ByteString m Void ()
+           Mx.ResponderMode NetworkState NtCAddr ByteString m Void ()
     localResponderApp = OuroborosApplication []
 
     chainSyncInitiator
