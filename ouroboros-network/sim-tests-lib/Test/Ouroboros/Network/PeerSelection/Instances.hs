@@ -35,6 +35,8 @@ import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint (..),
            RelayAccessPoint (..))
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers
+           (LocalRootConfig (..))
 import Ouroboros.Network.Testing.Utils (ShrinkCarefully, prop_shrink_nonequal,
            prop_shrink_valid)
 import Test.QuickCheck
@@ -188,3 +190,14 @@ prop_shrink_PeerSelectionTargets x =
       prop_shrink_valid sanePeerSelectionTargets x
  .&&. prop_shrink_nonequal x
 
+
+instance Arbitrary LocalRootConfig where
+  arbitrary = LocalRootConfig <$> arbitrary <*> arbitrary
+  shrink a@LocalRootConfig { peerAdvertise, peerTrustable } =
+    [ a { peerTrustable = peerTrustable' }
+    | peerTrustable' <- shrink peerTrustable
+    ]
+    ++
+    [ a { peerAdvertise = peerAdvertise' }
+    | peerAdvertise' <- shrink peerAdvertise
+    ]

@@ -51,6 +51,8 @@ import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers
+           (LocalRootConfig (..))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSelection.Types
 
@@ -411,12 +413,16 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
 
       --TODO: trace when the clamping kicks in, and warn operators
 
-      let added        = LocalRootPeers.toMap localRootPeers' Map.\\
+      let added, removed :: Map peeraddr LocalRootConfig
+          added        = LocalRootPeers.toMap localRootPeers' Map.\\
                          LocalRootPeers.toMap localRootPeers
           removed      = LocalRootPeers.toMap localRootPeers  Map.\\
                          LocalRootPeers.toMap localRootPeers'
           -- LocalRoots are not ledger!
-          addedInfoMap = Map.map (\(pa, _) -> (Nothing, Just pa)) added
+          addedInfoMap = Map.map
+                           (\LocalRootConfig { peerAdvertise } ->
+                             (Nothing, Just peerAdvertise))
+                           added
           removedSet   = Map.keysSet removed
           knownPeers'  = KnownPeers.insert addedInfoMap knownPeers
                         -- We do not immediately remove old ones from the
@@ -728,8 +734,9 @@ waitForSystemToQuiesce st@PeerSelectionState{
   , not hasOnlyBootstrapPeers
   -- Are the local root peers all trustable?
   , all (\case
-            (_, IsTrustable) -> True
-            _                -> False
+          LocalRootConfig { peerTrustable = IsTrustable }
+            -> True
+          _ -> False
         )
         (LocalRootPeers.toMap localRootPeers)
   -- Are the known peers all trustable or all in progress to be demoted?

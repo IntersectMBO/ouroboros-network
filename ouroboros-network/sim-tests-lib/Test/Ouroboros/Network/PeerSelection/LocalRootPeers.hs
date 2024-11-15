@@ -17,19 +17,16 @@ import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
 
-import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
-           LocalRootPeers (..), WarmValency (..))
-import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
-
 import Ouroboros.Network.PeerSelection.Governor
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
+           LocalRootConfig (..), LocalRootPeers (..), WarmValency (..))
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 
 import Ouroboros.Network.Testing.Utils (ShrinkCarefully, prop_shrink_nonequal,
            prop_shrink_valid, renderRanges)
 import Test.Ouroboros.Network.PeerSelection.Instances
 
 
-import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
-import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
@@ -153,7 +150,7 @@ prop_shrink_LocalRootPeers x =
       prop_shrink_valid LocalRootPeers.invariant x
  .&&. prop_shrink_nonequal x
 
-prop_fromGroups :: [(HotValency, WarmValency, Map PeerAddr (PeerAdvertise, PeerTrustable))] -> Bool
+prop_fromGroups :: [(HotValency, WarmValency, Map PeerAddr LocalRootConfig)] -> Bool
 prop_fromGroups = LocalRootPeers.invariant . LocalRootPeers.fromGroups
 
 prop_fromToGroups :: LocalRootPeers PeerAddr -> Bool
