@@ -66,9 +66,8 @@ activeTracer = nullTracer
 _sayTracer :: MonadSay m => Tracer m String
 _sayTracer = Tracer say
 
-
-testProtocols :: RunMiniProtocolWithMinimalCtx appType addr bytes m a b
-              -> OuroborosApplicationWithMinimalCtx appType addr bytes m a b
+testProtocols :: RunMiniProtocolWithMinimalCtx appType () addr bytes m a b
+              -> OuroborosApplicationWithMinimalCtx appType () addr bytes m a b
 testProtocols chainSync =
     OuroborosApplication [
       MiniProtocol {
@@ -208,6 +207,8 @@ demo chain0 updates delay = do
             case miniProtocolRun of
               ResponderProtocolOnly responder ->
                 [(Mx.ResponderDirectionOnly, void . runMiniProtocolCb responder respCtx)]
+              ResponderProtocolOnlyWithState {} ->
+                error "query network state is not supported"
         ]
       withAsync (Mx.run nullTracer serverMux serverBearer) $ \aid -> do
         _ <- atomically $ runFirstToFinish $ foldMap FirstToFinish resOps

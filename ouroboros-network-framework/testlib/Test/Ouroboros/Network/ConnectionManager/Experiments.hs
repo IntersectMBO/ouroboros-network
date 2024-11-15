@@ -270,7 +270,7 @@ withInitiatorOnlyConnectionManager
     -- ^ Handshake time limits
     -> AcceptedConnectionsLimit
     -> (ConnectionManagerWithExpandedCtx
-          Mx.InitiatorMode socket peerAddr
+          Mx.InitiatorMode socket () peerAddr
           DataFlowProtocolData UnversionedProtocol ByteString m [resp] Void
        -> m a)
     -> m a
@@ -329,7 +329,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
                            [MiniProtocol Mx.InitiatorMode
                                          (ExpandedInitiatorContext peerAddr m)
                                          (ResponderContext peerAddr)
-                                         ByteString m [resp] Void]
+                                         () ByteString m [resp] Void]
     clientApplication = mkProto <$> (Mx.MiniProtocolNum <$> nums)
                                 <*> nextRequests
 
@@ -348,7 +348,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
                      -> RunMiniProtocol Mx.InitiatorMode
                                         (ExpandedInitiatorContext peerAddr m)
                                         (ResponderContext peerAddr)
-                                        ByteString m [resp] Void
+                                        () ByteString m [resp] Void
     reqRespInitiator protocolNum nextRequest =
       InitiatorProtocolOnly
         (MiniProtocolCb $ \ExpandedInitiatorContext { eicConnectionId = connId } channel ->
@@ -450,7 +450,7 @@ withBidirectionalConnectionManager
     -- ^ Handshake time limits
     -> AcceptedConnectionsLimit
     -> (ConnectionManagerWithExpandedCtx
-          Mx.InitiatorResponderMode socket peerAddr
+          Mx.InitiatorResponderMode socket () peerAddr
           DataFlowProtocolData UnversionedProtocol ByteString m [resp] acc
        -> peerAddr
        -> Async m Void
@@ -549,7 +549,7 @@ withBidirectionalConnectionManager name timeouts
                           [MiniProtocol Mx.InitiatorResponderMode
                                         (ExpandedInitiatorContext peerAddr m)
                                         (ResponderContext peerAddr)
-                                        ByteString m [resp] acc]
+                                        () ByteString m [resp] acc]
     serverApplication = mkProto <$> (Mx.MiniProtocolNum <$> nums) <*> nextRequests
       where nums = TemperatureBundle (WithHot 1) (WithWarm 2) (WithEstablished 3)
             mkProto miniProtocolNum nextRequest =
@@ -570,7 +570,7 @@ withBidirectionalConnectionManager name timeouts
       -> RunMiniProtocol Mx.InitiatorResponderMode
                          (ExpandedInitiatorContext peerAddr m)
                          (ResponderContext peerAddr)
-                         ByteString m [resp] acc
+                         () ByteString m [resp] acc
     reqRespInitiatorAndResponder protocolNum accInit nextRequest =
       InitiatorAndResponderProtocol
         (MiniProtocolCb $ \ExpandedInitiatorContext { eicConnectionId = connId } channel ->
@@ -655,7 +655,7 @@ runInitiatorProtocols
     -> Mx.Mux muxMode m
     -> OuroborosBundle muxMode (ExpandedInitiatorContext addr m)
                                (ResponderContext addr)
-                               ByteString m a b
+                               () ByteString m a b
     -> TemperatureBundle (StrictTVar m ControlMessage)
     -> ConnectionId addr
     -> m (TemperatureBundle a)
@@ -667,7 +667,7 @@ runInitiatorProtocols singMuxMode mux bundle controlBundle connId = do
     traverse (atomically >=> either throwIO return)
              bundle'
   where
-    runInitiator :: MiniProtocolWithExpandedCtx muxMode addr ByteString m a b
+    runInitiator :: MiniProtocolWithExpandedCtx muxMode () addr ByteString m a b
                  -> ControlMessageSTM m
                  -> m (STM m (Either SomeException a))
     runInitiator ptcl controlMessage =
@@ -763,7 +763,7 @@ unidirectionalExperiment stdGen timeouts snocket makeBearer confSock socket clie
                      (\connHandle -> do
                       case connHandle of
                         Connected connId _ (Handle mux muxBundle controlBundle _
-                                        :: HandleWithExpandedCtx Mx.InitiatorMode peerAddr
+                                        :: HandleWithExpandedCtx Mx.InitiatorMode () peerAddr
                                               DataFlowProtocolData ByteString m [resp] Void) ->
                           try @_ @SomeException $
                             (runInitiatorProtocols

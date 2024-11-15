@@ -165,7 +165,7 @@ versionedProtocols ::
   -> Versions
        NodeToClientVersion
        NodeToClientVersionData
-       (OuroborosApplicationWithMinimalCtx appType LocalAddress bytes m a Void)
+       (OuroborosApplicationWithMinimalCtx appType () LocalAddress bytes m a Void)
 versionedProtocols networkMagic supportedVersions callback =
     NtC.foldMapVersions applyVersion (Map.toList supportedVersions)
   where
@@ -174,7 +174,7 @@ versionedProtocols networkMagic supportedVersions callback =
       -> Versions
            NodeToClientVersion
            NodeToClientVersionData
-           (OuroborosApplicationWithMinimalCtx appType LocalAddress bytes m a Void)
+           (OuroborosApplicationWithMinimalCtx appType () LocalAddress bytes m a Void)
     applyVersion (version, blockVersion) =
       NtC.versionedNodeToClientProtocols
         version

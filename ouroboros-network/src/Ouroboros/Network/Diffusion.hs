@@ -500,9 +500,9 @@ runM Interfaces
             :: forall muxMode socket initiatorCtx responderCtx b c.
                SingMuxMode muxMode
             -> Versions ntnVersion ntnVersionData
-                 (OuroborosBundle muxMode initiatorCtx responderCtx ByteString m b c)
+                 (OuroborosBundle muxMode initiatorCtx responderCtx NetworkState ByteString m b c)
             -> MuxConnectionHandler
-                 muxMode socket initiatorCtx responderCtx ntnAddr
+                 muxMode socket initiatorCtx responderCtx NetworkState ntnAddr
                  ntnVersion ntnVersionData ByteString m b c
           makeConnectionHandler' muxMode versions =
             makeConnectionHandler
@@ -552,11 +552,11 @@ runM Interfaces
                HasInitiator muxMode ~ True
             => MuxConnectionManager
                  muxMode socket (ExpandedInitiatorContext ntnAddr m)
-                 responderCtx ntnAddr ntnVersionData ntnVersion
+                 responderCtx NetworkState ntnAddr ntnVersionData ntnVersion
                  ByteString m a b
             -> (Governor.PeerStateActions
                   ntnAddr
-                  (PeerConnectionHandle muxMode responderCtx ntnAddr
+                  (PeerConnectionHandle muxMode responderCtx NetworkState ntnAddr
                      ntnVersionData ByteString m a b)
                   m
                 -> m c)
@@ -585,13 +585,14 @@ runM Interfaces
       --
       let
           withPeerSelectionActions'
-            :: m (Map ntnAddr PeerSharing)
+            :: forall muxMode responderCtx bytes a' b c.
+               m (Map ntnAddr PeerSharing)
             -> PeerStateActions
                  ntnAddr
                  (PeerConnectionHandle
-                    muxMode responderCtx ntnAddr ntnVersionData bytes m a b)
+                    muxMode responderCtx NetworkState ntnAddr ntnVersionData bytes m a' b)
                  m
-            -> ((Async m Void, Async m Void)
+            -> (   (Async m Void, Async m Void)
                 -> PeerSelectionActions
                      extraState
                      extraFlags
@@ -600,7 +601,7 @@ runM Interfaces
                      extraCounters
                      ntnAddr
                      (PeerConnectionHandle
-                        muxMode responderCtx ntnAddr ntnVersionData bytes m a b)
+                        muxMode responderCtx NetworkState ntnAddr ntnVersionData bytes m a' b)
                      m
                 -> m c)
             -> m c
@@ -652,11 +653,11 @@ runM Interfaces
           peerSelectionGovernor'
             :: Tracer m (DebugPeerSelection extraState extraFlags extraPeers ntnAddr)
             -> StrictTVar m (PeerSelectionState extraState extraFlags extraPeers ntnAddr
-                (PeerConnectionHandle muxMode responderCtx ntnAddr ntnVersionData ByteString m a b))
+                (PeerConnectionHandle muxMode responderCtx NetworkState ntnAddr ntnVersionData ByteString m a b))
             -> PeerSelectionActions
                 extraState extraFlags extraPeers
                 extraAPI extraCounters ntnAddr
-                (PeerConnectionHandle muxMode responderCtx ntnAddr ntnVersionData ByteString m a b)
+                (PeerConnectionHandle muxMode responderCtx NetworkState ntnAddr ntnVersionData ByteString m a b)
                 m
             -> m Void
           peerSelectionGovernor' peerSelectionTracer dbgVar peerSelectionActions =

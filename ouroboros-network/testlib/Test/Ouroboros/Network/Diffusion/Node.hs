@@ -172,6 +172,8 @@ data Arguments extraChurnArgs extraFlags m = Arguments
 --
 type ResolverException = SomeException
 
+type NetworkState = ()
+
 run :: forall extraState extraDebugState extraAPI
              extraPeers extraFlags extraChurnArgs extraCounters
              exception resolver resolverError m.
@@ -217,7 +219,7 @@ run :: forall extraState extraDebugState extraAPI
           extraCounters
           NtNAddr
           (PeerConnectionHandle
-             muxMode responderCtx NtNAddr ntnVersionData bytes m a b)
+             muxMode responderCtx NetworkState NtNAddr ntnVersionData bytes m a b)
           exception
           m)
     -> (forall muxMode responderCtx ntnVersionData bytes a b.
@@ -227,7 +229,7 @@ run :: forall extraState extraDebugState extraAPI
           extraPeers
           NtNAddr
           (PeerConnectionHandle
-             muxMode responderCtx NtNAddr ntnVersionData bytes m a b)
+             muxMode responderCtx NetworkState NtNAddr ntnVersionData bytes m a b)
         -> extraCounters)
     -> (Map NtNAddr PeerAdvertise -> extraPeers)
     -> (   PeerActionsDNS NtNAddr resolver resolverError m
