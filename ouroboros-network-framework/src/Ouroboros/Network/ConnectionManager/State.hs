@@ -19,7 +19,7 @@ module Ouroboros.Network.ConnectionManager.State
 import Control.Monad.Class.MonadAsync
 import Control.Concurrent.Class.MonadSTM.Strict
 import Data.Function (on)
-import Data.Map (Map)
+import Data.Map.Strict (Map)
 import Data.Maybe (maybeToList)
 import Data.Proxy (Proxy (..))
 import Data.Typeable (Typeable)
