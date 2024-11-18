@@ -6,25 +6,36 @@
 {-# LANGUAGE QuantifiedConstraints #-}
 
 module Ouroboros.Network.ConnectionManager.State
-  ( ConnectionManagerState
+  ( -- * ConnectionManagerState API
+    ConnectionManagerState
+  , module ConnMap
+  , lookupOutbound
+  , traverseMaybeWithKey
+    -- ** Monadic API
+  , readConnectionStates
+  , readAbstractStateMap
+    -- * MutableConnState
   , MutableConnState (..)
   , FreshIdSupply
   , newFreshIdSupply
   , newMutableConnState
-  , abstractState
+    -- * ConnectionState
   , ConnectionState (..)
+  , abstractState
   , connectionTerminated
   ) where
 
+import Prelude hiding (lookup)
 import Control.Monad.Class.MonadAsync
 import Control.Concurrent.Class.MonadSTM.Strict
 import Data.Function (on)
-import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 import Data.Maybe (maybeToList)
 import Data.Proxy (Proxy (..))
 import Data.Typeable (Typeable)
 
 import Ouroboros.Network.ConnectionId
+import Ouroboros.Network.ConnectionManager.ConnMap as ConnMap
 import Ouroboros.Network.ConnectionManager.Types
 
 import Test.Ouroboros.Network.Utils (WithName (..))
@@ -33,13 +44,77 @@ import Test.Ouroboros.Network.Utils (WithName (..))
 -- a mutable variable, which reduces congestion on the 'TMVar' which keeps
 -- 'ConnectionManagerState'.
 --
--- It is important we can lookup by remote @peerAddr@; this way we can find if
--- the connection manager is already managing a connection towards that
--- @peerAddr@ and reuse the 'ConnectionState'.
---
-type ConnectionManagerState peerAddr handle handleError version m
-  = Map peerAddr (MutableConnState peerAddr handle handleError version m)
+type ConnectionManagerState peerAddr handle handleError version m =
+    ConnMap peerAddr (MutableConnState peerAddr handle handleError version m)
 
+
+traverseMaybeWithKey
+  :: Applicative f
+  => (Either peerAddr (ConnectionId peerAddr) -> MutableConnState peerAddr handle handleError version m -> f (Maybe b))
+  -> ConnectionManagerState peerAddr handle handleError version m
+  -> f [b]
+traverseMaybeWithKey fn =
+    fmap (concat . Map.elems)
+  . Map.traverseMaybeWithKey
+      (\remoteAddress st ->
+          fmap (Just . Map.elems)
+        . Map.traverseMaybeWithKey
+            (\case
+                UnknownLocalAddr       -> fn (Left remoteAddress)
+                LocalAddr localAddress -> fn (Right ConnectionId { remoteAddress,
+                                                                   localAddress })
+            )
+        $ st
+      )
+  . getConnMap
+
+
+-- | Find an outbound connection for a given remote address.
+--
+lookupOutbound :: forall peerAddr handle handleError version m.
+                  ( MonadSTM m
+                  , Ord peerAddr
+                  )
+               => peerAddr
+               -> ConnectionManagerState peerAddr handle handleError version m
+               -> STM m (Maybe (MutableConnState peerAddr handle handleError version m))
+lookupOutbound remoteAddress (ConnMap st) =
+  case remoteAddress `Map.lookup` st of
+    Nothing -> return Nothing
+    Just st' ->
+      case UnknownLocalAddr `Map.lookup` st' of
+        Just conn -> return $ Just conn
+        Nothing   -> do
+          let conns :: [MutableConnState peerAddr handle handleError version m]
+              conns = Map.elems st'
+          connStates <- traverse (readTVar . connVar) conns
+          let outboundConns
+                    :: [MutableConnState peerAddr handle handleError version m]
+              outboundConns =
+                  map fst
+                . filter (outboundState . snd)
+                $ conns `zip` connStates
+          return $ case outboundConns of
+            -- return first outbound connection
+            conn:_   -> Just conn
+            -- if there's no outbound connection, return first inbound
+            -- connection, e.g. the smallest `localAddress` is preferred
+            [] -> case conns of
+              conn:_ -> Just conn
+              []     -> Nothing
+
+readConnectionStates
+  :: MonadSTM m
+  => ConnectionManagerState peerAddr handle handleError version m
+  -> STM m (ConnMap peerAddr (ConnectionState peerAddr handle handleError version m))
+readConnectionStates = traverse (readTVar . connVar)
+  
+
+readAbstractStateMap
+  :: MonadSTM m
+  => ConnectionManagerState peerAddr handle handleError version m
+  -> STM m (ConnMap peerAddr AbstractState)
+readAbstractStateMap = traverse (fmap (abstractState . Known) . readTVar . connVar)
 
 -- | 'MutableConnState', which supplies a unique identifier.
 --
@@ -131,7 +206,8 @@ newMutableConnState peerAddr freshIdSupply connState = do
       return $ MutableConnState { connStateId, connVar }
 
 
-abstractState :: MaybeUnknown (ConnectionState muxMode peerAddr m a b) -> AbstractState
+abstractState :: MaybeUnknown (ConnectionState muxMode peerAddr m a b)
+              -> AbstractState
 abstractState = \case
     Unknown  -> UnknownConnectionSt
     Race s'  -> go s'
@@ -258,3 +334,18 @@ connectionTerminated :: ConnectionState peerAddr handle handleError version m
 connectionTerminated TerminatingState {} = True
 connectionTerminated TerminatedState  {} = True
 connectionTerminated _                   = False
+
+
+outboundState :: ConnectionState peerAddr handle handleError version m
+              -> Bool
+outboundState ReservedOutboundState{}          = True
+outboundState (UnnegotiatedState Outbound _ _) = True
+outboundState (UnnegotiatedState Inbound _ _)  = False
+outboundState OutboundUniState{}               = True
+outboundState OutboundDupState{}               = True 
+outboundState OutboundIdleState{}              = True 
+outboundState DuplexState{}                    = True 
+outboundState InboundIdleState{}               = False
+outboundState InboundState{}                   = False
+outboundState TerminatingState{}               = False
+outboundState TerminatedState{}                = False

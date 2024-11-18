@@ -479,8 +479,7 @@ with
         CommitRemote connId -> do
           -- NOTE: `releaseInboundConnection` doesn't throw, hence exception
           -- handling is not needed.
-          res <- releaseInboundConnection connectionManager
-                                          (remoteAddress connId)
+          res <- releaseInboundConnection connectionManager connId
           traceWith tracer $ TrDemotedToColdRemote connId res
           case res of
             UnsupportedState {} -> do

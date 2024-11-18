@@ -637,7 +637,7 @@ withPeerStateActions PeerStateActionsArguments {
               PeerCold ->
                 return Nothing
               PeerCooling -> do
-                waitForOutboundDemotion spsConnectionManager (remoteAddress pchConnectionId)
+                waitForOutboundDemotion spsConnectionManager pchConnectionId
                 writeTVar pchPeerStatus PeerCold
                 return Nothing
               _ ->

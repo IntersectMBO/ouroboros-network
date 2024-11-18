@@ -177,7 +177,8 @@ import System.Random (StdGen)
 import Network.Mux.Types (HasInitiator, HasResponder, MiniProtocolDir)
 import Network.Mux.Types qualified as Mux
 
-import Ouroboros.Network.ConnectionId (ConnectionId)
+import Ouroboros.Network.ConnectionId (ConnectionId (..))
+import Ouroboros.Network.ConnectionManager.ConnMap (ConnMap)
 import Ouroboros.Network.MuxMode
 
 
@@ -423,9 +424,9 @@ data HandleErrorType =
 -- connections.
 --
 type PrunePolicy peerAddr = StdGen
-                         -> Map peerAddr ConnectionType
+                         -> Map (ConnectionId peerAddr) ConnectionType
                          -> Int
-                         -> Set peerAddr
+                         -> Set (ConnectionId peerAddr)
 
 
 -- | The simplest 'PrunePolicy', it should only be used for tests.
@@ -509,7 +510,7 @@ data OutboundConnectionManager (muxMode :: Mux.Mode) socket peerAddr handle hand
     OutboundConnectionManager
       :: HasInitiator muxMode ~ True
       => { ocmAcquireConnection :: AcquireOutboundConnection peerAddr handle handleError m
-         , ocmReleaseConnection :: peerAddr -> m (OperationResult AbstractState)
+         , ocmReleaseConnection :: ConnectionId peerAddr -> m (OperationResult AbstractState)
          }
       -> OutboundConnectionManager muxMode socket peerAddr handle handleError m
 
@@ -522,10 +523,10 @@ data InboundConnectionManager (muxMode :: Mux.Mode) socket peerAddr handle handl
     InboundConnectionManager
       :: HasResponder muxMode ~ True
       => { icmIncludeConnection    :: IncludeInboundConnection socket peerAddr handle handleError m
-         , icmReleaseConnection    :: peerAddr -> m (OperationResult DemotedToColdRemoteTr)
-         , icmPromotedToWarmRemote :: peerAddr -> m (OperationResult AbstractState)
+         , icmReleaseConnection    :: ConnectionId peerAddr -> m (OperationResult DemotedToColdRemoteTr)
+         , icmPromotedToWarmRemote :: ConnectionId peerAddr -> m (OperationResult AbstractState)
          , icmDemotedToColdRemote
-                                   :: peerAddr -> m (OperationResult AbstractState)
+                                   :: ConnectionId peerAddr -> m (OperationResult AbstractState)
          , icmNumberOfConnections  :: STM m Int
          }
       -> InboundConnectionManager muxMode socket peerAddr handle handleError m
@@ -548,13 +549,13 @@ data ConnectionManager (muxMode :: Mux.Mode) socket peerAddr handle handleError 
               (InboundConnectionManager  muxMode socket peerAddr handle handleError m),
 
         readState
-          :: STM m (Map peerAddr AbstractState),
+          :: STM m (ConnMap peerAddr AbstractState),
 
         -- | This STM action will block until the given connection is fully
         -- closed/terminated. If the connection manager doesn't have any connection to
         -- that peer it won't block.
         waitForOutboundDemotion
-          :: peerAddr
+          :: ConnectionId peerAddr
           -> STM m ()
       }
 
@@ -584,7 +585,7 @@ acquireOutboundConnection =
 releaseOutboundConnection
     :: HasInitiator muxMode ~ True
     => ConnectionManager muxMode socket peerAddr handle handleError m
-    -> peerAddr
+    -> ConnectionId peerAddr
     -> m (OperationResult AbstractState)
     -- ^ reports the from-state.
 releaseOutboundConnection =
@@ -603,7 +604,7 @@ releaseOutboundConnection =
 promotedToWarmRemote
     :: HasResponder muxMode ~ True
     => ConnectionManager muxMode socket peerAddr handle handleError m
-    -> peerAddr -> m (OperationResult AbstractState)
+    -> ConnectionId peerAddr -> m (OperationResult AbstractState)
 promotedToWarmRemote =
     icmPromotedToWarmRemote . withResponderMode . getConnectionManager
 
@@ -619,7 +620,7 @@ promotedToWarmRemote =
 demotedToColdRemote
     :: HasResponder muxMode ~ True
     => ConnectionManager muxMode socket peerAddr handle handleError m
-    -> peerAddr -> m (OperationResult AbstractState)
+    -> ConnectionId peerAddr -> m (OperationResult AbstractState)
 demotedToColdRemote =
     icmDemotedToColdRemote . withResponderMode . getConnectionManager
 
@@ -636,7 +637,7 @@ includeInboundConnection
 includeInboundConnection =
     icmIncludeConnection . withResponderMode . getConnectionManager
 
--- | Release outbound connection. Returns if the operation was successful.
+-- | Release inbound connection. Returns if the operation was successful.
 --
 -- This executes:
 --
@@ -645,7 +646,7 @@ includeInboundConnection =
 releaseInboundConnection
     :: HasResponder muxMode ~ True
     => ConnectionManager muxMode socket peerAddr handle handleError m
-    -> peerAddr -> m (OperationResult DemotedToColdRemoteTr)
+    -> ConnectionId peerAddr -> m (OperationResult DemotedToColdRemoteTr)
 releaseInboundConnection =
     icmReleaseConnection . withResponderMode . getConnectionManager
 
@@ -838,10 +839,10 @@ connectionManagerErrorFromException x = do
 --
 data AssertionLocation peerAddr
   = ReleaseInboundConnection  !(Maybe (ConnectionId peerAddr)) !AbstractState
-  | AcquireOutboundConnection    !(Maybe (ConnectionId peerAddr)) !AbstractState
+  | AcquireOutboundConnection !(Maybe (ConnectionId peerAddr)) !AbstractState
   | ReleaseOutboundConnection !(Maybe (ConnectionId peerAddr)) !AbstractState
-  | PromotedToWarmRemote         !(Maybe (ConnectionId peerAddr)) !AbstractState
-  | DemotedToColdRemote          !(Maybe (ConnectionId peerAddr)) !AbstractState
+  | PromotedToWarmRemote      !(Maybe (ConnectionId peerAddr)) !AbstractState
+  | DemotedToColdRemote       !(Maybe (ConnectionId peerAddr)) !AbstractState
   deriving Show
 
 
@@ -888,7 +889,7 @@ mkAbsTransition from to = Transition { fromState = from
                                      }
 
 data TransitionTrace' peerAddr state = TransitionTrace
-    { ttPeerAddr   :: peerAddr
+    { ttPeerAddr   :: peerAddr -- TODO: use ConnectionId
     , ttTransition :: Transition' state
     }
   deriving Functor
