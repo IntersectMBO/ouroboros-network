@@ -29,6 +29,7 @@ library
     Ouroboros.Network.Channel
     Ouroboros.Network.ConnectionHandler
     Ouroboros.Network.ConnectionId
+    Ouroboros.Network.ConnectionManager.ConnMap
     Ouroboros.Network.ConnectionManager.Core
     Ouroboros.Network.ConnectionManager.InformationChannel
     Ouroboros.Network.ConnectionManager.State

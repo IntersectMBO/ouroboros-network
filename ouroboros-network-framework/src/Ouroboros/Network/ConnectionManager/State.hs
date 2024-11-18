@@ -6,25 +6,32 @@
 {-# LANGUAGE QuantifiedConstraints #-}
 
 module Ouroboros.Network.ConnectionManager.State
-  ( ConnectionManagerState
+  ( -- * ConnectionManagerState API
+    ConnectionManagerState
+  , module ConnMap
+    -- ** Monadic API
+  , readConnectionStates
+  , readAbstractStateMap
+    -- * MutableConnState
   , MutableConnState (..)
   , FreshIdSupply
   , newFreshIdSupply
   , newMutableConnState
-  , abstractState
+    -- * ConnectionState
   , ConnectionState (..)
+  , abstractState
   , connectionTerminated
   ) where
 
-import Control.Monad.Class.MonadAsync
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadAsync
 import Data.Function (on)
-import Data.Map.Strict (Map)
-import Data.Maybe (maybeToList)
 import Data.Proxy (Proxy (..))
 import Data.Typeable (Typeable)
+import Prelude hiding (lookup)
 
 import Ouroboros.Network.ConnectionId
+import Ouroboros.Network.ConnectionManager.ConnMap as ConnMap
 import Ouroboros.Network.ConnectionManager.Types
 
 import Ouroboros.Network.Testing.Utils (WithName (..))
@@ -33,13 +40,22 @@ import Ouroboros.Network.Testing.Utils (WithName (..))
 -- a mutable variable, which reduces congestion on the 'TMVar' which keeps
 -- 'ConnectionManagerState'.
 --
--- It is important we can lookup by remote @peerAddr@; this way we can find if
--- the connection manager is already managing a connection towards that
--- @peerAddr@ and reuse the 'ConnectionState'.
---
-type ConnectionManagerState peerAddr handle handleError version m
-  = Map peerAddr (MutableConnState peerAddr handle handleError version m)
+type ConnectionManagerState peerAddr handle handleError version m =
+    ConnMap peerAddr (MutableConnState peerAddr handle handleError version m)
 
+
+readConnectionStates
+  :: MonadSTM m
+  => ConnectionManagerState peerAddr handle handleError version m
+  -> STM m (ConnMap peerAddr (ConnectionState peerAddr handle handleError version m))
+readConnectionStates = traverse (readTVar . connVar)
+
+
+readAbstractStateMap
+  :: MonadSTM m
+  => ConnectionManagerState peerAddr handle handleError version m
+  -> STM m (ConnMap peerAddr AbstractState)
+readAbstractStateMap = traverse (fmap (abstractState . Known) . readTVar . connVar)
 
 -- | 'MutableConnState', which supplies a unique identifier.
 --
@@ -131,7 +147,8 @@ newMutableConnState peerAddr freshIdSupply connState = do
       return $ MutableConnState { connStateId, connVar }
 
 
-abstractState :: MaybeUnknown (ConnectionState muxMode peerAddr m a b) -> AbstractState
+abstractState :: MaybeUnknown (ConnectionState muxMode peerAddr m a b)
+              -> AbstractState
 abstractState = \case
     Unknown  -> UnknownConnectionSt
     Race s'  -> go s'
@@ -182,7 +199,7 @@ data ConnectionState peerAddr handle handleError version m =
 
 
 instance ( Show peerAddr
-         , Show handleError
+         -- , Show handleError
          , MonadAsync m
          )
       => Show (ConnectionState peerAddr handle handleError version m) where
@@ -239,16 +256,16 @@ instance ( Show peerAddr
              , " "
              , show (asyncThreadId connThread)
              ]
-    show (TerminatingState connId connThread handleError) =
+    show (TerminatingState connId connThread _handleError) =
       concat ([ "TerminatingState "
               , show connId
               , " "
               , show (asyncThreadId connThread)
               ]
-              ++ maybeToList ((' ' :) . show <$> handleError))
-    show (TerminatedState handleError) =
+              )-- ++ maybeToList ((' ' :) . show <$> handleError))
+    show (TerminatedState _handleError) =
       concat (["TerminatedState"]
-              ++ maybeToList ((' ' :) . show <$> handleError))
+              )-- ++ maybeToList ((' ' :) . show <$> handleError))
 
 
 -- | Return 'True' for states in which the connection was already closed.
