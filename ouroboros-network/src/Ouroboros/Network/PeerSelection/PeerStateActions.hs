@@ -630,7 +630,7 @@ withPeerStateActions PeerStateActionsArguments {
               PeerCold ->
                 return Nothing
               PeerCooling -> do
-                waitForOutboundDemotion spsConnectionManager (remoteAddress pchConnectionId)
+                waitForOutboundDemotion spsConnectionManager pchConnectionId
                 writeTVar pchPeerStatus PeerCold
                 return Nothing
               _ ->
@@ -705,14 +705,12 @@ withPeerStateActions PeerStateActionsArguments {
           -- wrong).
           Just (WithSomeProtocolTemperature (WithWarm MiniProtocolSuccess {})) -> do
             isCooling <- closePeerConnection pch
-            if isCooling
-                then peerMonitoringLoop pch
-                else return ()
+            when isCooling
+              $ peerMonitoringLoop pch
           Just (WithSomeProtocolTemperature (WithEstablished MiniProtocolSuccess {})) -> do
             isCooling <- closePeerConnection pch
-            if isCooling
-                then peerMonitoringLoop pch
-                else return ()
+            when isCooling
+              $ peerMonitoringLoop pch
 
           Nothing ->
             traceWith spsTracer (PeerStatusChanged (CoolingToCold pchConnectionId))
@@ -730,7 +728,7 @@ withPeerStateActions PeerStateActionsArguments {
         $ \peerStateVar -> do
           res <- requestOutboundConnection spsConnectionManager remotePeerAddr
           case res of
-            Connected connectionId@ConnectionId { localAddress, remoteAddress }
+            Connected connId@ConnectionId { localAddress, remoteAddress }
                       _dataFlow
                       (Handle mux muxBundle controlMessageBundle versionData) -> do
 
@@ -743,7 +741,7 @@ withPeerStateActions PeerStateActionsArguments {
 
               let connHandle =
                     PeerConnectionHandle {
-                        pchConnectionId = connectionId,
+                        pchConnectionId = connId,
                         pchPeerStatus   = peerStateVar,
                         pchMux          = mux,
                         pchAppHandles   = mkApplicationHandleBundle
@@ -768,9 +766,9 @@ withPeerStateActions PeerStateActionsArguments {
                                         Nothing                    -> Just e)
                                      (\e -> do
                                         atomically $ do
-                                          waitForOutboundDemotion spsConnectionManager remoteAddress
+                                          waitForOutboundDemotion spsConnectionManager connId
                                           writeTVar peerStateVar PeerCold
-                                        traceWith spsTracer (PeerMonitoringError connectionId e)
+                                        traceWith spsTracer (PeerMonitoringError connId e)
                                         throwIO e)
                                      (peerMonitoringLoop connHandle $> Nothing))
                                    (return . Just)
@@ -1041,7 +1039,7 @@ withPeerStateActions PeerStateActionsArguments {
           -- 'unregisterOutboundConnection' could only fail to demote the peer if
           -- connection manager would simultaneously promote it, but this is not
           -- possible.
-          _ <- unregisterOutboundConnection spsConnectionManager (remoteAddress pchConnectionId)
+          _ <- unregisterOutboundConnection spsConnectionManager pchConnectionId
           wasWarm <- atomically (updateUnlessCoolingOrCold pchPeerStatus PeerCooling)
           when wasWarm $
             traceWith spsTracer (PeerStatusChanged (WarmToCooling pchConnectionId))
@@ -1177,4 +1175,5 @@ data PeerSelectionActionsTrace peerAddr vNumber =
     | PeerStatusChangeFailure (PeerStatusChangeType peerAddr) (FailureType vNumber)
     | PeerMonitoringError     (ConnectionId peerAddr) SomeException
     | PeerMonitoringResult    (ConnectionId peerAddr) (Maybe (WithSomeProtocolTemperature FirstToFinishResult))
+    | AcquireConnectionError  SomeException
   deriving Show

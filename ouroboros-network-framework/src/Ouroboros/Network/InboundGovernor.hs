@@ -373,8 +373,9 @@ withInboundGovernor trTracer tracer debugTracer inboundInfoChannel
           --    DemotedToCold^{dataFlow}_{Remote} : InboundState Duplex
           --                                      → InboundIdleState Duplex
           -- @
-          res <- demotedToColdRemote connectionManager
-                                     (remoteAddress connId)
+          -- NOTE: `demotedToColdRemote` doesn't throw, hence exception handling
+          -- is not needed.
+          res <- demotedToColdRemote connectionManager connId
           traceWith tracer (TrWaitIdleRemote connId res)
           case res of
             TerminatedConnection {} -> do
@@ -412,8 +413,10 @@ withInboundGovernor trTracer tracer debugTracer inboundInfoChannel
         -- first message that arrives is terminating a mini-protocol.
         AwakeRemote connId -> do
           -- notify the connection manager about the transition
-          res <- promotedToWarmRemote connectionManager
-                                      (remoteAddress connId)
+          --
+          -- NOTE: `promotedToWarmRemote` doesn't throw, hence exception handling
+          -- is not needed.
+          res <- promotedToWarmRemote connectionManager connId
           traceWith tracer (TrPromotedToWarmRemote connId res)
 
           when (resultInState res == UnknownConnectionSt) $ do
@@ -444,8 +447,7 @@ withInboundGovernor trTracer tracer debugTracer inboundInfoChannel
           return (Just connId, state')
 
         CommitRemote connId -> do
-          res <- unregisterInboundConnection connectionManager
-                                             (remoteAddress connId)
+          res <- unregisterInboundConnection connectionManager connId
           traceWith tracer $ TrDemotedToColdRemote connId res
           case res of
             UnsupportedState {} -> do

@@ -33,7 +33,8 @@ data ConnectionId addr = ConnectionId {
 --
 -- /Note:/ we relay on the fact that `remoteAddress` is an order
 -- preserving map (which allows us to use `Map.mapKeysMonotonic` in some
--- cases).
+-- cases.  We also relay on this particular order in
+-- `Ouroboros.Network.ConnectionManager.State.liveConnections`
 --
 instance Ord addr => Ord (ConnectionId addr) where
     conn `compare` conn' =

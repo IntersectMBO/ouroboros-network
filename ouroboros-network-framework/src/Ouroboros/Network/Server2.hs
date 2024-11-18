@@ -46,6 +46,7 @@ import Foreign.C.Error
 #endif
 
 import Ouroboros.Network.ConnectionHandler
+import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.ConnectionManager.InformationChannel
            (InboundGovernorInfoChannel)
 import Ouroboros.Network.ConnectionManager.Types
@@ -249,15 +250,19 @@ with ServerArguments {
                       else throwIO ioErr
                  Nothing -> throwIO err
 
-            (Accepted socket peerAddr, acceptNext) ->
+            (Accepted socket remoteAddress, acceptNext) ->
               (do
-                  traceWith tracer (TrAcceptConnection peerAddr)
+                  localAddress' <- getLocalAddr serverSnocket socket
+                  let connId = ConnectionId { localAddress = localAddress',
+                                              remoteAddress }
+                  traceWith tracer (TrAcceptConnection connId)
                   async $
-                    do a <-
+                    do
+                       a <-
                          unmask
                            (includeInboundConnection
                              serverConnectionManager
-                             hardLimit socket peerAddr)
+                             hardLimit socket connId)
                        case a of
                          Connected {}    -> pure ()
                          Disconnected {} -> do
@@ -275,7 +280,7 @@ with ServerArguments {
 --
 
 data ServerTrace peerAddr
-    = TrAcceptConnection            peerAddr
+    = TrAcceptConnection            (ConnectionId peerAddr)
     | TrAcceptError                 SomeException
     | TrAcceptPolicyTrace           AcceptConnectionsPolicyTrace
     | TrServerStarted               [peerAddr]
