@@ -10,6 +10,7 @@
 {-# LANGUAGE TupleSections         #-}
 -- Undecidable instances are need for 'Show' instance of 'ConnectionState'.
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
 -- | The implementation of connection manager.
@@ -37,9 +38,7 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Fix
 import Control.Tracer (Tracer, contramap, traceWith)
 import Data.Foldable (foldMap', traverse_)
-import Data.Function (on)
 import Data.Functor (void, ($>))
-import Data.Maybe (maybeToList)
 import Data.Proxy (Proxy (..))
 import Data.Typeable (Typeable)
 import GHC.Stack (CallStack, HasCallStack, callStack)
@@ -62,6 +61,7 @@ import Ouroboros.Network.ConnectionManager.InformationChannel
 import Ouroboros.Network.ConnectionManager.InformationChannel qualified as InfoChannel
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.ConnectionManager.Types qualified as CM
+import Ouroboros.Network.ConnectionManager.State
 import Ouroboros.Network.InboundGovernor.Event (NewConnectionInfo (..))
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
@@ -146,70 +146,6 @@ data ConnectionManagerArguments handlerTrace socket peerAddr handle handleError 
       }
 
 
--- | 'MutableConnState', which supplies a unique identifier.
---
--- TODO: We can get away without id, by tracking connections in
--- `TerminatingState` using a separate priority search queue.
---
-data MutableConnState peerAddr handle handleError version m = MutableConnState {
-    -- | A unique identifier
-    --
-    connStateId  :: !Int
-
-  , -- | Mutable state
-    --
-    connVar      :: !(StrictTVar m (ConnectionState peerAddr handle handleError
-                                                    version m))
-  }
-
-
-instance Eq (MutableConnState peerAddr handle handleError version m) where
-    (==) =  (==) `on` connStateId
-
-
--- | A supply of fresh id's.
---
--- We use a fresh ids for 'MutableConnState'.
---
-newtype FreshIdSupply m = FreshIdSupply { getFreshId :: STM m Int }
-
-
--- | Create a 'FreshIdSupply' inside an 'STM' monad.
---
-newFreshIdSupply :: forall m. MonadSTM m
-                 => Proxy m -> STM m (FreshIdSupply m)
-newFreshIdSupply _ = do
-    (v :: StrictTVar m Int) <- newTVar 0
-    let getFreshId :: STM m Int
-        getFreshId = do
-          c <- readTVar v
-          writeTVar v (succ c)
-          return c
-    return $ FreshIdSupply { getFreshId }
-
-
-newMutableConnState :: MonadSTM m
-                    => FreshIdSupply m
-                    -> ConnectionState peerAddr handle handleError
-                                       version m
-                    -> STM m (MutableConnState peerAddr handle handleError
-                                               version m)
-newMutableConnState freshIdSupply connState = do
-      connStateId <- getFreshId freshIdSupply
-      connVar <- newTVar connState
-      return $ MutableConnState { connStateId, connVar }
-
-
--- | 'ConnectionManager' state: for each peer we keep a 'ConnectionState' in
--- a mutable variable, which reduces congestion on the 'TMVar' which keeps
--- 'ConnectionManagerState'.
---
--- It is important we can lookup by remote @peerAddr@; this way we can find if
--- the connection manager is already managing a connection towards that
--- @peerAddr@ and reuse the 'ConnectionState'.
---
-type ConnectionManagerState peerAddr handle handleError version m
-  = Map peerAddr (MutableConnState peerAddr handle handleError version m)
 
 connectionManagerStateToCounters
   :: Map peerAddr (ConnectionState peerAddr handle handleError version m)
@@ -217,44 +153,6 @@ connectionManagerStateToCounters
 connectionManagerStateToCounters =
     foldMap' connectionStateToCounters
 
--- | State of a connection.
---
-data ConnectionState peerAddr handle handleError version m =
-    -- | Each outbound connections starts in this state.
-    ReservedOutboundState
-
-    -- | Each inbound connection starts in this state, outbound connection
-    -- reach this state once `connect` call returns.
-    --
-    -- note: the async handle is lazy, because it's passed with 'mfix'.
-  | UnnegotiatedState   !Provenance
-                        !(ConnectionId peerAddr)
-                         (Async m ())
-
-    -- | @OutboundState Unidirectional@ state.
-  | OutboundUniState    !(ConnectionId peerAddr) !(Async m ()) !handle
-
-    -- | Either @OutboundState Duplex@ or @OutboundState^\tau Duplex@.
-  | OutboundDupState    !(ConnectionId peerAddr) !(Async m ()) !handle !TimeoutExpired
-
-    -- | Before connection is reset it is put in 'OutboundIdleState' for the
-    -- duration of 'cmOutboundIdleTimeout'.
-    --
-  | OutboundIdleState   !(ConnectionId peerAddr) !(Async m ()) !handle !DataFlow
-  | InboundIdleState    !(ConnectionId peerAddr) !(Async m ()) !handle !DataFlow
-  | InboundState        !(ConnectionId peerAddr) !(Async m ()) !handle !DataFlow
-  | DuplexState         !(ConnectionId peerAddr) !(Async m ()) !handle
-  | TerminatingState    !(ConnectionId peerAddr) !(Async m ()) !(Maybe handleError)
-  | TerminatedState                              !(Maybe handleError)
-
-
--- | Return 'True' for states in which the connection was already closed.
---
-connectionTerminated :: ConnectionState peerAddr handle handleError version m
-                     -> Bool
-connectionTerminated TerminatingState {} = True
-connectionTerminated TerminatedState  {} = True
-connectionTerminated _                   = False
 
 
 -- | Perform counting from an 'AbstractState'
@@ -308,76 +206,6 @@ connectionStateToCounters state =
     outboundConn       = ConnectionManagerCounters 0 0 0 0 1
 
 
-instance ( Show peerAddr
-         , Show handleError
-         , MonadAsync m
-         )
-      => Show (ConnectionState peerAddr handle handleError version m) where
-    show ReservedOutboundState = "ReservedOutboundState"
-    show (UnnegotiatedState pr connId connThread) =
-      concat ["UnnegotiatedState "
-             , show pr
-             , " "
-             , show connId
-             , " "
-             , show (asyncThreadId connThread)
-             ]
-    show (OutboundUniState connId connThread _handle) =
-      concat [ "OutboundState Unidirectional "
-             , show connId
-             , " "
-             , show (asyncThreadId connThread)
-             ]
-    show (OutboundDupState connId connThread _handle expired) =
-      concat [ "OutboundState "
-             , show connId
-             , " "
-             , show (asyncThreadId connThread)
-             , " "
-             , show expired
-             ]
-    show (OutboundIdleState connId connThread _handle df) =
-      concat [ "OutboundIdleState "
-             , show connId
-             , " "
-             , show (asyncThreadId connThread)
-             , " "
-             , show df
-             ]
-    show (InboundIdleState connId connThread _handle df) =
-      concat [ "InboundIdleState "
-             , show connId
-             , " "
-             , show (asyncThreadId connThread)
-             , " "
-             , show df
-             ]
-    show (InboundState  connId connThread _handle df) =
-      concat [ "InboundState "
-             , show connId
-             , " "
-             , show (asyncThreadId connThread)
-             , " "
-             , show df
-             ]
-    show (DuplexState   connId connThread _handle) =
-      concat [ "DuplexState "
-             , show connId
-             , " "
-             , show (asyncThreadId connThread)
-             ]
-    show (TerminatingState connId connThread handleError) =
-      concat ([ "TerminatingState "
-              , show connId
-              , " "
-              , show (asyncThreadId connThread)
-              ]
-              ++ maybeToList ((' ' :) . show <$> handleError))
-    show (TerminatedState handleError) =
-      concat (["TerminatedState"]
-              ++ maybeToList ((' ' :) . show <$> handleError))
-
-
 getConnThread :: ConnectionState peerAddr handle handleError version m
               -> Maybe (Async m ())
 getConnThread ReservedOutboundState                                     = Nothing
@@ -424,27 +252,7 @@ isInboundConn DuplexState {}                             = True
 isInboundConn TerminatingState {}                        = False
 isInboundConn TerminatedState {}                         = False
 
-
-abstractState :: MaybeUnknown (ConnectionState muxMode peerAddr m a b) -> AbstractState
-abstractState = \case
-    Unknown  -> UnknownConnectionSt
-    Race s'  -> go s'
-    Known s' -> go s'
-  where
-    go :: ConnectionState muxMode peerAddr m a b -> AbstractState
-    go ReservedOutboundState {}       = ReservedOutboundSt
-    go (UnnegotiatedState pr _ _)     = UnnegotiatedSt pr
-    go (OutboundUniState    _ _ _)    = OutboundUniSt
-    go (OutboundDupState    _ _ _ te) = OutboundDupSt te
-    go (OutboundIdleState _ _ _ df)   = OutboundIdleSt df
-    go (InboundIdleState _ _ _ df)    = InboundIdleSt df
-    go (InboundState     _ _ _ df)    = InboundSt df
-    go DuplexState {}                 = DuplexSt
-    go TerminatingState {}            = TerminatingSt
-    go TerminatedState {}             = TerminatedSt
-
-
--- | The default value for 'cmTimeWaitTimeout'.
+-- | The default value for 'timeWaitTimeout'.
 --
 defaultTimeWaitTimeout :: DiffTime
 defaultTimeWaitTimeout = 60
@@ -1101,7 +909,7 @@ withConnectionManager args@ConnectionManagerArguments {
                     case v0 of
                       Nothing -> do
                         -- 'Accepted'
-                        v <- newMutableConnState freshIdSupply connState'
+                        v <- newMutableConnState (remoteAddress connId) freshIdSupply connState'
                         labelTVar (connVar v) ("conn-state-" ++ show connId)
                         return (v, Nothing)
                       Just v -> do
@@ -1129,8 +937,8 @@ withConnectionManager args@ConnectionManagerArguments {
                            InboundState          {} -> writeTVar (connVar v) connState'
                                                     $> assert False v
 
-                           TerminatingState      {} -> newMutableConnState freshIdSupply connState'
-                           TerminatedState       {} -> newMutableConnState freshIdSupply connState'
+                           TerminatingState      {} -> newMutableConnState (remoteAddress connId) freshIdSupply connState'
+                           TerminatedState       {} -> newMutableConnState (remoteAddress connId) freshIdSupply connState'
 
                         labelTVar (connVar v') ("conn-state-" ++ show connId)
                         return (v', Just connState0')
@@ -1623,7 +1431,7 @@ withConnectionManager args@ConnectionManagerArguments {
               let connState' = ReservedOutboundState
               (mutableConnState :: MutableConnState peerAddr handle handleError
                                                     version m)
-                <- newMutableConnState freshIdSupply connState'
+                <- newMutableConnState peerAddr freshIdSupply connState'
               -- TODO: label `connVar` using 'ConnectionId'
               labelTVar (connVar mutableConnState) ("conn-state-" ++ show peerAddr)
 
