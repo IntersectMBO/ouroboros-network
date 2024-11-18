@@ -49,6 +49,7 @@ import Foreign.C.Error
 
 import Network.Mux qualified as Mx
 import Ouroboros.Network.ConnectionHandler
+import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.ConnectionManager.InformationChannel
            (InboundGovernorInfoChannel)
 import Ouroboros.Network.ConnectionManager.Types
@@ -236,15 +237,19 @@ with Arguments {
                 -- no need to use a rethrow policy
                 _ -> throwIO err
 
-            (Accepted socket peerAddr, acceptNext) ->
+            (Accepted socket remoteAddress, acceptNext) ->
               (do
-                  traceWith tracer (TrAcceptConnection peerAddr)
+                  localAddress' <- getLocalAddr snocket socket
+                  let connId = ConnectionId { localAddress = localAddress',
+                                              remoteAddress }
+                  traceWith tracer (TrAcceptConnection connId)
                   async $
-                    do a <-
+                    do
+                       a <-
                          unmask
                            (includeInboundConnection
                              connectionManager
-                             hardLimit socket peerAddr)
+                             hardLimit socket connId)
                        case a of
                          Connected {}    -> pure ()
                          Disconnected {} -> close snocket socket
@@ -281,7 +286,7 @@ isECONNABORTED _ = False
 --
 
 data Trace peerAddr
-    = TrAcceptConnection            peerAddr
+    = TrAcceptConnection            (ConnectionId peerAddr)
     | TrAcceptError                 SomeException
     | TrAcceptPolicyTrace           AcceptConnectionsPolicyTrace
     | TrServerStarted               [peerAddr]

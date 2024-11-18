@@ -403,8 +403,7 @@ with
           -- @
           -- NOTE: `demotedToColdRemote` doesn't throw, hence exception handling
           -- is not needed.
-          res <- demotedToColdRemote connectionManager
-                                     (remoteAddress connId)
+          res <- demotedToColdRemote connectionManager connId
           traceWith tracer (TrWaitIdleRemote connId res)
           case res of
             TerminatedConnection {} -> do
@@ -445,8 +444,7 @@ with
           --
           -- NOTE: `promotedToWarmRemote` doesn't throw, hence exception handling
           -- is not needed.
-          res <- promotedToWarmRemote connectionManager
-                                      (remoteAddress connId)
+          res <- promotedToWarmRemote connectionManager connId
           traceWith tracer (TrPromotedToWarmRemote connId res)
 
           when (resultInState res == UnknownConnectionSt) $ do
@@ -479,8 +477,7 @@ with
         CommitRemote connId -> do
           -- NOTE: `releaseInboundConnection` doesn't throw, hence exception
           -- handling is not needed.
-          res <- releaseInboundConnection connectionManager
-                                          (remoteAddress connId)
+          res <- releaseInboundConnection connectionManager connId
           traceWith tracer $ TrDemotedToColdRemote connId res
           case res of
             UnsupportedState {} -> do
