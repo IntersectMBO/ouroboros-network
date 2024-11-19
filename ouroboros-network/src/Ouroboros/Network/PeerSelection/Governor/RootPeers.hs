@@ -25,7 +25,7 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRo
 --
 
 belowTarget :: (MonadSTM m, Ord peeraddr)
-            => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI peeraddr peerconn m
+            => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI extraCounters peeraddr peerconn m
             -> Time
             -> PeerSelectionState extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn
             -> Guarded (STM m) (TimedDecision m extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
@@ -73,9 +73,9 @@ belowTarget actions
     maxExtraRootPeers = targetNumberOfRootPeers - numRootPeers
 
 
-jobReqPublicRootPeers :: forall m extraActions extraState extraFlags extraAPI peeraddr peerconn.
+jobReqPublicRootPeers :: forall m extraActions extraState extraFlags extraAPI extraCounters peeraddr peerconn.
                          (MonadSTM m, Ord peeraddr)
-                      => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI peeraddr peerconn m
+                      => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI extraCounters peeraddr peerconn m
                       -> Int
                       -> Job () m (Completion m extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
 jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers

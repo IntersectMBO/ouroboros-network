@@ -80,7 +80,7 @@ governor_BOOTSTRAP_PEERS_TIMEOUT = 15 * 60
 -- to changes in ledger state judgement monitoring actions to change the static
 -- set of target peers.
 targetPeers :: (MonadSTM m, Ord peeraddr)
-            => PeerSelectionActions (CardanoPeerSelectionActions m) extraPeers extraFlags extraAPI peeraddr peerconn m
+            => PeerSelectionActions (CardanoPeerSelectionActions m) extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
             -> PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn
             -> Guarded (STM m) (TimedDecision m CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
 targetPeers PeerSelectionActions{ originalPeerSelectionTargets,
@@ -179,9 +179,9 @@ jobs jobPool st =
 
 -- | Monitor connections.
 --
-connections :: forall m extraActions extraState extraFlags extraPeers extraAPI peeraddr peerconn.
+connections :: forall m extraActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn.
                (MonadSTM m, Ord peeraddr)
-            => PeerSelectionActions extraActions extraPeers extraFlags extraAPI peeraddr peerconn m
+            => PeerSelectionActions extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
             -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
             -> Guarded (STM m) (TimedDecision m extraState extraFlags extraPeers peeraddr peerconn)
 connections PeerSelectionActions{
@@ -382,9 +382,9 @@ connections PeerSelectionActions{
 -- peers to the following set: A*, B, C*, D*, E. Notice that B is no longer
 -- trusted, however we will keep a connection to it until the outbound
 -- governor notices it and disconnects from it.
-localRoots :: forall extraActions extraAPI peeraddr peerconn m.
+localRoots :: forall extraActions extraAPI extraCounters peeraddr peerconn m.
               (MonadSTM m, Ord peeraddr)
-            => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) PeerTrustable extraAPI peeraddr peerconn m
+            => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) PeerTrustable extraAPI extraCounters peeraddr peerconn m
             -> PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn
            -> Guarded (STM m) (TimedDecision m CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
 localRoots actions@PeerSelectionActions{ readLocalRootPeers
@@ -557,7 +557,7 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
 monitorBootstrapPeersFlag :: ( MonadSTM m
                              , Ord peeraddr
                              )
-                          => PeerSelectionActions (CardanoPeerSelectionActions m) (CardanoPublicRootPeers peeraddr) extraFlags extraAPI peeraddr peerconn m
+                          => PeerSelectionActions (CardanoPeerSelectionActions m) (CardanoPublicRootPeers peeraddr) extraFlags extraAPI extraCounters peeraddr peerconn m
                           -> PeerSelectionState CardanoPeerSelectionState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn
                           -> Guarded (STM m) (TimedDecision m CardanoPeerSelectionState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
 monitorBootstrapPeersFlag PeerSelectionActions { extraActions = CardanoPeerSelectionActions { cpsaReadUseBootstrapPeers } }
@@ -623,7 +623,7 @@ monitorBootstrapPeersFlag PeerSelectionActions { extraActions = CardanoPeerSelec
 monitorLedgerStateJudgement :: ( MonadSTM m
                                , Ord peeraddr
                                )
-                            => PeerSelectionActions (CardanoPeerSelectionActions m) (CardanoPublicRootPeers peeraddr) extraFlags (CardanoLedgerPeersConsensusInterface m) peeraddr peerconn m
+                            => PeerSelectionActions (CardanoPeerSelectionActions m) (CardanoPublicRootPeers peeraddr) extraFlags (CardanoLedgerPeersConsensusInterface m) extraCounters peeraddr peerconn m
                             -> PeerSelectionState CardanoPeerSelectionState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn
                             -> Guarded (STM m) (TimedDecision m CardanoPeerSelectionState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
 monitorLedgerStateJudgement PeerSelectionActions{
@@ -830,7 +830,7 @@ jobVerifyPeerSnapshot baseline@(LedgerPeerSnapshot (slot, _))
 -- can launch `jobVerifyPeerSnapshot`
 --
 ledgerPeerSnapshotChange :: (MonadSTM m)
-                         => PeerSelectionActions extraActions extraPeers extraFlags extraAPI peeraddr peerconn m
+                         => PeerSelectionActions extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
                          -> PeerSelectionState CardanoPeerSelectionState extraFlags extraPeers peeraddr peerconn
                          -> Guarded (STM m) (TimedDecision m CardanoPeerSelectionState extraFlags extraPeers peeraddr peerconn)
 ledgerPeerSnapshotChange PeerSelectionActions {

@@ -130,6 +130,9 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
            MinBigLedgerPeersForTrustedState, UseLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 #endif
+import Cardano.Network.PeerSelection.Governor.Types (CardanoPeerSelectionView,
+           cardanoPeerSelectionStatetoCounters)
+import Cardano.Network.PeerSelection.Governor.Types qualified as CPSV
 import Cardano.PeerSelection.PeerSelectionActions
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
            (newLedgerAndPublicRootDNSSemaphore)
@@ -180,7 +183,9 @@ runM
                     ntcAddr ntcVersion ntcVersionData
                     resolverError CardanoPeerSelectionState
                     CardanoPeerSelectionState PeerTrustable
-                    (CardanoPublicRootPeers ntnAddr) m
+                    (CardanoPublicRootPeers ntnAddr)
+                    (CardanoPeerSelectionView ntnAddr)
+                    m
     -> -- | configuration
        Arguments m ntnFd ntnAddr
                    ntcFd ntcAddr
@@ -491,7 +496,7 @@ runM Interfaces
           PraosMode   -> daPeerSelectionTargets
           GenesisMode -> caeSyncPeerTargets
 
-      countersVar <- newTVarIO emptyPeerSelectionCounters
+      countersVar <- newTVarIO (emptyPeerSelectionCounters CPSV.empty)
 
       -- Design notes:
       --  - We split the following code into two parts:
@@ -656,6 +661,7 @@ runM Interfaces
                      (CardanoPublicRootPeers ntnAddr)
                      PeerTrustable
                      (CardanoLedgerPeersConsensusInterface m)
+                     (CardanoPeerSelectionView ntnAddr)
                      ntnAddr
                      (PeerConnectionHandle
                         muxMode responderCtx peerAddr ntnVersionData bytes m a b)
@@ -686,6 +692,7 @@ runM Interfaces
                                            cpsaSyncPeerTargets       = caeSyncPeerTargets,
                                            cpsaReadUseBootstrapPeers = caeReadUseBootstrapPeers
                                          },
+                                         extraStateToExtraCounters = cardanoPeerSelectionStatetoCounters,
                                          peerStateActions
                                        })
                                        WithLedgerPeersArgs {
@@ -703,8 +710,13 @@ runM Interfaces
             -> StrictTVar m (PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers ntnAddr) ntnAddr
                               (NodeToNodePeerConnectionHandle
                                muxMode ntnAddr ntnVersionData m a b))
-            -> NodeToNodePeerSelectionActions (CardanoPeerSelectionActions m) (CardanoPublicRootPeers ntnAddr) PeerTrustable (CardanoLedgerPeersConsensusInterface m)
-                                              muxMode ntnAddr ntnVersionData m a b
+            -> NodeToNodePeerSelectionActions
+                (CardanoPeerSelectionActions m)
+                (CardanoPublicRootPeers ntnAddr)
+                PeerTrustable
+                (CardanoLedgerPeersConsensusInterface m)
+                (CardanoPeerSelectionView ntnAddr)
+                muxMode ntnAddr ntnVersionData m a b
             -> m Void
           peerSelectionGovernor' peerSelectionTracer dbgVar peerSelectionActions =
             Governor.peerSelectionGovernor
@@ -722,7 +734,6 @@ runM Interfaces
                 debugStateVar      = dbgVar,
                 readUseLedgerPeers = daReadUseLedgerPeers
               }
-
 
       --
       -- The peer churn governor:
@@ -845,7 +856,9 @@ run
     -> TracersExtra RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
                     LocalAddress  NodeToClientVersion NodeToClientVersionData
                     IOException CardanoPeerSelectionState CardanoPeerSelectionState
-                    PeerTrustable (CardanoPublicRootPeers RemoteAddress) IO
+                    PeerTrustable (CardanoPublicRootPeers RemoteAddress)
+                    (CardanoPeerSelectionView RemoteAddress)
+                    IO
     -> Arguments IO
                  Socket      RemoteAddress
                  LocalSocket LocalAddress

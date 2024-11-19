@@ -41,7 +41,7 @@ import Ouroboros.Network.PeerSharing (PeerSharingController, requestPeers)
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount (..))
 
 withPeerSelectionActions
-  :: forall extraActions extraPeers extraFlags extraAPI peeraddr peerconn resolver exception m a.
+  :: forall extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn resolver exception m a.
      ( Alternative (STM m)
      , MonadAsync m
      , MonadDelay m
@@ -54,10 +54,10 @@ withPeerSelectionActions
   -> StrictTVar m (Config extraFlags peeraddr)
   -> PeerActionsDNS peeraddr resolver exception m
   -> ( (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
-     -> PeerSelectionActions extraActions extraPeers extraFlags extraAPI peeraddr peerconn m)
+     -> PeerSelectionActions extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m)
   -> WithLedgerPeersArgs extraAPI m
   -> (   (Async m Void, Async m Void)
-      -> PeerSelectionActions extraActions extraPeers extraFlags extraAPI peeraddr peerconn m
+      -> PeerSelectionActions extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
       -> m a)
   -- ^ continuation, receives a handle to the local roots peer provider thread
   -- (only if local root peers were non-empty).

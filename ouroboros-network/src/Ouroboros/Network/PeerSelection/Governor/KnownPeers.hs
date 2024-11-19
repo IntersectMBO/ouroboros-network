@@ -56,11 +56,13 @@ import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 --
 belowTarget
     :: (MonadAsync m, MonadTimer m, Ord peeraddr, Hashable peeraddr)
-    => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI peeraddr peerconn m
+    => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI extraCounters peeraddr peerconn m
     -> Time -- ^ blocked at
     -> Map peeraddr PeerSharing
     -> MkGuardedDecision CardanoPeerSelectionState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn m
-belowTarget actions@PeerSelectionActions { peerSharing }
+belowTarget actions@PeerSelectionActions {
+              peerSharing
+            }
             blockedAt
             inboundPeers
             policy@PeerSelectionPolicy {
@@ -232,9 +234,9 @@ belowTarget actions@PeerSelectionActions { peerSharing }
 --
 -- If we ask for more peers than needed a random subset of the peers in the filtered result
 -- is used.
-jobPeerShare :: forall m extraActions extraState extraFlags extraPeers extraAPI peeraddr peerconn.
+jobPeerShare :: forall m extraActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn.
                 (MonadAsync m, MonadTimer m, Ord peeraddr, Hashable peeraddr)
-             => PeerSelectionActions extraActions extraPeers extraFlags extraAPI peeraddr peerconn m
+             => PeerSelectionActions extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
              -> PeerSelectionPolicy peeraddr m
              -> Int
              -> Int
