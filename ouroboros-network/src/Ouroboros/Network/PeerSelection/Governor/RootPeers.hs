@@ -18,6 +18,7 @@ import Ouroboros.Network.PeerSelection.LedgerPeers (LedgerPeersKind (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
+import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersActions (..))
 
 
 --------------------------
@@ -25,11 +26,16 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRo
 --
 
 belowTarget :: (MonadSTM m, Ord peeraddr)
-            => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI extraCounters peeraddr peerconn m
+            => PeerSelectionActions extraState extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI extraCounters peeraddr peerconn m
             -> Time
             -> PeerSelectionState extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn
             -> Guarded (STM m) (TimedDecision m extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
-belowTarget actions
+belowTarget actions@PeerSelectionActions {
+              extraPeersActions = PublicExtraPeersActions {
+                extraPeersToSet
+              },
+              extraStateToExtraCounters
+            }
             blockedAt
             st@PeerSelectionState {
               publicRootRetryTime,
@@ -68,17 +74,18 @@ belowTarget actions
         numberOfRootPeers = numRootPeers
       }
       =
-      peerSelectionStateToCounters st
+      peerSelectionStateToCounters extraPeersToSet extraStateToExtraCounters st
 
     maxExtraRootPeers = targetNumberOfRootPeers - numRootPeers
 
 
 jobReqPublicRootPeers :: forall m extraActions extraState extraFlags extraAPI extraCounters peeraddr peerconn.
                          (MonadSTM m, Ord peeraddr)
-                      => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI extraCounters peeraddr peerconn m
+                      => PeerSelectionActions extraState extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI extraCounters peeraddr peerconn m
                       -> Int
                       -> Job () m (Completion m extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
 jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
+                                          , extraPeersActions
                                           }
                       numExtraAllowed =
     Job job (return . handler) () "reqPublicRootPeers"
@@ -115,8 +122,11 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
     job = do
       (results, ttl) <- requestPublicRootPeers AllLedgerPeers numExtraAllowed
       return $ Completion $ \st now ->
-        let newPeers = results `PublicRootPeers.difference` LocalRootPeers.keysSet (localRootPeers st)
-                               `PublicRootPeers.difference` PublicRootPeers.toSet (publicRootPeers st)
+        let newPeers =
+              PublicRootPeers.difference (differenceExtraPeers extraPeersActions)
+                (PublicRootPeers.difference (differenceExtraPeers extraPeersActions)
+                   results (LocalRootPeers.keysSet (localRootPeers st)))
+                (PublicRootPeers.toSet (extraPeersToSet extraPeersActions) (publicRootPeers st))
             publicRootPeers'  = publicRootPeers st <> newPeers
             publicConfigPeers = PublicRootPeers.getPublicConfigPeers publicRootPeers'
             bootstrapPeers    = PublicRootPeers.getBootstrapPeers publicRootPeers'
@@ -153,7 +163,7 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
             -- seconds is about 4 minutes.
             publicRootBackoffs' :: Int
             publicRootBackoffs'
-              | PublicRootPeers.null newPeers = (publicRootBackoffs st `max` 0) + 1
+              | PublicRootPeers.null (nullExtraPeers extraPeersActions) newPeers = (publicRootBackoffs st `max` 0) + 1
               | otherwise                     = 0
 
             publicRootRetryDiffTime :: DiffTime
@@ -166,7 +176,7 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
             publicRootRetryTime = addTime publicRootRetryDiffTime now
 
          in assert (Set.isSubsetOf
-                     (PublicRootPeers.toSet publicRootPeers')
+                     (PublicRootPeers.toSet (extraPeersToSet extraPeersActions) publicRootPeers')
                      (KnownPeers.toSet knownPeers''))
 
              Decision {

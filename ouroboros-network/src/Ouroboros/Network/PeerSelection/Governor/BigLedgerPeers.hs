@@ -21,7 +21,6 @@ import Control.Monad.Class.MonadTime.SI
 import Cardano.Network.PeerSelection.Bootstrap (requiresBootstrapPeers)
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState
            (CardanoPeerSelectionState (..))
-import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.LedgerPeers (LedgerPeersKind (..))
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
@@ -32,12 +31,17 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRo
 import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersActions (..))
 
 
-belowTarget :: (MonadSTM m, Ord peeraddr)
-            => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI extraCounters peeraddr peerconn m
+belowTarget :: (MonadSTM m, Ord peeraddr, Semigroup extraPeers)
+            => PeerSelectionActions CardanoPeerSelectionState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
             -> Time
-            -> PeerSelectionState CardanoPeerSelectionState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn
-            -> Guarded (STM m) (TimedDecision m CardanoPeerSelectionState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
-belowTarget actions
+            -> PeerSelectionState CardanoPeerSelectionState extraFlags extraPeers peeraddr peerconn
+            -> Guarded (STM m) (TimedDecision m CardanoPeerSelectionState extraFlags extraPeers peeraddr peerconn)
+belowTarget actions@PeerSelectionActions {
+              extraPeersActions = PublicExtraPeersActions {
+                extraPeersToSet
+              },
+              extraStateToExtraCounters
+            }
             blockedAt
             st@PeerSelectionState {
               bigLedgerPeerRetryTime,
@@ -76,18 +80,23 @@ belowTarget actions
         numberOfKnownBigLedgerPeers = numBigLedgerPeers
       }
       =
-      peerSelectionStateToCounters st
+      peerSelectionStateToCounters extraPeersToSet extraStateToExtraCounters st
 
     maxExtraBigLedgerPeers = targetNumberOfKnownBigLedgerPeers
                            - numBigLedgerPeers
 
 
-jobReqBigLedgerPeers :: forall m extraActions extraState extraFlags extraAPI extraCounters peeraddr peerconn.
-                        (MonadSTM m, Ord peeraddr)
-                     => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI extraCounters peeraddr peerconn m
+jobReqBigLedgerPeers :: forall m extraActions extraState extraFlags extraAPI extraPeers extraCounters peeraddr peerconn.
+                        (MonadSTM m, Ord peeraddr, Semigroup extraPeers)
+                     => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
                      -> Int
-                     -> Job () m (Completion m extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
+                     -> Job () m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
 jobReqBigLedgerPeers PeerSelectionActions {
+                       extraPeersActions = PublicExtraPeersActions {
+                         extraPeersToSet,
+                         differenceExtraPeers,
+                         nullExtraPeers
+                       },
                        requestPublicRootPeers
                      }
                      numExtraAllowed =
@@ -121,20 +130,23 @@ jobReqBigLedgerPeers PeerSelectionActions {
             decisionJobs  = []
           }
 
-    job :: m (Completion m extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
+    job :: m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
     job = do
       (results, ttl) <- requestPublicRootPeers BigLedgerPeers numExtraAllowed
       return $ Completion $ \st now ->
         let -- We make sure the set of big ledger peers disjoint from the sum
             -- of local, public and ledger peers.
-            newPeers :: PublicRootPeers (CardanoPublicRootPeers peeraddr) peeraddr
-            newPeers = results
-                       `PublicRootPeers.difference`
-                       (   LocalRootPeers.keysSet (localRootPeers st)
-                        <> PublicRootPeers.toSet (publicRootPeers st))
+            newPeers :: PublicRootPeers extraPeers peeraddr
+            newPeers =
+              PublicRootPeers.difference differenceExtraPeers
+                results
+                (   LocalRootPeers.keysSet (localRootPeers st)
+                 <> PublicRootPeers.toSet extraPeersToSet (publicRootPeers st))
 
-            newPeersSet      = PublicRootPeers.toSet newPeers
-            publicRootPeers' = publicRootPeers st <> newPeers
+            newPeersSet      = PublicRootPeers.toSet extraPeersToSet newPeers
+            publicRootPeers' =
+              PublicRootPeers.mergeG extraPeersToSet
+                (publicRootPeers st) newPeers
 
             knownPeers'
                      = KnownPeers.insert
@@ -155,7 +167,7 @@ jobReqBigLedgerPeers PeerSelectionActions {
             -- seconds is just over four minutes.
             bigLedgerPeerBackoffs' :: Int
             bigLedgerPeerBackoffs'
-              | PublicRootPeers.null newPeers = (bigLedgerPeerBackoffs st `max` 0) + 1
+              | PublicRootPeers.null nullExtraPeers newPeers = (bigLedgerPeerBackoffs st `max` 0) + 1
               | otherwise = 0
 
             bigLedgerPeerRetryDiffTime :: DiffTime
@@ -183,10 +195,19 @@ jobReqBigLedgerPeers PeerSelectionActions {
              }
 
 
-aboveTarget :: forall m extraState extraFlags extraCounters peeraddr peerconn.
+aboveTarget :: forall m extraState extraActions extraFlags extraAPI extraPeers extraCounters peeraddr peerconn.
                (Alternative (STM m), MonadSTM m, Ord peeraddr, HasCallStack)
-            => MkGuardedDecision extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn m
-aboveTarget PeerSelectionPolicy {policyPickColdPeersToForget}
+                 => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
+                 -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
+aboveTarget PeerSelectionActions {
+              extraPeersActions = PublicExtraPeersActions {
+                extraPeersToSet,
+                differenceExtraPeers,
+                memberExtraPeers
+              }
+              , extraStateToExtraCounters
+            }
+            PeerSelectionPolicy {policyPickColdPeersToForget}
             st@PeerSelectionState {
                  publicRootPeers,
                  knownPeers,
@@ -210,13 +231,15 @@ aboveTarget PeerSelectionPolicy {policyPickColdPeersToForget}
     = Guarded Nothing $ do
         let numPeersCanForget = numKnownBigLedgerPeers
                               - targetNumberOfKnownBigLedgerPeers
-        selectedToForget <- pickPeers st
+        selectedToForget <- pickPeers memberExtraPeers st
                                       policyPickColdPeersToForget
                                       availableToForget
                                       numPeersCanForget
         return $ \_now ->
           let knownPeers'     = KnownPeers.delete selectedToForget knownPeers
-              publicRootPeers' = PublicRootPeers.difference publicRootPeers selectedToForget
+              publicRootPeers' =
+                PublicRootPeers.difference differenceExtraPeers
+                  publicRootPeers selectedToForget
           in Decision {
                decisionTrace = [TraceForgetBigLedgerPeers
                                   targetNumberOfKnownBigLedgerPeers
@@ -237,6 +260,4 @@ aboveTarget PeerSelectionPolicy {policyPickColdPeersToForget}
     PeerSelectionView {
         viewKnownBigLedgerPeers       = (_, numKnownBigLedgerPeers),
         viewEstablishedBigLedgerPeers = (establishedBigLedgerPeers, numEstablishedBigLedgerPeers)
-      }
-      =
-      peerSelectionStateToView st
+      } = peerSelectionStateToView extraPeersToSet extraStateToExtraCounters st

@@ -80,14 +80,15 @@ governor_BOOTSTRAP_PEERS_TIMEOUT = 15 * 60
 -- to changes in ledger state judgement monitoring actions to change the static
 -- set of target peers.
 targetPeers :: (MonadSTM m, Ord peeraddr)
-            => PeerSelectionActions (CardanoPeerSelectionActions m) extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
-            -> PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn
-            -> Guarded (STM m) (TimedDecision m CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
+            => PeerSelectionActions CardanoPeerSelectionState (CardanoPeerSelectionActions m) extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
+            -> PeerSelectionState CardanoPeerSelectionState PeerTrustable extraPeers peeraddr peerconn
+            -> Guarded (STM m) (TimedDecision m CardanoPeerSelectionState PeerTrustable extraPeers peeraddr peerconn)
 targetPeers PeerSelectionActions{ originalPeerSelectionTargets,
                                   readPeerSelectionTargets,
                                   extraActions = CardanoPeerSelectionActions {
                                     cpsaSyncPeerTargets
-                                  }
+                                  },
+                                  extraPeersActions
                                 }
             st@PeerSelectionState{
               publicRootPeers,
@@ -150,9 +151,9 @@ targetPeers PeerSelectionActions{ originalPeerSelectionTargets,
             $ localRootPeers
 
           -- We have to enforce that local and big ledger peers are disjoint.
-          publicRootPeers' = publicRootPeers
-                             `PublicRootPeers.difference`
-                             LocalRootPeers.keysSet localRootPeers'
+          publicRootPeers' =
+            PublicRootPeers.difference (differenceExtraPeers extraPeersActions)
+              publicRootPeers (LocalRootPeers.keysSet localRootPeers')
 
       return $ \_now -> Decision {
         decisionTrace = [TraceTargetsChanged targets targets'],
@@ -181,7 +182,7 @@ jobs jobPool st =
 --
 connections :: forall m extraActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn.
                (MonadSTM m, Ord peeraddr)
-            => PeerSelectionActions extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
+            => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
             -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
             -> Guarded (STM m) (TimedDecision m extraState extraFlags extraPeers peeraddr peerconn)
 connections PeerSelectionActions{
@@ -384,10 +385,11 @@ connections PeerSelectionActions{
 -- governor notices it and disconnects from it.
 localRoots :: forall extraActions extraAPI extraCounters peeraddr peerconn m.
               (MonadSTM m, Ord peeraddr)
-            => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) PeerTrustable extraAPI extraCounters peeraddr peerconn m
+            => PeerSelectionActions CardanoPeerSelectionState extraActions (CardanoPublicRootPeers peeraddr) PeerTrustable extraAPI extraCounters peeraddr peerconn m
             -> PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn
            -> Guarded (STM m) (TimedDecision m CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
 localRoots actions@PeerSelectionActions{ readLocalRootPeers
+                                       , extraPeersActions
                                        }
            st@PeerSelectionState{
              localRootPeers,
@@ -444,9 +446,10 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
           -- We have to adjust the publicRootPeers to maintain the invariant
           -- that the local and public sets are non-overlapping.
           --
-          publicRootPeers' = publicRootPeers
-                             `PublicRootPeers.difference`
-                             localRootPeersSet
+          publicRootPeers' =
+            PublicRootPeers.difference (differenceExtraPeers extraPeersActions)
+              publicRootPeers
+              localRootPeersSet
 
           -- Non trustable peers that the outbound governor might keep. These
           -- should be demoted forgot as soon as possible. In order to do that
@@ -494,7 +497,8 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
       return $ \_now ->
 
           assert (Set.isSubsetOf
-                    (PublicRootPeers.toSet publicRootPeers')
+                    (PublicRootPeers.toSet (extraPeersToSet extraPeersActions)
+                                           publicRootPeers')
                    (KnownPeers.toSet knownPeers'))
         . assert (Set.isSubsetOf
                    (LocalRootPeers.keysSet localRootPeers')
@@ -557,10 +561,12 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
 monitorBootstrapPeersFlag :: ( MonadSTM m
                              , Ord peeraddr
                              )
-                          => PeerSelectionActions (CardanoPeerSelectionActions m) (CardanoPublicRootPeers peeraddr) extraFlags extraAPI extraCounters peeraddr peerconn m
+                          => PeerSelectionActions CardanoPeerSelectionState (CardanoPeerSelectionActions m) (CardanoPublicRootPeers peeraddr) extraFlags extraAPI extraCounters peeraddr peerconn m
                           -> PeerSelectionState CardanoPeerSelectionState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn
                           -> Guarded (STM m) (TimedDecision m CardanoPeerSelectionState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
-monitorBootstrapPeersFlag PeerSelectionActions { extraActions = CardanoPeerSelectionActions { cpsaReadUseBootstrapPeers } }
+monitorBootstrapPeersFlag PeerSelectionActions { extraActions = CardanoPeerSelectionActions { cpsaReadUseBootstrapPeers }
+                                               , extraPeersActions
+                                               }
                           st@PeerSelectionState { knownPeers
                                                 , establishedPeers
                                                 , publicRootPeers
@@ -592,7 +598,7 @@ monitorBootstrapPeersFlag PeerSelectionActions { extraActions = CardanoPeerSelec
                    nonEstablishedBootstrapPeers
                    knownPeers
              , publicRootPeers =
-                 PublicRootPeers.difference
+                 PublicRootPeers.difference (differenceExtraPeers extraPeersActions)
                    publicRootPeers
                    nonEstablishedBootstrapPeers
              , extraState = cpst {
@@ -623,7 +629,7 @@ monitorBootstrapPeersFlag PeerSelectionActions { extraActions = CardanoPeerSelec
 monitorLedgerStateJudgement :: ( MonadSTM m
                                , Ord peeraddr
                                )
-                            => PeerSelectionActions (CardanoPeerSelectionActions m) (CardanoPublicRootPeers peeraddr) extraFlags (CardanoLedgerPeersConsensusInterface m) extraCounters peeraddr peerconn m
+                            => PeerSelectionActions CardanoPeerSelectionState (CardanoPeerSelectionActions m) (CardanoPublicRootPeers peeraddr) extraFlags (CardanoLedgerPeersConsensusInterface m) extraCounters peeraddr peerconn m
                             -> PeerSelectionState CardanoPeerSelectionState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn
                             -> Guarded (STM m) (TimedDecision m CardanoPeerSelectionState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
 monitorLedgerStateJudgement PeerSelectionActions{
@@ -632,6 +638,7 @@ monitorLedgerStateJudgement PeerSelectionActions{
                                   clpciGetLedgerStateJudgement = readLedgerStateJudgement
                                 }
                               }
+                            , extraPeersActions
                             }
                             st@PeerSelectionState{ publicRootPeers,
                                                    knownPeers,
@@ -707,7 +714,7 @@ monitorLedgerStateJudgement PeerSelectionActions{
                   nonEstablishedBootstrapPeers
                   knownPeers
             , publicRootPeers =
-                PublicRootPeers.difference
+                PublicRootPeers.difference (differenceExtraPeers extraPeersActions)
                   publicRootPeers
                   nonEstablishedBootstrapPeers
             , publicRootBackoffs = 0
@@ -830,7 +837,7 @@ jobVerifyPeerSnapshot baseline@(LedgerPeerSnapshot (slot, _))
 -- can launch `jobVerifyPeerSnapshot`
 --
 ledgerPeerSnapshotChange :: (MonadSTM m)
-                         => PeerSelectionActions extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
+                         => PeerSelectionActions CardanoPeerSelectionState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
                          -> PeerSelectionState CardanoPeerSelectionState extraFlags extraPeers peeraddr peerconn
                          -> Guarded (STM m) (TimedDecision m CardanoPeerSelectionState extraFlags extraPeers peeraddr peerconn)
 ledgerPeerSnapshotChange PeerSelectionActions {

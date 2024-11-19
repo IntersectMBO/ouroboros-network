@@ -488,6 +488,7 @@ peerSelectionGovernor :: ( Alternative (STM m)
                       -> CardanoPeerSelectionState
                       -> CardanoPublicRootPeers peeraddr
                       -> PeerSelectionActions
+                          CardanoPeerSelectionState
                           (CardanoPeerSelectionActions m)
                           (CardanoPublicRootPeers peeraddr)
                           PeerTrustable
@@ -547,6 +548,7 @@ peerSelectionGovernorLoop :: forall m peeraddr peerconn.
                           -> Tracer m (DebugPeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr)
                           -> Tracer m (PeerSelectionCounters (CardanoPeerSelectionView peeraddr))
                           -> PeerSelectionActions
+                              CardanoPeerSelectionState
                               (CardanoPeerSelectionActions m)
                               (CardanoPublicRootPeers peeraddr)
                               PeerTrustable
@@ -571,15 +573,14 @@ peerSelectionGovernorLoop tracer
                           debugTracer
                           countersTracer
                           actions@PeerSelectionActions {
-                            peerSharing,
-                            getLedgerStateCtx = LedgerPeersConsensusInterface {
-                              lpExtraAPI = CardanoLedgerPeersConsensusInterface {
-                                clpciUpdateOutboundConnectionsState
-                              }
+                            extraPeersActions = PublicExtraPeersActions {
+                              extraPeersToSet
+                            , invariantExtraPeers
                             }
+                          , extraStateToExtraCounters
                           }
                           policy
-                          interfaces@PeerSelectionInterfaces {
+                          PeerSelectionInterfaces {
                             countersVar,
                             publicStateVar,
                             debugStateVar
@@ -591,7 +592,7 @@ peerSelectionGovernorLoop tracer
     loop :: PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn
          -> Time
          -> m Void
-    loop !st !dbgUpdateAt = assertPeerSelectionState st $ do
+    loop !st !dbgUpdateAt = assertPeerSelectionState extraPeersToSet invariantExtraPeers st $ do
       -- Update public state using 'toPublicState' to compute available peers
       -- to share for peer sharing
       atomically $ writeTVar publicStateVar (toPublicState st)
