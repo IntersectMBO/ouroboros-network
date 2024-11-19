@@ -76,6 +76,8 @@ import Cardano.Network.PeerSelection.Governor.PeerSelectionActions
            (CardanoPeerSelectionActions)
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState
            (CardanoPeerSelectionState (..))
+import Cardano.Network.PeerSelection.Governor.Types
+           (CardanoPeerSelectionView (..))
 import Cardano.Network.PeerSelection.LocalRootPeers
            (OutboundConnectionsState (..))
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
@@ -481,13 +483,28 @@ peerSelectionGovernor :: ( Alternative (STM m)
                          )
                       => Tracer m (TracePeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr)
                       -> Tracer m (DebugPeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr)
-                      -> Tracer m PeerSelectionCounters
+                      -> Tracer m (PeerSelectionCounters (CardanoPeerSelectionView peeraddr))
                       -> StdGen
                       -> CardanoPeerSelectionState
                       -> CardanoPublicRootPeers peeraddr
-                      -> PeerSelectionActions (CardanoPeerSelectionActions m) (CardanoPublicRootPeers peeraddr) PeerTrustable (CardanoLedgerPeersConsensusInterface m) peeraddr peerconn m
+                      -> PeerSelectionActions
+                          (CardanoPeerSelectionActions m)
+                          (CardanoPublicRootPeers peeraddr)
+                          PeerTrustable
+                          (CardanoLedgerPeersConsensusInterface m)
+                          (CardanoPeerSelectionView peeraddr)
+                          peeraddr
+                          peerconn
+                          m
                       -> PeerSelectionPolicy  peeraddr m
-                      -> PeerSelectionInterfaces CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn m
+                      -> PeerSelectionInterfaces
+                          CardanoPeerSelectionState
+                          PeerTrustable
+                          (CardanoPublicRootPeers peeraddr)
+                          (CardanoPeerSelectionView peeraddr)
+                          peeraddr
+                          peerconn
+                          m
                       -> m Void
 peerSelectionGovernor tracer debugTracer countersTracer fuzzRng extraState extraPeers actions policy interfaces =
     JobPool.withJobPool $ \jobPool ->
@@ -528,10 +545,25 @@ peerSelectionGovernorLoop :: forall m peeraddr peerconn.
                              )
                           => Tracer m (TracePeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr)
                           -> Tracer m (DebugPeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr)
-                          -> Tracer m PeerSelectionCounters
-                          -> PeerSelectionActions (CardanoPeerSelectionActions m) (CardanoPublicRootPeers peeraddr) PeerTrustable (CardanoLedgerPeersConsensusInterface m) peeraddr peerconn m
+                          -> Tracer m (PeerSelectionCounters (CardanoPeerSelectionView peeraddr))
+                          -> PeerSelectionActions
+                              (CardanoPeerSelectionActions m)
+                              (CardanoPublicRootPeers peeraddr)
+                              PeerTrustable
+                              (CardanoLedgerPeersConsensusInterface m)
+                              (CardanoPeerSelectionView peeraddr)
+                              peeraddr
+                              peerconn
+                              m
                           -> PeerSelectionPolicy  peeraddr m
-                          -> PeerSelectionInterfaces CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn m
+                          -> PeerSelectionInterfaces
+                              CardanoPeerSelectionState
+                              PeerTrustable
+                              (CardanoPublicRootPeers peeraddr)
+                              (CardanoPeerSelectionView peeraddr)
+                              peeraddr
+                              peerconn
+                              m
                           -> JobPool () m (Completion m CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
                           -> PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn
                           -> m Void
@@ -749,16 +781,18 @@ readAssociationMode
 outboundConnectionsState
     :: Ord peeraddr
     => AssociationMode
-    -> PeerSelectionSetsWithSizes peeraddr
+    -> PeerSelectionSetsWithSizes (CardanoPeerSelectionView peeraddr) peeraddr
     -> PeerSelectionState CardanoPeerSelectionState PeerTrustable extraPeers peeraddr peerconn
     -> OutboundConnectionsState
 outboundConnectionsState
     associationMode
     PeerSelectionView {
-      viewEstablishedPeers          = (viewEstablishedPeers, _),
-      viewEstablishedBootstrapPeers = (viewEstablishedBootstrapPeers, _),
-      viewActiveBootstrapPeers      = (viewActiveBootstrapPeers, _),
-      viewActiveBigLedgerPeers      = (_, activeNumBigLedgerPeers)
+      viewEstablishedPeers       = (viewEstablishedPeers, _),
+        viewActiveBigLedgerPeers = (_, activeNumBigLedgerPeers),
+      viewExtraViews = CardanoPeerSelectionView {
+        viewEstablishedBootstrapPeers = (viewEstablishedBootstrapPeers, _),
+        viewActiveBootstrapPeers      = (viewActiveBootstrapPeers, _)
+      }
     }
     PeerSelectionState {
       localRootPeers,

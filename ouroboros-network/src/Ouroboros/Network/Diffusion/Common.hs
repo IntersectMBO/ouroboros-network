@@ -250,7 +250,7 @@ data Applications ntnAddr ntnVersion ntnVersionData
 data TracersExtra ntnAddr ntnVersion ntnVersionData
                   ntcAddr ntcVersion ntcVersionData
                   resolverError extraState extraDebugState
-                  extraFlags extraPeers m =
+                  extraFlags extraPeers extraCounters m =
     TracersExtra {
       dtTraceLocalRootPeersTracer
         :: Tracer m (TraceLocalRootPeers extraFlags ntnAddr resolverError)
@@ -273,7 +273,7 @@ data TracersExtra ntnAddr ntnVersion ntnVersionData
         :: Tracer m (DebugPeerSelection extraState extraFlags extraPeers ntnAddr)
 
     , dtTracePeerSelectionCounters
-        :: Tracer m PeerSelectionCounters
+        :: Tracer m (PeerSelectionCounters extraCounters)
 
     , dtTraceChurnCounters
         :: Tracer m Governor.ChurnCounters
@@ -326,7 +326,7 @@ nullTracersExtra
   => TracersExtra ntnAddr ntnVersion ntnVersionData
                   ntcAddr ntcVersion ntcVersionData
                   resolverError extraState extraDebugState
-                  extraFlags extraPeers m
+                  extraFlags extraPeers extraCounters m
 nullTracersExtra =
     TracersExtra {
         dtTraceLocalRootPeersTracer                  = nullTracer
@@ -522,10 +522,10 @@ type NodeToNodePeerConnectionHandle (mode :: MuxMode) ntnAddr ntnVersionData m a
       ByteString
       m a b
 
-type NodeToNodePeerSelectionActions extraActions extraPeers extraFlags extraAPI
+type NodeToNodePeerSelectionActions extraActions extraPeers extraFlags extraAPI extraCounters
                                     (mode :: MuxMode) ntnAddr ntnVersionData m a b =
     PeerSelectionActions
-      extraActions extraPeers extraFlags extraAPI
+      extraActions extraPeers extraFlags extraAPI extraCounters
       ntnAddr
       (NodeToNodePeerConnectionHandle mode ntnAddr ntnVersionData m a b)
       m

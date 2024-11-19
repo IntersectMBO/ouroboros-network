@@ -107,6 +107,9 @@ import Ouroboros.Network.Server2 qualified as Server
 import System.Posix.Signals qualified as Signals
 #endif
 #ifdef POSIX
+import Cardano.Network.PeerSelection.Governor.Types (CardanoPeerSelectionView,
+           cardanoPeerSelectionStatetoCounters)
+import Cardano.Network.PeerSelection.Governor.Types qualified as CPSV
 import Ouroboros.Network.Diffusion.Policies (simplePeerSelectionPolicy)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeersConsensusInterface (..))
@@ -166,7 +169,9 @@ runM
                     ntcAddr ntcVersion ntcVersionData
                     resolverError CardanoPeerSelectionState
                     CardanoPeerSelectionState PeerTrustable
-                    (CardanoPublicRootPeers ntnAddr) m
+                    (CardanoPublicRootPeers ntnAddr)
+                    (CardanoPeerSelectionView ntnAddr)
+                    m
     -> -- | configuration
        Arguments m ntnFd ntnAddr
                    ntcFd ntcAddr
@@ -413,7 +418,7 @@ runM Interfaces
 
       peerSelectionTargetsVar <- newTVarIO daPeerSelectionTargets
 
-      countersVar <- newTVarIO emptyPeerSelectionCounters
+      countersVar <- newTVarIO (emptyPeerSelectionCounters CPSV.empty)
 
       -- Design notes:
       --  - We split the following code into two parts:
@@ -568,6 +573,7 @@ runM Interfaces
                      (CardanoPublicRootPeers ntnAddr)
                      PeerTrustable
                      (CardanoLedgerPeersConsensusInterface m)
+                     (CardanoPeerSelectionView ntnAddr)
                      ntnAddr
                      (PeerConnectionHandle
                         muxMode responderCtx peerAddr ntnVersionData bytes m a b)
@@ -598,6 +604,7 @@ runM Interfaces
                                            cpsaSyncPeerTargets       = caeSyncPeerTargets,
                                            cpsaReadUseBootstrapPeers = caeReadUseBootstrapPeers
                                          },
+                                         extraStateToExtraCounters = cardanoPeerSelectionStatetoCounters,
                                          peerStateActions
                                        })
                                        WithLedgerPeersArgs {
@@ -615,8 +622,14 @@ runM Interfaces
             -> StrictTVar m (PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers ntnAddr) ntnAddr
                               (NodeToNodePeerConnectionHandle
                                muxMode ntnAddr ntnVersionData m a b))
-            -> NodeToNodePeerSelectionActions (CardanoPeerSelectionActions m) (CardanoPublicRootPeers ntnAddr) PeerTrustable (CardanoLedgerPeersConsensusInterface m)
-                                              muxMode ntnAddr ntnVersionData m a b
+            -> NodeToNodePeerSelectionActions
+                (CardanoPeerSelectionActions m)
+                (CardanoPublicRootPeers ntnAddr)
+                PeerTrustable
+                (CardanoLedgerPeersConsensusInterface m)
+                (CardanoPeerSelectionView ntnAddr)
+                muxMode
+                ntnAddr ntnVersionData m a b
             -> m Void
           peerSelectionGovernor' peerSelectionTracer dbgVar peerSelectionActions =
             Governor.peerSelectionGovernor
@@ -758,7 +771,9 @@ run
     -> TracersExtra RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
                     LocalAddress  NodeToClientVersion NodeToClientVersionData
                     IOException CardanoPeerSelectionState CardanoPeerSelectionState
-                    PeerTrustable (CardanoPublicRootPeers RemoteAddress) IO
+                    PeerTrustable (CardanoPublicRootPeers RemoteAddress)
+                    (CardanoPeerSelectionView RemoteAddress)
+                    IO
     -> Arguments IO
                  Socket      RemoteAddress
                  LocalSocket LocalAddress

@@ -29,10 +29,11 @@ import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
+import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersActions (..))
 
 
 belowTarget :: (MonadSTM m, Ord peeraddr)
-            => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI peeraddr peerconn m
+            => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI extraCounters peeraddr peerconn m
             -> Time
             -> PeerSelectionState CardanoPeerSelectionState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn
             -> Guarded (STM m) (TimedDecision m CardanoPeerSelectionState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
@@ -81,12 +82,14 @@ belowTarget actions
                            - numBigLedgerPeers
 
 
-jobReqBigLedgerPeers :: forall m extraActions extraState extraFlags extraAPI peeraddr peerconn.
+jobReqBigLedgerPeers :: forall m extraActions extraState extraFlags extraAPI extraCounters peeraddr peerconn.
                         (MonadSTM m, Ord peeraddr)
-                     => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI peeraddr peerconn m
+                     => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI extraCounters peeraddr peerconn m
                      -> Int
                      -> Job () m (Completion m extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
-jobReqBigLedgerPeers PeerSelectionActions{ requestPublicRootPeers }
+jobReqBigLedgerPeers PeerSelectionActions {
+                       requestPublicRootPeers
+                     }
                      numExtraAllowed =
     Job job (return . handler) () "reqBigLedgerPeers"
   where
@@ -180,7 +183,7 @@ jobReqBigLedgerPeers PeerSelectionActions{ requestPublicRootPeers }
              }
 
 
-aboveTarget :: forall m extraState extraFlags peeraddr peerconn.
+aboveTarget :: forall m extraState extraFlags extraCounters peeraddr peerconn.
                (Alternative (STM m), MonadSTM m, Ord peeraddr, HasCallStack)
             => MkGuardedDecision extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn m
 aboveTarget PeerSelectionPolicy {policyPickColdPeersToForget}
