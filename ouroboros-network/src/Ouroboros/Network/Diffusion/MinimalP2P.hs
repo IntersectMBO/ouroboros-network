@@ -573,6 +573,7 @@ runM Interfaces
                  m
             -> ((Async m Void, Async m Void)
                 -> PeerSelectionActions
+                     CardanoPeerSelectionState
                      (CardanoPeerSelectionActions m)
                      (CardanoPublicRootPeers ntnAddr)
                      PeerTrustable
@@ -608,6 +609,7 @@ runM Interfaces
                                            cpsaSyncPeerTargets       = caeSyncPeerTargets,
                                            cpsaReadUseBootstrapPeers = caeReadUseBootstrapPeers
                                          },
+                                         extraPeersActions = CPRP.cardanoPublicRootPeersActions,
                                          extraStateToExtraCounters = cardanoPeerSelectionStatetoCounters,
                                          peerStateActions
                                        })
@@ -627,6 +629,7 @@ runM Interfaces
                               (NodeToNodePeerConnectionHandle
                                muxMode ntnAddr ntnVersionData m a b))
             -> NodeToNodePeerSelectionActions
+                CardanoPeerSelectionState
                 (CardanoPeerSelectionActions m)
                 (CardanoPublicRootPeers ntnAddr)
                 PeerTrustable

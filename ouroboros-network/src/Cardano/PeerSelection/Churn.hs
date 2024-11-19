@@ -36,8 +36,8 @@ import Data.Monoid.Synchronisation (FirstToFinish (..))
 import Ouroboros.Network.BlockFetch (FetchMode (..))
 import Ouroboros.Network.Diffusion.Policies (churnEstablishConnectionTimeout,
            closeConnectionTimeout, deactivateTimeout)
-import Ouroboros.Network.PeerSelection.Churn (ChurnCounters (..),
-           PeerChurnArgs (..))
+import Ouroboros.Network.PeerSelection.Churn (CheckPeerSelectionCounters,
+           ChurnCounters (..), ModifyPeerSelectionTargets, PeerChurnArgs (..))
 import Ouroboros.Network.PeerSelection.Governor.Types hiding (targets)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..))
@@ -70,10 +70,6 @@ pickChurnRegime consensus churn ubp =
     (_, _, GenesisMode)                         -> ChurnDefault
     (ChurnModeBulkSync, UseBootstrapPeers _, _) -> ChurnBootstrapPraosSync
     (ChurnModeBulkSync, _, _)                   -> ChurnPraosSync
-
--- | Facilitates composing updates to various targets via back-to-back pipeline
-type ModifyPeerSelectionTargets = PeerSelectionTargets -> PeerSelectionTargets
-type CheckPeerSelectionCounters = PeerSelectionCounters -> PeerSelectionTargets -> Bool
 
 -- | Churn governor.
 --

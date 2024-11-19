@@ -93,11 +93,12 @@ import Ouroboros.Network.PeerSelection.Governor.Monitor qualified as Monitor
 import Ouroboros.Network.PeerSelection.Governor.RootPeers qualified as RootPeers
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-           (LedgerPeersConsensusInterface (..), UseLedgerPeers (..))
+           (UseLedgerPeers (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
+import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersActions (..))
 
 {- $overview
 
@@ -488,6 +489,7 @@ peerSelectionGovernor :: ( Alternative (STM m)
                       -> CardanoPeerSelectionState
                       -> CardanoPublicRootPeers peeraddr
                       -> PeerSelectionActions
+                          CardanoPeerSelectionState
                           (CardanoPeerSelectionActions m)
                           (CardanoPublicRootPeers peeraddr)
                           PeerTrustable
@@ -547,6 +549,7 @@ peerSelectionGovernorLoop :: forall m peeraddr peerconn.
                           -> Tracer m (DebugPeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr)
                           -> Tracer m (PeerSelectionCounters (CardanoPeerSelectionView peeraddr))
                           -> PeerSelectionActions
+                              CardanoPeerSelectionState
                               (CardanoPeerSelectionActions m)
                               (CardanoPublicRootPeers peeraddr)
                               PeerTrustable
@@ -571,15 +574,14 @@ peerSelectionGovernorLoop tracer
                           debugTracer
                           countersTracer
                           actions@PeerSelectionActions {
-                            peerSharing,
-                            getLedgerStateCtx = LedgerPeersConsensusInterface {
-                              lpExtraAPI = CardanoLedgerPeersConsensusInterface {
-                                clpciUpdateOutboundConnectionsState
-                              }
+                            extraPeersActions = PublicExtraPeersActions {
+                              extraPeersToSet
+                            , invariantExtraPeers
                             }
+                          , extraStateToExtraCounters
                           }
                           policy
-                          interfaces@PeerSelectionInterfaces {
+                          PeerSelectionInterfaces {
                             countersVar,
                             publicStateVar,
                             debugStateVar
@@ -591,7 +593,7 @@ peerSelectionGovernorLoop tracer
     loop :: PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn
          -> Time
          -> m Void
-    loop !st !dbgUpdateAt = assertPeerSelectionState st $ do
+    loop !st !dbgUpdateAt = assertPeerSelectionState extraPeersToSet invariantExtraPeers st $ do
       -- Update public state using 'toPublicState' to compute available peers
       -- to share for peer sharing
       atomically $ writeTVar publicStateVar (toPublicState st)

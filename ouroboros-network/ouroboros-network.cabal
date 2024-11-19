@@ -59,6 +59,7 @@ library
     Cardano.Diffusion.Policies
     Cardano.Network.ArgumentsExtra
     Cardano.Network.LedgerPeerConsensusInterface
+    Cardano.Network.PeerSelection.Governor.Types
     Cardano.Network.PeerSelection.Governor.PeerSelectionActions
     Cardano.Network.PeerSelection.Governor.PeerSelectionState
     Cardano.Network.PeerSelection.PeerChurnArgs
@@ -106,6 +107,7 @@ library
     Ouroboros.Network.TxSubmission.Inbound
     Ouroboros.Network.TxSubmission.Mempool.Reader
     Ouroboros.Network.TxSubmission.Outbound
+    Ouroboros.Network.PeerSelection.Governor.Types
 
   other-modules:
     Ouroboros.Network.Diffusion.Utils
@@ -115,7 +117,6 @@ library
     Ouroboros.Network.PeerSelection.Governor.KnownPeers
     Ouroboros.Network.PeerSelection.Governor.Monitor
     Ouroboros.Network.PeerSelection.Governor.RootPeers
-    Ouroboros.Network.PeerSelection.Governor.Types
     Ouroboros.Network.PeerSelection.LedgerPeers.Common
     Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
 

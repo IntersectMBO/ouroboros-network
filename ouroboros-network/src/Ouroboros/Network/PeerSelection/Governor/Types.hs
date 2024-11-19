@@ -154,11 +154,10 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
            LocalRootPeers, WarmValency (..))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSelection.Types (PeerSource (..),
-           PeerStatus (PeerHot, PeerWarm))
+           PeerStatus (PeerHot, PeerWarm), PublicExtraPeersActions)
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
            PeerSharingResult (..))
 import Cardano.Network.Types (LedgerStateJudgement (..))
-import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
 import Cardano.Network.PeerSelection.Types (ChurnMode)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
 
@@ -316,7 +315,7 @@ sanePeerSelectionTargets PeerSelectionTargets{..} =
 -- * choice of known peer root sets
 -- * running both in simulation and for real
 --
-data PeerSelectionActions extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m =
+data PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m =
   PeerSelectionActions {
        -- | These are the original targets as seen in the static configuration
        --
@@ -363,6 +362,15 @@ data PeerSelectionActions extraActions extraPeers extraFlags extraAPI extraCount
        -- including the remote peer's 'PeerSharing' willingness information.
        --
        peerConnToPeerSharing :: peerconn -> PeerSharing,
+
+       -- | Public Extra Peers Actions
+       --
+       extraPeersActions :: PublicExtraPeersActions extraPeers peeraddr,
+
+       -- | Compute extraCounters from PeerSelectionState
+       extraStateToExtraCounters
+         :: PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+         -> extraCounters,
 
        -- | Request a sample of public root peers.
        --
@@ -1137,7 +1145,7 @@ peerSelectionStateToView
     availableToConnectSet = KnownPeers.availableToConnect knownPeers
 
     -- root peers
-    rootPeersSet   = PublicRootPeers.toSet publicRootPeers
+    rootPeersSet   = PublicRootPeers.toSet extraPeersToSet publicRootPeers
                   <> localRootSet
 
     -- non big ledger peers
@@ -1167,18 +1175,27 @@ peerSelectionStateToView
 
 peerSelectionStateToCounters
   :: Ord peeraddr
-  => PeerSelectionState extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn
-  -> PeerSelectionCounters
-peerSelectionStateToCounters = fmap snd . peerSelectionStateToView
+  => (extraPeers -> Set peeraddr)
+  -> (PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn -> extraCounters)
+  -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+  -> PeerSelectionCounters extraCounters
+peerSelectionStateToCounters extraPeersToSet extraStateToExtraCounters =
+    fmap snd
+  . peerSelectionStateToView extraPeersToSet
+                             extraStateToExtraCounters
 
 assertPeerSelectionState :: Ord peeraddr
-                         => PeerSelectionState extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn
+                         => (extraPeers -> Set peeraddr)
+                         -> (extraPeers -> Bool)
+                         -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
                          -> a -> a
-assertPeerSelectionState PeerSelectionState{..} =
+assertPeerSelectionState extraPeersToSet invariantExtraPeers PeerSelectionState{..} =
     assert (KnownPeers.invariant knownPeers)
   . assert (EstablishedPeers.invariant establishedPeers)
   . assert (LocalRootPeers.invariant localRootPeers)
-  . assert (PublicRootPeers.invariant publicRootPeers)
+  . assert (PublicRootPeers.invariant invariantExtraPeers
+                                      extraPeersToSet
+                                      publicRootPeers)
 
     -- The activePeers is a subset of the establishedPeers
     -- which is a subset of the known peers
@@ -1268,7 +1285,7 @@ assertPeerSelectionState PeerSelectionState{..} =
   where
     knownPeersSet       = KnownPeers.toSet knownPeers
     localRootPeersSet   = LocalRootPeers.keysSet localRootPeers
-    publicRootPeersSet  = PublicRootPeers.toSet publicRootPeers
+    publicRootPeersSet  = PublicRootPeers.toSet extraPeersToSet publicRootPeers
     bigLedgerPeers      = PublicRootPeers.getBigLedgerPeers publicRootPeers
     establishedPeersSet = EstablishedPeers.toSet      establishedPeers
     establishedReadySet = EstablishedPeers.readyPeers establishedPeers
@@ -1289,12 +1306,13 @@ assertPeerSelectionState PeerSelectionState{..} =
 -- and supply additional peer attributes from the current state.
 --
 pickPeers' :: (Ord peeraddr, Functor m, HasCallStack)
-           => (Int -> Set peeraddr -> PeerSelectionState extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn -> Bool)
+           => (Int -> Set peeraddr -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn -> Bool)
            -- ^ precondition
-           -> PeerSelectionState extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn
+           -> (peeraddr -> extraPeers -> Bool)
+           -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
            -> PickPolicy peeraddr m
            -> Set peeraddr -> Int -> m (Set peeraddr)
-pickPeers' precondition st@PeerSelectionState{localRootPeers, publicRootPeers, knownPeers}
+pickPeers' precondition memberExtraPeers st@PeerSelectionState{localRootPeers, publicRootPeers, knownPeers}
           pick available num =
     assert (precondition num available st) $
     fmap (\picked -> assert (postcondition picked) picked)
@@ -1307,10 +1325,11 @@ pickPeers' precondition st@PeerSelectionState{localRootPeers, publicRootPeers, k
     numClamped           = min num (Set.size available)
 
     peerSource p
-      | LocalRootPeers.member p localRootPeers   = PeerSourceLocalRoot
-      | PublicRootPeers.member p publicRootPeers = PeerSourcePublicRoot
-      | KnownPeers.member p knownPeers           = PeerSourcePeerShare
-      | otherwise                                = errorUnavailable
+      | PublicRootPeers.member
+          p memberExtraPeers publicRootPeers   = PeerSourcePublicRoot
+      | LocalRootPeers.member p localRootPeers = PeerSourceLocalRoot
+      | KnownPeers.member p knownPeers         = PeerSourcePeerShare
+      | otherwise                              = errorUnavailable
 
     peerConnectFailCount p =
         fromMaybe errorUnavailable $
@@ -1333,26 +1352,30 @@ pickPeers' precondition st@PeerSelectionState{localRootPeers, publicRootPeers, k
 -- | Pick some known peers.
 --
 pickPeers :: (Ord peeraddr, Functor m, HasCallStack)
-          => PeerSelectionState extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn
+          => (peeraddr -> extraPeers -> Bool)
+          -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
           -> PickPolicy peeraddr m
           -> Set peeraddr -> Int -> m (Set peeraddr)
 {-# INLINE pickPeers #-}
-pickPeers = pickPeers' (\num available PeerSelectionState { knownPeers } ->
-                            not (Set.null available) && num > 0
-                         && available `Set.isSubsetOf` KnownPeers.toSet knownPeers
-                       )
+pickPeers memberExtraPeers =
+  pickPeers' (\num available PeerSelectionState { knownPeers } ->
+       not (Set.null available) && num > 0
+    && available `Set.isSubsetOf` KnownPeers.toSet knownPeers)
+             memberExtraPeers
 
 -- | Pick some unknown peers.
 --
 pickUnknownPeers :: (Ord peeraddr, Functor m, HasCallStack)
-                 => PeerSelectionState extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn
+                 => (peeraddr -> extraPeers -> Bool)
+                 -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
                  -> PickPolicy peeraddr m
                  -> Set peeraddr -> Int -> m (Set peeraddr)
 {-# INLINE pickUnknownPeers #-}
-pickUnknownPeers = pickPeers' (\num available PeerSelectionState { knownPeers } ->
-                                   not (Set.null available) && num > 0
-                                && not (available `Set.isSubsetOf` KnownPeers.toSet knownPeers)
-                              )
+pickUnknownPeers memberExtraPeers =
+  pickPeers' (\num available PeerSelectionState { knownPeers } ->
+       not (Set.null available) && num > 0
+    && not (available `Set.isSubsetOf` KnownPeers.toSet knownPeers))
+             memberExtraPeers
 
 ---------------------------
 -- Peer Selection Decisions

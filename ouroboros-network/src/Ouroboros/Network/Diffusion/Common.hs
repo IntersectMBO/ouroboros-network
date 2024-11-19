@@ -523,10 +523,10 @@ type NodeToNodePeerConnectionHandle (mode :: Mx.Mode) ntnAddr ntnVersionData m a
       ByteString
       m a b
 
-type NodeToNodePeerSelectionActions extraActions extraPeers extraFlags extraAPI extraCounters
+type NodeToNodePeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters
                                     (mode :: Mx.Mode) ntnAddr ntnVersionData m a b =
     PeerSelectionActions
-      extraActions extraPeers extraFlags extraAPI extraCounters
+      extraState extraActions extraPeers extraFlags extraAPI extraCounters
       ntnAddr
       (NodeToNodePeerConnectionHandle mode ntnAddr ntnVersionData m a b)
       m
