@@ -32,6 +32,7 @@ encodeRemoteAddress =
   \case
     NodeToNodeV_13 -> sockAddr
     NodeToNodeV_14 -> sockAddr
+    NodeToNodeV_15 -> sockAddr
 
   where
     sockAddr = \case
@@ -58,6 +59,7 @@ decodeRemoteAddress =
   \case
     NodeToNodeV_13 -> decoder13
     NodeToNodeV_14 -> decoder13
+    NodeToNodeV_15 -> decoder13
 
   where
     decoder13 = do
