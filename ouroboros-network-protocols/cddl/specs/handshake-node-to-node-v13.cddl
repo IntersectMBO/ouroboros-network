@@ -14,7 +14,7 @@ msgQueryReply      = [3, versionTable]
 
 versionTable = { * versionNumber => nodeToNodeVersionData }
 
-versionNumber = 13 / 14
+versionNumber = 13 / 14 / 15
 
 nodeToNodeVersionData = [ networkMagic, initiatorOnlyDiffusionMode, peerSharing, query ]
 
