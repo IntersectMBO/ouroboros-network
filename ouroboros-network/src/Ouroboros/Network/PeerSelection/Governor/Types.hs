@@ -34,6 +34,9 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , PeerStateActions (..)
   , PeerSelectionActions (..)
   , PeerSelectionInterfaces (..)
+  , MonitoringAction
+  , ExtraGuardedDecisions (..)
+  , PeerSelectionGovernorArgs (..)
     -- * P2P governor internals
   , PeerSelectionState (..)
   , emptyPeerSelectionState
@@ -464,6 +467,62 @@ data PeerStateActions peeraddr peerconn m = PeerStateActions {
     -- | Close a connection: warm to cold transition.
     --
     closePeerConnection      :: peerconn -> m ()
+  }
+
+-----------------------
+-- Extra Guarded Decisions
+--
+type MonitoringAction extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m =
+  [  PeerSelectionPolicy peeraddr m
+  -> PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
+  -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+  -> Guarded (STM m) (TimedDecision m extraState extraFlags extraPeers peeraddr peerconn)
+  ]
+
+data ExtraGuardedDecisions extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m =
+  ExtraGuardedDecisions {
+
+    -- | This list of guarded decisions will come before all default possibly
+    -- blocking -- decisions. The order matters, making the first decisions
+    -- have priority over the later ones.
+    --
+    -- Note that these actions should be blocking.
+    preBlocking      :: MonitoringAction extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m
+
+    -- | This list of guarded decisions will come after all possibly preBlocking
+    -- and default blocking decisions. The order matters, making the first
+    -- decisions have priority over the later ones.
+    --
+    -- Note that these actions should be blocking.
+  , postBlocking     :: MonitoringAction extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m
+
+    -- | This list of guarded decisions will come before all default non-blocking
+    -- decisions. The order matters, making the first decisions have priority over
+    -- the later ones.
+    --
+    -- Note that these actions should not be blocking.
+  , preNonBlocking   :: MonitoringAction extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m
+
+    -- | This list of guarded decisions will come before all preNonBlocking and
+    -- default non-blocking decisions. The order matters, making the first
+    -- decisions have priority over the later ones.
+    --
+    -- Note that these actions should not be blocking.
+  , postNonBlocking  :: MonitoringAction extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m
+  }
+
+-----------------------
+-- Peer Selection Arguments
+--
+
+data PeerSelectionGovernorArgs extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn exception m =
+  PeerSelectionGovernorArgs {
+    abortGovernor :: PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+                  -> Maybe exception
+  , updateWithState :: PeerSelectionSetsWithSizes extraCounters peeraddr
+                    -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+                    -> STM m ()
+  , extraDecisions :: ExtraGuardedDecisions extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m
   }
 
 -----------------------
@@ -1444,6 +1503,10 @@ instance Alternative m => Semigroup (Guarded m a) where
   Guarded'     ta a <> GuardedSkip' tb   = Guarded'     (ta <> tb)  a
   GuardedSkip' ta   <> Guarded'     tb b = Guarded'     (ta <> tb)  b
   GuardedSkip' ta   <> GuardedSkip' tb   = GuardedSkip' (ta <> tb)
+
+instance Alternative m => Monoid (Guarded m a) where
+  mempty = GuardedSkip' mempty
+  mappend = (<>)
 
 
 data Decision m extraState extraFlags extraPeers peeraddr peerconn = Decision {

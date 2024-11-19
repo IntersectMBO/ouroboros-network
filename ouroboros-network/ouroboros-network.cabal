@@ -62,6 +62,7 @@ library
     Cardano.Network.PeerSelection.Governor.Types
     Cardano.Network.PeerSelection.Governor.PeerSelectionActions
     Cardano.Network.PeerSelection.Governor.PeerSelectionState
+    Cardano.Network.PeerSelection.Governor.Monitor
     Cardano.Network.PeerSelection.PeerChurnArgs
     Cardano.Network.PeerSelection.Types
     Cardano.Network.PublicRootPeers

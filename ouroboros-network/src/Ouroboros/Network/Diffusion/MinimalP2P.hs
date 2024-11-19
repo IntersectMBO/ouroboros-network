@@ -618,6 +618,24 @@ runM Interfaces
                                          wlpSemaphore             = dnsSemaphore
                                        }
 
+          peerSelectionGovernorArgs
+            :: PeerSelectionGovernorArgs
+                 extraState
+                 extraActions
+                 extraPeers
+                 extraAPI
+                 extraFlags
+                 extraCounters
+                 ntnAddr
+                 peerconn
+                 exception
+                 m
+          peerSelectionGovernorArgs = PeerSelectionGovernorArgs {
+            abortGovernor   = const Nothing
+          , updateWithState = \_ _ -> pure ()
+          , extraDecisions  = ExtraGuardedDecisions [] [] [] []
+          }
+
           peerSelectionGovernor'
             :: forall (muxMode :: MuxMode) b.
                Tracer m (DebugPeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers ntnAddr) ntnAddr)
@@ -639,6 +657,7 @@ runM Interfaces
               dtTracePeerSelectionTracer
               peerSelectionTracer
               dtTracePeerSelectionCounters
+              peerSelectionGovernorArgs
               fuzzRng
               (CPST.empty caeConsensusMode caeMinBigLedgerPeersForTrustedState)
               CPRP.empty
