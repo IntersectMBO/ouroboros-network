@@ -99,6 +99,7 @@ import Cardano.Network.LedgerPeerConsensusInterface
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState
            (CardanoPeerSelectionState)
+import Cardano.Network.PeerSelection.Governor.Types (CardanoPeerSelectionView)
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
 import Cardano.Network.Types (MinBigLedgerPeersForTrustedState (..))
@@ -197,7 +198,8 @@ run :: forall resolver m.
     -> Common.TracersExtra NtNAddr NtNVersion NtNVersionData
                           NtCAddr NtCVersion NtCVersionData
                           ResolverException CardanoPeerSelectionState
-                          CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers NtNAddr) m
+                          CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers NtNAddr)
+                          (CardanoPeerSelectionView NtNAddr) m
     -> Tracer m (TraceLabelPeer NtNAddr (TraceFetchClientState BlockHeader))
     -> m Void
 run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =

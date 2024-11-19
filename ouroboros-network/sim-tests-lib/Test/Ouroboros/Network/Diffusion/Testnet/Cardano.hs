@@ -476,7 +476,7 @@ prop_diffusion_nofail ioSimTrace traceNumber =
    in ioProperty $ do
      r <-
        evaluate ( List.foldl' (flip seq) True
-              $ [ assertPeerSelectionState st ()
+              $ [ assertPeerSelectionState CPRP.toSet CPRP.invariant st ()
                 | (_, DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st)) <- trace ]
               )
        `catch` \(AssertionFailed _) -> return False
@@ -1867,7 +1867,7 @@ prop_diffusion_target_established_public ioSimTrace traceNumber =
       let govPublicRootPeersSig :: Signal (Set NtNAddr)
           govPublicRootPeersSig =
             selectDiffusionPeerSelectionState
-              (PublicRootPeers.toSet . Governor.publicRootPeers)
+              (PublicRootPeers.toSet CPRP.toSet . Governor.publicRootPeers)
               events
 
           govEstablishedPeersSig :: Signal (Set NtNAddr)
@@ -1950,7 +1950,7 @@ prop_diffusion_target_active_public ioSimTrace traceNumber =
         let govPublicRootPeersSig :: Signal (Set NtNAddr)
             govPublicRootPeersSig =
               selectDiffusionPeerSelectionState
-                (PublicRootPeers.toSet . Governor.publicRootPeers)
+                (PublicRootPeers.toSet CPRP.toSet . Governor.publicRootPeers)
                 events
 
             govActivePeersSig :: Signal (Set NtNAddr)
@@ -2101,7 +2101,7 @@ prop_diffusion_target_active_root ioSimTrace traceNumber =
             govPublicRootPeersSig :: Signal (Set NtNAddr)
             govPublicRootPeersSig =
               selectDiffusionPeerSelectionState
-                (PublicRootPeers.toSet . Governor.publicRootPeers) events
+                (PublicRootPeers.toSet CPRP.toSet . Governor.publicRootPeers) events
 
             govRootPeersSig :: Signal (Set NtNAddr)
             govRootPeersSig = Set.union <$> govLocalRootPeersSig
