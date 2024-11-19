@@ -197,7 +197,8 @@ run :: forall resolver m.
     -> Common.TracersExtra NtNAddr NtNVersion NtNVersionData
                           NtCAddr NtCVersion NtCVersionData
                           ResolverException CardanoPeerSelectionState
-                          CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers NtNAddr) m
+                          CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers NtNAddr)
+                          (CardanoPeerSelectionView NtNAddr) m
     -> Tracer m (TraceLabelPeer NtNAddr (TraceFetchClientState BlockHeader))
     -> m Void
 run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =

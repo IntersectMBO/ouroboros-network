@@ -132,7 +132,15 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
            MinBigLedgerPeersForTrustedState, UseLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 #endif
+import Cardano.Network.PeerSelection.Governor.Monitor
+           (monitorBootstrapPeersFlag, monitorLedgerStateJudgement,
+           waitForSystemToQuiesce)
+import Cardano.Network.PeerSelection.Governor.Types (CardanoPeerSelectionView,
+           cardanoPeerSelectionStatetoCounters)
+import Cardano.Network.PeerSelection.Governor.Types qualified as CPSV
 import Cardano.PeerSelection.PeerSelectionActions
+import Ouroboros.Network.PeerSelection.Governor (outboundConnectionsState,
+           readAssociationMode)
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
            (newLedgerAndPublicRootDNSSemaphore)
 
@@ -182,7 +190,9 @@ runM
                     ntcAddr ntcVersion ntcVersionData
                     resolverError CardanoPeerSelectionState
                     CardanoPeerSelectionState PeerTrustable
-                    (CardanoPublicRootPeers ntnAddr) m
+                    (CardanoPublicRootPeers ntnAddr)
+                    (CardanoPeerSelectionView ntnAddr)
+                    m
     -> -- | configuration
        Arguments m ntnFd ntnAddr
                    ntcFd ntcAddr
@@ -493,7 +503,7 @@ runM Interfaces
           PraosMode   -> daPeerSelectionTargets
           GenesisMode -> caeSyncPeerTargets
 
-      countersVar <- newTVarIO emptyPeerSelectionCounters
+      countersVar <- newTVarIO (emptyPeerSelectionCounters CPSV.empty)
 
       -- Design notes:
       --  - We split the following code into two parts:
@@ -654,10 +664,12 @@ runM Interfaces
                  m
             -> ((Async m Void, Async m Void)
                 -> PeerSelectionActions
+                     CardanoPeerSelectionState
                      (CardanoPeerSelectionActions m)
                      (CardanoPublicRootPeers ntnAddr)
                      PeerTrustable
                      (CardanoLedgerPeersConsensusInterface m)
+                     (CardanoPeerSelectionView ntnAddr)
                      ntnAddr
                      (PeerConnectionHandle
                         muxMode responderCtx peerAddr ntnVersionData bytes m a b)
@@ -688,6 +700,8 @@ runM Interfaces
                                            cpsaSyncPeerTargets       = caeSyncPeerTargets,
                                            cpsaReadUseBootstrapPeers = caeReadUseBootstrapPeers
                                          },
+                                         extraPeersActions = CPRP.cardanoPublicRootPeersActions,
+                                         extraStateToExtraCounters = cardanoPeerSelectionStatetoCounters,
                                          peerStateActions
                                        })
                                        WithLedgerPeersArgs {
@@ -699,20 +713,71 @@ runM Interfaces
                                          wlpSemaphore             = dnsSemaphore
                                        }
 
+          peerSelectionGovernorArgs
+            :: PeerSelectionGovernorArgs
+                 CardanoPeerSelectionState
+                 (CardanoPeerSelectionActions m)
+                 (CardanoPublicRootPeers ntnAddr)
+                 (CardanoLedgerPeersConsensusInterface m)
+                 PeerTrustable
+                 (CardanoPeerSelectionView ntnAddr)
+                 ntnAddr
+                 (PeerConnectionHandle
+                        muxMode responderCtx peerAddr ntnVersionData bytes m a b)
+                 BootstrapPeersCriticalTimeoutError
+                 m
+          peerSelectionGovernorArgs = PeerSelectionGovernorArgs {
+            -- If by any chance the node takes more than 15 minutes to converge to a
+            -- clean state, we crash the node. This could happen in very rare
+            -- conditions such as a global network issue, DNS, or a bug in the code.
+            -- In any case crashing the node will force the node to be restarted,
+            -- starting in the correct state for it to make progress.
+            abortGovernor   = \st ->
+              case cpstBootstrapPeersTimeout (extraState st) of
+                Nothing -> Nothing
+                Just t
+                  | cpstBlockedAt (extraState st) >= t -> Just BootstrapPeersCriticalTimeoutError
+                  | otherwise                         -> Nothing
+          , updateWithState = \psv st -> do
+              associationMode <- readAssociationMode daReadUseLedgerPeers
+                                                     daOwnPeerSharing
+                                                     (cpstBootstrapPeersFlag (extraState st))
+              clpciUpdateOutboundConnectionsState (lpExtraAPI lpcsi)
+                (outboundConnectionsState associationMode psv st)
+          , extraDecisions  =
+              ExtraGuardedDecisions {
+                preBlocking     =
+                  [ \_ psa pst -> monitorBootstrapPeersFlag   psa pst
+                  , \_ psa pst -> monitorLedgerStateJudgement psa pst
+                  , \_ _   pst -> waitForSystemToQuiesce          pst
+                  ]
+              , postBlocking    = []
+              , preNonBlocking  = []
+              , postNonBlocking = []
+              }
+          }
+
           peerSelectionGovernor'
             :: forall (muxMode :: Mx.Mode) b.
                Tracer m (DebugPeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers ntnAddr) ntnAddr)
             -> StrictTVar m (PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers ntnAddr) ntnAddr
                               (NodeToNodePeerConnectionHandle
                                muxMode ntnAddr ntnVersionData m a b))
-            -> NodeToNodePeerSelectionActions (CardanoPeerSelectionActions m) (CardanoPublicRootPeers ntnAddr) PeerTrustable (CardanoLedgerPeersConsensusInterface m)
-                                              muxMode ntnAddr ntnVersionData m a b
+            -> NodeToNodePeerSelectionActions
+                CardanoPeerSelectionState
+                (CardanoPeerSelectionActions m)
+                (CardanoPublicRootPeers ntnAddr)
+                PeerTrustable
+                (CardanoLedgerPeersConsensusInterface m)
+                (CardanoPeerSelectionView ntnAddr)
+                muxMode ntnAddr ntnVersionData m a b
             -> m Void
           peerSelectionGovernor' peerSelectionTracer dbgVar peerSelectionActions =
             Governor.peerSelectionGovernor
               dtTracePeerSelectionTracer
               peerSelectionTracer
               dtTracePeerSelectionCounters
+              peerSelectionGovernorArgs
               fuzzRng
               (CPST.empty caeConsensusMode caeMinBigLedgerPeersForTrustedState)
               CPRP.empty
@@ -724,7 +789,6 @@ runM Interfaces
                 debugStateVar      = dbgVar,
                 readUseLedgerPeers = daReadUseLedgerPeers
               }
-
 
       --
       -- The peer churn governor:
@@ -847,7 +911,9 @@ run
     -> TracersExtra RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
                     LocalAddress  NodeToClientVersion NodeToClientVersionData
                     IOException CardanoPeerSelectionState CardanoPeerSelectionState
-                    PeerTrustable (CardanoPublicRootPeers RemoteAddress) IO
+                    PeerTrustable (CardanoPublicRootPeers RemoteAddress)
+                    (CardanoPeerSelectionView RemoteAddress)
+                    IO
     -> Arguments IO
                  Socket      RemoteAddress
                  LocalSocket LocalAddress

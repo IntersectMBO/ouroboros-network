@@ -1257,7 +1257,8 @@ diffusionSimulation
                              NtCAddr NtCVersion NtCVersionData
                              SomeException CardanoPeerSelectionState
                              CardanoPeerSelectionState PeerTrustable
-                             (CardanoPublicRootPeers NtNAddr) m
+                             (CardanoPublicRootPeers NtNAddr)
+                             (CardanoPeerSelectionView NtNAddr) m
     tracersExtra ntnAddr =
       Common.TracersExtra {
           Common.dtTraceLocalRootPeersTracer         = contramap
