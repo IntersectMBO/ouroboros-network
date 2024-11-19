@@ -4,7 +4,7 @@ import Cardano.Network.ConsensusMode (ConsensusMode)
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Cardano.Network.Types (LedgerStateJudgement (..),
            MinBigLedgerPeersForTrustedState (..))
-import Control.Monad.Class.MonadTime.SI (Time)
+import Control.Monad.Class.MonadTime.SI (Time (..))
 
 -- | Cardano Node PeerSelection State extension data type.
 -- It contain specific PeerSelection state parameters to guide the Outbound
@@ -24,6 +24,7 @@ data CardanoPeerSelectionState =
     -- | Has the governor fully reset its state
     --
   , cpstHasOnlyBootstrapPeers            :: !Bool
+  , cpstBlockedAt                        :: !Time
     -- | Has the governor fully reset its state
     -- TODO: Use strict Maybe type from cardano-base
   , cpstBootstrapPeersTimeout            :: !(Maybe Time)
@@ -43,6 +44,7 @@ empty consensusMode minActiveBigLedgerPeers =
       cpstConsensusMode                    = consensusMode,
       cpstBootstrapPeersFlag               = DontUseBootstrapPeers,
       cpstHasOnlyBootstrapPeers            = False,
+      cpstBlockedAt                        = Time 0,
       cpstBootstrapPeersTimeout            = Nothing,
       cpstMinBigLedgerPeersForTrustedState = minActiveBigLedgerPeers
     }

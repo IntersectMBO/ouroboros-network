@@ -130,10 +130,15 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
            MinBigLedgerPeersForTrustedState, UseLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 #endif
+import Cardano.Network.PeerSelection.Governor.Monitor
+           (monitorBootstrapPeersFlag, monitorLedgerStateJudgement,
+           waitForSystemToQuiesce)
 import Cardano.Network.PeerSelection.Governor.Types (CardanoPeerSelectionView,
            cardanoPeerSelectionStatetoCounters)
 import Cardano.Network.PeerSelection.Governor.Types qualified as CPSV
 import Cardano.PeerSelection.PeerSelectionActions
+import Ouroboros.Network.PeerSelection.Governor (outboundConnectionsState,
+           readAssociationMode)
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
            (newLedgerAndPublicRootDNSSemaphore)
 
@@ -706,6 +711,50 @@ runM Interfaces
                                          wlpSemaphore             = dnsSemaphore
                                        }
 
+          peerSelectionGovernorArgs
+            :: PeerSelectionGovernorArgs
+                 CardanoPeerSelectionState
+                 (CardanoPeerSelectionActions m)
+                 (CardanoPublicRootPeers ntnAddr)
+                 (CardanoLedgerPeersConsensusInterface m)
+                 PeerTrustable
+                 (CardanoPeerSelectionView ntnAddr)
+                 ntnAddr
+                 (PeerConnectionHandle
+                        muxMode responderCtx peerAddr ntnVersionData bytes m a b)
+                 BootstrapPeersCriticalTimeoutError
+                 m
+          peerSelectionGovernorArgs = PeerSelectionGovernorArgs {
+            -- If by any chance the node takes more than 15 minutes to converge to a
+            -- clean state, we crash the node. This could happen in very rare
+            -- conditions such as a global network issue, DNS, or a bug in the code.
+            -- In any case crashing the node will force the node to be restarted,
+            -- starting in the correct state for it to make progress.
+            abortGovernor   = \st ->
+              case cpstBootstrapPeersTimeout (extraState st) of
+                Nothing -> Nothing
+                Just t
+                  | cpstBlockedAt (extraState st) >= t -> Just BootstrapPeersCriticalTimeoutError
+                  | otherwise                         -> Nothing
+          , updateWithState = \psv st -> do
+              associationMode <- readAssociationMode daReadUseLedgerPeers
+                                                     daOwnPeerSharing
+                                                     (cpstBootstrapPeersFlag (extraState st))
+              clpciUpdateOutboundConnectionsState (lpExtraAPI lpcsi)
+                (outboundConnectionsState associationMode psv st)
+          , extraDecisions  =
+              ExtraGuardedDecisions {
+                preBlocking     =
+                  [ \_ psa pst -> monitorBootstrapPeersFlag   psa pst
+                  , \_ psa pst -> monitorLedgerStateJudgement psa pst
+                  , \_ _   pst -> waitForSystemToQuiesce          pst
+                  ]
+              , postBlocking    = []
+              , preNonBlocking  = []
+              , postNonBlocking = []
+              }
+          }
+
           peerSelectionGovernor'
             :: forall (muxMode :: Mx.Mode) b.
                Tracer m (DebugPeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers ntnAddr) ntnAddr)
@@ -726,6 +775,7 @@ runM Interfaces
               dtTracePeerSelectionTracer
               peerSelectionTracer
               dtTracePeerSelectionCounters
+              peerSelectionGovernorArgs
               fuzzRng
               (CPST.empty caeConsensusMode caeMinBigLedgerPeersForTrustedState)
               CPRP.empty
