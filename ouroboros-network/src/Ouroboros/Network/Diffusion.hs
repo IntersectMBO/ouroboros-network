@@ -20,6 +20,7 @@ import Cardano.Network.LedgerPeerConsensusInterface
            (CardanoLedgerPeersConsensusInterface)
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState
            (CardanoPeerSelectionState)
+import Cardano.Network.PeerSelection.Governor.Types (CardanoPeerSelectionView)
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
 import Control.Exception (IOException)
@@ -42,25 +43,26 @@ data P2P = P2P        -- ^ General P2P mode. Can be instantiated with custom
 
 -- | Tracers which depend on p2p mode.
 --
-data ExtraTracers (p2p :: P2P) extraState extraFlags extraPeers m where
+data ExtraTracers (p2p :: P2P) extraState extraFlags extraPeers extraCounters m where
   P2PTracers
     :: Common.TracersExtra
            RemoteAddress NodeToNodeVersion         NodeToNodeVersionData
            LocalAddress  NodeToClientVersion       NodeToClientVersionData
-           IOException   extraState extraState extraFlags extraPeers m
-    -> ExtraTracers 'P2P extraState extraFlags extraPeers m
+           IOException   extraState extraState extraFlags extraPeers extraCounters m
+    -> ExtraTracers 'P2P extraState extraFlags extraPeers extraCounters m
 
   P2PCardanoTracers
     :: Common.TracersExtra
            RemoteAddress NodeToNodeVersion         NodeToNodeVersionData
            LocalAddress  NodeToClientVersion       NodeToClientVersionData
            IOException   CardanoPeerSelectionState CardanoPeerSelectionState
-           PeerTrustable (CardanoPublicRootPeers RemoteAddress) m
-    -> ExtraTracers 'P2PCardano CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers RemoteAddress) m
+           PeerTrustable (CardanoPublicRootPeers RemoteAddress)
+           (CardanoPeerSelectionView RemoteAddress) m
+    -> ExtraTracers 'P2PCardano CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers RemoteAddress) (CardanoPeerSelectionView RemoteAddress) m
 
   NonP2PTracers
     :: NonP2P.TracersExtra
-    -> ExtraTracers 'NonP2P extraState extraFlags extraPeers m
+    -> ExtraTracers 'NonP2P extraState extraFlags extraPeers extraCounters m
 
 
 -- | Diffusion arguments which depend on p2p mode.
@@ -120,12 +122,12 @@ data ApplicationsExtra (p2p :: P2P) ntnAddr m a where
 
 -- | Run data diffusion in either 'P2P' or 'NonP2P' mode.
 --
-run :: forall (p2p :: P2P) extraArgs extraState extraFlags extraPeers extraAPI a.
+run :: forall (p2p :: P2P) extraArgs extraState extraFlags extraPeers extraAPI extraCounters a.
        Tracers
          RemoteAddress NodeToNodeVersion
          LocalAddress  NodeToClientVersion
          IO
-    -> ExtraTracers p2p extraState extraFlags extraPeers IO
+    -> ExtraTracers p2p extraState extraFlags extraPeers extraCounters IO
     -> Arguments
          IO
          Socket      RemoteAddress

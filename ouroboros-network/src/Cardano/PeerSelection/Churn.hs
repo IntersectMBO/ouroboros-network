@@ -36,8 +36,8 @@ import Data.Monoid.Synchronisation (FirstToFinish (..))
 import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..))
 import Ouroboros.Network.Diffusion.Policies (churnEstablishConnectionTimeout,
            closeConnectionTimeout, deactivateTimeout)
-import Ouroboros.Network.PeerSelection.Churn (ChurnCounters (..),
-           PeerChurnArgs (..))
+import Ouroboros.Network.PeerSelection.Churn (CheckPeerSelectionCounters,
+           ChurnCounters (..), ModifyPeerSelectionTargets, PeerChurnArgs (..))
 import Ouroboros.Network.PeerSelection.Governor.Types hiding (targets)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..))
@@ -71,10 +71,6 @@ pickChurnRegime consensus churn ubp =
     (ChurnModeBulkSync, UseBootstrapPeers _, _) -> ChurnBootstrapPraosSync
     (ChurnModeBulkSync, _, _)                   -> ChurnPraosSync
 
--- | Facilitates composing updates to various targets via back-to-back pipeline
-type ModifyPeerSelectionTargets = PeerSelectionTargets -> PeerSelectionTargets
-type CheckPeerSelectionCounters = PeerSelectionCounters -> PeerSelectionTargets -> Bool
-
 -- | Churn governor.
 --
 -- At every churn interval decrease active peers for a short while (1s), so that
@@ -83,13 +79,13 @@ type CheckPeerSelectionCounters = PeerSelectionCounters -> PeerSelectionTargets 
 -- On startup the churn governor gives a head start to local root peers over
 -- root peers.
 --
-peerChurnGovernor :: forall m extraDebugState extraFlags extraPeers peeraddr.
+peerChurnGovernor :: forall m extraDebugState extraFlags extraCounters extraPeers peeraddr.
                      ( MonadDelay m
                      , Alternative (STM m)
                      , MonadTimer m
                      , MonadCatch m
                      )
-                  => PeerChurnArgs m (CardanoPeerChurnArgs m) extraDebugState extraFlags extraPeers (CardanoLedgerPeersConsensusInterface m) peeraddr
+                  => PeerChurnArgs m (CardanoPeerChurnArgs m) extraDebugState extraFlags extraPeers (CardanoLedgerPeersConsensusInterface m) extraCounters peeraddr
                   -> m Void
 peerChurnGovernor PeerChurnArgs {
                     pcaPeerSelectionTracer = tracer,
@@ -151,13 +147,13 @@ peerChurnGovernor PeerChurnArgs {
     updateTargets
       :: ChurnAction
       -- ^ churn actions for tracing
-      -> (PeerSelectionCounters -> Int)
+      -> (PeerSelectionCounters extraCounters -> Int)
       -- ^ counter getter
       -> DiffTime
       -- ^ timeout
       -> (ChurnRegime -> HotValency -> PeerSelectionTargets -> ModifyPeerSelectionTargets)
       -- ^ update counters function
-      -> CheckPeerSelectionCounters
+      -> CheckPeerSelectionCounters extraCounters
       -- ^ check counters
       -> m ()
     updateTargets churnAction getCounter timeoutDelay modifyTargets checkCounters = do
@@ -216,7 +212,7 @@ peerChurnGovernor PeerChurnArgs {
             ChurnDefault -> targetNumberOfActivePeers base
             _otherwise   -> min ((max 1 ltt) + 1) (targetNumberOfActivePeers base) }
 
-    checkActivePeersIncreased :: CheckPeerSelectionCounters
+    checkActivePeersIncreased :: CheckPeerSelectionCounters extraCounters
     checkActivePeersIncreased
       PeerSelectionCounters { numberOfActivePeers }
       PeerSelectionTargets { targetNumberOfActivePeers }
@@ -234,7 +230,7 @@ peerChurnGovernor PeerChurnArgs {
             ChurnDefault -> decrease $ targetNumberOfActivePeers base
             _otherwise   -> min (max 1 ltt) (targetNumberOfActivePeers base - 1) }
 
-    checkActivePeersDecreased :: CheckPeerSelectionCounters
+    checkActivePeersDecreased :: CheckPeerSelectionCounters extraCounters
     checkActivePeersDecreased
       PeerSelectionCounters { numberOfActivePeers }
       PeerSelectionTargets { targetNumberOfActivePeers }
@@ -258,7 +254,7 @@ peerChurnGovernor PeerChurnArgs {
             -- targets to calculate the upper bound, ie. active + 1 here.
             _otherwise -> targetNumberOfEstablishedPeers base }
 
-    checkEstablishedPeersIncreased :: CheckPeerSelectionCounters
+    checkEstablishedPeersIncreased :: CheckPeerSelectionCounters extraCounters
     checkEstablishedPeersIncreased
       PeerSelectionCounters { numberOfEstablishedPeers }
       PeerSelectionTargets { targetNumberOfEstablishedPeers }
@@ -277,7 +273,7 @@ peerChurnGovernor PeerChurnArgs {
       targets { targetNumberOfEstablishedBigLedgerPeers = targetNumberOfEstablishedBigLedgerPeers base }
 
     checkEstablishedBigLedgerPeersIncreased
-      :: CheckPeerSelectionCounters
+      :: CheckPeerSelectionCounters extraCounters
     checkEstablishedBigLedgerPeersIncreased
       PeerSelectionCounters { numberOfEstablishedBigLedgerPeers }
       PeerSelectionTargets { targetNumberOfEstablishedBigLedgerPeers }
@@ -305,7 +301,7 @@ peerChurnGovernor PeerChurnArgs {
                           + targetNumberOfActivePeers base }
 
     checkEstablishedPeersDecreased
-      :: CheckPeerSelectionCounters
+      :: CheckPeerSelectionCounters extraCounters
     checkEstablishedPeersDecreased
       PeerSelectionCounters { numberOfEstablishedPeers }
       PeerSelectionTargets { targetNumberOfEstablishedPeers }
@@ -327,7 +323,7 @@ peerChurnGovernor PeerChurnArgs {
                ChurnDefault -> targetNumberOfActiveBigLedgerPeers base }
 
     checkActiveBigLedgerPeersIncreased
-      :: CheckPeerSelectionCounters
+      :: CheckPeerSelectionCounters extraCounters
     checkActiveBigLedgerPeersIncreased
       PeerSelectionCounters { numberOfActiveBigLedgerPeers }
       PeerSelectionTargets { targetNumberOfActiveBigLedgerPeers }
@@ -348,7 +344,7 @@ peerChurnGovernor PeerChurnArgs {
                ChurnDefault -> decrease $ targetNumberOfActiveBigLedgerPeers base }
 
     checkActiveBigLedgerPeersDecreased
-      :: CheckPeerSelectionCounters
+      :: CheckPeerSelectionCounters extraCounters
     checkActiveBigLedgerPeersDecreased
       PeerSelectionCounters { numberOfActiveBigLedgerPeers }
       PeerSelectionTargets { targetNumberOfActiveBigLedgerPeers }
@@ -369,7 +365,7 @@ peerChurnGovernor PeerChurnArgs {
         }
 
     checkEstablishedBigLedgerPeersDecreased
-      :: CheckPeerSelectionCounters
+      :: CheckPeerSelectionCounters extraCounters
     checkEstablishedBigLedgerPeersDecreased
       PeerSelectionCounters { numberOfEstablishedBigLedgerPeers }
       PeerSelectionTargets { targetNumberOfEstablishedBigLedgerPeers }
@@ -394,7 +390,7 @@ peerChurnGovernor PeerChurnArgs {
         }
 
     checkKnownPeersDecreased
-      :: PeerSelectionCounters -> PeerSelectionTargets -> Bool
+      :: PeerSelectionCounters extraCounters -> PeerSelectionTargets -> Bool
     checkKnownPeersDecreased
       PeerSelectionCounters { numberOfKnownPeers }
       PeerSelectionTargets { targetNumberOfKnownPeers }
@@ -417,7 +413,7 @@ peerChurnGovernor PeerChurnArgs {
         }
 
     checkKnownBigLedgerPeersDecreased
-      :: PeerSelectionCounters -> PeerSelectionTargets -> Bool
+      :: PeerSelectionCounters extraCounters -> PeerSelectionTargets -> Bool
     checkKnownBigLedgerPeersDecreased
       PeerSelectionCounters { numberOfKnownBigLedgerPeers }
       PeerSelectionTargets { targetNumberOfKnownBigLedgerPeers }
@@ -436,7 +432,7 @@ peerChurnGovernor PeerChurnArgs {
         }
 
     checkKnownPeersIncreased
-      :: CheckPeerSelectionCounters
+      :: CheckPeerSelectionCounters extraCounters
     checkKnownPeersIncreased
       PeerSelectionCounters { numberOfRootPeers,
                               numberOfKnownPeers }
@@ -458,7 +454,7 @@ peerChurnGovernor PeerChurnArgs {
         }
 
     checkKnownBigLedgerPeersIncreased
-      :: CheckPeerSelectionCounters
+      :: CheckPeerSelectionCounters extraCounters
     checkKnownBigLedgerPeersIncreased
       PeerSelectionCounters { numberOfKnownBigLedgerPeers }
       PeerSelectionTargets { targetNumberOfKnownBigLedgerPeers }

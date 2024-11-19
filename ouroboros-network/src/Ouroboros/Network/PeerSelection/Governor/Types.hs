@@ -34,6 +34,9 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , PeerStateActions (..)
   , PeerSelectionActions (..)
   , PeerSelectionInterfaces (..)
+  , MonitoringAction
+  , ExtraGuardedDecisions (..)
+  , PeerSelectionGovernorArgs (..)
     -- * P2P governor internals
   , PeerSelectionState (..)
   , emptyPeerSelectionState
@@ -89,13 +92,7 @@ module Ouroboros.Network.PeerSelection.Governor.Types
         numberOfActiveNonRootPeers,
         numberOfActiveNonRootPeersDemotions,
 
-        numberOfKnownBootstrapPeers,
-        numberOfColdBootstrapPeersPromotions,
-        numberOfEstablishedBootstrapPeers,
-        numberOfWarmBootstrapPeersDemotions,
-        numberOfWarmBootstrapPeersPromotions,
-        numberOfActiveBootstrapPeers,
-        numberOfActiveBootstrapPeersDemotions,
+        extraCounters,
 
         PeerSelectionCountersHWC,
         numberOfColdPeers,
@@ -161,11 +158,10 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
            LocalRootPeers, WarmValency (..))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSelection.Types (PeerSource (..),
-           PeerStatus (PeerHot, PeerWarm))
+           PeerStatus (PeerHot, PeerWarm), PublicExtraPeersActions)
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
            PeerSharingResult (..))
 import Cardano.Network.Types (LedgerStateJudgement (..))
-import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
 import Cardano.Network.PeerSelection.Types (ChurnMode)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
 
@@ -323,7 +319,7 @@ sanePeerSelectionTargets PeerSelectionTargets{..} =
 -- * choice of known peer root sets
 -- * running both in simulation and for real
 --
-data PeerSelectionActions extraActions extraPeers extraFlags extraAPI peeraddr peerconn m =
+data PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m =
   PeerSelectionActions {
        -- | These are the original targets as seen in the static configuration
        --
@@ -371,6 +367,15 @@ data PeerSelectionActions extraActions extraPeers extraFlags extraAPI peeraddr p
        --
        peerConnToPeerSharing :: peerconn -> PeerSharing,
 
+       -- | Public Extra Peers Actions
+       --
+       extraPeersActions :: PublicExtraPeersActions extraPeers peeraddr,
+
+       -- | Compute extraCounters from PeerSelectionState
+       extraStateToExtraCounters
+         :: PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+         -> extraCounters,
+
        -- | Request a sample of public root peers.
        --
        -- It is intended to cover use cases including:
@@ -411,11 +416,11 @@ data PeerSelectionActions extraActions extraPeers extraFlags extraAPI peeraddr p
 -- | Interfaces required by the peer selection governor, which do not need to
 -- be shared with actions and thus are not part of `PeerSelectionActions`.
 --
-data PeerSelectionInterfaces extraState extraFlags extraPeers peeraddr peerconn m =
+data PeerSelectionInterfaces extraState extraFlags extraPeers extraCounters peeraddr peerconn m =
   PeerSelectionInterfaces {
       -- | PeerSelectionCounters are shared with churn through a `StrictTVar`.
       --
-      countersVar        :: StrictTVar m PeerSelectionCounters,
+      countersVar        :: StrictTVar m (PeerSelectionCounters extraCounters),
 
       -- | PublicPeerSelectionState var.
       --
@@ -464,6 +469,62 @@ data PeerStateActions peeraddr peerconn m = PeerStateActions {
     -- | Close a connection: warm to cold transition.
     --
     closePeerConnection      :: peerconn -> m ()
+  }
+
+-----------------------
+-- Extra Guarded Decisions
+--
+type MonitoringAction extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m =
+  [  PeerSelectionPolicy peeraddr m
+  -> PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
+  -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+  -> Guarded (STM m) (TimedDecision m extraState extraFlags extraPeers peeraddr peerconn)
+  ]
+
+data ExtraGuardedDecisions extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m =
+  ExtraGuardedDecisions {
+
+    -- | This list of guarded decisions will come before all default possibly
+    -- blocking -- decisions. The order matters, making the first decisions
+    -- have priority over the later ones.
+    --
+    -- Note that these actions should be blocking.
+    preBlocking      :: MonitoringAction extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m
+
+    -- | This list of guarded decisions will come after all possibly preBlocking
+    -- and default blocking decisions. The order matters, making the first
+    -- decisions have priority over the later ones.
+    --
+    -- Note that these actions should be blocking.
+  , postBlocking     :: MonitoringAction extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m
+
+    -- | This list of guarded decisions will come before all default non-blocking
+    -- decisions. The order matters, making the first decisions have priority over
+    -- the later ones.
+    --
+    -- Note that these actions should not be blocking.
+  , preNonBlocking   :: MonitoringAction extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m
+
+    -- | This list of guarded decisions will come before all preNonBlocking and
+    -- default non-blocking decisions. The order matters, making the first
+    -- decisions have priority over the later ones.
+    --
+    -- Note that these actions should not be blocking.
+  , postNonBlocking  :: MonitoringAction extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m
+  }
+
+-----------------------
+-- Peer Selection Arguments
+--
+
+data PeerSelectionGovernorArgs extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn exception m =
+  PeerSelectionGovernorArgs {
+    abortGovernor :: PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+                  -> Maybe exception
+  , updateWithState :: PeerSelectionSetsWithSizes extraCounters peeraddr
+                    -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+                    -> STM m ()
+  , extraDecisions :: ExtraGuardedDecisions extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m
   }
 
 -----------------------
@@ -702,7 +763,7 @@ toPublicState PeerSelectionState { knownPeers } =
 -- This is a functor which is used to hold computation of various peer sets and
 -- their sizes.  See `peerSelectionStateToView`, `peerSelectionStateToCounters`.
 --
-data PeerSelectionView a = PeerSelectionView {
+data PeerSelectionView extraViews a = PeerSelectionView {
       viewRootPeers                        :: a,
 
       --
@@ -780,29 +841,19 @@ data PeerSelectionView a = PeerSelectionView {
       viewActiveNonRootPeers                :: a,
       viewActiveNonRootPeersDemotions       :: a,
 
-      --
-      -- Bootstrap Peers
-      --
-
-      viewKnownBootstrapPeers              :: a,
-      viewColdBootstrapPeersPromotions     :: a,
-      viewEstablishedBootstrapPeers        :: a,
-      viewWarmBootstrapPeersDemotions      :: a,
-      viewWarmBootstrapPeersPromotions     :: a,
-      viewActiveBootstrapPeers             :: a,
-      viewActiveBootstrapPeersDemotions    :: a
+      viewExtraViews :: extraViews
     } deriving (Eq, Functor, Show)
 
 
-type PeerSelectionCounters = PeerSelectionView Int
+type PeerSelectionCounters extraCounters = PeerSelectionView extraCounters Int
 pattern PeerSelectionCounters
           :: Int
           -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int
           -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int
           -> Int -> Int -> Int -> Int -> Int -> Int -> Int
           -> Int -> Int -> Int -> Int -> Int -> Int -> Int
-          -> Int -> Int -> Int -> Int -> Int -> Int -> Int
-          -> PeerSelectionCounters
+          -> extraCounters
+          -> PeerSelectionCounters extraCounters
 pattern PeerSelectionCounters {
       numberOfRootPeers,
 
@@ -840,13 +891,7 @@ pattern PeerSelectionCounters {
       numberOfActiveNonRootPeers,
       numberOfActiveNonRootPeersDemotions,
 
-      numberOfKnownBootstrapPeers,
-      numberOfColdBootstrapPeersPromotions,
-      numberOfEstablishedBootstrapPeers,
-      numberOfWarmBootstrapPeersDemotions,
-      numberOfWarmBootstrapPeersPromotions,
-      numberOfActiveBootstrapPeers,
-      numberOfActiveBootstrapPeersDemotions
+      extraCounters
     }
   =
   PeerSelectionView {
@@ -886,18 +931,12 @@ pattern PeerSelectionCounters {
       viewActiveNonRootPeers                = numberOfActiveNonRootPeers,
       viewActiveNonRootPeersDemotions       = numberOfActiveNonRootPeersDemotions,
 
-      viewKnownBootstrapPeers              = numberOfKnownBootstrapPeers,
-      viewColdBootstrapPeersPromotions     = numberOfColdBootstrapPeersPromotions,
-      viewEstablishedBootstrapPeers        = numberOfEstablishedBootstrapPeers,
-      viewWarmBootstrapPeersDemotions      = numberOfWarmBootstrapPeersDemotions,
-      viewWarmBootstrapPeersPromotions     = numberOfWarmBootstrapPeersPromotions,
-      viewActiveBootstrapPeers             = numberOfActiveBootstrapPeers,
-      viewActiveBootstrapPeersDemotions    = numberOfActiveBootstrapPeersDemotions
+      viewExtraViews = extraCounters
     }
 
 {-# COMPLETE PeerSelectionCounters #-}
 
-type PeerSelectionSetsWithSizes peeraddr = PeerSelectionView (Set peeraddr, Int)
+type PeerSelectionSetsWithSizes extraViews peeraddr = PeerSelectionView extraViews (Set peeraddr, Int)
 
 -- | A Pattern synonym which computes `hot`, `warm`, `cold` counters from
 -- `PeerSelectionCounters`.
@@ -905,7 +944,7 @@ type PeerSelectionSetsWithSizes peeraddr = PeerSelectionView (Set peeraddr, Int)
 pattern PeerSelectionCountersHWC :: Int -> Int -> Int -- peers
                                  -> Int -> Int -> Int -- big ledger peers
                                  -> Int -> Int -> Int -- local roots
-                                 -> PeerSelectionCounters
+                                 -> PeerSelectionCounters extraCounters
 pattern PeerSelectionCountersHWC { numberOfColdPeers,
                                    numberOfWarmPeers,
                                    numberOfHotPeers,
@@ -937,7 +976,7 @@ pattern PeerSelectionCountersHWC { numberOfColdPeers,
 
 -- | Internal function; used to implement `PeerSelectionCountersHWC` pattern synonym.
 --
-peerSelectionCountersHWC :: PeerSelectionCounters -> PeerSelectionCounters
+peerSelectionCountersHWC :: PeerSelectionCounters extraCounters -> PeerSelectionCounters extraCounters
 peerSelectionCountersHWC PeerSelectionCounters {..} =
     PeerSelectionCounters {
       numberOfRootPeers,
@@ -984,15 +1023,7 @@ peerSelectionCountersHWC PeerSelectionCounters {..} =
       numberOfActiveNonRootPeers,
       numberOfActiveNonRootPeersDemotions,
 
-      numberOfKnownBootstrapPeers                = numberOfKnownBootstrapPeers
-                                                 - numberOfEstablishedBootstrapPeers,
-      numberOfColdBootstrapPeersPromotions,
-      numberOfEstablishedBootstrapPeers          = numberOfEstablishedBootstrapPeers
-                                                 - numberOfActiveBootstrapPeers,
-      numberOfWarmBootstrapPeersDemotions,
-      numberOfWarmBootstrapPeersPromotions,
-      numberOfActiveBootstrapPeers,
-      numberOfActiveBootstrapPeersDemotions
+      extraCounters
     }
 
 emptyPeerSelectionState :: StdGen
@@ -1025,8 +1056,8 @@ emptyPeerSelectionState rng es ep =
       extraState                  = es
     }
 
-emptyPeerSelectionCounters :: PeerSelectionCounters
-emptyPeerSelectionCounters =
+emptyPeerSelectionCounters :: extraCounters -> PeerSelectionCounters extraCounters
+emptyPeerSelectionCounters emptyEC =
   PeerSelectionCounters {
     numberOfRootPeers                        = 0,
 
@@ -1048,14 +1079,6 @@ emptyPeerSelectionCounters =
     numberOfActiveBigLedgerPeers             = 0,
     numberOfActiveBigLedgerPeersDemotions    = 0,
 
-    numberOfKnownBootstrapPeers              = 0,
-    numberOfColdBootstrapPeersPromotions     = 0,
-    numberOfEstablishedBootstrapPeers        = 0,
-    numberOfWarmBootstrapPeersDemotions      = 0,
-    numberOfWarmBootstrapPeersPromotions     = 0,
-    numberOfActiveBootstrapPeers             = 0,
-    numberOfActiveBootstrapPeersDemotions    = 0,
-
     numberOfKnownLocalRootPeers              = 0,
     numberOfAvailableToConnectLocalRootPeers = 0,
     numberOfColdLocalRootPeersPromotions     = 0,
@@ -1070,7 +1093,9 @@ emptyPeerSelectionCounters =
     numberOfWarmNonRootPeersDemotions         = 0,
     numberOfWarmNonRootPeersPromotions        = 0,
     numberOfActiveNonRootPeers                = 0,
-    numberOfActiveNonRootPeersDemotions       = 0
+    numberOfActiveNonRootPeersDemotions       = 0,
+
+    extraCounters = emptyEC
   }
 
 -- | A view of the status of each established peer, for testing and debugging.
@@ -1095,10 +1120,14 @@ establishedPeersStatus PeerSelectionState{establishedPeers, activePeers} =
 --
 peerSelectionStateToView
   :: Ord peeraddr
-  => PeerSelectionState extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn
-  -> PeerSelectionSetsWithSizes peeraddr
+  => (extraPeers -> Set peeraddr)
+  -> (PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn -> extraViews)
+  -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+  -> PeerSelectionSetsWithSizes extraViews peeraddr
 peerSelectionStateToView
-    PeerSelectionState {
+    extraPeersToSet
+    extraStateToExtraViews
+    st@PeerSelectionState {
         knownPeers,
         establishedPeers,
         activePeers,
@@ -1141,19 +1170,6 @@ peerSelectionStateToView
       viewActiveBigLedgerPeersDemotions      = size $ activeBigLedgerPeersSet
                                                       `Set.intersection` inProgressDemoteHot,
 
-
-      viewKnownBootstrapPeers                = size   knownBootstrapPeersSet,
-      viewColdBootstrapPeersPromotions       = size $ knownBootstrapPeersSet
-                                                      `Set.intersection` inProgressPromoteCold,
-      viewEstablishedBootstrapPeers          = size   establishedBootstrapPeersSet,
-      viewWarmBootstrapPeersDemotions        = size $ establishedBootstrapPeersSet
-                                                      `Set.intersection` inProgressDemoteWarm,
-      viewWarmBootstrapPeersPromotions       = size $ establishedBootstrapPeersSet
-                                                      `Set.intersection` inProgressPromoteWarm,
-      viewActiveBootstrapPeers               = size   activeBootstrapPeersSet,
-      viewActiveBootstrapPeersDemotions      = size $ activeBootstrapPeersSet
-                                                      `Set.intersection` inProgressDemoteHot,
-
       viewKnownLocalRootPeers                = size   knownLocalRootPeersSet,
       viewAvailableToConnectLocalRootPeers   = size $ availableToConnectSet
                                                       `Set.intersection` knownLocalRootPeersSet,
@@ -1177,7 +1193,8 @@ peerSelectionStateToView
                                                       `Set.intersection` inProgressPromoteWarm,
       viewActiveNonRootPeers                  = size   activeNonRootPeersSet,
       viewActiveNonRootPeersDemotions         = size $ activeNonRootPeersSet
-                                                      `Set.intersection` inProgressDemoteHot
+                                                      `Set.intersection` inProgressDemoteHot,
+      viewExtraViews = extraStateToExtraViews st
     }
   where
     size s = (s, Set.size s)
@@ -1189,7 +1206,7 @@ peerSelectionStateToView
     availableToConnectSet = KnownPeers.availableToConnect knownPeers
 
     -- root peers
-    rootPeersSet   = PublicRootPeers.toSet publicRootPeers
+    rootPeersSet   = PublicRootPeers.toSet extraPeersToSet publicRootPeers
                   <> localRootSet
 
     -- non big ledger peers
@@ -1209,14 +1226,6 @@ peerSelectionStateToView
     establishedLocalRootsPeersSet = establishedPeersSet `Set.intersection` localRootSet
     activeLocalRootsPeersSet      = activePeersSet `Set.intersection` localRootSet
 
-    -- bootstrap peers
-    bootstrapSet                 = PublicRootPeers.getBootstrapPeers publicRootPeers
-    -- bootstrap peers and big ledger peers are disjoint, hence we can use
-    -- `knownPeersSet`, `establishedPeersSet` and `activePeersSet` below.
-    knownBootstrapPeersSet       = bootstrapSet
-    establishedBootstrapPeersSet = establishedPeersSet `Set.intersection` bootstrapSet
-    activeBootstrapPeersSet      = activePeersSet `Set.intersection` bootstrapSet
-
     -- shared peers
     -- shared peers are not big ledger peers, hence we can use `knownPeersSet`,
     -- `establishedPeersSet` and `activePeersSet` below.
@@ -1227,18 +1236,27 @@ peerSelectionStateToView
 
 peerSelectionStateToCounters
   :: Ord peeraddr
-  => PeerSelectionState extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn
-  -> PeerSelectionCounters
-peerSelectionStateToCounters = fmap snd . peerSelectionStateToView
+  => (extraPeers -> Set peeraddr)
+  -> (PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn -> extraCounters)
+  -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+  -> PeerSelectionCounters extraCounters
+peerSelectionStateToCounters extraPeersToSet extraStateToExtraCounters =
+    fmap snd
+  . peerSelectionStateToView extraPeersToSet
+                             extraStateToExtraCounters
 
 assertPeerSelectionState :: Ord peeraddr
-                         => PeerSelectionState extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn
+                         => (extraPeers -> Set peeraddr)
+                         -> (extraPeers -> Bool)
+                         -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
                          -> a -> a
-assertPeerSelectionState PeerSelectionState{..} =
+assertPeerSelectionState extraPeersToSet invariantExtraPeers PeerSelectionState{..} =
     assert (KnownPeers.invariant knownPeers)
   . assert (EstablishedPeers.invariant establishedPeers)
   . assert (LocalRootPeers.invariant localRootPeers)
-  . assert (PublicRootPeers.invariant publicRootPeers)
+  . assert (PublicRootPeers.invariant invariantExtraPeers
+                                      extraPeersToSet
+                                      publicRootPeers)
 
     -- The activePeers is a subset of the establishedPeers
     -- which is a subset of the known peers
@@ -1328,7 +1346,7 @@ assertPeerSelectionState PeerSelectionState{..} =
   where
     knownPeersSet       = KnownPeers.toSet knownPeers
     localRootPeersSet   = LocalRootPeers.keysSet localRootPeers
-    publicRootPeersSet  = PublicRootPeers.toSet publicRootPeers
+    publicRootPeersSet  = PublicRootPeers.toSet extraPeersToSet publicRootPeers
     bigLedgerPeers      = PublicRootPeers.getBigLedgerPeers publicRootPeers
     establishedPeersSet = EstablishedPeers.toSet      establishedPeers
     establishedReadySet = EstablishedPeers.readyPeers establishedPeers
@@ -1349,12 +1367,13 @@ assertPeerSelectionState PeerSelectionState{..} =
 -- and supply additional peer attributes from the current state.
 --
 pickPeers' :: (Ord peeraddr, Functor m, HasCallStack)
-           => (Int -> Set peeraddr -> PeerSelectionState extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn -> Bool)
+           => (Int -> Set peeraddr -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn -> Bool)
            -- ^ precondition
-           -> PeerSelectionState extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn
+           -> (peeraddr -> extraPeers -> Bool)
+           -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
            -> PickPolicy peeraddr m
            -> Set peeraddr -> Int -> m (Set peeraddr)
-pickPeers' precondition st@PeerSelectionState{localRootPeers, publicRootPeers, knownPeers}
+pickPeers' precondition memberExtraPeers st@PeerSelectionState{localRootPeers, publicRootPeers, knownPeers}
           pick available num =
     assert (precondition num available st) $
     fmap (\picked -> assert (postcondition picked) picked)
@@ -1367,10 +1386,11 @@ pickPeers' precondition st@PeerSelectionState{localRootPeers, publicRootPeers, k
     numClamped           = min num (Set.size available)
 
     peerSource p
-      | LocalRootPeers.member p localRootPeers   = PeerSourceLocalRoot
-      | PublicRootPeers.member p publicRootPeers = PeerSourcePublicRoot
-      | KnownPeers.member p knownPeers           = PeerSourcePeerShare
-      | otherwise                                = errorUnavailable
+      | PublicRootPeers.member
+          p memberExtraPeers publicRootPeers   = PeerSourcePublicRoot
+      | LocalRootPeers.member p localRootPeers = PeerSourceLocalRoot
+      | KnownPeers.member p knownPeers         = PeerSourcePeerShare
+      | otherwise                              = errorUnavailable
 
     peerConnectFailCount p =
         fromMaybe errorUnavailable $
@@ -1393,26 +1413,30 @@ pickPeers' precondition st@PeerSelectionState{localRootPeers, publicRootPeers, k
 -- | Pick some known peers.
 --
 pickPeers :: (Ord peeraddr, Functor m, HasCallStack)
-          => PeerSelectionState extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn
+          => (peeraddr -> extraPeers -> Bool)
+          -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
           -> PickPolicy peeraddr m
           -> Set peeraddr -> Int -> m (Set peeraddr)
 {-# INLINE pickPeers #-}
-pickPeers = pickPeers' (\num available PeerSelectionState { knownPeers } ->
-                            not (Set.null available) && num > 0
-                         && available `Set.isSubsetOf` KnownPeers.toSet knownPeers
-                       )
+pickPeers memberExtraPeers =
+  pickPeers' (\num available PeerSelectionState { knownPeers } ->
+       not (Set.null available) && num > 0
+    && available `Set.isSubsetOf` KnownPeers.toSet knownPeers)
+             memberExtraPeers
 
 -- | Pick some unknown peers.
 --
 pickUnknownPeers :: (Ord peeraddr, Functor m, HasCallStack)
-                 => PeerSelectionState extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn
+                 => (peeraddr -> extraPeers -> Bool)
+                 -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
                  -> PickPolicy peeraddr m
                  -> Set peeraddr -> Int -> m (Set peeraddr)
 {-# INLINE pickUnknownPeers #-}
-pickUnknownPeers = pickPeers' (\num available PeerSelectionState { knownPeers } ->
-                                   not (Set.null available) && num > 0
-                                && not (available `Set.isSubsetOf` KnownPeers.toSet knownPeers)
-                              )
+pickUnknownPeers memberExtraPeers =
+  pickPeers' (\num available PeerSelectionState { knownPeers } ->
+       not (Set.null available) && num > 0
+    && not (available `Set.isSubsetOf` KnownPeers.toSet knownPeers))
+             memberExtraPeers
 
 ---------------------------
 -- Peer Selection Decisions
@@ -1481,6 +1505,10 @@ instance Alternative m => Semigroup (Guarded m a) where
   Guarded'     ta a <> GuardedSkip' tb   = Guarded'     (ta <> tb)  a
   GuardedSkip' ta   <> Guarded'     tb b = Guarded'     (ta <> tb)  b
   GuardedSkip' ta   <> GuardedSkip' tb   = GuardedSkip' (ta <> tb)
+
+instance Alternative m => Monoid (Guarded m a) where
+  mempty = GuardedSkip' mempty
+  mappend = (<>)
 
 
 data Decision m extraState extraFlags extraPeers peeraddr peerconn = Decision {

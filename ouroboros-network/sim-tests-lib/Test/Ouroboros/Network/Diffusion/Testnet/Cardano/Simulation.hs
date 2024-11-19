@@ -123,6 +123,7 @@ import Cardano.Network.LedgerPeerConsensusInterface
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState
            (CardanoPeerSelectionState)
+import Cardano.Network.PeerSelection.Governor.Types (CardanoPeerSelectionView)
 import Cardano.Network.PeerSelection.LocalRootPeers
            (OutboundConnectionsState (..))
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
@@ -1263,7 +1264,8 @@ diffusionSimulation
                              NtCAddr NtCVersion NtCVersionData
                              SomeException CardanoPeerSelectionState
                              CardanoPeerSelectionState PeerTrustable
-                             (CardanoPublicRootPeers NtNAddr) m
+                             (CardanoPublicRootPeers NtNAddr)
+                             (CardanoPeerSelectionView NtNAddr) m
     tracersExtra ntnAddr =
       Common.TracersExtra {
           Common.dtTraceLocalRootPeersTracer         = contramap

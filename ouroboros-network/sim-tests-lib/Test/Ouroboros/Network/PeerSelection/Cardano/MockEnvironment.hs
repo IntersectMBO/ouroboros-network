@@ -62,10 +62,13 @@ import Control.Monad.IOSim
 import Control.Tracer (Tracer (..), contramap, traceWith)
 
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as CPST
+import Cardano.Network.PeerSelection.Governor.Types qualified as CPSV
 import Ouroboros.Network.ExitPolicy
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode)
 import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
+import Ouroboros.Network.PeerSelection.Governor.Types
+           (ExtraGuardedDecisions (..))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.Point
 
@@ -91,6 +94,7 @@ import Cardano.Network.PeerSelection.Governor.PeerSelectionActions
            (CardanoPeerSelectionActions (..))
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState
            (CardanoPeerSelectionState (..))
+import Cardano.Network.PeerSelection.Governor.Types (CardanoPeerSelectionView)
 import Cardano.Network.PeerSelection.LocalRootPeers
            (OutboundConnectionsState (..))
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
@@ -98,6 +102,8 @@ import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
 import Cardano.Network.PublicRootPeers qualified as CPRP
 import Cardano.Network.Types (LedgerStateJudgement (..),
            MinBigLedgerPeersForTrustedState (..))
+import Ouroboros.Network.PeerSelection.Governor.Types
+           (PeerSelectionGovernorArgs (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers (..))
@@ -212,13 +218,13 @@ validGovernorMockEnvironment GovernorMockEnvironment {
            , counterexample "local roots not a subset of all peers"
               (LocalRootPeers.keysSet localRootPeers `Set.isSubsetOf` allPeersSet)
            , counterexample "public root peers not a subset of  all peers" $
-             property (PublicRootPeers.toSet publicRootPeers `Set.isSubsetOf` allPeersSet)
+             property (PublicRootPeers.toSet CPRP.toSet publicRootPeers `Set.isSubsetOf` allPeersSet)
            , counterexample "failed peer selection targets sanity check" $
              property (foldl (\ !p ((t, t'), _) -> p && all sanePeerSelectionTargets [t, t'])
                         True
                         targets)
            , counterexample "big ledger peers not a subset of public roots"
-                (PublicRootPeers.invariant publicRootPeers)
+                (PublicRootPeers.invariant CPRP.invariant CPRP.toSet publicRootPeers)
            ]
   where
     allPeersSet = allPeers peerGraph
@@ -248,7 +254,7 @@ governorAction mockEnv@GovernorMockEnvironment {
                               (useBootstrapPeers mockEnv)
     -- todo: make MinBigLedgerPeersForTrustedState come from quickcheck
     debugStateVar <- StrictTVar.newTVarIO (emptyPeerSelectionState (mkStdGen 42) (CPST.empty consensusMode (MinBigLedgerPeersForTrustedState 0)) CPRP.empty)
-    countersVar <- StrictTVar.newTVarIO emptyPeerSelectionCounters
+    countersVar <- StrictTVar.newTVarIO (emptyPeerSelectionCounters CPSV.empty)
     policy  <- mockPeerSelectionPolicy mockEnv
     let initialPeerTargets = fst . NonEmpty.head $ targets'
 
@@ -293,6 +299,12 @@ governorAction mockEnv@GovernorMockEnvironment {
             readUseLedgerPeers = return DontUseLedgerPeers
           }
 
+        peerSelectionGovernorArgs = PeerSelectionGovernorArgs {
+          abortGovernor   = const Nothing
+        , updateWithState = \_ _ -> pure ()
+        , extraDecisions  = ExtraGuardedDecisions [] [] [] []
+        }
+
     exploreRaces      -- explore races within the governor
     _ <- forkIO $ do  -- races with the governor should be explored
       labelThisThread "outbound-governor"
@@ -300,6 +312,7 @@ governorAction mockEnv@GovernorMockEnvironment {
         tracerTracePeerSelection
         (tracerDebugPeerSelection <> traceAssociationMode interfaces actions)
         tracerTracePeerSelectionCounters
+        peerSelectionGovernorArgs
         (mkStdGen 42)
         (CPST.empty consensusMode (MinBigLedgerPeersForTrustedState 0)) -- ^ todo: make this come from quickcheck
         CPRP.empty
@@ -352,7 +365,16 @@ mockPeerSelectionActions :: forall m.
                          -> STM m UseLedgerPeers
                          -> STM m LedgerStateJudgement
                          -> STM m PeerSelectionTargets
-                         -> m (PeerSelectionActions (CardanoPeerSelectionActions m) (CardanoPublicRootPeers PeerAddr) PeerTrustable (CardanoLedgerPeersConsensusInterface m) PeerAddr (PeerConn m) m)
+                         -> m (PeerSelectionActions
+                                CardanoPeerSelectionState
+                                (CardanoPeerSelectionActions m)
+                                (CardanoPublicRootPeers PeerAddr)
+                                PeerTrustable
+                                (CardanoLedgerPeersConsensusInterface m)
+                                (CardanoPeerSelectionView PeerAddr)
+                                PeerAddr
+                                (PeerConn m)
+                                m)
 mockPeerSelectionActions tracer
                          env@GovernorMockEnvironment {
                            peerGraph,
@@ -422,7 +444,16 @@ mockPeerSelectionActions' :: forall m.
                           -> STM m LedgerStateJudgement
                           -> TVar m (Map PeerAddr (TVar m PeerStatus))
                           -> TVar m OutboundConnectionsState
-                          -> PeerSelectionActions (CardanoPeerSelectionActions m) (CardanoPublicRootPeers PeerAddr) PeerTrustable (CardanoLedgerPeersConsensusInterface m) PeerAddr (PeerConn m) m
+                          -> PeerSelectionActions
+                               CardanoPeerSelectionState
+                               (CardanoPeerSelectionActions m)
+                               (CardanoPublicRootPeers PeerAddr)
+                               PeerTrustable
+                               (CardanoLedgerPeersConsensusInterface m)
+                               (CardanoPeerSelectionView PeerAddr)
+                               PeerAddr
+                               (PeerConn m)
+                               m
 mockPeerSelectionActions' tracer
                           GovernorMockEnvironment {
                             localRootPeers,
@@ -477,7 +508,9 @@ mockPeerSelectionActions' tracer
       extraActions = CardanoPeerSelectionActions {
         cpsaSyncPeerTargets = peerTargets,
         cpsaReadUseBootstrapPeers = readUseBootstrapPeers
-      }
+      },
+      extraPeersActions = CPRP.cardanoPublicRootPeersActions,
+      extraStateToExtraCounters = CPSV.cardanoPeerSelectionStatetoCounters
     }
   where
     -- TODO: make this dynamic
@@ -517,7 +550,7 @@ mockPeerSelectionActions' tracer
                      | otherwise            ->
                        PublicRootPeers.fromBigLedgerPeers bigLedgerPeers
 
-      traceWith tracer (TraceEnvRootsResult (Set.toList (PublicRootPeers.toSet result)))
+      traceWith tracer (TraceEnvRootsResult (Set.toList (PublicRootPeers.toSet CPRP.toSet result)))
       return (result, ttl)
 
     requestPeerShare :: PeerSharingAmount -> PeerAddr -> m (PeerSharingResult PeerAddr)
@@ -708,10 +741,10 @@ mockPeerSelectionPolicy GovernorMockEnvironment {
 -- Utils for properties
 --
 
-data TestTraceEvent extraState extraFlags extraPeers =
+data TestTraceEvent extraState extraFlags extraPeers extraCounters =
     GovernorDebug           !(DebugPeerSelection extraState extraFlags extraPeers PeerAddr)
   | GovernorEvent           !(TracePeerSelection extraState extraFlags extraPeers PeerAddr)
-  | GovernorCounters        !PeerSelectionCounters
+  | GovernorCounters        !(PeerSelectionCounters extraCounters)
   | GovernorAssociationMode !AssociationMode
   | MockEnvEvent            !TraceMockEnv
   -- Warning: be careful with writing properties that rely
@@ -727,7 +760,7 @@ tracerTracePeerSelection :: Tracer (IOSim s) (TracePeerSelection CardanoPeerSele
 tracerTracePeerSelection = contramap f tracerTestTraceEvent
   where
     -- make the tracer strict
-    f :: TracePeerSelection extraState extraFlags extraPeers PeerAddr -> TestTraceEvent extraState extraFlags extraPeers
+    f :: TracePeerSelection extraState extraFlags extraPeers PeerAddr -> TestTraceEvent extraState extraFlags extraPeers extraCounters
     f a@(TraceLocalRootPeersChanged !_ !_)                   = GovernorEvent a
     f a@(TraceTargetsChanged !_ !_)                          = GovernorEvent a
     f a@(TracePublicRootsRequest !_ !_)                      = GovernorEvent a
@@ -790,8 +823,18 @@ tracerTracePeerSelection = contramap f tracerTestTraceEvent
 tracerDebugPeerSelection :: Tracer (IOSim s) (DebugPeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers PeerAddr) PeerAddr)
 tracerDebugPeerSelection = GovernorDebug `contramap` tracerTestTraceEvent
 
-traceAssociationMode :: PeerSelectionInterfaces CardanoPeerSelectionState extraFlags extraPeers PeerAddr (PeerConn (IOSim s)) (IOSim s)
-                     -> PeerSelectionActions extraActions extraPeers extraFlags extraAPI PeerAddr (PeerConn (IOSim s)) (IOSim s)
+traceAssociationMode :: PeerSelectionInterfaces CardanoPeerSelectionState extraFlags extraPeers extraCounters PeerAddr (PeerConn (IOSim s)) (IOSim s)
+                     -> PeerSelectionActions
+                          CardanoPeerSelectionState
+                          extraActions
+                          extraPeers
+                          extraFlags
+                          extraAPI
+                          extraCounters
+                          PeerAddr
+                          (PeerConn (IOSim s))
+                          (IOSim s)
+
                      -> Tracer (IOSim s) (DebugPeerSelection CardanoPeerSelectionState extraFlags extraPeers PeerAddr)
 traceAssociationMode interfaces actions = Tracer $ \(TraceGovernorState _ _ st) -> do
     associationMode <- atomically $ readAssociationMode
@@ -800,13 +843,13 @@ traceAssociationMode interfaces actions = Tracer $ \(TraceGovernorState _ _ st) 
                                            (cpstBootstrapPeersFlag (Governor.extraState st))
     traceWith tracerTestTraceEvent (GovernorAssociationMode associationMode)
 
-tracerTracePeerSelectionCounters :: Tracer (IOSim s) PeerSelectionCounters
+tracerTracePeerSelectionCounters :: Tracer (IOSim s) (PeerSelectionCounters (CardanoPeerSelectionView PeerAddr))
 tracerTracePeerSelectionCounters = contramap GovernorCounters tracerTestTraceEvent
 
 tracerMockEnv :: Tracer (IOSim s) TraceMockEnv
 tracerMockEnv = contramap MockEnvEvent tracerTestTraceEvent
 
-tracerTestTraceEvent :: Tracer (IOSim s) (TestTraceEvent CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers PeerAddr))
+tracerTestTraceEvent :: Tracer (IOSim s) (TestTraceEvent CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers PeerAddr) (CardanoPeerSelectionView PeerAddr))
 tracerTestTraceEvent = dynamicTracer <> Tracer (say . show)
 
 dynamicTracer :: Typeable a => Tracer (IOSim s) a
@@ -816,8 +859,9 @@ selectPeerSelectionTraceEvents
   :: ( Typeable extraState
      , Typeable extraFlags
      , Typeable extraPeers
+     , Typeable extraCounters
      )
-  => SimTrace a -> [(Time, (TestTraceEvent extraState extraFlags extraPeers))]
+  => SimTrace a -> [(Time, (TestTraceEvent extraState extraFlags extraPeers extraCounters))]
 selectPeerSelectionTraceEvents = go
   where
     go (SimTrace t _ _ (EventLog e) trace)
@@ -837,8 +881,9 @@ selectPeerSelectionTraceEventsUntil
   :: ( Typeable extraState
      , Typeable extraFlags
      , Typeable extraPeers
+     , Typeable extraCounters
      )
-  => Time -> SimTrace a -> [(Time, TestTraceEvent extraState extraFlags extraPeers)]
+  => Time -> SimTrace a -> [(Time, TestTraceEvent extraState extraFlags extraPeers extraCounters)]
 selectPeerSelectionTraceEventsUntil tmax = go
   where
     go (SimTrace t _ _ _ _)
@@ -858,11 +903,11 @@ selectPeerSelectionTraceEventsUntil tmax = go
     go (TraceInternalError e)        = error ("IOSim: " ++ e)
     go TraceLoop                     = error "Step time limit exceeded"
 
-selectGovernorEvents :: [(Time, TestTraceEvent extraState extraFlags extraPeers)]
+selectGovernorEvents :: [(Time, TestTraceEvent extraState extraFlags extraPeers extraCounters)]
                      -> [(Time, TracePeerSelection extraState extraFlags extraPeers PeerAddr)]
 selectGovernorEvents trace = [ (t, e) | (t, GovernorEvent e) <- trace ]
 
-selectGovernorStateEvents :: [(Time, TestTraceEvent extraState extraFlags extraPeers)]
+selectGovernorStateEvents :: [(Time, TestTraceEvent extraState extraFlags extraPeers extraCounters)]
                           -> [(Time, DebugPeerSelection extraState extraFlags extraPeers PeerAddr)]
 selectGovernorStateEvents trace = [ (t, e) | (t, GovernorDebug e) <- trace ]
 
@@ -1050,7 +1095,9 @@ instance Arbitrary GovernorMockEnvironment where
       [ env {
           peerGraph       = peerGraph',
           localRootPeers  = LocalRootPeers.restrictKeys localRootPeers nodes',
-          publicRootPeers = publicRootPeers `PublicRootPeers.intersection` nodes'
+          publicRootPeers =
+            PublicRootPeers.intersection CPRP.intersection
+              publicRootPeers nodes'
         }
       | peerGraph' <- shrink peerGraph
       , let nodes' = allPeers peerGraph' ]
@@ -1138,9 +1185,9 @@ instance Arbitrary GovernorMockEnvironment where
 prop_arbitrary_GovernorMockEnvironment :: GovernorMockEnvironment -> Property
 prop_arbitrary_GovernorMockEnvironment env =
     tabulate "num root peers"        [show (LocalRootPeers.size (localRootPeers env)
-                                          + PublicRootPeers.size (publicRootPeers env))] $
+                                          + PublicRootPeers.size CPRP.size (publicRootPeers env))] $
     tabulate "num local root peers"  [show (LocalRootPeers.size (localRootPeers env))] $
-    tabulate "num public root peers" [show (PublicRootPeers.size (publicRootPeers env))] $
+    tabulate "num public root peers" [show (PublicRootPeers.size CPRP.size (publicRootPeers env))] $
     tabulate "empty root peers" [show $ not emptyGraph && emptyRootPeers]  $
     tabulate "overlapping local/public roots" [show overlappingRootPeers]  $
     tabulate "num big ledger peers"  [show (Set.size bigLedgerPeersSet)] $
@@ -1150,10 +1197,10 @@ prop_arbitrary_GovernorMockEnvironment env =
     bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers (publicRootPeers env)
     emptyGraph     = null g where PeerGraph g = peerGraph env
     emptyRootPeers = LocalRootPeers.null (localRootPeers env)
-                  && PublicRootPeers.null (publicRootPeers env)
+                  && PublicRootPeers.null CPRP.nullAll (publicRootPeers env)
     overlappingRootPeers =
-      not $ PublicRootPeers.null $
-        PublicRootPeers.intersection
+      not $ PublicRootPeers.null CPRP.nullAll $
+        PublicRootPeers.intersection CPRP.intersection
           (publicRootPeers env)
           (LocalRootPeers.keysSet (localRootPeers env))
 

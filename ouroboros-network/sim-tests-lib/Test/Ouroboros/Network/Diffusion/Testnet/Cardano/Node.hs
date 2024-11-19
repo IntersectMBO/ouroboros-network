@@ -114,6 +114,7 @@ import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSLookupType)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
            LocalRootConfig, WarmValency)
 
+import Cardano.Network.PeerSelection.Governor.Types (CardanoPeerSelectionView)
 import Test.Ouroboros.Network.Data.Script (Script (..), stepScriptSTM')
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB (addBlock,
            getBlockPointSet)
@@ -199,7 +200,8 @@ run :: forall resolver m.
     -> Common.TracersExtra NtNAddr NtNVersion NtNVersionData
                           NtCAddr NtCVersion NtCVersionData
                           ResolverException CardanoPeerSelectionState
-                          CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers NtNAddr) m
+                          CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers NtNAddr)
+                          (CardanoPeerSelectionView NtNAddr) m
     -> Tracer m (TraceLabelPeer NtNAddr (TraceFetchClientState BlockHeader))
     -> m Void
 run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
