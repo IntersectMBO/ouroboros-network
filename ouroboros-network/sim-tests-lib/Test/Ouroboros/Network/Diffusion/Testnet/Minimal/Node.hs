@@ -181,7 +181,7 @@ run :: forall resolver m.
     -> Arguments m
     -> Common.TracersExtra NtNAddr NtNVersion NtNVersionData
                            NtCAddr NtCVersion NtCVersionData
-                           ResolverException () () () () m
+                           ResolverException () () () () () m
     -> Tracer m (TraceLabelPeer NtNAddr (TraceFetchClientState BlockHeader))
     -> m Void
 run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
