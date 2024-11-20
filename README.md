@@ -1,11 +1,11 @@
 # Ouroboros Network
 
-[![x86\_64-linux](https://img.shields.io/endpoint?url=https://ci.iog.io/job/IntersectMBO-ouroboros-network/master/x86_64-linux.required/shield&style=for-the-badge&label=x86_64-linux)](https://ci.iog.io/job/IntersectMBO-ouroboros-network/master/x86_64-linux.required)
-[![x86\_64-darwin](https://img.shields.io/endpoint?url=https://ci.iog.io/job/IntersectMBO-ouroboros-network/master/x86_64-darwin.required/shield&style=for-the-badge&label=x86_64-darwin)](https://ci.iog.io/job/IntersectMBO-ouroboros-network/master/x86_64-darwin.required)
-[![aarch64-darwin](https://img.shields.io/endpoint?url=https://ci.iog.io/job/IntersectMBO-ouroboros-network/master/aarch64-darwin.required/shield&style=for-the-badge&label=aarch64-linux)](https://ci.iog.io/job/IntersectMBO-ouroboros-network/master/aarch64-darwin.required)
+[![x86\_64-linux](https://img.shields.io/endpoint?url=https://ci.iog.io/job/IntersectMBO-ouroboros-network/master/x86_64-linux.required/shield&style=for-the-badge&label=x86_64-linux)](https://ci.iog.io/job/IntersectMBO-ouroboros-network/main/x86_64-linux.required)
+[![x86\_64-darwin](https://img.shields.io/endpoint?url=https://ci.iog.io/job/IntersectMBO-ouroboros-network/master/x86_64-darwin.required/shield&style=for-the-badge&label=x86_64-darwin)](https://ci.iog.io/job/IntersectMBO-ouroboros-network/main/x86_64-darwin.required)
+[![aarch64-darwin](https://img.shields.io/endpoint?url=https://ci.iog.io/job/IntersectMBO-ouroboros-network/master/aarch64-darwin.required/shield&style=for-the-badge&label=aarch64-linux)](https://ci.iog.io/job/IntersectMBO-ouroboros-network/main/aarch64-darwin.required)
 [![mingw64](https://img.shields.io/github/actions/workflow/status/intersectmbo/ouroboros-network/build.yml?event=merge_group&label=mingw64&style=for-the-badge)](https://github.com/intersectmbo/ouroboros-network/actions/workflows/build.yml)
-[![Nightly CI](https://img.shields.io/github/actions/workflow/status/intersectmbo/ouroboros-network/nightly.yml?branch=master&label=Nightly&style=for-the-badge)](https://github.com/intersectmbo/ouroboros-network/actions/workflows/nightly.yml)
-[![Haddocks](https://img.shields.io/github/actions/workflow/status/intersectmbo/ouroboros-network/github-page.yml?branch=master&label=Haddocks&style=for-the-badge)](https://ouroboros-network.cardano.intersectmbo.org/)
+[![Nightly CI](https://img.shields.io/github/actions/workflow/status/intersectmbo/ouroboros-network/nightly.yml?branch=main&label=Nightly&style=for-the-badge)](https://github.com/intersectmbo/ouroboros-network/actions/workflows/nightly.yml)
+[![Haddocks](https://img.shields.io/github/actions/workflow/status/intersectmbo/ouroboros-network/github-page.yml?branch=main&label=Haddocks&style=for-the-badge)](https://ouroboros-network.cardano.intersectmbo.org/)
 [![Discord](https://img.shields.io/discord/1136727663583698984?style=for-the-badge&color=blue)](https://discord.gg/8ncb7fgG)
 
 This repository contains specification and implementation of the network
