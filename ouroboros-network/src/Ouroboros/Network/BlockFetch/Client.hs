@@ -83,7 +83,7 @@ blockFetchClient _version controlMessageSTM reportFetched
                                                blockFetchSize,
                                                blockMatchesHeader,
                                                addFetchedBlock,
-                                               blockForgeUTCTime
+                                               headerForgeUTCTime
                                              },
                    fetchClientCtxStateVars = stateVars
                  } =
@@ -266,7 +266,7 @@ blockFetchClient _version controlMessageSTM reportFetched
             -- Add the block to the chain DB, notifying of any new chains.
             addFetchedBlock (castPoint (blockPoint header)) block
 
-            forgeTime <- atomically $ blockForgeUTCTime $ FromConsensus block
+            forgeTime <- atomically $ headerForgeUTCTime $ FromConsensus header
             let blockDelay = diffUTCTime now forgeTime
 
             let hf = getHeaderFields header

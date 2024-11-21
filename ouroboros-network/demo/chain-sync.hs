@@ -433,8 +433,7 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
               blockFetchSize         = \_ -> 1000,
               blockMatchesHeader     = \_ _ -> True,
 
-              headerForgeUTCTime,
-              blockForgeUTCTime      = headerForgeUTCTime . fmap blockHeader
+              headerForgeUTCTime
             }
           where
             plausibleCandidateChain cur candidate =
