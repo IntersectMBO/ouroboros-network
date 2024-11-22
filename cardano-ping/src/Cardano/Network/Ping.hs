@@ -28,7 +28,7 @@ module Cardano.Network.Ping
 import           Control.Exception (bracket, Exception (..), throwIO)
 import           Control.Monad (replicateM, unless, when)
 import           Control.Concurrent.Class.MonadSTM.Strict ( MonadSTM(atomically), takeTMVar, StrictTMVar )
-import           Control.Monad.Class.MonadTime.SI (UTCTime, diffTime, MonadMonotonicTime(getMonotonicTime), MonadTime(getCurrentTime), Time)
+import           Control.Monad.Class.MonadTime.SI (UTCTime, addUTCTime, diffTime, diffUTCTime, MonadMonotonicTime(getMonotonicTime), MonadTime(getCurrentTime), NominalDiffTime, Time)
 import           Control.Monad.Trans.Except
 import           Control.Tracer (Tracer (..), nullTracer, traceWith)
 import           Data.Aeson (Value, ToJSON(toJSON, toJSONList), object, encode, KeyValue((.=)))
@@ -54,6 +54,7 @@ import           Text.Printf (printf)
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
+import qualified Codec.CBOR.Term as CBOR
 import qualified Codec.CBOR.Write as CBOR
 import qualified Control.Monad.Class.MonadTimer.SI as MT
 import qualified Data.ByteString.Lazy as LBS
@@ -280,15 +281,34 @@ keepAliveDone _ =
     CBOR.toLazyByteString $
       CBOR.encodeWord 2
 
-chainSyncFindIntersect :: ByteString
-chainSyncFindIntersect = CBOR.toLazyByteString findIntersectEnc
+chainSyncFindIntersect :: [ChainSyncTip]
+                       -> ByteString
+chainSyncFindIntersect tips = CBOR.toLazyByteString findIntersectEnc
  where
   findIntersectEnc :: CBOR.Encoding
   findIntersectEnc =
        CBOR.encodeListLen 2
     <> CBOR.encodeWord 4
     <> CBOR.encodeListLenIndef
+    <> addTips tips
     <> CBOR.encodeBreak
+
+  addTips :: [ChainSyncTip]
+          -> CBOR.Encoding
+  addTips [] = mempty
+  addTips (t:ts) =
+       CBOR.encodeListLen 2
+    <> CBOR.encodeWord64 (cstSlotNo t)
+    <> CBOR.encodeBytes (LBS.toStrict $ cstHash t)
+    <> addTips ts
+
+chainSyncRequestNext :: ByteString
+chainSyncRequestNext = CBOR.toLazyByteString requestNextEnc
+ where
+  requestNextEnc :: CBOR.Encoding
+  requestNextEnc =
+      CBOR.encodeListLen 1
+   <> CBOR.encodeWord 0
 
 handshakeReqEnc :: NonEmpty NodeVersion -> Bool -> CBOR.Encoding
 handshakeReqEnc versions query =
@@ -526,19 +546,84 @@ handshakeDec = do
         _query <- CBOR.decodeBool
         return $ Right $ vnFun magic mode peerSharing
 
-chainSyncIntersectNotFoundDec :: CBOR.Decoder s (Word64, Word64, ByteString)
-chainSyncIntersectNotFoundDec = do
+chainSyncIntersect :: CBOR.Decoder s ChainSyncTip
+chainSyncIntersect = do
   len <- CBOR.decodeListLen
   key <- CBOR.decodeWord
   case (len, key) of
        (2, 6) -> do
+         chainSyncDecodeTip
+       (3, 5) -> do
          _ <- CBOR.decodeListLen
-         _ <- CBOR.decodeListLen
-         slotNo <- CBOR.decodeWord64
-         hash   <- CBOR.decodeBytes
-         blockNo <- CBOR.decodeWord64
-         return (slotNo, blockNo, LBS.fromStrict hash)
+         _ <- CBOR.decodeWord64
+         _ <- CBOR.decodeBytes
+         chainSyncDecodeTip
        _ -> fail ("IntersectNotFound unexpected " ++ show key)
+
+chainSyncDecodeTip :: CBOR.Decoder s ChainSyncTip
+chainSyncDecodeTip = do
+  _ <- CBOR.decodeListLen
+  _ <- CBOR.decodeListLen
+  slotNo <- CBOR.decodeWord64
+  hash   <- CBOR.decodeBytes
+  blockNo <- CBOR.decodeWord64
+  return $ ChainSyncTip slotNo blockNo $ LBS.fromStrict hash
+
+chainSyncDecodeHeader :: CBOR.Decoder s ChainSyncTip
+chainSyncDecodeHeader = do
+  _ <- CBOR.decodeListLen
+  _ <- CBOR.decodeListLen
+  blockNo <- CBOR.decodeWord64
+  slotNo <- CBOR.decodeWord64
+  hash   <- CBOR.decodeBytes
+  return $ ChainSyncTip slotNo blockNo $ LBS.fromStrict hash
+
+data ChainSyncTip = ChainSyncTip {
+    cstSlotNo  :: !Word64
+  , cstBlockNo :: !Word64
+  , cstHash    :: !ByteString
+  } deriving (Eq)
+
+instance Show ChainSyncTip where
+    show ChainSyncTip{..} =
+        printf "Tip: slotNo: %d blockNo: %d hash: %s" cstSlotNo cstBlockNo (hexStr cstHash)
+
+data ChainSyncAwaitReply = ChainSyncAwaitReply
+                         | ChainSyncRollForward ChainSyncTip
+                         | ChainSyncRollBackward ChainSyncTip
+                         deriving (Eq, Show)
+
+chainSyncCanWaitDec :: CBOR.Decoder s ChainSyncAwaitReply
+chainSyncCanWaitDec = do
+  len <- CBOR.decodeListLen
+  key <- CBOR.decodeWord
+  case (len, key) of
+       (1, 1) -> return ChainSyncAwaitReply
+       (3, 2) -> do
+           _hdrLen <- CBOR.decodeListLen
+           _hdrKey <- CBOR.decodeWord
+           CBOR.TTagged _ (CBOR.TBytes hdr) <- CBOR.decodeTerm
+           case CBOR.deserialiseFromBytes chainSyncDecodeHeader (LBS.fromStrict hdr) of
+                Left err -> fail $ "error decoding ChainSyncAwaitReply header " <> (show err)
+                Right (_,tip) -> return $ ChainSyncRollForward tip
+
+       (3, 3) -> do
+           skipPoint
+           tip <- chainSyncDecodeTip
+           return $ ChainSyncRollBackward tip
+       _ -> fail "error decoding ChainSyncAwaitReply"
+
+ where
+  skipPoint :: CBOR.Decoder s ()
+  skipPoint = do
+    len <- CBOR.decodeListLen
+    case len of
+         0 -> return ()
+         2 -> do
+           _ <- CBOR.decodeWord
+           _ <- CBOR.decodeBytes
+           return ()
+         _ -> error $ "unexpected length " <> (show len)
 
 wrap :: MiniProtocolNum -> MiniProtocolDir -> LBS.ByteString -> MuxSDU
 wrap ptclNum ptclDir blob = MuxSDU
@@ -627,6 +712,7 @@ data PingClientError = PingClientDeserialiseFailure DeserialiseFailure String
                      | PingClientHandshakeFailure HandshakeFailure String
                      | PingClientNegotiationError String [NodeVersion] String
                      | PingClientIPAddressFailure String
+                     | PingClientRequestNextFailure DeserialiseFailure String
                      deriving Show
 
 instance Exception PingClientError where
@@ -644,6 +730,8 @@ instance Exception PingClientError where
     printf "%s Version negotiation error %s\nReceived versions: %s\n" peerStr err (show recVersions)
   displayException (PingClientIPAddressFailure peerStr) =
     printf "%s expected an IP address\n" peerStr
+  displayException (PingClientRequestNextFailure err peerStr) =
+    printf "%s requestNext decoding error %s" peerStr (show err)
 
 pingClient :: Tracer IO LogMsg -> Tracer IO String -> PingOpts -> [NodeVersion] -> AddrInfo -> IO ()
 pingClient stdout stderr PingOpts{..} versions peer = bracket
@@ -694,7 +782,7 @@ pingClient stdout stderr PingOpts{..} versions peer = bracket
               TL.hPutStrLn IO.stdout $ peerStr' <> " " <> (showQueriedVersions recVersions)
             when (not pingOptsHandshakeQuery && not isUnixSocket) $ do
               if pingOptsGetTip
-                 then getTip bearer timeoutfn peerStr
+                 then getTip bearer timeoutfn peerStr []
                  else keepAlive bearer timeoutfn peerStr version (tdigest []) 0
               -- send terminating message
               _ <- write bearer timeoutfn $ wrap keepaliveNum InitiatorDir (keepAliveDone version)
@@ -792,19 +880,80 @@ pingClient stdout stderr PingOpts{..} versions peer = bracket
     getTip :: MuxBearer IO
            -> TimeoutFn IO
            -> String
+           -> [ChainSyncTip]
            -> IO ()
-    getTip bearer timeoutfn peerStr = do
-      !t_s <- write bearer timeoutfn $ wrap chainSyncNum InitiatorDir chainSyncFindIntersect
+    getTip bearer timeoutfn peerStr tips = do
+      !t_s <- write bearer timeoutfn $ wrap chainSyncNum InitiatorDir (chainSyncFindIntersect tips)
       (!msg, !t_e) <- nextMsg bearer timeoutfn chainSyncNum
-      case CBOR.deserialiseFromBytes chainSyncIntersectNotFoundDec msg of
+      case CBOR.deserialiseFromBytes chainSyncIntersect msg of
            Left err -> throwIO (PingClientFindIntersectDeserialiseFailure err peerStr)
-           Right (_, (slotNo, blockNo, hash)) ->
+           Right (_, tip@ChainSyncTip {..}) ->
              case fromSockAddr $ Socket.addrAddress peer of
                   Nothing -> throwIO (PingClientIPAddressFailure peerStr)
-                  Just host ->
-                    let tip = PingTip host (toSample t_e t_s) hash blockNo slotNo in
-                    if pingOptsJson then traceWith stdout $ LogMsg (encode tip)
-                                    else traceWith stdout $ LogMsg $ LBS.Char.pack $ show tip <> "\n"
+                  Just host -> do
+                    let pingTip = PingTip host (toSample t_e t_s) cstHash cstBlockNo cstSlotNo
+                    if pingOptsJson then traceWith stdout $ LogMsg (encode pingTip)
+                                    else traceWith stdout $ LogMsg $ LBS.Char.pack $ show pingTip <> "\n"
+                    case tips of
+                         [] -> do
+                             getTip bearer timeoutfn peerStr [tip]
+                         _  -> getNext bearer timeoutfn peerStr (tdigest []) 0
+
+    getNext :: MuxBearer IO
+            -> TimeoutFn IO
+            -> String
+            -> TDigest 5
+            -> Word32
+            -> IO ()
+    getNext bearer timeoutfn peerStr td !cookie = do
+      !_t_s <- write bearer timeoutfn $ wrap chainSyncNum InitiatorDir chainSyncRequestNext
+      (!msg, !_t_e) <- nextMsg bearer timeoutfn chainSyncNum
+      case CBOR.deserialiseFromBytes chainSyncCanWaitDec msg of
+           Left err -> throwIO (PingClientRequestNextFailure err peerStr)
+           Right (_, ChainSyncAwaitReply) -> do
+             -- printf "Await Reply\n"
+             IO.hFlush IO.stdout
+             (!msg2, !_t_e2) <- nextMsg bearer timeoutfn chainSyncNum
+             case CBOR.deserialiseFromBytes chainSyncCanWaitDec msg2 of
+                  Left err -> throwIO (PingClientRequestNextFailure err peerStr)
+                  Right (_, ChainSyncAwaitReply) -> error "unexpected Await Reply"
+                  Right (_, ChainSyncRollForward tip) -> do
+                      delay <- headerDelay (cstSlotNo tip)
+                      -- printf "Rollforward: delay: %s, %s\n" (show delay) (show tip)
+                      -- IO.hFlush IO.stdout
+                      now <- getCurrentTime
+                      let rtt = realToFrac delay
+                          td' = insert rtt td
+                          point = toStatPoint now peerStr (fromIntegral cookie) rtt td'
+                      if pingOptsJson
+                         then traceWith stdout $ LogMsg (encode point)
+                         else traceWith stdout $ LogMsg $ LBS.Char.pack $ show point <> "\n"
+
+                      getNext bearer timeoutfn peerStr td' (cookie + 1)
+                  Right (_, ChainSyncRollBackward _tip) -> do
+                      -- printf "Rollbackward: %s\n" (show tip)
+                      -- IO.hFlush IO.stdout
+                      getNext bearer timeoutfn peerStr td cookie
+           Right (_, ChainSyncRollForward _tip) -> do
+               {- delay <- headerDelay (cstSlotNo tip)
+               printf "Rollforward: delay: %s, %s\n" (show delay) (show tip)
+               IO.hFlush IO.stdout -}
+               getNext bearer timeoutfn peerStr td cookie
+           Right (_, ChainSyncRollBackward _tip) -> do
+               {- printf "Rollbackward: tip: %s\n" (show tip)
+               IO.hFlush IO.stdout -}
+               getNext bearer timeoutfn peerStr td cookie
+
+headerDelay :: Word64
+            -> IO NominalDiffTime
+headerDelay slotNo = do
+    now <- getCurrentTime
+    -- printf "now: %s\n" $ show now
+    let mainnetStart = Prelude.read "2020-06-07 21:44:51 UTC" :: UTCTime
+        slotTime = addUTCTime (realToFrac slotNo) mainnetStart
+        delay = diffUTCTime now slotTime
+    -- printf "slotNo: %d, slotTime %s\n" slotNo (show slotTime)
+    return delay
 
 isSameVersionAndMagic :: NodeVersion -> NodeVersion -> Bool
 isSameVersionAndMagic v1 v2 = extract v1 == extract v2
