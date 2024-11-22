@@ -924,7 +924,8 @@ pingClient stdout stderr PingOpts{..} versions peer = bracket
                       now <- getCurrentTime
                       let rtt = realToFrac delay
                           td' = insert rtt td
-                          point = toStatPoint now peerStr (fromIntegral cookie) rtt td'
+                          peerStr' = peerStr <> printf " %d %d" (cstSlotNo tip) (cstBlockNo tip)
+                          point = toStatPoint now peerStr' (fromIntegral cookie) rtt td'
                       if pingOptsJson
                          then traceWith stdout $ LogMsg (encode point)
                          else traceWith stdout $ LogMsg $ LBS.Char.pack $ show point <> "\n"
