@@ -125,7 +125,7 @@ withPeer
     -> m a
 withPeer tracer
          channelsVar
-         (TxMempoolSem mempoolSem)
+         (TxMempoolSem _mempoolSem)
          policy@TxDecisionPolicy { bufferedTxsMinLifetime }
          sharedStateVar
          TxSubmissionMempoolReader { mempoolGetSnapshot }
@@ -247,8 +247,8 @@ withPeer tracer
 
     withMempoolSem :: m (Either (txid,tx) (txid, tx)) -> m (Either (txid,tx) (txid,tx))
     withMempoolSem a =
-        bracket_ (atomically $ waitTSem mempoolSem)
-                 (atomically $ signalTSem mempoolSem)
+        bracket_ (return ()) -- (atomically $ waitTSem mempoolSem)
+                 (return ()) -- (atomically $ signalTSem mempoolSem)
                  (do
                      r <- a
                      now <- getMonotonicTime

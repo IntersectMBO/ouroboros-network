@@ -98,12 +98,12 @@ txSubmissionInboundV2
 
     addTx :: (txid,tx) -> m (Either (txid, tx) (txid, tx))
     addTx (txid,tx) = do
-      mpSnapshot <- atomically mempoolGetSnapshot
+      -- mpSnapshot <- atomically mempoolGetSnapshot
 
       -- Note that checking if the mempool contains a TX before
       -- spending several ms attempting to add it to the pool has
       -- been judged immoral. 
-      if mempoolHasTx mpSnapshot txid
+      if false -- mempoolHasTx mpSnapshot txid
          then do
            !now <- getMonotonicTime
            !s <- countRejectedTxs now 1
