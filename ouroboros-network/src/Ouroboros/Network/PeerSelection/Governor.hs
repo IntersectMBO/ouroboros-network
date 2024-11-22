@@ -128,6 +128,7 @@ import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.NodeToNode (PeerAdvertise(DoAdvertisePeer))
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers (EstablishedPeers(availableForPeerShare))
+import FRP.Rhine.Clock.Realtime (UTCClock)
 
 
 {- $overview
@@ -570,6 +571,14 @@ data ChaseTargets peeraddr = ChaseTargets !UpOrDown
                                           (Set.Set peeraddr)
 type TargetsInput peeraddr peerconn event = (PeerSelectionState peeraddr peerconn, PeerSelectionView (Set.Set peeraddr, Int))
 
+data ChannelGov = ChannelGov
+data PeerSelectionClock = PeerSelectionClock
+
+instance (MonadSTM m) => Clock m PeerSelectionClock where
+  type Time PeerSelectionClock = UTCTime
+  initClock (WC ChannelGov) = do
+    return undefined
+
 peerSelectionGovernor' :: forall peeraddr peerconn m. ( Alternative (STM m)
                          , MonadAsync m
                          , MonadDelay m
@@ -664,33 +673,33 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
             Rhine.try $ proc (sig, chan, st) -> do
               throwOnCond (not . sanePeerSelectionTargets) () -< targets st
               liftClSF $ constMCl (traceWith tracer $ TraceTargetsChanged undefined undefined) -< ()
-              (nextWakeup, finalState) <- liftClSF (stepActions [cardanoKnownPeers]) -< (sig, st)
+              -- (nextWakeup, finalState) <- liftClSF (stepActions [cardanoKnownPeers]) -< (sig, st)
               returnA -< ()
 
-        stepActions ::
-          [ClSF m cl (Maybe Quiesce, PeerSelectionState peeraddr peerconn) (Either (Maybe (Min Time)) (m (PeerSelectionState peeraddr peerconn)))]
-          -> ClSF m cl (Maybe Quiesce, PeerSelectionState peeraddr peerconn) (Maybe (Min Time), m (PeerSelectionState peeraddr peerconn))
-        stepActions [] = arr \(_s, st) -> (Nothing, return st)
-        stepActions (act:acts) = proc (sig, st) -> do
-          result <- act -< (sig, st)
-          case result of
-            Left t -> do
-              (lefts, actions) <- stepActions acts -< (sig, st)
-              returnA -< (t <> lefts, actions)
-            Right mact -> do
-              st' <- arrMCl id -< mact
-              stepActions acts -< (sig, st')
+        -- stepActions ::
+        --   [ClSF m cl (a, PeerSelectionState peeraddr peerconn) (Either Time (PeerSelectionState peeraddr peerconn))]
+        --   -> ClSF m cl (a, PeerSelectionState peeraddr peerconn) (PeerSelectionState peeraddr peerconn)
+        -- stepActions [] = arr \(_s, st) -> st
+        -- stepActions (act:acts) = proc (sig, st) -> do
+        --   result <- act -< (sig, st)
+        --   case result of
+        --     Left t -> do
+        --       (lefts, actions) <- stepActions acts -< (sig, st)
+        --       returnA -< (t <> lefts, actions)
+        --     Right mact -> do
+        --       st' <- arrMCl id -< mact
+        --       stepActions acts -< (sig, st')
 
-    cardanoKnownPeers :: BehaviorF m time (Maybe Quiesce, PeerSelectionState peeraddr peerconn) (Either (Maybe (Min Time)) (m (PeerSelectionState peeraddr peerconn)))
-    cardanoKnownPeers = proc (quiesce, state) -> do
-      case quiesce of
-        Nothing    -> knownPeers -< state
-        _otherwise -> returnA    -< Left Nothing
+    -- cardanoKnownPeers :: BehaviorF m time (Maybe Quiesce, PeerSelectionState peeraddr peerconn) (Either Time (PeerSelectionState peeraddr peerconn))
+    -- cardanoKnownPeers = proc (quiesce, state) -> do
+    --   case quiesce of
+    --     Nothing    -> knownPeers -< state
+    --     _otherwise -> returnA    -< Left Nothing
 
     -- establishedPeers :: BehaviorF m time (a, PeerSelectionState peeraddr peerconn) (Either (Maybe (Min Time)) (m (PeerSelectionState peeraddr peerconn)))
     -- establishedPeers = arr forEstablished
 
-    knownPeers :: BehaviorF m time (PeerSelectionState peeraddr peerconn) (Either (Maybe (Min Time)) (m (PeerSelectionState peeraddr peerconn)))
+    knownPeers :: BehaviorF m time (PeerSelectionState peeraddr peerconn) (Either Time (m (PeerSelectionState peeraddr peerconn)))
     knownPeers = withTime >>> arrMCl (\(now, state) -> forKnown state now <$> readInboundPeers actions)
       where
         withTime = proc st -> do
@@ -743,7 +752,7 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
     forKnown :: PeerSelectionState peeraddr peerconn
              -> time
              -> Map peeraddr PeerSharing
-             -> Either (Maybe (Min Time)) (m (PeerSelectionState peeraddr peerconn))
+             -> Either Time (m (PeerSelectionState peeraddr peerconn))
     forKnown st@PeerSelectionState {
               knownPeers,
               establishedPeers,
@@ -799,7 +808,7 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
       = Right do
         -- Max selected should be <= numPeerShareReqsPossible
         selectedForPeerShare <- pickPeers st
-                                policyPickKnownPeersForPeerShare
+                                (policyPickKnownPeersForPeerShare policy)
                                 availableForPeerShare
                                 numPeerShareReqsPossible
 
@@ -814,7 +823,7 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
             -- numPeersToReq :: PeerSharingAmount
             !numPeersToReq = fromIntegral
                            $ min 255 (max 8 (objective `div` numPeerShareReqs))
-            (salt, stdGen'') = random stdGen'
+            (salt, stdGen'') = undefined --random stdGen'
         traceWith tracer $ TracePeerShareRequests
                              targetNumberOfKnownPeers
                              numKnownPeers
@@ -835,10 +844,10 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
       | numKnownPeers < targetNumberOfKnownPeers
       , numPeerShareReqsPossible > 0
       , Set.null availableForPeerShare
-      = Left . Just $ fmap Min $ EstablishedPeers.minPeerShareTime establishedPeers
+      = undefined --Left . Just $ fmap Min $ EstablishedPeers.minPeerShareTime establishedPeers
 
       | otherwise
-      = Left Nothing
+      = undefined --Left Nothing
       where
         (useInboundPeers, stdGen') = random stdGen
         PeerSelectionCounters {
