@@ -884,7 +884,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
               m <- readTVar connVar
               check (Map.member (connId remoteAddr) m)
               writeTVar connVar (Map.delete (connId remoteAddr) m)
-            void (releaseOutboundConnection cm remoteAddr)
+            void (releaseOutboundConnection cm (connId remoteAddr))
             go (Map.delete remoteAddr connMap)
           RunMiniProtocols remoteAddr reqs -> do
             atomically $ do
@@ -1159,6 +1159,7 @@ prop_connection_manager_valid_transition_order (Fixed rnd) serverAcc (ArbDataFlo
   in tabulate "ConnectionEvents" (map showConnectionEvents events)
     . counterexample (ppScript mns)
     . counterexample (Trace.ppTrace show show abstractTransitionEvents)
+    . counterexample (ppTrace trace)
     . bifoldMap
        ( \ case
            MainReturn {} -> mempty

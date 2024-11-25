@@ -485,7 +485,7 @@ bidirectionalExperiment
                   muxBundle
               res <-
                 releaseOutboundConnection
-                  connectionManager remoteAddr
+                  connectionManager connId
               case res of
                 UnsupportedState inState -> do
                   traceWith debugTracer ( "initiator-loop"
