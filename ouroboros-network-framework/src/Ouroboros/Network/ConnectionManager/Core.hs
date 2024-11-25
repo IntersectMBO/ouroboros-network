@@ -81,6 +81,8 @@ data Arguments handlerTrace socket peerAddr handle handleError versionNumber ver
 
         -- | Trace state transitions.
         --
+        -- TODO: do we need this tracer?  In some tests we relay on `traceTVar` in
+        -- `newNetworkMutableState` instead.
         trTracer            :: Tracer m (TransitionTrace peerAddr
                                             (ConnectionState peerAddr handle handleError versionNumber m)),
 
