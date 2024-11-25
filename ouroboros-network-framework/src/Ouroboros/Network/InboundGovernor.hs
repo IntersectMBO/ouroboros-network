@@ -177,12 +177,12 @@ withInboundGovernor trTracer tracer debugTracer inboundInfoChannel
                )
             <> Map.foldMapWithKey
                  (    firstMuxToFinish
+                   <> firstPeerDemotedToCold
+                   <> firstPeerCommitRemote
                    <> firstMiniProtocolToFinish
                    <> firstPeerPromotedToWarm
                    <> firstPeerPromotedToHot
                    <> firstPeerDemotedToWarm
-                   <> firstPeerDemotedToCold
-                   <> firstPeerCommitRemote
 
                    :: EventSignal muxMode initiatorCtx peerAddr versionData m a b
                  )
