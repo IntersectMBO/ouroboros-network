@@ -1805,13 +1805,14 @@ withConnectionManager args@ConnectionManagerArguments {
                     TerminatedState handleErrorM
               transition = mkTransition connState connState'
               absConnState = State.abstractState (Known connState)
-              shouldTrace = absConnState /= TerminatedSt
+              shouldTransition = absConnState /= TerminatedSt
 
           -- 'handleError' might be either a handshake negotiation
           -- a protocol failure (an IO exception, a timeout or
           -- codec failure).  In the first case we should not reset
           -- the connection as this is not a protocol error.
-          writeTVar connVar connState'
+          when shouldTransition $ do
+            writeTVar connVar connState'
 
           updated <-
             modifyTMVarPure
@@ -1830,7 +1831,7 @@ withConnectionManager args@ConnectionManagerArguments {
             -- Key was present in the dictionary (stateVar) and
             -- removed so we trace the removal.
               return $
-                if shouldTrace
+                if shouldTransition
                    then [ transition
                         , Transition
                            { fromState = Known (TerminatedState Nothing)
