@@ -157,7 +157,7 @@ abstractState = \case
     go :: ConnectionState muxMode peerAddr m a b -> AbstractState
     go ReservedOutboundState {}       = ReservedOutboundSt
     go (UnnegotiatedState pr _ _)     = UnnegotiatedSt pr
-    go (OutboundUniState    _ _ _)    = OutboundUniSt
+    go OutboundUniState {}            = OutboundUniSt
     go (OutboundDupState    _ _ _ te) = OutboundDupSt te
     go (OutboundIdleState _ _ _ df)   = OutboundIdleSt df
     go (InboundIdleState _ _ _ df)    = InboundIdleSt df
