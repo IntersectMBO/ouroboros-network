@@ -64,8 +64,6 @@ import Ouroboros.Network.Testing.Utils hiding (SmallDelay, debugTracer)
 import Simulation.Network.Snocket (BearerInfo (..))
 
 import Test.Ouroboros.Network.Diffusion.Node.NodeKernel
-import Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Node
-           (config_REPROMOTE_DELAY)
 import Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Simulation
 import Test.QuickCheck
 import Test.QuickCheck.Monoids
@@ -113,6 +111,8 @@ import Control.Monad.Class.MonadTest (exploreRaces)
 import Data.Dynamic (fromDynamic)
 import Ouroboros.Network.Block (BlockNo (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
+import Test.Ouroboros.Network.Diffusion.Testnet.Minimal.Node
+           (config_REPROMOTE_DELAY)
 
 tests :: TestTree
 tests =

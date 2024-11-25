@@ -55,7 +55,6 @@ library
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:
     Cardano.Diffusion.Configuration
-    Cardano.Diffusion.P2P
     Cardano.Diffusion.Policies
     Cardano.Network.ArgumentsExtra
     Cardano.Network.LedgerPeerConsensusInterface
@@ -109,6 +108,7 @@ library
     Ouroboros.Network.TxSubmission.Mempool.Reader
     Ouroboros.Network.TxSubmission.Outbound
     Ouroboros.Network.PeerSelection.Governor.Types
+    Ouroboros.Network.PeerSelection.Governor.Monitor
 
   other-modules:
     Ouroboros.Network.Diffusion.Utils
@@ -116,7 +116,6 @@ library
     Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers
     Ouroboros.Network.PeerSelection.Governor.EstablishedPeers
     Ouroboros.Network.PeerSelection.Governor.KnownPeers
-    Ouroboros.Network.PeerSelection.Governor.Monitor
     Ouroboros.Network.PeerSelection.Governor.RootPeers
     Ouroboros.Network.PeerSelection.LedgerPeers.Common
     Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
@@ -259,7 +258,6 @@ library sim-tests-lib
     Test.Ouroboros.Network.Diffusion.Node.NodeKernel
     Test.Ouroboros.Network.Diffusion.Policies
     Test.Ouroboros.Network.Diffusion.Testnet.Cardano
-    Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Node
     Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Simulation
     Test.Ouroboros.Network.Diffusion.Testnet.Minimal.Node
     Test.Ouroboros.Network.LedgerPeers

@@ -26,9 +26,6 @@ import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 
-import Cardano.Network.PeerSelection.Bootstrap (requiresBootstrapPeers)
-import Cardano.Network.PeerSelection.Governor.PeerSelectionState
-           (CardanoPeerSelectionState (..))
 import Ouroboros.Network.Diffusion.Policies qualified as Policies
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
@@ -56,11 +53,13 @@ import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 --
 belowTarget
     :: (MonadAsync m, MonadTimer m, Ord peeraddr, Hashable peeraddr)
-    => PeerSelectionActions CardanoPeerSelectionState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
+    => (extraState -> Bool)
+    -> PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
     -> Time -- ^ blocked at
     -> Map peeraddr PeerSharing
-    -> MkGuardedDecision CardanoPeerSelectionState extraFlags extraPeers peeraddr peerconn m
-belowTarget actions@PeerSelectionActions {
+    -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
+belowTarget enableAction
+            actions@PeerSelectionActions {
               peerSharing
             , extraPeersActions = PublicExtraPeersActions {
                 memberExtraPeers
@@ -85,10 +84,7 @@ belowTarget actions@PeerSelectionActions {
               targets = PeerSelectionTargets {
                           targetNumberOfKnownPeers
                         },
-              extraState = CardanoPeerSelectionState {
-                cpstLedgerStateJudgement
-              , cpstBootstrapPeersFlag
-              },
+              extraState,
               stdGen
             }
     --
@@ -102,8 +98,7 @@ belowTarget actions@PeerSelectionActions {
     -- There are no peer share requests in-flight.
   , inProgressPeerShareReqs <= 0
 
-    -- No inbound peers should be used when the node is using bootstrap peers.
-  , not (requiresBootstrapPeers cpstBootstrapPeersFlag cpstLedgerStateJudgement)
+  , enableAction extraState
 
   , blockedAt >= inboundPeersRetryTime
 
@@ -156,9 +151,7 @@ belowTarget actions@PeerSelectionActions {
     -- We can only ask ones where we have not asked them within a certain time.
   , not (Set.null availableForPeerShare)
 
-    -- No peer share requests should be issued when the node is using bootstrap
-    -- peers.
-  , not (requiresBootstrapPeers cpstBootstrapPeersFlag cpstLedgerStateJudgement)
+  , enableAction extraState
 
   = Guarded Nothing $ do
       -- Max selected should be <= numPeerShareReqsPossible

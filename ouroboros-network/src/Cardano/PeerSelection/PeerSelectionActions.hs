@@ -64,7 +64,7 @@ requestPublicRootPeers
   usingBootstrapPeers <- atomically
                        $ requiresBootstrapPeers <$> useBootstrapped
                                                 <*> getLedgerStateJudgement
-  if usingBootstrapPeers
+  if True
      then do
       -- If the ledger state is in sensitive state we should get trustable peers.
       (bootstrapPeers, dt) <- requestConfiguredBootstrapPeers n
