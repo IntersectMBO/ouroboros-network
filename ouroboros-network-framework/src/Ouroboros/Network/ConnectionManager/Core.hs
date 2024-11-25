@@ -631,7 +631,7 @@ withConnectionManager args@ConnectionManagerArguments {
           -- hits there we will update `connVar`.
           uninterruptibleMask $ \unmask -> do
             traceWith tracer (TrConnectionCleanup connId)
-            eTransition <- modifyTMVar stateVar $ \state -> do
+            mbTransition <- modifyTMVar stateVar $ \state -> do
               eTransition <- atomically $ do
                 connState <- readTVar connVar
                 let connState' = TerminatedState Nothing
@@ -672,17 +672,16 @@ withConnectionManager args@ConnectionManagerArguments {
                   traverse_ (traceWith trTracer) mbTransition
                   close cmSnocket socket
                   return ( state
-                         , Left ()
+                         , Nothing
                          )
                 Right transition -> do
                   close cmSnocket socket
                   return ( state
-                         , Right transition
+                         , Just transition
                          )
 
-            case eTransition of
-              Left () -> do
-
+            case mbTransition of
+              Nothing -> do
                 let transition =
                       TransitionTrace
                         peerAddr
@@ -690,7 +689,7 @@ withConnectionManager args@ConnectionManagerArguments {
                            { fromState = Known (TerminatedState Nothing)
                            , toState   = Unknown
                            }
-                mbTransition <- modifyTMVar stateVar $ \state ->
+                mbTransition' <- modifyTMVar stateVar $ \state ->
                   case State.lookup connId state of
                     Nothing -> pure (state, Nothing)
                     Just v  ->
@@ -698,9 +697,10 @@ withConnectionManager args@ConnectionManagerArguments {
                          then pure (State.delete connId state , Just transition)
                          else pure (state                     , Nothing)
 
-                traverse_ (traceWith trTracer) mbTransition
+                traverse_ (traceWith trTracer) mbTransition'
                 traceCounters stateVar
-              Right transition ->
+
+              Just transition ->
                 do traceWith tracer (TrConnectionTimeWait connId)
                    when (cmTimeWaitTimeout > 0) $
                      let -- make sure we wait at least 'cmTimeWaitTimeout', we
@@ -1070,13 +1070,13 @@ withConnectionManager args@ConnectionManagerArguments {
                 case classifyHandleError <$> handleErrorM of
                   Just HandshakeFailure ->
                     TerminatingState connId connThread
-                                    handleErrorM
+                                     handleErrorM
                   Just HandshakeProtocolViolation ->
                     TerminatedState handleErrorM
                   -- On inbound query, connection is terminating.
                   Nothing ->
                     TerminatingState connId connThread
-                                    handleErrorM
+                                     handleErrorM
               transition = mkTransition connState connState'
               absConnState = State.abstractState (Known connState)
               shouldTrace = absConnState /= TerminatedSt
@@ -1797,7 +1797,7 @@ withConnectionManager args@ConnectionManagerArguments {
                 case classifyHandleError <$> handleErrorM of
                   Just HandshakeFailure ->
                     TerminatingState connId connThread
-                                    handleErrorM
+                                     handleErrorM
                   Just HandshakeProtocolViolation ->
                     TerminatedState handleErrorM
                   -- On outbound query, connection is terminated.
