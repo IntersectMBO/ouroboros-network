@@ -36,8 +36,8 @@ module Ouroboros.Network.InboundGovernor
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Exception (SomeAsyncException (..), assert)
-import Control.Monad (foldM, when)
+import Control.Exception (SomeAsyncException (..))
+import Control.Monad (foldM)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
@@ -419,20 +419,16 @@ withInboundGovernor trTracer tracer debugTracer inboundInfoChannel
           res <- promotedToWarmRemote connectionManager connId
           traceWith tracer (TrPromotedToWarmRemote connId res)
 
-          when (resultInState res == UnknownConnectionSt) $ do
-            traceWith tracer (TrUnexpectedlyFalseAssertion
-                                (InboundGovernorLoop
-                                  (Just connId)
-                                  UnknownConnectionSt)
-                             )
-            evaluate (assert False ())
-
-          let state' = updateRemoteState
-                         connId
-                         RemoteWarm
-                         state
-
-          return (Just connId, state')
+          case resultInState res of
+            UnknownConnectionSt -> do
+              let state' = unregisterConnection connId state
+              return (Just connId, state')
+            _ -> do
+              let state' = updateRemoteState
+                             connId
+                             RemoteWarm
+                             state
+              return (Just connId, state')
 
         RemotePromotedToHot connId -> do
           traceWith tracer (TrPromotedToHotRemote connId)
