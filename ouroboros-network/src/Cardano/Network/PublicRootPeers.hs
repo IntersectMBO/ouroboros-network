@@ -7,7 +7,7 @@ import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Typeable (Typeable)
-import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
+import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.Types
 
 data CardanoPublicRootPeers peeraddr =
@@ -39,6 +39,7 @@ cardanoPublicRootPeersActions =
   , sizeExtraPeers         = size
   , differenceExtraPeers   = difference
   , intersectionExtraPeers = intersection
+  , toAdvertise            = toAdvertisePeersMap
   }
 
 -- Map and Set are disjoint
@@ -94,3 +95,9 @@ intersection :: Ord peeraddr
 intersection (CardanoPublicRootPeers a b) addrs =
   CardanoPublicRootPeers (Map.restrictKeys a addrs)
                          (Set.intersection b addrs)
+
+toAdvertisePeersMap :: Ord peeraddr
+                    => CardanoPublicRootPeers peeraddr
+                    -> Map peeraddr PeerAdvertise
+toAdvertisePeersMap (CardanoPublicRootPeers a b) =
+  a <> Set.foldl (\m p -> Map.insert p DoNotAdvertisePeer m) Map.empty b

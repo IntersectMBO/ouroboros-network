@@ -74,8 +74,6 @@ import Test.Ouroboros.Network.Utils hiding (SmallDelay, debugTracer)
 import Simulation.Network.Snocket (BearerInfo (..))
 
 import Test.Ouroboros.Network.Diffusion.Node.Kernel
-import Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Node
-           (config_REPROMOTE_DELAY)
 import Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Simulation
 import Test.QuickCheck
 import Test.QuickCheck.Monoids
@@ -107,6 +105,8 @@ import Ouroboros.Network.Block (BlockNo (..))
 import Test.Ouroboros.Network.ConnectionManager.Timeouts
 import Test.Ouroboros.Network.ConnectionManager.Utils
 import Test.Ouroboros.Network.InboundGovernor.Utils
+import Test.Ouroboros.Network.Diffusion.Testnet.Minimal.Node
+           (config_REPROMOTE_DELAY)
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..))
 
 tests :: TestTree

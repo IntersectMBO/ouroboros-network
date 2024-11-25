@@ -22,9 +22,6 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import System.Random (randomR)
 
-import Cardano.Network.PeerSelection.Bootstrap (requiresBootstrapPeers)
-import Cardano.Network.PeerSelection.Governor.PeerSelectionState
-           (CardanoPeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (IsBigLedgerPeer (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
@@ -44,18 +41,19 @@ import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersActions (..))
 -- | If we are below the target of /hot peers/ we promote some of the /warm
 -- peers/ according to 'policyPickWarmPeersToPromote' policy.
 --
-belowTarget :: forall extraActions extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
+belowTarget :: forall extraState extraActions extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
                ( Alternative (STM m)
                , MonadDelay m
                , MonadSTM m
                , Ord peeraddr
                , HasCallStack
                )
-            => PeerSelectionActions CardanoPeerSelectionState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
-            -> MkGuardedDecision CardanoPeerSelectionState extraFlags extraPeers peeraddr peerconn m
-belowTarget = belowTargetBigLedgerPeers
-           <> belowTargetLocal
-           <> belowTargetOther
+            => (extraState -> Bool)
+            -> PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
+            -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
+belowTarget enableAction = belowTargetBigLedgerPeers enableAction
+                         <> belowTargetLocal
+                         <> belowTargetOther
 
 -- | If we are below the target of /hot big ledger peers peers/ we promote some
 -- of the /warm peers/ according to 'policyPickWarmPeersToPromote' policy.
@@ -63,11 +61,13 @@ belowTarget = belowTargetBigLedgerPeers
 -- It should be noted if the node is in bootstrap mode (i.e. in a sensitive
 -- state) then this monitoring action will be disabled.
 --
-belowTargetBigLedgerPeers :: forall extraActions extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
+belowTargetBigLedgerPeers :: forall extraState extraActions extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
                              (MonadDelay m, MonadSTM m, Ord peeraddr)
-                          => PeerSelectionActions CardanoPeerSelectionState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
-                          -> MkGuardedDecision CardanoPeerSelectionState extraFlags extraPeers peeraddr peerconn m
-belowTargetBigLedgerPeers actions@PeerSelectionActions {
+                          => (extraState -> Bool)
+                          -> PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
+                          -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
+belowTargetBigLedgerPeers enableAction
+                          actions@PeerSelectionActions {
                             extraPeersActions = PublicExtraPeersActions {
                               memberExtraPeers
                             , extraPeersToSet
@@ -87,10 +87,7 @@ belowTargetBigLedgerPeers actions@PeerSelectionActions {
                             targets = PeerSelectionTargets {
                                         targetNumberOfActiveBigLedgerPeers
                                       },
-                            extraState = CardanoPeerSelectionState {
-                              cpstLedgerStateJudgement
-                            , cpstBootstrapPeersFlag
-                            }
+                            extraState
                           }
     -- Are we below the target for number of active peers?
   | numActiveBigLedgerPeers + numPromoteInProgressBigLedgerPeers
@@ -109,8 +106,7 @@ belowTargetBigLedgerPeers actions@PeerSelectionActions {
                           - numPromoteInProgressBigLedgerPeers
   , not (Set.null availableToPromote)
   , numPeersToPromote > 0
-  -- Are we in a insensitive state, i.e. using bootstrap peers?
-  , not (requiresBootstrapPeers cpstBootstrapPeersFlag cpstLedgerStateJudgement)
+  , enableAction extraState
   = Guarded Nothing $ do
       selectedToPromote <- pickPeers memberExtraPeers st
                              policyPickWarmPeersToPromote
