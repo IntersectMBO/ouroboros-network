@@ -21,9 +21,6 @@ import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
 import System.Random (randomR)
 
-import Cardano.Network.PeerSelection.Bootstrap (requiresBootstrapPeers)
-import Cardano.Network.PeerSelection.Governor.PeerSelectionState
-           (CardanoPeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (IsBigLedgerPeer (..))
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
@@ -59,14 +56,15 @@ import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersActions (..))
 -- do go over target then the action to demote will be triggered. The demote
 -- action never picks local root peers.
 --
-belowTarget :: forall extraActions extraFlags extraAPI extraPeers extraCounters peeraddr peerconn m.
+belowTarget :: forall extraState extraActions extraFlags extraAPI extraPeers extraCounters peeraddr peerconn m.
                ( Alternative (STM m)
                , MonadSTM m
                , Ord peeraddr
                )
-            => PeerSelectionActions CardanoPeerSelectionState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
-            -> MkGuardedDecision CardanoPeerSelectionState extraFlags extraPeers peeraddr peerconn m
-belowTarget = belowTargetBigLedgerPeers <> belowTargetLocal <> belowTargetOther
+            => (extraState -> Bool)
+            -> PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
+            -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
+belowTarget enableAction = belowTargetBigLedgerPeers enableAction <> belowTargetLocal <> belowTargetOther
 
 
 -- | For locally configured root peers we have the explicit target that comes from local
@@ -260,11 +258,13 @@ belowTargetOther actions@PeerSelectionActions {
 -- It should be noted if the node is in bootstrap mode (i.e. in a sensitive
 -- state) then this monitoring action will be disabled.
 --
-belowTargetBigLedgerPeers :: forall extraActions extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
+belowTargetBigLedgerPeers :: forall extraState extraActions extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
                              (MonadSTM m, Ord peeraddr, HasCallStack)
-                          => PeerSelectionActions CardanoPeerSelectionState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
-                          -> MkGuardedDecision CardanoPeerSelectionState extraFlags extraPeers peeraddr peerconn m
-belowTargetBigLedgerPeers actions@PeerSelectionActions {
+                          => (extraState -> Bool)
+                          -> PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
+                          -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
+belowTargetBigLedgerPeers enableAction
+                          actions@PeerSelectionActions {
                             extraPeersActions = PublicExtraPeersActions {
                               memberExtraPeers
                             , extraPeersToSet
@@ -281,10 +281,7 @@ belowTargetBigLedgerPeers actions@PeerSelectionActions {
                             targets = PeerSelectionTargets {
                                         targetNumberOfEstablishedBigLedgerPeers
                                       },
-                            extraState = CardanoPeerSelectionState {
-                              cpstLedgerStateJudgement
-                            , cpstBootstrapPeersFlag
-                            }
+                            extraState
                           }
     -- Are we below the target for number of established peers?
   | numEstablishedPeers + numConnectInProgress
@@ -297,8 +294,7 @@ belowTargetBigLedgerPeers actions@PeerSelectionActions {
     -- in the connect set and we cannot pick them again.
   , numAvailableToConnect - numEstablishedPeers - numConnectInProgress > 0
 
-    -- Are we in insensitive state, i.e. using bootstrap peers?
-  , not (requiresBootstrapPeers cpstBootstrapPeersFlag cpstLedgerStateJudgement)
+  , enableAction extraState
   = Guarded Nothing $ do
       -- The availableToPromote here is non-empty due to the second guard.
       -- The known peers map restricted to the connect set is the same size as

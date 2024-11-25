@@ -1,5 +1,7 @@
+{-# LANGUAGE NamedFieldPuns #-}
 module Cardano.Network.PeerSelection.Governor.PeerSelectionActions where
 
+import Cardano.Network.ArgumentsExtra (CardanoArgumentsExtra (..))
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
 import Control.Concurrent.Class.MonadSTM
 import Ouroboros.Network.PeerSelection.Governor.Types (PeerSelectionTargets)
@@ -19,3 +21,15 @@ data CardanoPeerSelectionActions m =
     -- | Read the current bootstrap peers flag
   , cpsaReadUseBootstrapPeers :: STM m UseBootstrapPeers
   }
+
+cardanoExtraArgsToPeerSelectionActions :: CardanoArgumentsExtra m
+                                       -> CardanoPeerSelectionActions m
+cardanoExtraArgsToPeerSelectionActions CardanoArgumentsExtra {
+                                         caeSyncPeerTargets
+                                       , caeReadUseBootstrapPeers
+                                       } =
+  CardanoPeerSelectionActions {
+    cpsaSyncPeerTargets       = caeSyncPeerTargets
+  , cpsaReadUseBootstrapPeers = caeReadUseBootstrapPeers
+  }
+

@@ -45,7 +45,8 @@ import Network.Mux qualified as Mx
 import Ouroboros.Network.NodeToClient qualified as NodeToClient
 import Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit, DiffusionMode)
 import Ouroboros.Network.NodeToNode qualified as NodeToNode
-import Ouroboros.Network.PeerSelection.Governor.Types (PeerSelectionTargets,
+import Ouroboros.Network.PeerSelection.Governor.Types
+           (PeerSelectionGovernorArgs, PeerSelectionTargets,
            PublicPeerSelectionState)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeersConsensusInterface)
@@ -54,22 +55,26 @@ import Ouroboros.Network.Snocket (FileDescriptor, Snocket)
 import Ouroboros.Network.Socket (SystemdSocketTracer)
 import System.Random (StdGen)
 
+import Data.Set (Set)
 import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.ExitPolicy
 import Ouroboros.Network.InboundGovernor (RemoteTransitionTrace)
 import Ouroboros.Network.Mux hiding (MiniProtocol (..))
+import Ouroboros.Network.PeerSelection.Churn (PeerChurnArgs)
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.Governor.Types (DebugPeerSelection (..),
            PeerSelectionActions, PeerSelectionCounters, PeerSelectionState (..),
            TracePeerSelection (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers (LedgerPeerSnapshot (..),
-           TraceLedgerPeers, UseLedgerPeers (..))
+           NumberOfPeers, TraceLedgerPeers, UseLedgerPeers (..))
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeersKind)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import Ouroboros.Network.PeerSelection.PeerMetric
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PeerStateActions (PeerConnectionHandle,
            PeerSelectionActionsTrace (..))
+import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSActions,
            DNSLookupType (..))
@@ -78,6 +83,7 @@ import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
 import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
            (TracePublicRootPeers)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
+import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersActions)
 import Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
 import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.ConnectionId (ConnectionId)
@@ -351,7 +357,9 @@ nullTracersExtra =
 
 -- | P2P Arguments Extras
 --
-data ArgumentsExtra extraArgs extraFlags m = ArgumentsExtra {
+data ArgumentsExtra extraArgs extraState extraActions extraAPI extraPeers
+                    extraFlags extraChurnArgs extraCounters exception
+                    peeraddr m = ArgumentsExtra {
       -- | selection targets for the peer governor
       --
       daPeerSelectionTargets   :: PeerSelectionTargets
@@ -406,9 +414,78 @@ data ArgumentsExtra extraArgs extraFlags m = ArgumentsExtra {
       --
     , daBulkChurnInterval      :: DiffTime
 
+      -- | Extra State empty value
+      --
+    , daEmptyExtraState        :: extraState
+
+      -- | Extra Peers empty value
+      --
+    , daEmptyExtraPeers        :: extraPeers
+
+      -- | Extra Counters empty value
+      --
+    , daEmptyExtraCounters     :: extraCounters
+
+      -- | Provide Public Extra Actions for extraPeers to be
+      --
+    , daExtraPeersActions      :: PublicExtraPeersActions extraPeers peeraddr
+
+    , daPeerSelectionGovernorArgs
+        :: forall muxMode responderCtx ntnVersionData bytes a b .
+           PeerSelectionGovernorArgs extraState extraActions extraPeers
+                                     extraAPI extraFlags extraCounters
+                                     peeraddr (PeerConnectionHandle
+                                                 muxMode responderCtx peeraddr
+                                                 ntnVersionData bytes m a b)
+                                     exception m
+
+      -- | Function that computes extraCounters from PeerSelectionState
+      --
+    , daPeerSelectionStateToExtraCounters
+        :: forall muxMode responderCtx ntnVersionData bytes a b .
+           PeerSelectionState extraState extraFlags extraPeers
+                              peeraddr (PeerConnectionHandle
+                                          muxMode responderCtx peeraddr
+                                          ntnVersionData bytes m a b)
+        -> extraCounters
+
+      -- | Request Public Root Peers if no custom public root peers provider is
+      -- required just use the default one from
+      -- 'Ouroboros.Network.PeerSelection.PeerSelectionActions.getPublicRootPeers'
+      --
+    , daRequestPublicRootPeers
+        :: ( (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
+        -> LedgerPeersKind
+        -> Int
+        -> m (PublicRootPeers extraPeers peeraddr, DiffTime))
+
+      -- | Peer Churn Governor if no custom churn governor is required just
+      -- use the default one from
+      -- 'Ouroboros.Network.PeerSelection.Churn.peerChurnGovernor'
+      --
+    , daPeerChurnGovernor
+        :: PeerChurnArgs
+             m
+             extraChurnArgs
+             extraState
+             extraFlags
+             extraPeers
+             extraAPI
+             extraCounters
+             peeraddr
+        -> m Void
+
+      -- | Provide extraActions to be passed to peer selection actions
+      --
+    , daExtraActions :: extraActions
+
+      -- | Provide extraChurnArgs to be passed to churn governor
+      --
+    , daExtraChurnArgs :: extraChurnArgs
+
       -- | Extension point for third party users to be able to add more
       -- arguments.
-    , daExtraArgs              :: extraArgs
+    , daExtraArgs    :: extraArgs
     }
 
 socketAddressType :: Socket.SockAddr -> Maybe AddressType

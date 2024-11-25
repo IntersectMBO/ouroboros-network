@@ -473,11 +473,13 @@ data PeerStateActions peeraddr peerconn m = PeerStateActions {
 -- Extra Guarded Decisions
 --
 type MonitoringAction extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m =
-  [  PeerSelectionPolicy peeraddr m
+    PeerSelectionPolicy peeraddr m
   -> PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
   -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
   -> Guarded (STM m) (TimedDecision m extraState extraFlags extraPeers peeraddr peerconn)
-  ]
+
+type MonitoringActions extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m =
+  [ MonitoringAction extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m ]
 
 data ExtraGuardedDecisions extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m =
   ExtraGuardedDecisions {
@@ -487,28 +489,74 @@ data ExtraGuardedDecisions extraState extraActions extraPeers extraAPI extraFlag
     -- have priority over the later ones.
     --
     -- Note that these actions should be blocking.
-    preBlocking      :: MonitoringAction extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m
+    preBlocking      :: MonitoringActions extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m
 
     -- | This list of guarded decisions will come after all possibly preBlocking
     -- and default blocking decisions. The order matters, making the first
     -- decisions have priority over the later ones.
     --
     -- Note that these actions should be blocking.
-  , postBlocking     :: MonitoringAction extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m
+  , postBlocking     :: MonitoringActions extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m
 
     -- | This list of guarded decisions will come before all default non-blocking
     -- decisions. The order matters, making the first decisions have priority over
     -- the later ones.
     --
     -- Note that these actions should not be blocking.
-  , preNonBlocking   :: MonitoringAction extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m
+  , preNonBlocking   :: MonitoringActions extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m
 
     -- | This list of guarded decisions will come before all preNonBlocking and
     -- default non-blocking decisions. The order matters, making the first
     -- decisions have priority over the later ones.
     --
     -- Note that these actions should not be blocking.
-  , postNonBlocking  :: MonitoringAction extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m
+  , postNonBlocking  :: MonitoringActions extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m
+
+    -- | This action is necessary to the well functioning of the Outbound
+    -- Governor. In particular this action should monitor 'PeerSelectionTargets',
+    -- if they change, update 'PeerSelectionState' accordingly.
+    --
+    -- Customization of this monitoring action is allowed since a 3rd party
+    -- user might require more granular control over the targets of its
+    -- Outbound Governor.
+    --
+    -- If no custom action is required just use the default provided by
+    -- 'Ouroboros.Network.PeerSelection.Governor.Monitor.targetPeers'
+  , requiredTargetsAction :: MonitoringAction extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m
+
+    -- | This action is necessary to the well functioning of the Outbound
+    -- Governor. In particular this action should monitor Monitor local roots
+    -- using 'readLocalRootPeers' 'STM' action.
+    --
+    -- Customization of this monitoring action is allowed since a 3rd party
+    -- user might require more granular control over the local roots of its
+    -- Outbound Governor, according to 'extraFlags' for example.
+    --
+    -- If no custom action is required just use the default provided by
+    -- 'Ouroboros.Network.PeerSelection.Governor.Monitor.localRoots'
+  , requiredLocalRootsAction :: MonitoringAction extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m
+
+    -- | This enables third party users to add extra guards to the following monitoring
+    -- actions that make progress towards targets:
+    --
+    -- * BigLedgerPeers.belowTarget
+    -- * KnownPeers.belowTarget
+    -- * EstablishedPeers.belowTargetBigLedgerPeers
+    -- * ActivePeers.belowTargetBigLedgerPeers
+    --
+    -- This might be useful if the user requires its diffusion layer to stop
+    -- making progress during a sensitive/vulnerable situation and quarantine
+    -- it and make sure it is only connected to trusted peers.
+    --
+  , enableProgressMakingActions :: extraState -> Bool
+
+    -- | This can safely be left as 'id'. This parameter is an artifact of the
+    -- process of making the diffusion layer reusable. This function allows a
+    -- constant 'extraState' change after a successfull ledger peer snapshot
+    -- change.
+    --
+    -- TODO: Come up with a better solution
+  , ledgerPeerSnapshotExtraStateChange :: extraState -> extraState
   }
 
 -----------------------

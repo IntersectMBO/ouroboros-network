@@ -68,8 +68,6 @@ import Ouroboros.Network.Testing.Utils hiding (SmallDelay, debugTracer)
 import Simulation.Network.Snocket (BearerInfo (..))
 
 import Test.Ouroboros.Network.Diffusion.Node.Kernel
-import Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Node
-           (config_REPROMOTE_DELAY)
 import Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Simulation
 import Test.QuickCheck
 import Test.QuickCheck.Monoids
@@ -114,6 +112,8 @@ import Cardano.Network.Types (LedgerStateJudgement,
            MinBigLedgerPeersForTrustedState (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools(..))
+import Test.Ouroboros.Network.Diffusion.Testnet.Minimal.Node
+           (config_REPROMOTE_DELAY)
 
 tests :: TestTree
 tests =
