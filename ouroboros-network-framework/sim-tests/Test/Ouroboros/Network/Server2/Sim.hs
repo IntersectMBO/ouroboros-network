@@ -1039,6 +1039,7 @@ prop_connection_manager_valid_transitions_racy
    (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
   defaultBearerInfo mns@(MultiNodeScript events attenuationMap) =
     exploreSimTrace id sim $ \_ trace ->
+                             counterexample (ppTrace trace) $
                              validate_transitions mns trace
   where
     sim :: IOSim s ()
