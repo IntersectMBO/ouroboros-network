@@ -830,7 +830,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
 
                             Right (Just (Disconnected {})) -> pure ()
 
-                            Right (Just (Connected _ _ _)) -> do
+                            Right (Just (Connected connId _ _)) -> do
                               threadDelay (either id id (seActiveDelay conn))
                               -- if this outbound connection is not
                               -- executed within inbound connection,
@@ -850,11 +850,11 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
                                     -- successful.
                                     void $
                                       unregisterInboundConnection
-                                        connectionManager addr
+                                        connectionManager connId
 
                                   res <-
                                       unregisterOutboundConnection
-                                        connectionManager addr
+                                        connectionManager connId
                                   case res of
                                     UnsupportedState st ->
                                       throwIO (UnsupportedStateError
@@ -879,17 +879,20 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
                         (Accepted fd' addr', acceptNext) -> do
                           thread <-
                             async $ do
+                              localAddress <- getLocalAddr snocket fd'
+                              let connId = ConnectionId { localAddress,
+                                                          remoteAddress = addr' }
                               labelThisThread ("th-inbound-"
                                                 ++ show (getTestAddress addr))
                               Just conn' <-
                                 fdScheduleEntry
-                                  <$> atomically (readTVar (fdState fd'))
+                                  <$> readTVarIO (fdState fd')
                               when (addr /= addr' && seIdx conn /= seIdx conn') $
                                 throwIO (MismatchedScheduleEntry (addr, seIdx conn)
                                                                  (addr', seIdx conn'))
                               _ <-
                                 includeInboundConnection
-                                  connectionManager maxBound fd' addr
+                                  connectionManager maxBound fd' connId
                               t <- getMonotonicTime
 
                               let activeDelay = either id id (seActiveDelay conn)
@@ -902,11 +905,11 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
                                     threadDelay x
                                     _ <-
                                       promotedToWarmRemote
-                                        connectionManager addr
+                                        connectionManager connId
                                     threadDelay y
                                     _ <-
                                       demotedToColdRemote
-                                        connectionManager addr
+                                        connectionManager connId
                                     return ()
                                   )
                                   (threadDelay activeDelay)
@@ -930,7 +933,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
                                   -- TODO: should we run 'unregisterInboundConnection' depending on 'seActiveDelay'
                                   void $
                                     unregisterInboundConnection
-                                      connectionManager addr
+                                      connectionManager connId
                           go (thread : threads) acceptNext conns'
                         (AcceptFailure err, _acceptNext) ->
                           throwIO err

@@ -734,7 +734,9 @@ unidirectionalExperiment stdGen timeouts snocket makeBearer confSock socket clie
                   (numberOfRounds clientAndServerData)
                   (bracket
                      (requestOutboundConnection connectionManager serverAddr)
-                     (\_ -> unregisterOutboundConnection connectionManager serverAddr)
+                     (\case
+                        Connected connId _ _ -> unregisterOutboundConnection connectionManager connId
+                        Disconnected {} -> error "unidirectionalExperiment: impossible happened")
                      (\connHandle -> do
                       case connHandle of
                         Connected connId _ (Handle mux muxBundle controlBundle _
@@ -833,10 +835,13 @@ bidirectionalExperiment
                       (requestOutboundConnection
                         connectionManager0
                         localAddr1))
-                    (\_ ->
-                      unregisterOutboundConnection
-                        connectionManager0
-                        localAddr1)
+                    (\case
+                      Connected connId _ _ ->
+                        unregisterOutboundConnection
+                          connectionManager0
+                          connId
+                      Disconnected {} ->
+                        error "bidirectionalExperiment: impossible happened")
                     (\connHandle ->
                       case connHandle of
                         Connected connId _ (Handle mux muxBundle controlBundle _) -> do
@@ -855,10 +860,13 @@ bidirectionalExperiment
                       (requestOutboundConnection
                         connectionManager1
                         localAddr0))
-                    (\_ ->
-                      unregisterOutboundConnection
-                        connectionManager1
-                        localAddr0)
+                    (\case
+                      Connected connId _ _ ->
+                        unregisterOutboundConnection
+                          connectionManager1
+                          connId
+                      Disconnected {} ->
+                        error "ibidirectionalExperiment: mpossible happened")
                     (\connHandle ->
                       case connHandle of
                         Connected connId _ (Handle mux muxBundle controlBundle _) -> do
