@@ -211,12 +211,12 @@ with
                )
             <> Map.foldMapWithKey
                  (    firstMuxToFinish
+                   <> firstPeerDemotedToCold
+                   <> firstPeerCommitRemote
                    <> firstMiniProtocolToFinish connectionDataFlow
                    <> firstPeerPromotedToWarm
                    <> firstPeerPromotedToHot
                    <> firstPeerDemotedToWarm
-                   <> firstPeerDemotedToCold
-                   <> firstPeerCommitRemote
 
                    :: EventSignal muxMode initiatorCtx peerAddr versionData m a b
                  )
