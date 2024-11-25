@@ -97,10 +97,11 @@ import Control.Monad.IOSim
 
 import Cardano.Network.LedgerPeerConsensusInterface
            (CardanoLedgerPeersConsensusInterface (..))
+import Cardano.Network.PeerSelection.Governor.Monitor qualified as Cardano
 import Cardano.Network.PeerSelection.Governor.PeerSelectionActions
            (CardanoPeerSelectionActions (..))
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState
-           (CardanoPeerSelectionState)
+           (CardanoPeerSelectionState (..))
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as CPST
 import Cardano.Network.PeerSelection.Governor.Types
            (CardanoPeerSelectionView (..))
@@ -110,7 +111,8 @@ import Cardano.Network.PublicRootPeers qualified as CPRP
 import Cardano.Network.Types (LedgerStateJudgement (..),
            MinBigLedgerPeersForTrustedState (..))
 import Ouroboros.Network.PeerSelection.Governor.Types
-           (ExtraGuardedDecisions (..), PeerSelectionGovernorArgs (..))
+           (BootstrapPeersCriticalTimeoutError (..), ExtraGuardedDecisions (..),
+           PeerSelectionGovernorArgs (..), PeerSelectionState (extraState))
 import Test.QuickCheck
 import Test.QuickCheck.Monoids
 import Test.Tasty
@@ -4006,9 +4008,30 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
           }
 
         peerSelectionGovernorArgs = PeerSelectionGovernorArgs {
-          abortGovernor   = const Nothing
-        , updateWithState = \_ _ -> pure ()
-        , extraDecisions  = ExtraGuardedDecisions [] [] [] []
+          abortGovernor   = \st ->
+            case cpstBootstrapPeersTimeout (extraState st) of
+              Nothing -> Nothing
+              Just t
+                | cpstBlockedAt (extraState st) >= t -> Just BootstrapPeersCriticalTimeoutError
+                | otherwise                         -> Nothing
+
+        , updateWithState = const (const (pure ()))
+        , extraDecisions  =
+            ExtraGuardedDecisions {
+              preBlocking     =
+                [ \_ psa pst -> Cardano.monitorBootstrapPeersFlag   psa pst
+                , \_ psa pst -> Cardano.monitorLedgerStateJudgement psa pst
+                , \_ _   pst -> Cardano.waitForSystemToQuiesce          pst
+                ]
+            , postBlocking    = []
+            , preNonBlocking  = []
+            , postNonBlocking = []
+            , requiredTargetsAction              = \_ -> Cardano.targetPeers
+            , requiredLocalRootsAction           = \_ -> Cardano.localRoots
+            , enableProgressMakingActions        = \st ->
+                not (requiresBootstrapPeers (cpstBootstrapPeersFlag st) (cpstLedgerStateJudgement st))
+            , ledgerPeerSnapshotExtraStateChange = id
+            }
         }
 
     publicRootPeersProvider

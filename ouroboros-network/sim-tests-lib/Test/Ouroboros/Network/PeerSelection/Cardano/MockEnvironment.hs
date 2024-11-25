@@ -9,6 +9,7 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# OPTIONS_GHC -Wno-deferred-out-of-scope-variables #-}
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
+{-# LANGUAGE TypeApplications      #-}
 
 module Test.Ouroboros.Network.PeerSelection.Cardano.MockEnvironment
   ( PeerGraph (..)
@@ -85,6 +86,9 @@ import Cardano.Network.LedgerPeerConsensusInterface
            (CardanoLedgerPeersConsensusInterface (..))
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
+import Cardano.Network.PeerSelection.Governor.Monitor (localRoots,
+           monitorBootstrapPeersFlag, monitorLedgerStateJudgement, targetPeers,
+           waitForSystemToQuiesce)
 import Cardano.Network.PeerSelection.Governor.PeerSelectionActions
            (CardanoPeerSelectionActions (..))
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState
@@ -100,7 +104,8 @@ import Cardano.Network.Types (LedgerStateJudgement (..),
            MinBigLedgerPeersForTrustedState (..))
 import Data.IP (toIPv4w)
 import Ouroboros.Network.PeerSelection.Governor.Types
-           (ExtraGuardedDecisions (..), PeerSelectionGovernorArgs (..))
+           (BootstrapPeersCriticalTimeoutError (..), ExtraGuardedDecisions (..),
+           PeerSelectionGovernorArgs (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers (..))
@@ -114,7 +119,6 @@ import Test.Ouroboros.Network.PeerSelection.Cardano.PublicRootPeers ()
 import Test.QuickCheck
 import Test.Tasty (TestTree, localOption, testGroup)
 import Test.Tasty.QuickCheck (QuickCheckMaxSize (..), testProperty)
-
 
 tests :: TestTree
 tests =
@@ -297,9 +301,44 @@ governorAction mockEnv@GovernorMockEnvironment {
           }
 
         peerSelectionGovernorArgs = PeerSelectionGovernorArgs {
-          abortGovernor   = const Nothing
-        , updateWithState = \_ _ -> pure ()
-        , extraDecisions  = ExtraGuardedDecisions [] [] [] []
+          abortGovernor   = \st ->
+            -- If by any chance the node takes more than 15 minutes to converge to a
+            -- clean state, we crash the node. This could happen in very rare
+            -- conditions such as a global network issue, DNS, or a bug in the code.
+            -- In any case crashing the node will force the node to be restarted,
+            -- starting in the correct state for it to make progress.
+            case cpstBootstrapPeersTimeout (Governor.extraState st) of
+              Nothing -> Nothing
+              Just t
+                | cpstBlockedAt (Governor.extraState st) >= t -> Just BootstrapPeersCriticalTimeoutError
+                | otherwise                         -> Nothing
+        , updateWithState = const (const (pure ()))
+        , extraDecisions  =
+            ExtraGuardedDecisions {
+              preBlocking                        =
+                [ \_ psa pst -> monitorBootstrapPeersFlag   psa pst
+                , \_ psa pst -> monitorLedgerStateJudgement psa pst
+                , \_ _   pst -> waitForSystemToQuiesce          pst
+                ]
+            , postBlocking                       = []
+            , preNonBlocking                     = []
+            , postNonBlocking                    = []
+            , requiredTargetsAction              = \_ -> targetPeers
+            , requiredLocalRootsAction           = \_ -> localRoots
+
+              -- No inbound peers should be used when the node is using bootstrap peers.
+            , enableProgressMakingActions        =
+                \CardanoPeerSelectionState {
+                   cpstBootstrapPeersFlag
+                 , cpstLedgerStateJudgement
+                 } -> not (requiresBootstrapPeers cpstBootstrapPeersFlag cpstLedgerStateJudgement)
+
+              -- flips private state LedgerStateJudgement to TooYoung so that it
+              -- can launch the appropriate verification task in the job pool when external
+              -- LedgerStateJudgement is TooOld.
+            , ledgerPeerSnapshotExtraStateChange =
+              \st -> st { cpstLedgerStateJudgement = YoungEnough }
+            }
         }
 
     exploreRaces      -- explore races within the governor
@@ -1003,8 +1042,8 @@ instance Arbitrary GovernorMockEnvironment where
                  in splitAt (length otherPeers' `div` 2) otherPeers'
               )
 
-        localRoots <- arbitraryLocalRootPeers localRootsSet
-        return ( localRoots
+        localRootPeers <- arbitraryLocalRootPeers localRootsSet
+        return ( localRootPeers
                , PublicRootPeers.fromMapAndSet
                   publicConfigPeersMap
                   (Set.fromList boostrapPeers)

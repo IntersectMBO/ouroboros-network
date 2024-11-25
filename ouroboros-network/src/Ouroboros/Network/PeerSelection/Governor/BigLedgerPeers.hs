@@ -18,9 +18,6 @@ import Control.Exception (SomeException)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
 
-import Cardano.Network.PeerSelection.Bootstrap (requiresBootstrapPeers)
-import Cardano.Network.PeerSelection.Governor.PeerSelectionState
-           (CardanoPeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.LedgerPeers (LedgerPeersKind (..))
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
@@ -32,11 +29,13 @@ import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersActions (..))
 
 
 belowTarget :: (MonadSTM m, Ord peeraddr, Semigroup extraPeers)
-            => PeerSelectionActions CardanoPeerSelectionState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
+            => (extraState -> Bool)
+            -> PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
             -> Time
-            -> PeerSelectionState CardanoPeerSelectionState extraFlags extraPeers peeraddr peerconn
-            -> Guarded (STM m) (TimedDecision m CardanoPeerSelectionState extraFlags extraPeers peeraddr peerconn)
-belowTarget actions@PeerSelectionActions {
+            -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+            -> Guarded (STM m) (TimedDecision m extraState extraFlags extraPeers peeraddr peerconn)
+belowTarget enableAction
+            actions@PeerSelectionActions {
               extraPeersActions = PublicExtraPeersActions {
                 extraPeersToSet
               },
@@ -49,14 +48,9 @@ belowTarget actions@PeerSelectionActions {
               targets = PeerSelectionTargets {
                           targetNumberOfKnownBigLedgerPeers
                         },
-              extraState = CardanoPeerSelectionState {
-                cpstLedgerStateJudgement
-              , cpstBootstrapPeersFlag
-              }
+              extraState
             }
-      -- Are we in a sensitive state? We shouldn't attempt to fetch ledger peers
-      -- in a sensitive state since we only want to connect to trustable peers.
-    | not (requiresBootstrapPeers cpstBootstrapPeersFlag cpstLedgerStateJudgement)
+    | enableAction extraState
 
       -- Do we need more big ledger peers?
     , maxExtraBigLedgerPeers > 0
