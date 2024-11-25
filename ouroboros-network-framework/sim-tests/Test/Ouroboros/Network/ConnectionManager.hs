@@ -422,7 +422,7 @@ mkSnocket scheduleMap = do
                      )
 
             . getSchedule
-          <$> (getScheduleMap scheduleMap)
+          <$> getScheduleMap scheduleMap
     v <- newTVarIO inboundSchedule
     return $ Snocket {
         getLocalAddr,
@@ -449,10 +449,10 @@ mkSnocket scheduleMap = do
                       $> x
 
     getLocalAddr (FD v) =
-      fdLocalAddress <$> atomically (readTVar v)
+      fdLocalAddress <$> readTVarIO v
 
     getRemoteAddr (FD v) = do
-      mbRemote <- fdRemoteAddress <$> atomically (readTVar v)
+      mbRemote <- fdRemoteAddress <$> readTVarIO v
       case mbRemote of
         Nothing   -> throwIO InvalidArgumentError
         Just addr -> pure addr
