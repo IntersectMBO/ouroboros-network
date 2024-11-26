@@ -20,7 +20,6 @@ module Ouroboros.Network.Diffusion.Configuration
   , AcceptedConnectionsLimit (..)
   , BlockFetchConfiguration (..)
   , ChainSyncTimeout (..)
-  , ConsensusModePeerTargets (..)
   , DiffusionMode (..)
   , MiniProtocolParameters (..)
   , P2P (..)
