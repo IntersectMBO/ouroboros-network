@@ -56,10 +56,16 @@ import Ouroboros.Network.Socket (SystemdSocketTracer)
 import System.Random (StdGen)
 
 import Data.Set (Set)
+import Network.Socket qualified as Socket
+import Ouroboros.Network.BlockFetch (FetchMode)
 import Ouroboros.Network.ConnectionHandler
+import Ouroboros.Network.ConnectionId (ConnectionId)
+import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.Types
+import Ouroboros.Network.Context (ResponderContext)
 import Ouroboros.Network.ExitPolicy
 import Ouroboros.Network.InboundGovernor (RemoteTransitionTrace)
+import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.Mux hiding (MiniProtocol (..))
 import Ouroboros.Network.PeerSelection.Churn (PeerChurnArgs)
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
@@ -86,13 +92,7 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRo
 import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersActions)
 import Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
 import Ouroboros.Network.RethrowPolicy
-import Ouroboros.Network.ConnectionId (ConnectionId)
-import qualified Ouroboros.Network.ConnectionManager.Core as CM
-import qualified Ouroboros.Network.Server2 as Server
-import qualified Ouroboros.Network.InboundGovernor as IG
-import qualified Network.Socket as Socket
-import Ouroboros.Network.BlockFetch (FetchMode)
-import Ouroboros.Network.Context (ResponderContext)
+import Ouroboros.Network.Server2 qualified as Server
 
 -- | The 'DiffusionTracer' logs
 --

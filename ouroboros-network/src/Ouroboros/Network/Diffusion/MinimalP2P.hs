@@ -93,10 +93,11 @@ import Ouroboros.Network.Server2 qualified as Server
 #ifdef POSIX
 #endif
 #ifdef POSIX
+import GHC.IO.Exception (IOErrorType (..), IOException (..))
+import Network.Mux qualified as Mx
+import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.Diffusion.Policies (simplePeerSelectionPolicy)
-import qualified Ouroboros.Network.InboundGovernor as IG
-import qualified Ouroboros.Network.ConnectionManager.Core as CM
-import qualified Network.Mux as Mx
+import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
            (newLedgerAndPublicRootDNSSemaphore)
 #else
@@ -283,14 +284,65 @@ runM Interfaces
       =
       Map.map diNtnPeerSharing inboundDuplexPeers
 
-    -- Only the 'IOManagerError's are fatal, all the other exceptions in the
-    -- networking code will only shutdown the bearer (see 'ShutdownPeer' why
-    -- this is so).
+    -- TODO: this policy should also be used in `PeerStateActions` and
+    -- `InboundGovernor` (when creating or accepting connections)
     rethrowPolicy =
-      RethrowPolicy $ \_ctx err ->
+      -- Only the 'IOManagerError's are fatal, all the other exceptions in the
+      -- networking code will only shutdown the bearer (see 'ShutdownPeer' why
+      -- this is so).
+      RethrowPolicy (\_ctx err ->
         case fromException err of
           Just (_ :: IOManagerError) -> ShutdownNode
-          Nothing                    -> mempty
+          Nothing                    -> mempty)
+      <>
+      RethrowPolicy (\_ctx err ->
+        case fromException err of
+          -- if we are out of file descriptors (either because we exhausted
+          -- process or system limit) we should shut down the node and let the
+          -- operator investigate.
+          --
+          -- Refs:
+          -- * https://hackage.haskell.org/package/ghc-internal-9.1001.0/docs/src/GHC.Internal.Foreign.C.Error.html#errnoToIOError
+          -- * man socket.2
+          -- * man connect.2
+          -- * man accept.2
+          -- NOTE: many `connect` and `accept` exceptions are classified as
+          -- `OtherError`, here we only distinguish fatal IO errors (e.g.
+          -- ones that propagate to the main thread).
+          -- NOTE: we don't use the rethrow policy for `accept` calls, where
+          -- all but `ECONNABORTED` are fatal exceptions.
+          Just IOError { ioe_type } ->
+            case ioe_type of
+              ResourceExhausted    -> ShutdownNode
+              -- EAGAIN            -- connect, accept
+              -- EMFILE            -- socket, accept
+              -- ENFILE            -- socket, accept
+              -- ENOBUFS           -- socket, accept
+              -- ENOMEM            -- socket, accept
+
+              UnsupportedOperation -> ShutdownNode
+              -- EADDRNOTAVAIL     -- connect
+              -- EAFNOSUPPRT       -- connect
+
+              InvalidArgument      -> ShutdownNode
+              -- EINVAL            -- socket, accept
+              -- ENOTSOCK          -- connect
+              -- EBADF             -- connect, accept
+
+              ProtocolError        -> ShutdownNode
+              -- EPROTONOSUPPOPRT  -- socket
+              -- EPROTO            -- accept
+
+              _                    -> mempty
+          Nothing -> mempty)
+      <>
+      RethrowPolicy (\ctx err -> case  (ctx, fromException err) of
+                        -- mux unknown mini-protocol errors on the outbound
+                        -- side are fatal, since this is misconfiguration of the
+                        -- ouroboros-network stack.
+                        (OutboundError, Just Mx.UnknownMiniProtocol {})
+                          -> ShutdownNode
+                        _ -> mempty)
 
 
     -- | mkLocalThread - create local connection manager

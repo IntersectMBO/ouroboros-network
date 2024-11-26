@@ -142,7 +142,9 @@ import Data.Function (on)
 import Data.Typeable (Typeable)
 import Ouroboros.Network.BlockFetch (FetchMode (..), TraceFetchClientState,
            TraceLabelPeer (..))
+import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.Diffusion.Common qualified as Common
+import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.PeerSelection.Governor.Types
            (BootstrapPeersCriticalTimeoutError)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
@@ -161,14 +163,12 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
            WarmValency (..))
 import Ouroboros.Network.Protocol.PeerSharing.Codec (byteLimitsPeerSharing,
            timeLimitsPeerSharing)
+import Ouroboros.Network.Server2 qualified as Server
 import Test.Ouroboros.Network.Diffusion.Testnet.Minimal.Node (Arguments (..),
            Interfaces (..), LimitsAndTimeouts (..), run)
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..), genLedgerPoolsFrom)
 import Test.Ouroboros.Network.PeerSelection.LocalRootPeers ()
 import Test.QuickCheck
-import qualified Ouroboros.Network.ConnectionManager.Core as CM
-import qualified Ouroboros.Network.Server2 as Server
-import qualified Ouroboros.Network.InboundGovernor as IG
 
 -- | Diffusion Simulator Arguments
 --

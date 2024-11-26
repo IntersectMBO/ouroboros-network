@@ -111,11 +111,10 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
 import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersActions (..))
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB (addBlock,
            getBlockPointSet)
-import Test.Ouroboros.Network.Diffusion.Node.MiniProtocols qualified as Node
-import Test.Ouroboros.Network.Diffusion.Node.Kernel (NodeKernel (..),
-           NtCAddr, NtCVersion, NtCVersionData, NtNAddr, NtNVersion,
-           NtNVersionData (..))
+import Test.Ouroboros.Network.Diffusion.Node.Kernel (NodeKernel (..), NtCAddr,
+           NtCVersion, NtCVersionData, NtNAddr, NtNVersion, NtNVersionData (..))
 import Test.Ouroboros.Network.Diffusion.Node.Kernel qualified as Node
+import Test.Ouroboros.Network.Diffusion.Node.MiniProtocols qualified as Node
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay,
            DNSTimeout, mockDNSActions)
 

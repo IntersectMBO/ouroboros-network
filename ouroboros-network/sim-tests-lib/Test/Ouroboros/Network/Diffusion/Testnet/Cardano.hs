@@ -111,9 +111,9 @@ import Cardano.Network.PublicRootPeers qualified as CPRP
 import Cardano.Network.Types (LedgerStateJudgement,
            MinBigLedgerPeersForTrustedState (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
-import Test.Ouroboros.Network.LedgerPeers (LedgerPools(..))
 import Test.Ouroboros.Network.Diffusion.Testnet.Minimal.Node
            (config_REPROMOTE_DELAY)
+import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..))
 
 tests :: TestTree
 tests =
@@ -1594,7 +1594,7 @@ prop_connect_failure (AbsIOError ioerr) =
          $ evs
     ) noEvents absInfo script
   where
-    -- must be in sync with rethrowPolicy in `Ouroboros.Network.Diffusion.P2P`
+    -- must be in sync with rethrowPolicy in `Ouroboros.Network.Diffusion.MinimalP2P`
     isFatal :: IOErrorType -> Bool
     isFatal ResourceExhausted    = True
     isFatal UnsupportedOperation = True
@@ -1635,8 +1635,7 @@ prop_connect_failure (AbsIOError ioerr) =
             naPeerSharing = PeerSharingDisabled,
             naLocalRootPeers = [(1,1,Map.fromList [(RelayAccessAddress relayIP relayPort,(DoNotAdvertisePeer, IsNotTrustable))])],
             naLedgerPeers = Script (LedgerPools [] :| []),
-            naPeerTargets = ConsensusModePeerTargets {
-              deadlineTargets = PeerSelectionTargets {
+            naPeerTargets = (PeerSelectionTargets {
                 targetNumberOfRootPeers = 1,
                 targetNumberOfKnownPeers = 1,
                 targetNumberOfEstablishedPeers = 1,
@@ -1645,9 +1644,7 @@ prop_connect_failure (AbsIOError ioerr) =
                 targetNumberOfKnownBigLedgerPeers = 0,
                 targetNumberOfEstablishedBigLedgerPeers = 0,
                 targetNumberOfActiveBigLedgerPeers = 0
-              },
-              syncTargets = nullPeerSelectionTargets
-            },
+              }, nullPeerSelectionTargets),
             naDNSTimeoutScript = Script (DNSTimeout {getDNSTimeout = 0} :| []),
             naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []),
             naChainSyncExitOnBlockNo = Nothing,
@@ -1667,8 +1664,7 @@ prop_connect_failure (AbsIOError ioerr) =
             naPeerSharing = PeerSharingDisabled,
             naLocalRootPeers = [],
             naLedgerPeers = Script (LedgerPools [] :| []),
-            naPeerTargets = ConsensusModePeerTargets {
-              deadlineTargets = PeerSelectionTargets {
+            naPeerTargets = (PeerSelectionTargets {
                 targetNumberOfRootPeers = 0,
                 targetNumberOfKnownPeers = 0,
                 targetNumberOfEstablishedPeers = 0,
@@ -1677,9 +1673,7 @@ prop_connect_failure (AbsIOError ioerr) =
                 targetNumberOfKnownBigLedgerPeers = 0,
                 targetNumberOfEstablishedBigLedgerPeers = 0,
                 targetNumberOfActiveBigLedgerPeers = 0
-              },
-              syncTargets = nullPeerSelectionTargets
-            },
+              }, nullPeerSelectionTargets),
             naDNSTimeoutScript = Script (DNSTimeout {getDNSTimeout = 0} :| []),
             naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []),
             naChainSyncExitOnBlockNo = Nothing,
@@ -1767,8 +1761,7 @@ prop_accept_failure (AbsIOError ioerr) =
             naPeerSharing = PeerSharingDisabled,
             naLocalRootPeers = [(1,1,Map.fromList [(RelayAccessAddress relayIP relayPort,(DoNotAdvertisePeer, IsNotTrustable))])],
             naLedgerPeers = Script (LedgerPools [] :| []),
-            naPeerTargets = ConsensusModePeerTargets {
-              deadlineTargets = PeerSelectionTargets {
+            naPeerTargets = (PeerSelectionTargets {
                 targetNumberOfRootPeers = 1,
                 targetNumberOfKnownPeers = 1,
                 targetNumberOfEstablishedPeers = 1,
@@ -1777,9 +1770,7 @@ prop_accept_failure (AbsIOError ioerr) =
                 targetNumberOfKnownBigLedgerPeers = 0,
                 targetNumberOfEstablishedBigLedgerPeers = 0,
                 targetNumberOfActiveBigLedgerPeers = 0
-              },
-              syncTargets = nullPeerSelectionTargets
-            },
+              }, nullPeerSelectionTargets),
             naDNSTimeoutScript = Script (DNSTimeout {getDNSTimeout = 0} :| []),
             naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []),
             naChainSyncExitOnBlockNo = Nothing,
@@ -1799,8 +1790,7 @@ prop_accept_failure (AbsIOError ioerr) =
             naPeerSharing = PeerSharingDisabled,
             naLocalRootPeers = [],
             naLedgerPeers = Script (LedgerPools [] :| []),
-            naPeerTargets = ConsensusModePeerTargets {
-              deadlineTargets = PeerSelectionTargets {
+            naPeerTargets = (PeerSelectionTargets {
                 targetNumberOfRootPeers = 0,
                 targetNumberOfKnownPeers = 0,
                 targetNumberOfEstablishedPeers = 0,
@@ -1809,9 +1799,7 @@ prop_accept_failure (AbsIOError ioerr) =
                 targetNumberOfKnownBigLedgerPeers = 0,
                 targetNumberOfEstablishedBigLedgerPeers = 0,
                 targetNumberOfActiveBigLedgerPeers = 0
-              },
-              syncTargets = nullPeerSelectionTargets
-            },
+              }, nullPeerSelectionTargets),
             naDNSTimeoutScript = Script (DNSTimeout {getDNSTimeout = 0} :| []),
             naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []),
             naChainSyncExitOnBlockNo = Nothing,

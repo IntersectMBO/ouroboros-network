@@ -18,6 +18,7 @@ module Ouroboros.Network.Diffusion
 import Control.Concurrent.Class.MonadSTM.Strict (StrictTVar)
 import Control.Exception (Exception, IOException)
 import Data.Functor (void)
+import Network.Mux qualified as Mx
 import Network.Socket (Socket)
 import Ouroboros.Network.Diffusion.Common (Arguments,
            NodeToNodeConnectionManager, NodeToNodePeerConnectionHandle, Tracers)
@@ -30,7 +31,6 @@ import Ouroboros.Network.NodeToNode (NodeToNodeVersion, NodeToNodeVersionData,
            RemoteAddress)
 import Ouroboros.Network.PeerSelection.Governor.Types (PeerSelectionState)
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
-import qualified Network.Mux as Mx
 
 -- | Promoted data types.
 --
