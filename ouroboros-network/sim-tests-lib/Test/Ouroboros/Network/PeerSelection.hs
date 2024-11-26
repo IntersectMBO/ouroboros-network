@@ -60,6 +60,9 @@ import Network.Socket (SockAddr)
 import Cardano.Network.ConsensusMode
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
+import Cardano.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
+import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
+import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..),
            peerSharing)
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
@@ -91,6 +94,24 @@ import Test.Ouroboros.Network.PeerSelection.PeerGraph
 
 import Control.Monad.IOSim
 
+import Cardano.Network.LedgerPeerConsensusInterface
+           (CardanoLedgerPeersConsensusInterface (..))
+import Cardano.Network.PeerSelection.Governor.Monitor qualified as Cardano
+import Cardano.Network.PeerSelection.Governor.PeerSelectionActions
+           (CardanoPeerSelectionActions (..))
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState
+           (CardanoPeerSelectionState)
+           (CardanoPeerSelectionState (..))
+import Cardano.Network.PeerSelection.Governor.Types
+           (CardanoPeerSelectionView (..))
+import Cardano.Network.PeerSelection.Governor.Types qualified as CPSV
+import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
+import Cardano.Network.PublicRootPeers qualified as CPRP
+import Cardano.Network.Types (LedgerStateJudgement (..),
+           MinBigLedgerPeersForTrustedState (..))
+import Ouroboros.Network.PeerSelection.Governor.Types
+           (BootstrapPeersCriticalTimeoutError (..), ExtraGuardedDecisions (..),
+           PeerSelectionGovernorArgs (..), PeerSelectionState (extraState))
 import Test.QuickCheck
 import Test.QuickCheck.Monoids
 import Test.Tasty
