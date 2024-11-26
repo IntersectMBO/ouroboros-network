@@ -150,8 +150,8 @@ data Arguments m = Arguments
     , aPingPongInterval     :: DiffTime
     , aShouldChainSyncExit  :: BlockHeader -> m Bool
     , aChainSyncEarlyExit   :: Bool
+
     , aPeerTargets          :: (PeerSelectionTargets, PeerSelectionTargets)
-    , aPeerTargets          :: ConsensusModePeerTargets
     , aReadLocalRootPeers   :: STM m [( HotValency
                                       , WarmValency
                                       , Map RelayAccessPoint ( PeerAdvertise
@@ -400,8 +400,8 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
 
     mkArgsExtra :: StrictTVar m (Script UseBootstrapPeers)
                 -> Common.ArgumentsExtra (CardanoArgumentsExtra m) PeerTrustable m
+    mkArgsExtra ubpVar = Common.ArgumentsExtra
       { Common.daPeerSelectionTargets   = fst (aPeerTargets na)
-      { Common.daPeerSelectionTargets   = deadlineTargets (aPeerTargets na)
       , Common.daReadLocalRootPeers     = aReadLocalRootPeers na
       , Common.daReadPublicRootPeers    = aReadPublicRootPeers na
       , Common.daOwnPeerSharing         = aOwnPeerSharing na

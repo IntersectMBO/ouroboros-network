@@ -337,8 +337,8 @@ unit_cm_valid_transitions =
                      Map.fromList [(RelayAccessAddress "0:71:0:1:0:1:0:1" 65534,
                                     (DoAdvertisePeer, IsTrustable))])
                    ]
+                  (Script (LedgerPools [] :| []))
                   (PeerSelectionTargets
-                    { deadlineTargets = PeerSelectionTargets
                         { targetNumberOfRootPeers                 = 4
                         , targetNumberOfKnownPeers                = 4
                         , targetNumberOfEstablishedPeers          = 3
@@ -346,8 +346,8 @@ unit_cm_valid_transitions =
                         , targetNumberOfKnownBigLedgerPeers       = 4
                         , targetNumberOfEstablishedBigLedgerPeers = 1
                         , targetNumberOfActiveBigLedgerPeers      = 1
+                        }
                   , PeerSelectionTargets
-                    , syncTargets = PeerSelectionTargets
                         { targetNumberOfRootPeers                 = 0
                         , targetNumberOfKnownPeers                = 4
                         , targetNumberOfEstablishedPeers          = 0
@@ -355,8 +355,8 @@ unit_cm_valid_transitions =
                         , targetNumberOfKnownBigLedgerPeers       = 4
                         , targetNumberOfEstablishedBigLedgerPeers = 4
                         , targetNumberOfActiveBigLedgerPeers      = 3
+                        }
                   )
-                    })
                   (Script (DNSTimeout {getDNSTimeout = 0.325} :| []))
                   (Script (DNSLookupDelay {getDNSLookupDelay = 0.1} :|
                     [DNSLookupDelay {getDNSLookupDelay = 0.072}]))
@@ -379,8 +379,8 @@ unit_cm_valid_transitions =
                      Map.fromList [(RelayAccessAddress "0:79::1:0:0" 3,
                                     (DoNotAdvertisePeer, IsTrustable))])
                    ]
+                  (Script (LedgerPools [] :| []))
                   ( PeerSelectionTargets
-                    { deadlineTargets = PeerSelectionTargets
                         { targetNumberOfRootPeers                 = 1
                         , targetNumberOfKnownPeers                = 1
                         , targetNumberOfEstablishedPeers          = 1
@@ -388,8 +388,8 @@ unit_cm_valid_transitions =
                         , targetNumberOfKnownBigLedgerPeers       = 4
                         , targetNumberOfEstablishedBigLedgerPeers = 3
                         , targetNumberOfActiveBigLedgerPeers      = 3
+                        }
                   , PeerSelectionTargets
-                    , syncTargets = PeerSelectionTargets
                         { targetNumberOfRootPeers                 = 0
                         , targetNumberOfKnownPeers                = 1
                         , targetNumberOfEstablishedPeers          = 1
@@ -397,8 +397,8 @@ unit_cm_valid_transitions =
                         , targetNumberOfKnownBigLedgerPeers       = 4
                         , targetNumberOfEstablishedBigLedgerPeers = 2
                         , targetNumberOfActiveBigLedgerPeers      = 2
+                        }
                   )
-                    })
                   (Script (DNSTimeout {getDNSTimeout = 0.18} :| []))
                   (Script (DNSLookupDelay {getDNSLookupDelay = 0.125} :| []))
                   (Just (BlockNo 2))
@@ -896,15 +896,15 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
               [ (1,1,Map.fromList [(RelayAccessDomain "test2" 65535,(DoNotAdvertisePeer, IsNotTrustable))
               , (RelayAccessAddress "0:6:0:3:0:6:0:5" 65530,(DoNotAdvertisePeer, IsNotTrustable))])
               ]
+              (Script (LedgerPools [] :| []))
               (nullPeerSelectionTargets {
-                deadlineTargets = nullPeerSelectionTargets {
                     targetNumberOfKnownPeers = 2,
                     targetNumberOfEstablishedPeers = 2,
-
+                    targetNumberOfActivePeers = 1,
                     targetNumberOfKnownBigLedgerPeers = 0,
+                    targetNumberOfEstablishedBigLedgerPeers = 0,
                     targetNumberOfActiveBigLedgerPeers = 0 }
               , nullPeerSelectionTargets)
-                syncTargets = nullPeerSelectionTargets }
               (Script (DNSTimeout {getDNSTimeout = 0.239} :| [DNSTimeout {getDNSTimeout = 0.181},DNSTimeout {getDNSTimeout = 0.185},DNSTimeout {getDNSTimeout = 0.14},DNSTimeout {getDNSTimeout = 0.221}]))
               (Script (DNSLookupDelay {getDNSLookupDelay = 0.067} :| [DNSLookupDelay {getDNSLookupDelay = 0.097},DNSLookupDelay {getDNSLookupDelay = 0.101},DNSLookupDelay {getDNSLookupDelay = 0.096},DNSLookupDelay {getDNSLookupDelay = 0.051}]))
               Nothing
@@ -925,13 +925,13 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
              (TestAddress (IPAddr (read "0:6:0:3:0:6:0:5") 65530))
              PeerSharingDisabled
              []
+             (Script (LedgerPools [] :| []))
              (nullPeerSelectionTargets {
-               deadlineTargets = nullPeerSelectionTargets {
                    targetNumberOfRootPeers = 2,
                    targetNumberOfKnownPeers = 5,
+                   targetNumberOfEstablishedPeers = 1,
                    targetNumberOfActivePeers = 1 }
              , nullPeerSelectionTargets)
-               syncTargets = nullPeerSelectionTargets }
              (Script (DNSTimeout {getDNSTimeout = 0.28}
                   :| [DNSTimeout {getDNSTimeout = 0.204},
                       DNSTimeout {getDNSTimeout = 0.213}
@@ -1502,8 +1502,8 @@ unit_4191 = testWithIOSim prop_diffusion_dns_can_recover 125000 absInfo script
             [ (2,2,Map.fromList [ (RelayAccessDomain "test2" 15,(DoNotAdvertisePeer, IsNotTrustable))
                                 , (RelayAccessDomain "test3" 4,(DoAdvertisePeer, IsNotTrustable))])
             ]
+            (Script (LedgerPools [] :| []))
             (PeerSelectionTargets
-              deadlineTargets = PeerSelectionTargets
                 { targetNumberOfRootPeers = 6,
                   targetNumberOfKnownPeers = 7,
                   targetNumberOfEstablishedPeers = 7,
@@ -1511,9 +1511,9 @@ unit_4191 = testWithIOSim prop_diffusion_dns_can_recover 125000 absInfo script
 
                   targetNumberOfKnownBigLedgerPeers = 0,
                   targetNumberOfEstablishedBigLedgerPeers = 0,
+                  targetNumberOfActiveBigLedgerPeers = 0
                 }
             , nullPeerSelectionTargets)
-              syncTargets = nullPeerSelectionTargets }
             (Script (DNSTimeout {getDNSTimeout = 0.406} :| [ DNSTimeout {getDNSTimeout = 0.11}
                                                            , DNSTimeout {getDNSTimeout = 0.333}
                                                            , DNSTimeout {getDNSTimeout = 0.352}
@@ -2685,14 +2685,14 @@ async_demotion_network_script =
       simArgs
       (singletonTimedScript Map.empty)
       [ ( common { naAddr                  = addr1,
+                   naLocalRootPeers        = localRoots1,
                    naPeerTargets =
                      (Governor.nullPeerSelectionTargets {
-                     deadlineTargets = Governor.nullPeerSelectionTargets {
                          targetNumberOfKnownPeers = 2,
                            targetNumberOfEstablishedPeers = 2,
+                           targetNumberOfActivePeers = 2
                          }
                      , peerTargets)
-                     syncTargets = peerTargets }
                  }
         , [ JoinNetwork 0
             -- reconfigure the peer to trigger the outbound governor log
@@ -2740,8 +2740,8 @@ async_demotion_network_script =
         naBootstrapPeers   = Script (UseBootstrapPeers [RelayAccessDomain "bootstrap" 00000] :| []),
         naAddr             = undefined,
         naLocalRootPeers   = undefined,
+        naLedgerPeers      = Script (LedgerPools [] :| []),
         naPeerTargets      = (peerTargets, peerTargets),
-            syncTargets     = peerTargets },
         naDNSTimeoutScript = singletonScript (DNSTimeout 3),
         naDNSLookupDelayScript
                            = singletonScript (DNSLookupDelay 0.2),
@@ -3280,13 +3280,13 @@ prop_unit_4258 =
              (TestAddress (IPAddr (read "0.0.0.4") 9))
              PeerSharingDisabled
              [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.8" 65531,(DoNotAdvertisePeer, IsNotTrustable))])]
+             (Script (LedgerPools [] :| []))
              (nullPeerSelectionTargets {
-               deadlineTargets = nullPeerSelectionTargets {
                  targetNumberOfRootPeers = 2,
                  targetNumberOfKnownPeers = 5,
+                 targetNumberOfEstablishedPeers = 4,
                  targetNumberOfActivePeers = 1 }
              , nullPeerSelectionTargets)
-               syncTargets = nullPeerSelectionTargets }
              (Script (DNSTimeout {getDNSTimeout = 0.397}
                  :| [ DNSTimeout {getDNSTimeout = 0.382},
                       DNSTimeout {getDNSTimeout = 0.321},
@@ -3314,8 +3314,8 @@ prop_unit_4258 =
              (TestAddress (IPAddr (read "0.0.0.8") 65531))
              PeerSharingDisabled
              [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,(DoNotAdvertisePeer, IsNotTrustable))])]
+             (Script (LedgerPools [] :| []))
              (nullPeerSelectionTargets {
-               deadlineTargets = nullPeerSelectionTargets {
                  targetNumberOfRootPeers = 4,
                  targetNumberOfKnownPeers = 5,
                  targetNumberOfEstablishedPeers = 3,
@@ -3323,9 +3323,9 @@ prop_unit_4258 =
 
                  targetNumberOfKnownBigLedgerPeers = 0,
                  targetNumberOfEstablishedBigLedgerPeers = 0,
+                 targetNumberOfActiveBigLedgerPeers = 0
                }
              , nullPeerSelectionTargets)
-               syncTargets = nullPeerSelectionTargets }
              (Script (DNSTimeout {getDNSTimeout = 0.281}
                  :| [ DNSTimeout {getDNSTimeout = 0.177},
                       DNSTimeout {getDNSTimeout = 0.164},
@@ -3389,17 +3389,17 @@ prop_unit_reconnect =
                                   , (RelayAccessAddress "0.0.0.2" 0,(DoNotAdvertisePeer, IsNotTrustable))
                                   ])
               ]
+              (Script (LedgerPools [] :| []))
               (PeerSelectionTargets {
-                deadlineTargets = PeerSelectionTargets {
                     targetNumberOfRootPeers = 1,
                     targetNumberOfKnownPeers = 1,
                     targetNumberOfEstablishedPeers = 1,
                     targetNumberOfActivePeers = 1,
 
                     targetNumberOfKnownBigLedgerPeers = 0,
+                    targetNumberOfEstablishedBigLedgerPeers = 0,
                     targetNumberOfActiveBigLedgerPeers = 0 }
               , nullPeerSelectionTargets)
-                syncTargets = nullPeerSelectionTargets }
               (Script (DNSTimeout {getDNSTimeout = 10} :| []))
               (Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []))
               Nothing
@@ -3417,17 +3417,17 @@ prop_unit_reconnect =
                (TestAddress (IPAddr (read "0.0.0.1") 0))
                PeerSharingDisabled
                [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.0" 0,(DoNotAdvertisePeer, IsNotTrustable))])]
+               (Script (LedgerPools [] :| []))
                (PeerSelectionTargets {
-                 deadlineTargets = PeerSelectionTargets {
                      targetNumberOfRootPeers = 1,
                      targetNumberOfKnownPeers = 1,
                      targetNumberOfEstablishedPeers = 1,
                      targetNumberOfActivePeers = 1,
 
                      targetNumberOfKnownBigLedgerPeers = 0,
+                     targetNumberOfEstablishedBigLedgerPeers = 0,
                      targetNumberOfActiveBigLedgerPeers = 0 }
                , nullPeerSelectionTargets)
-                 syncTargets = nullPeerSelectionTargets }
              (Script (DNSTimeout {getDNSTimeout = 10} :| [ ]))
              (Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []))
              Nothing
@@ -3821,8 +3821,8 @@ unit_peer_sharing =
                           targetNumberOfActivePeers = x,
                           targetNumberOfKnownBigLedgerPeers = 0,
                           targetNumberOfEstablishedBigLedgerPeers = 0,
+                          targetNumberOfActiveBigLedgerPeers = 0 }
                 in (t, t)
-                in ConsensusModePeerTargets { deadlineTargets = t, syncTargets = t }
 
 
     defaultNodeArgs naConsensusMode = NodeArgs {
@@ -3834,8 +3834,8 @@ unit_peer_sharing =
         naAddr = undefined,
         naPeerSharing = PeerSharingEnabled,
         naLocalRootPeers = undefined,
+        naLedgerPeers = singletonScript (LedgerPools []),
         naPeerTargets = (nullPeerSelectionTargets, nullPeerSelectionTargets),
-            syncTargets = nullPeerSelectionTargets },
         naDNSTimeoutScript = singletonScript (DNSTimeout 300),
         naDNSLookupDelayScript = singletonScript (DNSLookupDelay 0.01),
         naChainSyncEarlyExit = False,
@@ -4384,10 +4384,10 @@ labelDiffusionScript (DiffusionScript args _ nodes) =
     . label ("Nº nodes in InitiatorOnlyDiffusionMode: "
               ++ show (length $ filter ((== InitiatorOnlyDiffusionMode) . naDiffusionMode . fst) nodes))
     -- todo: add label for GenesisMode syncTargets
+    . label ("Nº active peers: "
               ++ show (sum . map (targetNumberOfActivePeers . fst . naPeerTargets . fst) $ nodes))
-              ++ show (sum . map (targetNumberOfActivePeers . deadlineTargets . naPeerTargets . fst) $ nodes))
+    . label ("Nº active big ledger peers: "
               ++ show (sum . map (targetNumberOfActiveBigLedgerPeers . fst . naPeerTargets . fst) $ nodes))
-              ++ show (sum . map (targetNumberOfActiveBigLedgerPeers . deadlineTargets . naPeerTargets . fst) $ nodes))
     . label ("average number of active local roots: "
               ++ show (average . map (sum . map (\(HotValency v,_,_) -> v) . naLocalRootPeers . fst) $ nodes))
   where

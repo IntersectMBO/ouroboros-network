@@ -56,9 +56,9 @@ data ChurnRegime = ChurnDefault
                  | ChurnBootstrapPraosSync
                  -- ^ Praos targets further reduced to conserve resources
                  -- when syncing
+
 getPeerSelectionTargets :: ConsensusMode -> LedgerStateJudgement -> PeerSelectionTargets -> PeerSelectionTargets -> PeerSelectionTargets
 getPeerSelectionTargets consensus lsj deadlineTargets syncTargets =
-                                        syncTargets } =
   case (consensus, lsj) of
     (GenesisMode, TooOld) -> syncTargets
     _otherwise            -> deadlineTargets
@@ -101,12 +101,12 @@ peerChurnGovernor PeerChurnArgs {
                         clpciGetLedgerStateJudgement
                       }
                     },
-                    getOriginalPeerTargets,
                     getLocalRootHotTarget,
+                    getOriginalPeerTargets,
                     getExtraArgs = CardanoPeerChurnArgs {
                       cpcaModeVar             = churnModeVar,
+                      cpcaReadFetchMode       = getFetchMode,
                       cpcaSyncPeerTargets,
-                      cpcaPeerTargets,
                       cpcaReadUseBootstrap    = getUseBootstrapPeers,
                       cpcaConsensusMode       = consensusMode
                     }
@@ -121,8 +121,8 @@ peerChurnGovernor PeerChurnArgs {
   atomically $ do
     (churnMode, ledgerStateJudgement, useBootstrapPeers, ltt)
       <- (,,,) <$> updateChurnMode <*> clpciGetLedgerStateJudgement <*> getUseBootstrapPeers <*> getLocalRootHotTarget
+    let regime  = pickChurnRegime consensusMode churnMode useBootstrapPeers
         targets = getPeerSelectionTargets consensusMode ledgerStateJudgement getOriginalPeerTargets cpcaSyncPeerTargets
-        targets = getPeerSelectionTargets consensusMode ledgerStateJudgement cpcaPeerTargets
 
     modifyTVar peerSelectionVar ( increaseActivePeers regime ltt targets
                                 . increaseEstablishedPeers regime ltt targets)
@@ -162,8 +162,8 @@ peerChurnGovernor PeerChurnArgs {
         churnMode <- updateChurnMode
         ltt       <- getLocalRootHotTarget
         lsj       <- clpciGetLedgerStateJudgement
+        regime    <- pickChurnRegime consensusMode churnMode <$> getUseBootstrapPeers
         let targets = getPeerSelectionTargets consensusMode lsj getOriginalPeerTargets cpcaSyncPeerTargets
-        let targets = getPeerSelectionTargets consensusMode lsj cpcaPeerTargets
 
         (,) <$> (getCounter <$> readCounters)
             <*> stateTVar peerSelectionVar ((\a -> (a, a)) . modifyTargets regime ltt targets)

@@ -666,7 +666,7 @@ runM Interfaces
                                              PeerSharingEnabled  -> readInboundPeers,
                                          readLedgerPeerSnapshot = daReadLedgerPeerSnapshot,
                                          extraActions = CardanoPeerSelectionActions {
-                                           cpsaPeerTargets           = caePeerTargets,
+                                           cpsaSyncPeerTargets       = caeSyncPeerTargets,
                                            cpsaReadUseBootstrapPeers = caeReadUseBootstrapPeers
                                          },
                                          peerStateActions
@@ -740,7 +740,7 @@ runM Interfaces
       let peerChurnGovernor' =
             Governor.peerChurnGovernor
               PeerChurnArgs {
-                pcaPeerSelectionTracer = dtTracePeerSelectionTracer
+              , getExtraArgs           = daExtraChurnArgs
               , pcaChurnTracer         = dtTraceChurnCounters
               , pcaDeadlineInterval    = daDeadlineChurnInterval
               , pcaBulkInterval        = daBulkChurnInterval
@@ -754,8 +754,8 @@ runM Interfaces
                    LocalRootPeers.hotTarget
                  . LocalRootPeers.fromGroups
                  <$> readTVar localRootsVar
-              , getExtraArgs = ()
               , getOriginalPeerTargets = daPeerSelectionTargets
+              , getExtraArgs = ()
               }
 
       --

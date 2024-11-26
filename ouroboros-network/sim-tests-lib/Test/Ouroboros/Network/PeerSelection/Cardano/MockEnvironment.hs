@@ -540,8 +540,9 @@ mockPeerSelectionActions' tracer
       },
       readInboundPeers = pure Map.empty,
       readLedgerPeerSnapshot = pure Nothing,
+      originalPeerSelectionTargets = originalPeerTargets,
       extraActions = CardanoPeerSelectionActions {
-        cpsaPeerTargets = peerTargets,
+        cpsaSyncPeerTargets = peerTargets,
         cpsaReadUseBootstrapPeers = readUseBootstrapPeers
       }
     }
@@ -550,9 +551,8 @@ mockPeerSelectionActions' tracer
       extraStateToExtraCounters = CPSV.cardanoPeerSelectionStatetoCounters
     -- TODO: make this dynamic
     requestPublicRootPeers ledgerPeersKind _n = do
-      originalPeerSelectionTargets = originalPeerTargets,
       traceWith tracer TraceEnvRequestPublicRootPeers
-        cpsaSyncPeerTargets = peerTargets,
+      let ttl :: DiffTime
           ttl = 60
       _ <- async $ do
         threadDelay ttl
@@ -1069,21 +1069,13 @@ instance Arbitrary GovernorMockEnvironment where
                                                               <*> choose (1, min 1000 genesisBigKnown)
                           (praosBigAct, genesisBigAct) <- (,) <$> choose (0, min 100 praosBigEst)
                                                               <*> choose (1, min 100 genesisBigEst)
-                          let targets =
-                                ConsensusModePeerTargets {
-                                  deadlineTargets = PeerSelectionTargets {
+                          let deadlineTargets = PeerSelectionTargets {
                                       targetNumberOfRootPeers = praosRootKnown,
                                       targetNumberOfKnownPeers = praosKnown,
                                       targetNumberOfEstablishedPeers = praosEst,
                                       targetNumberOfActivePeers = praosAct,
                                       targetNumberOfKnownBigLedgerPeers = praosBigKnown,
-                          let deadlineTargets = PeerSelectionTargets {
-                                      targetNumberOfRootPeers = genesisRootKnown,
-                                      targetNumberOfKnownPeers = genesisKnown,
-                                      targetNumberOfEstablishedPeers = genesisEst,
-                                      targetNumberOfActivePeers = genesisAct,
-                                      targetNumberOfKnownBigLedgerPeers = genesisBigKnown,
-                                      targetNumberOfEstablishedBigLedgerPeers = genesisBigKnown,
+                                      targetNumberOfEstablishedBigLedgerPeers = praosBigEst,
                                       targetNumberOfActiveBigLedgerPeers = praosBigAct }
                               syncTargets = PeerSelectionTargets {
                                   targetNumberOfRootPeers = genesisRootKnown,
@@ -1093,11 +1085,19 @@ instance Arbitrary GovernorMockEnvironment where
                                   targetNumberOfKnownBigLedgerPeers = genesisBigKnown,
                                   targetNumberOfEstablishedBigLedgerPeers = genesisBigKnown,
                                   targetNumberOfActiveBigLedgerPeers = genesisBigAct }
+                          let lsjWithDelay = (,) lsj <$> elements [ShortDelay, NoDelay]
+                              -- synchronize target basis with ledger state judgement
+                              -- so we can use tests which check if the right targets
+                              -- are selected
+                              targetsWithDelay =     (,) (deadlineTargets, syncTargets)
+                                                 <$> case consensusMode of
+                                                       PraosMode -> elements [ShortDelay, NoDelay]
+                                                       GenesisMode -> snd <$> lsjWithDelay
 
                           (,) <$> lsjWithDelay <*> targetsWithDelay)
         where
           -- we want to generate targets which respect the number of local roots
-                              targetsWithDelay =     (,) (deadlineTargets, syncTargets)
+          -- and locally configured public roots which we plucked from the peer
           -- graph
           (HotValency localHot) = LocalRootPeers.hotTarget localRootPeers
           (WarmValency localWarm) = LocalRootPeers.warmTarget localRootPeers
@@ -1204,21 +1204,21 @@ instance Arbitrary GovernorMockEnvironment where
         in
           [shrunk
           | shrunk@(shrunkTarget, _) <- shrunkScript,
-            let ConsensusModePeerTargets {
-                  deadlineTargets,
-                  syncTargets = syncTargets@PeerSelectionTargets {
-                      targetNumberOfKnownBigLedgerPeers = genesisBigKnown,
-                      targetNumberOfEstablishedBigLedgerPeers = genesisBigEst,
-                      targetNumberOfActiveBigLedgerPeers = genesisBigAct } } = shrunkTarget,
-            all checkTargets [deadlineTargets, syncTargets],
-            genesisBigKnown >= 10 && genesisBigEst <= genesisBigKnown && genesisBigAct <= genesisBigEst,
             let ( deadlineTargets,
                   syncTargets@PeerSelectionTargets {
--- Tests for the QC Arbitrary instances
---
+                      targetNumberOfKnownBigLedgerPeers = genesisBigKnown,
+                      targetNumberOfEstablishedBigLedgerPeers = genesisBigEst,
                       targetNumberOfActiveBigLedgerPeers = genesisBigAct }) = shrunkTarget,
             checkTargets deadlineTargets,
             checkTargets syncTargets,
+            genesisBigKnown >= 10 && genesisBigEst <= genesisBigKnown && genesisBigAct <= genesisBigEst,
+            genesisBigEst * genesisBigAct /= 0]
+
+--
+-- Tests for the QC Arbitrary instances
+--
+
+prop_arbitrary_GovernorMockEnvironment :: GovernorMockEnvironment -> Property
 prop_arbitrary_GovernorMockEnvironment env =
     tabulate "num root peers"        [show (LocalRootPeers.size (localRootPeers env)
                                           + PublicRootPeers.size (publicRootPeers env))] $

@@ -67,35 +67,17 @@ governor_BOOTSTRAP_PEERS_TIMEOUT = 15 * 60
 -- On the other hand, if Genesis mode is on for the node, this action responds
 -- to changes in ledger state judgement monitoring actions to change the static
 -- set of target peers.
-              targets
+targetPeers :: (MonadSTM m, Ord peeraddr)
+            => PeerSelectionActions (CardanoPeerSelectionActions m) extraPeers extraFlags extraAPI peeraddr peerconn m
+            -> PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn
+            -> Guarded (STM m) (TimedDecision m CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
+targetPeers PeerSelectionActions{ originalPeerSelectionTargets,
+                                  readPeerSelectionTargets,
+                                  extraActions = CardanoPeerSelectionActions {
                                     cpsaSyncPeerTargets
                                   },
-                                  extraPeersActions
-                                }
-            st@PeerSelectionState{
-              publicRootPeers,
-      let -- We have to enforce the invariant that the number of root peers is
-                cpstBootstrapPeersFlag,
-                cpstHasOnlyBootstrapPeers,
-                cpstLedgerStateJudgement,
-                cpstConsensusMode
-              }
-            } =
-    Guarded Nothing $ do
-      churnTargets <- readPeerSelectionTargets
-      -- Genesis consensus mode:
-      -- we check if targets proposed by churn are stale
-      -- in the sense that they are the targets for
-      -- opposite value of the current ledger state judgement.
-      -- This indicates that we aren't churning currently, and
-      -- furthermore it means that the ledger state has flipped since
-      -- we last churned. Therefore we can't set the targets from
-      -- the TVar, and instead we set the appropriate targets
-      -- for the mode we are in.
-      let targets' =
-            case (cpstLedgerStateJudgement, cpstConsensusMode) of
-              (YoungEnough, GenesisMode)
-                | churnTargets == cpsaSyncPeerTargets ->
+      targets' <- readPeerSelectionTargets
+      check (targets' /= targets && sanePeerSelectionTargets targets')
                   originalPeerSelectionTargets
               (TooOld, GenesisMode)
                 | churnTargets == originalPeerSelectionTargets ->

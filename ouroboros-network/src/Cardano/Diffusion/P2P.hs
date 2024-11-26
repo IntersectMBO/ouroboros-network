@@ -696,8 +696,8 @@ runM Interfaces
                                              PeerSharingEnabled  -> readInboundPeers,
                                          readLedgerPeerSnapshot = daReadLedgerPeerSnapshot,
                                          extraActions = CardanoPeerSelectionActions {
-                                           cpsaPeerTargets           = caePeerTargets,
                                            cpsaSyncPeerTargets       = caeSyncPeerTargets,
+                                           cpsaReadUseBootstrapPeers = caeReadUseBootstrapPeers
                                          },
                                          peerStateActions
                                        })
