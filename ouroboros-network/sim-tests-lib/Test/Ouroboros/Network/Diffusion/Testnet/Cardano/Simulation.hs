@@ -118,18 +118,18 @@ import Cardano.Network.ArgumentsExtra (CardanoArgumentsExtra (..))
 import Cardano.Network.LedgerPeerConsensusInterface
            (CardanoLedgerPeersConsensusInterface (..))
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
-import Cardano.Network.PeerSelection.Governor.PeerSelectionState
 import Cardano.Network.PeerSelection.Governor.PeerSelectionActions
            (cardanoExtraArgsToPeerSelectionActions)
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState
            (CardanoPeerSelectionState)
-import Cardano.Network.PeerSelection.Governor.Types (CardanoPeerSelectionView)
-import Cardano.Network.PeerSelection.LocalRootPeers
-           (OutboundConnectionsState (..))
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as CPST
 import Cardano.Network.PeerSelection.Governor.Types (CardanoPeerSelectionView,
            cardanoPeerSelectionGovernorArgs)
-import Cardano.Network.PeerSelection.PeerChurnArgs (CardanoPeerChurnArgs (..))
 import Cardano.Network.PeerSelection.Governor.Types qualified as CPSV
+import Cardano.Network.PeerSelection.LocalRootPeers
+           (OutboundConnectionsState (..))
+import Cardano.Network.PeerSelection.PeerChurnArgs (CardanoPeerChurnArgs (..))
+import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import Cardano.Network.PeerSelection.Types (ChurnMode (..))
 import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
 import Cardano.Network.PublicRootPeers qualified as CPRP
@@ -145,11 +145,16 @@ import Ouroboros.Network.BlockFetch (FetchMode (..), TraceFetchClientState,
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.Diffusion.Common qualified as Common
 import Ouroboros.Network.InboundGovernor qualified as IG
+import Ouroboros.Network.PeerSelection.Governor.Types
+           (BootstrapPeersCriticalTimeoutError)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint (..),
            PortNumber, RelayAccessPoint (..))
+import Ouroboros.Network.PeerSelection.RootPeersDNS (PeerActionsDNS (..))
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSLookupType)
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
+           (newLedgerAndPublicRootDNSSemaphore)
 import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
            (TraceLocalRootPeers)
 import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
@@ -157,20 +162,16 @@ import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
            WarmValency (..))
 import Ouroboros.Network.Protocol.PeerSharing.Codec (byteLimitsPeerSharing,
-import Ouroboros.Network.PeerSelection.Governor.Types
-           (BootstrapPeersCriticalTimeoutError)
            timeLimitsPeerSharing)
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
-           (newLedgerAndPublicRootDNSSemaphore)
 import Ouroboros.Network.Server2 qualified as Server
+import Test.Ouroboros.Network.Diffusion.Testnet.Minimal.Node (Arguments (..),
+           Interfaces (..), LimitsAndTimeouts (..), run)
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..), genLedgerPoolsFrom)
 import Test.Ouroboros.Network.PeerSelection.LocalRootPeers ()
 import Test.QuickCheck
 
 -- | Diffusion Simulator Arguments
 --
-import Test.Ouroboros.Network.Diffusion.Testnet.Minimal.Node (Arguments (..),
-           Interfaces (..), LimitsAndTimeouts (..), run)
 -- Contains all necessary randomly generated values needed to run diffusion in
 -- simulation.
 --
@@ -1104,16 +1105,6 @@ diffusionSimulation
       chainSyncExitVar <- newTVarIO chainSyncExitOnBlockNo
       ledgerPeersVar <- initScript' ledgerPeers
       onlyOutboundConnectionsStateVar <- newTVarIO UntrustedState
-      let (bgaRng, rng) = Random.split $ mkStdGen seed
-          acceptedConnectionsLimit =
-            AcceptedConnectionsLimit maxBound maxBound 0
-          diffusionMode = InitiatorAndResponderDiffusionMode
-          readLocalRootPeers  = readTVar lrpVar
-          readPublicRootPeers = return publicRoots
-          readUseLedgerPeers  = return (UseLedgerPeers (After 0))
-
-          acceptVersion = \_ v -> Accept v
-
       useBootstrapPeersScriptVar <- newTVarIO bootstrapPeers
       churnModeVar <- newTVarIO ChurnModeNormal
       dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
@@ -1130,6 +1121,16 @@ diffusionSimulation
             }
           readUseBootstrapPeers = stepScriptSTM' useBootstrapPeersScriptVar
           (bgaRng, rng) = Random.split $ mkStdGen seed
+          acceptedConnectionsLimit =
+            AcceptedConnectionsLimit maxBound maxBound 0
+          diffusionMode = InitiatorAndResponderDiffusionMode
+          readLocalRootPeers  = readTVar lrpVar
+          readPublicRootPeers = return publicRoots
+          readUseLedgerPeers  = return (UseLedgerPeers (After 0))
+
+          acceptVersion = \_ v -> Accept v
+
+          defaultMiniProtocolsLimit :: MiniProtocolLimits
           defaultMiniProtocolsLimit =
             MiniProtocolLimits { maximumIngressQueue = 64000 }
 
@@ -1148,23 +1149,13 @@ diffusionSimulation
                 , idleTimeout      = Nothing
                 }
 
-          limitsAndTimeouts :: NodeKernel.LimitsAndTimeouts BlockHeader Block
-          limitsAndTimeouts
-            = NodeKernel.LimitsAndTimeouts
-                { NodeKernel.chainSyncLimits      = defaultMiniProtocolsLimit
-                , NodeKernel.chainSyncSizeLimits  = byteLimitsChainSync (const 0)
-                , NodeKernel.chainSyncTimeLimits  =
-                    timeLimitsChainSync stdChainSyncTimeout
-                , NodeKernel.blockFetchLimits     = defaultMiniProtocolsLimit
-                , NodeKernel.blockFetchSizeLimits = byteLimitsBlockFetch (const 0)
-                , NodeKernel.blockFetchTimeLimits = timeLimitsBlockFetch
           limitsAndTimeouts :: LimitsAndTimeouts BlockHeader Block
-                , NodeKernel.keepAliveSizeLimits  = byteLimitsKeepAlive (const 0)
+          limitsAndTimeouts
             = LimitsAndTimeouts
                 { chainSyncLimits      = defaultMiniProtocolsLimit
                 , chainSyncSizeLimits  = byteLimitsChainSync (const 0)
                 , chainSyncTimeLimits  =
-                , NodeKernel.handshakeLimits      = defaultMiniProtocolsLimit
+                    timeLimitsChainSync stdChainSyncTimeout
                 , blockFetchLimits     = defaultMiniProtocolsLimit
                 , blockFetchSizeLimits = byteLimitsBlockFetch (const 0)
                 , blockFetchTimeLimits = timeLimitsBlockFetch
@@ -1176,20 +1167,20 @@ diffusionSimulation
                 , pingPongTimeLimits   = timeLimitsPingPong
                 , handshakeLimits      = defaultMiniProtocolsLimit
                 , handshakeTimeLimits  =
-                }
+                    ProtocolTimeLimits (const shortWait)
                 , handhsakeSizeLimits  =
-          interfaces :: NodeKernel.Interfaces (CardanoLedgerPeersConsensusInterface m) m
-          interfaces =
+                    ProtocolSizeLimits (const (4 * 1440))
+                                       (fromIntegral . BL.length)
                 , peerSharingLimits     = defaultMiniProtocolsLimit
                 , peerSharingTimeLimits =
-              , NodeKernel.iNtnBearer         = makeFDBearer
+                    timeLimitsPeerSharing
                 , peerSharingSizeLimits =
-              , NodeKernel.iNtnDomainResolver = domainResolver dMapVar
-              , NodeKernel.iNtcSnocket        = ntcSnocket
-              , NodeKernel.iNtcBearer         = makeFDBearer
-              , NodeKernel.iRng               = rng
+                    byteLimitsPeerSharing (const 0)
+
+                }
+
           interfaces :: Interfaces (CardanoLedgerPeersConsensusInterface m) m
-              , NodeKernel.iLedgerPeersConsensusInterface
+          interfaces =
             Interfaces
               { iNtnSnocket        = ntnSnocket
               , iNtnBearer         = makeFDBearer
@@ -1200,6 +1191,16 @@ diffusionSimulation
               , iRng               = rng
               , iDomainMap         = dMapVar
               , iLedgerPeersConsensusInterface
+                                        =
+                  LedgerPeersConsensusInterface
+                    (pure maxBound)
+                    (do
+                      ledgerPools <- stepScriptSTM' ledgerPeersVar
+                      return $ Map.elems
+                             $ accPoolStake
+                             $ getLedgerPools
+                             $ ledgerPools)
+                    CardanoLedgerPeersConsensusInterface {
                       clpciGetLedgerStateJudgement = pure TooOld
                     , clpciUpdateOutboundConnectionsState =
                         \a -> do
@@ -1224,16 +1225,6 @@ diffusionSimulation
                            | otherwise ->
                 return False
 
-          arguments :: NodeKernel.Arguments m
-          arguments =
-            NodeKernel.Arguments
-              { NodeKernel.aIPAddress            = addr
-              , NodeKernel.aAcceptedLimits       = acceptedConnectionsLimit
-              , NodeKernel.aDiffusionMode        = diffusionMode
-              , NodeKernel.aKeepAliveInterval    = 10
-              , NodeKernel.aPingPongInterval     = 10
-              , NodeKernel.aPeerTargets          = peerTargets
-              , NodeKernel.aShouldChainSyncExit  = shouldChainSyncExit chainSyncExitVar
           cardanoExtraArgs :: CardanoArgumentsExtra m
           cardanoExtraArgs =
             CardanoArgumentsExtra {
@@ -1254,7 +1245,7 @@ diffusionSimulation
             }
 
           arguments :: Arguments (CardanoArgumentsExtra m) (CardanoPeerChurnArgs m) PeerTrustable m
-              , NodeKernel.aReadLocalRootPeers   = readLocalRootPeers
+          arguments =
             Arguments
               { aIPAddress            = addr
               , aAcceptedLimits       = acceptedConnectionsLimit
@@ -1273,10 +1264,40 @@ diffusionSimulation
               , aDNSTimeoutScript     = dnsTimeout
               , aDNSLookupDelayScript = dnsLookupDelay
               , aDebugTracer          = (\s -> WithTime (Time (-1)) (WithName addr (DiffusionDebugTrace s)))
-               . tracerWithTime
+                                                   `contramap` nodeTracer
               , aExtraArgs      = cardanoExtraArgs
               , aExtraChurnArgs = cardanoChurnArgs
-               $ nodeTracer)
+              }
+
+          tracersExtraAddr = tracersExtra addr
+
+          requestPublicRootPeers' =
+            requestPublicRootPeers (Common.dtTracePublicRootPeersTracer tracersExtraAddr)
+                                   (caeReadUseBootstrapPeers cardanoExtraArgs)
+                                   (pure TooOld)
+                                   (\a b -> TestAddress (IPAddr a b))
+                                   dnsSemaphore
+                                   readPublicRootPeers
+                                   (paDnsActions dnsActions)
+
+      run blockGeneratorArgs
+                     limitsAndTimeouts
+                     interfaces
+                     arguments
+                     (CPST.empty consensusMode (MinBigLedgerPeersForTrustedState 0))
+                     (cardanoExtraArgsToPeerSelectionActions cardanoExtraArgs)
+                     CPRP.empty
+                     CPSV.empty
+                     CPRP.cardanoPublicRootPeersActions
+                     (cardanoPeerSelectionGovernorArgs readUseLedgerPeers peerSharing (iLedgerPeersConsensusInterface interfaces))
+                     CPSV.cardanoPeerSelectionStatetoCounters
+                     requestPublicRootPeers'
+                     peerChurnGovernor
+                     tracersExtraAddr
+                     ( contramap (DiffusionFetchTrace . (\(TraceLabelPeer _ a) -> a))
+                     . tracerWithName addr
+                     . tracerWithTime
+                     $ nodeTracer)
         `catch` \e -> traceWith (diffSimTracer addr) (TrErrored e)
                    >> throwIO e
 
@@ -1321,35 +1342,15 @@ diffusionSimulation
         , Common.dtTracePublicRootPeersTracer        = contramap
                                                         DiffusionPublicRootPeerTrace
                                                      . tracerWithName ntnAddr
-          tracersExtraAddr = tracersExtra addr
-
-          requestPublicRootPeers' =
-            requestPublicRootPeers (Common.dtTracePublicRootPeersTracer tracersExtraAddr)
-                                   (caeReadUseBootstrapPeers cardanoExtraArgs)
-                                   (pure TooOld)
-                                   (\a b -> TestAddress (IPAddr a b))
-                                   dnsSemaphore
-                                   readPublicRootPeers
-                                   (paDnsActions dnsActions)
-
-      run blockGeneratorArgs
-                     limitsAndTimeouts
-                     interfaces
-                     arguments
-                     (CPST.empty consensusMode (MinBigLedgerPeersForTrustedState 0))
-                     (cardanoExtraArgsToPeerSelectionActions cardanoExtraArgs)
-                     CPRP.empty
-                     CPSV.empty
-                     CPRP.cardanoPublicRootPeersActions
-                     (cardanoPeerSelectionGovernorArgs readUseLedgerPeers peerSharing (iLedgerPeersConsensusInterface interfaces))
-                     CPSV.cardanoPeerSelectionStatetoCounters
-                     requestPublicRootPeers'
-                     peerChurnGovernor
-                     tracersExtraAddr
-                     ( contramap (DiffusionFetchTrace . (\(TraceLabelPeer _ a) -> a))
-                     . tracerWithName addr
-                     . tracerWithTime
-                     $ nodeTracer)
+                                                     . tracerWithTime
+                                                     $ nodeTracer
+        , Common.dtTraceLedgerPeersTracer            = contramap
+                                                        DiffusionLedgerPeersTrace
+                                                     . tracerWithName ntnAddr
+                                                     . tracerWithTime
+                                                     $ nodeTracer
+        , Common.dtTracePeerSelectionTracer          = contramap
+                                                        DiffusionPeerSelectionTrace
                                                      . tracerWithName ntnAddr
                                                      . tracerWithTime
                                                      $ nodeTracer

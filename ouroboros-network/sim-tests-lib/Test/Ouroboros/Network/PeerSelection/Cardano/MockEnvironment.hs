@@ -86,10 +86,10 @@ import Cardano.Network.LedgerPeerConsensusInterface
            (CardanoLedgerPeersConsensusInterface (..))
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
-import Cardano.Network.PeerSelection.Governor.PeerSelectionActions
 import Cardano.Network.PeerSelection.Governor.Monitor (localRoots,
            monitorBootstrapPeersFlag, monitorLedgerStateJudgement, targetPeers,
            waitForSystemToQuiesce)
+import Cardano.Network.PeerSelection.Governor.PeerSelectionActions
            (CardanoPeerSelectionActions (..))
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState
            (CardanoPeerSelectionState (..))
@@ -104,12 +104,12 @@ import Cardano.Network.Types (LedgerStateJudgement (..),
            MinBigLedgerPeersForTrustedState (..))
 import Data.IP (toIPv4w)
 import Ouroboros.Network.PeerSelection.Governor.Types
-           (ExtraGuardedDecisions (..), PeerSelectionGovernorArgs (..))
+           (BootstrapPeersCriticalTimeoutError (..), ExtraGuardedDecisions (..),
+           PeerSelectionGovernorArgs (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers (..))
-           (BootstrapPeersCriticalTimeoutError (..), ExtraGuardedDecisions (..),
-           PeerSelectionGovernorArgs (..))
+import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.Types (PeerStatus (..))
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
            PeerSharingResult (..))

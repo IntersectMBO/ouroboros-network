@@ -50,16 +50,16 @@ import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 --
 -- It should be noted if the node is in bootstrap mode (i.e. in a sensitive
 -- state) then this monitoring action will be disabled.
-    => (extraState -> Bool)
-    -> PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
+--
 belowTarget
     :: (MonadAsync m, MonadTimer m, Ord peeraddr, Hashable peeraddr)
-    => PeerSelectionActions CardanoPeerSelectionState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
+    => (extraState -> Bool)
+    -> PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
+    -> Time -- ^ blocked at
+    -> Map peeraddr PeerSharing
     -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
 belowTarget enableAction
             actions@PeerSelectionActions {
-    -> MkGuardedDecision CardanoPeerSelectionState extraFlags extraPeers peeraddr peerconn m
-belowTarget actions@PeerSelectionActions {
               peerSharing
             , extraPeersActions = PublicExtraPeersActions {
                 memberExtraPeers
@@ -83,8 +83,8 @@ belowTarget actions@PeerSelectionActions {
               inboundPeersRetryTime,
               targets = PeerSelectionTargets {
                           targetNumberOfKnownPeers
+                        },
               extraState,
-              },
               stdGen
             }
     --
@@ -97,8 +97,8 @@ belowTarget actions@PeerSelectionActions {
 
     -- There are no peer share requests in-flight.
   , inProgressPeerShareReqs <= 0
+
   , enableAction extraState
-  , not (requiresBootstrapPeers cpstBootstrapPeersFlag cpstLedgerStateJudgement)
 
   , blockedAt >= inboundPeersRetryTime
 
@@ -150,8 +150,8 @@ belowTarget actions@PeerSelectionActions {
     -- Are there any known peers that we can send a peer share request to?
     -- We can only ask ones where we have not asked them within a certain time.
   , not (Set.null availableForPeerShare)
+
   , enableAction extraState
-  , not (requiresBootstrapPeers cpstBootstrapPeersFlag cpstLedgerStateJudgement)
 
   = Guarded Nothing $ do
       -- Max selected should be <= numPeerShareReqsPossible

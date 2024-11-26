@@ -101,8 +101,8 @@ import Cardano.Network.PeerSelection.Governor.Monitor qualified as Cardano
 import Cardano.Network.PeerSelection.Governor.PeerSelectionActions
            (CardanoPeerSelectionActions (..))
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState
-           (CardanoPeerSelectionState)
            (CardanoPeerSelectionState (..))
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as CPST
 import Cardano.Network.PeerSelection.Governor.Types
            (CardanoPeerSelectionView (..))
 import Cardano.Network.PeerSelection.Governor.Types qualified as CPSV
@@ -4008,8 +4008,6 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
           }
 
         peerSelectionGovernorArgs = PeerSelectionGovernorArgs {
-          abortGovernor   = const Nothing
-        , updateWithState = \_ _ -> pure ()
           abortGovernor   = \st ->
             case cpstBootstrapPeersTimeout (extraState st) of
               Nothing -> Nothing
@@ -4034,6 +4032,8 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
                 not (requiresBootstrapPeers (cpstBootstrapPeersFlag st) (cpstLedgerStateJudgement st))
             , ledgerPeerSnapshotExtraStateChange = id
             }
+        }
+
     publicRootPeersProvider
       tracer
       (curry IP.toSockAddr)

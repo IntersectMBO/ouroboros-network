@@ -38,36 +38,36 @@ import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersActions (..))
 --
 
 
-belowTarget :: forall extraState extraActions extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
+-- | If we are below the target of /hot peers/ we promote some of the /warm
 -- peers/ according to 'policyPickWarmPeersToPromote' policy.
 --
-belowTarget :: forall extraActions extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
+belowTarget :: forall extraState extraActions extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
                ( Alternative (STM m)
                , MonadDelay m
                , MonadSTM m
+               , Ord peeraddr
+               , HasCallStack
+               )
             => (extraState -> Bool)
             -> PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
             -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
 belowTarget enableAction = belowTargetBigLedgerPeers enableAction
                          <> belowTargetLocal
                          <> belowTargetOther
-belowTarget = belowTargetBigLedgerPeers
-           <> belowTargetLocal
-           <> belowTargetOther
 
 -- | If we are below the target of /hot big ledger peers peers/ we promote some
 -- of the /warm peers/ according to 'policyPickWarmPeersToPromote' policy.
 --
-belowTargetBigLedgerPeers :: forall extraState extraActions extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
+-- It should be noted if the node is in bootstrap mode (i.e. in a sensitive
 -- state) then this monitoring action will be disabled.
+--
+belowTargetBigLedgerPeers :: forall extraState extraActions extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
+                             (MonadDelay m, MonadSTM m, Ord peeraddr)
                           => (extraState -> Bool)
                           -> PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
                           -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
 belowTargetBigLedgerPeers enableAction
                           actions@PeerSelectionActions {
-                          => PeerSelectionActions CardanoPeerSelectionState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
-                          -> MkGuardedDecision CardanoPeerSelectionState extraFlags extraPeers peeraddr peerconn m
-belowTargetBigLedgerPeers actions@PeerSelectionActions {
                             extraPeersActions = PublicExtraPeersActions {
                               memberExtraPeers
                             , extraPeersToSet

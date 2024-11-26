@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.Diffusion
@@ -22,13 +23,14 @@ import Network.Socket (Socket)
 import Ouroboros.Network.Diffusion.Common (Arguments,
            NodeToNodeConnectionManager, NodeToNodePeerConnectionHandle, Tracers)
 import Ouroboros.Network.Diffusion.Common qualified as Common
-import Ouroboros.Network.PeerSelection.Governor.Types (PeerSelectionState)
-import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
+import Ouroboros.Network.Diffusion.MinimalP2P qualified as MinimalP2P
 import Ouroboros.Network.Diffusion.NonP2P qualified as NonP2P
 import Ouroboros.Network.NodeToClient (LocalAddress, LocalSocket,
            NodeToClientVersion, NodeToClientVersionData)
 import Ouroboros.Network.NodeToNode (NodeToNodeVersion, NodeToNodeVersionData,
            RemoteAddress)
+import Ouroboros.Network.PeerSelection.Governor.Types (PeerSelectionState)
+import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 
 -- | Promoted data types.
 --
@@ -47,39 +49,39 @@ data ExtraTracers (p2p :: P2P) extraState extraFlags extraPeers extraCounters m 
            extraCounters m
     -> ExtraTracers 'P2P extraState extraFlags extraPeers extraCounters m
 
+  NonP2PTracers
+    :: NonP2P.TracersExtra
+    -> ExtraTracers 'NonP2P extraState extraFlags extraPeers extraCounters m
+
+
+-- | Diffusion arguments which depend on p2p mode.
+--
+data ArgumentsExtra
        (p2p :: P2P) extraArgs extraState extraActions extraAPI
        extraPeers extraFlags extraChurnArgs extraCounters exception ntnAddr m where
+  P2PArguments
+    :: Common.ArgumentsExtra extraArgs extraState extraActions extraAPI
                             extraPeers extraFlags extraChurnArgs
                             extraCounters exception ntnAddr m
     -> ArgumentsExtra 'P2P extraArgs extraState extraActions extraAPI
                            extraPeers extraFlags extraChurnArgs
                            extraCounters exception ntnAddr m
--- | Diffusion arguments which depend on p2p mode.
---
-data ArgumentsExtra (p2p :: P2P) extraArgs extraPeers m where
-  P2PArguments
-    :: Common.ArgumentsExtra extraArgs extraPeers m
+
+  NonP2PArguments
+    :: NonP2P.ArgumentsExtra
     -> ArgumentsExtra 'NonP2P extraArgs extraState extraActions extraAPI
                               extraPeers extraFlags extraChurnArgs
                               extraCounters exception ntnAddr m
 
-  P2PCardanoArguments
-    :: Common.ArgumentsExtra (CardanoArgumentsExtra m) PeerTrustable m
-    -> ArgumentsExtra 'P2PCardano (CardanoArgumentsExtra m) PeerTrustable m
-
-  NonP2PArguments
-    :: NonP2P.ArgumentsExtra
-    -> ArgumentsExtra 'NonP2P extraArgs extraPeers m
-         extraAPI m a
 -- | Application data which depend on p2p mode.
 --
-
-  P2PCardanoApplications
+data Applications (p2p :: P2P) extraAPI m a where
+  P2PApplications
     :: Common.Applications
          RemoteAddress  NodeToNodeVersion   NodeToNodeVersionData
          LocalAddress   NodeToClientVersion NodeToClientVersionData
-         (CardanoLedgerPeersConsensusInterface m) m a
-    -> Applications 'P2PCardano (CardanoLedgerPeersConsensusInterface m) m a
+         extraAPI m a
+    -> Applications 'P2P extraAPI m a
 
   NonP2PApplications
     :: Common.Applications
@@ -87,13 +89,13 @@ data ArgumentsExtra (p2p :: P2P) extraArgs extraPeers m where
          LocalAddress   NodeToClientVersion NodeToClientVersionData
          () m a
     -> Applications 'NonP2P () m a
+
+-- | Application data which depend on p2p mode.
+--
+data ApplicationsExtra (p2p :: P2P) ntnAddr m a where
   P2PApplicationsExtra
     :: Common.ApplicationsExtra ntnAddr m a
     -> ApplicationsExtra 'P2P ntnAddr m a
-
-  P2PCardanoApplicationsExtra
-    :: Common.ApplicationsExtra ntnAddr m a
-    -> ApplicationsExtra 'P2PCardano ntnAddr m a
 
   NonP2PApplicationsExtra
     :: NonP2P.ApplicationsExtra
@@ -131,28 +133,28 @@ run :: forall (p2p :: P2P) extraArgs extraState extraActions extraFlags
     -> Arguments
          IO
          Socket      RemoteAddress
+         LocalSocket LocalAddress
     -> ArgumentsExtra p2p extraArgs extraState extraActions extraAPI
        extraPeers extraFlags extraChurnArgs extraCounters exception
        RemoteAddress IO
-    -> ArgumentsExtra p2p extraArgs extraFlags IO
     -> Applications p2p extraAPI IO a
 
     -> ApplicationsExtra p2p RemoteAddress IO a
     -> IO ()
-run _ (P2PTracers _)
-            _ (P2PArguments _)
-            (P2PApplications _)
-            (P2PApplicationsExtra _) =
-    undefined
-run tracers (P2PCardanoTracers tracersExtra)
-            args (P2PCardanoArguments argsExtra)
-            (P2PCardanoApplications apps)
-            (P2PCardanoApplicationsExtra appsExtra) =
-    void $
-    P2P.run tracers tracersExtra
-            args argsExtra
 run sigUSR1Signal
     tracers (P2PTracers tracersExtra)
             args (P2PArguments argsExtra)
             (P2PApplications apps)
             (P2PApplicationsExtra appsExtra) =
+    void $
+    MinimalP2P.run
+      sigUSR1Signal tracers tracersExtra
+      args argsExtra apps appsExtra
+run _
+    tracers (NonP2PTracers tracersExtra)
+            args (NonP2PArguments argsExtra)
+            (NonP2PApplications apps)
+            (NonP2PApplicationsExtra appsExtra) = do
+    NonP2P.run tracers tracersExtra
+               args argsExtra
+               apps appsExtra

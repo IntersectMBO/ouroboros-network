@@ -54,7 +54,6 @@ module Ouroboros.Network.PeerSelection.Governor
 import Data.Foldable (traverse_)
 import Data.Hashable
 import Data.Map.Strict (Map)
-import Data.Set qualified as Set
 import Data.Void (Void)
 
 import Control.Applicative (Alternative ((<|>)))
@@ -68,10 +67,7 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer (..), traceWith)
 import System.Random
 
-           (OutboundConnectionsState (..))
-import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
-import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
-import Cardano.Network.Types
+import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Ouroboros.Network.PeerSelection.Churn (ChurnCounters (..),
            PeerChurnArgs (..), peerChurnGovernor)
 import Ouroboros.Network.PeerSelection.Governor.ActivePeers qualified as ActivePeers
@@ -81,10 +77,10 @@ import Ouroboros.Network.PeerSelection.Governor.KnownPeers qualified as KnownPee
 import Ouroboros.Network.PeerSelection.Governor.Monitor qualified as Monitor
 import Ouroboros.Network.PeerSelection.Governor.RootPeers qualified as RootPeers
 import Ouroboros.Network.PeerSelection.Governor.Types
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type (UseLedgerPeers (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
-import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersActions (..))
 
 {- $overview
@@ -468,26 +464,22 @@ peerSelectionGovernor :: ( Alternative (STM m)
                          , Ord peeraddr
                          , Show peerconn
                          , Hashable peeraddr
+                         , Exception exception
+                         , Eq extraCounters
+                         , Semigroup extraPeers
                          )
-                      => Tracer m (TracePeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr)
-                      -> Tracer m (DebugPeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr)
-                      -> Tracer m (PeerSelectionCounters (CardanoPeerSelectionView peeraddr))
-                      -> PeerSelectionGovernorArgs
-                          CardanoPeerSelectionState
-                          (CardanoPeerSelectionActions m)
-                          (CardanoPublicRootPeers peeraddr)
                       => Tracer m (TracePeerSelection extraState extraFlags extraPeers peeraddr)
                       -> Tracer m (DebugPeerSelection extraState extraFlags extraPeers peeraddr)
                       -> Tracer m (PeerSelectionCounters extraCounters)
-                          peeraddr
+                      -> PeerSelectionGovernorArgs
                           extraState extraActions extraPeers extraAPI extraFlags extraCounters
                           peeraddr peerconn exception m
-                          PeerTrustable
+                      -> StdGen
                       -> extraState
                       -> extraPeers
-                          peeraddr
-                          peerconn
-                          m
+                      -> PeerSelectionActions
+                          extraState extraActions extraPeers extraFlags extraAPI extraCounters
+                          peeraddr peerconn m
                       -> PeerSelectionPolicy  peeraddr m
                       -> PeerSelectionInterfaces
                            extraState extraFlags extraPeers extraCounters
@@ -515,46 +507,37 @@ peerSelectionGovernor tracer debugTracer countersTracer psArgs fuzzRng extraStat
 --   * root peer set changed
 --   * churn timeout
 --   * async action completed
+--   * established connection failed
+--
+-- We check the internal actions first, and otherwise the blocking actions.
+-- In each case we trace the action, update the state and execute the
+-- action asynchronously.
+--
+peerSelectionGovernorLoop :: forall m extraState extraActions extraPeers extraAPI extraFlags extraCounters exception peeraddr peerconn.
+                             ( Alternative (STM m)
+                             , MonadAsync m
+                             , MonadDelay m
+                             , MonadMask m
+                             , MonadTimer m
+                             , Ord peeraddr
+                             , Show peerconn
+                             , Hashable peeraddr, Exception exception, Eq extraCounters, Semigroup extraPeers
+                             )
                           => Tracer m (TracePeerSelection extraState extraFlags extraPeers peeraddr)
                           -> Tracer m (DebugPeerSelection extraState extraFlags extraPeers peeraddr)
                           -> Tracer m (PeerSelectionCounters extraCounters)
--- In each case we trace the action, update the state and execute the
+                          -> PeerSelectionGovernorArgs
                               extraState extraActions extraPeers extraAPI extraFlags extraCounters
                               peeraddr peerconn exception m
-                             , Hashable peeraddr
+                          -> PeerSelectionActions
                               extraState extraActions extraPeers extraFlags extraAPI extraCounters
                               peeraddr peerconn m
                           -> PeerSelectionPolicy peeraddr m
-                              (CardanoPeerSelectionView peeraddr)
-                              peeraddr
-                              peerconn
-                              BootstrapPeersCriticalTimeoutError
-                              m
-                          -> PeerSelectionActions
-                              CardanoPeerSelectionState
-                              (CardanoPeerSelectionActions m)
-                              (CardanoPublicRootPeers peeraddr)
-                              PeerTrustable
-                              (CardanoLedgerPeersConsensusInterface m)
-                              (CardanoPeerSelectionView peeraddr)
-                              peeraddr
-                              peerconn
-                              m
-                          -> PeerSelectionPolicy  peeraddr m
                           -> PeerSelectionInterfaces
-                            , requiredTargetsAction
-                            , requiredLocalRootsAction
-                            , enableProgressMakingActions
-                            , ledgerPeerSnapshotExtraStateChange
-                              CardanoPeerSelectionState
-                              PeerTrustable
-                              (CardanoPublicRootPeers peeraddr)
-                              (CardanoPeerSelectionView peeraddr)
-                              peeraddr
-                              peerconn
-                              m
-                          -> JobPool () m (Completion m CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
-    loop :: PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+                              extraState extraFlags extraPeers extraCounters
+                              peeraddr peerconn m
+                          -> JobPool () m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
+                          -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
                           -> m Void
 peerSelectionGovernorLoop tracer
                           debugTracer
@@ -567,6 +550,10 @@ peerSelectionGovernorLoop tracer
                             , postBlocking
                             , preNonBlocking
                             , postNonBlocking
+                            , requiredTargetsAction
+                            , requiredLocalRootsAction
+                            , enableProgressMakingActions
+                            , ledgerPeerSnapshotExtraStateChange
                             }
                           }
                           actions@PeerSelectionActions {
@@ -587,15 +574,15 @@ peerSelectionGovernorLoop tracer
                           pst = do
     loop pst (Time 0) `catch` (\e -> traceWith tracer (TraceOutboundGovernorCriticalFailure e) >> throwIO e)
   where
-    loop :: PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn
+    loop :: PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
          -> Time
          -> m Void
     loop !st !dbgUpdateAt = assertPeerSelectionState extraPeersToSet invariantExtraPeers st $ do
       -- Update public state using 'toPublicState' to compute available peers
       -- to share for peer sharing
       atomically $ writeTVar publicStateVar (toPublicState st)
-                         -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
-                         -> m (TimedDecision m extraState extraFlags extraPeers peeraddr peerconn)
+
+      blockedAt <- getMonotonicTime
 
       -- | If there's something utterly wrong with the PeerSelectionState such
       -- that the abortion of the Governor is required.
@@ -618,9 +605,9 @@ peerSelectionGovernorLoop tracer
       -- get the current time after the governor returned from the blocking
       -- 'evalGuardedDecisions' call.
       now <- getMonotonicTime
-                     -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+
       let Decision { decisionTrace, decisionJobs, decisionState = st'' } =
-                     -> Guarded (STM m) (TimedDecision m extraState extraFlags extraPeers peeraddr peerconn)
+            timedDecision now
 
       mbCounters <- atomically $ do
         let peerSelectionView =
@@ -637,23 +624,17 @@ peerSelectionGovernorLoop tracer
             >> return (Just counters')
           else return Nothing
 
-        -- Custom STM actions
-        updateWithState peerSelectionView st''
+      -- Trace counters
+      traverse_ (traceWith countersTracer) mbCounters
+      -- Trace peer selection
+      traverse_ (traceWith tracer) decisionTrace
 
-        -- Update counters
-        counters <- readTVar countersVar
-      -- it also makes a constant extraState change.
-      -- If the verification job detects a discrepancy vs. big peers on the ledger,
-      -- it throws and the node is shut down.
-      <> Monitor.ledgerPeerSnapshotChange ledgerPeerSnapshotExtraStateChange actions st
-
-      <> requiredTargetsAction    policy actions st
-      <> requiredLocalRootsAction policy actions st
+      mapM_ (JobPool.forkJob jobPool) decisionJobs
       loop st'' dbgUpdateAt'
 
     evalGuardedDecisions :: Time
-                         -> PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn
-                         -> m (TimedDecision m CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
+                         -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+                         -> m (TimedDecision m extraState extraFlags extraPeers peeraddr peerconn)
     evalGuardedDecisions blockedAt st = do
       inboundPeers <- readInboundPeers actions
       case guardedDecisions blockedAt st inboundPeers of
@@ -676,9 +657,9 @@ peerSelectionGovernorLoop tracer
           return timedDecision
 
     guardedDecisions :: Time
-                     -> PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn
+                     -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
                      -> Map peeraddr PeerSharing
-                     -> Guarded (STM m) (TimedDecision m CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
+                     -> Guarded (STM m) (TimedDecision m extraState extraFlags extraPeers peeraddr peerconn)
     guardedDecisions blockedAt st inboundPeers =
       -- All the alternative potentially-blocking decisions.
 
@@ -686,12 +667,28 @@ peerSelectionGovernorLoop tracer
         foldMap (\a -> a policy actions st) preBlocking
 
       <> Monitor.connections          actions st
+      <> Monitor.jobs                 jobPool st
+      -- This job monitors for changes in big ledger peer snapshot file (eg. reload)
+      -- and copies it into the governor's private state. When a change is detected,
+      -- it also makes a constant extraState change.
+      -- If the verification job detects a discrepancy vs. big peers on the ledger,
+      -- it throws and the node is shut down.
+      <> Monitor.ledgerPeerSnapshotChange ledgerPeerSnapshotExtraStateChange actions st
+
+      <> requiredTargetsAction    policy actions st
+      <> requiredLocalRootsAction policy actions st
+
+         -- Make sure postBlocking set is in the right place
+      <> foldMap (\a -> a policy actions st) postBlocking
+        -- Make sure preNonBlocking set is in the right place
+      <> foldMap (\a -> a policy actions st) preNonBlocking
+
         -- The non-blocking decisions regarding (known) big ledger peers
       <> BigLedgerPeers.belowTarget enableProgressMakingActions
                                     actions blockedAt st
       <> BigLedgerPeers.aboveTarget actions policy st
-      -- it also flips private state LedgerStateJudgement to TooYoung so that it
-      -- can launch the appropriate verification task in the job pool when external
+
+      -- All the alternative non-blocking internal decisions.
       <> RootPeers.belowTarget   actions blockedAt st
 
       <> KnownPeers.belowTarget  enableProgressMakingActions
@@ -705,27 +702,6 @@ peerSelectionGovernorLoop tracer
       <> ActivePeers.belowTarget enableProgressMakingActions
                                  actions policy st
       <> ActivePeers.aboveTarget actions policy st
-      <> Monitor.targetPeers          actions st
-      <> Monitor.localRoots           actions st
-
-         -- Make sure postBlocking set is in the right place
-      <> foldMap (\a -> a policy actions st) postBlocking
-        -- Make sure preNonBlocking set is in the right place
-      <> foldMap (\a -> a policy actions st) preNonBlocking
-
-      -- The non-blocking decisions regarding (known) big ledger peers
-      <> BigLedgerPeers.belowTarget   actions blockedAt        st
-      <> BigLedgerPeers.aboveTarget  actions            policy st
-
-      -- All the alternative non-blocking internal decisions.
-      <> RootPeers.belowTarget        actions blockedAt           st
-      <> KnownPeers.belowTarget       actions blockedAt
-                                              inboundPeers policy st
-      <> KnownPeers.aboveTarget      actions               policy st
-      <> EstablishedPeers.belowTarget actions              policy st
-      <> EstablishedPeers.aboveTarget actions              policy st
-      <> ActivePeers.belowTarget      actions              policy st
-      <> ActivePeers.aboveTarget      actions              policy st
 
          -- Make sure postNonBlocking set is in the right place
       <> foldMap (\a -> a policy actions st) postNonBlocking

@@ -107,15 +107,13 @@ library
     Ouroboros.Network.TxSubmission.Inbound
     Ouroboros.Network.TxSubmission.Mempool.Reader
     Ouroboros.Network.TxSubmission.Outbound
-    Ouroboros.Network.PeerSelection.Governor.Monitor
-    Ouroboros.Network.PeerSelection.Governor.Types
 
   other-modules:
     Ouroboros.Network.Diffusion.Utils
     Ouroboros.Network.PeerSelection.Governor.ActivePeers
     Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers
     Ouroboros.Network.PeerSelection.Governor.EstablishedPeers
-    Ouroboros.Network.PeerSelection.Governor.Monitor
+    Ouroboros.Network.PeerSelection.Governor.KnownPeers
     Ouroboros.Network.PeerSelection.Governor.RootPeers
     Ouroboros.Network.PeerSelection.LedgerPeers.Common
     Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
@@ -187,8 +185,7 @@ library
 
   if !os(windows)
     build-depends:
-      directory,
-      unix,
+      directory
 
   if flag(asserts)
     ghc-options: -fno-ignore-asserts
@@ -257,7 +254,7 @@ library sim-tests-lib
     Test.Ouroboros.Network.Diffusion.Node.Kernel
     Test.Ouroboros.Network.Diffusion.Node.MiniProtocols
     Test.Ouroboros.Network.Diffusion.Policies
-    Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Node
+    Test.Ouroboros.Network.Diffusion.Testnet.Cardano
     Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Simulation
     Test.Ouroboros.Network.Diffusion.Testnet.Minimal.Node
     Test.Ouroboros.Network.LedgerPeers

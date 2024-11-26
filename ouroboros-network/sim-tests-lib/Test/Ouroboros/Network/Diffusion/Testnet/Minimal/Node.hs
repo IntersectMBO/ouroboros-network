@@ -63,7 +63,7 @@ import Ouroboros.Network.Mock.ConcreteBlock (Block (..), BlockHeader (..),
            convertSlotToTimeForTestsAssumingNoHardFork)
 import Ouroboros.Network.Mock.ProducerState (ChainProducerState (..))
 
-import Cardano.Network.ConsensusMode
+import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.Block (MaxSlotNo (..), maxSlotNoFromWithOrigin,
            pointSlot)
 import Ouroboros.Network.BlockFetch
@@ -243,12 +243,12 @@ run :: forall extraArgs extraState extraActions extraAPI
                            extraPeers extraCounters m
     -> Tracer m (TraceLabelPeer NtNAddr (TraceFetchClientState BlockHeader))
     -> m Void
-run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
 run blockGeneratorArgs limits ni na
     emptyExtraState extraActions emptyExtraPeers
     emptyExtraCounters extraPeersActions psArgs
     psToExtraCounters requestPublicRootPeers peerChurnGovernor
     tracersExtra tracerBlockFetch =
+    Node.withNodeKernelThread blockGeneratorArgs
       $ \ nodeKernel nodeKernelThread -> do
         dnsTimeoutScriptVar <- newTVarIO (aDNSTimeoutScript na)
         dnsLookupDelayScriptVar <- newTVarIO (aDNSLookupDelayScript na)
@@ -257,8 +257,8 @@ run blockGeneratorArgs limits ni na
         let -- diffusion interfaces
             interfaces :: Common.Interfaces (NtNFD m) NtNAddr NtNVersion NtNVersionData
                                             (NtCFD m) NtCAddr NtCVersion NtCVersionData
-                                            resolver ResolverException () () () m
                                             resolver ResolverException extraState extraFlags extraPeers m
+            interfaces = Common.Interfaces
               { Common.diNtnSnocket            = iNtnSnocket ni
               , Common.diNtnBearer             = iNtnBearer ni
               , Common.diNtnConfigureSocket    = \_ _ -> return ()
@@ -322,12 +322,12 @@ run blockGeneratorArgs limits ni na
         let apps = Node.applications (aDebugTracer na) nodeKernel Node.cborCodecs limits appArgs blockHeader
 
         withAsync
-           (undefined) -- interfaces
            (runM interfaces
                  Common.nullTracers
                  tracersExtra
                  (mkArgs (nkPublicPeerSelectionVar nodeKernel))
                  argsExtra apps appsExtra)
+           $ \ diffusionThread ->
                withAsync (blockFetch nodeKernel) $ \blockFetchLogicThread ->
                  wait diffusionThread
               <> wait blockFetchLogicThread
@@ -439,15 +439,15 @@ run blockGeneratorArgs limits ni na
       , Common.daPublicPeerSelectionVar
       }
 
-    argsExtra :: Common.ArgumentsExtra () () m
     argsExtra :: Common.ArgumentsExtra
                    extraArgs extraState extraActions
                    extraAPI extraPeers extraFlags
                    extraChurnArgs extraCounters exception
                    NtNAddr m
-      { Common.daReadLocalRootPeers     = aReadLocalRootPeers na
+    argsExtra = Common.ArgumentsExtra
       { Common.daPeerSelectionTargets   = aPeerTargets na
       , Common.daReadLocalRootPeers     = aReadLocalRootPeers na
+      , Common.daReadPublicRootPeers    = aReadPublicRootPeers na
       , Common.daOwnPeerSharing         = aOwnPeerSharing na
       , Common.daReadUseLedgerPeers     = aReadUseLedgerPeers na
       , Common.daProtocolIdleTimeout    = aProtocolIdleTimeout na
@@ -455,7 +455,6 @@ run blockGeneratorArgs limits ni na
       , Common.daDeadlineChurnInterval  = 3300
       , Common.daBulkChurnInterval      = 300
       , Common.daReadLedgerPeerSnapshot = pure Nothing -- ^ tested independently
-      , Common.daExtraArgs              = ()
       , Common.daEmptyExtraState        = emptyExtraState
       , Common.daEmptyExtraPeers        = emptyExtraPeers
       , Common.daEmptyExtraCounters     = emptyExtraCounters
@@ -467,11 +466,11 @@ run blockGeneratorArgs limits ni na
       , Common.daPeerChurnGovernor      = peerChurnGovernor
       , Common.daPeerSelectionGovernorArgs         = psArgs
       , Common.daPeerSelectionStateToExtraCounters = psToExtraCounters
+      }
 
-    appArgs :: Node.AppArgs () BlockHeader Block m
     appArgs :: Node.AppArgs extraAPI BlockHeader Block m
+    appArgs = Node.AppArgs
       { Node.aaLedgerPeersConsensusInterface
-                                        = iLedgerPeersConsensusInterface ni
                                    = iLedgerPeersConsensusInterface ni
       , Node.aaKeepAliveStdGen     = keepAliveStdGen
       , Node.aaDiffusionMode       = aDiffusionMode na
@@ -480,6 +479,7 @@ run blockGeneratorArgs limits ni na
       , Node.aaShouldChainSyncExit = aShouldChainSyncExit na
       , Node.aaChainSyncEarlyExit  = aChainSyncEarlyExit na
       , Node.aaOwnPeerSharing      = aOwnPeerSharing na
+      }
 
 --- Utils
 

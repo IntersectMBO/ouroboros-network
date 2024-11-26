@@ -78,11 +78,11 @@ belowTarget actions@PeerSelectionActions {
     maxExtraRootPeers = targetNumberOfRootPeers - numRootPeers
 
 
-jobReqPublicRootPeers :: forall m extraActions extraState extraFlags extraAPI extraCounters peeraddr peerconn.
-                         (MonadSTM m, Ord peeraddr)
-                      => PeerSelectionActions extraState extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI extraCounters peeraddr peerconn m
+jobReqPublicRootPeers :: forall m extraActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn.
+                         (MonadSTM m, Ord peeraddr, Semigroup extraPeers)
+                      => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
+                      -> Int
                       -> Job () m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
-                      -> Job () m (Completion m extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
 jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
                                           , extraPeersActions = PublicExtraPeersActions {
                                               differenceExtraPeers
@@ -122,11 +122,11 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
             decisionJobs  = []
           }
 
-    job :: m (Completion m extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
+    job :: m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
     job = do
       (results, ttl) <- requestPublicRootPeers AllLedgerPeers numExtraAllowed
       return $ Completion $ \st now ->
-    job :: m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
+        let newPeers =
               PublicRootPeers.difference differenceExtraPeers
                 (PublicRootPeers.difference differenceExtraPeers
                    results (LocalRootPeers.keysSet (localRootPeers st)))
@@ -134,7 +134,7 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
             publicRootPeers'  = PublicRootPeers.mergeG extraPeersToSet (publicRootPeers st) newPeers
             extraPeers = PublicRootPeers.getExtraPeers publicRootPeers'
             ledgerPeers       = PublicRootPeers.toAllLedgerPeerSet publicRootPeers'
-            -- Add bootstrapPeers peers
+            -- Add extra peers
             knownPeers' = KnownPeers.insert
                             -- When we don't know about the PeerSharing information
                             -- we default to PeerSharingDisabled. I.e. we only pass
@@ -142,11 +142,11 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
                             -- the the default one.
                             ( Map.fromList
                             . map (\(p, pa) -> (p, (Nothing, Just pa)))
-                            $ Map.assocs publicConfigPeers
+                            $ Map.assocs (toAdvertise extraPeers)
                             )
                             (knownPeers st)
 
-            -- Add all other peers
+            -- Add ledger peers
             knownPeers'' = KnownPeers.insert
                             -- When we don't know about the PeerSharing information
                             -- we default to NoPeerSharing. I.e. we only pass
@@ -154,7 +154,7 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
                             -- the the default one.
                             ( Map.fromList
                             . map (,(Nothing, Nothing))
-                            $ Set.toList (bootstrapPeers <> ledgerPeers)
+                            $ Set.toList ledgerPeers
                             )
                             knownPeers'
 

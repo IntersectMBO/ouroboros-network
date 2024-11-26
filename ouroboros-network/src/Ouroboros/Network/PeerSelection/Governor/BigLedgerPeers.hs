@@ -48,11 +48,11 @@ belowTarget enableAction
               targets = PeerSelectionTargets {
                           targetNumberOfKnownBigLedgerPeers
                         },
-              extraState = CardanoPeerSelectionState {
-                cpstLedgerStateJudgement
               extraState
-      -- in a sensitive state since we only want to connect to trustable peers.
+            }
     | enableAction extraState
+
+      -- Do we need more big ledger peers?
     , maxExtraBigLedgerPeers > 0
 
     , not inProgressBigLedgerPeersReq
