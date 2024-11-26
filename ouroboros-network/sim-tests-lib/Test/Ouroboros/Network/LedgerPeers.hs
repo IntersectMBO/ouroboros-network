@@ -51,7 +51,6 @@ import Test.Tasty
 import Test.Tasty.QuickCheck
 import Text.Printf
 
-
 tests :: TestTree
 tests = testGroup "Ouroboros.Network.LedgerPeers"
   [ testProperty "Pick 100%" prop_pick100
@@ -80,22 +79,6 @@ instance Arbitrary ArbitraryRelayAccessPoint where
         oneof [ RelayAccessAddress (read "1.1.1.1")     . getArbitraryPortNumber <$> arbitrary
               , RelayAccessDomain  "relay.iohk.example" . getArbitraryPortNumber <$> arbitrary
               ]
-
-newtype ArbitraryLedgerStateJudgement =
-  ArbitraryLedgerStateJudgement {
-    getArbitraryLedgerStateJudgement :: LedgerStateJudgement
-  } deriving Show
-
-instance Arbitrary ArbitraryLedgerStateJudgement where
-    arbitrary =
-      ArbitraryLedgerStateJudgement <$>
-        oneof [ pure YoungEnough
-              , pure TooOld
-              ]
-    shrink (ArbitraryLedgerStateJudgement YoungEnough) =
-      [ArbitraryLedgerStateJudgement TooOld]
-    shrink (ArbitraryLedgerStateJudgement TooOld)      =
-      []
 
 -- TODO: import the `SlotNo` instance from
 -- `Test.Ouroboros.Network.PeerSelection.Instances`
@@ -177,10 +160,10 @@ instance Arbitrary ArbStakeMapOverSource where
     ula <- arbitrary
     ledgerPeers <-
       case (ula, ledgerWithOrigin) of
-        (Always, _) -> LedgerPeers TooOld . getLedgerPools <$> arbitrary
+        (Always, _) -> LedgerPeers . getLedgerPools <$> arbitrary
         (After slotNo, Origin) | slotNo > 0 -> return BeforeSlot
         (After afterSlotNo, At atSlotNo)
-          | afterSlotNo <= atSlotNo -> LedgerPeers TooOld . getLedgerPools <$> arbitrary
+          | afterSlotNo <= atSlotNo -> LedgerPeers . getLedgerPools <$> arbitrary
         _otherwise -> return BeforeSlot
     (peerMap, bigPeerMap, cachedSlot) <-
       return $ case peerSnapshot of
@@ -226,7 +209,7 @@ prop_ledgerPeerSnapshot_requests ArbStakeMapOverSource {
         bigPoolRelays = fmap (snd . snd) . Map.toList $ bigPoolMap
         poolRelays    = fmap (snd . snd) . Map.toList $ poolMap
     in case (ledgerWithOrigin, ledgerPeers, peerSnapshot) of
-        (At t, LedgerPeers _ ledgerPools, Just (LedgerPeerSnapshot (At t', snapshotAccStake)))
+        (At t, LedgerPeers ledgerPools, Just (LedgerPeerSnapshot (At t', snapshotAccStake)))
           | t' >= t ->
             snapshotRelays === bigPoolRelays .&&. bigPoolRelays === poolRelays
           | otherwise ->
@@ -237,7 +220,7 @@ prop_ledgerPeerSnapshot_requests ArbStakeMapOverSource {
             ledgerBigPoolRelays   = fmap (snd . snd) (accumulateBigLedgerStake ledgerPools)
             ledgerRelays = fmap (snd . snd) . Map.toList $ accPoolStake ledgerPools
 
-        (_, LedgerPeers _ ledgerPools, Nothing) ->
+        (_, LedgerPeers ledgerPools, Nothing) ->
                bigPoolRelays === ledgerBigPoolRelays
           .&&.    poolRelays === ledgerRelays
           where
@@ -260,11 +243,10 @@ prop_pick100 :: Word16
              -> MockRoots
              -> DelayAndTimeoutScripts
              -> ArbitrarySlotNo
-             -> ArbitraryLedgerStateJudgement
              -> Property
 prop_pick100 seed (NonNegative n) (ArbLedgerPeersKind ledgerPeersKind) (MockRoots _ dnsMapScript _ _)
              (DelayAndTimeoutScripts dnsLookupDelayScript dnsTimeoutScript)
-             (ArbitrarySlotNo slot) (ArbitraryLedgerStateJudgement lsj) =
+             (ArbitrarySlotNo slot) =
     let rng = mkStdGen $ fromIntegral seed
         sps = [ (0, RelayAccessAddress (read $ "0.0.0." ++ show a) 1 :| [])
               | a <- [0..n]
@@ -308,8 +290,8 @@ prop_pick100 seed (NonNegative n) (ArbLedgerPeersKind ledgerPeersKind) (MockRoot
             interface =
               LedgerPeersConsensusInterface
                 (pure $ At slot)
-                (pure lsj)
                 (pure (Map.elems accumulatedStakeMap))
+                ()
 
     in counterexample (show accumulatedStakeMap) $ ioProperty $ do
         tr' <- evaluateTrace (runSimTrace sim)
@@ -330,10 +312,9 @@ prop_pick :: LedgerPools
           -> MockRoots
           -> Script DNSLookupDelay
           -> ArbitrarySlotNo
-          -> ArbitraryLedgerStateJudgement
           -> Property
 prop_pick (LedgerPools lps) (ArbLedgerPeersKind ledgerPeersKind) count seed (MockRoots _ dnsMapScript _ _)
-          dnsLookupDelayScript (ArbitrarySlotNo slot) (ArbitraryLedgerStateJudgement lsj) =
+          dnsLookupDelayScript (ArbitrarySlotNo slot) =
     let rng = mkStdGen $ fromIntegral seed
 
         sim :: IOSim s [RelayAccessPoint]
@@ -348,8 +329,8 @@ prop_pick (LedgerPools lps) (ArbLedgerPeersKind ledgerPeersKind) count seed (Moc
 
           withLedgerPeers
                 PeerActionsDNS { paToPeerAddr = curry IP.toSockAddr,
-                                 paDnsActions = mockDNSActions @SomeException dnsMapVar dnsTimeoutScriptVar dnsLookupDelayScriptVar,
-                                 paDnsSemaphore = dnsSemaphore }
+                                 paDnsActions = mockDNSActions @SomeException dnsMapVar dnsTimeoutScriptVar dnsLookupDelayScriptVar
+                               }
                 WithLedgerPeersArgs { wlpRng = rng,
                                       wlpConsensusInterface = interface,
                                       wlpTracer = verboseTracer,
@@ -366,11 +347,11 @@ prop_pick (LedgerPools lps) (ArbLedgerPeersKind ledgerPeersKind) count seed (Moc
                                         ]
                 )
           where
-            interface :: LedgerPeersConsensusInterface (IOSim s)
+            interface :: LedgerPeersConsensusInterface () (IOSim s)
             interface = LedgerPeersConsensusInterface
                           (pure $ At slot)
-                          (pure lsj)
                           (pure lps)
+                          ()
 
             domainMap :: Map Domain (Set IP)
             domainMap = Map.fromList [("relay.iohk.example", Set.singleton (read "2.2.2.2"))]
@@ -467,12 +448,10 @@ prop_recomputeRelativeStake (LedgerPools lps) = property $ do
 
 
 prop_getLedgerPeers :: ArbitrarySlotNo
-                    -> ArbitraryLedgerStateJudgement
                     -> LedgerPools
                     -> ArbitrarySlotNo
                     -> Property
 prop_getLedgerPeers (ArbitrarySlotNo curSlot)
-                    (ArbitraryLedgerStateJudgement lsj)
                     (LedgerPools lps)
                     (ArbitrarySlotNo slot) =
   let afterSlot = if slot == 0
@@ -486,18 +465,18 @@ prop_getLedgerPeers (ArbitrarySlotNo curSlot)
 
    in counterexample (show result) $
       case result of
-        LedgerPeers _ _ -> property (curSlot >= slot || afterSlot == Always)
-        BeforeSlot      -> property (curSlot < slot)
+        LedgerPeers _ -> property (curSlot >= slot || afterSlot == Always)
+        BeforeSlot    -> property (curSlot < slot)
   where
     curSlotWO = if curSlot == 0
                   then Origin
                   else At curSlot
 
-    interface :: LedgerPeersConsensusInterface (IOSim s)
+    interface :: LedgerPeersConsensusInterface () (IOSim s)
     interface = LedgerPeersConsensusInterface
                   (pure $ curSlotWO)
-                  (pure lsj)
                   (pure (Map.elems (accPoolStake lps)))
+                  ()
 
 -- | Checks validity of LedgerPeerSnapshot CBOR encoding, and whether
 --   round trip cycle is the identity function

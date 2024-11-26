@@ -90,7 +90,6 @@ import Ouroboros.Network.NodeToNode (blockFetchMiniProtocolNum,
            chainSyncMiniProtocolNum, keepAliveMiniProtocolNum,
            peerSharingMiniProtocolNum)
 import Ouroboros.Network.PeerSelection.LedgerPeers
-import Ouroboros.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
 import Ouroboros.Network.PeerSelection.PeerSharing qualified as PSTypes
 import Ouroboros.Network.PeerSharing (PeerSharingAPI, bracketPeerSharingClient,
            peerSharingClient, peerSharingServer)
@@ -185,9 +184,9 @@ data LimitsAndTimeouts header block = LimitsAndTimeouts
 
 -- | Arguments for protocol handlers required by 'nodeApplications'.
 --
-data AppArgs header block m = AppArgs
+data AppArgs extraAPI header block m = AppArgs
   { aaLedgerPeersConsensusInterface
-     :: LedgerPeersConsensusInterface m
+     :: LedgerPeersConsensusInterface extraAPI m
   , aaKeepAliveStdGen
      :: StdGen
   , aaDiffusionMode
@@ -208,14 +207,12 @@ data AppArgs header block m = AppArgs
   , aaChainSyncEarlyExit  :: Bool
   , aaOwnPeerSharing
      :: PSTypes.PeerSharing
-  , aaUpdateOutboundConnectionsState
-     :: OutboundConnectionsState -> STM m ()
   }
 
 
 -- | Protocol handlers.
 --
-applications :: forall block header s m.
+applications :: forall extraAPI block header s m.
                 ( Alternative (STM m)
                 , MonadAsync m
                 , MonadFork  m
@@ -238,11 +235,11 @@ applications :: forall block header s m.
              -> NodeKernel header block s m
              -> Codecs NtNAddr header block m
              -> LimitsAndTimeouts header block
-             -> AppArgs header block m
+             -> AppArgs extraAPI header block m
              -> (block -> header)
              -> Diff.Applications NtNAddr NtNVersion NtNVersionData
                                   NtCAddr NtCVersion NtCVersionData
-                                  m ()
+                                  extraAPI m ()
 applications debugTracer nodeKernel
              Codecs { chainSyncCodec, blockFetchCodec
                     , keepAliveCodec, pingPongCodec
@@ -258,7 +255,6 @@ applications debugTracer nodeKernel
                , aaShouldChainSyncExit
                , aaChainSyncEarlyExit
                , aaOwnPeerSharing
-               , aaUpdateOutboundConnectionsState
                }
              toHeader =
     Diff.Applications
@@ -276,8 +272,6 @@ applications debugTracer nodeKernel
                                   localResponderApp
       , Diff.daLedgerPeersCtx =
           aaLedgerPeersConsensusInterface
-      , Diff.daUpdateOutboundConnectionsState =
-          aaUpdateOutboundConnectionsState
       }
   where
     initiatorApp
