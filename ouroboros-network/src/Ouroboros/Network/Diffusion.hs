@@ -38,23 +38,15 @@ data P2P = P2P        -- ^ General P2P mode. Can be instantiated with custom
 
 -- | Tracers which depend on p2p mode.
 --
-data ExtraTracers (p2p :: P2P) extraState extraFlags extraPeers m where
 data ExtraTracers (p2p :: P2P) extraState extraFlags extraPeers extraCounters m where
+  P2PTracers
     :: Common.TracersExtra
            RemoteAddress NodeToNodeVersion         NodeToNodeVersionData
            LocalAddress  NodeToClientVersion       NodeToClientVersionData
-           IOException   extraState extraState extraFlags extraPeers m
-           IOException   extraState extraState extraFlags extraPeers extraCounters m
+           IOException   extraState extraState extraFlags extraPeers
+           extraCounters m
     -> ExtraTracers 'P2P extraState extraFlags extraPeers extraCounters m
-  P2PCardanoTracers
-    :: Common.TracersExtra
-           RemoteAddress NodeToNodeVersion         NodeToNodeVersionData
-           LocalAddress  NodeToClientVersion       NodeToClientVersionData
-           IOException   CardanoPeerSelectionState CardanoPeerSelectionState
-           PeerTrustable (CardanoPublicRootPeers RemoteAddress)
-           (CardanoPeerSelectionView RemoteAddress) m
-    -> ExtraTracers 'P2PCardano CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers RemoteAddress) (CardanoPeerSelectionView RemoteAddress) m
-data ArgumentsExtra
+
        (p2p :: P2P) extraArgs extraState extraActions extraAPI
        extraPeers extraFlags extraChurnArgs extraCounters exception ntnAddr m where
                             extraPeers extraFlags extraChurnArgs
@@ -110,13 +102,33 @@ data ArgumentsExtra (p2p :: P2P) extraArgs extraPeers m where
 
 -- | Run data diffusion in either 'P2P' or 'NonP2P' mode.
 --
-run :: forall (p2p :: P2P) extraArgs extraState extraFlags extraPeers extraAPI a.
-run :: forall (p2p :: P2P) extraArgs extraState extraFlags extraPeers extraAPI extraCounters a.
+run :: forall (p2p :: P2P) extraArgs extraState extraActions extraFlags
+             extraPeers extraAPI extraChurnArgs extraCounters exception a.
+      ( Monoid extraPeers
+      , Eq extraCounters
+      , Eq extraFlags
+      , Exception exception
+      )
+    => (forall (mode :: Mx.Mode) x y.
+        NodeToNodeConnectionManager
+          mode Socket RemoteAddress NodeToNodeVersionData NodeToNodeVersion IO x y
+        -> StrictTVar
+             IO
+             (PeerSelectionState
+                extraState
+                extraFlags
+                extraPeers
+                RemoteAddress
+                (NodeToNodePeerConnectionHandle
+                   mode RemoteAddress NodeToNodeVersionData IO x y))
+        -> PeerMetrics IO RemoteAddress
+        -> IO ())
+    -> Tracers
          RemoteAddress NodeToNodeVersion
          LocalAddress  NodeToClientVersion
          IO
-    -> ExtraTracers p2p extraState extraFlags extraPeers IO
     -> ExtraTracers p2p extraState extraFlags extraPeers extraCounters IO
+    -> Arguments
          IO
          Socket      RemoteAddress
     -> ArgumentsExtra p2p extraArgs extraState extraActions extraAPI

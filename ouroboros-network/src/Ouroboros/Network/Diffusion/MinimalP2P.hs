@@ -665,12 +665,10 @@ runM Interfaces
                                              PeerSharingDisabled -> pure Map.empty
                                              PeerSharingEnabled  -> readInboundPeers,
                                          readLedgerPeerSnapshot = daReadLedgerPeerSnapshot,
-                                         extraActions = CardanoPeerSelectionActions {
-                                           cpsaSyncPeerTargets       = caeSyncPeerTargets,
-                                           cpsaReadUseBootstrapPeers = caeReadUseBootstrapPeers
-                                         },
+                                         extraActions              = daExtraActions,
+                                         extraPeersActions         = daExtraPeersActions,
+                                         extraStateToExtraCounters = daPeerSelectionStateToExtraCounters,
                                          peerStateActions
-                                         extraStateToExtraCounters = cardanoPeerSelectionStatetoCounters,
                                        })
                                        WithLedgerPeersArgs {
                                          wlpRng                   = ledgerPeersRng,
@@ -705,8 +703,6 @@ runM Interfaces
             -> StrictTVar m (PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers ntnAddr) ntnAddr
                               (NodeToNodePeerConnectionHandle
                                muxMode ntnAddr ntnVersionData m a b))
-            -> NodeToNodePeerSelectionActions (CardanoPeerSelectionActions m) (CardanoPublicRootPeers ntnAddr) PeerTrustable (CardanoLedgerPeersConsensusInterface m)
-                                              muxMode ntnAddr ntnVersionData m a b
             -> NodeToNodePeerSelectionActions
                 (CardanoPeerSelectionActions m)
                 (CardanoPublicRootPeers ntnAddr)
@@ -716,6 +712,8 @@ runM Interfaces
                 (CardanoPeerSelectionView ntnAddr)
                 muxMode
                 ntnAddr ntnVersionData m a b
+            -> m Void
+          peerSelectionGovernor' peerSelectionTracer dbgVar peerSelectionActions =
             Governor.peerSelectionGovernor
               dtTracePeerSelectionTracer
               peerSelectionTracer
@@ -846,22 +844,64 @@ runM Interfaces
 -- * accept connection from downstream peers, if run in
 --  'InitiatorAndResponderDiffusionMode'.
 -- * runs a local service which allows to use node-to-client protocol to obtain
---   information from the running system.  This is used by 'cardano-cli' or
---   a wallet and a like local services.
---
-run
-    :: forall a .
-       Tracers RemoteAddress NodeToNodeVersion
-               LocalAddress  NodeToClientVersion
-               IO
-    -> TracersExtra RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
-                    LocalAddress  NodeToClientVersion NodeToClientVersionData
-                    IOException CardanoPeerSelectionState CardanoPeerSelectionState
-                    PeerTrustable (CardanoPublicRootPeers RemoteAddress) IO
-    -> Arguments IO
-                    PeerTrustable (CardanoPublicRootPeers RemoteAddress)
-                    (CardanoPeerSelectionView RemoteAddress)
-                    IO
+run :: ( Monoid extraPeers
+       , Eq extraFlags
+       , Eq extraCounters
+       , Exception exception
+       )
+    => (forall (mode :: Mx.Mode) x y.
+        NodeToNodeConnectionManager
+          mode Socket RemoteAddress NodeToNodeVersionData NodeToNodeVersion IO x y
+        -> StrictTVar
+             IO
+             (PeerSelectionState
+                extraState
+                extraFlags
+                extraPeers
+                RemoteAddress
+                (NodeToNodePeerConnectionHandle
+                   mode RemoteAddress NodeToNodeVersionData IO x y))
+        -> PeerMetrics IO RemoteAddress
+        -> IO ())
+    -> Tracers
+        RemoteAddress
+        NodeToNodeVersion
+        LocalAddress
+        NodeToClientVersion
+        IO
+    -> TracersExtra
+        RemoteAddress
+        NodeToNodeVersion
+        NodeToNodeVersionData
+        LocalAddress
+        NodeToClientVersion
+        NodeToClientVersionData
+        IOException
+        extraState
+        extraState
+        extraFlags
+        extraPeers
+        extraCounters
+        IO
+    -> Arguments
+        IO
+        Socket
+        RemoteAddress
+        LocalSocket
+        LocalAddress
+    -> ArgumentsExtra
+        extraArgs
+        extraState
+        extraActions
+        extraAPI
+        extraPeers
+        extraFlags
+        extraChurnArgs
+        extraCounters
+        exception
+        RemoteAddress
+        IO
+                 Socket      RemoteAddress
                  LocalSocket LocalAddress
     -> ArgumentsExtra (CardanoArgumentsExtra IO) PeerTrustable IO
     -> Applications

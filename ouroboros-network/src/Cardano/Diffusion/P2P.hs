@@ -669,9 +669,9 @@ runM Interfaces
                      (CardanoPublicRootPeers ntnAddr)
                      PeerTrustable
                      (CardanoLedgerPeersConsensusInterface m)
+                     (CardanoPeerSelectionView ntnAddr)
                      ntnAddr
                      (PeerConnectionHandle
-                     (CardanoPeerSelectionView ntnAddr)
                         muxMode responderCtx peerAddr ntnVersionData bytes m a b)
                      m
                 -> m c)
@@ -699,6 +699,8 @@ runM Interfaces
                                            cpsaSyncPeerTargets       = caeSyncPeerTargets,
                                            cpsaReadUseBootstrapPeers = caeReadUseBootstrapPeers
                                          },
+                                         extraPeersActions = CPRP.cardanoPublicRootPeersActions,
+                                         extraStateToExtraCounters = cardanoPeerSelectionStatetoCounters,
                                          peerStateActions
                                        })
                                        WithLedgerPeersArgs {
@@ -760,8 +762,6 @@ runM Interfaces
             -> StrictTVar m (PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers ntnAddr) ntnAddr
                               (NodeToNodePeerConnectionHandle
                                muxMode ntnAddr ntnVersionData m a b))
-            -> NodeToNodePeerSelectionActions (CardanoPeerSelectionActions m) (CardanoPublicRootPeers ntnAddr) PeerTrustable (CardanoLedgerPeersConsensusInterface m)
-                                              muxMode ntnAddr ntnVersionData m a b
             -> NodeToNodePeerSelectionActions
                 CardanoPeerSelectionState
                 (CardanoPeerSelectionActions m)
@@ -770,6 +770,8 @@ runM Interfaces
                 (CardanoLedgerPeersConsensusInterface m)
                 (CardanoPeerSelectionView ntnAddr)
                 muxMode ntnAddr ntnVersionData m a b
+            -> m Void
+          peerSelectionGovernor' peerSelectionTracer dbgVar peerSelectionActions =
             Governor.peerSelectionGovernor
               dtTracePeerSelectionTracer
               peerSelectionTracer

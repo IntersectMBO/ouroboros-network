@@ -39,7 +39,7 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..))
 
 -- | Facilitates composing updates to various targets via back-to-back pipeline
 type ModifyPeerSelectionTargets = PeerSelectionTargets -> PeerSelectionTargets
-type CheckPeerSelectionCounters = PeerSelectionCounters -> PeerSelectionTargets -> Bool
+type CheckPeerSelectionCounters extraCounters = PeerSelectionCounters extraCounters -> PeerSelectionTargets -> Bool
 
 data ChurnCounters = ChurnCounter ChurnAction Int
 
@@ -112,7 +112,7 @@ peerChurnGovernor
     updateTargets
       :: ChurnAction
       -- ^ churn actions for tracing
-      -> (PeerSelectionCounters -> Int)
+      -> (PeerSelectionCounters extraCounters -> Int)
       -- ^ counter getter
       -> DiffTime
       -- ^ timeout
@@ -169,7 +169,7 @@ peerChurnGovernor
         targetNumberOfActivePeers = targetNumberOfActivePeers base
       }
 
-    checkActivePeersIncreased :: CheckPeerSelectionCounters
+    checkActivePeersIncreased :: CheckPeerSelectionCounters extraCounters
     checkActivePeersIncreased
       PeerSelectionCounters { numberOfActivePeers }
       PeerSelectionTargets { targetNumberOfActivePeers }
@@ -184,7 +184,7 @@ peerChurnGovernor
           decrease $ targetNumberOfActivePeers base
       }
 
-    checkActivePeersDecreased :: CheckPeerSelectionCounters
+    checkActivePeersDecreased :: CheckPeerSelectionCounters extraCounters
     checkActivePeersDecreased
       PeerSelectionCounters { numberOfActivePeers }
       PeerSelectionTargets { targetNumberOfActivePeers }
@@ -199,7 +199,7 @@ peerChurnGovernor
         targetNumberOfEstablishedPeers = targetNumberOfEstablishedPeers base
       }
 
-    checkEstablishedPeersIncreased :: CheckPeerSelectionCounters
+    checkEstablishedPeersIncreased :: CheckPeerSelectionCounters extraCounters
     checkEstablishedPeersIncreased
       PeerSelectionCounters { numberOfEstablishedPeers }
       PeerSelectionTargets { targetNumberOfEstablishedPeers }
@@ -216,7 +216,7 @@ peerChurnGovernor
       }
 
     checkEstablishedBigLedgerPeersIncreased
-      :: CheckPeerSelectionCounters
+      :: CheckPeerSelectionCounters extraCounters
     checkEstablishedBigLedgerPeersIncreased
       PeerSelectionCounters { numberOfEstablishedBigLedgerPeers }
       PeerSelectionTargets { targetNumberOfEstablishedBigLedgerPeers }
@@ -234,7 +234,7 @@ peerChurnGovernor
       }
 
     checkEstablishedPeersDecreased
-      :: CheckPeerSelectionCounters
+      :: CheckPeerSelectionCounters extraCounters
     checkEstablishedPeersDecreased
       PeerSelectionCounters { numberOfEstablishedPeers }
       PeerSelectionTargets { targetNumberOfEstablishedPeers }
@@ -250,7 +250,7 @@ peerChurnGovernor
       }
 
     checkActiveBigLedgerPeersIncreased
-      :: CheckPeerSelectionCounters
+      :: CheckPeerSelectionCounters extraCounters
     checkActiveBigLedgerPeersIncreased
       PeerSelectionCounters { numberOfActiveBigLedgerPeers }
       PeerSelectionTargets { targetNumberOfActiveBigLedgerPeers }
@@ -266,7 +266,7 @@ peerChurnGovernor
       }
 
     checkActiveBigLedgerPeersDecreased
-      :: CheckPeerSelectionCounters
+      :: CheckPeerSelectionCounters extraCounters
     checkActiveBigLedgerPeersDecreased
       PeerSelectionCounters { numberOfActiveBigLedgerPeers }
       PeerSelectionTargets { targetNumberOfActiveBigLedgerPeers }
@@ -285,7 +285,7 @@ peerChurnGovernor
         }
 
     checkEstablishedBigLedgerPeersDecreased
-      :: CheckPeerSelectionCounters
+      :: CheckPeerSelectionCounters extraCounters
     checkEstablishedBigLedgerPeersDecreased
       PeerSelectionCounters { numberOfEstablishedBigLedgerPeers }
       PeerSelectionTargets { targetNumberOfEstablishedBigLedgerPeers }
@@ -308,7 +308,7 @@ peerChurnGovernor
       }
 
     checkKnownPeersDecreased
-      :: PeerSelectionCounters -> PeerSelectionTargets -> Bool
+      :: PeerSelectionCounters extraCounters -> PeerSelectionTargets -> Bool
     checkKnownPeersDecreased
       PeerSelectionCounters { numberOfKnownPeers }
       PeerSelectionTargets { targetNumberOfKnownPeers }
@@ -329,7 +329,7 @@ peerChurnGovernor
       }
 
     checkKnownBigLedgerPeersDecreased
-      :: PeerSelectionCounters -> PeerSelectionTargets -> Bool
+      :: PeerSelectionCounters extraCounters -> PeerSelectionTargets -> Bool
     checkKnownBigLedgerPeersDecreased
       PeerSelectionCounters { numberOfKnownBigLedgerPeers }
       PeerSelectionTargets { targetNumberOfKnownBigLedgerPeers }
@@ -346,7 +346,7 @@ peerChurnGovernor
       }
 
     checkKnownPeersIncreased
-      :: CheckPeerSelectionCounters
+      :: CheckPeerSelectionCounters extraCounters
     checkKnownPeersIncreased
       PeerSelectionCounters { numberOfRootPeers,
                               numberOfKnownPeers }
@@ -366,7 +366,7 @@ peerChurnGovernor
       }
 
     checkKnownBigLedgerPeersIncreased
-      :: CheckPeerSelectionCounters
+      :: CheckPeerSelectionCounters extraCounters
     checkKnownBigLedgerPeersIncreased
       PeerSelectionCounters { numberOfKnownBigLedgerPeers }
       PeerSelectionTargets { targetNumberOfKnownBigLedgerPeers }

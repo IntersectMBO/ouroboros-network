@@ -463,43 +463,37 @@ peerSelectionGovernor :: ( Alternative (STM m)
                          , MonadAsync m
                          , MonadDelay m
                          , MonadLabelledSTM m
-                          extraState extraActions extraPeers extraFlags extraAPI extraCounters
-                          peeraddr peerconn m
+                         , MonadMask m
+                         , MonadTimer m
+                         , Ord peeraddr
+                         , Show peerconn
+                         , Hashable peeraddr
+                         )
+                      => Tracer m (TracePeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr)
+                      -> Tracer m (DebugPeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr)
+                      -> Tracer m (PeerSelectionCounters (CardanoPeerSelectionView peeraddr))
                       -> PeerSelectionGovernorArgs
                           CardanoPeerSelectionState
                           (CardanoPeerSelectionActions m)
                           (CardanoPublicRootPeers peeraddr)
-                          (CardanoLedgerPeersConsensusInterface m)
+                      => Tracer m (TracePeerSelection extraState extraFlags extraPeers peeraddr)
+                      -> Tracer m (DebugPeerSelection extraState extraFlags extraPeers peeraddr)
+                      -> Tracer m (PeerSelectionCounters extraCounters)
+                          peeraddr
+                          extraState extraActions extraPeers extraAPI extraFlags extraCounters
+                          peeraddr peerconn exception m
                           PeerTrustable
-                          (CardanoPeerSelectionView peeraddr)
+                      -> extraState
+                      -> extraPeers
                           peeraddr
                           peerconn
-                          BootstrapPeersCriticalTimeoutError
                           m
-                      -> StdGen
-                      -> Tracer m (PeerSelectionCounters (CardanoPeerSelectionView peeraddr))
-                      -> CardanoPublicRootPeers peeraddr
-                      -> PeerSelectionActions (CardanoPeerSelectionActions m) (CardanoPublicRootPeers peeraddr) PeerTrustable (CardanoLedgerPeersConsensusInterface m) peeraddr peerconn m
                       -> PeerSelectionPolicy  peeraddr m
-                      -> PeerSelectionActions
-                          CardanoPeerSelectionState
-                          (CardanoPeerSelectionActions m)
-                          (CardanoPublicRootPeers peeraddr)
-                          PeerTrustable
-                          (CardanoLedgerPeersConsensusInterface m)
-                          (CardanoPeerSelectionView peeraddr)
-                          peeraddr
-                          peerconn
-                          m
-                      -> m Void
                       -> PeerSelectionInterfaces
-                          CardanoPeerSelectionState
-                          PeerTrustable
-                          (CardanoPublicRootPeers peeraddr)
-                          (CardanoPeerSelectionView peeraddr)
-                          peeraddr
-                          peerconn
-                          m
+                           extraState extraFlags extraPeers extraCounters
+                           peeraddr peerconn m
+                      -> m Void
+peerSelectionGovernor tracer debugTracer countersTracer psArgs fuzzRng extraState extraPeers actions policy interfaces =
     JobPool.withJobPool $ \jobPool ->
       peerSelectionGovernorLoop
         tracer
@@ -538,8 +532,6 @@ peerSelectionGovernorLoop :: forall m peeraddr peerconn.
                              )
                           => Tracer m (TracePeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr)
                           -> Tracer m (DebugPeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr)
-                          -> Tracer m PeerSelectionCounters
-                          -> PeerSelectionActions (CardanoPeerSelectionActions m) (CardanoPublicRootPeers peeraddr) PeerTrustable (CardanoLedgerPeersConsensusInterface m) peeraddr peerconn m
                           -> Tracer m (PeerSelectionCounters (CardanoPeerSelectionView peeraddr))
                           -> PeerSelectionActions
                               (CardanoPeerSelectionActions m)
@@ -551,15 +543,16 @@ peerSelectionGovernorLoop :: forall m peeraddr peerconn.
                               peeraddr
                               peerconn
                               m
-                          -> JobPool () m (Completion m CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
+                          -> PeerSelectionPolicy  peeraddr m
                           -> PeerSelectionInterfaces
-                              CardanoPeerSelectionState
-                              PeerTrustable
-                              (CardanoPublicRootPeers peeraddr)
-                              (CardanoPeerSelectionView peeraddr)
-                              peeraddr
+                              extraState extraFlags extraPeers extraCounters
+                              peeraddr peerconn m
+                          -> JobPool () m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
+                          -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
                               peerconn
                               m
+                          -> JobPool () m (Completion m CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
+                          -> PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn
                           -> m Void
 peerSelectionGovernorLoop tracer
                           debugTracer
@@ -760,65 +753,3 @@ readAssociationMode
            |  null config
            -> LocalRootsOnly
          _ -> Unrestricted
-
-
-outboundConnectionsState
-    :: Ord peeraddr
-    => AssociationMode
-    -> PeerSelectionSetsWithSizes peeraddr
-    -> PeerSelectionState CardanoPeerSelectionState PeerTrustable extraPeers peeraddr peerconn
-    -> PeerSelectionSetsWithSizes (CardanoPeerSelectionView peeraddr) peeraddr
-outboundConnectionsState
-    associationMode
-    PeerSelectionView {
-      viewEstablishedPeers          = (viewEstablishedPeers, _),
-      viewEstablishedBootstrapPeers = (viewEstablishedBootstrapPeers, _),
-      viewEstablishedPeers       = (viewEstablishedPeers, _),
-        viewActiveBigLedgerPeers = (_, activeNumBigLedgerPeers),
-      viewExtraViews = CardanoPeerSelectionView {
-        viewEstablishedBootstrapPeers = (viewEstablishedBootstrapPeers, _),
-        viewActiveBootstrapPeers      = (viewActiveBootstrapPeers, _)
-      }
-      localRootPeers,
-      extraState = CardanoPeerSelectionState {
-        cpstConsensusMode,
-        cpstBootstrapPeersFlag,
-        cpstMinBigLedgerPeersForTrustedState
-      }
-    }
-    =
-    case (associationMode, cpstBootstrapPeersFlag, cpstConsensusMode) of
-      (LocalRootsOnly, _, _)
-        |  -- we are only connected to trusted local root
-           -- peers
-           viewEstablishedPeers `Set.isSubsetOf` trustableLocalRootSet
-        -> TrustedStateWithExternalPeers
-
-        |  otherwise
-        -> UntrustedState
-
-       -- bootstrap mode
-      (Unrestricted, UseBootstrapPeers {}, _)
-        |  -- we are only connected to trusted local root
-           -- peers or bootstrap peers
-           viewEstablishedPeers `Set.isSubsetOf` (viewEstablishedBootstrapPeers <> trustableLocalRootSet)
-           -- there's at least one active bootstrap peer
-        ,  not (Set.null viewActiveBootstrapPeers)
-        -> TrustedStateWithExternalPeers
-
-        |  otherwise
-        -> UntrustedState
-
-       -- praos mode with public roots
-      (Unrestricted, DontUseBootstrapPeers, PraosMode)
-        -> UntrustedState
-
-      -- Genesis mode
-      (Unrestricted, DontUseBootstrapPeers, GenesisMode)
-        |  activeNumBigLedgerPeers >= getMinBigLedgerPeersForTrustedState cpstMinBigLedgerPeersForTrustedState
-        -> TrustedStateWithExternalPeers
-
-        |  otherwise
-        -> UntrustedState
-  where
-    trustableLocalRootSet = LocalRootPeers.trustableKeysSet localRootPeers
