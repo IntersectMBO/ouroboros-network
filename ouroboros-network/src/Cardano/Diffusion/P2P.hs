@@ -2,7 +2,6 @@
 {-# LANGUAGE DataKinds                #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE FlexibleContexts         #-}
-{-# LANGUAGE GADTs                    #-}
 {-# LANGUAGE KindSignatures           #-}
 {-# LANGUAGE NamedFieldPuns           #-}
 {-# LANGUAGE RankNTypes               #-}
@@ -16,19 +15,9 @@
 -- | This module is expected to be imported qualified (it will clash
 -- with the "Ouroboros.Network.Diffusion.NonP2P").
 --
-module Ouroboros.Network.Diffusion.P2P
-  ( TracersExtra (..)
-  , nullTracers
-  , ArgumentsExtra (..)
-  , AcceptedConnectionsLimit (..)
-  , ApplicationsExtra (..)
-  , run
-  , Interfaces (..)
+module Cardano.Diffusion.P2P
+  ( run
   , runM
-  , NodeToNodePeerConnectionHandle
-    -- * Re-exports
-  , AbstractTransitionTrace
-  , RemoteTransitionTrace
   ) where
 
 
@@ -46,7 +35,6 @@ import Control.Tracer (Tracer, contramap, nullTracer, traceWith)
 import Data.ByteString.Lazy (ByteString)
 import Data.Foldable (asum)
 import Data.Hashable (Hashable)
-import Data.IP (IP)
 import Data.IP qualified as IP
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
@@ -54,26 +42,19 @@ import Data.Map qualified as Map
 import Data.Maybe (catMaybes, maybeToList)
 import Data.Typeable (Typeable)
 import Data.Void (Void)
-import GHC.IO.Exception (IOException (..), IOErrorType (..))
+import GHC.IO.Exception (IOErrorType (..), IOException (..))
+import Network.Socket (Socket)
+import Ouroboros.Network.Snocket (LocalAddress, LocalSocket (..),
+           localSocketFileDescriptor, makeLocalBearer, makeSocketBearer)
+import Ouroboros.Network.Snocket qualified as Snocket
 import System.Exit (ExitCode)
 import System.Random (StdGen, newStdGen, split)
-#ifdef POSIX
-import System.Posix.Signals qualified as Signals
-#endif
 
-import Network.Socket (Socket)
-import Network.Socket qualified as Socket
 
 import Network.Mux qualified as Mx
 
-import Ouroboros.Network.Snocket (FileDescriptor, LocalAddress,
-           LocalSocket (..), Snocket, localSocketFileDescriptor,
-           makeLocalBearer, makeSocketBearer)
-import Ouroboros.Network.Snocket qualified as Snocket
 
-import Ouroboros.Network.BlockFetch
-import Ouroboros.Network.ConnectionId
-import Ouroboros.Network.Context (ExpandedInitiatorContext, ResponderContext)
+import Ouroboros.Network.Context (ExpandedInitiatorContext)
 import Ouroboros.Network.Protocol.Handshake
 import Ouroboros.Network.Protocol.Handshake.Codec
 import Ouroboros.Network.Protocol.Handshake.Version
@@ -88,7 +69,6 @@ import Ouroboros.Network.Diffusion.Common hiding (nullTracers)
 import Ouroboros.Network.Diffusion.Policies qualified as Diffusion.Policies
 import Ouroboros.Network.Diffusion.Utils
 import Ouroboros.Network.ExitPolicy
-import Ouroboros.Network.InboundGovernor (RemoteTransitionTrace)
 import Ouroboros.Network.InboundGovernor qualified as InboundGovernor
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.Mux hiding (MiniProtocol (..))
@@ -96,26 +76,17 @@ import Ouroboros.Network.MuxMode
 import Ouroboros.Network.NodeToClient (NodeToClientVersion (..),
            NodeToClientVersionData)
 import Ouroboros.Network.NodeToClient qualified as NodeToClient
-import Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit (..),
-           DiffusionMode (..), NodeToNodeVersion (..),
+import Ouroboros.Network.NodeToNode (NodeToNodeVersion (..),
            NodeToNodeVersionData (..), RemoteAddress)
 import Ouroboros.Network.NodeToNode qualified as NodeToNode
 import Ouroboros.Network.PeerSelection.Churn (PeerChurnArgs (..))
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
-import Ouroboros.Network.PeerSelection.Governor.Types (DebugPeerSelection (..),
-           PeerSelectionActions, PeerSelectionCounters,
-           PeerSelectionInterfaces (..), PeerSelectionPolicy (..),
-           PeerSelectionState (..), TracePeerSelection (..),
-           emptyPeerSelectionCounters, emptyPeerSelectionState)
 #ifdef POSIX
-import Ouroboros.Network.PeerSelection.Governor.Types
-           (makeDebugPeerSelectionState)
 #endif
-import Ouroboros.Network.PeerSelection.LedgerPeers (TraceLedgerPeers,
-           WithLedgerPeersArgs (..))
+import Ouroboros.Network.PeerSelection.LedgerPeers (WithLedgerPeersArgs (..))
 #ifdef POSIX
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
-           LedgerPeersConsensusInterface (..), UseLedgerPeers)
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type
+           (LedgerPeersConsensusInterface (..))
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics,
            fetchynessBlocks, upstreamyness)
 #else
@@ -123,434 +94,55 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
            MinBigLedgerPeersForTrustedState, UseLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 #endif
-import Cardano.Node.ArgumentsExtra (CardanoArgumentsExtra (..),
-           ConsensusModePeerTargets (..))
-import Cardano.Node.ConsensusMode
-import Cardano.Node.LedgerPeerConsensusInterface
+import Cardano.Diffusion.Policies (simpleChurnModePeerSelectionPolicy)
+import Cardano.Network.ArgumentsExtra (CardanoArgumentsExtra (..))
+import Cardano.Network.LedgerPeerConsensusInterface
            (CardanoLedgerPeersConsensusInterface (..))
-import Cardano.Node.PeerSelection.Governor.PeerSelectionActions
+import Cardano.Network.PeerSelection.Governor.PeerSelectionActions
            (CardanoPeerSelectionActions (..))
-import Cardano.Node.PeerSelection.Governor.PeerSelectionState
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState
            (CardanoPeerSelectionState (..))
-import Cardano.Node.PeerSelection.Governor.PeerSelectionState qualified as CPST
-import Cardano.Node.PeerSelection.PeerChurnArgs (CardanoPeerChurnArgs (..))
-import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable)
-import Cardano.Node.PeerSelection.Types (ChurnMode (..))
-import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
-import Cardano.Node.PublicRootPeers qualified as CPRP
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as CPST
+import Cardano.Network.PeerSelection.PeerChurnArgs (CardanoPeerChurnArgs (..))
+import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
+import Cardano.Network.PeerSelection.Types (ChurnMode (..))
+import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
+import Cardano.Network.PublicRootPeers qualified as CPRP
+import Cardano.PeerSelection.Churn qualified as CardanoChurn
+import Ouroboros.Network.Diffusion.Common qualified as Common
+import Ouroboros.Network.Diffusion.Configuration
+import Ouroboros.Network.PeerSelection.Governor.Types hiding (peerSharing,
+           requestPublicRootPeers)
 import Ouroboros.Network.PeerSelection.PeerSelectionActions
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PeerStateActions (PeerConnectionHandle,
-           PeerSelectionActionsTrace (..), PeerStateActionsArguments (..),
-           pchPeerSharing, withPeerStateActions)
-import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
+           PeerStateActionsArguments (..), pchPeerSharing, withPeerStateActions)
 import Ouroboros.Network.PeerSelection.RootPeersDNS
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSActions,
-           DNSLookupType (..), ioDNSActions)
-import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
-           (TraceLocalRootPeers)
-import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
-           (TracePublicRootPeers)
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
+           (DNSLookupType (..), ioDNSActions)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
 import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.Server2 qualified as Server
-
--- | P2P DiffusionTracers Extras
---
-data TracersExtra ntnAddr ntnVersion ntnVersionData
-                  ntcAddr ntcVersion ntcVersionData
-                  resolverError extraState extraDebugState
-                  extraFlags extraPeers m =
-    TracersExtra {
-      dtTraceLocalRootPeersTracer
-        :: Tracer m (TraceLocalRootPeers extraFlags ntnAddr resolverError)
-
-    , dtTracePublicRootPeersTracer
-        :: Tracer m TracePublicRootPeers
-
-      -- | Ledger Peers tracer
-    , dtTraceLedgerPeersTracer
-        :: Tracer m TraceLedgerPeers
-
-    , dtTracePeerSelectionTracer
-        :: Tracer m (TracePeerSelection extraDebugState extraFlags extraPeers ntnAddr)
-
-    , dtDebugPeerSelectionInitiatorTracer
-        :: Tracer m (DebugPeerSelection extraState extraFlags extraPeers ntnAddr)
-
-      -- TODO: can be unified with the previous one
-    , dtDebugPeerSelectionInitiatorResponderTracer
-        :: Tracer m (DebugPeerSelection extraState extraFlags extraPeers ntnAddr)
-
-    , dtTracePeerSelectionCounters
-        :: Tracer m PeerSelectionCounters
-
-    , dtTraceChurnCounters
-        :: Tracer m Governor.ChurnCounters
-
-    , dtPeerSelectionActionsTracer
-        :: Tracer m (PeerSelectionActionsTrace ntnAddr ntnVersion)
-
-    , dtConnectionManagerTracer
-        :: Tracer m (CM.Trace
-                      ntnAddr
-                      (ConnectionHandlerTrace
-                         ntnVersion
-                         ntnVersionData))
-
-    , dtConnectionManagerTransitionTracer
-        :: Tracer m (AbstractTransitionTrace ntnAddr)
-
-    , dtServerTracer
-        :: Tracer m (Server.Trace ntnAddr)
-
-    , dtInboundGovernorTracer
-        :: Tracer m (InboundGovernor.Trace ntnAddr)
-
-    , dtInboundGovernorTransitionTracer
-        :: Tracer m (RemoteTransitionTrace ntnAddr)
-
-      --
-      -- NodeToClient tracers
-      --
-
-      -- | Connection manager tracer for local clients
-    , dtLocalConnectionManagerTracer
-        :: Tracer m (CM.Trace
-                       ntcAddr
-                       (ConnectionHandlerTrace
-                          ntcVersion
-                          ntcVersionData))
-
-      -- | Server tracer for local clients
-    , dtLocalServerTracer
-        :: Tracer m (Server.Trace ntcAddr)
-
-      -- | Inbound protocol governor tracer for local clients
-    , dtLocalInboundGovernorTracer
-        :: Tracer m (InboundGovernor.Trace ntcAddr)
-    }
-
-nullTracers :: Applicative m
-            => TracersExtra ntnAddr ntnVersion ntnVersionData
-                            ntcAddr ntcVersion ntcVersionData
-                            resolverError extraState extraDebugState
-                            extraFlags extraPeers m
-nullTracers =
-    TracersExtra {
-        dtTraceLocalRootPeersTracer                  = nullTracer
-      , dtTracePublicRootPeersTracer                 = nullTracer
-      , dtTraceLedgerPeersTracer                     = nullTracer
-      , dtTracePeerSelectionTracer                   = nullTracer
-      , dtTraceChurnCounters                         = nullTracer
-      , dtDebugPeerSelectionInitiatorTracer          = nullTracer
-      , dtDebugPeerSelectionInitiatorResponderTracer = nullTracer
-      , dtTracePeerSelectionCounters                 = nullTracer
-      , dtPeerSelectionActionsTracer                 = nullTracer
-      , dtConnectionManagerTracer                    = nullTracer
-      , dtConnectionManagerTransitionTracer          = nullTracer
-      , dtServerTracer                               = nullTracer
-      , dtInboundGovernorTracer                      = nullTracer
-      , dtInboundGovernorTransitionTracer            = nullTracer
-      , dtLocalConnectionManagerTracer               = nullTracer
-      , dtLocalServerTracer                          = nullTracer
-      , dtLocalInboundGovernorTracer                 = nullTracer
-    }
-
--- | P2P Arguments Extras
---
-data ArgumentsExtra extraArgs extraFlags m = ArgumentsExtra {
-      daReadLocalRootPeers     :: STM m (LocalRootPeers.Config extraFlags RelayAccessPoint)
-    , daReadPublicRootPeers    :: STM m (Map RelayAccessPoint PeerAdvertise)
-
-    -- | Depending on configuration, node may provide us with
-    -- a snapshot of big ledger peers taken at some slot on the chain.
-    -- These peers may be selected by ledgerPeersThread when requested
-    -- by the peer selection governor when the node is syncing up.
-    -- This is especially useful for Genesis consensus mode.
-    , daReadLedgerPeerSnapshot :: STM m (Maybe LedgerPeerSnapshot)
-
-    -- | Peer's own PeerSharing value.
-    --
-    -- This value comes from the node's configuration file and is static.
-    , daOwnPeerSharing         :: PeerSharing
-    , daReadUseLedgerPeers     :: STM m UseLedgerPeers
-
-      -- | Timeout which starts once all responder protocols are idle. If the
-      -- responders stay idle for duration of the timeout, the connection will
-      -- be demoted, if it wasn't used by the p2p-governor it will be closed.
-      --
-      -- Applies to 'Unidirectional' as well as 'Duplex' /node-to-node/
-      -- connections.
-      --
-      -- See 'serverProtocolIdleTimeout'.
-      --
-    , daProtocolIdleTimeout    :: DiffTime
-
-      -- | Time for which /node-to-node/ connections are kept in
-      -- 'TerminatingState', it should correspond to the OS configured @TCP@
-      -- @TIME_WAIT@ timeout.
-      --
-      -- This timeout will apply to after a connection has been closed, its
-      -- purpose is to be resilient for delayed packets in the same way @TCP@
-      -- is using @TIME_WAIT@.
-      --
-    , daTimeWaitTimeout        :: DiffTime
-
-      -- | Churn interval between churn events in deadline mode.  A small fuzz
-      -- is added (max 10 minutes) so that not all nodes churn at the same time.
-      --
-      -- By default it is set to 3300 seconds.
-      --
-    , daDeadlineChurnInterval  :: DiffTime
-
-      -- | Churn interval between churn events in bulk sync mode.  A small fuzz
-      -- is added (max 1 minute) so that not all nodes churn at the same time.
-      --
-      -- By default it is set to 300 seconds.
-      --
-    , daBulkChurnInterval      :: DiffTime
-
-      -- | Extension point for third party users to be able to add more
-      -- arguments.
-    , daExtraArgs              :: extraArgs
-    }
-
---
--- Constants
---
-
--- | Protocol inactivity timeout for local (e.g. /node-to-client/) connections.
---
-local_PROTOCOL_IDLE_TIMEOUT :: DiffTime
-local_PROTOCOL_IDLE_TIMEOUT = 2 -- 2 seconds
-
--- | Used to set 'cmWaitTimeout' for local (e.g. /node-to-client/) connections.
---
-local_TIME_WAIT_TIMEOUT :: DiffTime
-local_TIME_WAIT_TIMEOUT = 0
-
-
-socketAddressType :: Socket.SockAddr -> Maybe AddressType
-socketAddressType Socket.SockAddrInet {}  = Just IPv4Address
-socketAddressType Socket.SockAddrInet6 {} = Just IPv6Address
-socketAddressType Socket.SockAddrUnix {}  = Nothing
-
-
--- | P2P Applications Extras
---
--- TODO: we need initiator only mode for Daedalus, there's no reason why it
--- should run a node-to-node server side.
---
-data ApplicationsExtra ntnAddr m a =
-    ApplicationsExtra {
-    -- | /node-to-node/ rethrow policy
-    --
-      daRethrowPolicy       :: RethrowPolicy
-
-    -- | /node-to-node/ return policy
-    --
-    , daReturnPolicy        :: ReturnPolicy a
-
-    -- | /node-to-client/ rethrow policy
-    --
-    , daLocalRethrowPolicy  :: RethrowPolicy
-
-    -- | 'PeerMetrics' used by peer selection policy (see
-    -- 'simplePeerSelectionPolicy')
-    --
-    , daPeerMetrics         :: PeerMetrics m ntnAddr
-
-    -- | Used by churn-governor
-    -- TODO: Pull out (along with ouroboros-network-api/Ouroboros/Network/BlockFetch ->
-    -- ouroboros-network-api/Cardano/Node/BlockFetch)
-    , daBlockFetchMode      :: STM m FetchMode
-
-    -- | Used for peer sharing protocol
-    --
-    , daPeerSharingRegistry :: PeerSharingRegistry ntnAddr m
-  }
-
-
---
--- Node-To-Client type aliases
---
--- Node-To-Client diffusion is only used in 'ResponderMode'.
---
-
-type NodeToClientHandle ntcAddr versionData m =
-    HandleWithMinimalCtx Mx.ResponderMode ntcAddr versionData ByteString m Void ()
-
-type NodeToClientHandleError ntcVersion =
-    HandleError Mx.ResponderMode ntcVersion
-
-type NodeToClientConnectionHandler
-      ntcFd ntcAddr ntcVersion ntcVersionData m =
-    ConnectionHandler
-      Mx.ResponderMode
-      (ConnectionHandlerTrace ntcVersion ntcVersionData)
-      ntcFd
-      ntcAddr
-      (NodeToClientHandle ntcAddr ntcVersionData m)
-      (NodeToClientHandleError ntcVersion)
-      (ntcVersion, ntcVersionData)
-      m
-
-type NodeToClientConnectionManagerArguments
-      ntcFd ntcAddr ntcVersion ntcVersionData m =
-    CM.Arguments
-      (ConnectionHandlerTrace ntcVersion ntcVersionData)
-      ntcFd
-      ntcAddr
-      (NodeToClientHandle ntcAddr ntcVersionData m)
-      (NodeToClientHandleError ntcVersion)
-      ntcVersion
-      ntcVersionData
-      m
-
-
---
--- Node-To-Node type aliases
---
--- Node-To-Node diffusion runs in either 'InitiatorMode' or 'InitiatorResponderMode'.
---
-
-type NodeToNodeHandle
-       (mode :: Mx.Mode)
-       ntnAddr ntnVersionData m a b =
-    HandleWithExpandedCtx mode ntnAddr ntnVersionData ByteString m a b
-
-type NodeToNodeConnectionManager
-       (mode :: Mx.Mode)
-       ntnFd ntnAddr ntnVersionData ntnVersion m a b =
-    ConnectionManager
-      mode
-      ntnFd
-      ntnAddr
-      (NodeToNodeHandle mode ntnAddr ntnVersionData m a b)
-      (HandleError mode ntnVersion)
-      m
-
---
--- Governor type aliases
---
-
-type NodeToNodePeerConnectionHandle (mode :: Mx.Mode) ntnAddr ntnVersionData m a b =
-    PeerConnectionHandle
-      mode
-      (ResponderContext ntnAddr)
-      ntnAddr
-      ntnVersionData
-      ByteString
-      m a b
-
-type NodeToNodePeerSelectionActions extraActions extraPeers extraFlags extraAPI
-                                    (mode :: Mx.Mode) ntnAddr ntnVersionData m a b =
-    PeerSelectionActions
-      extraActions extraPeers extraFlags extraAPI
-      ntnAddr
-      (NodeToNodePeerConnectionHandle mode ntnAddr ntnVersionData m a b)
-      m
-
-data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
-                ntcFd ntcAddr ntcVersion ntcVersionData
-                resolver resolverError
-                extraState extraFlags extraPeers
-                m =
-    Interfaces {
-        -- | node-to-node snocket
-        --
-        diNtnSnocket
-          :: Snocket m ntnFd ntnAddr,
-
-        -- | node-to-node 'Mx.MakeBearer' callback
-        --
-        diNtnBearer
-          :: Mx.MakeBearer m ntnFd,
-
-        -- | node-to-node socket configuration
-        --
-        -- It is used by both inbound and outbound connection.  The address is
-        -- the local address that we can bind to if given (NOTE: for
-        -- node-to-node connection `Just` is always given).
-        --
-        diNtnConfigureSocket
-          :: ntnFd -> Maybe ntnAddr -> m (),
-
-        -- | node-to-node systemd socket configuration
-        --
-        diNtnConfigureSystemdSocket
-          :: ntnFd -> ntnAddr -> m (),
-
-        -- | node-to-node handshake configuration
-        --
-        diNtnHandshakeArguments
-          :: HandshakeArguments (ConnectionId ntnAddr) ntnVersion ntnVersionData m,
-
-        -- | node-to-node address type
-        --
-        diNtnAddressType
-          :: ntnAddr -> Maybe AddressType,
-
-        -- | node-to-node data flow used by connection manager to classify
-        -- negotiated connections
-        --
-        diNtnDataFlow
-          :: ntnVersionData -> DataFlow,
-
-        -- | remote side peer sharing information used by peer selection governor
-        -- to decide which peers are available for performing peer sharing
-        diNtnPeerSharing
-          :: ntnVersionData -> PeerSharing,
-
-        -- | node-to-node peer address
-        --
-        diNtnToPeerAddr
-          :: IP -> Socket.PortNumber -> ntnAddr,
-
-        -- | node-to-client snocket
-        --
-        diNtcSnocket
-          :: Snocket m ntcFd ntcAddr,
-
-        -- | node-to-client 'Mx.MakeBearer' callback
-        --
-        diNtcBearer
-          :: Mx.MakeBearer m ntcFd,
-
-        -- | node-to-client handshake configuration
-        --
-        diNtcHandshakeArguments
-          :: HandshakeArguments (ConnectionId ntcAddr) ntcVersion ntcVersionData m,
-
-        -- | node-to-client file descriptor
-        --
-        diNtcGetFileDescriptor
-          :: ntcFd -> m FileDescriptor,
-
-        -- | diffusion pseudo random generator. It is split between various
-        -- components that need randomness, e.g. inbound governor, peer
-        -- selection, policies, etc.
-        --
-        diRng
-          :: StdGen,
-
-        -- | callback which is used to register @SIGUSR1@ signal handler.
-        diInstallSigUSR1Handler
-          :: forall mode x y.
-             NodeToNodeConnectionManager mode ntnFd ntnAddr ntnVersionData ntnVersion  m x y
-          -> StrictTVar m (PeerSelectionState extraState extraFlags extraPeers
-                               ntnAddr (NodeToNodePeerConnectionHandle
-                               mode ntnAddr ntnVersionData m x y))
-          -> PeerMetrics m ntnAddr
-          -> m (),
-
-        -- | diffusion dns actions
-        --
-        diDnsActions
-          :: DNSLookupType -> DNSActions resolver resolverError m
-      }
+#ifdef POSIX
+import System.Posix.Signals qualified as Signals
+#endif
+#ifdef POSIX
+#else
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
+           MinBigLedgerPeersForTrustedState, UseLedgerPeers)
+import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
+#endif
+import Cardano.Network.PeerSelection.Governor.Monitor
+           (monitorBootstrapPeersFlag, monitorLedgerStateJudgement,
+           waitForSystemToQuiesce)
+import Cardano.Network.PeerSelection.Governor.Types (CardanoPeerSelectionView,
+           cardanoPeerSelectionStatetoCounters)
+import Cardano.Network.PeerSelection.Governor.Types qualified as CPSV
+import Cardano.PeerSelection.PeerSelectionActions
+import Ouroboros.Network.PeerSelection.Governor (outboundConnectionsState,
+           readAssociationMode)
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
+           (newLedgerAndPublicRootDNSSemaphore)
 
 runM
     :: forall m ntnFd ntnAddr ntnVersion ntnVersionData
@@ -587,7 +179,8 @@ runM
        Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
                   ntcFd ntcAddr ntcVersion ntcVersionData
                   resolver resolverError
-                  CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers ntnAddr) m
+                  CardanoPeerSelectionState PeerTrustable
+                  (CardanoPublicRootPeers ntnAddr) m
     -> -- | tracers
        Tracers ntnAddr ntnVersion
                ntcAddr ntcVersion
@@ -595,8 +188,11 @@ runM
     -> -- | p2p tracers
        TracersExtra ntnAddr ntnVersion ntnVersionData
                     ntcAddr ntcVersion ntcVersionData
-                    resolverError CardanoPeerSelectionState CardanoPeerSelectionState
-                    PeerTrustable (CardanoPublicRootPeers ntnAddr) m
+                    resolverError CardanoPeerSelectionState
+                    CardanoPeerSelectionState PeerTrustable
+                    (CardanoPublicRootPeers ntnAddr)
+                    (CardanoPeerSelectionView ntnAddr)
+                    m
     -> -- | configuration
        Arguments m ntnFd ntnAddr
                    ntcFd ntcAddr
@@ -661,7 +257,8 @@ runM Interfaces
        , daPublicPeerSelectionVar
        }
      ArgumentsExtra
-       { daReadLocalRootPeers
+       { daPeerSelectionTargets
+       , daReadLocalRootPeers
        , daReadPublicRootPeers
        , daOwnPeerSharing
        , daReadUseLedgerPeers
@@ -671,7 +268,7 @@ runM Interfaces
        , daBulkChurnInterval
        , daReadLedgerPeerSnapshot
        , daExtraArgs = CardanoArgumentsExtra {
-           caePeerTargets
+           caeSyncPeerTargets
          , caeMinBigLedgerPeersForTrustedState
          , caeConsensusMode
          , caeReadUseBootstrapPeers
@@ -681,7 +278,11 @@ runM Interfaces
        { daApplicationInitiatorMode
        , daApplicationInitiatorResponderMode
        , daLocalResponderApplication
-       , daLedgerPeersCtx
+       , daLedgerPeersCtx = lpcsi@LedgerPeersConsensusInterface {
+          lpExtraAPI = CardanoLedgerPeersConsensusInterface {
+            clpciGetLedgerStateJudgement
+          }
+         }
        }
      ApplicationsExtra
        { daRethrowPolicy
@@ -899,10 +500,10 @@ runM Interfaces
 
       peerSelectionTargetsVar <- newTVarIO $
         case caeConsensusMode of
-          PraosMode   -> deadlineTargets caePeerTargets
-          GenesisMode -> syncTargets caePeerTargets
+          PraosMode   -> daPeerSelectionTargets
+          GenesisMode -> caeSyncPeerTargets
 
-      countersVar <- newTVarIO emptyPeerSelectionCounters
+      countersVar <- newTVarIO (emptyPeerSelectionCounters CPSV.empty)
 
       -- Design notes:
       --  - We split the following code into two parts:
@@ -947,7 +548,7 @@ runM Interfaces
                 CM.snocket             = diNtnSnocket,
                 CM.makeBearer          = diNtnBearer,
                 CM.configureSocket     = diNtnConfigureSocket,
-                CM.connectionDataFlow    = diNtnDataFlow,
+                CM.connectionDataFlow  = diNtnDataFlow,
                 CM.prunePolicy         = prunePolicy,
                 CM.stdGen,
                 CM.connectionsLimits   = daAcceptedConnectionsLimit,
@@ -955,7 +556,7 @@ runM Interfaces
                 CM.outboundIdleTimeout = daProtocolIdleTimeout
               }
 
-      let peerSelectionPolicy = Diffusion.Policies.simplePeerSelectionPolicy
+      let peerSelectionPolicy = simpleChurnModePeerSelectionPolicy
                                   policyRngVar (readTVar churnModeVar)
                                   daPeerMetrics (epErrorDelay exitPolicy)
 
@@ -1037,72 +638,87 @@ runM Interfaces
                   }
 
       dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
+      let dnsActions =
+            PeerActionsDNS {
+              paToPeerAddr = diNtnToPeerAddr
+            , paDnsActions = diDnsActions lookupReqs
+            }
       --
       -- Run peer selection (p2p governor)
       --
-      let withPeerSelectionActions'
-            :: forall muxMode responderCtx bytes a1 b c.
-               m (Map ntnAddr PeerSharing)
-            -> PeerSelectionActionsDiffusionMode ntnAddr (PeerConnectionHandle muxMode responderCtx ntnAddr ntnVersionData bytes m a1 b) m
-            -> (   (Async m Void, Async m Void)
+      let requestPublicRootPeers' =
+            requestPublicRootPeers dtTracePublicRootPeersTracer
+                                   caeReadUseBootstrapPeers
+                                   clpciGetLedgerStateJudgement
+                                   diNtnToPeerAddr
+                                   dnsSemaphore
+                                   daReadPublicRootPeers
+                                   (diDnsActions lookupReqs)
+
+          withPeerSelectionActions'
+            :: m (Map ntnAddr PeerSharing)
+            -> PeerStateActions
+                 ntnAddr
+                 (PeerConnectionHandle
+                    muxMode responderCtx peerAddr ntnVersionData bytes m a b)
+                 m
+            -> ((Async m Void, Async m Void)
                 -> PeerSelectionActions
                      (CardanoPeerSelectionActions m) (CardanoPublicRootPeers ntnAddr) PeerTrustable (CardanoLedgerPeersConsensusInterface m)
                      ntnAddr
                      (PeerConnectionHandle
                         muxMode responderCtx ntnAddr ntnVersionData bytes m a1 b)
-                      m
+                     (CardanoPeerSelectionActions m)
+                     (CardanoPublicRootPeers ntnAddr)
+                     PeerTrustable
+                     (CardanoLedgerPeersConsensusInterface m)
                 -> m c)
             -- ^ continuation, receives a handle to the local roots peer provider thread
-            -- (only if local root peers were non-empty).
-            -> m c
+                        muxMode responderCtx peerAddr ntnVersionData bytes m a b)
+                     m
           withPeerSelectionActions' readInboundPeers =
-              withPeerSelectionActions localRootsVar PeerActionsDNS {
-                                         paToPeerAddr = diNtnToPeerAddr,
                                          paDnsActions = diDnsActions lookupReqs,
                                          paDnsSemaphore = dnsSemaphore }
                                        PeerSelectionActionsArgs {
-                                         psLocalRootPeersTracer = dtTraceLocalRootPeersTracer,
-                                         psPublicRootPeersTracer = dtTracePublicRootPeersTracer,
-                                         psReadTargets = readTVar peerSelectionTargetsVar,
-                                         getLedgerStateCtx = daLedgerPeersCtx,
-                                         psReadLocalRootPeers = daReadLocalRootPeers,
-                                         psReadPublicRootPeers = daReadPublicRootPeers,
-                                         psPeerSharing = daOwnPeerSharing,
-                                         psPeerConnToPeerSharing = pchPeerSharing diNtnPeerSharing,
-                                         psReadPeerSharingController = readTVar (getPeerSharingRegistry daPeerSharingRegistry),
-                                         psReadInboundPeers =
-                                           case daOwnPeerSharing of
-                                             PeerSharingDisabled -> pure Map.empty
-                                             PeerSharingEnabled  -> readInboundPeers,
-                                         readLedgerPeerSnapshot = daReadLedgerPeerSnapshot,
-                                         psExtraActions = CardanoPeerSelectionActions {
-                                           cpsaPeerTargets = caePeerTargets,
-                                           cpsaReadUseBootstrapPeers = caeReadUseBootstrapPeers
-                                         }
-                                       }
+                                         psLocalRootPeersTracer      = dtTraceLocalRootPeersTracer,
+                                         psPublicRootPeersTracer     = dtTracePublicRootPeersTracer,
+                                         psReadTargets               = readTVar peerSelectionTargetsVar,
+                                         getLedgerStateCtx           = lpcsi,
+                                         psReadLocalRootPeers        = daReadLocalRootPeers,
+                                         psReadPublicRootPeers       = daReadPublicRootPeers,
+          withPeerSelectionActions' readInboundPeers peerStateActions =
+              withPeerSelectionActions dtTraceLocalRootPeersTracer
+                                       localRootsVar
+                                       dnsActions
+                                       (\getLedgerPeers -> PeerSelectionActions {
+                                         readPeerSelectionTargets   = readTVar peerSelectionTargetsVar,
+                                         getLedgerStateCtx          = lpcsi,
+                                         readOriginalLocalRootPeers = daReadLocalRootPeers,
+                                         readLocalRootPeers         = readTVar localRootsVar,
+                                         peerSharing                = daOwnPeerSharing,
+                                         peerConnToPeerSharing      = pchPeerSharing diNtnPeerSharing,
+                                         extraActions = CardanoPeerSelectionActions {
+                                           cpsaPeerTargets           = caePeerTargets,
+                                         requestPublicRootPeers = requestPublicRootPeers' getLedgerPeers,
+                                         },
+                                         peerStateActions
+                                       })
                                        WithLedgerPeersArgs {
-                                         wlpRng = ledgerPeersRng,
-                                         wlpConsensusInterface = daLedgerPeersCtx,
-                                         wlpTracer = dtTraceLedgerPeersTracer,
-                                         wlpGetUseLedgerPeers = daReadUseLedgerPeers,
-                                         wlpGetLedgerPeerSnapshot = daReadLedgerPeerSnapshot }
-
-          peerSelectionGovernor'
-            :: forall (muxMode :: Mx.Mode) b.
-               Tracer m (DebugPeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers ntnAddr) ntnAddr)
-            -> StrictTVar m (PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers ntnAddr) ntnAddr
-                              (NodeToNodePeerConnectionHandle
-                               muxMode ntnAddr ntnVersionData m a b))
-            -> NodeToNodePeerSelectionActions (CardanoPeerSelectionActions m) (CardanoPublicRootPeers ntnAddr) PeerTrustable (CardanoLedgerPeersConsensusInterface m)
-                                              muxMode ntnAddr ntnVersionData m a b
-            -> m Void
-          peerSelectionGovernor' peerSelectionTracer dbgVar peerSelectionActions =
+                                         extraStateToExtraCounters = cardanoPeerSelectionStatetoCounters,
+                                         wlpRng                   = ledgerPeersRng,
+                                         wlpConsensusInterface    = lpcsi,
+                                         wlpTracer                = dtTraceLedgerPeersTracer,
+                                         wlpGetUseLedgerPeers     = daReadUseLedgerPeers,
+                                         wlpGetLedgerPeerSnapshot = daReadLedgerPeerSnapshot,
+                                         wlpSemaphore             = dnsSemaphore
+                                       }
             Governor.peerSelectionGovernor
               dtTracePeerSelectionTracer
               peerSelectionTracer
               dtTracePeerSelectionCounters
               fuzzRng
               (CPST.empty caeConsensusMode caeMinBigLedgerPeersForTrustedState)
+              peerSelectionGovernorArgs
               CPRP.empty
               peerSelectionActions
               peerSelectionPolicy
@@ -1113,11 +729,10 @@ runM Interfaces
                 readUseLedgerPeers = daReadUseLedgerPeers
               }
 
-
       --
       -- The peer churn governor:
       --
-      let peerChurnGovernor' = Governor.peerChurnGovernor PeerChurnArgs {
+      let peerChurnGovernor' = CardanoChurn.peerChurnGovernor PeerChurnArgs {
                                  pcaPeerSelectionTracer = dtTracePeerSelectionTracer,
                                  pcaChurnTracer         = dtTraceChurnCounters,
                                  pcaDeadlineInterval    = daDeadlineChurnInterval,
@@ -1128,16 +743,17 @@ runM Interfaces
                                  pcaRng                 = churnRng,
                                  pcaPeerSelectionVar    = peerSelectionTargetsVar,
                                  pcaReadCounters        = readTVar countersVar,
-                                 getLedgerStateCtx      = daLedgerPeersCtx,
+                                 getLedgerStateCtx      = lpcsi,
                                  getLocalRootHotTarget  =
                                        LocalRootPeers.hotTarget
                                      . LocalRootPeers.clampToTrustable
                                      . LocalRootPeers.fromGroups
                                    <$> readTVar localRootsVar,
+                                 getOriginalPeerTargets = daPeerSelectionTargets,
                                  getExtraArgs = CardanoPeerChurnArgs {
                                    cpcaModeVar          = churnModeVar,
                                    cpcaReadFetchMode    = daBlockFetchMode,
-                                   cpcaPeerTargets      = caePeerTargets,
+                                   cpcaSyncPeerTargets  = caeSyncPeerTargets,
                                    cpcaReadUseBootstrap = caeReadUseBootstrapPeers,
                                    cpcaConsensusMode    = caeConsensusMode
                                  }
@@ -1160,8 +776,8 @@ runM Interfaces
               \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions->
                 Async.withAsync
                   (peerSelectionGovernor'
-                    dtDebugPeerSelectionInitiatorTracer
-                    debugStateVar
+              peerStateActions $
+              \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions ->
                     peerSelectionActions) $ \governorThread ->
                     Async.withAsync
                       peerChurnGovernor' $ \churnGovernorThread ->
@@ -1210,7 +826,7 @@ runM Interfaces
                           \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions ->
                             Async.withAsync
                               (peerSelectionGovernor' dtDebugPeerSelectionInitiatorResponderTracer debugStateVar peerSelectionActions) $ \governorThread -> do
-                                -- begin, unique to InitiatorAndResponder mode:
+                        peerStateActions $
                                 traceWith tracer (RunServer addresses)
                                 -- end, unique to ...
                                 Async.withAsync peerChurnGovernor' $ \churnGovernorThread ->
@@ -1228,13 +844,15 @@ runM Interfaces
 --
 run
     :: forall a .
-      Tracers RemoteAddress NodeToNodeVersion
+       Tracers RemoteAddress NodeToNodeVersion
                LocalAddress  NodeToClientVersion
                IO
     -> TracersExtra RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
                     LocalAddress  NodeToClientVersion NodeToClientVersionData
                     IOException CardanoPeerSelectionState CardanoPeerSelectionState
-                    PeerTrustable (CardanoPublicRootPeers RemoteAddress) IO
+                    PeerTrustable (CardanoPublicRootPeers RemoteAddress)
+                    (CardanoPeerSelectionView RemoteAddress)
+                    IO
     -> Arguments IO
                  Socket      RemoteAddress
                  LocalSocket LocalAddress
@@ -1247,6 +865,70 @@ run
     -> IO Void
 run tracers tracersExtra args argsExtra apps appsExtra = do
     let tracer = dtDiffusionTracer tracers
+        diNtnHandshakeArguments =
+          HandshakeArguments {
+              haHandshakeTracer = dtHandshakeTracer tracers,
+              haHandshakeCodec  = NodeToNode.nodeToNodeHandshakeCodec,
+              haVersionDataCodec =
+                cborTermVersionDataCodec
+                  NodeToNode.nodeToNodeCodecCBORTerm,
+              haAcceptVersion = acceptableVersion,
+              haQueryVersion = queryVersion,
+              haTimeLimits = timeLimitsHandshake
+            }
+        diNtcHandshakeArguments =
+          HandshakeArguments {
+              haHandshakeTracer  = dtLocalHandshakeTracer tracers,
+              haHandshakeCodec   = NodeToClient.nodeToClientHandshakeCodec,
+              haVersionDataCodec =
+                cborTermVersionDataCodec
+                  NodeToClient.nodeToClientCodecCBORTerm,
+              haAcceptVersion = acceptableVersion,
+              haQueryVersion = queryVersion,
+              haTimeLimits = noTimeLimitsHandshake
+            }
+
+        diInstallSigUSR1Handler
+          :: forall mode x y ntnconn.
+             NodeToNodeConnectionManager mode Socket RemoteAddress
+                                         NodeToNodeVersionData NodeToNodeVersion IO x y
+          -> StrictTVar IO (PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers RemoteAddress) RemoteAddress ntnconn)
+          -> PeerMetrics IO RemoteAddress
+          -> IO ()
+#ifdef POSIX
+        diInstallSigUSR1Handler = \connectionManager dbgStateVar metrics -> do
+          _ <- Signals.installHandler
+            Signals.sigUSR1
+            (Signals.Catch
+              (do state <- atomically $ readState connectionManager
+                  traceWith (Common.dtConnectionManagerTracer tracersExtra)
+                            (CM.TrState state)
+                  ps <- readTVarIO dbgStateVar
+                  now <- getMonotonicTime
+                  (up, bp, lsj, am) <- atomically $
+                                         (,,,) <$> upstreamyness metrics
+                                               <*> fetchynessBlocks metrics
+                                               <*> clpciGetLedgerStateJudgement (lpExtraAPI (Common.daLedgerPeersCtx apps))
+                                               <*> Governor.readAssociationMode
+                                                     (Common.daReadUseLedgerPeers argsExtra)
+                                                     (Common.daOwnPeerSharing argsExtra)
+                                                     (cpstBootstrapPeersFlag (extraState ps))
+                  let cardanoExtraArgs = Common.daExtraArgs argsExtra
+                      (cm, mblp)       = ( caeConsensusMode cardanoExtraArgs
+                                         , caeMinBigLedgerPeersForTrustedState cardanoExtraArgs)
+                      dbgState         = makeDebugPeerSelectionState ps up bp ((CPST.empty cm mblp) { cpstLedgerStateJudgement = lsj }) am
+                  traceWith (Common.dtTracePeerSelectionTracer tracersExtra)
+                            (TraceDebugState now dbgState)
+              )
+            )
+            Nothing
+          return ()
+#else
+        diInstallSigUSR1Handler = \_ _ _ -> pure ()
+#endif
+
+    diRng <- newStdGen
+
     -- We run two services: for /node-to-node/ and /node-to-client/.  The
     -- naming convention is that we use /local/ prefix for /node-to-client/
     -- related terms, as this is a local only service running over a unix
@@ -1257,90 +939,26 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                (\e -> traceWith tracer (DiffusionErrored e)
                    >> throwIO (DiffusionError e))
          $ withIOManager $ \iocp -> do
-             let diNtnHandshakeArguments =
-                   HandshakeArguments {
-                       haHandshakeTracer = dtHandshakeTracer tracers,
-                       haHandshakeCodec  = NodeToNode.nodeToNodeHandshakeCodec,
-                       haVersionDataCodec =
-                         cborTermVersionDataCodec
-                           NodeToNode.nodeToNodeCodecCBORTerm,
-                       haAcceptVersion = acceptableVersion,
-                       haQueryVersion = queryVersion,
-                       haTimeLimits = timeLimitsHandshake
-                     }
-                 diNtcHandshakeArguments =
-                   HandshakeArguments {
-                       haHandshakeTracer  = dtLocalHandshakeTracer tracers,
-                       haHandshakeCodec   = NodeToClient.nodeToClientHandshakeCodec,
-                       haVersionDataCodec =
-                         cborTermVersionDataCodec
-                           NodeToClient.nodeToClientCodecCBORTerm,
-                       haAcceptVersion = acceptableVersion,
-                       haQueryVersion = queryVersion,
-                       haTimeLimits = noTimeLimitsHandshake
-                     }
-
-                 diInstallSigUSR1Handler
-                   :: forall mode x y ntnconn.
-                      NodeToNodeConnectionManager mode Socket RemoteAddress
-                                                  NodeToNodeVersionData NodeToNodeVersion IO x y
-                   -> StrictTVar IO (PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers RemoteAddress) RemoteAddress ntnconn)
-                   -> PeerMetrics IO RemoteAddress
-                   -> IO ()
-#ifdef POSIX
-                 diInstallSigUSR1Handler = \connectionManager dbgStateVar metrics -> do
-                   _ <- Signals.installHandler
-                     Signals.sigUSR1
-                     (Signals.Catch
-                       (do state <- atomically $ readState connectionManager
-                           traceWith (dtConnectionManagerTracer tracersExtra)
-                                     (CM.TrState state)
-                           ps <- readTVarIO dbgStateVar
-                           now <- getMonotonicTime
-                           (up, bp, lsj, am) <- atomically $
-                                                  (,,,) <$> upstreamyness metrics
-                                                        <*> fetchynessBlocks metrics
-                                                        <*> clpciGetLedgerStateJudgement (lpExtraAPI (daLedgerPeersCtx apps))
-                                                        <*> Governor.readAssociationMode
-                                                              (daReadUseLedgerPeers argsExtra)
-                                                              (daOwnPeerSharing argsExtra)
-                                                              (cpstBootstrapPeersFlag (extraState ps))
-                           let cardanoExtraArgs = daExtraArgs argsExtra
-                               (cm, mblp)       = (caeConsensusMode cardanoExtraArgs, caeMinBigLedgerPeersForTrustedState cardanoExtraArgs)
-                               dbgState         = makeDebugPeerSelectionState ps up bp ((CPST.empty cm mblp) { cpstLedgerStateJudgement = lsj }) am
-                           traceWith (dtTracePeerSelectionTracer tracersExtra)
-                                     (TraceDebugState now dbgState)
-                       )
-                     )
-                     Nothing
-                   return ()
-#else
-                 diInstallSigUSR1Handler = \_ _ _ -> pure ()
-#endif
-
-             diRng <- newStdGen
              runM
                Interfaces {
-                 diNtnSnocket = Snocket.socketSnocket iocp,
-                 diNtnBearer = makeSocketBearer,
-                 diNtnConfigureSocket = configureSocket,
+                 diNtnSnocket                = Snocket.socketSnocket iocp,
+                 diNtnBearer                 = makeSocketBearer,
+                 diNtnConfigureSocket        = configureSocket,
                  diNtnConfigureSystemdSocket =
                    configureSystemdSocket
                      (SystemdSocketConfiguration `contramap` tracer),
-                 diNtnHandshakeArguments,
-                 diNtnAddressType = socketAddressType,
-                 diNtnDataFlow = ntnDataFlow,
-                 diNtnPeerSharing = peerSharing,
-                 diNtnToPeerAddr = curry IP.toSockAddr,
-
-                 diNtcSnocket = Snocket.localSnocket iocp,
-                 diNtcBearer = makeLocalBearer,
-                 diNtcHandshakeArguments,
+                 diNtnAddressType       = socketAddressType,
+                 diNtnDataFlow          = ntnDataFlow,
+                 diNtnPeerSharing       = peerSharing,
+                 diNtnToPeerAddr        = curry IP.toSockAddr,
+                 diNtcSnocket           = Snocket.localSnocket iocp,
+                 diNtcBearer            = makeLocalBearer,
                  diNtcGetFileDescriptor = localSocketFileDescriptor,
-
+                 diDnsActions           = ioDNSActions,
+                 diNtnHandshakeArguments,
+                 diNtcHandshakeArguments,
                  diRng,
-                 diInstallSigUSR1Handler,
-                 diDnsActions = ioDNSActions
+                 diInstallSigUSR1Handler
                }
                tracers tracersExtra args argsExtra apps appsExtra
 

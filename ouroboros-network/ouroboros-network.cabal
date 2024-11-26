@@ -77,10 +77,11 @@ library
     Ouroboros.Network.BlockFetch.State
     Ouroboros.Network.DeltaQ
     Ouroboros.Network.Diffusion
+    Ouroboros.Network.Diffusion.Common
     Ouroboros.Network.Diffusion.Configuration
     Ouroboros.Network.Diffusion.NonP2P
-    Ouroboros.Network.Diffusion.P2P
     Ouroboros.Network.Diffusion.Policies
+    Ouroboros.Network.Diffusion.MinimalP2P
     Ouroboros.Network.ExitPolicy
     Ouroboros.Network.KeepAlive
     Ouroboros.Network.NodeToClient
@@ -107,7 +108,6 @@ library
     Ouroboros.Network.TxSubmission.Outbound
 
   other-modules:
-    Ouroboros.Network.Diffusion.Common
     Ouroboros.Network.Diffusion.Utils
     Ouroboros.Network.PeerSelection.Churn
     Ouroboros.Network.PeerSelection.Governor.ActivePeers

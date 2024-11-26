@@ -4,16 +4,11 @@
 -- nb. the module Ouroboros.Network.Diffusion.Governor should be imported qualified as PeerSelection by convention to aid comprehension
 
 module Ouroboros.Network.Diffusion.Configuration
-  ( DefaultNumBootstrapPeers (..)
-  , MinBigLedgerPeersForTrustedState (..)
-  , defaultNumBootstrapPeers
-  , defaultAcceptedConnectionsLimit
-  , defaultDiffusionMode
+  ( defaultAcceptedConnectionsLimit
   , defaultPeerSharing
   , defaultBlockFetchConfiguration
   , defaultChainSyncTimeout
   , defaultDeadlineTargets
-  , defaultSyncTargets
   , defaultDeadlineChurnInterval
   , defaultBulkChurnInterval
     -- re-exports
@@ -22,12 +17,10 @@ module Ouroboros.Network.Diffusion.Configuration
   , ChainSyncTimeout (..)
   , DiffusionMode (..)
   , MiniProtocolParameters (..)
-  , P2P (..)
   , PeerSelectionTargets (..)
   , PeerSharing (..)
   , ConsensusMode (..)
   , defaultConsensusMode
-  , defaultMinBigLedgerPeersForTrustedState
   , defaultMiniProtocolParameters
   , deactivateTimeout
   , closeConnectionTimeout
@@ -38,6 +31,8 @@ module Ouroboros.Network.Diffusion.Configuration
   , handshake_QUERY_SHUTDOWN_DELAY
   , ps_POLICY_PEER_SHARE_STICKY_TIME
   , ps_POLICY_PEER_SHARE_MAX_PEERS
+  , local_PROTOCOL_IDLE_TIMEOUT
+  , local_TIME_WAIT_TIMEOUT
   ) where
 
 import Control.Monad.Class.MonadTime.SI
@@ -47,7 +42,6 @@ import Cardano.Network.ConsensusMode
 import Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
 import Ouroboros.Network.ConnectionManager.Core (defaultProtocolIdleTimeout,
            defaultResetTimeout, defaultTimeWaitTimeout)
-import Ouroboros.Network.Diffusion (P2P (..))
 import Ouroboros.Network.Diffusion.Policies (closeConnectionTimeout,
            deactivateTimeout, maxChainSyncTimeout, minChainSyncTimeout,
            peerMetricsConfiguration)
@@ -62,15 +56,6 @@ import Ouroboros.Network.Protocol.ChainSync.Codec (ChainSyncTimeout (..))
 import Ouroboros.Network.Protocol.Handshake (handshake_QUERY_SHUTDOWN_DELAY)
 import Ouroboros.Network.Protocol.Limits (shortWait)
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
-
-
--- | Default number of bootstrap peers
---
-newtype DefaultNumBootstrapPeers = DefaultNumBootstrapPeers { getDefaultNumBootstrapPeers :: Int }
-  deriving (Eq, Show)
-
-defaultNumBootstrapPeers :: DefaultNumBootstrapPeers
-defaultNumBootstrapPeers = DefaultNumBootstrapPeers 30
 
 -- |Outbound governor targets
 -- Targets may vary depending on whether a node is operating in
@@ -89,31 +74,6 @@ defaultDeadlineTargets =
     targetNumberOfEstablishedBigLedgerPeers = 10,
     targetNumberOfActiveBigLedgerPeers      = 5 }
 
--- | These targets are established when Genesis mode is enabled
--- in node configuration and when the node is syncing up
---
-defaultSyncTargets :: PeerSelectionTargets
-defaultSyncTargets =
-  defaultDeadlineTargets {
-    targetNumberOfActivePeers               = 0,
-    targetNumberOfKnownBigLedgerPeers       = 100,
-    targetNumberOfEstablishedBigLedgerPeers = 50,
-    targetNumberOfActiveBigLedgerPeers      = 30 }
-
--- | This parameter controls the minimum number of active connections
---   with big ledger peers that must be maintained when syncing in
---   Genesis mode such that trusted state can be signalled to Consensus.
---   Exiting syncing / entering deadline mode is predicated on this
---   condition. This should be below `targetNumberOfActiveBigLedgerPeers`
---   in `syncTargets` otherwise untrusted state will never be departed.
---   This value is lower than the target, because in Genesis we may
---   demote a big ledger peer for underperformance and not immediately
---   promote one from the warm set in case there are adversaries
---   whom are intentionally trying to slow us down.
---
-defaultMinBigLedgerPeersForTrustedState :: MinBigLedgerPeersForTrustedState
-defaultMinBigLedgerPeersForTrustedState = MinBigLedgerPeersForTrustedState 5
-
 -- | Inbound governor targets
 --
 defaultAcceptedConnectionsLimit :: AcceptedConnectionsLimit
@@ -122,11 +82,6 @@ defaultAcceptedConnectionsLimit =
     acceptedConnectionsHardLimit = 512,
     acceptedConnectionsSoftLimit = 384,
     acceptedConnectionsDelay     = 5 }
-
--- | Principal mode of network operation
---
-defaultDiffusionMode :: P2P
-defaultDiffusionMode = NonP2P
 
 -- | Node's peer sharing participation flag
 --
@@ -176,3 +131,18 @@ defaultDeadlineChurnInterval = 3300
 
 defaultBulkChurnInterval :: DiffTime
 defaultBulkChurnInterval = 900
+
+--
+-- Constants
+--
+
+-- | Protocol inactivity timeout for local (e.g. /node-to-client/) connections.
+--
+local_PROTOCOL_IDLE_TIMEOUT :: DiffTime
+local_PROTOCOL_IDLE_TIMEOUT = 2 -- 2 seconds
+
+-- | Used to set 'cmWaitTimeout' for local (e.g. /node-to-client/) connections.
+--
+local_TIME_WAIT_TIMEOUT :: DiffTime
+local_TIME_WAIT_TIMEOUT = 0
+

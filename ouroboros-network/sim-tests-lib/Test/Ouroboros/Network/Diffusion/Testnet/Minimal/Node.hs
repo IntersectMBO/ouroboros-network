@@ -3,13 +3,12 @@
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
--- | Diffusion simulation.
---
-module Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Node
+module Test.Ouroboros.Network.Diffusion.Testnet.Minimal.Node
   ( -- * run a node
     Node.BlockGeneratorArgs (..)
   , Node.LimitsAndTimeouts (..)
@@ -65,14 +64,14 @@ import Ouroboros.Network.Mock.ConcreteBlock (Block (..), BlockHeader (..),
 import Ouroboros.Network.Mock.ProducerState (ChainProducerState (..))
 
 import Cardano.Network.ConsensusMode
-import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.Block (MaxSlotNo (..), maxSlotNoFromWithOrigin,
            pointSlot)
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
-import Ouroboros.Network.PeerSelection.Governor (PeerSelectionTargets (..),
+import Ouroboros.Network.PeerSelection.Governor (PeerChurnArgs,
+           PeerSelectionState (..), PeerSelectionTargets (..),
            PublicPeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.PeerMetric
            (PeerMetricsConfiguration (..), newPeerMetric)
@@ -88,42 +87,36 @@ import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (MakeBearer, Snocket, TestAddress (..),
            invalidFileDescriptor)
 
-import Ouroboros.Network.Testing.Data.Script (Script (..), stepScriptSTM')
+import Ouroboros.Network.Testing.Data.Script (Script (..))
 
 import Simulation.Network.Snocket (AddressType (..), FD)
-import Test.Ouroboros.Network.Diffusion.Node.Kernel (NtCAddr, NtCVersion,
-           NtCVersionData, NtNAddr, NtNVersion, NtNVersionData)
-import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay (..),
-           DNSTimeout (..))
 
-import Cardano.Node.ArgumentsExtra (CardanoArgumentsExtra (..),
-           ConsensusModePeerTargets (..))
-import Cardano.Network.LedgerPeerConsensusInterface
-           (CardanoLedgerPeersConsensusInterface)
-import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
-import Cardano.Network.PeerSelection.Governor.PeerSelectionState
-           (CardanoPeerSelectionState)
-import Cardano.Network.PeerSelection.Governor.Types (CardanoPeerSelectionView)
-import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
-import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
-import Cardano.Network.Types (MinBigLedgerPeersForTrustedState (..))
+import GHC.Exception (Exception)
 import Ouroboros.Network.Diffusion.Common qualified as Common
+import Ouroboros.Network.Diffusion.MinimalP2P (runM)
+import Ouroboros.Network.PeerSelection.Governor.Types
+           (PeerSelectionGovernorArgs)
+import Ouroboros.Network.PeerSelection.LedgerPeers (NumberOfPeers)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-           (LedgerPeersConsensusInterface, UseLedgerPeers)
+           (LedgerPeersConsensusInterface, LedgerPeersKind, UseLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import Ouroboros.Network.PeerSelection.PeerStateActions (PeerConnectionHandle)
+import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint,
            RelayAccessPoint)
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSLookupType)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
            WarmValency)
+import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersActions (..))
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB (addBlock,
            getBlockPointSet)
-import Test.Ouroboros.Network.Diffusion.Node.Kernel (NodeKernel (..),
-           NtNVersionData (..))
+import Test.Ouroboros.Network.Diffusion.Node.Kernel (NodeKernel (..), NtCAddr,
+           NtCVersion, NtCVersionData, NtNAddr, NtNVersion, NtNVersionData (..))
 import Test.Ouroboros.Network.Diffusion.Node.Kernel qualified as Node
 import Test.Ouroboros.Network.Diffusion.Node.MiniProtocols qualified as Node
-import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (mockDNSActions)
+import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay,
+           DNSTimeout, mockDNSActions)
 
 
 data Interfaces extraAPI m = Interfaces
@@ -142,7 +135,7 @@ data Interfaces extraAPI m = Interfaces
 type NtNFD m = FD m NtNAddr
 type NtCFD m = FD m NtCAddr
 
-data Arguments m = Arguments
+data Arguments extraArgs extraChurnArgs extraFlags m = Arguments
     { aIPAddress            :: NtNAddr
     , aAcceptedLimits       :: AcceptedConnectionsLimit
     , aDiffusionMode        :: DiffusionMode
@@ -150,15 +143,12 @@ data Arguments m = Arguments
     , aPingPongInterval     :: DiffTime
     , aShouldChainSyncExit  :: BlockHeader -> m Bool
     , aChainSyncEarlyExit   :: Bool
-    , aPeerTargets          :: (PeerSelectionTargets, PeerSelectionTargets)
-    , aPeerTargets          :: ConsensusModePeerTargets
+
+    , aPeerTargets          :: PeerSelectionTargets
     , aReadLocalRootPeers   :: STM m [( HotValency
                                       , WarmValency
-                                      , Map RelayAccessPoint ( PeerAdvertise
-                                                             , PeerTrustable))]
+                                      , Map RelayAccessPoint ( PeerAdvertise, extraFlags ))]
     , aReadPublicRootPeers  :: STM m (Map RelayAccessPoint PeerAdvertise)
-    , aReadUseBootstrapPeers :: Script UseBootstrapPeers
-    , aConsensusMode        :: ConsensusMode
     , aOwnPeerSharing       :: PeerSharing
     , aReadUseLedgerPeers   :: STM m UseLedgerPeers
     , aProtocolIdleTimeout  :: DiffTime
@@ -166,6 +156,8 @@ data Arguments m = Arguments
     , aDNSTimeoutScript     :: Script DNSTimeout
     , aDNSLookupDelayScript :: Script DNSLookupDelay
     , aDebugTracer          :: Tracer m String
+    , aExtraArgs            :: extraArgs
+    , aExtraChurnArgs       :: extraChurnArgs
     }
 
 -- The 'mockDNSActions' is not using \/ specifying 'resolverException', thus we
@@ -173,7 +165,9 @@ data Arguments m = Arguments
 --
 type ResolverException = SomeException
 
-run :: forall resolver m.
+run :: forall extraArgs extraState extraActions extraAPI
+             extraPeers extraFlags extraChurnArgs extraCounters
+             exception resolver m.
        ( Alternative (STM m)
        , MonadAsync       m
        , MonadDelay       m
@@ -190,34 +184,81 @@ run :: forall resolver m.
        , MonadThrow       (STM m)
        , MonadMVar        m
 
+       , Eq extraFlags
+       , Eq extraCounters
+       , Monoid extraPeers
+       , Exception exception
+
        , resolver ~ ()
        , forall a. Semigroup a => Semigroup (m a)
        )
     => Node.BlockGeneratorArgs Block StdGen
     -> Node.LimitsAndTimeouts BlockHeader Block
-    -> Interfaces (CardanoLedgerPeersConsensusInterface m) m
-    -> Arguments m
+    -> Interfaces extraAPI m
+    -> Arguments extraArgs extraChurnArgs extraFlags m
+    -> extraState
+    -> extraActions
+    -> extraPeers
+    -> extraCounters
+    -> PublicExtraPeersActions extraPeers NtNAddr
+    -> (forall muxMode responderCtx ntnVersionData bytes a b .
+        PeerSelectionGovernorArgs
+          extraState
+          extraActions
+          extraPeers
+          extraAPI
+          extraFlags
+          extraCounters
+          NtNAddr
+          (PeerConnectionHandle
+             muxMode responderCtx NtNAddr ntnVersionData bytes m a b)
+          exception
+          m)
+    -> (forall muxMode responderCtx ntnVersionData bytes a b.
+        PeerSelectionState
+          extraState
+          extraFlags
+          extraPeers
+          NtNAddr
+          (PeerConnectionHandle
+             muxMode responderCtx NtNAddr ntnVersionData bytes m a b)
+        -> extraCounters)
+    -> ( (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set NtNAddr, DiffTime)))
+        -> LedgerPeersKind
+        -> Int
+        -> m (PublicRootPeers extraPeers NtNAddr, DiffTime))
+    -> (PeerChurnArgs
+             m
+             extraChurnArgs
+             extraState
+             extraFlags
+             extraPeers
+             extraAPI
+             extraCounters
+             NtNAddr
+        -> m Void)
     -> Common.TracersExtra NtNAddr NtNVersion NtNVersionData
-                          NtCAddr NtCVersion NtCVersionData
-                          ResolverException CardanoPeerSelectionState
-                          CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers NtNAddr)
-                          (CardanoPeerSelectionView NtNAddr) m
+                           NtCAddr NtCVersion NtCVersionData
+                           ResolverException extraState extraState extraFlags
+                           extraPeers extraCounters m
     -> Tracer m (TraceLabelPeer NtNAddr (TraceFetchClientState BlockHeader))
     -> m Void
 run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
-    Node.withNodeKernelThread blockGeneratorArgs
+run blockGeneratorArgs limits ni na
+    emptyExtraState extraActions emptyExtraPeers
+    emptyExtraCounters extraPeersActions psArgs
+    psToExtraCounters requestPublicRootPeers peerChurnGovernor
+    tracersExtra tracerBlockFetch =
       $ \ nodeKernel nodeKernelThread -> do
         dnsTimeoutScriptVar <- newTVarIO (aDNSTimeoutScript na)
         dnsLookupDelayScriptVar <- newTVarIO (aDNSLookupDelayScript na)
-        useBootstrapPeersScriptVar <- newTVarIO (aReadUseBootstrapPeers na)
         peerMetrics <- newPeerMetric PeerMetricsConfiguration { maxEntriesToTrack = 180 }
 
         let -- diffusion interfaces
             interfaces :: Common.Interfaces (NtNFD m) NtNAddr NtNVersion NtNVersionData
                                             (NtCFD m) NtCAddr NtCVersion NtCVersionData
-                                            resolver ResolverException
-                                            CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers NtNAddr) m
-            interfaces = Common.Interfaces
+                                            resolver ResolverException () () () m
+                                            resolver ResolverException extraState extraFlags extraPeers m
               { Common.diNtnSnocket            = iNtnSnocket ni
               , Common.diNtnBearer             = iNtnBearer ni
               , Common.diNtnConfigureSocket    = \_ _ -> return ()
@@ -232,8 +273,8 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
                     , haQueryVersion     = const False
                     , haTimeLimits       = timeLimitsHandshake
                     }
-              , Common.diNtnAddressType    = ntnAddressType
-              , Common.diNtnDataFlow       = \NtNVersionData { ntnDiffusionMode } ->
+              , Common.diNtnAddressType = ntnAddressType
+              , Common.diNtnDataFlow    = \NtNVersionData { ntnDiffusionMode } ->
                   case ntnDiffusionMode of
                     InitiatorOnlyDiffusionMode         -> Unidirectional
                     InitiatorAndResponderDiffusionMode -> Duplex
@@ -262,31 +303,31 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
             appsExtra :: Common.ApplicationsExtra NtNAddr m ()
             appsExtra = Common.ApplicationsExtra
               { -- TODO: simulation errors should be critical
-                Common.daRethrowPolicy          =
+                Common.daRethrowPolicy     =
                      muxErrorRethrowPolicy
                   <> ioErrorRethrowPolicy
 
                 -- we are not using local connections, so we can make all the
                 -- errors fatal.
-              , Common.daLocalRethrowPolicy     =
+              , Common.daLocalRethrowPolicy =
                      mkRethrowPolicy
                        (\ _ (_ :: SomeException) -> ShutdownNode)
-              , Common.daPeerMetrics            = peerMetrics
+              , Common.daPeerMetrics         = peerMetrics
                 -- fetch mode is not used (no block-fetch mini-protocol)
-              , Common.daBlockFetchMode         = pure FetchModeDeadline
-              , Common.daReturnPolicy           = \_ -> config_REPROMOTE_DELAY
-              , Common.daPeerSharingRegistry    = nkPeerSharingRegistry nodeKernel
+              , Common.daBlockFetchMode      = pure FetchModeDeadline
+              , Common.daReturnPolicy        = \_ -> config_REPROMOTE_DELAY
+              , Common.daPeerSharingRegistry = nkPeerSharingRegistry nodeKernel
               }
 
         let apps = Node.applications (aDebugTracer na) nodeKernel Node.cborCodecs limits appArgs blockHeader
 
         withAsync
+           (undefined) -- interfaces
            (runM interfaces
                  Common.nullTracers
                  tracersExtra
                  (mkArgs (nkPublicPeerSelectionVar nodeKernel))
-                 (mkArgsExtra useBootstrapPeersScriptVar) apps appsExtra)
-           $ \ diffusionThread ->
+                 argsExtra apps appsExtra)
                withAsync (blockFetch nodeKernel) $ \blockFetchLogicThread ->
                  wait diffusionThread
               <> wait blockFetchLogicThread
@@ -324,8 +365,8 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
                                    Set.elems <$>
                                    getBlockPointSet (nkChainDB nodeKernel),
           mkAddFetchedBlock        =
-            pure $ \_p b ->
-              atomically (addBlock b (nkChainDB nodeKernel)),
+              pure $ \_p b ->
+                atomically (addBlock b (nkChainDB nodeKernel)),
 
           plausibleCandidateChain,
           compareCandidateChains,
@@ -398,12 +439,15 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
       , Common.daPublicPeerSelectionVar
       }
 
-    mkArgsExtra :: StrictTVar m (Script UseBootstrapPeers)
-                -> Common.ArgumentsExtra (CardanoArgumentsExtra m) PeerTrustable m
-      { Common.daPeerSelectionTargets   = fst (aPeerTargets na)
-      { Common.daPeerSelectionTargets   = deadlineTargets (aPeerTargets na)
+    argsExtra :: Common.ArgumentsExtra () () m
+    argsExtra :: Common.ArgumentsExtra
+                   extraArgs extraState extraActions
+                   extraAPI extraPeers extraFlags
+                   extraChurnArgs extraCounters exception
+                   NtNAddr m
+      { Common.daReadLocalRootPeers     = aReadLocalRootPeers na
+      { Common.daPeerSelectionTargets   = aPeerTargets na
       , Common.daReadLocalRootPeers     = aReadLocalRootPeers na
-      , Common.daReadPublicRootPeers    = aReadPublicRootPeers na
       , Common.daOwnPeerSharing         = aOwnPeerSharing na
       , Common.daReadUseLedgerPeers     = aReadUseLedgerPeers na
       , Common.daProtocolIdleTimeout    = aProtocolIdleTimeout na
@@ -411,27 +455,31 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
       , Common.daDeadlineChurnInterval  = 3300
       , Common.daBulkChurnInterval      = 300
       , Common.daReadLedgerPeerSnapshot = pure Nothing -- ^ tested independently
-      , Common.daExtraArgs              = CardanoArgumentsExtra {
-          caeReadUseBootstrapPeers  = stepScriptSTM' ubpVar
-        , caeConsensusMode          = aConsensusMode na
-        , caeSyncPeerTargets        = snd (aPeerTargets na)
-        , caeMinBigLedgerPeersForTrustedState
-            = MinBigLedgerPeersForTrustedState 0 -- ^ todo: fix
-        }
-      }
+      , Common.daExtraArgs              = ()
+      , Common.daEmptyExtraState        = emptyExtraState
+      , Common.daEmptyExtraPeers        = emptyExtraPeers
+      , Common.daEmptyExtraCounters     = emptyExtraCounters
+      , Common.daExtraPeersActions      = extraPeersActions
+      , Common.daExtraActions           = extraActions
+      , Common.daExtraChurnArgs         = aExtraChurnArgs na
+      , Common.daExtraArgs              = aExtraArgs na
+      , Common.daRequestPublicRootPeers = requestPublicRootPeers
+      , Common.daPeerChurnGovernor      = peerChurnGovernor
+      , Common.daPeerSelectionGovernorArgs         = psArgs
+      , Common.daPeerSelectionStateToExtraCounters = psToExtraCounters
 
-    appArgs :: Node.AppArgs (CardanoLedgerPeersConsensusInterface m) BlockHeader Block m
-    appArgs = Node.AppArgs
+    appArgs :: Node.AppArgs () BlockHeader Block m
+    appArgs :: Node.AppArgs extraAPI BlockHeader Block m
       { Node.aaLedgerPeersConsensusInterface
                                         = iLedgerPeersConsensusInterface ni
-      , Node.aaKeepAliveStdGen          = keepAliveStdGen
-      , Node.aaDiffusionMode            = aDiffusionMode na
-      , Node.aaKeepAliveInterval        = aKeepAliveInterval na
-      , Node.aaPingPongInterval         = aPingPongInterval na
-      , Node.aaShouldChainSyncExit      = aShouldChainSyncExit na
-      , Node.aaChainSyncEarlyExit       = aChainSyncEarlyExit na
-      , Node.aaOwnPeerSharing           = aOwnPeerSharing na
-      }
+                                   = iLedgerPeersConsensusInterface ni
+      , Node.aaKeepAliveStdGen     = keepAliveStdGen
+      , Node.aaDiffusionMode       = aDiffusionMode na
+      , Node.aaKeepAliveInterval   = aKeepAliveInterval na
+      , Node.aaPingPongInterval    = aPingPongInterval na
+      , Node.aaShouldChainSyncExit = aShouldChainSyncExit na
+      , Node.aaChainSyncEarlyExit  = aChainSyncEarlyExit na
+      , Node.aaOwnPeerSharing      = aOwnPeerSharing na
 
 --- Utils
 
