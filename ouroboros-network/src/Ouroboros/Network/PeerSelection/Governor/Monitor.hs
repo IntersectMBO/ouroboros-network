@@ -15,9 +15,6 @@ module Ouroboros.Network.PeerSelection.Governor.Monitor
   , jobVerifyPeerSnapshot
   , connections
   , localRoots
-  , monitorLedgerStateJudgement
-  , monitorBootstrapPeersFlag
-  , waitForSystemToQuiesce
   , ledgerPeerSnapshotChange
   ) where
 
@@ -49,12 +46,6 @@ import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as Estab
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSelection.Types
-
--- | Used to set 'bootstrapPeersTimeout' for crashing the node in a critical
--- failure case
---
-governor_BOOTSTRAP_PEERS_TIMEOUT :: DiffTime
-governor_BOOTSTRAP_PEERS_TIMEOUT = 15 * 60
 
 -- | Monitor 'PeerSelectionTargets', if they change, we just need to update
 -- 'PeerSelectionState', since we return it in a 'Decision' action it will be

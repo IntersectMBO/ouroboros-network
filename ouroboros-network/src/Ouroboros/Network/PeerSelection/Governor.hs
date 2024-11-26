@@ -499,6 +499,7 @@ peerSelectionGovernor tracer debugTracer countersTracer psArgs fuzzRng extraStat
         tracer
         debugTracer
         countersTracer
+        psArgs
         actions
         policy
         interfaces
@@ -514,25 +515,21 @@ peerSelectionGovernor tracer debugTracer countersTracer psArgs fuzzRng extraStat
 --   * root peer set changed
 --   * churn timeout
 --   * async action completed
---   * established connection failed
---
--- We check the internal actions first, and otherwise the blocking actions.
+                          => Tracer m (TracePeerSelection extraState extraFlags extraPeers peeraddr)
+                          -> Tracer m (DebugPeerSelection extraState extraFlags extraPeers peeraddr)
+                          -> Tracer m (PeerSelectionCounters extraCounters)
 -- In each case we trace the action, update the state and execute the
--- action asynchronously.
---
-peerSelectionGovernorLoop :: forall m peeraddr peerconn.
-                             ( Alternative (STM m)
-                             , MonadAsync m
-                             , MonadDelay m
-                             , MonadMask m
-                             , MonadTimer m
-                             , Ord peeraddr
-                             , Show peerconn
+                              extraState extraActions extraPeers extraAPI extraFlags extraCounters
+                              peeraddr peerconn exception m
                              , Hashable peeraddr
-                             )
-                          => Tracer m (TracePeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr)
-                          -> Tracer m (DebugPeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr)
-                          -> Tracer m (PeerSelectionCounters (CardanoPeerSelectionView peeraddr))
+                              extraState extraActions extraPeers extraFlags extraAPI extraCounters
+                              peeraddr peerconn m
+                          -> PeerSelectionPolicy peeraddr m
+                              (CardanoPeerSelectionView peeraddr)
+                              peeraddr
+                              peerconn
+                              BootstrapPeersCriticalTimeoutError
+                              m
                           -> PeerSelectionActions
                               CardanoPeerSelectionState
                               (CardanoPeerSelectionActions m)
@@ -544,22 +541,16 @@ peerSelectionGovernorLoop :: forall m peeraddr peerconn.
                               peerconn
                               m
                           -> PeerSelectionPolicy  peeraddr m
-                          -> PeerSelectionGovernorArgs
+                          -> PeerSelectionInterfaces
+                            , requiredTargetsAction
+                            , requiredLocalRootsAction
+                            , enableProgressMakingActions
+                            , ledgerPeerSnapshotExtraStateChange
                               CardanoPeerSelectionState
-                              (CardanoPeerSelectionActions m)
-                              (CardanoPublicRootPeers peeraddr)
-                              (CardanoLedgerPeersConsensusInterface m)
                               PeerTrustable
+                              (CardanoPublicRootPeers peeraddr)
                               (CardanoPeerSelectionView peeraddr)
                               peeraddr
-                              peerconn
-                              BootstrapPeersCriticalTimeoutError
-                              m
-                          -> PeerSelectionInterfaces
-                              extraState extraFlags extraPeers extraCounters
-                              peeraddr peerconn m
-                          -> JobPool () m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
-                          -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
                               peerconn
                               m
                           -> JobPool () m (Completion m CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
@@ -568,17 +559,6 @@ peerSelectionGovernorLoop :: forall m peeraddr peerconn.
 peerSelectionGovernorLoop tracer
                           debugTracer
                           countersTracer
-                          actions@PeerSelectionActions {
-                            extraPeersActions = PublicExtraPeersActions {
-                              extraPeersToSet
-                            , invariantExtraPeers
-                            }
-                          , extraStateToExtraCounters
-                          }
-                          policy
-                          PeerSelectionInterfaces {
-                            countersVar,
-                            publicStateVar,
                           PeerSelectionGovernorArgs {
                             abortGovernor
                           , updateWithState
@@ -589,6 +569,18 @@ peerSelectionGovernorLoop tracer
                             , postNonBlocking
                             }
                           }
+                          actions@PeerSelectionActions {
+                            extraPeersActions = PublicExtraPeersActions {
+                              extraPeersToSet
+                            , invariantExtraPeers
+                            }
+                          , extraStateToExtraCounters
+                          }
+
+                          policy
+                          PeerSelectionInterfaces {
+                            countersVar,
+                            publicStateVar,
                             debugStateVar
                           }
                           jobPool
@@ -596,7 +588,6 @@ peerSelectionGovernorLoop tracer
     loop pst (Time 0) `catch` (\e -> traceWith tracer (TraceOutboundGovernorCriticalFailure e) >> throwIO e)
   where
     loop :: PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn
-
          -> Time
          -> m Void
     loop !st !dbgUpdateAt = assertPeerSelectionState extraPeersToSet invariantExtraPeers st $ do
@@ -606,16 +597,11 @@ peerSelectionGovernorLoop tracer
                          -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
                          -> m (TimedDecision m extraState extraFlags extraPeers peeraddr peerconn)
 
-      -- If by any chance the node takes more than 15 minutes to converge to a
-      -- clean state, we crash the node. This could happen in very rare
-      -- conditions such as a global network issue, DNS, or a bug in the code.
-      -- In any case crashing the node will force the node to be restarted,
-      -- starting in the correct state for it to make progress.
-      case cpstBootstrapPeersTimeout (extraState st) of
-        Nothing -> pure ()
-        Just t
-          | blockedAt >= t -> throwIO BootstrapPeersCriticalTimeoutError
-          | otherwise      -> pure ()
+      -- | If there's something utterly wrong with the PeerSelectionState such
+      -- that the abortion of the Governor is required.
+      case abortGovernor st of
+        Nothing        -> pure ()
+        Just exception -> throwIO exception
 
       dbgUpdateAt' <- if dbgUpdateAt <= blockedAt
                          then do
@@ -645,6 +631,17 @@ peerSelectionGovernorLoop tracer
 
         -- Update counters
         counters <- readTVar countersVar
+        let !counters' = snd <$> peerSelectionView
+        if counters' /= counters
+          then writeTVar countersVar counters'
+            >> return (Just counters')
+          else return Nothing
+
+        -- Custom STM actions
+        updateWithState peerSelectionView st''
+
+        -- Update counters
+        counters <- readTVar countersVar
       -- it also makes a constant extraState change.
       -- If the verification job detects a discrepancy vs. big peers on the ledger,
       -- it throws and the node is shut down.
@@ -663,11 +660,13 @@ peerSelectionGovernorLoop tracer
         GuardedSkip _ ->
           -- impossible since guardedDecisions always has something to wait for
           error "peerSelectionGovernorLoop: impossible: nothing to do"
-        let peerSelectionView =
-              peerSelectionStateToView extraPeersToSet extraStateToExtraCounters st''
 
-        -- Custom STM actions
-        updateWithState peerSelectionView st''
+        Guarded Nothing decisionAction -> do
+          traceWith debugTracer (TraceGovernorState blockedAt Nothing st)
+          atomically decisionAction
+
+        Guarded (Just wakeupAt) decisionAction -> do
+          let wakeupIn = diffTime wakeupAt blockedAt
           traceWith debugTracer (TraceGovernorState blockedAt (Just wakeupIn) st)
           (readTimeout, cancelTimeout) <- registerDelayCancellable wakeupIn
           let wakeup = readTimeout >>= (\case TimeoutPending -> retry
@@ -683,51 +682,53 @@ peerSelectionGovernorLoop tracer
     guardedDecisions blockedAt st inboundPeers =
       -- All the alternative potentially-blocking decisions.
 
-      -- In Praos consensus mode, The Governor needs to react to changes in the bootstrap
-      -- peer flag, since this influences the behavior of the other monitoring actions.
-         Monitor.monitorBootstrapPeersFlag   actions st
-      -- The Governor needs to react to ledger state changes as soon as possible.
-      -- in Praos mode:
-      --   Check the definition site for more details, but in short, when the
-      --   node changes to 'TooOld' state it will go through a purging phase which
-      --   the 'waitForTheSystemToQuiesce' monitoring action will wait for.
-      <> Monitor.monitorLedgerStateJudgement actions st
-      -- In Praos consensus mode,
-      -- When the node transitions to 'TooOld' state the node will wait until
-      -- it reaches a clean (quiesced) state free of non-trusted peers, before
-      -- resuming making progress again connected to only trusted peers.
-      <> Monitor.waitForSystemToQuiesce              st
+        -- Make sure preBlocking set is in the right place
+        foldMap (\a -> a policy actions st) preBlocking
 
       <> Monitor.connections          actions st
-      <> Monitor.jobs                 jobPool st
-      -- This job monitors for changes in big ledger peer snapshot file (eg. reload)
-      -- and copies it into the governor's private state. When a change is detected,
+        -- The non-blocking decisions regarding (known) big ledger peers
+      <> BigLedgerPeers.belowTarget enableProgressMakingActions
+                                    actions blockedAt st
+      <> BigLedgerPeers.aboveTarget actions policy st
       -- it also flips private state LedgerStateJudgement to TooYoung so that it
       -- can launch the appropriate verification task in the job pool when external
-      -- LedgerStateJudgement is TooOld. If the verification job detects a discrepancy
-      -- vs. big peers on the ledger, it throws and the node is shut down.
-      <> Monitor.ledgerPeerSnapshotChange actions st
-      -- In Genesis consensus mode, this is responsible for settings targets on the basis
-      -- of the ledger state judgement. It takes into account whether
-      -- the churn governor is running via a tmvar such that targets are set
-      -- in a consistent manner. For non-Genesis, it follows the simpler
-      -- legacy protocol.
+      <> RootPeers.belowTarget   actions blockedAt st
+
+      <> KnownPeers.belowTarget  enableProgressMakingActions
+                                 actions blockedAt inboundPeers policy st
+      <> KnownPeers.aboveTarget  actions                        policy st
+
+      <> EstablishedPeers.belowTarget enableProgressMakingActions
+                                      actions policy st
+      <> EstablishedPeers.aboveTarget actions policy st
+
+      <> ActivePeers.belowTarget enableProgressMakingActions
+                                 actions policy st
+      <> ActivePeers.aboveTarget actions policy st
       <> Monitor.targetPeers          actions st
       <> Monitor.localRoots           actions st
 
+         -- Make sure postBlocking set is in the right place
+      <> foldMap (\a -> a policy actions st) postBlocking
+        -- Make sure preNonBlocking set is in the right place
+      <> foldMap (\a -> a policy actions st) preNonBlocking
+
       -- The non-blocking decisions regarding (known) big ledger peers
       <> BigLedgerPeers.belowTarget   actions blockedAt        st
-      <> BigLedgerPeers.aboveTarget                     policy st
+      <> BigLedgerPeers.aboveTarget  actions            policy st
 
       -- All the alternative non-blocking internal decisions.
       <> RootPeers.belowTarget        actions blockedAt           st
       <> KnownPeers.belowTarget       actions blockedAt
                                               inboundPeers policy st
-      <> KnownPeers.aboveTarget                            policy st
+      <> KnownPeers.aboveTarget      actions               policy st
       <> EstablishedPeers.belowTarget actions              policy st
       <> EstablishedPeers.aboveTarget actions              policy st
       <> ActivePeers.belowTarget      actions              policy st
       <> ActivePeers.aboveTarget      actions              policy st
+
+         -- Make sure postNonBlocking set is in the right place
+      <> foldMap (\a -> a policy actions st) postNonBlocking
 
       -- There is no rootPeersAboveTarget since the roots target is one sided.
 

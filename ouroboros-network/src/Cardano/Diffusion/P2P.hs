@@ -712,8 +712,6 @@ runM Interfaces
                                          wlpSemaphore             = dnsSemaphore
                                        }
 
-          peerSelectionGovernor'
-            :: forall (muxMode :: Mx.Mode) b.
           peerSelectionGovernorArgs
             :: PeerSelectionGovernorArgs
                  CardanoPeerSelectionState
@@ -758,6 +756,8 @@ runM Interfaces
               }
           }
 
+          peerSelectionGovernor'
+            :: forall (muxMode :: Mx.Mode) b.
                Tracer m (DebugPeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers ntnAddr) ntnAddr)
             -> StrictTVar m (PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers ntnAddr) ntnAddr
                               (NodeToNodePeerConnectionHandle
@@ -776,9 +776,9 @@ runM Interfaces
               dtTracePeerSelectionTracer
               peerSelectionTracer
               dtTracePeerSelectionCounters
+              peerSelectionGovernorArgs
               fuzzRng
               (CPST.empty caeConsensusMode caeMinBigLedgerPeersForTrustedState)
-              peerSelectionGovernorArgs
               CPRP.empty
               peerSelectionActions
               peerSelectionPolicy
