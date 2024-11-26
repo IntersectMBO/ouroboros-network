@@ -88,6 +88,8 @@ library
     Ouroboros.Network.NodeToNode
     Ouroboros.Network.PeerSelection.Churn
     Ouroboros.Network.PeerSelection.Governor
+    Ouroboros.Network.PeerSelection.Governor.Monitor
+    Ouroboros.Network.PeerSelection.Governor.Types
     Ouroboros.Network.PeerSelection.LedgerPeers
     Ouroboros.Network.PeerSelection.PeerMetric
     Ouroboros.Network.PeerSelection.PeerSelectionActions
