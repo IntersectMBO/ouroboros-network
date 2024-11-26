@@ -23,20 +23,21 @@ module Ouroboros.Network.Diffusion
   , makePublicPeerSelectionStateVar
   ) where
 
-import Control.Exception (IOException)
+import Control.Concurrent.Class.MonadSTM.Strict (StrictTVar)
+import Control.Exception (Exception, IOException)
 import Data.Functor (void)
-
+import Network.Mux qualified as Mx
 import Network.Socket (Socket)
-
+import Ouroboros.Network.Diffusion.Common (Arguments,
+           NodeToNodeConnectionManager, NodeToNodePeerConnectionHandle, Tracers)
+import Ouroboros.Network.Diffusion.Common qualified as Common
+import Ouroboros.Network.PeerSelection.Governor.Types (PeerSelectionState)
+import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
+import Ouroboros.Network.Diffusion.NonP2P qualified as NonP2P
 import Ouroboros.Network.NodeToClient (LocalAddress, LocalSocket,
            NodeToClientVersion, NodeToClientVersionData)
 import Ouroboros.Network.NodeToNode (NodeToNodeVersion, NodeToNodeVersionData,
            RemoteAddress)
-import Ouroboros.Network.PeerSelection.Governor.Types
-
-import Ouroboros.Network.Diffusion.Common as Common
-import Ouroboros.Network.Diffusion.NonP2P qualified as NonP2P
-import Ouroboros.Network.Diffusion.P2P qualified as P2P
 
 -- | Promoted data types.
 --
@@ -46,23 +47,37 @@ data P2P = P2P | NonP2P
 --
 data ExtraTracers (p2p :: P2P) where
   P2PTracers
-    :: P2P.TracersExtra
-           RemoteAddress  NodeToNodeVersion   NodeToNodeVersionData
-           LocalAddress   NodeToClientVersion NodeToClientVersionData
-           IOException IO
-    -> ExtraTracers 'P2P
-
-  NonP2PTracers
-    :: NonP2P.TracersExtra
-    -> ExtraTracers 'NonP2P
-
-
+    :: Common.TracersExtra
+           RemoteAddress NodeToNodeVersion         NodeToNodeVersionData
+           LocalAddress  NodeToClientVersion       NodeToClientVersionData
+           IOException   extraState extraState extraFlags extraPeers m
+           IOException   extraState extraState extraFlags extraPeers extraCounters m
+    -> ExtraTracers 'P2P extraState extraFlags extraPeers extraCounters m
+  P2PCardanoTracers
+    :: Common.TracersExtra
+           RemoteAddress NodeToNodeVersion         NodeToNodeVersionData
+           LocalAddress  NodeToClientVersion       NodeToClientVersionData
+           IOException   CardanoPeerSelectionState CardanoPeerSelectionState
+           PeerTrustable (CardanoPublicRootPeers RemoteAddress) m
+           PeerTrustable (CardanoPublicRootPeers RemoteAddress)
+           (CardanoPeerSelectionView RemoteAddress) m
+    -> ExtraTracers 'P2PCardano CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers RemoteAddress) (CardanoPeerSelectionView RemoteAddress) m
+    :: Common.ArgumentsExtra extraArgs extraState extraActions extraAPI
+                            extraPeers extraFlags extraChurnArgs
+                            extraCounters exception ntnAddr m
+    -> ArgumentsExtra 'P2P extraArgs extraState extraActions extraAPI
+                           extraPeers extraFlags extraChurnArgs
+                           extraCounters exception ntnAddr m
 -- | Diffusion arguments which depend on p2p mode.
 --
 data ExtraArguments (p2p :: P2P) m where
   P2PArguments
-    :: P2P.ArgumentsExtra m
-    -> ExtraArguments 'P2P m
+    :: Common.ArgumentsExtra extraArgs extraPeers m
+    -> ArgumentsExtra 'P2P extraArgs extraPeers m
+
+  P2PCardanoArguments
+    :: Common.ArgumentsExtra (CardanoArgumentsExtra m) PeerTrustable m
+    -> ArgumentsExtra 'P2PCardano (CardanoArgumentsExtra m) PeerTrustable m
 
   NonP2PArguments
     :: NonP2P.ArgumentsExtra
@@ -92,13 +107,13 @@ run :: forall (p2p :: P2P) a.
     -> Arguments
          IO
          Socket      RemoteAddress
-         LocalSocket LocalAddress
-    -> ExtraArguments p2p IO
-    -> Applications
-         RemoteAddress  NodeToNodeVersion   NodeToNodeVersionData
-         LocalAddress   NodeToClientVersion NodeToClientVersionData
-         IO a
-    -> ExtraApplications p2p RemoteAddress IO a
+    -> ArgumentsExtra p2p extraArgs extraState extraActions extraAPI
+       extraPeers extraFlags extraChurnArgs extraCounters exception
+       RemoteAddress IO
+    -> ArgumentsExtra p2p extraArgs extraFlags IO
+    -> Applications p2p extraAPI IO a
+
+    -> ApplicationsExtra p2p RemoteAddress IO a
     -> IO ()
 run tracers (P2PTracers tracersExtra)
             args (P2PArguments argsExtra)
@@ -109,7 +124,8 @@ run tracers (P2PTracers tracersExtra)
             apps appsExtra
 run tracers (NonP2PTracers tracersExtra)
             args (NonP2PArguments argsExtra)
-            apps (NonP2PApplications appsExtra) =
+            (NonP2PApplications apps)
+            (NonP2PApplicationsExtra appsExtra) = do
     NonP2P.run tracers tracersExtra
                args argsExtra
                apps appsExtra

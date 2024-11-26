@@ -19,6 +19,7 @@ module Ouroboros.Network.PeerSelection.LedgerPeers.Type
   , AccPoolStake (..)
   , IsBigLedgerPeer (..)
   , LedgerPeersConsensusInterface (..)
+  , mapExtraAPI
   , UseLedgerPeers (..)
   , AfterSlot (..)
   , LedgerPeersKind (..)
@@ -224,11 +225,16 @@ data IsBigLedgerPeer
 
 -- | Return ledger state information and ledger peers.
 --
-data LedgerPeersConsensusInterface m = LedgerPeersConsensusInterface {
-    lpGetLatestSlot           :: STM m (WithOrigin SlotNo),
-    lpGetLedgerStateJudgement :: STM m LedgerStateJudgement,
-    lpGetLedgerPeers          :: STM m [(PoolStake, NonEmpty RelayAccessPoint)]
+data LedgerPeersConsensusInterface extraAPI m = LedgerPeersConsensusInterface {
+    lpGetLatestSlot  :: STM m (WithOrigin SlotNo)
+  , lpGetLedgerPeers :: STM m [(PoolStake, NonEmpty RelayAccessPoint)]
+    -- | Extension point so that third party users can add more actions
+  , lpExtraAPI       :: extraAPI
   }
+
+mapExtraAPI :: (a -> b) -> LedgerPeersConsensusInterface a m -> LedgerPeersConsensusInterface b m
+mapExtraAPI f lpci@LedgerPeersConsensusInterface{ lpExtraAPI = api } =
+  lpci { lpExtraAPI = f api }
 
 instance ToJSON RelayAccessPointCoded where
   toJSON (RelayAccessPointCoded (RelayAccessDomain domain port)) =

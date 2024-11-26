@@ -49,14 +49,22 @@ import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 --
 -- It should be noted if the node is in bootstrap mode (i.e. in a sensitive
 -- state) then this monitoring action will be disabled.
---
+    => (extraState -> Bool)
+    -> PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
 belowTarget
-    :: (MonadAsync m, MonadTimer m, Ord peeraddr, Hashable peeraddr)
-    => PeerSelectionActions peeraddr peerconn m
+    => PeerSelectionActions CardanoPeerSelectionState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
+    => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI extraCounters peeraddr peerconn m
     -> Time -- ^ blocked at
-    -> Map peeraddr PeerSharing
-    -> MkGuardedDecision peeraddr peerconn m
-belowTarget actions@PeerSelectionActions { peerSharing }
+    -> MkGuardedDecision CardanoPeerSelectionState extraFlags extraPeers peeraddr peerconn m
+    -> MkGuardedDecision CardanoPeerSelectionState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn m
+belowTarget actions@PeerSelectionActions {
+            , extraPeersActions = PublicExtraPeersActions {
+                memberExtraPeers
+              , extraPeersToSet
+              }
+            , extraStateToExtraCounters
+              peerSharing
+            }
             blockedAt
             inboundPeers
             policy@PeerSelectionPolicy {
@@ -73,9 +81,8 @@ belowTarget actions@PeerSelectionActions { peerSharing }
               inboundPeersRetryTime,
               targets = PeerSelectionTargets {
                           targetNumberOfKnownPeers
-                        },
-              ledgerStateJudgement,
-              bootstrapPeersFlag,
+              extraState,
+              },
               stdGen
             }
     --
@@ -88,9 +95,8 @@ belowTarget actions@PeerSelectionActions { peerSharing }
 
     -- There are no peer share requests in-flight.
   , inProgressPeerShareReqs <= 0
-
-    -- No inbound peers should be used when the node is using bootstrap peers.
-  , not (requiresBootstrapPeers bootstrapPeersFlag ledgerStateJudgement)
+  , enableAction extraState
+  , not (requiresBootstrapPeers cpstBootstrapPeersFlag cpstLedgerStateJudgement)
 
   , blockedAt >= inboundPeersRetryTime
 
@@ -141,10 +147,8 @@ belowTarget actions@PeerSelectionActions { peerSharing }
     -- Are there any known peers that we can send a peer share request to?
     -- We can only ask ones where we have not asked them within a certain time.
   , not (Set.null availableForPeerShare)
-
-    -- No peer share requests should be issued when the node is using bootstrap
-    -- peers.
-  , not (requiresBootstrapPeers bootstrapPeersFlag ledgerStateJudgement)
+  , enableAction extraState
+  , not (requiresBootstrapPeers cpstBootstrapPeersFlag cpstLedgerStateJudgement)
 
   = Guarded Nothing $ do
       -- Max selected should be <= numPeerShareReqsPossible
@@ -226,15 +230,15 @@ belowTarget actions@PeerSelectionActions { peerSharing }
 --
 -- If we ask for more peers than needed a random subset of the peers in the filtered result
 -- is used.
-jobPeerShare :: forall m peeraddr peerconn.
-                (MonadAsync m, MonadTimer m, Ord peeraddr, Hashable peeraddr)
-             => PeerSelectionActions peeraddr peerconn m
+jobPeerShare :: forall m extraActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn.
+             => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
+             => PeerSelectionActions extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
              -> PeerSelectionPolicy peeraddr m
              -> Int
              -> Int
              -> PeerSharingAmount
              -> [peeraddr]
-             -> Job () m (Completion m peeraddr peerconn)
+             -> Job () m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
 jobPeerShare PeerSelectionActions{requestPeerShare}
              PeerSelectionPolicy { policyPeerShareBatchWaitTime
                                  , policyPeerShareOverallTimeout
@@ -253,7 +257,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
       sortBy (\a b -> compare (hashWithSalt salt a) (hashWithSalt salt b))
       addrs
 
-    handler :: [peeraddr] -> SomeException -> m (Completion m peeraddr peerconn)
+    handler :: [peeraddr] -> SomeException -> m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
     handler peers e = return $
       Completion $ \st _ ->
       Decision { decisionTrace = [TracePeerShareResults [ (p, Left e) | p <- peers ]],
@@ -264,7 +268,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                  decisionJobs = []
                }
 
-    jobPhase1 :: [peeraddr] -> m (Completion m peeraddr peerconn)
+    jobPhase1 :: [peeraddr] -> m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
     jobPhase1 peers = do
       -- In the typical case, where most requests return within a short
       -- timeout we want to collect all the responses into a batch and
@@ -359,7 +363,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                          }
 
     jobPhase2 :: Int -> [peeraddr] -> [Async m (PeerSharingResult peeraddr)]
-              -> m (Completion m peeraddr peerconn)
+              -> m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
     jobPhase2 maxRemaining peers peerShares = do
 
       -- Wait again, for all remaining to finish or a timeout.
@@ -430,12 +434,22 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
 -- peers). 'policyPickColdPeersToForget' policy is used to pick the peers.
 --
 aboveTarget :: (MonadSTM m, Ord peeraddr, HasCallStack)
-            => MkGuardedDecision peeraddr peerconn m
+            => MkGuardedDecision extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn m
 aboveTarget PeerSelectionPolicy {
               policyPickColdPeersToForget
             }
-            st@PeerSelectionState {
-              localRootPeers,
+            => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
+            -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
+aboveTarget PeerSelectionActions {
+              extraPeersActions = PublicExtraPeersActions {
+                memberExtraPeers
+              , extraPeersToSet
+              , sizeExtraPeers
+              , differenceExtraPeers
+              },
+              extraStateToExtraCounters
+            }
+            PeerSelectionPolicy {
               publicRootPeers,
               knownPeers,
               establishedPeers,

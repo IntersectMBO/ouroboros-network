@@ -85,23 +85,20 @@ import Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
 --
 getLedgerPeers
   :: MonadSTM m
-  => LedgerPeersConsensusInterface m
+  => LedgerPeersConsensusInterface extraAPI m
   -> AfterSlot
   -> STM m LedgerPeers
-getLedgerPeers (LedgerPeersConsensusInterface lpGetLatestSlot
-                                              lpGetLedgerStateJudgement
-                                              lpGetLedgerPeers)
+getLedgerPeers LedgerPeersConsensusInterface
+                 { lpGetLatestSlot
+                 , lpGetLedgerPeers
+                 }
                ulp = do
   wOrigin <- lpGetLatestSlot
   case (wOrigin, ulp) of
-    (_         , Always) -> ledgerPeers
+    (_         , Always) -> LedgerPeers <$> lpGetLedgerPeers
     (At curSlot, After slot)
-      | curSlot >= slot -> ledgerPeers
+      | curSlot >= slot -> LedgerPeers <$> lpGetLedgerPeers
     _ -> pure BeforeSlot
-  where
-    ledgerPeers = LedgerPeers
-              <$> lpGetLedgerStateJudgement
-              <*> lpGetLedgerPeers
 
 -- | Convert a list of pools with stake to a Map keyed on the accumulated stake.
 -- Consensus provides a list of pairs of relative stake and corresponding relays for all usable
@@ -208,7 +205,7 @@ long_PEER_LIST_LIFE_TIME = 1847 -- a prime number!
 
 -- | Run the LedgerPeers worker thread.
 --
-ledgerPeersThread :: forall m peerAddr resolver exception.
+ledgerPeersThread :: forall m peerAddr resolver extraAPI exception.
                      ( MonadAsync m
                      , MonadMonotonicTime m
                      , MonadThrow m
@@ -216,7 +213,7 @@ ledgerPeersThread :: forall m peerAddr resolver exception.
                      , Ord peerAddr
                      )
                   => PeerActionsDNS peerAddr resolver exception m
-                  -> WithLedgerPeersArgs m
+                  -> WithLedgerPeersArgs extraAPI m
                   -- blocking request for ledger peers
                   -> STM m (NumberOfPeers, LedgerPeersKind)
                   -- response with ledger peers
@@ -385,7 +382,7 @@ stakeMapWithSlotOverSource StakeMapOverSource {
                              bigPeerMap,
                              ula } =
   case (ledgerWithOrigin, ledgerPeers, peerSnapshot) of
-    (At ledgerSlotNo, LedgerPeers _ ledgerRelays, Just (LedgerPeerSnapshot (At snapshotSlotNo, accSnapshotRelays)))
+    (At ledgerSlotNo, LedgerPeers ledgerRelays, Just (LedgerPeerSnapshot (At snapshotSlotNo, accSnapshotRelays)))
       | snapshotSlotNo >= ledgerSlotNo -> -- ^ we cache the peers from the snapshot
                                           -- to avoid unnecessary work
         case cachedSlot of
@@ -396,9 +393,9 @@ stakeMapWithSlotOverSource StakeMapOverSource {
                         , Just snapshotSlotNo)
       | otherwise -> (accPoolStake ledgerRelays, accBigPoolStakeMap ledgerRelays, Nothing)
 
-    (_, LedgerPeers _ ledgerRelays, Nothing) -> ( accPoolStake ledgerRelays
-                                                , accBigPoolStakeMap ledgerRelays
-                                                , Nothing)
+    (_, LedgerPeers ledgerRelays, Nothing) -> ( accPoolStake ledgerRelays
+                                              , accBigPoolStakeMap ledgerRelays
+                                              , Nothing)
 
     (_, _, Just (LedgerPeerSnapshot (At snapshotSlotNo, accSnapshotRelays)))
       | After slot <- ula, snapshotSlotNo >= slot -> do
@@ -413,10 +410,10 @@ stakeMapWithSlotOverSource StakeMapOverSource {
 
 -- | Argument record for withLedgerPeers
 --
-data WithLedgerPeersArgs m = WithLedgerPeersArgs {
+data WithLedgerPeersArgs extraAPI m = WithLedgerPeersArgs {
   wlpRng                   :: StdGen,
   -- ^ Random generator for picking ledger peers
-  wlpConsensusInterface    :: LedgerPeersConsensusInterface m,
+  wlpConsensusInterface    :: LedgerPeersConsensusInterface extraAPI m,
   wlpTracer                :: Tracer m TraceLedgerPeers,
   -- ^ Get Ledger Peers comes from here
   wlpGetUseLedgerPeers     :: STM m UseLedgerPeers,
@@ -427,7 +424,7 @@ data WithLedgerPeersArgs m = WithLedgerPeersArgs {
 
 -- | For a LedgerPeers worker thread and submit request and receive responses.
 --
-withLedgerPeers :: forall peerAddr resolver exception m a.
+withLedgerPeers :: forall peerAddr resolver exception extraAPI m a.
                    ( MonadAsync m
                    , MonadThrow m
                    , MonadMonotonicTime m
@@ -435,7 +432,7 @@ withLedgerPeers :: forall peerAddr resolver exception m a.
                    , Ord peerAddr
                    )
                 => PeerActionsDNS peerAddr resolver exception m
-                -> WithLedgerPeersArgs m
+                -> WithLedgerPeersArgs extraAPI m
                 -> ((NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peerAddr, DiffTime)))
                      -> Async m Void
                      -> m a )

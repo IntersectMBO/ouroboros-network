@@ -76,8 +76,8 @@ data ChurnCounters = ChurnCounter ChurnAction Int
 
 -- | Record of arguments for peer churn governor
 --
-data PeerChurnArgs m peeraddr = PeerChurnArgs {
-  pcaPeerSelectionTracer :: Tracer m (TracePeerSelection peeraddr),
+data PeerChurnArgs m extraArgs extraDebugState extraFlags extraPeers extraAPI extraCounters peeraddr = PeerChurnArgs {
+  pcaPeerSelectionTracer :: Tracer m (TracePeerSelection extraDebugState extraFlags extraPeers peeraddr),
   pcaChurnTracer         :: Tracer m ChurnCounters,
   pcaDeadlineInterval    :: DiffTime,
   pcaBulkInterval        :: DiffTime,
@@ -85,62 +85,49 @@ data PeerChurnArgs m peeraddr = PeerChurnArgs {
   -- ^ the timeout for outbound governor to find new (thus
   -- cold) peers through peer sharing mechanism.
   pcaMetrics             :: PeerMetrics m peeraddr,
-  pcaModeVar             :: StrictTVar m ChurnMode,
   pcaRng                 :: StdGen,
-  pcaReadFetchMode       :: STM m FetchMode,
-  peerTargets            :: ConsensusModePeerTargets,
   pcaPeerSelectionVar    :: StrictTVar m PeerSelectionTargets,
-  pcaReadCounters        :: STM m PeerSelectionCounters,
-  pcaReadUseBootstrap    :: STM m UseBootstrapPeers,
-  pcaConsensusMode       :: ConsensusMode,
-  getLedgerStateCtx      :: LedgerPeersConsensusInterface m,
-  getLocalRootHotTarget  :: STM m HotValency }
-
+  pcaReadCounters        :: STM m (PeerSelectionCounters extraCounters),
+  getLedgerStateCtx      :: LedgerPeersConsensusInterface extraAPI m,
+  getLocalRootHotTarget  :: STM m HotValency,
+  getOriginalPeerTargets :: PeerSelectionTargets,
+  getExtraArgs           :: extraArgs }
+peerChurnGovernor :: forall m extraArgs extraDebugState extraFlags extraPeers extraAPI peeraddr.
 -- | Churn governor.
 --
 -- At every churn interval decrease active peers for a short while (1s), so that
 -- we can pick new ones. Then we churn non-active peers.
 --
--- On startup the churn governor gives a head start to local root peers over
+                  => PeerChurnArgs m extraArgs extraDebugState extraFlags extraPeers extraAPI peeraddr
 -- root peers.
---
-peerChurnGovernor :: forall m peeraddr.
-                     ( MonadDelay m
-                     , Alternative (STM m)
-                     , MonadTimer m
-                     , MonadCatch m
-                     )
-                  => PeerChurnArgs m peeraddr
-                  -> m Void
-peerChurnGovernor PeerChurnArgs {
-                    pcaPeerSelectionTracer = tracer,
-                    pcaChurnTracer         = churnTracer,
-                    pcaDeadlineInterval    = deadlineChurnInterval,
-                    pcaBulkInterval        = bulkChurnInterval,
-                    pcaPeerRequestTimeout  = requestPeersTimeout,
-                    pcaModeVar             = churnModeVar,
-                    pcaRng                 = inRng,
-                    pcaReadFetchMode       = getFetchMode,
-                    peerTargets,
-                    pcaPeerSelectionVar    = peerSelectionVar,
-                    pcaReadCounters        = readCounters,
-                    pcaReadUseBootstrap    = getUseBootstrapPeers,
-                    pcaConsensusMode       = consensusMode,
-                    getLedgerStateCtx = LedgerPeersConsensusInterface {
-                        lpGetLedgerStateJudgement },
-                    getLocalRootHotTarget } = do
-  -- Wait a while so that not only the closest peers have had the time
-  -- to become warm.
-  startTs0 <- getMonotonicTime
+peerChurnGovernor
+  PeerChurnArgs {
+    pcaPeerSelectionTracer = tracer,
+    pcaChurnTracer         = churnTracer,
+    pcaBulkInterval        = bulkChurnInterval,
+    pcaPeerRequestTimeout  = requestPeersTimeout,
+    pcaRng                 = inRng,
+    pcaPeerSelectionVar    = peerSelectionVar,
+    pcaReadCounters        = readCounters
+  } = do
+                    getLocalRootHotTarget,
+                    getExtraArgs = CardanoPeerChurnArgs {
+                      cpcaModeVar             = churnModeVar,
+                      cpcaReadFetchMode       = getFetchMode,
+                      cpcaPeerTargets,
+                      cpcaReadUseBootstrap    = getUseBootstrapPeers,
+                      cpcaConsensusMode       = consensusMode
+                    }
+    targets <- readTVar peerSelectionVar
   -- TODO: revisit the policy once we have local root peers in the governor.
   -- The intention is to give local root peers give head start and avoid
   -- giving advantage to hostile and quick root peers.
   threadDelay 3
   atomically $ do
     (churnMode, ledgerStateJudgement, useBootstrapPeers, ltt)
-      <- (,,,) <$> updateChurnMode <*> lpGetLedgerStateJudgement <*> getUseBootstrapPeers <*> getLocalRootHotTarget
+      <- (,,,) <$> updateChurnMode <*> clpciGetLedgerStateJudgement <*> getUseBootstrapPeers <*> getLocalRootHotTarget
     let regime  = pickChurnRegime consensusMode churnMode useBootstrapPeers
-        targets = getPeerSelectionTargets consensusMode ledgerStateJudgement peerTargets
+        targets = getPeerSelectionTargets consensusMode ledgerStateJudgement cpcaPeerTargets
 
     modifyTVar peerSelectionVar ( increaseActivePeers regime ltt targets
                                 . increaseEstablishedPeers regime ltt targets)
@@ -168,20 +155,16 @@ peerChurnGovernor PeerChurnArgs {
       -- ^ counter getter
       -> DiffTime
       -- ^ timeout
-      -> (ChurnRegime -> HotValency -> PeerSelectionTargets -> ModifyPeerSelectionTargets)
-      -- ^ update counters function
-      -> CheckPeerSelectionCounters
-      -- ^ check counters
-      -> m ()
+        targets <- readTVar peerSelectionVar
     updateTargets churnAction getCounter timeoutDelay modifyTargets checkCounters = do
       -- update targets, and return the new targets
       startTime <- getMonotonicTime
       (c, targets) <- atomically $ do
         churnMode <- updateChurnMode
         ltt       <- getLocalRootHotTarget
-        lsj       <- lpGetLedgerStateJudgement
+        lsj       <- clpciGetLedgerStateJudgement
         regime    <- pickChurnRegime consensusMode churnMode <$> getUseBootstrapPeers
-        let targets = getPeerSelectionTargets consensusMode lsj peerTargets
+        let targets = getPeerSelectionTargets consensusMode lsj cpcaPeerTargets
 
         (,) <$> (getCounter <$> readCounters)
             <*> stateTVar peerSelectionVar ((\a -> (a, a)) . modifyTargets regime ltt targets)

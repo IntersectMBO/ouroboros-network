@@ -150,7 +150,7 @@ data Arguments m ntnFd ntnAddr ntcFd ntcAddr = Arguments {
 --
 data Applications ntnAddr ntnVersion ntnVersionData
                   ntcAddr ntcVersion ntcVersionData
-                  m a =
+                  extraAPI m a =
   Applications {
       -- | NodeToNode initiator applications for initiator only mode.
       --
@@ -189,14 +189,5 @@ data Applications ntnAddr ntnVersion ntnVersionData
       -- | Interface used to get peers from the current ledger.
       --
       -- TODO: it should be in 'InterfaceExtra'
-    , daLedgerPeersCtx :: LedgerPeersConsensusInterface m
-
-      -- | Callback provided by consensus to inform it if the node is
-      -- connected to only local roots or also some external peers.
-      --
-      -- This is useful in order for the Bootstrap State Machine to
-      -- simply refuse to transition from TooOld to YoungEnough while
-      -- it only has local peers.
-      --
-    , daUpdateOutboundConnectionsState :: OutboundConnectionsState -> STM m ()
+    , daLedgerPeersCtx :: LedgerPeersConsensusInterface extraAPI m
   }
