@@ -107,16 +107,16 @@ library
     Ouroboros.Network.TxSubmission.Inbound
     Ouroboros.Network.TxSubmission.Mempool.Reader
     Ouroboros.Network.TxSubmission.Outbound
+    Ouroboros.Network.PeerSelection.Governor.Monitor
+    Ouroboros.Network.PeerSelection.Governor.Types
 
   other-modules:
     Ouroboros.Network.Diffusion.Utils
     Ouroboros.Network.PeerSelection.Governor.ActivePeers
     Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers
     Ouroboros.Network.PeerSelection.Governor.EstablishedPeers
-    Ouroboros.Network.PeerSelection.Governor.KnownPeers
     Ouroboros.Network.PeerSelection.Governor.Monitor
     Ouroboros.Network.PeerSelection.Governor.RootPeers
-    Ouroboros.Network.PeerSelection.Governor.Types
     Ouroboros.Network.PeerSelection.LedgerPeers.Common
     Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
 

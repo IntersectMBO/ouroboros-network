@@ -1,7 +1,11 @@
 module Ouroboros.Network.PeerSelection.Types
   ( PeerSource (..)
   , PeerStatus (..)
+  , PublicExtraPeersActions (..)
   ) where
+import Data.Map.Strict
+import Data.Set (Set)
+import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 
 -- | Where did this peer come from? Policy functions can choose to treat
 -- peers differently depending on where we found them from.
@@ -30,3 +34,39 @@ data PeerStatus =
      | PeerHot
   deriving (Eq, Ord, Show)
 
+-- PublicRootPeers extra peers bundle
+
+data PublicExtraPeersActions extraPeers peeraddr =
+  PublicExtraPeersActions {
+    -- | Check if extraPeers is empty
+    --
+    nullExtraPeers         :: extraPeers -> Bool
+
+    -- | Check extraPeers invariant
+    --
+  , invariantExtraPeers    :: extraPeers -> Bool
+
+    -- | Check extraPeers membership
+    --
+  , memberExtraPeers       :: peeraddr -> extraPeers -> Bool
+
+    -- | Convert extraPeers to peeraddr Set
+    --
+  , extraPeersToSet        :: extraPeers -> Set peeraddr
+
+    -- | Compute extraPeers size
+    --
+  , sizeExtraPeers         :: extraPeers -> Int
+
+    -- | Compute extraPeers difference
+    --
+  , differenceExtraPeers   :: extraPeers -> Set peeraddr -> extraPeers
+
+    -- | Compute extraPeers intersection
+    --
+  , intersectionExtraPeers :: extraPeers -> Set peeraddr -> extraPeers
+
+  -- | Which peers should be advertised
+  --
+  , toAdvertise            :: extraPeers -> Map peeraddr PeerAdvertise
+  }

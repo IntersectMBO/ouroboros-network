@@ -17,6 +17,7 @@ import Ouroboros.Network.PeerSelection.LedgerPeers (LedgerPeersKind (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
+import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersActions (..))
 
 
 --------------------------
@@ -72,7 +73,7 @@ belowTarget actions@PeerSelectionActions {
         numberOfRootPeers = numRootPeers
       }
       =
-      peerSelectionStateToCounters st
+      peerSelectionStateToCounters extraPeersToSet extraStateToExtraCounters st
 
     maxExtraRootPeers = targetNumberOfRootPeers - numRootPeers
 
@@ -83,6 +84,12 @@ jobReqPublicRootPeers :: forall m extraActions extraState extraFlags extraAPI ex
                       -> Job () m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
                       -> Job () m (Completion m extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
 jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
+                                          , extraPeersActions = PublicExtraPeersActions {
+                                              differenceExtraPeers
+                                            , extraPeersToSet
+                                            , nullExtraPeers
+                                            , toAdvertise
+                                          }
                                           }
                       numExtraAllowed =
     Job job (return . handler) () "reqPublicRootPeers"
@@ -120,8 +127,8 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
       (results, ttl) <- requestPublicRootPeers AllLedgerPeers numExtraAllowed
       return $ Completion $ \st now ->
     job :: m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
-              PublicRootPeers.difference (differenceExtraPeers extraPeersActions)
-                (PublicRootPeers.difference (differenceExtraPeers extraPeersActions)
+              PublicRootPeers.difference differenceExtraPeers
+                (PublicRootPeers.difference differenceExtraPeers
                    results (LocalRootPeers.keysSet (localRootPeers st)))
                 (PublicRootPeers.toSet extraPeersToSet (publicRootPeers st))
             publicRootPeers'  = PublicRootPeers.mergeG extraPeersToSet (publicRootPeers st) newPeers
@@ -159,7 +166,7 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
             -- seconds is about 4 minutes.
             publicRootBackoffs' :: Int
             publicRootBackoffs'
-              | PublicRootPeers.null newPeers = (publicRootBackoffs st `max` 0) + 1
+              | PublicRootPeers.null nullExtraPeers newPeers = (publicRootBackoffs st `max` 0) + 1
               | otherwise                     = 0
 
             publicRootRetryDiffTime :: DiffTime
@@ -172,7 +179,7 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
             publicRootRetryTime = addTime publicRootRetryDiffTime now
 
          in assert (Set.isSubsetOf
-                     (PublicRootPeers.toSet publicRootPeers')
+                     (PublicRootPeers.toSet extraPeersToSet publicRootPeers')
                      (KnownPeers.toSet knownPeers''))
 
              Decision {

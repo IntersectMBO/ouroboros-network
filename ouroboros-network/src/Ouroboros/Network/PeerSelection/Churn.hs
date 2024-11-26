@@ -15,6 +15,8 @@
 module Ouroboros.Network.PeerSelection.Churn
   ( PeerChurnArgs (..)
   , ChurnCounters (..)
+  , ModifyPeerSelectionTargets
+  , CheckPeerSelectionCounters
   , peerChurnGovernor
   ) where
 

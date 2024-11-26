@@ -693,20 +693,14 @@ runM Interfaces
                  m
           peerSelectionGovernorArgs = PeerSelectionGovernorArgs {
             abortGovernor   = const Nothing
-          , updateWithState = \_ _ -> pure ()
-          , extraDecisions  = ExtraGuardedDecisions [] [] [] []
-          }
-            daPeerChurnGovernor
-          peerSelectionGovernor'
-            :: forall (muxMode :: Mx.Mode) b.
-               Tracer m (DebugPeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers ntnAddr) ntnAddr)
-            -> StrictTVar m (PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers ntnAddr) ntnAddr
-                              (NodeToNodePeerConnectionHandle
-                               muxMode ntnAddr ntnVersionData m a b))
-            -> NodeToNodePeerSelectionActions
-                (CardanoPeerSelectionActions m)
-                (CardanoPublicRootPeers ntnAddr)
-                CardanoPeerSelectionState
+            :: Tracer m (DebugPeerSelection extraState extraFlags extraPeers ntnAddr)
+            -> StrictTVar m (PeerSelectionState extraState extraFlags extraPeers ntnAddr
+                (PeerConnectionHandle muxMode responderCtx ntnAddr ntnVersionData ByteString m a b))
+            -> PeerSelectionActions
+                extraState extraActions extraPeers extraFlags
+                extraAPI extraCounters ntnAddr
+                (PeerConnectionHandle muxMode responderCtx ntnAddr ntnVersionData ByteString m a b)
+                m
                 PeerTrustable
                 (CardanoLedgerPeersConsensusInterface m)
                 (CardanoPeerSelectionView ntnAddr)

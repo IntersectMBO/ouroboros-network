@@ -24,7 +24,6 @@ module Ouroboros.Network.PeerSelection.PublicRootPeers
   , merge
   , getPublicConfigPeers
   , getBootstrapPeers
-  , toSet
   , toPublicConfigPeerSet
   , insertPublicConfigPeer
   , insertBootstrapPeer

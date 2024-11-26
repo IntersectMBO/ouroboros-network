@@ -30,6 +30,7 @@ import Ouroboros.Network.PeerSelection.State.KnownPeers (setTepidFlag)
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
+import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersActions (..))
 
 
 ----------------------------
@@ -39,16 +40,17 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRo
 
 belowTarget :: forall extraState extraActions extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
 -- peers/ according to 'policyPickWarmPeersToPromote' policy.
+--
 belowTarget :: forall extraActions extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
-belowTarget :: forall extraActions extraFlags extraAPI extraCounters peeraddr peerconn m.
                ( Alternative (STM m)
                , MonadDelay m
                , MonadSTM m
-               , Ord peeraddr
-               , HasCallStack
-            => PeerSelectionActions CardanoPeerSelectionState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
-            -> MkGuardedDecision CardanoPeerSelectionState extraFlags extraPeers peeraddr peerconn m
-            -> MkGuardedDecision CardanoPeerSelectionState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn m
+            => (extraState -> Bool)
+            -> PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
+            -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
+belowTarget enableAction = belowTargetBigLedgerPeers enableAction
+                         <> belowTargetLocal
+                         <> belowTargetOther
 belowTarget = belowTargetBigLedgerPeers
            <> belowTargetLocal
            <> belowTargetOther
@@ -56,10 +58,13 @@ belowTarget = belowTargetBigLedgerPeers
 -- | If we are below the target of /hot big ledger peers peers/ we promote some
 -- of the /warm peers/ according to 'policyPickWarmPeersToPromote' policy.
 --
--- It should be noted if the node is in bootstrap mode (i.e. in a sensitive
+belowTargetBigLedgerPeers :: forall extraState extraActions extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
 -- state) then this monitoring action will be disabled.
---
-belowTargetBigLedgerPeers :: forall extraActions extraFlags extraAPI extraCounters peeraddr peerconn m.
+                          => (extraState -> Bool)
+                          -> PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
+                          -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
+belowTargetBigLedgerPeers enableAction
+                          actions@PeerSelectionActions {
                           => PeerSelectionActions CardanoPeerSelectionState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
                           -> MkGuardedDecision CardanoPeerSelectionState extraFlags extraPeers peeraddr peerconn m
 belowTargetBigLedgerPeers actions@PeerSelectionActions {
@@ -69,7 +74,6 @@ belowTargetBigLedgerPeers actions@PeerSelectionActions {
                             },
                             extraStateToExtraCounters
                           }
-belowTargetBigLedgerPeers actions
                           policy@PeerSelectionPolicy {
                             policyPickWarmPeersToPromote
                           }
@@ -104,7 +108,7 @@ belowTargetBigLedgerPeers actions
   , numPeersToPromote > 0
   , enableAction extraState
   = Guarded Nothing $ do
-      selectedToPromote <- pickPeers st
+      selectedToPromote <- pickPeers memberExtraPeers st
                              policyPickWarmPeersToPromote
                              availableToPromote
                              numPeersToPromote
@@ -138,10 +142,10 @@ belowTargetBigLedgerPeers actions
         numberOfWarmBigLedgerPeersPromotions = numPromoteInProgressBigLedgerPeers
       }
       =
-      peerSelectionStateToCounters st
+      peerSelectionStateToCounters extraPeersToSet extraStateToExtraCounters st
 
 
-belowTargetLocal :: forall extraActions extraState extraFlags extraAPI extraCounters peeraddr peerconn m.
+belowTargetLocal :: forall extraActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
                     (MonadDelay m, MonadSTM m, Ord peeraddr, HasCallStack)
                  => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
                  -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
@@ -150,7 +154,7 @@ belowTargetLocal actions@PeerSelectionActions {
                      memberExtraPeers
                    }
                  }
-belowTargetLocal :: forall extraActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
+                 policy@PeerSelectionPolicy {
                    policyPickWarmPeersToPromote
                  }
                  st@PeerSelectionState {
@@ -194,7 +198,7 @@ belowTargetLocal :: forall extraActions extraState extraFlags extraPeers extraAP
   = Guarded Nothing $ do
       selectedToPromote <-
         Set.unions <$> sequence
-          [ pickPeers st
+          [ pickPeers memberExtraPeers st
               policyPickWarmPeersToPromote
               membersAvailableToPromote
               numMembersToPromote
@@ -242,18 +246,9 @@ belowTargetLocal :: forall extraActions extraState extraFlags extraPeers extraAP
       , Set.size membersActive < getHotValency hotValency
       ]
 
-belowTargetOther :: forall extraActions extraState extraFlags extraAPI extraCounters peeraddr peerconn m.
+belowTargetOther :: forall extraActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
                     (MonadDelay m, MonadSTM m, Ord peeraddr,
                      HasCallStack)
-                 => PeerSelectionActions extraState extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI extraCounters peeraddr peerconn m
-                 -> MkGuardedDecision extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn m
-belowTargetOther actions
-                 policy@PeerSelectionPolicy {
-                   policyPickWarmPeersToPromote
-                 }
-                 st@PeerSelectionState {
-                   localRootPeers,
-                   establishedPeers,
                  => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
                  -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
 belowTargetOther actions@PeerSelectionActions {
@@ -263,6 +258,15 @@ belowTargetOther actions@PeerSelectionActions {
                    }
                  , extraStateToExtraCounters
                  }
+                 policy@PeerSelectionPolicy {
+                   policyPickWarmPeersToPromote
+                 }
+                 st@PeerSelectionState {
+                   localRootPeers,
+                   establishedPeers,
+                   activePeers,
+                   inProgressPromoteWarm,
+                   inProgressDemoteToCold,
                    inProgressDemoteWarm,
                    targets = PeerSelectionTargets {
                                targetNumberOfActivePeers
@@ -286,7 +290,7 @@ belowTargetOther actions@PeerSelectionActions {
   , not (Set.null availableToPromote)
   , numPeersToPromote > 0
   = Guarded Nothing $ do
-      selectedToPromote <- pickPeers st
+      selectedToPromote <- pickPeers memberExtraPeers st
                              policyPickWarmPeersToPromote
                              availableToPromote
                              numPeersToPromote
@@ -320,12 +324,12 @@ belowTargetOther actions@PeerSelectionActions {
         viewKnownBigLedgerPeers = (bigLedgerPeersSet, _)
       }
       =
-      peerSelectionStateToView st
+      peerSelectionStateToView extraPeersToSet extraStateToExtraCounters st
 
 
 jobPromoteWarmPeer :: forall extraActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
                       (MonadDelay m, Ord peeraddr)
-                   => PeerSelectionActions extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
+                   => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
                    -> PeerSelectionPolicy peeraddr m
                    -> peeraddr
                    -> IsBigLedgerPeer
@@ -340,7 +344,7 @@ jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {act
     handler e = do
       -- We wait here, not to avoid race conditions or broken locking, this is
       -- just a very simple back-off strategy. For cold -> warm failures we use
-                   => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
+      -- an exponential back-off retry strategy. For warm -> hot we do not need
       -- such a strategy. Simply a short pause is enough to ensure we never
       -- busy-loop.  Failures of warm -> hot will be accompanied by an
       -- asynchronous demotion to cold relatively promptly. If we did ever need
@@ -491,8 +495,8 @@ aboveTarget :: forall extraActions extraState extraFlags extraPeers extraAPI ext
                , Ord peeraddr
                , HasCallStack
                )
-            => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI extraCounters peeraddr peerconn m
-            -> MkGuardedDecision extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn m
+            => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
+            -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
 aboveTarget = aboveTargetBigLedgerPeers
            <> aboveTargetLocal
            <> aboveTargetOther
@@ -501,17 +505,8 @@ aboveTarget = aboveTargetBigLedgerPeers
   -- makes progress for the general target too.
 
 
-aboveTargetBigLedgerPeers :: forall extraActions extraState extraFlags extraAPI extraCounters peeraddr peerconn m.
+aboveTargetBigLedgerPeers :: forall extraActions extraState extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m.
                              (MonadSTM m, Ord peeraddr)
-                          => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI extraCounters peeraddr peerconn m
-                          -> MkGuardedDecision extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn m
-aboveTargetBigLedgerPeers actions
-            => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
-            -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
-                          }
-                          st@PeerSelectionState {
-                            publicRootPeers,
-                            localRootPeers,
                           => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
                           -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
 aboveTargetBigLedgerPeers actions@PeerSelectionActions {
@@ -521,8 +516,17 @@ aboveTargetBigLedgerPeers actions@PeerSelectionActions {
                             }
                           , extraStateToExtraCounters
                           }
+                          PeerSelectionPolicy {
+                            policyPickHotPeersToDemote
+                          }
+                          st@PeerSelectionState {
+                            publicRootPeers,
+                            localRootPeers,
+                            establishedPeers,
+                            activePeers,
+                            inProgressDemoteHot,
                             inProgressDemoteToCold,
-aboveTargetBigLedgerPeers :: forall extraActions extraState extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m.
+                            targets = PeerSelectionTargets {
                                         targetNumberOfActiveBigLedgerPeers
                                       }
                           }
@@ -547,7 +551,7 @@ aboveTargetBigLedgerPeers :: forall extraActions extraState extraPeers extraFlag
                               Set.\\ LocalRootPeers.keysSet localRootPeers
   , not (Set.null availableToDemote)
   = Guarded Nothing $ do
-      selectedToDemote <- pickPeers st
+      selectedToDemote <- pickPeers memberExtraPeers st
                             policyPickHotPeersToDemote
                             availableToDemote
                             numPeersToDemote
@@ -576,21 +580,11 @@ aboveTargetBigLedgerPeers :: forall extraActions extraState extraPeers extraFlag
         numberOfActiveBigLedgerPeers          = numActiveBigLedgerPeers,
         numberOfActiveBigLedgerPeersDemotions = numDemoteInProgressBigLedgerPeers
       }
-      =
-      peerSelectionStateToCounters st
+      = peerSelectionStateToCounters extraPeersToSet extraStateToExtraCounters st
 
 
-aboveTargetLocal :: forall extraActions extraState extraFlags extraAPI extraCounters peeraddr peerconn m.
+aboveTargetLocal :: forall extraActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
                     (MonadSTM m, Ord peeraddr, HasCallStack)
-                 => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI extraCounters peeraddr peerconn m
-                 -> MkGuardedDecision extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn m
-aboveTargetLocal actions
-                 PeerSelectionPolicy {
-                   policyPickHotPeersToDemote
-                 }
-                 st@PeerSelectionState {
-                   localRootPeers,
-                   establishedPeers,
                  => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
                  -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
 aboveTargetLocal actions@PeerSelectionActions {
@@ -598,6 +592,15 @@ aboveTargetLocal actions@PeerSelectionActions {
                      memberExtraPeers
                    }
                  }
+                 PeerSelectionPolicy {
+                   policyPickHotPeersToDemote
+                 }
+                 st@PeerSelectionState {
+                   localRootPeers,
+                   establishedPeers,
+                   activePeers,
+                   inProgressDemoteHot,
+                   inProgressDemoteToCold
                  }
     -- Are there any groups of local peers that are below target?
   | let groupsAboveTarget =
@@ -637,7 +640,7 @@ aboveTargetLocal actions@PeerSelectionActions {
   = Guarded Nothing $ do
       selectedToDemote <-
         Set.unions <$> sequence
-          [ pickPeers st
+          [ pickPeers memberExtraPeers st
               policyPickHotPeersToDemote
               membersAvailableToDemote
               numMembersToDemote
@@ -664,11 +667,17 @@ aboveTargetLocal actions@PeerSelectionActions {
   = GuardedSkip Nothing
 
 
-aboveTargetOther :: forall extraActions extraState extraFlags extraAPI extraCounters peeraddr peerconn m.
+aboveTargetOther :: forall extraActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
                     (MonadSTM m, Ord peeraddr, HasCallStack)
-                 => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI extraCounters peeraddr peerconn m
-                 -> MkGuardedDecision extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn m
-aboveTargetOther actions
+                 => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
+                 -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
+aboveTargetOther actions@PeerSelectionActions {
+                   extraPeersActions = PublicExtraPeersActions {
+                     memberExtraPeers
+                   , extraPeersToSet
+                   }
+                 , extraStateToExtraCounters
+                 }
                  PeerSelectionPolicy {
                    policyPickHotPeersToDemote
                  }
@@ -691,15 +700,9 @@ aboveTargetOther actions
                          - targetNumberOfActivePeers
                          - numDemoteInProgress
                          - (Set.size inProgressDemoteToCold)
-                 => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
-                 -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
-aboveTargetOther actions@PeerSelectionActions {
-                   extraPeersActions = PublicExtraPeersActions {
-                     memberExtraPeers
-                   , extraPeersToSet
-                   }
-                 , extraStateToExtraCounters
-                 }
+  , numPeersToDemote > 0
+
+    -- Are there any hot peers we actually can pick to demote?
     -- For the moment we say we cannot demote local root peers.
     -- TODO: review this decision. If we want to be able to demote local root
     -- peers, e.g. for churn and improved selection, then we'll need an extra
@@ -711,7 +714,7 @@ aboveTargetOther actions@PeerSelectionActions {
                               Set.\\ inProgressDemoteToCold
   , not (Set.null availableToDemote)
   = Guarded Nothing $ do
-      selectedToDemote <- pickPeers st
+      selectedToDemote <- pickPeers memberExtraPeers st
                             policyPickHotPeersToDemote
                             availableToDemote
                             numPeersToDemote
@@ -741,15 +744,15 @@ aboveTargetOther actions@PeerSelectionActions {
         numberOfActivePeersDemotions = numDemoteInProgress
       }
       =
-      peerSelectionStateToCounters st
+      peerSelectionStateToCounters extraPeersToSet extraStateToExtraCounters st
 
 
 jobDemoteActivePeer :: forall extraActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
                        (Monad m, Ord peeraddr)
-                    => PeerSelectionActions extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
+                    => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
                     -> peeraddr
                     -> peerconn
-                    => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
+                    -> Job () m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
 jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {deactivatePeerConnection}}
                     peeraddr peerconn =
     Job job handler () "demoteActivePeer"
