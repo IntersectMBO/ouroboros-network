@@ -140,11 +140,11 @@ import Cardano.PeerSelection.PeerSelectionActions (requestPublicRootPeers)
 import Data.Bool (bool)
 import Data.Function (on)
 import Data.Typeable (Typeable)
-import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.BlockFetch (FetchMode (..), TraceFetchClientState,
-import Ouroboros.Network.InboundGovernor qualified as IG
            TraceLabelPeer (..))
+import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.Diffusion.Common qualified as Common
+import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint (..),
@@ -159,7 +159,6 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
 import Ouroboros.Network.Protocol.PeerSharing.Codec (byteLimitsPeerSharing,
 import Ouroboros.Network.PeerSelection.Governor.Types
            (BootstrapPeersCriticalTimeoutError)
-import Ouroboros.Network.PeerSelection.RootPeersDNS (PeerActionsDNS (..))
            timeLimitsPeerSharing)
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
            (newLedgerAndPublicRootDNSSemaphore)

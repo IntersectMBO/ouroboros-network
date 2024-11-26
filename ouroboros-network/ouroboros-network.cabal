@@ -79,13 +79,14 @@ library
     Ouroboros.Network.Diffusion
     Ouroboros.Network.Diffusion.Common
     Ouroboros.Network.Diffusion.Configuration
+    Ouroboros.Network.Diffusion.MinimalP2P
     Ouroboros.Network.Diffusion.NonP2P
     Ouroboros.Network.Diffusion.Policies
-    Ouroboros.Network.Diffusion.MinimalP2P
     Ouroboros.Network.ExitPolicy
     Ouroboros.Network.KeepAlive
     Ouroboros.Network.NodeToClient
     Ouroboros.Network.NodeToNode
+    Ouroboros.Network.PeerSelection.Churn
     Ouroboros.Network.PeerSelection.Governor
     Ouroboros.Network.PeerSelection.LedgerPeers
     Ouroboros.Network.PeerSelection.PeerMetric
@@ -109,7 +110,6 @@ library
 
   other-modules:
     Ouroboros.Network.Diffusion.Utils
-    Ouroboros.Network.PeerSelection.Churn
     Ouroboros.Network.PeerSelection.Governor.ActivePeers
     Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers
     Ouroboros.Network.PeerSelection.Governor.EstablishedPeers
