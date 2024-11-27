@@ -38,17 +38,17 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
            LocalRootConfig, WarmValency)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 
-data TraceLocalRootPeers peerAddr exception =
-       TraceLocalRootDomains (LocalRootPeers.Config RelayAccessPoint)
+data TraceLocalRootPeers extraFlags peerAddr exception =
+       TraceLocalRootDomains (LocalRootPeers.Config extraFlags RelayAccessPoint)
        -- ^ 'Int' is the configured valency for the local producer groups
      | TraceLocalRootWaiting DomainAccessPoint DiffTime
      | TraceLocalRootResult  DomainAccessPoint [(IP, DNS.TTL)]
-     | TraceLocalRootGroups  (LocalRootPeers.Config peerAddr)
+     | TraceLocalRootGroups  (LocalRootPeers.Config extraFlags peerAddr)
        -- ^ This traces the results of the local root peer provider
      | TraceLocalRootDNSMap  (Map DomainAccessPoint [peerAddr])
        -- ^ This traces the results of the domain name resolution
-     | TraceLocalRootReconfigured (LocalRootPeers.Config RelayAccessPoint) -- ^ Old value
-                                  (LocalRootPeers.Config RelayAccessPoint) -- ^ New value
+     | TraceLocalRootReconfigured (LocalRootPeers.Config extraFlags RelayAccessPoint) -- ^ Old value
+                                  (LocalRootPeers.Config extraFlags RelayAccessPoint) -- ^ New value
      | TraceLocalRootFailure DomainAccessPoint (DNSorIOError exception)
        --TODO: classify DNS errors, config error vs transitory
      | TraceLocalRootError   DomainAccessPoint SomeException
@@ -60,24 +60,25 @@ data TraceLocalRootPeers peerAddr exception =
 -- the output 'StrictTVar'.
 --
 localRootPeersProvider
-  :: forall m peerAddr resolver exception.
+  :: forall m extraFlags peerAddr resolver exception.
      ( Alternative (STM m)
      , MonadAsync m
      , MonadDelay m
      , MonadThrow m
      , Ord peerAddr
+     , Eq extraFlags
      )
-  => Tracer m (TraceLocalRootPeers peerAddr exception)
+  => Tracer m (TraceLocalRootPeers extraFlags peerAddr exception)
   -> (IP -> Socket.PortNumber -> peerAddr)
   -> DNS.ResolvConf
   -> DNSActions resolver exception m
   -> STM m [( HotValency
             , WarmValency
-            , Map RelayAccessPoint LocalRootConfig)]
+            , Map RelayAccessPoint (LocalRootConfig extraFlags))]
   -- ^ input
   -> StrictTVar m [( HotValency
                    , WarmValency
-                   , Map peerAddr LocalRootConfig)]
+                   , Map peerAddr (LocalRootConfig extraFlags))]
   -- ^ output 'TVar'
   -> m Void
 localRootPeersProvider tracer
@@ -99,7 +100,7 @@ localRootPeersProvider tracer
     -- if either these threads fail or detects the local configuration changed.
     --
     loop :: DNSSemaphore m
-         -> [(HotValency, WarmValency, Map RelayAccessPoint LocalRootConfig)]
+         -> [(HotValency, WarmValency, Map RelayAccessPoint (LocalRootConfig extraFlags))]
          -> m Void
     loop dnsSemaphore domainsGroups = do
       traceWith tracer (TraceLocalRootDomains domainsGroups)
@@ -258,10 +259,10 @@ localRootPeersProvider tracer
     getLocalRootPeersGroups :: Map DomainAccessPoint [peerAddr]
                             -> [( HotValency
                                 , WarmValency
-                                , Map RelayAccessPoint LocalRootConfig)]
+                                , Map RelayAccessPoint (LocalRootConfig extraFlags))]
                             -> [( HotValency
                                 , WarmValency
-                                , Map peerAddr LocalRootConfig)]
+                                , Map peerAddr (LocalRootConfig extraFlags))]
     getLocalRootPeersGroups dnsMap =
       -- The idea is to traverse the static configuration. Enter each local
       -- group and check if any of the RelayAccessPoint has a Domain Name.

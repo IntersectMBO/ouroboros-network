@@ -13,7 +13,7 @@
 {-# OPTIONS_GHC -Wno-x-partial #-}
 #endif
 
-module Test.Ouroboros.Network.Testnet (tests) where
+module Test.Ouroboros.Network.Diffusion.Testnet.Cardano (tests) where
 
 import Control.Exception (AssertionFailed (..), catch, evaluate, fromException)
 import Control.Monad.Class.MonadFork
@@ -52,35 +52,42 @@ import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Types
-import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
+import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.Mock.ConcreteBlock (BlockHeader)
 import Ouroboros.Network.NodeToNode (DiffusionMode (..))
-import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
-           requiresBootstrapPeers)
-import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.LedgerPeers
-import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PeerStateActions
-import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
-import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions hiding
-           (DNSorIOError (IOError))
-import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
-           (TraceLocalRootPeers (..))
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions hiding (IOError)
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
-import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
-           LocalRootConfig (..), WarmValency (..))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSelection.Types
+
+import Simulation.Network.Snocket (BearerInfo (..))
+
+import Test.Ouroboros.Network.Diffusion.Node.Kernel
+import Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Node
+           (config_REPROMOTE_DELAY)
+import Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Simulation
+import Test.QuickCheck
+import Test.QuickCheck.Monoids
+import Test.Tasty
+
+import Cardano.Node.ConsensusMode
+import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable (..))
+import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
+import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
+           (TraceLocalRootPeers (..))
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
+           LocalRootConfig (..), WarmValency (..))
 import Ouroboros.Network.PeerSharing (PeerSharingResult (..))
 import Ouroboros.Network.Server2 qualified as Server
 
-import Simulation.Network.Snocket (BearerInfo (..))
 
 import Test.Ouroboros.Network.ConnectionManager.Timeouts
 import Test.Ouroboros.Network.ConnectionManager.Utils
@@ -90,14 +97,19 @@ import Test.Ouroboros.Network.Data.Signal
 import Test.Ouroboros.Network.Data.Signal qualified as Signal
 import Test.Ouroboros.Network.InboundGovernor.Utils
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..))
-import Test.Ouroboros.Network.Testnet.Internal
-import Test.Ouroboros.Network.Testnet.Node (config_REPROMOTE_DELAY)
-import Test.Ouroboros.Network.Testnet.Node.Kernel
 import Test.Ouroboros.Network.Utils hiding (SmallDelay, debugTracer)
-import Test.QuickCheck
-import Test.QuickCheck.Monoids
-import Test.Tasty
 import Test.Tasty.QuickCheck
+
+import Cardano.Node.ArgumentsExtra (ConsensusModePeerTargets (..))
+import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers (..),
+           requiresBootstrapPeers)
+import Cardano.Node.PeerSelection.Governor.PeerSelectionState
+           (CardanoPeerSelectionState)
+import Cardano.Node.PeerSelection.Governor.PeerSelectionState qualified as CPST
+import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
+import Cardano.Node.PublicRootPeers qualified as CPRP
+import Cardano.Node.Types (LedgerStateJudgement,
+           MinBigLedgerPeersForTrustedState (..))
 
 tests :: TestTree
 tests =
@@ -713,11 +725,15 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
     verify_only_bootstrap_peers_in_fallback_state events =
       let govUseBootstrapPeers :: Signal UseBootstrapPeers
           govUseBootstrapPeers =
-            selectDiffusionPeerSelectionState Governor.bootstrapPeersFlag events
+            selectDiffusionPeerSelectionState
+              (CPST.cpstBootstrapPeersFlag . Governor.extraState)
+              events
 
           govLedgerStateJudgement :: Signal LedgerStateJudgement
           govLedgerStateJudgement =
-            selectDiffusionPeerSelectionState Governor.ledgerStateJudgement events
+            selectDiffusionPeerSelectionState
+              (CPST.cpstLedgerStateJudgement . Governor.extraState)
+              events
 
           trJoinKillSig :: Signal JoinedOrKilled
           trJoinKillSig =
@@ -815,12 +831,13 @@ prop_no_non_trustable_peers_before_caught_up_state ioSimTrace traceNumber =
     verify_no_non_trustable_peers_before_caught_up_state events =
       let govUseBootstrapPeers :: Signal UseBootstrapPeers
           govUseBootstrapPeers =
-            selectDiffusionPeerSelectionState Governor.bootstrapPeersFlag
-                                              events
+            selectDiffusionPeerSelectionState
+              (CPST.cpstBootstrapPeersFlag . Governor.extraState)
+              events
 
           govLedgerStateJudgement :: Signal LedgerStateJudgement
           govLedgerStateJudgement =
-            selectDiffusionPeerSelectionState Governor.ledgerStateJudgement
+            selectDiffusionPeerSelectionState (CPST.cpstLedgerStateJudgement . Governor.extraState)
                                               events
 
           govKnownPeers :: Signal (Set NtNAddr)
@@ -838,7 +855,9 @@ prop_no_non_trustable_peers_before_caught_up_state ioSimTrace traceNumber =
 
           govHasOnlyBootstrapPeers :: Signal Bool
           govHasOnlyBootstrapPeers =
-            selectDiffusionPeerSelectionState Governor.hasOnlyBootstrapPeers events
+            selectDiffusionPeerSelectionState
+              (CPST.cpstHasOnlyBootstrapPeers . Governor.extraState)
+              events
 
           trJoinKillSig :: Signal JoinedOrKilled
           trJoinKillSig =
@@ -1156,7 +1175,7 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
                                 diffScript
                                 iosimTracer
 
-      events :: [TracePeerSelection NtNAddr]
+      events :: [TracePeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers NtNAddr) NtNAddr]
       events = mapMaybe (\case DiffusionPeerSelectionTrace st -> Just st
                                _                              -> Nothing
                         )
@@ -1168,7 +1187,11 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
              . Trace.take 125000
              $ runSimTrace sim
 
-      peerSelectionTraceMap :: TracePeerSelection NtNAddr -> String
+      peerSelectionTraceMap
+        :: ( Show extraDebugState
+           , Show extraFlags
+           , Show extraPeers
+           ) => TracePeerSelection extraDebugState extraFlags extraPeers NtNAddr -> String
       peerSelectionTraceMap TraceLocalRootPeersChanged {}            =
         "TraceLocalRootPeersChanged"
       peerSelectionTraceMap TraceTargetsChanged {}                   =
@@ -1608,7 +1631,7 @@ prop_connect_failure (AbsIOError ioerr) =
          $ evs
     ) noEvents absInfo script
   where
-    -- must be in sync with rethrowPolicy in `Ouroboros.Network.Diffusion.P2P`
+    -- must be in sync with rethrowPolicy in `Ouroboros.Network.Diffusion.MinimalP2P`
     isFatal :: IOErrorType -> Bool
     isFatal ResourceExhausted    = True
     isFatal UnsupportedOperation = True
@@ -1651,10 +1674,10 @@ prop_connect_failure (AbsIOError ioerr) =
             naLedgerPeers = Script (LedgerPools [] :| []),
             naPeerTargets = ConsensusModePeerTargets {
               deadlineTargets = PeerSelectionTargets {
-                targetNumberOfRootPeers = 1,
-                targetNumberOfKnownPeers = 1,
-                targetNumberOfEstablishedPeers = 1,
-                targetNumberOfActivePeers = 1,
+                targetNumberOfRootPeers = 0,
+                targetNumberOfKnownPeers = 0,
+                targetNumberOfEstablishedPeers = 0,
+                targetNumberOfActivePeers = 0,
 
                 targetNumberOfKnownBigLedgerPeers = 0,
                 targetNumberOfEstablishedBigLedgerPeers = 0,
@@ -1683,10 +1706,10 @@ prop_connect_failure (AbsIOError ioerr) =
             naLedgerPeers = Script (LedgerPools [] :| []),
             naPeerTargets = ConsensusModePeerTargets {
               deadlineTargets = PeerSelectionTargets {
-                targetNumberOfRootPeers = 0,
-                targetNumberOfKnownPeers = 0,
-                targetNumberOfEstablishedPeers = 0,
-                targetNumberOfActivePeers = 0,
+                targetNumberOfRootPeers = 1,
+                targetNumberOfKnownPeers = 1,
+                targetNumberOfEstablishedPeers = 1,
+                targetNumberOfActivePeers = 1,
 
                 targetNumberOfKnownBigLedgerPeers = 0,
                 targetNumberOfEstablishedBigLedgerPeers = 0,
@@ -2220,7 +2243,7 @@ prop_diffusion_target_established_local ioSimTrace traceNumber =
     verify_target_established_local :: Events DiffusionTestTrace
                                     -> Property
     verify_target_established_local events  =
-      let govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers NtNAddr)
+      let govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers PeerTrustable NtNAddr)
           govLocalRootPeersSig =
             selectDiffusionPeerSelectionState Governor.localRootPeers events
 
@@ -2386,7 +2409,7 @@ prop_diffusion_target_active_below ioSimTrace traceNumber =
     verify_target_active_below :: Events DiffusionTestTrace
                                -> Property
     verify_target_active_below events =
-      let govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers NtNAddr)
+      let govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers PeerTrustable NtNAddr)
           govLocalRootPeersSig =
             selectDiffusionPeerSelectionState Governor.localRootPeers events
 
@@ -2574,7 +2597,7 @@ prop_diffusion_target_active_local_below ioSimTrace traceNumber =
     verify_target_active_below :: Events DiffusionTestTrace
                                -> Property
     verify_target_active_below events =
-      let govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers NtNAddr)
+      let govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers PeerTrustable NtNAddr)
           govLocalRootPeersSig =
             selectDiffusionPeerSelectionState Governor.localRootPeers events
 
@@ -2995,7 +3018,7 @@ prop_diffusion_target_active_local_above ioSimTrace traceNumber =
     verify_target_active_above :: Events DiffusionTestTrace
                                -> Property
     verify_target_active_above events =
-      let govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers NtNAddr)
+      let govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers PeerTrustable NtNAddr)
           govLocalRootPeersSig =
             selectDiffusionPeerSelectionState Governor.localRootPeers events
 
@@ -3755,7 +3778,7 @@ unit_peer_sharing =
                                   script
                                   iosimTracer
 
-        events :: Map NtNAddr [TracePeerSelection NtNAddr]
+        events :: Map NtNAddr [TracePeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers NtNAddr) NtNAddr]
         events = Map.fromList
                . map (\as -> case as of
                         [] -> -- this should be a test failure!
@@ -3789,7 +3812,7 @@ unit_peer_sharing =
                $ runSimTrace sim
 
         verify :: NtNAddr
-               -> [TracePeerSelection NtNAddr]
+               -> [TracePeerSelection extraDebugState extraFlags extraPeers NtNAddr]
                -> All
         verify addr as | addr == ip_2 =
           let receivedPeers :: Set NtNAddr
@@ -3914,14 +3937,14 @@ prop_churn_notimeouts ioSimTrace traceNumber =
                $ ioSimTrace
     in  conjoin
       $ (\evs ->
-            let evsList :: [TracePeerSelection NtNAddr]
+            let evsList :: [TracePeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers NtNAddr) NtNAddr]
                 evsList = snd <$> eventsToList (selectDiffusionPeerSelectionEvents evs)
             in property $ counterexample (List.intercalate "\n" (show <$> eventsToList evs))
                         $ all noChurnTimeout evsList
         )
      <$> events
   where
-    noChurnTimeout :: TracePeerSelection NtNAddr -> Bool
+    noChurnTimeout :: TracePeerSelection extraDebugState extraFlags extraPeers NtNAddr -> Bool
     noChurnTimeout (TraceChurnTimeout _ DecreasedActivePeers _)               = False
     noChurnTimeout (TraceChurnTimeout _ DecreasedActiveBigLedgerPeers _)      = False
     noChurnTimeout (TraceChurnTimeout _ DecreasedEstablishedPeers _)          = False
@@ -3964,7 +3987,7 @@ prop_churn_steps ioSimTrace traceNumber =
 
     in   conjoin
        $ (\evs ->
-           let evsList :: [(Time, TracePeerSelection NtNAddr)]
+           let evsList :: [(Time, TracePeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers NtNAddr) NtNAddr)]
                evsList = eventsToList (selectDiffusionPeerSelectionEvents evs)
            in  counterexample (List.intercalate "\n" (show <$> evsList))
              . churnTracePredicate
@@ -4372,7 +4395,7 @@ withTimeNameTraceEvents = traceSelectTraceEventsDynamic
                             @(WithTime (WithName name b))
 
 selectDiffusionPeerSelectionEvents :: Events DiffusionTestTrace
-                                   -> Events (TracePeerSelection NtNAddr)
+                                   -> Events (TracePeerSelection CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers NtNAddr) NtNAddr)
 selectDiffusionPeerSelectionEvents = Signal.selectEvents
                     (\case DiffusionPeerSelectionTrace e -> Just e
                            _                             -> Nothing)
@@ -4384,7 +4407,7 @@ selectDiffusionSimulationTrace = Signal.selectEvents
                            _                                   -> Nothing)
 
 selectDiffusionPeerSelectionState :: Eq a
-                                  => (forall peerconn. Governor.PeerSelectionState NtNAddr peerconn -> a)
+                                  => (forall peerconn. Governor.PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers NtNAddr) NtNAddr peerconn -> a)
                                   -> Events DiffusionTestTrace
                                   -> Signal a
 selectDiffusionPeerSelectionState f =
@@ -4400,23 +4423,27 @@ selectDiffusionPeerSelectionState f =
     )
   . Signal.selectEvents
       (\case
-        DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just (Governor.consensusMode st, f st)
-        _                                                            -> Nothing)
+        DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) ->
+          Just (CPST.cpstConsensusMode (Governor.extraState st), f st)
+        _                                                            ->
+          Nothing)
   where
     initialState consensusMode =
       f $ Governor.emptyPeerSelectionState
             (mkStdGen 42)
-            consensusMode
-            (MinBigLedgerPeersForTrustedState 0) -- ^ todo: fix
+            (CPST.empty consensusMode (MinBigLedgerPeersForTrustedState 0)) -- ^ todo: fix
+            CPRP.empty
 
-selectDiffusionPeerSelectionState' :: (forall peerconn. Governor.PeerSelectionState NtNAddr peerconn -> a)
+selectDiffusionPeerSelectionState' :: (forall peerconn. Governor.PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers NtNAddr) NtNAddr peerconn -> a)
                                   -> Events DiffusionTestTrace
                                   -> Signal a
 selectDiffusionPeerSelectionState' f =
   -- TODO: #3182 Rng seed should come from quickcheck.
-    Signal.fromChangeEvents (f $ Governor.emptyPeerSelectionState (mkStdGen 42)
-                                                                  PraosMode
-                                                                  (MinBigLedgerPeersForTrustedState 0))
+    Signal.fromChangeEvents
+      (f $ Governor.emptyPeerSelectionState
+             (mkStdGen 42)
+             (CPST.empty PraosMode (MinBigLedgerPeersForTrustedState 0))
+             CPRP.empty)
   . Signal.selectEvents
       (\case
         DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just (f st)
@@ -4544,8 +4571,8 @@ labelDiffusionScript (DiffusionScript args _ nodes) =
 -- | filter out big ledger peers
 --
 dropBigLedgerPeers
-    :: (Governor.PeerSelectionState NtNAddr peerconn -> Set NtNAddr)
-    ->  Governor.PeerSelectionState NtNAddr peerconn -> Set NtNAddr
+    :: (Governor.PeerSelectionState extraState extraFlags extraPeers NtNAddr peerconn -> Set NtNAddr)
+    ->  Governor.PeerSelectionState extraState extraFlags extraPeers NtNAddr peerconn -> Set NtNAddr
 dropBigLedgerPeers f =
   \st -> f st Set.\\ PublicRootPeers.getBigLedgerPeers (Governor.publicRootPeers st)
 

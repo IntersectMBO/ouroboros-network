@@ -23,11 +23,11 @@ import GHC.Generics (Generic)
 import GHC.Stack (HasCallStack)
 import NoThunks.Class (NoThunks)
 
+import Cardano.Node.ConsensusMode (ConsensusMode (..))
+import Cardano.Node.Types (LedgerStateJudgement (..))
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import Ouroboros.Network.Block
 import Ouroboros.Network.SizeInBytes (SizeInBytes)
-import Cardano.Node.ConsensusMode (ConsensusMode (..))
-import Cardano.Node.Types (LedgerStateJudgement (..))
 
 data PraosFetchMode =
        -- | Use this mode when we are catching up on the chain but are stil

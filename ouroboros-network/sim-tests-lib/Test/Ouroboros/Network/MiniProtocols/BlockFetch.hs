@@ -7,7 +7,7 @@
 
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
-module Test.Ouroboros.Network.BlockFetch
+module Test.Ouroboros.Network.MiniProtocols.BlockFetch
   ( PeerGSVT (..)
   , tests
   ) where
