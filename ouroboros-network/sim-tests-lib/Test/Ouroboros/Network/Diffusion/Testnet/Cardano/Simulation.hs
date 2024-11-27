@@ -74,7 +74,6 @@ import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Types (AbstractTransitionTrace)
-import Ouroboros.Network.Diffusion.P2P qualified as Diff.P2P
 import Ouroboros.Network.Driver.Limits (ProtocolSizeLimits (..),
            ProtocolTimeLimits (..))
 import Ouroboros.Network.InboundGovernor (RemoteTransitionTrace)
@@ -98,7 +97,6 @@ import Ouroboros.Network.Protocol.KeepAlive.Codec (byteLimitsKeepAlive,
            timeLimitsKeepAlive)
 import Ouroboros.Network.Protocol.Limits (shortWait, smallByteLimit)
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
-import Ouroboros.Network.Server2 qualified as Server
 import Ouroboros.Network.Snocket (Snocket, TestAddress (..))
 
 import Ouroboros.Network.Block (BlockNo)
@@ -135,6 +133,7 @@ import Data.Function (on)
 import Data.Typeable (Typeable)
 import Ouroboros.Network.BlockFetch (PraosFetchMode (..), TraceFetchClientState,
            TraceLabelPeer (..))
+import Ouroboros.Network.Diffusion.Common qualified as Common
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint (..),
@@ -148,6 +147,7 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
            LocalRootConfig, WarmValency (..))
 import Ouroboros.Network.Protocol.PeerSharing.Codec (byteLimitsPeerSharing,
            timeLimitsPeerSharing)
+import Ouroboros.Network.Server2 qualified as Server
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..), genLedgerPoolsFrom)
 import Test.Ouroboros.Network.PeerSelection.LocalRootPeers ()
 import Test.QuickCheck
@@ -1223,14 +1223,16 @@ diffusionSimulation
               }
 
       NodeKernel.run blockGeneratorArgs
-                     limitsAndTimeouts
-                     interfaces
-                     arguments
-                     (tracersExtra addr)
-                     ( contramap (DiffusionFetchTrace . (\(TraceLabelPeer _ a) -> a))
-                     . tracerWithName addr
-                     . tracerWithTime
-                     $ nodeTracer)
+               limitsAndTimeouts
+               interfaces
+               arguments
+               (tracersExtra addr)
+               ( contramap (DiffusionFetchTrace . (\(TraceLabelPeer _ a) -> a))
+               . tracerWithName addr
+               . tracerWithTime
+               $ nodeTracer)
+        `catch` \e -> traceWith (diffSimTracer addr) (TrErrored e)
+                   >> throwIO e
 
     domainResolver :: StrictTVar m (Map Domain [(IP, TTL)])
                    -> DNSLookupType
@@ -1257,78 +1259,81 @@ diffusionSimulation
 
     tracersExtra
       :: NtNAddr
-      -> Diff.P2P.TracersExtra NtNAddr NtNVersion NtNVersionData
-                               NtCAddr NtCVersion NtCVersionData
-                               SomeException CardanoPeerSelectionState
-                               CardanoPeerSelectionState PeerTrustable
-                               (CardanoPublicRootPeers NtNAddr) m
+      -> Common.TracersExtra NtNAddr NtNVersion NtNVersionData
+                             NtCAddr NtCVersion NtCVersionData
+                             SomeException CardanoPeerSelectionState
+                             CardanoPeerSelectionState PeerTrustable
+                             (CardanoPublicRootPeers NtNAddr) m
     tracersExtra ntnAddr =
-      Diff.P2P.TracersExtra {
-          Diff.P2P.dtTraceLocalRootPeersTracer         = contramap DiffusionLocalRootPeerTrace
-                                                       . tracerWithName ntnAddr
-                                                       . tracerWithTime
-                                                       $ nodeTracer
-        , Diff.P2P.dtTracePublicRootPeersTracer        = contramap
-                                                          DiffusionPublicRootPeerTrace
-                                                       . tracerWithName ntnAddr
-                                                       . tracerWithTime
-                                                       $ nodeTracer
-        , Diff.P2P.dtTraceLedgerPeersTracer            = contramap
-                                                          DiffusionLedgerPeersTrace
-                                                       . tracerWithName ntnAddr
-                                                       . tracerWithTime
-                                                       $ nodeTracer
-        , Diff.P2P.dtTracePeerSelectionTracer          = contramap
-                                                          DiffusionPeerSelectionTrace
-                                                       . tracerWithName ntnAddr
-                                                       . tracerWithTime
-                                                       $ nodeTracer
-        , Diff.P2P.dtDebugPeerSelectionInitiatorTracer = contramap DiffusionDebugPeerSelectionTrace
-                                                       . tracerWithName ntnAddr
-                                                       . tracerWithTime
-                                                       $ nodeTracer
-        , Diff.P2P.dtDebugPeerSelectionInitiatorResponderTracer
+      Common.TracersExtra {
+          Common.dtTraceLocalRootPeersTracer         = contramap
+                                                        DiffusionLocalRootPeerTrace
+                                                     . tracerWithName ntnAddr
+                                                     . tracerWithTime
+                                                     $ nodeTracer
+        , Common.dtTracePublicRootPeersTracer        = contramap
+                                                        DiffusionPublicRootPeerTrace
+                                                     . tracerWithName ntnAddr
+                                                     . tracerWithTime
+                                                     $ nodeTracer
+        , Common.dtTraceLedgerPeersTracer            = contramap
+                                                        DiffusionLedgerPeersTrace
+                                                     . tracerWithName ntnAddr
+                                                     . tracerWithTime
+                                                     $ nodeTracer
+        , Common.dtTracePeerSelectionTracer          = contramap
+                                                        DiffusionPeerSelectionTrace
+                                                     . tracerWithName ntnAddr
+                                                     . tracerWithTime
+                                                     $ nodeTracer
+        , Common.dtDebugPeerSelectionInitiatorTracer = contramap
+                                                        DiffusionDebugPeerSelectionTrace
+                                                     . tracerWithName ntnAddr
+                                                     . tracerWithTime
+                                                     $ nodeTracer
+        , Common.dtDebugPeerSelectionInitiatorResponderTracer
             = contramap DiffusionDebugPeerSelectionTrace
             . tracerWithName ntnAddr
             . tracerWithTime
             $ nodeTracer
-        , Diff.P2P.dtTracePeerSelectionCounters        = nullTracer
-        , Diff.P2P.dtTraceChurnCounters                = nullTracer
-        , Diff.P2P.dtPeerSelectionActionsTracer        = contramap
-                                                          DiffusionPeerSelectionActionsTrace
-                                                       . tracerWithName ntnAddr
-                                                       . tracerWithTime
-                                                       $ nodeTracer
-        , Diff.P2P.dtConnectionManagerTracer           = contramap
-                                                          DiffusionConnectionManagerTrace
-                                                       . tracerWithName ntnAddr
-                                                       . tracerWithTime
-                                                       $ nodeTracer
-        , Diff.P2P.dtConnectionManagerTransitionTracer = contramap
-                                                           DiffusionConnectionManagerTransitionTrace
-                                                       . tracerWithName ntnAddr
-                                                       . tracerWithTime
+        , Common.dtTracePeerSelectionCounters        = nullTracer
+        , Common.dtTraceChurnCounters                = nullTracer
+        , Common.dtPeerSelectionActionsTracer        = contramap
+                                                        DiffusionPeerSelectionActionsTrace
+                                                     . tracerWithName ntnAddr
+                                                     . tracerWithTime
+                                                     $ nodeTracer
+        , Common.dtConnectionManagerTracer           = contramap
+                                                        DiffusionConnectionManagerTrace
+                                                     . tracerWithName ntnAddr
+                                                     . tracerWithTime
+                                                     $ nodeTracer
+        , Common.dtConnectionManagerTransitionTracer = contramap
+                                                         DiffusionConnectionManagerTransitionTrace
+                                                     . tracerWithName ntnAddr
+                                                     . tracerWithTime
           -- note: we have two ways getting transition trace:
           -- * through `traceTVar` installed in `newMutableConnState`
           -- * the `dtConnectionManagerTransitionTracer`
-                                                       $ nodeTracer
-        , Diff.P2P.dtServerTracer                      = contramap DiffusionServerTrace
-                                                       . tracerWithName ntnAddr
-                                                       . tracerWithTime
-                                                       $ nodeTracer
-        , Diff.P2P.dtInboundGovernorTracer             = contramap
-                                                           DiffusionInboundGovernorTrace
-                                                       . tracerWithName ntnAddr
-                                                       . tracerWithTime
-                                                       $ nodeTracer
-        , Diff.P2P.dtInboundGovernorTransitionTracer   = contramap
-                                                           DiffusionInboundGovernorTransitionTrace
-                                                       . tracerWithName ntnAddr
-                                                       . tracerWithTime
-                                                       $ nodeTracer
-        , Diff.P2P.dtLocalConnectionManagerTracer      = nullTracer
-        , Diff.P2P.dtLocalServerTracer                 = nullTracer
-        , Diff.P2P.dtLocalInboundGovernorTracer        = nullTracer
+                                                     $ nodeTracer
+        , Common.dtServerTracer                      = contramap
+                                                         DiffusionServerTrace
+                                                     . tracerWithName ntnAddr
+                                                     . tracerWithTime
+                                                     $ nodeTracer
+        , Common.dtInboundGovernorTracer             = contramap
+                                                         DiffusionInboundGovernorTrace
+                                                     . tracerWithName ntnAddr
+                                                     . tracerWithTime
+                                                     $ nodeTracer
+        , Common.dtInboundGovernorTransitionTracer   = contramap
+                                                         DiffusionInboundGovernorTransitionTrace
+                                                     . tracerWithName ntnAddr
+                                                     . tracerWithTime
+                                                     $ nodeTracer
+        , Common.dtLocalConnectionManagerTracer      = nullTracer
+        , Common.dtLocalServerTracer                 = nullTracer
+        , Common.dtLocalInboundGovernorTracer        = nullTracer
       }
 
 

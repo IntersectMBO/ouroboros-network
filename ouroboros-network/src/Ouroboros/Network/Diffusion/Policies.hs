@@ -1,4 +1,3 @@
-{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- Constants used in 'Ouroboros.Network.Diffusion'
@@ -16,7 +15,6 @@ import Data.Word (Word32)
 import System.Random
 import System.Random qualified as Rnd
 
-import Cardano.Node.PeerSelection.Types (ChurnMode (..))
 import Ouroboros.Network.ConnectionManager.Types (ConnectionType (..),
            Provenance (..), PrunePolicy)
 import Ouroboros.Network.ExitPolicy as ExitPolicy
@@ -108,12 +106,11 @@ simplePeerSelectionPolicy :: forall m peerAddr.
                              , Ord peerAddr
                              )
                           => StrictTVar m StdGen
-                          -> STM m ChurnMode
                           -> PeerMetrics m peerAddr
                           -> RepromoteDelay
                           -- ^ delay on error
                           -> PeerSelectionPolicy peerAddr m
-simplePeerSelectionPolicy rngVar getChurnMode metrics errorDelay = PeerSelectionPolicy {
+simplePeerSelectionPolicy rngVar metrics errorDelay = PeerSelectionPolicy {
       policyPickKnownPeersForPeerShare = simplePromotionPolicy,
       policyPickColdPeersToPromote     = simplePromotionPolicy,
       policyPickWarmPeersToPromote     = simplePromotionPolicy,
@@ -134,35 +131,15 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics errorDelay = PeerSelection
     }
   where
 
-     -- Add scaled random number in order to prevent ordering based on SockAddr
-    addRand :: Set.Set peerAddr
-            -> (peerAddr -> Word32 -> (peerAddr, Word32))
-            -> STM m (Map.Map peerAddr Word32)
-    addRand available scaleFn = do
-      inRng <- readTVar rngVar
-
-      let (rng, rng') = split inRng
-          rns = take (Set.size available) $ unfoldr (Just . random)  rng :: [Word32]
-          available' = Map.fromList $ zipWith scaleFn (Set.toList available) rns
-      writeTVar rngVar rng'
-      return available'
-
     hotDemotionPolicy :: PickPolicy peerAddr (STM m)
     hotDemotionPolicy _ _ _ available pickNum = do
-        mode <- getChurnMode
-        scores <- case mode of
-                       ChurnModeNormal -> do
-                           jpm <- joinedPeerMetricAt metrics
-                           hup <- upstreamyness metrics
-                           bup <- fetchynessBlocks metrics
-                           return $ Map.unionWith (+) hup bup `optionalMerge` jpm
+        jpm <- joinedPeerMetricAt metrics
+        hup <- upstreamyness metrics
+        bup <- fetchynessBlocks metrics
 
-                       ChurnModeBulkSync -> do
-                           jpm <- joinedPeerMetricAt metrics
-                           bup <- fetchynessBytes metrics
-                           return $ bup `optionalMerge` jpm
+        let scores = Map.unionWith (+) hup bup `optionalMerge` jpm
 
-        available' <- addRand available (,)
+        available' <- addRand rngVar available (,)
         return $ Set.fromList
              . map fst
              . take pickNum
@@ -180,7 +157,7 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics errorDelay = PeerSelection
     -- as likely to be demoted.
     warmDemotionPolicy :: PickPolicy peerAddr (STM m)
     warmDemotionPolicy _ _ isTepid available pickNum = do
-      available' <- addRand available (tepidWeight isTepid)
+      available' <- addRand rngVar available (tepidWeight isTepid)
       return $ Set.fromList
              . map fst
              . take pickNum
@@ -193,7 +170,7 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics errorDelay = PeerSelection
     -- be forgotten.
     coldForgetPolicy :: PickPolicy peerAddr (STM m)
     coldForgetPolicy _ failCnt _ available pickNum = do
-      available' <- addRand available (failWeight failCnt)
+      available' <- addRand rngVar available (failWeight failCnt)
       return $ Set.fromList
              . map fst
              . take pickNum
@@ -203,7 +180,7 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics errorDelay = PeerSelection
 
     simplePromotionPolicy :: PickPolicy peerAddr (STM m)
     simplePromotionPolicy _ _ _ available pickNum = do
-      available' <- addRand available (,)
+      available' <- addRand rngVar available (,)
       return $ Set.fromList
              . map fst
              . take pickNum
@@ -228,6 +205,23 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics errorDelay = PeerSelection
           if isTepid peer then (peer, r `div` 2)
                           else (peer, r)
 
+
+ -- Add scaled random number in order to prevent ordering based on SockAddr
+addRand :: ( MonadSTM m
+           , Ord peerAddr
+           )
+        => StrictTVar m StdGen
+        -> Set.Set peerAddr
+        -> (peerAddr -> Word32 -> (peerAddr, Word32))
+        -> STM m (Map.Map peerAddr Word32)
+addRand rngVar available scaleFn = do
+  inRng <- readTVar rngVar
+
+  let (rng, rng') = split inRng
+      rns = take (Set.size available) $ unfoldr (Just . random)  rng :: [Word32]
+      available' = Map.fromList $ zipWith scaleFn (Set.toList available) rns
+  writeTVar rngVar rng'
+  return available'
 
 --
 -- PrunePolicy
