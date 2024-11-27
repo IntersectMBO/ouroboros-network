@@ -94,7 +94,6 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
 import Ouroboros.Network.PeerSharing (PeerSharingResult (..))
 import Ouroboros.Network.Server2 qualified as Server
 
-import Cardano.Network.ArgumentsExtra (ConsensusModePeerTargets (..))
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState
@@ -104,6 +103,7 @@ import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
 import Cardano.Network.PublicRootPeers qualified as CPRP
 import Cardano.Network.Types (LedgerStateJudgement,
            MinBigLedgerPeersForTrustedState (..))
+import Ouroboros.Network.Block (BlockNo (..))
 import Test.Ouroboros.Network.ConnectionManager.Timeouts
 import Test.Ouroboros.Network.ConnectionManager.Utils
 import Test.Ouroboros.Network.InboundGovernor.Utils
@@ -168,6 +168,9 @@ tests =
                         (testWithIOSimPOR prop_churn_notimeouts 10000)
       , nightlyTest $ testProperty "steps"
                         (testWithIOSimPOR prop_churn_steps 10000)
+      ]
+    , testGroup "unit"
+      [ nightlyTest $ testProperty "unit cm" unit_cm_valid_transitions
       ]
     ]
   , testGroup "IOSim"
@@ -305,6 +308,152 @@ testWithIOSimPOR f traceNumber bi ds =
     $ exploreSimTrace id sim $ \_ ioSimTrace ->
         f ioSimTrace  traceNumber
 
+-- | This test checks a IOSimPOR false positive bug with the connection
+-- manager state transition traces no longer happens.
+--
+unit_cm_valid_transitions :: Property
+unit_cm_valid_transitions =
+  let bi = AbsBearerInfo
+            { abiConnectionDelay         = SmallDelay
+            , abiInboundAttenuation      = NoAttenuation FastSpeed
+            , abiOutboundAttenuation     = NoAttenuation FastSpeed
+            , abiInboundWriteFailure     = Nothing
+            , abiOutboundWriteFailure    = Just 0
+            , abiAcceptFailure           = Nothing
+            , abiSDUSize                 = LargeSDU
+            }
+      ds = DiffusionScript
+            (SimArgs 1 10)
+            (Script ((Map.empty, ShortDelay) :| [(Map.empty, LongDelay)]))
+            [ ( NodeArgs
+                  (-2)
+                  InitiatorAndResponderDiffusionMode
+                  (Just 269)
+                  (Map.fromList [(RelayAccessAddress "0:71:0:1:0:1:0:1" 65534,
+                                  DoAdvertisePeer)])
+                  GenesisMode
+                  (Script (DontUseBootstrapPeers :| []))
+                  (TestAddress (IPAddr (read "0:79::1:0:0") 3))
+                  PeerSharingDisabled
+                  [ (HotValency {getHotValency = 1},
+                     WarmValency {getWarmValency = 1},
+                     Map.fromList [(RelayAccessAddress "0:71:0:1:0:1:0:1" 65534,
+                                    (LocalRootConfig DoAdvertisePeer IsTrustable InitiatorAndResponderDiffusionMode))])
+                   ]
+                  (Script (LedgerPools [] :| []))
+                  (PeerSelectionTargets
+                        { targetNumberOfRootPeers                 = 4
+                        , targetNumberOfKnownPeers                = 4
+                        , targetNumberOfEstablishedPeers          = 3
+                        , targetNumberOfActivePeers               = 2
+                        , targetNumberOfKnownBigLedgerPeers       = 4
+                        , targetNumberOfEstablishedBigLedgerPeers = 1
+                        , targetNumberOfActiveBigLedgerPeers      = 1
+                        }
+                  , PeerSelectionTargets
+                        { targetNumberOfRootPeers                 = 0
+                        , targetNumberOfKnownPeers                = 4
+                        , targetNumberOfEstablishedPeers          = 0
+                        , targetNumberOfActivePeers               = 0
+                        , targetNumberOfKnownBigLedgerPeers       = 4
+                        , targetNumberOfEstablishedBigLedgerPeers = 4
+                        , targetNumberOfActiveBigLedgerPeers      = 3
+                        }
+                  )
+                  (Script (DNSTimeout {getDNSTimeout = 0.325} :| []))
+                  (Script (DNSLookupDelay {getDNSLookupDelay = 0.1} :|
+                    [DNSLookupDelay {getDNSLookupDelay = 0.072}]))
+                  Nothing
+                  False
+                  (Script (FetchModeBulkSync :| [FetchModeBulkSync]))
+                  , [JoinNetwork 0.5]
+                )
+              , ( NodeArgs
+                  0
+                  InitiatorAndResponderDiffusionMode
+                  (Just 90)
+                  Map.empty
+                  GenesisMode
+                  (Script (DontUseBootstrapPeers :| []))
+                  (TestAddress (IPAddr (read "0:71:0:1:0:1:0:1") 65534))
+                  PeerSharingEnabled
+                  [ (HotValency {getHotValency = 1},
+                     WarmValency {getWarmValency = 1},
+                     Map.fromList [(RelayAccessAddress "0:79::1:0:0" 3,
+                                    (LocalRootConfig DoNotAdvertisePeer IsTrustable InitiatorAndResponderDiffusionMode))])
+                   ]
+                  (Script (LedgerPools [] :| []))
+                  ( PeerSelectionTargets
+                        { targetNumberOfRootPeers                 = 1
+                        , targetNumberOfKnownPeers                = 1
+                        , targetNumberOfEstablishedPeers          = 1
+                        , targetNumberOfActivePeers               = 1
+                        , targetNumberOfKnownBigLedgerPeers       = 4
+                        , targetNumberOfEstablishedBigLedgerPeers = 3
+                        , targetNumberOfActiveBigLedgerPeers      = 3
+                        }
+                  , PeerSelectionTargets
+                        { targetNumberOfRootPeers                 = 0
+                        , targetNumberOfKnownPeers                = 1
+                        , targetNumberOfEstablishedPeers          = 1
+                        , targetNumberOfActivePeers               = 1
+                        , targetNumberOfKnownBigLedgerPeers       = 4
+                        , targetNumberOfEstablishedBigLedgerPeers = 2
+                        , targetNumberOfActiveBigLedgerPeers      = 2
+                        }
+                  )
+                  (Script (DNSTimeout {getDNSTimeout = 0.18} :| []))
+                  (Script (DNSLookupDelay {getDNSLookupDelay = 0.125} :| []))
+                  (Just (BlockNo 2))
+                  False
+                  (Script (FetchModeDeadline :| []))
+                  , [JoinNetwork 1.484848484848]
+                )
+            ]
+      s = ControlAwait
+            [ ScheduleMod
+                (RacyThreadId [3,1,3,1,2,3,2,1], 7)
+                ControlDefault
+                [ (RacyThreadId [3,1,3,1,2,3,2], 32)
+                , (RacyThreadId [3,1,3,1,2,3,2], 33)
+                , (RacyThreadId [2,1,3,1,4], 8)
+                , (RacyThreadId [2,1,3,1,4], 9)
+                , (RacyThreadId [2,1,3,1,4], 10)
+                , (RacyThreadId [2,1,3,1,4], 11)
+                , (RacyThreadId [2,1,3,1,4], 12)
+                , (RacyThreadId [2,1,3,1,4,1], 0)
+                , (RacyThreadId [2,1,3,1,4,1], 1)
+                , (RacyThreadId [2,1,3,1,4,1], 2)
+                , (RacyThreadId [2,1,3,1,4,1], 3)
+                , (RacyThreadId [2,1,3,1,4,1], 4)
+                , (RacyThreadId [2,1,3,1,4,1], 5)
+                , (RacyThreadId [2,1,3,1,4,1], 6)
+                , (RacyThreadId [2,1,3,1,4,1], 7)
+                , (RacyThreadId [2,1,3,1,4,1], 8)
+                , (RacyThreadId [2,1,3,1,4,1,1], 0)
+                , (RacyThreadId [2,1,3,1,4,1,1], 1)
+                , (RacyThreadId [2,1,3,1,4,1,1], 2)
+                , (RacyThreadId [2,1,3,1,4,1,1], 3)
+                , (RacyThreadId [2,1,3,1,4,1], 9)
+                , (RacyThreadId [2,1,3,1,4,1], 10)
+                , (RacyThreadId [2,1,3,1,4,1], 11)
+                , (RacyThreadId [2,1,3,1,4,1], 12)
+                , (RacyThreadId [2,1,3,1,4,1], 13)
+                , (RacyThreadId [2,1,3,1,4,1], 14)
+                , (RacyThreadId [2,1,3,1,4,1], 15)
+                , (RacyThreadId [2,1,3,1,4], 13)
+                , (RacyThreadId [2,1,3,1,4], 14)
+                , (RacyThreadId [2,1,3,1,4], 15)
+                , (RacyThreadId [2,1,3,1,4], 16)
+                , (RacyThreadId [3,1,3,1,2,3,2], 34)
+                ]
+            ]
+      sim :: forall s. IOSim s Void
+      sim = do
+        exploreRaces
+        diffusionSimulation (toBearerInfo bi) ds iosimTracer
+  in exploreSimTrace (\a -> a { explorationReplay = Just s }) sim $ \_ ioSimTrace ->
+       prop_diffusion_cm_valid_transition_order_iosim_por ioSimTrace 10000
 
 -- | As a basic property we run the governor to explore its state space a bit
 -- and check it does not throw any exceptions (assertions such as invariant
@@ -396,18 +545,16 @@ unit_connection_manager_trace_coverage =
              naPeerSharing = PeerSharingDisabled,
              naLocalRootPeers = [],
              naLedgerPeers = Script (LedgerPools [] :| []),
-             naPeerTargets = ConsensusModePeerTargets {
-                deadlineTargets = PeerSelectionTargets
-                  { targetNumberOfRootPeers = 1,
-                    targetNumberOfKnownPeers = 1,
-                    targetNumberOfEstablishedPeers = 0,
-                    targetNumberOfActivePeers = 0,
+             naPeerTargets = (PeerSelectionTargets
+               { targetNumberOfRootPeers = 1,
+                 targetNumberOfKnownPeers = 1,
+                 targetNumberOfEstablishedPeers = 0,
+                 targetNumberOfActivePeers = 0,
 
-                    targetNumberOfKnownBigLedgerPeers = 0,
-                    targetNumberOfEstablishedBigLedgerPeers = 0,
-                    targetNumberOfActiveBigLedgerPeers = 0
-                  },
-                syncTargets = nullPeerSelectionTargets },
+                 targetNumberOfKnownBigLedgerPeers = 0,
+                 targetNumberOfEstablishedBigLedgerPeers = 0,
+                 targetNumberOfActiveBigLedgerPeers = 0
+               }, nullPeerSelectionTargets),
              naDNSTimeoutScript = Script (DNSTimeout {getDNSTimeout = 1} :| []),
              naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0.1} :| []),
              naChainSyncExitOnBlockNo = Nothing,
@@ -432,18 +579,16 @@ unit_connection_manager_trace_coverage =
                                    ])
                ],
              naLedgerPeers = Script (LedgerPools [] :| []),
-             naPeerTargets = ConsensusModePeerTargets {
-                deadlineTargets = PeerSelectionTargets
-                  { targetNumberOfRootPeers = 6,
-                    targetNumberOfKnownPeers = 7,
-                    targetNumberOfEstablishedPeers = 7,
-                    targetNumberOfActivePeers = 6,
+             naPeerTargets = (PeerSelectionTargets
+               { targetNumberOfRootPeers = 6,
+                 targetNumberOfKnownPeers = 7,
+                 targetNumberOfEstablishedPeers = 7,
+                 targetNumberOfActivePeers = 6,
 
-                    targetNumberOfKnownBigLedgerPeers = 0,
-                    targetNumberOfEstablishedBigLedgerPeers = 0,
-                    targetNumberOfActiveBigLedgerPeers = 0
-                  },
-                syncTargets = nullPeerSelectionTargets },
+                 targetNumberOfKnownBigLedgerPeers = 0,
+                 targetNumberOfEstablishedBigLedgerPeers = 0,
+                 targetNumberOfActiveBigLedgerPeers = 0
+               }, nullPeerSelectionTargets),
              naDNSTimeoutScript = Script (DNSTimeout {getDNSTimeout = 1} :| []),
              naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0.1} :| []),
              naChainSyncExitOnBlockNo = Nothing,
@@ -524,18 +669,16 @@ unit_connection_manager_transitions_coverage =
              naPeerSharing = PeerSharingDisabled,
              naLocalRootPeers = [],
              naLedgerPeers = Script (LedgerPools [] :| []),
-             naPeerTargets = ConsensusModePeerTargets {
-                deadlineTargets = PeerSelectionTargets
-                  { targetNumberOfRootPeers = 1,
-                    targetNumberOfKnownPeers = 1,
-                    targetNumberOfEstablishedPeers = 0,
-                    targetNumberOfActivePeers = 0,
+             naPeerTargets = (PeerSelectionTargets
+               { targetNumberOfRootPeers = 1,
+                 targetNumberOfKnownPeers = 1,
+                 targetNumberOfEstablishedPeers = 0,
+                 targetNumberOfActivePeers = 0,
 
-                    targetNumberOfKnownBigLedgerPeers = 0,
-                    targetNumberOfEstablishedBigLedgerPeers = 0,
-                    targetNumberOfActiveBigLedgerPeers = 0
-                  },
-                syncTargets = nullPeerSelectionTargets },
+                 targetNumberOfKnownBigLedgerPeers = 0,
+                 targetNumberOfEstablishedBigLedgerPeers = 0,
+                 targetNumberOfActiveBigLedgerPeers = 0
+               }, nullPeerSelectionTargets),
              naDNSTimeoutScript = Script (DNSTimeout {getDNSTimeout = 1} :| []),
              naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0.1} :| []),
              naChainSyncExitOnBlockNo = Nothing,
@@ -560,18 +703,16 @@ unit_connection_manager_transitions_coverage =
                                    ])
                ],
              naLedgerPeers = Script (LedgerPools [] :| []),
-             naPeerTargets = ConsensusModePeerTargets {
-                deadlineTargets = PeerSelectionTargets
-                  { targetNumberOfRootPeers = 6,
-                    targetNumberOfKnownPeers = 7,
-                    targetNumberOfEstablishedPeers = 7,
-                    targetNumberOfActivePeers = 6,
+             naPeerTargets = (PeerSelectionTargets
+               { targetNumberOfRootPeers = 6,
+                 targetNumberOfKnownPeers = 7,
+                 targetNumberOfEstablishedPeers = 7,
+                 targetNumberOfActivePeers = 6,
 
-                    targetNumberOfKnownBigLedgerPeers = 0,
-                    targetNumberOfEstablishedBigLedgerPeers = 0,
-                    targetNumberOfActiveBigLedgerPeers = 0
-                  },
-                syncTargets = nullPeerSelectionTargets },
+                 targetNumberOfKnownBigLedgerPeers = 0,
+                 targetNumberOfEstablishedBigLedgerPeers = 0,
+                 targetNumberOfActiveBigLedgerPeers = 0
+               }, nullPeerSelectionTargets),
              naDNSTimeoutScript = Script (DNSTimeout {getDNSTimeout = 1} :| []),
              naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0.1} :| []),
              naChainSyncExitOnBlockNo = Nothing,
@@ -928,16 +1069,14 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
               , (RelayAccessAddress "0:6:0:3:0:6:0:5" 65530,LocalRootConfig DoNotAdvertisePeer IsNotTrustable InitiatorAndResponderDiffusionMode)])
               ]
               (Script (LedgerPools [] :| []))
-              ConsensusModePeerTargets {
-                deadlineTargets = nullPeerSelectionTargets {
+              (nullPeerSelectionTargets {
                     targetNumberOfKnownPeers = 2,
                     targetNumberOfEstablishedPeers = 2,
                     targetNumberOfActivePeers = 1,
-
                     targetNumberOfKnownBigLedgerPeers = 0,
                     targetNumberOfEstablishedBigLedgerPeers = 0,
-                    targetNumberOfActiveBigLedgerPeers = 0 },
-                syncTargets = nullPeerSelectionTargets }
+                    targetNumberOfActiveBigLedgerPeers = 0 }
+              , nullPeerSelectionTargets)
               (Script (DNSTimeout {getDNSTimeout = 0.239} :| [DNSTimeout {getDNSTimeout = 0.181},DNSTimeout {getDNSTimeout = 0.185},DNSTimeout {getDNSTimeout = 0.14},DNSTimeout {getDNSTimeout = 0.221}]))
               (Script (DNSLookupDelay {getDNSLookupDelay = 0.067} :| [DNSLookupDelay {getDNSLookupDelay = 0.097},DNSLookupDelay {getDNSLookupDelay = 0.101},DNSLookupDelay {getDNSLookupDelay = 0.096},DNSLookupDelay {getDNSLookupDelay = 0.051}]))
               Nothing
@@ -959,13 +1098,12 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
              PeerSharingDisabled
              []
              (Script (LedgerPools [] :| []))
-             ConsensusModePeerTargets {
-               deadlineTargets = nullPeerSelectionTargets {
+             (nullPeerSelectionTargets {
                    targetNumberOfRootPeers = 2,
                    targetNumberOfKnownPeers = 5,
                    targetNumberOfEstablishedPeers = 1,
-                   targetNumberOfActivePeers = 1 },
-               syncTargets = nullPeerSelectionTargets }
+                   targetNumberOfActivePeers = 1 }
+             , nullPeerSelectionTargets)
              (Script (DNSTimeout {getDNSTimeout = 0.28}
                   :| [DNSTimeout {getDNSTimeout = 0.204},
                       DNSTimeout {getDNSTimeout = 0.213}
@@ -1537,8 +1675,7 @@ unit_4191 = testWithIOSim prop_diffusion_dns_can_recover 125000 absInfo script
                                 , (RelayAccessDomain "test3" 4,LocalRootConfig DoAdvertisePeer IsNotTrustable InitiatorAndResponderDiffusionMode)])
             ]
             (Script (LedgerPools [] :| []))
-            ConsensusModePeerTargets {
-              deadlineTargets = PeerSelectionTargets
+            (PeerSelectionTargets
                 { targetNumberOfRootPeers = 6,
                   targetNumberOfKnownPeers = 7,
                   targetNumberOfEstablishedPeers = 7,
@@ -1547,8 +1684,8 @@ unit_4191 = testWithIOSim prop_diffusion_dns_can_recover 125000 absInfo script
                   targetNumberOfKnownBigLedgerPeers = 0,
                   targetNumberOfEstablishedBigLedgerPeers = 0,
                   targetNumberOfActiveBigLedgerPeers = 0
-                },
-              syncTargets = nullPeerSelectionTargets }
+                }
+            , nullPeerSelectionTargets)
             (Script (DNSTimeout {getDNSTimeout = 0.406} :| [ DNSTimeout {getDNSTimeout = 0.11}
                                                            , DNSTimeout {getDNSTimeout = 0.333}
                                                            , DNSTimeout {getDNSTimeout = 0.352}
@@ -1670,19 +1807,16 @@ prop_connect_failure (AbsIOError ioerr) =
             naPeerSharing = PeerSharingDisabled,
             naLocalRootPeers = [(1,1,Map.fromList [(RelayAccessAddress relayIP relayPort,LocalRootConfig DoNotAdvertisePeer IsNotTrustable InitiatorAndResponderDiffusionMode)])],
             naLedgerPeers = Script (LedgerPools [] :| []),
-            naPeerTargets = ConsensusModePeerTargets {
-              deadlineTargets = PeerSelectionTargets {
-                targetNumberOfRootPeers = 0,
-                targetNumberOfKnownPeers = 0,
-                targetNumberOfEstablishedPeers = 0,
-                targetNumberOfActivePeers = 0,
+            naPeerTargets = (PeerSelectionTargets
+              { targetNumberOfRootPeers = 1,
+                targetNumberOfKnownPeers = 1,
+                targetNumberOfEstablishedPeers = 1,
+                targetNumberOfActivePeers = 1,
 
                 targetNumberOfKnownBigLedgerPeers = 0,
                 targetNumberOfEstablishedBigLedgerPeers = 0,
                 targetNumberOfActiveBigLedgerPeers = 0
-              },
-              syncTargets = nullPeerSelectionTargets
-            },
+              }, nullPeerSelectionTargets),
             naDNSTimeoutScript = Script (DNSTimeout {getDNSTimeout = 0} :| []),
             naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []),
             naChainSyncExitOnBlockNo = Nothing,
@@ -1702,19 +1836,16 @@ prop_connect_failure (AbsIOError ioerr) =
             naPeerSharing = PeerSharingDisabled,
             naLocalRootPeers = [],
             naLedgerPeers = Script (LedgerPools [] :| []),
-            naPeerTargets = ConsensusModePeerTargets {
-              deadlineTargets = PeerSelectionTargets {
-                targetNumberOfRootPeers = 1,
-                targetNumberOfKnownPeers = 1,
-                targetNumberOfEstablishedPeers = 1,
-                targetNumberOfActivePeers = 1,
+            naPeerTargets = (PeerSelectionTargets
+              { targetNumberOfRootPeers = 0,
+                targetNumberOfKnownPeers = 0,
+                targetNumberOfEstablishedPeers = 0,
+                targetNumberOfActivePeers = 0,
 
                 targetNumberOfKnownBigLedgerPeers = 0,
                 targetNumberOfEstablishedBigLedgerPeers = 0,
                 targetNumberOfActiveBigLedgerPeers = 0
-              },
-              syncTargets = nullPeerSelectionTargets
-            },
+              }, nullPeerSelectionTargets),
             naDNSTimeoutScript = Script (DNSTimeout {getDNSTimeout = 0} :| []),
             naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []),
             naChainSyncExitOnBlockNo = Nothing,
@@ -1802,9 +1933,8 @@ prop_accept_failure (AbsIOError ioerr) =
             naPeerSharing = PeerSharingDisabled,
             naLocalRootPeers = [(1,1,Map.fromList [(RelayAccessAddress relayIP relayPort,LocalRootConfig DoNotAdvertisePeer IsNotTrustable InitiatorAndResponderDiffusionMode)])],
             naLedgerPeers = Script (LedgerPools [] :| []),
-            naPeerTargets = ConsensusModePeerTargets {
-              deadlineTargets = PeerSelectionTargets {
-                targetNumberOfRootPeers = 1,
+            naPeerTargets = (PeerSelectionTargets
+              { targetNumberOfRootPeers = 1,
                 targetNumberOfKnownPeers = 1,
                 targetNumberOfEstablishedPeers = 1,
                 targetNumberOfActivePeers = 1,
@@ -1812,9 +1942,7 @@ prop_accept_failure (AbsIOError ioerr) =
                 targetNumberOfKnownBigLedgerPeers = 0,
                 targetNumberOfEstablishedBigLedgerPeers = 0,
                 targetNumberOfActiveBigLedgerPeers = 0
-              },
-              syncTargets = nullPeerSelectionTargets
-            },
+            }, nullPeerSelectionTargets),
             naDNSTimeoutScript = Script (DNSTimeout {getDNSTimeout = 0} :| []),
             naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []),
             naChainSyncExitOnBlockNo = Nothing,
@@ -1834,9 +1962,8 @@ prop_accept_failure (AbsIOError ioerr) =
             naPeerSharing = PeerSharingDisabled,
             naLocalRootPeers = [],
             naLedgerPeers = Script (LedgerPools [] :| []),
-            naPeerTargets = ConsensusModePeerTargets {
-              deadlineTargets = PeerSelectionTargets {
-                targetNumberOfRootPeers = 0,
+            naPeerTargets = (PeerSelectionTargets
+              { targetNumberOfRootPeers = 0,
                 targetNumberOfKnownPeers = 0,
                 targetNumberOfEstablishedPeers = 0,
                 targetNumberOfActivePeers = 0,
@@ -1844,9 +1971,7 @@ prop_accept_failure (AbsIOError ioerr) =
                 targetNumberOfKnownBigLedgerPeers = 0,
                 targetNumberOfEstablishedBigLedgerPeers = 0,
                 targetNumberOfActiveBigLedgerPeers = 0
-              },
-              syncTargets = nullPeerSelectionTargets
-            },
+              }, nullPeerSelectionTargets),
             naDNSTimeoutScript = Script (DNSTimeout {getDNSTimeout = 0} :| []),
             naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []),
             naChainSyncExitOnBlockNo = Nothing,
@@ -2733,13 +2858,13 @@ async_demotion_network_script =
       (singletonTimedScript Map.empty)
       [ ( common { naAddr                  = addr1,
                    naLocalRootPeers        = localRoots1,
-                   naPeerTargets = ConsensusModePeerTargets {
-                     deadlineTargets = Governor.nullPeerSelectionTargets {
+                   naPeerTargets =
+                     (Governor.nullPeerSelectionTargets {
                          targetNumberOfKnownPeers = 2,
                            targetNumberOfEstablishedPeers = 2,
                            targetNumberOfActivePeers = 2
-                         },
-                     syncTargets = peerTargets }
+                         }
+                     , peerTargets)
                  }
         , [ JoinNetwork 0
             -- reconfigure the peer to trigger the outbound governor log
@@ -2788,9 +2913,7 @@ async_demotion_network_script =
         naAddr             = undefined,
         naLocalRootPeers   = undefined,
         naLedgerPeers      = Script (LedgerPools [] :| []),
-        naPeerTargets      = ConsensusModePeerTargets {
-            deadlineTargets = peerTargets,
-            syncTargets     = peerTargets },
+        naPeerTargets      = (peerTargets, peerTargets),
         naDNSTimeoutScript = singletonScript (DNSTimeout 3),
         naDNSLookupDelayScript
                            = singletonScript (DNSLookupDelay 0.2),
@@ -3329,13 +3452,12 @@ prop_unit_4258 =
              PeerSharingDisabled
              [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.8" 65531,LocalRootConfig DoNotAdvertisePeer IsNotTrustable InitiatorAndResponderDiffusionMode)])]
              (Script (LedgerPools [] :| []))
-             ConsensusModePeerTargets {
-               deadlineTargets = nullPeerSelectionTargets {
+             (nullPeerSelectionTargets {
                  targetNumberOfRootPeers = 2,
                  targetNumberOfKnownPeers = 5,
                  targetNumberOfEstablishedPeers = 4,
-                 targetNumberOfActivePeers = 1 },
-               syncTargets = nullPeerSelectionTargets }
+                 targetNumberOfActivePeers = 1 }
+             , nullPeerSelectionTargets)
              (Script (DNSTimeout {getDNSTimeout = 0.397}
                  :| [ DNSTimeout {getDNSTimeout = 0.382},
                       DNSTimeout {getDNSTimeout = 0.321},
@@ -3364,8 +3486,7 @@ prop_unit_4258 =
              PeerSharingDisabled
              [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,LocalRootConfig DoNotAdvertisePeer IsNotTrustable InitiatorAndResponderDiffusionMode)])]
              (Script (LedgerPools [] :| []))
-             ConsensusModePeerTargets {
-               deadlineTargets = nullPeerSelectionTargets {
+             (nullPeerSelectionTargets {
                  targetNumberOfRootPeers = 4,
                  targetNumberOfKnownPeers = 5,
                  targetNumberOfEstablishedPeers = 3,
@@ -3374,8 +3495,8 @@ prop_unit_4258 =
                  targetNumberOfKnownBigLedgerPeers = 0,
                  targetNumberOfEstablishedBigLedgerPeers = 0,
                  targetNumberOfActiveBigLedgerPeers = 0
-               },
-               syncTargets = nullPeerSelectionTargets }
+               }
+             , nullPeerSelectionTargets)
              (Script (DNSTimeout {getDNSTimeout = 0.281}
                  :| [ DNSTimeout {getDNSTimeout = 0.177},
                       DNSTimeout {getDNSTimeout = 0.164},
@@ -3440,8 +3561,7 @@ prop_unit_reconnect =
                                   ])
               ]
               (Script (LedgerPools [] :| []))
-              ConsensusModePeerTargets {
-                deadlineTargets = PeerSelectionTargets {
+              (PeerSelectionTargets {
                     targetNumberOfRootPeers = 1,
                     targetNumberOfKnownPeers = 1,
                     targetNumberOfEstablishedPeers = 1,
@@ -3449,8 +3569,8 @@ prop_unit_reconnect =
 
                     targetNumberOfKnownBigLedgerPeers = 0,
                     targetNumberOfEstablishedBigLedgerPeers = 0,
-                    targetNumberOfActiveBigLedgerPeers = 0 },
-                syncTargets = nullPeerSelectionTargets }
+                    targetNumberOfActiveBigLedgerPeers = 0 }
+              , nullPeerSelectionTargets)
               (Script (DNSTimeout {getDNSTimeout = 10} :| []))
               (Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []))
               Nothing
@@ -3469,8 +3589,7 @@ prop_unit_reconnect =
                PeerSharingDisabled
                [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.0" 0,LocalRootConfig DoNotAdvertisePeer IsNotTrustable InitiatorAndResponderDiffusionMode)])]
                (Script (LedgerPools [] :| []))
-               ConsensusModePeerTargets {
-                 deadlineTargets = PeerSelectionTargets {
+               (PeerSelectionTargets {
                      targetNumberOfRootPeers = 1,
                      targetNumberOfKnownPeers = 1,
                      targetNumberOfEstablishedPeers = 1,
@@ -3478,8 +3597,8 @@ prop_unit_reconnect =
 
                      targetNumberOfKnownBigLedgerPeers = 0,
                      targetNumberOfEstablishedBigLedgerPeers = 0,
-                     targetNumberOfActiveBigLedgerPeers = 0 },
-                 syncTargets = nullPeerSelectionTargets }
+                     targetNumberOfActiveBigLedgerPeers = 0 }
+               , nullPeerSelectionTargets)
              (Script (DNSTimeout {getDNSTimeout = 10} :| [ ]))
              (Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []))
              Nothing
@@ -3866,7 +3985,7 @@ unit_peer_sharing =
                           targetNumberOfKnownBigLedgerPeers = 0,
                           targetNumberOfEstablishedBigLedgerPeers = 0,
                           targetNumberOfActiveBigLedgerPeers = 0 }
-                in ConsensusModePeerTargets { deadlineTargets = t, syncTargets = t }
+                in (t, t)
 
 
     defaultNodeArgs naConsensusMode = NodeArgs {
@@ -3879,9 +3998,7 @@ unit_peer_sharing =
         naPeerSharing = PeerSharingEnabled,
         naLocalRootPeers = undefined,
         naLedgerPeers = singletonScript (LedgerPools []),
-        naPeerTargets = ConsensusModePeerTargets {
-            deadlineTargets = nullPeerSelectionTargets,
-            syncTargets = nullPeerSelectionTargets },
+        naPeerTargets = (nullPeerSelectionTargets, nullPeerSelectionTargets),
         naDNSTimeoutScript = singletonScript (DNSTimeout 300),
         naDNSLookupDelayScript = singletonScript (DNSLookupDelay 0.01),
         naChainSyncEarlyExit = False,
@@ -4295,18 +4412,16 @@ unit_local_root_diffusion_mode diffusionMode =
              naPeerSharing = PeerSharingDisabled,
              naLocalRootPeers = [],
              naLedgerPeers = Script (LedgerPools [] :| []),
-             naPeerTargets = ConsensusModePeerTargets {
-                deadlineTargets = PeerSelectionTargets
-                  { targetNumberOfRootPeers = 1,
-                    targetNumberOfKnownPeers = 1,
-                    targetNumberOfEstablishedPeers = 0,
-                    targetNumberOfActivePeers = 0,
+             naPeerTargets = (PeerSelectionTargets
+               { targetNumberOfRootPeers = 1,
+                 targetNumberOfKnownPeers = 1,
+                 targetNumberOfEstablishedPeers = 0,
+                 targetNumberOfActivePeers = 0,
 
-                    targetNumberOfKnownBigLedgerPeers = 0,
-                    targetNumberOfEstablishedBigLedgerPeers = 0,
-                    targetNumberOfActiveBigLedgerPeers = 0
-                  },
-                syncTargets = nullPeerSelectionTargets },
+                 targetNumberOfKnownBigLedgerPeers = 0,
+                 targetNumberOfEstablishedBigLedgerPeers = 0,
+                 targetNumberOfActiveBigLedgerPeers = 0
+               }, nullPeerSelectionTargets),
              naDNSTimeoutScript = Script (DNSTimeout {getDNSTimeout = 1} :| []),
              naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0.1} :| []),
              naChainSyncExitOnBlockNo = Nothing,
@@ -4331,18 +4446,16 @@ unit_local_root_diffusion_mode diffusionMode =
                                    ])
                ],
              naLedgerPeers = Script (LedgerPools [] :| []),
-             naPeerTargets = ConsensusModePeerTargets {
-                deadlineTargets = PeerSelectionTargets
-                  { targetNumberOfRootPeers = 6,
-                    targetNumberOfKnownPeers = 7,
-                    targetNumberOfEstablishedPeers = 7,
-                    targetNumberOfActivePeers = 6,
+             naPeerTargets = (PeerSelectionTargets
+               { targetNumberOfRootPeers = 6,
+                 targetNumberOfKnownPeers = 7,
+                 targetNumberOfEstablishedPeers = 7,
+                 targetNumberOfActivePeers = 6,
 
-                    targetNumberOfKnownBigLedgerPeers = 0,
-                    targetNumberOfEstablishedBigLedgerPeers = 0,
-                    targetNumberOfActiveBigLedgerPeers = 0
-                  },
-                syncTargets = nullPeerSelectionTargets },
+                 targetNumberOfKnownBigLedgerPeers = 0,
+                 targetNumberOfEstablishedBigLedgerPeers = 0,
+                 targetNumberOfActiveBigLedgerPeers = 0
+               }, nullPeerSelectionTargets),
              naDNSTimeoutScript = Script (DNSTimeout {getDNSTimeout = 1} :| []),
              naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0.1} :| []),
              naChainSyncExitOnBlockNo = Nothing,
@@ -4553,9 +4666,9 @@ labelDiffusionScript (DiffusionScript args _ nodes) =
               ++ show (length $ filter ((== InitiatorOnlyDiffusionMode) . naDiffusionMode . fst) nodes))
     -- todo: add label for GenesisMode syncTargets
     . label ("Nº active peers: "
-              ++ show (sum . map (targetNumberOfActivePeers . deadlineTargets . naPeerTargets . fst) $ nodes))
+              ++ show (sum . map (targetNumberOfActivePeers . fst . naPeerTargets . fst) $ nodes))
     . label ("Nº active big ledger peers: "
-              ++ show (sum . map (targetNumberOfActiveBigLedgerPeers . deadlineTargets . naPeerTargets . fst) $ nodes))
+              ++ show (sum . map (targetNumberOfActiveBigLedgerPeers . fst . naPeerTargets . fst) $ nodes))
     . label ("average number of active local roots: "
               ++ show (average . map (sum . map (\(HotValency v,_,_) -> v) . naLocalRootPeers . fst) $ nodes))
   where

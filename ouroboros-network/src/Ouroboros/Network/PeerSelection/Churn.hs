@@ -59,6 +59,7 @@ data PeerChurnArgs m extraArgs extraDebugState extraFlags extraPeers extraAPI pe
   pcaReadCounters        :: STM m PeerSelectionCounters,
   getLedgerStateCtx      :: LedgerPeersConsensusInterface extraAPI m,
   getLocalRootHotTarget  :: STM m HotValency,
+  getOriginalPeerTargets :: PeerSelectionTargets,
   getExtraArgs           :: extraArgs }
 
 -- | Churn governor.

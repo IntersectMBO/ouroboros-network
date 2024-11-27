@@ -1,8 +1,8 @@
 module Cardano.Network.PeerSelection.Governor.PeerSelectionActions where
 
-import Cardano.Network.ArgumentsExtra (ConsensusModePeerTargets)
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
 import Control.Concurrent.Class.MonadSTM
+import Ouroboros.Network.PeerSelection.Governor.Types (PeerSelectionTargets)
 
 -- | Cardano Node PeerSelection Actions extension data type.
 --
@@ -14,7 +14,7 @@ data CardanoPeerSelectionActions m =
     -- | Retrieve peer targets for Genesis & non-Genesis modes
     -- from node's configuration for the current state
     --
-    cpsaPeerTargets           :: ConsensusModePeerTargets
+    cpsaSyncPeerTargets       :: PeerSelectionTargets
 
     -- | Read the current bootstrap peers flag
   , cpsaReadUseBootstrapPeers :: STM m UseBootstrapPeers

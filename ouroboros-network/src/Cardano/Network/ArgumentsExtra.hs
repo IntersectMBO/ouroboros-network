@@ -12,7 +12,7 @@ import Ouroboros.Network.PeerSelection.Governor.Types
 data CardanoArgumentsExtra m =
   CardanoArgumentsExtra {
     -- | selection targets for the peer governor
-    caePeerTargets                      :: ConsensusModePeerTargets
+    caeSyncPeerTargets                  :: PeerSelectionTargets
   , caeReadUseBootstrapPeers            :: STM m UseBootstrapPeers
 
   -- | For Genesis, this sets the floor for minimum number of
@@ -26,12 +26,3 @@ data CardanoArgumentsExtra m =
     -- that leverage UseBootstrapPeers flag
   , caeConsensusMode                    :: ConsensusMode
   }
-
--- | Provides alternate peer selection targets
--- for various syncing modes.
---
-data ConsensusModePeerTargets = ConsensusModePeerTargets {
-  deadlineTargets :: !PeerSelectionTargets,
-  syncTargets     :: !PeerSelectionTargets
-  }
-  deriving (Eq, Show)
