@@ -21,7 +21,6 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   ( -- * P2P governor policies
     PeerSelectionPolicy (..)
   , PeerSelectionTargets (..)
-  , ConsensusModePeerTargets (..)
   , nullPeerSelectionTargets
   , sanePeerSelectionTargets
   , PickPolicy
@@ -32,7 +31,6 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , PeerStateActions (..)
   , PeerSelectionActions (..)
   , PeerSelectionInterfaces (..)
-  , ChurnMode (..)
     -- * P2P governor internals
   , PeerSelectionState (..)
   , emptyPeerSelectionState
@@ -142,11 +140,9 @@ import Control.Monad.Class.MonadTime.SI
 import System.Random (StdGen)
 
 import Control.Concurrent.Class.MonadSTM.Strict
-import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.ExitPolicy
-import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
+import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-import Ouroboros.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
@@ -161,7 +157,10 @@ import Ouroboros.Network.PeerSelection.Types (PeerSource (..),
            PeerStatus (PeerHot, PeerWarm))
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
            PeerSharingResult (..))
-
+import Cardano.Node.Types (LedgerStateJudgement (..), MinBigLedgerPeersForTrustedState)
+import Cardano.Node.PeerSelection.Types (ChurnMode)
+import Cardano.Node.PeerSelection.LocalRootPeers (OutboundConnectionsState)
+import Cardano.Node.ConsensusMode (ConsensusMode)
 
 -- | A peer pick policy is an action that picks a subset of elements from a
 -- map of peers.
@@ -277,14 +276,6 @@ data PeerSelectionTargets = PeerSelectionTargets {
 --     targetChurnIntervalEstablishedPeers :: !DiffTime,
 --     targetChurnIntervalActivePeers      :: !DiffTime
      }
-  deriving (Eq, Show)
-
--- | Provides alternate peer selection targets
--- for various syncing modes.
---
-data ConsensusModePeerTargets = ConsensusModePeerTargets {
-  deadlineTargets :: !PeerSelectionTargets,
-  syncTargets     :: !PeerSelectionTargets }
   deriving (Eq, Show)
 
 nullPeerSelectionTargets :: PeerSelectionTargets
@@ -789,7 +780,7 @@ data PeerSelectionView a = PeerSelectionView {
 
       --
       -- Non-Root Peers
-      -- 
+      --
 
       viewKnownNonRootPeers                 :: a,
       -- ^ number of known non root peers.  These are mostly peers received
@@ -1767,7 +1758,3 @@ data DebugPeerSelection peeraddr where
 
 deriving instance (Ord peeraddr, Show peeraddr)
                => Show (DebugPeerSelection peeraddr)
-
-data ChurnMode = ChurnModeBulkSync
-               | ChurnModeNormal deriving Show
-

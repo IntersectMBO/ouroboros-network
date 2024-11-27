@@ -16,6 +16,7 @@ import Data.Word (Word32)
 import System.Random
 import System.Random qualified as Rnd
 
+import Cardano.Node.PeerSelection.Types (ChurnMode (..))
 import Ouroboros.Network.ConnectionManager.Types (ConnectionType (..),
            Provenance (..), PrunePolicy)
 import Ouroboros.Network.ExitPolicy as ExitPolicy
