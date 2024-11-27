@@ -102,12 +102,10 @@ import Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit (..),
            DiffusionMode (..), NodeToNodeVersion (..),
            NodeToNodeVersionData (..), RemoteAddress)
 import Ouroboros.Network.NodeToNode qualified as NodeToNode
-import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
 import Ouroboros.Network.PeerSelection.Churn (PeerChurnArgs (..))
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
-import Ouroboros.Network.PeerSelection.Governor.Types
-           (ChurnMode (ChurnModeNormal), ConsensusModePeerTargets (..),
-           DebugPeerSelection (..), PeerSelectionActions, PeerSelectionCounters,
+import Ouroboros.Network.PeerSelection.Governor.Types (DebugPeerSelection (..),
+           PeerSelectionActions, PeerSelectionCounters,
            PeerSelectionInterfaces (..), PeerSelectionPolicy (..),
            PeerSelectionState, TracePeerSelection (..),
            emptyPeerSelectionCounters, emptyPeerSelectionState)
@@ -119,8 +117,7 @@ import Ouroboros.Network.PeerSelection.LedgerPeers (TraceLedgerPeers,
            WithLedgerPeersArgs (..))
 #ifdef POSIX
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
-           LedgerPeersConsensusInterface (..), MinBigLedgerPeersForTrustedState,
-           UseLedgerPeers)
+           LedgerPeersConsensusInterface (..), UseLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics,
            fetchynessBlocks, upstreamyness)
 #else
@@ -128,7 +125,12 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
            MinBigLedgerPeersForTrustedState, UseLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 #endif
-import Ouroboros.Network.ConsensusMode
+import Cardano.Node.ArgumentsExtra (CardanoArgumentsExtra (..),
+           ConsensusModePeerTargets (..))
+import Cardano.Node.ConsensusMode
+import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers)
+import Cardano.Node.PeerSelection.Types (ChurnMode (..))
+import Cardano.Node.Types (MinBigLedgerPeersForTrustedState)
 import Ouroboros.Network.PeerSelection.PeerSelectionActions
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PeerStateActions (PeerConnectionHandle,
