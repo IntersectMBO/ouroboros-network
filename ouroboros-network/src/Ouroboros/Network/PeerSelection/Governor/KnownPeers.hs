@@ -27,6 +27,9 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 
 import Cardano.Node.PeerSelection.Bootstrap (requiresBootstrapPeers)
+import Cardano.Node.PeerSelection.Governor.PeerSelectionState
+           (CardanoPeerSelectionState (..))
+import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
 import Ouroboros.Network.Diffusion.Policies qualified as Policies
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
@@ -53,10 +56,10 @@ import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 --
 belowTarget
     :: (MonadAsync m, MonadTimer m, Ord peeraddr, Hashable peeraddr)
-    => PeerSelectionActions peeraddr peerconn m
+    => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI peeraddr peerconn m
     -> Time -- ^ blocked at
     -> Map peeraddr PeerSharing
-    -> MkGuardedDecision peeraddr peerconn m
+    -> MkGuardedDecision CardanoPeerSelectionState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn m
 belowTarget actions@PeerSelectionActions { peerSharing }
             blockedAt
             inboundPeers
@@ -75,8 +78,10 @@ belowTarget actions@PeerSelectionActions { peerSharing }
               targets = PeerSelectionTargets {
                           targetNumberOfKnownPeers
                         },
-              ledgerStateJudgement,
-              bootstrapPeersFlag,
+              extraState = CardanoPeerSelectionState {
+                cpstLedgerStateJudgement
+              , cpstBootstrapPeersFlag
+              },
               stdGen
             }
     --
@@ -91,7 +96,7 @@ belowTarget actions@PeerSelectionActions { peerSharing }
   , inProgressPeerShareReqs <= 0
 
     -- No inbound peers should be used when the node is using bootstrap peers.
-  , not (requiresBootstrapPeers bootstrapPeersFlag ledgerStateJudgement)
+  , not (requiresBootstrapPeers cpstBootstrapPeersFlag cpstLedgerStateJudgement)
 
   , blockedAt >= inboundPeersRetryTime
 
@@ -145,7 +150,7 @@ belowTarget actions@PeerSelectionActions { peerSharing }
 
     -- No peer share requests should be issued when the node is using bootstrap
     -- peers.
-  , not (requiresBootstrapPeers bootstrapPeersFlag ledgerStateJudgement)
+  , not (requiresBootstrapPeers cpstBootstrapPeersFlag cpstLedgerStateJudgement)
 
   = Guarded Nothing $ do
       -- Max selected should be <= numPeerShareReqsPossible
@@ -227,15 +232,15 @@ belowTarget actions@PeerSelectionActions { peerSharing }
 --
 -- If we ask for more peers than needed a random subset of the peers in the filtered result
 -- is used.
-jobPeerShare :: forall m peeraddr peerconn.
+jobPeerShare :: forall m extraActions extraState extraFlags extraPeers extraAPI peeraddr peerconn.
                 (MonadAsync m, MonadTimer m, Ord peeraddr, Hashable peeraddr)
-             => PeerSelectionActions peeraddr peerconn m
+             => PeerSelectionActions extraActions extraPeers extraFlags extraAPI peeraddr peerconn m
              -> PeerSelectionPolicy peeraddr m
              -> Int
              -> Int
              -> PeerSharingAmount
              -> [peeraddr]
-             -> Job () m (Completion m peeraddr peerconn)
+             -> Job () m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
 jobPeerShare PeerSelectionActions{requestPeerShare}
              PeerSelectionPolicy { policyPeerShareBatchWaitTime
                                  , policyPeerShareOverallTimeout
@@ -254,7 +259,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
       sortBy (\a b -> compare (hashWithSalt salt a) (hashWithSalt salt b))
       addrs
 
-    handler :: [peeraddr] -> SomeException -> m (Completion m peeraddr peerconn)
+    handler :: [peeraddr] -> SomeException -> m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
     handler peers e = return $
       Completion $ \st _ ->
       Decision { decisionTrace = [TracePeerShareResults [ (p, Left e) | p <- peers ]],
@@ -265,7 +270,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                  decisionJobs = []
                }
 
-    jobPhase1 :: [peeraddr] -> m (Completion m peeraddr peerconn)
+    jobPhase1 :: [peeraddr] -> m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
     jobPhase1 peers = do
       -- In the typical case, where most requests return within a short
       -- timeout we want to collect all the responses into a batch and
@@ -360,7 +365,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                          }
 
     jobPhase2 :: Int -> [peeraddr] -> [Async m (PeerSharingResult peeraddr)]
-              -> m (Completion m peeraddr peerconn)
+              -> m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
     jobPhase2 maxRemaining peers peerShares = do
 
       -- Wait again, for all remaining to finish or a timeout.
@@ -431,7 +436,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
 -- peers). 'policyPickColdPeersToForget' policy is used to pick the peers.
 --
 aboveTarget :: (MonadSTM m, Ord peeraddr, HasCallStack)
-            => MkGuardedDecision peeraddr peerconn m
+            => MkGuardedDecision extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn m
 aboveTarget PeerSelectionPolicy {
               policyPickColdPeersToForget
             }

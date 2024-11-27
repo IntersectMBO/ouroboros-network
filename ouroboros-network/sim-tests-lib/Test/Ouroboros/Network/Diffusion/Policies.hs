@@ -6,7 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 
-module Test.Ouroboros.Network.Testnet.Policies where
+module Test.Ouroboros.Network.Diffusion.Policies where
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadTime.SI
@@ -31,6 +31,7 @@ import Ouroboros.Network.PeerSelection.PeerMetric
 import Ouroboros.Network.PeerSelection.Types (PeerSource (..))
 import Ouroboros.Network.SizeInBytes
 
+import Cardano.Node.PeerSelection.Types (ChurnMode (..))
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)

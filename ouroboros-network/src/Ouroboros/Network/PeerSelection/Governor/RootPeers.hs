@@ -12,6 +12,7 @@ import Control.Exception (SomeException, assert)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
 
+import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.LedgerPeers (LedgerPeersKind (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
@@ -24,10 +25,10 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRo
 --
 
 belowTarget :: (MonadSTM m, Ord peeraddr)
-            => PeerSelectionActions peeraddr peerconn m
+            => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI peeraddr peerconn m
             -> Time
-            -> PeerSelectionState peeraddr peerconn
-            -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
+            -> PeerSelectionState extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn
+            -> Guarded (STM m) (TimedDecision m extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
 belowTarget actions
             blockedAt
             st@PeerSelectionState {
@@ -72,17 +73,17 @@ belowTarget actions
     maxExtraRootPeers = targetNumberOfRootPeers - numRootPeers
 
 
-jobReqPublicRootPeers :: forall m peeraddr peerconn.
+jobReqPublicRootPeers :: forall m extraActions extraState extraFlags extraAPI peeraddr peerconn.
                          (MonadSTM m, Ord peeraddr)
-                      => PeerSelectionActions peeraddr peerconn m
+                      => PeerSelectionActions extraActions (CardanoPublicRootPeers peeraddr) extraFlags extraAPI peeraddr peerconn m
                       -> Int
-                      -> Job () m (Completion m peeraddr peerconn)
+                      -> Job () m (Completion m extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
 jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
                                           }
                       numExtraAllowed =
     Job job (return . handler) () "reqPublicRootPeers"
   where
-    handler :: SomeException -> Completion m peeraddr peerconn
+    handler :: SomeException -> Completion m extraState extraFlags extraPeers peeraddr peerconn
     handler e =
       Completion $ \st now ->
       -- This is a failure, so move the backoff counter one in the failure
@@ -110,7 +111,7 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
             decisionJobs  = []
           }
 
-    job :: m (Completion m peeraddr peerconn)
+    job :: m (Completion m extraState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
     job = do
       (results, ttl) <- requestPublicRootPeers AllLedgerPeers numExtraAllowed
       return $ Completion $ \st now ->
