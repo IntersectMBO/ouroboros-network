@@ -100,6 +100,7 @@ library
     Ouroboros.Network.PeerSelection.Governor.ActivePeers
     Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers
     Ouroboros.Network.PeerSelection.Governor.EstablishedPeers
+    Ouroboros.Network.PeerSelection.Governor.Event
     Ouroboros.Network.PeerSelection.Governor.KnownPeers
     Ouroboros.Network.PeerSelection.Governor.Monitor
     Ouroboros.Network.PeerSelection.Governor.RootPeers
@@ -170,6 +171,7 @@ library
     random,
     rhine,
     si-timers,
+    time-domain,
     strict-checked-vars ^>=0.2,
     strict-stm,
     typed-protocols ^>=0.3,
