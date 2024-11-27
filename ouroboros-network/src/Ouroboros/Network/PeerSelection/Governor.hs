@@ -71,6 +71,7 @@ module Ouroboros.Network.PeerSelection.Governor
   , peerSelectionStateToView
   ) where
 
+import Data.Maybe (isJust)
 import Control.Concurrent.Class.MonadSTM.TChan
 import Ouroboros.Network.Diffusion.Policies qualified as Policies
 import Data.Map.Strict (Map)
@@ -648,8 +649,8 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
         -- -- reactCardanoChurn :: ClSF (App2 peeraddr peerconn m) ChurnClock CardanoSignal ()
         performCardanoChurn = proc sig -> do
           case cardanoQuiesce sig of
-            Nothing    -> returnA -< Nothing -- cardanoSetTargets -< Nothing
-            _otherwise -> returnA -< Nothing
+            Nothing    -> cardanoSetTargets -< Nothing
+            _otherwise -> returnA -< ()
 
     monitorJobPool :: ClSF m (JobClock m peeraddr peerconn) (PeerSelectionState peeraddr peerconn) (PeerSelectionState peeraddr peerconn)
     monitorJobPool = undefined -- proc state -> do undefined
@@ -657,53 +658,38 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
       -- returnA -< ev state
 
     cardanoSetTargets :: ClSF (App2' peeraddr peerconn m) cl (Maybe Quiesce) ()
-    cardanoSetTargets = getEnv >>> impl
+    cardanoSetTargets = arrMCl impl
       where
-        getEnv = arrMCl \sig -> asks ((,,) sig) <*> State.get
-
-        impl =
-          Rhine.forever do
-            Rhine.try $ proc (sig, TChanWrapper chan, st) -> do
-              throwOnCond (not . sanePeerSelectionTargets) Quiesce -< targets st
-              throwMaybe -< sig
-              -- constMCl (traceWith tracer $ TraceTargetsChanged undefined undefined) -< ()
-              liftClSF ticksGovernorS -<  Right . PeerSelectionEvent <$> [Known, Established]
-              -- let tickClocks = atomically . writeTChan chan . Right
-              -- arrMCl (forM_ $ ) -< tickClocks
-              -- st' <- liftClSF (stepActions []) -< (sig, elo, st)
-              returnA -< ()
-
-        -- stepActions ::
-        --   [ClSF m cl (a, PeerSelectionState peeraddr peerconn) (Either Time (PeerSelectionState peeraddr peerconn))]
-        --   -> ClSF m cl (a, (x -> m ()), PeerSelectionState peeraddr peerconn) (PeerSelectionState peeraddr peerconn)
-        -- -- stepActions [] = arr snd -- \(_s, st) -> st
-        -- stepActions (act:acts) = proc (sig, scheduleLater, st) -> do
-        --   result <- act -< (sig, st)
-        --   case result of
-        --     Left time -> do
-        --       arrMCl (\chan -> chan undefined) -< scheduleLater
-        --       -- _ <- constMCl (writeTChan chan undefined) -< ()
-        --       -- (lefts, actions) <- stepActions acts -< (sig, st)
-        --       returnA -< undefined --(t <> lefts, actions)
-            -- Right mact -> do
-            --   st' <- arrMCl id -< mact
-            --   stepActions acts -< (sig, st')
+        impl sig = do
+          st <- State.get
+          if isJust sig || (not . sanePeerSelectionTargets $ targets st)
+            then return ()
+            else do
+              -- TODO lift this out to a common/general function
+              lift . lift $ traceWith tracer $ TraceTargetsChanged undefined undefined
+              ticksGovernorNow $ PeerSelectionEvent <$> [Known]
+              return ()
 
     cardanoKnownPeers :: ClSF (App2' peeraddr peerconn m) PeerSelectionClock CardanoSignal (Maybe (PeerSelectionState peeraddr peerconn))
     cardanoKnownPeers = proc signal -> do
       case cardanoQuiesce signal of
-        Nothing    -> returnA -< Nothing --knownPeers -< state
+        Nothing    -> knownPeers -< ()
         _otherwise -> returnA -< Nothing
 
     -- establishedPeers :: BehaviorF m time (a, PeerSelectionState peeraddr peerconn) (Either (Maybe (Min Time)) (m (PeerSelectionState peeraddr peerconn)))
     -- establishedPeers = arr forEstablished
 
-    knownPeers :: BehaviorF m time (PeerSelectionState peeraddr peerconn) (Either Time (m (PeerSelectionState peeraddr peerconn)))
-    knownPeers = withTime >>> arrMCl (\(now, state) -> forKnown state now <$> readInboundPeers actions)
-      where
-        withTime = proc st -> do
-          now <- absoluteS -< ()
-          returnA -< (now, st)
+    knownPeers :: BehaviorF (App2' peeraddr peerconn m) Time () (Maybe (PeerSelectionState peeraddr peerconn))
+    knownPeers = sinceLastS >>> proc elapsed -> do
+      st <- constMCl State.get -< ()
+      TChanWrapper chan <- constMCl ask -< ()
+      inb <- liftClSF . liftClSF $ constMCl (readInboundPeers actions) -< ()
+      case forKnown st elapsed inb of
+        Left time -> do
+          tickGovernorLaterS -< (time, undefined)
+          returnA -< Nothing
+        Right action ->
+          liftClSF . liftClSF $ Just <$> arrMCl id -< action
 
     forEstablished :: PeerSelectionState peeraddr peerconn
                    -> Either (Maybe (Min Time)) (m (PeerSelectionState peeraddr peerconn))
@@ -941,6 +927,7 @@ peerSelectionGovernor' tracer debugTracer countersTracer fuzzRng consensusMode m
             return (signal, state { cardanoLedgerStateJudgement, cardanoUseBootstrapPeers })
 
 data Quiesce = Quiesce
+  deriving (Eq)
 
 newtype MyClock (n :: Nat)= MyClock { aaa :: Millisecond n }
   deriving GetClockProxy
@@ -993,6 +980,7 @@ monitorBootstrapPeers tracer event CardanoState { cardanoUseBootstrapPeers,
 -- type App2 peeraddr peerconn m = ReaderT (TChanWrapper m PeerSelectionEvent) (StateT (PeerSelectionState peeraddr peerconn) m)
 type Temp peeraddr peerconn m =  StateT (PeerSelectionState peeraddr peerconn) m
 type App2' peeraddr peerconn m = ControlChannel (Temp peeraddr peerconn m) PeerSelectionEvent
+liftApp2 = liftClSF . liftClSF
   -- ReaderT (TChanWrapper (Temp peeraddr peerconn m) PeerSelectionEvent) (StateT (PeerSelectionState peeraddr peerconn) m)
 
 -- | Our pattern here is a loop with two sets of guarded actions:

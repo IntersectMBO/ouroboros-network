@@ -161,10 +161,27 @@ tickGovernor event = do
   TChanWrapper chan <- ask
   atomically $ writeTChan chan event
 
+tickGovernorNow :: (MonadSTM m) => event -> ControlChannel m event ()
+tickGovernorNow event = tickGovernor (Right event)
+
+tickGovernorLater :: (MonadSTM m) => SI.Time -> event -> ControlChannel m event ()
+tickGovernorLater time event = tickGovernor (Left (time, event))
+
+tickGovernorNowS :: (MonadSTM m) => ClSF (ControlChannel m event) cl event ()
+tickGovernorNowS = arrMCl (tickGovernor . Right)
+
+tickGovernorLaterS :: (MonadSTM m) => ClSF (ControlChannel m event) cl (SI.Time, event) ()
+tickGovernorLaterS = arrMCl (tickGovernor . Left)
+
 ticksGovernor :: (MonadSTM m) => [Either (SI.Time, event) event] -> ControlChannel m event ()
 ticksGovernor events = do
   TChanWrapper chan <- ask
   atomically $ mapM_ (writeTChan chan) events
+
+ticksGovernorNow :: (MonadSTM m) => [event] -> ControlChannel m event ()
+ticksGovernorNow events = do
+  TChanWrapper chan <- ask
+  atomically $ mapM_ (writeTChan chan) (Right <$> events)
 
 tickGovernorS :: (MonadSTM m) => ClSF (ControlChannel m event) cl (Either (SI.Time, event) event) ()
 tickGovernorS = arrMCl tickGovernor
