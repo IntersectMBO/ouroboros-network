@@ -44,6 +44,8 @@ import Data.Typeable (Typeable)
 import Data.Void (Void)
 import System.Random (mkStdGen)
 
+import Data.IP (toIPv4w)
+
 import Control.Concurrent.Class.MonadSTM
 import Control.Concurrent.Class.MonadSTM.Strict qualified as StrictTVar
 import Control.Exception (throw)
@@ -439,6 +441,15 @@ mockPeerSelectionActions' tracer
                           connsVar
                           outboundConnectionsStateVar =
     PeerSelectionActions {
+      readOriginalLocalRootPeers
+        = return
+        $ LocalRootPeers.toGroups
+        $ LocalRootPeers.mapPeers
+            (\(PeerAddr addr) ->
+                RelayAccessAddress (IPv4 (toIPv4w (fromIntegral addr)))
+                                   (fromIntegral addr)
+            )
+            localRootPeers,
       readLocalRootPeers       = return (LocalRootPeers.toGroups localRootPeers),
       peerSharing              = peerSharingFlag,
       peerConnToPeerSharing    = \(PeerConn _ ps _) -> ps,
