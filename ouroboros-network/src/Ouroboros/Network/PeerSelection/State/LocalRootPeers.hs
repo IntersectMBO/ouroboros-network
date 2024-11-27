@@ -12,6 +12,7 @@ module Ouroboros.Network.PeerSelection.State.LocalRootPeers
     -- Export constructors for defining tests.
   , invariant
     -- * Basic operations
+  , mapPeers
   , empty
   , null
   , size
@@ -37,34 +38,41 @@ import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
 
+import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
-import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 
 
 ---------------------------------------
 -- Local root peer set representation
 --
 
-data LocalRootConfig = LocalRootConfig {
+data LocalRootConfig extraFlags = LocalRootConfig {
     peerAdvertise :: !PeerAdvertise,
-    peerTrustable :: !PeerTrustable,
-    diffusionMode :: !DiffusionMode
+    diffusionMode :: !DiffusionMode,
+    extraFlags    :: !extraFlags
   }
   deriving (Show, Eq)
 
-data LocalRootPeers peeraddr =
+data LocalRootPeers extraFlags peeraddr =
      LocalRootPeers
        -- We use two partial & overlapping representations:
 
        -- The collection of all the peers, with the associated PeerAdvertise
-       -- and PeerTrustable values
-       (Map peeraddr LocalRootConfig)
+       -- and extra values
+       (Map peeraddr (LocalRootConfig extraFlags))
 
        -- The groups, but without the associated PeerAdvertise and
        -- PeerTrustable values
        [(HotValency, WarmValency, Set peeraddr)]
   deriving Eq
+
+mapPeers :: (Ord b)
+         => (a -> b)
+         -> LocalRootPeers extraFlags a
+         -> LocalRootPeers extraFlags b
+mapPeers f (LocalRootPeers m l) =
+  LocalRootPeers (Map.mapKeys f m) (fmap (fmap (Set.map f)) l)
 
 -- | Newtype wrapper representing hot valency value from local root group
 -- configuration
@@ -82,17 +90,18 @@ newtype WarmValency = WarmValency { getWarmValency :: Int }
 
 -- | Data available from topology file.
 --
-type Config peeraddr =
-     [(HotValency, WarmValency, Map peeraddr LocalRootConfig)]
+type Config extraFlags peeraddr =
+     [(HotValency, WarmValency, Map peeraddr (LocalRootConfig extraFlags))]
 
 
 -- It is an abstract type, so the derived Show is unhelpful, e.g. for replaying
 -- test cases.
 --
-instance (Show peeraddr, Ord peeraddr) => Show (LocalRootPeers peeraddr) where
+instance (Show extraFlags, Show peeraddr, Ord peeraddr)
+  => Show (LocalRootPeers extraFlags peeraddr) where
   show lrps = "fromGroups " ++ show (toGroups lrps)
 
-invariant :: Ord peeraddr => LocalRootPeers peeraddr -> Bool
+invariant :: Ord peeraddr => LocalRootPeers extraFlags peeraddr -> Bool
 invariant (LocalRootPeers m gs) =
 
     -- The overlapping representations must be consistent
@@ -112,31 +121,31 @@ invariant (LocalRootPeers m gs) =
        | (h, w, g) <- gs ]
 
 
-empty :: LocalRootPeers peeraddr
+empty :: LocalRootPeers extraFlags peeraddr
 empty = LocalRootPeers Map.empty []
 
-null :: LocalRootPeers peeraddr -> Bool
+null :: LocalRootPeers extraFlags peeraddr -> Bool
 null (LocalRootPeers m _) = Map.null m
 
-size :: LocalRootPeers peeraddr -> Int
+size :: LocalRootPeers extraFlags peeraddr -> Int
 size (LocalRootPeers m _) = Map.size m
 
-member :: Ord peeraddr => peeraddr -> LocalRootPeers peeraddr -> Bool
+member :: Ord peeraddr => peeraddr -> LocalRootPeers extraFlags peeraddr -> Bool
 member p (LocalRootPeers m _) = Map.member p m
 
-hotTarget :: LocalRootPeers peeraddr -> HotValency
+hotTarget :: LocalRootPeers extraFlags peeraddr -> HotValency
 hotTarget (LocalRootPeers _ gs) = sum [ h | (h, _, _) <- gs ]
 
-warmTarget :: LocalRootPeers peeraddr -> WarmValency
+warmTarget :: LocalRootPeers extraFlags peeraddr -> WarmValency
 warmTarget (LocalRootPeers _ gs) = sum [ w | (_, w, _) <- gs ]
 
-toMap :: LocalRootPeers peeraddr -> Map peeraddr LocalRootConfig
+toMap :: LocalRootPeers extraFlags peeraddr -> Map peeraddr (LocalRootConfig extraFlags)
 toMap (LocalRootPeers m _) = m
 
-keysSet :: LocalRootPeers peeraddr -> Set peeraddr
+keysSet :: LocalRootPeers extraFlags peeraddr -> Set peeraddr
 keysSet (LocalRootPeers m _) = Map.keysSet m
 
-toGroupSets :: LocalRootPeers peeraddr -> [(HotValency, WarmValency, Set peeraddr)]
+toGroupSets :: LocalRootPeers extraFlags peeraddr -> [(HotValency, WarmValency, Set peeraddr)]
 toGroupSets (LocalRootPeers _ gs) = gs
 
 
@@ -150,8 +159,8 @@ toGroupSets (LocalRootPeers _ gs) = gs
 -- trace a warning about dodgy config.
 --
 fromGroups :: Ord peeraddr
-           => [(HotValency, WarmValency, Map peeraddr LocalRootConfig)]
-           -> LocalRootPeers peeraddr
+           => [(HotValency, WarmValency, Map peeraddr (LocalRootConfig extraFlags))]
+           -> LocalRootPeers extraFlags peeraddr
 fromGroups =
     (\gs -> let m'  = Map.unions [ g | (_, _, g) <- gs ]
                 gs' = [ (h, w, Map.keysSet g) | (h, w, g) <- gs ]
@@ -176,8 +185,8 @@ fromGroups =
 -- satisfy the invariant.
 --
 toGroups :: Ord peeraddr
-         => LocalRootPeers peeraddr
-         -> [(HotValency, WarmValency, Map peeraddr LocalRootConfig)]
+         => LocalRootPeers extraFlags peeraddr
+         -> [(HotValency, WarmValency, Map peeraddr (LocalRootConfig extraFlags))]
 toGroups (LocalRootPeers m gs) =
     [ (h, w, Map.fromSet (m Map.!) g)
     | (h, w, g) <- gs ]
@@ -205,8 +214,8 @@ toGroups (LocalRootPeers m gs) =
 --
 clampToLimit :: Ord peeraddr
              => Int -- ^ The limit on the total number of local peers
-             -> LocalRootPeers peeraddr
-             -> LocalRootPeers peeraddr
+             -> LocalRootPeers extraFlags peeraddr
+             -> LocalRootPeers extraFlags peeraddr
 clampToLimit totalLimit (LocalRootPeers m gs0) =
     let gs' = limitTotalSize 0 gs0
         m'  = m `Map.restrictKeys` Set.unions [ g | (_, _, g) <- gs' ]
@@ -233,10 +242,10 @@ clampToLimit totalLimit (LocalRootPeers m gs0) =
       = [(h', w', g')]
 
 clampToTrustable :: Ord peeraddr
-                 => LocalRootPeers peeraddr
-                 -> LocalRootPeers peeraddr
+                 => LocalRootPeers PeerTrustable peeraddr
+                 -> LocalRootPeers PeerTrustable peeraddr
 clampToTrustable (LocalRootPeers m gs) =
-  let trustedMap = Map.filter (\LocalRootConfig { peerTrustable } -> case peerTrustable of
+  let trustedMap = Map.filter (\LocalRootConfig { extraFlags } -> case extraFlags of
                                  IsTrustable    -> True
                                  IsNotTrustable -> False
                               )
@@ -245,7 +254,7 @@ clampToTrustable (LocalRootPeers m gs) =
   where
     trustedGroups [] = []
     trustedGroups ((h, w, g):gss) =
-      let trusted = Map.filter (\LocalRootConfig { peerTrustable } -> case peerTrustable of
+      let trusted = Map.filter (\LocalRootConfig { extraFlags } -> case extraFlags of
                                   IsTrustable    -> True
                                   IsNotTrustable -> False
                                )
@@ -260,20 +269,20 @@ clampToTrustable (LocalRootPeers m gs) =
 
 isPeerTrustable :: Ord peeraddr
                 => peeraddr
-                -> LocalRootPeers peeraddr
+                -> LocalRootPeers PeerTrustable peeraddr
                 -> Bool
 isPeerTrustable peeraddr lrp =
   case Map.lookup peeraddr (toMap lrp) of
-    Just LocalRootConfig { peerTrustable = IsTrustable }
+    Just LocalRootConfig { extraFlags = IsTrustable }
       -> True
     _ -> False
 
-trustableKeysSet :: LocalRootPeers peeraddr
+trustableKeysSet :: LocalRootPeers PeerTrustable peeraddr
                  -> Set peeraddr
 trustableKeysSet (LocalRootPeers m _) =
     Map.keysSet
-  . Map.filter (\LocalRootConfig { peerTrustable } ->
-                 case peerTrustable of
+  . Map.filter (\LocalRootConfig { extraFlags } ->
+                 case extraFlags of
                    IsTrustable    -> True
                    IsNotTrustable -> False)
   $ m

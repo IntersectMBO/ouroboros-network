@@ -41,7 +41,8 @@ import Ouroboros.Network.Socket (NetworkMutableState, NetworkServerTracers (..),
 import Ouroboros.Network.Context (ExpandedInitiatorContext (..),
            IsBigLedgerPeer (..), MinimalInitiatorContext (..))
 import Ouroboros.Network.ControlMessage (continueForever)
-import Ouroboros.Network.Diffusion.Common hiding (nullTracers)
+import Ouroboros.Network.Diffusion.Common hiding (ApplicationsExtra,
+           ArgumentsExtra, TracersExtra, nullTracers)
 import Ouroboros.Network.ErrorPolicy
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.Mux
@@ -159,7 +160,7 @@ run
     -> Applications
          RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
          LocalAddress  NodeToClientVersion NodeToClientVersionData
-         IO a
+         () IO a
     -> ApplicationsExtra
     -> IO ()
 run Tracers

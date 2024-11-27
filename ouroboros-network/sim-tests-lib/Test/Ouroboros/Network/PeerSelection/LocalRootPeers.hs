@@ -2,6 +2,7 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeApplications   #-}
 
 module Test.Ouroboros.Network.PeerSelection.LocalRootPeers
   ( arbitraryLocalRootPeers
@@ -26,7 +27,6 @@ import Test.Ouroboros.Network.PeerSelection.Instances
 import Test.Ouroboros.Network.Utils (ShrinkCarefully, prop_shrink_nonequal,
            prop_shrink_valid, renderRanges)
 
-
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
@@ -36,15 +36,15 @@ tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.PeerSelection"
   [ testGroup "LocalRootPeers"
-    [ testProperty "arbitrary"    prop_arbitrary_LocalRootPeers
-    , testProperty "fromToGroups" prop_fromToGroups
-    , testProperty "fromGroups"   prop_fromGroups
-    , testProperty "shrink"       prop_shrink_LocalRootPeers
-    , testProperty "clampToLimit" prop_clampToLimit
-    , testProperty "clampToTrustable" prop_clampToTrustable
+    [ testProperty "arbitrary"    (prop_arbitrary_LocalRootPeers @NoExtraFlags)
+    , testProperty "fromToGroups" (prop_fromToGroups @NoExtraFlags)
+    , testProperty "fromGroups"   (prop_fromGroups @NoExtraFlags)
+    , testProperty "shrink"       (prop_shrink_LocalRootPeers @NoExtraFlags)
+    , testProperty "clampToLimit" (prop_clampToLimit @NoExtraFlags)
     ]
   ]
 
+type NoExtraFlags = ()
 
 -- | Check that we can forcibly bring the localRootPeers into compliance
 -- with the governor's state invariant, which requires that the local
@@ -52,7 +52,11 @@ tests =
 --
 -- The precondition on the targets is that they are sane.
 -- See sanePeerSelectionTargets.
-prop_clampToLimit :: LocalRootPeers PeerAddr -> PeerSelectionTargets -> Property
+prop_clampToLimit
+  :: Arbitrary extraFlags
+  => LocalRootPeers extraFlags PeerAddr
+  -> PeerSelectionTargets
+  -> Property
 prop_clampToLimit localRootPeers targets =
 
     let sizeLimit       = targetNumberOfKnownPeers targets
@@ -64,18 +68,8 @@ prop_clampToLimit localRootPeers targets =
           === min sizeLimit
                  (LocalRootPeers.size localRootPeers)
 
-prop_clampToTrustable :: LocalRootPeers PeerAddr -> Property
-prop_clampToTrustable localRootPeers =
-
-    let trustedPeers = LocalRootPeers.keysSet
-                     $ LocalRootPeers.clampToTrustable localRootPeers
-
-     in counterexample (show $ Map.restrictKeys (LocalRootPeers.toMap localRootPeers) trustedPeers)
-      $ all (`LocalRootPeers.isPeerTrustable` localRootPeers) trustedPeers
-
-
-arbitraryLocalRootPeers :: Ord peeraddr
-                        => Set peeraddr -> Gen (LocalRootPeers peeraddr)
+arbitraryLocalRootPeers :: (Ord peeraddr, Arbitrary extraFlags)
+                        => Set peeraddr -> Gen (LocalRootPeers extraFlags peeraddr)
 arbitraryLocalRootPeers peeraddrs = do
     -- divide into a few disjoint groups
     ngroups     <- choose (1, 5 :: Int)
@@ -104,8 +98,8 @@ instance Arbitrary HotValency where
 instance Arbitrary WarmValency where
   arbitrary = WarmValency <$> arbitrary
 
-instance (Arbitrary peeraddr, Ord peeraddr) =>
-         Arbitrary (LocalRootPeers peeraddr) where
+instance (Arbitrary extraFlags, Arbitrary peeraddr, Ord peeraddr) =>
+         Arbitrary (LocalRootPeers extraFlags peeraddr) where
     arbitrary = do
         peeraddrs <- scale (`div` 4) arbitrary
         arbitraryLocalRootPeers peeraddrs
@@ -114,16 +108,16 @@ instance (Arbitrary peeraddr, Ord peeraddr) =>
         map LocalRootPeers.fromGroups (shrink (LocalRootPeers.toGroups lrps))
 
 restrictKeys :: Ord peeraddr
-             => LocalRootPeers peeraddr
+             => LocalRootPeers extraFlags peeraddr
              -> Set peeraddr
-             -> LocalRootPeers peeraddr
+             -> LocalRootPeers extraFlags peeraddr
 restrictKeys lrps ks =
     LocalRootPeers.fromGroups
   . map (\(h, w, g) -> (h, w, Map.restrictKeys g ks))
   . LocalRootPeers.toGroups
   $ lrps
 
-prop_arbitrary_LocalRootPeers :: LocalRootPeers PeerAddr -> Property
+prop_arbitrary_LocalRootPeers :: Arbitrary extraFlags => LocalRootPeers extraFlags PeerAddr -> Property
 prop_arbitrary_LocalRootPeers lrps =
     tabulate "total size"    [size] $
     tabulate "num groups"    [numGroups] $
@@ -145,15 +139,25 @@ prop_arbitrary_LocalRootPeers lrps =
                  | (h, w, g) <- LocalRootPeers.toGroupSets lrps ]
 
 
-prop_shrink_LocalRootPeers :: ShrinkCarefully (LocalRootPeers PeerAddr) -> Property
+prop_shrink_LocalRootPeers
+  :: ( Eq extraFlags
+     , Show extraFlags
+     , Arbitrary extraFlags
+     )
+  => ShrinkCarefully (LocalRootPeers extraFlags PeerAddr)
+  -> Property
 prop_shrink_LocalRootPeers x =
       prop_shrink_valid LocalRootPeers.invariant x
  .&&. prop_shrink_nonequal x
 
-prop_fromGroups :: [(HotValency, WarmValency, Map PeerAddr LocalRootConfig)] -> Bool
+prop_fromGroups :: [(HotValency, WarmValency, Map PeerAddr (LocalRootConfig extraFlags))]
+                -> Bool
 prop_fromGroups = LocalRootPeers.invariant . LocalRootPeers.fromGroups
 
-prop_fromToGroups :: LocalRootPeers PeerAddr -> Bool
+prop_fromToGroups
+  :: Eq extraFlags
+  => LocalRootPeers extraFlags PeerAddr
+  -> Bool
 prop_fromToGroups lrps =
     LocalRootPeers.fromGroups (LocalRootPeers.toGroups lrps) == lrps
 

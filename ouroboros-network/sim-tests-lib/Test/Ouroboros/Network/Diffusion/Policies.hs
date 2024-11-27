@@ -6,7 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 
-module Test.Ouroboros.Network.Testnet.Policies where
+module Test.Ouroboros.Network.Diffusion.Policies where
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadTime.SI
@@ -24,13 +24,15 @@ import System.Random
 import NoThunks.Class.Orphans ()
 
 import Cardano.Slotting.Slot (SlotNo (..))
-import Ouroboros.Network.Diffusion.Policies
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.PeerSelection.Governor
 import Ouroboros.Network.PeerSelection.PeerMetric
 import Ouroboros.Network.PeerSelection.Types (PeerSource (..))
 import Ouroboros.Network.SizeInBytes
 
+import Ouroboros.Cardano.Network.Diffusion.Policies
+           (simpleChurnModePeerSelectionPolicy)
+import Ouroboros.Cardano.Network.Types (ChurnMode (..))
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
@@ -153,11 +155,12 @@ prop_hotToWarmM ArbitraryPolicyArguments{..} seed = do
     metrics <- newPeerMetric' apaHeaderMetric apaFetchedMetric
                               PeerMetricsConfiguration { maxEntriesToTrack = 180 }
 
-    let policies = simplePeerSelectionPolicy
-                        rngVar
-                        (readTVar cmVar)
-                        metrics
-                        (RepromoteDelay 10)
+    let policies =
+          simpleChurnModePeerSelectionPolicy
+            rngVar
+            (readTVar cmVar)
+            metrics
+            (RepromoteDelay 10)
     picked <- atomically $ policyPickHotPeersToDemote policies
                   (const PeerSourceLocalRoot)
                   peerConnectFailCount
@@ -217,11 +220,12 @@ prop_randomDemotionM ArbitraryPolicyArguments{..} seed = do
     metrics <- newPeerMetric' apaHeaderMetric apaFetchedMetric
                               PeerMetricsConfiguration { maxEntriesToTrack = 180 }
 
-    let policies = simplePeerSelectionPolicy
-                        rngVar
-                        (readTVar cmVar)
-                        metrics
-                        (RepromoteDelay 10)
+    let policies =
+          simpleChurnModePeerSelectionPolicy
+            rngVar
+            (readTVar cmVar)
+            metrics
+            (RepromoteDelay 10)
     doDemotion numberOfTries policies Map.empty
 
 

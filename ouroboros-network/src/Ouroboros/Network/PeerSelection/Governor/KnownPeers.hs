@@ -27,7 +27,6 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 
 import Ouroboros.Network.Diffusion.Policies qualified as Policies
-import Ouroboros.Network.PeerSelection.Bootstrap (requiresBootstrapPeers)
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
@@ -35,6 +34,7 @@ import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPe
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
+import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersAPI (..))
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 
 
@@ -52,12 +52,27 @@ import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 -- state) then this monitoring action will be disabled.
 --
 belowTarget
-    :: (MonadAsync m, MonadTimer m, Ord peeraddr, Hashable peeraddr)
-    => PeerSelectionActions peeraddr peerconn m
-    -> Time -- ^ blocked at
-    -> Map peeraddr PeerSharing
-    -> MkGuardedDecision peeraddr peerconn m
-belowTarget actions@PeerSelectionActions { peerSharing }
+  :: (MonadAsync m, MonadTimer m, Ord peeraddr, Hashable peeraddr)
+  => (extraState -> Bool)
+  -- ^ This argument enables or disables this monitoring action based on an
+  -- 'extraState' flag.
+  --
+  -- This might be useful if the user requires its diffusion layer to stop
+  -- making progress during a sensitive/vulnerable situation and quarantine
+  -- it and make sure it is only connected to trusted peers.
+  -> PeerSelectionActions extraState extraActions extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m
+  -> Time -- ^ blocked at
+  -> Map peeraddr PeerSharing
+  -> MkGuardedDecision extraState extraDebugState extraFlags extraPeers peeraddr peerconn m
+belowTarget enableAction
+            actions@PeerSelectionActions {
+              peerSharing,
+              extraPeersAPI = PublicExtraPeersAPI {
+                memberExtraPeers,
+                extraPeersToSet
+              },
+              extraStateToExtraCounters
+            }
             blockedAt
             inboundPeers
             policy@PeerSelectionPolicy {
@@ -75,8 +90,7 @@ belowTarget actions@PeerSelectionActions { peerSharing }
               targets = PeerSelectionTargets {
                           targetNumberOfKnownPeers
                         },
-              ledgerStateJudgement,
-              bootstrapPeersFlag,
+              extraState,
               stdGen
             }
     --
@@ -90,8 +104,7 @@ belowTarget actions@PeerSelectionActions { peerSharing }
     -- There are no peer share requests in-flight.
   , inProgressPeerShareReqs <= 0
 
-    -- No inbound peers should be used when the node is using bootstrap peers.
-  , not (requiresBootstrapPeers bootstrapPeersFlag ledgerStateJudgement)
+  , enableAction extraState
 
   , blockedAt >= inboundPeersRetryTime
 
@@ -105,6 +118,7 @@ belowTarget actions@PeerSelectionActions { peerSharing }
 
   = Guarded Nothing $ do
       selected <- pickUnknownPeers
+                  memberExtraPeers
                   st
                   policyPickInboundPeers
                   availablePeers
@@ -145,13 +159,11 @@ belowTarget actions@PeerSelectionActions { peerSharing }
     -- We can only ask ones where we have not asked them within a certain time.
   , not (Set.null availableForPeerShare)
 
-    -- No peer share requests should be issued when the node is using bootstrap
-    -- peers.
-  , not (requiresBootstrapPeers bootstrapPeersFlag ledgerStateJudgement)
+  , enableAction extraState
 
   = Guarded Nothing $ do
       -- Max selected should be <= numPeerShareReqsPossible
-      selectedForPeerShare <- pickPeers st
+      selectedForPeerShare <- pickPeers memberExtraPeers st
                               policyPickKnownPeersForPeerShare
                               availableForPeerShare
                               numPeerShareReqsPossible
@@ -205,7 +217,7 @@ belowTarget actions@PeerSelectionActions { peerSharing }
         numberOfKnownPeers = numKnownPeers
       }
       =
-      peerSelectionStateToCounters st
+      peerSelectionStateToCounters extraPeersToSet extraStateToExtraCounters st
     numPeerShareReqsPossible = policyMaxInProgressPeerShareReqs
                              - inProgressPeerShareReqs
     -- Only peer which permit peersharing are available
@@ -229,15 +241,27 @@ belowTarget actions@PeerSelectionActions { peerSharing }
 --
 -- If we ask for more peers than needed a random subset of the peers in the filtered result
 -- is used.
-jobPeerShare :: forall m peeraddr peerconn.
-                (MonadAsync m, MonadTimer m, Ord peeraddr, Hashable peeraddr)
-             => PeerSelectionActions peeraddr peerconn m
-             -> PeerSelectionPolicy peeraddr m
-             -> Int
-             -> Int
-             -> PeerSharingAmount
-             -> [peeraddr]
-             -> Job () m (Completion m peeraddr peerconn)
+jobPeerShare
+  :: forall m extraActions extraState extraDebugState extraFlags extraPeers
+           extraAPI extraCounters peeraddr peerconn.
+    (MonadAsync m, MonadTimer m, Ord peeraddr, Hashable peeraddr)
+  => PeerSelectionActions
+      extraState
+      extraActions
+      extraFlags
+      extraPeers
+      extraAPI
+      extraCounters
+      peeraddr
+      peerconn
+      m
+  -> PeerSelectionPolicy peeraddr m
+  -> Int
+  -> Int
+  -> PeerSharingAmount
+  -> [peeraddr]
+  -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers
+                         peeraddr peerconn)
 jobPeerShare PeerSelectionActions{requestPeerShare}
              PeerSelectionPolicy { policyPeerShareBatchWaitTime
                                  , policyPeerShareOverallTimeout
@@ -256,7 +280,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
       sortBy (\a b -> compare (hashWithSalt salt a) (hashWithSalt salt b))
       addrs
 
-    handler :: [peeraddr] -> SomeException -> m (Completion m peeraddr peerconn)
+    handler :: [peeraddr] -> SomeException -> m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
     handler peers e = return $
       Completion $ \st _ ->
       Decision { decisionTrace = [TracePeerShareResults [ (p, Left e) | p <- peers ]],
@@ -267,7 +291,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                  decisionJobs = []
                }
 
-    jobPhase1 :: [peeraddr] -> m (Completion m peeraddr peerconn)
+    jobPhase1 :: [peeraddr] -> m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
     jobPhase1 peers = do
       -- In the typical case, where most requests return within a short
       -- timeout we want to collect all the responses into a batch and
@@ -362,7 +386,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                          }
 
     jobPhase2 :: Int -> [peeraddr] -> [Async m (PeerSharingResult peeraddr)]
-              -> m (Completion m peeraddr peerconn)
+              -> m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
     jobPhase2 maxRemaining peers peerShares = do
 
       -- Wait again, for all remaining to finish or a timeout.
@@ -432,9 +456,39 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
 -- 'targetNumberOfRootPeers' (from combined sets of /local/ and /public root/
 -- peers). 'policyPickColdPeersToForget' policy is used to pick the peers.
 --
-aboveTarget :: (MonadSTM m, Ord peeraddr, HasCallStack)
-            => MkGuardedDecision peeraddr peerconn m
-aboveTarget PeerSelectionPolicy {
+aboveTarget
+  :: ( MonadSTM m
+     , Ord peeraddr
+     , HasCallStack
+     )
+  => PeerSelectionActions
+      extraState
+      extraActions
+      extraFlags
+      extraPeers
+      extraAPI
+      extraCounters
+      peeraddr
+      peerconn
+      m
+  -> MkGuardedDecision
+      extraState
+      extraDebugState
+      extraFlags
+      extraPeers
+      peeraddr
+      peerconn
+      m
+aboveTarget PeerSelectionActions {
+              extraPeersAPI = PublicExtraPeersAPI {
+                memberExtraPeers,
+                extraPeersToSet,
+                sizeExtraPeers,
+                differenceExtraPeers
+              },
+              extraStateToExtraCounters
+            }
+            PeerSelectionPolicy {
               policyPickColdPeersToForget
             }
             st@PeerSelectionState {
@@ -467,13 +521,13 @@ aboveTarget PeerSelectionPolicy {
     -- below the target for root peers.
     --
   , let numRootPeersCanForget = LocalRootPeers.size localRootPeers
-                              + PublicRootPeers.size publicRootPeers
+                              + PublicRootPeers.size sizeExtraPeers publicRootPeers
                               - targetNumberOfRootPeers
         availableToForget     = KnownPeers.toSet knownPeers
                                   Set.\\ EstablishedPeers.toSet establishedPeers
                                   Set.\\ LocalRootPeers.keysSet localRootPeers
                                   Set.\\ (if numRootPeersCanForget <= 0
-                                            then PublicRootPeers.toSet publicRootPeers
+                                            then PublicRootPeers.toSet extraPeersToSet publicRootPeers
                                             else Set.empty)
                                   Set.\\ inProgressPromoteCold
                                   Set.\\ bigLedgerPeersSet
@@ -489,7 +543,7 @@ aboveTarget PeerSelectionPolicy {
       -- If we /might/ pick a root peer, limit the number to forget so we do
       -- not pick too many root peers. This may cause us to go round several
       -- times but that is ok.
-      selectedToForget <- pickPeers st
+      selectedToForget <- pickPeers memberExtraPeers st
                             policyPickColdPeersToForget
                             availableToForget
                             numPeersToForget
@@ -497,10 +551,10 @@ aboveTarget PeerSelectionPolicy {
         let knownPeers'      = KnownPeers.delete
                                  selectedToForget
                                  knownPeers
-            publicRootPeers' = publicRootPeers
-                                `PublicRootPeers.difference` selectedToForget
+            publicRootPeers' =
+              PublicRootPeers.difference differenceExtraPeers publicRootPeers selectedToForget
         in assert (Set.isSubsetOf
-                     (PublicRootPeers.toSet publicRootPeers')
+                    (PublicRootPeers.toSet extraPeersToSet publicRootPeers')
                     (KnownPeers.toSet knownPeers'))
 
               Decision {
@@ -523,7 +577,7 @@ aboveTarget PeerSelectionPolicy {
         numberOfEstablishedPeers = numEstablishedPeers
       }
       =
-      peerSelectionStateToCounters st
+      peerSelectionStateToCounters extraPeersToSet extraStateToExtraCounters st
 
 
 -------------------------------

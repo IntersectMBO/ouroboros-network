@@ -15,9 +15,6 @@ module Ouroboros.Network.PeerSelection.Governor.Monitor
   , jobVerifyPeerSnapshot
   , connections
   , localRoots
-  , monitorLedgerStateJudgement
-  , monitorBootstrapPeersFlag
-  , waitForSystemToQuiesce
   , ledgerPeerSnapshotChange
   ) where
 
@@ -34,20 +31,16 @@ import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
 import System.Random (randomR)
 
-import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.ExitPolicy (RepromoteDelay)
 import Ouroboros.Network.ExitPolicy qualified as ExitPolicy
-import Ouroboros.Network.PeerSelection.Bootstrap (isBootstrapPeersEnabled,
-           isNodeAbleToMakeProgress, requiresBootstrapPeers)
 import Ouroboros.Network.PeerSelection.Governor.ActivePeers
            (jobDemoteActivePeer)
 import Ouroboros.Network.PeerSelection.Governor.Types hiding
            (PeerSelectionCounters)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeerSnapshot (..), LedgerPeersConsensusInterface (..),
-           LedgerStateJudgement (..), compareLedgerPeerSnapshotApproximate)
+           compareLedgerPeerSnapshotApproximate)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
-import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
@@ -56,109 +49,59 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSelection.Types
 
--- | Used to set 'bootstrapPeersTimeout' for crashing the node in a critical
--- failure case
---
-governor_BOOTSTRAP_PEERS_TIMEOUT :: DiffTime
-governor_BOOTSTRAP_PEERS_TIMEOUT = 15 * 60
-
 -- | Monitor 'PeerSelectionTargets', if they change, we just need to update
 -- 'PeerSelectionState', since we return it in a 'Decision' action it will be
 -- picked by the governor's 'peerSelectionGovernorLoop'.
 --
--- It should be noted if the node is in bootstrap mode (i.e. in a sensitive
--- state) then, until the node reaches a clean state, this monitoring action
--- will be disabled and thus churning will be disabled as well.
---
--- On the other hand, if Genesis mode is on for the node, this action responds
--- to changes in ledger state judgement monitoring actions to change the static
--- set of target peers.
 targetPeers :: (MonadSTM m, Ord peeraddr)
-            => PeerSelectionActions peeraddr peerconn m
-            -> PeerSelectionState peeraddr peerconn
-            -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
+            => PeerSelectionActions extraState extraActions extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m
+            -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+            -> Guarded (STM m) (TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
 targetPeers PeerSelectionActions{ readPeerSelectionTargets,
-                                  peerTargets = ConsensusModePeerTargets {
-                                    deadlineTargets,
-                                    syncTargets } }
+                                  extraPeersAPI
+                                }
             st@PeerSelectionState{
               publicRootPeers,
               localRootPeers,
-              targets,
-              bootstrapPeersFlag,
-              hasOnlyBootstrapPeers,
-              ledgerStateJudgement,
-              consensusMode
+              targets
             } =
     Guarded Nothing $ do
-      churnTargets <- readPeerSelectionTargets
-      -- Genesis consensus mode:
-      -- we check if targets proposed by churn are stale
-      -- in the sense that they are the targets for
-      -- opposite value of the current ledger state judgement.
-      -- This indicates that we aren't churning currently, and
-      -- furthermore it means that the ledger state has flipped since
-      -- we last churned. Therefore we can't set the targets from
-      -- the TVar, and instead we set the appropriate targets
-      -- for the mode we are in.
-      let targets' =
-            case (ledgerStateJudgement, consensusMode) of
-              (YoungEnough, GenesisMode)
-                | churnTargets == syncTargets ->
-                  deadlineTargets
-              (TooOld, GenesisMode)
-                | churnTargets == deadlineTargets ->
-                  syncTargets
-              _otherwise -> churnTargets
-
-      -- nb. first check is redundant in Genesis mode
-      check (   isNodeAbleToMakeProgress bootstrapPeersFlag
-                                         ledgerStateJudgement
-                                         hasOnlyBootstrapPeers
-             && targets /= targets'
-             && sanePeerSelectionTargets targets')
+      targets' <- readPeerSelectionTargets
+      check (targets' /= targets && sanePeerSelectionTargets targets')
       -- We simply ignore target updates that are not "sane".
 
-      let usingBootstrapPeers = requiresBootstrapPeers bootstrapPeersFlag
-                                                       ledgerStateJudgement
-          -- We have to enforce the invariant that the number of root peers is
+      let -- We have to enforce the invariant that the number of root peers is
           -- not more than the target number of known peers. It's unlikely in
           -- practice so it's ok to resolve it arbitrarily using clampToLimit.
-          --
-          -- Here we need to make sure that we prioritise the trustable peers
-          -- by clamping to trustable first.
           --
           -- TODO: we ought to add a warning if 'clampToLimit' modified local
           -- root peers, even though this is unexpected in the most common
           -- scenarios.
-          localRootPeers' =
-              LocalRootPeers.clampToLimit
+          localRootPeers' = LocalRootPeers.clampToLimit
                               (targetNumberOfKnownPeers targets')
-            $ (if usingBootstrapPeers
-                  then LocalRootPeers.clampToTrustable
-                  else id)
-            $ localRootPeers
+                              localRootPeers
 
           -- We have to enforce that local and big ledger peers are disjoint.
-          publicRootPeers' = publicRootPeers
-                             `PublicRootPeers.difference`
-                             LocalRootPeers.keysSet localRootPeers'
+          publicRootPeers' =
+            PublicRootPeers.difference (differenceExtraPeers extraPeersAPI)
+              publicRootPeers (LocalRootPeers.keysSet localRootPeers')
 
       return $ \_now -> Decision {
         decisionTrace = [TraceTargetsChanged targets targets'],
         decisionJobs  = [],
         decisionState = st {
-                          targets        = targets',
-                          localRootPeers = localRootPeers',
+                          targets         = targets',
+                          localRootPeers  = localRootPeers',
                           publicRootPeers = publicRootPeers'
                         } }
+
 
 -- | Await for the first result from 'JobPool' and return its 'Decision'.
 --
 jobs :: MonadSTM m
-     => JobPool () m (Completion m peeraddr peerconn)
-     -> PeerSelectionState peeraddr peerconn
-     -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
+     => JobPool () m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
+     -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+     -> Guarded (STM m) (TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
 jobs jobPool st =
     -- This case is simple because the job pool returns a 'Completion' which is
     -- just a function from the current state to a new 'Decision'.
@@ -169,11 +112,11 @@ jobs jobPool st =
 
 -- | Monitor connections.
 --
-connections :: forall m peeraddr peerconn.
+connections :: forall m extraActions extraState extraDebugState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn.
                (MonadSTM m, Ord peeraddr)
-            => PeerSelectionActions peeraddr peerconn m
-            -> PeerSelectionState peeraddr peerconn
-            -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
+            => PeerSelectionActions extraState extraActions extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m
+            -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+            -> Guarded (STM m) (TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
 connections PeerSelectionActions{
               peerStateActions = PeerStateActions {monitorPeerConnection}
             }
@@ -364,20 +307,16 @@ connections PeerSelectionActions{
 
 -- | Monitor local roots using 'readLocalRootPeers' 'STM' action.
 --
--- If the current ledger state is TooOld we can only trust our trustable local
--- root peers, this means that if we remove any local root peer we
--- might no longer abide by the invariant that we are only connected to
--- trusted peers. E.g. Local peers = A, B*, C* (* means trusted peer), if
--- the node is in bootstrap mode and decided to reconfigure the local root
--- peers to the following set: A*, B, C*, D*, E. Notice that B is no longer
--- trusted, however we will keep a connection to it until the outbound
--- governor notices it and disconnects from it.
-localRoots :: forall peeraddr peerconn m.
-              (MonadSTM m, Ord peeraddr)
-           => PeerSelectionActions peeraddr peerconn m
-           -> PeerSelectionState peeraddr peerconn
-           -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
+localRoots :: forall extraState extraDebugState extraActions extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
+              (MonadSTM m, Ord peeraddr, Eq extraFlags)
+           => PeerSelectionActions extraState extraActions extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m
+           -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+           -> Guarded (STM m) (TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
 localRoots actions@PeerSelectionActions{ readLocalRootPeers
+                                       , extraPeersAPI = PublicExtraPeersAPI {
+                                           differenceExtraPeers
+                                         , extraPeersToSet
+                                         }
                                        }
            st@PeerSelectionState{
              localRootPeers,
@@ -387,33 +326,21 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
              activePeers,
              inProgressDemoteHot,
              inProgressDemoteToCold,
-             targets = PeerSelectionTargets{targetNumberOfKnownPeers},
-             ledgerStateJudgement,
-             bootstrapPeersFlag,
-             hasOnlyBootstrapPeers
-           }
-  | isNodeAbleToMakeProgress bootstrapPeersFlag ledgerStateJudgement hasOnlyBootstrapPeers =
+             targets = PeerSelectionTargets{targetNumberOfKnownPeers}
+           } =
     Guarded Nothing $ do
       -- We have to enforce the invariant that the number of root peers is
       -- not more than the target number of known peers. It's unlikely in
       -- practice so it's ok to resolve it arbitrarily using clampToLimit.
-      --
-      -- Here we need to make sure that we prioritise the trustable peers
-      -- by clamping to trustable first.
       localRootPeersRaw <- readLocalRootPeers
-      let inSensitiveState = requiresBootstrapPeers bootstrapPeersFlag ledgerStateJudgement
-          localRootPeers' = LocalRootPeers.clampToLimit
+      let localRootPeers' = LocalRootPeers.clampToLimit
                               targetNumberOfKnownPeers
-                          . (if inSensitiveState
-                                then LocalRootPeers.clampToTrustable
-                                else id)
                           . LocalRootPeers.fromGroups
                           $ localRootPeersRaw
       check (localRootPeers' /= localRootPeers)
-
       --TODO: trace when the clamping kicks in, and warn operators
 
-      let added, removed :: Map peeraddr LocalRootConfig
+      let added, removed :: Map peeraddr (LocalRootConfig extraFlags)
           added        = LocalRootPeers.toMap localRootPeers' Map.\\
                          LocalRootPeers.toMap localRootPeers
           removed      = LocalRootPeers.toMap localRootPeers  Map.\\
@@ -433,37 +360,10 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
 
           -- We have to adjust the publicRootPeers to maintain the invariant
           -- that the local and public sets are non-overlapping.
-          --
-          publicRootPeers' = publicRootPeers
-                             `PublicRootPeers.difference`
-                             localRootPeersSet
-
-          -- Non trustable peers that the outbound governor might keep. These
-          -- should be demoted forgot as soon as possible. In order to do that
-          -- we set 'hasOnlyBootstrapPeers' to False and
-          -- 'ledgerStateJudgement' to TooOld in order to force clean state
-          -- reconnections.
-          hasOnlyBootstrapPeers' =
-            Set.null $ KnownPeers.toSet knownPeers'
-                       `Set.difference`
-                       (  LocalRootPeers.keysSet localRootPeers'
-                       <> PublicRootPeers.getBootstrapPeers publicRootPeers')
-
-          -- If the node is in a vulnerable position, i.e. connected to a
-          -- local root that is no longer deemed trustable we have to
-          -- force clean state reconnections. We do this by setting the
-          -- 'ledgerStateJudgement' value to 'YoungEnough' which
-          -- 'monitorLedgerStateJudgement' will then read the original
-          -- 'TooOld' value and trigger the clean state protocol.
-          --
-          -- Note that if the state actually changes to 'YoungEnough' it
-          -- doesn't really matter.
-          --
-          ledgerStateJudgement' =
-            if    requiresBootstrapPeers bootstrapPeersFlag ledgerStateJudgement
-               && not hasOnlyBootstrapPeers'
-            then YoungEnough
-            else ledgerStateJudgement
+          publicRootPeers' =
+            PublicRootPeers.difference differenceExtraPeers
+              publicRootPeers
+              localRootPeersSet
 
           -- If we are removing local roots and we have active connections to
           -- them then things are a little more complicated. We would typically
@@ -480,286 +380,29 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
                                 Set.\\ inProgressDemoteToCold
           selectedToDemote' = EstablishedPeers.toMap establishedPeers
                                `Map.restrictKeys` selectedToDemote
-
       return $ \_now ->
 
           assert (Set.isSubsetOf
-                    (PublicRootPeers.toSet publicRootPeers')
+                    (PublicRootPeers.toSet extraPeersToSet
+                                           publicRootPeers')
                    (KnownPeers.toSet knownPeers'))
         . assert (Set.isSubsetOf
                    (LocalRootPeers.keysSet localRootPeers')
                    (KnownPeers.toSet knownPeers'))
 
         $ Decision {
-            decisionTrace = TraceLocalRootPeersChanged localRootPeers localRootPeers'
-                          : [ TraceLedgerStateJudgementChanged YoungEnough
-                            | ledgerStateJudgement /= ledgerStateJudgement'
-                            ],
+            decisionTrace = [TraceLocalRootPeersChanged localRootPeers
+                                                        localRootPeers'],
             decisionState = st {
                               localRootPeers      = localRootPeers',
                               publicRootPeers     = publicRootPeers',
                               knownPeers          = knownPeers',
                               inProgressDemoteHot = inProgressDemoteHot
-                                                 <> selectedToDemote,
-                              hasOnlyBootstrapPeers = hasOnlyBootstrapPeers',
-                              ledgerStateJudgement  = ledgerStateJudgement'
+                                                 <> selectedToDemote
                             },
             decisionJobs  = [ jobDemoteActivePeer actions peeraddr peerconn
                           | (peeraddr, peerconn) <- Map.assocs selectedToDemote' ]
           }
-  | otherwise = GuardedSkip Nothing
-
-
--- | Monitor 'UseBootstrapPeers' flag.
---
--- The user might reconfigure the node at any point to change the value of
--- UseBootstrapPeers. Essentially the user can enable or disable bootstrap
--- peers at any time. Since 'monitorLedgerStateJudgement' will act on the
--- ledger state judgement value changing, this monitoring action should only
--- be responsible for either disabling bootstrap peers (in case the user
--- disables this flag) or enabling the 'monitorLedgerStateJudgement' action to
--- work correctly in the case the node finds itself in bootstrap mode. In
--- order to achieve this behavior, when bootstrap peers are disabled we should
--- update the ledger state judgement value to 'YoungEnough'; and
--- 'hasOnlyBootstrapPeers' to 'False'.
---
--- Here's a brief explanation why this works. There's 4 scenarios to consider:
---
--- 1. The node is in 'YoungEnough' state and the user
---  1.1. Enables bootstrap peers: In this case since the node is caught up
---  nothing should happen, so setting the LSJ to YoungEnough state is
---  idempotent.
---  1.2. Disables bootstrap peers: In this case, since the node is caught up,
---  its functioning can't really be distinguished from that of a node that has
---  bootstrap peers disabled. So changing the LSJ and 'hasOnlyBootstrapPeers'
---  flag is idempotent.
--- 2. The node is in 'TooOld' state and the user
---  2.1. Enables bootstrap peers: If the node is behind, enabling bootstrap
---  peers will enable 'monitorLedgerStateJudgement'. So if we set the LSJ to
---  be in 'YoungEnough' state it is going to make sure 'monitorLedgerStateJudgement'
---  observes the 'TooOld' state, triggering the right measures to be taken.
---  2.2. Disables bootstrap peers: If this is the case, we want to let the
---  peer connect to non-trusted peers, so just updating the boostrap peers
---  flag will enable the previously disabled monitoring actions.
---
-monitorBootstrapPeersFlag :: ( MonadSTM m
-                             , Ord peeraddr
-                             )
-                          => PeerSelectionActions peeraddr peerconn m
-                          -> PeerSelectionState peeraddr peerconn
-                          -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-monitorBootstrapPeersFlag PeerSelectionActions { readUseBootstrapPeers }
-                          st@PeerSelectionState { bootstrapPeersFlag
-                                                , knownPeers
-                                                , establishedPeers
-                                                , publicRootPeers
-                                                , inProgressPromoteCold
-                                                , inProgressPromoteWarm
-                                                , consensusMode
-                                                }
-  | GenesisMode <- consensusMode = GuardedSkip Nothing
-  | otherwise =
-  Guarded Nothing $ do
-    ubp <- readUseBootstrapPeers
-    check (ubp /= bootstrapPeersFlag)
-    let nonEstablishedBootstrapPeers =
-          PublicRootPeers.getBootstrapPeers publicRootPeers
-          Set.\\
-          EstablishedPeers.toSet establishedPeers
-          Set.\\
-          (inProgressPromoteCold <> inProgressPromoteWarm)
-    return $ \_now ->
-      Decision {
-        decisionTrace = [TraceUseBootstrapPeersChanged ubp],
-        decisionJobs  = [],
-        decisionState =
-          st { bootstrapPeersFlag    = ubp
-             , ledgerStateJudgement  = YoungEnough
-             , hasOnlyBootstrapPeers = False
-             , bootstrapPeersTimeout = Nothing
-             , knownPeers =
-                 KnownPeers.delete
-                   nonEstablishedBootstrapPeers
-                   knownPeers
-             , publicRootPeers =
-                 PublicRootPeers.difference
-                   publicRootPeers
-                   nonEstablishedBootstrapPeers
-             }
-      }
-
--- | Monitor 'LedgerStateJudgement', if it changes,
---
--- For Praos mode:
--- If bootstrap peers are enabled, we need to update 'PeerSelectionTargets'.
--- If the ledger state changed to 'TooOld' we set all other targets to 0
--- and the governor waits for all active connections to drop and then set
--- the targets to sensible values for getting caught up again.
--- However if the state changes to 'YoungEnough' we reset the targets back to
--- their original values.
---
--- It should be noted if the node has bootstrap peers disabled then this
--- monitoring action will be disabled.
---
--- It should also be noted that churning is ignored until the node converges
--- to a clean state. I.e., it will disconnect from the targets source of truth.
---
-monitorLedgerStateJudgement :: ( MonadSTM m
-                               , Ord peeraddr
-                               )
-                            => PeerSelectionActions peeraddr peerconn m
-                            -> PeerSelectionState peeraddr peerconn
-                            -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-monitorLedgerStateJudgement PeerSelectionActions{ getLedgerStateCtx = ledgerCtx@LedgerPeersConsensusInterface {
-                                                    lpGetLedgerStateJudgement = readLedgerStateJudgement } }
-                            st@PeerSelectionState{ bootstrapPeersFlag,
-                                                   publicRootPeers,
-                                                   knownPeers,
-                                                   establishedPeers,
-                                                   inProgressPromoteCold,
-                                                   inProgressPromoteWarm,
-                                                   ledgerStateJudgement,
-                                                   consensusMode,
-                                                   ledgerPeerSnapshot }
-  | GenesisMode <- consensusMode =
-    Guarded Nothing $ do
-      lsj <- readLedgerStateJudgement
-      check (lsj /= ledgerStateJudgement)
-
-      return $ \_now ->
-        Decision {
-          decisionTrace = [TraceLedgerStateJudgementChanged lsj],
-          decisionJobs = case (lsj, ledgerPeerSnapshot) of
-                           (TooOld, Just ledgerPeerSnapshot') ->
-                             [jobVerifyPeerSnapshot ledgerPeerSnapshot' ledgerCtx]
-                           _otherwise -> [],
-          decisionState = st {
-              ledgerStateJudgement = lsj } }
-
-  | PraosMode <- consensusMode
-  , isBootstrapPeersEnabled bootstrapPeersFlag =
-    Guarded Nothing $ do
-      lsj <- readLedgerStateJudgement
-      check (lsj /= ledgerStateJudgement)
-      st' <- case lsj of
-        TooOld      -> do
-          return (\now -> st
-            { ledgerStateJudgement = lsj
-            , targets =
-                PeerSelectionTargets
-                  { targetNumberOfRootPeers                 = 0
-                  , targetNumberOfKnownPeers                = 0
-                  , targetNumberOfEstablishedPeers          = 0
-                  , targetNumberOfActivePeers               = 0
-                  , targetNumberOfKnownBigLedgerPeers       = 0
-                  , targetNumberOfEstablishedBigLedgerPeers = 0
-                  , targetNumberOfActiveBigLedgerPeers      = 0
-                  }
-            -- We have to enforce the invariant that the number of root peers is
-            -- not more than the target number of known peers. It's unlikely in
-            -- practice so it's ok to resolve it arbitrarily using clampToLimit.
-            , localRootPeers = LocalRootPeers.empty
-            , hasOnlyBootstrapPeers = False
-            , bootstrapPeersTimeout = Just (addTime governor_BOOTSTRAP_PEERS_TIMEOUT now)
-            , publicRootBackoffs = 0
-            , publicRootRetryTime = now
-            })
-        YoungEnough -> do
-          let nonEstablishedBootstrapPeers =
-                PublicRootPeers.getBootstrapPeers publicRootPeers
-                Set.\\
-                EstablishedPeers.toSet establishedPeers
-                Set.\\
-                (inProgressPromoteCold <> inProgressPromoteWarm)
-          return (\now -> st
-            { ledgerStateJudgement  = lsj
-            , hasOnlyBootstrapPeers = False
-            , bootstrapPeersTimeout = Nothing
-            , knownPeers =
-                KnownPeers.delete
-                  nonEstablishedBootstrapPeers
-                  knownPeers
-            , publicRootPeers =
-                PublicRootPeers.difference
-                  publicRootPeers
-                  nonEstablishedBootstrapPeers
-            , publicRootBackoffs = 0
-            , publicRootRetryTime = now
-            })
-      return $ \now ->
-        Decision {
-          decisionTrace = [TraceLedgerStateJudgementChanged lsj],
-          decisionJobs  = [],
-          decisionState = st' now
-        }
-  | otherwise = GuardedSkip Nothing
-
--- | If the node just got in the TooOld state, the node just had its targets
--- adjusted to get rid of all peers. This jobs monitors the node state and when
--- it has arrived to a clean (quiesced) state it sets the 'hasOnlyBootstrapPeers'
--- flag on which will unblock the 'localRoots' and 'targetPeers' monitoring actions,
--- allowing the node to make progress by only connecting to trusted peers.
---
--- It should be noted if the node is _not_ in bootstrap mode (i.e. _not_ in a
--- sensitive state) then this monitoring action will be disabled.
---
--- If the node takes more than 15 minutes to converge to a clean state the
--- node will crash itself so it can be brought back on again in a clean state.
--- If the node takes more than 15 minutes to converge to a clean state it
--- means something really bad must be going on, such a global network outage,
--- DNS issues, or there could be an actual bug in the code. In any case we'll
--- detect that and have a way to observe such cases.
---
-waitForSystemToQuiesce :: ( MonadSTM m
-                          , Ord peeraddr
-                          )
-                       => PeerSelectionState peeraddr peerconn
-                       -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-waitForSystemToQuiesce st@PeerSelectionState{
-                            ledgerStateJudgement
-                          , bootstrapPeersFlag
-                          , knownPeers
-                          , localRootPeers
-                          , publicRootPeers
-                          , inProgressPromoteCold
-                          , inProgressPromoteWarm
-                          , inProgressPeerShareReqs
-                          , inProgressPublicRootsReq
-                          , inProgressBigLedgerPeersReq
-                          , hasOnlyBootstrapPeers
-                          }
-  -- Is the node in sensitive state?
-  | requiresBootstrapPeers bootstrapPeersFlag ledgerStateJudgement
-  -- Has the node still haven't reached a clean state
-  , not hasOnlyBootstrapPeers
-  -- Are the local root peers all trustable?
-  , all (\case
-          LocalRootConfig { peerTrustable = IsTrustable }
-            -> True
-          _ -> False
-        )
-        (LocalRootPeers.toMap localRootPeers)
-  -- Are the known peers all trustable or all in progress to be demoted?
-  , KnownPeers.toSet knownPeers `Set.isSubsetOf`
-    (  PublicRootPeers.getBootstrapPeers publicRootPeers
-    <> LocalRootPeers.keysSet (LocalRootPeers.clampToTrustable localRootPeers)
-    )
-
-  -- Are there still any in progress promotion jobs?
-  , Set.null inProgressPromoteCold
-  , Set.null inProgressPromoteWarm
-  , inProgressPeerShareReqs == 0
-  , not inProgressBigLedgerPeersReq
-  , not inProgressPublicRootsReq =
-    Guarded Nothing $ do
-      return $ \_now ->
-        Decision { decisionTrace = [TraceOnlyBootstrapPeers],
-                   decisionJobs  = [],
-                   decisionState = st { hasOnlyBootstrapPeers = True
-                                      , bootstrapPeersTimeout = Nothing
-                                      }
-        }
-  | otherwise = GuardedSkip Nothing
 
 -- |This job, which is initiated by monitorLedgerStateJudgement job,
 -- verifies whether the provided big ledger pools match up with the
@@ -768,8 +411,8 @@ waitForSystemToQuiesce st@PeerSelectionState{
 --
 jobVerifyPeerSnapshot :: ( MonadSTM m )
                       => LedgerPeerSnapshot
-                      -> LedgerPeersConsensusInterface m
-                      -> Job () m (Completion m peeraddr peerconn)
+                      -> LedgerPeersConsensusInterface extraAPI m
+                      -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
 jobVerifyPeerSnapshot baseline@(LedgerPeerSnapshot (slot, _))
                       LedgerPeersConsensusInterface {
                         lpGetLatestSlot,
@@ -795,13 +438,18 @@ jobVerifyPeerSnapshot baseline@(LedgerPeerSnapshot (slot, _))
 -- can launch `jobVerifyPeerSnapshot`
 --
 ledgerPeerSnapshotChange :: (MonadSTM m)
-                         => PeerSelectionState peeraddr peerconn
-                         -> PeerSelectionActions peeraddr peerconn m
-                         -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-ledgerPeerSnapshotChange st@PeerSelectionState {
-                              ledgerPeerSnapshot }
+                         => (extraState -> extraState)
+                         -> PeerSelectionActions extraState extraActions extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m
+                         -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+                         -> Guarded (STM m) (TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
+ledgerPeerSnapshotChange extraStateChange
                          PeerSelectionActions {
-                           readLedgerPeerSnapshot } =
+                           readLedgerPeerSnapshot
+                         }
+                         st@PeerSelectionState {
+                           ledgerPeerSnapshot,
+                           extraState
+                         } =
   Guarded Nothing $ do
     ledgerPeerSnapshot' <- readLedgerPeerSnapshot
     case (ledgerPeerSnapshot', ledgerPeerSnapshot) of
@@ -813,6 +461,7 @@ ledgerPeerSnapshotChange st@PeerSelectionState {
                    Decision { decisionTrace = [],
                               decisionJobs  = [],
                               decisionState = st {
-                                ledgerStateJudgement = YoungEnough,
-                                ledgerPeerSnapshot = ledgerPeerSnapshot' } }
-
+                                extraState = extraStateChange extraState,
+                                ledgerPeerSnapshot = ledgerPeerSnapshot'
+                              }
+                            }
