@@ -104,9 +104,9 @@ import Cardano.Network.Types (LedgerStateJudgement,
 import Ouroboros.Network.Block (BlockNo (..))
 import Test.Ouroboros.Network.ConnectionManager.Timeouts
 import Test.Ouroboros.Network.ConnectionManager.Utils
-import Test.Ouroboros.Network.InboundGovernor.Utils
 import Test.Ouroboros.Network.Diffusion.Testnet.Minimal.Node
            (config_REPROMOTE_DELAY)
+import Test.Ouroboros.Network.InboundGovernor.Utils
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..))
 
 tests :: TestTree

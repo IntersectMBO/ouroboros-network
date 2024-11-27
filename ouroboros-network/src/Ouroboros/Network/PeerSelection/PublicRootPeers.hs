@@ -1,4 +1,5 @@
 {-# LANGUAGE DerivingVia    #-}
+{-# LANGUAGE GADTs          #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TypeOperators  #-}
 

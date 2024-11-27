@@ -144,8 +144,8 @@ import Cardano.PeerSelection.PeerSelectionActions (requestPublicRootPeers)
 import Data.Bool (bool)
 import Data.Function (on)
 import Data.Typeable (Typeable)
-import Ouroboros.Network.BlockFetch (PraosFetchMode (..), TraceFetchClientState,
-           TraceLabelPeer (..), FetchMode (..))
+import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..),
+           TraceFetchClientState, TraceLabelPeer (..))
 import Ouroboros.Network.Diffusion.Common qualified as Common
 import Ouroboros.Network.PeerSelection.Governor.Types
            (BootstrapPeersCriticalTimeoutError)

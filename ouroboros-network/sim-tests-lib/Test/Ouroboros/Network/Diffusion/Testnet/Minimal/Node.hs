@@ -89,10 +89,10 @@ import Ouroboros.Network.Snocket (MakeBearer, Snocket, TestAddress (..),
 
 import Simulation.Network.Snocket (AddressType (..), FD)
 
+import GHC.Exception (Exception)
 import Ouroboros.Network.BlockFetch.ConsensusInterface
            (ChainSelStarvation (ChainSelStarvationEndedAt))
 import Ouroboros.Network.ConnectionManager.State (ConnStateIdSupply)
-import GHC.Exception (Exception)
 import Ouroboros.Network.Diffusion.Common qualified as Common
 import Ouroboros.Network.Diffusion.MinimalP2P (runM)
 import Ouroboros.Network.PeerSelection.Governor.Types
@@ -109,8 +109,8 @@ import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint,
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSLookupType)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
            LocalRootConfig, WarmValency)
-import Test.Ouroboros.Network.Data.Script (Script)
 import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersActions (..))
+import Test.Ouroboros.Network.Data.Script (Script)
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB (addBlock,
            getBlockPointSet)
 import Test.Ouroboros.Network.Diffusion.Node.Kernel (NodeKernel (..), NtCAddr,
