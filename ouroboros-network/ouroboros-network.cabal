@@ -58,10 +58,10 @@ library
     Cardano.Diffusion.Policies
     Cardano.Network.ArgumentsExtra
     Cardano.Network.LedgerPeerConsensusInterface
-    Cardano.Network.PeerSelection.Governor.Types
+    Cardano.Network.PeerSelection.Governor.Monitor
     Cardano.Network.PeerSelection.Governor.PeerSelectionActions
     Cardano.Network.PeerSelection.Governor.PeerSelectionState
-    Cardano.Network.PeerSelection.Governor.Monitor
+    Cardano.Network.PeerSelection.Governor.Types
     Cardano.Network.PeerSelection.PeerChurnArgs
     Cardano.Network.PeerSelection.Types
     Cardano.Network.PublicRootPeers
@@ -88,6 +88,8 @@ library
     Ouroboros.Network.NodeToNode
     Ouroboros.Network.PeerSelection.Churn
     Ouroboros.Network.PeerSelection.Governor
+    Ouroboros.Network.PeerSelection.Governor.Monitor
+    Ouroboros.Network.PeerSelection.Governor.Types
     Ouroboros.Network.PeerSelection.LedgerPeers
     Ouroboros.Network.PeerSelection.PeerMetric
     Ouroboros.Network.PeerSelection.PeerSelectionActions
@@ -107,8 +109,6 @@ library
     Ouroboros.Network.TxSubmission.Inbound
     Ouroboros.Network.TxSubmission.Mempool.Reader
     Ouroboros.Network.TxSubmission.Outbound
-    Ouroboros.Network.PeerSelection.Governor.Types
-    Ouroboros.Network.PeerSelection.Governor.Monitor
 
   other-modules:
     Ouroboros.Network.Diffusion.Utils
@@ -187,7 +187,7 @@ library
 
   if !os(windows)
     build-depends:
-      directory,
+      directory
 
   if flag(asserts)
     ghc-options: -fno-ignore-asserts
