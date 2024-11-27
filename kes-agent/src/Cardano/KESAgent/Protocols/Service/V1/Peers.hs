@@ -22,28 +22,30 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadTimer
 import Network.TypedProtocol.Core
+import Network.TypedProtocol.Peer.Client as Client
+import Network.TypedProtocol.Peer.Server as Server
 
 serviceReceiver :: forall (m :: * -> *)
              . KESAlgorithm (KES StandardCrypto)
             => Monad m
             => (Bundle m StandardCrypto -> m RecvResult)
-            -> Peer (ServiceProtocol m) AsClient InitialState m ()
+            -> Client (ServiceProtocol m) NonPipelined InitialState m ()
 serviceReceiver receiveBundle =
-    Await (ServerAgency TokInitial) $ \case
+    Client.Await $ \case
       VersionMessage -> go
-      AbortMessage -> Done TokEnd ()
-      ProtocolErrorMessage -> Done TokEnd ()
+      AbortMessage -> Client.Done ()
+      ProtocolErrorMessage -> Client.Done ()
   where
-    go :: Peer (ServiceProtocol m) AsClient IdleState m ()
-    go = Await (ServerAgency TokIdle) $ \case
+    go :: Client (ServiceProtocol m) NonPipelined IdleState m ()
+    go = Client.Await $ \case
           KeyMessage bundle ->
-            Effect $ do
+            Client.Effect $ do
               result <- receiveBundle bundle
-              return $ Yield (ClientAgency TokWaitForConfirmation) (RecvResultMessage result) go
+              return $ Client.Yield (RecvResultMessage result) go
           ProtocolErrorMessage ->
-            Done TokEnd ()
+            Client.Done ()
           ServerDisconnectMessage ->
-            Done TokEnd ()
+            Client.Done ()
 
 servicePusher :: forall (m :: (* -> *))
                . MonadSTM m
@@ -53,23 +55,23 @@ servicePusher :: forall (m :: (* -> *))
               => m (Bundle m StandardCrypto)
               -> m (Bundle m StandardCrypto)
               -> (RecvResult -> m ())
-              -> Peer (ServiceProtocol m) AsServer InitialState m ()
+              -> Server (ServiceProtocol m) NonPipelined InitialState m ()
 servicePusher currentKey nextKey handleResult =
-  Yield (ServerAgency TokInitial) VersionMessage $
-    Effect $ do
+  Server.Yield VersionMessage $
+    Server.Effect $ do
       bundle <- currentKey
       return $
-        Yield (ServerAgency TokIdle) (KeyMessage bundle) $
-          Await (ClientAgency TokWaitForConfirmation) $ \(RecvResultMessage result) -> goR result
+        Server.Yield (KeyMessage bundle) $
+          Server.Await $ \(RecvResultMessage result) -> goR result
   where
-    goR :: RecvResult -> Peer (ServiceProtocol m) AsServer IdleState m ()
-    goR result = Effect $ do
+    goR :: RecvResult -> Server (ServiceProtocol m) NonPipelined IdleState m ()
+    goR result = Server.Effect $ do
       handleResult result
       go
 
-    go :: m (Peer (ServiceProtocol m) AsServer IdleState m ())
+    go :: m (Server (ServiceProtocol m) NonPipelined IdleState m ())
     go = do
       bundle <- nextKey
       return $
-        Yield (ServerAgency TokIdle) (KeyMessage bundle) $
-          Await (ClientAgency TokWaitForConfirmation) $ \(RecvResultMessage result) -> goR result
+        Server.Yield (KeyMessage bundle) $
+          Server.Await $ \(RecvResultMessage result) -> goR result

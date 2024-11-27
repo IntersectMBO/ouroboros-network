@@ -146,6 +146,7 @@ import System.Directory ( removeFile )
 import System.IO
 import System.IO.Error ( ioeGetErrorType, isDoesNotExistErrorType )
 import System.IO.Unsafe
+import System.IO.Unsafe
 import System.IOManager
 import System.Random
 import System.Socket.Family.Unix
@@ -760,9 +761,7 @@ toBearerInfo abi =
         biOutboundWriteFailure = abiOutboundWriteFailure abi,
         biAcceptFailures       = (\(errDelay, errType) ->
                                    ( ABI.delay errDelay
-                                   , case errType of
-                                      AbsIOErrConnectionAborted -> IOErrConnectionAborted
-                                      AbsIOErrResourceExhausted -> IOErrResourceExhausted
+                                   , errType
                                    )
                                  ) <$> abiAcceptFailure abi,
         biSDUSize              = toSduSize (abiSDUSize abi)

@@ -1,21 +1,23 @@
 {-# OPTIONS_GHC -Wno-deprecations #-}
 
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE DerivingVia #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE QuantifiedConstraints #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Cardano.KESAgent.Protocols.VersionHandshake.Driver
   where
@@ -55,46 +57,65 @@ instance Pretty VersionHandshakeDriverTrace where
   pretty (VersionHandshakeDriverMisc x) = x
   pretty x = drop (strLength "VersionHandshakeDriver") (show x)
 
-versionHandshakeDriver :: ( Monad m
+versionHandshakeDriver :: forall (m :: * -> *) pr
+                        . ( Monad m
                           , MonadThrow m
                           , MonadST m
                           )
                        => RawBearer m
                        -> Tracer m VersionHandshakeDriverTrace
-                       -> Driver VersionHandshakeProtocol () m
-versionHandshakeDriver s tracer = Driver
-  { sendMessage = \agency msg -> case (agency, msg) of
-      (ServerAgency TokInitial, VersionOfferMessage versions) -> do
+                       -> Driver VersionHandshakeProtocol pr () m
+versionHandshakeDriver s tracer =
+  Driver { sendMessage, recvMessage, initialDState = () }
+  where
+
+    sendMessage :: forall (st :: VersionHandshakeProtocol) (st' :: VersionHandshakeProtocol)
+                 . ( StateTokenI st
+                   , ActiveState st
+                   )
+                => ReflRelativeAgency (StateAgency st) WeHaveAgency (Relative pr (StateAgency st))
+                -> Message VersionHandshakeProtocol st st'
+                -> m ()
+    sendMessage = \_ msg -> case (stateToken @st, msg) of
+      (SInitialState, VersionOfferMessage versions) -> do
         traceWith tracer $ VersionHandshakeDriverOfferingVersions versions
         sendItem s versions
         return ()
 
-      (ClientAgency TokVersionsOffered, VersionAcceptMessage version) -> do
+      (SVersionsOfferedState, VersionAcceptMessage version) -> do
         traceWith tracer $ VersionHandshakeDriverAcceptingVersion version
         sendItem s (Just version)
         return ()
 
-      (ClientAgency TokVersionsOffered, VersionRejectedMessage) -> do
+      (SVersionsOfferedState, VersionRejectedMessage) -> do
         traceWith tracer $ VersionHandshakeDriverRejectingVersion
         sendItem s (Nothing :: Maybe VersionIdentifier)
         return ()
 
-  , recvMessage = \agency () -> case agency of
-      (ServerAgency TokInitial) -> do
+      (SEndState, _) -> error "This cannot happen"
+
+    recvMessage :: forall (st :: VersionHandshakeProtocol)
+                 . ( StateTokenI st
+                   , ActiveState st
+                   )
+                => ReflRelativeAgency (StateAgency st) TheyHaveAgency (Relative pr (StateAgency st))
+                -> ()
+                -> m (SomeMessage st, ())
+    recvMessage = \_ () -> case stateToken @st of
+      SInitialState -> do
         result <- runReadResultT $ receiveItem s
         case result of
           ReadOK versions -> return (SomeMessage (VersionOfferMessage versions), ())
           x -> throw x
 
-      (ClientAgency TokVersionsOffered) -> do
+      SVersionsOfferedState -> do
         result <- runReadResultT $ receiveItem s
         case result of
           ReadOK Nothing -> return (SomeMessage VersionRejectedMessage, ())
           ReadOK (Just version) -> return (SomeMessage (VersionAcceptMessage version), ())
           x -> throw x
 
-  , startDState = ()
-  }
+      SEndState -> error "This cannot happen"
 
 instance HasInfo (DirectCodec m) (Message VersionHandshakeProtocol InitialState VersionsOfferedState) where
   info codec _ = info codec (Proxy @[VersionIdentifier])

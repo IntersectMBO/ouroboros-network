@@ -239,7 +239,7 @@ test-suite kes-agent-tests
                  , filepath >= 1.4.2 && <1.5
                  , ghc-prim
                  , io-classes
-                 , io-sim
+                 , io-sim >=1.5.0
                  , network
                  , network-mux
                  , ouroboros-network-framework

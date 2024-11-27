@@ -228,31 +228,30 @@ instance Protocol (ControlProtocol m c) where
           EndMessage :: Message (ControlProtocol m c) IdleState EndState
           ProtocolErrorMessage :: Message (ControlProtocol m c) a EndState
 
-  -- | Server always has agency, except between sending a key and confirming it
-  data ServerHasAgency st where
-    TokInitial :: ServerHasAgency InitialState
-    TokIdle :: ServerHasAgency IdleState
+  type StateAgency InitialState = ServerAgency
+  type StateAgency IdleState = ServerAgency
 
-  -- | Client only has agency between sending a key and confirming it
-  data ClientHasAgency st where
-    TokWaitForConfirmation :: ClientHasAgency WaitForConfirmationState
-    TokWaitForPublicKey :: ClientHasAgency WaitForPublicKeyState
-    TokWaitForInfo :: ClientHasAgency WaitForInfoState
+  type StateAgency WaitForConfirmationState = ClientAgency
+  type StateAgency WaitForPublicKeyState = ClientAgency
+  type StateAgency WaitForInfoState = ClientAgency
+  type StateAgency EndState = NobodyAgency
 
-  -- | Someone, i.e., the server, always has agency
-  data NobodyHasAgency st where
-    TokEnd :: NobodyHasAgency EndState
+  type StateToken = SControlProtocol
 
-  exclusionLemma_ClientAndServerHaveAgency tok1 tok2 =
-    case tok1 of
-      TokWaitForConfirmation ->
-        case tok2 of {}
-      TokWaitForPublicKey ->
-        case tok2 of {}
-      TokWaitForInfo ->
-        case tok2 of {}
-  exclusionLemma_NobodyAndClientHaveAgency _ _ = undefined
-  exclusionLemma_NobodyAndServerHaveAgency _ _ = undefined
+data SControlProtocol (st :: ControlProtocol m c) where
+  SInitialState :: SControlProtocol InitialState
+  SIdleState :: SControlProtocol IdleState
+  SWaitForConfirmationState :: SControlProtocol WaitForConfirmationState
+  SWaitForPublicKeyState :: SControlProtocol WaitForPublicKeyState
+  SWaitForInfoState :: SControlProtocol WaitForInfoState
+  SEndState :: SControlProtocol EndState
+
+instance StateTokenI InitialState where stateToken = SInitialState
+instance StateTokenI IdleState where stateToken = SIdleState
+instance StateTokenI WaitForConfirmationState where stateToken = SWaitForConfirmationState
+instance StateTokenI WaitForPublicKeyState where stateToken = SWaitForPublicKeyState
+instance StateTokenI WaitForInfoState where stateToken = SWaitForInfoState
+instance StateTokenI EndState where stateToken = SEndState
 
 instance NamedCrypto c => VersionedProtocol (ControlProtocol m c) where
   versionIdentifier = cpVersionIdentifier

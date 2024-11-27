@@ -73,22 +73,24 @@ instance Protocol VersionHandshakeProtocol where
           VersionRejectedMessage :: Message VersionHandshakeProtocol VersionsOfferedState EndState
 
   -- | Server always has agency, except between sending a key and confirming it
-  data ServerHasAgency st where
-    TokInitial :: ServerHasAgency InitialState
+  type StateAgency InitialState = ServerAgency
 
   -- | Client only has agency between sending a key and confirming it
-  data ClientHasAgency st where
-    TokVersionsOffered :: ClientHasAgency VersionsOfferedState
+  type StateAgency VersionsOfferedState = ClientAgency
 
   -- | Someone, i.e., the server, always has agency
-  data NobodyHasAgency st where
-    TokEnd :: NobodyHasAgency EndState
+  type StateAgency EndState = NobodyAgency
 
-  exclusionLemma_ClientAndServerHaveAgency tok1 tok2 =
-    case tok1 of
-      TokVersionsOffered -> case tok2 of {}
-  exclusionLemma_NobodyAndClientHaveAgency _ _ = undefined
-  exclusionLemma_NobodyAndServerHaveAgency _ _ = undefined
+  type StateToken = SVersionHandshakeProtocol
+
+data SVersionHandshakeProtocol (st :: VersionHandshakeProtocol) where
+  SInitialState :: SVersionHandshakeProtocol InitialState
+  SVersionsOfferedState :: SVersionHandshakeProtocol VersionsOfferedState
+  SEndState :: SVersionHandshakeProtocol EndState
+
+instance StateTokenI InitialState where stateToken = SInitialState
+instance StateTokenI VersionsOfferedState where stateToken = SVersionsOfferedState
+instance StateTokenI EndState where stateToken = SEndState
 
 instance VersionedProtocol VersionHandshakeProtocol where
   versionIdentifier _ = vpVersionIdentifier

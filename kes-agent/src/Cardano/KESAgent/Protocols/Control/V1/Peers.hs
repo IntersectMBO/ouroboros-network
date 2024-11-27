@@ -19,6 +19,8 @@ import Cardano.Crypto.KES.Class
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
 import Network.TypedProtocol.Core
+import Network.TypedProtocol.Peer.Client as Client
+import Network.TypedProtocol.Peer.Server as Server
 
 controlReceiver :: forall (m :: * -> *)
              .  Monad m
@@ -27,97 +29,97 @@ controlReceiver :: forall (m :: * -> *)
             -> m (Maybe (VerKeyKES (KES StandardCrypto)))
             -> (OCert StandardCrypto -> m RecvResult)
             -> m AgentInfo
-            -> Peer (ControlProtocol m) AsClient InitialState m ()
+            -> Client (ControlProtocol m) NonPipelined InitialState m ()
 controlReceiver genKey dropKey queryKey installKey getAgentInfo =
-    Await (ServerAgency TokInitial) $ \case
+    Client.Await $ \case
       VersionMessage -> go
-      AbortMessage -> Done TokEnd ()
-      ProtocolErrorMessage -> Done TokEnd ()
+      AbortMessage -> Client.Done ()
+      ProtocolErrorMessage -> Client.Done ()
   where
-    go :: Peer (ControlProtocol m) AsClient IdleState m ()
-    go = Await (ServerAgency TokIdle) $ \case
+    go :: Client (ControlProtocol m) NonPipelined IdleState m ()
+    go = Client.Await $ \case
           InstallKeyMessage oc ->
-            Effect $ do
+            Client.Effect $ do
               result <- installKey oc
-              return $ Yield (ClientAgency TokWaitForConfirmation) (InstallResultMessage result) go
+              return $ Client.Yield (InstallResultMessage result) go
           GenStagedKeyMessage ->
-            Effect $ do
+            Client.Effect $ do
               vkeyMay <- genKey
-              return $ Yield (ClientAgency TokWaitForPublicKey) (PublicKeyMessage vkeyMay) go
+              return $ Client.Yield (PublicKeyMessage vkeyMay) go
           QueryStagedKeyMessage ->
-            Effect $ do
+            Client.Effect $ do
               vkeyMay <- queryKey
-              return $ Yield (ClientAgency TokWaitForPublicKey) (PublicKeyMessage vkeyMay) go
+              return $ Client.Yield (PublicKeyMessage vkeyMay) go
           DropStagedKeyMessage ->
-            Effect $ do
+            Client.Effect $ do
               vkeyMay <- dropKey
-              return $ Yield (ClientAgency TokWaitForPublicKey) (PublicKeyMessage vkeyMay) go
+              return $ Client.Yield (PublicKeyMessage vkeyMay) go
 
           RequestInfoMessage ->
-            Effect $ do
+            Client.Effect $ do
               info <- getAgentInfo
-              return $ Yield (ClientAgency TokWaitForInfo) (InfoMessage info) go
+              return $ Client.Yield (InfoMessage info) go
 
           EndMessage ->
-            Done TokEnd ()
+            Client.Done ()
 
           ProtocolErrorMessage ->
-            Done TokEnd ()
+            Client.Done ()
 
-type ControlPeer m a = Peer (ControlProtocol m) AsServer InitialState m a
+type ControlServer m a = Server (ControlProtocol m) NonPipelined InitialState m a
 
 controlGenKey :: forall (m :: (* -> *))
                . MonadSTM m
               => MonadThrow m
-              => ControlPeer m (Maybe (VerKeyKES (KES StandardCrypto)))
+              => ControlServer m (Maybe (VerKeyKES (KES StandardCrypto)))
 controlGenKey = do
-  Yield (ServerAgency TokInitial) VersionMessage $
-    Yield (ServerAgency TokIdle) GenStagedKeyMessage $
-      Await (ClientAgency TokWaitForPublicKey) $ \(PublicKeyMessage vkeyMay) ->
-        Yield (ServerAgency TokIdle) EndMessage $
-          Done TokEnd vkeyMay
+  Server.Yield VersionMessage $
+    Server.Yield GenStagedKeyMessage $
+      Server.Await $ \(PublicKeyMessage vkeyMay) ->
+        Server.Yield EndMessage $
+          Server.Done vkeyMay
 
 controlQueryKey :: forall (m :: (* -> *))
                . MonadSTM m
               => MonadThrow m
-              => ControlPeer m (Maybe (VerKeyKES (KES StandardCrypto)))
+              => ControlServer m (Maybe (VerKeyKES (KES StandardCrypto)))
 controlQueryKey = do
-  Yield (ServerAgency TokInitial) VersionMessage $
-    Yield (ServerAgency TokIdle) QueryStagedKeyMessage $
-      Await (ClientAgency TokWaitForPublicKey) $ \(PublicKeyMessage vkeyMay) ->
-        Yield (ServerAgency TokIdle) EndMessage $
-          Done TokEnd vkeyMay
+  Server.Yield VersionMessage $
+    Server.Yield QueryStagedKeyMessage $
+      Server.Await $ \(PublicKeyMessage vkeyMay) ->
+        Server.Yield EndMessage $
+          Server.Done vkeyMay
 
 controlDropKey :: forall (m :: (* -> *))
                . MonadSTM m
               => MonadThrow m
-              => ControlPeer m (Maybe (VerKeyKES (KES StandardCrypto)))
+              => ControlServer m (Maybe (VerKeyKES (KES StandardCrypto)))
 controlDropKey = do
-  Yield (ServerAgency TokInitial) VersionMessage $
-    Yield (ServerAgency TokIdle) DropStagedKeyMessage $
-      Await (ClientAgency TokWaitForPublicKey) $ \(PublicKeyMessage vkeyMay) ->
-        Yield (ServerAgency TokIdle) EndMessage $
-          Done TokEnd vkeyMay
+  Server.Yield VersionMessage $
+    Server.Yield DropStagedKeyMessage $
+      Server.Await $ \(PublicKeyMessage vkeyMay) ->
+        Server.Yield EndMessage $
+          Server.Done vkeyMay
 
 controlInstallKey :: forall (m :: (* -> *))
                . MonadSTM m
               => MonadThrow m
               => OCert StandardCrypto
-              -> ControlPeer m RecvResult
+              -> ControlServer m RecvResult
 controlInstallKey oc = do
-  Yield (ServerAgency TokInitial) VersionMessage $
-    Yield (ServerAgency TokIdle) (InstallKeyMessage oc) $
-      Await (ClientAgency TokWaitForConfirmation) $ \(InstallResultMessage result) ->
-        Yield (ServerAgency TokIdle) EndMessage $
-          Done TokEnd result
+  Server.Yield VersionMessage $
+    Server.Yield (InstallKeyMessage oc) $
+      Server.Await $ \(InstallResultMessage result) ->
+        Server.Yield EndMessage $
+          Server.Done result
 
 controlGetInfo :: forall (m :: (* -> *))
                . MonadSTM m
               => MonadThrow m
-              => ControlPeer m AgentInfo
+              => ControlServer m AgentInfo
 controlGetInfo = do
-  Yield (ServerAgency TokInitial) VersionMessage $
-    Yield (ServerAgency TokIdle) RequestInfoMessage $
-      Await (ClientAgency TokWaitForInfo) $ \(InfoMessage info) ->
-        Yield (ServerAgency TokIdle) EndMessage $
-          Done TokEnd info
+  Server.Yield VersionMessage $
+    Server.Yield RequestInfoMessage $
+      Server.Await $ \(InfoMessage info) ->
+        Server.Yield EndMessage $
+          Server.Done info

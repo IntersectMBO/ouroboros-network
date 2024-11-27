@@ -1,34 +1,36 @@
 {-# OPTIONS_GHC -Wno-deprecations #-}
 
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE DerivingVia #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE QuantifiedConstraints #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Cardano.KESAgent.Protocols.Control.V1.Driver
   where
 
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
-import Cardano.KESAgent.Protocols.Types
 import Cardano.KESAgent.Protocols.Control.V1.Protocol
 import Cardano.KESAgent.Protocols.RecvResult
-import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Protocols.StandardCrypto
-import Cardano.KESAgent.Serialization.RawUtil
+import Cardano.KESAgent.Protocols.Types
+import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Serialization.DirectCodec
+import Cardano.KESAgent.Serialization.RawUtil
 import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting
 
@@ -45,8 +47,8 @@ import Cardano.Crypto.Libsodium.Memory
 
 import Ouroboros.Network.RawBearer
 
-import Control.Monad ( void, when, replicateM )
 import Control.Concurrent.Class.MonadMVar
+import Control.Monad ( void, when, replicateM )
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow ( MonadThrow, bracket )
@@ -62,6 +64,10 @@ import Data.Coerce
 import Data.Functor.Contravariant ( (>$<) )
 import Data.Maybe ( isJust )
 import Data.Proxy
+import Data.SerDoc.Class ( ViaEnum (..), Codec (..), HasInfo (..), Serializable (..), encodeEnum, decodeEnum, enumInfo )
+import qualified Data.SerDoc.Info
+import Data.SerDoc.Info ( Description (..), aliasField )
+import Data.SerDoc.TH (deriveSerDoc)
 import qualified Data.Text as Text
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Time (UTCTime)
@@ -74,10 +80,6 @@ import Foreign.Marshal.Utils ( copyBytes )
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Driver
 import Text.Printf
-import Data.SerDoc.Info ( Description (..), aliasField )
-import Data.SerDoc.Class ( ViaEnum (..), Codec (..), HasInfo (..), Serializable (..), encodeEnum, decodeEnum, enumInfo )
-import qualified Data.SerDoc.Info
-import Data.SerDoc.TH (deriveSerDoc)
 
 flagHasBundle, flagHasStagedKey :: Word8
 flagHasBundle = 0x01
@@ -130,7 +132,7 @@ $(deriveSerDoc ''DirectCodec [] ''BootstrapInfo)
 $(deriveSerDoc ''DirectCodec [] ''BundleInfo)
 $(deriveSerDoc ''DirectCodec [] ''AgentInfo)
 
-controlDriver :: forall m f t p
+controlDriver :: forall (m :: * -> *) f t p pr
                . VersionedProtocol (ControlProtocol m)
               => HasInfo (DirectCodec m) (VerKeyKES (KES StandardCrypto))
               => HasInfo (DirectCodec m) AgentInfo
@@ -142,55 +144,69 @@ controlDriver :: forall m f t p
               => MonadST m
               => RawBearer m
               -> Tracer m ControlDriverTrace
-              -> Driver (ControlProtocol m) () m
-controlDriver s tracer = Driver
-  { sendMessage = \agency msg -> case (agency, msg) of
-      (ServerAgency TokInitial, VersionMessage) -> do
+              -> Driver (ControlProtocol m) pr () m
+controlDriver s tracer =
+  Driver { sendMessage, recvMessage, initialDState = () }
+  where
+
+    sendMessage :: forall (st :: ControlProtocol m) (st' :: ControlProtocol m)
+                 . ( StateTokenI st
+                   , ActiveState st
+                   )
+                => ReflRelativeAgency (StateAgency st) WeHaveAgency (Relative pr (StateAgency st))
+                -> Message (ControlProtocol m) st st'
+                -> m ()
+    sendMessage _ msg = case (stateToken @st, msg) of
+      (SInitialState, VersionMessage) -> do
         let VersionIdentifier v = versionIdentifier (Proxy @(ControlProtocol m))
         sendVersion (Proxy @(ControlProtocol m)) s (ControlDriverSendingVersionID >$< tracer)
-      (ServerAgency TokInitial, AbortMessage) ->
+      (_, AbortMessage) ->
         return ()
 
-      (ServerAgency TokIdle, GenStagedKeyMessage) -> do
+      (SIdleState, GenStagedKeyMessage) -> do
         sendItem s GenStagedKeyCmd
-      (ServerAgency TokIdle, QueryStagedKeyMessage) -> do
+      (SIdleState, QueryStagedKeyMessage) -> do
         sendItem s QueryStagedKeyCmd
-      (ServerAgency TokIdle, DropStagedKeyMessage) -> do
+      (SIdleState, DropStagedKeyMessage) -> do
         sendItem s DropStagedKeyCmd
-      (ServerAgency TokIdle, RequestInfoMessage) -> do
+      (SIdleState, RequestInfoMessage) -> do
         sendItem s RequestInfoCmd
 
-      (ServerAgency TokIdle, InstallKeyMessage oc) -> do
+      (SIdleState, InstallKeyMessage oc) -> do
         sendItem s InstallKeyCmd
         sendItem s oc
 
-      (ServerAgency TokIdle, EndMessage) -> do
+      (SIdleState, EndMessage) -> do
         return ()
 
-      (ServerAgency _, ProtocolErrorMessage) -> do
+      (_, ProtocolErrorMessage) -> do
         return ()
 
-      (ClientAgency _, ProtocolErrorMessage) -> do
-        return ()
-
-      (ClientAgency TokWaitForPublicKey, PublicKeyMessage vkeyMay) -> do
+      (SWaitForPublicKeyState, PublicKeyMessage vkeyMay) -> do
         case vkeyMay of
           Nothing -> traceWith tracer ControlDriverNoPublicKeyToReturn
           Just _ -> traceWith tracer ControlDriverReturningPublicKey
         sendItem s vkeyMay
 
-      (ClientAgency TokWaitForConfirmation, InstallResultMessage reason) -> do
+      (SWaitForConfirmationState, InstallResultMessage reason) -> do
         if reason == RecvOK then
           traceWith tracer ControlDriverConfirmingKey
         else
           traceWith tracer ControlDriverDecliningKey
         sendItem s reason
 
-      (ClientAgency TokWaitForInfo, InfoMessage info) -> do
+      (SWaitForInfoState, InfoMessage info) -> do
         sendItem s info
 
-  , recvMessage = \agency () -> case agency of
-      (ServerAgency TokInitial) -> do
+    recvMessage :: forall (st :: ControlProtocol m)
+                 . ( StateTokenI st
+                   , ActiveState st
+                   )
+                => ReflRelativeAgency (StateAgency st) TheyHaveAgency (Relative pr (StateAgency st))
+                -> ()
+                -> m (SomeMessage st, ())
+    recvMessage = \agency () -> case stateToken @st of
+      SInitialState -> do
         traceWith tracer ControlDriverReceivingVersionID
         result <- checkVersion (Proxy @(ControlProtocol m)) s (ControlDriverReceivedVersionID >$< tracer)
         case result of
@@ -200,7 +216,7 @@ controlDriver s tracer = Driver
             traceWith tracer $ readErrorToControlDriverTrace err
             return (SomeMessage AbortMessage, ())
 
-      (ServerAgency TokIdle) -> do
+      SIdleState -> do
         result <- runReadResultT $ do
           lift $ traceWith tracer ControlDriverReceivingCommand
           cmd <- receiveItem s
@@ -225,7 +241,7 @@ controlDriver s tracer = Driver
             return (SomeMessage EndMessage, ())
 
 
-      (ClientAgency TokWaitForPublicKey) -> do
+      SWaitForPublicKeyState -> do
         result <- runReadResultT $ do
           lift $ traceWith tracer ControlDriverReceivingKey
           vkMay <- receiveItem s
@@ -243,7 +259,7 @@ controlDriver s tracer = Driver
             traceWith tracer $ readErrorToControlDriverTrace err
             return (SomeMessage ProtocolErrorMessage, ())
 
-      (ClientAgency TokWaitForConfirmation) -> do
+      SWaitForConfirmationState -> do
         result <- runReadResultT $ receiveItem s
         case result of
           ReadOK reason ->
@@ -252,7 +268,7 @@ controlDriver s tracer = Driver
             traceWith tracer $ readErrorToControlDriverTrace err
             return (SomeMessage ProtocolErrorMessage, ())
 
-      (ClientAgency TokWaitForInfo) -> do
+      SWaitForInfoState -> do
         result <- runReadResultT $ receiveItem s
         case result of
           ReadOK info ->
@@ -261,8 +277,7 @@ controlDriver s tracer = Driver
             traceWith tracer $ readErrorToControlDriverTrace err
             return (SomeMessage ProtocolErrorMessage, ())
 
-  , startDState = ()
-  }
+      SEndState -> error "This cannot happen"
 
 readErrorToControlDriverTrace :: ReadResult a -> ControlDriverTrace
 readErrorToControlDriverTrace (ReadOK _) =

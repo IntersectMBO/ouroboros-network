@@ -96,23 +96,28 @@ instance Protocol (ServiceProtocol m c) where
           ProtocolErrorMessage :: Message (ServiceProtocol m c) a EndState
 
   -- | Server always has agency, except between sending a key and confirming it
-  data ServerHasAgency st where
-    TokInitial :: ServerHasAgency InitialState
-    TokIdle :: ServerHasAgency IdleState
+  type StateAgency InitialState = ServerAgency
+  type StateAgency IdleState = ServerAgency
 
   -- | Client only has agency between sending a key and confirming it
-  data ClientHasAgency st where
-    TokWaitForConfirmation :: ClientHasAgency WaitForConfirmationState
+  type StateAgency WaitForConfirmationState = ClientAgency
 
-  -- | Someone, i.e., the server, always has agency
-  data NobodyHasAgency st where
-    TokEnd :: NobodyHasAgency EndState
+  -- | Nobody has agency after the end of the exchange
+  type StateAgency EndState = NobodyAgency
 
-  exclusionLemma_ClientAndServerHaveAgency tok1 tok2 =
-    case tok1 of
-      TokWaitForConfirmation -> case tok2 of {}
-  exclusionLemma_NobodyAndClientHaveAgency _ _ = undefined
-  exclusionLemma_NobodyAndServerHaveAgency _ _ = undefined
+  type StateToken = SServiceProtocol
+
+data SServiceProtocol (st :: ServiceProtocol m c) where
+  SInitialState :: SServiceProtocol InitialState
+  SIdleState :: SServiceProtocol IdleState
+  SWaitForConfirmationState :: SServiceProtocol WaitForConfirmationState
+  SEndState :: SServiceProtocol EndState
+
+instance StateTokenI InitialState where stateToken = SInitialState
+instance StateTokenI IdleState where stateToken = SIdleState
+instance StateTokenI WaitForConfirmationState where stateToken = SWaitForConfirmationState
+instance StateTokenI EndState where stateToken = SEndState
+
 
 instance NamedCrypto c => VersionedProtocol (ServiceProtocol m c) where
   versionIdentifier = spVersionIdentifier

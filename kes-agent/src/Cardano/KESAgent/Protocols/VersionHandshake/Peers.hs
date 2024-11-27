@@ -22,30 +22,32 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadTimer
 import Network.TypedProtocol.Core
+import Network.TypedProtocol.Peer.Client as Client
+import Network.TypedProtocol.Peer.Server as Server
 
 versionHandshakeClient :: Monad m
                        => [VersionIdentifier]
-                       -> Peer VersionHandshakeProtocol AsClient InitialState m (Maybe VersionIdentifier)
+                       -> Client VersionHandshakeProtocol NonPipelined InitialState m (Maybe VersionIdentifier)
 versionHandshakeClient acceptableVersions =
-    Await (ServerAgency TokInitial) $ \case
+    Client.Await $ \case
       VersionOfferMessage availableVersions ->
         let commonVersions = [ v | v <- acceptableVersions, w <- availableVersions, v == w ]
         in
           case commonVersions of
             [] ->
-              Yield (ClientAgency TokVersionsOffered) VersionRejectedMessage $
-              Done TokEnd Nothing
+              Client.Yield VersionRejectedMessage $
+              Client.Done Nothing
             (v:_) ->
-              Yield (ClientAgency TokVersionsOffered) (VersionAcceptMessage v) $
-              Done TokEnd (Just v)
+              Client.Yield (VersionAcceptMessage v) $
+              Client.Done (Just v)
 
 versionHandshakeServer :: Monad m
                        => [VersionIdentifier]
-                       -> Peer VersionHandshakeProtocol AsServer InitialState m (Maybe VersionIdentifier)
+                       -> Server VersionHandshakeProtocol NonPipelined InitialState m (Maybe VersionIdentifier)
 versionHandshakeServer availableVersions =
-  Yield (ServerAgency TokInitial) (VersionOfferMessage availableVersions) $
-    Await (ClientAgency TokVersionsOffered) $ \case
+  Server.Yield (VersionOfferMessage availableVersions) $
+    Server.Await $ \case
       VersionRejectedMessage ->
-        Done TokEnd Nothing
+        Server.Done Nothing
       VersionAcceptMessage v ->
-        Done TokEnd (Just v)
+        Server.Done (Just v)

@@ -176,7 +176,7 @@ import Data.Text ( Text )
 import qualified Data.Text as Text
 import Data.Time ( UTCTime )
 import Data.Typeable ( Typeable )
-import Network.TypedProtocol.Core ( Peer (..), PeerRole (..) )
+import Network.TypedProtocol.Core ( PeerRole (..) )
 import Network.TypedProtocol.Driver ( runPeerWithDriver )
 import Text.Printf
 import Data.Coerce
@@ -767,7 +767,6 @@ mkServiceDriverSP0 =
         runPeerWithDriver
           (SP0.serviceDriver bearer tracer)
           (SP0.servicePusher currentKey nextKey reportPushResult)
-          ()
   )
 
 mkServiceDriverSP1 :: forall m
@@ -787,7 +786,6 @@ mkServiceDriverSP1 =
         runPeerWithDriver
           (SP1.serviceDriver bearer tracer)
           (SP1.servicePusher currentKey nextKey reportPushResult)
-          ()
   )
 
 instance ServiceCrypto StandardCrypto where
@@ -835,7 +833,6 @@ mkControlDriverCP0 =
                 (queryKey agent)
                 (installKey agent)
                 (fromAgentInfo <$> getInfo agent))
-              ()
     )
 
 mkControlDriverCP1 :: forall m fd addr
@@ -858,7 +855,6 @@ mkControlDriverCP1 =
                 (queryKey agent)
                 (installKey agent)
                 (fromAgentInfo <$> getInfo agent))
-              ()
     )
 
 instance ControlCrypto StandardCrypto where
@@ -945,7 +941,6 @@ runAgent agent = do
                 runPeerWithDriver
                   (versionHandshakeDriver bearer (AgentVersionHandshakeDriverTrace >$< (agentTracer . agentOptions $ agent)))
                   (versionHandshakeServer (map fst (availableServiceDrivers @c @m)))
-                  ()
             case protocolVersionMay >>= (`lookup` (availableServiceDrivers @c @m)) of
               Nothing ->
                 traceWith (agentTracer . agentOptions $ agent) AgentServiceVersionHandshakeFailed
@@ -1016,7 +1011,6 @@ runAgent agent = do
                 runPeerWithDriver
                   (versionHandshakeDriver bearer (AgentVersionHandshakeDriverTrace >$< (agentTracer . agentOptions $ agent)))
                   (versionHandshakeServer (map fst (availableControlDrivers @c @m)))
-                  ()
             case protocolVersionMay >>= (`lookup` (availableControlDrivers @c @m)) of
               Nothing ->
                 traceWith (agentTracer . agentOptions $ agent) AgentControlVersionHandshakeFailed

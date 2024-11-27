@@ -136,7 +136,6 @@ mkServiceClientDriverSP0 =
           runPeerWithDriver
             (SP0.serviceDriver bearer $ ServiceClientDriverTrace >$< tracer)
             (SP0.serviceReceiver $ \bundle -> handleKey bundle <* traceWith tracer ServiceClientReceivedKey)
-            ()
     )
 
 mkServiceClientDriverSP1 :: forall m
@@ -154,7 +153,6 @@ mkServiceClientDriverSP1 =
           runPeerWithDriver
             (SP1.serviceDriver bearer $ ServiceClientDriverTrace >$< tracer)
             (SP1.serviceReceiver $ \bundle -> handleKey bundle <* traceWith tracer ServiceClientReceivedKey)
-            ()
     )
 
 
@@ -241,7 +239,6 @@ runServiceClient proxy mrb options handleKey tracer = do
           runPeerWithDriver
             (versionHandshakeDriver bearer (ServiceClientVersionHandshakeTrace >$< tracer))
             (versionHandshakeClient (map fst (availableServiceClientDrivers @c @m)))
-            ()
       case protocolVersionMay >>= (`lookup` (availableServiceClientDrivers @c @m)) of
         Nothing ->
           traceWith tracer ServiceClientVersionHandshakeFailed

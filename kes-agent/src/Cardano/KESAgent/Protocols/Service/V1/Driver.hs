@@ -13,6 +13,8 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE PolyKinds #-}
 
 module Cardano.KESAgent.Protocols.Service.V1.Driver
   where
@@ -77,7 +79,7 @@ import Text.Printf
 import Data.SerDoc.Info ( Description (..) )
 import Data.SerDoc.Class ( ViaEnum (..) )
 
-serviceDriver :: forall m f t p
+serviceDriver :: forall m f t p pr
                . VersionedProtocol (ServiceProtocol m)
               => HasInfo (DirectCodec m) (SignKeyKES (KES StandardCrypto))
               => HasInfo (DirectCodec m) (VerKeyKES (KES StandardCrypto))
@@ -90,42 +92,55 @@ serviceDriver :: forall m f t p
               => MonadST m
               => RawBearer m
               -> Tracer m ServiceDriverTrace
-              -> Driver (ServiceProtocol m) () m
-serviceDriver s tracer = Driver
-  { sendMessage = \agency msg -> case (agency, msg) of
-      (ServerAgency TokInitial, VersionMessage) -> do
+              -> Driver (ServiceProtocol m) pr () m
+serviceDriver s tracer =
+  Driver { sendMessage, recvMessage, initialDState = () }
+  where
+    sendMessage :: forall (st :: ServiceProtocol m) (st' :: ServiceProtocol m)
+                 . ( StateTokenI st
+                   , ActiveState st
+                   )
+                => ReflRelativeAgency (StateAgency st) WeHaveAgency (Relative pr (StateAgency st))
+                -> Message (ServiceProtocol m) st st'
+                -> m ()
+    sendMessage = \_ msg -> case (stateToken @st, msg) of
+      (SInitialState, VersionMessage) -> do
         let VersionIdentifier v = versionIdentifier (Proxy @(ServiceProtocol m))
         sendVersion (Proxy @(ServiceProtocol m)) s (ServiceDriverSendingVersionID >$< tracer)
-      (ServerAgency TokInitial, AbortMessage) -> do
+      (SInitialState, AbortMessage) -> do
         return ()
 
-      (ServerAgency TokIdle, KeyMessage bundle) -> do
+      (SIdleState, KeyMessage bundle) -> do
         traceWith tracer $ ServiceDriverSendingKey (ocertN (bundleOC bundle))
         sendItem s bundle
         traceWith tracer $ ServiceDriverSentKey (ocertN (bundleOC bundle))
 
-      (ServerAgency TokIdle, ServerDisconnectMessage) -> do
+      (SIdleState, ServerDisconnectMessage) -> do
         return ()
 
-      (ServerAgency _, ProtocolErrorMessage) -> do
+      (_, ProtocolErrorMessage) -> do
         return ()
 
-      (ClientAgency _, ProtocolErrorMessage) -> do
-        return ()
-
-      (ClientAgency TokWaitForConfirmation, RecvResultMessage reason) -> do
+      (SWaitForConfirmationState, RecvResultMessage reason) -> do
         if reason == RecvOK then
           traceWith tracer ServiceDriverConfirmingKey
         else
           traceWith tracer $ ServiceDriverDecliningKey reason
         sendRecvResult s reason
 
-      (ClientAgency TokWaitForConfirmation, ClientDisconnectMessage) -> do
+      (SWaitForConfirmationState, ClientDisconnectMessage) -> do
         return ()
 
 
-  , recvMessage = \agency () -> case agency of
-      (ServerAgency TokInitial) -> do
+    recvMessage :: forall (st :: ServiceProtocol m)
+                 . ( StateTokenI st
+                   , ActiveState st
+                   )
+                => ReflRelativeAgency (StateAgency st) TheyHaveAgency (Relative pr (StateAgency st))
+                -> ()
+                -> m (SomeMessage st, ())
+    recvMessage = \agency () -> case stateToken @st of
+      SInitialState -> do
         traceWith tracer ServiceDriverReceivingVersionID
         result <- checkVersion (Proxy @(ServiceProtocol m)) s (ServiceDriverReceivedVersionID >$< tracer)
         case result of
@@ -134,7 +149,7 @@ serviceDriver s tracer = Driver
           err -> do
             traceWith tracer $ readErrorToServiceDriverTrace err
             return (SomeMessage AbortMessage, ())
-      (ServerAgency TokIdle) -> do
+      SIdleState -> do
         result <- runReadResultT $ do
           lift $ traceWith tracer ServiceDriverReceivingKey
           bundle <- receiveItem s
@@ -149,7 +164,7 @@ serviceDriver s tracer = Driver
             traceWith tracer $ readErrorToServiceDriverTrace err
             return (SomeMessage ProtocolErrorMessage, ())
 
-      (ClientAgency TokWaitForConfirmation) -> do
+      SWaitForConfirmationState -> do
         result <- receiveRecvResult s
         case result of
           ReadOK response -> do
@@ -165,8 +180,7 @@ serviceDriver s tracer = Driver
             traceWith tracer $ readErrorToServiceDriverTrace err
             return (SomeMessage ProtocolErrorMessage, ())
 
-  , startDState = ()
-  }
+      SEndState -> error "This cannot happen"
 
 readErrorToServiceDriverTrace :: ReadResult a -> ServiceDriverTrace
 readErrorToServiceDriverTrace (ReadOK _) =

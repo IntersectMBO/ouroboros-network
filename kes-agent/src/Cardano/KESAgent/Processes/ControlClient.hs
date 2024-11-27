@@ -60,7 +60,7 @@ import Control.Tracer ( Tracer, traceWith )
 import Data.Functor.Contravariant ( (>$<) )
 import Data.Proxy ( Proxy (..) )
 import Network.TypedProtocol.Driver ( runPeerWithDriver )
-import Network.TypedProtocol.Core ( Peer (..), PeerRole (..) )
+import Network.TypedProtocol.Peer.Server ( Server, IsPipelined (..) )
 import Data.Coerce
 import Data.Kind
 import Data.Typeable
@@ -156,7 +156,6 @@ runControlClient1 handler proxy mrb options tracer = do
           runPeerWithDriver
             (versionHandshakeDriver bearer (ControlClientVersionHandshakeDriverTrace >$< tracer))
             (versionHandshakeClient (map fst drivers))
-            ()
       case protocolVersionMay >>= (`lookup` drivers) of
         Nothing ->
           error "Protocol handshake failed (control)"
@@ -167,7 +166,7 @@ runControlClient1 handler proxy mrb options tracer = do
 
 class IsControlHandler proto (m :: Type -> Type) a where
   type InitialState proto :: proto
-  toHandler :: Peer proto AsServer (InitialState proto) m a -> ControlHandler m a
+  toHandler :: Server proto NonPipelined (InitialState proto) m a -> ControlHandler m a
 
 type MonadControlHandler m =
       ( MonadThrow m
@@ -192,7 +191,6 @@ instance
       fst <$> runPeerWithDriver
                 (CP0.controlDriver bearer $ ControlClientDriverTrace >$< tracer)
                 peer
-                ()
 
 instance
     MonadControlHandler m => IsControlHandler (CP1.ControlProtocol m) m a
@@ -202,12 +200,11 @@ instance
       fst <$> runPeerWithDriver
                 (CP1.controlDriver bearer $ ControlClientDriverTrace >$< tracer)
                 peer
-                ()
 
 toHandlerEntry :: forall proto m a.
                   IsControlHandler proto m a
                => VersionedProtocol proto
-               => Peer proto AsServer (InitialState proto) m a
+               => Server proto NonPipelined (InitialState proto) m a
                -> (VersionIdentifier, ControlHandler m a)
 toHandlerEntry peer = (versionIdentifier (Proxy @proto), toHandler peer)
 

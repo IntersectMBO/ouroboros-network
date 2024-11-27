@@ -135,8 +135,6 @@ import Data.Text ( Text )
 import qualified Data.Text as Text
 import Data.Time ( UTCTime )
 import Data.Typeable ( Typeable )
-import Network.TypedProtocol.Core ( Peer (..), PeerRole (..) )
-import Network.TypedProtocol.Driver ( runPeerWithDriver )
 import Text.Printf
 import Data.Coerce
 
