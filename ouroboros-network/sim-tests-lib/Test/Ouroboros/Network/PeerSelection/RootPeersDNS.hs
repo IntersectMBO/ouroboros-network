@@ -59,6 +59,7 @@ import Data.List (intercalate)
 import Data.List.NonEmpty (NonEmpty (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
+import Ouroboros.Network.PeerSelection.RootPeersDNS (PeerActionsDNS (..))
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
 import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
@@ -361,11 +362,14 @@ mockLocalRootPeersProvider tracer (MockRoots localRootPeers dnsMapScript _ _)
       withAsync (updateDNSMap dnsMapScriptVar dnsMapVar) $ \_ -> do
         void $ MonadTimer.timeout 3600 $
           localRootPeersProvider tracer
-                                 (curry toSockAddr)
+                                 PeerActionsDNS {
+                                   paToPeerAddr = curry toSockAddr,
+                                   paDnsActions =
+                                     mockDNSActions dnsMapVar
+                                                    dnsTimeoutScriptVar
+                                                    dnsLookupDelayScriptVar
+                                 }
                                  DNSResolver.defaultResolvConf
-                                 (mockDNSActions dnsMapVar
-                                                 dnsTimeoutScriptVar
-                                                 dnsLookupDelayScriptVar)
                                  (readTVar localRootPeersVar)
                                  resultVar
         -- if there's no dns domain, `localRootPeersProvider` will never write
