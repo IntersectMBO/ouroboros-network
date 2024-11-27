@@ -23,12 +23,13 @@ data IsLedgerPeer = IsLedgerPeer
 
 -- | Ledger Peer request result
 --
-data LedgerPeers = LedgerPeers LedgerStateJudgement -- ^ Current ledger state
-                               [(PoolStake, NonEmpty RelayAccessPoint)]
-                               -- ^ Ledger peers
-                 | BeforeSlot -- ^ No result because the node is still
-                              -- before the configured UseLedgerAfter slot
-                              -- number
+data LedgerPeers =
+    LedgerPeers [(PoolStake, NonEmpty RelayAccessPoint)]
+                -- ^ Ledger peers
+  | BeforeSlot
+    -- ^ No result because the node is still
+    -- before the configured UseLedgerAfter slot
+    -- number
   deriving (Eq, Show)
 
 -- | Trace LedgerPeers events.

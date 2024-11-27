@@ -18,7 +18,6 @@ import Control.Exception (SomeException)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
 
-import Ouroboros.Network.PeerSelection.Bootstrap (requiresBootstrapPeers)
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.LedgerPeers (LedgerPeersKind (..))
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
@@ -26,14 +25,45 @@ import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
+import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersAPI (..))
 
 
-belowTarget :: (MonadSTM m, Ord peeraddr)
-            => PeerSelectionActions peeraddr peerconn m
-            -> Time
-            -> PeerSelectionState peeraddr peerconn
-            -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-belowTarget actions
+belowTarget
+  :: (MonadSTM m, Ord peeraddr, Semigroup extraPeers)
+  => (extraState -> Bool)
+  -- ^ This argument enables or disables this monitoring action based
+  -- on an 'extraState' flag.
+  --
+  -- This might be useful if the user requires its diffusion layer to
+  -- stop making progress during a sensitive/vulnerable situation and
+  -- quarantine it and make sure it is only connected to trusted peers.
+  -> PeerSelectionActions
+      extraState
+      extraActions
+      extraFlags
+      extraPeers
+      extraAPI
+      extraCounters
+      peeraddr
+      peerconn
+      m
+  -> Time
+  -> PeerSelectionState
+      extraState
+      extraFlags
+      extraPeers
+      peeraddr
+      peerconn
+  -> Guarded (STM m)
+            (TimedDecision m extraState extraDebugState extraFlags extraPeers
+                           peeraddr peerconn)
+belowTarget enableAction
+            actions@PeerSelectionActions {
+              extraPeersAPI = PublicExtraPeersAPI {
+                extraPeersToSet
+              },
+              extraStateToExtraCounters
+            }
             blockedAt
             st@PeerSelectionState {
               bigLedgerPeerRetryTime,
@@ -41,12 +71,9 @@ belowTarget actions
               targets = PeerSelectionTargets {
                           targetNumberOfKnownBigLedgerPeers
                         },
-              ledgerStateJudgement,
-              bootstrapPeersFlag
+              extraState
             }
-      -- Are we in a sensitive state? We shouldn't attempt to fetch ledger peers
-      -- in a sensitive state since we only want to connect to trustable peers.
-    | not (requiresBootstrapPeers bootstrapPeersFlag ledgerStateJudgement)
+    | enableAction extraState
 
       -- Do we need more big ledger peers?
     , maxExtraBigLedgerPeers > 0
@@ -70,22 +97,44 @@ belowTarget actions
         numberOfKnownBigLedgerPeers = numBigLedgerPeers
       }
       =
-      peerSelectionStateToCounters st
+      peerSelectionStateToCounters extraPeersToSet extraStateToExtraCounters st
 
     maxExtraBigLedgerPeers = targetNumberOfKnownBigLedgerPeers
                            - numBigLedgerPeers
 
 
-jobReqBigLedgerPeers :: forall m peeraddr peerconn.
-                        (MonadSTM m, Ord peeraddr)
-                     => PeerSelectionActions peeraddr peerconn m
-                     -> Int
-                     -> Job () m (Completion m peeraddr peerconn)
-jobReqBigLedgerPeers PeerSelectionActions{ requestPublicRootPeers }
+jobReqBigLedgerPeers
+  :: forall m extraActions extraState extraDebugState extraFlags extraAPI extraPeers
+           extraCounters peeraddr peerconn.
+     ( MonadSTM m
+     , Ord peeraddr
+     , Semigroup extraPeers
+     )
+  => PeerSelectionActions
+      extraState
+      extraActions
+      extraFlags
+      extraPeers
+      extraAPI
+      extraCounters
+      peeraddr
+      peerconn
+      m
+  -> Int
+  -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr
+                          peerconn)
+jobReqBigLedgerPeers PeerSelectionActions {
+                       extraPeersAPI = PublicExtraPeersAPI {
+                         extraPeersToSet,
+                         differenceExtraPeers,
+                         nullExtraPeers
+                       },
+                       requestPublicRootPeers
+                     }
                      numExtraAllowed =
     Job job (return . handler) () "reqBigLedgerPeers"
   where
-    handler :: SomeException -> Completion m peeraddr peerconn
+    handler :: SomeException -> Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn
     handler e =
       Completion $ \st now ->
       -- This is a failure, so move the backoff counter one in the failure
@@ -113,20 +162,23 @@ jobReqBigLedgerPeers PeerSelectionActions{ requestPublicRootPeers }
             decisionJobs  = []
           }
 
-    job :: m (Completion m peeraddr peerconn)
+    job :: m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
     job = do
       (results, ttl) <- requestPublicRootPeers BigLedgerPeers numExtraAllowed
       return $ Completion $ \st now ->
         let -- We make sure the set of big ledger peers disjoint from the sum
             -- of local, public and ledger peers.
-            newPeers :: PublicRootPeers peeraddr
-            newPeers = results
-                       `PublicRootPeers.difference`
-                       (   LocalRootPeers.keysSet (localRootPeers st)
-                        <> PublicRootPeers.toSet (publicRootPeers st))
+            newPeers :: PublicRootPeers extraPeers peeraddr
+            newPeers =
+              PublicRootPeers.difference differenceExtraPeers
+                results
+                (   LocalRootPeers.keysSet (localRootPeers st)
+                 <> PublicRootPeers.toSet extraPeersToSet (publicRootPeers st))
 
-            newPeersSet      = PublicRootPeers.toSet newPeers
-            publicRootPeers' = publicRootPeers st <> newPeers
+            newPeersSet      = PublicRootPeers.toSet extraPeersToSet newPeers
+            publicRootPeers' =
+              PublicRootPeers.mergeG extraPeersToSet
+                (publicRootPeers st) newPeers
 
             knownPeers'
                      = KnownPeers.insert
@@ -147,7 +199,7 @@ jobReqBigLedgerPeers PeerSelectionActions{ requestPublicRootPeers }
             -- seconds is just over four minutes.
             bigLedgerPeerBackoffs' :: Int
             bigLedgerPeerBackoffs'
-              | PublicRootPeers.null newPeers = (bigLedgerPeerBackoffs st `max` 0) + 1
+              | PublicRootPeers.null nullExtraPeers newPeers = (bigLedgerPeerBackoffs st `max` 0) + 1
               | otherwise = 0
 
             bigLedgerPeerRetryDiffTime :: DiffTime
@@ -175,10 +227,41 @@ jobReqBigLedgerPeers PeerSelectionActions{ requestPublicRootPeers }
              }
 
 
-aboveTarget :: forall m peeraddr peerconn.
-               (Alternative (STM m), MonadSTM m, Ord peeraddr, HasCallStack)
-            => MkGuardedDecision peeraddr peerconn m
-aboveTarget PeerSelectionPolicy {policyPickColdPeersToForget}
+aboveTarget
+  :: forall m extraState extraDebugState extraActions extraFlags extraAPI extraPeers
+            extraCounters peeraddr peerconn.
+     ( Alternative (STM m)
+     , MonadSTM m
+     , Ord peeraddr
+     , HasCallStack
+     )
+  => PeerSelectionActions
+      extraState
+      extraActions
+      extraFlags
+      extraPeers
+      extraAPI
+      extraCounters
+      peeraddr
+      peerconn
+      m
+  -> MkGuardedDecision
+      extraState
+      extraDebugState
+      extraFlags
+      extraPeers
+      peeraddr
+      peerconn
+      m
+aboveTarget PeerSelectionActions {
+              extraPeersAPI = PublicExtraPeersAPI {
+                extraPeersToSet,
+                differenceExtraPeers,
+                memberExtraPeers
+              },
+                extraStateToExtraCounters
+            }
+            PeerSelectionPolicy {policyPickColdPeersToForget}
             st@PeerSelectionState {
                  publicRootPeers,
                  knownPeers,
@@ -202,13 +285,15 @@ aboveTarget PeerSelectionPolicy {policyPickColdPeersToForget}
     = Guarded Nothing $ do
         let numPeersCanForget = numKnownBigLedgerPeers
                               - targetNumberOfKnownBigLedgerPeers
-        selectedToForget <- pickPeers st
+        selectedToForget <- pickPeers memberExtraPeers st
                                       policyPickColdPeersToForget
                                       availableToForget
                                       numPeersCanForget
         return $ \_now ->
           let knownPeers'     = KnownPeers.delete selectedToForget knownPeers
-              publicRootPeers' = PublicRootPeers.difference publicRootPeers selectedToForget
+              publicRootPeers' =
+                PublicRootPeers.difference differenceExtraPeers
+                  publicRootPeers selectedToForget
           in Decision {
                decisionTrace = [TraceForgetBigLedgerPeers
                                   targetNumberOfKnownBigLedgerPeers
@@ -229,6 +314,4 @@ aboveTarget PeerSelectionPolicy {policyPickColdPeersToForget}
     PeerSelectionView {
         viewKnownBigLedgerPeers       = (_, numKnownBigLedgerPeers),
         viewEstablishedBigLedgerPeers = (establishedBigLedgerPeers, numEstablishedBigLedgerPeers)
-      }
-      =
-      peerSelectionStateToView st
+      } = peerSelectionStateToView extraPeersToSet extraStateToExtraCounters st

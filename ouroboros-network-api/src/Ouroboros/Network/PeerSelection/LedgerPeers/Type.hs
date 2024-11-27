@@ -18,13 +18,12 @@ module Ouroboros.Network.PeerSelection.LedgerPeers.Type
   ( PoolStake (..)
   , AccPoolStake (..)
   , IsBigLedgerPeer (..)
-  , LedgerStateJudgement (..)
   , LedgerPeersConsensusInterface (..)
+  , mapExtraAPI
   , UseLedgerPeers (..)
   , AfterSlot (..)
   , LedgerPeersKind (..)
   , LedgerPeerSnapshot (.., LedgerPeerSnapshot)
-  , MinBigLedgerPeersForTrustedState (..)
   , isLedgerPeersEnabled
   , compareLedgerPeerSnapshotApproximate
   ) where
@@ -45,19 +44,6 @@ import Data.Aeson
 import Data.Aeson.Types
 import NoThunks.Class
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
-
--- | Minimum number of hot big ledger peers in Genesis mode
---   for trusted state to be signalled to Consensus. This number
---   should be smaller than the `targetNumberOfActiveBigLedgerPeers`
---   but greater than 1. In Genesis, we may demote a big ledger peer
---   for underperformance, but not promote a replacement immediately
---   to guard against adversaries which may want to slow down our
---   progress.
---
-newtype MinBigLedgerPeersForTrustedState =
-  MinBigLedgerPeersForTrustedState { getMinBigLedgerPeersForTrustedState :: Int }
-  deriving stock (Eq, Show)
-  deriving newtype (FromJSON)
 
 -- |The type of big ledger peers that is serialised or later
 -- provided by node configuration for the networking layer
@@ -237,17 +223,18 @@ data IsBigLedgerPeer
    | IsNotBigLedgerPeer
   deriving Eq
 
--- | Wether the node is caught up or fell too far behind the chain
-data LedgerStateJudgement = YoungEnough | TooOld
-  deriving (Eq, Show, Generic, NoThunks)
-
 -- | Return ledger state information and ledger peers.
 --
-data LedgerPeersConsensusInterface m = LedgerPeersConsensusInterface {
-    lpGetLatestSlot           :: STM m (WithOrigin SlotNo),
-    lpGetLedgerStateJudgement :: STM m LedgerStateJudgement,
-    lpGetLedgerPeers          :: STM m [(PoolStake, NonEmpty RelayAccessPoint)]
+data LedgerPeersConsensusInterface extraAPI m = LedgerPeersConsensusInterface {
+    lpGetLatestSlot  :: STM m (WithOrigin SlotNo)
+  , lpGetLedgerPeers :: STM m [(PoolStake, NonEmpty RelayAccessPoint)]
+    -- | Extension point so that third party users can add more actions
+  , lpExtraAPI       :: extraAPI
   }
+
+mapExtraAPI :: (a -> b) -> LedgerPeersConsensusInterface a m -> LedgerPeersConsensusInterface b m
+mapExtraAPI f lpci@LedgerPeersConsensusInterface{ lpExtraAPI = api } =
+  lpci { lpExtraAPI = f api }
 
 instance ToJSON RelayAccessPointCoded where
   toJSON (RelayAccessPointCoded (RelayAccessDomain domain port)) =
