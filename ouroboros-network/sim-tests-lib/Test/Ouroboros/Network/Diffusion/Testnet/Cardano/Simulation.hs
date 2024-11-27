@@ -115,7 +115,6 @@ import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay (..),
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS qualified as PeerSelection hiding
            (tests)
 
-import Cardano.Network.ArgumentsExtra (ConsensusModePeerTargets (..))
 import Cardano.Network.LedgerPeerConsensusInterface
            (CardanoLedgerPeersConsensusInterface (..))
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
@@ -218,7 +217,7 @@ data NodeArgs =
                                    )]
     , naLedgerPeers            :: Script LedgerPools
       -- ^ 'Arguments' 'LocalRootPeers' values
-    , naPeerTargets            :: ConsensusModePeerTargets
+    , naPeerTargets            :: (PeerSelectionTargets, PeerSelectionTargets)
       -- ^ 'Arguments' 'aLocalSelectionTargets' value
     , naDNSTimeoutScript       :: Script DNSTimeout
       -- ^ 'Arguments' 'aDNSTimeoutScript' value
@@ -406,7 +405,7 @@ genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream
                                        `suchThat` hasActive
   SmallTargets syncTargets <- resize (length relays * 2) arbitrary
                                        `suchThat` hasActive
-  let peerTargets = ConsensusModePeerTargets { deadlineTargets, syncTargets }
+  let peerTargets = (deadlineTargets, syncTargets)
   dnsTimeout <- arbitrary
   dnsLookupDelay <- arbitrary
   chainSyncExitOnBlockNo

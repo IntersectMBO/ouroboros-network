@@ -13,6 +13,7 @@ module Ouroboros.Network.PeerSelection.State.LocalRootPeers
     -- Export constructors for defining tests.
   , invariant
     -- * Basic operations
+  , mapPeers
   , empty
   , null
   , size
@@ -58,6 +59,13 @@ data LocalRootPeers extraFlags peeraddr =
        -- PeerTrustable values
        [(HotValency, WarmValency, Set peeraddr)]
   deriving Eq
+
+mapPeers :: (Ord b)
+         => (a -> b)
+         -> LocalRootPeers extraFlags a
+         -> LocalRootPeers extraFlags b
+mapPeers f (LocalRootPeers m l) =
+  LocalRootPeers (Map.mapKeys f m) (fmap (fmap (Set.map f)) l)
 
 -- | Newtype wrapper representing hot valency value from local root group
 -- configuration
