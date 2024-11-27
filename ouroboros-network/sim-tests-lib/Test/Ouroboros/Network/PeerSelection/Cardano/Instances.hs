@@ -8,11 +8,11 @@
 
 module Test.Ouroboros.Network.PeerSelection.Cardano.Instances where
 
-import Cardano.Node.ArgumentsExtra (ConsensusModePeerTargets (..))
-import Cardano.Node.ConsensusMode (ConsensusMode (..))
-import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers (..))
-import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable (..))
-import Cardano.Node.Types (LedgerStateJudgement (..))
+import Cardano.Network.ArgumentsExtra (ConsensusModePeerTargets (..))
+import Cardano.Network.ConsensusMode (ConsensusMode (..))
+import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
+import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
+import Cardano.Network.Types (LedgerStateJudgement (..))
 import Test.Ouroboros.Network.PeerSelection.Instances ()
 import Test.QuickCheck
 

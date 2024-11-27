@@ -57,13 +57,13 @@ library
     Cardano.Diffusion.Configuration
     Cardano.Diffusion.P2P
     Cardano.Diffusion.Policies
-    Cardano.Node.ArgumentsExtra
-    Cardano.Node.LedgerPeerConsensusInterface
-    Cardano.Node.PeerSelection.Governor.PeerSelectionActions
-    Cardano.Node.PeerSelection.Governor.PeerSelectionState
-    Cardano.Node.PeerSelection.PeerChurnArgs
-    Cardano.Node.PeerSelection.Types
-    Cardano.Node.PublicRootPeers
+    Cardano.Network.ArgumentsExtra
+    Cardano.Network.LedgerPeerConsensusInterface
+    Cardano.Network.PeerSelection.Governor.PeerSelectionActions
+    Cardano.Network.PeerSelection.Governor.PeerSelectionState
+    Cardano.Network.PeerSelection.PeerChurnArgs
+    Cardano.Network.PeerSelection.Types
+    Cardano.Network.PublicRootPeers
     Cardano.PeerSelection.Churn
     Cardano.PeerSelection.PeerSelectionActions
     Control.Concurrent.Class.MonadSTM.Strict.TMergeVar

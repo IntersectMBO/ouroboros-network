@@ -1,8 +1,8 @@
-module Cardano.Node.PeerSelection.Governor.PeerSelectionState where
+module Cardano.Network.PeerSelection.Governor.PeerSelectionState where
 
-import Cardano.Node.ConsensusMode (ConsensusMode)
-import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers (..))
-import Cardano.Node.Types (LedgerStateJudgement (..),
+import Cardano.Network.ConsensusMode (ConsensusMode)
+import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
+import Cardano.Network.Types (LedgerStateJudgement (..),
            MinBigLedgerPeersForTrustedState (..))
 import Control.Monad.Class.MonadTime.SI (Time)
 
@@ -25,7 +25,7 @@ data CardanoPeerSelectionState =
     --
   , cpstHasOnlyBootstrapPeers            :: !Bool
     -- | Has the governor fully reset its state
-    --
+    -- TODO: Use strict Maybe type from cardano-base
   , cpstBootstrapPeersTimeout            :: !(Maybe Time)
     -- | Use in Genesis mode to check whether we can signal to
     --   consensus that we met criteria of trusted state to enter

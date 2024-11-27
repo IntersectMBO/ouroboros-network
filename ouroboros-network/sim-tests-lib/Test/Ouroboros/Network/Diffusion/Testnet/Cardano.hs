@@ -65,6 +65,11 @@ import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as Estab
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSelection.Types
+import Test.Ouroboros.Network.Data.AbsBearerInfo
+import Test.Ouroboros.Network.Data.Script
+import Test.Ouroboros.Network.Data.Signal
+import Test.Ouroboros.Network.Data.Signal qualified as Signal
+import Test.Ouroboros.Network.Utils hiding (SmallDelay, debugTracer)
 
 import Simulation.Network.Snocket (BearerInfo (..))
 
@@ -75,9 +80,10 @@ import Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Simulation
 import Test.QuickCheck
 import Test.QuickCheck.Monoids
 import Test.Tasty
+import Test.Tasty.QuickCheck (testProperty)
 
-import Cardano.Node.ConsensusMode
-import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable (..))
+import Cardano.Network.ConsensusMode
+import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
@@ -88,28 +94,20 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
 import Ouroboros.Network.PeerSharing (PeerSharingResult (..))
 import Ouroboros.Network.Server2 qualified as Server
 
-
+import Cardano.Network.ArgumentsExtra (ConsensusModePeerTargets (..))
+import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
+           requiresBootstrapPeers)
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState
+           (CardanoPeerSelectionState)
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as CPST
+import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
+import Cardano.Network.PublicRootPeers qualified as CPRP
+import Cardano.Network.Types (LedgerStateJudgement,
+           MinBigLedgerPeersForTrustedState (..))
 import Test.Ouroboros.Network.ConnectionManager.Timeouts
 import Test.Ouroboros.Network.ConnectionManager.Utils
-import Test.Ouroboros.Network.Data.AbsBearerInfo
-import Test.Ouroboros.Network.Data.Script
-import Test.Ouroboros.Network.Data.Signal
-import Test.Ouroboros.Network.Data.Signal qualified as Signal
 import Test.Ouroboros.Network.InboundGovernor.Utils
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..))
-import Test.Ouroboros.Network.Utils hiding (SmallDelay, debugTracer)
-import Test.Tasty.QuickCheck
-
-import Cardano.Node.ArgumentsExtra (ConsensusModePeerTargets (..))
-import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers (..),
-           requiresBootstrapPeers)
-import Cardano.Node.PeerSelection.Governor.PeerSelectionState
-           (CardanoPeerSelectionState)
-import Cardano.Node.PeerSelection.Governor.PeerSelectionState qualified as CPST
-import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
-import Cardano.Node.PublicRootPeers qualified as CPRP
-import Cardano.Node.Types (LedgerStateJudgement,
-           MinBigLedgerPeersForTrustedState (..))
 
 tests :: TestTree
 tests =
@@ -3165,7 +3163,7 @@ prop_diffusion_cm_valid_transitions ioSimTrace traceNumber =
                                . (counterexample $!
                                    (  "\nUnexpected transition: "
                                    ++ show tr)
-                                   )
+                               )
                                . verifyAbstractTransition
                                $ tr
                              )

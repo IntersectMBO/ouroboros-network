@@ -10,7 +10,7 @@ module Cardano.Diffusion.Configuration
   , defaultMinBigLedgerPeersForTrustedState
   ) where
 
-import Cardano.Node.Types (MinBigLedgerPeersForTrustedState (..))
+import Cardano.Network.Types (MinBigLedgerPeersForTrustedState (..))
 import Ouroboros.Network.Diffusion.Configuration (defaultDeadlineTargets)
 import Ouroboros.Network.PeerSelection.Governor.Types
            (PeerSelectionTargets (..))
