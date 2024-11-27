@@ -34,19 +34,19 @@ import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
 import System.Random (randomR)
 
-import Cardano.Node.ArgumentsExtra (ConsensusModePeerTargets (..))
-import Cardano.Node.ConsensusMode
-import Cardano.Node.LedgerPeerConsensusInterface
+import Cardano.Network.ArgumentsExtra (ConsensusModePeerTargets (..))
+import Cardano.Network.ConsensusMode
+import Cardano.Network.LedgerPeerConsensusInterface
            (CardanoLedgerPeersConsensusInterface (..))
-import Cardano.Node.PeerSelection.Bootstrap (isBootstrapPeersEnabled,
+import Cardano.Network.PeerSelection.Bootstrap (isBootstrapPeersEnabled,
            isNodeAbleToMakeProgress, requiresBootstrapPeers)
-import Cardano.Node.PeerSelection.Governor.PeerSelectionActions
+import Cardano.Network.PeerSelection.Governor.PeerSelectionActions
            (CardanoPeerSelectionActions (..))
-import Cardano.Node.PeerSelection.Governor.PeerSelectionState
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState
            (CardanoPeerSelectionState (..))
-import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable (..))
-import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers)
-import Cardano.Node.Types (LedgerStateJudgement (..))
+import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
+import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
+import Cardano.Network.Types (LedgerStateJudgement (..))
 import Ouroboros.Network.ExitPolicy (RepromoteDelay)
 import Ouroboros.Network.ExitPolicy qualified as ExitPolicy
 import Ouroboros.Network.PeerSelection.Governor.ActivePeers

@@ -23,14 +23,14 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (traceWith)
 import System.Random
 
-import Cardano.Node.ArgumentsExtra (ConsensusModePeerTargets (..))
-import Cardano.Node.ConsensusMode (ConsensusMode (..))
-import Cardano.Node.LedgerPeerConsensusInterface
+import Cardano.Network.ArgumentsExtra (ConsensusModePeerTargets (..))
+import Cardano.Network.ConsensusMode (ConsensusMode (..))
+import Cardano.Network.LedgerPeerConsensusInterface
            (CardanoLedgerPeersConsensusInterface (..))
-import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers (..))
-import Cardano.Node.PeerSelection.PeerChurnArgs (CardanoPeerChurnArgs (..))
-import Cardano.Node.PeerSelection.Types (ChurnMode (..))
-import Cardano.Node.Types (LedgerStateJudgement (..))
+import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
+import Cardano.Network.PeerSelection.PeerChurnArgs (CardanoPeerChurnArgs (..))
+import Cardano.Network.PeerSelection.Types (ChurnMode (..))
+import Cardano.Network.Types (LedgerStateJudgement (..))
 import Control.Applicative (Alternative)
 import Data.Functor (($>))
 import Data.Monoid.Synchronisation (FirstToFinish (..))

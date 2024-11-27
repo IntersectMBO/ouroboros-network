@@ -10,10 +10,10 @@
 module Cardano.PeerSelection.PeerSelectionActions (requestPublicRootPeers) where
 
 
-import Cardano.Node.PeerSelection.Bootstrap (UseBootstrapPeers (..),
+import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
-import Cardano.Node.PublicRootPeers (CardanoPublicRootPeers (..))
-import Cardano.Node.Types (LedgerStateJudgement)
+import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers (..))
+import Cardano.Network.Types (LedgerStateJudgement)
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadAsync (MonadAsync)
 import Control.Monad.Class.MonadThrow (Exception, MonadThrow)

@@ -1,6 +1,6 @@
 {-# LANGUAGE NamedFieldPuns #-}
 
-module Cardano.Node.PublicRootPeers where
+module Cardano.Network.PublicRootPeers where
 
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map

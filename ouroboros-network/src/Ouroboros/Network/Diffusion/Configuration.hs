@@ -38,7 +38,7 @@ module Ouroboros.Network.Diffusion.Configuration
 import Control.Monad.Class.MonadTime.SI
 import System.Random (randomRIO)
 
-import Cardano.Node.ConsensusMode
+import Cardano.Network.ConsensusMode
 import Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
 import Ouroboros.Network.ConnectionManager.Core (defaultProtocolIdleTimeout,
            defaultResetTimeout, defaultTimeWaitTimeout)

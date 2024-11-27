@@ -8,7 +8,7 @@ module Test.Ouroboros.Network.PeerSelection.Cardano.LocalRootPeers (tests) where
 
 import Data.Map.Strict qualified as Map
 
-import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable)
+import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers
            (LocalRootPeers (..))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers

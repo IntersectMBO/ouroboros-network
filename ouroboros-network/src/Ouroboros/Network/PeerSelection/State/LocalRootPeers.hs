@@ -38,7 +38,7 @@ import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
 
-import Cardano.Node.PeerSelection.PeerTrustable (PeerTrustable (..))
+import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 
 
