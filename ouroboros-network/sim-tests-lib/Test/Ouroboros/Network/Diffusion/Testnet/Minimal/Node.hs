@@ -320,7 +320,6 @@ run blockGeneratorArgs limits ni na
                        (\ _ (_ :: SomeException) -> ShutdownNode)
               , Common.daPeerMetrics         = peerMetrics
                 -- fetch mode is not used (no block-fetch mini-protocol)
-              , Common.daBlockFetchMode      = pure (PraosFetchMode FetchModeDeadline)
               , Common.daReturnPolicy        = \_ -> config_REPROMOTE_DELAY
               , Common.daPeerSharingRegistry = nkPeerSharingRegistry nodeKernel
               }

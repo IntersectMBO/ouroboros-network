@@ -57,7 +57,6 @@ import System.Random (StdGen)
 
 import Data.Set (Set)
 import Network.Socket qualified as Socket
-import Ouroboros.Network.BlockFetch (FetchMode)
 import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionId (ConnectionId)
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
@@ -518,11 +517,6 @@ data ApplicationsExtra ntnAddr m a =
     -- 'simplePeerSelectionPolicy')
     --
     , daPeerMetrics         :: PeerMetrics m ntnAddr
-
-    -- | Used by churn-governor
-    -- TODO: Pull out (along with ouroboros-network-api/Ouroboros/Network/BlockFetch ->
-    -- ouroboros-network-api/Cardano/Node/BlockFetch)
-    , daBlockFetchMode      :: STM m FetchMode
 
     -- | Used for peer sharing protocol
     --
