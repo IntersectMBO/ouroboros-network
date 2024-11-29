@@ -401,15 +401,11 @@ withConnectionManager args@ConnectionManagerArguments {
       <- atomically $  do
           v  <- newTMVar State.empty
           labelTMVar v "cm-state"
-          traceTMVar (Proxy :: Proxy m) v
-                   $ \old new ->
-                     case (old, new) of
-                       (Nothing, _)             -> pure DontTrace
-                       -- taken
-                       (Just (Just _), Nothing) -> pure (TraceString "cm-state: taken")
-                       -- released
-                       (Just Nothing,  Just _)  -> pure (TraceString "cm-state: released")
-                       (_, _)                   -> pure DontTrace
+          traceTMVar (Proxy :: Proxy m) v $ \_ mbst -> do
+            st' <- case mbst of
+              Nothing -> pure Nothing
+              Just st -> Just <$> traverse (inspectTVar (Proxy :: Proxy m) . toLazyTVar . connVar) st
+            return (TraceString (show st'))
 
           freshIdSupply <- State.newFreshIdSupply (Proxy :: Proxy m)
           stdGenVar <- newTVar (cmStdGen args)
