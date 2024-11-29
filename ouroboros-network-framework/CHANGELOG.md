@@ -4,6 +4,9 @@
 
 ### Breaking changes
 
+* Connection manager is using `ConnectionId`s to identify connections, this
+  affects its API.
+
 ### Non-breaking changes
 
 ## 0.13.2.5 -- 2024-10-10
