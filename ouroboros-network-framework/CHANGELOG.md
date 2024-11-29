@@ -12,6 +12,8 @@
   `unregister{Inbound,Outbound}Connection` to `release{Inbound,Outbound}Connection`.
   `AssertionLocation` constructors were renamed as well.
 * Added `RawBearer` API (see https://github.com/IntersectMBO/ouroboros-network/pull/4395)
+* Connection manager is using `ConnectionId`s to identify connections, this
+  affects its API.
 
 ### Non-breaking changes
 
