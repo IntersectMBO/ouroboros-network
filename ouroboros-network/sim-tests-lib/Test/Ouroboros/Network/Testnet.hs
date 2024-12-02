@@ -275,8 +275,10 @@ testWithIOSim f traceNumber bi ds =
       sim = diffusionSimulation (toBearerInfo bi)
                                 ds
                                 iosimTracer
+      trace = runSimTrace sim
    in labelDiffusionScript ds
-    $ f (runSimTrace sim) traceNumber
+    $ counterexample (Trace.ppTrace show (ppSimEvent 0 0 0) $ Trace.take traceNumber trace)
+    $ f trace traceNumber
 
 testWithIOSimPOR :: (SimTrace Void -> Int -> Property)
                  -> Int
@@ -3041,7 +3043,7 @@ prop_diffusion_cm_valid_transition_order_iosim_por ioSimTrace traceNumber =
          property
        . bifoldMap
           (const mempty)
-          (verifyAbstractTransitionOrder False)
+          (verifyAbstractTransitionOrder id False)
        . fmap (map ttTransition)
        . groupConns id abstractStateIsFinalTransitionTVarTracing
 
@@ -3074,25 +3076,24 @@ prop_diffusion_cm_valid_transition_order ioSimTrace traceNumber =
                      . last
                      $ evsList
          in classifySimulatedTime lastTime
-          $ classifyNumberOfEvents (length evsList)
-          $ verify_cm_valid_transition_order
-          $ (\(WithName _ (WithTime _ b)) -> b)
-          <$> ev
+          . classifyNumberOfEvents (length evsList)
+          . verify_cm_valid_transition_order
+          $ ev
         )
       <$> events
   where
-    verify_cm_valid_transition_order :: Trace () DiffusionTestTrace -> Property
+    verify_cm_valid_transition_order :: Trace () (WithName NtNAddr (WithTime DiffusionTestTrace)) -> Property
     verify_cm_valid_transition_order events =
-      let abstractTransitionEvents :: Trace () (AbstractTransitionTrace NtNAddr)
+      let abstractTransitionEvents :: Trace () (WithName NtNAddr (WithTime (AbstractTransitionTrace NtNAddr)))
           abstractTransitionEvents =
-            selectDiffusionConnectionManagerTransitionEvents events
+            selectDiffusionConnectionManagerTransitionEvents' events
 
        in  property
          . bifoldMap
             (const mempty)
-            (verifyAbstractTransitionOrder False)
-         . fmap (map ttTransition)
-         . groupConns id abstractStateIsFinalTransition
+            (verifyAbstractTransitionOrder (wtEvent . wnEvent) False)
+         . fmap (map (fmap (fmap ttTransition)))
+         . groupConns (wtEvent . wnEvent) abstractStateIsFinalTransition
          $ abstractTransitionEvents
 
 -- | Unit test that checks issue 4258
@@ -4176,6 +4177,18 @@ selectDiffusionConnectionManagerTransitionEvents =
   . mapMaybe
      (\case DiffusionConnectionManagerTransitionTrace e -> Just e
             _                                           -> Nothing)
+  . Trace.toList
+
+selectDiffusionConnectionManagerTransitionEvents'
+  :: Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))
+  -> Trace () (WithName NtNAddr (WithTime (AbstractTransitionTrace NtNAddr)))
+selectDiffusionConnectionManagerTransitionEvents' =
+    Trace.fromList ()
+  . mapMaybe
+     (\case
+       (WithName addr (WithTime time (DiffusionConnectionManagerTransitionTrace e)))
+         -> Just (WithName addr (WithTime time e))
+       _ -> Nothing)
   . Trace.toList
 
 selectDiffusionConnectionManagerTransitionEventsTime
