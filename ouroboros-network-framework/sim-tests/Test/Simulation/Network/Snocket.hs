@@ -40,6 +40,7 @@ import Data.ByteString.Lazy (ByteString)
 import Data.Foldable (traverse_)
 import Data.Functor (void)
 import Data.Map qualified as Map
+import Data.Maybe (isNothing)
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Text.Printf
@@ -54,6 +55,7 @@ import Ouroboros.Network.Snocket
 import Simulation.Network.Snocket
 
 import Network.Mux as Mx
+import Network.Mux.Types as Mx
 import Network.TypedProtocol.Codec.CBOR
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.ReqResp.Client
@@ -84,6 +86,8 @@ tests =
                    prop_connect_to_not_listening_socket
     , testProperty "simultaneous_open"
                    prop_simultaneous_open
+    , testProperty "self connect"
+                   prop_self_connect
     ]
 
 type TestAddr      = TestAddress Int
@@ -559,6 +563,47 @@ prop_simultaneous_open defaultBearerInfo =
             _ <- listenAndConnect (TestAddress 1) (TestAddress 0)
                                  snocket getState
             wait clientAsync
+
+
+-- | Check that when we bind both outbound and inbound socket to the same
+-- address, and connect the outbound to inbound:
+--
+-- * accept loop never returns
+-- * the outbound socket acts as a mirror
+--
+-- This is how socket API behaves on Linux.
+--
+prop_self_connect :: ByteString -> Property
+prop_self_connect payload =
+    runSimOrThrow sim
+  where
+    addr :: TestAddress Int
+    addr = TestAddress 0
+
+    sim :: forall s. IOSim s Property
+    sim =
+      withSnocket nullTracer noAttenuation Map.empty
+      $ \snocket _getState ->
+        withAsync (runServer addr snocket
+                             (close snocket) acceptOne return)
+          $ \serverThread -> do
+            bracket (openToConnect snocket addr)
+                    (close snocket)
+                  $ \fd -> do
+                    bind snocket fd addr
+                    connect snocket fd addr
+                    bearer <- getBearer makeFDBearer 10 nullTracer fd
+                    let channel = bearerAsChannel bearer (MiniProtocolNum 0) InitiatorDir
+                    send channel payload
+                    payload' <- recv channel
+                    threadDelay 1
+                    serverResult <- atomically $
+                                    (Just <$> waitSTM serverThread)
+                                   `orElse`
+                                   pure Nothing
+                    return $ Just payload === payload'
+                        .&&. isNothing serverResult
+
 
 --
 -- Utils
