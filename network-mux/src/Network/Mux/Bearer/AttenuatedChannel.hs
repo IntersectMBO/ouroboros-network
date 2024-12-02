@@ -8,6 +8,9 @@ module Network.Mux.Bearer.AttenuatedChannel
   , Size
   , SuccessOrFailure (..)
   , Attenuation (..)
+  , QueueChannel
+  , newAttenuatedChannel
+  , echoQueueChannel
   , newConnectedAttenuatedChannelPair
   , attenuationChannelAsBearer
     -- * Trace
@@ -59,6 +62,19 @@ data QueueChannel m = QueueChannel {
     qcRead  :: StrictTVar m (Maybe (StrictTQueue m Message)),
     qcWrite :: StrictTVar m (Maybe (StrictTQueue m Message))
   }
+
+
+-- A `QueueChannel` which receives what is written to it.
+--
+echoQueueChannel :: MonadSTM m => STM m (QueueChannel m)
+echoQueueChannel = do
+  q <- newTQueue
+  v <- newTVar (Just q)
+  return QueueChannel {
+    qcRead  = v,
+    qcWrite = v
+  }
+
 
 --
 -- QueueChannel API
