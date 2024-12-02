@@ -90,7 +90,7 @@ data Connection m addr = Connection
     { -- | Attenuated channels of a connection.
       --
       connChannelLocal  :: !(AttenuatedChannel m)
-    , connChannelRemote :: !(AttenuatedChannel m)
+    , connChannelRemote ::   AttenuatedChannel m
 
       -- | SDU size of a connection.
       --
@@ -139,12 +139,36 @@ mkConnection :: ( MonadDelay         m
                 , MonadTimer         m
                 , MonadThrow         m
                 , MonadThrow    (STM m)
+                , Eq addr
                 )
              => Tracer m (WithAddr (TestAddress addr)
                                    (SnocketTrace m (TestAddress addr)))
              -> BearerInfo
              -> ConnectionId (TestAddress addr)
              -> STM m (Connection m (TestAddress addr))
+
+mkConnection tr bearerInfo connId@ConnectionId { localAddress, remoteAddress } | localAddress == remoteAddress = do
+  -- we are connecting to onself.  On Linux this returns a connection which
+  -- mirrors all sent data.
+  qc <- echoQueueChannel
+  channel <- newAttenuatedChannel
+      ( ( WithAddr (Just localAddress) (Just remoteAddress)
+        . STAttenuatedChannelTrace connId
+        )
+        `contramap` tr)
+      Attenuation
+        { aReadAttenuation  = biOutboundAttenuation  bearerInfo
+        , aWriteAttenuation = biOutboundWriteFailure bearerInfo
+        }
+      qc
+  return Connection {
+    connChannelLocal  = channel,
+    connChannelRemote = undefined,
+    connSDUSize  = biSDUSize bearerInfo,
+    connState    = SYN_SENT,
+    connProvider = localAddress
+  }
+
 mkConnection tr bearerInfo connId@ConnectionId { localAddress, remoteAddress } =
     (\(connChannelLocal, connChannelRemote) ->
       Connection {
@@ -895,11 +919,11 @@ mkSnocket state tr = Snocket { getLocalAddr
 
               connMap <- readTVar (nsConnections state)
               case Map.lookup normalisedId connMap of
-                Just      Connection { connState = ESTABLISHED } ->
+                Just Connection { connState = ESTABLISHED } ->
                   throwSTM (connectedIOError fd_)
 
-                Just      Connection { connState = SYN_SENT, connProvider }
-                        | connProvider == localAddress ->
+                Just Connection { connState = SYN_SENT, connProvider }
+                  | connProvider == localAddress ->
                   throwSTM (connectedIOError fd_)
 
                 -- simultaneous open
@@ -979,7 +1003,7 @@ mkSnocket state tr = Snocket { getLocalAddr
                     <$> readTVar (nsConnections state)
               case lstFd of
                 -- error cases
-                (Nothing) ->
+                Nothing ->
                   return (Left (connectIOError connId "no such listening socket"))
                 (Just FDUninitialised {}) ->
                   return (Left (connectIOError connId "unitialised listening socket"))
@@ -1009,13 +1033,16 @@ mkSnocket state tr = Snocket { getLocalAddr
                     Just conn@Connection { connState = SYN_SENT } -> do
                       let fd_' = FDConnected connId conn
                       writeTVar fdVarLocal fd_'
-                      writeTBQueue queue
-                                   ChannelWithInfo
-                                     { cwiAddress       = localAddress connId
-                                     , cwiSDUSize       = biSDUSize bearerInfo
-                                     , cwiChannelLocal  = connChannelRemote conn
-                                     , cwiChannelRemote = connChannelLocal conn
-                                     }
+                      when (localAddress connId /= remoteAddress) $
+                        -- We only write to the accept `queue` if we're not
+                        -- connecting to ourselves.
+                        writeTBQueue queue
+                                     ChannelWithInfo
+                                       { cwiAddress       = localAddress connId
+                                       , cwiSDUSize       = biSDUSize bearerInfo
+                                       , cwiChannelLocal  = connChannelRemote conn
+                                       , cwiChannelRemote = connChannelLocal conn
+                                       }
                       return (Right (fd_', NormalOpen))
 
                     Just Connection { connState = FIN } -> do
@@ -1049,7 +1076,7 @@ mkSnocket state tr = Snocket { getLocalAddr
                     (\e -> atomically $ modifyTVar (nsConnections state)
                                                    (Map.delete (normaliseId connId))
                         >> throwIO e)
-                    $ unmask (atomically $ runFirstToFinish $
+                    $ unmask . atomically . runFirstToFinish $
                         (FirstToFinish $ do
                           LazySTM.readTVar timeoutVar >>= check
                           modifyTVar (nsConnections state)
@@ -1072,12 +1099,16 @@ mkSnocket state tr = Snocket { getLocalAddr
                                       ++ show (normaliseId connId)
                             Just Connection { connState } ->
                               Just <$> check (connState == ESTABLISHED))
-                       )
 
                 case r of
+                  -- self connect
+                  Nothing | localAddress connId == remoteAddress
+                          -> traceWith' fd (STConnected fd_' o)
+
                   Nothing -> do
                     traceWith' fd (STConnectTimeout WaitingToBeAccepted)
                     throwIO (connectIOError connId "connect timeout: when waiting for being accepted")
+
                   Just _  -> traceWith' fd (STConnected fd_' o)
 
           FDConnecting {} ->
