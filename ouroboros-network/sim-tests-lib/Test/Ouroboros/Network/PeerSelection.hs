@@ -4020,14 +4020,12 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
         , updateWithState = const (const (pure ()))
         , extraDecisions  =
             ExtraGuardedDecisions {
-              preBlocking     =
-                [ \_ psa pst -> Cardano.monitorBootstrapPeersFlag   psa pst
-                , \_ psa pst -> Cardano.monitorLedgerStateJudgement psa pst
-                , \_ _   pst -> Cardano.waitForSystemToQuiesce          pst
-                ]
-            , postBlocking    = []
-            , preNonBlocking  = []
-            , postNonBlocking = []
+              preBlocking     = \_ psa pst ->
+                  Cardano.monitorBootstrapPeersFlag   psa pst
+                <> Cardano.monitorLedgerStateJudgement psa pst
+                <> Cardano.waitForSystemToQuiesce          pst
+            , postBlocking    = mempty
+            , postNonBlocking = mempty
             , requiredTargetsAction              = \_ -> Cardano.targetPeers
             , requiredLocalRootsAction           = \_ -> Cardano.localRoots
             , enableProgressMakingActions        = \st ->
@@ -4084,7 +4082,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
                   deactivatePeerConnection = error "deactivatePeerConnection",
                   closePeerConnection      = error "closePeerConnection"
                 },
-                readOriginalLocalRootPeers = return [],
+                readLocalRootPeersFromFile = return [],
                 readInboundPeers = pure Map.empty,
                 getLedgerStateCtx =
                   LedgerPeersConsensusInterface {
@@ -4098,14 +4096,14 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
                           writeTVar olocVar a
                     }
                   },
-                originalPeerSelectionTargets = targets,
+                peerSelectionTargets = targets,
                 readLedgerPeerSnapshot = pure Nothing,
                 extraActions = CardanoPeerSelectionActions {
-                  cpsaSyncPeerTargets = targets,
+                  cpsaGenesisPeerTargets = targets,
                   cpsaReadUseBootstrapPeers = readUseBootstrapPeers
                 },
                 extraStateToExtraCounters = CPSV.cardanoPeerSelectionStatetoCounters,
-                extraPeersActions = CPRP.cardanoPublicRootPeersActions
+                extraPeersAPI = CPRP.cardanoPublicRootPeersAPI
               }
 
     targets :: PeerSelectionTargets

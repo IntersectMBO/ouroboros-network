@@ -74,7 +74,7 @@ withPeerSelectionActions
       ledgerPeersArgs
       (\getLedgerPeers lpThread -> do
           let peerSelectionActions@PeerSelectionActions
-                { readOriginalLocalRootPeers
+                { readLocalRootPeersFromFile
                 } = getPeerSelectionActions getLedgerPeers
           withAsync
             (localRootPeersProvider
@@ -83,7 +83,7 @@ withPeerSelectionActions
               -- NOTE: we don't set `resolvConcurrent` because
               -- of https://github.com/kazu-yamamoto/dns/issues/174
               DNS.defaultResolvConf
-              readOriginalLocalRootPeers
+              readLocalRootPeersFromFile
               localRootsVar)
             (\lrppThread -> k (lpThread, lrppThread) peerSelectionActions))
 

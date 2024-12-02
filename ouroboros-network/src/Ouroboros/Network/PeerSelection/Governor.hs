@@ -81,7 +81,7 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type (UseLedgerPeers (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
-import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersActions (..))
+import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersAPI (..))
 
 {- $overview
 
@@ -548,7 +548,6 @@ peerSelectionGovernorLoop tracer
                           , extraDecisions = ExtraGuardedDecisions {
                               preBlocking
                             , postBlocking
-                            , preNonBlocking
                             , postNonBlocking
                             , requiredTargetsAction
                             , requiredLocalRootsAction
@@ -557,7 +556,7 @@ peerSelectionGovernorLoop tracer
                             }
                           }
                           actions@PeerSelectionActions {
-                            extraPeersActions = PublicExtraPeersActions {
+                            extraPeersAPI = PublicExtraPeersAPI {
                               extraPeersToSet
                             , invariantExtraPeers
                             }
@@ -664,7 +663,7 @@ peerSelectionGovernorLoop tracer
       -- All the alternative potentially-blocking decisions.
 
         -- Make sure preBlocking set is in the right place
-        foldMap (\a -> a policy actions st) preBlocking
+        preBlocking policy actions st
 
       <> Monitor.connections          actions st
       <> Monitor.jobs                 jobPool st
@@ -679,14 +678,12 @@ peerSelectionGovernorLoop tracer
       <> requiredLocalRootsAction policy actions st
 
          -- Make sure postBlocking set is in the right place
-      <> foldMap (\a -> a policy actions st) postBlocking
-        -- Make sure preNonBlocking set is in the right place
-      <> foldMap (\a -> a policy actions st) preNonBlocking
+      <> postBlocking policy actions st
 
         -- The non-blocking decisions regarding (known) big ledger peers
       <> BigLedgerPeers.belowTarget enableProgressMakingActions
                                     actions blockedAt st
-      <> BigLedgerPeers.aboveTarget actions policy st
+      <> BigLedgerPeers.aboveTarget  actions policy st
 
       -- All the alternative non-blocking internal decisions.
       <> RootPeers.belowTarget   actions blockedAt st
@@ -704,7 +701,7 @@ peerSelectionGovernorLoop tracer
       <> ActivePeers.aboveTarget actions policy st
 
          -- Make sure postNonBlocking set is in the right place
-      <> foldMap (\a -> a policy actions st) postNonBlocking
+      <> postNonBlocking policy actions st
 
       -- There is no rootPeersAboveTarget since the roots target is one sided.
 

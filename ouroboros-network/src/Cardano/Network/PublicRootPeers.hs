@@ -29,9 +29,9 @@ instance Ord peeraddr => Monoid (CardanoPublicRootPeers peeraddr) where
   mempty = empty
 
 -- Cardano Public Root Peers Actions
-cardanoPublicRootPeersActions :: Ord peeraddr => PublicExtraPeersActions (CardanoPublicRootPeers peeraddr) peeraddr
-cardanoPublicRootPeersActions =
-  PublicExtraPeersActions {
+cardanoPublicRootPeersAPI :: Ord peeraddr => PublicExtraPeersAPI (CardanoPublicRootPeers peeraddr) peeraddr
+cardanoPublicRootPeersAPI =
+  PublicExtraPeersAPI {
     nullExtraPeers         = nullAll
   , invariantExtraPeers    = invariant
   , memberExtraPeers       = member

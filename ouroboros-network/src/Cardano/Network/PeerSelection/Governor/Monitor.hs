@@ -33,7 +33,6 @@ import Cardano.Network.PeerSelection.Governor.PeerSelectionState
            (CardanoPeerSelectionState (..))
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
-import Cardano.Network.PublicRootPeers qualified as CNPRP
 import Cardano.Network.Types (LedgerStateJudgement (..))
 import Control.Exception (assert)
 import Data.Map.Strict (Map)
@@ -75,12 +74,12 @@ targetPeers :: (MonadSTM m, Ord peeraddr)
             => PeerSelectionActions CardanoPeerSelectionState (CardanoPeerSelectionActions m) extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
             -> PeerSelectionState CardanoPeerSelectionState PeerTrustable extraPeers peeraddr peerconn
             -> Guarded (STM m) (TimedDecision m CardanoPeerSelectionState PeerTrustable extraPeers peeraddr peerconn)
-targetPeers PeerSelectionActions{ originalPeerSelectionTargets,
+targetPeers PeerSelectionActions{ peerSelectionTargets,
                                   readPeerSelectionTargets,
                                   extraActions = CardanoPeerSelectionActions {
-                                    cpsaSyncPeerTargets
+                                    cpsaGenesisPeerTargets
                                   },
-                                  extraPeersActions
+                                  extraPeersAPI
                                 }
             st@PeerSelectionState{
               publicRootPeers,
@@ -107,11 +106,11 @@ targetPeers PeerSelectionActions{ originalPeerSelectionTargets,
       let targets' =
             case (cpstLedgerStateJudgement, cpstConsensusMode) of
               (YoungEnough, GenesisMode)
-                | churnTargets == cpsaSyncPeerTargets ->
-                  originalPeerSelectionTargets
+                | churnTargets == cpsaGenesisPeerTargets ->
+                  peerSelectionTargets
               (TooOld, GenesisMode)
-                | churnTargets == originalPeerSelectionTargets ->
-                  cpsaSyncPeerTargets
+                | churnTargets == peerSelectionTargets ->
+                  cpsaGenesisPeerTargets
               _otherwise -> churnTargets
 
       -- nb. first check is redundant in Genesis mode
@@ -144,7 +143,7 @@ targetPeers PeerSelectionActions{ originalPeerSelectionTargets,
 
           -- We have to enforce that local and big ledger peers are disjoint.
           publicRootPeers' =
-            PublicRootPeers.difference (differenceExtraPeers extraPeersActions)
+            PublicRootPeers.difference (differenceExtraPeers extraPeersAPI)
               publicRootPeers (LocalRootPeers.keysSet localRootPeers')
 
       return $ \_now -> Decision {
@@ -172,7 +171,7 @@ localRoots :: forall extraActions extraAPI extraCounters peeraddr peerconn m.
            -> PeerSelectionState CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn
            -> Guarded (STM m) (TimedDecision m CardanoPeerSelectionState PeerTrustable (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
 localRoots actions@PeerSelectionActions{ readLocalRootPeers
-                                       , extraPeersActions
+                                       , extraPeersAPI
                                        }
            st@PeerSelectionState{
              localRootPeers,
@@ -233,7 +232,7 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
           -- that the local and public sets are non-overlapping.
           --
           publicRootPeers' =
-            PublicRootPeers.difference (differenceExtraPeers extraPeersActions)
+            PublicRootPeers.difference (differenceExtraPeers extraPeersAPI)
               publicRootPeers
               localRootPeersSet
 
@@ -283,7 +282,7 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
       return $ \_now ->
 
           assert (Set.isSubsetOf
-                    (PublicRootPeers.toSet (extraPeersToSet extraPeersActions)
+                    (PublicRootPeers.toSet (extraPeersToSet extraPeersAPI)
                                            publicRootPeers')
                    (KnownPeers.toSet knownPeers'))
         . assert (Set.isSubsetOf
@@ -349,7 +348,9 @@ monitorBootstrapPeersFlag :: ( MonadSTM m
                           => PeerSelectionActions CardanoPeerSelectionState (CardanoPeerSelectionActions m) (CardanoPublicRootPeers peeraddr) extraFlags extraAPI extraCounters peeraddr peerconn m
                           -> PeerSelectionState CardanoPeerSelectionState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn
                           -> Guarded (STM m) (TimedDecision m CardanoPeerSelectionState extraFlags (CardanoPublicRootPeers peeraddr) peeraddr peerconn)
-monitorBootstrapPeersFlag PeerSelectionActions { extraActions = CardanoPeerSelectionActions { cpsaReadUseBootstrapPeers } }
+monitorBootstrapPeersFlag PeerSelectionActions { extraActions = CardanoPeerSelectionActions { cpsaReadUseBootstrapPeers }
+                                               , extraPeersAPI
+                                               }
                           st@PeerSelectionState { knownPeers
                                                 , establishedPeers
                                                 , publicRootPeers
@@ -381,7 +382,7 @@ monitorBootstrapPeersFlag PeerSelectionActions { extraActions = CardanoPeerSelec
                    nonEstablishedBootstrapPeers
                    knownPeers
              , publicRootPeers =
-                 PublicRootPeers.difference CNPRP.difference
+                 PublicRootPeers.difference (differenceExtraPeers extraPeersAPI)
                    publicRootPeers
                    nonEstablishedBootstrapPeers
              , extraState = cpst {
@@ -421,6 +422,7 @@ monitorLedgerStateJudgement PeerSelectionActions{
                                   clpciGetLedgerStateJudgement = readLedgerStateJudgement
                                 }
                               }
+                            , extraPeersAPI
                             }
                             st@PeerSelectionState{ publicRootPeers,
                                                    knownPeers,
@@ -496,7 +498,7 @@ monitorLedgerStateJudgement PeerSelectionActions{
                   nonEstablishedBootstrapPeers
                   knownPeers
             , publicRootPeers =
-                PublicRootPeers.difference CNPRP.difference
+                PublicRootPeers.difference (differenceExtraPeers extraPeersAPI)
                   publicRootPeers
                   nonEstablishedBootstrapPeers
             , publicRootBackoffs = 0

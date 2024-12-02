@@ -23,8 +23,8 @@ import Network.Socket (Socket)
 import Ouroboros.Network.Diffusion.Common (Arguments,
            NodeToNodeConnectionManager, NodeToNodePeerConnectionHandle, Tracers)
 import Ouroboros.Network.Diffusion.Common qualified as Common
-import Ouroboros.Network.Diffusion.MinimalP2P qualified as MinimalP2P
 import Ouroboros.Network.Diffusion.NonP2P qualified as NonP2P
+import Ouroboros.Network.Diffusion.P2P qualified as P2P
 import Ouroboros.Network.NodeToClient (LocalAddress, LocalSocket,
            NodeToClientVersion, NodeToClientVersionData)
 import Ouroboros.Network.NodeToNode (NodeToNodeVersion, NodeToNodeVersionData,
@@ -147,7 +147,7 @@ run sigUSR1Signal
             (P2PApplications apps)
             (P2PApplicationsExtra appsExtra) =
     void $
-    MinimalP2P.run
+    P2P.run
       sigUSR1Signal tracers tracersExtra
       args argsExtra apps appsExtra
 run _

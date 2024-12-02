@@ -1235,7 +1235,7 @@ diffusionSimulation
           cardanoExtraArgs :: CardanoArgumentsExtra m
           cardanoExtraArgs =
             CardanoArgumentsExtra {
-              caeSyncPeerTargets                  = snd peerTargets
+              caeGenesisPeerTargets               = snd peerTargets
             , caeReadUseBootstrapPeers            = readUseBootstrapPeers
             , caeMinBigLedgerPeersForTrustedState = defaultMinBigLedgerPeersForTrustedState
             , caeConsensusMode                    = consensusMode
@@ -1246,7 +1246,7 @@ diffusionSimulation
             CardanoPeerChurnArgs {
               cpcaModeVar             = churnModeVar
             , cpcaReadFetchMode       = pure (PraosFetchMode FetchModeDeadline)
-            , cpcaSyncPeerTargets     = caeSyncPeerTargets cardanoExtraArgs
+            , cpcaGenesisPeerTargets  = caeGenesisPeerTargets cardanoExtraArgs
             , cpcaReadUseBootstrap    = caeReadUseBootstrapPeers cardanoExtraArgs
             , cpcaConsensusMode       = consensusMode
             }
@@ -1293,9 +1293,8 @@ diffusionSimulation
                      arguments
                      (CPST.empty consensusMode (MinBigLedgerPeersForTrustedState 0))
                      (cardanoExtraArgsToPeerSelectionActions cardanoExtraArgs)
-                     CPRP.empty
                      CPSV.empty
-                     CPRP.cardanoPublicRootPeersActions
+                     CPRP.cardanoPublicRootPeersAPI
                      (cardanoPeerSelectionGovernorArgs readUseLedgerPeers peerSharing (iLedgerPeersConsensusInterface interfaces))
                      CPSV.cardanoPeerSelectionStatetoCounters
                      requestPublicRootPeers'

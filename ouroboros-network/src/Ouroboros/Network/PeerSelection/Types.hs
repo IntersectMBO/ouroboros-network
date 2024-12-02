@@ -1,7 +1,7 @@
 module Ouroboros.Network.PeerSelection.Types
   ( PeerSource (..)
   , PeerStatus (..)
-  , PublicExtraPeersActions (..)
+  , PublicExtraPeersAPI (..)
   ) where
 import Data.Map.Strict
 import Data.Set (Set)
@@ -36,8 +36,8 @@ data PeerStatus =
 
 -- PublicRootPeers extra peers bundle
 
-data PublicExtraPeersActions extraPeers peeraddr =
-  PublicExtraPeersActions {
+data PublicExtraPeersAPI extraPeers peeraddr =
+  PublicExtraPeersAPI {
     -- | Check if extraPeers is empty
     --
     nullExtraPeers         :: extraPeers -> Bool

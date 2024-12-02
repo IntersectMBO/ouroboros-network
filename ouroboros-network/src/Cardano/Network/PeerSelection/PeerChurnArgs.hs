@@ -9,10 +9,10 @@ import Ouroboros.Network.PeerSelection.Governor.Types (PeerSelectionTargets)
 
 data CardanoPeerChurnArgs m =
   CardanoPeerChurnArgs {
-    cpcaModeVar          :: StrictTVar m ChurnMode
-  , cpcaReadFetchMode    :: STM m FetchMode
-  , cpcaSyncPeerTargets  :: PeerSelectionTargets
-  , cpcaReadUseBootstrap :: STM m UseBootstrapPeers
-  , cpcaConsensusMode    :: ConsensusMode
+    cpcaModeVar            :: StrictTVar m ChurnMode
+  , cpcaReadFetchMode      :: STM m FetchMode
+  , cpcaGenesisPeerTargets :: PeerSelectionTargets
+  , cpcaReadUseBootstrap   :: STM m UseBootstrapPeers
+  , cpcaConsensusMode      :: ConsensusMode
   }
 

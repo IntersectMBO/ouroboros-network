@@ -94,7 +94,7 @@ import Ouroboros.Network.BlockFetch.ConsensusInterface
            (ChainSelStarvation (ChainSelStarvationEndedAt))
 import Ouroboros.Network.ConnectionManager.State (ConnStateIdSupply)
 import Ouroboros.Network.Diffusion.Common qualified as Common
-import Ouroboros.Network.Diffusion.MinimalP2P (runM)
+import Ouroboros.Network.Diffusion.P2P (runM)
 import Ouroboros.Network.PeerSelection.Governor.Types
            (PeerSelectionGovernorArgs)
 import Ouroboros.Network.PeerSelection.LedgerPeers (NumberOfPeers)
@@ -109,7 +109,7 @@ import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint,
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSLookupType)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
            LocalRootConfig, WarmValency)
-import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersActions (..))
+import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersAPI (..))
 import Test.Ouroboros.Network.Data.Script (Script)
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB (addBlock,
            getBlockPointSet)
@@ -201,9 +201,8 @@ run :: forall extraArgs extraState extraActions extraAPI
     -> Arguments extraArgs extraChurnArgs extraFlags m
     -> extraState
     -> extraActions
-    -> extraPeers
     -> extraCounters
-    -> PublicExtraPeersActions extraPeers NtNAddr
+    -> PublicExtraPeersAPI extraPeers NtNAddr
     -> (forall muxMode responderCtx ntnVersionData bytes a b .
         PeerSelectionGovernorArgs
           extraState
@@ -247,9 +246,9 @@ run :: forall extraArgs extraState extraActions extraAPI
     -> Tracer m (TraceLabelPeer NtNAddr (TraceFetchClientState BlockHeader))
     -> m Void
 run blockGeneratorArgs limits ni na
-    emptyExtraState extraActions emptyExtraPeers
-    emptyExtraCounters extraPeersActions psArgs
-    psToExtraCounters requestPublicRootPeers peerChurnGovernor
+    emptyExtraState extraActions emptyExtraCounters
+    extraPeersAPI psArgs psToExtraCounters
+    requestPublicRootPeers peerChurnGovernor
     tracersExtra tracerBlockFetch =
     Node.withNodeKernelThread blockGeneratorArgs
       $ \ nodeKernel nodeKernelThread -> do
@@ -466,9 +465,8 @@ run blockGeneratorArgs limits ni na
       , Common.daBulkChurnInterval      = 300
       , Common.daReadLedgerPeerSnapshot = pure Nothing -- ^ tested independently
       , Common.daEmptyExtraState        = emptyExtraState
-      , Common.daEmptyExtraPeers        = emptyExtraPeers
       , Common.daEmptyExtraCounters     = emptyExtraCounters
-      , Common.daExtraPeersActions      = extraPeersActions
+      , Common.daExtraPeersAPI          = extraPeersAPI
       , Common.daExtraActions           = extraActions
       , Common.daExtraChurnArgs         = aExtraChurnArgs na
       , Common.daExtraArgs              = aExtraArgs na

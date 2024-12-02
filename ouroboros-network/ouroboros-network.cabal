@@ -81,8 +81,8 @@ library
     Ouroboros.Network.Diffusion
     Ouroboros.Network.Diffusion.Common
     Ouroboros.Network.Diffusion.Configuration
-    Ouroboros.Network.Diffusion.MinimalP2P
     Ouroboros.Network.Diffusion.NonP2P
+    Ouroboros.Network.Diffusion.P2P
     Ouroboros.Network.Diffusion.Policies
     Ouroboros.Network.ExitPolicy
     Ouroboros.Network.KeepAlive

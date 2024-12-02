@@ -30,7 +30,7 @@ import Ouroboros.Network.PeerSelection.State.KnownPeers (setTepidFlag)
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
-import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersActions (..))
+import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersAPI (..))
 
 
 ----------------------------
@@ -68,7 +68,7 @@ belowTargetBigLedgerPeers :: forall extraState extraActions extraFlags extraPeer
                           -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
 belowTargetBigLedgerPeers enableAction
                           actions@PeerSelectionActions {
-                            extraPeersActions = PublicExtraPeersActions {
+                            extraPeersAPI = PublicExtraPeersAPI {
                               memberExtraPeers
                             , extraPeersToSet
                             },
@@ -150,7 +150,7 @@ belowTargetLocal :: forall extraActions extraState extraFlags extraPeers extraAP
                  => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
                  -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
 belowTargetLocal actions@PeerSelectionActions {
-                   extraPeersActions = PublicExtraPeersActions {
+                   extraPeersAPI = PublicExtraPeersAPI {
                      memberExtraPeers
                    }
                  }
@@ -252,7 +252,7 @@ belowTargetOther :: forall extraActions extraState extraFlags extraPeers extraAP
                  => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
                  -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
 belowTargetOther actions@PeerSelectionActions {
-                   extraPeersActions = PublicExtraPeersActions {
+                   extraPeersAPI = PublicExtraPeersAPI {
                      memberExtraPeers
                    , extraPeersToSet
                    }
@@ -510,7 +510,7 @@ aboveTargetBigLedgerPeers :: forall extraActions extraState extraPeers extraFlag
                           => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
                           -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
 aboveTargetBigLedgerPeers actions@PeerSelectionActions {
-                            extraPeersActions = PublicExtraPeersActions {
+                            extraPeersAPI = PublicExtraPeersAPI {
                               memberExtraPeers
                             , extraPeersToSet
                             }
@@ -588,7 +588,7 @@ aboveTargetLocal :: forall extraActions extraState extraFlags extraPeers extraAP
                  => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
                  -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
 aboveTargetLocal actions@PeerSelectionActions {
-                   extraPeersActions = PublicExtraPeersActions {
+                   extraPeersAPI = PublicExtraPeersAPI {
                      memberExtraPeers
                    }
                  }
@@ -672,7 +672,7 @@ aboveTargetOther :: forall extraActions extraState extraFlags extraPeers extraAP
                  => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
                  -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
 aboveTargetOther actions@PeerSelectionActions {
-                   extraPeersActions = PublicExtraPeersActions {
+                   extraPeersAPI = PublicExtraPeersAPI {
                      memberExtraPeers
                    , extraPeersToSet
                    }

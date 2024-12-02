@@ -1766,7 +1766,7 @@ prop_connect_failure (AbsIOError ioerr) =
          $ evs
     ) noEvents absInfo script
   where
-    -- must be in sync with rethrowPolicy in `Ouroboros.Network.Diffusion.MinimalP2P`
+    -- must be in sync with rethrowPolicy in `Ouroboros.Network.Diffusion.P2P`
     isFatal :: IOErrorType -> Bool
     isFatal ResourceExhausted    = True
     isFatal UnsupportedOperation = True

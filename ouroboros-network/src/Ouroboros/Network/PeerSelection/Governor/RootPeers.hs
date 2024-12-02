@@ -17,7 +17,7 @@ import Ouroboros.Network.PeerSelection.LedgerPeers (LedgerPeersKind (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
-import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersActions (..))
+import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersAPI (..))
 
 
 --------------------------
@@ -30,7 +30,7 @@ belowTarget :: (MonadSTM m, Ord peeraddr, Semigroup extraPeers)
             -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
             -> Guarded (STM m) (TimedDecision m extraState extraFlags extraPeers peeraddr peerconn)
 belowTarget actions@PeerSelectionActions {
-              extraPeersActions = PublicExtraPeersActions {
+              extraPeersAPI = PublicExtraPeersAPI {
                 extraPeersToSet
               },
               extraStateToExtraCounters
@@ -84,7 +84,7 @@ jobReqPublicRootPeers :: forall m extraActions extraState extraFlags extraPeers 
                       -> Int
                       -> Job () m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
 jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
-                                          , extraPeersActions = PublicExtraPeersActions {
+                                          , extraPeersAPI = PublicExtraPeersAPI {
                                               differenceExtraPeers
                                             , extraPeersToSet
                                             , nullExtraPeers

@@ -25,7 +25,7 @@ import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
-import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersActions (..))
+import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersAPI (..))
 
 
 belowTarget :: (MonadSTM m, Ord peeraddr, Semigroup extraPeers)
@@ -36,7 +36,7 @@ belowTarget :: (MonadSTM m, Ord peeraddr, Semigroup extraPeers)
             -> Guarded (STM m) (TimedDecision m extraState extraFlags extraPeers peeraddr peerconn)
 belowTarget enableAction
             actions@PeerSelectionActions {
-              extraPeersActions = PublicExtraPeersActions {
+              extraPeersAPI = PublicExtraPeersAPI {
                 extraPeersToSet
               },
               extraStateToExtraCounters
@@ -86,7 +86,7 @@ jobReqBigLedgerPeers :: forall m extraActions extraState extraFlags extraAPI ext
                      -> Int
                      -> Job () m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
 jobReqBigLedgerPeers PeerSelectionActions {
-                       extraPeersActions = PublicExtraPeersActions {
+                       extraPeersAPI = PublicExtraPeersAPI {
                          extraPeersToSet,
                          differenceExtraPeers,
                          nullExtraPeers
@@ -194,7 +194,7 @@ aboveTarget :: forall m extraState extraActions extraFlags extraAPI extraPeers e
                  => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
                  -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
 aboveTarget PeerSelectionActions {
-              extraPeersActions = PublicExtraPeersActions {
+              extraPeersAPI = PublicExtraPeersAPI {
                 extraPeersToSet,
                 differenceExtraPeers,
                 memberExtraPeers
