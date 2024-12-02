@@ -1173,7 +1173,7 @@ prop_connection_manager_valid_transition_order (Fixed rnd) serverAcc (ArbDataFlo
            MainReturn {} -> mempty
            _             -> All False
        )
-       (verifyAbstractTransitionOrder True)
+       (verifyAbstractTransitionOrder id True)
     . fmap (map ttTransition)
     . groupConns id abstractStateIsFinalTransition
     $ abstractTransitionEvents
@@ -1213,7 +1213,7 @@ prop_connection_manager_valid_transition_order_racy (Fixed rnd) serverAcc (ArbDa
                MainReturn {} -> mempty
                _             -> All False
            )
-           (verifyAbstractTransitionOrder True)
+           (verifyAbstractTransitionOrder id True)
         . fmap (map ttTransition)
         . groupConns id abstractStateIsFinalTransition
         $ abstractTransitionEvents

@@ -1,4 +1,5 @@
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.ConnectionManager.Test.Utils where
 
@@ -192,20 +193,22 @@ validTransitionMap t@Transition { fromState, toState } =
 -- Assuming all transitions in the transition list are valid, we only need to
 -- look at the 'toState' of the current transition and the 'fromState' of the
 -- next transition.
-verifyAbstractTransitionOrder :: Bool -- ^ Check last transition: useful for
+verifyAbstractTransitionOrder :: forall a. Show a
+                              => (a -> AbstractTransition)
+                              -> Bool -- ^ Check last transition: useful for
                                       --    distinguish Diffusion layer tests
                                       --    vs non-Diffusion ones.
-                              -> [AbstractTransition]
+                              -> [a]
                               -> All
-verifyAbstractTransitionOrder _ [] = mempty
-verifyAbstractTransitionOrder checkLast (h:t) = go t h
+verifyAbstractTransitionOrder _ _ [] = mempty
+verifyAbstractTransitionOrder get checkLast (h:t) = go t h
   where
-    go :: [AbstractTransition] -> AbstractTransition -> All
+    go :: [a] -> a -> All
     -- All transitions must end in the 'UnknownConnectionSt', and since we
     -- assume that all transitions are valid we do not have to check the
     -- 'fromState'.
-    go [] (Transition _ UnknownConnectionSt) = mempty
-    go [] tr@(Transition _ _)          =
+    go [] a | (Transition _ UnknownConnectionSt) <- get a = mempty
+    go [] a | tr@(Transition _ _) <- get a =
       All
         $ counterexample
             ("\nUnexpected last transition: " ++ show tr)
@@ -213,14 +216,14 @@ verifyAbstractTransitionOrder checkLast (h:t) = go t h
     -- All transitions have to be in a correct order, which means that the
     -- current state we are looking at (current toState) needs to be equal to
     -- the next 'fromState', in order for the transition chain to be correct.
-    go (next@(Transition nextFromState _) : ts)
-        curr@(Transition _ currToState) =
+    go (a : as) b | (Transition nextFromState _) <- get a
+                  , (Transition _ currToState) <- get b =
          All
            (counterexample
               ("\nUnexpected transition order!\nWent from: "
-              ++ show curr ++ "\nto: " ++ show next)
+              ++ show b ++ "\nto: " ++ show a)
               (property (currToState == nextFromState)))
-         <> go ts next
+         <> go as a
 
 
 -- | List of all valid transition's names.
