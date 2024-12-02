@@ -1077,14 +1077,14 @@ mkSnocket state tr = Snocket { getLocalAddr
                                                    (Map.delete (normaliseId connId))
                         >> throwIO e)
                     $ unmask . atomically . runFirstToFinish $
-                        (FirstToFinish $ do
+                        FirstToFinish (do
                           LazySTM.readTVar timeoutVar >>= check
                           modifyTVar (nsConnections state)
                                      (Map.delete (normaliseId connId))
                           return Nothing
                         )
                         <>
-                        (FirstToFinish $ do
+                        FirstToFinish (do
                           mbConn <- Map.lookup (normaliseId connId)
                                 <$> readTVar (nsConnections state)
                           case mbConn of
