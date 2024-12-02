@@ -86,9 +86,10 @@ import Cardano.Network.LedgerPeerConsensusInterface
            (CardanoLedgerPeersConsensusInterface (..))
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
-import Cardano.Network.PeerSelection.Governor.Monitor (localRoots,
-           monitorBootstrapPeersFlag, monitorLedgerStateJudgement, targetPeers,
+import Cardano.Network.PeerSelection.Governor.Monitor
+           (monitorBootstrapPeersFlag, monitorLedgerStateJudgement,
            waitForSystemToQuiesce)
+import Cardano.Network.PeerSelection.Governor.Monitor qualified as Cardano
 import Cardano.Network.PeerSelection.Governor.PeerSelectionActions
            (CardanoPeerSelectionActions (..))
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState
@@ -315,16 +316,14 @@ governorAction mockEnv@GovernorMockEnvironment {
         , updateWithState = const (const (pure ()))
         , extraDecisions  =
             ExtraGuardedDecisions {
-              preBlocking                        =
-                [ \_ psa pst -> monitorBootstrapPeersFlag   psa pst
-                , \_ psa pst -> monitorLedgerStateJudgement psa pst
-                , \_ _   pst -> waitForSystemToQuiesce          pst
-                ]
-            , postBlocking                       = []
-            , preNonBlocking                     = []
-            , postNonBlocking                    = []
-            , requiredTargetsAction              = \_ -> targetPeers
-            , requiredLocalRootsAction           = \_ -> localRoots
+              preBlocking                        = \_ psa pst ->
+                  monitorBootstrapPeersFlag   psa pst
+                <> monitorLedgerStateJudgement psa pst
+                <> waitForSystemToQuiesce          pst
+            , postBlocking                       = mempty
+            , postNonBlocking                    = mempty
+            , requiredTargetsAction              = \_ -> Cardano.targetPeers
+            , requiredLocalRootsAction           = \_ -> Cardano.localRoots
 
               -- No inbound peers should be used when the node is using bootstrap peers.
             , enableProgressMakingActions        =
@@ -505,7 +504,7 @@ mockPeerSelectionActions' tracer
                           connsVar
                           outboundConnectionsStateVar =
     PeerSelectionActions {
-      readOriginalLocalRootPeers
+      readLocalRootPeersFromFile
         = return
         $ LocalRootPeers.toGroups
         $ LocalRootPeers.mapPeers
@@ -540,12 +539,12 @@ mockPeerSelectionActions' tracer
       },
       readInboundPeers = pure Map.empty,
       readLedgerPeerSnapshot = pure Nothing,
-      originalPeerSelectionTargets = originalPeerTargets,
+      peerSelectionTargets = originalPeerTargets,
       extraActions = CardanoPeerSelectionActions {
-        cpsaSyncPeerTargets = peerTargets,
+        cpsaGenesisPeerTargets = peerTargets,
         cpsaReadUseBootstrapPeers = readUseBootstrapPeers
       },
-      extraPeersActions = CPRP.cardanoPublicRootPeersActions,
+      extraPeersAPI = CPRP.cardanoPublicRootPeersAPI,
       extraStateToExtraCounters = CPSV.cardanoPeerSelectionStatetoCounters
     }
   where

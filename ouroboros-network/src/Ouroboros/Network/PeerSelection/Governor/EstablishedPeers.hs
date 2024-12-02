@@ -30,7 +30,7 @@ import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as Estab
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (WarmValency (..))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
-import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersActions (..))
+import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersAPI (..))
 
 
 ---------------------------------
@@ -75,7 +75,7 @@ belowTargetLocal :: forall extraActions extraState extraFlags extraPeers extraAP
                  => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
                  -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
 belowTargetLocal actions@PeerSelectionActions {
-                   extraPeersActions = PublicExtraPeersActions {
+                   extraPeersAPI = PublicExtraPeersAPI {
                      memberExtraPeers
                    , extraPeersToSet
                    }
@@ -175,7 +175,7 @@ belowTargetOther :: forall extraActions extraState extraFlags extraPeers extraAP
                  => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
                  -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
 belowTargetOther actions@PeerSelectionActions {
-                   extraPeersActions = PublicExtraPeersActions {
+                   extraPeersAPI = PublicExtraPeersAPI {
                      memberExtraPeers
                    , extraPeersToSet
                    },
@@ -265,7 +265,7 @@ belowTargetBigLedgerPeers :: forall extraState extraActions extraFlags extraPeer
                           -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
 belowTargetBigLedgerPeers enableAction
                           actions@PeerSelectionActions {
-                            extraPeersActions = PublicExtraPeersActions {
+                            extraPeersAPI = PublicExtraPeersAPI {
                               memberExtraPeers
                             , extraPeersToSet
                             },
@@ -366,7 +366,7 @@ jobPromoteColdPeer :: forall extraActions extraState extraFlags extraPeers extra
 jobPromoteColdPeer PeerSelectionActions {
                      peerStateActions = PeerStateActions {establishPeerConnection},
                      peerConnToPeerSharing,
-                     extraPeersActions = PublicExtraPeersActions {
+                     extraPeersAPI = PublicExtraPeersAPI {
                        extraPeersToSet
                      },
                      extraStateToExtraCounters
@@ -515,7 +515,7 @@ aboveTargetOther :: forall extraActions extraState extraFlags extraPeers extraAP
             => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
             -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
 aboveTargetOther actions@PeerSelectionActions {
-                   extraPeersActions = PublicExtraPeersActions {
+                   extraPeersAPI = PublicExtraPeersAPI {
                      memberExtraPeers
                    , extraPeersToSet
                    },
@@ -608,7 +608,7 @@ aboveTargetBigLedgerPeers :: forall extraActions extraState extraFlags extraAPI 
                           => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
                           -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
 aboveTargetBigLedgerPeers actions@PeerSelectionActions {
-                            extraPeersActions = PublicExtraPeersActions {
+                            extraPeersAPI = PublicExtraPeersAPI {
                               memberExtraPeers
                             , extraPeersToSet
                             },

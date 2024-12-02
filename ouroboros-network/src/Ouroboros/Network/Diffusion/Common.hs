@@ -88,7 +88,7 @@ import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
 import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
            (TracePublicRootPeers)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
-import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersActions)
+import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersAPI)
 import Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
 import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.Server2 qualified as Server
@@ -417,17 +417,13 @@ data ArgumentsExtra extraArgs extraState extraActions extraAPI extraPeers
       --
     , daEmptyExtraState        :: extraState
 
-      -- | Extra Peers empty value
-      --
-    , daEmptyExtraPeers        :: extraPeers
-
       -- | Extra Counters empty value
       --
     , daEmptyExtraCounters     :: extraCounters
 
       -- | Provide Public Extra Actions for extraPeers to be
       --
-    , daExtraPeersActions      :: PublicExtraPeersActions extraPeers peeraddr
+    , daExtraPeersAPI          :: PublicExtraPeersAPI extraPeers peeraddr
 
     , daPeerSelectionGovernorArgs
         :: forall muxMode responderCtx ntnVersionData bytes a b .

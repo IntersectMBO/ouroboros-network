@@ -1228,7 +1228,7 @@ diffusionSimulation
           cardanoExtraArgs :: CardanoArgumentsExtra m
           cardanoExtraArgs =
             CardanoArgumentsExtra {
-              caeSyncPeerTargets                  = snd peerTargets
+              caeGenesisPeerTargets               = snd peerTargets
             , caeReadUseBootstrapPeers            = readUseBootstrapPeers
             , caeMinBigLedgerPeersForTrustedState = defaultMinBigLedgerPeersForTrustedState
             , caeConsensusMode                    = consensusMode
@@ -1237,11 +1237,11 @@ diffusionSimulation
           cardanoChurnArgs :: CardanoPeerChurnArgs m
           cardanoChurnArgs =
             CardanoPeerChurnArgs {
-              cpcaModeVar             = churnModeVar
-            , cpcaReadFetchMode       = pure FetchModeDeadline
-            , cpcaSyncPeerTargets     = caeSyncPeerTargets cardanoExtraArgs
-            , cpcaReadUseBootstrap    = caeReadUseBootstrapPeers cardanoExtraArgs
-            , cpcaConsensusMode       = consensusMode
+              cpcaModeVar            = churnModeVar
+            , cpcaReadFetchMode      = pure FetchModeDeadline
+            , cpcaGenesisPeerTargets = caeGenesisPeerTargets cardanoExtraArgs
+            , cpcaReadUseBootstrap   = caeReadUseBootstrapPeers cardanoExtraArgs
+            , cpcaConsensusMode      = consensusMode
             }
 
           arguments :: Arguments (CardanoArgumentsExtra m) (CardanoPeerChurnArgs m) PeerTrustable m
@@ -1286,9 +1286,8 @@ diffusionSimulation
                      arguments
                      (CPST.empty consensusMode (MinBigLedgerPeersForTrustedState 0))
                      (cardanoExtraArgsToPeerSelectionActions cardanoExtraArgs)
-                     CPRP.empty
                      CPSV.empty
-                     CPRP.cardanoPublicRootPeersActions
+                     CPRP.cardanoPublicRootPeersAPI
                      (cardanoPeerSelectionGovernorArgs readUseLedgerPeers peerSharing (iLedgerPeersConsensusInterface interfaces))
                      CPSV.cardanoPeerSelectionStatetoCounters
                      requestPublicRootPeers'

@@ -157,7 +157,7 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
            LocalRootPeers, WarmValency (..))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSelection.Types (PeerSource (..),
-           PeerStatus (PeerHot, PeerWarm), PublicExtraPeersActions)
+           PeerStatus (PeerHot, PeerWarm), PublicExtraPeersAPI)
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
            PeerSharingResult (..))
 import Cardano.Network.Types (LedgerStateJudgement (..))
@@ -320,9 +320,9 @@ sanePeerSelectionTargets PeerSelectionTargets{..} =
 --
 data PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m =
   PeerSelectionActions {
-       -- | These are the original targets as seen in the static configuration
+       -- | These are the targets as seen in the static configuration
        --
-       originalPeerSelectionTargets :: PeerSelectionTargets,
+       peerSelectionTargets :: PeerSelectionTargets,
 
        -- | Read current Peer Selection Targets these can be changed by Churn
        -- Governor
@@ -333,7 +333,7 @@ data PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI
        --
        -- This should come from 'ArgumentsExtra' when initializing Diffusion
        --
-       readOriginalLocalRootPeers :: STM m (LocalRootPeers.Config extraFlags RelayAccessPoint),
+       readLocalRootPeersFromFile :: STM m (LocalRootPeers.Config extraFlags RelayAccessPoint),
 
        -- | Read the current set of locally or privately known root peers.
        --
@@ -368,7 +368,7 @@ data PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI
 
        -- | Public Extra Peers Actions
        --
-       extraPeersActions :: PublicExtraPeersActions extraPeers peeraddr,
+       extraPeersAPI :: PublicExtraPeersAPI extraPeers peeraddr,
 
        -- | Compute extraCounters from PeerSelectionState
        extraStateToExtraCounters
@@ -478,39 +478,29 @@ type MonitoringAction extraState extraActions extraPeers extraAPI extraFlags ext
   -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
   -> Guarded (STM m) (TimedDecision m extraState extraFlags extraPeers peeraddr peerconn)
 
-type MonitoringActions extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m =
-  [ MonitoringAction extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m ]
-
 data ExtraGuardedDecisions extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m =
   ExtraGuardedDecisions {
 
-    -- | This list of guarded decisions will come before all default possibly
-    -- blocking -- decisions. The order matters, making the first decisions
+    -- | This guarded decision will come before all default possibly
+    -- blocking decisions. The order matters, making the first decisions
     -- have priority over the later ones.
     --
-    -- Note that these actions should be blocking.
-    preBlocking      :: MonitoringActions extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m
+    -- Note that this action should be blocking.
+    preBlocking      :: MonitoringAction extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m
 
     -- | This list of guarded decisions will come after all possibly preBlocking
     -- and default blocking decisions. The order matters, making the first
     -- decisions have priority over the later ones.
     --
-    -- Note that these actions should be blocking.
-  , postBlocking     :: MonitoringActions extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m
+    -- Note that these actions can be either blocking or non-blocking.
+  , postBlocking     :: MonitoringAction extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m
 
     -- | This list of guarded decisions will come before all default non-blocking
-    -- decisions. The order matters, making the first decisions have priority over
-    -- the later ones.
+    -- decisions. The order matters, making the first decisions have priority
+    -- over the later ones.
     --
     -- Note that these actions should not be blocking.
-  , preNonBlocking   :: MonitoringActions extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m
-
-    -- | This list of guarded decisions will come before all preNonBlocking and
-    -- default non-blocking decisions. The order matters, making the first
-    -- decisions have priority over the later ones.
-    --
-    -- Note that these actions should not be blocking.
-  , postNonBlocking  :: MonitoringActions extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m
+  , postNonBlocking  :: MonitoringAction extraState extraActions extraPeers extraAPI extraFlags extraCounters peeraddr peerconn m
 
     -- | This action is necessary to the well functioning of the Outbound
     -- Governor. In particular this action should monitor 'PeerSelectionTargets',
@@ -1282,7 +1272,10 @@ peerSelectionStateToView
 
 peerSelectionStateToCounters
   :: Ord peeraddr
-  => (extraPeers -> Set peeraddr)
+  => (extraPeers -> Set peeraddr) -- ^ This function comes from 'PublicExtraPeersAPI'
+                                -- It is needed to compute the set of all
+                                -- extraPeers and use that information to
+                                -- compute the counters.
   -> (PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn -> extraCounters)
   -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
   -> PeerSelectionCounters extraCounters
@@ -1293,7 +1286,14 @@ peerSelectionStateToCounters extraPeersToSet extraStateToExtraCounters =
 
 assertPeerSelectionState :: Ord peeraddr
                          => (extraPeers -> Set peeraddr)
+                           -- ^ This function comes from 'PublicExtraPeersAPI'
+                           -- It is needed to compute the set of all
+                           -- extraPeers and use that information to
+                           -- compute the invariant.
                          -> (extraPeers -> Bool)
+                           -- ^ This function comes from 'PublicExtraPeersAPI'
+                           -- It is needed to compute the invariant of the
+                           -- extraPeers data type.
                          -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
                          -> a -> a
 assertPeerSelectionState extraPeersToSet invariantExtraPeers PeerSelectionState{..} =
@@ -1416,6 +1416,10 @@ pickPeers' :: (Ord peeraddr, Functor m, HasCallStack)
            => (Int -> Set peeraddr -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn -> Bool)
            -- ^ precondition
            -> (peeraddr -> extraPeers -> Bool)
+           -- ^ This function comes from 'PublicExtraPeersAPI'
+           --
+           -- It is needed to compute membership of the
+           -- extraPeers data type.
            -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
            -> PickPolicy peeraddr m
            -> Set peeraddr -> Int -> m (Set peeraddr)
@@ -1460,6 +1464,10 @@ pickPeers' precondition memberExtraPeers st@PeerSelectionState{localRootPeers, p
 --
 pickPeers :: (Ord peeraddr, Functor m, HasCallStack)
           => (peeraddr -> extraPeers -> Bool)
+          -- ^ This function comes from 'PublicExtraPeersAPI'
+          --
+          -- It is needed to compute membership of the
+          -- extraPeers data type.
           -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
           -> PickPolicy peeraddr m
           -> Set peeraddr -> Int -> m (Set peeraddr)
@@ -1474,6 +1482,10 @@ pickPeers memberExtraPeers =
 --
 pickUnknownPeers :: (Ord peeraddr, Functor m, HasCallStack)
                  => (peeraddr -> extraPeers -> Bool)
+                 -- ^ This function comes from 'PublicExtraPeersAPI'
+                 --
+                 -- It is needed to compute membership of the
+                 -- extraPeers data type.
                  -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
                  -> PickPolicy peeraddr m
                  -> Set peeraddr -> Int -> m (Set peeraddr)

@@ -16,7 +16,7 @@ data CardanoPeerSelectionActions m =
     -- | Retrieve peer targets for Genesis & non-Genesis modes
     -- from node's configuration for the current state
     --
-    cpsaSyncPeerTargets       :: PeerSelectionTargets
+    cpsaGenesisPeerTargets    :: PeerSelectionTargets
 
     -- | Read the current bootstrap peers flag
   , cpsaReadUseBootstrapPeers :: STM m UseBootstrapPeers
@@ -25,11 +25,11 @@ data CardanoPeerSelectionActions m =
 cardanoExtraArgsToPeerSelectionActions :: CardanoArgumentsExtra m
                                        -> CardanoPeerSelectionActions m
 cardanoExtraArgsToPeerSelectionActions CardanoArgumentsExtra {
-                                         caeSyncPeerTargets
+                                         caeGenesisPeerTargets
                                        , caeReadUseBootstrapPeers
                                        } =
   CardanoPeerSelectionActions {
-    cpsaSyncPeerTargets       = caeSyncPeerTargets
+    cpsaGenesisPeerTargets       = caeGenesisPeerTargets
   , cpsaReadUseBootstrapPeers = caeReadUseBootstrapPeers
   }
 

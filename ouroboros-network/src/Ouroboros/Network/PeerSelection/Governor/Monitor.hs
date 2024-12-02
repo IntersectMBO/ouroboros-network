@@ -56,7 +56,7 @@ targetPeers :: (MonadSTM m, Ord peeraddr)
             -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
             -> Guarded (STM m) (TimedDecision m extraState extraFlags extraPeers peeraddr peerconn)
 targetPeers PeerSelectionActions{ readPeerSelectionTargets,
-                                  extraPeersActions
+                                  extraPeersAPI
                                 }
             st@PeerSelectionState{
               publicRootPeers,
@@ -81,7 +81,7 @@ targetPeers PeerSelectionActions{ readPeerSelectionTargets,
 
           -- We have to enforce that local and big ledger peers are disjoint.
           publicRootPeers' =
-            PublicRootPeers.difference (differenceExtraPeers extraPeersActions)
+            PublicRootPeers.difference (differenceExtraPeers extraPeersAPI)
               publicRootPeers (LocalRootPeers.keysSet localRootPeers')
 
       return $ \_now -> Decision {
@@ -310,7 +310,7 @@ localRoots :: forall extraState extraActions extraPeers extraFlags extraAPI extr
            -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
            -> Guarded (STM m) (TimedDecision m extraState extraFlags extraPeers peeraddr peerconn)
 localRoots actions@PeerSelectionActions{ readLocalRootPeers
-                                       , extraPeersActions = PublicExtraPeersActions {
+                                       , extraPeersAPI = PublicExtraPeersAPI {
                                            differenceExtraPeers
                                          , extraPeersToSet
                                          }

@@ -1,5 +1,6 @@
-{-# LANGUAGE DeriveFunctor  #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE DeriveFunctor    #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE NamedFieldPuns   #-}
 
 module Cardano.Network.PeerSelection.Governor.Types where
 
@@ -8,9 +9,10 @@ import Cardano.Network.LedgerPeerConsensusInterface
            (CardanoLedgerPeersConsensusInterface (..))
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
-import Cardano.Network.PeerSelection.Governor.Monitor (localRoots,
-           monitorBootstrapPeersFlag, monitorLedgerStateJudgement, targetPeers,
+import Cardano.Network.PeerSelection.Governor.Monitor
+           (monitorBootstrapPeersFlag, monitorLedgerStateJudgement,
            waitForSystemToQuiesce)
+import Cardano.Network.PeerSelection.Governor.Monitor qualified as Cardano
 import Cardano.Network.PeerSelection.Governor.PeerSelectionActions
            (CardanoPeerSelectionActions)
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState
@@ -21,7 +23,8 @@ import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
 import Cardano.Network.Types (LedgerStateJudgement (..),
            getMinBigLedgerPeersForTrustedState)
-import Control.Concurrent.Class.MonadSTM (MonadSTM, STM)
+import Control.Applicative (Alternative)
+import Control.Concurrent.Class.MonadSTM
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Ouroboros.Network.PeerSelection.Governor (readAssociationMode)
@@ -62,6 +65,7 @@ empty = CardanoPeerSelectionView {
   , viewActiveBootstrapPeers          = (Set.empty, 0)
   , viewActiveBootstrapPeersDemotions = (Set.empty, 0)
   }
+
 
 cardanoPeerSelectionStatetoCounters
   :: Ord peeraddr
@@ -176,7 +180,8 @@ outboundConnectionsState
 
 cardanoPeerSelectionGovernorArgs
   :: ( MonadSTM m
-    , Ord peeraddr
+     , Alternative (STM m)
+     , Ord peeraddr
      )
   => STM m UseLedgerPeers
   -> PeerSharing
@@ -213,16 +218,14 @@ cardanoPeerSelectionGovernorArgs readUseLedgerPeers peerSharing lpsci =
         (outboundConnectionsState associationMode psv st)
   , extraDecisions  =
       ExtraGuardedDecisions {
-        preBlocking     =
-          [ \_ psa pst -> monitorBootstrapPeersFlag   psa pst
-          , \_ psa pst -> monitorLedgerStateJudgement psa pst
-          , \_ _   pst -> waitForSystemToQuiesce          pst
-          ]
-      , postBlocking    = []
-      , preNonBlocking  = []
-      , postNonBlocking = []
-      , requiredTargetsAction              = \_ -> targetPeers
-      , requiredLocalRootsAction           = \_ -> localRoots
+        preBlocking     = \_ psa pst ->
+             monitorBootstrapPeersFlag   psa pst
+          <> monitorLedgerStateJudgement psa pst
+          <> waitForSystemToQuiesce          pst
+      , postBlocking    = mempty
+      , postNonBlocking = mempty
+      , requiredTargetsAction              = \_ -> Cardano.targetPeers
+      , requiredLocalRootsAction           = \_ -> Cardano.localRoots
       , enableProgressMakingActions        = \st ->
           not (requiresBootstrapPeers (cpstBootstrapPeersFlag st) (cpstLedgerStateJudgement st))
       , ledgerPeerSnapshotExtraStateChange = \st ->

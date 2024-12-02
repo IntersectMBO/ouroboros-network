@@ -34,7 +34,7 @@ import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPe
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
-import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersActions (..))
+import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersAPI (..))
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 
 
@@ -61,7 +61,7 @@ belowTarget
 belowTarget enableAction
             actions@PeerSelectionActions {
               peerSharing
-            , extraPeersActions = PublicExtraPeersActions {
+            , extraPeersAPI = PublicExtraPeersAPI {
                 memberExtraPeers
               , extraPeersToSet
               }
@@ -440,7 +440,7 @@ aboveTarget :: (MonadSTM m, Ord peeraddr, HasCallStack)
             => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
             -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
 aboveTarget PeerSelectionActions {
-              extraPeersActions = PublicExtraPeersActions {
+              extraPeersAPI = PublicExtraPeersAPI {
                 memberExtraPeers
               , extraPeersToSet
               , sizeExtraPeers

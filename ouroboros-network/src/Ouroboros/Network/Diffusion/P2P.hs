@@ -13,7 +13,7 @@
 -- | This module is expected to be imported qualified (it will clash
 -- with the "Ouroboros.Network.Diffusion.NonP2P").
 --
-module Ouroboros.Network.Diffusion.MinimalP2P
+module Ouroboros.Network.Diffusion.P2P
   ( run
   , runM
   ) where
@@ -223,9 +223,8 @@ runM Interfaces
        , daBulkChurnInterval
        , daReadLedgerPeerSnapshot
        , daEmptyExtraState
-       , daEmptyExtraPeers
        , daEmptyExtraCounters
-       , daExtraPeersActions
+       , daExtraPeersAPI
        , daPeerSelectionGovernorArgs
        , daPeerSelectionStateToExtraCounters
        , daPeerChurnGovernor
@@ -622,10 +621,10 @@ runM Interfaces
                                        localRootsVar
                                        dnsActions
                                        (\getLedgerPeers -> PeerSelectionActions {
-                                         originalPeerSelectionTargets = daPeerSelectionTargets,
+                                         peerSelectionTargets = daPeerSelectionTargets,
                                          readPeerSelectionTargets   = readTVar peerSelectionTargetsVar,
                                          getLedgerStateCtx          = daLedgerPeersCtx,
-                                         readOriginalLocalRootPeers = daReadLocalRootPeers,
+                                         readLocalRootPeersFromFile = daReadLocalRootPeers,
                                          readLocalRootPeers         = readTVar localRootsVar,
                                          peerSharing                = daOwnPeerSharing,
                                          peerConnToPeerSharing      = pchPeerSharing diNtnPeerSharing,
@@ -638,7 +637,7 @@ runM Interfaces
                                              PeerSharingEnabled  -> readInboundPeers,
                                          readLedgerPeerSnapshot = daReadLedgerPeerSnapshot,
                                          extraActions              = daExtraActions,
-                                         extraPeersActions         = daExtraPeersActions,
+                                         extraPeersAPI             = daExtraPeersAPI,
                                          extraStateToExtraCounters = daPeerSelectionStateToExtraCounters,
                                          peerStateActions
                                        })
@@ -669,7 +668,7 @@ runM Interfaces
               daPeerSelectionGovernorArgs
               fuzzRng
               daEmptyExtraState
-              daEmptyExtraPeers
+              mempty
               peerSelectionActions
               peerSelectionPolicy
               PeerSelectionInterfaces {
@@ -745,7 +744,7 @@ runM Interfaces
         -- InitiatorOnly mode, run peer selection only:
         InitiatorOnlyDiffusionMode ->
           withConnectionManagerInitiatorOnlyMode $ \connectionManager-> do
-          debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng daEmptyExtraState daEmptyExtraPeers
+          debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng daEmptyExtraState mempty
           diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
           withPeerStateActions' connectionManager $ \peerStateActions->
             withPeerSelectionActions'
@@ -770,7 +769,7 @@ runM Interfaces
             inboundInfoChannel $ \connectionManager ->
               withSockets' $ \sockets addresses -> do
                 withServer sockets connectionManager inboundInfoChannel $ \inboundGovernorThread readInboundState -> do
-                  debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng daEmptyExtraState daEmptyExtraPeers
+                  debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng daEmptyExtraState mempty
                   diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
                   withPeerStateActions' connectionManager $ \peerStateActions ->
                     withPeerSelectionActions'

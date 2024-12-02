@@ -11,8 +11,9 @@ import Ouroboros.Network.PeerSelection.Governor.Types
 --
 data CardanoArgumentsExtra m =
   CardanoArgumentsExtra {
-    -- | selection targets for the peer governor
-    caeSyncPeerTargets                  :: PeerSelectionTargets
+    -- | Genesis selection targets for the peer governor
+    caeGenesisPeerTargets               :: PeerSelectionTargets
+
   , caeReadUseBootstrapPeers            :: STM m UseBootstrapPeers
 
   -- | For Genesis, this sets the floor for minimum number of
