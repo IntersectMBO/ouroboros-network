@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE NamedFieldPuns      #-}
@@ -17,10 +18,15 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
   , constantResource
     -- ** Error type
   , DNSorIOError (..)
+  , DNSLookupResult (..)
   ) where
 
 import Data.Function (fix)
+import Data.List (sortOn)
 import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.NonEmpty qualified as NE
+import Data.Maybe
+import System.Random
 
 import Control.Exception (IOException)
 import Control.Monad.Class.MonadAsync
@@ -42,10 +48,11 @@ import Control.Tracer (Tracer (..), traceWith)
 import System.Directory (getModificationTime)
 #endif
 
-import Data.IP (IP (..))
+import Data.Map qualified as Map
 import Network.DNS (DNSError)
 import Network.DNS qualified as DNS
 
+import Ouroboros.Network.PeerSelection.RelayAccessPoint
 
 data DNSLookupType = LookupReqAOnly
                    | LookupReqAAAAOnly
@@ -54,8 +61,25 @@ data DNSLookupType = LookupReqAOnly
 
 data DNSorIOError exception
     = DNSError !DNSError
+    | SRVNullResponse
+    -- ^ For cases when SRV lookup returns an empty list of domains
+    -- to sample from. This is leveraged in tests to observe a dns lookup
+    -- request being made
     | IOError  !exception
   deriving Show
+
+-- | The type returned by 'DNSActions.dnsLookupWithTTL'
+-- indicating the type of domain attempted to resolve
+--
+data DNSLookupResult peeraddr =
+    DNSLookup ( DomainPlainAccessPoint
+              , [DNSError]
+              ,  [(peeraddr, DNS.TTL)])
+  | DNSLookupSRV ( DNS.Domain
+                 , [DNSError]
+                 , Maybe (  PortNumber -- ^ service port
+                         , [(peeraddr, DNS.TTL)]))
+  deriving (Show)
 
 instance Exception exception => Exception (DNSorIOError exception) where
 
@@ -167,10 +191,11 @@ data DNSActions resolver exception m = DNSActions {
     -- DNS library timeouts do not work reliably on Windows (#1873), hence the
     -- additional timeout.
     --
-    dnsLookupWithTTL         :: DNS.ResolvConf
+    dnsLookupWithTTL         :: DomainAccessPoint
+                             -> DNS.ResolvConf
                              -> resolver
-                             -> DNS.Domain
-                             -> m ([DNS.DNSError], [(IP, DNS.TTL)])
+                             -> StdGen
+                             -> m (DNSLookupResult IP)
   }
 
 
@@ -200,7 +225,7 @@ ioDNSActions =
     \reqs -> DNSActions {
                dnsResolverResource      = resolverResource,
                dnsAsyncResolverResource = asyncResolverResource,
-               dnsLookupWithTTL         = lookupWithTTL reqs
+               dnsLookupWithTTL         = dispatchLookupWithTTL reqs
              }
   where
     -- |
@@ -363,25 +388,94 @@ ioDNSActions =
             } <- answer
           ]
 
+    lookupSRVWithTTL :: DNSLookupType
+                     -> DNS.Domain
+                     -> DNS.ResolvConf
+                     -> DNS.Resolver
+                     -> StdGen
+                     -> IO (DNSLookupResult IP)
+    lookupSRVWithTTL ofType domain0 resolvConf resolver rng = do
+        reply <- timeout (microsecondsAsIntToDiffTime
+                           $ DNS.resolvTimeout resolvConf)
+                         (DNS.lookupRaw resolver domain0 DNS.SRV)
+        case reply of
+          Nothing          -> return $ DNSLookupSRV (domain0, [DNS.TimeoutExpired], Nothing)
+          Just (Left  err) -> return $ DNSLookupSRV (domain0, [err], Nothing)
+          Just (Right msg) ->
+            case DNS.fromDNSMessage msg selectSRV of
+              Left err -> return $ DNSLookupSRV (domain0, [err], Nothing)
+              Right services -> do
+                let srvByPriority = sortOn priority services
+                    grouped       = NE.groupWith priority srvByPriority
+
+                case listToMaybe grouped of
+                  Just topPriority -> do
+                    case topPriority of
+                      (single, _, _, port) NE.:| [] ->
+                          DNSLookupSRV
+                        . inclDomainAndPort single port <$>
+                            lookupWithTTL ofType single resolvConf resolver
+                      many ->
+                        DNSLookupSRV <$> runWeightedLookup (NE.toList many)
+                  Nothing -> return $ DNSLookupSRV (domain0, [], Nothing)
+
+      where
+        inclDomainAndPort domain !port (e, ipsttls) = (domain, e, Just (fromIntegral port, ipsttls))
+
+        runWeightedLookup services =
+          let go !upper acc [] = (upper, acc)
+              go !upper acc (srv:srvcs) =
+                let upper' = weight srv + upper
+                 in go upper' ((upper', srv):acc) srvcs
+
+              (upperBound, cdf) = go 0 [] services
+              mapCdf = Map.fromList cdf
+              (pick, _) = randomR (0, upperBound) rng
+              (winner, _, _, port) = snd . fromJust $ Map.lookupGE pick mapCdf
+           in inclDomainAndPort winner port <$>
+                lookupWithTTL ofType winner resolvConf resolver
+
+        selectSRV DNS.DNSMessage { DNS.answer } =
+          [ (domain', priority', weight', port)
+          | DNS.ResourceRecord {
+              DNS.rdata = DNS.RD_SRV priority' weight' port domain'
+            } <- answer
+          ]
+
+        weight   (_, _, w, _) = w
+        priority (_, p, _, _) = p
+
+    dispatchLookupWithTTL :: DNSLookupType
+                          -> DomainAccessPoint
+                          -> DNS.ResolvConf
+                          -> DNS.Resolver
+                          -> StdGen
+                          -> IO (DNSLookupResult IP)
+    dispatchLookupWithTTL lookupType domain conf resolver rng =
+      case domain of
+        DomainAccessPoint d -> wrap <$> lookupWithTTL lookupType (dapDomain d) conf resolver
+         where
+           wrap (a, b) = DNSLookup (d, a, b)
+        DomainSRVAccessPoint d -> lookupSRVWithTTL lookupType (srvDomain d) conf resolver rng
 
     lookupWithTTL :: DNSLookupType
+                  -> DNS.Domain
                   -> DNS.ResolvConf
                   -> DNS.Resolver
-                  -> DNS.Domain
                   -> IO ([DNS.DNSError], [(IP, DNS.TTL)])
-    lookupWithTTL LookupReqAOnly resolvConf resolver domain = do
+    lookupWithTTL LookupReqAOnly domain resolvConf resolver = do
         res <- lookupAWithTTL resolvConf resolver domain
         case res of
              Left err -> return ([err], [])
              Right r  -> return ([], r)
 
-    lookupWithTTL LookupReqAAAAOnly resolvConf resolver domain = do
+    lookupWithTTL LookupReqAAAAOnly domain resolvConf resolver = do
         res <- lookupAAAAWithTTL resolvConf resolver domain
         case res of
              Left err -> return ([err], [])
              Right r  -> return ([], r)
 
-    lookupWithTTL LookupReqAAndAAAA resolvConf resolver domain = do
+    lookupWithTTL LookupReqAAndAAAA domain resolvConf resolver = do
         (r_ipv6, r_ipv4) <- concurrently (lookupAAAAWithTTL resolvConf resolver domain)
                                          (lookupAWithTTL resolvConf resolver domain)
         case (r_ipv6, r_ipv4) of
