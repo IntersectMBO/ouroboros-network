@@ -9,7 +9,7 @@ module Ouroboros.Network.BlockFetch.Decision
   ( -- * Deciding what to fetch
     fetchDecisions
   , FetchDecisionPolicy (..)
-  , FetchMode (..)
+  , PraosFetchMode (..)
   , PeerInfo
   , peerInfoPeer
   , FetchDecision
@@ -49,7 +49,7 @@ import Ouroboros.Network.Point (withOriginToMaybe)
 import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..),
            PeerFetchInFlight (..), PeerFetchStatus (..))
 import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..),
-           GenesisFetchMode (..))
+           PraosFetchMode (..))
 import Ouroboros.Network.BlockFetch.DeltaQ (PeerFetchInFlightLimits (..),
            PeerGSV (..), SizeInBytes, calculatePeerFetchInFlightLimits,
            comparePeerGSV, comparePeerGSV', estimateExpectedResponseDuration,
@@ -234,7 +234,7 @@ data FetchDecline =
      -- * the corresponding configured limit constant, either
      --   'maxConcurrencyBulkSync' or 'maxConcurrencyDeadline'
      --
-   | FetchDeclineConcurrencyLimit   !GenesisFetchMode !Word
+   | FetchDeclineConcurrencyLimit   !FetchMode !Word
   deriving (Eq, Show)
 
 
@@ -264,7 +264,7 @@ fetchDecisions
       HasHeader header,
       HeaderHash header ~ HeaderHash block)
   => FetchDecisionPolicy header
-  -> FetchMode
+  -> PraosFetchMode
   -> AnchoredFragment header
   -> (Point block -> Bool)
   -> MaxSlotNo
@@ -640,7 +640,7 @@ filterNotAlreadyInFlightWithPeer chains =
 --
 filterNotAlreadyInFlightWithOtherPeers
   :: HasHeader header
-  => FetchMode
+  => PraosFetchMode
   -> [( FetchDecision [AnchoredFragment header]
       , PeerFetchStatus header
       , PeerFetchInFlight header
@@ -724,7 +724,7 @@ prioritisePeerChains
    , Hashable peer
    , Ord peer
    )
-  => FetchMode
+  => PraosFetchMode
   -> Int
   -> (AnchoredFragment header -> AnchoredFragment header -> Ordering)
   -> (header -> SizeInBytes)
@@ -906,7 +906,7 @@ fetchRequestDecisions
       , Ord peer
       )
   => FetchDecisionPolicy header
-  -> FetchMode
+  -> PraosFetchMode
   -> [( FetchDecision [AnchoredFragment header]
       , PeerFetchStatus header
       , PeerFetchInFlight header
@@ -1021,7 +1021,7 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
 fetchRequestDecision
   :: HasHeader header
   => FetchDecisionPolicy header
-  -> FetchMode
+  -> PraosFetchMode
   -> Word
   -> PeerFetchInFlightLimits
   -> PeerFetchInFlight header

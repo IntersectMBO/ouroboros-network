@@ -42,8 +42,7 @@ import Network.TypedProtocol.Peer.Client
 import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.BlockFetch.Client
-import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation (..),
-           GenesisFetchMode (..))
+import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation (..))
 import Ouroboros.Network.Channel
 import Ouroboros.Network.ControlMessage
 import Ouroboros.Network.DeltaQ
@@ -63,7 +62,7 @@ import Ouroboros.Network.Mock.ConcreteBlock
 blockFetchExample0 :: forall m.
                       (MonadST m, MonadAsync m, MonadDelay m, MonadFork m,
                        MonadTime m, MonadTimer m, MonadMask m, MonadThrow (STM m))
-                   => GenesisFetchMode
+                   => FetchMode
                    -> Tracer m (TraceDecisionEvent Int BlockHeader)
                    -> Tracer m (TraceLabelPeer Int
                                  (TraceFetchClientState BlockHeader))
@@ -177,7 +176,7 @@ blockFetchExample0 fetchMode decisionTracer clientStateTracer clientMsgTracer
 blockFetchExample1 :: forall m.
                       (MonadST m, MonadAsync m, MonadDelay m, MonadFork m,
                        MonadTime m, MonadTimer m, MonadMask m, MonadThrow (STM m))
-                   => GenesisFetchMode
+                   => FetchMode
                    -> Tracer m (TraceDecisionEvent Int BlockHeader)
                    -> Tracer m (TraceLabelPeer Int
                                  (TraceFetchClientState BlockHeader))
@@ -276,7 +275,7 @@ blockFetchExample1 fetchMode decisionTracer clientStateTracer clientMsgTracer
 --
 
 sampleBlockFetchPolicy1 :: (MonadSTM m, HasHeader header, HasHeader block)
-                        => GenesisFetchMode
+                        => FetchMode
                         -> (forall x. HasHeader x => FromConsensus x -> STM m UTCTime)
                         -> TestFetchedBlockHeap m block
                         -> AnchoredFragment header

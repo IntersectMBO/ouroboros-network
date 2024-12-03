@@ -122,7 +122,7 @@ import Test.Ouroboros.Network.Testnet.Node.Kernel (BlockGeneratorArgs, NtCAddr,
 import Data.Bool (bool)
 import Data.Function (on)
 import Data.Typeable (Typeable)
-import Ouroboros.Network.BlockFetch (FetchMode (..), TraceFetchClientState,
+import Ouroboros.Network.BlockFetch (PraosFetchMode (..), TraceFetchClientState,
            TraceLabelPeer (..))
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Ouroboros.Network.PeerSelection.LocalRootPeers
@@ -219,7 +219,7 @@ data NodeArgs =
       -- ^ 'Arguments' 'aDNSLookupDelayScript' value
     , naChainSyncExitOnBlockNo :: Maybe BlockNo
     , naChainSyncEarlyExit     :: Bool
-    , naFetchModeScript        :: Script FetchMode
+    , naFetchModeScript        :: Script PraosFetchMode
     }
 
 instance Show NodeArgs where

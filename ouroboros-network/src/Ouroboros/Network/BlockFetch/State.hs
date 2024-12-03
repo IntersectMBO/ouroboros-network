@@ -13,6 +13,7 @@ module Ouroboros.Network.BlockFetch.State
   , FetchDecision
   , FetchDecline (..)
   , FetchMode (..)
+  , PraosFetchMode (..)
   , TraceLabelPeer (..)
   , TraceFetchClientState (..)
   ) where
@@ -43,10 +44,10 @@ import Ouroboros.Network.BlockFetch.ClientState (FetchClientStateVars (..),
            PeersOrder (..), TraceFetchClientState (..), TraceLabelPeer (..),
            addNewFetchRequest, readFetchClientState)
 import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation,
-           GenesisFetchMode (..))
+           FetchMode (..))
 import Ouroboros.Network.BlockFetch.Decision (FetchDecision,
-           FetchDecisionPolicy (..), FetchDecline (..), FetchMode (..),
-           PeerInfo, fetchDecisions)
+           FetchDecisionPolicy (..), FetchDecline (..), PeerInfo,
+           PraosFetchMode (..), fetchDecisions)
 import Ouroboros.Network.BlockFetch.Decision.Genesis (fetchDecisionsGenesisM)
 import Ouroboros.Network.BlockFetch.Decision.Trace
 import Ouroboros.Network.BlockFetch.DeltaQ (PeerGSV (..))
@@ -129,7 +130,7 @@ fetchLogicIteration
   -> FetchStateFingerprint peer header block
   -> StrictTVar m (PeersOrder peer)
   -> (peer -> m ()) -- ^ Action to call to demote the dynamo of ChainSync jumping.
-  -> m (FetchStateFingerprint peer header block, GenesisFetchMode)
+  -> m (FetchStateFingerprint peer header block, FetchMode)
 fetchLogicIteration decisionTracer clientStateTracer
                     fetchDecisionPolicy
                     fetchTriggerVariables
@@ -312,7 +313,7 @@ data FetchNonTriggerVariables peer header block m = FetchNonTriggerVariables {
        readStateFetchedBlocks    :: STM m (Point block -> Bool),
        readStatePeerStateVars    :: STM m (Map peer (FetchClientStateVars m header)),
        readStatePeerGSVs         :: STM m (Map peer PeerGSV),
-       readStateFetchMode        :: STM m GenesisFetchMode,
+       readStateFetchMode        :: STM m FetchMode,
        readStateFetchedMaxSlotNo :: STM m MaxSlotNo,
        readStateChainSelStarvation :: STM m ChainSelStarvation
      }
@@ -356,7 +357,7 @@ data FetchStateSnapshot peer header block m = FetchStateSnapshot {
                                                FetchClientStateVars m header),
        fetchStatePeerGSVs         :: Map peer PeerGSV,
        fetchStateFetchedBlocks    :: Point block -> Bool,
-       fetchStateFetchMode        :: GenesisFetchMode,
+       fetchStateFetchMode        :: FetchMode,
        fetchStateFetchedMaxSlotNo :: MaxSlotNo,
        fetchStateChainSelStarvation :: ChainSelStarvation
      }

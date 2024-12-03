@@ -30,8 +30,8 @@ import System.Random
 import Control.Applicative (Alternative)
 import Data.Functor (($>))
 import Data.Monoid.Synchronisation (FirstToFinish (..))
-import Ouroboros.Network.BlockFetch (FetchMode (..))
-import Ouroboros.Network.BlockFetch.ConsensusInterface (GenesisFetchMode (..))
+import Ouroboros.Network.BlockFetch (PraosFetchMode (..))
+import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..))
 import Ouroboros.Network.ConsensusMode (ConsensusMode (..))
 import Ouroboros.Network.Diffusion.Policies (churnEstablishConnectionTimeout,
            closeConnectionTimeout, deactivateTimeout)
@@ -91,7 +91,7 @@ data PeerChurnArgs m peeraddr = PeerChurnArgs {
   pcaMetrics             :: PeerMetrics m peeraddr,
   pcaModeVar             :: StrictTVar m ChurnMode,
   pcaRng                 :: StdGen,
-  pcaReadFetchMode       :: STM m GenesisFetchMode,
+  pcaReadFetchMode       :: STM m FetchMode,
   peerTargets            :: ConsensusModePeerTargets,
   pcaPeerSelectionVar    :: StrictTVar m PeerSelectionTargets,
   pcaReadCounters        :: STM m PeerSelectionCounters,

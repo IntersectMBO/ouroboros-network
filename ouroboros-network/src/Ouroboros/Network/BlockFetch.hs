@@ -97,6 +97,7 @@ module Ouroboros.Network.BlockFetch
   , bracketSyncWithFetchClient
   , bracketKeepAliveClient
     -- * Re-export types used by 'BlockFetchConsensusInterface'
+  , PraosFetchMode (..)
   , FetchMode (..)
   , FromConsensus (..)
   , SizeInBytes

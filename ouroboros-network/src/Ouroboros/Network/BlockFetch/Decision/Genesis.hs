@@ -150,7 +150,7 @@ import Ouroboros.Network.Block
 import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..),
            PeerFetchInFlight (..), PeersOrder (..))
 import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation (..),
-           GenesisFetchMode (..))
+           FetchMode (..))
 import Ouroboros.Network.BlockFetch.DeltaQ (calculatePeerFetchInFlightLimits)
 
 import Cardano.Slotting.Slot (WithOrigin)

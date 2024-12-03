@@ -66,8 +66,7 @@ import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.Block (MaxSlotNo (..), maxSlotNoFromWithOrigin,
            pointSlot)
 import Ouroboros.Network.BlockFetch
-import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation (..),
-           GenesisFetchMode (..))
+import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation (..))
 import Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
 import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.Diffusion qualified as Diff
