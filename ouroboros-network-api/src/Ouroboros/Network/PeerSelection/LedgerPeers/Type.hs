@@ -30,9 +30,9 @@ module Ouroboros.Network.PeerSelection.LedgerPeers.Type
   ) where
 
 import Control.Monad (forM)
-import Data.ByteString.Char8 qualified as BS
+import Data.ByteString.Char8 (unpack)
 import Data.List.NonEmpty (NonEmpty)
-import Data.Text.Encoding (decodeUtf8)
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import GHC.Generics (Generic)
 import Text.Read (readMaybe)
 
@@ -254,28 +254,29 @@ instance ToJSON RelayAccessPointCoded where
     object
       [ "domain" .= decodeUtf8 domain
       , "port"   .= (fromIntegral port :: Int)]
-
+  toJSON (RelayAccessPointCoded (RelayAccessSRVDomain domain)) =
+    object
+      [ "srvDomain" .= decodeUtf8 domain ]
   toJSON (RelayAccessPointCoded (RelayAccessAddress ip port)) =
     object
       [ "address" .= show ip
       , "port" .= (fromIntegral port :: Int)]
 
 instance FromJSON RelayAccessPointCoded where
-  parseJSON = withObject "RelayAccessPointCoded" $ \v -> do
-    domain <- fmap BS.pack <$> v .:? "domain"
-    port <- fromIntegral @Int <$> v .: "port"
-    case domain of
-      Nothing ->
-            v .: "address"
-        >>= \case
-               Nothing -> fail "RelayAccessPointCoded: invalid IP address"
-               Just addr ->
-                 return . RelayAccessPointCoded $ RelayAccessAddress addr port
-            . readMaybe
-
-      Just domain'
-        | Just (_, '.') <- BS.unsnoc domain' ->
-          return . RelayAccessPointCoded $ RelayAccessDomain domain' port
-        | otherwise ->
-          let fullyQualified = domain' `BS.snoc` '.'
-          in return . RelayAccessPointCoded $ RelayAccessDomain fullyQualified port
+  parseJSON = withObject "RelayAccessPointCoded" $ \o -> do
+    let dap = parseMaybe (fmap DomainAccessPoint . parseJSON) (Object o)
+    case dap of
+      Just dap' ->
+        case dap' of
+          DomainAccessPoint (DomainPlain domain port) ->
+            return $ RelayAccessPointCoded $ RelayAccessDomain domain port
+          DomainSRVAccessPoint (DomainSRV domain) ->
+            return $ RelayAccessPointCoded $ RelayAccessSRVDomain domain
+      Nothing -> do
+        address <- encodeUtf8 <$> o .: "address"
+        port <- fromIntegral @Int <$> o .: "port"
+        case readMaybe $ unpack address of
+          Just ip ->
+            return $ RelayAccessPointCoded $ RelayAccessAddress ip port
+          Nothing -> fail $ "RelayAccessPointCoded: unrecognized JSON object: "
+                     <> show o
