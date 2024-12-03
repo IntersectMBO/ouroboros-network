@@ -16,6 +16,7 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Void (Void, absurd)
 import Data.Word (Word32)
+import System.Random
 
 import Control.Applicative (Alternative, (<|>))
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -73,6 +74,7 @@ localRootPeersProvider
   -> (IP -> Socket.PortNumber -> peerAddr)
   -> DNS.ResolvConf
   -> DNSActions resolver exception m
+  -> StdGen
   -> STM m [( HotValency
             , WarmValency
             , Map RelayAccessPoint (PeerAdvertise, PeerTrustable))]
@@ -89,30 +91,38 @@ localRootPeersProvider tracer
                          dnsAsyncResolverResource,
                          dnsLookupWithTTL
                        }
+                       rng0
                        readLocalRootPeers
                        rootPeersGroupVar =
         atomically (do domainsGroups <- readLocalRootPeers
                        writeTVar rootPeersGroupVar (getLocalRootPeersGroups Map.empty domainsGroups)
                        dnsSemaphore <- newDNSLocalRootSemaphore
                        return (dnsSemaphore, domainsGroups))
-    >>= uncurry loop
+    >>= uncurry (loop rng0)
   where
     -- | Loop function that monitors DNS Domain resolution threads and restarts
     -- if either these threads fail or detects the local configuration changed.
     --
-    loop :: DNSSemaphore m
+    loop :: StdGen
+         -> DNSSemaphore m
          -> [(HotValency, WarmValency, Map RelayAccessPoint (PeerAdvertise, PeerTrustable))]
          -> m Void
-    loop dnsSemaphore domainsGroups = do
-      traceWith tracer (TraceLocalRootDomains domainsGroups)
+    loop rng dnsSemaphore serviceGroups = do
+      traceWith tracer (TraceLocalRootDomains serviceGroups)
       rr <- dnsAsyncResolverResource resolvConf
       let
           -- Get only DomainAccessPoint to monitor and perform DNS resolution
           -- on them.
-          domains :: [DomainAccessPoint]
-          domains = [ domain
-                    | (_, _, m) <- domainsGroups
-                    , (RelayDomainAccessPoint domain, _) <- Map.toList m ]
+          (rng', rngs, domains) = Map.foldlWithKey' step (rng, [], []) $
+                                    Map.unions $ third <$> serviceGroups
+          third (_, _, it) = it
+          step (stepRng, stepRngs, daps) (RelayDomainAccessPoint dap) _ =
+            case dap of
+              DomainAccessPoint {} -> (stepRng, stepRng : stepRngs, dap : daps)
+              DomainSRVAccessPoint {} ->
+                let (stepRng', resolvRng) = split stepRng
+                in (stepRng', resolvRng : stepRngs, dap : daps)
+          step x _ _ = x
 
           -- Initial DNS Domain Map has all domains entries empty
           initialDNSDomainMap :: Map DomainAccessPoint [peerAddr]
@@ -123,6 +133,7 @@ localRootPeersProvider tracer
       dnsDomainMapVar <- newTVarIO initialDNSDomainMap
 
       traceWith tracer (TraceLocalRootDNSMap initialDNSDomainMap)
+
 
       -- Launch DomainAddress monitoring threads and wait for threads to error
       -- or for local configuration changes.
@@ -136,7 +147,7 @@ localRootPeersProvider tracer
       -- going to lookup into the new DNS Domain Map and replace that entry
       -- with the lookup result.
       domainsGroups' <-
-        withAsyncAllWithCtx (monitorDomain rr dnsSemaphore dnsDomainMapVar `map` domains) $ \as -> do
+        withAsyncAllWithCtx (monitorDomain rr dnsSemaphore dnsDomainMapVar `map` (zip domains rngs)) $ \as -> do
           let tagErrWithDomain (domain, _, res) = either (Left . (domain,)) absurd res
           res <- atomically $
                   -- wait until any of the monitoring threads errors
@@ -145,43 +156,55 @@ localRootPeersProvider tracer
                   -- wait for configuration changes
                   (do a <- readLocalRootPeers
                       -- wait until the input domains groups changes
-                      check (a /= domainsGroups)
+                      check (a /= serviceGroups)
                       return (Right a))
           case res of
             Left (domain, err)    -> traceWith tracer (TraceLocalRootError domain err)
                                   -- current domain groups haven't changed, we
                                   -- can return them
-                                  >> return domainsGroups
-            Right domainsGroups'  -> traceWith tracer (TraceLocalRootReconfigured domainsGroups domainsGroups')
+                                  >> return serviceGroups
+            Right domainsGroups'  -> traceWith tracer (TraceLocalRootReconfigured serviceGroups domainsGroups')
                                   -- current domain groups changed, we should
                                   -- return them
                                   >> return domainsGroups'
       -- we continue the loop outside of 'withAsyncAll',  this makes sure that
       -- all the monitoring threads are killed.
-      loop dnsSemaphore domainsGroups'
+      loop rng' dnsSemaphore domainsGroups'
 
     resolveDomain
       :: DNSSemaphore m
       -> resolver
       -> DomainAccessPoint
+      -> StdGen
       -> m (Either [DNS.DNSError] [(peerAddr, DNS.TTL)])
     resolveDomain dnsSemaphore resolver
-                  domain@DomainAccessPoint {dapDomain, dapPortNumber} = do
-      (errs, results) <- withDNSSemaphore dnsSemaphore
-                                          (dnsLookupWithTTL
-                                            resolvConf
-                                            resolver
-                                            dapDomain)
-      mapM_ (traceWith tracer . TraceLocalRootFailure domain . DNSError)
-            errs
-
-      if null errs
-         then do
-           traceWith tracer (TraceLocalRootResult domain results)
-           return $ Right [ ( toPeerAddr addr dapPortNumber
-                            , _ttl)
-                          | (addr, _ttl) <- results ]
-         else return $ Left errs
+                  domain rng = do
+      reply <- withDNSSemaphore dnsSemaphore
+                                (dnsLookupWithTTL
+                                  domain
+                                  resolvConf
+                                  resolver
+                                  rng)
+      case reply of
+        DNSLookup (DomainPlain _d port, errs, ipsttls) -> do
+          mapM_ (traceWith tracer . TraceLocalRootFailure domain . DNSError)
+                errs
+          completion port ipsttls errs $ TraceLocalRootResult domain ipsttls
+        DNSLookupSRV (_d, errs, mAnswer) -> do
+          mapM_ (traceWith tracer . TraceLocalRootFailure domain . DNSError)
+                errs
+          case mAnswer of
+            Nothing -> return $ Left errs
+            Just (port, ipsttls) ->
+              completion port ipsttls errs $ TraceLocalRootResult domain ipsttls
+      where
+        completion port ipsttls errs trace =
+          if null errs then do
+             traceWith tracer trace
+             return $ Right [ ( toPeerAddr addr port
+                              , _ttl)
+                            | (addr, _ttl) <- ipsttls ]
+          else return $ Left errs
 
     -- | Function that runs on a monitoring thread. This function will, every
     -- TTL, issue a DNS resolution request and collect the results for its
@@ -193,17 +216,19 @@ localRootPeersProvider tracer
       :: Resource m (Either (DNSorIOError exception) resolver)
       -> DNSSemaphore m
       -> StrictTVar m (Map DomainAccessPoint [peerAddr])
-      -> DomainAccessPoint
+      -> (DomainAccessPoint, StdGen)
       -> (DomainAccessPoint, m Void)
-    monitorDomain rr0 dnsSemaphore dnsDomainMapVar domain =
-        (domain, go 0 (retryResource (TraceLocalRootFailure domain `contramap` tracer)
-                                     (1 :| [3, 6, 9, 12])
-                                     rr0))
+    monitorDomain rr0 dnsSemaphore dnsDomainMapVar (domain, rng0') =
+        (domain, go 0 rng0'
+                   (retryResource (TraceLocalRootFailure domain `contramap` tracer)
+                                  (1 :| [3, 6, 9, 12])
+                                  rr0))
       where
         go :: DiffTime
+           -> StdGen
            -> Resource m resolver
            -> m Void
-        go !ttl !rr = do
+        go !ttl !rng !rr = do
           when (ttl > 0) $ do
             traceWith tracer (TraceLocalRootWaiting domain ttl)
             threadDelay ttl
@@ -211,10 +236,13 @@ localRootPeersProvider tracer
           (resolver, rr') <- withResource rr
 
           --- Resolve 'domain'
-          reply <- resolveDomain dnsSemaphore resolver domain
+          let (rng', resolvRng) = split rng
+          reply <- resolveDomain dnsSemaphore resolver domain resolvRng
           case reply of
-            Left errs -> go (minimum $ map (\err -> ttlForDnsError err ttl) errs)
-                           rr'
+            Left errs ->
+              go (minimum $ map (\err -> ttlForDnsError err ttl) errs)
+                 rng'
+                 rr'
             Right results -> do
               (newRootPeersGroups, newDNSDomainMap) <- atomically $ do
                 -- Read current DNS Domain Map value
@@ -249,7 +277,7 @@ localRootPeersProvider tracer
               traceWith tracer (TraceLocalRootGroups newRootPeersGroups)
               traceWith tracer (TraceLocalRootDNSMap newDNSDomainMap)
 
-              go (ttlForResults (map snd results)) rr'
+              go (ttlForResults (map snd results)) rng' rr'
 
     -- | Returns local root peers without any domain names, only 'peerAddr'
     -- (IP + PortNumber).
