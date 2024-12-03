@@ -313,6 +313,7 @@ ledgerPeersThread PeerActionsDNS {
                let (plainAddrs, domains) =
                      List.foldl' partitionPeer (Set.empty, []) pickedPeers
 
+               let (rng'', rngResolv) = split rng'
                -- NOTE: we don't set `resolveConcurrent` because
                -- of https://github.com/kazu-yamamoto/dns/issues/174
                domainAddrs <- resolveLedgerPeers wlpTracer
@@ -321,15 +322,16 @@ ledgerPeersThread PeerActionsDNS {
                                                  DNS.defaultResolvConf
                                                  paDnsActions
                                                  domains
+                                                 rngResolv
 
-               let (rng'', rngDomain) = split rng'
+               let (rng3, rngDomain) = split rng''
                    pickedAddrs =
                      snd $ List.foldl' pickDomainAddrs
                                   (rngDomain, plainAddrs)
                                   domainAddrs
 
                atomically $ putResp $ Just (pickedAddrs, ttl)
-               go rng'' ts peerMap' bigPeerMap' cachedSlot'
+               go rng3 ts peerMap' bigPeerMap' cachedSlot'
 
     -- Randomly pick one of the addresses returned in the DNS result.
     pickDomainAddrs :: (StdGen, Set peerAddr)
