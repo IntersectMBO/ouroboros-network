@@ -54,20 +54,20 @@ library
   -- At this experiment/prototype stage everything is exposed.
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:
-    Cardano.Diffusion.Configuration
-    Cardano.Diffusion.Policies
-    Cardano.Network.ArgumentsExtra
-    Cardano.Network.LedgerPeerConsensusInterface
-    Cardano.Network.PeerSelection.Governor.Monitor
-    Cardano.Network.PeerSelection.Governor.PeerSelectionActions
-    Cardano.Network.PeerSelection.Governor.PeerSelectionState
-    Cardano.Network.PeerSelection.Governor.Types
-    Cardano.Network.PeerSelection.PeerChurnArgs
-    Cardano.Network.PeerSelection.Types
-    Cardano.Network.PublicRootPeers
-    Cardano.PeerSelection.Churn
-    Cardano.PeerSelection.PeerSelectionActions
     Control.Concurrent.Class.MonadSTM.Strict.TMergeVar
+    Ouroboros.Cardano.Diffusion.Configuration
+    Ouroboros.Cardano.Diffusion.Policies
+    Ouroboros.Cardano.Network.ArgumentsExtra
+    Ouroboros.Cardano.Network.LedgerPeerConsensusInterface
+    Ouroboros.Cardano.Network.PeerSelection.Governor.Monitor
+    Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionActions
+    Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState
+    Ouroboros.Cardano.Network.PeerSelection.Governor.Types
+    Ouroboros.Cardano.Network.PeerSelection.PeerChurnArgs
+    Ouroboros.Cardano.Network.PeerSelection.Types
+    Ouroboros.Cardano.Network.PublicRootPeers
+    Ouroboros.Cardano.PeerSelection.Churn
+    Ouroboros.Cardano.PeerSelection.PeerSelectionActions
     Ouroboros.Network.BlockFetch
     Ouroboros.Network.BlockFetch.Client
     Ouroboros.Network.BlockFetch.ClientRegistry

@@ -37,12 +37,12 @@ module Ouroboros.Network.PeerSelection.PublicRootPeers
 
 import Prelude hiding (null)
 
-import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers (..))
-import Cardano.Network.PublicRootPeers qualified as CPRP
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set (Set, (\\))
 import Data.Set qualified as Set
+import Ouroboros.Cardano.Network.PublicRootPeers (CardanoPublicRootPeers (..))
+import Ouroboros.Cardano.Network.PublicRootPeers qualified as CPRP
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 
 ---------------------------------------

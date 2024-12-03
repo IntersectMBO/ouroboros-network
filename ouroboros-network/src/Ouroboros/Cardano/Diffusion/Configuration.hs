@@ -2,7 +2,7 @@
 -- | One stop shop for configuring diffusion layer for upstream clients
 -- This module contains Cardano specific configuration parameters
 
-module Cardano.Diffusion.Configuration
+module Ouroboros.Cardano.Diffusion.Configuration
   ( DefaultNumBootstrapPeers (..)
   , MinBigLedgerPeersForTrustedState (..)
   , defaultNumBootstrapPeers

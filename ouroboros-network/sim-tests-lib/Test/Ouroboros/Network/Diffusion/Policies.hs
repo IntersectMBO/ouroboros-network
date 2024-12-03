@@ -30,8 +30,8 @@ import Ouroboros.Network.PeerSelection.PeerMetric
 import Ouroboros.Network.PeerSelection.Types (PeerSource (..))
 import Ouroboros.Network.SizeInBytes
 
-import Cardano.Diffusion.Policies (simpleChurnModePeerSelectionPolicy)
-import Cardano.Network.PeerSelection.Types (ChurnMode (..))
+import Ouroboros.Cardano.Diffusion.Policies (simpleChurnModePeerSelectionPolicy)
+import Ouroboros.Cardano.Network.PeerSelection.Types (ChurnMode (..))
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)

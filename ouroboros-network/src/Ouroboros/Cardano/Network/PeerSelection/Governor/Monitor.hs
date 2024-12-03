@@ -9,7 +9,7 @@
 -- * monitoring the completion of asynchronous governor job
 -- * monitoring connections
 --
-module Cardano.Network.PeerSelection.Governor.Monitor
+module Ouroboros.Cardano.Network.PeerSelection.Governor.Monitor
   ( targetPeers
   , localRoots
   , monitorLedgerStateJudgement
@@ -23,21 +23,21 @@ import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
 
 import Cardano.Network.ConsensusMode
-import Cardano.Network.LedgerPeerConsensusInterface
-           (CardanoLedgerPeersConsensusInterface (..))
 import Cardano.Network.PeerSelection.Bootstrap (isBootstrapPeersEnabled,
            isNodeAbleToMakeProgress, requiresBootstrapPeers)
-import Cardano.Network.PeerSelection.Governor.PeerSelectionActions
-           (CardanoPeerSelectionActions (..))
-import Cardano.Network.PeerSelection.Governor.PeerSelectionState
-           (CardanoPeerSelectionState (..))
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
-import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
 import Cardano.Network.Types (LedgerStateJudgement (..))
 import Control.Exception (assert)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
+import Ouroboros.Cardano.Network.LedgerPeerConsensusInterface
+           (CardanoLedgerPeersConsensusInterface (..))
+import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionActions
+           (CardanoPeerSelectionActions (..))
+import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState
+           (CardanoPeerSelectionState (..))
+import Ouroboros.Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
 import Ouroboros.Network.PeerSelection.Governor.ActivePeers
            (jobDemoteActivePeer)
 import Ouroboros.Network.PeerSelection.Governor.Monitor (jobVerifyPeerSnapshot)

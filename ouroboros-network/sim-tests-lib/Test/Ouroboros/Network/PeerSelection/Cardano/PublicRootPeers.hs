@@ -20,9 +20,8 @@ import Test.Ouroboros.Network.PeerSelection.Instances
 import Test.Ouroboros.Network.Utils (ShrinkCarefully, prop_shrink_nonequal,
            prop_shrink_valid)
 
-
-import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers (..))
-import Cardano.Network.PublicRootPeers qualified as CNPRP
+import Ouroboros.Cardano.Network.PublicRootPeers (CardanoPublicRootPeers (..))
+import Ouroboros.Cardano.Network.PublicRootPeers qualified as CNPRP
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers (..))
 import Test.QuickCheck

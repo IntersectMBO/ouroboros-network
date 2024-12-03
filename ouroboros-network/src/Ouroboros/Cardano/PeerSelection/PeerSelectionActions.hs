@@ -7,12 +7,11 @@
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TupleSections            #-}
 
-module Cardano.PeerSelection.PeerSelectionActions (requestPublicRootPeers) where
+module Ouroboros.Cardano.PeerSelection.PeerSelectionActions (requestPublicRootPeers) where
 
 
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
-import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers (..))
 import Cardano.Network.Types (LedgerStateJudgement)
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadAsync (MonadAsync)
@@ -26,6 +25,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Network.DNS qualified as DNS
 import Network.Socket (PortNumber)
+import Ouroboros.Cardano.Network.PublicRootPeers (CardanoPublicRootPeers (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers hiding (getLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSelectionActions (getPublicRootPeers)
