@@ -73,7 +73,8 @@ import Test.Tasty
 import Test.Tasty.QuickCheck (testProperty)
 
 import Control.Exception (AssertionFailed (..), catch, evaluate)
-import Ouroboros.Network.BlockFetch (FetchMode (..), TraceFetchClientState (..))
+import Ouroboros.Network.BlockFetch (PraosFetchMode (..),
+           TraceFetchClientState (..))
 import Ouroboros.Network.ConnectionManager.Test.Timeouts (TestProperty (..),
            classifyActivityType, classifyEffectiveDataFlow,
            classifyNegotiatedDataFlow, classifyPrunings, classifyTermination,

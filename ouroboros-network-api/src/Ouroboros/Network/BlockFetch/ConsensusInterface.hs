@@ -5,8 +5,8 @@
 {-# LANGUAGE RankNTypes     #-}
 
 module Ouroboros.Network.BlockFetch.ConsensusInterface
-  ( FetchMode (..)
-  , GenesisFetchMode (..)
+  ( PraosFetchMode (..)
+  , FetchMode (..)
   , BlockFetchConsensusInterface (..)
   , FromConsensus (..)
   , ChainSelStarvation (..)
@@ -30,7 +30,7 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerStateJudgement (..))
 import Ouroboros.Network.SizeInBytes (SizeInBytes)
 
-data FetchMode =
+data PraosFetchMode =
        -- | Use this mode when we are catching up on the chain but are stil
        -- well behind. In this mode the fetch logic will optimise for
        -- throughput rather than latency.
@@ -54,7 +54,7 @@ data FetchMode =
   deriving (Eq, Show)
 
 -- | The fetch mode that the block fetch logic should use.
-data GenesisFetchMode = FetchModeGenesis | PraosFetchMode FetchMode
+data FetchMode = FetchModeGenesis | PraosFetchMode PraosFetchMode
   deriving (Eq, Show)
 
 -- | Construct 'readFetchMode' for 'BlockFetchConsensusInterface' by branching
@@ -64,9 +64,9 @@ mkReadFetchMode
   => ConsensusMode
   -> m LedgerStateJudgement
      -- ^ Used for 'GenesisMode'.
-  -> m FetchMode
+  -> m PraosFetchMode
      -- ^ Used for 'PraosMode' for backwards compatibility.
-  -> m GenesisFetchMode
+  -> m FetchMode
 mkReadFetchMode consensusMode getLedgerStateJudgement getFetchMode =
     case consensusMode of
       GenesisMode -> getLedgerStateJudgement <&> \case
@@ -111,7 +111,7 @@ data BlockFetchConsensusInterface peer header block m =
        -- to \"now\" it uses the deadline mode, and when it is far away it uses
        -- the bulk sync mode.
        --
-       readFetchMode          :: STM m GenesisFetchMode,
+       readFetchMode          :: STM m FetchMode,
 
        -- | Recent, only within last K
        readFetchedBlocks      :: STM m (Point block -> Bool),

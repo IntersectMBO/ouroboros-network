@@ -46,7 +46,6 @@ import Ouroboros.Network.Block
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.BlockFetch.ClientRegistry
 import Ouroboros.Network.BlockFetch.ClientState
-import Ouroboros.Network.BlockFetch.ConsensusInterface (GenesisFetchMode (..))
 import Ouroboros.Network.BlockFetch.DeltaQ
 import Ouroboros.Network.BlockFetch.Examples
 import Ouroboros.Network.Driver (TraceSendRecv)
@@ -114,7 +113,7 @@ prop_blockFetchStaticNoOverlapGenesis =
 -- With a Praos fetch mode, the test runs the block fetch logic to download all
 -- blocks of both chain candidates.
 --
--- With GenesisFetchMode, the test runs the block fetch logic to download all
+-- With the Genesis fetch mode, the test runs the block fetch logic to download all
 -- blocks of the longest candidate chain (either of them if they are of equal
 -- length).
 --
@@ -131,7 +130,7 @@ prop_blockFetchStaticNoOverlapGenesis =
 -- * 'tracePropertyClientStateSanity'
 -- * 'tracePropertyInFlight'
 --
-prop_blockFetchStaticNoOverlap :: GenesisFetchMode -> TestChainFork -> Property
+prop_blockFetchStaticNoOverlap :: FetchMode -> TestChainFork -> Property
 prop_blockFetchStaticNoOverlap fetchMode (TestChainFork common fork1 fork2) =
     let trace = selectTraceEventsDynamic (runSimTrace simulation)
 
@@ -199,7 +198,7 @@ prop_blockFetchStaticWithOverlapGenesis =
 --
 -- TODO: 'prop_blockFetchBulkSyncStaticWithOverlap' fails if we introduce delays. issue #2622
 --
-prop_blockFetchStaticWithOverlap :: GenesisFetchMode -> TestChainFork -> Property
+prop_blockFetchStaticWithOverlap :: FetchMode -> TestChainFork -> Property
 prop_blockFetchStaticWithOverlap fetchMode (TestChainFork _common fork1 fork2) =
     let trace = selectTraceEventsDynamic (runSimTrace simulation)
 
@@ -917,7 +916,7 @@ prop_terminateGenesis = prop_terminate FetchModeGenesis
 -- make a proper calculation what should it be.  At the moment this test shows
 -- that the block fetch protocol can exit within some large time limit.
 --
-prop_terminate :: GenesisFetchMode -> TestChainFork -> Positive SmallDelay -> Property
+prop_terminate :: FetchMode -> TestChainFork -> Positive SmallDelay -> Property
 prop_terminate fetchMode (TestChainFork _commonChain forkChain _forkChain) (Positive (SmallDelay delay)) =
     let tr = runSimTrace simulation
         trace :: [FetchRequestTrace]
