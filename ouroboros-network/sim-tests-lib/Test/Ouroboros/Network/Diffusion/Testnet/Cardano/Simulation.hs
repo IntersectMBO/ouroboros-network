@@ -114,33 +114,36 @@ import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay (..),
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS qualified as PeerSelection hiding
            (tests)
 
-import Cardano.Diffusion.Configuration (defaultMinBigLedgerPeersForTrustedState)
-import Cardano.Network.ArgumentsExtra (CardanoArgumentsExtra (..))
-import Cardano.Network.LedgerPeerConsensusInterface
-           (CardanoLedgerPeersConsensusInterface (..))
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
-import Cardano.Network.PeerSelection.Governor.PeerSelectionActions
-           (cardanoExtraArgsToPeerSelectionActions)
-import Cardano.Network.PeerSelection.Governor.PeerSelectionState
-           (CardanoPeerSelectionState)
-import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as CPST
-import Cardano.Network.PeerSelection.Governor.Types (CardanoPeerSelectionView,
-           cardanoPeerSelectionGovernorArgs)
-import Cardano.Network.PeerSelection.Governor.Types qualified as CPSV
 import Cardano.Network.PeerSelection.LocalRootPeers
            (OutboundConnectionsState (..))
-import Cardano.Network.PeerSelection.PeerChurnArgs (CardanoPeerChurnArgs (..))
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
-import Cardano.Network.PeerSelection.Types (ChurnMode (..))
-import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
-import Cardano.Network.PublicRootPeers qualified as CPRP
 import Cardano.Network.Types (LedgerStateJudgement (..),
            MinBigLedgerPeersForTrustedState (..))
-import Cardano.PeerSelection.Churn (peerChurnGovernor)
-import Cardano.PeerSelection.PeerSelectionActions (requestPublicRootPeers)
 import Data.Bool (bool)
 import Data.Function (on)
 import Data.Typeable (Typeable)
+import Ouroboros.Cardano.Diffusion.Configuration
+           (defaultMinBigLedgerPeersForTrustedState)
+import Ouroboros.Cardano.Network.ArgumentsExtra (CardanoArgumentsExtra (..))
+import Ouroboros.Cardano.Network.LedgerPeerConsensusInterface
+           (CardanoLedgerPeersConsensusInterface (..))
+import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionActions
+           (cardanoExtraArgsToPeerSelectionActions)
+import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState
+           (CardanoPeerSelectionState)
+import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as CPST
+import Ouroboros.Cardano.Network.PeerSelection.Governor.Types
+           (CardanoPeerSelectionView, cardanoPeerSelectionGovernorArgs)
+import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as CPSV
+import Ouroboros.Cardano.Network.PeerSelection.PeerChurnArgs
+           (CardanoPeerChurnArgs (..))
+import Ouroboros.Cardano.Network.PeerSelection.Types (ChurnMode (..))
+import Ouroboros.Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
+import Ouroboros.Cardano.Network.PublicRootPeers qualified as CPRP
+import Ouroboros.Cardano.PeerSelection.Churn (peerChurnGovernor)
+import Ouroboros.Cardano.PeerSelection.PeerSelectionActions
+           (requestPublicRootPeers)
 import Ouroboros.Network.BlockFetch (FetchMode (..), TraceFetchClientState,
            TraceLabelPeer (..))
 import Ouroboros.Network.ConnectionManager.Core qualified as CM

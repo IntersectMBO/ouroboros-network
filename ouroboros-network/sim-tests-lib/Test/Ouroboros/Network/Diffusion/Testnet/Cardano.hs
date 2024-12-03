@@ -103,13 +103,13 @@ import Ouroboros.Network.Server2 qualified as Server
 
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
-import Cardano.Network.PeerSelection.Governor.PeerSelectionState
-           (CardanoPeerSelectionState)
-import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as CPST
-import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
-import Cardano.Network.PublicRootPeers qualified as CPRP
 import Cardano.Network.Types (LedgerStateJudgement,
            MinBigLedgerPeersForTrustedState (..))
+import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState
+           (CardanoPeerSelectionState)
+import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as CPST
+import Ouroboros.Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
+import Ouroboros.Cardano.Network.PublicRootPeers qualified as CPRP
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Test.Ouroboros.Network.Diffusion.Testnet.Minimal.Node
            (config_REPROMOTE_DELAY)

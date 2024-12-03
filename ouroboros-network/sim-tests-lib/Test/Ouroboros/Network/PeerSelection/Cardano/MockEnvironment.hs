@@ -60,7 +60,7 @@ import Control.Monad.Fail qualified as Fail
 import Control.Monad.IOSim
 import Control.Tracer (Tracer (..), contramap, traceWith)
 
-import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as CPST
+import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as CPST
 import Ouroboros.Network.ExitPolicy
 import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
@@ -82,28 +82,29 @@ import Test.Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers hid
 import Test.Ouroboros.Network.PeerSelection.PeerGraph
 
 import Cardano.Network.ConsensusMode
-import Cardano.Network.LedgerPeerConsensusInterface
-           (CardanoLedgerPeersConsensusInterface (..))
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
-import Cardano.Network.PeerSelection.Governor.Monitor
-           (monitorBootstrapPeersFlag, monitorLedgerStateJudgement,
-           waitForSystemToQuiesce)
-import Cardano.Network.PeerSelection.Governor.Monitor qualified as Cardano
-import Cardano.Network.PeerSelection.Governor.PeerSelectionActions
-           (CardanoPeerSelectionActions (..))
-import Cardano.Network.PeerSelection.Governor.PeerSelectionState
-           (CardanoPeerSelectionState (..))
-import Cardano.Network.PeerSelection.Governor.Types (CardanoPeerSelectionView)
-import Cardano.Network.PeerSelection.Governor.Types qualified as CPSV
 import Cardano.Network.PeerSelection.LocalRootPeers
            (OutboundConnectionsState (..))
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
-import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
-import Cardano.Network.PublicRootPeers qualified as CPRP
 import Cardano.Network.Types (LedgerStateJudgement (..),
            MinBigLedgerPeersForTrustedState (..))
 import Data.IP (toIPv4w)
+import Ouroboros.Cardano.Network.LedgerPeerConsensusInterface
+           (CardanoLedgerPeersConsensusInterface (..))
+import Ouroboros.Cardano.Network.PeerSelection.Governor.Monitor
+           (monitorBootstrapPeersFlag, monitorLedgerStateJudgement,
+           waitForSystemToQuiesce)
+import Ouroboros.Cardano.Network.PeerSelection.Governor.Monitor qualified as Cardano
+import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionActions
+           (CardanoPeerSelectionActions (..))
+import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState
+           (CardanoPeerSelectionState (..))
+import Ouroboros.Cardano.Network.PeerSelection.Governor.Types
+           (CardanoPeerSelectionView)
+import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as CPSV
+import Ouroboros.Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
+import Ouroboros.Cardano.Network.PublicRootPeers qualified as CPRP
 import Ouroboros.Network.PeerSelection.Governor.Types
            (BootstrapPeersCriticalTimeoutError (..), ExtraGuardedDecisions (..),
            PeerSelectionGovernorArgs (..))

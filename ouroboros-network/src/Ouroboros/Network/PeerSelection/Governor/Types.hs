@@ -161,7 +161,7 @@ import Ouroboros.Network.PeerSelection.Types (PeerSource (..),
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
            PeerSharingResult (..))
 import Cardano.Network.Types (LedgerStateJudgement (..))
-import Cardano.Network.PeerSelection.Types (ChurnMode)
+import Ouroboros.Cardano.Network.PeerSelection.Types (ChurnMode)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
 
 -- | A peer pick policy is an action that picks a subset of elements from a

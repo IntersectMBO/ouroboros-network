@@ -1,4 +1,4 @@
-module Cardano.Network.ArgumentsExtra where
+module Ouroboros.Cardano.Network.ArgumentsExtra where
 
 import Cardano.Network.ConsensusMode (ConsensusMode)
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers)

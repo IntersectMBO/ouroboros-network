@@ -1,9 +1,9 @@
 {-# LANGUAGE NamedFieldPuns #-}
-module Cardano.Network.PeerSelection.Governor.PeerSelectionActions where
+module Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionActions where
 
-import Cardano.Network.ArgumentsExtra (CardanoArgumentsExtra (..))
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
 import Control.Concurrent.Class.MonadSTM
+import Ouroboros.Cardano.Network.ArgumentsExtra (CardanoArgumentsExtra (..))
 import Ouroboros.Network.PeerSelection.Governor.Types (PeerSelectionTargets)
 
 -- | Cardano Node PeerSelection Actions extension data type.

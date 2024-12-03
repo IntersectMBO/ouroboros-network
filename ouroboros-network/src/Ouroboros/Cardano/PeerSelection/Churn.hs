@@ -12,7 +12,7 @@
 
 -- | This subsystem manages the discovery and selection of /upstream/ peers.
 --
-module Cardano.PeerSelection.Churn (peerChurnGovernor) where
+module Ouroboros.Cardano.PeerSelection.Churn (peerChurnGovernor) where
 
 import Data.Void (Void)
 
@@ -24,15 +24,16 @@ import Control.Tracer (traceWith)
 import System.Random
 
 import Cardano.Network.ConsensusMode (ConsensusMode (..))
-import Cardano.Network.LedgerPeerConsensusInterface
-           (CardanoLedgerPeersConsensusInterface (..))
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
-import Cardano.Network.PeerSelection.PeerChurnArgs (CardanoPeerChurnArgs (..))
-import Cardano.Network.PeerSelection.Types (ChurnMode (..))
 import Cardano.Network.Types (LedgerStateJudgement (..))
 import Control.Applicative (Alternative)
 import Data.Functor (($>))
 import Data.Monoid.Synchronisation (FirstToFinish (..))
+import Ouroboros.Cardano.Network.LedgerPeerConsensusInterface
+           (CardanoLedgerPeersConsensusInterface (..))
+import Ouroboros.Cardano.Network.PeerSelection.PeerChurnArgs
+           (CardanoPeerChurnArgs (..))
+import Ouroboros.Cardano.Network.PeerSelection.Types (ChurnMode (..))
 import Ouroboros.Network.BlockFetch (FetchMode (..))
 import Ouroboros.Network.Diffusion.Policies (churnEstablishConnectionTimeout,
            closeConnectionTimeout, deactivateTimeout)

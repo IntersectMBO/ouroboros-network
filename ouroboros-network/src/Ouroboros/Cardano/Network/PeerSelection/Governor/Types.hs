@@ -2,31 +2,31 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE NamedFieldPuns   #-}
 
-module Cardano.Network.PeerSelection.Governor.Types where
+module Ouroboros.Cardano.Network.PeerSelection.Governor.Types where
 
 import Cardano.Network.ConsensusMode (ConsensusMode (..))
-import Cardano.Network.LedgerPeerConsensusInterface
-           (CardanoLedgerPeersConsensusInterface (..))
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
-import Cardano.Network.PeerSelection.Governor.Monitor
-           (monitorBootstrapPeersFlag, monitorLedgerStateJudgement,
-           waitForSystemToQuiesce)
-import Cardano.Network.PeerSelection.Governor.Monitor qualified as Cardano
-import Cardano.Network.PeerSelection.Governor.PeerSelectionActions
-           (CardanoPeerSelectionActions)
-import Cardano.Network.PeerSelection.Governor.PeerSelectionState
-           (CardanoPeerSelectionState (..))
 import Cardano.Network.PeerSelection.LocalRootPeers
            (OutboundConnectionsState (..))
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
-import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
 import Cardano.Network.Types (LedgerStateJudgement (..),
            getMinBigLedgerPeersForTrustedState)
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM
 import Data.Set (Set)
 import Data.Set qualified as Set
+import Ouroboros.Cardano.Network.LedgerPeerConsensusInterface
+           (CardanoLedgerPeersConsensusInterface (..))
+import Ouroboros.Cardano.Network.PeerSelection.Governor.Monitor
+           (monitorBootstrapPeersFlag, monitorLedgerStateJudgement,
+           waitForSystemToQuiesce)
+import Ouroboros.Cardano.Network.PeerSelection.Governor.Monitor qualified as Cardano
+import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionActions
+           (CardanoPeerSelectionActions)
+import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState
+           (CardanoPeerSelectionState (..))
+import Ouroboros.Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
 import Ouroboros.Network.PeerSelection.Governor (readAssociationMode)
 import Ouroboros.Network.PeerSelection.Governor.Types (AssociationMode (..),
            BootstrapPeersCriticalTimeoutError (..), ExtraGuardedDecisions (..),

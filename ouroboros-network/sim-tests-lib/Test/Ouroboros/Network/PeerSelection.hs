@@ -95,21 +95,21 @@ import Test.Ouroboros.Network.PeerSelection.PeerGraph
 
 import Control.Monad.IOSim
 
-import Cardano.Network.LedgerPeerConsensusInterface
-           (CardanoLedgerPeersConsensusInterface (..))
-import Cardano.Network.PeerSelection.Governor.Monitor qualified as Cardano
-import Cardano.Network.PeerSelection.Governor.PeerSelectionActions
-           (CardanoPeerSelectionActions (..))
-import Cardano.Network.PeerSelection.Governor.PeerSelectionState
-           (CardanoPeerSelectionState (..))
-import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as CPST
-import Cardano.Network.PeerSelection.Governor.Types
-           (CardanoPeerSelectionView (..))
-import Cardano.Network.PeerSelection.Governor.Types qualified as CPSV
-import Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
-import Cardano.Network.PublicRootPeers qualified as CPRP
 import Cardano.Network.Types (LedgerStateJudgement (..),
            MinBigLedgerPeersForTrustedState (..))
+import Ouroboros.Cardano.Network.LedgerPeerConsensusInterface
+           (CardanoLedgerPeersConsensusInterface (..))
+import Ouroboros.Cardano.Network.PeerSelection.Governor.Monitor qualified as Cardano
+import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionActions
+           (CardanoPeerSelectionActions (..))
+import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState
+           (CardanoPeerSelectionState (..))
+import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as CPST
+import Ouroboros.Cardano.Network.PeerSelection.Governor.Types
+           (CardanoPeerSelectionView (..))
+import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as CPSV
+import Ouroboros.Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
+import Ouroboros.Cardano.Network.PublicRootPeers qualified as CPRP
 import Ouroboros.Network.PeerSelection.Governor.Types
            (BootstrapPeersCriticalTimeoutError (..), ExtraGuardedDecisions (..),
            PeerSelectionGovernorArgs (..), PeerSelectionState (extraState))

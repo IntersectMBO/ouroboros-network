@@ -1,9 +1,9 @@
-module Cardano.Network.PeerSelection.PeerChurnArgs where
+module Ouroboros.Cardano.Network.PeerSelection.PeerChurnArgs where
 
 import Cardano.Network.ConsensusMode (ConsensusMode)
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
-import Cardano.Network.PeerSelection.Types (ChurnMode)
 import Control.Concurrent.Class.MonadSTM.Strict
+import Ouroboros.Cardano.Network.PeerSelection.Types (ChurnMode)
 import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode)
 import Ouroboros.Network.PeerSelection.Governor.Types (PeerSelectionTargets)
 

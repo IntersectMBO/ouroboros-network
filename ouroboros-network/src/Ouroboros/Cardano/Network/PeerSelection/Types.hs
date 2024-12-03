@@ -1,4 +1,4 @@
-module Cardano.Network.PeerSelection.Types where
+module Ouroboros.Cardano.Network.PeerSelection.Types where
 
 data ChurnMode = ChurnModeBulkSync
                | ChurnModeNormal
