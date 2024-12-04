@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -84,6 +85,7 @@ module Ouroboros.Network.BlockFetch
   ( blockFetchLogic
   , BlockFetchConfiguration (..)
   , BlockFetchConsensusInterface (..)
+  , GenesisBlockFetchConfiguration (..)
     -- ** Tracer types
   , FetchDecision
   , TraceFetchClientState (..)
@@ -95,6 +97,7 @@ module Ouroboros.Network.BlockFetch
   , bracketSyncWithFetchClient
   , bracketKeepAliveClient
     -- * Re-export types used by 'BlockFetchConsensusInterface'
+  , PraosFetchMode (..)
   , FetchMode (..)
   , FromConsensus (..)
   , SizeInBytes
@@ -108,6 +111,8 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer)
 
+import GHC.Generics (Generic)
+
 import Ouroboros.Network.Block
 import Ouroboros.Network.SizeInBytes (SizeInBytes)
 
@@ -118,8 +123,8 @@ import Ouroboros.Network.BlockFetch.ClientRegistry (FetchClientPolicy (..),
            setFetchClientContext)
 import Ouroboros.Network.BlockFetch.ConsensusInterface
            (BlockFetchConsensusInterface (..), FromConsensus (..))
+import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
 import Ouroboros.Network.BlockFetch.State
-
 
 
 -- | Configuration for FetchDecisionPolicy.
@@ -127,21 +132,38 @@ import Ouroboros.Network.BlockFetch.State
 data BlockFetchConfiguration =
      BlockFetchConfiguration {
          -- | Maximum concurrent downloads during bulk syncing.
-         bfcMaxConcurrencyBulkSync :: !Word,
+         bfcMaxConcurrencyBulkSync      :: !Word,
 
          -- | Maximum concurrent downloads during deadline syncing.
-         bfcMaxConcurrencyDeadline :: !Word,
+         bfcMaxConcurrencyDeadline      :: !Word,
 
          -- | Maximum requests in flight per each peer.
-         bfcMaxRequestsInflight    :: !Word,
+         bfcMaxRequestsInflight         :: !Word,
 
          -- | Desired interval between calls to fetchLogicIteration
-         bfcDecisionLoopInterval   :: !DiffTime,
+         -- in Genesis fetch mode
+         bfcDecisionLoopIntervalGenesis :: !DiffTime,
+
+         -- | Desired interval between calls to fetchLogicIteration
+         -- in Praos fetch modes
+         bfcDecisionLoopIntervalPraos   :: !DiffTime,
 
          -- | Salt used when comparing peers
-         bfcSalt                   :: !Int
+         bfcSalt                        :: !Int,
+
+         -- | Genesis-specific parameters
+         bfcGenesisBFConfig             :: !GenesisBlockFetchConfiguration
      }
      deriving (Show)
+
+-- | BlockFetch configuration parameters specific to Genesis.
+data GenesisBlockFetchConfiguration =
+     GenesisBlockFetchConfiguration
+      { -- | Grace period when starting to talk to a peer in genesis mode
+        -- during which it is fine if the chain selection gets starved.
+        gbfcGracePeriod :: !DiffTime
+      }
+      deriving (Eq, Generic, Show)
 
 -- | Execute the block fetch logic. It monitors the current chain and candidate
 -- chains. It decided which block bodies to fetch and manages the process of
@@ -155,11 +177,11 @@ blockFetchLogic :: forall addr header block m.
                    , HasHeader block
                    , HeaderHash header ~ HeaderHash block
                    , MonadDelay m
-                   , MonadSTM m
+                   , MonadTimer m
                    , Ord addr
                    , Hashable addr
                    )
-                => Tracer m [TraceLabelPeer addr (FetchDecision [Point header])]
+                => Tracer m (TraceDecisionEvent addr header)
                 -> Tracer m (TraceLabelPeer addr (TraceFetchClientState header))
                 -> BlockFetchConsensusInterface addr header block m
                 -> FetchClientRegistry addr header block m
@@ -177,6 +199,7 @@ blockFetchLogic decisionTracer clientStateTracer
       fetchDecisionPolicy
       fetchTriggerVariables
       fetchNonTriggerVariables
+      demoteChainSyncJumpingDynamo
   where
     mkFetchClientPolicy :: STM m (FetchClientPolicy header block m)
     mkFetchClientPolicy = do
@@ -191,11 +214,13 @@ blockFetchLogic decisionTracer clientStateTracer
     fetchDecisionPolicy :: FetchDecisionPolicy header
     fetchDecisionPolicy =
       FetchDecisionPolicy {
-        maxInFlightReqsPerPeer   = bfcMaxRequestsInflight,
-        maxConcurrencyBulkSync   = bfcMaxConcurrencyBulkSync,
-        maxConcurrencyDeadline   = bfcMaxConcurrencyDeadline,
-        decisionLoopInterval     = bfcDecisionLoopInterval,
-        peerSalt                 = bfcSalt,
+        maxInFlightReqsPerPeer      = bfcMaxRequestsInflight,
+        maxConcurrencyBulkSync      = bfcMaxConcurrencyBulkSync,
+        maxConcurrencyDeadline      = bfcMaxConcurrencyDeadline,
+        decisionLoopIntervalGenesis = bfcDecisionLoopIntervalGenesis,
+        decisionLoopIntervalPraos   = bfcDecisionLoopIntervalPraos,
+        peerSalt                    = bfcSalt,
+        bulkSyncGracePeriod         = gbfcGracePeriod bfcGenesisBFConfig,
 
         plausibleCandidateChain,
         compareCandidateChains,
@@ -213,9 +238,10 @@ blockFetchLogic decisionTracer clientStateTracer
     fetchNonTriggerVariables :: FetchNonTriggerVariables addr header block m
     fetchNonTriggerVariables =
       FetchNonTriggerVariables {
-        readStateFetchedBlocks    = readFetchedBlocks,
-        readStatePeerStateVars    = readFetchClientsStateVars registry,
-        readStatePeerGSVs         = readPeerGSVs registry,
-        readStateFetchMode        = readFetchMode,
-        readStateFetchedMaxSlotNo = readFetchedMaxSlotNo
+        readStateFetchedBlocks      = readFetchedBlocks,
+        readStatePeerStateVars      = readFetchClientsStateVars registry,
+        readStatePeerGSVs           = readPeerGSVs registry,
+        readStateFetchMode          = readFetchMode,
+        readStateFetchedMaxSlotNo   = readFetchedMaxSlotNo,
+        readStateChainSelStarvation = readChainSelStarvation
       }

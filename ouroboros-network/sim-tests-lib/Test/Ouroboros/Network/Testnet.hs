@@ -45,7 +45,8 @@ import System.Random (mkStdGen)
 import Network.DNS.Types qualified as DNS
 
 import Ouroboros.Network.Block (BlockNo (..))
-import Ouroboros.Network.BlockFetch (FetchMode (..), TraceFetchClientState (..))
+import Ouroboros.Network.BlockFetch (PraosFetchMode (..),
+           TraceFetchClientState (..))
 import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.Core qualified as CM

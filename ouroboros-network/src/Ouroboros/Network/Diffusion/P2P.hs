@@ -71,7 +71,7 @@ import Ouroboros.Network.Snocket (FileDescriptor, LocalAddress,
            makeLocalBearer, makeSocketBearer)
 import Ouroboros.Network.Snocket qualified as Snocket
 
-import Ouroboros.Network.BlockFetch
+import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode)
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.Context (ExpandedInitiatorContext, ResponderContext)
 import Ouroboros.Network.Protocol.Handshake

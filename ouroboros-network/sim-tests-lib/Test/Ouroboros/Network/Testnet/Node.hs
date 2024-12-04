@@ -38,7 +38,7 @@ import Control.Monad.Class.MonadSay
 import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow (MonadEvaluate, MonadMask, MonadThrow,
            SomeException)
-import Control.Monad.Class.MonadTime.SI (DiffTime, MonadTime)
+import Control.Monad.Class.MonadTime.SI (DiffTime, MonadTime, Time (..))
 import Control.Monad.Class.MonadTimer.SI (MonadDelay, MonadTimer)
 import Control.Monad.Fix (MonadFix)
 import Control.Tracer (Tracer (..), nullTracer)
@@ -66,6 +66,7 @@ import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.Block (MaxSlotNo (..), maxSlotNoFromWithOrigin,
            pointSlot)
 import Ouroboros.Network.BlockFetch
+import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation (..))
 import Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
 import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.Diffusion qualified as Diff
@@ -261,7 +262,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
                        (\ _ (_ :: SomeException) -> ShutdownNode)
               , Diff.P2P.daPeerMetrics            = peerMetrics
                 -- fetch mode is not used (no block-fetch mini-protocol)
-              , Diff.P2P.daBlockFetchMode         = pure FetchModeDeadline
+              , Diff.P2P.daBlockFetchMode         = pure $ PraosFetchMode FetchModeDeadline
               , Diff.P2P.daReturnPolicy           = \_ -> config_REPROMOTE_DELAY
               , Diff.P2P.daPeerSharingRegistry    = nkPeerSharingRegistry nodeKernel
               }
@@ -292,8 +293,12 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
           bfcMaxConcurrencyBulkSync = 1,
           bfcMaxConcurrencyDeadline = 2,
           bfcMaxRequestsInflight    = 10,
-          bfcDecisionLoopInterval   = 0.01,
-          bfcSalt                   = 0
+          bfcDecisionLoopIntervalGenesis = 0.04,
+          bfcDecisionLoopIntervalPraos = 0.01,
+          bfcSalt                   = 0,
+          bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
+            { gbfcGracePeriod = 10 -- seconds
+            }
         })
 
     blockFetchPolicy :: NodeKernel BlockHeader Block s m
@@ -305,7 +310,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
                                        >=> (return . toAnchoredFragment)),
           readCurrentChain       = readTVar (nkChainProducerState nodeKernel)
                                    >>= (return . toAnchoredFragmentHeader . chainState),
-          readFetchMode          = return FetchModeBulkSync,
+          readFetchMode          = return $ PraosFetchMode FetchModeBulkSync,
           readFetchedBlocks      = flip Set.member <$> getBlockPointSet (nkChainDB nodeKernel),
           readFetchedMaxSlotNo   = Foldable.foldl' max NoMaxSlotNo .
                                    map (maxSlotNoFromWithOrigin . pointSlot) .
@@ -322,7 +327,10 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
           blockMatchesHeader     = \_ _ -> True,
 
           headerForgeUTCTime,
-          blockForgeUTCTime      = headerForgeUTCTime . fmap blockHeader
+          blockForgeUTCTime      = headerForgeUTCTime . fmap blockHeader,
+
+          readChainSelStarvation       = pure (ChainSelStarvationEndedAt (Time 0)),
+          demoteChainSyncJumpingDynamo = \_ -> pure ()
         }
       where
         plausibleCandidateChain cur candidate =
