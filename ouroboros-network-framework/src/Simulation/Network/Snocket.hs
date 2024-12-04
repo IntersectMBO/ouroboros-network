@@ -38,6 +38,7 @@ module Simulation.Network.Snocket
   , TimeoutDetail (..)
   , noAttenuation
   , FD
+  , makeFDRawBearer
   , makeFDBearer
   , GlobalAddressScheme (..)
   , AddressType (..)
@@ -50,19 +51,25 @@ import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad (when)
+import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.ST.Unsafe (unsafeIOToST)
 import Control.Tracer (Tracer, contramap, contramapM, traceWith)
 
 import GHC.IO.Exception
 
 import Data.Bifoldable (bitraverse_)
+import Data.ByteString qualified as BS
+import Data.ByteString.Lazy qualified as LBS
 import Data.Foldable (traverse_)
 import Data.Functor (($>))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Typeable (Typeable)
+import Foreign.Marshal (copyBytes)
+import Foreign.Ptr (castPtr)
 import Numeric.Natural (Natural)
 import Text.Printf (printf)
 
@@ -74,6 +81,7 @@ import Network.Mux.Bearer.AttenuatedChannel
 
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.Types (AddressType (..))
+import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket
 
 import Ouroboros.Network.Testing.Data.Script (Script (..), stepScriptSTM)
@@ -532,8 +540,113 @@ instance Show addr => Show (FD_ m addr) where
 
 -- | File descriptor type.
 --
-newtype FD m peerAddr = FD { fdVar :: (StrictTVar m (FD_ m peerAddr)) }
+newtype FD m peerAddr = FD { fdVar :: StrictTVar m (FD_ m peerAddr) }
 
+data FDRawBearerSendTrace
+  = SendingBytes Int
+  | SentBytes Int
+  deriving (Show, Eq)
+
+data FDRawBearerRecvTrace
+  = ReceivingBytes Int
+  | ReceivedBytes Int
+  | ReadingFromBuffer Int
+  | ReadingFromSocket Int
+  | CheckingBuffer
+  | BufferSize Int
+  | UpdateBuffer
+      Int -- ^ take
+      Int -- ^ keep
+  | BufferUpdated
+  | EndOfStream
+  | Copying
+  deriving (Show, Eq)
+
+data FDRawBearerTrace
+  = TraceSend FDRawBearerSendTrace
+  | TraceRecv FDRawBearerRecvTrace
+  deriving (Show, Eq)
+
+-- | Make a 'RawBearer' from an 'FD'. Since this is only used for testing, we
+-- can bypass the requirement of moving raw bytes directly between file
+-- descriptors and provided memory buffers, and we can instead covertly use
+-- plain old 'ByteString' under the hood. This allows us to use the
+-- 'AttenuatedChannel' inside the `FD_`, even though its send and receive
+-- methods do not have the right format.
+makeFDRawBearer :: forall m addr.
+                   ( MonadST m
+                   , MonadThrow m
+                   , MonadLabelledSTM m
+                   , Show addr
+                   )
+                => Tracer m FDRawBearerTrace
+                -> MakeRawBearer m (FD m (TestAddress addr))
+makeFDRawBearer tracer = MakeRawBearer go
+  where
+    traceSend = traceWith tracer . TraceSend
+
+    traceRecv = traceWith tracer . TraceRecv
+
+    go (FD {fdVar}) = do
+      (bufVar :: StrictTMVar m LBS.ByteString) <- newTMVarIO LBS.empty
+      return RawBearer
+                { send = \src srcSize -> do
+                    labelTVarIO fdVar "sender"
+                    traceSend $ SendingBytes srcSize
+                    fd_ <- readTVarIO fdVar
+                    case fd_ of
+                      FDConnected _ conn -> do
+                        bs <- stToIO . unsafeIOToST $ BS.packCStringLen (castPtr src, srcSize)
+                        let bsl = LBS.fromStrict bs
+                        acWrite (connChannelLocal conn) bsl
+                        traceSend $ SentBytes srcSize
+                        return srcSize
+                      _ ->
+                        throwIO (invalidError fd_)
+                , recv = \dst size -> do
+                    labelTVarIO fdVar "receiver"
+                    let size64 = fromIntegral size
+                    traceRecv $ ReceivingBytes size
+                    fd_ <- readTVarIO fdVar
+                    case fd_ of
+                      FDConnected _ conn -> do
+                        traceRecv CheckingBuffer
+                        bytesFromBuffer <- atomically $ takeTMVar bufVar
+                        traceRecv $ BufferSize (fromIntegral $ LBS.length bytesFromBuffer)
+                        (lhs, rhs) <- if not (LBS.null bytesFromBuffer)
+                          then do
+                            traceRecv $ ReadingFromBuffer size
+                            return (LBS.take size64 bytesFromBuffer, LBS.drop size64 bytesFromBuffer)
+                          else do
+                            traceRecv $ ReadingFromSocket size
+                            bytesRead <- acRead (connChannelLocal conn)
+                            traceRecv $ ReceivedBytes (fromIntegral . LBS.length $ LBS.take size64 bytesRead)
+                            return (LBS.take size64 bytesRead, LBS.drop size64 bytesRead)
+                        traceRecv $ UpdateBuffer (fromIntegral $ LBS.length lhs) (fromIntegral $ LBS.length rhs)
+                        atomically $ putTMVar bufVar rhs
+                        traceRecv $ BufferUpdated
+                        if LBS.null lhs then do
+                          traceRecv EndOfStream
+                          return 0
+                        else do
+                          traceRecv Copying
+                          let bs = LBS.toStrict lhs
+                          stToIO . unsafeIOToST $ BS.useAsCStringLen bs $ \(src, srcSize) -> do
+                              copyBytes dst (castPtr src) srcSize
+                              return srcSize
+                      _ ->
+                        throwIO (invalidError fd_)
+                }
+
+    invalidError :: FD_ m (TestAddress addr) -> IOError
+    invalidError fd_ = IOError
+      { ioe_handle      = Nothing
+      , ioe_type        = InvalidArgument
+      , ioe_location    = "Ouroboros.Network.Snocket.Sim.toRawBearer"
+      , ioe_description = printf "Invalid argument (%s)" (show fd_)
+      , ioe_errno       = Nothing
+      , ioe_filename    = Nothing
+      }
 
 makeFDBearer :: forall addr m.
                 ( MonadMonotonicTime m
@@ -557,17 +670,16 @@ makeFDBearer = MakeBearer $ \sduTimeout muxTracer FD { fdVar } -> do
                                                 (connChannelLocal conn)
           FDClosed {} ->
             throwIO (invalidError fd_)
-      where
-        -- io errors
-        invalidError :: FD_ m (TestAddress addr) -> IOError
-        invalidError fd_ = IOError
-          { ioe_handle      = Nothing
-          , ioe_type        = InvalidArgument
-          , ioe_location    = "Ouroboros.Network.Snocket.Sim.toBearer"
-          , ioe_description = printf "Invalid argument (%s)" (show fd_)
-          , ioe_errno       = Nothing
-          , ioe_filename    = Nothing
-          }
+  where
+    invalidError :: FD_ m (TestAddress addr) -> IOError
+    invalidError fd_ = IOError
+      { ioe_handle      = Nothing
+      , ioe_type        = InvalidArgument
+      , ioe_location    = "Ouroboros.Network.Snocket.Sim.toBearer"
+      , ioe_description = printf "Invalid argument (%s)" (show fd_)
+      , ioe_errno       = Nothing
+      , ioe_filename    = Nothing
+      }
 
 --
 -- Simulated snockets

@@ -11,6 +11,7 @@
 * Renamed `requestOutboundConnection` to `acquireOutboundConnection` and
   `unregister{Inbound,Outbound}Connection` to `release{Inbound,Outbound}Connection`.
   `AssertionLocation` constructors were renamed as well.
+* Added `RawBearer` API (see https://github.com/IntersectMBO/ouroboros-network/pull/4395)
 
 ### Non-breaking changes
 
@@ -43,6 +44,7 @@
 * `Ouroboros.Network.ConnectionManager.Core` must be imported qualified.
 * `ConnectionManagerTrace` moved from `Ouroboros.Network.ConnectionManager.Types`
   to the `Core` module & renamed as `Trace`.
+* RawBearer API (typeclass and instances) added.
 
 ### Non-breaking changes
 
