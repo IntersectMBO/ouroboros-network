@@ -594,7 +594,7 @@ peerChurnGovernor PeerChurnArgs {
     -- the process of promoting/demoting a peer and it will take some time
     -- before it can act on new targets set by churn
     shortTimeout :: DiffTime
-    shortTimeout = 60
+    shortTimeout = 180
 
     -- Replace 20% or at least one peer every churnInterval.
     decrease :: Int -> Int

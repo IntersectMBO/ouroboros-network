@@ -30,10 +30,6 @@ module Ouroboros.Network.PeerSelection.Governor
   , readAssociationMode
   , DebugPeerSelectionState (..)
   , peerSelectionGovernor
-    -- * Peer churn governor
-  , PeerChurnArgs (..)
-  , peerChurnGovernor
-  , ChurnCounters (..)
     -- * Internals exported for testing
   , assertPeerSelectionState
   , sanePeerSelectionTargets
@@ -68,8 +64,6 @@ import Control.Tracer (Tracer (..), traceWith)
 import System.Random
 
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
-import Ouroboros.Network.PeerSelection.Churn (ChurnCounters (..),
-           PeerChurnArgs (..), peerChurnGovernor)
 import Ouroboros.Network.PeerSelection.Governor.ActivePeers qualified as ActivePeers
 import Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers qualified as BigLedgerPeers
 import Ouroboros.Network.PeerSelection.Governor.EstablishedPeers qualified as EstablishedPeers
