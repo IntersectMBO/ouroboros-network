@@ -66,8 +66,7 @@ import Ouroboros.Network.ExitPolicy
 import Ouroboros.Network.InboundGovernor (RemoteTransitionTrace)
 import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.Mux hiding (MiniProtocol (..))
-import Ouroboros.Network.PeerSelection.Churn (PeerChurnArgs)
-import Ouroboros.Network.PeerSelection.Governor qualified as Governor
+import Ouroboros.Network.PeerSelection.Churn (ChurnCounters, PeerChurnArgs)
 import Ouroboros.Network.PeerSelection.Governor.Types (DebugPeerSelection (..),
            PeerSelectionActions, PeerSelectionCounters, PeerSelectionState (..),
            TracePeerSelection (..))
@@ -282,7 +281,7 @@ data TracersExtra ntnAddr ntnVersion ntnVersionData
         :: Tracer m (PeerSelectionCounters extraCounters)
 
     , dtTraceChurnCounters
-        :: Tracer m Governor.ChurnCounters
+        :: Tracer m ChurnCounters
 
     , dtPeerSelectionActionsTracer
         :: Tracer m (PeerSelectionActionsTrace ntnAddr ntnVersion)

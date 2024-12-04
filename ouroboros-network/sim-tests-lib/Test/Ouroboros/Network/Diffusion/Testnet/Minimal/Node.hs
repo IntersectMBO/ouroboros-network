@@ -70,9 +70,8 @@ import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
-import Ouroboros.Network.PeerSelection.Governor (PeerChurnArgs,
-           PeerSelectionState (..), PeerSelectionTargets (..),
-           PublicPeerSelectionState (..))
+import Ouroboros.Network.PeerSelection.Governor (PeerSelectionState (..),
+           PeerSelectionTargets (..), PublicPeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.PeerMetric
            (PeerMetricsConfiguration (..), newPeerMetric)
 import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
@@ -94,6 +93,7 @@ import Simulation.Network.Snocket (AddressType (..), FD)
 import GHC.Exception (Exception)
 import Ouroboros.Network.Diffusion.Common qualified as Common
 import Ouroboros.Network.Diffusion.P2P (runM)
+import Ouroboros.Network.PeerSelection.Churn (PeerChurnArgs)
 import Ouroboros.Network.PeerSelection.Governor.Types
            (PeerSelectionGovernorArgs)
 import Ouroboros.Network.PeerSelection.LedgerPeers (NumberOfPeers)
