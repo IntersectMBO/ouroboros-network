@@ -7,7 +7,7 @@
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeOperators       #-}
 
-module Test.Ouroboros.Network.TxSubmission (tests) where
+module Test.Ouroboros.Network.MiniProtocols.TxSubmission (tests) where
 
 import Prelude hiding (seq)
 

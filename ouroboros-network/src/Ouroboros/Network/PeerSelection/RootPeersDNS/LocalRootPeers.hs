@@ -27,12 +27,11 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer (..), contramap, traceWith)
 
 import Network.DNS qualified as DNS
-import Network.Socket qualified as Socket
 
 import Data.Bifunctor (second)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
-import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
+import Ouroboros.Network.PeerSelection.RootPeersDNS (PeerActionsDNS (..))
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore,
            newDNSLocalRootSemaphore, withDNSSemaphore)
@@ -40,17 +39,17 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
            WarmValency)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 
-data TraceLocalRootPeers peerAddr exception =
-       TraceLocalRootDomains (LocalRootPeers.Config RelayAccessPoint)
+data TraceLocalRootPeers extraFlags peerAddr exception =
+       TraceLocalRootDomains (LocalRootPeers.Config extraFlags RelayAccessPoint)
        -- ^ 'Int' is the configured valency for the local producer groups
      | TraceLocalRootWaiting DomainAccessPoint DiffTime
      | TraceLocalRootResult  DomainAccessPoint [(IP, DNS.TTL)]
-     | TraceLocalRootGroups  (LocalRootPeers.Config peerAddr)
+     | TraceLocalRootGroups  (LocalRootPeers.Config extraFlags peerAddr)
        -- ^ This traces the results of the local root peer provider
      | TraceLocalRootDNSMap  (Map DomainAccessPoint [peerAddr])
        -- ^ This traces the results of the domain name resolution
-     | TraceLocalRootReconfigured (LocalRootPeers.Config RelayAccessPoint) -- ^ Old value
-                                  (LocalRootPeers.Config RelayAccessPoint) -- ^ New value
+     | TraceLocalRootReconfigured (LocalRootPeers.Config extraFlags RelayAccessPoint) -- ^ Old value
+                                  (LocalRootPeers.Config extraFlags RelayAccessPoint) -- ^ New value
      | TraceLocalRootFailure DomainAccessPoint (DNSorIOError exception)
        --TODO: classify DNS errors, config error vs transitory
      | TraceLocalRootError   DomainAccessPoint SomeException
@@ -62,33 +61,35 @@ data TraceLocalRootPeers peerAddr exception =
 -- the output 'StrictTVar'.
 --
 localRootPeersProvider
-  :: forall m peerAddr resolver exception.
+  :: forall m extraFlags peerAddr resolver exception.
      ( Alternative (STM m)
      , MonadAsync m
      , MonadDelay m
      , MonadThrow m
      , Ord peerAddr
+     , Eq extraFlags
      )
-  => Tracer m (TraceLocalRootPeers peerAddr exception)
-  -> (IP -> Socket.PortNumber -> peerAddr)
+  => Tracer m (TraceLocalRootPeers extraFlags peerAddr exception)
+  -> PeerActionsDNS peerAddr resolver exception m
   -> DNS.ResolvConf
-  -> DNSActions resolver exception m
   -> STM m [( HotValency
             , WarmValency
-            , Map RelayAccessPoint (PeerAdvertise, PeerTrustable))]
+            , Map RelayAccessPoint (PeerAdvertise, extraFlags))]
   -- ^ input
   -> StrictTVar m [( HotValency
                    , WarmValency
-                   , Map peerAddr (PeerAdvertise, PeerTrustable))]
+                   , Map peerAddr (PeerAdvertise, extraFlags))]
   -- ^ output 'TVar'
   -> m Void
 localRootPeersProvider tracer
-                       toPeerAddr
-                       resolvConf
-                       DNSActions {
-                         dnsAsyncResolverResource,
-                         dnsLookupWithTTL
+                       PeerActionsDNS {
+                         paToPeerAddr,
+                         paDnsActions = DNSActions {
+                           dnsAsyncResolverResource,
+                           dnsLookupWithTTL
+                         }
                        }
+                       resolvConf
                        readLocalRootPeers
                        rootPeersGroupVar =
         atomically (do domainsGroups <- readLocalRootPeers
@@ -101,7 +102,7 @@ localRootPeersProvider tracer
     -- if either these threads fail or detects the local configuration changed.
     --
     loop :: DNSSemaphore m
-         -> [(HotValency, WarmValency, Map RelayAccessPoint (PeerAdvertise, PeerTrustable))]
+         -> [(HotValency, WarmValency, Map RelayAccessPoint (PeerAdvertise, extraFlags))]
          -> m Void
     loop dnsSemaphore domainsGroups = do
       traceWith tracer (TraceLocalRootDomains domainsGroups)
@@ -178,7 +179,7 @@ localRootPeersProvider tracer
       if null errs
          then do
            traceWith tracer (TraceLocalRootResult domain results)
-           return $ Right [ ( toPeerAddr addr dapPortNumber
+           return $ Right [ ( paToPeerAddr addr dapPortNumber
                             , _ttl)
                           | (addr, _ttl) <- results ]
          else return $ Left errs
@@ -260,10 +261,10 @@ localRootPeersProvider tracer
     getLocalRootPeersGroups :: Map DomainAccessPoint [peerAddr]
                             -> [( HotValency
                                 , WarmValency
-                                , Map RelayAccessPoint (PeerAdvertise, PeerTrustable))]
+                                , Map RelayAccessPoint (PeerAdvertise, extraFlags))]
                             -> [( HotValency
                                 , WarmValency
-                                , Map peerAddr (PeerAdvertise, PeerTrustable))]
+                                , Map peerAddr (PeerAdvertise, extraFlags))]
     getLocalRootPeersGroups dnsMap =
       -- The idea is to traverse the static configuration. Enter each local
       -- group and check if any of the RelayAccessPoint has a Domain Name.
@@ -277,7 +278,7 @@ localRootPeersProvider tracer
                       (\accMap rap pa
                          -> case rap of
                              RelayAccessAddress ip port ->
-                               Map.insert (toPeerAddr ip port) pa accMap
+                               Map.insert (paToPeerAddr ip port) pa accMap
                              RelayDomainAccessPoint dap ->
                                let newEntries = maybe Map.empty
                                                       Map.fromList

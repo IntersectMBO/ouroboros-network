@@ -1,4 +1,4 @@
-module Test.Ouroboros.Network.Testnet.Node.ChainDB
+module Test.Ouroboros.Network.Diffusion.Node.ChainDB
   ( ChainDB (..)
   , SelectChain (..)
   , newChainDB
