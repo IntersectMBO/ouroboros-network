@@ -82,6 +82,7 @@ import Ouroboros.Network.InboundGovernor.State (ConnectionState (..),
            InboundGovernorCounters (..))
 import Ouroboros.Network.Mux
 import Ouroboros.Network.MuxMode
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.Protocol.Handshake.Codec (noTimeLimitsHandshake,
            timeLimitsHandshake)
 import Ouroboros.Network.Protocol.Handshake.Unversioned
@@ -876,7 +877,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
                                        case fromException e of
                                          Just SomeAsyncException {} -> Nothing
                                          _                          -> Just e)
-                          $ requestOutboundConnection cm remoteAddr
+                          $ requestOutboundConnection cm InitiatorAndResponderDiffusionMode remoteAddr
             case connHandle of
               Left _ ->
                 go connMap

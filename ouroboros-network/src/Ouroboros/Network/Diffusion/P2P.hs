@@ -517,7 +517,11 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         -- | diffusion dns actions
         --
         diDnsActions
-          :: DNSLookupType -> DNSActions resolver resolverError m
+          :: DNSLookupType -> DNSActions resolver resolverError m,
+
+        -- | Update `ntnVersionData` for initiator-only local roots.
+        diUpdateVersionData
+          :: ntnVersionData -> DiffusionMode -> ntnVersionData
       }
 
 runM
@@ -594,6 +598,7 @@ runM Interfaces
        , diRng
        , diInstallSigUSR1Handler
        , diDnsActions
+       , diUpdateVersionData
        }
      Tracers
        { dtMuxTracer
@@ -737,7 +742,8 @@ runM Interfaces
                   connectionDataFlow    = localDataFlow,
                   cmPrunePolicy         = Diffusion.Policies.prunePolicy,
                   cmStdGen              = cmLocalStdGen,
-                  cmConnectionsLimits   = localConnectionLimits
+                  cmConnectionsLimits   = localConnectionLimits,
+                  cmUpdateVersionData   = \a _ -> a
                 }
 
         withConnectionManager
@@ -862,7 +868,8 @@ runM Interfaces
                 cmStdGen,
                 cmConnectionsLimits   = daAcceptedConnectionsLimit,
                 cmTimeWaitTimeout     = daTimeWaitTimeout,
-                cmOutboundIdleTimeout = daProtocolIdleTimeout
+                cmOutboundIdleTimeout = daProtocolIdleTimeout,
+                cmUpdateVersionData   = diUpdateVersionData
               }
 
       let peerSelectionPolicy = Diffusion.Policies.simplePeerSelectionPolicy
@@ -1232,7 +1239,8 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
 
                  diRng,
                  diInstallSigUSR1Handler,
-                 diDnsActions = ioDNSActions
+                 diDnsActions = ioDNSActions,
+                 diUpdateVersionData = \versionData diffusionMode -> versionData { diffusionMode }
                }
                tracers tracersExtra args argsExtra apps appsExtra
 

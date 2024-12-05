@@ -189,6 +189,7 @@ test-suite sim-tests
     monoidal-synchronisation,
     network,
     network-mux,
+    ouroboros-network-api,
     ouroboros-network-framework,
     ouroboros-network-framework:testlib,
     ouroboros-network-testing,

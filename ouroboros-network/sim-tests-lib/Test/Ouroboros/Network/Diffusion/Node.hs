@@ -242,6 +242,8 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
                                                      (iDomainMap ni)
                                                      dnsTimeoutScriptVar
                                                      dnsLookupDelayScriptVar)
+              , Diff.P2P.diUpdateVersionData     = \versionData diffusionMode ->
+                                                    versionData { ntnDiffusionMode = diffusionMode }
               }
 
             appsExtra :: Diff.P2P.ApplicationsExtra NtNAddr m ()

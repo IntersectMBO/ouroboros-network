@@ -84,6 +84,7 @@ import Ouroboros.Network.InboundGovernor (DebugInboundGovernor (..),
            InboundGovernorTrace (..))
 import Ouroboros.Network.Mux
 import Ouroboros.Network.MuxMode
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.Protocol.Handshake
 import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
            noTimeLimitsHandshake, timeLimitsHandshake)
@@ -297,7 +298,8 @@ withInitiatorOnlyConnectionManager name timeouts trTracer cmTracer cmStdGen snoc
           cmStdGen,
           cmConnectionsLimits = acceptedConnLimit,
           cmTimeWaitTimeout = tTimeWaitTimeout timeouts,
-          cmOutboundIdleTimeout = tOutboundIdleTimeout timeouts
+          cmOutboundIdleTimeout = tOutboundIdleTimeout timeouts,
+          cmUpdateVersionData = \a _ -> a
         }
       (makeConnectionHandler
         muxTracer
@@ -484,7 +486,13 @@ withBidirectionalConnectionManager name timeouts
           connectionDataFlow = \_ (DataFlowProtocolData df _) -> df,
           cmPrunePolicy = simplePrunePolicy,
           cmStdGen,
-          cmConnectionsLimits = acceptedConnLimit
+          cmConnectionsLimits = acceptedConnLimit,
+          cmUpdateVersionData = \versionData diffusionMode ->
+                                  versionData { getProtocolDataFlow =
+                                                  case diffusionMode of
+                                                    InitiatorOnlyDiffusionMode         -> Unidirectional
+                                                    InitiatorAndResponderDiffusionMode -> Duplex
+                                              }
         }
         (makeConnectionHandler
           muxTracer
@@ -733,7 +741,7 @@ unidirectionalExperiment stdGen timeouts snocket makeBearer confSock socket clie
                 replicateM
                   (numberOfRounds clientAndServerData)
                   (bracket
-                     (requestOutboundConnection connectionManager serverAddr)
+                     (requestOutboundConnection connectionManager InitiatorOnlyDiffusionMode serverAddr)
                      (\case
                         Connected connId _ _ -> unregisterOutboundConnection connectionManager connId
                         Disconnected {} -> error "unidirectionalExperiment: impossible happened")
@@ -834,6 +842,7 @@ bidirectionalExperiment
                     (withLock useLock lock
                       (requestOutboundConnection
                         connectionManager0
+                        InitiatorAndResponderDiffusionMode
                         localAddr1))
                     (\case
                       Connected connId _ _ ->
@@ -859,6 +868,7 @@ bidirectionalExperiment
                     (withLock useLock lock
                       (requestOutboundConnection
                         connectionManager1
+                        InitiatorAndResponderDiffusionMode
                         localAddr0))
                     (\case
                       Connected connId _ _ ->

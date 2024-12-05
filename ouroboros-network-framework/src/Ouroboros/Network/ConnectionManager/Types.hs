@@ -180,6 +180,7 @@ import Network.Mux.Types (HasInitiator, HasResponder, MiniProtocolDir,
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.ConnectionManager.ConnMap (ConnMap)
 import Ouroboros.Network.MuxMode
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 
 
 -- | Connection manager supports `IPv4` and `IPv6` addresses.
@@ -345,7 +346,8 @@ newtype MaskedAction m a = MaskedAction {
 -- accessing the 'TVar' which holds state of the connection.
 --
 type ConnectionHandlerFn handlerTrace socket peerAddr handle handleError versionNumber versionData m
-     = socket
+     = (versionData -> versionData)
+    -> socket
     -> PromiseWriter m (Either handleError (HandshakeConnectionResult handle (versionNumber, versionData)))
     -> Tracer m handlerTrace
     -> ConnectionId peerAddr
@@ -490,7 +492,7 @@ data Connected peerAddr handle handleError =
 
 
 type RequestOutboundConnection peerAddr handle handleError m
-    =            peerAddr -> m (Connected peerAddr handle handleError)
+    = DiffusionMode -> peerAddr -> m (Connected peerAddr handle handleError)
 type IncludeInboundConnection socket peerAddr handle handleError m
     = Word32
     -- ^ inbound connections hard limit.
@@ -848,6 +850,7 @@ data ConnectionManagerTrace peerAddr handlerTrace
   | TrUnregisterConnection         Provenance (ConnectionId peerAddr)
   | TrConnect                      (Maybe peerAddr) -- ^ local address
                                    peerAddr         -- ^ remote address
+                                   DiffusionMode
   | TrConnectError                 (Maybe peerAddr) -- ^ local address
                                    peerAddr         -- ^ remote address
                                    SomeException

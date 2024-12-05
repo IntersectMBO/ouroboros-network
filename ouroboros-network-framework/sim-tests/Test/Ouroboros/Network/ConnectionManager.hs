@@ -62,6 +62,7 @@ import Ouroboros.Network.ConnectionManager.Core
 import Ouroboros.Network.ConnectionManager.Test.Utils (verifyAbstractTransition)
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.MuxMode
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.Server.RateLimiting
 import Ouroboros.Network.Snocket (Accept (..), Accepted (..),
            AddressFamily (TestFamily), Snocket (..), TestAddress (..))
@@ -606,7 +607,7 @@ mkConnectionHandler snocket =
         handler
   where
     handler :: ConnectionHandlerFn handlerTrace (FD m) Addr (Handle m) Void Version VersionData m
-    handler fd promise _ ConnectionId { remoteAddress } _ =
+    handler _ fd promise _ ConnectionId { remoteAddress } _ =
       MaskedAction $ \unmask ->
         do threadId <- myThreadId
            let addr = getTestAddress remoteAddress
@@ -773,6 +774,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
                 },
               cmTimeWaitTimeout = testTimeWaitTimeout,
               cmOutboundIdleTimeout = testOutboundIdleTimeout
+              cmUpdateVersionData = \a _ -> a
             }
             connectionHandler
             (\_ -> HandshakeFailure)
@@ -811,7 +813,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
                                 -- handshake negotiation.
                                 timeout (1 + 5 + testTimeWaitTimeout)
                                   (requestOutboundConnection
-                                    connectionManager addr))
+                                    connectionManager InitiatorAndResponderDiffusionMode addr))
                             `catches`
                               [ Handler $ \(e :: IOException) -> return (Left (toException e))
                               , Handler $ \(e :: SomeConnectionManagerError) ->

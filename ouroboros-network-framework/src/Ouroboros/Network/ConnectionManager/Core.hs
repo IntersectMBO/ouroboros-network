@@ -61,6 +61,7 @@ import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.ConnectionManager.State
 import Ouroboros.Network.InboundGovernor.Event (NewConnectionInfo (..))
 import Ouroboros.Network.MuxMode
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket
 
@@ -139,7 +140,8 @@ data ConnectionManagerArguments handlerTrace socket peerAddr handle handleError 
         --
         cmStdGen              :: StdGen,
 
-        cmConnectionsLimits   :: AcceptedConnectionsLimit
+        cmConnectionsLimits   :: AcceptedConnectionsLimit,
+        cmUpdateVersionData   :: versionData -> DiffusionMode -> versionData
       }
 
 
@@ -383,7 +385,8 @@ withConnectionManager args@ConnectionManagerArguments {
                           cmOutboundIdleTimeout,
                           connectionDataFlow,
                           cmPrunePolicy,
-                          cmConnectionsLimits
+                          cmConnectionsLimits,
+                          cmUpdateVersionData
                         }
                       ConnectionHandler {
                           connectionHandler
@@ -589,14 +592,15 @@ withConnectionManager args@ConnectionManagerArguments {
     -- TODO: We could probably elegantly eliminate 'PromiseWriter', now that we use
     -- MonadFix.
     forkConnectionHandler
-      :: StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
+      :: (versionData -> versionData)
+      -> StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
       -> MutableConnState peerAddr handle handleError version m
       -> socket
       -> ConnectionId peerAddr
       -> PromiseWriter m (Either handleError (HandshakeConnectionResult handle (version, versionData)))
       -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version versionData m
       -> m (Async m ())
-    forkConnectionHandler stateVar
+    forkConnectionHandler updateVersionDataFn stateVar
                           mutableConnState@MutableConnState { connVar }
                           socket
                           connId@ConnectionId { remoteAddress = peerAddr }
@@ -604,7 +608,7 @@ withConnectionManager args@ConnectionManagerArguments {
                           handler =
         mask $ \unmask -> async $ do
           runWithUnmask
-            (handler socket writer
+            (handler updateVersionDataFn socket writer
                      (TrConnectionHandler connId `contramap` tracer)
                      connId
                      (\bearerTimeout ->
@@ -929,7 +933,7 @@ withConnectionManager args@ConnectionManagerArguments {
 
                 connThread' <-
                   forkConnectionHandler
-                     stateVar mutableConnVar' socket connId writer handler
+                     id stateVar mutableConnVar' socket connId writer handler
                 return (connThread', mutableConnVar', connState0', connState')
 
             traceWith trTracer (TransitionTrace (remoteAddress connId)
@@ -1303,9 +1307,10 @@ withConnectionManager args@ConnectionManagerArguments {
         -> StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
         -> StrictTVar m StdGen
         -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version versionData m
+        -> DiffusionMode
         -> peerAddr
         -> m (Connected peerAddr handle handleError)
-    requestOutboundConnectionImpl freshIdSupply stateVar stdGenVar handler peerAddr = do
+    requestOutboundConnectionImpl freshIdSupply stateVar stdGenVar handler diffusionMode peerAddr = do
         let provenance = Outbound
         traceWith tracer (TrIncludeConnection provenance peerAddr)
         (trace, mutableConnState@MutableConnState { connVar }
@@ -1502,16 +1507,22 @@ withConnectionManager args@ConnectionManagerArguments {
                                    Just IPv4Address -> cmIPv4Address
                                    Just IPv6Address -> cmIPv6Address
                       cmConfigureSocket socket addr
+                      -- only bind to the ip address if:
+                      -- * the diffusion is given `ipv4/6` addresses;
+                      -- * `diffusionMode` for this connection is
+                      --   `InitiatorAndResponderMode`.
                       case cmAddressType peerAddr of
-                        Nothing -> pure ()
-                        Just IPv4Address ->
+                        Just IPv4Address | InitiatorAndResponderDiffusionMode
+                                           <- diffusionMode ->
                              traverse_ (bind cmSnocket socket)
                                        cmIPv4Address
-                        Just IPv6Address ->
+                        Just IPv6Address | InitiatorAndResponderDiffusionMode
+                                           <- diffusionMode ->
                              traverse_ (bind cmSnocket socket)
                                        cmIPv6Address
+                        _ -> pure ()
 
-                      traceWith tracer (TrConnect addr peerAddr)
+                      traceWith tracer (TrConnect addr peerAddr diffusionMode)
                       connect cmSnocket socket peerAddr
                         `catch` \e -> do
                           traceWith tracer (TrConnectError addr peerAddr e)
@@ -1545,7 +1556,7 @@ withConnectionManager args@ConnectionManagerArguments {
 
                 connThread <-
                   forkConnectionHandler
-                    stateVar mutableConnState socket connId writer handler
+                    (`cmUpdateVersionData` diffusionMode) stateVar mutableConnState socket connId writer handler
                 return (connId, connThread)
 
             (trans, mbAssertion) <- atomically $ do

@@ -297,9 +297,9 @@ connectionManagerTraceMap (TrIncludeConnection p _)        =
   "TrIncludeConnection " ++ show p
 connectionManagerTraceMap (TrUnregisterConnection p _)     =
   "TrUnregisterConnection " ++ show p
-connectionManagerTraceMap (TrConnect _ _)                  =
+connectionManagerTraceMap TrConnect {}                     =
   "TrConnect"
-connectionManagerTraceMap (TrConnectError _ _ _)          =
+connectionManagerTraceMap (TrConnectError _ _ _)           =
   "TrConnectError"
 connectionManagerTraceMap (TrTerminatingConnection p _)    =
   "TrTerminatingConnection " ++ show p

@@ -54,6 +54,7 @@ import Ouroboros.Network.Context
 import Ouroboros.Network.ControlMessage (ControlMessage (..))
 import Ouroboros.Network.ExitPolicy
 import Ouroboros.Network.Mux
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.Governor (PeerStateActions (..))
 import Ouroboros.Network.Protocol.Handshake (HandshakeException)
 
@@ -717,16 +718,17 @@ withPeerStateActions PeerStateActionsArguments {
 
     establishPeerConnection :: JobPool () m (Maybe SomeException)
                             -> IsBigLedgerPeer
+                            -> DiffusionMode
                             -> peerAddr
                             -> m (PeerConnectionHandle muxMode responderCtx peerAddr versionData ByteString m a b)
-    establishPeerConnection jobPool isBigLedgerPeer remotePeerAddr =
+    establishPeerConnection jobPool isBigLedgerPeer diffusionMode remotePeerAddr =
       -- Protect consistency of the peer state with 'bracketOnError' if
       -- opening a connection fails.
       bracketOnError
         (newTVarIO PeerCold)
         (\peerStateVar -> atomically $ writeTVar peerStateVar PeerCold)
         $ \peerStateVar -> do
-          res <- requestOutboundConnection spsConnectionManager remotePeerAddr
+          res <- requestOutboundConnection spsConnectionManager diffusionMode remotePeerAddr
           case res of
             Connected connId@ConnectionId { localAddress, remoteAddress }
                       _dataFlow
