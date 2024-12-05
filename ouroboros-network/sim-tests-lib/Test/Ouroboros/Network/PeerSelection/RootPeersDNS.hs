@@ -57,6 +57,7 @@ import Control.Tracer (Tracer (Tracer), contramap, nullTracer, traceWith)
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Data.List (intercalate)
 import Data.List.NonEmpty (NonEmpty (..))
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
@@ -238,10 +239,10 @@ simpleMockRoots = MockRoots localRootPeers dnsMap Map.empty (singletonScript Map
       [ ( 2, 2
         , Map.fromList
           [ ( RelayAccessAddress (read "192.0.2.1") (read "3333")
-            , LocalRootConfig DoAdvertisePeer IsNotTrustable
+            , LocalRootConfig DoAdvertisePeer IsNotTrustable InitiatorAndResponderDiffusionMode
             )
           , ( RelayAccessDomain  "test.domain"      (read "4444")
-            , LocalRootConfig DoNotAdvertisePeer IsNotTrustable
+            , LocalRootConfig DoNotAdvertisePeer IsNotTrustable InitiatorAndResponderDiffusionMode
             )
           ]
         )

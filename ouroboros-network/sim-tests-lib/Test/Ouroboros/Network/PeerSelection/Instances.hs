@@ -17,17 +17,17 @@ module Test.Ouroboros.Network.PeerSelection.Instances
   , prop_shrink_PeerSelectionTargets
   ) where
 
+import Data.Hashable
+import Data.IP qualified as IP
 import Data.Text.Encoding (encodeUtf8)
 import Data.Word (Word32, Word64)
 
 import Cardano.Slotting.Slot (SlotNo (..))
 
-import Ouroboros.Network.PeerSelection.Governor
-
-import Data.Hashable
-import Data.IP qualified as IP
 import Ouroboros.Network.ConsensusMode
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
+import Ouroboros.Network.PeerSelection.Governor
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (AfterSlot (..),
            UseLedgerPeers (..))
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
@@ -192,12 +192,18 @@ prop_shrink_PeerSelectionTargets x =
 
 
 instance Arbitrary LocalRootConfig where
-  arbitrary = LocalRootConfig <$> arbitrary <*> arbitrary
-  shrink a@LocalRootConfig { peerAdvertise, peerTrustable } =
+  arbitrary = LocalRootConfig <$> arbitrary <*> arbitrary <*> elements [InitiatorAndResponderDiffusionMode, InitiatorOnlyDiffusionMode]
+  shrink a@LocalRootConfig { peerAdvertise, peerTrustable, diffusionMode } =
     [ a { peerTrustable = peerTrustable' }
     | peerTrustable' <- shrink peerTrustable
     ]
     ++
     [ a { peerAdvertise = peerAdvertise' }
     | peerAdvertise' <- shrink peerAdvertise
+    ]
+    ++
+    [ a { diffusionMode = diffusionMode' }
+    | diffusionMode' <- case diffusionMode of
+        InitiatorOnlyDiffusionMode         -> []
+        InitiatorAndResponderDiffusionMode -> [InitiatorOnlyDiffusionMode]
     ]
