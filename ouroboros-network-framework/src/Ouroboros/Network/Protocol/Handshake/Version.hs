@@ -3,13 +3,12 @@
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TypeOperators              #-}
 
 module Ouroboros.Network.Protocol.Handshake.Version
   ( Versions (..)
+  , updateVersionData
   , Version (..)
   , VersionMismatch (..)
     -- * Simple or no versioning
@@ -53,6 +52,12 @@ newtype Versions vNum vData r = Versions
   { getVersions :: Map vNum (Version vData r)
   }
   deriving Semigroup
+
+updateVersionData :: (vData -> vData) -> Versions vNum vData r -> Versions vNum vData r
+updateVersionData fn =
+    Versions
+  . Map.map (\v -> v { versionData = fn (versionData v) })
+  . getVersions
 
 instance Functor (Versions vNum extra) where
     fmap f (Versions vs) = Versions $ Map.map (fmap f)  vs
