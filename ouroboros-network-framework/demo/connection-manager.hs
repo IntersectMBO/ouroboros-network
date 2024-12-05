@@ -65,6 +65,7 @@ import Ouroboros.Network.Context
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.Mux
 import Ouroboros.Network.MuxMode
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.Protocol.Handshake
 import Ouroboros.Network.Protocol.Handshake.Codec (timeLimitsHandshake)
 import Ouroboros.Network.Protocol.Handshake.Unversioned
@@ -540,9 +541,9 @@ bidirectionalExperiment
                               InitiatorResponderMode
                               UnversionedProtocol))
     connect n cm | n <= 1 =
-      requestOutboundConnection cm remoteAddr
+      requestOutboundConnection cm InitiatorAndResponderDiffusionMode remoteAddr
     connect n cm =
-      requestOutboundConnection cm remoteAddr
+      requestOutboundConnection cm InitiatorAndResponderDiffusionMode remoteAddr
         `catch` \(_ :: IOException) -> threadDelay 1
                                     >> connect (pred n) cm
         `catch` \(_ :: MuxError)    -> threadDelay 1

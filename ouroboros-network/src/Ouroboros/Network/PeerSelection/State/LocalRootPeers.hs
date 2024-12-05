@@ -37,6 +37,7 @@ import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
 
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 
@@ -47,7 +48,8 @@ import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 
 data LocalRootConfig = LocalRootConfig {
     peerAdvertise :: !PeerAdvertise,
-    peerTrustable :: !PeerTrustable
+    peerTrustable :: !PeerTrustable,
+    diffusionMode :: !DiffusionMode
   }
   deriving (Show, Eq)
 

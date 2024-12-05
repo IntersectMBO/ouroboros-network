@@ -171,6 +171,7 @@ alterKnownPeerInfo (peerSharing, peerAdvertise) peerLookupResult =
       , knownSuccessfulConnection = False
       }
     Just kpi -> Just $
+      -- pick first known value
       kpi {
         knownPeerSharing   = maybeToStrictMaybe peerSharing
                          <|> knownPeerSharing kpi

@@ -62,6 +62,7 @@ import Ouroboros.Network.ConnectionManager.Core
 import Ouroboros.Network.ConnectionManager.Test.Utils (verifyAbstractTransition)
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.MuxMode
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.Server.RateLimiting
 import Ouroboros.Network.Snocket (Accept (..), Accepted (..),
            AddressFamily (TestFamily), Snocket (..), TestAddress (..))
@@ -811,7 +812,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
                                 -- handshake negotiation.
                                 timeout (1 + 5 + testTimeWaitTimeout)
                                   (requestOutboundConnection
-                                    connectionManager addr))
+                                    connectionManager InitiatorAndResponderDiffusionMode addr))
                             `catches`
                               [ Handler $ \(e :: IOException) -> return (Left (toException e))
                               , Handler $ \(e :: SomeConnectionManagerError) ->

@@ -180,6 +180,7 @@ import Network.Mux.Types (HasInitiator, HasResponder, MiniProtocolDir,
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.ConnectionManager.ConnMap (ConnMap)
 import Ouroboros.Network.MuxMode
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 
 
 -- | Connection manager supports `IPv4` and `IPv6` addresses.
@@ -490,7 +491,7 @@ data Connected peerAddr handle handleError =
 
 
 type RequestOutboundConnection peerAddr handle handleError m
-    =            peerAddr -> m (Connected peerAddr handle handleError)
+    = DiffusionMode -> peerAddr -> m (Connected peerAddr handle handleError)
 type IncludeInboundConnection socket peerAddr handle handleError m
     = Word32
     -- ^ inbound connections hard limit.
