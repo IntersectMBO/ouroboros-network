@@ -1,5 +1,6 @@
 */Setup.hs
 ouroboros-network/src/Ouroboros/Network/PeerSelection/Governor/Types.hs
+ouroboros-network/sim-tests-lib/Test/Ouroboros/Network/Testnet.hs
 network-mux/src/Network/Mux/TCPInfo.hs
 network-mux/src/Network/Mux/Bearer.hs
 network-mux/src/Network/Mux/Bearer/Pipe.hs
