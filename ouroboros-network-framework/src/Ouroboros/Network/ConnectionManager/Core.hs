@@ -67,6 +67,7 @@ import Ouroboros.Network.ConnectionManager.State qualified as State
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.InboundGovernor.Event (NewConnectionInfo (..))
 import Ouroboros.Network.MuxMode
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket
 
@@ -1311,9 +1312,10 @@ with args@Arguments {
         -> StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
         -> StrictTVar m StdGen
         -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError (version, versionData) m
+        -> DiffusionMode
         -> peerAddr
         -> m (Connected peerAddr handle handleError)
-    acquireOutboundConnectionImpl freshIdSupply stateVar stdGenVar handler peerAddr = do
+    acquireOutboundConnectionImpl freshIdSupply stateVar stdGenVar handler diffusionMode peerAddr = do
         let provenance = Outbound
         traceWith tracer (TrIncludeConnection provenance peerAddr)
         (trace, mutableConnState@MutableConnState { connVar }
@@ -1510,14 +1512,20 @@ with args@Arguments {
                                    Just IPv4Address -> ipv4Address
                                    Just IPv6Address -> ipv6Address
                       configureSocket socket addr
+                      -- only bind to the ip address if:
+                      -- * the diffusion is given `ipv4/6` addresses;
+                      -- * `diffusionMode` for this connection is
+                      --   `InitiatorAndResponderMode`.
                       case addressType peerAddr of
-                        Nothing -> pure ()
-                        Just IPv4Address ->
+                        Just IPv4Address | InitiatorAndResponderDiffusionMode
+                                           <- diffusionMode ->
                              traverse_ (bind snocket socket)
                                        ipv4Address
-                        Just IPv6Address ->
+                        Just IPv6Address | InitiatorAndResponderDiffusionMode
+                                           <- diffusionMode ->
                              traverse_ (bind snocket socket)
                                        ipv6Address
+                        _ -> pure ()
 
                       traceWith tracer (TrConnect addr peerAddr)
                       connect snocket socket peerAddr

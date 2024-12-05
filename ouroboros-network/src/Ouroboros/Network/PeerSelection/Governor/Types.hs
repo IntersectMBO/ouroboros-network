@@ -144,6 +144,7 @@ import System.Random (StdGen)
 import Control.Concurrent.Class.MonadSTM.Strict
 import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.ExitPolicy
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode)
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
@@ -446,6 +447,7 @@ data PeerStateActions peeraddr peerconn m = PeerStateActions {
     -- mini-protocol callbacks.
     --
     establishPeerConnection  :: IsBigLedgerPeer
+                             -> DiffusionMode
                              -> peeraddr -> m peerconn,
 
     -- | Activate a connection: warm to hot promotion.

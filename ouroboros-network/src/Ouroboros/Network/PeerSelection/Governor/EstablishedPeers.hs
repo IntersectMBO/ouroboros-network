@@ -21,6 +21,7 @@ import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
 import System.Random (randomR)
 
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.Bootstrap (requiresBootstrapPeers)
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (IsBigLedgerPeer (..))
@@ -129,8 +130,11 @@ belowTargetLocal actions
                           inProgressPromoteCold = inProgressPromoteCold
                                                <> selectedToPromote
                         },
-        decisionJobs  = [ jobPromoteColdPeer actions policy peer IsNotBigLedgerPeer
-                        | peer <- Set.toList selectedToPromote ]
+        decisionJobs  = [ jobPromoteColdPeer actions policy peer IsNotBigLedgerPeer diffusionMode
+                        | peer <- Set.toList selectedToPromote
+                        , let diffusionMode = LocalRootPeers.diffusionMode
+                                            $ LocalRootPeers.toMap localRootPeers Map.! peer
+                        ]
       }
 
     -- If we could promote except that there are no peers currently available
@@ -217,7 +221,7 @@ belowTargetOther actions
                           inProgressPromoteCold = inProgressPromoteCold
                                                <> selectedToPromote
                         },
-        decisionJobs  = [ jobPromoteColdPeer actions policy peer IsNotBigLedgerPeer
+        decisionJobs  = [ jobPromoteColdPeer actions policy peer IsNotBigLedgerPeer InitiatorAndResponderDiffusionMode
                         | peer <- Set.toList selectedToPromote ]
       }
 
@@ -305,7 +309,7 @@ belowTargetBigLedgerPeers actions
                           inProgressPromoteCold = inProgressPromoteCold
                                                <> selectedToPromote
                         },
-        decisionJobs  = [ jobPromoteColdPeer actions policy peer IsBigLedgerPeer
+        decisionJobs  = [ jobPromoteColdPeer actions policy peer IsBigLedgerPeer InitiatorAndResponderDiffusionMode
                         | peer <- Set.toList selectedToPromote ]
       }
 
@@ -343,13 +347,14 @@ jobPromoteColdPeer :: forall peeraddr peerconn m.
                    -> PeerSelectionPolicy peeraddr m
                    -> peeraddr
                    -> IsBigLedgerPeer
+                   -> DiffusionMode
                    -> Job () m (Completion m peeraddr peerconn)
 jobPromoteColdPeer PeerSelectionActions {
                      peerStateActions = PeerStateActions {establishPeerConnection},
                      peerConnToPeerSharing
                    }
                    PeerSelectionPolicy { policyPeerShareActivationDelay }
-                   peeraddr isBigLedgerPeer =
+                   peeraddr isBigLedgerPeer diffusionMode =
     Job job handler () "promoteColdPeer"
   where
     handler :: SomeException -> m (Completion m peeraddr peerconn)
@@ -408,7 +413,7 @@ jobPromoteColdPeer PeerSelectionActions {
     job = do
       --TODO: decide if we should do timeouts here or if we should make that
       -- the responsibility of establishPeerConnection
-      peerconn <- establishPeerConnection isBigLedgerPeer peeraddr
+      peerconn <- establishPeerConnection isBigLedgerPeer diffusionMode peeraddr
       let !peerSharing = peerConnToPeerSharing peerconn
 
       return $ Completion $ \st@PeerSelectionState {

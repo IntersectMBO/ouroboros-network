@@ -81,6 +81,7 @@ import Ouroboros.Network.Driver.Limits
 import Ouroboros.Network.InboundGovernor qualified as InboundGovernor
 import Ouroboros.Network.Mux
 import Ouroboros.Network.MuxMode
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.Protocol.Handshake
 import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
            noTimeLimitsHandshake, timeLimitsHandshake)
@@ -735,7 +736,7 @@ unidirectionalExperiment stdGen timeouts snocket makeBearer confSock socket clie
                 replicateM
                   (numberOfRounds clientAndServerData)
                   (bracket
-                     (acquireOutboundConnection connectionManager serverAddr)
+                     (acquireOutboundConnection connectionManager InitiatorOnlyDiffusionMode serverAddr)
                      (\case
                         Connected connId _ _ -> releaseOutboundConnection connectionManager connId
                         Disconnected {} -> error "unidirectionalExperiment: impossible happened")
@@ -836,6 +837,7 @@ bidirectionalExperiment
                     (withLock useLock lock
                       (acquireOutboundConnection
                         connectionManager0
+                        InitiatorAndResponderDiffusionMode
                         localAddr1))
                     (\case
                       Connected connId _ _ ->
@@ -861,6 +863,7 @@ bidirectionalExperiment
                     (withLock useLock lock
                       (acquireOutboundConnection
                         connectionManager1
+                        InitiatorAndResponderDiffusionMode
                         localAddr0))
                     (\case
                       Connected connId _ _ ->
