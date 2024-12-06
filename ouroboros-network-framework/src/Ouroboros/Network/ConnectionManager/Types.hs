@@ -344,9 +344,9 @@ newtype MaskedAction m a = MaskedAction {
 -- Note: 'PromiseWriter' could be replaced with an stm action which is
 -- accessing the 'TVar' which holds state of the connection.
 --
-type ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version m
+type ConnectionHandlerFn handlerTrace socket peerAddr handle handleError versionNumber versionData m
      = socket
-    -> PromiseWriter m (Either handleError (HandshakeConnectionResult handle version))
+    -> PromiseWriter m (Either handleError (HandshakeConnectionResult handle (versionNumber, versionData)))
     -> Tracer m handlerTrace
     -> ConnectionId peerAddr
     -> (DiffTime -> socket -> m (MuxBearer m))
@@ -365,13 +365,13 @@ data HandshakeConnectionResult handle version
 -- There's one 'ConnectionHandlerFn' per provenance, possibly limited by
 -- @muxMode@.
 --
-newtype ConnectionHandler muxMode handlerTrace socket peerAddr handle handleError version m =
+newtype ConnectionHandler muxMode handlerTrace socket peerAddr handle handleError versionNumber versionData m =
     ConnectionHandler {
         -- | Connection handler.
         --
         connectionHandler ::
           WithMuxTuple muxMode
-            (ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version m)
+            (ConnectionHandlerFn handlerTrace socket peerAddr handle handleError versionNumber versionData m)
       }
 
 
