@@ -3,7 +3,6 @@
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE GADTs                #-}
 {-# LANGUAGE KindSignatures       #-}
-{-# LANGUAGE LambdaCase           #-}
 {-# LANGUAGE NamedFieldPuns       #-}
 {-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
@@ -365,7 +364,7 @@ with
        , Typeable peerAddr
        )
     => Arguments handlerTrace socket peerAddr handle handleError version versionData m
-    -> ConnectionHandler  muxMode handlerTrace socket peerAddr handle handleError (version, versionData) m
+    -> ConnectionHandler  muxMode handlerTrace socket peerAddr handle handleError version versionData m
     -- ^ Callback which runs in a thread dedicated for a given connection.
     -> (handleError -> HandleErrorType)
     -- ^ classify 'handleError's
@@ -602,7 +601,7 @@ with args@Arguments {
       -> socket
       -> ConnectionId peerAddr
       -> PromiseWriter m (Either handleError (HandshakeConnectionResult handle (version, versionData)))
-      -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError (version, versionData) m
+      -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version versionData m
       -> m (Async m ())
     forkConnectionHandler stateVar
                           mutableConnState@MutableConnState { connVar }
@@ -842,7 +841,7 @@ with args@Arguments {
         :: HasCallStack
         => FreshIdSupply m
         -> StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
-        -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError (version, versionData) m
+        -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version versionData m
         -> Word32
         -- ^ inbound connections hard limit
         -- TODO: This is needed because the accept loop can not guarantee that
@@ -1310,7 +1309,7 @@ with args@Arguments {
         => FreshIdSupply m
         -> StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
         -> StrictTVar m StdGen
-        -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError (version, versionData) m
+        -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version versionData m
         -> peerAddr
         -> m (Connected peerAddr handle handleError)
     acquireOutboundConnectionImpl freshIdSupply stateVar stdGenVar handler peerAddr = do

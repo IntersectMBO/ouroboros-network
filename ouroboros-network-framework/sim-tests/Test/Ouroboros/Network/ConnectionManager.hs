@@ -597,7 +597,7 @@ mkConnectionHandler :: forall m handlerTrace.
                     -> ConnectionHandler Mx.InitiatorResponderMode
                                          handlerTrace (FD m)
                                          Addr (Handle m)
-                                         Void (Version, VersionData)
+                                         Void Version VersionData
                                          m
 mkConnectionHandler snocket =
     ConnectionHandler $
@@ -605,7 +605,7 @@ mkConnectionHandler snocket =
         handler
         handler
   where
-    handler :: ConnectionHandlerFn handlerTrace (FD m) Addr (Handle m) Void (Version, VersionData) m
+    handler :: ConnectionHandlerFn handlerTrace (FD m) Addr (Handle m) Void Version VersionData m
     handler fd promise _ ConnectionId { remoteAddress } _ =
       MaskedAction $ \unmask ->
         do threadId <- myThreadId

@@ -390,7 +390,8 @@ type NodeToClientConnectionHandler
       ntcAddr
       (NodeToClientHandle ntcAddr ntcVersionData m)
       (NodeToClientHandleError ntcVersion)
-      (ntcVersion, ntcVersionData)
+      ntcVersion
+      ntcVersionData
       m
 
 type NodeToClientConnectionManagerArguments

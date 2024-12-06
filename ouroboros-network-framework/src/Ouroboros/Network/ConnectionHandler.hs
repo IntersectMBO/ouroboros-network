@@ -179,7 +179,8 @@ type MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr vers
                       peerAddr
                       (Handle muxMode initiatorCtx responderCtx versionData bytes m a b)
                       (HandleError muxMode versionNumber)
-                      (versionNumber, versionData)
+                      versionNumber
+                      versionData
                       m
 
 -- | Type alias for 'ConnectionManager' using 'Handle'.
@@ -276,7 +277,8 @@ makeConnectionHandler muxTracer singMuxMode
                              peerAddr
                              (Handle muxMode initiatorCtx responderCtx versionData ByteString m a b)
                              (HandleError muxMode versionNumber)
-                             (versionNumber, versionData)
+                             versionNumber
+                             versionData
                              m
     outboundConnectionHandler socket
                               PromiseWriter { writePromise }
@@ -343,7 +345,8 @@ makeConnectionHandler muxTracer singMuxMode
                              peerAddr
                              (Handle muxMode initiatorCtx responderCtx versionData ByteString m a b)
                              (HandleError muxMode versionNumber)
-                             (versionNumber, versionData)
+                             versionNumber
+                             versionData
                              m
     inboundConnectionHandler socket
                              PromiseWriter { writePromise }
