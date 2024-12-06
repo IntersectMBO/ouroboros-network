@@ -56,6 +56,7 @@ library
   exposed-modules:
     Control.Concurrent.Class.MonadSTM.Strict.TMergeVar
     Ouroboros.Cardano.Diffusion.Configuration
+    Ouroboros.Cardano.Diffusion.Handlers
     Ouroboros.Cardano.Diffusion.Policies
     Ouroboros.Cardano.Network.ArgumentsExtra
     Ouroboros.Cardano.Network.LedgerPeerConsensusInterface
@@ -187,7 +188,8 @@ library
 
   if !os(windows)
     build-depends:
-      directory
+      directory,
+      unix,
 
   if flag(asserts)
     ghc-options: -fno-ignore-asserts
