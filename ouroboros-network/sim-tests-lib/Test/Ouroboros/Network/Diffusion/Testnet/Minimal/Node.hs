@@ -259,7 +259,7 @@ run blockGeneratorArgs limits ni na
         let -- diffusion interfaces
             interfaces :: Common.Interfaces (NtNFD m) NtNAddr NtNVersion NtNVersionData
                                             (NtCFD m) NtCAddr NtCVersion NtCVersionData
-                                            resolver ResolverException extraState extraFlags extraPeers m
+                                            resolver ResolverException extraState extraFlags extraPeers extraAPI m
             interfaces = Common.Interfaces
               { Common.diNtnSnocket            = iNtnSnocket ni
               , Common.diNtnBearer             = iNtnBearer ni

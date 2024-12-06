@@ -18,7 +18,6 @@ module Ouroboros.Network.Diffusion
 import Control.Concurrent.Class.MonadSTM.Strict (StrictTVar)
 import Control.Exception (Exception, IOException)
 import Data.Functor (void)
-import Network.Mux qualified as Mx
 import Network.Socket (Socket)
 import Ouroboros.Network.Diffusion.Common (Arguments,
            NodeToNodeConnectionManager, NodeToNodePeerConnectionHandle, Tracers)
@@ -75,20 +74,20 @@ data ArgumentsExtra
 
 -- | Application data which depend on p2p mode.
 --
-data Applications (p2p :: P2P) extraAPI m a where
+data Applications (p2p :: P2P) ntnAddr ntcAddr versionDataNTN versionDataNTC extraAPI m a where
   P2PApplications
     :: Common.Applications
-         RemoteAddress  NodeToNodeVersion   NodeToNodeVersionData
-         LocalAddress   NodeToClientVersion NodeToClientVersionData
+         ntnAddr  NodeToNodeVersion   versionDataNTN
+         ntcAddr  NodeToClientVersion versionDataNTC
          extraAPI m a
-    -> Applications 'P2P extraAPI m a
+    -> Applications 'P2P ntnAddr ntcAddr versionDataNTN versionDataNTC extraAPI m a
 
   NonP2PApplications
     :: Common.Applications
-         RemoteAddress  NodeToNodeVersion   NodeToNodeVersionData
-         LocalAddress   NodeToClientVersion NodeToClientVersionData
+         ntnAddr NodeToNodeVersion   versionDataNTN
+         ntcAddr NodeToClientVersion versionDataNTC
          () m a
-    -> Applications 'NonP2P () m a
+    -> Applications 'NonP2P ntnAddr ntcAddr versionDataNTN versionDataNTC extraAPI m a
 
 -- | Application data which depend on p2p mode.
 --
@@ -111,18 +110,16 @@ run :: forall (p2p :: P2P) extraArgs extraState extraActions extraFlags
       , Eq extraFlags
       , Exception exception
       )
-    => (forall (mode :: Mx.Mode) x y.
-        NodeToNodeConnectionManager
-          mode Socket RemoteAddress NodeToNodeVersionData NodeToNodeVersion IO x y
-        -> StrictTVar
-             IO
-             (PeerSelectionState
-                extraState
-                extraFlags
-                extraPeers
-                RemoteAddress
-                (NodeToNodePeerConnectionHandle
-                   mode RemoteAddress NodeToNodeVersionData IO x y))
+    => (forall mode x y.
+          NodeToNodeConnectionManager mode Socket
+                                      RemoteAddress NodeToNodeVersionData
+                                      NodeToNodeVersion IO x y
+        -> StrictTVar IO
+             (PeerSelectionState extraState extraFlags extraPeers
+                                 RemoteAddress
+                                 (NodeToNodePeerConnectionHandle
+                                     mode RemoteAddress
+                                     NodeToNodeVersionData IO x y))
         -> PeerMetrics IO RemoteAddress
         -> IO ())
     -> Tracers
@@ -137,8 +134,7 @@ run :: forall (p2p :: P2P) extraArgs extraState extraActions extraFlags
     -> ArgumentsExtra p2p extraArgs extraState extraActions extraAPI
        extraPeers extraFlags extraChurnArgs extraCounters exception
        RemoteAddress IO
-    -> Applications p2p extraAPI IO a
-
+    -> Applications p2p RemoteAddress LocalAddress NodeToNodeVersionData NodeToClientVersionData extraAPI IO a
     -> ApplicationsExtra p2p RemoteAddress IO a
     -> IO ()
 run sigUSR1Signal

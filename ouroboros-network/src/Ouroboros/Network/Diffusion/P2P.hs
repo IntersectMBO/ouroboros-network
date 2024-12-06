@@ -138,7 +138,7 @@ runM
        Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
                   ntcFd ntcAddr ntcVersion ntcVersionData
                   resolver resolverError
-                  extraState extraFlags extraPeers m
+                  extraState extraFlags extraPeers extraAPI m
     -> -- | tracers
        Tracers ntnAddr ntnVersion
                ntcAddr ntcVersion
@@ -806,20 +806,18 @@ run :: ( Monoid extraPeers
        , Eq extraCounters
        , Exception exception
        )
-    => (forall (mode :: Mx.Mode) x y.
-        NodeToNodeConnectionManager
-          mode Socket RemoteAddress NodeToNodeVersionData NodeToNodeVersion IO x y
-        -> StrictTVar
-             IO
-             (PeerSelectionState
-                extraState
-                extraFlags
-                extraPeers
-                RemoteAddress
-                (NodeToNodePeerConnectionHandle
-                   mode RemoteAddress NodeToNodeVersionData IO x y))
-        -> PeerMetrics IO RemoteAddress
-        -> IO ())
+    => ( forall (mode :: Mx.Mode) x y.
+         NodeToNodeConnectionManager mode Socket
+            RemoteAddress NodeToNodeVersionData
+            NodeToNodeVersion IO x y
+       -> StrictTVar IO
+            (PeerSelectionState extraState extraFlags extraPeers
+                               RemoteAddress
+                               (NodeToNodePeerConnectionHandle
+                                   mode RemoteAddress
+                                   NodeToNodeVersionData IO x y))
+       -> PeerMetrics IO RemoteAddress
+       -> IO ())
     -> Tracers
         RemoteAddress
         NodeToNodeVersion
