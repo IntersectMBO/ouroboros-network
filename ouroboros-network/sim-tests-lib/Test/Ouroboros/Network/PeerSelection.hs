@@ -3788,7 +3788,8 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
       dnsSemaphore
       DNS.defaultResolvConf
       readDomains
-      (ioDNSActions LookupReqAAndAAAA) $ \requestPublicRootPeers -> do
+      (ioDNSActions LookupReqAAndAAAA)
+      (mkStdGen 42) $ \requestPublicRootPeers -> do
         peerSelectionGovernor
           tracer tracer tracer
           -- TODO: #3182 Rng seed should come from quickcheck.

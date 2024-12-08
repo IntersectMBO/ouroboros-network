@@ -43,7 +43,8 @@ data TraceLocalRootPeers peerAddr exception =
        TraceLocalRootDomains (LocalRootPeers.Config RelayAccessPoint)
        -- ^ 'Int' is the configured valency for the local producer groups
      | TraceLocalRootWaiting DomainAccessPoint DiffTime
-     | TraceLocalRootResult  DomainAccessPoint [(IP, DNS.TTL)]
+     | TraceLocalRootResult  DomainPlainAccessPoint [(IP, DNS.TTL)]
+     | TraceLocalRootResultVia DomainSRVAccessPoint DomainPlainAccessPoint [(IP, DNS.TTL)]
      | TraceLocalRootGroups  (LocalRootPeers.Config peerAddr)
        -- ^ This traces the results of the local root peer provider
      | TraceLocalRootDNSMap  (Map DomainAccessPoint [peerAddr])
@@ -51,6 +52,9 @@ data TraceLocalRootPeers peerAddr exception =
      | TraceLocalRootReconfigured (LocalRootPeers.Config RelayAccessPoint) -- ^ Old value
                                   (LocalRootPeers.Config RelayAccessPoint) -- ^ New value
      | TraceLocalRootFailure DomainAccessPoint (Maybe (DNSorIOError exception))
+     -- ^ A failure in practice should always return a @Just 'DNSorIOError'@
+     -- for a /well behaved/ dns implementation. But it is convenient for some
+     -- tests to return Nothing here to observe a lookup attempt.
        --TODO: classify DNS errors, config error vs transitory
      | TraceLocalRootError   DomainAccessPoint SomeException
   deriving Show
@@ -171,30 +175,35 @@ localRootPeersProvider tracer
       -> StdGen
       -> m (Either [DNS.DNSError] [(peerAddr, DNS.TTL)])
     resolveDomain dnsSemaphore resolver
-                  domain rng = do
+                  domain0 rng = do
       reply <- withDNSSemaphore dnsSemaphore
                                 (dnsLookupWithTTL
-                                  domain
+                                  domain0
                                   resolvConf
                                   resolver
                                   rng)
 
       case reply of
-        DNSLookup (DomainPlain _d port, errs, ipsttls) ->
-          completion port ipsttls errs
-        DNSLookupSRV (_d, errs, mAnswer) ->
+        DNSLookup (dPlain, errs, ipsttls) ->
+          completion dPlain ipsttls errs $ TraceLocalRootResult dPlain ipsttls
+        DNSLookupSRV (dSRV, errs, mAnswer) ->
           case mAnswer of
             Nothing -> do
-              traceWith tracer $ TraceLocalRootFailure domain Nothing
+              if null errs
+                then traceWith tracer $ TraceLocalRootFailure domain0 Nothing
+                else
+                  mapM_ (traceWith tracer . TraceLocalRootFailure domain0 . Just . DNSError)
+                        errs
               return $ Left []
-            Just (ddd, port, ipsttls) ->
-              completion port ipsttls errs
+            Just (dFollow, ipsttls) ->
+               completion dFollow ipsttls errs $
+                  TraceLocalRootResultVia dSRV dFollow ipsttls
       where
-        completion port ipsttls errs = do
-          mapM_ (traceWith tracer . TraceLocalRootFailure domain . Just . DNSError)
+        completion dom@(DomainPlain _d port) ipsttls errs successTrace = do
+          mapM_ (traceWith tracer . TraceLocalRootFailure (DomainAccessPoint dom) . Just . DNSError)
                 errs
           if not . null $ ipsttls then do
-             traceWith tracer $ TraceLocalRootResult domain ipsttls
+             traceWith tracer successTrace
              return $ Right [ ( toPeerAddr addr port
                               , _ttl)
                             | (addr, _ttl) <- ipsttls ]
