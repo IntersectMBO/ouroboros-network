@@ -1,3 +1,5 @@
+{-# LANGUAGE BlockArguments      #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
@@ -60,6 +62,7 @@ import Data.List.NonEmpty (NonEmpty (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
+import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
 import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
@@ -68,7 +71,7 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
            WarmValency (..))
 import Ouroboros.Network.Testing.Data.Script (Script (Script), initScript',
            scriptHead, singletonScript, stepScript')
-import Test.Ouroboros.Network.PeerSelection.Instances ()
+import Test.Ouroboros.Network.PeerSelection.Instances (genPort)
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
@@ -105,9 +108,10 @@ data MockRoots = MockRoots {
     mockLocalRootPeers        :: [( HotValency
                                   , WarmValency
                                   , Map RelayAccessPoint (PeerAdvertise, PeerTrustable))]
-  , mockLocalRootPeersDNSMap  :: Script (Map Domain [(IP, TTL)])
+  , mockLocalRootPeersDNSMap  :: Script (Map DomainAccessPoint [(IP, TTL)])
   , mockPublicRootPeers       :: Map RelayAccessPoint PeerAdvertise
-  , mockPublicRootPeersDNSMap :: Script (Map Domain [(IP, TTL)])
+  , mockPublicRootPeersDNSMap :: Script (Map DomainAccessPoint [(IP, TTL)])
+  , mockSRVPorts              :: Script PortNumber
   }
   deriving Show
 
@@ -131,13 +135,15 @@ genMockRoots = sized $ \relaysNumber -> do
         localRelaysMap    = map Map.fromList $ zipWith zip localRelaysBlocks
                                                            peerAdvertise
         localRootPeers    = zipWith (\(h, w) g -> (h, w, g)) targets localRelaysMap
-        localRootDomains  = [ domain
-                            | RelayAccessDomain domain _ <- taggedLocalRelays ]
+        localRootDomains  = [ d
+                            | d@RelayAccessDomain {} <- taggedLocalRelays ]
 
         ipsPerDomain = 2
 
     lrpDNSMap <- Script . NonEmpty.fromList
               <$> listOf1 (genDomainLookupTable ipsPerDomain localRootDomains)
+
+    srvPortScript <- Script . NonEmpty.fromList <$> listOf1 genPort
 
     -- Generate PublicRootPeers
     --
@@ -148,8 +154,8 @@ genMockRoots = sized $ \relaysNumber -> do
           Map.fromList (zip (tagRelays publicRootRelays)
                             publicRootPeersAdvertise)
 
-        publicRootDomains = [ domain
-                            | (RelayAccessDomain domain _, _)
+        publicRootDomains = [ d
+                            | (d@(RelayAccessDomain domain _), _)
                                 <- Map.assocs publicRootPeers ]
 
     publicRootPeersDNSMap <- Script . NonEmpty.fromList
@@ -159,9 +165,17 @@ genMockRoots = sized $ \relaysNumber -> do
       mockLocalRootPeers        = localRootPeers,
       mockLocalRootPeersDNSMap  = lrpDNSMap,
       mockPublicRootPeers       = publicRootPeers,
-      mockPublicRootPeersDNSMap = publicRootPeersDNSMap
+      mockPublicRootPeersDNSMap = publicRootPeersDNSMap,
+      mockSRVPorts              = srvPortScript
     })
   where
+    projDomain :: RelayAccessPoint -> Maybe Domain
+    projDomain = \case
+      RelayDomainAccessPoint domain
+        | DomainAccessPoint (DomainPlain domain' _) <- domain -> Just domain'
+        | DomainSRVAccessPoint (DomainSRV domain')  <- domain -> Just domain'
+      _otherwise -> Nothing
+
     genTargets :: Gen (HotValency, WarmValency)
     genTargets = do
       warmValency <- WarmValency <$> chooseEnum (1, 5)
@@ -232,7 +246,7 @@ instance Arbitrary MockRoots where
 -- | Used for debugging in GHCI
 --
 simpleMockRoots :: MockRoots
-simpleMockRoots = MockRoots localRootPeers dnsMap Map.empty (singletonScript Map.empty)
+simpleMockRoots = MockRoots localRootPeers dnsMap Map.empty (singletonScript Map.empty) (singletonScript (1 :: PortNumber))
   where
     localRootPeers =
       [ ( 2, 2
@@ -292,7 +306,7 @@ mockDNSActions :: forall exception m.
                   ( MonadDelay m
                   , MonadTimer m
                   )
-               => StrictTVar m (Map Domain [(IP, TTL)])
+               => StrictTVar m (Map DomainAccessPoint [(IP, TTL)])
                -> StrictTVar m (Script DNSTimeout)
                -> StrictTVar m (Script DNSLookupDelay)
                -> DNSActions () exception m
@@ -306,11 +320,12 @@ mockDNSActions dnsMapVar dnsTimeoutScript dnsLookupDelayScript =
    dnsResolverResource      _ = return (Right <$> constantResource ())
    dnsAsyncResolverResource _ = return (Right <$> constantResource ())
 
-   dnsLookupWithTTL :: resolvConf
+   dnsLookupWithTTL :: DomainAccessPoint
+                    -> resolvConf
                     -> resolver
-                    -> Domain
-                    -> m ([DNSError], [(IP, TTL)])
-   dnsLookupWithTTL _ _ domain = do
+                    -> stdgen
+                    -> m (DNSLookupResult IP)
+   dnsLookupWithTTL domain _ _ _ = do
      dnsMap <- readTVarIO dnsMapVar
      DNSTimeout dnsTimeout <- stepScript' dnsTimeoutScript
      DNSLookupDelay dnsLookupDelay <- stepScript' dnsLookupDelayScript
@@ -323,9 +338,13 @@ mockDNSActions dnsMapVar dnsTimeoutScript dnsLookupDelayScript =
             Just x  -> return (Right x)
 
      case dnsLookup of
-       Nothing        -> return ([TimeoutExpired], [])
-       Just (Left e)  -> return ([e], [])
-       Just (Right a) -> return ([], a)
+       Nothing
+         | DomainAccessPoint {} <- domain -> return undefined --([TimeoutExpired], [])
+         | otherwise -> return undefined
+       Just (Left e)
+         | DomainAccessPoint {} <- domain -> return undefined --return ([e], [])
+         | otherwise -> return undefined
+       Just (Right a) -> return undefined --a
 
 -- | 'localRootPeersProvider' running with a given MockRoots env
 --

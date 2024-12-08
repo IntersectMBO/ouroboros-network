@@ -12,6 +12,7 @@ module Test.Ouroboros.Network.PeerSelection.Instances
     -- generators
   , genIPv4
   , genIPv6
+  , genPort
     -- generator tests
   , prop_arbitrary_PeerSelectionTargets
   , prop_shrink_PeerSelectionTargets
@@ -149,7 +150,11 @@ instance Arbitrary DomainAccessPoint where
       <$> elements domains
       <*> (fromIntegral <$> (arbitrary :: Gen Int))
     where
-      domains = [ "test1"
+      plain = DomainAccessPoint <$> (DomainPlain
+              <$> elements domains
+              <*> genPort)
+      srv = DomainSRVAccessPoint <$> (DomainSRV <$> elements domains)
+      domains = encodeUtf8 <$> [ "test1"
                 , "test2"
                 , "test3"
                 , "test4"
@@ -159,6 +164,10 @@ instance Arbitrary DomainAccessPoint where
 genIPv4 :: Gen IP.IP
 genIPv4 =
     IP.IPv4 . IP.toIPv4w <$> arbitrary `suchThat` (> 100)
+
+genPort :: Gen PortNumber
+genPort =
+    fromIntegral <$> (arbitrary :: Gen Int)
 
 genIPv6 :: Gen IP.IP
 genIPv6 =
@@ -187,4 +196,3 @@ prop_shrink_PeerSelectionTargets :: ShrinkCarefully PeerSelectionTargets -> Prop
 prop_shrink_PeerSelectionTargets x =
       prop_shrink_valid sanePeerSelectionTargets x
  .&&. prop_shrink_nonequal x
-
