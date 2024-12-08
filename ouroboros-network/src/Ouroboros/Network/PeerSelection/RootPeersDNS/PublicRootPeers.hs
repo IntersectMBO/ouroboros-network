@@ -11,7 +11,6 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
   , TracePublicRootPeers (..)
   ) where
 
-import Data.Functor ((<&>))
 import Data.List (partition)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -80,9 +79,9 @@ publicRootPeersProvider tracer
     resourceVar <- newTVarIO rr
     action (requestPublicRootPeers resourceVar)
   where
-    -- processResult :: (DNSLookupResult IP, PeerAdvertise)
-    --               -> m ((Maybe PortNumber, PeerAdvertise), [(IP, TTL)])
-    processResult (DNSLookup (dp@(DomainPlain domain port), errs, ipsttls)
+    processResult :: (DNSLookupResult IP, PeerAdvertise)
+                  -> m ((Maybe PortNumber, PeerAdvertise), [(IP, TTL)])
+    processResult (DNSLookup (dPlain@(DomainPlain domain port), errs, ipsttls)
                   , pa) = do
         mapM_ (traceWith tracer . TracePublicRootFailure dap . Just)
               errs
@@ -91,20 +90,21 @@ publicRootPeersProvider tracer
 
         return ((Just port, pa), ipsttls)
         where
-          dap = DomainAccessPoint dp
+          dap = DomainAccessPoint dPlain
 
-    processResult ( (DNSLookupSRV (srvDomain, errs, mResult))
+    processResult ( DNSLookupSRV (srvDomain, errs, mResult)
                   , pa) = do
         mapM_ (traceWith tracer . TracePublicRootFailure (DomainSRVAccessPoint srvDomain)  . Just)
               errs
 
         case mResult of
           Nothing -> do
-            traceWith tracer $ TracePublicRootFailure (DomainSRVAccessPoint srvDomain) Nothing
+            when (null errs) $
+              traceWith tracer $ TracePublicRootFailure (DomainSRVAccessPoint srvDomain) Nothing
             return ((Nothing, pa), [])
-          Just (domain, port, ipsttls) -> do
+          Just (DomainPlain dFollow port, ipsttls) -> do
             when (not . null $ ipsttls) $
-              traceWith tracer $ TracePublicRootResultVia srvDomain domain ipsttls
+              traceWith tracer $ TracePublicRootResultVia srvDomain dFollow ipsttls
             return ((Just port, pa), ipsttls)
 
     requestPublicRootPeers

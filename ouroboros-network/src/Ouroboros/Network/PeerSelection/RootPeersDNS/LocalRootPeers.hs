@@ -12,6 +12,7 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
   ) where
 
 import Data.Bifunctor (second)
+import Data.Either (isRight)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -43,7 +44,8 @@ data TraceLocalRootPeers peerAddr exception =
        TraceLocalRootDomains (LocalRootPeers.Config RelayAccessPoint)
        -- ^ 'Int' is the configured valency for the local producer groups
      | TraceLocalRootWaiting DomainAccessPoint DiffTime
-     | TraceLocalRootResult  DomainAccessPoint [(IP, DNS.TTL)]
+     | TraceLocalRootResult  DomainPlainAccessPoint [(IP, DNS.TTL)]
+     | TraceLocalRootResultVia DomainSRVAccessPoint DomainPlainAccessPoint [(IP, DNS.TTL)]
      | TraceLocalRootGroups  (LocalRootPeers.Config peerAddr)
        -- ^ This traces the results of the local root peer provider
      | TraceLocalRootDNSMap  (Map DomainAccessPoint [peerAddr])
@@ -51,6 +53,10 @@ data TraceLocalRootPeers peerAddr exception =
      | TraceLocalRootReconfigured (LocalRootPeers.Config RelayAccessPoint) -- ^ Old value
                                   (LocalRootPeers.Config RelayAccessPoint) -- ^ New value
      | TraceLocalRootFailure DomainAccessPoint (Maybe (DNSorIOError exception))
+     | TraceLocalRootFailureVia DomainSRVAccessPoint DomainPlainAccessPoint (Maybe (DNSorIOError exception))
+       -- ^ A failure in practice should always return a @Just 'DNSorIOError'@
+       -- for a /well behaved/ dns implementation. But it is convenient for some
+       -- tests to return Nothing here to observe a lookup attempt.
        --TODO: classify DNS errors, config error vs transitory
      | TraceLocalRootError   DomainAccessPoint SomeException
   deriving Show
@@ -171,35 +177,49 @@ localRootPeersProvider tracer
       -> StdGen
       -> m (Either [DNS.DNSError] [(peerAddr, DNS.TTL)])
     resolveDomain dnsSemaphore resolver
-                  domain rng = do
+                  domain0 rng = do
       reply <- withDNSSemaphore dnsSemaphore
                                 (dnsLookupWithTTL
-                                  domain
+                                  domain0
                                   resolvConf
                                   resolver
                                   rng)
 
+      -- the test 'prop_diffusion_dns_can_recover' requires us to be careful on how domain lookup
+      -- can fail, slightly complicating this code vs. legacy non-SRV implementation. Concretely,
+      -- the both the failure and results indicate whether an SRV lookup was attempted (the Via constructor)
+      -- We don't have these tests for public/ledger peers and the associated logic like this below is simpler;
+      -- however, the same lookup code is leveraged there and so being more explicit here alone should be sufficient.
       case reply of
-        DNSLookup (DomainPlain _d port, errs, ipsttls) ->
-          completion port ipsttls errs
-        DNSLookupSRV (_d, errs, mAnswer) ->
+        DNSLookup (dPlain@(DomainPlain _d port), errs, ipsttls) -> do
+          mapM_ (traceWith tracer . TraceLocalRootFailure (DomainAccessPoint dPlain) . Just . DNSError)
+                errs
+          let result = completion port ipsttls errs
+          when (isRight result) $ traceWith tracer $ TraceLocalRootResult dPlain ipsttls
+          return result
+        DNSLookupSRV (dSRV, errs, mAnswer) ->
           case mAnswer of
             Nothing -> do
-              traceWith tracer $ TraceLocalRootFailure domain Nothing
+              if null errs
+                then traceWith tracer $ TraceLocalRootFailure (DomainSRVAccessPoint dSRV) Nothing
+                else
+                  mapM_ (traceWith tracer . TraceLocalRootFailure (DomainSRVAccessPoint dSRV) . Just . DNSError)
+                        errs
               return $ Left []
-            Just (ddd, port, ipsttls) ->
-              completion port ipsttls errs
+            Just (dFollow@(DomainPlain _d port), ipsttls) -> do
+              mapM_ (traceWith tracer . TraceLocalRootFailureVia dSRV dFollow . Just . DNSError)
+                    errs
+              let result = completion port ipsttls errs
+              when (isRight result) $ traceWith tracer $ TraceLocalRootResultVia dSRV dFollow ipsttls
+              return result
       where
-        completion port ipsttls errs = do
-          mapM_ (traceWith tracer . TraceLocalRootFailure domain . Just . DNSError)
-                errs
+        completion port ipsttls errs =
           if not . null $ ipsttls then do
-             traceWith tracer $ TraceLocalRootResult domain ipsttls
-             return $ Right [ ( toPeerAddr addr port
-                              , _ttl)
-                            | (addr, _ttl) <- ipsttls ]
+             Right [ ( toPeerAddr addr port
+                     , _ttl)
+                   | (addr, _ttl) <- ipsttls ]
           else do
-            return $ Left errs
+            Left errs
 
     -- | Function that runs on a monitoring thread. This function will, every
     -- TTL, issue a DNS resolution request and collect the results for its

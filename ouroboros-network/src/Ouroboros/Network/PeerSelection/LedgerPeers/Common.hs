@@ -46,7 +46,8 @@ data TraceLedgerPeers =
       -- ledger peers.
     | TraceLedgerPeersDomains [DomainAccessPoint]
     | TraceLedgerPeersResult  DNS.Domain [(IP, DNS.TTL)]
-    | TraceLedgerPeersFailure DNS.Domain DNS.DNSError
+    | TraceLedgerPeersResultVia DomainSRVAccessPoint DomainPlainAccessPoint [(IP, DNS.TTL)]
+    | TraceLedgerPeersFailure DNS.Domain (Maybe DNS.DNSError)
     | DisabledLedgerPeers
       -- ^ Trace for when getting peers from the ledger is disabled, that is DontUseLedgerPeers.
     | TraceUseLedgerPeers UseLedgerPeers
@@ -101,6 +102,8 @@ instance Show TraceLedgerPeers where
     show (TraceLedgerPeersDomains domains) = "Resolving " ++ show domains
     show (TraceLedgerPeersResult domain l) =
       "Resolution success " ++ show domain ++ " " ++ show l
+    show (TraceLedgerPeersResultVia (DomainSRV dSRV) (DomainPlain dPlain _p) l) =
+      "Resolution success " ++ show dSRV ++ " via " ++ show dPlain ++ " " ++ show l
     show (TraceLedgerPeersFailure domain err) =
       "Resolution failed " ++ show domain ++ " " ++ show err
     show UsingBigLedgerPeerSnapshot = "Using peer snapshot for big ledger peers"

@@ -10,17 +10,20 @@ module Test.Ouroboros.Network.PeerSelection.Instances
   ( -- test types
     PeerAddr (..)
     -- generators
+  , genDomainName
   , genIPv4
   , genIPv6
+  , genPort
     -- generator tests
   , prop_arbitrary_PeerSelectionTargets
   , prop_shrink_PeerSelectionTargets
   ) where
 
+import Data.ByteString (ByteString)
+import Data.ByteString.Char8 qualified as BSC
 import Data.Hashable
 import Data.IP qualified as IP
-import Data.Text.Encoding (encodeUtf8)
-import Data.Word (Word32, Word64)
+import Data.Word (Word16, Word32, Word64)
 
 import Cardano.Slotting.Slot (SlotNo (..))
 
@@ -33,8 +36,7 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type (AfterSlot (..),
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
-import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint (..),
-           RelayAccessPoint (..))
+import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers
            (LocalRootConfig (..))
 
@@ -147,21 +149,23 @@ instance Arbitrary ConsensusModePeerTargets where
          syncTargets'' <- syncTargets']
 
 instance Arbitrary DomainAccessPoint where
-  arbitrary =
-    DomainAccessPoint . encodeUtf8
-      <$> elements domains
-      <*> (fromIntegral <$> (arbitrary :: Gen Int))
+  arbitrary = oneof [plain, srv]
     where
-      domains = [ "test1"
-                , "test2"
-                , "test3"
-                , "test4"
-                , "test5"
-                ]
+      plain = DomainAccessPoint <$> (DomainPlain
+              <$> genDomainName
+              <*> genPort)
+      srv = DomainSRVAccessPoint <$> (DomainSRV <$> genDomainName)
+
+genDomainName :: Gen ByteString
+genDomainName = elements $ (\i -> "test" <> (BSC.pack . show $ i)) <$> [1..6 :: Int]
 
 genIPv4 :: Gen IP.IP
 genIPv4 =
     IP.IPv4 . IP.toIPv4w <$> resize 200 arbitrary `suchThat` (> 100)
+
+genPort :: Gen PortNumber
+genPort =
+    fromIntegral <$> (arbitrary :: Gen Word16)
 
 genIPv6 :: Gen IP.IP
 genIPv6 =
@@ -176,11 +180,9 @@ genIPv6 =
 
 instance Arbitrary RelayAccessPoint where
   arbitrary =
-      oneof [ RelayDomainAccessPoint <$> arbitrary
-            , RelayAccessAddress <$> oneof [genIPv4, genIPv6]
-                                 <*> (fromIntegral
-                                     <$> (arbitrary :: Gen Int))
-            ]
+      frequency [ (4, RelayAccessAddress <$> oneof [genIPv4, genIPv6] <*> genPort)
+                , (4, RelayAccessDomain <$> genDomainName <*> genPort)
+                , (1, RelayAccessSRVDomain <$> genDomainName)]
 
 prop_arbitrary_PeerSelectionTargets :: PeerSelectionTargets -> Bool
 prop_arbitrary_PeerSelectionTargets =
