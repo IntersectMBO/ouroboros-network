@@ -37,4 +37,3 @@ prop_roundtrip_PeerAdvertise_JSON pa =
     decode (encode pa) === Just pa
     .&&.
     fromJSON (toJSON pa) === pure pa
-
