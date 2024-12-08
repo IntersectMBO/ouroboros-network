@@ -55,7 +55,7 @@ import System.Random (StdGen, split)
 
 import Codec.CBOR.Term qualified as CBOR
 
-import Network.DNS (Domain, TTL)
+import Network.DNS (Domain, TYPE, TTL)
 
 import Ouroboros.Network.Mock.Chain (Chain, toAnchoredFragment, toOldestFirst)
 import Ouroboros.Network.Mock.ConcreteBlock (Block (..), BlockHeader (..),
@@ -106,7 +106,7 @@ import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSLookupType)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
            WarmValency)
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay,
-           DNSTimeout, mockDNSActions)
+           DNSTimeout, MockDNSLookupResult, mockDNSActions)
 import Test.Ouroboros.Network.Testnet.Node.ChainDB (addBlock, getBlockPointSet)
 import Test.Ouroboros.Network.Testnet.Node.Kernel (NodeKernel (..), NtCAddr,
            NtCVersion, NtCVersionData, NtNAddr, NtNVersion, NtNVersionData (..))
@@ -122,7 +122,7 @@ data Interfaces m = Interfaces
     , iNtcSnocket        :: Snocket m (NtCFD m) NtCAddr
     , iNtcBearer         :: MakeBearer m (NtCFD m)
     , iRng               :: StdGen
-    , iDomainMap         :: StrictTVar m (Map Domain [(IP, TTL)])
+    , iDomainMap         :: StrictTVar m (Map (Domain, TYPE) MockDNSLookupResult)
     , iLedgerPeersConsensusInterface
                          :: LedgerPeersConsensusInterface m
     , iUpdateOutboundConnectionsState

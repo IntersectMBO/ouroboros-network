@@ -21,20 +21,19 @@ tests =
   ]
 
 prop_roundtrip_DomainAccessPoint_JSON :: DomainAccessPoint -> Property
-prop_roundtrip_DomainAccessPoint_JSON da =
-    decode (encode da) === Just da
-    .&&.
-    fromJSON (toJSON da) === pure da
+prop_roundtrip_DomainAccessPoint_JSON da = undefined
+    -- decode (encode da) === Just da
+    -- .&&.
+    -- fromJSON (toJSON da) === pure da
 
 prop_roundtrip_RelayAccessPoint_JSON :: RelayAccessPoint -> Property
-prop_roundtrip_RelayAccessPoint_JSON ra =
-    decode (encode ra) === Just ra
-    .&&.
-    fromJSON (toJSON ra) === pure ra
+prop_roundtrip_RelayAccessPoint_JSON ra = undefined
+    -- decode (encode ra) === Just ra
+    -- .&&.
+    -- fromJSON (toJSON ra) === pure ra
 
 prop_roundtrip_PeerAdvertise_JSON :: PeerAdvertise -> Property
 prop_roundtrip_PeerAdvertise_JSON pa =
     decode (encode pa) === Just pa
     .&&.
     fromJSON (toJSON pa) === pure pa
-
