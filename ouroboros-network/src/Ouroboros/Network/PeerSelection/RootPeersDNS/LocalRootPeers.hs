@@ -53,6 +53,9 @@ data TraceLocalRootPeers peerAddr exception =
      | TraceLocalRootReconfigured (LocalRootPeers.Config RelayAccessPoint) -- ^ Old value
                                   (LocalRootPeers.Config RelayAccessPoint) -- ^ New value
      | TraceLocalRootFailure DomainAccessPoint (Maybe (DNSorIOError exception))
+     -- ^ A failure in practice should always return a @Just 'DNSorIOError'@
+     -- for a /well behaved/ dns implementation. But it is convenient for some
+     -- tests to return Nothing here to observe a lookup attempt.
        --TODO: classify DNS errors, config error vs transitory
      | TraceLocalRootError   DomainAccessPoint SomeException
   deriving Show
@@ -187,6 +190,10 @@ localRootPeersProvider tracer
         DNSLookupSRV (_d, errs, mAnswer) ->
           case mAnswer of
             Nothing -> do
+              -- a well behaved dns implementation shouldn't have us end up
+              -- here. But it is also convenient from testing perspective
+              -- to observe an SRV lookup attempt - which is required - even though
+              -- it leads to nowhere.
               traceWith tracer $ TraceLocalRootFailure domain Nothing
               return $ Left []
             Just (ddd, port, ipsttls) ->
