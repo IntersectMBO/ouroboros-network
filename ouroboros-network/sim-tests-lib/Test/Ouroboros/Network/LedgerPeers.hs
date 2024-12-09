@@ -70,15 +70,16 @@ instance Arbitrary ArbitraryPortNumber where
               $ map (ArbitraryPortNumber . read . show)
               $ ([1000..1100] :: [Int])
 
-newtype ArbitraryRelayAccessPoint =
-  ArbitraryRelayAccessPoint { getArbitraryRelayAccessPoint :: RelayAccessPoint }
-  deriving (Eq, Ord) via RelayAccessPoint
+-- newtype ArbitraryRelayAccessPoint =
+--   ArbitraryRelayAccessPoint { getArbitraryRelayAccessPoint :: RelayAccessPoint }
+--   deriving (Eq, Ord) via RelayAccessPoint
 
 instance Arbitrary ArbitraryRelayAccessPoint where
     arbitrary =
       ArbitraryRelayAccessPoint <$>
         oneof [ RelayAccessAddress (read "1.1.1.1")     . getArbitraryPortNumber <$> arbitrary
               , RelayAccessDomain  "relay.iohk.example" . getArbitraryPortNumber <$> arbitrary
+              , pure $ RelayAccessSRVDomain  "_cardano._tcp.iohk.example"
               ]
 
 newtype ArbitraryLedgerStateJudgement =

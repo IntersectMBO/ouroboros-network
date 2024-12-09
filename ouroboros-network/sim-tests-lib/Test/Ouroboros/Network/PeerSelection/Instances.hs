@@ -8,15 +8,19 @@
 
 module Test.Ouroboros.Network.PeerSelection.Instances
   ( -- test types
-    PeerAddr (..)
+    ArbitraryPlainDomain (..)
+  , PeerAddr (..)
     -- generators
   , genIPv4
   , genIPv6
+  , genPort
     -- generator tests
   , prop_arbitrary_PeerSelectionTargets
   , prop_shrink_PeerSelectionTargets
   ) where
 
+import Network.DNS qualified as DNS
+import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Data.Text.Encoding (encodeUtf8)
 import Data.Word (Word32, Word64)
 
@@ -26,6 +30,7 @@ import Ouroboros.Network.PeerSelection.Governor
 
 import Data.Hashable
 import Data.IP qualified as IP
+import Network.Socket
 import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (AfterSlot (..),
@@ -43,6 +48,8 @@ import Test.QuickCheck
 --
 -- QuickCheck instances
 --
+
+newtype ArbitraryPlainDomain = ArbitraryPlainDomain DNS.Domain
 
 -- | Simple address representation for the tests
 --
@@ -143,13 +150,26 @@ instance Arbitrary ConsensusModePeerTargets where
        | deadlineTargets'' <- deadlineTargets',
          syncTargets'' <- syncTargets']
 
-instance Arbitrary DomainAccessPoint where
-  arbitrary =
-    DomainAccessPoint . encodeUtf8
-      <$> elements domains
-      <*> (fromIntegral <$> (arbitrary :: Gen Int))
+-- | for sampling results from an SRV lookup
+--
+instance Arbitrary ArbitraryPlainDomain where
+  arbitrary = ArbitraryPlainDomain <$> elements domains
     where
-      domains = [ "test1"
+      domains = encodeUtf8 <$> [ "fromsrv_1"
+                , "fromsrv_2"
+                , "fromsrv_3"
+                , "fromsrv_4"
+                , "fromsrv_5"
+                ]
+
+instance Arbitrary DomainAccessPoint where
+  arbitrary = oneof [plain, srv]
+    where
+      plain = DomainAccessPoint <$> (DomainPlain
+              <$> (("_srv" <>) <$> elements domains) -- ^ _srv just to tag sim trace
+              <*> genPort)
+      srv = DomainSRVAccessPoint <$> (DomainSRV <$> elements domains)
+      domains = encodeUtf8 <$> [ "test1"
                 , "test2"
                 , "test3"
                 , "test4"
@@ -159,6 +179,10 @@ instance Arbitrary DomainAccessPoint where
 genIPv4 :: Gen IP.IP
 genIPv4 =
     IP.IPv4 . IP.toIPv4w <$> arbitrary `suchThat` (> 100)
+
+genPort :: Gen PortNumber
+genPort =
+    fromIntegral <$> (arbitrary :: Gen Int)
 
 genIPv6 :: Gen IP.IP
 genIPv6 =
@@ -173,11 +197,16 @@ genIPv6 =
 
 instance Arbitrary RelayAccessPoint where
   arbitrary =
-      oneof [ RelayDomainAccessPoint <$> arbitrary
-            , RelayAccessAddress <$> oneof [genIPv4, genIPv6]
-                                 <*> (fromIntegral
-                                     <$> (arbitrary :: Gen Int))
-            ]
+      frequency [ (4, RelayAccessAddress <$> oneof [genIPv4, genIPv6] <*> genPort)
+                , (4, RelayAccessDomain <$> elements domains <*> genPort)
+                , (1, RelayAccessSRVDomain <$> elements domains)]
+    where
+      domains = encodeUtf8 <$> [ "test1"
+                , "test2"
+                , "test3"
+                , "test4"
+                , "test5"
+                ]
 
 prop_arbitrary_PeerSelectionTargets :: PeerSelectionTargets -> Bool
 prop_arbitrary_PeerSelectionTargets =
@@ -187,4 +216,3 @@ prop_shrink_PeerSelectionTargets :: ShrinkCarefully PeerSelectionTargets -> Prop
 prop_shrink_PeerSelectionTargets x =
       prop_shrink_valid sanePeerSelectionTargets x
  .&&. prop_shrink_nonequal x
-
