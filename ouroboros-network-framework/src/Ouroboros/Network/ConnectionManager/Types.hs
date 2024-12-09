@@ -890,8 +890,8 @@ mkAbsTransition from to = Transition { fromState = from
                                      , toState   = to
                                      }
 
-data TransitionTrace' peerAddr state = TransitionTrace
-    { ttPeerAddr   :: peerAddr -- TODO: use ConnectionId
+data TransitionTrace' id state = TransitionTrace
+    { ttPeerAddr   :: id -- ^ an id of a connection, not necessarily an address, e.g. `State.ConnStateId`
     , ttTransition :: Transition' state
     }
   deriving Functor

@@ -74,6 +74,7 @@ import Network.Mux qualified as Mux
 import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
+import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.InboundGovernor.State (ConnectionState (..))
@@ -627,7 +628,7 @@ multinodeExperiment
     => Tracer m (WithName (Name peerAddr)
                           (RemoteTransitionTrace peerAddr))
     -> Tracer m (WithName (Name peerAddr)
-                          (AbstractTransitionTrace peerAddr))
+                          (AbstractTransitionTrace CM.ConnStateId))
     -> Tracer m (WithName (Name peerAddr)
                           (IG.Trace peerAddr))
     -> Tracer m (WithName (Name peerAddr)
@@ -2242,7 +2243,7 @@ multiNodeSimTracer :: ( Alternative (STM m), Monad m, MonadFix m
                    -> Tracer m
                       (WithName (Name SimAddr) (RemoteTransitionTrace SimAddr))
                    -> Tracer m
-                      (WithName (Name SimAddr) (AbstractTransitionTrace SimAddr))
+                      (WithName (Name SimAddr) (AbstractTransitionTrace CM.ConnStateId))
                    -> Tracer m
                       (WithName (Name SimAddr) (IG.Trace SimAddr))
                    -> Tracer m
