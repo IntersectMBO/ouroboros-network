@@ -433,4 +433,4 @@ data ConnectionHandlerTrace versionNumber versionData =
     | TrHandshakeServerError
         (HandshakeException versionNumber)
     | TrConnectionHandlerError ErrorContext SomeException ErrorCommand
-  deriving Show 
+  deriving Show
