@@ -1,9 +1,11 @@
-{-# LANGUAGE LambdaCase            #-}
-{-# LANGUAGE NamedFieldPuns        #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeApplications           #-}
 -- Undecidable instances are need for 'Show' instance of 'ConnectionState'.
-{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE QuantifiedConstraints      #-}
 
 module Ouroboros.Network.ConnectionManager.State
   ( -- * ConnectionManagerState API
@@ -14,8 +16,10 @@ module Ouroboros.Network.ConnectionManager.State
   , readAbstractStateMap
     -- * MutableConnState
   , MutableConnState (..)
-  , FreshIdSupply
-  , newFreshIdSupply
+  , ConnStateIdSupply
+  , ConnStateId (..)
+  , ConnectionTransitionTrace
+  , newConnStateIdSupply
   , newMutableConnState
     -- * ConnectionState
   , ConnectionState (..)
@@ -57,6 +61,14 @@ readAbstractStateMap
   -> STM m (ConnMap peerAddr AbstractState)
 readAbstractStateMap = traverse (fmap (abstractState . Known) . readTVar . connVar)
 
+-- | A unique identifier of a connection.
+--
+-- It's used even when we don't yet know `ConnectionId`.
+--
+newtype ConnStateId = ConnStateId { getConnId :: Int }
+  deriving stock (Eq, Ord, Show)
+  deriving newtype Enum
+
 -- | 'MutableConnState', which supplies a unique identifier.
 --
 -- TODO: We can get away without id, by tracking connections in
@@ -65,7 +77,7 @@ readAbstractStateMap = traverse (fmap (abstractState . Known) . readTVar . connV
 data MutableConnState peerAddr handle handleError version m = MutableConnState {
     -- | A unique identifier
     --
-    connStateId  :: !Int
+    connStateId  :: !ConnStateId
 
   , -- | Mutable state
     --
@@ -82,21 +94,25 @@ instance Eq (MutableConnState peerAddr handle handleError version m) where
 --
 -- We use a fresh ids for 'MutableConnState'.
 --
-newtype FreshIdSupply m = FreshIdSupply { getFreshId :: STM m Int }
+newtype ConnStateIdSupply m = ConnStateIdSupply { getConnStateId :: STM m ConnStateId }
 
 
 -- | Create a 'FreshIdSupply' inside an 'STM' monad.
 --
-newFreshIdSupply :: forall m. MonadSTM m
-                 => Proxy m -> STM m (FreshIdSupply m)
-newFreshIdSupply _ = do
-    (v :: StrictTVar m Int) <- newTVar 0
-    let getFreshId :: STM m Int
-        getFreshId = do
+newConnStateIdSupply :: forall m. MonadSTM m
+                     => Proxy m
+                     -> STM m (ConnStateIdSupply m)
+newConnStateIdSupply _ = do
+    (v :: StrictTVar m ConnStateId) <- newTVar (ConnStateId 0)
+    let getConnStateId :: STM m ConnStateId
+        getConnStateId = do
           c <- readTVar v
           writeTVar v (succ c)
           return c
-    return $ FreshIdSupply { getFreshId }
+    return $ ConnStateIdSupply { getConnStateId }
+
+
+type ConnectionTransitionTrace peerAddr = WithName peerAddr (AbstractTransitionTrace ConnStateId)
 
 
 newMutableConnState :: forall peerAddr handle handleError version m.
@@ -104,13 +120,13 @@ newMutableConnState :: forall peerAddr handle handleError version m.
                       , Typeable peerAddr
                       )
                     => peerAddr
-                    -> FreshIdSupply m
+                    -> ConnStateIdSupply m
                     -> ConnectionState peerAddr handle handleError
                                        version m
                     -> STM m (MutableConnState peerAddr handle handleError
                                                version m)
 newMutableConnState peerAddr freshIdSupply connState = do
-      connStateId <- getFreshId freshIdSupply
+      connStateId <- getConnStateId freshIdSupply
       connVar <- newTVar connState
       -- This tracing is a no op in IO.
       --
