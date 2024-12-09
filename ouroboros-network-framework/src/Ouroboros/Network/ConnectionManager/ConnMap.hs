@@ -17,7 +17,7 @@ module Ouroboros.Network.ConnectionManager.ConnMap
   , lookup
   , lookupByRemoteAddr
   , updateLocalAddr
-  , traverseMaybeWithKey
+  , traverseMaybe
   ) where
 
 import Prelude hiding (lookup)
@@ -279,22 +279,17 @@ updateLocalAddr ConnectionId { remoteAddress, localAddress } (ConnMap m) =
       m
 
 
-traverseMaybeWithKey
+traverseMaybe
   :: Applicative f
-  => (Either peerAddr (ConnectionId peerAddr) -> a -> f (Maybe b))
+  => (a -> f (Maybe b))
   -> ConnMap peerAddr a
   -> f [b]
-traverseMaybeWithKey fn =
+traverseMaybe fn =
     fmap (concat . Map.elems)
   . Map.traverseMaybeWithKey
-      (\remoteAddress st ->
+      (\_ st ->
           fmap (Just . Map.elems)
-        . Map.traverseMaybeWithKey
-            (\case
-                UnknownLocalAddr       -> fn (Left remoteAddress)
-                LocalAddr localAddress -> fn (Right ConnectionId { remoteAddress,
-                                                                   localAddress })
-            )
+        . Map.traverseMaybeWithKey (\_ -> fn)
         $ st
       )
   . getConnMap
