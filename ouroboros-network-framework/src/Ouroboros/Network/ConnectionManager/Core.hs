@@ -528,9 +528,8 @@ with args@Arguments {
         -- Spawning one thread for each connection cleanup avoids spending time
         -- waiting for locks and cleanup logic that could delay closing the
         -- connections and making us not respecting certain timeouts.
-        asyncs <- State.traverseMaybeWithKey
-          -- TODO: remove first argument!
-          (\_peerAddrOrConnId MutableConnState { connStateId, connVar } -> do
+        asyncs <- State.traverseMaybe
+          (\MutableConnState { connStateId, connVar } -> do
             -- cleanup handler for that thread will close socket associated
             -- with the thread.  We put each connection in 'TerminatedState' to
             -- try that none of the connection threads will enter
