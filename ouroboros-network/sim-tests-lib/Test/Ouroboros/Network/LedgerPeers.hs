@@ -70,9 +70,9 @@ instance Arbitrary ArbitraryPortNumber where
               $ map (ArbitraryPortNumber . read . show)
               $ ([1000..1100] :: [Int])
 
-newtype ArbitraryRelayAccessPoint =
-  ArbitraryRelayAccessPoint { getArbitraryRelayAccessPoint :: RelayAccessPoint }
-  deriving (Eq, Ord) via RelayAccessPoint
+-- newtype ArbitraryRelayAccessPoint =
+--   ArbitraryRelayAccessPoint { getArbitraryRelayAccessPoint :: RelayAccessPoint }
+--   deriving (Eq, Ord) via RelayAccessPoint
 
 instance Arbitrary ArbitraryRelayAccessPoint where
     arbitrary =
