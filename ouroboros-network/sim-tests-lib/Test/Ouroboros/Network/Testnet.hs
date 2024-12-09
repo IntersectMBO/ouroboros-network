@@ -369,16 +369,9 @@ prop_connection_manager_transitions_coverage defaultBearerInfo diffScript =
                                 diffScript
                                 iosimTracer
 
-      events :: [AbstractTransitionTrace NtNAddr]
-      events = mapMaybe (\case DiffusionConnectionManagerTransitionTrace st ->
-                                   Just st
-                               _ -> Nothing
-                        )
-             . Trace.toList
-             . fmap (\(WithTime _ (WithName _ b)) -> b)
-             . withTimeNameTraceEvents
-                @DiffusionTestTrace
-                @NtNAddr
+      events :: [AbstractTransitionTrace CM.ConnStateId]
+      events = fmap (\((WithName _ b)) -> b)
+             . selectTraceEventsDynamic' @_ @(CM.ConnectionTransitionTrace NtNAddr)
              . Trace.take 125000
              $ runSimTrace sim
 
@@ -2587,7 +2580,7 @@ prop_diffusion_cm_valid_transitions ioSimTrace traceNumber =
   where
     verify_cm_valid_transitions :: Trace () DiffusionTestTrace -> Property
     verify_cm_valid_transitions events =
-      let abstractTransitionEvents :: Trace () (AbstractTransitionTrace NtNAddr)
+      let abstractTransitionEvents :: Trace () (AbstractTransitionTrace CM.ConnStateId)
           abstractTransitionEvents =
             selectDiffusionConnectionManagerTransitionEvents events
 
@@ -2734,7 +2727,7 @@ prop_diffusion_cm_valid_transition_order ioSimTrace traceNumber =
   where
     verify_cm_valid_transition_order :: Trace () (WithName NtNAddr (WithTime DiffusionTestTrace)) -> Property
     verify_cm_valid_transition_order events =
-      let abstractTransitionEvents :: Trace () (WithName NtNAddr (WithTime (AbstractTransitionTrace NtNAddr)))
+      let abstractTransitionEvents :: Trace () (WithName NtNAddr (WithTime (AbstractTransitionTrace CM.ConnStateId)))
           abstractTransitionEvents =
             selectDiffusionConnectionManagerTransitionEvents' events
 
@@ -2930,10 +2923,10 @@ prop_unit_reconnect =
                                 diffScript
                                 iosimTracer
 
-      events :: [Events DiffusionTestTrace]
+      events :: [Events (WithName NtNAddr DiffusionTestTrace)]
       events = Trace.toList
              . fmap ( Signal.eventsFromList
-                    . fmap (\(WithName _ (WithTime t b)) -> (t, b))
+                    . fmap (\(WithName addr (WithTime t b)) -> (t, WithName addr b))
                     )
              . splitWithNameTrace
              . fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
@@ -2948,26 +2941,27 @@ prop_unit_reconnect =
    <$> events
 
   where
-    verify_consistency :: Events DiffusionTestTrace -> Property
+    verify_consistency :: Events (WithName NtNAddr DiffusionTestTrace) -> Property
     verify_consistency events =
       let govEstablishedPeersSig :: Signal (Set NtNAddr)
           govEstablishedPeersSig =
             selectDiffusionPeerSelectionState'
               (EstablishedPeers.toSet . Governor.establishedPeers)
-              events
+              (wnEvent <$> events)
 
-          govConnectionManagerTransitionsSig :: [E (AbstractTransitionTrace NtNAddr)]
+          govConnectionManagerTransitionsSig :: [E (WithName NtNAddr (AbstractTransitionTrace CM.ConnStateId))]
           govConnectionManagerTransitionsSig =
-            Signal.eventsToListWithId
+              Signal.eventsToListWithId
             $ Signal.selectEvents
                 (\case
-                   DiffusionConnectionManagerTransitionTrace tr -> Just tr
-                   _                                            -> Nothing
+                   WithName addr (DiffusionConnectionManagerTransitionTrace tr)
+                     -> Just (WithName addr tr)
+                   _ -> Nothing
                 ) events
 
        in conjoin
-        $ map (\(E ts a) -> case a of
-                TransitionTrace addr (Transition _ TerminatedSt) ->
+        $ map (\(E ts (WithName addr a)) -> case a of
+                TransitionTrace _ (Transition _ TerminatedSt) ->
                   eventually ts (Set.notMember addr) govEstablishedPeersSig
                 _ -> True -- TODO: Do the opposite
               )
@@ -3671,7 +3665,7 @@ prop_diffusion_timeouts_enforced ioSimTrace traceNumber =
   where
     verify_timeouts :: Trace () (Time, DiffusionTestTrace) -> Property
     verify_timeouts events =
-      let transitionSignal :: Trace (SimResult ()) [(Time, AbstractTransitionTrace NtNAddr)]
+      let transitionSignal :: Trace (SimResult ()) [(Time, AbstractTransitionTrace CM.ConnStateId)]
           transitionSignal = Trace.fromList (MainReturn (Time 0) (Labelled (ThreadId []) (Just "main")) () [])
                            . Trace.toList
                            . groupConns snd abstractStateIsFinalTransition
@@ -3784,7 +3778,7 @@ selectTimedDiffusionPeerSelectionActionsEvents =
 
 selectDiffusionConnectionManagerTransitionEvents
   :: Trace () DiffusionTestTrace
-  -> Trace () (AbstractTransitionTrace NtNAddr)
+  -> Trace () (AbstractTransitionTrace CM.ConnStateId)
 selectDiffusionConnectionManagerTransitionEvents =
   Trace.fromList ()
   . mapMaybe
@@ -3794,7 +3788,7 @@ selectDiffusionConnectionManagerTransitionEvents =
 
 selectDiffusionConnectionManagerTransitionEvents'
   :: Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))
-  -> Trace () (WithName NtNAddr (WithTime (AbstractTransitionTrace NtNAddr)))
+  -> Trace () (WithName NtNAddr (WithTime (AbstractTransitionTrace CM.ConnStateId)))
 selectDiffusionConnectionManagerTransitionEvents' =
     Trace.fromList ()
   . mapMaybe
@@ -3806,7 +3800,7 @@ selectDiffusionConnectionManagerTransitionEvents' =
 
 selectDiffusionConnectionManagerTransitionEventsTime
   :: Trace () (Time, DiffusionTestTrace)
-  -> Trace () (Time, AbstractTransitionTrace NtNAddr)
+  -> Trace () (Time, AbstractTransitionTrace CM.ConnStateId)
 selectDiffusionConnectionManagerTransitionEventsTime =
   Trace.fromList ()
   . mapMaybe

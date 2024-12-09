@@ -75,7 +75,8 @@ import Network.TypedProtocol.ReqResp.Type
 
 import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionId
-import Ouroboros.Network.ConnectionManager.Core
+import Ouroboros.Network.ConnectionManager.Core as CM
+import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context
 import Ouroboros.Network.ControlMessage
@@ -253,7 +254,7 @@ withInitiatorOnlyConnectionManager
     => name
     -- ^ identifier (for logging)
     -> Timeouts
-    -> Tracer m (WithName name (AbstractTransitionTrace peerAddr))
+    -> Tracer m (WithName name (AbstractTransitionTrace CM.ConnStateId))
     -> Tracer m (WithName name
                           (ConnectionManagerTrace
                             peerAddr
@@ -422,7 +423,7 @@ withBidirectionalConnectionManager
     -> Timeouts
     -- ^ identifier (for logging)
     -> Tracer m (WithName name (RemoteTransitionTrace peerAddr))
-    -> Tracer m (WithName name (AbstractTransitionTrace peerAddr))
+    -> Tracer m (WithName name (AbstractTransitionTrace CM.ConnStateId))
     -> Tracer m (WithName name
                           (ConnectionManagerTrace
                             peerAddr
@@ -599,7 +600,7 @@ withBidirectionalConnectionManager name timeouts
 
 
 reqRespSizeLimits :: forall req resp. ProtocolSizeLimits (ReqResp req resp)
-                                                        ByteString
+                                                         ByteString
 reqRespSizeLimits = ProtocolSizeLimits
     { sizeLimitForState
     , dataSize = fromIntegral . LBS.length

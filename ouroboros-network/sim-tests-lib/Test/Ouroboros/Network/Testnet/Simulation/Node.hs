@@ -67,8 +67,10 @@ import Network.TypedProtocol.Core (PeerHasAgency (..))
 import Network.TypedProtocol.PingPong.Type qualified as PingPong
 
 import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
-import Ouroboros.Network.ConnectionManager.Types (AbstractTransitionTrace,
-           ConnectionManagerTrace)
+import Ouroboros.Network.ConnectionManager.Core qualified as CM
+import Ouroboros.Network.ConnectionManager.State qualified as CM
+import Ouroboros.Network.ConnectionManager.Types (AbstractTransitionTrace)
+import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.Diffusion.P2P qualified as Diff.P2P
 import Ouroboros.Network.Driver.Limits (ProtocolSizeLimits (..),
            ProtocolTimeLimits (..))
@@ -909,7 +911,7 @@ data DiffusionTestTrace =
           (ConnectionHandlerTrace NtNVersion NtNVersionData))
     | DiffusionDiffusionSimulationTrace DiffusionSimulationTrace
     | DiffusionConnectionManagerTransitionTrace
-        (AbstractTransitionTrace NtNAddr)
+        (AbstractTransitionTrace CM.ConnStateId)
     | DiffusionInboundGovernorTransitionTrace
         (RemoteTransitionTrace NtNAddr)
     | DiffusionInboundGovernorTrace (InboundGovernorTrace NtNAddr)
@@ -1271,11 +1273,7 @@ diffusionSimulation
                                                        . tracerWithName ntnAddr
                                                        . tracerWithTime
                                                        $ nodeTracer
-        , Diff.P2P.dtConnectionManagerTransitionTracer = contramap
-                                                           DiffusionConnectionManagerTransitionTrace
-                                                       . tracerWithName ntnAddr
-                                                       . tracerWithTime
-                                                       $ nodeTracer
+        , Diff.P2P.dtConnectionManagerTransitionTracer = nullTracer
         , Diff.P2P.dtServerTracer                      = contramap DiffusionServerTrace
                                                        . tracerWithName ntnAddr
                                                        . tracerWithTime

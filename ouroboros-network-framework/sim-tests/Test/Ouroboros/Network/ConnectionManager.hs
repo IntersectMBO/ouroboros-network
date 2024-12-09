@@ -58,7 +58,8 @@ import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
 
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
-import Ouroboros.Network.ConnectionManager.Core
+import Ouroboros.Network.ConnectionManager.Core as CM
+import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Test.Utils (verifyAbstractTransition)
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.MuxMode
@@ -647,10 +648,10 @@ mkConnectionHandler snocket =
 -- Consistent type aliases for observed traces.
 --
 
-type TestConnectionState m       = ConnectionState Addr (Handle m) Void Version m
-type TestConnectionManagerTrace  = ConnectionManagerTrace Addr ()
-type TestTransitionTrace m       = TransitionTrace  Addr (TestConnectionState m)
-type TestAbstractTransitionTrace = AbstractTransitionTrace Addr
+type TestConnectionState m       = CM.ConnectionState Addr (Handle m) Void Version m
+type TestConnectionManagerTrace  = CM.Trace Addr ()
+type TestTransitionTrace m       = TransitionTrace CM.ConnStateId (TestConnectionState m)
+type TestAbstractTransitionTrace = AbstractTransitionTrace CM.ConnStateId
 
 newtype SkewedBool = SkewedBool Bool
   deriving Show
@@ -783,11 +784,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
                 :: ConnectionManager InitiatorResponderMode (FD (IOSim s))
                                      Addr (Handle m) Void (IOSim s)) -> do
             fd <- open snocket TestFamily
-            case myAddress of
-              Just localAddr ->
-                bind snocket fd localAddr
-              Nothing ->
-                pure ()
+            traverse_ (bind snocket fd) myAddress
 
             let go :: HasCallStack
                    => [Async (IOSim s) ()]

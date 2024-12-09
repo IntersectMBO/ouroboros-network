@@ -148,20 +148,19 @@ newMutableConnState peerAddr freshIdSupply connState = do
                     let prevAbs = abstractState (Known prev)
                   , prevAbs /= currAbs -> pure
                                        $ TraceDynamic
-                                       $ WithName connStateId
-                                       $ TransitionTrace peerAddr
-                                       $ mkAbsTransition prevAbs
-                                                         currAbs
+                                       ( WithName peerAddr
+                                                  (TransitionTrace connStateId $ mkAbsTransition prevAbs currAbs)
+                                       :: ConnectionTransitionTrace peerAddr)
                 Nothing                -> pure
                                        $ TraceDynamic
-                                       $ WithName connStateId
-                                       $ TransitionTrace peerAddr
+                                       ( WithName peerAddr
+                                       $ TransitionTrace connStateId
                                        $ mkAbsTransition TerminatedSt
                                                          currAbs
+                                       :: ConnectionTransitionTrace peerAddr)
                 _                      -> pure DontTrace
         )
       return $ MutableConnState { connStateId, connVar }
-
 
 abstractState :: MaybeUnknown (ConnectionState muxMode peerAddr m a b)
               -> AbstractState
