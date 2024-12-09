@@ -81,6 +81,7 @@ import Ouroboros.Network.Socket (configureSocket, configureSystemdSocket)
 
 import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
+import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.InformationChannel
            (newInformationChannel)
 import Ouroboros.Network.ConnectionManager.Types
@@ -188,7 +189,7 @@ data TracersExtra ntnAddr ntnVersion ntnVersionData
                          ntnVersionData))
 
     , dtConnectionManagerTransitionTracer
-        :: Tracer m (AbstractTransitionTrace ntnAddr)
+        :: Tracer m (AbstractTransitionTrace CM.ConnStateId)
 
     , dtServerTracer
         :: Tracer m (Server.Trace ntnAddr)

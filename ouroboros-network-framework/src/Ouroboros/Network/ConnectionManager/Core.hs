@@ -83,7 +83,7 @@ data Arguments handlerTrace socket peerAddr handle handleError versionNumber ver
         --
         -- TODO: do we need this tracer?  In some tests we relay on `traceTVar` in
         -- `newNetworkMutableState` instead.
-        trTracer            :: Tracer m (TransitionTrace peerAddr
+        trTracer            :: Tracer m (TransitionTrace State.ConnStateId
                                             (ConnectionState peerAddr handle handleError versionNumber m)),
 
         -- | Mux trace.
@@ -291,9 +291,10 @@ data DemoteToColdLocal peerAddr handlerTrace handle handleError version m
                               (StrictTVar m (ConnectionState
                                               peerAddr handle
                                               handleError version m))
-                             !(Transition (ConnectionState
-                                            peerAddr handle
-                                            handleError version m))
+                             !(TransitionTrace State.ConnStateId
+                                              (ConnectionState
+                                                peerAddr handle
+                                                handleError version m))
 
     -- | Any @DemoteToCold@ transition which does not terminate the connection, i.e.
     -- @
@@ -303,9 +304,10 @@ data DemoteToColdLocal peerAddr handlerTrace handle handleError version m
     -- or the case where the connection is already in 'TerminatingState' or
     -- 'TerminatedState'.
     --
-    | DemoteToColdLocalNoop !(Maybe (Transition (ConnectionState
-                                                  peerAddr handle
-                                                  handleError version m)))
+    | DemoteToColdLocalNoop !(Maybe (TransitionTrace State.ConnStateId
+                                                     (ConnectionState
+                                                        peerAddr handle
+                                                        handleError version m)))
                             !AbstractState
 
     -- | Duplex connection was demoted, prune connections.
@@ -317,9 +319,10 @@ data DemoteToColdLocal peerAddr handlerTrace handle handleError version m
                                (ConnectionState
                                  peerAddr handle
                                  handleError version m)
-                               (Transition (ConnectionState
-                                             peerAddr handle
-                                             handleError version m))
+                               (TransitionTrace State.ConnStateId
+                                                (ConnectionState
+                                                   peerAddr handle
+                                                   handleError version m))
                              )
 
                              -- ^ Left case is for when the connection which
@@ -526,8 +529,8 @@ with args@Arguments {
         -- waiting for locks and cleanup logic that could delay closing the
         -- connections and making us not respecting certain timeouts.
         asyncs <- State.traverseMaybeWithKey
-          (\peerAddrOrConnId MutableConnState { connVar } -> do
-            let remoteAddr = either id remoteAddress peerAddrOrConnId
+          -- TODO: remove first argument!
+          (\_peerAddrOrConnId MutableConnState { connStateId, connVar } -> do
             -- cleanup handler for that thread will close socket associated
             -- with the thread.  We put each connection in 'TerminatedState' to
             -- try that none of the connection threads will enter
@@ -542,12 +545,12 @@ with args@Arguments {
                   connState <- readTVar connVar
                   let connState'            = TerminatedState Nothing
                       trT                   =
-                        TransitionTrace remoteAddr (mkTransition connState connState')
+                        TransitionTrace connStateId (mkTransition connState connState')
                       absConnState          = State.abstractState (Known connState)
                       shouldTraceTerminated = absConnState /= TerminatedSt
                       shouldTraceUnknown    = absConnState == ReservedOutboundSt
                       trU = TransitionTrace
-                              remoteAddr
+                              connStateId
                               (Transition { fromState = Known connState'
                                           , toState   = Unknown
                                           })
@@ -609,9 +612,9 @@ with args@Arguments {
       -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version versionData m
       -> m (Async m ())
     forkConnectionHandler updateVersionDataFn stateVar
-                          mutableConnState@MutableConnState { connVar }
+                          mutableConnState@MutableConnState { connStateId, connVar }
                           socket
-                          connId@ConnectionId { remoteAddress = peerAddr }
+                          connId
                           writer
                           handler =
         mask $ \unmask -> async $ do
@@ -643,7 +646,7 @@ with args@Arguments {
                 connState <- readTVar connVar
                 let connState' = TerminatedState Nothing
                     transition = mkTransition connState connState'
-                    transitionTrace = TransitionTrace peerAddr transition
+                    transitionTrace = TransitionTrace connStateId transition
                 case connState of
                   ReservedOutboundState -> do
                     writeTVar connVar connState'
@@ -691,7 +694,7 @@ with args@Arguments {
               Nothing -> do
                 let transition =
                       TransitionTrace
-                        peerAddr
+                        connStateId
                         Transition
                            { fromState = Known (TerminatedState Nothing)
                            , toState   = Unknown
@@ -774,7 +777,7 @@ with args@Arguments {
                       -- overwriting.
                        else return [ ]
 
-                  traverse_ (traceWith trTracer . TransitionTrace peerAddr) trs
+                  traverse_ (traceWith trTracer . TransitionTrace connStateId) trs
                   traceCounters stateVar
 
     -- Pruning is done in two stages:
@@ -944,7 +947,7 @@ with args@Arguments {
                      id stateVar mutableConnVar' socket connId writer handler
                 return (connThread', mutableConnVar', connState0', connState')
 
-            traceWith trTracer (TransitionTrace (remoteAddress connId)
+            traceWith trTracer (TransitionTrace (connStateId connVar)
                                  Transition { fromState = maybe Unknown Known connState0
                                             , toState   = Known connState
                                             })
@@ -960,17 +963,17 @@ with args@Arguments {
           Nothing ->
             return (Disconnected connId Nothing)
 
-          Just (mutableConnState@MutableConnState { connVar }
+          Just (mutableConnState@MutableConnState { connVar, connStateId }
                , connThread, reader) -> do
             traceCounters stateVar
 
             res <- atomically $ readPromise reader
             case res of
               Left handleError -> do
-                terminateInboundWithErrorOrQuery connId connVar connThread stateVar mutableConnState $ Just handleError
+                terminateInboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState $ Just handleError
 
               Right HandshakeConnectionQuery -> do
-                terminateInboundWithErrorOrQuery connId connVar connThread stateVar mutableConnState Nothing
+                terminateInboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState Nothing
 
               Right (HandshakeConnectionResult handle (_version, versionData)) -> do
                 let dataFlow = connectionDataFlow versionData
@@ -1030,7 +1033,7 @@ with args@Arguments {
 
                     TerminatedState {} -> return (False, Nothing, Inbound)
 
-                traverse_ (traceWith trTracer . TransitionTrace (remoteAddress connId)) mbTransition
+                traverse_ (traceWith trTracer . TransitionTrace connStateId) mbTransition
                 traceCounters stateVar
 
                 -- Note that we don't set a timeout thread here which would
@@ -1062,6 +1065,7 @@ with args@Arguments {
 
     terminateInboundWithErrorOrQuery
       :: ConnectionId peerAddr
+      -> State.ConnStateId
       -> StrictTVar m (ConnectionState peerAddr handle handleError version m)
       -> Async m ()
       -> StrictTMVar
@@ -1069,7 +1073,7 @@ with args@Arguments {
       -> MutableConnState peerAddr handle handleError version m
       -> Maybe handleError
       -> m (Connected peerAddr handle1 handleError)
-    terminateInboundWithErrorOrQuery connId connVar connThread stateVar mutableConnState handleErrorM = do
+    terminateInboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState handleErrorM = do
         transitions <- atomically $ do
           connState <- readTVar connVar
 
@@ -1144,7 +1148,7 @@ with args@Arguments {
             -- overwriting.
              else return [ ]
 
-        traverse_ (traceWith trTracer . TransitionTrace (remoteAddress connId)) transitions
+        traverse_ (traceWith trTracer . TransitionTrace connStateId) transitions
         traceCounters stateVar
 
         return (Disconnected connId handleErrorM)
@@ -1158,7 +1162,7 @@ with args@Arguments {
         -> m (OperationResult DemotedToColdRemoteTr)
     releaseInboundConnectionImpl stateVar connId = mask_ $ do
       traceWith tracer (TrReleaseConnection Inbound connId)
-      (mbThread, mbTransition, result, mbAssertion) <- atomically $ do
+      (mbThread, mbTransitionTrace, result, mbAssertion) <- atomically $ do
         state <- readTMVar stateVar
         case State.lookup connId state of
           Nothing -> do
@@ -1170,7 +1174,7 @@ with args@Arguments {
                  , OperationSuccess CommitTr
                  , Nothing
                  )
-          Just MutableConnState { connVar } -> do
+          Just MutableConnState { connVar, connStateId } -> do
             connState <- readTVar connVar
             let st = State.abstractState (Known connState)
             case connState of
@@ -1199,7 +1203,7 @@ with args@Arguments {
                 let connState' = OutboundDupState connId connThread handle Expired
                 writeTVar connVar connState'
                 return ( Nothing
-                       , Just (mkTransition connState connState')
+                       , Just (TransitionTrace connStateId (mkTransition connState connState'))
                        , OperationSuccess KeepTr
                        , Nothing
                        )
@@ -1243,7 +1247,7 @@ with args@Arguments {
                 let connState' = TerminatingState connId connThread Nothing
                 writeTVar connVar connState'
                 return ( Just connThread
-                       , Just (mkTransition connState connState')
+                       , Just (TransitionTrace connStateId (mkTransition connState connState'))
                        , OperationSuccess CommitTr
                        , Nothing
                        )
@@ -1254,7 +1258,7 @@ with args@Arguments {
                 let connState' = TerminatingState connId connThread Nothing
                 writeTVar connVar connState'
                 return ( Just connThread
-                       , Just (mkTransition connState connState')
+                       , Just (TransitionTrace connStateId (mkTransition connState connState'))
                        , UnsupportedState st
                        , Just (TrUnexpectedlyFalseAssertion
                                  (ReleaseInboundConnection (Just connId)
@@ -1268,7 +1272,7 @@ with args@Arguments {
                 let connState' = OutboundDupState connId connThread handle Ticking
                 writeTVar connVar connState'
                 return ( Nothing
-                       , Just (mkTransition connState connState')
+                       , Just (TransitionTrace connStateId (mkTransition connState connState'))
                        , UnsupportedState st
                        , Just (TrUnexpectedlyFalseAssertion
                                  (ReleaseInboundConnection (Just connId)
@@ -1295,7 +1299,7 @@ with args@Arguments {
                        , Nothing
                        )
 
-      traverse_ (traceWith trTracer . TransitionTrace (remoteAddress connId)) mbTransition
+      traverse_ (traceWith trTracer) mbTransitionTrace
       traceCounters stateVar
 
       -- 'throwTo' avoids blocking until 'timeWaitTimeout' expires.
@@ -1311,7 +1315,7 @@ with args@Arguments {
 
     acquireOutboundConnectionImpl
         :: HasCallStack
-        => FreshIdSupply m
+        => ConnStateIdSupply m
         -> StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
         -> StrictTVar m StdGen
         -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version versionData m
@@ -1321,12 +1325,12 @@ with args@Arguments {
     acquireOutboundConnectionImpl connStateIdSupply stateVar stdGenVar handler diffusionMode peerAddr = do
         let provenance = Outbound
         traceWith tracer (TrIncludeConnection provenance peerAddr)
-        (trace, mutableConnState@MutableConnState { connVar }
+        (trace, mutableConnState@MutableConnState { connVar, connStateId }
               , eHandleWedge) <- atomically $ do
           state <- readTMVar stateVar
           stdGen <- stateTVar stdGenVar split
           case State.lookupByRemoteAddr stdGen peerAddr state of
-            Just mutableConnState@MutableConnState { connVar } -> do
+            Just mutableConnState@MutableConnState { connVar, connStateId } -> do
               connState <- readTVar connVar
               let st = State.abstractState (Known connState)
               case connState of
@@ -1389,7 +1393,7 @@ with args@Arguments {
                   let connState' = OutboundDupState connId connThread handle Ticking
                   writeTVar connVar connState'
                   return ( Just (Left (TransitionTrace
-                                         peerAddr
+                                         connStateId
                                          (mkTransition connState connState')))
                          , mutableConnState
                          , Right (Here (Connected connId dataFlow handle))
@@ -1412,7 +1416,7 @@ with args@Arguments {
                   let connState' = DuplexState connId connThread handle
                   writeTVar connVar connState'
                   return ( Just (Left (TransitionTrace
-                                        peerAddr
+                                        connStateId
                                         (mkTransition connState connState')))
                          , mutableConnState
                          , Right (Here (Connected connId dataFlow handle))
@@ -1438,16 +1442,17 @@ with args@Arguments {
 
             Nothing -> do
               let connState' = ReservedOutboundState
-              (mutableConnState :: MutableConnState peerAddr handle handleError
-                                                    version m)
-                <- State.newMutableConnState peerAddr freshConnIdSupply connState'
+              (mutableConnState@MutableConnState { connVar, connStateId }
+                :: MutableConnState peerAddr handle handleError
+                                    version m)
+                <- State.newMutableConnState peerAddr connStateIdSupply connState'
               -- TODO: label `connVar` using 'ConnectionId'
-              labelTVar (connVar mutableConnState) ("conn-state-" ++ show peerAddr)
+              labelTVar connVar ("conn-state-" ++ show peerAddr)
 
               writeTMVar stateVar
                         (State.insertUnknownLocalAddr peerAddr mutableConnState state)
               return ( Just (Left (TransitionTrace
-                                    peerAddr
+                                    connStateId
                                     Transition {
                                         fromState = Unknown,
                                         toState   = Known connState'
@@ -1505,7 +1510,7 @@ with args@Arguments {
                             ]
                           )
 
-                      traverse_ (traceWith trTracer . TransitionTrace peerAddr) trs
+                      traverse_ (traceWith trTracer . TransitionTrace connStateId) trs
                       traceCounters stateVar
                     )
                     $ \socket -> do
@@ -1609,7 +1614,7 @@ with args@Arguments {
                                 )
                          )
 
-            traverse_ (traceWith trTracer . TransitionTrace peerAddr) trans
+            traverse_ (traceWith trTracer . TransitionTrace connStateId) trans
             traverse_ (traceWith tracer >=> evaluate . assert True)
                       mbAssertion
             traceCounters stateVar
@@ -1617,10 +1622,10 @@ with args@Arguments {
             res <- atomically (readPromise reader)
             case res of
               Left handleError -> do
-                terminateOutboundWithErrorOrQuery connId connVar connThread peerAddr stateVar mutableConnState $ Just handleError
+                terminateOutboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState $ Just handleError
 
               Right HandshakeConnectionQuery -> do
-                terminateOutboundWithErrorOrQuery connId connVar connThread peerAddr stateVar mutableConnState Nothing
+                terminateOutboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState Nothing
 
               Right (HandshakeConnectionResult handle (_version, versionData)) -> do
                 let dataFlow = connectionDataFlow versionData
@@ -1691,7 +1696,7 @@ with args@Arguments {
                     _ ->
                       let st = State.abstractState (Known connState) in
                       throwSTM (withCallStack (ForbiddenOperation peerAddr st))
-                traverse_ (traceWith trTracer .  TransitionTrace peerAddr)
+                traverse_ (traceWith trTracer .  TransitionTrace connStateId)
                           mbTransition
                 traceCounters stateVar
                 return $ case mbTransition of
@@ -1737,7 +1742,7 @@ with args@Arguments {
                   let connState' = OutboundDupState connId connThread handle Ticking
                   writeTVar connVar connState'
                   return ( Left (TransitionTrace
-                                  peerAddr
+                                  connStateId
                                   (mkTransition connState connState'))
                          , Connected connId dataFlow handle
                          )
@@ -1762,7 +1767,7 @@ with args@Arguments {
                   let connState' = DuplexState connId connThread handle
                   writeTVar connVar connState'
                   return ( Left (TransitionTrace
-                                  peerAddr
+                                  connStateId
                                   (mkTransition connState connState'))
                          , Connected connId dataFlow handle
                          )
@@ -1796,14 +1801,14 @@ with args@Arguments {
 
     terminateOutboundWithErrorOrQuery
         :: ConnectionId peerAddr
+        -> State.ConnStateId
         -> StrictTVar m (ConnectionState peerAddr handle handleError version m)
         -> Async m ()
-        -> peerAddr
         -> StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
         -> MutableConnState peerAddr handle handleError version m
         -> Maybe handleError
         -> m (Connected peerAddr handle handleError)
-    terminateOutboundWithErrorOrQuery connId connVar connThread peerAddr stateVar mutableConnState handleErrorM = do
+    terminateOutboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState handleErrorM = do
         transitions <- atomically $ do
           connState <- readTVar connVar
 
@@ -1869,7 +1874,7 @@ with args@Arguments {
              else return [ ]
 
 
-        traverse_ (traceWith trTracer . TransitionTrace peerAddr) transitions
+        traverse_ (traceWith trTracer . TransitionTrace connStateId) transitions
         traceCounters stateVar
 
         return (Disconnected connId handleErrorM)
@@ -1892,7 +1897,7 @@ with args@Arguments {
           Nothing -> pure ( DemoteToColdLocalNoop Nothing UnknownConnectionSt
                           , Nothing)
 
-          Just MutableConnState { connVar } -> do
+          Just MutableConnState { connVar, connStateId } -> do
             connState <- readTVar connVar
             let st = State.abstractState (Known connState)
             case connState of
@@ -1926,7 +1931,7 @@ with args@Arguments {
                                                    Unidirectional
                 writeTVar connVar connState'
                 return ( DemotedToColdLocal connId connThread connVar
-                          (mkTransition connState connState')
+                          (TransitionTrace connStateId $ mkTransition connState connState')
                        , Nothing
                        )
 
@@ -1940,13 +1945,13 @@ with args@Arguments {
                                                    Duplex
                 writeTVar connVar connState'
                 return ( DemotedToColdLocal connId connThread connVar
-                          (mkTransition connState connState')
+                          (TransitionTrace connStateId $ mkTransition connState connState')
                        , Nothing
                        )
 
               OutboundDupState _connId connThread handle Ticking -> do
                 let connState' = InboundIdleState connId connThread handle Duplex
-                    tr = mkTransition connState connState'
+                    tr = TransitionTrace connStateId $ mkTransition connState connState'
 
                 numberOfConns <- countIncomingConnections state
 
@@ -2016,7 +2021,7 @@ with args@Arguments {
                 -- @
                 --
                 let connState' = InboundState connId connThread handle Duplex
-                    tr = mkTransition connState connState'
+                    tr = TransitionTrace connStateId $ mkTransition connState connState'
 
                 -- @
                 -- DemotedToCold^{Duplex}_{Local} : DuplexState
@@ -2044,8 +2049,9 @@ with args@Arguments {
         pure ()
 
       case transition of
-        DemotedToColdLocal _connId connThread connVar tr -> do
-          traceWith trTracer (TransitionTrace (remoteAddress connId) tr)
+        DemotedToColdLocal _connId connThread connVar
+                           tr@TransitionTrace { ttPeerAddr = connStateId } -> do
+          traceWith trTracer tr
           traceCounters stateVar
           timeoutVar <- registerDelay outboundIdleTimeout
           r <- atomically $ runFirstToFinish $
@@ -2064,7 +2070,7 @@ with args@Arguments {
             Right connState -> do
               let connState' = TerminatingState connId connThread Nothing
               atomically $ writeTVar connVar connState'
-              traceWith trTracer (TransitionTrace (remoteAddress connId)
+              traceWith trTracer (TransitionTrace connStateId
                                    (mkTransition connState connState'))
               traceCounters stateVar
               -- We rely on the `finally` handler of connection thread to:
@@ -2083,17 +2089,17 @@ with args@Arguments {
               return (UnsupportedState (State.abstractState $ Known connState))
 
         PruneConnections prune eTr -> do
-          traverse_ (traceWith trTracer . TransitionTrace (remoteAddress connId)) eTr
+          traverse_ (traceWith trTracer) eTr
           runPruneAction prune
           traceCounters stateVar
-          return (OperationSuccess (State.abstractState (either Known fromState eTr)))
+          return (OperationSuccess (State.abstractState (either Known (fromState . ttTransition) eTr)))
 
         DemoteToColdLocalError trace st -> do
           traceWith tracer trace
           return (UnsupportedState st)
 
         DemoteToColdLocalNoop tr a -> do
-          traverse_ (traceWith trTracer . TransitionTrace (remoteAddress connId)) tr
+          traverse_ (traceWith trTracer) tr
           traceCounters stateVar
           return (OperationSuccess a)
 
@@ -2115,7 +2121,7 @@ with args@Arguments {
                             , Nothing
                             , Nothing
                             )
-          Just MutableConnState { connVar } -> do
+          Just MutableConnState { connVar, connStateId } -> do
             connState <- readTVar connVar
             let st = State.abstractState (Known connState)
             case connState of
@@ -2182,14 +2188,14 @@ with args@Arguments {
                     $ writeTVar connVar connState'
 
                   return
-                    ( OperationSuccess tr
+                    ( OperationSuccess (TransitionTrace connStateId tr)
                     , Just prune
                     , Nothing
                     )
 
                 else do
                   writeTVar connVar connState'
-                  return ( OperationSuccess tr
+                  return ( OperationSuccess (TransitionTrace connStateId tr)
                          , Nothing
                          , Nothing
                          )
@@ -2220,14 +2226,14 @@ with args@Arguments {
                      $ writeTVar connVar connState'
 
                   return
-                    ( OperationSuccess (mkTransition connState (TerminatedState Nothing))
+                    ( OperationSuccess (TransitionTrace connStateId $ mkTransition connState (TerminatedState Nothing))
                     , Just prune
                     , Nothing
                     )
 
                 else do
                   writeTVar connVar connState'
-                  return ( OperationSuccess tr
+                  return ( OperationSuccess (TransitionTrace connStateId tr)
                          , Nothing
                          , Nothing
                          )
@@ -2243,12 +2249,12 @@ with args@Arguments {
                 -- @
                 let connState' = InboundState connId connThread handle dataFlow
                 writeTVar connVar connState'
-                return ( OperationSuccess (mkTransition connState connState')
+                return ( OperationSuccess (TransitionTrace connStateId $ mkTransition connState connState')
                        , Nothing
                        , Nothing
                        )
               InboundState _connId _ _ _ ->
-                return ( OperationSuccess (mkTransition connState connState)
+                return ( OperationSuccess (TransitionTrace connStateId $ mkTransition connState connState)
                        , Nothing
                        -- already in 'InboundState'?
                        , Just (TrUnexpectedlyFalseAssertion
@@ -2258,7 +2264,7 @@ with args@Arguments {
                               )
                        )
               DuplexState {} ->
-                return ( OperationSuccess (mkTransition connState connState)
+                return ( OperationSuccess (TransitionTrace connStateId $ mkTransition connState connState)
                        , Nothing
                        , Nothing
                        )
@@ -2281,16 +2287,16 @@ with args@Arguments {
       -- trace transition
       case (result, pruneTr) of
         (OperationSuccess tr, Nothing) -> do
-          traceWith trTracer (TransitionTrace (remoteAddress connId) tr)
+          traceWith trTracer tr
           traceCounters stateVar
 
         (OperationSuccess tr, Just prune) -> do
-          traceWith trTracer (TransitionTrace (remoteAddress connId) tr)
+          traceWith trTracer tr
           runPruneAction prune
           traceCounters stateVar
 
         _ -> return ()
-      return (State.abstractState . fromState <$> result)
+      return (State.abstractState . fromState . ttTransition <$> result)
 
 
     demotedToColdRemoteImpl
@@ -2304,7 +2310,7 @@ with args@Arguments {
           Nothing -> return ( UnsupportedState UnknownConnectionSt
                             , Nothing
                             )
-          Just MutableConnState { connVar } -> do
+          Just MutableConnState { connVar, connStateId } -> do
             connState <- readTVar connVar
             let st = State.abstractState (Known connState)
             case connState of
@@ -2333,17 +2339,17 @@ with args@Arguments {
                               )
                        )
               OutboundDupState _connId _connThread _handle _expired ->
-                return ( OperationSuccess (mkTransition connState connState)
+                return ( OperationSuccess (TransitionTrace connStateId $ mkTransition connState connState)
                        , Nothing
                        )
               -- one can only enter 'OutboundIdleState' if remote state is
               -- already cold.
               OutboundIdleState _connId _connThread _handle _dataFlow ->
-                return ( OperationSuccess (mkTransition connState connState)
+                return ( OperationSuccess (TransitionTrace connStateId $ mkTransition connState connState)
                        , Nothing
                        )
               InboundIdleState _connId _connThread _handle _dataFlow ->
-                return ( OperationSuccess (mkTransition connState connState)
+                return ( OperationSuccess (TransitionTrace connStateId $ mkTransition connState connState)
                        , Nothing
                        )
 
@@ -2355,7 +2361,7 @@ with args@Arguments {
               InboundState _connId connThread handle dataFlow -> do
                 let connState' = InboundIdleState connId connThread handle dataFlow
                 writeTVar connVar connState'
-                return ( OperationSuccess (mkTransition connState connState')
+                return ( OperationSuccess (TransitionTrace connStateId $ mkTransition connState connState')
                        , Nothing
                        )
 
@@ -2367,7 +2373,7 @@ with args@Arguments {
               DuplexState _connId connThread handle -> do
                 let connState' = OutboundDupState connId connThread handle Ticking
                 writeTVar connVar connState'
-                return ( OperationSuccess (mkTransition connState connState')
+                return ( OperationSuccess (TransitionTrace connStateId $ mkTransition connState connState')
                        , Nothing
                        )
 
@@ -2388,11 +2394,11 @@ with args@Arguments {
       -- trace transition
       case result of
         OperationSuccess tr ->
-          traceWith trTracer (TransitionTrace (remoteAddress connId) tr)
+          traceWith trTracer tr
         _ -> return ()
 
       traceCounters stateVar
-      return (State.abstractState . fromState <$> result)
+      return (State.abstractState . fromState . ttTransition <$> result)
 
 
 --
