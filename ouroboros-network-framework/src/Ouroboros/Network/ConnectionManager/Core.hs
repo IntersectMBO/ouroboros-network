@@ -60,8 +60,8 @@ import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.InformationChannel
            (InformationChannel)
 import Ouroboros.Network.ConnectionManager.InformationChannel qualified as InfoChannel
-import Ouroboros.Network.ConnectionManager.State (ConnectionManagerState,
-           ConnectionState (..), FreshIdSupply, MutableConnState (..))
+import Ouroboros.Network.ConnectionManager.State (ConnStateIdSupply,
+           ConnectionManagerState, ConnectionState (..), MutableConnState (..))
 import Ouroboros.Network.ConnectionManager.State qualified as State
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.InboundGovernor.Event (NewConnectionInfo (..))
@@ -402,8 +402,8 @@ with args@Arguments {
      classifyHandleError
      inboundGovernorInfoChannel
      k = do
-    ((freshIdSupply, stateVar, stdGenVar)
-       ::  ( FreshIdSupply m
+    ((connStateIdSupply, stateVar, stdGenVar)
+       ::  ( ConnStateIdSupply m
            , StrictTMVar m (ConnectionManagerState peerAddr handle handleError
                                                    version m)
            , StrictTVar m StdGen
@@ -417,9 +417,9 @@ with args@Arguments {
               Just st -> Just <$> traverse (inspectTVar (Proxy :: Proxy m) . toLazyTVar . connVar) st
             return (TraceString (show st'))
 
-          freshIdSupply <- State.newFreshIdSupply (Proxy :: Proxy m)
+          connStateIdSupply <- State.newConnStateIdSupply (Proxy :: Proxy m)
           stdGenVar <- newTVar (stdGen args)
-          return (freshIdSupply, v, stdGenVar)
+          return (connStateIdSupply, v, stdGenVar)
 
     let readState
           :: STM m (State.ConnMap peerAddr AbstractState)
@@ -456,7 +456,7 @@ with args@Arguments {
                   WithInitiatorMode
                     OutboundConnectionManager {
                         ocmAcquireConnection =
-                          acquireOutboundConnectionImpl freshIdSupply stateVar
+                          acquireOutboundConnectionImpl connStateIdSupply stateVar
                                                         stdGenVar outboundHandler,
                         ocmReleaseConnection =
                           releaseOutboundConnectionImpl stateVar stdGenVar
@@ -471,7 +471,7 @@ with args@Arguments {
                   WithResponderMode
                     InboundConnectionManager {
                         icmIncludeConnection =
-                          includeInboundConnectionImpl freshIdSupply stateVar
+                          includeInboundConnectionImpl connStateIdSupply stateVar
                                                        inboundHandler,
                         icmReleaseConnection =
                           releaseInboundConnectionImpl stateVar,
@@ -492,14 +492,14 @@ with args@Arguments {
                   WithInitiatorResponderMode
                     OutboundConnectionManager {
                         ocmAcquireConnection =
-                          acquireOutboundConnectionImpl freshIdSupply stateVar
+                          acquireOutboundConnectionImpl connStateIdSupply stateVar
                                                         stdGenVar outboundHandler,
                         ocmReleaseConnection =
                           releaseOutboundConnectionImpl stateVar stdGenVar
                       }
                     InboundConnectionManager {
                         icmIncludeConnection =
-                          includeInboundConnectionImpl freshIdSupply stateVar
+                          includeInboundConnectionImpl connStateIdSupply stateVar
                                                        inboundHandler,
                         icmReleaseConnection =
                           releaseInboundConnectionImpl stateVar,
@@ -844,7 +844,7 @@ with args@Arguments {
 
     includeInboundConnectionImpl
         :: HasCallStack
-        => FreshIdSupply m
+        => ConnStateIdSupply m
         -> StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
         -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version versionData m
         -> Word32
@@ -859,7 +859,7 @@ with args@Arguments {
         -> ConnectionId peerAddr
         -- ^ connection id used as an identifier of the resource
         -> m (Connected peerAddr handle handleError)
-    includeInboundConnectionImpl freshIdSupply
+    includeInboundConnectionImpl connStateIdSupply
                                  stateVar
                                  handler
                                  hardLimit
@@ -905,7 +905,7 @@ with args@Arguments {
                     case v0 of
                       Nothing -> do
                         -- 'Accepted'
-                        v <- State.newMutableConnState (remoteAddress connId) freshIdSupply connState'
+                        v <- State.newMutableConnState (remoteAddress connId) connStateIdSupply connState'
                         labelTVar (connVar v) ("conn-state-" ++ show connId)
                         return (v, Nothing)
                       Just v -> do
@@ -933,8 +933,8 @@ with args@Arguments {
                            InboundState          {} -> writeTVar (connVar v) connState'
                                                     $> assert False v
 
-                           TerminatingState      {} -> State.newMutableConnState (remoteAddress connId) freshIdSupply connState'
-                           TerminatedState       {} -> State.newMutableConnState (remoteAddress connId) freshIdSupply connState'
+                           TerminatingState      {} -> State.newMutableConnState (remoteAddress connId) connStateIdSupply connState'
+                           TerminatedState       {} -> State.newMutableConnState (remoteAddress connId) connStateIdSupply connState'
 
                         labelTVar (connVar v') ("conn-state-" ++ show connId)
                         return (v', Just connState0')
@@ -1318,7 +1318,7 @@ with args@Arguments {
         -> DiffusionMode
         -> peerAddr
         -> m (Connected peerAddr handle handleError)
-    acquireOutboundConnectionImpl freshIdSupply stateVar stdGenVar handler diffusionMode peerAddr = do
+    acquireOutboundConnectionImpl connStateIdSupply stateVar stdGenVar handler diffusionMode peerAddr = do
         let provenance = Outbound
         traceWith tracer (TrIncludeConnection provenance peerAddr)
         (trace, mutableConnState@MutableConnState { connVar }
@@ -1440,7 +1440,7 @@ with args@Arguments {
               let connState' = ReservedOutboundState
               (mutableConnState :: MutableConnState peerAddr handle handleError
                                                     version m)
-                <- State.newMutableConnState peerAddr freshIdSupply connState'
+                <- State.newMutableConnState peerAddr freshConnIdSupply connState'
               -- TODO: label `connVar` using 'ConnectionId'
               labelTVar (connVar mutableConnState) ("conn-state-" ++ show peerAddr)
 
