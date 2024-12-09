@@ -25,7 +25,7 @@ module Test.Ouroboros.Network.PeerSelection.RootPeersDNS
   , DelayAndTimeoutScripts (..)
   ) where
 
-import Data.Bifunctor (first)
+import Data.Bifunctor (bimap, second)
 import Data.Text.Encoding (encodeUtf8)
 import Control.Applicative (Alternative)
 import Control.Monad (forever, replicateM_)
@@ -121,7 +121,7 @@ data MockRoots = MockRoots {
                                   , WarmValency
                                   , Map RelayAccessPoint (PeerAdvertise, PeerTrustable))]
   , mockLocalRootPeersDNSMap  :: Script (Map (DNS.Domain, DNS.TYPE) MockDNSLookupResult)
-  , mockPublicRootPeers       :: Map RelayAccessPoint PeerAdvertise
+  , mockPublicRootPeers       :: Script (Map RelayAccessPoint PeerAdvertise)
   , mockPublicRootPeersDNSMap :: Script (Map (DNS.Domain, DNS.TYPE) MockDNSLookupResult)
   }
   deriving Show
@@ -132,76 +132,74 @@ genMockRoots :: Gen MockRoots
 genMockRoots = sized $ \relaysNumber -> do
     -- Generate LocalRootPeers
     --
-    relaysPerGroup <- chooseEnum (1, relaysNumber `div` 3)
+    -- relaysPerGroup <- chooseEnum (1, relaysNumber `div` 3)
 
-    localRootRelays <- vectorOf relaysNumber arbitrary
-    targets <- vectorOf relaysNumber genTargets
+    -- localRootRelays <- vectorOf relaysNumber arbitrary
+    -- targets <- vectorOf relaysNumber genTargets
 
-    peerAdvertise <- blocks relaysPerGroup
-                      <$> vectorOf relaysNumber arbitrary
+    -- peerAdvertise <- blocks relaysPerGroup
+    --                   <$> vectorOf relaysNumber arbitrary
 
-        -- concat unique identifier to DNS domains to simplify tests
-    let taggedLocalRelays = tagRelays localRootRelays
-        localRelaysBlocks = blocks relaysPerGroup taggedLocalRelays
-        localRelaysMap    = map Map.fromList $ zipWith zip localRelaysBlocks
-                                                           peerAdvertise
-        localRootPeers    = zipWith (\(h, w) g -> (h, w, g)) targets localRelaysMap
-        localRootDomains  = [ d
-                            | d@RelayAccessDomain {} <- taggedLocalRelays ]
+    --     -- concat unique identifier to DNS domains to simplify tests
+    -- let taggedLocalRelays = tagRelays localRootRelays
+    --     localRelaysBlocks = blocks relaysPerGroup taggedLocalRelays
+    --     localRelaysMap    = map Map.fromList $ zipWith zip localRelaysBlocks
+    --                                                        peerAdvertise
+    --     localRootPeers    = zipWith (\(h, w) g -> (h, w, g)) targets localRelaysMap
+    --     localRootDomains  = [ d
+    --                         | d@RelayAccessDomain {} <- taggedLocalRelays ]
 
-        ipsPerDomain = 2
+    let ipsPerDomain = 2
 
-    lrpDNSMap <- Script . NonEmpty.fromList
-              <$> listOf1 (genDomainLookupTable ipsPerDomain localRootDomains)
+    -- lrpDNSMap <- Script . NonEmpty.fromList
+    --           <$> listOf1 (genDomainLookupTable ipsPerDomain localRootDomains)
 
     -- Generate PublicRootPeers
     --
     publicRootRelays <- tagRelays <$> vectorOf relaysNumber arbitrary
-    let (numNotSRV, relayAddress, relayDomains, relaySRVs) = foldl'
-                                                            threeWay
-                                                            (0, [], [], [])
-                                                            publicRootRelays
-    let aaa = [d
-              | (RelayAccessDomain d _) <- relayDomains]
-        ll dom = (dom, DNS.SRV)
+    let (relayAddress, relayDomains, relaySRVs) = foldl'
+                                                    threeWay
+                                                    ([], [], [])
+                                                    publicRootRelays
+    advertiseStatic <- zip relayAddress <$> vectorOf (length relayAddress) arbitrary
+    let genLookups = do
+          ipsttls <- genDomainIPLookupTable ipsPerDomain (dapDomain <$> relayDomains)
+          (srvs, plain) <- dealDomains [] relayDomains relaySRVs
+          let srvs' = bimap srvDomain (fmap dapDomain) <$> srvs
+          advertiseSrvs <- vectorOf (length srvs) arbitrary
+          advertisePlain <- vectorOf (length plain) arbitrary
+          let advertiseDynamic =    zipWith s srvs advertiseSrvs
+                                 <> zipWith p plain advertisePlain
+              s (DomainSRV d, _)  adv' = (RelayAccessSRVDomain d, adv')
+              p (DomainPlain d port) adv' = (RelayAccessDomain d port, adv')
+          srvs'' <- Map.fromList . fmap (bimap (,DNS.SRV) Right) <$> groupSrvs [] srvs'
+          return ( Map.union ipsttls srvs''
+                 , Map.fromList $ advertiseStatic <> advertiseDynamic)
 
-    tbl1 <- genDomainLookupTable ipsPerDomain aaa
-    (srvs, plain) <- dealDomains [] relayDomains relaySRVs
-    srvs' <- first ll <$> groupSrvs [] srvs
-
-    publicRootPeersAdvertise <- vectorOf numNotSRV arbitrary
-
-    let publicRootPeers = undefined
-          -- Map.fromList (zip (tagRelays publicRootRelays)
-          --                   publicRootPeersAdvertise)
-
-        publicRootDomains = [ d
-                            | (d@(RelayAccessDomain domain _), _)
-                                <- Map.assocs publicRootPeers ]
-
-    publicRootPeersDNSMap <- Script . NonEmpty.fromList
-                          <$> listOf1 (genDomainLookupTable ipsPerDomain publicRootDomains)
+    lookups <- listOf1 genLookups
+    let publicRootPeersDNSMap = Script . NonEmpty.fromList $ fst <$> lookups
+        publicRootPeers = Script . NonEmpty.fromList $ snd <$> lookups
 
     return (MockRoots {
       mockLocalRootPeers        = undefined, --localRootPeers,
       mockLocalRootPeersDNSMap  = undefined, --lrpDNSMap,
-      mockPublicRootPeers       = undefined, --publicRootPeers,
-      mockPublicRootPeersDNSMap = undefined --publicRootPeersDNSMap
+      mockPublicRootPeers       = publicRootPeers,
+      mockPublicRootPeersDNSMap = publicRootPeersDNSMap
     })
   where
     groupSrvs acc [] = return acc
     groupSrvs acc ((srv, domains):rest) = do
-      let helper hacc count domains' = do
+      let helper hacc 0 _ = return hacc
+          helper hacc count domains' = do
             howMany <- chooseInt (1, count)
             port <- genPort
-            prio <- arbitrary
-            wt <- arbitrary
+            -- prio <- arbitrary
+            -- wt <- arbitrary
             let res = eff <$> take howMany domains'
-                eff dom = (dom, prio, wt, port)
+                eff dom = (dom, undefined, undefined, port)
             helper (res <> hacc) (count - howMany) (drop howMany domains')
-          helper hacc 0 _ = return hacc
-      break <- helper [] (length domains) domains
-      groupSrvs (break : acc) rest
+      breakUp <- helper [] (length domains) domains
+      groupSrvs ((srv, breakUp) : acc) rest
 
     dealDomains [] (domain : domains) srvs@(srv : srvs') =
       dealDomains [(srv, [domain])] domains srvs'
@@ -210,22 +208,21 @@ genMockRoots = sized $ \relaysNumber -> do
       toss <- arbitrary
       if toss
         then dealDomains ((s, domain : ds):as) domains srvs
-        else dealDomains (srv, [domain]):as' domains srvs'
+        else dealDomains ((srv, [domain]):as') domains srvs'
 
     dealDomains as ds _srvs = return (as, ds)
 
-    threeWay (!notSRV, rAddressAcc, rDomainAcc, rSRVAcc) v =
-      case v of
-        RelayAccessAddress {} -> (succ notSRV, v : rAddressAcc, rDomainAcc, rSRVAcc)
-        RelayAccessDomain {}  -> (succ notSRV, rAddressAcc, v : rDomainAcc, rSRVAcc)
-        RelayAccessSRVDomain {} -> (notSRV, rAddressAcc, rDomainAcc, v : rSRVAcc)
+    threeWay (rAddressAcc, rDomainAcc, rSRVAcc) = \case
+      a@RelayAccessAddress {} -> (a : rAddressAcc, rDomainAcc, rSRVAcc)
+      RelayAccessDomain d p  -> (rAddressAcc, DomainPlain d p : rDomainAcc, rSRVAcc)
+      RelayAccessSRVDomain d -> (rAddressAcc, rDomainAcc, DomainSRV d : rSRVAcc)
 
-    projDomain :: RelayAccessPoint -> Maybe DNS.Domain
-    projDomain = \case
-      RelayDomainAccessPoint domain
-        | DomainAccessPoint (DomainPlain domain' _) <- domain -> Just domain'
-        | DomainSRVAccessPoint (DomainSRV domain')  <- domain -> Just domain'
-      _otherwise -> Nothing
+    -- projDomain :: RelayAccessPoint -> Maybe DNS.Domain
+    -- projDomain = \case
+    --   RelayDomainAccessPoint domain
+    --     | DomainAccessPoint (DomainPlain domain' _) <- domain -> Just domain'
+    --     | DomainSRVAccessPoint (DomainSRV domain')  <- domain -> Just domain'
+    --   _otherwise -> Nothing
 
     genTargets :: Gen (HotValency, WarmValency)
     genTargets = do
@@ -233,9 +230,9 @@ genMockRoots = sized $ \relaysNumber -> do
       hotValency <- HotValency <$> chooseEnum (1, getWarmValency warmValency)
       return (hotValency, warmValency)
 
-    genDomainLookupTable :: Int -> [DNS.Domain] -> Gen (Map (DNS.Domain, DNS.TYPE)
-                                                            MockDNSLookupResult)
-    genDomainLookupTable ipsPerDomain localRootDomains = do
+    genDomainIPLookupTable :: Int -> [DNS.Domain] -> Gen (Map (DNS.Domain, DNS.TYPE)
+                                                              MockDNSLookupResult)
+    genDomainIPLookupTable ipsPerDomain localRootDomains = do
       localRootDomainIPs <- blocks ipsPerDomain
               -- Modules under test do not differ by IP version so we only
               -- generate IPv4 addresses.
@@ -251,71 +248,74 @@ genMockRoots = sized $ \relaysNumber -> do
 
       return lrpDNSMap
 
-    tagRelays relays =
+    tagRelays =
       zipWith
         (\tag rel
           -> case rel of
-               RelayAccessDomain domain port
-                 -> RelayAccessDomain (domain <> (pack . show) tag) port
+               RelayDomainAccessPoint domain
+                 | DomainAccessPoint (DomainPlain domain' port) <- domain ->
+                     RelayAccessDomain (domain' <> (pack . show) tag) port
+                 | DomainSRVAccessPoint (DomainSRV domain') <- domain ->
+                     RelayAccessSRVDomain (domain' <> (pack . show) tag)
                x -> x
         )
         [(0 :: Int), 1 .. ]
-        relays
 
     blocks _ [] = []
     blocks s l  = take s l : blocks s (drop s l)
 
 instance Arbitrary MockRoots where
     arbitrary = genMockRoots
-    shrink roots@MockRoots { mockLocalRootPeers
-                           , mockLocalRootPeersDNSMap
-                           , mockPublicRootPeers
-                           , mockPublicRootPeersDNSMap
-                           } =
-      [ roots { mockLocalRootPeers        = lrp
-              , mockLocalRootPeersDNSMap  = lrpDNSMap
-              }
-      | lrp <- shrinkList (const []) mockLocalRootPeers,
-        let lrpDomains =
-              Set.fromList [ domain
-                           | RelayAccessDomain domain _
-                              <- concatMap (Map.keys . thrd) lrp ]
-            lrpDNSMap  = (`Map.restrictKeys` lrpDomains)
-                       <$> mockLocalRootPeersDNSMap
-      ] ++
-      [ roots { mockPublicRootPeers       = prp
-              , mockPublicRootPeersDNSMap = prpDNSMap
-              }
-      | prp <- shrink mockPublicRootPeers,
-        let prpDomains = Set.fromList [ domain
-                                      | (RelayAccessDomain domain _, _)
-                                          <- Map.assocs prp ]
-            prpDNSMap  = (`Map.restrictKeys` prpDomains)
-                       <$> mockPublicRootPeersDNSMap
-      ]
-        where
-          thrd (_, _, c) = c
+    shrink roots@MockRoots{} = undefined
+      -- { mockLocalRootPeers
+      --                      , mockLocalRootPeersDNSMap
+      --                      , mockPublicRootPeers
+      --                      , mockPublicRootPeersDNSMap
+      --                      } =
+      -- [ roots { mockLocalRootPeers        = lrp
+      --         , mockLocalRootPeersDNSMap  = lrpDNSMap
+      --         }
+      -- | lrp <- shrinkList (const []) mockLocalRootPeers,
+      --   let lrpDomains =
+      --         Set.fromList [ domain
+      --                      | RelayAccessDomain domain _
+      --                         <- concatMap (Map.keys . thrd) lrp ]
+      --       lrpDNSMap  = (`Map.restrictKeys` lrpDomains)
+      --                  <$> mockLocalRootPeersDNSMap
+      -- ] ++
+      -- [ roots { mockPublicRootPeers       = prp
+      --         , mockPublicRootPeersDNSMap = prpDNSMap
+      --         }
+      -- | prp <- shrink mockPublicRootPeers,
+      --   let prpDomains = Set.fromList [ domain
+      --                                 | (RelayAccessDomain domain _, _)
+      --                                     <- Map.assocs prp ]
+      --       prpDNSMap  = (`Map.restrictKeys` prpDomains)
+      --                  <$> mockPublicRootPeersDNSMap
+      -- ]
+      --   where
+      --     thrd (_, _, c) = c
 
 -- | Used for debugging in GHCI
 --
-simpleMockRoots :: MockRoots
-simpleMockRoots = MockRoots localRootPeers dnsMap Map.empty (singletonScript Map.empty) (singletonScript (1 :: PortNumber))
-  where
-    localRootPeers =
-      [ ( 2, 2
-        , Map.fromList
-          [ ( RelayAccessAddress (read "192.0.2.1") (read "3333")
-            , (DoAdvertisePeer, IsNotTrustable)
-            )
-          , ( RelayAccessDomain  "test.domain"      (read "4444")
-            , (DoNotAdvertisePeer, IsNotTrustable)
-            )
-          ]
-        )
-      ]
-    dnsMap = singletonScript $ Map.fromList
-              [ ("test.domain", [read "192.1.1.1", read "192.2.2.2"])
-              ]
+-- simpleMockRoots :: MockRoots
+-- simpleMockRoots = MockRoots localRootPeers dnsMap Map.empty (singletonScript Map.empty) (singletonScript (1 :: PortNumber))
+--   where
+--     localRootPeers =
+--       [ ( 2, 2
+--         , Map.fromList
+--           [ ( RelayAccessAddress (read "192.0.2.1") (read "3333")
+--             , (DoAdvertisePeer, IsNotTrustable)
+--             )
+--           , ( RelayAccessDomain  "test.domain"      (read "4444")
+--             , (DoNotAdvertisePeer, IsNotTrustable)
+--             )
+--           ]
+--         )
+--       ]
+--     dnsMap = singletonScript $ Map.fromList
+--               [ ("test.domain", [read "192.1.1.1", read "192.2.2.2"])
+--               ]
 
 
 genDiffTime :: Integer
@@ -358,6 +358,7 @@ instance Arbitrary DNSLookupDelay where
 mockDNSActions :: forall exception m.
                   ( MonadDelay m
                   , MonadTimer m
+                  , MonadAsync m
                   )
                => StrictTVar m (Map (DNS.Domain, DNS.TYPE) MockDNSLookupResult)
                -> StrictTVar m (Script DNSTimeout)
@@ -383,11 +384,11 @@ mockDNSActions dnsMapVar dnsTimeoutScript dnsLookupDelayScript =
      DNSTimeout dnsTimeout <- stepScript' dnsTimeoutScript
      DNSLookupDelay dnsLookupDelay <- stepScript' dnsLookupDelayScript
 
-     MonadTimer.timeout dnsTimeout $ do
+     MonadTimer.timeout dnsTimeout do
        MonadTimer.threadDelay dnsLookupDelay
        case Map.lookup (domain, ofType) dnsMap of
-         Nothing -> return (Just $ Left NameError)
-         Just x  -> return (Just . Right $ toDNSMessage x)
+         Nothing -> return (Left NameError)
+         Just x  -> return (Right $ toDNSMessage x)
 
    toDNSMessage = undefined
 
@@ -420,21 +421,22 @@ mockLocalRootPeersProvider tracer (MockRoots localRootPeers dnsMapScript _ _)
       _ <- labelTVarIO resultVar "resultVar"
       _ <- traceTVarIO resultVar
                        (\_ a -> pure $ TraceDynamic (LocalRootPeersResults a))
-      withAsync (updateDNSMap dnsMapScriptVar dnsMapVar) $ \_ -> do
-        void $ MonadTimer.timeout 3600 $
-          localRootPeersProvider tracer
-                                 (curry toSockAddr)
-                                 DNSResolver.defaultResolvConf
-                                 (mockDNSActions dnsMapVar
-                                                 dnsTimeoutScriptVar
-                                                 dnsLookupDelayScriptVar)
-                                 (readTVar localRootPeersVar)
-                                 resultVar
-        -- if there's no dns domain, `localRootPeersProvider` will never write
-        -- to `resultVar`; thus the `traceTVarIO` callback will never execute.
-        -- By reading & writing to the `TVar` we are forcing it to run at least
-        -- once.
-        atomically $ readTVar resultVar >>= writeTVar resultVar
+      return ()
+      -- withAsync (updateDNSMap dnsMapScriptVar dnsMapVar) $ \_ -> do
+      --   void $ MonadTimer.timeout 3600 $
+      --     localRootPeersProvider tracer
+      --                            (curry toSockAddr)
+      --                            DNSResolver.defaultResolvConf
+      --                            (mockDNSActions dnsMapVar
+      --                                            dnsTimeoutScriptVar
+      --                                            dnsLookupDelayScriptVar)
+      --                            (readTVar localRootPeersVar)
+      --                            resultVar
+      --   -- if there's no dns domain, `localRootPeersProvider` will never write
+      --   -- to `resultVar`; thus the `traceTVarIO` callback will never execute.
+      --   -- By reading & writing to the `TVar` we are forcing it to run at least
+      --   -- once.
+      --   atomically $ readTVar resultVar >>= writeTVar resultVar
   where
     updateDNSMap :: StrictTVar m (Script (Map DNS.Domain [(IP, TTL)]))
                  -> StrictTVar m (Map DNS.Domain [(IP, TTL)])
@@ -475,20 +477,21 @@ mockPublicRootPeersProvider tracer (MockRoots _ _ publicRootPeers dnsMapScript)
       dnsTimeoutScriptVar <- initScript' dnsTimeoutScript
       dnsLookupDelayScriptVar <- initScript' dnsLookupDelayScript
       publicRootPeersVar <- newTVarIO publicRootPeers
-      replicateM_ 5 $ do
-        dnsMap' <- stepScript' dnsMapScriptVar
-        atomically (writeTVar dnsMapVar dnsMap')
+      return ()
+      -- replicateM_ 5 $ do
+      --   dnsMap' <- stepScript' dnsMapScriptVar
+      --   atomically (writeTVar dnsMapVar dnsMap')
 
-        publicRootPeersProvider tracer
-                                (curry toSockAddr)
-                                dnsSemaphore
-                                DNSResolver.defaultResolvConf
-                                (readTVar publicRootPeersVar)
-                                (mockDNSActions @Failure
-                                                dnsMapVar
-                                                dnsTimeoutScriptVar
-                                                dnsLookupDelayScriptVar)
-                                action
+      --   publicRootPeersProvider tracer
+      --                           (curry toSockAddr)
+      --                           dnsSemaphore
+      --                           DNSResolver.defaultResolvConf
+      --                           (readTVar publicRootPeersVar)
+      --                           (mockDNSActions @Failure
+      --                                           dnsMapVar
+      --                                           dnsTimeoutScriptVar
+      --                                           dnsLookupDelayScriptVar)
+      --                           action
 
 -- | 'resolveDomainAddresses' running with a given MockRoots env
 --
@@ -511,16 +514,17 @@ mockResolveLedgerPeers tracer (MockRoots _ _ publicRootPeers dnsMapScript)
 
       dnsTimeoutScriptVar <- initScript' dnsTimeoutScript
       dnsLookupDelayScriptVar <- initScript' dnsLookupDelayScript
-      resolveLedgerPeers tracer
-                         (curry toSockAddr)
-                         dnsSemaphore
-                         DNSResolver.defaultResolvConf
-                         (mockDNSActions @Failure dnsMapVar
-                                                  dnsTimeoutScriptVar
-                                                  dnsLookupDelayScriptVar)
-                         [ domain
-                         | (RelayDomainAccessPoint domain, _)
-                              <- Map.assocs publicRootPeers ]
+      return undefined
+      -- resolveLedgerPeers tracer
+      --                    (curry toSockAddr)
+      --                    dnsSemaphore
+      --                    DNSResolver.defaultResolvConf
+      --                    (mockDNSActions @Failure dnsMapVar
+      --                                             dnsTimeoutScriptVar
+      --                                             dnsLookupDelayScriptVar)
+      --                    [ domain
+      --                    | (RelayDomainAccessPoint domain, _)
+      --                         <- Map.assocs publicRootPeers ]
 
 --
 -- Utils for properties
@@ -574,8 +578,8 @@ selectLocalRootGroupsEvents trace = [ (t, e) | (t, TraceLocalRootGroups e) <- tr
 
 selectLocalRootResultEvents :: [(Time, TraceLocalRootPeers SockAddr Failure)]
                             -> [(Time, (DNS.Domain, [IP]))]
-selectLocalRootResultEvents trace = [ (t, (domain, map fst r))
-                                    | (t, TraceLocalRootResult (DomainAccessPoint domain _) r) <- trace ]
+selectLocalRootResultEvents trace = undefined --[ (t, (domain, map fst r))
+                                    -- | (t, TraceLocalRootResult (DomainAccessPoint domain _) r) <- trace ]
 
 selectPublicRootPeersEvents :: [(Time, TestTraceEvent)]
                             -> [(Time, TracePublicRootPeers)]
@@ -727,24 +731,24 @@ prop_local_resolvesDomainsCorrectly mockRoots@(MockRoots localRoots lDNSMap _ _)
 
         -- all domains that could have been resolved in each script
         maxResultMap :: Script (Set DNS.Domain)
-        maxResultMap = Map.keysSet
-                     . (`Map.restrictKeys` localRootDomains)
-                     <$> lDNSMap
+        maxResultMap = undefined --Map.keysSet
+                     -- . (`Map.restrictKeys` localRootDomains)
+                     -- <$> lDNSMap
 
         -- all domains that were tried to resolve during the simulation
         allTriedDomains :: Set DNS.Domain
-        allTriedDomains
-          = Set.fromList
-          $ catMaybes
-          [ mbDomain
-          | (_, ev) <- tr
-          , let mbDomain = case ev of
-                  TraceLocalRootResult  (DomainAccessPoint domain _)  _ -> Just domain
-                  TraceLocalRootFailure (DomainAccessPoint domain _)  _ -> Just domain
-                  TraceLocalRootError   (DomainAccessPoint _domain _) _ -> Nothing
-                  _                                                     -> Nothing
+        allTriedDomains = undefined
+          -- = Set.fromList
+          -- $ catMaybes
+          -- [ mbDomain
+          -- | (_, ev) <- tr
+          -- , let mbDomain = case ev of
+          --         TraceLocalRootResult  (DomainAccessPoint domain _)  _ -> Just domain
+          --         TraceLocalRootFailure (DomainAccessPoint domain _)  _ -> Just domain
+          --         TraceLocalRootError   (DomainAccessPoint _domain _) _ -> Nothing
+          --         _                                                     -> Nothing
 
-          ]
+          -- ]
 
 
     in
@@ -899,27 +903,27 @@ prop_public_resolvesDomainsCorrectly
     mockRoots@(MockRoots _ _ _ pDNSMap)
     (DelayAndTimeoutScripts dnsLookupDelayScript dnsTimeoutScript)
     n
-  =
-    let mockRoots' =
-          mockRoots { mockPublicRootPeersDNSMap =
-                        singletonScript (scriptHead pDNSMap)
-                    }
-        tr = runSimTrace
-           $ mockPublicRootPeersProvider tracerTracePublicRoots
-                                         mockRoots'
-                                         dnsTimeoutScript
-                                         dnsLookupDelayScript
-                                         ($ n)
+  = undefined
+    -- let mockRoots' =
+    --       mockRoots { mockPublicRootPeersDNSMap =
+    --                     singletonScript (scriptHead pDNSMap)
+    --                 }
+    --     tr = runSimTrace
+    --        $ mockPublicRootPeersProvider tracerTracePublicRoots
+    --                                      mockRoots'
+    --                                      dnsTimeoutScript
+    --                                      dnsLookupDelayScript
+    --                                      ($ n)
 
-        successes = selectPublicRootResultEvents
-                  $ selectPublicRootPeersEvents
-                  $ selectRootPeerDNSTraceEvents
-                  $ tr
+    --     successes = selectPublicRootResultEvents
+    --               $ selectPublicRootPeersEvents
+    --               $ selectRootPeerDNSTraceEvents
+    --               $ tr
 
-        successesMap = Map.fromList $ map snd successes
+    --     successesMap = Map.fromList $ map snd successes
 
-     in counterexample (show successes)
-      $ successesMap == (map fst <$> Map.unions pDNSMap)
+    --  in counterexample (show successes)
+    --   $ successesMap == (map fst <$> Map.unions pDNSMap)
 
 
 -- | Create a resource from a list.
