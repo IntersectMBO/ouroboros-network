@@ -1,7 +1,29 @@
 {-# LANGUAGE LambdaCase     #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
-module Ouroboros.Network.ConnectionManager.Test.Timeouts where
+module Ouroboros.Network.ConnectionManager.Test.Timeouts
+  ( verifyAllTimeouts
+  , SimAddr
+  , SimAddr_
+  , TestAddr (..)
+  , TestProperty (..)
+  , ArbDataFlow (..)
+  , Timeouts (..)
+  , ioTimeouts
+  , simTimeouts
+  , mkProperty
+  , mkPropertyPruning
+  , groupConns
+  , groupConnsEither
+  , classifyNegotiatedDataFlow
+  , classifyActivityType
+  , classifyEffectiveDataFlow
+  , classifyTermination
+  , classifyPrunings
+  , classifyPruning
+  , within_
+  , ppTransition
+  ) where
 
 import Control.Monad.Class.MonadTime.SI (DiffTime, Time, diffTime)
 import Control.Monad.IOSim
@@ -69,7 +91,7 @@ verifyTimeouts state inDiffusion [] =
     ("This state didn't timeout:\n"
     ++ show state
     )
-  $ (inDiffusion || isNothing state)
+  $ inDiffusion || isNothing state
 -- If we already seen a \tau transition state
 verifyTimeouts st@(Just (state, t')) inDiffusion
                ((t, TransitionTrace _ tt@(Transition _ to)):xs) =
