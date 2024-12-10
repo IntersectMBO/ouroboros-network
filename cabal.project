@@ -54,3 +54,9 @@ package network-mux
 package ouroboros-network
   flags: +asserts +cddl
 
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/io-sim
+  tag: 586ddf6b52be1bbc78f9c659907f8e3fa13ccffe
+  --sha256: sha256-HaCWLHhseTQsTgShuh6tM52NpS558jcPgpQZ0YTBgj4=
+  subdir: io-sim
