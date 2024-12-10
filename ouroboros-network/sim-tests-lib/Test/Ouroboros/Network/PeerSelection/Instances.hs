@@ -158,7 +158,7 @@ instance Arbitrary DomainAccessPoint where
 
 genIPv4 :: Gen IP.IP
 genIPv4 =
-    IP.IPv4 . IP.toIPv4w <$> arbitrary `suchThat` (> 100)
+    IP.IPv4 . IP.toIPv4w <$> resize 200 arbitrary `suchThat` (> 100)
 
 genIPv6 :: Gen IP.IP
 genIPv6 =
@@ -166,7 +166,7 @@ genIPv6 =
   where
     genFourWord32 :: Gen (Word32, Word32, Word32, Word32)
     genFourWord32 =
-       (,,,) <$> arbitrary `suchThat` (> 100)
+       (,,,) <$> resize 200 arbitrary `suchThat` (> 100)
              <*> arbitrary
              <*> arbitrary
              <*> arbitrary
