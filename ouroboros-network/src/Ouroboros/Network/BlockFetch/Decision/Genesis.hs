@@ -5,125 +5,122 @@
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE TypeOperators       #-}
+module Ouroboros.Network.BlockFetch.Decision.Genesis
+  ( -- * Genesis decision logic
+    --
+    -- | This module contains the part of the block fetch decisions process that is
+    -- specific to the bulk sync mode. This logic reuses parts of the logic for the
+    -- deadline mode, but it is inherently different.
+    --
+    -- Definitions:
+    --
+    -- - Let @inflight :: peer -> Set blk@ be the outstanding blocks, those that
+    --   have been requested and are expected to arrive but have not yet.
+    --
+    -- - Let @peersOrder@ be an order of preference among the peers. This order is
+    --   not set in stone and will evolve as we go.
+    --
+    -- - Let @currentPeer :: Maybe peer@ be the “current peer” with which we are
+    --   interacting. If it exists, this peer must be the best according to
+    --   @peersOrder@, and the last fetch request must have been sent to them.
+    --
+    -- - Let @currentStart :: Time@ be the latest time a fetch request was sent
+    --   while there were no outstanding blocks.
+    --
+    -- - Let @gracePeriod@ be a small duration (eg. 10s), during which a “cold” peer
+    --   is allowed to warm up (eg. grow the TCP window) before being expected to
+    --   feed blocks faster than we can validate them.
+    --
+    -- One iteration of this decision logic:
+    --
+    -- 0. If @inflight(currentPeer)@ is non-empty and the block validation component
+    --    has idled at any point after @currentStart@ plus @gracePeriod@, then the
+    --    peer @currentPeer@ has failed to promptly serve @inflight(currentPeer)@,
+    --    and:
+    --
+    --   - If @currentPeer@ is the ChainSync Jumping dynamo, then it must
+    --     immediately be replaced as the dynamo.
+    --
+    --   - Stop considering the peer “current” and make them the worst according to
+    --     the @peersOrder@.
+    --
+    -- 1. Select @theCandidate :: AnchoredFragment (Header blk)@. This is the best
+    --    candidate header chain among the ChainSync clients (eg. best raw
+    --    tiebreaker among the longest).
+    --
+    -- 2. Select @thePeer :: peer@.
+    --
+    --    - Let @grossRequest@ be the oldest block on @theCandidate@ that has not
+    --      already been downloaded.
+    --
+    --    - If @grossRequest@ is empty, then terminate this iteration. Otherwise,
+    --      pick the best peer (according to @peersOrder@) offering the block in
+    --      @grossRequest@.
+    --
+    -- 3. Craft the actual request to @thePeer@ asking blocks of @theCandidate@:
+    --
+    --    - If the byte size of @inflight(thePeer)@ is below the low-water mark,
+    --      then terminate this iteration.
+    --
+    --    - Decide and send the actual next batch request, as influenced by exactly
+    --      which blocks are actually already currently in-flight with @thePeer@.
+    --
+    -- 4. If we went through the election of a new peer, replace @currentPeer@ and
+    --    put the new peer at the front of @peersOrder@. Also reset @currentStart@
+    --    if @inflights(thePeer)@ is empty.
+    --
+    -- Terminate this iteration.
 
--- | Genesis decision logic
---
--- This module contains the part of the block fetch decisions process that is
--- specific to the bulk sync mode. This logic reuses parts of the logic for the
--- deadline mode, but it is inherently different.
---
--- Definitions:
---
--- - Let @inflight :: peer -> Set blk@ be the outstanding blocks, those that
---   have been requested and are expected to arrive but have not yet.
---
--- - Let @peersOrder@ be an order of preference among the peers. This order is
---   not set in stone and will evolve as we go.
---
--- - Let @currentPeer :: Maybe peer@ be the “current peer” with which we are
---   interacting. If it exists, this peer must be the best according to
---   @peersOrder@, and the last fetch request must have been sent to them.
---
--- - Let @currentStart :: Time@ be the latest time a fetch request was sent
---   while there were no outstanding blocks.
---
--- - Let @gracePeriod@ be a small duration (eg. 10s), during which a “cold” peer
---   is allowed to warm up (eg. grow the TCP window) before being expected to
---   feed blocks faster than we can validate them.
---
--- One iteration of this decision logic:
---
--- 0. If @inflight(currentPeer)@ is non-empty and the block validation component
---    has idled at any point after @currentStart@ plus @gracePeriod@, then the
---    peer @currentPeer@ has failed to promptly serve @inflight(currentPeer)@,
---    and:
---
---   - If @currentPeer@ is the ChainSync Jumping dynamo, then it must
---     immediately be replaced as the dynamo.
---
---   - Stop considering the peer “current” and make them the worst according to
---     the @peersOrder@.
---
--- 1. Select @theCandidate :: AnchoredFragment (Header blk)@. This is the best
---    candidate header chain among the ChainSync clients (eg. best raw
---    tiebreaker among the longest).
---
--- 2. Select @thePeer :: peer@.
---
---    - Let @grossRequest@ be the oldest block on @theCandidate@ that has not
---      already been downloaded.
---
---    - If @grossRequest@ is empty, then terminate this iteration. Otherwise,
---      pick the best peer (according to @peersOrder@) offering the block in
---      @grossRequest@.
---
--- 3. Craft the actual request to @thePeer@ asking blocks of @theCandidate@:
---
---    - If the byte size of @inflight(thePeer)@ is below the low-water mark,
---      then terminate this iteration.
---
---    - Decide and send the actual next batch request, as influenced by exactly
---      which blocks are actually already currently in-flight with @thePeer@.
---
--- 4. If we went through the election of a new peer, replace @currentPeer@ and
---    put the new peer at the front of @peersOrder@. Also reset @currentStart@
---    if @inflights(thePeer)@ is empty.
---
--- Terminate this iteration.
---
--- About the influence of in-flight requests
--- -----------------------------------------
---
--- One can note that in-flight requests are ignored when finding a new peer, but
--- considered when crafting the actual request to a chosen peer. This is by
--- design. We explain the rationale here.
---
--- If a peer proves too slow, then we give up on it (see point 0. above), even
--- if it has requests in-flight. In subsequent selections of peers (point 2.),
--- the blocks in these requests will not be removed from @theCandidate@ as, as
--- far as we know, these requests might not return (until the connection to that
--- peer is terminated by the mini protocol timeout).
---
--- When crafting the actual request, we do need to consider the in-flight
--- requests of the peer, to avoid clogging our network. If some of these
--- in-flight requests date from when the peer was previously “current”, this
--- means that we cycled through all the peers that provided @theCandidate@ and
--- they all failed to serve our blocks promptly.
---
--- This is a degenerate case of the algorithm that might happen but only be
--- transient. Soon enough, @theCandidate@ should be honest (if the consensus
--- layer does its job correctly), and there should exist an honest peer ready to
--- serve @theCandidate@ promptly.
---
--- Interactions with ChainSync Jumping (CSJ)
--- -----------------------------------------
---
--- Because we always require our peers to be able to serve a gross request
--- with an old block, peers with longer chains have a better chance to pass
--- this criteria and to be selected as current peer. The CSJ dynamo, being
--- always ahead of jumpers, has therefore more chances to be selected as the
--- current peer. It is still possible for a jumper or a disengaged peer to be
--- selected.
---
--- If the current peer is the CSJ dynamo and it is a dishonest peer that retains
--- blocks, it will get multiple opportunities to do so since it will be selected
--- as the current peer more often. We therefore rotate the dynamo every time it
--- is the current peer and it fails to serve blocks promptly.
---
--- About the gross request
--- -----------------------
---
--- We want to select a peer that is able to serve us a batch of oldest blocks
--- of @theCandidate@. However, not every peer will be able to deliver these
--- batches as they might be on different chains. We therefore select a peer only
--- if its candidate fragment contains the block in the gross request. In this
--- way, we ensure that the peer can serve at least one block that we wish to
--- fetch.
---
--- If the peer cannot offer any more blocks after that, it will be rotated out
--- soon.
---
-module Ouroboros.Network.BlockFetch.Decision.Genesis (fetchDecisionsGenesisM) where
+    -- * About the influence of in-flight requests
+    --
+    -- | One can note that in-flight requests are ignored when finding a new peer, but
+    -- considered when crafting the actual request to a chosen peer. This is by
+    -- design. We explain the rationale here.
+    --
+    -- If a peer proves too slow, then we give up on it (see point 0. above), even
+    -- if it has requests in-flight. In subsequent selections of peers (point 2.),
+    -- the blocks in these requests will not be removed from @theCandidate@ as, as
+    -- far as we know, these requests might not return (until the connection to that
+    -- peer is terminated by the mini protocol timeout).
+    --
+    -- When crafting the actual request, we do need to consider the in-flight
+    -- requests of the peer, to avoid clogging our network. If some of these
+    -- in-flight requests date from when the peer was previously “current”, this
+    -- means that we cycled through all the peers that provided @theCandidate@ and
+    -- they all failed to serve our blocks promptly.
+    --
+    -- This is a degenerate case of the algorithm that might happen but only be
+    -- transient. Soon enough, @theCandidate@ should be honest (if the consensus
+    -- layer does its job correctly), and there should exist an honest peer ready to
+    -- serve @theCandidate@ promptly.
+
+    -- * Interactions with ChainSync Jumping (CSJ)
+    --
+    -- | Because we always require our peers to be able to serve a gross request
+    -- with an old block, peers with longer chains have a better chance to pass
+    -- this criteria and to be selected as current peer. The CSJ dynamo, being
+    -- always ahead of jumpers, has therefore more chances to be selected as the
+    -- current peer. It is still possible for a jumper or a disengaged peer to be
+    -- selected.
+    --
+    -- If the current peer is the CSJ dynamo and it is a dishonest peer that retains
+    -- blocks, it will get multiple opportunities to do so since it will be selected
+    -- as the current peer more often. We therefore rotate the dynamo every time it
+    -- is the current peer and it fails to serve blocks promptly.
+
+    -- * About the gross request
+    --
+    -- | We want to select a peer that is able to serve us a batch of oldest blocks
+    -- of @theCandidate@. However, not every peer will be able to deliver these
+    -- batches as they might be on different chains. We therefore select a peer only
+    -- if its candidate fragment contains the block in the gross request. In this
+    -- way, we ensure that the peer can serve at least one block that we wish to
+    -- fetch.
+    --
+    -- If the peer cannot offer any more blocks after that, it will be rotated out
+    -- soon.
+    fetchDecisionsGenesisM
+  ) where
 
 import Control.Exception (assert)
 import Control.Monad (guard)
@@ -156,6 +153,7 @@ import Ouroboros.Network.BlockFetch.DeltaQ (calculatePeerFetchInFlightLimits)
 import Cardano.Slotting.Slot (WithOrigin)
 import Ouroboros.Network.BlockFetch.Decision
 import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent (..))
+
 
 type WithDeclined peer = Writer (DList (FetchDecline, peer))
 
