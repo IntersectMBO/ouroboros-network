@@ -1,5 +1,6 @@
 */Setup.hs
 ouroboros-network-api/src/Ouroboros/Network/Protocol/Type.hs
+ouroboros-network/src/Ouroboros/Network/BlockFetch/Decision/Genesis.hs
 ouroboros-network/src/Ouroboros/Network/Diffusion/P2P.hs
 ouroboros-network/src/Ouroboros/Network/PeerSelection/Governor/Types.hs
 network-mux/src/Network/Mux/TCPInfo.hs
