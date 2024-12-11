@@ -884,7 +884,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
               m <- readTVar connVar
               check (Map.member (connId remoteAddr) m)
               writeTVar connVar (Map.delete (connId remoteAddr) m)
-            void (releaseOutboundConnection cm remoteAddr)
+            void (releaseOutboundConnection cm (connId remoteAddr))
             go (Map.delete remoteAddr connMap)
           RunMiniProtocols remoteAddr reqs -> do
             atomically $ do
@@ -1039,6 +1039,7 @@ prop_connection_manager_valid_transitions_racy
    (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
   defaultBearerInfo mns@(MultiNodeScript events attenuationMap) =
     exploreSimTrace id sim $ \_ trace ->
+                             counterexample (ppTrace trace) $
                              validate_transitions mns trace
   where
     sim :: IOSim s ()
@@ -1159,12 +1160,13 @@ prop_connection_manager_valid_transition_order (Fixed rnd) serverAcc (ArbDataFlo
   in tabulate "ConnectionEvents" (map showConnectionEvents events)
     . counterexample (ppScript mns)
     . counterexample (Trace.ppTrace show show abstractTransitionEvents)
+    . counterexample (ppTrace trace)
     . bifoldMap
        ( \ case
            MainReturn {} -> mempty
            _             -> All False
        )
-       (verifyAbstractTransitionOrder True)
+       (verifyAbstractTransitionOrder id True)
     . fmap (map ttTransition)
     . groupConns id abstractStateIsFinalTransition
     $ abstractTransitionEvents
@@ -1204,7 +1206,7 @@ prop_connection_manager_valid_transition_order_racy (Fixed rnd) serverAcc (ArbDa
                MainReturn {} -> mempty
                _             -> All False
            )
-           (verifyAbstractTransitionOrder True)
+           (verifyAbstractTransitionOrder id True)
         . fmap (map ttTransition)
         . groupConns id abstractStateIsFinalTransition
         $ abstractTransitionEvents

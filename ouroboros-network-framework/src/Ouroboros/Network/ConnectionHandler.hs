@@ -411,10 +411,10 @@ makeConnectionHandler muxTracer singMuxMode
 --
 
 
--- | 'ConnectionHandlerTrace' is embedded into 'ConnectionManagerTrace' with
--- 'Ouroboros.Network.ConnectionManager.Types.ConnectionHandlerTrace'
--- constructor.  It already includes 'ConnectionId' so we don't need to take
--- care of it here.
+-- | 'ConnectionHandlerTrace' is embedded into
+-- 'Ouroboros.Network.ConnectionManager.Core.Trace' with
+-- 'Ouroboros.Network.ConnectionManager.Types.TrConnectionHandler' constructor.
+-- It already includes 'ConnectionId' so we don't need to take care of it here.
 --
 -- TODO: when 'Handshake' will get its own tracer, independent of 'Mux', it
 -- should be embedded into 'ConnectionHandlerTrace'.
