@@ -99,4 +99,10 @@ localTxMonitorServer txId (slot, allTxs) =
                 , numberOfTxs     = fromIntegral (length allTxs)
                 }
            in pure $ SendMsgReplyGetSizes sizes (serverStAcquired txs)
+      , recvMsgGetMeasures =
+          let measures = MempoolMeasures
+                { txCount = fromIntegral (length allTxs)
+                , measuresMap = mempty
+                }
+          in pure $ SendMsgReplyGetMeasures measures (serverStAcquired txs)
       }
