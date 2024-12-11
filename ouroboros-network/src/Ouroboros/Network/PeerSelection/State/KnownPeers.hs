@@ -43,15 +43,16 @@ module Ouroboros.Network.PeerSelection.State.KnownPeers
 import Data.List qualified as List
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Maybe.Strict
 import Data.OrdPSQ (OrdPSQ)
 import Data.OrdPSQ qualified as PSQ
 import Data.Set (Set)
 import Data.Set qualified as Set
 
+import Control.Applicative ((<|>))
 import Control.Exception (assert)
 import Control.Monad.Class.MonadTime.SI
 
-import Data.Maybe (fromMaybe)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 
@@ -114,7 +115,7 @@ data KnownPeerInfo = KnownPeerInfo {
        --
        -- It is used by the Peer Sharing logic to decide if we should share/ask
        -- about/to this peer's address to others.
-       knownPeerSharing          :: !PeerSharing,
+       knownPeerSharing          :: !(StrictMaybe PeerSharing),
 
        -- | Indicates current local Peer Willingness information.
        --
@@ -123,7 +124,7 @@ data KnownPeerInfo = KnownPeerInfo {
        --
        -- It is used by the Peer Sharing logic to decide if we should share
        -- about this peer's address to others.
-       knownPeerAdvertise        :: !PeerAdvertise,
+       knownPeerAdvertise        :: !(StrictMaybe PeerAdvertise),
 
        -- | Indicates if the node managed to connect to the peer at some point
        -- in time.
@@ -165,14 +166,17 @@ alterKnownPeerInfo (peerSharing, peerAdvertise) peerLookupResult =
       KnownPeerInfo {
         knownPeerFailCount = 0
       , knownPeerTepid     = False
-      , knownPeerSharing   = fromMaybe PeerSharingDisabled peerSharing
-      , knownPeerAdvertise = fromMaybe DoNotAdvertisePeer peerAdvertise
+      , knownPeerSharing   = maybeToStrictMaybe peerSharing
+      , knownPeerAdvertise = maybeToStrictMaybe peerAdvertise
       , knownSuccessfulConnection = False
       }
     Just kpi -> Just $
+      -- pick first known value
       kpi {
-        knownPeerSharing   = fromMaybe (knownPeerSharing kpi) peerSharing
-      , knownPeerAdvertise = fromMaybe (knownPeerAdvertise kpi) peerAdvertise
+        knownPeerSharing   = maybeToStrictMaybe peerSharing
+                         <|> knownPeerSharing kpi
+      , knownPeerAdvertise = maybeToStrictMaybe peerAdvertise
+                         <|> knownPeerAdvertise kpi
       }
 
 -------------------------------
@@ -437,7 +441,7 @@ canPeerShareRequest :: Ord peeraddr => peeraddr -> KnownPeers peeraddr -> Bool
 canPeerShareRequest pa KnownPeers { allPeers } =
   case Map.lookup pa allPeers of
     Just KnownPeerInfo
-          { knownPeerSharing = PeerSharingEnabled
+          { knownPeerSharing = SJust PeerSharingEnabled
           } -> True
     _       -> False
 
@@ -448,7 +452,7 @@ canSharePeers :: Ord peeraddr => peeraddr -> KnownPeers peeraddr -> Bool
 canSharePeers pa KnownPeers { allPeers } =
   case Map.lookup pa allPeers of
     Just KnownPeerInfo
-          { knownPeerAdvertise        = DoAdvertisePeer
+          { knownPeerAdvertise        = SJust DoAdvertisePeer
           , knownSuccessfulConnection = True
           , knownPeerFailCount        = 0
           } -> True
@@ -473,7 +477,7 @@ getPeerSharingResponsePeers knownPeers =
     Map.keysSet
   $ Map.filter (\case
                   KnownPeerInfo
-                    { knownPeerAdvertise        = DoAdvertisePeer
+                    { knownPeerAdvertise        = SJust DoAdvertisePeer
                     , knownSuccessfulConnection = True
                     , knownPeerFailCount        = 0
                     } -> True

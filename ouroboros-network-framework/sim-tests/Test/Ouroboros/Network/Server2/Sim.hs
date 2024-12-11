@@ -74,12 +74,14 @@ import Network.Mux qualified as Mux
 import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
+import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.InboundGovernor.State (ConnectionState (..))
 import Ouroboros.Network.InboundGovernor.State qualified as IG
 import Ouroboros.Network.Mux
 import Ouroboros.Network.MuxMode
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.Protocol.Handshake.Codec (noTimeLimitsHandshake,
            timeLimitsHandshake)
 import Ouroboros.Network.Protocol.Handshake.Unversioned
@@ -626,7 +628,7 @@ multinodeExperiment
     => Tracer m (WithName (Name peerAddr)
                           (RemoteTransitionTrace peerAddr))
     -> Tracer m (WithName (Name peerAddr)
-                          (AbstractTransitionTrace peerAddr))
+                          (AbstractTransitionTrace CM.ConnStateId))
     -> Tracer m (WithName (Name peerAddr)
                           (IG.Trace peerAddr))
     -> Tracer m (WithName (Name peerAddr)
@@ -869,7 +871,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
                                        case fromException e of
                                          Just SomeAsyncException {} -> Nothing
                                          _                          -> Just e)
-                          $ acquireOutboundConnection cm remoteAddr
+                          $ acquireOutboundConnection cm InitiatorAndResponderDiffusionMode remoteAddr
             case connHandle of
               Left _ ->
                 go connMap
@@ -2241,7 +2243,7 @@ multiNodeSimTracer :: ( Alternative (STM m), Monad m, MonadFix m
                    -> Tracer m
                       (WithName (Name SimAddr) (RemoteTransitionTrace SimAddr))
                    -> Tracer m
-                      (WithName (Name SimAddr) (AbstractTransitionTrace SimAddr))
+                      (WithName (Name SimAddr) (AbstractTransitionTrace CM.ConnStateId))
                    -> Tracer m
                       (WithName (Name SimAddr) (IG.Trace SimAddr))
                    -> Tracer m

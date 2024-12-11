@@ -65,6 +65,7 @@ import Ouroboros.Network.ControlMessage (ControlMessage (..))
 import Ouroboros.Network.Mux
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.Protocol.Handshake
+import Ouroboros.Network.Protocol.Handshake.Version qualified as Handshake
 import Ouroboros.Network.RethrowPolicy
 
 -- | We place an upper limit of `30s` on the time we wait on receiving an SDU.
@@ -179,7 +180,8 @@ type MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr vers
                       peerAddr
                       (Handle muxMode initiatorCtx responderCtx versionData bytes m a b)
                       (HandleError muxMode versionNumber)
-                      (versionNumber, versionData)
+                      versionNumber
+                      versionData
                       m
 
 -- | Type alias for 'ConnectionManager' using 'Handle'.
@@ -276,9 +278,11 @@ makeConnectionHandler muxTracer singMuxMode
                              peerAddr
                              (Handle muxMode initiatorCtx responderCtx versionData ByteString m a b)
                              (HandleError muxMode versionNumber)
-                             (versionNumber, versionData)
+                             versionNumber
+                             versionData
                              m
-    outboundConnectionHandler socket
+    outboundConnectionHandler versionDataFn
+                              socket
                               PromiseWriter { writePromise }
                               tracer
                               connectionId@ConnectionId { localAddress
@@ -299,7 +303,7 @@ makeConnectionHandler muxTracer singMuxMode
               unmask (runHandshakeClient handshakeBearer
                                          connectionId
                                          handshakeArguments
-                                         versionedApplication)
+                                         (Handshake.updateVersionData versionDataFn versionedApplication))
               -- 'runHandshakeClient' only deals with protocol limit errors or
               -- handshake negotiation failures, but not with 'IOException's or
               -- 'MuxError's.
@@ -343,9 +347,11 @@ makeConnectionHandler muxTracer singMuxMode
                              peerAddr
                              (Handle muxMode initiatorCtx responderCtx versionData ByteString m a b)
                              (HandleError muxMode versionNumber)
-                             (versionNumber, versionData)
+                             versionNumber
+                             versionData
                              m
-    inboundConnectionHandler socket
+    inboundConnectionHandler updateVersionDataFn
+                             socket
                              PromiseWriter { writePromise }
                              tracer
                              connectionId@ConnectionId { localAddress
@@ -366,7 +372,7 @@ makeConnectionHandler muxTracer singMuxMode
               unmask (runHandshakeServer handshakeBearer
                                          connectionId
                                          handshakeArguments
-                                         versionedApplication)
+                                         (Handshake.updateVersionData updateVersionDataFn versionedApplication))
               -- 'runHandshakeServer' only deals with protocol limit errors or
               -- handshake negotiation failures, but not with 'IOException's or
               -- 'MuxError's.

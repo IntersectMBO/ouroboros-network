@@ -81,6 +81,7 @@ import Ouroboros.Network.Socket (configureSocket, configureSystemdSocket)
 
 import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
+import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.InformationChannel
            (newInformationChannel)
 import Ouroboros.Network.ConnectionManager.Types
@@ -188,7 +189,7 @@ data TracersExtra ntnAddr ntnVersion ntnVersionData
                          ntnVersionData))
 
     , dtConnectionManagerTransitionTracer
-        :: Tracer m (AbstractTransitionTrace ntnAddr)
+        :: Tracer m (AbstractTransitionTrace CM.ConnStateId)
 
     , dtServerTracer
         :: Tracer m (Server.Trace ntnAddr)
@@ -390,7 +391,8 @@ type NodeToClientConnectionHandler
       ntcAddr
       (NodeToClientHandle ntcAddr ntcVersionData m)
       (NodeToClientHandleError ntcVersion)
-      (ntcVersion, ntcVersionData)
+      ntcVersion
+      ntcVersionData
       m
 
 type NodeToClientConnectionManagerArguments
@@ -541,7 +543,11 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         -- | diffusion dns actions
         --
         diDnsActions
-          :: DNSLookupType -> DNSActions resolver resolverError m
+          :: DNSLookupType -> DNSActions resolver resolverError m,
+
+        -- | Update `ntnVersionData` for initiator-only local roots.
+        diUpdateVersionData
+          :: ntnVersionData -> DiffusionMode -> ntnVersionData
       }
 
 runM
@@ -618,6 +624,7 @@ runM Interfaces
        , diRng
        , diInstallSigUSR1Handler
        , diDnsActions
+       , diUpdateVersionData
        }
      Tracers
        { dtMuxTracer
@@ -813,7 +820,8 @@ runM Interfaces
                   CM.connectionDataFlow    = ntcDataFlow,
                   CM.prunePolicy         = Diffusion.Policies.prunePolicy,
                   CM.stdGen              = cmLocalStdGen,
-                  CM.connectionsLimits   = localConnectionLimits
+                  CM.connectionsLimits   = localConnectionLimits,
+                  CM.updateVersionData   = \a _ -> a
                 }
 
         CM.with
@@ -942,7 +950,8 @@ runM Interfaces
                 CM.stdGen,
                 CM.connectionsLimits   = daAcceptedConnectionsLimit,
                 CM.timeWaitTimeout     = daTimeWaitTimeout,
-                CM.outboundIdleTimeout = daProtocolIdleTimeout
+                CM.outboundIdleTimeout = daProtocolIdleTimeout,
+                CM.updateVersionData   = diUpdateVersionData
               }
 
       let peerSelectionPolicy = Diffusion.Policies.simplePeerSelectionPolicy
@@ -1319,7 +1328,8 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
 
                  diRng,
                  diInstallSigUSR1Handler,
-                 diDnsActions = ioDNSActions
+                 diDnsActions = ioDNSActions,
+                 diUpdateVersionData = \versionData diffusionMode -> versionData { diffusionMode }
                }
                tracers tracersExtra args argsExtra apps appsExtra
 
