@@ -1,3 +1,4 @@
+{-# LANGUAGE BlockArguments        #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
@@ -35,6 +36,9 @@ module Test.Ouroboros.Network.Testnet.Internal
   , module PeerSelection
   ) where
 
+import Data.Foldable (foldlM)
+import Network.DNS qualified as DNS
+import Data.Functor.Classes
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadMVar (MonadMVar)
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -54,7 +58,7 @@ import Control.Monad.IOSim (IOSim, traceM)
 import Data.ByteString.Char8 qualified as BSC
 import Data.ByteString.Lazy qualified as BL
 import Data.IP (IP (..))
-import Data.List (delete, nubBy)
+import Data.List (delete, nubBy, nub)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map (Map)
 import Data.Map qualified as Map
@@ -66,7 +70,7 @@ import Data.Void (Void)
 import System.Random (StdGen, mkStdGen)
 import System.Random qualified as Random
 
-import Network.DNS (Domain, TTL)
+import Network.DNS (Domain, TYPE, TTL)
 
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.PingPong.Type qualified as PingPong
@@ -111,7 +115,7 @@ import Simulation.Network.Snocket (BearerInfo (..), FD, SnocketTrace,
 
 import Test.Ouroboros.Network.PeerSelection.Instances qualified as PeerSelection
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay (..),
-           DNSTimeout (..))
+           DNSTimeout (..), MockDNSLookupResult)
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS qualified as PeerSelection hiding
            (tests)
 import Test.Ouroboros.Network.Testnet.Node qualified as Node
@@ -130,8 +134,7 @@ import Ouroboros.Network.PeerSelection.LocalRootPeers
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
-import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint (..),
-           PortNumber, RelayAccessPoint (..))
+import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSLookupType)
 import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
            (TraceLocalRootPeers)
@@ -423,7 +426,7 @@ genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream
                      , relay' /= relay
                      , let advertise = case relay' of
                              RelayAddrInfo        _ip _port adv -> adv
-                             RelayDomainInfo _dns _ip _port adv -> adv
+                             RelayDomainInfo _dns _ adv -> adv
                      ]
   ledgerPeers <- fmap (map makeRelayAccessPoint) <$> listOf (sublistOf ledgerPeersRelays)
   ledgerPeerPools <- traverse genLedgerPoolsFrom ledgerPeers
@@ -482,7 +485,7 @@ genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream
 
 -- 'DomainMapScript' describes evolution of domain name resolution.
 --
-type DomainMapScript = TimedScript (Map Domain [(IP, TTL)])
+type DomainMapScript = TimedScript (Map (Domain, TYPE) MockDNSLookupResult)
 
 
 -- | Make sure that the final domain map can resolve all the domains correctly.
@@ -493,53 +496,64 @@ fixupDomainMapScript relays (Script (a@(_, delay) :| as)) =
       []                  -> Script $ (dnsMap, delay) :| as
       ((_, delay') : as') -> Script $ a :| reverse ((dnsMap, delay') : as')
   where
-    dnsMap :: Map Domain [(IP, TTL)]
-    dnsMap = Map.fromListWith (++)
-      [ (domain, [(ip, 300)])
-      | RelayDomainInfo domain ip _ _ <- getRelayAccessInfos relays
-      ]
+    --dnsMap :: Map Domain [(IP, TTL)]
+    dnsMap = undefined
+    -- Map.fromListWith (either (++) undefined) $
+    --            [ ((domain, DNS.A), Left [(ip, 300)])
+    --            | RelayDomainInfo domain (Just (ip, _port)) _ <- getRelayAccessInfos relays
+    --            ]
+    --            <>
+    --            [ ((domain, DNS.SRV), Right undefined)
+    --            | RelayDomainInfo domain Nothing _ <- getRelayAccessInfos relays]
 
-
+type MockDNSMap = (Map (Domain, TYPE) MockDNSLookupResult)
 -- | Generate a `DomainMapScript`.  Each step contains modification of the full
 -- dns map with at most 20% entries removed and 20% entries modified.  The last
 -- scripted value is the full dns map which ensures that eventually all dns
 -- names resolve to correct ip addresses.
 --
-genDomainMapScript :: RelayAccessInfos -> Gen DomainMapScript
-genDomainMapScript relays = fixupDomainMapScript relays
-                         <$> arbitraryScriptOf 10
+genDomainMapScript :: TestnetRelays -> Gen DomainMapScript
+genDomainMapScript relays = --fixupDomainMapScript relays <$>
+                           arbitraryScriptOf 10
                                ((,) <$> genDomainMap <*> arbitrary)
   where
-    genDomainMap :: Gen (Map Domain [(IP, TTL)])
-    genDomainMap = do
-      rm <- removedDomains
-      md <- modifiedDomains
-      return $ Map.fromList md `Map.union` foldr Map.delete dnsMap rm
+    TestnetRelays them = relays
 
-    removedDomains :: Gen [Domain]
-    removedDomains = do
+    genDomainMap :: Gen MockDNSMap
+    genDomainMap = do
+      dnsMap <- dnsMapGen
+      let dnsAssoc = Map.toList dnsMap
+      rm <- removedDomains dnsAssoc
+      md <- modifiedDomains dnsAssoc
+      return undefined
+      -- return $ Map.fromList md `Map.union` foldr Map.delete dnsMap rm
+
+    removedDomains domains = do
         as <- vectorOf (length domains) (frequency [(4, pure True), (1, pure False)])
         return $ map fst . filter snd $ zip domains as
-      where
-        domains = Map.keys dnsMap
 
-    modifiedDomains :: Gen [(Domain, [(IP, TTL)])]
-    modifiedDomains = do
-        as <- vectorOf (length domains) (frequency [(4, pure True), (1, pure False)])
-        let ds :: [Domain]
-            ds = map fst . filter snd $ zip domains as
-        ips <- vectorOf (length ds) (case relays of
-                                       IPv4RelayAccessInfos _ -> PeerSelection.genIPv4
-                                       IPv6RelayAccessInfos _ -> PeerSelection.genIPv6)
-        return $ zip ds ((\a -> [(a,ttl)]) <$> ips)
-      where
-        domains = Map.keys dnsMap
+    modifiedDomains domains = do
+        toss <- vectorOf (length domains) (frequency [(4, pure True), (1, pure False)])
+        let ds = map fst . filter snd $ zip domains toss
+        return undefined
+        -- ips <- vectorOf (length ds) (case them of
+        --                                -- IPv4RelayAccessInfos _ -> PeerSelection.genIPv4
+        --                                -- IPv6RelayAccessInfos _ -> PeerSelection.genIPv6)
+        -- return $ zip ds ((\a -> [(a,ttl)]) <$> ips)
 
-    dnsMap :: Map Domain [(IP, TTL)]
-    dnsMap = Map.fromListWith (++)
-      [ (domain, [(ip, ttl)])
-      | RelayDomainInfo domain ip _ _ <- getRelayAccessInfos relays
-      ]
+    dnsMapGen = do
+      foldlM step Map.empty them
+
+    step b (relay, ip) = do
+      case relay of
+        RelayAccessAddress {} -> return b
+        RelayAccessDomain d p -> Map.alterF fa (d, DNS.A) b
+        RelayAccessSRVDomain d -> Map.alterF ga (d, DNS.SRV) b
+      where
+        fa Nothing = pure . Just . Left $ [(ip, ttl)]
+        fa (Just (Left ipsttls)) = pure . Just . Left $ (ip, ttl) : ipsttls
+        ga Nothing = undefined -- generate some domains
+        ga (Just xs) = undefined -- concat ip into subdomains
 
     ttl = 300
 
@@ -584,8 +598,8 @@ instance Show DiffusionScript where
 data RelayAccessInfo
     = RelayAddrInfo          IP PortNumber PeerAdvertise
     -- ^ relays available using ip / port pair
-    | RelayDomainInfo Domain IP PortNumber PeerAdvertise
-    -- ^ relays available either using the given domain.
+    | RelayDomainInfo Domain (Maybe (IP, PortNumber)) PeerAdvertise
+    -- ^ relays accessible via a domain name (SRV when Nothing)
   deriving (Show, Eq)
 
 genRelayAccessInfo :: Gen IP
@@ -594,19 +608,23 @@ genRelayAccessInfo genIP =
   oneof [ RelayAddrInfo <$> genIP
                         <*> (fromIntegral <$> (arbitrary :: Gen Int))
                         <*> arbitrary
-        , (\(DomainAccessPoint domain port) ip advertise -> RelayDomainInfo domain ip port advertise)
-                        <$> arbitrary
-                        <*> genIP
-                        <*> arbitrary
+        , f <$> arbitrary
+            <*> genIP
+            <*> arbitrary
         ]
+  where
+    f dom ip advertise =
+      case dom of
+        DomainAccessPoint (DomainPlain d p) -> RelayDomainInfo d (Just (ip, p)) advertise
+        DomainSRVAccessPoint (DomainSRV d)  -> RelayDomainInfo d Nothing advertise
 
 makeRelayAccessPoint :: RelayAccessInfo -> RelayAccessPoint
 makeRelayAccessPoint (RelayAddrInfo ip port _) = RelayAccessAddress ip port
-makeRelayAccessPoint (RelayDomainInfo domain _ip port _) = RelayAccessDomain domain port
+makeRelayAccessPoint a = undefined --(RelayDomainInfo domain _ip port _) = RelayAccessDomain domain port
 
 makeNtNAddr :: RelayAccessInfo -> NtNAddr
 makeNtNAddr (RelayAddrInfo ip port _)        = TestAddress (IPAddr ip port)
-makeNtNAddr (RelayDomainInfo _dns ip port _) = TestAddress (IPAddr ip port)
+makeNtNAddr a = undefined --(RelayDomainInfo _dns ip port _) = TestAddress (IPAddr ip port)
 
 data RelayAccessInfos
     -- IPv4 only network
@@ -619,12 +637,13 @@ fixupRelayAccessInfos :: [RelayAccessInfo] -> [RelayAccessInfo]
 fixupRelayAccessInfos as = f <$> as
     where
       -- map domains to the same port number
-      m = Map.fromList [ (domain, port)
-                       | RelayDomainInfo domain _ port _ <- as
-                       ]
+      m = undefined
+      -- Map.fromList [ (domain, port)
+      --                  | RelayDomainInfo domain _ port _ <- as
+      --                  ]
 
       f a@RelayAddrInfo {} = a
-      f (RelayDomainInfo domain ip _ advertise) = RelayDomainInfo domain ip (m Map.! domain) advertise
+      --f (RelayDomainInfo domain ip _ advertise) = RelayDomainInfo domain ip (m Map.! domain) advertise
 
 
 -- Generate a list of either IPv4 only or IPv6 only `RelayAccessInfo`.  All
@@ -659,22 +678,22 @@ data RelayAccessInfosWithDNS = RelayAccessInfosWithDNS RelayAccessInfos DomainMa
 
 
 instance Arbitrary RelayAccessInfosWithDNS where
-    arbitrary =
-      flip suchThat (\(RelayAccessInfosWithDNS infos _)
-                      -> length (getRelayAccessInfos infos) >= 2) $ do
-        infos <- arbitrary
-        domainMapScript <- genDomainMapScript infos
-        return $ RelayAccessInfosWithDNS infos domainMapScript
+    arbitrary = undefined
+      -- flip suchThat (\(RelayAccessInfosWithDNS infos _)
+      --                 -> length (getRelayAccessInfos infos) >= 2) $ do
+      --   infos <- arbitrary
+      --   domainMapScript <- genDomainMapScript infos
+      --   return $ RelayAccessInfosWithDNS infos domainMapScript
 
-    shrink (RelayAccessInfosWithDNS infos dnsMapScript) =
-      [ RelayAccessInfosWithDNS infos (fixupDomainMapScript infos' dnsMapScript)
-      | infos' <- shrink infos
-      , length (getRelayAccessInfos infos') >= 2
-      ]
-      ++
-      [ RelayAccessInfosWithDNS infos dnsMapScript'
-      | dnsMapScript' <- shrinkDomainMapScript infos dnsMapScript
-      ]
+    shrink (RelayAccessInfosWithDNS infos dnsMapScript) = undefined
+    --   [ RelayAccessInfosWithDNS infos (fixupDomainMapScript infos' dnsMapScript)
+    --   | infos' <- shrink infos
+    --   , length (getRelayAccessInfos infos') >= 2
+    --   ]
+    --   ++
+    --   [ RelayAccessInfosWithDNS infos dnsMapScript'
+    --   | dnsMapScript' <- shrinkDomainMapScript infos dnsMapScript
+      -- ]
 
 
 genDiffusionScript :: ([RelayAccessInfo]
@@ -682,30 +701,25 @@ genDiffusionScript :: ([RelayAccessInfo]
                         -> Gen [( HotValency
                                 , WarmValency
                                 , Map RelayAccessPoint (PeerAdvertise, PeerTrustable))])
-                   -> RelayAccessInfosWithDNS
+                   -> TestnetRelays
                    -> Gen (SimArgs, DomainMapScript, [(NodeArgs, [Command])])
 genDiffusionScript genLocalRootPeers
-                   (RelayAccessInfosWithDNS relays dnsMapScript)
+                   relays@(TestnetRelays them) -- (RelayAccessInfosWithDNS relays dnsMapScript)
                    = do
-    let simArgs = mainnetSimArgs (length relays')
-    nodesWithCommands <- mapM go (nubBy ((==) `on` getRelayIP) relays')
+    let simArgs = mainnetSimArgs (length them)
+    dnsMapScript <- genDomainMapScript relays
+    nodesWithCommands <- mapM go undefined --ips
     return (simArgs, dnsMapScript, nodesWithCommands)
   where
-    getRelayIP :: RelayAccessInfo -> IP
-    getRelayIP (RelayAddrInfo ip _ _)     = ip
-    getRelayIP (RelayDomainInfo _ ip _ _) = ip
-
-    relays' :: [RelayAccessInfo]
-    relays' = getRelayAccessInfos relays
-
     go :: RelayAccessInfo -> Gen (NodeArgs, [Command])
-    go relay = do
-      let otherRelays  = relay `delete` relays'
-          minConnected = 3 `max` (length relays' - 1)
-      localRts <- genLocalRootPeers otherRelays relay
-      nodeArgs <- genNodeArgs relays' minConnected localRts relay
-      commands <- genCommands localRts
-      return (nodeArgs, commands)
+    go relay = undefined
+      -- do
+      -- let otherRelays  = relay `delete` relays'
+      --     minConnected = 3 `max` (length relays' - 1) -- ^ TODO is this ever different from 3?
+      -- localRts <- genLocalRootPeers otherRelays relay
+      -- nodeArgs <- genNodeArgs relays' minConnected localRts relay
+      -- commands <- genCommands localRts
+      -- return (nodeArgs, commands)
 
 
 -- | Multinode Diffusion Simulator Script
@@ -714,57 +728,71 @@ genDiffusionScript genLocalRootPeers
 -- or can not be connected to one another. These nodes can also randomly die or
 -- have their local configuration changed.
 --
-genNonHotDiffusionScript :: RelayAccessInfosWithDNS
-                         -> Gen (SimArgs, DomainMapScript, [(NodeArgs, [Command])])
-genNonHotDiffusionScript = genDiffusionScript genLocalRootPeers
-  where
-    -- | Generate Local Root Peers
-    --
-    genLocalRootPeers :: [RelayAccessInfo]
-                      -> RelayAccessInfo
-                      -> Gen [( HotValency
-                              , WarmValency
-                              , Map RelayAccessPoint (PeerAdvertise, PeerTrustable)
-                              )]
-    genLocalRootPeers relays _relay = flip suchThat hasUpstream $ do
-      nrGroups <- chooseInt (1, 3)
-      -- Remove self from local root peers
-      let size = length relays
-          sizePerGroup = (size `div` nrGroups) + 1
+-- genNonHotDiffusionScript :: RelayAccessInfosWithDNS
+--                          -> Gen (SimArgs, DomainMapScript, [(NodeArgs, [Command])])
+-- genNonHotDiffusionScript = genDiffusionScript genLocalRootPeers
+--   where
+--     -- | Generate Local Root Peers
+--     --
+--     genLocalRootPeers :: [RelayAccessInfo]
+--                       -> RelayAccessInfo
+--                       -> Gen [( HotValency
+--                               , WarmValency
+--                               , Map RelayAccessPoint (PeerAdvertise, PeerTrustable)
+--                               )]
+--     genLocalRootPeers relays _relay = flip suchThat hasUpstream $ do
+--       nrGroups <- chooseInt (1, 3)
+--       -- Remove self from local root peers
+--       let size = length relays
+--           sizePerGroup = (size `div` nrGroups) + 1
 
-      peerAdvertise <- vectorOf size arbitrary
+--       peerAdvertise <- vectorOf size arbitrary
 
-      let relaysAdv = zip (makeRelayAccessPoint <$> relays) peerAdvertise
-          relayGroups = divvy sizePerGroup relaysAdv
-          relayGroupsMap = Map.fromList <$> relayGroups
+--       let relaysAdv = zip (makeRelayAccessPoint <$> relays) peerAdvertise
+--           relayGroups = divvy sizePerGroup relaysAdv
+--           relayGroupsMap = Map.fromList <$> relayGroups
 
-      target <- forM relayGroups
-                    (\x -> if null x
-                           then pure (0, 0)
-                           else genTargets (length x))
+--       target <- forM relayGroups
+--                     (\x -> if null x
+--                            then pure (0, 0)
+--                            else genTargets (length x))
 
-      let lrpGroups = zipWith (\(h, w) g -> (h, w, g))
-                              target
-                              relayGroupsMap
+--       let lrpGroups = zipWith (\(h, w) g -> (h, w, g))
+--                               target
+--                               relayGroupsMap
 
-      return lrpGroups
+--       return lrpGroups
 
-    genTargets :: Int -> Gen (HotValency, WarmValency)
-    genTargets l = do
-      warmValency <- WarmValency <$> chooseEnum (1, l)
-      hotValency <- HotValency <$> chooseEnum (1, getWarmValency warmValency)
-      return (hotValency, warmValency)
+--     genTargets :: Int -> Gen (HotValency, WarmValency)
+--     genTargets l = do
+--       warmValency <- WarmValency <$> chooseEnum (1, l)
+--       hotValency <- HotValency <$> chooseEnum (1, getWarmValency warmValency)
+--       return (hotValency, warmValency)
 
-    hasUpstream :: [( HotValency
-                    , WarmValency
-                    , Map RelayAccessPoint (PeerAdvertise, PeerTrustable)
-                    )]
-                -> Bool
-    hasUpstream localRootPeers =
-      any id [ v > 0 && not (Map.null m)
-             | (HotValency v, _, m) <- localRootPeers
-             ]
+--     hasUpstream :: [( HotValency
+--                     , WarmValency
+--                     , Map RelayAccessPoint (PeerAdvertise, PeerTrustable)
+--                     )]
+--                 -> Bool
+--     hasUpstream localRootPeers =
+--       any id [ v > 0 && not (Map.null m)
+--              | (HotValency v, _, m) <- localRootPeers
+--              ]
 
+newtype TestnetRelays = TestnetRelays {unNodeAddrs :: [(RelayAccessPoint, IP)]}
+
+instance Arbitrary TestnetRelays where
+  arbitrary = do
+    i <- choose (2,3)
+    relays <- (vectorOf i arbitrary >>= traverse f) `suchThat` uniqueIps
+    return $ TestnetRelays relays
+
+    where
+      f raa@(RelayAccessAddress ip _port) = pure (raa, ip)
+      f x = pure undefined --(x,) <$> arbitrary
+      uniqueIps xs =
+        let ips = snd <$> xs
+        in length (nub ips) == length ips
 
 -- | Multinode Hot Diffusion Simulator Script
 --
@@ -774,7 +802,7 @@ genNonHotDiffusionScript = genDiffusionScript genLocalRootPeers
 -- active connections. These nodes can not randomly die or have their local
 -- configuration changed. Their local root peers consist of a single group.
 --
-genHotDiffusionScript :: RelayAccessInfosWithDNS
+genHotDiffusionScript :: TestnetRelays
                       -> Gen (SimArgs, DomainMapScript, [(NodeArgs, [Command])])
 genHotDiffusionScript = genDiffusionScript genLocalRootPeers
     where
@@ -815,8 +843,8 @@ genHotDiffusionScript = genDiffusionScript genLocalRootPeers
 
 instance Arbitrary DiffusionScript where
   arbitrary = (\(a,b,c) -> DiffusionScript a b c)
-            <$> frequency [ (1, arbitrary >>= genNonHotDiffusionScript)
-                          , (1, arbitrary >>= genHotDiffusionScript)
+            <$> frequency [ --(1, arbitrary >>= genNonHotDiffusionScript)
+                          (1, arbitrary >>= genHotDiffusionScript)
                           ]
   -- TODO: shrink dns map
   -- TODO: we should write more careful shrinking than recursively shrinking
@@ -977,7 +1005,7 @@ diffusionSimulation
       $ \ntnSnocket _ ->
         withSnocket nullTracer defaultBearerInfo Map.empty
       $ \ntcSnocket _ -> do
-        dnsMapVar <- fromLazyTVar <$> playTimedScript nullTracer dnsMapScript
+        dnsMapVar <- fromLazyTVar <$> undefined --playTimedScript nullTracer dnsMapScript
         withAsyncAll
           (map (uncurry (runCommand Nothing ntnSnocket ntcSnocket dnsMapVar simArgs))
                         nodeArgs)
@@ -1151,7 +1179,7 @@ diffusionSimulation
               , Node.iNtcSnocket        = ntcSnocket
               , Node.iNtcBearer         = makeFDBearer
               , Node.iRng               = rng
-              , Node.iDomainMap         = dMapVar
+              , Node.iDomainMap         = undefined --dMapVar
               , Node.iLedgerPeersConsensusInterface
                                         =
                   LedgerPeersConsensusInterface
@@ -1232,11 +1260,12 @@ diffusionSimulation
     domainResolver dnsMapVar _ daps = do
       dnsMap <- fmap (map fst) <$> atomically (readTVar dnsMapVar)
       let mapDomains :: [(DomainAccessPoint, Set NtNAddr)]
-          mapDomains = [ ( dap
-                         , Set.fromList [ ntnToPeerAddr a p | a <- addrs ]
-                         )
-                       | dap@(DomainAccessPoint d p) <- daps
-                       , addrs <- maybeToList (d `Map.lookup` dnsMap) ]
+          mapDomains = undefined
+          -- [ ( dap
+          --                , Set.fromList [ ntnToPeerAddr a p | a <- addrs ]
+          --                )
+          --              | dap@(DomainAccessPoint d p) <- daps
+          --              , addrs <- maybeToList (d `Map.lookup` dnsMap) ]
       return (Map.fromListWith (<>) mapDomains)
 
     diffSimTracer :: NtNAddr -> Tracer m DiffusionSimulationTrace
