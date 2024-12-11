@@ -46,7 +46,7 @@ import Network.DNS.Types qualified as DNS
 
 import Ouroboros.Network.BlockFetch (PraosFetchMode (..),
            TraceFetchClientState (..))
-import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
+import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace (..))
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.State qualified as CM
@@ -224,6 +224,12 @@ tests =
                    (testWithIOSim prop_only_bootstrap_peers_in_fallback_state 125000)
     , testProperty "no non trustable peers before caught up state"
                    (testWithIOSim prop_no_non_trustable_peers_before_caught_up_state 125000)
+    , testGroup "local root diffusion mode"
+        [ testProperty "InitiatorOnly"
+          (unit_local_root_diffusion_mode InitiatorOnlyDiffusionMode)
+        , testProperty "InitiatorAndResponder"
+          (unit_local_root_diffusion_mode InitiatorAndResponderDiffusionMode)
+        ]
     , testGroup "Peer Sharing"
       [ testProperty "share a peer"
                      unit_peer_sharing
@@ -4048,6 +4054,116 @@ prop_diffusion_timeouts_enforced ioSimTrace traceNumber =
        in property
         $ verifyAllTimeouts True transitionSignal
 
+
+newtype ArbDiffusionMode = ArbDiffusionMode { getDiffusionMode :: DiffusionMode }
+  deriving (Eq, Show)
+
+-- | Verify that local root can negotiate the right diffusion mode.
+--
+unit_local_root_diffusion_mode :: DiffusionMode
+                               -> Property
+unit_local_root_diffusion_mode diffusionMode =
+    -- this is a unit test
+    withMaxSuccess 1 $
+    let sim = diffusionSimulation (toBearerInfo absNoAttenuation) script iosimTracer
+
+        -- list of negotiated version data
+        events :: [NtNVersionData]
+        events =
+            mapMaybe (\case
+                       DiffusionConnectionManagerTrace (CM.TrConnectionHandler ConnectionId { remoteAddress } (TrHandshakeSuccess _ versionData))
+                         | remoteAddress == addr'
+                         -> Just versionData
+                       _ -> Nothing
+                     )
+          . fmap wnEvent
+          . filter (\WithName { wnName } -> wnName == addr)
+          . fmap wtEvent
+          . Trace.toList
+          . withTimeNameTraceEvents
+              @DiffusionTestTrace
+              @NtNAddr
+          . Trace.take 125000
+          $ runSimTrace sim
+    in property $ foldMap (\versionData -> All $ ntnDiffusionMode versionData === diffusionMode) events
+  where
+    addr, addr' :: NtNAddr
+    addr  = TestAddress (IPAddr (read "127.0.0.2") 1000)
+    addr' = TestAddress (IPAddr (read "127.0.0.1") 1000)
+
+    script =
+      DiffusionScript
+        (SimArgs 1 20)
+        (singletonTimedScript Map.empty)
+        [ -- a relay node
+          (NodeArgs {
+             naSeed = 0,
+             naDiffusionMode = InitiatorAndResponderDiffusionMode,
+             naMbTime = Just 224,
+             naPublicRoots = Map.empty,
+             naConsensusMode = PraosMode,
+             naBootstrapPeers = (Script (DontUseBootstrapPeers :| [])),
+             naAddr = addr',
+             naPeerSharing = PeerSharingDisabled,
+             naLocalRootPeers = [],
+             naLedgerPeers = Script (LedgerPools [] :| []),
+             naPeerTargets = ConsensusModePeerTargets {
+                deadlineTargets = PeerSelectionTargets
+                  { targetNumberOfRootPeers = 1,
+                    targetNumberOfKnownPeers = 1,
+                    targetNumberOfEstablishedPeers = 0,
+                    targetNumberOfActivePeers = 0,
+
+                    targetNumberOfKnownBigLedgerPeers = 0,
+                    targetNumberOfEstablishedBigLedgerPeers = 0,
+                    targetNumberOfActiveBigLedgerPeers = 0
+                  },
+                syncTargets = nullPeerSelectionTargets },
+             naDNSTimeoutScript = Script (DNSTimeout {getDNSTimeout = 1} :| []),
+             naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0.1} :| []),
+             naChainSyncExitOnBlockNo = Nothing,
+             naChainSyncEarlyExit = False,
+             naFetchModeScript = Script (FetchModeDeadline :| [])
+           }
+          , [JoinNetwork 0]
+          )
+        , -- a relay, which has the BP as a local root
+          (NodeArgs {
+             naSeed = 0,
+             naDiffusionMode = InitiatorAndResponderDiffusionMode,
+             naMbTime = Just 224,
+             naPublicRoots = Map.empty,
+             naConsensusMode = PraosMode,
+             naBootstrapPeers = (Script (DontUseBootstrapPeers :| [])),
+             naAddr = addr,
+             naPeerSharing = PeerSharingDisabled,
+             naLocalRootPeers =
+               [ (1,1,Map.fromList [ (RelayAccessAddress (read "127.0.0.1") 1000,
+                                      LocalRootConfig DoNotAdvertisePeer IsNotTrustable diffusionMode)
+                                   ])
+               ],
+             naLedgerPeers = Script (LedgerPools [] :| []),
+             naPeerTargets = ConsensusModePeerTargets {
+                deadlineTargets = PeerSelectionTargets
+                  { targetNumberOfRootPeers = 6,
+                    targetNumberOfKnownPeers = 7,
+                    targetNumberOfEstablishedPeers = 7,
+                    targetNumberOfActivePeers = 6,
+
+                    targetNumberOfKnownBigLedgerPeers = 0,
+                    targetNumberOfEstablishedBigLedgerPeers = 0,
+                    targetNumberOfActiveBigLedgerPeers = 0
+                  },
+                syncTargets = nullPeerSelectionTargets },
+             naDNSTimeoutScript = Script (DNSTimeout {getDNSTimeout = 1} :| []),
+             naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0.1} :| []),
+             naChainSyncExitOnBlockNo = Nothing,
+             naChainSyncEarlyExit = False,
+             naFetchModeScript = Script (FetchModeDeadline :| [])
+           }
+          , [JoinNetwork 0]
+          )
+        ]
 
 -- Utils
 --
