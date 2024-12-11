@@ -17,17 +17,17 @@ module Test.Ouroboros.Network.PeerSelection.Instances
   , prop_shrink_PeerSelectionTargets
   ) where
 
+import Data.Hashable
+import Data.IP qualified as IP
 import Data.Text.Encoding (encodeUtf8)
 import Data.Word (Word32, Word64)
 
 import Cardano.Slotting.Slot (SlotNo (..))
 
-import Ouroboros.Network.PeerSelection.Governor
-
-import Data.Hashable
-import Data.IP qualified as IP
 import Ouroboros.Network.ConsensusMode
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
+import Ouroboros.Network.PeerSelection.Governor
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (AfterSlot (..),
            UseLedgerPeers (..))
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
@@ -35,6 +35,8 @@ import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint (..),
            RelayAccessPoint (..))
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers
+           (LocalRootConfig (..))
 import Ouroboros.Network.Testing.Utils (ShrinkCarefully, prop_shrink_nonequal,
            prop_shrink_valid)
 import Test.QuickCheck
@@ -188,3 +190,20 @@ prop_shrink_PeerSelectionTargets x =
       prop_shrink_valid sanePeerSelectionTargets x
  .&&. prop_shrink_nonequal x
 
+
+instance Arbitrary LocalRootConfig where
+  arbitrary = LocalRootConfig <$> arbitrary <*> arbitrary <*> elements [InitiatorAndResponderDiffusionMode, InitiatorOnlyDiffusionMode]
+  shrink a@LocalRootConfig { peerAdvertise, peerTrustable, diffusionMode } =
+    [ a { peerTrustable = peerTrustable' }
+    | peerTrustable' <- shrink peerTrustable
+    ]
+    ++
+    [ a { peerAdvertise = peerAdvertise' }
+    | peerAdvertise' <- shrink peerAdvertise
+    ]
+    ++
+    [ a { diffusionMode = diffusionMode' }
+    | diffusionMode' <- case diffusionMode of
+        InitiatorOnlyDiffusionMode         -> []
+        InitiatorAndResponderDiffusionMode -> [InitiatorOnlyDiffusionMode]
+    ]

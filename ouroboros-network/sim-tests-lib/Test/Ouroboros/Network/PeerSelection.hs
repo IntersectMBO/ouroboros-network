@@ -59,6 +59,7 @@ import Network.Socket (SockAddr)
 
 import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
 import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..),
@@ -77,7 +78,7 @@ import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
-           LocalRootPeers (..), WarmValency (..))
+           LocalRootConfig (..), LocalRootPeers (..), WarmValency (..))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.Point
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingResult (..))
@@ -3464,8 +3465,9 @@ prop_governor_only_bootstrap_peers_in_clean_state env =
           . selectEnvEvents
           $ events
           where
-            isTrustable (_, IsTrustable) = True
-            isTrustable _                = False
+            isTrustable LocalRootConfig { peerTrustable = IsTrustable }
+                          = True
+            isTrustable _ = False
 
         govHasOnlyBootstrapPeers :: Signal Bool
         govHasOnlyBootstrapPeers =
@@ -3874,8 +3876,8 @@ prop_issue_3550 = prop_governor_target_established_below defaultMaxTime $
           (PeerAddr 29,[],GovernorScripts {peerShareScript = Script (Nothing :| []), peerSharingScript = Script (PeerSharingDisabled :| []), connectionScript = Script ((ToWarm,NoDelay) :| [(ToCold,NoDelay),(Noop,NoDelay)])})
         ],
       localRootPeers = LocalRootPeers.fromGroups
-        [ (1, 1, Map.fromList [(PeerAddr 16,(DoAdvertisePeer, IsNotTrustable))])
-        , (1, 1, Map.fromList [(PeerAddr 4,(DoAdvertisePeer, IsNotTrustable))])
+        [ (1, 1, Map.fromList [(PeerAddr 16, LocalRootConfig DoAdvertisePeer IsNotTrustable InitiatorAndResponderDiffusionMode)])
+        , (1, 1, Map.fromList [(PeerAddr 4, LocalRootConfig DoAdvertisePeer IsNotTrustable InitiatorAndResponderDiffusionMode)])
         ],
       publicRootPeers = PublicRootPeers.fromPublicRootPeers
         (Map.fromList [ (PeerAddr 14, DoNotAdvertisePeer)
@@ -3922,7 +3924,7 @@ prop_issue_3515 = prop_governor_nolivelock $
                            peerSharingScript = Script (PeerSharingDisabled :| []),
                            connectionScript = Script ((ToCold,NoDelay) :| [(Noop,NoDelay)])
                          })],
-      localRootPeers = LocalRootPeers.fromGroups [(1,1,Map.fromList [(PeerAddr 10,(DoAdvertisePeer, IsNotTrustable))])],
+      localRootPeers = LocalRootPeers.fromGroups [(1,1,Map.fromList [(PeerAddr 10, LocalRootConfig DoAdvertisePeer IsNotTrustable InitiatorAndResponderDiffusionMode)])],
       publicRootPeers = PublicRootPeers.empty,
       targets = Script . NonEmpty.fromList $ targets'',
       pickKnownPeersForPeerShare = Script (PickFirst :| []),
@@ -3963,7 +3965,7 @@ prop_issue_3494 = prop_governor_nofail $
                                                 peerSharingScript = Script (PeerSharingDisabled :| []),
                                                 connectionScript = Script ((ToCold,NoDelay) :| [(Noop,NoDelay)])
                                               })],
-      localRootPeers = LocalRootPeers.fromGroups [(1,1,Map.fromList [(PeerAddr 64, (DoAdvertisePeer, IsNotTrustable))])],
+      localRootPeers = LocalRootPeers.fromGroups [(1,1,Map.fromList [(PeerAddr 64, LocalRootConfig DoAdvertisePeer IsNotTrustable InitiatorAndResponderDiffusionMode)])],
       publicRootPeers = PublicRootPeers.empty,
       targets = Script . NonEmpty.fromList $ targets'',
       pickKnownPeersForPeerShare = Script (PickFirst :| []),
@@ -4012,8 +4014,8 @@ prop_issue_3233 = prop_governor_nolivelock $
          (PeerAddr 15,[],GovernorScripts {peerShareScript = Script (Just ([],PeerShareTimeSlow) :| []), peerSharingScript = Script (PeerSharingDisabled :| []), connectionScript = Script ((Noop,NoDelay) :| [])})
         ],
       localRootPeers = LocalRootPeers.fromGroups
-        [ (1, 1, Map.fromList [(PeerAddr 15, (DoAdvertisePeer, IsNotTrustable))])
-        , (1, 1, Map.fromList [(PeerAddr 13, (DoAdvertisePeer, IsNotTrustable))])
+        [ (1, 1, Map.fromList [(PeerAddr 15, LocalRootConfig DoAdvertisePeer IsNotTrustable InitiatorAndResponderDiffusionMode)])
+        , (1, 1, Map.fromList [(PeerAddr 13, LocalRootConfig DoAdvertisePeer IsNotTrustable InitiatorAndResponderDiffusionMode)])
         ],
       publicRootPeers = PublicRootPeers.fromPublicRootPeers
         (Map.fromList [(PeerAddr 4, DoNotAdvertisePeer)]),

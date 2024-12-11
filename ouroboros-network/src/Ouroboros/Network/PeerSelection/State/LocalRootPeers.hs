@@ -1,12 +1,11 @@
-{-# LANGUAGE BangPatterns       #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE DerivingVia        #-}
-{-# LANGUAGE NamedFieldPuns     #-}
-{-# LANGUAGE RecordWildCards    #-}
+{-# LANGUAGE BangPatterns   #-}
+{-# LANGUAGE DerivingVia    #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 module Ouroboros.Network.PeerSelection.State.LocalRootPeers
   ( -- * Types
     LocalRootPeers (..)
+  , LocalRootConfig (..)
   , HotValency (..)
   , WarmValency (..)
   , Config
@@ -38,6 +37,7 @@ import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
 
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 
@@ -46,13 +46,20 @@ import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 -- Local root peer set representation
 --
 
+data LocalRootConfig = LocalRootConfig {
+    peerAdvertise :: !PeerAdvertise,
+    peerTrustable :: !PeerTrustable,
+    diffusionMode :: !DiffusionMode
+  }
+  deriving (Show, Eq)
+
 data LocalRootPeers peeraddr =
      LocalRootPeers
        -- We use two partial & overlapping representations:
 
        -- The collection of all the peers, with the associated PeerAdvertise
        -- and PeerTrustable values
-       (Map peeraddr (PeerAdvertise, PeerTrustable))
+       (Map peeraddr LocalRootConfig)
 
        -- The groups, but without the associated PeerAdvertise and
        -- PeerTrustable values
@@ -76,7 +83,7 @@ newtype WarmValency = WarmValency { getWarmValency :: Int }
 -- | Data available from topology file.
 --
 type Config peeraddr =
-     [(HotValency, WarmValency, Map peeraddr ( PeerAdvertise, PeerTrustable))]
+     [(HotValency, WarmValency, Map peeraddr LocalRootConfig)]
 
 
 -- It is an abstract type, so the derived Show is unhelpful, e.g. for replaying
@@ -123,7 +130,7 @@ hotTarget (LocalRootPeers _ gs) = sum [ h | (h, _, _) <- gs ]
 warmTarget :: LocalRootPeers peeraddr -> WarmValency
 warmTarget (LocalRootPeers _ gs) = sum [ w | (_, w, _) <- gs ]
 
-toMap :: LocalRootPeers peeraddr -> Map peeraddr (PeerAdvertise, PeerTrustable)
+toMap :: LocalRootPeers peeraddr -> Map peeraddr LocalRootConfig
 toMap (LocalRootPeers m _) = m
 
 keysSet :: LocalRootPeers peeraddr -> Set peeraddr
@@ -143,7 +150,7 @@ toGroupSets (LocalRootPeers _ gs) = gs
 -- trace a warning about dodgy config.
 --
 fromGroups :: Ord peeraddr
-           => [(HotValency, WarmValency, Map peeraddr (PeerAdvertise, PeerTrustable))]
+           => [(HotValency, WarmValency, Map peeraddr LocalRootConfig)]
            -> LocalRootPeers peeraddr
 fromGroups =
     (\gs -> let m'  = Map.unions [ g | (_, _, g) <- gs ]
@@ -170,7 +177,7 @@ fromGroups =
 --
 toGroups :: Ord peeraddr
          => LocalRootPeers peeraddr
-         -> [(HotValency, WarmValency, Map peeraddr (PeerAdvertise, PeerTrustable))]
+         -> [(HotValency, WarmValency, Map peeraddr LocalRootConfig)]
 toGroups (LocalRootPeers m gs) =
     [ (h, w, Map.fromSet (m Map.!) g)
     | (h, w, g) <- gs ]
@@ -229,7 +236,7 @@ clampToTrustable :: Ord peeraddr
                  => LocalRootPeers peeraddr
                  -> LocalRootPeers peeraddr
 clampToTrustable (LocalRootPeers m gs) =
-  let trustedMap = Map.filter (\(_, pt) -> case pt of
+  let trustedMap = Map.filter (\LocalRootConfig { peerTrustable } -> case peerTrustable of
                                  IsTrustable    -> True
                                  IsNotTrustable -> False
                               )
@@ -238,7 +245,7 @@ clampToTrustable (LocalRootPeers m gs) =
   where
     trustedGroups [] = []
     trustedGroups ((h, w, g):gss) =
-      let trusted = Map.filter (\(_, pt) -> case pt of
+      let trusted = Map.filter (\LocalRootConfig { peerTrustable } -> case peerTrustable of
                                   IsTrustable    -> True
                                   IsNotTrustable -> False
                                )
@@ -257,14 +264,16 @@ isPeerTrustable :: Ord peeraddr
                 -> Bool
 isPeerTrustable peeraddr lrp =
   case Map.lookup peeraddr (toMap lrp) of
-    Just (_, IsTrustable) -> True
-    _                     -> False
+    Just LocalRootConfig { peerTrustable = IsTrustable }
+      -> True
+    _ -> False
 
 trustableKeysSet :: LocalRootPeers peeraddr
                  -> Set peeraddr
 trustableKeysSet (LocalRootPeers m _) =
     Map.keysSet
-  . Map.filter (\(_, trustable) -> case trustable of
-                    IsTrustable    -> True
-                    IsNotTrustable -> False)
+  . Map.filter (\LocalRootConfig { peerTrustable } ->
+                 case peerTrustable of
+                   IsTrustable    -> True
+                   IsNotTrustable -> False)
   $ m

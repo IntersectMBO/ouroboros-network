@@ -210,7 +210,7 @@ library sim-tests-lib
     dns,
     hashable,
     io-classes,
-    io-sim,
+    io-sim ^>=1.5.1,
     iproute,
     monoidal-synchronisation,
     mtl,

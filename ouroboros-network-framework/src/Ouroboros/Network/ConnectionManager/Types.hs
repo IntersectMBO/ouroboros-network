@@ -180,6 +180,7 @@ import Network.Mux.Types qualified as Mux
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.ConnectionManager.ConnMap (ConnMap)
 import Ouroboros.Network.MuxMode
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 
 
 -- | Connection manager supports `IPv4` and `IPv6` addresses.
@@ -349,9 +350,10 @@ newtype MaskedAction m a = MaskedAction {
 -- Note: 'PromiseWriter' could be replaced with an stm action which is
 -- accessing the 'TVar' which holds state of the connection.
 --
-type ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version m
-     = socket
-    -> PromiseWriter m (Either handleError (HandshakeConnectionResult handle version))
+type ConnectionHandlerFn handlerTrace socket peerAddr handle handleError versionNumber versionData m
+     = (versionData -> versionData)
+    -> socket
+    -> PromiseWriter m (Either handleError (HandshakeConnectionResult handle (versionNumber, versionData)))
     -> Tracer m handlerTrace
     -> ConnectionId peerAddr
     -> (DiffTime -> socket -> m (Mux.Bearer m))
@@ -370,13 +372,13 @@ data HandshakeConnectionResult handle version
 -- There's one 'ConnectionHandlerFn' per provenance, possibly limited by
 -- @muxMode@.
 --
-newtype ConnectionHandler muxMode handlerTrace socket peerAddr handle handleError version m =
+newtype ConnectionHandler muxMode handlerTrace socket peerAddr handle handleError versionNumber versionData m =
     ConnectionHandler {
         -- | Connection handler.
         --
         connectionHandler ::
           WithMuxTuple muxMode
-            (ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version m)
+            (ConnectionHandlerFn handlerTrace socket peerAddr handle handleError versionNumber versionData m)
       }
 
 
@@ -495,7 +497,7 @@ data Connected peerAddr handle handleError =
 
 
 type AcquireOutboundConnection peerAddr handle handleError m
-    =            peerAddr -> m (Connected peerAddr handle handleError)
+    = DiffusionMode -> peerAddr -> m (Connected peerAddr handle handleError)
 type IncludeInboundConnection socket peerAddr handle handleError m
     = Word32
     -- ^ inbound connections hard limit.
@@ -888,8 +890,8 @@ mkAbsTransition from to = Transition { fromState = from
                                      , toState   = to
                                      }
 
-data TransitionTrace' peerAddr state = TransitionTrace
-    { ttPeerAddr   :: peerAddr -- TODO: use ConnectionId
+data TransitionTrace' id state = TransitionTrace
+    { ttPeerAddr   :: id -- ^ an id of a connection, not necessarily an address, e.g. `State.ConnStateId`
     , ttTransition :: Transition' state
     }
   deriving Functor

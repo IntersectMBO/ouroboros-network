@@ -59,9 +59,11 @@ import Test.Tasty.QuickCheck (testProperty)
 
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
+import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Test.Utils (verifyAbstractTransition)
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.MuxMode
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.Server.RateLimiting
 import Ouroboros.Network.Snocket (Accept (..), Accepted (..),
            AddressFamily (TestFamily), Snocket (..), TestAddress (..))
@@ -597,7 +599,7 @@ mkConnectionHandler :: forall m handlerTrace.
                     -> ConnectionHandler Mx.InitiatorResponderMode
                                          handlerTrace (FD m)
                                          Addr (Handle m)
-                                         Void (Version, VersionData)
+                                         Void Version VersionData
                                          m
 mkConnectionHandler snocket =
     ConnectionHandler $
@@ -605,8 +607,8 @@ mkConnectionHandler snocket =
         handler
         handler
   where
-    handler :: ConnectionHandlerFn handlerTrace (FD m) Addr (Handle m) Void (Version, VersionData) m
-    handler fd promise _ ConnectionId { remoteAddress } _ =
+    handler :: ConnectionHandlerFn handlerTrace (FD m) Addr (Handle m) Void Version VersionData m
+    handler _ fd promise _ ConnectionId { remoteAddress } _ =
       MaskedAction $ \unmask ->
         do threadId <- myThreadId
            let addr = getTestAddress remoteAddress
@@ -648,8 +650,8 @@ mkConnectionHandler snocket =
 
 type TestConnectionState m       = CM.ConnectionState Addr (Handle m) Void Version m
 type TestConnectionManagerTrace  = CM.Trace Addr ()
-type TestTransitionTrace m       = TransitionTrace  Addr (TestConnectionState m)
-type TestAbstractTransitionTrace = AbstractTransitionTrace Addr
+type TestTransitionTrace m       = TransitionTrace CM.ConnStateId (TestConnectionState m)
+type TestAbstractTransitionTrace = AbstractTransitionTrace CM.ConnStateId
 
 newtype SkewedBool = SkewedBool Bool
   deriving Show
@@ -772,7 +774,8 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
                   acceptedConnectionsDelay     = 0
                 },
               CM.timeWaitTimeout = testTimeWaitTimeout,
-              CM.outboundIdleTimeout = testOutboundIdleTimeout
+              CM.outboundIdleTimeout = testOutboundIdleTimeout,
+              CM.updateVersionData = \a _ -> a
             }
             connectionHandler
             (\_ -> HandshakeFailure)
@@ -781,11 +784,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
                 :: ConnectionManager Mx.InitiatorResponderMode (FD (IOSim s))
                                      Addr (Handle m) Void (IOSim s)) -> do
             fd <- open snocket TestFamily
-            case myAddress of
-              Just localAddr ->
-                bind snocket fd localAddr
-              Nothing ->
-                pure ()
+            traverse_ (bind snocket fd) myAddress
 
             let go :: HasCallStack
                    => [Async (IOSim s) ()]
@@ -811,7 +810,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
                                 -- handshake negotiation.
                                 timeout (1 + 5 + testTimeWaitTimeout)
                                   (acquireOutboundConnection
-                                    connectionManager addr))
+                                    connectionManager InitiatorAndResponderDiffusionMode addr))
                             `catches`
                               [ Handler $ \(e :: IOException) -> return (Left (toException e))
                               , Handler $ \(e :: SomeConnectionManagerError) ->

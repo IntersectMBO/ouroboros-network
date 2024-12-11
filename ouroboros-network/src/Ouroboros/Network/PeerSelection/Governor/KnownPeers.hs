@@ -117,6 +117,8 @@ belowTarget actions@PeerSelectionActions { peerSharing }
                             selectedMap
                             availablePeers
                           ],
+          -- NOTE: We set `DoAdvertisePeer` for all peers coming from the
+          -- inbound side. `AdvertisePeer` is only a local configuration option.
           decisionState = st { knownPeers = KnownPeers.setSuccessfulConnectionFlag selected
                                           $ KnownPeers.insert
                                               (Map.map (\ps -> (Just ps, Just DoAdvertisePeer)) selectedMap)
