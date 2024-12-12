@@ -15,10 +15,10 @@ let
   #
   # NOTE: cross compilation with `ghc-9.6.2` doesn't currently work
   # https://ci.iog.io/build/623082/nixlog/2
-  crossGHCVersion = "ghc8107";
+  crossGHCVersion = "ghc966";
 
   # alternative compilers
-  otherCompilers = [ "ghc810" ];
+  otherCompilers = [ "ghc966" ];
 
   # from https://github.com/input-output-hk/haskell.nix/issues/298#issuecomment-767936405
   forAllProjectPackages = cfg: args@{ lib, ... }: {
