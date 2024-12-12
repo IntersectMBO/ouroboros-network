@@ -177,13 +177,6 @@ data BlockFetchConsensusInterface peer header block m =
        -- ancillary functions\/interfaces from this function.
        headerForgeUTCTime :: FromConsensus header -> STM m UTCTime,
 
-       -- | Calculate when a block was forged.
-       --
-       -- PRECONDITION: Same as 'headerForgeUTCTime'.
-       --
-       -- WARNING: Same as 'headerForgeUTCTime'.
-       blockForgeUTCTime  :: FromConsensus block -> STM m UTCTime,
-
        -- | Information on the ChainSel starvation status; whether it is ongoing
        -- or has ended recently. Needed by the bulk sync decision logic.
        readChainSelStarvation :: STM m ChainSelStarvation,

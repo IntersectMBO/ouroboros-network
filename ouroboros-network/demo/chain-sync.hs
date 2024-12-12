@@ -436,7 +436,6 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
               blockMatchesHeader     = \_ _ -> True,
 
               headerForgeUTCTime,
-              blockForgeUTCTime      = headerForgeUTCTime . fmap blockHeader,
               readChainSelStarvation = pure (ChainSelStarvationEndedAt (Time 0)),
 
               demoteChainSyncJumpingDynamo = \_ -> pure ()

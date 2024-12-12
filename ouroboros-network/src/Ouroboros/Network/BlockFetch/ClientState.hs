@@ -80,7 +80,7 @@ data FetchClientPolicy header block m =
        blockFetchSize     :: header -> SizeInBytes,
        blockMatchesHeader :: header -> block -> Bool,
        addFetchedBlock    :: Point block -> block -> m (),
-       blockForgeUTCTime  :: FromConsensus block -> STM m UTCTime
+       headerForgeUTCTime :: FromConsensus header -> STM m UTCTime
      }
 
 -- | A set of variables shared between the block fetch logic thread and each

@@ -20,7 +20,7 @@
 * Introduced `daReadLedgerPeerSnapshot` to `P2P.ArgumentsExtra` which holds
   a `Maybe LedgerPeerSnapshot` from a node's configuration. If present, it
   may be used to pick big ledger peers by the peer selection governor when
-  bootstrapping a node in Genesis consensus mode, or in general when 
+  bootstrapping a node in Genesis consensus mode, or in general when
   LedgerStateJudgement = TooOld, subject to conditions in
   `LedgerPeers.ledgerPeersThread`.
 * Diffusion run function in P2P mode has new paramaters:
@@ -46,6 +46,7 @@
 * `Ouroboros.Network.NodeToNode.connectTo` returns either an error or the
   result of the first terminated mini-protocol.
 * Adjusted for changes in `ouroboros-network-framework` (PR #4990)
+* Renamed `blockForgeUTCTime` to `headerForgeUTCTime` in `FetchClientPolicy`.
 
 ### Non-Breaking changes
 
@@ -60,7 +61,7 @@
   a node is syncing up.
 * Implemented verification of big ledger peer snapshot when syncing reaches
   the point at which the snapshot was taken. An error is raised when there's
-  a mismatch detected. 
+  a mismatch detected.
 * Added `defaultDeadlineChurnInterval` and `defaultBulkChurnInterval` to Configuration
   module. Previously these were hard coded in node.
 * Updated tests for `network-mux` changes.
