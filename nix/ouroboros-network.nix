@@ -15,7 +15,7 @@ let
   #
   # NOTE: cross compilation with `ghc-9.6.2` doesn't currently work
   # https://ci.iog.io/build/623082/nixlog/2
-  crossGHCVersion = "ghc8107";
+  crossGHCVersion = "ghc982";
 
   # alternative compilers
   otherCompilers = [ "ghc810" ];
