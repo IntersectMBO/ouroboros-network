@@ -6,6 +6,8 @@
 {-# LANGUAGE PatternSynonyms   #-}
 {-# LANGUAGE TypeApplications  #-}
 {-# LANGUAGE ViewPatterns      #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveAnyClass #-}
 
 module Ouroboros.Network.PeerSelection.RelayAccessPoint
   ( DomainAccessPoint (..)
@@ -34,6 +36,7 @@ import Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import Cardano.Binary qualified as Codec
 import Network.DNS qualified as DNS
 import Network.Socket qualified as Socket
+import GHC.Generics
 
 -- | Types of domains supported
 -- NB: A deliberately limited subset of SRV is supported.
@@ -49,7 +52,7 @@ data DomainAccessPoint = DomainAccessPoint !DomainPlainAccessPoint
                        -- ^ An @A@ or @AAAA@ DNS record
                        | DomainSRVAccessPoint !DomainSRVAccessPoint
                        -- ^ A @SRV@ DNS record
-  deriving (Eq, Show, Ord)
+  deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
 -- | A product of a 'DNS.Domain' and 'Socket.PortNumber'.  After resolving the
 -- domain we will use the 'Socket.PortNumber' to form 'Socket.SockAddr'.
