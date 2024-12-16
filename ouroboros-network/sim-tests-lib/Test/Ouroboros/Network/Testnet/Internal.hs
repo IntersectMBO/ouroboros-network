@@ -1290,7 +1290,14 @@ diffusionSimulation
                                                        . tracerWithName ntnAddr
                                                        . tracerWithTime
                                                        $ nodeTracer
-        , Diff.P2P.dtConnectionManagerTransitionTracer = nullTracer
+        , Diff.P2P.dtConnectionManagerTransitionTracer = contramap
+                                                           DiffusionConnectionManagerTransitionTrace
+                                                       . tracerWithName ntnAddr
+                                                       . tracerWithTime
+          -- note: we have two ways getting transition trace:
+          -- * through `traceTVar` installed in `newMutableConnState`
+          -- * the `dtConnectionManagerTransitionTracer`
+                                                       $ nodeTracer
         , Diff.P2P.dtServerTracer                      = contramap DiffusionServerTrace
                                                        . tracerWithName ntnAddr
                                                        . tracerWithTime
