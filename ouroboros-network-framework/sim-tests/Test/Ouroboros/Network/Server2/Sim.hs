@@ -55,6 +55,7 @@ import Data.Monoid (Sum (..))
 import Data.Monoid.Synchronisation (FirstToFinish (..))
 import Data.OrdPSQ (OrdPSQ)
 import Data.OrdPSQ qualified as OrdPSQ
+import Data.Proxy (Proxy (..))
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Typeable (Typeable)
@@ -654,64 +655,66 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
                     (MultiNodeScript script _) =
   withJobPool $ \jobpool -> do
   stdGenVar <- newTVarIO stdGen0
-  cc <- startServerConnectionHandler stdGenVar MainServer dataFlow0 [accInit] serverAddr jobpool
-  loop stdGenVar (Map.singleton serverAddr [accInit]) (Map.singleton serverAddr cc) script jobpool
+  connStateIdSupply <- atomically $ CM.newConnStateIdSupply (Proxy @m)
+  cc <- startServerConnectionHandler stdGenVar connStateIdSupply MainServer dataFlow0 [accInit] serverAddr jobpool
+  loop stdGenVar connStateIdSupply (Map.singleton serverAddr [accInit]) (Map.singleton serverAddr cc) script jobpool
   where
 
     loop :: StrictTVar m StdGen
+         -> CM.ConnStateIdSupply m
          -> Map.Map peerAddr acc
          -> Map.Map peerAddr (StrictTQueue m (ConnectionHandlerMessage peerAddr req))
          -> [ConnectionEvent req peerAddr]
          -> JobPool () m ()
          -> m ()
-    loop _ _ _ [] _ = threadDelay 3600
-    loop stdGenVar nodeAccs servers (event : events) jobpool =
+    loop _ _ _ _ [] _ = threadDelay 3600
+    loop stdGenVar connStateIdSupply nodeAccs servers (event : events) jobpool =
       case event of
 
         StartClient delay localAddr -> do
           threadDelay delay
-          cc <- startClientConnectionHandler stdGenVar (Client localAddr) localAddr jobpool
-          loop stdGenVar nodeAccs (Map.insert localAddr cc servers) events jobpool
+          cc <- startClientConnectionHandler stdGenVar connStateIdSupply (Client localAddr) localAddr jobpool
+          loop stdGenVar connStateIdSupply nodeAccs (Map.insert localAddr cc servers) events jobpool
 
         StartServer delay localAddr nodeAcc -> do
           threadDelay delay
-          cc <- startServerConnectionHandler stdGenVar (Node localAddr) Duplex [nodeAcc] localAddr jobpool
-          loop stdGenVar (Map.insert localAddr [nodeAcc] nodeAccs) (Map.insert localAddr cc servers) events jobpool
+          cc <- startServerConnectionHandler stdGenVar connStateIdSupply (Node localAddr) Duplex [nodeAcc] localAddr jobpool
+          loop stdGenVar connStateIdSupply (Map.insert localAddr [nodeAcc] nodeAccs) (Map.insert localAddr cc servers) events jobpool
 
         InboundConnection delay nodeAddr -> do
           threadDelay delay
           sendMsg nodeAddr $ NewConnection serverAddr
-          loop stdGenVar nodeAccs servers events jobpool
+          loop stdGenVar connStateIdSupply nodeAccs servers events jobpool
 
         OutboundConnection delay nodeAddr -> do
           threadDelay delay
           sendMsg serverAddr $ NewConnection nodeAddr
-          loop stdGenVar nodeAccs servers events jobpool
+          loop stdGenVar connStateIdSupply nodeAccs servers events jobpool
 
         CloseInboundConnection delay remoteAddr -> do
           threadDelay delay
           sendMsg remoteAddr $ Disconnect serverAddr
-          loop stdGenVar nodeAccs servers events jobpool
+          loop stdGenVar connStateIdSupply nodeAccs servers events jobpool
 
         CloseOutboundConnection delay remoteAddr -> do
           threadDelay delay
           sendMsg serverAddr $ Disconnect remoteAddr
-          loop stdGenVar nodeAccs servers events jobpool
+          loop stdGenVar connStateIdSupply nodeAccs servers events jobpool
 
         InboundMiniprotocols delay nodeAddr reqs -> do
           threadDelay delay
           sendMsg nodeAddr $ RunMiniProtocols serverAddr reqs
-          loop stdGenVar nodeAccs servers events jobpool
+          loop stdGenVar connStateIdSupply nodeAccs servers events jobpool
 
         OutboundMiniprotocols delay nodeAddr reqs -> do
           threadDelay delay
           sendMsg serverAddr $ RunMiniProtocols nodeAddr reqs
-          loop stdGenVar nodeAccs servers events jobpool
+          loop stdGenVar connStateIdSupply nodeAccs servers events jobpool
 
         ShutdownClientServer delay nodeAddr -> do
           threadDelay delay
           sendMsg nodeAddr Shutdown
-          loop stdGenVar nodeAccs servers events jobpool
+          loop stdGenVar connStateIdSupply nodeAccs servers events jobpool
       where
         sendMsg :: peerAddr -> ConnectionHandlerMessage peerAddr req -> m ()
         sendMsg addr msg = atomically $
@@ -731,11 +734,12 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
             Just qs -> readTQueue (projectBundle tok qs)
 
     startClientConnectionHandler :: StrictTVar m StdGen
+                                 -> CM.ConnStateIdSupply m
                                  -> Name peerAddr
                                  -> peerAddr
                                  -> JobPool () m ()
                                  -> m (StrictTQueue m (ConnectionHandlerMessage peerAddr req))
-    startClientConnectionHandler stdGenVar name localAddr jobpool  = do
+    startClientConnectionHandler stdGenVar connStateIdSupply name localAddr jobpool  = do
         cc <- atomically newTQueue
         labelTQueueIO cc $ "cc/" ++ show name
         connVar <- newTVarIO Map.empty
@@ -746,7 +750,8 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
           $ Job
               ( withInitiatorOnlyConnectionManager
                     name simTimeouts nullTracer nullTracer stdGen
-                    snocket makeBearer (Just localAddr) (mkNextRequests connVar)
+                    snocket makeBearer connStateIdSupply
+                    (Just localAddr) (mkNextRequests connVar)
                     timeLimitsHandshake acceptedConnLimit
                   ( \ connectionManager ->
                       connectionLoop SingInitiatorMode localAddr cc connectionManager Map.empty connVar
@@ -758,13 +763,14 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
         return cc
 
     startServerConnectionHandler :: StrictTVar m StdGen
+                                 -> CM.ConnStateIdSupply m
                                  -> Name peerAddr
                                  -> DataFlow
                                  -> acc
                                  -> peerAddr
                                  -> JobPool () m ()
                                  -> m (StrictTQueue m (ConnectionHandlerMessage peerAddr req))
-    startServerConnectionHandler stdGenVar name dataFlow serverAcc localAddr jobpool = do
+    startServerConnectionHandler stdGenVar connStateIdSupply name dataFlow serverAcc localAddr jobpool = do
         fd <- Snocket.open snocket addrFamily
         Snocket.bind   snocket fd localAddr
         Snocket.listen snocket fd
@@ -782,7 +788,8 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
                           inboundTrTracer trTracer cmTracer
                           inboundTracer debugTracer
                           stdGen
-                          snocket makeBearer (\_ -> pure ()) fd (Just localAddr) serverAcc
+                          snocket makeBearer connStateIdSupply
+                          (\_ -> pure ()) fd (Just localAddr) serverAcc
                           (mkNextRequests connVar)
                           timeLimitsHandshake
                           acceptedConnLimit
@@ -799,7 +806,8 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
                       (show name)
                 Unidirectional ->
                   Job ( withInitiatorOnlyConnectionManager
-                          name simTimeouts trTracer cmTracer stdGen snocket makeBearer (Just localAddr)
+                          name simTimeouts trTracer cmTracer stdGen snocket makeBearer
+                          connStateIdSupply (Just localAddr)
                           (mkNextRequests connVar)
                           timeLimitsHandshake
                           acceptedConnLimit
@@ -2182,6 +2190,7 @@ prop_server_accept_error (Fixed rnd) (AbsIOError ioerr) =
                Snocket.bind snock socket0 addr
                Snocket.listen snock socket0
                nextRequests <- oneshotNextRequests pdata
+               connStateIdSupply <- atomically $ CM.newConnStateIdSupply Proxy
                withBidirectionalConnectionManager "node-0" simTimeouts
                                                   nullTracer nullTracer
                                                   nullTracer nullTracer
@@ -2189,6 +2198,7 @@ prop_server_accept_error (Fixed rnd) (AbsIOError ioerr) =
                                                   (mkStdGen rnd)
                                                   snock
                                                   makeFDBearer
+                                                  connStateIdSupply
                                                   (\_ -> pure ())
                                                   socket0 (Just addr)
                                                   [accumulatorInit pdata]

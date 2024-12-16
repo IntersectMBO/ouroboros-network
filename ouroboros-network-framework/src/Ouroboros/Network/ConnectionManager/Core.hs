@@ -149,7 +149,11 @@ data Arguments handlerTrace socket peerAddr handle handleError versionNumber ver
 
         connectionsLimits   :: AcceptedConnectionsLimit,
 
-        updateVersionData   :: versionData -> DiffusionMode -> versionData
+        updateVersionData   :: versionData -> DiffusionMode -> versionData,
+
+        -- | Supply for `ConnStateId`-s.
+        --
+        connStateIdSupply   :: ConnStateIdSupply m
       }
 
 
@@ -397,7 +401,8 @@ with args@Arguments {
          connectionDataFlow,
          prunePolicy,
          connectionsLimits,
-         updateVersionData
+         updateVersionData,
+         connStateIdSupply
        }
      ConnectionHandler {
          connectionHandler
@@ -405,9 +410,8 @@ with args@Arguments {
      classifyHandleError
      inboundGovernorInfoChannel
      k = do
-    ((connStateIdSupply, stateVar, stdGenVar)
-       ::  ( ConnStateIdSupply m
-           , StrictTMVar m (ConnectionManagerState peerAddr handle handleError
+    ((stateVar, stdGenVar)
+       ::  ( StrictTMVar m (ConnectionManagerState peerAddr handle handleError
                                                    version m)
            , StrictTVar m StdGen
            ))
@@ -420,9 +424,8 @@ with args@Arguments {
               Just st -> Just <$> traverse (inspectTVar (Proxy :: Proxy m) . toLazyTVar . connVar) st
             return (TraceString (show st'))
 
-          connStateIdSupply <- State.newConnStateIdSupply (Proxy :: Proxy m)
           stdGenVar <- newTVar (stdGen args)
-          return (connStateIdSupply, v, stdGenVar)
+          return (v, stdGenVar)
 
     let readState
           :: STM m (State.ConnMap peerAddr AbstractState)
@@ -459,8 +462,7 @@ with args@Arguments {
                   WithInitiatorMode
                     OutboundConnectionManager {
                         ocmAcquireConnection =
-                          acquireOutboundConnectionImpl connStateIdSupply stateVar
-                                                        stdGenVar outboundHandler,
+                          acquireOutboundConnectionImpl stateVar stdGenVar outboundHandler,
                         ocmReleaseConnection =
                           releaseOutboundConnectionImpl stateVar stdGenVar
                       },
@@ -474,8 +476,7 @@ with args@Arguments {
                   WithResponderMode
                     InboundConnectionManager {
                         icmIncludeConnection =
-                          includeInboundConnectionImpl connStateIdSupply stateVar
-                                                       inboundHandler,
+                          includeInboundConnectionImpl stateVar inboundHandler,
                         icmReleaseConnection =
                           releaseInboundConnectionImpl stateVar,
                         icmPromotedToWarmRemote =
@@ -495,15 +496,13 @@ with args@Arguments {
                   WithInitiatorResponderMode
                     OutboundConnectionManager {
                         ocmAcquireConnection =
-                          acquireOutboundConnectionImpl connStateIdSupply stateVar
-                                                        stdGenVar outboundHandler,
+                          acquireOutboundConnectionImpl stateVar stdGenVar outboundHandler,
                         ocmReleaseConnection =
                           releaseOutboundConnectionImpl stateVar stdGenVar
                       }
                     InboundConnectionManager {
                         icmIncludeConnection =
-                          includeInboundConnectionImpl connStateIdSupply stateVar
-                                                       inboundHandler,
+                          includeInboundConnectionImpl stateVar inboundHandler,
                         icmReleaseConnection =
                           releaseInboundConnectionImpl stateVar,
                         icmPromotedToWarmRemote =
@@ -846,8 +845,7 @@ with args@Arguments {
 
     includeInboundConnectionImpl
         :: HasCallStack
-        => ConnStateIdSupply m
-        -> StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
+        => StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
         -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version versionData m
         -> Word32
         -- ^ inbound connections hard limit
@@ -861,8 +859,7 @@ with args@Arguments {
         -> ConnectionId peerAddr
         -- ^ connection id used as an identifier of the resource
         -> m (Connected peerAddr handle handleError)
-    includeInboundConnectionImpl connStateIdSupply
-                                 stateVar
+    includeInboundConnectionImpl stateVar
                                  handler
                                  hardLimit
                                  socket
@@ -1314,14 +1311,13 @@ with args@Arguments {
 
     acquireOutboundConnectionImpl
         :: HasCallStack
-        => ConnStateIdSupply m
-        -> StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
+        => StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
         -> StrictTVar m StdGen
         -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version versionData m
         -> DiffusionMode
         -> peerAddr
         -> m (Connected peerAddr handle handleError)
-    acquireOutboundConnectionImpl connStateIdSupply stateVar stdGenVar handler diffusionMode peerAddr = do
+    acquireOutboundConnectionImpl stateVar stdGenVar handler diffusionMode peerAddr = do
         let provenance = Outbound
         traceWith tracer (TrIncludeConnection provenance peerAddr)
         (trace, mutableConnState@MutableConnState { connVar, connStateId }

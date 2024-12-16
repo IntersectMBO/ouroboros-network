@@ -60,6 +60,7 @@ import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.InformationChannel
            (newInformationChannel)
+import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context
 import Ouroboros.Network.IOManager
@@ -187,6 +188,7 @@ withBidirectionalConnectionManager
     -> Mux.MakeBearer m socket
     -> socket
     -- ^ listening socket
+    -> CM.ConnStateIdSupply m
     -> DiffTime -- protocol idle timeout
     -> DiffTime -- wait time timeout
     -> Maybe peerAddr
@@ -201,6 +203,7 @@ withBidirectionalConnectionManager
        -> m a)
     -> m a
 withBidirectionalConnectionManager snocket makeBearer socket
+                                   connStateIdSupply
                                    protocolIdleTimeout
                                    timeWaitTimeout
                                    localAddress
@@ -244,7 +247,8 @@ withBidirectionalConnectionManager snocket makeBearer socket
               acceptedConnectionsSoftLimit = maxBound,
               acceptedConnectionsDelay     = 0
             },
-          CM.updateVersionData = \a _ -> a
+          CM.updateVersionData = \a _ -> a,
+          CM.connStateIdSupply
         }
         (makeConnectionHandler
           muxTracer
@@ -458,8 +462,9 @@ bidirectionalExperiment
     localAddr remoteAddr
     clientAndServerData = do
       stdGen <- Random.newStdGen
+      connStateIdSupply <- atomically $ CM.newConnStateIdSupply (Proxy @IO)
       withBidirectionalConnectionManager
-        snocket makeBearer socket0
+        snocket makeBearer socket0 connStateIdSupply
         protocolIdleTimeout timeWaitTimeout
         (Just localAddr) stdGen clientAndServerData $
         \connectionManager _serverAddr -> forever' $ do

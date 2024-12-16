@@ -44,6 +44,7 @@ import Data.List (intercalate, sortOn)
 import Data.Map (Map)
 import Data.Map.Strict qualified as Map
 import Data.Monoid (All (..))
+import Data.Proxy (Proxy (..))
 import Data.Text.Lazy qualified as Text
 import Data.Void (Void)
 import Quiet
@@ -731,6 +732,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
     experiment = do
         labelThisThread "th-main"
         snocket <- mkSnocket scheduleMap
+        connStateIdSupply <- atomically $ CM.newConnStateIdSupply Proxy
         let tracer :: Tracer (IOSim s) TestConnectionManagerTrace
             tracer = Tracer (say . show)
                     {--
@@ -775,7 +777,8 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
                 },
               CM.timeWaitTimeout = testTimeWaitTimeout,
               CM.outboundIdleTimeout = testOutboundIdleTimeout,
-              CM.updateVersionData = \a _ -> a
+              CM.updateVersionData = \a _ -> a,
+              CM.connStateIdSupply
             }
             connectionHandler
             (\_ -> HandshakeFailure)

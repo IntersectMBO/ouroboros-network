@@ -59,6 +59,7 @@ import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (catMaybes, fromMaybe, maybeToList)
+import Data.Proxy (Proxy (..))
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Time.Clock (secondsToDiffTime)
@@ -967,8 +968,9 @@ diffusionSimulation
   -> m Void
 diffusionSimulation
   defaultBearerInfo
-  (DiffusionScript simArgs dnsMapScript nodeArgs)
-  nodeTracer =
+  (DiffusionScript simArgs dnsMapScript args)
+  nodeTracer = do
+    connStateIdSupply <- atomically $ CM.newConnStateIdSupply Proxy
     -- TODO: we should use `snocket` per node, this will allow us to set up
     -- bearer info per node
     withSnocket netSimTracer defaultBearerInfo Map.empty
@@ -977,8 +979,8 @@ diffusionSimulation
       $ \ntcSnocket _ -> do
         dnsMapVar <- fromLazyTVar <$> playTimedScript nullTracer dnsMapScript
         withAsyncAll
-          (map (uncurry (runCommand Nothing ntnSnocket ntcSnocket dnsMapVar simArgs))
-                        nodeArgs)
+          (map ((\(nodeArgs, commands) -> runCommand Nothing ntnSnocket ntcSnocket dnsMapVar simArgs nodeArgs connStateIdSupply commands))
+               args)
           $ \nodes -> do
             (_, x) <- waitAny nodes
             return x
@@ -1004,50 +1006,52 @@ diffusionSimulation
         -- ^ Map of domain map TVars to be updated in case a node changes its IP
       -> SimArgs -- ^ Simulation arguments needed in order to run a simulation
       -> NodeArgs -- ^ Simulation arguments needed in order to run a single node
+      -> CM.ConnStateIdSupply m
       -> [Command] -- ^ List of commands/actions to perform for a single node
       -> m Void
-    runCommand Nothing ntnSnocket ntcSnocket dnsMapVar sArgs nArgs [] = do
+    runCommand Nothing ntnSnocket ntcSnocket dnsMapVar sArgs nArgs connStateIdSupply [] = do
       threadDelay 3600
       traceWith (diffSimTracer (naAddr nArgs)) TrRunning
-      runCommand Nothing ntnSnocket ntcSnocket dnsMapVar sArgs nArgs []
-    runCommand (Just (_, _)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs [] = do
+      runCommand Nothing ntnSnocket ntcSnocket dnsMapVar sArgs nArgs connStateIdSupply []
+    runCommand (Just (_, _)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs connStateIdSupply [] = do
       -- We shouldn't block this thread waiting
       -- on the async since this will lead to a deadlock
       -- as thread returns 'Void'.
       threadDelay 3600
       traceWith (diffSimTracer (naAddr nArgs)) TrRunning
-      runCommand Nothing ntnSnocket ntcSnocket dMapVarMap sArgs nArgs []
-    runCommand Nothing ntnSnocket ntcSnocket dnsMapVar sArgs nArgs
+      runCommand Nothing ntnSnocket ntcSnocket dMapVarMap sArgs nArgs connStateIdSupply []
+    runCommand Nothing ntnSnocket ntcSnocket dnsMapVar sArgs nArgs connStateIdSupply
                (JoinNetwork delay :cs) = do
       threadDelay delay
       traceWith (diffSimTracer (naAddr nArgs)) TrJoiningNetwork
       lrpVar <- newTVarIO $ naLocalRootPeers nArgs
-      withAsync (runNode sArgs nArgs ntnSnocket ntcSnocket lrpVar dnsMapVar) $ \nodeAsync ->
-        runCommand (Just (nodeAsync, lrpVar)) ntnSnocket ntcSnocket dnsMapVar sArgs nArgs cs
-    runCommand _ _ _ _ _ _ (JoinNetwork _:_) =
+      withAsync (runNode sArgs nArgs ntnSnocket ntcSnocket connStateIdSupply lrpVar dnsMapVar) $ \nodeAsync ->
+        runCommand (Just (nodeAsync, lrpVar)) ntnSnocket ntcSnocket dnsMapVar sArgs nArgs connStateIdSupply cs
+    runCommand _ _ _ _ _ _ _ (JoinNetwork _:_) =
       error "runCommand: Impossible happened"
-    runCommand (Just (async_, _)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs
+    runCommand (Just (async_, _)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs connStateIdSupply
                (Kill delay:cs) = do
       threadDelay delay
       traceWith (diffSimTracer (naAddr nArgs)) TrKillingNode
       cancel async_
-      runCommand Nothing ntnSnocket ntcSnocket dMapVarMap sArgs nArgs cs
-    runCommand _ _ _ _ _ _ (Kill _:_) = do
+      runCommand Nothing ntnSnocket ntcSnocket dMapVarMap sArgs nArgs connStateIdSupply cs
+    runCommand _ _ _ _ _ _ _ (Kill _:_) = do
       error "runCommand: Impossible happened"
-    runCommand Nothing _ _ _ _ _ (Reconfigure _ _:_) =
+    runCommand Nothing _ _ _ _ _ _ (Reconfigure _ _:_) =
       error "runCommand: Impossible happened"
-    runCommand (Just (async_, lrpVar)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs
+    runCommand (Just (async_, lrpVar)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs connStateIdSupply
                (Reconfigure delay newLrp:cs) = do
       threadDelay delay
       traceWith (diffSimTracer (naAddr nArgs)) TrReconfiguringNode
       _ <- atomically $ writeTVar lrpVar newLrp
-      runCommand (Just (async_, lrpVar)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs
+      runCommand (Just (async_, lrpVar)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs connStateIdSupply
                  cs
 
     runNode :: SimArgs
             -> NodeArgs
             -> Snocket m (FD m NtNAddr) NtNAddr
             -> Snocket m (FD m NtCAddr) NtCAddr
+            -> CM.ConnStateIdSupply m
             -> StrictTVar m [( HotValency
                              , WarmValency
                              , Map RelayAccessPoint LocalRootConfig
@@ -1075,6 +1079,7 @@ diffusionSimulation
             }
             ntnSnocket
             ntcSnocket
+            connStateIdSupply
             lrpVar
             dMapVar = do
       chainSyncExitVar <- newTVarIO chainSyncExitOnBlockNo
@@ -1166,6 +1171,7 @@ diffusionSimulation
                     a' <- readTVar onlyOutboundConnectionsStateVar
                     when (a /= a') $
                       writeTVar onlyOutboundConnectionsStateVar a
+              , Node.iConnStateIdSupply = connStateIdSupply
               }
 
           shouldChainSyncExit :: StrictTVar m (Maybe BlockNo) -> BlockHeader -> m Bool

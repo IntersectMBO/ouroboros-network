@@ -67,6 +67,7 @@ import Ouroboros.Network.Block (MaxSlotNo (..), maxSlotNoFromWithOrigin,
            pointSlot)
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation (..))
+import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
 import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.Diffusion qualified as Diff
@@ -127,6 +128,7 @@ data Interfaces m = Interfaces
                          :: LedgerPeersConsensusInterface m
     , iUpdateOutboundConnectionsState
                          :: OutboundConnectionsState -> STM m ()
+    , iConnStateIdSupply :: CM.ConnStateIdSupply m
     }
 
 type NtNFD m = FD m NtNAddr
@@ -246,6 +248,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
                                                      dnsLookupDelayScriptVar)
               , Diff.P2P.diUpdateVersionData     = \versionData diffusionMode ->
                                                     versionData { ntnDiffusionMode = diffusionMode }
+              , Diff.P2P.diConnStateIdSupply     = iConnStateIdSupply ni
               }
 
             appsExtra :: Diff.P2P.ApplicationsExtra NtNAddr m ()

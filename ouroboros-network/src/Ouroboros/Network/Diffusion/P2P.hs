@@ -52,6 +52,7 @@ import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (catMaybes, maybeToList)
+import Data.Proxy (Proxy (..))
 import Data.Typeable (Typeable)
 import Data.Void (Void)
 import GHC.IO.Exception (IOException (..), IOErrorType (..))
@@ -547,7 +548,15 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
 
         -- | Update `ntnVersionData` for initiator-only local roots.
         diUpdateVersionData
-          :: ntnVersionData -> DiffusionMode -> ntnVersionData
+          :: ntnVersionData -> DiffusionMode -> ntnVersionData,
+
+        -- | `ConnStateIdSupply` used by the connection-manager for this node.
+        --
+        -- This is exposed for testing, where we use a global
+        -- `ConnStateIdSupply`.
+        --
+        diConnStateIdSupply
+          :: CM.ConnStateIdSupply m
       }
 
 runM
@@ -625,6 +634,7 @@ runM Interfaces
        , diInstallSigUSR1Handler
        , diDnsActions
        , diUpdateVersionData
+       , diConnStateIdSupply
        }
      Tracers
        { dtMuxTracer
@@ -821,7 +831,8 @@ runM Interfaces
                   CM.prunePolicy         = Diffusion.Policies.prunePolicy,
                   CM.stdGen              = cmLocalStdGen,
                   CM.connectionsLimits   = localConnectionLimits,
-                  CM.updateVersionData   = \a _ -> a
+                  CM.updateVersionData   = \a _ -> a,
+                  CM.connStateIdSupply   = diConnStateIdSupply
                 }
 
         CM.with
@@ -951,7 +962,8 @@ runM Interfaces
                 CM.connectionsLimits   = daAcceptedConnectionsLimit,
                 CM.timeWaitTimeout     = daTimeWaitTimeout,
                 CM.outboundIdleTimeout = daProtocolIdleTimeout,
-                CM.updateVersionData   = diUpdateVersionData
+                CM.updateVersionData   = diUpdateVersionData,
+                CM.connStateIdSupply   = diConnStateIdSupply
               }
 
       let peerSelectionPolicy = Diffusion.Policies.simplePeerSelectionPolicy
@@ -1307,6 +1319,7 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
 #endif
 
              diRng <- newStdGen
+             diConnStateIdSupply <- atomically $ CM.newConnStateIdSupply Proxy
              runM
                Interfaces {
                  diNtnSnocket = Snocket.socketSnocket iocp,
@@ -1329,7 +1342,8 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                  diRng,
                  diInstallSigUSR1Handler,
                  diDnsActions = ioDNSActions,
-                 diUpdateVersionData = \versionData diffusionMode -> versionData { diffusionMode }
+                 diUpdateVersionData = \versionData diffusionMode -> versionData { diffusionMode },
+                 diConnStateIdSupply
                }
                tracers tracersExtra args argsExtra apps appsExtra
 
