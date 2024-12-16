@@ -292,7 +292,7 @@ run blockGeneratorArgs limits ni na
                     }
               , Common.diNtcGetFileDescriptor  = \_ -> pure invalidFileDescriptor
               , Common.diRng                   = diffStgGen
-              , Common.diInstallSigUSR1Handler = \_ _ _ _ -> pure ()
+              , Common.diInstallSigUSR1Handler = \_ _ _ -> pure ()
               , Common.diDnsActions            = const (mockDNSActions
                                                        (iDomainMap ni)
                                                        dnsTimeoutScriptVar

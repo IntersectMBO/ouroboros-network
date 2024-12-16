@@ -111,13 +111,9 @@ run :: forall (p2p :: P2P) extraArgs extraState extraActions extraFlags
       , Exception exception
       )
     => (forall mode x y.
-           Common.Applications RemoteAddress NodeToNodeVersion
-                               NodeToNodeVersionData LocalAddress
-                               NodeToClientVersion NodeToClientVersionData
-                               extraAPI IO x
-        -> NodeToNodeConnectionManager mode Socket
-                                       RemoteAddress NodeToNodeVersionData
-                                       NodeToNodeVersion IO x y
+          NodeToNodeConnectionManager mode Socket
+                                      RemoteAddress NodeToNodeVersionData
+                                      NodeToNodeVersion IO x y
         -> StrictTVar IO
              (PeerSelectionState extraState extraFlags extraPeers
                                  RemoteAddress
@@ -139,7 +135,6 @@ run :: forall (p2p :: P2P) extraArgs extraState extraActions extraFlags
        extraPeers extraFlags extraChurnArgs extraCounters exception
        RemoteAddress IO
     -> Applications p2p RemoteAddress LocalAddress NodeToNodeVersionData NodeToClientVersionData extraAPI IO a
-
     -> ApplicationsExtra p2p RemoteAddress IO a
     -> IO ()
 run sigUSR1Signal

@@ -679,11 +679,7 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         -- | callback which is used to register @SIGUSR1@ signal handler.
         diInstallSigUSR1Handler
           :: forall mode x y.
-             Applications ntnAddr ntnVersion
-                          ntnVersionData ntcAddr
-                          ntcVersion ntcVersionData
-                          extraAPI m x
-          -> NodeToNodeConnectionManager mode ntnFd
+             NodeToNodeConnectionManager mode ntnFd
                                          ntnAddr ntnVersionData
                                          ntnVersion m x y
           -> StrictTVar m

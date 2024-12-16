@@ -232,7 +232,7 @@ runM Interfaces
        , daExtraActions
        , daExtraChurnArgs
        }
-     applications@Applications
+     Applications
        { daApplicationInitiatorMode
        , daApplicationInitiatorResponderMode
        , daLocalResponderApplication
@@ -745,7 +745,7 @@ runM Interfaces
         InitiatorOnlyDiffusionMode ->
           withConnectionManagerInitiatorOnlyMode $ \connectionManager-> do
           debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng daEmptyExtraState mempty
-          diInstallSigUSR1Handler applications connectionManager debugStateVar daPeerMetrics
+          diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
           withPeerStateActions' connectionManager $ \peerStateActions->
             withPeerSelectionActions'
               (return Map.empty)
@@ -770,7 +770,7 @@ runM Interfaces
               withSockets' $ \sockets addresses -> do
                 withServer sockets connectionManager inboundInfoChannel $ \inboundGovernorThread readInboundState -> do
                   debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng daEmptyExtraState mempty
-                  diInstallSigUSR1Handler applications connectionManager debugStateVar daPeerMetrics
+                  diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
                   withPeerStateActions' connectionManager $ \peerStateActions ->
                     withPeerSelectionActions'
                       (mkInboundPeersMap <$> readInboundState)
@@ -800,11 +800,7 @@ run :: ( Monoid extraPeers
        , Exception exception
        )
     => ( forall (mode :: Mx.Mode) x y.
-         Applications RemoteAddress NodeToNodeVersion
-                      NodeToNodeVersionData LocalAddress
-                      NodeToClientVersion NodeToClientVersionData
-                      extraAPI IO x
-       -> NodeToNodeConnectionManager mode Socket
+         NodeToNodeConnectionManager mode Socket
             RemoteAddress NodeToNodeVersionData
             NodeToNodeVersion IO x y
        -> StrictTVar IO
