@@ -600,7 +600,7 @@ type NodeToNodePeerSelectionActions extraState extraActions extraPeers extraFlag
 data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
                 ntcFd ntcAddr ntcVersion ntcVersionData
                 resolver resolverError
-                extraState extraFlags extraPeers
+                extraState extraFlags extraPeers extraAPI
                 m =
     Interfaces {
         -- | node-to-node snocket
@@ -679,10 +679,19 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         -- | callback which is used to register @SIGUSR1@ signal handler.
         diInstallSigUSR1Handler
           :: forall mode x y.
-             NodeToNodeConnectionManager mode ntnFd ntnAddr ntnVersionData ntnVersion  m x y
-          -> StrictTVar m (PeerSelectionState extraState extraFlags extraPeers
-                               ntnAddr (NodeToNodePeerConnectionHandle
-                               mode ntnAddr ntnVersionData m x y))
+             Applications ntnAddr ntnVersion
+                          ntnVersionData ntcAddr
+                          ntcVersion ntcVersionData
+                          extraAPI m x
+          -> NodeToNodeConnectionManager mode ntnFd
+                                         ntnAddr ntnVersionData
+                                         ntnVersion m x y
+          -> StrictTVar m
+               (PeerSelectionState extraState extraFlags extraPeers
+                                   ntnAddr
+                                   (NodeToNodePeerConnectionHandle
+                                       mode ntnAddr
+                                       ntnVersionData m x y))
           -> PeerMetrics m ntnAddr
           -> m (),
 

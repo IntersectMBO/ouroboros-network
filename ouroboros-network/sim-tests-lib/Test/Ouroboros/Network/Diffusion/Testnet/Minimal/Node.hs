@@ -256,7 +256,7 @@ run blockGeneratorArgs limits ni na
         let -- diffusion interfaces
             interfaces :: Common.Interfaces (NtNFD m) NtNAddr NtNVersion NtNVersionData
                                             (NtCFD m) NtCAddr NtCVersion NtCVersionData
-                                            resolver ResolverException extraState extraFlags extraPeers m
+                                            resolver ResolverException extraState extraFlags extraPeers extraAPI m
             interfaces = Common.Interfaces
               { Common.diNtnSnocket            = iNtnSnocket ni
               , Common.diNtnBearer             = iNtnBearer ni
@@ -292,7 +292,7 @@ run blockGeneratorArgs limits ni na
                     }
               , Common.diNtcGetFileDescriptor  = \_ -> pure invalidFileDescriptor
               , Common.diRng                   = diffStgGen
-              , Common.diInstallSigUSR1Handler = \_ _ _ -> pure ()
+              , Common.diInstallSigUSR1Handler = \_ _ _ _ -> pure ()
               , Common.diDnsActions            = const (mockDNSActions
                                                        (iDomainMap ni)
                                                        dnsTimeoutScriptVar

@@ -18,7 +18,6 @@ module Ouroboros.Network.Diffusion
 import Control.Concurrent.Class.MonadSTM.Strict (StrictTVar)
 import Control.Exception (Exception, IOException)
 import Data.Functor (void)
-import Network.Mux qualified as Mx
 import Network.Socket (Socket)
 import Ouroboros.Network.Diffusion.Common (Arguments,
            NodeToNodeConnectionManager, NodeToNodePeerConnectionHandle, Tracers)
@@ -111,18 +110,20 @@ run :: forall (p2p :: P2P) extraArgs extraState extraActions extraFlags
       , Eq extraFlags
       , Exception exception
       )
-    => (forall (mode :: Mx.Mode) x y.
-        NodeToNodeConnectionManager
-          mode Socket RemoteAddress NodeToNodeVersionData NodeToNodeVersion IO x y
-        -> StrictTVar
-             IO
-             (PeerSelectionState
-                extraState
-                extraFlags
-                extraPeers
-                RemoteAddress
-                (NodeToNodePeerConnectionHandle
-                   mode RemoteAddress NodeToNodeVersionData IO x y))
+    => (forall mode x y.
+           Common.Applications RemoteAddress NodeToNodeVersion
+                               NodeToNodeVersionData LocalAddress
+                               NodeToClientVersion NodeToClientVersionData
+                               extraAPI IO x
+        -> NodeToNodeConnectionManager mode Socket
+                                       RemoteAddress NodeToNodeVersionData
+                                       NodeToNodeVersion IO x y
+        -> StrictTVar IO
+             (PeerSelectionState extraState extraFlags extraPeers
+                                 RemoteAddress
+                                 (NodeToNodePeerConnectionHandle
+                                     mode RemoteAddress
+                                     NodeToNodeVersionData IO x y))
         -> PeerMetrics IO RemoteAddress
         -> IO ())
     -> Tracers

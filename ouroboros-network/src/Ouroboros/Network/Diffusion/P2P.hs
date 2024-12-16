@@ -137,7 +137,7 @@ runM
        Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
                   ntcFd ntcAddr ntcVersion ntcVersionData
                   resolver resolverError
-                  extraState extraFlags extraPeers m
+                  extraState extraFlags extraPeers extraAPI m
     -> -- | tracers
        Tracers ntnAddr ntnVersion
                ntcAddr ntcVersion
@@ -232,7 +232,7 @@ runM Interfaces
        , daExtraActions
        , daExtraChurnArgs
        }
-     Applications
+     applications@Applications
        { daApplicationInitiatorMode
        , daApplicationInitiatorResponderMode
        , daLocalResponderApplication
@@ -745,7 +745,7 @@ runM Interfaces
         InitiatorOnlyDiffusionMode ->
           withConnectionManagerInitiatorOnlyMode $ \connectionManager-> do
           debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng daEmptyExtraState mempty
-          diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
+          diInstallSigUSR1Handler applications connectionManager debugStateVar daPeerMetrics
           withPeerStateActions' connectionManager $ \peerStateActions->
             withPeerSelectionActions'
               (return Map.empty)
@@ -770,7 +770,7 @@ runM Interfaces
               withSockets' $ \sockets addresses -> do
                 withServer sockets connectionManager inboundInfoChannel $ \inboundGovernorThread readInboundState -> do
                   debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng daEmptyExtraState mempty
-                  diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
+                  diInstallSigUSR1Handler applications connectionManager debugStateVar daPeerMetrics
                   withPeerStateActions' connectionManager $ \peerStateActions ->
                     withPeerSelectionActions'
                       (mkInboundPeersMap <$> readInboundState)
@@ -799,20 +799,22 @@ run :: ( Monoid extraPeers
        , Eq extraCounters
        , Exception exception
        )
-    => (forall (mode :: Mx.Mode) x y.
-        NodeToNodeConnectionManager
-          mode Socket RemoteAddress NodeToNodeVersionData NodeToNodeVersion IO x y
-        -> StrictTVar
-             IO
-             (PeerSelectionState
-                extraState
-                extraFlags
-                extraPeers
-                RemoteAddress
-                (NodeToNodePeerConnectionHandle
-                   mode RemoteAddress NodeToNodeVersionData IO x y))
-        -> PeerMetrics IO RemoteAddress
-        -> IO ())
+    => ( forall (mode :: Mx.Mode) x y.
+         Applications RemoteAddress NodeToNodeVersion
+                      NodeToNodeVersionData LocalAddress
+                      NodeToClientVersion NodeToClientVersionData
+                      extraAPI IO x
+       -> NodeToNodeConnectionManager mode Socket
+            RemoteAddress NodeToNodeVersionData
+            NodeToNodeVersion IO x y
+       -> StrictTVar IO
+            (PeerSelectionState extraState extraFlags extraPeers
+                               RemoteAddress
+                               (NodeToNodePeerConnectionHandle
+                                   mode RemoteAddress
+                                   NodeToNodeVersionData IO x y))
+       -> PeerMetrics IO RemoteAddress
+       -> IO ())
     -> Tracers
         RemoteAddress
         NodeToNodeVersion
