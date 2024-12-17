@@ -57,24 +57,24 @@ import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersAPI (..))
 -- do go over target then the action to demote will be triggered. The demote
 -- action never picks local root peers.
 --
-belowTarget :: forall extraState extraActions extraFlags extraAPI extraPeers extraCounters peeraddr peerconn m.
+belowTarget :: forall extraState extraDebugState extraActions extraFlags extraAPI extraPeers extraCounters peeraddr peerconn m.
                ( Alternative (STM m)
                , MonadSTM m
                , Ord peeraddr
                )
             => (extraState -> Bool)
             -> PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
-            -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
+            -> MkGuardedDecision extraState extraDebugState extraFlags extraPeers peeraddr peerconn m
 belowTarget enableAction = belowTargetBigLedgerPeers enableAction <> belowTargetLocal <> belowTargetOther
 
 
 -- | For locally configured root peers we have the explicit target that comes from local
 -- configuration.
 --
-belowTargetLocal :: forall extraActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
+belowTargetLocal :: forall extraActions extraState extraDebugState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
                     (MonadSTM m, Ord peeraddr, HasCallStack)
                  => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
-                 -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
+                 -> MkGuardedDecision extraState extraDebugState extraFlags extraPeers peeraddr peerconn m
 belowTargetLocal actions@PeerSelectionActions {
                    extraPeersAPI = PublicExtraPeersAPI {
                      memberExtraPeers
@@ -174,10 +174,10 @@ belowTargetLocal actions@PeerSelectionActions {
       } = peerSelectionStateToView extraPeersToSet extraStateToExtraCounters st
 
 
-belowTargetOther :: forall extraActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
+belowTargetOther :: forall extraActions extraState extraDebugState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
                     (MonadSTM m, Ord peeraddr, HasCallStack)
                  => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
-                 -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
+                 -> MkGuardedDecision extraState extraDebugState extraFlags extraPeers peeraddr peerconn m
 belowTargetOther actions@PeerSelectionActions {
                    extraPeersAPI = PublicExtraPeersAPI {
                      memberExtraPeers
@@ -262,11 +262,11 @@ belowTargetOther actions@PeerSelectionActions {
 -- It should be noted if the node is in bootstrap mode (i.e. in a sensitive
 -- state) then this monitoring action will be disabled.
 --
-belowTargetBigLedgerPeers :: forall extraState extraActions extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
+belowTargetBigLedgerPeers :: forall extraState extraDebugState extraActions extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
                              (MonadSTM m, Ord peeraddr, HasCallStack)
                           => (extraState -> Bool)
                           -> PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
-                          -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
+                          -> MkGuardedDecision extraState extraDebugState extraFlags extraPeers peeraddr peerconn m
 belowTargetBigLedgerPeers enableAction
                           actions@PeerSelectionActions {
                             extraPeersAPI = PublicExtraPeersAPI {
@@ -360,14 +360,14 @@ maxColdPeerRetryBackoff :: Int
 maxColdPeerRetryBackoff = 5
 
 
-jobPromoteColdPeer :: forall extraActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
+jobPromoteColdPeer :: forall extraActions extraState extraDebugState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
                        (Monad m, Ord peeraddr)
                    => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
                    -> PeerSelectionPolicy peeraddr m
                    -> peeraddr
                    -> IsBigLedgerPeer
                    -> DiffusionMode
-                   -> Job () m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
+                   -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
 jobPromoteColdPeer PeerSelectionActions {
                      peerStateActions = PeerStateActions {establishPeerConnection},
                      peerConnToPeerSharing,
@@ -380,7 +380,7 @@ jobPromoteColdPeer PeerSelectionActions {
                    peeraddr isBigLedgerPeer diffusionMode =
     Job job handler () "promoteColdPeer"
   where
-    handler :: SomeException -> m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
+    handler :: SomeException -> m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
     handler e = return $
       Completion $ \st@PeerSelectionState {
                       publicRootPeers,
@@ -432,7 +432,7 @@ jobPromoteColdPeer PeerSelectionActions {
             decisionJobs  = []
           }
 
-    job :: m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
+    job :: m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
     job = do
       --TODO: decide if we should do timeouts here or if we should make that
       -- the responsibility of establishPeerConnection
@@ -509,16 +509,16 @@ jobPromoteColdPeer PeerSelectionActions {
 -- | If we are above the target of /established peers/ we demote some of the
 -- /warm peers/ to the cold state, according to 'policyPickWarmPeersToDemote'.
 --
-aboveTarget :: forall extraActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
+aboveTarget :: forall extraActions extraState extraDebugState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
                (Alternative (STM m), MonadSTM m, Ord peeraddr)
             => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
-            -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
+            -> MkGuardedDecision extraState extraDebugState extraFlags extraPeers peeraddr peerconn m
 aboveTarget =  aboveTargetBigLedgerPeers <> aboveTargetOther
 
-aboveTargetOther :: forall extraActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
+aboveTargetOther :: forall extraActions extraState extraDebugState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
                (MonadSTM m, Ord peeraddr, HasCallStack)
             => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
-            -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
+            -> MkGuardedDecision extraState extraDebugState extraFlags extraPeers peeraddr peerconn m
 aboveTargetOther actions@PeerSelectionActions {
                    extraPeersAPI = PublicExtraPeersAPI {
                      memberExtraPeers
@@ -608,10 +608,10 @@ aboveTargetOther actions@PeerSelectionActions {
   = GuardedSkip Nothing
 
 
-aboveTargetBigLedgerPeers :: forall extraActions extraState extraFlags extraAPI extraPeers extraCounters peeraddr peerconn m.
+aboveTargetBigLedgerPeers :: forall extraActions extraState extraDebugState extraFlags extraAPI extraPeers extraCounters peeraddr peerconn m.
                              (MonadSTM m, Ord peeraddr, HasCallStack)
                           => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
-                          -> MkGuardedDecision extraState extraFlags extraPeers peeraddr peerconn m
+                          -> MkGuardedDecision extraState extraDebugState extraFlags extraPeers peeraddr peerconn m
 aboveTargetBigLedgerPeers actions@PeerSelectionActions {
                             extraPeersAPI = PublicExtraPeersAPI {
                               memberExtraPeers
@@ -693,17 +693,17 @@ aboveTargetBigLedgerPeers actions@PeerSelectionActions {
   = GuardedSkip Nothing
 
 
-jobDemoteEstablishedPeer :: forall extraActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
+jobDemoteEstablishedPeer :: forall extraActions extraState extraDebugState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
                             (Monad m, Ord peeraddr)
                          => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
                          -> peeraddr
                          -> peerconn
-                         -> Job () m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
+                         -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
 jobDemoteEstablishedPeer PeerSelectionActions{peerStateActions = PeerStateActions {closePeerConnection}}
                          peeraddr peerconn =
     Job job handler () "demoteEstablishedPeer"
   where
-    handler :: SomeException -> m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
+    handler :: SomeException -> m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
     handler e = return $
       -- It's quite bad if closing fails. The peer is cooling so
       -- we can't remove it from the set of established peers.
@@ -740,7 +740,7 @@ jobDemoteEstablishedPeer PeerSelectionActions{peerStateActions = PeerStateAction
           decisionJobs  = []
       }
 
-    job :: m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
+    job :: m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
     job = do
       closePeerConnection peerconn
       return $ Completion $ \st@PeerSelectionState {

@@ -168,7 +168,7 @@ data Arguments extraArgs extraChurnArgs extraFlags m = Arguments
 --
 type ResolverException = SomeException
 
-run :: forall extraArgs extraState extraActions extraAPI
+run :: forall extraArgs extraState extraDebugState extraActions extraAPI
              extraPeers extraFlags extraChurnArgs extraCounters
              exception resolver m.
        ( Alternative (STM m)
@@ -206,6 +206,7 @@ run :: forall extraArgs extraState extraActions extraAPI
     -> (forall muxMode responderCtx ntnVersionData bytes a b .
         PeerSelectionGovernorArgs
           extraState
+          extraDebugState
           extraActions
           extraPeers
           extraAPI
@@ -232,7 +233,7 @@ run :: forall extraArgs extraState extraActions extraAPI
     -> (PeerChurnArgs
              m
              extraChurnArgs
-             extraState
+             extraDebugState
              extraFlags
              extraPeers
              extraAPI
@@ -241,7 +242,7 @@ run :: forall extraArgs extraState extraActions extraAPI
         -> m Void)
     -> Common.TracersExtra NtNAddr NtNVersion NtNVersionData
                            NtCAddr NtCVersion NtCVersionData
-                           ResolverException extraState extraState extraFlags
+                           ResolverException extraState extraDebugState extraFlags
                            extraPeers extraCounters m
     -> Tracer m (TraceLabelPeer NtNAddr (TraceFetchClientState BlockHeader))
     -> m Void
@@ -449,7 +450,7 @@ run blockGeneratorArgs limits ni na
       }
 
     argsExtra :: Common.ArgumentsExtra
-                   extraArgs extraState extraActions
+                   extraArgs extraState extraDebugState extraActions
                    extraAPI extraPeers extraFlags
                    extraChurnArgs extraCounters exception
                    NtNAddr m

@@ -80,13 +80,13 @@ pickChurnRegime consensus churn ubp =
 -- On startup the churn governor gives a head start to local root peers over
 -- root peers.
 --
-peerChurnGovernor :: forall m extraDebugState extraFlags extraCounters extraPeers peeraddr.
+peerChurnGovernor :: forall m extraState extraFlags extraCounters extraPeers peeraddr.
                      ( MonadDelay m
                      , Alternative (STM m)
                      , MonadTimer m
                      , MonadCatch m
                      )
-                  => PeerChurnArgs m (CardanoPeerChurnArgs m) extraDebugState extraFlags extraPeers (CardanoLedgerPeersConsensusInterface m) extraCounters peeraddr
+                  => PeerChurnArgs m (CardanoPeerChurnArgs m) extraState extraFlags extraPeers (CardanoLedgerPeersConsensusInterface m) extraCounters peeraddr
                   -> m Void
 peerChurnGovernor PeerChurnArgs {
                     pcaPeerSelectionTracer = tracer,
