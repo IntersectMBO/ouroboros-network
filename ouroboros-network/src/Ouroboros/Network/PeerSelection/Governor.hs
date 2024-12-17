@@ -462,11 +462,11 @@ peerSelectionGovernor :: ( Alternative (STM m)
                          , Eq extraCounters
                          , Semigroup extraPeers
                          )
-                      => Tracer m (TracePeerSelection extraState extraFlags extraPeers peeraddr)
+                      => Tracer m (TracePeerSelection extraDebugState extraFlags extraPeers peeraddr)
                       -> Tracer m (DebugPeerSelection extraState extraFlags extraPeers peeraddr)
                       -> Tracer m (PeerSelectionCounters extraCounters)
                       -> PeerSelectionGovernorArgs
-                          extraState extraActions extraPeers extraAPI extraFlags extraCounters
+                          extraState extraDebugState extraActions extraPeers extraAPI extraFlags extraCounters
                           peeraddr peerconn exception m
                       -> StdGen
                       -> extraState
@@ -507,7 +507,7 @@ peerSelectionGovernor tracer debugTracer countersTracer psArgs fuzzRng extraStat
 -- In each case we trace the action, update the state and execute the
 -- action asynchronously.
 --
-peerSelectionGovernorLoop :: forall m extraState extraActions extraPeers extraAPI extraFlags extraCounters exception peeraddr peerconn.
+peerSelectionGovernorLoop :: forall m extraState extraDebugState extraActions extraPeers extraAPI extraFlags extraCounters exception peeraddr peerconn.
                              ( Alternative (STM m)
                              , MonadAsync m
                              , MonadDelay m
@@ -517,11 +517,11 @@ peerSelectionGovernorLoop :: forall m extraState extraActions extraPeers extraAP
                              , Show peerconn
                              , Hashable peeraddr, Exception exception, Eq extraCounters, Semigroup extraPeers
                              )
-                          => Tracer m (TracePeerSelection extraState extraFlags extraPeers peeraddr)
+                          => Tracer m (TracePeerSelection extraDebugState extraFlags extraPeers peeraddr)
                           -> Tracer m (DebugPeerSelection extraState extraFlags extraPeers peeraddr)
                           -> Tracer m (PeerSelectionCounters extraCounters)
                           -> PeerSelectionGovernorArgs
-                              extraState extraActions extraPeers extraAPI extraFlags extraCounters
+                              extraState extraDebugState extraActions extraPeers extraAPI extraFlags extraCounters
                               peeraddr peerconn exception m
                           -> PeerSelectionActions
                               extraState extraActions extraPeers extraFlags extraAPI extraCounters
@@ -530,7 +530,7 @@ peerSelectionGovernorLoop :: forall m extraState extraActions extraPeers extraAP
                           -> PeerSelectionInterfaces
                               extraState extraFlags extraPeers extraCounters
                               peeraddr peerconn m
-                          -> JobPool () m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
+                          -> JobPool () m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
                           -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
                           -> m Void
 peerSelectionGovernorLoop tracer
@@ -627,7 +627,7 @@ peerSelectionGovernorLoop tracer
 
     evalGuardedDecisions :: Time
                          -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
-                         -> m (TimedDecision m extraState extraFlags extraPeers peeraddr peerconn)
+                         -> m (TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
     evalGuardedDecisions blockedAt st = do
       inboundPeers <- readInboundPeers actions
       case guardedDecisions blockedAt st inboundPeers of
@@ -652,7 +652,7 @@ peerSelectionGovernorLoop tracer
     guardedDecisions :: Time
                      -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
                      -> Map peeraddr PeerSharing
-                     -> Guarded (STM m) (TimedDecision m extraState extraFlags extraPeers peeraddr peerconn)
+                     -> Guarded (STM m) (TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
     guardedDecisions blockedAt st inboundPeers =
       -- All the alternative potentially-blocking decisions.
 
@@ -709,7 +709,7 @@ peerSelectionGovernorLoop tracer
 
 
 wakeupDecision :: PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
-               -> TimedDecision m extraState extraFlags extraPeers peeraddr peerconn
+               -> TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn
 wakeupDecision st _now =
   Decision {
     decisionTrace = [TraceGovernorWakeup],

@@ -188,6 +188,7 @@ cardanoPeerSelectionGovernorArgs
   -> LedgerPeersConsensusInterface (CardanoLedgerPeersConsensusInterface m) m
   -> PeerSelectionGovernorArgs
        CardanoPeerSelectionState
+       extraDebugState
        (CardanoPeerSelectionActions m)
        (CardanoPublicRootPeers peeraddr)
        (CardanoLedgerPeersConsensusInterface m)

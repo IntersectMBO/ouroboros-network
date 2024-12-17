@@ -99,7 +99,7 @@ runM
     :: forall m ntnFd ntnAddr ntnVersion ntnVersionData
                 ntcFd ntcAddr ntcVersion ntcVersionData
                 resolver resolverError exception a
-                extraArgs extraState extraActions extraPeers
+                extraArgs extraState extraDebugState extraActions extraPeers
                 extraAPI extraFlags extraChurnArgs extraCounters .
 
        ( Alternative (STM m)
@@ -146,13 +146,13 @@ runM
        TracersExtra ntnAddr ntnVersion ntnVersionData
                     ntcAddr ntcVersion ntcVersionData
                     resolverError
-                    extraState extraState extraFlags
+                    extraState extraDebugState extraFlags
                     extraPeers extraCounters m
     -> -- | configuration
        Arguments m ntnFd ntnAddr
                    ntcFd ntcAddr
     -> -- | p2p configuration
-       ArgumentsExtra extraArgs extraState extraActions extraAPI
+       ArgumentsExtra extraArgs extraState extraDebugState extraActions extraAPI
                       extraPeers extraFlags extraChurnArgs extraCounters
                       exception ntnAddr m
 
@@ -826,7 +826,7 @@ run :: ( Monoid extraPeers
         NodeToClientVersionData
         IOException
         extraState
-        extraState
+        extraDebugState
         extraFlags
         extraPeers
         extraCounters
@@ -840,6 +840,7 @@ run :: ( Monoid extraPeers
     -> ArgumentsExtra
         extraArgs
         extraState
+        extraDebugState
         extraActions
         extraAPI
         extraPeers

@@ -54,7 +54,7 @@ import Ouroboros.Network.PeerSelection.Types
 targetPeers :: (MonadSTM m, Ord peeraddr)
             => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
             -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
-            -> Guarded (STM m) (TimedDecision m extraState extraFlags extraPeers peeraddr peerconn)
+            -> Guarded (STM m) (TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
 targetPeers PeerSelectionActions{ readPeerSelectionTargets,
                                   extraPeersAPI
                                 }
@@ -96,9 +96,9 @@ targetPeers PeerSelectionActions{ readPeerSelectionTargets,
 -- | Await for the first result from 'JobPool' and return its 'Decision'.
 --
 jobs :: MonadSTM m
-     => JobPool () m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
+     => JobPool () m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
      -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
-     -> Guarded (STM m) (TimedDecision m extraState extraFlags extraPeers peeraddr peerconn)
+     -> Guarded (STM m) (TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
 jobs jobPool st =
     -- This case is simple because the job pool returns a 'Completion' which is
     -- just a function from the current state to a new 'Decision'.
@@ -109,11 +109,11 @@ jobs jobPool st =
 
 -- | Monitor connections.
 --
-connections :: forall m extraActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn.
+connections :: forall m extraActions extraState extraDebugState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn.
                (MonadSTM m, Ord peeraddr)
             => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
             -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
-            -> Guarded (STM m) (TimedDecision m extraState extraFlags extraPeers peeraddr peerconn)
+            -> Guarded (STM m) (TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
 connections PeerSelectionActions{
               peerStateActions = PeerStateActions {monitorPeerConnection}
             }
@@ -304,11 +304,11 @@ connections PeerSelectionActions{
 
 -- | Monitor local roots using 'readLocalRootPeers' 'STM' action.
 --
-localRoots :: forall extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m.
+localRoots :: forall extraState extraDebugState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m.
               (MonadSTM m, Ord peeraddr, Eq extraFlags)
            => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
            -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
-           -> Guarded (STM m) (TimedDecision m extraState extraFlags extraPeers peeraddr peerconn)
+           -> Guarded (STM m) (TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
 localRoots actions@PeerSelectionActions{ readLocalRootPeers
                                        , extraPeersAPI = PublicExtraPeersAPI {
                                            differenceExtraPeers
@@ -405,7 +405,7 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
 jobVerifyPeerSnapshot :: ( MonadSTM m )
                       => LedgerPeerSnapshot
                       -> LedgerPeersConsensusInterface extraAPI m
-                      -> Job () m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
+                      -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
 jobVerifyPeerSnapshot baseline@(LedgerPeerSnapshot (slot, _))
                       LedgerPeersConsensusInterface {
                         lpGetLatestSlot,
@@ -434,7 +434,7 @@ ledgerPeerSnapshotChange :: (MonadSTM m)
                          => (extraState -> extraState)
                          -> PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
                          -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
-                         -> Guarded (STM m) (TimedDecision m extraState extraFlags extraPeers peeraddr peerconn)
+                         -> Guarded (STM m) (TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
 ledgerPeerSnapshotChange extraStateChange
                          PeerSelectionActions {
                            readLedgerPeerSnapshot

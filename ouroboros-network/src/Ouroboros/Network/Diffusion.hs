@@ -39,36 +39,36 @@ data P2P = P2P        -- ^ General P2P mode. Can be instantiated with custom
 
 -- | Tracers which depend on p2p mode.
 --
-data ExtraTracers (p2p :: P2P) extraState extraFlags extraPeers extraCounters m where
+data ExtraTracers (p2p :: P2P) extraState extraDebugState extraFlags extraPeers extraCounters m where
   P2PTracers
     :: Common.TracersExtra
            RemoteAddress NodeToNodeVersion         NodeToNodeVersionData
            LocalAddress  NodeToClientVersion       NodeToClientVersionData
-           IOException   extraState extraState extraFlags extraPeers
+           IOException   extraState extraDebugState extraFlags extraPeers
            extraCounters m
-    -> ExtraTracers 'P2P extraState extraFlags extraPeers extraCounters m
+    -> ExtraTracers 'P2P extraState extraDebugState extraFlags extraPeers extraCounters m
 
   NonP2PTracers
     :: NonP2P.TracersExtra
-    -> ExtraTracers 'NonP2P extraState extraFlags extraPeers extraCounters m
+    -> ExtraTracers 'NonP2P extraState extraDebugState extraFlags extraPeers extraCounters m
 
 
 -- | Diffusion arguments which depend on p2p mode.
 --
 data ArgumentsExtra
-       (p2p :: P2P) extraArgs extraState extraActions extraAPI
+       (p2p :: P2P) extraArgs extraState extraDebugState extraActions extraAPI
        extraPeers extraFlags extraChurnArgs extraCounters exception ntnAddr m where
   P2PArguments
-    :: Common.ArgumentsExtra extraArgs extraState extraActions extraAPI
+    :: Common.ArgumentsExtra extraArgs extraState extraDebugState extraActions extraAPI
                             extraPeers extraFlags extraChurnArgs
                             extraCounters exception ntnAddr m
-    -> ArgumentsExtra 'P2P extraArgs extraState extraActions extraAPI
+    -> ArgumentsExtra 'P2P extraArgs extraState extraDebugState extraActions extraAPI
                            extraPeers extraFlags extraChurnArgs
                            extraCounters exception ntnAddr m
 
   NonP2PArguments
     :: NonP2P.ArgumentsExtra
-    -> ArgumentsExtra 'NonP2P extraArgs extraState extraActions extraAPI
+    -> ArgumentsExtra 'NonP2P extraArgs extraState extraDebugState extraActions extraAPI
                               extraPeers extraFlags extraChurnArgs
                               extraCounters exception ntnAddr m
 
@@ -103,7 +103,7 @@ data ApplicationsExtra (p2p :: P2P) ntnAddr m a where
 
 -- | Run data diffusion in either 'P2P' or 'NonP2P' mode.
 --
-run :: forall (p2p :: P2P) extraArgs extraState extraActions extraFlags
+run :: forall (p2p :: P2P) extraArgs extraState extraDebugState extraActions extraFlags
              extraPeers extraAPI extraChurnArgs extraCounters exception a.
       ( Monoid extraPeers
       , Eq extraCounters
@@ -126,12 +126,12 @@ run :: forall (p2p :: P2P) extraArgs extraState extraActions extraFlags
          RemoteAddress NodeToNodeVersion
          LocalAddress  NodeToClientVersion
          IO
-    -> ExtraTracers p2p extraState extraFlags extraPeers extraCounters IO
+    -> ExtraTracers p2p extraState extraDebugState extraFlags extraPeers extraCounters IO
     -> Arguments
          IO
          Socket      RemoteAddress
          LocalSocket LocalAddress
-    -> ArgumentsExtra p2p extraArgs extraState extraActions extraAPI
+    -> ArgumentsExtra p2p extraArgs extraState extraDebugState extraActions extraAPI
        extraPeers extraFlags extraChurnArgs extraCounters exception
        RemoteAddress IO
     -> Applications p2p RemoteAddress LocalAddress NodeToNodeVersionData NodeToClientVersionData extraAPI IO a

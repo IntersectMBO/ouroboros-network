@@ -355,7 +355,7 @@ nullTracersExtra =
 
 -- | P2P Arguments Extras
 --
-data ArgumentsExtra extraArgs extraState extraActions extraAPI extraPeers
+data ArgumentsExtra extraArgs extraState extraDebugState extraActions extraAPI extraPeers
                     extraFlags extraChurnArgs extraCounters exception
                     peeraddr m = ArgumentsExtra {
       -- | selection targets for the peer governor
@@ -426,7 +426,7 @@ data ArgumentsExtra extraArgs extraState extraActions extraAPI extraPeers
 
     , daPeerSelectionGovernorArgs
         :: forall muxMode responderCtx ntnVersionData bytes a b .
-           PeerSelectionGovernorArgs extraState extraActions extraPeers
+           PeerSelectionGovernorArgs extraState extraDebugState extraActions extraPeers
                                      extraAPI extraFlags extraCounters
                                      peeraddr (PeerConnectionHandle
                                                  muxMode responderCtx peeraddr
@@ -461,7 +461,7 @@ data ArgumentsExtra extraArgs extraState extraActions extraAPI extraPeers
         :: PeerChurnArgs
              m
              extraChurnArgs
-             extraState
+             extraDebugState
              extraFlags
              extraPeers
              extraAPI

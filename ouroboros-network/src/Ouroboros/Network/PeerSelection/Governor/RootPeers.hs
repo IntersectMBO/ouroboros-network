@@ -28,7 +28,7 @@ belowTarget :: (MonadSTM m, Ord peeraddr, Semigroup extraPeers)
             => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
             -> Time
             -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
-            -> Guarded (STM m) (TimedDecision m extraState extraFlags extraPeers peeraddr peerconn)
+            -> Guarded (STM m) (TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
 belowTarget actions@PeerSelectionActions {
               extraPeersAPI = PublicExtraPeersAPI {
                 extraPeersToSet
@@ -78,11 +78,11 @@ belowTarget actions@PeerSelectionActions {
     maxExtraRootPeers = targetNumberOfRootPeers - numRootPeers
 
 
-jobReqPublicRootPeers :: forall m extraActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn.
+jobReqPublicRootPeers :: forall m extraActions extraState extraDebugState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn.
                          (MonadSTM m, Ord peeraddr, Semigroup extraPeers)
                       => PeerSelectionActions extraState extraActions extraPeers extraFlags extraAPI extraCounters peeraddr peerconn m
                       -> Int
-                      -> Job () m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
+                      -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
 jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
                                           , extraPeersAPI = PublicExtraPeersAPI {
                                               differenceExtraPeers
@@ -94,7 +94,7 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
                       numExtraAllowed =
     Job job (return . handler) () "reqPublicRootPeers"
   where
-    handler :: SomeException -> Completion m extraState extraFlags extraPeers peeraddr peerconn
+    handler :: SomeException -> Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn
     handler e =
       Completion $ \st now ->
       -- This is a failure, so move the backoff counter one in the failure
@@ -122,7 +122,7 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
             decisionJobs  = []
           }
 
-    job :: m (Completion m extraState extraFlags extraPeers peeraddr peerconn)
+    job :: m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
     job = do
       (results, ttl) <- requestPublicRootPeers AllLedgerPeers numExtraAllowed
       return $ Completion $ \st now ->

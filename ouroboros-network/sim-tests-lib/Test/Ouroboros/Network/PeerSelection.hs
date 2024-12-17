@@ -103,7 +103,7 @@ import Ouroboros.Cardano.Network.PeerSelection.Governor.Monitor qualified as Car
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionActions
            (CardanoPeerSelectionActions (..))
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState
-           (CardanoPeerSelectionState (..))
+           (CardanoDebugPeerSelectionState, CardanoPeerSelectionState (..))
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as CPST
 import Ouroboros.Cardano.Network.PeerSelection.Governor.Types
            (CardanoPeerSelectionView (..))
@@ -4040,7 +4040,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
       readDomains
       (ioDNSActions LookupReqAAndAAAA) $ \requestPublicRootPeers -> do
         peerSelectionGovernor
-          tracer tracer tracer
+          tracer' tracer tracer
           peerSelectionGovernorArgs
           -- TODO: #3182 Rng seed should come from quickcheck.
           (mkStdGen 42)
@@ -4052,6 +4052,9 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
           policy
           interfaces
   where
+    tracer' :: Tracer IO (TracePeerSelection CardanoDebugPeerSelectionState PeerTrustable (CardanoPublicRootPeers SockAddr) SockAddr)
+    tracer' = tracer
+
     tracer :: Show a => Tracer IO a
     tracer  = Tracer (BS.putStrLn . BS.pack . show)
 
