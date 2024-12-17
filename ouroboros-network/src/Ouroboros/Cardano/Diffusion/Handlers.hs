@@ -36,7 +36,7 @@ sigUSR1Handler
                   IO
   -> STM IO UseLedgerPeers
   -> PeerSharing
-  -> UseBootstrapPeers
+  -> STM IO UseBootstrapPeers
   -> STM IO LedgerStateJudgement
   -> ConnectionManager muxMode socket ntnAddr
                        handle handleError IO
@@ -46,12 +46,13 @@ sigUSR1Handler
                    peerconn)
   -> PeerMetrics IO ntnAddr
   -> IO ()
-sigUSR1Handler tracersExtra getUseLedgerPeers ownPeerSharing useBootstrapPeers
+sigUSR1Handler tracersExtra getUseLedgerPeers ownPeerSharing getBootstrapPeers
                getLedgerStateJudgement connectionManager dbgStateVar metrics = do
   _ <- Signals.installHandler
          Signals.sigUSR1
          (Signals.Catch
-           (do state <- atomically $ readState connectionManager
+           (do (state, useBootstrapPeers) <- atomically $ do
+                  (,) <$> readState connectionManager <*> getBootstrapPeers
                traceWith (dtConnectionManagerTracer tracersExtra)
                          (TrState state)
                ps <- readTVarIO dbgStateVar
@@ -73,6 +74,24 @@ sigUSR1Handler tracersExtra getUseLedgerPeers ownPeerSharing useBootstrapPeers
   return ()
 #else
 sigUSR1Handler
-  :: IO ()
-sigUSR1Handler = pure ()
+  :: Ord ntnAddr
+  => TracersExtra ntnAddr ntnVersion ntnVersionData
+                  ntcAddr ntcVersion ntcVersionData
+                  resolverError extraState
+                  CardanoDebugPeerSelectionState
+                  extraFlags extraPeers extraCounters
+                  IO
+  -> STM IO UseLedgerPeers
+  -> PeerSharing
+  -> UseBootstrapPeers
+  -> STM IO LedgerStateJudgement
+  -> ConnectionManager muxMode socket ntnAddr
+                       handle handleError IO
+  -> StrictTVar IO (PeerSelectionState
+                   CardanoPeerSelectionState
+                   extraFlags extraPeers ntnAddr
+                   peerconn)
+  -> PeerMetrics IO ntnAddr
+  -> IO ()
+sigUSR1Handler _ _ _ _ _ _ _ = pure ()
 #endif
