@@ -10,6 +10,7 @@
 * Addapted to `network-mux` changes in https://github.com/IntersectMBO/ouroboros-network/pull/4997
 * Use `LocalRootConfig` instead of a tuple.
 * Extended `LocalRootConfig` with `diffusionMode :: DiffusionMode` field.
+* Added `diConnStateSupply` record field to `Ouroboros.Network.Diffusion.P2P.Interfaces`.
 
 ### Non-Breaking changes
 
