@@ -23,10 +23,11 @@ import Control.Monad.Class.MonadTime.SI (DiffTime, Time (Time), addTime,
 import Control.Monad.IOSim
 
 import Data.Bifoldable (bifoldMap)
+import Data.Bifunctor (first)
 import Data.Dynamic (fromDynamic)
 import Data.Foldable (fold)
 import Data.IP qualified as IP
-import Data.List as List (find, foldl', intercalate, tails)
+import Data.List qualified as List
 import Data.List.Trace qualified as Trace
 import Data.Map (Map)
 import Data.Map qualified as Map
@@ -248,9 +249,9 @@ tests =
       , testProperty "peer selection trace coverage"
                      prop_peer_selection_trace_coverage
       , testProperty "connection manager trace coverage"
-                     prop_connection_manager_trace_coverage
+                     unit_connection_manager_trace_coverage
       , testProperty "connection manager transitions coverage"
-                     prop_connection_manager_transitions_coverage
+                     unit_connection_manager_transitions_coverage
       , testProperty "inbound governor trace coverage"
                      prop_inbound_governor_trace_coverage
       , testProperty "inbound governor transitions coverage"
@@ -335,20 +336,21 @@ prop_diffusion_nofail ioSimTrace traceNumber =
      if r
      then return $ property True
      else do
-       putStrLn $ intercalate "\n" $ map show trace
+       putStrLn $ List.intercalate "\n" $ map show trace
        -- the ioSimTrace is infinite, but it will terminate with `AssertionFailed`
        error "impossible!"
 
 -- | This test coverage of 'CM.Trace' constructors.
 --
-prop_connection_manager_trace_coverage :: AbsBearerInfo
-                                       -> DiffusionScript
-                                       -> Property
-prop_connection_manager_trace_coverage defaultBearerInfo diffScript =
-
+-- TODO: to turn this test into a property test requires to generate
+-- `DiffusionScript` which have at least two nodes that connect to each other.
+--
+unit_connection_manager_trace_coverage :: Property
+unit_connection_manager_trace_coverage =
+  withMaxSuccess 1 $
   let sim :: forall s . IOSim s Void
-      sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
-                                diffScript
+      sim = diffusionSimulation (toBearerInfo absNoAttenuation)
+                                script
                                 iosimTracer
 
       events :: [CM.Trace
@@ -367,35 +369,218 @@ prop_connection_manager_trace_coverage defaultBearerInfo diffScript =
 
       eventsSeenNames = map connectionManagerTraceMap events
 
-   -- TODO: Add checkCoverage here
    in tabulate "connection manager trace" eventsSeenNames
-      True
+    $ label (showBucket 250 $ length events)
+        (case events of [] | any (not . List.null . snd) nodes
+                           -> False
+                        _  -> True)
+  where
+    addr, addr' :: NtNAddr
+    addr  = TestAddress (IPAddr (read "127.0.0.2") 1000)
+    addr' = TestAddress (IPAddr (read "127.0.0.1") 1000)
+
+    script@(DiffusionScript _ _ nodes) =
+      DiffusionScript
+        (SimArgs 1 20)
+        (singletonTimedScript Map.empty)
+        [ -- a relay node
+          (NodeArgs {
+             naSeed = 0,
+             naDiffusionMode = InitiatorAndResponderDiffusionMode,
+             naMbTime = Just 224,
+             naPublicRoots = Map.empty,
+             naConsensusMode = PraosMode,
+             naBootstrapPeers = (Script (DontUseBootstrapPeers :| [])),
+             naAddr = addr',
+             naPeerSharing = PeerSharingDisabled,
+             naLocalRootPeers = [],
+             naLedgerPeers = Script (LedgerPools [] :| []),
+             naPeerTargets = ConsensusModePeerTargets {
+                deadlineTargets = PeerSelectionTargets
+                  { targetNumberOfRootPeers = 1,
+                    targetNumberOfKnownPeers = 1,
+                    targetNumberOfEstablishedPeers = 0,
+                    targetNumberOfActivePeers = 0,
+
+                    targetNumberOfKnownBigLedgerPeers = 0,
+                    targetNumberOfEstablishedBigLedgerPeers = 0,
+                    targetNumberOfActiveBigLedgerPeers = 0
+                  },
+                syncTargets = nullPeerSelectionTargets },
+             naDNSTimeoutScript = Script (DNSTimeout {getDNSTimeout = 1} :| []),
+             naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0.1} :| []),
+             naChainSyncExitOnBlockNo = Nothing,
+             naChainSyncEarlyExit = False,
+             naFetchModeScript = Script (FetchModeDeadline :| [])
+           }
+          , [JoinNetwork 0]
+          )
+        , -- a relay, which has the BP as a local root
+          (NodeArgs {
+             naSeed = 0,
+             naDiffusionMode = InitiatorAndResponderDiffusionMode,
+             naMbTime = Just 224,
+             naPublicRoots = Map.empty,
+             naConsensusMode = PraosMode,
+             naBootstrapPeers = (Script (DontUseBootstrapPeers :| [])),
+             naAddr = addr,
+             naPeerSharing = PeerSharingDisabled,
+             naLocalRootPeers =
+               [ (1,1,Map.fromList [ (RelayAccessAddress (read "127.0.0.1") 1000,
+                                      LocalRootConfig DoNotAdvertisePeer IsNotTrustable InitiatorAndResponderDiffusionMode)
+                                   ])
+               ],
+             naLedgerPeers = Script (LedgerPools [] :| []),
+             naPeerTargets = ConsensusModePeerTargets {
+                deadlineTargets = PeerSelectionTargets
+                  { targetNumberOfRootPeers = 6,
+                    targetNumberOfKnownPeers = 7,
+                    targetNumberOfEstablishedPeers = 7,
+                    targetNumberOfActivePeers = 6,
+
+                    targetNumberOfKnownBigLedgerPeers = 0,
+                    targetNumberOfEstablishedBigLedgerPeers = 0,
+                    targetNumberOfActiveBigLedgerPeers = 0
+                  },
+                syncTargets = nullPeerSelectionTargets },
+             naDNSTimeoutScript = Script (DNSTimeout {getDNSTimeout = 1} :| []),
+             naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0.1} :| []),
+             naChainSyncExitOnBlockNo = Nothing,
+             naChainSyncEarlyExit = False,
+             naFetchModeScript = Script (FetchModeDeadline :| [])
+           }
+          , [JoinNetwork 0]
+          )
+        ]
 
 -- | This tests coverage of ConnectionManager transitions.
 --
-prop_connection_manager_transitions_coverage :: AbsBearerInfo
-                                             -> DiffusionScript
-                                             -> Property
-prop_connection_manager_transitions_coverage defaultBearerInfo diffScript =
-
+-- TODO: to turn this test into a property test requires to generate
+-- `DiffusionScript` which have at least two nodes that connect to each other.
+--
+unit_connection_manager_transitions_coverage :: Property
+unit_connection_manager_transitions_coverage =
+  withMaxSuccess 1 $
   let sim :: forall s . IOSim s Void
-      sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
-                                diffScript
+      sim = diffusionSimulation (toBearerInfo absNoAttenuation)
+                                script
                                 iosimTracer
+      trace = runSimTrace sim
 
+      -- events from `traceTVar` installed in `newMutableConnState`
       events :: [AbstractTransitionTrace CM.ConnStateId]
       events = fmap (\((WithName _ b)) -> b)
              . selectTraceEventsDynamic' @_ @(CM.ConnectionTransitionTrace NtNAddr)
              . Trace.take 125000
-             $ runSimTrace sim
+             $ trace
 
+      -- events from the transition tracer
+      events' :: [AbstractTransitionTrace CM.ConnStateId]
+      events' = Trace.toList
+              . selectDiffusionConnectionManagerTransitionEvents
+              . fmap (wnEvent . wtEvent)
+              . withTimeNameTraceEvents
+                 @DiffusionTestTrace
+                 @NtNAddr
+              . first (const ())
+              . Trace.take 125000
+              $ trace
 
       transitionsSeenNames = map (snd . validTransitionMap . ttTransition)
                                  events
 
-   -- TODO: Add checkCoverage here
    in tabulate "connection manager transitions" transitionsSeenNames
-      True
+    $ counterexample "traceTVar"
+      (label ("traceTVar transitions: " ++ showBucket 250 (length events))
+        (case events of [] | any (not . List.null . snd) nodes
+                           -> False
+                        _  -> True))
+      .&&.
+      counterexample "trace"
+      (label ("tracer transitions: " ++ showBucket 250 (length events'))
+        (case events' of [] | any (not . List.null . snd) nodes
+                            -> False
+                         _  -> True))
+
+  where
+    addr, addr' :: NtNAddr
+    addr  = TestAddress (IPAddr (read "127.0.0.2") 1000)
+    addr' = TestAddress (IPAddr (read "127.0.0.1") 1000)
+
+    script@(DiffusionScript _ _ nodes) =
+      DiffusionScript
+        (SimArgs 1 20)
+        (singletonTimedScript Map.empty)
+        [ -- a relay node
+          (NodeArgs {
+             naSeed = 0,
+             naDiffusionMode = InitiatorAndResponderDiffusionMode,
+             naMbTime = Just 224,
+             naPublicRoots = Map.empty,
+             naConsensusMode = PraosMode,
+             naBootstrapPeers = (Script (DontUseBootstrapPeers :| [])),
+             naAddr = addr',
+             naPeerSharing = PeerSharingDisabled,
+             naLocalRootPeers = [],
+             naLedgerPeers = Script (LedgerPools [] :| []),
+             naPeerTargets = ConsensusModePeerTargets {
+                deadlineTargets = PeerSelectionTargets
+                  { targetNumberOfRootPeers = 1,
+                    targetNumberOfKnownPeers = 1,
+                    targetNumberOfEstablishedPeers = 0,
+                    targetNumberOfActivePeers = 0,
+
+                    targetNumberOfKnownBigLedgerPeers = 0,
+                    targetNumberOfEstablishedBigLedgerPeers = 0,
+                    targetNumberOfActiveBigLedgerPeers = 0
+                  },
+                syncTargets = nullPeerSelectionTargets },
+             naDNSTimeoutScript = Script (DNSTimeout {getDNSTimeout = 1} :| []),
+             naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0.1} :| []),
+             naChainSyncExitOnBlockNo = Nothing,
+             naChainSyncEarlyExit = False,
+             naFetchModeScript = Script (FetchModeDeadline :| [])
+           }
+          , [JoinNetwork 0]
+          )
+        , -- a relay, which has the BP as a local root
+          (NodeArgs {
+             naSeed = 0,
+             naDiffusionMode = InitiatorAndResponderDiffusionMode,
+             naMbTime = Just 224,
+             naPublicRoots = Map.empty,
+             naConsensusMode = PraosMode,
+             naBootstrapPeers = (Script (DontUseBootstrapPeers :| [])),
+             naAddr = addr,
+             naPeerSharing = PeerSharingDisabled,
+             naLocalRootPeers =
+               [ (1,1,Map.fromList [ (RelayAccessAddress (read "127.0.0.1") 1000,
+                                      LocalRootConfig DoNotAdvertisePeer IsNotTrustable InitiatorAndResponderDiffusionMode)
+                                   ])
+               ],
+             naLedgerPeers = Script (LedgerPools [] :| []),
+             naPeerTargets = ConsensusModePeerTargets {
+                deadlineTargets = PeerSelectionTargets
+                  { targetNumberOfRootPeers = 6,
+                    targetNumberOfKnownPeers = 7,
+                    targetNumberOfEstablishedPeers = 7,
+                    targetNumberOfActivePeers = 6,
+
+                    targetNumberOfKnownBigLedgerPeers = 0,
+                    targetNumberOfEstablishedBigLedgerPeers = 0,
+                    targetNumberOfActiveBigLedgerPeers = 0
+                  },
+                syncTargets = nullPeerSelectionTargets },
+             naDNSTimeoutScript = Script (DNSTimeout {getDNSTimeout = 1} :| []),
+             naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0.1} :| []),
+             naChainSyncExitOnBlockNo = Nothing,
+             naChainSyncEarlyExit = False,
+             naFetchModeScript = Script (FetchModeDeadline :| [])
+           }
+          , [JoinNetwork 0]
+          )
+        ]
+
 
 -- | This test coverage of InboundGovernorTrace constructors.
 --
@@ -599,7 +784,7 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
                       <*> govLedgerStateJudgement
                        <*> trIsNodeAlive
               )
-       in counterexample (intercalate "\n" $ map show $ Signal.eventsToList events)
+       in counterexample (List.intercalate "\n" $ map show $ Signal.eventsToList events)
         $ signalProperty 20 show
             Set.null
             keepNonTrustablePeersTooLong
@@ -709,7 +894,7 @@ prop_no_non_trustable_peers_before_caught_up_state ioSimTrace traceNumber =
                        <*> trIsNodeAlive
               )
 
-       in counterexample (intercalate "\n" $ map show $ Signal.eventsToList events)
+       in counterexample (List.intercalate "\n" $ map show $ Signal.eventsToList events)
         $ signalProperty 20 show
             Set.null
             keepNonTrustablePeersTooLong
@@ -2158,7 +2343,7 @@ prop_diffusion_target_established_local ioSimTrace traceNumber =
        in counterexample
             ("\nSignal key: (local root peers, established peers, " ++
              "recent failures, is alive, opportunities, ignored too long)\n" ++
-               intercalate "\n" (map show $ eventsToList events)
+               List.intercalate "\n" (map show $ eventsToList events)
             )
         $ signalProperty 20 show
               (\(_,_,_,_,_,_, tooLong) -> Set.null tooLong)
@@ -2351,7 +2536,7 @@ prop_diffusion_target_active_below ioSimTrace traceNumber =
             ("\nSignal key: (local, established peers, active peers, " ++
              "recent failures, opportunities, is node running, ignored too long)") $
           counterexample
-            (intercalate "\n" $ map show $ Signal.eventsToList events) $
+            (List.intercalate "\n" $ map show $ Signal.eventsToList events) $
 
           signalProperty 20 show
             (\(_, _, _, _, _, _, toolong) -> Set.null toolong)
@@ -2515,7 +2700,7 @@ prop_diffusion_target_active_local_below ioSimTrace traceNumber =
             ("\nSignal key: (local, established peers, active peers, " ++
              "recent failures, opportunities, ignored too long)") $
           counterexample
-            (intercalate "\n" $ map show $ Signal.eventsToList events) $
+            (List.intercalate "\n" $ map show $ Signal.eventsToList events) $
 
           signalProperty 20 show
             (\(_,_,_,_,_,toolong) -> Set.null toolong)
@@ -2887,7 +3072,7 @@ prop_diffusion_target_active_local_above ioSimTrace traceNumber =
        in counterexample
             ("\nSignal key: (local peers, active peers, is alive " ++
              "demotion opportunities, ignored too long)") $
-          counterexample (intercalate "\n" $ map show $ Signal.eventsToList events) $
+          counterexample (List.intercalate "\n" $ map show $ Signal.eventsToList events) $
 
           signalProperty 20 show
             (\(_,_,_,_,toolong) -> Set.null toolong)
@@ -2959,7 +3144,7 @@ prop_diffusion_cm_valid_transitions ioSimTrace traceNumber =
                  tpProperty =
                      (counterexample $!
                        (  "\nconnection:\n"
-                       ++ intercalate "\n" (map ppTransition trs))
+                       ++ List.intercalate "\n" (map ppTransition trs))
                        )
                    . foldMap ( \ tr
                               -> All
@@ -3029,7 +3214,7 @@ prop_diffusion_cm_valid_transition_order_iosim_por ioSimTrace traceNumber =
             lastTime = (\(WithName _ (WithTime t _)) -> t)
                      . last
                      $ evsList
-         in counterexample (intercalate "\n" $ map show $ Trace.toList ev)
+         in counterexample (List.intercalate "\n" $ map show $ Trace.toList ev)
           $ classifySimulatedTime lastTime
           $ classifyNumberOfEvents (length evsList)
           $ verify_cm_valid_transition_order
@@ -3428,17 +3613,6 @@ prop_diffusion_peer_selection_actions_no_dodgy_traces ioSimTrace traceNumber =
       <$> events
 
   where
-    showBucket :: Int -> Int -> String
-    showBucket size a | a < size
-                      = show a
-                      | otherwise
-                      = concat [ "["
-                               , show (a `div` size * size)
-                               , ", "
-                               , show (a `div` size * size + size)
-                               , ")"
-                               ]
-
     classifyNumberOfPeerStateActionEvents
       :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
       -> Property -> Property
@@ -3512,11 +3686,12 @@ prop_diffusion_peer_selection_actions_no_dodgy_traces ioSimTrace traceNumber =
          )
          .&&.
          ( let f :: [WithTime (PeerSelectionActionsTrace NtNAddr NtNVersion)] -> Property
-               f as = conjoin $ g <$> tails as
+               f as = conjoin $ g <$> List.tails as
 
                g :: [WithTime (PeerSelectionActionsTrace NtNAddr NtNVersion)] -> Property
                g as@(WithTime demotionTime (PeerStatusChanged HotToCooling{}) : as') =
-                 case find (\case
+                 case List.find
+                           (\case
                                WithTime _ (PeerStatusChanged ColdToWarm{}) -> True
                                _ -> False)
                            as' of
@@ -3527,9 +3702,10 @@ prop_diffusion_peer_selection_actions_no_dodgy_traces ioSimTrace traceNumber =
                                                      >= repromoteDelay config_REPROMOTE_DELAY
                                                       )
                g as@(WithTime demotionTime (PeerStatusChanged WarmToCooling{}) : as') =
-                 case find (\case
-                               WithTime _ (PeerStatusChanged ColdToWarm{}) -> True
-                               _ -> False)
+                 case List.find
+                           (\case
+                                 WithTime _ (PeerStatusChanged ColdToWarm{}) -> True
+                                 _ -> False)
                            as' of
 
                    Nothing                         -> property True
@@ -3648,7 +3824,7 @@ unit_peer_sharing =
                                                               , show addr
                                                               , " =====\n\n"
                                                               ]
-                                                          ++ intercalate "\n" (map show evs)
+                                                          ++ List.intercalate "\n" (map show evs)
                                                           ++ s) "" events) $
       Map.foldMapWithKey verify events
   where
@@ -3749,7 +3925,7 @@ prop_churn_notimeouts ioSimTrace traceNumber =
       $ (\evs ->
             let evsList :: [TracePeerSelection NtNAddr]
                 evsList = snd <$> eventsToList (selectDiffusionPeerSelectionEvents evs)
-            in property $ counterexample (intercalate "\n" (show <$> eventsToList evs))
+            in property $ counterexample (List.intercalate "\n" (show <$> eventsToList evs))
                         $ all noChurnTimeout evsList
         )
      <$> events
@@ -3799,7 +3975,7 @@ prop_churn_steps ioSimTrace traceNumber =
        $ (\evs ->
            let evsList :: [(Time, TracePeerSelection NtNAddr)]
                evsList = eventsToList (selectDiffusionPeerSelectionEvents evs)
-           in  counterexample (intercalate "\n" (show <$> evsList))
+           in  counterexample (List.intercalate "\n" (show <$> evsList))
              . churnTracePredicate
              . mapMaybe (\case
                           (_, TraceChurnAction _ a _)  -> Just a
@@ -4381,3 +4557,16 @@ dropBigLedgerPeers
     ->  Governor.PeerSelectionState NtNAddr peerconn -> Set NtNAddr
 dropBigLedgerPeers f =
   \st -> f st Set.\\ PublicRootPeers.getBigLedgerPeers (Governor.publicRootPeers st)
+
+
+showBucket :: Int -> Int -> String
+showBucket size a | a < size
+                  = show a
+                  | otherwise
+                  = concat [ "["
+                           , show (a `div` size * size)
+                           , ", "
+                           , show (a `div` size * size + size)
+                           , ")"
+                           ]
+

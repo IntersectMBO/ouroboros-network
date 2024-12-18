@@ -52,6 +52,7 @@ import Data.ByteString.Lazy qualified as LBS
 import Data.Functor (($>), (<&>))
 import Data.List (mapAccumL)
 import Data.List.NonEmpty (NonEmpty (..))
+import Data.Proxy (Proxy (..))
 import Data.Typeable (Typeable)
 import Data.Void (Void)
 
@@ -261,6 +262,7 @@ withInitiatorOnlyConnectionManager
     -> Mx.MakeBearer m socket
     -- ^ series of request possible to do with the bidirectional connection
     -- manager towards some peer.
+    -> CM.ConnStateIdSupply m
     -> Maybe peerAddr
     -> TemperatureBundle (ConnectionId peerAddr -> STM m [req])
     -- ^ Functions to get the next requests for a given connection
@@ -272,8 +274,8 @@ withInitiatorOnlyConnectionManager
           DataFlowProtocolData UnversionedProtocol ByteString m [resp] Void
        -> m a)
     -> m a
-withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket makeBearer localAddr
-                                   nextRequests handshakeTimeLimits acceptedConnLimit k = do
+withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket makeBearer connStateIdSupply
+                                   localAddr nextRequests handshakeTimeLimits acceptedConnLimit k = do
     mainThreadId <- myThreadId
     let muxTracer = (name,) `contramap` nullTracer -- mux tracer
     CM.with
@@ -297,7 +299,8 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
           CM.connectionsLimits = acceptedConnLimit,
           CM.timeWaitTimeout = tTimeWaitTimeout timeouts,
           CM.outboundIdleTimeout = tOutboundIdleTimeout timeouts,
-          CM.updateVersionData = \a _ -> a
+          CM.updateVersionData = \a _ -> a,
+          CM.connStateIdSupply
         }
       (makeConnectionHandler
         muxTracer
@@ -430,6 +433,7 @@ withBidirectionalConnectionManager
     -> StdGen
     -> Snocket m socket peerAddr
     -> Mx.MakeBearer m socket
+    -> CM.ConnStateIdSupply m
     -> (socket -> m ()) -- ^ configure socket
     -> socket
     -- ^ listening socket
@@ -454,7 +458,7 @@ withBidirectionalConnectionManager name timeouts
                                    inboundTrTracer trTracer
                                    tracer inboundTracer debugTracer
                                    stdGen
-                                   snocket makeBearer
+                                   snocket makeBearer connStateIdSupply
                                    confSock socket
                                    localAddress
                                    accumulatorInit nextRequests
@@ -490,7 +494,8 @@ withBidirectionalConnectionManager name timeouts
                                                   case diffusionMode of
                                                     InitiatorOnlyDiffusionMode         -> Unidirectional
                                                     InitiatorAndResponderDiffusionMode -> Duplex
-                                              }
+                                              },
+          CM.connStateIdSupply
         }
         (makeConnectionHandler
           muxTracer
@@ -724,15 +729,16 @@ unidirectionalExperiment
 unidirectionalExperiment stdGen timeouts snocket makeBearer confSock socket clientAndServerData = do
     let (stdGen', stdGen'') = split stdGen
     nextReqs <- oneshotNextRequests clientAndServerData
+    connStateIdSupply <- atomically $ CM.newConnStateIdSupply (Proxy @m)
     withInitiatorOnlyConnectionManager
-      "client" timeouts nullTracer nullTracer stdGen' snocket makeBearer Nothing nextReqs
+      "client" timeouts nullTracer nullTracer stdGen' snocket makeBearer connStateIdSupply Nothing nextReqs
       timeLimitsHandshake maxAcceptedConnectionsLimit
       $ \connectionManager ->
         withBidirectionalConnectionManager "server" timeouts
                                            nullTracer nullTracer nullTracer
                                            nullTracer nullTracer
                                            stdGen''
-                                           snocket makeBearer
+                                           snocket makeBearer connStateIdSupply
                                            confSock socket Nothing
                                            [accumulatorInit clientAndServerData]
                                            noNextRequests
@@ -809,11 +815,13 @@ bidirectionalExperiment
     clientAndServerData0 clientAndServerData1 = do
       let (stdGen', stdGen'') = split stdGen
       lock <- newTMVarIO ()
+      connStateIdSupply <- atomically $ CM.newConnStateIdSupply (Proxy @m)
       nextRequests0 <- oneshotNextRequests clientAndServerData0
       nextRequests1 <- oneshotNextRequests clientAndServerData1
       withBidirectionalConnectionManager "node-0" timeouts
                                          nullTracer nullTracer nullTracer nullTracer
-                                         nullTracer stdGen' snocket makeBearer confSock
+                                         nullTracer stdGen' snocket makeBearer
+                                         connStateIdSupply confSock
                                          socket0 (Just localAddr0)
                                          [accumulatorInit clientAndServerData0]
                                          nextRequests0
@@ -822,7 +830,8 @@ bidirectionalExperiment
         (\connectionManager0 _serverAddr0 _serverAsync0 -> do
           withBidirectionalConnectionManager "node-1" timeouts
                                              nullTracer nullTracer nullTracer nullTracer
-                                             nullTracer stdGen'' snocket makeBearer confSock
+                                             nullTracer stdGen'' snocket makeBearer
+                                             connStateIdSupply confSock
                                              socket1 (Just localAddr1)
                                              [accumulatorInit clientAndServerData1]
                                              nextRequests1

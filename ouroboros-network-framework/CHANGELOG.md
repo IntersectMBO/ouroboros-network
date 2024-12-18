@@ -14,6 +14,8 @@
 * Added `RawBearer` API (see https://github.com/IntersectMBO/ouroboros-network/pull/4395)
 * Connection manager is using `ConnectionId`s to identify connections, this
   affects its API.
+* Added `connStateSupply` record field to
+  `Ouroboros.Network.ConnectionManager.Core.Arguments`.
 
 ### Non-breaking changes
 
