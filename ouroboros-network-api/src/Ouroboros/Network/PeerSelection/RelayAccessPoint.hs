@@ -1,6 +1,5 @@
-{-# LANGUAGE BlockArguments    #-}
 {-# LANGUAGE BangPatterns      #-}
-{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE BlockArguments    #-}
 {-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms   #-}
@@ -18,6 +17,7 @@ module Ouroboros.Network.PeerSelection.RelayAccessPoint
   , Socket.PortNumber
   ) where
 
+import Control.Applicative ((<|>))
 import Control.DeepSeq (NFData (..))
 import Control.Monad (unless)
 
@@ -50,6 +50,22 @@ data DomainAccessPoint = DomainAccessPoint !DomainPlainAccessPoint
                        -- ^ A @SRV@ DNS record
   deriving (Eq, Show, Ord)
 
+instance ToJSON DomainAccessPoint where
+  toJSON (DomainAccessPoint dPlain)  = toJSON dPlain
+  toJSON (DomainSRVAccessPoint dSRV) = toJSON dSRV
+
+instance FromJSON DomainAccessPoint where
+  parseJSON = withObject "DomainAccessPoint" $ \o -> do
+    let dap =     parseMaybe (fmap Left  <$> parseJSON) (Object o)
+              <|> parseMaybe (fmap Right <$> parseJSON) (Object o)
+    case dap of
+      Just (Left dPlain) ->
+            return $ DomainAccessPoint dPlain
+      Just (Right dSRV) ->
+            return $ DomainSRVAccessPoint dSRV
+      _otherwise -> fail $ "DomainAccessPoint: unrecognized JSON object: "
+                         <> show o
+
 -- | A product of a 'DNS.Domain' and 'Socket.PortNumber'.  After resolving the
 -- domain we will use the 'Socket.PortNumber' to form 'Socket.SockAddr'.
 --
@@ -68,25 +84,25 @@ newtype DomainSRVAccessPoint = DomainSRV {
 instance FromJSON DomainPlainAccessPoint where
   parseJSON = withObject "DomainPlainAccessPoint" $ \v -> do
     DomainPlain
-      <$> (encodeUtf8 <$> v .: "domain")
+      <$> (encodeUtf8 <$> v .: "address")
       <*> ((fromIntegral :: Int -> Socket.PortNumber) <$> v .: "port")
 
 instance ToJSON DomainPlainAccessPoint where
   toJSON da =
     object
-      [ "domain" .= decodeUtf8 (dapDomain da)
+      [ "address" .= decodeUtf8 (dapDomain da)
       , "port" .= (fromIntegral (dapPortNumber da) :: Int)
       ]
 
 instance FromJSON DomainSRVAccessPoint where
   parseJSON = withObject "DomainSRVAccessPoint" $ \v -> do
     DomainSRV
-      <$> (encodeUtf8 <$> v .: "srvDomain")
+      <$> (encodeUtf8 <$> v .: "address")
 
 instance ToJSON DomainSRVAccessPoint where
   toJSON (DomainSRV domain) =
     object
-      [ "srvDomain" .= decodeUtf8 domain
+      [ "address" .= decodeUtf8 domain
       ]
 
 -- | A relay can have either an IP address and a port number or
@@ -136,21 +152,23 @@ instance FromCBOR RelayAccessPointCoded where
       $ fail $ "Unrecognized RelayAccessPoint list length "
                <> show listLen <> "for constructor tag "
                <> show constructorTag
-    port <- fromInteger <$> fromCBOR @Integer
     case constructorTag of
       0 -> do
-        domain <- fromCBOR
-        return . RelayAccessPointCoded $ RelayAccessDomain domain port
+        port <- decodePort
+        RelayAccessPointCoded <$> (RelayAccessDomain <$> fromCBOR <*> pure port)
       1 -> do
+        port <- decodePort
         ip4 <- IP.IPv4 . IP.toIPv4 <$> fromCBOR
         return . RelayAccessPointCoded $ RelayAccessAddress ip4 port
       2 -> do
+        port <- decodePort
         ip6 <- IP.IPv6 . IP.toIPv6 <$> fromCBOR
         return . RelayAccessPointCoded $ RelayAccessAddress ip6 port
       3 -> do
-        domain <- fromCBOR
-        return . RelayAccessPointCoded $ RelayAccessSRVDomain domain
+        RelayAccessPointCoded <$> (RelayAccessSRVDomain <$> fromCBOR)
       _ -> fail $ "Unrecognized RelayAccessPoint tag: " <> show constructorTag
+    where
+      decodePort = fromIntegral @Int <$> fromCBOR
 
 instance Show RelayAccessPoint where
     show (RelayAccessDomain domain port) =
@@ -201,7 +219,7 @@ instance FromJSON RelayAccessPoint where
           port <- o .: "port"
           return (toRelayAccessPoint addr port)
     case res of
-      Nothing -> return $ RelayAccessSRVDomain addr
+      Nothing  -> return $ RelayAccessSRVDomain addr
       Just rap -> return rap
 
 instance ToJSON RelayAccessPoint where
