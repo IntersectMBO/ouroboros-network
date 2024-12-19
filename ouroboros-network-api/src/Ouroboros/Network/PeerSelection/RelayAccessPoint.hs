@@ -6,6 +6,8 @@
 {-# LANGUAGE PatternSynonyms   #-}
 {-# LANGUAGE TypeApplications  #-}
 {-# LANGUAGE ViewPatterns      #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveAnyClass #-}
 
 module Ouroboros.Network.PeerSelection.RelayAccessPoint
   ( DomainAccessPoint (..)
@@ -34,6 +36,7 @@ import Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import Cardano.Binary qualified as Codec
 import Network.DNS qualified as DNS
 import Network.Socket qualified as Socket
+import GHC.Generics
 
 -- | Types of domains supported
 -- NB: A deliberately limited subset of SRV is supported.
@@ -49,7 +52,7 @@ data DomainAccessPoint = DomainAccessPoint !DomainPlainAccessPoint
                        -- ^ An @A@ or @AAAA@ DNS record
                        | DomainSRVAccessPoint !DomainSRVAccessPoint
                        -- ^ A @SRV@ DNS record
-  deriving (Eq, Show, Ord)
+  deriving (Eq, Show, Ord, Generic, ToJSON, FromJSON)
 
 -- | A product of a 'DNS.Domain' and 'Socket.PortNumber'.  After resolving the
 -- domain we will use the 'Socket.PortNumber' to form 'Socket.SockAddr'.
@@ -69,25 +72,25 @@ newtype DomainSRVAccessPoint = DomainSRV {
 instance FromJSON DomainPlainAccessPoint where
   parseJSON = withObject "DomainPlainAccessPoint" $ \v -> do
     DomainPlain
-      <$> (encodeUtf8 <$> v .: "domain")
+      <$> (encodeUtf8 <$> v .: "address")
       <*> ((fromIntegral :: Int -> Socket.PortNumber) <$> v .: "port")
 
 instance ToJSON DomainPlainAccessPoint where
   toJSON da =
     object
-      [ "domain" .= decodeUtf8 (dapDomain da)
+      [ "address" .= decodeUtf8 (dapDomain da)
       , "port" .= (fromIntegral (dapPortNumber da) :: Int)
       ]
 
 instance FromJSON DomainSRVAccessPoint where
   parseJSON = withObject "DomainSRVAccessPoint" $ \v -> do
     DomainSRV
-      <$> (encodeUtf8 <$> v .: "srvDomain")
+      <$> (encodeUtf8 <$> v .: "address")
 
 instance ToJSON DomainSRVAccessPoint where
   toJSON (DomainSRV domain) =
     object
-      [ "srvDomain" .= decodeUtf8 domain
+      [ "address" .= decodeUtf8 domain
       ]
 
 -- | A relay can have either an IP address and a port number or
@@ -137,21 +140,23 @@ instance FromCBOR RelayAccessPointCoded where
       $ fail $ "Unrecognized RelayAccessPoint list length "
                <> show listLen <> "for constructor tag "
                <> show constructorTag
-    port <- fromInteger <$> fromCBOR @Integer
     case constructorTag of
       0 -> do
-        domain <- fromCBOR
-        return . RelayAccessPointCoded $ RelayAccessDomain domain port
+        port <- decodePort
+        RelayAccessPointCoded <$> (RelayAccessDomain <$> fromCBOR <*> pure port)
       1 -> do
+        port <- decodePort
         ip4 <- IP.IPv4 . IP.toIPv4 <$> fromCBOR
         return . RelayAccessPointCoded $ RelayAccessAddress ip4 port
       2 -> do
+        port <- decodePort
         ip6 <- IP.IPv6 . IP.toIPv6 <$> fromCBOR
         return . RelayAccessPointCoded $ RelayAccessAddress ip6 port
       3 -> do
-        domain <- fromCBOR
-        return . RelayAccessPointCoded $ RelayAccessSRVDomain domain
+        RelayAccessPointCoded <$> (RelayAccessSRVDomain <$> fromCBOR)
       _ -> fail $ "Unrecognized RelayAccessPoint tag: " <> show constructorTag
+    where
+      decodePort = fromIntegral @Int <$> fromCBOR
 
 instance Show RelayAccessPoint where
     show (RelayAccessDomain domain port) =
