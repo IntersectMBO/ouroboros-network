@@ -41,6 +41,7 @@ library
     Ouroboros.Network.Protocol.BlockFetch.Type
     Ouroboros.Network.Protocol.ChainSync.Client
     Ouroboros.Network.Protocol.ChainSync.ClientPipelined
+    Ouroboros.Network.Protocol.ChainSync.PipeClient
     Ouroboros.Network.Protocol.ChainSync.Codec
     Ouroboros.Network.Protocol.ChainSync.PipelineDecision
     Ouroboros.Network.Protocol.ChainSync.Server
@@ -104,6 +105,7 @@ library
     io-classes ^>=1.5.0,
     nothunks,
     ouroboros-network-api ^>=0.11,
+    pipes,
     quiet,
     serialise,
     si-timers,
