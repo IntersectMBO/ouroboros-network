@@ -80,6 +80,7 @@ import Ouroboros.Network.PeerSelection.PeerStateActions (PeerConnectionHandle,
            PeerSelectionActionsTrace (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
+import Ouroboros.Network.PeerSelection.RootPeersDNS (PeerActionsDNS)
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSActions,
            DNSLookupType (..))
 import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
@@ -357,7 +358,7 @@ nullTracersExtra =
 --
 data ArgumentsExtra extraArgs extraState extraDebugState extraActions extraAPI extraPeers
                     extraFlags extraChurnArgs extraCounters exception
-                    peeraddr m = ArgumentsExtra {
+                    peeraddr resolver resolverError m = ArgumentsExtra {
       -- | selection targets for the peer governor
       --
       daPeerSelectionTargets   :: PeerSelectionTargets
@@ -448,7 +449,8 @@ data ArgumentsExtra extraArgs extraState extraDebugState extraActions extraAPI e
       -- 'Ouroboros.Network.PeerSelection.PeerSelectionActions.getPublicRootPeers'
       --
     , daRequestPublicRootPeers
-        :: ( (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
+        :: PeerActionsDNS peeraddr resolver resolverError m
+        -> ( (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
         -> LedgerPeersKind
         -> Int
         -> m (PublicRootPeers extraPeers peeraddr, DiffTime))

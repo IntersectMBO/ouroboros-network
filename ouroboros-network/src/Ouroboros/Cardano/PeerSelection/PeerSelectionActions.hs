@@ -24,14 +24,13 @@ import Data.Map qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Network.DNS qualified as DNS
-import Network.Socket (PortNumber)
 import Ouroboros.Cardano.Network.PublicRootPeers (CardanoPublicRootPeers (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers hiding (getLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSelectionActions (getPublicRootPeers)
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSActions)
+import Ouroboros.Network.PeerSelection.RootPeersDNS (PeerActionsDNS (..))
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore)
 import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
 
@@ -48,17 +47,19 @@ requestPublicRootPeers
   => Tracer m TracePublicRootPeers
   -> STM m UseBootstrapPeers
   -> STM m LedgerStateJudgement
-  -> (IP -> PortNumber -> peeraddr)
+  -> PeerActionsDNS peeraddr resolver exception m
   -> DNSSemaphore m
   -> STM m (Map RelayAccessPoint PeerAdvertise)
-  -> DNSActions resolver exception m
   -> (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
   -> LedgerPeersKind
   -> Int
   -> m (PublicRootPeers (CardanoPublicRootPeers peeraddr) peeraddr, DiffTime)
 requestPublicRootPeers
   publicTracer useBootstrapped getLedgerStateJudgement
-  toPeerAddr dnsSemaphore readPublicRootPeers dnsActions
+  PeerActionsDNS { paToPeerAddr = toPeerAddr
+                 , paDnsActions = dnsActions
+                 }
+  dnsSemaphore readPublicRootPeers
   getLedgerPeers ledgerPeersKind n = do
   -- Check if the node is in a sensitive state
   usingBootstrapPeers <- atomically

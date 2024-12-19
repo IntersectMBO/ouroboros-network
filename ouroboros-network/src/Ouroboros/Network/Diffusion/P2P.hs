@@ -94,6 +94,7 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRo
 import Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
 import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.Server2 qualified as Server
+import Network.DNS (Resolver)
 
 runM
     :: forall m ntnFd ntnAddr ntnVersion ntnVersionData
@@ -154,7 +155,7 @@ runM
     -> -- | p2p configuration
        ArgumentsExtra extraArgs extraState extraDebugState extraActions extraAPI
                       extraPeers extraFlags extraChurnArgs extraCounters
-                      exception ntnAddr m
+                      exception ntnAddr resolver resolverError m
 
     -> -- | protocol handlers
        Applications ntnAddr ntnVersion ntnVersionData
@@ -630,7 +631,7 @@ runM Interfaces
                                          peerConnToPeerSharing      = pchPeerSharing diNtnPeerSharing,
                                          requestPeerShare           =
                                            getPeerShare (readTVar (getPeerSharingRegistry daPeerSharingRegistry)),
-                                         requestPublicRootPeers     = daRequestPublicRootPeers getLedgerPeers,
+                                         requestPublicRootPeers     = daRequestPublicRootPeers dnsActions getLedgerPeers,
                                          readInboundPeers =
                                            case daOwnPeerSharing of
                                              PeerSharingDisabled -> pure Map.empty
@@ -849,6 +850,8 @@ run :: ( Monoid extraPeers
         extraCounters
         exception
         RemoteAddress
+        Resolver
+        IOException
         IO
     -> Applications
         RemoteAddress

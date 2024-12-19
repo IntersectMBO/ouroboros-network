@@ -7,6 +7,7 @@
 module Ouroboros.Network.Diffusion
   ( -- * Common API
     P2P (..)
+  , P2PDecision (..)
   , ExtraTracers (..)
   , ArgumentsExtra (..)
   , Applications (..)
@@ -18,6 +19,7 @@ module Ouroboros.Network.Diffusion
 import Control.Concurrent.Class.MonadSTM.Strict (StrictTVar)
 import Control.Exception (Exception, IOException)
 import Data.Functor (void)
+import Network.DNS (Resolver)
 import Network.Socket (Socket)
 import Ouroboros.Network.Diffusion.Common (Arguments,
            NodeToNodeConnectionManager, NodeToNodePeerConnectionHandle, Tracers)
@@ -36,6 +38,16 @@ import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 data P2P = P2P        -- ^ General P2P mode. Can be instantiated with custom
                       -- data types
          | NonP2P     -- ^ Cardano non-P2P mode. Deprecated
+
+-- | Auxiliary type to define arbitrary decision types based on type level
+-- P2P
+--
+data P2PDecision (p2p :: P2P) a b where
+  P2PDecision :: a
+              -> P2PDecision 'P2P a b
+  NonP2PDecision :: b
+              -> P2PDecision 'NonP2P a b
+
 
 -- | Tracers which depend on p2p mode.
 --
@@ -57,20 +69,20 @@ data ExtraTracers (p2p :: P2P) extraState extraDebugState extraFlags extraPeers 
 --
 data ArgumentsExtra
        (p2p :: P2P) extraArgs extraState extraDebugState extraActions extraAPI
-       extraPeers extraFlags extraChurnArgs extraCounters exception ntnAddr m where
+       extraPeers extraFlags extraChurnArgs extraCounters exception ntnAddr resolver resolverError m where
   P2PArguments
     :: Common.ArgumentsExtra extraArgs extraState extraDebugState extraActions extraAPI
                             extraPeers extraFlags extraChurnArgs
-                            extraCounters exception ntnAddr m
+                            extraCounters exception ntnAddr resolver resolverError m
     -> ArgumentsExtra 'P2P extraArgs extraState extraDebugState extraActions extraAPI
                            extraPeers extraFlags extraChurnArgs
-                           extraCounters exception ntnAddr m
+                           extraCounters exception ntnAddr resolver resolverError m
 
   NonP2PArguments
     :: NonP2P.ArgumentsExtra
     -> ArgumentsExtra 'NonP2P extraArgs extraState extraDebugState extraActions extraAPI
                               extraPeers extraFlags extraChurnArgs
-                              extraCounters exception ntnAddr m
+                              extraCounters exception ntnAddr resolver resolverError m
 
 -- | Application data which depend on p2p mode.
 --
@@ -133,7 +145,7 @@ run :: forall (p2p :: P2P) extraArgs extraState extraDebugState extraActions ext
          LocalSocket LocalAddress
     -> ArgumentsExtra p2p extraArgs extraState extraDebugState extraActions extraAPI
        extraPeers extraFlags extraChurnArgs extraCounters exception
-       RemoteAddress IO
+       RemoteAddress Resolver IOException IO
     -> Applications p2p RemoteAddress LocalAddress NodeToNodeVersionData NodeToClientVersionData extraAPI IO a
     -> ApplicationsExtra p2p RemoteAddress IO a
     -> IO ()
