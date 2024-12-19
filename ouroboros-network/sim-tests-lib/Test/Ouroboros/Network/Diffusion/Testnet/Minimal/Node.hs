@@ -107,6 +107,7 @@ import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint,
            RelayAccessPoint)
 import Ouroboros.Network.PeerSelection.RootPeersDNS (PeerActionsDNS)
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSLookupType)
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
            WarmValency)
 import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersAPI (..))
@@ -226,6 +227,7 @@ run :: forall extraArgs extraState extraDebugState extraActions extraAPI
              muxMode responderCtx NtNAddr ntnVersionData bytes m a b)
         -> extraCounters)
     -> (   PeerActionsDNS NtNAddr resolver resolverError m
+        -> DNSSemaphore m
         -> (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set NtNAddr, DiffTime)))
         -> LedgerPeersKind
         -> Int

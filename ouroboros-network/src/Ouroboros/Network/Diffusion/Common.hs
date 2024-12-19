@@ -83,6 +83,7 @@ import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
 import Ouroboros.Network.PeerSelection.RootPeersDNS (PeerActionsDNS)
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSActions,
            DNSLookupType (..))
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore)
 import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
            (TraceLocalRootPeers)
 import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
@@ -450,6 +451,7 @@ data ArgumentsExtra extraArgs extraState extraDebugState extraActions extraAPI e
       --
     , daRequestPublicRootPeers
         :: PeerActionsDNS peeraddr resolver resolverError m
+        -> DNSSemaphore m
         -> ( (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
         -> LedgerPeersKind
         -> Int

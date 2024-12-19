@@ -47,19 +47,20 @@ requestPublicRootPeers
   => Tracer m TracePublicRootPeers
   -> STM m UseBootstrapPeers
   -> STM m LedgerStateJudgement
+  -> STM m (Map RelayAccessPoint PeerAdvertise)
   -> PeerActionsDNS peeraddr resolver exception m
   -> DNSSemaphore m
-  -> STM m (Map RelayAccessPoint PeerAdvertise)
   -> (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
   -> LedgerPeersKind
   -> Int
   -> m (PublicRootPeers (CardanoPublicRootPeers peeraddr) peeraddr, DiffTime)
 requestPublicRootPeers
-  publicTracer useBootstrapped getLedgerStateJudgement
+  publicTracer useBootstrapped
+  getLedgerStateJudgement readPublicRootPeers
   PeerActionsDNS { paToPeerAddr = toPeerAddr
                  , paDnsActions = dnsActions
                  }
-  dnsSemaphore readPublicRootPeers
+  dnsSemaphore
   getLedgerPeers ledgerPeersKind n = do
   -- Check if the node is in a sensitive state
   usingBootstrapPeers <- atomically

@@ -631,7 +631,7 @@ runM Interfaces
                                          peerConnToPeerSharing      = pchPeerSharing diNtnPeerSharing,
                                          requestPeerShare           =
                                            getPeerShare (readTVar (getPeerSharingRegistry daPeerSharingRegistry)),
-                                         requestPublicRootPeers     = daRequestPublicRootPeers dnsActions getLedgerPeers,
+                                         requestPublicRootPeers     = daRequestPublicRootPeers dnsActions dnsSemaphore getLedgerPeers,
                                          readInboundPeers =
                                            case daOwnPeerSharing of
                                              PeerSharingDisabled -> pure Map.empty

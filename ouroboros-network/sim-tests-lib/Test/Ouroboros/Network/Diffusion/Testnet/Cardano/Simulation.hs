@@ -153,8 +153,6 @@ import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint (..),
            PortNumber, RelayAccessPoint (..))
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSLookupType)
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
-           (newLedgerAndPublicRootDNSSemaphore)
 import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
            (TraceLocalRootPeers)
 import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
@@ -1107,7 +1105,6 @@ diffusionSimulation
       onlyOutboundConnectionsStateVar <- newTVarIO UntrustedState
       useBootstrapPeersScriptVar <- newTVarIO bootstrapPeers
       churnModeVar <- newTVarIO ChurnModeNormal
-      dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
 
       let readUseBootstrapPeers = stepScriptSTM' useBootstrapPeersScriptVar
           (bgaRng, rng) = Random.split $ mkStdGen seed
@@ -1261,12 +1258,10 @@ diffusionSimulation
 
           tracersExtraAddr = tracersExtra addr
 
-          requestPublicRootPeers' x =
+          requestPublicRootPeers' =
             requestPublicRootPeers (Common.dtTracePublicRootPeersTracer tracersExtraAddr)
                                    (caeReadUseBootstrapPeers cardanoExtraArgs)
                                    (pure TooOld)
-                                   x
-                                   dnsSemaphore
                                    readPublicRootPeers
 
       run blockGeneratorArgs
