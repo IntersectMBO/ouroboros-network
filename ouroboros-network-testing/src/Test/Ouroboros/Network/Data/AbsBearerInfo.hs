@@ -3,7 +3,7 @@
 {-# LANGUAGE NamedFieldPuns     #-}
 {-# LANGUAGE NumericUnderscores #-}
 
-module Ouroboros.Network.Testing.Data.AbsBearerInfo
+module Test.Ouroboros.Network.Data.AbsBearerInfo
   ( AbsBearerInfoScript (..)
   , canFail
   , NonFailingAbsBearerInfo (..)
@@ -24,22 +24,21 @@ module Ouroboros.Network.Testing.Data.AbsBearerInfo
   , AbsIOErrType (..)
   ) where
 
-import           Control.Monad.Class.MonadTime.SI (DiffTime, Time (..), addTime)
+import Control.Monad.Class.MonadTime.SI (DiffTime, Time (..), addTime)
 
-import qualified Data.List as List
-import qualified Data.List.NonEmpty as NonEmpty
-import           Data.Monoid (Any (..))
-import           GHC.IO.Exception (IOException (..), IOErrorType (..))
-import           Foreign.C.Error (Errno (..), eCONNABORTED)
+import Data.List qualified as List
+import Data.List.NonEmpty qualified as NonEmpty
+import Data.Monoid (Any (..))
+import Foreign.C.Error (Errno (..), eCONNABORTED)
+import GHC.IO.Exception (IOErrorType (..), IOException (..))
 
-import           Network.Mux.Bearer.AttenuatedChannel (Size,
-                     SuccessOrFailure (..))
-import           Network.Mux.Types (SDUSize (..))
+import Network.Mux.Bearer.AttenuatedChannel (Size, SuccessOrFailure (..))
+import Network.Mux.Types (SDUSize (..))
 
-import           Ouroboros.Network.Testing.Data.Script (Script (..))
-import           Ouroboros.Network.Testing.Utils (Delay (..))
+import Test.Ouroboros.Network.Data.Script (Script (..))
+import Test.Ouroboros.Network.Utils (Delay (..))
 
-import           Test.QuickCheck hiding (Result (..))
+import Test.QuickCheck hiding (Result (..))
 
 
 data AbsDelay = SmallDelay

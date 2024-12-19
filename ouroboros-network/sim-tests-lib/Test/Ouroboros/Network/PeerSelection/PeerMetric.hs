@@ -43,7 +43,7 @@ import Control.Monad.IOSim
 
 import NoThunks.Class
 
-import Ouroboros.Network.Testing.Data.Script
+import Test.Ouroboros.Network.Data.Script
 
 import Test.QuickCheck
 import Test.QuickCheck.Monoids

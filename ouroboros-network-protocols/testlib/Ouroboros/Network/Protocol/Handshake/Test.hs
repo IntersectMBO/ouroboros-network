@@ -45,7 +45,7 @@ import Network.Mux.Types (MiniProtocolDir (..), MiniProtocolNum (..),
 import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Proofs
 
-import Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
+import Test.Ouroboros.Network.Protocol.Utils (prop_codec_cborM,
            prop_codec_valid_cbor_encoding, splits2, splits3)
 
 import Ouroboros.Network.Channel
@@ -165,8 +165,7 @@ tests =
 -- wrongly encoded data (protocol version & associated version data mismatch)
 --
 
--- |
--- Testing version number
+-- | Testing version number
 --
 data VersionNumber
   = Version_0

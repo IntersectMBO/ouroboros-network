@@ -5,12 +5,12 @@
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 
-module Ouroboros.Network.Testing.Utils
+module Test.Ouroboros.Network.Utils
   ( -- * Arbitrary Delays
     Delay (..)
   , genDelayWithPrecision
   , SmallDelay (..)
-  -- * Set properties
+    -- * Set properties
   , isSubsetProperty
   , disjointSetsProperty
     -- * QuickCheck Utils
@@ -19,7 +19,7 @@ module Ouroboros.Network.Testing.Utils
   , ShrinkCarefully (..)
   , prop_shrink_nonequal
   , prop_shrink_valid
-  -- * Tracing Utils
+    -- * Tracing Utils
   , WithName (..)
   , WithTime (..)
   , tracerWithName
@@ -28,36 +28,35 @@ module Ouroboros.Network.Testing.Utils
   , swapTimeWithName
   , swapNameWithTime
   , splitWithNameTrace
-  -- * Tracers
+    -- * Tracers
   , debugTracer
   , sayTracer
-  -- * Tasty Utils
+    -- * Tasty Utils
   , nightlyTest
   , ignoreTest
-  -- * Auxiliary functions
+    -- * Auxiliary functions
   , renderRanges
   ) where
 
-import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Tracer (Contravariant (contramap), Tracer (..),
-                     contramapM)
+import Control.Monad.Class.MonadSay
+import Control.Monad.Class.MonadTime.SI
+import Control.Tracer (Contravariant (contramap), Tracer (..), contramapM)
 
-import           Data.Bitraversable (bimapAccumR)
-import           Data.List (delete)
-import           Data.List.Trace (Trace)
-import qualified Data.List.Trace as Trace
-import qualified Data.Map as Map
-import           Data.Maybe (fromJust, isJust)
-import           Data.Ratio
-import           Data.Set (Set)
-import qualified Data.Set as Set
-import           Text.Pretty.Simple (pPrint)
+import Data.Bitraversable (bimapAccumR)
+import Data.List (delete)
+import Data.List.Trace (Trace)
+import Data.List.Trace qualified as Trace
+import Data.Map qualified as Map
+import Data.Maybe (fromJust, isJust)
+import Data.Ratio
+import Data.Set (Set)
+import Data.Set qualified as Set
+import Text.Pretty.Simple (pPrint)
 
-import           Test.QuickCheck
-import           Test.Tasty (TestTree)
-import           Test.Tasty.ExpectedFailure (ignoreTest)
-import           Debug.Trace (traceShowM)
+import Debug.Trace (traceShowM)
+import Test.QuickCheck
+import Test.Tasty (TestTree)
+import Test.Tasty.ExpectedFailure (ignoreTest)
 
 
 newtype Delay = Delay { getDelay :: DiffTime }
@@ -142,7 +141,7 @@ renderRanges r n = show lower ++ " -- " ++ show upper
     lower = n - n `mod` r
     upper = lower + (r-1)
 
--- 
+--
 -- Set properties
 --
 
