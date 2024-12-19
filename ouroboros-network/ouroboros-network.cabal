@@ -67,8 +67,6 @@ library
     Ouroboros.Network.DeltaQ
     Ouroboros.Network.Diffusion
     Ouroboros.Network.Diffusion.Configuration
-    Ouroboros.Network.Diffusion.NonP2P
-    Ouroboros.Network.Diffusion.P2P
     Ouroboros.Network.Diffusion.Policies
     Ouroboros.Network.ExitPolicy
     Ouroboros.Network.KeepAlive
@@ -90,13 +88,12 @@ library
     Ouroboros.Network.PeerSelection.State.LocalRootPeers
     Ouroboros.Network.PeerSelection.Types
     Ouroboros.Network.PeerSharing
-    Ouroboros.Network.Tracers
     Ouroboros.Network.TxSubmission.Inbound
     Ouroboros.Network.TxSubmission.Mempool.Reader
     Ouroboros.Network.TxSubmission.Outbound
 
   other-modules:
-    Ouroboros.Network.Diffusion.Common
+    Ouroboros.Network.Diffusion.Types
     Ouroboros.Network.Diffusion.Utils
     Ouroboros.Network.PeerSelection.Churn
     Ouroboros.Network.PeerSelection.Governor.ActivePeers
@@ -201,7 +198,6 @@ library sim-tests-lib
     base >=4.14 && <4.21,
     bytestring,
     cardano-binary,
-    cardano-prelude,
     cardano-slotting,
     cborg,
     containers,
@@ -262,7 +258,6 @@ library sim-tests-lib
     Test.Ouroboros.Network.PeerSelection.PeerMetric
     Test.Ouroboros.Network.PeerSelection.PublicRootPeers
     Test.Ouroboros.Network.PeerSelection.RootPeersDNS
-    Test.Ouroboros.Network.PeerState
     Test.Ouroboros.Network.Testnet
     Test.Ouroboros.Network.Testnet.Internal
     Test.Ouroboros.Network.Testnet.Node
@@ -325,6 +320,7 @@ test-suite io-tests
     ouroboros-network,
     ouroboros-network-api,
     ouroboros-network-framework,
+    ouroboros-network-framework:testlib,
     ouroboros-network-mock,
     ouroboros-network-protocols,
     ouroboros-network-protocols:testlib,
@@ -367,6 +363,7 @@ executable demo-chain-sync
     ouroboros-network,
     ouroboros-network-api,
     ouroboros-network-framework,
+    ouroboros-network-framework:testlib,
     ouroboros-network-mock,
     ouroboros-network-protocols,
     random,

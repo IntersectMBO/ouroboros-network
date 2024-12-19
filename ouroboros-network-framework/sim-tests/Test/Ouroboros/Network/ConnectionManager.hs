@@ -61,13 +61,14 @@ import Test.Tasty.QuickCheck (testProperty)
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.State qualified as CM
-import Ouroboros.Network.ConnectionManager.Test.Utils (verifyAbstractTransition)
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.Server.RateLimiting
 import Ouroboros.Network.Snocket (Accept (..), Accepted (..),
            AddressFamily (TestFamily), Snocket (..), TestAddress (..))
+
+import Test.Ouroboros.Network.ConnectionManager.Utils (verifyAbstractTransition)
 
 import Ouroboros.Network.ConnectionManager.InformationChannel
            (newInformationChannel)
@@ -79,7 +80,7 @@ tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.ConnectionManager"
   [ -- generators, shrinkers properties
-    -- TODO: replace these tests with 'Test.Ouroboros.Network.Server2' simulation.
+    -- TODO: replace these tests with 'Test.Ouroboros.Network.Server' simulation.
     testProperty "overwritten"                    unit_overwritten
   , testProperty "timeoutExpired"                 unit_timeoutExpired
   ]

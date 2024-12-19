@@ -4,6 +4,7 @@
 
 ### Breaking changes
 
+* Renamed `Test.Ouroboros.Network.Testing.Utils -> Test.Ouroboros.Network.Protocol.Utils`
 * Removed deprecated APIs:
   * `chainSyncClientNull`
   * `localStateQueryClientNull`

@@ -4,6 +4,16 @@
 
 ### Breaking changes
 
+* `Ouroboros.Network.Subscription` removed.
+* `Ouroboros.Network.ErrorPolicy` removed.
+* APIs removed from `Ouroboros.Network.Socket`:
+  * `NetworkMutableState` & friends,
+  * `withServerNode` and `withServerNode'`,
+  * `NetworkServerTracers`,
+  * `fromSnocket`,
+  * `beginConnection`
+* `Ouroboros.Network.Server.Socket` replaced with a simpler server
+  implementation in `Test.Ouroboros.Network.Server` (in `ouroboros-network:testlib` component).
 * Use `IOError` in `BearerInfo`.
 * Addapted to `network-mux` changes in https://github.com/IntersectMBO/ouroboros-network/pull/4999
 * Addapted to `network-mux` changes in https://github.com/IntersectMBO/ouroboros-network/pull/4997
@@ -16,6 +26,13 @@
   affects its API.
 * Added `connStateSupply` record field to
   `Ouroboros.Network.ConnectionManager.Core.Arguments`.
+* Renamed modules in `ouroboros-network:testlib`:
+  `Ouroboros.Network.Test.Orphans -> Test.Ouroboros.Network.Orphans`
+  `Ouroboros.Network.ConnectionManager.Test.Experiments -> Test.Ouroboros.Network.ConnectionManager.Experiments`
+  `Ouroboros.Network.ConnectionManager.Test.Timeouts -> Test.Ouroboros.Network.ConnectionManager.Timeouts`
+  `Ouroboros.Network.ConnectionManager.Test.Utils -> Test.Ouroboros.Network.ConnectionManager.Utils`
+  `Ouroboros.Network.InboundGovernor.Test.Utils -> Test.Ouroboros.Network.InboundGovernor.Utils`
+
 
 ### Non-breaking changes
 
