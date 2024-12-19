@@ -1,63 +1,46 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE TypeOperators #-}
 
 module Ouroboros.Network.Protocol.ChainSync.PipeClient
 where
 
-import Network.TypedProtocol
 import Ouroboros.Network.Protocol.ChainSync.Client
-import Ouroboros.Network.Protocol.ChainSync.Type
 import Pipes
 
-data ChainSyncResponse header point tip
-  = RollForward header tip
+data ChainSyncResponse block point tip
+  = RollForward block tip
   | RollBackward point tip
-  | IntersectFound point tip
   | IntersectNotFound tip
   deriving (Show)
 
--- | Run a chain sync client as a 'Producer'.
--- Pass a suitable 'Driver', and a list of known 'point's. The 'Producer' will
--- initialize itself by requesting an intersection, and yielding either
--- 'IntersectFound' or 'IntersectNotFound' to indicate the server's response.
--- After that, it will indefinitely request updates and 'yield' them as
--- 'RollForward' and 'RollBackward', respectively.
-chainSyncClientProducer :: forall header point tip m dstate
+-- | Run a chain sync client as a 'Pipe'.
+chainSyncClientProducer :: forall block point tip m p
                          . ( Monad m
+                           , p ~ Pipe [point] (ChainSyncResponse block point tip) m
                            )
-                        => Driver
-                            (ChainSync header point tip)
-                            AsClient
-                            dstate
-                            (Producer (ChainSyncResponse header point tip) m)
-                        -> [point]
-                        -> Producer (ChainSyncResponse header point tip) m dstate
-chainSyncClientProducer driver known =
-  snd <$> runPeerWithDriver driver peer
+                        => (ChainSyncClient block point tip p () -> p ())
+                        -> p ()
+chainSyncClientProducer runClient =
+  runClient $ ChainSyncClient runProtocol
   where
-    peer = chainSyncClientPeer (ChainSyncClient runPeer)
-
-    runPeer :: Producer
-                  (ChainSyncResponse header point tip)
-                  m
-                  (ClientStIdle header point tip (Producer (ChainSyncResponse header point tip) m) ())
-    runPeer =
+    runProtocol :: p (ClientStIdle block point tip p ())
+    runProtocol = do
+      known <- await
       pure . SendMsgFindIntersect known $
         ClientStIntersect
           { recvMsgIntersectFound = \p t -> ChainSyncClient $ do
-              yield (IntersectFound p t)
+              yield (RollBackward p t)
               runProducer
           , recvMsgIntersectNotFound = \t -> ChainSyncClient $ do
               yield (IntersectNotFound t)
               runProducer
           }
-    runProducer :: Producer
-                    (ChainSyncResponse header point tip)
-                    m
-                    (ClientStIdle header point tip (Producer (ChainSyncResponse header point tip) m) ())
+
+    runProducer :: p (ClientStIdle block point tip p ())
     runProducer =
       pure . SendMsgRequestNext (pure ()) $
         ClientStNext
