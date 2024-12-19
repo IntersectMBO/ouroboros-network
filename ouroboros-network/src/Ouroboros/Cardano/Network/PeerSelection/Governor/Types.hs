@@ -32,8 +32,7 @@ import Ouroboros.Network.PeerSelection.Governor.Types (AssociationMode (..),
            BootstrapPeersCriticalTimeoutError (..), ExtraGuardedDecisions (..),
            PeerSelectionGovernorArgs (..), PeerSelectionSetsWithSizes,
            PeerSelectionState (..), PeerSelectionView (..))
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-           (LedgerPeersConsensusInterface (..), UseLedgerPeers)
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type (UseLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
@@ -185,7 +184,7 @@ cardanoPeerSelectionGovernorArgs
      )
   => STM m UseLedgerPeers
   -> PeerSharing
-  -> LedgerPeersConsensusInterface (CardanoLedgerPeersConsensusInterface m) m
+  -> (OutboundConnectionsState -> STM m ())
   -> PeerSelectionGovernorArgs
        CardanoPeerSelectionState
        extraDebugState
@@ -198,7 +197,7 @@ cardanoPeerSelectionGovernorArgs
        peerconn
        BootstrapPeersCriticalTimeoutError
        m
-cardanoPeerSelectionGovernorArgs readUseLedgerPeers peerSharing lpsci =
+cardanoPeerSelectionGovernorArgs readUseLedgerPeers peerSharing updateOutboundConnectionsState =
   PeerSelectionGovernorArgs {
     -- If by any chance the node takes more than 15 minutes to converge to a
     -- clean state, we crash the node. This could happen in very rare
@@ -215,7 +214,7 @@ cardanoPeerSelectionGovernorArgs readUseLedgerPeers peerSharing lpsci =
       associationMode <- readAssociationMode readUseLedgerPeers
                                              peerSharing
                                              (cpstBootstrapPeersFlag (extraState st))
-      clpciUpdateOutboundConnectionsState (lpExtraAPI lpsci)
+      updateOutboundConnectionsState
         (outboundConnectionsState associationMode psv st)
   , extraDecisions  =
       ExtraGuardedDecisions {

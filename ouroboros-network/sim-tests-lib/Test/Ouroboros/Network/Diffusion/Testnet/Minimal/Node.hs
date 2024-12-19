@@ -106,7 +106,9 @@ import Ouroboros.Network.PeerSelection.PeerStateActions (PeerConnectionHandle)
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint,
            RelayAccessPoint)
+import Ouroboros.Network.PeerSelection.RootPeersDNS (PeerActionsDNS)
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSLookupType)
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
            LocalRootConfig, WarmValency)
 import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersAPI (..))
@@ -170,7 +172,7 @@ type ResolverException = SomeException
 
 run :: forall extraArgs extraState extraDebugState extraActions extraAPI
              extraPeers extraFlags extraChurnArgs extraCounters
-             exception resolver m.
+             exception resolver resolverError m.
        ( Alternative (STM m)
        , MonadAsync       m
        , MonadDelay       m
@@ -193,6 +195,7 @@ run :: forall extraArgs extraState extraDebugState extraActions extraAPI
        , Exception exception
 
        , resolver ~ ()
+       , resolverError ~ ResolverException
        , forall a. Semigroup a => Semigroup (m a)
        )
     => Node.BlockGeneratorArgs Block StdGen
@@ -226,7 +229,9 @@ run :: forall extraArgs extraState extraDebugState extraActions extraAPI
           (PeerConnectionHandle
              muxMode responderCtx NtNAddr ntnVersionData bytes m a b)
         -> extraCounters)
-    -> ( (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set NtNAddr, DiffTime)))
+    -> (   PeerActionsDNS NtNAddr resolver resolverError m
+        -> DNSSemaphore m
+        -> (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set NtNAddr, DiffTime)))
         -> LedgerPeersKind
         -> Int
         -> m (PublicRootPeers extraPeers NtNAddr, DiffTime))
@@ -453,7 +458,7 @@ run blockGeneratorArgs limits ni na
                    extraArgs extraState extraDebugState extraActions
                    extraAPI extraPeers extraFlags
                    extraChurnArgs extraCounters exception
-                   NtNAddr m
+                   NtNAddr resolver resolverError m
     argsExtra = Common.ArgumentsExtra
       { Common.daPeerSelectionTargets   = aPeerTargets na
       , Common.daReadLocalRootPeers     = aReadLocalRootPeers na

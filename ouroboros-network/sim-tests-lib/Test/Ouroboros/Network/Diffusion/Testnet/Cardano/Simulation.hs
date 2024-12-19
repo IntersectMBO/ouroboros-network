@@ -150,16 +150,11 @@ import Ouroboros.Cardano.PeerSelection.PeerSelectionActions
 import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..),
            TraceFetchClientState, TraceLabelPeer (..))
 import Ouroboros.Network.Diffusion.Common qualified as Common
-import Ouroboros.Network.PeerSelection.Governor.Types
-           (BootstrapPeersCriticalTimeoutError)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint (..),
            PortNumber, RelayAccessPoint (..))
-import Ouroboros.Network.PeerSelection.RootPeersDNS (PeerActionsDNS (..))
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSLookupType)
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
-           (newLedgerAndPublicRootDNSSemaphore)
 import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
            (TraceLocalRootPeers)
 import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
@@ -1116,19 +1111,8 @@ diffusionSimulation
       onlyOutboundConnectionsStateVar <- newTVarIO UntrustedState
       useBootstrapPeersScriptVar <- newTVarIO bootstrapPeers
       churnModeVar <- newTVarIO ChurnModeNormal
-      dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
-      dnsTimeoutScriptVar <- newTVarIO dnsTimeout
-      dnsLookupDelayScriptVar <- newTVarIO dnsLookupDelay
 
-      let dnsActions :: PeerActionsDNS (TestAddress NtNAddr_) () BootstrapPeersCriticalTimeoutError m
-          dnsActions =
-            PeerActionsDNS {
-              paToPeerAddr = (\a b -> TestAddress (IPAddr a b))
-            , paDnsActions = mockDNSActions dMapVar
-                                            dnsTimeoutScriptVar
-                                            dnsLookupDelayScriptVar
-            }
-          readUseBootstrapPeers = stepScriptSTM' useBootstrapPeersScriptVar
+      let readUseBootstrapPeers = stepScriptSTM' useBootstrapPeersScriptVar
           (bgaRng, rng) = Random.split $ mkStdGen seed
           acceptedConnectionsLimit =
             AcceptedConnectionsLimit maxBound maxBound 0
@@ -1285,10 +1269,7 @@ diffusionSimulation
             requestPublicRootPeers (Common.dtTracePublicRootPeersTracer tracersExtraAddr)
                                    (caeReadUseBootstrapPeers cardanoExtraArgs)
                                    (pure TooOld)
-                                   (\a b -> TestAddress (IPAddr a b))
-                                   dnsSemaphore
                                    readPublicRootPeers
-                                   (paDnsActions dnsActions)
 
       run blockGeneratorArgs
                      limitsAndTimeouts
@@ -1298,7 +1279,7 @@ diffusionSimulation
                      (cardanoExtraArgsToPeerSelectionActions cardanoExtraArgs)
                      CPSV.empty
                      CPRP.cardanoPublicRootPeersAPI
-                     (cardanoPeerSelectionGovernorArgs readUseLedgerPeers peerSharing (iLedgerPeersConsensusInterface interfaces))
+                     (cardanoPeerSelectionGovernorArgs readUseLedgerPeers peerSharing (clpciUpdateOutboundConnectionsState $ lpExtraAPI $ iLedgerPeersConsensusInterface interfaces))
                      CPSV.cardanoPeerSelectionStatetoCounters
                      requestPublicRootPeers'
                      peerChurnGovernor
