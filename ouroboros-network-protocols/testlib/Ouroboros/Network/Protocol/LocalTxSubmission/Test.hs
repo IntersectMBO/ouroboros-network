@@ -44,7 +44,7 @@ import Ouroboros.Network.Protocol.LocalTxSubmission.Server
 import Ouroboros.Network.Protocol.LocalTxSubmission.Type
 
 import Test.Data.CDDL (Any (..))
-import Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
+import Test.Ouroboros.Network.Protocol.Utils (prop_codec_cborM,
            prop_codec_valid_cbor_encoding, splits2, splits3)
 
 import Control.DeepSeq

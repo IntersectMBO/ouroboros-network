@@ -57,7 +57,7 @@ import Ouroboros.Network.TxSubmission.Mempool.Reader
 import Ouroboros.Network.TxSubmission.Outbound
 import Ouroboros.Network.Util.ShowProxy
 
-import Ouroboros.Network.Testing.Utils
+import Test.Ouroboros.Network.Utils
 
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)

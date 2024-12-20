@@ -65,7 +65,7 @@ import Ouroboros.Network.Protocol.Handshake.Codec
 import Ouroboros.Network.Protocol.Handshake.Unversioned
 import Ouroboros.Network.Protocol.Handshake.Version
 
-import Ouroboros.Network.Test.Orphans ()
+import Test.Ouroboros.Network.Orphans ()
 
 import Test.QuickCheck
 import Test.Tasty (DependencyType (..), TestTree, after, testGroup)

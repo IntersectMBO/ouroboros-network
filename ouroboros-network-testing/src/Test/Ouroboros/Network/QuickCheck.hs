@@ -1,15 +1,15 @@
 {-# LANGUAGE RankNTypes #-}
 
-module Ouroboros.Network.Testing.QuickCheck
+module Test.Ouroboros.Network.QuickCheck
   ( runSimGen
   , monadicSim
   ) where
 
-import           Test.QuickCheck
-import           Test.QuickCheck.Gen.Unsafe (Capture (..), capture)
-import           Test.QuickCheck.Monadic
+import Test.QuickCheck
+import Test.QuickCheck.Gen.Unsafe (Capture (..), capture)
+import Test.QuickCheck.Monadic
 
-import           Control.Monad.IOSim
+import Control.Monad.IOSim
 
 -- | 'IOSim' analogue of 'runSTGen'
 --
