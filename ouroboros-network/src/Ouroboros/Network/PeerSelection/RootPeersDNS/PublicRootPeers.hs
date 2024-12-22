@@ -80,31 +80,32 @@ publicRootPeersProvider tracer
     resourceVar <- newTVarIO rr
     action (requestPublicRootPeers resourceVar)
   where
-    -- processResult :: (DNSLookupResult IP, PeerAdvertise)
-    --               -> m ((Maybe PortNumber, PeerAdvertise), [(IP, TTL)])
-    processResult (DNSLookup (dp@(DomainPlain domain port), errs, ipsttls)
+    processResult :: (DNSLookupResult IP, PeerAdvertise)
+                  -> m ((Maybe PortNumber, PeerAdvertise), [(IP, TTL)])
+    processResult (DNSLookup (domain@(DomainPlain domain' port), errs, ipsttls)
                   , pa) = do
-        mapM_ (traceWith tracer . TracePublicRootFailure fff . Just)
+        mapM_ (traceWith tracer . TracePublicRootFailure dap . Just)
               errs
         when (not . null $ ipsttls) $
-            traceWith tracer $ TracePublicRootResult domain ipsttls
+            traceWith tracer $ TracePublicRootResult domain' ipsttls
 
         return ((Just port, pa), ipsttls)
         where
-          fff = DomainAccessPoint dp
+          dap = DomainAccessPoint domain
 
-    processResult ( (DNSLookupSRV (srvDomain, errs, mResult))
+    processResult ( DNSLookupSRV (srvDomain, errs, mResult)
                   , pa) = do
         mapM_ (traceWith tracer . TracePublicRootFailure (DomainSRVAccessPoint srvDomain)  . Just)
               errs
 
         case mResult of
           Nothing -> do
-            traceWith tracer $ TracePublicRootFailure (DomainSRVAccessPoint srvDomain) Nothing
+            when (null errs) $
+              traceWith tracer $ TracePublicRootFailure (DomainSRVAccessPoint srvDomain) Nothing
             return ((Nothing, pa), [])
-          Just (ddd, port, ipsttls) -> do
+          Just (domainFollow, port, ipsttls) -> do
             when (not . null $ ipsttls) $
-              traceWith tracer $ TracePublicRootResultVia srvDomain ddd ipsttls
+              traceWith tracer $ TracePublicRootResultVia srvDomain domainFollow ipsttls
             return ((Just port, pa), ipsttls)
 
     requestPublicRootPeers

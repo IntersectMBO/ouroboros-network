@@ -97,7 +97,7 @@ resolveLedgerPeers tracer
     processResult mr (DNSLookup (domain@DomainPlain { dapDomain, dapPortNumber }
                      , errs
                      , ipsttls)) = do
-        mapM_ (traceWith tracer . TraceLedgerPeersFailure dapDomain)
+        mapM_ (traceWith tracer . TraceLedgerPeersFailure dapDomain . Just)
               errs
         when (not $ null ipsttls) $
             traceWith tracer $ TraceLedgerPeersResult dapDomain ipsttls
@@ -108,16 +108,19 @@ resolveLedgerPeers tracer
         let domain0' = DomainSRVAccessPoint domain0
         case mResult of
           Nothing -> do
-            mapM_ (traceWith tracer . TraceLedgerPeersFailure (srvDomain domain0))
-                  errs
+            if null errs
+              then traceWith tracer $ TraceLedgerPeersFailure (srvDomain domain0) Nothing
+              else
+                mapM_ (traceWith tracer . TraceLedgerPeersFailure (srvDomain domain0) . Just)
+                      errs
             return $
               -- TODO is this necessary?
               Map.insertWith (\_new old -> old) domain0' Set.empty mr
           Just (domain, port, ipsttls) -> do
-            mapM_ (traceWith tracer . TraceLedgerPeersFailure domain)
+            mapM_ (traceWith tracer . TraceLedgerPeersFailure domain . Just)
                   errs
             when (not . null $ ipsttls) $
-              traceWith tracer $ TraceLedgerPeersResult domain ipsttls
+              traceWith tracer $ TraceLedgerPeersResultVia domain0 (DomainPlain domain port) ipsttls
             return $ Map.alter (addFn ipsttls port) domain0' mr
 
     addFn :: [(IP, DNS.TTL)]

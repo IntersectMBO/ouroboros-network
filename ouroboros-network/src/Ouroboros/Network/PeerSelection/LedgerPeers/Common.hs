@@ -46,7 +46,8 @@ data TraceLedgerPeers =
       -- ledger peers.
     | TraceLedgerPeersDomains [DomainAccessPoint]
     | TraceLedgerPeersResult  DNS.Domain [(IP, DNS.TTL)]
-    | TraceLedgerPeersFailure DNS.Domain DNS.DNSError
+    | TraceLedgerPeersResultVia DomainSRVAccessPoint DomainPlainAccessPoint [(IP, DNS.TTL)]
+    | TraceLedgerPeersFailure DNS.Domain (Maybe DNS.DNSError)
     | DisabledLedgerPeers
       -- ^ Trace for when getting peers from the ledger is disabled, that is DontUseLedgerPeers.
     | TraceUseLedgerPeers UseLedgerPeers

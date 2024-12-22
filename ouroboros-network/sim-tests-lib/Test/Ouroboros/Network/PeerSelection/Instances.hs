@@ -159,11 +159,6 @@ instance Arbitrary DomainAccessPoint where
               <*> genPort)
       srv = DomainSRVAccessPoint <$> (DomainSRV <$> genDomainName)
 
--- we generate a few fresh domain names for each SRV domain
--- so it helps to have a few more to help avoid clashes with
--- non-srv/legacy domains. We don't want entirely fresh
--- srv subordinate domain names because clashes are not illegal, per se.
---
 genDomainName :: Gen ByteString
 genDomainName = elements $ (\i -> "test" <> (BSC.pack . show $ i)) <$> [1..6 :: Int]
 

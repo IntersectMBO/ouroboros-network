@@ -110,161 +110,161 @@ import Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests =
-  testGroup "Ouroboros.Network.Testnet" []
-  -- [ testGroup "generators"
-  --   [ testProperty "diffusionScript fixupCommands idempotent"
-  --                   prop_diffusionScript_fixupCommands
-  --   , testProperty "diffusionScript command script valid"
-  --                  prop_diffusionScript_commandScript_valid
-  --   ]
-  -- , testGroup "IOSimPOR"
-  --   [ nightlyTest $ testProperty "no failure"
-  --                     (testWithIOSimPOR prop_diffusion_nofail 10000)
-  --   , nightlyTest $ testProperty "no livelock"
-  --                     (testWithIOSimPOR prop_diffusion_nolivelock 10000)
-  --   , nightlyTest $ testProperty "dns can recover from fails"
-  --                     (testWithIOSimPOR prop_diffusion_dns_can_recover 10000)
-  --   , nightlyTest $ testProperty "target established public"
-  --                     (testWithIOSimPOR prop_diffusion_target_established_public 10000)
-  --   , nightlyTest $ testProperty "target active public"
-  --                     (testWithIOSimPOR prop_diffusion_target_active_public 10000)
-  --   , nightlyTest $ testProperty "target established local"
-  --                     (testWithIOSimPOR prop_diffusion_target_established_local 10000)
-  --   , nightlyTest $ testProperty "target active local"
-  --                     (testWithIOSimPOR prop_diffusion_target_active_local 10000)
-  --   , nightlyTest $ testProperty "target active root"
-  --                     (testWithIOSimPOR prop_diffusion_target_active_root 10000)
-  --   , nightlyTest $ testProperty "target active below"
-  --                     (testWithIOSimPOR prop_diffusion_target_active_below 10000)
-  --   , nightlyTest $ testProperty "target active local below"
-  --                     (testWithIOSimPOR prop_diffusion_target_active_local_below 10000)
-  --   , nightlyTest $ testProperty "async demotion"
-  --                     (testWithIOSimPOR prop_diffusion_async_demotions 10000)
-  --   , nightlyTest $ testProperty "target active local above"
-  --                     (testWithIOSimPOR prop_diffusion_target_active_local_above 10000)
-  --   , nightlyTest $ testProperty "connection manager valid transitions"
-  --                     (testWithIOSimPOR prop_diffusion_cm_valid_transitions 10000)
-  --   , nightlyTest $ testProperty "connection manager valid transition order"
-  --                     (testWithIOSimPOR prop_diffusion_cm_valid_transition_order_iosim_por 10000)
-  --   , nightlyTest $ testProperty "connection manager no dodgy traces"
-  --                     (testWithIOSimPOR prop_diffusion_cm_no_dodgy_traces 10000)
-  --   , nightlyTest $ testProperty "peer selection actions no dodgy traces"
-  --                     (testWithIOSimPOR prop_diffusion_peer_selection_actions_no_dodgy_traces 10000)
-  --   , nightlyTest $ testProperty "inbound governor valid transitions"
-  --                     (testWithIOSimPOR prop_diffusion_ig_valid_transitions 10000)
-  --   , nightlyTest $ testProperty "inbound governor valid transition order"
-  --                     (testWithIOSimPOR prop_diffusion_ig_valid_transition_order 10000)
-  --   , nightlyTest $ testProperty "cm & ig timeouts enforced"
-  --                     (testWithIOSimPOR prop_diffusion_timeouts_enforced 10000)
-  --   , nightlyTest $ testProperty "any Cold async demotion"
-  --                     (testWithIOSimPOR prop_track_coolingToCold_demotions 10000)
-  --   , nightlyTest $ testProperty "only bootstrap peers in fallback state"
-  --                     (testWithIOSimPOR prop_only_bootstrap_peers_in_fallback_state 10000)
-  --   , nightlyTest $ testProperty "no non trustable peers before caught up state"
-  --                     (testWithIOSimPOR prop_no_non_trustable_peers_before_caught_up_state 10000)
-  --   , testGroup "Churn"
-  --     [ nightlyTest $ testProperty "no timeouts"
-  --                       (testWithIOSimPOR prop_churn_notimeouts 10000)
-  --     , nightlyTest $ testProperty "steps"
-  --                       (testWithIOSimPOR prop_churn_steps 10000)
-  --     ]
-  --   , testGroup "unit"
-  --     [ nightlyTest $ testProperty "unit cm" unit_cm_valid_transitions ]
-  --   ]
-  -- , testGroup "IOSim"
-  --   [ testProperty "no failure"
-  --                  (testWithIOSim prop_diffusion_nofail 125000)
-  --   , testProperty "no livelock"
-  --                  (testWithIOSim prop_diffusion_nolivelock 125000)
-  --   , testProperty "dns can recover from fails"
-  --                  (testWithIOSim prop_diffusion_dns_can_recover 125000)
-  --   -- , testProperty "unit #4191"
-  --   --                unit_4191
-  --   , testProperty "target established public"
-  --                  (testWithIOSim prop_diffusion_target_established_public 125000)
-  --   , testProperty "target active public"
-  --                  (testWithIOSim prop_diffusion_target_active_public 125000)
-  --   , testProperty "target established local"
-  --                  (testWithIOSim prop_diffusion_target_established_local 125000)
-  --   , testProperty "unit reconnect"
-  --                  prop_unit_reconnect
-  --   , testProperty "target active local"
-  --                  (testWithIOSim prop_diffusion_target_active_local 125000)
-  --   , testProperty "target active root"
-  --                  (testWithIOSim prop_diffusion_target_active_root 125000)
-  --   , testProperty "target active below"
-  --                  (testWithIOSim prop_diffusion_target_active_below 125000)
-  --   , testProperty "target active local below"
-  --                  (testWithIOSim prop_diffusion_target_active_local_below 250000)
-  --   , testProperty "async demotion"
-  --                  (testWithIOSim prop_diffusion_async_demotions 125000)
-  --   , testProperty "async demotion (unit)"
-  --                  unit_diffusion_async_demotions
-  --   , testProperty "target active local above"
-  --                  (testWithIOSim prop_diffusion_target_active_local_above 125000)
-  --   , testProperty "connection manager valid transitions"
-  --                  (testWithIOSim prop_diffusion_cm_valid_transitions 125000)
-  --   , testProperty "connection manager valid transition order"
-  --                  (testWithIOSim prop_diffusion_cm_valid_transition_order 125000)
-  --   , testProperty "unit 4258"
-  --                  prop_unit_4258
-  --   , testProperty "connection manager no dodgy traces"
-  --                  (testWithIOSim prop_diffusion_cm_no_dodgy_traces 125000)
-  --   , testProperty "peer selection actions no dodgy traces"
-  --                  (testWithIOSim prop_diffusion_peer_selection_actions_no_dodgy_traces 125000)
-  --   , testProperty "inbound governor valid transitions"
-  --                  (testWithIOSim prop_diffusion_ig_valid_transitions 125000)
-  --   , testProperty "inbound governor valid transition order"
-  --                  (testWithIOSim prop_diffusion_ig_valid_transition_order 125000)
-  --   , testProperty "cm & ig timeouts enforced"
-  --                  (testWithIOSim prop_diffusion_timeouts_enforced 125000)
-  --   , testProperty "any Cold async demotion"
-  --                  (testWithIOSim prop_track_coolingToCold_demotions 125000)
-  --   , testProperty "unit #4177" unit_4177
-  --   , testProperty "connect failure" prop_connect_failure
-  --   , testProperty "accept failure" prop_accept_failure
-  --   , testProperty "only bootstrap peers in fallback state"
-  --                  (testWithIOSim prop_only_bootstrap_peers_in_fallback_state 125000)
-  --   , testProperty "no non trustable peers before caught up state"
-  --                  (testWithIOSim prop_no_non_trustable_peers_before_caught_up_state 125000)
-  --   , testGroup "Peer Sharing"
-  --     [ testProperty "share a peer"
-  --                    unit_peer_sharing
-  --     ]
-  --   , testGroup "Churn"
-  --     [ testProperty "no timeouts"
-  --                    (testWithIOSim prop_churn_notimeouts 125000)
-  --     , testProperty "steps"
-  --                    (testWithIOSim prop_churn_steps 5000)
-  --     ]
-  --   , testGroup "coverage"
-  --     [ testProperty "server trace coverage"
-  --                    prop_server_trace_coverage
-  --     , testProperty "peer selection actions trace coverage"
-  --                    prop_peer_selection_action_trace_coverage
-  --     , testProperty "peer selection trace coverage"
-  --                    prop_peer_selection_trace_coverage
-  --     , testProperty "connection manager trace coverage"
-  --                    prop_connection_manager_trace_coverage
-  --     , testProperty "connection manager transitions coverage"
-  --                    prop_connection_manager_transitions_coverage
-  --     , testProperty "inbound governor trace coverage"
-  --                    prop_inbound_governor_trace_coverage
-  --     , testProperty "inbound governor transitions coverage"
-  --                    prop_inbound_governor_transitions_coverage
-  --     , testProperty "fetch client state trace coverage"
-  --                    prop_fetch_client_state_trace_coverage
-  --     ]
-  --   , testGroup "hot diffusion script"
-  --     [ testProperty "target active public"
-  --                    prop_hot_diffusion_target_active_public
-  --     , testProperty "target active local"
-  --                    prop_hot_diffusion_target_active_local
-  --     , testProperty "target active root"
-  --                    prop_hot_diffusion_target_active_root
-  --     ]
-  --   ]
-  -- ]
+  testGroup "Ouroboros.Network.Testnet"
+  [ testGroup "generators"
+    [ testProperty "diffusionScript fixupCommands idempotent"
+                    prop_diffusionScript_fixupCommands
+    , testProperty "diffusionScript command script valid"
+                   prop_diffusionScript_commandScript_valid
+    ]
+  , testGroup "IOSimPOR"
+    [ nightlyTest $ testProperty "no failure"
+                      (testWithIOSimPOR prop_diffusion_nofail 10000)
+    , nightlyTest $ testProperty "no livelock"
+                      (testWithIOSimPOR prop_diffusion_nolivelock 10000)
+    , nightlyTest $ testProperty "dns can recover from fails"
+                      (testWithIOSimPOR prop_diffusion_dns_can_recover 10000)
+    , nightlyTest $ testProperty "target established public"
+                      (testWithIOSimPOR prop_diffusion_target_established_public 10000)
+    , nightlyTest $ testProperty "target active public"
+                      (testWithIOSimPOR prop_diffusion_target_active_public 10000)
+    , nightlyTest $ testProperty "target established local"
+                      (testWithIOSimPOR prop_diffusion_target_established_local 10000)
+    , nightlyTest $ testProperty "target active local"
+                      (testWithIOSimPOR prop_diffusion_target_active_local 10000)
+    , nightlyTest $ testProperty "target active root"
+                      (testWithIOSimPOR prop_diffusion_target_active_root 10000)
+    , nightlyTest $ testProperty "target active below"
+                      (testWithIOSimPOR prop_diffusion_target_active_below 10000)
+    , nightlyTest $ testProperty "target active local below"
+                      (testWithIOSimPOR prop_diffusion_target_active_local_below 10000)
+    , nightlyTest $ testProperty "async demotion"
+                      (testWithIOSimPOR prop_diffusion_async_demotions 10000)
+    , nightlyTest $ testProperty "target active local above"
+                      (testWithIOSimPOR prop_diffusion_target_active_local_above 10000)
+    , nightlyTest $ testProperty "connection manager valid transitions"
+                      (testWithIOSimPOR prop_diffusion_cm_valid_transitions 10000)
+    , nightlyTest $ testProperty "connection manager valid transition order"
+                      (testWithIOSimPOR prop_diffusion_cm_valid_transition_order_iosim_por 10000)
+    , nightlyTest $ testProperty "connection manager no dodgy traces"
+                      (testWithIOSimPOR prop_diffusion_cm_no_dodgy_traces 10000)
+    , nightlyTest $ testProperty "peer selection actions no dodgy traces"
+                      (testWithIOSimPOR prop_diffusion_peer_selection_actions_no_dodgy_traces 10000)
+    , nightlyTest $ testProperty "inbound governor valid transitions"
+                      (testWithIOSimPOR prop_diffusion_ig_valid_transitions 10000)
+    , nightlyTest $ testProperty "inbound governor valid transition order"
+                      (testWithIOSimPOR prop_diffusion_ig_valid_transition_order 10000)
+    , nightlyTest $ testProperty "cm & ig timeouts enforced"
+                      (testWithIOSimPOR prop_diffusion_timeouts_enforced 10000)
+    , nightlyTest $ testProperty "any Cold async demotion"
+                      (testWithIOSimPOR prop_track_coolingToCold_demotions 10000)
+    , nightlyTest $ testProperty "only bootstrap peers in fallback state"
+                      (testWithIOSimPOR prop_only_bootstrap_peers_in_fallback_state 10000)
+    , nightlyTest $ testProperty "no non trustable peers before caught up state"
+                      (testWithIOSimPOR prop_no_non_trustable_peers_before_caught_up_state 10000)
+    , testGroup "Churn"
+      [ nightlyTest $ testProperty "no timeouts"
+                        (testWithIOSimPOR prop_churn_notimeouts 10000)
+      , nightlyTest $ testProperty "steps"
+                        (testWithIOSimPOR prop_churn_steps 10000)
+      ]
+    , testGroup "unit"
+      [ nightlyTest $ testProperty "unit cm" unit_cm_valid_transitions ]
+    ]
+  , testGroup "IOSim"
+    [ testProperty "no failure"
+                   (testWithIOSim prop_diffusion_nofail 125000)
+    , testProperty "no livelock"
+                   (testWithIOSim prop_diffusion_nolivelock 125000)
+    , testProperty "dns can recover from fails"
+                   (testWithIOSim prop_diffusion_dns_can_recover 125000)
+    -- , testProperty "unit #4191"
+    --                unit_4191
+    , testProperty "target established public"
+                   (testWithIOSim prop_diffusion_target_established_public 125000)
+    , testProperty "target active public"
+                   (testWithIOSim prop_diffusion_target_active_public 125000)
+    , testProperty "target established local"
+                   (testWithIOSim prop_diffusion_target_established_local 125000)
+    , testProperty "unit reconnect"
+                   prop_unit_reconnect
+    , testProperty "target active local"
+                   (testWithIOSim prop_diffusion_target_active_local 125000)
+    , testProperty "target active root"
+                   (testWithIOSim prop_diffusion_target_active_root 125000)
+    , testProperty "target active below"
+                   (testWithIOSim prop_diffusion_target_active_below 125000)
+    , testProperty "target active local below"
+                   (testWithIOSim prop_diffusion_target_active_local_below 250000)
+    , testProperty "async demotion"
+                   (testWithIOSim prop_diffusion_async_demotions 125000)
+    , testProperty "async demotion (unit)"
+                   unit_diffusion_async_demotions
+    , testProperty "target active local above"
+                   (testWithIOSim prop_diffusion_target_active_local_above 125000)
+    , testProperty "connection manager valid transitions"
+                   (testWithIOSim prop_diffusion_cm_valid_transitions 125000)
+    , testProperty "connection manager valid transition order"
+                   (testWithIOSim prop_diffusion_cm_valid_transition_order 125000)
+    , testProperty "unit 4258"
+                   prop_unit_4258
+    , testProperty "connection manager no dodgy traces"
+                   (testWithIOSim prop_diffusion_cm_no_dodgy_traces 125000)
+    , testProperty "peer selection actions no dodgy traces"
+                   (testWithIOSim prop_diffusion_peer_selection_actions_no_dodgy_traces 125000)
+    , testProperty "inbound governor valid transitions"
+                   (testWithIOSim prop_diffusion_ig_valid_transitions 125000)
+    , testProperty "inbound governor valid transition order"
+                   (testWithIOSim prop_diffusion_ig_valid_transition_order 125000)
+    , testProperty "cm & ig timeouts enforced"
+                   (testWithIOSim prop_diffusion_timeouts_enforced 125000)
+    , testProperty "any Cold async demotion"
+                   (testWithIOSim prop_track_coolingToCold_demotions 125000)
+    , testProperty "unit #4177" unit_4177
+    , testProperty "connect failure" prop_connect_failure
+    , testProperty "accept failure" prop_accept_failure
+    , testProperty "only bootstrap peers in fallback state"
+                   (testWithIOSim prop_only_bootstrap_peers_in_fallback_state 125000)
+    , testProperty "no non trustable peers before caught up state"
+                   (testWithIOSim prop_no_non_trustable_peers_before_caught_up_state 125000)
+    , testGroup "Peer Sharing"
+      [ testProperty "share a peer"
+                     unit_peer_sharing
+      ]
+    , testGroup "Churn"
+      [ testProperty "no timeouts"
+                     (testWithIOSim prop_churn_notimeouts 125000)
+      , testProperty "steps"
+                     (testWithIOSim prop_churn_steps 5000)
+      ]
+    , testGroup "coverage"
+      [ testProperty "server trace coverage"
+                     prop_server_trace_coverage
+      , testProperty "peer selection actions trace coverage"
+                     prop_peer_selection_action_trace_coverage
+      , testProperty "peer selection trace coverage"
+                     prop_peer_selection_trace_coverage
+      , testProperty "connection manager trace coverage"
+                     prop_connection_manager_trace_coverage
+      , testProperty "connection manager transitions coverage"
+                     prop_connection_manager_transitions_coverage
+      , testProperty "inbound governor trace coverage"
+                     prop_inbound_governor_trace_coverage
+      , testProperty "inbound governor transitions coverage"
+                     prop_inbound_governor_transitions_coverage
+      , testProperty "fetch client state trace coverage"
+                     prop_fetch_client_state_trace_coverage
+      ]
+    , testGroup "hot diffusion script"
+      [ testProperty "target active public"
+                     prop_hot_diffusion_target_active_public
+      , testProperty "target active local"
+                     prop_hot_diffusion_target_active_local
+      , testProperty "target active root"
+                     prop_hot_diffusion_target_active_root
+      ]
+    ]
+  ]
 
 traceFromList :: [a] -> Trace (SimResult ()) a
 traceFromList = Trace.fromList (MainReturn  (Time 0) (Labelled (ThreadId []) (Just "main")) () [])
@@ -1429,8 +1429,12 @@ prop_diffusion_dns_can_recover ioSimTrace traceNumber =
         DiffusionLocalRootPeerTrace
           (TraceLocalRootReconfigured _ _) ->
             verify Map.empty ttlMap recovered t evs
-        DiffusionLocalRootPeerTrace (TraceLocalRootResult dap r) ->
-          let dns = extractDomainName dap
+        DiffusionLocalRootPeerTrace trace | isResultTag trace ->
+          let (dns, r) =
+                case trace of
+                  TraceLocalRootResult (DomainPlain d _p) ipsttls -> (d, ipsttls)
+                  TraceLocalRootResultVia (DomainSRV d) _dp ipsttls -> (d, ipsttls)
+                  _ -> error "impossible!"
               ttls = map snd r
               ttlMap' = Map.insert dns (ttlForResults ttls) ttlMap
            in case Map.lookup dns toRecover of
@@ -1446,6 +1450,11 @@ prop_diffusion_dns_can_recover ioSimTrace traceNumber =
 
     extractDomainName (DomainAccessPoint (DomainPlain d _)) = d
     extractDomainName (DomainSRVAccessPoint (DomainSRV d))  = d
+
+    isResultTag = \case
+      TraceLocalRootResult {} -> True
+      TraceLocalRootResultVia {} -> True
+      _otherwise -> False
 
 
 -- | Unit test which covers issue #4191
