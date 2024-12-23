@@ -27,9 +27,9 @@ import Ouroboros.Network.IOManager
 import Ouroboros.Network.Snocket (socketSnocket)
 import Ouroboros.Network.Socket (configureSocket)
 
-import Ouroboros.Network.ConnectionManager.Test.Experiments
-import Ouroboros.Network.ConnectionManager.Test.Timeouts
-import Ouroboros.Network.Test.Orphans ()
+import Test.Ouroboros.Network.ConnectionManager.Experiments
+import Test.Ouroboros.Network.ConnectionManager.Timeouts
+import Test.Ouroboros.Network.Orphans ()
 
 tests :: TestTree
 tests =

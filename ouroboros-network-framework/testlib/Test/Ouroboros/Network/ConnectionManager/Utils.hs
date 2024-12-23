@@ -1,7 +1,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.ConnectionManager.Test.Utils where
+module Test.Ouroboros.Network.ConnectionManager.Utils where
 
 import Prelude hiding (read)
 

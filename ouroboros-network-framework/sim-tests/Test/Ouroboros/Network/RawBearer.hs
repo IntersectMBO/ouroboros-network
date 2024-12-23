@@ -9,7 +9,6 @@ module Test.Ouroboros.Network.RawBearer where
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket
-import Ouroboros.Network.Testing.Data.AbsBearerInfo
 
 import Control.Concurrent.Class.MonadMVar
 import Control.Exception (Exception)
@@ -34,6 +33,7 @@ import System.Directory (removeFile)
 import System.IO.Error (ioeGetErrorType, isDoesNotExistErrorType)
 import System.IO.Unsafe
 
+import Test.Ouroboros.Network.Data.AbsBearerInfo
 import Test.Simulation.Network.Snocket (toBearerInfo)
 import Test.Tasty
 import Test.Tasty.QuickCheck

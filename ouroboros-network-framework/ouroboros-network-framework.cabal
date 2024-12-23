@@ -125,12 +125,12 @@ library testlib
   visibility: public
   hs-source-dirs: testlib
   exposed-modules:
-    Ouroboros.Network.ConnectionManager.Test.Experiments
-    Ouroboros.Network.ConnectionManager.Test.Timeouts
-    Ouroboros.Network.ConnectionManager.Test.Utils
-    Ouroboros.Network.InboundGovernor.Test.Utils
-    Ouroboros.Network.RawBearer.Test.Utils
-    Ouroboros.Network.Test.Orphans
+    Test.Ouroboros.Network.ConnectionManager.Experiments
+    Test.Ouroboros.Network.ConnectionManager.Timeouts
+    Test.Ouroboros.Network.ConnectionManager.Utils
+    Test.Ouroboros.Network.InboundGovernor.Utils
+    Test.Ouroboros.Network.Orphans
+    Test.Ouroboros.Network.RawBearer.Utils
 
   other-modules:
   build-depends:

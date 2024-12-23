@@ -4,6 +4,7 @@
 
 ### Breaking changes
 
+* Renamed modules from `Ouroboros.Network.Testing.*` to `Test.Ouroboros.Network.*`
 * Added `IOError` field to `ErrorInterval :: AbsAttenuation` constructor.
 
 ### Non-Breaking changes

@@ -46,10 +46,10 @@ import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
            noTimeLimitsHandshake)
 import Ouroboros.Network.Protocol.Handshake.Version (acceptableVersion,
            queryVersion)
-import Ouroboros.Network.Testing.Serialise
 import Ouroboros.Network.Util.ShowProxy
 
 import Test.ChainGenerators (TestBlockChainAndUpdates (..))
+import Test.Ouroboros.Network.Serialise
 
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Test.QuickCheck

@@ -2,7 +2,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE NamedFieldPuns   #-}
 {-# LANGUAGE RankNTypes       #-}
-module Test.Ouroboros.Network.Testing.Utils where
+module Test.Ouroboros.Network.Protocol.Utils where
 
 import Codec.CBOR.FlatTerm qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR

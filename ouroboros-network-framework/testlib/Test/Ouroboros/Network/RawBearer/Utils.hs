@@ -4,7 +4,7 @@
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 
-module Ouroboros.Network.RawBearer.Test.Utils where
+module Test.Ouroboros.Network.RawBearer.Utils where
 
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket
