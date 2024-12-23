@@ -184,15 +184,8 @@ genIPv6 =
 instance Arbitrary RelayAccessPoint where
   arbitrary =
       frequency [ (4, RelayAccessAddress <$> oneof [genIPv4, genIPv6] <*> genPort)
-                , (4, RelayAccessDomain <$> elements domains <*> genPort)
-                , (1, RelayAccessSRVDomain <$> elements domains)]
-    where
-      domains = encodeUtf8 <$> [ "test1"
-                , "test2"
-                , "test3"
-                , "test4"
-                , "test5"
-                ]
+                , (4, RelayAccessDomain <$> genDomainName <*> genPort)
+                , (1, RelayAccessSRVDomain <$> genDomainName)]
 
 prop_arbitrary_PeerSelectionTargets :: PeerSelectionTargets -> Bool
 prop_arbitrary_PeerSelectionTargets =

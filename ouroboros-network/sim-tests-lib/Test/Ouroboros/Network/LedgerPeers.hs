@@ -554,8 +554,8 @@ prop_ledgerPeerSnapshotJSONV1 slotNo
           strippedRelaysWithAccStake' = stripFQN <$> relaysWithAccStake'
       in
              wOrigin === wOrigin'
-        -- .&&. counterexample "fully qualified name"
-        --                     (strippedRelaysWithAccStake === strippedRelaysWithAccStake')
+        .&&. counterexample "fully qualified name"
+                            (strippedRelaysWithAccStake === strippedRelaysWithAccStake')
         .&&. counterexample "approximation error"
                             (compareApprox relaysWithAccStake relaysWithAccStake')
 

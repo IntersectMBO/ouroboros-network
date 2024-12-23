@@ -101,11 +101,11 @@ tests =
        , testProperty "resolves domains correctly"
                       prop_local_resolvesDomainsCorrectly
        , testProperty "updates domains correctly"
-                      $ prop_local_updatesDomainsCorrectly
+                      prop_local_updatesDomainsCorrectly
        ]
     , testGroup "publicRootPeersProvider"
        [ testProperty "resolves domains correctly"
-                      $ prop_public_resolvesDomainsCorrectly
+                      prop_public_resolvesDomainsCorrectly
        ]
     , testGroup "delayedResource"
        [

@@ -3760,109 +3760,110 @@ selectEnvTargets f =
 -- This is a manual test that runs in IO and has to be observed to see that it
 -- is doing something sensible. It is not run automatically.
 --
--- _governorFindingPublicRoots :: Int
---                             -> STM IO (Map RelayAccessPoint PeerAdvertise)
---                             -> STM IO UseBootstrapPeers
---                             -> STM IO LedgerStateJudgement
---                             -> PeerSharing
---                             -> StrictTVar IO OutboundConnectionsState
---                             -> ConsensusMode
---                             -> IO Void
--- _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrapPeers readLedgerStateJudgement peerSharing olocVar consensusMode = do
---     countersVar <- newTVarIO emptyPeerSelectionCounters
---     publicStateVar <- makePublicPeerSelectionStateVar
---     debugStateVar <- newTVarIO $ emptyPeerSelectionState (mkStdGen 42) consensusMode (MinBigLedgerPeersForTrustedState 0)
---     dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
---     let interfaces = PeerSelectionInterfaces {
---             countersVar,
---             publicStateVar,
---             debugStateVar,
---             readUseLedgerPeers = return DontUseLedgerPeers
---           }
+_governorFindingPublicRoots :: Int
+                            -> STM IO (Map RelayAccessPoint PeerAdvertise)
+                            -> STM IO UseBootstrapPeers
+                            -> STM IO LedgerStateJudgement
+                            -> PeerSharing
+                            -> StrictTVar IO OutboundConnectionsState
+                            -> ConsensusMode
+                            -> IO Void
+_governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrapPeers readLedgerStateJudgement peerSharing olocVar consensusMode = do
+    countersVar <- newTVarIO emptyPeerSelectionCounters
+    publicStateVar <- makePublicPeerSelectionStateVar
+    debugStateVar <- newTVarIO $ emptyPeerSelectionState (mkStdGen 42) consensusMode (MinBigLedgerPeersForTrustedState 0)
+    dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
+    let interfaces = PeerSelectionInterfaces {
+            countersVar,
+            publicStateVar,
+            debugStateVar,
+            readUseLedgerPeers = return DontUseLedgerPeers
+          }
 
---     publicRootPeersProvider
---       tracer
---       (curry IP.toSockAddr)
---       dnsSemaphore
---       DNS.defaultResolvConf
---       readDomains
---       (ioDNSActions LookupReqAAndAAAA) $ \requestPublicRootPeers -> do
---         peerSelectionGovernor
---           tracer tracer tracer
---           -- TODO: #3182 Rng seed should come from quickcheck.
---           (mkStdGen 42)
---           consensusMode
---           (MinBigLedgerPeersForTrustedState 0)
---           actions
---             { requestPublicRootPeers = \_ ->
---                 transformPeerSelectionAction requestPublicRootPeers }
---           policy
---           interfaces
---   where
---     tracer :: Show a => Tracer IO a
---     tracer  = Tracer (BS.putStrLn . BS.pack . show)
+    publicRootPeersProvider
+      tracer
+      (curry IP.toSockAddr)
+      dnsSemaphore
+      DNS.defaultResolvConf
+      readDomains
+      (ioDNSActions LookupReqAAndAAAA)
+      (mkStdGen 42) $ \requestPublicRootPeers -> do
+        peerSelectionGovernor
+          tracer tracer tracer
+          -- TODO: #3182 Rng seed should come from quickcheck.
+          (mkStdGen 42)
+          consensusMode
+          (MinBigLedgerPeersForTrustedState 0)
+          actions
+            { requestPublicRootPeers = \_ ->
+                transformPeerSelectionAction requestPublicRootPeers }
+          policy
+          interfaces
+  where
+    tracer :: Show a => Tracer IO a
+    tracer  = Tracer (BS.putStrLn . BS.pack . show)
 
---     actions :: PeerSelectionActions SockAddr PeerSharing IO
---     actions = PeerSelectionActions {
---                 peerTargets,
---                 readLocalRootPeers       = return [],
---                 peerSharing              = peerSharing,
---                 readPeerSelectionTargets = return targets,
---                 requestPeerShare         = \_ _ -> return (PeerSharingResult []),
---                 peerConnToPeerSharing    = id,
---                 requestPublicRootPeers   = \_ _ -> return (PublicRootPeers.empty, 0),
---                 peerStateActions         = PeerStateActions {
---                   establishPeerConnection  = error "establishPeerConnection",
---                   monitorPeerConnection    = error "monitorPeerConnection",
---                   activatePeerConnection   = error "activatePeerConnection",
---                   deactivatePeerConnection = error "deactivatePeerConnection",
---                   closePeerConnection      = error "closePeerConnection"
---                 },
---                 readUseBootstrapPeers,
---                 readInboundPeers = pure Map.empty,
---                 updateOutboundConnectionsState = \a -> do
---                   a' <- readTVar olocVar
---                   when (a /= a') $
---                     writeTVar olocVar a,
---                 getLedgerStateCtx =
---                   LedgerPeersConsensusInterface {
---                     lpGetLatestSlot = pure Origin,
---                     lpGetLedgerStateJudgement = readLedgerStateJudgement,
---                     lpGetLedgerPeers = pure [] },
---                 readLedgerPeerSnapshot = pure Nothing
---               }
+    actions :: PeerSelectionActions SockAddr PeerSharing IO
+    actions = PeerSelectionActions {
+                peerTargets,
+                readLocalRootPeers       = return [],
+                peerSharing              = peerSharing,
+                readPeerSelectionTargets = return targets,
+                requestPeerShare         = \_ _ -> return (PeerSharingResult []),
+                peerConnToPeerSharing    = id,
+                requestPublicRootPeers   = \_ _ -> return (PublicRootPeers.empty, 0),
+                peerStateActions         = PeerStateActions {
+                  establishPeerConnection  = error "establishPeerConnection",
+                  monitorPeerConnection    = error "monitorPeerConnection",
+                  activatePeerConnection   = error "activatePeerConnection",
+                  deactivatePeerConnection = error "deactivatePeerConnection",
+                  closePeerConnection      = error "closePeerConnection"
+                },
+                readUseBootstrapPeers,
+                readInboundPeers = pure Map.empty,
+                updateOutboundConnectionsState = \a -> do
+                  a' <- readTVar olocVar
+                  when (a /= a') $
+                    writeTVar olocVar a,
+                getLedgerStateCtx =
+                  LedgerPeersConsensusInterface {
+                    lpGetLatestSlot = pure Origin,
+                    lpGetLedgerStateJudgement = readLedgerStateJudgement,
+                    lpGetLedgerPeers = pure [] },
+                readLedgerPeerSnapshot = pure Nothing
+              }
 
---     targets :: PeerSelectionTargets
---     targets = nullPeerSelectionTargets {
---                 targetNumberOfRootPeers  = targetNumberOfRootPeers,
---                 targetNumberOfKnownPeers = targetNumberOfRootPeers
---               }
+    targets :: PeerSelectionTargets
+    targets = nullPeerSelectionTargets {
+                targetNumberOfRootPeers  = targetNumberOfRootPeers,
+                targetNumberOfKnownPeers = targetNumberOfRootPeers
+              }
 
---     peerTargets = ConsensusModePeerTargets {
---       deadlineTargets = targets,
---       syncTargets     = targets}
+    peerTargets = ConsensusModePeerTargets {
+      deadlineTargets = targets,
+      syncTargets     = targets}
 
---     policy :: PeerSelectionPolicy SockAddr IO
---     policy  = PeerSelectionPolicy {
---                 policyPickKnownPeersForPeerShare = \_ _ _ -> pickTrivially,
---                 policyPickColdPeersToForget   = \_ _ _ -> pickTrivially,
---                 policyPickColdPeersToPromote  = \_ _ _ -> pickTrivially,
---                 policyPickWarmPeersToPromote  = \_ _ _ -> pickTrivially,
---                 policyPickHotPeersToDemote    = \_ _ _ -> pickTrivially,
---                 policyPickWarmPeersToDemote   = \_ _ _ -> pickTrivially,
---                 policyPickInboundPeers        = \_ _ _ -> pickTrivially,
---                 policyFindPublicRootTimeout   = 5,
---                 policyMaxInProgressPeerShareReqs = 0,
---                 policyPeerShareRetryTime         = 0, -- seconds
---                 policyPeerShareBatchWaitTime     = 0, -- seconds
---                 policyPeerShareOverallTimeout    = 0, -- seconds
---                 policyPeerShareActivationDelay   = 2, -- seconds
---                 policyErrorDelay              = 0  -- seconds
---               }
---     pickTrivially :: Applicative m => Set SockAddr -> Int -> m (Set SockAddr)
---     pickTrivially m n = pure . Set.take n $ m
+    policy :: PeerSelectionPolicy SockAddr IO
+    policy  = PeerSelectionPolicy {
+                policyPickKnownPeersForPeerShare = \_ _ _ -> pickTrivially,
+                policyPickColdPeersToForget   = \_ _ _ -> pickTrivially,
+                policyPickColdPeersToPromote  = \_ _ _ -> pickTrivially,
+                policyPickWarmPeersToPromote  = \_ _ _ -> pickTrivially,
+                policyPickHotPeersToDemote    = \_ _ _ -> pickTrivially,
+                policyPickWarmPeersToDemote   = \_ _ _ -> pickTrivially,
+                policyPickInboundPeers        = \_ _ _ -> pickTrivially,
+                policyFindPublicRootTimeout   = 5,
+                policyMaxInProgressPeerShareReqs = 0,
+                policyPeerShareRetryTime         = 0, -- seconds
+                policyPeerShareBatchWaitTime     = 0, -- seconds
+                policyPeerShareOverallTimeout    = 0, -- seconds
+                policyPeerShareActivationDelay   = 2, -- seconds
+                policyErrorDelay              = 0  -- seconds
+              }
+    pickTrivially :: Applicative m => Set SockAddr -> Int -> m (Set SockAddr)
+    pickTrivially m n = pure . Set.take n $ m
 
---     transformPeerSelectionAction = fmap (fmap (\(a, b) -> (PublicRootPeers.fromMapAndSet a Set.empty Set.empty Set.empty, b)))
+    transformPeerSelectionAction = fmap (fmap (\(a, b) -> (PublicRootPeers.fromMapAndSet a Set.empty Set.empty Set.empty, b)))
 
 prop_issue_3550 :: Property
 prop_issue_3550 = prop_governor_target_established_below defaultMaxTime $
