@@ -4,6 +4,8 @@
 {-# LANGUAGE LambdaCase       #-}
 {-# LANGUAGE NamedFieldPuns   #-}
 {-# LANGUAGE RecordWildCards  #-}
+{-# LANGUAGE TypeFamilies     #-}
+{-# LANGUAGE TypeOperators    #-}
 
 #if __GLASGOW_HASKELL__ >= 908
 {-# OPTIONS_GHC -Wno-x-partial #-}
@@ -27,6 +29,7 @@ module Ouroboros.Network.BlockFetch.ClientState
   , completeFetchBatch
   , rejectedFetchBatch
   , TraceFetchClientState (..)
+  , mapTraceFetchClientState
   , TraceLabelPeer (..)
   , ChainRange (..)
     -- * Ancillary
@@ -52,7 +55,8 @@ import Network.Mux.Trace (TraceLabelPeer (..))
 
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import Ouroboros.Network.AnchoredFragment qualified as AF
-import Ouroboros.Network.Block (HasHeader, MaxSlotNo (..), Point, blockPoint)
+import Ouroboros.Network.Block (HasHeader, HeaderHash, MaxSlotNo (..), Point,
+           blockPoint, castPoint)
 import Ouroboros.Network.BlockFetch.ConsensusInterface (FromConsensus (..))
 import Ouroboros.Network.BlockFetch.DeltaQ (PeerFetchInFlightLimits (..),
            PeerGSV, SizeInBytes, calculatePeerFetchInFlightLimits)
@@ -430,6 +434,41 @@ data TraceFetchClientState header =
         --
       | ClientTerminating Int
   deriving Show
+
+mapTraceFetchClientState :: (HeaderHash h1 ~ HeaderHash h2, HasHeader h2)
+                         => (h1 -> h2)
+                         -> TraceFetchClientState h1
+                         -> TraceFetchClientState h2
+mapTraceFetchClientState fheader = \case
+    AddedFetchRequest request inflight inflightLimits status -> AddedFetchRequest (frequest request) (finflight inflight) inflightLimits (fstatus status)
+
+    AcknowledgedFetchRequest request -> AcknowledgedFetchRequest (frequest request)
+
+    SendFetchRequest headers gsv -> SendFetchRequest (AF.mapAnchoredFragment fheader headers) gsv
+
+    StartedFetchBatch   range inflight inflightLimits status           -> StartedFetchBatch   (frange range) (finflight inflight) inflightLimits (fstatus status)
+    CompletedBlockFetch point inflight inflightLimits status time size -> CompletedBlockFetch (fpoint point) (finflight inflight) inflightLimits (fstatus status) time size
+    CompletedFetchBatch range inflight inflightLimits status           -> CompletedFetchBatch (frange range) (finflight inflight) inflightLimits (fstatus status)
+    RejectedFetchBatch  range inflight inflightLimits status           -> RejectedFetchBatch  (frange range) (finflight inflight) inflightLimits (fstatus status)
+
+    ClientTerminating i -> ClientTerminating i
+  where
+    frequest (FetchRequest headers) = FetchRequest $ map (AF.mapAnchoredFragment fheader) headers
+
+    finflight inflight = inflight { peerFetchBlocksInFlight = fpoints (peerFetchBlocksInFlight inflight) }
+
+    fstatus = \case
+      PeerFetchStatusShutdown          -> PeerFetchStatusShutdown
+      PeerFetchStatusStarting          -> PeerFetchStatusStarting
+      PeerFetchStatusAberrant          -> PeerFetchStatusAberrant
+      PeerFetchStatusBusy              -> PeerFetchStatusBusy
+      PeerFetchStatusReady points idle -> PeerFetchStatusReady (fpoints points) idle
+
+    fpoints = Set.mapMonotonic fpoint
+
+    frange (ChainRange p1 p2) = ChainRange (fpoint p1) (fpoint p2)
+
+    fpoint = castPoint
 
 
 -- | Add a new fetch request for a single peer. This is used by the fetch
