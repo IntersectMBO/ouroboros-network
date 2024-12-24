@@ -10,6 +10,7 @@
 module Test.Ouroboros.Network.PeerSelection.Instances
   ( -- test types
     PeerAddr (..)
+  , TestSeed (..)
     -- generators
   , genDomainName
   , genIPv4
@@ -49,6 +50,15 @@ import Test.QuickCheck
 --
 -- QuickCheck instances
 --
+
+-- | Seed for domain lookups
+--
+newtype TestSeed = TestSeed { unTestSeed :: Int }
+  deriving (Eq, Show)
+
+instance Arbitrary TestSeed where
+  arbitrary = TestSeed <$> chooseInt(minBound, maxBound)
+  shrink seed = [seed]
 
 -- | Simple address representation for the tests
 --
