@@ -28,31 +28,28 @@ module Test.Ouroboros.Network.PeerSelection.RootPeersDNS
   , DelayAndTimeoutScripts (..)
   ) where
 
-import Data.IP qualified as IP
-import Debug.Trace qualified as D
-import System.Random
 import Data.Functor ((<&>))
-import Data.Bifunctor (bimap, first)
-import Data.Text.Encoding (encodeUtf8)
+import Data.Bifunctor (bimap)
+-- import Data.Text.Encoding (encodeUtf8)
 import Control.Applicative (Alternative)
 import Control.Monad (forever, replicateM_)
 import Data.ByteString.Char8 (pack)
 import Data.Dynamic (Typeable, fromDynamic)
-import Data.Either (fromRight, fromLeft, rights)
+import Data.Either (fromLeft, rights)
 import Data.Foldable as Foldable (foldl')
 import Data.Function (fix)
 import Data.Functor (void)
-import Data.IP (fromHostAddress, toIPv4w, toSockAddr)
+import Data.IP (fromHostAddress, toSockAddr)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (catMaybes, mapMaybe)
+import Data.Maybe (mapMaybe)
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Time.Clock (picosecondsToDiffTime)
 import Data.Void (Void)
 import Data.Word (Word16)
-import Network.DNS (DNSError (NameError, TimeoutExpired), answer, DNSMessage, ResourceRecord (..), defaultResponse, TTL)
+import Network.DNS (DNSError (NameError), answer, DNSMessage, ResourceRecord (..), defaultResponse, TTL)
 import Network.DNS qualified as DNS
 import Network.DNS.Resolver qualified as DNSResolver
 import Network.Socket (SockAddr (..))
@@ -84,10 +81,12 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
            WarmValency (..))
 import Ouroboros.Network.Testing.Data.Script (Script (Script), initScript',
            scriptHead, singletonScript, stepScript')
-import Test.Ouroboros.Network.PeerSelection.Instances (genPort, genIPv4)
+import Test.Ouroboros.Network.PeerSelection.Instances
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
+
+import System.Random
 
 tests :: TestTree
 tests =
@@ -386,11 +385,11 @@ mockDNSActions :: forall exception m.
                -> StrictTVar m (Script DNSTimeout)
                -> StrictTVar m (Script DNSLookupDelay)
                -> DNSActions () exception m
-mockDNSActions ofType dnsMapVar dnsTimeoutScript dnsLookupDelayScript =
+mockDNSActions ofType0 dnsMapVar dnsTimeoutScript dnsLookupDelayScript =
     DNSActions {
       dnsResolverResource,
       dnsAsyncResolverResource,
-      dnsLookupWithTTL = dispatchLookupWithTTL ofType mockLookup
+      dnsLookupWithTTL = dispatchLookupWithTTL ofType0 mockLookup
     }
  where
    dnsResolverResource      _ = return (Right <$> constantResource ())
@@ -419,8 +418,8 @@ mockDNSActions ofType dnsMapVar dnsTimeoutScript dnsLookupDelayScript =
              answer = [ResourceRecord domain DNS.NULL 0 ttl rdata
                       | (ip, ttl) <- ipsttls
                       , let rdata = case ip of
-                              IPv4 ip -> DNS.RD_A ip
-                              IPv6 ip -> DNS.RD_AAAA ip]}
+                              IPv4 ip' -> DNS.RD_A ip'
+                              IPv6 ip' -> DNS.RD_AAAA ip']}
          Right ds ->
            defaultResponse {
              answer = [ResourceRecord domain DNS.NULL 0 0 rdata
@@ -770,7 +769,7 @@ prop_local_resolvesDomainsCorrectly mockRoots@(MockRoots localRoots lDNSMap _ _)
           [ rad
           | (_, _, m) <- localRoots
           , Just rad <- flip map (Map.keys m) \case
-              RelayAccessDomain d p -> Just (d, DNS.A)
+              RelayAccessDomain d _p -> Just (d, DNS.A)
               RelayAccessSRVDomain d -> Just (d, DNS.SRV)
               _otherwise -> Nothing
           ]
@@ -886,7 +885,7 @@ prop_local_updatesDomainsCorrectly mockRoots@(MockRoots lrp _ _ _)
                                              case sockAddr of
                                                SockAddrInet _ hostAddr
                                                  -> IPv4 $ fromHostAddress hostAddr
-                                               _ -> error "Impossible happened!"
+                                               _ -> error $ show sockAddr --error "Impossible happened!"
 
                                          ) $ Map.keys
                                            $ thrd
@@ -897,8 +896,8 @@ prop_local_updatesDomainsCorrectly mockRoots@(MockRoots lrp _ _ _)
                             arePresent = all ((`elem` ipsAtIndex) . fst) res
                          in (arePresent && b, (t', y))
 
-                      (TraceLocalRootResult _ _, _) -> (b, (t, x))
-                      (_, _)                        -> (b, (t', y))
+                      (trace, _) | isResultTag trace -> (b, (t, x))
+                      (_, _)                         -> (b, (t', y))
                    )
               (True, head tr)
               (tail tr)

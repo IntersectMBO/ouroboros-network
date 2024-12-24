@@ -197,10 +197,10 @@ localRootPeersProvider tracer
                   mapM_ (traceWith tracer . TraceLocalRootFailure domain0 . Just . DNSError)
                         errs
               return $ Left []
-            Just (ddd, port, ipsttls) ->
-              let d = DomainPlain ddd port
-               in completion d ipsttls errs $
-                    TraceLocalRootResultVia dSRV d ipsttls
+            Just (dFollow, port, ipsttls) ->
+              let dFollow' = DomainPlain dFollow port
+               in completion dFollow' ipsttls errs $
+                    TraceLocalRootResultVia dSRV dFollow' ipsttls
       where
         completion dom@(DomainPlain d port) ipsttls errs successTrace = do
           mapM_ (traceWith tracer . TraceLocalRootFailure (DomainAccessPoint dom) . Just . DNSError)

@@ -82,16 +82,16 @@ publicRootPeersProvider tracer
   where
     processResult :: (DNSLookupResult IP, PeerAdvertise)
                   -> m ((Maybe PortNumber, PeerAdvertise), [(IP, TTL)])
-    processResult (DNSLookup (domain@(DomainPlain domain' port), errs, ipsttls)
+    processResult (DNSLookup (dPlain@(DomainPlain domain port), errs, ipsttls)
                   , pa) = do
         mapM_ (traceWith tracer . TracePublicRootFailure dap . Just)
               errs
         when (not . null $ ipsttls) $
-            traceWith tracer $ TracePublicRootResult domain' ipsttls
+            traceWith tracer $ TracePublicRootResult domain ipsttls
 
         return ((Just port, pa), ipsttls)
         where
-          dap = DomainAccessPoint domain
+          dap = DomainAccessPoint dPlain
 
     processResult ( DNSLookupSRV (srvDomain, errs, mResult)
                   , pa) = do
@@ -103,9 +103,9 @@ publicRootPeersProvider tracer
             when (null errs) $
               traceWith tracer $ TracePublicRootFailure (DomainSRVAccessPoint srvDomain) Nothing
             return ((Nothing, pa), [])
-          Just (domainFollow, port, ipsttls) -> do
+          Just (dFollow, port, ipsttls) -> do
             when (not . null $ ipsttls) $
-              traceWith tracer $ TracePublicRootResultVia srvDomain domainFollow ipsttls
+              traceWith tracer $ TracePublicRootResultVia srvDomain dFollow ipsttls
             return ((Just port, pa), ipsttls)
 
     requestPublicRootPeers

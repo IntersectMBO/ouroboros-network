@@ -126,7 +126,6 @@ import Test.Ouroboros.Network.Testnet.Node.Kernel (BlockGeneratorArgs, NtCAddr,
            NtNVersionData, ntnAddrToRelayAccessPoint, randomBlockGenerationArgs)
 
 import Data.Bool (bool)
-import Data.Function (on)
 import Data.Typeable (Typeable)
 import Ouroboros.Network.BlockFetch (FetchMode (..), TraceFetchClientState,
            TraceLabelPeer (..))
@@ -370,7 +369,7 @@ genNodeArgs :: [TestnetRelayInfo]
             -> [(HotValency, WarmValency, Map RelayAccessPoint (PeerAdvertise, PeerTrustable))]
             -> TestnetRelayInfo
             -> Gen NodeArgs
-genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream $ do
+genNodeArgs relays minConnected localRootPeers self = flip suchThat hasUpstream $ do
   -- Slot length needs to be greater than 0 else we get a livelock on
   -- the IOSim.
   --
@@ -423,10 +422,10 @@ genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream
   let (ledgerPeersRelays, publicRootsRelays) =
         splitAt (length relays `div` 2) relays
       publicRoots =
-        Map.fromList [ (relay, advertise)
-                     | relay' <- publicRootsRelays
-                     , relay' /= relay
-                     , let (relay, _, _, (advertise, _)) = relay'
+        Map.fromList [ (other, advertise)
+                     | pubRelay <- publicRootsRelays
+                     , pubRelay /= self
+                     , let (other, _, _, (advertise, _)) = pubRelay
                      ]
   ledgerPeers <- fmap (map \(relay, _, _, _) -> relay) <$> listOf (sublistOf ledgerPeersRelays)
   ledgerPeerPools <- traverse genLedgerPoolsFrom ledgerPeers
@@ -451,7 +450,7 @@ genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream
         -- `UseLedgerPeers 0`!
       , naConsensusMode
       , naBootstrapPeers         = bootstrapPeersDomain
-      , naAddr                   = TestAddress ((\(_, ip, port, _) -> IPAddr ip port) relay)
+      , naAddr                   = TestAddress ((\(_, ip, port, _) -> IPAddr ip port) self)
       , naLocalRootPeers         = localRootPeers
       , naLedgerPeers            = ledgerPeerPoolsScript
       , naPeerTargets            = peerTargets
@@ -555,7 +554,7 @@ genDomainMapScript relays = do
 
     stepSRV m (k, d, ip, port) = do
       i <- choose (1, 5)
-      subordinates <- zipWith addTag [0 ..] <$> vectorOf i PeerSelection.genDomainName
+      subordinates <- zipWith addTag [0 :: Int ..] <$> vectorOf i PeerSelection.genDomainName
       (_, subs) <- head <$> PeerSelection.genGroupSrvs [(d, subordinates)]
       let fixupPort = map relayPort subs
           lookupSequence =

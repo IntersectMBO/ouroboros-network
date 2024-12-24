@@ -22,9 +22,8 @@ module Test.Ouroboros.Network.PeerSelection.Instances
 
 import Data.ByteString.Char8 qualified as BSC
 import Data.ByteString
-import Network.DNS qualified as DNS
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
-import Data.Text.Encoding (encodeUtf8)
+-- import Data.Text.Encoding (encodeUtf8)
 import Data.Word (Word16, Word32, Word64)
 
 import Cardano.Slotting.Slot (SlotNo (..))
@@ -33,7 +32,6 @@ import Ouroboros.Network.PeerSelection.Governor
 
 import Data.Hashable
 import Data.IP qualified as IP
-import Network.Socket
 import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (AfterSlot (..),
@@ -41,8 +39,8 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type (AfterSlot (..),
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
-import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint (..),
-           RelayAccessPoint (..))
+-- import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint (..),
+--            RelayAccessPoint (..))
 import Ouroboros.Network.Testing.Utils (ShrinkCarefully, prop_shrink_nonequal,
            prop_shrink_valid)
 import Test.QuickCheck

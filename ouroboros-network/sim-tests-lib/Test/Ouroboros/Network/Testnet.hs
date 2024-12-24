@@ -178,8 +178,8 @@ tests =
                    (testWithIOSim prop_diffusion_nolivelock 125000)
     , testProperty "dns can recover from fails"
                    (testWithIOSim prop_diffusion_dns_can_recover 125000)
-    -- , testProperty "unit #4191"
-    --                unit_4191
+    , testProperty "unit #4191"
+                   unit_4191
     , testProperty "target established public"
                    (testWithIOSim prop_diffusion_target_established_public 125000)
     , testProperty "target active public"
@@ -1459,106 +1459,106 @@ prop_diffusion_dns_can_recover ioSimTrace traceNumber =
 
 -- | Unit test which covers issue #4191
 --
--- unit_4191 :: Property
--- unit_4191 = testWithIOSim prop_diffusion_dns_can_recover 125000 absInfo script
---   where
---     ioerr =
---       IOError
---         { ioe_handle      = Nothing,
---           ioe_type        = ResourceVanished,
---           ioe_location    = "AttenuationChannel",
---           ioe_description = "attenuation",
---           ioe_errno       = Nothing,
---           ioe_filename    = Nothing
---         }
---     absInfo =
---       AbsBearerInfo
---         { abiConnectionDelay = SmallDelay,
---           abiInboundAttenuation = NoAttenuation NormalSpeed,
---           abiOutboundAttenuation = ErrorInterval NormalSpeed (Time 17.666666666666) 888 ioerr,
---           abiInboundWriteFailure = Nothing,
---           abiOutboundWriteFailure = Just 2,
---           abiAcceptFailure = Nothing, abiSDUSize = LargeSDU
---         }
---     script =
---       DiffusionScript
---         (SimArgs 1 20)
---         (singletonTimedScript $
---            Map.fromList
---              [ ("test2", [ (read "810b:4c8a:b3b5:741:8c0c:b437:64cf:1bd9", 300)
---                          , (read "254.167.216.215", 300)
---                          , (read "27.173.29.254", 300)
---                          , (read "61.238.34.238", 300)
---                          , (read "acda:b62d:6d7d:50f7:27b6:7e34:2dc6:ee3d", 300)
---                          ])
---              , ("test3", [ (read "903e:61bc:8b2f:d98f:b16e:5471:c83d:4430", 300)
---                          , (read "19.40.90.161", 300)
---                          ])
---              ])
---         [(NodeArgs
---             16
---             InitiatorAndResponderDiffusionMode
---             (Just 224)
---             Map.empty
---             PraosMode
---             (Script (UseBootstrapPeers [RelayAccessDomain "bootstrap" 00000] :| []))
---             (TestAddress (IPAddr (read "0.0.1.236") 65527))
---             PeerSharingDisabled
---             [ (2,2,Map.fromList [ (RelayAccessDomain "test2" 15,(DoNotAdvertisePeer, IsNotTrustable))
---                                 , (RelayAccessDomain "test3" 4,(DoAdvertisePeer, IsNotTrustable))])
---             ]
---             (Script (LedgerPools [] :| []))
---             ConsensusModePeerTargets {
---               deadlineTargets = PeerSelectionTargets
---                 { targetNumberOfRootPeers = 6,
---                   targetNumberOfKnownPeers = 7,
---                   targetNumberOfEstablishedPeers = 7,
---                   targetNumberOfActivePeers = 6,
+unit_4191 :: Property
+unit_4191 = testWithIOSim prop_diffusion_dns_can_recover 125000 absInfo script
+  where
+    ioerr =
+      IOError
+        { ioe_handle      = Nothing,
+          ioe_type        = ResourceVanished,
+          ioe_location    = "AttenuationChannel",
+          ioe_description = "attenuation",
+          ioe_errno       = Nothing,
+          ioe_filename    = Nothing
+        }
+    absInfo =
+      AbsBearerInfo
+        { abiConnectionDelay = SmallDelay,
+          abiInboundAttenuation = NoAttenuation NormalSpeed,
+          abiOutboundAttenuation = ErrorInterval NormalSpeed (Time 17.666666666666) 888 ioerr,
+          abiInboundWriteFailure = Nothing,
+          abiOutboundWriteFailure = Just 2,
+          abiAcceptFailure = Nothing, abiSDUSize = LargeSDU
+        }
+    script =
+      DiffusionScript
+        (SimArgs 1 20)
+        (singletonTimedScript $
+           Map.fromList
+             [ (("test2", DNS.A), Left [ (read "810b:4c8a:b3b5:741:8c0c:b437:64cf:1bd9", 300)
+                                       , (read "254.167.216.215", 300)
+                                       , (read "27.173.29.254", 300)
+                                       , (read "61.238.34.238", 300)
+                                       , (read "acda:b62d:6d7d:50f7:27b6:7e34:2dc6:ee3d", 300)
+                                       ])
+             , (("test3", DNS.A), Left [ (read "903e:61bc:8b2f:d98f:b16e:5471:c83d:4430", 300)
+                                       , (read "19.40.90.161", 300)
+                                       ])
+             ])
+        [(NodeArgs
+            16
+            InitiatorAndResponderDiffusionMode
+            (Just 224)
+            Map.empty
+            PraosMode
+            (Script (UseBootstrapPeers [RelayAccessDomain "bootstrap" 00000] :| []))
+            (TestAddress (IPAddr (read "0.0.1.236") 65527))
+            PeerSharingDisabled
+            [ (2,2,Map.fromList [ (RelayAccessDomain "test2" 15,(DoNotAdvertisePeer, IsNotTrustable))
+                                , (RelayAccessDomain "test3" 4,(DoAdvertisePeer, IsNotTrustable))])
+            ]
+            (Script (LedgerPools [] :| []))
+            ConsensusModePeerTargets {
+              deadlineTargets = PeerSelectionTargets
+                { targetNumberOfRootPeers = 6,
+                  targetNumberOfKnownPeers = 7,
+                  targetNumberOfEstablishedPeers = 7,
+                  targetNumberOfActivePeers = 6,
 
---                   targetNumberOfKnownBigLedgerPeers = 0,
---                   targetNumberOfEstablishedBigLedgerPeers = 0,
---                   targetNumberOfActiveBigLedgerPeers = 0
---                 },
---               syncTargets = nullPeerSelectionTargets }
---             (Script (DNSTimeout {getDNSTimeout = 0.406} :| [ DNSTimeout {getDNSTimeout = 0.11}
---                                                            , DNSTimeout {getDNSTimeout = 0.333}
---                                                            , DNSTimeout {getDNSTimeout = 0.352}
---                                                            , DNSTimeout {getDNSTimeout = 0.123}
---                                                            , DNSTimeout {getDNSTimeout = 0.12}
---                                                            , DNSTimeout {getDNSTimeout = 0.23}
---                                                            , DNSTimeout {getDNSTimeout = 0.311}
---                                                            , DNSTimeout {getDNSTimeout = 0.37}
---                                                            , DNSTimeout {getDNSTimeout = 0.153}
---                                                            , DNSTimeout {getDNSTimeout = 0.328}
---                                                            , DNSTimeout {getDNSTimeout = 0.239}
---                                                            , DNSTimeout {getDNSTimeout = 0.261}
---                                                            , DNSTimeout {getDNSTimeout = 0.15}
---                                                            , DNSTimeout {getDNSTimeout = 0.26}
---                                                            , DNSTimeout {getDNSTimeout = 0.37}
---                                                            , DNSTimeout {getDNSTimeout = 0.28}
---                                                            ]))
---             (Script (DNSLookupDelay {getDNSLookupDelay = 0.124} :| [ DNSLookupDelay {getDNSLookupDelay = 0.11}
---                                                                    , DNSLookupDelay {getDNSLookupDelay = 0.129}
---                                                                    , DNSLookupDelay {getDNSLookupDelay = 0.066}
---                                                                    , DNSLookupDelay {getDNSLookupDelay = 0.125}
---                                                                    , DNSLookupDelay {getDNSLookupDelay = 0.046}
---                                                                    , DNSLookupDelay {getDNSLookupDelay = 0.135}
---                                                                    , DNSLookupDelay {getDNSLookupDelay = 0.05}
---                                                                    , DNSLookupDelay {getDNSLookupDelay = 0.039}
---                                                                    ]))
---             Nothing
---             False
---             (Script (FetchModeDeadline :| []))
---             , [ JoinNetwork 6.710144927536
---               , Kill 7.454545454545
---               , JoinNetwork 10.763157894736
---               , Reconfigure 0.415384615384 [(1,1,Map.empty)
---               , (1,1,Map.empty)]
---               , Reconfigure 15.550561797752 [(1,1,Map.empty)
---               , (1,1,Map.fromList [(RelayAccessDomain "test2" 15,(DoAdvertisePeer, IsNotTrustable))])]
---               , Reconfigure 82.85714285714 []
---               ])
---         ]
+                  targetNumberOfKnownBigLedgerPeers = 0,
+                  targetNumberOfEstablishedBigLedgerPeers = 0,
+                  targetNumberOfActiveBigLedgerPeers = 0
+                },
+              syncTargets = nullPeerSelectionTargets }
+            (Script (DNSTimeout {getDNSTimeout = 0.406} :| [ DNSTimeout {getDNSTimeout = 0.11}
+                                                           , DNSTimeout {getDNSTimeout = 0.333}
+                                                           , DNSTimeout {getDNSTimeout = 0.352}
+                                                           , DNSTimeout {getDNSTimeout = 0.123}
+                                                           , DNSTimeout {getDNSTimeout = 0.12}
+                                                           , DNSTimeout {getDNSTimeout = 0.23}
+                                                           , DNSTimeout {getDNSTimeout = 0.311}
+                                                           , DNSTimeout {getDNSTimeout = 0.37}
+                                                           , DNSTimeout {getDNSTimeout = 0.153}
+                                                           , DNSTimeout {getDNSTimeout = 0.328}
+                                                           , DNSTimeout {getDNSTimeout = 0.239}
+                                                           , DNSTimeout {getDNSTimeout = 0.261}
+                                                           , DNSTimeout {getDNSTimeout = 0.15}
+                                                           , DNSTimeout {getDNSTimeout = 0.26}
+                                                           , DNSTimeout {getDNSTimeout = 0.37}
+                                                           , DNSTimeout {getDNSTimeout = 0.28}
+                                                           ]))
+            (Script (DNSLookupDelay {getDNSLookupDelay = 0.124} :| [ DNSLookupDelay {getDNSLookupDelay = 0.11}
+                                                                   , DNSLookupDelay {getDNSLookupDelay = 0.129}
+                                                                   , DNSLookupDelay {getDNSLookupDelay = 0.066}
+                                                                   , DNSLookupDelay {getDNSLookupDelay = 0.125}
+                                                                   , DNSLookupDelay {getDNSLookupDelay = 0.046}
+                                                                   , DNSLookupDelay {getDNSLookupDelay = 0.135}
+                                                                   , DNSLookupDelay {getDNSLookupDelay = 0.05}
+                                                                   , DNSLookupDelay {getDNSLookupDelay = 0.039}
+                                                                   ]))
+            Nothing
+            False
+            (Script (FetchModeDeadline :| []))
+            , [ JoinNetwork 6.710144927536
+              , Kill 7.454545454545
+              , JoinNetwork 10.763157894736
+              , Reconfigure 0.415384615384 [(1,1,Map.empty)
+              , (1,1,Map.empty)]
+              , Reconfigure 15.550561797752 [(1,1,Map.empty)
+              , (1,1,Map.fromList [(RelayAccessDomain "test2" 15,(DoAdvertisePeer, IsNotTrustable))])]
+              , Reconfigure 82.85714285714 []
+              ])
+        ]
 
 
 -- | Verify that some connect failures are fatal.
