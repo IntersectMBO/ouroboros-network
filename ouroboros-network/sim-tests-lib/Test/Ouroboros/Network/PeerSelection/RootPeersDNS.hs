@@ -445,9 +445,10 @@ mockLocalRootPeersProvider :: forall m.
                            -> MockRoots
                            -> Script DNSTimeout
                            -> Script DNSLookupDelay
+                           -> TestSeed
                            -> m ()
 mockLocalRootPeersProvider tracer (MockRoots localRootPeers dnsMapScript _ _)
-                           dnsTimeoutScript dnsLookupDelayScript = do
+                           dnsTimeoutScript dnsLookupDelayScript dnsSeed = do
       dnsMapScriptVar <- initScript' dnsMapScript
       dnsMap <- stepScript' dnsMapScriptVar
       dnsMapVar <- newTVarIO dnsMap
@@ -468,7 +469,7 @@ mockLocalRootPeersProvider tracer (MockRoots localRootPeers dnsMapScript _ _)
                                                  dnsMapVar
                                                  dnsTimeoutScriptVar
                                                  dnsLookupDelayScriptVar)
-                                 (mkStdGen 42)
+                                 (mkStdGen $ unTestSeed dnsSeed)
                                  (readTVar localRootPeersVar)
                                  resultVar
         -- if there's no dns domain, `localRootPeersProvider` will never write
@@ -504,10 +505,11 @@ mockPublicRootPeersProvider :: forall m a.
                             -> MockRoots
                             -> Script DNSTimeout
                             -> Script DNSLookupDelay
+                            -> TestSeed
                             -> ((Int -> m (Map SockAddr PeerAdvertise, DiffTime)) -> m a)
                             -> m ()
 mockPublicRootPeersProvider tracer (MockRoots _ _ publicRootPeers dnsMapScript)
-                            dnsTimeoutScript dnsLookupDelayScript action = do
+                            dnsTimeoutScript dnsLookupDelayScript dnsSeed action = do
       dnsMapScriptVar <- initScript' dnsMapScript
       dnsMap <- stepScript' dnsMapScriptVar
       dnsMapVar <- newTVarIO dnsMap
@@ -530,7 +532,7 @@ mockPublicRootPeersProvider tracer (MockRoots _ _ publicRootPeers dnsMapScript)
                                                 dnsMapVar
                                                 dnsTimeoutScriptVar
                                                 dnsLookupDelayScriptVar)
-                                (mkStdGen 42)
+                                (mkStdGen $ unTestSeed dnsSeed)
                                 action
 
 -- | 'resolveDomainAddresses' running with a given MockRoots env
@@ -544,9 +546,10 @@ mockResolveLedgerPeers :: ( MonadAsync m
                        -> MockRoots
                        -> Script DNSTimeout
                        -> Script DNSLookupDelay
+                       -> TestSeed
                        -> m (Map DomainAccessPoint (Set SockAddr))
 mockResolveLedgerPeers tracer (MockRoots _ _ publicRootPeers dnsMapScript)
-                       dnsTimeoutScript dnsLookupDelayScript = do
+                       dnsTimeoutScript dnsLookupDelayScript (TestSeed dnsSeed)= do
       dnsMapScriptVar <- initScript' dnsMapScript
       dnsMap <- stepScript' dnsMapScriptVar
       dnsMapVar <- newTVarIO dnsMap
@@ -566,7 +569,7 @@ mockResolveLedgerPeers tracer (MockRoots _ _ publicRootPeers dnsMapScript)
                          | (RelayDomainAccessPoint domain, _)
                               <- Map.assocs publicRootPeers ]
                          -- TODO should come from quickcheck
-                         (mkStdGen 42)
+                         (mkStdGen dnsSeed)
 
 --
 -- Utils for properties
@@ -658,10 +661,12 @@ selectPublicRootResultEvents trace = [ (t, result)
 prop_local_preservesIPs :: MockRoots
                         -> Script DNSTimeout
                         -> Script DNSLookupDelay
+                        -> TestSeed
                         -> Property
 prop_local_preservesIPs mockRoots@(MockRoots localRoots _ _ _)
                         dnsTimeoutScript
-                        dnsLookupDelayScript =
+                        dnsLookupDelayScript
+                        dnsSeed =
     let tr = selectLocalRootPeersResults
            $ selectRootPeerDNSTraceEvents
            $ runSimTrace
@@ -669,6 +674,7 @@ prop_local_preservesIPs mockRoots@(MockRoots localRoots _ _ _)
                                         mockRoots
                                         dnsTimeoutScript
                                         dnsLookupDelayScript
+                                        dnsSeed
 
      in counterexample (intercalate "\n" $ map show tr)
       $ classify (length tr > 0) "Actually testing something"
@@ -716,10 +722,12 @@ prop_local_preservesIPs mockRoots@(MockRoots localRoots _ _ _)
 prop_local_preservesGroupNumberAndTargets :: MockRoots
                                           -> Script DNSTimeout
                                           -> Script DNSLookupDelay
+                                          -> TestSeed
                                           -> Property
 prop_local_preservesGroupNumberAndTargets mockRoots@(MockRoots lrp _ _ _)
                                           dnsTimeoutScript
-                                          dnsLookupDelayScript =
+                                          dnsLookupDelayScript
+                                          dnsSeed =
     let tr = selectLocalRootPeersResults
            $ selectRootPeerDNSTraceEvents
            $ runSimTrace
@@ -727,6 +735,7 @@ prop_local_preservesGroupNumberAndTargets mockRoots@(MockRoots lrp _ _ _)
                                         mockRoots
                                         dnsTimeoutScript
                                         dnsLookupDelayScript
+                                        dnsSeed
 
         -- For all LocalRootGroup results, the number of groups should be
         -- preserved, i.e. no new groups are added nor deleted along the
@@ -750,10 +759,12 @@ prop_local_preservesGroupNumberAndTargets mockRoots@(MockRoots lrp _ _ _)
 prop_local_resolvesDomainsCorrectly :: MockRoots
                                     -> Script DNSTimeout
                                     -> Script DNSLookupDelay
+                                    -> TestSeed
                                     -> Property
 prop_local_resolvesDomainsCorrectly mockRoots@(MockRoots localRoots lDNSMap _ _)
                                     dnsTimeoutScript
-                                    dnsLookupDelayScript =
+                                    dnsLookupDelayScript
+                                    dnsSeed =
     let mockRoots' =
           mockRoots { mockLocalRootPeersDNSMap =
                         singletonScript (scriptHead lDNSMap)
@@ -765,6 +776,7 @@ prop_local_resolvesDomainsCorrectly mockRoots@(MockRoots localRoots lDNSMap _ _)
                                         mockRoots'
                                         dnsTimeoutScript
                                         dnsLookupDelayScript
+                                        dnsSeed
 
         -- local root domains
         localRootDomains :: Set (DNS.Domain, DNS.TYPE)
@@ -836,10 +848,12 @@ prop_local_resolvesDomainsCorrectly mockRoots@(MockRoots localRoots lDNSMap _ _)
 prop_local_updatesDomainsCorrectly :: MockRoots
                                    -> Script DNSTimeout
                                    -> Script DNSLookupDelay
+                                   -> TestSeed
                                    -> Property
 prop_local_updatesDomainsCorrectly mockRoots@(MockRoots lrp _ _ _)
                                    dnsTimeoutScript
-                                   dnsLookupDelayScript =
+                                   dnsLookupDelayScript
+                                   dnsSeed =
     let tr = selectLocalRootPeersEvents
            $ selectRootPeerDNSTraceEvents
            $ runSimTrace
@@ -847,6 +861,7 @@ prop_local_updatesDomainsCorrectly mockRoots@(MockRoots lrp _ _ _)
                                         mockRoots
                                         dnsTimeoutScript
                                         dnsLookupDelayScript
+                                        dnsSeed
 
         r = Foldable.foldl' (\(b, (t, x)) (t', y) ->
                     case (x, y) of
@@ -967,11 +982,13 @@ instance Arbitrary DelayAndTimeoutScripts where
 prop_public_resolvesDomainsCorrectly :: MockRoots
                                      -> DelayAndTimeoutScripts
                                      -> Int
+                                     -> TestSeed
                                      -> Property
 prop_public_resolvesDomainsCorrectly
     mockRoots@(MockRoots _ _ _ pDNSMap)
     (DelayAndTimeoutScripts dnsLookupDelayScript dnsTimeoutScript)
     n
+    dnsSeed
   =
     let pDNSMap' = scriptHead pDNSMap
         mockPublicRootPeersDNSMap = singletonScript pDNSMap'
@@ -982,6 +999,7 @@ prop_public_resolvesDomainsCorrectly
                                          mockRoots'
                                          dnsTimeoutScript
                                          dnsLookupDelayScript
+                                         dnsSeed
                                          ($ n)
 
         successes = selectPublicRootResultEvents
