@@ -36,6 +36,7 @@ module Ouroboros.Network.PeerSelection.Governor
   , CapturePublicStateVar
   , newCapturePublicStateVar
   , PublicPeerSelectionState (..)
+  , toOutboundState
   , requestPublicState
     -- * Peer churn governor
   , PeerChurnArgs (..)

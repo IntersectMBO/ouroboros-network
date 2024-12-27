@@ -22,6 +22,8 @@ module Ouroboros.Network.Diffusion
   , Arguments (..)
   , AcceptedConnectionsLimit (..)
   , Applications (..)
+  , NodeToNode.NodeToNodeApplication
+  , NodeToClient.NodeToClientApplication
   , run
   , Interfaces (..)
   , runM
@@ -29,6 +31,7 @@ module Ouroboros.Network.Diffusion
     -- * Re-exports
   , AbstractTransitionTrace
   , RemoteTransitionTrace
+  , Failure (..)
   ) where
 
 
@@ -51,7 +54,7 @@ import Data.IP qualified as IP
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Data.Maybe (catMaybes, maybeToList)
+import Data.Maybe (catMaybes)
 import Data.Proxy (Proxy (..))
 import Data.Typeable (Typeable)
 import Data.Void (Void)
@@ -80,6 +83,7 @@ import Ouroboros.Network.Protocol.Handshake.Version
 
 import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionId
+import Ouroboros.Network.ConnectionManager.ConnMap qualified as CM
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.InformationChannel
            (newInformationChannel)
@@ -120,6 +124,7 @@ import Ouroboros.Network.PeerSelection.RootPeersDNS
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSActions,
            DNSLookupType (..), ioDNSActions)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
+import Ouroboros.Network.PublicState qualified as Public
 
 import Ouroboros.Network.Diffusion.Policies qualified as Diffusion.Policies
 import Ouroboros.Network.Diffusion.Types
@@ -147,40 +152,38 @@ socketAddressType Socket.SockAddrInet6 {} = Just IPv6Address
 socketAddressType Socket.SockAddrUnix {}  = Nothing
 
 
-type NetworkState = ()
-
 --
 -- Node-To-Client type aliases
 --
 -- Node-To-Client diffusion is only used in 'ResponderMode'.
 --
 
-type NodeToClientHandle ntcAddr versionData m =
-    HandleWithMinimalCtx Mx.ResponderMode NetworkState ntcAddr versionData ByteString m Void ()
+type NodeToClientHandle ntcAddr ntnAddr versionData m =
+    HandleWithMinimalCtx Mx.ResponderMode (Public.NetworkState ntnAddr) ntcAddr versionData ByteString m Void ()
 
 type NodeToClientHandleError ntcVersion =
     HandleError Mx.ResponderMode ntcVersion
 
 type NodeToClientConnectionHandler
-      ntcFd ntcAddr ntcVersion ntcVersionData m =
+      ntcFd ntcAddr ntnAddr ntcVersion ntcVersionData m =
     ConnectionHandler
       Mx.ResponderMode
       (ConnectionHandlerTrace ntcVersion ntcVersionData)
       ntcFd
       ntcAddr
-      (NodeToClientHandle ntcAddr ntcVersionData m)
+      (NodeToClientHandle ntcAddr ntnAddr ntcVersionData m)
       (NodeToClientHandleError ntcVersion)
       ntcVersion
       ntcVersionData
       m
 
 type NodeToClientConnectionManagerArguments
-      ntcFd ntcAddr ntcVersion ntcVersionData m =
+      ntcFd ntcAddr ntnAddr ntcVersion ntcVersionData m =
     CM.Arguments
       (ConnectionHandlerTrace ntcVersion ntcVersionData)
       ntcFd
       ntcAddr
-      (NodeToClientHandle ntcAddr ntcVersionData m)
+      (NodeToClientHandle ntcAddr ntnAddr ntcVersionData m)
       (NodeToClientHandleError ntcVersion)
       ntcVersion
       ntcVersionData
@@ -193,10 +196,19 @@ type NodeToClientConnectionManagerArguments
 -- Node-To-Node diffusion runs in either 'InitiatorMode' or 'InitiatorResponderMode'.
 --
 
+-- We don't expose network state over node-t-node protocol.
+type UnitNetworkState = ()
+
 type NodeToNodeHandle
        (mode :: Mx.Mode)
        ntnAddr ntnVersionData m a b =
-    HandleWithExpandedCtx mode NetworkState ntnAddr ntnVersionData ByteString m a b
+    HandleWithExpandedCtx
+      mode
+      UnitNetworkState
+      ntnAddr
+      ntnVersionData
+      ByteString
+      m a b
 
 type NodeToNodeConnectionManager
        (mode :: Mx.Mode)
@@ -217,7 +229,7 @@ type NodeToNodePeerConnectionHandle (mode :: Mx.Mode) ntnAddr ntnVersionData m a
     PeerConnectionHandle
       mode
       (ResponderContext ntnAddr)
-      NetworkState
+      UnitNetworkState
       ntnAddr
       ntnVersionData
       ByteString
@@ -466,12 +478,14 @@ runM Interfaces
     -- Thread to which 'RethrowPolicy' will throw fatal exceptions.
     mainThreadId <- myThreadId
 
-    Async.runConcurrently
-      $ asum
-      $ Async.Concurrently <$>
-          ( mkRemoteThread mainThreadId
-          : maybeToList (mkLocalThread mainThreadId <$> daLocalAddress)
-          )
+    withRemoteThreads mainThreadId $ \threads readPublicNetworkState ->
+      Async.runConcurrently
+        $ asum
+        $ Async.Concurrently
+       <$> ( case mkLocalThread readPublicNetworkState mainThreadId <$> daLocalAddress of
+               Nothing -> [snd <$> Async.waitAny threads]
+               Just th -> [snd <$> Async.waitAny threads, th]
+           )
 
   where
     (ledgerPeersRng, rng1) = split diRng
@@ -552,8 +566,11 @@ runM Interfaces
 
     -- | mkLocalThread - create local connection manager
 
-    mkLocalThread :: ThreadId m -> Either ntcFd ntcAddr -> m Void
-    mkLocalThread mainThreadId localAddr =
+    mkLocalThread :: m (Public.NetworkState ntnAddr)
+                  -> ThreadId m
+                  -> Either ntcFd ntcAddr
+                  -> m Void
+    mkLocalThread readPublicNetworkState mainThreadId localAddr =
       withLocalSocket tracer diNtcGetFileDescriptor diNtcSnocket localAddr
       $ \localSocket -> do
         localInbInfoChannel <- newInformationChannel
@@ -561,7 +578,7 @@ runM Interfaces
         let localConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0
 
             localConnectionHandler :: NodeToClientConnectionHandler
-                                        ntcFd ntcAddr ntcVersion ntcVersionData m
+                                        ntcFd ntcAddr ntnAddr ntcVersion ntcVersionData m
             localConnectionHandler =
               makeConnectionHandler
                 dtLocalMuxTracer
@@ -577,7 +594,7 @@ runM Interfaces
 
             localConnectionManagerArguments
               :: NodeToClientConnectionManagerArguments
-                   ntcFd ntcAddr ntcVersion ntcVersionData m
+                   ntcFd ntcAddr ntnAddr ntcVersion ntcVersionData m
             localConnectionManagerArguments =
               CM.Arguments {
                   CM.tracer              = dtLocalConnectionManagerTracer,
@@ -624,15 +641,18 @@ runM Interfaces
                   Server.connectionManager     = localConnectionManager,
                   Server.connectionDataFlow    = ntcDataFlow,
                   Server.inboundInfoChannel    = localInbInfoChannel,
-                  Server.readNetworkState      = return ()
+                  Server.readNetworkState      = readPublicNetworkState
                 }
               (\thread _ -> Async.wait thread)
 
 
-    -- | mkRemoteThread - create remote connection manager
-
-    mkRemoteThread :: ThreadId m -> m Void
-    mkRemoteThread mainThreadId = do
+    -- | withRemoteThreads - create remote connection manager
+    -- TODO: the comment is unfinished
+    withRemoteThreads :: forall x.
+                         ThreadId m
+                      -> ([Async m Void] -> m (Public.NetworkState ntnAddr) -> m x)
+                      -> m x
+    withRemoteThreads mainThreadId k = do
       let
         exitPolicy :: ExitPolicy a
         exitPolicy = stdExitPolicy daReturnPolicy
@@ -739,9 +759,9 @@ runM Interfaces
             :: forall muxMode socket initiatorCtx responderCtx b c.
                SingMuxMode muxMode
             -> Versions ntnVersion ntnVersionData
-                 (OuroborosBundle muxMode initiatorCtx responderCtx NetworkState ByteString m b c)
+                 (OuroborosBundle muxMode initiatorCtx responderCtx UnitNetworkState ByteString m b c)
             -> MuxConnectionHandler
-                 muxMode socket initiatorCtx responderCtx NetworkState ntnAddr
+                 muxMode socket initiatorCtx responderCtx UnitNetworkState ntnAddr
                  ntnVersion ntnVersionData ByteString m b c
           makeConnectionHandler' muxMode versions =
             makeConnectionHandler
@@ -790,11 +810,11 @@ runM Interfaces
                HasInitiator muxMode ~ True
             => MuxConnectionManager
                  muxMode socket (ExpandedInitiatorContext ntnAddr m)
-                 responderCtx NetworkState ntnAddr ntnVersionData ntnVersion
+                 responderCtx UnitNetworkState ntnAddr ntnVersionData ntnVersion
                  ByteString m a b
             -> (Governor.PeerStateActions
                   ntnAddr
-                  (PeerConnectionHandle muxMode responderCtx NetworkState ntnAddr
+                  (PeerConnectionHandle muxMode responderCtx UnitNetworkState ntnAddr
                      ntnVersionData ByteString m a b)
                   m
                 -> m c)
@@ -819,12 +839,12 @@ runM Interfaces
       let withPeerSelectionActions'
             :: forall muxMode responderCtx bytes a1 b c.
                m (Map ntnAddr PeerSharing)
-            -> PeerSelectionActionsDiffusionMode ntnAddr (PeerConnectionHandle muxMode responderCtx NetworkState ntnAddr ntnVersionData bytes m a1 b) m
+            -> PeerSelectionActionsDiffusionMode ntnAddr (PeerConnectionHandle muxMode responderCtx UnitNetworkState ntnAddr ntnVersionData bytes m a1 b) m
             -> (   (Async m Void, Async m Void)
                 -> Governor.PeerSelectionActions
                      ntnAddr
                      (PeerConnectionHandle
-                        muxMode responderCtx NetworkState ntnAddr ntnVersionData bytes m a1 b)
+                        muxMode responderCtx UnitNetworkState ntnAddr ntnVersionData bytes m a1 b)
                       m
                 -> m c)
             -- ^ continuation, receives a handle to the local roots peer provider thread
@@ -934,9 +954,15 @@ runM Interfaces
                     peerSelectionActions) $ \governorThread ->
                     Async.withAsync
                       peerChurnGovernor' $ \churnGovernorThread ->
-                      -- wait for any thread to fail:
-                      snd <$> Async.waitAny
-                                [ledgerPeersThread, localRootPeersProvider, governorThread, churnGovernorThread]
+                      k [ ledgerPeersThread
+                        , localRootPeersProvider
+                        , governorThread
+                        , churnGovernorThread
+                        ]
+                        (publicNetworkStateSTM
+                          (readState connectionManager)
+                          daCapturePublicStateVar
+                          (pure InboundGovernor.emptyPublicState))
 
         -- InitiatorAndResponder mode, run peer selection and the server:
         InitiatorAndResponderDiffusionMode -> do
@@ -997,7 +1023,41 @@ runM Interfaces
                                 --
                                 Async.withAsync peerChurnGovernor' $ \churnGovernorThread ->
                                   -- wait for any thread to fail:
-                                  snd <$> Async.waitAny [ledgerPeersThread, localRootPeersProvider, governorThread, churnGovernorThread, inboundGovernorThread]
+                                  k [ ledgerPeersThread
+                                    , localRootPeersProvider
+                                    , governorThread
+                                    , churnGovernorThread
+                                    , inboundGovernorThread
+                                    ]
+                                    (publicNetworkStateSTM
+                                      (readState connectionManager)
+                                      daCapturePublicStateVar
+                                      readInboundGovState)
+
+
+publicNetworkStateSTM
+  :: ( MonadSTM m
+     , Ord addr
+     )
+  => STM m (CM.ConnMap addr AbstractState)
+  -> Governor.CapturePublicStateVar addr m
+  -> STM m (InboundGovernor.PublicState addr versionData)
+  -> m (Public.NetworkState addr)
+publicNetworkStateSTM readCMState capturePublicStateVar readInboundGovState = do
+  (connMap, inboundState)
+    <- atomically $ (,) <$> readCMState
+                        <*> readInboundGovState
+  outboundState
+    <- Governor.requestPublicState capturePublicStateVar
+  return Public.NetworkState {
+      Public.connectionManagerState = Public.ConnectionManagerState {
+        Public.connectionMap                 = CM.toMap connMap,
+        Public.registeredOutboundConnections = CM.unknownSet connMap
+      },
+      Public.inboundGovernorState  = InboundGovernor.toInboundState inboundState,
+      Public.outboundGovernorState = Governor.toOutboundState outboundState
+    }
+
 
 -- | Main entry point for data diffusion service.  It allows to:
 --

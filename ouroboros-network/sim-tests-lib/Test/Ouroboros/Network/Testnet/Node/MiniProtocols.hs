@@ -80,6 +80,7 @@ import Ouroboros.Network.Mock.ProducerState
 import Ouroboros.Network.Mux
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
+import Ouroboros.Network.PublicState qualified as Public
 import Ouroboros.Network.RethrowPolicy (ErrorCommand (ShutdownNode),
            ioErrorRethrowPolicy, mkRethrowPolicy, muxErrorRethrowPolicy)
 import Ouroboros.Network.Util.ShowProxy
@@ -380,7 +381,7 @@ applications debugTracer nodeKernel
 
     localResponderApp
       :: OuroborosApplicationWithMinimalCtx
-           Mx.ResponderMode NetworkState NtCAddr ByteString m Void ()
+           Mx.ResponderMode (Public.NetworkState NtNAddr) NtCAddr ByteString m Void ()
     localResponderApp = OuroborosApplication []
 
     chainSyncInitiator
