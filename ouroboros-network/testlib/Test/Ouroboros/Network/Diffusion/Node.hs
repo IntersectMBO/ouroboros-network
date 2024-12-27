@@ -27,7 +27,7 @@ module Test.Ouroboros.Network.Diffusion.Node
   , AcceptedConnectionsLimit (..)
   , DiffusionMode (..)
   , PeerAdvertise (..)
-  , PeerSelectionTargets (..)
+  , Governor.PeerSelectionTargets (..)
     -- * configuration constants
   , config_REPROMOTE_DELAY
     -- * re-exports
@@ -89,10 +89,7 @@ import Ouroboros.Network.Mock.ConcreteBlock (Block (..), BlockHeader (..),
 import Ouroboros.Network.Mock.ProducerState (ChainProducerState (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.Churn (PeerChurnArgs)
-import Ouroboros.Network.PeerSelection.Governor (PeerSelectionState (..),
-           PeerSelectionTargets (..), PublicPeerSelectionState (..))
-import Ouroboros.Network.PeerSelection.Governor.Types
-           (PeerSelectionGovernorArgs)
+import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.LedgerPeers (NumberOfPeers)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeersConsensusInterface, LedgerPeersKind, UseLedgerPeers)
@@ -152,7 +149,7 @@ data Arguments extraChurnArgs extraFlags m = Arguments
     , aShouldChainSyncExit  :: BlockHeader -> m Bool
     , aChainSyncEarlyExit   :: Bool
 
-    , aPeerTargets          :: PeerSelectionTargets
+    , aPeerTargets          :: Governor.PeerSelectionTargets
     , aReadLocalRootPeers   :: STM m [( HotValency
                                       , WarmValency
                                       , Map RelayAccessPoint (LocalRootConfig extraFlags))]
@@ -210,7 +207,7 @@ run :: forall extraState extraDebugState extraAPI
     -> extraCounters
     -> PublicExtraPeersAPI extraPeers NtNAddr
     -> (forall muxMode responderCtx ntnVersionData bytes a b .
-        PeerSelectionGovernorArgs
+        Governor.PeerSelectionGovernorArgs
           extraState
           extraDebugState
           extraFlags
@@ -223,7 +220,7 @@ run :: forall extraState extraDebugState extraAPI
           exception
           m)
     -> (forall muxMode responderCtx ntnVersionData bytes a b.
-        PeerSelectionState
+        Governor.PeerSelectionState
           extraState
           extraFlags
           extraPeers
@@ -331,7 +328,7 @@ run blockGeneratorArgs limits ni na
         withAsync
            (Diff.runM interfaces
                       tracers
-                      (mkArgs (nkPublicPeerSelectionVar nodeKernel))
+                      (mkArgs (nkCapturePublicStateVar nodeKernel))
                       apps)
            $ \ diffusionThread ->
                withAsync (blockFetch nodeKernel) $ \blockFetchLogicThread ->
@@ -438,21 +435,21 @@ run blockGeneratorArgs limits ni na
         decodeData _ (CBOR.TList [CBOR.TBool True, CBOR.TInt a])  = NtNVersionData InitiatorAndResponderDiffusionMode <$> (toPeerSharing a)
         decodeData _ _                                            = Left (Text.pack "unversionedDataCodec: unexpected term")
 
-    mkArgs :: StrictTVar m (PublicPeerSelectionState NtNAddr)
+    mkArgs :: Governor.CapturePublicStateVar NtNAddr m
            -> Diff.Arguments
                    extraState extraDebugState
                    extraFlags extraPeers extraAPI
                    extraChurnArgs extraCounters exception
                    resolver resolverError
                    m (NtNFD m) NtNAddr (NtCFD m) NtCAddr
-    mkArgs daPublicPeerSelectionVar = Diff.Arguments
+    mkArgs daCapturePublicStateVar = Diff.Arguments
       { Diff.daIPv4Address   = Right <$> (ntnToIPv4 . aIPAddress) na
       , Diff.daIPv6Address   = Right <$> (ntnToIPv6 . aIPAddress) na
       , Diff.daLocalAddress  = Nothing
       , Diff.daAcceptedConnectionsLimit
                              = aAcceptedLimits na
       , Diff.daMode          = aDiffusionMode na
-      , Diff.daPublicPeerSelectionVar
+      , Diff.daCapturePublicStateVar
       , Diff.daPeerSelectionTargets   = aPeerTargets na
       , Diff.daReadLocalRootPeers     = aReadLocalRootPeers na
       , Diff.daReadPublicRootPeers    = aReadPublicRootPeers na

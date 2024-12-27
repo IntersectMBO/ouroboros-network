@@ -210,7 +210,7 @@ runM Interfaces
        , daLocalAddress
        , daAcceptedConnectionsLimit
        , daMode = diffusionMode
-       , daPublicPeerSelectionVar
+       , daCapturePublicStateVar
        , daPeerSelectionTargets
        , daReadLocalRootPeers
        , daReadPublicRootPeers
@@ -673,9 +673,9 @@ runM Interfaces
               peerSelectionPolicy
               PeerSelectionInterfaces {
                 countersVar,
-                publicStateVar     = daPublicPeerSelectionVar,
-                debugStateVar      = dbgVar,
-                readUseLedgerPeers = daReadUseLedgerPeers
+                capturePublicStateVar = daCapturePublicStateVar,
+                debugStateVar         = dbgVar,
+                readUseLedgerPeers    = daReadUseLedgerPeers
               }
 
 

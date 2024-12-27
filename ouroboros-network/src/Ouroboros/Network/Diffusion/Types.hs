@@ -73,7 +73,7 @@ import Ouroboros.Network.NodeToClient qualified as NodeToClient
 import Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit, DiffusionMode)
 import Ouroboros.Network.NodeToNode qualified as NodeToNode
 import Ouroboros.Network.PeerSelection as PeerSelection
-import Ouroboros.Network.PeerSelection.Governor.Types
+import Ouroboros.Network.PeerSelection.Governor.Types as Governor
 import Ouroboros.Network.PeerSelection.RootPeersDNS
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 
@@ -282,7 +282,7 @@ data Arguments extraState extraDebugState extraFlags extraPeers
       -- It is created outside of diffusion, since it is needed to create some
       -- apps (e.g. peer sharing).
       --
-    , daPublicPeerSelectionVar   :: StrictTVar m (PublicPeerSelectionState ntnAddr)
+    , daCapturePublicStateVar  :: Governor.CapturePublicStateVar ntnAddr m
 
       -- | selection targets for the peer governor
       --
