@@ -920,6 +920,7 @@ traceNum TraceDebugState {}                                   = 54
 traceNum TraceChurnAction {}                                  = 55
 traceNum TraceChurnTimeout {}                                 = 56
 traceNum TraceVerifyPeerSnapshot {}                           = 57
+traceNum TracePublicPeerSelectionState {}                     = 58
 
 allTraceNames :: Map Int String
 allTraceNames =
@@ -982,6 +983,7 @@ allTraceNames =
    , (55, "TraceChurnAction")
    , (56, "TraceChurnTimeout")
    , (57, "TraceVerifyPeerSnapshot")
+   , (58, "TracePublicPeerSelectionState")
    ]
 
 
@@ -3772,12 +3774,12 @@ _governorFindingPublicRoots :: Int
                             -> IO Void
 _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrapPeers readLedgerStateJudgement peerSharing olocVar consensusMode = do
     countersVar <- newTVarIO emptyPeerSelectionCounters
-    publicStateVar <- makePublicPeerSelectionStateVar
+    capturePublicStateVar <- Governor.newCapturePublicStateVar
     debugStateVar <- newTVarIO $ emptyPeerSelectionState (mkStdGen 42) consensusMode (MinBigLedgerPeersForTrustedState 0)
     dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
     let interfaces = PeerSelectionInterfaces {
             countersVar,
-            publicStateVar,
+            capturePublicStateVar,
             debugStateVar,
             readUseLedgerPeers = return DontUseLedgerPeers
           }

@@ -32,8 +32,9 @@ import Data.Map.Strict qualified as Map
 import Data.Monoid.Synchronisation (FirstToFinish (..), runFirstToFinish)
 import Data.Set qualified as Set
 import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)
-import Ouroboros.Network.PeerSelection.Governor.Types (PublicPeerSelectionState,
+import Ouroboros.Network.PeerSelection.Governor.Types (CapturePublicStateVar,
            availableToShare)
+import Ouroboros.Network.PeerSelection.Governor.Types qualified as Governor
 import Ouroboros.Network.Protocol.PeerSharing.Client (PeerSharingClient (..))
 import Ouroboros.Network.Protocol.PeerSharing.Server (PeerSharingServer (..))
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount (..),
@@ -152,13 +153,13 @@ peerSharingServer peerSharingAPI =
 -- | PeerSharingAPI needed to compute the peers to be shared.
 --
 data PeerSharingAPI addr s m =
-  PeerSharingAPI { psPublicPeerSelectionStateVar :: StrictTVar m (PublicPeerSelectionState addr)
-                 , psGenVar                      :: StrictTVar m s
-                 , psReSaltAtVar                 :: StrictTVar m Time
-                 , psPolicyPeerShareStickyTime   :: !DiffTime
+  PeerSharingAPI { psCapturePublicStateVar     :: CapturePublicStateVar addr m
+                 , psGenVar                    :: StrictTVar m s
+                 , psReSaltAtVar               :: StrictTVar m Time
+                 , psPolicyPeerShareStickyTime :: !DiffTime
                  -- ^ Amount of time between changes to the salt used to pick peers to
                  -- gossip about.
-                 , psPolicyPeerShareMaxPeers     :: !PeerSharingAmount
+                 , psPolicyPeerShareMaxPeers   :: !PeerSharingAmount
                  -- ^ Maximum number of peers to respond with in a single request
                  }
 
@@ -176,23 +177,23 @@ ps_POLICY_PEER_SHARE_MAX_PEERS = 10
 -- | Create a new PeerSharingAPI
 --
 newPeerSharingAPI :: MonadSTM m
-                  => StrictTVar m (PublicPeerSelectionState addr)
+                  => CapturePublicStateVar addr m
                   -> s
                   -> DiffTime
                   -> PeerSharingAmount
                   -> m (PeerSharingAPI addr s m)
-newPeerSharingAPI publicPeerSelectionStateVar
+newPeerSharingAPI capturePublicStateVar
                   rng
                   policyPeerShareStickyTime
                   policyPeerShareMaxPeers = do
   genVar <- newTVarIO rng
   reSaltAtVar <- newTVarIO (Time 0)
   return $
-    PeerSharingAPI { psPublicPeerSelectionStateVar = publicPeerSelectionStateVar,
-                     psGenVar                      = genVar,
-                     psReSaltAtVar                 = reSaltAtVar,
-                     psPolicyPeerShareStickyTime   = policyPeerShareStickyTime,
-                     psPolicyPeerShareMaxPeers     = policyPeerShareMaxPeers
+    PeerSharingAPI { psCapturePublicStateVar      = capturePublicStateVar,
+                     psGenVar                     = genVar,
+                     psReSaltAtVar                = reSaltAtVar,
+                     psPolicyPeerShareStickyTime  = policyPeerShareStickyTime,
+                     psPolicyPeerShareMaxPeers    = policyPeerShareMaxPeers
                    }
 
 -- | Select a random subset of the known peers that are available to publish through peersharing.
@@ -208,14 +209,14 @@ computePeerSharingPeers :: (  MonadSTM m
                         => PeerSharingAPI ntnAddr s m
                         -> PeerSharingAmount
                         -> m [ntnAddr]
-computePeerSharingPeers PeerSharingAPI{ psPublicPeerSelectionStateVar,
+computePeerSharingPeers PeerSharingAPI{ psCapturePublicStateVar,
                                         psPolicyPeerShareStickyTime,
                                         psPolicyPeerShareMaxPeers,
                                         psReSaltAtVar,
                                         psGenVar
                                       } amount = do
   now <- getMonotonicTime
-  publicState <- readTVarIO psPublicPeerSelectionStateVar
+  publicState <- Governor.requestPublicState psCapturePublicStateVar
   salt <- atomically $ do
     reSaltAt <- readTVar psReSaltAtVar
     if reSaltAt <= now

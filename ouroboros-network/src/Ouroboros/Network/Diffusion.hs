@@ -434,7 +434,7 @@ runM Interfaces
        , daLocalAddress
        , daAcceptedConnectionsLimit
        , daMode = diffusionMode
-       , daPublicPeerSelectionVar
+       , daCapturePublicStateVar
        , daPeerTargets
        , daReadLocalRootPeers
        , daReadPublicRootPeers
@@ -880,9 +880,9 @@ runM Interfaces
               peerSelectionPolicy
               Governor.PeerSelectionInterfaces {
                 Governor.countersVar,
-                Governor.publicStateVar     = daPublicPeerSelectionVar,
-                Governor.debugStateVar      = dbgVar,
-                Governor.readUseLedgerPeers = daReadUseLedgerPeers
+                Governor.capturePublicStateVar = daCapturePublicStateVar,
+                Governor.debugStateVar         = dbgVar,
+                Governor.readUseLedgerPeers    = daReadUseLedgerPeers
               }
 
 
