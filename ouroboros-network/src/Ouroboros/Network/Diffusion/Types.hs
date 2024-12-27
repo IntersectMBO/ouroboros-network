@@ -11,6 +11,8 @@ module Ouroboros.Network.Diffusion.Types
   , nullTracers
   , Arguments (..)
   , Applications (..)
+  , NodeToNode.NodeToNodeApplication
+  , NodeToClient.NodeToClientApplication
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -25,9 +27,6 @@ import Data.Typeable (Typeable)
 import Data.Void (Void)
 
 import Network.Mux qualified as Mx
-
-import Ouroboros.Network.Mux (OuroborosApplicationWithMinimalCtx,
-           OuroborosBundleWithExpandedCtx)
 
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
@@ -336,7 +335,6 @@ data Arguments m ntnFd ntnAddr ntcFd ntcAddr = Arguments {
     , daBulkChurnInterval      :: DiffTime
   }
 
-
 -- | Versioned mini-protocol bundles run on a negotiated connection.
 --
 data Applications ntnAddr ntnVersion ntnVersionData
@@ -352,9 +350,8 @@ data Applications ntnAddr ntnVersion ntnVersionData
       daApplicationInitiatorMode
         :: Versions ntnVersion
                     ntnVersionData
-                      (OuroborosBundleWithExpandedCtx
-                      Mx.InitiatorMode () ntnAddr
-                      ByteString m a Void)
+                    (NodeToNode.NodeToNodeApplication
+                      Mx.InitiatorMode ntnAddr ByteString m a Void)
 
       -- | NodeToNode initiator & responder applications for bidirectional mode.
       --
@@ -362,9 +359,8 @@ data Applications ntnAddr ntnVersion ntnVersionData
            -- Peer Sharing result computation callback
         :: Versions ntnVersion
                     ntnVersionData
-                    (OuroborosBundleWithExpandedCtx
-                      Mx.InitiatorResponderMode () ntnAddr
-                      ByteString m a ())
+                    (NodeToNode.NodeToNodeApplication
+                      Mx.InitiatorResponderMode ntnAddr ByteString m a ())
 
       -- | NodeToClient responder application (server role)
       --
@@ -373,9 +369,7 @@ data Applications ntnAddr ntnVersion ntnVersionData
     , daLocalResponderApplication
         :: Versions ntcVersion
                     ntcVersionData
-                     (OuroborosApplicationWithMinimalCtx
-                      Mx.ResponderMode () ntcAddr
-                      ByteString m Void ())
+                    (NodeToClient.NodeToClientApplication Mx.ResponderMode ntnAddr ntcAddr ByteString m Void ())
 
       -- | Interface used to get peers from the current ledger.
       --

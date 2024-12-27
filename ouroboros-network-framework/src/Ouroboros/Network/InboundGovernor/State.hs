@@ -12,6 +12,7 @@
 module Ouroboros.Network.InboundGovernor.State
   ( PublicState (..)
   , emptyPublicState
+  , toInboundState
   , newPublicStateVar
     -- * Internals
   , mkPublicState
@@ -40,11 +41,13 @@ import Data.Cache (Cache)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.OrdPSQ as OrdPSQ
+import Data.Set qualified as Set
 
 import Network.Mux qualified as Mux
 
 import Ouroboros.Network.Context
 import Ouroboros.Network.Mux
+import Ouroboros.Network.PublicState (InboundState (..), emptyInboundState)
 
 -- | Remote connection state tracked by inbound protocol governor.
 --
@@ -73,11 +76,31 @@ data PublicState peerAddr versionData = PublicState {
 
     }
 
+
 emptyPublicState :: PublicState peerAddr versionData
 emptyPublicState = PublicState {
     inboundDuplexPeers = Map.empty,
     remoteStateMap     = Map.empty
   }
+
+
+toInboundState :: Ord peerAddr => PublicState peerAddr versionData -> InboundState peerAddr
+toInboundState PublicState { remoteStateMap } =
+    Map.foldrWithKey'
+      (\connId rs is@InboundState {
+                       remoteHotSet,
+                       remoteWarmSet,
+                       remoteColdSet,
+                       remoteIdleSet
+                     } -> case rs of
+        RemoteHotSt  -> is { remoteHotSet  = connId `Set.insert` remoteHotSet  }
+        RemoteWarmSt -> is { remoteWarmSet = connId `Set.insert` remoteWarmSet }
+        RemoteColdSt -> is { remoteColdSet = connId `Set.insert` remoteColdSet }
+        RemoteIdleSt -> is { remoteIdleSet = connId `Set.insert` remoteIdleSet }
+      )
+      emptyInboundState
+      remoteStateMap
+
 
 newPublicStateVar :: MonadSTM m => m (StrictTVar m (PublicState peerAddr versionData))
 newPublicStateVar = newTVarIO emptyPublicState

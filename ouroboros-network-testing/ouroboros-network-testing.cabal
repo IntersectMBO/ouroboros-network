@@ -79,6 +79,7 @@ library
     strict-stm,
     tasty,
     tasty-expected-failure,
+    ouroboros-network-api
 
   ghc-options:
     -Wall
