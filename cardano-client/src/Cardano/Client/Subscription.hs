@@ -50,6 +50,8 @@ import Ouroboros.Network.NodeToClient (Handshake, LocalAddress (..),
            NodeToClientVersion, NodeToClientVersionData (..), TraceSendRecv,
            Versions)
 import Ouroboros.Network.NodeToClient qualified as NtC
+import Ouroboros.Network.NodeToNode (RemoteAddress)
+import Ouroboros.Network.PublicState qualified as Public
 import Ouroboros.Network.Snocket qualified as Snocket
 
 type MuxMode  = Mx.Mode
@@ -104,7 +106,7 @@ subscribe
   -> SubscriptionParams a
   -> (   NodeToClientVersion
       -> blockVersion
-      -> NodeToClientProtocols Mx.InitiatorMode LocalAddress BSL.ByteString IO a Void)
+      -> NodeToClientProtocols Mx.InitiatorMode RemoteAddress LocalAddress BSL.ByteString IO a Void)
   -> IO ()
 subscribe snocket networkMagic supportedVersions
                   SubscriptionTracers {
@@ -154,7 +156,7 @@ versionedProtocols ::
   -- ^ Use `supportedNodeToClientVersions` from `ouroboros-consensus`.
   -> (   NodeToClientVersion
       -> blockVersion
-      -> NodeToClientProtocols appType LocalAddress bytes m a Void)
+      -> NodeToClientProtocols appType RemoteAddress LocalAddress bytes m a Void)
      -- ^ callback which receives codecs, connection id and STM action which
      -- can be checked if the networking runtime system requests the protocols
      -- to stop.
@@ -165,7 +167,7 @@ versionedProtocols ::
   -> Versions
        NodeToClientVersion
        NodeToClientVersionData
-       (OuroborosApplicationWithMinimalCtx appType () LocalAddress bytes m a Void)
+       (OuroborosApplicationWithMinimalCtx appType (Public.NetworkState RemoteAddress) LocalAddress bytes m a Void)
 versionedProtocols networkMagic supportedVersions callback =
     NtC.foldMapVersions applyVersion (Map.toList supportedVersions)
   where
@@ -174,7 +176,7 @@ versionedProtocols networkMagic supportedVersions callback =
       -> Versions
            NodeToClientVersion
            NodeToClientVersionData
-           (OuroborosApplicationWithMinimalCtx appType () LocalAddress bytes m a Void)
+           (OuroborosApplicationWithMinimalCtx appType (Public.NetworkState RemoteAddress) LocalAddress bytes m a Void)
     applyVersion (version, blockVersion) =
       NtC.versionedNodeToClientProtocols
         version

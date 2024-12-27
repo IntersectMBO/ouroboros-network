@@ -95,6 +95,7 @@ import Ouroboros.Network.Protocol.PeerSharing.Client (peerSharingClientPeer)
 import Ouroboros.Network.Protocol.PeerSharing.Codec (codecPeerSharing)
 import Ouroboros.Network.Protocol.PeerSharing.Server (peerSharingServerPeer)
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharing)
+import Ouroboros.Network.PublicState qualified as Public
 import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.Util.ShowProxy
 
@@ -379,7 +380,7 @@ applications debugTracer nodeKernel
 
     localResponderApp
       :: OuroborosApplicationWithMinimalCtx
-           Mx.ResponderMode NetworkState NtCAddr ByteString m Void ()
+           Mx.ResponderMode (Public.NetworkState NtNAddr) NtCAddr ByteString m Void ()
     localResponderApp = OuroborosApplication []
 
     chainSyncInitiator

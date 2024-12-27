@@ -14,6 +14,8 @@
 module Ouroboros.Network.NodeToNode
   ( nodeToNodeProtocols
   , NodeToNodeProtocols (..)
+  , NodeToNodeApplication
+  , UnitNetworkState
   , NodeToNodeProtocolsWithExpandedCtx
   , NodeToNodeProtocolsWithMinimalCtx
   , MiniProtocolParameters (..)
@@ -56,6 +58,7 @@ module Ouroboros.Network.NodeToNode
   , ProtocolLimitFailure
   , Handshake
   , Socket
+  , CapturePublicStateVar
     -- ** Exceptions
   , ExceptionInHandler (..)
     -- ** Traces
@@ -86,8 +89,8 @@ import Ouroboros.Network.Driver (TraceSendRecv (..))
 import Ouroboros.Network.Driver.Limits (ProtocolLimitFailure (..))
 import Ouroboros.Network.Mux
 import Ouroboros.Network.NodeToNode.Version
-import Ouroboros.Network.PeerSelection.Governor.Types
-           (PeerSelectionTargets (..))
+import Ouroboros.Network.PeerSelection.Governor.Types (CapturePublicStateVar,
+           PeerSelectionTargets (..))
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.Protocol.Handshake.Codec
@@ -165,6 +168,19 @@ defaultMiniProtocolParameters = MiniProtocolParameters {
     , blockFetchPipeliningMax     = 100
     , txSubmissionMaxUnacked       = 10
   }
+
+-- We don't expose network state over node-t-node protocol.
+type UnitNetworkState = ()
+
+
+-- | A type alias for the node-to-node protocol bundle used by diffusion.  It
+-- is more general what we need in `Applications` type so it can be used in
+-- `ouroboros-cosnensus-diffusion` (polymorphic `bytes`).
+--
+type NodeToNodeApplication mode ntnAddr bytes m a b =
+    OuroborosBundleWithExpandedCtx
+      mode UnitNetworkState ntnAddr bytes m a b
+
 
 -- | Make an 'OuroborosApplication' for the bundle of mini-protocols that
 -- make up the overall node-to-node protocol.

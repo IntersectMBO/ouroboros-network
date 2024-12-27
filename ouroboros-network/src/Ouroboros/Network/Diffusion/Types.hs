@@ -23,7 +23,7 @@ module Ouroboros.Network.Diffusion.Types
   , NodeToClientConnectionHandler
   , NodeToClientConnectionManagerArguments
     -- * NodeToNode type aliases
-  , NetworkState
+  , NodeToNode.UnitNetworkState
   , NodeToNodeHandle
   , NodeToNodeConnectionManager
   , NodeToNodePeerConnectionHandle
@@ -31,6 +31,8 @@ module Ouroboros.Network.Diffusion.Types
     -- * Re-exports
   , AbstractTransitionTrace
   , IG.RemoteTransitionTrace
+  , NodeToNode.NodeToNodeApplication
+  , NodeToClient.NodeToClientApplication
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -48,9 +50,6 @@ import System.Random (StdGen)
 
 import Network.Mux qualified as Mx
 import Network.Socket qualified as Socket
-
-import Ouroboros.Network.Mux (OuroborosApplicationWithMinimalCtx,
-           OuroborosBundleWithExpandedCtx)
 
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
@@ -76,6 +75,7 @@ import Ouroboros.Network.PeerSelection as PeerSelection
 import Ouroboros.Network.PeerSelection.Governor.Types as Governor
 import Ouroboros.Network.PeerSelection.RootPeersDNS
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
+import Ouroboros.Network.PublicState qualified as Public
 
 -- | The 'DiffusionTracer' logs
 --
@@ -104,8 +104,6 @@ data DiffusionTracer ntnAddr ntcAddr
   | DiffusionErrored SomeException
   | SystemdSocketConfiguration SystemdSocketTracer
     deriving Show
-
-type NetworkState = ()
 
 -- TODO: add a tracer for these misconfiguration
 data Failure where
@@ -355,7 +353,7 @@ data Arguments extraState extraDebugState extraFlags extraPeers
            PeerSelectionGovernorArgs extraState extraDebugState extraFlags extraPeers
                                      extraAPI extraCounters
                                      ntnAddr (PeerConnectionHandle
-                                                muxMode responderCtx NetworkState ntnAddr
+                                                muxMode responderCtx NodeToNode.UnitNetworkState ntnAddr
                                                 ntnVersionData bytes m a b)
                                      exception m
 
@@ -365,7 +363,7 @@ data Arguments extraState extraDebugState extraFlags extraPeers
         :: forall muxMode responderCtx ntnVersionData bytes a b .
            PeerSelectionState extraState extraFlags extraPeers
                               ntnAddr (PeerConnectionHandle
-                                         muxMode responderCtx NetworkState ntnAddr
+                                         muxMode responderCtx NodeToNode.UnitNetworkState ntnAddr
                                          ntnVersionData bytes m a b)
         -> extraCounters
 
@@ -420,7 +418,6 @@ data Arguments extraState extraDebugState extraFlags extraPeers
 
   }
 
-
 -- | Versioned mini-protocol bundles run on a negotiated connection.
 --
 data Applications ntnAddr ntnVersion ntnVersionData
@@ -436,9 +433,8 @@ data Applications ntnAddr ntnVersion ntnVersionData
       daApplicationInitiatorMode
         :: Versions ntnVersion
                     ntnVersionData
-                      (OuroborosBundleWithExpandedCtx
-                      Mx.InitiatorMode () ntnAddr
-                      ByteString m a Void)
+                    (NodeToNode.NodeToNodeApplication
+                      Mx.InitiatorMode ntnAddr ByteString m a Void)
 
       -- | NodeToNode initiator & responder applications for bidirectional mode.
       --
@@ -446,9 +442,8 @@ data Applications ntnAddr ntnVersion ntnVersionData
            -- Peer Sharing result computation callback
         :: Versions ntnVersion
                     ntnVersionData
-                    (OuroborosBundleWithExpandedCtx
-                      Mx.InitiatorResponderMode () ntnAddr
-                      ByteString m a ())
+                    (NodeToNode.NodeToNodeApplication
+                      Mx.InitiatorResponderMode ntnAddr ByteString m a ())
 
       -- | NodeToClient responder application (server role)
       --
@@ -457,9 +452,7 @@ data Applications ntnAddr ntnVersion ntnVersionData
     , daLocalResponderApplication
         :: Versions ntcVersion
                     ntcVersionData
-                     (OuroborosApplicationWithMinimalCtx
-                      Mx.ResponderMode () ntcAddr
-                      ByteString m Void ())
+                    (NodeToClient.NodeToClientApplication Mx.ResponderMode ntnAddr ntcAddr ByteString m Void ())
 
       -- | Interface used to get peers from the current ledger.
       --
@@ -496,35 +489,37 @@ data Applications ntnAddr ntnVersion ntnVersionData
 --
 -- Node-To-Client type aliases
 --
--- Node-To-Client diffusion is only used in 'ResponderMode'.
+-- Node-To-Client diffusion is only used in 'ResponderMode', it has access to
+-- `Public.NetworkState` for the purpose of making it available through one of
+-- the mini-protocols.
 --
 
-type NodeToClientHandle ntcAddr versionData m =
-    HandleWithMinimalCtx Mx.ResponderMode NetworkState ntcAddr versionData ByteString m Void ()
+type NodeToClientHandle ntnAddr ntcAddr versionData m =
+    HandleWithMinimalCtx Mx.ResponderMode (Public.NetworkState ntnAddr) ntcAddr versionData ByteString m Void ()
 
 type NodeToClientHandleError ntcVersion =
     HandleError Mx.ResponderMode ntcVersion
 
 type NodeToClientConnectionHandler
-      ntcFd ntcAddr ntcVersion ntcVersionData m =
+      ntcFd ntnAddr ntcAddr ntcVersion ntcVersionData m =
     ConnectionHandler
       Mx.ResponderMode
       (ConnectionHandlerTrace ntcVersion ntcVersionData)
       ntcFd
       ntcAddr
-      (NodeToClientHandle ntcAddr ntcVersionData m)
+      (NodeToClientHandle ntnAddr ntcAddr ntcVersionData m)
       (NodeToClientHandleError ntcVersion)
       ntcVersion
       ntcVersionData
       m
 
 type NodeToClientConnectionManagerArguments
-      ntcFd ntcAddr ntcVersion ntcVersionData m =
+      ntcFd ntnAddr ntcAddr ntcVersion ntcVersionData m =
     CM.Arguments
       (ConnectionHandlerTrace ntcVersion ntcVersionData)
       ntcFd
       ntcAddr
-      (NodeToClientHandle ntcAddr ntcVersionData m)
+      (NodeToClientHandle ntnAddr ntcAddr ntcVersionData m)
       (NodeToClientHandleError ntcVersion)
       ntcVersion
       ntcVersionData
@@ -535,12 +530,20 @@ type NodeToClientConnectionManagerArguments
 -- Node-To-Node type aliases
 --
 -- Node-To-Node diffusion runs in either 'InitiatorMode' or 'InitiatorResponderMode'.
+-- We don't expose network state through Node-to-Node Protocol, hence
+-- `UnitNetworkState`.
 --
 
 type NodeToNodeHandle
        (mode :: Mx.Mode)
        ntnAddr ntnVersionData m a b =
-    HandleWithExpandedCtx mode NetworkState ntnAddr ntnVersionData ByteString m a b
+    HandleWithExpandedCtx
+        mode
+        NodeToNode.UnitNetworkState
+        ntnAddr
+        ntnVersionData
+        ByteString
+        m a b
 
 type NodeToNodeConnectionManager
        (mode :: Mx.Mode)
@@ -561,7 +564,7 @@ type NodeToNodePeerConnectionHandle (mode :: Mx.Mode) ntnAddr ntnVersionData m a
     PeerConnectionHandle
       mode
       (ResponderContext ntnAddr)
-      NetworkState
+      NodeToNode.UnitNetworkState
       ntnAddr
       ntnVersionData
       ByteString
