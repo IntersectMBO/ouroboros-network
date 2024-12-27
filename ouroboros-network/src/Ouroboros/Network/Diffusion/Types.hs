@@ -55,8 +55,7 @@ import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.Governor.Types
            (ConsensusModePeerTargets (..), DebugPeerSelection (..),
-           PeerSelectionCounters, PublicPeerSelectionState,
-           TracePeerSelection (..))
+           PeerSelectionCounters, TracePeerSelection (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers (TraceLedgerPeers)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
            LedgerPeersConsensusInterface (..), MinBigLedgerPeersForTrustedState,
@@ -269,7 +268,7 @@ data Arguments m ntnFd ntnAddr ntcFd ntcAddr = Arguments {
       -- It is created outside of diffusion, since it is needed to create some
       -- apps (e.g. peer sharing).
       --
-    , daPublicPeerSelectionVar   :: StrictTVar m (PublicPeerSelectionState ntnAddr)
+    , daCapturePublicStateVar  :: Governor.CapturePublicStateVar ntnAddr m
 
       -- | selection targets for the peer governor
       --

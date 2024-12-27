@@ -73,7 +73,8 @@ import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.Diffusion qualified as Diff
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.Governor (ConsensusModePeerTargets,
-           PeerSelectionTargets (..), PublicPeerSelectionState (..))
+           PeerSelectionTargets (..))
+import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics,
            PeerMetricsConfiguration (..), newPeerMetric)
 import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
@@ -253,7 +254,7 @@ run blockGeneratorArgs limits ni na tracers tracerBlockFetch =
         withAsync
            (Diff.runM interfaces
                       tracers
-                      (mkArgs (nkPublicPeerSelectionVar nodeKernel) useBootstrapPeersScriptVar)
+                      (mkArgs (nkCapturePublicStateVar nodeKernel) useBootstrapPeersScriptVar)
                       apps)
            $ \ diffusionThread ->
                withAsync (blockFetch nodeKernel) $ \blockFetchLogicThread ->
@@ -361,17 +362,17 @@ run blockGeneratorArgs limits ni na tracers tracerBlockFetch =
         decodeData _ (CBOR.TList [CBOR.TBool True, CBOR.TInt a])  = NtNVersionData InitiatorAndResponderDiffusionMode <$> (toPeerSharing a)
         decodeData _ _                                            = Left (Text.pack "unversionedDataCodec: unexpected term")
 
-    mkArgs :: StrictTVar m (PublicPeerSelectionState NtNAddr)
+    mkArgs :: Governor.CapturePublicStateVar NtNAddr m
            -> StrictTVar m (Script UseBootstrapPeers)
            -> Diff.Arguments m (NtNFD m) NtNAddr (NtCFD m) NtCAddr
-    mkArgs daPublicPeerSelectionVar ubpVar = Diff.Arguments
+    mkArgs daCapturePublicStateVar ubpVar = Diff.Arguments
       { Diff.daIPv4Address   = Right <$> (ntnToIPv4 . aIPAddress) na
       , Diff.daIPv6Address   = Right <$> (ntnToIPv6 . aIPAddress) na
       , Diff.daLocalAddress  = Nothing
       , Diff.daAcceptedConnectionsLimit
                              = aAcceptedLimits na
       , Diff.daMode          = aDiffusionMode na
-      , Diff.daPublicPeerSelectionVar
+      , Diff.daCapturePublicStateVar
       , Diff.daPeerTargets            = aPeerTargets na
       , Diff.daReadLocalRootPeers     = aReadLocalRootPeers na
       , Diff.daReadPublicRootPeers    = aReadPublicRootPeers na

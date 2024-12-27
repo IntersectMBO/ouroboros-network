@@ -32,6 +32,11 @@ module Ouroboros.Network.PeerSelection.Governor
   , readAssociationMode
   , DebugPeerSelectionState (..)
   , peerSelectionGovernor
+    -- * PublicPeerSelectionState API
+  , CapturePublicStateVar
+  , newCapturePublicStateVar
+  , PublicPeerSelectionState (..)
+  , requestPublicState
     -- * Peer churn governor
   , PeerChurnArgs (..)
   , peerChurnGovernor
@@ -41,7 +46,6 @@ module Ouroboros.Network.PeerSelection.Governor
   , sanePeerSelectionTargets
   , establishedPeersStatus
   , PeerSelectionState (..)
-  , PublicPeerSelectionState (..)
   , makePublicPeerSelectionStateVar
   , PeerSelectionView (..)
   , PeerSelectionCounters
@@ -536,7 +540,7 @@ peerSelectionGovernorLoop tracer
                           policy
                           interfaces@PeerSelectionInterfaces {
                             countersVar,
-                            publicStateVar,
+                            capturePublicStateVar,
                             debugStateVar
                           }
                           jobPool
@@ -547,10 +551,6 @@ peerSelectionGovernorLoop tracer
          -> Time
          -> m Void
     loop !st !dbgUpdateAt = assertPeerSelectionState st $ do
-      -- Update public state using 'toPublicState' to compute available peers
-      -- to share for peer sharing
-      atomically $ writeTVar publicStateVar (toPublicState st)
-
       blockedAt <- getMonotonicTime
 
       -- If by any chance the node takes more than 15 minutes to converge to a
@@ -640,9 +640,10 @@ peerSelectionGovernorLoop tracer
     guardedDecisions blockedAt st inboundPeers =
       -- All the alternative potentially-blocking decisions.
 
+         Monitor.monitorCapturePublicStateVar capturePublicStateVar st
       -- In Praos consensus mode, The Governor needs to react to changes in the bootstrap
       -- peer flag, since this influences the behavior of the other monitoring actions.
-         Monitor.monitorBootstrapPeersFlag   actions st
+      <> Monitor.monitorBootstrapPeersFlag   actions st
       -- The Governor needs to react to ledger state changes as soon as possible.
       -- in Praos mode:
       --   Check the definition site for more details, but in short, when the

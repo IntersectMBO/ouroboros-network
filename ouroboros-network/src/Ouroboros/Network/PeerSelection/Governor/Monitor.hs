@@ -19,6 +19,7 @@ module Ouroboros.Network.PeerSelection.Governor.Monitor
   , monitorBootstrapPeersFlag
   , waitForSystemToQuiesce
   , ledgerPeerSnapshotChange
+  , monitorCapturePublicStateVar
   ) where
 
 import Data.Map.Strict (Map)
@@ -815,4 +816,21 @@ ledgerPeerSnapshotChange st@PeerSelectionState {
                               decisionState = st {
                                 ledgerStateJudgement = YoungEnough,
                                 ledgerPeerSnapshot = ledgerPeerSnapshot' } }
+
+monitorCapturePublicStateVar
+  :: MonadSTM m
+  => CapturePublicStateVar peeraddr m
+  -> PeerSelectionState peeraddr peerconn
+  -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
+monitorCapturePublicStateVar v st = Guarded Nothing $ do
+    let pst = toPublicState st
+    handlePublicStateRequest v pst
+    return $ \_ ->
+      Decision {
+        decisionTrace = [TracePublicPeerSelectionState pst],
+        decisionJobs  = [],
+        decisionState = st
+      }
+
+
 

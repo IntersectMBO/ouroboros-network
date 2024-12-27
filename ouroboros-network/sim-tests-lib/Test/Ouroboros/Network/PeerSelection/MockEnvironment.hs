@@ -228,7 +228,7 @@ governorAction mockEnv@GovernorMockEnvironment {
                  consensusMode,
                  targets = Script targets',
                  ledgerStateJudgement = Script ledgerStateJudgement'} = do
-    publicStateVar <- makePublicPeerSelectionStateVar
+    capturePublicStateVar <- Governor.newCapturePublicStateVar
     lpVar <- playTimedScript (contramap TraceEnvUseLedgerPeers tracerMockEnv)
                              (useLedgerPeers mockEnv)
     usbVar <- playTimedScript (contramap TraceEnvSetUseBootstrapPeers tracerMockEnv)
@@ -278,7 +278,7 @@ governorAction mockEnv@GovernorMockEnvironment {
 
     let interfaces = PeerSelectionInterfaces {
             countersVar,
-            publicStateVar,
+            capturePublicStateVar,
             debugStateVar,
             -- TODO: peer selection tests are not relying on `UseLedgerPeers`
             readUseLedgerPeers = return DontUseLedgerPeers
@@ -765,6 +765,7 @@ tracerTracePeerSelection = contramap f tracerTestTraceEvent
     f a@(TraceChurnAction !_ !_ !_)                          = GovernorEvent a
     f a@(TraceChurnTimeout !_ !_ !_)                         = GovernorEvent a
     f a@(TraceVerifyPeerSnapshot !_)                         = GovernorEvent a
+    f a@(TracePublicPeerSelectionState !_)                   = GovernorEvent a
 
 tracerDebugPeerSelection :: Tracer (IOSim s) (DebugPeerSelection PeerAddr)
 tracerDebugPeerSelection = GovernorDebug `contramap` tracerTestTraceEvent

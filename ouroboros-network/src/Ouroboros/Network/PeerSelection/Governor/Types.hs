@@ -116,6 +116,12 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , peerSelectionStateToView
     -- * Peer Sharing Auxiliary data type
   , PeerSharingResult (..)
+    -- * Capture public state
+  , CapturePublicState (..)
+  , CapturePublicStateVar
+  , newCapturePublicStateVar
+  , requestPublicState
+  , handlePublicStateRequest
     -- * Traces
   , TracePeerSelection (..)
   , ChurnAction (..)
@@ -418,9 +424,10 @@ data PeerSelectionInterfaces peeraddr peerconn m = PeerSelectionInterfaces {
       --
       countersVar        :: StrictTVar m PeerSelectionCounters,
 
-      -- | PublicPeerSelectionState var.
+      -- | An interface to request / receive `PublicPeerSelectionState`
       --
-      publicStateVar     :: StrictTVar m (PublicPeerSelectionState peeraddr),
+      capturePublicStateVar
+                         :: CapturePublicStateVar peeraddr m,
 
       -- | PeerSelectionState shared for debugging purposes (to support SIGUSR1
       -- debug event tracing)
@@ -1733,6 +1740,8 @@ data TracePeerSelection peeraddr =
      | TraceUseBootstrapPeersChanged UseBootstrapPeers
      | TraceVerifyPeerSnapshot Bool
 
+     | TracePublicPeerSelectionState (PublicPeerSelectionState peeraddr)
+
      --
      -- Critical Failures
      --
@@ -1783,3 +1792,45 @@ deriving instance (Ord peeraddr, Show peeraddr)
 data ChurnMode = ChurnModeBulkSync
                | ChurnModeNormal deriving Show
 
+
+-- | Request / response for capturing public state.  Internal.
+--
+data CapturePublicState peeraddr
+  = RequestState
+  | CapturedState (PublicPeerSelectionState peeraddr)
+
+newtype CapturePublicStateVar peeraddr m =
+    CapturePublicStateVar (StrictTMVar m (CapturePublicState peeraddr))
+
+newCapturePublicStateVar :: MonadSTM m
+                         => m (CapturePublicStateVar peeraddr m)
+newCapturePublicStateVar = CapturePublicStateVar <$> newEmptyTMVarIO
+
+-- | Put a request in `CaptureStateVar`.
+--
+requestPublicState :: MonadSTM m
+                   => CapturePublicStateVar peeraddr m
+                   -> m (PublicPeerSelectionState peeraddr)
+requestPublicState (CapturePublicStateVar v) = do
+    -- `putTMVar` and `writePublicState` guard that there's only one request in
+    -- flight, since it is `requestPublicState` that empties the
+    -- `CaptureStateVar`.
+    atomically $ putTMVar v RequestState
+    atomically $ do
+      a <- takeTMVar v
+      case a of
+        RequestState     -> retry -- request in progress
+        CapturedState ps -> return ps
+
+-- | Block for a `RequestState`, then write public state back.
+--
+handlePublicStateRequest
+  :: MonadSTM m
+  => CapturePublicStateVar peeraddr m
+  -> PublicPeerSelectionState peeraddr
+  -> STM m ()
+handlePublicStateRequest (CapturePublicStateVar v) st = do
+    a <- readTMVar v
+    case a of
+      RequestState      -> writeTMVar v (CapturedState st)
+      (CapturedState _) -> retry
