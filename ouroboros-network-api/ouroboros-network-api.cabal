@@ -97,3 +97,61 @@ library
 
   if flag(asserts)
     ghc-options: -fno-ignore-asserts
+
+library testlib
+  visibility: public
+  hs-source-dirs: testlib
+  exposed-modules:
+    Test.Ouroboros.Network.PublicState.Generators
+
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  build-depends:
+    QuickCheck,
+    base,
+    containers,
+    ouroboros-network-api,
+
+  ghc-options:
+    -Wall
+    -Wno-unticked-promoted-constructors
+    -Wcompat
+    -Wincomplete-uni-patterns
+    -Wincomplete-record-updates
+    -Wpartial-fields
+    -Widentities
+    -Wredundant-constraints
+    -Wunused-packages
+
+  if flag(asserts)
+    ghc-options: -fno-ignore-asserts
+
+test-suite test
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs: test
+  other-modules:
+    Test.Ouroboros.Network.PublicState
+
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  build-depends:
+    base,
+    bytestring,
+    cborg,
+    ouroboros-network-api:{ouroboros-network-api, testlib},
+    serialise,
+    tasty,
+    tasty-quickcheck,
+    with-utf8,
+
+  ghc-options:
+    -Wall
+    -Wno-unticked-promoted-constructors
+    -Wcompat
+    -Wincomplete-uni-patterns
+    -Wincomplete-record-updates
+    -Wpartial-fields
+    -Widentities
+    -Wredundant-constraints
+    -Wunused-packages

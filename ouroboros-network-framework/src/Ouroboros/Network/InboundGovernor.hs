@@ -20,6 +20,7 @@
 module Ouroboros.Network.InboundGovernor
   ( -- * Run Inbound Protocol Governor
     PublicState (..)
+  , toInboundState
   , newPublicStateVar
   , emptyPublicState
   , Arguments (..)

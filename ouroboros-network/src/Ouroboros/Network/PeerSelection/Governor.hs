@@ -35,6 +35,7 @@ module Ouroboros.Network.PeerSelection.Governor
   , CapturePublicStateVar
   , newCapturePublicStateVar
   , PublicPeerSelectionState (..)
+  , toOutboundState
   , requestPublicState
     -- * Internals exported for testing
   , assertPeerSelectionState
