@@ -4157,12 +4157,13 @@ unit_peer_sharing =
              counterexample (concat [ show ip_0
                                     , " is not a member of received peers "
                                     , show receivedPeers
+                                    , " for "
+                                    , show addr
                                     ]) $
              ip_0 `Set.member` receivedPeers
         verify _ _ = All True
 
     in
-      -- counterexample (ppEvents trace) $
       counterexample (Map.foldrWithKey (\addr evs s -> concat [ "\n\n===== "
                                                               , show addr
                                                               , " =====\n\n"
