@@ -3788,7 +3788,8 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
       dnsSemaphore
       DNS.defaultResolvConf
       readDomains
-      (ioDNSActions LookupReqAAndAAAA) $ \requestPublicRootPeers -> do
+      (ioDNSActions LookupReqAAndAAAA)
+      (mkStdGen 42) $ \requestPublicRootPeers -> do
         peerSelectionGovernor
           tracer tracer tracer
           -- TODO: #3182 Rng seed should come from quickcheck.
@@ -3904,7 +3905,8 @@ prop_issue_3550 = prop_governor_target_established_below defaultMaxTime $
       consensusMode = PraosMode,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       useLedgerPeers = Script ((UseLedgerPeers Always, NoDelay) :| []),
-      ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
+      ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| []),
+      seed = TestSeed 42
     }
 
 -- | issue #3515
@@ -3938,7 +3940,8 @@ prop_issue_3515 = prop_governor_nolivelock $
       consensusMode = PraosMode,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       useLedgerPeers = Script ((UseLedgerPeers Always, NoDelay) :| []),
-      ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
+      ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| []),
+      seed = TestSeed 42
     }
   where
     targets' =
@@ -3979,7 +3982,8 @@ prop_issue_3494 = prop_governor_nofail $
       consensusMode = PraosMode,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       useLedgerPeers = Script ((UseLedgerPeers Always, NoDelay) :| []),
-      ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
+      ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| []),
+      seed = TestSeed 42
     }
   where
     targets' =
@@ -4031,7 +4035,8 @@ prop_issue_3233 = prop_governor_nolivelock $
       consensusMode = PraosMode,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       useLedgerPeers = Script ((UseLedgerPeers Always, NoDelay) :| []),
-      ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
+      ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| []),
+      seed = TestSeed 42
     }
   where
     targets' =
