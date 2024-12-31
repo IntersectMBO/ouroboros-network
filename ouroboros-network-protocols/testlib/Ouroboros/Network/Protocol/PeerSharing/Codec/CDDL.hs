@@ -13,7 +13,7 @@ import Ouroboros.Network.Protocol.PeerSharing.Type
 peerSharingCodec :: NodeToNodeVersion
                  -> Codec (PeerSharing SockAddr)
                          CBOR.DeserialiseFailure IO BL.ByteString
-peerSharingCodec ntnVersion =
-  codecPeerSharing (encodeRemoteAddress ntnVersion)
-                   (decodeRemoteAddress ntnVersion)
+peerSharingCodec _ntnVersion =
+  codecPeerSharing encodeRemoteAddress
+                   decodeRemoteAddress
 
