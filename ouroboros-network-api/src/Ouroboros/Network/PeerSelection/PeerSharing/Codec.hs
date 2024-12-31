@@ -1,17 +1,19 @@
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE LambdaCase        #-}
 
 module Ouroboros.Network.PeerSelection.PeerSharing.Codec
   ( encodePortNumber
   , decodePortNumber
   , encodeRemoteAddress
   , decodeRemoteAddress
+  , RemoteAddressEncoding (..)
   ) where
 
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
+import Codec.Serialise (Serialise (..))
 
 import Network.Socket (PortNumber, SockAddr (..))
-import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion (..))
 
 encodePortNumber :: PortNumber -> CBOR.Encoding
 encodePortNumber = CBOR.encodeWord16 . fromIntegral
@@ -27,50 +29,54 @@ decodePortNumber = fromIntegral <$> CBOR.decodeWord16
 ---
 -- /Invariant:/ not a unix socket address type.
 ---
-encodeRemoteAddress :: NodeToNodeVersion -> SockAddr -> CBOR.Encoding
-encodeRemoteAddress =
-  \case
-    NodeToNodeV_14 -> sockAddr
-
-  where
-    sockAddr = \case
-      SockAddrInet pn w -> CBOR.encodeListLen 3
-                        <> CBOR.encodeWord 0
-                        <> CBOR.encodeWord32 w
-                        <> encodePortNumber pn
-      SockAddrInet6 pn _ (w1, w2, w3, w4) _ -> CBOR.encodeListLen 6
-                                            <> CBOR.encodeWord 1
-                                            <> CBOR.encodeWord32 w1
-                                            <> CBOR.encodeWord32 w2
-                                            <> CBOR.encodeWord32 w3
-                                            <> CBOR.encodeWord32 w4
-                                            <> encodePortNumber pn
-      SockAddrUnix _ -> error "Should never be encoding a SockAddrUnix!"
+encodeRemoteAddress :: SockAddr -> CBOR.Encoding
+encodeRemoteAddress = \case
+  SockAddrInet pn w -> CBOR.encodeListLen 3
+                    <> CBOR.encodeWord 0
+                    <> CBOR.encodeWord32 w
+                    <> encodePortNumber pn
+  SockAddrInet6 pn _ (w1, w2, w3, w4) _ -> CBOR.encodeListLen 6
+                                        <> CBOR.encodeWord 1
+                                        <> CBOR.encodeWord32 w1
+                                        <> CBOR.encodeWord32 w2
+                                        <> CBOR.encodeWord32 w3
+                                        <> CBOR.encodeWord32 w4
+                                        <> encodePortNumber pn
+  SockAddrUnix _ -> error "Should never be encoding a SockAddrUnix!"
 
 -- | This decoder should be faithful to the PeerSharing
 -- CDDL Specification.
 --
 -- See the network design document for more details
 --
-decodeRemoteAddress :: NodeToNodeVersion -> CBOR.Decoder s SockAddr
-decodeRemoteAddress =
-  \case
-    NodeToNodeV_14 -> decoder14
+decodeRemoteAddress :: CBOR.Decoder s SockAddr
+decodeRemoteAddress = do
+  _ <- CBOR.decodeListLen
+  tok <- CBOR.decodeWord
+  case tok of
+    0 -> do
+      w <- CBOR.decodeWord32
+      pn <- decodePortNumber
+      return (SockAddrInet pn w)
+    1 -> do
+      w1 <- CBOR.decodeWord32
+      w2 <- CBOR.decodeWord32
+      w3 <- CBOR.decodeWord32
+      w4 <- CBOR.decodeWord32
+      pn <- decodePortNumber
+      return (SockAddrInet6 pn 0 (w1, w2, w3, w4) 0)
+    _ -> fail ("Serialise.decode.SockAddr unexpected tok " ++ show tok)
 
-  where
-    decoder14 = do
-      _ <- CBOR.decodeListLen
-      tok <- CBOR.decodeWord
-      case tok of
-        0 -> do
-          w <- CBOR.decodeWord32
-          pn <- decodePortNumber
-          return (SockAddrInet pn w)
-        1 -> do
-          w1 <- CBOR.decodeWord32
-          w2 <- CBOR.decodeWord32
-          w3 <- CBOR.decodeWord32
-          w4 <- CBOR.decodeWord32
-          pn <- decodePortNumber
-          return (SockAddrInet6 pn 0 (w1, w2, w3, w4) 0)
-        _ -> fail ("Serialise.decode.SockAddr unexpected tok " ++ show tok)
+
+-- | A newtype wrapper which provides `Serialise` instance.
+--
+newtype RemoteAddressEncoding addr =
+    RemoteAddressEncoding { getRemoteAddressEncoding :: addr }
+  deriving (Eq, Ord)
+
+-- | This instance is used by `LocalStateQuery` mini-protocol codec in
+-- `ouroboros-consensus-diffusion`.
+--
+instance Serialise (RemoteAddressEncoding SockAddr) where
+  encode = encodeRemoteAddress . getRemoteAddressEncoding
+  decode = RemoteAddressEncoding <$> decodeRemoteAddress
