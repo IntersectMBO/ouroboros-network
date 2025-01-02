@@ -1,6 +1,12 @@
 # Revision history for ouroboros-network-testing
 
-## next version
+## next release
+
+### Breaking changes
+
+### Non-breaking changes
+
+## 0.8.0.0 -- 2025-01-02
 
 ### Breaking changes
 

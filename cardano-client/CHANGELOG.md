@@ -4,9 +4,13 @@
 
 ### Breaking changes
 
-* Addapted to `network-mux` changes in https://github.com/IntersectMBO/ouroboros-network/pull/4997
-
 ### Non-breaking changes
+
+## 0.5.0.0 -- 2025-01-02
+
+### Breaking changes
+
+* Addapted to `network-mux` changes in https://github.com/IntersectMBO/ouroboros-network/pull/4997
 
 ## 0.4.0.0 -- 2024-10-17
 

@@ -4,6 +4,12 @@
 
 ### Breaking changes
 
+### Non-breaking changes
+
+## 0.12.0.0 -- 2025-01-02
+
+### Breaking changes
+
 * Removed deprecated APIs
   * `getLegacyTipBlockNo`
   * `legacyTip`

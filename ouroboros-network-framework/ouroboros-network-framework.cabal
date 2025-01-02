@@ -1,6 +1,6 @@
 cabal-version: 3.0
 name: ouroboros-network-framework
-version: 0.14.0.0
+version: 0.15.0.0
 synopsis: Ouroboros network framework
 description: Ouroboros network framework.
 license: Apache-2.0
@@ -86,13 +86,13 @@ library
     hashable,
     io-classes ^>=1.5.0,
     iproute >=1.7 && <1.8,
-    monoidal-synchronisation ^>=0.1.0.5,
+    monoidal-synchronisation ^>=0.1.0.6,
     mtl,
     network ^>=3.1.4,
-    network-mux ^>=0.5,
+    network-mux ^>=0.6,
     nothunks,
     nothunks ^>=0.1.4 || ^>=0.2,
-    ouroboros-network-api ^>=0.11,
+    ouroboros-network-api ^>=0.12,
     ouroboros-network-testing,
     psqueues,
     quiet,

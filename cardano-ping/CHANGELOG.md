@@ -1,5 +1,11 @@
 # Revision history for cardano-ping
 
+## 0.7.0.0 -- 2024-10-17
+
+### Breaking changes
+
+* Updated dependencies.
+
 ## 0.6.0.0 -- 2024-10-17
 
 ### Breaking changes
