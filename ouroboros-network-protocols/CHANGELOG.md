@@ -1,5 +1,11 @@
 # Revision history for ouroboros-network-protocols
 
+## 0.13.0.0 -- 2025-01-02
+
+### Breaking changes
+
+* Removed deprecated API
+
 ## 0.12.0.0 -- 2024-10-17
 
 ### Breaking changes
