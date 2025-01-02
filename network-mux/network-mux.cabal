@@ -56,7 +56,7 @@ library
     contra-tracer >=0.1 && <0.2,
     io-classes ^>=1.5.0,
     monoidal-synchronisation >=0.1 && <0.2,
-    network ^>=3.1.4,
+    network ^>=3.2.7,
     process ^>=1.6,
     quiet,
     si-timers,

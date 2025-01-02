@@ -161,7 +161,7 @@ library
     iproute,
     monoidal-synchronisation,
     mtl,
-    network ^>=3.1.4,
+    network ^>=3.2.7,
     network-mux,
     nothunks,
     ouroboros-network-api ^>=0.12,

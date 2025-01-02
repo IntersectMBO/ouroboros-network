@@ -88,7 +88,7 @@ library
     iproute >=1.7 && <1.8,
     monoidal-synchronisation ^>=0.1.0.6,
     mtl,
-    network ^>=3.1.4,
+    network ^>=3.2.7,
     network-mux ^>=0.6,
     nothunks,
     nothunks ^>=0.1.4 || ^>=0.2,
