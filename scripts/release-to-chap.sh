@@ -62,7 +62,7 @@ if [[ $REPORT == 1 ]] then
 else
 
   branch=$(git rev-parse --abbrev-ref HEAD)
-  if [[ !($TEST) && !($branch =~ ^(main|release/.*)$) ]]; then
+  if [[ $TEST == 0 && !($branch =~ ^(main|release/.*)$) ]]; then
     echo "error: one must release from main or a release/* branch, pass a -t switch to skip this test"
     exit 1
   fi
@@ -82,7 +82,7 @@ else
     git pull
   fi
   BRANCH="network/release-$(date -I)"
-  if [[ $TEST ]];then
+  if [[ $TEST == 1 ]];then
     BRANCH="${BRANCH}-DO_NOT_MERGE"
   fi
   git switch -c $BRANCH
@@ -103,7 +103,7 @@ else
   git --no-pager log --oneline origin/main..HEAD
 
   popd > /dev/null
-  if [[ !($TEST) ]];then
+  if [[ $TEST == 0 ]];then
     trace "created tags:"
     git tag --points-at=HEAD
     trace "please run ./scripts/build-with-chap.sh"
