@@ -1516,9 +1516,9 @@ with args@Arguments {
                                    Just IPv6Address -> ipv6Address
                       configureSocket socket addr
                       -- only bind to the ip address if:
-                      -- * the diffusion is given `ipv4/6` addresses;
-                      -- * `diffusionMode` for this connection is
-                      --   `InitiatorAndResponderMode`.
+                      -- the diffusion is given `ipv4/6` addresses;
+                      -- `diffusionMode` for this connection is
+                      -- `InitiatorAndResponderMode`.
                       case addressType peerAddr of
                         Just IPv4Address | InitiatorAndResponderDiffusionMode
                                            <- diffusionMode ->

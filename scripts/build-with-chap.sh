@@ -66,16 +66,15 @@ if [[ $TEST == 0 ]]; then
     name=$(cat $cf | grep '^name:' | awk '{ print $2 }')
     version=$(ls -1 $CHAP_DIR/_sources/$name | sort -V | tail -1)
     rev=$(yq .github.rev $CHAP_DIR/_sources/$name/$version/meta.toml)
-    ! { git branch -l --contains $rev --format="%(refname:short)" | grep -e '^\(master\|release//\)'; }
+    ! { git branch -l --contains $rev --format="%(refname:short)" | grep -e '^\(main$\|release/\)'; }
     if [[ $? == 0 ]]; then
-      echo "$name: revision $rev is not on the master or a 'release/*' branch."
+      echo "$name: revision $rev is not on the main or a 'release/*' branch."
       exit 1
     fi
   done
 fi
 
 pushd $CHAP_DIR
-git symbolic-ref --short HEAD
 if [[ $TEST == 0 && $(git symbolic-ref --short HEAD) =~ ^network\/release- ]] then
   gh pr comment --body "* [x] checked with \`build-with-chap.sh\` in \`ouroboros-network\`"
 fi
