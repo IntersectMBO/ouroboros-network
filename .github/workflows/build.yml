@@ -31,22 +31,18 @@ jobs:
 
     steps:
 
+    - name: "Install System Dependencies via pacman (msys2)"
+      if: runner.os == 'Windows'
+      shell: 'C:/msys64/usr/bin/bash.exe -e {0}'
+      run: |
+        /usr/bin/pacman -S --noconfirm mingw-w64-x86_64-pkg-config mingw-w64-x86_64-openssl mingw-w64-x86_64-sed base-devel autoconf-wrapper autoconf automake libtool make
+
     - name: Install Haskell
       uses: input-output-hk/actions/haskell@latest
       id: setup-haskell
       with:
         ghc-version: ${{ matrix.ghc }}
         cabal-version: "3.12.1.0"
-        pacman-packages: >
-          mingw-w64-x86_64-pkg-config
-          mingw-w64-x86_64-openssl
-          mingw-w64-x86_64-sed
-          base-devel
-          autoconf-wrapper
-          autoconf
-          automake
-          libtool
-          make
 
     - uses: actions/checkout@v4
 
