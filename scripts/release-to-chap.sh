@@ -11,8 +11,8 @@ function usage {
   echo "Release packages to CHaP and create a PR."
   echo "-h help message "
   echo "-r report unreleased changes"
-  echo "-t build a release from a custom branch rather than master or release/* branches"
-  echo "Set CHAP_DIR env variable to point to CHaP direcotory, if not set '/tmp/chap' will be used."
+  echo "-t build a release from a custom branch rather than main or release/* branches"
+  echo "Set CARDANO_HASKELL_PACKAGES_DIR env variable to point to CHaP directory, if not set '/tmp/chap' will be used."
 }
 
 REPORT=0
@@ -36,7 +36,6 @@ while getopts ${optstring} arg; do
       exit 2
   esac
 done
-echo "TEST=$TEST"
 
 REPO_URL="https://github.com/intersectmbo/ouroboros-network"
 
@@ -63,8 +62,8 @@ if [[ $REPORT == 1 ]] then
 else
 
   branch=$(git rev-parse --abbrev-ref HEAD)
-  if [[ !($TEST) && !($branch =~ ^(master|release/.*)$) ]]; then
-    echo "error: one must release from master or a release/* branch, pass a -t switch to skip this test"
+  if [[ !($TEST) && !($branch =~ ^(main|release/.*)$) ]]; then
+    echo "error: one must release from main or a release/* branch, pass a -t switch to skip this test"
     exit 1
   fi
 

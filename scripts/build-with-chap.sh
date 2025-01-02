@@ -13,6 +13,30 @@ which yq # https://github.com/mikefarah/yq#install
 
 CHAP_DIR=${CARDANO_HASKELL_PACKAGES_DIR:-"/tmp/chap"}
 
+function usage {
+  echo "Build against cardano-haskell-packages branch"
+  echo "-h help message "
+  echo "-t build a release from a custom branch rather than main or release/* branches"
+  echo "Set CARDANO_HASKELL_PACKAGES_DIR env variable to point to CHaP directory, if not set '/tmp/chap' will be used."
+}
+
+optstring="ht"
+TEST=0
+while getopts ${optstring} arg; do
+  case ${arg} in
+    h)
+      usage
+      exit 0
+      ;;
+    t)
+      TEST=1
+      ;;
+    ?)
+      echo "Invalid option '-${arg}'."
+      exit 2
+  esac
+done
+
 if [[ -n "$(git status --untracked-files=no --porcelain)" ]];then
   echo "error: not a clean directory"
   exit 1
@@ -36,20 +60,22 @@ done
 cabal build all
 git reset --hard HEAD
 
-# check that all revs are on `master` or `release\/*` branches.
-for cf in $cabal_files; do
-  name=$(cat $cf | grep '^name:' | awk '{ print $2 }')
-  version=$(ls -1 $CHAP_DIR/_sources/$name | sort -V | tail -1)
-  rev=$(yq .github.rev $CHAP_DIR/_sources/$name/$version/meta.toml)
-  ! { git branch -l --contains $rev --format="%(refname:short)" | grep -e '^\(master\|release//\)'; }
-  if [[ $? == 0 ]]; then
-    echo "$name: revision $rev is not on the master or a 'release/*' branch."
-    exit 1
-  fi
-done
+# check that all revs are on `main` or `release\/*` branches.
+if [[ $TEST == 0 ]]; then
+  for cf in $cabal_files; do
+    name=$(cat $cf | grep '^name:' | awk '{ print $2 }')
+    version=$(ls -1 $CHAP_DIR/_sources/$name | sort -V | tail -1)
+    rev=$(yq .github.rev $CHAP_DIR/_sources/$name/$version/meta.toml)
+    ! { git branch -l --contains $rev --format="%(refname:short)" | grep -e '^\(master\|release//\)'; }
+    if [[ $? == 0 ]]; then
+      echo "$name: revision $rev is not on the master or a 'release/*' branch."
+      exit 1
+    fi
+  done
+fi
 
 pushd $CHAP_DIR
 git symbolic-ref --short HEAD
-if [[ $(git symbolic-ref --short HEAD) =~ ^network\/release- ]] then
+if [[ $TEST == 0 && $(git symbolic-ref --short HEAD) =~ ^network\/release- ]] then
   gh pr comment --body "* [x] checked with \`build-with-chap.sh\` in \`ouroboros-network\`"
 fi
