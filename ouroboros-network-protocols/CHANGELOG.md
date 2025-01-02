@@ -1,5 +1,9 @@
 # Revision history for ouroboros-network-protocols
 
+### Breaking changes
+
+* Added new `GetMeasures` message to `LocalTxMonitor`
+
 ## 0.12.0.0 -- 2024-10-17
 
 ### Breaking changes
