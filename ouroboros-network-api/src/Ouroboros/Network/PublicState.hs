@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric    #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE NamedFieldPuns   #-}
 
@@ -19,10 +20,13 @@ import Codec.CBOR.Encoding
 import Codec.Serialise (Serialise)
 import Codec.Serialise.Class (decode, encode)
 import Control.Monad (replicateM)
+import Data.Aeson qualified as Aeson
 import Data.Map.Strict (Map)
 import Data.Set (Set)
 import Data.Set qualified as Set
+import Data.String (fromString)
 import Data.Map.Strict qualified as Map
+import GHC.Generics
 
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.Public
@@ -37,8 +41,13 @@ data ConnectionManagerState peeraddr = ConnectionManagerState {
     registeredOutboundConnections :: Set peeraddr
     -- ^ set of outbound connections in `ReserverdOutboundSt` state.
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 
+instance Aeson.ToJSON peeraddr => Aeson.ToJSON (ConnectionManagerState peeraddr) where
+  toEncoding ConnectionManagerState { connectionMap, registeredOutboundConnections } =
+    Aeson.pairs $
+         fromString "connectionMap" Aeson..= connectionMap
+      <> fromString "registeredOutboundConnections" Aeson..= registeredOutboundConnections
 
 data InboundState peeraddr = InboundState {
     remoteHotSet  :: !(Set (ConnectionId peeraddr)),
@@ -46,7 +55,20 @@ data InboundState peeraddr = InboundState {
     remoteColdSet :: !(Set (ConnectionId peeraddr)),
     remoteIdleSet :: !(Set (ConnectionId peeraddr))
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
+
+instance Aeson.ToJSON peeraddr => Aeson.ToJSON (InboundState peeraddr) where
+  toEncoding InboundState {
+      remoteHotSet,
+      remoteWarmSet,
+      remoteColdSet,
+      remoteIdleSet
+    } =
+    Aeson.pairs $
+         fromString "remoteHotSet" Aeson..= remoteHotSet 
+      <> fromString "remoteWarmSet" Aeson..= remoteWarmSet
+      <> fromString "remoteColdSet" Aeson..= remoteColdSet
+      <> fromString "remoteIdleSet" Aeson..= remoteIdleSet
 
 emptyInboundState :: InboundState peeraddr
 emptyInboundState = InboundState {
@@ -61,7 +83,18 @@ data OutboundState peeraddr = OutboundState {
     warmPeers :: Set peeraddr,
     hotPeers  :: Set peeraddr
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
+
+instance Aeson.ToJSON peeraddr => Aeson.ToJSON (OutboundState peeraddr) where
+  toEncoding OutboundState {
+      hotPeers,
+      warmPeers,
+      coldPeers
+    } =
+    Aeson.pairs $
+         fromString "hotPeers"  Aeson..= hotPeers 
+      <> fromString "warmPeers" Aeson..= warmPeers
+      <> fromString "coldPeers" Aeson..= coldPeers
 
 
 data NetworkState peeraddr = NetworkState {
@@ -71,7 +104,18 @@ data NetworkState peeraddr = NetworkState {
     inboundGovernorState   :: InboundState peeraddr,
     outboundGovernorState  :: OutboundState peeraddr
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
+
+instance Aeson.ToJSON peeraddr => Aeson.ToJSON (NetworkState peeraddr) where
+  toEncoding NetworkState {
+      connectionManagerState,
+      inboundGovernorState,
+      outboundGovernorState
+    } =
+    Aeson.pairs $
+         fromString "connectionManagerState" Aeson..= connectionManagerState
+      <> fromString "inboundGovernorState"   Aeson..= inboundGovernorState
+      <> fromString "outboundGovernorState"  Aeson..= outboundGovernorState
 
 
 --
