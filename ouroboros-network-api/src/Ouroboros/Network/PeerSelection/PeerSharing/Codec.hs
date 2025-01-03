@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase        #-}
 
@@ -12,6 +13,8 @@ module Ouroboros.Network.PeerSelection.PeerSharing.Codec
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.Serialise (Serialise (..))
+import Data.Aeson qualified as Aeson
+import GHC.Generics
 
 import Network.Socket (PortNumber, SockAddr (..))
 
@@ -72,7 +75,7 @@ decodeRemoteAddress = do
 --
 newtype RemoteAddressEncoding addr =
     RemoteAddressEncoding { getRemoteAddressEncoding :: addr }
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Generic)
 
 -- | This instance is used by `LocalStateQuery` mini-protocol codec in
 -- `ouroboros-consensus-diffusion`.
@@ -80,3 +83,7 @@ newtype RemoteAddressEncoding addr =
 instance Serialise (RemoteAddressEncoding SockAddr) where
   encode = encodeRemoteAddress . getRemoteAddressEncoding
   decode = RemoteAddressEncoding <$> decodeRemoteAddress
+
+instance Aeson.ToJSON (RemoteAddressEncoding SockAddr) where
+  toJSON     (RemoteAddressEncoding addr) = Aeson.toJSON (show addr)
+  toEncoding (RemoteAddressEncoding addr) = Aeson.toEncoding (show addr)
