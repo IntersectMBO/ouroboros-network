@@ -15,7 +15,7 @@
 --
 -- This module should be imported qualified.
 --
-module Ouroboros.Network.Server2
+module Ouroboros.Network.Server
   ( Arguments (..)
     -- * Run server
   , with

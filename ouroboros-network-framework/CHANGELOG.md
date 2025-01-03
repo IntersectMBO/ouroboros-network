@@ -4,6 +4,17 @@
 
 ### Breaking changes
 
+* `Ouroboros.Network.Subscription` removed.
+* `Ouroboros.Network.ErrorPolicy` removed.
+* APIs removed from `Ouroboros.Network.Socket`:
+  * `NetworkMutableState` & friends,
+  * `withServerNode` and `withServerNode'`,
+  * `NetworkServerTracers`,
+  * `fromSnocket`,
+  * `beginConnection`
+* `Ouroboros.Network.Server.Socket` replaced with a simpler server
+  implementation in `Test.Ouroboros.Network.Server` (in `ouroboros-network:testlib` component).
+
 ### Non-breaking changes
 
 ## 0.15.0.0 -- 2025-01-02
