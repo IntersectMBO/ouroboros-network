@@ -20,6 +20,8 @@
 
 ### Non-Breaking changes
 
+* Added the `mapTraceFetchClientState` function
+
 ## 0.18.0.0 -- 2024-10-17
 
 ### Breaking changes
