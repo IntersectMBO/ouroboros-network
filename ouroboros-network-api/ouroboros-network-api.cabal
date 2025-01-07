@@ -23,12 +23,16 @@ flag asserts
 library
   hs-source-dirs: src
   exposed-modules:
+    Cardano.Network.ConsensusMode
+    Cardano.Network.PeerSelection.Bootstrap
+    Cardano.Network.PeerSelection.LocalRootPeers
+    Cardano.Network.PeerSelection.PeerTrustable
+    Cardano.Network.Types
     Ouroboros.Network.AnchoredFragment
     Ouroboros.Network.AnchoredSeq
     Ouroboros.Network.Block
     Ouroboros.Network.BlockFetch.ConsensusInterface
     Ouroboros.Network.CodecCBORTerm
-    Ouroboros.Network.ConsensusMode
     Ouroboros.Network.ControlMessage
     Ouroboros.Network.Handshake
     Ouroboros.Network.Handshake.Acceptable
@@ -36,15 +40,12 @@ library
     Ouroboros.Network.Magic
     Ouroboros.Network.NodeToClient.Version
     Ouroboros.Network.NodeToNode.Version
-    Ouroboros.Network.PeerSelection.Bootstrap
     Ouroboros.Network.PeerSelection.LedgerPeers.Type
     Ouroboros.Network.PeerSelection.LedgerPeers.Utils
-    Ouroboros.Network.PeerSelection.LocalRootPeers
     Ouroboros.Network.PeerSelection.PeerAdvertise
     Ouroboros.Network.PeerSelection.PeerMetric.Type
     Ouroboros.Network.PeerSelection.PeerSharing
     Ouroboros.Network.PeerSelection.PeerSharing.Codec
-    Ouroboros.Network.PeerSelection.PeerTrustable
     Ouroboros.Network.PeerSelection.RelayAccessPoint
     Ouroboros.Network.Point
     Ouroboros.Network.Protocol.Limits
