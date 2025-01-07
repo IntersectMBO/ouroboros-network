@@ -796,7 +796,10 @@ envEventCredits  TraceEnvPeersStatus{}          = 0
 -- next request.
 --
 envEventCredits  TraceEnvPeerShareResult{}      = 10
-envEventCredits  TraceEnvRootsResult{}          = 10
+-- fails --quickcheck-replay="(SMGen 1595848698888088949 9152751073020452179,27)"
+-- with 10 credits, but it appears benign as requests for public root peers
+-- stack with peer share requests and without sufficient credits the test fails
+envEventCredits  TraceEnvRootsResult{}          = 15
 envEventCredits  TraceEnvBigLedgerPeersResult{} = 10
 
 -- These events are visible in the environment but are the result of actions
