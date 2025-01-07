@@ -36,8 +36,7 @@ import GHC.Generics
 
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.Public
-import Ouroboros.Network.PeerSelection.PeerSharing.Codec
-           (RemoteAddressEncoding (..))
+import Ouroboros.Network.RemoteAddress.Codec (RemoteAddressEncoding (..))
 
 
 data ConnectionManagerState peeraddr = ConnectionManagerState {
