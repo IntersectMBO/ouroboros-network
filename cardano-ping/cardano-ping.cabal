@@ -26,16 +26,13 @@ library
   hs-source-dirs: src
   exposed-modules: Cardano.Network.Ping
   build-depends:
-    -- The Windows version of network-3.1.2 is missing
-    -- functions, see
-    -- https://github.com/haskell/network/issues/484
     aeson >=2.1.1.0 && <3,
     base >=4.14 && <4.21,
     bytestring >=0.10 && <0.13,
     cborg >=0.2.8 && <0.3,
     contra-tracer >=0.1 && <0.3,
     iproute ^>=1.7.15,
-    network >=3.1.2.2 && <3.2,
+    network ^>=3.2.7,
     network-mux ^>=0.6,
     si-timers ^>=1.5,
     strict-stm,
