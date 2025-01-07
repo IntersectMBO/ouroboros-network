@@ -47,11 +47,11 @@ library
     Ouroboros.Network.PeerSelection.PeerAdvertise
     Ouroboros.Network.PeerSelection.PeerMetric.Type
     Ouroboros.Network.PeerSelection.PeerSharing
-    Ouroboros.Network.PeerSelection.PeerSharing.Codec
     Ouroboros.Network.PeerSelection.RelayAccessPoint
     Ouroboros.Network.Point
     Ouroboros.Network.Protocol.Limits
     Ouroboros.Network.PublicState
+    Ouroboros.Network.RemoteAddress.Codec
     Ouroboros.Network.SizeInBytes
     Ouroboros.Network.Util.ShowProxy
 

@@ -2,7 +2,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase        #-}
 
-module Ouroboros.Network.PeerSelection.PeerSharing.Codec
+module Ouroboros.Network.RemoteAddress.Codec
   ( encodePortNumber
   , decodePortNumber
   , encodeRemoteAddress

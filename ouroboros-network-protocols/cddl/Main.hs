@@ -115,8 +115,6 @@ import Ouroboros.Network.Protocol.PeerSharing.Type qualified as PeerSharing
 import Test.ChainGenerators ()
 import Test.Data.CDDL (Any (..))
 
-import Ouroboros.Network.PeerSelection.PeerSharing.Codec (decodeRemoteAddress,
-           encodeRemoteAddress)
 import Ouroboros.Network.Protocol.BlockFetch.Codec.CDDL
 import Ouroboros.Network.Protocol.ChainSync.Codec.CDDL
 import Ouroboros.Network.Protocol.LocalStateQuery.Codec.CDDL
@@ -124,6 +122,8 @@ import Ouroboros.Network.Protocol.LocalTxMonitor.Codec.CDDL
 import Ouroboros.Network.Protocol.LocalTxSubmission.Codec.CDDL
 import Ouroboros.Network.Protocol.PeerSharing.Codec.CDDL
 import Ouroboros.Network.Protocol.TxSubmission2.Codec.CDDL
+import Ouroboros.Network.RemoteAddress.Codec (decodeRemoteAddress,
+           encodeRemoteAddress)
 import Test.QuickCheck hiding (Result (..))
 import Test.QuickCheck.Instances.ByteString ()
 import Test.Tasty (TestTree, adjustOption, defaultMain, testGroup)

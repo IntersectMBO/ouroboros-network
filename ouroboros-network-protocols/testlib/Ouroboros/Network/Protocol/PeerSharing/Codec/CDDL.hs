@@ -5,10 +5,10 @@ import Data.ByteString.Lazy qualified as BL
 import Network.Socket (SockAddr (..))
 import Network.TypedProtocol.Codec
 import Ouroboros.Network.NodeToNode.Version
-import Ouroboros.Network.PeerSelection.PeerSharing.Codec (decodeRemoteAddress,
-           encodeRemoteAddress)
 import Ouroboros.Network.Protocol.PeerSharing.Codec (codecPeerSharing)
 import Ouroboros.Network.Protocol.PeerSharing.Type
+import Ouroboros.Network.RemoteAddress.Codec (decodeRemoteAddress,
+           encodeRemoteAddress)
 
 peerSharingCodec :: NodeToNodeVersion
                  -> Codec (PeerSharing SockAddr)
