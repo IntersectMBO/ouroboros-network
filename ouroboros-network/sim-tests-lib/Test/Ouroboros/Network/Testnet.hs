@@ -2598,11 +2598,14 @@ prop_diffusion_target_active_local_below ioSimTrace traceNumber =
           trJoinKillSig =
               Signal.fromChangeEvents Killed -- Default to TrKillingNode
             . Signal.selectEvents
-                (\case TrJoiningNetwork -> Just Joined
-                       TrKillingNode    -> Just Killed
-                       _                -> Nothing
-                )
-            . selectDiffusionSimulationTrace
+                    (\case DiffusionDiffusionSimulationTrace TrJoiningNetwork
+                            -> Just Joined
+                           DiffusionDiffusionSimulationTrace TrKillingNode
+                            -> Just Killed
+                           DiffusionConnectionManagerTrace CM.TrShutdown
+                            -> Just Killed
+                           _ -> Nothing
+                    )
             $ events
 
           -- Signal.keyedUntil receives 2 functions one that sets start of the
