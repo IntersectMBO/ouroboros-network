@@ -213,7 +213,7 @@ tests =
     , testProperty "connect failure" prop_connect_failure
     , testProperty "accept failure" prop_accept_failure
     , testProperty "only bootstrap peers in fallback state"
-                   (testWithIOSim prop_only_bootstrap_peers_in_fallback_state 125000)
+                   (testWithIOSim prop_only_bootstrap_peers_in_fallback_state 125000 absNoAttenuation)
     , testProperty "no non trustable peers before caught up state"
                    (testWithIOSim prop_no_non_trustable_peers_before_caught_up_state 125000)
     , testGroup "local root diffusion mode"
