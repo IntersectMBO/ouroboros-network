@@ -173,14 +173,14 @@ following pieces of information:
     {ping-pong-protocol}
     {A simple ping-pong protocol for testing.}
     {typed-protocols/src/Network/TypedProtocol/PingPong/Type.hs}
-    {https://ouroboros-network.cardano.intersectmbo.org/typed-protocols-examples/Network-TypedProtocol-PingPong-Type.html\#t:PingPong}
+    {https://input-output-hk.github.io/typed-protocols/typed-protocols-examples/Network-TypedProtocol-PingPong-Type.html\#t:PingPong}
 
 \miniEntry
     {Request Response Protocol}
     {request-response-protocol}
     {A ping pong like protocol which allows to exchanges data.}
     {typed-protocols/src/Network/TypedProtocol/ReqResp/Type.hs}
-    {https://ouroboros-network.cardano.intersectmbo.org/typed-protocols-examples/Network-TypedProtocol-ReqResp-Type.html\#t:ReqResp}
+    {https://input-output-hk.github.io/typed-protocols/typed-protocols-examples/Network-TypedProtocol-ReqResp-Type.html\#t:ReqResp}
 
 \miniEntry
     {Handshake Mini Protocol}
@@ -193,36 +193,58 @@ following pieces of information:
     {Chain Synchronisation Protocol}
     {chain-sync-protocol}
     {The protocol by which a downstream chain consumer follows an upstream chain producer.}
-    {ouroboros-network/src/Ouroboros/Network/Protocol/ChainSync/Type.hs}
-    {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/Ouroboros-Network-Protocol-ChainSync-Type.html\#t:ChainSync}
+    {ouroboros-network-protocols/src/Ouroboros/Network/Protocol/ChainSync/Type.hs}
+    {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Type.html\#t:ChainSync}
 
 \miniEntry
     {Block Fetch Protocol}
     {block-fetch-protocol}
     {The block fetching mechanism enables a node to download ranges of blocks.}
-    {ouroboros-network/src/Ouroboros/Network/Protocol/BlockFetch/Type.hs}
-    {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/Ouroboros-Network-Protocol-BlockFetch-Type.html\#t:BlockFetch}
+    {ouroboros-network-protocols/src/Ouroboros/Network/Protocol/BlockFetch/Type.hs}
+    {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-protocols/Ouroboros-Network-Protocol-BlockFetch-Type.html\#t:BlockFetch}
 
 \miniEntry
     {Transaction Submission Protocol v2}
     {tx-submission-protocol2}
     {A Protocol for transmitting transaction between core nodes.}
-    {ouroboros-network/src/Ouroboros/Network/Protocol/TxSubmission2/Type.hs}
-    {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/Ouroboros-Network-Protocol-TxSubmission2-Type.html\#t:TxSubmission2}
+    {ouroboros-network-protocols/src/Ouroboros/Network/Protocol/TxSubmission2/Type.hs}
+    {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-protocols/Ouroboros-Network-Protocol-TxSubmission2-Type.html\#t:TxSubmission2}
 
 \miniEntry
     {Keep Alive Protocol}
     {keep-alive-protocol}
     {A protocol for sending keep alive messages and round trip measurements}
-    {ouroboros-network/src/Ouroboros/Network/Protocol/KeepAlive/Type.hs}
-    {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/Ouroboros-Network-Protocol-KeepAlive-Type.html\#t:KeepAlive}
+    {ouroboros-network-protocols/src/Ouroboros/Network/Protocol/KeepAlive/Type.hs}
+    {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-protocols/Ouroboros-Network-Protocol-KeepAlive-Type.html\#t:KeepAlive}
+
+\miniEntry
+    {Peer Sharing Protocol}
+    {peer-sharing-protocol}
+    {A mini-protocol which allows to share peer addresses}
+    {ouroboros-network-protocols/src/Ouroboros/Network/Protocol/PeerSharing/Type.hs}
+    {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-protocols/Ouroboros-Network-Protocol-PeerSharing-Type.html\#t:PeerSharing}
+
+\miniEntry
+    {Chain Synchronisation Protocol}
+    {chain-sync-protocol}
+    {The protocol by which a downstream chain consumer follows an upstream chain producer.}
+    {ouroboros-network-protocols/src/Ouroboros/Network/Protocol/ChainSync/Type.hs}
+    {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Type.html\#t:ChainSync}
 
 \miniEntry
     {Local State Query Mini Protocol}
     {local-state-query-protocol}
     {Protocol used by local clients to query ledger state}
-    {ouroboros-network/src/Ouroboros/Network/Protocol/LocalStateQuery/Type.hs}
-    {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/Ouroboros-Network-Protocol-LocalStateQuery-Type.html\#t:LocalStateQuery}
+    {ouroboros-network-protocols/src/Ouroboros/Network/Protocol/LocalStateQuery/Type.hs}
+    {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalStateQuery-Type.html\#t:LocalStateQuery}
+
+\miniEntry
+    {Local Tx Submission Mini Protocol}
+    {local-tx-submission-protocol}
+    {Protocol used by local clients to submit transactions}
+    {ouroboros-network-protocols/src/Ouroboros/Network/Protocol/LocalTxSubmission/Type.hs}
+    {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalTxSubmission-Type.html\#t:LocalTxSubmission}
+
 
 \section{CBOR and CDDL}
 All mini-protocols are encoded using concise binary object representation
@@ -254,7 +276,7 @@ Dummy protocols are only used for testing and are not needed either for
 Node-to-Node nor for the Node-to-Client protocols.
 \subsection{Ping-Pong mini-protocol}
 \label{ping-pong-protocol}
-\haddockref{Network.TypedProtocol.PingPong.Type}{typed-protocols-examples/Network-TypedProtocol-PingPong-Type\#t:PingPong}
+\haddockrefraw{Network.TypedProtocol.PingPong.Type}{https://input-output-hk.github.io/typed-protocols/typed-protocols-examples/Network-TypedProtocol-PingPong-Type.html\#t:PingPong}
 \newcommand{\Ping}{\msg{MsgPing}}
 \newcommand{\Pong}{\msg{MsgPong}}
 
@@ -311,7 +333,7 @@ The messages of the Ping-Pong protocol do not carry any data.
 
 \subsection{Request-Response mini-protocol}
 \label{request-response-protocol}
-\haddockref{Network.TypedProtocol.ReqResp.Type}{typed-protocols-examples/Network-TypedProtocol-ReqResp-Type.html\#t:ReqResp}
+\haddockrefraw{Network.TypedProtocol.ReqResp.Type}{https://input-output-hk.github.io/typed-protocols/typed-protocols-examples/Network-TypedProtocol-ReqResp-Type.html\#t:ReqResp}
 \renewcommand{\StIdle}{\state{StIdle}}
 \renewcommand{\StBusy}{\state{StBusy}}
 \renewcommand{\StDone}{\state{StDone}}
@@ -598,7 +620,7 @@ client protocol.
 
 \section{Chain-Sync mini-protocol}
 \label{chain-sync-protocol}
-\haddockref{Ouroboros.Network.Protocol.ChainSync.Type}{ouroboros-network/Ouroboros-Network-Protocol-ChainSync-Type\#t:ChainSync}
+\haddockref{Ouroboros.Network.Protocol.ChainSync.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Type\#t:ChainSync}
 \newcommand{\StCanAwait}{\state{StCanAwait}}
 \newcommand{\StMustReply}{\state{StMustReply}}
 \newcommand{\StIntersect}{\state{StIntersect}}
@@ -882,7 +904,7 @@ See appendix \ref{cddl-common} for common definitions.
 
 \section{Block-Fetch mini-protocol}
 \label{block-fetch-protocol}
-\haddockref{Ouroboros.Network.Protocol.BlockFetch.Type}{ouroboros-network/Ouroboros-Network-Protocol-BlockFetch-Type\#t:BlockFetch}
+\haddockref{Ouroboros.Network.Protocol.BlockFetch.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-BlockFetch-Type\#t:BlockFetch}
 
 \renewcommand{\StIdle}{\state{StIdle}}
 \renewcommand{\StBusy}{\state{StBusy}}
@@ -973,7 +995,7 @@ See appendix \ref{cddl-common} for common definitions.
 Version 1 of the tx-submission protocol is no longer supported.
 
 \subsection{Version 2}
-\haddockref{Ouroboros.Network.Protocol.TxSubmission2.Type}{ouroboros-network/Ouroboros-Network-Protocol-TxSubmission2-Type\#t:TxSubmission2}
+\haddockref{Ouroboros.Network.Protocol.TxSubmission2.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-TxSubmission2-Type\#t:TxSubmission2}
 \label{tx-submission-protocol2}
 \newcommand{\StInit}  {\state{StInit}}
 \newcommand{\MsgInit} {\trans{MsgInit}}
@@ -1116,7 +1138,7 @@ It replies with not more than the requested number of ids (possible with an empt
 A blocking request on the other side, waits until at least one transaction is available.
 
 \section{Keep Alive Mini Protocol}
-\haddockref{Ouroboros.Network.Protocol.KeepAlive.Type}{ouroboros-network/Ouroboros-Network-Protocol-KeepAlive-Type\#t:KeepAlive}
+\haddockref{Ouroboros.Network.Protocol.KeepAlive.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-KeepAlive-Type\#t:KeepAlive}
 \label{keep-alive-protocol}
 \subsection{Description}
 Keep alive mini-protocol is a member of node-to-node protocol.  It is used for
@@ -1169,7 +1191,7 @@ measurements.
 \lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/keep-alive.cddl}
 
 \section{Local Tx-Submission mini-protocol}
-\haddockref{Ouroboros.Network.Protocol.LocalTxSubmission.Type}{ouroboros-network/Ouroboros-Network-Protocol-LocalTxSubmission-Type\#t:LocalTxSubmission}
+\haddockref{Ouroboros.Network.Protocol.LocalTxSubmission.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalTxSubmission-Type\#t:LocalTxSubmission}
 \label{local-tx-submission-protocol}
 \subsection{Description}
 The local transaction submission mini protocol is used by local clients,
@@ -1230,7 +1252,7 @@ This is acceptable because is protocol is only for use between a node and local 
 
 \section{Local State Query mini-protocol}
 \label{local-state-query-protocol}
-\haddockref{Ouroboros.Network.Protocol.LocalStateQuery.Type}{ouroboros-network/Ouroboros-Network-Protocol-LocalStateQuery-Type\#t:LocalStateQuery}
+\haddockref{Ouroboros.Network.Protocol.LocalStateQuery.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalStateQuery-Type\#t:LocalStateQuery}
 \newcommand{\StAcquiring}{\state{Acquiring}}
 \newcommand{\StAcquired}{\state{Acquired}}
 \newcommand{\StQuerying}{\state{Querying}}
@@ -1320,7 +1342,7 @@ $ImmutableTip$ are necessarily not subject rollback.
 See appendix \ref{cddl-common} for common definitions.
 
 \section{Peer Sharing mini-protocol}
-\haddockref{Ouroboros.Network.Protocol.PeerSharing.Type}{ouroboros-network/Ouroboros-Network-Protocol-PeerSharing-Type\#t:PeerSharing}
+\haddockref{Ouroboros.Network.Protocol.PeerSharing.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-PeerSharing-Type\#t:PeerSharing}
 \label{peer-sharing-protocol}
 \subsection{Description}
 The Peer Sharing MiniProtocol is a simple Request-Reply protocol. Peer Sharing
@@ -1478,7 +1500,7 @@ The buffer sizes are listed in Table~\ref{bla} in Section~\ref{blub}.
 \section{Node-to-node protocol}
 \label{section:node-to-node-protocol}
 \haddockref{Ouroboros.Network.NodeToNode}{ouroboros-network/Ouroboros-Network-NodeToNode}\newline
-\haddockref{Ouroboros.Network.NodeToNode.Version}{ouroboros-network/Ouroboros-Network-NodeToNode-Version}\newline
+\haddockref{Ouroboros.Network.NodeToNode.Version}{ouroboros-network-api/Ouroboros-Network-NodeToNode-Version}\newline
 
 The \textit{node-to-node protocol} consists of the following protocols:
 \begin{itemize}
@@ -1507,7 +1529,7 @@ Previously supported node-to-node versions are listed in table \ref{table:histor
 \section{Node-to-client protocol}
 \label{section:node-to-client-protocol}
 \haddockref{Ouroboros.Network.NodeToClient}{ouroboros-network/Ouroboros-Network-NodeToClient}\newline
-\haddockref{Ouroboros.Network.NodeToClient.Version}{ouroboros-network/Ouroboros-Network-NodeToClient-Version}\newline
+\haddockref{Ouroboros.Network.NodeToClient.Version}{ouroboros-network-api/Ouroboros-Network-NodeToClient-Version}\newline
 
 The \textit{node-to-client protocol} consists of the following protocols:
 \begin{itemize}
