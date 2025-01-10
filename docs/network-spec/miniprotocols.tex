@@ -1190,6 +1190,130 @@ measurements.
 \subsection{CDDL encoding specification}
 \lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/keep-alive.cddl}
 
+\section{Peer Sharing mini-protocol}
+\haddockref{Ouroboros.Network.Protocol.PeerSharing.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-PeerSharing-Type\#t:PeerSharing}
+\label{peer-sharing-protocol}
+\subsection{Description}
+The Peer Sharing MiniProtocol is a simple Request-Reply protocol. Peer Sharing
+Protocol is used by nodes to perform share requests to upstream peers. Requested peers
+will share a subset of their Known Peers.
+
+\newcommand{\PsClient}{\state{StIdle}}
+\newcommand{\PsServer}{\state{StBusy}}
+\newcommand{\MsgShareRequest}{\trans{MsgShareRequest}}
+\newcommand{\MsgSharePeers}{\trans{MsgSharePeers}}
+\subsection{State machine}
+
+\begin{figure}[h]
+  \begin{tabular}{|l|l|}
+    \hline
+    \multicolumn{2}{|c|}{Agency} \\ \hline
+    Client has Agency & \PsClient  \\ \hline
+    Server has Agency & \PsServer  \\ \hline
+  \end{tabular}
+\end{figure}
+
+\begin{figure}[h]
+  \begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4.5cm, semithick]
+    \tikzstyle{every state}=[fill=red,draw=none,text=white]
+    \node[state, mygreen, initial]        (Client)  {\PsClient};
+    \node[state, myblue, right of=Client] (Server)  {\PsServer};
+    \node[state, below of=Client]         (Done)    {\StDone};
+
+    \draw (Client) edge[above, bend left=45] node{\MsgShareRequest} (Server);
+    \draw (Server) edge[below, bend left=45] node{\MsgSharePeers}   (Client);
+    \draw (Client) edge[left]                node{\MsgDone}         (Done);
+  \end{tikzpicture}
+  \caption{State machine of the peer sharing protocol.}
+\end{figure}
+
+\paragraph{Protocol messages}
+\begin{description}
+\item [\MsgShareRequest{} $amount$]
+  The client requests a maximum number of peers to be shared ($amount$). Ideally this
+  amount should limited by a protocol level constant to disallow a bad actor from
+  requesting too many peers.
+\item [\MsgSharePeers{} ${[}peerAddress{]}$]
+  The server replies with a set of peers. Ideally the amount of information (e.g. reply
+  byte size) should be limited by a protocol level constant to disallow a bad actor from
+  sending too much information.
+\item [\MsgDone]
+  Terminating message.
+\end{description}
+
+\subsection{Client Implementation Details}
+
+The initiator side will have to be running indefinitely since protocol termination means
+either an error or peer demotion. Because of this, the protocol won't be able to be run as
+a simple request-response protocol. To overcome this the client side implementation will
+use a registry so that each connected peer gets registered and assigned a controller with
+a request mailbox. This controller will be used to issue requests to the client
+implementation which will be waiting for the queue to be filled up to send a
+\MsgShareRequest. After sending a request, the result is put into a local result mailbox.
+
+If a peer gets disconnected, it should get unregistered.
+
+\subsubsection{Deciding to whom to request peers to (and how many)}
+
+First of all peer sharing requests should only be issued if:
+
+\begin{itemize}
+  \item The current number of known peers is less than the target for known peers;
+  \item The rate limit value for peer sharing requests isn't exceeded;
+  \item There are available peers to issue requests too;
+\end{itemize}
+
+If these conditions hold then we can pick a set of peers to issue requests to.
+Ideally this set respects the rate limit value for peer sharing requests.
+
+If a peer has \texttt{PeerSharingDisabled} flag value do not ask it for peers.
+This peer won't even have the Peer Sharing miniprotocol server running.
+
+The amount of peers to request to each upstream peer should aim to fullfill
+the target for known peers. This number should be split for the current peer
+target objective across all peer sharing candidates for efficiency and
+diversity reasons.
+
+\subsubsection{Picking peers for the response}
+
+Apart from managing the Outbound Governor state correctly, the final result
+set should be a random distribution of the original set.
+
+This selection should be done in such a way that when the same initial PRNG
+state is used, the selected set does not significantly vary with small
+perturbations in the set of published peers.
+
+The intention of this selection method is that the selection should give
+approximately the same replies to the same peers over the course of multiple
+requests from the same peer. This is to deliberately slow the rate at which
+peers can discover and map out the entire network.
+
+\subsection{Server Implementation Details}
+
+As soon as the server receives a share request it needs to pick subset not bigger than the
+value specified in the request's parameter. The reply set needs to be sampled randomly
+from the Known Peer set according to the following constraints:
+
+\begin{itemize}
+  \item Only pick peers that we managed to connect-to at some point
+  \item Don't pick known-to-be-ledger peers
+  \item Pick peers that have a public willingness information (e.g. \texttt{DoAdvertisePeer}).
+  \item Pick peers that haven't behaved badly (e.g. \texttt{PeerFailCount == 0})
+\end{itemize}
+
+Computing the result (i.e. random sampling of available peers) needs access to the
+\texttt{PeerSelectionState} which is specific to the \texttt{peerSelectionGovernorLoop}. However when
+initializing the server side of the protocol we have to provide the result computing
+function early in the consensus side. This means we will have to find a way to delay the
+function application all the way to diffusion and share the relevant parts of
+\texttt{PeerSelectionState} with this function via a \texttt{TVar}.
+
+\subsection{CDDL encoding specification ($11$ to $12$)}\label{peersharing-cddl}
+\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/peer-sharing-v11-12.cddl}
+
+\subsection{CDDL encoding specification ($\geq 13$)}\label{peersharing-cddl}
+\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/peer-sharing-v13.cddl}
+
 \section{Local Tx-Submission mini-protocol}
 \haddockref{Ouroboros.Network.Protocol.LocalTxSubmission.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalTxSubmission-Type\#t:LocalTxSubmission}
 \label{local-tx-submission-protocol}
@@ -1340,130 +1464,6 @@ $ImmutableTip$ are necessarily not subject rollback.
 \subsection{CDDL encoding specification}
 \lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/local-state-query.cddl}
 See appendix \ref{cddl-common} for common definitions.
-
-\section{Peer Sharing mini-protocol}
-\haddockref{Ouroboros.Network.Protocol.PeerSharing.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-PeerSharing-Type\#t:PeerSharing}
-\label{peer-sharing-protocol}
-\subsection{Description}
-The Peer Sharing MiniProtocol is a simple Request-Reply protocol. Peer Sharing
-Protocol is used by nodes to perform share requests to upstream peers. Requested peers
-will share a subset of their Known Peers.
-
-\newcommand{\PsClient}{\state{StIdle}}
-\newcommand{\PsServer}{\state{StBusy}}
-\newcommand{\MsgShareRequest}{\trans{MsgShareRequest}}
-\newcommand{\MsgSharePeers}{\trans{MsgSharePeers}}
-\subsection{State machine}
-
-\begin{figure}[h]
-  \begin{tabular}{|l|l|}
-    \hline
-    \multicolumn{2}{|c|}{Agency} \\ \hline
-    Client has Agency & \PsClient  \\ \hline
-    Server has Agency & \PsServer  \\ \hline
-  \end{tabular}
-\end{figure}
-
-\begin{figure}[h]
-  \begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4.5cm, semithick]
-    \tikzstyle{every state}=[fill=red,draw=none,text=white]
-    \node[state, mygreen, initial]        (Client)  {\PsClient};
-    \node[state, myblue, right of=Client] (Server)  {\PsServer};
-    \node[state, below of=Client]         (Done)    {\StDone};
-
-    \draw (Client) edge[above, bend left=45] node{\MsgShareRequest} (Server);
-    \draw (Server) edge[below, bend left=45] node{\MsgSharePeers}   (Client);
-    \draw (Client) edge[left]                node{\MsgDone}         (Done);
-  \end{tikzpicture}
-  \caption{State machine of the peer sharing protocol.}
-\end{figure}
-
-\paragraph{Protocol messages}
-\begin{description}
-\item [\MsgShareRequest{} $amount$]
-  The client requests a maximum number of peers to be shared ($amount$). Ideally this
-  amount should limited by a protocol level constant to disallow a bad actor from
-  requesting too many peers.
-\item [\MsgSharePeers{} ${[}peerAddress{]}$]
-  The server replies with a set of peers. Ideally the amount of information (e.g. reply
-  byte size) should be limited by a protocol level constant to disallow a bad actor from
-  sending too much information.
-\item [\MsgDone]
-  Terminating message.
-\end{description}
-
-\subsection{Client Implementation Details}
-
-The initiator side will have to be running indefinitely since protocol termination means
-either an error or peer demotion. Because of this, the protocol won't be able to be run as
-a simple request-response protocol. To overcome this the client side implementation will
-use a registry so that each connected peer gets registered and assigned a controller with
-a request mailbox. This controller will be used to issue requests to the client
-implementation which will be waiting for the queue to be filled up to send a
-\MsgShareRequest. After sending a request, the result is put into a local result mailbox.
-
-If a peer gets disconnected, it should get unregistered.
-
-\subsubsection{Deciding to whom to request peers to (and how many)}
-
-First of all peer sharing requests should only be issued if:
-
-\begin{itemize}
-  \item The current number of known peers is less than the target for known peers;
-  \item The rate limit value for peer sharing requests isn't exceeded;
-  \item There are available peers to issue requests too;
-\end{itemize}
-
-If these conditions hold then we can pick a set of peers to issue requests to.
-Ideally this set respects the rate limit value for peer sharing requests.
-
-If a peer has \texttt{PeerSharingDisabled} flag value do not ask it for peers.
-This peer won't even have the Peer Sharing miniprotocol server running.
-
-The amount of peers to request to each upstream peer should aim to fullfill
-the target for known peers. This number should be split for the current peer
-target objective across all peer sharing candidates for efficiency and
-diversity reasons.
-
-\subsubsection{Picking peers for the response}
-
-Apart from managing the Outbound Governor state correctly, the final result
-set should be a random distribution of the original set.
-
-This selection should be done in such a way that when the same initial PRNG
-state is used, the selected set does not significantly vary with small
-perturbations in the set of published peers.
-
-The intention of this selection method is that the selection should give
-approximately the same replies to the same peers over the course of multiple
-requests from the same peer. This is to deliberately slow the rate at which
-peers can discover and map out the entire network.
-
-\subsection{Server Implementation Details}
-
-As soon as the server receives a share request it needs to pick subset not bigger than the
-value specified in the request's parameter. The reply set needs to be sampled randomly
-from the Known Peer set according to the following constraints:
-
-\begin{itemize}
-  \item Only pick peers that we managed to connect-to at some point
-  \item Don't pick known-to-be-ledger peers
-  \item Pick peers that have a public willingness information (e.g. \texttt{DoAdvertisePeer}).
-  \item Pick peers that haven't behaved badly (e.g. \texttt{PeerFailCount == 0})
-\end{itemize}
-
-Computing the result (i.e. random sampling of available peers) needs access to the
-\texttt{PeerSelectionState} which is specific to the \texttt{peerSelectionGovernorLoop}. However when
-initializing the server side of the protocol we have to provide the result computing
-function early in the consensus side. This means we will have to find a way to delay the
-function application all the way to diffusion and share the relevant parts of
-\texttt{PeerSelectionState} with this function via a \texttt{TVar}.
-
-\subsection{CDDL encoding specification ($11$ to $12$)}\label{peersharing-cddl}
-\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/peer-sharing-v11-12.cddl}
-
-\subsection{CDDL encoding specification ($\geq 13$)}\label{peersharing-cddl}
-\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/peer-sharing-v13.cddl}
 
 \section{Pipelining of Mini Protocols}
 \label{pipelining}
