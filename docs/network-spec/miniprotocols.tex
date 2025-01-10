@@ -168,6 +168,12 @@ following pieces of information:
   \end{framed}
 }
 
+\subsection{Dummy mini-protocols}
+
+Dummy mini-protocols are not used by `cardano-node`, however they might be
+helpful when writing demos, testing purposes or getting familiar with the
+framework.
+
 \miniEntry
     {Ping Pong Protocol}
     {ping-pong-protocol}
@@ -182,12 +188,21 @@ following pieces of information:
     {typed-protocols/src/Network/TypedProtocol/ReqResp/Type.hs}
     {https://input-output-hk.github.io/typed-protocols/typed-protocols-examples/Network-TypedProtocol-ReqResp-Type.html\#t:ReqResp}
 
+\subsection{Handshake}
+
+Handshake mini-protocol is shared by the node-to-node and node-to-client
+protocols (it is polymorphic to allow that).
+
 \miniEntry
     {Handshake Mini Protocol}
     {handshake-protocol}
     {This protocol is used for version negotiation.}
-    {ouroboros-network/src/Ouroboros/Network/Protocol/Handshake/Type.hs}
+    {ouroboros-network-framework/src/Ouroboros/Network/Protocol/Handshake/Type.hs}
     {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Type.html\#t:Handshake}
+
+\subsection{Node-to-node mini-protocols}
+
+Mini-protocols used by the node-to-node protocol.
 
 \miniEntry
     {Chain Synchronisation Protocol}
@@ -223,6 +238,12 @@ following pieces of information:
     {A mini-protocol which allows to share peer addresses}
     {ouroboros-network-protocols/src/Ouroboros/Network/Protocol/PeerSharing/Type.hs}
     {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-protocols/Ouroboros-Network-Protocol-PeerSharing-Type.html\#t:PeerSharing}
+
+\subsection{Node-to-client mini-protocols}
+
+Mini-protocols used by node-to-client protocol.  The chain-sync mini-protocol
+is shared with node-to-node protocol, but instantiated differently.  In the
+node-to-client version it is used with full blocks rather than just headers.
 
 \miniEntry
     {Chain Synchronisation Protocol}
