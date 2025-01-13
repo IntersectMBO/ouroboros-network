@@ -1391,9 +1391,9 @@ This is acceptable because is protocol is only for use between a node and local 
 \begin{figure}[h]
   \begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4cm, semithick]
     \tikzstyle{every state}=[fill=red,draw=none,text=white]
-    \node[state, myblue, initial]                                     (Idle)     {\StIdle};
-    \node[state, right of=Idle]                                       (Done)     {\StDone};
-    \node[state, mygreen, above of=Idle]                              (Busy)     {\StBusy};
+    \node[state, mygreen, initial]      (Idle) {\StIdle};
+    \node[state, right of=Idle]         (Done) {\StDone};
+    \node[state, myblue, above of=Idle] (Busy) {\StBusy};
 
     \draw (Idle)         edge[]              node{\MsgDone}           (Done);
     \draw (Idle.0)       to[out=30,  in=330] node[fill=white, left=-2mm]{\MsgSubmitTx}    (Busy.0);
