@@ -764,7 +764,7 @@ The protocol uses the following messages:
     \StIdle      & \MsgDone            &                                     & \StDone       \\ \hline
     \StCanAwait  & \MsgAwaitReply         &                                     & \StMustReply  \\ \hline
     \StCanAwait  & \MsgRollForward        & $header$, $tip$                     & \StIdle       \\ \hline
-    \StCanAwait  & \MsgRollBackward       & $header_{old}$, $tip$                & \StIdle       \\ \hline
+    \StCanAwait  & \MsgRollBackward       & $point_{old}$, $tip$                & \StIdle       \\ \hline
     \StMustReply & \MsgRollForward        & $header$, $tip$                     & \StIdle       \\ \hline
     \StMustReply & \MsgRollBackward       & $point_{old}$, $tip$                 & \StIdle       \\ \hline
     \StIntersect & \MsgIntersectFound     & $point_{intersect}$, $tip$            & \StIdle       \\ \hline
