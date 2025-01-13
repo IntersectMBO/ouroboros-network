@@ -60,6 +60,7 @@ import Ouroboros.Network.Util.ShowProxy
 -- whether transactions are flowing towards a peer or away, and thus indicates
 -- what role the peer is playing.
 --
+type TxSubmission2 :: Type -> Type -> Type
 data TxSubmission2 txid tx where
 
   -- | Initial protocol message.
