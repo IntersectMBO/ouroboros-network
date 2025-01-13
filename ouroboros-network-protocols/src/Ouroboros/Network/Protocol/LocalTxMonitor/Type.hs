@@ -62,6 +62,7 @@ import Ouroboros.Network.Util.ShowProxy
 --
 -- It is parametrised over the type of transactions.
 --
+type LocalTxMonitor :: Type -> Type -> Type -> Type
 data LocalTxMonitor txid tx slot where
 
   -- | The client has agency; it can request a transaction or terminate.
@@ -217,8 +218,8 @@ instance Protocol (LocalTxMonitor txid tx slot) where
       :: txid
       -> Message (LocalTxMonitor txid tx slot) StAcquired (StBusy HasTx)
 
-    -- | The server responds 'True' when the given tx is present in the snapshot,
-    -- False otherwise.
+    -- | The server responds 'True' when the given tx is present in the
+    -- snapshot, 'False' otherwise.
     --
     MsgReplyHasTx
       :: Bool

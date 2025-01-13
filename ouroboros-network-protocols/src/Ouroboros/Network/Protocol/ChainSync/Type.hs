@@ -1,10 +1,11 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE PolyKinds           #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE FlexibleInstances        #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE StandaloneDeriving       #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeFamilies             #-}
 
 -- | The type of the chain synchronisation protocol.
 --
@@ -13,6 +14,7 @@
 --
 module Ouroboros.Network.Protocol.ChainSync.Type where
 
+import Data.Kind (Type)
 import Data.Singletons
 
 import Network.TypedProtocol.Core
@@ -24,6 +26,7 @@ import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 -- | A kind to identify our protocol, and the types of the states in the state
 -- transition diagram of the protocol.
 --
+type ChainSync :: Type -> Type -> Type -> Type
 data ChainSync header point tip where
 
   -- | Both client and server are idle. The client can send a request and
