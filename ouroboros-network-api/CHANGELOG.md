@@ -18,6 +18,9 @@
 
 ### Non-breaking changes
 
+* Changed definition of `DomainAccessPoint` for DNS SRV implementation.
+* Refactored `RelayAccessPointCoded` JSON instances for clarity
+
 ## 0.11.0.0 -- 2024-10-17
 
 ### Breaking changes

@@ -202,6 +202,8 @@ data TracersExtra ntnAddr ntnVersion ntnVersionData
     , dtInboundGovernorTransitionTracer
         :: Tracer m (RemoteTransitionTrace ntnAddr)
 
+    , dtDnsTracer :: Tracer m (DnsTrace IP)
+
       --
       -- NodeToClient tracers
       --
@@ -246,6 +248,7 @@ nullTracers =
       , dtLocalConnectionManagerTracer               = nullTracer
       , dtLocalServerTracer                          = nullTracer
       , dtLocalInboundGovernorTracer                 = nullTracer
+      , dtDnsTracer                                  = nullTracer
     }
 
 -- | P2P Arguments Extras
@@ -545,7 +548,9 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         -- | diffusion dns actions
         --
         diDnsActions
-          :: DNSLookupType -> DNSActions resolver resolverError m,
+          :: DNSLookupType
+          -> Tracer m (DnsTrace IP)
+          -> DNSActions resolver resolverError m,
 
         -- | Update `ntnVersionData` for initiator-only local roots.
         diUpdateVersionData
@@ -660,6 +665,7 @@ runM Interfaces
        , dtLocalConnectionManagerTracer
        , dtLocalServerTracer
        , dtLocalInboundGovernorTracer
+       , dtDnsTracer
        }
      Arguments
        { daIPv4Address
@@ -716,7 +722,8 @@ runM Interfaces
     (churnRng,       rng3) = split rng2
     (fuzzRng,        rng4) = split rng3
     (cmLocalStdGen,  rng5) = split rng4
-    (cmStdGen1, cmStdGen2) = split rng5
+    (cmStdGen1,      rng6) = split rng5
+    (cmStdGen2, peerSelectionActionsRng) = split rng6
 
 
     mkInboundPeersMap :: InboundGovernor.PublicState ntnAddr ntnVersionData
@@ -1035,7 +1042,7 @@ runM Interfaces
           withPeerSelectionActions' readInboundPeers =
               withPeerSelectionActions localRootsVar PeerActionsDNS {
                                          paToPeerAddr = diNtnToPeerAddr,
-                                         paDnsActions = diDnsActions lookupReqs,
+                                         paDnsActions = diDnsActions lookupReqs dtDnsTracer,
                                          paDnsSemaphore = dnsSemaphore }
                                        PeerSelectionActionsArgs {
                                          psLocalRootPeersTracer = dtTraceLocalRootPeersTracer,
@@ -1061,6 +1068,7 @@ runM Interfaces
                                          wlpTracer = dtTraceLedgerPeersTracer,
                                          wlpGetUseLedgerPeers = daReadUseLedgerPeers,
                                          wlpGetLedgerPeerSnapshot = daReadLedgerPeerSnapshot }
+                                       peerSelectionActionsRng
 
           peerSelectionGovernor'
             :: forall (muxMode :: Mx.Mode) b.

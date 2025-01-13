@@ -67,8 +67,10 @@ import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PeerStateActions
 import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
+import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions hiding
            (DNSorIOError (IOError))
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions qualified as DNSActions
 import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
            (TraceLocalRootPeers (..))
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
@@ -1137,8 +1139,8 @@ prop_peer_selection_action_trace_coverage defaultBearerInfo diffScript =
         "PeerMonitoringError " ++ show se
       peerSelectionActionsTraceMap (PeerMonitoringResult _ wspt)  =
         "PeerMonitoringResult " ++ show wspt
-      peerSelectionActionsTraceMap (AcquireConnectionError e)      =
-        "AcquireConnectionError " ++ show e
+      peerSelectionActionsTraceMap (AcquireConnectionError _e)    =
+        "AcquireConnectionError"
 
       eventsSeenNames = map peerSelectionActionsTraceMap events
 
@@ -1439,19 +1441,38 @@ prop_diffusion_dns_can_recover ioSimTrace traceNumber =
     verify toRecover ttlMap recovered time ((t, ev):evs) =
       case ev of
         DiffusionLocalRootPeerTrace
-          (TraceLocalRootFailure dap (DNSError err)) ->
-            let dns = dapDomain dap
+          failure | isFailure failure && notIOError failure ->
+            let dns = extractDomainName failure
                 ttl = fromMaybe 0 $ Map.lookup dns ttlMap
-                ttl' = ttlForDnsError err ttl
+                ttl' = case failReason failure of
+                         Just (DNSError err) -> ttlForDnsError err ttl
+                         _otherwise          -> clipTTLAbove (ttl * 2 + 5)
                 ttlMap' = Map.insert dns ttl' ttlMap
              in verify (Map.insert dns (addTime ttl' t) toRecover)
                         ttlMap'
                         recovered t evs
+          where
+            failReason = \case
+              TraceLocalRootFailure _ reason -> reason
+              TraceLocalRootFailureVia _ _ reason -> reason
+              _otherwise -> error "impossible!"
+            notIOError = \case
+              TraceLocalRootFailure _ failure' | Just (DNSActions.IOError {}) <- failure' -> False
+              TraceLocalRootFailureVia _ _ failure' | Just (DNSActions.IOError {}) <- failure' -> False
+              _otherwise -> True
+            isFailure (TraceLocalRootFailure {}) = True
+            isFailure (TraceLocalRootFailureVia {}) = True
+            isFailure _ = False
+
         DiffusionLocalRootPeerTrace
           (TraceLocalRootReconfigured _ _) ->
             verify Map.empty ttlMap recovered t evs
-        DiffusionLocalRootPeerTrace (TraceLocalRootResult dap r) ->
-          let dns = dapDomain dap
+        DiffusionLocalRootPeerTrace trace | isResultTag trace ->
+          let (dns, r) =
+                case trace of
+                  TraceLocalRootResult (DomainPlain d _p) ipsttls -> (d, ipsttls)
+                  TraceLocalRootResultVia (DomainSRV d) _dp ipsttls -> (d, ipsttls)
+                  _ -> error "impossible!"
               ttls = map snd r
               ttlMap' = Map.insert dns (ttlForResults ttls) ttlMap
            in case Map.lookup dns toRecover of
@@ -1464,6 +1485,16 @@ prop_diffusion_dns_can_recover ioSimTrace traceNumber =
         DiffusionDiffusionSimulationTrace TrReconfiguringNode ->
           verify Map.empty ttlMap recovered t evs
         _ -> verify toRecover ttlMap recovered time evs
+
+    extractDomainName (TraceLocalRootFailure (DomainAccessPoint (DomainPlain d _)) _) = d
+    extractDomainName (TraceLocalRootFailure (DomainSRVAccessPoint (DomainSRV d)) _)  = d
+    extractDomainName (TraceLocalRootFailureVia (DomainSRV d) _ _) = d
+    extractDomainName _ = error "impossible!"
+
+    isResultTag = \case
+      TraceLocalRootResult {} -> True
+      TraceLocalRootResultVia {} -> True
+      _otherwise -> False
 
 
 -- | Unit test which covers issue #4191
@@ -1494,15 +1525,15 @@ unit_4191 = testWithIOSim prop_diffusion_dns_can_recover 125000 absInfo script
         (SimArgs 1 20)
         (singletonTimedScript $
            Map.fromList
-             [ ("test2", [ (read "810b:4c8a:b3b5:741:8c0c:b437:64cf:1bd9", 300)
-                         , (read "254.167.216.215", 300)
-                         , (read "27.173.29.254", 300)
-                         , (read "61.238.34.238", 300)
-                         , (read "acda:b62d:6d7d:50f7:27b6:7e34:2dc6:ee3d", 300)
-                         ])
-             , ("test3", [ (read "903e:61bc:8b2f:d98f:b16e:5471:c83d:4430", 300)
-                         , (read "19.40.90.161", 300)
-                         ])
+             [ (("test2", DNS.A), Left [ (read "810b:4c8a:b3b5:741:8c0c:b437:64cf:1bd9", 300)
+                                       , (read "254.167.216.215", 300)
+                                       , (read "27.173.29.254", 300)
+                                       , (read "61.238.34.238", 300)
+                                       , (read "acda:b62d:6d7d:50f7:27b6:7e34:2dc6:ee3d", 300)
+                                       ])
+             , (("test3", DNS.A), Left [ (read "903e:61bc:8b2f:d98f:b16e:5471:c83d:4430", 300)
+                                       , (read "19.40.90.161", 300)
+                                       ])
              ])
         [(NodeArgs
             16
@@ -4556,4 +4587,3 @@ showBucket size a | a < size
                            , show (a `div` size * size + size)
                            , ")"
                            ]
-

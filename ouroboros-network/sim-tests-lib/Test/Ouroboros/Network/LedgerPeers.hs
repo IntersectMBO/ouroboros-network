@@ -44,6 +44,7 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
            (recomputeRelativeStake)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 
 import Test.Ouroboros.Network.Data.Script
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS
@@ -80,6 +81,7 @@ instance Arbitrary ArbitraryRelayAccessPoint where
       ArbitraryRelayAccessPoint <$>
         oneof [ RelayAccessAddress (read "1.1.1.1")     . getArbitraryPortNumber <$> arbitrary
               , RelayAccessDomain  "relay.iohk.example" . getArbitraryPortNumber <$> arbitrary
+              , pure $ RelayAccessSRVDomain  "_cardano._tcp.iohk.example"
               ]
 
 newtype ArbitraryLedgerStateJudgement =
@@ -288,7 +290,12 @@ prop_pick100 seed (NonNegative n) (ArbLedgerPeersKind ledgerPeersKind) (MockRoot
 
           withLedgerPeers
                 PeerActionsDNS { paToPeerAddr = curry IP.toSockAddr,
-                                 paDnsActions = (mockDNSActions @SomeException dnsMapVar dnsTimeoutScriptVar dnsLookupDelayScriptVar),
+                                 paDnsActions = mockDNSActions
+                                                   @SomeException
+                                                   LookupReqAOnly
+                                                   dnsMapVar
+                                                   dnsTimeoutScriptVar
+                                                   dnsLookupDelayScriptVar,
                                  paDnsSemaphore = dnsSemaphore }
                 WithLedgerPeersArgs { wlpRng = rng,
                                       wlpConsensusInterface = interface,
@@ -349,7 +356,12 @@ prop_pick (LedgerPools lps) (ArbLedgerPeersKind ledgerPeersKind) count seed (Moc
 
           withLedgerPeers
                 PeerActionsDNS { paToPeerAddr = curry IP.toSockAddr,
-                                 paDnsActions = mockDNSActions @SomeException dnsMapVar dnsTimeoutScriptVar dnsLookupDelayScriptVar,
+                                 paDnsActions = mockDNSActions
+                                                  @SomeException
+                                                  LookupReqAOnly
+                                                  dnsMapVar
+                                                  dnsTimeoutScriptVar
+                                                  dnsLookupDelayScriptVar,
                                  paDnsSemaphore = dnsSemaphore }
                 WithLedgerPeersArgs { wlpRng = rng,
                                       wlpConsensusInterface = interface,
@@ -552,6 +564,10 @@ prop_ledgerPeerSnapshotJSONV1 slotNo
     step it@(RelayAccessDomain domain port) =
       case BS.unsnoc domain of
         Just (prefix, '.') -> RelayAccessDomain prefix port
+        _otherwise         -> it
+    step it@(RelayAccessSRVDomain domain) =
+      case BS.unsnoc domain of
+        Just (prefix, '.') -> RelayAccessSRVDomain prefix
         _otherwise         -> it
     step it = it
 

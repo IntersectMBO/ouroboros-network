@@ -1,3 +1,4 @@
+{-# LANGUAGE BlockArguments             #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingVia                #-}
@@ -29,21 +30,20 @@ module Ouroboros.Network.PeerSelection.LedgerPeers.Type
   , compareLedgerPeerSnapshotApproximate
   ) where
 
-import Control.Monad (forM)
-import Data.ByteString.Char8 qualified as BS
-import Data.List.NonEmpty (NonEmpty)
-import Data.Text.Encoding (decodeUtf8)
 import GHC.Generics (Generic)
-import Text.Read (readMaybe)
 
 import Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import Cardano.Binary qualified as Codec
 import Cardano.Slotting.Slot (SlotNo (..), WithOrigin (..))
 import Control.Concurrent.Class.MonadSTM
 import Control.DeepSeq (NFData (..))
+import Control.Monad (forM)
 import Data.Aeson
 import Data.Aeson.Types
+import Data.ByteString.Char8 qualified as BS
+import Data.List.NonEmpty (NonEmpty)
 import NoThunks.Class
+
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 
 -- | Minimum number of hot big ledger peers in Genesis mode
@@ -124,11 +124,13 @@ instance FromJSON LedgerPeerSnapshot where
         1 -> do
           slot <- v .: "slotNo"
           bigPools <- v .: "bigLedgerPools"
-          bigPools' <- (forM bigPools . withObject "bigLedgerPools" $ \poolV -> do
-            AccPoolStakeCoded accStake <- poolV .: "accumulatedStake"
-            PoolStakeCoded reStake <- poolV .: "relativeStake"
-            relays <- fmap unRelayAccessPointCoded <$> poolV .: "relays"
-            return (accStake, (reStake, relays))) <?> Key "bigLedgerPools"
+          bigPools' <- forM (zip [0 :: Int ..] bigPools) \(idx, poolO) -> do
+                         let f poolV = do
+                                 AccPoolStakeCoded accStake <- poolV .: "accumulatedStake"
+                                 PoolStakeCoded reStake <- poolV .: "relativeStake"
+                                 relays <- fmap unRelayAccessPointCoded <$> poolV .: "relays"
+                                 return (accStake, (reStake, relays))
+                         withObject ("bigLedgerPools[" <> show idx <> "]") f (Object poolO)
 
           return $ LedgerPeerSnapshotV1 (slot, bigPools')
         _ -> fail $ "Network.LedgerPeers.Type: parseJSON: failed to parse unsupported version " <> show vNum
@@ -250,32 +252,22 @@ data LedgerPeersConsensusInterface m = LedgerPeersConsensusInterface {
   }
 
 instance ToJSON RelayAccessPointCoded where
-  toJSON (RelayAccessPointCoded (RelayAccessDomain domain port)) =
-    object
-      [ "domain" .= decodeUtf8 domain
-      , "port"   .= (fromIntegral port :: Int)]
-
-  toJSON (RelayAccessPointCoded (RelayAccessAddress ip port)) =
-    object
-      [ "address" .= show ip
-      , "port" .= (fromIntegral port :: Int)]
+  toJSON (RelayAccessPointCoded x) = toJSON x
 
 instance FromJSON RelayAccessPointCoded where
-  parseJSON = withObject "RelayAccessPointCoded" $ \v -> do
-    domain <- fmap BS.pack <$> v .:? "domain"
-    port <- fromIntegral @Int <$> v .: "port"
-    case domain of
-      Nothing ->
-            v .: "address"
-        >>= \case
-               Nothing -> fail "RelayAccessPointCoded: invalid IP address"
-               Just addr ->
-                 return . RelayAccessPointCoded $ RelayAccessAddress addr port
-            . readMaybe
-
-      Just domain'
-        | Just (_, '.') <- BS.unsnoc domain' ->
-          return . RelayAccessPointCoded $ RelayAccessDomain domain' port
-        | otherwise ->
-          let fullyQualified = domain' `BS.snoc` '.'
-          in return . RelayAccessPointCoded $ RelayAccessDomain fullyQualified port
+  parseJSON = withObject "RelayAccessPointCoded" $ \o -> do
+    let f =
+          case parseMaybe parseJSON (Object o) of
+            Just it@(RelayAccessAddress {}) -> it
+            Just (RelayAccessDomain d p)  ->
+              RelayAccessDomain (fullyQualified d) p
+            Just (RelayAccessSRVDomain d) ->
+              RelayAccessSRVDomain (fullyQualified d)
+            Nothing ->
+              error $ "RelayAccessPointCoded: unrecognized JSON object: "
+                    <> show o
+    return $ RelayAccessPointCoded f
+    where
+      fullyQualified = \case
+        domain | Just (_, '.') <- BS.unsnoc domain -> domain
+               | otherwise -> domain `BS.snoc` '.'
