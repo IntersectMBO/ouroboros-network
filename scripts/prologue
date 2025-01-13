@@ -44,9 +44,11 @@ This site contains Haskell documentation of __Ouroboros-Network__
         * __[ChainSync](ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Type.html)__
         * __[BlockFetch](ouroboros-network-protocols/Ouroboros-Network-Protocol-BlockFetch-Type.html)__
         * __[TxSubmission2](ouroboros-network-protocols/Ouroboros-Network-Protocol-TxSubmission2-Type.html)__
+        * __[PeerSharing](ouroboros-network-protocols/Ouroboros-Network-Protocol-PeerSharing-Type.html)__
+        * __[KeepAlive](ouroboros-network-protocols/Ouroboros-Network-Protocol-KeepAlive-Type.html)__
         * __[LocalTxSubmission](ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalTxSubmission-Type.html)__
         * __[LocalStateQuery](ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalStateQuery-Type.html)__
-        * __[LocalTxMonitor](ouroboros-network-potocols/Ouroboros-Network-Protocol-LocalTxMonitor-Type.html)__
+        * __[LocalTxMonitor](ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalTxMonitor-Type.html)__
 
     Note @Handshake@ mini-protocol is implemented in @ourboros-network-framework@:
         * __[Handshake](ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Type.html)__
