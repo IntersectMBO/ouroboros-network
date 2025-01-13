@@ -1019,6 +1019,7 @@ Transition table is shown in table~\ref{table:block-fetch}.
 See appendix \ref{cddl-common} for common definitions.
 
 \section{Tx-Submission mini-protocol}
+\label{tx-submission-protocol}
 \subsection{Version 1}
 Version 1 of the tx-submission protocol is no longer supported.
 
@@ -1655,9 +1656,10 @@ The \textit{node-to-node protocol} consists of the following protocols:
 \begin{itemize}
   \item \textit{chain-sync mini-protocol} for headers (section~\ref{chain-sync-protocol})
   \item \textit{block-fetch mini-protocol} (section~\ref{block-fetch-protocol})
-  \item \textit{tx-submission mini-protocol};  from $NodeToNodeV\_6$ the version
-    2 is used  (section~\ref{tx-submission-protocol})
-  \item keep alive mini-protocol; from $NodeToNodeV\_3$ (section~\ref{keep-alive-protocol})
+  \item \textit{tx-submission mini-protocol};  from \texttt{NodeToNodeV\_6} the version
+    2 is used  (section~\ref{tx-submission-protocol2})
+  \item \textit{keep alive mini-protocol}; from \texttt{NodeToNodeV\_3} (section~\ref{keep-alive-protocol})
+  \item \textit{peer-sharing mini-protocol}; from \texttt{NodeToNodeV\_11} (section~\ref{peer-sharing-protocol})
 \end{itemize}
 Currently supported versions of the \textit{node-to-node protocol} are listed
 in table~\ref{table:node-to-node-protocol-versions}.
@@ -1665,8 +1667,8 @@ in table~\ref{table:node-to-node-protocol-versions}.
   \begin{center}
     \begin{tabular}{l|l}
       version         & description \\\hline\hline
-      $NodeToNodeV\_13$ & Disabled peer sharing for buggy V11 \& V12 and for InitiatorOnly nodes \\\hline
-      $NodeToNodeV\_14$ & No changes, identifies Chang+1 HF nodes\\\hline
+      \texttt{NodeToNodeV\_13} & Disabled peer sharing for buggy V11 \& V12 and for InitiatorOnly nodes \\\hline
+      \texttt{NodeToNodeV\_14} & No changes, identifies Chang+1 HF nodes\\\hline
     \end{tabular}
     \caption{Node-to-node protocol versions}
     \label{table:node-to-node-protocol-versions}
@@ -1684,7 +1686,8 @@ The \textit{node-to-client protocol} consists of the following protocols:
 \begin{itemize}
   \item \textit{chain-sync mini-protocol} for blocks (section~\ref{chain-sync-protocol})
   \item \textit{local-tx-submission mini-protocol} (section~\ref{local-tx-submission-protocol})
-  \item \textit{local-state-query mini-protocol}; from version $NodeToClient\_2$ (section~\ref{local-state-query-protocol})
+  \item \textit{local-state-query mini-protocol}; from version \texttt{NodeToClient\_2} (section~\ref{local-state-query-protocol})
+  \item \textit{local tx-monitor mini-protocol}; from version \texttt{NodeToClient\_12} (section~\ref{local-tx-monitor-protocol})
 \end{itemize}
 Supported versions of \textit{node-to-client protocol} are listed in
 table~\ref{table:node-to-client-protocol-versions}.
@@ -1692,9 +1695,9 @@ table~\ref{table:node-to-client-protocol-versions}.
   \begin{center}
     \begin{tabular}{l|l}
       version & description \\\hline\hline
-      $NodeToClientV\_16$ & Add ImmutableTip to LocalStateQuery, conway, GetStakeDelegDeposits query \\\hline
-      $NodeToClientV\_17$ & GetProposals, GetRatifyState queries \\\hline
-      $NodeToClientV\_18$ & GetFuturePParams query \\\hline
+      \texttt{NodeToClientV\_16} & Add ImmutableTip to LocalStateQuery, conway, GetStakeDelegDeposits query \\\hline
+      \texttt{NodeToClientV\_17} & GetProposals, GetRatifyState queries \\\hline
+      \texttt{NodeToClientV\_18} & GetFuturePParams query \\\hline
     \end{tabular}
     \caption{Node-to-client protocol versions}
     \label{table:node-to-client-protocol-versions}
