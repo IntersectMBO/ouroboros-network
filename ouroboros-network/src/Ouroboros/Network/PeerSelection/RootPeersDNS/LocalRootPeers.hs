@@ -43,22 +43,22 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRo
 data TraceLocalRootPeers peerAddr exception =
        TraceLocalRootDomains (LocalRootPeers.Config RelayAccessPoint)
        -- ^ 'Int' is the configured valency for the local producer groups
-     | TraceLocalRootWaiting DomainAccessPoint DiffTime
-     | TraceLocalRootResult  DomainPlainAccessPoint [(IP, DNS.TTL)]
-     | TraceLocalRootResultVia DomainSRVAccessPoint DomainPlainAccessPoint [(IP, DNS.TTL)]
+     | TraceLocalRootWaiting RelayAccessPoint DiffTime
+     -- | TraceLocalRootResult  DomainPlainAccessPoint [(IP, DNS.TTL)]
+     -- | TraceLocalRootResultVia DomainSRVAccessPoint DomainPlainAccessPoint [(IP, DNS.TTL)]
      | TraceLocalRootGroups  (LocalRootPeers.Config peerAddr)
        -- ^ This traces the results of the local root peer provider
-     | TraceLocalRootDNSMap  (Map DomainAccessPoint [peerAddr])
+     | TraceLocalRootDNSMap  (Map RelayAccessPoint [peerAddr])
        -- ^ This traces the results of the domain name resolution
      | TraceLocalRootReconfigured (LocalRootPeers.Config RelayAccessPoint) -- ^ Old value
                                   (LocalRootPeers.Config RelayAccessPoint) -- ^ New value
-     | TraceLocalRootFailure DomainAccessPoint (Maybe (DNSorIOError exception))
-     | TraceLocalRootFailureVia DomainSRVAccessPoint DomainPlainAccessPoint (Maybe (DNSorIOError exception))
+     | TraceLocalRootFailure RelayAccessPoint (DNSorIOError exception)
+     -- | TraceLocalRootFailureVia DomainSRVAccessPoint DomainPlainAccessPoint (Maybe (DNSorIOError exception))
        -- ^ A failure in practice should always return a @Just 'DNSorIOError'@
        -- for a /well behaved/ dns implementation. But it is convenient for some
        -- tests to return Nothing here to observe a lookup attempt.
        --TODO: classify DNS errors, config error vs transitory
-     | TraceLocalRootError   DomainAccessPoint SomeException
+     | TraceLocalRootError DNS.Domain SomeException
   deriving Show
 
 -- | Resolve 'RelayAddress'-es of local root peers using dns if needed.  Local
@@ -117,13 +117,17 @@ localRootPeersProvider tracer
       let
           -- Get only DomainAccessPoint to monitor and perform DNS resolution
           -- on them.
-          domains :: [DomainAccessPoint]
-          domains = [ domain
+          domains :: [RelayAccessPoint]
+          domains = [ rap
                     | (_, _, m) <- serviceGroups
-                    , (RelayDomainAccessPoint domain, _) <- Map.toList m ]
+                    , (rap, _) <- Map.toList m
+                    , case rap of
+                        RelayAccessAddress {} -> False
+                        _otherwise            -> True
+                    ]
 
           -- Initial DNS Domain Map has all domains entries empty
-          initialDNSDomainMap :: Map DomainAccessPoint [peerAddr]
+          initialDNSDomainMap :: Map RelayAccessPoint [peerAddr]
           initialDNSDomainMap =
             Map.fromList $ map (, []) domains
 
@@ -170,56 +174,6 @@ localRootPeersProvider tracer
       -- all the monitoring threads are killed.
       loop rng' dnsSemaphore domainsGroups'
 
-    resolveDomain
-      :: DNSSemaphore m
-      -> resolver
-      -> DomainAccessPoint
-      -> StdGen
-      -> m (Either [DNS.DNSError] [(peerAddr, DNS.TTL)])
-    resolveDomain dnsSemaphore resolver
-                  domain0 rng = do
-      reply <- withDNSSemaphore dnsSemaphore
-                                (dnsLookupWithTTL
-                                  domain0
-                                  resolvConf
-                                  resolver
-                                  rng)
-
-      -- the test 'prop_diffusion_dns_can_recover' requires us to be careful on how domain lookup
-      -- can fail, slightly complicating this code vs. legacy non-SRV implementation. Concretely,
-      -- the both the failure and results indicate whether an SRV lookup was attempted (the Via constructor)
-      -- We don't have these tests for public/ledger peers and the associated logic like this below is simpler;
-      -- however, the same lookup code is leveraged there and so being more explicit here alone should be sufficient.
-      case reply of
-        DNSLookup (dPlain@(DomainPlain _d port), errs, ipsttls) -> do
-          mapM_ (traceWith tracer . TraceLocalRootFailure (DomainAccessPoint dPlain) . Just . DNSError)
-                errs
-          let result = completion port ipsttls errs
-          when (isRight result) $ traceWith tracer $ TraceLocalRootResult dPlain ipsttls
-          return result
-        DNSLookupSRV (dSRV, errs, mAnswer) ->
-          case mAnswer of
-            Nothing -> do
-              if null errs
-                then traceWith tracer $ TraceLocalRootFailure (DomainSRVAccessPoint dSRV) Nothing
-                else
-                  mapM_ (traceWith tracer . TraceLocalRootFailure (DomainSRVAccessPoint dSRV) . Just . DNSError)
-                        errs
-              return $ Left []
-            Just (dFollow@(DomainPlain _d port), ipsttls) -> do
-              mapM_ (traceWith tracer . TraceLocalRootFailureVia dSRV dFollow . Just . DNSError)
-                    errs
-              let result = completion port ipsttls errs
-              when (isRight result) $ traceWith tracer $ TraceLocalRootResultVia dSRV dFollow ipsttls
-              return result
-      where
-        completion port ipsttls errs =
-          if not . null $ ipsttls then do
-             Right [ ( toPeerAddr addr port
-                     , _ttl)
-                   | (addr, _ttl) <- ipsttls ]
-          else do
-            Left errs
 
     -- | Function that runs on a monitoring thread. This function will, every
     -- TTL, issue a DNS resolution request and collect the results for its
@@ -230,16 +184,21 @@ localRootPeersProvider tracer
     monitorDomain
       :: Resource m (Either (DNSorIOError exception) resolver)
       -> DNSSemaphore m
-      -> StrictTVar m (Map DomainAccessPoint [peerAddr])
+      -> StrictTVar m (Map RelayAccessPoint [peerAddr])
       -> StdGen
-      -> DomainAccessPoint
-      -> (DomainAccessPoint, m Void)
-    monitorDomain rr0 dnsSemaphore dnsDomainMapVar resolvRng0 domain  =
-        (domain, go 0 resolvRng0
-                   (retryResource ((TraceLocalRootFailure domain . Just) `contramap` tracer)
+      -> RelayAccessPoint
+      -> (DNS.Domain, m Void)
+    monitorDomain rr0 dnsSemaphore dnsDomainMapVar resolvRng0 domain =
+        (domain', go 0 resolvRng0
+                   (retryResource (TraceLocalRootFailure domain `contramap` tracer)
                                   (1 :| [3, 6, 9, 12])
                                   rr0))
       where
+        domain' = case domain of
+          RelayAccessDomain d _p -> d
+          RelayAccessSRVDomain d -> d
+          _otherwise             -> error "LocalRootPeers.monitorDomain: impossible!"
+
         go :: DiffTime
            -> StdGen
            -> Resource m resolver
@@ -253,9 +212,18 @@ localRootPeersProvider tracer
 
           --- Resolve 'domain'
           let (rng', _) = split rng
-          reply <- resolveDomain dnsSemaphore resolver domain rng
+          reply <- fmap ((\(ip, port, ttl) -> (toPeerAddr ip port, ttl)) <$>) <$>
+                     withDNSSemaphore dnsSemaphore
+                                      (dnsLookupWithTTL
+                                        DnsLocalPeers
+                                        domain
+                                        resolvConf
+                                        resolver
+                                        rng)
+
           case reply of
             Left errs
+              -- TODO cleanup
               | [] <- errs -> go (ttlBackoff ttl) rng' rr'
               | otherwise ->
                   go (minimum $ map (\err -> ttlForDnsError err ttl) errs)
@@ -303,7 +271,7 @@ localRootPeersProvider tracer
     -- It does so by reading a DNS Domain Map and replacing all instances of a
     -- DomainAccessPoint in the static configuration with the values from the
     -- map.
-    getLocalRootPeersGroups :: Map DomainAccessPoint [peerAddr]
+    getLocalRootPeersGroups :: Map RelayAccessPoint [peerAddr]
                             -> [( HotValency
                                 , WarmValency
                                 , Map RelayAccessPoint LocalRootConfig)]
@@ -324,11 +292,10 @@ localRootPeersProvider tracer
                          -> case rap of
                              RelayAccessAddress ip port ->
                                Map.insert (toPeerAddr ip port) pa accMap
-                             RelayDomainAccessPoint dap ->
-                               let newEntries = maybe Map.empty
-                                                      Map.fromList
-                                              $ fmap (, pa)
-                                              <$> Map.lookup dap dnsMap
+                             dap ->
+                               let newEntries =
+                                     maybe Map.empty (Map.fromList . fmap (, pa))
+                                           $ Map.lookup dap dnsMap
                                 in accMap <> newEntries
                       )
                    Map.empty

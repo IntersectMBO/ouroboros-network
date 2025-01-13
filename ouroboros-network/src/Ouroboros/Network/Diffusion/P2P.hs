@@ -201,6 +201,8 @@ data TracersExtra ntnAddr ntnVersion ntnVersionData
     , dtInboundGovernorTransitionTracer
         :: Tracer m (RemoteTransitionTrace ntnAddr)
 
+    , dtDnsTracer :: Tracer m (DnsTrace IP)
+
       --
       -- NodeToClient tracers
       --
@@ -245,6 +247,7 @@ nullTracers =
       , dtLocalConnectionManagerTracer               = nullTracer
       , dtLocalServerTracer                          = nullTracer
       , dtLocalInboundGovernorTracer                 = nullTracer
+      , dtDnsTracer                                  = nullTracer
     }
 
 -- | P2P Arguments Extras
@@ -544,7 +547,9 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         -- | diffusion dns actions
         --
         diDnsActions
-          :: DNSLookupType -> DNSActions resolver resolverError m,
+          :: DNSLookupType
+          -> Tracer m (DnsTrace IP)
+          -> DNSActions resolver resolverError m,
 
         -- | Update `ntnVersionData` for initiator-only local roots.
         diUpdateVersionData
@@ -659,6 +664,7 @@ runM Interfaces
        , dtLocalConnectionManagerTracer
        , dtLocalServerTracer
        , dtLocalInboundGovernorTracer
+       , dtDnsTracer
        }
      Arguments
        { daIPv4Address
@@ -1069,7 +1075,7 @@ runM Interfaces
           withPeerSelectionActions' readInboundPeers =
               withPeerSelectionActions localRootsVar PeerActionsDNS {
                                          paToPeerAddr = diNtnToPeerAddr,
-                                         paDnsActions = diDnsActions lookupReqs,
+                                         paDnsActions = diDnsActions lookupReqs dtDnsTracer,
                                          paDnsSemaphore = dnsSemaphore }
                                        PeerSelectionActionsArgs {
                                          psLocalRootPeersTracer = dtTraceLocalRootPeersTracer,

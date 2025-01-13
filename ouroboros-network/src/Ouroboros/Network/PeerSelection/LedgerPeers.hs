@@ -13,8 +13,7 @@
 #endif
 
 module Ouroboros.Network.PeerSelection.LedgerPeers
-  ( DomainAccessPoint (..)
-  , IP.IP (..)
+  ( IP.IP (..)
   , LedgerPeers (..)
   , getLedgerPeers
   , RelayAccessPoint (..)
@@ -347,15 +346,16 @@ ledgerPeersThread PeerActionsDNS {
 
     -- Divide the picked peers form the ledger into addresses we can use
     -- directly and domain names that we need to resolve.
-    partitionPeer :: (Set peerAddr, [DomainAccessPoint])
+    partitionPeer :: (Set peerAddr, [RelayAccessPoint])
                   -> RelayAccessPoint
-                  -> (Set peerAddr, [DomainAccessPoint])
-    partitionPeer (addrs, domains) (RelayDomainAccessPoint domain) =
-      (addrs, domain : domains)
-    partitionPeer (!addrs, domains) (RelayAccessAddress ip port) =
-      let !addr  = paToPeerAddr ip port
-          addrs' = Set.insert addr addrs
-       in (addrs', domains)
+                  -> (Set peerAddr, [RelayAccessPoint])
+    partitionPeer (!addrs, domains) = \case
+      RelayAccessAddress ip port ->
+        let !addr  = paToPeerAddr ip port
+            addrs' = Set.insert addr addrs
+         in (addrs', domains)
+      d@(RelayAccessDomain {}) -> (addrs, d : domains)
+      d@(RelayAccessSRVDomain {}) -> (addrs, d : domains)
 
 
 -- | Arguments record to stakeMapWithSlotOverSource function

@@ -179,7 +179,11 @@ withPeerSelectionActions
       usingBootstrapPeers <- atomically
                            $ requiresBootstrapPeers <$> useBootstrapped
                                                     <*> lpGetLedgerStateJudgement getLedgerStateCtx
-      rng <- atomically $ modifyTVar' (fst . split)
+      rng <- atomically $ do
+        rng <- readTVar varRng
+        let (rng', rng'') = split rng
+        writeTVar varRng rng''
+        return rng'
       if usingBootstrapPeers
          then do
           -- If the ledger state is in sensitive state we should get trustable peers.

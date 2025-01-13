@@ -1,23 +1,16 @@
 {-# LANGUAGE BangPatterns      #-}
 {-# LANGUAGE BlockArguments    #-}
-{-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PatternSynonyms   #-}
 {-# LANGUAGE TypeApplications  #-}
-{-# LANGUAGE ViewPatterns      #-}
 
 module Ouroboros.Network.PeerSelection.RelayAccessPoint
-  ( DomainAccessPoint (..)
-  , DomainPlainAccessPoint (..)
-  , DomainSRVAccessPoint (..)
-  , RelayAccessPoint (.., RelayDomainAccessPoint)
+  ( RelayAccessPoint (..)
   , RelayAccessPointCoded (..)
   , IP.IP (..)
     -- * Socket type re-exports
   , Socket.PortNumber
   ) where
 
-import Control.Applicative ((<|>))
 import Control.DeepSeq (NFData (..))
 import Control.Monad (unless)
 
@@ -34,83 +27,12 @@ import Cardano.Binary qualified as Codec
 import Network.DNS qualified as DNS
 import Network.Socket qualified as Socket
 
--- | Types of domains supported
--- NB: A deliberately limited subset of SRV is supported.
--- Concretely, a peer from only the top priority level may
--- be given a chance to connect by the peer selection governor. Other
--- priority levels will not be considered. If there are multiple records
--- of the top priority (ie. lowest numerical value), a weighted random
--- sampling is in fact performed by this implementation, and addresses
--- and port are obtained from the winner.
--- (cf. https://www.ietf.org/rfc/rfc2782.txt)
---
-data DomainAccessPoint = DomainAccessPoint !DomainPlainAccessPoint
-                       -- ^ An @A@ or @AAAA@ DNS record
-                       | DomainSRVAccessPoint !DomainSRVAccessPoint
-                       -- ^ A @SRV@ DNS record
-  deriving (Eq, Show, Ord)
-
-instance ToJSON DomainAccessPoint where
-  toJSON (DomainAccessPoint dPlain)  = toJSON dPlain
-  toJSON (DomainSRVAccessPoint dSRV) = toJSON dSRV
-
-instance FromJSON DomainAccessPoint where
-  parseJSON = withObject "DomainAccessPoint" $ \o -> do
-    let dap =     parseMaybe (fmap Left  <$> parseJSON) (Object o)
-              <|> parseMaybe (fmap Right <$> parseJSON) (Object o)
-    case dap of
-      Just (Left dPlain) ->
-            return $ DomainAccessPoint dPlain
-      Just (Right dSRV) ->
-            return $ DomainSRVAccessPoint dSRV
-      _otherwise -> fail $ "DomainAccessPoint: unrecognized JSON object: "
-                         <> show o
-
--- | A product of a 'DNS.Domain' and 'Socket.PortNumber'.  After resolving the
--- domain we will use the 'Socket.PortNumber' to form 'Socket.SockAddr'.
---
-data DomainPlainAccessPoint = DomainPlain {
-    dapDomain     :: !DNS.Domain,
-    dapPortNumber :: !Socket.PortNumber
-  }
-  deriving (Eq, Show, Ord)
-
--- | An SRV domain is just a DNS.Domain
---
-newtype DomainSRVAccessPoint = DomainSRV {
-  srvDomain :: DNS.Domain }
-  deriving (Show, Eq, Ord)
-
-instance FromJSON DomainPlainAccessPoint where
-  parseJSON = withObject "DomainPlainAccessPoint" $ \v -> do
-    DomainPlain
-      <$> (encodeUtf8 <$> v .: "address")
-      <*> ((fromIntegral :: Int -> Socket.PortNumber) <$> v .: "port")
-
-instance ToJSON DomainPlainAccessPoint where
-  toJSON da =
-    object
-      [ "address" .= decodeUtf8 (dapDomain da)
-      , "port" .= (fromIntegral (dapPortNumber da) :: Int)
-      ]
-
-instance FromJSON DomainSRVAccessPoint where
-  parseJSON = withObject "DomainSRVAccessPoint" $ \v -> do
-    DomainSRV
-      <$> (encodeUtf8 <$> v .: "address")
-
-instance ToJSON DomainSRVAccessPoint where
-  toJSON (DomainSRV domain) =
-    object
-      [ "address" .= decodeUtf8 domain
-      ]
-
 -- | A relay can have either an IP address and a port number or
 -- a domain with a port number
 --
-data RelayAccessPoint = RelayAccessDomain  !DNS.Domain !Socket.PortNumber
+data RelayAccessPoint = RelayAccessDomain    !DNS.Domain !Socket.PortNumber
                       | RelayAccessSRVDomain !DNS.Domain
-                      | RelayAccessAddress !IP.IP      !Socket.PortNumber
+                      | RelayAccessAddress   !IP.IP      !Socket.PortNumber
   deriving (Eq, Ord)
 
 newtype RelayAccessPointCoded = RelayAccessPointCoded { unRelayAccessPointCoded :: RelayAccessPoint }
@@ -178,29 +100,6 @@ instance Show RelayAccessPoint where
     show (RelayAccessAddress ip port) =
       "RelayAccessAddress \"" ++ show ip ++ "\" " ++ show port
 
-
--- | 'RelayDomainAccessPoint' a bidirectional pattern which links
--- 'RelayAccessDomain' and 'DomainAccessPoint'.
---
-pattern RelayDomainAccessPoint :: DomainAccessPoint -> RelayAccessPoint
-pattern RelayDomainAccessPoint dap <- (viewRelayAccessPoint -> Just dap)
-  where
-    RelayDomainAccessPoint (DomainAccessPoint (DomainPlain {dapDomain, dapPortNumber})) =
-      RelayAccessDomain dapDomain dapPortNumber
-    RelayDomainAccessPoint (DomainSRVAccessPoint (DomainSRV {srvDomain})) =
-      RelayAccessSRVDomain srvDomain
-
-{-# COMPLETE RelayDomainAccessPoint, RelayAccessAddress #-}
-
-viewRelayAccessPoint :: RelayAccessPoint -> Maybe DomainAccessPoint
-viewRelayAccessPoint (RelayAccessDomain dapDomain dapPortNumber) =
-    Just $ DomainAccessPoint $ DomainPlain {dapDomain, dapPortNumber}
-viewRelayAccessPoint (RelayAccessSRVDomain srvDomain) =
-    Just $ DomainSRVAccessPoint $ DomainSRV {srvDomain}
-viewRelayAccessPoint  RelayAccessAddress {} =
-    Nothing
-
-
 -- 'IP' nor 'IPv6' is strict, 'IPv4' is strict only because it's a newtype for
 -- a primitive type ('Word32').
 --
@@ -222,6 +121,13 @@ instance FromJSON RelayAccessPoint where
       Nothing  -> return $ RelayAccessSRVDomain addr
       Just rap -> return rap
 
+    where
+      toRelayAccessPoint :: DNS.Domain -> Int -> RelayAccessPoint
+      toRelayAccessPoint address port =
+          case readMaybe (unpack address) of
+            Nothing   -> RelayAccessDomain address (fromIntegral port)
+            Just addr -> RelayAccessAddress addr (fromIntegral port)
+
 instance ToJSON RelayAccessPoint where
   toJSON (RelayAccessDomain addr port) =
     object
@@ -237,12 +143,3 @@ instance ToJSON RelayAccessPoint where
       [ "address" .= Text.pack (show ip)
       , "port" .= (fromIntegral port :: Int)
       ]
-
--- | Parse a address field as either an IP address or a DNS address.
--- Returns corresponding RelayAccessPoint.
---
-toRelayAccessPoint :: DNS.Domain -> Int -> RelayAccessPoint
-toRelayAccessPoint address port =
-    case readMaybe (unpack address) of
-      Nothing   -> RelayAccessDomain address (fromIntegral port)
-      Just addr -> RelayAccessAddress addr (fromIntegral port)

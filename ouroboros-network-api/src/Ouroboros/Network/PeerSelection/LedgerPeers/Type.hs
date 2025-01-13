@@ -35,7 +35,6 @@ import GHC.Generics (Generic)
 import Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import Cardano.Binary qualified as Codec
 import Cardano.Slotting.Slot (SlotNo (..), WithOrigin (..))
-import Control.Applicative ((<|>))
 import Control.Concurrent.Class.MonadSTM
 import Control.DeepSeq (NFData (..))
 import Control.Monad (forM)
@@ -43,7 +42,6 @@ import Data.Aeson
 import Data.Aeson.Types
 import Data.ByteString.Char8 qualified as BS
 import Data.List.NonEmpty (NonEmpty)
-import Data.Text.Encoding (decodeUtf8)
 import NoThunks.Class
 
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
@@ -254,32 +252,21 @@ data LedgerPeersConsensusInterface m = LedgerPeersConsensusInterface {
   }
 
 instance ToJSON RelayAccessPointCoded where
-  toJSON (RelayAccessPointCoded (RelayAccessDomain domain port)) =
-    object
-      [ "address" .= decodeUtf8 domain
-      , "port"   .= (fromIntegral port :: Int)]
-  toJSON (RelayAccessPointCoded (RelayAccessSRVDomain domain)) =
-    object
-      [ "address" .= decodeUtf8 domain ]
-  toJSON (RelayAccessPointCoded (RelayAccessAddress ip port)) =
-    object
-      [ "address" .= show ip
-      , "port" .= (fromIntegral port :: Int)]
+  toJSON (RelayAccessPointCoded x) = toJSON x
 
 instance FromJSON RelayAccessPointCoded where
   parseJSON = withObject "RelayAccessPointCoded" $ \o -> do
-    case parseMaybe parseJSON (Object o) of
-      Just it@(RelayAccessAddress {}) -> return $ RelayAccessPointCoded it
-      _otherwise -> do
-        let dap =     parseMaybe (fmap Left <$> parseJSON) (Object o)
-                  <|> parseMaybe (fmap Right <$> parseJSON) (Object o)
-        case dap of
-          Just (Left (DomainPlain domain port)) ->
-                return $ RelayAccessPointCoded $ RelayAccessDomain (fullyQualified domain) port
-          Just (Right (DomainSRV domain)) ->
-                return $ RelayAccessPointCoded $ RelayAccessSRVDomain (fullyQualified domain)
-          _otherwise -> fail $ "RelayAccessPointCoded: unrecognized JSON object: "
-                             <> show o
+    let f =
+          case parseMaybe parseJSON (Object o) of
+            Just it@(RelayAccessAddress {}) -> it
+            Just (RelayAccessDomain d p)  ->
+              RelayAccessDomain (fullyQualified d) p
+            Just (RelayAccessSRVDomain d) ->
+              RelayAccessSRVDomain (fullyQualified d)
+            Nothing ->
+              error $ "RelayAccessPointCoded: unrecognized JSON object: "
+                    <> show o
+    return $ RelayAccessPointCoded f
     where
       fullyQualified = \case
         domain | Just (_, '.') <- BS.unsnoc domain -> domain

@@ -40,10 +40,10 @@ import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore,
 
 data TracePublicRootPeers =
        TracePublicRootRelayAccessPoint (Map RelayAccessPoint PeerAdvertise)
-     | TracePublicRootDomains [DomainAccessPoint]
-     | TracePublicRootResult  DNS.Domain [(IP, TTL)]
-     | TracePublicRootResultVia DomainSRVAccessPoint DNS.Domain [(IP, TTL)]
-     | TracePublicRootFailure DomainAccessPoint (Maybe DNSError)
+     | TracePublicRootDomains [RelayAccessPoint]
+     -- | TracePublicRootResult  DNS.Domain [(IP, TTL)]
+     -- | TracePublicRootResultVia DomainSRVAccessPoint DNS.Domain [(IP, TTL)]
+     -- | TracePublicRootFailure DomainAccessPoint (Maybe DNSError)
        --TODO: classify DNS errors, config error vs transitory
   deriving Show
 
@@ -79,34 +79,6 @@ publicRootPeersProvider tracer
     resourceVar <- newTVarIO rr
     action (requestPublicRootPeers resourceVar)
   where
-    processResult :: (DNSLookupResult IP, PeerAdvertise)
-                  -> m ((Maybe PortNumber, PeerAdvertise), [(IP, TTL)])
-    processResult (DNSLookup (dPlain@(DomainPlain domain port), errs, ipsttls)
-                  , pa) = do
-        mapM_ (traceWith tracer . TracePublicRootFailure dap . Just)
-              errs
-        when (not . null $ ipsttls) $
-            traceWith tracer $ TracePublicRootResult domain ipsttls
-
-        return ((Just port, pa), ipsttls)
-        where
-          dap = DomainAccessPoint dPlain
-
-    processResult ( DNSLookupSRV (srvDomain, errs, mResult)
-                  , pa) = do
-        mapM_ (traceWith tracer . TracePublicRootFailure (DomainSRVAccessPoint srvDomain)  . Just)
-              errs
-
-        case mResult of
-          Nothing -> do
-            when (null errs) $
-              traceWith tracer $ TracePublicRootFailure (DomainSRVAccessPoint srvDomain) Nothing
-            return ((Nothing, pa), [])
-          Just (DomainPlain dFollow port, ipsttls) -> do
-            when (not . null $ ipsttls) $
-              traceWith tracer $ TracePublicRootResultVia srvDomain dFollow ipsttls
-            return ((Just port, pa), ipsttls)
-
     requestPublicRootPeers
       :: StrictTVar m (Resource m (Either (DNSorIOError exception) resolver))
       -> Int
@@ -123,27 +95,32 @@ publicRootPeersProvider tracer
           Right resolver -> do
             let (doms, relayAddrs) =
                   flip partition (Map.assocs services) $ \case
-                    (RelayDomainAccessPoint {}, _) -> True
-                    _otherwise -> False
+                    (RelayAccessAddress {}, _) -> False
+                    _otherwise                 -> True
                 lookups =
                   [ (, pa)
                       <$> withDNSSemaphore dnsSemaphore
                             (dnsLookupWithTTL
-                              dap
+                              DnsPublicPeers
+                              domain
                               resolvConf
                               resolver
                               rng0)
-                  | (RelayDomainAccessPoint dap, pa) <- doms]
+                  | (domain, pa) <- doms
+                  , case domain of
+                      RelayAccessAddress {}   -> False
+                      RelayAccessDomain  {}   -> True
+                      RelayAccessSRVDomain {} -> True
+                  ]
             -- The timeouts here are handled by the 'lookupWithTTL'. They're
             -- configured via the DNS.ResolvConf resolvTimeout field and defaults
             -- to 3 sec.
             results  <- withAsyncAll lookups (atomically . mapM waitSTM)
-            results' <- mapM processResult results
             let successes = [ ( (toPeerAddr ip port, pa)
                               , ipttl)
-                            | ( (Just port, pa)
-                              , ipttls) <- results'
-                            , (ip, ipttl) <- ipttls
+                            | ( Right ipsttls
+                              , pa) <- results
+                            , (ip, port, ipttl) <- ipsttls
                             ]
                 !domainsIps = [(toPeerAddr ip port, pa)
                               | (RelayAccessAddress ip port, pa) <- relayAddrs ]

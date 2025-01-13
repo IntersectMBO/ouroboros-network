@@ -1,5 +1,7 @@
 module Ouroboros.Network.PeerSelection.RootPeersDNS
   ( module Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
+  , DnsTrace (..)
+  , DnsPeersKind (..)
   , PeerActionsDNS (..)
   ) where
 
