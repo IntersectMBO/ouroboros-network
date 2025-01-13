@@ -758,16 +758,16 @@ The protocol uses the following messages:
   \begin{tabular}{|l|l|l|l|}
     \hline
     \multicolumn{4}{|c|}{Transition table} \\ \hline
-    from state & message             & parameters                          & to state    \\ \hline\hline
+    from state   & message                & parameters                          & to state      \\ \hline\hline
     \StIdle      & \MsgRequestNext        &                                     & \StCanAwait   \\ \hline
     \StIdle      & \MsgFindIntersect      & $\langle point\rangle$              & \StIntersect  \\ \hline
-    \StIdle      & \MsgDone            &                                     & \StDone       \\ \hline
+    \StIdle      & \MsgDone               &                                     & \StDone       \\ \hline
     \StCanAwait  & \MsgAwaitReply         &                                     & \StMustReply  \\ \hline
     \StCanAwait  & \MsgRollForward        & $header$, $tip$                     & \StIdle       \\ \hline
     \StCanAwait  & \MsgRollBackward       & $point_{old}$, $tip$                & \StIdle       \\ \hline
     \StMustReply & \MsgRollForward        & $header$, $tip$                     & \StIdle       \\ \hline
-    \StMustReply & \MsgRollBackward       & $point_{old}$, $tip$                 & \StIdle       \\ \hline
-    \StIntersect & \MsgIntersectFound     & $point_{intersect}$, $tip$            & \StIdle       \\ \hline
+    \StMustReply & \MsgRollBackward       & $point_{old}$, $tip$                & \StIdle       \\ \hline
+    \StIntersect & \MsgIntersectFound     & $point_{intersect}$, $tip$          & \StIdle       \\ \hline
     \StIntersect & \MsgIntersectNotFound  & $tip$                               & \StIdle       \\ \hline
   \end{tabular}
   \caption{Chain-Sync mini-protocol messages.}
