@@ -218,8 +218,8 @@ instance Protocol (LocalTxMonitor txid tx slot) where
       :: txid
       -> Message (LocalTxMonitor txid tx slot) StAcquired (StBusy HasTx)
 
-    -- | The server responds 'True' when the given tx is present in the snapshot,
-    -- False otherwise.
+    -- | The server responds 'True' when the given tx is present in the
+    -- snapshot, 'False' otherwise.
     --
     MsgReplyHasTx
       :: Bool

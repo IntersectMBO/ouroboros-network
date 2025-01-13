@@ -266,6 +266,13 @@ node-to-client version it is used with full blocks rather than just headers.
     {ouroboros-network-protocols/src/Ouroboros/Network/Protocol/LocalTxSubmission/Type.hs}
     {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalTxSubmission-Type.html\#t:LocalTxSubmission}
 
+\miniEntry
+    {Local Tx Monitor Mini Protocol}
+    {local-tx-monitor-protocol}
+    {Protocol used by local clients to monitor transactions}
+    {ouroboros-network-protocols/src/Ouroboros/Network/Protocol/LocalTxMonitor/Type.hs}
+    {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalTxMonitor-Type.html\#t:LocalTxMonitor}
+
 
 \section{CBOR and CDDL}
 All mini-protocols are encoded using concise binary object representation
@@ -1476,7 +1483,7 @@ $ImmutableTip$ are necessarily not subject rollback.
     \StQuerying         & \MsgResult          & $result$            & \StAcquired  \\\hline
     \StAcquired         & \MsgReAcquire       & $Target\ point$     & \StAcquiring \\\hline
     \StAcquired         & \MsgRelease         &                     & \StIdle      \\\hline
-    \StIdle             & \MsgDone            &                     & \StDone        \\\hline
+    \StIdle             & \MsgDone            &                     & \StDone      \\\hline
   \end{tabular}
   \caption{Local State Query mini-protocol messages.}
   \label{fig:lsq-messages}
@@ -1484,6 +1491,127 @@ $ImmutableTip$ are necessarily not subject rollback.
 
 \subsection{CDDL encoding specification}
 \lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/local-state-query.cddl}
+See appendix \ref{cddl-common} for common definitions.
+
+\section{Local Tx-Monitor mini-protocol}
+\haddockref{Ouroboros.Network.Protocol.LocalTxMonitor.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalTxMonitor-Type\#t:LocalTxMonitor}
+\label{local-tx-monitor-protocol}
+\newcommand{\MsgAwaitAcquire}{\msg{MsgAwaitAcquire}}
+
+\newcommand{\NextTx}{\state{NextTx}}
+\newcommand{\MsgNextTx}{\msg{MsgNextTx}}
+\newcommand{\MsgReplyNextTx}{\msg{MsgReplyNextTx}}
+
+\newcommand{\MsgHasTx}{\msg{MsgHasTx}}
+\newcommand{\HasTx}{\state{HasTx}}
+\newcommand{\MsgReplyHasTx}{\msg{MsgReplyHasTx}}
+
+\newcommand{\GetSizes}{\state{GetSizes}}
+\newcommand{\MsgGetSizes}{\msg{MsgGetSizes}}
+\newcommand{\MsgReplyGetSizes}{\msg{MsgReplyGetSizes}}
+
+\subsection{Description}
+
+A mini-protocol which allows to monitor transactions in the local mempool. This
+mini-protocol is stateful, the server side tracks transactions already sent to
+the client.
+
+\subsection{State machine}
+\begin{figure}[h]
+  \begin{tabular}{|l|l|}
+    \hline
+    \multicolumn{2}{|c|}{Agency} \\ \hline
+    Client has Agency & \StIdle \\ \hline
+    Server has Agency & \StAcquiring \\ \hline
+    Client has Agency & \StAcquired \\ \hline
+    Server has Agency & \StBusy \\ \hline
+  \end{tabular}
+\end{figure}
+
+
+\begin{figure}[h]
+  \begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4cm, semithick]
+    \tikzstyle{every state}=[fill=red,draw=none,text=white]
+    \node[state, mygreen, initial]                                   (Idle)         {\StIdle};
+    \node[state, myblue, right of=Idle]                              (Acquiring)    {\StAcquiring};
+    \node[state, mygreen, right of=Acquiring]                        (Acquired)     {\StAcquired};
+    \node[state, myblue, right of=Acquired]                          (BusyHasTx)    {\StBusy\ \HasTx};
+    \node[state, myblue, above of=BusyHasTx]                         (BusyNextTx)   {\StBusy\ \NextTx};
+    \node[state, myblue, below of=BusyHasTx]                         (BusyGetSizes) {\StBusy\ \GetSizes};
+    \node[state, below of=Idle]                                      (Done)         {\StDone};
+
+    \draw (Idle)         edge               node{\MsgAcquire}       (Acquiring);
+    \draw (Acquiring)    edge[bend left=45] node{\MsgAcquired}      (Acquired);
+    \draw (Acquired)     edge[bend left=45] node{\MsgAwaitAcquire}  (Acquiring);
+    \draw (Acquired)     edge[bend left=45] node{\MsgRelease}       (Idle);
+    \draw (Acquired)     edge[bend left=20] node{\MsgNextTx}        (BusyNextTx);
+    \draw (BusyNextTx)   edge[bend left=20] node{\MsgReplyNextTx}   (Acquired);
+    \draw (Acquired)     edge[bend left=20] node{\MsgHasTx}         (BusyHasTx);
+    \draw (BusyHasTx)    edge[bend left=20] node{\MsgReplyHasTx}    (Acquired);
+    \draw (Acquired)     edge[bend left=20] node{\MsgGetSizes}      (BusyGetSizes);
+    \draw (BusyGetSizes) edge[bend left=20] node{\MsgReplyGetSizes} (Acquired);
+    \draw (Idle)         edge               node{\MsgDone}          (Done);
+  \end{tikzpicture}
+  \caption{State machine of the Local Tx-Monitor mini-protocol.}
+\end{figure}
+
+\paragraph{Protocol messages}
+\begin{description}
+  \item[\MsgAcquire{}] Acquire the latest snapshot. This enables subsequent
+    queries to be made against a consistent view of the mempool.
+  \item[\MsgAcquired{} {\boldmath (SlotNo)}] The server side is now locked to
+    a particular mempool snapshot. It returns the slot number of the 'virtual
+    block' under construction.
+  \item[\MsgAwaitAcquire{}] Like 'MsgAcquire' but await for a new snapshot
+    different from the one currently acquired.
+  \item[\MsgRelease{}] Release the acquired snapshot, in order to loop back to
+    the idle state.
+  \item[\MsgNextTx{}] The client requests a single transaction and waits
+    a reply.
+  \item[\MsgReplyNextTx{} \boldmath(\textbf{Nothing} | \textbf{Just} $tx$)] The
+    server responds with a single transaction if one is available in the
+    mempool. This must be a transaction that was not previously sent to the
+    client for this particular snapshot.
+  \item[\MsgHasTx{}] The client checks whether the server knows of a particular
+    transaction identified by its id.
+  \item[\MsgReplyHasTx{} (Bool)] The server responds \texttt{True} when the given tx
+    is present in the snapshot, \texttt{False} otherwise.
+  \item[\MsgGetSizes{}] The client asks the server about the mempool current
+    size and max capacity.
+  \item[\MsgReplyGetSizes{} (Word32,Word32,Word32)] The server responds with
+    three sizes.  The meaning of them are:
+    \begin{description}
+      \item[capacity in bytes] the maximum capacity of the mempool {\small (note that
+        this may dynamically change when the ledger state is updated)};
+      \item[size in bytes] the summed byte size of all the transactions in the
+        mempool;
+      \item[number of transactions] the number of transactions in the mempool.
+    \end{description}
+\end{description}
+
+\begin{figure}[h]
+  \begin{tabular}{|l|l|l|l|}
+    \hline
+    \multicolumn{4}{|c|}{Transition table} \\ \hline
+    from state          & message             & parameters                 & to state \\ \hline\hline
+    \StIdle             & \MsgAcquire         &                            & \StAcquiring \\\hline
+    \StAcquiring        & \MsgAcquired        & SlotNo                     & \StAcquired \\\hline
+    \StAcquired         & \MsgAwaitAcquire    &                            & \StAcquiring \\\hline
+    \StAcquired         & \MsgRelease         &                            & \StIdle \\\hline
+    \StAcquired         & \MsgNextTx          &                            & \StBusy\ \NextTx\\\hline
+    \StBusy\ \NextTx    & \MsgReplyNextTx     & Maybe $tx$                 & \StAcquired\\\hline
+    \StAcquired         & \MsgHasTx           &                            & \StBusy\ \HasTx\\\hline
+    \StBusy\ \HasTx     & \MsgReplyNextTx     & Bool                       & \StAcquired\\\hline
+    \StAcquired         & \MsgGetSizes        &                            & \StBusy\ \GetSizes\\\hline
+    \StBusy\ \GetSizes  & \MsgReplyGetSizes   & Word32,Word32,Word32       & \StAcquired\\\hline
+    \StIdle             & \MsgDone            &                            & \StDone\\\hline
+  \end{tabular}
+  \caption{Local Transaction Monitor mini-protocol messages.}
+  \label{fig:ltxm-messages}
+\end{figure}
+
+\subsection{CDDL encoding specification}
+\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/local-tx-monitor.cddl}
 See appendix \ref{cddl-common} for common definitions.
 
 \section{Pipelining of Mini Protocols}
