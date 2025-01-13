@@ -27,6 +27,7 @@ import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 data ChainRange point = ChainRange !point !point
   deriving (Show, Eq, Ord, Generic, NFData)
 
+type BlockFetch :: Type -> Type -> Type
 data BlockFetch block point where
   BFIdle      :: BlockFetch block point
   BFBusy      :: BlockFetch block point

@@ -1,19 +1,21 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE DerivingVia         #-}
-{-# LANGUAGE EmptyCase           #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE PolyKinds           #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE DeriveGeneric            #-}
+{-# LANGUAGE DerivingVia              #-}
+{-# LANGUAGE EmptyCase                #-}
+{-# LANGUAGE FlexibleInstances        #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE StandaloneDeriving       #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeFamilies             #-}
 
 module Ouroboros.Network.Protocol.PeerSharing.Type where
 
 import Control.DeepSeq
 
 import Codec.Serialise.Class (Serialise)
+import Data.Kind (Type)
 import Data.Word (Word8)
 import GHC.Generics (Generic)
 
@@ -40,6 +42,7 @@ data PeerSharingResult peerAddress = PeerSharingResult [peerAddress]
 -- | A kind to identify our protocol, and the types of the states in the state
 -- transition diagram of the protocol.
 --
+type PeerSharing :: Type -> Type
 data PeerSharing peerAddress where
 
     -- | The client can send a request and the server is waiting for a request.

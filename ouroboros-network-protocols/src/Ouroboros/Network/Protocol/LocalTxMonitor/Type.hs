@@ -62,6 +62,7 @@ import Ouroboros.Network.Util.ShowProxy
 --
 -- It is parametrised over the type of transactions.
 --
+type LocalTxMonitor :: Type -> Type -> Type -> Type
 data LocalTxMonitor txid tx slot where
 
   -- | The client has agency; it can request a transaction or terminate.
