@@ -26,6 +26,7 @@ module Ouroboros.Network.Diffusion.P2P
   , Interfaces (..)
   , runM
   , NodeToNodePeerConnectionHandle
+  , isFatal
     -- * Re-exports
   , AbstractTransitionTrace
   , RemoteTransitionTrace
@@ -738,43 +739,9 @@ runM Interfaces
       <>
       RethrowPolicy (\_ctx err ->
         case fromException err of
-          -- if we are out of file descriptors (either because we exhausted
-          -- process or system limit) we should shut down the node and let the
-          -- operator investigate.
-          --
-          -- Refs:
-          -- * https://hackage.haskell.org/package/ghc-internal-9.1001.0/docs/src/GHC.Internal.Foreign.C.Error.html#errnoToIOError
-          -- * man socket.2
-          -- * man connect.2
-          -- * man accept.2
-          -- NOTE: many `connect` and `accept` exceptions are classified as
-          -- `OtherError`, here we only distinguish fatal IO errors (e.g.
-          -- ones that propagate to the main thread).
-          -- NOTE: we don't use the rethrow policy for `accept` calls, where
-          -- all but `ECONNABORTED` are fatal exceptions.
           Just IOError { ioe_type } ->
-            case ioe_type of
-              ResourceExhausted    -> ShutdownNode
-              -- EAGAIN            -- connect, accept
-              -- EMFILE            -- socket, accept
-              -- ENFILE            -- socket, accept
-              -- ENOBUFS           -- socket, accept
-              -- ENOMEM            -- socket, accept
-
-              UnsupportedOperation -> ShutdownNode
-              -- EADDRNOTAVAIL     -- connect
-              -- EAFNOSUPPRT       -- connect
-
-              InvalidArgument      -> ShutdownNode
-              -- EINVAL            -- socket, accept
-              -- ENOTSOCK          -- connect
-              -- EBADF             -- connect, accept
-
-              ProtocolError        -> ShutdownNode
-              -- EPROTONOSUPPOPRT  -- socket
-              -- EPROTO            -- accept
-
-              _                    -> mempty
+            if isFatal ioe_type then ShutdownNode
+                                else mempty
           Nothing -> mempty)
       <>
       RethrowPolicy (\ctx err -> case  (ctx, fromException err) of
@@ -1347,6 +1314,42 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                }
                tracers tracersExtra args argsExtra apps appsExtra
 
+--
+-- Fatal Errors
+--
+-- If we are out of file descriptors (either because we exhausted
+-- process or system limit) we should shut down the node and let the
+-- operator investigate.
+--
+-- Refs:
+-- * https://hackage.haskell.org/package/ghc-internal-9.1001.0/docs/src/GHC.Internal.Foreign.C.Error.html#errnoToIOError
+-- * man socket.2
+-- * man connect.2
+-- * man accept.2
+-- NOTE: many `connect` and `accept` exceptions are classified as
+-- `OtherError`, here we only distinguish fatal IO errors (e.g.
+-- ones that propagate to the main thread).
+-- NOTE: we don't use the rethrow policy for `accept` calls, where
+-- all but `ECONNABORTED` are fatal exceptions.
+--
+isFatal :: IOErrorType -> Bool
+isFatal ResourceExhausted = True
+        -- EAGAIN            -- connect, accept
+        -- EMFILE            -- socket, accept
+        -- ENFILE            -- socket, accept
+        -- ENOBUFS           -- socket, accept
+        -- ENOMEM            -- socket, accept
+isFatal UnsupportedOperation = True
+        -- EADDRNOTAVAIL     -- connect
+        -- EAFNOSUPPRT       -- connect
+isFatal InvalidArgument      = True
+        -- EINVAL            -- socket, accept
+        -- ENOTSOCK          -- connect
+        -- EBADF             -- connect, accept
+isFatal ProtocolError        = True
+        -- EPROTONOSUPPOPRT  -- socket
+        -- EPROTO            -- accept
+isFatal _                    = False
 
 --
 -- Data flow
