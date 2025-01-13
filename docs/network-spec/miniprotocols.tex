@@ -988,7 +988,8 @@ The block fetching mechanism enables a node to download a range of blocks.
 \paragraph{Protocol messages}
 \begin{description}
 \item [\MsgRequestRange{} {\boldmath $(range)$}]
-  The client requests a {\boldmath $range$} of blocks from the server.
+  The client requests a {\boldmath $range$} of blocks from the server.  The
+  range is inclusive on both sides.
 \item [\MsgNoBlocks]
   The server tells the client that it does not have all of the blocks in the requested {\boldmath $range$}.
 \item [\MsgStartBatch]
