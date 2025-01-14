@@ -1597,9 +1597,9 @@ The protocol follows a simple request-response pattern:
 Note, that the local transaction submission protocol is a push based protocol where the client
 creates a workload for the server.
 This is acceptable because is protocol is only for use between a node and local client.
-\newcommand{\MsgSubmitTx}{\trans{MsgSubmitTx}}
-\newcommand{\MsgAcceptTx}{\trans{MsgAcceptTx}}
-\newcommand{\MsgRejectTx}{\trans{MsgRejectTx}}
+\newcommand{\MsgSubmitTx}{\msg{MsgSubmitTx}}
+\newcommand{\MsgAcceptTx}{\msg{MsgAcceptTx}}
+\newcommand{\MsgRejectTx}{\msg{MsgRejectTx}}
 
 \subsection{State machine}
 \begin{figure}[h]
@@ -1660,13 +1660,13 @@ See appendix \ref{cddl-common} for common definitions.
 \newcommand{\StAcquiring}{\state{Acquiring}}
 \newcommand{\StAcquired}{\state{Acquired}}
 \newcommand{\StQuerying}{\state{Querying}}
-\newcommand{\MsgAcquire}{\trans{MsgAcquire}}
-\newcommand{\MsgAcquired}{\trans{MsgAcquired}}
-\newcommand{\MsgFailure}{\trans{MsgFailure}}
-\newcommand{\MsgQuery}{\trans{MsgQuery}}
-\newcommand{\MsgResult}{\trans{MsgResult}}
-\newcommand{\MsgRelease}{\trans{MsgRelease}}
-\newcommand{\MsgReAcquire}{\trans{MsgReAcquire}}
+\newcommand{\MsgAcquire}{\msg{MsgAcquire}}
+\newcommand{\MsgAcquired}{\msg{MsgAcquired}}
+\newcommand{\MsgFailure}{\msg{MsgFailure}}
+\newcommand{\MsgQuery}{\msg{MsgQuery}}
+\newcommand{\MsgResult}{\msg{MsgResult}}
+\newcommand{\MsgRelease}{\msg{MsgRelease}}
+\newcommand{\MsgReAcquire}{\msg{MsgReAcquire}}
 
 \subsection{Description}
 Local State Query mini-protocol allows to query the consensus / ledger state.
