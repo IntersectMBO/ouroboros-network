@@ -17,11 +17,12 @@ import Cardano.Crypto.KES.Class
 
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
+import Data.Kind (Type)
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Peer.Client as Client
 import Network.TypedProtocol.Peer.Server as Server
 
-controlReceiver :: forall (c :: *) (m :: * -> *)
+controlReceiver :: forall (c :: Type) (m :: Type -> Type)
              . KESAlgorithm (KES c)
             => Monad m
             => m (Maybe (VerKeyKES (KES c)))
@@ -68,7 +69,7 @@ controlReceiver genKey dropKey queryKey installKey getAgentInfo =
 
 type ControlPeer c m a = Server (ControlProtocol m c) NonPipelined InitialState m a
 
-controlGenKey :: forall (c :: *) (m :: (* -> *))
+controlGenKey :: forall (c :: Type) (m :: (Type -> Type))
                . KESAlgorithm (KES c)
               => MonadSTM m
               => MonadThrow m
@@ -80,7 +81,7 @@ controlGenKey = do
         Server.Yield EndMessage $
           Server.Done vkeyMay
 
-controlQueryKey :: forall (c :: *) (m :: (* -> *))
+controlQueryKey :: forall (c :: Type) (m :: (Type -> Type))
                . KESAlgorithm (KES c)
               => MonadSTM m
               => MonadThrow m
@@ -92,7 +93,7 @@ controlQueryKey = do
         Server.Yield EndMessage $
           Server.Done vkeyMay
 
-controlDropKey :: forall (c :: *) (m :: (* -> *))
+controlDropKey :: forall (c :: Type) (m :: (Type -> Type))
                . KESAlgorithm (KES c)
               => MonadSTM m
               => MonadThrow m
@@ -104,7 +105,7 @@ controlDropKey = do
         Server.Yield EndMessage $
           Server.Done vkeyMay
 
-controlInstallKey :: forall (c :: *) (m :: (* -> *))
+controlInstallKey :: forall (c :: Type) (m :: (Type -> Type))
                . KESAlgorithm (KES c)
               => MonadSTM m
               => MonadThrow m
@@ -117,7 +118,7 @@ controlInstallKey oc = do
         Server.Yield EndMessage $
           Server.Done result
 
-controlGetInfo :: forall (c :: *) (m :: (* -> *))
+controlGetInfo :: forall (c :: Type) (m :: (Type -> Type))
                . KESAlgorithm (KES c)
               => MonadSTM m
               => MonadThrow m

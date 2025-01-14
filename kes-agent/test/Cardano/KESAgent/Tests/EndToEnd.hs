@@ -156,6 +156,8 @@ kesAgentControlInstallValid =
           ]
           ExitSuccess
           [ "KES key installed." ]
+        -- Allow some time for service client to actually receive the key
+        threadDelay 10000
     assertMatchingOutputLinesWith ("SERVICE OUTPUT CHECK\n" <> (Text.unpack . Text.unlines $ agentOutLines)) 0 ["KES", "key", "0"] serviceOutLines
 
 kesAgentControlInstallInvalidOpCert :: Assertion
@@ -320,11 +322,19 @@ kesAgentControlInstallMultiNodes =
             ]
             ExitSuccess
             [ "KES key installed." ]
+          -- Little bit of delay to allow the client to read the key.
+          threadDelay 10000
         return (serviceOutLines1, serviceOutLines2)
 
-    assertNoMatchingOutputLines 0 ["KES", "key", "0"] serviceOutLines1
-    assertMatchingOutputLines 4 ["ReceivedVersionID"] serviceOutLines1
-    assertMatchingOutputLines 0 ["KES", "key", "0"] serviceOutLines2
+    assertNoMatchingOutputLinesWith
+              ("Service 1: NOT 'KES key 0'\n" ++ (Text.unpack . Text.unlines $ agentOutLines))
+              0 ["KES", "key", "0"] serviceOutLines1
+    assertMatchingOutputLinesWith
+              ("Service1: 'ReceivedVersionID'\n" ++ (Text.unpack . Text.unlines $ agentOutLines))
+              4 ["ReceivedVersionID"] serviceOutLines1
+    assertMatchingOutputLinesWith
+              ("Service2: 'KES key 0'\n" ++ (Text.unpack . Text.unlines $ agentOutLines))
+              0 ["KES", "key", "0"] serviceOutLines2
 
 kesAgentEvolvesKey :: Assertion
 kesAgentEvolvesKey =
@@ -538,6 +548,8 @@ kesAgentSelfHeal2 =
             ]
             ExitSuccess
             [ "KES key installed." ]
+            -- Allow some time for agent to shut down cleanly
+          threadDelay 10000
         controlClientCheckP
           [ "info"
           , "--control-address", controlAddr2
@@ -545,6 +557,7 @@ kesAgentSelfHeal2 =
           (ExitFailure 1)
           (any ("kes-agent-control: Network.Socket.connect: " `isPrefixOf`))
         (agentOutLines2b, ()) <- withAgent controlAddr2 serviceAddr2 [serviceAddr1] coldVerKeyFile $ do
+          threadDelay 10000
           controlClientCheckP
             [ "info"
             , "--control-address", controlAddr2
@@ -553,6 +566,8 @@ kesAgentSelfHeal2 =
             ]
             ExitSuccess
             (any (`elem` ["Current evolution: 0 / 64", "Current evolution: 1 / 64"]))
+          -- Allow some time for agent to shut down cleanly
+          threadDelay 10000
         return (agentOutLines2a ++ ["------"] ++ agentOutLines2b, ())
     return ()
 
@@ -573,11 +588,18 @@ assertMatchingOutputLines = assertMatchingOutputLinesWith ""
 
 assertMatchingOutputLinesWith :: String -> Int -> [Text] -> [Text] -> Assertion
 assertMatchingOutputLinesWith extraInfo ignore pattern lines =
-  assertBool (extraInfo ++ (Text.unpack . Text.unlines $ lines)) (matchOutputLines ignore pattern lines)
+  assertBool
+    (extraInfo ++ (Text.unpack . Text.unlines $ lines))
+    (matchOutputLines ignore pattern lines)
 
 assertNoMatchingOutputLines :: Int -> [Text] -> [Text] -> Assertion
-assertNoMatchingOutputLines ignore pattern lines =
-  assertBool (Text.unpack . Text.unlines $ lines) (matchNoOutputLines ignore pattern lines)
+assertNoMatchingOutputLines = assertNoMatchingOutputLinesWith ""
+
+assertNoMatchingOutputLinesWith :: String -> Int -> [Text] -> [Text] -> Assertion
+assertNoMatchingOutputLinesWith extraInfo ignore pattern lines =
+  assertBool
+    (extraInfo ++ (Text.unpack . Text.unlines $ lines))
+    (matchNoOutputLines ignore pattern lines)
 
 controlClient :: [String] -> IO (ExitCode, String, String)
 controlClient args =

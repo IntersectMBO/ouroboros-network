@@ -25,24 +25,25 @@ module Cardano.KESAgent.Protocols.VersionHandshake.Driver
 import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Protocols.VersionHandshake.Protocol
 import Cardano.KESAgent.Protocols.VersionedProtocol
-import Cardano.KESAgent.Serialization.RawUtil
 import Cardano.KESAgent.Serialization.DirectCodec
+import Cardano.KESAgent.Serialization.RawUtil
 import Cardano.KESAgent.Util.Pretty
 
 import Control.Exception
+import Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadThrow ( MonadThrow, bracket )
 import Control.Tracer ( Tracer, traceWith )
+import Data.Coerce
+import Data.Kind (Type)
+import Data.Proxy
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Driver
-import Data.Coerce
-import Control.Monad.Class.MonadThrow ( MonadThrow, bracket )
-import Control.Monad.Class.MonadST
-import Data.Proxy
 
 import Ouroboros.Network.RawBearer
 
-import Data.SerDoc.Info ( Description (..), aliasField )
 import Data.SerDoc.Class ( ViaEnum (..), Codec (..), HasInfo (..), Serializable (..), encodeEnum, decodeEnum, enumInfo )
 import qualified Data.SerDoc.Info
+import Data.SerDoc.Info ( Description (..), aliasField )
 import Data.SerDoc.TH (deriveSerDoc)
 
 -- | Logging messages that the Driver may send
@@ -57,7 +58,7 @@ instance Pretty VersionHandshakeDriverTrace where
   pretty (VersionHandshakeDriverMisc x) = x
   pretty x = drop (strLength "VersionHandshakeDriver") (show x)
 
-versionHandshakeDriver :: forall (m :: * -> *) pr
+versionHandshakeDriver :: forall (m :: Type -> Type) pr
                         . ( Monad m
                           , MonadThrow m
                           , MonadST m

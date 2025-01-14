@@ -62,6 +62,7 @@ import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 import Data.Coerce
 import Data.Functor.Contravariant ( (>$<) )
+import Data.Kind (Type)
 import Data.Maybe ( isJust )
 import Data.Proxy
 import Data.SerDoc.Class ( ViaEnum (..), Codec (..), HasInfo (..), Serializable (..), encodeEnum, decodeEnum, enumInfo )
@@ -132,7 +133,7 @@ $(deriveSerDoc ''DirectCodec [] ''BootstrapInfo)
 $(deriveSerDoc ''DirectCodec [] ''BundleInfo)
 $(deriveSerDoc ''DirectCodec [] ''AgentInfo)
 
-controlDriver :: forall (m :: * -> *) f t p pr
+controlDriver :: forall (m :: Type -> Type) f t p pr
                . VersionedProtocol (ControlProtocol m)
               => HasInfo (DirectCodec m) (VerKeyKES (KES StandardCrypto))
               => HasInfo (DirectCodec m) AgentInfo

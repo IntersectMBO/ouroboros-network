@@ -18,11 +18,12 @@ import Cardano.Crypto.KES.Class
 
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
+import Data.Kind (Type)
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Peer.Client as Client
 import Network.TypedProtocol.Peer.Server as Server
 
-controlReceiver :: forall (m :: * -> *)
+controlReceiver :: forall (m :: Type -> Type)
              .  Monad m
             => m (Maybe (VerKeyKES (KES StandardCrypto)))
             -> m (Maybe (VerKeyKES (KES StandardCrypto)))
@@ -68,7 +69,7 @@ controlReceiver genKey dropKey queryKey installKey getAgentInfo =
 
 type ControlServer m a = Server (ControlProtocol m) NonPipelined InitialState m a
 
-controlGenKey :: forall (m :: (* -> *))
+controlGenKey :: forall (m :: (Type -> Type))
                . MonadSTM m
               => MonadThrow m
               => ControlServer m (Maybe (VerKeyKES (KES StandardCrypto)))
@@ -79,7 +80,7 @@ controlGenKey = do
         Server.Yield EndMessage $
           Server.Done vkeyMay
 
-controlQueryKey :: forall (m :: (* -> *))
+controlQueryKey :: forall (m :: (Type -> Type))
                . MonadSTM m
               => MonadThrow m
               => ControlServer m (Maybe (VerKeyKES (KES StandardCrypto)))
@@ -90,7 +91,7 @@ controlQueryKey = do
         Server.Yield EndMessage $
           Server.Done vkeyMay
 
-controlDropKey :: forall (m :: (* -> *))
+controlDropKey :: forall (m :: (Type -> Type))
                . MonadSTM m
               => MonadThrow m
               => ControlServer m (Maybe (VerKeyKES (KES StandardCrypto)))
@@ -101,7 +102,7 @@ controlDropKey = do
         Server.Yield EndMessage $
           Server.Done vkeyMay
 
-controlInstallKey :: forall (m :: (* -> *))
+controlInstallKey :: forall (m :: (Type -> Type))
                . MonadSTM m
               => MonadThrow m
               => OCert StandardCrypto
@@ -113,7 +114,7 @@ controlInstallKey oc = do
         Server.Yield EndMessage $
           Server.Done result
 
-controlGetInfo :: forall (m :: (* -> *))
+controlGetInfo :: forall (m :: (Type -> Type))
                . MonadSTM m
               => MonadThrow m
               => ControlServer m AgentInfo

@@ -126,7 +126,6 @@ import Data.Time.Clock.POSIX
   )
 import Data.Typeable
 import Data.Word
-import Debug.Trace
 import Foreign ( free, mallocBytes )
 import Foreign.C ( CSize )
 import Foreign.ForeignPtr

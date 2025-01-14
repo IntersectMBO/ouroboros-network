@@ -20,11 +20,12 @@ import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadTimer
+import Data.Kind (Type)
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Peer.Client as Client
 import Network.TypedProtocol.Peer.Server as Server
 
-serviceReceiver :: forall (c :: *) (m :: * -> *)
+serviceReceiver :: forall (c :: Type) (m :: Type -> Type)
              . KESAlgorithm (KES c)
             => Monad m
             => (Bundle m c -> m RecvResult)
@@ -46,7 +47,7 @@ serviceReceiver receiveBundle =
           ServerDisconnectMessage ->
             Client.Done ()
 
-servicePusher :: forall (c :: *) (m :: (* -> *))
+servicePusher :: forall (c :: Type) (m :: (Type -> Type))
            . KESAlgorithm (KES c)
           => MonadSTM m
           => MonadThrow m

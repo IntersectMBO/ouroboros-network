@@ -35,6 +35,7 @@ import Cardano.Crypto.Util ( SignableRepresentation (..) )
 
 import Data.ByteString ( ByteString )
 import Data.ByteString qualified as BS
+import Data.Kind (Type)
 import Data.Proxy ( Proxy (..) )
 import Data.Typeable
 import Data.Word
@@ -45,7 +46,7 @@ import Quiet
 import Data.SerDoc.Info ( Description (..) )
 import Data.SerDoc.Class ( ViaEnum (..) )
 
-data ServiceProtocol (m :: * -> *) (k :: *) where
+data ServiceProtocol (m :: Type -> Type) (k :: Type) where
   -- | Default state after connecting, but before the protocol version has been
   -- negotiated.
   InitialState :: ServiceProtocol m k

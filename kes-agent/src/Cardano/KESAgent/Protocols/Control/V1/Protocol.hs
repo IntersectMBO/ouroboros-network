@@ -38,6 +38,7 @@ import Cardano.Crypto.Hash.Class
 import Data.ByteString ( ByteString )
 import Data.Text ( Text )
 import Data.ByteString qualified as BS
+import Data.Kind (Type)
 import Data.Proxy ( Proxy (..) )
 import Data.Typeable
 import Data.Word
@@ -106,7 +107,7 @@ instance Eq (VerKeyKES (KES StandardCrypto)) => Eq KeyInfo where
 -- through. This allows the control client to report success to the user, but it
 -- also helps make things more predictable in testing, because it means that
 -- sending keys is now synchronous.
-data ControlProtocol (m :: * -> *) where
+data ControlProtocol (m :: Type -> Type) where
   -- | Default state after connecting, but before the protocol version has been
   -- negotiated.
   InitialState :: ControlProtocol m
