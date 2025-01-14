@@ -1933,8 +1933,24 @@ in table~\ref{table:node-to-node-protocol-versions}.
 \newline
 Previously supported node-to-node versions are listed in table \ref{table:historical-node-to-node-protocol-versions}.
 
-See table~\ref{table:node-to-node-protocol-numbers} for mini-protocol numbers
+\subsection{Node-to-node mux mini-protocol numbers}
+The following table~\ref{table:node-to-node-protocol-numbers} shows mux mini-protocol numbers
 assigned to each node-to-node mini-protocol.
+\begin{table}[ht]
+  \begin{center}
+    \begin{tabular}{l|c}
+      mini-protocol                                                      & mini-protocol number \\\hline
+      \hyperref[handshake-protocol]{Handshake}                           & 0  \\
+      \hyperref[chain-sync-protocol]{Chain-Sync}                         & 2  \\
+      \hyperref[block-fetch-protocol]{Block-Fetch}                       & 3  \\
+      \hyperref[tx-submission-protocol2]{Tx-Submission}                  & 4  \\
+      \hyperref[keep-alive-protocol]{Keep-Alive}                         & 8  \\
+      \hyperref[peer-sharing-protocol]{Peer-Sharing} \small{(optional)}  & 10 \\
+    \end{tabular}
+  \end{center}
+  \caption{Node-to-node protocol numbers}
+  \label{table:node-to-node-protocol-numbers}
+\end{table}
 
 \section{Node-to-client protocol}
 \label{section:node-to-client-protocol}
@@ -1965,5 +1981,20 @@ table~\ref{table:node-to-client-protocol-versions}.
 \newline
 Previously supported node-to-client versions are listed in table \ref{table:historical-node-to-client-protocol-versions}.
 
-See table~\ref{table:node-to-client-protocol-numbers} for mini-protocol numbers
+\subsection{Node-to-client mux mini-protocol numbers}
+The following table~\ref{table:node-to-client-protocol-numbers} show mux mini-protocol numbers
 assigned to each node-to-client mini-protocol.
+\begin{table}[ht]
+  \begin{center}
+    \begin{tabular}{l|c}
+      mini-protocol                                                & mini-protocol number \\\hline
+      \hyperref[handshake-protocol]{Handshake}                     & 0 \\
+      \hyperref[chain-sync-protocol]{Chain-Sync}                   & 5 \\
+      \hyperref[local-tx-submission-protocol]{Local Tx-Submission} & 6 \\
+      \hyperref[local-state-query-protocol]{Local State Query}     & 7 \\
+      \hyperref[local-tx-monitor-protocol]{Local Tx-Monitor}       & 9 \\
+    \end{tabular}
+  \end{center}
+  \caption{Node-to-client protocol numbers}
+  \label{table:node-to-client-protocol-numbers}
+\end{table}
