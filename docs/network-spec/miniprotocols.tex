@@ -348,13 +348,11 @@ The messages of the Ping-Pong protocol do not carry any data.
 \end{description}
 
 \begin{table}[h]
-  \begin{tabular}{|l|l|l|}
-    \hline
-    \multicolumn{3}{|c|}{Transition table} \\ \hline
-    from state   & message            & to state    \\ \hline\hline
-    \StIdle        & \Ping              & \StBusy   \\ \hline
-    \StBusy        & \Pong              & \StIdle   \\ \hline
-    \StIdle        & \MsgDone           & \StDone   \\ \hline
+  \begin{tabular}{l|l|l}
+    from state & message   & to state \\\hline
+    \StIdle    & \Ping     & \StBusy  \\
+    \StBusy    & \Pong     & \StIdle  \\
+    \StIdle    & \MsgDone  & \StDone  \\
   \end{tabular}
   \caption{Ping-Pong mini-protocol messages.}
 \end{table}
@@ -404,12 +402,11 @@ The protocol uses the following messages.
 \end{description}
 
 \begin{table}[h]
-  \begin{tabular}{|l|l|l|l|} \hline
-  \multicolumn{4}{|c|}{Transition table} \\ \hline
-    from           & message            & parameters             & to          \\ \hline\hline
-    \StIdle        & \Request           & $request$              & \StBusy     \\ \hline
-    \StBusy        & \Response          & $response$             & \StIdle     \\ \hline
-    \StIdle        & \RespDone          &                        & \StDone     \\ \hline
+  \begin{tabular}{l|l|l|l}
+    from    & message    & parameters  & to      \\\hline
+    \StIdle & \Request   & $request$   & \StBusy \\
+    \StBusy & \Response  & $response$  & \StIdle \\
+    \StIdle & \RespDone  &             & \StDone \\
   \end{tabular}
   \caption{Request-Response mini-protocol messages.}
 \end{table}
@@ -788,20 +785,18 @@ The protocol uses the following messages:
 \end{description}
 
 \begin{table}[h!]
-  \begin{tabular}{|l|l|l|l|}
-    \hline
-    \multicolumn{4}{|c|}{Transition table} \\ \hline
-    from state   & message                & parameters                          & to state      \\ \hline\hline
-    \StIdle      & \MsgRequestNext        &                                     & \StCanAwait   \\ \hline
-    \StIdle      & \MsgFindIntersect      & $\langle point\rangle$              & \StIntersect  \\ \hline
-    \StIdle      & \MsgDone               &                                     & \StDone       \\ \hline
-    \StCanAwait  & \MsgAwaitReply         &                                     & \StMustReply  \\ \hline
-    \StCanAwait  & \MsgRollForward        & $header$, $tip$                     & \StIdle       \\ \hline
-    \StCanAwait  & \MsgRollBackward       & $point_{old}$, $tip$                & \StIdle       \\ \hline
-    \StMustReply & \MsgRollForward        & $header$, $tip$                     & \StIdle       \\ \hline
-    \StMustReply & \MsgRollBackward       & $point_{old}$, $tip$                & \StIdle       \\ \hline
-    \StIntersect & \MsgIntersectFound     & $point_{intersect}$, $tip$          & \StIdle       \\ \hline
-    \StIntersect & \MsgIntersectNotFound  & $tip$                               & \StIdle       \\ \hline
+  \begin{tabular}{l|l|l|l}
+    from state   & message                & parameters                          & to state      \\ \hline
+    \StIdle      & \MsgRequestNext        &                                     & \StCanAwait   \\
+    \StIdle      & \MsgFindIntersect      & $\langle point\rangle$              & \StIntersect  \\
+    \StIdle      & \MsgDone               &                                     & \StDone       \\
+    \StCanAwait  & \MsgAwaitReply         &                                     & \StMustReply  \\
+    \StCanAwait  & \MsgRollForward        & $header$, $tip$                     & \StIdle       \\
+    \StCanAwait  & \MsgRollBackward       & $point_{old}$, $tip$                & \StIdle       \\
+    \StMustReply & \MsgRollForward        & $header$, $tip$                     & \StIdle       \\
+    \StMustReply & \MsgRollBackward       & $point_{old}$, $tip$                & \StIdle       \\
+    \StIntersect & \MsgIntersectFound     & $point_{intersect}$, $tip$          & \StIdle       \\
+    \StIntersect & \MsgIntersectNotFound  & $tip$                               & \StIdle       \\
   \end{tabular}
   \caption{Chain-Sync mini-protocol messages.}
 \end{table}
@@ -1078,16 +1073,14 @@ Transition table is shown in table~\ref{table:block-fetch}.
 
 \begin{table}[h!]
   \begin{center}
-    \begin{tabular}{|l|l|l|l|}
-      \hline
-      \multicolumn{4}{|c|}{Transition table} \\ \hline
-      from state     & message                & parameters             & to state      \\ \hline\hline
-      \StIdle        & \MsgClientDone         &                        & \StDone       \\ \hline
-      \StIdle        & \MsgRequestRange       & $range$                & \StBusy       \\ \hline
-      \StBusy        & \MsgNoBlocks           &                        & \StIdle       \\ \hline
-      \StBusy        & \MsgStartBatch         &                        & \StStreaming  \\ \hline
-      \StStreaming   & \MsgBlock              & $body$                 & \StStreaming  \\ \hline
-      \StStreaming   & \MsgBatchDone          &                        & \StIdle       \\ \hline
+    \begin{tabular}{l|l|l|l}
+      from state     & message                & parameters             & to state      \\ \hline
+      \StIdle        & \MsgClientDone         &                        & \StDone       \\
+      \StIdle        & \MsgRequestRange       & $range$                & \StBusy       \\
+      \StBusy        & \MsgNoBlocks           &                        & \StIdle       \\
+      \StBusy        & \MsgStartBatch         &                        & \StStreaming  \\
+      \StStreaming   & \MsgBlock              & $body$                 & \StStreaming  \\
+      \StStreaming   & \MsgBatchDone          &                        & \StIdle       \\
     \end{tabular}
   \end{center}
   \caption{Block-Fetch mini-protocol messages.}
@@ -1217,18 +1210,16 @@ The version 2 is used by since \texttt{NodeToNode\_V6} of the node-to-node proto
 \end{description}
 
 \begin{table}[h!]
-  \begin{tabular}{|l|l|l|l|}
-    \hline
-    \multicolumn{4}{|c|}{Transition table} \\ \hline
-    from state        & message             & parameters                    & to state          \\ \hline\hline
-    \StInit           & \MsgInit            &                               & \StIdle             \\ \hline
-    \StIdle             & \MsgRequestTxIdsB      & $ack$,$req$                   & \StTxIdsBlocking    \\ \hline
-    \StTxIdsBlocking    & \MsgReplyTxIds         & $\langle (id, size) \rangle$  & \StIdle             \\ \hline
-    \StIdle             & \MsgRequestTxIdsNB     & $ack$,$req$                   & \StTxIdsNonBlocking \\ \hline
-    \StTxIdsNonBlocking & \MsgReplyTxIds         & $\langle (id, size) \rangle$  & \StIdle             \\ \hline
-    \StIdle             & \MsgRequestTxs         & $\langle ids \rangle$         & \StTxs              \\ \hline
-    \StTxs              & \MsgReplyTxs           & $\langle txs \rangle$         & \StIdle             \\ \hline
-    \MsgRequestTxIdsB    & \MsgDone            &                               & \StDone             \\ \hline
+  \begin{tabular}{l|l|l|l}
+    from state          & message             & parameters                    & to state            \\\hline
+    \StInit             & \MsgInit            &                               & \StIdle             \\
+    \StIdle             & \MsgRequestTxIdsB   & $ack$,$req$                   & \StTxIdsBlocking    \\
+    \StTxIdsBlocking    & \MsgReplyTxIds      & $\langle (id, size) \rangle$  & \StIdle             \\
+    \StIdle             & \MsgRequestTxIdsNB  & $ack$,$req$                   & \StTxIdsNonBlocking \\
+    \StTxIdsNonBlocking & \MsgReplyTxIds      & $\langle (id, size) \rangle$  & \StIdle             \\
+    \StIdle             & \MsgRequestTxs      & $\langle ids \rangle$         & \StTxs              \\
+    \StTxs              & \MsgReplyTxs        & $\langle txs \rangle$         & \StIdle             \\
+    \MsgRequestTxIdsB   & \MsgDone            &                               & \StDone             \\
   \end{tabular}
   \caption{Tx-Submission mini-protocol (version 2) messages.}
 \end{table}
@@ -1712,18 +1703,16 @@ $ImmutableTip$ are necessarily not subject rollback.
 % TODO natural language description of each message
 
 \begin{figure}[h]
-  \begin{tabular}{|l|l|l|l|}
-    \hline
-    \multicolumn{4}{|c|}{Transition table} \\ \hline
-    from state          & message             & parameters          & to state \\ \hline\hline
-    \StIdle             & \MsgAcquire         & $Target\ point$     & \StAcquiring \\\hline
-    \StAcquiring        & \MsgFailure         & $AcquireFailure$    & \StIdle      \\\hline
-    \StAcquiring        & \MsgAcquired        &                     & \StAcquired  \\\hline
-    \StAcquired         & \MsgQuery           & $query$             & \StQuerying  \\\hline
-    \StQuerying         & \MsgResult          & $result$            & \StAcquired  \\\hline
-    \StAcquired         & \MsgReAcquire       & $Target\ point$     & \StAcquiring \\\hline
-    \StAcquired         & \MsgRelease         &                     & \StIdle      \\\hline
-    \StIdle             & \MsgDone            &                     & \StDone      \\\hline
+  \begin{tabular}{l|l|l|l}
+    from state          & message             & parameters          & to state \\ \hline
+    \StIdle             & \MsgAcquire         & $Target\ point$     & \StAcquiring \\
+    \StAcquiring        & \MsgFailure         & $AcquireFailure$    & \StIdle      \\
+    \StAcquiring        & \MsgAcquired        &                     & \StAcquired  \\
+    \StAcquired         & \MsgQuery           & $query$             & \StQuerying  \\
+    \StQuerying         & \MsgResult          & $result$            & \StAcquired  \\
+    \StAcquired         & \MsgReAcquire       & $Target\ point$     & \StAcquiring \\
+    \StAcquired         & \MsgRelease         &                     & \StIdle      \\
+    \StIdle             & \MsgDone            &                     & \StDone      \\
   \end{tabular}
   \caption{Local State Query mini-protocol messages.}
   \label{fig:lsq-messages}
@@ -1839,21 +1828,19 @@ the client.
 \end{description}
 
 \begin{figure}[h]
-  \begin{tabular}{|l|l|l|l|}
-    \hline
-    \multicolumn{4}{|c|}{Transition table} \\ \hline
-    from state          & message             & parameters                 & to state \\ \hline\hline
-    \StIdle             & \MsgAcquire         &                            & \StAcquiring \\\hline
-    \StAcquiring        & \MsgAcquired        & SlotNo                     & \StAcquired \\\hline
-    \StAcquired         & \MsgAwaitAcquire    &                            & \StAcquiring \\\hline
-    \StAcquired         & \MsgRelease         &                            & \StIdle \\\hline
-    \StAcquired         & \MsgNextTx          &                            & \StBusy\ \NextTx\\\hline
-    \StBusy\ \NextTx    & \MsgReplyNextTx     & Maybe $tx$                 & \StAcquired\\\hline
-    \StAcquired         & \MsgHasTx           &                            & \StBusy\ \HasTx\\\hline
-    \StBusy\ \HasTx     & \MsgReplyNextTx     & Bool                       & \StAcquired\\\hline
-    \StAcquired         & \MsgGetSizes        &                            & \StBusy\ \GetSizes\\\hline
-    \StBusy\ \GetSizes  & \MsgReplyGetSizes   & Word32,Word32,Word32       & \StAcquired\\\hline
-    \StIdle             & \MsgDone            &                            & \StDone\\\hline
+  \begin{tabular}{l|l|l|l}
+    from state          & message             & parameters                 & to state \\ \hline
+    \StIdle             & \MsgAcquire         &                            & \StAcquiring \\
+    \StAcquiring        & \MsgAcquired        & SlotNo                     & \StAcquired \\
+    \StAcquired         & \MsgAwaitAcquire    &                            & \StAcquiring \\
+    \StAcquired         & \MsgRelease         &                            & \StIdle \\
+    \StAcquired         & \MsgNextTx          &                            & \StBusy\ \NextTx\\
+    \StBusy\ \NextTx    & \MsgReplyNextTx     & Maybe $tx$                 & \StAcquired\\
+    \StAcquired         & \MsgHasTx           &                            & \StBusy\ \HasTx\\
+    \StBusy\ \HasTx     & \MsgReplyNextTx     & Bool                       & \StAcquired\\
+    \StAcquired         & \MsgGetSizes        &                            & \StBusy\ \GetSizes\\
+    \StBusy\ \GetSizes  & \MsgReplyGetSizes   & Word32,Word32,Word32       & \StAcquired\\
+    \StIdle             & \MsgDone            &                            & \StDone\\
   \end{tabular}
   \caption{Local Transaction Monitor mini-protocol messages.}
   \label{fig:ltxm-messages}
