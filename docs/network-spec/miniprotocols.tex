@@ -499,6 +499,39 @@ Messages of the protocol:
 \end{table}
 }
 
+\subsection{Size limits per state}
+
+These limits bound how many bytes can be send in a given state, indirectly this
+limits payload size of each message.  If a space limit is violated the
+connection SHOULD be torn down.
+
+\begin{table}[h!]
+  \begin{center}
+    \begin{tabular}{l|r}
+      state      & size limit in bytes \\\hline
+      \StPropose & \texttt{5760} \\
+      \StConfirm & \texttt{5760} \\
+    \end{tabular}
+    % \caption{size limits per state}
+  \end{center}
+\end{table}
+
+\subsection{Timeouts per state}
+
+These limits bound how much time the receiver side can wait for arrival of
+a message.  If a timeout is violated the connection SHOULD be torn down.
+
+\begin{table}[h!]
+  \begin{center}
+    \begin{tabular}{l|r}
+      state      & timeout \\\hline
+      \StPropose & \texttt{10}s \\
+      \StConfirm & \texttt{10}s \\
+    \end{tabular}
+    % \caption{timeouts per state}
+  \end{center}
+\end{table}
+
 \subsection{Client and Server Implementation}
 Section~\ref{handshake-cddl} contains the CDDL-specification of the binary format of the handshake messages.
 The version table is encoded as a CBOR table with the version number as key
@@ -754,7 +787,7 @@ The protocol uses the following messages:
       Terminate the protocol.
 \end{description}
 
-\begin{table}[h]
+\begin{table}[h!]
   \begin{tabular}{|l|l|l|l|}
     \hline
     \multicolumn{4}{|c|}{Transition table} \\ \hline
@@ -771,6 +804,45 @@ The protocol uses the following messages:
     \StIntersect & \MsgIntersectNotFound  & $tip$                               & \StIdle       \\ \hline
   \end{tabular}
   \caption{Chain-Sync mini-protocol messages.}
+\end{table}
+
+\subsection{Size limits per state}
+
+The table~\ref{table:chain-sync-size-limits} specifies how many bytes can be send
+in a given state, indirectly this limits payload size of each message.  If
+a space limit is violated the connection SHOULD be torn down.
+
+\begin{table}[h!]
+  \begin{center}
+    \begin{tabular}{l|r}
+      state        & size limit in bytes \\\hline
+      \StIdle      & \texttt{65535} \\
+      \StCanAwait  & \texttt{65535} \\
+      \StMustReply & \texttt{65535} \\
+      \StIntersect & \texttt{65535} \\
+    \end{tabular}
+    \caption{size limits per state}
+    \label{table:chain-sync-size-limits}
+  \end{center}
+\end{table}
+
+\subsection{Timeouts per state}
+
+The table~\ref{table:chain-sync-timeouts} specify message timeouts in a given
+state.  If a timeout is violated the connection SHOULD be torn down.
+
+\begin{table}[h!]
+  \begin{center}
+    \begin{tabular}{l|r}
+      state        & timeout \\\hline
+      \StIdle      & \texttt{3673}s \\
+      \StCanAwait  & \texttt{10}s   \\
+      \StMustReply & random between \texttt{135}s and \texttt{269}s \\
+      \StIntersect & \texttt{10}s   \\
+    \end{tabular}
+    \caption{timeouts per state}
+    \label{table:chain-sync-timeouts}
+  \end{center}
 \end{table}
 
 \newcommand{\readpointer}{\emph{read-pointer}}
@@ -1004,7 +1076,7 @@ The block fetching mechanism enables a node to download a range of blocks.
 
 Transition table is shown in table~\ref{table:block-fetch}.
 
-\begin{table}[h]
+\begin{table}[h!]
   \begin{center}
     \begin{tabular}{|l|l|l|l|}
       \hline
@@ -1020,6 +1092,41 @@ Transition table is shown in table~\ref{table:block-fetch}.
   \end{center}
   \caption{Block-Fetch mini-protocol messages.}
   \label{table:block-fetch}
+\end{table}
+
+\subsection{Size limits per state}
+
+These limits bound how many bytes can be send in a given state, indirectly this
+limits payload size of each message.  If a space limit is violated the
+connection SHOULD be torn down.
+
+\begin{table}[h!]
+  \begin{center}
+    \begin{tabular}{l|r}
+      state        & size limit in bytes \\\hline
+      \StIdle      & \texttt{65535} \\
+      \StBusy      & \texttt{65535} \\
+      \StStreaming & \texttt{2500000} \\
+    \end{tabular}
+    % \caption{size limits per state}
+  \end{center}
+\end{table}
+
+\subsection{Timeouts per state}
+
+These limits bound how much time the receiver side can wait for arrival of
+a message.  If a timeout is violated the connection SHOULD be torn down.
+
+\begin{table}[h!]
+  \begin{center}
+    \begin{tabular}{l|r}
+      state        & timeout \\\hline
+      \StIdle      & - \\
+      \StBusy      & \texttt{60}s \\
+      \StStreaming & \texttt{60}s \\
+    \end{tabular}
+    % \caption{timeouts per state}
+  \end{center}
 \end{table}
 
 \subsection{CDDL encoding specification}
@@ -1067,7 +1174,7 @@ The version 2 is used by version 6 and higher of node-to-node protocol.
   \end{tabular}
 \end{figure}
 
-\begin{figure}[h]
+\begin{figure}[h!]
 \begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4.5cm, semithick]
   \tikzstyle{every state}=[fill=red,draw=none,text=white]
   \node[state, mygreen, initial] (I) at (-4,  0) {\StInit};
@@ -1111,7 +1218,7 @@ The version 2 is used by version 6 and higher of node-to-node protocol.
       The client terminates the mini protocol.
 \end{description}
 
-\begin{table}[h]
+\begin{table}[h!]
   \begin{tabular}{|l|l|l|l|}
     \hline
     \multicolumn{4}{|c|}{Transition table} \\ \hline
@@ -1127,6 +1234,48 @@ The version 2 is used by version 6 and higher of node-to-node protocol.
   \end{tabular}
   \caption{Tx-Submission mini-protocol (version 2) messages.}
 \end{table}
+
+\subsubsection{Size limits per state}
+
+Table~\ref{table:tx-submission-size-limits} specifies how may bytes can be send
+in a given state, indirectly this limits payload size of each message.  If
+a space limit is violated the connection SHOULD be torn down.
+
+\begin{table}[h!]
+  \begin{center}
+    \begin{tabular}{l|r}
+      state               & size limit in bytes \\\hline
+      \StInit             & \texttt{5760} \\
+      \StIdle             & \texttt{5760} \\
+      \StTxIdsBlocking    & \texttt{2500000} \\
+      \StTxIdsNonBlocking & \texttt{2500000} \\
+      \StTxs              & \texttt{2500000} \\
+    \end{tabular}
+    \caption{size limits per state}
+    \label{table:tx-submission-size-limits}
+  \end{center}
+\end{table}
+
+\subsubsection{Timeouts per state}
+
+The table~\ref{table:tx-submission-timeouts} specify message timeouts in
+a given state.  If a timeout is violated the connection SHOULD be torn down.
+
+\begin{table}[h!]
+  \begin{center}
+    \begin{tabular}{l|r}
+      state               & timeout \\\hline
+      \StInit             & - \\
+      \StIdle             & - \\
+      \StTxIdsBlocking    & - \\
+      \StTxIdsNonBlocking & \texttt{10}s \\
+      \StTxs              & \texttt{10}s \\
+    \end{tabular}
+    \caption{timeouts per state}
+    \label{table:tx-submission-timeouts}
+  \end{center}
+\end{table}
+
 \subsubsection{CDDL encoding specification}\label{tx-submission2-cddl}
 \lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/tx-submission2.cddl}
 See version 1 of the mini-protocol in section~\ref{tx-submission-cddl} and
@@ -1227,6 +1376,39 @@ measurements.
   Terminating message.
 \end{description}
 
+\subsection{Size limits per state}
+
+These limits bound how many bytes can be send in a given state, indirectly this
+limits payload size of each message.  If a space limit is violated the
+connection SHOULD be torn down.
+
+\begin{table}[h!]
+  \begin{center}
+    \begin{tabular}{l|r}
+      state   & size limit in bytes \\\hline
+      \Client & \texttt{65535} \\
+      \Server & \texttt{65535} \\
+    \end{tabular}
+    % \caption{size limits per state}
+  \end{center}
+\end{table}
+
+\subsection{Timeouts per state}
+
+These limits bound how much time the receiver side can wait for arrival of
+a message.  If a timeout is violated the connection SHOULD be torn down.
+
+\begin{table}[h!]
+  \begin{center}
+    \begin{tabular}{l|r}
+      state   & timeout \\\hline
+      \Client & \texttt{97}s \\
+      \Server & \texttt{60}s \\
+    \end{tabular}
+    % \caption{timeouts per state}
+  \end{center}
+\end{table}
+
 \subsection{CDDL encoding specification}
 \lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/keep-alive.cddl}
 
@@ -1248,22 +1430,22 @@ will share a subset of their Known Peers.
 \begin{figure}[h]
   \begin{tabular}{|l|l|}
     \hline
-    \multicolumn{2}{|c|}{Agency} \\ \hline
-    Client has Agency & \PsClient  \\ \hline
-    Server has Agency & \PsServer  \\ \hline
+    \multicolumn{2}{|c|}{Agency} \\\hline
+    Client has Agency & \StIdle  \\\hline
+    Server has Agency & \StBusy  \\\hline
   \end{tabular}
 \end{figure}
 
 \begin{figure}[h]
   \begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4.5cm, semithick]
     \tikzstyle{every state}=[fill=red,draw=none,text=white]
-    \node[state, mygreen, initial]        (Client)  {\PsClient};
-    \node[state, myblue, right of=Client] (Server)  {\PsServer};
-    \node[state, below of=Client]         (Done)    {\StDone};
+    \node[state, mygreen, initial]        (Idle)  {\StIdle};
+    \node[state, myblue, right of=Client] (Busy)  {\StBusy};
+    \node[state, below of=Client]         (Done)  {\StDone};
 
-    \draw (Client) edge[above, bend left=45] node{\MsgShareRequest} (Server);
-    \draw (Server) edge[below, bend left=45] node{\MsgSharePeers}   (Client);
-    \draw (Client) edge[left]                node{\MsgDone}         (Done);
+    \draw (Idle) edge[above, bend left=45] node{\MsgShareRequest} (Busy);
+    \draw (Busy) edge[below, bend left=45] node{\MsgSharePeers}   (Idle);
+    \draw (Idle) edge[left]                node{\MsgDone}         (Done);
   \end{tikzpicture}
   \caption{State machine of the peer sharing protocol.}
 \end{figure}
@@ -1281,6 +1463,39 @@ will share a subset of their Known Peers.
 \item [\MsgDone]
   Terminating message.
 \end{description}
+
+\subsection{Size limits per state}
+
+These limits bound how many bytes can be send in a given state, indirectly this
+limits payload size of each message.  If a space limit is violated the
+connection SHOULD be torn down.
+
+\begin{table}[h!]
+  \begin{center}
+    \begin{tabular}{l|r}
+      state   & size limit in bytes \\\hline
+      \StIdle & \texttt{5760} \\
+      \StBusy & \texttt{5760} \\
+    \end{tabular}
+    % \caption{size limits per state}
+  \end{center}
+\end{table}
+
+\subsection{Timeouts per state}
+
+These limits bound how much time the receiver side can wait for arrival of
+a message.  If a timeout is violated the connection SHOULD be torn down.
+
+\begin{table}[h!]
+  \begin{center}
+    \begin{tabular}{l|r}
+      state   & timeout \\\hline
+      \StIdle & - \\
+      \StBusy & \texttt{60}s \\
+    \end{tabular}
+    % \caption{timeouts per state}
+  \end{center}
+\end{table}
 
 \subsection{Client Implementation Details}
 
@@ -1378,8 +1593,8 @@ This is acceptable because is protocol is only for use between a node and local 
 \newcommand{\MsgSubmitTx}{\trans{MsgSubmitTx}}
 \newcommand{\MsgAcceptTx}{\trans{MsgAcceptTx}}
 \newcommand{\MsgRejectTx}{\trans{MsgRejectTx}}
-\subsection{State machine}
 
+\subsection{State machine}
 \begin{figure}[h]
   \begin{tabular}{|l|l|}
     \hline
@@ -1415,6 +1630,14 @@ This is acceptable because is protocol is only for use between a node and local 
 \item [\MsgDone]
       The client terminates the mini protocol.
 \end{description}
+
+\subsection{Size limits per state}
+
+No size limits.
+
+\subsection{Timeouts per state}
+
+No timeouts.
 
 \subsection{CDDL encoding specification}
 \lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/local-tx-submission.cddl}
@@ -1507,6 +1730,14 @@ $ImmutableTip$ are necessarily not subject rollback.
   \caption{Local State Query mini-protocol messages.}
   \label{fig:lsq-messages}
 \end{figure}
+
+\subsection{Size limits per state}
+
+No size limits.
+
+\subsection{Timeouts per state}
+
+No timeouts.
 
 \subsection{CDDL encoding specification}
 \lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/local-state-query.cddl}
@@ -1629,6 +1860,14 @@ the client.
   \caption{Local Transaction Monitor mini-protocol messages.}
   \label{fig:ltxm-messages}
 \end{figure}
+
+\subsection{Size limits per state}
+
+No size limits.
+
+\subsection{Timeouts per state}
+
+No timeouts.
 
 \subsection{CDDL encoding specification}
 \lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/local-tx-monitor.cddl}
