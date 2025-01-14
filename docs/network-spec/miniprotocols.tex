@@ -321,13 +321,13 @@ because the Ping-Pong client and the Ping-Pong server do not access the internal
 \begin{figure}[h]
   \begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4.5cm, semithick]
     \tikzstyle{every state}=[fill=red,draw=none,text=white]
-    \node[state, mygreen, initial]                            (Idle)      {\StIdle};
-    \node[state, right of=Idle]                             (Done)      {\StDone};
-    \node[state, myblue, below of=Idle]                       (Busy)      {\StBusy};
+    \node[state, mygreen, initial]      (Idle) {\StIdle};
+    \node[state, right of=Idle]         (Done) {\StDone};
+    \node[state, myblue, below of=Idle] (Busy) {\StBusy};
 
-    \draw (Idle)         edge[above]               node{\MsgDone}                  (Done);
-    \draw (Idle)         edge[left, bend right]    node{\Ping}                     (Busy);
-    \draw (Busy)         edge[right, bend right]   node{\Pong}                     (Idle);
+    \draw (Idle) edge[above]             node{\MsgDone} (Done);
+    \draw (Idle) edge[left, bend right]  node{\Ping}    (Busy);
+    \draw (Busy) edge[right, bend right] node{\Pong}    (Idle);
   \end{tikzpicture}
 \end{figure}
 
@@ -378,13 +378,13 @@ application of the protocol determines the types of the requests and responses.
 \subsubsection{State machine}
 \begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4.5cm, semithick]
   \tikzstyle{every state}=[fill=red,draw=none,text=white]
-  \node[state, mygreen, initial]                                   (Idle)      {\StIdle};
-  \node[state, myblue, right of=Idle]                              (Busy)      {\StBusy};
-  \node[state, below of=Idle]                                    (Done)      {\StDone};
+  \node[state, mygreen, initial]      (Idle) {\StIdle};
+  \node[state, myblue, right of=Idle] (Busy) {\StBusy};
+  \node[state, below of=Idle]         (Done) {\StDone};
 
-  \draw (Idle)         edge[below, bend right] node{\Request}    (Busy);
-  \draw (Busy)         edge[above, bend right] node{\Response}   (Idle);
-  \draw (Idle)         edge[right]             node{\RespDone}   (Done);
+  \draw (Idle) edge[below, bend right] node{\Request}  (Busy);
+  \draw (Busy) edge[above, bend right] node{\Response} (Idle);
+  \draw (Idle) edge[right]             node{\RespDone} (Done);
 \end{tikzpicture}
 
 \begin{figure}[ht]
@@ -453,12 +453,12 @@ The handshake mini protocol is designed to handle simultaneous TCP open.
     \tikzstyle{every state}=[fill=red,draw=none,text=white]
     \node[state, mygreen, initial]   (StPropose) at (0,  0) {\StPropose};
     \node[state, myblue]             (StConfirm) at (5,  0) {\StConfirm};
-    \node[state, right of=Confirm] (StDone)    at (7,  0) {\StDone};
+    \node[state, right of=Confirm]   (StDone)    at (7,  0) {\StDone};
 
     \draw (StPropose) --node[above=1em]{\MsgProposeVersions} (StConfirm);
-    \draw[->] (StConfirm.10)  to [out=15,  in=150] node[above]{\MsgAcceptVersion}   (StDone.170);
-    \draw[->] (StConfirm.350) to [out=-15, in=210] node[below]{\MsgRefuse}          (StDone.190);
-    \draw[->] (StConfirm)     -- node[fill=white,above=-0.8em] {\MsgReplyVersions} (StDone.west);
+    \draw[->] (StConfirm.10)  to [out=15,  in=150] node[above]{\MsgAcceptVersion} (StDone.170);
+    \draw[->] (StConfirm.350) to [out=-15, in=210] node[below]{\MsgRefuse}        (StDone.190);
+    \draw[->] (StConfirm)     -- node[fill=white,above=-0.8em]{\MsgReplyVersions} (StDone.west);
   \end{tikzpicture}
 \end{figure}
 
@@ -488,11 +488,11 @@ Messages of the protocol:
 {\small
 \begin{table}[h]
   \begin{tabular}{l|l|l|l} \hline
-    from       & message/event         & parameters                        & to \\\hline
-    \StPropose & \MsgProposeVersions   & $versionTable$                    & \StConfirm \\
-    \StConfirm & \MsgReplyVersions     & $versionTable$                    & \StDone \\
-    \StConfirm & \MsgAcceptVersion     & $(versionNumber,extraParameters)$ & \StDone \\
-    \StConfirm & \MsgRefuse            & $reason$                          & \StDone \\
+    from       & message/event       & parameters                        & to \\\hline
+    \StPropose & \MsgProposeVersions & $versionTable$                    & \StConfirm \\
+    \StConfirm & \MsgReplyVersions   & $versionTable$                    & \StDone \\
+    \StConfirm & \MsgAcceptVersion   & $(versionNumber,extraParameters)$ & \StDone \\
+    \StConfirm & \MsgRefuse          & $reason$                          & \StDone \\
   \end{tabular}
 \end{table}
 }
@@ -792,17 +792,17 @@ The protocol uses the following messages:
 
 \begin{table}[h!]
   \begin{tabular}{l|l|l|l}
-    from state   & message                & parameters                          & to state      \\ \hline
-    \StIdle      & \MsgRequestNext        &                                     & \StCanAwait   \\
-    \StIdle      & \MsgFindIntersect      & $\langle point\rangle$              & \StIntersect  \\
-    \StIdle      & \MsgDone               &                                     & \StDone       \\
-    \StCanAwait  & \MsgAwaitReply         &                                     & \StMustReply  \\
-    \StCanAwait  & \MsgRollForward        & $header$, $tip$                     & \StIdle       \\
-    \StCanAwait  & \MsgRollBackward       & $point_{old}$, $tip$                & \StIdle       \\
-    \StMustReply & \MsgRollForward        & $header$, $tip$                     & \StIdle       \\
-    \StMustReply & \MsgRollBackward       & $point_{old}$, $tip$                & \StIdle       \\
-    \StIntersect & \MsgIntersectFound     & $point_{intersect}$, $tip$          & \StIdle       \\
-    \StIntersect & \MsgIntersectNotFound  & $tip$                               & \StIdle       \\
+    from state   & message                & parameters                  & to state     \\\hline
+    \StIdle      & \MsgRequestNext        &                             & \StCanAwait  \\
+    \StIdle      & \MsgFindIntersect      & $\langle point\rangle$      & \StIntersect \\
+    \StIdle      & \MsgDone               &                             & \StDone      \\
+    \StCanAwait  & \MsgAwaitReply         &                             & \StMustReply \\
+    \StCanAwait  & \MsgRollForward        & $header$, $tip$             & \StIdle      \\
+    \StCanAwait  & \MsgRollBackward       & $point_{old}$, $tip$        & \StIdle      \\
+    \StMustReply & \MsgRollForward        & $header$, $tip$             & \StIdle      \\
+    \StMustReply & \MsgRollBackward       & $point_{old}$, $tip$        & \StIdle      \\
+    \StIntersect & \MsgIntersectFound     & $point_{intersect}$, $tip$  & \StIdle      \\
+    \StIntersect & \MsgIntersectNotFound  & $tip$                       & \StIdle      \\
   \end{tabular}
   \caption{Chain-Sync mini-protocol messages.}
 \end{table}
@@ -1039,12 +1039,12 @@ The block fetching mechanism enables a node to download a range of blocks.
     \node[state, myblue]          at (-3cm,-3cm) (Busy)      {\StBusy};
     \node[state, myblue]          at (4cm,-3cm)  (Streaming) {\StStreaming};
 
-    \draw (Idle)         edge[above]                node[fill=white]{\MsgClientDone}                  (Done);
-    \draw (Idle)         edge[left,bend right]      node[fill=white]{\MsgRequestRange}                (Busy);
-    \draw (Busy)         edge[above,bend right]     node[fill=white]{\MsgNoBlocks}                    (Idle);
-    \draw (Busy)         edge[below]                node[fill=white]{\MsgStartBatch}                  (Streaming);
-    \draw (Streaming)    edge[loop right]           node[fill=white,left=-10mm]{\MsgBlock}            (Streaming);
-    \draw (Streaming)    edge[right]                node[fill=white,left=-15mm]{\MsgBatchDone}        (Idle);
+    \draw (Idle)      edge[above]            node[fill=white]{\MsgClientDone}           (Done);
+    \draw (Idle)      edge[left,bend right]  node[fill=white]{\MsgRequestRange}         (Busy);
+    \draw (Busy)      edge[above,bend right] node[fill=white]{\MsgNoBlocks}             (Idle);
+    \draw (Busy)      edge[below]            node[fill=white]{\MsgStartBatch}           (Streaming);
+    \draw (Streaming) edge[loop right]       node[fill=white,left=-10mm]{\MsgBlock}     (Streaming);
+    \draw (Streaming) edge[right]            node[fill=white,left=-15mm]{\MsgBatchDone} (Idle);
   \end{tikzpicture}
   \caption{State machine of the block-fetch mini-protocol}
 \end{figure}
@@ -1083,13 +1083,13 @@ Transition table is shown in table~\ref{table:block-fetch}.
 \begin{table}[h!]
   \begin{center}
     \begin{tabular}{l|l|l|l}
-      from state     & message                & parameters             & to state      \\ \hline
-      \StIdle        & \MsgClientDone         &                        & \StDone       \\
-      \StIdle        & \MsgRequestRange       & $range$                & \StBusy       \\
-      \StBusy        & \MsgNoBlocks           &                        & \StIdle       \\
-      \StBusy        & \MsgStartBatch         &                        & \StStreaming  \\
-      \StStreaming   & \MsgBlock              & $body$                 & \StStreaming  \\
-      \StStreaming   & \MsgBatchDone          &                        & \StIdle       \\
+      from state    & message          & parameters & to state     \\\hline
+      \StIdle       & \MsgClientDone   &            & \StDone      \\
+      \StIdle       & \MsgRequestRange & $range$    & \StBusy      \\
+      \StBusy       & \MsgNoBlocks     &            & \StIdle      \\
+      \StBusy       & \MsgStartBatch   &            & \StStreaming \\
+      \StStreaming  & \MsgBlock        & $body$     & \StStreaming \\
+      \StStreaming  & \MsgBatchDone    &            & \StIdle      \\
     \end{tabular}
   \end{center}
   \caption{Block-Fetch mini-protocol messages.}
@@ -1609,10 +1609,10 @@ This is acceptable because is protocol is only for use between a node and local 
     \node[state, right of=Idle]         (Done) {\StDone};
     \node[state, myblue, above of=Idle] (Busy) {\StBusy};
 
-    \draw (Idle)         edge[]              node{\MsgDone}           (Done);
-    \draw (Idle.0)       to[out=30,  in=330] node[fill=white, left=-2mm]{\MsgSubmitTx}    (Busy.0);
-    \draw (Busy.185)     to[out=180, in=180, looseness=2] node[fill=white, right=10mm, below=3mm]{\MsgAcceptTx} (Idle.175);
-    \draw (Busy.190)     to[out=240, in=120] node[fill=white, left=10mm, above=3mm]{\MsgRejectTx}  (Idle.170);
+    \draw (Idle)     edge[]                           node{\MsgDone}                                        (Done);
+    \draw (Idle.0)   to[out=30,  in=330]              node[fill=white, left=-2mm]{\MsgSubmitTx}             (Busy.0);
+    \draw (Busy.185) to[out=180, in=180, looseness=2] node[fill=white, right=10mm, below=3mm]{\MsgAcceptTx} (Idle.175);
+    \draw (Busy.190) to[out=240, in=120]              node[fill=white, left=10mm, above=3mm]{\MsgRejectTx}  (Idle.170);
   \end{tikzpicture}
 \caption{State machine of the Local Tx-Submission mini-protocol.}
 \end{figure}
