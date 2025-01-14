@@ -1134,14 +1134,11 @@ a message.  If a timeout is violated the connection SHOULD be torn down.
 See appendix \ref{cddl-common} for common definitions.
 
 \section{Tx-Submission mini-protocol}
-\label{tx-submission-protocol}
-\subsection{Version 1}
-Version 1 of the tx-submission protocol is no longer supported.
-
-\subsection{Version 2}
 \haddockref{Ouroboros.Network.Protocol.TxSubmission2.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-TxSubmission2-Type\#t:TxSubmission2}\\
 \hyperref[table:node-to-node-protocol-numbers]{\textit{node-to-node mini-protocol number}}: \texttt{4}\\
+\label{tx-submission-protocol}
 \label{tx-submission-protocol2}
+
 \newcommand{\StInit}  {\state{StInit}}
 \newcommand{\MsgInit} {\trans{MsgInit}}
 \newcommand{\StTxIdsBlocking}    {\state{StTxIdsBlocking}}
@@ -1162,8 +1159,9 @@ against resource consumption attacks from the other side.  The local
 transaction submission protocol, which is used when the server trusts a local
 client, is described in Section \ref{local-tx-submission-protocol}.
 
-The version 2 is used by version 6 and higher of node-to-node protocol.
-\subsubsection{State machine}
+Note that Version 1 of the tx-submission protocol is no longer supported.
+The version 2 is used by since \texttt{NodeToNode\_V6} of the node-to-node protocol.
+\subsection{State machine}
 
 \begin{figure}[h]
   \begin{tabular}{|l|l|}
@@ -1235,7 +1233,7 @@ The version 2 is used by version 6 and higher of node-to-node protocol.
   \caption{Tx-Submission mini-protocol (version 2) messages.}
 \end{table}
 
-\subsubsection{Size limits per state}
+\subsection{Size limits per state}
 
 Table~\ref{table:tx-submission-size-limits} specifies how may bytes can be send
 in a given state, indirectly this limits payload size of each message.  If
@@ -1256,7 +1254,7 @@ a space limit is violated the connection SHOULD be torn down.
   \end{center}
 \end{table}
 
-\subsubsection{Timeouts per state}
+\subsection{Timeouts per state}
 
 The table~\ref{table:tx-submission-timeouts} specify message timeouts in
 a given state.  If a timeout is violated the connection SHOULD be torn down.
@@ -1276,7 +1274,7 @@ a given state.  If a timeout is violated the connection SHOULD be torn down.
   \end{center}
 \end{table}
 
-\subsubsection{CDDL encoding specification}\label{tx-submission2-cddl}
+\subsection{CDDL encoding specification}\label{tx-submission2-cddl}
 \lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/tx-submission2.cddl}
 See version 1 of the mini-protocol in section~\ref{tx-submission-cddl} and
 appendix \ref{cddl-common} for common definitions.
