@@ -451,8 +451,8 @@ The handshake mini protocol is designed to handle simultaneous TCP open.
 \begin{figure}[h]
   \begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=6cm, semithick]
     \tikzstyle{every state}=[fill=red,draw=none,text=white]
-    \node[state, green, initial]   (StPropose) at (0,  0) {\StPropose};
-    \node[state, blue]             (StConfirm) at (5,  0) {\StConfirm};
+    \node[state, mygreen, initial]   (StPropose) at (0,  0) {\StPropose};
+    \node[state, myblue]             (StConfirm) at (5,  0) {\StConfirm};
     \node[state, right of=Confirm] (StDone)    at (7,  0) {\StDone};
 
     \draw (StPropose) --node[above=1em]{\MsgProposeVersions} (StConfirm);
