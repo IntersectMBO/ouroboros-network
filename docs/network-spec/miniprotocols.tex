@@ -1,6 +1,9 @@
 \chapter{Mini Protocols}
 \label{chapter:mini-protocols}
 
+\newcommand{\Client}{\textcolor{mygreen}{\textbf{Client}}}
+\newcommand{\Server}{\textcolor{myblue}{\textbf{Server}}}
+
 \section{Mini Protocols and Protocol Families}
 A mini protocol is a well defined and modular building block of
 the network protocol.
@@ -329,10 +332,10 @@ because the Ping-Pong client and the Ping-Pong server do not access the internal
 \end{figure}
 
 \begin{figure}[ht]
-  \begin{tabular}{|l|l|} \hline
-  \multicolumn{2}{|c|}{Agency} \\ \hline
-    Client has Agency & \StIdle \\  \hline
-    Server has Agency & \StBusy \\  \hline
+  \begin{tabular}{l|l}
+    state   & agency \\\hline
+    \StIdle & \Client \\
+    \StBusy & \Server \\
   \end{tabular}
 \end{figure}
 
@@ -373,13 +376,6 @@ This means that there are different possible applications of this protocol and t
 application of the protocol determines the types of the requests and responses.
 
 \subsubsection{State machine}
-\begin{tabular}{|l|l|}
-  \hline
-  \multicolumn{2}{|c|}{Agency} \\ \hline
-  Client has Agency & \StIdle \\  \hline
-  Server has Agency & \StBusy \\ \hline
-\end{tabular}
-{\vskip 10pt}
 \begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4.5cm, semithick]
   \tikzstyle{every state}=[fill=red,draw=none,text=white]
   \node[state, mygreen, initial]                                   (Idle)      {\StIdle};
@@ -390,7 +386,15 @@ application of the protocol determines the types of the requests and responses.
   \draw (Busy)         edge[above, bend right] node{\Response}   (Idle);
   \draw (Idle)         edge[right]             node{\RespDone}   (Done);
 \end{tikzpicture}
-{\vskip 10pt}
+
+\begin{figure}[ht]
+  \begin{tabular}{l|l}
+    state   & agency \\\hline
+    \StIdle & \Client \\
+    \StBusy & \Server \\
+  \end{tabular}
+\end{figure}
+
 The protocol uses the following messages.
 \begin{description}
 \item [\Request{} $(request)$]
@@ -444,16 +448,6 @@ These callback functions are specific for the supported protocol versions.
 The handshake mini protocol is designed to handle simultaneous TCP open.
 
 \subsection{State machine}
-
-\begin{figure}[h]
-  \begin{tabular}{|l|l|}
-    \hline
-    \multicolumn{2}{|c|}{Agency} \\ \hline
-    Client has Agency & \StPropose \\ \hline
-    Server has Agency & \StConfirm \\  \hline
-  \end{tabular}
-\end{figure}
-
 \begin{figure}[h]
   \begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=6cm, semithick]
     \tikzstyle{every state}=[fill=red,draw=none,text=white]
@@ -466,6 +460,14 @@ The handshake mini protocol is designed to handle simultaneous TCP open.
     \draw[->] (StConfirm.350) to [out=-15, in=210] node[below]{\MsgRefuse}          (StDone.190);
     \draw[->] (StConfirm)     -- node[fill=white,above=-0.8em] {\MsgReplyVersions} (StDone.west);
   \end{tikzpicture}
+\end{figure}
+
+\begin{figure}[h]
+  \begin{tabular}{l|l}
+    state & agency \\\hline
+    \StPropose & \Client \\
+    \StConfirm & \Server \\
+  \end{tabular}
 \end{figure}
 
 Messages of the protocol:
@@ -485,13 +487,12 @@ Messages of the protocol:
 
 {\small
 \begin{table}[h]
-  \begin{tabular}{|l|l|l|l|} \hline
-  \multicolumn{4}{|c|}{Transition table} \\ \hline
-    from       & message/event         & parameters                        & to \\ \hline\hline
-    \StPropose & \MsgProposeVersions   & $versionTable$                    & \StConfirm \\ \hline
-    \StConfirm & \MsgReplyVersions    & $versionTable$                    & \StDone \\ \hline
-    \StConfirm & \MsgAcceptVersion     & $(versionNumber,extraParameters)$ & \StDone \\ \hline
-    \StConfirm & \MsgRefuse            & $reason$                          & \StDone \\ \hline
+  \begin{tabular}{l|l|l|l} \hline
+    from       & message/event         & parameters                        & to \\\hline
+    \StPropose & \MsgProposeVersions   & $versionTable$                    & \StConfirm \\
+    \StConfirm & \MsgReplyVersions     & $versionTable$                    & \StDone \\
+    \StConfirm & \MsgAcceptVersion     & $(versionNumber,extraParameters)$ & \StDone \\
+    \StConfirm & \MsgRefuse            & $reason$                          & \StDone \\
   \end{tabular}
 \end{table}
 }
@@ -712,15 +713,6 @@ is used to transfer full blocks.
 
 \subsection{State Machine}
 
-\begin{figure}[h]
-  \begin{tabular}{|l|l|}
-    \hline
-    \multicolumn{2}{|c|}{Agency} \\ \hline
-    Client has Agency & \StIdle \\  \hline
-    Server has Agency & \StCanAwait, \StMustReply, \StIntersect \\ \hline
-  \end{tabular}
-\end{figure}
-
 \begin{figure}[ht]
   \begin{tikzpicture}[->,auto,node distance=5.5cm,semithick]
     \tikzstyle{every state}=[fill=red,draw=none,text=white]
@@ -741,9 +733,23 @@ is used to transfer full blocks.
     \draw (Intersect.240) to[out=230, in=120]        node[fill=white, pos=0.6, left=-30mm]{\MsgIntersectFound}    (Idle.120);
     \draw (Idle)          edge[above]                node{\MsgDone}                                               (Done);
   \end{tikzpicture}
-\caption{State machine of the Chain-Sync mini-protocol.}
+\caption{State machine of the Chain-Sync mini-protocol}
 \label{chain-sync-automata}
 \end{figure}
+
+\begin{figure}[h]
+  \begin{center}
+    \begin{tabular}{l|l}
+      state        & agency \\\hline
+      \StIdle      & \Client \\
+      \StIntersect & \Server \\
+      \StCanAwait  & \Server \\
+      \StMustReply & \Server \\
+    \end{tabular}
+    \caption{Chain-Sync state agencies}
+  \end{center}
+\end{figure}
+
 
 The protocol uses the following messages:
 \begin{description}
@@ -1026,15 +1032,6 @@ The block fetching mechanism enables a node to download a range of blocks.
 \subsection{State machine}
 
 \begin{figure}[h]
-  \begin{tabular}{|l|l|}
-    \hline
-    \multicolumn{2}{|c|}{Agency} \\ \hline
-    Client has Agency & \StIdle            \\  \hline
-    Server has Agency & \StBusy, \StStreaming \\ \hline
-  \end{tabular}
-\end{figure}
-
-\begin{figure}[h]
   \begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4.5cm, semithick]
     \tikzstyle{every state}=[fill=red,draw=none,text=white]
     \node[state, mygreen,initial] at (-1cm,0cm)  (Idle)      {\StIdle};
@@ -1049,7 +1046,19 @@ The block fetching mechanism enables a node to download a range of blocks.
     \draw (Streaming)    edge[loop right]           node[fill=white,left=-10mm]{\MsgBlock}            (Streaming);
     \draw (Streaming)    edge[right]                node[fill=white,left=-15mm]{\MsgBatchDone}        (Idle);
   \end{tikzpicture}
-  \caption{State machine of the block-fetch mini-protocol.}
+  \caption{State machine of the block-fetch mini-protocol}
+\end{figure}
+
+\begin{figure}[h]
+  \begin{center}
+    \begin{tabular}{l|l}
+      state        & agency \\\hline
+      \StIdle      & \Client \\
+      \StBusy      & \Server \\
+      \StStreaming & \Server \\
+    \end{tabular}
+    \caption{Block-Fetch state agencies}
+  \end{center}
 \end{figure}
 
 \paragraph{Protocol messages}
@@ -1156,15 +1165,6 @@ Note that Version 1 of the tx-submission protocol is no longer supported.
 The version 2 is used by since \texttt{NodeToNode\_V6} of the node-to-node protocol.
 \subsection{State machine}
 
-\begin{figure}[h]
-  \begin{tabular}{|l|l|}
-    \hline
-    \multicolumn{2}{|c|}{Agency} \\ \hline
-    Client has Agency & \StInit, \StTxIdsBlocking, \StTxIdsNonBlocking, \StTxs \\ \hline
-    Server has Agency & \StIdle \\ \hline
-  \end{tabular}
-\end{figure}
-
 \begin{figure}[h!]
 \begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4.5cm, semithick]
   \tikzstyle{every state}=[fill=red,draw=none,text=white]
@@ -1185,6 +1185,20 @@ The version 2 is used by since \texttt{NodeToNode\_V6} of the node-to-node proto
 \end{tikzpicture}
   \caption{State machine of the Tx-Submission mini-protocol (version 2).}
 \label{tx-submission-automata-v2}
+\end{figure}
+
+\begin{figure}[h]
+  \begin{center}
+    \begin{tabular}{l|l}
+      state               & agency \\\hline
+      \StInit             & \Client \\
+      \StIdle             & \Server \\
+      \StTxIdsBlocking    & \Client \\
+      \StTxIdsNonBlocking & \Client \\
+      \StTxs              & \Client \\
+    \end{tabular}
+    \caption{Tx-Submission state agencies}
+  \end{center}
 \end{figure}
 
 \paragraph{Protocol messages}
@@ -1323,26 +1337,17 @@ Keep alive mini-protocol is a member of node-to-node protocol.  It is used for
 two purposes: to provide keep alive messages, and do round trip time
 measurements.
 
-\newcommand{\Client}{\state{StClient}}
-\newcommand{\Server}{\state{StServer}}
+\newcommand{\StClient}{\state{StClient}}
+\newcommand{\StServer}{\state{StServer}}
 \newcommand{\MsgKeepAlive}{\trans{MsgKeepAlive}}
 \newcommand{\MsgKeepAliveResponse}{\trans{MsgKeepAliveResponse}}
 \subsection{State machine}
 
 \begin{figure}[h]
-  \begin{tabular}{|l|l|}
-    \hline
-    \multicolumn{2}{|c|}{Agency} \\ \hline
-    Client has Agency & \Client  \\ \hline
-    Server has Agency & \Server  \\ \hline
-  \end{tabular}
-\end{figure}
-
-\begin{figure}[h]
   \begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4.5cm, semithick]
     \tikzstyle{every state}=[fill=red,draw=none,text=white]
-    \node[state, mygreen, initial]        (Client)  {\Client};
-    \node[state, myblue, right of=Client] (Server)  {\Server};
+    \node[state, mygreen, initial]        (Client)  {\StClient};
+    \node[state, myblue, right of=Client] (Server)  {\StServer};
     \node[state, below of=Client]         (Done)    {\StDone};
 
     \draw (Client) edge[above, bend left=45] node{\MsgKeepAlive}         (Server);
@@ -1350,6 +1355,17 @@ measurements.
     \draw (Client) edge[left]                node{\MsgDone}              (Done);
   \end{tikzpicture}
   \caption{State machine of the keep alive protocol.}
+\end{figure}
+
+\begin{figure}[h]
+  \begin{center}
+    \begin{tabular}{l|l}
+      state   & agency \\\hline
+      \StClient & \Client \\
+      \StServer & \Server \\
+    \end{tabular}
+    \caption{Keep-Alive state agencies}
+  \end{center}
 \end{figure}
 
 \paragraph{Protocol messages}
@@ -1375,8 +1391,8 @@ connection SHOULD be torn down.
   \begin{center}
     \begin{tabular}{l|r}
       state   & size limit in bytes \\\hline
-      \Client & \texttt{65535} \\
-      \Server & \texttt{65535} \\
+      \StClient & \texttt{65535} \\
+      \StServer & \texttt{65535} \\
     \end{tabular}
     % \caption{size limits per state}
   \end{center}
@@ -1391,8 +1407,8 @@ a message.  If a timeout is violated the connection SHOULD be torn down.
   \begin{center}
     \begin{tabular}{l|r}
       state   & timeout \\\hline
-      \Client & \texttt{97}s \\
-      \Server & \texttt{60}s \\
+      \StClient & \texttt{97}s \\
+      \StServer & \texttt{60}s \\
     \end{tabular}
     % \caption{timeouts per state}
   \end{center}
@@ -1417,15 +1433,6 @@ will share a subset of their Known Peers.
 \subsection{State machine}
 
 \begin{figure}[h]
-  \begin{tabular}{|l|l|}
-    \hline
-    \multicolumn{2}{|c|}{Agency} \\\hline
-    Client has Agency & \StIdle  \\\hline
-    Server has Agency & \StBusy  \\\hline
-  \end{tabular}
-\end{figure}
-
-\begin{figure}[h]
   \begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4.5cm, semithick]
     \tikzstyle{every state}=[fill=red,draw=none,text=white]
     \node[state, mygreen, initial]        (Idle)  {\StIdle};
@@ -1437,6 +1444,17 @@ will share a subset of their Known Peers.
     \draw (Idle) edge[left]                node{\MsgDone}         (Done);
   \end{tikzpicture}
   \caption{State machine of the peer sharing protocol.}
+\end{figure}
+
+\begin{figure}[h]
+  \begin{center}
+    \begin{tabular}{l|l}
+      state   & agency \\\hline
+      \StIdle & \Client \\
+      \StBusy & \Server \\
+    \end{tabular}
+    \caption{Peer-Sharing state agencies}
+  \end{center}
 \end{figure}
 
 \paragraph{Protocol messages}
@@ -1585,15 +1603,6 @@ This is acceptable because is protocol is only for use between a node and local 
 
 \subsection{State machine}
 \begin{figure}[h]
-  \begin{tabular}{|l|l|}
-    \hline
-    \multicolumn{2}{|c|}{Agency} \\ \hline
-    Client has Agency & \StIdle \\ \hline
-    Server has Agency & \StBusy \\  \hline
-  \end{tabular}
-\end{figure}
-
-\begin{figure}[h]
   \begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4cm, semithick]
     \tikzstyle{every state}=[fill=red,draw=none,text=white]
     \node[state, mygreen, initial]      (Idle) {\StIdle};
@@ -1607,6 +1616,18 @@ This is acceptable because is protocol is only for use between a node and local 
   \end{tikzpicture}
 \caption{State machine of the Local Tx-Submission mini-protocol.}
 \end{figure}
+
+\begin{figure}[h]
+  \begin{center}
+    \begin{tabular}{l|l}
+      state   & agency \\\hline
+      \StIdle & \Client \\
+      \StBusy & \Server \\
+    \end{tabular}
+    \caption{Local Tx-Submission state agencies}
+  \end{center}
+\end{figure}
+
 
 \paragraph{Protocol messages}
 \begin{description}
@@ -1658,15 +1679,6 @@ ledger state.
 
 \subsection{State machine}
 \begin{figure}[h]
-  \begin{tabular}{|l|l|}
-    \hline
-    \multicolumn{2}{|c|}{Agency} \\ \hline
-    Server has Agency & \StIdle{}, \StAcquired{} \\ \hline
-    Client has Agency & \StAcquiring{}, \StQuerying{} \\ \hline
-  \end{tabular}
-\end{figure}
-
-\begin{figure}[h]
   \begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4cm,semithick]
     \tikzstyle{every state}=[fill=red,draw,none,text=white]
     \node[state, mygreen, initial] (Idle) {\StIdle};
@@ -1687,6 +1699,19 @@ ledger state.
   \end{tikzpicture}
   \caption{State machine of the Local State Query mini-protocol.}
 \end{figure}
+
+\begin{figure}[h]
+  \begin{center}
+    \begin{tabular}{l|l}
+      state        & agency \\\hline
+      \StIdle      & \Client \\
+      \StAcquiring & \Server \\
+      \StAcquired  & \Client \\
+      \StQuerying  & \Server \\
+    \end{tabular}
+  \end{center}
+\end{figure}
+
 
 \paragraph{Protocol messages}
 
@@ -1755,17 +1780,6 @@ mini-protocol is stateful, the server side tracks transactions already sent to
 the client.
 
 \subsection{State machine}
-\begin{figure}[h]
-  \begin{tabular}{|l|l|}
-    \hline
-    \multicolumn{2}{|c|}{Agency} \\ \hline
-    Client has Agency & \StIdle \\ \hline
-    Server has Agency & \StAcquiring \\ \hline
-    Client has Agency & \StAcquired \\ \hline
-    Server has Agency & \StBusy \\ \hline
-  \end{tabular}
-\end{figure}
-
 
 \begin{figure}[h]
   \begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4cm, semithick]
@@ -1791,6 +1805,19 @@ the client.
     \draw (Idle)         edge               node{\MsgDone}          (Done);
   \end{tikzpicture}
   \caption{State machine of the Local Tx-Monitor mini-protocol.}
+\end{figure}
+
+\begin{figure}[h]
+  \begin{center}
+    \begin{tabular}{l|l}
+      state        & agency \\\hline
+      \StIdle      & \Client \\
+      \StAcquiring & \Server \\
+      \StAcquired  & \Client \\
+      \StBusy      & \Server \\
+    \end{tabular}
+    \caption{Local Tx-Monitor state agencies}
+  \end{center}
 \end{figure}
 
 \paragraph{Protocol messages}
