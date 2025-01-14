@@ -333,9 +333,9 @@ because the Ping-Pong client and the Ping-Pong server do not access the internal
 
 \begin{figure}[ht]
   \begin{tabular}{l|l}
-    state   & agency \\\hline
-    \StIdle & \Client \\
-    \StBusy & \Server \\
+    \header{state} & \header{agency} \\\hline
+    \StIdle        & \Client \\
+    \StBusy        & \Server \\
   \end{tabular}
 \end{figure}
 
@@ -352,10 +352,10 @@ The messages of the Ping-Pong protocol do not carry any data.
 
 \begin{table}[h]
   \begin{tabular}{l|l|l}
-    from state & message   & to state \\\hline
-    \StIdle    & \Ping     & \StBusy  \\
-    \StBusy    & \Pong     & \StIdle  \\
-    \StIdle    & \MsgDone  & \StDone  \\
+    \header{from state} & \header{message} & \header{to state} \\\hline
+    \StIdle             & \Ping            & \StBusy  \\
+    \StBusy             & \Pong            & \StIdle  \\
+    \StIdle             & \MsgDone         & \StDone  \\
   \end{tabular}
   \caption{Ping-Pong mini-protocol messages.}
 \end{table}
@@ -389,9 +389,9 @@ application of the protocol determines the types of the requests and responses.
 
 \begin{figure}[ht]
   \begin{tabular}{l|l}
-    state   & agency \\\hline
-    \StIdle & \Client \\
-    \StBusy & \Server \\
+    \header{state} & \header{agency} \\\hline
+    \StIdle        & \Client \\
+    \StBusy        & \Server \\
   \end{tabular}
 \end{figure}
 
@@ -407,10 +407,10 @@ The protocol uses the following messages.
 
 \begin{table}[h]
   \begin{tabular}{l|l|l|l}
-    from    & message    & parameters  & to      \\\hline
-    \StIdle & \Request   & $request$   & \StBusy \\
-    \StBusy & \Response  & $response$  & \StIdle \\
-    \StIdle & \RespDone  &             & \StDone \\
+    \header{from} & \header{message} & \header{parameters} & \header{to} \\\hline
+    \StIdle       & \Request         & $request$           & \StBusy \\
+    \StBusy       & \Response        & $response$          & \StIdle \\
+    \StIdle       & \RespDone        &                     & \StDone \\
   \end{tabular}
   \caption{Request-Response mini-protocol messages.}
 \end{table}
@@ -464,9 +464,9 @@ The handshake mini protocol is designed to handle simultaneous TCP open.
 
 \begin{figure}[h]
   \begin{tabular}{l|l}
-    state & agency \\\hline
-    \StPropose & \Client \\
-    \StConfirm & \Server \\
+    \header{state} & \header{agency} \\\hline
+    \StPropose     & \Client \\
+    \StConfirm     & \Server \\
   \end{tabular}
 \end{figure}
 
@@ -487,8 +487,8 @@ Messages of the protocol:
 
 {\small
 \begin{table}[h]
-  \begin{tabular}{l|l|l|l} \hline
-    from       & message/event       & parameters                        & to \\\hline
+  \begin{tabular}{l|l|l|l}
+    \header{from} & \header{message} & \header{parameters} & \header{to} \\\hline
     \StPropose & \MsgProposeVersions & $versionTable$                    & \StConfirm \\
     \StConfirm & \MsgReplyVersions   & $versionTable$                    & \StDone \\
     \StConfirm & \MsgAcceptVersion   & $(versionNumber,extraParameters)$ & \StDone \\
@@ -506,7 +506,7 @@ connection SHOULD be torn down.
 \begin{table}[h!]
   \begin{center}
     \begin{tabular}{l|r}
-      state      & size limit in bytes \\\hline
+      \header{state} & \header{size limit in bytes} \\\hline
       \StPropose & \texttt{5760} \\
       \StConfirm & \texttt{5760} \\
     \end{tabular}
@@ -522,9 +522,9 @@ a message.  If a timeout is violated the connection SHOULD be torn down.
 \begin{table}[h!]
   \begin{center}
     \begin{tabular}{l|r}
-      state      & timeout \\\hline
-      \StPropose & \texttt{10}s \\
-      \StConfirm & \texttt{10}s \\
+      \header{state} & \header{timeout} \\\hline
+      \StPropose     & \texttt{10}s \\
+      \StConfirm     & \texttt{10}s \\
     \end{tabular}
     % \caption{timeouts per state}
   \end{center}
@@ -740,11 +740,11 @@ is used to transfer full blocks.
 \begin{figure}[h]
   \begin{center}
     \begin{tabular}{l|l}
-      state        & agency \\\hline
-      \StIdle      & \Client \\
-      \StIntersect & \Server \\
-      \StCanAwait  & \Server \\
-      \StMustReply & \Server \\
+      \header{state} & \header{agency} \\\hline
+      \StIdle        & \Client \\
+      \StIntersect   & \Server \\
+      \StCanAwait    & \Server \\
+      \StMustReply   & \Server \\
     \end{tabular}
     \caption{Chain-Sync state agencies}
   \end{center}
@@ -792,7 +792,7 @@ The protocol uses the following messages:
 
 \begin{table}[h!]
   \begin{tabular}{l|l|l|l}
-    from state   & message                & parameters                  & to state     \\\hline
+    \header{from state} & \header{message} & \header{parameters} & \header{to state}   \\\hline
     \StIdle      & \MsgRequestNext        &                             & \StCanAwait  \\
     \StIdle      & \MsgFindIntersect      & $\langle point\rangle$      & \StIntersect \\
     \StIdle      & \MsgDone               &                             & \StDone      \\
@@ -816,11 +816,11 @@ a space limit is violated the connection SHOULD be torn down.
 \begin{table}[h!]
   \begin{center}
     \begin{tabular}{l|r}
-      state        & size limit in bytes \\\hline
-      \StIdle      & \texttt{65535} \\
-      \StCanAwait  & \texttt{65535} \\
-      \StMustReply & \texttt{65535} \\
-      \StIntersect & \texttt{65535} \\
+      \header{state} & \header{size limit in bytes} \\\hline
+      \StIdle        & \texttt{65535} \\
+      \StCanAwait    & \texttt{65535} \\
+      \StMustReply   & \texttt{65535} \\
+      \StIntersect   & \texttt{65535} \\
     \end{tabular}
     \caption{size limits per state}
     \label{table:chain-sync-size-limits}
@@ -835,11 +835,11 @@ state.  If a timeout is violated the connection SHOULD be torn down.
 \begin{table}[h!]
   \begin{center}
     \begin{tabular}{l|r}
-      state        & timeout \\\hline
-      \StIdle      & \texttt{3673}s \\
-      \StCanAwait  & \texttt{10}s   \\
-      \StMustReply & random between \texttt{135}s and \texttt{269}s \\
-      \StIntersect & \texttt{10}s   \\
+      \header{state} & \header{timeout} \\\hline
+      \StIdle        & \texttt{3673}s \\
+      \StCanAwait    & \texttt{10}s   \\
+      \StMustReply   & random between \texttt{135}s and \texttt{269}s \\
+      \StIntersect   & \texttt{10}s   \\
     \end{tabular}
     \caption{timeouts per state}
     \label{table:chain-sync-timeouts}
@@ -1052,10 +1052,10 @@ The block fetching mechanism enables a node to download a range of blocks.
 \begin{figure}[h]
   \begin{center}
     \begin{tabular}{l|l}
-      state        & agency \\\hline
-      \StIdle      & \Client \\
-      \StBusy      & \Server \\
-      \StStreaming & \Server \\
+      \header{state} & \header{agency} \\\hline
+      \StIdle        & \Client \\
+      \StBusy        & \Server \\
+      \StStreaming   & \Server \\
     \end{tabular}
     \caption{Block-Fetch state agencies}
   \end{center}
@@ -1083,7 +1083,7 @@ Transition table is shown in table~\ref{table:block-fetch}.
 \begin{table}[h!]
   \begin{center}
     \begin{tabular}{l|l|l|l}
-      from state    & message          & parameters & to state     \\\hline
+      \header{from state} & \header{message} & \header{parameters} & \header{to state} \\\hline
       \StIdle       & \MsgClientDone   &            & \StDone      \\
       \StIdle       & \MsgRequestRange & $range$    & \StBusy      \\
       \StBusy       & \MsgNoBlocks     &            & \StIdle      \\
@@ -1105,10 +1105,10 @@ connection SHOULD be torn down.
 \begin{table}[h!]
   \begin{center}
     \begin{tabular}{l|r}
-      state        & size limit in bytes \\\hline
-      \StIdle      & \texttt{65535} \\
-      \StBusy      & \texttt{65535} \\
-      \StStreaming & \texttt{2500000} \\
+      \header{state} & \header{size limit in bytes} \\\hline
+      \StIdle        & \texttt{65535} \\
+      \StBusy        & \texttt{65535} \\
+      \StStreaming   & \texttt{2500000} \\
     \end{tabular}
     % \caption{size limits per state}
   \end{center}
@@ -1122,10 +1122,10 @@ a message.  If a timeout is violated the connection SHOULD be torn down.
 \begin{table}[h!]
   \begin{center}
     \begin{tabular}{l|r}
-      state        & timeout \\\hline
-      \StIdle      & - \\
-      \StBusy      & \texttt{60}s \\
-      \StStreaming & \texttt{60}s \\
+      \header{state} & \header{timeout} \\\hline
+      \StIdle        & - \\
+      \StBusy        & \texttt{60}s \\
+      \StStreaming   & \texttt{60}s \\
     \end{tabular}
     % \caption{timeouts per state}
   \end{center}
@@ -1190,7 +1190,7 @@ The version 2 is used by since \texttt{NodeToNode\_V6} of the node-to-node proto
 \begin{figure}[h]
   \begin{center}
     \begin{tabular}{l|l}
-      state               & agency \\\hline
+      \header{state}      & \header{agency} \\\hline
       \StInit             & \Client \\
       \StIdle             & \Server \\
       \StTxIdsBlocking    & \Client \\
@@ -1225,7 +1225,7 @@ The version 2 is used by since \texttt{NodeToNode\_V6} of the node-to-node proto
 
 \begin{table}[h!]
   \begin{tabular}{l|l|l|l}
-    from state          & message             & parameters                    & to state            \\\hline
+    \header{from state} & \header{message}    & \header{parameters}           & \header{to state}   \\\hline
     \StInit             & \MsgInit            &                               & \StIdle             \\
     \StIdle             & \MsgRequestTxIdsB   & $ack$,$req$                   & \StTxIdsBlocking    \\
     \StTxIdsBlocking    & \MsgReplyTxIds      & $\langle (id, size) \rangle$  & \StIdle             \\
@@ -1247,7 +1247,7 @@ a space limit is violated the connection SHOULD be torn down.
 \begin{table}[h!]
   \begin{center}
     \begin{tabular}{l|r}
-      state               & size limit in bytes \\\hline
+      \header{state}      & \header{size limit in bytes} \\\hline
       \StInit             & \texttt{5760} \\
       \StIdle             & \texttt{5760} \\
       \StTxIdsBlocking    & \texttt{2500000} \\
@@ -1267,7 +1267,7 @@ a given state.  If a timeout is violated the connection SHOULD be torn down.
 \begin{table}[h!]
   \begin{center}
     \begin{tabular}{l|r}
-      state               & timeout \\\hline
+      \header{state}      & \header{timeout} \\\hline
       \StInit             & - \\
       \StIdle             & - \\
       \StTxIdsBlocking    & - \\
@@ -1281,8 +1281,6 @@ a given state.  If a timeout is violated the connection SHOULD be torn down.
 
 \subsection{CDDL encoding specification}\label{tx-submission2-cddl}
 \lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/tx-submission2.cddl}
-See version 1 of the mini-protocol in section~\ref{tx-submission-cddl} and
-appendix \ref{cddl-common} for common definitions.
 
 \subsection{Client and Server Implementation}
 The protocol has two design goals: It must diffuse transactions with high efficiency
@@ -1360,9 +1358,9 @@ measurements.
 \begin{figure}[h]
   \begin{center}
     \begin{tabular}{l|l}
-      state   & agency \\\hline
-      \StClient & \Client \\
-      \StServer & \Server \\
+      \header{state} & \header{agency} \\\hline
+      \StClient      & \Client \\
+      \StServer      & \Server \\
     \end{tabular}
     \caption{Keep-Alive state agencies}
   \end{center}
@@ -1390,9 +1388,9 @@ connection SHOULD be torn down.
 \begin{table}[h!]
   \begin{center}
     \begin{tabular}{l|r}
-      state   & size limit in bytes \\\hline
-      \StClient & \texttt{65535} \\
-      \StServer & \texttt{65535} \\
+      \header{state} & \header{size limit in bytes} \\\hline
+      \StClient      & \texttt{65535} \\
+      \StServer      & \texttt{65535} \\
     \end{tabular}
     % \caption{size limits per state}
   \end{center}
@@ -1406,9 +1404,9 @@ a message.  If a timeout is violated the connection SHOULD be torn down.
 \begin{table}[h!]
   \begin{center}
     \begin{tabular}{l|r}
-      state   & timeout \\\hline
-      \StClient & \texttt{97}s \\
-      \StServer & \texttt{60}s \\
+      \header{state} & \header{timeout} \\\hline
+      \StClient      & \texttt{97}s \\
+      \StServer      & \texttt{60}s \\
     \end{tabular}
     % \caption{timeouts per state}
   \end{center}
@@ -1449,9 +1447,9 @@ will share a subset of their Known Peers.
 \begin{figure}[h]
   \begin{center}
     \begin{tabular}{l|l}
-      state   & agency \\\hline
-      \StIdle & \Client \\
-      \StBusy & \Server \\
+      \header{state} & \header{agency} \\\hline
+      \StIdle        & \Client \\
+      \StBusy        & \Server \\
     \end{tabular}
     \caption{Peer-Sharing state agencies}
   \end{center}
@@ -1480,9 +1478,9 @@ connection SHOULD be torn down.
 \begin{table}[h!]
   \begin{center}
     \begin{tabular}{l|r}
-      state   & size limit in bytes \\\hline
-      \StIdle & \texttt{5760} \\
-      \StBusy & \texttt{5760} \\
+      \header{state} & \header{size limit in bytes} \\\hline
+      \StIdle        & \texttt{5760} \\
+      \StBusy        & \texttt{5760} \\
     \end{tabular}
     % \caption{size limits per state}
   \end{center}
@@ -1496,9 +1494,9 @@ a message.  If a timeout is violated the connection SHOULD be torn down.
 \begin{table}[h!]
   \begin{center}
     \begin{tabular}{l|r}
-      state   & timeout \\\hline
-      \StIdle & - \\
-      \StBusy & \texttt{60}s \\
+      \header{state} & \header{timeout} \\\hline
+      \StIdle        & - \\
+      \StBusy        & \texttt{60}s \\
     \end{tabular}
     % \caption{timeouts per state}
   \end{center}
@@ -1620,9 +1618,9 @@ This is acceptable because is protocol is only for use between a node and local 
 \begin{figure}[h]
   \begin{center}
     \begin{tabular}{l|l}
-      state   & agency \\\hline
-      \StIdle & \Client \\
-      \StBusy & \Server \\
+      \header{state} & \header{agency} \\\hline
+      \StIdle        & \Client \\
+      \StBusy        & \Server \\
     \end{tabular}
     \caption{Local Tx-Submission state agencies}
   \end{center}
@@ -1703,11 +1701,11 @@ ledger state.
 \begin{figure}[h]
   \begin{center}
     \begin{tabular}{l|l}
-      state        & agency \\\hline
-      \StIdle      & \Client \\
-      \StAcquiring & \Server \\
-      \StAcquired  & \Client \\
-      \StQuerying  & \Server \\
+      \header{state} & \header{agency} \\\hline
+      \StIdle        & \Client \\
+      \StAcquiring   & \Server \\
+      \StAcquired    & \Client \\
+      \StQuerying    & \Server \\
     \end{tabular}
   \end{center}
 \end{figure}
@@ -1729,7 +1727,7 @@ $ImmutableTip$ are necessarily not subject rollback.
 
 \begin{figure}[h]
   \begin{tabular}{l|l|l|l}
-    from state          & message             & parameters          & to state \\ \hline
+    \header{from state} & \header{message}    & \header{parameters} & \header{to state} \\ \hline
     \StIdle             & \MsgAcquire         & $Target\ point$     & \StAcquiring \\
     \StAcquiring        & \MsgFailure         & $AcquireFailure$    & \StIdle      \\
     \StAcquiring        & \MsgAcquired        &                     & \StAcquired  \\
@@ -1810,11 +1808,11 @@ the client.
 \begin{figure}[h]
   \begin{center}
     \begin{tabular}{l|l}
-      state        & agency \\\hline
-      \StIdle      & \Client \\
-      \StAcquiring & \Server \\
-      \StAcquired  & \Client \\
-      \StBusy      & \Server \\
+      \header{state} & \header{agency} \\\hline
+      \StIdle        & \Client \\
+      \StAcquiring   & \Server \\
+      \StAcquired    & \Client \\
+      \StBusy        & \Server \\
     \end{tabular}
     \caption{Local Tx-Monitor state agencies}
   \end{center}
@@ -1856,13 +1854,13 @@ the client.
 
 \begin{figure}[h]
   \begin{tabular}{l|l|l|l}
-    from state          & message             & parameters                 & to state \\ \hline
+    \header{from state} & \header{message}    & \header{parameters}        & \header{to state} \\ \hline
     \StIdle             & \MsgAcquire         &                            & \StAcquiring \\
     \StAcquiring        & \MsgAcquired        & SlotNo                     & \StAcquired \\
     \StAcquired         & \MsgAwaitAcquire    &                            & \StAcquiring \\
     \StAcquired         & \MsgRelease         &                            & \StIdle \\
     \StAcquired         & \MsgNextTx          &                            & \StBusy\ \NextTx\\
-    \StBusy\ \NextTx    & \MsgReplyNextTx     & Maybe $tx$                 & \StAcquired\\
+    \StBusy\ \NextTx    & \MsgReplyNextTx     & (\textbf{Nothing} | \textbf{Just} $tx$)      & \StAcquired\\
     \StAcquired         & \MsgHasTx           &                            & \StBusy\ \HasTx\\
     \StBusy\ \HasTx     & \MsgReplyNextTx     & Bool                       & \StAcquired\\
     \StAcquired         & \MsgGetSizes        &                            & \StBusy\ \GetSizes\\
@@ -1936,9 +1934,9 @@ in table~\ref{table:node-to-node-protocol-versions}.
 \begin{figure}[h]
   \begin{center}
     \begin{tabular}{l|l}
-      version         & description \\\hline\hline
-      \texttt{NodeToNodeV\_13} & Disabled peer sharing for buggy V11 \& V12 and for InitiatorOnly nodes \\\hline
-      \texttt{NodeToNodeV\_14} & No changes, identifies Chang+1 HF nodes\\\hline
+      \header{version}         & \header{description} \\\hline
+      \texttt{NodeToNodeV\_13} & Disabled peer sharing for buggy V11 \& V12 and for InitiatorOnly nodes \\
+      \texttt{NodeToNodeV\_14} & No changes, identifies Chang+1 HF nodes\\
     \end{tabular}
     \caption{Node-to-node protocol versions}
     \label{table:node-to-node-protocol-versions}
@@ -1953,7 +1951,7 @@ assigned to each node-to-node mini-protocol.
 \begin{table}[ht]
   \begin{center}
     \begin{tabular}{l|c}
-      mini-protocol                                                      & mini-protocol number \\\hline
+      \header{mini-protocol}                                             & \header{mini-protocol number} \\\hline
       \hyperref[handshake-protocol]{Handshake}                           & 0  \\
       \hyperref[chain-sync-protocol]{Chain-Sync}                         & 2  \\
       \hyperref[block-fetch-protocol]{Block-Fetch}                       & 3  \\
@@ -1983,10 +1981,10 @@ table~\ref{table:node-to-client-protocol-versions}.
 \begin{figure}[h]
   \begin{center}
     \begin{tabular}{l|l}
-      version & description \\\hline\hline
-      \texttt{NodeToClientV\_16} & Add ImmutableTip to LocalStateQuery, conway, GetStakeDelegDeposits query \\\hline
-      \texttt{NodeToClientV\_17} & GetProposals, GetRatifyState queries \\\hline
-      \texttt{NodeToClientV\_18} & GetFuturePParams query \\\hline
+      \header{version} & \header{description} \\\hline
+      \texttt{NodeToClientV\_16} & Add ImmutableTip to LocalStateQuery, conway, GetStakeDelegDeposits query \\
+      \texttt{NodeToClientV\_17} & GetProposals, GetRatifyState queries \\
+      \texttt{NodeToClientV\_18} & GetFuturePParams query \\
     \end{tabular}
     \caption{Node-to-client protocol versions}
     \label{table:node-to-client-protocol-versions}
@@ -2001,7 +1999,7 @@ assigned to each node-to-client mini-protocol.
 \begin{table}[ht]
   \begin{center}
     \begin{tabular}{l|c}
-      mini-protocol                                                & mini-protocol number \\\hline
+      \header{mini-protocol}                                       & \header{mini-protocol number} \\\hline
       \hyperref[handshake-protocol]{Handshake}                     & 0 \\
       \hyperref[chain-sync-protocol]{Chain-Sync}                   & 5 \\
       \hyperref[local-tx-submission-protocol]{Local Tx-Submission} & 6 \\
