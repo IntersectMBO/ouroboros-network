@@ -1332,6 +1332,10 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
 -- NOTE: we don't use the rethrow policy for `accept` calls, where
 -- all but `ECONNABORTED` are fatal exceptions.
 --
+-- NOTE: UnsupportedOperation error type is not considered fatal since it can
+-- happen on a race condition between the connect and accept call between two
+-- nodes that have each other as local roots.
+--
 isFatal :: IOErrorType -> Bool
 isFatal ResourceExhausted = True
         -- EAGAIN            -- connect, accept
@@ -1339,9 +1343,6 @@ isFatal ResourceExhausted = True
         -- ENFILE            -- socket, accept
         -- ENOBUFS           -- socket, accept
         -- ENOMEM            -- socket, accept
-isFatal UnsupportedOperation = True
-        -- EADDRNOTAVAIL     -- connect
-        -- EAFNOSUPPRT       -- connect
 isFatal InvalidArgument      = True
         -- EINVAL            -- socket, accept
         -- ENOTSOCK          -- connect
