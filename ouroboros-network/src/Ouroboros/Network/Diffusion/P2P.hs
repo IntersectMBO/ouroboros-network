@@ -1332,7 +1332,7 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
 -- NOTE: we don't use the rethrow policy for `accept` calls, where
 -- all but `ECONNABORTED` are fatal exceptions.
 --
--- NOTE2: UnsupportedOperation error type is not considered fatal since it can
+-- NOTE: UnsupportedOperation error type is not considered fatal since it can
 -- happen on a race condition between the connect and accept call between two
 -- nodes that have each other as local roots.
 --
