@@ -1,6 +1,6 @@
 cabal-version: 3.0
 name: ouroboros-network
-version: 0.19.0.0
+version: 0.19.0.1
 synopsis: A networking layer for the Ouroboros blockchain protocol
 description: A networking layer for the Ouroboros blockchain protocol.
 license: Apache-2.0
