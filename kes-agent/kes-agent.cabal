@@ -192,6 +192,8 @@ executable kes-agent-protodocs
     hs-source-dirs: protodocs
     main-is: Main.hs
     -- other-modules: Cardano.KESAgent.Protodocs.TH
+    if (impl(ghc <= 9.10.0))
+        build-depends: ghc-heap <= 9.10.1
     build-depends: kes-agent
                  , bytestring
                  , blaze-html
