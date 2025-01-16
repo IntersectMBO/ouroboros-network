@@ -5,24 +5,24 @@
 \newcommand{\Server}{\textcolor{myblue}{\textbf{Server}}}
 
 \section{Mini Protocols and Protocol Families}
-A mini protocol is a well defined and modular building block of
+A mini protocol is a well-defined and modular building block of
 the network protocol.
-Structuring the protocol around mini protocols helps to manage the overall complexity of
+Structuring a protocol around mini-protocols helps manage the overall complexity of
 the design and adds useful flexibility.
-The design turns into a family of mini protocols that can be specialised to particular requirements
-by choosing a particular set of mini protocols.
+The design turns into a family of mini-protocols that can be specialised to particular requirements
+by choosing a particular set of mini-protocols.
 
-The mini protocols in this section describe both the initiator and responder of a communication.
+The mini-protocols in this section describe the initiator and responder of a communication.
 The initiator is the dual of the responder and vice versa.
-(The terms client/server and consumer/producer are also used sometimes.)
-At any time a node will typically run many instances of mini protocols, including many instances of the
-same mini protocol.
-Each mini protocol instance of the node communicates with the dual instance of
+(The terms client/server, consumer/producer or initiator/responder are also used sometimes.)
+At any time, a node will typically run many instances of mini-protocols, including many instances of the
+same mini-protocol.
+Each mini-protocol instance of the node communicates with the dual instance of
 exactly one peer.
 
 The set of mini protocols that run on a connection between two participants of the system
 depends on the role of the participants, i.e. whether the node acts as a full node or just
-a block chain consumer, for example a wallet.
+a blockchain consumer, such as a wallet.
 
 \section{Protocols as State Machines}
 The implementation of the mini protocols uses a generic framework for state machines.
@@ -31,66 +31,66 @@ The Haskell implementation of the state machine framework is described in
 Section~\ref{Haskell-state-machine}.
 }
 This framework uses correct-by-construction techniques to guarantee
-several properties of the protocol and the implementation.
+several properties of each mini-protocol.
 In particular, it guarantees that there are no deadlocks.
-At any time, one side has agency
-(is expected to transmit the next message) and the other side is awaiting for
-the message (or both sides agree that the protocol has terminated).
-If either side receives a message that is not expected according to the protocol
-the communication is aborted.
+At any time, only one side has the agency
+(is expected to transmit the next message) while the other side is waiting for
+the message (or both sides agree that the mini-protocol has terminated).
+If either side receives a message that is not expected according to the mini-protocol
+the communication is aborted (the connection is closed).
 
-For each mini protocol that is based on this underlying framework the description provides the
+For each mini-protocol based on this underlying framework, the description provides the
 following pieces of information:
 
 \begin{itemize}
-\item An informal description of the protocol.
+\item An informal description of the mini-protocol.
 \item States of the state machine.
-\item The messages that are exchanged.
+\item The messages (transitions) of the mini-protocol.
 \item A transition graph of the global view of the state machine.
-\item The client implementation of the protocol.
-\item The server implementation of the protocol.
+\item The client implementation of the mini-protocol.
+\item The server implementation of the mini-protocol.
 \end{itemize}
 
 \begin{description}
 \item[State Machine]
-  Each mini protocol is described as a state machine.
-  This document uses a simple diagram representations for state machines, and
+  Each mini-protocol is described as a state machine.
+  This document uses simple diagram representations for state machines and
   also includes corresponding transition tables.
   Descriptions of state machines in this section are directly derived from
   specifications of mini protocols using the state machine framework.
 
-  The state machine framework that is used to specify the protocol can be instantiated
+  The state machine framework that is used to specify the mini-protocol can be instantiated
   with different implementations that work at different levels of abstraction
-  (for example implementations used for simulation, implementations that run over virtual
+  (for example, implementations used for simulation, implementations that run over virtual
   connections and implementations that actually transmit messages over the real network).
 
 
 \item[States]
   States are abstract: they are not a value of some variables in a node, but
-  rather describe the state of the two-party communication as whole, e.g.
+  rather describe the state of the two-party communication as a whole, e.g.
   that a client is responsible for sending a particular type of message and
-  the server is awaiting on it.  This, in particular, means that if the state
-  machine is in a given state, both client and server are in this state.
+  the server is waiting on it.  This, in particular, means that if the state
+  machine is in a given state, then both the client and server are in this state.
   An additional piece of information that differentiates the roles of peers in
-  a given state is agency, which describes which side is responsible for
+  a given state is the agency, which describes which side is responsible for
   sending the next message.
 
   In the state machine framework, abstract states of a state machine are
   modelled as promoted types, so they do not correspond to any particular
-  value hold by one of the peers.
+  the value held by one of the peers.
 
   The document presents this abstract view of mini protocols and the state
   machines where the client and server are always in identical states, which
-  also means that client and server simultaneously transit to new states.
-  For this description network delays are not important.
+  also means that the client and server simultaneously transit to new states.
+  For this description, network delays are not important.
 
-  An interpretation, which is closer to the real-world implementation but
-  less concise, is that there are independent client and server states
+  An interpretation which is closer to the real-world implementation but
+  less concise is that there are independent client and server states
   and that transitions on either side happen independently when a message is sent or received.
 
 \item[Messages]
-  Messages exchanged by peers form edges of a state machine diagram, in other
-  words they are transitions between states.
+  Messages exchanged by peers form edges of a state machine diagram; in other
+  words, they are transitions between states.
   They are elements from the set
   $$\{(label, data) \mid label \in Labels, data \in Data\}$$
   Protocols use a small set of $Labels$ typically $|Labels| \leq 10$.
@@ -99,26 +99,24 @@ following pieces of information:
 
 \item[Agency]
   A node has agency if it is expected to send the next message.
-  In every state (except the \StDone-state) either the client or server has agency.
-  In the \StDone-state the protocol has terminated and neither side is expected to send any more
-  messages.
+  The client or server has agency in every state, except a termination state in which nor the client, nor the server can send any message. All our mini-protocols have a single terminating state \StDone{}.
 
 \item [State machine diagrams]
       States are drawn as circles in state machine diagrams.
-      States with agency at the client are drawn in green, states with agency at the server in blue and
-      the \StDone-state in black.
+      States with the agency on the client side are drawn in green, states with the agency on the server side are drawn in blue, and
+      the termination states are in black.
       By construction, the system is always in exactly one state,
-      i.e. the client's state is always the same state as server's,
-      and the colour indicates who is the agent.
+      i.e. the client's state is always the same state as the server's,
+      and the colour indicates who the agent is.
       It is also important to understand that the arrows in the state transition diagram denote
       state transitions and not the direction of the message that is being transmitted.
-      For the agent of the particular state the arrow means: ``send a message to the
+      For the agent of the particular state, the arrow means: ``send a message to the
       other peer and move to the next state''.
-      For a non-agent an arrow in the diagram can be interpreted as:
+      For a non-agent, an arrow in the diagram can be interpreted as:
       ``receive an incoming message and move to the next state''.
-      This may be confusing because the arrows are labelled with the messages and
-      many arrows go from a green state (client has the agency) to a blue
-      state (server has the agency) or vice versa.
+      This may not be very clear because the arrows are labelled with the messages, and
+      many arrows go from a green state (the client has the agency) to a blue
+      state (the server has the agency) or vice versa.
 
 \begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4.5cm, semithick]
   \tikzstyle{every state}=[fill=red,draw=none,text=white]
@@ -128,9 +126,9 @@ following pieces of information:
 \end{tikzpicture}
 
       $A$ is green, i.e in state $A$ the client has agency.
-      Therefore the client sends a message to the server and
+      Therefore, the client sends a message to the server and
       both client and server transition to state $B$.
-      As $B$ is blue the agency also changes from client to server.
+      As $B$ is blue, the agency also changes from client to server.
 
 \begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4.5cm, semithick]
   \tikzstyle{every state}=[fill=red,draw=none,text=white]
@@ -140,9 +138,9 @@ following pieces of information:
 \end{tikzpicture}
 
       $C$ is blue, i.e in state $C$ the server has agency.
-      Therefore the server sends a message to the client and
+      Therefore, the server sends a message to the client and
       both client and server transition to state $D$.
-      As $D$ is also blue the agency remains at the server.
+      As $D$ is also blue, the agency remains on the server.
 
 \item[Client and server implementation]
   The state machine describes which messages are sent and received and in which order.
@@ -154,7 +152,7 @@ following pieces of information:
 
   Strictly speaking, the representation of the node-local mutable state
   and the updates to the node-local state are implementation details that are
-  not part of the communication protocol between the nodes,  and will
+  not part of the communication protocol between the nodes and will
   depend on an application that is built on top of the network service
   (wallet, core node, explorer, etc.).
   The corresponding sections were added to clarify the mode of operation of the
@@ -173,7 +171,7 @@ following pieces of information:
 
 \subsection{Dummy mini-protocols}
 
-Dummy mini-protocols are not used by `cardano-node`, however they might be
+Dummy mini-protocols are not used by `cardano-node`; however, they might be
 helpful when writing demos, testing purposes or getting familiar with the
 framework.
 
@@ -187,7 +185,7 @@ framework.
 \miniEntry
     {Request Response Protocol}
     {request-response-protocol}
-    {A ping pong like protocol which allows to exchanges data.}
+    {A ping-pong-like protocol which allows the exchange of data.}
     {typed-protocols/src/Network/TypedProtocol/ReqResp/Type.hs}
     {https://input-output-hk.github.io/typed-protocols/typed-protocols-examples/Network-TypedProtocol-ReqResp-Type.html\#t:ReqResp}
 
@@ -205,7 +203,7 @@ protocols (it is polymorphic to allow that).
 
 \subsection{Node-to-node mini-protocols}
 
-Mini-protocols used by the node-to-node protocol.
+In this section, we list all the mini-protocols that constitute the node-to-node protocol.
 
 \miniEntry
     {Chain Synchronisation Protocol}
@@ -224,14 +222,14 @@ Mini-protocols used by the node-to-node protocol.
 \miniEntry
     {Transaction Submission Protocol v2}
     {tx-submission-protocol2}
-    {A Protocol for transmitting transaction between core nodes.}
+    {A Protocol for transmitting transactions between core nodes.}
     {ouroboros-network-protocols/src/Ouroboros/Network/Protocol/TxSubmission2/Type.hs}
     {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-protocols/Ouroboros-Network-Protocol-TxSubmission2-Type.html\#t:TxSubmission2}
 
 \miniEntry
     {Keep Alive Protocol}
     {keep-alive-protocol}
-    {A protocol for sending keep alive messages and round trip measurements}
+    {A protocol for sending keep alive messages and doing round trip measurements}
     {ouroboros-network-protocols/src/Ouroboros/Network/Protocol/KeepAlive/Type.hs}
     {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-protocols/Ouroboros-Network-Protocol-KeepAlive-Type.html\#t:KeepAlive}
 
@@ -245,8 +243,8 @@ Mini-protocols used by the node-to-node protocol.
 \subsection{Node-to-client mini-protocols}
 
 Mini-protocols used by node-to-client protocol.  The chain-sync mini-protocol
-is shared with node-to-node protocol, but instantiated differently.  In the
-node-to-client version it is used with full blocks rather than just headers.
+is shared between node-to-node and node-to-client protocols, but it is instantiated differently.  In  
+node-to-client protocol, it is used with full blocks rather than just headers.
 
 \miniEntry
     {Chain Synchronisation Protocol}
@@ -278,29 +276,29 @@ node-to-client version it is used with full blocks rather than just headers.
 
 
 \section{CBOR and CDDL}
-All mini-protocols are encoded using concise binary object representation
+All mini-protocols are encoded using the concise binary object representation
 (CBOR), see~\url{https://cbor.io}.  Each codec comes along with a specification
 written in CDDL,
 see \href{https://cbor-wg.github.io/cddl/draft-ietf-cbor-cddl.html}{'Coincise
 data definition language (CDDL)'}.
 
 Note that the networking layer knows very little about blocks, transactions or
-their identifiers.  We use parametric polymorphism in the implementation which
-is not present in CDDL.  For this reason we use \texttt{any} in our CDDL specifications.
-If you want to find concrete instatiations of these types in by `Cardano` you
+their identifiers.  We use parametric polymorphism in the implementation, which
+is not present in CDDL.  For this reason, we use \texttt{any} in our CDDL specifications.
+If you want to find concrete instatiations of these types in by `Cardano`, you
 will need to consult
 \href{https://github.com/intersectmbo/cardano-ledger}{cardano-ledger} and
 \href{https://github.com/intersectmbo/ouroboros-consensus}{ouroboros-consensus}.
-Each ledger era has its own CDDL spec which you can find
+Each ledger era has its own CDDL spec, which you can find
 \href{https://github.com/intersectmbo/cardano-ledger#cardano-ledger}{here}.
-Note that there's also the hard fork combinator (HFC) which allows us to
+Note that there's also the hard fork combinator (HFC), which allows us to
 combine multiple eras into a single blockchain.  It affects how many of the
-data types are encoded across different eras.  Currently this is not properly
+data types are encoded across different eras.  Currently, this is not properly
 documented (see
 \href{https://github.com/intersectmbo/ouroboros-consensus/issues/7}{issue
-\#7}). In the meantime we can only offer informal advise: data is encoded
-as tuples (length 2 lists), where the first element is a zero based index of an
-era while the second item is the era dependent encoding.
+\#7}). In the meantime, we can only offer informal advice: data is encoded
+as tuples (length two lists), where the first element is a zero-based index of an
+era while the second item is the era-dependent encoding.
 
 \section{Dummy Protocols}
 Dummy protocols are only used for testing and are not needed either for
@@ -371,9 +369,9 @@ The messages of the Ping-Pong protocol do not carry any data.
 \newcommand{\RespDone}{\msg{MsgDone}}
 
 \subsubsection{Description}
-The request response protocol is polymorphic in the request and response data that is being transmitted.
-This means that there are different possible applications of this protocol and the
-application of the protocol determines the types of the requests and responses.
+The request-response protocol is polymorphic in the request and response data that is being transmitted.
+This means that there are different possible applications of this protocol, and the
+application of the protocol determines the types of requests and responses.
 
 \subsubsection{State machine}
 \begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4.5cm, semithick]
@@ -439,11 +437,11 @@ and the protocol parameters that are used by the client and the server.
 It is run exactly once when a new connection is initialised
 and consists of a single request from the client and a single reply from the server.
 
-The handshake mini protocol is a generic protocol that can negotiate any kind protocol parameters.
-It only assumes that protocol parameters can be encoded to, and decoded from, CBOR terms.
-A node, that runs the handshake protocol, must instantiate it with the set of
-supported protocol versions and callback functions for handling the protocol parameters.
-These callback functions are specific for the supported protocol versions.
+The handshake mini protocol is a generic protocol that can negotiate version number and protocol parameters (these my depend on the version number).
+It only assumes that protocol parameters can be encoded to and decoded from CBOR terms.
+A node that runs the handshake protocol must instantiate it with the set of
+supported protocol versions and callback functions to handle the protocol parameters.
+These callback functions are specific to the supported protocol versions.
 
 The handshake mini protocol is designed to handle simultaneous TCP open.
 
@@ -478,7 +476,7 @@ Messages of the protocol:
       data.  Note that different version numbers might use different version
       data (e.g. supporting a different set of parameters).
   \item [\MsgReplyVersions{} {\boldmath $(versionTable)$}]
-      In TCP simultaneous open the client will receive \MsgReplyVersions{}
+      In TCP simultaneous open, the client will receive \MsgReplyVersions{}
       (which was sent as \MsgProposeVersions{}) as a reply to its own
       \MsgProposeVersions{}; thus both \MsgProposeVersions{} and
       \MsgReplyVersions{} have to have the same CBOR encoding.
@@ -502,8 +500,8 @@ Messages of the protocol:
 
 \subsection{Size limits per state}
 
-These limits bound how many bytes can be send in a given state, indirectly this
-limits payload size of each message.  If a space limit is violated the
+These bounds limit how many bytes can be sent in a given state; indirectly, this
+limits the payload size of each message.  If a space limit is violated, the
 connection SHOULD be torn down.
 
 \begin{table}[h!]
@@ -519,8 +517,8 @@ connection SHOULD be torn down.
 
 \subsection{Timeouts per state}
 
-These limits bound how much time the receiver side can wait for arrival of
-a message.  If a timeout is violated the connection SHOULD be torn down.
+These limits bound how much time the receiver side can wait for the arrival of
+a message.  If a timeout is violated, the connection SHOULD be torn down.
 
 \begin{table}[h!]
   \begin{center}
@@ -536,12 +534,12 @@ a message.  If a timeout is violated the connection SHOULD be torn down.
 \subsection{Node-to-node handshake}
 
 The node-to-node handshake instantiates version data\footnote{To be precise, in
-ouroboros-network we instantiate version data to CBOR terms and do encoding
-/ decoding of version data lazily (as required), rather than as part of the
+ouroboros-network, we instantiate version data to CBOR terms and do encoding
+/ decoding of version data lazily (as required) rather than as part of the
 protocol codec (the protocol codec only decodes bytes to CBOR terms, and thus
 fails only if received bytes are not a valid CBOR encoding).  This is important
 in order to support receiving a mixture of known and unknown versions. The same
-remark applies to node-to-client protocol as well.} to a record which consists
+the remark applies to the node-to-client protocol as well.} to a record which consists
 of
 \begin{description}
   \item[network magic] a \texttt{Word32} value;
@@ -554,19 +552,19 @@ of
     versions \& version data and terminate the connection.
 \end{description}
 
-When negotiating a connection each side will have access to local and remote
-version data associated to the negotiated version number.  The result of
+When negotiating a connection, each side will have access to local and remote
+version data associated with the negotiated version number.  The result of
 negotiation is a new version data record which consists of:
 \begin{itemize}\label{alg:node-to-node-negotiation}
-  \item if the network magic agree then its inherited by the negotiated version
+  \item if the network magic agrees, then it is inherited by the negotiated version
     data, otherwise the negotiation fails;
-  \item diffusion mode SHOULD be initiator only iff any side proposes the
-    initiator only mode (i.e. the logical disjunction operator);
+  \item diffusion mode SHOULD be initiator only if and only if any side proposes the
+    initiator-only mode (i.e. the logical disjunction operator);
   \item peer sharing SHOULD be inherited from the remote side;
   \item query SHOULD be inherited from the client (the side that sent
       \MsgProposeVersions{}).
 \end{itemize}
-If negotiation was successful, the negotiated version data is sent back
+If the negotiation is successful, the negotiated version data is sent back
 using \MsgAcceptVersion{}, otherwise \MsgRefuse{} SHOULD be sent.
 
 \subsection{Node-to-client handshake}
@@ -579,28 +577,28 @@ of
     versions \& version data and terminate the connection.
 \end{description}
 
-The negotiated version data is computed similar as in the node-to-node
+The negotiated version data is computed similarly as in the node-to-node
 protocol:
 \begin{itemize}\label{alg:node-to-client-negotiation}
-  \item if the network magic agree then its inherited by the negotiated version
+  \item if the network magic agrees, then it is inherited by the negotiated version
     data, otherwise the negotiation fails;
   \item query SHOULD be inherited from the client (the side that sent
     \MsgProposeVersions{}).
 \end{itemize}
-If negotiation was successful, the negotiated version data is sent back
+If the negotiation is successful, the negotiated version data is sent back
 using \MsgAcceptVersion{}, otherwise \MsgRefuse{} SHOULD be sent.
 
 
 \subsection{Client and Server Implementation}
-Section~\ref{handshake-cddl} contains the CDDL-specification of the binary format of the handshake messages.
-The version table is encoded as a CBOR table with the version number as key
-and the protocol parameters as value.
+Section~\ref{handshake-cddl} contains the CDDL specification of the binary format of the handshake messages.
+The version table is encoded as a CBOR table with the version number as the key
+and the protocol parameters as a value.
 The handshake protocol requires that the version numbers ( i.e. the keys) in the version table are unique
 and appear in ascending order.
-(Note, that CDDL is not expressive enough to precisely specify that requirement on the keys of the CBOR
-table. Therefore the CDDL-specification uses a table with keys from 1 to 4 as an example.)
+(Note that CDDL is not expressive enough to precisely specify that requirement on the keys of the CBOR
+table. Therefore, the CDDL specification uses a table with keys from 1 to 4 as an example.)
 
-In a run of the handshake mini protocol the peers exchange only two messages:
+In a run of the handshake mini protocol, the peers exchange only two messages:
 The client initiates the protocol with a \MsgProposeVersions{} message that
 contains information about all protocol versions it wants to support. The
 server replies either with an \MsgAcceptVersion{} message containing the
@@ -608,11 +606,11 @@ negotiated version number and version data or a \MsgRefuse{} message.
 The \MsgRefuse{} message contains one of three alternative refuse reasons:
 \VersionMismatch{}, \HandshakeDecodeError{} or just \Refused{}.
 
-When a server receives a \MsgProposeVersions{} message it uses the following algorithm to
+When a server receives a \MsgProposeVersions{} message, it uses the following algorithm to
 compute the response:
 \begin{enumerate}
 \item
-  Compute the intersection of the set of protocol version numbers that the server support
+  Compute the intersection of the set of protocol version numbers that the server supports
   and the version numbers requested by the client.
 \item
   If the intersection is empty:
@@ -621,7 +619,7 @@ compute the response:
   Otherwise, select the protocol with the highest version number in the
     intersection.
 \item
-  Run the protocol specific decoder on the CBOR term that contains the protocol parameters.
+  Run the protocol-specific decoder on the CBOR term that contains the protocol parameters.
 \item
   If the decoder fails:
   Reply with \MsgRefuse(\HandshakeDecodeError), the selected version number and an error message.
@@ -637,23 +635,23 @@ compute the response:
     CBOR codec and reply with \MsgAcceptVersion, the selected version number
     and the extra parameters.
 \end{enumerate}
-Note, that in step 4), 6) and 8) the handshake protocol uses the callback functions that are specific
-for set of protocols that the server supports.
-The handshake protocol is designed,
-such that a server can always handle requests for protocol versions that it does not support.
+Note that in step 4), 6) and 8) the handshake protocol uses the callback functions that are specific
+for a set of protocols that the server supports.
+The handshake protocol is designed
+so that a server can always handle requests for protocol versions that it does not support.
 The server simply ignores the CBOR terms that represent the protocol parameters of unsupported
-version.
+versions.
 
 In case of simultaneous open of a TCP connection, both handshake clients will
-send their \MsgProposeVersions{}, both will interpret the incoming message as
-\MsgReplyVersions{} (thus both must have the same encoding, the implementation
+send their \MsgProposeVersions{}, and both will interpret the incoming message as
+\MsgReplyVersions{} (thus, both must have the same encoding; the implementation
 can distinguish them by the protocol state).  Both clients should choose the
 highest version of the protocol available.  If any side does not accept any
-version (or its parameters) it can reset the connection.
+version (or its parameters), the connection can be reset.
 
 The protocol does not forbid, nor could it detect a usage of
 \MsgReplyVersions{} outside of TCP simultaneous open.  The process of
-choosing between proposed and received version must be symmetric, in the
+choosing between the proposed and received version must be symmetric in the
 following sense.
 
 \begin{description}
@@ -669,7 +667,7 @@ following sense.
     See
     \href{https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Version.html#t:Acceptable}{ref}.
     Both \texttt{acceptable local remote} and \texttt{acceptable remote local}
-    must satisfy the following condition:
+    must satisfy the following conditions:
     \begin{itemize}
       \item if either of them accepts a version by returning \texttt{Accept},
         the other one must accept the same value, i.e. in this case
@@ -679,9 +677,9 @@ following sense.
     \end{itemize}
 \end{description}
 Note that the above condition guarantees that if either side returns
-\texttt{Accept} then the connection will not be closed by the remote end.
+\texttt{Accept}, then the connection will not be closed by the remote end.
 A weaker condition, in which the return values are equal if they both return
-\texttt{Accept}, does not guarantee this property.  We also verify that the
+\texttt{Accept} does not guarantee this property.  We also verify that the
 whole Handshake protocol, not just the \texttt{acceptable} satisfies the above
 property, see
 \href{https://github.com/intersectmbo/ouroboros-network/blob/master/ouroboros-network/protocol-tests/Ouroboros/Network/Protocol/Handshake/Test.hs}{Ouroboros-Network
@@ -690,11 +688,11 @@ test suite}.
 The fact that we are using non-injective encoding in the handshake protocol
 side steps typed-protocols strong typed-checked properties.  For injective
 codecs (i.e. codecs for which each message has a distinguished encoding), both
-sides of typed-protocols are always at the same state (once all in-flight
-message arrived).  This is no longer true in general, however this is still
-true for the handshake protocol.  Event though the opening message
-\MsgProposeVersions{} of a simultaneous open, will materialise on the
-other side as termination message \MsgReplyVersions{}, the same will
+sides of typed-protocols are always in the same state (once all in-flight
+the message arrived).  This is no longer true in general; however, this is still
+true for the handshake protocol.  Even though the opening message
+\MsgProposeVersions{} of a simultaneous open will materialise on the
+other side as a termination message \MsgReplyVersions{}, and the same will
 happen to the \MsgProposeVersions{} transmitted in the other direction.
 We include a special test case
 (\href{https://github.com/intersectmbo/ouroboros-network/blob/master/ouroboros-network/protocol-tests/Ouroboros/Network/Protocol/Handshake/Test.hs\#L551}{\texttt{prop\_channel\_simultaneous\_open}})
@@ -705,15 +703,15 @@ errors.
 
 The handshake mini protocol runs before the multiplexer is initialised.
 Each message is transmitted within a single MUX segment, i.e. with a proper
-segment header, but as the multiplexer is not yet running the messages MUST not
-be split into multiple segments.  The Handshake protocol is using the
-mini-protocol nuumber $0$ in both node-to-node and node-to-client case.
+segment header, but as the multiplexer is not yet running, the messages MUST not
+be split into multiple segments.  The Handshake protocol uses the
+mini-protocol number $0$ in both node-to-node and node-to-client cases.
 
 \subsection{CDDL encoding specification}\label{handshake-cddl}
-There are two flavours of the mini-protocol which only differ with type
-instantiations, e.g. different protocol versions and version data carried in
-messages.  First one is used by the node to node protocol the other by node to
-client protocol.
+There are two flavours of the mini-protocol that only differ with type
+instantiations, e.g., different protocol versions and version data carried in
+messages.  First, one is used by the node-to-node protocol, and the other is used by the
+node-to-client protocol.
 \subsubsection{Node-to-node handshake mini-protocol}
 \lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/handshake-node-to-node-v13.cddl}
 
@@ -738,18 +736,18 @@ client protocol.
 \newcommand{\MsgIntersectNotFound}{\msg{MsgIntersectNotFound}}
 
 \subsection{Description}
-The chain synchronisation protocol is used by a block chain consumer
-to replicate the producer's block chain locally.
+The chain synchronisation protocol is used by a blockchain consumer
+to replicate the producer's blockchain locally.
 A node communicates with several upstream and downstream nodes
 and runs an independent client instance and an independent server instance for every
 other node it communicates with.
 (See Figure~\ref{node-diagram-concurrency}.)
 
 The chain synchronisation protocol is polymorphic.
-The (full)-node to client protocol uses an instance of the chain synchronisation protocol
+The node-to-client protocol uses an instance of the chain synchronisation protocol
 that transfers full blocks, while the node-to-node instance only transfers block headers.
 In the node-to-node case, the block fetch protocol (Section \ref{block-fetch-protocol})
-is used to transfer full blocks.
+is used to diffuse full blocks.
 
 \subsection{State Machine}
 
@@ -801,29 +799,29 @@ The protocol uses the following messages:
       the producer is waiting for its own chain state to change.
 \item [\MsgRollForward{} {\boldmath $(header, tip)$}]
       Tell the consumer to extend their chain with the given $header$.
-      The message also tells the consumer about the $tip$ of the producers chain.
+      The message also tells the consumer about the $tip$ of the producer's chain.
 \item [\MsgRollBackward{} {\boldmath $(point_{old}, tip$}]
       Tell the consumer to roll back to a given $point_{old}$ on their chain.
       The message also tells the consumer about the current  $tip$ of the chain the producer is following.
 \item [\MsgFindIntersect{} {\boldmath $\langle point_{head} \rangle $}]
       Ask the producer to try to find an improved intersection point between
       the consumer and producer's chains.
-      The consumer sends a sequence {\boldmath $\langle point \rangle $} which
-      shall be ordered by preference (e.g. points with highest slot number
-      first) and it is up to the producer to find the first intersection point
+      The consumer sends a sequence {\boldmath $\langle point \rangle $}, which
+      shall be ordered by preference (e.g. points with the highest slot number
+      first), and it is up to the producer to find the first intersection point
       on its chain and send it back to the consumer.  If an empty list of
-      points is sent with \MsgFindIntersect{} the server will reply with
+      points is sent with \MsgFindIntersect{}, the server will reply with
       \MsgIntersectNotFound{}.
 \item [\MsgIntersectFound{} {\boldmath $(point_{intersect} ,tip)$}]
-      The producer replies with the first point of the request that is on his current chain.
+      The producer replies with the first point of the request, which is on his current chain.
       The consumer can decide whether to send more points.
       The message also tells the consumer about the $tip$ of the producer.
-      Whenever the server replies with \MsgIntersectFound{} the client can
+      Whenever the server replies with \MsgIntersectFound{}, the client can
       expect the next update (i.e. a replay to \MsgRequestNext{}) to be
       \MsgRollBackward{} to the specified $point_{intersect}$ (which makes
       handling state updates on the client side easier).
 \item [\MsgIntersectNotFound{} {\boldmath $(tip)$}]
-      The reply to the consumer that no intersection was found: none of the
+      Reply to the consumer that no intersection was found: none of the
       points the consumer supplied are on the producer chain.
       The message only contains the $tip$ of the producer chain.
 \item [\MsgDone]
@@ -849,9 +847,9 @@ The protocol uses the following messages:
 
 \subsection{Size limits per state}
 
-The table~\ref{table:chain-sync-size-limits} specifies how many bytes can be send
-in a given state, indirectly this limits payload size of each message.  If
-a space limit is violated the connection SHOULD be torn down.
+Table~\ref {table:chain-sync-size-limits} specifies how many bytes can be sent
+in a given state; indirectly, this limits the payload size of each message.  If
+a space limit is violated, the connection SHOULD be torn down.
 
 \begin{table}[h!]
   \begin{center}
@@ -869,8 +867,8 @@ a space limit is violated the connection SHOULD be torn down.
 
 \subsection{Timeouts per state}
 
-The table~\ref{table:chain-sync-timeouts} specify message timeouts in a given
-state.  If a timeout is violated the connection SHOULD be torn down.
+The table~\ref{table:chain-sync-timeouts} specifies message timeouts in a given
+state.  If a timeout is violated, the connection SHOULD be torn down.
 
 \begin{table}[h!]
   \begin{center}
@@ -898,31 +896,31 @@ is that a chain consumer must never be able to cause excessive resource use on t
 The presented implementation meets this requirement.
 It uses a constant amount of memory to store the state that the producer maintains
 per chain consumer.  This protocol is only used to reproduce the producer
-chain locally by consumer.  By running many instances of this protocol against
+chain locally by the consumer.  By running many instances of this protocol against
 different peers, a node can reproduce chains in the network and
-do chain selection which by design is not part of this protocol.
-Note, that when we refer to the consumer's chain in this section, we mean
+make chain selection, which by design is not part of this protocol.
+Note that when we refer to the consumer's chain in this section, we mean
 the chain that is reproduced by the consumer with the instance of
-the chain-sync protocol under consideration and not the result of the chain selection algorithm.
+the chain-sync protocol and not the result of the chain selection algorithm.
 
 We call the state which the producer maintains about the consumer the \readpointer{}.
 The \readpointer{} basically tracks what the producer knows about the head of
 the consumer's chain without storing it locally.
 It points to a block on the current chain of the chain producer.
-The \readpointer{}s are part of the shared state of the node (Figure~\ref{node-diagram-concurrency}) and
+The \readpointer{}s are part of the shared state of the node (Figure~\ref{node-diagram-concurrency}), and
 \readpointer{}s are concurrently updated by the thread that runs the chain-sync mini-protocol and the
 chain tracking logic of the node itself.
 
 We first describe how the mini-protocol updates a \readpointer{} and later address what happens in case
 of a fork.
 \subparagraph{Initializing the \readpointer{}.}
-The chain producer assumes that a consumer, which has just connected,
+The chain producer assumes that a consumer which has just connected,
 only knows the genesis block and initialises the \readpointer{} of that consumer
 with a pointer to the genesis block on its chain.
 
 \subparagraph{Downloading a chain of blocks}
 A typical situation is when the consumer follows the chain of the producer but is not yet at the head of the
-chain (this also covers a consumer booting from genesis).
+chain (this also covers a consumer booting from the genesis).
 In this case, the protocol follows a simple, consumer-driven, request-response pattern.
 The consumer sends \MsgRequestNext{} messages to ask for the next block.
 If the \readpointer{} is not yet at the head of the chain,
@@ -937,17 +935,17 @@ The protocol follows this pattern until the \readpointer{} reaches the end of it
 \begin{center}
 \pgfuseimage{read-pointer-consumer-driver}
 \end{center}
-\caption{Consumer driven block download.}
+\caption{Consumer-driven block download.}
 \label{read-pointer-consumer-driver}
 \end{figure}
 
 \subparagraph{Producer driven updates}
 If the \readpointer{} points to the end of the chain and the producer receives
 a \MsgRequestNext{}
-the consumers chain is already up to date.
+the consumer's chain is already up to date.
 The producer informs the consumer with an \MsgAwaitReply{} that no new data is available.
-After receiving a \MsgAwaitReply, the consumer just waits for a new message and the producer keeps agency.
-The \MsgAwaitReply{} switches from a consumer driven phase to a producer driven phase.
+After receiving a \MsgAwaitReply{}, the consumer waits for a new message, and the producer keeps agency.
+The \MsgAwaitReply{} switches from a consumer-driven phase to a producer-driven phase.
 
 The producer waits until new data becomes available.
 When a new block is available, the producer will
@@ -959,7 +957,7 @@ The node of the chain producer can switch to a new fork at any time, independent
 state machine.
 A chain switch can cause an update of the \readpointer{},
 which is part of the mutable state that is shared between the thread that runs
-the chain sync protocol and the thread that implements the chain following logic of the node.
+the chain sync protocol and the thread that implements the chain following the logic of the node.
 There are two cases:
 
 1) If the \readpointer{} points to a block that is on the common prefix of the new
@@ -969,7 +967,7 @@ fork and the old fork, no update of the \readpointer{} is needed.
 the \readpointer{} is set to the last block that is common between the new and the old chain.
 The node also sets a flag that signals the chain-sync thread to send a \MsgRollBackward{} instead
 of a \MsgRollForward.
-Finally the producer thread must unblock if it is in the \StMustReply{} state.
+Finally, the producer thread must unblock if it is in the \StMustReply{} state.
 
 \begin{figure}[ht]
 \pgfdeclareimage[height=5cm]{read-pointer-rollback}{figure/read-pointer-rollback.pdf}
@@ -981,51 +979,51 @@ Finally the producer thread must unblock if it is in the \StMustReply{} state.
 \end{figure}
 
 Figure~\ref{read-pointer-rollback} illustrates a fork switch that requires an update of the \readpointer{}
-for one of the chain consumers, i.e. an example for case 2.
+for one of the chain consumers.
 Before the switch, the \readpointer{} of the consumer points to block $0x660f$.
 The producer switches to a new chain with the head of the chain at block $0xcdf0$.
-The node must update the \readpointer{} to block $0xfa40$ and the next message to the consumer
+The node must update the \readpointer{} to block $0xfa40$, and the next message to the consumer
 will be a \MsgRollBackward.
 
-Note, that a node typically communicates with several consumers. For each consumer it runs an independent
+Note that a node typically communicates with several consumers. For each consumer, it runs an independent
 version of the chain-sync-protocol state machine in an independent thread and with its own \readpointer{}.
-Each of those \readpointer{}s has to be updated independently and for each consumer
+Each of those \readpointer{}s has to be updated independently, and for each consumer,
 either case 1) or case 2) can apply.
 
 \subparagraph{Consumer starts with an arbitrary fork}
-Typically, the consumer already knows some fork of the block chain when it
+Typically, the consumer already knows some fork of the blockchain when it
 starts to track the producer.
 The protocol provides an efficient method to search for the longest common prefix (here called intersection)
 between the fork of the producer and the fork that is known to the consumer.
 
 To do so, the consumer sends a \MsgFindIntersect{} message with a list of chain
 points on the chain known to the consumer.
-If the producer does not know any of the points it replies with \MsgIntersectNotFound.
-Otherwise it replies with \MsgIntersectFound{} and the best (i.e. the newest) of the points that it knows
+If the producer does not know any of the points, it replies with \MsgIntersectNotFound.
+Otherwise, it replies with \MsgIntersectFound{} and the best (i.e. the newest) of the points that it knows
 and also updates the \readpointer{} accordingly.
 For efficiency, the consumer should use a binary search scheme to search for the longest common
 prefix.
 
 It is advised that the consumer always starts with \MsgFindIntersect{} in a fresh connection
-and it is free to use \MsgFindIntersect{} at any time later as seems beneficial.
+and it is free to use \MsgFindIntersect{} at any time later as it is beneficial.
 If the consumer does not know anything about the producer's chain,
 it can start the search with the following list of points:
 $\langle point(b), point(b-1), point(b-2), point(b-4), point (b-8),\ldots \rangle$
 where $point(b-i)$ is the point of the $i$th predecessor of block $b$ and
 $b$ is the head of the consumer fork.
-Maximum depth of a fork in Ouroboros is bounded and the intersection will always be found with a small number of
+The maximum depth of a fork in Ouroboros is bounded, and the intersection will always be found with a small number of
 iterations of this algorithm.
 
 \subparagraph{Additional remarks}
-Note that by sending \MsgFindIntersect{} the server will not modify its
+Note that by sending \MsgFindIntersect{}, the server will not modify its
 \readpointer{}.
 
 \subsection{Implementation of the Chain Consumer}
 In principle, the chain consumer has to guard against a malicious chain producer
 as much as the other way around.
-However, two aspects of the protocol play in favour of the consumer here.
+However, two aspects of the protocol play a role in favour of the consumer here.
 \begin{itemize}
-  \item The protocol is basically consumer driven, i.e. the producer has no way to send unsolicited
+  \item The protocol is consumer-driven, i.e., the producer cannot send unsolicited
 data to the consumer (within the protocol).
   \item The consumer can verify the response data itself.
 \end{itemize}
@@ -1036,10 +1034,10 @@ Here are some cases to consider:
   inconsistent behaviour.
 \item[The producer replies with a \MsgRollForward] The consumer can verify the block itself
   with the help of the ledger layer.
-  (The consumer may need to download the block first, if the protocol only sends block headers.)
+  (The consumer may need to download the block first if the protocol only sends block headers.)
 \item[The producer replies with a \MsgRollBackward] The consumer tracks several producers, so
-  if the producer sends false \MsgRollBackward{} messages the consumer's node
-  will, at some point, just switch to a longer chain fork.
+  if the producer sends false \MsgRollBackward{} messages, the consumer's node
+  will, at some point, switch to a longer chain fork.
 \item[The Producer is just passive/slow] The consumer's node will switch to
   a longer chain coming from another producer via another instance of
     chain-sync protocol.
@@ -1118,7 +1116,7 @@ The block fetching mechanism enables a node to download a range of blocks.
   The client terminates the protocol.
 \end{description}
 
-Transition table is shown in table~\ref{table:block-fetch}.
+The transitions are shown in table~\ref{table:block-fetch}.
 
 \begin{table}[h!]
   \begin{center}
@@ -1138,8 +1136,8 @@ Transition table is shown in table~\ref{table:block-fetch}.
 
 \subsection{Size limits per state}
 
-These limits bound how many bytes can be send in a given state, indirectly this
-limits payload size of each message.  If a space limit is violated the
+These bounds limit how many bytes can be sent in a given state; indirectly, this
+limits the payload size of each message.  If a space limit is violated, the
 connection SHOULD be torn down.
 
 \begin{table}[h!]
@@ -1156,8 +1154,8 @@ connection SHOULD be torn down.
 
 \subsection{Timeouts per state}
 
-These limits bound how much time the receiver side can wait for arrival of
-a message.  If a timeout is violated the connection SHOULD be torn down.
+These limits bound how much time the receiver side can wait for the arrival of
+a message.  If a timeout is violated, the connection SHOULD be torn down.
 
 \begin{table}[h!]
   \begin{center}
@@ -1195,14 +1193,14 @@ See appendix \ref{cddl-common} for common definitions.
 \subsubsection{Description}
 The node-to-node transaction submission protocol is used to transfer
 transactions between full nodes.  The protocol follows a pull-based strategy
-where the initiator asks for new transactions and the responder sends them
+where the initiator asks for new transactions, and the responder sends them
 back.  It is suitable for a trustless setting where both sides need to guard
 against resource consumption attacks from the other side.  The local
 transaction submission protocol, which is used when the server trusts a local
 client, is described in Section \ref{local-tx-submission-protocol}.
 
 Note that Version 1 of the tx-submission protocol is no longer supported.
-The version 2 is used by since \texttt{NodeToNode\_V6} of the node-to-node protocol.
+Version 2 is used since \texttt{NodeToNode\_V6} of the node-to-node protocol.
 \subsection{State machine}
 
 \begin{figure}[h!]
@@ -1249,16 +1247,16 @@ The version 2 is used by since \texttt{NodeToNode\_V6} of the node-to-node proto
       The client will block until new transactions are available.
 \item [\MsgRequestTxIdsNB{} {\boldmath $(ack,req)$}]
       The server asks for new transaction ids and acknowledges old ids.
-      The client immediately replies (possible with an empty list).
+      The client immediately replies (possibly with an empty list).
 \item [\MsgReplyTxIds{} {\boldmath ($\langle (id, size) \rangle$) }]
       The client replies with a list of available transactions.
-      The list contains pairs of transactions ids and the corresponding size of the transaction in bytes.
-      In the blocking case the reply is guaranteed to contain at least one transaction.
+      The list contains pairs of transaction ids and the corresponding size of the transaction in bytes.
+      In the blocking case, the reply is guaranteed to contain at least one transaction.
       In the non-blocking case, the reply may contain an empty list.
 \item [\MsgRequestTxs{} {\boldmath ($\langle ids \rangle$)}]
       The server requests transactions by sending a list of transaction-ids.
 \item [\MsgReplyTxs{} {\boldmath ($\langle txs \rangle$})]
-      The client replies with a list transaction.
+      The client replies with a list of transactions.
 \item [\MsgDone]
       The client terminates the mini protocol.
 \end{description}
@@ -1280,9 +1278,9 @@ The version 2 is used by since \texttt{NodeToNode\_V6} of the node-to-node proto
 
 \subsection{Size limits per state}
 
-Table~\ref{table:tx-submission-size-limits} specifies how may bytes can be send
-in a given state, indirectly this limits payload size of each message.  If
-a space limit is violated the connection SHOULD be torn down.
+Table~\ref{table:tx-submission-size-limits} specifies how many bytes can be sent
+in a given state; indirectly, this limits the payload size of each message.  If
+a space limit is violated, the connection SHOULD be torn down.
 
 \begin{table}[h!]
   \begin{center}
@@ -1301,8 +1299,8 @@ a space limit is violated the connection SHOULD be torn down.
 
 \subsection{Timeouts per state}
 
-The table~\ref{table:tx-submission-timeouts} specify message timeouts in
-a given state.  If a timeout is violated the connection SHOULD be torn down.
+The table~\ref{table:tx-submission-timeouts} specifies message timeouts in
+a given state.  If a timeout is violated, the connection SHOULD be torn down.
 
 \begin{table}[h!]
   \begin{center}
@@ -1328,42 +1326,41 @@ and, at the same time, it must rule out
 asymmetric resource attacks from the transaction consumer against the transaction provider.
 
 The protocol is based on two pull-based operations.
-The transaction consumer can ask for a number of transaction ids and it can use these
+The transaction consumer can ask for a number of transaction ids, and it can use these
 transaction ids to request a batch of transactions.
 The transaction consumer has flexibility in the number of transaction ids it requests,
-whether to actually download the transaction body of a given id
+whether to actually download the transaction body
 and flexibility in how it batches the download of transactions.
 The transaction consumer can also switch between requesting transaction ids and downloading
 transaction bodies at any time.
-It must however observe several constraints that are necessary for a memory efficient implementation
+It must, however, observe several constraints that are necessary for a memory-efficient implementation
 of the transaction provider.
 
 Conceptually, the provider maintains a limited size FIFO of outstanding transactions per consumer.
-(The actual implementation can of course use the data structure that works best).
+(The actual implementation can, of course, use the data structure that works best).
 The maximum FIFO size is a protocol parameter.
 The protocol guarantees that, at any time, the consumer and producer agree on the current size of
 that FIFO and on the outstanding transaction ids.
-The consumer can use a variety of heuristics for requesting transaction ids and transactions.
-One possible implementation for a consumer is to maintain a FIFO which mirrors the producers FIFO
+The consumer can use a variety of heuristics to request transaction ids and transactions.
+One possible implementation for a consumer is to maintain a FIFO that mirrors the producer's FIFO
 but only contains the transaction ids (and the size of the transaction) and not the full transactions.
 
 After the consumer requests new transaction ids, the provider replies with a list of transaction ids and
 puts these transactions in its FIFO.
-As part of a request a consumer also acknowledges the number of old transactions,
+As part of a request, a consumer also acknowledges the number of old transactions,
 which are removed from the FIFO at the same time.
 The provider checks that the size of the FIFO, i.e. the number of outstanding transactions,
 never exceeds the protocol limit and aborts the connection if a request violates the limits.
 The consumer can request any batch of transactions from the current FIFO in any order.
-Note however, that the reply will omit any transactions that have become invalid in the meantime.
-(More precisely the server will omit invalid transactions from the reply but they will still be counted in the FIFO
-size and they still require an acknowledgement from the consumer).
+Note, however, that the reply will omit any transactions that have become invalid in the meantime.
+(More precisely, the server will omit invalid transactions from the reply, but they will still be counted in the FIFO
+size, and they will still require an acknowledgement from the consumer).
 
 The protocol supports blocking and non-blocking requests for new transactions ids.
-If the FIFO is empty the consumer must use a blocking request
-otherwise a non-blocking request.
+If the FIFO is empty, the consumer must use a blocking request; otherwise, it must be a non-blocking request.
 The producer must reply immediately (i.e. within a small timeout) to a non-blocking request.
-It replies with not more than the requested number of ids (possible with an empty list).
-A blocking request on the other side, waits until at least one transaction is available.
+It replies with not more than the requested number of ids (possibly with an empty list).
+A blocking request, on the other side, waits until at least one transaction is available.
 
 \section{Keep Alive Mini Protocol}
 \haddockref{Ouroboros.Network.Protocol.KeepAlive.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-KeepAlive-Type\#t:KeepAlive}\\
@@ -1371,8 +1368,8 @@ A blocking request on the other side, waits until at least one transaction is av
 
 \label{keep-alive-protocol}
 \subsection{Description}
-Keep alive mini-protocol is a member of node-to-node protocol.  It is used for
-two purposes: to provide keep alive messages, and do round trip time
+Keep-alive mini-protocol is a member of the node-to-node protocol.  It is used for
+two purposes: to provide keep alive messages and do round trip time
 measurements.
 
 \newcommand{\StClient}{\state{StClient}}
@@ -1392,7 +1389,7 @@ measurements.
     \draw (Server) edge[below, bend left=45] node{\MsgKeepAliveResponse} (Client);
     \draw (Client) edge[left]                node{\MsgDone}              (Done);
   \end{tikzpicture}
-  \caption{State machine of the keep alive protocol.}
+  \caption{State machine of the keep-alive protocol.}
 \end{figure}
 
 \begin{figure}[h]
@@ -1409,7 +1406,7 @@ measurements.
 \paragraph{Protocol messages}
 \begin{description}
 \item [\MsgKeepAlive{} $cookie$]
-  Keep alive message.  The $cookie$ value is a \texttt{Word16} value which allows to
+  Keep alive message.  The $cookie$ value is a \texttt{Word16} value, which allows to
   match requests with responses.  It is a protocol error if the cookie received
   back with \MsgKeepAliveResponse{} does not match the value sent with
   \MsgKeepAlive{}.
@@ -1421,8 +1418,8 @@ measurements.
 
 \subsection{Size limits per state}
 
-These limits bound how many bytes can be send in a given state, indirectly this
-limits payload size of each message.  If a space limit is violated the
+These bounds limit how many bytes can be sent in a given state; indirectly, this
+limits the payload size of each message.  If a space limit is violated, the
 connection SHOULD be torn down.
 
 \begin{table}[h!]
@@ -1438,8 +1435,8 @@ connection SHOULD be torn down.
 
 \subsection{Timeouts per state}
 
-These limits bound how much time the receiver side can wait for arrival of
-a message.  If a timeout is violated the connection SHOULD be torn down.
+These limits bound how much time the receiver side can wait for the arrival of
+a message.  If a timeout is violated, the connection SHOULD be torn down.
 
 \begin{table}[h!]
   \begin{center}
@@ -1460,9 +1457,7 @@ a message.  If a timeout is violated the connection SHOULD be torn down.
 \hyperref[table:node-to-node-protocol-numbers]{\textit{node-to-node mini-protocol number}}: \texttt{10}\\
 \label{peer-sharing-protocol}
 \subsection{Description}
-The Peer Sharing MiniProtocol is a simple Request-Reply protocol. Peer Sharing
-Protocol is used by nodes to perform share requests to upstream peers. Requested peers
-will share a subset of their Known Peers.
+The Peer-Sharing mini-protocol is a simple Request-Reply mini-protocol. The mini-protocol is used by nodes to share their upstream peers (a subset of their Known Peers).
 
 \newcommand{\PsClient}{\state{StIdle}}
 \newcommand{\PsServer}{\state{StBusy}}
@@ -1498,21 +1493,21 @@ will share a subset of their Known Peers.
 \paragraph{Protocol messages}
 \begin{description}
 \item [\MsgShareRequest{} $amount$]
-  The client requests a maximum number of peers to be shared ($amount$). Ideally this
+  The client requests a maximum number of peers to be shared ($amount$). Ideally, this
   amount should limited by a protocol level constant to disallow a bad actor from
   requesting too many peers.
 \item [\MsgSharePeers{} ${[}peerAddress{]}$]
-  The server replies with a set of peers. Ideally the amount of information (e.g. reply
-  byte size) should be limited by a protocol level constant to disallow a bad actor from
-  sending too much information.
+  The server replies with a set of peers. Ideally, the amount of information (e.g. reply
+  byte size) SHOULD be limited by a protocol level constant to disallow a bad actor from
+  sending too much information (see the size limits below).
 \item [\MsgDone]
   Terminating message.
 \end{description}
 
 \subsection{Size limits per state}
 
-These limits bound how many bytes can be send in a given state, indirectly this
-limits payload size of each message.  If a space limit is violated the
+These bounds limit how many bytes can be sent in a given state; indirectly, this
+limits the payload size of each message.  If a space limit is violated, the
 connection SHOULD be torn down.
 
 \begin{table}[h!]
@@ -1528,8 +1523,8 @@ connection SHOULD be torn down.
 
 \subsection{Timeouts per state}
 
-These limits bound how much time the receiver side can wait for arrival of
-a message.  If a timeout is violated the connection SHOULD be torn down.
+These limits bound how much time the receiver side can wait for the arrival of
+a message.  If a timeout is violated, the connection SHOULD be torn down.
 
 \begin{table}[h!]
   \begin{center}
@@ -1546,33 +1541,33 @@ a message.  If a timeout is violated the connection SHOULD be torn down.
 
 The initiator side will have to be running indefinitely since protocol termination means
 either an error or peer demotion. Because of this, the protocol won't be able to be run as
-a simple request-response protocol. To overcome this the client side implementation will
+a simple request-response protocol. To overcome this, the client-side implementation will
 use a registry so that each connected peer gets registered and assigned a controller with
 a request mailbox. This controller will be used to issue requests to the client
-implementation which will be waiting for the queue to be filled up to send a
+implementation, which will be waiting for the queue to be filled up to send a
 \MsgShareRequest. After sending a request, the result is put into a local result mailbox.
 
 If a peer gets disconnected, it should get unregistered.
 
-\subsubsection{Deciding to whom to request peers to (and how many)}
+\subsubsection{Deciding from whom to request peers (and how many)}
 
-First of all peer sharing requests should only be issued if:
+First of all, peer-sharing requests should only be issued if:
 
 \begin{itemize}
   \item The current number of known peers is less than the target for known peers;
   \item The rate limit value for peer sharing requests isn't exceeded;
-  \item There are available peers to issue requests too;
+  \item There are available peers to issue requests to;
 \end{itemize}
 
-If these conditions hold then we can pick a set of peers to issue requests to.
-Ideally this set respects the rate limit value for peer sharing requests.
+If these conditions hold, then we can pick a set of peers to issue requests to.
+Ideally, this set respects the rate limit value for peer-sharing requests.
 
-If a peer has \texttt{PeerSharingDisabled} flag value do not ask it for peers.
-This peer won't even have the Peer Sharing miniprotocol server running.
+If a peer has \texttt{PeerSharingDisabled}, flag value, do not ask it for peers.
+This peer won't even have the Peer-Sharing miniprotocol server running.
 
-The amount of peers to request to each upstream peer should aim to fullfill
+The number of peers to request from each upstream peer should aim to fulfil
 the target for known peers. This number should be split for the current peer
-target objective across all peer sharing candidates for efficiency and
+target objective across all peer-sharing candidates for efficiency and
 diversity reasons.
 
 \subsubsection{Picking peers for the response}
@@ -1591,21 +1586,21 @@ peers can discover and map out the entire network.
 
 \subsection{Server Implementation Details}
 
-As soon as the server receives a share request it needs to pick subset not bigger than the
+As soon as the server receives a share request, it needs to pick a subset not bigger than the
 value specified in the request's parameter. The reply set needs to be sampled randomly
 from the Known Peer set according to the following constraints:
 
 \begin{itemize}
-  \item Only pick peers that we managed to connect-to at some point
+  \item Only pick peers that we managed to connect to at some point
   \item Don't pick known-to-be-ledger peers
-  \item Pick peers that have a public willingness information (e.g. \texttt{DoAdvertisePeer}).
+  \item Pick peers that have public willingness information (e.g. \texttt{DoAdvertisePeer}).
   \item Pick peers that haven't behaved badly (e.g. \texttt{PeerFailCount == 0})
 \end{itemize}
 
 Computing the result (i.e. random sampling of available peers) needs access to the
-\texttt{PeerSelectionState} which is specific to the \texttt{peerSelectionGovernorLoop}. However when
-initializing the server side of the protocol we have to provide the result computing
-function early in the consensus side. This means we will have to find a way to delay the
+\texttt{PeerSelectionState}, which is specific to the \texttt{peerSelectionGovernorLoop}. However, when
+initialising the server side of the mini-protocol, we have to provide the result computing
+function early on the consensus side. This means we will have to find a way to delay the
 function application all the way to diffusion and share the relevant parts of
 \texttt{PeerSelectionState} with this function via a \texttt{TVar}.
 
@@ -1621,7 +1616,7 @@ function application all the way to diffusion and share the relevant parts of
 \label{local-tx-submission-protocol}
 \subsection{Description}
 The local transaction submission mini protocol is used by local clients,
-for example wallets or CLI tools, to submit transactions to a local node.
+For example, wallets or CLI tools are used to submit transactions to a local node.
 The protocol is {\bf not} used to forward transactions from one core node to another.
 The protocol for the transfer of transactions between full nodes
 is described in Section \ref{tx-submission-protocol2}.
@@ -1632,9 +1627,9 @@ The protocol follows a simple request-response pattern:
 \item The Server either accepts the transaction (returning a confirmation) or rejects it (returning the
   reason).
 \end{enumerate}
-Note, that the local transaction submission protocol is a push based protocol where the client
+Note that the local transaction submission protocol is a push-based protocol where the client
 creates a workload for the server.
-This is acceptable because is protocol is only for use between a node and local client.
+This is acceptable because this mini-protocol is only to be used between a node and a local client.
 \newcommand{\MsgSubmitTx}{\msg{MsgSubmitTx}}
 \newcommand{\MsgAcceptTx}{\msg{MsgAcceptTx}}
 \newcommand{\MsgRejectTx}{\msg{MsgRejectTx}}
@@ -1707,12 +1702,12 @@ See appendix \ref{cddl-common} for common definitions.
 \newcommand{\MsgReAcquire}{\msg{MsgReAcquire}}
 
 \subsection{Description}
-Local State Query mini-protocol allows to query the consensus / ledger state.
-This mini protocol is part of the Node-to-Client protocol, hence it is only
+Local State Query mini-protocol allows querying of the consensus/ledger state.
+This mini protocol is part of the node-to-client protocol; hence, it is only
 used by local (and thus trusted) clients.  Possible queries depend on the era
-(Byron, Shelly, etc) and are not specified in this document.  The protocol
-specifies basic operations like acquiring / releasing the consensus / ledger
-state which is done by the server, or running queries against the acquired
+(Byron, Shelly, etc.) and are not specified in this document.  The protocol
+specifies basic operations like acquiring/releasing the consensus/ledger
+state, which is done by the server, or running queries against the acquired
 ledger state.
 
 \subsection{State machine}
@@ -1759,9 +1754,9 @@ either $ImmutableTip$, $VolatileTip$, or $SpecificPoint pt$.
 
 The primary motivation for being able to acquire the $ImmutableTip$ is that
 it's the most recent ledger state that the node will never abandon: the node
-will never rollback to prefix of that immutable chain (unless the on-disk
+will never rollback to a prefix of that immutable chain (unless the on-disk
 ChainDB is corrupted/manipulated). Therefore, answers to queries against the
-$ImmutableTip$ are necessarily not subject rollback.
+$ImmutableTip$ is necessarily not subject to rollback.
 
 % TODO natural language description of each message
 
@@ -1813,8 +1808,8 @@ See appendix \ref{cddl-common} for common definitions.
 
 \subsection{Description}
 
-A mini-protocol which allows to monitor transactions in the local mempool. This
-mini-protocol is stateful, the server side tracks transactions already sent to
+A mini-protocol which allows the monitoring of transactions in the local mempool. This
+mini-protocol is stateful; the server side tracks transactions already sent to
 the client.
 
 \subsection{State machine}
@@ -1865,11 +1860,11 @@ the client.
   \item[\MsgAcquired{} {\boldmath (SlotNo)}] The server side is now locked to
     a particular mempool snapshot. It returns the slot number of the 'virtual
     block' under construction.
-  \item[\MsgAwaitAcquire{}] Like 'MsgAcquire' but await for a new snapshot
+  \item[\MsgAwaitAcquire{}] Like 'MsgAcquire' but await a new snapshot
     different from the one currently acquired.
-  \item[\MsgRelease{}] Release the acquired snapshot, in order to loop back to
+  \item[\MsgRelease{}] Release the acquired snapshot in order to loop back to
     the idle state.
-  \item[\MsgNextTx{}] The client requests a single transaction and waits
+  \item[\MsgNextTx{}] The client requests a single transaction and waits for
     a reply.
   \item[\MsgReplyNextTx{} \boldmath(\textbf{Nothing} | \textbf{Just} $tx$)] The
     server responds with a single transaction if one is available in the
@@ -1926,24 +1921,23 @@ See appendix \ref{cddl-common} for common definitions.
 \section{Pipelining of Mini Protocols}
 \label{pipelining}
 Protocol pipelining is a technique that improves the performance of some protocols.
-The underlying idea is that a client, which wants to perform several requests,
+The underlying idea is that a client that wants to perform several requests
 just transmits those requests in sequence without blocking and waiting for the reply from the server.
-In the reference implementation, pipelining is used by the clients of all mini protocol except Chain-Sync.
-Those mini protocols follow a request-response pattern that is amenable to pipelining such
-that pipelining becomes a feature of the client implementation that does not require any
-modifications of the server implementation.
+In the reference implementation, pipelining is used by the clients of all mini-protocols except Chain-Sync.
+Those mini-protocols follow a request-response pattern that is amenable to pipelining such
+that pipelining becomes a feature of the client implementation and does not require any
+modifications to the server implementation.
 
 As an example, let's consider the Block-Fetch mini protocol.
-When a client follows the protocol and sends a sequence of \MsgRequestRange~messages to the server
-the data stream from the client to the server will only consist of \MsgRequestRange~messages
+When a client follows the protocol and sends a sequence of \MsgRequestRange{}~messages to the server, the data stream from the client to the server will only consist of \MsgRequestRange~messages
 (and a final \MsgClientDone~message) and no other message types.
 The server can simply follow the state machine of the protocol and process the messages in turn,
-regardless whether the client uses pipelining or not.
+regardless of whether the client uses pipelining or not.
 The MUX/DEMUX layer (Section~\ref{multiplexing-section}) guarantees
-that messages of the same mini protocol are delivered in transmission order,
-and therefore the client can determine which response belongs to which request.
+that messages of the same mini protocol are delivered in transmission order.
+Therefore, the client can determine which response belongs to which request.
 
-The MUX/DEMUX layer also provides a fixed size buffer between the egress of DEMUX and the ingress
+The MUX/DEMUX layer also provides a fixed-size buffer between the egress of DEMUX and the ingress
 of mini protocol thread.
 The size of this buffer is a protocol parameter that determines how many messages
 a client can send before waiting for a reply from the server (see Section~\ref{mux-flow-control}).
@@ -2022,7 +2016,7 @@ table~\ref{table:node-to-client-protocol-versions}.
   \begin{center}
     \begin{tabular}{l|l}
       \header{version} & \header{description} \\\hline
-      \texttt{NodeToClientV\_16} & Add ImmutableTip to LocalStateQuery, conway, GetStakeDelegDeposits query \\
+      \texttt{NodeToClientV\_16} & Add ImmutableTip to LocalStateQuery, Conway, GetStakeDelegDeposits query \\
       \texttt{NodeToClientV\_17} & GetProposals, GetRatifyState queries \\
       \texttt{NodeToClientV\_18} & GetFuturePParams query \\
     \end{tabular}

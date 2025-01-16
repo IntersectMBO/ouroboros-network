@@ -31,29 +31,29 @@ tx-submission to disseminate transactions across the network.
   \label{node-diagram-concurrency}
 \end{figure}
 
-Figure~\ref{node-diagram-concurrency} illustrates design of a node.  Circles
+Figure~\ref{node-diagram-concurrency} illustrates the design of a node.  Circles
 represents threads that run one of the mini-protocols.
 Each mini-protocols communicate with a remote node over the network.
-Threads communicate by means of a shared mutable variables, which
+Threads communicate by means of shared mutable variables, which
 are represented by boxes in Figure~\ref{node-diagram-concurrency}.
 We heavily use
 \href{https://en.wikipedia.org/wiki/Software_transactional_memory}{Software
 transactional memory} (STM), which is a mechanism for safe and lock-free
 concurrent access to mutable state (see \cite{stm:harris2006}).
 
-The ouroboros-network supports multiplexing mini-protocols, which allows to run
-node-to-node or node-to-client protocol on a single bearer, e.g. a TCP
-connection, other bearers are also supported.  This means that chain-sync,
+The ouroboros-network supports multiplexing mini-protocols, which allows us to run
+the node-to-node or the node-to-client protocol on a single bearer, e.g. a TCP
+connection; other bearers are also supported.  This means that chain-sync,
 block-fetch and tx-submission mini-protocols will share a single TCP
-connection.  The multiplexer, its framing is described in
+connection.  The multiplexer and its framing are described in
 Chapter~\ref{chapter:multiplexer}.
 
 \section{Congestion Control}
 A central design goal of the system is robust operation at high workloads.  For
 example, it is a normal working condition of the networking design that
 transactions arrive at a higher rate than the number that can be included in
-blockchain.  An increase of the rate at which transactions are submitted must
-not cause a decrease of the block chain quality.
+blockchain.  An increase in the rate at which transactions are submitted must
+not cause a decrease in the blockchain quality.
 
 Point-to-point TCP bearers do not deal well with overloading.  A TCP connection
 has a certain maximal bandwidth, i.e. a certain maximum load that it can handle
@@ -65,41 +65,41 @@ At the same time, the node itself has a limit on the rate at which it can
 process data.  In particular, a node may have to share its processing power
 with other processes that run on the same machine/operation system instance,
 which means that a node may get slowed down for some reason, and the system may
-get in a situation where there is more data available from the network than the
+get into a situation where there is more data available from the network than the
 node can process.  The design must operate appropriately in this situation and
 recover from transient conditions.  In any condition, a node must not exceed
 its memory limits, that is there must be defined limits, breaches of which
-being treated like protocol violations.
+are treated like protocol violations.
 
-Of course it makes no sense if the system design is robust, but so defensive
+Of course, it makes no sense if the system design is robust but so defensive
 that it fails to meet performance goals.  An example would be a protocol that
 never transmits a message unless it has received an explicit ACK for the
-previous message. This approach might avoid overloading the network, but would
-waste most of the potential bandwidth.  To avoid such performance problems, our
-implementation is heavily using protocol pipelining.
+previous message. This approach might avoid overloading the network but would
+waste most of the potential bandwidth.  To avoid such performance problems our
+implementation relies upon protocol pipelining.
 
 
 \section{Real-time Constraints and Coordinated Universal Time}
 Ouroboros models the passage of physical time as an infinite sequence of time
 slots, i.e. contiguous, equal-length intervals of time, and assigns slot
 leaders (nodes that are eligible to create a new block) to those time slots.
-At the beginning of a time slot, the slot leader selects the block chain and
+At the beginning of a time slot, the slot leader selects the blockchain and
 transactions that are the basis for the new block, then it creates the new
 block and sends the new block to its peers.  When the new block reaches the
-next block leader before the beginning of next time slot, the next block leader
-can extend the block chain upon this block (if the block did not arrive on time
+next block leader before the beginning of the next time slot, the next block leader
+can extend the blockchain upon this block (if the block did not arrive on time
 the next leader will create a new block anyway).
 
 There are some trade-offs when choosing the slot time that is used for the
-protocol but basically the slot length should be long enough such that a new
-block has a good chance to reach the next slot leader in time.  It is assumed
+protocol, but basically, the slot length should be long enough such that a new
+block has a good chance of reaching the next slot leader in time.  It is assumed
 that the clock skews between the local clocks of the nodes is small with
 respect to the slot length.
 
 However, no matter how accurate the local clocks of the nodes are with respect
-to the time slots the effects of a possible clock skew must still be carefully
+to the time slots, the effects of a possible clock skew must still be carefully
 considered.  For example, when a node time-stamps incoming blocks with its
 local clock time, it may encounter blocks that are created in the future with
 respect to the local clock of the node.  The node must then decide whether this
 is because of a clock skew or whether the node considers this as adversarial
-behavior of another node.
+behaviour of another node.

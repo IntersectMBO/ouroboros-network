@@ -84,8 +84,8 @@
 \newcommand{\MsgDone}{\msg{MsgDone}}
 \newcommand{\header}[1]{\textbf{#1}}
 
-% TODO: the document is using `\langle` and `\rangle` to denote lists, maybe
-% it's better to use Haskell notation, will it be more in sync with other docs
+% TODO: the document uses `\langle` and `\rangle` to denote lists, maybe
+% it's better to use Haskell notation. Will it be more in sync with other docs
 % produced by the formal method team?
 \renewcommand{\langle}{[}
 \renewcommand{\rangle}{]}
@@ -173,12 +173,12 @@
 \maketitle
 
 \begin{abstract}
-  This document provides technical specification of the implementation of the
-  \texttt{ouroboros-network} component of \texttt{cardano-node}. It provides specification of all
-  mini-protocols as well multiplexing and low level wire encoding.  It provides
+  This document provides technical specifications for the implementation of the
+  \texttt{ouroboros-network} component of \texttt{cardano-node}. It provides specifications of all
+  mini-protocols, multiplexing, and low-level wire encoding.  It provides
   necessary information about both node-to-node and node-to-client protocols.
 
-  The primary audience for this document are engineers wishing to build
+  The primary audience for this document is engineers wishing to build
   clients interacting with a node via node-to-client or node-to-node protocols
   or independent implementations of a node.  Although the original
   implementation of \texttt{ouroboros-network} is done \texttt{Haskell}, this specification is
@@ -254,7 +254,7 @@ in table~\ref{table:historical-node-to-client-protocol-versions}.
       $NodeToClientV\_6$ & mary \\\hline
       $NodeToClientV\_7$ & new queries added to local state query mini-protocol\\\hline
       $NodeToClientV\_8$ & codec changed for local state query mini-protocol\\\hline
-      $NodeToClientV\_9$ & alonzo \\\hline
+      $NodeToClientV\_9$ & Alonzo \\\hline
       $NodeToClientV\_10$ & GetChainBlock \& GetChainPoint queries \\\hline
       $NodeToClientV\_11$ & GetRewardInfoPools query \\\hline
       $NodeToClientV\_12$ & Added LocalTxMonitor mini-protocol \\\hline
