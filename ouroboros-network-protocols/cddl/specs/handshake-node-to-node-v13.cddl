@@ -1,5 +1,5 @@
 ;
-; NodeToNode Handshake, v13
+; NodeToNode Handshake (>=v13)
 ;
 handshakeMessage
     = msgProposeVersions

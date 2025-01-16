@@ -71,13 +71,18 @@
            {\href{https://ouroboros-network.cardano.intersectmbo.org/#2}
                  {\emph{haddock documentation}: \texttt{#1}}
            }
+\newcommand{\haddockrefraw}[2]
+           {\href{#2}
+                 {\emph{haddock documentation}: \texttt{#1}}
+           }
 \newcommand{\trans}[1]{\texttt{#1}}
 \newcommand{\state}[1]{\texttt{#1}}
-\newcommand{\msg}[1]{\texttt{#1}}
+\newcommand{\msg}[1]{\textbf{\texttt{#1}}}
 \newcommand{\StIdle}{\state{StIdle}}
 \newcommand{\StBusy}{\state{StBusy}}
 \newcommand{\StDone}{\state{StDone}}
 \newcommand{\MsgDone}{\msg{MsgDone}}
+\newcommand{\header}[1]{\textbf{#1}}
 
 % TODO: the document is using `\langle` and `\rangle` to denote lists, maybe
 % it's better to use Haskell notation, will it be more in sync with other docs
@@ -155,7 +160,7 @@
 \and
   Marc Fontaine\footnote{{\small \texttt{marc.fontaine@iohk.io}}}
 \and
-  Karl Knutsson\footnote{{\small \texttt{karl.knutsson@iohk.io}}}
+  Karl Knutsson\footnote{{\small \texttt{karl.knutsson-ext@cardanofoundation.org}}}
 \and
   Armando Santos\footnote{{\small \texttt{armando@well-typed.com}}}
 \and
@@ -209,6 +214,7 @@
 \chapter{Historical protocol versions}
 \label{historical-protocol-versions}
 
+\section{Node-to-node protocol}
 Previously supported versions of the \textit{node-to-node protocol} are listed
 in table~\ref{table:historical-node-to-node-protocol-versions}.
 \begin{figure}[h]
@@ -233,6 +239,7 @@ in table~\ref{table:historical-node-to-node-protocol-versions}.
   \end{center}
 \end{figure}
 
+\section{Node-to-client protocol}
 Previously supported versions of the \textit{node-to-client protocol} are listed
 in table~\ref{table:historical-node-to-client-protocol-versions}.
 \begin{figure}[h]

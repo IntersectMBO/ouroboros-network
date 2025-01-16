@@ -1,5 +1,19 @@
 # Revision history for ouroboros-network-protocols
 
+## Unreleased version
+
+### Breaking changes
+
+* Added kind signatures to protocol types: 
+  * `ChainSync`,
+  * `BlockFetch`,
+  * `TxSubmission2`,
+  * `PeerSharing`,
+  * `LocalTxMonitor`,
+  * `LocalTxSubmission`.
+
+### Non-breaking changes
+
 ## 0.13.0.0 -- 2025-01-02
 
 ### Breaking changes

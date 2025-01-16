@@ -30,6 +30,7 @@ import Ouroboros.Network.Util.ShowProxy
 -- It is parametrised over the type of transactions and the type of reasons
 -- used when rejecting a transaction.
 --
+type LocalTxSubmission :: Type -> Type -> Type
 data LocalTxSubmission tx reject where
 
   -- | The client has agency; it can submit a transaction or terminate.
