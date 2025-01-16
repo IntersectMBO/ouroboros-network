@@ -27,8 +27,9 @@ module Cardano.Network.Ping
 
 import           Control.Exception (bracket, Exception (..), throwIO)
 import           Control.Monad (replicateM, unless, when)
+import           Control.Monad.Class.MonadAsync
 import           Control.Concurrent.Class.MonadSTM.Strict ( MonadSTM(atomically), takeTMVar, StrictTMVar )
-import           Control.Monad.Class.MonadTime.SI (UTCTime, addUTCTime, diffTime, diffUTCTime, MonadMonotonicTime(getMonotonicTime), MonadTime(getCurrentTime), NominalDiffTime, Time)
+import           Control.Monad.Class.MonadTime.SI (UTCTime, addUTCTime, diffTime, diffUTCTime, MonadMonotonicTime(getMonotonicTime), MonadTime(getCurrentTime), NominalDiffTime, Time (..))
 import           Control.Monad.Trans.Except
 import           Control.Tracer (Tracer (..), nullTracer, traceWith)
 import           Data.Aeson (Value, ToJSON(toJSON, toJSONList), object, encode, KeyValue((.=)))
@@ -47,7 +48,8 @@ import           Data.Word (Word16, Word32, Word64)
 import           GHC.Generics
 import           Network.Mux.Bearer (MakeBearer (..), makeSocketBearer)
 import           Network.Mux.Timeout (TimeoutFn, withTimeoutSerial)
-import           Network.Mux.Types (MuxSDUHeader(MuxSDUHeader, mhTimestamp, mhDir, mhLength, mhNum), MiniProtocolNum(..), MiniProtocolDir(InitiatorDir), MuxBearer(read, write), MuxSDU(..), RemoteClockModel(RemoteClockModel))
+import           Network.Mux.Time (timestampMicrosecondsLow32Bits, microsecondsToDiffTime)
+import           Network.Mux.Types (MuxSDUHeader(MuxSDUHeader, mhTimestamp, mhDir, mhLength, mhNum), MiniProtocolNum(..), MiniProtocolDir(InitiatorDir), MuxBearer(read, write), MuxSDU(..), RemoteClockModel(..))
 import           Network.Socket (AddrInfo, StructLinger (..))
 import           Text.Printf (printf)
 
@@ -782,7 +784,10 @@ pingClient stdout stderr PingOpts{..} versions peer = bracket
               TL.hPutStrLn IO.stdout $ peerStr' <> " " <> (showQueriedVersions recVersions)
             when (not pingOptsHandshakeQuery && not isUnixSocket) $ do
               if pingOptsGetTip
-                 then getTip bearer timeoutfn peerStr []
+                 then do
+                   withAsync (keepAlive0 bearer timeoutfn  version 0) $ \aid -> do
+                     getTip bearer timeoutfn peerStr []
+                     cancel aid
                  else keepAlive bearer timeoutfn peerStr version (tdigest []) 0
               -- send terminating message
               _ <- write bearer timeoutfn $ wrap keepaliveNum InitiatorDir (keepAliveDone version)
@@ -848,6 +853,27 @@ pingClient stdout stderr PingOpts{..} versions peer = bracket
         then return (msBlob sdu, t_e)
         else nextMsg bearer timeoutfn ptclNum
 
+    nextMsg' ::  MuxBearer IO -> TimeoutFn IO -> MiniProtocolNum -> IO (LBS.ByteString, Time, Word32)
+    nextMsg' bearer timeoutfn ptclNum = do
+      (sdu, t_e) <- Network.Mux.Types.read bearer timeoutfn
+      if mhNum (msHeader sdu) == ptclNum
+        then return (msBlob sdu, t_e, unRemoteClockModel $ mhTimestamp $ msHeader sdu)
+        else nextMsg' bearer timeoutfn ptclNum
+
+
+    keepAlive0 :: MuxBearer IO
+              -> TimeoutFn IO
+              -> NodeVersion
+              -> Word32
+              -> IO ()
+    keepAlive0 bearer timeoutfn version !cookie = do
+      MT.threadDelay $ 120
+      let cookie16 = fromIntegral cookie
+      _ <- write bearer timeoutfn $ wrap keepaliveNum InitiatorDir (keepAliveReq version cookie16)
+      MT.threadDelay $ 10
+      keepAlive0 bearer timeoutfn version (cookie + 1) 
+    
+
     keepAlive :: MuxBearer IO
               -> TimeoutFn IO
               -> String
@@ -884,7 +910,7 @@ pingClient stdout stderr PingOpts{..} versions peer = bracket
            -> IO ()
     getTip bearer timeoutfn peerStr tips = do
       !t_s <- write bearer timeoutfn $ wrap chainSyncNum InitiatorDir (chainSyncFindIntersect tips)
-      (!msg, !t_e) <- nextMsg bearer timeoutfn chainSyncNum
+      (!msg, !t_e, !rc) <- nextMsg' bearer timeoutfn chainSyncNum
       case CBOR.deserialiseFromBytes chainSyncIntersect msg of
            Left err -> throwIO (PingClientFindIntersectDeserialiseFailure err peerStr)
            Right (_, tip@ChainSyncTip {..}) ->
@@ -895,25 +921,59 @@ pingClient stdout stderr PingOpts{..} versions peer = bracket
                     if pingOptsJson then traceWith stdout $ LogMsg (encode pingTip)
                                     else traceWith stdout $ LogMsg $ LBS.Char.pack $ show pingTip <> "\n"
                     case tips of
-                         [] -> do
-                             getTip bearer timeoutfn peerStr [tip]
-                         _  -> getNext bearer timeoutfn peerStr (tdigest []) 0
+                         [] -> getTip bearer timeoutfn peerStr [tip]
+                         _  -> getNext bearer timeoutfn peerStr (tdigest []) (tdigest []) (tdigest [])
+                                       0 rc 0
+
+    rcTrack :: Word64
+            -> Word32
+            -> Word32
+            -> (Word64, DiffTime)
+    rcTrack rc_upper prev_rc rc =
+      let rc_upper' = if prev_rc > rc then rc_upper + 0x100000000
+                                      else rc_upper
+          rc64 = fromIntegral rc :: Word64
+          rcTs = microsecondsToDiffTime (fromIntegral $ rc_upper' + rc64) in
+      (rc_upper', rcTs)
 
     getNext :: MuxBearer IO
             -> TimeoutFn IO
             -> String
             -> TDigest 5
+            -> TDigest 5
+            -> TDigest 5
+            -> Word64
+            -> Word32
             -> Word32
             -> IO ()
-    getNext bearer timeoutfn peerStr td !cookie = do
-      !_t_s <- write bearer timeoutfn $ wrap chainSyncNum InitiatorDir chainSyncRequestNext
-      (!msg, !_t_e) <- nextMsg bearer timeoutfn chainSyncNum
+    getNext _ _ _ _ _ _ _ _ cookie | cookie == pingOptsCount = return ()
+    getNext bearer timeoutfn peerStr tdN tdC tdM rc_upper prev_rc !cookie = do
+      !t_s <- write bearer timeoutfn $ wrap chainSyncNum InitiatorDir chainSyncRequestNext
+      (!msg, Time !t_e, !rc) <- nextMsg' bearer timeoutfn chainSyncNum
+      let (rc_upper', rcTs) = rcTrack rc_upper prev_rc rc
       case CBOR.deserialiseFromBytes chainSyncCanWaitDec msg of
            Left err -> throwIO (PingClientRequestNextFailure err peerStr)
            Right (_, ChainSyncAwaitReply) -> do
+             now <- getCurrentTime
+             let rtt = toSample (Time t_e) t_s
+                 tdN' = insert rtt tdN
+                 tdM' = insert (realToFrac x) tdM
+                 _md = fromMaybe 0 (quantile 0.5 tdM')
+                 peerStr' = "Net, " <> peerStr
+                 point = toStatPoint now peerStr' (fromIntegral cookie) rtt tdN'
+                 _t_e32 = timestampMicrosecondsLow32Bits (Time t_e)
+                 x = t_e - rcTs
+             -- printf "XXX: t_e: %s t_e32: %d rc %d x: %s\n" (show t_e) t_e32 rc (show x) 
+             -- printf "XXX: median: %f delta %f\n" md (realToFrac x - md)
+             if pingOptsJson
+                then traceWith stdout $ LogMsg (encode point)
+                else traceWith stdout $ LogMsg $ LBS.Char.pack $ show point <> "\n"
+
+
              -- printf "Await Reply\n"
              IO.hFlush IO.stdout
-             (!msg2, !_t_e2) <- nextMsg bearer timeoutfn chainSyncNum
+             (!msg2, Time !t_e2, !rc2) <- nextMsg' bearer timeoutfn chainSyncNum
+             let (rc_upper'', rcTs') = rcTrack rc_upper' rc rc2
              case CBOR.deserialiseFromBytes chainSyncCanWaitDec msg2 of
                   Left err -> throwIO (PingClientRequestNextFailure err peerStr)
                   Right (_, ChainSyncAwaitReply) -> error "unexpected Await Reply"
@@ -921,29 +981,38 @@ pingClient stdout stderr PingOpts{..} versions peer = bracket
                       delay <- headerDelay (cstSlotNo tip)
                       -- printf "Rollforward: delay: %s, %s\n" (show delay) (show tip)
                       -- IO.hFlush IO.stdout
-                      now <- getCurrentTime
-                      let rtt = realToFrac delay
-                          td' = insert rtt td
-                          peerStr' = peerStr <> printf " %d %d" (cstSlotNo tip) (cstBlockNo tip)
-                          point = toStatPoint now peerStr' (fromIntegral cookie) rtt td'
+                      now2 <- getCurrentTime
+                      -- let rtt2 = realToFrac delay {- - (max 0 ((fromIntegral x2 - md2) / 1000)) -}
+                      let rtt2 = realToFrac delay - (realToFrac x2 - md2) 
+                                                  - mdn / 2
+                          tdC' = insert rtt2 tdC
+                          tdM'' = insert (realToFrac x) tdM'
+                          -- t_e322 = timestampMicrosecondsLow32Bits (Time t_e2)
+                          md2 = fromMaybe 0 (quantile 0.5 tdM'')
+                          mdn = fromMaybe 0 (quantile 0.5 tdN')
+                          x2 = t_e2 - rcTs'
+                          peerStr2' = "Chain, " <> peerStr <> printf ", %d, %d" (cstSlotNo tip) (cstBlockNo tip)
+                          point2 = toStatPoint now2 peerStr2' (fromIntegral cookie) rtt2 tdC'
+                      -- printf "XXX2: median: %f delta %f\n" md2 (realToFrac x2 - md2)
+                      IO.hFlush IO.stdout
                       if pingOptsJson
-                         then traceWith stdout $ LogMsg (encode point)
-                         else traceWith stdout $ LogMsg $ LBS.Char.pack $ show point <> "\n"
+                         then traceWith stdout $ LogMsg (encode point2)
+                         else traceWith stdout $ LogMsg $ LBS.Char.pack $ show point2 <> "\n"
 
-                      getNext bearer timeoutfn peerStr td' (cookie + 1)
+                      getNext bearer timeoutfn peerStr tdN' tdC' tdM' rc_upper'' rc2 (cookie + 1)
                   Right (_, ChainSyncRollBackward _tip) -> do
                       -- printf "Rollbackward: %s\n" (show tip)
                       -- IO.hFlush IO.stdout
-                      getNext bearer timeoutfn peerStr td cookie
+                      getNext bearer timeoutfn peerStr tdN tdC tdM rc_upper'' rc2 cookie
            Right (_, ChainSyncRollForward _tip) -> do
                {- delay <- headerDelay (cstSlotNo tip)
                printf "Rollforward: delay: %s, %s\n" (show delay) (show tip)
                IO.hFlush IO.stdout -}
-               getNext bearer timeoutfn peerStr td cookie
+               getNext bearer timeoutfn peerStr tdN tdC tdM rc_upper' rc cookie
            Right (_, ChainSyncRollBackward _tip) -> do
                {- printf "Rollbackward: tip: %s\n" (show tip)
                IO.hFlush IO.stdout -}
-               getNext bearer timeoutfn peerStr td cookie
+               getNext bearer timeoutfn peerStr tdN tdC tdM rc_upper' rc cookie
 
 headerDelay :: Word64
             -> IO NominalDiffTime
