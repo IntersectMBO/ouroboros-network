@@ -6,14 +6,6 @@
 
 ### Non-breaking changes
 
-## 0.19.0.1 -- 2025-01-15
-
-### Breaking changes
-
-### Non-breaking changes
-
-- Removed `UnsupportedOperation` from rethrow policy.
-
 ## 0.19.0.0 -- 2025-01-02
 
 ### Breaking changes
