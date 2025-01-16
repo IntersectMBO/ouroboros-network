@@ -472,16 +472,19 @@ The handshake mini protocol is designed to handle simultaneous TCP open.
 
 Messages of the protocol:
 \begin{description}
-\item [\MsgProposeVersions{} {\boldmath $(versionTable)$}]
+  \item [\MsgProposeVersions{} {\boldmath $(versionTable)$}]
       The client proposes a number of possible versions and protocol parameters.
-\item [\MsgReplyVersions{} {\boldmath $(versionTable)$}]
+      $versionTable$ is a map from version numbers to their associated version
+      data.  Note that different version numbers might use different version
+      data (e.g. supporting a different set of parameters).
+  \item [\MsgReplyVersions{} {\boldmath $(versionTable)$}]
       In TCP simultaneous open the client will receive \MsgReplyVersions{}
       (which was sent as \MsgProposeVersions{}) as a reply to its own
       \MsgProposeVersions{}; thus both \MsgProposeVersions{} and
       \MsgReplyVersions{} have to have the same CBOR encoding.
-\item [\MsgAcceptVersion{} {\boldmath $(versionNumber,extraParameters)$}]
+  \item [\MsgAcceptVersion{} {\boldmath $(versionNumber,extraParameters)$}]
       The server accepts $versionNumber$ and returns possible extra protocol parameters.
-\item [\MsgRefuse{} {\boldmath $(reason)$}]
+  \item [\MsgRefuse{} {\boldmath $(reason)$}]
       The server refuses the proposed versions.
 \end{description}
 
@@ -489,10 +492,10 @@ Messages of the protocol:
 \begin{table}[h]
   \begin{tabular}{l|l|l|l}
     \header{from} & \header{message} & \header{parameters} & \header{to} \\\hline
-    \StPropose & \MsgProposeVersions & $versionTable$                    & \StConfirm \\
-    \StConfirm & \MsgReplyVersions   & $versionTable$                    & \StDone \\
-    \StConfirm & \MsgAcceptVersion   & $(versionNumber,extraParameters)$ & \StDone \\
-    \StConfirm & \MsgRefuse          & $reason$                          & \StDone \\
+    \StPropose & \MsgProposeVersions & $versionTable$                & \StConfirm \\
+    \StConfirm & \MsgReplyVersions   & $versionTable$                & \StDone \\
+    \StConfirm & \MsgAcceptVersion   & $(versionNumber,versionData)$ & \StDone \\
+    \StConfirm & \MsgRefuse          & $reason$                      & \StDone \\
   \end{tabular}
 \end{table}
 }
@@ -530,6 +533,64 @@ a message.  If a timeout is violated the connection SHOULD be torn down.
   \end{center}
 \end{table}
 
+\subsection{Node-to-node handshake}
+
+The node-to-node handshake instantiates version data\footnote{To be precise, in
+ouroboros-network we instantiate version data to CBOR terms and do encoding
+/ decoding of version data lazily (as required), rather than as part of the
+protocol codec (the protocol codec only decodes bytes to CBOR terms, and thus
+fails only if received bytes are not a valid CBOR encoding).  This is important
+in order to support receiving a mixture of known and unknown versions. The same
+remark applies to node-to-client protocol as well.} to a record which consists
+of
+\begin{description}
+  \item[network magic] a \texttt{Word32} value;
+  \item[diffusion mode] a boolean value: \texttt{True} value indicates
+    initiator only mode, \texttt{False} - initiator and responder mode;
+  \item[peer sharing] either $0$ or $1$: $1$ indicates that the node
+    will engage in peer sharing (and thus it will run the PeerSharing
+    mini-protocol);
+  \item[query] a boolean value: \texttt{True} will send back all supported
+    versions \& version data and terminate the connection.
+\end{description}
+
+When negotiating a connection each side will have access to local and remote
+version data associated to the negotiated version number.  The result of
+negotiation is a new version data record which consists of:
+\begin{itemize}\label{alg:node-to-node-negotiation}
+  \item if the network magic agree then its inherited by the negotiated version
+    data, otherwise the negotiation fails;
+  \item diffusion mode SHOULD be initiator only iff any side proposes the
+    initiator only mode (i.e. the logical disjunction operator);
+  \item peer sharing SHOULD be inherited from the remote side;
+  \item query SHOULD be inherited from the client (the side that sent
+      \MsgProposeVersions{}).
+\end{itemize}
+If negotiation was successful, the negotiated version data is sent back
+using \MsgAcceptVersion{}, otherwise \MsgRefuse{} SHOULD be sent.
+
+\subsection{Node-to-client handshake}
+
+The node-to-node handshake instantiates version data to a record which consists
+of
+\begin{description}
+  \item[network magic] a \texttt{Word32} value;
+  \item[query] a boolean value: \texttt{True} will send back all supported;
+    versions \& version data and terminate the connection.
+\end{description}
+
+The negotiated version data is computed similar as in the node-to-node
+protocol:
+\begin{itemize}\label{alg:node-to-client-negotiation}
+  \item if the network magic agree then its inherited by the negotiated version
+    data, otherwise the negotiation fails;
+  \item query SHOULD be inherited from the client (the side that sent
+    \MsgProposeVersions{}).
+\end{itemize}
+If negotiation was successful, the negotiated version data is sent back
+using \MsgAcceptVersion{}, otherwise \MsgRefuse{} SHOULD be sent.
+
+
 \subsection{Client and Server Implementation}
 Section~\ref{handshake-cddl} contains the CDDL-specification of the binary format of the handshake messages.
 The version table is encoded as a CBOR table with the version number as key
@@ -540,10 +601,10 @@ and appear in ascending order.
 table. Therefore the CDDL-specification uses a table with keys from 1 to 4 as an example.)
 
 In a run of the handshake mini protocol the peers exchange only two messages:
-The client requests to connect with a \MsgProposeVersions{} message that contains information about
-all protocol versions it wants to support.
-The server replies either with an \MsgAcceptVersion{} message containing the negotiated
-version number and extra parameters or a \MsgRefuse{} message.
+The client initiates the protocol with a \MsgProposeVersions{} message that
+contains information about all protocol versions it wants to support. The
+server replies either with an \MsgAcceptVersion{} message containing the
+negotiated version number and version data or a \MsgRefuse{} message.
 The \MsgRefuse{} message contains one of three alternative refuse reasons:
 \VersionMismatch{}, \HandshakeDecodeError{} or just \Refused{}.
 
@@ -557,22 +618,24 @@ compute the response:
   If the intersection is empty:
   Reply with \MsgRefuse(\VersionMismatch) and the list of protocol numbers the server supports.
 \item
-  Otherwise:
-  Select the protocol with the highest version number in the intersection.
+  Otherwise, select the protocol with the highest version number in the
+    intersection.
 \item
   Run the protocol specific decoder on the CBOR term that contains the protocol parameters.
 \item
   If the decoder fails:
   Reply with \MsgRefuse(\HandshakeDecodeError), the selected version number and an error message.
 \item
-  Otherwise: Test the proposed protocol parameters of the selected protocol version
+  Otherwise, test the proposed protocol parameters of the selected protocol version
 \item
   If the test refuses the parameters:
     Reply with \MsgRefuse(\Refused), the selected version number and an error message.
 \item
-  Otherwise:
-  Encode the extra parameters and
-  reply with \MsgAcceptVersion, the selected version number and the extra parameters.
+  Otherwise, compute negotiation parameters according to the
+    algorithm~\ref{alg:node-to-node-negotiation} or
+    \ref{alg:node-to-client-negotiation}, encode them with the corresponding
+    CBOR codec and reply with \MsgAcceptVersion, the selected version number
+    and the extra parameters.
 \end{enumerate}
 Note, that in step 4), 6) and 8) the handshake protocol uses the callback functions that are specific
 for set of protocols that the server supports.
@@ -591,12 +654,12 @@ version (or its parameters) it can reset the connection.
 The protocol does not forbid, nor could it detect a usage of
 \MsgReplyVersions{} outside of TCP simultaneous open.  The process of
 choosing between proposed and received version must be symmetric, in the
-following sense:
+following sense.
 
 \begin{description}
   \item[]
     We use \texttt{acceptable :: vData -> vData -> Accept vData}
-    function to compute accepted version data from proposed and received data,
+    function to compute accepted version data from local and remote data,
     where
 \begin{verbatim}
   data Accept vData = Accept vData
@@ -605,14 +668,14 @@ following sense:
 \end{verbatim}
     See
     \href{https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Version.html#t:Acceptable}{ref}.
-    Both \texttt{acceptable proposed received} and \texttt{acceptable received
-    proposed} must satisfy the following condition:
+    Both \texttt{acceptable local remote} and \texttt{acceptable remote local}
+    must satisfy the following condition:
     \begin{itemize}
       \item if either of them accepts a version by returning \texttt{Accept},
         the other one must accept the same value, i.e. in this case
-        \texttt{acceptable proposed received == acceptable received proposed}
+        \texttt{acceptable local remote == acceptable remote local}
       \item if either of them refuses to accept (returns \texttt{Refuse reason})
-        the other one shall return \texttt{Refuse} as well.
+        the other one SHOULD return \texttt{Refuse} as well.
     \end{itemize}
 \end{description}
 Note that the above condition guarantees that if either side returns
@@ -630,55 +693,32 @@ codecs (i.e. codecs for which each message has a distinguished encoding), both
 sides of typed-protocols are always at the same state (once all in-flight
 message arrived).  This is no longer true in general, however this is still
 true for the handshake protocol.  Event though the opening message
-\texttt{MsgProposeVersions} of a simultaneous open, will materialise on the
-other side as termination message \texttt{MsgReplyVersions}, the same will
-happen to the \texttt{MsgProposeVersion} transmitted in the other direction.
+\MsgProposeVersions{} of a simultaneous open, will materialise on the
+other side as termination message \MsgReplyVersions{}, the same will
+happen to the \MsgProposeVersions{} transmitted in the other direction.
 We include a special test case
 (\href{https://github.com/intersectmbo/ouroboros-network/blob/master/ouroboros-network/protocol-tests/Ouroboros/Network/Protocol/Handshake/Test.hs\#L551}{\texttt{prop\_channel\_simultaneous\_open}})
-to verify that simultaneous open well behaves and does not lead to protocol
+to verify that simultaneous open behaves well and does not lead to protocol
 errors.
 
-The handshake mini protocol runs before the MUX/DEMUX itself is initialised.
+\subsection{Handshake and the multiplexer}
+
+The handshake mini protocol runs before the multiplexer is initialised.
 Each message is transmitted within a single MUX segment, i.e. with a proper
-segment header, but, as the MUX/DEMUX is not yet running the messages must not
-be split into multiple segments.  These MUX segments are using a reserved
-protocol id $0$ (\texttt{Muxcontrol}).
+segment header, but as the multiplexer is not yet running the messages MUST not
+be split into multiple segments.  The Handshake protocol is using the
+mini-protocol nuumber $0$ in both node-to-node and node-to-client case.
 
-\subsection{Handhsake version 11 and greater}
-
-In most recent versions of Handshake negotiated node-to-node version data has
-one more parameter: Peer Sharing willingness information. This is a flag that
-can be globally configured by the node, to let others know if a particular node
-wants to participate or not in Peer Sharing. This addition breaks the symmetry
-of \texttt{acceptable} since, upon negotiating handshake, each node keeps the
-remote side value of the Peer Sharing flag. This can be solved by making
-\texttt{acceptable} symmetric modulo peer sharing flag.
-
-This new flag addition also means that, for testing purposes, we are going to
-need two different CDDL specifications: one for versions $< 11$ and one for
-versions $\geq 11$.
-
-\subsection{CDDL encoding specification ($< 11$)}\label{handshake-cddl}
+\subsection{CDDL encoding specification}\label{handshake-cddl}
 There are two flavours of the mini-protocol which only differ with type
 instantiations, e.g. different protocol versions and version data carried in
 messages.  First one is used by the node to node protocol the other by node to
 client protocol.
-
-\subsubsection{Node to node handshake mini-protocol}
-\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/handshake-node-to-node.cddl}
-\subsubsection{Node to client handshake mini-protocol}
-\label{sec:nodetoclientcddl}
-\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/handshake-node-to-client.cddl}
-
-\subsection{CDDL encoding specification ($11$ to $12$)}\label{handshake-cddl}
-
-\subsubsection{Node to node handshake mini-protocol}
-\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/handshake-node-to-node-v11-12.cddl}
-
-\subsection{CDDL encoding specification ($\geq 13$)}\label{handshake-cddl}
-
-\subsubsection{Node to node handshake mini-protocol}
+\subsubsection{Node-to-node handshake mini-protocol}
 \lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/handshake-node-to-node-v13.cddl}
+
+\subsubsection{Node-to-client handshake mini-protocol}
+\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/handshake-node-to-client.cddl}
 
 \section{Chain-Sync mini-protocol}
 \label{chain-sync-protocol}
