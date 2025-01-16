@@ -110,6 +110,9 @@ data Event (muxMode :: Mux.Mode) initiatorCtx peerAddr versionData m a b
     -- | Transition from 'RemoteIdle' or 'RemoteCold' to 'RemoteEstablished'.
     --
     | AwakeRemote            !(ConnectionId peerAddr)
+                             !(Mux.Mux muxMode m)
+                             !(Map MiniProtocolNum
+                                 (MiniProtocolData muxMode initiatorCtx peerAddr m a b))
 
     -- | Update `igsMatureDuplexPeers` and `igsFreshDuplexPeers`.
     --
@@ -200,7 +203,7 @@ firstPeerPromotedToWarm :: forall muxMode initiatorCtx peerAddr versionData m a 
                         => EventSignal muxMode initiatorCtx peerAddr versionData m a b
 firstPeerPromotedToWarm
     connId
-    ConnectionState { csMux, csRemoteState }
+    ConnectionState { csMux, csRemoteState, csMiniProtocolMap }
     = case csRemoteState of
         -- the connection is already in 'RemoteEstablished' state.
         RemoteEstablished -> mempty
@@ -228,6 +231,18 @@ firstPeerPromotedToWarm
             fn
             (Mux.miniProtocolStateMap csMux)
   where
+
+    -- only estblish mini-protocols;
+    establishedMiniProtocolMap :: (Map MiniProtocolNum
+                                  (MiniProtocolData muxMode initiatorCtx peerAddr m a b))
+    establishedMiniProtocolMap = Map.filter
+           (\MiniProtocolData { mpdMiniProtocolTemp } ->
+                case mpdMiniProtocolTemp of
+                  Established -> True
+                  _           -> False
+           )
+           csMiniProtocolMap
+
     fn :: (MiniProtocolNum, MiniProtocolDir)
        -> STM m MiniProtocolStatus
        -> FirstToFinish (STM m) (Event muxMode initiatorCtx peerAddr versionData m a b)
@@ -240,7 +255,7 @@ firstPeerPromotedToWarm
             miniProtocolStatus >>= \case
               StatusIdle          -> retry
               StatusStartOnDemand -> retry
-              StatusRunning       -> return $ AwakeRemote connId
+              StatusRunning       -> return $ AwakeRemote connId csMux establishedMiniProtocolMap
 
 
 -- | Detect when a first warm peer is promoted to hot (any hot mini-protocols

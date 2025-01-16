@@ -146,6 +146,7 @@ data Trace =
     | TraceStartEagerly MiniProtocolNum MiniProtocolDir
     | TraceStartOnDemand MiniProtocolNum MiniProtocolDir
     | TraceStartedOnDemand MiniProtocolNum MiniProtocolDir
+    | TraceKickStart MiniProtocolNum MiniProtocolDir
     | TraceTerminating MiniProtocolNum MiniProtocolDir
     | TraceStopping
     | TraceStopped
@@ -185,6 +186,7 @@ instance Show Trace where
     show (TraceStartEagerly mid dir) = printf "Eagerly started (%s) in %s" (show mid) (show dir)
     show (TraceStartOnDemand mid dir) = printf "Preparing to start (%s) in %s" (show mid) (show dir)
     show (TraceStartedOnDemand mid dir) = printf "Started on demand (%s) in %s" (show mid) (show dir)
+    show (TraceKickStart mid dir) = printf "Kickstart (%s) in %s" (show mid) (show dir)
     show (TraceTerminating mid dir) = printf "Terminating (%s) in %s" (show mid) (show dir)
     show TraceStopping = "Mux stopping"
     show TraceStopped  = "Mux stoppped"

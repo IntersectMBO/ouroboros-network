@@ -28,6 +28,7 @@ module Network.Mux
   , stop
     -- ** Run a mini-protocol
   , runMiniProtocol
+  , kickstartMiniProtocol
   , StartOnDemandOrEagerly (..)
   , ByteChannel
   , Channel (..)
@@ -331,6 +332,7 @@ data ControlCmd mode m =
        !StartOnDemandOrEagerly
        !(MiniProtocolState mode m)
        !(MiniProtocolAction m)
+   | CmdKickStartProtocolThread MiniProtocolKey
    | CmdShutdown
 
 -- | Strategy how to start a mini-protocol.
@@ -477,6 +479,15 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
                              (protocolDirEnum miniProtocolDir))
           go monitorCtx'
 
+        EventControlCmd (CmdKickStartProtocolThread (num,dir)) ->
+          case Map.lookup (num, dir) mcOnDemandProtocols of
+               Nothing ->
+                 -- This isn't an error, the protocol just started
+                 go monitorCtx
+               Just (ptclState, ptclAction) -> do
+                 traceWith tracer (TraceKickStart num dir)
+                 doStartOnDemand ptclState ptclAction
+
         EventControlCmd CmdShutdown -> do
           traceWith tracer TraceStopping
           atomically $ writeTVar muxStatus Stopping
@@ -497,12 +508,20 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
                              miniProtocolInfo = MiniProtocolInfo {
                                miniProtocolNum,
                                miniProtocolDir
-                             },
-                             miniProtocolStatusVar
-                           }
-                           ptclAction -> do
+                             }
+                           } ptclAction -> do
           traceWith tracer (TraceStartOnDemand miniProtocolNum
                              (protocolDirEnum miniProtocolDir))
+          doStartOnDemand ptclState ptclAction
+
+      where
+        doStartOnDemand :: MiniProtocolState mode m
+                        -> MiniProtocolAction m
+                        -> m ()
+        doStartOnDemand ptclState@MiniProtocolState {
+                             miniProtocolStatusVar
+                           }
+                           ptclAction = do
           atomically $ writeTVar miniProtocolStatusVar StatusRunning
           JobPool.forkJob jobpool $
             miniProtocolJob
@@ -522,14 +541,14 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
       buf <- readTVar q
       check (not (BL.null buf))
 
-    protocolKey :: MiniProtocolState mode m -> MiniProtocolKey
-    protocolKey MiniProtocolState {
-                  miniProtocolInfo = MiniProtocolInfo {
-                    miniProtocolNum,
-                    miniProtocolDir
-                  }
-                } =
-      (miniProtocolNum, protocolDirEnum miniProtocolDir)
+protocolKey :: MiniProtocolState mode m -> MiniProtocolKey
+protocolKey MiniProtocolState {
+              miniProtocolInfo = MiniProtocolInfo {
+                miniProtocolNum,
+                miniProtocolDir
+              }
+            } =
+  (miniProtocolNum, protocolDirEnum miniProtocolDir)
 
 data MonitorEvent mode m =
      EventJobResult  JobResult
@@ -616,6 +635,44 @@ traceBearerState :: Tracer m Trace -> BearerState -> m ()
 traceBearerState tracer state =
     traceWith tracer (TraceState state)
 
+-- | Manually kick start a protocol that was initially setup to start on demand.
+kickstartMiniProtocol :: forall mode m.
+                         ( MonadSTM   m
+                         , MonadThrow m
+                         , MonadThrow (STM m)
+                         )
+                      => Mux mode m
+                      -> MiniProtocolNum
+                      -> MiniProtocolDirection mode
+                      -> m ()
+kickstartMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue , muxStatus}
+                ptclNum ptclDir
+    -- Ensure the mini-protocol is known and get the status var
+  | Just ptclState@MiniProtocolState{miniProtocolStatusVar}
+      <- Map.lookup (ptclNum, ptclDir') muxMiniProtocols
+
+  = atomically $ do
+      st <- readTVar muxStatus
+      case st of
+        Stopping -> throwSTM (Shutdown Nothing st)
+        Stopped  -> throwSTM (Shutdown Nothing st)
+        _        -> return ()
+
+      status <- readTVar miniProtocolStatusVar
+      if status /= StatusStartOnDemand
+         then return ()
+         else do
+           -- Tell the mux control to kickstart the thread
+           writeTQueue muxControlCmdQueue $
+               CmdKickStartProtocolThread
+               (protocolKey ptclState)
+
+    -- It is a programmer error to get the wrong protocol, but this is also
+    -- very easy to avoid.
+  | otherwise
+  = throwIO (UnknownProtocolInternalError ptclNum ptclDir')
+  where
+    ptclDir' = protocolDirEnum ptclDir
 
 --
 -- Starting mini-protocol threads

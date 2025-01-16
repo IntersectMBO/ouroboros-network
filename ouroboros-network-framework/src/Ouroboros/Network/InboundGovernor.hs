@@ -439,7 +439,7 @@ with
         -- Note: the 'AwakeRemote' is detected as soon as mux detects any
         -- traffic.  This means that we'll observe this transition also if the
         -- first message that arrives is terminating a mini-protocol.
-        AwakeRemote connId -> do
+        AwakeRemote connId aMux aProts -> do
           -- notify the connection manager about the transition
           --
           -- NOTE: `promotedToWarmRemote` doesn't throw, hence exception handling
@@ -452,6 +452,12 @@ with
               let state' = unregisterConnection connId state
               return (Just connId, state')
             _ -> do
+
+              -- If mux detected any traffic the established protocols should be running.
+              -- This is done to ensure that one can't for example run TX submission or ChainSync only,
+              -- without KeepAlive.
+              mapM_ (kickStart aMux) aProts
+
               let state' = updateRemoteState
                              connId
                              RemoteWarm
@@ -562,6 +568,31 @@ with
 
       inboundGovernorLoop var state''
 
+
+-- | Manually start a mini-protocol, that was setup as on demand.
+kickStart :: forall (mode :: Mux.Mode) initiatorCtx peerAddr m a b.
+                        ( Alternative (STM m)
+                        , HasResponder mode ~ True
+                        , MonadAsync m
+                        , MonadCatch m
+                        , MonadThrow (STM m)
+                        )
+                     => Mux.Mux mode m
+              -> MiniProtocolData mode initiatorCtx peerAddr m a b
+              -> m ()
+kickStart mux MiniProtocolData {
+                  mpdMiniProtocol     = miniProtocol
+                } =
+    case miniProtocolRun miniProtocol of
+        ResponderProtocolOnly _ ->
+          Mux.kickstartMiniProtocol
+            mux (miniProtocolNum miniProtocol)
+            Mux.ResponderDirectionOnly
+
+        InitiatorAndResponderProtocol _ _ ->
+          Mux.kickstartMiniProtocol
+            mux (miniProtocolNum miniProtocol)
+            Mux.ResponderDirection
 
 -- | Run a responder mini-protocol.
 --
