@@ -26,10 +26,6 @@ a blockchain consumer, such as a wallet.
 
 \section{Protocols as State Machines}
 The implementation of the mini protocols uses a generic framework for state machines.
-\hide{
-The Haskell implementation of the state machine framework is described in
-Section~\ref{Haskell-state-machine}.
-}
 This framework uses correct-by-construction techniques to guarantee
 several properties of each mini-protocol.
 In particular, it guarantees that there are no deadlocks.
@@ -886,9 +882,6 @@ state.  If a timeout is violated, the connection SHOULD be torn down.
 
 \newcommand{\readpointer}{\emph{read-pointer}}
 \subsection{Implementation of the Chain Producer}
-\hide{The trade-offs between the robustness and efficiency of possible chain-sync protocols are
-discussed in Section~\ref{chain-sync-discussion}.
-}
 This section describes a stateful implementation of a chain producer that is suitable for a setting where
 the producer cannot trust the chain consumer.
 An important requirement in this setting
@@ -1933,7 +1926,7 @@ When a client follows the protocol and sends a sequence of \MsgRequestRange{}~me
 (and a final \MsgClientDone~message) and no other message types.
 The server can simply follow the state machine of the protocol and process the messages in turn,
 regardless of whether the client uses pipelining or not.
-The MUX/DEMUX layer (Section~\ref{multiplexing-section}) guarantees
+The MUX/DEMUX layer (Chapter~\ref{chapter:multiplexer}) guarantees
 that messages of the same mini protocol are delivered in transmission order.
 Therefore, the client can determine which response belongs to which request.
 
@@ -1945,9 +1938,6 @@ The protocol requires that a client must never cause an overrun of these buffers
 If a message arrives at the server that would cause the buffer to overrun,
 the server treats this case as a protocol violation of the peer
 (and closes the connection to the peer).
-\hide{
-The buffer sizes are listed in Table~\ref{bla} in Section~\ref{blub}.
-}
 
 \section{Node-to-node protocol}
 \label{section:node-to-node-protocol}
