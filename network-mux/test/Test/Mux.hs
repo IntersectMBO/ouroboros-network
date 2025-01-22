@@ -1390,8 +1390,9 @@ prop_mux_start_mX apps runTime = do
              -> m (Property, Either SomeException ())
     checkRes startStrat minRunTime (get,da) = do
         let totTime = case startStrat of
-                           Mx.StartOnDemand -> daRunTime da + daStartAfter da
-                           Mx.StartEagerly  -> daRunTime da
+                           Mx.StartOnDemand    -> daRunTime da + daStartAfter da
+                           Mx.StartOnDemandAny -> daRunTime da + daStartAfter da
+                           Mx.StartEagerly     -> daRunTime da
         r <- atomically get
         case daAction da of
              DummyAppSucceed ->

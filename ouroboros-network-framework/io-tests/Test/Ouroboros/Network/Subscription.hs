@@ -84,6 +84,7 @@ testProtocols1 chainSync =
     OuroborosApplication [
        MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
+        miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = MiniProtocolLimits {
                                maximumIngressQueue = defaultMiniProtocolLimit
                              },
@@ -100,6 +101,7 @@ testProtocols2 reqResp =
     OuroborosApplication [
        MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 4,
+        miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = MiniProtocolLimits {
                                maximumIngressQueue = defaultMiniProtocolLimit
                              },

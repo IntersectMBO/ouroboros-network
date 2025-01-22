@@ -302,6 +302,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
           [ let miniProtocolNum = Mux.MiniProtocolNum 1
             in MiniProtocol {
                 miniProtocolNum,
+                miniProtocolStart  = StartOnDemand,
                 miniProtocolLimits = Mux.MiniProtocolLimits maxBound,
                 miniProtocolRun =
                   reqRespInitiatorAndResponder
@@ -313,6 +314,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
           [ let miniProtocolNum = Mux.MiniProtocolNum 2
             in MiniProtocol {
                 miniProtocolNum,
+                miniProtocolStart  = StartOnDemand,
                 miniProtocolLimits = Mux.MiniProtocolLimits maxBound,
                 miniProtocolRun =
                   reqRespInitiatorAndResponder
@@ -324,6 +326,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
           [ let miniProtocolNum = Mux.MiniProtocolNum 3
             in MiniProtocol {
                 miniProtocolNum,
+                miniProtocolStart  = StartOnDemandAny,
                 miniProtocolLimits = Mux.MiniProtocolLimits maxBound,
                 miniProtocolRun =
                   reqRespInitiatorAndResponder

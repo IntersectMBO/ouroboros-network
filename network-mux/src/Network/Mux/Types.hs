@@ -190,6 +190,7 @@ data MiniProtocolState mode m = MiniProtocolState {
      }
 
 data MiniProtocolStatus = StatusIdle | StatusStartOnDemand | StatusRunning
+                        | StatusStartOnDemandAny
   deriving (Eq, Show)
 
 data SDUHeader = SDUHeader {

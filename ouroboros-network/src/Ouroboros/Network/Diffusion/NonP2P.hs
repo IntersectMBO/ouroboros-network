@@ -141,6 +141,7 @@ mkResponderApp bundle =
                    } =
       MiniProtocol { miniProtocolNum
                    , miniProtocolLimits
+                   , miniProtocolStart  = StartEagerly
                    , miniProtocolRun = ResponderProtocolOnly responder
                    }
 

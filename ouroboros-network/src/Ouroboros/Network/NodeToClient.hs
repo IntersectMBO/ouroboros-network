@@ -183,21 +183,25 @@ nodeToClientProtocols protocols _version =
   where
     localChainSyncMiniProtocol localChainSyncProtocol = MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 5,
+        miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = maximumMiniProtocolLimits,
         miniProtocolRun    = localChainSyncProtocol
       }
     localTxSubmissionMiniProtocol localTxSubmissionProtocol = MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 6,
+        miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = maximumMiniProtocolLimits,
         miniProtocolRun    = localTxSubmissionProtocol
       }
     localStateQueryMiniProtocol localStateQueryProtocol = MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 7,
+        miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = maximumMiniProtocolLimits,
         miniProtocolRun    = localStateQueryProtocol
       }
     localTxMonitorMiniProtocol localTxMonitorProtocol = MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 9,
+        miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = maximumMiniProtocolLimits,
         miniProtocolRun    = localTxMonitorProtocol
     }
