@@ -291,6 +291,7 @@ applications debugTracer nodeKernel
                        , miniProtocolLimits
                        , miniProtocolRun } =
           MiniProtocol { miniProtocolNum
+                       , miniProtocolStart = StartEagerly
                        , miniProtocolLimits
                        , miniProtocolRun =
                           case miniProtocolRun of
@@ -304,6 +305,7 @@ applications debugTracer nodeKernel
       { withHot = WithHot
           [ MiniProtocol
               { miniProtocolNum    = chainSyncMiniProtocolNum
+              , miniProtocolStart  = StartOnDemand
               , miniProtocolLimits = chainSyncLimits limits
               , miniProtocolRun    =
                   InitiatorAndResponderProtocol
@@ -312,6 +314,7 @@ applications debugTracer nodeKernel
               }
           , MiniProtocol
               { miniProtocolNum    = blockFetchMiniProtocolNum
+              , miniProtocolStart  = StartOnDemand
               , miniProtocolLimits = blockFetchLimits limits
               , miniProtocolRun    =
                   InitiatorAndResponderProtocol
@@ -322,6 +325,7 @@ applications debugTracer nodeKernel
       , withWarm = WithWarm
           [ MiniProtocol
               { miniProtocolNum    = MiniProtocolNum 9
+              , miniProtocolStart  = StartOnDemand
               , miniProtocolLimits = pingPongLimits limits
               , miniProtocolRun    =
                   InitiatorAndResponderProtocol
@@ -332,6 +336,7 @@ applications debugTracer nodeKernel
       , withEstablished = WithEstablished $
           [ MiniProtocol
               { miniProtocolNum    = keepAliveMiniProtocolNum
+              , miniProtocolStart  = StartOnDemandAny
               , miniProtocolLimits = keepAliveLimits limits
               , miniProtocolRun    =
                   InitiatorAndResponderProtocol
@@ -341,6 +346,7 @@ applications debugTracer nodeKernel
           ] ++ if aaOwnPeerSharing /= PSTypes.PeerSharingDisabled
                   then [ MiniProtocol
                           { miniProtocolNum    = peerSharingMiniProtocolNum
+                          , miniProtocolStart  = StartOnDemand
                           , miniProtocolLimits = peerSharingLimits limits
                           , miniProtocolRun    =
                               InitiatorAndResponderProtocol

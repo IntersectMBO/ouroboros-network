@@ -52,6 +52,7 @@ module Ouroboros.Network.Mux
     -- | from "Network.Mux"
   , Mux.HasInitiator
   , Mux.HasResponder
+  , Mux.StartOnDemandOrEagerly (..)
   ) where
 
 import Control.Monad.Class.MonadAsync
@@ -234,6 +235,7 @@ type OuroborosBundleWithMinimalCtx (mode :: Mux.Mode) peerAddr bytes m a b =
 data MiniProtocol (mode :: Mux.Mode) initiatorCtx responderCtx bytes m a b =
      MiniProtocol {
        miniProtocolNum    :: !MiniProtocolNum,
+       miniProtocolStart  :: !Mux.StartOnDemandOrEagerly,
        miniProtocolLimits :: !MiniProtocolLimits,
        miniProtocolRun    :: !(RunMiniProtocol mode initiatorCtx responderCtx bytes m a b)
      }

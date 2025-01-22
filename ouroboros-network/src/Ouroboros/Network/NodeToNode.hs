@@ -257,16 +257,19 @@ nodeToNodeProtocols miniProtocolParameters protocols _version ownPeerSharing =
                               } ->
             [ MiniProtocol {
                 miniProtocolNum    = chainSyncMiniProtocolNum,
+                miniProtocolStart  = StartOnDemand,
                 miniProtocolLimits = chainSyncProtocolLimits miniProtocolParameters,
                 miniProtocolRun    = chainSyncProtocol
               }
             , MiniProtocol {
                 miniProtocolNum    = blockFetchMiniProtocolNum,
+                miniProtocolStart  = StartOnDemand,
                 miniProtocolLimits = blockFetchProtocolLimits miniProtocolParameters,
                 miniProtocolRun    = blockFetchProtocol
               }
             , MiniProtocol {
                 miniProtocolNum    = txSubmissionMiniProtocolNum,
+                miniProtocolStart  = StartOnDemand,
                 miniProtocolLimits = txSubmissionProtocolLimits miniProtocolParameters,
                 miniProtocolRun    = txSubmissionProtocol
               }
@@ -282,11 +285,13 @@ nodeToNodeProtocols miniProtocolParameters protocols _version ownPeerSharing =
             | ownPeerSharing /= PeerSharingDisabled ->
             [ MiniProtocol {
                 miniProtocolNum    = keepAliveMiniProtocolNum,
+                miniProtocolStart  = StartOnDemandAny,
                 miniProtocolLimits = keepAliveProtocolLimits miniProtocolParameters,
                 miniProtocolRun    = keepAliveProtocol
               }
             , MiniProtocol {
                 miniProtocolNum    = peerSharingMiniProtocolNum,
+                miniProtocolStart  = StartOnDemand,
                 miniProtocolLimits = peerSharingProtocolLimits miniProtocolParameters,
                 miniProtocolRun    = peerSharingProtocol
               }
@@ -295,6 +300,7 @@ nodeToNodeProtocols miniProtocolParameters protocols _version ownPeerSharing =
             | otherwise ->
             [ MiniProtocol {
                 miniProtocolNum    = keepAliveMiniProtocolNum,
+                miniProtocolStart  = StartOnDemandAny,
                 miniProtocolLimits = keepAliveProtocolLimits miniProtocolParameters,
                 miniProtocolRun    = keepAliveProtocol
               }

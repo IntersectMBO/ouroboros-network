@@ -221,6 +221,7 @@ demoProtocol2 chainSync =
     OuroborosApplication [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
+        miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = maximumMiniProtocolLimits,
         miniProtocolRun    = chainSync
       }
@@ -329,11 +330,13 @@ demoProtocol3 chainSync blockFetch =
     OuroborosApplication [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
+        miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = maximumMiniProtocolLimits,
         miniProtocolRun    = chainSync
       }
     , MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 3,
+        miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = maximumMiniProtocolLimits,
         miniProtocolRun    = blockFetch
       }

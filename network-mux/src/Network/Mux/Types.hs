@@ -189,7 +189,10 @@ data MiniProtocolState mode m = MiniProtocolState {
        miniProtocolStatusVar    :: StrictTVar m MiniProtocolStatus
      }
 
-data MiniProtocolStatus = StatusIdle | StatusStartOnDemand | StatusRunning
+data MiniProtocolStatus = StatusIdle
+                        | StatusStartOnDemand
+                        | StatusRunning
+                        | StatusStartOnDemandAny
   deriving (Eq, Show)
 
 data SDUHeader = SDUHeader {

@@ -118,6 +118,7 @@ testProtocols2 reqResp =
     OuroborosApplication [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 4,
+        miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = MiniProtocolLimits {
                                maximumIngressQueue = defaultMiniProtocolLimit
                              },
