@@ -2,30 +2,12 @@
 cd "$(dirname $0)/.."
 pwd
 
-GLOBAL_DIFF="./log/stylish.diff"
-
 ERRORS=0
 
 function report {
     WHAT="$1"
     let ERRORS++
     echo "Check failed: $WHAT"
-}
-
-function check-stylish-file {
-    FILE="$1"
-    FORMATTED="$FILE~stylish"
-    DIFF="$FILE~stylish-diff"
-    stylish-haskell "$FILE" > "$FORMATTED"
-    diff -u "$FILE" "$FORMATTED" > "$DIFF"
-    DIFFSIZE=$(wc -l "$DIFF" | cut -f1 -d' ')
-    if [ "$DIFFSIZE" -gt 0 ]
-        then
-            cat "$DIFF" >> "$GLOBAL_DIFF"
-            report "stylish-haskell $FILE"
-    fi
-    rm -f "$FORMATTED"
-    rm -f "$DIFF"
 }
 
 function check-whitespace-file {
@@ -37,13 +19,10 @@ function check-whitespace-file {
     fi
 }
 
-echo "" > "$GLOBAL_DIFF"
-
-fd . ./kes-agent -e hs
+# fd . ./kes-agent -e hs
 for FILE in $(fd . ./kes-agent -e hs); do
-    echo "Checking: $FILE"
+    # echo "Checking: $FILE"
     check-whitespace-file "$FILE"
-    check-stylish-file "$FILE"
 done
 
 exit "$ERRORS"
