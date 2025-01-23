@@ -1,5 +1,3 @@
-{-# OPTIONS_GHC -Wno-deprecations #-}
-
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -18,9 +16,10 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -Wno-deprecations #-}
 
 module Cardano.KESAgent.Protocols.Control.V1.Driver
-  where
+where
 
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
@@ -38,46 +37,54 @@ import Cardano.Binary
 import Cardano.Crypto.DSIGN.Class
 import Cardano.Crypto.DirectSerialise
 import Cardano.Crypto.KES.Class
-import Cardano.Crypto.Libsodium.Memory
-  ( allocaBytes
-  , copyMem
-  , packByteStringCStringLen
-  , unpackByteStringCStringLen
-  )
+import Cardano.Crypto.Libsodium.Memory (
+  allocaBytes,
+  copyMem,
+  packByteStringCStringLen,
+  unpackByteStringCStringLen,
+ )
 
 import Ouroboros.Network.RawBearer
 
 import Control.Concurrent.Class.MonadMVar
-import Control.Monad ( void, when, replicateM )
+import Control.Monad (replicateM, void, when)
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadSTM
-import Control.Monad.Class.MonadThrow ( MonadThrow, bracket )
-import Control.Monad.Extra ( whenJust )
+import Control.Monad.Class.MonadThrow (MonadThrow, bracket)
+import Control.Monad.Extra (whenJust)
 import Control.Monad.Trans (lift)
-import Control.Tracer ( Tracer, traceWith )
-import Data.Binary ( decode, encode )
-import Data.Bits ( (.|.), (.&.) )
-import Data.ByteString ( ByteString )
+import Control.Tracer (Tracer, traceWith)
+import Data.Binary (decode, encode)
+import Data.Bits ((.&.), (.|.))
+import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 import Data.Coerce
-import Data.Functor.Contravariant ( (>$<) )
+import Data.Functor.Contravariant ((>$<))
 import Data.Kind (Type)
-import Data.Maybe ( isJust )
+import Data.Maybe (isJust)
 import Data.Proxy
-import Data.SerDoc.Class ( ViaEnum (..), Codec (..), HasInfo (..), Serializable (..), encodeEnum, decodeEnum, enumInfo )
-import qualified Data.SerDoc.Info
-import Data.SerDoc.Info ( Description (..), aliasField )
+import Data.SerDoc.Class (
+  Codec (..),
+  HasInfo (..),
+  Serializable (..),
+  ViaEnum (..),
+  decodeEnum,
+  encodeEnum,
+  enumInfo,
+ )
+import Data.SerDoc.Info (Description (..), aliasField)
+import Data.SerDoc.Info qualified
 import Data.SerDoc.TH (deriveSerDoc)
-import qualified Data.Text as Text
+import Data.Text qualified as Text
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Time (UTCTime)
 import Data.Typeable
 import Data.Word
-import Foreign ( Ptr, castPtr, plusPtr )
-import Foreign.C.Types ( CChar, CSize )
-import Foreign.Marshal.Alloc ( free, mallocBytes )
-import Foreign.Marshal.Utils ( copyBytes )
+import Foreign (Ptr, castPtr, plusPtr)
+import Foreign.C.Types (CChar, CSize)
+import Foreign.Marshal.Alloc (free, mallocBytes)
+import Foreign.Marshal.Utils (copyBytes)
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Driver
 import Text.Printf
@@ -95,75 +102,81 @@ flagWhen False _ = 0
 
 whenFlag :: Applicative m => Word8 -> Word8 -> m a -> m (Maybe a)
 whenFlag flag flags action =
-  if (flags .&. flag) == flag then
-    Just <$> action
-  else
-    pure Nothing
-
+  if (flags .&. flag) == flag
+    then
+      Just <$> action
+    else
+      pure Nothing
 
 instance
   ( Codec codec
   , HasInfo codec Word8
   , HasInfo codec (DefEnumEncoding codec)
-  ) => HasInfo codec ConnectionStatus where
-    info codec _ = enumInfo codec (Proxy @ConnectionStatus) (Proxy @Word8)
+  ) =>
+  HasInfo codec ConnectionStatus
+  where
+  info codec _ = enumInfo codec (Proxy @ConnectionStatus) (Proxy @Word8)
 
 instance
   ( Codec codec
   , Serializable codec Word8
   , Monad (MonadEncode codec)
   , Monad (MonadDecode codec)
-  ) => Serializable codec ConnectionStatus where
-      encode codec = encodeEnum codec (Proxy @Word8)
-      decode codec = decodeEnum codec (Proxy @Word8)
+  ) =>
+  Serializable codec ConnectionStatus
+  where
+  encode codec = encodeEnum codec (Proxy @Word8)
+  decode codec = decodeEnum codec (Proxy @Word8)
 
-deriving newtype instance (Codec codec, HasInfo codec (VerKeyKES (KES StandardCrypto))) => HasInfo codec KeyInfo
+deriving newtype instance
+  (Codec codec, HasInfo codec (VerKeyKES (KES StandardCrypto))) => HasInfo codec KeyInfo
 
 instance
   ( Codec codec
   , Monad (MonadEncode codec)
   , Monad (MonadDecode codec)
   , Serializable codec (VerKeyKES (KES StandardCrypto))
-  )
-  => Serializable codec KeyInfo where
-        encode codec (KeyInfo k) = Data.SerDoc.Class.encode codec k
-        decode codec = KeyInfo <$> Data.SerDoc.Class.decode codec
+  ) =>
+  Serializable codec KeyInfo
+  where
+  encode codec (KeyInfo k) = Data.SerDoc.Class.encode codec k
+  decode codec = KeyInfo <$> Data.SerDoc.Class.decode codec
 
 $(deriveSerDoc ''DirectCodec [] ''BootstrapInfo)
 $(deriveSerDoc ''DirectCodec [] ''BundleInfo)
 $(deriveSerDoc ''DirectCodec [] ''AgentInfo)
 
-controlDriver :: forall (m :: Type -> Type) f t p pr
-               . VersionedProtocol (ControlProtocol m)
-              => HasInfo (DirectCodec m) (VerKeyKES (KES StandardCrypto))
-              => HasInfo (DirectCodec m) AgentInfo
-              => Serializable (DirectCodec m) AgentInfo
-              => MonadThrow m
-              => MonadSTM m
-              => MonadMVar m
-              => MonadFail m
-              => MonadST m
-              => RawBearer m
-              -> Tracer m ControlDriverTrace
-              -> Driver (ControlProtocol m) pr () m
+controlDriver ::
+  forall (m :: Type -> Type) f t p pr.
+  VersionedProtocol (ControlProtocol m) =>
+  HasInfo (DirectCodec m) (VerKeyKES (KES StandardCrypto)) =>
+  HasInfo (DirectCodec m) AgentInfo =>
+  Serializable (DirectCodec m) AgentInfo =>
+  MonadThrow m =>
+  MonadSTM m =>
+  MonadMVar m =>
+  MonadFail m =>
+  MonadST m =>
+  RawBearer m ->
+  Tracer m ControlDriverTrace ->
+  Driver (ControlProtocol m) pr () m
 controlDriver s tracer =
-  Driver { sendMessage, recvMessage, initialDState = () }
+  Driver {sendMessage, recvMessage, initialDState = ()}
   where
-
-    sendMessage :: forall (st :: ControlProtocol m) (st' :: ControlProtocol m)
-                 . ( StateTokenI st
-                   , ActiveState st
-                   )
-                => ReflRelativeAgency (StateAgency st) WeHaveAgency (Relative pr (StateAgency st))
-                -> Message (ControlProtocol m) st st'
-                -> m ()
+    sendMessage ::
+      forall (st :: ControlProtocol m) (st' :: ControlProtocol m).
+      ( StateTokenI st
+      , ActiveState st
+      ) =>
+      ReflRelativeAgency (StateAgency st) WeHaveAgency (Relative pr (StateAgency st)) ->
+      Message (ControlProtocol m) st st' ->
+      m ()
     sendMessage _ msg = case (stateToken @st, msg) of
       (SInitialState, VersionMessage) -> do
         let VersionIdentifier v = versionIdentifier (Proxy @(ControlProtocol m))
         sendVersion (Proxy @(ControlProtocol m)) s (ControlDriverSendingVersionID >$< tracer)
       (_, AbortMessage) ->
         return ()
-
       (SIdleState, GenStagedKeyMessage) -> do
         sendItem s GenStagedKeyCmd
       (SIdleState, QueryStagedKeyMessage) -> do
@@ -172,40 +185,36 @@ controlDriver s tracer =
         sendItem s DropStagedKeyCmd
       (SIdleState, RequestInfoMessage) -> do
         sendItem s RequestInfoCmd
-
       (SIdleState, InstallKeyMessage oc) -> do
         sendItem s InstallKeyCmd
         sendItem s oc
-
       (SIdleState, EndMessage) -> do
         return ()
-
       (_, ProtocolErrorMessage) -> do
         return ()
-
       (SWaitForPublicKeyState, PublicKeyMessage vkeyMay) -> do
         case vkeyMay of
           Nothing -> traceWith tracer ControlDriverNoPublicKeyToReturn
           Just _ -> traceWith tracer ControlDriverReturningPublicKey
         sendItem s vkeyMay
-
       (SWaitForConfirmationState, InstallResultMessage reason) -> do
-        if reason == RecvOK then
-          traceWith tracer ControlDriverConfirmingKey
-        else
-          traceWith tracer ControlDriverDecliningKey
+        if reason == RecvOK
+          then
+            traceWith tracer ControlDriverConfirmingKey
+          else
+            traceWith tracer ControlDriverDecliningKey
         sendItem s reason
-
       (SWaitForInfoState, InfoMessage info) -> do
         sendItem s info
 
-    recvMessage :: forall (st :: ControlProtocol m)
-                 . ( StateTokenI st
-                   , ActiveState st
-                   )
-                => ReflRelativeAgency (StateAgency st) TheyHaveAgency (Relative pr (StateAgency st))
-                -> ()
-                -> m (SomeMessage st, ())
+    recvMessage ::
+      forall (st :: ControlProtocol m).
+      ( StateTokenI st
+      , ActiveState st
+      ) =>
+      ReflRelativeAgency (StateAgency st) TheyHaveAgency (Relative pr (StateAgency st)) ->
+      () ->
+      m (SomeMessage st, ())
     recvMessage = \agency () -> case stateToken @st of
       SInitialState -> do
         traceWith tracer ControlDriverReceivingVersionID
@@ -216,7 +225,6 @@ controlDriver s tracer =
           err -> do
             traceWith tracer $ readErrorToControlDriverTrace err
             return (SomeMessage AbortMessage, ())
-
       SIdleState -> do
         result <- runReadResultT $ do
           lift $ traceWith tracer ControlDriverReceivingCommand
@@ -240,18 +248,18 @@ controlDriver s tracer =
           err -> do
             traceWith tracer $ readErrorToControlDriverTrace err
             return (SomeMessage EndMessage, ())
-
-
       SWaitForPublicKeyState -> do
         result <- runReadResultT $ do
           lift $ traceWith tracer ControlDriverReceivingKey
           vkMay <- receiveItem s
-          lift $ traceWith tracer
-            (maybe
-              ControlDriverNoPublicKeyToReturn
-              (ControlDriverReceivedKey . rawSerialiseVerKeyKES)
-              vkMay
-            )
+          lift $
+            traceWith
+              tracer
+              ( maybe
+                  ControlDriverNoPublicKeyToReturn
+                  (ControlDriverReceivedKey . rawSerialiseVerKeyKES)
+                  vkMay
+              )
           return (SomeMessage (PublicKeyMessage vkMay), ())
         case result of
           ReadOK msg ->
@@ -259,7 +267,6 @@ controlDriver s tracer =
           err -> do
             traceWith tracer $ readErrorToControlDriverTrace err
             return (SomeMessage ProtocolErrorMessage, ())
-
       SWaitForConfirmationState -> do
         result <- runReadResultT $ receiveItem s
         case result of
@@ -268,7 +275,6 @@ controlDriver s tracer =
           err -> do
             traceWith tracer $ readErrorToControlDriverTrace err
             return (SomeMessage ProtocolErrorMessage, ())
-
       SWaitForInfoState -> do
         result <- runReadResultT $ receiveItem s
         case result of
@@ -277,7 +283,6 @@ controlDriver s tracer =
           err -> do
             traceWith tracer $ readErrorToControlDriverTrace err
             return (SomeMessage ProtocolErrorMessage, ())
-
       SEndState -> error "This cannot happen"
 
 readErrorToControlDriverTrace :: ReadResult a -> ControlDriverTrace
@@ -290,62 +295,85 @@ readErrorToControlDriverTrace (ReadMalformed what) =
 readErrorToControlDriverTrace (ReadVersionMismatch expected actual) =
   ControlDriverInvalidVersion expected actual
 
-
 instance HasInfo (DirectCodec m) (Message (ControlProtocol m) InitialState IdleState) where
-  info codec _ = aliasField
-            ("Message<" ++
-              (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier) ++
-              ",InitialState,IdleState" ++
-              ">")
-            (info codec (Proxy @VersionIdentifier))
+  info codec _ =
+    aliasField
+      ( "Message<"
+          ++ (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier)
+          ++ ",InitialState,IdleState"
+          ++ ">"
+      )
+      (info codec (Proxy @VersionIdentifier))
 instance HasInfo (DirectCodec m) (Message (ControlProtocol m) IdleState WaitForPublicKeyState) where
-  info codec _ = aliasField
-            ("Message<" ++
-              (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier) ++
-              ",IdleState,WaitForPublicKeyState" ++
-              ">")
-            (info codec (Proxy @Command))
+  info codec _ =
+    aliasField
+      ( "Message<"
+          ++ (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier)
+          ++ ",IdleState,WaitForPublicKeyState"
+          ++ ">"
+      )
+      (info codec (Proxy @Command))
 
-instance (HasInfo (DirectCodec m) (VerKeyKES (KES StandardCrypto))) => HasInfo (DirectCodec m) (Message (ControlProtocol m) WaitForPublicKeyState IdleState) where
-  info codec _ = aliasField
-            ("Message<" ++
-              (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier) ++
-              ",WaitForPublicKeyState,IdleState" ++
-              ">")
-            (info codec (Proxy @(Maybe (VerKeyKES (KES StandardCrypto)))))
-instance (HasInfo (DirectCodec m) (VerKeyKES (KES StandardCrypto))) => HasInfo (DirectCodec m) (Message (ControlProtocol m) IdleState WaitForConfirmationState) where
-  info codec _ = aliasField
-            ("Message<" ++
-              (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier) ++
-              ",IdleState,WaitForConfirmationState" ++
-              ">")
-            (info codec (Proxy @(OCert StandardCrypto)))
+instance
+  HasInfo (DirectCodec m) (VerKeyKES (KES StandardCrypto)) =>
+  HasInfo (DirectCodec m) (Message (ControlProtocol m) WaitForPublicKeyState IdleState)
+  where
+  info codec _ =
+    aliasField
+      ( "Message<"
+          ++ (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier)
+          ++ ",WaitForPublicKeyState,IdleState"
+          ++ ">"
+      )
+      (info codec (Proxy @(Maybe (VerKeyKES (KES StandardCrypto)))))
+instance
+  HasInfo (DirectCodec m) (VerKeyKES (KES StandardCrypto)) =>
+  HasInfo (DirectCodec m) (Message (ControlProtocol m) IdleState WaitForConfirmationState)
+  where
+  info codec _ =
+    aliasField
+      ( "Message<"
+          ++ (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier)
+          ++ ",IdleState,WaitForConfirmationState"
+          ++ ">"
+      )
+      (info codec (Proxy @(OCert StandardCrypto)))
 instance HasInfo (DirectCodec m) (Message (ControlProtocol m) WaitForConfirmationState IdleState) where
-  info codec _ = aliasField
-            ("Message<" ++
-              (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier) ++
-              ",WaitForConfirmationState,IdleState" ++
-              ">")
-            (info codec (Proxy @RecvResult))
+  info codec _ =
+    aliasField
+      ( "Message<"
+          ++ (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier)
+          ++ ",WaitForConfirmationState,IdleState"
+          ++ ">"
+      )
+      (info codec (Proxy @RecvResult))
 instance HasInfo (DirectCodec m) (Message (ControlProtocol m) IdleState WaitForInfoState) where
-  info codec _ = aliasField
-            ("Message<" ++
-              (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier) ++
-              ",IdleState,WaitForInfoState" ++
-              ">")
-            (info codec (Proxy @()))
-instance ( HasInfo (DirectCodec m) (VerKeyKES (KES StandardCrypto))
-         ) => HasInfo (DirectCodec m) (Message (ControlProtocol m) WaitForInfoState IdleState) where
-  info codec _ = aliasField
-            ("Message<" ++
-              (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier) ++
-              ",WaitForInfoState,IdleState" ++
-              ">")
-            (info codec (Proxy @AgentInfo))
+  info codec _ =
+    aliasField
+      ( "Message<"
+          ++ (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier)
+          ++ ",IdleState,WaitForInfoState"
+          ++ ">"
+      )
+      (info codec (Proxy @()))
+instance
+  HasInfo (DirectCodec m) (VerKeyKES (KES StandardCrypto)) =>
+  HasInfo (DirectCodec m) (Message (ControlProtocol m) WaitForInfoState IdleState)
+  where
+  info codec _ =
+    aliasField
+      ( "Message<"
+          ++ (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier)
+          ++ ",WaitForInfoState,IdleState"
+          ++ ">"
+      )
+      (info codec (Proxy @AgentInfo))
 instance HasInfo (DirectCodec m) (Message (ControlProtocol m) _st EndState) where
-  info codec _ = aliasField
-            ("Message<" ++
-              (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier) ++
-              ",st,EndState" ++
-              ">")
-            (info codec (Proxy @()))
+  info codec _ =
+    aliasField
+      ( "Message<"
+          ++ (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier)
+          ++ ",st,EndState"
+          ++ ">"
+      )
+      (info codec (Proxy @()))

@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -9,29 +10,28 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE NoStarIsType #-}
 
-module Cardano.KESAgent.Serialization.Spec
-( module Cardano.KESAgent.Serialization.Spec
-, module Cardano.KESAgent.Serialization.Spec.Types
-, module Cardano.KESAgent.Serialization.Spec.Class
-, module Cardano.KESAgent.Serialization.Spec.OrphansBase
-, module Cardano.KESAgent.Serialization.Spec.OrphansCardano
-, module Cardano.KESAgent.Serialization.Spec.TH
-, Proxy (..)
-, StandardCrypto
+module Cardano.KESAgent.Serialization.Spec (
+  module Cardano.KESAgent.Serialization.Spec,
+  module Cardano.KESAgent.Serialization.Spec.Types,
+  module Cardano.KESAgent.Serialization.Spec.Class,
+  module Cardano.KESAgent.Serialization.Spec.OrphansBase,
+  module Cardano.KESAgent.Serialization.Spec.OrphansCardano,
+  module Cardano.KESAgent.Serialization.Spec.TH,
+  Proxy (..),
+  StandardCrypto,
 )
 where
 
 import Cardano.KESAgent.Protocols.StandardCrypto
-import Cardano.KESAgent.Serialization.Spec.Types
 import Cardano.KESAgent.Serialization.Spec.Class
 import Cardano.KESAgent.Serialization.Spec.OrphansBase
 import Cardano.KESAgent.Serialization.Spec.OrphansCardano
 import Cardano.KESAgent.Serialization.Spec.TH
+import Cardano.KESAgent.Serialization.Spec.Types
 
-import Control.Monad ( zipWithM_ )
+import Control.Monad (zipWithM_)
 import Data.Proxy
 import Text.Printf
 
@@ -75,22 +75,18 @@ printSpec =
       case field of
         AliasField afi -> do
           goFieldContents indent (aliasFieldTarget afi)
-
         CompoundField cfi -> do
           mapM_ (printSubfield $ succ indent) (compoundFieldSubfields cfi)
-
         ListField lfi -> do
           printIndent indent
           putStrLn $ "#ELEMS: " ++ formatFieldSize (listSize lfi)
           printIndent indent
           putStrLn $ "ELEM TYPE:"
           goField (succ indent) (listElemInfo lfi)
-
         ChoiceField cfi -> do
           printIndent indent
           putStrLn $ "CHOOSE BY: " ++ formatChoiceCondition (choiceCondition cfi)
-          zipWithM_ (printChoice $ succ indent) [0,1..] (choiceFieldAlternatives cfi)
-
+          zipWithM_ (printChoice $ succ indent) [0, 1 ..] (choiceFieldAlternatives cfi)
         _ ->
           return ()
 

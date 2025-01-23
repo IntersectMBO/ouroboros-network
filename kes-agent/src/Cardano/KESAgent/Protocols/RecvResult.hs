@@ -3,8 +3,12 @@ where
 
 data RecvResult
   = RecvOK
-  | RecvErrorKeyOutdated -- ^ Newer key is already present
-  | RecvErrorInvalidOpCert -- ^ OpCert did not validate
-  | RecvErrorNoKey -- ^ No key exists that could be used
-  | RecvErrorUnknown -- ^ Something else went wrong, we don't know what
+  | -- | Newer key is already present
+    RecvErrorKeyOutdated
+  | -- | OpCert did not validate
+    RecvErrorInvalidOpCert
+  | -- | No key exists that could be used
+    RecvErrorNoKey
+  | -- | Something else went wrong, we don't know what
+    RecvErrorUnknown
   deriving (Show, Read, Eq, Ord, Bounded, Enum)

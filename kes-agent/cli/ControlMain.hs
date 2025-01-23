@@ -1,11 +1,11 @@
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE GADTs #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Main
 where
@@ -13,54 +13,54 @@ where
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
 import Cardano.KESAgent.Processes.ControlClient
+import Cardano.KESAgent.Protocols.AgentInfo
 import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Protocols.Types
-import Cardano.KESAgent.Protocols.AgentInfo
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Serialization.CBOR
-import Cardano.KESAgent.Serialization.TextEnvelope
 import Cardano.KESAgent.Serialization.DirectCodec
+import Cardano.KESAgent.Serialization.TextEnvelope
 import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting
 
 import Cardano.Crypto.DSIGN.Class
 import Cardano.Crypto.KES.Class
 import Cardano.Crypto.Libsodium (sodiumInit)
-import Cardano.Crypto.Libsodium.MLockedSeed (mlockedSeedNewRandom, mlockedSeedFinalize)
+import Cardano.Crypto.Libsodium.MLockedSeed (mlockedSeedFinalize, mlockedSeedNewRandom)
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket
 
-import Control.Monad ( (>=>), when, unless, forM_ )
-import Control.Monad.Class.MonadThrow (bracket, throwIO, catch, SomeException)
-import Control.Monad.Extra ( whenJust )
+import Control.Monad (forM_, unless, when, (>=>))
+import Control.Monad.Class.MonadThrow (SomeException, bracket, catch, throwIO)
+import Control.Monad.Extra (whenJust)
 import Control.Tracer
 import qualified Data.Aeson as JSON
 import qualified Data.ByteString as BS
+import Data.Coerce
 import Data.Maybe (fromMaybe)
 import Data.Proxy
+import Data.SerDoc.Class (HasInfo, Serializable)
 import qualified Data.Text.IO as Text
 import Network.Socket
 import Options.Applicative
 import System.Environment
 import System.Exit
-import System.IO (hPutStrLn, stdout, stderr, hFlush)
+import System.IO (hFlush, hPutStrLn, stderr, stdout)
 import System.IOManager
 import System.Posix.Syslog.Priority as Syslog
 import Text.Printf
 import Text.Read (readMaybe)
-import Data.SerDoc.Class (HasInfo, Serializable)
-import Data.Coerce
 
-data CommonOptions =
-  CommonOptions
-    { optControlPath :: Maybe String
-    , optVerbosity :: Maybe Int
-    , optRetryDelay :: Maybe Int
-    , optRetryExponential :: Maybe Bool
-    , optRetryAttempts :: Maybe Int
-    }
-    deriving (Show, Eq)
+data CommonOptions
+  = CommonOptions
+  { optControlPath :: Maybe String
+  , optVerbosity :: Maybe Int
+  , optRetryDelay :: Maybe Int
+  , optRetryExponential :: Maybe Bool
+  , optRetryAttempts :: Maybe Int
+  }
+  deriving (Show, Eq)
 
 instance Semigroup CommonOptions where
   CommonOptions p1 v1 ri1 re1 ra1 <> CommonOptions p2 v2 ri2 re2 ra2 =
@@ -94,12 +94,12 @@ optFromEnv = do
       , optRetryExponential = Nothing
       }
 
-data GenKeyOptions =
-  GenKeyOptions
-    { gkoCommon :: CommonOptions
-    , gkoKESVerificationKeyFile :: Maybe FilePath
-    }
-    deriving (Show, Eq)
+data GenKeyOptions
+  = GenKeyOptions
+  { gkoCommon :: CommonOptions
+  , gkoKESVerificationKeyFile :: Maybe FilePath
+  }
+  deriving (Show, Eq)
 
 instance Semigroup GenKeyOptions where
   GenKeyOptions c1 vk1 <> GenKeyOptions c2 vk2 =
@@ -114,16 +114,17 @@ defGenKeyOptions :: GenKeyOptions =
 gkoFromEnv :: IO GenKeyOptions
 gkoFromEnv = do
   common <- optFromEnv
-  return defGenKeyOptions
-    { gkoCommon = common
-    }
+  return
+    defGenKeyOptions
+      { gkoCommon = common
+      }
 
-data QueryKeyOptions =
-  QueryKeyOptions
-    { qkoCommon :: CommonOptions
-    , qkoKESVerificationKeyFile :: Maybe FilePath
-    }
-    deriving (Show, Eq)
+data QueryKeyOptions
+  = QueryKeyOptions
+  { qkoCommon :: CommonOptions
+  , qkoKESVerificationKeyFile :: Maybe FilePath
+  }
+  deriving (Show, Eq)
 
 instance Semigroup QueryKeyOptions where
   QueryKeyOptions c1 vk1 <> QueryKeyOptions c2 vk2 =
@@ -138,15 +139,16 @@ defQueryKeyOptions :: QueryKeyOptions =
 qkoFromEnv :: IO QueryKeyOptions
 qkoFromEnv = do
   common <- optFromEnv
-  return defQueryKeyOptions
-    { qkoCommon = common
-    }
+  return
+    defQueryKeyOptions
+      { qkoCommon = common
+      }
 
-newtype DropKeyOptions =
-  DropKeyOptions
-    { dkoCommon :: CommonOptions
-    }
-    deriving (Show, Eq)
+newtype DropKeyOptions
+  = DropKeyOptions
+  { dkoCommon :: CommonOptions
+  }
+  deriving (Show, Eq)
 
 instance Semigroup DropKeyOptions where
   DropKeyOptions c1 <> DropKeyOptions c2 =
@@ -160,16 +162,17 @@ defDropKeyOptions :: DropKeyOptions =
 dkoFromEnv :: IO DropKeyOptions
 dkoFromEnv = do
   common <- optFromEnv
-  return defDropKeyOptions
-    { dkoCommon = common
-    }
+  return
+    defDropKeyOptions
+      { dkoCommon = common
+      }
 
-data InstallKeyOptions =
-  InstallKeyOptions
-    { ikoCommon :: CommonOptions
-    , ikoOpCertFile :: Maybe FilePath
-    }
-    deriving (Show, Eq)
+data InstallKeyOptions
+  = InstallKeyOptions
+  { ikoCommon :: CommonOptions
+  , ikoOpCertFile :: Maybe FilePath
+  }
+  deriving (Show, Eq)
 
 instance Semigroup InstallKeyOptions where
   InstallKeyOptions c1 vk1 <> InstallKeyOptions c2 vk2 =
@@ -184,41 +187,47 @@ defInstallKeyOptions :: InstallKeyOptions =
 ikoFromEnv :: IO InstallKeyOptions
 ikoFromEnv = do
   common <- optFromEnv
-  return defInstallKeyOptions
-    { ikoCommon = common
-    }
-
+  return
+    defInstallKeyOptions
+      { ikoCommon = common
+      }
 
 pCommonOptions =
   CommonOptions
-    <$> option (Just <$> str)
-          (  long "control-address"
+    <$> option
+      (Just <$> str)
+      ( long "control-address"
           <> short 'c'
           <> value Nothing
           <> metavar "ADDR"
           <> help "Socket address for 'control' connections to a running kes-agent process"
-          )
-    <*> option (Just <$> auto)
-          (  long "verbose"
+      )
+    <*> option
+      (Just <$> auto)
+      ( long "verbose"
           <> short 'v'
           <> value (Just 1)
           <> help "Set verbosity"
-          )
-    <*> option (Just <$> auto)
-          (  long "retry-interval"
+      )
+    <*> option
+      (Just <$> auto)
+      ( long "retry-interval"
           <> long "retry-delay"
           <> value Nothing
           <> help "Connection retry interval (milliseconds)"
-          )
-    <*> flag Nothing (Just True)
-          (  long "retry-exponential"
+      )
+    <*> flag
+      Nothing
+      (Just True)
+      ( long "retry-exponential"
           <> help "Exponentially increase retry interval"
-          )
-    <*> option (Just <$> auto)
-          (  long "retry-attempts"
+      )
+    <*> option
+      (Just <$> auto)
+      ( long "retry-attempts"
           <> value Nothing
           <> help "Number of connection retry attempts"
-          )
+      )
 
 pGenKeyOptions =
   GenKeyOptions
@@ -240,20 +249,22 @@ pInstallKeyOptions =
     <*> pOpCertFile
 
 pVerKeyFile =
-    option (Just <$> str)
-      (  long "kes-verification-key-file"
-      <> value Nothing
-      <> metavar "FILE"
-      <> help "File to write KES verification key to"
-      )
+  option
+    (Just <$> str)
+    ( long "kes-verification-key-file"
+        <> value Nothing
+        <> metavar "FILE"
+        <> help "File to write KES verification key to"
+    )
 
 pOpCertFile =
-    option (Just <$> str)
-      (  long "opcert-file"
-      <> value Nothing
-      <> metavar "FILE"
-      <> help "File to read OpCert from"
-      )
+  option
+    (Just <$> str)
+    ( long "opcert-file"
+        <> value Nothing
+        <> metavar "FILE"
+        <> help "File to read OpCert from"
+    )
 
 data ProgramOptions
   = RunGenKey GenKeyOptions
@@ -263,13 +274,14 @@ data ProgramOptions
   | RunGetInfo CommonOptions -- for now
   deriving (Show, Eq)
 
-pProgramOptions = subparser
-  (  command "gen-staged-key" (info (RunGenKey <$> pGenKeyOptions) idm)
-  <> command "drop-staged-key" (info (RunDropKey <$> pDropKeyOptions) idm)
-  <> command "export-staged-vkey" (info (RunQueryKey <$> pQueryKeyOptions) idm)
-  <> command "install-key" (info (RunInstallKey <$> pInstallKeyOptions) idm)
-  <> command "info" (info (RunGetInfo <$> pCommonOptions) idm)
-  )
+pProgramOptions =
+  subparser
+    ( command "gen-staged-key" (info (RunGenKey <$> pGenKeyOptions) idm)
+        <> command "drop-staged-key" (info (RunDropKey <$> pDropKeyOptions) idm)
+        <> command "export-staged-vkey" (info (RunQueryKey <$> pQueryKeyOptions) idm)
+        <> command "install-key" (info (RunInstallKey <$> pInstallKeyOptions) idm)
+        <> command "info" (info (RunGetInfo <$> pCommonOptions) idm)
+    )
 
 eitherError :: Either String a -> IO a
 eitherError (Left err) = error err
@@ -300,19 +312,21 @@ mkControlClientOptions opts ioManager = do
   let retryExponential = fromMaybe False $ optRetryExponential opts
   let retryAttempts = fromMaybe 0 $ optRetryAttempts opts
 
-  return ControlClientOptions
-            { controlClientSnocket = socketSnocket ioManager
-            , controlClientAddress = SockAddrUnix controlPath
-            , controlClientLocalAddress = Nothing
-            , controlClientRetryDelay = retryDelay
-            , controlClientRetryExponential = retryExponential
-            , controlClientRetryAttempts = retryAttempts
-            }
+  return
+    ControlClientOptions
+      { controlClientSnocket = socketSnocket ioManager
+      , controlClientAddress = SockAddrUnix controlPath
+      , controlClientLocalAddress = Nothing
+      , controlClientRetryDelay = retryDelay
+      , controlClientRetryExponential = retryExponential
+      , controlClientRetryAttempts = retryAttempts
+      }
 
-runControlClientCommand :: CommonOptions
-                        -> IOManager
-                        -> ( ControlClient IO StandardCrypto -> ControlHandler IO a )
-                        -> IO a
+runControlClientCommand ::
+  CommonOptions ->
+  IOManager ->
+  (ControlClient IO StandardCrypto -> ControlHandler IO a) ->
+  IO a
 runControlClientCommand opts ioManager handler = do
   controlClientOptions <- mkControlClientOptions opts ioManager
   let verbosity = fromMaybe 0 $ optVerbosity opts
@@ -329,10 +343,11 @@ runGenKey gko' = withIOManager $ \ioManager -> do
   gkoEnv <- gkoFromEnv
   let gko = gko' <> gkoEnv <> defGenKeyOptions
   let verKeyFilenameMay = gkoKESVerificationKeyFile gko
-  vkKESMay <- runControlClientCommand
-                (gkoCommon gko)
-                ioManager
-                controlGenKey
+  vkKESMay <-
+    runControlClientCommand
+      (gkoCommon gko)
+      ioManager
+      controlGenKey
   case vkKESMay of
     Nothing -> do
       putStrLn "Key generation has failed. Please check KES agent log for details."
@@ -353,10 +368,11 @@ runQueryKey qko' = withIOManager $ \ioManager -> do
   qkoEnv <- qkoFromEnv
   let qko = qko' <> qkoEnv <> defQueryKeyOptions
   let verKeyFilename = fromMaybe "-" (qkoKESVerificationKeyFile qko)
-  vkKESMay <- runControlClientCommand
-                (qkoCommon qko)
-                ioManager
-                controlQueryKey
+  vkKESMay <-
+    runControlClientCommand
+      (qkoCommon qko)
+      ioManager
+      controlQueryKey
   case vkKESMay of
     Nothing -> do
       putStrLn "No key available."
@@ -373,10 +389,11 @@ runDropKey :: DropKeyOptions -> IO ()
 runDropKey dko' = withIOManager $ \ioManager -> do
   dkoEnv <- dkoFromEnv
   let dko = dko' <> dkoEnv <> defDropKeyOptions
-  vkKESMay <- runControlClientCommand
-                (dkoCommon dko)
-                ioManager
-                controlDropKey
+  vkKESMay <-
+    runControlClientCommand
+      (dkoCommon dko)
+      ioManager
+      controlDropKey
   case vkKESMay of
     Nothing -> do
       putStrLn "Staged key dropped."
@@ -396,15 +413,17 @@ runInstallKey iko' = withIOManager $ \ioManager -> do
     Left err -> do
       putStrLn $ "Error: " ++ err
     Right (OpCert oc _) -> do
-      result <- runControlClientCommand
-                    (ikoCommon iko)
-                    ioManager
-                    (\c -> controlInstallKey c oc)
-      if result == RecvOK then
-        putStrLn "KES key installed."
-      else do
-        putStrLn $ "Error: " ++ formatReason result
-        exitWith $ ExitFailure (fromEnum result)
+      result <-
+        runControlClientCommand
+          (ikoCommon iko)
+          ioManager
+          (\c -> controlInstallKey c oc)
+      if result == RecvOK
+        then
+          putStrLn "KES key installed."
+        else do
+          putStrLn $ "Error: " ++ formatReason result
+          exitWith $ ExitFailure (fromEnum result)
 
 runGetInfo :: CommonOptions -> IO ()
 runGetInfo opt' = withIOManager $ \ioManager -> do
@@ -417,7 +436,10 @@ runGetInfo opt' = withIOManager $ \ioManager -> do
     printf "--- Installed KES SignKey ---\n"
     printf "VerKey: %s\n" (hexShowBS . rawSerialiseVerKeyKES $ bundleInfoVK bundleInfo)
     printf "Valid from period: %u\n" (unKESPeriod $ bundleInfoStartKESPeriod bundleInfo)
-    printf "Current evolution: %u / %u\n" (bundleInfoEvolution bundleInfo) (totalPeriodsKES (Proxy @(KES StandardCrypto)))
+    printf
+      "Current evolution: %u / %u\n"
+      (bundleInfoEvolution bundleInfo)
+      (totalPeriodsKES (Proxy @(KES StandardCrypto)))
     printf "OpCert number: %u\n" (bundleInfoOCertN bundleInfo)
     let (SignedDSIGN sig) = bundleInfoSigma bundleInfo
     printf "OpCert signature: %s\n" (hexShowBS . rawSerialiseSigDSIGN $ sig)

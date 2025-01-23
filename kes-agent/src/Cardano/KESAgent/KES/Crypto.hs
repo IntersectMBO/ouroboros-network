@@ -1,9 +1,9 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | A stripped-down version of the @OCert@ and @Crypto@ types used in
 -- @cardano-ledger@. We only replicate what we need here, so as to avoid
@@ -16,7 +16,7 @@
 -- performance critical, the small overhead introduced by using the default
 -- CBOR serialization seems like an acceptable tradeoff.
 module Cardano.KESAgent.KES.Crypto
-  where
+where
 
 import Cardano.Crypto.DSIGN.Class as DSIGN
 import Cardano.Crypto.KES.Class
@@ -25,8 +25,11 @@ import Data.Kind
 
 -- | Convenience class that bundles associated KES and DSIGN algorithms into a
 -- single typeclass
-class ( KESAlgorithm (KES c)
-      , DSIGNAlgorithm (DSIGN c)
-      ) => Crypto c where
+class
+  ( KESAlgorithm (KES c)
+  , DSIGNAlgorithm (DSIGN c)
+  ) =>
+  Crypto c
+  where
   type KES c :: Type
   type DSIGN c :: Type

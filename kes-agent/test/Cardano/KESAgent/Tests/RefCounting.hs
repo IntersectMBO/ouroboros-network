@@ -1,11 +1,11 @@
-module Cardano.KESAgent.Tests.RefCounting
-  ( tests
-  ) where
+module Cardano.KESAgent.Tests.RefCounting (
+  tests,
+) where
 
 import Cardano.KESAgent.Util.RefCounting
 
-import Control.Concurrent ( threadDelay )
-import Control.Concurrent.Async ( concurrently_ )
+import Control.Concurrent (threadDelay)
+import Control.Concurrent.Async (concurrently_)
 import Control.Concurrent.MVar
 import Control.Exception
 import Control.Monad
@@ -15,18 +15,20 @@ import Test.Tasty.QuickCheck
 {-# ANN module "HLint: ignore Use camelCase" #-}
 
 tests :: TestTree
-tests = testGroup "RefCounting"
-  [ testProperty "counter is 1 on fresh CRef" p_counterIs1OnFresh
-  , testProperty "counter is 0 after release" p_counterIs0AfterRelease
-  , testProperty "withCRef keeps counter balanced" p_withCRefBalanced
-  , testProperty "finalizer fires on only release" p_finalizerOnOnlyRelease
-  , testProperty "finalizer fires once on concurrent use" p_finalizerOnConcurrentUse
-  , testProperty "finalizer fires on last release" p_finalizerOnLastRelease
-  , testProperty "finalizer does not fire when references remain" p_noFinalizerBeforeLastRelease
-  , testProperty "throw on excessive release" p_throwOnExcessiveRelease
-  , testProperty "throw on read after free" p_throwOnReadAfterFree
-  , testProperty "throw on acquire after free" p_throwOnReacquire
-  ]
+tests =
+  testGroup
+    "RefCounting"
+    [ testProperty "counter is 1 on fresh CRef" p_counterIs1OnFresh
+    , testProperty "counter is 0 after release" p_counterIs0AfterRelease
+    , testProperty "withCRef keeps counter balanced" p_withCRefBalanced
+    , testProperty "finalizer fires on only release" p_finalizerOnOnlyRelease
+    , testProperty "finalizer fires once on concurrent use" p_finalizerOnConcurrentUse
+    , testProperty "finalizer fires on last release" p_finalizerOnLastRelease
+    , testProperty "finalizer does not fire when references remain" p_noFinalizerBeforeLastRelease
+    , testProperty "throw on excessive release" p_throwOnExcessiveRelease
+    , testProperty "throw on read after free" p_throwOnReadAfterFree
+    , testProperty "throw on acquire after free" p_throwOnReacquire
+    ]
 
 p_counterIs1OnFresh :: Property
 p_counterIs1OnFresh = ioProperty $ do
@@ -77,16 +79,16 @@ p_finalizerOnOnlyRelease = ioProperty $ do
 p_finalizerOnConcurrentUse :: Int -> Int -> Property
 p_finalizerOnConcurrentUse d1 d2 =
   abs d1 < 10000 ==>
-  abs d2 < 10000 ==>
-  ioProperty $ do
-    firingsVar <- newMVar 0
-    acquiredVar <- newEmptyMVar
-    ref <- newCRef (\_ -> modifyMVar_ firingsVar (return . succ)) ()
-    concurrently_
-        (threadDelay (abs d1) >> takeMVar acquiredVar >> releaseCRef ref)
-        (withCRef ref $ \_ -> putMVar acquiredVar () >> threadDelay (abs d2))
-    firings <- readMVar firingsVar
-    return (firings === 1)
+    abs d2 < 10000 ==>
+      ioProperty $ do
+        firingsVar <- newMVar 0
+        acquiredVar <- newEmptyMVar
+        ref <- newCRef (\_ -> modifyMVar_ firingsVar (return . succ)) ()
+        concurrently_
+          (threadDelay (abs d1) >> takeMVar acquiredVar >> releaseCRef ref)
+          (withCRef ref $ \_ -> putMVar acquiredVar () >> threadDelay (abs d2))
+        firings <- readMVar firingsVar
+        return (firings === 1)
 
 -- | Simulated usage pattern: a new CRef is created, acquired N times, and then
 -- released N+1 times (once for each explicit acquire, and once for the initial

@@ -1,6 +1,7 @@
 {-# LANGUAGE ImportQualifiedPost #-}
+
 module Main
-  where
+where
 
 import Cardano.KESAgent.Tests.EndToEnd qualified as EndToEnd
 import Cardano.KESAgent.Tests.OCert qualified as OCert
@@ -12,10 +13,10 @@ import Cardano.Crypto.Libsodium
 
 import Ouroboros.Network.Snocket
 
-import Control.Tracer ( nullTracer )
+import Control.Tracer (nullTracer)
 import Network.Socket
 import System.IOManager
-import Test.Tasty ( TestTree, defaultMain, testGroup )
+import Test.Tasty (TestTree, defaultMain, testGroup)
 
 main :: IO ()
 main = withIOManager $ \ioManager -> do
@@ -24,10 +25,12 @@ main = withIOManager $ \ioManager -> do
   defaultMain (tests lock ioManager)
 
 tests :: Simulation.Lock IO -> IOManager -> TestTree
-tests lock ioManager = testGroup "KES Agent"
-  [ RefCounting.tests
-  , OCert.tests
-  , Serialization.tests
-  , Simulation.tests lock nullTracer ioManager
-  , EndToEnd.tests
-  ]
+tests lock ioManager =
+  testGroup
+    "KES Agent"
+    [ RefCounting.tests
+    , OCert.tests
+    , Serialization.tests
+    , Simulation.tests lock nullTracer ioManager
+    , EndToEnd.tests
+    ]

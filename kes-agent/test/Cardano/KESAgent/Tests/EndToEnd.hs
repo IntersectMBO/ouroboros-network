@@ -1,41 +1,41 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE OverloadedStrings #-}
 
-module Cardano.KESAgent.Tests.EndToEnd
-  ( tests )
-  where
-import Cardano.KESAgent.Serialization.TextEnvelope
+module Cardano.KESAgent.Tests.EndToEnd (tests)
+where
+
 import Cardano.KESAgent.KES.Crypto
+import Cardano.KESAgent.KES.Evolution (defEvolutionConfig, getCurrentKESPeriod)
 import Cardano.KESAgent.KES.OCert
-import Cardano.KESAgent.Protocols.Types
 import Cardano.KESAgent.Protocols.AgentInfo
-import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Protocols.RecvResult
+import Cardano.KESAgent.Protocols.StandardCrypto
+import Cardano.KESAgent.Protocols.Types
 import Cardano.KESAgent.Serialization.CBOR
-import Cardano.KESAgent.KES.Evolution ( getCurrentKESPeriod, defEvolutionConfig )
+import Cardano.KESAgent.Serialization.TextEnvelope
 import Paths_kes_agent
 
-import Cardano.Crypto.KES.Class
 import Cardano.Crypto.DSIGN.Class
+import Cardano.Crypto.KES.Class
 
 import Control.Concurrent.Async
 import Control.Concurrent.Class.MonadMVar
-import Control.Monad (replicateM, forever)
+import Control.Monad (forever, replicateM)
+import Control.Monad.Class.MonadThrow (SomeException, bracket, catch, finally, throwIO)
 import Control.Monad.Class.MonadTimer (threadDelay)
-import Control.Monad.Class.MonadThrow (catch, finally, bracket, SomeException, throwIO)
 import Data.List (isPrefixOf)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
-import Test.Tasty
-import Test.Tasty.HUnit
-import System.Process
-import System.Exit ( ExitCode (..) )
-import System.Environment ( lookupEnv, setEnv, unsetEnv )
+import System.Environment (lookupEnv, setEnv, unsetEnv)
+import System.Exit (ExitCode (..))
+import System.FilePath ((</>))
 import System.IO
 import System.IO.Temp
-import System.FilePath ( (</>) )
+import System.Process
+import Test.Tasty
+import Test.Tasty.HUnit
 
 import Debug.Trace
 import Text.Printf
@@ -45,30 +45,34 @@ defGenesisTimestamp = 1506203091 -- real-world genesis on the production ledger
 
 tests :: TestTree
 tests =
-  testGroup "end to end"
+  testGroup
+    "end to end"
     [ testCase "kes-agent --help" kesAgentHelp
     , testCase "kes-agent --genesis-file" kesAgentGenesisFile
     , testCase "kes-agent-control --help" kesAgentControlHelp
-    , testGroup "kes-agent-control install-key"
-      [ testCase "valid" kesAgentControlInstallValid
-      , testCase "invalid opcert" kesAgentControlInstallInvalidOpCert
-      , testCase "no key" kesAgentControlInstallNoKey
-      , testCase "dropped key" kesAgentControlInstallDroppedKey
-      , testCase "multiple nodes" kesAgentControlInstallMultiNodes
-      ]
-    , testGroup "evolution"
-      [ testCase "key evolves forward" kesAgentEvolvesKey
-      ]
-    , testGroup "inter-agent"
-      [ testCase "key propagated to other agent" kesAgentPropagate
-      , testCase "self-healing 1 (agent 2 goes down)" kesAgentSelfHeal1
-      , testCase "self-healing 2 (agent 1 goes down)" kesAgentSelfHeal2
-      ]
+    , testGroup
+        "kes-agent-control install-key"
+        [ testCase "valid" kesAgentControlInstallValid
+        , testCase "invalid opcert" kesAgentControlInstallInvalidOpCert
+        , testCase "no key" kesAgentControlInstallNoKey
+        , testCase "dropped key" kesAgentControlInstallDroppedKey
+        , testCase "multiple nodes" kesAgentControlInstallMultiNodes
+        ]
+    , testGroup
+        "evolution"
+        [ testCase "key evolves forward" kesAgentEvolvesKey
+        ]
+    , testGroup
+        "inter-agent"
+        [ testCase "key propagated to other agent" kesAgentPropagate
+        , testCase "self-healing 1 (agent 2 goes down)" kesAgentSelfHeal1
+        , testCase "self-healing 2 (agent 1 goes down)" kesAgentSelfHeal2
+        ]
     ]
 
 kesAgentHelp :: Assertion
 kesAgentHelp = do
-  (exitCode, stdout, stderr) <- readProcessWithExitCode "kes-agent" [ "--help" ] ""
+  (exitCode, stdout, stderr) <- readProcessWithExitCode "kes-agent" ["--help"] ""
   assertEqual (stdout ++ "\n" ++ stderr) ExitSuccess exitCode
 
 kesAgentGenesisFile :: Assertion
@@ -82,18 +86,24 @@ kesAgentGenesisFile = do
     coldVerKeyFile <- getDataFileName "fixtures/cold.vkey"
     genesisFile <- getDataFileName "fixtures/mainnet-shelley-genesis.json"
 
-    let args = [ "run"
-               , "--genesis-file", genesisFile
-               , "--cold-verification-key", coldVerKeyFile
-               , "--service-address", serviceAddr
-               , "--control-address", controlAddr
-               ]
+    let args =
+          [ "run"
+          , "--genesis-file"
+          , genesisFile
+          , "--cold-verification-key"
+          , coldVerKeyFile
+          , "--service-address"
+          , serviceAddr
+          , "--control-address"
+          , controlAddr
+          ]
     withSpawnProcess "kes-agent" args $ \_ (Just hOut) (Just hErr) ph -> do
       threadDelay 100000
       terminateProcess ph
-      (outT, errT) <- concurrently
-        (Text.lines <$> Text.hGetContents hOut)
-        (Text.lines <$> Text.hGetContents hErr)
+      (outT, errT) <-
+        concurrently
+          (Text.lines <$> Text.hGetContents hOut)
+          (Text.lines <$> Text.hGetContents hErr)
       exitCode <- waitForProcess ph
       return (outT, errT, exitCode)
   assertMatchingOutputLines 3 ["ListeningOnControlSocket"] agentOutLines
@@ -116,7 +126,6 @@ logHandle h = do
   forever go `catch` (\(_ :: SomeException) -> return ())
   reverse <$> readMVar var
 
-
 kesAgentControlInstallValid :: Assertion
 kesAgentControlInstallValid =
   withSystemTempDirectory "kes-agent-tests" $ \tmpdir -> do
@@ -128,9 +137,12 @@ kesAgentControlInstallValid =
     coldVerKeyFile <- getDataFileName "fixtures/cold.vkey"
 
     let makeCert = do
-          ColdSignKey coldSK <- either error return =<< decodeTextEnvelopeFile @(ColdSignKey (DSIGN StandardCrypto)) coldSignKeyFile
-          ColdVerKey coldVK <- either error return =<< decodeTextEnvelopeFile @(ColdVerKey (DSIGN StandardCrypto)) coldVerKeyFile
-          KESVerKey kesVK <- either error return =<< decodeTextEnvelopeFile @(KESVerKey (KES StandardCrypto)) kesKeyFile
+          ColdSignKey coldSK <-
+            either error return =<< decodeTextEnvelopeFile @(ColdSignKey (DSIGN StandardCrypto)) coldSignKeyFile
+          ColdVerKey coldVK <-
+            either error return =<< decodeTextEnvelopeFile @(ColdVerKey (DSIGN StandardCrypto)) coldVerKeyFile
+          KESVerKey kesVK <-
+            either error return =<< decodeTextEnvelopeFile @(KESVerKey (KES StandardCrypto)) kesKeyFile
           kesPeriod <- getCurrentKESPeriod defEvolutionConfig
           let ocert :: OCert StandardCrypto = makeOCert kesVK 0 kesPeriod coldSK
           encodeTextEnvelopeFile opcertFile (OpCert ocert coldVK)
@@ -140,8 +152,10 @@ kesAgentControlInstallValid =
       withAgentAndService controlAddr serviceAddr [] coldVerKeyFile $ do
         controlClientCheck
           [ "gen-staged-key"
-          , "--kes-verification-key-file", kesKeyFile
-          , "--control-address", controlAddr
+          , "--kes-verification-key-file"
+          , kesKeyFile
+          , "--control-address"
+          , controlAddr
           ]
           ExitSuccess
           [ "Asking agent to generate a key..."
@@ -151,14 +165,20 @@ kesAgentControlInstallValid =
         makeCert
         controlClientCheck
           [ "install-key"
-          , "--opcert-file", opcertFile
-          , "--control-address", controlAddr
+          , "--opcert-file"
+          , opcertFile
+          , "--control-address"
+          , controlAddr
           ]
           ExitSuccess
-          [ "KES key installed." ]
+          ["KES key installed."]
         -- Allow some time for service client to actually receive the key
         threadDelay 10000
-    assertMatchingOutputLinesWith ("SERVICE OUTPUT CHECK\n" <> (Text.unpack . Text.unlines $ agentOutLines)) 0 ["KES", "key", "0"] serviceOutLines
+    assertMatchingOutputLinesWith
+      ("SERVICE OUTPUT CHECK\n" <> (Text.unpack . Text.unlines $ agentOutLines))
+      0
+      ["KES", "key", "0"]
+      serviceOutLines
 
 kesAgentControlInstallInvalidOpCert :: Assertion
 kesAgentControlInstallInvalidOpCert =
@@ -174,8 +194,10 @@ kesAgentControlInstallInvalidOpCert =
       withAgentAndService controlAddr serviceAddr [] coldVerKeyFile $ do
         controlClientCheck
           [ "gen-staged-key"
-          , "--kes-verification-key-file", kesKeyFile
-          , "--control-address", controlAddr
+          , "--kes-verification-key-file"
+          , kesKeyFile
+          , "--control-address"
+          , controlAddr
           ]
           ExitSuccess
           [ "Asking agent to generate a key..."
@@ -184,11 +206,13 @@ kesAgentControlInstallInvalidOpCert =
           ]
         controlClientCheck
           [ "install-key"
-          , "--opcert-file", opcertFile
-          , "--control-address", controlAddr
+          , "--opcert-file"
+          , opcertFile
+          , "--control-address"
+          , controlAddr
           ]
           (ExitFailure $ fromEnum RecvErrorInvalidOpCert)
-          [ "Error: OpCert validation failed" ]
+          ["Error: OpCert validation failed"]
 
     assertNoMatchingOutputLines 0 ["KES", "key", "0"] serviceOutLines
     assertMatchingOutputLines 1 ["Warning", "Agent:", "RejectingKey"] agentOutLines
@@ -204,9 +228,12 @@ kesAgentControlInstallNoKey =
     coldVerKeyFile <- getDataFileName "fixtures/cold.vkey"
 
     let makeCert = do
-          ColdSignKey coldSK <- either error return =<< decodeTextEnvelopeFile @(ColdSignKey (DSIGN StandardCrypto)) coldSignKeyFile
-          ColdVerKey coldVK <- either error return =<< decodeTextEnvelopeFile @(ColdVerKey (DSIGN StandardCrypto)) coldVerKeyFile
-          KESVerKey kesVK <- either error return =<< decodeTextEnvelopeFile @(KESVerKey (KES StandardCrypto)) kesKeyFile
+          ColdSignKey coldSK <-
+            either error return =<< decodeTextEnvelopeFile @(ColdSignKey (DSIGN StandardCrypto)) coldSignKeyFile
+          ColdVerKey coldVK <-
+            either error return =<< decodeTextEnvelopeFile @(ColdVerKey (DSIGN StandardCrypto)) coldVerKeyFile
+          KESVerKey kesVK <-
+            either error return =<< decodeTextEnvelopeFile @(KESVerKey (KES StandardCrypto)) kesKeyFile
           kesPeriod <- getCurrentKESPeriod defEvolutionConfig
           let ocert :: OCert StandardCrypto = makeOCert kesVK 0 kesPeriod coldSK
           encodeTextEnvelopeFile opcertFile (OpCert ocert coldVK)
@@ -217,11 +244,13 @@ kesAgentControlInstallNoKey =
         makeCert
         controlClientCheck
           [ "install-key"
-          , "--opcert-file", opcertFile
-          , "--control-address", controlAddr
+          , "--opcert-file"
+          , opcertFile
+          , "--control-address"
+          , controlAddr
           ]
           (ExitFailure $ fromEnum RecvErrorNoKey)
-          [ "Error: No KES key found" ]
+          ["Error: No KES key found"]
 
     assertNoMatchingOutputLines 0 ["KES", "key", "0"] serviceOutLines
 
@@ -236,9 +265,12 @@ kesAgentControlInstallDroppedKey =
     coldVerKeyFile <- getDataFileName "fixtures/cold.vkey"
 
     let makeCert = do
-          ColdSignKey coldSK <- either error return =<< decodeTextEnvelopeFile @(ColdSignKey (DSIGN StandardCrypto)) coldSignKeyFile
-          ColdVerKey coldVK <- either error return =<< decodeTextEnvelopeFile @(ColdVerKey (DSIGN StandardCrypto)) coldVerKeyFile
-          KESVerKey kesVK <- either error return =<< decodeTextEnvelopeFile @(KESVerKey (KES StandardCrypto)) kesKeyFile
+          ColdSignKey coldSK <-
+            either error return =<< decodeTextEnvelopeFile @(ColdSignKey (DSIGN StandardCrypto)) coldSignKeyFile
+          ColdVerKey coldVK <-
+            either error return =<< decodeTextEnvelopeFile @(ColdVerKey (DSIGN StandardCrypto)) coldVerKeyFile
+          KESVerKey kesVK <-
+            either error return =<< decodeTextEnvelopeFile @(KESVerKey (KES StandardCrypto)) kesKeyFile
           kesPeriod <- getCurrentKESPeriod defEvolutionConfig
           let ocert :: OCert StandardCrypto = makeOCert kesVK 0 kesPeriod coldSK
           encodeTextEnvelopeFile opcertFile (OpCert ocert coldVK)
@@ -248,8 +280,10 @@ kesAgentControlInstallDroppedKey =
       withAgentAndService controlAddr serviceAddr [] coldVerKeyFile $ do
         controlClientCheck
           [ "gen-staged-key"
-          , "--kes-verification-key-file", kesKeyFile
-          , "--control-address", controlAddr
+          , "--kes-verification-key-file"
+          , kesKeyFile
+          , "--control-address"
+          , controlAddr
           ]
           ExitSuccess
           [ "Asking agent to generate a key..."
@@ -265,15 +299,17 @@ kesAgentControlInstallDroppedKey =
           , controlAddr
           ]
           ExitSuccess
-          [ "Staged key dropped." ]
+          ["Staged key dropped."]
 
         controlClientCheck
           [ "install-key"
-          , "--opcert-file", opcertFile
-          , "--control-address", controlAddr
+          , "--opcert-file"
+          , opcertFile
+          , "--control-address"
+          , controlAddr
           ]
           (ExitFailure $ fromEnum RecvErrorNoKey)
-          [ "Error: No KES key found" ]
+          ["Error: No KES key found"]
 
     assertNoMatchingOutputLines 0 ["KES", "key", "0"] serviceOutLines
 
@@ -288,9 +324,12 @@ kesAgentControlInstallMultiNodes =
     coldVerKeyFile <- getDataFileName "fixtures/cold.vkey"
 
     let makeCert = do
-          ColdSignKey coldSK <- either error return =<< decodeTextEnvelopeFile @(ColdSignKey (DSIGN StandardCrypto)) coldSignKeyFile
-          ColdVerKey coldVK <- either error return =<< decodeTextEnvelopeFile @(ColdVerKey (DSIGN StandardCrypto)) coldVerKeyFile
-          KESVerKey kesVK <- either error return =<< decodeTextEnvelopeFile @(KESVerKey (KES StandardCrypto)) kesKeyFile
+          ColdSignKey coldSK <-
+            either error return =<< decodeTextEnvelopeFile @(ColdSignKey (DSIGN StandardCrypto)) coldSignKeyFile
+          ColdVerKey coldVK <-
+            either error return =<< decodeTextEnvelopeFile @(ColdVerKey (DSIGN StandardCrypto)) coldVerKeyFile
+          KESVerKey kesVK <-
+            either error return =<< decodeTextEnvelopeFile @(KESVerKey (KES StandardCrypto)) kesKeyFile
           kesPeriod <- getCurrentKESPeriod defEvolutionConfig
           let ocert :: OCert StandardCrypto = makeOCert kesVK 0 kesPeriod coldSK
           encodeTextEnvelopeFile opcertFile (OpCert ocert coldVK)
@@ -306,8 +345,10 @@ kesAgentControlInstallMultiNodes =
         (serviceOutLines2, ()) <- withService serviceAddr $ do
           controlClientCheck
             [ "gen-staged-key"
-            , "--kes-verification-key-file", kesKeyFile
-            , "--control-address", controlAddr
+            , "--kes-verification-key-file"
+            , kesKeyFile
+            , "--control-address"
+            , controlAddr
             ]
             ExitSuccess
             [ "Asking agent to generate a key..."
@@ -317,24 +358,32 @@ kesAgentControlInstallMultiNodes =
           makeCert
           controlClientCheck
             [ "install-key"
-            , "--opcert-file", opcertFile
-            , "--control-address", controlAddr
+            , "--opcert-file"
+            , opcertFile
+            , "--control-address"
+            , controlAddr
             ]
             ExitSuccess
-            [ "KES key installed." ]
+            ["KES key installed."]
           -- Little bit of delay to allow the client to read the key.
           threadDelay 10000
         return (serviceOutLines1, serviceOutLines2)
 
     assertNoMatchingOutputLinesWith
-              ("Service 1: NOT 'KES key 0'\n" ++ (Text.unpack . Text.unlines $ agentOutLines))
-              0 ["KES", "key", "0"] serviceOutLines1
+      ("Service 1: NOT 'KES key 0'\n" ++ (Text.unpack . Text.unlines $ agentOutLines))
+      0
+      ["KES", "key", "0"]
+      serviceOutLines1
     assertMatchingOutputLinesWith
-              ("Service1: 'ReceivedVersionID'\n" ++ (Text.unpack . Text.unlines $ agentOutLines))
-              4 ["ReceivedVersionID"] serviceOutLines1
+      ("Service1: 'ReceivedVersionID'\n" ++ (Text.unpack . Text.unlines $ agentOutLines))
+      4
+      ["ReceivedVersionID"]
+      serviceOutLines1
     assertMatchingOutputLinesWith
-              ("Service2: 'KES key 0'\n" ++ (Text.unpack . Text.unlines $ agentOutLines))
-              0 ["KES", "key", "0"] serviceOutLines2
+      ("Service2: 'KES key 0'\n" ++ (Text.unpack . Text.unlines $ agentOutLines))
+      0
+      ["KES", "key", "0"]
+      serviceOutLines2
 
 kesAgentEvolvesKey :: Assertion
 kesAgentEvolvesKey =
@@ -348,9 +397,12 @@ kesAgentEvolvesKey =
     currentKesPeriod <- getCurrentKESPeriod defEvolutionConfig
 
     let makeCert = do
-          ColdSignKey coldSK <- either error return =<< decodeTextEnvelopeFile @(ColdSignKey (DSIGN StandardCrypto)) coldSignKeyFile
-          ColdVerKey coldVK <- either error return =<< decodeTextEnvelopeFile @(ColdVerKey (DSIGN StandardCrypto)) coldVerKeyFile
-          KESVerKey kesVK <- either error return =<< decodeTextEnvelopeFile @(KESVerKey (KES StandardCrypto)) kesKeyFile
+          ColdSignKey coldSK <-
+            either error return =<< decodeTextEnvelopeFile @(ColdSignKey (DSIGN StandardCrypto)) coldSignKeyFile
+          ColdVerKey coldVK <-
+            either error return =<< decodeTextEnvelopeFile @(ColdVerKey (DSIGN StandardCrypto)) coldVerKeyFile
+          KESVerKey kesVK <-
+            either error return =<< decodeTextEnvelopeFile @(KESVerKey (KES StandardCrypto)) kesKeyFile
           let kesPeriod = KESPeriod $ unKESPeriod currentKesPeriod - 10
           let ocert :: OCert StandardCrypto = makeOCert kesVK 0 kesPeriod coldSK
           encodeTextEnvelopeFile opcertFile (OpCert ocert coldVK)
@@ -360,8 +412,10 @@ kesAgentEvolvesKey =
       withAgentAndService controlAddr serviceAddr [] coldVerKeyFile $ do
         controlClientCheck
           [ "gen-staged-key"
-          , "--kes-verification-key-file", kesKeyFile
-          , "--control-address", controlAddr
+          , "--kes-verification-key-file"
+          , kesKeyFile
+          , "--control-address"
+          , controlAddr
           ]
           ExitSuccess
           [ "Asking agent to generate a key..."
@@ -371,18 +425,25 @@ kesAgentEvolvesKey =
         makeCert
         controlClientCheck
           [ "install-key"
-          , "--opcert-file", opcertFile
-          , "--control-address", controlAddr
+          , "--opcert-file"
+          , opcertFile
+          , "--control-address"
+          , controlAddr
           ]
           ExitSuccess
-          [ "KES key installed." ]
+          ["KES key installed."]
         controlClientCheckP
           [ "info"
-          , "--control-address", controlAddr
+          , "--control-address"
+          , controlAddr
           ]
           ExitSuccess
           (any (`elem` ["Current evolution: 10 / 64", "Current evolution: 11 / 64"]))
-    assertMatchingOutputLinesWith ("SERVICE OUTPUT CHECK\n" <> (Text.unpack . Text.unlines $ agentOutLines)) 0 ["KES", "key", "0"] serviceOutLines
+    assertMatchingOutputLinesWith
+      ("SERVICE OUTPUT CHECK\n" <> (Text.unpack . Text.unlines $ agentOutLines))
+      0
+      ["KES", "key", "0"]
+      serviceOutLines
 
 kesAgentPropagate :: Assertion
 kesAgentPropagate =
@@ -398,9 +459,12 @@ kesAgentPropagate =
     currentKesPeriod <- getCurrentKESPeriod defEvolutionConfig
 
     let makeCert = do
-          ColdSignKey coldSK <- either error return =<< decodeTextEnvelopeFile @(ColdSignKey (DSIGN StandardCrypto)) coldSignKeyFile
-          ColdVerKey coldVK <- either error return =<< decodeTextEnvelopeFile @(ColdVerKey (DSIGN StandardCrypto)) coldVerKeyFile
-          KESVerKey kesVK <- either error return =<< decodeTextEnvelopeFile @(KESVerKey (KES StandardCrypto)) kesKeyFile
+          ColdSignKey coldSK <-
+            either error return =<< decodeTextEnvelopeFile @(ColdSignKey (DSIGN StandardCrypto)) coldSignKeyFile
+          ColdVerKey coldVK <-
+            either error return =<< decodeTextEnvelopeFile @(ColdVerKey (DSIGN StandardCrypto)) coldVerKeyFile
+          KESVerKey kesVK <-
+            either error return =<< decodeTextEnvelopeFile @(KESVerKey (KES StandardCrypto)) kesKeyFile
           let kesPeriod = KESPeriod $ unKESPeriod currentKesPeriod
           let ocert :: OCert StandardCrypto = makeOCert kesVK 0 kesPeriod coldSK
           encodeTextEnvelopeFile opcertFile (OpCert ocert coldVK)
@@ -411,8 +475,10 @@ kesAgentPropagate =
         withAgentAndService controlAddr2 serviceAddr2 [serviceAddr1] coldVerKeyFile $ do
           controlClientCheck
             [ "gen-staged-key"
-            , "--kes-verification-key-file", kesKeyFile
-            , "--control-address", controlAddr1
+            , "--kes-verification-key-file"
+            , kesKeyFile
+            , "--control-address"
+            , controlAddr1
             ]
             ExitSuccess
             [ "Asking agent to generate a key..."
@@ -422,18 +488,25 @@ kesAgentPropagate =
           makeCert
           controlClientCheck
             [ "install-key"
-            , "--opcert-file", opcertFile
-            , "--control-address", controlAddr1
+            , "--opcert-file"
+            , opcertFile
+            , "--control-address"
+            , controlAddr1
             ]
             ExitSuccess
-            [ "KES key installed." ]
+            ["KES key installed."]
           controlClientCheckP
             [ "info"
-            , "--control-address", controlAddr2
+            , "--control-address"
+            , controlAddr2
             ]
             ExitSuccess
             (any (`elem` ["Current evolution: 0 / 64", "Current evolution: 1 / 64"]))
-    assertMatchingOutputLinesWith ("SERVICE OUTPUT CHECK\n" <> (Text.unpack . Text.unlines $ agentOutLines1)) 0 ["KES", "key", "0"] serviceOutLines
+    assertMatchingOutputLinesWith
+      ("SERVICE OUTPUT CHECK\n" <> (Text.unpack . Text.unlines $ agentOutLines1))
+      0
+      ["KES", "key", "0"]
+      serviceOutLines
 
 kesAgentSelfHeal1 :: Assertion
 kesAgentSelfHeal1 =
@@ -449,9 +522,12 @@ kesAgentSelfHeal1 =
     currentKesPeriod <- getCurrentKESPeriod defEvolutionConfig
 
     let makeCert = do
-          ColdSignKey coldSK <- either error return =<< decodeTextEnvelopeFile @(ColdSignKey (DSIGN StandardCrypto)) coldSignKeyFile
-          ColdVerKey coldVK <- either error return =<< decodeTextEnvelopeFile @(ColdVerKey (DSIGN StandardCrypto)) coldVerKeyFile
-          KESVerKey kesVK <- either error return =<< decodeTextEnvelopeFile @(KESVerKey (KES StandardCrypto)) kesKeyFile
+          ColdSignKey coldSK <-
+            either error return =<< decodeTextEnvelopeFile @(ColdSignKey (DSIGN StandardCrypto)) coldSignKeyFile
+          ColdVerKey coldVK <-
+            either error return =<< decodeTextEnvelopeFile @(ColdVerKey (DSIGN StandardCrypto)) coldVerKeyFile
+          KESVerKey kesVK <-
+            either error return =<< decodeTextEnvelopeFile @(KESVerKey (KES StandardCrypto)) kesKeyFile
           let kesPeriod = KESPeriod $ unKESPeriod currentKesPeriod
           let ocert :: OCert StandardCrypto = makeOCert kesVK 0 kesPeriod coldSK
           encodeTextEnvelopeFile opcertFile (OpCert ocert coldVK)
@@ -463,8 +539,10 @@ kesAgentSelfHeal1 =
           threadDelay 1000000
           controlClientCheck
             [ "gen-staged-key"
-            , "--kes-verification-key-file", kesKeyFile
-            , "--control-address", controlAddr2
+            , "--kes-verification-key-file"
+            , kesKeyFile
+            , "--control-address"
+            , controlAddr2
             ]
             ExitSuccess
             [ "Asking agent to generate a key..."
@@ -474,20 +552,24 @@ kesAgentSelfHeal1 =
           makeCert
           controlClientCheck
             [ "install-key"
-            , "--opcert-file", opcertFile
-            , "--control-address", controlAddr2
+            , "--opcert-file"
+            , opcertFile
+            , "--control-address"
+            , controlAddr2
             ]
             ExitSuccess
-            [ "KES key installed." ]
+            ["KES key installed."]
           controlClientCheckP
             [ "info"
-            , "--control-address", controlAddr1
+            , "--control-address"
+            , controlAddr1
             ]
             ExitSuccess
             (const True)
         controlClientCheckP
           [ "info"
-          , "--control-address", controlAddr2
+          , "--control-address"
+          , controlAddr2
           ]
           (ExitFailure 1)
           (any ("kes-agent-control: Network.Socket.connect: " `isPrefixOf`))
@@ -495,9 +577,12 @@ kesAgentSelfHeal1 =
           threadDelay 1000000
           controlClientCheckP
             [ "info"
-            , "--control-address", controlAddr2
-            , "--retry-delay", "100"
-            , "--retry-attempts", "10"
+            , "--control-address"
+            , controlAddr2
+            , "--retry-delay"
+            , "100"
+            , "--retry-attempts"
+            , "10"
             ]
             ExitSuccess
             (any (`elem` ["Current evolution: 0 / 64", "Current evolution: 1 / 64"]))
@@ -518,9 +603,12 @@ kesAgentSelfHeal2 =
     currentKesPeriod <- getCurrentKESPeriod defEvolutionConfig
 
     let makeCert = do
-          ColdSignKey coldSK <- either error return =<< decodeTextEnvelopeFile @(ColdSignKey (DSIGN StandardCrypto)) coldSignKeyFile
-          ColdVerKey coldVK <- either error return =<< decodeTextEnvelopeFile @(ColdVerKey (DSIGN StandardCrypto)) coldVerKeyFile
-          KESVerKey kesVK <- either error return =<< decodeTextEnvelopeFile @(KESVerKey (KES StandardCrypto)) kesKeyFile
+          ColdSignKey coldSK <-
+            either error return =<< decodeTextEnvelopeFile @(ColdSignKey (DSIGN StandardCrypto)) coldSignKeyFile
+          ColdVerKey coldVK <-
+            either error return =<< decodeTextEnvelopeFile @(ColdVerKey (DSIGN StandardCrypto)) coldVerKeyFile
+          KESVerKey kesVK <-
+            either error return =<< decodeTextEnvelopeFile @(KESVerKey (KES StandardCrypto)) kesKeyFile
           let kesPeriod = KESPeriod $ unKESPeriod currentKesPeriod
           let ocert :: OCert StandardCrypto = makeOCert kesVK 0 kesPeriod coldSK
           encodeTextEnvelopeFile opcertFile (OpCert ocert coldVK)
@@ -532,8 +620,10 @@ kesAgentSelfHeal2 =
           threadDelay 1000000
           controlClientCheck
             [ "gen-staged-key"
-            , "--kes-verification-key-file", kesKeyFile
-            , "--control-address", controlAddr1
+            , "--kes-verification-key-file"
+            , kesKeyFile
+            , "--control-address"
+            , controlAddr1
             ]
             ExitSuccess
             [ "Asking agent to generate a key..."
@@ -543,16 +633,19 @@ kesAgentSelfHeal2 =
           makeCert
           controlClientCheck
             [ "install-key"
-            , "--opcert-file", opcertFile
-            , "--control-address", controlAddr1
+            , "--opcert-file"
+            , opcertFile
+            , "--control-address"
+            , controlAddr1
             ]
             ExitSuccess
-            [ "KES key installed." ]
-            -- Allow some time for agent to shut down cleanly
+            ["KES key installed."]
+          -- Allow some time for agent to shut down cleanly
           threadDelay 10000
         controlClientCheckP
           [ "info"
-          , "--control-address", controlAddr2
+          , "--control-address"
+          , controlAddr2
           ]
           (ExitFailure 1)
           (any ("kes-agent-control: Network.Socket.connect: " `isPrefixOf`))
@@ -560,9 +653,12 @@ kesAgentSelfHeal2 =
           threadDelay 10000
           controlClientCheckP
             [ "info"
-            , "--control-address", controlAddr2
-            , "--retry-delay", "100"
-            , "--retry-attempts", "10"
+            , "--control-address"
+            , controlAddr2
+            , "--retry-delay"
+            , "100"
+            , "--retry-attempts"
+            , "10"
             ]
             ExitSuccess
             (any (`elem` ["Current evolution: 0 / 64", "Current evolution: 1 / 64"]))
@@ -621,11 +717,13 @@ controlClientCheckP args expectedExitCode outputAsExpected = do
   assertBool (cmd ++ "\nCONTROL CLIENT OUTPUT\n" ++ outStr ++ errStr) (outputAsExpected outLines)
   assertEqual ("CONTROL CLIENT EXIT CODE\n" ++ outStr ++ errStr) expectedExitCode exitCode
 
-withAgentAndService :: FilePath -> FilePath -> [FilePath] -> FilePath -> IO a -> IO ([Text.Text], [Text.Text], a)
+withAgentAndService ::
+  FilePath -> FilePath -> [FilePath] -> FilePath -> IO a -> IO ([Text.Text], [Text.Text], a)
 withAgentAndService controlAddr serviceAddr bootstrapAddrs coldVerKeyFile action = do
   (agentOutLines, (serviceOutLines, retval)) <-
     withAgent controlAddr serviceAddr bootstrapAddrs coldVerKeyFile $
-      withService serviceAddr
+      withService
+        serviceAddr
         action
   return (agentOutLines, serviceOutLines, retval)
 
@@ -634,35 +732,41 @@ withAgent controlAddr serviceAddr bootstrapAddrs coldVerKeyFile action =
   withSpawnProcess "kes-agent" args $ \_ (Just hOut) (Just hErr) ph -> go hOut hErr ph
   where
     go hOut hErr ph = do
-        result <- (Right <$> action) `catch` handler
-        terminateProcess ph
-        outT <- Text.lines <$> Text.hGetContents hOut
-        errT <- Text.lines <$> Text.hGetContents hErr
-        case result of
-          Right retval ->
-            return (outT, retval)
-          Left (HUnitFailure srcLocMay msg) -> do
-            let msg' = (Text.unpack . Text.unlines $
-                          ["--- AGENT TRACE ---"] ++
-                          outT ++
-                          ["--- AGENT STDERR ---"] ++
-                          errT ++
-                          ["--- END OF AGENT TRACE ---"]
-                       ) ++
-                       msg
+      result <- (Right <$> action) `catch` handler
+      terminateProcess ph
+      outT <- Text.lines <$> Text.hGetContents hOut
+      errT <- Text.lines <$> Text.hGetContents hErr
+      case result of
+        Right retval ->
+          return (outT, retval)
+        Left (HUnitFailure srcLocMay msg) -> do
+          let msg' =
+                ( Text.unpack . Text.unlines $
+                    ["--- AGENT TRACE ---"]
+                      ++ outT
+                      ++ ["--- AGENT STDERR ---"]
+                      ++ errT
+                      ++ ["--- END OF AGENT TRACE ---"]
+                )
+                  ++ msg
 
-            throwIO $ HUnitFailure srcLocMay msg'
+          throwIO $ HUnitFailure srcLocMay msg'
 
     handler :: HUnitFailure -> IO (Either HUnitFailure a)
     handler err = return (Left err)
 
-    args = [ "run"
-           , "--cold-verification-key", coldVerKeyFile
-           , "--service-address", serviceAddr
-           , "--control-address", controlAddr
-           , "--log-level", "debug"
-           ]
-           ++ concat [ ["--bootstrap-address", a] | a <- bootstrapAddrs ]
+    args =
+      [ "run"
+      , "--cold-verification-key"
+      , coldVerKeyFile
+      , "--service-address"
+      , serviceAddr
+      , "--control-address"
+      , controlAddr
+      , "--log-level"
+      , "debug"
+      ]
+        ++ concat [["--bootstrap-address", a] | a <- bootstrapAddrs]
 
 withService :: FilePath -> IO a -> IO ([Text.Text], a)
 withService serviceAddr action =
@@ -676,17 +780,21 @@ withService serviceAddr action =
     terminateProcess ph
     outT <- Text.lines <$> Text.hGetContents hOut
     return (outT, retval)
-    where
-      args = [ "--service-address", serviceAddr ]
+  where
+    args = ["--service-address", serviceAddr]
 
-withSpawnProcess :: FilePath -> [String] -> (Maybe Handle -> Maybe Handle -> Maybe Handle -> ProcessHandle -> IO a) -> IO a
+withSpawnProcess ::
+  FilePath ->
+  [String] ->
+  (Maybe Handle -> Maybe Handle -> Maybe Handle -> ProcessHandle -> IO a) ->
+  IO a
 withSpawnProcess cmd args action = do
   let cp' = proc cmd args
-      cp = cp'
-            { std_in = CreatePipe
-            , std_out = CreatePipe
-            , std_err = CreatePipe
-            , new_session = True
-            }
+      cp =
+        cp'
+          { std_in = CreatePipe
+          , std_out = CreatePipe
+          , std_err = CreatePipe
+          , new_session = True
+          }
   withCreateProcess cp action
-

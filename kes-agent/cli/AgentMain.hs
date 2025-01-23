@@ -1,6 +1,6 @@
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Main
 where
@@ -18,28 +18,29 @@ import Cardano.Crypto.Libsodium.MLockedSeed
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket
 
+import Control.Arrow ((>>>))
 import Control.Concurrent.Class.MonadMVar
-import Control.Monad ( when, (<=<) )
-import Control.Monad.Class.MonadThrow ( bracket, finally, catch, SomeException )
-import Control.Monad.Class.MonadTime ( getCurrentTime )
+import Control.Monad (when, (<=<))
+import Control.Monad.Class.MonadThrow (SomeException, bracket, catch, finally)
+import Control.Monad.Class.MonadTime (getCurrentTime)
 import Control.Tracer
+import Data.Bifunctor
 import Data.ByteString (ByteString)
 import Data.Char
 import Data.Maybe
 import Data.Monoid
-import Data.Bifunctor
 import Data.Proxy (Proxy (..))
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 import Data.Text.Encoding (encodeUtf8)
 import qualified Data.Text.IO as Text
-import Data.Time.Clock.POSIX ( utcTimeToPOSIXSeconds )
+import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Network.Socket
 import Options.Applicative
 import System.Directory
 import System.Environment
-import System.FilePath ( (</>) )
+import System.FilePath ((</>))
 import System.IO (hFlush, stdout)
 import System.IOManager
 import System.Posix.Daemonize
@@ -48,24 +49,24 @@ import System.Posix.Syslog.Priority as Syslog
 import System.Posix.Types as Posix
 import System.Posix.User as Posix
 import Text.Printf
-import Text.Read ( readMaybe )
-import qualified Toml
+import Text.Read (readMaybe)
 import Toml (TomlCodec, (.=))
-import Control.Arrow ( (>>>) )
+import qualified Toml
+
 data NormalModeOptions
   = NormalModeOptions
-      { nmoServicePath :: Maybe String
-      , nmoControlPath :: Maybe String
-      , nmoBootstrapPaths :: Set String
-      , nmoLogLevel :: Maybe Priority
-      , nmoColdVerKeyFile :: Maybe FilePath
-      , nmoGenesisFile :: Maybe FilePath
-      }
+  { nmoServicePath :: Maybe String
+  , nmoControlPath :: Maybe String
+  , nmoBootstrapPaths :: Set String
+  , nmoLogLevel :: Maybe Priority
+  , nmoColdVerKeyFile :: Maybe FilePath
+  , nmoGenesisFile :: Maybe FilePath
+  }
   deriving (Show)
 
 instance Semigroup NormalModeOptions where
-  NormalModeOptions sp1 cp1 bps1 ll1 vkp1 gf1 <>
-    NormalModeOptions sp2 cp2 bps2 ll2 vkp2 gf2 =
+  NormalModeOptions sp1 cp1 bps1 ll1 vkp1 gf1
+    <> NormalModeOptions sp2 cp2 bps2 ll2 vkp2 gf2 =
       NormalModeOptions
         (sp1 <|> sp2)
         (cp1 <|> cp2)
@@ -89,29 +90,31 @@ instance Monoid NormalModeOptions where
   mempty = defNormalModeOptions
 
 normalModeTomlCodec :: TomlCodec NormalModeOptions
-normalModeTomlCodec = NormalModeOptions
-  <$> Toml.dioptional (Toml.string "service-path") .= nmoServicePath
-  <*> Toml.dioptional (Toml.string "control-path") .= nmoControlPath
-  <*> Toml.arraySetOf Toml._String "bootstrap-paths" .= nmoBootstrapPaths
-  <*> (Just <$> Toml.match (_ReadLogLevel >>> Toml._String) "log-level") .= (fromMaybe Syslog.Notice . nmoLogLevel)
-  <*> Toml.dioptional (Toml.string "cold-vkey") .= nmoColdVerKeyFile
-  <*> Toml.dioptional (Toml.string "genesis-file") .= nmoGenesisFile
+normalModeTomlCodec =
+  NormalModeOptions
+    <$> Toml.dioptional (Toml.string "service-path") .= nmoServicePath
+    <*> Toml.dioptional (Toml.string "control-path") .= nmoControlPath
+    <*> Toml.arraySetOf Toml._String "bootstrap-paths" .= nmoBootstrapPaths
+    <*> (Just <$> Toml.match (_ReadLogLevel >>> Toml._String) "log-level")
+      .= (fromMaybe Syslog.Notice . nmoLogLevel)
+    <*> Toml.dioptional (Toml.string "cold-vkey") .= nmoColdVerKeyFile
+    <*> Toml.dioptional (Toml.string "genesis-file") .= nmoGenesisFile
 
 data ServiceModeOptions
   = ServiceModeOptions
-      { smoServicePath :: Maybe String
-      , smoControlPath :: Maybe String
-      , smoBootstrapPaths :: Set String
-      , smoUser :: Maybe String
-      , smoGroup :: Maybe String
-      , smoColdVerKeyFile :: Maybe FilePath
-      , smoGenesisFile :: Maybe FilePath
-      }
+  { smoServicePath :: Maybe String
+  , smoControlPath :: Maybe String
+  , smoBootstrapPaths :: Set String
+  , smoUser :: Maybe String
+  , smoGroup :: Maybe String
+  , smoColdVerKeyFile :: Maybe FilePath
+  , smoGenesisFile :: Maybe FilePath
+  }
   deriving (Show)
 
 instance Semigroup ServiceModeOptions where
-  ServiceModeOptions sp1 cp1 bps1 uid1 gid1 vkp1 gf1 <>
-    ServiceModeOptions sp2 cp2 bps2 uid2 gid2 vkp2 gf2 =
+  ServiceModeOptions sp1 cp1 bps1 uid1 gid1 vkp1 gf1
+    <> ServiceModeOptions sp2 cp2 bps2 uid2 gid2 vkp2 gf2 =
       ServiceModeOptions
         (sp1 <|> sp2)
         (cp1 <|> cp2)
@@ -149,90 +152,100 @@ nullServiceModeOptions =
     }
 
 serviceModeTomlCodec :: TomlCodec ServiceModeOptions
-serviceModeTomlCodec = ServiceModeOptions
-  <$> Toml.dioptional (Toml.string "service-path") .= smoServicePath
-  <*> Toml.dioptional (Toml.string "control-path") .= smoControlPath
-  <*> Toml.arraySetOf Toml._String "bootstrap-paths" .= smoBootstrapPaths
-  <*> Toml.dioptional (Toml.string "user") .= smoUser
-  <*> Toml.dioptional (Toml.string "group") .= smoGroup
-  <*> Toml.dioptional (Toml.string "cold-vkey") .= smoColdVerKeyFile
-  <*> Toml.dioptional (Toml.string "genesis-file") .= smoGenesisFile
+serviceModeTomlCodec =
+  ServiceModeOptions
+    <$> Toml.dioptional (Toml.string "service-path") .= smoServicePath
+    <*> Toml.dioptional (Toml.string "control-path") .= smoControlPath
+    <*> Toml.arraySetOf Toml._String "bootstrap-paths" .= smoBootstrapPaths
+    <*> Toml.dioptional (Toml.string "user") .= smoUser
+    <*> Toml.dioptional (Toml.string "group") .= smoGroup
+    <*> Toml.dioptional (Toml.string "cold-vkey") .= smoColdVerKeyFile
+    <*> Toml.dioptional (Toml.string "genesis-file") .= smoGenesisFile
 
 data ProgramModeOptions
   = RunAsService ServiceModeOptions
   | RunNormally NormalModeOptions
   deriving (Show)
 
-data ProgramOptions =
-  ProgramOptions
-    { poMode :: ProgramModeOptions
-    , poExtraConfigPath :: Maybe FilePath
-    }
-    deriving (Show)
+data ProgramOptions
+  = ProgramOptions
+  { poMode :: ProgramModeOptions
+  , poExtraConfigPath :: Maybe FilePath
+  }
+  deriving (Show)
 
 pProgramOptions =
   ProgramOptions
     <$> pProgramModeOptions
-    <*> option (Just <$> str)
-          (  long "config-file"
+    <*> option
+      (Just <$> str)
+      ( long "config-file"
           <> long "config"
           <> short 'F'
           <> value Nothing
           <> metavar "FILE"
           <> help "Load configuration from FILE"
-          )
+      )
 
-
-pProgramModeOptions = subparser
-    (  command "start" (info (pure $ RunAsService nullServiceModeOptions) idm)
-    <> command "stop" (info (pure $ RunAsService nullServiceModeOptions) idm)
-    <> command "restart" (info (pure $ RunAsService nullServiceModeOptions) idm)
-    <> command "status" (info (pure $ RunAsService nullServiceModeOptions) idm)
-    <> command "run" (info (RunNormally <$> pNormalModeOptions) idm)
+pProgramModeOptions =
+  subparser
+    ( command "start" (info (pure $ RunAsService nullServiceModeOptions) idm)
+        <> command "stop" (info (pure $ RunAsService nullServiceModeOptions) idm)
+        <> command "restart" (info (pure $ RunAsService nullServiceModeOptions) idm)
+        <> command "status" (info (pure $ RunAsService nullServiceModeOptions) idm)
+        <> command "run" (info (RunNormally <$> pNormalModeOptions) idm)
     )
 
 pNormalModeOptions =
   NormalModeOptions
-    <$> option (Just <$> str)
-          (  long "service-address"
+    <$> option
+      (Just <$> str)
+      ( long "service-address"
           <> short 's'
           <> value Nothing
           <> metavar "PATH"
           <> help "Socket address for 'service' connections"
-          )
-    <*> option (Just <$> str)
-          (  long "control-address"
+      )
+    <*> option
+      (Just <$> str)
+      ( long "control-address"
           <> short 'c'
           <> value Nothing
           <> metavar "PATH"
           <> help "Socket address for 'control' connections"
-          )
-    <*> (Set.fromList <$> many (strOption
-          (  long "bootstrap-address"
-          <> short 'b'
-          <> metavar "PATH"
-          <> help "Socket address for 'bootstrapping' connections"
-          )
-        ))
-    <*> option (Just <$> eitherReader readLogLevel)
-          (  long "log-level"
+      )
+    <*> ( Set.fromList
+            <$> many
+              ( strOption
+                  ( long "bootstrap-address"
+                      <> short 'b'
+                      <> metavar "PATH"
+                      <> help "Socket address for 'bootstrapping' connections"
+                  )
+              )
+        )
+    <*> option
+      (Just <$> eitherReader readLogLevel)
+      ( long "log-level"
           <> short 'l'
           <> value Nothing
           <> metavar "LEVEL"
           <> help "Logging level. One of 'debug', 'info', 'notice', 'warn', 'error', 'critical', 'emergency'."
-          )
-    <*> option (Just <$> str)
-          (  long "cold-verification-key"
+      )
+    <*> option
+      (Just <$> str)
+      ( long "cold-verification-key"
           <> value Nothing
           <> metavar "PATH"
           <> help "Cold verification key file, used to validate OpCerts upon receipt"
-          )
-    <*> option (Just <$> str)
-          (  long "genesis-file"
+      )
+    <*> option
+      (Just <$> str)
+      ( long "genesis-file"
           <> value Nothing
           <> metavar "PATH"
           <> help "Genesis file (mainnet-ERA-genesis.json)"
-          )
+      )
 
 readLogLevel :: String -> Either String Priority
 readLogLevel "debug" = Right Syslog.Debug
@@ -266,18 +279,18 @@ nmoFromEnv = do
   coldVerKeyPath <- lookupEnv "KES_AGENT_COLD_VK"
   genesisFile <- lookupEnv "KES_AGENT_GENESIS_FILE"
   logLevel <- fmap (either error id . readLogLevel) <$> lookupEnv "KES_AGENT_LOG_LEVEL"
-  return NormalModeOptions
-    { nmoServicePath = servicePath
-    , nmoControlPath = controlPath
-    , nmoBootstrapPaths = bootstrapPaths
-    , nmoLogLevel = logLevel
-    , nmoColdVerKeyFile = coldVerKeyPath
-    , nmoGenesisFile = genesisFile
-    }
+  return
+    NormalModeOptions
+      { nmoServicePath = servicePath
+      , nmoControlPath = controlPath
+      , nmoBootstrapPaths = bootstrapPaths
+      , nmoLogLevel = logLevel
+      , nmoColdVerKeyFile = coldVerKeyPath
+      , nmoGenesisFile = genesisFile
+      }
 
 nmoFromFiles :: IO NormalModeOptions
 nmoFromFiles = optionsFromFiles defNormalModeOptions normalModeTomlCodec =<< getConfigPaths
-
 
 smoFromEnv :: IO ServiceModeOptions
 smoFromEnv = do
@@ -290,15 +303,16 @@ smoFromEnv = do
   groupSpec <- lookupEnv "KES_AGENT_GROUP"
   userSpec <- lookupEnv "KES_AGENT_USER"
   genesisFile <- lookupEnv "KES_AGENT_GENESIS_FILE"
-  return ServiceModeOptions
-    { smoServicePath = servicePath
-    , smoControlPath = controlPath
-    , smoBootstrapPaths = bootstrapPaths
-    , smoUser = userSpec
-    , smoGroup = groupSpec
-    , smoColdVerKeyFile = coldVerKeyPath
-    , smoGenesisFile = genesisFile
-    }
+  return
+    ServiceModeOptions
+      { smoServicePath = servicePath
+      , smoControlPath = controlPath
+      , smoBootstrapPaths = bootstrapPaths
+      , smoUser = userSpec
+      , smoGroup = groupSpec
+      , smoColdVerKeyFile = coldVerKeyPath
+      , smoGenesisFile = genesisFile
+      }
 
 smoFromFiles :: IO ServiceModeOptions
 smoFromFiles = optionsFromFiles defServiceModeOptions serviceModeTomlCodec =<< getConfigPaths
@@ -310,18 +324,20 @@ nmoToAgentOptions nmo = do
   let bootstrapPaths = Set.toList $ nmoBootstrapPaths nmo
   coldVerKeyPath <- maybe (error "No cold verification key") return (nmoColdVerKeyFile nmo)
   (ColdVerKey coldVerKey) <- either error return =<< decodeTextEnvelopeFile coldVerKeyPath
-  evolutionConfig <- maybe
-                      (pure defEvolutionConfig)
-                      (either error return <=< evolutionConfigFromGenesisFile)
-                      (nmoGenesisFile nmo)
-  return defAgentOptions
-            { agentServiceAddr = SockAddrUnix servicePath
-            , agentControlAddr = SockAddrUnix controlPath
-            , agentBootstrapAddr = map SockAddrUnix bootstrapPaths
-            , agentColdVerKey = coldVerKey
-            , agentGenSeed = mlockedSeedNewRandom
-            , agentEvolutionConfig = evolutionConfig
-            }
+  evolutionConfig <-
+    maybe
+      (pure defEvolutionConfig)
+      (either error return <=< evolutionConfigFromGenesisFile)
+      (nmoGenesisFile nmo)
+  return
+    defAgentOptions
+      { agentServiceAddr = SockAddrUnix servicePath
+      , agentControlAddr = SockAddrUnix controlPath
+      , agentBootstrapAddr = map SockAddrUnix bootstrapPaths
+      , agentColdVerKey = coldVerKey
+      , agentGenSeed = mlockedSeedNewRandom
+      , agentEvolutionConfig = evolutionConfig
+      }
 
 smoToAgentOptions :: ServiceModeOptions -> IO (AgentOptions IO SockAddr StandardCrypto)
 smoToAgentOptions smo = do
@@ -330,33 +346,36 @@ smoToAgentOptions smo = do
   let bootstrapPaths = Set.toList $ smoBootstrapPaths smo
   coldVerKeyPath <- maybe (error "No cold verification key") return (smoColdVerKeyFile smo)
   (ColdVerKey coldVerKey) <- either error return =<< decodeTextEnvelopeFile coldVerKeyPath
-  evolutionConfig <- maybe
-                      (pure defEvolutionConfig)
-                      (either error return <=< evolutionConfigFromGenesisFile)
-                      (smoGenesisFile smo)
-  return defAgentOptions
-            { agentServiceAddr = SockAddrUnix servicePath
-            , agentControlAddr = SockAddrUnix controlPath
-            , agentBootstrapAddr = map SockAddrUnix bootstrapPaths
-            , agentColdVerKey = coldVerKey
-            , agentGenSeed = mlockedSeedNewRandom
-            , agentEvolutionConfig = evolutionConfig
-            }
+  evolutionConfig <-
+    maybe
+      (pure defEvolutionConfig)
+      (either error return <=< evolutionConfigFromGenesisFile)
+      (smoGenesisFile smo)
+  return
+    defAgentOptions
+      { agentServiceAddr = SockAddrUnix servicePath
+      , agentControlAddr = SockAddrUnix controlPath
+      , agentBootstrapAddr = map SockAddrUnix bootstrapPaths
+      , agentColdVerKey = coldVerKey
+      , agentGenSeed = mlockedSeedNewRandom
+      , agentEvolutionConfig = evolutionConfig
+      }
 
 optionsFromFile :: Show a => a -> TomlCodec a -> FilePath -> IO a
 optionsFromFile def codec path = do
   exists <- doesFileExist path
-  if exists then do
-    -- putStrLn $ "Loading configuration file: " <> path
-    tomlRes <- Toml.decodeFileEither codec path
-    print tomlRes
-    case tomlRes of
-      Left errs -> do
-        error . Text.unpack $ Toml.prettyTomlDecodeErrors errs
-      Right opts -> do
-        return opts
-  else do
-    return def
+  if exists
+    then do
+      -- putStrLn $ "Loading configuration file: " <> path
+      tomlRes <- Toml.decodeFileEither codec path
+      print tomlRes
+      case tomlRes of
+        Left errs -> do
+          error . Text.unpack $ Toml.prettyTomlDecodeErrors errs
+        Right opts -> do
+          return opts
+    else do
+      return def
 
 optionsFromFiles :: (Show a, Monoid a) => a -> TomlCodec a -> [FilePath] -> IO a
 optionsFromFiles def codec paths =
@@ -424,26 +443,29 @@ stdoutAgentTracer maxPrio lock = Tracer $ \msg -> do
   timestamp <- utcTimeToPOSIXSeconds <$> getCurrentTime
   let prio = agentTracePrio msg
   when (prio <= maxPrio) $
-        withMVar lock $ \_ -> do
-          printf "%15.3f %-8s %s\n"
-            (realToFrac timestamp :: Double)
-            (show prio)
-            (pretty msg)
-          hFlush stdout
-
+    withMVar lock $ \_ -> do
+      printf
+        "%15.3f %-8s %s\n"
+        (realToFrac timestamp :: Double)
+        (show prio)
+        (pretty msg)
+      hFlush stdout
 
 runAsService :: Maybe FilePath -> ServiceModeOptions -> IO ()
 runAsService configPathMay smo' =
-  go `catch` (\(e :: SomeException) ->
-    syslog Syslog.Critical (encodeUtf8 . Text.pack $ show e))
+  go
+    `catch` ( \(e :: SomeException) ->
+                syslog Syslog.Critical (encodeUtf8 . Text.pack $ show e)
+            )
   where
     go :: IO ()
-    go =  withIOManager $ \ioManager -> do
+    go = withIOManager $ \ioManager -> do
       smoEnv <- smoFromEnv
-      smoExtra <- maybe
-                    (pure defServiceModeOptions)
-                    (optionsFromFile defServiceModeOptions serviceModeTomlCodec)
-                    configPathMay
+      smoExtra <-
+        maybe
+          (pure defServiceModeOptions)
+          (optionsFromFile defServiceModeOptions serviceModeTomlCodec)
+          configPathMay
       smoFiles <- smoFromFiles
       let smo = smo' <> smoEnv <> smoExtra <> smoFiles <> defServiceModeOptions
       agentOptions <- smoToAgentOptions smo
@@ -458,11 +480,12 @@ runAsService configPathMay smo' =
               gid <- groupID <$> Posix.getGroupEntryForName groupName
               uid <- userID <$> Posix.getUserEntryForName userName
               Posix.setFileCreationMask 0770
-              agent <- newAgent
-                (Proxy @StandardCrypto)
-                (socketSnocket ioManager)
-                makeSocketRawBearer
-                agentOptions { agentTracer = syslogAgentTracer }
+              agent <-
+                newAgent
+                  (Proxy @StandardCrypto)
+                  (socketSnocket ioManager)
+                  makeSocketRawBearer
+                  agentOptions {agentTracer = syslogAgentTracer}
               setOwnerAndGroup servicePath uid gid
               setOwnerAndGroup controlPath uid gid
               return agent
@@ -474,10 +497,11 @@ runAsService configPathMay smo' =
 runNormally :: Maybe FilePath -> NormalModeOptions -> IO ()
 runNormally configPathMay nmo' = withIOManager $ \ioManager -> do
   nmoEnv <- nmoFromEnv
-  nmoExtra <- maybe
-                (pure defNormalModeOptions)
-                (optionsFromFile defNormalModeOptions normalModeTomlCodec)
-                configPathMay
+  nmoExtra <-
+    maybe
+      (pure defNormalModeOptions)
+      (optionsFromFile defNormalModeOptions normalModeTomlCodec)
+      configPathMay
   nmoFiles <- nmoFromFiles
   let nmo = nmo' <> nmoEnv <> nmoExtra <> nmoFiles <> defNormalModeOptions
   agentOptions <- nmoToAgentOptions nmo
@@ -485,11 +509,11 @@ runNormally configPathMay nmo' = withIOManager $ \ioManager -> do
 
   logLock <- newMVar ()
   bracket
-    (newAgent
-      (Proxy @StandardCrypto)
-      (socketSnocket ioManager)
-      makeSocketRawBearer
-      agentOptions { agentTracer = stdoutAgentTracer maxPrio logLock }
+    ( newAgent
+        (Proxy @StandardCrypto)
+        (socketSnocket ioManager)
+        makeSocketRawBearer
+        agentOptions {agentTracer = stdoutAgentTracer maxPrio logLock}
     )
     finalizeAgent
     runAgent

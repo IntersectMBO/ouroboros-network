@@ -9,11 +9,11 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 module Cardano.KESAgent.KES.Classes
-  where
+where
 
 import Cardano.KESAgent.KES.Crypto
-import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Protocols.Service.V1.Protocol
+import Cardano.KESAgent.Protocols.VersionedProtocol
 
 import Cardano.Binary
 import Cardano.Crypto.DirectSerialise
@@ -27,6 +27,6 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
-import Control.Monad.Class.MonadTime ( MonadTime (..) )
+import Control.Monad.Class.MonadTime (MonadTime (..))
 import Control.Monad.Class.MonadTimer
-import Data.Typeable ( Typeable )
+import Data.Typeable (Typeable)

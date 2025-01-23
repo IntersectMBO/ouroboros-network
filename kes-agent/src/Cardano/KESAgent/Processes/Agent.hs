@@ -1,3 +1,4 @@
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -10,7 +11,6 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE ConstraintKinds #-}
 
 -- | The main Agent program.
 -- The KES Agent opens two sockets:
@@ -19,45 +19,43 @@
 --   push new keys into the agent.
 -- - A \"service\" socket, to which a Node can connect in order to receive the
 --   current KES key and future key updates.
-module Cardano.KESAgent.Processes.Agent
-  ( Agent
-  , AgentOptions (..)
-  , EvolutionConfig (..)
-  , ControlCrypto (..)
-  , ServiceCrypto (..)
-  , defEvolutionConfig
-  , AgentTrace (..)
-  , ServiceClientTrace (..)
-  , defAgentOptions
-  , newAgent
-  , runAgent
-  , finalizeAgent
-  )
-  where
+module Cardano.KESAgent.Processes.Agent (
+  Agent,
+  AgentOptions (..),
+  EvolutionConfig (..),
+  ControlCrypto (..),
+  ServiceCrypto (..),
+  defEvolutionConfig,
+  AgentTrace (..),
+  ServiceClientTrace (..),
+  defAgentOptions,
+  newAgent,
+  runAgent,
+  finalizeAgent,
+)
+where
 
-import Cardano.KESAgent.KES.Bundle ( Bundle (..) )
-import Cardano.KESAgent.KES.Crypto ( Crypto (..) )
-import Cardano.KESAgent.KES.Evolution
-  ( getCurrentKESPeriodWith
-  , updateKESTo
-  , EvolutionConfig (..)
-  , defEvolutionConfig
-  )
-import Cardano.KESAgent.KES.OCert
-  ( KESPeriod (..)
-  , OCert (..)
-  , OCertSignable
-  , validateOCert
-  )
-import Cardano.KESAgent.Processes.ServiceClient
-  ( runServiceClientForever
-  , ServiceClientOptions (..)
-  , ServiceClientTrace (..)
-  , ServiceClientCrypto (..)
-  )
-import Cardano.KESAgent.Protocols.Types
+import Cardano.KESAgent.KES.Bundle (Bundle (..))
+import Cardano.KESAgent.KES.Crypto (Crypto (..))
+import Cardano.KESAgent.KES.Evolution (
+  EvolutionConfig (..),
+  defEvolutionConfig,
+  getCurrentKESPeriodWith,
+  updateKESTo,
+ )
+import Cardano.KESAgent.KES.OCert (
+  KESPeriod (..),
+  OCert (..),
+  OCertSignable,
+  validateOCert,
+ )
+import Cardano.KESAgent.Processes.ServiceClient (
+  ServiceClientCrypto (..),
+  ServiceClientOptions (..),
+  ServiceClientTrace (..),
+  runServiceClientForever,
+ )
 import Cardano.KESAgent.Protocols.AgentInfo
-import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Protocols.BearerUtil
 import qualified Cardano.KESAgent.Protocols.Control.V0.Driver as CP0
 import qualified Cardano.KESAgent.Protocols.Control.V0.Peers as CP0
@@ -65,122 +63,134 @@ import qualified Cardano.KESAgent.Protocols.Control.V0.Protocol as CP0
 import qualified Cardano.KESAgent.Protocols.Control.V1.Driver as CP1
 import qualified Cardano.KESAgent.Protocols.Control.V1.Peers as CP1
 import qualified Cardano.KESAgent.Protocols.Control.V1.Protocol as CP1
-import Cardano.KESAgent.Protocols.RecvResult ( RecvResult (..) )
+import Cardano.KESAgent.Protocols.RecvResult (RecvResult (..))
 import qualified Cardano.KESAgent.Protocols.Service.V0.Driver as SP0
 import qualified Cardano.KESAgent.Protocols.Service.V0.Peers as SP0
 import qualified Cardano.KESAgent.Protocols.Service.V0.Protocol as SP0
 import qualified Cardano.KESAgent.Protocols.Service.V1.Driver as SP1
 import qualified Cardano.KESAgent.Protocols.Service.V1.Peers as SP1
 import qualified Cardano.KESAgent.Protocols.Service.V1.Protocol as SP1
+import Cardano.KESAgent.Protocols.StandardCrypto
+import Cardano.KESAgent.Protocols.Types
+import Cardano.KESAgent.Protocols.VersionHandshake.Driver (
+  VersionHandshakeDriverTrace (..),
+  versionHandshakeDriver,
+ )
+import Cardano.KESAgent.Protocols.VersionHandshake.Peers (versionHandshakeServer)
+import Cardano.KESAgent.Protocols.VersionHandshake.Protocol (VersionHandshakeProtocol)
 import Cardano.KESAgent.Protocols.VersionedProtocol
-import Cardano.KESAgent.Protocols.VersionHandshake.Driver ( VersionHandshakeDriverTrace (..), versionHandshakeDriver )
-import Cardano.KESAgent.Protocols.VersionHandshake.Peers ( versionHandshakeServer )
-import Cardano.KESAgent.Protocols.VersionHandshake.Protocol ( VersionHandshakeProtocol )
 import Cardano.KESAgent.Serialization.DirectCodec
-import Cardano.KESAgent.Util.Pretty ( Pretty (..), strLength )
-import Cardano.KESAgent.Util.RefCounting
-  ( CRef
-  , CRefEvent (..)
-  , CRefID
-  , acquireCRef
-  , newCRef
-  , newCRefWith
-  , readCRef
-  , releaseCRef
-  , withCRefValue
-  )
+import Cardano.KESAgent.Util.Pretty (Pretty (..), strLength)
+import Cardano.KESAgent.Util.RefCounting (
+  CRef,
+  CRefEvent (..),
+  CRefID,
+  acquireCRef,
+  newCRef,
+  newCRefWith,
+  readCRef,
+  releaseCRef,
+  withCRefValue,
+ )
 
-import Cardano.Crypto.DSIGN.Class ( DSIGNAlgorithm (..), VerKeyDSIGN )
+import Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm (..), VerKeyDSIGN)
 import qualified Cardano.Crypto.DSIGN.Class as DSIGN
-import Cardano.Crypto.DirectSerialise
-  ( DirectDeserialise (..)
-  , DirectSerialise (..)
-  )
-import Cardano.Crypto.KES.Class
-  ( ContextKES
-  , KESAlgorithm (..)
-  , SignKeyWithPeriodKES (..)
-  , forgetSignKeyKES
-  , rawSerialiseSignKeyKES
-  , genKeyKES
-  , deriveVerKeyKES
-  )
+import Cardano.Crypto.DirectSerialise (
+  DirectDeserialise (..),
+  DirectSerialise (..),
+ )
+import Cardano.Crypto.KES.Class (
+  ContextKES,
+  KESAlgorithm (..),
+  SignKeyWithPeriodKES (..),
+  deriveVerKeyKES,
+  forgetSignKeyKES,
+  genKeyKES,
+  rawSerialiseSignKeyKES,
+ )
 import Cardano.Crypto.Libsodium.MLockedSeed
 
 import Ouroboros.Network.RawBearer
-import Ouroboros.Network.Snocket ( Accept (..), Accepted (..), Snocket (..) )
+import Ouroboros.Network.Snocket (Accept (..), Accepted (..), Snocket (..))
 
-import Data.Word
-import Data.SerDoc.Info ( Description (..), aliasField, annField )
-import Data.SerDoc.Class ( ViaEnum (..), Codec (..), HasInfo (..), Serializable (..), encodeEnum, decodeEnum, enumInfo )
+import Control.Concurrent.Class.MonadMVar (
+  MVar,
+  MonadMVar,
+  newEmptyMVar,
+  newMVar,
+  putMVar,
+  readMVar,
+  tryTakeMVar,
+  withMVar,
+ )
+import Control.Concurrent.Class.MonadSTM (MonadSTM, retry)
+import Control.Concurrent.Class.MonadSTM.TChan (
+  TChan,
+  dupTChan,
+  newBroadcastTChan,
+  readTChan,
+  writeTChan,
+ )
+import Control.Concurrent.Class.MonadSTM.TMVar (
+  TMVar,
+  newEmptyTMVar,
+  newTMVar,
+  newTMVarIO,
+  putTMVar,
+  readTMVar,
+  takeTMVar,
+  tryReadTMVar,
+  tryTakeTMVar,
+ )
+import Control.Monad (forever, void, when)
+import Control.Monad.Class.MonadAsync (
+  MonadAsync,
+  concurrently,
+  concurrently_,
+  mapConcurrently_,
+ )
+import Control.Monad.Class.MonadFork (labelThread, myThreadId)
+import Control.Monad.Class.MonadST (MonadST)
+import Control.Monad.Class.MonadSTM (atomically)
+import Control.Monad.Class.MonadThrow (
+  MonadCatch,
+  MonadThrow,
+  SomeException,
+  bracket,
+  catch,
+  finally,
+  throwIO,
+ )
+import Control.Monad.Class.MonadTime (MonadTime (..))
+import Control.Monad.Class.MonadTimer (MonadTimer, threadDelay)
+import Control.Tracer (Tracer (..), nullTracer, traceWith)
+import Data.ByteString (ByteString)
+import Data.Coerce
+import Data.Functor.Contravariant (contramap, (>$<))
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
+import Data.Maybe (fromJust)
+import Data.Proxy (Proxy (..))
+import Data.SerDoc.Class (
+  Codec (..),
+  HasInfo (..),
+  Serializable (..),
+  ViaEnum (..),
+  decodeEnum,
+  encodeEnum,
+  enumInfo,
+ )
+import Data.SerDoc.Info (Description (..), aliasField, annField)
 import qualified Data.SerDoc.Info
 import Data.SerDoc.TH (deriveSerDoc)
-import Control.Concurrent.Class.MonadMVar
-  ( MVar
-  , MonadMVar
-  , newEmptyMVar
-  , newMVar
-  , putMVar
-  , readMVar
-  , tryTakeMVar
-  , withMVar
-  )
-import Control.Concurrent.Class.MonadSTM ( MonadSTM, retry )
-import Control.Concurrent.Class.MonadSTM.TChan
-  ( TChan
-  , dupTChan
-  , newBroadcastTChan
-  , readTChan
-  , writeTChan
-  )
-import Control.Concurrent.Class.MonadSTM.TMVar
-  ( TMVar
-  , newEmptyTMVar
-  , newTMVar
-  , newTMVarIO
-  , putTMVar
-  , readTMVar
-  , takeTMVar
-  , tryReadTMVar
-  , tryTakeTMVar
-  )
-import Control.Monad ( forever, void, when )
-import Control.Monad.Class.MonadAsync
-  ( MonadAsync
-  , concurrently
-  , concurrently_
-  , mapConcurrently_
-  )
-import Control.Monad.Class.MonadFork ( labelThread, myThreadId )
-import Control.Monad.Class.MonadST ( MonadST )
-import Control.Monad.Class.MonadSTM ( atomically )
-import Control.Monad.Class.MonadThrow
-  ( MonadCatch
-  , MonadThrow
-  , SomeException
-  , bracket
-  , catch
-  , finally
-  , throwIO
-  )
-import Control.Monad.Class.MonadTime ( MonadTime (..) )
-import Control.Monad.Class.MonadTimer ( threadDelay, MonadTimer )
-import Control.Tracer ( Tracer (..), nullTracer, traceWith )
-import Data.ByteString ( ByteString )
-import Data.Coerce
-import Data.Functor.Contravariant ( contramap, (>$<) )
-import Data.Map.Strict ( Map )
-import qualified Data.Map.Strict as Map
-import Data.Maybe ( fromJust )
-import Data.Proxy ( Proxy (..) )
-import Data.Text ( Text )
+import Data.Text (Text)
 import qualified Data.Text as Text
-import Data.Time ( UTCTime )
-import Data.Typeable ( Typeable )
-import Network.TypedProtocol.Core ( PeerRole (..) )
-import Network.TypedProtocol.Driver ( runPeerWithDriver )
+import Data.Time (UTCTime)
+import Data.Typeable (Typeable)
+import Data.Word
+import Network.TypedProtocol.Core (PeerRole (..))
+import Network.TypedProtocol.Driver (runPeerWithDriver)
 import Text.Printf
-import Data.Coerce
 
 {-HLINT ignore "Use underscore" -}
 
@@ -223,7 +233,6 @@ instance Pretty AgentTrace where
   pretty (AgentServiceClientConnected a b) = "Agent: ServiceClientConnected: " ++ a ++ " " ++ b
   pretty (AgentServiceClientDisconnected a) = "Agent: ServiceClientDisconnected: " ++ a
   pretty (AgentServiceSocketError e) = "Agent: ServiceSocketError: " ++ e
-
   pretty (AgentControlDriverTrace d) = "Agent: ControlDriver: " ++ pretty d
   pretty (AgentControlSocketClosed a) = "Agent: ControlSocketClosed: " ++ a
   pretty (AgentControlClientConnected a b) = "Agent: ControlClientConnected: " ++ a ++ " " ++ b
@@ -231,43 +240,38 @@ instance Pretty AgentTrace where
   pretty (AgentControlSocketError e) = "Agent: ControlSocketError: " ++ e
   pretty x = "Agent: " ++ drop (strLength "Agent") (show x)
 
-data AgentOptions m addr c =
-  AgentOptions
-    { agentTracer :: Tracer m AgentTrace
-      -- | Socket on which the agent will be listening for control messages,
-      -- i.e., KES keys being pushed from a control server.
-    , agentControlAddr :: addr
-
-      -- | Socket on which the agent will send KES keys to any connected nodes.
-    , agentServiceAddr :: addr
-
-      -- | Sockets that the agent will use for bootstrapping from other agents.
-    , agentBootstrapAddr :: [addr]
-
-      -- | Evolution configuration: genesis, slot duration, slots per KES period
-    , agentEvolutionConfig :: EvolutionConfig
-
-      -- | Return the current time. Should normally be set to
-      -- 'getPOSIXTime', but overriding this may be desirable for testing
-      -- purposes.
-    , agentGetCurrentTime :: m UTCTime
-
-    , agentColdVerKey :: VerKeyDSIGN (DSIGN c)
-
-    , agentGenSeed :: m (MLockedSeed (SeedSizeKES (KES c)))
-    }
+data AgentOptions m addr c
+  = AgentOptions
+  { agentTracer :: Tracer m AgentTrace
+  , agentControlAddr :: addr
+  -- ^ Socket on which the agent will be listening for control messages,
+  -- i.e., KES keys being pushed from a control server.
+  , agentServiceAddr :: addr
+  -- ^ Socket on which the agent will send KES keys to any connected nodes.
+  , agentBootstrapAddr :: [addr]
+  -- ^ Sockets that the agent will use for bootstrapping from other agents.
+  , agentEvolutionConfig :: EvolutionConfig
+  -- ^ Evolution configuration: genesis, slot duration, slots per KES period
+  , agentGetCurrentTime :: m UTCTime
+  -- ^ Return the current time. Should normally be set to
+  -- 'getPOSIXTime', but overriding this may be desirable for testing
+  -- purposes.
+  , agentColdVerKey :: VerKeyDSIGN (DSIGN c)
+  , agentGenSeed :: m (MLockedSeed (SeedSizeKES (KES c)))
+  }
 
 defAgentOptions :: MonadTime m => AgentOptions m addr c
-defAgentOptions = AgentOptions
-  { agentControlAddr = error "missing control address"
-  , agentServiceAddr = error "missing service address"
-  , agentBootstrapAddr = []
-  , agentEvolutionConfig = defEvolutionConfig
-  , agentGetCurrentTime = getCurrentTime
-  , agentTracer = nullTracer
-  , agentColdVerKey = error "missing cold verification key file"
-  , agentGenSeed = error "missing seed generator"
-  }
+defAgentOptions =
+  AgentOptions
+    { agentControlAddr = error "missing control address"
+    , agentServiceAddr = error "missing service address"
+    , agentBootstrapAddr = []
+    , agentEvolutionConfig = defEvolutionConfig
+    , agentGetCurrentTime = getCurrentTime
+    , agentTracer = nullTracer
+    , agentColdVerKey = error "missing cold verification key file"
+    , agentGenSeed = error "missing seed generator"
+    }
 
 -- The key update lock is required because we need to distinguish between two
 -- different situations in which the currentKey TMVar may be empty:
@@ -299,34 +303,35 @@ defAgentOptions = AgentOptions
 -- - takeTMVar is not allowed, since it would 1) block, and 2) require
 --   acquisition of keyLock, resulting in a deadlock.
 -- - tryTakeTMVar is allowed, but only while holding the keyLock.
-data Agent c m fd addr =
-  Agent
-    { agentSnocket :: Snocket m fd addr
-    , agentMRB :: MakeRawBearer m fd
-    , agentOptions :: AgentOptions m addr c
-    , agentCurrentKeyVar :: TMVar m (Maybe (Bundle m c))
-    , agentStagedKeyVar :: TMVar m (Maybe (CRef m (SignKeyWithPeriodKES (KES c))))
-    , agentNextKeyChan :: TChan m (Bundle m c)
-    , agentServiceFD :: fd
-    , agentControlFD :: fd
-    , agentBootstrapConnections :: TMVar m (Map Text ConnectionStatus)
-    }
+data Agent c m fd addr
+  = Agent
+  { agentSnocket :: Snocket m fd addr
+  , agentMRB :: MakeRawBearer m fd
+  , agentOptions :: AgentOptions m addr c
+  , agentCurrentKeyVar :: TMVar m (Maybe (Bundle m c))
+  , agentStagedKeyVar :: TMVar m (Maybe (CRef m (SignKeyWithPeriodKES (KES c))))
+  , agentNextKeyChan :: TChan m (Bundle m c)
+  , agentServiceFD :: fd
+  , agentControlFD :: fd
+  , agentBootstrapConnections :: TMVar m (Map Text ConnectionStatus)
+  }
 
-newAgent :: forall c m fd addr
-          . Monad m
-         => MonadSTM m
-         => Show addr
-         => Show fd
-         => Proxy c
-         -> Snocket m fd addr
-         -> MakeRawBearer m fd
-         -> AgentOptions m addr c
-         -> m (Agent c m fd addr)
+newAgent ::
+  forall c m fd addr.
+  Monad m =>
+  MonadSTM m =>
+  Show addr =>
+  Show fd =>
+  Proxy c ->
+  Snocket m fd addr ->
+  MakeRawBearer m fd ->
+  AgentOptions m addr c ->
+  m (Agent c m fd addr)
 newAgent _p s mrb options = do
-  stagedKeyVar :: TMVar m (Maybe (CRef m (SignKeyWithPeriodKES (KES c))))
-               <- newTMVarIO Nothing
-  currentKeyVar :: TMVar m (Maybe (Bundle m c))
-                <- newTMVarIO Nothing
+  stagedKeyVar :: TMVar m (Maybe (CRef m (SignKeyWithPeriodKES (KES c)))) <-
+    newTMVarIO Nothing
+  currentKeyVar :: TMVar m (Maybe (Bundle m c)) <-
+    newTMVarIO Nothing
   nextKeyChan <- atomically newBroadcastTChan
   bootstrapConnectionsVar <- newTMVarIO mempty
 
@@ -336,17 +341,18 @@ newAgent _p s mrb options = do
   controlFD <- open s (addrFamily s (agentControlAddr options))
   bind s controlFD (agentControlAddr options)
 
-  return Agent
-    { agentSnocket = s
-    , agentMRB = mrb
-    , agentOptions = options
-    , agentStagedKeyVar = stagedKeyVar
-    , agentCurrentKeyVar = currentKeyVar
-    , agentNextKeyChan = nextKeyChan
-    , agentServiceFD = serviceFD
-    , agentControlFD = controlFD
-    , agentBootstrapConnections = bootstrapConnectionsVar
-    }
+  return
+    Agent
+      { agentSnocket = s
+      , agentMRB = mrb
+      , agentOptions = options
+      , agentStagedKeyVar = stagedKeyVar
+      , agentCurrentKeyVar = currentKeyVar
+      , agentNextKeyChan = nextKeyChan
+      , agentServiceFD = serviceFD
+      , agentControlFD = controlFD
+      , agentBootstrapConnections = bootstrapConnectionsVar
+      }
 
 finalizeAgent :: Monad m => Agent c m fd addr -> m ()
 finalizeAgent agent = do
@@ -360,11 +366,12 @@ agentTrace agent = traceWith (agentTracer . agentOptions $ agent)
 agentCRefTracer :: Agent c m fd addr -> Tracer m CRefEvent
 agentCRefTracer = contramap AgentCRefEvent . agentTracer . agentOptions
 
-alterBundle :: (MonadSTM m, MonadThrow m)
-          => Agent c m fd addr
-          -> String
-          -> (Maybe (Bundle m c) -> m (Maybe (Bundle m c), a))
-          -> m a
+alterBundle ::
+  (MonadSTM m, MonadThrow m) =>
+  Agent c m fd addr ->
+  String ->
+  (Maybe (Bundle m c) -> m (Maybe (Bundle m c), a)) ->
+  m a
 alterBundle agent context f = do
   agentTrace agent $ AgentLockRequest context
   atomically (takeTMVar (agentCurrentKeyVar agent)) >>= \bundle -> do
@@ -374,11 +381,12 @@ alterBundle agent context f = do
     agentTrace agent (AgentLockReleased context)
     return retval
 
-withBundle :: (MonadSTM m, MonadThrow m)
-          => Agent c m fd addr
-          -> String
-          -> (Maybe (Bundle m c) -> m a)
-          -> m a
+withBundle ::
+  (MonadSTM m, MonadThrow m) =>
+  Agent c m fd addr ->
+  String ->
+  (Maybe (Bundle m c) -> m a) ->
+  m a
 withBundle agent context f = do
   agentTrace agent $ AgentLockRequest context
   atomically (takeTMVar (agentCurrentKeyVar agent)) >>= \bundle -> do
@@ -388,13 +396,14 @@ withBundle agent context f = do
     agentTrace agent (AgentLockReleased context)
     return retval
 
-alterStagedKey :: (MonadSTM m, MonadThrow m)
-          => Agent c m fd addr
-          -> String
-          -> ( Maybe (CRef m (SignKeyWithPeriodKES (KES c)))
-               -> m (Maybe (CRef m (SignKeyWithPeriodKES (KES c))), a)
-             )
-          -> m a
+alterStagedKey ::
+  (MonadSTM m, MonadThrow m) =>
+  Agent c m fd addr ->
+  String ->
+  ( Maybe (CRef m (SignKeyWithPeriodKES (KES c))) ->
+    m (Maybe (CRef m (SignKeyWithPeriodKES (KES c))), a)
+  ) ->
+  m a
 alterStagedKey agent context f = do
   agentTrace agent $ AgentLockRequest context
   atomically (takeTMVar (agentStagedKeyVar agent)) >>= \skp -> do
@@ -404,11 +413,12 @@ alterStagedKey agent context f = do
     agentTrace agent (AgentLockReleased context)
     return retval
 
-withStagedKey :: (MonadSTM m, MonadThrow m)
-          => Agent c m fd addr
-          -> String
-          -> (Maybe (CRef m (SignKeyWithPeriodKES (KES c))) -> m a)
-          -> m a
+withStagedKey ::
+  (MonadSTM m, MonadThrow m) =>
+  Agent c m fd addr ->
+  String ->
+  (Maybe (CRef m (SignKeyWithPeriodKES (KES c))) -> m a) ->
+  m a
 withStagedKey agent context f = do
   agentTrace agent $ AgentLockRequest context
   atomically (takeTMVar (agentStagedKeyVar agent)) >>= \skp -> do
@@ -418,18 +428,19 @@ withStagedKey agent context f = do
     agentTrace agent (AgentLockReleased context)
     return retval
 
-
 formatKey :: OCert c -> String
 formatKey ocert =
   let serialNumber = ocertN ocert
   in printf "%i" serialNumber
 
-genKey :: AgentContext m c
-       => Agent c m fd addr -> m (Maybe (VerKeyKES (KES c)))
+genKey ::
+  AgentContext m c =>
+  Agent c m fd addr -> m (Maybe (VerKeyKES (KES c)))
 genKey agent = do
   bracket
     (agentGenSeed . agentOptions $ agent)
-    mlockedSeedFinalize $ \seed -> do
+    mlockedSeedFinalize
+    $ \seed -> do
       sk <- genKeyKES seed
       oldSKVarMay <- atomically $ takeTMVar (agentStagedKeyVar agent)
       maybe (return ()) releaseCRef oldSKVarMay
@@ -438,17 +449,20 @@ genKey agent = do
       vk <- deriveVerKeyKES sk
       return $ Just vk
 
-dropKey :: AgentContext m c
-        => Agent c m fd addr -> m (Maybe (VerKeyKES (KES c)))
-dropKey agent = do
-  keyMay <- atomically $ takeTMVar (agentStagedKeyVar agent)
-  maybe (return ()) releaseCRef keyMay
-  return Nothing
-  `finally` do
-    atomically $ putTMVar (agentStagedKeyVar agent) Nothing
+dropKey ::
+  AgentContext m c =>
+  Agent c m fd addr -> m (Maybe (VerKeyKES (KES c)))
+dropKey agent =
+  do
+    keyMay <- atomically $ takeTMVar (agentStagedKeyVar agent)
+    maybe (return ()) releaseCRef keyMay
+    return Nothing
+    `finally` do
+      atomically $ putTMVar (agentStagedKeyVar agent) Nothing
 
-queryKey :: AgentContext m c
-         => Agent c m fd addr -> m (Maybe (VerKeyKES (KES c)))
+queryKey ::
+  AgentContext m c =>
+  Agent c m fd addr -> m (Maybe (VerKeyKES (KES c)))
 queryKey agent = do
   withStagedKey agent "queryKey" $ \keyMay -> do
     case keyMay of
@@ -457,10 +471,11 @@ queryKey agent = do
         vk <- deriveVerKeyKES (skWithoutPeriodKES skp)
         return $ Just vk
 
-installKey :: AgentContext m c
-           => Agent c m fd addr
-           -> OCert c
-           -> m RecvResult
+installKey ::
+  AgentContext m c =>
+  Agent c m fd addr ->
+  OCert c ->
+  m RecvResult
 installKey agent oc = do
   newKeyMay <- alterStagedKey agent "install staged key" $ \keyMay -> do
     case keyMay of
@@ -511,7 +526,6 @@ convertConnectionStatusCP0 ConnectionUp = CP0.ConnectionUp
 convertConnectionStatusCP0 ConnectionConnecting = CP0.ConnectionConnecting
 convertConnectionStatusCP0 ConnectionDown = CP0.ConnectionDown
 
-
 instance FromAgentInfo StandardCrypto CP1.AgentInfo where
   fromAgentInfo info =
     CP1.AgentInfo
@@ -547,51 +561,57 @@ convertConnectionStatusCP1 ConnectionUp = CP1.ConnectionUp
 convertConnectionStatusCP1 ConnectionConnecting = CP1.ConnectionConnecting
 convertConnectionStatusCP1 ConnectionDown = CP1.ConnectionDown
 
-getInfo :: AgentContext m c
-        => Agent c m fd addr -> m (AgentInfo c)
+getInfo ::
+  AgentContext m c =>
+  Agent c m fd addr -> m (AgentInfo c)
 getInfo agent = do
   bundleInfoMay <- do
-      withBundle agent "get info" $ \case
-        Nothing ->
-          return Nothing
-        Just bundle ->
-          withCRefValue (bundleSKP bundle) $ \skp -> do
-            return $ Just BundleInfo
-                        { bundleInfoEvolution = fromIntegral $ periodKES skp
-                        , bundleInfoStartKESPeriod = ocertKESPeriod (bundleOC bundle)
-                        , bundleInfoOCertN = ocertN (bundleOC bundle)
-                        , bundleInfoVK = ocertVkHot (bundleOC bundle)
-                        , bundleInfoSigma = ocertSigma (bundleOC bundle)
-                        }
+    withBundle agent "get info" $ \case
+      Nothing ->
+        return Nothing
+      Just bundle ->
+        withCRefValue (bundleSKP bundle) $ \skp -> do
+          return $
+            Just
+              BundleInfo
+                { bundleInfoEvolution = fromIntegral $ periodKES skp
+                , bundleInfoStartKESPeriod = ocertKESPeriod (bundleOC bundle)
+                , bundleInfoOCertN = ocertN (bundleOC bundle)
+                , bundleInfoVK = ocertVkHot (bundleOC bundle)
+                , bundleInfoSigma = ocertSigma (bundleOC bundle)
+                }
 
   keyInfoMay <- do
-      withStagedKey agent "get info" $ \case
-        Nothing -> do
-          return Nothing
-        Just skpVar -> withCRefValue skpVar $ \skp -> do
-          vk <- deriveVerKeyKES (skWithoutPeriodKES skp)
-          return $ Just (KeyInfo vk)
+    withStagedKey agent "get info" $ \case
+      Nothing -> do
+        return Nothing
+      Just skpVar -> withCRefValue skpVar $ \skp -> do
+        vk <- deriveVerKeyKES (skWithoutPeriodKES skp)
+        return $ Just (KeyInfo vk)
 
   now <- agentGetCurrentTime (agentOptions agent)
-  kesPeriod <- getCurrentKESPeriodWith
-                (agentGetCurrentTime $ agentOptions agent)
-                (agentEvolutionConfig $ agentOptions agent)
+  kesPeriod <-
+    getCurrentKESPeriodWith
+      (agentGetCurrentTime $ agentOptions agent)
+      (agentEvolutionConfig $ agentOptions agent)
   bootstrapStatusesRaw <- Map.toAscList <$> atomically (readTMVar (agentBootstrapConnections agent))
   let bootstrapStatuses = map (uncurry BootstrapInfo) bootstrapStatusesRaw
 
-  return AgentInfo
-    { agentInfoCurrentBundle = bundleInfoMay
-    , agentInfoStagedKey = keyInfoMay
-    , agentInfoCurrentTime = now
-    , agentInfoCurrentKESPeriod = kesPeriod
-    , agentInfoBootstrapConnections = bootstrapStatuses
-    }
+  return
+    AgentInfo
+      { agentInfoCurrentBundle = bundleInfoMay
+      , agentInfoStagedKey = keyInfoMay
+      , agentInfoCurrentTime = now
+      , agentInfoCurrentKESPeriod = kesPeriod
+      , agentInfoBootstrapConnections = bootstrapStatuses
+      }
 
 checkEvolution :: AgentContext m c => Agent c m fd addr -> m ()
 checkEvolution agent = do
-  p' <- getCurrentKESPeriodWith
-          (agentGetCurrentTime $ agentOptions agent)
-          (agentEvolutionConfig $ agentOptions agent)
+  p' <-
+    getCurrentKESPeriodWith
+      (agentGetCurrentTime $ agentOptions agent)
+      (agentEvolutionConfig $ agentOptions agent)
   agentTrace agent $ AgentCheckEvolution p'
   alterBundle agent "checkEvolution" $ \bundleMay -> do
     case bundleMay of
@@ -600,27 +620,29 @@ checkEvolution agent = do
         return (Nothing, ())
       Just (Bundle keyVar oc) -> withCRefValue keyVar $ \key -> do
         let p = KESPeriod $ unKESPeriod (ocertKESPeriod oc) + periodKES key
-        if p < p' then do
-          keyMay' <- updateKESTo () p' oc key
-          case keyMay' of
-            Nothing -> do
-              agentTrace agent $ AgentKeyExpired p p'
-              releaseCRef keyVar
-              return (Nothing, ())
-            Just key' -> do
-              agentTrace agent $ AgentKeyEvolved p p'
-              keyVar' <- newCRefWith (agentCRefTracer agent) (forgetSignKeyKES . skWithoutPeriodKES) key'
-              releaseCRef keyVar
-              return (Just (Bundle keyVar' oc), ())
-        else do
-          agentTrace agent $ AgentKeyNotEvolved p p'
-          return (bundleMay, ())
+        if p < p'
+          then do
+            keyMay' <- updateKESTo () p' oc key
+            case keyMay' of
+              Nothing -> do
+                agentTrace agent $ AgentKeyExpired p p'
+                releaseCRef keyVar
+                return (Nothing, ())
+              Just key' -> do
+                agentTrace agent $ AgentKeyEvolved p p'
+                keyVar' <- newCRefWith (agentCRefTracer agent) (forgetSignKeyKES . skWithoutPeriodKES) key'
+                releaseCRef keyVar
+                return (Just (Bundle keyVar' oc), ())
+          else do
+            agentTrace agent $ AgentKeyNotEvolved p p'
+            return (bundleMay, ())
 
-pushKey :: forall c m fd addr.
-           AgentContext m c
-        => Agent c m fd addr
-        -> Bundle m c
-        -> m RecvResult
+pushKey ::
+  forall c m fd addr.
+  AgentContext m c =>
+  Agent c m fd addr ->
+  Bundle m c ->
+  m RecvResult
 pushKey agent bundle = do
   vkKES <- withCRefValue (bundleSKP bundle) (deriveVerKeyKES . skWithoutPeriodKES)
 
@@ -630,12 +652,11 @@ pushKey agent bundle = do
           vkKES
           (bundleOC bundle)
   case validationResult of
-    Left err ->  do
+    Left err -> do
       agentTrace agent $ AgentRejectingKey err
       return RecvErrorInvalidOpCert
     Right () ->
       go
-
   where
     go = do
       result <- alterBundle agent "pushKey" $ \oldKeyOcMay -> do
@@ -656,111 +677,115 @@ pushKey agent bundle = do
         case oldKeyOcMay of
           Just (Bundle oldKeyVar oldOC) -> do
             let oldKeyStr = formatKey oldOC
-            if ocertN oldOC >= ocertN oc then do
-              releaseCRef keyVar
-              agentTrace agent $ AgentSkippingOldKey oldKeyStr keyStr
-              return (oldKeyOcMay, RecvErrorKeyOutdated)
-            else do
-              releaseCRef oldKeyVar
-              agentTrace agent $ AgentReplacingPreviousKey oldKeyStr keyStr
-              report (Bundle keyVar oc)
+            if ocertN oldOC >= ocertN oc
+              then do
+                releaseCRef keyVar
+                agentTrace agent $ AgentSkippingOldKey oldKeyStr keyStr
+                return (oldKeyOcMay, RecvErrorKeyOutdated)
+              else do
+                releaseCRef oldKeyVar
+                agentTrace agent $ AgentReplacingPreviousKey oldKeyStr keyStr
+                report (Bundle keyVar oc)
           Nothing -> do
             agentTrace agent $ AgentInstallingNewKey keyStr
             report (Bundle keyVar oc)
       checkEvolution agent
       return result
 
-runListener :: forall m c fd addr st (pr :: PeerRole) t a
-             . MonadThrow m
-            => MonadFail m
-            => MonadST m
-            => MonadSTM m
-            => MonadMVar m
-            => MonadAsync m
-            => MonadCatch m
-            => Show fd
-            => Snocket m fd addr
-            -> fd
-            -> String
-            -> MakeRawBearer m fd
-            -> Tracer m AgentTrace
-            -> (String -> AgentTrace)
-            -> (String -> AgentTrace)
-            -> (String -> String -> AgentTrace)
-            -> (String -> AgentTrace)
-            -> (String -> AgentTrace)
-            -> (t -> AgentTrace)
-            -> (RawBearer m -> Tracer m t -> m ())
-            -> m ()
+runListener ::
+  forall m c fd addr st (pr :: PeerRole) t a.
+  MonadThrow m =>
+  MonadFail m =>
+  MonadST m =>
+  MonadSTM m =>
+  MonadMVar m =>
+  MonadAsync m =>
+  MonadCatch m =>
+  Show fd =>
+  Snocket m fd addr ->
+  fd ->
+  String ->
+  MakeRawBearer m fd ->
+  Tracer m AgentTrace ->
+  (String -> AgentTrace) ->
+  (String -> AgentTrace) ->
+  (String -> String -> AgentTrace) ->
+  (String -> AgentTrace) ->
+  (String -> AgentTrace) ->
+  (t -> AgentTrace) ->
+  (RawBearer m -> Tracer m t -> m ()) ->
+  m ()
 runListener
-      s
-      fd
-      addrStr
-      mrb
-      tracer
-      tListeningOnSocket
-      tSocketClosed
-      tClientConnected
-      tClientDisconnected
-      tSocketError
-      tDriverTrace
-      handle = do
-  listen s fd
-  traceWith tracer (tListeningOnSocket addrStr)
+  s
+  fd
+  addrStr
+  mrb
+  tracer
+  tListeningOnSocket
+  tSocketClosed
+  tClientConnected
+  tClientDisconnected
+  tSocketError
+  tDriverTrace
+  handle = do
+    listen s fd
+    traceWith tracer (tListeningOnSocket addrStr)
 
-  let handleConnection fd' = do
-        traceWith tracer (tClientConnected (show fd) (show fd'))
-        bearer <- getRawBearer mrb fd'
-        handle bearer (tDriverTrace >$< tracer)
+    let handleConnection fd' = do
+          traceWith tracer (tClientConnected (show fd) (show fd'))
+          bearer <- getRawBearer mrb fd'
+          handle bearer (tDriverTrace >$< tracer)
 
-  let logAndContinue :: SomeException -> m ()
-      logAndContinue e = traceWith tracer (tSocketError (show e))
+    let logAndContinue :: SomeException -> m ()
+        logAndContinue e = traceWith tracer (tSocketError (show e))
 
-      handleClientDisconnect :: fd -> BearerConnectionClosed -> m ()
-      handleClientDisconnect fd _ =
-        traceWith tracer (tClientDisconnected $ show fd)
+        handleClientDisconnect :: fd -> BearerConnectionClosed -> m ()
+        handleClientDisconnect fd _ =
+          traceWith tracer (tClientDisconnected $ show fd)
 
-  let loop :: Accept m fd addr -> m ()
-      loop a = do
-        accepted <- runAccept a
-        case accepted of
-          (AcceptFailure e, next) -> do
-            traceWith tracer $ tSocketError (show e)
-            loop next
-          (Accepted fd' addr', next) ->
-            concurrently_
-              (loop next)
-              (handleConnection fd'
-                `catch` handleClientDisconnect fd'
-                `catch` logAndContinue
-                `finally` (close s fd' >> traceWith tracer (tSocketClosed $ show fd'))
-              )
+    let loop :: Accept m fd addr -> m ()
+        loop a = do
+          accepted <- runAccept a
+          case accepted of
+            (AcceptFailure e, next) -> do
+              traceWith tracer $ tSocketError (show e)
+              loop next
+            (Accepted fd' addr', next) ->
+              concurrently_
+                (loop next)
+                ( handleConnection fd'
+                    `catch` handleClientDisconnect fd'
+                    `catch` logAndContinue
+                    `finally` (close s fd' >> traceWith tracer (tSocketClosed $ show fd'))
+                )
 
-  (accept s fd >>= loop) `catch` logAndContinue
+    (accept s fd >>= loop) `catch` logAndContinue
 
 class ServiceCrypto c where
-  availableServiceDrivers :: forall m
-                              . AgentContext m c
-                             => [ ( VersionIdentifier
-                                  , RawBearer m
-                                    -> Tracer m ServiceDriverTrace
-                                    -> m (Bundle m c)
-                                    -> m (Bundle m c)
-                                    -> (RecvResult -> m ())
-                                    -> m ()
-                                  )
-                                ]
+  availableServiceDrivers ::
+    forall m.
+    AgentContext m c =>
+    [ ( VersionIdentifier
+      , RawBearer m ->
+        Tracer m ServiceDriverTrace ->
+        m (Bundle m c) ->
+        m (Bundle m c) ->
+        (RecvResult -> m ()) ->
+        m ()
+      )
+    ]
 
-mkServiceDriverSP0 :: forall m c
-                    . AgentContext m c
-                   => ( VersionIdentifier
-                      , RawBearer m
-                        -> Tracer m ServiceDriverTrace
-                        -> m (Bundle m c)
-                        -> m (Bundle m c)
-                        -> (RecvResult -> m ())
-                        -> m ()
-                      )
+mkServiceDriverSP0 ::
+  forall m c.
+  AgentContext m c =>
+  ( VersionIdentifier
+  , RawBearer m ->
+    Tracer m ServiceDriverTrace ->
+    m (Bundle m c) ->
+    m (Bundle m c) ->
+    (RecvResult -> m ()) ->
+    m ()
+  )
 mkServiceDriverSP0 =
   ( versionIdentifier (Proxy @(SP0.ServiceProtocol _ c))
   , \bearer tracer currentKey nextKey reportPushResult ->
@@ -770,16 +795,17 @@ mkServiceDriverSP0 =
           (SP0.servicePusher currentKey nextKey reportPushResult)
   )
 
-mkServiceDriverSP1 :: forall m
-                    . MonadAgent m
-                   => ( VersionIdentifier
-                      , RawBearer m
-                        -> Tracer m ServiceDriverTrace
-                        -> m (Bundle m StandardCrypto)
-                        -> m (Bundle m StandardCrypto)
-                        -> (RecvResult -> m ())
-                        -> m ()
-                      )
+mkServiceDriverSP1 ::
+  forall m.
+  MonadAgent m =>
+  ( VersionIdentifier
+  , RawBearer m ->
+    Tracer m ServiceDriverTrace ->
+    m (Bundle m StandardCrypto) ->
+    m (Bundle m StandardCrypto) ->
+    (RecvResult -> m ()) ->
+    m ()
+  )
 mkServiceDriverSP1 =
   ( versionIdentifier (Proxy @(SP1.ServiceProtocol _))
   , \bearer tracer currentKey nextKey reportPushResult ->
@@ -797,116 +823,122 @@ instance ServiceCrypto StandardCrypto where
 
 instance ServiceCrypto MockCrypto where
   availableServiceDrivers =
-    [ mkServiceDriverSP0 ]
+    [mkServiceDriverSP0]
 
 instance ServiceCrypto SingleCrypto where
   availableServiceDrivers =
-    [ mkServiceDriverSP0 ]
+    [mkServiceDriverSP0]
 
 class ControlCrypto c where
-  availableControlDrivers :: forall m fd addr
-                              . AgentContext m c
-                             => [ ( VersionIdentifier
-                                  , RawBearer m
-                                    -> Tracer m ControlDriverTrace
-                                    -> Agent c m fd addr
-                                    -> m ()
-                                  )
-                                ]
+  availableControlDrivers ::
+    forall m fd addr.
+    AgentContext m c =>
+    [ ( VersionIdentifier
+      , RawBearer m ->
+        Tracer m ControlDriverTrace ->
+        Agent c m fd addr ->
+        m ()
+      )
+    ]
 
-mkControlDriverCP0 :: forall m fd addr c
-                    . AgentContext m c
-                   => ( VersionIdentifier
-                      , RawBearer m
-                        -> Tracer m ControlDriverTrace
-                        -> Agent c m fd addr
-                        -> m ()
-                      )
+mkControlDriverCP0 ::
+  forall m fd addr c.
+  AgentContext m c =>
+  ( VersionIdentifier
+  , RawBearer m ->
+    Tracer m ControlDriverTrace ->
+    Agent c m fd addr ->
+    m ()
+  )
 mkControlDriverCP0 =
-    ( versionIdentifier (Proxy @(CP0.ControlProtocol _ c))
-    , \bearer tracer agent ->
-          void $
-            runPeerWithDriver
-              (CP0.controlDriver bearer tracer)
-              (CP0.controlReceiver
-                (genKey agent)
-                (dropKey agent)
-                (queryKey agent)
-                (installKey agent)
-                (fromAgentInfo <$> getInfo agent))
-    )
+  ( versionIdentifier (Proxy @(CP0.ControlProtocol _ c))
+  , \bearer tracer agent ->
+      void $
+        runPeerWithDriver
+          (CP0.controlDriver bearer tracer)
+          ( CP0.controlReceiver
+              (genKey agent)
+              (dropKey agent)
+              (queryKey agent)
+              (installKey agent)
+              (fromAgentInfo <$> getInfo agent)
+          )
+  )
 
-mkControlDriverCP1 :: forall m fd addr
-                    . AgentContext m StandardCrypto
-                   => ( VersionIdentifier
-                      , RawBearer m
-                        -> Tracer m ControlDriverTrace
-                        -> Agent StandardCrypto m fd addr
-                        -> m ()
-                      )
+mkControlDriverCP1 ::
+  forall m fd addr.
+  AgentContext m StandardCrypto =>
+  ( VersionIdentifier
+  , RawBearer m ->
+    Tracer m ControlDriverTrace ->
+    Agent StandardCrypto m fd addr ->
+    m ()
+  )
 mkControlDriverCP1 =
-    ( versionIdentifier (Proxy @(CP1.ControlProtocol _))
-    , \bearer tracer agent ->
-          void $
-            runPeerWithDriver
-              (CP1.controlDriver bearer tracer)
-              (CP1.controlReceiver
-                (genKey agent)
-                (dropKey agent)
-                (queryKey agent)
-                (installKey agent)
-                (fromAgentInfo <$> getInfo agent))
-    )
+  ( versionIdentifier (Proxy @(CP1.ControlProtocol _))
+  , \bearer tracer agent ->
+      void $
+        runPeerWithDriver
+          (CP1.controlDriver bearer tracer)
+          ( CP1.controlReceiver
+              (genKey agent)
+              (dropKey agent)
+              (queryKey agent)
+              (installKey agent)
+              (fromAgentInfo <$> getInfo agent)
+          )
+  )
 
 instance ControlCrypto StandardCrypto where
   availableControlDrivers =
-    [ mkControlDriverCP1, mkControlDriverCP0 ]
+    [mkControlDriverCP1, mkControlDriverCP0]
 
 instance ControlCrypto MockCrypto where
   availableControlDrivers =
-    [ mkControlDriverCP0 ]
+    [mkControlDriverCP0]
 
 instance ControlCrypto SingleCrypto where
   availableControlDrivers =
-    [ mkControlDriverCP0 ]
+    [mkControlDriverCP0]
 
 type MonadAgent m =
-      ( Monad m
-      , MonadAsync m
-      , MonadCatch m
-      , MonadFail m
-      , MonadMVar m
-      , MonadST m
-      , MonadTimer m
-      )
+  ( Monad m
+  , MonadAsync m
+  , MonadCatch m
+  , MonadFail m
+  , MonadMVar m
+  , MonadST m
+  , MonadTimer m
+  )
 
 type AgentCrypto c =
-      ( ContextDSIGN (DSIGN c) ~ ()
-      , ContextKES (KES c) ~ ()
-      , DSIGN.Signable (DSIGN c) (OCertSignable c)
-      , DirectSerialise (SignKeyKES (KES c))
-      , DirectDeserialise (SignKeyKES (KES c))
-      , Crypto c
-      , NamedCrypto c
-      , ControlCrypto c
-      , ServiceCrypto c
-      , ServiceClientCrypto c
-      , Typeable c
-      )
+  ( ContextDSIGN (DSIGN c) ~ ()
+  , ContextKES (KES c) ~ ()
+  , DSIGN.Signable (DSIGN c) (OCertSignable c)
+  , DirectSerialise (SignKeyKES (KES c))
+  , DirectDeserialise (SignKeyKES (KES c))
+  , Crypto c
+  , NamedCrypto c
+  , ControlCrypto c
+  , ServiceCrypto c
+  , ServiceClientCrypto c
+  , Typeable c
+  )
 
 type AgentContext m c =
-      ( MonadAgent m
-      , AgentCrypto c
-      , HasInfo (DirectCodec m) (VerKeyKES (KES c))
-      , HasInfo (DirectCodec m) (SignKeyKES (KES c))
-      )
+  ( MonadAgent m
+  , AgentCrypto c
+  , HasInfo (DirectCodec m) (VerKeyKES (KES c))
+  , HasInfo (DirectCodec m) (SignKeyKES (KES c))
+  )
 
-runAgent :: forall c m fd addr
-          . AgentContext m c
-         => Show addr
-         => Show fd
-         => Agent c m fd addr
-         -> m ()
+runAgent ::
+  forall c m fd addr.
+  AgentContext m c =>
+  Show addr =>
+  Show fd =>
+  Agent c m fd addr ->
+  m ()
 runAgent agent = do
   let runEvolution = do
         forever $ do
@@ -937,26 +969,30 @@ runAgent agent = do
           AgentServiceClientDisconnected
           AgentServiceSocketError
           AgentServiceDriverTrace
-          (\bearer tracer' -> do
-            (protocolVersionMay :: Maybe VersionIdentifier, ()) <-
+          ( \bearer tracer' -> do
+              (protocolVersionMay :: Maybe VersionIdentifier, ()) <-
                 runPeerWithDriver
-                  (versionHandshakeDriver bearer (AgentVersionHandshakeDriverTrace >$< (agentTracer . agentOptions $ agent)))
+                  ( versionHandshakeDriver
+                      bearer
+                      (AgentVersionHandshakeDriverTrace >$< (agentTracer . agentOptions $ agent))
+                  )
                   (versionHandshakeServer (map fst (availableServiceDrivers @c @m)))
-            case protocolVersionMay >>= (`lookup` (availableServiceDrivers @c @m)) of
-              Nothing ->
-                traceWith (agentTracer . agentOptions $ agent) AgentServiceVersionHandshakeFailed
-              Just run ->
-                withDuplexBearer bearer $ \bearer' ->
-                  run bearer' tracer' currentKey nextKey reportPushResult
+              case protocolVersionMay >>= (`lookup` (availableServiceDrivers @c @m)) of
+                Nothing ->
+                  traceWith (agentTracer . agentOptions $ agent) AgentServiceVersionHandshakeFailed
+                Just run ->
+                  withDuplexBearer bearer $ \bearer' ->
+                    run bearer' tracer' currentKey nextKey reportPushResult
           )
 
   let runBootstrap :: addr -> m ()
       runBootstrap addr = do
         labelMyThread $ "bootstrap-" ++ show addr
-        let scOpts = ServiceClientOptions
-                      { serviceClientSnocket = agentSnocket agent
-                      , serviceClientAddress = addr
-                      }
+        let scOpts =
+              ServiceClientOptions
+                { serviceClientSnocket = agentSnocket agent
+                , serviceClientAddress = addr
+                }
 
         let label = Text.pack (show addr)
 
@@ -1007,22 +1043,26 @@ runAgent agent = do
           AgentControlClientDisconnected
           AgentControlSocketError
           AgentControlDriverTrace
-          (\bearer tracer' -> do
-            (protocolVersionMay :: Maybe VersionIdentifier, ()) <-
+          ( \bearer tracer' -> do
+              (protocolVersionMay :: Maybe VersionIdentifier, ()) <-
                 runPeerWithDriver
-                  (versionHandshakeDriver bearer (AgentVersionHandshakeDriverTrace >$< (agentTracer . agentOptions $ agent)))
+                  ( versionHandshakeDriver
+                      bearer
+                      (AgentVersionHandshakeDriverTrace >$< (agentTracer . agentOptions $ agent))
+                  )
                   (versionHandshakeServer (map fst (availableControlDrivers @c @m)))
-            case protocolVersionMay >>= (`lookup` (availableControlDrivers @c @m)) of
-              Nothing ->
-                traceWith (agentTracer . agentOptions $ agent) AgentControlVersionHandshakeFailed
-              Just run ->
-                run bearer tracer' agent
+              case protocolVersionMay >>= (`lookup` (availableControlDrivers @c @m)) of
+                Nothing ->
+                  traceWith (agentTracer . agentOptions $ agent) AgentControlVersionHandshakeFailed
+                Just run ->
+                  run bearer tracer' agent
           )
 
-  void $ runService
-          `concurrently` runControl
-          `concurrently` runEvolution
-          `concurrently` runBootstraps
+  void $
+    runService
+      `concurrently` runControl
+      `concurrently` runEvolution
+      `concurrently` runBootstraps
 
 labelMyThread label = do
   tid <- myThreadId

@@ -18,16 +18,43 @@ jobs:
       fail-fast: false
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
-    - name: Install dependencies
+    - name: Trailing whitespace check
+      if: matrix.os != 'windows-latest'
       run: |
-        sudo apt install -y fd-find stylish-haskell
-        stylish-haskell --version
+        offenders="$(git grep "\s$" -- *.hs *.c *.h *.nix *.yml *.md || true)";
+        if [ -n "${offenders}" ]; then
+          echo -e "Fix trailing whitespace in:\n"
+          echo -n "${offenders}"
+          exit 1
+        fi
 
-    - name: Sanity checks
+  fourmolu:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        shell: bash
+
+    strategy:
+      fail-fast: false
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install fourmolu
       run: |
-        ./scripts/sanity-check
+        FOURMOLU_VERSION="0.16.2.0"
+        mkdir -p "$HOME/.local/bin"
+        curl -sL "https://github.com/fourmolu/fourmolu/releases/download/v${FOURMOLU_VERSION}/fourmolu-${FOURMOLU_VERSION}-linux-x86_64" -o "$HOME/.local/bin/fourmolu"
+        chmod a+x "$HOME/.local/bin/fourmolu"
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+    - name: Run fourmolu
+      run: ./scripts/fourmolize.sh
+
+
   build:
     runs-on: ${{ matrix.os }}
 

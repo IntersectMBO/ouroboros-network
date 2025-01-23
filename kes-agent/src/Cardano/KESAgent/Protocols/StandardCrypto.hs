@@ -1,19 +1,19 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Cardano.KESAgent.Protocols.StandardCrypto
 where
 
-import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.KES.Crypto
+import Cardano.KESAgent.Protocols.VersionedProtocol
 
+import Cardano.Crypto.DSIGN.Ed25519
+import Cardano.Crypto.Hash.Blake2b
+import Cardano.Crypto.KES.CompactSum
 import Cardano.Crypto.KES.Mock
 import Cardano.Crypto.KES.Single
 import Cardano.Crypto.KES.Sum
-import Cardano.Crypto.KES.CompactSum
-import Cardano.Crypto.DSIGN.Ed25519
-import Cardano.Crypto.Hash.Blake2b
 
 data StandardCrypto
 
