@@ -25,6 +25,7 @@ package cryptonite
   flags: -support_rdrand
 
 allow-newer: bytestring
+           , serdoc-core:template-haskell
 
 -- ---------------------------------------------------------
 -- Disable all tests by default
