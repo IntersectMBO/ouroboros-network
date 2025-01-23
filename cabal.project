@@ -10,7 +10,7 @@ repository cardano-haskell-packages
     d4a35cd3121aa00d18544bb0ac01c3e1691d618f462c46129271bccf39f7e8ee
 
 -- run `nix flake lock --update-input hackageNix` after updating index-state.
-index-state: 2024-11-20T00:00:00Z
+index-state: 2025-01-23T07:40:24Z
 index-state: cardano-haskell-packages 2024-11-20T00:00:00Z
 
 packages:
@@ -25,7 +25,6 @@ package cryptonite
   flags: -support_rdrand
 
 allow-newer: bytestring
-           , serdoc-core:template-haskell
 
 -- ---------------------------------------------------------
 -- Disable all tests by default
@@ -84,14 +83,6 @@ source-repository-package
     typed-protocols
     typed-protocols-doc
     typed-protocols-cborg
-
--- Not yet on CHaP or Hackage
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/serdoc
-  tag: c1e6d6ae22d58a402ac359b26be7b922921d2a73
-  subdir:
-    serdoc-core
 
 allow-newer:
   base,
