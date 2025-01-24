@@ -1,15 +1,11 @@
 {-# LANGUAGE BangPatterns      #-}
+{-# LANGUAGE BlockArguments    #-}
 {-# LANGUAGE LambdaCase        #-}
-{-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PatternSynonyms   #-}
 {-# LANGUAGE TypeApplications  #-}
-{-# LANGUAGE ViewPatterns      #-}
 
 module Ouroboros.Network.PeerSelection.RelayAccessPoint
-  ( DomainAccessPoint (..)
-  , RelayAccessPoint (.., RelayDomainAccessPoint)
-  , RelayAccessPointCoded (..)
+  ( RelayAccessPoint (..)
   , IP.IP (..)
     -- * Socket type re-exports
   , Socket.PortNumber
@@ -29,28 +25,6 @@ import Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import Cardano.Binary qualified as Codec
 import Network.DNS qualified as DNS
 import Network.Socket qualified as Socket
-
--- | A product of a 'DNS.Domain' and 'Socket.PortNumber'.  After resolving the
--- domain we will use the 'Socket.PortNumber' to form 'Socket.SockAddr'.
---
-data DomainAccessPoint = DomainAccessPoint {
-    dapDomain     :: !DNS.Domain,
-    dapPortNumber :: !Socket.PortNumber
-  }
-  deriving (Show, Eq, Ord)
-
-instance FromJSON DomainAccessPoint where
-  parseJSON = withObject "DomainAccessPoint" $ \v ->
-    DomainAccessPoint
-      <$> (encodeUtf8 <$> v .: "address")
-      <*> ((fromIntegral :: Int -> Socket.PortNumber) <$> v .: "port")
-
-instance ToJSON DomainAccessPoint where
-  toJSON da =
-    object
-      [ "address" .= decodeUtf8 (dapDomain da)
-      , "port" .= (fromIntegral (dapPortNumber da) :: Int)
-      ]
 
 -- | A relay can have either an IP address and a port number or
 -- a domain with a port number
@@ -109,25 +83,6 @@ instance Show RelayAccessPoint where
       "RelayAccessDomain " ++ show domain ++ " " ++ show port
     show (RelayAccessAddress ip port) =
       "RelayAccessAddress \"" ++ show ip ++ "\" " ++ show port
-
-
--- | 'RelayDomainAccessPoint' a bidirectional pattern which links
--- 'RelayAccessDomain' and 'DomainAccessPoint'.
---
-pattern RelayDomainAccessPoint :: DomainAccessPoint -> RelayAccessPoint
-pattern RelayDomainAccessPoint dap <- (viewRelayAccessPoint -> Just dap)
-  where
-    RelayDomainAccessPoint DomainAccessPoint {dapDomain, dapPortNumber} =
-      RelayAccessDomain dapDomain dapPortNumber
-
-{-# COMPLETE RelayDomainAccessPoint, RelayAccessAddress #-}
-
-viewRelayAccessPoint :: RelayAccessPoint -> Maybe DomainAccessPoint
-viewRelayAccessPoint (RelayAccessDomain dapDomain dapPortNumber) =
-    Just DomainAccessPoint {dapDomain, dapPortNumber}
-viewRelayAccessPoint  RelayAccessAddress {} =
-    Nothing
-
 
 -- 'IP' nor 'IPv6' is strict, 'IPv4' is strict only because it's a newtype for
 -- a primitive type ('Word32').
