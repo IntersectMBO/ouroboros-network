@@ -42,6 +42,7 @@ module Ouroboros.Network.PeerSelection.LedgerPeers
 
 import Control.Monad (when)
 import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadTime.SI
 import Control.Tracer (Tracer, traceWith)
 import Data.IP qualified as IP
@@ -452,5 +453,7 @@ withLedgerPeers peerActionsDNS
           atomically $ putTMVar reqVar (numberOfPeers, ledgerPeersKind)
           atomically $ takeTMVar respVar
     withAsync
-      (ledgerPeersThread peerActionsDNS ledgerPeerArgs getRequest putResponse)
+      (do
+          labelThisThread "Ledger Peers (ouroboros-network)"
+          ledgerPeersThread peerActionsDNS ledgerPeerArgs getRequest putResponse)
       $ \ thread -> k request thread

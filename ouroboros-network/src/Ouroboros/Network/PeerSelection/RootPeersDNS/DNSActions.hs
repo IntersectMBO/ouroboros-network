@@ -24,6 +24,7 @@ import Data.List.NonEmpty (NonEmpty (..))
 
 import Control.Exception (IOException)
 import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
 import Control.Monad.Class.Trans ()
 
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -323,6 +324,7 @@ ioDNSActions =
                    -> DNS.Domain
                    -> IO (Either DNS.DNSError [(IP, DNS.TTL)])
     lookupAWithTTL resolvConf resolver domain = do
+        labelThisThread "lookupAWithTTL"
         reply <- timeout (microsecondsAsIntToDiffTime
                            $ DNS.resolvTimeout resolvConf)
                          (DNS.lookupRaw resolver domain DNS.A)
@@ -346,6 +348,7 @@ ioDNSActions =
                       -> DNS.Domain
                       -> IO (Either DNS.DNSError [(IP, DNS.TTL)])
     lookupAAAAWithTTL resolvConf resolver domain = do
+        labelThisThread "lookupAAAWithTTL"
         reply <- timeout (microsecondsAsIntToDiffTime
                            $ DNS.resolvTimeout resolvConf)
                          (DNS.lookupRaw resolver domain DNS.AAAA)

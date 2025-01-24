@@ -166,7 +166,9 @@ with Arguments {
           InboundGovernor.idleTimeout        = inboundIdleTimeout,
           InboundGovernor.connectionManager  = connectionManager
         } $ \inboundGovernorThread readPublicInboundState ->
-        withAsync (k inboundGovernorThread readPublicInboundState) $ \actionThread -> do
+        withAsync (do
+                      labelThisThread "Server2 (ouroboros-network-framework)"
+                      k inboundGovernorThread readPublicInboundState) $ \actionThread -> do
           let acceptLoops :: [m Void]
               acceptLoops =
                           [ (accept snocket socket >>= acceptLoop localAddress)
@@ -175,6 +177,7 @@ with Arguments {
                           ]
           -- race all `acceptLoops` with `actionThread` and
           -- `inboundGovernorThread`
+          -- TODO is this right?
           List.foldl' (\as io -> fn <$> as `race` io)
                  (fn <$> actionThread `waitEither` inboundGovernorThread)
                  acceptLoops
@@ -295,4 +298,3 @@ data Trace peerAddr
     -- ^ similar to 'TrAcceptConnection' but it is logged once the connection is
     -- handed to inbound connection manager, e.g. after handshake negotiation.
   deriving Show
-

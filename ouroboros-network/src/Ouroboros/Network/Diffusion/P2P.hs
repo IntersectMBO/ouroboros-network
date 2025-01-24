@@ -756,8 +756,9 @@ runM Interfaces
     -- | mkLocalThread - create local connection manager
 
     mkLocalThread :: ThreadId m -> Either ntcFd ntcAddr -> m Void
-    mkLocalThread mainThreadId localAddr =
-      withLocalSocket tracer diNtcGetFileDescriptor diNtcSnocket localAddr
+    mkLocalThread mainThreadId localAddr = do
+     labelThisThread "local connection manager"
+     withLocalSocket tracer diNtcGetFileDescriptor diNtcSnocket localAddr
       $ \localSocket -> do
         localInbInfoChannel <- newInformationChannel
 
@@ -835,6 +836,7 @@ runM Interfaces
 
     mkRemoteThread :: ThreadId m -> m Void
     mkRemoteThread mainThreadId = do
+      labelThisThread "remote connection manager"
       let
         exitPolicy :: ExitPolicy a
         exitPolicy = stdExitPolicy daReturnPolicy
@@ -1180,11 +1182,15 @@ runM Interfaces
                         PeerSelectionActionsDiffusionMode { psPeerStateActions = peerStateActions } $
                           \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions ->
                             Async.withAsync
-                              (peerSelectionGovernor' dtDebugPeerSelectionInitiatorResponderTracer debugStateVar peerSelectionActions) $ \governorThread -> do
+                              (do
+                                labelThisThread "Peer selection governor"
+                                peerSelectionGovernor' dtDebugPeerSelectionInitiatorResponderTracer debugStateVar peerSelectionActions) $ \governorThread -> do
                                 -- begin, unique to InitiatorAndResponder mode:
                                 traceWith tracer (RunServer addresses)
                                 -- end, unique to ...
-                                Async.withAsync peerChurnGovernor' $ \churnGovernorThread ->
+                                Async.withAsync (do
+                                                    labelThisThread "Peer churn governor"
+                                                    peerChurnGovernor') $ \churnGovernorThread ->
                                   -- wait for any thread to fail:
                                   snd <$> Async.waitAny [ledgerPeersThread, localRootPeersProvider, governorThread, churnGovernorThread, inboundGovernorThread]
 
