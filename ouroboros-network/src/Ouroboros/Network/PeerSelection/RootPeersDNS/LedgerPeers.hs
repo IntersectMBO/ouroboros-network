@@ -3,35 +3,33 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 
 module Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
   ( resolveLedgerPeers
   , TraceResolveLedgerPeers (..)
   ) where
 
-import Control.Monad (when)
 import Control.Monad.Class.MonadAsync
 import Control.Tracer (Tracer, traceWith)
-import Data.IP qualified as IP
+import Data.List (foldl')
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 
-import Data.Foldable (foldlM)
 import Data.Set (Set)
 import Data.Set qualified as Set
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadThrow
 
-
 import Network.DNS qualified as DNS
-import Network.Socket qualified as Socket
+import System.Random
 
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSActions (..),
-           DNSorIOError (..), Resource (..))
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore,
            withDNSSemaphore)
+
 
 -- | Provides DNS resolution functionality.
 --
@@ -45,21 +43,23 @@ resolveLedgerPeers
      , Exception exception
      )
   => Tracer m TraceResolveLedgerPeers
-  -> (IP.IP -> Socket.PortNumber -> peerAddr)
   -> DNSSemaphore m
   -> DNS.ResolvConf
-  -> DNSActions resolver exception m
-  -> [DomainAccessPoint]
-  -> m (Map DomainAccessPoint (Set peerAddr))
+  -> DNSActions peerAddr resolver exception m
+  -> LedgerPeersKind
+  -> [RelayAccessPoint]
+  -> StdGen
+  -> m (Map DNS.Domain (Set peerAddr))
 resolveLedgerPeers tracer
-                   toPeerAddr
                    dnsSemaphore
                    resolvConf
                    DNSActions {
                       dnsResolverResource,
                       dnsLookupWithTTL
                     }
+                   peerKind
                    domains
+                   rng
                    = do
     traceWith tracer (TraceResolveLedgerPeersDomains domains)
     rr <- dnsResolverResource resolvConf
@@ -68,7 +68,7 @@ resolveLedgerPeers tracer
   where
     resolveDomains
       :: StrictTVar m (Resource m (Either (DNSorIOError exception) resolver))
-      -> m (Map DomainAccessPoint (Set peerAddr))
+      -> m (Map DNS.Domain (Set peerAddr))
     resolveDomains resourceVar = do
         rr <- readTVarIO resourceVar
         (er, rr') <- withResource rr
@@ -78,43 +78,42 @@ resolveLedgerPeers tracer
           Left (IOError  err) -> throwIO err
           Right resolver -> do
             let lookups =
-                  [ (,) domain
-                      <$> withDNSSemaphore dnsSemaphore
-                            (dnsLookupWithTTL
-                              resolvConf
-                              resolver
-                              (dapDomain domain))
-                  | domain <- domains ]
+                  [ (domain',) <$> withDNSSemaphore dnsSemaphore
+                                     (dnsLookupWithTTL
+                                       (DNSLedgerPeer peerKind)
+                                       domain
+                                       resolvConf
+                                       resolver
+                                       rng)
+                  | domain <- domains
+                  , domain' <-
+                      case domain of
+                        RelayAccessAddress {}  -> []
+                        RelayAccessDomain d _p -> [d]
+                        RelayAccessSRVDomain d -> [d]
+                  ]
             -- The timeouts here are handled by the 'lookupWithTTL'. They're
             -- configured via the DNS.ResolvConf resolvTimeout field and
             -- defaults to 3 sec.
             results <- withAsyncAll lookups (atomically . mapM waitSTM)
-            foldlM processResult Map.empty results
+            return $ foldl' processResult Map.empty results
 
-    processResult :: Map DomainAccessPoint (Set peerAddr)
-                  -> (DomainAccessPoint, ([DNS.DNSError], [(IP, DNS.TTL)]))
-                  -> m (Map DomainAccessPoint (Set peerAddr))
-    processResult mr (domain, (errs, ipsttls)) = do
-        mapM_ (traceWith tracer . TraceResolveLedgerPeersFailure (dapDomain domain))
-              errs
-        when (not $ null ipsttls) $
-            traceWith tracer $ TraceResolveLedgerPeersResult (dapDomain domain) ipsttls
+    processResult :: Map DNS.Domain (Set peerAddr)
+                  -> (DNS.Domain, DNSLookupResult peerAddr)
+                  -> Map DNS.Domain (Set peerAddr)
+    processResult mr (domain , addrttls) = do
+        Map.alter (addFn addrttls) domain mr
 
-        return $ Map.alter addFn domain mr
-      where
-        addFn :: Maybe (Set peerAddr) -> Maybe (Set peerAddr)
-        addFn Nothing =
-            let ips = map fst ipsttls
-                !addrs = map (\ip -> toPeerAddr ip (dapPortNumber domain))
-                             ips
-                !addrSet = Set.fromList addrs in
-            Just addrSet
-        addFn (Just addrSet) =
-            let ips = map fst ipsttls
-                !addrs = map (\ip -> toPeerAddr ip (dapPortNumber domain))
-                             ips
-                !addrSet' = Set.union addrSet (Set.fromList addrs) in
-            Just addrSet'
+    addFn :: DNSLookupResult peerAddr
+          -> Maybe (Set peerAddr)
+          -> Maybe (Set peerAddr)
+    addFn (Left _) Nothing = Just Set.empty
+    addFn (Left _) addrs = addrs
+    addFn (Right addrttls) Nothing =
+      Just $ Set.fromList . map fst $ addrttls
+    addFn (Right addrttls) (Just addrSet) =
+      let !addrSet' = Set.union addrSet (Set.fromList . map fst $ addrttls)
+       in Just addrSet'
 
 withAsyncAll :: MonadAsync m => [m a] -> ([Async m a] -> m b) -> m b
 withAsyncAll xs0 action = go [] xs0

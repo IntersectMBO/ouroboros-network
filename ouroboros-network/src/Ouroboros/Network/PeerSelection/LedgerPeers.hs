@@ -13,8 +13,7 @@
 #endif
 
 module Ouroboros.Network.PeerSelection.LedgerPeers
-  ( DomainAccessPoint (..)
-  , IP.IP (..)
+  ( IP.IP (..)
   , LedgerPeers (..)
   , getLedgerPeers
   , RelayAccessPoint (..)
@@ -327,25 +326,27 @@ ledgerPeersThread PeerActionsDNS {
                let (plainAddrs, domains) =
                      List.foldl' partitionPeer (Set.empty, []) pickedPeers
 
+               let (rng2, rngResolv) = split rng'
                -- NOTE: we don't set `resolveConcurrent` because
                -- of https://github.com/kazu-yamamoto/dns/issues/174
                domainAddrs <-
                  resolveLedgerPeers
                    (resolveTraceToLedgerPeersTrace `contramap` wlpTracer)
-                   paToPeerAddr
                    wlpSemaphore
                    DNS.defaultResolvConf
                    paDnsActions
+                   ledgerPeersKind
                    domains
+                   rngResolv
 
-               let (rng'', rngDomain) = split rng'
+               let (rng3, rngDomain) = split rng2
                    pickedAddrs =
                      snd $ List.foldl' pickDomainAddrs
                                   (rngDomain, plainAddrs)
                                   domainAddrs
 
                atomically $ putResp $ Just (pickedAddrs, ttl)
-               go rng'' ts peerMap' bigPeerMap' cachedSlot'
+               go rng3 ts peerMap' bigPeerMap' cachedSlot'
 
     -- Randomly pick one of the addresses returned in the DNS result.
     pickDomainAddrs :: (StdGen, Set peerAddr)
@@ -361,15 +362,16 @@ ledgerPeersThread PeerActionsDNS {
 
     -- Divide the picked peers form the ledger into addresses we can use
     -- directly and domain names that we need to resolve.
-    partitionPeer :: (Set peerAddr, [DomainAccessPoint])
+    partitionPeer :: (Set peerAddr, [RelayAccessPoint])
                   -> RelayAccessPoint
-                  -> (Set peerAddr, [DomainAccessPoint])
-    partitionPeer (addrs, domains) (RelayDomainAccessPoint domain) =
-      (addrs, domain : domains)
-    partitionPeer (!addrs, domains) (RelayAccessAddress ip port) =
-      let !addr  = paToPeerAddr ip port
-          addrs' = Set.insert addr addrs
-       in (addrs', domains)
+                  -> (Set peerAddr, [RelayAccessPoint])
+    partitionPeer (!addrs, domains) = \case
+      RelayAccessAddress ip port ->
+        let !addr  = paToPeerAddr ip port
+            addrs' = Set.insert addr addrs
+         in (addrs', domains)
+      d@(RelayAccessDomain {}) -> (addrs, d : domains)
+      d@(RelayAccessSRVDomain {}) -> (addrs, d : domains)
 
 
 -- | Arguments record to stakeMapWithSlotOverSource function
