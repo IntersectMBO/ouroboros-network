@@ -8,7 +8,6 @@ import Data.Word (Word16)
 import Text.Printf
 
 import Data.List.NonEmpty (NonEmpty)
-import Network.DNS qualified as DNS
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 
@@ -44,9 +43,7 @@ data TraceLedgerPeers =
       -- ^ Trace for fetching a new list of peers from the ledger. The first Int
       -- is the number of ledger peers returned the latter is the number of big
       -- ledger peers.
-    | TraceLedgerPeersDomains [DomainAccessPoint]
-    | TraceLedgerPeersResult  DNS.Domain [(IP, DNS.TTL)]
-    | TraceLedgerPeersFailure DNS.Domain DNS.DNSError
+    | TraceLedgerPeersDomains [RelayAccessPoint]
     | DisabledLedgerPeers
       -- ^ Trace for when getting peers from the ledger is disabled, that is DontUseLedgerPeers.
     | TraceUseLedgerPeers UseLedgerPeers
@@ -99,8 +96,4 @@ instance Show TraceLedgerPeers where
       printf "Not enough ledger peers to pick %d out of %d" n numOfLedgerPeers
 
     show (TraceLedgerPeersDomains domains) = "Resolving " ++ show domains
-    show (TraceLedgerPeersResult domain l) =
-      "Resolution success " ++ show domain ++ " " ++ show l
-    show (TraceLedgerPeersFailure domain err) =
-      "Resolution failed " ++ show domain ++ " " ++ show err
     show UsingBigLedgerPeerSnapshot = "Using peer snapshot for big ledger peers"
