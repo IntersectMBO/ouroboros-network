@@ -1,4 +1,8 @@
-module Ouroboros.Network.PeerSelection.RootPeersDNS (PeerActionsDNS (..)) where
+module Ouroboros.Network.PeerSelection.RootPeersDNS
+  ( DNSTrace (..)
+  , DNSPeersKind (..)
+  , PeerActionsDNS (..)
+  ) where
 
 import Data.IP (IP)
 import Network.Socket (PortNumber)
@@ -9,5 +13,5 @@ import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 --
 data PeerActionsDNS peeraddr resolver exception m = PeerActionsDNS {
   paToPeerAddr :: IP -> PortNumber -> peeraddr,
-  paDnsActions :: DNSActions resolver exception m
+  paDnsActions :: DNSActions peeraddr resolver exception m
   }
