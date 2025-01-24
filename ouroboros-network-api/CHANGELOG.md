@@ -22,6 +22,11 @@
   `Ouroboros.Network.PeerSelection.LedgerPeers/Type` to there.
 - Removed `lpGetLedgerStateJudgment` from `LedgerConsensusInterface` and added
   `extraAPI` type parameter to it.
+* Removed `DomainAccessPoint` type
+* Added `RelayAccessSRVDomain` tag to `RelayAccessPoint`
+* Removed `RelayAccessPointCoded` type
+* Bumped LedgerPeerSnapshot version to 2 to directly
+  leverage JSON and CBOR instances for `RelayAccessPoint`
 
 ## 0.12.0.0 -- 2025-01-02
 
