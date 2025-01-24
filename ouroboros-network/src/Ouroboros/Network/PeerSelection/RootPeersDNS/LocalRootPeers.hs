@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
@@ -90,19 +91,21 @@ localRootPeersProvider tracer
                        resolvConf
                        readLocalRootPeers
                        rootPeersGroupVar =
-        atomically (do domainsGroups <- readLocalRootPeers
-                       writeTVar rootPeersGroupVar (getLocalRootPeersGroups Map.empty domainsGroups)
-                       dnsSemaphore <- newDNSLocalRootSemaphore
-                       return (dnsSemaphore, domainsGroups))
-    >>= uncurry loop
+      atomically do
+        domainsGroups <- readLocalRootPeers
+        writeTVar rootPeersGroupVar (getLocalRootPeersGroups Map.empty domainsGroups)
+        (,,) <$> newTVar rng0 <*> newDNSLocalRootSemaphore <*> pure domainsGroups
+  >>= loop'
   where
+    loop' (varRng, sem, domGroups) = loop varRng sem domGroups
     -- | Loop function that monitors DNS Domain resolution threads and restarts
     -- if either these threads fail or detects the local configuration changed.
     --
-    loop :: DNSSemaphore m
+    loop :: StrictTVar m StdGen
+         -> DNSSemaphore m
          -> [(HotValency, WarmValency, Map RelayAccessPoint (LocalRootConfig extraFlags))]
          -> m Void
-    loop dnsSemaphore domainsGroups = do
+    loop varRng dnsSemaphore domainsGroups = do
       traceWith tracer (TraceLocalRootDomains domainsGroups)
       rr <- dnsAsyncResolverResource resolvConf
       let
@@ -135,7 +138,7 @@ localRootPeersProvider tracer
       -- going to lookup into the new DNS Domain Map and replace that entry
       -- with the lookup result.
       domainsGroups' <-
-        withAsyncAllWithCtx (monitorDomain rr dnsSemaphore dnsDomainMapVar `map` domains) $ \as -> do
+        withAsyncAllWithCtx (monitorDomain rr dnsSemaphore dnsDomainMapVar varRng `map` domains) $ \as -> do
           let tagErrWithDomain (domain, _, res) = either (Left . (domain,)) absurd res
           res <- atomically $
                   -- wait until any of the monitoring threads errors
@@ -157,7 +160,7 @@ localRootPeersProvider tracer
                                   >> return domainsGroups'
       -- we continue the loop outside of 'withAsyncAll',  this makes sure that
       -- all the monitoring threads are killed.
-      loop dnsSemaphore domainsGroups'
+      loop varRng dnsSemaphore domainsGroups'
 
     resolveDomain
       :: DNSSemaphore m
@@ -191,13 +194,15 @@ localRootPeersProvider tracer
     monitorDomain
       :: Resource m (Either (DNSorIOError exception) resolver)
       -> DNSSemaphore m
-      -> StrictTVar m (Map DomainAccessPoint [peerAddr])
-      -> DomainAccessPoint
-      -> (DomainAccessPoint, m Void)
-    monitorDomain rr0 dnsSemaphore dnsDomainMapVar domain =
-        (domain, go 0 (retryResource (TraceLocalRootFailure domain `contramap` tracer)
-                                     (1 :| [3, 6, 9, 12])
-                                     rr0))
+      -> StrictTVar m (Map RelayAccessPoint [peerAddr])
+      -> StrictTVar m StdGen
+      -> RelayAccessPoint
+      -> (DNS.Domain, m Void)
+    monitorDomain rr0 dnsSemaphore dnsDomainMapVar varRng domain =
+        (domain', go 0
+                     (retryResource (TraceLocalRootFailure domain `contramap` tracer)
+                                    (1 :| [3, 6, 9, 12])
+                                    rr0))
       where
         go :: DiffTime
            -> Resource m resolver
@@ -210,10 +215,19 @@ localRootPeersProvider tracer
           (resolver, rr') <- withResource rr
 
           --- Resolve 'domain'
-          reply <- resolveDomain dnsSemaphore resolver domain
+          rng <- atomically . stateTVar varRng $ split
+          reply <- withDNSSemaphore dnsSemaphore
+                                    (dnsLookupWithTTL
+                                      DNSLocalPeer
+                                      domain
+                                      resolvConf
+                                      resolver
+                                      rng)
+
           case reply of
-            Left errs -> go (minimum $ map (\err -> ttlForDnsError err ttl) errs)
-                           rr'
+            Left errs ->
+              go (minimum $ map (ttlForDnsError ttl) errs)
+                 rr'
             Right results -> do
               (newRootPeersGroups, newDNSDomainMap) <- atomically $ do
                 -- Read current DNS Domain Map value

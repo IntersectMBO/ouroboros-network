@@ -383,6 +383,7 @@ data Arguments extraState extraDebugState extraFlags extraPeers
                    -> (Map ntnAddr PeerAdvertise -> extraPeers)
                    -> ( (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set ntnAddr, DiffTime)))
                    -> LedgerPeersKind
+                   -> StdGen
                    -> Int
                    -> m (PublicRootPeers extraPeers ntnAddr, DiffTime)))
 

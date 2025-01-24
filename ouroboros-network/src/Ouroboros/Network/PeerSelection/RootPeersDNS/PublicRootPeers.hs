@@ -68,6 +68,7 @@ publicRootPeersProvider tracer
                           dnsResolverResource,
                           dnsLookupWithTTL
                         }
+                        rng
                         action = do
     domains <- atomically readDomains
     traceWith tracer (TracePublicRootRelayAccessPoint domains)
@@ -107,9 +108,13 @@ publicRootPeersProvider tracer
                             (dnsLookupWithTTL
                               resolvConf
                               resolver
-                              domain)
-                          )
-                  | (RelayAccessDomain domain port, pa) <- Map.assocs domains ]
+                              rng))
+                  | (domain, pa) <- doms
+                  , case domain of
+                      RelayAccessAddress {}   -> False
+                      RelayAccessDomain  {}   -> True
+                      RelayAccessSRVDomain {} -> True
+                  ]
             -- The timeouts here are handled by the 'lookupWithTTL'. They're
             -- configured via the DNS.ResolvConf resolvTimeout field and defaults
             -- to 3 sec.

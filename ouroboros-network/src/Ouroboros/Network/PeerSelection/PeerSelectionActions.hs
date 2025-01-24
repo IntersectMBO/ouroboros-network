@@ -1,3 +1,4 @@
+{-# LANGUAGE BlockArguments           #-}
 {-# LANGUAGE CPP                      #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE FlexibleContexts         #-}
@@ -23,6 +24,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer)
 
+import Data.Bifunctor (first)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Set (Set)
@@ -30,7 +32,6 @@ import Data.Void (Void)
 
 import Network.DNS qualified as DNS
 
-import Data.Bifunctor (first)
 import Ouroboros.Network.PeerSelection.Governor.Types
            (PeerSelectionActions (PeerSelectionActions, readLocalRootPeersFromFile))
 import Ouroboros.Network.PeerSelection.LedgerPeers hiding (getLedgerPeers)
@@ -42,6 +43,8 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers
 import Ouroboros.Network.PeerSharing (PeerSharingController,
            PeerSharingResult (..), requestPeers)
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount (..))
+
+import System.Random
 
 withPeerSelectionActions
   :: forall extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn resolver exception m a.
@@ -59,6 +62,7 @@ withPeerSelectionActions
   -> ( (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
      -> PeerSelectionActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m)
   -> WithLedgerPeersArgs extraAPI m
+  -> StdGen
   -> (   (Async m Void, Async m Void)
       -> PeerSelectionActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m
       -> m a)
@@ -71,6 +75,7 @@ withPeerSelectionActions
   peerActionsDNS
   getPeerSelectionActions
   ledgerPeersArgs
+  rng0
   k = do
     withLedgerPeers
       peerActionsDNS
@@ -79,17 +84,17 @@ withPeerSelectionActions
           let peerSelectionActions@PeerSelectionActions
                 { readLocalRootPeersFromFile
                 } = getPeerSelectionActions getLedgerPeers
-          withAsync
-            (do
-             labelThisThread "local-roots-peers"
-             localRootPeersProvider
-              localTracer
-              peerActionsDNS
-              -- NOTE: we don't set `resolvConcurrent` because
-              -- of https://github.com/kazu-yamamoto/dns/issues/174
-              DNS.defaultResolvConf
-              readLocalRootPeersFromFile
-              localRootsVar)
+          withAsync do
+              labelThisThread "local-roots-peers"
+              localRootPeersProvider
+                localTracer
+                peerActionsDNS
+                -- NOTE: we don't set `resolvConcurrent` because
+                -- of https://github.com/kazu-yamamoto/dns/issues/174
+                DNS.defaultResolvConf
+                rng0
+                readLocalRootPeersFromFile
+                localRootsVar
             (\lrppThread -> k (lpThread, lrppThread) peerSelectionActions))
 
 requestPeerSharingResult :: ( MonadSTM m
@@ -136,6 +141,7 @@ requestPublicRootPeers
   -- ^ Function to convert DNS result into extra peers
   -> (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
   -> LedgerPeersKind
+  -> StdGen
   -> Int
   -> m (PublicRootPeers extraPeers peeraddr, DiffTime)
 requestPublicRootPeers
@@ -143,7 +149,7 @@ requestPublicRootPeers
   PeerActionsDNS { paToPeerAddr = toPeerAddr
                  , paDnsActions = dnsActions
                  }
-  dnsSemaphore toExtraPeers getLedgerPeers ledgerPeersKind n = do
+  dnsSemaphore toExtraPeers getLedgerPeers ledgerPeersKind rng n = do
   mbLedgerPeers <- getLedgerPeers (NumberOfPeers $ fromIntegral n)
                                    ledgerPeersKind
   case mbLedgerPeers of
@@ -171,4 +177,5 @@ requestPublicRootPeers
                               DNS.defaultResolvConf
                               readPublicRootPeers
                               dnsActions
+                              rng
                               ($ x)

@@ -19,6 +19,8 @@ import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersAPI (..))
 
+import System.Random
+
 
 --------------------------
 -- Root peers below target
@@ -55,7 +57,8 @@ belowTarget actions@PeerSelectionActions {
               inProgressPublicRootsReq,
               targets = PeerSelectionTargets {
                           targetNumberOfRootPeers
-                        }
+                        },
+              stdGen
             }
     -- Are we under target for number of root peers?
   | maxExtraRootPeers > 0
@@ -70,8 +73,9 @@ belowTarget actions@PeerSelectionActions {
         decisionTrace = [TracePublicRootsRequest
                            targetNumberOfRootPeers
                            numRootPeers],
-        decisionState = st { inProgressPublicRootsReq = True },
-        decisionJobs  = [jobReqPublicRootPeers actions maxExtraRootPeers]
+        decisionState = st { inProgressPublicRootsReq = True
+                           , stdGen = fst . split $ stdGen },
+        decisionJobs  = [jobReqPublicRootPeers actions stdGen maxExtraRootPeers]
       }
 
     -- If we would be able to do the request except for the time, return the
@@ -108,6 +112,7 @@ jobReqPublicRootPeers
       peeraddr
       peerconn
       m
+  -> StdGen
   -> Int
   -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers
                          peeraddr peerconn)
@@ -119,6 +124,7 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers,
                                               toAdvertise
                                           }
                                           }
+                      rng
                       numExtraAllowed =
     Job job (return . handler) () "reqPublicRootPeers"
   where
@@ -155,7 +161,7 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers,
     job :: m (Completion m extraState extraDebugState extraFlags extraPeers
                          peeraddr peerconn)
     job = do
-      (results, ttl) <- requestPublicRootPeers AllLedgerPeers numExtraAllowed
+      (results, ttl) <- requestPublicRootPeers AllLedgerPeers rng numExtraAllowed
       return $ Completion $ \st now ->
         let newPeers =
               PublicRootPeers.difference differenceExtraPeers
