@@ -80,6 +80,7 @@ instance Arbitrary ArbitraryRelayAccessPoint where
       ArbitraryRelayAccessPoint <$>
         oneof [ RelayAccessAddress (read "1.1.1.1")     . getArbitraryPortNumber <$> arbitrary
               , RelayAccessDomain  "relay.iohk.example" . getArbitraryPortNumber <$> arbitrary
+              , pure $ RelayAccessSRVDomain  "_cardano._tcp.example.org"
               ]
 
 newtype ArbitraryLedgerStateJudgement =

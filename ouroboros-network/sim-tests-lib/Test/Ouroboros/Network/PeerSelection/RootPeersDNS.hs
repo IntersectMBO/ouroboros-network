@@ -102,13 +102,35 @@ tests =
 -- Mock Environment and Utils
 --
 
+data DomainAccessPoint = DomainAccessPoint !DNS.Domain PortNumber
+                       | DomainSRVAccessPoint !DNS.Domain
+  deriving (Eq, Show, Ord)
+
+instance Arbitrary DomainAccessPoint where
+  arbitrary = oneof [plain, srv]
+    where
+      plain = DomainAccessPoint
+                <$> genDomainName
+                <*> genPort
+      srv = DomainSRVAccessPoint <$> genDomainName
+
+genDomainName :: Gen BSC.ByteString
+genDomainName = elements $ (\i -> "test" <> (BSC.pack . show $ i)) <$> [1..6 :: Int]
+
+type MockDNSLookupResult = Either [(IP, TTL)]
+                                  [( DNS.Domain
+                                   , Word16 -- ^ priority
+                                   , Word16 -- ^ weight
+                                   , PortNumber)]
+type MockDNSMap = (Map (DNS.Domain, DNS.TYPE) MockDNSLookupResult)
+
 data MockRoots = MockRoots {
     mockLocalRootPeers        :: [( HotValency
                                   , WarmValency
                                   , Map RelayAccessPoint LocalRootConfig)]
-  , mockLocalRootPeersDNSMap  :: Script (Map Domain [(IP, TTL)])
+  , mockLocalRootPeersDNSMap  :: Script MockDNSMap
   , mockPublicRootPeers       :: Map RelayAccessPoint PeerAdvertise
-  , mockPublicRootPeersDNSMap :: Script (Map Domain [(IP, TTL)])
+  , mockPublicRootPeersDNSMap :: Script MockDNSMap
   }
   deriving Show
 
