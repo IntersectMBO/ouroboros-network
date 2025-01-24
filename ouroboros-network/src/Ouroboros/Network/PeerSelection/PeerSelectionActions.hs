@@ -21,6 +21,7 @@ import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadMVar (MonadMVar (..))
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
@@ -146,7 +147,9 @@ withPeerSelectionActions
                                        updateOutboundConnectionsState,
                                        readLedgerPeerSnapshot }
           withAsync
-            (localRootPeersProvider
+            (do
+             labelThisThread "local-roots-peers"
+             localRootPeersProvider
               localTracer
               toPeerAddr
               -- NOTE: we don't set `resolvConcurrent` because
