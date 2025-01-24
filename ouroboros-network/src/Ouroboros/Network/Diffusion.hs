@@ -202,6 +202,7 @@ runM Interfaces
        , dtLocalConnectionManagerTracer
        , dtLocalServerTracer
        , dtLocalInboundGovernorTracer
+       , dtDnsTracer
        }
      Arguments
        { daIPv4Address
@@ -576,7 +577,7 @@ runM Interfaces
       let dnsActions =
             PeerActionsDNS {
               paToPeerAddr = diNtnToPeerAddr
-            , paDnsActions = diDnsActions lookupReqs
+            , paDnsActions = diDnsActions dtDnsTracer lookupReqs diNtnToPeerAddr
             }
       --
       -- Run peer selection (p2p governor)
