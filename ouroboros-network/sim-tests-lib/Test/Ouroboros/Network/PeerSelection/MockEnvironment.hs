@@ -146,7 +146,8 @@ data GovernorMockEnvironment = GovernorMockEnvironment {
        useBootstrapPeers          :: !(TimedScript UseBootstrapPeers),
        consensusMode              :: !ConsensusMode,
        useLedgerPeers             :: !(TimedScript UseLedgerPeers),
-       ledgerStateJudgement       :: !(TimedScript LedgerStateJudgement)
+       ledgerStateJudgement       :: !(TimedScript LedgerStateJudgement),
+       seed                       :: !TestSeed
      }
   deriving (Show, Eq)
 
@@ -227,14 +228,15 @@ governorAction :: GovernorMockEnvironment -> IOSim s Void
 governorAction mockEnv@GovernorMockEnvironment {
                  consensusMode,
                  targets = Script targets',
-                 ledgerStateJudgement = Script ledgerStateJudgement'} = do
+                 ledgerStateJudgement = Script ledgerStateJudgement',
+                 seed = TestSeed seed'} = do
     publicStateVar <- makePublicPeerSelectionStateVar
     lpVar <- playTimedScript (contramap TraceEnvUseLedgerPeers tracerMockEnv)
                              (useLedgerPeers mockEnv)
     usbVar <- playTimedScript (contramap TraceEnvSetUseBootstrapPeers tracerMockEnv)
                               (useBootstrapPeers mockEnv)
     -- todo: make MinBigLedgerPeersForTrustedState come from quickcheck
-    debugStateVar <- StrictTVar.newTVarIO (emptyPeerSelectionState (mkStdGen 42) consensusMode (MinBigLedgerPeersForTrustedState 0))
+    debugStateVar <- StrictTVar.newTVarIO (emptyPeerSelectionState (mkStdGen seed') consensusMode (MinBigLedgerPeersForTrustedState 0))
     countersVar <- StrictTVar.newTVarIO emptyPeerSelectionCounters
     policy  <- mockPeerSelectionPolicy mockEnv
     let initialPeerTargets = fst . NonEmpty.head $ targets'
@@ -291,7 +293,7 @@ governorAction mockEnv@GovernorMockEnvironment {
         tracerTracePeerSelection
         (tracerDebugPeerSelection <> traceAssociationMode interfaces actions)
         tracerTracePeerSelectionCounters
-        (mkStdGen 42)
+        (mkStdGen seed')
         consensusMode
         (MinBigLedgerPeersForTrustedState 0) -- ^ todo: make this come from quickcheck
         actions
@@ -874,6 +876,7 @@ instance Arbitrary GovernorMockEnvironment where
                                    PraosMode   -> arbitrary
       useLedgerPeers          <- arbitrary
       ledgerStateJudgement0   <- listOf arbitrary
+      seed                    <- arbitrary
       (ledgerStateJudgement, targets) <-
         genLsjWithTargets localRootPeers publicRootPeers ledgerStateJudgement0 consensusMode
 

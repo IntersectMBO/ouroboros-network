@@ -44,6 +44,7 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
            (recomputeRelativeStake)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 
 import Test.Ouroboros.Network.Data.Script
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS
@@ -289,7 +290,13 @@ prop_pick100 seed (NonNegative n) (ArbLedgerPeersKind ledgerPeersKind) (MockRoot
 
           withLedgerPeers
                 PeerActionsDNS { paToPeerAddr = curry IP.toSockAddr,
-                                 paDnsActions = (mockDNSActions @SomeException dnsMapVar dnsTimeoutScriptVar dnsLookupDelayScriptVar),
+                                 paDnsActions = mockDNSActions @SomeException
+                                                   (Tracer traceM)
+                                                   LookupReqAOnly
+                                                   (curry IP.toSockAddr)
+                                                   dnsMapVar
+                                                   dnsTimeoutScriptVar
+                                                   dnsLookupDelayScriptVar,
                                  paDnsSemaphore = dnsSemaphore }
                 WithLedgerPeersArgs { wlpRng = rng,
                                       wlpConsensusInterface = interface,
@@ -350,7 +357,13 @@ prop_pick (LedgerPools lps) (ArbLedgerPeersKind ledgerPeersKind) count seed (Moc
 
           withLedgerPeers
                 PeerActionsDNS { paToPeerAddr = curry IP.toSockAddr,
-                                 paDnsActions = mockDNSActions @SomeException dnsMapVar dnsTimeoutScriptVar dnsLookupDelayScriptVar,
+                                 paDnsActions = mockDNSActions @SomeException
+                                                  (Tracer traceM)
+                                                  LookupReqAOnly
+                                                  (curry IP.toSockAddr)
+                                                  dnsMapVar
+                                                  dnsTimeoutScriptVar
+                                                  dnsLookupDelayScriptVar,
                                  paDnsSemaphore = dnsSemaphore }
                 WithLedgerPeersArgs { wlpRng = rng,
                                       wlpConsensusInterface = interface,
