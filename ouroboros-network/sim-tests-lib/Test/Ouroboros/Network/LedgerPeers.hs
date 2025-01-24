@@ -60,8 +60,8 @@ tests = testGroup "Ouroboros.Network.LedgerPeers"
   , testProperty "accumulateBigLedgerStake" prop_accumulateBigLedgerStake
   , testProperty "recomputeRelativeStake" prop_recomputeRelativeStake
   , testProperty "getLedgerPeers invariants" prop_getLedgerPeers
-  , testProperty "LedgerPeerSnapshot CBOR version 1" prop_ledgerPeerSnapshotCBORV1
-  , testProperty "LedgerPeerSnapshot JSON version 1" prop_ledgerPeerSnapshotJSONV1
+  , testProperty "LedgerPeerSnapshot CBOR version 2" prop_ledgerPeerSnapshotCBORV2
+  , testProperty "LedgerPeerSnapshot JSON version 2" prop_ledgerPeerSnapshotJSONV2
   ]
 
 newtype ArbitraryPortNumber = ArbitraryPortNumber { getArbitraryPortNumber :: PortNumber }
@@ -186,7 +186,7 @@ instance Arbitrary ArbStakeMapOverSource where
     (peerMap, bigPeerMap, cachedSlot) <-
       return $ case peerSnapshot of
                  Nothing -> (Map.empty, Map.empty, Nothing)
-                 Just (LedgerPeerSnapshotV1 (At slot, accPools))
+                 Just (LedgerPeerSnapshotV2 (At slot, accPools))
                    -> (Map.fromList accPools, Map.fromList accPools, Just slot)
                  _otherwise -> error "impossible!"
     return $ ArbStakeMapOverSource StakeMapOverSource {
@@ -204,7 +204,7 @@ instance Arbitrary ArbStakeMapOverSource where
       genPeerSnapshot = do
         slotNo <- At . getPositive <$> arbitrary
         pools <- accumulateBigLedgerStake . getLedgerPools <$> arbitrary
-        return $ LedgerPeerSnapshotV1 (slotNo, pools)
+        return $ LedgerPeerSnapshotV2 (slotNo, pools)
 
 -- | This test checks whether requesting ledger peers works as intended
 -- when snapshot data is available. For each request, peers must be returned from the right
@@ -503,10 +503,10 @@ prop_getLedgerPeers (ArbitrarySlotNo curSlot)
 -- | Checks validity of LedgerPeerSnapshot CBOR encoding, and whether
 --   round trip cycle is the identity function
 --
-prop_ledgerPeerSnapshotCBORV1 :: ArbitrarySlotNo
+prop_ledgerPeerSnapshotCBORV2 :: ArbitrarySlotNo
                               -> LedgerPools
                               -> Property
-prop_ledgerPeerSnapshotCBORV1 slotNo
+prop_ledgerPeerSnapshotCBORV2 slotNo
                               ledgerPools =
   counterexample (show snapshot) $
          counterexample ("Invalid CBOR encoding" <> show encoded)
@@ -515,31 +515,31 @@ prop_ledgerPeerSnapshotCBORV1 slotNo
                 (counterexample . ("CBOR round trip failed: " <>) . show <*> (snapshot ==))
                 decoded
   where
-    snapshot = snapshotV1 slotNo ledgerPools
+    snapshot = snapshotV2 slotNo ledgerPools
     encoded = toFlatTerm . toCBOR $ snapshot
     decoded = fromFlatTerm fromCBOR encoded
 
 -- | Tests if LedgerPeerSnapshot JSON round trip is the identity function
 --
-prop_ledgerPeerSnapshotJSONV1 :: ArbitrarySlotNo
+prop_ledgerPeerSnapshotJSONV2 :: ArbitrarySlotNo
                               -> LedgerPools
                               -> Property
-prop_ledgerPeerSnapshotJSONV1 slotNo
+prop_ledgerPeerSnapshotJSONV2 slotNo
                               ledgerPools =
   counterexample (show snapshot) $
      either ((`counterexample` False) . ("JSON decode failed: " <>))
             (counterexample . ("JSON round trip failed: " <>) . show <*> nearlyEqualModuloFullyQualified snapshot)
             roundTrip
   where
-    snapshot = snapshotV1 slotNo ledgerPools
+    snapshot = snapshotV2 slotNo ledgerPools
     roundTrip = case fromJSON . toJSON $ snapshot of
                   Aeson.Success s -> Right s
                   Error str       -> Left str
 
     nearlyEqualModuloFullyQualified snapshotOriginal snapshotRoundTripped =
-      let LedgerPeerSnapshotV1 (wOrigin, relaysWithAccStake) = snapshotOriginal
+      let LedgerPeerSnapshotV2 (wOrigin, relaysWithAccStake) = snapshotOriginal
           strippedRelaysWithAccStake = stripFQN <$> relaysWithAccStake
-          LedgerPeerSnapshotV1 (wOrigin', relaysWithAccStake') = snapshotRoundTripped
+          LedgerPeerSnapshotV2 (wOrigin', relaysWithAccStake') = snapshotRoundTripped
           strippedRelaysWithAccStake' = stripFQN <$> relaysWithAccStake'
       in
              wOrigin === wOrigin'
@@ -552,6 +552,10 @@ prop_ledgerPeerSnapshotJSONV1 slotNo
     step it@(RelayAccessDomain domain port) =
       case BS.unsnoc domain of
         Just (prefix, '.') -> RelayAccessDomain prefix port
+        _otherwise         -> it
+    step it@(RelayAccessSRVDomain domain) =
+      case BS.unsnoc domain of
+        Just (prefix, '.') -> RelayAccessSRVDomain prefix
         _otherwise         -> it
     step it = it
 
@@ -571,11 +575,11 @@ prop_ledgerPeerSnapshotJSONV1 slotNo
 
 -- | helper functions for ledgerpeersnapshot encoding tests
 --
-snapshotV1 :: ArbitrarySlotNo
+snapshotV2 :: ArbitrarySlotNo
            -> LedgerPools
            -> LedgerPeerSnapshot
-snapshotV1 (ArbitrarySlotNo slot)
-           (LedgerPools pools) = LedgerPeerSnapshotV1 (originOrSlot, poolStakeWithAccumulation)
+snapshotV2 (ArbitrarySlotNo slot)
+           (LedgerPools pools) = LedgerPeerSnapshotV2 (originOrSlot, poolStakeWithAccumulation)
   where
     poolStakeWithAccumulation = Map.assocs . accPoolStake $ pools
     originOrSlot = if slot == 0
