@@ -1,3 +1,4 @@
+{-# LANGUAGE BlockArguments             #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingVia                #-}
@@ -29,21 +30,18 @@ module Ouroboros.Network.PeerSelection.LedgerPeers.Type
   , compareLedgerPeerSnapshotApproximate
   ) where
 
-import Control.Monad (forM)
-import Data.ByteString.Char8 qualified as BS
-import Data.List.NonEmpty (NonEmpty)
-import Data.Text.Encoding (decodeUtf8)
 import GHC.Generics (Generic)
-import Text.Read (readMaybe)
 
 import Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import Cardano.Binary qualified as Codec
 import Cardano.Slotting.Slot (SlotNo (..), WithOrigin (..))
 import Control.Concurrent.Class.MonadSTM
 import Control.DeepSeq (NFData (..))
+import Control.Monad (forM)
 import Data.Aeson
-import Data.Aeson.Types
+import Data.List.NonEmpty (NonEmpty)
 import NoThunks.Class
+
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 
 -- | Minimum number of hot big ledger peers in Genesis mode
@@ -64,7 +62,7 @@ newtype MinBigLedgerPeersForTrustedState =
 -- to connect to when syncing.
 --
 data LedgerPeerSnapshot =
-  LedgerPeerSnapshotV1 (WithOrigin SlotNo, [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))])
+  LedgerPeerSnapshotV2 (WithOrigin SlotNo, [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))])
   -- ^ Internal use for version 1, use pattern synonym for public API
   deriving (Eq, Show)
 
@@ -74,8 +72,8 @@ data LedgerPeerSnapshot =
 --
 pattern LedgerPeerSnapshot :: (WithOrigin SlotNo, [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))])
                            -> LedgerPeerSnapshot
-pattern LedgerPeerSnapshot payload <- LedgerPeerSnapshotV1 payload where
-  LedgerPeerSnapshot payload = LedgerPeerSnapshotV1 payload
+pattern LedgerPeerSnapshot payload <- LedgerPeerSnapshotV2 payload where
+  LedgerPeerSnapshot payload = LedgerPeerSnapshotV2 payload
 
 {-# COMPLETE LedgerPeerSnapshot #-}
 
@@ -104,33 +102,36 @@ compareLedgerPeerSnapshotApproximate baseline candidate =
 --
 migrateLedgerPeerSnapshot :: LedgerPeerSnapshot
                           -> Maybe (WithOrigin SlotNo, [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))])
-migrateLedgerPeerSnapshot (LedgerPeerSnapshotV1 lps) = Just lps
+migrateLedgerPeerSnapshot (LedgerPeerSnapshotV2 lps) = Just lps
 
 instance ToJSON LedgerPeerSnapshot where
-  toJSON (LedgerPeerSnapshotV1 (slot, pools)) =
-    object [ "version" .= (1 :: Int)
+  toJSON (LedgerPeerSnapshotV2 (slot, pools)) =
+    object [ "version" .= (2 :: Int)
            , "slotNo" .= slot
-           , "bigLedgerPools" .= [ object [ "accumulatedStake" .= fromRational @Double accStake
-                                          , "relativeStake"  .= fromRational @Double relStake
-                                          , "relays"   .= relays']
-                                 | (AccPoolStake accStake, (PoolStake relStake, relays)) <- pools
-                                 , let relays' = fmap RelayAccessPointCoded relays]]
+           , "bigLedgerPools" .= [ object
+                                   [ "accumulatedStake" .= fromRational @Double accStake
+                                   , "relativeStake"  .= fromRational @Double relStake
+                                   , "relays"   .= relays]
+                                   | (AccPoolStake accStake, (PoolStake relStake, relays)) <- pools
+                                   ]]
 
 instance FromJSON LedgerPeerSnapshot where
   parseJSON = withObject "LedgerPeerSnapshot" $ \v -> do
     vNum :: Int <- v .: "version"
     parsedSnapshot <-
       case vNum of
-        1 -> do
+        2 -> do
           slot <- v .: "slotNo"
           bigPools <- v .: "bigLedgerPools"
-          bigPools' <- (forM bigPools . withObject "bigLedgerPools" $ \poolV -> do
-            AccPoolStakeCoded accStake <- poolV .: "accumulatedStake"
-            PoolStakeCoded reStake <- poolV .: "relativeStake"
-            relays <- fmap unRelayAccessPointCoded <$> poolV .: "relays"
-            return (accStake, (reStake, relays))) <?> Key "bigLedgerPools"
+          bigPools' <- forM (zip [0 :: Int ..] bigPools) \(idx, poolO) -> do
+                         let f poolV = do
+                                 AccPoolStakeCoded accStake <- poolV .: "accumulatedStake"
+                                 PoolStakeCoded reStake <- poolV .: "relativeStake"
+                                 relays <- poolV .: "relays"
+                                 return (accStake, (reStake, relays))
+                         withObject ("bigLedgerPools[" <> show idx <> "]") f (Object poolO)
 
-          return $ LedgerPeerSnapshotV1 (slot, bigPools')
+          return $ LedgerPeerSnapshotV2 (slot, bigPools')
         _ -> fail $ "Network.LedgerPeers.Type: parseJSON: failed to parse unsupported version " <> show vNum
     case migrateLedgerPeerSnapshot parsedSnapshot of
       Just payload -> return $ LedgerPeerSnapshot payload
@@ -160,26 +161,26 @@ instance FromCBOR WithOriginCoded where
       _      -> fail "LedgerPeers.Type: Unrecognized list length while decoding WithOrigin SlotNo"
 
 instance ToCBOR LedgerPeerSnapshot where
-  toCBOR (LedgerPeerSnapshotV1 (wOrigin, pools)) =
+  toCBOR (LedgerPeerSnapshotV2 (wOrigin, pools)) =
        Codec.encodeListLen 2
-    <> Codec.encodeWord8 1
+    <> Codec.encodeWord8 2
     <> toCBOR (WithOriginCoded wOrigin, pools')
     where
       pools' =
-        [(AccPoolStakeCoded accPoolStake, (PoolStakeCoded relStake, neRelayAccessPointCoded))
+        [(AccPoolStakeCoded accPoolStake, (PoolStakeCoded relStake, relays))
         | (accPoolStake, (relStake, relays)) <- pools
-        , let neRelayAccessPointCoded = fmap RelayAccessPointCoded relays]
+        ]
 
 instance FromCBOR LedgerPeerSnapshot where
   fromCBOR = do
     Codec.decodeListLenOf 2
     version <- Codec.decodeWord8
     case version of
-      1 -> LedgerPeerSnapshotV1 <$> do
+      2 -> LedgerPeerSnapshotV2 <$> do
              (WithOriginCoded wOrigin, pools) <- fromCBOR
-             let pools' = [(accStake, (relStake, relays'))
+             let pools' = [(accStake, (relStake, relays))
                           | (AccPoolStakeCoded accStake, (PoolStakeCoded relStake, relays)) <- pools
-                          , let relays' = unRelayAccessPointCoded <$> relays]
+                          ]
              return (wOrigin, pools')
       _ -> fail $ "LedgerPeers.Type: no decoder could be found for version " <> show version
 
