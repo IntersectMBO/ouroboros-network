@@ -1356,8 +1356,8 @@ prop_peer_selection_action_trace_coverage defaultBearerInfo diffScript =
         "PeerMonitoringError " ++ show se
       peerSelectionActionsTraceMap (PeerMonitoringResult _ wspt)  =
         "PeerMonitoringResult " ++ show wspt
-      peerSelectionActionsTraceMap (AcquireConnectionError e)      =
-        "AcquireConnectionError " ++ show e
+      peerSelectionActionsTraceMap (AcquireConnectionError _e)    =
+        "AcquireConnectionError"
 
       eventsSeenNames = map peerSelectionActionsTraceMap events
 
@@ -1673,8 +1673,8 @@ prop_diffusion_dns_can_recover ioSimTrace traceNumber =
     verify toRecover ttlMap recovered time ((t, ev):evs) =
       case ev of
         DiffusionLocalRootPeerTrace
-          (TraceLocalRootFailure dap (DNSError err)) ->
-            let dns = dapDomain dap
+          (TraceLocalRootFailure rap (DNSError err)) ->
+            let dns = extractDomainName rap
                 ttl = fromMaybe 0 $ Map.lookup dns ttlMap
                 ttl' = ttlForDnsError err ttl
                 ttlMap' = Map.insert dns ttl' ttlMap
@@ -1684,13 +1684,13 @@ prop_diffusion_dns_can_recover ioSimTrace traceNumber =
         DiffusionLocalRootPeerTrace
           (TraceLocalRootReconfigured _ _) ->
             verify Map.empty ttlMap recovered t evs
-        DiffusionLocalRootPeerTrace (TraceLocalRootResult dap r) ->
-          let dns = dapDomain dap
-              ttls = map snd r
-              ttlMap' = Map.insert dns (ttlForResults ttls) ttlMap
-           in case Map.lookup dns toRecover of
+        DiffusionDNSTrace (DNSResult DNSLocalPeer domain srvDomain ipsttls) ->
+          let primaryDomain = fromMaybe domain srvDomain
+              ttls = map getTTLs ipsttls
+              ttlMap' = Map.insert primaryDomain (ttlForResults ttls) ttlMap
+           in case Map.lookup primaryDomain toRecover of
                 Nothing -> verify toRecover ttlMap' recovered t evs
-                Just _  -> verify (Map.delete dns toRecover)
+                Just _  -> verify (Map.delete primaryDomain toRecover)
                                   ttlMap'
                                   (recovered + 1)
                                   t
@@ -1698,6 +1698,12 @@ prop_diffusion_dns_can_recover ioSimTrace traceNumber =
         DiffusionDiffusionSimulationTrace TrReconfiguringNode ->
           verify Map.empty ttlMap recovered t evs
         _ -> verify toRecover ttlMap recovered time evs
+
+    extractDomainName (RelayAccessDomain d _)  = d
+    extractDomainName (RelayAccessSRVDomain d) = d
+    extractDomainName _                        = error "impossible!"
+
+    getTTLs (_, _, it) = it
 
 prop_diffusion_dns_can_recover_iosimpor
   :: AbsBearerInfo -> DiffusionScript -> Property
@@ -1737,15 +1743,15 @@ unit_4191 = testWithIOSim prop_diffusion_dns_can_recover long_trace absInfo scri
         (SimArgs 1 20)
         (singletonTimedScript $
            Map.fromList
-             [ ("test2", [ (read "810b:4c8a:b3b5:741:8c0c:b437:64cf:1bd9", 300)
-                         , (read "254.167.216.215", 300)
-                         , (read "27.173.29.254", 300)
-                         , (read "61.238.34.238", 300)
-                         , (read "acda:b62d:6d7d:50f7:27b6:7e34:2dc6:ee3d", 300)
-                         ])
-             , ("test3", [ (read "903e:61bc:8b2f:d98f:b16e:5471:c83d:4430", 300)
-                         , (read "19.40.90.161", 300)
-                         ])
+             [ (("test2", DNS.A), Left [ (read "810b:4c8a:b3b5:741:8c0c:b437:64cf:1bd9", 300)
+                                       , (read "254.167.216.215", 300)
+                                       , (read "27.173.29.254", 300)
+                                       , (read "61.238.34.238", 300)
+                                       , (read "acda:b62d:6d7d:50f7:27b6:7e34:2dc6:ee3d", 300)
+                                       ])
+             , (("test3", DNS.A), Left [ (read "903e:61bc:8b2f:d98f:b16e:5471:c83d:4430", 300)
+                                       , (read "19.40.90.161", 300)
+                                       ])
              ])
         [(NodeArgs
             16
@@ -5028,4 +5034,3 @@ showBucket size a | a < size
                            , show (a `div` size * size + size)
                            , ")"
                            ]
-
