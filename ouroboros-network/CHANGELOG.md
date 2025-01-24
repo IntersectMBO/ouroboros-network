@@ -39,6 +39,13 @@
 * Use `LocalRootConfig` instead of a tuple.
 * Extended `LocalRootConfig` with `diffusionMode :: DiffusionMode` field.
 * Added `diConnStateSupply` record field to `Ouroboros.Network.Diffusion.P2P.Interfaces`.
+* Removed `TraceLedgerPeersResult` and `TraceLedgerPeersFailure`
+* Changed `TraceLedgerPeersDomains` to accept `[RelayAccessPoint]`
+* Removed `TraceLocalRootResult` and changed some other constructors to
+  accept `RelayAccessPoint` in lieu of `DomainAccessPoint` which was removed
+* Removed `TracePublicRootResult` and `TracePublicRootFailure`
+* Changed signature of `resolveLedgerPeers`, `localRootPeersProvider`, `publicRootPeersProvider`,
+  `withPeerSelectionActions` to accept random seed for DNS SRV lookup.
 
 ### Non-Breaking changes
 

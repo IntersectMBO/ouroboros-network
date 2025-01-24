@@ -15,6 +15,11 @@
   * `legacyTip`
   * `toLegacyTip`
 * Dropped all node-to-client versions < `NodeToClientV_16`.
+* Removed `DomainAccessPoint` type
+* Added `RelayAccessSRVDomain` tag to `RelayAccessPoint`
+* Removed `RelayAccessPointCoded` type
+* Bumped LedgerPeerSnapshot version to 2 to directly
+  leverage JSON and CBOR instances for `RelayAccessPoint`
 
 ### Non-breaking changes
 
