@@ -1,8 +1,11 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 
 module Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
   ( -- * DNS based actions for local and public root providers
@@ -10,17 +13,29 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
     -- * DNSActions IO
   , ioDNSActions
   , DNSLookupType (..)
+  , DNSLookupResult
     -- * Utils
     -- ** Resource
   , Resource (..)
   , retryResource
   , constantResource
+    -- ** Exposed for testing purposes
+  , dispatchLookupWithTTL
     -- ** Error type
   , DNSorIOError (..)
+    -- * Tracing types
+  , DnsTrace (..)
+  , DnsPeersKind (..)
   ) where
 
+import Data.Foldable qualified as Fold
 import Data.Function (fix)
+import Data.List (sortOn)
 import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.NonEmpty qualified as NE
+import Data.Map qualified as Map
+import Data.Maybe (fromJust, listToMaybe)
+import Data.Word (Word16)
 
 import Control.Exception (IOException)
 import Control.Monad.Class.MonadAsync
@@ -42,10 +57,29 @@ import Control.Tracer (Tracer (..), traceWith)
 import System.Directory (getModificationTime)
 #endif
 
-import Data.IP (IP (..))
-import Network.DNS (DNSError)
+import Network.DNS (DNSError, DNSMessage)
 import Network.DNS qualified as DNS
+import System.Random
 
+import Ouroboros.Network.PeerSelection.RelayAccessPoint
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeersKind)
+
+data DnsPeersKind = DnsLocalPeer | DnsPublicPeer | DnsLedgerPeer !LedgerPeersKind
+  deriving (Show)
+
+data DnsTrace = DnsResult
+                  DnsPeersKind
+                  DNS.Domain
+                  -- ^ source of addresses
+                  (Maybe DNS.Domain)
+                  -- ^ SRV domain, if relevant
+                  [(IP, PortNumber, DNS.TTL)]
+                  -- ^ payload
+              | DnsTraceLookupError !DnsPeersKind !(Maybe DNSLookupType) !DNS.Domain !DNS.DNSError
+              | DnsSRVFail
+                 !DnsPeersKind
+                 !DNS.Domain -- ^ SRV domain
+  deriving (Show)
 
 data DNSLookupType = LookupReqAOnly
                    | LookupReqAAAAOnly
@@ -56,6 +90,12 @@ data DNSorIOError exception
     = DNSError !DNSError
     | IOError  !exception
   deriving Show
+
+-- | The type returned by 'DNSActions.dnsLookupWithTTL'
+-- indicating the type of domain attempted to resolve
+--
+type DNSLookupResult peerAddr =
+    Either [DNS.DNSError] [(peerAddr, DNS.TTL)]
 
 instance Exception exception => Exception (DNSorIOError exception) where
 
@@ -141,7 +181,7 @@ data TimedResolver
 
 -- | Dictionary of DNS actions vocabulary
 --
-data DNSActions resolver exception m = DNSActions {
+data DNSActions peerAddr resolver exception m = DNSActions {
 
     -- |
     --
@@ -167,10 +207,12 @@ data DNSActions resolver exception m = DNSActions {
     -- DNS library timeouts do not work reliably on Windows (#1873), hence the
     -- additional timeout.
     --
-    dnsLookupWithTTL         :: DNS.ResolvConf
+    dnsLookupWithTTL         :: DnsPeersKind
+                             -> RelayAccessPoint
+                             -> DNS.ResolvConf
                              -> resolver
-                             -> DNS.Domain
-                             -> m ([DNS.DNSError], [(IP, DNS.TTL)])
+                             -> StdGen
+                             -> m (DNSLookupResult peerAddr)
   }
 
 
@@ -194,15 +236,22 @@ getResolver resolvConf = do
 --
 -- It guarantees that returned TTLs are strictly greater than 0.
 --
-ioDNSActions :: DNSLookupType
-             -> DNSActions DNS.Resolver IOException IO
-ioDNSActions =
-    \reqs -> DNSActions {
-               dnsResolverResource      = resolverResource,
-               dnsAsyncResolverResource = asyncResolverResource,
-               dnsLookupWithTTL         = lookupWithTTL reqs
-             }
+ioDNSActions :: Tracer IO DnsTrace
+             -> DNSLookupType
+             -> (IP -> PortNumber -> peerAddr)
+             -> DNSActions peerAddr DNS.Resolver IOException IO
+ioDNSActions tracer lookupType toPeerAddr =
+    DNSActions {
+      dnsResolverResource      = resolverResource,
+      dnsAsyncResolverResource = asyncResolverResource,
+      dnsLookupWithTTL         = dispatchLookupWithTTL lookupType mkResolveDNSIOAction tracer toPeerAddr
+      }
   where
+    mkResolveDNSIOAction resolver resolvConf domain ofType =
+      timeout (microsecondsAsIntToDiffTime
+               $ DNS.resolvTimeout resolvConf)
+              (DNS.lookupRaw resolver domain ofType)
+
     -- |
     --
     -- TODO: it could be useful for `publicRootPeersProvider`.
@@ -313,83 +362,190 @@ ioDNSActions =
                   return (Right resolver', go filePath resourceVar)
 
 
-    -- | Like 'DNS.lookupA' but also return the TTL for the results.
-    --
-    -- DNS library timeouts do not work reliably on Windows (#1873), hence the
-    -- additional timeout.
-    --
-    lookupAWithTTL :: DNS.ResolvConf
-                   -> DNS.Resolver
-                   -> DNS.Domain
-                   -> IO (Either DNS.DNSError [(IP, DNS.TTL)])
-    lookupAWithTTL resolvConf resolver domain = do
-        reply <- timeout (microsecondsAsIntToDiffTime
-                           $ DNS.resolvTimeout resolvConf)
-                         (DNS.lookupRaw resolver domain DNS.A)
-        case reply of
-          Nothing          -> return (Left DNS.TimeoutExpired)
-          Just (Left  err) -> return (Left err)
-          Just (Right ans) -> return (DNS.fromDNSMessage ans selectA)
-          --TODO: we can get the SOA TTL on NXDOMAIN here if we want to
+srvRecordLookupWithTTL :: forall peerAddr m. (MonadAsync m)
+                       => DNSLookupType
+                       -> Tracer m DnsTrace
+                       -> (IP -> PortNumber -> peerAddr)
+                       -> DnsPeersKind
+                       -> DNS.Domain
+                       -> (   DNS.Domain
+                           -> DNS.TYPE
+                       -> m (Maybe (Either DNSError DNSMessage)))
+                       -> StdGen
+                       -> m (DNSLookupResult peerAddr)
+srvRecordLookupWithTTL ofType tracer toPeerAddr peerType domainSRV resolveDNS rng = do
+    reply <- resolveDNS domainSRV DNS.SRV
+    case reply of
+      Nothing          -> do
+        traceWith tracer $ DnsTraceLookupError peerType Nothing domainSRV DNS.TimeoutExpired
+        return . Left $ [DNS.TimeoutExpired]
+      Just (Left  err) -> do
+        traceWith tracer $ DnsTraceLookupError peerType Nothing domainSRV err
+        return . Left $ [err]
+      Just (Right msg) ->
+        case DNS.fromDNSMessage msg selectSRV of
+          Left err -> do
+            traceWith tracer $ DnsTraceLookupError peerType Nothing domainSRV err
+            return . Left $ [err]
+          Right services -> do
+            let srvByPriority = sortOn priority services
+                grouped       = NE.groupWith priority srvByPriority
+            (result, domain) <- do
+              case listToMaybe grouped of
+                Just topPriority ->
+                  case topPriority of
+                    (domain, _, _, port) NE.:| [] -> do -- fast path
+                      result <- domainLookupWithTTL tracer ofType domain peerType resolveDNS
+                      let result' = ipsttlsWithPort port <$> result
+                      return (result', domain)
+                    many -> -- general path
+                      runWeightedLookup many
+                Nothing -> return (Right [], "")
+            case result of
+              Left {} -> traceWith tracer $ DnsSRVFail peerType domainSRV
+              Right ipsttls ->
+                traceWith tracer $ DnsResult peerType domain (Just domainSRV) ipsttls
+            return $ map (\(ip, port, ttl) -> (toPeerAddr ip port, ttl)) <$> result
+
       where
-        selectA DNS.DNSMessage { DNS.answer } =
-          [ (IPv4 addr, fixupTTL ttl)
+        ipsttlsWithPort port = map (\(ip, ttl) -> (ip, fromIntegral port, ttl))
+        runWeightedLookup :: NonEmpty (DNS.Domain, Word16, Word16, Word16)
+                          -> m (Either [DNSError] [(IP, PortNumber, DNS.TTL)], DNS.Domain)
+        runWeightedLookup services =
+           let (upperBound, cdf) = Fold.foldl' aggregate (0, []) services
+               mapCdf = Map.fromList cdf
+               (pick, _) = randomR (0, upperBound) rng
+               (domain, _, _, port) = snd . fromJust $ Map.lookupGE pick mapCdf
+           in (,domain) . fmap (ipsttlsWithPort port) <$> domainLookupWithTTL tracer ofType domain peerType resolveDNS
+
+        aggregate (!upper, cdf) srv =
+          let upper' = weight srv + upper
+           in (upper', (upper', srv):cdf)
+
+        selectSRV DNS.DNSMessage { DNS.answer } =
+          [ (domain', priority', weight', port)
           | DNS.ResourceRecord {
-              DNS.rdata = DNS.RD_A addr,
-              DNS.rrttl = ttl
+              DNS.rdata = DNS.RD_SRV priority' weight' port domain'
             } <- answer
           ]
 
+        weight   (_, _, w, _) = w
+        priority (_, p, _, _) = p
 
-    lookupAAAAWithTTL :: DNS.ResolvConf
-                      -> DNS.Resolver
-                      -> DNS.Domain
-                      -> IO (Either DNS.DNSError [(IP, DNS.TTL)])
-    lookupAAAAWithTTL resolvConf resolver domain = do
-        reply <- timeout (microsecondsAsIntToDiffTime
-                           $ DNS.resolvTimeout resolvConf)
-                         (DNS.lookupRaw resolver domain DNS.AAAA)
-        case reply of
-          Nothing          -> return (Left DNS.TimeoutExpired)
-          Just (Left  err) -> return (Left err)
-          Just (Right ans) -> return (DNS.fromDNSMessage ans selectAAAA)
-          --TODO: we can get the SOA TTL on NXDOMAIN here if we want to
-      where
-        selectAAAA DNS.DNSMessage { DNS.answer } =
-          [ (IPv6 addr, fixupTTL ttl)
-          | DNS.ResourceRecord {
-              DNS.rdata = DNS.RD_AAAA addr,
-              DNS.rrttl = ttl
-            } <- answer
-          ]
+dispatchLookupWithTTL :: (MonadAsync m)
+                      => DNSLookupType
+                      -> (   resolver
+                          -> resolvConf
+                          -> DNS.Domain
+                          -> DNS.TYPE
+                          -> m (Maybe (Either DNSError DNSMessage)))
+                      -> Tracer m DnsTrace
+                      -> (IP -> PortNumber -> peerAddr)
+                      -> DnsPeersKind
+                      -> RelayAccessPoint
+                      -> resolvConf
+                      -> resolver
+                      -> StdGen
+                      -> m (DNSLookupResult peerAddr)
+dispatchLookupWithTTL lookupType mkResolveDNS tracer toPeerAddr peerType domain conf resolver rng =
+  let resolveDNS = mkResolveDNS resolver conf
+  in case domain of
+    RelayAccessDomain d p -> do
+      result <- domainLookupWithTTL tracer lookupType d peerType resolveDNS
+      let trace = map (\(ip, ttl) -> (ip, p, ttl)) <$> result
+      Fold.traverse_ (traceWith tracer . DnsResult peerType d Nothing) trace
+      return $ map (\(ip, _ttl) -> (toPeerAddr ip p, _ttl)) <$> result
+    RelayAccessSRVDomain d -> srvRecordLookupWithTTL lookupType tracer toPeerAddr peerType d resolveDNS rng
+    RelayAccessAddress addr p  -> return . Right $ [(toPeerAddr addr p, maxBound)]
+
+domainLookupWithTTL :: (MonadAsync m)
+                    => Tracer m DnsTrace
+                    -> DNSLookupType
+                    -> DNS.Domain
+                    -> DnsPeersKind
+                    -> (   DNS.Domain
+                        -> DNS.TYPE
+                    -> m (Maybe (Either DNSError DNSMessage)))
+                    -> m (Either [DNSError] [(IP, DNS.TTL)])
+domainLookupWithTTL tracer look@LookupReqAOnly d peerType resolveDNS = do
+    res <- domainALookupWithTTL (resolveDNS d DNS.A)
+    case res of
+         Left err -> do
+           traceWith tracer $ DnsTraceLookupError peerType (Just look) d err
+           return . Left $ [err]
+         Right r  -> return . Right $ r
+
+domainLookupWithTTL tracer look@LookupReqAAAAOnly d peerType resolveDNS = do
+    res <- domainAAAALookupWithTTL (resolveDNS d DNS.AAAA)
+    case res of
+         Left err -> do
+           traceWith tracer $ DnsTraceLookupError peerType (Just look) d err
+           return . Left $ [err] --([err], [])
+         Right r  -> return . Right $ r
+
+domainLookupWithTTL tracer LookupReqAAndAAAA d peerType resolveDNS = do
+    (r_ipv6, r_ipv4) <- concurrently (domainAAAALookupWithTTL (resolveDNS d DNS.AAAA))
+                                     (domainALookupWithTTL (resolveDNS d DNS.A))
+    case (r_ipv6, r_ipv4) of
+         (Left  e6, Left  e4) -> do
+           traceWith tracer $ DnsTraceLookupError
+                                peerType (Just LookupReqAOnly) d e4
+           traceWith tracer $ DnsTraceLookupError
+                                peerType (Just LookupReqAAAAOnly) d e6
+           return . Left $ [e6, e4]
+         (Right r6, Left  e4) -> do
+           traceWith tracer $ DnsTraceLookupError
+                                peerType (Just LookupReqAOnly) d e4
+           return . Right $ r6
+         (Left  e6, Right r4) -> do
+           traceWith tracer $ DnsTraceLookupError
+                                peerType (Just LookupReqAAAAOnly) d e6
+           return . Right $ r4
+         (Right r6, Right r4) -> return . Right $ r6 <> r4
+
+-- | Like 'DNS.lookupA' but also return the TTL for the results.
+--
+-- DNS library timeouts do not work reliably on Windows (#1873), hence the
+-- additional timeout.
+--
+domainALookupWithTTL :: (Monad m)
+               => m (Maybe (Either DNSError DNSMessage))
+               -> m (Either DNS.DNSError [(IP, DNS.TTL)])
+domainALookupWithTTL action = do
+    reply <- action
+    case reply of
+      Nothing          -> return (Left DNS.TimeoutExpired)
+      Just (Left  err) -> return (Left err)
+      Just (Right ans) -> return (DNS.fromDNSMessage ans selectA)
+      --TODO: we can get the SOA TTL on NXDOMAIN here if we want to
+  where
+    selectA DNS.DNSMessage { DNS.answer } =
+      [ (IPv4 addr, fixupTTL ttl)
+      | DNS.ResourceRecord {
+          DNS.rdata = DNS.RD_A addr,
+          DNS.rrttl = ttl
+        } <- answer
+      ]
 
 
-    lookupWithTTL :: DNSLookupType
-                  -> DNS.ResolvConf
-                  -> DNS.Resolver
-                  -> DNS.Domain
-                  -> IO ([DNS.DNSError], [(IP, DNS.TTL)])
-    lookupWithTTL LookupReqAOnly resolvConf resolver domain = do
-        res <- lookupAWithTTL resolvConf resolver domain
-        case res of
-             Left err -> return ([err], [])
-             Right r  -> return ([], r)
-
-    lookupWithTTL LookupReqAAAAOnly resolvConf resolver domain = do
-        res <- lookupAAAAWithTTL resolvConf resolver domain
-        case res of
-             Left err -> return ([err], [])
-             Right r  -> return ([], r)
-
-    lookupWithTTL LookupReqAAndAAAA resolvConf resolver domain = do
-        (r_ipv6, r_ipv4) <- concurrently (lookupAAAAWithTTL resolvConf resolver domain)
-                                         (lookupAWithTTL resolvConf resolver domain)
-        case (r_ipv6, r_ipv4) of
-             (Left  e6, Left  e4) -> return ([e6, e4], [])
-             (Right r6, Left  e4) -> return ([e4], r6)
-             (Left  e6, Right r4) -> return ([e6], r4)
-             (Right r6, Right r4) -> return ([], r6 <> r4)
-
+domainAAAALookupWithTTL :: (Monad m)
+                  => m (Maybe (Either DNSError DNSMessage))
+                  -> m (Either DNS.DNSError [(IP, DNS.TTL)])
+domainAAAALookupWithTTL action = do
+    reply <- action
+    case reply of
+      Nothing          -> return (Left DNS.TimeoutExpired)
+      Just (Left  err) -> return (Left err)
+      Just (Right ans) -> return (DNS.fromDNSMessage ans selectAAAA)
+      --TODO: we can get the SOA TTL on NXDOMAIN here if we want to
+  where
+    selectAAAA DNS.DNSMessage { DNS.answer } =
+      [ (IPv6 addr, fixupTTL ttl)
+      | DNS.ResourceRecord {
+          DNS.rdata = DNS.RD_AAAA addr,
+          DNS.rrttl = ttl
+        } <- answer
+      ]
 
 --
 -- Utils

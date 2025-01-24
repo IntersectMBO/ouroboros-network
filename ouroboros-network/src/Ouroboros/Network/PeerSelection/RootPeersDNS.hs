@@ -1,5 +1,7 @@
 module Ouroboros.Network.PeerSelection.RootPeersDNS
   ( module Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
+  , DnsTrace (..)
+  , DnsPeersKind (..)
   , PeerActionsDNS (..)
   ) where
 
@@ -13,6 +15,6 @@ import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
 --
 data PeerActionsDNS peeraddr resolver exception m = PeerActionsDNS {
   paToPeerAddr   :: IP -> PortNumber -> peeraddr,
-  paDnsActions   :: DNSActions resolver exception m,
+  paDnsActions   :: DNSActions peeraddr resolver exception m,
   paDnsSemaphore :: DNSSemaphore m
   }
