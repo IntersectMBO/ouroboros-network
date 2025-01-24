@@ -243,34 +243,3 @@ data LedgerPeersConsensusInterface extraAPI m = LedgerPeersConsensusInterface {
 mapExtraAPI :: (a -> b) -> LedgerPeersConsensusInterface a m -> LedgerPeersConsensusInterface b m
 mapExtraAPI f lpci@LedgerPeersConsensusInterface{ lpExtraAPI = api } =
   lpci { lpExtraAPI = f api }
-
-instance ToJSON RelayAccessPointCoded where
-  toJSON (RelayAccessPointCoded (RelayAccessDomain domain port)) =
-    object
-      [ "domain" .= decodeUtf8 domain
-      , "port"   .= (fromIntegral port :: Int)]
-
-  toJSON (RelayAccessPointCoded (RelayAccessAddress ip port)) =
-    object
-      [ "address" .= show ip
-      , "port" .= (fromIntegral port :: Int)]
-
-instance FromJSON RelayAccessPointCoded where
-  parseJSON = withObject "RelayAccessPointCoded" $ \v -> do
-    domain <- fmap BS.pack <$> v .:? "domain"
-    port <- fromIntegral @Int <$> v .: "port"
-    case domain of
-      Nothing ->
-            v .: "address"
-        >>= \case
-               Nothing -> fail "RelayAccessPointCoded: invalid IP address"
-               Just addr ->
-                 return . RelayAccessPointCoded $ RelayAccessAddress addr port
-            . readMaybe
-
-      Just domain'
-        | Just (_, '.') <- BS.unsnoc domain' ->
-          return . RelayAccessPointCoded $ RelayAccessDomain domain' port
-        | otherwise ->
-          let fullyQualified = domain' `BS.snoc` '.'
-          in return . RelayAccessPointCoded $ RelayAccessDomain fullyQualified port
