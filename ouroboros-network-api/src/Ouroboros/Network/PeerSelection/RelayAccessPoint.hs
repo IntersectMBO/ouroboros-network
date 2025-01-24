@@ -12,11 +12,12 @@ module Ouroboros.Network.PeerSelection.RelayAccessPoint
   ) where
 
 import Control.DeepSeq (NFData (..))
-import Control.Monad (when)
+import Control.Monad (unless)
 
 import Data.Aeson
+import Data.Aeson.Types
+import Data.ByteString.Char8 (snoc, unpack, unsnoc)
 import Data.IP qualified as IP
-import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Text.Read (readMaybe)
@@ -29,8 +30,9 @@ import Network.Socket qualified as Socket
 -- | A relay can have either an IP address and a port number or
 -- a domain with a port number
 --
-data RelayAccessPoint = RelayAccessDomain  !DNS.Domain !Socket.PortNumber
-                      | RelayAccessAddress !IP.IP      !Socket.PortNumber
+data RelayAccessPoint = RelayAccessDomain    !DNS.Domain !Socket.PortNumber
+                      | RelayAccessSRVDomain !DNS.Domain
+                      | RelayAccessAddress   !IP.IP      !Socket.PortNumber
   deriving (Eq, Ord)
 
 newtype RelayAccessPointCoded = RelayAccessPointCoded { unRelayAccessPointCoded :: RelayAccessPoint }
@@ -81,6 +83,8 @@ instance FromCBOR RelayAccessPointCoded where
 instance Show RelayAccessPoint where
     show (RelayAccessDomain domain port) =
       "RelayAccessDomain " ++ show domain ++ " " ++ show port
+    show (RelayAccessSRVDomain domain) =
+      "RelayAccessSRVDomain " ++ show domain
     show (RelayAccessAddress ip port) =
       "RelayAccessAddress \"" ++ show ip ++ "\" " ++ show port
 
@@ -89,16 +93,31 @@ instance Show RelayAccessPoint where
 --
 instance NFData RelayAccessPoint where
   rnf (RelayAccessDomain !_domain !_port) = ()
+  rnf (RelayAccessSRVDomain !_domain) = ()
   rnf (RelayAccessAddress ip !_port) =
     case ip of
       IP.IPv4 ipv4 -> rnf (IP.fromIPv4w ipv4)
       IP.IPv6 ipv6 -> rnf (IP.fromIPv6w ipv6)
 
 instance FromJSON RelayAccessPoint where
-  parseJSON = withObject "RelayAccessPoint" $ \v -> do
-    addr <- v .: "address"
-    port <- v .: "port"
-    return (toRelayAccessPoint addr port)
+  parseJSON = withObject "RelayAccessPoint" $ \o -> do
+    addr <- encodeUtf8 <$> o .: "address"
+    let res = flip parseMaybe o $ const do
+          port <- o .: "port"
+          return (toRelayAccessPoint addr port)
+    case res of
+      Nothing  -> return $ RelayAccessSRVDomain (fullyQualified addr)
+      Just rap -> return rap
+
+    where
+      toRelayAccessPoint :: DNS.Domain -> Int -> RelayAccessPoint
+      toRelayAccessPoint address port =
+          case readMaybe (unpack address) of
+            Nothing   -> RelayAccessDomain (fullyQualified address) (fromIntegral port)
+            Just addr -> RelayAccessAddress addr (fromIntegral port)
+      fullyQualified = \case
+        domain | Just (_, '.') <- unsnoc domain -> domain
+               | otherwise -> domain `snoc` '.'
 
 instance ToJSON RelayAccessPoint where
   toJSON (RelayAccessDomain addr port) =
@@ -106,17 +125,60 @@ instance ToJSON RelayAccessPoint where
       [ "address" .= decodeUtf8 addr
       , "port" .= (fromIntegral port :: Int)
       ]
+  toJSON (RelayAccessSRVDomain domain) =
+    object
+      [ "address" .= decodeUtf8 domain
+      ]
   toJSON (RelayAccessAddress ip port) =
     object
       [ "address" .= Text.pack (show ip)
       , "port" .= (fromIntegral port :: Int)
       ]
 
--- | Parse a address field as either an IP address or a DNS address.
--- Returns corresponding RelayAccessPoint.
---
-toRelayAccessPoint :: Text -> Int -> RelayAccessPoint
-toRelayAccessPoint address port =
-    case readMaybe (Text.unpack address) of
-      Nothing   -> RelayAccessDomain (encodeUtf8 address) (fromIntegral port)
-      Just addr -> RelayAccessAddress addr (fromIntegral port)
+instance ToCBOR RelayAccessPoint where
+  toCBOR rap = case rap of
+    RelayAccessDomain domain port ->
+         Codec.encodeListLen 3
+      <> Codec.encodeWord8 0
+      <> toCBOR domain
+      <> serialise' port
+    RelayAccessAddress (IP.IPv4 ipv4) port ->
+         Codec.encodeListLen 3
+      <> Codec.encodeWord8 1
+      <> toCBOR (IP.fromIPv4 ipv4)
+      <> serialise' port
+    RelayAccessAddress (IP.IPv6 ip6) port ->
+         Codec.encodeListLen 3
+      <> Codec.encodeWord8 2
+      <> toCBOR (IP.fromIPv6 ip6)
+      <> serialise' port
+    RelayAccessSRVDomain domain ->
+         Codec.encodeListLen 2
+      <> Codec.encodeWord8 3
+      <> toCBOR domain
+    where
+      serialise' = toCBOR . toInteger
+
+instance FromCBOR RelayAccessPoint where
+  fromCBOR = do
+    listLen <- Codec.decodeListLen
+    constructorTag <- Codec.decodeWord8
+    unless (   listLen == 3
+            || (listLen == 2 && constructorTag == 3))
+      $ fail $ "Unrecognized RelayAccessPoint list length "
+               <> show listLen <> "for constructor tag "
+               <> show constructorTag
+    case constructorTag of
+      0 -> do
+        RelayAccessDomain <$> fromCBOR <*> decodePort
+      1 -> do
+        let ip4 = IP.IPv4 . IP.toIPv4 <$> fromCBOR
+        RelayAccessAddress <$> ip4 <*> decodePort
+      2 -> do
+        let ip6 = IP.IPv6 . IP.toIPv6 <$> fromCBOR
+        RelayAccessAddress <$> ip6 <*> decodePort
+      3 -> do
+        RelayAccessSRVDomain <$> fromCBOR
+      _ -> fail $ "Unrecognized RelayAccessPoint tag: " <> show constructorTag
+    where
+      decodePort = fromIntegral @Int <$> fromCBOR
