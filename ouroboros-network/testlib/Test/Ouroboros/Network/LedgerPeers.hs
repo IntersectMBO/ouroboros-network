@@ -291,8 +291,13 @@ prop_pick100 seed (NonNegative n) (ArbLedgerPeersKind ledgerPeersKind) (MockRoot
 
           withLedgerPeers
                 PeerActionsDNS { paToPeerAddr = curry IP.toSockAddr,
-                                 paDnsActions = (mockDNSActions @SomeException dnsMapVar dnsTimeoutScriptVar dnsLookupDelayScriptVar)
-                               }
+                                 paDnsActions = mockDNSActions @SomeException
+                                                   (Tracer traceM)
+                                                   LookupReqAOnly
+                                                   (curry IP.toSockAddr)
+                                                   dnsMapVar
+                                                   dnsTimeoutScriptVar
+                                                   dnsLookupDelayScriptVar }
                 WithLedgerPeersArgs { wlpRng = rng,
                                       wlpConsensusInterface = interface,
                                       wlpTracer = verboseTracer,
@@ -353,8 +358,13 @@ prop_pick (LedgerPools lps) (ArbLedgerPeersKind ledgerPeersKind) count seed (Moc
 
           withLedgerPeers
                 PeerActionsDNS { paToPeerAddr = curry IP.toSockAddr,
-                                 paDnsActions = mockDNSActions @SomeException dnsMapVar dnsTimeoutScriptVar dnsLookupDelayScriptVar
-                               }
+                                 paDnsActions = mockDNSActions @SomeException
+                                                  (Tracer traceM)
+                                                  LookupReqAOnly
+                                                  (curry IP.toSockAddr)
+                                                  dnsMapVar
+                                                  dnsTimeoutScriptVar
+                                                  dnsLookupDelayScriptVar }
                 WithLedgerPeersArgs { wlpRng = rng,
                                       wlpConsensusInterface = interface,
                                       wlpTracer = verboseTracer,
