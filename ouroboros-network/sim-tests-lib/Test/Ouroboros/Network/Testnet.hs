@@ -1,7 +1,10 @@
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -44,6 +47,7 @@ import GHC.IO.Exception as GHC (IOErrorType (..), IOException (..))
 import System.Random (mkStdGen)
 
 import Network.DNS.Types qualified as DNS
+import Network.Mux.Trace qualified as Mx
 
 import Ouroboros.Network.BlockFetch (PraosFetchMode (..),
            TraceFetchClientState (..))
@@ -78,7 +82,11 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSelection.Types
 import Ouroboros.Network.PeerSharing (PeerSharingResult (..))
+import Ouroboros.Network.Protocol.Limits
+import Ouroboros.Network.Protocol.KeepAlive.Type
 import Ouroboros.Network.Server2 qualified as Server
+import Ouroboros.Network.Util.ShowProxy
+import Network.TypedProtocol.Core
 
 import Simulation.Network.Snocket (BearerInfo (..))
 
@@ -258,6 +266,10 @@ tests =
                      prop_hot_diffusion_target_active_local
       , testProperty "target active root"
                      prop_hot_diffusion_target_active_root
+      ]
+    , testGroup "KeepAlive"
+      [ testProperty "no keepalive errors"
+                     (testWithIOSim prop_no_keepAlive_error 100000)
       ]
     ]
   ]
@@ -4327,6 +4339,40 @@ unit_local_root_diffusion_mode diffusionMode =
           , [JoinNetwork 0]
           )
         ]
+
+-- | This test check that we don't have any KeepAlive protocol error
+--
+prop_no_keepAlive_error :: SimTrace Void
+                        -> Int
+                        -> Property
+prop_no_keepAlive_error ioSimTrace traceNumber =
+  let events = Trace.toList
+             . fmap (\(WithTime t (WithName _ b)) -> (t, b))
+             . withTimeNameTraceEvents
+                @DiffusionTestTrace
+                @NtNAddr
+             . Trace.take traceNumber
+             $ ioSimTrace
+   in counterexample (List.intercalate "\n" $ map show $ events)
+    $ all (\case
+             (_, DiffusionInboundGovernorTrace (IG.TrMuxErrored _ err)) ->
+               case fromException err of
+                 -- Just (ExceededTimeLimit (_ :: StateToken (st :: KeepAlive))) -> False
+                 Just (ExceededTimeLimit e) -> theWorst (ExceededTimeLimit e)
+                 Just _                                          -> True
+                 Nothing                                         -> True
+             _                                                   -> True
+          )
+          events
+
+  where
+
+    theWorst :: ProtocolLimitFailure -> Bool
+    theWorst err = show err /= "ExceededTimeLimit (KeepAlive) (ClientAgency TokClient)"
+    -- theWorst err = show err /= "ExceededTimeLimit (ChainSync (BlockHeader) (Tip Block)) ServerHasAgency (SingIntersect)"
+      {-let ws = List.words $ show err in
+      if List.elem "KeepAlive" ws then False
+                               else True -}
 
 -- Utils
 --

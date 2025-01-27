@@ -7,6 +7,7 @@
 module Ouroboros.Network.KeepAlive
   ( KeepAliveInterval (..)
   , keepAliveClient
+  , keepAliveNopClient
   , keepAliveServer
   , TraceKeepAliveClient (..)
   ) where
@@ -98,6 +99,46 @@ keepAliveClient tracer inRng controlMessageSTM peer dqCtx KeepAliveInterval { ke
             let (cookie, rng') = random rng in
             pure (SendMsgKeepAlive (Cookie cookie) $ go rng' now)
         Terminate -> pure (SendMsgDone (pure ()))
+
+keepAliveNopClient
+    :: forall m peer.
+       ( MonadTimer m
+       , Ord peer
+       )
+    => Tracer m (TraceKeepAliveClient peer)
+    -> StdGen
+    -> ControlMessageSTM m
+    -> peer
+    -> StrictTVar m (M.Map peer PeerGSV)
+    -> KeepAliveInterval
+    -> KeepAliveClient m ()
+keepAliveNopClient _ _ controlMessageSTM _ _ _ =
+  KeepAliveClient go
+
+  where
+    go = do
+      delayVar <- registerDelay 100
+      decision <- atomically (decisionSTM delayVar)
+
+      case decision of
+         Quiesce   -> error "keepAliveClient: impossible happened"
+         Continue  -> go
+         Terminate -> pure (SendMsgDone (pure ()))
+
+    decisionSTM :: Lazy.TVar m Bool
+                -> STM  m ControlMessage
+    decisionSTM delayVar = do
+       controlMessage <- controlMessageSTM
+       case controlMessage of
+            Terminate -> return Terminate
+
+            -- Continue
+            _  -> do
+              done <- Lazy.readTVar delayVar
+              if done
+                 then return Continue
+                 else retry
+
 
 
 keepAliveServer

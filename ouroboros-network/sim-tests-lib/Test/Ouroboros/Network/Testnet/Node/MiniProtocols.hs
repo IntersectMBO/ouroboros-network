@@ -218,6 +218,7 @@ data AppArgs header block m = AppArgs
 applications :: forall block header s m.
                 ( Alternative (STM m)
                 , MonadAsync m
+                , MonadDelay m
                 , MonadFork  m
                 , MonadMask  m
                 , MonadMVar  m
@@ -486,20 +487,20 @@ applications debugTracer nodeKernel
          channel
       -> do labelThisThread "KeepAliveClient"
             let kacApp =
-                  \ctxVar -> runPeerWithLimits
+                  \ctxVar -> (runPeerWithLimits
                                ((show . (connId,)) `contramap` debugTracer)
                                keepAliveCodec
                                (keepAliveSizeLimits limits)
                                (keepAliveTimeLimits limits)
                                channel
                                (keepAliveClientPeer $
-                                  keepAliveClient
+                                  keepAliveNopClient
                                     nullTracer
                                     aaKeepAliveStdGen
                                     controlMessageSTM
                                     remoteAddress
                                     ctxVar
-                                    (KeepAliveInterval aaKeepAliveInterval))
+                                    (KeepAliveInterval aaKeepAliveInterval)))
             bracketKeepAliveClient (nkFetchClientRegistry nodeKernel)
                                    remoteAddress
                                    kacApp
@@ -509,7 +510,8 @@ applications debugTracer nodeKernel
     keepAliveResponder = MiniProtocolCb $ \_ctx channel -> do
       labelThisThread "KeepAliveServer"
       runPeerWithLimits
-        nullTracer
+        (show `contramap`debugTracer)
+        -- nullTracer
         keepAliveCodec
         (keepAliveSizeLimits limits)
         (keepAliveTimeLimits limits)
