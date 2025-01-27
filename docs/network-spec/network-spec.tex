@@ -84,8 +84,8 @@
 \newcommand{\MsgDone}{\msg{MsgDone}}
 \newcommand{\header}[1]{\textbf{#1}}
 
-% TODO: the document is using `\langle` and `\rangle` to denote lists, maybe
-% it's better to use Haskell notation, will it be more in sync with other docs
+% TODO: the document uses `\langle` and `\rangle` to denote lists, maybe
+% it's better to use Haskell notation. Will it be more in sync with other docs
 % produced by the formal method team?
 \renewcommand{\langle}{[}
 \renewcommand{\rangle}{]}
@@ -168,17 +168,17 @@
 \and
   Alex Vieth\footnote{{\small \texttt{alex@well-typed.com}}}
 }
-\date{{\small Version 1.4.0, \today}}
+\date{{\small Version 1.5.0, \today}}
 
 \maketitle
 
 \begin{abstract}
-  This document provides technical specification of the implementation of the
-  \texttt{ouroboros-network} component of \texttt{cardano-node}. It provides specification of all
-  mini-protocols as well multiplexing and low level wire encoding.  It provides
+  This document provides technical specifications for the implementation of the
+  \texttt{ouroboros-network} component of \texttt{cardano-node}. It provides specifications of all
+  mini-protocols, multiplexing, and low-level wire encoding.  It provides
   necessary information about both node-to-node and node-to-client protocols.
 
-  The primary audience for this document are engineers wishing to build
+  The primary audience for this document is engineers wishing to build
   clients interacting with a node via node-to-client or node-to-node protocols
   or independent implementations of a node.  Although the original
   implementation of \texttt{ouroboros-network} is done \texttt{Haskell}, this specification is
@@ -188,16 +188,30 @@
 
 \tableofcontents
 
+\pagebreak
 \section*{Version history}
 
 \begin{description}
-\item[Version 1.0.0 Nov 2019, State machines and wire format for Ouroboros-Network-1.0.0.]
-\item[Version 1.1.0 Apr 2021, Connection Manager for Ouroboros-Network-Framework.]
-\item[Version 1.2.0 Apr 2021, tx-submission version 2, local-state-query, keep-alive mini-protocols]
-\item[Version 1.3.0 Jul 2021, Review of the multiplexer documentation]
-\item[Version 1.4.0 Oct 2024, Extended Connection-Manager documentation]
+\item[Version 1.0.0 Nov 2019] State machines and wire format for Ouroboros-Network-1.0.0.
+\item[Version 1.1.0 Apr 2021] Connection Manager for Ouroboros-Network-Framework.
+\item[Version 1.2.0 Apr 2021] tx-submission version 2, local-state-query, keep-alive mini-protocols.
+\item[Version 1.3.0 Jul 2021] Review of the multiplexer documentation.
+\item[Version 1.4.0 Oct 2024] Extended Connection-Manager documentation.
+\item[Version 1.5.0 Jan 2025] Changes:
+  \begin{itemize}
+    \item Added Local Tx-Monitor mini-protocol specification.
+    \item Added space and time limits for mini-protocols.
+    \item Added mini-protocol mux numbers in their specification.
+    \item Added state agency tables for each mini-protocol.
+    \item Moved section on mini-protocol numbers to node-to-node and node-to-client sections.
+    \item Formatted tables and diagrams.
+    \item Improved Handshake documentation.
+    \item Reviewed language \& grammar.
+  \end{itemize}
 \end{description}
 \listoftodos
+\pagebreak
+
 % \include{intro}
 \include{architecture}
 \include{mux}
@@ -220,19 +234,19 @@ in table~\ref{table:historical-node-to-node-protocol-versions}.
 \begin{figure}[h]
   \begin{center}
     \begin{tabular}{l|l}
-      version         & description \\\hline\hline
-      $NodeToNodeV\_1$ & initial version \\\hline
-      $NodeToNodeV\_2$ & block size hints \\\hline
-      $NodeToNodeV\_3$ & introduction of keep-alive mini-protocol \\\hline
-      $NodeToNodeV\_4$ & introduction of diffusion mode in handshake mini-protocol \\\hline
-      $NodeToNodeV\_5$ & \\\hline
-      $NodeToNodeV\_6$ & transaction submission version 2 \\\hline
-      $NodeToNodeV\_7$ & new keep-alive, Alonzo ledger era \\\hline
-      $NodeToNodeV\_8$ & chain-sync \& block-fetch pipelining \\\hline
-      $NodeToNodeV\_9$ & Babbage ledger era \\\hline
-      $NodeToNodeV\_10$ & Full duplex connections \\\hline
-      $NodeToNodeV\_11$ & Peer sharing willingness \\\hline
-      $NodeToNodeV\_12$ & No observable changes \\\hline
+      \header{version}        & \header{description} \\\hline
+      \texttt{NodeToNodeV\_1} & initial version \\
+      \texttt{NodeToNodeV\_2} & block size hints \\
+      \texttt{NodeToNodeV\_3} & introduction of keep-alive mini-protocol \\
+      \texttt{NodeToNodeV\_4} & introduction of diffusion mode in handshake mini-protocol \\
+      \texttt{NodeToNodeV\_5} & \\
+      \texttt{NodeToNodeV\_6} & transaction submission version 2 \\
+      \texttt{NodeToNodeV\_7} & new keep-alive, Alonzo ledger era \\
+      \texttt{NodeToNodeV\_8} & chain-sync \& block-fetch pipelining \\
+      \texttt{NodeToNodeV\_9} & Babbage ledger era \\
+      \texttt{NodeToNodeV\_10} & Full duplex connections \\
+      \texttt{NodeToNodeV\_11} & Peer sharing willingness \\
+      \texttt{NodeToNodeV\_12} & No observable changes \\
     \end{tabular}
     \caption{Node-to-node protocol versions}
     \label{table:historical-node-to-node-protocol-versions}
@@ -245,22 +259,22 @@ in table~\ref{table:historical-node-to-client-protocol-versions}.
 \begin{figure}[h]
   \begin{center}
     \begin{tabular}{l|l}
-      version         & description \\\hline\hline
-      $NodeToClientV\_1$ & initial version\\\hline
-      $NodeToClientV\_2$ & added local-query mini-protocol\\\hline
-      $NodeToClientV\_3$ & \\\hline
-      $NodeToClientV\_4$ & new queries added to local state query mini-protocol\\\hline
-      $NodeToClientV\_5$ & allegra \\\hline
-      $NodeToClientV\_6$ & mary \\\hline
-      $NodeToClientV\_7$ & new queries added to local state query mini-protocol\\\hline
-      $NodeToClientV\_8$ & codec changed for local state query mini-protocol\\\hline
-      $NodeToClientV\_9$ & alonzo \\\hline
-      $NodeToClientV\_10$ & GetChainBlock \& GetChainPoint queries \\\hline
-      $NodeToClientV\_11$ & GetRewardInfoPools query \\\hline
-      $NodeToClientV\_12$ & Added LocalTxMonitor mini-protocol \\\hline
-      $NodeToClientV\_13$ & babbage \\\hline
-      $NodeToClientV\_14$ & GetPoolDistr, GetPoolState, GetSnapshots queries \\\hline
-      $NodeToClientV\_15$ & internal changes \\\hline
+      \header{version}           & \header{description} \\\hline
+      \texttt{NodeToClientV\_1}  & initial version\\
+      \texttt{NodeToClientV\_2}  & added local-query mini-protocol\\
+      \texttt{NodeToClientV\_3}  & \\
+      \texttt{NodeToClientV\_4}  & new queries added to local state query mini-protocol\\
+      \texttt{NodeToClientV\_5}  & Allegra era \\
+      \texttt{NodeToClientV\_6}  & Mary era \\
+      \texttt{NodeToClientV\_7}  & new queries added to local state query mini-protocol\\
+      \texttt{NodeToClientV\_8}  & codec changed for local state query mini-protocol\\
+      \texttt{NodeToClientV\_9}  & Alonzo era \\
+      \texttt{NodeToClientV\_10} & GetChainBlock \& GetChainPoint queries \\
+      \texttt{NodeToClientV\_11} & GetRewardInfoPools query \\
+      \texttt{NodeToClientV\_12} & Added LocalTxMonitor mini-protocol \\
+      \texttt{NodeToClientV\_13} & Babbage era \\
+      \texttt{NodeToClientV\_14} & GetPoolDistr, GetPoolState, GetSnapshots queries \\
+      \texttt{NodeToClientV\_15} & internal changes \\
     \end{tabular}
     \caption{Node-to-client protocol versions}
     \label{table:historical-node-to-client-protocol-versions}
