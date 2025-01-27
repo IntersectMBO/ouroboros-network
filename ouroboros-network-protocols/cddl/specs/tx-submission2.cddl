@@ -7,6 +7,8 @@
 
 txSubmission2Message
     = msgInit
+    ; corresponds to either MsgRequestTxIdsBlocking or
+    ; MsgRequestTxIdsNonBlocking in the spec
     / msgRequestTxIds
     / msgReplyTxIds
     / msgRequestTxs

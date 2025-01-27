@@ -1172,16 +1172,16 @@ See appendix \ref{cddl-common} for common definitions.
 \label{tx-submission-protocol}
 \label{tx-submission-protocol2}
 
-\newcommand{\StInit}  {\state{StInit}}
-\newcommand{\MsgInit} {\trans{MsgInit}}
+\newcommand{\StInit}             {\state{StInit}}
+\newcommand{\MsgInit}            {\msg{MsgInit}}
 \newcommand{\StTxIdsBlocking}    {\state{StTxIdsBlocking}}
 \newcommand{\StTxIdsNonBlocking} {\state{StTxIdsNonBlocking}}
 \newcommand{\StTxs}              {\state{StTxs}}
-\newcommand{\MsgRequestTxIdsNB}  {\trans{MsgRequestTxIdsNonBlocking}}
-\newcommand{\MsgRequestTxIdsB}   {\trans{MsgRequestTxIdsBlocking}}
-\newcommand{\MsgReplyTxIds}      {\trans{MsgReplyTxIds}}
-\newcommand{\MsgRequestTxs}      {\trans{MsgRequestTxs}}
-\newcommand{\MsgReplyTxs}        {\trans{MsgReplyTxs}}
+\newcommand{\MsgRequestTxIdsNB}  {\msg{MsgRequestTxIdsNonBlocking}}
+\newcommand{\MsgRequestTxIdsB}   {\msg{MsgRequestTxIdsBlocking}}
+\newcommand{\MsgReplyTxIds}      {\msg{MsgReplyTxIds}}
+\newcommand{\MsgRequestTxs}      {\msg{MsgRequestTxs}}
+\newcommand{\MsgReplyTxs}        {\msg{MsgReplyTxs}}
 
 \subsubsection{Description}
 The node-to-node transaction submission protocol is used to transfer
@@ -1235,12 +1235,12 @@ Version 2 is used since \texttt{NodeToNode\_V6} of the node-to-node protocol.
 \paragraph{Protocol messages}
 \begin{description}
 \item [\MsgInit] initial message of the protocol
-\item [\MsgRequestTxIdsB{} {\boldmath $(ack,req)$}]
-      The server asks for new transaction ids and acknowledges old ids.
-      The client will block until new transactions are available.
 \item [\MsgRequestTxIdsNB{} {\boldmath $(ack,req)$}]
       The server asks for new transaction ids and acknowledges old ids.
       The client immediately replies (possibly with an empty list).
+\item [\MsgRequestTxIdsB{} {\boldmath $(ack,req)$}]
+      The server asks for new transaction ids and acknowledges old ids.
+      The client will block until new transactions are available.
 \item [\MsgReplyTxIds{} {\boldmath ($\langle (id, size) \rangle$) }]
       The client replies with a list of available transactions.
       The list contains pairs of transaction ids and the corresponding size of the transaction in bytes.
@@ -1258,13 +1258,13 @@ Version 2 is used since \texttt{NodeToNode\_V6} of the node-to-node protocol.
   \begin{tabular}{l|l|l|l}
     \header{from state} & \header{message}    & \header{parameters}           & \header{to state}   \\\hline
     \StInit             & \MsgInit            &                               & \StIdle             \\
-    \StIdle             & \MsgRequestTxIdsB   & $ack$,$req$                   & \StTxIdsBlocking    \\
-    \StTxIdsBlocking    & \MsgReplyTxIds      & $\langle (id, size) \rangle$  & \StIdle             \\
     \StIdle             & \MsgRequestTxIdsNB  & $ack$,$req$                   & \StTxIdsNonBlocking \\
+    \StIdle             & \MsgRequestTxIdsB   & $ack$,$req$                   & \StTxIdsBlocking    \\
     \StTxIdsNonBlocking & \MsgReplyTxIds      & $\langle (id, size) \rangle$  & \StIdle             \\
+    \StTxIdsBlocking    & \MsgReplyTxIds      & $\langle (id, size) \rangle$  & \StIdle             \\
     \StIdle             & \MsgRequestTxs      & $\langle ids \rangle$         & \StTxs              \\
     \StTxs              & \MsgReplyTxs        & $\langle txs \rangle$         & \StIdle             \\
-    \MsgRequestTxIdsB   & \MsgDone            &                               & \StDone             \\
+    \StIdle             & \MsgDone            &                               & \StDone             \\
   \end{tabular}
   \caption{Tx-Submission mini-protocol (version 2) messages.}
 \end{table}
