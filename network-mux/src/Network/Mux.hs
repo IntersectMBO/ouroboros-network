@@ -487,7 +487,7 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
                                                       (ptclState, ptclAction)
                                                       mcOnDemandProtocols
                                        }
-          traceWith tracer (TraceStartedOnDemand miniProtocolNum
+          traceWith tracer (TraceStartOnDemand miniProtocolNum
                              (protocolDirEnum miniProtocolDir))
           go monitorCtx'
 
@@ -559,7 +559,7 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
                       miniProtocolStatusVar
                     }
                     ptclAction = do
-      traceWith tracer (TraceStartOnDemand miniProtocolNum
+      traceWith tracer (TraceStartedOnDemand miniProtocolNum
                          (protocolDirEnum miniProtocolDir))
       atomically $ modifyTVar miniProtocolStatusVar (\a -> assert (a /= StatusRunning) StatusRunning)
       JobPool.forkJob jobpool $
