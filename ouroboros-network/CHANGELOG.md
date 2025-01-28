@@ -4,6 +4,10 @@
 
 ### Breaking changes
 
+* Use `miniProtocolStart` for setting start strategy.
+  KeepAlive is started with `StartOnDemandAny`, other miniprotocols are
+  started with `StartOnDemand`.
+
 ### Non-breaking changes
 
 ## 0.19.0.0 -- 2025-01-02

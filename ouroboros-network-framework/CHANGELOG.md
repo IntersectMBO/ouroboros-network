@@ -4,6 +4,8 @@
 
 ### Breaking changes
 
+*  Add `miniProtocolStart` to `MiniProtocol` to control starting strategy.
+
 ### Non-breaking changes
 
 ## 0.15.0.0 -- 2025-01-02
