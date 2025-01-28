@@ -45,14 +45,14 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Fix (MonadFix)
 import Control.Tracer (Tracer, contramap, nullTracer, traceWith)
 import Data.ByteString.Lazy (ByteString)
-import Data.Foldable (asum)
+import Data.Function ((&))
 import Data.Hashable (Hashable)
 import Data.IP (IP)
 import Data.IP qualified as IP
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Data.Maybe (catMaybes, maybeToList)
+import Data.Maybe (catMaybes)
 import Data.Proxy (Proxy (..))
 import Data.Typeable (Typeable)
 import Data.Void (Void)
@@ -703,12 +703,13 @@ runM Interfaces
     -- Thread to which 'RethrowPolicy' will throw fatal exceptions.
     mainThreadId <- myThreadId
 
-    Async.runConcurrently
-      $ asum
-      $ Async.Concurrently <$>
-          ( mkRemoteThread mainThreadId
-          : maybeToList (mkLocalThread mainThreadId <$> daLocalAddress)
-          )
+    -- If we have a local address, race the remote and local threads. Otherwise
+    -- just launch the remote thread.
+    mkRemoteThread mainThreadId &
+      (case daLocalAddress of
+         Nothing -> id
+         Just addr -> (fmap (either id id) . (`Async.race` mkLocalThread mainThreadId addr))
+      )
 
   where
     (ledgerPeersRng, rng1) = split diRng
