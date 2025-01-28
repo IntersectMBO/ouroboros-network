@@ -148,7 +148,7 @@ withPeerSelectionActions
                                        readLedgerPeerSnapshot }
           withAsync
             (do
-             labelThisThread "Local Root Peers Provider (ouroboros-network)"
+             labelThisThread "local-roots-peers"
              localRootPeersProvider
               localTracer
               toPeerAddr

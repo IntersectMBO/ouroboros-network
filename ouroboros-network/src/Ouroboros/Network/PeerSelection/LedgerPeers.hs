@@ -454,6 +454,6 @@ withLedgerPeers peerActionsDNS
           atomically $ takeTMVar respVar
     withAsync
       (do
-          labelThisThread "Ledger Peers (ouroboros-network)"
+          labelThisThread "ledger-peers"
           ledgerPeersThread peerActionsDNS ledgerPeerArgs getRequest putResponse)
       $ \ thread -> k request thread

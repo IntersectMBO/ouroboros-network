@@ -155,9 +155,10 @@ with
     }
     k
     = do
+    labelThisThread "inbound-governor"
     var <- newTVarIO (mkPublicState emptyState)
     withAsync ((do
-               labelThisThread "Inbound governor (ouroboros-network-framework)"
+               labelThisThread "inbound-governor-loop"
                inboundGovernorLoop var emptyState)
                 `catch`
                handleError var) $

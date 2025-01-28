@@ -348,7 +348,7 @@ ioDNSActions =
                       -> DNS.Domain
                       -> IO (Either DNS.DNSError [(IP, DNS.TTL)])
     lookupAAAAWithTTL resolvConf resolver domain = do
-        labelThisThread "lookupAAAWithTTL"
+        labelThisThread "lookupAAAAWithTTL"
         reply <- timeout (microsecondsAsIntToDiffTime
                            $ DNS.resolvTimeout resolvConf)
                          (DNS.lookupRaw resolver domain DNS.AAAA)
