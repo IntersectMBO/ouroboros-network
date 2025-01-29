@@ -360,7 +360,7 @@ handshakeReqEnc versions query =
           CBOR.encodeWord (18 `setBit` nodeToClientVersionBit)
       <>  nodeToClientDataWithQuery magic
     encodeVersion (NodeToClientVersionV19 magic) =
-          CBOR.encodeWord (18 `setBit` nodeToClientVersionBit)
+          CBOR.encodeWord (19 `setBit` nodeToClientVersionBit)
       <>  nodeToClientDataWithQuery magic
     encodeVersion (NodeToClientVersionV20 magic) =
           CBOR.encodeWord (20 `setBit` nodeToClientVersionBit)
