@@ -1240,15 +1240,29 @@ instance Arbitrary DiffTime where
            . NonNegative
            . toRational
 
+-- | An arbitrary instance for `StartOnDemand` & `StartOnDemandAny`.
+--
+newtype DummyStart = DummyStart {
+    unDummyStart :: Mx.StartOnDemandOrEagerly
+  } deriving (Eq, Show)
+
+instance Arbitrary DummyStart where
+  -- Only used for responder side so we don't generate StartEagerly
+  arbitrary = fmap DummyStart (elements [Mx.StartOnDemand, Mx.StartOnDemandAny])
+
+  shrink (DummyStart Mx.StartOnDemandAny) = [DummyStart Mx.StartOnDemand]
+  shrink _                                = []
+
 data DummyApp = DummyApp {
       daNum        :: !Mx.MiniProtocolNum
     , daAction     :: !DummyAppResult
+    , daStart      :: !DummyStart
     , daRunTime    :: !DiffTime
     , daStartAfter :: !DiffTime
     } deriving (Eq, Show)
 
 instance Arbitrary DummyApp where
-    arbitrary = DummyApp <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
+    arbitrary = DummyApp <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
 
 data DummyApps =
     DummyResponderApps [DummyApp]
@@ -1263,14 +1277,15 @@ instance Arbitrary DummyApps where
         apps <- mapM genApp $ nub nums
         mode <- arbitrary
         case mode of
-             Mx.InitiatorMode          -> return $ DummyInitiatorApps apps
+             Mx.InitiatorMode          -> return $ DummyInitiatorApps $
+                                            map (\a -> a { daStart = DummyStart Mx.StartEagerly }) apps
              Mx.ResponderMode          -> frequency [ (3, return $ DummyResponderApps apps)
                                                     , (1, return $ DummyResponderAppsKillMux apps)
                                                     ]
              Mx.InitiatorResponderMode -> return $ DummyInitiatorResponderApps apps
 
       where
-        genApp num = DummyApp num <$> arbitrary <*> arbitrary <*> arbitrary
+        genApp num = DummyApp num <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
 
     shrink (DummyResponderApps apps) = [ DummyResponderApps apps'
                                        | apps' <- filter (not . null) $ shrinkList (const []) apps
@@ -1316,7 +1331,7 @@ instance Arbitrary DummyRestartingApps where
              Mx.InitiatorResponderMode -> return $ DummyRestartingInitiatorResponderApps apps
       where
         genApp num = do
-            app <- DummyApp num DummyAppSucceed <$> arbitrary <*> arbitrary
+            app <- DummyApp num DummyAppSucceed <$> arbitrary <*> arbitrary <*> arbitrary
             restarts <- choose (0, 5)
             return (app, restarts)
 
@@ -1381,17 +1396,25 @@ prop_mux_start_mX apps runTime = do
         (-1)
         nullTracer
         QueueChannel { writeQueue = mux_r, readQueue = mux_w }
-    prop_mux_start_m bearer (triggerApp peerBearer) checkRes apps runTime
+    prop_mux_start_m bearer (triggerApp peerBearer) checkRes apps runTime anyStartAfter
 
   where
-    checkRes :: Mx.StartOnDemandOrEagerly
-             -> DiffTime
+    anyStartAfter :: DiffTime
+    anyStartAfter =
+      case apps of
+           DummyResponderApps as          -> minimum (map daStartAfter as)
+           DummyResponderAppsKillMux as   -> minimum (map daStartAfter as)
+           DummyInitiatorApps as          -> minimum (map daStartAfter as)
+           DummyInitiatorResponderApps as -> minimum (map daStartAfter as)
+
+    checkRes :: DiffTime
              -> ((STM m (Either SomeException ())), DummyApp)
              -> m (Property, Either SomeException ())
-    checkRes startStrat minRunTime (get,da) = do
-        let totTime = case startStrat of
-                           Mx.StartOnDemand -> daRunTime da + daStartAfter da
-                           Mx.StartEagerly  -> daRunTime da
+    checkRes minRunTime (get,da) = do
+        let totTime = case unDummyStart (daStart da) of
+                           Mx.StartOnDemand    -> daRunTime da + daStartAfter da
+                           Mx.StartOnDemandAny -> daRunTime da + anyStartAfter
+                           Mx.StartEagerly     -> daRunTime da
         r <- atomically get
         case daAction da of
              DummyAppSucceed ->
@@ -1506,7 +1529,8 @@ prop_mux_restart_m (DummyRestartingResponderApps rapps) = do
              Right (app, 0) -> do
                  runRestartingApps mux $ M.delete (daNum app) ops
              Right (app, restarts) -> do
-                 op <- Mx.runMiniProtocol mux (daNum app) Mx.ResponderDirectionOnly Mx.StartOnDemand
+                 op <- Mx.runMiniProtocol mux (daNum app) Mx.ResponderDirectionOnly
+                           (unDummyStart $ daStart app)
                            (dummyRestartingAppToChannel (app, restarts - 1))
                  runRestartingApps mux $ M.insert (daNum app) op ops
 
@@ -1541,7 +1565,7 @@ prop_mux_restart_m (DummyRestartingInitiatorResponderApps rapps) = do
                                mux
                                (daNum $ fst app)
                                Mx.ResponderDirection
-                               Mx.StartOnDemand
+                               (unDummyStart $ daStart $ fst app)
                                (dummyRestartingAppToChannel (fst app, (Mx.ResponderDirection, snd app)))
                            | app <- rapps
                            ]
@@ -1571,12 +1595,13 @@ prop_mux_restart_m (DummyRestartingInitiatorResponderApps rapps) = do
                  let opKey = (dir, daNum app)
                      strat = case dir of
                                   Mx.InitiatorDirection -> Mx.StartEagerly
-                                  Mx.ResponderDirection -> Mx.StartOnDemand
+                                  Mx.ResponderDirection -> unDummyStart $ daStart app
                  op <- Mx.runMiniProtocol mux (daNum app) dir strat (dummyRestartingAppToChannel (app, (dir, restarts - 1)))
                  runRestartingApps mux $ M.insert opKey op ops
 
 
 
+-- | Verifying starting and stopping of miniprotocols. Both normal exits and by exception.
 prop_mux_start_m :: forall m.
                        ( Alternative (STM m)
                        , MonadAsync m
@@ -1589,16 +1614,25 @@ prop_mux_start_m :: forall m.
                        , MonadTimer m
                        )
                     => Mx.Bearer m
+                    -- ^ Mux bearer
                     -> (DummyApp -> m ())
-                    -> (    Mx.StartOnDemandOrEagerly
-                         -> DiffTime
+                    -- ^ trigger action that starts the app
+                    -> (    DiffTime
+                         -- ^ How long did the test run.
                          -> ((STM m (Either SomeException ())), DummyApp)
+                         -- ^ Result for running the app, along with the app
                          -> m (Property, Either SomeException ())
                        )
+                    -- ^ Verify that the app succeded/failed as expected when
+                    -- the test stopped
                     -> DummyApps
+                    -- ^ List of apps to test
                     -> DiffTime
+                    -- ^ Maximum run time
+                    -> DiffTime
+                    -- ^ Time at which StartOnDemandAny should run
                     -> m Property
-prop_mux_start_m bearer _ checkRes (DummyInitiatorApps apps) runTime = do
+prop_mux_start_m bearer _ checkRes (DummyInitiatorApps apps) runTime _ = do
     let minis = map (appToInfo Mx.InitiatorDirectionOnly) apps
         minRunTime = minimum $ runTime : (map daRunTime $ filter (\app -> daAction app == DummyAppFail) apps)
 
@@ -1613,15 +1647,18 @@ prop_mux_start_m bearer _ checkRes (DummyInitiatorApps apps) runTime = do
                           (dummyAppToChannel app)
                        | app <- apps
                        ]
-    rc <- mapM (checkRes Mx.StartEagerly minRunTime) $ zip getRes apps
+    rc <- mapM (checkRes minRunTime) $ zip getRes apps
     wait killer
     void $ waitCatch mux_aid
 
     return (conjoin $ map fst rc)
 
-prop_mux_start_m bearer trigger checkRes (DummyResponderApps apps) runTime = do
+prop_mux_start_m bearer trigger checkRes (DummyResponderApps apps) runTime anyStartAfter = do
     let minis = map (appToInfo Mx.ResponderDirectionOnly) apps
-        minRunTime = minimum $ runTime : (map (\a -> daRunTime a + daStartAfter a) $ filter (\app -> daAction app == DummyAppFail) apps)
+        minRunTime = minimum $ runTime : (map (\a -> case unDummyStart (daStart a) of
+                                                          Mx.StartOnDemandAny -> daRunTime a + anyStartAfter
+                                                          _                   -> daRunTime a + daStartAfter a
+                                              ) $ filter (\app -> daAction app == DummyAppFail) apps)
 
     mux <- Mx.new minis
     mux_aid <- async $ Mx.run verboseTracer mux bearer
@@ -1629,21 +1666,25 @@ prop_mux_start_m bearer trigger checkRes (DummyResponderApps apps) runTime = do
                            mux
                           (daNum app)
                           Mx.ResponderDirectionOnly
-                          Mx.StartOnDemand
+                          (unDummyStart $ daStart app)
                           (dummyAppToChannel app)
                        | app <- apps
                        ]
 
-    triggers <- mapM (async . trigger) $ filter (\app -> daStartAfter app <= minRunTime) apps
+    triggers <- mapM (async . trigger) $
+                  filter (\app -> case unDummyStart (daStart app) of
+                                       Mx.StartOnDemandAny -> anyStartAfter <= minRunTime
+                                       _                   -> daStartAfter app <= minRunTime
+                         ) apps
     killer <- async $ (threadDelay runTime) >> Mx.stop mux
-    rc <- mapM (checkRes Mx.StartOnDemand minRunTime) $ zip getRes apps
+    rc <- mapM (checkRes minRunTime) $ zip getRes apps
     wait killer
     mapM_ cancel triggers
     void $ waitCatch mux_aid
 
     return (conjoin $ map fst rc)
 
-prop_mux_start_m bearer _trigger _checkRes (DummyResponderAppsKillMux apps) runTime = do
+prop_mux_start_m bearer _trigger _checkRes (DummyResponderAppsKillMux apps) runTime _ = do
     -- Start a mini-protocol on demand, but kill mux before the application is
     -- triggered.  This test assures that mini-protocol completion action does
     -- not deadlocks.
@@ -1655,7 +1696,7 @@ prop_mux_start_m bearer _trigger _checkRes (DummyResponderAppsKillMux apps) runT
                            mux
                           (daNum app)
                           Mx.ResponderDirectionOnly
-                          Mx.StartOnDemand
+                          (unDummyStart $ daStart app)
                           (dummyAppToChannel app)
                        | app <- apps
                        ]
@@ -1667,7 +1708,7 @@ prop_mux_start_m bearer _trigger _checkRes (DummyResponderAppsKillMux apps) runT
 
     return (property True)
 
-prop_mux_start_m bearer trigger checkRes (DummyInitiatorResponderApps apps) runTime = do
+prop_mux_start_m bearer trigger checkRes (DummyInitiatorResponderApps apps) runTime anyStartAfter = do
     let initMinis = map (appToInfo Mx.InitiatorDirection) apps
         respMinis = map (appToInfo Mx.ResponderDirection) apps
         minRunTime = minimum $ runTime : (map (\a -> daRunTime a) $ filter (\app -> daAction app == DummyAppFail) apps)
@@ -1686,15 +1727,21 @@ prop_mux_start_m bearer trigger checkRes (DummyInitiatorResponderApps apps) runT
                                mux
                                (daNum app)
                                Mx.ResponderDirection
-                               Mx.StartOnDemand
+                               (unDummyStart $ daStart app)
                                (dummyAppToChannel app)
                            | app <- apps
                            ]
 
-    triggers <- mapM (async . trigger) $ filter (\app -> daStartAfter app <= minRunTime) apps
+    triggers <- mapM (async . trigger) $
+                  filter (\app -> case unDummyStart (daStart app) of
+                                       Mx.StartOnDemandAny -> anyStartAfter <= minRunTime
+                                       _                   -> daStartAfter app <= minRunTime
+                         ) apps
     killer <- async $ (threadDelay runTime) >> Mx.stop mux
-    !rcInit <- mapM (checkRes Mx.StartEagerly minRunTime) $ zip getInitRes apps
-    !rcResp <- mapM (checkRes Mx.StartOnDemand minRunTime) $ zip getRespRes apps
+    !rcInit <- mapM (checkRes minRunTime) $
+                 zip getInitRes $
+                   map (\a -> a { daStart = DummyStart Mx.StartEagerly }) apps
+    !rcResp <- mapM (checkRes minRunTime) $ zip getRespRes apps
     wait killer
     mapM_ cancel triggers
     void $ waitCatch mux_aid

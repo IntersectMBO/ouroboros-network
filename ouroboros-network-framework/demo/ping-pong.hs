@@ -107,6 +107,7 @@ demoProtocol0 pingPong =
     OuroborosApplication [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
+        miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = maximumMiniProtocolLimits,
         miniProtocolRun    = pingPong
       }
@@ -198,11 +199,13 @@ demoProtocol1 pingPong pingPong' =
     OuroborosApplication [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
+        miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = maximumMiniProtocolLimits,
         miniProtocolRun    = pingPong
       }
     , MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 3,
+        miniProtocolStart  = StartOnDemandAny,
         miniProtocolLimits = maximumMiniProtocolLimits,
         miniProtocolRun    = pingPong'
       }

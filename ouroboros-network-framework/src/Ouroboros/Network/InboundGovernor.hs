@@ -277,7 +277,7 @@ with
                       <-
                       foldM
                         (\acc mpd@MiniProtocolData { mpdMiniProtocol } ->
-                          runResponder csMux mpd Mux.StartOnDemand >>= \case
+                          runResponder csMux mpd >>= \case
                             -- synchronous exceptions when starting
                             -- a mini-protocol are non-recoverable; we
                             -- close the connection and allow the server
@@ -378,7 +378,7 @@ with
               return (Just tConnId, state')
 
             Right _ ->
-              runResponder tMux mpd Mux.StartOnDemand >>= \case
+              runResponder tMux mpd >>= \case
                 Right completionAction -> do
                   traceWith tracer (TrResponderRestarted tConnId num)
                   let state' = updateMiniProtocol tConnId num completionAction state
@@ -579,14 +579,12 @@ runResponder :: forall (mode :: Mux.Mode) initiatorCtx peerAddr m a b.
                  )
               => Mux.Mux mode m
               -> MiniProtocolData mode initiatorCtx peerAddr m a b
-              -> Mux.StartOnDemandOrEagerly
               -> m (Either SomeException (STM m (Either SomeException b)))
 runResponder mux
              MiniProtocolData {
                mpdMiniProtocol     = miniProtocol,
                mpdResponderContext = responderContext
-             }
-             startStrategy =
+             } =
     -- do not catch asynchronous exceptions, which are non recoverable
     tryJust (\e -> case fromException e of
               Just (SomeAsyncException _) -> Nothing
@@ -596,14 +594,14 @@ runResponder mux
           Mux.runMiniProtocol
             mux (miniProtocolNum miniProtocol)
             Mux.ResponderDirectionOnly
-            startStrategy
+            (miniProtocolStart miniProtocol)
             (runMiniProtocolCb responder responderContext)
 
         InitiatorAndResponderProtocol _ responder ->
           Mux.runMiniProtocol
             mux (miniProtocolNum miniProtocol)
             Mux.ResponderDirection
-            startStrategy
+            (miniProtocolStart miniProtocol)
             (runMiniProtocolCb responder responderContext)
 
 

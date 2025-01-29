@@ -238,9 +238,10 @@ firstPeerPromotedToWarm
         ResponderDir ->
           FirstToFinish $
             miniProtocolStatus >>= \case
-              StatusIdle          -> retry
-              StatusStartOnDemand -> retry
-              StatusRunning       -> return $ AwakeRemote connId
+              StatusIdle             -> retry
+              StatusStartOnDemand    -> retry
+              StatusStartOnDemandAny -> retry
+              StatusRunning          -> return $ AwakeRemote connId
 
 
 -- | Detect when a first warm peer is promoted to hot (any hot mini-protocols
@@ -288,9 +289,10 @@ firstPeerPromotedToHot
     fn miniProtocolStatus =
       FirstToFinish $
         miniProtocolStatus >>= \case
-          StatusIdle          -> retry
-          StatusStartOnDemand -> retry
-          StatusRunning       -> return ()
+          StatusIdle             -> retry
+          StatusStartOnDemand    -> retry
+          StatusStartOnDemandAny -> retry
+          StatusRunning          -> return ()
 
 
 -- | Detect when all hot mini-protocols terminates, which triggers the
@@ -333,9 +335,10 @@ firstPeerDemotedToWarm
     fn miniProtocolStatus =
       LastToFinishM $
         miniProtocolStatus >>= \case
-          StatusIdle          -> return ()
-          StatusStartOnDemand -> return ()
-          StatusRunning       -> retry
+          StatusIdle             -> return ()
+          StatusStartOnDemand    -> return ()
+          StatusStartOnDemandAny -> return ()
+          StatusRunning          -> retry
 
 
 -- | Await for first peer demoted to cold, i.e. detect the
@@ -375,9 +378,10 @@ firstPeerDemotedToCold
                     ResponderDir ->
                       LastToFinishM $ do
                         miniProtocolStatus >>= \case
-                          StatusIdle          -> return ()
-                          StatusStartOnDemand -> return ()
-                          StatusRunning       -> retry
+                          StatusIdle             -> return ()
+                          StatusStartOnDemand    -> return ()
+                          StatusStartOnDemandAny -> return ()
+                          StatusRunning          -> retry
                 )
                 (Mux.miniProtocolStateMap csMux)
 
