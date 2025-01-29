@@ -1,5 +1,11 @@
 # Revision history for cardano-ping
 
+## next version
+
+### Breaking changes
+
+* Added `NodeToClientVersionV20`
+
 ## 0.7.0.0 -- 2024-10-17
 
 ### Breaking changes

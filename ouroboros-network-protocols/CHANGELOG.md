@@ -4,7 +4,8 @@
 
 ### Breaking changes
 
-* Added kind signatures to protocol types: 
+* Adapt the `versionNumber` cddl definition to account for `NodeToClientVersionV20`.
+* Added kind signatures to protocol types:
   * `ChainSync`,
   * `BlockFetch`,
   * `TxSubmission2`,
