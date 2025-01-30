@@ -21,6 +21,7 @@
 * Use `LocalRootConfig` instead of a tuple.
 * Extended `LocalRootConfig` with `diffusionMode :: DiffusionMode` field.
 * Added `diConnStateSupply` record field to `Ouroboros.Network.Diffusion.P2P.Interfaces`.
+* UnknownMiniProtocol error should not crash the node
 
 ### Non-Breaking changes
 
