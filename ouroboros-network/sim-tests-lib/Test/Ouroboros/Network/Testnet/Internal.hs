@@ -118,7 +118,8 @@ import Test.Ouroboros.Network.PeerSelection.RootPeersDNS qualified as PeerSelect
 import Test.Ouroboros.Network.Testnet.Node qualified as Node
 import Test.Ouroboros.Network.Testnet.Node.Kernel (BlockGeneratorArgs, NtCAddr,
            NtCVersion, NtCVersionData, NtNAddr, NtNAddr_ (IPAddr), NtNVersion,
-           NtNVersionData, ntnAddrToRelayAccessPoint, randomBlockGenerationArgs)
+           NtNVersionData (..), ntnAddrToRelayAccessPoint,
+           randomBlockGenerationArgs)
 import Test.Ouroboros.Network.Utils
 
 import Data.Bool (bool)
@@ -1093,7 +1094,9 @@ diffusionSimulation
           readPublicRootPeers = return publicRoots
           readUseLedgerPeers  = return (UseLedgerPeers (After 0))
 
-          acceptVersion = \_ v -> Accept v
+          acceptVersion :: NtNVersionData -> NtNVersionData -> Accept NtNVersionData
+          acceptVersion (NtNVersionData dm ps) (NtNVersionData dm' ps') =
+            Accept (NtNVersionData (dm `min` dm') (ps <> ps'))
 
           defaultMiniProtocolsLimit :: MiniProtocolLimits
           defaultMiniProtocolsLimit =
