@@ -8,6 +8,12 @@
 
 ## 0.19.0.2 -- 2025-02-03
 
+### Breaking changes
+
+### Non-breaking changes
+
+* UnknownMiniProtocol error should not crash the node
+
 ## 0.19.0.1 -- 2025-01-15
 
 ### Breaking changes
