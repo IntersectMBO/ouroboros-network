@@ -751,7 +751,7 @@ runM Interfaces
                         -- side are fatal, since this is misconfiguration of the
                         -- ouroboros-network stack.
                         (OutboundError, Just Mx.UnknownMiniProtocol {})
-                          -> ShutdownNode
+                          -> ShutdownPeer
                         _ -> mempty)
 
 
