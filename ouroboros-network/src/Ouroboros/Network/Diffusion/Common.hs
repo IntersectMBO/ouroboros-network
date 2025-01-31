@@ -25,7 +25,7 @@ import Control.Tracer (Tracer, nullTracer)
 import Network.Mux qualified as Mx
 
 import Ouroboros.Network.Mux (OuroborosApplicationWithMinimalCtx,
-           OuroborosBundleWithExpandedCtx)
+           OuroborosBundleFilterWithExpandedCtx, OuroborosBundleWithExpandedCtx)
 import Ouroboros.Network.NodeToClient (Versions)
 import Ouroboros.Network.NodeToClient qualified as NodeToClient
 import Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit, ConnectionId,
@@ -189,6 +189,18 @@ data Applications ntnAddr ntnVersion ntnVersionData
                      (OuroborosApplicationWithMinimalCtx
                       Mx.ResponderMode ntcAddr
                       ByteString m Void ())
+
+      -- | NodeToNode application filter this filter is used for 'InitiatorOnly'
+      -- applications
+    , daApplicationsFilterInitiatorMode
+      :: forall muxMode .
+         OuroborosBundleFilterWithExpandedCtx ntnVersionData muxMode ntnAddr ByteString m a Void
+
+      -- | NodeToNode application filter this filter is used for 'InitiatorAndResponder'
+      -- applications
+    , daApplicationsFilterInitiatorAndResponderMode
+      :: forall muxMode.
+         OuroborosBundleFilterWithExpandedCtx ntnVersionData muxMode ntnAddr ByteString m a ()
 
       -- | Interface used to get peers from the current ledger.
       --

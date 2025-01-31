@@ -90,7 +90,7 @@ import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
 import Ouroboros.Network.Protocol.Handshake.Type (Handshake)
 import Ouroboros.Network.Protocol.Handshake.Unversioned
 import Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..),
-           Queryable (..))
+           Queryable (..), constFilter)
 import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Server2 (RemoteTransitionTrace)
@@ -314,6 +314,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
             haTimeLimits = handshakeTimeLimits
           }
         (dataFlowProtocol Unidirectional clientApplication)
+        constFilter
         (mainThreadId, debugMuxErrorRethrowPolicy
                     <> debugMuxRuntimeErrorRethrowPolicy
                     <> debugIOErrorRethrowPolicy
@@ -510,6 +511,7 @@ withBidirectionalConnectionManager name timeouts
               haTimeLimits = handshakeTimeLimits
             }
           (dataFlowProtocol Duplex serverApplication)
+          constFilter
           (mainThreadId,   debugMuxErrorRethrowPolicy
                         <> debugMuxRuntimeErrorRethrowPolicy
                         <> debugIOErrorRethrowPolicy

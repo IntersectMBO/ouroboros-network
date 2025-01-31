@@ -3,14 +3,19 @@
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 
 module Ouroboros.Network.Protocol.Handshake.Version
-  ( Versions (..)
+  ( BidirectionalFilter (..)
+  , Versions (..)
   , updateVersionData
   , Version (..)
   , VersionMismatch (..)
+    -- * Filters
+  , contramapBidirectionalFilterData
+  , constFilter
     -- * Simple or no versioning
   , simpleSingletonVersions
   , foldMapVersions
@@ -29,6 +34,30 @@ import GHC.Stack (HasCallStack)
 import Ouroboros.Network.Handshake.Acceptable (Accept (..), Acceptable (..))
 import Ouroboros.Network.Handshake.Queryable (Queryable (..))
 
+
+-- | This filters negotiated applications (the 'r' type variable) based on the
+-- current version data.
+--
+data BidirectionalFilter vData r =
+  BidirectionalFilter {
+    outboundFilter :: r
+                   -> vData
+                   -> r
+  , inboundFilter :: r
+                  -> vData
+                  -> r
+  }
+
+contramapBidirectionalFilterData
+  :: (a -> b) -> BidirectionalFilter b r -> BidirectionalFilter a r
+contramapBidirectionalFilterData f BidirectionalFilter {
+                                     outboundFilter
+                                   , inboundFilter
+                                   } =
+  BidirectionalFilter {
+    outboundFilter = \r a -> outboundFilter r (f a)
+  , inboundFilter  = \r a -> inboundFilter r (f a)
+  }
 
 -- | The version map supported by the local agent keyed on the version
 -- identifier.
@@ -62,6 +91,12 @@ updateVersionData fn =
 instance Functor (Versions vNum extra) where
     fmap f (Versions vs) = Versions $ Map.map (fmap f)  vs
 
+
+-- | This filter returns the original arguments, i.e. it doesn't filter
+-- anything
+--
+constFilter :: BidirectionalFilter vData r
+constFilter = BidirectionalFilter const const
 
 -- | Useful for folding multiple 'Versions'.
 --
