@@ -65,6 +65,7 @@ import Ouroboros.Network.ControlMessage (ControlMessage (..))
 import Ouroboros.Network.Mux
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.Protocol.Handshake
+import Ouroboros.Network.Protocol.Handshake.Version (BidirectionalFilter (..))
 import Ouroboros.Network.Protocol.Handshake.Version qualified as Handshake
 import Ouroboros.Network.RethrowPolicy
 
@@ -228,6 +229,7 @@ makeConnectionHandler
     -> HandshakeArguments (ConnectionId peerAddr) versionNumber versionData m
     -> Versions versionNumber versionData
                 (OuroborosBundle muxMode initiatorCtx responderCtx ByteString m a b)
+    -> OuroborosBundleFilter versionData muxMode initiatorCtx responderCtx ByteString m a b
     -> (ThreadId m, RethrowPolicy)
     -- ^ 'ThreadId' and rethrow policy.  Rethrow policy might throw an async
     -- exception to that thread, when trying to terminate the process.
@@ -235,6 +237,10 @@ makeConnectionHandler
 makeConnectionHandler muxTracer singMuxMode
                       handshakeArguments
                       versionedApplication
+                      BidirectionalFilter {
+                        outboundFilter = outboundAppsFilter
+                      , inboundFilter  = inboundAppsFilter
+                      }
                       (mainThreadId, rethrowPolicy) =
     ConnectionHandler {
         connectionHandler =
@@ -317,16 +323,17 @@ makeConnectionHandler muxTracer singMuxMode
 
               Right (HandshakeNegotiationResult app versionNumber agreedOptions) ->
                 unmask $ do
+                  let filteredApps = outboundAppsFilter app agreedOptions
                   traceWith tracer (TrHandshakeSuccess versionNumber agreedOptions)
                   controlMessageBundle
                     <- (\a b c -> TemperatureBundle (WithHot a) (WithWarm b) (WithEstablished c))
                         <$> newTVarIO Continue
                         <*> newTVarIO Continue
                         <*> newTVarIO Continue
-                  mux <- Mx.new (mkMiniProtocolInfos app)
+                  mux <- Mx.new (mkMiniProtocolInfos filteredApps)
                   let !handle = Handle {
                           hMux            = mux,
-                          hMuxBundle      = app,
+                          hMuxBundle      = filteredApps,
                           hControlMessage = controlMessageBundle,
                           hVersionData    = agreedOptions
                         }
@@ -386,17 +393,18 @@ makeConnectionHandler muxTracer singMuxMode
                 traceWith tracer (TrHandshakeServerError err)
               Right (HandshakeNegotiationResult app versionNumber agreedOptions) ->
                 unmask $ do
+                  let filteredApps = inboundAppsFilter app agreedOptions
                   traceWith tracer (TrHandshakeSuccess versionNumber agreedOptions)
                   controlMessageBundle
                     <- (\a b c -> TemperatureBundle (WithHot a) (WithWarm b) (WithEstablished c))
                         <$> newTVarIO Continue
                         <*> newTVarIO Continue
                         <*> newTVarIO Continue
-                  mux <- Mx.new (mkMiniProtocolInfos app)
+                  mux <- Mx.new (mkMiniProtocolInfos filteredApps)
 
                   let !handle = Handle {
                           hMux            = mux,
-                          hMuxBundle      = app,
+                          hMuxBundle      = filteredApps,
                           hControlMessage = controlMessageBundle,
                           hVersionData    = agreedOptions
                         }

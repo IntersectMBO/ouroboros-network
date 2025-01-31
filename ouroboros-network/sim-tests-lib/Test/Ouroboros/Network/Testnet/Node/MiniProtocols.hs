@@ -57,7 +57,8 @@ import Ouroboros.Network.Protocol.ChainSync.Server
 import Ouroboros.Network.Protocol.ChainSync.Type
 import Ouroboros.Network.Protocol.Handshake.Type
 import Ouroboros.Network.Protocol.Handshake.Unversioned
-import Ouroboros.Network.Protocol.Handshake.Version (simpleSingletonVersions)
+import Ouroboros.Network.Protocol.Handshake.Version
+           (contramapBidirectionalFilterData, simpleSingletonVersions)
 import Ouroboros.Network.Protocol.KeepAlive.Client
 import Ouroboros.Network.Protocol.KeepAlive.Codec
 import Ouroboros.Network.Protocol.KeepAlive.Server
@@ -88,7 +89,7 @@ import Pipes qualified
 
 import Ouroboros.Network.NodeToNode (blockFetchMiniProtocolNum,
            chainSyncMiniProtocolNum, keepAliveMiniProtocolNum,
-           peerSharingMiniProtocolNum)
+           peerSharingFilter, peerSharingMiniProtocolNum)
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
 import Ouroboros.Network.PeerSelection.PeerSharing qualified as PSTypes
@@ -274,6 +275,10 @@ applications debugTracer nodeKernel
           simpleSingletonVersions UnversionedProtocol
                                   UnversionedProtocolData
                                   localResponderApp
+      , Diff.daApplicationsFilterInitiatorMode =
+          contramapBidirectionalFilterData ntnPeerSharing peerSharingFilter
+      , Diff.daApplicationsFilterInitiatorAndResponderMode =
+          contramapBidirectionalFilterData ntnPeerSharing peerSharingFilter
       , Diff.daLedgerPeersCtx =
           aaLedgerPeersConsensusInterface
       , Diff.daUpdateOutboundConnectionsState =

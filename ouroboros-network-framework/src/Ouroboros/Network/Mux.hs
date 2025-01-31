@@ -22,6 +22,7 @@ module Ouroboros.Network.Mux
   , withoutSomeProtocolTemperature
   , TemperatureBundle (..)
   , projectBundle
+  , filterTemperatureBundle
     -- * Mux mini-protocol callback
   , MiniProtocolCb (..)
   , mkMiniProtocolCbFromPeer
@@ -41,6 +42,8 @@ module Ouroboros.Network.Mux
   , OuroborosBundle
   , OuroborosBundleWithExpandedCtx
   , OuroborosBundleWithMinimalCtx
+  , OuroborosBundleFilter
+  , OuroborosBundleFilterWithExpandedCtx
     -- * Non-P2P API
   , OuroborosApplication (..)
   , OuroborosApplicationWithMinimalCtx
@@ -77,6 +80,7 @@ import Ouroboros.Network.Context (ExpandedInitiatorContext,
            MinimalInitiatorContext, ResponderContext)
 import Ouroboros.Network.Driver
 import Ouroboros.Network.Driver.Stateful qualified as Stateful
+import Ouroboros.Network.Protocol.Handshake.Version (BidirectionalFilter (..))
 import Ouroboros.Network.Util.ShowProxy (ShowProxy)
 
 
@@ -203,6 +207,29 @@ instance Applicative TemperatureBundle where
                             (warmFn <*> warm)
                             (establishedFn <*> established)
 
+
+-- | Useful to filter temperature bundles
+--
+filterTemperatureBundle :: SomeTokProtocolTemperature -> (a -> Bool) -> TemperatureBundle [a] -> TemperatureBundle [a]
+filterTemperatureBundle (SomeTokProtocolTemperature pt) f tb =
+  case pt of
+    SingHot ->
+      TemperatureBundle
+          (WithHot (filter f (projectBundle pt tb)))
+          (withWarm tb)
+          (withEstablished tb)
+    SingWarm ->
+      TemperatureBundle
+          (withHot tb)
+          (WithWarm (filter f (projectBundle pt tb)))
+          (withEstablished tb)
+
+    SingEstablished ->
+      TemperatureBundle
+          (withHot tb)
+          (withWarm tb)
+          (WithEstablished (filter f (projectBundle pt tb)))
+
 --
 -- Useful type synonyms
 --
@@ -210,7 +237,10 @@ instance Applicative TemperatureBundle where
 type OuroborosBundle   (mode :: Mux.Mode) initiatorCtx responderCtx bytes m a b =
     TemperatureBundle [MiniProtocol mode initiatorCtx responderCtx bytes m a b]
 
--- | 'OuroborosBundle' used in P2P.
+type OuroborosBundleFilter versionData (mode :: Mux.Mode) initiatorCtx responderCtx bytes m a b =
+  BidirectionalFilter versionData (OuroborosBundle (mode :: Mux.Mode) initiatorCtx responderCtx bytes m a b)
+
+-- | 'OuroborosBundle' and 'OuroborosBundleFilter' used in P2P.
 --
 type OuroborosBundleWithExpandedCtx (mode :: Mux.Mode) peerAddr bytes m a b =
      OuroborosBundle mode
@@ -224,6 +254,12 @@ type OuroborosBundleWithMinimalCtx (mode :: Mux.Mode) peerAddr bytes m a b =
                      (ResponderContext peerAddr)
                      bytes m a b
 
+type OuroborosBundleFilterWithExpandedCtx versionData (mode :: Mux.Mode) peerAddr bytes m a b =
+  BidirectionalFilter versionData
+                      (OuroborosBundle (mode :: Mux.Mode)
+                                       (ExpandedInitiatorContext peerAddr m)
+                                       (ResponderContext peerAddr)
+                                       bytes m a b)
 
 -- | Each mini-protocol is represented by its
 --

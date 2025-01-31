@@ -23,6 +23,7 @@ module Ouroboros.Network.NodeToNode
   , txSubmissionProtocolLimits
   , keepAliveProtocolLimits
   , defaultMiniProtocolParameters
+  , peerSharingFilter
   , NodeToNodeVersion (..)
   , NodeToNodeVersionData (..)
   , NetworkConnectTracers (..)
@@ -221,6 +222,27 @@ defaultMiniProtocolParameters = MiniProtocolParameters {
     , blockFetchPipeliningMax     = 100
     , txSubmissionMaxUnacked       = 10
   }
+
+peerSharingFilter
+  :: OuroborosBundleFilter PeerSharing muxMode initiatorCtx responderCtx bytes m a b
+peerSharingFilter =
+  BidirectionalFilter {
+    outboundFilter = filterBundle
+  , inboundFilter  = filterBundle
+  }
+  where
+    filterBundle :: TemperatureBundle [MiniProtocol muxMode initiatorCtx responderCtx bytes m a b]
+                 -> PeerSharing
+                 -> TemperatureBundle [MiniProtocol muxMode initiatorCtx responderCtx bytes m a b]
+    filterBundle bundle PeerSharingDisabled =
+        filterTemperatureBundle (SomeTokProtocolTemperature SingHot)
+                                (\mp -> miniProtocolNum mp /= peerSharingMiniProtocolNum)
+      . filterTemperatureBundle (SomeTokProtocolTemperature SingWarm)
+                                (\mp -> miniProtocolNum mp /= peerSharingMiniProtocolNum)
+      . filterTemperatureBundle (SomeTokProtocolTemperature SingEstablished)
+                                (\mp -> miniProtocolNum mp /= peerSharingMiniProtocolNum)
+      $ bundle
+    filterBundle bundle _ = bundle
 
 -- | Make an 'OuroborosApplication' for the bundle of mini-protocols that
 -- make up the overall node-to-node protocol.

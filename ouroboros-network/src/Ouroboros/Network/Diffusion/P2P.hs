@@ -688,6 +688,8 @@ runM Interfaces
        { daApplicationInitiatorMode
        , daApplicationInitiatorResponderMode
        , daLocalResponderApplication
+       , daApplicationsFilterInitiatorMode
+       , daApplicationsFilterInitiatorAndResponderMode
        , daLedgerPeersCtx
        , daUpdateOutboundConnectionsState
        }
@@ -776,6 +778,7 @@ runM Interfaces
                         (WithWarm [])
                         (WithEstablished [])
                   ) <$> daLocalResponderApplication )
+                constFilter
                 (mainThreadId, rethrowPolicy <> daLocalRethrowPolicy)
 
             localConnectionManagerArguments
@@ -942,15 +945,17 @@ runM Interfaces
                SingMuxMode muxMode
             -> Versions ntnVersion ntnVersionData
                  (OuroborosBundle muxMode initiatorCtx responderCtx ByteString m b c)
+            -> OuroborosBundleFilter ntnVersionData muxMode initiatorCtx responderCtx ByteString m b c
             -> MuxConnectionHandler
                  muxMode socket initiatorCtx responderCtx ntnAddr
                  ntnVersion ntnVersionData ByteString m b c
-          makeConnectionHandler' muxMode versions =
+          makeConnectionHandler' muxMode versions filters =
             makeConnectionHandler
               dtMuxTracer
               muxMode
               diNtnHandshakeArguments
               versions
+              filters
               (mainThreadId, rethrowPolicy <> daRethrowPolicy)
 
           -- | Capture the two variations (InitiatorMode,InitiatorResponderMode) of
@@ -965,7 +970,8 @@ runM Interfaces
                  -- than limits imposed by 'cmConnectionsLimits'.
               (makeConnectionHandler'
                 SingInitiatorMode
-                daApplicationInitiatorMode)
+                daApplicationInitiatorMode
+                daApplicationsFilterInitiatorMode)
               classifyHandleError
               NotInResponderMode
 
@@ -975,7 +981,8 @@ runM Interfaces
                 (connectionManagerArguments' Diffusion.Policies.prunePolicy cmStdGen2)
                 (makeConnectionHandler'
                    SingInitiatorResponderMode
-                   daApplicationInitiatorResponderMode)
+                   daApplicationInitiatorResponderMode
+                   daApplicationsFilterInitiatorAndResponderMode)
                 classifyHandleError
                 (InResponderMode inbndInfoChannel)
 

@@ -71,7 +71,7 @@ import Ouroboros.Network.Protocol.Handshake
 import Ouroboros.Network.Protocol.Handshake.Codec (timeLimitsHandshake)
 import Ouroboros.Network.Protocol.Handshake.Unversioned
 import Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..),
-           Queryable (..))
+           Queryable (..), constFilter)
 import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Server2 qualified as Server
@@ -266,6 +266,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
              (serverApplication hotRequestsVar
                                 warmRequestsVar
                                 establishedRequestsVar))
+          constFilter
           (mainThreadId,   debugMuxErrorRethrowPolicy
                         <> debugIOErrorRethrowPolicy))
           (\_ -> HandshakeFailure)
