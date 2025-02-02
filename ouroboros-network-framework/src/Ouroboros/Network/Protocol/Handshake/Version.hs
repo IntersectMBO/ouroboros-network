@@ -101,10 +101,13 @@ data VersionMismatch vNum where
 --
 simpleSingletonVersions
   :: vNum
+  -- ^ version number
   -> vData
-  -> r
+  -- ^ proposed version data
+  -> (vData -> r)
+  -- ^ callback which receives negotiated version data
   -> Versions vNum vData r
 simpleSingletonVersions vNum vData r =
   Versions
     $ Map.singleton vNum
-      (Version (\_ -> r) vData)
+      (Version r vData)

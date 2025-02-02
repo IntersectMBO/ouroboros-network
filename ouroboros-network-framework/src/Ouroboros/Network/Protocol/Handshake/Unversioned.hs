@@ -70,7 +70,10 @@ unversionedProtocol :: app
                     -> Versions UnversionedProtocol
                                 UnversionedProtocolData
                                 app
-unversionedProtocol = simpleSingletonVersions UnversionedProtocol UnversionedProtocolData
+unversionedProtocol app =
+    simpleSingletonVersions UnversionedProtocol
+                            UnversionedProtocolData
+                            (\_ -> app)
 
 
 -- | Alternative for 'UnversionedProtocolData' which contains 'DataFlow'.
@@ -119,8 +122,10 @@ dataFlowProtocol :: DataFlow
                  -> Versions UnversionedProtocol
                              DataFlowProtocolData
                              app
-dataFlowProtocol dataFlow =
-    simpleSingletonVersions UnversionedProtocol (DataFlowProtocolData dataFlow PeerSharingDisabled)
+dataFlowProtocol dataFlow app =
+    simpleSingletonVersions UnversionedProtocol
+                            (DataFlowProtocolData dataFlow PeerSharingDisabled)
+                            (\_ -> app)
 
 -- | 'Handshake' codec used in various tests.
 --
