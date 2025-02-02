@@ -265,15 +265,15 @@ applications debugTracer nodeKernel
       { Diff.daApplicationInitiatorMode =
           simpleSingletonVersions UnversionedProtocol
                                   (NtNVersionData InitiatorOnlyDiffusionMode aaOwnPeerSharing)
-                                  initiatorApp
+                                  (\NtNVersionData {ntnPeerSharing} -> initiatorApp ntnPeerSharing)
       , Diff.daApplicationInitiatorResponderMode =
           simpleSingletonVersions UnversionedProtocol
                                   (NtNVersionData aaDiffusionMode aaOwnPeerSharing)
-                                  initiatorAndResponderApp
+                                  (\NtNVersionData {ntnPeerSharing} -> initiatorAndResponderApp ntnPeerSharing)
       , Diff.daLocalResponderApplication =
           simpleSingletonVersions UnversionedProtocol
                                   UnversionedProtocolData
-                                  localResponderApp
+                                  (\_ -> localResponderApp)
       , Diff.daLedgerPeersCtx =
           aaLedgerPeersConsensusInterface
       , Diff.daUpdateOutboundConnectionsState =
@@ -281,9 +281,10 @@ applications debugTracer nodeKernel
       }
   where
     initiatorApp
-      :: OuroborosBundleWithExpandedCtx Mx.InitiatorMode NtNAddr ByteString m () Void
+      :: PSTypes.PeerSharing
+      -> OuroborosBundleWithExpandedCtx Mx.InitiatorMode NtNAddr ByteString m () Void
     -- initiator mode will never run a peer sharing responder side
-    initiatorApp = fmap f <$> initiatorAndResponderApp
+    initiatorApp peerSharing = fmap f <$> initiatorAndResponderApp peerSharing
       where
         f :: MiniProtocolWithExpandedCtx Mx.InitiatorResponderMode NtNAddr ByteString m () ()
           -> MiniProtocolWithExpandedCtx Mx.InitiatorMode          NtNAddr ByteString m () Void
@@ -300,8 +301,9 @@ applications debugTracer nodeKernel
                        }
 
     initiatorAndResponderApp
-      :: OuroborosBundleWithExpandedCtx Mx.InitiatorResponderMode NtNAddr ByteString m () ()
-    initiatorAndResponderApp = TemperatureBundle
+      :: PSTypes.PeerSharing
+      -> OuroborosBundleWithExpandedCtx Mx.InitiatorResponderMode NtNAddr ByteString m () ()
+    initiatorAndResponderApp peerSharing = TemperatureBundle
       { withHot = WithHot
           [ MiniProtocol
               { miniProtocolNum    = chainSyncMiniProtocolNum
@@ -334,7 +336,7 @@ applications debugTracer nodeKernel
               }
           ]
       , withEstablished = WithEstablished $
-          [ MiniProtocol
+            MiniProtocol
               { miniProtocolNum    = keepAliveMiniProtocolNum
               , miniProtocolStart  = StartOnDemandAny
               , miniProtocolLimits = keepAliveLimits limits
@@ -343,18 +345,20 @@ applications debugTracer nodeKernel
                     keepAliveInitiator
                     keepAliveResponder
               }
-          ] ++ if aaOwnPeerSharing /= PSTypes.PeerSharingDisabled
-                  then [ MiniProtocol
-                          { miniProtocolNum    = peerSharingMiniProtocolNum
-                          , miniProtocolStart  = StartOnDemand
-                          , miniProtocolLimits = peerSharingLimits limits
-                          , miniProtocolRun    =
-                              InitiatorAndResponderProtocol
-                                peerSharingInitiator
-                                (peerSharingResponder (nkPeerSharingAPI nodeKernel))
-                          }
-                       ]
-                  else []
+          : case peerSharing of
+              PSTypes.PeerSharingEnabled ->
+                [ MiniProtocol
+                    { miniProtocolNum    = peerSharingMiniProtocolNum
+                    , miniProtocolStart  = StartOnDemand
+                    , miniProtocolLimits = peerSharingLimits limits
+                    , miniProtocolRun    =
+                        InitiatorAndResponderProtocol
+                          peerSharingInitiator
+                          (peerSharingResponder (nkPeerSharingAPI nodeKernel))
+                    }
+                ]
+              PSTypes.PeerSharingDisabled ->
+                []
       }
 
     localResponderApp

@@ -80,6 +80,7 @@ import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.Diffusion.P2P qualified as Diff.P2P
 import Ouroboros.Network.Driver.Limits (ProtocolSizeLimits (..),
            ProtocolTimeLimits (..))
+import Ouroboros.Network.Handshake.Acceptable (Acceptable (acceptableVersion))
 import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.Mux (MiniProtocolLimits (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
@@ -96,7 +97,6 @@ import Ouroboros.Network.Protocol.BlockFetch.Codec (byteLimitsBlockFetch,
            timeLimitsBlockFetch)
 import Ouroboros.Network.Protocol.ChainSync.Codec (ChainSyncTimeout (..),
            byteLimitsChainSync, timeLimitsChainSync)
-import Ouroboros.Network.Protocol.Handshake.Version (Accept (Accept))
 import Ouroboros.Network.Protocol.KeepAlive.Codec (byteLimitsKeepAlive,
            timeLimitsKeepAlive)
 import Ouroboros.Network.Protocol.Limits (shortWait, smallByteLimit)
@@ -1092,9 +1092,7 @@ diffusionSimulation
           readLocalRootPeers  = readTVar lrpVar
           readPublicRootPeers = return publicRoots
           readUseLedgerPeers  = return (UseLedgerPeers (After 0))
-
-          acceptVersion = \_ v -> Accept v
-
+          acceptVersion = acceptableVersion
           defaultMiniProtocolsLimit :: MiniProtocolLimits
           defaultMiniProtocolsLimit =
             MiniProtocolLimits { maximumIngressQueue = 64000 }

@@ -61,6 +61,7 @@ import Ouroboros.Network.AnchoredFragment (Anchor (..))
 import Ouroboros.Network.Block (HasFullHeader, SlotNo)
 import Ouroboros.Network.Block qualified as Block
 import Ouroboros.Network.BlockFetch
+import Ouroboros.Network.Handshake.Acceptable (Accept (..), Acceptable (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.Protocol.Handshake.Unversioned
 import Ouroboros.Network.Snocket (TestAddress (..))
@@ -141,6 +142,23 @@ data NtNVersionData = NtNVersionData
   , ntnPeerSharing   :: PeerSharing
   }
   deriving Show
+
+instance Acceptable NtNVersionData where
+  acceptableVersion
+    NtNVersionData {
+        ntnDiffusionMode,
+        ntnPeerSharing
+      }
+    NtNVersionData {
+        ntnDiffusionMode = ntnDiffusionMode',
+        ntnPeerSharing   = ntnPeerSharing'
+      }
+    =
+    Accept $ NtNVersionData {
+        ntnDiffusionMode = ntnDiffusionMode `min` ntnDiffusionMode',
+        ntnPeerSharing   = ntnPeerSharing <> ntnPeerSharing'
+      }
+
 type NtCAddr        = TestAddress Int
 type NtCVersion     = UnversionedProtocol
 type NtCVersionData = UnversionedProtocolData
