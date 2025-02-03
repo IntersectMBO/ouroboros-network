@@ -23,7 +23,7 @@ jobs:
 
     env:
       # Modify this value to "invalidate" all cabal caches.
-      CABAL_CACHE_VERSION: "2024-05-22"
+      CABAL_CACHE_VERSION: "2025-02-03"
       # Modify this value to "invalidate" the cabal store cache only.
       CACHE_VERSION: "20220919"
       # Modify this value to "invalidate" the dist-newstyle cache only.
