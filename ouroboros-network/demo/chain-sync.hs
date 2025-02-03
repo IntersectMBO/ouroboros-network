@@ -247,7 +247,7 @@ clientChainSync sockPaths maxSlotNo = withIOManager $ \iocp ->
         (simpleSingletonVersions
            UnversionedProtocol
            UnversionedProtocolData
-           app)
+           (\_ -> app))
         Nothing
         (localAddressFromPath sockPath)
 
@@ -287,7 +287,7 @@ serverChainSync sockAddr slotLength seed = withIOManager $ \iocp -> do
       (simpleSingletonVersions
         UnversionedProtocol
         UnversionedProtocolData
-        (SomeResponderApplication (app prng)))
+        (\_ -> SomeResponderApplication (app prng)))
       nullErrorPolicies
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
@@ -494,7 +494,7 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
                           (simpleSingletonVersions
                             UnversionedProtocol
                             UnversionedProtocolData
-                            app)
+                            (\_ -> app))
                           Nothing
                           (localAddressFromPath sockAddr)
                     | sockAddr <- sockAddrs ]
@@ -561,7 +561,7 @@ serverBlockFetch sockAddr slotLength seed = withIOManager $ \iocp -> do
       (simpleSingletonVersions
         UnversionedProtocol
         UnversionedProtocolData
-        (SomeResponderApplication (app prng)))
+        (\_ -> SomeResponderApplication (app prng)))
       nullErrorPolicies
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception

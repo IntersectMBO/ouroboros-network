@@ -244,9 +244,13 @@ nodeToNodeProtocols
   :: MiniProtocolParameters
   -> NodeToNodeProtocols muxMode initiatorCtx responderCtx bytes m a b
   -> NodeToNodeVersion
-  -> PeerSharing -- ^ Node's own PeerSharing value
+  -- ^ negotiated version number
+  -> NodeToNodeVersionData
+  -- ^ negotiated version data
   -> OuroborosBundle muxMode initiatorCtx responderCtx bytes m a b
-nodeToNodeProtocols miniProtocolParameters protocols _version ownPeerSharing =
+nodeToNodeProtocols miniProtocolParameters protocols
+                    _version NodeToNodeVersionData { peerSharing }
+                    =
     TemperatureBundle
       -- Hot protocols: 'chain-sync', 'block-fetch' and 'tx-submission'.
       (WithHot $
@@ -278,27 +282,24 @@ nodeToNodeProtocols miniProtocolParameters protocols _version ownPeerSharing =
       -- Established protocols: 'keep-alive'.
       (WithEstablished $
         case protocols of
-          NodeToNodeProtocols { keepAliveProtocol, peerSharingProtocol }
-            | ownPeerSharing /= PeerSharingDisabled ->
-            [ MiniProtocol {
+          NodeToNodeProtocols { keepAliveProtocol,
+                                peerSharingProtocol } ->
+              MiniProtocol {
                 miniProtocolNum    = keepAliveMiniProtocolNum,
                 miniProtocolLimits = keepAliveProtocolLimits miniProtocolParameters,
                 miniProtocolRun    = keepAliveProtocol
               }
-            , MiniProtocol {
-                miniProtocolNum    = peerSharingMiniProtocolNum,
-                miniProtocolLimits = peerSharingProtocolLimits miniProtocolParameters,
-                miniProtocolRun    = peerSharingProtocol
-              }
-            ]
-          NodeToNodeProtocols { keepAliveProtocol }
-            | otherwise ->
-            [ MiniProtocol {
-                miniProtocolNum    = keepAliveMiniProtocolNum,
-                miniProtocolLimits = keepAliveProtocolLimits miniProtocolParameters,
-                miniProtocolRun    = keepAliveProtocol
-              }
-            ])
+            : case peerSharing of
+                PeerSharingEnabled ->
+                  [ MiniProtocol {
+                      miniProtocolNum    = peerSharingMiniProtocolNum,
+                      miniProtocolLimits = peerSharingProtocolLimits miniProtocolParameters,
+                      miniProtocolRun    = peerSharingProtocol
+                    }
+                  ]
+                PeerSharingDisabled ->
+                  []
+      )
 
 addSafetyMargin :: Int -> Int
 addSafetyMargin x = x + x `div` 10

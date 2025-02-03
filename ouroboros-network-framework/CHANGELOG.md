@@ -6,6 +6,12 @@
 
 ### Non-breaking changes
 
+## 0.16.0.0 -- 2025-02-03
+
+### Breaking changes
+
+* `simpleSingletonVersions`: takes a callback which receives negotiated version data.
+
 ## 0.15.0.0 -- 2025-01-02
 
 ### Breaking changes
