@@ -94,7 +94,7 @@ else
     if [[ !(-d $dir) ]];then
       trace "publishing $name-$version"
       ./scripts/add-from-github.sh $REPO_URL $gitsha $name
-      if [[ !($TEST) ]];then
+      if [[ $TEST == 0 ]];then
         git --git-dir "$gitdir/.git" tag "$name-$version" $gitsha
       fi
     fi
