@@ -27,7 +27,7 @@ import Ouroboros.Network.Util.ShowProxy
 -- | The kind of the local transaction-submission protocol, and the types of
 -- the states in the protocol state machine.
 --
--- It is parametrised over the type of transactions and the type of reasons
+-- It is parameterised over the type of transactions and the type of reasons
 -- used when rejecting a transaction.
 --
 type LocalTxSubmission :: Type -> Type -> Type

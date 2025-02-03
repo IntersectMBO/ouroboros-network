@@ -147,12 +147,13 @@ main = defaultMain
     , bgroup "LocalTxMonitor Codec" $
         let printMsg :: AnyMessage (LocalTxMonitor TxId Tx SlotNo) -> String
             printMsg msg = case msg of
-               AnyMessageAndAgency tok (LocalTxMonitor.MsgAcquired _)      -> show tok ++ " MsgAcquired"
-               AnyMessageAndAgency tok (LocalTxMonitor.MsgReplyNextTx _)   -> show tok ++ " MsgReplyNextTx"
-               AnyMessageAndAgency tok (LocalTxMonitor.MsgHasTx _)         -> show tok ++ " MsgHasTx"
-               AnyMessageAndAgency tok (LocalTxMonitor.MsgReplyHasTx _)    -> show tok ++ " MsgReplyHasTx"
-               AnyMessageAndAgency tok (LocalTxMonitor.MsgReplyGetSizes _) -> show tok ++ " MsgReplyGetSizes"
-               AnyMessageAndAgency tok message                             -> show tok ++ " " ++ show message
+               AnyMessageAndAgency tok (LocalTxMonitor.MsgAcquired _)         -> show tok ++ " MsgAcquired"
+               AnyMessageAndAgency tok (LocalTxMonitor.MsgReplyNextTx _)      -> show tok ++ " MsgReplyNextTx"
+               AnyMessageAndAgency tok (LocalTxMonitor.MsgHasTx _)            -> show tok ++ " MsgHasTx"
+               AnyMessageAndAgency tok (LocalTxMonitor.MsgReplyHasTx _)       -> show tok ++ " MsgReplyHasTx"
+               AnyMessageAndAgency tok (LocalTxMonitor.MsgReplyGetSizes _)    -> show tok ++ " MsgReplyGetSizes"
+               AnyMessageAndAgency tok (LocalTxMonitor.MsgReplyGetMeasures _) -> show tok ++ " MsgReplyGetMeasures"
+               AnyMessageAndAgency tok message                                -> show tok ++ " " ++ show message
          in concat
             [ benchmarkCodec ("LocalTxSubmission " ++ printMsg msg)
                              (const localTxMonitorCodec) maxBound msg

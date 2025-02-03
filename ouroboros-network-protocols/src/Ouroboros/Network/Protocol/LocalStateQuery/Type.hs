@@ -34,7 +34,7 @@ import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 -- | The kind of the local state query protocol, and the types of
 -- the states in the protocol state machine.
 --
--- It is parametrised over the type of block (for points), the type of queries
+-- It is parameterised over the type of block (for points), the type of queries
 -- and query results.
 --
 type LocalStateQuery :: Type           -- ^ block

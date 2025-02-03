@@ -20,35 +20,39 @@
 -- already sent to the client.
 --
 -- @
---                    START
---                      ⇓
---                    ┌───────────────┐
---            ┌──────▶│     Idle      │⇒ DONE
---            │       └───┬───────────┘
---            │           │
---            │   Acquire │
---            │           ▼
---            │       ┌───────────────┐
---    Release │       │   Acquiring   │
---            │       └───┬───────────┘
---            │           │       ▲
---            │  Acquired │       │ AwaitAcquire
---            │           ▼       │
---            │       ┌───────────┴───┐
---            └───────┤   Acquired    │
---                    └───┬───────────┘
---                        │       ▲
---  HasTx|NextTx|GetSizes │       │ Reply (HasTx|NextTx|GetSizes)
---                        ▼       │
---                    ┌───────────┴───┐
---                    │      Busy     │
---                    └───────────────┘
+--                   START
+--                     ⇓
+--                   ┌───────────────┐
+--           ┌──────▶│     Idle      │⇒ DONE
+--           │       └───┬───────────┘
+--           │           │
+--           │   Acquire │
+--           │           ▼
+--           │       ┌───────────────┐
+--   Release │       │   Acquiring   │
+--           │       └───┬───────────┘
+--           │           │       ▲
+--           │  Acquired │       │ AwaitAcquire
+--           │           ▼       │
+--           │       ┌───────────┴───┐
+--           └───────┤   Acquired    │
+--                   └───┬───────────┘
+--                       │       ▲
+--  HasTx|NextTx|        │       │ Reply (HasTx|NextTx
+--  GetSizes|GetMeasures │       │       |GetSizes|GetMeasures)
+--                       │       │
+--                       ▼       │
+--                   ┌───────────┴───┐
+--                   │      Busy     │
+--                   └───────────────┘
 -- @
 module Ouroboros.Network.Protocol.LocalTxMonitor.Type where
 
 
 import Data.Kind
+import Data.Map.Strict (Map)
 import Data.Singletons
+import Data.Text (Text)
 import Data.Word
 import GHC.Generics (Generic)
 
@@ -60,7 +64,7 @@ import Ouroboros.Network.Util.ShowProxy
 -- | The kind of the local transaction monitoring protocol, and the types of
 -- the states in the protocol state machine.
 --
--- It is parametrised over the type of transactions.
+-- It is parameterised over the type of transactions.
 --
 type LocalTxMonitor :: Type -> Type -> Type -> Type
 data LocalTxMonitor txid tx slot where
@@ -132,17 +136,22 @@ data StBusyKind where
   -- | The server is busy looking for the current size and max capacity of the
   -- mempool
   GetSizes :: StBusyKind
+  -- | The server is busy looking for the current size and max capacity of the
+  -- mempool
+  GetMeasures :: StBusyKind
 
 type SingBusyKind :: StBusyKind -> Type
 data SingBusyKind st where
-    SingNextTx   :: SingBusyKind NextTx
-    SingHasTx    :: SingBusyKind HasTx
-    SingGetSizes :: SingBusyKind GetSizes
+    SingNextTx      :: SingBusyKind NextTx
+    SingHasTx       :: SingBusyKind HasTx
+    SingGetSizes    :: SingBusyKind GetSizes
+    SingGetMeasures :: SingBusyKind GetMeasures
 
 type instance Sing = SingBusyKind
-instance SingI NextTx   where sing = SingNextTx
-instance SingI HasTx    where sing = SingHasTx
-instance SingI GetSizes where sing = SingGetSizes
+instance SingI NextTx      where sing = SingNextTx
+instance SingI HasTx       where sing = SingHasTx
+instance SingI GetSizes    where sing = SingGetSizes
+instance SingI GetMeasures where sing = SingGetMeasures
 
 deriving instance Show (SingBusyKind st)
 
@@ -155,6 +164,22 @@ data MempoolSizeAndCapacity = MempoolSizeAndCapacity
     -- ^ The summed byte size of all the transactions in the mempool.
   , numberOfTxs     :: !Word32
     -- ^ The number of transactions in the mempool
+  } deriving (Generic, Eq, Show, NFData)
+
+data SizeAndCapacity a = SizeAndCapacity
+  { size     :: !a
+  , capacity :: !a
+  } deriving (Generic, Eq, Show, NFData)
+
+instance Functor SizeAndCapacity where
+  fmap f (SizeAndCapacity s c) = SizeAndCapacity (f s) (f c)
+
+newtype MeasureName = MeasureName Text
+  deriving (Generic, Eq, Ord, Show, NFData)
+
+data MempoolMeasures = MempoolMeasures
+  { txCount     :: !Word32
+  , measuresMap :: !(Map MeasureName (SizeAndCapacity Integer))
   } deriving (Generic, Eq, Show, NFData)
 
 instance Protocol (LocalTxMonitor txid tx slot) where
@@ -237,6 +262,16 @@ instance Protocol (LocalTxMonitor txid tx slot) where
       :: MempoolSizeAndCapacity
       -> Message (LocalTxMonitor txid tx slot) (StBusy GetSizes) StAcquired
 
+    -- | The client asks the server about the current mempool measures
+    --
+    MsgGetMeasures
+      :: Message (LocalTxMonitor txid tx slot) StAcquired (StBusy GetMeasures)
+
+    -- | The server responds with the current mempool measures
+    MsgReplyGetMeasures
+      :: MempoolMeasures
+      -> Message (LocalTxMonitor txid tx slot) (StBusy GetMeasures) StAcquired
+
     -- | Release the acquired snapshot, in order to loop back to the idle state.
     --
     MsgRelease
@@ -260,27 +295,19 @@ instance ( NFData txid
          , NFData tx
          , NFData slot
          ) => NFData (Message (LocalTxMonitor txid tx slot) from to) where
-  rnf MsgAcquire             = ()
-  rnf (MsgAcquired slot)     = rnf slot
-  rnf MsgAwaitAcquire        = ()
-  rnf MsgNextTx              = ()
-  rnf (MsgReplyNextTx mbTx)  = rnf mbTx
-  rnf (MsgHasTx txid)        = rnf txid
-  rnf (MsgReplyHasTx b)      = rnf b
-  rnf MsgGetSizes            = ()
-  rnf (MsgReplyGetSizes msc) = rnf msc
-  rnf MsgRelease             = ()
-  rnf MsgDone                = ()
-
-data TokBusyKind (k :: StBusyKind) where
-  TokNextTx   :: TokBusyKind NextTx
-  TokHasTx    :: TokBusyKind HasTx
-  TokGetSizes :: TokBusyKind GetSizes
-
-instance NFData (TokBusyKind k) where
-  rnf TokNextTx   = ()
-  rnf TokHasTx    = ()
-  rnf TokGetSizes = ()
+  rnf MsgAcquire                = ()
+  rnf (MsgAcquired slot)        = rnf slot
+  rnf MsgAwaitAcquire           = ()
+  rnf MsgNextTx                 = ()
+  rnf (MsgReplyNextTx mbTx)     = rnf mbTx
+  rnf (MsgHasTx txid)           = rnf txid
+  rnf (MsgReplyHasTx b)         = rnf b
+  rnf MsgGetSizes               = ()
+  rnf (MsgReplyGetSizes msc)    = rnf msc
+  rnf MsgGetMeasures            = ()
+  rnf (MsgReplyGetMeasures msc) = rnf msc
+  rnf MsgRelease                = ()
+  rnf MsgDone                   = ()
 
 deriving instance (Show txid, Show tx, Show slot)
   => Show (Message (LocalTxMonitor txid tx slot) from to)

@@ -15,18 +15,22 @@ localTxMonitorMessage
   / msgReplyHasTx
   / msgGetSizes
   / msgReplyGetSizes
+  / msgGetMeasures
+  / msgReplyGetMeasures
   / msgRelease
 
-msgDone          = [0]
+msgDone             = [0]
 
-msgAcquire       = [1]
-msgAcquired      = [2, slotNo]
+msgAcquire          = [1]
+msgAcquired         = [2, slotNo]
 
-msgAwaitAcquire  = msgAcquire
-msgRelease       = [3]
-msgNextTx        = [5]
-msgReplyNextTx   = [6] / [6, tx]
-msgHasTx         = [7, txId]
-msgReplyHasTx    = [8, bool]
-msgGetSizes      = [9]
-msgReplyGetSizes = [10, [word32, word32, word32]]
+msgAwaitAcquire     = msgAcquire
+msgRelease          = [3]
+msgNextTx           = [5]
+msgReplyNextTx      = [6] / [6, tx]
+msgHasTx            = [7, txId]
+msgReplyHasTx       = [8, bool]
+msgGetSizes         = [9]
+msgReplyGetSizes    = [10, [word32, word32, word32]]
+msgGetMeasures      = [11]
+msgReplyGetMeasures = [12, word32, {* text => [integer, integer]}]

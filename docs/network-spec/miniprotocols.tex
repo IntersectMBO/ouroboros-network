@@ -1799,6 +1799,10 @@ See appendix \ref{cddl-common} for common definitions.
 \newcommand{\MsgGetSizes}{\msg{MsgGetSizes}}
 \newcommand{\MsgReplyGetSizes}{\msg{MsgReplyGetSizes}}
 
+\newcommand{\GetMeasures}{\state{GetMeasures}}
+\newcommand{\MsgGetMeasures}{\msg{MsgGetMeasures}}
+\newcommand{\MsgReplyGetMeasures}{\msg{MsgReplyGetMeasures}}
+
 \subsection{Description}
 
 A mini-protocol which allows the monitoring of transactions in the local mempool. This
@@ -1810,25 +1814,28 @@ the client.
 \begin{figure}[h]
   \begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4cm, semithick]
     \tikzstyle{every state}=[fill=red,draw=none,text=white]
-    \node[state, mygreen, initial]                                   (Idle)         {\StIdle};
-    \node[state, myblue, right of=Idle]                              (Acquiring)    {\StAcquiring};
-    \node[state, mygreen, right of=Acquiring]                        (Acquired)     {\StAcquired};
-    \node[state, myblue, right of=Acquired]                          (BusyHasTx)    {\StBusy\ \HasTx};
-    \node[state, myblue, above of=BusyHasTx]                         (BusyNextTx)   {\StBusy\ \NextTx};
-    \node[state, myblue, below of=BusyHasTx]                         (BusyGetSizes) {\StBusy\ \GetSizes};
-    \node[state, below of=Idle]                                      (Done)         {\StDone};
+    \node[state, mygreen, initial]                                   (Idle)            {\StIdle};
+    \node[state, myblue, right of=Idle]                              (Acquiring)       {\StAcquiring};
+    \node[state, mygreen, right of=Acquiring]                        (Acquired)        {\StAcquired};
+    \node[state, myblue, right of=Acquired]                          (BusyHasTx)       {\StBusy\ \HasTx};
+    \node[state, myblue, above of=BusyHasTx]                         (BusyNextTx)      {\StBusy\ \NextTx};
+    \node[state, myblue, below of=BusyHasTx]                         (BusyGetSizes)    {\StBusy\ \GetSizes};
+    \node[state, myblue, below of=BusyHasTx]                         (BusyGetMeasures) {\StBusy\ \GetMeasures};
+    \node[state, below of=Idle]                                      (Done)            {\StDone};
 
-    \draw (Idle)         edge               node{\MsgAcquire}       (Acquiring);
-    \draw (Acquiring)    edge[bend left=45] node{\MsgAcquired}      (Acquired);
-    \draw (Acquired)     edge[bend left=45] node{\MsgAwaitAcquire}  (Acquiring);
-    \draw (Acquired)     edge[bend left=45] node{\MsgRelease}       (Idle);
-    \draw (Acquired)     edge[bend left=20] node{\MsgNextTx}        (BusyNextTx);
-    \draw (BusyNextTx)   edge[bend left=20] node{\MsgReplyNextTx}   (Acquired);
-    \draw (Acquired)     edge[bend left=20] node{\MsgHasTx}         (BusyHasTx);
-    \draw (BusyHasTx)    edge[bend left=20] node{\MsgReplyHasTx}    (Acquired);
-    \draw (Acquired)     edge[bend left=20] node{\MsgGetSizes}      (BusyGetSizes);
-    \draw (BusyGetSizes) edge[bend left=20] node{\MsgReplyGetSizes} (Acquired);
-    \draw (Idle)         edge               node{\MsgDone}          (Done);
+    \draw (Idle)            edge               node{\MsgAcquire}          (Acquiring);
+    \draw (Acquiring)       edge[bend left=45] node{\MsgAcquired}         (Acquired);
+    \draw (Acquired)        edge[bend left=45] node{\MsgAwaitAcquire}     (Acquiring);
+    \draw (Acquired)        edge[bend left=45] node{\MsgRelease}          (Idle);
+    \draw (Acquired)        edge[bend left=20] node{\MsgNextTx}           (BusyNextTx);
+    \draw (BusyNextTx)      edge[bend left=20] node{\MsgReplyNextTx}      (Acquired);
+    \draw (Acquired)        edge[bend left=20] node{\MsgHasTx}            (BusyHasTx);
+    \draw (BusyHasTx)       edge[bend left=20] node{\MsgReplyHasTx}       (Acquired);
+    \draw (Acquired)        edge[bend left=20] node{\MsgGetSizes}         (BusyGetSizes);
+    \draw (Acquired)        edge[bend left=20] node{\MsgGetMeasures}      (BusyGetMeasures);
+    \draw (BusyGetSizes)    edge[bend left=20] node{\MsgReplyGetSizes}    (Acquired);
+    \draw (BusyGetMeasures) edge[bend left=20] node{\MsgReplyGetMeasures} (Acquired);
+    \draw (Idle)            edge               node{\MsgDone}             (Done);
   \end{tikzpicture}
   \caption{State machine of the Local Tx-Monitor mini-protocol.}
 \end{figure}
@@ -1878,22 +1885,32 @@ the client.
         mempool;
       \item[number of transactions] the number of transactions in the mempool.
     \end{description}
+  \item[\MsgGetMeasures{}] The client asks the server for information on the mempool's measures.
+  \item[\MsgReplyGetMeasures{} (Word32, Map Text (Integer, Integer))] The server responds with
+    the total number of transactions currently in the mempool, and a map of the measures known to
+    the mempool. The keys of this map are textual labels of the measure names, which should
+    typically be considered stable for a given node version, and the values are a pair of integers
+    representing the current size and maximum capacity respectively for that measure. The maximum
+    capacity should not be considered fixed and is likely to change due to mempool conditions. The
+    size should always be less than or equal to the capacity.
 \end{description}
 
 \begin{figure}[h]
   \begin{tabular}{l|l|l|l}
-    \header{from state} & \header{message}    & \header{parameters}        & \header{to state} \\ \hline
-    \StIdle             & \MsgAcquire         &                            & \StAcquiring \\
-    \StAcquiring        & \MsgAcquired        & SlotNo                     & \StAcquired \\
-    \StAcquired         & \MsgAwaitAcquire    &                            & \StAcquiring \\
-    \StAcquired         & \MsgRelease         &                            & \StIdle \\
-    \StAcquired         & \MsgNextTx          &                            & \StBusy\ \NextTx\\
-    \StBusy\ \NextTx    & \MsgReplyNextTx     & (\textbf{Nothing} | \textbf{Just} $tx$)      & \StAcquired\\
-    \StAcquired         & \MsgHasTx           &                            & \StBusy\ \HasTx\\
-    \StBusy\ \HasTx     & \MsgReplyNextTx     & Bool                       & \StAcquired\\
-    \StAcquired         & \MsgGetSizes        &                            & \StBusy\ \GetSizes\\
-    \StBusy\ \GetSizes  & \MsgReplyGetSizes   & Word32,Word32,Word32       & \StAcquired\\
-    \StIdle             & \MsgDone            &                            & \StDone\\
+    \header{from state}    & \header{message}      & \header{parameters}                      & \header{to state} \\ \hline
+    \StIdle                & \MsgAcquire           &                                          & \StAcquiring \\
+    \StAcquiring           & \MsgAcquired          & SlotNo                                   & \StAcquired \\
+    \StAcquired            & \MsgAwaitAcquire      &                                          & \StAcquiring \\
+    \StAcquired            & \MsgRelease           &                                          & \StIdle \\
+    \StAcquired            & \MsgNextTx            &                                          & \StBusy\ \NextTx\\
+    \StBusy\ \NextTx       & \MsgReplyNextTx       & (\textbf{Nothing} | \textbf{Just} $tx$)  & \StAcquired\\
+    \StAcquired            & \MsgHasTx             &                                          & \StBusy\ \HasTx\\
+    \StBusy\ \HasTx        & \MsgReplyNextTx       & Bool                                     & \StAcquired\\
+    \StAcquired            & \MsgGetSizes          &                                          & \StBusy\ \GetSizes\\
+    \StBusy\ \GetSizes     & \MsgReplyGetSizes     & Word32,Word32,Word32                     & \StAcquired\\
+    \StAcquired            & \MsgGetMeasures       &                                          & \StBusy\ \GetMeasures\\
+    \StBusy\ \GetMeasures  & \MsgReplyGetMeasures  & Word32,Map Text (Integer,Integer)        & \StAcquired\\
+    \StIdle                & \MsgDone              &                                          & \StDone\\
   \end{tabular}
   \caption{Local Transaction Monitor mini-protocol messages.}
   \label{fig:ltxm-messages}

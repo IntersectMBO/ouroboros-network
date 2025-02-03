@@ -69,6 +69,7 @@ data ServerStAcquired txid tx slot m a = ServerStAcquired
     { recvMsgNextTx       :: m (ServerStBusy NextTx txid tx slot m a)
     , recvMsgHasTx        :: txid -> m (ServerStBusy HasTx txid tx slot m a)
     , recvMsgGetSizes     :: m (ServerStBusy GetSizes txid tx slot m a)
+    , recvMsgGetMeasures  :: m (ServerStBusy GetMeasures txid tx slot m a)
     , recvMsgAwaitAcquire :: m (ServerStAcquiring txid tx slot m a)
     , recvMsgRelease      :: m (ServerStIdle txid tx slot m a)
     }
@@ -94,6 +95,11 @@ data ServerStBusy (kind :: StBusyKind) txid tx slot m a where
     :: MempoolSizeAndCapacity
     -> ServerStAcquired txid tx slot m a
     -> ServerStBusy GetSizes txid tx slot m a
+
+  SendMsgReplyGetMeasures
+    :: MempoolMeasures
+    -> ServerStAcquired txid tx slot m a
+    -> ServerStBusy GetMeasures txid tx slot m a
 
 -- | Interpret a 'LocalTxMonitorServer' action sequence as a 'Peer' on the
 -- client-side of the 'LocalTxMonitor' protocol.
@@ -134,6 +140,7 @@ localTxMonitorServerPeer (LocalTxMonitorServer mServer) =
         { recvMsgNextTx
         , recvMsgHasTx
         , recvMsgGetSizes
+        , recvMsgGetMeasures
         , recvMsgAwaitAcquire
         , recvMsgRelease
         } -> Await $ \case
@@ -143,6 +150,8 @@ localTxMonitorServerPeer (LocalTxMonitorServer mServer) =
             Effect $ handleHasTx <$> recvMsgHasTx txid
           MsgGetSizes ->
             Effect $ handleGetSizes <$> recvMsgGetSizes
+          MsgGetMeasures ->
+            Effect $ handleGetMeasures <$> recvMsgGetMeasures
           MsgAwaitAcquire ->
             Effect $ handleStAcquiring <$> recvMsgAwaitAcquire
           MsgRelease ->
@@ -170,4 +179,12 @@ localTxMonitorServerPeer (LocalTxMonitorServer mServer) =
     handleGetSizes = \case
       SendMsgReplyGetSizes sizes serverStAcquired ->
         Yield (MsgReplyGetSizes sizes) $
+          handleStAcquired serverStAcquired
+
+    handleGetMeasures ::
+         ServerStBusy GetMeasures txid tx slot m a
+      -> Server (LocalTxMonitor txid tx slot) NonPipelined (StBusy GetMeasures) m a
+    handleGetMeasures = \case
+      SendMsgReplyGetMeasures measures serverStAcquired ->
+        Yield (MsgReplyGetMeasures measures) $
           handleStAcquired serverStAcquired
