@@ -164,8 +164,9 @@ data NodeToClientProtocols appType ntcAddr bytes m a b = NodeToClientProtocols {
 nodeToClientProtocols
   :: NodeToClientProtocols appType addr bytes m a b
   -> NodeToClientVersion
+  -> NodeToClientVersionData
   -> OuroborosApplicationWithMinimalCtx appType addr bytes m a b
-nodeToClientProtocols protocols _version =
+nodeToClientProtocols protocols _version _versionData =
     OuroborosApplication $
       case protocols of
         NodeToClientProtocols {

@@ -44,6 +44,7 @@ import GHC.IO.Exception as GHC (IOErrorType (..), IOException (..))
 import System.Random (mkStdGen)
 
 import Network.DNS.Types qualified as DNS
+import Network.Mux.Trace qualified as Mx
 
 import Ouroboros.Network.BlockFetch (PraosFetchMode (..),
            TraceFetchClientState (..))
@@ -226,6 +227,7 @@ tests =
     , testGroup "Peer Sharing"
       [ testProperty "share a peer"
                      unit_peer_sharing
+      , testProperty "don't peershare the unwilling" (testWithIOSim prop_no_peershare_unwilling 100000)
       ]
     , testGroup "Churn"
       [ testProperty "no timeouts"
@@ -4327,6 +4329,32 @@ unit_local_root_diffusion_mode diffusionMode =
           , [JoinNetwork 0]
           )
         ]
+
+prop_no_peershare_unwilling:: SimTrace Void
+                           -> Int
+                           -> Property
+prop_no_peershare_unwilling ioSimTrace traceNumber =
+  let events = Trace.toList
+             . fmap (\(WithTime t (WithName _ b)) -> (t, b))
+             . withTimeNameTraceEvents
+                @DiffusionTestTrace
+                @NtNAddr
+             . Trace.take traceNumber
+             $ ioSimTrace
+  in  counterexample (List.intercalate "\n" $ map show events)
+    $ foldMap
+        (\case
+          (_, DiffusionInboundGovernorTrace (IG.TrMuxErrored _ err)) ->
+            case fromException err of
+              -- Technically we fail on more than the peersharing protocol.
+              -- Which is fine.
+              Just (Mx.UnknownMiniProtocol num) -> All
+                                                 $ counterexample (show num) False
+              Just _                            -> All True
+              Nothing                           -> All True
+          _                                     -> All True
+          )
+          events
 
 -- Utils
 --

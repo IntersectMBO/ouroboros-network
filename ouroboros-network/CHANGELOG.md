@@ -10,6 +10,18 @@
 
 ### Non-breaking changes
 
+## 0.19.0.2 -- 2025-02-03
+
+### Non-breaking changes
+
+* UnknownMiniProtocol error should not crash the node
+
+## 0.19.0.1 -- 2025-01-15
+
+### Non-breaking changes
+
+- Removed `UnsupportedOperation` from rethrow policy.
+
 ## 0.19.0.0 -- 2025-01-02
 
 ### Breaking changes
@@ -23,7 +35,7 @@
 * Added `diConnStateSupply` record field to `Ouroboros.Network.Diffusion.P2P.Interfaces`.
 * UnknownMiniProtocol error should not crash the node
 
-### Non-Breaking changes
+### Non-breaking changes
 
 * Added the `mapTraceFetchClientState` function
 

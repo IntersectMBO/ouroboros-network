@@ -176,7 +176,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
           diffusionMode = InitiatorAndResponderDiffusionMode,
           peerSharing = PeerSharingDisabled,
           query = False })
-        (SomeResponderApplication responderApp))
+        (\_ -> SomeResponderApplication responderApp))
       nullErrorPolicies
       $ \realProducerAddress _ -> do
       withAsync
@@ -198,7 +198,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
               diffusionMode = InitiatorOnlyDiffusionMode,
               peerSharing = PeerSharingDisabled,
               query = False })
-            initiatorApp)
+            (\_ -> initiatorApp))
           (Just consumerAddress)
           realProducerAddress)
         $ \ _connAsync -> do

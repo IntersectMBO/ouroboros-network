@@ -28,7 +28,7 @@ instance Semigroup PeerSharing where
   (<>) :: PeerSharing -> PeerSharing -> PeerSharing
   PeerSharingDisabled <> _                   = PeerSharingDisabled
   _                   <> PeerSharingDisabled = PeerSharingDisabled
-  _                   <> _                   = PeerSharingEnabled
+  PeerSharingEnabled  <> PeerSharingEnabled  = PeerSharingEnabled
 
 -- | The Monoid laws are witnessed by the following denotation function:
 --
