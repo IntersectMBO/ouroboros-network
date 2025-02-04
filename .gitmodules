@@ -1,0 +1,3 @@
+[submodule "cardano-blueprint"]
+	path = cardano-blueprint
+	url = git@github.com:cardano-scaling/cardano-blueprint
