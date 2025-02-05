@@ -51,6 +51,8 @@ data NodeToClientVersion
     -- ^ added @GetFuturePParams@ query
     | NodeToClientV_19
     -- ^ added @GetLedgerPeerSnapshot@
+    | NodeToClientV_20
+    -- ^ added @QueryStakePoolDefaultVote@
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable, Generic, NFData)
 
 -- | We set 16ths bit to distinguish `NodeToNodeVersion` and
@@ -68,6 +70,7 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
           NodeToClientV_17 -> enc 17
           NodeToClientV_18 -> enc 18
           NodeToClientV_19 -> enc 19
+          NodeToClientV_20 -> enc 20
         where
           enc :: Int -> CBOR.Term
           enc = CBOR.TInt . (`setBit` nodeToClientVersionBit)
@@ -78,6 +81,7 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
             17 -> Right NodeToClientV_17
             18 -> Right NodeToClientV_18
             19 -> Right NodeToClientV_19
+            20 -> Right NodeToClientV_20
             n  -> Left (unknownTag n)
         where
           dec :: CBOR.Term -> Either (Text, Maybe Int) Int

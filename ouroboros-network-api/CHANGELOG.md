@@ -4,6 +4,8 @@
 
 ### Breaking changes
 
+* Added `NodeToClientV_20`.
+
 ### Non-breaking changes
 
 ## 0.12.0.0 -- 2025-01-02
