@@ -1338,15 +1338,19 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
 --
 isFatal :: IOErrorType -> Bool
 isFatal ResourceExhausted = True
-        -- EAGAIN            -- connect, accept
+        -- EAGAIN            -- connect, accept, send, recv
+                             -- All sockets are in `SOCK_NONBLOCK` mode on
+                             -- Linux.  This error is handled by `network`
+                             -- package via `throwErrnoIfMinus1RetryMayBlock`.
         -- EMFILE            -- socket, accept
         -- ENFILE            -- socket, accept
         -- ENOBUFS           -- socket, accept
-        -- ENOMEM            -- socket, accept
+                             -- send: "Normally, this does not occur in Linux"
+        -- ENOMEM            -- socket, accept, send, recv
 isFatal InvalidArgument      = True
-        -- EINVAL            -- socket, accept
-        -- ENOTSOCK          -- connect
-        -- EBADF             -- connect, accept
+        -- EINVAL            -- socket, accept, send, recv
+        -- ENOTSOCK          -- connect, send, recv
+        -- EBADF             -- connect, accept, send, recv
 isFatal ProtocolError        = True
         -- EPROTONOSUPPOPRT  -- socket
         -- EPROTO            -- accept
