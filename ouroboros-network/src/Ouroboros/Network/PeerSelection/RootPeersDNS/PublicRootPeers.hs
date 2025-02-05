@@ -17,6 +17,7 @@ import Data.Word (Word32)
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad (when)
 import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Tracer (Tracer (..), traceWith)
@@ -100,11 +101,14 @@ publicRootPeersProvider tracer
           Right resolver -> do
             let lookups =
                   [ ((DomainAccessPoint domain port, pa),)
-                      <$> withDNSSemaphore dnsSemaphore
+                      <$> (do
+                        labelThisThread "dnsLookupWithTTL"
+                        withDNSSemaphore dnsSemaphore
                             (dnsLookupWithTTL
                               resolvConf
                               resolver
                               domain)
+                          )
                   | (RelayAccessDomain domain port, pa) <- Map.assocs domains ]
             -- The timeouts here are handled by the 'lookupWithTTL'. They're
             -- configured via the DNS.ResolvConf resolvTimeout field and defaults

@@ -38,7 +38,6 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, contramap, traceWith)
 
 import Data.ByteString.Lazy (ByteString)
-import Data.List as List (foldl')
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Void (Void, absurd)
@@ -166,18 +165,24 @@ with Arguments {
           InboundGovernor.idleTimeout        = inboundIdleTimeout,
           InboundGovernor.connectionManager  = connectionManager
         } $ \inboundGovernorThread readPublicInboundState ->
-        withAsync (k inboundGovernorThread readPublicInboundState) $ \actionThread -> do
+        withAsync (do
+                      labelThisThread "Server2 (ouroboros-network-framework)"
+                      k inboundGovernorThread readPublicInboundState) $ \actionThread -> do
           let acceptLoops :: [m Void]
               acceptLoops =
-                          [ (accept snocket socket >>= acceptLoop localAddress)
+                          [ (do
+                                labelThisThread ("accept " ++ show localAddress)
+                                accept snocket socket >>= acceptLoop localAddress)
                               `finally` close snocket socket
                           | (localAddress, socket) <- localAddresses `zip` sockets
                           ]
           -- race all `acceptLoops` with `actionThread` and
           -- `inboundGovernorThread`
-          List.foldl' (\as io -> fn <$> as `race` io)
-                 (fn <$> actionThread `waitEither` inboundGovernorThread)
-                 acceptLoops
+          let waiter = fn <$> (do
+                                  labelThisThread "racing-action-inbound-governor"
+                                  actionThread `waitEither` inboundGovernorThread)
+
+          (fn <$> waiter `race` (labelThisThread "racing-accept-loops" >> raceAll acceptLoops))
             `finally`
               traceWith tracer TrServerStopped
             `catch`
@@ -190,6 +195,13 @@ with Arguments {
     fn :: Either x Void -> x
     fn (Left x)  = x
     fn (Right v) = absurd v
+
+    raceAll asyncs = withAsyncAll asyncs (fmap snd . waitAny)
+
+    withAsyncAll xs0 action = go [] xs0
+      where
+        go as []     = action (reverse as)
+        go as (x:xs) = withAsync x (\a -> go (a:as) xs)
 
     acceptLoop :: peerAddr
                -> Accept m socket peerAddr
@@ -295,4 +307,3 @@ data Trace peerAddr
     -- ^ similar to 'TrAcceptConnection' but it is logged once the connection is
     -- handed to inbound connection manager, e.g. after handshake negotiation.
   deriving Show
-

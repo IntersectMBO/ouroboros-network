@@ -42,6 +42,7 @@ import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (SomeAsyncException (..))
 import Control.Monad (foldM)
 import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
@@ -154,8 +155,11 @@ with
     }
     k
     = do
+    labelThisThread "inbound-governor"
     var <- newTVarIO (mkPublicState emptyState)
-    withAsync (inboundGovernorLoop var emptyState
+    withAsync ((do
+               labelThisThread "inbound-governor-loop"
+               inboundGovernorLoop var emptyState)
                 `catch`
                handleError var) $
       \thread ->
