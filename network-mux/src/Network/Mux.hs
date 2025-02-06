@@ -211,10 +211,11 @@ run :: forall m mode.
        , MonadMask m
        )
     => Tracer m Trace
+    -> Int
     -> Mux mode m
     -> Bearer m
     -> m ()
-run tracer Mux {muxMiniProtocols, muxControlCmdQueue, muxStatus} bearer@Bearer {name} = do
+run tracer peerHash Mux {muxMiniProtocols, muxControlCmdQueue, muxStatus} bearer@Bearer{name} = do
     egressQueue <- atomically $ newTBQueue 100
 
     -- label shared variables
@@ -231,7 +232,8 @@ run tracer Mux {muxMiniProtocols, muxControlCmdQueue, muxStatus} bearer@Bearer {
         -- Wait for someone to shut us down by calling muxStop or an error.
         -- Outstanding jobs are shut down Upon completion of withJobPool.
         withTimeoutSerial $ \timeout ->
-          monitor tracer
+          monitor peerHash
+                  tracer
                   timeout
                   jobpool
                   egressQueue
@@ -375,14 +377,15 @@ monitor :: forall mode m.
            , Alternative (STM m)
            , MonadThrow (STM m)
            )
-        => Tracer m Trace
+        => Int
+        -> Tracer m Trace
         -> TimeoutFn m
         -> JobPool.JobPool Group m JobResult
         -> EgressQueue m
         -> StrictTQueue m (ControlCmd mode m)
         -> StrictTVar m Status
         -> m ()
-monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
+monitor peerHash tracer timeout jobpool egressQueue cmdQueue muxStatus =
     go (MonitorCtx Map.empty)
   where
     go :: MonitorCtx m mode -> m ()
@@ -451,7 +454,7 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
                            ptclAction) -> do
           traceWith tracer (TraceStartEagerly miniProtocolNum
                              (protocolDirEnum miniProtocolDir))
-          JobPool.forkJob jobpool $
+          JobPool.forkJobOn peerHash jobpool $
             miniProtocolJob
               tracer
               egressQueue

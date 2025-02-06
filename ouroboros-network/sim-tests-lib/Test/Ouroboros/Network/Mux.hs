@@ -183,7 +183,7 @@ demo chain0 updates delay = do
               InitiatorProtocolOnly initiator ->
                 [(Mx.InitiatorDirectionOnly, void . runMiniProtocolCb initiator initCtx)]
         ]
-      withAsync (Mx.run nullTracer clientMux clientBearer) $ \aid -> do
+      withAsync (Mx.run nullTracer 1 clientMux clientBearer) $ \aid -> do
         _ <- atomically $ runFirstToFinish $ foldMap FirstToFinish resOps
         Mx.stop clientMux
         wait aid
@@ -208,7 +208,7 @@ demo chain0 updates delay = do
               ResponderProtocolOnly responder ->
                 [(Mx.ResponderDirectionOnly, void . runMiniProtocolCb responder respCtx)]
         ]
-      withAsync (Mx.run nullTracer serverMux serverBearer) $ \aid -> do
+      withAsync (Mx.run nullTracer 1 serverMux serverBearer) $ \aid -> do
         _ <- atomically $ runFirstToFinish $ foldMap FirstToFinish resOps
         Mx.stop serverMux
         wait aid

@@ -438,7 +438,7 @@ connectToNodeWithMux'
          traceWith muxTracer $ Mx.TraceHandshakeClientEnd (diffTime ts_end ts_start)
          bearer <- Mx.getBearer makeBearer sduTimeout muxTracer sd
          mux <- Mx.new (toMiniProtocolInfos app)
-         withAsync (Mx.run muxTracer mux bearer) $ \aid ->
+         withAsync (Mx.run muxTracer undefined mux bearer) $ \aid ->
            k connectionId versionNumber agreedOptions app mux aid
 
        Right (HandshakeQueryResult _vMap) -> do
@@ -612,7 +612,7 @@ beginConnection makeBearer muxTracer handshakeTracer handshakeCodec handshakeTim
                  traceWith muxTracer' Mx.TraceHandshakeServerEnd
                  bearer <- Mx.getBearer makeBearer sduTimeout muxTracer' sd
                  mux <- Mx.new (toMiniProtocolInfos app)
-                 withAsync (Mx.run muxTracer' mux bearer) $ \aid ->
+                 withAsync (Mx.run muxTracer' undefined mux bearer) $ \aid ->
                    void $ simpleMuxCallback connectionId versionNumber agreedOptions app mux aid
 
              Right (HandshakeQueryResult _vMap) -> do
