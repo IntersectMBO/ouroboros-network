@@ -5,6 +5,15 @@
 ### Breaking changes
 
 * Added `NodeToClientV_20`.
+- Moved `Ouroboros.Network.ConsensusMode` to `Cardano.Network.ConsensusMode`
+- Moved `Ouroboros.Network.PeerSelection.Bootstrap` to `Cardano.Network.PeerSelection.Bootstrap`
+- Moved `Ouroboros.Network.PeerSelection.LocalRootPeers` to `Cardano.Network.PeerSelection.LocalRootPeers`
+- Moved `Ouroboros.Network.PeerSelection.PeerTrustable` to `Cardano.Network.PeerSelection.PeerTrustable`
+- Created `Cardano.Network.Types` and moved Cardano specific types such as
+  `LedgerStateJudgement` and `NumberOfBigLedgerPeers` from
+  `Ouroboros.Network.PeerSelection.LedgerPeers/Type` to there.
+- Removed `lpGetLedgerStateJudgment` from `LedgerConsensusInterface` and added
+  `extraAPI` type parameter to it.
 
 ### Non-breaking changes
 
