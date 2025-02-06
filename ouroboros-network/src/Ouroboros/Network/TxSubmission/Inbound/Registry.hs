@@ -293,7 +293,7 @@ updateRejects now 0 pts | rejectedTxs pts == 0
 updateRejects now n pts@PeerTxState { rejectedTxs, rejectedTxsTs } =
     let duration = diffTime now rejectedTxsTs
         rate = 0.1                 -- 0.1 rejected tx/s
-        maxTokens = 15 * 60 / rate -- 15 minutes worth of rejections
+        maxTokens = 15 * 60 * rate -- 15 minutes worth of rejections
         !drain = realToFrac duration * rate
         !drained = max 0 $ rejectedTxs - drain in
     pts { rejectedTxs = max 0 $ min maxTokens $ drained + n
