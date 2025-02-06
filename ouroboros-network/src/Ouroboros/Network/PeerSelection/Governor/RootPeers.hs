@@ -31,7 +31,6 @@ belowTarget
      )
   => PeerSelectionActions
       extraState
-      extraActions
       extraFlags
       extraPeers
       extraAPI
@@ -94,7 +93,7 @@ belowTarget actions@PeerSelectionActions {
 
 
 jobReqPublicRootPeers
-  :: forall m extraActions extraState extraDebugState extraFlags extraPeers
+  :: forall m extraState extraDebugState extraFlags extraPeers
            extraAPI extraCounters peeraddr peerconn.
      ( MonadSTM m
      , Ord peeraddr
@@ -102,7 +101,6 @@ jobReqPublicRootPeers
      )
   => PeerSelectionActions
       extraState
-      extraActions
       extraFlags
       extraPeers
       extraAPI

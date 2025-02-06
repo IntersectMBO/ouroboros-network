@@ -319,7 +319,7 @@ sanePeerSelectionTargets PeerSelectionTargets{..} =
 -- * choice of known peer root sets
 -- * running both in simulation and for real
 --
-data PeerSelectionActions extraState extraActions extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m =
+data PeerSelectionActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m =
   PeerSelectionActions {
        -- | These are the targets as seen in the static configuration
        --
@@ -406,12 +406,7 @@ data PeerSelectionActions extraState extraActions extraFlags extraPeers extraAPI
 
        -- | Read the current state of ledger peer snapshot
        --
-       readLedgerPeerSnapshot :: STM m (Maybe LedgerPeerSnapshot),
-
-       -- | Extension point so that third party users can add more actions
-       --
-       extraActions :: extraActions
-
+       readLedgerPeerSnapshot :: STM m (Maybe LedgerPeerSnapshot)
      }
 
 -- | Interfaces required by the peer selection governor, which do not need to
@@ -475,12 +470,11 @@ data PeerStateActions peeraddr peerconn m = PeerStateActions {
 -----------------------
 -- Extra Guarded Decisions
 --
-type MonitoringAction extraState extraDebugState extraActions extraFlags
+type MonitoringAction extraState extraDebugState extraFlags
                       extraPeers extraAPI extraCounters peeraddr peerconn m =
      PeerSelectionPolicy peeraddr m
   -> PeerSelectionActions
       extraState
-      extraActions
       extraFlags
       extraPeers
       extraAPI
@@ -498,7 +492,7 @@ type MonitoringAction extraState extraDebugState extraActions extraFlags
             (TimedDecision m extraState extraDebugState extraFlags extraPeers
                            peeraddr peerconn)
 
-data ExtraGuardedDecisions extraState extraDebugState extraActions extraFlags
+data ExtraGuardedDecisions extraState extraDebugState extraFlags
                            extraPeers extraAPI extraCounters peeraddr peerconn m =
   ExtraGuardedDecisions {
 
@@ -508,7 +502,7 @@ data ExtraGuardedDecisions extraState extraDebugState extraActions extraFlags
     --
     -- Note that this action should be blocking.
     preBlocking
-      :: MonitoringAction extraState extraDebugState extraActions extraFlags
+      :: MonitoringAction extraState extraDebugState extraFlags
                           extraPeers extraAPI extraCounters peeraddr peerconn m
 
     -- | This guarded decision will come after all possibly preBlocking
@@ -517,7 +511,7 @@ data ExtraGuardedDecisions extraState extraDebugState extraActions extraFlags
     --
     -- Note that these actions can be either blocking or non-blocking.
   , postBlocking
-      :: MonitoringAction extraState extraDebugState extraActions extraFlags
+      :: MonitoringAction extraState extraDebugState extraFlags
                           extraPeers extraAPI extraCounters peeraddr peerconn m
 
     -- | This guarded decision will come before all default non-blocking
@@ -526,7 +520,7 @@ data ExtraGuardedDecisions extraState extraDebugState extraActions extraFlags
     --
     -- Note that these actions should not be blocking.
   , postNonBlocking
-      :: MonitoringAction extraState extraDebugState extraActions extraFlags
+      :: MonitoringAction extraState extraDebugState extraFlags
                           extraPeers extraAPI extraCounters peeraddr peerconn m
 
     -- | This action is necessary to the well functioning of the Outbound
@@ -540,7 +534,7 @@ data ExtraGuardedDecisions extraState extraDebugState extraActions extraFlags
     -- If no custom action is required (i.e. Nothing) a default will be provided by
     -- 'Ouroboros.Network.PeerSelection.Governor.Monitor.targetPeers'
   , customTargetsAction
-      :: Maybe (MonitoringAction extraState extraDebugState extraActions
+      :: Maybe (MonitoringAction extraState extraDebugState
                                  extraFlags extraPeers extraAPI extraCounters
                                  peeraddr peerconn m)
 
@@ -555,7 +549,7 @@ data ExtraGuardedDecisions extraState extraDebugState extraActions extraFlags
     -- If no custom action is required (i.e. Nothing) a default provided by
     -- 'Ouroboros.Network.PeerSelection.Governor.Monitor.localRoots'
   , customLocalRootsAction
-      :: Maybe (MonitoringAction extraState extraDebugState extraActions
+      :: Maybe (MonitoringAction extraState extraDebugState
                                  extraFlags extraPeers extraAPI extraCounters
                                  peeraddr peerconn m)
 
@@ -586,7 +580,7 @@ data ExtraGuardedDecisions extraState extraDebugState extraActions extraFlags
 -- Peer Selection Arguments
 --
 
-data PeerSelectionGovernorArgs extraState extraDebugState extraActions extraFlags
+data PeerSelectionGovernorArgs extraState extraDebugState extraFlags
                                extraPeers extraAPI extraCounters peeraddr peerconn
                                exception m =
   PeerSelectionGovernorArgs {
@@ -599,7 +593,7 @@ data PeerSelectionGovernorArgs extraState extraDebugState extraActions extraFlag
       -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
       -> STM m ()
   , extraDecisions
-      :: ExtraGuardedDecisions extraState extraDebugState extraActions extraFlags
+      :: ExtraGuardedDecisions extraState extraDebugState extraFlags
                                extraPeers extraAPI extraCounters peeraddr peerconn m
   }
 

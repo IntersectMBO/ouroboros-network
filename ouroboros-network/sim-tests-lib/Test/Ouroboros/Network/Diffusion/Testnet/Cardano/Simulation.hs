@@ -1266,10 +1266,10 @@ diffusionSimulation
           interfaces
           arguments
           (ExtraState.empty consensusMode (NumberOfBigLedgerPeers 0))
-          (Cardano.cardanoExtraArgsToPeerSelectionActions cardanoExtraArgs)
           ExtraSizes.empty
           Cardano.cardanoPublicRootPeersAPI
           (Cardano.cardanoPeerSelectionGovernorArgs
+            (Cardano.cardanoExtraArgsToPeerSelectionActions cardanoExtraArgs)
             readUseLedgerPeers
             peerSharing
             ( Cardano.updateOutboundConnectionsState

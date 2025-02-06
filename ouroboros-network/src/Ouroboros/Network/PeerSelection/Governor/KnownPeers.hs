@@ -60,7 +60,7 @@ belowTarget
   -- This might be useful if the user requires its diffusion layer to stop
   -- making progress during a sensitive/vulnerable situation and quarantine
   -- it and make sure it is only connected to trusted peers.
-  -> PeerSelectionActions extraState extraActions extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m
+  -> PeerSelectionActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m
   -> Time -- ^ blocked at
   -> Map peeraddr PeerSharing
   -> MkGuardedDecision extraState extraDebugState extraFlags extraPeers peeraddr peerconn m
@@ -242,12 +242,11 @@ belowTarget enableAction
 -- If we ask for more peers than needed a random subset of the peers in the filtered result
 -- is used.
 jobPeerShare
-  :: forall m extraActions extraState extraDebugState extraFlags extraPeers
+  :: forall m extraState extraDebugState extraFlags extraPeers
            extraAPI extraCounters peeraddr peerconn.
     (MonadAsync m, MonadTimer m, Ord peeraddr, Hashable peeraddr)
   => PeerSelectionActions
       extraState
-      extraActions
       extraFlags
       extraPeers
       extraAPI
@@ -463,7 +462,6 @@ aboveTarget
      )
   => PeerSelectionActions
       extraState
-      extraActions
       extraFlags
       extraPeers
       extraAPI

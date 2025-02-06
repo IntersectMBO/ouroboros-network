@@ -39,7 +39,6 @@ belowTarget
   -- quarantine it and make sure it is only connected to trusted peers.
   -> PeerSelectionActions
       extraState
-      extraActions
       extraFlags
       extraPeers
       extraAPI
@@ -104,7 +103,7 @@ belowTarget enableAction
 
 
 jobReqBigLedgerPeers
-  :: forall m extraActions extraState extraDebugState extraFlags extraAPI extraPeers
+  :: forall m extraState extraDebugState extraFlags extraAPI extraPeers
            extraCounters peeraddr peerconn.
      ( MonadSTM m
      , Ord peeraddr
@@ -112,7 +111,6 @@ jobReqBigLedgerPeers
      )
   => PeerSelectionActions
       extraState
-      extraActions
       extraFlags
       extraPeers
       extraAPI
@@ -228,7 +226,7 @@ jobReqBigLedgerPeers PeerSelectionActions {
 
 
 aboveTarget
-  :: forall m extraState extraDebugState extraActions extraFlags extraAPI extraPeers
+  :: forall m extraState extraDebugState extraFlags extraAPI extraPeers
             extraCounters peeraddr peerconn.
      ( Alternative (STM m)
      , MonadSTM m
@@ -237,7 +235,6 @@ aboveTarget
      )
   => PeerSelectionActions
       extraState
-      extraActions
       extraFlags
       extraPeers
       extraAPI

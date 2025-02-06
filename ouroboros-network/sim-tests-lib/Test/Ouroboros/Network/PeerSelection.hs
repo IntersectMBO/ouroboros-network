@@ -4011,6 +4011,10 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
 
         peerSelectionGovernorArgs =
           Cardano.cardanoPeerSelectionGovernorArgs
+            Cardano.ExtraPeerSelectionActions {
+              genesisPeerTargets    = targets,
+              readUseBootstrapPeers = readUseBootstrapPeers
+            }
             (return DontUseLedgerPeers)
             peerSharing
             (Cardano.updateOutboundConnectionsState (lpExtraAPI (getLedgerStateCtx actions)))
@@ -4045,7 +4049,6 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
     actions
       :: PeerSelectionActions
           Cardano.ExtraState
-          (Cardano.ExtraPeerSelectionActions IO)
           PeerTrustable
           (Cardano.ExtraPeers SockAddr)
           (Cardano.LedgerPeersConsensusInterface IO)
@@ -4083,10 +4086,6 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
                   },
                 peerSelectionTargets = targets,
                 readLedgerPeerSnapshot = pure Nothing,
-                extraActions = Cardano.ExtraPeerSelectionActions {
-                  genesisPeerTargets = targets,
-                  readUseBootstrapPeers = readUseBootstrapPeers
-                },
                 extraStateToExtraCounters = ExtraSizes.cardanoPeerSelectionStatetoCounters,
                 extraPeersAPI = ExtraPeers.cardanoPublicRootPeersAPI
               }

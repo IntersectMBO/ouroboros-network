@@ -68,19 +68,19 @@ data ExtraTracers (p2p :: P2P) extraState extraDebugState extraFlags extraPeers 
 -- | Diffusion arguments which depend on p2p mode.
 --
 data ArgumentsExtra
-       (p2p :: P2P) extraArgs extraState extraDebugState extraActions extraAPI
+       (p2p :: P2P) extraArgs extraState extraDebugState extraAPI
        extraPeers extraFlags extraChurnArgs extraCounters exception ntnAddr resolver resolverError m where
   P2PArguments
-    :: Common.ArgumentsExtra extraState extraDebugState extraActions extraAPI
+    :: Common.ArgumentsExtra extraState extraDebugState extraAPI
                             extraPeers extraFlags extraChurnArgs
                             extraCounters exception ntnAddr resolver resolverError m
-    -> ArgumentsExtra 'P2P extraArgs extraState extraDebugState extraActions extraAPI
+    -> ArgumentsExtra 'P2P extraArgs extraState extraDebugState extraAPI
                            extraPeers extraFlags extraChurnArgs
                            extraCounters exception ntnAddr resolver resolverError m
 
   NonP2PArguments
     :: NonP2P.ArgumentsExtra
-    -> ArgumentsExtra 'NonP2P extraArgs extraState extraDebugState extraActions extraAPI
+    -> ArgumentsExtra 'NonP2P extraArgs extraState extraDebugState extraAPI
                               extraPeers extraFlags extraChurnArgs
                               extraCounters exception ntnAddr resolver resolverError m
 
@@ -115,7 +115,7 @@ data ApplicationsExtra (p2p :: P2P) ntnAddr m a where
 
 -- | Run data diffusion in either 'P2P' or 'NonP2P' mode.
 --
-run :: forall (p2p :: P2P) extraArgs extraState extraDebugState extraActions extraFlags
+run :: forall (p2p :: P2P) extraArgs extraState extraDebugState extraFlags
              extraPeers extraAPI extraChurnArgs extraCounters exception a.
       ( Monoid extraPeers
       , Eq extraCounters
@@ -143,7 +143,7 @@ run :: forall (p2p :: P2P) extraArgs extraState extraDebugState extraActions ext
          IO
          Socket      RemoteAddress
          LocalSocket LocalAddress
-    -> ArgumentsExtra p2p extraArgs extraState extraDebugState extraActions extraFlags
+    -> ArgumentsExtra p2p extraArgs extraState extraDebugState extraFlags
        extraPeers extraAPI extraChurnArgs extraCounters exception
        RemoteAddress Resolver IOException IO
     -> Applications p2p RemoteAddress LocalAddress NodeToNodeVersionData NodeToClientVersionData extraAPI IO a

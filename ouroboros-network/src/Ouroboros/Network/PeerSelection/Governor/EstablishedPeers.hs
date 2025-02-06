@@ -58,7 +58,7 @@ import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersAPI (..))
 -- action never picks local root peers.
 --
 belowTarget
-  :: forall extraState extraDebugState extraActions extraFlags extraPeers extraAPI
+  :: forall extraState extraDebugState extraFlags extraPeers extraAPI
             extraCounters peeraddr peerconn m.
      ( Alternative (STM m)
      , MonadSTM m
@@ -73,7 +73,6 @@ belowTarget
   -- quarantine it and make sure it is only connected to trusted peers.
   -> PeerSelectionActions
       extraState
-      extraActions
       extraFlags
       extraPeers
       extraAPI
@@ -99,7 +98,7 @@ belowTarget enableAction =
 -- configuration.
 --
 belowTargetLocal
-  :: forall extraActions extraState extraDebugState extraFlags extraPeers extraAPI
+  :: forall extraState extraDebugState extraFlags extraPeers extraAPI
            extraCounters peeraddr peerconn m.
      ( MonadSTM m
      , Ord peeraddr
@@ -107,7 +106,6 @@ belowTargetLocal
      )
   => PeerSelectionActions
       extraState
-      extraActions
       extraFlags
       extraPeers extraAPI extraCounters peeraddr peerconn m
   -> MkGuardedDecision
@@ -218,7 +216,7 @@ belowTargetLocal actions@PeerSelectionActions {
 
 
 belowTargetOther
-  :: forall extraActions extraState extraDebugState extraFlags extraPeers
+  :: forall extraState extraDebugState extraFlags extraPeers
             extraAPI extraCounters peeraddr peerconn m.
      ( MonadSTM m
      , Ord peeraddr
@@ -226,7 +224,6 @@ belowTargetOther
      )
   => PeerSelectionActions
       extraState
-      extraActions
       extraFlags
       extraPeers
       extraAPI
@@ -327,7 +324,7 @@ belowTargetOther actions@PeerSelectionActions {
 -- state) then this monitoring action will be disabled.
 --
 belowTargetBigLedgerPeers
-  :: forall extraState extraDebugState extraActions extraFlags extraPeers
+  :: forall extraState extraDebugState extraFlags extraPeers
             extraAPI extraCounters peeraddr peerconn m.
      ( MonadSTM m
      , Ord peeraddr
@@ -343,7 +340,6 @@ belowTargetBigLedgerPeers
   -- make sure it is only connected to trusted peers.
   -> PeerSelectionActions
       extraState
-      extraActions
       extraFlags
       extraPeers
       extraAPI
@@ -453,14 +449,13 @@ maxColdPeerRetryBackoff = 5
 
 
 jobPromoteColdPeer
-  :: forall extraActions extraState extraDebugState extraFlags extraPeers extraAPI
+  :: forall extraState extraDebugState extraFlags extraPeers extraAPI
            extraCounters peeraddr peerconn m.
      ( Monad m
      , Ord peeraddr
      )
   => PeerSelectionActions
       extraState
-      extraActions
       extraFlags
       extraPeers
       extraAPI
@@ -618,7 +613,7 @@ jobPromoteColdPeer PeerSelectionActions {
 -- /warm peers/ to the cold state, according to 'policyPickWarmPeersToDemote'.
 --
 aboveTarget
-  :: forall extraActions extraState extraDebugState extraFlags extraPeers extraAPI
+  :: forall extraState extraDebugState extraFlags extraPeers extraAPI
             extraCounters peeraddr peerconn m.
      ( Alternative (STM m)
      , MonadSTM m
@@ -626,7 +621,6 @@ aboveTarget
      )
   => PeerSelectionActions
       extraState
-      extraActions
       extraFlags
       extraPeers
       extraAPI
@@ -645,7 +639,7 @@ aboveTarget
 aboveTarget =  aboveTargetBigLedgerPeers <> aboveTargetOther
 
 aboveTargetOther
-  :: forall extraActions extraState extraDebugState extraFlags extraPeers extraAPI
+  :: forall extraState extraDebugState extraFlags extraPeers extraAPI
             extraCounters peeraddr peerconn m.
      ( MonadSTM m
      , Ord peeraddr
@@ -653,7 +647,6 @@ aboveTargetOther
      )
   => PeerSelectionActions
       extraState
-      extraActions
       extraFlags
       extraPeers
       extraAPI
@@ -759,7 +752,7 @@ aboveTargetOther actions@PeerSelectionActions {
 
 
 aboveTargetBigLedgerPeers
-  :: forall extraActions extraState extraDebugState extraFlags extraPeers extraAPI
+  :: forall extraState extraDebugState extraFlags extraPeers extraAPI
             extraCounters peeraddr peerconn m.
      ( MonadSTM m
      , Ord peeraddr
@@ -767,7 +760,6 @@ aboveTargetBigLedgerPeers
      )
   => PeerSelectionActions
       extraState
-      extraActions
       extraFlags
       extraPeers
       extraAPI
@@ -865,14 +857,13 @@ aboveTargetBigLedgerPeers actions@PeerSelectionActions {
 
 
 jobDemoteEstablishedPeer
-  :: forall extraActions extraState extraDebugState extraFlags extraPeers extraAPI
+  :: forall extraState extraDebugState extraFlags extraPeers extraAPI
             extraCounters peeraddr peerconn m.
      ( Monad m
      , Ord peeraddr
      )
   => PeerSelectionActions
       extraState
-      extraActions
       extraFlags
       extraPeers
       extraAPI

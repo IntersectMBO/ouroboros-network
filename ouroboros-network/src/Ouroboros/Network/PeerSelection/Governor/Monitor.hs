@@ -54,7 +54,7 @@ import Ouroboros.Network.PeerSelection.Types
 -- picked by the governor's 'peerSelectionGovernorLoop'.
 --
 targetPeers :: (MonadSTM m, Ord peeraddr)
-            => PeerSelectionActions extraState extraActions extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m
+            => PeerSelectionActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m
             -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
             -> Guarded (STM m) (TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
 targetPeers PeerSelectionActions{ readPeerSelectionTargets,
@@ -112,9 +112,9 @@ jobs jobPool st =
 
 -- | Monitor connections.
 --
-connections :: forall m extraActions extraState extraDebugState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn.
+connections :: forall m extraState extraDebugState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn.
                (MonadSTM m, Ord peeraddr)
-            => PeerSelectionActions extraState extraActions extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m
+            => PeerSelectionActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m
             -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
             -> Guarded (STM m) (TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
 connections PeerSelectionActions{
@@ -307,9 +307,9 @@ connections PeerSelectionActions{
 
 -- | Monitor local roots using 'readLocalRootPeers' 'STM' action.
 --
-localRoots :: forall extraState extraDebugState extraActions extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
+localRoots :: forall extraState extraDebugState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
               (MonadSTM m, Ord peeraddr, Eq extraFlags)
-           => PeerSelectionActions extraState extraActions extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m
+           => PeerSelectionActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m
            -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
            -> Guarded (STM m) (TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
 localRoots actions@PeerSelectionActions{ readLocalRootPeers
@@ -401,7 +401,7 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
                                                  <> selectedToDemote
                             },
             decisionJobs  = [ jobDemoteActivePeer actions peeraddr peerconn
-                          | (peeraddr, peerconn) <- Map.assocs selectedToDemote' ]
+                            | (peeraddr, peerconn) <- Map.assocs selectedToDemote' ]
           }
 
 -- |This job, which is initiated by monitorLedgerStateJudgement job,
@@ -439,7 +439,7 @@ jobVerifyPeerSnapshot baseline@(LedgerPeerSnapshot (slot, _))
 --
 ledgerPeerSnapshotChange :: (MonadSTM m)
                          => (extraState -> extraState)
-                         -> PeerSelectionActions extraState extraActions extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m
+                         -> PeerSelectionActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m
                          -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
                          -> Guarded (STM m) (TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
 ledgerPeerSnapshotChange extraStateChange

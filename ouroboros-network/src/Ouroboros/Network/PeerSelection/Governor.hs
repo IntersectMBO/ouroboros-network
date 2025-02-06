@@ -467,13 +467,13 @@ peerSelectionGovernor :: ( Alternative (STM m)
                       -> Tracer m (DebugPeerSelection extraState extraFlags extraPeers peeraddr)
                       -> Tracer m (PeerSelectionCounters extraCounters)
                       -> PeerSelectionGovernorArgs
-                          extraState extraDebugState extraActions extraFlags extraPeers extraAPI extraCounters
+                          extraState extraDebugState extraFlags extraPeers extraAPI extraCounters
                           peeraddr peerconn exception m
                       -> StdGen
                       -> extraState
                       -> extraPeers
                       -> PeerSelectionActions
-                          extraState extraActions extraFlags extraPeers extraAPI extraCounters
+                          extraState extraFlags extraPeers extraAPI extraCounters
                           peeraddr peerconn m
                       -> PeerSelectionPolicy  peeraddr m
                       -> PeerSelectionInterfaces
@@ -509,7 +509,7 @@ peerSelectionGovernor tracer debugTracer countersTracer peerSelectionArgs fuzzRn
 -- In each case we trace the action, update the state and execute the
 -- action asynchronously.
 --
-peerSelectionGovernorLoop :: forall m extraState extraDebugState extraActions extraFlags extraPeers extraAPI extraCounters exception peeraddr peerconn.
+peerSelectionGovernorLoop :: forall m extraState extraDebugState extraFlags extraPeers extraAPI extraCounters exception peeraddr peerconn.
                              ( Alternative (STM m)
                              , MonadAsync m
                              , MonadDelay m
@@ -527,10 +527,10 @@ peerSelectionGovernorLoop :: forall m extraState extraDebugState extraActions ex
                           -> Tracer m (DebugPeerSelection extraState extraFlags extraPeers peeraddr)
                           -> Tracer m (PeerSelectionCounters extraCounters)
                           -> PeerSelectionGovernorArgs
-                              extraState extraDebugState extraActions extraFlags extraPeers extraAPI extraCounters
+                              extraState extraDebugState extraFlags extraPeers extraAPI extraCounters
                               peeraddr peerconn exception m
                           -> PeerSelectionActions
-                              extraState extraActions extraFlags extraPeers extraAPI extraCounters
+                              extraState extraFlags extraPeers extraAPI extraCounters
                               peeraddr peerconn m
                           -> PeerSelectionPolicy peeraddr m
                           -> PeerSelectionInterfaces

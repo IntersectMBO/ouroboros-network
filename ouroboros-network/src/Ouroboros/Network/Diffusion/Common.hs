@@ -361,7 +361,7 @@ nullTracersExtra =
 
 -- | P2P Arguments Extras
 --
-data ArgumentsExtra extraState extraDebugState extraActions extraFlags extraPeers
+data ArgumentsExtra extraState extraDebugState extraFlags extraPeers
                     extraAPI extraChurnArgs extraCounters exception
                     peeraddr resolver resolverError m = ArgumentsExtra {
       -- | selection targets for the peer governor
@@ -432,7 +432,7 @@ data ArgumentsExtra extraState extraDebugState extraActions extraFlags extraPeer
 
     , daPeerSelectionGovernorArgs
         :: forall muxMode responderCtx ntnVersionData bytes a b .
-           PeerSelectionGovernorArgs extraState extraDebugState extraActions extraFlags extraPeers
+           PeerSelectionGovernorArgs extraState extraDebugState extraFlags extraPeers
                                      extraAPI extraCounters
                                      peeraddr (PeerConnectionHandle
                                                  muxMode responderCtx peeraddr
@@ -484,10 +484,6 @@ data ArgumentsExtra extraState extraDebugState extraActions extraFlags extraPeer
              extraCounters
              peeraddr
         -> m Void
-
-      -- | Provide extraActions to be passed to peer selection actions
-      --
-    , daExtraActions :: extraActions
 
       -- | Provide extraChurnArgs to be passed to churn governor
       --
@@ -602,10 +598,10 @@ type NodeToNodePeerConnectionHandle (mode :: Mx.Mode) ntnAddr ntnVersionData m a
       ByteString
       m a b
 
-type NodeToNodePeerSelectionActions extraState extraActions extraFlags extraPeers extraAPI extraCounters
+type NodeToNodePeerSelectionActions extraState extraFlags extraPeers extraAPI extraCounters
                                     (mode :: Mx.Mode) ntnAddr ntnVersionData m a b =
     PeerSelectionActions
-      extraState extraActions extraFlags extraPeers extraAPI extraCounters
+      extraState extraFlags extraPeers extraAPI extraCounters
       ntnAddr
       (NodeToNodePeerConnectionHandle mode ntnAddr ntnVersionData m a b)
       m
