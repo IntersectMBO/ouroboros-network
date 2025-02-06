@@ -409,7 +409,7 @@ connectToNodeWithMux'
     muxTracer <- initDeltaQTracer' $ Mx.WithBearer connectionId `contramap` nctMuxTracer
     ts_start <- getMonotonicTime
 
-    handshakeBearer <- Mx.getBearer makeBearer sduHandshakeTimeout muxTracer sd
+    handshakeBearer <- Mx.getBearer makeBearer sduHandshakeTimeout muxTracer sd Nothing
     app_e <-
       runHandshakeClient
         handshakeBearer
@@ -436,10 +436,12 @@ connectToNodeWithMux'
 
        Right (HandshakeNegotiationResult app versionNumber agreedOptions) -> do
          traceWith muxTracer $ Mx.TraceHandshakeClientEnd (diffTime ts_end ts_start)
-         bearer <- Mx.getBearer makeBearer sduTimeout muxTracer sd
-         mux <- Mx.new (toMiniProtocolInfos app)
-         withAsync (Mx.run muxTracer mux bearer) $ \aid ->
-           k connectionId versionNumber agreedOptions app mux aid
+         Mx.withReadBufferIO (\buffer -> do
+             bearer <- Mx.getBearer makeBearer sduTimeout muxTracer sd buffer
+             mux <- Mx.new (toMiniProtocolInfos app)
+             withAsync (Mx.run muxTracer mux bearer) $ \aid ->
+               k connectionId versionNumber agreedOptions app mux aid
+           )
 
        Right (HandshakeQueryResult _vMap) -> do
          traceWith muxTracer $ Mx.TraceHandshakeClientEnd (diffTime ts_end ts_start)
@@ -584,7 +586,7 @@ beginConnection makeBearer muxTracer handshakeTracer handshakeCodec handshakeTim
 
         traceWith muxTracer' $ Mx.TraceHandshakeStart
 
-        handshakeBearer <- Mx.getBearer makeBearer sduHandshakeTimeout muxTracer' sd
+        handshakeBearer <- Mx.getBearer makeBearer sduHandshakeTimeout muxTracer' sd Nothing
         app_e <-
           runHandshakeServer
             handshakeBearer
@@ -610,10 +612,12 @@ beginConnection makeBearer muxTracer handshakeTracer handshakeCodec handshakeTim
 
              Right (HandshakeNegotiationResult (SomeResponderApplication app) versionNumber agreedOptions) -> do
                  traceWith muxTracer' Mx.TraceHandshakeServerEnd
-                 bearer <- Mx.getBearer makeBearer sduTimeout muxTracer' sd
-                 mux <- Mx.new (toMiniProtocolInfos app)
-                 withAsync (Mx.run muxTracer' mux bearer) $ \aid ->
-                   void $ simpleMuxCallback connectionId versionNumber agreedOptions app mux aid
+                 Mx.withReadBufferIO (\buffer -> do
+                     bearer <- Mx.getBearer makeBearer sduTimeout muxTracer' sd buffer
+                     mux <- Mx.new (toMiniProtocolInfos app)
+                     withAsync (Mx.run muxTracer' mux bearer) $ \aid ->
+                       void $ simpleMuxCallback connectionId versionNumber agreedOptions app mux aid
+                   )
 
              Right (HandshakeQueryResult _vMap) -> do
                  traceWith muxTracer' Mx.TraceHandshakeServerEnd

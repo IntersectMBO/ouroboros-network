@@ -229,7 +229,7 @@ clientServerSimulation payloads =
           (accepted, accept1) <- runAccept accept0
           case accepted of
             Accepted fd' remoteAddr -> do
-              bearer <- getBearer makeFDBearer 10 nullTracer fd'
+              bearer <- getBearer makeFDBearer 10 nullTracer fd' Nothing
               thread <- async $ handleConnection bearer remoteAddr
                                 `finally`
                                close snocket fd'
@@ -308,7 +308,7 @@ clientServerSimulation payloads =
                               (\channel -> runPeer tr codecReqResp
                                                    channel
                                                    clientPeer)
-                  bearer <- Mx.getBearer makeFDBearer 10 nullTracer fd
+                  bearer <- Mx.getBearer makeFDBearer 10 nullTracer fd Nothing
 
                   -- kill mux as soon as the client returns
                   withAsync
@@ -577,7 +577,7 @@ prop_self_connect payload =
                   $ \fd -> do
                     bind snocket fd addr
                     connect snocket fd addr
-                    bearer <- getBearer makeFDBearer 10 nullTracer fd
+                    bearer <- getBearer makeFDBearer 10 nullTracer fd Nothing
                     let channel = bearerAsChannel bearer (MiniProtocolNum 0) InitiatorDir
                     send channel payload
                     payload' <- recv channel

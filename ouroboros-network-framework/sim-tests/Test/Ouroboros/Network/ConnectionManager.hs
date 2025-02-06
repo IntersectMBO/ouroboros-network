@@ -345,7 +345,7 @@ newtype FD m = FD { fdState :: StrictTVar m FDState }
 
 makeFDBearer :: MonadDelay m
              => MakeBearer m (FD m)
-makeFDBearer = MakeBearer $ \_ _ _ ->
+makeFDBearer = MakeBearer $ \_ _ _ _ ->
       return Mx.Bearer {
           Mx.write     = \_ _ -> getMonotonicTime,
           Mx.writeMany = \_ _ -> getMonotonicTime,
@@ -612,7 +612,7 @@ mkConnectionHandler snocket =
         handler
   where
     handler :: ConnectionHandlerFn handlerTrace (FD m) Addr (Handle m) Void Version VersionData m
-    handler _ fd promise _ ConnectionId { remoteAddress } _ =
+    handler _ fd promise _ ConnectionId { remoteAddress } _ _  =
       MaskedAction $ \unmask ->
         do threadId <- myThreadId
            let addr = getTestAddress remoteAddress
@@ -769,6 +769,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
               CM.addressType = \_ -> Just IPv4Address,
               CM.snocket = snocket,
               CM.makeBearer = makeFDBearer,
+              CM.withBuffer = \f -> f Nothing,
               CM.configureSocket = \_ _ -> return (),
               CM.connectionDataFlow = id,
               CM.prunePolicy = simplePrunePolicy,
