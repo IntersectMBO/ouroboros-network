@@ -194,8 +194,8 @@ demo chain0 updates = do
                                      , ChainSync.chainSyncServerPeer server
                                      )
 
-        clientBearer <- Mx.getBearer Mx.makePipeChannelBearer (-1) activeTracer chan1
-        serverBearer <- Mx.getBearer Mx.makePipeChannelBearer (-1) activeTracer chan2
+        clientBearer <- Mx.getBearer Mx.makePipeChannelBearer (-1) activeTracer chan1 Nothing
+        serverBearer <- Mx.getBearer Mx.makePipeChannelBearer (-1) activeTracer chan2 Nothing
 
         _ <- async $ do
               clientMux <- Mx.new (toMiniProtocolInfos (\_ _ -> Nothing) consumerApp)
