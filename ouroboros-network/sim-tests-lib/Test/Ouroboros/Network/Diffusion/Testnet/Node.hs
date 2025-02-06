@@ -140,7 +140,7 @@ data Interfaces extraAPI m = Interfaces
 type NtNFD m = FD m NtNAddr
 type NtCFD m = FD m NtCAddr
 
-data Arguments extraArgs extraChurnArgs extraFlags m = Arguments
+data Arguments extraChurnArgs extraFlags m = Arguments
     { aIPAddress            :: NtNAddr
     , aAcceptedLimits       :: AcceptedConnectionsLimit
     , aDiffusionMode        :: DiffusionMode
@@ -161,7 +161,6 @@ data Arguments extraArgs extraChurnArgs extraFlags m = Arguments
     , aDNSTimeoutScript     :: Script DNSTimeout
     , aDNSLookupDelayScript :: Script DNSLookupDelay
     , aDebugTracer          :: Tracer m String
-    , aExtraArgs            :: extraArgs
     , aExtraChurnArgs       :: extraChurnArgs
     }
 
@@ -170,7 +169,7 @@ data Arguments extraArgs extraChurnArgs extraFlags m = Arguments
 --
 type ResolverException = SomeException
 
-run :: forall extraArgs extraState extraDebugState extraActions extraAPI
+run :: forall extraState extraDebugState extraActions extraAPI
              extraPeers extraFlags extraChurnArgs extraCounters
              exception resolver resolverError m.
        ( Alternative (STM m)
@@ -201,7 +200,7 @@ run :: forall extraArgs extraState extraDebugState extraActions extraAPI
     => Node.BlockGeneratorArgs Block StdGen
     -> Node.LimitsAndTimeouts BlockHeader Block
     -> Interfaces extraAPI m
-    -> Arguments extraArgs extraChurnArgs extraFlags m
+    -> Arguments extraChurnArgs extraFlags m
     -> extraState
     -> extraActions
     -> extraCounters
@@ -457,7 +456,7 @@ run blockGeneratorArgs limits ni na
       }
 
     argsExtra :: Common.ArgumentsExtra
-                   extraArgs extraState extraDebugState extraActions
+                   extraState extraDebugState extraActions
                    extraFlags extraPeers extraAPI
                    extraChurnArgs extraCounters exception
                    NtNAddr resolver resolverError m
@@ -477,7 +476,6 @@ run blockGeneratorArgs limits ni na
       , Common.daExtraPeersAPI          = extraPeersAPI
       , Common.daExtraActions           = extraActions
       , Common.daExtraChurnArgs         = aExtraChurnArgs na
-      , Common.daExtraArgs              = aExtraArgs na
       , Common.daToExtraPeers           = toExtraPeers
       , Common.daRequestPublicRootPeers = Just requestPublicRootPeers
       , Common.daPeerChurnGovernor      = peerChurnGovernor

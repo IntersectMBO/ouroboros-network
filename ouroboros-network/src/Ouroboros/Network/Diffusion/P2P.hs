@@ -102,7 +102,7 @@ runM
     :: forall m ntnFd ntnAddr ntnVersion ntnVersionData
                 ntcFd ntcAddr ntcVersion ntcVersionData
                 resolver resolverError exception a
-                extraArgs extraState extraDebugState extraActions extraPeers
+                extraState extraDebugState extraActions extraPeers
                 extraAPI extraFlags extraChurnArgs extraCounters .
 
        ( Alternative (STM m)
@@ -155,7 +155,7 @@ runM
        Arguments m ntnFd ntnAddr
                    ntcFd ntcAddr
     -> -- | p2p configuration
-       ArgumentsExtra extraArgs extraState extraDebugState extraActions extraFlags
+       ArgumentsExtra extraState extraDebugState extraActions extraFlags
                       extraPeers extraAPI extraChurnArgs extraCounters
                       exception ntnAddr resolver resolverError m
 
@@ -846,7 +846,6 @@ run :: ( Monoid extraPeers
         LocalSocket
         LocalAddress
     -> ArgumentsExtra
-        extraArgs
         extraState
         extraDebugState
         extraActions
