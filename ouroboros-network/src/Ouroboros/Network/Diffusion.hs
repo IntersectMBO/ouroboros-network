@@ -68,20 +68,20 @@ data ExtraTracers (p2p :: P2P) extraState extraDebugState extraFlags extraPeers 
 --
 data ArgumentsExtra
        (p2p :: P2P) extraArgs extraState extraDebugState extraAPI
-       extraFlags extraPeers extraChurnArgs extraCounters exception ntnAddr resolver resolverError m where
+       extraFlags extraPeers extraChurnArgs extraCounters exception ntnAddr ntcAddr resolver resolverError m where
   P2PArguments
     :: P2P.ArgumentsExtra extraState extraDebugState extraAPI
                           extraFlags extraPeers extraChurnArgs
-                          extraCounters exception ntnAddr resolver resolverError m
+                          extraCounters exception ntnAddr ntcAddr resolver resolverError m
     -> ArgumentsExtra 'P2P extraArgs extraState extraDebugState extraAPI
                            extraFlags extraPeers extraChurnArgs
-                           extraCounters exception ntnAddr resolver resolverError m
+                           extraCounters exception ntnAddr ntcAddr resolver resolverError m
 
   NonP2PArguments
     :: NonP2P.ArgumentsExtra
     -> ArgumentsExtra 'NonP2P extraArgs extraState extraDebugState extraAPI
                               extraFlags extraPeers extraChurnArgs
-                              extraCounters exception ntnAddr resolver resolverError m
+                              extraCounters exception ntnAddr ntcAddr resolver resolverError m
 
 
 -- | Application data which depend on p2p mode.
@@ -129,7 +129,7 @@ run :: forall (p2p :: P2P) extraArgs extraState extraDebugState extraFlags
     -> ArgumentsExtra p2p extraArgs extraState extraDebugState
        extraFlags extraPeers
        extraAPI extraChurnArgs extraCounters exception
-       RemoteAddress Resolver IOException IO
+       RemoteAddress LocalAddress Resolver IOException IO
     -> Applications RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
                     LocalAddress  NodeToClientVersion NodeToClientVersionData
                     extraAPI IO a

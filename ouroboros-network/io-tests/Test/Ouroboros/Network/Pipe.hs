@@ -198,7 +198,7 @@ demo chain0 updates = do
         serverBearer <- Mx.getBearer Mx.makePipeChannelBearer (-1) activeTracer chan2
 
         _ <- async $ do
-              clientMux <- Mx.new (toMiniProtocolInfos consumerApp)
+              clientMux <- Mx.new (toMiniProtocolInfos (\_ _ -> Nothing) consumerApp)
               let initCtx = MinimalInitiatorContext (ConnectionId "consumer" "producer")
               resOps <- sequence
                 [ Mx.runMiniProtocol
@@ -223,7 +223,7 @@ demo chain0 updates = do
                 wait aid
 
         _ <- async $ do
-              serverMux <- Mx.new (toMiniProtocolInfos producerApp)
+              serverMux <- Mx.new (toMiniProtocolInfos (\_ _ -> Nothing) producerApp)
               let respCtx = ResponderContext (ConnectionId "consumer" "producer")
               resOps <- sequence
                 [ Mx.runMiniProtocol

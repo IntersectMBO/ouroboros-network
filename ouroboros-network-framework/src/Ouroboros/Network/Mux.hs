@@ -37,6 +37,9 @@ module Ouroboros.Network.Mux
   , MiniProtocolWithMinimalCtx
   , MiniProtocolNum (..)
   , MiniProtocolLimits (..)
+  , ForkPolicy (..)
+  , noBindForkPolicy
+  , responderForkPolicy
     -- * MiniProtocol bundle
   , OuroborosBundle
   , OuroborosBundleWithExpandedCtx
@@ -60,6 +63,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Tracer (Tracer)
 
 import Data.Foldable (fold)
+import Data.Hashable
 import Data.Kind (Type)
 import Data.Void (Void)
 
@@ -72,6 +76,7 @@ import Network.TypedProtocol.Stateful.Peer qualified as Stateful
 import Network.Mux qualified as Mux
 import Network.Mux.Types (MiniProtocolInfo, MiniProtocolLimits,
            MiniProtocolNum (..))
+import Network.Mux.Types qualified as Mux
 
 import Ouroboros.Network.Channel
 import Ouroboros.Network.Context (ExpandedInitiatorContext,
@@ -245,8 +250,10 @@ data MiniProtocol (mode :: Mux.Mode) initiatorCtx responderCtx bytes m a b =
        -- ^ mini-protocol callback(s)
      }
 
-mkMiniProtocolInfo :: MiniProtocol mode initiatorCtx responderCtx bytes m a b -> [MiniProtocolInfo mode]
-mkMiniProtocolInfo MiniProtocol {
+mkMiniProtocolInfo :: ForkPolicyCb
+                   -> MiniProtocol mode initiatorCtx responderCtx bytes m a b
+                   -> [MiniProtocolInfo mode]
+mkMiniProtocolInfo forkPolicy MiniProtocol {
      miniProtocolNum,
      miniProtocolLimits,
      miniProtocolRun
@@ -256,7 +263,9 @@ mkMiniProtocolInfo MiniProtocol {
       Mux.miniProtocolNum,
       Mux.miniProtocolDir = dir,
       Mux.miniProtocolLimits,
-      Mux.miniProtocolCapability = Nothing
+      Mux.miniProtocolCapability =
+        forkPolicy miniProtocolNum
+                  (Mux.protocolDirEnum dir)
     }
   | dir <- case miniProtocolRun of
              InitiatorProtocolOnly{}         -> [ Mux.InitiatorDirectionOnly ]
@@ -431,10 +440,48 @@ fromOuroborosBundle :: OuroborosBundle      mode initiatorCtx responderCtx bytes
 fromOuroborosBundle = OuroborosApplication . fold
 
 
-toMiniProtocolInfos :: OuroborosApplication mode initiatorCtx responderCtx bytes m a b
+-- | `ForkPolicy` guards to which capability each mini-protocol is bound.
+--
+type ForkPolicyCb =  Mux.MiniProtocolNum
+                  -> Mux.MiniProtocolDir
+                  -> Maybe Int
+
+-- | Extension of a `ForkPolicyCb` used by `ouroboros-network-framework` outside
+-- of this module.
+--
+newtype ForkPolicy peerAddr = ForkPolicy {
+    runForkPolicy :: peerAddr -> ForkPolicyCb
+  }
+
+
+-- | A `ForkPolicy` which does not bind mini-protocol threads to a given capability.
+--
+noBindForkPolicy :: ForkPolicy peerAddr
+noBindForkPolicy = ForkPolicy (\_ _ _ -> Nothing)
+
+
+-- | A `ForkPolicy` which binds responders mini-protocols to lower capabilities.
+--
+responderForkPolicy :: Hashable peerAddr
+                    => Int -- ^ salt
+                    -> Int -- ^ number of capabilities
+                    -> ForkPolicy peerAddr
+responderForkPolicy salt numCapabilities = ForkPolicy {
+    runForkPolicy = \peerAddr _ miniProtocolDir ->
+      case miniProtocolDir of
+        Mux.InitiatorDir -> Nothing
+        Mux.ResponderDir -> Just $ hashWithSalt salt peerAddr
+                             `mod` max 1 (numCapabilities - 2)
+
+
+  }
+
+
+toMiniProtocolInfos :: ForkPolicyCb
+                    -> OuroborosApplication mode initiatorCtx responderCtx bytes m a b
                     -> [MiniProtocolInfo mode]
-toMiniProtocolInfos =
-    foldMap mkMiniProtocolInfo . getOuroborosApplication
+toMiniProtocolInfos forkPolicy =
+    foldMap (mkMiniProtocolInfo forkPolicy) . getOuroborosApplication
 
 
 contramapInitiatorCtx :: (initiatorCtx' -> initiatorCtx)
@@ -457,6 +504,8 @@ contramapInitiatorCtx f (OuroborosApplication ptcls) = OuroborosApplication
 -- | Make 'MiniProtocolBundle', which is used to create a mux interface with
 -- 'newMux'.
 --
-mkMiniProtocolInfos :: OuroborosBundle mode initiatorCtx responderCtx bytes m a b
+mkMiniProtocolInfos :: ForkPolicyCb
+                    -> OuroborosBundle mode initiatorCtx responderCtx bytes m a b
                     -> [MiniProtocolInfo mode]
-mkMiniProtocolInfos = foldMap (foldMap mkMiniProtocolInfo)
+mkMiniProtocolInfos forkPolicy = foldMap (foldMap (mkMiniProtocolInfo forkPolicy))
+

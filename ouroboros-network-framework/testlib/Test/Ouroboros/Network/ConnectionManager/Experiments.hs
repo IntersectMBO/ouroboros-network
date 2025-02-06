@@ -305,6 +305,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
       (makeConnectionHandler
         muxTracer
         SingInitiatorMode
+        noBindForkPolicy
         HandshakeArguments {
             -- TraceSendRecv
             haHandshakeTracer = (name,) `contramap` nullTracer,
@@ -501,6 +502,7 @@ withBidirectionalConnectionManager name timeouts
         (makeConnectionHandler
           muxTracer
           SingInitiatorResponderMode
+          noBindForkPolicy
           HandshakeArguments {
               -- TraceSendRecv
               haHandshakeTracer = WithName name `contramap` nullTracer,

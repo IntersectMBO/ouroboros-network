@@ -258,6 +258,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
         (makeConnectionHandler
           muxTracer
           SingInitiatorResponderMode
+          noBindForkPolicy
           HandshakeArguments {
               -- TraceSendRecv
               haHandshakeTracer = ("handshake",) `contramap` debugTracer,

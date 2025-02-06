@@ -356,7 +356,7 @@ prop_socket_recv_error f rerr =
                     _ <- async $ do
                       threadDelay 0.1
                       atomically $ putTMVar lock ()
-                    mux <- Mx.new (toMiniProtocolInfos app)
+                    mux <- Mx.new (toMiniProtocolInfos (\_ _ -> Nothing) app)
                     let respCtx = ResponderContext connectionId
                     resOps <- sequence
                       [ Mx.runMiniProtocol

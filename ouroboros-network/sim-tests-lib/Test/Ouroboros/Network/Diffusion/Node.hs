@@ -66,6 +66,7 @@ import System.Random (StdGen, split)
 
 import Network.DNS (Domain, TTL)
 
+import Ouroboros.Network.Mux (noBindForkPolicy)
 import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
 import Ouroboros.Network.Protocol.Handshake.Codec (VersionDataCodec (..),
            noTimeLimitsHandshake, timeLimitsHandshake)
@@ -464,7 +465,7 @@ run blockGeneratorArgs limits ni na
                    extraState extraDebugState
                    extraFlags extraPeers extraAPI
                    extraChurnArgs extraCounters exception
-                   NtNAddr resolver resolverError m
+                   NtNAddr NtCAddr resolver resolverError m
     argsExtra = P2P.ArgumentsExtra
       { P2P.daPeerSelectionTargets   = aPeerTargets na
       , P2P.daReadLocalRootPeers     = aReadLocalRootPeers na
@@ -485,6 +486,8 @@ run blockGeneratorArgs limits ni na
       , P2P.daPeerChurnGovernor      = peerChurnGovernor
       , P2P.daPeerSelectionGovernorArgs         = psArgs
       , P2P.daPeerSelectionStateToExtraCounters = psToExtraCounters
+      , P2P.daMuxForkPolicy          = noBindForkPolicy
+      , P2P.daLocalMuxForkPolicy     = noBindForkPolicy
       }
 
     appArgs :: Node.AppArgs extraAPI BlockHeader Block m
