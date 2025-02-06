@@ -156,12 +156,14 @@ demo chain0 updates delay = do
                       Mx.QueueChannel { Mx.writeQueue = client_w,
                                         Mx.readQueue = client_r
                                       }
+                       Nothing
     serverBearer <- Mx.getBearer Mx.makeQueueChannelBearer
                        (-1)
                        activeTracer
                        Mx.QueueChannel { Mx.writeQueue = server_w,
                                          Mx.readQueue = server_r
                                        }
+                       Nothing
 
     clientAsync <- async $ do
       clientMux <- Mx.new (toMiniProtocolInfos consumerApp)

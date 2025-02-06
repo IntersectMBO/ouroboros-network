@@ -101,7 +101,7 @@ server =
     associateWithIOManager ioManager (Left hpipe)
     Win32.Async.connectNamedPipe hpipe
     void $ forkIO $ do
-      bearer <- getBearer Mx.makeNamedPipeBearer (-1) nullTracer hpipe
+      bearer <- getBearer Mx.makeNamedPipeBearer (-1) nullTracer hpipe Nothing
       serverWorker bearer
         `finally` closeHandle hpipe
 #else
@@ -113,7 +113,7 @@ server = do
     forever $ do
       (sock', _addr) <- Socket.accept sock
       void $ forkIO $ do
-        bearer <- getBearer Mx.makeSocketBearer 1.0 nullTracer sock'
+        bearer <- getBearer Mx.makeSocketBearer 1.0 nullTracer sock' Nothing
         serverWorker bearer
           `finally` Socket.close sock'
 #endif
@@ -167,13 +167,13 @@ client n msg =
                         fILE_FLAG_OVERLAPPED
                         Nothing
     associateWithIOManager ioManager (Left hpipe)
-    bearer <- getBearer Mx.makeNamedPipeBearer (-1) nullTracer hpipe
+    bearer <- getBearer Mx.makeNamedPipeBearer (-1) nullTracer hpipe Nothing
     clientWorker bearer n msg
 #else
 client n msg = do
     sock <- Socket.socket AF_UNIX Socket.Stream Socket.defaultProtocol
     Socket.connect sock (SockAddrUnix pipeName)
-    bearer <- getBearer Mx.makeSocketBearer 1.0 nullTracer sock
+    bearer <- getBearer Mx.makeSocketBearer 1.0 nullTracer sock Nothing
     clientWorker bearer n msg
 #endif
 

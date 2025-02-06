@@ -66,6 +66,8 @@ import Network.Socket (Socket)
 import Network.Socket qualified as Socket
 
 import Network.Mux qualified as Mx
+import Network.Mux.Types (ReadBuffer)
+import Network.Mux.Bearer (withReadBufferIO)
 
 import Ouroboros.Network.Snocket (FileDescriptor, LocalAddress,
            LocalSocket (..), Snocket, localSocketFileDescriptor,
@@ -465,6 +467,10 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         diNtnBearer
           :: Mx.MakeBearer m ntnFd,
 
+        -- | readbuffer
+        diWithBuffer
+          :: ((Maybe (ReadBuffer m) -> m ()) -> m ()),
+
         -- | node-to-node socket configuration
         --
         -- It is used by both inbound and outbound connection.  The address is
@@ -619,6 +625,7 @@ runM
 runM Interfaces
        { diNtnSnocket
        , diNtnBearer
+       , diWithBuffer
        , diNtnConfigureSocket
        , diNtnConfigureSystemdSocket
        , diNtnHandshakeArguments
@@ -804,6 +811,7 @@ runM Interfaces
                   CM.addressType         = const Nothing,
                   CM.snocket             = diNtcSnocket,
                   CM.makeBearer          = diNtcBearer,
+                  CM.withBuffer          = diWithBuffer,
                   CM.configureSocket     = \_ _ -> return (),
                   CM.timeWaitTimeout     = local_TIME_WAIT_TIMEOUT,
                   CM.outboundIdleTimeout = local_PROTOCOL_IDLE_TIMEOUT,
@@ -935,6 +943,7 @@ runM Interfaces
                 CM.addressType         = diNtnAddressType,
                 CM.snocket             = diNtnSnocket,
                 CM.makeBearer          = diNtnBearer,
+                CM.withBuffer          = diWithBuffer,
                 CM.configureSocket     = diNtnConfigureSocket,
                 CM.connectionDataFlow    = diNtnDataFlow,
                 CM.prunePolicy         = prunePolicy,
@@ -1304,6 +1313,7 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                Interfaces {
                  diNtnSnocket = Snocket.socketSnocket iocp,
                  diNtnBearer = makeSocketBearer,
+                 diWithBuffer = withReadBufferIO,
                  diNtnConfigureSocket = configureSocket,
                  diNtnConfigureSystemdSocket =
                    configureSystemdSocket
