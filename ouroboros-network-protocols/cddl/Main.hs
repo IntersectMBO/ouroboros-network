@@ -150,18 +150,18 @@ tests CDDLSpecs { cddlChainSync
                 , cddlTxSubmission2
                 , cddlKeepAlive
                 , cddlLocalStateQuery
-                , cddlHandshakeNodeToNodeV13ToLast
+                , cddlHandshakeNodeToNodeV14ToLast
                 , cddlHandshakeNodeToClient
-                , cddlPeerSharingNodeToNodeV13ToLast
-                , cddlNodeToNodeVersionDataV13ToLast
+                , cddlPeerSharingNodeToNodeV14ToLast
+                , cddlNodeToNodeVersionDataV14ToLast
                 } =
   adjustOption (const $ QuickCheckMaxSize 10) $
   testGroup "cddl"
     [ testGroup "encoding"
       -- validate encoding against a specification
-      [ testProperty "NodeToNode.Handshake V13 to Last"
-                                         (prop_encodeHandshakeNodeToNodeV13ToLast
-                                               cddlHandshakeNodeToNodeV13ToLast)
+      [ testProperty "NodeToNode.Handshake V14 to Last"
+                                         (prop_encodeHandshakeNodeToNodeV14ToLast
+                                               cddlHandshakeNodeToNodeV14ToLast)
       , -- If this fails whilst adding a new node-to-client version, ensure that
         -- all the necessary changes are included:
         --
@@ -186,17 +186,17 @@ tests CDDLSpecs { cddlChainSync
       , testProperty "LocalStateQuery"   (prop_encodeLocalStateQuery
                                                cddlLocalStateQuery)
 
-      , testProperty "PeerSharing V13 to Last" (prop_encodePeerSharingV13ToLast
-                                               cddlPeerSharingNodeToNodeV13ToLast)
+      , testProperty "PeerSharing V14 to Last" (prop_encodePeerSharingV14ToLast
+                                                  cddlPeerSharingNodeToNodeV14ToLast)
 
-      , testProperty "NodeToNodeVersionData V13 to Last" (prop_encodeNodeToNodeVersionDataV13ToLast
-                                                            cddlNodeToNodeVersionDataV13ToLast)
+      , testProperty "NodeToNodeVersionData V14 to Last" (prop_encodeNodeToNodeVersionDataV14ToLast
+                                                            cddlNodeToNodeVersionDataV14ToLast)
       ]
     , testGroup "decoder"
       -- validate decoder by generating messages from the specification
-      [ testCase "NodeToNode.Handshake V13 to Last"
+      [ testCase "NodeToNode.Handshake V14 to Last"
                                      (unit_decodeHandshakeNodeToNode
-                                           cddlHandshakeNodeToNodeV13ToLast)
+                                           cddlHandshakeNodeToNodeV14ToLast)
       , testCase "NodeToClient.Handshake"
                                      (unit_decodeHandshakeNodeToClient
                                            cddlHandshakeNodeToClient)
@@ -215,11 +215,11 @@ tests CDDLSpecs { cddlChainSync
       , testCase "LocalStateQuery"   (unit_decodeLocalStateQuery
                                            cddlLocalStateQuery)
 
-      , testCase "PeerSharing V13 to Last" (unit_decodePeerSharingV13ToLast
-                                                cddlPeerSharingNodeToNodeV13ToLast)
+      , testCase "PeerSharing V14 to Last" (unit_decodePeerSharingV14ToLast
+                                                cddlPeerSharingNodeToNodeV14ToLast)
 
-      , testCase "NodeToNodeVersionData V13 to Last" (unit_decodeNodeToNodeVersionDataV13ToLast
-                                                        cddlNodeToNodeVersionDataV13ToLast)
+      , testCase "NodeToNodeVersionData V14 to Last" (unit_decodeNodeToNodeVersionDataV14ToLast
+                                                        cddlNodeToNodeVersionDataV14ToLast)
       ]
     ]
 
@@ -229,7 +229,7 @@ newtype CDDLSpec ps = CDDLSpec BL.ByteString
 
 data CDDLSpecs = CDDLSpecs {
     cddlHandshakeNodeToClient        :: CDDLSpec (Handshake NodeToClientVersion CBOR.Term),
-    cddlHandshakeNodeToNodeV13ToLast :: CDDLSpec (Handshake NodeToNodeVersion   CBOR.Term),
+    cddlHandshakeNodeToNodeV14ToLast :: CDDLSpec (Handshake NodeToNodeVersion   CBOR.Term),
     cddlChainSync                    :: CDDLSpec (ChainSync BlockHeader HeaderPoint HeaderTip),
     cddlBlockFetch                   :: CDDLSpec (BlockFetch Block BlockPoint),
     cddlTxSubmission2                :: CDDLSpec (TxSubmission2 TxId Tx),
@@ -240,9 +240,9 @@ data CDDLSpecs = CDDLSpecs {
     cddlLocalTxMonitor               :: CDDLSpec (LocalTxMonitor TxId Tx SlotNo),
     cddlLocalStateQuery              :: CDDLSpec (LocalStateQuery Block BlockPoint Query),
 
-    cddlPeerSharingNodeToNodeV13ToLast :: CDDLSpec (PeerSharing.PeerSharing SockAddr),
+    cddlPeerSharingNodeToNodeV14ToLast :: CDDLSpec (PeerSharing.PeerSharing SockAddr),
 
-    cddlNodeToNodeVersionDataV13ToLast :: CDDLSpec NodeToNodeVersionData
+    cddlNodeToNodeVersionDataV14ToLast :: CDDLSpec NodeToNodeVersionData
   }
 
 
@@ -253,7 +253,7 @@ readCDDLSpecs = do
        <$> doesDirectoryExist "ouroboros-network-protocols"
     common                <- BL.readFile (dir </> "common.cddl")
     handshakeNodeToClient <- BL.readFile (dir </> "handshake-node-to-client.cddl")
-    handshakeNodeToNodeV13ToLast <- BL.readFile (dir </> "handshake-node-to-node-v13.cddl")
+    handshakeNodeToNodeV14ToLast <- BL.readFile (dir </> "handshake-node-to-node-v14.cddl")
     chainSync             <- BL.readFile (dir </> "chain-sync.cddl")
     blockFetch            <- BL.readFile (dir </> "block-fetch.cddl")
     txSubmission2         <- BL.readFile (dir </> "tx-submission2.cddl")
@@ -262,14 +262,14 @@ readCDDLSpecs = do
     localTxMonitor        <- BL.readFile (dir </> "local-tx-monitor.cddl")
     localStateQuery       <- BL.readFile (dir </> "local-state-query.cddl")
 
-    peerSharingNodeToNodeV13ToLast <- BL.readFile (dir </> "peer-sharing-v13.cddl")
+    peerSharingNodeToNodeV14ToLast <- BL.readFile (dir </> "peer-sharing-v14.cddl")
 
-    nodeToNodeVersionDataV13ToLast <- BL.readFile (dir </> "node-to-node-version-data-v13.cddl")
+    nodeToNodeVersionDataV14ToLast <- BL.readFile (dir </> "node-to-node-version-data-v14.cddl")
     -- append common definitions; they must be appended since the first
     -- definition is the entry point for a cddl spec.
     return CDDLSpecs {
         cddlHandshakeNodeToClient        = CDDLSpec   handshakeNodeToClient,
-        cddlHandshakeNodeToNodeV13ToLast = CDDLSpec   handshakeNodeToNodeV13ToLast,
+        cddlHandshakeNodeToNodeV14ToLast = CDDLSpec   handshakeNodeToNodeV14ToLast,
         cddlChainSync                    = CDDLSpec $ chainSync
                                                    <> common,
         cddlBlockFetch                   = CDDLSpec $ blockFetch
@@ -284,10 +284,10 @@ readCDDLSpecs = do
         cddlLocalStateQuery              = CDDLSpec $ localStateQuery
                                                    <> common,
 
-        cddlPeerSharingNodeToNodeV13ToLast = CDDLSpec $ peerSharingNodeToNodeV13ToLast
+        cddlPeerSharingNodeToNodeV14ToLast = CDDLSpec $ peerSharingNodeToNodeV14ToLast
                                                      <> common,
 
-        cddlNodeToNodeVersionDataV13ToLast = CDDLSpec nodeToNodeVersionDataV13ToLast
+        cddlNodeToNodeVersionDataV14ToLast = CDDLSpec nodeToNodeVersionDataV14ToLast
       }
 
 --
@@ -409,8 +409,8 @@ validateCBOR (CDDLSpec spec) blob =
 -- with Peer Sharing required yet another parameter ((see
 -- specs/handshake-node-to-node-v13.cddl)
 --
-newtype NtNHandshakeV13ToLast =
-  NtNHandshakeV13ToLast
+newtype NtNHandshakeV14ToLast =
+  NtNHandshakeV14ToLast
     (AnyMessage (Handshake NodeToNodeVersion CBOR.Term))
     deriving Show
 
@@ -458,16 +458,16 @@ genNtNHandshake genVersion = oneof
           <*> (Text.pack <$> arbitrary)
       ]
 
-instance Arbitrary NtNHandshakeV13ToLast where
+instance Arbitrary NtNHandshakeV14ToLast where
   arbitrary = do
-    let genVersion = elements [NodeToNodeV_13 ..]
-    NtNHandshakeV13ToLast <$> genNtNHandshake genVersion
+    let genVersion = elements [NodeToNodeV_14 ..]
+    NtNHandshakeV14ToLast <$> genNtNHandshake genVersion
 
-prop_encodeHandshakeNodeToNodeV13ToLast
+prop_encodeHandshakeNodeToNodeV14ToLast
     :: CDDLSpec            (Handshake NodeToNodeVersion CBOR.Term)
-    -> NtNHandshakeV13ToLast
+    -> NtNHandshakeV14ToLast
     -> Property
-prop_encodeHandshakeNodeToNodeV13ToLast spec (NtNHandshakeV13ToLast x) =
+prop_encodeHandshakeNodeToNodeV14ToLast spec (NtNHandshakeV14ToLast x) =
   validateEncoder spec nodeToNodeHandshakeCodec x
 
 -- TODO: add our regular tests for `Handshake NodeToClientVerision CBOR.Term`
@@ -586,19 +586,19 @@ instance Arbitrary SockAddr where
                                     <*> arbitrary
                     ]
 
-prop_encodePeerSharingV13ToLast
+prop_encodePeerSharingV14ToLast
     :: CDDLSpec (PeerSharing.PeerSharing SockAddr)
-    -> NtNVersionV13ToLast
+    -> NtNVersionV14ToLast
     -> AnyMessage (PeerSharing.PeerSharing SockAddr)
     -> Property
-prop_encodePeerSharingV13ToLast spec (NtNVersionV13ToLast ntnVersion) =
+prop_encodePeerSharingV14ToLast spec (NtNVersionV14ToLast ntnVersion) =
   validateEncoder spec (peerSharingCodec ntnVersion)
 
-newtype NtNVersionV13ToLast = NtNVersionV13ToLast NodeToNodeVersion
+newtype NtNVersionV14ToLast = NtNVersionV14ToLast NodeToNodeVersion
   deriving Show
 
-instance Arbitrary NtNVersionV13ToLast where
-  arbitrary = NtNVersionV13ToLast <$> elements [NodeToNodeV_13 ..]
+instance Arbitrary NtNVersionV14ToLast where
+  arbitrary = NtNVersionV14ToLast <$> elements [NodeToNodeV_14 ..]
 
 instance Arbitrary NodeToNodeVersionData where
     arbitrary =
@@ -612,20 +612,20 @@ instance Arbitrary NodeToNodeVersionData where
                      ]
         <*> arbitrary
 
-newtype NtNVersionDataV13ToLast = NtNVersionDataV13ToLast (NodeToNodeVersion, NodeToNodeVersionData)
+newtype NtNVersionDataV14ToLast = NtNVersionDataV14ToLast (NodeToNodeVersion, NodeToNodeVersionData)
   deriving Show
 
-instance Arbitrary NtNVersionDataV13ToLast where
+instance Arbitrary NtNVersionDataV14ToLast where
   arbitrary = do
-    NtNVersionV13ToLast ntnVersion <- arbitrary
+    NtNVersionV14ToLast ntnVersion <- arbitrary
     ntnVersionData <- arbitrary
-    return (NtNVersionDataV13ToLast (ntnVersion, ntnVersionData))
+    return (NtNVersionDataV14ToLast (ntnVersion, ntnVersionData))
 
-prop_encodeNodeToNodeVersionDataV13ToLast
+prop_encodeNodeToNodeVersionDataV14ToLast
     :: CDDLSpec NodeToNodeVersionData
-    -> NtNVersionDataV13ToLast
+    -> NtNVersionDataV14ToLast
     -> Property
-prop_encodeNodeToNodeVersionDataV13ToLast spec (NtNVersionDataV13ToLast (v, a)) =
+prop_encodeNodeToNodeVersionDataV14ToLast spec (NtNVersionDataV14ToLast (v, a)) =
   validateCBORTermEncoder spec (nodeToNodeCodecCBORTerm v) a
 
 --
@@ -939,11 +939,11 @@ unit_decodeLocalStateQuery spec =
       ]
       100
 
-unit_decodePeerSharingV13ToLast
+unit_decodePeerSharingV14ToLast
     :: CDDLSpec (PeerSharing.PeerSharing SockAddr)
     -> Assertion
-unit_decodePeerSharingV13ToLast spec =
-    forM_ [NodeToNodeV_13 ..] $ \v ->
+unit_decodePeerSharingV14ToLast spec =
+    forM_ [NodeToNodeV_14 ..] $ \v ->
     validateDecoder Nothing
       spec (peerSharingCodec v)
       [ SomeAgency PeerSharing.SingIdle
@@ -951,11 +951,11 @@ unit_decodePeerSharingV13ToLast spec =
       ]
       100
 
-unit_decodeNodeToNodeVersionDataV13ToLast
+unit_decodeNodeToNodeVersionDataV14ToLast
     :: CDDLSpec NodeToNodeVersionData
     -> Assertion
-unit_decodeNodeToNodeVersionDataV13ToLast spec =
-    forM_ [NodeToNodeV_13 ..] $ \v ->
+unit_decodeNodeToNodeVersionDataV14ToLast spec =
+    forM_ [NodeToNodeV_14 ..] $ \v ->
     validateCBORTermDecoder Nothing spec (nodeToNodeCodecCBORTerm v) 100
 
 --

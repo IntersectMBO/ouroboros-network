@@ -1,0 +1,35 @@
+;
+; NodeToNode Handshake (>=v14)
+;
+handshakeMessage
+    = msgProposeVersions
+    / msgAcceptVersion
+    / msgRefuse
+    / msgQueryReply
+
+msgProposeVersions = [0, versionTable]
+msgAcceptVersion   = [1, versionNumber, nodeToNodeVersionData]
+msgRefuse          = [2, refuseReason]
+msgQueryReply      = [3, versionTable]
+
+versionTable = { * versionNumber => nodeToNodeVersionData }
+
+versionNumber = 14
+
+nodeToNodeVersionData = [ networkMagic, initiatorOnlyDiffusionMode, peerSharing, query ]
+
+; range between 0 and 0xffffffff
+networkMagic = 0..4294967295
+initiatorOnlyDiffusionMode = bool
+; range between 0 and 1
+peerSharing = 0..1
+query = bool
+
+refuseReason
+    = refuseReasonVersionMismatch
+    / refuseReasonHandshakeDecodeError
+    / refuseReasonRefused
+
+refuseReasonVersionMismatch      = [0, [ *versionNumber ] ]
+refuseReasonHandshakeDecodeError = [1, versionNumber, tstr]
+refuseReasonRefused              = [2, versionNumber, tstr]
