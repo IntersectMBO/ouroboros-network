@@ -17,10 +17,12 @@ module Network.Mux.Bearer
   ) where
 
 import           Control.Monad.Class.MonadSTM
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime.SI
 import           Control.Tracer (Tracer)
 
+import           Data.ByteString.Lazy qualified as BL
 import           Network.Socket (Socket)
 #if defined(mingw32_HOST_OS)
 import           System.Win32 (HANDLE)
@@ -54,9 +56,12 @@ pureBearer :: Applicative m
 pureBearer f = \sduTimeout tr fd -> pure (f sduTimeout tr fd)
 
 makeSocketBearer :: MakeBearer IO Socket
-makeSocketBearer = MakeBearer $ pureBearer (socketAsMuxBearer size)
+makeSocketBearer = MakeBearer $ (\sduTimeout tr fd -> do
+    readBuffer <- newTVarIO BL.empty
+    return $ socketAsMuxBearer size readBuffer bufSize sduTimeout tr fd)
   where
     size = SDUSize 12_288
+    bufSize = 16*1024
 
 makePipeChannelBearer :: MakeBearer IO PipeChannel
 makePipeChannelBearer = MakeBearer $ pureBearer (\_ -> pipeAsMuxBearer size)

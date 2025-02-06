@@ -11,6 +11,7 @@ import Control.Tracer
 import Data.ByteString.Lazy qualified as BL
 import Data.Int
 
+import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
@@ -45,11 +46,13 @@ import Network.Mux.TCPInfo (SocketOption (TCPInfoSocketOption))
 --
 socketAsMuxBearer
   :: Mx.SDUSize
+  -> StrictTVar IO BL.ByteString
+  -> Int64
   -> DiffTime
   -> Tracer IO Mx.MuxTrace
   -> Socket.Socket
   -> MuxBearer IO
-socketAsMuxBearer sduSize sduTimeout tracer sd =
+socketAsMuxBearer sduSize readBuffer readBufferSize sduTimeout tracer sd =
       Mx.MuxBearer {
         Mx.read    = readSocket,
         Mx.write   = writeSocket,
@@ -96,26 +99,42 @@ socketAsMuxBearer sduSize sduTimeout tracer sd =
       recvAtMost :: Bool -> Int64 -> IO BL.ByteString
       recvAtMost waitingOnNxtHeader l = do
           traceWith tracer $ Mx.MuxTraceRecvStart $ fromIntegral l
+          availableData <- atomically $ do
+              buf <- readTVar readBuffer
+              if BL.length buf >= l
+                 then do
+                   let (toProcess, remaining) = BL.splitAt l buf
+                   writeTVar readBuffer remaining
+                   return toProcess
+                 else do
+                   writeTVar readBuffer BL.empty
+                   return buf
+          if BL.null availableData
+             then do
 #if defined(mingw32_HOST_OS)
-          buf <- Win32.Async.recv sd (fromIntegral l)
+                 buf <- Win32.Async.recv sd (max l readBufferSize)
 #else
-          buf <- Socket.recv sd l
+                 buf <- Socket.recv sd (max l readBufferSize)
 #endif
-                    `catch` Mx.handleIOException "recv errored"
-          if BL.null buf
-              then do
-                  when waitingOnNxtHeader $
-                      {- This may not be an error, but could be an orderly shutdown.
-                       - We wait 1 seconds to give the mux protocols time to perform
-                       - a clean up and exit.
-                       -}
-                      threadDelay 1
-                  throwIO $ Mx.MuxError Mx.MuxBearerClosed (show sd ++
-                      " closed when reading data, waiting on next header " ++
-                      show waitingOnNxtHeader)
-              else do
-                  traceWith tracer $ Mx.MuxTraceRecvEnd (fromIntegral $ BL.length buf)
-                  return buf
+                            `catch` Mx.handleIOException "recv errored"
+                 if BL.null buf
+                      then do
+                          when waitingOnNxtHeader $
+                              {- This may not be an error, but could be an orderly shutdown.
+                               - We wait 1 seconds to give the mux protocols time to perform
+                               - a clean up and exit.
+                              -}
+                              threadDelay 1
+                          throwIO $ Mx.MuxError Mx.MuxBearerClosed (show sd ++
+                              " closed when reading data, waiting on next header " ++
+                              show waitingOnNxtHeader)
+                      else do
+                          atomically $ modifyTVar readBuffer (`BL.append` buf)
+                          recvAtMost waitingOnNxtHeader l
+               else do
+                   traceWith tracer $ Mx.MuxTraceRecvEnd
+                       (fromIntegral $ BL.length availableData)
+                   return availableData
 
       writeSocket :: Mx.TimeoutFn IO -> Mx.MuxSDU -> IO Time
       writeSocket timeout sdu = do
