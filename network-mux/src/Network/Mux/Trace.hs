@@ -125,6 +125,7 @@ data Trace =
     | TraceRecvHeaderEnd SDUHeader
     | TraceRecvDeltaQObservation SDUHeader Time
     | TraceRecvDeltaQSample Double Int Int Double Double Double Double String
+    | TraceRecvRaw Int
     | TraceRecvStart Int
     | TraceRecvEnd Int
     | TraceSendStart SDUHeader
@@ -160,6 +161,7 @@ instance Show Trace where
         (unRemoteClockModel mhTimestamp) (show ts) mhLength
     show (TraceRecvDeltaQSample d sp so dqs dqvm dqvs estR sdud) = printf "Bearer DeltaQ Sample: duration %.3e packets %d sumBytes %d DeltaQ_S %.3e DeltaQ_VMean %.3e DeltaQ_VVar %.3e DeltaQ_estR %.3e sizeDist %s"
          d sp so dqs dqvm dqvs estR sdud
+    show (TraceRecvRaw len) = printf "Bearer Receive Raw: length %d" len
     show (TraceRecvStart len) = printf "Bearer Receive Start: length %d" len
     show (TraceRecvEnd len) = printf "Bearer Receive End: length %d" len
     show (TraceSendStart SDUHeader { mhTimestamp, mhNum, mhDir, mhLength }) = printf "Bearer Send Start: ts: 0x%08x (%s) %s length %d"

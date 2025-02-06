@@ -241,6 +241,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
           CM.addressType  = \_ -> Just IPv4Address,
           CM.snocket      = snocket,
           CM.makeBearer   = makeBearer,
+          CM.withBuffer   = \f -> f Nothing,
           CM.configureSocket = \_ _ -> return (),
           CM.timeWaitTimeout = timeWaitTimeout,
           CM.outboundIdleTimeout = protocolIdleTimeout,

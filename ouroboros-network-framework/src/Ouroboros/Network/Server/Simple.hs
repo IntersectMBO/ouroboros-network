@@ -75,7 +75,7 @@ with sn makeBearer configureSock addr handshakeArgs versions k =
               -- connection responder thread
               let connId = ConnectionId addr remoteAddr
               bearer <- Mx.getBearer makeBearer
-                        (-1) nullTracer sock'
+                        (-1) nullTracer sock' Nothing
               configureSock sock' addr
               r <- runHandshakeServer bearer connId handshakeArgs versions
               case r of

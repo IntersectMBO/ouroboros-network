@@ -379,7 +379,7 @@ connectToNodeWithMux'
     muxTracer <- initDeltaQTracer' $ Mx.WithBearer connectionId `contramap` nctMuxTracer
     ts_start <- getMonotonicTime
 
-    handshakeBearer <- Mx.getBearer makeBearer sduHandshakeTimeout muxTracer sd
+    handshakeBearer <- Mx.getBearer makeBearer sduHandshakeTimeout muxTracer sd Nothing
     app_e <-
       runHandshakeClient
         handshakeBearer
@@ -406,10 +406,12 @@ connectToNodeWithMux'
 
        Right (HandshakeNegotiationResult app versionNumber agreedOptions) -> do
          traceWith muxTracer $ Mx.TraceHandshakeClientEnd (diffTime ts_end ts_start)
-         bearer <- Mx.getBearer makeBearer sduTimeout muxTracer sd
-         mux <- Mx.new (toMiniProtocolInfos (runForkPolicy noBindForkPolicy remoteAddress) app)
-         withAsync (Mx.run muxTracer mux bearer) $ \aid ->
-           k connectionId versionNumber agreedOptions app mux aid
+         Mx.withReadBufferIO (\buffer -> do
+             bearer <- Mx.getBearer makeBearer sduTimeout muxTracer sd buffer
+             mux <- Mx.new (toMiniProtocolInfos (runForkPolicy noBindForkPolicy remoteAddress) app)
+             withAsync (Mx.run muxTracer mux bearer) $ \aid ->
+               k connectionId versionNumber agreedOptions app mux aid
+           )
 
        Right (HandshakeQueryResult _vMap) -> do
          traceWith muxTracer $ Mx.TraceHandshakeClientEnd (diffTime ts_end ts_start)
@@ -500,3 +502,4 @@ data SomeResponderApplication addr bytes m b where
           Mx.HasResponder muxMode ~ True
        => (OuroborosApplicationWithMinimalCtx muxMode addr bytes m a b)
        -> SomeResponderApplication addr bytes m b
+
