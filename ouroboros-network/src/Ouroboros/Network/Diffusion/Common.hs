@@ -361,7 +361,7 @@ nullTracersExtra =
 
 -- | P2P Arguments Extras
 --
-data ArgumentsExtra extraArgs extraState extraDebugState extraActions extraFlags extraPeers
+data ArgumentsExtra extraState extraDebugState extraActions extraFlags extraPeers
                     extraAPI extraChurnArgs extraCounters exception
                     peeraddr resolver resolverError m = ArgumentsExtra {
       -- | selection targets for the peer governor
@@ -492,10 +492,6 @@ data ArgumentsExtra extraArgs extraState extraDebugState extraActions extraFlags
       -- | Provide extraChurnArgs to be passed to churn governor
       --
     , daExtraChurnArgs :: extraChurnArgs
-
-      -- | Extension point for third party users to be able to add more
-      -- arguments.
-    , daExtraArgs    :: extraArgs
     }
 
 socketAddressType :: Socket.SockAddr -> Maybe AddressType

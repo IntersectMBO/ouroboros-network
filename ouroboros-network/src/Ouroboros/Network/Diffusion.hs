@@ -71,7 +71,7 @@ data ArgumentsExtra
        (p2p :: P2P) extraArgs extraState extraDebugState extraActions extraAPI
        extraPeers extraFlags extraChurnArgs extraCounters exception ntnAddr resolver resolverError m where
   P2PArguments
-    :: Common.ArgumentsExtra extraArgs extraState extraDebugState extraActions extraAPI
+    :: Common.ArgumentsExtra extraState extraDebugState extraActions extraAPI
                             extraPeers extraFlags extraChurnArgs
                             extraCounters exception ntnAddr resolver resolverError m
     -> ArgumentsExtra 'P2P extraArgs extraState extraDebugState extraActions extraAPI

@@ -1229,7 +1229,7 @@ diffusionSimulation
             , Churn.consensusMode       = consensusMode
             }
 
-          arguments :: Node.Arguments (Cardano.ExtraArguments m) (Churn.ExtraArguments m) PeerTrustable m
+          arguments :: Node.Arguments (Churn.ExtraArguments m) PeerTrustable m
           arguments =
             Node.Arguments
               { Node.aIPAddress            = addr
@@ -1250,7 +1250,6 @@ diffusionSimulation
               , Node.aDNSLookupDelayScript = dnsLookupDelay
               , Node.aDebugTracer          = (\s -> WithTime (Time (-1)) (WithName addr (DiffusionDebugTrace s)))
                                                    `contramap` nodeTracer
-              , Node.aExtraArgs      = cardanoExtraArgs
               , Node.aExtraChurnArgs = cardanoChurnArgs
               }
 
