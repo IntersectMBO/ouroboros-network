@@ -319,6 +319,7 @@ makeConnectionHandler muxTracer forkPolicy
                               connectionId@ConnectionId { localAddress
                                                         , remoteAddress }
                               mkMuxBearer
+                              withBuffer
         = MaskedAction { runWithUnmask }
       where
         runWithUnmask :: (forall x. m x -> m x) -> m ()
@@ -329,7 +330,7 @@ makeConnectionHandler muxTracer forkPolicy
                                     , "-"
                                     , show remoteAddress
                                     ])
-            handshakeBearer <- mkMuxBearer sduHandshakeTimeout socket
+            handshakeBearer <- mkMuxBearer sduHandshakeTimeout socket Nothing
             hsResult <-
               unmask (runHandshakeClient handshakeBearer
                                          connectionId
@@ -362,7 +363,6 @@ makeConnectionHandler muxTracer forkPolicy
                           hVersionData    = agreedOptions
                         }
                   atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
-                  bearer <- mkMuxBearer sduTimeout socket
                   let muxTracer' =
                         case inResponderMode of
                           InResponderMode (inboundGovChannelTracer, connectionDataFlow)
@@ -381,8 +381,11 @@ makeConnectionHandler muxTracer forkPolicy
                                 -- It will be stuck when reaches mature state, forever waiting for the incoming
                                 -- peer handle.
                                 muxTracer
-                  Mx.run (Mx.WithBearer connectionId `contramap` muxTracer')
-                           mux bearer
+                  withBuffer (\buffer -> do
+                      bearer <- mkMuxBearer sduTimeout socket buffer
+                      Mx.run (Mx.WithBearer connectionId `contramap` muxTracer')
+                             mux bearer
+                    )
 
               Right (HandshakeQueryResult vMap) -> do
                 atomically $ writePromise (Right HandshakeConnectionQuery)
@@ -408,6 +411,7 @@ makeConnectionHandler muxTracer forkPolicy
                              connectionId@ConnectionId { localAddress
                                                        , remoteAddress }
                              mkMuxBearer
+                             withBuffer
         = MaskedAction { runWithUnmask }
       where
         runWithUnmask :: (forall x. m x -> m x) -> m ()
@@ -418,7 +422,7 @@ makeConnectionHandler muxTracer forkPolicy
                                     , "-"
                                     , show remoteAddress
                                     ])
-            handshakeBearer <- mkMuxBearer sduHandshakeTimeout socket
+            handshakeBearer <- mkMuxBearer sduHandshakeTimeout socket Nothing
             hsResult <-
               unmask (runHandshakeServer handshakeBearer
                                          connectionId
@@ -452,9 +456,11 @@ makeConnectionHandler muxTracer forkPolicy
                           hVersionData    = agreedOptions
                         }
                   atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
-                  bearer <- mkMuxBearer sduTimeout socket
-                  Mx.run (Mx.WithBearer connectionId `contramap` (muxTracer <> inboundGovChannelTracer))
-                         mux bearer
+                  withBuffer (\buffer -> do
+                      bearer <- mkMuxBearer sduTimeout socket buffer
+                      Mx.run (Mx.WithBearer connectionId `contramap` (muxTracer <> inboundGovChannelTracer))
+                             mux bearer
+                    )
               Right (HandshakeQueryResult vMap) -> do
                 atomically $ writePromise (Right HandshakeConnectionQuery)
                 traceWith tracer $ TrHandshakeQuery vMap

@@ -116,6 +116,9 @@ data Arguments handlerTrace socket peerAddr handle handleError versionNumber ver
         --
         makeBearer          :: MakeBearer m socket,
 
+        -- | With a ReadBuffer
+        withBuffer          :: ((Maybe (Mx.ReadBuffer m) -> m ()) -> m ()),
+
         -- | Socket configuration.
         --
         configureSocket     :: socket -> Maybe peerAddr -> m (),
@@ -397,6 +400,7 @@ with args@Arguments {
          addressType,
          snocket,
          makeBearer,
+         withBuffer,
          configureSocket,
          timeWaitTimeout,
          outboundIdleTimeout,
@@ -625,7 +629,8 @@ with args@Arguments {
                      (\bearerTimeout ->
                        getBearer makeBearer
                          bearerTimeout
-                         (Mx.WithBearer connId `contramap` muxTracer)))
+                         (Mx.WithBearer connId `contramap` muxTracer))
+                     withBuffer)
             unmask
           `finally` cleanup
       where

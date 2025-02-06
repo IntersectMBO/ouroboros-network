@@ -346,7 +346,7 @@ newtype FD m = FD { fdState :: StrictTVar m FDState }
 
 makeFDBearer :: MonadDelay m
              => MakeBearer m (FD m)
-makeFDBearer = MakeBearer $ \_ _ _ ->
+makeFDBearer = MakeBearer $ \_ _ _ _ ->
       return Mx.Bearer {
           Mx.write     = \_ _ -> getMonotonicTime,
           Mx.writeMany = \_ _ -> getMonotonicTime,
@@ -613,7 +613,7 @@ mkConnectionHandler snocket =
         handler
   where
     handler :: ConnectionHandlerFn handlerTrace (FD m) Addr (Handle m) Void Version VersionData m
-    handler _ fd promise _ ConnectionId { remoteAddress } _ =
+    handler _ fd promise _ ConnectionId { remoteAddress } _ _  =
       MaskedAction $ \unmask ->
         do threadId <- myThreadId
            let addr = getTestAddress remoteAddress
@@ -762,6 +762,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
         let connectionHandler = mkConnectionHandler snocket
         result <- CM.with
           CM.Arguments {
+<<<<<<< HEAD
             tracer,
             trTracer,
             muxTracer = nullTracer,
@@ -787,6 +788,34 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
             classifyHandleError = \_ -> HandshakeFailure }
           (InResponderMode inbgovInfoChannel)
           connectionHandler
+=======
+              CM.tracer,
+              CM.trTracer,
+              CM.muxTracer = nullTracer,
+              CM.ipv4Address = myAddress,
+              CM.ipv6Address = Nothing,
+              CM.addressType = \_ -> Just IPv4Address,
+              CM.snocket = snocket,
+              CM.makeBearer = makeFDBearer,
+              CM.withBuffer = \f -> f Nothing,
+              CM.configureSocket = \_ _ -> return (),
+              CM.connectionDataFlow = id,
+              CM.prunePolicy = simplePrunePolicy,
+              CM.stdGen = Random.mkStdGen rnd,
+              CM.connectionsLimits = AcceptedConnectionsLimit {
+                  acceptedConnectionsHardLimit = maxBound,
+                  acceptedConnectionsSoftLimit = maxBound,
+                  acceptedConnectionsDelay     = 0
+                },
+              CM.timeWaitTimeout = testTimeWaitTimeout,
+              CM.outboundIdleTimeout = testOutboundIdleTimeout,
+              CM.updateVersionData = \a _ -> a,
+              CM.connStateIdSupply
+            }
+            connectionHandler
+            (\_ -> HandshakeFailure)
+            (InResponderMode inbgovInfoChannel)
+>>>>>>> a309c5a1d3 (Implement an optional read buffer for mux bearers)
           $ \(connectionManager
                 :: ConnectionManager Mx.InitiatorResponderMode (FD (IOSim s))
                                      Addr (Handle m) Void (IOSim s)) -> do

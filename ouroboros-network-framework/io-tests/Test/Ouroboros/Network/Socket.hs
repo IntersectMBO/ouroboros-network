@@ -350,7 +350,7 @@ prop_socket_recv_error f rerr =
                             localAddress = Socket.addrAddress muxAddress,
                             remoteAddress
                           }
-                    bearer <- Mx.getBearer Mx.makeSocketBearer timeout nullTracer sd'
+                    bearer <- Mx.getBearer Mx.makeSocketBearer timeout nullTracer sd' Nothing
                     _ <- async $ do
                       threadDelay 0.1
                       atomically $ putTMVar lock ()
@@ -450,7 +450,7 @@ prop_socket_send_error rerr =
                     let sduTimeout = if rerr == SendSDUTimeout then 0.10
                                                                else (-1) -- No timeout
                         blob = BL.pack $ replicate 0xffff 0xa5
-                    bearer <- Mx.getBearer Mx.makeSocketBearer sduTimeout nullTracer sd'
+                    bearer <- Mx.getBearer Mx.makeSocketBearer sduTimeout nullTracer sd' Nothing
                     Mx.withTimeoutSerial $ \timeout ->
                       -- send maximum mux sdus until we've filled the window.
                       replicateM 100 $ do
