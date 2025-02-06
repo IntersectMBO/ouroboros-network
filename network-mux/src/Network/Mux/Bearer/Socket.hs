@@ -11,14 +11,15 @@ import Control.Tracer
 import Data.ByteString.Lazy qualified as BL
 import Data.Int
 
+import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
 
 import Network.Socket qualified as Socket
 #if !defined(mingw32_HOST_OS)
-import Network.Socket.ByteString.Lazy qualified as Socket (recv, sendAll)
-import Network.Socket.ByteString qualified as Socket (sendMany)
+import Data.ByteString.Internal (create)
+import Foreign.Marshal.Utils
 #else
 import System.Win32.Async.Socket.ByteString.Lazy qualified as Win32.Async
 #endif
@@ -47,11 +48,12 @@ import Network.Mux.TCPInfo (SocketOption (TCPInfoSocketOption))
 socketAsBearer
   :: Mx.SDUSize
   -> Int
+  -> Maybe (Mx.ReadBuffer IO)
   -> DiffTime
   -> Tracer IO Mx.Trace
   -> Socket.Socket
   -> Bearer IO
-socketAsBearer sduSize batchSize sduTimeout tracer sd =
+socketAsBearer sduSize batchSize readBuffer_m sduTimeout tracer sd =
       Mx.Bearer {
         Mx.read      = readSocket,
         Mx.write     = writeSocket,
@@ -99,10 +101,56 @@ socketAsBearer sduSize batchSize sduTimeout tracer sd =
       recvAtMost :: Bool -> Int64 -> IO BL.ByteString
       recvAtMost waitingOnNxtHeader l = do
           traceWith tracer $ Mx.TraceRecvStart $ fromIntegral l
+
+          case readBuffer_m of
+               Nothing         -> -- No read buffer available; read directly from socket
+                   recvFromSocket waitingOnNxtHeader l
+               Just Mx.ReadBuffer{Mx.rbVar, Mx.rbSize} -> do
+                   availableData <- atomically $ do
+                       buf <- readTVar rbVar
+                       if BL.length buf >= l
+                          then do
+                            let (toProcess, remaining) = BL.splitAt l buf
+                            writeTVar rbVar remaining
+                            return toProcess
+                          else do
+                            writeTVar rbVar BL.empty
+                            return buf
+
+                   if BL.null availableData
+                      then do
+                        -- Not data in buffer; read more from socket
+                        newBuf <- recvFromSocket waitingOnNxtHeader $ fromIntegral rbSize
+                        atomically $ modifyTVar rbVar (`BL.append` newBuf)
+                        recvAtMost waitingOnNxtHeader l
+                      else do
+                        traceWith tracer $ Mx.TraceRecvEnd $ fromIntegral $ BL.length availableData
+                        return availableData
+#if !defined(mingw32_HOST_OS)
+      -- Read at most `min rbSize maxLen` bytes from the socket
+      -- into rbBuf.
+      -- Creates and returns a Bytestring matching the exact size
+      -- of the number of bytes read.
+      recvBuf :: Mx.ReadBuffer IO -> Int64 -> IO BL.ByteString
+      recvBuf Mx.ReadBuffer{Mx.rbBuf, Mx.rbSize} maxLen = do
+        len <- Socket.recvBuf sd rbBuf (min rbSize $ fromIntegral maxLen)
+        traceWith tracer $ Mx.TraceRecvRaw len
+        if len > 0
+           then do
+             bs <- create len (\dest -> copyBytes dest rbBuf len)
+             return $ BL.fromStrict bs
+           else return $ BL.empty
+#endif
+
+      recvFromSocket :: Bool -> Int64 -> IO BL.ByteString
+      recvFromSocket waitingOnNxtHeader l = do
 #if defined(mingw32_HOST_OS)
           buf <- Win32.Async.recv sd (fromIntegral l)
 #else
-          buf <- Socket.recv sd l
+          buf <- (case readBuffer_m of
+                      Nothing         -> Socket.recv sd l
+                      Just readBuffer -> recvBuf readBuffer l
+                     )
 #endif
                     `catch` Mx.handleIOException "recv errored"
           if BL.null buf
@@ -116,9 +164,7 @@ socketAsBearer sduSize batchSize sduTimeout tracer sd =
                   throwIO $ Mx.BearerClosed (show sd ++
                       " closed when reading data, waiting on next header " ++
                       show waitingOnNxtHeader)
-              else do
-                  traceWith tracer $ Mx.TraceRecvEnd (fromIntegral $ BL.length buf)
-                  return buf
+              else return buf
 
       writeSocket :: Mx.TimeoutFn IO -> Mx.SDU -> IO Time
       writeSocket timeout sdu = do

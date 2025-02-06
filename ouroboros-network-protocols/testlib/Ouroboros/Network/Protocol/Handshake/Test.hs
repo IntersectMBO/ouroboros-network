@@ -1329,11 +1329,13 @@ prop_channel_simultaneous_open_sim codec versionDataCodec
                         nullTracer
                         -- (("client",) `contramap` Tracer Debug.traceShowM)
                         fdConn
+                        Nothing
             bearer' <- Mx.getBearer makeFDBearer
                         1
                         nullTracer
                         -- (("server",) `contramap` Tracer Debug.traceShowM)
                         fdConn'
+                        Nothing
             let chann  = bearerAsChannel bearer  (MiniProtocolNum 0) InitiatorDir
                 chann' = bearerAsChannel bearer' (MiniProtocolNum 0) InitiatorDir
             res <- prop_channel_simultaneous_open

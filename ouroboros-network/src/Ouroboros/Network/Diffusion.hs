@@ -52,6 +52,7 @@ import System.Random (StdGen, newStdGen, split)
 
 import Network.DNS (Resolver)
 import Network.Mux qualified as Mx
+import Network.Mux.Bearer (withReadBufferIO)
 import Network.Socket (Socket)
 import Network.Socket qualified as Socket
 
@@ -164,6 +165,7 @@ runM
 runM Interfaces
        { diNtnSnocket
        , diNtnBearer
+       , diWithBuffer
        , diNtnConfigureSocket
        , diNtnConfigureSystemdSocket
        , diNtnHandshakeArguments
@@ -353,6 +355,7 @@ runM Interfaces
                   CM.addressType         = const Nothing,
                   CM.snocket             = diNtcSnocket,
                   CM.makeBearer          = diNtcBearer,
+                  CM.withBuffer          = diWithBuffer,
                   CM.configureSocket     = \_ _ -> return (),
                   CM.timeWaitTimeout     = local_TIME_WAIT_TIMEOUT,
                   CM.outboundIdleTimeout = local_PROTOCOL_IDLE_TIMEOUT,
@@ -480,6 +483,7 @@ runM Interfaces
                 CM.addressType         = diNtnAddressType,
                 CM.snocket             = diNtnSnocket,
                 CM.makeBearer          = diNtnBearer,
+                CM.withBuffer          = diWithBuffer,
                 CM.configureSocket     = diNtnConfigureSocket,
                 CM.connectionDataFlow  = diNtnDataFlow,
                 CM.prunePolicy         = prunePolicy,
@@ -911,6 +915,7 @@ run sigUSR1Signal tracers args apps = do
                Interfaces {
                  diNtnSnocket                = Snocket.socketSnocket iocp,
                  diNtnBearer                 = makeSocketBearer,
+                 diWithBuffer                = withReadBufferIO,
                  diNtnConfigureSocket        = configureSocket,
                  diNtnConfigureSystemdSocket =
                    configureSystemdSocket

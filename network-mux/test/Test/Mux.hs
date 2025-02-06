@@ -409,10 +409,12 @@ prop_mux_snd_recv_bi (DummyRun messages) = ioProperty $ do
                       (-1)
                       clientTracer
                       QueueChannel { writeQueue = client_w, readQueue = client_r }
+                      Nothing
     serverBearer <- getBearer makeQueueChannelBearer
                       (-1)
                       serverTracer
                       QueueChannel { writeQueue = server_w, readQueue = server_r }
+                      Nothing
 
     let clientApps = [ MiniProtocolInfo {
                         miniProtocolNum = Mx.MiniProtocolNum 2,
@@ -519,10 +521,12 @@ prop_mux_snd_recv_compat messages = ioProperty $ do
                       (-1)
                       clientTracer
                       QueueChannel { writeQueue = client_w, readQueue = client_r }
+                     Nothing
     serverBearer <- getBearer makeQueueChannelBearer
                      (-1)
                      serverTracer
                      QueueChannel { writeQueue = server_w, readQueue = server_r }
+                     Nothing
     (verify, client_mp, server_mp) <- setupMiniReqRspCompat
                                         (return ()) endMpsVar messages
 
@@ -796,10 +800,12 @@ runWithQueues initApps respApps = do
                       (-1)
                       clientTracer
                       QueueChannel { writeQueue = client_w, readQueue = client_r }
+                      Nothing
     serverBearer <- getBearer makeQueueChannelBearer
                       (-1)
                       serverTracer
                       QueueChannel { writeQueue = server_w, readQueue = server_r }
+                      Nothing
     runMuxApplication initApps clientBearer respApps serverBearer
 
 runWithPipe :: RunMuxApplications
@@ -835,8 +841,8 @@ runWithPipe initApps respApps =
              let clientChannel = Mx.pipeChannelFromNamedPipe hCli
                  serverChannel = Mx.pipeChannelFromNamedPipe hSrv
 
-             clientBearer <- getBearer makePipeChannelBearer (-1) clientTracer clientChannel
-             serverBearer <- getBearer makePipeChannelBearer (-1) serverTracer serverChannel
+             clientBearer <- getBearer makePipeChannelBearer (-1) clientTracer clientChannel Nothing
+             serverBearer <- getBearer makePipeChannelBearer (-1) serverTracer serverChannel Nothing
 
              Win32.Async.connectNamedPipe hSrv
              runMuxApplication initApps clientBearer respApps serverBearer
@@ -852,8 +858,8 @@ runWithPipe initApps respApps =
         let clientChannel = Mx.pipeChannelFromHandles rCli wSrv
             serverChannel = Mx.pipeChannelFromHandles rSrv wCli
 
-        clientBearer <- getBearer makePipeChannelBearer (-1) clientTracer clientChannel
-        serverBearer <- getBearer makePipeChannelBearer (-1) serverTracer serverChannel
+        clientBearer <- getBearer makePipeChannelBearer (-1) clientTracer clientChannel Nothing
+        serverBearer <- getBearer makePipeChannelBearer (-1) serverTracer serverChannel Nothing
         runMuxApplication initApps clientBearer respApps serverBearer
 
 #endif
@@ -941,10 +947,12 @@ prop_mux_starvation (Uneven response0 response1) =
                       (-1)
                       clientTracer
                       QueueChannel { writeQueue = client_w, readQueue = client_r }
+                      Nothing
     serverBearer <- getBearer makeQueueChannelBearer
                       (-1)
                       serverTracer
                       QueueChannel { writeQueue = server_w, readQueue = server_r }
+                      Nothing
     (client_short, server_short) <-
         setupMiniReqRsp (waitOnAllClients activeMpsVar 2)
                          $ DummyTrace [(request, response1)]
@@ -1183,6 +1191,7 @@ prop_demux_sdu a = do
                           QueueChannel { writeQueue = server_w,
                                          readQueue  = server_r
                                        }
+                          Nothing
 
         serverMux <- Mx.new [serverApp]
         serverRes <- Mx.runMiniProtocol serverMux (Mx.miniProtocolNum serverApp) (Mx.miniProtocolDir serverApp)
@@ -1422,11 +1431,13 @@ prop_mux_start_mX apps runTime = do
         (-1)
         nullTracer
         QueueChannel { writeQueue = mux_w, readQueue = mux_r }
+        Nothing
     peerBearer <-
       getBearer makeQueueChannelBearer
         (-1)
         nullTracer
         QueueChannel { writeQueue = mux_r, readQueue = mux_w }
+        Nothing
     prop_mux_start_m bearer (triggerApp peerBearer) checkRes apps runTime anyStartAfter
 
   where
@@ -1483,6 +1494,7 @@ prop_mux_restart_m (DummyRestartingInitiatorApps apps) = do
                 (-1)
                 nullTracer
                 QueueChannel { writeQueue = mux_w, readQueue = mux_r }
+                Nothing
     let minis = map (appToInfo Mx.InitiatorDirectionOnly . fst) apps
 
     mux <- Mx.new minis
@@ -1524,11 +1536,13 @@ prop_mux_restart_m (DummyRestartingResponderApps rapps) = do
         (-1)
         nullTracer
         QueueChannel { writeQueue = mux_w, readQueue = mux_r }
+        Nothing
     peerBearer <-
       getBearer makeQueueChannelBearer
         (-1)
         nullTracer
         QueueChannel { writeQueue = mux_r, readQueue = mux_w }
+        Nothing
     let apps = map fst rapps
         minis = map (appToInfo Mx.ResponderDirectionOnly) apps
 
@@ -1573,11 +1587,13 @@ prop_mux_restart_m (DummyRestartingInitiatorResponderApps rapps) = do
         (-1)
         nullTracer
         QueueChannel { writeQueue = mux_w, readQueue = mux_r }
+        Nothing
     peerBearer <-
       getBearer makeQueueChannelBearer
         (-1)
         nullTracer
         QueueChannel { writeQueue = mux_r, readQueue = mux_w }
+        Nothing
     let apps = map fst rapps
         initMinis = map (appToInfo Mx.InitiatorDirection) apps
         respMinis = map (appToInfo Mx.ResponderDirection) apps
@@ -1858,16 +1874,16 @@ data ClientOrServer = Client | Server
     deriving Show
 
 
-data NetworkCtx sock m = NetworkCtx {
+data NetworkCtx sock m b = NetworkCtx {
     ncSocket    :: m sock,
     ncClose     :: sock -> m (),
-    ncMuxBearer :: sock -> m (Mx.Bearer m)
+    ncMuxBearer :: sock -> (Mx.Bearer m -> m b) -> m b
   }
 
 
-withNetworkCtx :: MonadThrow m => NetworkCtx sock m -> (Mx.Bearer m -> m a) -> m a
+withNetworkCtx :: MonadThrow m => NetworkCtx sock m a -> (Mx.Bearer m -> m a) -> m a
 withNetworkCtx NetworkCtx { ncSocket, ncClose, ncMuxBearer } k =
-    bracket ncSocket ncClose (\sock -> ncMuxBearer sock >>= k)
+    bracket ncSocket ncClose (\sock -> ncMuxBearer sock k)
 
 
 close_experiment
@@ -1890,8 +1906,8 @@ close_experiment
     -> FaultInjection
     -> Tracer m (ClientOrServer, TraceSendRecv (MsgReqResp req resp))
     -> Tracer m (ClientOrServer, Mx.Trace)
-    -> NetworkCtx sock m
-    -> NetworkCtx sock m
+    -> NetworkCtx sock m (Either SomeException (Either [resp] [resp]))
+    -> NetworkCtx sock m (Either SomeException ())
     -> [req]
     -> (acc -> req -> (acc, resp))
     -> acc
@@ -2131,7 +2147,11 @@ prop_mux_close_io fault reqs fn acc = ioProperty $ withIOManager $ \iocp -> do
                 associateWithIOManager iocp (Right sock)
                 return sock,
               ncClose  = Socket.close,
-              ncMuxBearer = getBearer makeSocketBearer 10 nullTracer
+              ncMuxBearer = \sd k -> withReadBufferIO (\buffer -> do
+                              bearer <- getBearer makeSocketBearer 10 nullTracer sd buffer
+                              k bearer
+                            )
+
             }
           clientCtx = NetworkCtx {
               ncSocket = do
@@ -2144,7 +2164,11 @@ prop_mux_close_io fault reqs fn acc = ioProperty $ withIOManager $ \iocp -> do
                     Socket.close sock
                 return sock,
               ncClose  = Socket.close,
-              ncMuxBearer = getBearer makeSocketBearer 10 nullTracer
+              ncMuxBearer = \sd k -> withReadBufferIO (\buffer -> do
+                              bearer <- getBearer makeSocketBearer 10 nullTracer sd buffer
+                              k bearer
+                            )
+
             }
       close_experiment
         True
@@ -2193,18 +2217,18 @@ prop_mux_close_sim fault (Positive sduSize_) reqs fn acc =
           clientCtx = NetworkCtx {
               ncSocket = return chann,
               ncClose  = acClose,
-              ncMuxBearer = pure
-                          . attenuationChannelAsBearer
-                              sduSize sduTimeout
-                              nullTracer
+              ncMuxBearer = \fd k ->
+                               k $ attenuationChannelAsBearer
+                                     sduSize sduTimeout
+                                     nullTracer fd
             }
           serverCtx = NetworkCtx {
               ncSocket = return chann',
               ncClose  = acClose,
-              ncMuxBearer = pure
-                          . attenuationChannelAsBearer
-                              sduSize sduTimeout
-                              nullTracer
+              ncMuxBearer = \fd k ->
+                               k $ attenuationChannelAsBearer
+                                     sduSize sduTimeout
+                                     nullTracer fd
             }
       close_experiment
         False

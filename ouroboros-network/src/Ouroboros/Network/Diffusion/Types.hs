@@ -46,6 +46,7 @@ import Data.Void (Void)
 import System.Random (StdGen)
 
 import Network.Mux qualified as Mx
+import Network.Mux.Types (ReadBuffer)
 import Network.Socket qualified as Socket
 
 import Ouroboros.Network.Mux (OuroborosApplicationWithMinimalCtx,
@@ -587,6 +588,10 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         --
         diNtnBearer
           :: Mx.MakeBearer m ntnFd,
+
+        -- | readbuffer
+        diWithBuffer
+          :: ((Maybe (ReadBuffer m) -> m ()) -> m ()),
 
         -- | node-to-node socket configuration
         --

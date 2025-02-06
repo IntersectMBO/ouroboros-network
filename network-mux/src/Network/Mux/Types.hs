@@ -40,6 +40,7 @@ module Network.Mux.Types
   , RemoteClockModel (..)
   , remoteClockPrecision
   , RuntimeError (..)
+  , ReadBuffer (..)
   ) where
 
 import Prelude hiding (read)
@@ -50,6 +51,7 @@ import Data.Functor (void)
 import Data.Int
 import Data.Ix (Ix (..))
 import Data.Word
+import Foreign.Ptr (Ptr)
 import Quiet
 
 import GHC.Generics (Generic)
@@ -302,3 +304,16 @@ data RuntimeError =
   deriving Show
 
 instance Exception RuntimeError
+
+-- | ReadBuffer for Mux Bearers
+--
+-- This is used to read more data than whats currently needed in one syscall.
+-- Any extra data read is cached in rbVar until the next read request.
+data ReadBuffer m = ReadBuffer {
+  -- | Read cache
+    rbVar  :: StrictTVar m BL.ByteString
+  -- | Buffer, used by the kernel to write the received data into.
+  , rbBuf  :: Ptr Word8
+  -- | Size of `rbBuf`.
+  , rbSize :: Int
+  }
