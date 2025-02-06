@@ -70,9 +70,9 @@ governor_BOOTSTRAP_PEERS_TIMEOUT = 15 * 60
 -- set of target peers.
 targetPeers
   :: (MonadSTM m, Ord peeraddr)
-  => PeerSelectionActions
+  => Cardano.ExtraPeerSelectionActions m
+  -> PeerSelectionActions
       Cardano.ExtraState
-      (Cardano.ExtraPeerSelectionActions m)
       extraFlags
       extraPeers
       extraAPI
@@ -89,13 +89,14 @@ targetPeers
   -> Guarded (STM m)
             (TimedDecision m Cardano.ExtraState extraDebugState PeerTrustable
                            extraPeers peeraddr peerconn)
-targetPeers PeerSelectionActions{ peerSelectionTargets,
-                                  readPeerSelectionTargets,
-                                  extraActions = Cardano.ExtraPeerSelectionActions {
-                                    Cardano.genesisPeerTargets
-                                  },
-                                  extraPeersAPI
-                                }
+targetPeers Cardano.ExtraPeerSelectionActions {
+              Cardano.genesisPeerTargets
+            }
+            PeerSelectionActions {
+              peerSelectionTargets,
+              readPeerSelectionTargets,
+              extraPeersAPI
+            }
             st@PeerSelectionState{
               publicRootPeers,
               localRootPeers,
@@ -182,11 +183,10 @@ targetPeers PeerSelectionActions{ peerSelectionTargets,
 -- trusted, however we will keep a connection to it until the outbound
 -- governor notices it and disconnects from it.
 localRoots
-  :: forall extraDebugState extraActions extraAPI extraCounters peeraddr peerconn m.
+  :: forall extraDebugState extraAPI extraCounters peeraddr peerconn m.
     (MonadSTM m, Ord peeraddr)
   => PeerSelectionActions
       Cardano.ExtraState
-      extraActions
       PeerTrustable
       (Cardano.ExtraPeers peeraddr)
       extraAPI
@@ -380,9 +380,10 @@ monitorBootstrapPeersFlag
   :: ( MonadSTM m
      , Ord peeraddr
      )
-  => PeerSelectionActions
+  => Cardano.ExtraPeerSelectionActions m
+  -> PeerSelectionActions
       Cardano.ExtraState
-      (Cardano.ExtraPeerSelectionActions m)
+
       extraFlags
       (Cardano.ExtraPeers peeraddr)
       extraAPI
@@ -399,11 +400,8 @@ monitorBootstrapPeersFlag
   -> Guarded (STM m)
             (TimedDecision m Cardano.ExtraState extraDebugState extraFlags
                            (Cardano.ExtraPeers peeraddr) peeraddr peerconn)
-monitorBootstrapPeersFlag PeerSelectionActions { extraActions = Cardano.ExtraPeerSelectionActions {
-                                                                  Cardano.readUseBootstrapPeers
-                                                                }
-                                               , extraPeersAPI
-                                               }
+monitorBootstrapPeersFlag Cardano.ExtraPeerSelectionActions { Cardano.readUseBootstrapPeers }
+                          PeerSelectionActions { extraPeersAPI }
                           st@PeerSelectionState { knownPeers
                                                 , establishedPeers
                                                 , publicRootPeers
@@ -465,11 +463,10 @@ monitorBootstrapPeersFlag PeerSelectionActions { extraActions = Cardano.ExtraPee
 --
 monitorLedgerStateJudgement
   :: ( MonadSTM m
-    , Ord peeraddr
-    )
+     , Ord peeraddr
+     )
   => PeerSelectionActions
       Cardano.ExtraState
-      (Cardano.ExtraPeerSelectionActions m)
       extraFlags
       (Cardano.ExtraPeers peeraddr)
       (Cardano.LedgerPeersConsensusInterface m)
@@ -605,8 +602,8 @@ monitorLedgerStateJudgement PeerSelectionActions{
 --
 waitForSystemToQuiesce
   :: ( MonadSTM m
-    , Ord peeraddr
-    )
+     , Ord peeraddr
+     )
   => PeerSelectionState
       Cardano.ExtraState
       PeerTrustable

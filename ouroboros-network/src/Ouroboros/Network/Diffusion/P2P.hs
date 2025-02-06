@@ -102,7 +102,7 @@ runM
     :: forall m ntnFd ntnAddr ntnVersion ntnVersionData
                 ntcFd ntcAddr ntcVersion ntcVersionData
                 resolver resolverError exception a
-                extraState extraDebugState extraActions extraPeers
+                extraState extraDebugState extraPeers
                 extraAPI extraFlags extraChurnArgs extraCounters .
 
        ( Alternative (STM m)
@@ -155,7 +155,7 @@ runM
        Arguments m ntnFd ntnAddr
                    ntcFd ntcAddr
     -> -- | p2p configuration
-       ArgumentsExtra extraState extraDebugState extraActions extraFlags
+       ArgumentsExtra extraState extraDebugState extraFlags
                       extraPeers extraAPI extraChurnArgs extraCounters
                       exception ntnAddr resolver resolverError m
 
@@ -237,7 +237,6 @@ runM Interfaces
        , daPeerChurnGovernor
        , daToExtraPeers
        , daRequestPublicRootPeers
-       , daExtraActions
        , daExtraChurnArgs
        }
      Applications
@@ -583,7 +582,6 @@ runM Interfaces
             -> ((Async m Void, Async m Void)
                 -> PeerSelectionActions
                      extraState
-                     extraActions
                      extraFlags
                      extraPeers
                      extraAPI
@@ -625,7 +623,6 @@ runM Interfaces
                                              PeerSharingDisabled -> pure Map.empty
                                              PeerSharingEnabled  -> readInboundPeers,
                                          readLedgerPeerSnapshot = daReadLedgerPeerSnapshot,
-                                         extraActions              = daExtraActions,
                                          extraPeersAPI             = daExtraPeersAPI,
                                          extraStateToExtraCounters = daPeerSelectionStateToExtraCounters,
                                          peerStateActions
@@ -644,7 +641,7 @@ runM Interfaces
             -> StrictTVar m (PeerSelectionState extraState extraFlags extraPeers ntnAddr
                 (PeerConnectionHandle muxMode responderCtx ntnAddr ntnVersionData ByteString m a b))
             -> PeerSelectionActions
-                extraState extraActions extraFlags extraPeers
+                extraState extraFlags extraPeers
                 extraAPI extraCounters ntnAddr
                 (PeerConnectionHandle muxMode responderCtx ntnAddr ntnVersionData ByteString m a b)
                 m
@@ -848,7 +845,6 @@ run :: ( Monoid extraPeers
     -> ArgumentsExtra
         extraState
         extraDebugState
-        extraActions
         extraFlags
         extraPeers
         extraAPI

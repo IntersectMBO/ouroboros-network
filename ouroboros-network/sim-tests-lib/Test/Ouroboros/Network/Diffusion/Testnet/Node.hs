@@ -169,7 +169,7 @@ data Arguments extraChurnArgs extraFlags m = Arguments
 --
 type ResolverException = SomeException
 
-run :: forall extraState extraDebugState extraActions extraAPI
+run :: forall extraState extraDebugState extraAPI
              extraPeers extraFlags extraChurnArgs extraCounters
              exception resolver resolverError m.
        ( Alternative (STM m)
@@ -202,14 +202,12 @@ run :: forall extraState extraDebugState extraActions extraAPI
     -> Interfaces extraAPI m
     -> Arguments extraChurnArgs extraFlags m
     -> extraState
-    -> extraActions
     -> extraCounters
     -> PublicExtraPeersAPI extraPeers NtNAddr
     -> (forall muxMode responderCtx ntnVersionData bytes a b .
         PeerSelectionGovernorArgs
           extraState
           extraDebugState
-          extraActions
           extraFlags
           extraPeers
           extraAPI
@@ -253,7 +251,7 @@ run :: forall extraState extraDebugState extraActions extraAPI
     -> Tracer m (TraceLabelPeer NtNAddr (TraceFetchClientState BlockHeader))
     -> m Void
 run blockGeneratorArgs limits ni na
-    emptyExtraState extraActions emptyExtraCounters
+    emptyExtraState emptyExtraCounters
     extraPeersAPI psArgs psToExtraCounters
     toExtraPeers requestPublicRootPeers peerChurnGovernor
     tracersExtra tracerBlockFetch =
@@ -456,7 +454,7 @@ run blockGeneratorArgs limits ni na
       }
 
     argsExtra :: Common.ArgumentsExtra
-                   extraState extraDebugState extraActions
+                   extraState extraDebugState
                    extraFlags extraPeers extraAPI
                    extraChurnArgs extraCounters exception
                    NtNAddr resolver resolverError m
@@ -474,7 +472,6 @@ run blockGeneratorArgs limits ni na
       , Common.daEmptyExtraState        = emptyExtraState
       , Common.daEmptyExtraCounters     = emptyExtraCounters
       , Common.daExtraPeersAPI          = extraPeersAPI
-      , Common.daExtraActions           = extraActions
       , Common.daExtraChurnArgs         = aExtraChurnArgs na
       , Common.daToExtraPeers           = toExtraPeers
       , Common.daRequestPublicRootPeers = Just requestPublicRootPeers

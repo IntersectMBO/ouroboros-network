@@ -186,13 +186,13 @@ cardanoPeerSelectionGovernorArgs
      , Alternative (STM m)
      , Ord peeraddr
      )
-  => STM m UseLedgerPeers
+  => Cardano.ExtraPeerSelectionActions m
+  -> STM m UseLedgerPeers
   -> PeerSharing
   -> (OutboundConnectionsState -> STM m ())
   -> PeerSelectionGovernorArgs
        Cardano.ExtraState
        extraDebugState
-       (Cardano.ExtraPeerSelectionActions m)
        PeerTrustable
        (Cardano.ExtraPeers peeraddr)
        (Cardano.LedgerPeersConsensusInterface m)
@@ -201,7 +201,7 @@ cardanoPeerSelectionGovernorArgs
        peerconn
        BootstrapPeersCriticalTimeoutError
        m
-cardanoPeerSelectionGovernorArgs readUseLedgerPeers peerSharing updateOutboundConnectionsState =
+cardanoPeerSelectionGovernorArgs extraActions readUseLedgerPeers peerSharing updateOutboundConnectionsState =
   PeerSelectionGovernorArgs {
     -- If by any chance the node takes more than 15 minutes to converge to a
     -- clean state, we crash the node. This could happen in very rare
@@ -223,12 +223,12 @@ cardanoPeerSelectionGovernorArgs readUseLedgerPeers peerSharing updateOutboundCo
   , extraDecisions  =
       ExtraGuardedDecisions {
         preBlocking     = \_ psa pst ->
-             monitorBootstrapPeersFlag   psa pst
+             monitorBootstrapPeersFlag   extraActions psa pst
           <> monitorLedgerStateJudgement psa pst
           <> waitForSystemToQuiesce          pst
       , postBlocking    = mempty
       , postNonBlocking = mempty
-      , customTargetsAction         = Just $ \_ -> Cardano.targetPeers
+      , customTargetsAction         = Just $ \_ -> Cardano.targetPeers extraActions
       , customLocalRootsAction      = Just $ \_ -> Cardano.localRoots
       , enableProgressMakingActions = \st ->
           not (requiresBootstrapPeers (Cardano.bootstrapPeersFlag st) (Cardano.ledgerStateJudgement st))

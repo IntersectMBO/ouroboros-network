@@ -245,6 +245,7 @@ governorAction mockEnv@GovernorMockEnvironment {
                              (useLedgerPeers mockEnv)
     usbVar <- playTimedScript (contramap TraceEnvSetUseBootstrapPeers tracerMockEnv)
                               (useBootstrapPeers mockEnv)
+    let readUseBootstrapPeers = readTVar usbVar
     -- todo: make NumberOfBigLedgerPeers come from quickcheck
     debugStateVar <- StrictTVar.newTVarIO (emptyPeerSelectionState (mkStdGen 42) (ExtraState.empty consensusMode (NumberOfBigLedgerPeers 0)) ExtraPeers.empty)
     countersVar <- StrictTVar.newTVarIO (emptyPeerSelectionCounters ExtraSizes.empty)
@@ -260,7 +261,7 @@ governorAction mockEnv@GovernorMockEnvironment {
                                         (first fst <$> targets mockEnv)
           mockPeerSelectionActions tracerMockEnv mockEnv
                                    initialPeerTargets
-                                   (readTVar usbVar)
+                                   readUseBootstrapPeers
                                    (readTVar lpVar)
                                    (readTVar lsjVar)
                                    (readTVar targetsVar)
@@ -293,6 +294,10 @@ governorAction mockEnv@GovernorMockEnvironment {
 
         peerSelectionGovernorArgs =
           Cardano.cardanoPeerSelectionGovernorArgs
+            Cardano.ExtraPeerSelectionActions {
+              Cardano.genesisPeerTargets    = snd initialPeerTargets,
+              Cardano.readUseBootstrapPeers = readUseBootstrapPeers
+            }
             (readTVar lpVar)
             (peerSharing actions)
             (Cardano.updateOutboundConnectionsState (lpExtraAPI (getLedgerStateCtx actions)))
@@ -360,7 +365,6 @@ mockPeerSelectionActions :: forall m.
                          -> STM m PeerSelectionTargets
                          -> m (PeerSelectionActions
                                 Cardano.ExtraState
-                                (Cardano.ExtraPeerSelectionActions m)
                                 PeerTrustable
                                 (Cardano.ExtraPeers PeerAddr)
                                 (Cardano.LedgerPeersConsensusInterface m)
@@ -439,7 +443,6 @@ mockPeerSelectionActions' :: forall m.
                           -> TVar m OutboundConnectionsState
                           -> PeerSelectionActions
                                Cardano.ExtraState
-                               (Cardano.ExtraPeerSelectionActions m)
                                PeerTrustable
                                (Cardano.ExtraPeers PeerAddr)
                                (Cardano.LedgerPeersConsensusInterface m)
@@ -453,7 +456,7 @@ mockPeerSelectionActions' tracer
                             publicRootPeers,
                             peerSharingFlag
                           }
-                          (originalPeerTargets, peerTargets)
+                          (originalPeerTargets, _peerTargets)
                           scripts
                           readTargets
                           readUseBootstrapPeers
@@ -498,10 +501,6 @@ mockPeerSelectionActions' tracer
       readInboundPeers = pure Map.empty,
       readLedgerPeerSnapshot = pure Nothing,
       peerSelectionTargets = originalPeerTargets,
-      extraActions = Cardano.ExtraPeerSelectionActions {
-        Cardano.genesisPeerTargets    = peerTargets,
-        Cardano.readUseBootstrapPeers = readUseBootstrapPeers
-      },
       extraPeersAPI = ExtraPeers.cardanoPublicRootPeersAPI,
       extraStateToExtraCounters = Cardano.cardanoPeerSelectionStatetoCounters
     }
@@ -828,7 +827,6 @@ traceAssociationMode
       (IOSim s)
   -> PeerSelectionActions
        Cardano.ExtraState
-       extraActions
        extraFlags
        extraPeers
        extraAPI
