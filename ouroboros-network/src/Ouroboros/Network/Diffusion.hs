@@ -21,7 +21,7 @@ import Control.Exception (Exception, IOException)
 import Data.Functor (void)
 import Network.DNS (Resolver)
 import Network.Socket (Socket)
-import Ouroboros.Network.Diffusion.Common (Arguments,
+import Ouroboros.Network.Diffusion.Common (Applications (..), Arguments,
            NodeToNodeConnectionManager, NodeToNodePeerConnectionHandle, Tracers)
 import Ouroboros.Network.Diffusion.Common qualified as Common
 import Ouroboros.Network.Diffusion.NonP2P qualified as NonP2P
@@ -84,22 +84,6 @@ data ArgumentsExtra
                               extraPeers extraFlags extraChurnArgs
                               extraCounters exception ntnAddr resolver resolverError m
 
--- | Application data which depend on p2p mode.
---
-data Applications (p2p :: P2P) ntnAddr ntcAddr versionDataNTN versionDataNTC extraAPI m a where
-  P2PApplications
-    :: Common.Applications
-         ntnAddr  NodeToNodeVersion   versionDataNTN
-         ntcAddr  NodeToClientVersion versionDataNTC
-         extraAPI m a
-    -> Applications 'P2P ntnAddr ntcAddr versionDataNTN versionDataNTC extraAPI m a
-
-  NonP2PApplications
-    :: Common.Applications
-         ntnAddr NodeToNodeVersion   versionDataNTN
-         ntcAddr NodeToClientVersion versionDataNTC
-         () m a
-    -> Applications 'NonP2P ntnAddr ntcAddr versionDataNTN versionDataNTC extraAPI m a
 
 -- | Application data which depend on p2p mode.
 --
@@ -146,13 +130,15 @@ run :: forall (p2p :: P2P) extraArgs extraState extraDebugState extraFlags
     -> ArgumentsExtra p2p extraArgs extraState extraDebugState extraFlags
        extraPeers extraAPI extraChurnArgs extraCounters exception
        RemoteAddress Resolver IOException IO
-    -> Applications p2p RemoteAddress LocalAddress NodeToNodeVersionData NodeToClientVersionData extraAPI IO a
+    -> Applications RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
+                    LocalAddress  NodeToClientVersion NodeToClientVersionData
+                    extraAPI IO a
     -> ApplicationsExtra p2p RemoteAddress IO a
     -> IO ()
 run sigUSR1Signal
     tracers (P2PTracers tracersExtra)
             args (P2PArguments argsExtra)
-            (P2PApplications apps)
+            apps
             (P2PApplicationsExtra appsExtra) =
     void $
     P2P.run
@@ -161,7 +147,7 @@ run sigUSR1Signal
 run _
     tracers (NonP2PTracers tracersExtra)
             args (NonP2PArguments argsExtra)
-            (NonP2PApplications apps)
+            apps
             (NonP2PApplicationsExtra appsExtra) = do
     NonP2P.run tracers tracersExtra
                args argsExtra
