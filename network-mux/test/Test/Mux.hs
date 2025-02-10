@@ -265,7 +265,7 @@ instance Arbitrary ArbitrarySDU where
             ts  <- arbitrary
             mid <- choose (6, 0x7fff) -- ClientChainSynWithBlocks with 5 is the highest valid mid
             mode <- oneof [return 0x0, return 0x8000]
-            len <- arbitrary
+            len <- choose (1, 0xffff)
             p <- arbitrary
 
             return $ ArbitraryInvalidSDU (InvalidSDU (RemoteClockModel ts) (mid .|. mode) len
@@ -274,8 +274,9 @@ instance Arbitrary ArbitrarySDU where
         invalidLenght = do
             ts  <- arbitrary
             mid <- arbitrary
-            len <- arbitrary
-            realLen <- choose (0, 7) -- Size of mux header is 8
+            realLen <- choose (0, 8) -- Size of mux header is 8
+            len <- if realLen == 8 then return 0
+                                   else arbitrary
             p <- arbitrary
 
             return $ ArbitraryInvalidSDU (InvalidSDU (RemoteClockModel ts) mid len realLen p)

@@ -47,10 +47,13 @@ decodeMuxSDU buf =
     case Bin.runGetOrFail dec buf of
          Left  (_, _, e)  -> Left $ MuxError MuxDecodeError e
          Right (_, _, h) ->
-             Right $ MuxSDU {
-                   msHeader = h
-                 , msBlob   = BL.empty
-                 }
+           if mhLength h > 0
+             then
+               Right $ MuxSDU {
+                     msHeader = h
+                   , msBlob   = BL.empty
+                   }
+             else Left $ MuxError MuxDecodeError "short SDU"
   where
     dec = do
         mhTimestamp <- RemoteClockModel <$> Bin.getWord32be
