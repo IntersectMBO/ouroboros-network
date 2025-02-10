@@ -235,9 +235,14 @@ type OuroborosBundleWithMinimalCtx (mode :: Mux.Mode) peerAddr bytes m a b =
 data MiniProtocol (mode :: Mux.Mode) initiatorCtx responderCtx bytes m a b =
      MiniProtocol {
        miniProtocolNum    :: !MiniProtocolNum,
+       -- ^ mini-protocol number
        miniProtocolStart  :: !Mux.StartOnDemandOrEagerly,
+       -- ^ strategy for starting responder side; initiator side is always
+       -- started using `StartEagerly`.
        miniProtocolLimits :: !MiniProtocolLimits,
+       -- ^ mini-protocol limits
        miniProtocolRun    :: !(RunMiniProtocol mode initiatorCtx responderCtx bytes m a b)
+       -- ^ mini-protocol callback(s)
      }
 
 mkMiniProtocolInfo :: MiniProtocol mode initiatorCtx responderCtx bytes m a b -> [MiniProtocolInfo mode]
