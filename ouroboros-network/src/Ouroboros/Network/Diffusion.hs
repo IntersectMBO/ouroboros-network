@@ -69,19 +69,19 @@ data ExtraTracers (p2p :: P2P) extraState extraDebugState extraFlags extraPeers 
 --
 data ArgumentsExtra
        (p2p :: P2P) extraArgs extraState extraDebugState extraAPI
-       extraPeers extraFlags extraChurnArgs extraCounters exception ntnAddr resolver resolverError m where
+       extraFlags extraPeers extraChurnArgs extraCounters exception ntnAddr resolver resolverError m where
   P2PArguments
     :: Common.ArgumentsExtra extraState extraDebugState extraAPI
-                            extraPeers extraFlags extraChurnArgs
-                            extraCounters exception ntnAddr resolver resolverError m
+                             extraFlags extraPeers extraChurnArgs
+                             extraCounters exception ntnAddr resolver resolverError m
     -> ArgumentsExtra 'P2P extraArgs extraState extraDebugState extraAPI
-                           extraPeers extraFlags extraChurnArgs
+                           extraFlags extraPeers extraChurnArgs
                            extraCounters exception ntnAddr resolver resolverError m
 
   NonP2PArguments
     :: NonP2P.ArgumentsExtra
     -> ArgumentsExtra 'NonP2P extraArgs extraState extraDebugState extraAPI
-                              extraPeers extraFlags extraChurnArgs
+                              extraFlags extraPeers extraChurnArgs
                               extraCounters exception ntnAddr resolver resolverError m
 
 
@@ -127,8 +127,9 @@ run :: forall (p2p :: P2P) extraArgs extraState extraDebugState extraFlags
          IO
          Socket      RemoteAddress
          LocalSocket LocalAddress
-    -> ArgumentsExtra p2p extraArgs extraState extraDebugState extraFlags
-       extraPeers extraAPI extraChurnArgs extraCounters exception
+    -> ArgumentsExtra p2p extraArgs extraState extraDebugState
+       extraFlags extraPeers
+       extraAPI extraChurnArgs extraCounters exception
        RemoteAddress Resolver IOException IO
     -> Applications RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
                     LocalAddress  NodeToClientVersion NodeToClientVersionData
