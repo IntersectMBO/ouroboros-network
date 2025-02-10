@@ -461,13 +461,13 @@ data ArgumentsExtra extraState extraDebugState extraFlags extraPeers
       -- 'Ouroboros.Network.PeerSelection.PeerSelectionActions.getPublicRootPeers'
       --
     , daRequestPublicRootPeers
-        :: Maybe (PeerActionsDNS peeraddr resolver resolverError m
-        -> DNSSemaphore m
-        -> (Map peeraddr PeerAdvertise -> extraPeers)
-        -> ( (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
-        -> LedgerPeersKind
-        -> Int
-        -> m (PublicRootPeers extraPeers peeraddr, DiffTime)))
+        :: Maybe (    PeerActionsDNS peeraddr resolver resolverError m
+                   -> DNSSemaphore m
+                   -> (Map peeraddr PeerAdvertise -> extraPeers)
+                   -> ( (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
+                   -> LedgerPeersKind
+                   -> Int
+                   -> m (PublicRootPeers extraPeers peeraddr, DiffTime)))
 
       -- | Peer Churn Governor if no custom churn governor is required just
       -- use the default one from
