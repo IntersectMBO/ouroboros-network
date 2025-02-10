@@ -1,4 +1,6 @@
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -20,14 +22,29 @@ import Ouroboros.Network.Protocol.BlockFetch.Codec.CDDL (Block, BlockPoint)
 import Ouroboros.Network.Protocol.LocalStateQuery.Codec
 import Ouroboros.Network.Protocol.LocalStateQuery.Type
 import Test.Data.CDDL (Any)
-import Test.QuickCheck (Arbitrary (..))
+import Test.QuickCheck (Arbitrary (..), oneof)
 
 newtype Result = Result Any
-  deriving (Eq, Show, Arbitrary, Serialise, Generic, NFData)
+  deriving stock (Eq, Show, Generic)
+  deriving newtype (Arbitrary, Serialise, NFData)
 
--- TODO: add payload to the query
+data QueryPayload =
+    BlockQuery Any
+  | GetSystemStart
+  | GetChainBlockNo
+  | GetChainPoint
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (Serialise, NFData)
+
+instance Arbitrary QueryPayload where
+    arbitrary = oneof [ BlockQuery <$> arbitrary
+                      , pure GetSystemStart
+                      , pure GetChainBlockNo
+                      , pure GetChainPoint
+                      ]
+
 data Query result where
-    Query :: Any -> Query Result
+    Query :: QueryPayload -> Query Result
 
 instance NFData (Query result) where
   rnf (Query a) = rnf a
