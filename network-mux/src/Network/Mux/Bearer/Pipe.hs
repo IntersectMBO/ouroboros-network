@@ -75,9 +75,11 @@ pipeAsMuxBearer
   -> MuxBearer IO
 pipeAsMuxBearer sduSize tracer channel =
       Mx.MuxBearer {
-          Mx.read    = readPipe,
-          Mx.write   = writePipe,
-          Mx.sduSize = sduSize
+          Mx.read      = readPipe,
+          Mx.write     = writePipe,
+          Mx.writeMany = writePipeMany,
+          Mx.sduSize   = sduSize,
+          Mx.batchSize = fromIntegral $ Mx.getSDUSize sduSize
         }
     where
       readPipe :: Mx.TimeoutFn IO -> IO (Mx.MuxSDU, Time)
@@ -116,4 +118,10 @@ pipeAsMuxBearer sduSize tracer channel =
             `catch` Mx.handleIOException "writeHandle errored"
           traceWith tracer Mx.MuxTraceSendEnd
           return ts
+
+      writePipeMany :: Mx.TimeoutFn IO -> [Mx.MuxSDU] -> IO Time
+      writePipeMany timeoutFn sdus = do
+        ts <- getMonotonicTime
+        mapM_ (writePipe timeoutFn) sdus
+        return ts
 

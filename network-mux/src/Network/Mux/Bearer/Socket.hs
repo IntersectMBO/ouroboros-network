@@ -11,6 +11,7 @@ import Control.Tracer
 import Data.ByteString.Lazy qualified as BL
 import Data.Int
 
+import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
@@ -18,6 +19,7 @@ import Control.Monad.Class.MonadTimer.SI hiding (timeout)
 import Network.Socket qualified as Socket
 #if !defined(mingw32_HOST_OS)
 import Network.Socket.ByteString.Lazy qualified as Socket (recv, sendAll)
+import Network.Socket.ByteString qualified as Socket (sendMany)
 #else
 import System.Win32.Async.Socket.ByteString.Lazy qualified as Win32.Async
 #endif
@@ -45,15 +47,20 @@ import Network.Mux.TCPInfo (SocketOption (TCPInfoSocketOption))
 --
 socketAsMuxBearer
   :: Mx.SDUSize
+  -> Int
+  -> StrictTVar IO BL.ByteString
+  -> Int64
   -> DiffTime
   -> Tracer IO Mx.MuxTrace
   -> Socket.Socket
   -> MuxBearer IO
-socketAsMuxBearer sduSize sduTimeout tracer sd =
+socketAsMuxBearer sduSize batchSize readBuffer readBufferSize sduTimeout tracer sd =
       Mx.MuxBearer {
-        Mx.read    = readSocket,
-        Mx.write   = writeSocket,
-        Mx.sduSize = sduSize
+        Mx.read      = readSocket,
+        Mx.write     = writeSocket,
+        Mx.writeMany = writeSocketMany,
+        Mx.sduSize   = sduSize,
+        Mx.batchSize = batchSize
       }
     where
       hdrLenght = 8
@@ -96,26 +103,42 @@ socketAsMuxBearer sduSize sduTimeout tracer sd =
       recvAtMost :: Bool -> Int64 -> IO BL.ByteString
       recvAtMost waitingOnNxtHeader l = do
           traceWith tracer $ Mx.MuxTraceRecvStart $ fromIntegral l
+          availableData <- atomically $ do
+              buf <- readTVar readBuffer
+              if BL.length buf >= l
+                 then do
+                   let (toProcess, remaining) = BL.splitAt l buf
+                   writeTVar readBuffer remaining
+                   return toProcess
+                 else do
+                   writeTVar readBuffer BL.empty
+                   return buf
+          if BL.null availableData
+             then do
 #if defined(mingw32_HOST_OS)
-          buf <- Win32.Async.recv sd (fromIntegral l)
+                 buf <- Win32.Async.recv sd (fromIntegral $ max l readBufferSize)
 #else
-          buf <- Socket.recv sd l
+                 buf <- Socket.recv sd (max l readBufferSize)
 #endif
-                    `catch` Mx.handleIOException "recv errored"
-          if BL.null buf
-              then do
-                  when waitingOnNxtHeader $
-                      {- This may not be an error, but could be an orderly shutdown.
-                       - We wait 1 seconds to give the mux protocols time to perform
-                       - a clean up and exit.
-                       -}
-                      threadDelay 1
-                  throwIO $ Mx.MuxError Mx.MuxBearerClosed (show sd ++
-                      " closed when reading data, waiting on next header " ++
-                      show waitingOnNxtHeader)
-              else do
-                  traceWith tracer $ Mx.MuxTraceRecvEnd (fromIntegral $ BL.length buf)
-                  return buf
+                            `catch` Mx.handleIOException "recv errored"
+                 if BL.null buf
+                      then do
+                          when waitingOnNxtHeader $
+                              {- This may not be an error, but could be an orderly shutdown.
+                               - We wait 1 seconds to give the mux protocols time to perform
+                               - a clean up and exit.
+                              -}
+                              threadDelay 1
+                          throwIO $ Mx.MuxError Mx.MuxBearerClosed (show sd ++
+                              " closed when reading data, waiting on next header " ++
+                              show waitingOnNxtHeader)
+                      else do
+                          atomically $ modifyTVar readBuffer (`BL.append` buf)
+                          recvAtMost waitingOnNxtHeader l
+               else do
+                   traceWith tracer $ Mx.MuxTraceRecvEnd
+                       (fromIntegral $ BL.length availableData)
+                   return availableData
 
       writeSocket :: Mx.TimeoutFn IO -> Mx.MuxSDU -> IO Time
       writeSocket timeout sdu = do
@@ -147,3 +170,34 @@ socketAsMuxBearer sduSize sduTimeout tracer sd =
 #endif
                    return ts
 
+      writeSocketMany :: Mx.TimeoutFn IO -> [Mx.MuxSDU] -> IO Time
+#if defined(mingw32_HOST_OS)
+      writeSocketMany timeout sdus = do
+        ts <- getMonotonicTime
+        mapM_ (writeSocket timeout) sdus
+        return ts
+#else
+      writeSocketMany timeout sdus = do
+          ts <- getMonotonicTime
+          let ts32 = Mx.timestampMicrosecondsLow32Bits ts
+              buf  = map (Mx.encodeMuxSDU .
+                           (\sdu -> Mx.setTimestamp sdu (Mx.RemoteClockModel ts32))) sdus
+          r <- timeout ((fromIntegral $ length sdus) * sduTimeout) $
+              Socket.sendMany sd (concatMap BL.toChunks buf)
+              `catch` Mx.handleIOException "sendAll errored"
+          case r of
+               Nothing -> do
+                    traceWith tracer Mx.MuxTraceSDUWriteTimeoutException
+                    throwIO $ Mx.MuxError Mx.MuxSDUWriteTimeout "Mux SDU Timeout"
+               Just _ -> do
+                   traceWith tracer Mx.MuxTraceSendEnd
+#if defined(linux_HOST_OS) && defined(MUX_TRACE_TCPINFO)
+                   -- If it was possible to detect if the TraceTCPInfo was
+                   -- enable we wouldn't have to hide the getSockOpt
+                   -- syscall in this ifdef. Instead we would only call it if
+                   -- we knew that the information would be traced.
+                   tcpi <- Socket.getSockOpt sd TCPInfoSocketOption
+                   traceWith tracer $ Mx.TraceTCPInfo tcpi (sum $ map (Mx.mhLength . Mx.msHeader) sdus)
+#endif
+                   return ts
+#endif

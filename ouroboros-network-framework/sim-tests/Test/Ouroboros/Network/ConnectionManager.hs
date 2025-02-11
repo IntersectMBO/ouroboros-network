@@ -345,7 +345,9 @@ makeFDBearer = MakeBearer $ \_ _ _ ->
       return MuxBearer {
           write   = \_ _ -> getMonotonicTime,
           read    = \_ -> forever (threadDelay 3600),
-          sduSize = SDUSize 1500
+          writeMany   = \_ _ -> getMonotonicTime,
+          sduSize = SDUSize 1500,
+          batchSize = 1500
         }
 
 -- | We only keep exceptions here which should not be handled by the test

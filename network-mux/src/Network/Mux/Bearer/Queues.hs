@@ -42,7 +42,9 @@ queueChannelAsMuxBearer sduSize tracer QueueChannel { writeQueue, readQueue } = 
       Mx.MuxBearer {
         Mx.read    = readMux,
         Mx.write   = writeMux,
-        Mx.sduSize = sduSize
+        Mx.writeMany   = writeMuxMany,
+        Mx.sduSize = sduSize,
+        Mx.batchSize = 2 * (fromIntegral $ Mx.getSDUSize sduSize)
       }
     where
       readMux :: Mx.TimeoutFn m -> m (Mx.MuxSDU, Time)
@@ -68,4 +70,10 @@ queueChannelAsMuxBearer sduSize tracer QueueChannel { writeQueue, readQueue } = 
           atomically $ writeTBQueue writeQueue buf
           traceWith tracer Mx.MuxTraceSendEnd
           return ts
+
+      writeMuxMany :: Mx.TimeoutFn m -> [Mx.MuxSDU] -> m Time
+      writeMuxMany timeoutFn sdus = do
+        ts <- getMonotonicTime
+        mapM_ (writeMux timeoutFn) sdus
+        return ts
 
