@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns          #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
@@ -131,7 +132,8 @@ newtype Wanton m = Wanton { want :: StrictTVar m BL.ByteString }
 -- that each active demand gets a `maxSDU`s work of data processed
 -- each time it gets to the front of the queue
 muxer
-    :: ( MonadAsync m
+    :: forall m void.
+       ( MonadAsync m
        , MonadFork m
        , MonadMask m
        , MonadThrow (STM m)
@@ -140,11 +142,36 @@ muxer
     => EgressQueue m
     -> MuxBearer m
     -> m void
-muxer egressQueue bearer =
+muxer egressQueue MuxBearer { writeMany, sduSize, batchSize } =
     withTimeoutSerial $ \timeout ->
     forever $ do
       TLSRDemand mpc md d <- atomically $ readTBQueue egressQueue
-      processSingleWanton egressQueue bearer timeout mpc md d
+      sdu <- processSingleWanton egressQueue sduSize mpc md d
+      sdus <- buildBatch [sdu] (sduLength sdu)
+      writeMany timeout (reverse sdus)
+
+  where
+    maxSDUsPerBatch :: Int
+    maxSDUsPerBatch = 100
+
+    sduLength :: MuxSDU -> Int
+    sduLength sdu = 8 + fromIntegral (msLength sdu)
+
+    -- Build a batch of SDUs to submit in one go to the bearer.
+    -- The egress queue is still processed one SDU at the time
+    -- to ensure that we don't cause starvation.
+    -- The batch size is either limited by the bearer
+    -- (e.g the SO_SNDBUF for Socket) or number of SDUs.
+    --
+    buildBatch sdus _ | length sdus >= maxSDUsPerBatch   = return sdus
+    buildBatch sdus sdusLength | sdusLength >= batchSize = return sdus
+    buildBatch sdus !sdusLength = do
+      demand_m <- atomically $ tryReadTBQueue egressQueue
+      case demand_m of
+           Just (TLSRDemand mpc md d) -> do
+             sdu <- processSingleWanton egressQueue sduSize mpc md d
+             buildBatch (sdu:sdus) (sdusLength + sduLength sdu)
+           Nothing -> return sdus
 
 -- | Pull a `maxSDU`s worth of data out out the `Wanton` - if there is
 -- data remaining requeue the `TranslocationServiceRequest` (this
@@ -152,18 +179,17 @@ muxer egressQueue bearer =
 -- first.
 processSingleWanton :: MonadSTM m
                     => EgressQueue m
-                    -> MuxBearer m
-                    -> TimeoutFn m
+                    -> SDUSize
                     -> MiniProtocolNum
                     -> MiniProtocolDir
                     -> Wanton m
-                    -> m ()
-processSingleWanton egressQueue MuxBearer { write, sduSize }
-                    timeout mpc md wanton = do
+                    -> m MuxSDU
+processSingleWanton egressQueue (SDUSize sduSize)
+                    mpc md wanton = do
     blob <- atomically $ do
       -- extract next SDU
       d <- readTVar (want wanton)
-      let (frag, rest) = BL.splitAt (fromIntegral (getSDUSize sduSize)) d
+      let (frag, rest) = BL.splitAt (fromIntegral sduSize) d
       -- if more to process then enqueue remaining work
       if BL.null rest
         then writeTVar (want wanton) BL.empty
@@ -184,5 +210,5 @@ processSingleWanton egressQueue MuxBearer { write, sduSize }
                   },
                 msBlob = blob
               }
-    void $ write timeout sdu
+    return sdu
     --paceTransmission tNow

@@ -213,10 +213,14 @@ msLength = mhLength . msHeader
 data MuxBearer m = MuxBearer {
     -- | Timestamp and send MuxSDU.
       write   :: TimeoutFn m -> MuxSDU -> m Time
+    -- | Timestamp and send many MuxSDU.
+    , writeMany   :: TimeoutFn m -> [MuxSDU] -> m Time
     -- | Read a MuxSDU
     , read    :: TimeoutFn m -> m (MuxSDU, Time)
     -- | Return a suitable MuxSDU payload size.
     , sduSize :: SDUSize
+    -- | Retirn a suitable batch size
+    , batchSize :: Int
     }
 
 newtype SDUSize = SDUSize { getSDUSize :: Word16 }

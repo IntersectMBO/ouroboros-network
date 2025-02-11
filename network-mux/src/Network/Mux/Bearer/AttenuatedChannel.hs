@@ -260,8 +260,10 @@ attenuationChannelAsMuxBearer :: forall m.
                               -> MuxBearer m
 attenuationChannelAsMuxBearer sduSize sduTimeout muxTracer chan =
     MuxBearer {
-      read    = readMux,
-      write   = writeMux,
+      read      = readMux,
+      write     = writeMux,
+      writeMany = writeMuxMany,
+      batchSize = fromIntegral $ getSDUSize sduSize,
       sduSize
     }
   where
@@ -295,6 +297,12 @@ attenuationChannelAsMuxBearer sduSize sduTimeout muxTracer chan =
       acWrite chan buf
 
       traceWith muxTracer MuxTraceSendEnd
+      return ts
+
+    writeMuxMany :: TimeoutFn m -> [MuxSDU] -> m Time
+    writeMuxMany timeoutFn sdus = do
+      ts <- getMonotonicTime
+      mapM_ (writeMux timeoutFn) sdus
       return ts
 
 --

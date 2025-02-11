@@ -23,7 +23,7 @@ import           Control.Monad.Class.MonadTime.SI
 import           Control.Tracer (Tracer)
 
 import           Data.ByteString.Lazy qualified as BL
-import           Network.Socket (Socket)
+import           Network.Socket (getSocketOption, SocketOption (..), Socket)
 #if defined(mingw32_HOST_OS)
 import           System.Win32 (HANDLE)
 #endif
@@ -58,10 +58,11 @@ pureBearer f = \sduTimeout tr fd -> pure (f sduTimeout tr fd)
 makeSocketBearer :: MakeBearer IO Socket
 makeSocketBearer = MakeBearer $ (\sduTimeout tr fd -> do
     readBuffer <- newTVarIO BL.empty
-    return $ socketAsMuxBearer size readBuffer bufSize sduTimeout tr fd)
+    batch <- getSocketOption fd SendBuffer
+    return $ socketAsMuxBearer size batch readBuffer bufSize sduTimeout tr fd)
   where
     size = SDUSize 12_288
-    bufSize = 16*1024
+    bufSize = 16_384
 
 makePipeChannelBearer :: MakeBearer IO PipeChannel
 makePipeChannelBearer = MakeBearer $ pureBearer (\_ -> pipeAsMuxBearer size)
