@@ -116,7 +116,7 @@ socketAsMuxBearer sduSize batchSize readBuffer readBufferSize sduTimeout tracer 
           if BL.null availableData
              then do
 #if defined(mingw32_HOST_OS)
-                 buf <- Win32.Async.recv sd (max l readBufferSize)
+                 buf <- Win32.Async.recv sd (fromIntegral $ max l readBufferSize)
 #else
                  buf <- Socket.recv sd (max l readBufferSize)
 #endif

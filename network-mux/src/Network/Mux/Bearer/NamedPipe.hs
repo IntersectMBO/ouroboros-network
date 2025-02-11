@@ -38,8 +38,8 @@ namedPipeAsBearer sduSize tracer h =
         Mx.read      = readNamedPipe,
         Mx.write     = writeNamedPipe,
         Mx.writeMany = writeNamedPipeMany,
-        Mx.sduSize   = sduSize
-        Mx.batchSize = fromIntegral $ getSDUSize sduSize
+        Mx.sduSize   = sduSize,
+        Mx.batchSize = fromIntegral $ Mx.getSDUSize sduSize
       }
   where
     readNamedPipe :: Mx.TimeoutFn IO -> IO (Mx.MuxSDU, Time)
