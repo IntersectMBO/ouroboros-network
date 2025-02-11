@@ -241,13 +241,17 @@ msHeaderLength = 8
 --
 data Bearer m = Bearer {
     -- | Timestamp and send SDU.
-      write   :: TimeoutFn m -> SDU -> m Time
+      write     :: TimeoutFn m -> SDU -> m Time
+    -- | Timestamp and send many SDUs.
+    , writeMany :: TimeoutFn m -> [SDU] -> m Time
     -- | Read a SDU
-    , read    :: TimeoutFn m -> m (SDU, Time)
+    , read      :: TimeoutFn m -> m (SDU, Time)
     -- | Return a suitable SDU payload size.
-    , sduSize :: SDUSize
+    , sduSize   :: SDUSize
+    -- | Return a suitable batch size
+    , batchSize :: Int
     -- | Name of the bearer
-    , name    :: String
+    , name      :: String
     }
 
 newtype SDUSize = SDUSize { getSDUSize :: Word16 }
