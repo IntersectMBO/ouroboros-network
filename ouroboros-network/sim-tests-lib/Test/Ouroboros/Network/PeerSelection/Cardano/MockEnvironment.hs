@@ -298,9 +298,6 @@ governorAction mockEnv@GovernorMockEnvironment {
               Cardano.genesisPeerTargets    = snd initialPeerTargets,
               Cardano.readUseBootstrapPeers = readUseBootstrapPeers
             }
-            (readTVar lpVar)
-            (peerSharing actions)
-            (Cardano.updateOutboundConnectionsState (lpExtraAPI (getLedgerStateCtx actions)))
 
 
     exploreRaces      -- explore races within the governor

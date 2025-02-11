@@ -589,7 +589,9 @@ data PeerSelectionGovernorArgs extraState extraDebugState extraFlags
       -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
       -> Maybe exception
   , updateWithState
-      :: PeerSelectionSetsWithSizes extraCounters peeraddr
+      :: PeerSelectionInterfaces extraState extraFlags extraPeers extraCounters peeraddr peerconn m
+      -> PeerSelectionActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m
+      -> PeerSelectionSetsWithSizes extraCounters peeraddr
       -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
       -> STM m ()
   , extraDecisions

@@ -564,7 +564,7 @@ peerSelectionGovernorLoop tracer
                           }
 
                           policy
-                          PeerSelectionInterfaces {
+                          interfaces@PeerSelectionInterfaces {
                             countersVar,
                             publicStateVar,
                             debugStateVar
@@ -613,7 +613,7 @@ peerSelectionGovernorLoop tracer
               peerSelectionStateToView extraPeersToSet extraStateToExtraCounters st''
 
         -- Custom STM actions
-        updateWithState peerSelectionView st''
+        updateWithState interfaces actions peerSelectionView st''
 
         -- Update counters
         counters <- readTVar countersVar

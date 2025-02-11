@@ -1270,12 +1270,6 @@ diffusionSimulation
           Cardano.cardanoPublicRootPeersAPI
           (Cardano.cardanoPeerSelectionGovernorArgs
             (Cardano.cardanoExtraArgsToPeerSelectionActions cardanoExtraArgs)
-            readUseLedgerPeers
-            peerSharing
-            ( Cardano.updateOutboundConnectionsState
-            $ lpExtraAPI
-            $ Node.iLedgerPeersConsensusInterface
-            $ interfaces)
           )
           Cardano.cardanoPeerSelectionStatetoCounters
           (flip Cardano.ExtraPeers Set.empty)

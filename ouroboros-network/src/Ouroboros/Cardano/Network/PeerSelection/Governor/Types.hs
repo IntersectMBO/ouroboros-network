@@ -27,10 +27,11 @@ import Ouroboros.Cardano.Network.PublicRootPeers qualified as Cardano
 import Ouroboros.Network.PeerSelection.Governor (readAssociationMode)
 import Ouroboros.Network.PeerSelection.Governor.Types (AssociationMode (..),
            BootstrapPeersCriticalTimeoutError (..), ExtraGuardedDecisions (..),
-           PeerSelectionGovernorArgs (..), PeerSelectionSetsWithSizes,
+           PeerSelectionActions (..), PeerSelectionGovernorArgs (..),
+           PeerSelectionInterfaces (..), PeerSelectionSetsWithSizes,
            PeerSelectionState (..), PeerSelectionView (..))
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type (UseLedgerPeers)
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import Ouroboros.Network.PeerSelection.LedgerPeers
+           (LedgerPeersConsensusInterface (lpExtraAPI))
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
@@ -187,9 +188,6 @@ cardanoPeerSelectionGovernorArgs
      , Ord peeraddr
      )
   => Cardano.ExtraPeerSelectionActions m
-  -> STM m UseLedgerPeers
-  -> PeerSharing
-  -> (OutboundConnectionsState -> STM m ())
   -> PeerSelectionGovernorArgs
        Cardano.ExtraState
        extraDebugState
@@ -201,7 +199,7 @@ cardanoPeerSelectionGovernorArgs
        peerconn
        BootstrapPeersCriticalTimeoutError
        m
-cardanoPeerSelectionGovernorArgs extraActions readUseLedgerPeers peerSharing updateOutboundConnectionsState =
+cardanoPeerSelectionGovernorArgs extraActions =
   PeerSelectionGovernorArgs {
     -- If by any chance the node takes more than 15 minutes to converge to a
     -- clean state, we crash the node. This could happen in very rare
@@ -214,11 +212,15 @@ cardanoPeerSelectionGovernorArgs extraActions readUseLedgerPeers peerSharing upd
         Just t
           | blockedAt >= t -> Just BootstrapPeersCriticalTimeoutError
           | otherwise      -> Nothing
-  , updateWithState = \psv st -> do
+  , updateWithState = \PeerSelectionInterfaces { readUseLedgerPeers }
+                       PeerSelectionActions { getLedgerStateCtx,
+                                              peerSharing }
+                       psv st -> do
       associationMode <- readAssociationMode readUseLedgerPeers
                                              peerSharing
                                              (Cardano.bootstrapPeersFlag (extraState st))
-      updateOutboundConnectionsState
+      Cardano.updateOutboundConnectionsState
+        (lpExtraAPI getLedgerStateCtx)
         (outboundConnectionsState associationMode psv st)
   , extraDecisions  =
       ExtraGuardedDecisions {
