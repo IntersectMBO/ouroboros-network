@@ -55,9 +55,11 @@ pureBearer :: Applicative m
 pureBearer f = \sduTimeout tr fd -> pure (f sduTimeout tr fd)
 
 makeSocketBearer :: MakeBearer IO Socket
-makeSocketBearer = MakeBearer $ pureBearer (socketAsBearer size)
+makeSocketBearer = MakeBearer $ (\sduTimeout tr fd -> do
+    return $ socketAsBearer size batch sduTimeout tr fd)
   where
     size = SDUSize 12_288
+    batch = 131_072
 
 makePipeChannelBearer :: MakeBearer IO PipeChannel
 makePipeChannelBearer = MakeBearer $ pureBearer (\_ -> pipeAsBearer size)
