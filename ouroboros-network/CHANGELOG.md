@@ -6,6 +6,12 @@
 
 ### Non-breaking changes
 
+## 0.19.0.3 -- 2025-03-11
+
+### Non-breaking changes
+
+* `IOError` rethrow policy changed.
+
 ## 0.19.0.2 -- 2025-02-03
 
 ### Breaking changes
