@@ -101,7 +101,7 @@ import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState quali
 import Ouroboros.Cardano.Network.PublicRootPeers qualified as Cardano
 import Ouroboros.Cardano.Network.PublicRootPeers qualified as ExtraPeers
 import Ouroboros.Network.Block (BlockNo (..))
-import Ouroboros.Network.Diffusion.Common (isFatal)
+import Ouroboros.Network.Diffusion.P2P (isFatal)
 import Test.Ouroboros.Network.ConnectionManager.Timeouts
 import Test.Ouroboros.Network.ConnectionManager.Utils
 import Test.Ouroboros.Network.Diffusion.Testnet.Node (config_REPROMOTE_DELAY)
