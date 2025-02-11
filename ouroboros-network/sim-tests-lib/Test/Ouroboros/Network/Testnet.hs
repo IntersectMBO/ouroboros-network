@@ -157,7 +157,7 @@ tests =
                       (testWithIOSimPOR prop_no_non_trustable_peers_before_caught_up_state 10000)
     , testGroup "Churn"
       [ nightlyTest $ testProperty "no timeouts"
-                        (testWithIOSimPOR prop_churn_notimeouts 10000)
+                        (testWithIOSimPOR prop_churn_notimeouts 10000 absNoAttenuation)
       , nightlyTest $ testProperty "steps"
                         (testWithIOSimPOR prop_churn_steps 10000)
       ]
@@ -231,7 +231,7 @@ tests =
       ]
     , testGroup "Churn"
       [ testProperty "no timeouts"
-                     (testWithIOSim prop_churn_notimeouts 125000)
+                     (testWithIOSim prop_churn_notimeouts 125000 absNoAttenuation)
       , testProperty "steps"
                      (testWithIOSim prop_churn_steps 5000)
       ]
