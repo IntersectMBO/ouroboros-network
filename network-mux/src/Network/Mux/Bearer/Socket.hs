@@ -19,6 +19,7 @@ import Control.Monad.Class.MonadTimer.SI hiding (timeout)
 import Network.Socket qualified as Socket
 #if !defined(mingw32_HOST_OS)
 import Network.Socket.ByteString.Lazy qualified as Socket (recv, sendAll)
+import Network.Socket.ByteString qualified as Socket (sendMany)
 #else
 import System.Win32.Async.Socket.ByteString.Lazy qualified as Win32.Async
 #endif
@@ -46,18 +47,21 @@ import Network.Mux.TCPInfo (SocketOption (TCPInfoSocketOption))
 --
 socketAsBearer
   :: Mx.SDUSize
+  -> Int
   -> StrictTVar IO BL.ByteString
   -> Int64
   -> DiffTime
   -> Tracer IO Mx.Trace
   -> Socket.Socket
   -> Bearer IO
-socketAsBearer sduSize readBuffer readBufferSize sduTimeout tracer sd =
+socketAsBearer sduSize batchSize readBuffer readBufferSize sduTimeout tracer sd =
       Mx.Bearer {
-        Mx.read    = readSocket,
-        Mx.write   = writeSocket,
-        Mx.sduSize = sduSize,
-        Mx.name    = "socket-bearer"
+        Mx.read      = readSocket,
+        Mx.write     = writeSocket,
+        Mx.writeMany = writeSocketMany,
+        Mx.sduSize   = sduSize,
+        Mx.batchSize = batchSize,
+        Mx.name      = "socket-bearer"
       }
     where
       hdrLenght = 8
@@ -113,7 +117,7 @@ socketAsBearer sduSize readBuffer readBufferSize sduTimeout tracer sd =
           if BL.null availableData
              then do
 #if defined(mingw32_HOST_OS)
-                 buf <- Win32.Async.recv sd (max l readBufferSize)
+                 buf <- Win32.Async.recv sd (fromIntegral $ max l readBufferSize)
 #else
                  buf <- Socket.recv sd (max l readBufferSize)
 #endif
@@ -167,3 +171,34 @@ socketAsBearer sduSize readBuffer readBufferSize sduTimeout tracer sd =
 #endif
                    return ts
 
+      writeSocketMany :: Mx.TimeoutFn IO -> [Mx.SDU] -> IO Time
+#if defined(mingw32_HOST_OS)
+      writeSocketMany timeout sdus = do
+        ts <- getMonotonicTime
+        mapM_ (writeSocket timeout) sdus
+        return ts
+#else
+      writeSocketMany timeout sdus = do
+          ts <- getMonotonicTime
+          let ts32 = Mx.timestampMicrosecondsLow32Bits ts
+              buf  = map (Mx.encodeSDU .
+                           (\sdu -> Mx.setTimestamp sdu (Mx.RemoteClockModel ts32))) sdus
+          r <- timeout ((fromIntegral $ length sdus) * sduTimeout) $
+              Socket.sendMany sd (concatMap BL.toChunks buf)
+              `catch` Mx.handleIOException "sendAll errored"
+          case r of
+               Nothing -> do
+                    traceWith tracer Mx.TraceSDUWriteTimeoutException
+                    throwIO Mx.SDUWriteTimeout
+               Just _ -> do
+                   traceWith tracer Mx.TraceSendEnd
+#if defined(linux_HOST_OS) && defined(MUX_TRACE_TCPINFO)
+                   -- If it was possible to detect if the TraceTCPInfo was
+                   -- enable we wouldn't have to hide the getSockOpt
+                   -- syscall in this ifdef. Instead we would only call it if
+                   -- we knew that the information would be traced.
+                   tcpi <- Socket.getSockOpt sd TCPInfoSocketOption
+                   traceWith tracer $ Mx.TraceTCPInfo tcpi (sum $ map (Mx.mhLength . Mx.msHeader) sdus)
+#endif
+                   return ts
+#endif
