@@ -4015,9 +4015,6 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
               genesisPeerTargets    = targets,
               readUseBootstrapPeers = readUseBootstrapPeers
             }
-            (return DontUseLedgerPeers)
-            peerSharing
-            (Cardano.updateOutboundConnectionsState (lpExtraAPI (getLedgerStateCtx actions)))
 
 
     publicRootPeersProvider
