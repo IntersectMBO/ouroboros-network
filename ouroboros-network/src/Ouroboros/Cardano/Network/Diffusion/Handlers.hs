@@ -11,7 +11,7 @@ import Cardano.Network.Types (LedgerStateJudgement)
 import Control.Concurrent.Class.MonadSTM.Strict
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
 import Ouroboros.Network.ConnectionManager.Types
-import Ouroboros.Network.Diffusion.Common
+import Ouroboros.Network.Diffusion.P2P (TracersExtra (..))
 import Ouroboros.Network.PeerSelection.Governor
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (UseLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerMetric

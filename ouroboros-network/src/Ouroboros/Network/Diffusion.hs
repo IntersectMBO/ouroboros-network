@@ -22,8 +22,7 @@ import Data.Functor (void)
 import Network.DNS (Resolver)
 import Network.Socket (Socket)
 import Ouroboros.Network.Diffusion.Common (Applications (..), Arguments,
-           NodeToNodeConnectionManager, NodeToNodePeerConnectionHandle, Tracers)
-import Ouroboros.Network.Diffusion.Common qualified as Common
+           Tracers)
 import Ouroboros.Network.Diffusion.NonP2P qualified as NonP2P
 import Ouroboros.Network.Diffusion.P2P qualified as P2P
 import Ouroboros.Network.NodeToClient (LocalAddress, LocalSocket,
@@ -53,7 +52,7 @@ data P2PDecision (p2p :: P2P) a b where
 --
 data ExtraTracers (p2p :: P2P) extraState extraDebugState extraFlags extraPeers extraCounters m where
   P2PTracers
-    :: Common.TracersExtra
+    :: P2P.TracersExtra
            RemoteAddress NodeToNodeVersion         NodeToNodeVersionData
            LocalAddress  NodeToClientVersion       NodeToClientVersionData
            IOException   extraState extraDebugState extraFlags extraPeers
@@ -71,9 +70,9 @@ data ArgumentsExtra
        (p2p :: P2P) extraArgs extraState extraDebugState extraAPI
        extraFlags extraPeers extraChurnArgs extraCounters exception ntnAddr resolver resolverError m where
   P2PArguments
-    :: Common.ArgumentsExtra extraState extraDebugState extraAPI
-                             extraFlags extraPeers extraChurnArgs
-                             extraCounters exception ntnAddr resolver resolverError m
+    :: P2P.ArgumentsExtra extraState extraDebugState extraAPI
+                          extraFlags extraPeers extraChurnArgs
+                          extraCounters exception ntnAddr resolver resolverError m
     -> ArgumentsExtra 'P2P extraArgs extraState extraDebugState extraAPI
                            extraFlags extraPeers extraChurnArgs
                            extraCounters exception ntnAddr resolver resolverError m
@@ -89,7 +88,7 @@ data ArgumentsExtra
 --
 data ApplicationsExtra (p2p :: P2P) ntnAddr m a where
   P2PApplicationsExtra
-    :: Common.ApplicationsExtra ntnAddr m a
+    :: P2P.ApplicationsExtra ntnAddr m a
     -> ApplicationsExtra 'P2P ntnAddr m a
 
   NonP2PApplicationsExtra
@@ -107,15 +106,15 @@ run :: forall (p2p :: P2P) extraArgs extraState extraDebugState extraFlags
       , Exception exception
       )
     => (forall mode x y.
-          NodeToNodeConnectionManager mode Socket
-                                      RemoteAddress NodeToNodeVersionData
-                                      NodeToNodeVersion IO x y
+           P2P.NodeToNodeConnectionManager mode Socket
+                                           RemoteAddress NodeToNodeVersionData
+                                           NodeToNodeVersion IO x y
         -> StrictTVar IO
              (PeerSelectionState extraState extraFlags extraPeers
                                  RemoteAddress
-                                 (NodeToNodePeerConnectionHandle
-                                     mode RemoteAddress
-                                     NodeToNodeVersionData IO x y))
+                                 (P2P.NodeToNodePeerConnectionHandle
+                                      mode RemoteAddress
+                                      NodeToNodeVersionData IO x y))
         -> PeerMetrics IO RemoteAddress
         -> IO ())
     -> Tracers

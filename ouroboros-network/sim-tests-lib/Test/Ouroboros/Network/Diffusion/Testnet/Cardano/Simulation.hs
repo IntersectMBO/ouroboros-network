@@ -143,7 +143,7 @@ import Ouroboros.Cardano.PeerSelection.PeerSelectionActions
            (requestPublicRootPeers)
 import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..),
            TraceFetchClientState, TraceLabelPeer (..))
-import Ouroboros.Network.Diffusion.Common qualified as Diff.P2P
+import Ouroboros.Network.Diffusion.P2P qualified as Diff.P2P
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint (..),
