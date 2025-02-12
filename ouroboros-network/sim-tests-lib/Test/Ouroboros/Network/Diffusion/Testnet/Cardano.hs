@@ -94,9 +94,9 @@ import Test.Ouroboros.Network.Data.AbsBearerInfo
 import Test.Ouroboros.Network.Data.Script
 import Test.Ouroboros.Network.Data.Signal
 import Test.Ouroboros.Network.Data.Signal qualified as Signal
+import Test.Ouroboros.Network.Diffusion.Node (config_REPROMOTE_DELAY)
 import Test.Ouroboros.Network.Diffusion.Node.Kernel
 import Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Simulation
-import Test.Ouroboros.Network.Diffusion.Testnet.Node (config_REPROMOTE_DELAY)
 import Test.Ouroboros.Network.InboundGovernor.Utils
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..))
 import Test.Ouroboros.Network.Utils hiding (SmallDelay, debugTracer)
