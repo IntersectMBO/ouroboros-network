@@ -8,18 +8,21 @@
 {-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
-module Test.Ouroboros.Network.Diffusion.Testnet.Node
+module Test.Ouroboros.Network.Diffusion.Node
   ( -- * run a node
-    Node.BlockGeneratorArgs (..)
-  , Node.LimitsAndTimeouts (..)
-  , Interfaces (..)
+    Interfaces (..)
   , Arguments (..)
   , run
     -- * node types
   , NtNAddr
   , NtNFD
+  , NtNVersion
+  , NtNVersionData
   , NtCAddr
   , NtCFD
+  , NtCVersion
+  , NtCVersionData
+  , Node.NtNAddr_ (..)
     -- * extra types used by the node
   , AcceptedConnectionsLimit (..)
   , DiffusionMode (..)
