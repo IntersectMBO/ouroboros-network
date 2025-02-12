@@ -7,11 +7,13 @@ module Test.Ouroboros.Network.Diffusion.Node.ChainDB
   ) where
 
 import Control.Concurrent.Class.MonadSTM (MonadSTM (..))
+
 import Data.Coerce (coerce)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
+
 import Ouroboros.Network.AnchoredFragment (Point)
 import Ouroboros.Network.Block (ChainHash (..), HasFullHeader, HasHeader,
            blockHash, blockPoint, blockPrevHash)

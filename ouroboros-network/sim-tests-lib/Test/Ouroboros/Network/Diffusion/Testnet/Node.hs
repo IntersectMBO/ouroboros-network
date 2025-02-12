@@ -44,6 +44,7 @@ import Control.Monad.Class.MonadTimer.SI (MonadDelay, MonadTimer)
 import Control.Monad.Fix (MonadFix)
 import Control.Tracer (Tracer (..), nullTracer)
 
+import Codec.CBOR.Term qualified as CBOR
 import Data.Foldable as Foldable (foldl')
 import Data.IP (IP (..))
 import Data.Map (Map)
@@ -52,55 +53,45 @@ import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Void (Void)
+import GHC.Exception (Exception)
 import System.Random (StdGen, split)
-
-import Codec.CBOR.Term qualified as CBOR
 
 import Network.DNS (Domain, TTL)
 
-import Ouroboros.Network.Mock.Chain (Chain, toAnchoredFragment, toOldestFirst)
-import Ouroboros.Network.Mock.ConcreteBlock (Block (..), BlockHeader (..),
-           convertSlotToTimeForTestsAssumingNoHardFork)
-import Ouroboros.Network.Mock.ProducerState (ChainProducerState (..))
-
-import Ouroboros.Network.AnchoredFragment qualified as AF
-import Ouroboros.Network.Block (MaxSlotNo (..), maxSlotNoFromWithOrigin,
-           pointSlot)
-import Ouroboros.Network.BlockFetch
-import Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
-import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
-import Ouroboros.Network.PeerSelection.Governor (PeerSelectionState (..),
-           PeerSelectionTargets (..), PublicPeerSelectionState (..))
-import Ouroboros.Network.PeerSelection.PeerMetric
-           (PeerMetricsConfiguration (..), newPeerMetric)
 import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
 import Ouroboros.Network.Protocol.Handshake.Codec (VersionDataCodec (..),
            noTimeLimitsHandshake, timeLimitsHandshake)
 import Ouroboros.Network.Protocol.Handshake.Unversioned
            (unversionedHandshakeCodec, unversionedProtocolDataCodec)
 import Ouroboros.Network.Protocol.Handshake.Version (Accept (Accept))
-import Ouroboros.Network.RethrowPolicy (ErrorCommand (ShutdownNode),
-           ioErrorRethrowPolicy, mkRethrowPolicy, muxErrorRethrowPolicy)
-import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
-import Ouroboros.Network.Snocket (MakeBearer, Snocket, TestAddress (..),
-           invalidFileDescriptor)
 
-import Simulation.Network.Snocket (AddressType (..), FD)
-
-import GHC.Exception (Exception)
+import Ouroboros.Network.AnchoredFragment qualified as AF
+import Ouroboros.Network.Block (MaxSlotNo (..), maxSlotNoFromWithOrigin,
+           pointSlot)
+import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.BlockFetch.ConsensusInterface
            (ChainSelStarvation (ChainSelStarvationEndedAt))
 import Ouroboros.Network.ConnectionManager.State (ConnStateIdSupply)
+import Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
 import Ouroboros.Network.Diffusion.Common qualified as Common
 import Ouroboros.Network.Diffusion.P2P qualified as P2P
+import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
+import Ouroboros.Network.Mock.Chain (Chain, toAnchoredFragment, toOldestFirst)
+import Ouroboros.Network.Mock.ConcreteBlock (Block (..), BlockHeader (..),
+           convertSlotToTimeForTestsAssumingNoHardFork)
+import Ouroboros.Network.Mock.ProducerState (ChainProducerState (..))
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.Churn (PeerChurnArgs)
+import Ouroboros.Network.PeerSelection.Governor (PeerSelectionState (..),
+           PeerSelectionTargets (..), PublicPeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.Governor.Types
            (PeerSelectionGovernorArgs)
 import Ouroboros.Network.PeerSelection.LedgerPeers (NumberOfPeers)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeersConsensusInterface, LedgerPeersKind, UseLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
+import Ouroboros.Network.PeerSelection.PeerMetric
+           (PeerMetricsConfiguration (..), newPeerMetric)
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PeerStateActions (PeerConnectionHandle)
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
@@ -112,6 +103,14 @@ import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
            LocalRootConfig, WarmValency)
 import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersAPI (..))
+import Ouroboros.Network.RethrowPolicy (ErrorCommand (ShutdownNode),
+           ioErrorRethrowPolicy, mkRethrowPolicy, muxErrorRethrowPolicy)
+import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
+import Ouroboros.Network.Snocket (MakeBearer, Snocket, TestAddress (..),
+           invalidFileDescriptor)
+
+import Simulation.Network.Snocket (AddressType (..), FD)
+
 import Test.Ouroboros.Network.Data.Script (Script)
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB (addBlock,
            getBlockPointSet)
