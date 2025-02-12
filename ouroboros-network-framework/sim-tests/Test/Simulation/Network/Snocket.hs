@@ -37,6 +37,7 @@ import Codec.Serialise (Serialise)
 import Codec.Serialise qualified as Serialise
 
 import Data.ByteString.Lazy (ByteString)
+import Data.ByteString.Lazy qualified as BL
 import Data.Foldable (traverse_)
 import Data.Functor (void)
 import Data.Map qualified as Map
@@ -556,8 +557,10 @@ prop_simultaneous_open defaultBearerInfo =
 --
 -- This is how socket API behaves on Linux.
 --
+
 prop_self_connect :: ByteString -> Property
 prop_self_connect payload =
+  BL.length payload > 0 && BL.length payload <= 0xffff ==>
     runSimOrThrow sim
   where
     addr :: TestAddress Int
