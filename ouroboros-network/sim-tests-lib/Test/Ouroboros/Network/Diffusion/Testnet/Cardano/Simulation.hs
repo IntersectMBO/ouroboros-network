@@ -109,14 +109,12 @@ import Ouroboros.Network.InboundGovernor (RemoteTransitionTrace)
 import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.Mock.ConcreteBlock (Block (..), BlockHeader (..))
 import Ouroboros.Network.Mux (MiniProtocolLimits (..))
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.Governor (DebugPeerSelection (..),
-           PeerSelectionTargets (..), TracePeerSelection)
+           TracePeerSelection)
 import Ouroboros.Network.PeerSelection.Governor qualified as PeerSelection
 import Ouroboros.Network.PeerSelection.LedgerPeers (AfterSlot (..),
            LedgerPeersConsensusInterface (..), TraceLedgerPeers,
            UseLedgerPeers (..), accPoolStake)
-import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import Ouroboros.Network.PeerSelection.PeerStateActions
            (PeerSelectionActionsTrace)
@@ -138,7 +136,6 @@ import Ouroboros.Network.Protocol.KeepAlive.Codec (byteLimitsKeepAlive,
 import Ouroboros.Network.Protocol.Limits (shortWait, smallByteLimit)
 import Ouroboros.Network.Protocol.PeerSharing.Codec (byteLimitsPeerSharing,
            timeLimitsPeerSharing)
-import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Server2 qualified as Server
 import Ouroboros.Network.Snocket (Snocket, TestAddress (..))
 
@@ -146,11 +143,7 @@ import Simulation.Network.Snocket (BearerInfo (..), FD, SnocketTrace,
            WithAddr (..), makeFDBearer, withSnocket)
 
 import Test.Ouroboros.Network.Data.Script
-import Test.Ouroboros.Network.Diffusion.Node.Kernel (BlockGeneratorArgs,
-           NtCAddr, NtCVersion, NtCVersionData, NtNAddr, NtNAddr_ (IPAddr),
-           NtNVersion, NtNVersionData, ntnAddrToRelayAccessPoint,
-           randomBlockGenerationArgs)
-import Test.Ouroboros.Network.Diffusion.Testnet.Node qualified as Node
+import Test.Ouroboros.Network.Diffusion.Node as Node
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..), genLedgerPoolsFrom)
 import Test.Ouroboros.Network.PeerSelection.Cardano.Instances ()
 import Test.Ouroboros.Network.PeerSelection.Instances qualified as PeerSelection
@@ -486,7 +479,7 @@ genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream
     hasUpstream NodeArgs { naAddr, naPublicRoots, naLocalRootPeers } =
          not (Map.null $ naPublicRoots
                          `Map.withoutKeys`
-                         Set.fromList (maybeToList (ntnAddrToRelayAccessPoint naAddr)))
+                         Set.fromList (maybeToList (Node.ntnAddrToRelayAccessPoint naAddr)))
       || any id [ v > 0 && not (Map.null m)
                 | (HotValency v, _, m) <- naLocalRootPeers
                 ]
@@ -1117,11 +1110,11 @@ diffusionSimulation
           defaultMiniProtocolsLimit =
             MiniProtocolLimits { maximumIngressQueue = 64000 }
 
-          blockGeneratorArgs :: BlockGeneratorArgs Block StdGen
+          blockGeneratorArgs :: Node.BlockGeneratorArgs Block StdGen
           blockGeneratorArgs =
-            randomBlockGenerationArgs bgaSlotDuration
-                                      bgaRng
-                                      quota
+            Node.randomBlockGenerationArgs bgaSlotDuration
+                                           bgaRng
+                                           quota
 
           stdChainSyncTimeout :: ChainSyncTimeout
           stdChainSyncTimeout = do
