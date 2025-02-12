@@ -39,13 +39,24 @@ import Data.Time (secondsToDiffTime)
 import Data.Typeable (Typeable)
 import Data.Void (Void)
 import Data.Word (Word32)
-
 import GHC.IO.Exception (IOErrorType (..), IOException (..))
 import System.Random (mkStdGen)
 
 import Network.DNS.Types qualified as DNS
 import Network.Mux.Trace qualified as Mx
 
+import Cardano.Network.ConsensusMode
+import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
+           requiresBootstrapPeers)
+import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
+import Cardano.Network.Types (LedgerStateJudgement, NumberOfBigLedgerPeers (..))
+
+import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
+import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as ExtraState
+import Ouroboros.Cardano.Network.PublicRootPeers qualified as Cardano
+import Ouroboros.Cardano.Network.PublicRootPeers qualified as ExtraPeers
+
+import Ouroboros.Network.Block (BlockNo (..))
 import Ouroboros.Network.BlockFetch (PraosFetchMode (..),
            TraceFetchClientState (..))
 import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace (..))
@@ -53,6 +64,7 @@ import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Types
+import Ouroboros.Network.Diffusion.P2P (isFatal)
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.Mock.ConcreteBlock (BlockHeader)
@@ -60,53 +72,41 @@ import Ouroboros.Network.NodeToNode (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.LedgerPeers
+import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PeerStateActions
+import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions hiding (IOError)
+import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
+           (TraceLocalRootPeers (..))
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
+           LocalRootConfig (..), WarmValency (..))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSelection.Types
+import Ouroboros.Network.PeerSharing (PeerSharingResult (..))
+import Ouroboros.Network.Server2 qualified as Server
+
+import Test.Ouroboros.Network.ConnectionManager.Timeouts
+import Test.Ouroboros.Network.ConnectionManager.Utils
 import Test.Ouroboros.Network.Data.AbsBearerInfo
 import Test.Ouroboros.Network.Data.Script
 import Test.Ouroboros.Network.Data.Signal
 import Test.Ouroboros.Network.Data.Signal qualified as Signal
+import Test.Ouroboros.Network.Diffusion.Node.Kernel
+import Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Simulation
+import Test.Ouroboros.Network.Diffusion.Testnet.Node (config_REPROMOTE_DELAY)
+import Test.Ouroboros.Network.InboundGovernor.Utils
+import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..))
 import Test.Ouroboros.Network.Utils hiding (SmallDelay, debugTracer)
 
 import Simulation.Network.Snocket (BearerInfo (..))
 
-import Test.Ouroboros.Network.Diffusion.Node.Kernel
-import Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Simulation
 import Test.QuickCheck
 import Test.QuickCheck.Monoids
 import Test.Tasty
 import Test.Tasty.QuickCheck (testProperty)
-
-import Cardano.Network.ConsensusMode
-import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
-import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
-import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
-import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
-           (TraceLocalRootPeers (..))
-import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
-           LocalRootConfig (..), WarmValency (..))
-import Ouroboros.Network.PeerSharing (PeerSharingResult (..))
-import Ouroboros.Network.Server2 qualified as Server
-
-import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
-           requiresBootstrapPeers)
-import Cardano.Network.Types (LedgerStateJudgement, NumberOfBigLedgerPeers (..))
-import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as ExtraState
-import Ouroboros.Cardano.Network.PublicRootPeers qualified as Cardano
-import Ouroboros.Cardano.Network.PublicRootPeers qualified as ExtraPeers
-import Ouroboros.Network.Block (BlockNo (..))
-import Ouroboros.Network.Diffusion.P2P (isFatal)
-import Test.Ouroboros.Network.ConnectionManager.Timeouts
-import Test.Ouroboros.Network.ConnectionManager.Utils
-import Test.Ouroboros.Network.Diffusion.Testnet.Node (config_REPROMOTE_DELAY)
-import Test.Ouroboros.Network.InboundGovernor.Utils
-import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..))
 
 tests :: TestTree
 tests =
