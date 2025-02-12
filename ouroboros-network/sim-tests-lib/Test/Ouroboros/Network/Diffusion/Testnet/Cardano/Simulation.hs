@@ -44,12 +44,13 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Fix
+import Control.Monad.IOSim (IOSim, traceM)
 import Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 
-import Control.Monad.IOSim (IOSim, traceM)
-
+import Data.Bool (bool)
 import Data.ByteString.Char8 qualified as BSC
 import Data.ByteString.Lazy qualified as BL
+import Data.Function (on)
 import Data.IP (IP (..))
 import Data.List (delete, nubBy)
 import Data.List.NonEmpty qualified as NonEmpty
@@ -60,72 +61,23 @@ import Data.Proxy (Proxy (..))
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Time.Clock (secondsToDiffTime)
+import Data.Typeable (Typeable)
 import Data.Void (Void)
 import System.Random (StdGen, mkStdGen)
 import System.Random qualified as Random
 
 import Network.DNS (Domain, TTL)
-
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.PingPong.Type qualified as PingPong
 
 import Cardano.Network.ConsensusMode
-import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
-import Ouroboros.Network.ConnectionManager.Core qualified as CM
-import Ouroboros.Network.ConnectionManager.State qualified as CM
-import Ouroboros.Network.ConnectionManager.Types (AbstractTransitionTrace)
-import Ouroboros.Network.Driver.Limits (ProtocolSizeLimits (..),
-           ProtocolTimeLimits (..))
-import Ouroboros.Network.Handshake.Acceptable (Acceptable (acceptableVersion))
-import Ouroboros.Network.InboundGovernor (RemoteTransitionTrace)
-import Ouroboros.Network.InboundGovernor qualified as IG
-import Ouroboros.Network.Mux (MiniProtocolLimits (..))
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
-import Ouroboros.Network.PeerSelection.Governor (DebugPeerSelection (..),
-           PeerSelectionTargets (..), TracePeerSelection)
-import Ouroboros.Network.PeerSelection.Governor qualified as PeerSelection
-import Ouroboros.Network.PeerSelection.LedgerPeers (AfterSlot (..),
-           LedgerPeersConsensusInterface (..), TraceLedgerPeers,
-           UseLedgerPeers (..), accPoolStake)
-import Ouroboros.Network.PeerSelection.PeerStateActions
-           (PeerSelectionActionsTrace)
-import Ouroboros.Network.Protocol.BlockFetch.Codec (byteLimitsBlockFetch,
-           timeLimitsBlockFetch)
-import Ouroboros.Network.Protocol.ChainSync.Codec (ChainSyncTimeout (..),
-           byteLimitsChainSync, timeLimitsChainSync)
-import Ouroboros.Network.Protocol.KeepAlive.Codec (byteLimitsKeepAlive,
-           timeLimitsKeepAlive)
-import Ouroboros.Network.Protocol.Limits (shortWait, smallByteLimit)
-import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
-import Ouroboros.Network.Snocket (Snocket, TestAddress (..))
-
-import Ouroboros.Network.Block (BlockNo)
-import Ouroboros.Network.Mock.ConcreteBlock (Block (..), BlockHeader (..))
-import Simulation.Network.Snocket (BearerInfo (..), FD, SnocketTrace,
-           WithAddr (..), makeFDBearer, withSnocket)
-
-import Test.Ouroboros.Network.Data.Script
-import Test.Ouroboros.Network.Diffusion.Node.Kernel (BlockGeneratorArgs,
-           NtCAddr, NtCVersion, NtCVersionData, NtNAddr, NtNAddr_ (IPAddr),
-           NtNVersion, NtNVersionData, ntnAddrToRelayAccessPoint,
-           randomBlockGenerationArgs)
-import Test.Ouroboros.Network.PeerSelection.Cardano.Instances ()
-import Test.Ouroboros.Network.PeerSelection.Instances qualified as PeerSelection
-import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay (..),
-           DNSTimeout (..), mockDNSActions)
-import Test.Ouroboros.Network.PeerSelection.RootPeersDNS qualified as PeerSelection hiding
-           (tests)
-import Test.Ouroboros.Network.Utils
-
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Cardano.Network.PeerSelection.LocalRootPeers
            (OutboundConnectionsState (..))
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import Cardano.Network.Types (LedgerStateJudgement (..),
            NumberOfBigLedgerPeers (..))
-import Data.Bool (bool)
-import Data.Function (on)
-import Data.Typeable (Typeable)
+
 import Ouroboros.Cardano.Network.ArgumentsExtra qualified as Cardano
 import Ouroboros.Cardano.Network.Diffusion.Configuration
            (defaultNumberOfBigLedgerPeers)
@@ -141,11 +93,33 @@ import Ouroboros.Cardano.Network.Types (ChurnMode (..))
 import Ouroboros.Cardano.PeerSelection.Churn (peerChurnGovernor)
 import Ouroboros.Cardano.PeerSelection.PeerSelectionActions
            (requestPublicRootPeers)
+
+import Ouroboros.Network.Block (BlockNo)
 import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..),
            TraceFetchClientState, TraceLabelPeer (..))
+import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
+import Ouroboros.Network.ConnectionManager.Core qualified as CM
+import Ouroboros.Network.ConnectionManager.State qualified as CM
+import Ouroboros.Network.ConnectionManager.Types (AbstractTransitionTrace)
 import Ouroboros.Network.Diffusion.P2P qualified as Diff.P2P
+import Ouroboros.Network.Driver.Limits (ProtocolSizeLimits (..),
+           ProtocolTimeLimits (..))
+import Ouroboros.Network.Handshake.Acceptable (Acceptable (acceptableVersion))
+import Ouroboros.Network.InboundGovernor (RemoteTransitionTrace)
+import Ouroboros.Network.InboundGovernor qualified as IG
+import Ouroboros.Network.Mock.ConcreteBlock (Block (..), BlockHeader (..))
+import Ouroboros.Network.Mux (MiniProtocolLimits (..))
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
+import Ouroboros.Network.PeerSelection.Governor (DebugPeerSelection (..),
+           PeerSelectionTargets (..), TracePeerSelection)
+import Ouroboros.Network.PeerSelection.Governor qualified as PeerSelection
+import Ouroboros.Network.PeerSelection.LedgerPeers (AfterSlot (..),
+           LedgerPeersConsensusInterface (..), TraceLedgerPeers,
+           UseLedgerPeers (..), accPoolStake)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import Ouroboros.Network.PeerSelection.PeerStateActions
+           (PeerSelectionActionsTrace)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint (..),
            PortNumber, RelayAccessPoint (..))
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSLookupType)
@@ -155,12 +129,37 @@ import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
            (TracePublicRootPeers)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
            LocalRootConfig, WarmValency (..))
+import Ouroboros.Network.Protocol.BlockFetch.Codec (byteLimitsBlockFetch,
+           timeLimitsBlockFetch)
+import Ouroboros.Network.Protocol.ChainSync.Codec (ChainSyncTimeout (..),
+           byteLimitsChainSync, timeLimitsChainSync)
+import Ouroboros.Network.Protocol.KeepAlive.Codec (byteLimitsKeepAlive,
+           timeLimitsKeepAlive)
+import Ouroboros.Network.Protocol.Limits (shortWait, smallByteLimit)
 import Ouroboros.Network.Protocol.PeerSharing.Codec (byteLimitsPeerSharing,
            timeLimitsPeerSharing)
+import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Server2 qualified as Server
+import Ouroboros.Network.Snocket (Snocket, TestAddress (..))
+
+import Simulation.Network.Snocket (BearerInfo (..), FD, SnocketTrace,
+           WithAddr (..), makeFDBearer, withSnocket)
+
+import Test.Ouroboros.Network.Data.Script
+import Test.Ouroboros.Network.Diffusion.Node.Kernel (BlockGeneratorArgs,
+           NtCAddr, NtCVersion, NtCVersionData, NtNAddr, NtNAddr_ (IPAddr),
+           NtNVersion, NtNVersionData, ntnAddrToRelayAccessPoint,
+           randomBlockGenerationArgs)
 import Test.Ouroboros.Network.Diffusion.Testnet.Node qualified as Node
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..), genLedgerPoolsFrom)
+import Test.Ouroboros.Network.PeerSelection.Cardano.Instances ()
+import Test.Ouroboros.Network.PeerSelection.Instances qualified as PeerSelection
 import Test.Ouroboros.Network.PeerSelection.LocalRootPeers ()
+import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay (..),
+           DNSTimeout (..), mockDNSActions)
+import Test.Ouroboros.Network.PeerSelection.RootPeersDNS qualified as PeerSelection hiding
+           (tests)
+import Test.Ouroboros.Network.Utils
 import Test.QuickCheck
 
 -- | Diffusion Simulator Arguments
