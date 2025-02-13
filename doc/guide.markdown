@@ -126,10 +126,14 @@ Installation
 #### Building
 
 1. Check out source code from github:
+    ```sh
     git clone https://github.com/input-output-hk/kes-agent ./kes-agent
+    ```
 2. Build and install with cabal:
+    ```sh
     cd kes-agent
     cabal install exe:kes-agent exe:kes-agent-control
+    ```
 
 ### Installing KES Agent
 
