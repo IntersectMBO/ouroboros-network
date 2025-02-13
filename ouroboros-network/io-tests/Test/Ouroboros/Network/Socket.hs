@@ -48,11 +48,11 @@ import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
            noTimeLimitsHandshake)
 import Ouroboros.Network.Protocol.Handshake.Version (acceptableVersion,
            queryVersion)
+import Ouroboros.Network.Server.Simple qualified as Server.Simple
 import Ouroboros.Network.Util.ShowProxy
 
 import Test.ChainGenerators (TestBlockChainAndUpdates (..))
 import Test.Ouroboros.Network.Serialise
-import Test.Ouroboros.Network.Server qualified as Test.Server
 
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
@@ -158,7 +158,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
                                                   encode             decode
                                                   (encodeTip encode) (decodeTip decode)
 
-    Test.Server.with
+    Server.Simple.with
       (socketSnocket iocp)
       makeSocketBearer
       ((. Just) <$> configureSocket)

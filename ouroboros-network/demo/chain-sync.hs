@@ -79,7 +79,7 @@ import Ouroboros.Network.BlockFetch.ClientRegistry (FetchClientRegistry (..))
 import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation (..))
 import Ouroboros.Network.DeltaQ (defaultGSV)
 
-import Test.Ouroboros.Network.Server qualified as Test.Server
+import Ouroboros.Network.Server.Simple qualified as Server.Simple
 
 
 data Options = Options {
@@ -274,7 +274,7 @@ serverChainSync sockAddr slotLength seed = withIOManager $ \iocp -> do
     prng <- case seed of
       Nothing -> initStdGen
       Just a  -> return (mkStdGen a)
-    Test.Server.with
+    Server.Simple.with
       (localSnocket iocp)
       makeLocalBearer
       mempty
@@ -548,7 +548,7 @@ serverBlockFetch sockAddr slotLength seed = withIOManager $ \iocp -> do
     prng <- case seed of
       Nothing -> initStdGen
       Just a  -> return (mkStdGen a)
-    Test.Server.with
+    Server.Simple.with
       (localSnocket iocp)
       makeLocalBearer
       mempty

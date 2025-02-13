@@ -4,10 +4,11 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
--- | A simple server implemented for testing purposes
+-- | A simple server.  The server doesn't control resource usage (e.g. limiting
+-- of inbound connections) and thus should only be used in a safe environment.
 --
 -- The module should be imported qualified.
-module Test.Ouroboros.Network.Server where
+module Ouroboros.Network.Server.Simple where
 
 import Control.Applicative (Alternative)
 import Control.Concurrent.JobPool qualified as JobPool

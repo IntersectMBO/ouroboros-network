@@ -57,6 +57,7 @@ library
     Ouroboros.Network.Server
     Ouroboros.Network.Server.ConnectionTable
     Ouroboros.Network.Server.RateLimiting
+    Ouroboros.Network.Server.Simple
     Ouroboros.Network.Snocket
     Ouroboros.Network.Socket
     Simulation.Network.Snocket
@@ -116,7 +117,6 @@ library testlib
     Test.Ouroboros.Network.InboundGovernor.Utils
     Test.Ouroboros.Network.Orphans
     Test.Ouroboros.Network.RawBearer.Utils
-    Test.Ouroboros.Network.Server
 
   other-modules:
   build-depends:
@@ -288,7 +288,6 @@ executable demo-ping-pong
     network-mux,
     ouroboros-network-api,
     ouroboros-network-framework,
-    ouroboros-network-framework:testlib,
     typed-protocols-examples,
 
   default-language: Haskell2010

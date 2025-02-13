@@ -56,6 +56,7 @@ import Ouroboros.Network.Snocket as Snocket
 import Ouroboros.Network.Socket
 -- TODO: remove Mx prefixes
 import Ouroboros.Network.Mux
+import Ouroboros.Network.Server.Simple qualified as Server.Simple
 
 import Network.Mux qualified as Mx
 import Network.Mux.Bearer qualified as Mx
@@ -69,7 +70,6 @@ import Ouroboros.Network.Protocol.Handshake.Unversioned
 import Ouroboros.Network.Protocol.Handshake.Version
 
 import Test.Ouroboros.Network.Orphans ()
-import Test.Ouroboros.Network.Server qualified as Test.Server
 
 import Test.QuickCheck
 import Test.Tasty (DependencyType (..), TestTree, after, testGroup)
@@ -246,9 +246,9 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
       bind snocket sock responderAddr
       listen snocket sock
       res <-
-        Test.Server.with
+        Server.Simple.with
           snocket
-          makeSocketBearer
+          Mx.makeSocketBearer
           (\fd addr -> configureSock fd (Just addr))
           responderAddr
           HandshakeArguments {

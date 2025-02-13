@@ -38,7 +38,7 @@ import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
 import Ouroboros.Network.Protocol.Handshake.Codec
 import Ouroboros.Network.Protocol.Handshake.Unversioned
 import Ouroboros.Network.Protocol.Handshake.Version
-import Test.Ouroboros.Network.Server qualified as Test.Server
+import Ouroboros.Network.Server.Simple qualified as Server
 
 import Network.TypedProtocol.PingPong.Client as PingPong
 import Network.TypedProtocol.PingPong.Codec.CBOR as PingPong
@@ -158,7 +158,7 @@ clientPingPong pipelined =
 serverPingPong :: IO Void
 serverPingPong =
     withIOManager $ \iomgr -> do
-    Test.Server.with
+    Server.with
       (Snocket.localSnocket iomgr)
       makeLocalBearer
       mempty
@@ -252,7 +252,7 @@ clientPingPong2 =
 serverPingPong2 :: IO Void
 serverPingPong2 =
     withIOManager $ \iomgr -> do
-    Test.Server.with
+    Server.with
       (Snocket.localSnocket iomgr)
       makeLocalBearer
       mempty
