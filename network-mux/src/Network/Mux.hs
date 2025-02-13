@@ -201,7 +201,7 @@ data Group = MuxJob
 -- * at any given time each @TranslocationServiceRequest@ contains a non-empty
 -- 'Wanton'
 --
-run :: forall m mode.
+run :: forall m (mode :: Mode).
        ( MonadAsync m
        , MonadFork m
        , MonadLabelledSTM m
@@ -214,7 +214,12 @@ run :: forall m mode.
     -> Mux mode m
     -> Bearer m
     -> m ()
-run tracer Mux {muxMiniProtocols, muxControlCmdQueue, muxStatus} bearer@Bearer {name} = do
+run tracer
+    Mux { muxMiniProtocols,
+          muxControlCmdQueue,
+          muxStatus
+        }
+    bearer@Bearer{name} = do
     egressQueue <- atomically $ newTBQueue 100
 
     -- label shared variables
@@ -459,18 +464,28 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
                            ptclState@MiniProtocolState {
                              miniProtocolInfo = MiniProtocolInfo {
                                miniProtocolNum,
-                               miniProtocolDir
+                               miniProtocolDir,
+                               miniProtocolCapability
                              }
                            }
                            ptclAction) -> do
           traceWith tracer (TraceStartEagerly miniProtocolNum
-                             (protocolDirEnum miniProtocolDir))
-          JobPool.forkJob jobpool $
-            miniProtocolJob
-              tracer
-              egressQueue
-              ptclState
-              ptclAction
+                                              (protocolDirEnum miniProtocolDir))
+          case miniProtocolCapability of
+            Nothing ->
+              JobPool.forkJob jobpool $
+                miniProtocolJob
+                  tracer
+                  egressQueue
+                  ptclState
+                  ptclAction
+            Just cap ->
+              JobPool.forkJobOn cap jobpool $
+                miniProtocolJob
+                  tracer
+                  egressQueue
+                  ptclState
+                  ptclAction
           go monitorCtx
 
         EventControlCmd (CmdStartProtocolThread
@@ -554,20 +569,30 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
     doStartOnDemand ptclState@MiniProtocolState {
                       miniProtocolInfo = MiniProtocolInfo {
                            miniProtocolNum,
-                           miniProtocolDir
+                           miniProtocolDir,
+                           miniProtocolCapability
                       },
                       miniProtocolStatusVar
                     }
                     ptclAction = do
       traceWith tracer (TraceStartedOnDemand miniProtocolNum
-                         (protocolDirEnum miniProtocolDir))
+                                             (protocolDirEnum miniProtocolDir))
       atomically $ modifyTVar miniProtocolStatusVar (\a -> assert (a /= StatusRunning) StatusRunning)
-      JobPool.forkJob jobpool $
-        miniProtocolJob
-          tracer
-          egressQueue
-          ptclState
-          ptclAction
+      case miniProtocolCapability of
+        Nothing ->
+          JobPool.forkJob jobpool $
+            miniProtocolJob
+              tracer
+              egressQueue
+              ptclState
+              ptclAction
+        Just cap ->
+          JobPool.forkJobOn cap jobpool $
+            miniProtocolJob
+              tracer
+              egressQueue
+              ptclState
+              ptclAction
 
     checkNonEmptyQueue :: IngressQueue m -> STM m ()
     checkNonEmptyQueue q = do

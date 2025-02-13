@@ -403,7 +403,8 @@ makeConnectionHandler muxTracer singMuxMode
                   atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
                   bearer <- mkMuxBearer sduTimeout socket
                   Mx.run (Mx.WithBearer connectionId `contramap` muxTracer)
-                             mux bearer
+                         mux bearer
+
               Right (HandshakeQueryResult vMap) -> do
                 atomically $ writePromise (Right HandshakeConnectionQuery)
                 traceWith tracer $ TrHandshakeQuery vMap

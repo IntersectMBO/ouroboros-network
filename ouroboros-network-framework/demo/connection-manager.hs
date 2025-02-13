@@ -37,6 +37,7 @@ import Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 import Data.ByteString.Lazy (ByteString)
 import Data.Either (partitionEithers)
 import Data.Functor (($>))
+import Data.Hashable (Hashable)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Typeable (Typeable)
 
@@ -77,6 +78,7 @@ import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Server2 qualified as Server
 import Ouroboros.Network.Snocket (Snocket, socketSnocket)
 import Ouroboros.Network.Snocket qualified as Snocket
+import Ouroboros.Network.Socket ()
 import Ouroboros.Network.Util.ShowProxy
 
 
@@ -174,7 +176,10 @@ withBidirectionalConnectionManager
     :: forall peerAddr socket m a.
        ( ConnectionManagerMonad m
 
-       , Ord peerAddr, Show peerAddr, Typeable peerAddr
+       , Hashable peerAddr
+       , Ord peerAddr
+       , Show peerAddr
+       , Typeable peerAddr
 
        -- debugging
        , MonadFix m
@@ -444,7 +449,8 @@ runInitiatorProtocols
 --
 bidirectionalExperiment
     :: forall peerAddr socket.
-       ( Ord peerAddr
+       ( Hashable peerAddr
+       , Ord peerAddr
        , Show peerAddr
        , Typeable peerAddr
        , Eq peerAddr

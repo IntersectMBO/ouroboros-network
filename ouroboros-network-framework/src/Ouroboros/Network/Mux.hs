@@ -255,7 +255,8 @@ mkMiniProtocolInfo MiniProtocol {
   [ Mux.MiniProtocolInfo {
       Mux.miniProtocolNum,
       Mux.miniProtocolDir = dir,
-      Mux.miniProtocolLimits
+      Mux.miniProtocolLimits,
+      Mux.miniProtocolCapability = Nothing
     }
   | dir <- case miniProtocolRun of
              InitiatorProtocolOnly{}         -> [ Mux.InitiatorDirectionOnly ]
