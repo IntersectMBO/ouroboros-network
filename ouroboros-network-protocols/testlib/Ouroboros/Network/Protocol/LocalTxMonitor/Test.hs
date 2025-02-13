@@ -72,6 +72,7 @@ codec ::
      )
   => Codec (LocalTxMonitor TxId Tx SlotNo) S.DeserialiseFailure m ByteString
 codec = codecLocalTxMonitor
+  maxBound
   S.encode S.decode
   S.encode S.decode
   S.encode S.decode
