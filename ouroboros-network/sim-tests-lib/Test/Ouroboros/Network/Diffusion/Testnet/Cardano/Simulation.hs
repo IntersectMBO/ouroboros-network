@@ -52,7 +52,6 @@ import Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 import Data.Bool (bool)
 import Data.ByteString.Char8 qualified as BSC
 import Data.ByteString.Lazy qualified as BL
-import Data.Function (on)
 import Data.Either (fromLeft, fromRight)
 import Data.Foldable (foldlM)
 import Data.List (delete, nub, partition)
