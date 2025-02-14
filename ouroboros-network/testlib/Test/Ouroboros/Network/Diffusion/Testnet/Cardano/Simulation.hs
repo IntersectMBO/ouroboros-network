@@ -52,7 +52,6 @@ import Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 import Data.Bool (bool)
 import Data.ByteString.Char8 qualified as BSC
 import Data.ByteString.Lazy qualified as BL
-import Data.Function (on)
 import Data.Either (fromLeft, fromRight)
 import Data.Foldable (foldlM)
 import Data.List (delete, nub, partition)
@@ -113,20 +112,10 @@ import Ouroboros.Network.InboundGovernor (RemoteTransitionTrace)
 import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.Mock.ConcreteBlock (Block (..), BlockHeader (..))
 import Ouroboros.Network.Mux (MiniProtocolLimits (..))
-import Ouroboros.Network.PeerSelection (AfterSlot (..), DomainAccessPoint (..),
-           LedgerPeersConsensusInterface (..), PeerSelectionActionsTrace,
-           PeerSharing, PortNumber, RelayAccessPoint (..), TraceLedgerPeers,
-           UseLedgerPeers (..))
-import Ouroboros.Network.PeerSelection.Governor (DebugPeerSelection (..),
-           TracePeerSelection)
+import Ouroboros.Network.PeerSelection hiding (peerChurnGovernor,
+           requestPublicRootPeers)
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
-import Ouroboros.Network.PeerSelection.LedgerPeers (AfterSlot (..),
-           LedgerPeersConsensusInterface (..), TraceLedgerPeers,
-           UseLedgerPeers (..), accPoolStake)
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
-import Ouroboros.Network.PeerSelection.PeerStateActions
-           (PeerSelectionActionsTrace)
-import Ouroboros.Network.PeerSelection.RelayAccessPoint
+import Ouroboros.Network.PeerSelection.LedgerPeers (accPoolStake)
 import Ouroboros.Network.PeerSelection.RootPeersDNS
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
            LocalRootConfig, WarmValency (..))
@@ -907,7 +896,7 @@ data DiffusionTestTrace =
       DiffusionLocalRootPeerTrace (TraceLocalRootPeers PeerTrustable NtNAddr SomeException)
     | DiffusionPublicRootPeerTrace TracePublicRootPeers
     | DiffusionLedgerPeersTrace TraceLedgerPeers
-    | DiffusionPeerSelectionTrace (TracePeerSelection Cardano.ExtraState PeerTrustable (Cardano.ExtraPeers NtNAddr) NtNAddr)
+    | DiffusionPeerSelectionTrace (Governor.TracePeerSelection Cardano.ExtraState PeerTrustable (Cardano.ExtraPeers NtNAddr) NtNAddr)
     | DiffusionPeerSelectionActionsTrace (PeerSelectionActionsTrace NtNAddr NtNVersion)
     | DiffusionDebugPeerSelectionTrace (DebugPeerSelection Cardano.ExtraState PeerTrustable (Cardano.ExtraPeers NtNAddr) NtNAddr)
     | DiffusionConnectionManagerTrace
