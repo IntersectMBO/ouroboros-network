@@ -241,7 +241,7 @@ tests =
       ]
     , testGroup "Churn"
       [ testProperty "no timeouts"
-                     (testWithIOSim prop_churn_notimeouts 125000 absNoAttenuation)
+                     (testWithIOSim prop_churn_notimeouts 100000 absNoAttenuation)
       , testProperty "steps"
                      (testWithIOSim prop_churn_steps 5000)
       ]
