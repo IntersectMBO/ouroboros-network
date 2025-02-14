@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
@@ -4055,14 +4056,14 @@ prop_churn_notimeouts ioSimTrace traceNumber =
      <$> events
   where
     noChurnTimeout :: TracePeerSelection extraDebugState extraFlags extraPeers NtNAddr -> Bool
-    noChurnTimeout (TraceChurnTimeout _ DecreasedActivePeers _)               = False
-    noChurnTimeout (TraceChurnTimeout _ DecreasedActiveBigLedgerPeers _)      = False
-    noChurnTimeout (TraceChurnTimeout _ DecreasedEstablishedPeers _)          = False
-    noChurnTimeout (TraceChurnTimeout _ DecreasedEstablishedBigLedgerPeers _) = False
-    noChurnTimeout (TraceChurnTimeout _ DecreasedKnownPeers _)                = False
-    noChurnTimeout (TraceChurnTimeout _ DecreasedKnownBigLedgerPeers _)       = False
-    noChurnTimeout  TraceChurnTimeout {}                                      = True
-    noChurnTimeout  _                                                         = True
+    noChurnTimeout (TraceChurnTimeout !_ DecreasedActivePeers !_)               = False
+    noChurnTimeout (TraceChurnTimeout !_ DecreasedActiveBigLedgerPeers !_)      = False
+    noChurnTimeout (TraceChurnTimeout !_ DecreasedEstablishedPeers !_)          = False
+    noChurnTimeout (TraceChurnTimeout !_ DecreasedEstablishedBigLedgerPeers !_) = False
+    noChurnTimeout (TraceChurnTimeout !_ DecreasedKnownPeers !_)                = False
+    noChurnTimeout (TraceChurnTimeout !_ DecreasedKnownBigLedgerPeers !_)       = False
+    noChurnTimeout  TraceChurnTimeout {}                                        = True
+    noChurnTimeout  _                                                           = True
 
 
 -- | Verify that churn trace consists of repeated list of actions:
