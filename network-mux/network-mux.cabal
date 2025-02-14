@@ -215,6 +215,7 @@ benchmark socket-read-write
   default-extensions: ImportQualifiedPost
   ghc-options:
     -threaded
+    -rtsopts
     -fproc-alignment=64
     -Wall
     -Wcompat
