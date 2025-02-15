@@ -43,6 +43,7 @@ import Control.DeepSeq (NFData (..))
 import Data.Aeson
 import Data.Aeson.Types
 import NoThunks.Class
+
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 
 -- |The type of big ledger peers that is serialised or later

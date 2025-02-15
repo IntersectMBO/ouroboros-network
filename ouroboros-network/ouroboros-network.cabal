@@ -87,6 +87,7 @@ library
     Ouroboros.Network.KeepAlive
     Ouroboros.Network.NodeToClient
     Ouroboros.Network.NodeToNode
+    Ouroboros.Network.PeerSelection
     Ouroboros.Network.PeerSelection.Churn
     Ouroboros.Network.PeerSelection.Governor
     Ouroboros.Network.PeerSelection.Governor.Monitor

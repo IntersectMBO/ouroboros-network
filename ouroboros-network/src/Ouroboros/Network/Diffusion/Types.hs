@@ -38,7 +38,6 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, nullTracer)
 
 import Data.ByteString.Lazy (ByteString)
-import Data.IP (IP)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Map (Map)
 import Data.Set (Set)
@@ -72,27 +71,10 @@ import Ouroboros.Network.Socket (SystemdSocketTracer)
 import Ouroboros.Network.NodeToClient qualified as NodeToClient
 import Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit, DiffusionMode)
 import Ouroboros.Network.NodeToNode qualified as NodeToNode
-import Ouroboros.Network.PeerSelection.Churn qualified as Governor
+import Ouroboros.Network.PeerSelection as PeerSelection
 import Ouroboros.Network.PeerSelection.Governor.Types
-import Ouroboros.Network.PeerSelection.LedgerPeers (LedgerPeerSnapshot,
-           LedgerPeersConsensusInterface (..), LedgerPeersKind, NumberOfPeers,
-           TraceLedgerPeers, UseLedgerPeers)
-import Ouroboros.Network.PeerSelection.PeerAdvertise
-import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
-import Ouroboros.Network.PeerSelection.PeerStateActions (PeerConnectionHandle,
-           PeerSelectionActionsTrace)
-import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
-import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
-import Ouroboros.Network.PeerSelection.RootPeersDNS (PeerActionsDNS)
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
-import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
-           (TraceLocalRootPeers)
-import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
-           (TracePublicRootPeers)
+import Ouroboros.Network.PeerSelection.RootPeersDNS
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
-import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersAPI)
 
 -- | The 'DiffusionTracer' logs
 --
@@ -187,7 +169,7 @@ data Tracers ntnAddr ntnVersion ntnVersionData
         :: Tracer m (PeerSelectionCounters extraCounters)
 
     , dtTraceChurnCounters
-        :: Tracer m Governor.ChurnCounters
+        :: Tracer m PeerSelection.ChurnCounters
 
     , dtPeerSelectionActionsTracer
         :: Tracer m (PeerSelectionActionsTrace ntnAddr ntnVersion)
@@ -406,7 +388,7 @@ data Arguments extraState extraDebugState extraFlags extraPeers
       -- 'Ouroboros.Network.PeerSelection.Churn.peerChurnGovernor'
       --
     , daPeerChurnGovernor
-        :: Governor.PeerChurnArgs
+        :: PeerSelection.PeerChurnArgs
              m
              extraChurnArgs
              extraDebugState

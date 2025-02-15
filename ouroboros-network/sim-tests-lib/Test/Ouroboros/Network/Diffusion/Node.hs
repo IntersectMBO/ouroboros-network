@@ -89,25 +89,18 @@ import Ouroboros.Network.Mock.ConcreteBlock (Block (..), BlockHeader (..),
            convertSlotToTimeForTestsAssumingNoHardFork)
 import Ouroboros.Network.Mock.ProducerState (ChainProducerState (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
-import Ouroboros.Network.PeerSelection.Churn (PeerChurnArgs)
-import Ouroboros.Network.PeerSelection.Governor (PeerSelectionState (..),
-           PeerSelectionTargets (..), PublicPeerSelectionState (..))
-import Ouroboros.Network.PeerSelection.Governor.Types
-           (PeerSelectionGovernorArgs)
-import Ouroboros.Network.PeerSelection.LedgerPeers (NumberOfPeers)
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-           (LedgerPeersConsensusInterface, LedgerPeersKind, UseLedgerPeers)
-import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
-import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics,
-           PeerMetricsConfiguration (..), newPeerMetric)
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
-import Ouroboros.Network.PeerSelection.PeerStateActions (PeerConnectionHandle)
-import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
-import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint,
-           RelayAccessPoint)
-import Ouroboros.Network.PeerSelection.RootPeersDNS (PeerActionsDNS)
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSLookupType)
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore)
+import Ouroboros.Network.PeerSelection (DomainAccessPoint, PeerAdvertise (..),
+           PeerChurnArgs, PeerConnectionHandle, PeerMetrics,
+           PeerMetricsConfiguration (..), PeerSharing (..), PublicRootPeers,
+           RelayAccessPoint, newPeerMetric)
+import Ouroboros.Network.PeerSelection.Governor (PeerSelectionGovernorArgs,
+           PeerSelectionState (..), PeerSelectionTargets (..),
+           PublicPeerSelectionState (..))
+import Ouroboros.Network.PeerSelection.LedgerPeers
+           (LedgerPeersConsensusInterface, LedgerPeersKind, NumberOfPeers,
+           UseLedgerPeers)
+import Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupType,
+           DNSSemaphore, PeerActionsDNS)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
            LocalRootConfig, WarmValency)
 import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersAPI (..))

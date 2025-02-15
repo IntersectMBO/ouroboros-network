@@ -1,13 +1,14 @@
-module Ouroboros.Network.PeerSelection.RootPeersDNS (PeerActionsDNS (..)) where
+module Ouroboros.Network.PeerSelection.RootPeersDNS
+  ( PeerActionsDNS (..)
+  , module DNSActions
+  , module DNSSemaphore
+  , module LedgerPeers
+  , module LocalRootPeers
+  , module PublicRootPeers
+  ) where
 
-import Data.IP (IP)
-import Network.Socket (PortNumber)
-
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
-
--- | Record of some parameters that are commonly used together
---
-data PeerActionsDNS peeraddr resolver exception m = PeerActionsDNS {
-  paToPeerAddr :: IP -> PortNumber -> peeraddr,
-  paDnsActions :: DNSActions resolver exception m
-  }
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions as DNSActions
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore as DNSSemaphore
+import Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers as LedgerPeers
+import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers as LocalRootPeers
+import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers as PublicRootPeers

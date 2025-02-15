@@ -70,9 +70,6 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
            recomputeRelativeStake)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore)
-import Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
-           (resolveLedgerPeers)
 
 -- | Internal API to deal with 'UseLedgerAfter' configuration
 -- option

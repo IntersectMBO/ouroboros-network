@@ -1,14 +1,13 @@
 {-# LANGUAGE CPP                      #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE FlexibleContexts         #-}
-{-# LANGUAGE LambdaCase               #-}
 {-# LANGUAGE NamedFieldPuns           #-}
 {-# LANGUAGE RankNTypes               #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
-{-# LANGUAGE TupleSections            #-}
 
 module Ouroboros.Network.PeerSelection.PeerSelectionActions
-  ( withPeerSelectionActions
+  ( PeerSelectionActions (..)
+  , withPeerSelectionActions
   , requestPeerSharingResult
   , requestPublicRootPeers
   ) where
@@ -39,10 +38,6 @@ import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.RootPeersDNS
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore)
-import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
-import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
-           (TracePublicRootPeers, publicRootPeersProvider)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers
 import Ouroboros.Network.PeerSharing (PeerSharingController,
            PeerSharingResult (..), requestPeers)
