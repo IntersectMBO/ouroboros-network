@@ -45,7 +45,6 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS
 
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
 import Test.Ouroboros.Network.Data.Script
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS
 import Test.QuickCheck

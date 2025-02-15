@@ -30,7 +30,6 @@ import Network.DNS qualified as DNS
 
 import Data.Bifunctor (second)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
-import Ouroboros.Network.PeerSelection.RootPeersDNS (PeerActionsDNS (..))
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore,
            newDNSLocalRootSemaphore, withDNSSemaphore)

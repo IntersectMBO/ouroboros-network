@@ -78,20 +78,10 @@ import Ouroboros.Network.NodeToClient qualified as NodeToClient
 import Ouroboros.Network.NodeToNode (NodeToNodeVersion (..),
            NodeToNodeVersionData (..), RemoteAddress)
 import Ouroboros.Network.NodeToNode qualified as NodeToNode
-import Ouroboros.Network.PeerSelection.Churn (PeerChurnArgs (..))
+import Ouroboros.Network.PeerSelection as PeerSelection
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
-import Ouroboros.Network.PeerSelection.Governor.Types hiding (peerSharing)
-import Ouroboros.Network.PeerSelection.LedgerPeers (WithLedgerPeersArgs (..))
-import Ouroboros.Network.PeerSelection.PeerMetric
-import Ouroboros.Network.PeerSelection.PeerSelectionActions
-import Ouroboros.Network.PeerSelection.PeerSelectionActions qualified as Ouroboros
-import Ouroboros.Network.PeerSelection.PeerStateActions (PeerConnectionHandle,
-           PeerStateActionsArguments (..), pchPeerSharing, withPeerStateActions)
-import Ouroboros.Network.PeerSelection.RootPeersDNS
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
-           (DNSLookupType (..), ioDNSActions)
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
-           (newLedgerAndPublicRootDNSSemaphore)
+import Ouroboros.Network.PeerSelection.RootPeersDNS (PeerActionsDNS (..))
+import Ouroboros.Network.PeerSelection.RootPeersDNS qualified as RootPeersDNS
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
 import Ouroboros.Network.Protocol.Handshake
@@ -432,9 +422,9 @@ runM Interfaces
         Nothing   -> pure ()
 
       lookupReqs <- case (ipv4Address, ipv6Address) of
-                           (Just _ , Nothing) -> return LookupReqAOnly
-                           (Nothing, Just _ ) -> return LookupReqAAAAOnly
-                           (Just _ , Just _ ) -> return LookupReqAAndAAAA
+                           (Just _ , Nothing) -> return RootPeersDNS.LookupReqAOnly
+                           (Nothing, Just _ ) -> return RootPeersDNS.LookupReqAAAAOnly
+                           (Just _ , Just _ ) -> return RootPeersDNS.LookupReqAAndAAAA
                            (Nothing, Nothing) -> throwIO NoSocket
 
       -- RNGs used for picking random peers from the ledger and for
@@ -445,7 +435,7 @@ runM Interfaces
 
       peerSelectionTargetsVar <- newTVarIO daPeerSelectionTargets
 
-      countersVar <- newTVarIO (emptyPeerSelectionCounters daEmptyExtraCounters)
+      countersVar <- newTVarIO (Governor.emptyPeerSelectionCounters daEmptyExtraCounters)
 
       -- Design notes:
       --  - We split the following code into two parts:
@@ -582,7 +572,7 @@ runM Interfaces
                     spsMainThreadId = mainThreadId
                   }
 
-      dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
+      dnsSemaphore <- RootPeersDNS.newLedgerAndPublicRootDNSSemaphore
       let dnsActions =
             PeerActionsDNS {
               paToPeerAddr = diNtnToPeerAddr
@@ -629,7 +619,7 @@ runM Interfaces
                                          requestPublicRootPeers     =
                                            case daRequestPublicRootPeers of
                                              Nothing ->
-                                               Ouroboros.requestPublicRootPeers
+                                               PeerSelection.requestPublicRootPeers
                                                  dtTracePublicRootPeersTracer
                                                  daReadPublicRootPeers
                                                  dnsActions
@@ -750,7 +740,7 @@ runM Interfaces
         -- InitiatorOnly mode, run peer selection only:
         InitiatorOnlyDiffusionMode ->
           withConnectionManagerInitiatorOnlyMode $ \connectionManager-> do
-          debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng daEmptyExtraState mempty
+          debugStateVar <- newTVarIO $ Governor.emptyPeerSelectionState fuzzRng daEmptyExtraState mempty
           diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
           withPeerStateActions' connectionManager $ \peerStateActions->
             withPeerSelectionActions'
@@ -782,7 +772,7 @@ runM Interfaces
                 --
                 withServer sockets connectionManager inboundInfoChannel $
                   \inboundGovernorThread readInboundState -> do
-                    debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng daEmptyExtraState mempty
+                    debugStateVar <- newTVarIO $ Governor.emptyPeerSelectionState fuzzRng daEmptyExtraState mempty
                     diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
                     withPeerStateActions' connectionManager $
                       \peerStateActions ->
@@ -930,7 +920,7 @@ run sigUSR1Signal tracers args apps = do
                  diNtcSnocket           = Snocket.localSnocket iocp,
                  diNtcBearer            = makeLocalBearer,
                  diNtcGetFileDescriptor = localSocketFileDescriptor,
-                 diDnsActions           = ioDNSActions,
+                 diDnsActions           = RootPeersDNS.ioDNSActions,
                  diInstallSigUSR1Handler = sigUSR1Signal,
                  diNtnHandshakeArguments,
                  diNtcHandshakeArguments,

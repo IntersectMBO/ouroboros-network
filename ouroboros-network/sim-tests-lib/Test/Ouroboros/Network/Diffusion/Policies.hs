@@ -25,9 +25,9 @@ import NoThunks.Class.Orphans ()
 
 import Cardano.Slotting.Slot (SlotNo (..))
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
+import Ouroboros.Network.PeerSelection (PeerSource (..))
 import Ouroboros.Network.PeerSelection.Governor
 import Ouroboros.Network.PeerSelection.PeerMetric
-import Ouroboros.Network.PeerSelection.Types (PeerSource (..))
 import Ouroboros.Network.SizeInBytes
 
 import Ouroboros.Cardano.Network.Diffusion.Policies
