@@ -2,11 +2,183 @@
 
 ## next release
 
+### Non Breaking changes
+
+- Renamed `Test.Ouroboros.Network.Testnet.*` to `Test.Ouroboros.Network.Diffusion.*`
+- Refactored tests to compile with library changes and made necessary changes
+  to work with the now polymorphic diffusion code.
+- Renamed `Test.Ouroboros.Network.{BlockFetch, KeepAlive, TxSubmission}` to
+  `Test.Ouroboros.Network.MiniProtocols.{BlockFetch, KeepAlive, TxSubmission}`.
+- Created `Test.Ouroboros.Network.PeerSelection.Cardano.Instances` and moved
+  Cardano specific types and type-class instances to here.
+- Created `Test.Ouroboros.Network.PeerSelection.Cardano.LocalRootPeers` and moved
+  Cardano local root peers specific tests to here
+- Moved `Test.Ouroboros.Network.PeerSelection.MockEnvironment` to
+  `Test.Ouroboros.Network.PeerSelection.Cardano.MockEnvironment`
+- Moved `Test.Ouroboros.Network.PeerSelection.PublicRootPeers` to
+  `Test.Ouroboros.Network.PeerSelection.Cardano.PublicRootPeers`
+
 ### Breaking changes
 
 * Use `miniProtocolStart` for setting start strategy.
   KeepAlive is started with `StartOnDemandAny`, other miniprotocols are
   started with `StartOnDemand`.
+- Created `Ouroboros.Cardano.Diffusion.Configuration` and moved all Cardano
+  specific configuration values to here.
+- Created `Ouroboros.Cardano.Diffusion.Handlers` which holds the
+  `sigUSR1Handler` for the Cardano node.
+- Created `Ouroboros.Cardano.Diffusion.Policies` that hold the `ChurnMode`
+  peer policy used by Cardano node.
+- Created `Ouroboros.Cardano.Network.ExtraArguments` that has the
+  `ExtraArguments` data type to be plugged as an extension point in the
+  Diffusion Stack when instantiating Cardano node.
+- Created `Ouroboros.Cardano.Network.LedgerPeersConsensusInterface` that has
+  the `LedgerPeersConsensusInterface` data type to be plugged as an extension
+  point in the Diffusion Stack when instantiating Cardano node.
+- Created `Ouroboros.Cardano.Network.PeerSelection.Churn.ExtraArguments` that has
+  the `Churn.ExtraArguments` data type to be plugged as an extension point in
+  the Churn governor when instantiating Cardano node.
+- Created `Ouroboros.Cardano.Network.PeerSelection.Governor.Monitor` that
+  holds all monitoring actions related and used by Cardano Node
+  (`targetPeers`, `localRoots`, `monitorLedgerStateJudgement`,
+   `monitorBootstrapPeersFlag`, `waitForSystemToQuiesce`).
+- Created `Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionActions`
+  that has the `ExtraPeerSelectionActions` data type to be plugged as an
+  extension point in the Diffusion Stack when instantiating Cardano node.
+- Created `Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState`
+  that has the `ExtraState` and `DebugPeerSelectionState` data types to be
+  plugged as an extension point in the Diffusion Stack when instantiating
+  Cardano node.
+- Created `Ouroboros.Cardano.Network.PeerSelection.Governor.Types`
+  that has the `ExtraPeerSelectionSetsWithSizes` data type and
+  `cardanoPeerSelectionGovernorArgs` function to be plugged as an extension
+  point in the Diffusion Stack when instantiating Cardano node.
+- Created `Ouroboros.Cardano.Network.PublicRootPeers` that has the
+  `ExtraPeers` data type, and `cardanoPublicRootPeersAPI` function function to
+  be plugged as an extension point in the Diffusion Stack when instantiating
+  Cardano node.
+- Created `Ouroboros.Cardano.Network.Types` that has the
+  `ChurnMode` data type definition and the `CardanoPublicRootPeers` type alias to
+  be plugged as an extension point in the Diffusion Stack when instantiating
+  Cardano node.
+- Created `Ouroboros.Cardano.PeerSelection.Churn` that has the
+  `peerChurnGovernor` (and subsequent auxiliary functions) that is used by
+  Cardano Node.
+- Created `Ouroboros.Cardano.PeerSelection.PeerSelectionActions`  that has the
+  `requestPublicRootPeers` function used to fetch `CardanoPublicRootPeers` and
+  is used by Cardano Node.
+- In `Ouroboros.Network.Diffusion` changes to `ExtraTracers`,
+  `ArgumentsExtra`, `Applications` `ApplicationsExtra` were made to include
+  all required extension point type variables. `run` function now is 100%
+  polymorphic and independent of Cardano specifics.
+- Moved most common Diffusion data types definitions (e.g. `ArgumentsExtra`,
+  `ApplicationsExtra`, `NodeToNodeConnectionManager`, etc.) to
+  `Ouroboros.Network.Diffusion.Common`. These data types were also changed to
+  include the necessary extension points to make them general and polymorphic
+  regarding Cardano specific details.
+  - `Applications` now has `extraAPI` type parameter used by `laLedgerPeersCtx`
+  - `TracersExtra` now has `extraState`, `extraDebugState`, `extraFlags`,
+    `extraPeers`, `extraCounters` type parameters
+  - `ArgumentsExtra` now has `extraArgs`, `extraState`, `extraDebugState`,
+    `extraActions`, `extraFlags`, `extraPeers`, `extraAPI`, `extraChurnArgs`,
+    `extraCounters` type parameters.
+    - This data type also now includes:
+      - `daPeerSelectionGovernorArgs` to enable users to provide their own
+        churn governor.
+      - `daPeerSelectionStateToExtraCounters` to enable users to provider
+      their own `extraCounters` counter function.
+      - `daToExtraPeers` to enable users to provide how to construct
+      their own `extraPeers` from a DNS lookup result.
+      - `daRequestPublicRootPeers` to enable users to provide how to fetch
+      their own public root peers. Note that if no custom function is required
+      a default one is provided.
+      - `daPeerChurnGovernor` to enable users to provide their own churn
+      governor. Note that if no custom function is required a default one is
+      provided.
+      - `daExtraActions` field to enable users to provide their own
+        `extraActions`
+      - `daExtraChurnArgs` field to enable users to provide their own
+        `extraChurnArgs`
+      - `daExtraArgs` field to enable users to provide their own `extraArgs`
+  - `Interfaces` now has `extraState`, `extraFlags`, `extraPeers`, `extraAPI`
+    type parameters.
+    - This data type also now includes:
+      - `diInstallSigUSR1Handler` field to enable users to provide their own
+        SIG USR1 signal handler.
+- `Ouroboros.Network.Diffusion.P2P` `runM` and `run` is now fully polymorphic over
+  Cardano specific details. It uses default implementations for
+  `requestPublicRootPeers` if none is provided
+- `Ouroboros.Network.Diffusion.Policies` now only contains a simple peer
+  selection policy used by a default churn governor implementation that does
+  not depend on Cardano specifics.
+- `Ouroboros.Network.PeerSelection.Churn` `PeerChurnArgs` now has `extraArgs`,
+  `extraDebugState`, `extraFlags`, `extraPeers`, `extraAPI`, `extraCounters`
+  type parameters.
+  - This data type also now includes:
+    - `getOriginalPeerTargets` which returns the local configured
+      `PeerSelectionTargets`
+  - `peerChurnGovernor` is now polymorphic and simpler since it does not
+  depend on Cardano specifics. This function is should be used as the default
+  one if no custom churn governor is provided.
+- `Ouroboros.Network.PeerSelection.Governor` `peerSelectionGovernor` is now
+  fully polymorphic and does not depend on Cardano specifics. It relies on
+  `PeerSelectionGovernorArgs`'s `ExtraGuardedDecisions` data type to insert
+  the extra monitoring actions that an user might configure.
+- `Ouroboros.Network.PeerSelection.Governor.{Monitor, ActivePeers, BigLedgerPeers, EstablishedPeers, KnownPeers, RootPeers}`
+  monitoring actions functions were made fully polymorphic.
+- `Ouroboros.Network.PeerSelection.Governor.Types` `PeerSelectionActions` now
+  has `extraState`, `extraActions`, `extraFlags`, `extraPeers`, `extraAPI`,
+  `extraCounters`.
+  - This data type also now includes:
+    - `readLocalRootPeersFromFile` for reading the original set of locally
+      configured root peers.
+    - `extraPeersAPI` field for accessing the `PublicExtraPeersAPI` data type.
+    - `extraStateToExtraCounters` to compute `extraCounters` from `PeerSelectionState`
+    - `updateOutboundConnectionsState` was *removed* and moved elsewhere since
+    it was a Cardano specific function.
+    - `extraActions` field to enable users to provide their own
+      `extraActions`.
+- `Ouroboros.Network.PeerSelection.Governor.Types` `PeerSelectionInterfaces` now
+  has `extraState`, `extraFlags`, `extraPeers`, `extraCounters`.
+- Created `PeerSelectionGovernorArgs` which contains `ExtraGuardedDecisions`
+  in `Ouroboros.Network.PeerSelection.Governor.Types` to enable users to
+  extend the peer selection governor monitoring actions and a few other bits
+  like when to abort the governor.
+- `Ouroboros.Network.PeerSelection.Governor.Types` `PeerSelectionState` now
+  has `extraState`, `extraFlags`, `extraPeers`.
+- `Ouroboros.Network.PeerSelection.Governor.Types` `DebugPeerSelectionState` now
+  has `extraState`, `extraFlags`, `extraPeers`.
+- `Ouroboros.Network.PeerSelection.Governor.Types` `PeerSelectionView` now
+  has `extraViews`.
+- `Ouroboros.Network.PeerSelection.LedgerPeers` `ledgerPeersThread`,
+  `withLedgerPeers` and `WithLedgerPeersArgs` have too been refactored to
+  accommodate the required extra type parameters.
+- Removed `LedgerStateJudgement` from `LedgerPeers` data type in
+  `Ouroboros.Network.PeerSelection.LedgerPeers.Common`
+- `withPeerSelectionActions` no longer receives `PeerSelectionActionsArgs` as
+  this data type was redundant. Instead a callback that creates
+  `PeerSelectionActions` is passed and used.
+
+  In the same module (`Ouroboros.Network.PeerSelection.PeerSelectionActions`)
+  a default, polymorphic implementation for `requestPublicRootPeers` is
+  provided.
+- `PublicRootPeers` data type in `Ouroboros.Network.PeerSelection.PublicRootPeers`
+  no longer uses Cardano specific notions such as bootstrap peers. It now
+  abstracts over them using the `extraPeers` type parameter. All the functions
+  were refactored to accommodate this change. Now each function receives a
+  callback that is applied to the `extraPeers` field. To make this more
+  ergonomic the `PublicExtraPeersAPI` data type was created in
+  `Ouroboros.Network.PeerSelection.Types`, which is a record of all
+  `PublicRootPeers` manipulation functions.
+- Removed `paDNSSemaphore` from `PeerActionsDNS`, this is now passed to
+  `WithLedgerPeersArgs`.
+- `TraceLocalRootPeers` now has `extraFlags` type parameters.
+- `localRootPeersProvider` now receives `PeerActionsDNS` instead of the
+  `toPeerAddr` callback.
+- `LocalRootConfig` now has `extraFlags` type parameter and field
+  (`PeerTrustable` was abstracted out, since this was a bootstrap peers
+  Cardano specific type.).
+- `LocalRootPeers` now has `extraFlags` type parameter.
 
 ### Non-breaking changes
 

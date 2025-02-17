@@ -20,7 +20,6 @@ module Ouroboros.Network.PeerSelection.Governor
     -- $peer-selection-governor
     PeerSelectionPolicy (..)
   , PeerSelectionTargets (..)
-  , ConsensusModePeerTargets (..)
   , PeerSelectionActions (..)
   , PeerSelectionInterfaces (..)
   , PeerStateActions (..)
@@ -31,10 +30,6 @@ module Ouroboros.Network.PeerSelection.Governor
   , readAssociationMode
   , DebugPeerSelectionState (..)
   , peerSelectionGovernor
-    -- * Peer churn governor
-  , PeerChurnArgs (..)
-  , peerChurnGovernor
-  , ChurnCounters (..)
     -- * Internals exported for testing
   , assertPeerSelectionState
   , sanePeerSelectionTargets
@@ -49,14 +44,12 @@ module Ouroboros.Network.PeerSelection.Governor
   , emptyPeerSelectionCounters
   , nullPeerSelectionTargets
   , emptyPeerSelectionState
-  , ChurnMode (..)
   , peerSelectionStateToView
   ) where
 
 import Data.Foldable (traverse_)
 import Data.Hashable
 import Data.Map.Strict (Map)
-import Data.Set qualified as Set
 import Data.Void (Void)
 
 import Control.Applicative (Alternative ((<|>)))
@@ -70,10 +63,7 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer (..), traceWith)
 import System.Random
 
-import Ouroboros.Network.ConsensusMode
-import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
-import Ouroboros.Network.PeerSelection.Churn (ChurnCounters (..),
-           PeerChurnArgs (..), peerChurnGovernor)
+import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Ouroboros.Network.PeerSelection.Governor.ActivePeers qualified as ActivePeers
 import Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers qualified as BigLedgerPeers
 import Ouroboros.Network.PeerSelection.Governor.EstablishedPeers qualified as EstablishedPeers
@@ -81,14 +71,11 @@ import Ouroboros.Network.PeerSelection.Governor.KnownPeers qualified as KnownPee
 import Ouroboros.Network.PeerSelection.Governor.Monitor qualified as Monitor
 import Ouroboros.Network.PeerSelection.Governor.RootPeers qualified as RootPeers
 import Ouroboros.Network.PeerSelection.Governor.Types
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-           (MinBigLedgerPeersForTrustedState (..), UseLedgerPeers (..))
-import Ouroboros.Network.PeerSelection.LocalRootPeers
-           (OutboundConnectionsState (..))
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type (UseLedgerPeers (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
-import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
+import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersAPI (..))
 
 {- $overview
 
@@ -471,28 +458,41 @@ peerSelectionGovernor :: ( Alternative (STM m)
                          , Ord peeraddr
                          , Show peerconn
                          , Hashable peeraddr
+                         , Exception exception
+                         , Eq extraCounters
+                         , Semigroup extraPeers
+                         , Eq extraFlags
                          )
-                      => Tracer m (TracePeerSelection peeraddr)
-                      -> Tracer m (DebugPeerSelection peeraddr)
-                      -> Tracer m PeerSelectionCounters
+                      => Tracer m (TracePeerSelection extraDebugState extraFlags extraPeers peeraddr)
+                      -> Tracer m (DebugPeerSelection extraState extraFlags extraPeers peeraddr)
+                      -> Tracer m (PeerSelectionCounters extraCounters)
+                      -> PeerSelectionGovernorArgs
+                          extraState extraDebugState extraFlags extraPeers extraAPI extraCounters
+                          peeraddr peerconn exception m
                       -> StdGen
-                      -> ConsensusMode
-                      -> MinBigLedgerPeersForTrustedState -- ^ Genesis parameter
-                      -> PeerSelectionActions peeraddr peerconn m
+                      -> extraState
+                      -> extraPeers
+                      -> PeerSelectionActions
+                          extraState extraFlags extraPeers extraAPI extraCounters
+                          peeraddr peerconn m
                       -> PeerSelectionPolicy  peeraddr m
-                      -> PeerSelectionInterfaces peeraddr peerconn m
+                      -> PeerSelectionInterfaces
+                           extraState extraFlags extraPeers extraCounters
+                           peeraddr peerconn m
                       -> m Void
-peerSelectionGovernor tracer debugTracer countersTracer fuzzRng consensusMode minActiveBigLedgerPeers actions policy interfaces =
+peerSelectionGovernor tracer debugTracer countersTracer peerSelectionArgs fuzzRng
+                      extraState extraPeers actions policy interfaces =
     JobPool.withJobPool $ \jobPool ->
       peerSelectionGovernorLoop
         tracer
         debugTracer
         countersTracer
+        peerSelectionArgs
         actions
         policy
         interfaces
         jobPool
-        (emptyPeerSelectionState fuzzRng consensusMode minActiveBigLedgerPeers)
+        (emptyPeerSelectionState fuzzRng extraState extraPeers)
 
 -- | Our pattern here is a loop with two sets of guarded actions:
 --
@@ -509,7 +509,7 @@ peerSelectionGovernor tracer debugTracer countersTracer fuzzRng consensusMode mi
 -- In each case we trace the action, update the state and execute the
 -- action asynchronously.
 --
-peerSelectionGovernorLoop :: forall m peeraddr peerconn.
+peerSelectionGovernorLoop :: forall m extraState extraDebugState extraFlags extraPeers extraAPI extraCounters exception peeraddr peerconn.
                              ( Alternative (STM m)
                              , MonadAsync m
                              , MonadDelay m
@@ -518,20 +518,51 @@ peerSelectionGovernorLoop :: forall m peeraddr peerconn.
                              , Ord peeraddr
                              , Show peerconn
                              , Hashable peeraddr
+                             , Exception exception
+                             , Eq extraCounters
+                             , Semigroup extraPeers
+                             , Eq extraFlags
                              )
-                          => Tracer m (TracePeerSelection peeraddr)
-                          -> Tracer m (DebugPeerSelection peeraddr)
-                          -> Tracer m PeerSelectionCounters
-                          -> PeerSelectionActions peeraddr peerconn m
-                          -> PeerSelectionPolicy  peeraddr m
-                          -> PeerSelectionInterfaces peeraddr peerconn m
-                          -> JobPool () m (Completion m peeraddr peerconn)
-                          -> PeerSelectionState peeraddr peerconn
+                          => Tracer m (TracePeerSelection extraDebugState extraFlags extraPeers peeraddr)
+                          -> Tracer m (DebugPeerSelection extraState extraFlags extraPeers peeraddr)
+                          -> Tracer m (PeerSelectionCounters extraCounters)
+                          -> PeerSelectionGovernorArgs
+                              extraState extraDebugState extraFlags extraPeers extraAPI extraCounters
+                              peeraddr peerconn exception m
+                          -> PeerSelectionActions
+                              extraState extraFlags extraPeers extraAPI extraCounters
+                              peeraddr peerconn m
+                          -> PeerSelectionPolicy peeraddr m
+                          -> PeerSelectionInterfaces
+                              extraState extraFlags extraPeers extraCounters
+                              peeraddr peerconn m
+                          -> JobPool () m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
+                          -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
                           -> m Void
 peerSelectionGovernorLoop tracer
                           debugTracer
                           countersTracer
-                          actions
+                          PeerSelectionGovernorArgs {
+                            abortGovernor
+                          , updateWithState
+                          , extraDecisions = ExtraGuardedDecisions {
+                              preBlocking
+                            , postBlocking
+                            , postNonBlocking
+                            , customTargetsAction
+                            , customLocalRootsAction
+                            , enableProgressMakingActions
+                            , ledgerPeerSnapshotExtraStateChange
+                            }
+                          }
+                          actions@PeerSelectionActions {
+                            extraPeersAPI = PublicExtraPeersAPI {
+                              extraPeersToSet
+                            , invariantExtraPeers
+                            }
+                          , extraStateToExtraCounters
+                          }
+
                           policy
                           interfaces@PeerSelectionInterfaces {
                             countersVar,
@@ -542,26 +573,21 @@ peerSelectionGovernorLoop tracer
                           pst = do
     loop pst (Time 0) `catch` (\e -> traceWith tracer (TraceOutboundGovernorCriticalFailure e) >> throwIO e)
   where
-    loop :: PeerSelectionState peeraddr peerconn
+    loop :: PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
          -> Time
          -> m Void
-    loop !st !dbgUpdateAt = assertPeerSelectionState st $ do
+    loop !st !dbgUpdateAt = assertPeerSelectionState extraPeersToSet invariantExtraPeers st $ do
       -- Update public state using 'toPublicState' to compute available peers
       -- to share for peer sharing
       atomically $ writeTVar publicStateVar (toPublicState st)
 
       blockedAt <- getMonotonicTime
 
-      -- If by any chance the node takes more than 15 minutes to converge to a
-      -- clean state, we crash the node. This could happen in very rare
-      -- conditions such as a global network issue, DNS, or a bug in the code.
-      -- In any case crashing the node will force the node to be restarted,
-      -- starting in the correct state for it to make progress.
-      case bootstrapPeersTimeout st of
-        Nothing -> pure ()
-        Just t
-          | blockedAt >= t -> throwIO BootstrapPeersCriticalTimeoutError
-          | otherwise      -> pure ()
+      -- | If there's something utterly wrong with the PeerSelectionState such
+      -- that the abortion of the Governor is required.
+      case abortGovernor blockedAt st of
+        Nothing        -> pure ()
+        Just exception -> throwIO exception
 
       dbgUpdateAt' <- if dbgUpdateAt <= blockedAt
                          then do
@@ -583,14 +609,11 @@ peerSelectionGovernorLoop tracer
             timedDecision now
 
       mbCounters <- atomically $ do
-        -- Update outbound connections state
-        let peerSelectionView = peerSelectionStateToView st''
-        associationMode <- readAssociationMode (readUseLedgerPeers interfaces)
-                                               (peerSharing actions)
-                                               (bootstrapPeersFlag st'')
-        updateOutboundConnectionsState
-          actions
-          (outboundConnectionsState associationMode peerSelectionView st'')
+        let peerSelectionView =
+              peerSelectionStateToView extraPeersToSet extraStateToExtraCounters st''
+
+        -- Custom STM actions
+        updateWithState interfaces actions peerSelectionView st''
 
         -- Update counters
         counters <- readTVar countersVar
@@ -609,8 +632,8 @@ peerSelectionGovernorLoop tracer
       loop st'' dbgUpdateAt'
 
     evalGuardedDecisions :: Time
-                         -> PeerSelectionState peeraddr peerconn
-                         -> m (TimedDecision m peeraddr peerconn)
+                         -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+                         -> m (TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
     evalGuardedDecisions blockedAt st = do
       inboundPeers <- readInboundPeers actions
       case guardedDecisions blockedAt st inboundPeers of
@@ -633,57 +656,57 @@ peerSelectionGovernorLoop tracer
           return timedDecision
 
     guardedDecisions :: Time
-                     -> PeerSelectionState peeraddr peerconn
+                     -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
                      -> Map peeraddr PeerSharing
-                     -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
+                     -> Guarded (STM m) (TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
     guardedDecisions blockedAt st inboundPeers =
       -- All the alternative potentially-blocking decisions.
 
-      -- In Praos consensus mode, The Governor needs to react to changes in the bootstrap
-      -- peer flag, since this influences the behavior of the other monitoring actions.
-         Monitor.monitorBootstrapPeersFlag   actions st
-      -- The Governor needs to react to ledger state changes as soon as possible.
-      -- in Praos mode:
-      --   Check the definition site for more details, but in short, when the
-      --   node changes to 'TooOld' state it will go through a purging phase which
-      --   the 'waitForTheSystemToQuiesce' monitoring action will wait for.
-      <> Monitor.monitorLedgerStateJudgement actions st
-      -- In Praos consensus mode,
-      -- When the node transitions to 'TooOld' state the node will wait until
-      -- it reaches a clean (quiesced) state free of non-trusted peers, before
-      -- resuming making progress again connected to only trusted peers.
-      <> Monitor.waitForSystemToQuiesce              st
+        -- Make sure preBlocking set is in the right place
+        preBlocking policy actions st
 
       <> Monitor.connections          actions st
       <> Monitor.jobs                 jobPool st
       -- This job monitors for changes in big ledger peer snapshot file (eg. reload)
       -- and copies it into the governor's private state. When a change is detected,
-      -- it also flips private state LedgerStateJudgement to TooYoung so that it
-      -- can launch the appropriate verification task in the job pool when external
-      -- LedgerStateJudgement is TooOld. If the verification job detects a discrepancy
-      -- vs. big peers on the ledger, it throws and the node is shut down.
-      <> Monitor.ledgerPeerSnapshotChange st actions
-      -- In Genesis consensus mode, this is responsible for settings targets on the basis
-      -- of the ledger state judgement. It takes into account whether
-      -- the churn governor is running via a tmvar such that targets are set
-      -- in a consistent manner. For non-Genesis, it follows the simpler
-      -- legacy protocol.
-      <> Monitor.targetPeers          actions st
-      <> Monitor.localRoots           actions st
+      -- it also makes a constant extraState change.
+      -- If the verification job detects a discrepancy vs. big peers on the ledger,
+      -- it throws and the node is shut down.
+      <> Monitor.ledgerPeerSnapshotChange ledgerPeerSnapshotExtraStateChange actions st
 
-      -- The non-blocking decisions regarding (known) big ledger peers
-      <> BigLedgerPeers.belowTarget   actions blockedAt        st
-      <> BigLedgerPeers.aboveTarget                     policy st
+      <> case customTargetsAction of
+          Nothing             -> Monitor.targetPeers actions st
+          Just targetsActions -> targetsActions policy actions st
+
+      <> case customLocalRootsAction of
+          Nothing                -> Monitor.localRoots actions st
+          Just localRootsActions -> localRootsActions policy actions st
+
+         -- Make sure postBlocking set is in the right place
+      <> postBlocking policy actions st
+
+        -- The non-blocking decisions regarding (known) big ledger peers
+      <> BigLedgerPeers.belowTarget enableProgressMakingActions
+                                    actions blockedAt st
+      <> BigLedgerPeers.aboveTarget  actions policy st
 
       -- All the alternative non-blocking internal decisions.
-      <> RootPeers.belowTarget        actions blockedAt           st
-      <> KnownPeers.belowTarget       actions blockedAt
-                                              inboundPeers policy st
-      <> KnownPeers.aboveTarget                            policy st
-      <> EstablishedPeers.belowTarget actions              policy st
-      <> EstablishedPeers.aboveTarget actions              policy st
-      <> ActivePeers.belowTarget      actions              policy st
-      <> ActivePeers.aboveTarget      actions              policy st
+      <> RootPeers.belowTarget   actions blockedAt st
+
+      <> KnownPeers.belowTarget  enableProgressMakingActions
+                                 actions blockedAt inboundPeers policy st
+      <> KnownPeers.aboveTarget  actions                        policy st
+
+      <> EstablishedPeers.belowTarget enableProgressMakingActions
+                                      actions policy st
+      <> EstablishedPeers.aboveTarget actions policy st
+
+      <> ActivePeers.belowTarget enableProgressMakingActions
+                                 actions policy st
+      <> ActivePeers.aboveTarget actions policy st
+
+         -- Make sure postNonBlocking set is in the right place
+      <> postNonBlocking policy actions st
 
       -- There is no rootPeersAboveTarget since the roots target is one sided.
 
@@ -696,8 +719,8 @@ peerSelectionGovernorLoop tracer
       -- roots peers because we'd be above target for known peers).
 
 
-wakeupDecision :: PeerSelectionState peeraddr peerconn
-               -> TimedDecision m peeraddr peerconn
+wakeupDecision :: PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+               -> TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn
 wakeupDecision st _now =
   Decision {
     decisionTrace = [TraceGovernorWakeup],
@@ -731,61 +754,3 @@ readAssociationMode
            |  null config
            -> LocalRootsOnly
          _ -> Unrestricted
-
-
-outboundConnectionsState
-    :: Ord peeraddr
-    => AssociationMode
-    -> PeerSelectionSetsWithSizes peeraddr
-    -> PeerSelectionState peeraddr peerconn
-    -> OutboundConnectionsState
-outboundConnectionsState
-    associationMode
-    PeerSelectionView {
-      viewEstablishedPeers          = (viewEstablishedPeers, _),
-      viewEstablishedBootstrapPeers = (viewEstablishedBootstrapPeers, _),
-      viewActiveBootstrapPeers      = (viewActiveBootstrapPeers, _),
-      viewActiveBigLedgerPeers      = (_, activeNumBigLedgerPeers)
-    }
-    PeerSelectionState {
-      consensusMode,
-      localRootPeers,
-      bootstrapPeersFlag,
-      minBigLedgerPeersForTrustedState
-    }
-    =
-    case (associationMode, bootstrapPeersFlag, consensusMode) of
-      (LocalRootsOnly, _, _)
-        |  -- we are only connected to trusted local root
-           -- peers
-           viewEstablishedPeers `Set.isSubsetOf` trustableLocalRootSet
-        -> TrustedStateWithExternalPeers
-
-        |  otherwise
-        -> UntrustedState
-
-       -- bootstrap mode
-      (Unrestricted, UseBootstrapPeers {}, _)
-        |  -- we are only connected to trusted local root
-           -- peers or bootstrap peers
-           viewEstablishedPeers `Set.isSubsetOf` (viewEstablishedBootstrapPeers <> trustableLocalRootSet)
-           -- there's at least one active bootstrap peer
-        ,  not (Set.null viewActiveBootstrapPeers)
-        -> TrustedStateWithExternalPeers
-
-        |  otherwise
-        -> UntrustedState
-
-       -- praos mode with public roots
-      (Unrestricted, DontUseBootstrapPeers, PraosMode)
-        -> UntrustedState
-
-      -- Genesis mode
-      (Unrestricted, DontUseBootstrapPeers, GenesisMode)
-        |  activeNumBigLedgerPeers >= getMinBigLedgerPeersForTrustedState minBigLedgerPeersForTrustedState
-        -> TrustedStateWithExternalPeers
-
-        |  otherwise
-        -> UntrustedState
-  where
-    trustableLocalRootSet = LocalRootPeers.trustableKeysSet localRootPeers

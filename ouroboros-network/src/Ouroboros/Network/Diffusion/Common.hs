@@ -1,6 +1,7 @@
 -- Common things between P2P and NonP2P Diffusion modules
 {-# LANGUAGE DataKinds          #-}
 {-# LANGUAGE GADTs              #-}
+{-# LANGUAGE KindSignatures     #-}
 {-# LANGUAGE RankNTypes         #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
@@ -11,30 +12,28 @@ module Ouroboros.Network.Diffusion.Common
   , nullTracers
   , Arguments (..)
   , Applications (..)
+  , AcceptedConnectionsLimit (..)
   ) where
 
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadThrow
+import Control.Tracer (Tracer, nullTracer)
 import Data.ByteString.Lazy (ByteString)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Typeable (Typeable)
 import Data.Void (Void)
 
-import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Exception (Exception, SomeException)
-import Control.Tracer (Tracer, nullTracer)
-
 import Network.Mux qualified as Mx
 
-import Ouroboros.Network.Mux (OuroborosApplicationWithMinimalCtx,
-           OuroborosBundleWithExpandedCtx)
-import Ouroboros.Network.NodeToClient (Versions)
+import Ouroboros.Network.ConnectionId (ConnectionId)
+import Ouroboros.Network.Mux hiding (MiniProtocol (..))
 import Ouroboros.Network.NodeToClient qualified as NodeToClient
-import Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit, ConnectionId,
-           DiffusionMode)
+import Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit, DiffusionMode)
 import Ouroboros.Network.NodeToNode qualified as NodeToNode
 import Ouroboros.Network.PeerSelection.Governor.Types (PublicPeerSelectionState)
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type
+import Ouroboros.Network.PeerSelection.LedgerPeers
            (LedgerPeersConsensusInterface)
-import Ouroboros.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
+import Ouroboros.Network.Protocol.Handshake
 import Ouroboros.Network.Snocket (FileDescriptor)
 import Ouroboros.Network.Socket (SystemdSocketTracer)
 
@@ -154,7 +153,7 @@ data Arguments m ntnFd ntnAddr ntcFd ntcAddr = Arguments {
 --
 data Applications ntnAddr ntnVersion ntnVersionData
                   ntcAddr ntcVersion ntcVersionData
-                  m a =
+                  extraAPI m a =
   Applications {
       -- | NodeToNode initiator applications for initiator only mode.
       --
@@ -193,14 +192,5 @@ data Applications ntnAddr ntnVersion ntnVersionData
       -- | Interface used to get peers from the current ledger.
       --
       -- TODO: it should be in 'InterfaceExtra'
-    , daLedgerPeersCtx :: LedgerPeersConsensusInterface m
-
-      -- | Callback provided by consensus to inform it if the node is
-      -- connected to only local roots or also some external peers.
-      --
-      -- This is useful in order for the Bootstrap State Machine to
-      -- simply refuse to transition from TooOld to YoungEnough while
-      -- it only has local peers.
-      --
-    , daUpdateOutboundConnectionsState :: OutboundConnectionsState -> STM m ()
+    , daLedgerPeersCtx :: LedgerPeersConsensusInterface extraAPI m
   }

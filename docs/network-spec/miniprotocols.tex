@@ -239,7 +239,7 @@ In this section, we list all the mini-protocols that constitute the node-to-node
 \subsection{Node-to-client mini-protocols}
 
 Mini-protocols used by node-to-client protocol.  The chain-sync mini-protocol
-is shared between node-to-node and node-to-client protocols, but it is instantiated differently.  In  
+is shared between node-to-node and node-to-client protocols, but it is instantiated differently.  In
 node-to-client protocol, it is used with full blocks rather than just headers.
 
 \miniEntry
@@ -709,7 +709,7 @@ instantiations, e.g., different protocol versions and version data carried in
 messages.  First, one is used by the node-to-node protocol, and the other is used by the
 node-to-client protocol.
 \subsubsection{Node-to-node handshake mini-protocol}
-\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/handshake-node-to-node-v13.cddl}
+\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/handshake-node-to-node-v14.cddl}
 
 \subsubsection{Node-to-client handshake mini-protocol}
 \lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/handshake-node-to-client.cddl}
@@ -718,7 +718,7 @@ node-to-client protocol.
 \label{chain-sync-protocol}
 \haddockref{Ouroboros.Network.Protocol.ChainSync.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Type\#t:ChainSync}\\
 \hyperref[table:node-to-node-protocol-numbers]{\textit{node-to-node mini-protocol number}}: \texttt{2}\\
-\hyperref[table:node-to-client-protocol-numbers]{\textit{node-to-client mini-protocol number}}: \texttt{5}\\ 
+\hyperref[table:node-to-client-protocol-numbers]{\textit{node-to-client mini-protocol number}}: \texttt{5}\\
 
 \newcommand{\StCanAwait}{\state{StCanAwait}}
 \newcommand{\StMustReply}{\state{StMustReply}}
@@ -1597,11 +1597,8 @@ function early on the consensus side. This means we will have to find a way to d
 function application all the way to diffusion and share the relevant parts of
 \texttt{PeerSelectionState} with this function via a \texttt{TVar}.
 
-\subsection{CDDL encoding specification ($11$ to $12$)}\label{peersharing-cddl}
-\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/peer-sharing-v11-12.cddl}
-
-\subsection{CDDL encoding specification ($\geq 13$)}\label{peersharing-cddl}
-\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/peer-sharing-v13.cddl}
+\subsection{CDDL encoding specification ($\geq 14$)}\label{peersharing-cddl}
+\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/peer-sharing-v14.cddl}
 
 \section{Local Tx-Submission mini-protocol}
 \haddockref{Ouroboros.Network.Protocol.LocalTxSubmission.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalTxSubmission-Type\#t:LocalTxSubmission}\\
@@ -1976,8 +1973,7 @@ in table~\ref{table:node-to-node-protocol-versions}.
   \begin{center}
     \begin{tabular}{l|l}
       \header{version}         & \header{description} \\\hline
-      \texttt{NodeToNodeV\_13} & Disabled peer sharing for buggy V11 \& V12 and for InitiatorOnly nodes \\
-      \texttt{NodeToNodeV\_14} & No changes, identifies Chang+1 HF nodes\\
+      \texttt{NodeToNodeV\_14} & No changes, identifies Plomin HF nodes mandatory on mainnet as of 2025.01.29\\
     \end{tabular}
     \caption{Node-to-node protocol versions}
     \label{table:node-to-node-protocol-versions}
