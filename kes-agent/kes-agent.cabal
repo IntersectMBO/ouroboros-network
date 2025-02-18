@@ -110,7 +110,7 @@ library
                  , text
                  , template-haskell >=2.18.0.0
                  , time >=1.10
-                 , typed-protocols
+                 , typed-protocols ^>=0.3
                  , typed-protocols-doc
     hs-source-dirs:   src
     default-language: Haskell2010
