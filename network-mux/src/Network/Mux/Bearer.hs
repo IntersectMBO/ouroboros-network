@@ -91,7 +91,7 @@ makeQueueChannelBearer = MakeBearer $ pureBearer (\_ tr q _-> queueChannelAsBear
 
 #if defined(mingw32_HOST_OS)
 makeNamedPipeBearer :: MakeBearer IO HANDLE
-MakeBearer $ pureBearer (\_ _ -> namedPipeAsBearer size)
+makeNamedPipeBearer = MakeBearer $ pureBearer (\_ _ fd _-> namedPipeAsBearer size fd)
   where
     size = SDUSize 24_576
 #endif
