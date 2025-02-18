@@ -39,6 +39,7 @@ module Network.Mux.Types
   , RemoteClockModel (..)
   , remoteClockPrecision
   , RuntimeError (..)
+  , ReadBuffer (..)
   ) where
 
 import Prelude hiding (read)
@@ -48,6 +49,7 @@ import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
 import Data.Ix (Ix (..))
 import Data.Word
+import Foreign.Ptr (Ptr)
 import Quiet
 
 import GHC.Generics (Generic)
@@ -292,3 +294,9 @@ data RuntimeError =
   deriving Show
 
 instance Exception RuntimeError
+
+data ReadBuffer m = ReadBuffer {
+    rbVar :: StrictTVar m BL.ByteString
+  , rbBuf :: Ptr Word8
+  , rbSize :: Int
+  }
