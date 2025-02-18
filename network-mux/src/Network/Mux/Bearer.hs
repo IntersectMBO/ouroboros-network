@@ -73,6 +73,10 @@ withReadBufferIO f = allocaBytesAligned size 8 $ \ptr -> do
     v <- atomically $ newTVar BL.empty
     f $ Just $ ReadBuffer v ptr size
   where
+    -- Maximum amount of data read in one call.
+    -- Corresponds to the default readbuffer size on Linux.
+    -- We want it larger than 64Kbyte, but not too large since
+    -- it is a memory overhead per mux bearer in an application.
     size = 131_072
 
 makePipeChannelBearer :: MakeBearer IO PipeChannel
