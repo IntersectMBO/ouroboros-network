@@ -16,6 +16,7 @@ module Network.Mux.Egress
 
 import Control.Monad
 import Data.ByteString.Lazy qualified as BL
+import Data.Int
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadAsync
@@ -154,8 +155,8 @@ muxer egressQueue Bearer { writeMany, sduSize, batchSize } =
     maxSDUsPerBatch :: Int
     maxSDUsPerBatch = 100
 
-    sduLength :: SDU -> Int
-    sduLength sdu = 8 + fromIntegral (msLength sdu)
+    sduLength :: SDU -> Int64
+    sduLength sdu = msHeaderLength + fromIntegral (msLength sdu)
 
     -- Build a batch of SDUs to submit in one go to the bearer.
     -- The egress queue is still processed one SDU at the time
@@ -164,7 +165,7 @@ muxer egressQueue Bearer { writeMany, sduSize, batchSize } =
     -- (e.g the SO_SNDBUF for Socket) or number of SDUs.
     --
     buildBatch sdus _ | length sdus >= maxSDUsPerBatch   = return sdus
-    buildBatch sdus sdusLength | sdusLength >= batchSize = return sdus
+    buildBatch sdus sdusLength | sdusLength >= fromIntegral batchSize = return sdus
     buildBatch sdus !sdusLength = do
       demand_m <- atomically $ tryReadTBQueue egressQueue
       case demand_m of

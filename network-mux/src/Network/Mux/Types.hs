@@ -36,6 +36,7 @@ module Network.Mux.Types
   , msNum
   , msDir
   , msLength
+  , msHeaderLength
   , RemoteClockModel (..)
   , remoteClockPrecision
   , RuntimeError (..)
@@ -47,6 +48,7 @@ import Prelude hiding (read)
 import Control.Exception (Exception, SomeException)
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
+import Data.Int
 import Data.Ix (Ix (..))
 import Data.Word
 import Foreign.Ptr (Ptr)
@@ -223,6 +225,9 @@ msDir = mhDir . msHeader
 msLength :: SDU -> Word16
 msLength = mhLength . msHeader
 
+-- | Size of a MuxHeader in Bytes
+msHeaderLength :: Int64
+msHeaderLength = 8
 
 -- | Low level access to underlying socket or pipe.  There are three smart
 -- constructors:
