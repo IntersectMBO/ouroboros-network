@@ -57,14 +57,12 @@ socketAsBearer sduSize sduTimeout tracer sd =
         Mx.name    = "socket-bearer"
       }
     where
-      hdrLenght = 8
-
       readSocket :: Mx.TimeoutFn IO -> IO (Mx.SDU, Time)
       readSocket timeout = do
           traceWith tracer Mx.TraceRecvHeaderStart
 
           -- Wait for the first part of the header without any timeout
-          h0 <- recvAtMost True hdrLenght
+          h0 <- recvAtMost True Mx.msHeaderLength
 
           -- Optionally wait at most sduTimeout seconds for the complete SDU.
           r_m <- timeout sduTimeout $ recvRem h0
@@ -76,7 +74,7 @@ socketAsBearer sduSize sduTimeout tracer sd =
 
       recvRem :: BL.ByteString -> IO (Mx.SDU, Time)
       recvRem !h0 = do
-          hbuf <- recvLen' (hdrLenght - BL.length h0) [h0]
+          hbuf <- recvLen' (Mx.msHeaderLength - BL.length h0) [h0]
           case Mx.decodeSDU hbuf of
                Left  e ->  throwIO e
                Right header@Mx.SDU { Mx.msHeader } -> do

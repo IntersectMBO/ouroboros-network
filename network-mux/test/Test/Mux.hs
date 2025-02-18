@@ -274,12 +274,12 @@ instance Arbitrary ArbitrarySDU where
         invalidLenght = do
             ts  <- arbitrary
             mid <- arbitrary
-            realLen <- choose (0, 8) -- Size of mux header is 8
-            len <- if realLen == 8 then return 0
-                                   else arbitrary
+            realLen <- choose (0, Mx.msHeaderLength)
+            len <- if realLen == Mx.msHeaderLength then return 0
+                                                   else arbitrary
             p <- arbitrary
 
-            return $ ArbitraryInvalidSDU (InvalidSDU (Mx.RemoteClockModel ts) mid len realLen p)
+            return $ ArbitraryInvalidSDU (InvalidSDU (Mx.RemoteClockModel ts) mid len (fromIntegral realLen) p)
                                          (Mx.SDUDecodeError "")
 
 instance Arbitrary Mx.BearerState where
