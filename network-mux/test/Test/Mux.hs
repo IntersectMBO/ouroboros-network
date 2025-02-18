@@ -818,8 +818,8 @@ runWithPipe initApps respApps =
              let clientChannel = Mx.pipeChannelFromNamedPipe hCli
                  serverChannel = Mx.pipeChannelFromNamedPipe hSrv
 
-             clientBearer <- getBearer makePipeChannelBearer (-1) clientTracer clientChannel
-             serverBearer <- getBearer makePipeChannelBearer (-1) serverTracer serverChannel
+             clientBearer <- getBearer makePipeChannelBearer (-1) clientTracer clientChannel Nothing
+             serverBearer <- getBearer makePipeChannelBearer (-1) serverTracer serverChannel Nothing
 
              Win32.Async.connectNamedPipe hSrv
              runMuxApplication initApps clientBearer respApps serverBearer
