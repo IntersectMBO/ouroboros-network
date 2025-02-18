@@ -84,7 +84,7 @@ pipeAsBearer sduSize tracer channel =
       readPipe :: Mx.TimeoutFn IO -> IO (Mx.SDU, Time)
       readPipe _ = do
           traceWith tracer Mx.TraceRecvHeaderStart
-          hbuf <- recvLen' 8 []
+          hbuf <- recvLen' (fromIntegral Mx.msHeaderLength) []
           case Mx.decodeSDU hbuf of
               Left e -> throwIO e
               Right header@Mx.SDU { Mx.msHeader } -> do
