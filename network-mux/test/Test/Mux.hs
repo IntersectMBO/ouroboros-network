@@ -274,15 +274,15 @@ instance Arbitrary ArbitrarySDU where
         invalidLenght = do
             ts  <- arbitrary
             mid <- arbitrary
-            realLen <- choose (0, 8) -- Size of mux header is 8
+            realLen <- choose (0, Mx.msHeaderLength)
             -- An SDU with a payload length of 0 is also invalid.
             -- When sending a full header and setting the length to 0
             -- we can verify that they throw an exception.
-            len <- if realLen == 8 then return 0
-                                   else arbitrary
+            len <- if realLen == Mx.msHeaderLength then return 0
+                                                   else arbitrary
             p <- arbitrary
 
-            return $ ArbitraryInvalidSDU (InvalidSDU (Mx.RemoteClockModel ts) mid len realLen p)
+            return $ ArbitraryInvalidSDU (InvalidSDU (Mx.RemoteClockModel ts) mid len (fromIntegral realLen) p)
                                          (Mx.SDUDecodeError "")
 
 instance Arbitrary Mx.BearerState where
