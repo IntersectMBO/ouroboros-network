@@ -26,18 +26,19 @@ import Data.Text (Text)
 import qualified Data.Text.Lazy as LText
 import GHC.Generics
 import Network.TypedProtocol.Core
-import Network.TypedProtocol.Documentation
-import Network.TypedProtocol.Documentation.Html
-import qualified Text.Blaze.Html.Renderer.Pretty as Pretty
-import Text.Blaze.Html.Renderer.Text (renderHtml)
-import Text.Printf
+-- import Network.TypedProtocol.Documentation
+-- import Network.TypedProtocol.Documentation.Html
+-- import qualified Text.Blaze.Html.Renderer.Pretty as Pretty
+-- import Text.Blaze.Html.Renderer.Text (renderHtml)
+-- import Text.Printf
 
-allDocs =
-  [ $(describeProtocol ''VersionHandshakeProtocol [] ''DirectCodec [''IO])
-  , $(describeProtocol ''ServiceProtocol [''IO, ''StandardCrypto] ''DirectCodec [''IO])
-  , $(describeProtocol ''ControlProtocol [''IO, ''StandardCrypto] ''DirectCodec [''IO])
-  ]
+-- allDocs =
+--   [ $(describeProtocol ''VersionHandshakeProtocol [] ''DirectCodec [''IO])
+--   , $(describeProtocol ''ServiceProtocol [''IO, ''StandardCrypto] ''DirectCodec [''IO])
+--   , $(describeProtocol ''ControlProtocol [''IO, ''StandardCrypto] ''DirectCodec [''IO])
+--   ]
 
 runPlayground :: IO ()
 runPlayground = do
-  writeFile "spec.html" (Pretty.renderHtml . wrapDocument . renderProtocolDescriptions $ allDocs)
+  putStrLn "Hello world"
+  -- writeFile "spec.html" (Pretty.renderHtml . wrapDocument . renderProtocolDescriptions $ allDocs)
