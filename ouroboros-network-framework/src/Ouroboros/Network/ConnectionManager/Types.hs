@@ -356,7 +356,8 @@ type ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version
     -> PromiseWriter m (Either handleError (HandshakeConnectionResult handle (versionNumber, versionData)))
     -> Tracer m handlerTrace
     -> ConnectionId peerAddr
-    -> (DiffTime -> socket -> m (Mux.Bearer m))
+    -> (DiffTime -> socket -> Maybe (Mux.ReadBuffer m) -> m (Mux.Bearer m))
+    -> ((Maybe (Mux.ReadBuffer m) -> m ()) -> m ())
     -> MaskedAction m ()
 
 data HandshakeConnectionResult handle version

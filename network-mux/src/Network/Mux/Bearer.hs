@@ -15,6 +15,7 @@ module Network.Mux.Bearer
 #if defined(mingw32_HOST_OS)
   , makeNamedPipeBearer
 #endif
+  , withReadBufferIO
   ) where
 
 import           Control.Monad.Class.MonadSTM
@@ -28,6 +29,7 @@ import           Network.Socket (getSocketOption, SocketOption (..), Socket)
 #if defined(mingw32_HOST_OS)
 import           System.Win32 (HANDLE)
 #endif
+import           Foreign.Marshal.Alloc
 
 import           Network.Mux.Bearer.Pipe
 import           Network.Mux.Bearer.Queues
@@ -47,26 +49,34 @@ newtype MakeBearer m fd = MakeBearer {
       -- tracer
       -> fd
       -- file descriptor
+      -> Maybe (ReadBuffer m)
+      -- Optional Readbuffer
       -> m (Bearer m)
   }
 
-
 pureBearer :: Applicative m
-           => (DiffTime -> Tracer m Trace -> fd ->    Bearer m)
-           ->  DiffTime -> Tracer m Trace -> fd -> m (Bearer m)
-pureBearer f = \sduTimeout tr fd -> pure (f sduTimeout tr fd)
+           => (DiffTime -> Tracer m Trace -> fd -> Maybe (ReadBuffer m) ->   Bearer m)
+           ->  DiffTime -> Tracer m Trace -> fd -> Maybe (ReadBuffer m) -> m (Bearer m)
+pureBearer f = \sduTimeout rb tr fd -> pure (f sduTimeout rb tr fd)
+
 
 makeSocketBearer :: MakeBearer IO Socket
-makeSocketBearer = MakeBearer $ (\sduTimeout tr fd -> do
-    readBuffer <- newTVarIO BL.empty
+makeSocketBearer = MakeBearer $ (\sduTimeout tr fd rb -> do
     batch <- getSocketOption fd SendBuffer
-    return $ socketAsBearer size batch readBuffer bufSize sduTimeout tr fd)
+    return $ socketAsBearer size batch rb sduTimeout tr fd)
   where
     size = SDUSize 12_288
-    bufSize = 16_384
+
+withReadBufferIO :: (Maybe (ReadBuffer IO) -> IO b)
+                 -> IO b
+withReadBufferIO f = allocaBytesAligned size 8 $ \ptr -> do
+    v <- atomically $ newTVar BL.empty
+    f $ Just $ ReadBuffer v ptr size
+  where
+    size = 131_072
 
 makePipeChannelBearer :: MakeBearer IO PipeChannel
-makePipeChannelBearer = MakeBearer $ pureBearer (\_ -> pipeAsBearer size)
+makePipeChannelBearer = MakeBearer $ pureBearer (\_ tr fd _ -> pipeAsBearer size tr fd)
   where
     size = SDUSize 32_768
 
@@ -75,13 +85,13 @@ makeQueueChannelBearer :: ( MonadSTM   m
                           , MonadThrow m
                           )
                        => MakeBearer m (QueueChannel m)
-makeQueueChannelBearer = MakeBearer $ pureBearer (\_ -> queueChannelAsBearer size)
+makeQueueChannelBearer = MakeBearer $ pureBearer (\_ tr q _-> queueChannelAsBearer size tr q)
   where
     size = SDUSize 1_280
 
 #if defined(mingw32_HOST_OS)
 makeNamedPipeBearer :: MakeBearer IO HANDLE
-makeNamedPipeBearer = MakeBearer $ pureBearer (\_ -> namedPipeAsBearer size)
+MakeBearer $ pureBearer (\_ _ -> namedPipeAsBearer size)
   where
     size = SDUSize 24_576
 #endif
