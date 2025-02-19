@@ -1,8 +1,7 @@
-{-# LANGUAGE NamedFieldPuns     #-}
+{-# LANGUAGE NamedFieldPuns   #-}
+{-# LANGUAGE TypeApplications #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TypeApplications   #-}
 
 module Test.Ouroboros.Network.PeerSelection.LocalRootPeers
   ( arbitraryLocalRootPeers
