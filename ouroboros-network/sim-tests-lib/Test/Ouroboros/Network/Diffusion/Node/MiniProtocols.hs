@@ -9,7 +9,7 @@
 -- orphaned 'ShowProxy PingPong' instance.
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.Ouroboros.Network.Testnet.Node.MiniProtocols
+module Test.Ouroboros.Network.Diffusion.Node.MiniProtocols
   ( Codecs
   , cborCodecs
   , LimitsAndTimeouts (..)
@@ -29,21 +29,26 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer (..), contramap, nullTracer)
-import Data.ByteString.Lazy (ByteString)
-import Data.Functor (($>))
-import Data.Maybe (fromMaybe)
-import Data.Void (Void)
-import System.Random (RandomGen, StdGen)
 
 import Codec.CBOR.Read qualified as CBOR
 import Codec.Serialise qualified as Serialise
+import Data.ByteString.Lazy (ByteString)
+import Data.Functor (($>))
+import Data.Maybe (fromMaybe)
+import Data.Monoid.Synchronisation
+import Data.Void (Void)
+import Pipes qualified
+import System.Random (RandomGen, StdGen)
 
+import Network.Mux qualified as Mx
+import Network.TypedProtocol
 import Network.TypedProtocol.Codec
 import Network.TypedProtocol.PingPong.Client as PingPong
 import Network.TypedProtocol.PingPong.Codec.CBOR
 import Network.TypedProtocol.PingPong.Examples
 import Network.TypedProtocol.PingPong.Server
 import Network.TypedProtocol.PingPong.Type
+
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.BlockFetch.Client
 import Ouroboros.Network.Protocol.BlockFetch.Codec
@@ -63,34 +68,22 @@ import Ouroboros.Network.Protocol.KeepAlive.Codec
 import Ouroboros.Network.Protocol.KeepAlive.Server
 import Ouroboros.Network.Protocol.KeepAlive.Type
 
-import Data.Monoid.Synchronisation
-
 import Ouroboros.Network.Block (HasHeader, HeaderHash, Point)
 import Ouroboros.Network.Block qualified as Block
 import Ouroboros.Network.Context
 import Ouroboros.Network.ControlMessage (ControlMessage (..))
-import Ouroboros.Network.Diffusion qualified as Diff (Applications (..))
+import Ouroboros.Network.Diffusion.Common qualified as Common
 import Ouroboros.Network.Driver.Limits
 import Ouroboros.Network.KeepAlive
 import Ouroboros.Network.Mock.Chain qualified as Chain
+import Ouroboros.Network.Mock.ConcreteBlock
 import Ouroboros.Network.Mock.ProducerState
 import Ouroboros.Network.Mux
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
-import Ouroboros.Network.Util.ShowProxy
-
-import Ouroboros.Network.Mock.ConcreteBlock
-
-import Network.TypedProtocol
-
-import Network.Mux qualified as Mx
-
-import Pipes qualified
-
 import Ouroboros.Network.NodeToNode (blockFetchMiniProtocolNum,
            chainSyncMiniProtocolNum, keepAliveMiniProtocolNum,
            peerSharingMiniProtocolNum)
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
-import Ouroboros.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
 import Ouroboros.Network.PeerSelection.PeerSharing qualified as PSTypes
 import Ouroboros.Network.PeerSharing (PeerSharingAPI, bracketPeerSharingClient,
            peerSharingClient, peerSharingServer)
@@ -98,7 +91,9 @@ import Ouroboros.Network.Protocol.PeerSharing.Client (peerSharingClientPeer)
 import Ouroboros.Network.Protocol.PeerSharing.Codec (codecPeerSharing)
 import Ouroboros.Network.Protocol.PeerSharing.Server (peerSharingServerPeer)
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharing)
-import Test.Ouroboros.Network.Testnet.Node.Kernel
+import Ouroboros.Network.Util.ShowProxy
+
+import Test.Ouroboros.Network.Diffusion.Node.Kernel
 
 
 -- | Protocol codecs.
@@ -185,9 +180,9 @@ data LimitsAndTimeouts header block = LimitsAndTimeouts
 
 -- | Arguments for protocol handlers required by 'nodeApplications'.
 --
-data AppArgs header block m = AppArgs
+data AppArgs extraAPI header block m = AppArgs
   { aaLedgerPeersConsensusInterface
-     :: LedgerPeersConsensusInterface m
+     :: LedgerPeersConsensusInterface extraAPI m
   , aaKeepAliveStdGen
      :: StdGen
   , aaDiffusionMode
@@ -208,14 +203,12 @@ data AppArgs header block m = AppArgs
   , aaChainSyncEarlyExit  :: Bool
   , aaOwnPeerSharing
      :: PSTypes.PeerSharing
-  , aaUpdateOutboundConnectionsState
-     :: OutboundConnectionsState -> STM m ()
   }
 
 
 -- | Protocol handlers.
 --
-applications :: forall block header s m.
+applications :: forall extraAPI block header s m.
                 ( Alternative (STM m)
                 , MonadAsync m
                 , MonadFork  m
@@ -238,11 +231,11 @@ applications :: forall block header s m.
              -> NodeKernel header block s m
              -> Codecs NtNAddr header block m
              -> LimitsAndTimeouts header block
-             -> AppArgs header block m
+             -> AppArgs extraAPI header block m
              -> (block -> header)
-             -> Diff.Applications NtNAddr NtNVersion NtNVersionData
-                                  NtCAddr NtCVersion NtCVersionData
-                                  m ()
+             -> Common.Applications NtNAddr NtNVersion NtNVersionData
+                                    NtCAddr NtCVersion NtCVersionData
+                                    extraAPI m ()
 applications debugTracer nodeKernel
              Codecs { chainSyncCodec, blockFetchCodec
                     , keepAliveCodec, pingPongCodec
@@ -258,26 +251,23 @@ applications debugTracer nodeKernel
                , aaShouldChainSyncExit
                , aaChainSyncEarlyExit
                , aaOwnPeerSharing
-               , aaUpdateOutboundConnectionsState
                }
              toHeader =
-    Diff.Applications
-      { Diff.daApplicationInitiatorMode =
+    Common.Applications
+      { Common.daApplicationInitiatorMode =
           simpleSingletonVersions UnversionedProtocol
                                   (NtNVersionData InitiatorOnlyDiffusionMode aaOwnPeerSharing)
                                   (\NtNVersionData {ntnPeerSharing} -> initiatorApp ntnPeerSharing)
-      , Diff.daApplicationInitiatorResponderMode =
+      , Common.daApplicationInitiatorResponderMode =
           simpleSingletonVersions UnversionedProtocol
                                   (NtNVersionData aaDiffusionMode aaOwnPeerSharing)
                                   (\NtNVersionData {ntnPeerSharing} -> initiatorAndResponderApp ntnPeerSharing)
-      , Diff.daLocalResponderApplication =
+      , Common.daLocalResponderApplication =
           simpleSingletonVersions UnversionedProtocol
                                   UnversionedProtocolData
                                   (\_ -> localResponderApp)
-      , Diff.daLedgerPeersCtx =
+      , Common.daLedgerPeersCtx =
           aaLedgerPeersConsensusInterface
-      , Diff.daUpdateOutboundConnectionsState =
-          aaUpdateOutboundConnectionsState
       }
   where
     initiatorApp

@@ -6,7 +6,7 @@
 
 -- | Node kernel which does chain selection and block production.
 --
-module Test.Ouroboros.Network.Testnet.Node.Kernel
+module Test.Ouroboros.Network.Diffusion.Node.Kernel
   ( -- * Common types
     NtNAddr
   , NtNAddr_ (..)
@@ -30,8 +30,6 @@ module Test.Ouroboros.Network.Testnet.Node.Kernel
   , NodeKernelError (..)
   ) where
 
-import GHC.Generics (Generic)
-
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -41,19 +39,21 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
+
+import Codec.CBOR.Decoding qualified as CBOR
+import Codec.CBOR.Encoding qualified as CBOR
 import Data.ByteString.Char8 qualified as BSC
 import Data.Hashable (Hashable)
 import Data.IP (IP (..), fromIPv4w, fromIPv6w, toIPv4, toIPv4w, toIPv6, toIPv6w)
 import Data.IP qualified as IP
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Monoid.Synchronisation
 import Data.Typeable (Typeable)
 import Data.Void (Void)
+import GHC.Generics (Generic)
 import Numeric.Natural (Natural)
-
 import System.Random (RandomGen, StdGen, randomR, split)
-
-import Data.Monoid.Synchronisation
 
 import Network.Socket (PortNumber)
 
@@ -62,23 +62,13 @@ import Ouroboros.Network.Block (HasFullHeader, SlotNo)
 import Ouroboros.Network.Block qualified as Block
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.Handshake.Acceptable (Accept (..), Acceptable (..))
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
-import Ouroboros.Network.Protocol.Handshake.Unversioned
-import Ouroboros.Network.Snocket (TestAddress (..))
-
+import Ouroboros.Network.Mock.Chain (Chain (..))
 import Ouroboros.Network.Mock.Chain qualified as Chain
 import Ouroboros.Network.Mock.ConcreteBlock (Block)
 import Ouroboros.Network.Mock.ConcreteBlock qualified as ConcreteBlock
 import Ouroboros.Network.Mock.ProducerState
-
-import Simulation.Network.Snocket (AddressType (..), GlobalAddressScheme (..))
-
-import Test.Ouroboros.Network.Orphans ()
-
-import Codec.CBOR.Decoding qualified as CBOR
-import Codec.CBOR.Encoding qualified as CBOR
-import Ouroboros.Network.Mock.Chain (Chain (..))
 import Ouroboros.Network.NodeToNode ()
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.Governor (PublicPeerSelectionState,
            makePublicPeerSelectionStateVar)
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
@@ -86,8 +76,14 @@ import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint (..))
 import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry (..),
            newPeerSharingAPI, newPeerSharingRegistry,
            ps_POLICY_PEER_SHARE_MAX_PEERS, ps_POLICY_PEER_SHARE_STICKY_TIME)
-import Test.Ouroboros.Network.Testnet.Node.ChainDB (ChainDB (..))
-import Test.Ouroboros.Network.Testnet.Node.ChainDB qualified as ChainDB
+import Ouroboros.Network.Protocol.Handshake.Unversioned
+import Ouroboros.Network.Snocket (TestAddress (..))
+
+import Simulation.Network.Snocket (AddressType (..), GlobalAddressScheme (..))
+
+import Test.Ouroboros.Network.Diffusion.Node.ChainDB (ChainDB (..))
+import Test.Ouroboros.Network.Diffusion.Node.ChainDB qualified as ChainDB
+import Test.Ouroboros.Network.Orphans ()
 import Test.QuickCheck (Arbitrary (..), choose, chooseInt, frequency, oneof)
 
 

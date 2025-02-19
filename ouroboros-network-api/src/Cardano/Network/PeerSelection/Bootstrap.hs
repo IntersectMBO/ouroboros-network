@@ -1,16 +1,15 @@
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Ouroboros.Network.PeerSelection.Bootstrap
+module Cardano.Network.PeerSelection.Bootstrap
   ( UseBootstrapPeers (..)
   , isBootstrapPeersEnabled
   , requiresBootstrapPeers
   , isNodeAbleToMakeProgress
   ) where
 
+import Cardano.Network.Types (LedgerStateJudgement (..))
 import GHC.Generics (Generic)
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-           (LedgerStateJudgement (..))
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
 
 data UseBootstrapPeers = DontUseBootstrapPeers
