@@ -44,6 +44,7 @@ module Test.Ouroboros.Network.Data.Signal
     -- * Set-based temporal operations
   , keyedTimeout
   , keyedLinger
+  , keyedLinger'
   , keyedUntil
   ) where
 
@@ -306,6 +307,18 @@ until start stop =
 -- | Make a signal that keeps track of recent activity, based on observing an
 -- underlying signal.
 --
+-- This is based on keyedLinger' function but uses a constant timeout value.
+--
+keyedLinger :: forall a b. Ord b
+            => DiffTime
+            -> (a -> Set b)  -- ^ The activity set signal
+            -> Signal a
+            -> Signal (Set b)
+keyedLinger d arm = keyedLinger' (fmap (\x -> (x, d)) arm)
+
+-- | Make a signal that keeps track of recent activity, based on observing an
+-- underlying signal.
+--
 -- The underlying signal is scrutinised with the provided \"activity interest\"
 -- function that tells us if the signal value is activity of interest to track.
 -- If it is, the given key is entered into the result signal set for the given
@@ -322,12 +335,11 @@ until start stop =
 -- with all promotion opportunities and all the failed attempts and discard
 -- those. This allow us to correctly identify valid promotion opportunities.
 --
-keyedLinger :: forall a b. Ord b
-            => DiffTime
-            -> (a -> Set b)  -- ^ The activity set signal
+keyedLinger' :: forall a b. Ord b
+            => (a -> (Set b, DiffTime))  -- ^ The activity set signal
             -> Signal a
             -> Signal (Set b)
-keyedLinger d arm =
+keyedLinger' arm =
     Signal Set.empty
   . go Set.empty PSQ.empty
   . toTimeSeries
@@ -335,7 +347,7 @@ keyedLinger d arm =
   where
     go :: Set b
        -> OrdPSQ b Time ()
-       -> [E (Set b)]
+       -> [E (Set b, DiffTime)]
        -> [E (Set b)]
     go !_ !_ [] = []
 
@@ -348,9 +360,9 @@ keyedLinger d arm =
       = E (TS t' 0) lingerSet' : go lingerSet' lingerPSQ'' (E ts xs : txs)
 
     go !lingerSet !lingerPSQ (E ts@(TS t _) x : txs) =
-      let lingerSet' = lingerSet <> x
-          t'         = addTime d t
-          lingerPSQ' = Set.foldl' (\s y -> PSQ.insert y t' () s) lingerPSQ x
+      let lingerSet' = lingerSet <> fst x
+          t'         = addTime (snd x) t
+          lingerPSQ' = Set.foldl' (\s y -> PSQ.insert y t' () s) lingerPSQ (fst x)
        in if lingerSet' /= lingerSet
             then E ts lingerSet' : go lingerSet' lingerPSQ' txs
             else                   go lingerSet' lingerPSQ' txs

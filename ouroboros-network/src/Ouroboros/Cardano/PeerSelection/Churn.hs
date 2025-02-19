@@ -486,26 +486,12 @@ peerChurnGovernor PeerChurnArgs {
       churnMode <- atomically updateChurnMode
       traceWith tracer $ TraceChurnMode churnMode
 
-      -- Purge the worst active peers.
-      updateTargets DecreasedActivePeers
-                    numberOfActivePeers
-                    deactivateTimeout -- chainsync might timeout after 5mins
-                    decreaseActivePeers
-                    checkActivePeersDecreased
-
-      -- Pick new active peers.
-      updateTargets IncreasedActivePeers
-                    numberOfActivePeers
-                    shortTimeout
-                    increaseActivePeers
-                    checkActivePeersIncreased
-
       -- Purge the worst active big ledger peers.
       updateTargets DecreasedActiveBigLedgerPeers
                     numberOfActiveBigLedgerPeers
-                    deactivateTimeout -- chainsync might timeout after 5mins
+                    deactivateTimeout
                     decreaseActiveBigLedgerPeers
-                    (checkActiveBigLedgerPeersDecreased)
+                    checkActiveBigLedgerPeersDecreased
 
       -- Pick new active big ledger peers.
       updateTargets IncreasedActiveBigLedgerPeers
@@ -514,33 +500,12 @@ peerChurnGovernor PeerChurnArgs {
                     increaseActiveBigLedgerPeers
                     checkActiveBigLedgerPeersIncreased
 
-      -- Forget the worst performing established peers.
-      updateTargets DecreasedEstablishedPeers
-                    numberOfEstablishedPeers
-                    (1 + closeConnectionTimeout)
-                    decreaseEstablishedPeers
-                    (checkEstablishedPeersDecreased)
-
       -- Forget the worst performing established big ledger peers.
       updateTargets DecreasedEstablishedBigLedgerPeers
                     numberOfEstablishedBigLedgerPeers
                     (1 + closeConnectionTimeout)
                     decreaseEstablishedBigLedgerPeers
                     checkEstablishedBigLedgerPeersDecreased
-
-      -- Forget the worst performing known peers (root peers, ledger peers)
-      updateTargets DecreasedKnownPeers
-                    numberOfKnownPeers
-                    shortTimeout
-                    decreaseKnownPeers
-                    checkKnownPeersDecreased
-
-      -- Pick new known peers
-      updateTargets IncreasedKnownPeers
-                    numberOfKnownPeers
-                    (2 * requestPeersTimeout + shortTimeout)
-                    increaseKnownPeers
-                    checkKnownPeersIncreased
 
       -- Forget the worst performing known big ledger peers.
       updateTargets DecreasedKnownBigLedgerPeers
@@ -556,19 +521,54 @@ peerChurnGovernor PeerChurnArgs {
                     increaseKnownBigLedgerPeers
                     checkKnownBigLedgerPeersIncreased
 
-      -- Pick new non-active peers
-      updateTargets IncreasedEstablishedPeers
-                    numberOfEstablishedPeers
-                    churnEstablishConnectionTimeout
-                    increaseEstablishedPeers
-                    checkEstablishedPeersIncreased
-
       -- Pick new non-active big ledger peers
       updateTargets IncreasedEstablishedBigLedgerPeers
                     numberOfEstablishedBigLedgerPeers
                     churnEstablishConnectionTimeout
                     increaseEstablishedBigLedgerPeers
                     checkEstablishedBigLedgerPeersIncreased
+
+      -- Purge the worst active peers.
+      updateTargets DecreasedActivePeers
+                    numberOfActivePeers
+                    deactivateTimeout
+                    decreaseActivePeers
+                    checkActivePeersDecreased
+
+      -- Pick new active peers.
+      updateTargets IncreasedActivePeers
+                    numberOfActivePeers
+                    shortTimeout
+                    increaseActivePeers
+                    checkActivePeersIncreased
+
+      -- Forget the worst performing established peers.
+      updateTargets DecreasedEstablishedPeers
+                    numberOfEstablishedPeers
+                    (1 + closeConnectionTimeout)
+                    decreaseEstablishedPeers
+                    checkEstablishedPeersDecreased
+
+      -- Forget the worst performing known peers (root peers, ledger peers)
+      updateTargets DecreasedKnownPeers
+                    numberOfKnownPeers
+                    shortTimeout
+                    decreaseKnownPeers
+                    checkKnownPeersDecreased
+
+      -- Pick new known peers
+      updateTargets IncreasedKnownPeers
+                    numberOfKnownPeers
+                    (2 * requestPeersTimeout + shortTimeout)
+                    increaseKnownPeers
+                    checkKnownPeersIncreased
+
+      -- Pick new non-active peers
+      updateTargets IncreasedEstablishedPeers
+                    numberOfEstablishedPeers
+                    churnEstablishConnectionTimeout
+                    increaseEstablishedPeers
+                    checkEstablishedPeersIncreased
 
       endTs <- getMonotonicTime
 

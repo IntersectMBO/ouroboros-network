@@ -39,7 +39,7 @@ data ExtraState =
     --
   , minNumberOfBigLedgerPeers :: NumberOfBigLedgerPeers
   }
-  deriving Show
+  deriving (Eq, Show)
 
 empty :: ConsensusMode -> NumberOfBigLedgerPeers -> ExtraState
 empty cm minActiveBigLedgerPeers =

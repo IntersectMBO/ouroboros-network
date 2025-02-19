@@ -4029,41 +4029,82 @@ unit_peer_sharing =
 -- | This property verifies that when nodes are running without network
 -- attenuation, decreasing numbers by churn never timeouts.
 --
+--
+-- This test revealed a scenario where the governor can become blocked due to
+-- the way `EstablishedPeers` enforces connection constraints. Specifically,
+-- each `EstablishedPeers` action has a guard that prevents further peer
+-- selection until a new connection can be established. In a real-world
+-- network with many peers, this is unlikely to be an issue. However, in our
+-- controlled test environment with a limited number of peers, all of them may
+-- be in a timeout state. Because the governor selects the peer with the
+-- minimum `connectTime`, and exponential backoff increases this value
+-- significantly after multiple failed attempts, the governor can end up
+-- blocking for an extended period (e.g., ~150s). This blocking behavior
+-- disrupts churn, as the governor cannot proceed with peer selection while
+-- waiting. To address this, the test takes into consideration when such a
+-- blocking occurs and identifies whether the governor is stuck due to a high
+-- `minConnectTime`, and bypass the churn timeout in such cases. While this is
+-- a workaround, it ensures the test remains meaningful without being
+-- invalidated by an artificial limitation of the test environment.
+--
 prop_churn_notimeouts :: SimTrace Void
                       -> Int
                       -> Property
 prop_churn_notimeouts ioSimTrace traceNumber =
    let events :: [Events DiffusionTestTrace]
        events = Trace.toList
-                . fmap ( Signal.eventsFromList
-                      . fmap (\(WithName _ (WithTime t b)) -> (t, b))
-                      )
-               . splitWithNameTrace
-               . fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
-               . withTimeNameTraceEvents
-                  @DiffusionTestTrace
-                  @NtNAddr
-               . Trace.take traceNumber
-               $ ioSimTrace
+              . fmap ( Signal.eventsFromList
+                    . fmap (\(WithName _ (WithTime t b)) -> (t, b))
+                    )
+              . splitWithNameTrace
+              . fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
+              . withTimeNameTraceEvents
+                 @DiffusionTestTrace
+                 @NtNAddr
+              . Trace.take traceNumber
+              $ ioSimTrace
     in  conjoin
       $ (\evs ->
-            let evsList :: [TracePeerSelection Cardano.ExtraState PeerTrustable (Cardano.ExtraPeers NtNAddr) NtNAddr]
-                evsList = snd <$> eventsToList (selectDiffusionPeerSelectionEvents evs)
-            in property $ counterexample (List.intercalate "\n" (show <$> eventsToList evs))
-                        $ all noChurnTimeout evsList
+            let psSig :: Signal (TracePeerSelection Cardano.ExtraState PeerTrustable (Cardano.ExtraPeers NtNAddr) NtNAddr)
+                psSig = fromChangeEvents TraceGovernorWakeup (selectDiffusionPeerSelectionEvents evs)
+
+                -- We have 'True' when the governor is blocked
+                -- waiting for peers to be available to connect.
+                isGovernorStuck :: Signal Bool
+                isGovernorStuck = fmap (not . Set.null)
+                                . keyedLinger'
+                                    (\d -> if d > 0
+                                          then (Set.singleton (), d)
+                                          else (Set.empty, d)
+                                    )
+                                . Signal.fromChangeEvents 0
+                                . Signal.selectEvents
+                                   (\case
+                                       DiffusionDebugPeerSelectionTrace (TraceGovernorState _ (Just dt) _)
+                                         -> Just dt
+                                       _ -> Nothing)
+                                $ evs
+
+                -- We can't decrease peers that are in progress sets
+                noChurnTimeoutSig :: Signal Bool
+                noChurnTimeoutSig =
+                  (\peerSelection ->
+                    case peerSelection of
+                      TraceChurnTimeout _ DecreasedActivePeers _               -> False
+                      TraceChurnTimeout _ DecreasedActiveBigLedgerPeers _      -> False
+                      TraceChurnTimeout _ DecreasedEstablishedPeers _          -> False
+                      TraceChurnTimeout _ DecreasedEstablishedBigLedgerPeers _ -> False
+                      TraceChurnTimeout _ DecreasedKnownPeers _                -> False
+                      TraceChurnTimeout _ DecreasedKnownBigLedgerPeers _       -> False
+                      _                                                        -> True
+                  ) <$> psSig
+
+            in signalProperty 20 show
+                  (\(churnTimeout, governorStuck)
+                      -> governorStuck || churnTimeout)
+                  ((,) <$> noChurnTimeoutSig <*> isGovernorStuck)
         )
      <$> events
-  where
-    noChurnTimeout :: TracePeerSelection extraDebugState extraFlags extraPeers NtNAddr -> Bool
-    noChurnTimeout (TraceChurnTimeout _ DecreasedActivePeers _)               = False
-    noChurnTimeout (TraceChurnTimeout _ DecreasedActiveBigLedgerPeers _)      = False
-    noChurnTimeout (TraceChurnTimeout _ DecreasedEstablishedPeers _)          = False
-    noChurnTimeout (TraceChurnTimeout _ DecreasedEstablishedBigLedgerPeers _) = False
-    noChurnTimeout (TraceChurnTimeout _ DecreasedKnownPeers _)                = False
-    noChurnTimeout (TraceChurnTimeout _ DecreasedKnownBigLedgerPeers _)       = False
-    noChurnTimeout  TraceChurnTimeout {}                                      = True
-    noChurnTimeout  _                                                         = True
-
 
 -- | Verify that churn trace consists of repeated list of actions:
 --
