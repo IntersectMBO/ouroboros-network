@@ -1,10 +1,12 @@
-
 module Test.Ouroboros.Network.PeerSelection.KnownPeers (tests) where
+
 import Data.Map (Map)
+
 import Ouroboros.Network.PeerSelection.LedgerPeers (RelayAccessPoint)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
+
 import Test.Ouroboros.Network.PeerSelection.Instances ()
 import Test.QuickCheck (Property, counterexample)
 import Test.Tasty (TestTree, testGroup)
