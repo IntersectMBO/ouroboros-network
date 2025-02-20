@@ -24,7 +24,6 @@ module Ouroboros.Network.Diffusion
   , IG.RemoteTransitionTrace
   ) where
 
-
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadMVar (MonadMVar)
 import Control.Concurrent.Class.MonadSTM.Strict
