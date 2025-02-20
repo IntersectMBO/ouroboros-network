@@ -67,6 +67,8 @@ library
     Ouroboros.Cardano.Network.PeerSelection.Governor.Types
     Ouroboros.Cardano.Network.PublicRootPeers
     Ouroboros.Cardano.Network.Types
+    Ouroboros.Cardano.Node.Topology
+    Ouroboros.Cardano.Node.Types
     Ouroboros.Cardano.PeerSelection.Churn
     Ouroboros.Cardano.PeerSelection.PeerSelectionActions
     Ouroboros.Network.BlockFetch
@@ -82,6 +84,7 @@ library
     Ouroboros.Network.Diffusion
     Ouroboros.Network.Diffusion.Configuration
     Ouroboros.Network.Diffusion.Policies
+    Ouroboros.Network.Diffusion.Topology
     Ouroboros.Network.Diffusion.Types
     Ouroboros.Network.ExitPolicy
     Ouroboros.Network.KeepAlive
