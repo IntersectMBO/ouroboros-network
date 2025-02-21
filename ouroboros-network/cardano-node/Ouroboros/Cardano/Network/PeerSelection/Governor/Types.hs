@@ -33,7 +33,7 @@ import Ouroboros.Network.PeerSelection.Governor.Types (AssociationMode (..),
            PeerSelectionState (..), PeerSelectionView (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
            (LedgerPeersConsensusInterface (lpExtraAPI))
-import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
+import Ouroboros.Network.PeerSelection.PublicRootPeers (getBigLedgerPeers)
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 
@@ -102,7 +102,7 @@ cardanoPeerSelectionStatetoCounters
 
     -- common sets
     establishedSet = EstablishedPeers.toSet establishedPeers
-    bigLedgerSet   = PublicRootPeers.getBigLedgerPeers publicRootPeers
+    bigLedgerSet   = getBigLedgerPeers publicRootPeers
 
     -- non big ledger peers
     establishedPeersSet = establishedSet Set.\\ establishedBigLedgerPeersSet
