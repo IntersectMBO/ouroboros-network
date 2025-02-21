@@ -16,6 +16,7 @@ import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM
 import Data.Set (Set)
 import Data.Set qualified as Set
+import Ouroboros.Cardano.Network.ExtraRootPeers qualified as Cardano
 import Ouroboros.Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.Monitor
            (monitorBootstrapPeersFlag, monitorLedgerStateJudgement,
@@ -23,7 +24,7 @@ import Ouroboros.Cardano.Network.PeerSelection.Governor.Monitor
 import Ouroboros.Cardano.Network.PeerSelection.Governor.Monitor qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionActions qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
-import Ouroboros.Cardano.Network.PublicRootPeers qualified as Cardano
+import Ouroboros.Cardano.Network.PublicRootPeers qualified as Cardano.PublicRootPeers
 import Ouroboros.Network.PeerSelection.Governor (readAssociationMode)
 import Ouroboros.Network.PeerSelection.Governor.Types (AssociationMode (..),
            BootstrapPeersCriticalTimeoutError (..), ExtraGuardedDecisions (..),
@@ -112,7 +113,7 @@ cardanoPeerSelectionStatetoCounters
     activeBigLedgerPeersSet      = establishedBigLedgerPeersSet `Set.intersection` activePeers
 
     -- bootstrap peers
-    bootstrapSet                 = PublicRootPeers.getBootstrapPeers publicRootPeers
+    bootstrapSet                 = Cardano.PublicRootPeers.getBootstrapPeers publicRootPeers
     -- bootstrap peers and big ledger peers are disjoint, hence we can use
     -- `knownPeersSet`, `establishedPeersSet` and `activePeersSet` below.
     knownBootstrapPeersSet       = bootstrapSet
