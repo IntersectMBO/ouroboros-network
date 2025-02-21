@@ -243,9 +243,10 @@ clientServerSimulation payloads =
           labelThisThread "server-handler"
           bracket
             (Mx.new [ MiniProtocolInfo {
-                        miniProtocolNum    = reqRespProtocolNum,
-                        miniProtocolDir    = Mx.ResponderDirectionOnly,
-                        miniProtocolLimits = Mx.MiniProtocolLimits maxBound
+                        miniProtocolNum        = reqRespProtocolNum,
+                        miniProtocolDir        = Mx.ResponderDirectionOnly,
+                        miniProtocolLimits     = Mx.MiniProtocolLimits maxBound,
+                        miniProtocolCapability = Nothing
                       }
                     ])
             Mx.stop
@@ -286,9 +287,10 @@ clientServerSimulation payloads =
                 $ \fd -> do
                   connect snocket fd serverAddr
                   mux <- Mx.new [ MiniProtocolInfo {
-                                    miniProtocolNum    = reqRespProtocolNum,
-                                    miniProtocolDir    = Mx.InitiatorDirectionOnly,
-                                    miniProtocolLimits = Mx.MiniProtocolLimits maxBound
+                                    miniProtocolNum        = reqRespProtocolNum,
+                                    miniProtocolDir        = Mx.InitiatorDirectionOnly,
+                                    miniProtocolLimits     = Mx.MiniProtocolLimits maxBound,
+                                    miniProtocolCapability = Nothing
                                   }
                                 ]
                   localAddr <- getLocalAddr snocket fd

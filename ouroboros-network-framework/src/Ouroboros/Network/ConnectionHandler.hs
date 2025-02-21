@@ -68,6 +68,7 @@ import Ouroboros.Network.Protocol.Handshake
 import Ouroboros.Network.Protocol.Handshake.Version qualified as Handshake
 import Ouroboros.Network.RethrowPolicy
 
+
 -- | We place an upper limit of `30s` on the time we wait on receiving an SDU.
 -- There is no upper bound on the time we wait when waiting for a new SDU.
 -- This makes it possible for mini-protocols to use timeouts that are larger
@@ -223,6 +224,7 @@ makeConnectionHandler
        )
     => Tracer m (Mx.WithBearer (ConnectionId peerAddr) Mx.Trace)
     -> SingMuxMode muxMode
+    -> ForkPolicy peerAddr
     -- ^ describe whether this is outbound or inbound connection, and bring
     -- evidence that we can use mux with it.
     -> HandshakeArguments (ConnectionId peerAddr) versionNumber versionData m
@@ -233,6 +235,7 @@ makeConnectionHandler
     -- exception to that thread, when trying to terminate the process.
     -> MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr versionNumber versionData ByteString m a b
 makeConnectionHandler muxTracer singMuxMode
+                      forkPolicy
                       handshakeArguments
                       versionedApplication
                       (mainThreadId, rethrowPolicy) =
@@ -323,7 +326,7 @@ makeConnectionHandler muxTracer singMuxMode
                         <$> newTVarIO Continue
                         <*> newTVarIO Continue
                         <*> newTVarIO Continue
-                  mux <- Mx.new (mkMiniProtocolInfos app)
+                  mux <- Mx.new (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
                   let !handle = Handle {
                           hMux            = mux,
                           hMuxBundle      = app,
@@ -392,7 +395,7 @@ makeConnectionHandler muxTracer singMuxMode
                         <$> newTVarIO Continue
                         <*> newTVarIO Continue
                         <*> newTVarIO Continue
-                  mux <- Mx.new (mkMiniProtocolInfos app)
+                  mux <- Mx.new (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
 
                   let !handle = Handle {
                           hMux            = mux,
@@ -403,7 +406,8 @@ makeConnectionHandler muxTracer singMuxMode
                   atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
                   bearer <- mkMuxBearer sduTimeout socket
                   Mx.run (Mx.WithBearer connectionId `contramap` muxTracer)
-                             mux bearer
+                         mux bearer
+
               Right (HandshakeQueryResult vMap) -> do
                 atomically $ writePromise (Right HandshakeConnectionQuery)
                 traceWith tracer $ TrHandshakeQuery vMap

@@ -240,7 +240,7 @@ nullTracersExtra =
 --
 data ArgumentsExtra extraState extraDebugState extraFlags extraPeers
                     extraAPI extraChurnArgs extraCounters exception
-                    peeraddr resolver resolverError m = ArgumentsExtra {
+                    ntnAddr ntcAddr resolver resolverError m = ArgumentsExtra {
       -- | selection targets for the peer governor
       --
       daPeerSelectionTargets   :: PeerSelectionTargets
@@ -305,15 +305,15 @@ data ArgumentsExtra extraState extraDebugState extraFlags extraPeers
 
       -- | Provide Public Extra Actions for extraPeers to be
       --
-    , daExtraPeersAPI          :: PublicExtraPeersAPI extraPeers peeraddr
+    , daExtraPeersAPI          :: PublicExtraPeersAPI extraPeers ntnAddr
 
     , daPeerSelectionGovernorArgs
         :: forall muxMode responderCtx ntnVersionData bytes a b .
            PeerSelectionGovernorArgs extraState extraDebugState extraFlags extraPeers
                                      extraAPI extraCounters
-                                     peeraddr (PeerConnectionHandle
-                                                 muxMode responderCtx peeraddr
-                                                 ntnVersionData bytes m a b)
+                                     ntnAddr (PeerConnectionHandle
+                                                muxMode responderCtx ntnAddr
+                                                ntnVersionData bytes m a b)
                                      exception m
 
       -- | Function that computes extraCounters from PeerSelectionState
@@ -321,15 +321,15 @@ data ArgumentsExtra extraState extraDebugState extraFlags extraPeers
     , daPeerSelectionStateToExtraCounters
         :: forall muxMode responderCtx ntnVersionData bytes a b .
            PeerSelectionState extraState extraFlags extraPeers
-                              peeraddr (PeerConnectionHandle
-                                          muxMode responderCtx peeraddr
-                                          ntnVersionData bytes m a b)
+                              ntnAddr (PeerConnectionHandle
+                                         muxMode responderCtx ntnAddr
+                                         ntnVersionData bytes m a b)
         -> extraCounters
 
       -- | Function that constructs a 'extraPeers' set from a map of dns
       -- lookup results.
       --
-    , daToExtraPeers :: Map peeraddr PeerAdvertise -> extraPeers
+    , daToExtraPeers :: Map ntnAddr PeerAdvertise -> extraPeers
 
       -- | Request Public Root Peers.
       --
@@ -338,13 +338,13 @@ data ArgumentsExtra extraState extraDebugState extraFlags extraPeers
       -- 'Ouroboros.Network.PeerSelection.PeerSelectionActions.getPublicRootPeers'
       --
     , daRequestPublicRootPeers
-        :: Maybe (    PeerActionsDNS peeraddr resolver resolverError m
+        :: Maybe (    PeerActionsDNS ntnAddr resolver resolverError m
                    -> DNSSemaphore m
-                   -> (Map peeraddr PeerAdvertise -> extraPeers)
-                   -> ( (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
+                   -> (Map ntnAddr PeerAdvertise -> extraPeers)
+                   -> ( (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set ntnAddr, DiffTime)))
                    -> LedgerPeersKind
                    -> Int
-                   -> m (PublicRootPeers extraPeers peeraddr, DiffTime)))
+                   -> m (PublicRootPeers extraPeers ntnAddr, DiffTime)))
 
       -- | Peer Churn Governor if no custom churn governor is required just
       -- use the default one from
@@ -359,12 +359,20 @@ data ArgumentsExtra extraState extraDebugState extraFlags extraPeers
              extraPeers
              extraAPI
              extraCounters
-             peeraddr
+             ntnAddr
         -> m Void
 
       -- | Provide extraChurnArgs to be passed to churn governor
       --
     , daExtraChurnArgs :: extraChurnArgs
+
+      -- | A fork policy for node-to-node mini-protocol threads spawn by mux.
+      --
+    , daMuxForkPolicy :: ForkPolicy ntnAddr
+
+    -- | A fork policy for node-to-client mini-protocols threads spawn by mux.
+    --
+    , daLocalMuxForkPolicy :: ForkPolicy ntcAddr
     }
 
 
@@ -658,7 +666,7 @@ runM
     -> -- | p2p configuration
        ArgumentsExtra extraState extraDebugState extraFlags
                       extraPeers extraAPI extraChurnArgs extraCounters
-                      exception ntnAddr resolver resolverError m
+                      exception ntnAddr ntcAddr resolver resolverError m
 
     -> -- | protocol handlers
        Applications ntnAddr ntnVersion ntnVersionData
@@ -739,6 +747,8 @@ runM Interfaces
        , daToExtraPeers
        , daRequestPublicRootPeers
        , daExtraChurnArgs
+       , daMuxForkPolicy
+       , daLocalMuxForkPolicy
        }
      Applications
        { daApplicationInitiatorMode
@@ -839,6 +849,7 @@ runM Interfaces
               makeConnectionHandler
                 dtLocalMuxTracer
                 SingResponderMode
+                daLocalMuxForkPolicy
                 diNtcHandshakeArguments
                 ( ( \ (OuroborosApplication apps)
                    -> TemperatureBundle
@@ -1015,6 +1026,7 @@ runM Interfaces
             makeConnectionHandler
               dtMuxTracer
               muxMode
+              daMuxForkPolicy
               diNtnHandshakeArguments
               versions
               (mainThreadId, rethrowPolicy <> daRethrowPolicy)
@@ -1370,6 +1382,7 @@ run :: ( Monoid extraPeers
         extraCounters
         exception
         RemoteAddress
+        LocalAddress
         Resolver
         IOException
         IO

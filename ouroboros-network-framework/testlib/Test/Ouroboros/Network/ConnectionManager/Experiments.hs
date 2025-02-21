@@ -50,6 +50,7 @@ import Codec.Serialise.Class (Serialise)
 import Data.ByteString.Lazy (ByteString)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Functor (($>), (<&>))
+import Data.Hashable
 import Data.List (mapAccumL)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Proxy (Proxy (..))
@@ -304,6 +305,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
       (makeConnectionHandler
         muxTracer
         SingInitiatorMode
+        noBindForkPolicy
         HandshakeArguments {
             -- TraceSendRecv
             haHandshakeTracer = (name,) `contramap` nullTracer,
@@ -500,6 +502,7 @@ withBidirectionalConnectionManager name timeouts
         (makeConnectionHandler
           muxTracer
           SingInitiatorResponderMode
+          noBindForkPolicy
           HandshakeArguments {
               -- TraceSendRecv
               haHandshakeTracer = WithName name `contramap` nullTracer,
@@ -715,6 +718,7 @@ unidirectionalExperiment
 
        , acc ~ [req], resp ~ [req]
        , Ord peerAddr, Show peerAddr, Typeable peerAddr, Eq peerAddr
+       , Hashable peerAddr
        , Serialise req, Show req
        , Serialise resp, Show resp, Eq resp
        , Typeable req, Typeable resp
@@ -792,6 +796,7 @@ bidirectionalExperiment
 
        , acc ~ [req], resp ~ [req]
        , Ord peerAddr, Show peerAddr, Typeable peerAddr, Eq peerAddr
+       , Hashable peerAddr
 
        , Serialise req, Show req
        , Serialise resp, Show resp, Eq resp

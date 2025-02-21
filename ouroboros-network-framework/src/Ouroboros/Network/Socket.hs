@@ -437,7 +437,7 @@ connectToNodeWithMux'
        Right (HandshakeNegotiationResult app versionNumber agreedOptions) -> do
          traceWith muxTracer $ Mx.TraceHandshakeClientEnd (diffTime ts_end ts_start)
          bearer <- Mx.getBearer makeBearer sduTimeout muxTracer sd
-         mux <- Mx.new (toMiniProtocolInfos app)
+         mux <- Mx.new (toMiniProtocolInfos (runForkPolicy noBindForkPolicy remoteAddress) app)
          withAsync (Mx.run muxTracer mux bearer) $ \aid ->
            k connectionId versionNumber agreedOptions app mux aid
 
@@ -611,7 +611,8 @@ beginConnection makeBearer muxTracer handshakeTracer handshakeCodec handshakeTim
              Right (HandshakeNegotiationResult (SomeResponderApplication app) versionNumber agreedOptions) -> do
                  traceWith muxTracer' Mx.TraceHandshakeServerEnd
                  bearer <- Mx.getBearer makeBearer sduTimeout muxTracer' sd
-                 mux <- Mx.new (toMiniProtocolInfos app)
+                 -- non-p2p: use `noBindForkPolicy`
+                 mux <- Mx.new (toMiniProtocolInfos (runForkPolicy noBindForkPolicy remoteAddress) app)
                  withAsync (Mx.run muxTracer' mux bearer) $ \aid ->
                    void $ simpleMuxCallback connectionId versionNumber agreedOptions app mux aid
 

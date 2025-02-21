@@ -137,9 +137,10 @@ serverWorker bearer = do
   where
     ptcls :: [MiniProtocolInfo ResponderMode]
     ptcls = [ MiniProtocolInfo {
-                miniProtocolNum    = MiniProtocolNum 2,
-                miniProtocolDir    = ResponderDirectionOnly,
-                miniProtocolLimits = defaultProtocolLimits
+                miniProtocolNum        = MiniProtocolNum 2,
+                miniProtocolDir        = ResponderDirectionOnly,
+                miniProtocolLimits     = defaultProtocolLimits,
+                miniProtocolCapability = Nothing
               }
             ]
 
@@ -196,9 +197,10 @@ clientWorker bearer n msg = do
   where
     ptcls :: [MiniProtocolInfo Mx.InitiatorMode]
     ptcls = [ MiniProtocolInfo {
-                miniProtocolNum    = MiniProtocolNum 2,
-                miniProtocolDir    = InitiatorDirectionOnly,
-                miniProtocolLimits = defaultProtocolLimits
+                miniProtocolNum        = MiniProtocolNum 2,
+                miniProtocolDir        = InitiatorDirectionOnly,
+                miniProtocolLimits     = defaultProtocolLimits,
+                miniProtocolCapability = Nothing
               }
             ]
 

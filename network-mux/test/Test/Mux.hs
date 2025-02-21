@@ -345,13 +345,15 @@ prop_mux_snd_recv (DummyRun messages) = ioProperty $ do
         clientApp = MiniProtocolInfo {
                        miniProtocolNum = Mx.MiniProtocolNum 2,
                        miniProtocolDir = Mx.InitiatorDirectionOnly,
-                       miniProtocolLimits = defaultMiniProtocolLimits
+                       miniProtocolLimits = defaultMiniProtocolLimits,
+                       miniProtocolCapability = Nothing
                      }
 
         serverApp = MiniProtocolInfo {
                        miniProtocolNum = Mx.MiniProtocolNum 2,
                        miniProtocolDir = Mx.ResponderDirectionOnly,
-                       miniProtocolLimits = defaultMiniProtocolLimits
+                       miniProtocolLimits = defaultMiniProtocolLimits,
+                       miniProtocolCapability = Nothing
                      }
 
     clientMux <- Mx.new [clientApp]
@@ -411,24 +413,28 @@ prop_mux_snd_recv_bi (DummyRun messages) = ioProperty $ do
     let clientApps = [ MiniProtocolInfo {
                         miniProtocolNum = Mx.MiniProtocolNum 2,
                         miniProtocolDir = Mx.InitiatorDirection,
-                        miniProtocolLimits = defaultMiniProtocolLimits
+                        miniProtocolLimits = defaultMiniProtocolLimits,
+                        miniProtocolCapability = Nothing
                        }
                      , MiniProtocolInfo {
                         miniProtocolNum = Mx.MiniProtocolNum 2,
                         miniProtocolDir = Mx.ResponderDirection,
-                        miniProtocolLimits = defaultMiniProtocolLimits
+                        miniProtocolLimits = defaultMiniProtocolLimits,
+                        miniProtocolCapability = Nothing
                       }
                      ]
 
         serverApps = [ MiniProtocolInfo {
                         miniProtocolNum = Mx.MiniProtocolNum 2,
                         miniProtocolDir = Mx.ResponderDirection,
-                        miniProtocolLimits = defaultMiniProtocolLimits
+                        miniProtocolLimits = defaultMiniProtocolLimits,
+                        miniProtocolCapability = Nothing
                        }
                      , MiniProtocolInfo {
                         miniProtocolNum = Mx.MiniProtocolNum 2,
                         miniProtocolDir = Mx.InitiatorDirection,
-                        miniProtocolLimits = defaultMiniProtocolLimits
+                        miniProtocolLimits = defaultMiniProtocolLimits,
+                        miniProtocolCapability = Nothing
                        }
                      ]
 
@@ -517,15 +523,17 @@ prop_mux_snd_recv_compat messages = ioProperty $ do
                                         (return ()) endMpsVar messages
 
     let clientBundle = [ MiniProtocolInfo {
-                           miniProtocolNum    = Mx.MiniProtocolNum 2,
-                           miniProtocolLimits = defaultMiniProtocolLimits,
-                           miniProtocolDir    = Mx.InitiatorDirectionOnly }
+                           miniProtocolNum        = Mx.MiniProtocolNum 2,
+                           miniProtocolLimits     = defaultMiniProtocolLimits,
+                           miniProtocolDir        = Mx.InitiatorDirectionOnly,
+                           miniProtocolCapability = Nothing }
                        ]
 
         serverBundle = [ MiniProtocolInfo {
-                           miniProtocolNum    = Mx.MiniProtocolNum 2,
-                           miniProtocolLimits = defaultMiniProtocolLimits,
-                           miniProtocolDir    = Mx.ResponderDirectionOnly }
+                           miniProtocolNum        = Mx.MiniProtocolNum 2,
+                           miniProtocolLimits     = defaultMiniProtocolLimits,
+                           miniProtocolDir        = Mx.ResponderDirectionOnly,
+                           miniProtocolCapability = Nothing }
                        ]
 
     clientAsync <- async $ do
@@ -717,7 +725,13 @@ runMuxApplication initApps initBearer respApps respBearer = do
         initApps' = zip protNum initApps
 
     respMux <- Mx.new $ map (\(pn,_) ->
-        MiniProtocolInfo (Mx.MiniProtocolNum pn) Mx.ResponderDirectionOnly defaultMiniProtocolLimits)
+          MiniProtocolInfo {
+            miniProtocolNum        = Mx.MiniProtocolNum pn,
+            miniProtocolDir        = Mx.ResponderDirectionOnly,
+            miniProtocolLimits     = defaultMiniProtocolLimits,
+            miniProtocolCapability = Nothing
+          }
+        )
         respApps'
     respAsync <- async $ Mx.run serverTracer respMux respBearer
     getRespRes <- sequence [ Mx.runMiniProtocol
@@ -730,7 +744,13 @@ runMuxApplication initApps initBearer respApps respBearer = do
                            ]
 
     initMux <- Mx.new $ map (\(pn,_) ->
-        MiniProtocolInfo (Mx.MiniProtocolNum pn) Mx.InitiatorDirectionOnly defaultMiniProtocolLimits)
+          MiniProtocolInfo {
+            miniProtocolNum        = Mx.MiniProtocolNum pn,
+            miniProtocolDir        = Mx.InitiatorDirectionOnly,
+            miniProtocolLimits     = defaultMiniProtocolLimits,
+            miniProtocolCapability = Nothing
+          }
+        )
         initApps'
     initAsync <- async $ Mx.run clientTracer initMux initBearer
     getInitRes <- sequence [ Mx.runMiniProtocol
@@ -932,23 +952,27 @@ prop_mux_starvation (Uneven response0 response1) =
     let clientApp2 = MiniProtocolInfo {
                          miniProtocolNum = Mx.MiniProtocolNum 2,
                          miniProtocolDir = Mx.InitiatorDirectionOnly,
-                         miniProtocolLimits = defaultMiniProtocolLimits
+                         miniProtocolLimits = defaultMiniProtocolLimits,
+                         miniProtocolCapability = Nothing
                        }
         clientApp3 = MiniProtocolInfo {
                          miniProtocolNum = Mx.MiniProtocolNum 3,
                          miniProtocolDir = Mx.InitiatorDirectionOnly,
-                         miniProtocolLimits = defaultMiniProtocolLimits
+                         miniProtocolLimits = defaultMiniProtocolLimits,
+                         miniProtocolCapability = Nothing
                        }
 
         serverApp2 = MiniProtocolInfo {
                          miniProtocolNum = Mx.MiniProtocolNum 2,
                          miniProtocolDir = Mx.ResponderDirectionOnly,
-                         miniProtocolLimits = defaultMiniProtocolLimits
+                         miniProtocolLimits = defaultMiniProtocolLimits,
+                         miniProtocolCapability = Nothing
                        }
         serverApp3 = MiniProtocolInfo {
                          miniProtocolNum = Mx.MiniProtocolNum 3,
                          miniProtocolDir = Mx.ResponderDirectionOnly,
-                         miniProtocolLimits = defaultMiniProtocolLimits
+                         miniProtocolLimits = defaultMiniProtocolLimits,
+                         miniProtocolCapability = Nothing
                        }
 
     serverMux <- Mx.new [serverApp2, serverApp3]
@@ -960,9 +984,9 @@ prop_mux_starvation (Uneven response0 response1) =
 
     clientMux <- Mx.new [clientApp2, clientApp3]
     clientMux_aid <- async $ Mx.run (clientTracer <> headerTracer) clientMux clientBearer
-    clientRes2 <- Mx.runMiniProtocol clientMux (Mx.miniProtocolNum clientApp2) (Mx.miniProtocolDir clientApp2)
+    clientRes2 <- Mx.runMiniProtocol clientMux (miniProtocolNum clientApp2) (miniProtocolDir clientApp2)
                    Mx.StartEagerly client_short
-    clientRes3 <- Mx.runMiniProtocol clientMux (Mx.miniProtocolNum clientApp3) (Mx.miniProtocolDir clientApp3)
+    clientRes3 <- Mx.runMiniProtocol clientMux (miniProtocolNum clientApp3) (miniProtocolDir clientApp3)
                    Mx.StartEagerly client_long
 
 
@@ -1061,7 +1085,8 @@ prop_demux_sdu a = do
         let server_mps = MiniProtocolInfo {
                            miniProtocolNum = Mx.MiniProtocolNum 2,
                            miniProtocolDir = Mx.ResponderDirectionOnly,
-                           miniProtocolLimits = smallMiniProtocolLimits
+                           miniProtocolLimits = smallMiniProtocolLimits,
+                           miniProtocolCapability = Nothing
                          }
 
         (client_w, said, waitServerRes, mux) <- plainServer server_mps (serverRsp stopVar)
@@ -1089,7 +1114,8 @@ prop_demux_sdu a = do
         let server_mps = MiniProtocolInfo {
                             miniProtocolNum = Mx.MiniProtocolNum 2,
                             miniProtocolDir = Mx.ResponderDirectionOnly,
-                            miniProtocolLimits = defaultMiniProtocolLimits
+                            miniProtocolLimits = defaultMiniProtocolLimits,
+                            miniProtocolCapability = Nothing
                           }
 
         (client_w, said, waitServerRes, mux) <- plainServer server_mps (serverRsp stopVar)
@@ -1116,7 +1142,8 @@ prop_demux_sdu a = do
         let server_mps = MiniProtocolInfo {
                             miniProtocolNum = Mx.MiniProtocolNum 2,
                             miniProtocolDir = Mx.ResponderDirectionOnly,
-                            miniProtocolLimits = defaultMiniProtocolLimits
+                            miniProtocolLimits = defaultMiniProtocolLimits,
+                            miniProtocolCapability = Nothing
                           }
 
         (client_w, said, waitServerRes, mux) <- plainServer server_mps (serverRsp stopVar)
@@ -1351,7 +1378,7 @@ dummyRestartingAppToChannel (app, r) = \_ -> do
 
 
 appToInfo :: Mx.MiniProtocolDirection mode -> DummyApp -> MiniProtocolInfo mode
-appToInfo d da = MiniProtocolInfo (daNum da) d defaultMiniProtocolLimits
+appToInfo d da = MiniProtocolInfo (daNum da) d defaultMiniProtocolLimits Nothing
 
 triggerApp :: forall m.
               ( MonadAsync m
@@ -1877,7 +1904,8 @@ close_experiment
       (bracket (Mx.new [ MiniProtocolInfo {
                            miniProtocolNum,
                            miniProtocolDir = Mx.InitiatorDirectionOnly,
-                           miniProtocolLimits = Mx.MiniProtocolLimits maxBound
+                           miniProtocolLimits = Mx.MiniProtocolLimits maxBound,
+                           miniProtocolCapability = Nothing
                          }
                        ])
                 Mx.stop $ \mux ->
@@ -1895,7 +1923,8 @@ close_experiment
           (bracket ( Mx.new [ MiniProtocolInfo {
                                 miniProtocolNum,
                                 miniProtocolDir = Mx.ResponderDirectionOnly,
-                                miniProtocolLimits = Mx.MiniProtocolLimits maxBound
+                                miniProtocolLimits = Mx.MiniProtocolLimits maxBound,
+                                miniProtocolCapability = Nothing
                               }
                             ])
                     Mx.stop $ \mux ->

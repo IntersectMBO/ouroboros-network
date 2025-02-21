@@ -12,6 +12,7 @@ module Control.Concurrent.JobPool
   , Job (..)
   , withJobPool
   , forkJob
+  , forkJobOn
   , readSize
   , readGroupSize
   , waitForJob
@@ -28,6 +29,7 @@ import Control.Monad (void, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork (MonadThread (..))
 import Control.Monad.Class.MonadThrow
+
 
 -- | JobPool allows to submit asynchronous jobs, wait for their completion or
 -- cancel.  Jobs are grouped, each group can be cancelled separately.
@@ -69,16 +71,19 @@ withJobPool =
       jobs <- readTVarIO jobsVar
       mapM_ uninterruptibleCancel jobs
 
-forkJob :: forall group m a.
-           ( MonadAsync m, MonadMask m
-           , Ord group
-           )
-        => JobPool group m a
-        -> Job     group m a
-        -> m ()
-forkJob JobPool{jobsVar, completionQueue} (Job action handler group label) =
+
+forkJob' :: forall group m a.
+            ( MonadAsync m, MonadMask m
+            , Ord group
+            )
+         => (m () -> m (Async m ()))
+         -- ^ how to fork a thread, e.g. `async`, `asyncOn`.
+         -> JobPool group m a
+         -> Job     group m a
+         -> m ()
+forkJob' doFork JobPool{jobsVar, completionQueue} (Job action handler group label) =
     mask $ \restore -> do
-      jobAsync <- async $ do
+      jobAsync <- doFork $ do
         tid <- myThreadId
         io tid restore
           `onException`
@@ -103,6 +108,33 @@ forkJob JobPool{jobsVar, completionQueue} (Job action handler group label) =
       !res <- handleJust notAsyncExceptions handler $
               restore action
       atomically $ writeTQueue completionQueue res
+
+
+
+-- | Fork a `Job` using `async`.
+--
+forkJob :: forall group m a.
+           ( MonadAsync m, MonadMask m
+           , Ord group
+           )
+        => JobPool group m a
+        -> Job     group m a
+        -> m ()
+forkJob = forkJob' async
+
+
+-- | Fork a `Job` using `asyncOn`.
+--
+forkJobOn :: forall group m a.
+             ( MonadAsync m, MonadMask m
+             , Ord group
+             )
+          => Int
+          -> JobPool group m a
+          -> Job     group m a
+          -> m ()
+forkJobOn cap = forkJob' (asyncOn cap)
+
 
 readSize :: MonadSTM m => JobPool group m a -> STM m Int
 readSize JobPool{jobsVar} = Map.size <$> readTVar jobsVar

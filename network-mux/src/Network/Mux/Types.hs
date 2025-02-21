@@ -127,12 +127,14 @@ type family HasResponder (mode :: Mode) :: Bool where
 --
 data MiniProtocolInfo (mode :: Mode) =
      MiniProtocolInfo {
-       miniProtocolNum    :: !MiniProtocolNum,
+       miniProtocolNum        :: !MiniProtocolNum,
        -- ^ Unique mini-protocol number.
-       miniProtocolDir    :: !(MiniProtocolDirection mode),
+       miniProtocolDir        :: !(MiniProtocolDirection mode),
        -- ^ Mini-protocol direction.
-       miniProtocolLimits :: !MiniProtocolLimits
+       miniProtocolLimits     :: !MiniProtocolLimits,
        -- ^ ingress queue limits for the protocol
+       miniProtocolCapability :: !(Maybe Int)
+       -- ^ capability on which the mini-protocol should run
      }
 
 data MiniProtocolDirection (mode :: Mode) where

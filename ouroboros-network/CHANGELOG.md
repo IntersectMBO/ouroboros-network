@@ -179,6 +179,7 @@
   (`PeerTrustable` was abstracted out, since this was a bootstrap peers
   Cardano specific type.).
 - `LocalRootPeers` now has `extraFlags` type parameter.
+- `daForkPolicy` field added to `Ouroboros.Network.P2P.ArgumentsExtra`.
 
 ### Non-breaking changes
 
