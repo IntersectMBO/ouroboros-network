@@ -59,6 +59,7 @@ library
     Ouroboros.Cardano.Network.Diffusion.Configuration
     Ouroboros.Cardano.Network.Diffusion.Handlers
     Ouroboros.Cardano.Network.Diffusion.Policies
+    Ouroboros.Cardano.Network.ExtraRootPeers
     Ouroboros.Cardano.Network.LedgerPeerConsensusInterface
     Ouroboros.Cardano.Network.PeerSelection.Churn.ExtraArguments
     Ouroboros.Cardano.Network.PeerSelection.Governor.Monitor

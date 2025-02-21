@@ -85,6 +85,7 @@ import Cardano.Network.Types (LedgerStateJudgement (..),
 import Ouroboros.Cardano.Network.ArgumentsExtra qualified as Cardano
 import Ouroboros.Cardano.Network.Diffusion.Configuration
            (defaultNumberOfBigLedgerPeers)
+import Ouroboros.Cardano.Network.ExtraRootPeers qualified as Cardano
 import Ouroboros.Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Churn.ExtraArguments qualified as Churn
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano hiding
@@ -92,7 +93,6 @@ import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState quali
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as ExtraState
 import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as ExtraSizes
-import Ouroboros.Cardano.Network.PublicRootPeers qualified as Cardano
 import Ouroboros.Cardano.Network.Types (ChurnMode (..))
 import Ouroboros.Cardano.PeerSelection.Churn (peerChurnGovernor)
 import Ouroboros.Cardano.PeerSelection.PeerSelectionActions

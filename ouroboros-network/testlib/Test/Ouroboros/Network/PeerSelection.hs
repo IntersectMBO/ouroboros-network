@@ -62,6 +62,7 @@ import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
 import Cardano.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
+import Ouroboros.Cardano.Network.PublicRootPeers qualified as Cardano.PublicRootPeers
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..),
@@ -98,14 +99,14 @@ import Control.Monad.IOSim
 
 import Cardano.Network.Types (LedgerStateJudgement (..),
            NumberOfBigLedgerPeers (..))
+import Ouroboros.Cardano.Network.ExtraRootPeers qualified as Cardano
+import Ouroboros.Cardano.Network.ExtraRootPeers qualified as ExtraPeers
 import Ouroboros.Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionActions qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as ExtraState
 import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as ExtraSizes
-import Ouroboros.Cardano.Network.PublicRootPeers qualified as Cardano
-import Ouroboros.Cardano.Network.PublicRootPeers qualified as ExtraPeers
 import Test.QuickCheck
 import Test.QuickCheck.Monoids
 import Test.Tasty
@@ -2144,7 +2145,7 @@ prop_governor_target_known_5_no_shrink_below (MaxTime maxTime) env =
 
         bootstrapPeersSig :: Signal (Set PeerAddr)
         bootstrapPeersSig =
-          selectGovState (PublicRootPeers.getBootstrapPeers . Governor.publicRootPeers)
+          selectGovState (Cardano.PublicRootPeers.getBootstrapPeers . Governor.publicRootPeers)
                          (ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) ExtraPeers.empty
                          events
 
@@ -3529,7 +3530,7 @@ prop_governor_only_bootstrap_peers_in_fallback_state env =
         govTrustedPeers =
           selectGovState
             (\st -> LocalRootPeers.keysSet (LocalRootPeers.clampToTrustable (Governor.localRootPeers st))
-                 <> PublicRootPeers.getBootstrapPeers (Governor.publicRootPeers st)
+                 <> Cardano.PublicRootPeers.getBootstrapPeers (Governor.publicRootPeers st)
             )
             (ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) ExtraPeers.empty
             events
@@ -3587,7 +3588,7 @@ prop_governor_no_non_trustable_peers_before_caught_up_state env =
         govTrustedPeers =
           selectGovState
             (\st -> LocalRootPeers.keysSet (LocalRootPeers.clampToTrustable (Governor.localRootPeers st))
-                 <> PublicRootPeers.getBootstrapPeers (Governor.publicRootPeers st)
+                 <> Cardano.PublicRootPeers.getBootstrapPeers (Governor.publicRootPeers st)
             )
             (ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) ExtraPeers.empty
             events
@@ -3651,7 +3652,7 @@ prop_governor_only_bootstrap_peers_in_clean_state env =
                 ( KnownPeers.toSet (Governor.knownPeers st)
                 ,
                       LocalRootPeers.keysSet (LocalRootPeers.clampToTrustable (Governor.localRootPeers st))
-                   <> PublicRootPeers.getBootstrapPeers (Governor.publicRootPeers st)
+                   <> Cardano.PublicRootPeers.getBootstrapPeers (Governor.publicRootPeers st)
                 )
             )
             (ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) ExtraPeers.empty
@@ -3755,7 +3756,7 @@ prop_governor_stops_using_bootstrap_peers env =
 
         govBootstrapPeers :: Signal (Set PeerAddr)
         govBootstrapPeers =
-          selectGovState (PublicRootPeers.getBootstrapPeers . Governor.publicRootPeers)
+          selectGovState (Cardano.PublicRootPeers.getBootstrapPeers . Governor.publicRootPeers)
                          (ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) ExtraPeers.empty
                          events
 
@@ -3832,7 +3833,7 @@ prop_governor_uses_ledger_peers env =
           $ Signal.toChangeEvents
           $ ((\ubp lsj prp ->
                 if not (requiresBootstrapPeers ubp lsj)
-                   then Set.null (PublicRootPeers.getBootstrapPeers prp)
+                   then Set.null (Cardano.PublicRootPeers.getBootstrapPeers prp)
                    else True)
             <$> govUseBootstrapPeers
             <*> govLedgerStateJudgement
@@ -4115,7 +4116,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
     pickTrivially :: Applicative m => Set SockAddr -> Int -> m (Set SockAddr)
     pickTrivially m n = pure . Set.take n $ m
 
-    transformPeerSelectionAction = fmap (fmap (\(a, b) -> (PublicRootPeers.fromMapAndSet a Set.empty Set.empty Set.empty, b)))
+    transformPeerSelectionAction = fmap (fmap (\(a, b) -> (Cardano.PublicRootPeers.fromMapAndSet a Set.empty Set.empty Set.empty, b)))
 
 prop_issue_3550 :: Property
 prop_issue_3550 = prop_governor_target_established_below defaultMaxTime $
@@ -4130,7 +4131,7 @@ prop_issue_3550 = prop_governor_target_established_below defaultMaxTime $
         [ (1, 1, Map.fromList [(PeerAddr 16, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])
         , (1, 1, Map.fromList [(PeerAddr 4, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])
         ],
-      publicRootPeers = PublicRootPeers.fromPublicRootPeers
+      publicRootPeers = Cardano.PublicRootPeers.fromPublicRootPeers
         (Map.fromList [ (PeerAddr 14, DoNotAdvertisePeer)
                       , (PeerAddr 29, DoNotAdvertisePeer)
                       ]
@@ -4270,7 +4271,7 @@ prop_issue_3233 = prop_governor_nolivelock $
         [ (1, 1, Map.fromList [(PeerAddr 15, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])
         , (1, 1, Map.fromList [(PeerAddr 13, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])
         ],
-      publicRootPeers = PublicRootPeers.fromPublicRootPeers
+      publicRootPeers = Cardano.PublicRootPeers.fromPublicRootPeers
         (Map.fromList [(PeerAddr 4, DoNotAdvertisePeer)]),
       targets = Script . NonEmpty.fromList $ targets'',
       pickKnownPeersForPeerShare = Script (PickFirst :| []),
