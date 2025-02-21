@@ -58,13 +58,9 @@ import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Data.List (intercalate)
 import Data.List.NonEmpty (NonEmpty (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
-import Ouroboros.Network.PeerSelection.LedgerPeers
-import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
-import Ouroboros.Network.PeerSelection.RootPeersDNS (PeerActionsDNS (..))
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
-import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
-import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
+import Ouroboros.Network.PeerSelection (DomainAccessPoint (..), IP (..),
+           PeerAdvertise (..), RelayAccessPoint (..), TraceLedgerPeers)
+import Ouroboros.Network.PeerSelection.RootPeersDNS
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
            LocalRootConfig (..), WarmValency (..))
 import Test.Ouroboros.Network.Data.Script (Script (Script), initScript',
