@@ -33,6 +33,8 @@ import Ouroboros.Network.Snocket as Snocket
 import Ouroboros.Network.Socket
 
 
+-- TODO: should be moved to `ouroboros-network-framework`
+-- It is needed in `ekg-forward` and probably wallet too.
 with :: forall fd addr vNumber vData m a b.
         ( Alternative (STM m),
           MonadAsync m,

@@ -111,8 +111,8 @@ defaultMiniProtocolLimit = 3000000
 -- |
 -- Allow to run a singly req-resp protocol.
 --
-testProtocols2 :: RunMiniProtocolWithMinimalCtx appType addr bytes m a b
-               -> OuroborosApplicationWithMinimalCtx appType addr bytes m a b
+testProtocols2 :: RunMiniProtocolWithMinimalCtx appType () addr bytes m a b
+               -> OuroborosApplicationWithMinimalCtx appType () addr bytes m a b
 testProtocols2 reqResp =
     OuroborosApplication [
       MiniProtocol {
@@ -207,7 +207,7 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
 
     let -- Server Node; only req-resp server
         responderApp :: OuroborosApplicationWithMinimalCtx
-                          Mx.ResponderMode Socket.SockAddr BL.ByteString IO Void ()
+                          Mx.ResponderMode () Socket.SockAddr BL.ByteString IO Void ()
         responderApp = testProtocols2 reqRespResponder
 
         reqRespResponder =
@@ -223,7 +223,7 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
 
         -- Client Node; only req-resp client
         initiatorApp :: OuroborosApplicationWithMinimalCtx
-                          Mx.InitiatorMode Socket.SockAddr BL.ByteString IO () Void
+                          Mx.InitiatorMode () Socket.SockAddr BL.ByteString IO () Void
         initiatorApp = testProtocols2 reqRespInitiator
 
         reqRespInitiator =
@@ -299,7 +299,7 @@ prop_socket_recv_error f rerr =
     sv   <- newEmptyTMVarIO
 
     let app :: OuroborosApplicationWithMinimalCtx
-                 Mx.ResponderMode Socket.SockAddr BL.ByteString IO Void ()
+                 Mx.ResponderMode () Socket.SockAddr BL.ByteString IO Void ()
         app = testProtocols2 reqRespResponder
 
         reqRespResponder =
@@ -363,8 +363,10 @@ prop_socket_recv_error f rerr =
                           <- getOuroborosApplication app
                       , (miniProtocolDir, action) <-
                           case miniProtocolRun of
-                            ResponderProtocolOnly initiator ->
-                              [(Mx.ResponderDirectionOnly, void . runMiniProtocolCb initiator respCtx)]
+                            ResponderProtocolOnly responder ->
+                              [(Mx.ResponderDirectionOnly, void . runMiniProtocolCb responder respCtx)]
+                            ResponderProtocolOnlyWithState {} ->
+                              error "ResponderProtocolOnlyWithState: not-supported"
                       ]
 
                     withAsync (Mx.run nullTracer mux bearer) $ \aid -> do
@@ -498,7 +500,7 @@ prop_socket_client_connect_error _ xs =
     cv <- newEmptyTMVarIO
 
     let app :: OuroborosApplicationWithMinimalCtx
-                 Mx.InitiatorMode Socket.SockAddr BL.ByteString IO () Void
+                 Mx.InitiatorMode () Socket.SockAddr BL.ByteString IO () Void
         app = testProtocols2 reqRespInitiator
 
         reqRespInitiator =

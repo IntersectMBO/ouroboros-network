@@ -69,6 +69,8 @@ tests = testGroup "Pipe"
    [ testProperty "pipe sync demo" (withMaxSuccess 32 prop_pipe_demo)
    ]
 
+type NetworkState = ()
+
 --
 -- Properties
 --
@@ -82,8 +84,8 @@ defaultMiniProtocolLimit = 3000000
 
 -- | The bundle of mini-protocols in our demo protocol: only chain sync
 --
-demoProtocols :: RunMiniProtocolWithMinimalCtx appType addr bytes m a b
-              -> OuroborosApplicationWithMinimalCtx appType addr bytes m a b
+demoProtocols :: RunMiniProtocolWithMinimalCtx appType NetworkState addr bytes m a b
+              -> OuroborosApplicationWithMinimalCtx appType NetworkState addr bytes m a b
 demoProtocols chainSync =
     OuroborosApplication [
       MiniProtocol {
@@ -164,7 +166,7 @@ demo chain0 updates = do
             target = Chain.headPoint expectedChain
 
             consumerApp :: OuroborosApplicationWithMinimalCtx
-                             Mx.InitiatorMode String BL.ByteString IO () Void
+                             Mx.InitiatorMode NetworkState String BL.ByteString IO () Void
             consumerApp = demoProtocols chainSyncInitator
 
             chainSyncInitator =
@@ -182,7 +184,7 @@ demo chain0 updates = do
             server = ChainSync.chainSyncServerExample () producerVar id
 
             producerApp ::OuroborosApplicationWithMinimalCtx
-                            Mx.ResponderMode String BL.ByteString IO Void ()
+                            Mx.ResponderMode NetworkState String BL.ByteString IO Void ()
             producerApp = demoProtocols chainSyncResponder
 
             chainSyncResponder =
@@ -241,6 +243,9 @@ demo chain0 updates = do
                     case miniProtocolRun of
                       ResponderProtocolOnly responder ->
                         [(Mx.ResponderDirectionOnly, void . runMiniProtocolCb responder respCtx)]
+
+                      ResponderProtocolOnlyWithState {} ->
+                        error "quering network state is not supported"
                 ]
               withAsync (Mx.run nullTracer serverMux serverBearer) $ \aid -> do
                 _ <- atomically $ runFirstToFinish $ foldMap FirstToFinish resOps

@@ -33,6 +33,8 @@ library
     Ouroboros.Network.Block
     Ouroboros.Network.BlockFetch.ConsensusInterface
     Ouroboros.Network.CodecCBORTerm
+    Ouroboros.Network.ConnectionId
+    Ouroboros.Network.ConnectionManager.Public
     Ouroboros.Network.ControlMessage
     Ouroboros.Network.Handshake
     Ouroboros.Network.Handshake.Acceptable
@@ -45,10 +47,11 @@ library
     Ouroboros.Network.PeerSelection.PeerAdvertise
     Ouroboros.Network.PeerSelection.PeerMetric.Type
     Ouroboros.Network.PeerSelection.PeerSharing
-    Ouroboros.Network.PeerSelection.PeerSharing.Codec
     Ouroboros.Network.PeerSelection.RelayAccessPoint
     Ouroboros.Network.Point
     Ouroboros.Network.Protocol.Limits
+    Ouroboros.Network.PublicState
+    Ouroboros.Network.RemoteAddress.Codec
     Ouroboros.Network.SizeInBytes
     Ouroboros.Network.Util.ShowProxy
 
@@ -67,6 +70,7 @@ library
     contra-tracer,
     deepseq,
     dns,
+    hashable,
     io-classes ^>=1.5.0,
     iproute ^>=1.7.15,
     measures,
@@ -93,3 +97,61 @@ library
 
   if flag(asserts)
     ghc-options: -fno-ignore-asserts
+
+library testlib
+  visibility: public
+  hs-source-dirs: testlib
+  exposed-modules:
+    Test.Ouroboros.Network.PublicState.Generators
+
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  build-depends:
+    QuickCheck,
+    base,
+    containers,
+    ouroboros-network-api,
+
+  ghc-options:
+    -Wall
+    -Wno-unticked-promoted-constructors
+    -Wcompat
+    -Wincomplete-uni-patterns
+    -Wincomplete-record-updates
+    -Wpartial-fields
+    -Widentities
+    -Wredundant-constraints
+    -Wunused-packages
+
+  if flag(asserts)
+    ghc-options: -fno-ignore-asserts
+
+test-suite test
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs: test
+  other-modules:
+    Test.Ouroboros.Network.PublicState
+
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  build-depends:
+    base,
+    bytestring,
+    cborg,
+    ouroboros-network-api:{ouroboros-network-api, testlib},
+    serialise,
+    tasty,
+    tasty-quickcheck,
+    with-utf8,
+
+  ghc-options:
+    -Wall
+    -Wno-unticked-promoted-constructors
+    -Wcompat
+    -Wincomplete-uni-patterns
+    -Wincomplete-record-updates
+    -Wpartial-fields
+    -Widentities
+    -Wredundant-constraints
+    -Wunused-packages
