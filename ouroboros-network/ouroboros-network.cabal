@@ -1,4 +1,4 @@
-cabal-version: 3.0
+cabal-version: 3.4
 name: ouroboros-network
 version: 0.19.0.2
 synopsis: A networking layer for the Ouroboros blockchain protocol
@@ -55,23 +55,6 @@ library
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:
     Control.Concurrent.Class.MonadSTM.Strict.TMergeVar
-    Ouroboros.Cardano.Network.ArgumentsExtra
-    Ouroboros.Cardano.Network.Diffusion.Configuration
-    Ouroboros.Cardano.Network.Diffusion.Handlers
-    Ouroboros.Cardano.Network.Diffusion.Policies
-    Ouroboros.Cardano.Network.ExtraRootPeers
-    Ouroboros.Cardano.Network.LedgerPeerConsensusInterface
-    Ouroboros.Cardano.Network.PeerSelection.Churn.ExtraArguments
-    Ouroboros.Cardano.Network.PeerSelection.Governor.Monitor
-    Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionActions
-    Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState
-    Ouroboros.Cardano.Network.PeerSelection.Governor.Types
-    Ouroboros.Cardano.Network.PublicRootPeers
-    Ouroboros.Cardano.Network.Types
-    Ouroboros.Cardano.Node.Topology
-    Ouroboros.Cardano.Node.Types
-    Ouroboros.Cardano.PeerSelection.Churn
-    Ouroboros.Cardano.PeerSelection.PeerSelectionActions
     Ouroboros.Network.BlockFetch
     Ouroboros.Network.BlockFetch.Client
     Ouroboros.Network.BlockFetch.ClientRegistry
@@ -193,14 +176,191 @@ library
 
   if !os(windows)
     build-depends:
-      directory,
-      unix,
+      directory
 
   if flag(asserts)
     ghc-options: -fno-ignore-asserts
 
   if flag(txsubmission-delay)
     cpp-options: -DTXSUBMISSION_DELAY
+
+-- Internal library required to share some internal modules with
+-- 'cardano-node' sub library
+--
+library internal-lib
+  visibility: private
+  hs-source-dirs: src
+  exposed-modules:
+    Control.Concurrent.Class.MonadSTM.Strict.TMergeVar
+    Ouroboros.Network.BlockFetch
+    Ouroboros.Network.BlockFetch.Client
+    Ouroboros.Network.BlockFetch.ClientRegistry
+    Ouroboros.Network.BlockFetch.ClientState
+    Ouroboros.Network.BlockFetch.Decision
+    Ouroboros.Network.BlockFetch.Decision.Genesis
+    Ouroboros.Network.BlockFetch.Decision.Trace
+    Ouroboros.Network.BlockFetch.DeltaQ
+    Ouroboros.Network.BlockFetch.State
+    Ouroboros.Network.DeltaQ
+    Ouroboros.Network.Diffusion
+    Ouroboros.Network.Diffusion.Configuration
+    Ouroboros.Network.Diffusion.Policies
+    Ouroboros.Network.Diffusion.Topology
+    Ouroboros.Network.Diffusion.Types
+    Ouroboros.Network.ExitPolicy
+    Ouroboros.Network.KeepAlive
+    Ouroboros.Network.NodeToClient
+    Ouroboros.Network.NodeToNode
+    Ouroboros.Network.PeerSelection.Churn
+    Ouroboros.Network.PeerSelection.Governor
+    Ouroboros.Network.PeerSelection.Governor.ActivePeers
+    Ouroboros.Network.PeerSelection.Governor.Monitor
+    Ouroboros.Network.PeerSelection.Governor.Types
+    Ouroboros.Network.PeerSelection.LedgerPeers
+    Ouroboros.Network.PeerSelection.PeerMetric
+    Ouroboros.Network.PeerSelection.PeerSelectionActions
+    Ouroboros.Network.PeerSelection.PeerStateActions
+    Ouroboros.Network.PeerSelection.PublicRootPeers
+    Ouroboros.Network.PeerSelection.RootPeersDNS
+    Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
+    Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
+    Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
+    Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
+    Ouroboros.Network.PeerSelection.State.EstablishedPeers
+    Ouroboros.Network.PeerSelection.State.KnownPeers
+    Ouroboros.Network.PeerSelection.State.LocalRootPeers
+    Ouroboros.Network.PeerSelection.Types
+    Ouroboros.Network.PeerSharing
+    Ouroboros.Network.TxSubmission.Inbound
+    Ouroboros.Network.TxSubmission.Mempool.Reader
+    Ouroboros.Network.TxSubmission.Outbound
+
+  other-modules:
+    Ouroboros.Network.Diffusion.Utils
+    Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers
+    Ouroboros.Network.PeerSelection.Governor.EstablishedPeers
+    Ouroboros.Network.PeerSelection.Governor.KnownPeers
+    Ouroboros.Network.PeerSelection.Governor.RootPeers
+    Ouroboros.Network.PeerSelection.LedgerPeers.Common
+    Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
+
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  build-depends:
+    async >=2.2 && <2.3,
+    base >=4.14 && <4.21,
+    bytestring >=0.10 && <0.13,
+    cardano-prelude,
+    cardano-slotting,
+    cardano-strict-containers,
+    cborg >=0.2.1 && <0.3,
+    containers,
+    contra-tracer,
+    deepseq,
+    dlist,
+    dns,
+    hashable,
+    io-classes ^>=1.5.0,
+    io-classes-mtl ^>=0.1,
+    iproute,
+    monoidal-synchronisation,
+    mtl,
+    network ^>=3.2.7,
+    network-mux,
+    nothunks,
+    ouroboros-network-api ^>=0.12,
+    ouroboros-network-framework ^>=0.16,
+    ouroboros-network-protocols ^>=0.13,
+    psqueues >=0.2.3 && <0.3,
+    random,
+    si-timers,
+    strict-checked-vars ^>=0.2,
+    strict-stm,
+    transformers,
+    typed-protocols ^>=0.3,
+    typed-protocols-stateful,
+
+  if !os(windows)
+    build-depends:
+      directory
+
+  if flag(asserts)
+    ghc-options: -fno-ignore-asserts
+
+  if flag(txsubmission-delay)
+    cpp-options: -DTXSUBMISSION_DELAY
+
+library cardano-node
+  import: ghc-options
+  hs-source-dirs: cardano-node
+  exposed-modules:
+    Ouroboros.Cardano.Network.ArgumentsExtra
+    Ouroboros.Cardano.Network.Diffusion.Configuration
+    Ouroboros.Cardano.Network.Diffusion.Handlers
+    Ouroboros.Cardano.Network.Diffusion.Policies
+    Ouroboros.Cardano.Network.ExtraRootPeers
+    Ouroboros.Cardano.Network.LedgerPeerConsensusInterface
+    Ouroboros.Cardano.Network.PeerSelection.Churn.ExtraArguments
+    Ouroboros.Cardano.Network.PeerSelection.Governor.Monitor
+    Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionActions
+    Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState
+    Ouroboros.Cardano.Network.PeerSelection.Governor.Types
+    Ouroboros.Cardano.Network.PublicRootPeers
+    Ouroboros.Cardano.Network.Types
+    Ouroboros.Cardano.Node.Topology
+    Ouroboros.Cardano.Node.Types
+    Ouroboros.Cardano.PeerSelection.Churn
+    Ouroboros.Cardano.PeerSelection.PeerSelectionActions
+
+  other-modules:
+  reexported-modules:
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  other-extensions:
+    BangPatterns
+    DataKinds
+    EmptyCase
+    ExistentialQuantification
+    FlexibleContexts
+    FlexibleInstances
+    FunctionalDependencies
+    GADTSyntax
+    GADTs
+    GeneralizedNewtypeDeriving
+    MultiParamTypeClasses
+    NamedFieldPuns
+    OverloadedStrings
+    PolyKinds
+    RankNTypes
+    RecordWildCards
+    ScopedTypeVariables
+    TemplateHaskell
+    TupleSections
+    TypeApplications
+    TypeFamilies
+    TypeInType
+
+  build-depends:
+    base >=4.14 && <4.21,
+    containers,
+    contra-tracer,
+    dns,
+    io-classes ^>=1.5.0,
+    monoidal-synchronisation,
+    network ^>=3.2.7,
+    ouroboros-network:internal-lib,
+    ouroboros-network-api ^>=0.12,
+    ouroboros-network-framework ^>=0.16,
+    random,
+    si-timers,
+    strict-stm,
+
+  if !os(windows)
+    build-depends:
+      unix
+
+  if flag(asserts)
+    ghc-options: -fno-ignore-asserts
 
 -- Simulation Test Library
 library sim-tests-lib
@@ -231,7 +391,7 @@ library sim-tests-lib
     network,
     network-mux,
     nothunks,
-    ouroboros-network,
+    ouroboros-network:{cardano-node, internal-lib},
     ouroboros-network-api,
     ouroboros-network-framework,
     ouroboros-network-framework:testlib,
