@@ -52,10 +52,10 @@ import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 import Cardano.Network.Types (LedgerStateJudgement, NumberOfBigLedgerPeers (..))
 
+import Ouroboros.Cardano.Network.ExtraRootPeers qualified as Cardano
+import Ouroboros.Cardano.Network.ExtraRootPeers qualified as ExtraPeers
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as ExtraState
-import Ouroboros.Cardano.Network.PublicRootPeers qualified as Cardano
-import Ouroboros.Cardano.Network.PublicRootPeers qualified as ExtraPeers
 
 import Ouroboros.Network.Block (BlockNo (..))
 import Ouroboros.Network.BlockFetch (PraosFetchMode (..),
@@ -97,6 +97,7 @@ import Test.Ouroboros.Network.Utils hiding (SmallDelay, debugTracer)
 
 import Simulation.Network.Snocket (BearerInfo (..))
 
+import Ouroboros.Cardano.Network.PublicRootPeers qualified as PublicRootPeers
 import Test.QuickCheck
 import Test.QuickCheck.Monoids
 import Test.Tasty

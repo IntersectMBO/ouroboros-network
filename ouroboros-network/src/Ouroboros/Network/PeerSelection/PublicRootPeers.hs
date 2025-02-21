@@ -23,28 +23,12 @@ module Ouroboros.Network.PeerSelection.PublicRootPeers
   , intersection
   , fromDisjointSets
   , mergeG
-    -- ** Cardano Node specific operations
-  , merge
-  , getPublicConfigPeers
-  , getBootstrapPeers
-  , toPublicConfigPeerSet
-  , insertPublicConfigPeer
-  , insertBootstrapPeer
-  , insertLedgerPeer
-  , insertBigLedgerPeer
-  , fromPublicRootPeers
-  , fromBootstrapPeers
-  , fromMapAndSet
   ) where
 
 import Prelude hiding (null)
 
-import Data.Map.Strict (Map)
-import Data.Map.Strict qualified as Map
 import Data.Set (Set, (\\))
 import Data.Set qualified as Set
-import Ouroboros.Cardano.Network.PublicRootPeers qualified as Cardano
-import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 
 ---------------------------------------
 -- Public root peer set representation
@@ -189,120 +173,3 @@ mergeG extraPeersToSet
         (lp1 <> lp2)
         (blp1 <> blp2)
 
-
--- Cardano Node Public Roots
-
-instance ( Ord peeraddr
-         ) => Semigroup (PublicRootPeers (Cardano.ExtraPeers peeraddr) peeraddr) where
-  (<>) = merge
-
-instance ( Ord peeraddr
-         ) => Monoid (PublicRootPeers (Cardano.ExtraPeers peeraddr) peeraddr) where
-  mempty = empty Cardano.empty
-
-merge :: Ord peeraddr
-      => PublicRootPeers (Cardano.ExtraPeers peeraddr) peeraddr
-      -> PublicRootPeers (Cardano.ExtraPeers peeraddr) peeraddr
-      -> PublicRootPeers (Cardano.ExtraPeers peeraddr) peeraddr
-merge a b = mergeG Cardano.toSet a b
-
-getPublicConfigPeers :: PublicRootPeers (Cardano.ExtraPeers peeraddr) peeraddr -> Map peeraddr PeerAdvertise
-getPublicConfigPeers PublicRootPeers { getExtraPeers = (Cardano.ExtraPeers pp _) } = pp
-
-getBootstrapPeers :: PublicRootPeers (Cardano.ExtraPeers peeraddr) peeraddr -> Set peeraddr
-getBootstrapPeers PublicRootPeers { getExtraPeers = (Cardano.ExtraPeers _ bsp) } = bsp
-
-toPublicConfigPeerSet :: PublicRootPeers (Cardano.ExtraPeers peeraddr) peeraddr -> Set peeraddr
-toPublicConfigPeerSet PublicRootPeers {
-                        getExtraPeers = Cardano.ExtraPeers pp _
-                      } = Map.keysSet pp
-
--- | Preserves PublicRootPeers invariant. If the two sets are not disjoint,
--- removes the common ones from the bootstrap peers set since its the most
--- sensitive set.
---
-fromMapAndSet :: Ord peeraddr
-              => Map peeraddr PeerAdvertise -- ^ public configured root peers
-              -> Set peeraddr -- ^ bootstrap peers
-              -> Set peeraddr -- ^ ledger peers
-              -> Set peeraddr -- ^ big ledger peers
-              -> PublicRootPeers (Cardano.ExtraPeers peeraddr) peeraddr
-fromMapAndSet pp bsp =
-  fromDisjointSets Cardano.toSet (Cardano.fromMapAndSet pp bsp)
-
-fromPublicRootPeers :: Map peeraddr PeerAdvertise
-                    -> PublicRootPeers (Cardano.ExtraPeers peeraddr) peeraddr
-fromPublicRootPeers pp =
-  empty (Cardano.empty { Cardano.getPublicConfigPeers = pp })
-
-fromBootstrapPeers :: Set peeraddr
-                   -> PublicRootPeers (Cardano.ExtraPeers peeraddr) peeraddr
-fromBootstrapPeers bsp =
-  empty (Cardano.empty { Cardano.getBootstrapPeers = bsp })
-
-insertPublicConfigPeer :: Ord peeraddr
-                       => peeraddr
-                       -> PeerAdvertise
-                       -> PublicRootPeers (Cardano.ExtraPeers peeraddr) peeraddr
-                       -> PublicRootPeers (Cardano.ExtraPeers peeraddr) peeraddr
-insertPublicConfigPeer p pa prp@PublicRootPeers {
-                              getExtraPeers = Cardano.ExtraPeers {
-                                Cardano.getBootstrapPeers = getBootstrapPeers'
-                              }
-                            } =
-  let prp'@PublicRootPeers {
-        getExtraPeers = Cardano.ExtraPeers {
-          Cardano.getPublicConfigPeers = pp
-        }
-      } = difference Cardano.difference prp (Set.singleton p)
-  in if Set.member p getBootstrapPeers'
-     then prp
-     else prp' { getExtraPeers = (getExtraPeers prp') {
-                   Cardano.getPublicConfigPeers = Map.insert p pa pp
-                 }
-               }
-
-insertBootstrapPeer :: Ord peeraddr
-                    => peeraddr
-                    -> PublicRootPeers (Cardano.ExtraPeers peeraddr) peeraddr
-                    -> PublicRootPeers (Cardano.ExtraPeers peeraddr) peeraddr
-insertBootstrapPeer p prp =
-  let prp'@PublicRootPeers {
-        getExtraPeers = Cardano.ExtraPeers {
-          Cardano.getBootstrapPeers = bsp
-        }
-      } = difference Cardano.difference prp (Set.singleton p)
-  in prp' { getExtraPeers = (getExtraPeers prp') {
-              Cardano.getBootstrapPeers = Set.insert p bsp
-            }
-          }
-
-insertLedgerPeer :: Ord peeraddr
-                 => peeraddr
-                 -> PublicRootPeers (Cardano.ExtraPeers peeraddr) peeraddr
-                 -> PublicRootPeers (Cardano.ExtraPeers peeraddr) peeraddr
-insertLedgerPeer p prp@PublicRootPeers {
-                     getExtraPeers = Cardano.ExtraPeers {
-                       Cardano.getBootstrapPeers = getBootstrapPeers'
-                     }
-                   } =
-  let prp'@PublicRootPeers { getLedgerPeers } =
-        difference Cardano.difference prp (Set.singleton p)
-   in if Set.member p getBootstrapPeers'
-         then prp
-         else prp' {getLedgerPeers = Set.insert p getLedgerPeers }
-
-insertBigLedgerPeer :: Ord peeraddr
-                    => peeraddr
-                    -> PublicRootPeers (Cardano.ExtraPeers peeraddr) peeraddr
-                    -> PublicRootPeers (Cardano.ExtraPeers peeraddr) peeraddr
-insertBigLedgerPeer p prp@PublicRootPeers{
-                        getExtraPeers = Cardano.ExtraPeers {
-                          Cardano.getBootstrapPeers = getBootstrapPeers'
-                        }
-                      } =
-  let prp'@PublicRootPeers { getBigLedgerPeers } =
-        difference Cardano.difference prp (Set.singleton p)
-   in if Set.member p getBootstrapPeers'
-         then prp
-         else prp' { getBigLedgerPeers = Set.insert p getBigLedgerPeers }
