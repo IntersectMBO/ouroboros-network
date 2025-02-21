@@ -1,4 +1,4 @@
-cabal-version: 3.0
+cabal-version: 3.4
 name: ouroboros-network
 version: 0.20.1.0
 synopsis: A networking layer for the Ouroboros blockchain protocol
@@ -55,23 +55,6 @@ library
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:
     Control.Concurrent.Class.MonadSTM.Strict.TMergeVar
-    Ouroboros.Cardano.Network.ArgumentsExtra
-    Ouroboros.Cardano.Network.Diffusion.Configuration
-    Ouroboros.Cardano.Network.Diffusion.Handlers
-    Ouroboros.Cardano.Network.Diffusion.Policies
-    Ouroboros.Cardano.Network.ExtraRootPeers
-    Ouroboros.Cardano.Network.LedgerPeerConsensusInterface
-    Ouroboros.Cardano.Network.PeerSelection.Churn.ExtraArguments
-    Ouroboros.Cardano.Network.PeerSelection.Governor.Monitor
-    Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionActions
-    Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState
-    Ouroboros.Cardano.Network.PeerSelection.Governor.Types
-    Ouroboros.Cardano.Network.PublicRootPeers
-    Ouroboros.Cardano.Network.Types
-    Ouroboros.Cardano.Node.Topology
-    Ouroboros.Cardano.Node.Types
-    Ouroboros.Cardano.PeerSelection.Churn
-    Ouroboros.Cardano.PeerSelection.PeerSelectionActions
     Ouroboros.Network.BlockFetch
     Ouroboros.Network.BlockFetch.Client
     Ouroboros.Network.BlockFetch.ClientRegistry
@@ -114,10 +97,10 @@ library
     Ouroboros.Network.TxSubmission.Inbound
     Ouroboros.Network.TxSubmission.Mempool.Reader
     Ouroboros.Network.TxSubmission.Outbound
+    Ouroboros.Network.PeerSelection.Governor.ActivePeers
 
   other-modules:
     Ouroboros.Network.Diffusion.Utils
-    Ouroboros.Network.PeerSelection.Governor.ActivePeers
     Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers
     Ouroboros.Network.PeerSelection.Governor.EstablishedPeers
     Ouroboros.Network.PeerSelection.Governor.KnownPeers
@@ -193,14 +176,85 @@ library
 
   if !os(windows)
     build-depends:
-      directory,
-      unix,
+      directory
 
   if flag(asserts)
     ghc-options: -fno-ignore-asserts
 
   if flag(txsubmission-delay)
     cpp-options: -DTXSUBMISSION_DELAY
+
+library cardano-node
+  import: ghc-options
+  hs-source-dirs: cardano-node
+  exposed-modules:
+    Ouroboros.Cardano.Network.ArgumentsExtra
+    Ouroboros.Cardano.Network.Diffusion.Configuration
+    Ouroboros.Cardano.Network.Diffusion.Handlers
+    Ouroboros.Cardano.Network.Diffusion.Policies
+    Ouroboros.Cardano.Network.ExtraRootPeers
+    Ouroboros.Cardano.Network.LedgerPeerConsensusInterface
+    Ouroboros.Cardano.Network.PeerSelection.Churn.ExtraArguments
+    Ouroboros.Cardano.Network.PeerSelection.Governor.Monitor
+    Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionActions
+    Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState
+    Ouroboros.Cardano.Network.PeerSelection.Governor.Types
+    Ouroboros.Cardano.Network.PublicRootPeers
+    Ouroboros.Cardano.Network.Types
+    Ouroboros.Cardano.Node.Topology
+    Ouroboros.Cardano.Node.Types
+    Ouroboros.Cardano.PeerSelection.Churn
+    Ouroboros.Cardano.PeerSelection.PeerSelectionActions
+
+  other-modules:
+  reexported-modules:
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  other-extensions:
+    BangPatterns
+    DataKinds
+    EmptyCase
+    ExistentialQuantification
+    FlexibleContexts
+    FlexibleInstances
+    FunctionalDependencies
+    GADTSyntax
+    GADTs
+    GeneralizedNewtypeDeriving
+    MultiParamTypeClasses
+    NamedFieldPuns
+    OverloadedStrings
+    PolyKinds
+    RankNTypes
+    RecordWildCards
+    ScopedTypeVariables
+    TemplateHaskell
+    TupleSections
+    TypeApplications
+    TypeFamilies
+    TypeInType
+
+  build-depends:
+    base >=4.14 && <4.21,
+    containers,
+    contra-tracer,
+    dns,
+    io-classes ^>=1.5.0,
+    monoidal-synchronisation,
+    network ^>=3.2.7,
+    ouroboros-network,
+    ouroboros-network-api ^>=0.12,
+    ouroboros-network-framework ^>=0.16,
+    random,
+    si-timers,
+    strict-stm,
+
+  if !os(windows)
+    build-depends:
+      unix
+
+  if flag(asserts)
+    ghc-options: -fno-ignore-asserts
 
 -- Simulation Test Library
 library testlib
@@ -231,7 +285,7 @@ library testlib
     network,
     network-mux,
     nothunks,
-    ouroboros-network,
+    ouroboros-network:{ouroboros-network, cardano-node},
     ouroboros-network-api,
     ouroboros-network-framework,
     ouroboros-network-framework:testlib,

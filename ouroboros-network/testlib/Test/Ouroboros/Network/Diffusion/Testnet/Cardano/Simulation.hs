@@ -927,9 +927,6 @@ iosimTracer :: forall s a.
             => Tracer (IOSim s) (WithTime (WithName NtNAddr a))
 iosimTracer = Tracer traceM <> sayTracer
 
-churnModeTracer :: Tracer (IOSim s) (WithTime (WithName NtNAddr TracerChurnMode))
-churnModeTracer = Tracer traceM <> sayTracer
-
 -- | Run an arbitrary topology
 diffusionSimulation
   :: forall m. ( Alternative (STM m)
