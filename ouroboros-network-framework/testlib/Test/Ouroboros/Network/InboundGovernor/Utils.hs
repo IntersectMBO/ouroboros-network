@@ -11,8 +11,8 @@ import Test.QuickCheck.Monoids
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.InboundGovernor (RemoteSt (..))
 import Ouroboros.Network.InboundGovernor qualified as IG
-import Ouroboros.Network.Server2 (RemoteTransition)
-import Ouroboros.Network.Server2 qualified as Server
+import Ouroboros.Network.Server (RemoteTransition)
+import Ouroboros.Network.Server qualified as Server
 
 
 -- | Pattern synonym which matches either 'RemoteHotEst' or 'RemoteWarmSt'.

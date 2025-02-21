@@ -21,7 +21,6 @@ import Test.Ouroboros.Network.PeerSelection.KnownPeers qualified
 import Test.Ouroboros.Network.PeerSelection.LocalRootPeers qualified
 import Test.Ouroboros.Network.PeerSelection.PeerMetric qualified
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS qualified
-import Test.Ouroboros.Network.PeerState qualified (tests)
 import Test.Ouroboros.Network.TxSubmission qualified (tests)
 import Test.Ouroboros.Network.Version qualified (tests)
 
@@ -48,7 +47,6 @@ tests =
   , Test.Ouroboros.Network.PeerSelection.PeerMetric.tests
   , Test.Ouroboros.Network.PeerSelection.RootPeersDNS.tests
   , Test.Ouroboros.Network.PeerSelection.tests
-  , Test.Ouroboros.Network.PeerState.tests
   , Test.Ouroboros.Network.Version.tests
 
     -- cardano specific logic

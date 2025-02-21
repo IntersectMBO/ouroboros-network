@@ -74,8 +74,8 @@ import Ouroboros.Network.Protocol.Handshake.Unversioned
 import Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..),
            Queryable (..))
 import Ouroboros.Network.RethrowPolicy
+import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
-import Ouroboros.Network.Server2 qualified as Server
 import Ouroboros.Network.Snocket (Snocket, socketSnocket)
 import Ouroboros.Network.Snocket qualified as Snocket
 import Ouroboros.Network.Socket ()

@@ -32,8 +32,7 @@ This site contains Haskell documentation of __Ouroboros-Network__
   ouroboros protocols, but build a solid foundation for the networking
   library.  Among others, it includes
         * __[Inbound Governor](ouroboros-network-framework/Ouroboros-Network-InboundGovernor.html)__
-        * __[Server P2P](ouroboros-network-framework/Ouroboros-Network-Server2.html)__
-        * __[Server NonP2P](ouroboros-network-framework/Ouroboros-Network-Server-Socket.html)__
+        * __[Server P2P](ouroboros-network-framework/Ouroboros-Network-Server.html)__
         * __[Socket](ouroboros-network-framework/Ouroboros-Network-Socket.html)__
         * __[Snocket](ouroboros-network-framework/Ouroboros-Network-Snocket.html)__
         * __[Simulated Snocket](ouroboros-network-framework/Simulation-Network-Snocket.html)__
