@@ -8,6 +8,7 @@ import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import Control.Exception (IOException, SomeException)
 import Network.DNS (Resolver)
 import Network.Socket (SockAddr)
+import Ouroboros.Cardano.Network.ExtraRootPeers (ExtraPeers)
 import Ouroboros.Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Churn.ExtraArguments qualified as Churn
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState
@@ -15,7 +16,6 @@ import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.Types
            (ExtraPeerSelectionSetsWithSizes)
-import Ouroboros.Cardano.Network.PublicRootPeers (ExtraPeers)
 import Ouroboros.Network.Diffusion
 import Ouroboros.Network.NodeToNode (RemoteAddress)
 import Ouroboros.Network.PeerSelection.Governor.Types
