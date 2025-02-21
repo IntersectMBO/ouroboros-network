@@ -25,6 +25,7 @@ module Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Simulation
     -- * Tracing
   , DiffusionTestTrace (..)
   , iosimTracer
+  , churnModeTracer
     -- * Re-exports
   , TestAddress (..)
   , RelayAccessPoint (..)
@@ -142,6 +143,8 @@ import Ouroboros.Network.Snocket (Snocket, TestAddress (..))
 import Simulation.Network.Snocket (BearerInfo (..), FD, SnocketTrace,
            WithAddr (..), makeFDBearer, withSnocket)
 
+import Ouroboros.Cardano.Network.PeerSelection.Churn.ExtraArguments
+           (TracerChurnMode)
 import Test.Ouroboros.Network.Data.Script
 import Test.Ouroboros.Network.Diffusion.Node as Node
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..), genLedgerPoolsFrom)
@@ -951,6 +954,9 @@ iosimTracer :: forall s a.
             => Tracer (IOSim s) (WithTime (WithName NtNAddr a))
 iosimTracer = Tracer traceM <> sayTracer
 
+churnModeTracer :: Tracer (IOSim s) (WithTime (WithName NtNAddr TracerChurnMode))
+churnModeTracer = Tracer traceM <> sayTracer
+
 -- | Run an arbitrary topology
 diffusionSimulation
   :: forall m. ( Alternative (STM m)
@@ -973,12 +979,14 @@ diffusionSimulation
   => BearerInfo
   -> DiffusionScript
   -> Tracer m (WithTime (WithName NtNAddr DiffusionTestTrace))
+  -> Tracer m (WithTime (WithName NtNAddr TracerChurnMode))
   -- ^ timed trace of nodes in the system
   -> m Void
 diffusionSimulation
   defaultBearerInfo
   (DiffusionScript simArgs dnsMapScript nodeArgs)
-  nodeTracer = do
+  nodeTracer
+  churnModeTracer = do
     connStateIdSupply <- atomically $ CM.newConnStateIdSupply Proxy
     -- TODO: we should use `snocket` per node, this will allow us to set up
     -- bearer info per node
@@ -1219,6 +1227,8 @@ diffusionSimulation
             , Churn.genesisPeerTargets  = Cardano.genesisPeerTargets cardanoExtraArgs
             , Churn.readUseBootstrap    = Cardano.readUseBootstrapPeers cardanoExtraArgs
             , Churn.consensusMode       = consensusMode
+            , Churn.tracerChurnMode     = (\s -> WithTime (Time (-1)) (WithName addr s))
+                                            `contramap` churnModeTracer
             }
 
           arguments :: Node.Arguments (Churn.ExtraArguments m) PeerTrustable m

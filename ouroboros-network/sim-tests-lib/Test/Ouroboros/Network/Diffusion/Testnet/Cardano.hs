@@ -286,6 +286,7 @@ testWithIOSim f traceNumber bi ds =
       sim = diffusionSimulation (toBearerInfo bi)
                                 ds
                                 iosimTracer
+                                churnModeTracer
       trace = runSimTrace sim
    in labelDiffusionScript ds
     $ counterexample (Trace.ppTrace show (ppSimEvent 0 0 0) $ Trace.take traceNumber trace)
@@ -303,6 +304,7 @@ testWithIOSimPOR f traceNumber bi ds =
         diffusionSimulation (toBearerInfo bi)
                             ds
                             iosimTracer
+                            churnModeTracer
    in labelDiffusionScript ds
     $ exploreSimTrace id sim $ \_ ioSimTrace ->
         f ioSimTrace  traceNumber
@@ -450,7 +452,7 @@ unit_cm_valid_transitions =
       sim :: forall s. IOSim s Void
       sim = do
         exploreRaces
-        diffusionSimulation (toBearerInfo bi) ds iosimTracer
+        diffusionSimulation (toBearerInfo bi) ds iosimTracer churnModeTracer
   in exploreSimTrace (\a -> a { explorationReplay = Just s }) sim $ \_ ioSimTrace ->
        prop_diffusion_cm_valid_transition_order_iosim_por ioSimTrace 10000
 
@@ -501,6 +503,7 @@ unit_connection_manager_trace_coverage =
       sim = diffusionSimulation (toBearerInfo absNoAttenuation)
                                 script
                                 iosimTracer
+                                churnModeTracer
 
       events :: [CM.Trace
                   NtNAddr
@@ -610,6 +613,7 @@ unit_connection_manager_transitions_coverage =
       sim = diffusionSimulation (toBearerInfo absNoAttenuation)
                                 script
                                 iosimTracer
+                                churnModeTracer
       trace = runSimTrace sim
 
       -- events from `traceTVar` installed in `newMutableConnState`
@@ -734,6 +738,7 @@ prop_inbound_governor_trace_coverage defaultBearerInfo diffScript =
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
                                 iosimTracer
+                                churnModeTracer
 
       events :: [IG.Trace NtNAddr]
       events = mapMaybe (\case DiffusionInboundGovernorTrace st -> Just st
@@ -763,6 +768,7 @@ prop_inbound_governor_transitions_coverage defaultBearerInfo diffScript =
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
                                 iosimTracer
+                                churnModeTracer
 
       events :: [IG.RemoteTransitionTrace NtNAddr]
       events = mapMaybe (\case DiffusionInboundGovernorTransitionTrace st ->
@@ -795,6 +801,7 @@ prop_fetch_client_state_trace_coverage defaultBearerInfo diffScript =
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
                                 iosimTracer
+                                churnModeTracer
 
       events :: [TraceFetchClientState BlockHeader]
       events = mapMaybe (\case DiffusionFetchTrace st ->
@@ -1238,6 +1245,7 @@ prop_server_trace_coverage defaultBearerInfo diffScript =
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
                                 iosimTracer
+                                churnModeTracer
 
       events :: [Server.Trace NtNAddr]
       events = mapMaybe (\case DiffusionServerTrace st -> Just st
@@ -1267,6 +1275,7 @@ prop_peer_selection_action_trace_coverage defaultBearerInfo diffScript =
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
                                 iosimTracer
+                                churnModeTracer
 
       events :: [PeerSelectionActionsTrace NtNAddr NtNVersion]
       events = mapMaybe (\case DiffusionPeerSelectionActionsTrace st -> Just st
@@ -1309,6 +1318,7 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
                                 iosimTracer
+                                churnModeTracer
 
       events :: [TracePeerSelection Cardano.ExtraState PeerTrustable (Cardano.ExtraPeers NtNAddr) NtNAddr]
       events = mapMaybe (\case DiffusionPeerSelectionTrace st -> Just st
@@ -1387,8 +1397,6 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
         "TraceGovernorWakeup"
       peerSelectionTraceMap TraceChurnWait {}                        =
         "TraceChurnWait"
-      peerSelectionTraceMap (TraceChurnMode cm)                      =
-        "TraceChurnMode " ++ show cm
       peerSelectionTraceMap TraceForgetBigLedgerPeers {}             =
         "TraceForgetBigLedgerPeers"
       peerSelectionTraceMap TraceBigLedgerPeersRequest {}            =
@@ -3598,6 +3606,7 @@ prop_unit_reconnect =
                                                                 } ))
                                 diffScript
                                 iosimTracer
+                                churnModeTracer
 
       events :: [Events (WithName NtNAddr DiffusionTestTrace)]
       events = Trace.toList
@@ -3879,6 +3888,7 @@ unit_peer_sharing =
         sim = diffusionSimulation (toBearerInfo absNoAttenuation)
                                   script
                                   iosimTracer
+                                  churnModeTracer
 
         events :: Map NtNAddr [TracePeerSelection Cardano.ExtraState PeerTrustable (Cardano.ExtraPeers NtNAddr) NtNAddr]
         events = Map.fromList
@@ -4396,7 +4406,7 @@ unit_local_root_diffusion_mode :: DiffusionMode
 unit_local_root_diffusion_mode diffusionMode =
     -- this is a unit test
     withMaxSuccess 1 $
-    let sim = diffusionSimulation (toBearerInfo absNoAttenuation) script iosimTracer
+    let sim = diffusionSimulation (toBearerInfo absNoAttenuation) script iosimTracer churnModeTracer
 
         -- list of negotiated version data
         events :: [NtNVersionData]
