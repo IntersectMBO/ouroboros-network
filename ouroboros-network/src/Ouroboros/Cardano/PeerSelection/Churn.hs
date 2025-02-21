@@ -121,6 +121,7 @@ peerChurnGovernor PeerChurnArgs {
                       Churn.readFetchMode       = getFetchMode,
                       Churn.readUseBootstrap    = getUseBootstrapPeers,
                       Churn.consensusMode       = consensusMode,
+                      Churn.tracerChurnMode     = tracerChurnMode,
                       Churn.genesisPeerTargets
                     }
                   } = do
@@ -484,7 +485,7 @@ peerChurnGovernor PeerChurnArgs {
       startTs <- getMonotonicTime
 
       churnMode <- atomically updateChurnMode
-      traceWith tracer $ TraceChurnMode churnMode
+      traceWith tracerChurnMode $ Churn.TraceChurnMode churnMode
 
       -- Purge the worst active big ledger peers.
       updateTargets DecreasedActiveBigLedgerPeers

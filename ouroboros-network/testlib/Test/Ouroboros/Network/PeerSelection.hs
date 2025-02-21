@@ -941,37 +941,36 @@ traceNum TraceDemoteHotDone{}                                 = 23
 traceNum TraceDemoteAsynchronous{}                            = 24
 traceNum TraceGovernorWakeup{}                                = 25
 traceNum TraceChurnWait{}                                     = 26
-traceNum TraceChurnMode{}                                     = 27
-traceNum TracePromoteWarmAborted{}                            = 28
-traceNum TraceDemoteLocalAsynchronous{}                       = 29
-traceNum TraceBigLedgerPeersRequest{}                         = 30
-traceNum TraceBigLedgerPeersResults{}                         = 31
-traceNum TraceBigLedgerPeersFailure{}                         = 32
-traceNum TraceForgetBigLedgerPeers{}                          = 33
-traceNum TracePromoteColdBigLedgerPeers{}                     = 34
-traceNum TracePromoteColdBigLedgerPeerFailed{}                = 35
-traceNum TracePromoteColdBigLedgerPeerDone{}                  = 36
-traceNum TracePromoteWarmBigLedgerPeers{}                     = 37
-traceNum TracePromoteWarmBigLedgerPeerFailed{}                = 38
-traceNum TracePromoteWarmBigLedgerPeerDone{}                  = 39
-traceNum TracePromoteWarmBigLedgerPeerAborted{}               = 40
-traceNum TraceDemoteWarmBigLedgerPeers{}                      = 41
-traceNum TraceDemoteWarmBigLedgerPeerFailed{}                 = 42
-traceNum TraceDemoteWarmBigLedgerPeerDone{}                   = 43
-traceNum TraceDemoteHotBigLedgerPeers{}                       = 44
-traceNum TraceDemoteHotBigLedgerPeerFailed{}                  = 45
-traceNum TraceDemoteHotBigLedgerPeerDone{}                    = 46
-traceNum TracePickInboundPeers{}                              = 47
-traceNum TraceDemoteBigLedgerPeersAsynchronous{}              = 48
-traceNum TraceLedgerStateJudgementChanged{}                   = 49
-traceNum TraceOnlyBootstrapPeers{}                            = 50
-traceNum TraceBootstrapPeersFlagChangedWhilstInSensitiveState = 51
-traceNum TraceUseBootstrapPeersChanged {}                     = 52
-traceNum TraceOutboundGovernorCriticalFailure {}              = 53
-traceNum TraceDebugState {}                                   = 54
-traceNum TraceChurnAction {}                                  = 55
-traceNum TraceChurnTimeout {}                                 = 56
-traceNum TraceVerifyPeerSnapshot {}                           = 57
+traceNum TracePromoteWarmAborted{}                            = 27
+traceNum TraceDemoteLocalAsynchronous{}                       = 28
+traceNum TraceBigLedgerPeersRequest{}                         = 29
+traceNum TraceBigLedgerPeersResults{}                         = 30
+traceNum TraceBigLedgerPeersFailure{}                         = 31
+traceNum TraceForgetBigLedgerPeers{}                          = 32
+traceNum TracePromoteColdBigLedgerPeers{}                     = 33
+traceNum TracePromoteColdBigLedgerPeerFailed{}                = 34
+traceNum TracePromoteColdBigLedgerPeerDone{}                  = 35
+traceNum TracePromoteWarmBigLedgerPeers{}                     = 36
+traceNum TracePromoteWarmBigLedgerPeerFailed{}                = 37
+traceNum TracePromoteWarmBigLedgerPeerDone{}                  = 38
+traceNum TracePromoteWarmBigLedgerPeerAborted{}               = 39
+traceNum TraceDemoteWarmBigLedgerPeers{}                      = 40
+traceNum TraceDemoteWarmBigLedgerPeerFailed{}                 = 41
+traceNum TraceDemoteWarmBigLedgerPeerDone{}                   = 42
+traceNum TraceDemoteHotBigLedgerPeers{}                       = 43
+traceNum TraceDemoteHotBigLedgerPeerFailed{}                  = 44
+traceNum TraceDemoteHotBigLedgerPeerDone{}                    = 45
+traceNum TracePickInboundPeers{}                              = 46
+traceNum TraceDemoteBigLedgerPeersAsynchronous{}              = 47
+traceNum TraceLedgerStateJudgementChanged{}                   = 48
+traceNum TraceOnlyBootstrapPeers{}                            = 49
+traceNum TraceBootstrapPeersFlagChangedWhilstInSensitiveState = 50
+traceNum TraceUseBootstrapPeersChanged {}                     = 51
+traceNum TraceOutboundGovernorCriticalFailure {}              = 52
+traceNum TraceDebugState {}                                   = 53
+traceNum TraceChurnAction {}                                  = 54
+traceNum TraceChurnTimeout {}                                 = 55
+traceNum TraceVerifyPeerSnapshot {}                           = 56
 
 allTraceNames :: Map Int String
 allTraceNames =
@@ -1003,37 +1002,36 @@ allTraceNames =
    , (24, "TraceDemoteAsynchronous")
    , (25, "TraceGovernorWakeup")
    , (26, "TraceChurnWait")
-   , (27, "TraceChurnMode")
-   , (28, "TracePromoteWarmAborted")
-   , (29, "TraceDemoteAsynchronous")
-   , (30, "TraceBigLedgerPeersRequest")
-   , (31, "TraceBigLedgerPeersResults")
-   , (32, "TraceBigLedgerPeersFailure")
-   , (33, "TraceForgetBigLedgerPeers")
-   , (34, "TracePromoteColdBigLedgerPeers")
-   , (35, "TracePromoteColdBigLedgerPeerFailed")
-   , (36, "TracePromoteColdBigLedgerPeerDone")
-   , (37, "TracePromoteWarmBigLedgerPeers")
-   , (38, "TracePromoteWarmBigLedgerPeerFailed")
-   , (39, "TracePromoteWarmBigLedgerPeerDone")
-   , (40, "TracePromoteWarmBigLedgerPeerAborted")
-   , (41, "TraceDemoteWarmBigLedgerPeers")
-   , (42, "TraceDemoteWarmBigLedgerPeerFailed")
-   , (43, "TraceDemoteWarmBigLedgerPeerDone")
-   , (44, "TraceDemoteHotBigLedgerPeers")
-   , (45, "TraceDemoteHotBigLedgerPeerFailed")
-   , (46, "TraceDemoteHotBigLedgerPeerDone")
-   , (47, "TracePickInboundPeers")
-   , (48, "TraceDemoteBigLedgerPeersAsynchronous")
-   , (49, "TraceLedgerStateJudgementChanged")
-   , (50, "TraceOnlyBootstrapPeers")
-   , (51, "TraceBootstrapPeersFlagChangedWhilstInSensitiveState")
-   , (52, "TraceUseBootstrapPeersChanged")
-   , (53, "TraceOutboundGovernorCriticalFailure")
-   , (54, "TraceDebugState")
-   , (55, "TraceChurnAction")
-   , (56, "TraceChurnTimeout")
-   , (57, "TraceVerifyPeerSnapshot")
+   , (27, "TracePromoteWarmAborted")
+   , (28, "TraceDemoteAsynchronous")
+   , (29, "TraceBigLedgerPeersRequest")
+   , (30, "TraceBigLedgerPeersResults")
+   , (31, "TraceBigLedgerPeersFailure")
+   , (32, "TraceForgetBigLedgerPeers")
+   , (33, "TracePromoteColdBigLedgerPeers")
+   , (34, "TracePromoteColdBigLedgerPeerFailed")
+   , (35, "TracePromoteColdBigLedgerPeerDone")
+   , (36, "TracePromoteWarmBigLedgerPeers")
+   , (37, "TracePromoteWarmBigLedgerPeerFailed")
+   , (38, "TracePromoteWarmBigLedgerPeerDone")
+   , (39, "TracePromoteWarmBigLedgerPeerAborted")
+   , (40, "TraceDemoteWarmBigLedgerPeers")
+   , (41, "TraceDemoteWarmBigLedgerPeerFailed")
+   , (42, "TraceDemoteWarmBigLedgerPeerDone")
+   , (43, "TraceDemoteHotBigLedgerPeers")
+   , (44, "TraceDemoteHotBigLedgerPeerFailed")
+   , (45, "TraceDemoteHotBigLedgerPeerDone")
+   , (46, "TracePickInboundPeers")
+   , (47, "TraceDemoteBigLedgerPeersAsynchronous")
+   , (48, "TraceLedgerStateJudgementChanged")
+   , (49, "TraceOnlyBootstrapPeers")
+   , (50, "TraceBootstrapPeersFlagChangedWhilstInSensitiveState")
+   , (51, "TraceUseBootstrapPeersChanged")
+   , (52, "TraceOutboundGovernorCriticalFailure")
+   , (53, "TraceDebugState")
+   , (54, "TraceChurnAction")
+   , (55, "TraceChurnTimeout")
+   , (56, "TraceVerifyPeerSnapshot")
    ]
 
 
