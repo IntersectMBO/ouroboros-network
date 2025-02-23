@@ -105,7 +105,6 @@ library
                  , quiet
                  , serdoc-core
                  , socket >= 0.8.3 && <0.9
-                 , socket-unix >=0.2.0.0
                  , stm>=2.5 && <2.6
                  , text
                  , template-haskell >=2.18.0.0
@@ -210,6 +209,7 @@ executable kes-agent-control
 --                  , time
 --                  , typed-protocols
 --                  , typed-protocols-doc
+
 
 
 test-suite kes-agent-tests
