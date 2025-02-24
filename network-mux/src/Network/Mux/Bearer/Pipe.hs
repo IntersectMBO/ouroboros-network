@@ -72,7 +72,7 @@ pipeAsBearer
   :: Mx.SDUSize
   -> Tracer IO Mx.Trace
   -> PipeChannel
-  -> Bearer IO
+  -> Bearer IO s
 pipeAsBearer sduSize tracer channel =
       Mx.Bearer {
           Mx.read      = readPipe,
@@ -125,4 +125,3 @@ pipeAsBearer sduSize tracer channel =
         ts <- getMonotonicTime
         mapM_ (writePipe timeoutFn) sdus
         return ts
-

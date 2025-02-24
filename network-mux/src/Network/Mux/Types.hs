@@ -1,4 +1,4 @@
-{-# BlockArguments #-}
+{-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingVia                #-}
@@ -43,23 +43,24 @@ module Network.Mux.Types
   , RuntimeError (..)
   , BearerIngressBufferInfo
   , BearerIngressBuffer (..)
+  , BearerBuffering (..)
+  , SBearerBuffering (..)
   , newBearerIngressBuffer
   , peekBearerBuffer
   ) where
 
 import Prelude hiding (read)
 
+import Data.Kind
 import Data.ByteString
 import Data.ByteString.Internal
 import GHC.ForeignPtr
 import Data.IORef
-import Data.ByteString.Builder
-import Control.Exception (Exception, SomeException, assert)
+import Control.Exception (Exception, SomeException)
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
 import Data.Ix (Ix (..))
 import Data.Word
-import Foreign.Ptr (Ptr)
 import Quiet
 
 import GHC.Generics (Generic)
@@ -241,7 +242,7 @@ msLength = mhLength . msHeader
 -- * 'Network.Pipe.pipeAsBearer'
 -- * @Test.Mux.queuesAsBearer@
 --
-data Bearer m = Bearer {
+data Bearer m (buffered :: BearerBuffering) = Bearer {
     -- | Timestamp and send SDU.
       write   :: TimeoutFn m -> SDU -> m Time
     -- | Timestamp and send many SDUs.
@@ -267,7 +268,7 @@ newtype SDUSize = SDUSize { getSDUSize :: Word16 }
 --
 bearerAsChannel
   :: forall m. Functor m
-  => Bearer m
+  => Bearer m Unbuffered
   -> MiniProtocolNum
   -> MiniProtocolDir
   -> ByteChannel m
@@ -310,6 +311,12 @@ instance Exception RuntimeError
 --   , rbBuf :: [(Int, Ptr Word8)]
 --   , rbSize :: Int
 --   }
+
+data BearerBuffering = Buffered | Unbuffered
+
+data SBearerBuffering :: BearerBuffering -> Type where
+  SBuffered :: SBearerBuffering Buffered
+  SUnbuffered :: SBearerBuffering Unbuffered
 
 type BearerIngressBufferInfo = (Int, Int, ForeignPtr Word8)
 

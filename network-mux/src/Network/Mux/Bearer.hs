@@ -1,10 +1,12 @@
 {-# LANGUAGE CPP                    #-}
+{-# LANGUAGE DataKinds              #-}
 {-# LANGUAGE FlexibleInstances      #-}
 {-# LANGUAGE GADTs                  #-}
 {-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE NumericUnderscores     #-}
 {-# LANGUAGE ScopedTypeVariables    #-}
 {-# LANGUAGE UndecidableInstances   #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Network.Mux.Bearer
   ( Bearer (..)
@@ -15,7 +17,7 @@ module Network.Mux.Bearer
 #if defined(mingw32_HOST_OS)
   , makeNamedPipeBearer
 #endif
-  , withReadBufferIO
+  -- , withReadBufferIO
   ) where
 
 import           Control.Monad.Class.MonadSTM
@@ -40,43 +42,64 @@ import           Network.Mux.Types hiding (sduSize)
 import           Network.Mux.Bearer.NamedPipe
 #endif
 
-newtype MakeBearer m fd = MakeBearer {
+data MakeBearer m fd buffered where
+  MakeBearerBuffered :: {
+    getBearerBuffered
+      :: DiffTime
+      -> Tracer m Trace
+      -> fd
+      -> BearerIngressBuffer
+      -> m (Bearer m Buffered) } -> MakeBearer m fd Buffered
+  MakeBearer :: {
     getBearer
       :: DiffTime
-      -- timeout for reading an SDU segment, if negative no
-      -- timeout is applied.
       -> Tracer m Trace
-      -- tracer
       -> fd
-      -- file descriptor
-      -> Maybe (ReadBuffer m)
-      -- Optional Readbuffer
-      -> m (Bearer m)
-  }
+      -> m (Bearer m Unbuffered) } -> MakeBearer m fd Unbuffered
+
+-- newtype MakeBearer m fd buffered = MakeBearer {
+--     getBearer
+--       :: DiffTime
+--       -- ^ timeout for reading an SDU segment, if negative no
+--       -- timeout is applied.
+--       -> Tracer m Trace
+--       -- ^ tracer
+--       -> fd
+--       -- ^ file descriptor
+--       -> m (Bearer m buffered)
+--   }
 
 pureBearer :: Applicative m
-           => (DiffTime -> Tracer m Trace -> fd -> Maybe (ReadBuffer m) ->   Bearer m)
-           ->  DiffTime -> Tracer m Trace -> fd -> Maybe (ReadBuffer m) -> m (Bearer m)
-pureBearer f = \sduTimeout rb tr fd -> pure (f sduTimeout rb tr fd)
+           => (DiffTime -> Tracer m Trace -> fd ->   Bearer m Unbuffered)
+           ->  DiffTime -> Tracer m Trace -> fd -> m (Bearer m Unbuffered)
+pureBearer f =
+  \sduTimeout tr fd -> pure (f sduTimeout tr fd)
 
 
-makeSocketBearer :: MakeBearer IO Socket
-makeSocketBearer = MakeBearer $ (\sduTimeout tr fd rb -> do
-    batch <- getSocketOption fd SendBuffer
-    return $ socketAsBearer size batch rb sduTimeout tr fd)
+makeSocketBearer :: SBearerBuffering s -> MakeBearer IO Socket s
+makeSocketBearer =
+  \case
+    SBuffered ->
+      MakeBearerBuffered $ \sduTimeout tr fd bb -> do
+                               batch <- getSocketOption fd SendBuffer
+                               return $ socketAsBearerBuffered size batch bb sduTimeout tr fd
+    SUnbuffered ->
+      MakeBearer $ \sduTimeout tr fd -> do
+        batch <- getSocketOption fd SendBuffer
+        return $ undefined --socketAsBearerBuffered size batch rb sduTimeout tr fd
   where
     size = SDUSize 12_288
 
-withReadBufferIO :: (Maybe (ReadBuffer IO) -> IO b)
-                 -> IO b
-withReadBufferIO f = allocaBytesAligned size 8 $ \ptr -> do
-    v <- atomically $ newTVar BL.empty
-    f $ Just $ ReadBuffer v ptr size
-  where
-    size = 131_072
+-- withReadBufferIO :: (Maybe (ReadBuffer IO) -> IO b)
+--                  -> IO b
+-- withReadBufferIO f = allocaBytesAligned size 8 $ \ptr -> do
+--     v <- atomically $ newTVar BL.empty
+--     f $ Just $ ReadBuffer v ptr size
+--   where
+--     size = 131_072
 
-makePipeChannelBearer :: MakeBearer IO PipeChannel
-makePipeChannelBearer = MakeBearer $ pureBearer (\_ tr fd _ -> pipeAsBearer size tr fd)
+makePipeChannelBearer :: MakeBearer IO PipeChannel Unbuffered
+makePipeChannelBearer = undefined --MakeBearer $ pureBearer (\_ tr fd _ -> pipeAsBearer size tr fd)
   where
     size = SDUSize 32_768
 
@@ -84,8 +107,8 @@ makeQueueChannelBearer :: ( MonadSTM   m
                           , MonadMonotonicTime m
                           , MonadThrow m
                           )
-                       => MakeBearer m (QueueChannel m)
-makeQueueChannelBearer = MakeBearer $ pureBearer (\_ tr q _-> queueChannelAsBearer size tr q)
+                       => MakeBearer m (QueueChannel m) Unbuffered
+makeQueueChannelBearer = undefined --MakeBearer $ pureBearer (\_ tr q _-> queueChannelAsBearer size tr q)
   where
     size = SDUSize 1_280
 

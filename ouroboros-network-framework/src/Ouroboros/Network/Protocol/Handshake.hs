@@ -119,7 +119,7 @@ runHandshakeClient
        , MonadThrow (STM m)
        , Ord vNumber
        )
-    => Mx.Bearer m
+    => Mx.Bearer m Unbuffered
     -> connectionId
     -> HandshakeArguments connectionId vNumber vData m
     -> Versions vNumber vData application

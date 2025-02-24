@@ -262,7 +262,7 @@ newConnectedAttenuatedChannelPair tr tr' attenuation attenuation' = do
     b' <- newAttenuatedChannel tr' attenuation' c'
     return (b, b')
 
-attenuationChannelAsBearer :: forall m.
+attenuationChannelAsBearer :: forall m s.
                               ( MonadThrow         m
                               , MonadMonotonicTime m
                               )
@@ -270,7 +270,7 @@ attenuationChannelAsBearer :: forall m.
                            -> DiffTime
                            -> Tracer m Trace
                            -> AttenuatedChannel m
-                           -> Bearer m
+                           -> Bearer m s
 attenuationChannelAsBearer sduSize sduTimeout muxTracer chan =
     Bearer {
       read      = readMux,

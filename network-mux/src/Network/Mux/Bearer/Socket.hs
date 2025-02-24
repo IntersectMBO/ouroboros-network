@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
@@ -61,7 +62,7 @@ socketAsBearerBuffered
   -> DiffTime
   -> Tracer IO Mx.Trace
   -> Socket.Socket
-  -> Bearer IO
+  -> Bearer IO Mx.Buffered
 socketAsBearerBuffered sduSize batchSize
                        sb@BearerIngressBuffer { bibSize, bibInfoRef }
                        sduTimeout tracer sd =

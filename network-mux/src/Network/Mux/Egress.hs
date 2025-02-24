@@ -132,7 +132,7 @@ newtype Wanton m = Wanton { want :: StrictTVar m BL.ByteString }
 -- that each active demand gets a `maxSDU`s work of data processed
 -- each time it gets to the front of the queue
 muxer
-    :: forall m void.
+    :: forall m s void.
        ( MonadAsync m
        , MonadFork m
        , MonadMask m
@@ -140,7 +140,7 @@ muxer
        , MonadTimer m
        )
     => EgressQueue m
-    -> Bearer m
+    -> Bearer m s
     -> m void
 muxer egressQueue Bearer { writeMany, sduSize, batchSize } =
     withTimeoutSerial $ \timeout ->

@@ -371,7 +371,7 @@ connectToNodeWithMux'
      , Mx.HasInitiator muxMode ~ True
      )
   => Snocket IO fd addr
-  -> Mx.MakeBearer IO fd
+  -> (SBearerBuffering s -> Mx.MakeBearer IO fd s)
   -> ConnectToArgs fd addr vNumber vData
   -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b)
   -- ^ application to run over the connection

@@ -97,7 +97,7 @@ data MiniProtocolDispatchInfo m =
 demuxer :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
             MonadTimer m)
       => [MiniProtocolState mode m]
-      -> Bearer m
+      -> Bearer m s
       -> m void
 demuxer ptcls bearer =
   let !dispatchTable = setupDispatchTable ptcls in
@@ -199,4 +199,3 @@ setupDispatchTable ptcls =
     minpnum, maxpnum :: MiniProtocolNum
     minpnum = minimum pnums
     maxpnum = maximum pnums
-

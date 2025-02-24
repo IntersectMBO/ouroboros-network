@@ -29,7 +29,7 @@ data QueueChannel m = QueueChannel {
 
 
 queueChannelAsBearer
-  :: forall m.
+  :: forall m s.
      ( MonadSTM   m
      , MonadMonotonicTime m
      , MonadThrow m
@@ -37,7 +37,7 @@ queueChannelAsBearer
   => Mx.SDUSize
   -> Tracer m Mx.Trace
   -> QueueChannel m
-  -> Bearer m
+  -> Bearer m s
 queueChannelAsBearer sduSize tracer QueueChannel { writeQueue, readQueue } = do
       Mx.Bearer {
         Mx.read      = readMux,
@@ -77,4 +77,3 @@ queueChannelAsBearer sduSize tracer QueueChannel { writeQueue, readQueue } = do
         ts <- getMonotonicTime
         mapM_ (writeMux timeoutFn) sdus
         return ts
-

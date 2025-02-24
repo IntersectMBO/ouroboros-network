@@ -201,7 +201,7 @@ data Group = MuxJob
 -- * at any given time each @TranslocationServiceRequest@ contains a non-empty
 -- 'Wanton'
 --
-run :: forall m mode.
+run :: forall m s mode.
        ( MonadAsync m
        , MonadFork m
        , MonadLabelledSTM m
@@ -212,7 +212,7 @@ run :: forall m mode.
        )
     => Tracer m Trace
     -> Mux mode m
-    -> Bearer m
+    -> Bearer m s
     -> m ()
 run tracer Mux {muxMiniProtocols, muxControlCmdQueue, muxStatus} bearer@Bearer {name} = do
     egressQueue <- atomically $ newTBQueue 100
@@ -715,4 +715,3 @@ runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue , muxStatus}
                    <|> return (Left $ toException (Shutdown Nothing st))
            Failed e -> readTMVar completionVar
                    <|> return (Left $ toException (Shutdown (Just e) st))
-
