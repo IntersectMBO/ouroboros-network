@@ -1876,22 +1876,28 @@ the client.
     \node[state, myblue, right of=Acquired]                          (BusyHasTx)       {\StBusy\ \HasTx};
     \node[state, myblue, above of=BusyHasTx]                         (BusyNextTx)      {\StBusy\ \NextTx};
     \node[state, myblue, below of=BusyHasTx]                         (BusyGetSizes)    {\StBusy\ \GetSizes};
-    \node[state, myblue, below of=BusyHasTx]                         (BusyGetMeasures) {\StBusy\ \GetMeasures};
+    \node[state, myblue, below of=Acquired]                          (BusyGetMeasures) {\StBusy\ \GetMeasures};
     \node[state, below of=Idle]                                      (Done)            {\StDone};
 
-    \draw (Idle)            edge               node{\MsgAcquire}          (Acquiring);
-    \draw (Acquiring)       edge[bend left=45] node{\MsgAcquired}         (Acquired);
-    \draw (Acquired)        edge[bend left=45] node{\MsgAwaitAcquire}     (Acquiring);
-    \draw (Acquired)        edge[bend left=45] node{\MsgRelease}          (Idle);
-    \draw (Acquired)        edge[bend left=20] node{\MsgNextTx}           (BusyNextTx);
-    \draw (BusyNextTx)      edge[bend left=20] node{\MsgReplyNextTx}      (Acquired);
-    \draw (Acquired)        edge[bend left=20] node{\MsgHasTx}            (BusyHasTx);
-    \draw (BusyHasTx)       edge[bend left=20] node{\MsgReplyHasTx}       (Acquired);
-    \draw (Acquired)        edge[bend left=20] node{\MsgGetSizes}         (BusyGetSizes);
-    \draw (Acquired)        edge[bend left=20] node{\MsgGetMeasures}      (BusyGetMeasures);
-    \draw (BusyGetSizes)    edge[bend left=20] node{\MsgReplyGetSizes}    (Acquired);
-    \draw (BusyGetMeasures) edge[bend left=20] node{\MsgReplyGetMeasures} (Acquired);
-    \draw (Idle)            edge               node{\MsgDone}             (Done);
+    \draw (Idle)            edge               node{\MsgAcquire}                   (Acquiring);
+    \draw (Acquiring)       edge[bend left=45] node{\MsgAcquired}                  (Acquired);
+    \draw (Acquired)        edge[bend left=45] node{\MsgRelease}                   (Idle);
+    \draw (Acquired)        edge[bend left=45] node[fill=white]{\MsgAwaitAcquire}  (Acquiring);
+    \draw (Acquired)        edge[bend left=20] node[left=-20pt,fill=white]{\MsgNextTx}
+                                                                                   (BusyNextTx);
+    \draw (BusyNextTx)      edge[bend left=20] node[right=-20pt,fill=white]{\MsgReplyNextTx}
+                                                                                   (Acquired);
+    \draw (Acquired)        edge[bend left=20] node[right=-20pt,fill=white]{\MsgGetSizes}
+                                               (BusyGetSizes);
+    \draw (BusyGetSizes)    edge[bend left=20] node[right=-20pt,pos=0.56,fill=white]{\MsgReplyGetSizes}
+                                               (Acquired);
+    \draw (Acquired)        edge[bend left=20] node[pos=0.7,right=-20pt,fill=white]{\MsgGetMeasures}
+                                               (BusyGetMeasures);
+    \draw (BusyGetMeasures) edge[bend left=20] node[pos=0.20,left=-15pt,fill=white]{\MsgReplyGetMeasures}
+                                               (Acquired);
+    \draw (Acquired)        edge[bend left=20] node[fill=white]{\MsgHasTx}         (BusyHasTx);
+    \draw (BusyHasTx)       edge[bend left=20] node[fill=white,pos=0.45]{\MsgReplyHasTx}    (Acquired);
+    \draw (Idle)            edge               node{\MsgDone}                      (Done);
   \end{tikzpicture}
   \caption{State machine of the Local Tx-Monitor mini-protocol.}
 \end{figure}
