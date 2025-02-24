@@ -1,3 +1,4 @@
+{-# BlockArguments #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingVia                #-}
@@ -8,6 +9,7 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE BangPatterns #-}
 
 -- | Types used by the multiplexer.
 --
@@ -39,12 +41,20 @@ module Network.Mux.Types
   , RemoteClockModel (..)
   , remoteClockPrecision
   , RuntimeError (..)
-  , ReadBuffer (..)
+  , BearerIngressBufferInfo
+  , BearerIngressBuffer (..)
+  , newBearerIngressBuffer
+  , peekBearerBuffer
   ) where
 
 import Prelude hiding (read)
 
-import Control.Exception (Exception, SomeException)
+import Data.ByteString
+import Data.ByteString.Internal
+import GHC.ForeignPtr
+import Data.IORef
+import Data.ByteString.Builder
+import Control.Exception (Exception, SomeException, assert)
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
 import Data.Ix (Ix (..))
@@ -295,8 +305,27 @@ data RuntimeError =
 
 instance Exception RuntimeError
 
-data ReadBuffer m = ReadBuffer {
-    rbVar :: StrictTVar m BL.ByteString
-  , rbBuf :: Ptr Word8
-  , rbSize :: Int
+-- data ReadBuffer m = ReadBuffer {
+--     rbVar :: StrictTVar m Builder
+--   , rbBuf :: [(Int, Ptr Word8)]
+--   , rbSize :: Int
+--   }
+
+type BearerIngressBufferInfo = (Int, Int, ForeignPtr Word8)
+
+data BearerIngressBuffer = BearerIngressBuffer {
+  bibSize    :: !Int,
+  bibInfoRef  :: IORef BearerIngressBufferInfo
   }
+
+newBearerIngressBuffer :: Int -> IO BearerIngressBuffer
+newBearerIngressBuffer bibSize = do
+  ptr <- mallocByteString bibSize
+  bibInfoRef <- newIORef (0, 0, ptr)
+  return BearerIngressBuffer { bibSize, bibInfoRef }
+
+peekBearerBuffer :: BearerIngressBuffer -> IO ByteString
+peekBearerBuffer BearerIngressBuffer { bibInfoRef } = do
+  (!start, !len, !basePtr) <- readIORef bibInfoRef
+  let basePtr' = plusForeignPtr basePtr start
+  return $ BS basePtr' len
