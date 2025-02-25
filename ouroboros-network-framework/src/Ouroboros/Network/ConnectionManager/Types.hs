@@ -275,7 +275,7 @@ data PromiseWriter m a = PromiseWriter {
   }
 
 data PromiseWriterException = PromiseWriterBlocked
-  deriving (Show, Typeable)
+  deriving (Show)
 
 instance Exception PromiseWriterException
 
@@ -399,7 +399,6 @@ data ExceptionInHandler where
                        => !peerAddr
                        -> !SomeException
                        -> ExceptionInHandler
-  deriving Typeable
 
 instance Show ExceptionInHandler where
     show (ExceptionInHandler peerAddr e) = "ExceptionInHandler "
@@ -684,7 +683,7 @@ data AbstractState =
     | WaitRemoteIdleSt
     | TerminatingSt
     | TerminatedSt
-    deriving (Eq, Ord, Show, Typeable)
+    deriving (Eq, Ord, Show)
 
 
 -- | Counters for tracing and analysis purposes
@@ -742,7 +741,7 @@ data ConnectionManagerError peerAddr
     -- was expected.
     --
     | UnknownPeer           !peerAddr                !CallStack
-    deriving (Show, Typeable)
+    deriving (Show)
 
 
 instance ( Show peerAddr

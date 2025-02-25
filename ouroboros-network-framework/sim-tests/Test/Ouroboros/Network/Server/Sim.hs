@@ -605,7 +605,6 @@ data ExperimentError =
     | SimulationTimeout
 
 deriving instance Show ExperimentError
-deriving instance Typeable ExperimentError
 instance Exception ExperimentError where
 
 -- | Run a central server that talks to any number of clients and other nodes.

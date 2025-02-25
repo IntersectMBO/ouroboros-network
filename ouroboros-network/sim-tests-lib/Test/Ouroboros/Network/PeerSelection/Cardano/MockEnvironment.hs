@@ -420,7 +420,7 @@ mockPeerSelectionActions tracer
 data TransitionError
   = ActivationError
   | DeactivationError
-  deriving (Show, Typeable)
+  deriving Show
 
 instance Exception TransitionError where
 

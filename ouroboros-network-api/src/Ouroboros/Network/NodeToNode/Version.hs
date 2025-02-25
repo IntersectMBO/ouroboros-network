@@ -14,7 +14,6 @@ module Ouroboros.Network.NodeToNode.Version
 
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Typeable (Typeable)
 
 import Codec.CBOR.Term qualified as CBOR
 
@@ -69,7 +68,7 @@ data NodeToNodeVersion =
     --   peer sharing server side and can not reply to requests.
     | NodeToNodeV_14
     -- ^ Chang+1 HF
-  deriving (Eq, Ord, Enum, Bounded, Show, Typeable, Generic, NFData)
+  deriving (Eq, Ord, Enum, Bounded, Show, Generic, NFData)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
 nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
@@ -105,7 +104,7 @@ nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
 data DiffusionMode
     = InitiatorOnlyDiffusionMode
     | InitiatorAndResponderDiffusionMode
-  deriving (Typeable, Eq, Ord, Show)
+  deriving (Eq, Ord, Show)
 
 
 -- | Version data for NodeToNode protocol
@@ -116,7 +115,7 @@ data NodeToNodeVersionData = NodeToNodeVersionData
   , peerSharing   :: !PeerSharing
   , query         :: !Bool
   }
-  deriving (Show, Typeable, Eq)
+  deriving (Show, Eq)
   -- 'Eq' instance is not provided, it is not what we need in version
   -- negotiation (see 'Acceptable' instance below).
 
