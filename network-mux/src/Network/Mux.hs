@@ -203,6 +203,7 @@ data Group = MuxJob
 --
 run :: forall m mode.
        ( MonadAsync m
+       , MonadDelay m
        , MonadFork m
        , MonadLabelledSTM m
        , Alternative (STM m)
