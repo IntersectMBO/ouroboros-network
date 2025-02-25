@@ -15,7 +15,7 @@
       inputs.hackage.follows = "hackageNix";
     };
     hackageNix = {
-      url = "github:input-output-hk/hackage.nix";
+      url = "github:input-output-hk/hackage.nix?ref=for-stackage";
       flake = false;
     };
     nixpkgs.follows = "haskellNix/nixpkgs-unstable";
