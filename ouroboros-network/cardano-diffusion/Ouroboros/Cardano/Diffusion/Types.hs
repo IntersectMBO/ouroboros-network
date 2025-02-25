@@ -2,20 +2,22 @@
 {-# LANGUAGE GADTs          #-}
 {-# LANGUAGE KindSignatures #-}
 
-module Ouroboros.Cardano.Node.Types where
+module Ouroboros.Cardano.Diffusion.Types where
 
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
+
 import Control.Exception (IOException, SomeException)
 import Network.DNS (Resolver)
 import Network.Socket (SockAddr)
-import Ouroboros.Cardano.Network.ExtraRootPeers (ExtraPeers)
+
 import Ouroboros.Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.Churn.ExtraArguments qualified as Churn
+import Ouroboros.Cardano.Network.PeerSelection.ExtraRootPeers (ExtraPeers)
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState
            (ExtraState)
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.Types
            (ExtraPeerSelectionSetsWithSizes)
+import Ouroboros.Cardano.PeerSelection.Churn qualified as Churn
 import Ouroboros.Network.Diffusion
 import Ouroboros.Network.NodeToNode (RemoteAddress)
 import Ouroboros.Network.PeerSelection.Governor.Types

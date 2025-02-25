@@ -25,7 +25,6 @@ module Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Simulation
     -- * Tracing
   , DiffusionTestTrace (..)
   , iosimTracer
-  , churnModeTracer
     -- * Re-exports
   , TestAddress (..)
   , RelayAccessPoint (..)
@@ -82,16 +81,16 @@ import Cardano.Network.Types (LedgerStateJudgement (..),
 import Ouroboros.Cardano.Network.ArgumentsExtra qualified as Cardano
 import Ouroboros.Cardano.Network.Diffusion.Configuration
            (defaultNumberOfBigLedgerPeers)
-import Ouroboros.Cardano.Network.ExtraRootPeers qualified as Cardano
 import Ouroboros.Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.Churn.ExtraArguments qualified as Churn
+import Ouroboros.Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano hiding
            (consensusMode)
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as ExtraState
 import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as ExtraSizes
-import Ouroboros.Cardano.Network.Types (ChurnMode (..))
-import Ouroboros.Cardano.PeerSelection.Churn (peerChurnGovernor)
+import Ouroboros.Cardano.PeerSelection.Churn (ChurnMode (..), TracerChurnMode,
+           peerChurnGovernor)
+import Ouroboros.Cardano.PeerSelection.Churn qualified as Churn
 import Ouroboros.Cardano.PeerSelection.PeerSelectionActions
            (requestPublicRootPeers)
 
@@ -143,8 +142,6 @@ import Ouroboros.Network.Snocket (Snocket, TestAddress (..))
 import Simulation.Network.Snocket (BearerInfo (..), FD, SnocketTrace,
            WithAddr (..), makeFDBearer, withSnocket)
 
-import Ouroboros.Cardano.Network.PeerSelection.Churn.ExtraArguments
-           (TracerChurnMode)
 import Test.Ouroboros.Network.Data.Script
 import Test.Ouroboros.Network.Diffusion.Node as Node
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..), genLedgerPoolsFrom)
@@ -953,9 +950,6 @@ iosimTracer :: forall s a.
               )
             => Tracer (IOSim s) (WithTime (WithName NtNAddr a))
 iosimTracer = Tracer traceM <> sayTracer
-
-churnModeTracer :: Tracer (IOSim s) (WithTime (WithName NtNAddr TracerChurnMode))
-churnModeTracer = Tracer traceM <> sayTracer
 
 -- | Run an arbitrary topology
 diffusionSimulation

@@ -91,14 +91,14 @@ import Cardano.Network.PeerSelection.LocalRootPeers
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import Cardano.Network.Types (LedgerStateJudgement (..),
            NumberOfBigLedgerPeers (..))
-import Ouroboros.Cardano.Network.ExtraRootPeers qualified as Cardano
-import Ouroboros.Cardano.Network.ExtraRootPeers qualified as ExtraPeers
 import Ouroboros.Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
+import Ouroboros.Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
+import Ouroboros.Cardano.Network.PeerSelection.ExtraRootPeers qualified as ExtraPeers
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionActions qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as ExtraState
 import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as ExtraSizes
-import Ouroboros.Cardano.Network.PublicRootPeers qualified as Cardano.PublicRootPeers
+import Ouroboros.Cardano.Network.PeerSelection.PublicRootPeers qualified as Cardano.PublicRootPeers
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers (..))

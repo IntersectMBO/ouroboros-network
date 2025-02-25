@@ -185,7 +185,7 @@ library
     cpp-options: -DTXSUBMISSION_DELAY
 
 -- Internal library required to share some internal modules with
--- 'cardano-node' sub library
+-- 'cardano-diffusion' sub library
 --
 library internal-lib
   visibility: private
@@ -290,25 +290,24 @@ library internal-lib
   if flag(txsubmission-delay)
     cpp-options: -DTXSUBMISSION_DELAY
 
-library cardano-node
+library cardano-diffusion
   import: ghc-options
-  hs-source-dirs: cardano-node
+  visibility: public
+  hs-source-dirs: cardano-diffusion
   exposed-modules:
+    Ouroboros.Cardano.Diffusion.Topology
+    Ouroboros.Cardano.Diffusion.Types
     Ouroboros.Cardano.Network.ArgumentsExtra
     Ouroboros.Cardano.Network.Diffusion.Configuration
     Ouroboros.Cardano.Network.Diffusion.Handlers
     Ouroboros.Cardano.Network.Diffusion.Policies
-    Ouroboros.Cardano.Network.ExtraRootPeers
     Ouroboros.Cardano.Network.LedgerPeerConsensusInterface
-    Ouroboros.Cardano.Network.PeerSelection.Churn.ExtraArguments
+    Ouroboros.Cardano.Network.PeerSelection.ExtraRootPeers
     Ouroboros.Cardano.Network.PeerSelection.Governor.Monitor
     Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionActions
     Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState
     Ouroboros.Cardano.Network.PeerSelection.Governor.Types
-    Ouroboros.Cardano.Network.PublicRootPeers
-    Ouroboros.Cardano.Network.Types
-    Ouroboros.Cardano.Node.Topology
-    Ouroboros.Cardano.Node.Types
+    Ouroboros.Cardano.Network.PeerSelection.PublicRootPeers
     Ouroboros.Cardano.PeerSelection.Churn
     Ouroboros.Cardano.PeerSelection.PeerSelectionActions
 
@@ -391,7 +390,7 @@ library sim-tests-lib
     network,
     network-mux,
     nothunks,
-    ouroboros-network:{cardano-node, internal-lib},
+    ouroboros-network:{cardano-diffusion, internal-lib},
     ouroboros-network-api,
     ouroboros-network-framework,
     ouroboros-network-framework:testlib,

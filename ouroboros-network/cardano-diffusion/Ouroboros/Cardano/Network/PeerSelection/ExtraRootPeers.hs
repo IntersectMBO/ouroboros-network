@@ -1,6 +1,6 @@
 {-# LANGUAGE NamedFieldPuns #-}
 
-module Ouroboros.Cardano.Network.ExtraRootPeers where
+module Ouroboros.Cardano.Network.PeerSelection.ExtraRootPeers where
 
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
