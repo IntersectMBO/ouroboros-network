@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
@@ -119,7 +120,7 @@ runHandshakeClient
        , MonadThrow (STM m)
        , Ord vNumber
        )
-    => Mx.Bearer m Unbuffered
+    => Mx.Bearer m Mx.Unbuffered
     -> connectionId
     -> HandshakeArguments connectionId vNumber vData m
     -> Versions vNumber vData application
@@ -156,7 +157,7 @@ runHandshakeServer
        , MonadThrow (STM m)
        , Ord vNumber
        )
-    => Mx.Bearer m
+    => Mx.Bearer m Mx.Unbuffered
     -> connectionId
     -> HandshakeArguments connectionId vNumber vData m
     -> Versions vNumber vData application

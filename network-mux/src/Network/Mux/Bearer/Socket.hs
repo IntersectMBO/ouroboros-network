@@ -7,15 +7,18 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Network.Mux.Bearer.Socket (socketAsBearerBuffered) where
+module Network.Mux.Bearer.Socket
+  ( socketAsBearerBuffered
+  , socketAsBearer) where
 
 import Control.Exception hiding (throwIO, catch)
-import Data.IORef
-import Data.Word
 import Control.Monad (when)
 import Control.Tracer
 import Data.ByteString.Lazy qualified as BL
 import Data.ByteString qualified as BS
+import Data.Int
+import Data.IORef
+import Data.Word
 
 -- import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadThrow
@@ -24,7 +27,7 @@ import Control.Monad.Class.MonadTimer.SI hiding (timeout)
 
 import Network.Socket qualified as Socket
 #if !defined(mingw32_HOST_OS)
-import Network.Socket.ByteString.Lazy qualified as Socket (sendAll)
+import Network.Socket.ByteString.Lazy qualified as Socket (recv, sendAll)
 import Network.Socket.ByteString qualified as Socket (sendMany)
 import Data.ByteString.Internal (ByteString (..))
 import Foreign.Marshal.Utils
@@ -36,7 +39,7 @@ import Network.Mux.Codec qualified as Mx
 import Network.Mux.Time qualified as Mx
 import Network.Mux.Timeout qualified as Mx
 import Network.Mux.Trace qualified as Mx
-import Network.Mux.Types (Bearer, BearerIngressBuffer (..), BearerIngressBufferInfo)
+import Network.Mux.Types (Bearer, BearerIngressBuffer (..))
 import Network.Mux.Types qualified as Mx
 import Foreign.Ptr
 import GHC.ForeignPtr
@@ -72,7 +75,7 @@ socketAsBearerBuffered sduSize batchSize
         Mx.writeMany = writeSocketMany,
         Mx.sduSize   = sduSize,
         Mx.batchSize = batchSize,
-        Mx.name      = "socket-bearer"
+        Mx.name      = "socket-bearer-buffrd"
       }
     where
       hdrLength :: Word16
@@ -96,13 +99,14 @@ socketAsBearerBuffered sduSize batchSize
 
       recvRem :: IO (Mx.SDU, Time)
       recvRem = do
-        while ((< fromIntegral hdrLength) . BS.length <$> Mx.peekBearerBuffer sb) (recv False True)
+        while ((< fromIntegral hdrLength) . BS.length <$> Mx.peekBearerBuffer sb)
+          (recv False True)
         bytes <- BL.fromStrict <$> Mx.peekBearerBuffer sb
         case Mx.decodeSDU bytes of
           Left  e -> throwIO e
           Right header@Mx.SDU { Mx.msHeader } -> do
               traceWith tracer $ Mx.TraceRecvHeaderEnd msHeader
-              bytesBuffer <- Mx.newBearerIngressBuffer . fromIntegral $ Mx.mhLength msHeader
+              bytesBuffer <- Mx.newBearerIngressBuffer . Just . fromIntegral $ Mx.mhLength msHeader
               !blob <- recvLen bytesBuffer
 
               !ts <- getMonotonicTime
@@ -115,41 +119,42 @@ socketAsBearerBuffered sduSize batchSize
             when x $ m >> while p m
 
       recvLen :: BearerIngressBuffer -> IO BL.ByteString
-      recvLen destSb@BearerIngressBuffer { bibSize = destSize, bibInfoRef = destInfoRef } = do
-        (_destStart, destLen, destPtr) <- readIORef destInfoRef
-        (srcStart, srcLen, srcPtr)  <- readIORef bibInfoRef
-        if srcLen > 0 -- ^ grab data from buffer if available
-          then do
-            let howMany = destSize - destLen `min` srcLen
-                srcInfo' = if srcLen - howMany == 0
-                             then (0, 0, srcPtr)
-                             else (srcStart + howMany, srcLen - howMany, srcPtr)
-                destLen' = destLen + howMany
-                destInfo' = (0, destLen', destPtr)
-            unsafeWithForeignPtr destPtr $ \destPtr' ->
-              unsafeWithForeignPtr srcPtr $ \srcPtr' -> do
-                let destPtr'' = plusPtr destPtr' destLen
-                    srcPtr''  = plusPtr srcPtr' srcStart
-                copyBytes destPtr'' srcPtr'' howMany
-            writeIORef bibInfoRef srcInfo'
-            traceWith tracer $ Mx.TraceRecvEnd howMany
-            if destLen' == destSize
-              then return . BL.fromStrict $ BS destPtr destLen
-              else do
-                r <- newIORef destInfo'
-                recvLen $ destSb { Mx.bibInfoRef = r }
-          else
-            recv False False >> recvLen destSb
+      recvLen BearerIngressBuffer { bibSize = destSize, bibInfoRef = destInfoRef } = recvLen'
+        where
+          socketInfoRef = bibInfoRef
+          recvLen' = do
+            (_destStart, destLen, destPtr) <- readIORef destInfoRef
+            (srcStart, srcLen, srcPtr)     <- readIORef socketInfoRef
+            if srcLen > 0 -- ^ grab data from buffer if available
+              then do
+                let howMany = destSize - destLen `min` srcLen
+                    srcInfo' = if srcLen == howMany
+                                 then (0, 0, srcPtr)
+                                 else (srcStart + howMany, srcLen - howMany, srcPtr)
+                    destLen' = destLen + howMany
+                    destInfo' = (0, destLen', destPtr)
+                unsafeWithForeignPtr destPtr $ \destPtr' ->
+                  unsafeWithForeignPtr srcPtr $ \srcPtr' -> do
+                    let destPtr'' = plusPtr destPtr' destLen
+                        srcPtr''  = plusPtr srcPtr' srcStart
+                    copyBytes destPtr'' srcPtr'' howMany
+                writeIORef socketInfoRef srcInfo'
+                traceWith tracer $ Mx.TraceRecvEnd howMany
+                if destLen' == destSize
+                  then return . BL.fromStrict $ BS destPtr destLen
+                  else writeIORef destInfoRef destInfo' >> recvLen'
+              else
+                recv False False >> recvLen'
 
       recv :: Bool -> Bool -> IO ()
       recv waitingOnNxtHeader reservePermission = do
-        (start, len, bufPtr) <- readIORef bibInfoRef
+        (start, len, socketBufPtr) <- readIORef bibInfoRef
         let maxRead = if reservePermission
                         then bibSize - (start + len)
                         else (bibSize - fromIntegral hdrLength) - (start + len)
         bytesRead <-
           assert (maxRead > 0) $
-          withForeignPtr bufPtr $
+          withForeignPtr socketBufPtr $
             \ptr -> Socket.recvBuf sd (plusPtr ptr len) maxRead
 
         when (bytesRead == 0) do
@@ -162,8 +167,7 @@ socketAsBearerBuffered sduSize batchSize
                   " closed when reading data, waiting on next header " ++
                   show waitingOnNxtHeader)
         traceWith tracer $ Mx.TraceRecvRaw bytesRead
-        let srcInfo' = (start, len + bytesRead, bufPtr)
-        writeIORef bibInfoRef srcInfo'
+        writeIORef bibInfoRef (start, len + bytesRead, socketBufPtr)
         where
 #if !defined(mingw32_HOST_OS)
           -- Read at most `min rbSize maxLen` bytes from the socket
@@ -267,3 +271,126 @@ socketAsBearerBuffered sduSize batchSize
 #endif
                    return ts
 #endif
+
+-- |
+-- Create @'MuxBearer'@ from a socket.
+--
+-- On Windows 'System.Win32.Async` operations are used to read and write from
+-- a socket.  This means that the socket must be associated with the I/O
+-- completion port with
+-- 'System.Win32.Async.IOManager.associateWithIOCompletionPort'.
+--
+-- Note: 'IOException's thrown by 'sendAll' and 'recv' are wrapped in
+-- 'MuxError'.
+--
+socketAsBearer
+  :: Mx.SDUSize
+  -> Int
+  -> DiffTime
+  -> Tracer IO Mx.Trace
+  -> Socket.Socket
+  -> Bearer IO Mx.Unbuffered
+socketAsBearer sduSize batchSize sduTimeout tracer sd =
+      Mx.Bearer {
+        Mx.read      = readSocket,
+        Mx.write     = writeSocket,
+        Mx.writeMany = writeSocketMany,
+        Mx.sduSize   = sduSize,
+        Mx.batchSize = batchSize,
+        Mx.name      = "socket-bearer-buffrd"
+      }
+    where
+      hdrLenght = 8
+
+      readSocket :: Mx.TimeoutFn IO -> IO (Mx.SDU, Time)
+      readSocket timeout = do
+          traceWith tracer Mx.TraceRecvHeaderStart
+
+          -- Wait for the first part of the header without any timeout
+          h0 <- recvAtMost True hdrLenght
+
+          -- Optionally wait at most sduTimeout seconds for the complete SDU.
+          r_m <- timeout sduTimeout $ recvRem h0
+          case r_m of
+                Nothing -> do
+                    traceWith tracer Mx.TraceSDUReadTimeoutException
+                    throwIO $ Mx.SDUReadTimeout
+                Just r -> return r
+
+      recvRem :: BL.ByteString -> IO (Mx.SDU, Time)
+      recvRem !h0 = do
+          hbuf <- recvLen' (hdrLenght - BL.length h0) [h0]
+          case Mx.decodeSDU hbuf of
+               Left  e ->  throwIO e
+               Right header@Mx.SDU { Mx.msHeader } -> do
+                   traceWith tracer $ Mx.TraceRecvHeaderEnd msHeader
+                   !blob <- recvLen' (fromIntegral $ Mx.mhLength msHeader) []
+
+                   !ts <- getMonotonicTime
+                   let !header' = header {Mx.msBlob = blob}
+                   traceWith tracer (Mx.TraceRecvDeltaQObservation msHeader ts)
+                   return (header', ts)
+
+      recvLen' ::  Int64 -> [BL.ByteString] -> IO BL.ByteString
+      recvLen' 0 bufs = return $ BL.concat $ reverse bufs
+      recvLen' l bufs = do
+          buf <- recvAtMost False l
+          recvLen' (l - BL.length buf) (buf : bufs)
+
+      recvAtMost :: Bool -> Int64 -> IO BL.ByteString
+      recvAtMost waitingOnNxtHeader l = do
+          traceWith tracer $ Mx.TraceRecvStart $ fromIntegral l
+#if defined(mingw32_HOST_OS)
+          buf <- Win32.Async.recv sd (fromIntegral l)
+#else
+          buf <- Socket.recv sd l
+#endif
+                    `catch` Mx.handleIOException "recv errored"
+          if BL.null buf
+              then do
+                  when waitingOnNxtHeader $
+                      {- This may not be an error, but could be an orderly shutdown.
+                       - We wait 1 seconds to give the mux protocols time to perform
+                       - a clean up and exit.
+                       -}
+                      threadDelay 1
+                  throwIO $ Mx.BearerClosed (show sd ++
+                      " closed when reading data, waiting on next header " ++
+                      show waitingOnNxtHeader)
+              else do
+                  traceWith tracer $ Mx.TraceRecvEnd (fromIntegral $ BL.length buf)
+                  return buf
+
+      writeSocket :: Mx.TimeoutFn IO -> Mx.SDU -> IO Time
+      writeSocket timeout sdu = do
+          ts <- getMonotonicTime
+          let ts32 = Mx.timestampMicrosecondsLow32Bits ts
+              sdu' = Mx.setTimestamp sdu (Mx.RemoteClockModel ts32)
+              buf  = Mx.encodeSDU sdu'
+          traceWith tracer $ Mx.TraceSendStart (Mx.msHeader sdu')
+          r <- timeout sduTimeout $
+#if defined(mingw32_HOST_OS)
+              Win32.Async.sendAll sd buf
+#else
+              Socket.sendAll sd buf
+#endif
+              `catch` Mx.handleIOException "sendAll errored"
+          case r of
+               Nothing -> do
+                    traceWith tracer Mx.TraceSDUWriteTimeoutException
+                    throwIO Mx.SDUWriteTimeout
+               Just _ -> do
+                   traceWith tracer Mx.TraceSendEnd
+#if defined(linux_HOST_OS) && defined(MUX_TRACE_TCPINFO)
+                   -- If it was possible to detect if the TraceTCPInfo was
+                   -- enable we wouldn't have to hide the getSockOpt
+                   -- syscall in this ifdef. Instead we would only call it if
+                   -- we knew that the information would be traced.
+                   tcpi <- Socket.getSockOpt sd TCPInfoSocketOption
+                   traceWith tracer $ Mx.TraceTCPInfo tcpi (Mx.mhLength $ Mx.msHeader sdu)
+#endif
+                   return ts
+
+      writeSocketMany :: Mx.TimeoutFn IO -> [Mx.SDU] -> IO Time
+      writeSocketMany timeout sdus =
+        getMonotonicTime <* mapM_ (writeSocket timeout) sdus

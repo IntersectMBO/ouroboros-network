@@ -104,6 +104,7 @@ import Network.Socket qualified as Socket
 import Control.Tracer
 
 import Network.Mux qualified as Mx
+import Network.Mux.Types qualified as Mx
 import Network.Mux.Bearer qualified as Mx
 import Network.Mux.DeltaQ.TraceTransformer
 import Network.TypedProtocol.Codec hiding (decode, encode)
@@ -353,7 +354,7 @@ connectToNode'
      )
   => Snocket IO fd addr
   -> Mx.MakeBearer IO fd
-  -> ConnectToArgs fd addr vNumber vData
+  -> forall buffering. Mx.SBearerBuffering buffering
   -- ^ a configured socket to use to connect to a remote service provider
   -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b)
   -- ^ application to run over the connection
@@ -371,7 +372,7 @@ connectToNodeWithMux'
      , Mx.HasInitiator muxMode ~ True
      )
   => Snocket IO fd addr
-  -> (SBearerBuffering s -> Mx.MakeBearer IO fd s)
+  -> Mx.MakeBearer IO fd
   -> ConnectToArgs fd addr vNumber vData
   -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b)
   -- ^ application to run over the connection
@@ -409,7 +410,7 @@ connectToNodeWithMux'
     muxTracer <- initDeltaQTracer' $ Mx.WithBearer connectionId `contramap` nctMuxTracer
     ts_start <- getMonotonicTime
 
-    handshakeBearer <- Mx.getBearer makeBearer sduHandshakeTimeout muxTracer sd Nothing
+    handshakeBearer <- Mx.getBearer makeBearer sduHandshakeTimeout muxTracer sd Mx.SUnbuffered
     app_e <-
       runHandshakeClient
         handshakeBearer
@@ -436,12 +437,11 @@ connectToNodeWithMux'
 
        Right (HandshakeNegotiationResult app versionNumber agreedOptions) -> do
          traceWith muxTracer $ Mx.TraceHandshakeClientEnd (diffTime ts_end ts_start)
-         Mx.withReadBufferIO (\buffer -> do
-             bearer <- Mx.getBearer makeBearer sduTimeout muxTracer sd buffer
-             mux <- Mx.new (toMiniProtocolInfos app)
-             withAsync (Mx.run muxTracer mux bearer) $ \aid ->
-               k connectionId versionNumber agreedOptions app mux aid
-           )
+         ingressBuffer <- Mx.SBuffered <$> Mx.newBearerIngressBuffer Nothing
+         bearer <- Mx.getBearer makeBearer sduTimeout muxTracer sd ingressBuffer
+         mux <- Mx.new (toMiniProtocolInfos app)
+         withAsync (Mx.run muxTracer mux bearer) $ \aid ->
+           k connectionId versionNumber agreedOptions app mux aid
 
        Right (HandshakeQueryResult _vMap) -> do
          traceWith muxTracer $ Mx.TraceHandshakeClientEnd (diffTime ts_end ts_start)
@@ -519,6 +519,7 @@ connectToNodeSocket iocp args versions sd =
     connectToNode'
       (Snocket.socketSnocket iocp)
       Mx.makeSocketBearer
+      undefined
       args
       versions
       sd
@@ -586,7 +587,7 @@ beginConnection makeBearer muxTracer handshakeTracer handshakeCodec handshakeTim
 
         traceWith muxTracer' $ Mx.TraceHandshakeStart
 
-        handshakeBearer <- Mx.getBearer makeBearer sduHandshakeTimeout muxTracer' sd Nothing
+        handshakeBearer <- Mx.getBearer makeBearer sduHandshakeTimeout muxTracer' sd Mx.SUnbuffered
         app_e <-
           runHandshakeServer
             handshakeBearer
@@ -612,12 +613,11 @@ beginConnection makeBearer muxTracer handshakeTracer handshakeCodec handshakeTim
 
              Right (HandshakeNegotiationResult (SomeResponderApplication app) versionNumber agreedOptions) -> do
                  traceWith muxTracer' Mx.TraceHandshakeServerEnd
-                 Mx.withReadBufferIO (\buffer -> do
-                     bearer <- Mx.getBearer makeBearer sduTimeout muxTracer' sd buffer
-                     mux <- Mx.new (toMiniProtocolInfos app)
-                     withAsync (Mx.run muxTracer' mux bearer) $ \aid ->
-                       void $ simpleMuxCallback connectionId versionNumber agreedOptions app mux aid
-                   )
+                 ingressBuffer <- Mx.SBuffered <$> Mx.newBearerIngressBuffer Nothing
+                 bearer <- Mx.getBearer makeBearer sduTimeout muxTracer' sd ingressBuffer
+                 mux <- Mx.new (toMiniProtocolInfos app)
+                 withAsync (Mx.run muxTracer' mux bearer) $ \aid ->
+                   void $ simpleMuxCallback connectionId versionNumber agreedOptions app mux aid
 
              Right (HandshakeQueryResult _vMap) -> do
                  traceWith muxTracer' Mx.TraceHandshakeServerEnd
@@ -779,7 +779,7 @@ runServerThread NetworkServerTracers { nstMuxTracer
         serverSocket
         acceptedConnectionsLimit
         (acceptException sockAddr)
-        (beginConnection makeBearer nstMuxTracer nstHandshakeTracer handshakeCodec handshakeTimeLimits versionDataCodec handshakeCallbacks (acceptConnectionTx sockAddr))
+        (beginConnection makeBearer undefined nstMuxTracer nstHandshakeTracer handshakeCodec handshakeTimeLimits versionDataCodec handshakeCallbacks (acceptConnectionTx sockAddr))
         -- register producer when application starts, it will be unregistered
         -- using 'CompleteConnection'
         (\remoteAddr thread st -> pure $ registerProducer remoteAddr thread

@@ -267,8 +267,8 @@ newtype SDUSize = SDUSize { getSDUSize :: Word16 }
 -- 'MiniProtocolNum' and 'MiniProtocolDir'.
 --
 bearerAsChannel
-  :: forall m. Functor m
-  => Bearer m Unbuffered
+  :: forall m s. Functor m
+  => Bearer m s
   -> MiniProtocolNum
   -> MiniProtocolDir
   -> ByteChannel m
@@ -306,16 +306,12 @@ data RuntimeError =
 
 instance Exception RuntimeError
 
--- data ReadBuffer m = ReadBuffer {
---     rbVar :: StrictTVar m Builder
---   , rbBuf :: [(Int, Ptr Word8)]
---   , rbSize :: Int
---   }
+-- todo here or in bearer module?
 
 data BearerBuffering = Buffered | Unbuffered
 
 data SBearerBuffering :: BearerBuffering -> Type where
-  SBuffered :: SBearerBuffering Buffered
+  SBuffered :: BearerIngressBuffer -> SBearerBuffering Buffered
   SUnbuffered :: SBearerBuffering Unbuffered
 
 type BearerIngressBufferInfo = (Int, Int, ForeignPtr Word8)
@@ -325,11 +321,13 @@ data BearerIngressBuffer = BearerIngressBuffer {
   bibInfoRef  :: IORef BearerIngressBufferInfo
   }
 
-newBearerIngressBuffer :: Int -> IO BearerIngressBuffer
-newBearerIngressBuffer bibSize = do
-  ptr <- mallocByteString bibSize
+newBearerIngressBuffer :: Maybe Word32 -> IO BearerIngressBuffer
+newBearerIngressBuffer mSize = do
+  ptr <- mallocByteString  bibSize
   bibInfoRef <- newIORef (0, 0, ptr)
   return BearerIngressBuffer { bibSize, bibInfoRef }
+  where
+    bibSize = maybe 131072 fromIntegral mSize
 
 peekBearerBuffer :: BearerIngressBuffer -> IO ByteString
 peekBearerBuffer BearerIngressBuffer { bibInfoRef } = do

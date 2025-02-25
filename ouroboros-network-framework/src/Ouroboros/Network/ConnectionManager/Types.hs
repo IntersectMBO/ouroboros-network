@@ -156,6 +156,7 @@ module Ouroboros.Network.ConnectionManager.Types
   , TransitionTrace
   , TransitionTrace' (..)
   , AbstractTransitionTrace
+  , MkBearerFn (..)
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -356,9 +357,10 @@ type ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version
     -> PromiseWriter m (Either handleError (HandshakeConnectionResult handle (versionNumber, versionData)))
     -> Tracer m handlerTrace
     -> ConnectionId peerAddr
-    -> (DiffTime -> socket -> Maybe (Mux.ReadBuffer m) -> m (Mux.Bearer m))
-    -> ((Maybe (Mux.ReadBuffer m) -> m ()) -> m ())
+    -> MkBearerFn socket m
     -> MaskedAction m ()
+
+newtype MkBearerFn socket m = MkBearerFn (forall s. DiffTime -> socket -> Mux.SBearerBuffering s -> m (Mux.Bearer m s))
 
 data HandshakeConnectionResult handle version
   -- | Handshake saw a query.
@@ -379,7 +381,7 @@ newtype ConnectionHandler muxMode handlerTrace socket peerAddr handle handleErro
         --
         connectionHandler ::
           WithMuxTuple muxMode
-            (ConnectionHandlerFn handlerTrace socket peerAddr handle handleError versionNumber versionData m)
+            (ConnectionHandlerFn handlerTrace socket peerAddr handle handleError versionNumber versionData m )
       }
 
 

@@ -114,9 +114,6 @@ data Arguments handlerTrace socket peerAddr handle handleError versionNumber ver
         --
         makeBearer          :: MakeBearer m socket,
 
-        -- | With a ReadBuffer
-        withBuffer          :: ((Maybe (Mx.ReadBuffer m) -> m ()) -> m ()),
-
         -- | Socket configuration.
         --
         configureSocket     :: socket -> Maybe peerAddr -> m (),
@@ -377,7 +374,7 @@ with
        , Typeable peerAddr
        )
     => Arguments handlerTrace socket peerAddr handle handleError version versionData m
-    -> ConnectionHandler  muxMode handlerTrace socket peerAddr handle handleError version versionData m
+    -> ConnectionHandler muxMode handlerTrace socket peerAddr handle handleError version versionData m
     -- ^ Callback which runs in a thread dedicated for a given connection.
     -> (handleError -> HandleErrorType)
     -- ^ classify 'handleError's
@@ -398,7 +395,6 @@ with args@Arguments {
          addressType,
          snocket,
          makeBearer,
-         withBuffer,
          configureSocket,
          timeWaitTimeout,
          outboundIdleTimeout,
@@ -624,11 +620,10 @@ with args@Arguments {
             (handler updateVersionDataFn socket writer
                      (TrConnectionHandler connId `contramap` tracer)
                      connId
-                     (\bearerTimeout ->
-                       getBearer makeBearer
-                         bearerTimeout
-                         (Mx.WithBearer connId `contramap` muxTracer))
-                     withBuffer)
+                     (MkBearerFn $ \bearerTimeout ->
+                                     getBearer makeBearer
+                                     bearerTimeout
+                                     (Mx.WithBearer connId `contramap` muxTracer)))
             unmask
           `finally` cleanup
       where

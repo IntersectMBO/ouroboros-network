@@ -56,6 +56,7 @@ import Data.Typeable (Typeable)
 
 import Network.Mux (Mux)
 import Network.Mux qualified as Mx
+import Network.Mux.Types qualified as Mx
 
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.ConnectionManager.Types
@@ -67,6 +68,7 @@ import Ouroboros.Network.MuxMode
 import Ouroboros.Network.Protocol.Handshake
 import Ouroboros.Network.Protocol.Handshake.Version qualified as Handshake
 import Ouroboros.Network.RethrowPolicy
+import Network.Mux.Types (SBearerBuffering(SUnbuffered))
 
 -- | We place an upper limit of `30s` on the time we wait on receiving an SDU.
 -- There is no upper bound on the time we wait when waiting for a new SDU.
@@ -225,6 +227,7 @@ makeConnectionHandler
     -> SingMuxMode muxMode
     -- ^ describe whether this is outbound or inbound connection, and bring
     -- evidence that we can use mux with it.
+    -> forall buffering. Mx.SBearerBuffering buffering
     -> HandshakeArguments (ConnectionId peerAddr) versionNumber versionData m
     -> Versions versionNumber versionData
                 (OuroborosBundle muxMode initiatorCtx responderCtx ByteString m a b)
@@ -232,7 +235,7 @@ makeConnectionHandler
     -- ^ 'ThreadId' and rethrow policy.  Rethrow policy might throw an async
     -- exception to that thread, when trying to terminate the process.
     -> MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr versionNumber versionData ByteString m a b
-makeConnectionHandler muxTracer singMuxMode
+makeConnectionHandler muxTracer singMuxMode singBuffering
                       handshakeArguments
                       versionedApplication
                       (mainThreadId, rethrowPolicy) =
@@ -287,8 +290,7 @@ makeConnectionHandler muxTracer singMuxMode
                               tracer
                               connectionId@ConnectionId { localAddress
                                                         , remoteAddress }
-                              mkMuxBearer
-                              withBuffer
+                              (MkBearerFn mkMuxBearer)
         = MaskedAction { runWithUnmask }
       where
         runWithUnmask :: (forall x. m x -> m x) -> m ()
@@ -299,7 +301,7 @@ makeConnectionHandler muxTracer singMuxMode
                                     , "-"
                                     , show remoteAddress
                                     ])
-            handshakeBearer <- mkMuxBearer sduHandshakeTimeout socket Nothing
+            handshakeBearer <- mkMuxBearer sduHandshakeTimeout socket Mx.SUnbuffered
             hsResult <-
               unmask (runHandshakeClient handshakeBearer
                                          connectionId
@@ -332,11 +334,8 @@ makeConnectionHandler muxTracer singMuxMode
                           hVersionData    = agreedOptions
                         }
                   atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
-                  withBuffer (\buffer -> do
-                      bearer <- mkMuxBearer sduTimeout socket buffer
-                      Mx.run (Mx.WithBearer connectionId `contramap` muxTracer)
-                             mux bearer
-                    )
+                  bearer <- mkMuxBearer sduTimeout socket singBuffering
+                  Mx.run (Mx.WithBearer connectionId `contramap` muxTracer) mux bearer
 
               Right (HandshakeQueryResult vMap) -> do
                 atomically $ writePromise (Right HandshakeConnectionQuery)
@@ -359,8 +358,7 @@ makeConnectionHandler muxTracer singMuxMode
                              tracer
                              connectionId@ConnectionId { localAddress
                                                        , remoteAddress }
-                             mkMuxBearer
-                             withBuffer
+                             (MkBearerFn mkMuxBearer)
         = MaskedAction { runWithUnmask }
       where
         runWithUnmask :: (forall x. m x -> m x) -> m ()
@@ -371,7 +369,7 @@ makeConnectionHandler muxTracer singMuxMode
                                     , "-"
                                     , show remoteAddress
                                     ])
-            handshakeBearer <- mkMuxBearer sduHandshakeTimeout socket Nothing
+            handshakeBearer <- mkMuxBearer sduHandshakeTimeout socket SUnbuffered
             hsResult <-
               unmask (runHandshakeServer handshakeBearer
                                          connectionId
@@ -405,11 +403,10 @@ makeConnectionHandler muxTracer singMuxMode
                           hVersionData    = agreedOptions
                         }
                   atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
-                  withBuffer (\buffer -> do
-                      bearer <- mkMuxBearer sduTimeout socket buffer
-                      Mx.run (Mx.WithBearer connectionId `contramap` muxTracer)
-                             mux bearer
-                    )
+                  bearer <- mkMuxBearer sduTimeout socket singBuffering
+                  Mx.run (Mx.WithBearer connectionId `contramap` muxTracer)
+                         mux bearer
+
               Right (HandshakeQueryResult vMap) -> do
                 atomically $ writePromise (Right HandshakeConnectionQuery)
                 traceWith tracer $ TrHandshakeQuery vMap

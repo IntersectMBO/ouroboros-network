@@ -72,7 +72,7 @@ pipeAsBearer
   :: Mx.SDUSize
   -> Tracer IO Mx.Trace
   -> PipeChannel
-  -> Bearer IO s
+  -> Bearer IO Mx.Unbuffered
 pipeAsBearer sduSize tracer channel =
       Mx.Bearer {
           Mx.read      = readPipe,

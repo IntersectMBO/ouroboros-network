@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
@@ -29,7 +30,7 @@ data QueueChannel m = QueueChannel {
 
 
 queueChannelAsBearer
-  :: forall m s.
+  :: forall m.
      ( MonadSTM   m
      , MonadMonotonicTime m
      , MonadThrow m
@@ -37,7 +38,7 @@ queueChannelAsBearer
   => Mx.SDUSize
   -> Tracer m Mx.Trace
   -> QueueChannel m
-  -> Bearer m s
+  -> Bearer m Mx.Unbuffered
 queueChannelAsBearer sduSize tracer QueueChannel { writeQueue, readQueue } = do
       Mx.Bearer {
         Mx.read      = readMux,
