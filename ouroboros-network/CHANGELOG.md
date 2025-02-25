@@ -20,6 +20,23 @@
 - Removed `TracePublicRootResult` and `TracePublicRootFailure`
 - Changed signature of `resolveLedgerPeers`, `localRootPeersProvider`, `publicRootPeersProvider`,
   `withPeerSelectionActions` to accept random seed for DNS SRV lookup.
+- `TraceChurnMode` removed from `TracePeerSelection`
+- `ChurnMode` moved to new `cardano-diffusion` sublibrary
+- Created `cardano-diffusion` sublibrary with all cardano specific
+  implementation details.
+- Removed `Cardano.Network.ExtraArguments` module as it is no longer needed
+- Created `Cardano.Network.Diffusion` with its own run function. This function
+  initializes the cardano diffusion with all its specific parameters and
+  provides a cleaner API that makes explicit what locally configured values it
+  depends on.
+- Created Cardano `LocalConfiguration` data type
+- Simplified `Arguments` / `Applications` / `Interfaces data` type. No longer
+  receives a lot of type parameters as some of their fields were moved to
+  `DiffusionArguments`
+- Removed `readFetchMode` from `Churn.ExtraArguments` and moved it to `LedgerPeersConsensusInterface`.
+- Renamed `Arguments` to `DiffusionConfiguration`
+- Renamed `Applications` to `DiffusionApplications`
+- `runM` function now receives `ExtraParameters` as an argument
 
 ## 0.20.1.0 -- 2025-03-13
 
