@@ -64,7 +64,7 @@ library
 
   build-depends:
     QuickCheck,
-    base >=4.14 && <4.21,
+    base >=4.14 && <4.22,
     cborg >=0.2.1 && <0.3,
     containers,
     contra-tracer,
@@ -101,7 +101,7 @@ test-suite test
   other-modules: Test.Ouroboros.Network.Data.AbsBearerInfo.Test
   build-depends:
     QuickCheck,
-    base >=4.14 && <4.21,
+    base >=4.14 && <4.22,
     ouroboros-network-testing,
     tasty,
     tasty-quickcheck,
