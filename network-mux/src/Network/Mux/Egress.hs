@@ -21,6 +21,7 @@ import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
+import Control.Monad.Class.MonadTime.SI
 
 import Network.Mux.Timeout
 import Network.Mux.Types
@@ -134,6 +135,7 @@ newtype Wanton m = Wanton { want :: StrictTVar m BL.ByteString }
 muxer
     :: forall m void.
        ( MonadAsync m
+       , MonadDelay m
        , MonadFork m
        , MonadMask m
        , MonadThrow (STM m)
@@ -145,12 +147,21 @@ muxer
 muxer egressQueue Bearer { writeMany, sduSize, batchSize } =
     withTimeoutSerial $ \timeout ->
     forever $ do
+      start <- getMonotonicTime
       TLSRDemand mpc md d <- atomically $ readTBQueue egressQueue
       sdu <- processSingleWanton egressQueue sduSize mpc md d
       sdus <- buildBatch [sdu] (sduLength sdu)
-      writeMany timeout (reverse sdus)
+      void $ writeMany timeout (reverse sdus)
+      end <- getMonotonicTime
+      empty <- atomically $ isEmptyTBQueue egressQueue
+      when (empty) $ do
+        let delta = diffTime end start
+        threadDelay (loopInterval - delta)
 
   where
+    loopInterval :: DiffTime
+    loopInterval = 0.001
+
     maxSDUsPerBatch :: Int
     maxSDUsPerBatch = 100
 
