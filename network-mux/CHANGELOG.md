@@ -4,11 +4,15 @@
 
 ### Breaking changes
 
+### Non-breaking changes
+
+## 0.7.0.0 -- 2025-02-25
+
+### Breaking changes
+
 * Use the correct tracing message for `StartOnDemand`.
 * Implement `StartOnDemandAny`, which will start the miniprotocol as soon as
   any `StartOnDemand` protocol starts.
-
-### Non-breaking changes
 
 ## 0.6.0.0 -- 2025-01-02
 

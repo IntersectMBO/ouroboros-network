@@ -2,21 +2,7 @@
 
 ## next release
 
-### Non Breaking changes
-
-- Renamed `Test.Ouroboros.Network.Testnet.*` to `Test.Ouroboros.Network.Diffusion.*`
-- Refactored tests to compile with library changes and made necessary changes
-  to work with the now polymorphic diffusion code.
-- Renamed `Test.Ouroboros.Network.{BlockFetch, KeepAlive, TxSubmission}` to
-  `Test.Ouroboros.Network.MiniProtocols.{BlockFetch, KeepAlive, TxSubmission}`.
-- Created `Test.Ouroboros.Network.PeerSelection.Cardano.Instances` and moved
-  Cardano specific types and type-class instances to here.
-- Created `Test.Ouroboros.Network.PeerSelection.Cardano.LocalRootPeers` and moved
-  Cardano local root peers specific tests to here
-- Moved `Test.Ouroboros.Network.PeerSelection.MockEnvironment` to
-  `Test.Ouroboros.Network.PeerSelection.Cardano.MockEnvironment`
-- Moved `Test.Ouroboros.Network.PeerSelection.PublicRootPeers` to
-  `Test.Ouroboros.Network.PeerSelection.Cardano.PublicRootPeers`
+## 0.20.0.0 -- 2025-02-25
 
 ### Breaking changes
 
@@ -182,6 +168,20 @@
 - `daForkPolicy` field added to `Ouroboros.Network.P2P.ArgumentsExtra`.
 
 ### Non-breaking changes
+
+- Renamed `Test.Ouroboros.Network.Testnet.*` to `Test.Ouroboros.Network.Diffusion.*`
+- Refactored tests to compile with library changes and made necessary changes
+  to work with the now polymorphic diffusion code.
+- Renamed `Test.Ouroboros.Network.{BlockFetch, KeepAlive, TxSubmission}` to
+  `Test.Ouroboros.Network.MiniProtocols.{BlockFetch, KeepAlive, TxSubmission}`.
+- Created `Test.Ouroboros.Network.PeerSelection.Cardano.Instances` and moved
+  Cardano specific types and type-class instances to here.
+- Created `Test.Ouroboros.Network.PeerSelection.Cardano.LocalRootPeers` and moved
+  Cardano local root peers specific tests to here
+- Moved `Test.Ouroboros.Network.PeerSelection.MockEnvironment` to
+  `Test.Ouroboros.Network.PeerSelection.Cardano.MockEnvironment`
+- Moved `Test.Ouroboros.Network.PeerSelection.PublicRootPeers` to
+  `Test.Ouroboros.Network.PeerSelection.Cardano.PublicRootPeers`
 
 ## 0.19.0.2 -- 2025-02-03
 
