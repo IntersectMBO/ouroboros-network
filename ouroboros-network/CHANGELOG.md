@@ -20,6 +20,10 @@
 - Removed `TracePublicRootResult` and `TracePublicRootFailure`
 - Changed signature of `resolveLedgerPeers`, `localRootPeersProvider`, `publicRootPeersProvider`,
   `withPeerSelectionActions` to accept random seed for DNS SRV lookup.
+- `TraceChurnMode` removed from `TracePeerSelection`
+- `ChurnMode` moved to new `cardano-diffusion` sublibrary
+- Created `cardano-diffusion` sublibrary with all cardano specific
+  implementation details.
 
 ## 0.20.0.0 -- 2025-02-25
 
