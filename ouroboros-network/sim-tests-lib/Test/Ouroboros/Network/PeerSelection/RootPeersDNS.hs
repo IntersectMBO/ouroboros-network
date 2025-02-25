@@ -472,7 +472,7 @@ mockResolveLedgerPeers tracer (MockRoots _ _ publicRootPeers dnsMapScript)
 data TestTraceEvent = RootPeerDNSLocal  (TraceLocalRootPeers () SockAddr Failure)
                     | LocalRootPeersResults [(HotValency, WarmValency, Map SockAddr (LocalRootConfig ()))]
                     | RootPeerDNSPublic TracePublicRootPeers
-  deriving (Show, Typeable)
+  deriving Show
 
 tracerTraceLocalRoots :: Tracer (IOSim s) (TraceLocalRootPeers () SockAddr Failure)
 tracerTraceLocalRoots = contramap RootPeerDNSLocal tracerTestTraceEvent

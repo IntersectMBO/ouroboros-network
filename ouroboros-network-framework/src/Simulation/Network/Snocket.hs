@@ -387,7 +387,6 @@ data ResourceException
                                         (Maybe SomeException)
 
 deriving instance Show ResourceException
-deriving instance Typeable ResourceException
 instance Exception ResourceException where
 
 

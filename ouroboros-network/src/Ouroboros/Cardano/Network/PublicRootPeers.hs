@@ -6,7 +6,6 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
-import Data.Typeable (Typeable)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.Types
 
@@ -15,7 +14,7 @@ data ExtraPeers peeraddr =
     { getPublicConfigPeers :: !(Map peeraddr PeerAdvertise)
     , getBootstrapPeers    :: !(Set peeraddr)
     }
-  deriving (Eq, Show, Typeable)
+  deriving (Eq, Show)
 
 instance Ord peeraddr => Semigroup (ExtraPeers peeraddr) where
   (ExtraPeers a b) <> (ExtraPeers a' b') =

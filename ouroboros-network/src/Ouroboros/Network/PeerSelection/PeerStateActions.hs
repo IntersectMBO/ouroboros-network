@@ -275,7 +275,7 @@ data MiniProtocolException = MiniProtocolException {
   deriving Show
 
 newtype MiniProtocolExceptions = MiniProtocolExceptions [MiniProtocolException]
-  deriving (Show, Typeable)
+  deriving Show
 
 instance Exception MiniProtocolExceptions
 
