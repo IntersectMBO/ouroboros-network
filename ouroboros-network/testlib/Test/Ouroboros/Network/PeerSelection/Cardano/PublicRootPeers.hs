@@ -20,9 +20,10 @@ import Test.Ouroboros.Network.PeerSelection.Instances
 import Test.Ouroboros.Network.Utils (ShrinkCarefully, prop_shrink_nonequal,
            prop_shrink_valid)
 
-import Ouroboros.Cardano.Network.ExtraRootPeers qualified as Cardano
-import Ouroboros.Cardano.Network.PublicRootPeers (CardanoPublicRootPeers)
-import Ouroboros.Cardano.Network.PublicRootPeers qualified as Cardano.PublicRootPeers
+import Ouroboros.Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
+import Ouroboros.Cardano.Network.PeerSelection.PublicRootPeers
+           (CardanoPublicRootPeers)
+import Ouroboros.Cardano.Network.PeerSelection.PublicRootPeers qualified as Cardano.PublicRootPeers
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers

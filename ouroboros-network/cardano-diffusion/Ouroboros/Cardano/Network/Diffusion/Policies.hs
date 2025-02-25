@@ -8,7 +8,7 @@ import Control.Concurrent.Class.MonadSTM.Strict
 import Data.List (sortOn)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
-import Ouroboros.Cardano.Network.Types (ChurnMode (..))
+import Ouroboros.Cardano.Network.PeerSelection.Churn (ChurnMode (..))
 import Ouroboros.Network.Diffusion.Policies (addRand, optionalMerge,
            simplePeerSelectionPolicy)
 import Ouroboros.Network.ExitPolicy

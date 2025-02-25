@@ -31,11 +31,11 @@ import Control.Exception (assert)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
-import Ouroboros.Cardano.Network.ExtraRootPeers qualified as Cardano
 import Ouroboros.Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
+import Ouroboros.Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionActions qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
-import Ouroboros.Cardano.Network.PublicRootPeers qualified as Cardano.PublicRootPeers
+import Ouroboros.Cardano.Network.PeerSelection.PublicRootPeers qualified as Cardano.PublicRootPeers
 import Ouroboros.Network.PeerSelection.Governor.ActivePeers
            (jobDemoteActivePeer)
 import Ouroboros.Network.PeerSelection.Governor.Monitor (jobVerifyPeerSnapshot)

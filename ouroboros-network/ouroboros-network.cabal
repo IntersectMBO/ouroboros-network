@@ -77,6 +77,7 @@ library
     Ouroboros.Network.PeerSelection
     Ouroboros.Network.PeerSelection.Churn
     Ouroboros.Network.PeerSelection.Governor
+    Ouroboros.Network.PeerSelection.Governor.ActivePeers
     Ouroboros.Network.PeerSelection.Governor.Monitor
     Ouroboros.Network.PeerSelection.Governor.Types
     Ouroboros.Network.PeerSelection.LedgerPeers
@@ -97,7 +98,6 @@ library
     Ouroboros.Network.TxSubmission.Inbound
     Ouroboros.Network.TxSubmission.Mempool.Reader
     Ouroboros.Network.TxSubmission.Outbound
-    Ouroboros.Network.PeerSelection.Governor.ActivePeers
 
   other-modules:
     Ouroboros.Network.Diffusion.Utils
@@ -184,27 +184,26 @@ library
   if flag(txsubmission-delay)
     cpp-options: -DTXSUBMISSION_DELAY
 
-library cardano-node
+library cardano-diffusion
   import: ghc-options
-  hs-source-dirs: cardano-node
+  visibility: public
+  hs-source-dirs: cardano-diffusion
   exposed-modules:
     Ouroboros.Cardano.Network.ArgumentsExtra
     Ouroboros.Cardano.Network.Diffusion.Configuration
     Ouroboros.Cardano.Network.Diffusion.Handlers
     Ouroboros.Cardano.Network.Diffusion.Policies
-    Ouroboros.Cardano.Network.ExtraRootPeers
+    Ouroboros.Cardano.Network.Diffusion.Topology
+    Ouroboros.Cardano.Network.Diffusion.Types
     Ouroboros.Cardano.Network.LedgerPeerConsensusInterface
-    Ouroboros.Cardano.Network.PeerSelection.Churn.ExtraArguments
+    Ouroboros.Cardano.Network.PeerSelection.Churn
+    Ouroboros.Cardano.Network.PeerSelection.ExtraRootPeers
     Ouroboros.Cardano.Network.PeerSelection.Governor.Monitor
     Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionActions
     Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState
     Ouroboros.Cardano.Network.PeerSelection.Governor.Types
-    Ouroboros.Cardano.Network.PublicRootPeers
-    Ouroboros.Cardano.Network.Types
-    Ouroboros.Cardano.Node.Topology
-    Ouroboros.Cardano.Node.Types
-    Ouroboros.Cardano.PeerSelection.Churn
-    Ouroboros.Cardano.PeerSelection.PeerSelectionActions
+    Ouroboros.Cardano.Network.PeerSelection.PeerSelectionActions
+    Ouroboros.Cardano.Network.PeerSelection.PublicRootPeers
 
   other-modules:
   reexported-modules:
@@ -235,7 +234,7 @@ library cardano-node
     TypeInType
 
   build-depends:
-    base >=4.14 && <4.21,
+    base >=4.14 && <4.22,
     containers,
     contra-tracer,
     dns,
@@ -243,8 +242,8 @@ library cardano-node
     monoidal-synchronisation,
     network ^>=3.2.7,
     ouroboros-network,
-    ouroboros-network-api ^>=0.12,
-    ouroboros-network-framework ^>=0.16,
+    ouroboros-network-api ^>=0.13,
+    ouroboros-network-framework ^>=0.17,
     random,
     si-timers,
     strict-stm,
@@ -285,7 +284,7 @@ library testlib
     network,
     network-mux,
     nothunks,
-    ouroboros-network:{ouroboros-network, cardano-node},
+    ouroboros-network:{ouroboros-network, cardano-diffusion},
     ouroboros-network-api,
     ouroboros-network-framework,
     ouroboros-network-framework:testlib,
