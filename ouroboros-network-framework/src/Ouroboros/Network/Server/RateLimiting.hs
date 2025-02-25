@@ -15,7 +15,6 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, traceWith)
 
-import Data.Typeable (Typeable)
 import Data.Word
 import Text.Printf
 
@@ -144,7 +143,7 @@ data AcceptConnectionsPolicyTrace
       = ServerTraceAcceptConnectionRateLimiting DiffTime Int
       | ServerTraceAcceptConnectionHardLimit Word32
       | ServerTraceAcceptConnectionResume Int
-  deriving (Eq, Ord, Typeable)
+  deriving (Eq, Ord)
 
 instance Show AcceptConnectionsPolicyTrace where
     show (ServerTraceAcceptConnectionRateLimiting delay numberOfConnections) =

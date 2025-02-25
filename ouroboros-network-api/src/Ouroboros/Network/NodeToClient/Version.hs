@@ -16,7 +16,6 @@ import Control.Monad ((>=>))
 import Data.Bits (clearBit, setBit, testBit)
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Typeable (Typeable)
 import GHC.Generics
 import Ouroboros.Network.CodecCBORTerm
 import Ouroboros.Network.Handshake.Acceptable (Accept (..), Acceptable (..))
@@ -53,7 +52,7 @@ data NodeToClientVersion
     -- ^ added @GetLedgerPeerSnapshot@
     | NodeToClientV_20
     -- ^ added @QueryStakePoolDefaultVote@
-  deriving (Eq, Ord, Enum, Bounded, Show, Typeable, Generic, NFData)
+  deriving (Eq, Ord, Enum, Bounded, Show, Generic, NFData)
 
 -- | We set 16ths bit to distinguish `NodeToNodeVersion` and
 -- `NodeToClientVersion`.  This way connecting wrong protocol suite will fail
@@ -106,7 +105,7 @@ data NodeToClientVersionData = NodeToClientVersionData
   { networkMagic :: !NetworkMagic
   , query        :: !Bool
   }
-  deriving (Eq, Show, Typeable)
+  deriving (Eq, Show)
 
 instance Acceptable NodeToClientVersionData where
     acceptableVersion local remote
