@@ -1071,6 +1071,7 @@ encodeInvalidMuxSDU sdu =
 prop_demux_sdu :: forall m.
                     ( Alternative (STM m)
                     , MonadAsync m
+                    , MonadDelay m
                     , MonadFork m
                     , MonadLabelledSTM m
                     , MonadMask m
@@ -1887,6 +1888,7 @@ close_experiment
     :: forall sock acc req resp m.
        ( Alternative (STM m)
        , MonadAsync       m
+       , MonadDelay       m
        , MonadFork        m
        , MonadLabelledSTM m
        , MonadMask        m
