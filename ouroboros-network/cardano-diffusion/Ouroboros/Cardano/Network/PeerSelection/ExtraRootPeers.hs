@@ -1,12 +1,12 @@
 {-# LANGUAGE NamedFieldPuns #-}
 
-module Ouroboros.Cardano.Network.ExtraRootPeers where
+module Ouroboros.Cardano.Network.PeerSelection.ExtraRootPeers where
 
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
-import Data.Typeable (Typeable)
+
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.Types
 
@@ -15,7 +15,7 @@ data ExtraPeers peeraddr =
     { publicConfigPeers :: !(Map peeraddr PeerAdvertise)
     , bootstrapPeers    :: !(Set peeraddr)
     }
-  deriving (Eq, Show, Typeable)
+  deriving (Eq, Show)
 
 instance Ord peeraddr => Semigroup (ExtraPeers peeraddr) where
   (ExtraPeers a b) <> (ExtraPeers a' b') =

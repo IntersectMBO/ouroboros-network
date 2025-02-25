@@ -16,15 +16,15 @@ import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM
 import Data.Set (Set)
 import Data.Set qualified as Set
-import Ouroboros.Cardano.Network.ExtraRootPeers qualified as Cardano
 import Ouroboros.Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
+import Ouroboros.Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.Monitor
            (monitorBootstrapPeersFlag, monitorLedgerStateJudgement,
            waitForSystemToQuiesce)
 import Ouroboros.Cardano.Network.PeerSelection.Governor.Monitor qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionActions qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
-import Ouroboros.Cardano.Network.PublicRootPeers qualified as Cardano.PublicRootPeers
+import Ouroboros.Cardano.Network.PeerSelection.PublicRootPeers qualified as Cardano.PublicRootPeers
 import Ouroboros.Network.PeerSelection.Governor (readAssociationMode)
 import Ouroboros.Network.PeerSelection.Governor.Types (AssociationMode (..),
            BootstrapPeersCriticalTimeoutError (..), ExtraGuardedDecisions (..),

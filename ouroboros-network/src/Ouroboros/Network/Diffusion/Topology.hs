@@ -1,6 +1,5 @@
-{-# LANGUAGE DisambiguateRecordFields #-}
-{-# LANGUAGE DuplicateRecordFields    #-}
-{-# LANGUAGE NamedFieldPuns           #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE NamedFieldPuns        #-}
 
 module Ouroboros.Network.Diffusion.Topology where
 
