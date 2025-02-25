@@ -6,6 +6,12 @@
 
 ### Non-breaking changes
 
+## 0.8.1.0 -- 2025-02-25
+
+### Non-breaking changes
+
+* Added `Test.Ouroboros.Network.Data.Signal.keydLinger'`.
+
 ## 0.8.0.0 -- 2025-01-02
 
 ### Breaking changes
