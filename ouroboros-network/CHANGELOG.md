@@ -170,6 +170,10 @@
   Cardano specific type.).
 - `LocalRootPeers` now has `extraFlags` type parameter.
 - `daForkPolicy` field added to `Ouroboros.Network.P2P.ArgumentsExtra`.
+- `TraceChurnMode` removed from `TracePeerSelection`
+- `ChurnMode` moved to new `cardano-diffusion` sublibrary
+- Created `cardano-diffusion` sublibrary with all cardano specific
+  implementation details.
 
 ### Non-breaking changes
 
@@ -206,7 +210,7 @@
 * APIs removed from `Ouroboros.Network.{NodeToClient,NodeToNode}` modules:
   * NetworkServerTracers
   * NetworkMutableState APIs
-  * withServer 
+  * withServer
   * ErrorPolicies
   * WithAddr
   * SuspendDecision
