@@ -25,7 +25,6 @@ module Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Simulation
     -- * Tracing
   , DiffusionTestTrace (..)
   , iosimTracer
-  , churnModeTracer
     -- * Re-exports
   , TestAddress (..)
   , RelayAccessPoint (..)
@@ -82,17 +81,17 @@ import Cardano.Network.Types (LedgerStateJudgement (..),
 import Ouroboros.Cardano.Network.ArgumentsExtra qualified as Cardano
 import Ouroboros.Cardano.Network.Diffusion.Configuration
            (defaultNumberOfBigLedgerPeers)
-import Ouroboros.Cardano.Network.ExtraRootPeers qualified as Cardano
 import Ouroboros.Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.Churn.ExtraArguments qualified as Churn
+import Ouroboros.Cardano.Network.PeerSelection.Churn (ChurnMode (..),
+           TracerChurnMode, peerChurnGovernor)
+import Ouroboros.Cardano.Network.PeerSelection.Churn qualified as Churn
+import Ouroboros.Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano hiding
            (consensusMode)
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as ExtraState
 import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as ExtraSizes
-import Ouroboros.Cardano.Network.Types (ChurnMode (..))
-import Ouroboros.Cardano.PeerSelection.Churn (peerChurnGovernor)
-import Ouroboros.Cardano.PeerSelection.PeerSelectionActions
+import Ouroboros.Cardano.Network.PeerSelection.PeerSelectionActions
            (requestPublicRootPeers)
 
 import Ouroboros.Network.Block (BlockNo)
@@ -143,8 +142,6 @@ import Ouroboros.Network.Snocket (Snocket, TestAddress (..))
 import Simulation.Network.Snocket (BearerInfo (..), FD, SnocketTrace,
            WithAddr (..), makeFDBearer, withSnocket)
 
-import Ouroboros.Cardano.Network.PeerSelection.Churn.ExtraArguments
-           (TracerChurnMode)
 import Test.Ouroboros.Network.Data.Script
 import Test.Ouroboros.Network.Diffusion.Node as Node
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..), genLedgerPoolsFrom)
@@ -941,6 +938,7 @@ data DiffusionTestTrace =
     | DiffusionInboundGovernorTrace (IG.Trace NtNAddr)
     | DiffusionServerTrace (Server.Trace NtNAddr)
     | DiffusionFetchTrace (TraceFetchClientState BlockHeader)
+    | DiffusionChurnModeTrace TracerChurnMode
     | DiffusionDebugTrace String
     deriving (Show)
 
@@ -976,14 +974,12 @@ diffusionSimulation
   => BearerInfo
   -> DiffusionScript
   -> Tracer m (WithTime (WithName NtNAddr DiffusionTestTrace))
-  -> Tracer m (WithTime (WithName NtNAddr TracerChurnMode))
   -- ^ timed trace of nodes in the system
   -> m Void
 diffusionSimulation
   defaultBearerInfo
   (DiffusionScript simArgs dnsMapScript nodeArgs)
-  nodeTracer
-  churnModeTracer = do
+  nodeTracer = do
     connStateIdSupply <- atomically $ CM.newConnStateIdSupply Proxy
     -- TODO: we should use `snocket` per node, this will allow us to set up
     -- bearer info per node
@@ -1224,8 +1220,8 @@ diffusionSimulation
             , Churn.genesisPeerTargets  = Cardano.genesisPeerTargets cardanoExtraArgs
             , Churn.readUseBootstrap    = Cardano.readUseBootstrapPeers cardanoExtraArgs
             , Churn.consensusMode       = consensusMode
-            , Churn.tracerChurnMode     = (\s -> WithTime (Time (-1)) (WithName addr s))
-                                            `contramap` churnModeTracer
+            , Churn.tracerChurnMode     = (\s -> WithTime (Time (-1)) (WithName addr (DiffusionChurnModeTrace s)))
+                                            `contramap` nodeTracer
             }
 
           arguments :: Node.Arguments (Churn.ExtraArguments m) PeerTrustable m
