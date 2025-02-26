@@ -29,6 +29,7 @@ import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 import Text.Printf
 
+import Ouroboros.Network.NodeToClient.Version qualified as V
 import Ouroboros.Network.Protocol.LocalTxMonitor.Type
 
 codecLocalTxMonitor ::
@@ -36,18 +37,23 @@ codecLocalTxMonitor ::
      ( MonadST m
      , ptcl ~ LocalTxMonitor txid tx slot
      )
-  => (txid -> CBOR.Encoding)
+  => V.NodeToClientVersion
+     -- ^ Whether to accept `MsgGetMeasures`
+  -> (txid -> CBOR.Encoding)
   -> (forall s. CBOR.Decoder s txid)
   -> (tx -> CBOR.Encoding)
   -> (forall s. CBOR.Decoder s tx)
   -> (slot -> CBOR.Encoding)
   -> (forall s. CBOR.Decoder s slot)
   -> Codec (LocalTxMonitor txid tx slot) CBOR.DeserialiseFailure m ByteString
-codecLocalTxMonitor encodeTxId decodeTxId
+codecLocalTxMonitor version
+                    encodeTxId decodeTxId
                     encodeTx   decodeTx
                     encodeSlot decodeSlot =
     mkCodecCborLazyBS encode decode
   where
+    canHandleMeasures = version >= V.NodeToClientV_20
+
     encode ::
          forall (st  :: ptcl) (st' :: ptcl).
          Message ptcl st st'
@@ -67,8 +73,15 @@ codecLocalTxMonitor encodeTxId decodeTxId
         CBOR.encodeListLen 2 <> CBOR.encodeWord 7 <> encodeTxId txid
       MsgGetSizes ->
         CBOR.encodeListLen 1 <> CBOR.encodeWord 9
-      MsgGetMeasures ->
-        CBOR.encodeListLen 1 <> CBOR.encodeWord 11
+      MsgGetMeasures
+        | canHandleMeasures ->
+            CBOR.encodeListLen 1 <> CBOR.encodeWord 11
+        | otherwise ->
+            error $ unwords
+              [ "encodeFailure: local tx monitor:"
+              , "MsgGetMeasures is only supported on NodeToClient"
+              , "versions >= v20"
+              ]
       MsgAcquired slot ->
         CBOR.encodeListLen 2 <> CBOR.encodeWord 2 <> encodeSlot slot
       MsgReplyNextTx Nothing ->
@@ -84,11 +97,18 @@ codecLocalTxMonitor encodeTxId decodeTxId
         <> CBOR.encodeWord32 (capacityInBytes sz)
         <> CBOR.encodeWord32 (sizeInBytes sz)
         <> CBOR.encodeWord32 (numberOfTxs sz)
-      MsgReplyGetMeasures measures ->
-           CBOR.encodeListLen 3
-        <> CBOR.encodeWord 12
-        <> CBOR.encodeWord32 (txCount measures)
-        <> encodeMeasureMap (measuresMap measures)
+      MsgReplyGetMeasures measures
+        | canHandleMeasures ->
+               CBOR.encodeListLen 3
+            <> CBOR.encodeWord 12
+            <> CBOR.encodeWord32 (txCount measures)
+            <> encodeMeasureMap (measuresMap measures)
+        | otherwise ->
+            error $ unwords
+              [ "encodeFailure: local tx monitor:"
+              , "MsgReplyGetMeasures is only supported on NodeToClient"
+              , "versions >= v20"
+              ]
 
     decode ::
          forall s (st :: ptcl).

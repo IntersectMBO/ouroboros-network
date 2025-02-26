@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 
@@ -301,6 +302,8 @@ localTxMonitorMessages =
   , AnyMessage (MsgReplyHasTx maxBound)
   , AnyMessage MsgGetSizes
   , AnyMessage (MsgReplyGetSizes (MempoolSizeAndCapacity maxBound maxBound maxBound))
+  , AnyMessage MsgGetMeasures
+  , AnyMessage (MsgReplyGetMeasures (MempoolMeasures maxBound (Map.singleton (MeasureName "example_measure") (SizeAndCapacity 0 0))))
   , AnyMessage LocalTxMonitor.MsgRelease
   , AnyMessage LocalTxMonitor.MsgDone
   ]

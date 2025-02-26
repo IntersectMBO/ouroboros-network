@@ -51,7 +51,8 @@ data NodeToClientVersion
     | NodeToClientV_19
     -- ^ added @GetLedgerPeerSnapshot@
     | NodeToClientV_20
-    -- ^ added @QueryStakePoolDefaultVote@
+    -- ^ added @QueryStakePoolDefaultVote@,
+    -- added @MsgGetMeasures@ / @MsgReplyGetMeasures@ to @LocalTxMonitor@
   deriving (Eq, Ord, Enum, Bounded, Show, Generic, NFData)
 
 -- | We set 16ths bit to distinguish `NodeToNodeVersion` and
