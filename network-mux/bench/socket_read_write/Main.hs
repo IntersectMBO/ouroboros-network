@@ -1,7 +1,8 @@
 {-# LANGUAGE BangPatterns      #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-import Control.Exception (bracket)
+{-# OPTIONS_GHC -fno-ignore-asserts #-}
+import Control.Exception (bracket, assert)
 import Control.Concurrent.Class.MonadSTM.Strict
 import Data.Functor (void)
 import Control.Monad (forever, replicateM_, when, unless)
@@ -40,52 +41,47 @@ totalPayloadLen sndSize = sndSize * numberOfPackets
 -- | Run a client that connects to the specified addr.
 -- Signals the message sndSize to the server by writing it
 -- in the provided TMVar.
-readBenchmark :: StrictTMVar IO Int64 -> Int64 -> Socket.SockAddr -> IO ()
-readBenchmark sndSizeV sndSize addr = do
+readBenchmark :: StrictTMVar IO Int64 -> Int64 -> SBearerBuffering buffer -> Socket.SockAddr -> IO ()
+readBenchmark sndSizeV sndSize singBuffer addr = do
   bracket
     (Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
     Socket.close
-    (\sd -> do
+  $ \sd -> do
       atomically $ putTMVar sndSizeV sndSize
       Socket.connect sd addr
-      withReadBufferIO (\buffer -> do
-        bearer <- getBearer makeSocketBearer sduTimeout activeTracer sd buffer
+      bearer <- getBearer makeSocketBearer sduTimeout activeTracer sd singBuffer
 
-        let chan = bearerAsChannel bearer (MiniProtocolNum 42) InitiatorDir
-        doRead (totalPayloadLen sndSize) chan 0
-       )
-    )
+      let chan = bearerAsChannel bearer (MiniProtocolNum 42) InitiatorDir
+      doRead (totalPayloadLen sndSize) chan 0
  where
    doRead :: Int64 -> ByteChannel IO -> Int64 -> IO ()
    doRead maxData _ cnt | cnt >= maxData = return ()
    doRead maxData chan !cnt = do
      msg_m <- recv chan
      case msg_m of
-          Just msg -> doRead maxData chan (cnt + BL.length msg)
+          Just msg -> assert (not . BL.null $ msg) doRead maxData chan (cnt + BL.length msg)
           Nothing -> error "doRead: nullread"
 
 -- Like readBenchmark but uses a demuxer thread
-readDemuxerBenchmark :: StrictTMVar IO Int64 -> Int64 -> Socket.SockAddr -> IO ()
-readDemuxerBenchmark sndSizeV sndSize addr = do
+readDemuxerBenchmark :: StrictTMVar IO Int64 -> Int64 -> SBearerBuffering buffering -> Socket.SockAddr -> IO ()
+readDemuxerBenchmark sndSizeV sndSize singBuffer addr = do
   bracket
     (Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
     Socket.close
-    (\sd -> do
+  $ \sd -> do
       atomically $ putTMVar sndSizeV sndSize
 
       Socket.connect sd addr
-      withReadBufferIO (\buffer -> do
-        bearer <- getBearer makeSocketBearer sduTimeout activeTracer sd buffer
-        ms42 <- mkMiniProtocolState 42
-        ms41 <- mkMiniProtocolState 41
-        withAsync (demuxer [ms41, ms42] bearer) $ \aid -> do
-          withAsync (doRead 42 (totalPayloadLen sndSize) (miniProtocolIngressQueue ms42) 0) $ \aid42 -> do
-            withAsync (doRead 41 (totalPayloadLen 10) (miniProtocolIngressQueue ms41) 0) $ \aid41 -> do
-              _ <- waitBoth aid42 aid41
-              cancel aid
-              return ()
-       )
-    )
+      bearer <- getBearer makeSocketBearer sduTimeout activeTracer sd singBuffer
+      ms42 <- mkMiniProtocolState 42
+      ms41 <- mkMiniProtocolState 41
+      withAsync (demuxer [ms41, ms42] bearer) $ \aid -> do
+        withAsync (doRead 42 (totalPayloadLen sndSize) (miniProtocolIngressQueue ms42) 0) $ \aid42 -> do
+          withAsync (doRead 41 (totalPayloadLen 10) (miniProtocolIngressQueue ms41) 0) $ \aid41 -> do
+            _ <- waitBoth aid42 aid41
+            cancel aid
+            return ()
+
  where
 
    mkMiniProtocolState num = do
@@ -115,39 +111,38 @@ readDemuxerBenchmark sndSizeV sndSize addr = do
 startServer :: StrictTMVar IO Int64 -> Socket -> IO ()
 startServer sndSizeV ad = forever $ do
     (sd, _) <- Socket.accept ad
-    withReadBufferIO (\buffer -> do
-      bearer <- getBearer makeSocketBearer sduTimeout activeTracer sd buffer
-      sndSize <- atomically $ takeTMVar sndSizeV
+    buffer <- SBuffered <$> newBearerIngressBuffer Nothing
+    bearer <- getBearer makeSocketBearer sduTimeout activeTracer sd buffer
+    sndSize <- atomically $ takeTMVar sndSizeV
 
-      let chan = bearerAsChannel bearer (MiniProtocolNum 42) ResponderDir
-          payload = BL.replicate sndSize 0xa5
-          maxData = totalPayloadLen sndSize
-          numberOfSdus = fromIntegral $ maxData `div` sndSize
-      replicateM_ numberOfSdus $ do
-        send chan payload
-     )
+    let chan = bearerAsChannel bearer (MiniProtocolNum 42) ResponderDir
+        payload = BL.replicate sndSize 0xa5
+        maxData = totalPayloadLen sndSize
+        numberOfSdus = fromIntegral $ maxData `div` sndSize
+    replicateM_ numberOfSdus $ do
+      send chan payload
+
 -- | Like startServer but it uses the `writeMany` function
 -- for vector IO.
 startServerMany :: StrictTMVar IO Int64 -> Socket -> IO ()
 startServerMany sndSizeV ad = forever $ do
     (sd, _) <- Socket.accept ad
-    withReadBufferIO (\buffer -> do
-      bearer <- getBearer makeSocketBearer sduTimeout activeTracer sd buffer
-      sndSize <- atomically $ takeTMVar sndSizeV
+    buffer <- SBuffered <$> newBearerIngressBuffer Nothing
+    bearer <- getBearer makeSocketBearer sduTimeout activeTracer sd buffer
+    sndSize <- atomically $ takeTMVar sndSizeV
 
-      let maxData = totalPayloadLen sndSize
-          numberOfSdus = fromIntegral $ maxData `div` sndSize
-          numberOfCalls = numberOfSdus `div` 10
-          runtSdus = numberOfSdus `mod` 10
+    let maxData = totalPayloadLen sndSize
+        numberOfSdus = fromIntegral $ maxData `div` sndSize
+        numberOfCalls = numberOfSdus `div` 10
+        runtSdus = numberOfSdus `mod` 10
 
-      withTimeoutSerial $ \timeoutFn -> do
-        replicateM_ numberOfCalls $ do
-          let sdus = replicate 10 $ wrap $ BL.replicate sndSize 0xa5
-          void $ writeMany bearer timeoutFn sdus
-        when (runtSdus > 0) $ do
-          let sdus = replicate runtSdus $ wrap $ BL.replicate sndSize 0xa5
-          void $ writeMany bearer timeoutFn sdus
-     )
+    withTimeoutSerial $ \timeoutFn -> do
+      replicateM_ numberOfCalls $ do
+        let sdus = replicate 10 $ wrap $ BL.replicate sndSize 0xa5
+        void $ writeMany bearer timeoutFn sdus
+      when (runtSdus > 0) $ do
+        let sdus = replicate runtSdus $ wrap $ BL.replicate sndSize 0xa5
+        void $ writeMany bearer timeoutFn sdus
  where
   -- wrap a 'ByteString' as 'SDU'
   wrap :: BL.ByteString -> SDU
@@ -169,43 +164,42 @@ startServerMany sndSizeV ad = forever $ do
 startServerEgresss :: StrictTMVar IO Int64 -> Socket -> IO ()
 startServerEgresss sndSizeV ad = forever $ do
     (sd, _) <- Socket.accept ad
-    withReadBufferIO (\buffer -> do
-      bearer <-getBearer makeSocketBearer sduTimeout activeTracer sd buffer
-      sndSize <- atomically $ takeTMVar sndSizeV
-      eq <- atomically $ newTBQueue 100
-      w42 <- newTVarIO BL.empty
-      w41 <- newTVarIO BL.empty
+    buffer <- SBuffered <$> newBearerIngressBuffer Nothing
+    bearer <- getBearer makeSocketBearer sduTimeout activeTracer sd buffer
+    sndSize <- atomically $ takeTMVar sndSizeV
+    eq <- atomically $ newTBQueue 100
+    w42 <- newTVarIO BL.empty
+    w41 <- newTVarIO BL.empty
 
-      let maxData = totalPayloadLen sndSize
-          numberOfSdus = fromIntegral $ maxData `div` sndSize
-          numberOfCalls = numberOfSdus `div` 10 :: Int
-          runtSdus = numberOfSdus `mod` 10 :: Int
+    let maxData = totalPayloadLen sndSize
+        numberOfSdus = fromIntegral $ maxData `div` sndSize
+        numberOfCalls = numberOfSdus `div` 10 :: Int
+        runtSdus = numberOfSdus `mod` 10 :: Int
 
-      withAsync (muxer eq bearer) $ \aid -> do
+    withAsync (muxer eq bearer) $ \aid -> do
 
-        replicateM_ numberOfCalls $ do
-          let payload42s = replicate 10 $ BL.replicate sndSize 42
-          let payload41s = replicate 10 $ BL.replicate 10 41
-          mapM_ (sendToMux w42 eq (MiniProtocolNum 42) ResponderDir) payload42s
-          mapM_ (sendToMux w41 eq (MiniProtocolNum 41) ResponderDir) payload41s
-        when (runtSdus > 0) $ do
-          let payload42s = replicate runtSdus $ BL.replicate sndSize 42
-          let payload41s = replicate runtSdus $ BL.replicate 10 41
-          mapM_ (sendToMux w42 eq (MiniProtocolNum 42) ResponderDir) payload42s
-          mapM_ (sendToMux w41 eq (MiniProtocolNum 41) ResponderDir) payload41s
+      replicateM_ numberOfCalls $ do
+        let payload42s = replicate 10 $ BL.replicate sndSize 42
+        let payload41s = replicate 10 $ BL.replicate 10 41
+        mapM_ (sendToMux w42 eq (MiniProtocolNum 42) ResponderDir) payload42s
+        mapM_ (sendToMux w41 eq (MiniProtocolNum 41) ResponderDir) payload41s
+      when (runtSdus > 0) $ do
+        let payload42s = replicate runtSdus $ BL.replicate sndSize 42
+        let payload41s = replicate runtSdus $ BL.replicate 10 41
+        mapM_ (sendToMux w42 eq (MiniProtocolNum 42) ResponderDir) payload42s
+        mapM_ (sendToMux w41 eq (MiniProtocolNum 41) ResponderDir) payload41s
 
-        -- Wait for the egress queue to empty
-        atomically $ do
-          r42 <- readTVar w42
-          r41 <- readTVar w42
-          unless (BL.null r42 || BL.null r41) retry
+      -- Wait for the egress queue to empty
+      atomically $ do
+        r42 <- readTVar w42
+        r41 <- readTVar w42
+        unless (BL.null r42 || BL.null r41) retry
 
-        -- when the client is done they will close the socket
-        -- and we will read zero bytes.
-        _ <- Socket.recv sd 128
+      -- when the client is done they will close the socket
+      -- and we will read zero bytes.
+      _ <- Socket.recv sd 128
 
-        cancel aid
-     )
+      cancel aid
   where
     sendToMux :: StrictTVar IO BL.ByteString -> EgressQueue IO -> MiniProtocolNum -> MiniProtocolDir
               -> BL.ByteString -> IO ()
@@ -253,25 +247,38 @@ main = do
         addr <- setupServer ad1
         addrM <- setupServer ad2
         addrE <- setupServer ad3
+        let bufferSize = 32768
+        putStrLn $ "Buffered runs using buffer size of " <> show bufferSize <> " bytes"
+        buffer <- SBuffered <$> newBearerIngressBuffer (Just bufferSize)
 
         withAsync (startServer sndSizeV ad1) $ \said -> do
           withAsync (startServerMany sndSizeMV ad2) $ \saidM -> do
             withAsync (startServerEgresss sndSizeEV ad3) $ \saidE -> do
               defaultMain [
                   -- Suggested Max SDU size for Socket bearer
-                  bench "Read/Write Benchmark 12288 byte SDUs"  $ nfIO $ readBenchmark sndSizeV 12288 addr
+                  bench "Read/Write Benchmark 12288 byte SDUs baseline"  $ nfIO $ readBenchmark sndSizeV 12288 SUnbuffered addr
                   -- Payload size for ChainSync's RequestNext
-                , bench "Read/Write Benchmark 914 byte SDUs"  $ nfIO $ readBenchmark sndSizeV 914 addr
-                -- Payload size for ChainSync's RequestNext
-                , bench "Read/Write Benchmark 10 byte SDUs"  $ nfIO $ readBenchmark sndSizeV 10 addr
+                , bench "Read/Write Benchmark 914 byte SDUs baseline"  $ nfIO $ readBenchmark sndSizeV 914 SUnbuffered addr
+                  -- Payload size for ChainSync's RequestNext
+                , bench "Read/Write Benchmark 10 byte SDUs baseline"  $ nfIO $ readBenchmark sndSizeV 10 SUnbuffered addr
+                  -- Suggested Max SDU size for Socket bearer
+                , bench "Read/Write Benchmark 12288 byte SDUs buffered"   $ nfIO $ readBenchmark sndSizeV 12288 buffer addr
+                  -- Payload size for ChainSync's RequestNext
+                , bench "Read/Write Benchmark 914 byte SDUs buffered"  $ nfIO $ readBenchmark sndSizeV 914 buffer addr
+                  -- Payload size for ChainSync's RequestNext
+                , bench "Read/Write Benchmark 10 byte SDUs buffered"  $ nfIO $ readBenchmark sndSizeV 10 buffer addr
 
                   -- Send batches of SDUs at the same time
-                , bench "Read/Write-Many Benchmark 12288 byte SDUs"  $ nfIO $ readBenchmark sndSizeMV 12288 addrM
-                , bench "Read/Write-Many Benchmark 914 byte SDUs"  $ nfIO $ readBenchmark sndSizeMV 914 addrM
-                , bench "Read/Write-Many Benchmark 10 byte SDUs"  $ nfIO $ readBenchmark sndSizeMV 10 addrM
+                , bench "Read/Write-Many Benchmark 12288 byte SDUs baseline"  $ nfIO $ readBenchmark sndSizeMV 12288 SUnbuffered addrM
+                , bench "Read/Write-Many Benchmark 914 byte SDUs baseline"  $ nfIO $ readBenchmark sndSizeMV 914 SUnbuffered addrM
+                , bench "Read/Write-Many Benchmark 10 byte SDUs baseline"  $ nfIO $ readBenchmark sndSizeMV 10 SUnbuffered addrM
+                , bench "Read/Write-Many Benchmark 12288 byte SDUs buffered"  $ nfIO $ readBenchmark sndSizeMV 12288 buffer addrM
+                , bench "Read/Write-Many Benchmark 914 byte SDUs buffered"  $ nfIO $ readBenchmark sndSizeMV 914 buffer addrM
+                , bench "Read/Write-Many Benchmark 10 byte SDUs baseline"  $ nfIO $ readBenchmark sndSizeMV 10 buffer addrM
 
                   -- Use standard muxer and demuxer
-                , bench "Read/Write Mux Benchmark 12288+10 byte SDUs"  $ nfIO $ readDemuxerBenchmark sndSizeEV 12288 addrE
+                , bench "Read/Write Mux Benchmark 12288+10 byte SDUs baseline"  $ nfIO $ readDemuxerBenchmark sndSizeEV 12288 SUnbuffered addrE
+                , bench "Read/Write Mux Benchmark 12288+10 byte SDUs buffered" $ nfIO $ readDemuxerBenchmark sndSizeEV 12288 SUnbuffered addrE
 
                 ]
               cancel said
