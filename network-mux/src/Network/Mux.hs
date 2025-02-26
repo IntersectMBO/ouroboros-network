@@ -48,6 +48,7 @@ module Network.Mux
   , WithBearer (..)
   ) where
 
+import Data.ByteString.Builder (lazyByteString, toLazyByteString)
 import Data.ByteString.Lazy qualified as BL
 import Data.Int (Int64)
 import Data.Map (Map)
@@ -143,7 +144,7 @@ mkMiniProtocolState :: MonadSTM m
                     => MiniProtocolInfo mode
                     -> m (MiniProtocolState mode m)
 mkMiniProtocolState miniProtocolInfo = do
-    miniProtocolIngressQueue <- newTVarIO BL.empty
+    miniProtocolIngressQueue <- newTVarIO (0, mempty)
     miniProtocolStatusVar    <- newTVarIO StatusIdle
     return MiniProtocolState {
        miniProtocolInfo,
@@ -325,7 +326,8 @@ miniProtocolJob tracer egressQueue
           `orElse` throwSTM (BlockedOnCompletionVar miniProtocolNum)
         case remainder of
           Just trailing ->
-            modifyTVar miniProtocolIngressQueue (BL.append trailing)
+            modifyTVar miniProtocolIngressQueue (\(l, b) ->
+              (l + BL.length trailing, b <> (lazyByteString trailing)))
           Nothing ->
             pure ()
 
@@ -615,8 +617,8 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
 
     checkNonEmptyQueue :: IngressQueue m -> STM m ()
     checkNonEmptyQueue q = do
-      buf <- readTVar q
-      check (not (BL.null buf))
+      (l, _) <- readTVar q
+      check (l /= 0)
 
     protocolKey :: MiniProtocolState mode m -> MiniProtocolKey
     protocolKey MiniProtocolState {
@@ -701,10 +703,10 @@ muxChannel tracer egressQueue want@(Wanton w) mc md q =
         -- matching ingress queue. This is the same queue the 'demux' thread writes to.
         traceWith tracer $ TraceChannelRecvStart mc
         blob <- atomically $ do
-            blob <- readTVar q
-            if blob == BL.empty
+            (l, blob) <- readTVar q
+            if l == 0
                 then retry
-                else writeTVar q BL.empty >> return blob
+                else writeTVar q (0, mempty) >> return (toLazyByteString blob)
         -- say $ printf "recv mid %s mode %s blob len %d" (show mid) (show md) (BL.length blob)
         traceWith tracer $ TraceChannelRecvEnd mc (fromIntegral $ BL.length blob)
         return $ Just blob
