@@ -7,10 +7,12 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+{-# OPTIONS_GHC -fno-ignore-asserts #-}
 module Network.Mux.Bearer.Socket
   ( socketAsBearerBuffered
   , socketAsBearer) where
 
+import Debug.Trace qualified as DT
 import Control.Exception hiding (throwIO, catch)
 import Control.Monad (when)
 import Control.Tracer
@@ -107,8 +109,9 @@ socketAsBearerBuffered sduSize batchSize
           Right header@Mx.SDU { Mx.msHeader } -> do
               traceWith tracer $ Mx.TraceRecvHeaderEnd msHeader
               bytesBuffer <- Mx.newBearerIngressBuffer . Just . fromIntegral $ Mx.mhLength msHeader
+              -- DT.traceIO $ "mhLength = " <> show (Mx.mhLength msHeader)
               !blob <- recvLen bytesBuffer
-
+              -- DT.traceIO "bye"
               !ts <- getMonotonicTime
               let !header' = header {Mx.msBlob = blob}
               traceWith tracer (Mx.TraceRecvDeltaQObservation msHeader ts)
@@ -124,15 +127,19 @@ socketAsBearerBuffered sduSize batchSize
           socketInfoRef = bibInfoRef
           recvLen' = do
             (_destStart, destLen, destPtr) <- readIORef destInfoRef
-            (srcStart, srcLen, srcPtr)     <- readIORef socketInfoRef
+            -- DT.traceIO $ "destLen= " <> show destLen
+            srcInfo@(srcStart, srcLen, srcPtr)     <- readIORef socketInfoRef
             if srcLen > 0 -- ^ grab data from buffer if available
               then do
-                let howMany = destSize - destLen `min` srcLen
+                -- DT.traceIO $ "srcInfo = " <> show srcInfo
+                -- DT.traceIO $ "destSize - destLen = " <> show (destSize - destLen)
+                let howMany = (destSize - destLen) `min` srcLen
                     srcInfo' = if srcLen == howMany
                                  then (0, 0, srcPtr)
                                  else (srcStart + howMany, srcLen - howMany, srcPtr)
                     destLen' = destLen + howMany
                     destInfo' = (0, destLen', destPtr)
+                -- DT.traceIO $ "howMany = " <> show howMany <> "\nsrcInfo' = " <> show srcInfo'
                 unsafeWithForeignPtr destPtr $ \destPtr' ->
                   unsafeWithForeignPtr srcPtr $ \srcPtr' -> do
                     let destPtr'' = plusPtr destPtr' destLen
@@ -141,7 +148,7 @@ socketAsBearerBuffered sduSize batchSize
                 writeIORef socketInfoRef srcInfo'
                 traceWith tracer $ Mx.TraceRecvEnd howMany
                 if destLen' == destSize
-                  then return . BL.fromStrict $ BS destPtr destLen
+                  then return . BL.fromStrict $ BS destPtr destSize
                   else writeIORef destInfoRef destInfo' >> recvLen'
               else
                 recv False False >> recvLen'
@@ -152,10 +159,12 @@ socketAsBearerBuffered sduSize batchSize
         let maxRead = if reservePermission
                         then bibSize - (start + len)
                         else (bibSize - fromIntegral hdrLength) - (start + len)
+
+        -- DT.traceIO $ "(start, len) = " <> show start <> "," <> show len <> "\nmaxRead = " <> show maxRead
         bytesRead <-
           assert (maxRead > 0) $
           withForeignPtr socketBufPtr $
-            \ptr -> Socket.recvBuf sd (plusPtr ptr len) maxRead
+            \ptr -> Socket.recvBuf sd (plusPtr ptr (start + len)) maxRead
 
         when (bytesRead == 0) do
           {- This may not be an error, but could be an orderly shutdown.
@@ -167,8 +176,10 @@ socketAsBearerBuffered sduSize batchSize
                   " closed when reading data, waiting on next header " ++
                   show waitingOnNxtHeader)
         traceWith tracer $ Mx.TraceRecvRaw bytesRead
+        let temp = (start, len + bytesRead, socketBufPtr)
+        -- DT.traceIO $ "temp = " <> show temp
         writeIORef bibInfoRef (start, len + bytesRead, socketBufPtr)
-        where
+        -- where
 #if !defined(mingw32_HOST_OS)
           -- Read at most `min rbSize maxLen` bytes from the socket
           -- into rbBuf.
