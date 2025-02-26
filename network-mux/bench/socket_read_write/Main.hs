@@ -14,6 +14,7 @@ import Data.Word
 import Network.Socket qualified as Socket
 import Network.Socket (Socket)
 import Network.Socket.ByteString.Lazy qualified as Socket (recv)
+import Data.ByteString.Builder (Builder, toLazyByteString)
 import Data.ByteString.Lazy qualified as BL
 import Test.Tasty.Bench
 
@@ -85,13 +86,13 @@ readDemuxerQueueBenchmark sndSizeV sndSize addr = do
        )
     )
  where
-   doRead :: Word8 -> Int64 -> StrictTVar IO BL.ByteString -> IO ()
+   doRead :: Word8 -> Int64 -> StrictTVar IO (Int64, Builder) -> IO ()
    doRead tag maxData queue = do
      msg <- atomically $ do
-       b <- readTVar queue
-       if BL.length b == maxData
+       (l,b) <- readTVar queue
+       if l == maxData
           then
-            return b
+            return (toLazyByteString b)
           else
             retry
      if BL.all ( == tag) msg
@@ -121,23 +122,23 @@ readDemuxerBenchmark sndSizeV sndSize addr = do
        )
     )
  where
-   doRead :: Word8 -> Int64 -> StrictTVar IO BL.ByteString -> Int64 -> IO ()
+   doRead :: Word8 -> Int64 -> StrictTVar IO (Int64, Builder) -> Int64 -> IO ()
    doRead _ maxData _ cnt | cnt >= maxData = return ()
    doRead tag maxData queue !cnt = do
      msg <- atomically $ do
-       b <- readTVar queue
-       if BL.null b
+       (l,b) <- readTVar queue
+       if l == 0
           then retry
           else do
-            writeTVar queue BL.empty
-            return b
+            writeTVar queue (0, mempty)
+            return (toLazyByteString b)
      if BL.all ( == tag) msg
         then doRead tag maxData queue (cnt + BL.length msg)
         else error "corrupt stream"
 
 mkMiniProtocolState :: MonadSTM m => Word16 -> m (MiniProtocolState 'InitiatorMode m)
 mkMiniProtocolState num = do
-  mpq <- newTVarIO BL.empty
+  mpq <- newTVarIO (0, mempty)
   mpv    <- newTVarIO StatusRunning
 
   let mpi = MiniProtocolInfo (MiniProtocolNum num) InitiatorDirectionOnly
@@ -304,11 +305,12 @@ main = do
                 , bench "Read/Write-Many Benchmark 10 byte SDUs"  $ nfIO $ readBenchmark sndSizeMV 10 addrM
 
                   -- Use standard muxer and demuxer
+                , bench "Read/Write Mux Benchmark 800+10 byte SDUs"  $ nfIO $ readDemuxerBenchmark sndSizeEV 800 addrE
                 , bench "Read/Write Mux Benchmark 12288+10 byte SDUs"  $ nfIO $ readDemuxerBenchmark sndSizeEV 12288 addrE
 
                   -- Use standard demuxer
-                -- , bench "Read/Write Demuxer Queuing Benchmark 10 byte SDUs"  $ nfIO $ readDemuxerQueueBenchmark sndSizeV 10 addr
-                -- , bench "Read/Write Demuxer Queuing Benchmark 256 byte SDUs"  $ nfIO $ readDemuxerQueueBenchmark sndSizeV 256 addr
+                , bench "Read/Write Demuxer Queuing Benchmark 10 byte SDUs"  $ nfIO $ readDemuxerQueueBenchmark sndSizeV 10 addr
+                , bench "Read/Write Demuxer Queuing Benchmark 256 byte SDUs"  $ nfIO $ readDemuxerQueueBenchmark sndSizeV 256 addr
                 ]
               cancel said
               cancel saidM
