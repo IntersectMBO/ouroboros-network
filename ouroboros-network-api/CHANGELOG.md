@@ -1,6 +1,6 @@
 # Revision history for ouroboros-network-api
 
-## next release
+## 0.13.0.0 -- 2025-02-25
 
 ### Breaking changes
 
@@ -14,8 +14,6 @@
   `Ouroboros.Network.PeerSelection.LedgerPeers/Type` to there.
 - Removed `lpGetLedgerStateJudgment` from `LedgerConsensusInterface` and added
   `extraAPI` type parameter to it.
-
-### Non-breaking changes
 
 ## 0.12.0.0 -- 2025-01-02
 

@@ -1,12 +1,10 @@
 # Revision history for ouroboros-network-framework
 
-## next release
+## 0.17.0.0 -- 2025-02-25
 
 ### Breaking changes
 
 *  Add `miniProtocolStart` to `MiniProtocol` to control starting strategy.
-
-### Non-breaking changes
 
 ## 0.16.0.0 -- 2025-02-03
 
