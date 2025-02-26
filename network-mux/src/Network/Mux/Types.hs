@@ -46,6 +46,7 @@ module Network.Mux.Types
 import Prelude hiding (read)
 
 import Control.Exception (Exception, SomeException)
+import Data.ByteString.Builder (Builder)
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
 import Data.Int
@@ -172,7 +173,7 @@ data Status
 -- Mux internal types
 --
 
-type IngressQueue m = StrictTVar m BL.ByteString
+type IngressQueue m = StrictTVar m (Int64, Builder)
 
 -- | The index of a protocol in a MuxApplication, used for array indices
 newtype MiniProtocolIx = MiniProtocolIx Int
