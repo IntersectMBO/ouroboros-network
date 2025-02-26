@@ -62,10 +62,11 @@ pureBearer f = \sduTimeout rb tr fd -> pure (f sduTimeout rb tr fd)
 
 makeSocketBearer :: MakeBearer IO Socket
 makeSocketBearer = MakeBearer $ (\sduTimeout tr fd rb -> do
-    batch <- getSocketOption fd SendBuffer
+    _batch <- getSocketOption fd SendBuffer
     return $ socketAsBearer size batch rb sduTimeout tr fd)
   where
     size = SDUSize 12_288
+    batch = 131_072
 
 withReadBufferIO :: (Maybe (ReadBuffer IO) -> IO b)
                  -> IO b
