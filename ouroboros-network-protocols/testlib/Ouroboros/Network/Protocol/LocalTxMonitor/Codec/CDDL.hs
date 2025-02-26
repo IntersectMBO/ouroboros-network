@@ -13,6 +13,7 @@ localTxMonitorCodec :: Codec (LocalTxMonitor TxId Tx SlotNo)
                             CBOR.DeserialiseFailure IO BL.ByteString
 localTxMonitorCodec =
     codecLocalTxMonitor
+      maxBound
       Serialise.encode Serialise.decode
       Serialise.encode Serialise.decode
       Serialise.encode Serialise.decode
