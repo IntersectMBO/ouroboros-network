@@ -66,21 +66,26 @@ data ExtraTracers (p2p :: P2P) extraState extraDebugState extraFlags extraPeers 
 
 -- | Diffusion arguments which depend on p2p mode.
 --
+-- TODO: do we need both `exception` and `resolverError`?
 data ArgumentsExtra
-       (p2p :: P2P) extraArgs extraState extraDebugState extraAPI
-       extraFlags extraPeers extraChurnArgs extraCounters exception ntnAddr ntcAddr resolver resolverError m where
+       (p2p :: P2P)
+       extraArgs extraState extraDebugState
+       extraFlags extraPeers extraAPI
+       extraChurnArgs extraCounters exception
+       ntnAddr ntcAddr
+       resolver resolverError m where
   P2PArguments
-    :: P2P.ArgumentsExtra extraState extraDebugState extraAPI
-                          extraFlags extraPeers extraChurnArgs
+    :: P2P.ArgumentsExtra extraState extraDebugState
+                          extraFlags extraPeers extraAPI extraChurnArgs
                           extraCounters exception ntnAddr ntcAddr resolver resolverError m
-    -> ArgumentsExtra 'P2P extraArgs extraState extraDebugState extraAPI
-                           extraFlags extraPeers extraChurnArgs
+    -> ArgumentsExtra 'P2P extraArgs extraState extraDebugState
+                           extraFlags extraPeers extraAPI extraChurnArgs
                            extraCounters exception ntnAddr ntcAddr resolver resolverError m
 
   NonP2PArguments
     :: NonP2P.ArgumentsExtra
-    -> ArgumentsExtra 'NonP2P extraArgs extraState extraDebugState extraAPI
-                              extraFlags extraPeers extraChurnArgs
+    -> ArgumentsExtra 'NonP2P extraArgs extraState extraDebugState
+                              extraFlags extraPeers extraAPI extraChurnArgs
                               extraCounters exception ntnAddr ntcAddr resolver resolverError m
 
 
@@ -126,10 +131,11 @@ run :: forall (p2p :: P2P) extraArgs extraState extraDebugState extraFlags
          IO
          Socket      RemoteAddress
          LocalSocket LocalAddress
-    -> ArgumentsExtra p2p extraArgs extraState extraDebugState
-       extraFlags extraPeers
-       extraAPI extraChurnArgs extraCounters exception
-       RemoteAddress LocalAddress Resolver IOException IO
+    -> ArgumentsExtra p2p
+         extraArgs extraState extraDebugState
+         extraFlags extraPeers extraAPI
+         extraChurnArgs extraCounters exception
+         RemoteAddress LocalAddress Resolver IOException IO
     -> Applications RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
                     LocalAddress  NodeToClientVersion NodeToClientVersionData
                     extraAPI IO a
