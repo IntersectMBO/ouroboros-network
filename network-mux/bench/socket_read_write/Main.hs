@@ -13,7 +13,6 @@ import Data.Word
 import Network.Socket qualified as Socket
 import Network.Socket (Socket)
 import Network.Socket.ByteString.Lazy qualified as Socket (recv)
-import Data.ByteString.Builder (Builder, toLazyByteString)
 import Data.ByteString.Lazy qualified as BL
 import Test.Tasty.Bench
 
@@ -90,7 +89,7 @@ readDemuxerBenchmark sndSizeV sndSize addr = do
  where
 
    mkMiniProtocolState num = do
-      mpq <- newTVarIO (0, mempty)
+      mpq <- newTVarIO BL.empty
       mpv    <- newTVarIO StatusRunning
 
       let mpi = MiniProtocolInfo (MiniProtocolNum num) InitiatorDirectionOnly
@@ -98,16 +97,16 @@ readDemuxerBenchmark sndSizeV sndSize addr = do
       return $ MiniProtocolState mpi mpq mpv
 
 
-   doRead :: Word8 -> Int64 -> StrictTVar IO (Int64, Builder) -> Int64 -> IO ()
+   doRead :: Word8 -> Int64 -> StrictTVar IO BL.ByteString -> Int64 -> IO ()
    doRead _ maxData _ cnt | cnt >= maxData = return ()
    doRead tag maxData queue !cnt = do
      msg <- atomically $ do
-       (l,b) <- readTVar queue
-       if l == 0
+       b <- readTVar queue
+       if BL.null b
           then retry
           else do
-            writeTVar queue (0, mempty)
-            return (toLazyByteString b)
+            writeTVar queue BL.empty
+            return b
      if BL.all ( == tag) msg
         then doRead tag maxData queue (cnt + BL.length msg)
         else error "corrupt stream"
@@ -272,7 +271,6 @@ main = do
                 , bench "Read/Write-Many Benchmark 10 byte SDUs"  $ nfIO $ readBenchmark sndSizeMV 10 addrM
 
                   -- Use standard muxer and demuxer
-                , bench "Read/Write Mux Benchmark 800+10 byte SDUs"  $ nfIO $ readDemuxerBenchmark sndSizeEV 800 addrE
                 , bench "Read/Write Mux Benchmark 12288+10 byte SDUs"  $ nfIO $ readDemuxerBenchmark sndSizeEV 12288 addrE
 
                 ]

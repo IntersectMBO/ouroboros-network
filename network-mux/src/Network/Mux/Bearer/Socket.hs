@@ -10,8 +10,6 @@ module Network.Mux.Bearer.Socket (socketAsBearer) where
 import Control.Monad (when)
 import Control.Tracer
 import Data.ByteString.Lazy qualified as BL
-import Data.ByteString.Builder
-import Data.ByteString.Builder.Internal (lazyByteStringThreshold)
 import Data.Int
 
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -85,23 +83,23 @@ socketAsBearer sduSize batchSize readBuffer_m sduTimeout tracer sd =
 
       recvRem :: BL.ByteString -> IO (Mx.SDU, Time)
       recvRem !h0 = do
-          hbuf <- recvLen' (Mx.msHeaderLength - BL.length h0) (lazyByteString h0)
-          case Mx.decodeSDU (toLazyByteString hbuf) of
+          hbuf <- recvLen' (Mx.msHeaderLength - BL.length h0) [h0]
+          case Mx.decodeSDU hbuf of
                Left  e ->  throwIO e
                Right header@Mx.SDU { Mx.msHeader } -> do
                    traceWith tracer $ Mx.TraceRecvHeaderEnd msHeader
-                   !blob <- recvLen' (fromIntegral $ Mx.mhLength msHeader) mempty
+                   !blob <- recvLen' (fromIntegral $ Mx.mhLength msHeader) []
 
                    !ts <- getMonotonicTime
-                   let !header' = header {Mx.msBlob = toLazyByteString blob}
+                   let !header' = header {Mx.msBlob = blob}
                    traceWith tracer (Mx.TraceRecvDeltaQObservation msHeader ts)
                    return (header', ts)
 
-      recvLen' ::  Int64 -> Builder -> IO Builder
-      recvLen' 0 bufs = return bufs
+      recvLen' ::  Int64 -> [BL.ByteString] -> IO BL.ByteString
+      recvLen' 0 bufs = return $ BL.concat $ reverse bufs
       recvLen' l bufs = do
           buf <- recvAtMost False l
-          recvLen' (l - BL.length buf) (bufs `mappend` (lazyByteStringThreshold 64 buf))
+          recvLen' (l - BL.length buf) (buf : bufs)
 
       recvAtMost :: Bool -> Int64 -> IO BL.ByteString
       recvAtMost waitingOnNxtHeader l = do

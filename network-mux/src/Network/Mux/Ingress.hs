@@ -12,7 +12,6 @@ module Network.Mux.Ingress
   ) where
 
 import Data.Array
-import Data.ByteString.Builder.Internal (lazyByteStringThreshold)
 import Data.ByteString.Lazy qualified as BL
 import Data.List (nub)
 
@@ -116,10 +115,9 @@ demuxer ptcls bearer =
                    throwIO (InitiatorOnly (msNum sdu))
       Just (MiniProtocolDispatchInfo q qMax) ->
         atomically $ do
-          (len, buf) <- readTVar q
-          let len' = len + BL.length (msBlob sdu)
-          if len' <= fromIntegral qMax
-              then writeTVar q $ (len', buf <> (lazyByteStringThreshold 64 $ msBlob sdu))
+          buf <- readTVar q
+          if BL.length buf + BL.length (msBlob sdu) <= fromIntegral qMax
+              then writeTVar q $ BL.append buf (msBlob sdu)
               else throwSTM $ IngressQueueOverRun (msNum sdu) (msDir sdu)
 
 lookupMiniProtocol :: MiniProtocolDispatch m
