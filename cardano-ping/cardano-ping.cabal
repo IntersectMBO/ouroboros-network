@@ -1,6 +1,6 @@
 cabal-version: 3.0
 name: cardano-ping
-version: 0.7.0.0
+version: 0.8.0.0
 synopsis: Utility for pinging cardano nodes
 description: Utility for pinging cardano nodes.
 license: Apache-2.0
@@ -33,7 +33,7 @@ library
     contra-tracer >=0.1 && <0.3,
     iproute ^>=1.7.15,
     network ^>=3.2.7,
-    network-mux ^>=0.6,
+    network-mux ^>=0.7,
     si-timers ^>=1.5,
     strict-stm,
     tdigest ^>=0.3,

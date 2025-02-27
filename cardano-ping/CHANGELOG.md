@@ -4,6 +4,12 @@
 
 ### Breaking changes
 
+### Non-breaking changes
+
+## 0.8.0.0 -- 2025-02-25
+
+### Breaking changes
+
 * Added `NodeToClientVersionV20`
 
 ## 0.7.0.0 -- 2024-10-17
