@@ -30,7 +30,7 @@ library
   build-depends:
     Win32-network >=0.1 && <0.3,
     async >=2.2 && <2.3,
-    base >=4.14 && <4.21,
+    base >=4.14 && <4.22,
     binary >=0.8 && <0.11,
     bytestring >=0.10 && <0.13,
     contra-tracer >=0.1 && <0.2,
@@ -63,7 +63,7 @@ test-suite test
   type: exitcode-stdio-1.0
   build-depends:
     QuickCheck,
-    base >=4.14 && <4.21,
+    base >=4.14 && <4.22,
     binary >=0.8 && <0.11,
     tasty,
     tasty-quickcheck,
@@ -89,7 +89,7 @@ executable demo-ntp-client
   build-depends:
     Win32-network >=0.1 && <0.3,
     async >=2.2 && <2.3,
-    base >=4.14 && <4.21,
+    base >=4.14 && <4.22,
     contra-tracer >=0.1 && <0.2,
     ntp-client,
 

@@ -155,7 +155,7 @@ library
 
   build-depends:
     async >=2.2 && <2.3,
-    base >=4.14 && <4.21,
+    base >=4.14 && <4.22,
     bytestring >=0.10 && <0.13,
     cardano-prelude,
     cardano-slotting,
@@ -209,7 +209,7 @@ library sim-tests-lib
     QuickCheck,
     aeson,
     array,
-    base >=4.14 && <4.21,
+    base >=4.14 && <4.22,
     bytestring,
     cardano-binary,
     cardano-slotting,
@@ -295,7 +295,7 @@ test-suite sim-tests
   hs-source-dirs: sim-tests
   main-is: Main.hs
   build-depends:
-    base >=4.14 && <4.21,
+    base >=4.14 && <4.22,
     ouroboros-network:sim-tests-lib,
     ouroboros-network-protocols:testlib,
     tasty,
@@ -326,7 +326,7 @@ test-suite io-tests
   default-extensions: ImportQualifiedPost
   build-depends:
     QuickCheck,
-    base >=4.14 && <4.21,
+    base >=4.14 && <4.22,
     bytestring,
     contra-tracer,
     io-classes,
@@ -367,7 +367,7 @@ executable demo-chain-sync
   main-is: chain-sync.hs
   build-depends:
     async,
-    base >=4.14 && <4.21,
+    base >=4.14 && <4.22,
     bytestring,
     containers,
     contra-tracer,

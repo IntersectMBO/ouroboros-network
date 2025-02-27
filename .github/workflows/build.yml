@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ghc: ["8.10.7", "9.6", "9.8", "9.10"]
+        ghc: ["8.10.7", "9.6", "9.8", "9.10", "9.12"]
         os: [windows-latest]
 
     env:

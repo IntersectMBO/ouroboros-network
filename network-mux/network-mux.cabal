@@ -49,7 +49,7 @@ library
     -- functions, see
     -- https://github.com/haskell/network/issues/484
     array >=0.5 && <0.6,
-    base >=4.14 && <4.21,
+    base >=4.14 && <4.22,
     binary >=0.8 && <0.11,
     bytestring >=0.10 && <0.13,
     containers >=0.5 && <0.8,
@@ -128,7 +128,7 @@ test-suite test
   build-depends:
     QuickCheck,
     Win32-network,
-    base >=4.14 && <4.21,
+    base >=4.14 && <4.22,
     binary,
     bytestring,
     cborg,
@@ -177,7 +177,7 @@ executable mux-demo
   main-is: mux-demo.hs
   other-modules: Test.Mux.ReqResp
   build-depends:
-    base >=4.14 && <4.21,
+    base >=4.14 && <4.22,
     bytestring,
     cborg,
     contra-tracer,
