@@ -7,13 +7,11 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-{-# OPTIONS_GHC -fno-ignore-asserts #-}
 module Network.Mux.Bearer.Socket
   ( socketAsBearerBuffered
   , socketAsBearer) where
 
-import Debug.Trace qualified as DT
-import Control.Exception hiding (throwIO, catch)
+import Control.Exception hiding (catch, throwIO)
 import Control.Monad (when)
 import Control.Tracer
 import Data.ByteString.Lazy qualified as BL
@@ -109,9 +107,7 @@ socketAsBearerBuffered sduSize batchSize
           Right header@Mx.SDU { Mx.msHeader } -> do
               traceWith tracer $ Mx.TraceRecvHeaderEnd msHeader
               bytesBuffer <- Mx.newBearerIngressBuffer . Just . fromIntegral $ Mx.mhLength msHeader
-              -- DT.traceIO $ "mhLength = " <> show (Mx.mhLength msHeader)
               !blob <- recvLen bytesBuffer
-              -- DT.traceIO "bye"
               !ts <- getMonotonicTime
               let !header' = header {Mx.msBlob = blob}
               traceWith tracer (Mx.TraceRecvDeltaQObservation msHeader ts)
@@ -122,24 +118,29 @@ socketAsBearerBuffered sduSize batchSize
             when x $ m >> while p m
 
       recvLen :: BearerIngressBuffer -> IO BL.ByteString
-      recvLen BearerIngressBuffer { bibSize = destSize, bibInfoRef = destInfoRef } = recvLen'
+      recvLen BearerIngressBuffer { bibSize = destSize, bibInfoRef = destInfoRef } =
+        modifyIORef' socketInfoRef skipHeader >> recvLen'
         where
           socketInfoRef = bibInfoRef
+
+          skipHeader (!start, !len, basePtr) =
+            let start' = start + fromIntegral hdrLength
+                len'   = len - fromIntegral hdrLength
+             in if len' == 0
+                   then (0, 0, basePtr)
+                   else (start', len', basePtr)
+
           recvLen' = do
             (_destStart, destLen, destPtr) <- readIORef destInfoRef
-            -- DT.traceIO $ "destLen= " <> show destLen
-            srcInfo@(srcStart, srcLen, srcPtr)     <- readIORef socketInfoRef
+            (srcStart, srcLen, srcPtr)     <- readIORef socketInfoRef
             if srcLen > 0 -- ^ grab data from buffer if available
               then do
-                -- DT.traceIO $ "srcInfo = " <> show srcInfo
-                -- DT.traceIO $ "destSize - destLen = " <> show (destSize - destLen)
                 let howMany = (destSize - destLen) `min` srcLen
                     srcInfo' = if srcLen == howMany
                                  then (0, 0, srcPtr)
                                  else (srcStart + howMany, srcLen - howMany, srcPtr)
                     destLen' = destLen + howMany
                     destInfo' = (0, destLen', destPtr)
-                -- DT.traceIO $ "howMany = " <> show howMany <> "\nsrcInfo' = " <> show srcInfo'
                 unsafeWithForeignPtr destPtr $ \destPtr' ->
                   unsafeWithForeignPtr srcPtr $ \srcPtr' -> do
                     let destPtr'' = plusPtr destPtr' destLen
@@ -150,17 +151,17 @@ socketAsBearerBuffered sduSize batchSize
                 if destLen' == destSize
                   then return . BL.fromStrict $ BS destPtr destSize
                   else writeIORef destInfoRef destInfo' >> recvLen'
-              else
+              else do
                 recv False False >> recvLen'
 
       recv :: Bool -> Bool -> IO ()
       recv waitingOnNxtHeader reservePermission = do
         (start, len, socketBufPtr) <- readIORef bibInfoRef
-        let maxRead = if reservePermission
+        let maxRead = if (   start + len + fromIntegral hdrLength - 1
+                          >= bibSize - fromIntegral hdrLength) && reservePermission
                         then bibSize - (start + len)
                         else (bibSize - fromIntegral hdrLength) - (start + len)
 
-        -- DT.traceIO $ "(start, len) = " <> show start <> "," <> show len <> "\nmaxRead = " <> show maxRead
         bytesRead <-
           assert (maxRead > 0) $
           withForeignPtr socketBufPtr $
@@ -176,8 +177,6 @@ socketAsBearerBuffered sduSize batchSize
                   " closed when reading data, waiting on next header " ++
                   show waitingOnNxtHeader)
         traceWith tracer $ Mx.TraceRecvRaw bytesRead
-        let temp = (start, len + bytesRead, socketBufPtr)
-        -- DT.traceIO $ "temp = " <> show temp
         writeIORef bibInfoRef (start, len + bytesRead, socketBufPtr)
         -- where
 #if !defined(mingw32_HOST_OS)

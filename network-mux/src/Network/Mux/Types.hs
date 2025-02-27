@@ -323,11 +323,11 @@ data BearerIngressBuffer = BearerIngressBuffer {
 
 newBearerIngressBuffer :: Maybe Word32 -> IO BearerIngressBuffer
 newBearerIngressBuffer mSize = do
-  ptr <- mallocByteString  bibSize
+  ptr <- mallocByteString bibSize
   bibInfoRef <- newIORef (0, 0, ptr)
   return BearerIngressBuffer { bibSize, bibInfoRef }
   where
-    bibSize = maybe 131072 fromIntegral mSize
+    bibSize = maybe 4096 fromIntegral mSize
 
 peekBearerBuffer :: BearerIngressBuffer -> IO ByteString
 peekBearerBuffer BearerIngressBuffer { bibInfoRef } = do
