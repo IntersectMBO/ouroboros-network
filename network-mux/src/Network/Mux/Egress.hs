@@ -161,7 +161,7 @@ muxer egressQueue Bearer { writeMany, sduSize, batchSize } =
 
   where
     loopInterval :: DiffTime
-    loopInterval = 0.005
+    loopInterval = 0.001
 
     maxSDUsPerBatch :: Int
     maxSDUsPerBatch = 100
