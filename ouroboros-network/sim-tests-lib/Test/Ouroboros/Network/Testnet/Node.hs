@@ -210,6 +210,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
             interfaces = Diff.P2P.Interfaces
               { Diff.P2P.diNtnSnocket            = iNtnSnocket ni
               , Diff.P2P.diNtnBearer             = iNtnBearer ni
+              , Diff.P2P.diWithBuffer            = \f -> f Nothing
               , Diff.P2P.diNtnConfigureSocket    = \_ _ -> return ()
               , Diff.P2P.diNtnConfigureSystemdSocket
                                                  = \_ _ -> return ()
