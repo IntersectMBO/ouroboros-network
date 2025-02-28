@@ -20,6 +20,8 @@ import Network.Socket qualified as Socket
 #if !defined(mingw32_HOST_OS)
 import Data.ByteString.Internal (create)
 import Foreign.Marshal.Utils
+import Network.Socket.ByteString qualified as Socket (sendMany)
+import Network.Socket.ByteString.Lazy qualified as Socket (recv, sendAll)
 #else
 import System.Win32.Async.Socket.ByteString.Lazy qualified as Win32.Async
 #endif
@@ -103,7 +105,7 @@ socketAsBearer sduSize batchSize readBuffer_m sduTimeout tracer sd =
           traceWith tracer $ Mx.TraceRecvStart $ fromIntegral l
 
           case readBuffer_m of
-               Nothing         -> -- No read buffer available; read directly from socket
+               Nothing -> -- No read buffer available; read directly from socket
                    recvFromSocket waitingOnNxtHeader l
                Just Mx.ReadBuffer{Mx.rbVar, Mx.rbSize} -> do
                    availableData <- atomically $ do
@@ -119,9 +121,19 @@ socketAsBearer sduSize batchSize readBuffer_m sduTimeout tracer sd =
 
                    if BL.null availableData
                       then do
+#if !defined(mingw32_HOST_OS)
                         -- Not data in buffer; read more from socket
+                        when (not waitingOnNxtHeader) $
+                          -- Don't let the kernel wake us up until there is
+                          -- at least l bytes of data.
+                          Socket.setSocketOption sd Socket.RecvLowWater $ fromIntegral l
+#endif
                         newBuf <- recvFromSocket waitingOnNxtHeader $ fromIntegral rbSize
                         atomically $ modifyTVar rbVar (`BL.append` newBuf)
+#if !defined(mingw32_HOST_OS)
+                        when (not waitingOnNxtHeader) $
+                          Socket.setSocketOption sd Socket.RecvLowWater 1
+#endif
                         recvAtMost waitingOnNxtHeader l
                       else do
                         traceWith tracer $ Mx.TraceRecvEnd $ fromIntegral $ BL.length availableData
