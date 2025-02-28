@@ -2927,7 +2927,7 @@ prop_diffusion_async_demotions ioSimTrace traceNumber =
 
           demotionOpportunitiesTooLong :: Signal (Set NtNAddr)
           demotionOpportunitiesTooLong =
-              Signal.keyedTimeout 1 id demotionOpportunities
+              Signal.keyedTimeout 10 id demotionOpportunities
 
       in signalProperty
             20 show Set.null

@@ -36,9 +36,11 @@ module Network.Mux.Types
   , msNum
   , msDir
   , msLength
+  , msHeaderLength
   , RemoteClockModel (..)
   , remoteClockPrecision
   , RuntimeError (..)
+  , ReadBuffer (..)
   ) where
 
 import Prelude hiding (read)
@@ -46,8 +48,10 @@ import Prelude hiding (read)
 import Control.Exception (Exception, SomeException)
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
+import Data.Int
 import Data.Ix (Ix (..))
 import Data.Word
+import Foreign.Ptr (Ptr)
 import Quiet
 
 import GHC.Generics (Generic)
@@ -221,6 +225,9 @@ msDir = mhDir . msHeader
 msLength :: SDU -> Word16
 msLength = mhLength . msHeader
 
+-- | Size of a MuxHeader in Bytes
+msHeaderLength :: Int64
+msHeaderLength = 8
 
 -- | Low level access to underlying socket or pipe.  There are three smart
 -- constructors:
@@ -232,10 +239,14 @@ msLength = mhLength . msHeader
 data Bearer m = Bearer {
     -- | Timestamp and send SDU.
       write   :: TimeoutFn m -> SDU -> m Time
+    -- | Timestamp and send many SDUs.
+    , writeMany   :: TimeoutFn m -> [SDU] -> m Time
     -- | Read a SDU
     , read    :: TimeoutFn m -> m (SDU, Time)
     -- | Return a suitable SDU payload size.
     , sduSize :: SDUSize
+    -- | Return a suitable batch size
+    , batchSize :: Int
     -- | Name of the bearer
     , name    :: String
     }
@@ -288,3 +299,9 @@ data RuntimeError =
   deriving Show
 
 instance Exception RuntimeError
+
+data ReadBuffer m = ReadBuffer {
+    rbVar :: StrictTVar m BL.ByteString
+  , rbBuf :: Ptr Word8
+  , rbSize :: Int
+  }
