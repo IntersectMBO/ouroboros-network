@@ -18,7 +18,16 @@ acquireFailurePointNotOnChain = 1
 failure      = acquireFailurePointTooOld
              / acquireFailurePointNotOnChain
 
-query        = any
+blockQuery      = [0, point]
+getSystemStart  = [1]
+getChainBlockNo = [2]
+getChainPoint   = [3]
+
+query        = blockQuery
+             / getSystemStart
+             / getChainBlockNo
+             / getChainPoint
+
 result       = any
 
 msgAcquire   = [0, point]
