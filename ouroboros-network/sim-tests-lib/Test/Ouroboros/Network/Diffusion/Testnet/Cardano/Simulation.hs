@@ -82,15 +82,15 @@ import Ouroboros.Cardano.Network.ArgumentsExtra qualified as Cardano
 import Ouroboros.Cardano.Network.Diffusion.Configuration
            (defaultNumberOfBigLedgerPeers)
 import Ouroboros.Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.Churn.ExtraArguments qualified as Churn
+import Ouroboros.Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano hiding
            (consensusMode)
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as ExtraState
 import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as ExtraSizes
-import Ouroboros.Cardano.Network.PublicRootPeers qualified as Cardano
-import Ouroboros.Cardano.Network.Types (ChurnMode (..))
-import Ouroboros.Cardano.PeerSelection.Churn (peerChurnGovernor)
+import Ouroboros.Cardano.PeerSelection.Churn (ChurnMode (..), TracerChurnMode,
+           peerChurnGovernor)
+import Ouroboros.Cardano.PeerSelection.Churn qualified as Churn
 import Ouroboros.Cardano.PeerSelection.PeerSelectionActions
            (requestPublicRootPeers)
 
@@ -973,12 +973,14 @@ diffusionSimulation
   => BearerInfo
   -> DiffusionScript
   -> Tracer m (WithTime (WithName NtNAddr DiffusionTestTrace))
+  -> Tracer m (WithTime (WithName NtNAddr TracerChurnMode))
   -- ^ timed trace of nodes in the system
   -> m Void
 diffusionSimulation
   defaultBearerInfo
   (DiffusionScript simArgs dnsMapScript nodeArgs)
-  nodeTracer = do
+  nodeTracer
+  churnModeTracer = do
     connStateIdSupply <- atomically $ CM.newConnStateIdSupply Proxy
     -- TODO: we should use `snocket` per node, this will allow us to set up
     -- bearer info per node
@@ -1219,6 +1221,8 @@ diffusionSimulation
             , Churn.genesisPeerTargets  = Cardano.genesisPeerTargets cardanoExtraArgs
             , Churn.readUseBootstrap    = Cardano.readUseBootstrapPeers cardanoExtraArgs
             , Churn.consensusMode       = consensusMode
+            , Churn.tracerChurnMode     = (\s -> WithTime (Time (-1)) (WithName addr s))
+                                            `contramap` churnModeTracer
             }
 
           arguments :: Node.Arguments (Churn.ExtraArguments m) PeerTrustable m
