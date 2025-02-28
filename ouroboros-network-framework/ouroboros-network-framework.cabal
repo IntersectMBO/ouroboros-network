@@ -66,7 +66,7 @@ library
   build-depends:
     -- ^ only to derive nothunk instances
     Win32-network ^>=0.2,
-    base >=4.12 && <4.21,
+    base >=4.12 && <4.22,
     bytestring >=0.10 && <0.13,
     cborg >=0.2.1 && <0.3,
     containers >=0.5 && <0.8,
@@ -121,7 +121,7 @@ library testlib
   other-modules:
   build-depends:
     QuickCheck,
-    base >=4.14 && <4.21,
+    base >=4.14 && <4.22,
     bytestring,
     cborg,
     containers,
@@ -168,7 +168,7 @@ test-suite sim-tests
 
   build-depends:
     QuickCheck,
-    base >=4.14 && <4.21,
+    base >=4.14 && <4.22,
     bytestring,
     cborg,
     containers,
@@ -236,7 +236,7 @@ test-suite io-tests
 
   build-depends:
     QuickCheck,
-    base >=4.14 && <4.21,
+    base >=4.14 && <4.22,
     bytestring,
     contra-tracer,
     directory,
@@ -281,7 +281,7 @@ executable demo-ping-pong
   main-is: ping-pong.hs
   build-depends:
     async,
-    base >=4.14 && <4.21,
+    base >=4.14 && <4.22,
     bytestring,
     contra-tracer,
     directory,
@@ -308,7 +308,7 @@ executable demo-connection-manager
   hs-source-dirs: demo
   main-is: connection-manager.hs
   build-depends:
-    base >=4.14 && <4.21,
+    base >=4.14 && <4.22,
     bytestring,
     contra-tracer,
     hashable,
