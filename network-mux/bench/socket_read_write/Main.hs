@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns      #-}
+{-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 import Control.Exception (bracket)
@@ -64,6 +65,39 @@ readBenchmark sndSizeV sndSize addr = do
           Just msg -> doRead maxData chan (cnt + BL.length msg)
           Nothing -> error "doRead: nullread"
 
+-- | Like readDemuxerBenchmark but it doesn't empty the ingress queue until
+-- all data has been sent.
+readDemuxerQueueBenchmark :: StrictTMVar IO Int64 -> Int64 -> Socket.SockAddr -> IO ()
+readDemuxerQueueBenchmark sndSizeV sndSize addr = do
+  bracket
+    (Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
+    Socket.close
+    (\sd -> do
+      atomically $ putTMVar sndSizeV sndSize
+
+      Socket.connect sd addr
+      withReadBufferIO (\buffer -> do
+        bearer <- getBearer makeSocketBearer sduTimeout activeTracer sd buffer
+        ms42 <- mkMiniProtocolState 42
+        withAsync (demuxer [ms42] bearer) $ \aid -> do
+          doRead 0xa5 (totalPayloadLen sndSize) (miniProtocolIngressQueue ms42)
+          cancel aid
+       )
+    )
+ where
+   doRead :: Word8 -> Int64 -> StrictTVar IO BL.ByteString -> IO ()
+   doRead tag maxData queue = do
+     msg <- atomically $ do
+       b <- readTVar queue
+       if BL.length b == maxData
+          then
+            return b
+          else
+            retry
+     if BL.all ( == tag) msg
+        then return ()
+        else error "corrupt stream"
+
 -- Like readBenchmark but uses a demuxer thread
 readDemuxerBenchmark :: StrictTMVar IO Int64 -> Int64 -> Socket.SockAddr -> IO ()
 readDemuxerBenchmark sndSizeV sndSize addr = do
@@ -87,16 +121,6 @@ readDemuxerBenchmark sndSizeV sndSize addr = do
        )
     )
  where
-
-   mkMiniProtocolState num = do
-      mpq <- newTVarIO BL.empty
-      mpv    <- newTVarIO StatusRunning
-
-      let mpi = MiniProtocolInfo (MiniProtocolNum num) InitiatorDirectionOnly
-                                 (MiniProtocolLimits maxBound)
-      return $ MiniProtocolState mpi mpq mpv
-
-
    doRead :: Word8 -> Int64 -> StrictTVar IO BL.ByteString -> Int64 -> IO ()
    doRead _ maxData _ cnt | cnt >= maxData = return ()
    doRead tag maxData queue !cnt = do
@@ -110,6 +134,15 @@ readDemuxerBenchmark sndSizeV sndSize addr = do
      if BL.all ( == tag) msg
         then doRead tag maxData queue (cnt + BL.length msg)
         else error "corrupt stream"
+
+mkMiniProtocolState :: MonadSTM m => Word16 -> m (MiniProtocolState 'InitiatorMode m)
+mkMiniProtocolState num = do
+  mpq <- newTVarIO BL.empty
+  mpv    <- newTVarIO StatusRunning
+
+  let mpi = MiniProtocolInfo (MiniProtocolNum num) InitiatorDirectionOnly
+                             (MiniProtocolLimits maxBound)
+  return $ MiniProtocolState mpi mpq mpv
 
 -- | Run a server that accept connections on `ad`.
 startServer :: StrictTMVar IO Int64 -> Socket -> IO ()
@@ -273,6 +306,9 @@ main = do
                   -- Use standard muxer and demuxer
                 , bench "Read/Write Mux Benchmark 12288+10 byte SDUs"  $ nfIO $ readDemuxerBenchmark sndSizeEV 12288 addrE
 
+                  -- Use standard demuxer
+                -- , bench "Read/Write Demuxer Queuing Benchmark 10 byte SDUs"  $ nfIO $ readDemuxerQueueBenchmark sndSizeV 10 addr
+                -- , bench "Read/Write Demuxer Queuing Benchmark 256 byte SDUs"  $ nfIO $ readDemuxerQueueBenchmark sndSizeV 256 addr
                 ]
               cancel said
               cancel saidM
