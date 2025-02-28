@@ -12,7 +12,7 @@ module Network.Mux.Ingress
   ) where
 
 import Data.Array
-import Data.ByteString.Builder.Internal (lazyByteStringThreshold)
+import Data.ByteString.Builder.Internal (lazyByteStringInsert, lazyByteStringThreshold)
 import Data.ByteString.Lazy qualified as BL
 import Data.List (nub)
 
@@ -119,7 +119,13 @@ demuxer ptcls bearer =
           (len, buf) <- readTVar q
           let len' = len + BL.length (msBlob sdu)
           if len' <= fromIntegral qMax
-              then writeTVar q $ (len', buf <> (lazyByteStringThreshold 64 $ msBlob sdu))
+              then do
+                let buf' = if len == 0
+                               then -- Don't copy the payload if the queue was empty
+                                 lazyByteStringInsert $ msBlob sdu
+                              else -- Copy payloads smaller than 128 bytes
+                                 buf <> (lazyByteStringThreshold 128 $ msBlob sdu)
+                writeTVar q $ (len', buf')
               else throwSTM $ IngressQueueOverRun (msNum sdu) (msDir sdu)
 
 lookupMiniProtocol :: MiniProtocolDispatch m
