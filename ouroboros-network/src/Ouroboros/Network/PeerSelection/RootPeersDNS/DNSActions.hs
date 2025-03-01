@@ -28,6 +28,7 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
   , DnsPeersKind (..)
   ) where
 
+import Data.ByteString.Char8 qualified as BS
 import Data.Foldable qualified as Fold
 import Data.Function (fix)
 import Data.List (sortOn)
@@ -388,7 +389,7 @@ srvRecordLookupWithTTL ofType tracer toPeerAddr peerType domainSRV resolveDNS rn
             traceWith tracer $ DnsTraceLookupError peerType Nothing domainSRV err
             return . Left $ [err]
           Right services -> do
-            let srvByPriority = sortOn priority services
+            let srvByPriority = filter ((BS.pack "." /=) . pickDomain) $ sortOn priority services
                 grouped       = NE.groupWith priority srvByPriority
             (result, domain) <- do
               case listToMaybe grouped of
@@ -409,6 +410,7 @@ srvRecordLookupWithTTL ofType tracer toPeerAddr peerType domainSRV resolveDNS rn
 
       where
         ipsttlsWithPort port ttl = map (\(ip, _ttl) -> (ip, fromIntegral port, ttl))
+
         runWeightedLookup :: NonEmpty (DNS.Domain, Word16, Word16, Word16, DNS.TTL)
                           -> m (Either [DNSError] [(IP, PortNumber, DNS.TTL)], DNS.Domain)
         runWeightedLookup services =
@@ -430,8 +432,9 @@ srvRecordLookupWithTTL ofType tracer toPeerAddr peerType domainSRV resolveDNS rn
             } <- answer
           ]
 
-        weight   (_, _, w, _, _) = w
-        priority (_, p, _, _, _) = p
+        weight   (_, _, w, _, _)   = w
+        priority (_, p, _, _, _)   = p
+        pickDomain (d, _, _, _, _) = d
 
 dispatchLookupWithTTL :: (MonadAsync m)
                       => DNSLookupType
