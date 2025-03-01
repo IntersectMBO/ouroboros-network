@@ -394,9 +394,9 @@ srvRecordLookupWithTTL ofType tracer toPeerAddr peerType domainSRV resolveDNS rn
               case listToMaybe grouped of
                 Just topPriority ->
                   case topPriority of
-                    (domain, _, _, port) NE.:| [] -> do -- fast path
+                    (domain, _, _, port, ttl) NE.:| [] -> do -- fast path
                       result <- domainLookupWithTTL tracer ofType domain peerType resolveDNS
-                      let result' = ipsttlsWithPort port <$> result
+                      let result' = ipsttlsWithPort port ttl <$> result
                       return (result', domain)
                     many -> -- general path
                       runWeightedLookup many
@@ -408,29 +408,30 @@ srvRecordLookupWithTTL ofType tracer toPeerAddr peerType domainSRV resolveDNS rn
             return $ map (\(ip, port, ttl) -> (toPeerAddr ip port, ttl)) <$> result
 
       where
-        ipsttlsWithPort port = map (\(ip, ttl) -> (ip, fromIntegral port, ttl))
-        runWeightedLookup :: NonEmpty (DNS.Domain, Word16, Word16, Word16)
+        ipsttlsWithPort port ttl = map (\(ip, _ttl) -> (ip, fromIntegral port, ttl))
+        runWeightedLookup :: NonEmpty (DNS.Domain, Word16, Word16, Word16, DNS.TTL)
                           -> m (Either [DNSError] [(IP, PortNumber, DNS.TTL)], DNS.Domain)
         runWeightedLookup services =
            let (upperBound, cdf) = Fold.foldl' aggregate (0, []) services
                mapCdf = Map.fromList cdf
                (pick, _) = randomR (0, upperBound) rng
-               (domain, _, _, port) = snd . fromJust $ Map.lookupGE pick mapCdf
-           in (,domain) . fmap (ipsttlsWithPort port) <$> domainLookupWithTTL tracer ofType domain peerType resolveDNS
+               (domain, _, _, port, ttl) = snd . fromJust $ Map.lookupGE pick mapCdf
+           in (,domain) . fmap (ipsttlsWithPort port ttl) <$> domainLookupWithTTL tracer ofType domain peerType resolveDNS
 
         aggregate (!upper, cdf) srv =
           let upper' = weight srv + upper
            in (upper', (upper', srv):cdf)
 
         selectSRV DNS.DNSMessage { DNS.answer } =
-          [ (domain', priority', weight', port)
+          [ (domain', priority', weight', port, ttl)
           | DNS.ResourceRecord {
-              DNS.rdata = DNS.RD_SRV priority' weight' port domain'
+              DNS.rdata = DNS.RD_SRV priority' weight' port domain',
+              DNS.rrttl = ttl
             } <- answer
           ]
 
-        weight   (_, _, w, _) = w
-        priority (_, p, _, _) = p
+        weight   (_, _, w, _, _) = w
+        priority (_, p, _, _, _) = p
 
 dispatchLookupWithTTL :: (MonadAsync m)
                       => DNSLookupType
