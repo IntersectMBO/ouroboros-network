@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
@@ -11,6 +12,7 @@ import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Serialization.CBOR
 import Cardano.KESAgent.Serialization.TextEnvelope
 import Cardano.KESAgent.Util.Pretty
+import Cardano.KESAgent.Priority
 
 import Cardano.Crypto.Libsodium (sodiumInit)
 import Cardano.Crypto.Libsodium.MLockedSeed
@@ -36,22 +38,24 @@ import qualified Data.Text as Text
 import Data.Text.Encoding (encodeUtf8)
 import qualified Data.Text.IO as Text
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
-import Network.Socket
+import Network.Socket hiding (Debug)
 import Options.Applicative
 import System.Directory
 import System.Environment
 import System.FilePath ((</>))
 import System.IO (hFlush, stdout)
 import System.IOManager
-import System.Posix.Daemonize
-import System.Posix.Files as Posix
-import System.Posix.Syslog.Priority as Syslog
-import System.Posix.Types as Posix
-import System.Posix.User as Posix
 import Text.Printf
 import Text.Read (readMaybe)
 import Toml (TomlCodec, (.=))
 import qualified Toml
+#if !defined(mingw32_HOST_OS)
+import System.Posix.Daemonize
+import System.Posix.Files as Posix
+import System.Posix.Types as Posix
+import System.Posix.User as Posix
+import System.Posix.Syslog.Priority
+#endif
 
 data NormalModeOptions
   = NormalModeOptions
@@ -81,7 +85,7 @@ defNormalModeOptions =
     { nmoServicePath = Just "/tmp/kes-agent-service.socket"
     , nmoControlPath = Just "/tmp/kes-agent-control.socket"
     , nmoBootstrapPaths = Set.empty
-    , nmoLogLevel = Just Syslog.Notice
+    , nmoLogLevel = Just Notice
     , nmoColdVerKeyFile = Nothing -- Just "./cold.vkey"
     , nmoGenesisFile = Nothing
     }
@@ -96,7 +100,7 @@ normalModeTomlCodec =
     <*> Toml.dioptional (Toml.string "control-path") .= nmoControlPath
     <*> Toml.arraySetOf Toml._String "bootstrap-paths" .= nmoBootstrapPaths
     <*> (Just <$> Toml.match (_ReadLogLevel >>> Toml._String) "log-level")
-      .= (fromMaybe Syslog.Notice . nmoLogLevel)
+      .= (fromMaybe Notice . nmoLogLevel)
     <*> Toml.dioptional (Toml.string "cold-vkey") .= nmoColdVerKeyFile
     <*> Toml.dioptional (Toml.string "genesis-file") .= nmoGenesisFile
 
@@ -248,13 +252,13 @@ pNormalModeOptions =
       )
 
 readLogLevel :: String -> Either String Priority
-readLogLevel "debug" = Right Syslog.Debug
-readLogLevel "info" = Right Syslog.Info
-readLogLevel "warn" = Right Syslog.Warning
-readLogLevel "notice" = Right Syslog.Notice
-readLogLevel "error" = Right Syslog.Error
-readLogLevel "critical" = Right Syslog.Critical
-readLogLevel "emergency" = Right Syslog.Emergency
+readLogLevel "debug" = Right Debug
+readLogLevel "info" = Right Info
+readLogLevel "warn" = Right Warning
+readLogLevel "notice" = Right Notice
+readLogLevel "error" = Right Error
+readLogLevel "critical" = Right Critical
+readLogLevel "emergency" = Right Emergency
 readLogLevel x = Left $ "Invalid log level " ++ show x
 
 _ReadLogLevel :: Toml.TomlBiMap Priority String
@@ -392,51 +396,47 @@ getConfigPaths = do
     ]
 
 agentTracePrio :: AgentTrace -> Priority
-agentTracePrio AgentVersionHandshakeDriverTrace {} = Syslog.Debug
-agentTracePrio AgentServiceVersionHandshakeFailed {} = Syslog.Warning
-agentTracePrio AgentControlVersionHandshakeFailed {} = Syslog.Warning
-agentTracePrio AgentServiceDriverTrace {} = Syslog.Debug
-agentTracePrio AgentControlDriverTrace {} = Syslog.Debug
-agentTracePrio (AgentBootstrapTrace ServiceClientVersionHandshakeTrace {}) = Syslog.Debug
-agentTracePrio (AgentBootstrapTrace ServiceClientVersionHandshakeFailed {}) = Syslog.Error
-agentTracePrio (AgentBootstrapTrace ServiceClientDriverTrace {}) = Syslog.Debug
-agentTracePrio (AgentBootstrapTrace ServiceClientSocketClosed {}) = Syslog.Notice
-agentTracePrio (AgentBootstrapTrace ServiceClientConnected {}) = Syslog.Notice
-agentTracePrio (AgentBootstrapTrace ServiceClientAttemptReconnect {}) = Syslog.Info
-agentTracePrio (AgentBootstrapTrace ServiceClientReceivedKey {}) = Syslog.Notice
-agentTracePrio (AgentBootstrapTrace ServiceClientAbnormalTermination {}) = Syslog.Error
-agentTracePrio (AgentBootstrapTrace ServiceClientOpCertNumberCheck {}) = Syslog.Debug
-agentTracePrio AgentReplacingPreviousKey {} = Syslog.Notice
-agentTracePrio AgentRejectingKey {} = Syslog.Warning
-agentTracePrio AgentInstallingNewKey {} = Syslog.Notice
-agentTracePrio AgentSkippingOldKey {} = Syslog.Info
-agentTracePrio AgentServiceSocketClosed {} = Syslog.Notice
-agentTracePrio AgentListeningOnServiceSocket {} = Syslog.Notice
-agentTracePrio AgentServiceClientConnected {} = Syslog.Notice
-agentTracePrio AgentServiceClientDisconnected {} = Syslog.Notice
-agentTracePrio AgentServiceSocketError {} = Syslog.Error
-agentTracePrio AgentControlSocketClosed {} = Syslog.Notice
-agentTracePrio AgentListeningOnControlSocket {} = Syslog.Notice
-agentTracePrio AgentControlClientConnected {} = Syslog.Notice
-agentTracePrio AgentControlClientDisconnected {} = Syslog.Notice
-agentTracePrio AgentControlSocketError {} = Syslog.Error
-agentTracePrio AgentCheckEvolution {} = Syslog.Info
-agentTracePrio AgentUpdateKESPeriod {} = Syslog.Notice
-agentTracePrio AgentKeyNotEvolved {} = Syslog.Info
-agentTracePrio AgentNoKeyToEvolve {} = Syslog.Info
-agentTracePrio AgentKeyEvolved {} = Syslog.Notice
-agentTracePrio AgentKeyExpired {} = Syslog.Warning
-agentTracePrio AgentLockRequest {} = Syslog.Debug
-agentTracePrio AgentLockAcquired {} = Syslog.Debug
-agentTracePrio AgentLockReleased {} = Syslog.Debug
-agentTracePrio AgentCRefEvent {} = Syslog.Debug
+agentTracePrio AgentVersionHandshakeDriverTrace {} = Debug
+agentTracePrio AgentServiceVersionHandshakeFailed {} = Warning
+agentTracePrio AgentControlVersionHandshakeFailed {} = Warning
+agentTracePrio AgentServiceDriverTrace {} = Debug
+agentTracePrio AgentControlDriverTrace {} = Debug
+agentTracePrio (AgentBootstrapTrace ServiceClientVersionHandshakeTrace {}) = Debug
+agentTracePrio (AgentBootstrapTrace ServiceClientVersionHandshakeFailed {}) = Error
+agentTracePrio (AgentBootstrapTrace ServiceClientDriverTrace {}) = Debug
+agentTracePrio (AgentBootstrapTrace ServiceClientSocketClosed {}) = Notice
+agentTracePrio (AgentBootstrapTrace ServiceClientConnected {}) = Notice
+agentTracePrio (AgentBootstrapTrace ServiceClientAttemptReconnect {}) = Info
+agentTracePrio (AgentBootstrapTrace ServiceClientReceivedKey {}) = Notice
+agentTracePrio (AgentBootstrapTrace ServiceClientAbnormalTermination {}) = Error
+agentTracePrio (AgentBootstrapTrace ServiceClientOpCertNumberCheck {}) = Debug
+agentTracePrio AgentReplacingPreviousKey {} = Notice
+agentTracePrio AgentRejectingKey {} = Warning
+agentTracePrio AgentInstallingNewKey {} = Notice
+agentTracePrio AgentSkippingOldKey {} = Info
+agentTracePrio AgentServiceSocketClosed {} = Notice
+agentTracePrio AgentListeningOnServiceSocket {} = Notice
+agentTracePrio AgentServiceClientConnected {} = Notice
+agentTracePrio AgentServiceClientDisconnected {} = Notice
+agentTracePrio AgentServiceSocketError {} = Error
+agentTracePrio AgentControlSocketClosed {} = Notice
+agentTracePrio AgentListeningOnControlSocket {} = Notice
+agentTracePrio AgentControlClientConnected {} = Notice
+agentTracePrio AgentControlClientDisconnected {} = Notice
+agentTracePrio AgentControlSocketError {} = Error
+agentTracePrio AgentCheckEvolution {} = Info
+agentTracePrio AgentUpdateKESPeriod {} = Notice
+agentTracePrio AgentKeyNotEvolved {} = Info
+agentTracePrio AgentNoKeyToEvolve {} = Info
+agentTracePrio AgentKeyEvolved {} = Notice
+agentTracePrio AgentKeyExpired {} = Warning
+agentTracePrio AgentLockRequest {} = Debug
+agentTracePrio AgentLockAcquired {} = Debug
+agentTracePrio AgentLockReleased {} = Debug
+agentTracePrio AgentCRefEvent {} = Debug
 
 agentTraceFormatBS :: AgentTrace -> ByteString
 agentTraceFormatBS = encodeUtf8 . Text.pack . pretty
-
-syslogAgentTracer :: Tracer IO AgentTrace
-syslogAgentTracer = Tracer $ \event ->
-  syslog (agentTracePrio event) (agentTraceFormatBS event)
 
 stdoutAgentTracer :: Priority -> MVar IO () -> Tracer IO AgentTrace
 stdoutAgentTracer maxPrio lock = Tracer $ \msg -> do
@@ -451,11 +451,28 @@ stdoutAgentTracer maxPrio lock = Tracer $ \msg -> do
         (pretty msg)
       hFlush stdout
 
+#if defined(mingw32_HOST_OS)
+-- Windows OS - no syslog available.
+-- TODO: find a reasonable default logging target for Windows
+defaultAgentTracer :: Tracer IO AgentTrace
+defaultAgentTracer = nullTracer
+#else
+syslogAgentTracer :: Tracer IO AgentTrace
+syslogAgentTracer = Tracer $ \event ->
+  syslog (agentTracePrio event) (agentTraceFormatBS event)
+
+defaultAgentTracer :: Tracer IO AgentTrace
+defaultAgentTracer = syslogAgentTracer
+#endif
+
 runAsService :: Maybe FilePath -> ServiceModeOptions -> IO ()
 runAsService configPathMay smo' =
+#if defined(mingw32_HOST_OS)
+  error "Running as a service is not supported on Windows"
+#else
   go
     `catch` ( \(e :: SomeException) ->
-                syslog Syslog.Critical (encodeUtf8 . Text.pack $ show e)
+                syslog Critical (encodeUtf8 . Text.pack $ show e)
             )
   where
     go :: IO ()
@@ -485,7 +502,7 @@ runAsService configPathMay smo' =
                   (Proxy @StandardCrypto)
                   (socketSnocket ioManager)
                   makeSocketRawBearer
-                  agentOptions {agentTracer = syslogAgentTracer}
+                  agentOptions {agentTracer = defaultAgentTracer}
               setOwnerAndGroup servicePath uid gid
               setOwnerAndGroup controlPath uid gid
               return agent
@@ -493,6 +510,7 @@ runAsService configPathMay smo' =
               runAgent agent `finally` finalizeAgent agent
           , group = Just groupName
           }
+#endif
 
 runNormally :: Maybe FilePath -> NormalModeOptions -> IO ()
 runNormally configPathMay nmo' = withIOManager $ \ioManager -> do

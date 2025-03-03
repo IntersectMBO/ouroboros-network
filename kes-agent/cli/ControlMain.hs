@@ -48,7 +48,6 @@ import System.Environment
 import System.Exit
 import System.IO (hFlush, hPutStrLn, stderr, stdout)
 import System.IOManager
-import System.Posix.Syslog.Priority as Syslog
 import Text.Printf
 import Text.Read (readMaybe)
 

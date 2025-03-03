@@ -15,6 +15,7 @@ import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Protocols.Types
 import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting
+import Cardano.KESAgent.Priority
 
 import Cardano.Crypto.KES.Class
 import Cardano.Crypto.Libsodium (sodiumInit)
@@ -36,12 +37,11 @@ import Data.Proxy (Proxy (..))
 import qualified Data.Text as Text
 import Data.Text.Encoding (encodeUtf8)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
-import Network.Socket
+import Network.Socket hiding (Debug)
 import Options.Applicative
 import System.Environment
 import System.IO (hFlush, stdout)
 import System.IOManager
-import System.Posix.Syslog.Priority as Syslog
 import Text.Printf
 
 data ServiceDemoOptions
@@ -89,15 +89,15 @@ sdoToServiceClientOptions ioManager sdo = do
       }
 
 serviceTracePrio :: ServiceClientTrace -> Priority
-serviceTracePrio ServiceClientVersionHandshakeTrace {} = Syslog.Debug
-serviceTracePrio ServiceClientDriverTrace {} = Syslog.Debug
-serviceTracePrio ServiceClientVersionHandshakeFailed {} = Syslog.Error
-serviceTracePrio ServiceClientSocketClosed {} = Syslog.Notice
-serviceTracePrio ServiceClientConnected {} = Syslog.Notice
-serviceTracePrio ServiceClientAttemptReconnect {} = Syslog.Info
-serviceTracePrio ServiceClientReceivedKey {} = Syslog.Notice
-serviceTracePrio ServiceClientAbnormalTermination {} = Syslog.Error
-serviceTracePrio ServiceClientOpCertNumberCheck {} = Syslog.Debug
+serviceTracePrio ServiceClientVersionHandshakeTrace {} = Debug
+serviceTracePrio ServiceClientDriverTrace {} = Debug
+serviceTracePrio ServiceClientVersionHandshakeFailed {} = Error
+serviceTracePrio ServiceClientSocketClosed {} = Notice
+serviceTracePrio ServiceClientConnected {} = Notice
+serviceTracePrio ServiceClientAttemptReconnect {} = Info
+serviceTracePrio ServiceClientReceivedKey {} = Notice
+serviceTracePrio ServiceClientAbnormalTermination {} = Error
+serviceTracePrio ServiceClientOpCertNumberCheck {} = Debug
 
 serviceTraceFormatBS :: ServiceClientTrace -> ByteString
 serviceTraceFormatBS = encodeUtf8 . Text.pack . pretty
@@ -149,7 +149,7 @@ main = do
   withIOManager $ \ioManager -> do
     serviceClientOptions <- sdoToServiceClientOptions ioManager sdo
     logLock <- newMVar ()
-    let maxPrio = Syslog.Debug
+    let maxPrio = Debug
     let tracer = stdoutStringTracer maxPrio logLock
     forever $ do
       runServiceClient
@@ -162,6 +162,6 @@ main = do
                     return ()
                 )
         `catch` ( \(e :: SomeException) ->
-                    traceWith tracer (Syslog.Emergency, show e)
+                    traceWith tracer (Emergency, show e)
                 )
       threadDelay 10000000

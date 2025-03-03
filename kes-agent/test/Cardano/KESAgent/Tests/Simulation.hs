@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
@@ -147,12 +148,15 @@ import System.IO.Error (ioeGetErrorType, isDoesNotExistErrorType)
 import System.IO.Unsafe
 import System.IOManager
 import System.Random
-import System.Socket.Family.Unix
 import Test.Crypto.Instances
 import Test.QuickCheck (Arbitrary (..), vectorOf)
 import Test.Tasty
 import Test.Tasty.QuickCheck
 import Text.Printf (printf)
+
+#if !defined(mingw32_HOST_OS)
+import System.Socket.Family.Unix
+#endif
 
 tests ::
   Lock IO ->
@@ -262,8 +266,6 @@ testCrypto proxyC lock tracer ioManager =
         ]
     ]
   where
-    ioMkAddr i = SockAddrUnix $ "./local" ++ show i
-
     name =
       Text.unpack
         . decodeUtf8
@@ -345,10 +347,20 @@ withTestAddressIO a =
     mkAddrName i = "./local" ++ show i
 
     mkAddr :: Word -> SockAddr
+#if defined(mingw32_HOST_OS)
+    mkAddr i = SockAddrInet (fromIntegral i + 1024) (tupleToHostAddress (127, 0, 0, 0))
+#else
     mkAddr i = SockAddrUnix $ mkAddrName i
+#endif
 
     cleanup :: Word -> IO ()
+#if defined(mingw32_HOST_OS)
+    -- On Windows, we use a local TCP socket, so no cleanup required.
+    cleanup _ = return ()
+#else
     cleanup seed = do
+      -- On POSIX, we use domain sockets, so we delete the socket when we're
+      -- done.
       -- putStrLn $ "rm " ++ mkAddrName seed
       removeFile (mkAddrName seed)
         `catch` ( \e ->
@@ -358,6 +370,7 @@ withTestAddressIO a =
                       else do
                         throwIO e
                 )
+#endif
 
 withTestAddressIOSim ::
   forall s a. AddressPool (IOSim s) -> (TestAddress Int -> IOSim s a) -> IOSim s a
