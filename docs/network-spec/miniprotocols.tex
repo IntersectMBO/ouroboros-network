@@ -499,6 +499,41 @@ Messages of the protocol:
 \end{table}
 }
 
+\subsection{Size limits per state}
+
+These bounds limit how many bytes can be sent in a given state; indirectly, this
+limits the payload size of each message.  If a space limit is violated, the
+connection SHOULD be torn down.
+
+\begin{table}[h!]
+  \begin{center}
+    \begin{tabular}{l|r}
+      \header{state} & \header{size limit in bytes} \\\hline
+      \StPropose & \texttt{5760} \\
+      \StConfirm & \texttt{5760} \\
+    \end{tabular}
+    % \caption{size limits per state}
+    \label{table:handshake-size-limits}
+  \end{center}
+\end{table}
+
+\subsection{Timeouts per state}
+
+These limits bound how much time the receiver side can wait for the arrival of
+a message.  If a timeout is violated, the connection SHOULD be torn down.
+
+\begin{table}[h!]
+  \begin{center}
+    \begin{tabular}{l|r}
+      \header{state} & \header{timeout} \\\hline
+      \StPropose     & \texttt{10}s \\
+      \StConfirm     & \texttt{10}s \\
+    \end{tabular}
+    \caption{timeouts per state}
+    \label{table:handshake-timeouts}
+  \end{center}
+\end{table}
+
 \subsection{Node-to-node handshake}
 
 The node-to-node handshake instantiates version data\footnote{To be precise, in
@@ -888,6 +923,7 @@ a space limit is violated, the connection SHOULD be torn down.
 \end{table}
 
 \subsection{Timeouts per state}
+\label{subsec:chain-sync-timeouts}
 
 The table~\ref{table:chain-sync-timeouts} specifies message timeouts in a given
 state.  If a timeout is violated, the connection SHOULD be torn down.
@@ -1169,6 +1205,7 @@ connection SHOULD be torn down.
       \StStreaming   & \texttt{2500000} \\
     \end{tabular}
     % \caption{size limits per state}
+    \label{table:block-fetch-size-limits}
   \end{center}
 \end{table}
 
@@ -1185,7 +1222,8 @@ a message.  If a timeout is violated, the connection SHOULD be torn down.
       \StBusy        & \texttt{60}s \\
       \StStreaming   & \texttt{60}s \\
     \end{tabular}
-    % \caption{timeouts per state}
+    \caption{timeouts per state}
+    \label{table:block-fetch-timeouts}
   \end{center}
 \end{table}
 
@@ -1478,6 +1516,7 @@ connection SHOULD be torn down.
       \StServer      & \texttt{65535} \\
     \end{tabular}
     % \caption{size limits per state}
+    \label{table:keep-alive-size-limits}
   \end{center}
 \end{table}
 
@@ -1493,7 +1532,8 @@ a message.  If a timeout is violated, the connection SHOULD be torn down.
       \StClient      & \texttt{97}s \\
       \StServer      & \texttt{60}s \\
     \end{tabular}
-    % \caption{timeouts per state}
+    \caption{timeouts per state}
+    \label{table:keep-alive-timeouts}
   \end{center}
 \end{table}
 
@@ -1567,6 +1607,7 @@ connection SHOULD be torn down.
       \StBusy        & \texttt{5760} \\
     \end{tabular}
     % \caption{size limits per state}
+    \label{table:peer-share-size-limits}
   \end{center}
 \end{table}
 
@@ -1582,7 +1623,8 @@ a message.  If a timeout is violated, the connection SHOULD be torn down.
       \StIdle        & - \\
       \StBusy        & \texttt{60}s \\
     \end{tabular}
-    % \caption{timeouts per state}
+    \caption{timeouts per state}
+    \label{table:peer-share-timeouts}
   \end{center}
 \end{table}
 
