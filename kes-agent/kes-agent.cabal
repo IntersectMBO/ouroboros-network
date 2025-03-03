@@ -127,7 +127,6 @@ executable kes-agent
                  , containers
                  , directory
                  , filepath
-                 , hdaemonize
                  , hsyslog
                  , io-classes
                  , network
@@ -138,8 +137,11 @@ executable kes-agent
                  , time
                  , tomland
                  , typed-protocols
-                 , unix
                  , Win32-network
+    if os(windows)
+    else
+        build-depends: unix
+                     , hdaemonize
 
 executable kes-service-client-demo
     import: project-config
@@ -251,7 +253,6 @@ test-suite kes-agent-tests
                  , QuickCheck
                  , random >=1.2.1 && <1.3
                  , serdoc-core
-                 , socket-unix >=0.2.0.0 && <0.3.0.0
                  , tasty
                  , tasty-hunit
                  , tasty-quickcheck
@@ -259,3 +260,6 @@ test-suite kes-agent-tests
                  , text >=1.2.5
                  , time >=1.10
                  , Win32-network
+    if os(windows)
+    else
+        build-depends: socket-unix >=0.2.0.0 && <0.3.0.0
