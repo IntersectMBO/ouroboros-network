@@ -212,6 +212,7 @@ runM Interfaces
        , dtLocalConnectionManagerTracer
        , dtLocalServerTracer
        , dtLocalInboundGovernorTracer
+       , dtDnsTracer
        }
      Arguments
        { daIPv4Address
@@ -271,8 +272,8 @@ runM Interfaces
     (churnRng,       rng3) = split rng2
     (fuzzRng,        rng4) = split rng3
     (cmLocalStdGen,  rng5) = split rng4
-    (cmStdGen1, cmStdGen2) = split rng5
-
+    (cmStdGen1,      rng6) = split rng5
+    (cmStdGen2, peerSelectionActionsRng) = split rng6
 
     mkInboundPeersMap :: IG.PublicState ntnAddr ntnVersionData
                       -> Map ntnAddr PeerSharing
@@ -586,7 +587,7 @@ runM Interfaces
       let dnsActions =
             PeerActionsDNS {
               paToPeerAddr = diNtnToPeerAddr
-            , paDnsActions = diDnsActions lookupReqs
+            , paDnsActions = diDnsActions dtDnsTracer lookupReqs diNtnToPeerAddr
             }
       --
       -- Run peer selection (p2p governor)
@@ -655,6 +656,7 @@ runM Interfaces
                                          wlpGetLedgerPeerSnapshot = daReadLedgerPeerSnapshot,
                                          wlpSemaphore             = dnsSemaphore
                                        }
+                                       peerSelectionActionsRng
 
           peerSelectionGovernor'
             :: Tracer m (DebugPeerSelection extraState extraFlags extraPeers ntnAddr)

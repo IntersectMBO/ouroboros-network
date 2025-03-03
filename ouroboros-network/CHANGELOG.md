@@ -17,6 +17,12 @@
   `Test.Ouroboros.Network.PeerSelection.Cardano.MockEnvironment`
 - Moved `Test.Ouroboros.Network.PeerSelection.PublicRootPeers` to
   `Test.Ouroboros.Network.PeerSelection.Cardano.PublicRootPeers`
+* Tracing of DNS results is now directly performed by `dnsLookupWithTTL`,
+  which is captured by the new `DNSTrace` type. Results are tagged with
+  the new `DNSLookupResult` type. The type of peer that traces are tagged with
+  are captured by the `DNSPeersKind` type, which also distinguishes the type
+  of ledger peer.
+* Added `dispatchLookupWithTTL`
 
 ### Breaking changes
 
@@ -180,6 +186,13 @@
   Cardano specific type.).
 - `LocalRootPeers` now has `extraFlags` type parameter.
 - `daForkPolicy` field added to `Ouroboros.Network.P2P.ArgumentsExtra`.
+- Removed `TraceLedgerPeersResult` and `TraceLedgerPeersFailure`
+- Changed `TraceLedgerPeersDomains` to accept `[RelayAccessPoint]`
+- Removed `TraceLocalRootResult` and changed some other constructors to
+  accept `RelayAccessPoint` in lieu of `DomainAccessPoint`, which was removed
+- Removed `TracePublicRootResult` and `TracePublicRootFailure`
+- Changed signature of `resolveLedgerPeers`, `localRootPeersProvider`, `publicRootPeersProvider`,
+  `withPeerSelectionActions` to accept random seed for DNS SRV lookup.
 
 ### Non-breaking changes
 
@@ -202,7 +215,7 @@
 * APIs removed from `Ouroboros.Network.{NodeToClient,NodeToNode}` modules:
   * NetworkServerTracers
   * NetworkMutableState APIs
-  * withServer 
+  * withServer
   * ErrorPolicies
   * WithAddr
   * SuspendDecision
@@ -222,7 +235,6 @@
 * Use `LocalRootConfig` instead of a tuple.
 * Extended `LocalRootConfig` with `diffusionMode :: DiffusionMode` field.
 * Added `diConnStateSupply` record field to `Ouroboros.Network.Diffusion.P2P.Interfaces`.
-* UnknownMiniProtocol error should not crash the node
 
 ### Non-breaking changes
 

@@ -62,9 +62,8 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Void (Void)
 import GHC.Exception (Exception)
+import Network.DNS (Domain, TYPE)
 import System.Random (StdGen, split)
-
-import Network.DNS (Domain, TTL)
 
 import Ouroboros.Network.Mux (noBindForkPolicy)
 import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
@@ -103,10 +102,10 @@ import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics,
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PeerStateActions (PeerConnectionHandle)
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
-import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint,
-           RelayAccessPoint)
+import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
 import Ouroboros.Network.PeerSelection.RootPeersDNS (PeerActionsDNS)
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSLookupType)
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
+           (DNSLookupType (..))
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
            LocalRootConfig, WarmValency)
@@ -125,7 +124,8 @@ import Test.Ouroboros.Network.Diffusion.Node.Kernel (NodeKernel (..), NtCAddr,
 import Test.Ouroboros.Network.Diffusion.Node.Kernel qualified as Node
 import Test.Ouroboros.Network.Diffusion.Node.MiniProtocols qualified as Node
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay,
-           DNSTimeout, mockDNSActions)
+           DNSTimeout, DomainAccessPoint (..), MockDNSLookupResult,
+           mockDNSActions)
 
 
 data Interfaces extraAPI m = Interfaces
@@ -136,7 +136,7 @@ data Interfaces extraAPI m = Interfaces
     , iNtcSnocket        :: Snocket m (NtCFD m) NtCAddr
     , iNtcBearer         :: MakeBearer m (NtCFD m)
     , iRng               :: StdGen
-    , iDomainMap         :: StrictTVar m (Map Domain [(IP, TTL)])
+    , iDomainMap         :: StrictTVar m (Map (Domain, TYPE) MockDNSLookupResult)
     , iLedgerPeersConsensusInterface
                          :: LedgerPeersConsensusInterface extraAPI m
     , iConnStateIdSupply :: ConnStateIdSupply m
@@ -237,6 +237,7 @@ run :: forall extraState extraDebugState extraAPI
         -> (Map NtNAddr PeerAdvertise -> extraPeers)
         -> (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set NtNAddr, DiffTime)))
         -> LedgerPeersKind
+        -> StdGen
         -> Int
         -> m (PublicRootPeers extraPeers NtNAddr, DiffTime))
     -> (PeerChurnArgs
@@ -306,10 +307,14 @@ run blockGeneratorArgs limits ni na
               , Diff.diNtcGetFileDescriptor  = \_ -> pure invalidFileDescriptor
               , Diff.diRng                   = diffStgGen
               , Diff.diInstallSigUSR1Handler = \_ _ _ -> pure ()
-              , Diff.diDnsActions            = const (mockDNSActions
-                                                       (iDomainMap ni)
-                                                       dnsTimeoutScriptVar
-                                                       dnsLookupDelayScriptVar)
+              , Diff.diDnsActions            = \tracer lookupType toPeerAddr ->
+                  mockDNSActions
+                    tracer
+                    lookupType
+                    toPeerAddr
+                    (iDomainMap ni)
+                    dnsTimeoutScriptVar
+                    dnsLookupDelayScriptVar
               , Diff.diUpdateVersionData     = \versionData diffusionMode ->
                                                     versionData { ntnDiffusionMode = diffusionMode }
               , Diff.diConnStateIdSupply     = iConnStateIdSupply ni
