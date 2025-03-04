@@ -1,8 +1,7 @@
 {-# LANGUAGE BangPatterns      #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-{-# OPTIONS_GHC -fno-ignore-asserts #-}
-import Control.Exception (bracket, assert)
+import Control.Exception (bracket)
 import Control.Concurrent.Class.MonadSTM.Strict
 import Data.Functor (void)
 import Control.Monad (forever, replicateM_, when, unless)
@@ -41,15 +40,16 @@ totalPayloadLen sndSize = sndSize * numberOfPackets
 -- | Run a client that connects to the specified addr.
 -- Signals the message sndSize to the server by writing it
 -- in the provided TMVar.
-readBenchmark :: StrictTMVar IO Int64 -> Int64 -> SBearerBuffering buffer -> Socket.SockAddr -> IO ()
-readBenchmark sndSizeV sndSize singBuffer addr = do
+readBenchmark :: StrictTMVar IO Int64 -> Int64 -> Socket.SockAddr -> IO ()
+readBenchmark sndSizeV sndSize addr = do
   bracket
     (Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
     Socket.close
   $ \sd -> do
       atomically $ putTMVar sndSizeV sndSize
       Socket.connect sd addr
-      bearer <- getBearer makeSocketBearer sduTimeout activeTracer sd singBuffer
+      buffer <- SBuffered <$> newBearerIngressBuffer Nothing
+      bearer <- getBearer makeSocketBearer sduTimeout activeTracer sd buffer
 
       let chan = bearerAsChannel bearer (MiniProtocolNum 42) InitiatorDir
       doRead (totalPayloadLen sndSize) chan 0
@@ -59,12 +59,12 @@ readBenchmark sndSizeV sndSize singBuffer addr = do
    doRead maxData chan !cnt = do
      msg_m <- recv chan
      case msg_m of
-          Just msg -> assert (not . BL.null $ msg) doRead maxData chan (cnt + BL.length msg)
+          Just msg -> doRead maxData chan (cnt + BL.length msg)
           Nothing -> error "doRead: nullread"
 
 -- Like readBenchmark but uses a demuxer thread
-readDemuxerBenchmark :: StrictTMVar IO Int64 -> Int64 -> SBearerBuffering buffering -> Socket.SockAddr -> IO ()
-readDemuxerBenchmark sndSizeV sndSize singBuffer addr = do
+readDemuxerBenchmark :: StrictTMVar IO Int64 -> Int64 -> Socket.SockAddr -> IO ()
+readDemuxerBenchmark sndSizeV sndSize addr = do
   bracket
     (Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
     Socket.close
@@ -72,7 +72,8 @@ readDemuxerBenchmark sndSizeV sndSize singBuffer addr = do
       atomically $ putTMVar sndSizeV sndSize
 
       Socket.connect sd addr
-      bearer <- getBearer makeSocketBearer sduTimeout activeTracer sd singBuffer
+      buffer <- SBuffered <$> newBearerIngressBuffer Nothing
+      bearer <- getBearer makeSocketBearer sduTimeout activeTracer sd buffer
       ms42 <- mkMiniProtocolState 42
       ms41 <- mkMiniProtocolState 41
       withAsync (demuxer [ms41, ms42] bearer) $ \aid -> do
@@ -247,38 +248,25 @@ main = do
         addr <- setupServer ad1
         addrM <- setupServer ad2
         addrE <- setupServer ad3
-        let bufferSize = 32768
-        putStrLn $ "Buffered runs using buffer size of " <> show bufferSize <> " bytes"
-        buffer <- SBuffered <$> newBearerIngressBuffer (Just bufferSize)
 
         withAsync (startServer sndSizeV ad1) $ \said -> do
           withAsync (startServerMany sndSizeMV ad2) $ \saidM -> do
             withAsync (startServerEgresss sndSizeEV ad3) $ \saidE -> do
               defaultMain [
                   -- Suggested Max SDU size for Socket bearer
-                  bench "Read/Write Benchmark 12288 byte SDUs baseline"  $ nfIO $ readBenchmark sndSizeV 12288 SUnbuffered addr
+                  bench "Read/Write Benchmark 12288 byte SDUs"  $ nfIO $ readBenchmark sndSizeV 12288 addr
                   -- Payload size for ChainSync's RequestNext
-                , bench "Read/Write Benchmark 914 byte SDUs baseline"  $ nfIO $ readBenchmark sndSizeV 914 SUnbuffered addr
-                  -- Payload size for ChainSync's RequestNext
-                , bench "Read/Write Benchmark 10 byte SDUs baseline"  $ nfIO $ readBenchmark sndSizeV 10 SUnbuffered addr
-                  -- Suggested Max SDU size for Socket bearer
-                , bench "Read/Write Benchmark 12288 byte SDUs buffered"   $ nfIO $ readBenchmark sndSizeV 12288 buffer addr
-                  -- Payload size for ChainSync's RequestNext
-                , bench "Read/Write Benchmark 914 byte SDUs buffered"  $ nfIO $ readBenchmark sndSizeV 914 buffer addr
-                  -- Payload size for ChainSync's RequestNext
-                , bench "Read/Write Benchmark 10 byte SDUs buffered"  $ nfIO $ readBenchmark sndSizeV 10 buffer addr
+                , bench "Read/Write Benchmark 914 byte SDUs"  $ nfIO $ readBenchmark sndSizeV 914 addr
+                -- Payload size for ChainSync's RequestNext
+                , bench "Read/Write Benchmark 10 byte SDUs"  $ nfIO $ readBenchmark sndSizeV 10 addr
 
                   -- Send batches of SDUs at the same time
-                , bench "Read/Write-Many Benchmark 12288 byte SDUs baseline"  $ nfIO $ readBenchmark sndSizeMV 12288 SUnbuffered addrM
-                , bench "Read/Write-Many Benchmark 914 byte SDUs baseline"  $ nfIO $ readBenchmark sndSizeMV 914 SUnbuffered addrM
-                , bench "Read/Write-Many Benchmark 10 byte SDUs baseline"  $ nfIO $ readBenchmark sndSizeMV 10 SUnbuffered addrM
-                , bench "Read/Write-Many Benchmark 12288 byte SDUs buffered"  $ nfIO $ readBenchmark sndSizeMV 12288 buffer addrM
-                , bench "Read/Write-Many Benchmark 914 byte SDUs buffered"  $ nfIO $ readBenchmark sndSizeMV 914 buffer addrM
-                , bench "Read/Write-Many Benchmark 10 byte SDUs baseline"  $ nfIO $ readBenchmark sndSizeMV 10 buffer addrM
+                , bench "Read/Write-Many Benchmark 12288 byte SDUs"  $ nfIO $ readBenchmark sndSizeMV 12288 addrM
+                , bench "Read/Write-Many Benchmark 914 byte SDUs"  $ nfIO $ readBenchmark sndSizeMV 914 addrM
+                , bench "Read/Write-Many Benchmark 10 byte SDUs"  $ nfIO $ readBenchmark sndSizeMV 10 addrM
 
                   -- Use standard muxer and demuxer
-                , bench "Read/Write Mux Benchmark 12288+10 byte SDUs baseline"  $ nfIO $ readDemuxerBenchmark sndSizeEV 12288 SUnbuffered addrE
-                , bench "Read/Write Mux Benchmark 12288+10 byte SDUs buffered" $ nfIO $ readDemuxerBenchmark sndSizeEV 12288 SUnbuffered addrE
+                , bench "Read/Write Mux Benchmark 12288+10 byte SDUs"  $ nfIO $ readDemuxerBenchmark sndSizeEV 12288 addrE
 
                 ]
               cancel said
