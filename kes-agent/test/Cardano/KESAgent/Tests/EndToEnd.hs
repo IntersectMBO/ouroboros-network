@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
@@ -50,6 +51,9 @@ tests =
     [ testCase "kes-agent --help" kesAgentHelp
     , testCase "kes-agent --genesis-file" kesAgentGenesisFile
     , testCase "kes-agent-control --help" kesAgentControlHelp
+#if !defined(mingw32_HOST_OS)
+    -- These tests take forever on Windows, and aren't really helpful anyway,
+    -- since we don't support running kes-agent on Windows.
     , testGroup
         "kes-agent-control install-key"
         [ testCase "valid" kesAgentControlInstallValid
@@ -68,6 +72,7 @@ tests =
         , testCase "self-healing 1 (agent 2 goes down)" kesAgentSelfHeal1
         , testCase "self-healing 2 (agent 1 goes down)" kesAgentSelfHeal2
         ]
+#endif
     ]
 
 kesAgentHelp :: Assertion
