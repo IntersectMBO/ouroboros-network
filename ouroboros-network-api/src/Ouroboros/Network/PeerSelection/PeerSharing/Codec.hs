@@ -30,7 +30,6 @@ decodePortNumber = fromIntegral <$> CBOR.decodeWord16
 encodeRemoteAddress :: NodeToNodeVersion -> SockAddr -> CBOR.Encoding
 encodeRemoteAddress =
   \case
-    NodeToNodeV_13 -> sockAddr
     NodeToNodeV_14 -> sockAddr
 
   where
@@ -56,11 +55,10 @@ encodeRemoteAddress =
 decodeRemoteAddress :: NodeToNodeVersion -> CBOR.Decoder s SockAddr
 decodeRemoteAddress =
   \case
-    NodeToNodeV_13 -> decoder13
-    NodeToNodeV_14 -> decoder13
+    NodeToNodeV_14 -> decoder14
 
   where
-    decoder13 = do
+    decoder14 = do
       _ <- CBOR.decodeListLen
       tok <- CBOR.decodeWord
       case tok of
