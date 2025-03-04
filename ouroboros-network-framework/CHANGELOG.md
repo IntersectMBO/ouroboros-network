@@ -2,6 +2,12 @@
 
 ## next release
 
+### Non-breaking changes
+
+### Breaking changes
+
+## 0.17.0.0 -- 2025-02-25
+
 ### Breaking changes
 
 *  Add `miniProtocolStart` to `MiniProtocol` to control starting strategy.
@@ -16,8 +22,6 @@
 * `Ouroboros.Network.Server.Socket` replaced with a simpler server
   implementation in `Test.Ouroboros.Network.Server` (in `ouroboros-network:testlib` component).
 * Added `Ouroboros.Network.Server.Simple.with` to run a simple server as a replacement for `Ouroboros.Network.Socket.withServerNode`.
-
-### Non-breaking changes
 
 ## 0.16.0.0 -- 2025-02-03
 
