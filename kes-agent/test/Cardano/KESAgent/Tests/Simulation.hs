@@ -251,6 +251,12 @@ testCrypto ::
   (forall a. (Show a, Pretty a) => Tracer IO a) ->
   IOManager ->
   TestTree
+#if defined(mingw32_HOST_OS)
+testCrypto _ _ _ _ =
+  testGroup
+    name
+    [ ]
+#else
 testCrypto proxyC lock tracer ioManager =
   testGroup
     name
@@ -265,6 +271,7 @@ testCrypto proxyC lock tracer ioManager =
             testIOSim (testOneKeyThroughChain proxyC)
         ]
     ]
+#endif
   where
     name =
       Text.unpack
