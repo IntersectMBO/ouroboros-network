@@ -256,6 +256,13 @@ testCrypto _ _ _ _ =
   testGroup
     name
     [ ]
+  where
+    name =
+      Text.unpack
+        . decodeUtf8
+        . unCryptoName
+        . cryptoName
+        $ (Proxy @c)
 #else
 testCrypto proxyC lock tracer ioManager =
   testGroup
@@ -271,7 +278,6 @@ testCrypto proxyC lock tracer ioManager =
             testIOSim (testOneKeyThroughChain proxyC)
         ]
     ]
-#endif
   where
     name =
       Text.unpack
@@ -279,6 +285,7 @@ testCrypto proxyC lock tracer ioManager =
         . unCryptoName
         . cryptoName
         $ (Proxy @c)
+#endif
 
 mvarPrettyTracer ::
   (MonadTime m, MonadMVar m) =>
@@ -360,11 +367,12 @@ withTestAddressIO a =
     mkAddr i = SockAddrUnix $ mkAddrName i
 #endif
 
-    cleanup :: Word -> IO ()
 #if defined(mingw32_HOST_OS)
     -- On Windows, we use a local TCP socket, so no cleanup required.
+    cleanup :: Word -> IO ()
     cleanup _ = return ()
 #else
+    cleanup :: Word -> IO ()
     cleanup seed = do
       -- On POSIX, we use domain sockets, so we delete the socket when we're
       -- done.

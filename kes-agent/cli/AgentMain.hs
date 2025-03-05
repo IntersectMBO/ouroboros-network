@@ -7,12 +7,12 @@ module Main
 where
 
 import Cardano.KESAgent.KES.Evolution
+import Cardano.KESAgent.Priority
 import Cardano.KESAgent.Processes.Agent
 import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Serialization.CBOR
 import Cardano.KESAgent.Serialization.TextEnvelope
 import Cardano.KESAgent.Util.Pretty
-import Cardano.KESAgent.Priority
 
 import Cardano.Crypto.Libsodium (sodiumInit)
 import Cardano.Crypto.Libsodium.MLockedSeed
@@ -466,10 +466,11 @@ defaultAgentTracer = syslogAgentTracer
 #endif
 
 runAsService :: Maybe FilePath -> ServiceModeOptions -> IO ()
-runAsService configPathMay smo' =
 #if defined(mingw32_HOST_OS)
+runAsService _ _ =
   error "Running as a service is not supported on Windows"
 #else
+runAsService configPathMay smo' =
   go
     `catch` ( \(e :: SomeException) ->
                 syslog Critical (encodeUtf8 . Text.pack $ show e)

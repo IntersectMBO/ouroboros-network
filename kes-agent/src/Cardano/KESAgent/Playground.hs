@@ -26,6 +26,7 @@ import Data.Text (Text)
 import qualified Data.Text.Lazy as LText
 import GHC.Generics
 import Network.TypedProtocol.Core
+
 -- import Network.TypedProtocol.Documentation
 -- import Network.TypedProtocol.Documentation.Html
 -- import qualified Text.Blaze.Html.Renderer.Pretty as Pretty
@@ -41,4 +42,5 @@ import Network.TypedProtocol.Core
 runPlayground :: IO ()
 runPlayground = do
   putStrLn "Hello world"
-  -- writeFile "spec.html" (Pretty.renderHtml . wrapDocument . renderProtocolDescriptions $ allDocs)
+
+-- writeFile "spec.html" (Pretty.renderHtml . wrapDocument . renderProtocolDescriptions $ allDocs)

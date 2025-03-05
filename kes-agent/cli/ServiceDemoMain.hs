@@ -9,13 +9,13 @@ where
 import Cardano.KESAgent.KES.Bundle (Bundle (..))
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import Cardano.KESAgent.KES.OCert (KESPeriod (..), OCert (..))
+import Cardano.KESAgent.Priority
 import Cardano.KESAgent.Processes.ServiceClient
 import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Protocols.Types
 import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting
-import Cardano.KESAgent.Priority
 
 import Cardano.Crypto.KES.Class
 import Cardano.Crypto.Libsodium (sodiumInit)

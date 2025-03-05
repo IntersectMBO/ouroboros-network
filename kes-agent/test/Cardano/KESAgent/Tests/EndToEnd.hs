@@ -45,13 +45,13 @@ defGenesisTimestamp :: Integer
 defGenesisTimestamp = 1506203091 -- real-world genesis on the production ledger
 
 tests :: TestTree
+#if !defined(mingw32_HOST_OS)
 tests =
   testGroup
     "end to end"
     [ testCase "kes-agent --help" kesAgentHelp
     , testCase "kes-agent --genesis-file" kesAgentGenesisFile
     , testCase "kes-agent-control --help" kesAgentControlHelp
-#if !defined(mingw32_HOST_OS)
     -- These tests take forever on Windows, and aren't really helpful anyway,
     -- since we don't support running kes-agent on Windows.
     , testGroup
@@ -72,8 +72,13 @@ tests =
         , testCase "self-healing 1 (agent 2 goes down)" kesAgentSelfHeal1
         , testCase "self-healing 2 (agent 1 goes down)" kesAgentSelfHeal2
         ]
-#endif
     ]
+#else
+  test =
+    testGroup
+      "end to end"
+      [ ]
+#endif
 
 kesAgentHelp :: Assertion
 kesAgentHelp = do

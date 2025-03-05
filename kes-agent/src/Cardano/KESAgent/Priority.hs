@@ -1,8 +1,8 @@
 {-# LANGUAGE CPP #-}
 
 -- | This module defines a priority type for trace logging.
-module Cardano.KESAgent.Priority
-( Priority (..)
+module Cardano.KESAgent.Priority (
+  Priority (..),
 )
 where
 
