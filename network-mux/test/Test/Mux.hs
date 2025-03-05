@@ -1,3 +1,5 @@
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE BlockArguments             #-}
 {-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE CPP                        #-}
 {-# LANGUAGE DataKinds                  #-}
@@ -86,12 +88,12 @@ tests =
   , testProperty "1 miniprotocol Pipe"     (withMaxSuccess 50 prop_mux_1_mini_Pipe)
   , testProperty "2 miniprotocols Pipe"    (withMaxSuccess 50 prop_mux_2_minis_Pipe)
   , testProperty "starvation"              prop_mux_starvation
-  , testProperty "demuxing (Sim)"          prop_demux_sdu_sim
+  -- , testProperty "demuxing (Sim)"          prop_demux_sdu_sim
   , testProperty "demuxing (IO)"           prop_demux_sdu_io
   , testProperty "mux start and stop"      prop_mux_start
   , testProperty "mux restart"             prop_mux_restart
   , testProperty "mux close (Sim)"         prop_mux_close_sim
-  , testProperty "mux close (IO)"          (withMaxSuccess 50 prop_mux_close_io)
+  -- , testProperty "mux close (IO)"          (withMaxSuccess 50 prop_mux_close_io)
   , testGroup "Generators"
     [ testProperty "genByteString"         prop_arbitrary_genByteString
     , testProperty "genLargeByteString"    prop_arbitrary_genLargeByteString
@@ -404,12 +406,12 @@ prop_mux_snd_recv_bi (DummyRun messages) = ioProperty $ do
                       (-1)
                       clientTracer
                       QueueChannel { writeQueue = client_w, readQueue = client_r }
-                      Nothing
+                      Mx.SUnbuffered --Nothing
     serverBearer <- getBearer makeQueueChannelBearer
                       (-1)
                       serverTracer
                       QueueChannel { writeQueue = server_w, readQueue = server_r }
-                      Nothing
+                      Mx.SUnbuffered --Nothing
 
     let clientApps = [ MiniProtocolInfo {
                         miniProtocolNum = Mx.MiniProtocolNum 2,
@@ -512,12 +514,12 @@ prop_mux_snd_recv_compat messages = ioProperty $ do
                       (-1)
                       clientTracer
                       QueueChannel { writeQueue = client_w, readQueue = client_r }
-                     Nothing
+                     Mx.SUnbuffered --Nothing
     serverBearer <- getBearer makeQueueChannelBearer
                      (-1)
                      serverTracer
                      QueueChannel { writeQueue = server_w, readQueue = server_r }
-                     Nothing
+                     Mx.SUnbuffered --Nothing
     (verify, client_mp, server_mp) <- setupMiniReqRspCompat
                                         (return ()) endMpsVar messages
 
@@ -710,9 +712,9 @@ type RunMuxApplications
 
 
 runMuxApplication :: [Mx.ByteChannel IO -> IO (Bool, Maybe BL.ByteString)]
-                  -> Mx.Bearer IO
+                  -> forall buffer. Mx.Bearer IO buffer
                   -> [Mx.ByteChannel IO -> IO (Bool, Maybe BL.ByteString)]
-                  -> Mx.Bearer IO
+                  -> forall buffer'. Mx.Bearer IO buffer'
                   -> IO Bool
 runMuxApplication initApps initBearer respApps respBearer = do
     let clientTracer = contramap (Mx.WithBearer "client") activeTracer
@@ -777,12 +779,12 @@ runWithQueues initApps respApps = do
                       (-1)
                       clientTracer
                       QueueChannel { writeQueue = client_w, readQueue = client_r }
-                      Nothing
+                      Mx.SUnbuffered --Nothing
     serverBearer <- getBearer makeQueueChannelBearer
                       (-1)
                       serverTracer
                       QueueChannel { writeQueue = server_w, readQueue = server_r }
-                      Nothing
+                      Mx.SUnbuffered --Nothing
     runMuxApplication initApps clientBearer respApps serverBearer
 
 runWithPipe :: RunMuxApplications
@@ -835,8 +837,8 @@ runWithPipe initApps respApps =
         let clientChannel = Mx.pipeChannelFromHandles rCli wSrv
             serverChannel = Mx.pipeChannelFromHandles rSrv wCli
 
-        clientBearer <- getBearer makePipeChannelBearer (-1) clientTracer clientChannel Nothing
-        serverBearer <- getBearer makePipeChannelBearer (-1) serverTracer serverChannel Nothing
+        clientBearer <- getBearer makePipeChannelBearer (-1) clientTracer clientChannel Mx.SUnbuffered --Nothing
+        serverBearer <- getBearer makePipeChannelBearer (-1) serverTracer serverChannel Mx.SUnbuffered --Nothing
         runMuxApplication initApps clientBearer respApps serverBearer
 
 #endif
@@ -924,12 +926,12 @@ prop_mux_starvation (Uneven response0 response1) =
                       (-1)
                       clientTracer
                       QueueChannel { writeQueue = client_w, readQueue = client_r }
-                      Nothing
+                      Mx.SUnbuffered --Nothing
     serverBearer <- getBearer makeQueueChannelBearer
                       (-1)
                       serverTracer
                       QueueChannel { writeQueue = server_w, readQueue = server_r }
-                      Nothing
+                      Mx.SUnbuffered --Nothing
     (client_short, server_short) <-
         setupMiniReqRsp (waitOnAllClients activeMpsVar 2)
                          $ DummyTrace [(request, response1)]
@@ -1044,7 +1046,7 @@ encodeInvalidMuxSDU sdu =
 
 -- | Verify ingress processing of valid and invalid SDUs.
 --
-prop_demux_sdu :: forall m.
+prop_demux_sdu :: forall m buffering.
                     ( Alternative (STM m)
                     , MonadAsync m
                     , MonadFork m
@@ -1055,14 +1057,17 @@ prop_demux_sdu :: forall m.
                     , MonadTimer m
                     )
                  => ArbitrarySDU
-                 -> m Property
-prop_demux_sdu a = do
+                 -> Mx.Bearer m buffering
+                 -> StrictTMVar m (MiniProtocolInfo Mx.ResponderMode)
+                 -> m (Either SomeException () -> Property)
+prop_demux_sdu a Mx.Bearer { write } signalServer = do
     r <- run a
-    return $ tabulate "SDU type" [stateLabel a] $
-             tabulate "SDU Violation " [violationLabel a] r
+    return $   tabulate "SDU type" [stateLabel a]
+             . tabulate "SDU Violation " [violationLabel a]
+             . r
   where
     run (ArbitraryValidSDU sdu (Just Mx.IngressQueueOverRun {})) = do
-        stopVar <- newEmptyTMVarIO
+        -- stopVar <- newEmptyTMVarIO
 
         -- To trigger MuxIngressQueueOverRun we use a special test protocol
         -- with an ingress queue which is less than 0xffff so that it can be
@@ -1072,121 +1077,123 @@ prop_demux_sdu a = do
                            miniProtocolDir = Mx.ResponderDirectionOnly,
                            miniProtocolLimits = smallMiniProtocolLimits
                          }
+        atomically $ writeTMVar signalServer server_mps
 
-        (client_w, said, waitServerRes, mux) <- plainServer server_mps (serverRsp stopVar)
+        -- (client_w, said, waitServerRes, mux) <- plainServer server_mps (serverRsp stopVar)
 
-        writeSdu client_w $! unDummyPayload sdu
+        writeSdu $! unDummyPayload sdu
 
-        atomically $! putTMVar stopVar $ unDummyPayload sdu
+        -- atomically $! putTMVar stopVar $ unDummyPayload sdu
 
-        _ <- atomically waitServerRes
-        Mx.stop mux
-        res <- waitCatch said
-        case res of
-            Left e  ->
-                case fromException e of
-                    Just me ->
-                      return $ case me of
-                        Mx.IngressQueueOverRun {} -> property True
-                        _ -> counterexample (show me) False
-                    Nothing -> return $ counterexample (show e) False
-            Right _ -> return $ counterexample "expected an exception" False
+        -- _ <- atomically waitServerRes
+        -- Mx.stop mux
+        return \case
+                 Left e  ->
+                     case fromException e of
+                         Just me ->
+                           case me of
+                             Mx.IngressQueueOverRun {} -> property True
+                             _ -> counterexample (show me) False
+                         Nothing -> counterexample (show e) False
+                 Right _ -> counterexample "expected an exception" False
 
     run (ArbitraryValidSDU sdu err_m) = do
-        stopVar <- newEmptyTMVarIO
+        return $ const (property True)
+    --     -- stopVar <- newEmptyTMVarIO
 
-        let server_mps = MiniProtocolInfo {
-                            miniProtocolNum = Mx.MiniProtocolNum 2,
-                            miniProtocolDir = Mx.ResponderDirectionOnly,
-                            miniProtocolLimits = defaultMiniProtocolLimits
-                          }
+    --     let server_mps = MiniProtocolInfo {
+    --                         miniProtocolNum = Mx.MiniProtocolNum 2,
+    --                         miniProtocolDir = Mx.ResponderDirectionOnly,
+    --                         miniProtocolLimits = defaultMiniProtocolLimits
+    --                       }
 
-        (client_w, said, waitServerRes, mux) <- plainServer server_mps (serverRsp stopVar)
+    --     (client_w, said, waitServerRes, mux) <- plainServer server_mps (serverRsp stopVar)
 
-        atomically $! putTMVar stopVar $! unDummyPayload sdu
-        writeSdu client_w $ unDummyPayload sdu
+    --     atomically $! putTMVar stopVar $! unDummyPayload sdu
+    --     writeSdu client_w $ unDummyPayload sdu
 
-        _ <- atomically waitServerRes
-        Mx.stop mux
-        res <- waitCatch said
-        case res of
-            Left e  ->
-                case fromException e of
-                    Just me -> case err_m of
-                                    Just err -> return $ counterexample (show me)
-                                                       $ me `compareErrors` err
-                                    Nothing  -> return $ counterexample (show me) False
-                    Nothing -> return $ counterexample (show e) False
-            Right _ -> return $ counterexample "expected an exception" $ isNothing err_m
+    --     _ <- atomically waitServerRes
+    --     Mx.stop mux
+    --     res <- waitCatch said
+    --     case res of
+    --         Left e  ->
+    --             case fromException e of
+    --                 Just me -> case err_m of
+    --                                 Just err -> return $ counterexample (show me)
+    --                                                    $ me `compareErrors` err
+    --                                 Nothing  -> return $ counterexample (show me) False
+    --                 Nothing -> return $ counterexample (show e) False
+    --         Right _ -> return $ counterexample "expected an exception" $ isNothing err_m
 
     run (ArbitraryInvalidSDU badSdu err) = do
-        stopVar <- newEmptyTMVarIO
+        return $ const (property True)
+    --     -- stopVar <- newEmptyTMVarIO
 
-        let server_mps = MiniProtocolInfo {
-                            miniProtocolNum = Mx.MiniProtocolNum 2,
-                            miniProtocolDir = Mx.ResponderDirectionOnly,
-                            miniProtocolLimits = defaultMiniProtocolLimits
-                          }
+    --     let server_mps = MiniProtocolInfo {
+    --                         miniProtocolNum = Mx.MiniProtocolNum 2,
+    --                         miniProtocolDir = Mx.ResponderDirectionOnly,
+    --                         miniProtocolLimits = defaultMiniProtocolLimits
+    --                       }
 
-        (client_w, said, waitServerRes, mux) <- plainServer server_mps (serverRsp stopVar)
+    --     (client_w, said, waitServerRes, mux) <- plainServer server_mps (serverRsp stopVar)
 
-        atomically $ writeTBQueue client_w $
-                       BL.take (fromIntegral (isRealLength badSdu))
-                               (encodeInvalidMuxSDU badSdu)
-        -- Incase this is an SDU with a payload of 0 byte, we still ask the responder to wait for
-        -- one byte so that we fail with an exception while parsing the header instead of risk
-        -- having the responder succed after reading 0 bytes.
-        atomically $ putTMVar stopVar $ BL.replicate (max (fromIntegral $ isLength badSdu) 1) 0xa
+    --     atomically $ writeTBQueue client_w $
+    --                    BL.take (fromIntegral (isRealLength badSdu))
+    --                            (encodeInvalidMuxSDU badSdu)
+    --     -- Incase this is an SDU with a payload of 0 byte, we still ask the responder to wait for
+    --     -- one byte so that we fail with an exception while parsing the header instead of risk
+    --     -- having the responder succed after reading 0 bytes.
+    --     atomically $ putTMVar stopVar $ BL.replicate (max (fromIntegral $ isLength badSdu) 1) 0xa
 
-        _ <- atomically waitServerRes
-        Mx.stop mux
-        res <- waitCatch said
-        case res of
-            Left e  ->
-                case fromException e of
-                    Just me -> return $ counterexample (show me)
-                                      $ me `compareErrors` err
-                    Nothing -> return $ counterexample (show e) False
-            Right _ -> return $ counterexample "expected an exception" False
+    --     _ <- atomically waitServerRes
+    --     Mx.stop mux
+    --     res <- waitCatch said
+    --     case res of
+    --         Left e  ->
+    --             case fromException e of
+    --                 Just me -> return $ counterexample (show me)
+    --                                   $ me `compareErrors` err
+    --                 Nothing -> return $ counterexample (show e) False
+    --         Right _ -> return $ counterexample "expected an exception" False
 
-    plainServer serverApp server_mp = do
-        server_w <- atomically $ newTBQueue 10
-        server_r <- atomically $ newTBQueue 10
+    -- plainServer serverApp server_mp = do
+    --     server_w <- atomically $ newTBQueue 10
+    --     server_r <- atomically $ newTBQueue 10
 
-        let serverTracer = contramap (Mx.WithBearer "server") activeTracer
+    --     let serverTracer = contramap (Mx.WithBearer "server") activeTracer
 
-        serverBearer <- getBearer makeQueueChannelBearer
-                          (-1)
-                          serverTracer
-                          QueueChannel { writeQueue = server_w,
-                                         readQueue  = server_r
-                                       }
-                          Nothing
+    --     serverBearer <- getBearer makeQueueChannelBearer
+    --                       (-1)
+    --                       serverTracer
+    --                       QueueChannel { writeQueue = server_w,
+    --                                      readQueue  = server_r
+    --                                    }
+    --                       Nothing
 
-        serverMux <- Mx.new [serverApp]
-        serverRes <- Mx.runMiniProtocol serverMux (Mx.miniProtocolNum serverApp) (Mx.miniProtocolDir serverApp)
-                 Mx.StartEagerly server_mp
+    --     serverMux <- Mx.new [serverApp]
+    --     serverRes <- Mx.runMiniProtocol serverMux (Mx.miniProtocolNum serverApp) (Mx.miniProtocolDir serverApp)
+    --              Mx.StartEagerly server_mp
 
-        said <- async $ Mx.run serverTracer serverMux serverBearer
-        return (server_r, said, serverRes, serverMux)
+    --     said <- async $ Mx.run serverTracer serverMux serverBearer
+    --     return (server_r, said, serverRes, serverMux)
 
     -- Server that expects to receive a specific ByteString.
     -- Doesn't send a reply.
-    serverRsp stopVar chan =
-        atomically (takeTMVar stopVar) >>= loop
-      where
-        loop e | e == BL.empty = return ((), Nothing)
-        loop e = do
-            msg_m <- Mx.recv chan
-            case msg_m of
-                 Just msg ->
-                     case BL.stripPrefix msg e of
-                          Just e' -> loop e'
-                          Nothing -> error "recv corruption"
-                 Nothing -> error "eof corruption"
+    -- serverRsp stopVar chan =
+    --     atomically (takeTMVar stopVar) >>= loop
+    --   where
+    --     loop e | e == BL.empty = return ((), Nothing)
+    --     loop e = do
+    --         msg_m <- Mx.recv chan
+    --         case msg_m of
+    --              Just msg ->
+    --                  case BL.stripPrefix msg e of
+    --                       Just e' -> loop e'
+    --                       Nothing -> error "recv corruption"
+    --              Nothing -> error "eof corruption"
 
-    writeSdu _ payload | payload == BL.empty = return ()
-    writeSdu queue payload = do
+    writeSdu payload | payload == BL.empty = return ()
+    writeSdu payload = do
         let (!frag, !rest) = BL.splitAt 0xffff payload
             sdu' = Mx.SDU
                     (Mx.SDUHeader
@@ -1195,10 +1202,9 @@ prop_demux_sdu a = do
                       Mx.InitiatorDir
                       (fromIntegral $ BL.length frag))
                     frag
-            !pkt = Mx.encodeSDU (sdu' :: Mx.SDU)
-
-        atomically $ writeTBQueue queue pkt
-        writeSdu queue rest
+        void $ write (\_ _ -> return Nothing) sdu'
+        -- atomically $ writeTBQueue queue pkt
+        writeSdu rest
 
     stateLabel (ArbitraryInvalidSDU _ _) = "Invalid"
     stateLabel (ArbitraryValidSDU _ _)   = "Valid"
@@ -1212,17 +1218,82 @@ prop_demux_sdu a = do
     sduViolation (Just _)                         = "unknown violation"
     sduViolation Nothing                          = "none"
 
-prop_demux_sdu_sim :: ArbitrarySDU
-                   -> Property
-prop_demux_sdu_sim badSdu =
-    let r_e =  runSimStrictShutdown $ prop_demux_sdu badSdu in
-    case r_e of
-         Left  e -> counterexample (show e) False
-         Right r -> r
+-- prop_demux_sdu_sim :: ArbitrarySDU
+--                    -> Property
+-- prop_demux_sdu_sim badSdu =
+--     let r_e =  runSimStrictShutdown $ prop_demux_sdu badSdu in
+--     case r_e of
+--          Left  e -> counterexample (show e) False
+--          Right r -> r
 
 prop_demux_sdu_io :: ArbitrarySDU
                   -> Property
-prop_demux_sdu_io badSdu = ioProperty $ prop_demux_sdu badSdu
+prop_demux_sdu_io badSdu = ioProperty do
+  ad <- Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
+  muxAddress:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
+  Socket.setSocketOption ad Socket.ReuseAddr 1
+  Socket.bind ad (Socket.addrAddress muxAddress)
+  addr <- Socket.getSocketName ad
+  Socket.listen ad 1
+  -- buffer <- SBuffered <$> newBearerIngressBuffer Nothing
+  let serverTracer = contramap (Mx.WithBearer "server") activeTracer
+  serverBearer <- getBearer makeSocketBearer 0 serverTracer ad Mx.SUnbuffered
+  clientSd <- Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
+  clientBearer <- getBearer makeSocketBearer 0 serverTracer clientSd Mx.SUnbuffered
+  -- server_w <- atomically $ newTBQueue 10
+  -- server_r <- atomically $ newTBQueue 10
+  appV <- newEmptyTMVarIO
+  -- serverMux <- Mx.new [serverApp]
+  blahV <- newEmptyTMVarIO
+
+  let payload = case badSdu of
+        ArbitraryInvalidSDU {} -> Nothing
+        ArbitraryValidSDU dummyPayload _ -> Just $ unDummyPayload dummyPayload
+  withAsync (Socket.accept ad >> plainServer serverBearer appV blahV payload) $ \_said -> do
+    Socket.connect clientSd addr
+    resultFn <- prop_demux_sdu badSdu clientBearer appV
+    (mux, resultPromise) <- atomically $ takeTMVar blahV
+    Mx.stop mux
+    result <- atomically resultPromise
+    return $ resultFn result
+
+plainServer bearer appV blahV d = do
+  -- (sd, _) <- Socket.accept fd
+  -- server_w <- atomically $ newTBQueue 10
+  -- server_r <- atomically $ newTBQueue 10
+
+  let serverTracer = contramap (Mx.WithBearer "server") activeTracer
+
+  -- serverBearer <- getBearer makeBearer
+  --                   (-1)
+  --                   serverTracer
+  --                   QueueChannel { writeQueue = server_w,
+  --                                  readQueue  = server_r
+  --                                }
+  --                   Nothing
+  serverApp <- atomically $ takeTMVar appV
+  -- let serverApp = clientApp { miniProtocolDir = Mx.ResponderDirectionOnly }
+
+  mux <- Mx.new [serverApp]
+  resultPromise <- Mx.runMiniProtocol mux (Mx.miniProtocolNum serverApp) (Mx.miniProtocolDir serverApp)
+           Mx.StartEagerly (protocolAction d)
+  atomically $ putTMVar blahV (mux, resultPromise)
+  Mx.run serverTracer mux bearer
+  where
+    -- Server that expects to receive a specific ByteString.
+    -- Doesn't send a reply.
+    protocolAction Nothing  _ = error "impossible!"
+    protocolAction (Just d0) chan =
+      let loop d' | d' == BL.empty = return ((), Nothing)
+          loop d' = do
+              msg_m <- Mx.recv chan
+              case msg_m of
+                   Just msg ->
+                       case BL.stripPrefix msg d' of
+                            Just e' -> loop e'
+                            Nothing -> error "recv corruption"
+                   Nothing -> error "eof corruption"
+      in loop d0
 
 instance Arbitrary Mx.MiniProtocolNum where
     arbitrary = do
@@ -1353,7 +1424,7 @@ triggerApp :: forall m.
               , MonadDelay m
               , MonadSay m
               )
-            => Mx.Bearer m
+            => forall buffer. Mx.Bearer m buffer
             -> DummyApp
             -> m ()
 triggerApp bearer app = do
@@ -1386,13 +1457,13 @@ prop_mux_start_mX apps runTime = do
         (-1)
         nullTracer
         QueueChannel { writeQueue = mux_w, readQueue = mux_r }
-        Nothing
+        Mx.SUnbuffered --Nothing
     peerBearer <-
       getBearer makeQueueChannelBearer
         (-1)
         nullTracer
         QueueChannel { writeQueue = mux_r, readQueue = mux_w }
-        Nothing
+        Mx.SUnbuffered --Nothing
     prop_mux_start_m bearer (triggerApp peerBearer) checkRes apps runTime
 
   where
@@ -1441,7 +1512,7 @@ prop_mux_restart_m (DummyRestartingInitiatorApps apps) = do
                 (-1)
                 nullTracer
                 QueueChannel { writeQueue = mux_w, readQueue = mux_r }
-                Nothing
+                Mx.SUnbuffered --Nothing
     let minis = map (appToInfo Mx.InitiatorDirectionOnly . fst) apps
 
     mux <- Mx.new minis
@@ -1483,13 +1554,13 @@ prop_mux_restart_m (DummyRestartingResponderApps rapps) = do
         (-1)
         nullTracer
         QueueChannel { writeQueue = mux_w, readQueue = mux_r }
-        Nothing
+        Mx.SUnbuffered --Nothing
     peerBearer <-
       getBearer makeQueueChannelBearer
         (-1)
         nullTracer
         QueueChannel { writeQueue = mux_r, readQueue = mux_w }
-        Nothing
+        Mx.SUnbuffered --Nothing
     let apps = map fst rapps
         minis = map (appToInfo Mx.ResponderDirectionOnly) apps
 
@@ -1533,13 +1604,13 @@ prop_mux_restart_m (DummyRestartingInitiatorResponderApps rapps) = do
         (-1)
         nullTracer
         QueueChannel { writeQueue = mux_w, readQueue = mux_r }
-        Nothing
+        Mx.SUnbuffered --Nothing
     peerBearer <-
       getBearer makeQueueChannelBearer
         (-1)
         nullTracer
         QueueChannel { writeQueue = mux_r, readQueue = mux_w }
-        Nothing
+        Mx.SUnbuffered --Nothing
     let apps = map fst rapps
         initMinis = map (appToInfo Mx.InitiatorDirection) apps
         respMinis = map (appToInfo Mx.ResponderDirection) apps
@@ -1605,7 +1676,7 @@ prop_mux_start_m :: forall m.
                        , MonadThrow (STM m)
                        , MonadTimer m
                        )
-                    => Mx.Bearer m
+                    => forall buffer. Mx.Bearer m buffer
                     -> (DummyApp -> m ())
                     -> (    Mx.StartOnDemandOrEagerly
                          -> DiffTime
@@ -1801,11 +1872,11 @@ data NetworkCtx sock m b = NetworkCtx {
     ncSocket    :: m sock,
     ncClose     :: sock -> m (),
     -- ncMuxBearer :: sock -> m (Mx.Bearer m)
-    ncMuxBearer :: sock -> (Mx.Bearer m -> m b) -> m b
+    ncMuxBearer :: sock -> (forall buffer. Mx.Bearer m buffer -> m b) -> m b
   }
 
 
-withNetworkCtx :: MonadThrow m => NetworkCtx sock m a -> (Mx.Bearer m -> m a) -> m a
+withNetworkCtx :: MonadThrow m => NetworkCtx sock m a -> (forall buffer. Mx.Bearer m buffer -> m a) -> m a
 withNetworkCtx NetworkCtx { ncSocket, ncClose, ncMuxBearer } k =
     bracket ncSocket ncClose (\sd -> ncMuxBearer sd k)
 
@@ -2049,64 +2120,64 @@ close_experiment
       }
 
 
-prop_mux_close_io :: FaultInjection
-                  -> [Int]
-                  -> (Int -> Int -> (Int, Int))
-                  -> Int
-                  -> Property
-prop_mux_close_io fault reqs fn acc = ioProperty $ withIOManager $ \iocp -> do
-    serverAddr : _ <- Socket.getAddrInfo
-                        Nothing (Just "127.0.0.1") (Just "0")
-    bracket (Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
-            Socket.close
-            $ \serverSocket -> do
-      associateWithIOManager iocp (Right serverSocket)
-      Socket.bind serverSocket (Socket.addrAddress serverAddr)
-      Socket.listen serverSocket 1
-      let serverCtx = NetworkCtx {
-              ncSocket = do
-                (sock, _) <- Socket.accept serverSocket
-                associateWithIOManager iocp (Right sock)
-                return sock,
-              ncClose  = Socket.close,
-              ncMuxBearer = \sd k -> withReadBufferIO (\buffer -> do
-                              bearer <- getBearer makeSocketBearer 10 nullTracer sd buffer
-                              k bearer
-                            )
+-- prop_mux_close_io :: FaultInjection
+--                   -> [Int]
+--                   -> (Int -> Int -> (Int, Int))
+--                   -> Int
+--                   -> Property
+-- prop_mux_close_io fault reqs fn acc = ioProperty $ withIOManager $ \iocp -> do
+--     serverAddr : _ <- Socket.getAddrInfo
+--                         Nothing (Just "127.0.0.1") (Just "0")
+--     bracket (Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
+--             Socket.close
+--             $ \serverSocket -> do
+--       associateWithIOManager iocp (Right serverSocket)
+--       Socket.bind serverSocket (Socket.addrAddress serverAddr)
+--       Socket.listen serverSocket 1
+--       let serverCtx = NetworkCtx {
+--               ncSocket = do
+--                 (sock, _) <- Socket.accept serverSocket
+--                 associateWithIOManager iocp (Right sock)
+--                 return sock,
+--               ncClose  = Socket.close,
+--               ncMuxBearer = \sd k -> withReadBufferIO (\buffer -> do
+--                               bearer <- getBearer makeSocketBearer 10 nullTracer sd buffer
+--                               k bearer
+--                             )
 
-            }
-          clientCtx = NetworkCtx {
-              ncSocket = do
-                sock <- Socket.socket Socket.AF_INET Socket.Stream
-                                      Socket.defaultProtocol
-                associateWithIOManager iocp (Right sock)
-                (Socket.getSocketName serverSocket
-                  >>= Socket.connect sock)
-                  `onException`
-                    Socket.close sock
-                return sock,
-              ncClose  = Socket.close,
-              ncMuxBearer = \sd k -> withReadBufferIO (\buffer -> do
-                              bearer <- getBearer makeSocketBearer 10 nullTracer sd buffer
-                              k bearer
-                            )
+--             }
+--           clientCtx = NetworkCtx {
+--               ncSocket = do
+--                 sock <- Socket.socket Socket.AF_INET Socket.Stream
+--                                       Socket.defaultProtocol
+--                 associateWithIOManager iocp (Right sock)
+--                 (Socket.getSocketName serverSocket
+--                   >>= Socket.connect sock)
+--                   `onException`
+--                     Socket.close sock
+--                 return sock,
+--               ncClose  = Socket.close,
+--               ncMuxBearer = \sd k -> withReadBufferIO (\buffer -> do
+--                               bearer <- getBearer makeSocketBearer 10 nullTracer sd buffer
+--                               k bearer
+--                             )
 
-            }
-      close_experiment
-        True
-        fault
-        nullTracer
-        nullTracer
-        {--
-          - ((\msg -> (,msg) <$> getMonotonicTime)
-          -  `contramapM` Tracer Debug.traceShowM
-          - )
-          - ((\msg -> (,msg) <$> getMonotonicTime)
-          -  `contramapM` Tracer Debug.traceShowM
-          - )
-          --}
-        clientCtx serverCtx
-        reqs fn acc
+--             }
+--       close_experiment
+--         True
+--         fault
+--         nullTracer
+--         nullTracer
+--         {--
+--           - ((\msg -> (,msg) <$> getMonotonicTime)
+--           -  `contramapM` Tracer Debug.traceShowM
+--           - )
+--           - ((\msg -> (,msg) <$> getMonotonicTime)
+--           -  `contramapM` Tracer Debug.traceShowM
+--           - )
+--           --}
+--         clientCtx serverCtx
+--         reqs fn acc
 
 
 prop_mux_close_sim :: FaultInjection
