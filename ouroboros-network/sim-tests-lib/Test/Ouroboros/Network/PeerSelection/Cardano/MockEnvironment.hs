@@ -92,12 +92,13 @@ import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import Cardano.Network.Types (LedgerStateJudgement (..),
            NumberOfBigLedgerPeers (..))
 import Ouroboros.Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
+import Ouroboros.Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
+import Ouroboros.Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano.ExtraPeers
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionActions qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as ExtraState
+import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano.ExtraState
 import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as ExtraSizes
-import Ouroboros.Cardano.Network.PublicRootPeers qualified as Cardano
-import Ouroboros.Cardano.Network.PublicRootPeers qualified as ExtraPeers
+import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as Cardano.ExtraSizes
+import Ouroboros.Cardano.Network.PeerSelection.PublicRootPeers qualified as Cardano.PublicRootPeers
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers (..))
@@ -211,13 +212,13 @@ validGovernorMockEnvironment GovernorMockEnvironment {
            , counterexample "local roots not a subset of all peers"
               (LocalRootPeers.keysSet localRootPeers `Set.isSubsetOf` allPeersSet)
            , counterexample "public root peers not a subset of  all peers" $
-             property (PublicRootPeers.toSet ExtraPeers.toSet publicRootPeers `Set.isSubsetOf` allPeersSet)
+             property (PublicRootPeers.toSet Cardano.ExtraPeers.toSet publicRootPeers `Set.isSubsetOf` allPeersSet)
            , counterexample "failed peer selection targets sanity check" $
              property (foldl (\ !p ((t, t'), _) -> p && all sanePeerSelectionTargets [t, t'])
                         True
                         targets)
            , counterexample "big ledger peers not a subset of public roots"
-                (PublicRootPeers.invariant ExtraPeers.invariant ExtraPeers.toSet publicRootPeers)
+                (PublicRootPeers.invariant Cardano.ExtraPeers.invariant Cardano.ExtraPeers.toSet publicRootPeers)
            ]
   where
     allPeersSet = allPeers peerGraph
@@ -247,8 +248,8 @@ governorAction mockEnv@GovernorMockEnvironment {
                               (useBootstrapPeers mockEnv)
     let readUseBootstrapPeers = readTVar usbVar
     -- todo: make NumberOfBigLedgerPeers come from quickcheck
-    debugStateVar <- StrictTVar.newTVarIO (emptyPeerSelectionState (mkStdGen 42) (ExtraState.empty consensusMode (NumberOfBigLedgerPeers 0)) ExtraPeers.empty)
-    countersVar <- StrictTVar.newTVarIO (emptyPeerSelectionCounters ExtraSizes.empty)
+    debugStateVar <- StrictTVar.newTVarIO (emptyPeerSelectionState (mkStdGen 42) (Cardano.ExtraState.empty consensusMode (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty)
+    countersVar <- StrictTVar.newTVarIO (emptyPeerSelectionCounters Cardano.ExtraSizes.empty)
     policy  <- mockPeerSelectionPolicy mockEnv
     let initialPeerTargets = fst . NonEmpty.head $ targets'
 
@@ -309,8 +310,8 @@ governorAction mockEnv@GovernorMockEnvironment {
         tracerTracePeerSelectionCounters
         peerSelectionGovernorArgs
         (mkStdGen 42)
-        (ExtraState.empty consensusMode (NumberOfBigLedgerPeers 0)) -- ^ todo: make this come from quickcheck
-        ExtraPeers.empty
+        (Cardano.ExtraState.empty consensusMode (NumberOfBigLedgerPeers 0)) -- ^ todo: make this come from quickcheck
+        Cardano.ExtraPeers.empty
         actions
         policy
         interfaces
@@ -498,7 +499,7 @@ mockPeerSelectionActions' tracer
       readInboundPeers = pure Map.empty,
       readLedgerPeerSnapshot = pure Nothing,
       peerSelectionTargets = originalPeerTargets,
-      extraPeersAPI = ExtraPeers.cardanoPublicRootPeersAPI,
+      extraPeersAPI = Cardano.ExtraPeers.cardanoPublicRootPeersAPI,
       extraStateToExtraCounters = Cardano.cardanoPeerSelectionStatetoCounters
     }
   where
@@ -518,28 +519,28 @@ mockPeerSelectionActions' tracer
       useLedgerPeers <- atomically readUseLedgerPeers
       -- If the ledger state is YoungEnough we should get ledger peers.
       -- Otherwise we should get bootstrap peers
-      let publicConfigPeers = PublicRootPeers.getPublicConfigPeers publicRootPeers
-          bootstrapPeers    = PublicRootPeers.getBootstrapPeers publicRootPeers
+      let publicConfigPeers = Cardano.PublicRootPeers.getPublicConfigPeers publicRootPeers
+          bootstrapPeers    = Cardano.PublicRootPeers.getBootstrapPeers publicRootPeers
           ledgerPeers       = PublicRootPeers.getLedgerPeers publicRootPeers
           bigLedgerPeers    = PublicRootPeers.getBigLedgerPeers publicRootPeers
           result =
             if usingBootstrapPeers
-               then PublicRootPeers.fromBootstrapPeers bootstrapPeers
+               then Cardano.PublicRootPeers.fromBootstrapPeers bootstrapPeers
                else case useLedgerPeers of
-                 DontUseLedgerPeers -> PublicRootPeers.empty ExtraPeers.empty
+                 DontUseLedgerPeers -> PublicRootPeers.empty Cardano.ExtraPeers.empty
                  UseLedgerPeers _ -> case ledgerPeersKind of
                    AllLedgerPeers
                      | Set.null ledgerPeers ->
-                       PublicRootPeers.fromPublicRootPeers publicConfigPeers
+                       Cardano.PublicRootPeers.fromPublicRootPeers publicConfigPeers
                      | otherwise            ->
                        PublicRootPeers.fromLedgerPeers ledgerPeers
                    BigLedgerPeers
                      | Set.null ledgerPeers ->
-                       PublicRootPeers.fromPublicRootPeers publicConfigPeers
+                       Cardano.PublicRootPeers.fromPublicRootPeers publicConfigPeers
                      | otherwise            ->
                        PublicRootPeers.fromBigLedgerPeers bigLedgerPeers
 
-      traceWith tracer (TraceEnvRootsResult (Set.toList (PublicRootPeers.toSet ExtraPeers.toSet result)))
+      traceWith tracer (TraceEnvRootsResult (Set.toList (PublicRootPeers.toSet Cardano.ExtraPeers.toSet result)))
       return (result, ttl)
 
     requestPeerShare :: PeerSharingAmount -> PeerAddr -> m (PeerSharingResult PeerAddr)
@@ -799,7 +800,6 @@ tracerTracePeerSelection = contramap f tracerTestTraceEvent
     f a@(TraceDemoteBigLedgerPeersAsynchronous !_)           = GovernorEvent a
     f a@TraceGovernorWakeup                                  = GovernorEvent a
     f a@(TraceChurnWait !_)                                  = GovernorEvent a
-    f a@(TraceChurnMode !_)                                  = GovernorEvent a
     f a@(TraceLedgerStateJudgementChanged !_)                = GovernorEvent a
     f a@TraceOnlyBootstrapPeers                              = GovernorEvent a
     f a@TraceBootstrapPeersFlagChangedWhilstInSensitiveState = GovernorEvent a
@@ -956,7 +956,7 @@ instance Arbitrary GovernorMockEnvironment where
       arbitraryRootPeers :: Set PeerAddr
                          -> Gen (LocalRootPeers PeerTrustable PeerAddr, PublicRootPeers (Cardano.ExtraPeers PeerAddr) PeerAddr)
       arbitraryRootPeers peers | Set.null peers =
-        return (LocalRootPeers.empty, PublicRootPeers.empty ExtraPeers.empty)
+        return (LocalRootPeers.empty, PublicRootPeers.empty Cardano.ExtraPeers.empty)
 
       arbitraryRootPeers peers = do
         -- We decide how many we want and then pick randomly.
@@ -1006,7 +1006,7 @@ instance Arbitrary GovernorMockEnvironment where
 
         localRootPeers <- arbitraryLocalRootPeers localRootsSet
         return ( localRootPeers
-               , PublicRootPeers.fromMapAndSet
+               , Cardano.PublicRootPeers.fromMapAndSet
                   publicConfigPeersMap
                   (Set.fromList boostrapPeers)
                   (Set.fromList ledgerPeers)
@@ -1063,7 +1063,7 @@ instance Arbitrary GovernorMockEnvironment where
           -- graph
           (HotValency localHot) = LocalRootPeers.hotTarget localRootPeers
           (WarmValency localWarm) = LocalRootPeers.warmTarget localRootPeers
-          publicConfiguredRootSize = Set.size . PublicRootPeers.toPublicConfigPeerSet $ publicRootPeers
+          publicConfiguredRootSize = Set.size . Cardano.PublicRootPeers.toPublicConfigPeerSet $ publicRootPeers
           knownOffset = localWarm + publicConfiguredRootSize
           knownGen = (knownOffset +) <$> resize (1000 - min 1000 knownOffset) arbitrarySizedNatural
           rootKnownGen knownMax = choose (0, min 100 (knownMax - localWarm))
@@ -1094,7 +1094,7 @@ instance Arbitrary GovernorMockEnvironment where
           peerGraph       = peerGraph',
           localRootPeers  = LocalRootPeers.restrictKeys localRootPeers nodes',
           publicRootPeers =
-            PublicRootPeers.intersection ExtraPeers.intersection
+            PublicRootPeers.intersection Cardano.ExtraPeers.intersection
               publicRootPeers nodes'
         }
       | peerGraph' <- shrink peerGraph
@@ -1151,7 +1151,7 @@ instance Arbitrary GovernorMockEnvironment where
       -- and the number of publicly configured root peers. A similar treatment with
       -- appropriate conditions is necessary for established and active peers.
       shrinkTargets targetsWithDelay =
-        let publicConfiguredRootSize = Set.size . PublicRootPeers.toPublicConfigPeerSet $ publicRootPeers
+        let publicConfiguredRootSize = Set.size . Cardano.PublicRootPeers.toPublicConfigPeerSet $ publicRootPeers
             (HotValency hotLocalRootsSize) = LocalRootPeers.hotTarget localRootPeers
             (WarmValency warmLocalRootsSize) = LocalRootPeers.warmTarget localRootPeers
             shrunkScript = shrink targetsWithDelay
@@ -1183,9 +1183,9 @@ instance Arbitrary GovernorMockEnvironment where
 prop_arbitrary_GovernorMockEnvironment :: GovernorMockEnvironment -> Property
 prop_arbitrary_GovernorMockEnvironment env =
     tabulate "num root peers"        [show (LocalRootPeers.size (localRootPeers env)
-                                          + PublicRootPeers.size ExtraPeers.size (publicRootPeers env))] $
+                                          + PublicRootPeers.size Cardano.ExtraPeers.size (publicRootPeers env))] $
     tabulate "num local root peers"  [show (LocalRootPeers.size (localRootPeers env))] $
-    tabulate "num public root peers" [show (PublicRootPeers.size ExtraPeers.size (publicRootPeers env))] $
+    tabulate "num public root peers" [show (PublicRootPeers.size Cardano.ExtraPeers.size (publicRootPeers env))] $
     tabulate "empty root peers" [show $ not emptyGraph && emptyRootPeers]  $
     tabulate "overlapping local/public roots" [show overlappingRootPeers]  $
     tabulate "num big ledger peers"  [show (Set.size bigLedgerPeersSet)] $
@@ -1195,10 +1195,10 @@ prop_arbitrary_GovernorMockEnvironment env =
     bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers (publicRootPeers env)
     emptyGraph     = null g where PeerGraph g = peerGraph env
     emptyRootPeers = LocalRootPeers.null (localRootPeers env)
-                  && PublicRootPeers.null ExtraPeers.nullAll (publicRootPeers env)
+                  && PublicRootPeers.null Cardano.ExtraPeers.nullAll (publicRootPeers env)
     overlappingRootPeers =
-      not $ PublicRootPeers.null ExtraPeers.nullAll $
-        PublicRootPeers.intersection ExtraPeers.intersection
+      not $ PublicRootPeers.null Cardano.ExtraPeers.nullAll $
+        PublicRootPeers.intersection Cardano.ExtraPeers.intersection
           (publicRootPeers env)
           (LocalRootPeers.keysSet (localRootPeers env))
 

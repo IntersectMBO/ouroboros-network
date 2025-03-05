@@ -82,16 +82,16 @@ import Ouroboros.Cardano.Network.ArgumentsExtra qualified as Cardano
 import Ouroboros.Cardano.Network.Diffusion.Configuration
            (defaultNumberOfBigLedgerPeers)
 import Ouroboros.Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.Churn.ExtraArguments qualified as Churn
+import Ouroboros.Cardano.Network.PeerSelection.Churn (ChurnMode (..),
+           TracerChurnMode, peerChurnGovernor)
+import Ouroboros.Cardano.Network.PeerSelection.Churn qualified as Churn
+import Ouroboros.Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano hiding
            (consensusMode)
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as ExtraState
 import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as ExtraSizes
-import Ouroboros.Cardano.Network.PublicRootPeers qualified as Cardano
-import Ouroboros.Cardano.Network.Types (ChurnMode (..))
-import Ouroboros.Cardano.PeerSelection.Churn (peerChurnGovernor)
-import Ouroboros.Cardano.PeerSelection.PeerSelectionActions
+import Ouroboros.Cardano.Network.PeerSelection.PeerSelectionActions
            (requestPublicRootPeers)
 
 import Ouroboros.Network.Block (BlockNo)
@@ -938,6 +938,7 @@ data DiffusionTestTrace =
     | DiffusionInboundGovernorTrace (IG.Trace NtNAddr)
     | DiffusionServerTrace (Server.Trace NtNAddr)
     | DiffusionFetchTrace (TraceFetchClientState BlockHeader)
+    | DiffusionChurnModeTrace TracerChurnMode
     | DiffusionDebugTrace String
     deriving (Show)
 
@@ -1219,6 +1220,8 @@ diffusionSimulation
             , Churn.genesisPeerTargets  = Cardano.genesisPeerTargets cardanoExtraArgs
             , Churn.readUseBootstrap    = Cardano.readUseBootstrapPeers cardanoExtraArgs
             , Churn.consensusMode       = consensusMode
+            , Churn.tracerChurnMode     = (\s -> WithTime (Time (-1)) (WithName addr (DiffusionChurnModeTrace s)))
+                                            `contramap` nodeTracer
             }
 
           arguments :: Node.Arguments (Churn.ExtraArguments m) PeerTrustable m
