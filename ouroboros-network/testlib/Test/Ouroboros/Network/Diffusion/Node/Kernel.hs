@@ -68,10 +68,9 @@ import Ouroboros.Network.Mock.ConcreteBlock qualified as ConcreteBlock
 import Ouroboros.Network.Mock.ProducerState
 import Ouroboros.Network.NodeToNode ()
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
+import Ouroboros.Network.PeerSelection (PeerSharing, RelayAccessPoint (..))
 import Ouroboros.Network.PeerSelection.Governor (PublicPeerSelectionState,
            makePublicPeerSelectionStateVar)
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
-import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint (..))
 import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry (..),
            newPeerSharingAPI, newPeerSharingRegistry,
            ps_POLICY_PEER_SHARE_MAX_PEERS, ps_POLICY_PEER_SHARE_STICKY_TIME)

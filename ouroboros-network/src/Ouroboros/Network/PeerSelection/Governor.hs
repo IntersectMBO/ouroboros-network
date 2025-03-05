@@ -3,7 +3,6 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE LambdaCase            #-}
-{-# LANGUAGE MultiWayIf            #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 
@@ -19,10 +18,12 @@ module Ouroboros.Network.PeerSelection.Governor
     -- * Peer selection governor
     -- $peer-selection-governor
     PeerSelectionPolicy (..)
+  , PickPolicy
   , PeerSelectionTargets (..)
   , PeerSelectionActions (..)
   , PeerSelectionInterfaces (..)
   , PeerStateActions (..)
+  , PeerSelectionGovernorArgs (..)
   , TracePeerSelection (..)
   , ChurnAction (..)
   , DebugPeerSelection (..)

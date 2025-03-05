@@ -109,22 +109,16 @@ import Ouroboros.Network.InboundGovernor (RemoteTransitionTrace)
 import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.Mock.ConcreteBlock (Block (..), BlockHeader (..))
 import Ouroboros.Network.Mux (MiniProtocolLimits (..))
+import Ouroboros.Network.PeerSelection (AfterSlot (..), DomainAccessPoint (..),
+           LedgerPeersConsensusInterface (..), PeerSelectionActionsTrace,
+           PeerSharing, PortNumber, RelayAccessPoint (..), TraceLedgerPeers,
+           UseLedgerPeers (..))
 import Ouroboros.Network.PeerSelection.Governor (DebugPeerSelection (..),
            TracePeerSelection)
-import Ouroboros.Network.PeerSelection.Governor qualified as PeerSelection
-import Ouroboros.Network.PeerSelection.LedgerPeers (AfterSlot (..),
-           LedgerPeersConsensusInterface (..), TraceLedgerPeers,
-           UseLedgerPeers (..), accPoolStake)
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
-import Ouroboros.Network.PeerSelection.PeerStateActions
-           (PeerSelectionActionsTrace)
-import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint (..),
-           PortNumber, RelayAccessPoint (..))
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSLookupType)
-import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
-           (TraceLocalRootPeers)
-import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
-           (TracePublicRootPeers)
+import Ouroboros.Network.PeerSelection.Governor qualified as Governor
+import Ouroboros.Network.PeerSelection.LedgerPeers (accPoolStake)
+import Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupType,
+           TraceLocalRootPeers, TracePublicRootPeers)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
            LocalRootConfig, WarmValency (..))
 import Ouroboros.Network.Protocol.BlockFetch.Codec (byteLimitsBlockFetch,
@@ -362,7 +356,7 @@ instance Arbitrary SmallPeerSelectionTargets where
     [ SmallTargets targets'
     | (r',k',e',a',kb',eb',ab') <- shrink (r,k,e,a,kb,eb,ab)
     , let targets' = PeerSelectionTargets r' k' e' a' kb' eb' ab'
-    , PeerSelection.sanePeerSelectionTargets targets'
+    , Governor.sanePeerSelectionTargets targets'
     ]
 
 

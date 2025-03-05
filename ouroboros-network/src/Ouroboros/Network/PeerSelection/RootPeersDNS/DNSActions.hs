@@ -7,6 +7,7 @@
 module Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
   ( -- * DNS based actions for local and public root providers
     DNSActions (..)
+  , PeerActionsDNS (..)
     -- * DNSActions IO
   , ioDNSActions
   , DNSLookupType (..)
@@ -46,6 +47,7 @@ import System.Directory (getModificationTime)
 import Data.IP (IP (..))
 import Network.DNS (DNSError)
 import Network.DNS qualified as DNS
+import Network.Socket (PortNumber)
 
 
 data DNSLookupType = LookupReqAOnly
@@ -172,6 +174,16 @@ data DNSActions resolver exception m = DNSActions {
                              -> resolver
                              -> DNS.Domain
                              -> m ([DNS.DNSError], [(IP, DNS.TTL)])
+  }
+
+
+-- | Record of some parameters that are commonly used together
+--
+-- TODO: rename as `PeerDNSActions`; can we bundle `paToPeerAddr` with
+-- `DNSActions`?
+data PeerActionsDNS peeraddr resolver exception m = PeerActionsDNS {
+  paToPeerAddr :: IP -> PortNumber -> peeraddr,
+  paDnsActions :: DNSActions resolver exception m
   }
 
 
