@@ -12,6 +12,7 @@ msgAcceptVersion   = [1, versionNumber, nodeToNodeVersionData]
 msgRefuse          = [2, refuseReason]
 msgQueryReply      = [3, versionTable]
 
+; The codec only accepts definite-length maps.
 versionTable = { * versionNumber => nodeToNodeVersionData }
 
 versionNumber = 14

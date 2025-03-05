@@ -11,6 +11,7 @@ msgProposeVersions = [0, versionTable]
 msgAcceptVersion   = [1, versionNumber, nodeToNodeVersionData]
 msgRefuse          = [2, refuseReason]
 
+; The codec only accepts definite-length maps.
 versionTable = { * versionNumber => nodeToNodeVersionData }
 
 versionNumber = 7 / 8 / 9 / 10

@@ -14,6 +14,7 @@ msgRefuse          = [2, refuseReason]
 msgQueryReply      = [3, versionTable]
 
 ; Entries must be sorted by version number. For testing, this is handled in `handshakeFix`.
+; The codec only accepts definite-length maps.
 versionTable = { * versionNumber => nodeToClientVersionData }
 
 
