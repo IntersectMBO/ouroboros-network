@@ -78,3 +78,4 @@ This package contains:
   demonstration purposes.
 - The `kes-agent-protodocs` binary, a tool that will output documentation of
   the KES Agent protocols as used in the current versions of the library.
+  **This part is currently disabled due to dependency issues.**

@@ -35,7 +35,6 @@ library
     import: project-config
     import: base-dependencies
     exposed-modules:
-                   Cardano.KESAgent.Playground
                    Cardano.KESAgent.Priority
                    Cardano.KESAgent.KES.Classes
                    Cardano.KESAgent.KES.Evolution
