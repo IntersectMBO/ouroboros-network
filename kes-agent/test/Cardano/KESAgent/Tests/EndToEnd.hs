@@ -74,7 +74,7 @@ tests =
         ]
     ]
 #else
-  test =
+  tests =
     testGroup
       "end to end"
       [ ]
