@@ -74,10 +74,13 @@ tests =
         ]
     ]
 #else
-  tests =
-    testGroup
-      "end to end"
-      [ ]
+tests =
+  testGroup
+    "end to end"
+    [ testCase "kes-agent --help" kesAgentHelp
+    , testCase "kes-agent --genesis-file" kesAgentGenesisFile
+    , testCase "kes-agent-control --help" kesAgentControlHelp
+    ]
 #endif
 
 kesAgentHelp :: Assertion
