@@ -118,8 +118,8 @@ socketAsBearerBuffered sduSize batchSize
             when x $ m >> while p m
 
       recvLen :: BearerIngressBuffer -> IO BL.ByteString
-      recvLen BearerIngressBuffer { bibSize = destSize, bibInfoRef = destInfoRef } =
-        modifyIORef' socketInfoRef skipHeader >> recvLen'
+      recvLen BearerIngressBuffer { bibSize = destSize, bibInfoRef = destInfoRef } = recvLen'
+        -- modifyIORef' socketInfoRef skipHeader >> recvLen'
         where
           socketInfoRef = bibInfoRef
 
@@ -157,10 +157,13 @@ socketAsBearerBuffered sduSize batchSize
       recv :: Bool -> Bool -> IO ()
       recv waitingOnNxtHeader reservePermission = do
         (start, len, socketBufPtr) <- readIORef bibInfoRef
-        let maxRead = if (   start + len + fromIntegral hdrLength - 1
-                          >= bibSize - fromIntegral hdrLength) && reservePermission
+        let maxRead = if reservePermission
                         then bibSize - (start + len)
                         else (bibSize - fromIntegral hdrLength) - (start + len)
+        -- let maxRead = if (   start + len + fromIntegral hdrLength - 1
+        --                   >= bibSize - fromIntegral hdrLength) && reservePermission
+        --                 then bibSize - (start + len)
+        --                 else (bibSize - fromIntegral hdrLength) - (start + len)
 
         bytesRead <-
           assert (maxRead > 0) $
