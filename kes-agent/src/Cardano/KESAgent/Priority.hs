@@ -15,12 +15,12 @@ import System.Posix.Syslog.Priority
 -- On Windows, we'll define our own 'Priority' type as a drop-in replacement
 -- for the syslog priority type from the @hsyslog@ package.
 data Priority
-  = Debug
-  | Info
-  | Notice
-  | Warning
-  | Error
+  = Emergency
   | Critical
-  | Emergency
+  | Error
+  | Warning
+  | Notice
+  | Info
+  | Debug
   deriving (Show, Eq, Ord, Enum, Bounded)
 #endif
