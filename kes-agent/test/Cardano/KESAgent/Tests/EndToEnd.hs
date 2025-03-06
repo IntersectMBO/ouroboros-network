@@ -369,7 +369,7 @@ kesAgentControlInstallMultiNodes =
             ExitSuccess
             ["KES key installed."]
           -- Little bit of delay to allow the client to read the key.
-          threadDelay 10000
+          threadDelay 100000
         return (serviceOutLines1, serviceOutLines2)
 
     assertNoMatchingOutputLinesWith
