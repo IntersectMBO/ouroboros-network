@@ -51,8 +51,6 @@ tests =
     [ testCase "kes-agent --help" kesAgentHelp
     , testCase "kes-agent --genesis-file" kesAgentGenesisFile
     , testCase "kes-agent-control --help" kesAgentControlHelp
-    -- These tests take forever on Windows, and aren't really helpful anyway,
-    -- since we don't support running kes-agent on Windows.
     , testGroup
         "kes-agent-control install-key"
         [ testCase "valid" kesAgentControlInstallValid
@@ -62,14 +60,14 @@ tests =
         , testCase "multiple nodes" kesAgentControlInstallMultiNodes
         ]
     , testGroup
-        "evolution"
-        [ testCase "key evolves forward" kesAgentEvolvesKey
-        ]
-    , testGroup
         "inter-agent"
         [ testCase "key propagated to other agent" kesAgentPropagate
         , testCase "self-healing 1 (agent 2 goes down)" kesAgentSelfHeal1
         , testCase "self-healing 2 (agent 1 goes down)" kesAgentSelfHeal2
+        ]
+    , testGroup
+        "evolution"
+        [ testCase "key evolves forward" kesAgentEvolvesKey
         ]
     ]
 
@@ -80,9 +78,9 @@ kesAgentHelp = do
 
 socketAddresses :: FilePath -> (FilePath, FilePath)
 socketAddresses tmpdir =
-    ( tmpdir </> "control.socket"
-    , tmpdir </> "service.socket"
-    )
+  ( tmpdir </> "control.socket"
+  , tmpdir </> "service.socket"
+  )
 
 kesAgentGenesisFile :: Assertion
 kesAgentGenesisFile = do
@@ -411,36 +409,39 @@ kesAgentEvolvesKey =
           return ()
 
     (agentOutLines, serviceOutLines, ()) <-
-      withAgentAndService controlAddr serviceAddr [] coldVerKeyFile $ do
-        controlClientCheck
-          [ "gen-staged-key"
-          , "--kes-verification-key-file"
-          , kesKeyFile
-          , "--control-address"
-          , controlAddr
-          ]
-          ExitSuccess
-          [ "Asking agent to generate a key..."
-          , "KES SignKey generated."
-          , "KES VerKey written to " <> kesKeyFile
-          ]
-        makeCert
-        controlClientCheck
-          [ "install-key"
-          , "--opcert-file"
-          , opcertFile
-          , "--control-address"
-          , controlAddr
-          ]
-          ExitSuccess
-          ["KES key installed."]
-        controlClientCheckP
-          [ "info"
-          , "--control-address"
-          , controlAddr
-          ]
-          ExitSuccess
-          (any (`elem` ["Current evolution: 10 / 64", "Current evolution: 11 / 64"]))
+      withAgentAndService controlAddr serviceAddr [] coldVerKeyFile $ 
+        (>>= either error return) $
+        race (threadDelay 10000000 >> return "TIMED OUT")
+          $ do
+              controlClientCheck
+                [ "gen-staged-key"
+                , "--kes-verification-key-file"
+                , kesKeyFile
+                , "--control-address"
+                , controlAddr
+                ]
+                ExitSuccess
+                [ "Asking agent to generate a key..."
+                , "KES SignKey generated."
+                , "KES VerKey written to " <> kesKeyFile
+                ]
+              makeCert
+              controlClientCheck
+                [ "install-key"
+                , "--opcert-file"
+                , opcertFile
+                , "--control-address"
+                , controlAddr
+                ]
+                ExitSuccess
+                ["KES key installed."]
+              controlClientCheckP
+                [ "info"
+                , "--control-address"
+                , controlAddr
+                ]
+                ExitSuccess
+                (any (`elem` ["Current evolution: 10 / 64", "Current evolution: 11 / 64"]))
     assertMatchingOutputLinesWith
       ("SERVICE OUTPUT CHECK\n" <> (Text.unpack . Text.unlines $ agentOutLines))
       0
