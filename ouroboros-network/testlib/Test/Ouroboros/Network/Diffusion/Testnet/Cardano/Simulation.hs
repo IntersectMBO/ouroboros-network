@@ -226,27 +226,28 @@ data NodeArgs =
     }
 
 instance Show NodeArgs where
-    show NodeArgs { naSeed, naDiffusionMode, naMbTime, naBootstrapPeers, naPublicRoots,
-                   naAddr, naPeerSharing, naLocalRootPeers, naPeerTargets,
-                   naDNSTimeoutScript, naDNSLookupDelayScript, naChainSyncExitOnBlockNo,
-                   naChainSyncEarlyExit, naFetchModeScript, naConsensusMode } =
+    show NodeArgs { naSeed, naDiffusionMode, naMbTime, naBootstrapPeers,
+                    naPublicRoots, naAddr, naPeerSharing, naLedgerPeers,
+                    naLocalRootPeers, naPeerTargets, naDNSTimeoutScript,
+                    naDNSLookupDelayScript, naChainSyncExitOnBlockNo,
+                    naChainSyncEarlyExit, naFetchModeScript, naConsensusMode } =
       unwords [ "NodeArgs"
               , "(" ++ show naSeed ++ ")"
               , show naDiffusionMode
-              , show naConsensusMode
               , "(" ++ show naMbTime ++ ")"
               , "(" ++ show naPublicRoots ++ ")"
+              , show naConsensusMode
               , "(" ++ show naBootstrapPeers ++ ")"
               , "(" ++ show naAddr ++ ")"
               , show naPeerSharing
               , show naLocalRootPeers
+              , show naLedgerPeers
               , show naPeerTargets
               , "(" ++ show naDNSTimeoutScript ++ ")"
               , "(" ++ show naDNSLookupDelayScript ++ ")"
               , "(" ++ show naChainSyncExitOnBlockNo ++ ")"
               , show naChainSyncEarlyExit
               , show naFetchModeScript
-              , "============================================\n"
               ]
 
 data Command = JoinNetwork DiffTime
