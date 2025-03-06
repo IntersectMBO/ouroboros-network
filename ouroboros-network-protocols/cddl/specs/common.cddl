@@ -11,6 +11,7 @@ block  = any
 header = any
 tip    = any
 point  = any
+; The codec only accepts definite-length list.
 points = [ *point ]
 txId   = any
 tx     = any

@@ -10,7 +10,8 @@ msgShareRequest = [0, byte]
 msgSharePeers   = [1, peerAddresses]
 msgDone         = [2]
 
-peerAddresses = [* peerAddress]
+; The codec accepts both indefinite-length and definite-length lists.
+peerAddresses = [ *peerAddress ]
 
 byte = 0..255
 
