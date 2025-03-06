@@ -2,8 +2,9 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE NamedFieldPuns    #-}
-{-# LANGUAGE TypeOperators     #-}
 
+-- | The module is designed to be imported qualified.
+--
 module Ouroboros.Network.PeerSelection.PublicRootPeers
   ( -- * Types
     PublicRootPeers (..)
