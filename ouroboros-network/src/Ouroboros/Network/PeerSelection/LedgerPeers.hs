@@ -131,7 +131,7 @@ accBigPoolStakeMap :: [(PoolStake, NonEmpty RelayAccessPoint)]
                    -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
 accBigPoolStakeMap = Map.fromAscList      -- the input list is ordered by `AccPoolStake`, thus we
                                           -- can use `fromAscList`
-                     . accumulateBigLedgerStake
+                   . accumulateBigLedgerStake
 
 -- | Try to pick n random peers using stake distribution.
 --
