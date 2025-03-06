@@ -60,6 +60,8 @@ import Data.List.NonEmpty (NonEmpty (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection (DomainAccessPoint (..), IP (..),
            PeerAdvertise (..), RelayAccessPoint (..), TraceLedgerPeers)
+import Ouroboros.Network.PeerSelection.LedgerPeers
+           (resolveTraceToLedgerPeersTrace)
 import Ouroboros.Network.PeerSelection.RootPeersDNS
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
            LocalRootConfig (..), WarmValency (..))
@@ -450,7 +452,7 @@ mockResolveLedgerPeers tracer (MockRoots _ _ publicRootPeers dnsMapScript)
 
       dnsTimeoutScriptVar <- initScript' dnsTimeoutScript
       dnsLookupDelayScriptVar <- initScript' dnsLookupDelayScript
-      resolveLedgerPeers tracer
+      resolveLedgerPeers (resolveTraceToLedgerPeersTrace `contramap` tracer)
                          (curry toSockAddr)
                          dnsSemaphore
                          DNSResolver.defaultResolvConf

@@ -118,7 +118,6 @@ library
     Ouroboros.Network.PeerSelection.Governor.EstablishedPeers
     Ouroboros.Network.PeerSelection.Governor.KnownPeers
     Ouroboros.Network.PeerSelection.Governor.RootPeers
-    Ouroboros.Network.PeerSelection.LedgerPeers.Common
     Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
 
   reexported-modules:

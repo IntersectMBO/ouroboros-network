@@ -6,6 +6,8 @@
 
 ### Non-breaking changes
 
+* `IsLedgerPeer` added to `Ouroboros.Network.LedgerPeers.Types` module.
+
 ## 0.13.0.0 -- 2025-02-25
 
 ### Breaking changes
