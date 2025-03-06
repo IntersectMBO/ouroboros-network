@@ -45,7 +45,6 @@ defGenesisTimestamp :: Integer
 defGenesisTimestamp = 1506203091 -- real-world genesis on the production ledger
 
 tests :: TestTree
-#if !defined(mingw32_HOST_OS)
 tests =
   testGroup
     "end to end"
@@ -73,26 +72,22 @@ tests =
         , testCase "self-healing 2 (agent 1 goes down)" kesAgentSelfHeal2
         ]
     ]
-#else
-tests =
-  testGroup
-    "end to end"
-    [ testCase "kes-agent --help" kesAgentHelp
-    , testCase "kes-agent --genesis-file" kesAgentGenesisFile
-    , testCase "kes-agent-control --help" kesAgentControlHelp
-    ]
-#endif
 
 kesAgentHelp :: Assertion
 kesAgentHelp = do
   (exitCode, stdout, stderr) <- readProcessWithExitCode "kes-agent" ["--help"] ""
   assertEqual (stdout ++ "\n" ++ stderr) ExitSuccess exitCode
 
+socketAddresses :: FilePath -> (FilePath, FilePath)
+socketAddresses tmpdir =
+    ( tmpdir </> "control.socket"
+    , tmpdir </> "service.socket"
+    )
+
 kesAgentGenesisFile :: Assertion
 kesAgentGenesisFile = do
   (agentOutLines, agentErrLines, exitCode) <- withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
-    let controlAddr = tmpdir </> "control.socket"
-        serviceAddr = tmpdir </> "service.socket"
+    let (controlAddr, serviceAddr) = socketAddresses tmpdir
         kesKeyFile = tmpdir </> "kes.vkey"
         opcertFile = tmpdir </> "opcert.cert"
     coldSignKeyFile <- getDataFileName "fixtures/cold.skey"
@@ -142,8 +137,7 @@ logHandle h = do
 kesAgentControlInstallValid :: Assertion
 kesAgentControlInstallValid =
   withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
-    let controlAddr = tmpdir </> "control.socket"
-        serviceAddr = tmpdir </> "service.socket"
+    let (controlAddr, serviceAddr) = socketAddresses tmpdir
         kesKeyFile = tmpdir </> "kes.vkey"
         opcertFile = tmpdir </> "opcert.cert"
     coldSignKeyFile <- getDataFileName "fixtures/cold.skey"
@@ -196,8 +190,7 @@ kesAgentControlInstallValid =
 kesAgentControlInstallInvalidOpCert :: Assertion
 kesAgentControlInstallInvalidOpCert =
   withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
-    let controlAddr = tmpdir </> "control.socket"
-        serviceAddr = tmpdir </> "service.socket"
+    let (controlAddr, serviceAddr) = socketAddresses tmpdir
         kesKeyFile = tmpdir </> "kes.vkey"
     opcertFile <- getDataFileName "fixtures/opcert.cert"
     coldSignKeyFile <- getDataFileName "fixtures/cold.skey"
@@ -233,8 +226,7 @@ kesAgentControlInstallInvalidOpCert =
 kesAgentControlInstallNoKey :: Assertion
 kesAgentControlInstallNoKey =
   withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
-    let controlAddr = tmpdir </> "control.socket"
-        serviceAddr = tmpdir </> "service.socket"
+    let (controlAddr, serviceAddr) = socketAddresses tmpdir
         opcertFile = tmpdir </> "opcert.cert"
     kesKeyFile <- getDataFileName "fixtures/kes.vkey"
     coldSignKeyFile <- getDataFileName "fixtures/cold.skey"
@@ -270,8 +262,7 @@ kesAgentControlInstallNoKey =
 kesAgentControlInstallDroppedKey :: Assertion
 kesAgentControlInstallDroppedKey =
   withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
-    let controlAddr = tmpdir </> "control.socket"
-        serviceAddr = tmpdir </> "service.socket"
+    let (controlAddr, serviceAddr) = socketAddresses tmpdir
         opcertFile = tmpdir </> "opcert.cert"
         kesKeyFile = tmpdir </> "kes.vkey"
     coldSignKeyFile <- getDataFileName "fixtures/cold.skey"
@@ -329,8 +320,7 @@ kesAgentControlInstallDroppedKey =
 kesAgentControlInstallMultiNodes :: Assertion
 kesAgentControlInstallMultiNodes =
   withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
-    let controlAddr = tmpdir </> "control.socket"
-        serviceAddr = tmpdir </> "service.socket"
+    let (controlAddr, serviceAddr) = socketAddresses tmpdir
         kesKeyFile = tmpdir </> "kes.vkey"
         opcertFile = tmpdir </> "opcert.cert"
     coldSignKeyFile <- getDataFileName "fixtures/cold.skey"
@@ -401,8 +391,7 @@ kesAgentControlInstallMultiNodes =
 kesAgentEvolvesKey :: Assertion
 kesAgentEvolvesKey =
   withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
-    let controlAddr = tmpdir </> "control.socket"
-        serviceAddr = tmpdir </> "service.socket"
+    let (controlAddr, serviceAddr) = socketAddresses tmpdir
         kesKeyFile = tmpdir </> "kes.vkey"
         opcertFile = tmpdir </> "opcert.cert"
     coldSignKeyFile <- getDataFileName "fixtures/cold.skey"
