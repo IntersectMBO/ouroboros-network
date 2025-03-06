@@ -90,7 +90,7 @@ kesAgentHelp = do
 
 kesAgentGenesisFile :: Assertion
 kesAgentGenesisFile = do
-  (agentOutLines, agentErrLines, exitCode) <- withSystemTempDirectory "kes-agent-tests" $ \tmpdir -> do
+  (agentOutLines, agentErrLines, exitCode) <- withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
     let controlAddr = tmpdir </> "control.socket"
         serviceAddr = tmpdir </> "service.socket"
         kesKeyFile = tmpdir </> "kes.vkey"
@@ -141,7 +141,7 @@ logHandle h = do
 
 kesAgentControlInstallValid :: Assertion
 kesAgentControlInstallValid =
-  withSystemTempDirectory "kes-agent-tests" $ \tmpdir -> do
+  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
     let controlAddr = tmpdir </> "control.socket"
         serviceAddr = tmpdir </> "service.socket"
         kesKeyFile = tmpdir </> "kes.vkey"
@@ -195,7 +195,7 @@ kesAgentControlInstallValid =
 
 kesAgentControlInstallInvalidOpCert :: Assertion
 kesAgentControlInstallInvalidOpCert =
-  withSystemTempDirectory "kes-agent-tests" $ \tmpdir -> do
+  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
     let controlAddr = tmpdir </> "control.socket"
         serviceAddr = tmpdir </> "service.socket"
         kesKeyFile = tmpdir </> "kes.vkey"
@@ -232,7 +232,7 @@ kesAgentControlInstallInvalidOpCert =
 
 kesAgentControlInstallNoKey :: Assertion
 kesAgentControlInstallNoKey =
-  withSystemTempDirectory "kes-agent-tests" $ \tmpdir -> do
+  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
     let controlAddr = tmpdir </> "control.socket"
         serviceAddr = tmpdir </> "service.socket"
         opcertFile = tmpdir </> "opcert.cert"
@@ -269,7 +269,7 @@ kesAgentControlInstallNoKey =
 
 kesAgentControlInstallDroppedKey :: Assertion
 kesAgentControlInstallDroppedKey =
-  withSystemTempDirectory "kes-agent-tests" $ \tmpdir -> do
+  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
     let controlAddr = tmpdir </> "control.socket"
         serviceAddr = tmpdir </> "service.socket"
         opcertFile = tmpdir </> "opcert.cert"
@@ -328,7 +328,7 @@ kesAgentControlInstallDroppedKey =
 
 kesAgentControlInstallMultiNodes :: Assertion
 kesAgentControlInstallMultiNodes =
-  withSystemTempDirectory "kes-agent-tests" $ \tmpdir -> do
+  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
     let controlAddr = tmpdir </> "control.socket"
         serviceAddr = tmpdir </> "service.socket"
         kesKeyFile = tmpdir </> "kes.vkey"
@@ -400,7 +400,7 @@ kesAgentControlInstallMultiNodes =
 
 kesAgentEvolvesKey :: Assertion
 kesAgentEvolvesKey =
-  withSystemTempDirectory "kes-agent-tests" $ \tmpdir -> do
+  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
     let controlAddr = tmpdir </> "control.socket"
         serviceAddr = tmpdir </> "service.socket"
         kesKeyFile = tmpdir </> "kes.vkey"
@@ -460,7 +460,7 @@ kesAgentEvolvesKey =
 
 kesAgentPropagate :: Assertion
 kesAgentPropagate =
-  withSystemTempDirectory "kes-agent-tests" $ \tmpdir -> do
+  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
     let controlAddr1 = tmpdir </> "control1.socket"
         serviceAddr1 = tmpdir </> "service1.socket"
         controlAddr2 = tmpdir </> "control2.socket"
@@ -523,7 +523,7 @@ kesAgentPropagate =
 
 kesAgentSelfHeal1 :: Assertion
 kesAgentSelfHeal1 =
-  withSystemTempDirectory "kes-agent-tests" $ \tmpdir -> do
+  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
     let controlAddr1 = tmpdir </> "control1.socket"
         serviceAddr1 = tmpdir </> "service1.socket"
         controlAddr2 = tmpdir </> "control2.socket"
@@ -604,7 +604,7 @@ kesAgentSelfHeal1 =
 
 kesAgentSelfHeal2 :: Assertion
 kesAgentSelfHeal2 =
-  withSystemTempDirectory "kes-agent-tests" $ \tmpdir -> do
+  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
     let controlAddr1 = tmpdir </> "control1.socket"
         serviceAddr1 = tmpdir </> "service1.socket"
         controlAddr2 = tmpdir </> "control2.socket"

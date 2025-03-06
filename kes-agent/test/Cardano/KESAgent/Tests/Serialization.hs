@@ -179,7 +179,7 @@ prop_roundtrip_file ::
   Property
 prop_roundtrip_file makeThing seed = ioProperty $ do
   val <- makeThing seed
-  actual <- withSystemTempDirectory "kes-agent-tests" $ \dirname -> do
+  actual <- withSystemTempDirectory "KesAgentTest" $ \dirname -> do
     let filename = dirname </> "serialized.something"
     encodeTextEnvelopeFile filename val
     decodeTextEnvelopeFile filename
