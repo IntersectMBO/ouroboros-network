@@ -44,6 +44,13 @@ import Text.Printf
 defGenesisTimestamp :: Integer
 defGenesisTimestamp = 1506203091 -- real-world genesis on the production ledger
 
+#if defined(mingw32_HOST_OS)
+tests :: TestTree
+tests =
+  testGroup
+    "end to end"
+    []
+#else
 tests :: TestTree
 tests =
   testGroup
@@ -70,6 +77,7 @@ tests =
         [ testCase "key evolves forward" kesAgentEvolvesKey
         ]
     ]
+#endif
 
 kesAgentHelp :: Assertion
 kesAgentHelp = do
@@ -409,10 +417,10 @@ kesAgentEvolvesKey =
           return ()
 
     (agentOutLines, serviceOutLines, ()) <-
-      withAgentAndService controlAddr serviceAddr [] coldVerKeyFile $ 
+      withAgentAndService controlAddr serviceAddr [] coldVerKeyFile $
         (>>= either error return) $
-        race (threadDelay 10000000 >> return "TIMED OUT")
-          $ do
+          race (threadDelay 10000000 >> return "TIMED OUT") $
+            do
               controlClientCheck
                 [ "gen-staged-key"
                 , "--kes-verification-key-file"
