@@ -1,6 +1,5 @@
 module Ouroboros.Network.PeerSelection.RootPeersDNS
-  ( PeerActionsDNS (..)
-  , module DNSActions
+  ( module DNSActions
   , module DNSSemaphore
   , module LedgerPeers
   , module LocalRootPeers
