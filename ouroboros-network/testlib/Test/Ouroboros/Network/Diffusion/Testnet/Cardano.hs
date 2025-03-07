@@ -279,6 +279,10 @@ tests =
 long_trace :: Int
 long_trace = 125_000
 
+-- | 250_000 events
+very_long_trace :: Int
+very_long_trace = 2 * long_trace
+
 -- | 10_000s events
 short_trace :: Int
 short_trace = 10_000
@@ -2985,7 +2989,7 @@ prop_diffusion_target_active_local_below_iosimpor
 prop_diffusion_target_active_local_below_iosim
   :: AbsBearerInfo -> DiffusionScript -> Property
 prop_diffusion_target_active_local_below_iosim
-  = testWithIOSim prop_diffusion_target_active_local_below 250000
+  = testWithIOSim prop_diffusion_target_active_local_below (very_long_trace)
 
 
 --_iosim
@@ -4788,7 +4792,7 @@ prop_no_peershare_unwilling ioSimTrace traceNumber =
 prop_no_peershare_unwilling_iosim
   :: AbsBearerInfo -> DiffusionScript -> Property
 prop_no_peershare_unwilling_iosim
-  = testWithIOSim prop_no_peershare_unwilling 100_000
+  = testWithIOSim prop_no_peershare_unwilling long_trace
 
 
 --

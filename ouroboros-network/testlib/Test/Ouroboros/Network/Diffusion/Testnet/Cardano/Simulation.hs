@@ -428,10 +428,11 @@ genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream
                              RelayAddrInfo        _ip _port adv -> adv
                              RelayDomainInfo _dns _ip _port adv -> adv
                      ]
-  ledgerPeers <- fmap (map makeRelayAccessPoint) <$> listOf (sublistOf ledgerPeersRelays)
-  ledgerPeerPools <- traverse genLedgerPoolsFrom ledgerPeers
-  firstLedgerPool <- arbitrary
-  let ledgerPeerPoolsScript = Script (firstLedgerPool :| ledgerPeerPools)
+
+  ledgerPeers :: [[NonEmpty RelayAccessPoint]]
+     <- listOf1 (listOf1 (sublistOf1 (NonEmpty.fromList $ makeRelayAccessPoint <$> ledgerPeersRelays)))
+  ledgerPeersScript_ <- traverse genLedgerPoolsFrom ledgerPeers
+  let ledgerPeersScript = Script (NonEmpty.fromList ledgerPeersScript_)
 
   fetchModeScript <- fmap (bool FetchModeBulkSync FetchModeDeadline) <$> arbitrary
 
@@ -453,7 +454,7 @@ genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream
       , naBootstrapPeers         = bootstrapPeersDomain
       , naAddr                   = makeNtNAddr relay
       , naLocalRootPeers         = localRootPeers
-      , naLedgerPeers            = ledgerPeerPoolsScript
+      , naLedgerPeers            = ledgerPeersScript
       , naPeerTargets            = peerTargets
       , naDNSTimeoutScript       = dnsTimeout
       , naDNSLookupDelayScript   = dnsLookupDelay
@@ -1407,3 +1408,21 @@ withAsyncAll xs0 action = go [] xs0
 divvy :: Int -> [a] -> [[a]]
 divvy _ [] = []
 divvy n as = take n as : divvy n (drop n as)
+
+
+sublistOf1 :: NonEmpty a -> Gen (NonEmpty a)
+sublistOf1 as = do
+    -- boolean mask
+    msk <- vectorOf len arbitrary
+    -- index for which we force `True` in the `msk`
+    idx <- chooseInt (0, len - 1)
+    let msk' = case splitAt (idx - 1) msk of
+          (hs, _:ts) -> hs ++ (True : ts)
+          _          -> error "sublistOf1: impossible happened"
+    return . NonEmpty.fromList
+           . fmap snd
+           . NonEmpty.filter fst
+           . NonEmpty.zip (NonEmpty.fromList msk')
+           $ as
+  where
+    len = NonEmpty.length as
