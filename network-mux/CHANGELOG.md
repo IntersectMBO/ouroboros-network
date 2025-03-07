@@ -3,8 +3,15 @@
 ## next release
 
 ### Breaking changes
+* Bearer writeMany function for vector IO
+* An optional read buffer for Bearer
+* Polling of the egress queue
 
 ### Non-breaking changes
+* Define msHeaderLength instead of using '8'
+* Benchmark for Socket Bearer
+* Use ByteString.Builder for the ingress queues
+* Signal the kernal that we require at least the full SDU's worth of data
 
 ## 0.7.0.0 -- 2025-02-25
 
