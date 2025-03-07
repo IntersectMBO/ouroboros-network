@@ -7,7 +7,6 @@
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeApplications      #-}
 #if __GLASGOW_HASKELL__ >= 908
 {-# OPTIONS_GHC -Wno-x-partial #-}
 #endif
@@ -36,14 +35,13 @@ module Ouroboros.Network.PeerSelection.LedgerPeers
   , module Ouroboros.Network.PeerSelection.LedgerPeers.Type
     -- * Internal only exported for testing purposes
   , resolveLedgerPeers
-  , resolveTraceToLedgerPeersTrace
   ) where
 
 import Control.Monad (when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadTime.SI
-import Control.Tracer (Tracer, contramap, traceWith)
+import Control.Tracer (Tracer, traceWith)
 import Data.IP qualified as IP
 import Data.List as List (foldl')
 import Data.List.NonEmpty (NonEmpty (..))
@@ -329,9 +327,9 @@ ledgerPeersThread PeerActionsDNS {
                let (rng2, rngResolv) = split rng'
                -- NOTE: we don't set `resolveConcurrent` because
                -- of https://github.com/kazu-yamamoto/dns/issues/174
+               traceWith wlpTracer (TraceLedgerPeersDomains domains)
                domainAddrs <-
                  resolveLedgerPeers
-                   (resolveTraceToLedgerPeersTrace `contramap` wlpTracer)
                    wlpSemaphore
                    DNS.defaultResolvConf
                    paDnsActions
@@ -493,9 +491,7 @@ data TraceLedgerPeers =
       -- ^ Trace for fetching a new list of peers from the ledger. The first Int
       -- is the number of ledger peers returned the latter is the number of big
       -- ledger peers.
-    | TraceLedgerPeersDomains [DomainAccessPoint]
-    | TraceLedgerPeersResult  DNS.Domain [(IP, DNS.TTL)]
-    | TraceLedgerPeersFailure DNS.Domain DNS.DNSError
+    | TraceLedgerPeersDomains [RelayAccessPoint]
     | DisabledLedgerPeers
       -- ^ Trace for when getting peers from the ledger is disabled, that is DontUseLedgerPeers.
     | TraceUseLedgerPeers UseLedgerPeers
@@ -507,14 +503,6 @@ data TraceLedgerPeers =
     | NotEnoughBigLedgerPeers NumberOfPeers Int
     | NotEnoughLedgerPeers NumberOfPeers Int
     | UsingBigLedgerPeerSnapshot
-
-resolveTraceToLedgerPeersTrace :: TraceResolveLedgerPeers -> TraceLedgerPeers
-resolveTraceToLedgerPeersTrace (TraceResolveLedgerPeersDomains dnsnames)
-                              = TraceLedgerPeersDomains dnsnames
-resolveTraceToLedgerPeersTrace (TraceResolveLedgerPeersResult dnsname result)
-                              = TraceLedgerPeersResult dnsname result
-resolveTraceToLedgerPeersTrace (TraceResolveLedgerPeersFailure dnsname err)
-                              = TraceLedgerPeersFailure dnsname err
 
 instance Show TraceLedgerPeers where
     show (PickedBigLedgerPeer addr ackStake stake) =
@@ -553,10 +541,5 @@ instance Show TraceLedgerPeers where
       printf "Not enough big ledger peers to pick %d out of %d" n numOfBigLedgerPeers
     show (NotEnoughLedgerPeers (NumberOfPeers n) numOfLedgerPeers) =
       printf "Not enough ledger peers to pick %d out of %d" n numOfLedgerPeers
-
     show (TraceLedgerPeersDomains domains) = "Resolving " ++ show domains
-    show (TraceLedgerPeersResult domain l) =
-      "Resolution success " ++ show domain ++ " " ++ show l
-    show (TraceLedgerPeersFailure domain err) =
-      "Resolution failed " ++ show domain ++ " " ++ show err
     show UsingBigLedgerPeerSnapshot = "Using peer snapshot for big ledger peers"

@@ -73,8 +73,6 @@ import Control.Tracer (Tracer (Tracer), contramap, nullTracer, traceWith)
 
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection
-import Ouroboros.Network.PeerSelection.LedgerPeers
-           (resolveTraceToLedgerPeersTrace)
 import Ouroboros.Network.PeerSelection.RootPeersDNS
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
            LocalRootConfig (..), WarmValency (..))
@@ -583,8 +581,13 @@ mockResolveLedgerPeers tracer (MockRoots _ _ publicRootPeers dnsMapScript)
 
       dnsTimeoutScriptVar <- initScript' dnsTimeoutScript
       dnsLookupDelayScriptVar <- initScript' dnsLookupDelayScript
-      resolveLedgerPeers (resolveTraceToLedgerPeersTrace `contramap` tracer)
-                         dnsSemaphore
+      let relays = [ dap
+                   | (relay, _) <- Map.assocs publicRootPeers
+                   , dap <- case relay of
+                              RelayAccessAddress {} -> []
+                              x                     -> [x]]
+      traceWith tracer . Left $ TraceLedgerPeersDomains relays
+      resolveLedgerPeers dnsSemaphore
                          DNSResolver.defaultResolvConf
                          (mockDNSActions @Failure
                            (contramap Right tracer)
@@ -594,11 +597,7 @@ mockResolveLedgerPeers tracer (MockRoots _ _ publicRootPeers dnsMapScript)
                            dnsTimeoutScriptVar
                            dnsLookupDelayScriptVar)
                          AllLedgerPeers
-                         [ dap
-                         | (relay, _) <- Map.assocs publicRootPeers
-                         , dap <- case relay of
-                             RelayAccessAddress {} -> []
-                             x                     -> [x]]
+                         relays
                          (mkStdGen dnsSeed)
 
 --

@@ -5,13 +5,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 
-module Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
-  ( resolveLedgerPeers
-  , TraceResolveLedgerPeers (..)
-  ) where
+module Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers (resolveLedgerPeers) where
 
 import Control.Monad.Class.MonadAsync
-import Control.Tracer (Tracer, traceWith)
 import Data.List (foldl')
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -25,6 +21,7 @@ import Control.Monad.Class.MonadThrow
 import Network.DNS qualified as DNS
 import System.Random
 
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore,
@@ -42,16 +39,14 @@ resolveLedgerPeers
      , MonadAsync m
      , Exception exception
      )
-  => Tracer m TraceResolveLedgerPeers
-  -> DNSSemaphore m
+  => DNSSemaphore m
   -> DNS.ResolvConf
   -> DNSActions peerAddr resolver exception m
   -> LedgerPeersKind
   -> [RelayAccessPoint]
   -> StdGen
   -> m (Map DNS.Domain (Set peerAddr))
-resolveLedgerPeers tracer
-                   dnsSemaphore
+resolveLedgerPeers dnsSemaphore
                    resolvConf
                    DNSActions {
                       dnsResolverResource,
@@ -61,7 +56,6 @@ resolveLedgerPeers tracer
                    domains
                    rng
                    = do
-    traceWith tracer (TraceResolveLedgerPeersDomains domains)
     rr <- dnsResolverResource resolvConf
     resourceVar <- newTVarIO rr
     resolveDomains resourceVar
@@ -120,9 +114,3 @@ withAsyncAll xs0 action = go [] xs0
   where
     go as []     = action (reverse as)
     go as (x:xs) = withAsync x (\a -> go (a:as) xs)
-
-
-data TraceResolveLedgerPeers =
-      TraceResolveLedgerPeersDomains [DomainAccessPoint]
-    | TraceResolveLedgerPeersResult  DNS.Domain [(IP, DNS.TTL)]
-    | TraceResolveLedgerPeersFailure DNS.Domain DNS.DNSError
