@@ -17,6 +17,7 @@
 module Ouroboros.Network.PeerSelection.LedgerPeers.Type
   ( PoolStake (..)
   , AccPoolStake (..)
+  , IsLedgerPeer (..)
   , IsBigLedgerPeer (..)
   , LedgerPeersConsensusInterface (..)
   , mapExtraAPI
@@ -209,6 +210,12 @@ newtype AccPoolStake = AccPoolStake { unAccPoolStake :: Rational }
 
 newtype AccPoolStakeCoded = AccPoolStakeCoded AccPoolStake
   deriving (ToCBOR, FromCBOR, FromJSON, ToJSON) via Rational
+
+-- | Identifies a peer as coming from ledger or not.
+data IsLedgerPeer = IsLedgerPeer
+                  -- ^ a ledger peer.
+                  | IsNotLedgerPeer
+  deriving (Eq, Show)
 
 -- | A boolean like type.  Big ledger peers are the largest SPOs which control
 -- 90% of staked stake.

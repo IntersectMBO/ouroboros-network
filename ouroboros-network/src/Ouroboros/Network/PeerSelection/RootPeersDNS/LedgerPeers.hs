@@ -4,7 +4,10 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers (resolveLedgerPeers) where
+module Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
+  ( resolveLedgerPeers
+  , TraceResolveLedgerPeers (..)
+  ) where
 
 import Control.Monad (when)
 import Control.Monad.Class.MonadAsync
@@ -24,7 +27,6 @@ import Control.Monad.Class.MonadThrow
 import Network.DNS qualified as DNS
 import Network.Socket qualified as Socket
 
-import Ouroboros.Network.PeerSelection.LedgerPeers.Common
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSActions (..),
            DNSorIOError (..), Resource (..))
@@ -42,7 +44,7 @@ resolveLedgerPeers
      , MonadAsync m
      , Exception exception
      )
-  => Tracer m TraceLedgerPeers
+  => Tracer m TraceResolveLedgerPeers
   -> (IP.IP -> Socket.PortNumber -> peerAddr)
   -> DNSSemaphore m
   -> DNS.ResolvConf
@@ -59,7 +61,7 @@ resolveLedgerPeers tracer
                     }
                    domains
                    = do
-    traceWith tracer (TraceLedgerPeersDomains domains)
+    traceWith tracer (TraceResolveLedgerPeersDomains domains)
     rr <- dnsResolverResource resolvConf
     resourceVar <- newTVarIO rr
     resolveDomains resourceVar
@@ -68,7 +70,7 @@ resolveLedgerPeers tracer
       :: StrictTVar m (Resource m (Either (DNSorIOError exception) resolver))
       -> m (Map DomainAccessPoint (Set peerAddr))
     resolveDomains resourceVar = do
-        rr <- atomically $ readTVar resourceVar
+        rr <- readTVarIO resourceVar
         (er, rr') <- withResource rr
         atomically $ writeTVar resourceVar rr'
         case er of
@@ -93,10 +95,10 @@ resolveLedgerPeers tracer
                   -> (DomainAccessPoint, ([DNS.DNSError], [(IP, DNS.TTL)]))
                   -> m (Map DomainAccessPoint (Set peerAddr))
     processResult mr (domain, (errs, ipsttls)) = do
-        mapM_ (traceWith tracer . TraceLedgerPeersFailure (dapDomain domain))
+        mapM_ (traceWith tracer . TraceResolveLedgerPeersFailure (dapDomain domain))
               errs
         when (not $ null ipsttls) $
-            traceWith tracer $ TraceLedgerPeersResult (dapDomain domain) ipsttls
+            traceWith tracer $ TraceResolveLedgerPeersResult (dapDomain domain) ipsttls
 
         return $ Map.alter addFn domain mr
       where
@@ -119,3 +121,9 @@ withAsyncAll xs0 action = go [] xs0
   where
     go as []     = action (reverse as)
     go as (x:xs) = withAsync x (\a -> go (a:as) xs)
+
+
+data TraceResolveLedgerPeers =
+      TraceResolveLedgerPeersDomains [DomainAccessPoint]
+    | TraceResolveLedgerPeersResult  DNS.Domain [(IP, DNS.TTL)]
+    | TraceResolveLedgerPeersFailure DNS.Domain DNS.DNSError

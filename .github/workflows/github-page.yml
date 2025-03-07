@@ -48,7 +48,7 @@ jobs:
       id: setup-haskell
       with:
         ghc-version: ${{ matrix.ghc }}
-        cabal-version: 'head'
+        cabal-version: '3.14.1.1'
 
     - uses: actions/cache@v4
       name: Cache cabal store

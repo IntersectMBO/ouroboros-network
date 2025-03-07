@@ -35,16 +35,16 @@ module Ouroboros.Network.PeerSelection.LedgerPeers
   , withLedgerPeers
     -- Re-exports for testing purposes
   , module Ouroboros.Network.PeerSelection.LedgerPeers.Type
-  , module Ouroboros.Network.PeerSelection.LedgerPeers.Common
     -- * Internal only exported for testing purposes
   , resolveLedgerPeers
+  , resolveTraceToLedgerPeersTrace
   ) where
 
 import Control.Monad (when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadTime.SI
-import Control.Tracer (Tracer, traceWith)
+import Control.Tracer (Tracer, contramap, traceWith)
 import Data.IP qualified as IP
 import Data.List as List (foldl')
 import Data.List.NonEmpty (NonEmpty (..))
@@ -54,6 +54,7 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (isJust)
 import Data.Ratio
 import System.Random
+import Text.Printf
 
 import Cardano.Slotting.Slot (SlotNo (..), WithOrigin (..))
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -63,13 +64,23 @@ import Data.Set qualified as Set
 import Data.Void (Void)
 import Data.Word (Word16, Word64)
 import Network.DNS qualified as DNS
-import Ouroboros.Network.PeerSelection.LedgerPeers.Common
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
            (accumulateBigLedgerStake, bigLedgerPeerQuota,
            recomputeRelativeStake)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS
+
+-- | Ledger Peer request result
+--
+data LedgerPeers =
+    LedgerPeers [(PoolStake, NonEmpty RelayAccessPoint)]
+                -- ^ Ledger peers
+  | BeforeSlot
+    -- ^ No result because the node is still
+    -- before the configured UseLedgerAfter slot
+    -- number
+  deriving (Eq, Show)
 
 -- | Internal API to deal with 'UseLedgerAfter' configuration
 -- option
@@ -131,7 +142,12 @@ accBigPoolStakeMap :: [(PoolStake, NonEmpty RelayAccessPoint)]
                    -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
 accBigPoolStakeMap = Map.fromAscList      -- the input list is ordered by `AccPoolStake`, thus we
                                           -- can use `fromAscList`
-                     . accumulateBigLedgerStake
+                   . accumulateBigLedgerStake
+
+-- | Number of peers to pick.
+--
+newtype NumberOfPeers = NumberOfPeers { getNumberOfPeers :: Word16 }
+  deriving Show
 
 -- | Try to pick n random peers using stake distribution.
 --
@@ -313,12 +329,14 @@ ledgerPeersThread PeerActionsDNS {
 
                -- NOTE: we don't set `resolveConcurrent` because
                -- of https://github.com/kazu-yamamoto/dns/issues/174
-               domainAddrs <- resolveLedgerPeers wlpTracer
-                                                 paToPeerAddr
-                                                 wlpSemaphore
-                                                 DNS.defaultResolvConf
-                                                 paDnsActions
-                                                 domains
+               domainAddrs <-
+                 resolveLedgerPeers
+                   (resolveTraceToLedgerPeersTrace `contramap` wlpTracer)
+                   paToPeerAddr
+                   wlpSemaphore
+                   DNS.defaultResolvConf
+                   paDnsActions
+                   domains
 
                let (rng'', rngDomain) = split rng'
                    pickedAddrs =
@@ -455,3 +473,88 @@ withLedgerPeers peerActionsDNS
           labelThisThread "ledger-peers"
           ledgerPeersThread peerActionsDNS ledgerPeerArgs getRequest putResponse)
       $ \ thread -> k request thread
+
+--
+-- Tracer
+--
+
+-- | Trace LedgerPeers events.
+data TraceLedgerPeers =
+      PickedBigLedgerPeer RelayAccessPoint AccPoolStake PoolStake
+      -- ^ Trace for a significant ledger peer picked with accumulated and relative stake of its pool.
+    | PickedLedgerPeer RelayAccessPoint AccPoolStake PoolStake
+      -- ^ Trace for a ledger peer picked with accumulated and relative stake of its pool.
+    | PickedBigLedgerPeers NumberOfPeers [RelayAccessPoint]
+    | PickedLedgerPeers    NumberOfPeers [RelayAccessPoint]
+      -- ^ Trace for the number of peers and we wanted to pick and the list of peers picked.
+    | FetchingNewLedgerState Int Int
+      -- ^ Trace for fetching a new list of peers from the ledger. The first Int
+      -- is the number of ledger peers returned the latter is the number of big
+      -- ledger peers.
+    | TraceLedgerPeersDomains [DomainAccessPoint]
+    | TraceLedgerPeersResult  DNS.Domain [(IP, DNS.TTL)]
+    | TraceLedgerPeersFailure DNS.Domain DNS.DNSError
+    | DisabledLedgerPeers
+      -- ^ Trace for when getting peers from the ledger is disabled, that is DontUseLedgerPeers.
+    | TraceUseLedgerPeers UseLedgerPeers
+      -- ^ Trace UseLedgerPeers value
+    | WaitingOnRequest
+    | RequestForPeers NumberOfPeers
+    | ReusingLedgerState Int DiffTime
+    | FallingBackToPublicRootPeers
+    | NotEnoughBigLedgerPeers NumberOfPeers Int
+    | NotEnoughLedgerPeers NumberOfPeers Int
+    | UsingBigLedgerPeerSnapshot
+
+resolveTraceToLedgerPeersTrace :: TraceResolveLedgerPeers -> TraceLedgerPeers
+resolveTraceToLedgerPeersTrace (TraceResolveLedgerPeersDomains dnsnames)
+                              = TraceLedgerPeersDomains dnsnames
+resolveTraceToLedgerPeersTrace (TraceResolveLedgerPeersResult dnsname result)
+                              = TraceLedgerPeersResult dnsname result
+resolveTraceToLedgerPeersTrace (TraceResolveLedgerPeersFailure dnsname err)
+                              = TraceLedgerPeersFailure dnsname err
+
+instance Show TraceLedgerPeers where
+    show (PickedBigLedgerPeer addr ackStake stake) =
+        printf "PickedBigLedgerPeer %s ack stake %s ( %.04f) relative stake %s ( %.04f )"
+            (show addr)
+            (show $ unAccPoolStake ackStake)
+            (fromRational (unAccPoolStake ackStake) :: Double)
+            (show $ unPoolStake stake)
+            (fromRational (unPoolStake stake) :: Double)
+    show (PickedLedgerPeer addr ackStake stake) =
+        printf "PickedLedgerPeer %s ack stake %s ( %.04f) relative stake %s ( %.04f )"
+            (show addr)
+            (show $ unAccPoolStake ackStake)
+            (fromRational (unAccPoolStake ackStake) :: Double)
+            (show $ unPoolStake stake)
+            (fromRational (unPoolStake stake) :: Double)
+    show (PickedBigLedgerPeers (NumberOfPeers n) peers) =
+        printf "PickedBigLedgerPeers %d %s" n (show peers)
+    show (PickedLedgerPeers (NumberOfPeers n) peers) =
+        printf "PickedLedgerPeers %d %s" n (show peers)
+    show (FetchingNewLedgerState cnt bigCnt) =
+        printf "Fetching new ledgerstate, %d registered pools, %d registered big ledger pools"
+            cnt bigCnt
+    show (TraceUseLedgerPeers ulp) =
+        printf "UseLedgerPeers state %s"
+            (show ulp)
+    show WaitingOnRequest = "WaitingOnRequest"
+    show (RequestForPeers (NumberOfPeers cnt)) = printf "RequestForPeers %d" cnt
+    show (ReusingLedgerState cnt age) =
+        printf "ReusingLedgerState %d peers age %s"
+          cnt
+          (show age)
+    show FallingBackToPublicRootPeers = "Falling back to public root peers"
+    show DisabledLedgerPeers = "LedgerPeers is disabled"
+    show (NotEnoughBigLedgerPeers (NumberOfPeers n) numOfBigLedgerPeers) =
+      printf "Not enough big ledger peers to pick %d out of %d" n numOfBigLedgerPeers
+    show (NotEnoughLedgerPeers (NumberOfPeers n) numOfLedgerPeers) =
+      printf "Not enough ledger peers to pick %d out of %d" n numOfLedgerPeers
+
+    show (TraceLedgerPeersDomains domains) = "Resolving " ++ show domains
+    show (TraceLedgerPeersResult domain l) =
+      "Resolution success " ++ show domain ++ " " ++ show l
+    show (TraceLedgerPeersFailure domain err) =
+      "Resolution failed " ++ show domain ++ " " ++ show err
+    show UsingBigLedgerPeerSnapshot = "Using peer snapshot for big ledger peers"
