@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -112,115 +113,119 @@ tests =
     ]
   , testGroup "IOSimPOR"
     [ nightlyTest $ testProperty "no failure"
-                      (testWithIOSimPOR prop_diffusion_nofail 10000)
+                                 prop_diffusion_nofail_iosimpor
     , nightlyTest $ testProperty "no livelock"
-                      (testWithIOSimPOR prop_diffusion_nolivelock 10000)
+                                 prop_diffusion_nolivelock_iosimpor
     , nightlyTest $ testProperty "dns can recover from fails"
-                      (testWithIOSimPOR prop_diffusion_dns_can_recover 10000)
+                                 prop_diffusion_dns_can_recover_iosimpor
     , nightlyTest $ testProperty "target established public"
-                      (testWithIOSimPOR prop_diffusion_target_established_public 10000)
+                                 prop_diffusion_target_established_public_iosimpor
     , nightlyTest $ testProperty "target active public"
-                      (testWithIOSimPOR prop_diffusion_target_active_public 10000)
+                                 prop_diffusion_target_active_public_iosimpor
     , nightlyTest $ testProperty "target established local"
-                      (testWithIOSimPOR prop_diffusion_target_established_local 10000)
+                                 prop_diffusion_target_established_local_iosimpor
     , nightlyTest $ testProperty "target active local"
-                      (testWithIOSimPOR prop_diffusion_target_active_local 10000)
+                                 prop_diffusion_target_active_local_iosimpor
     , nightlyTest $ testProperty "target active root"
-                      (testWithIOSimPOR prop_diffusion_target_active_root 10000)
+                                 prop_diffusion_target_active_root_iosimpor
     , nightlyTest $ testProperty "target active below"
-                      (testWithIOSimPOR prop_diffusion_target_active_below 10000)
+                                 prop_diffusion_target_active_below_iosimpor
     , nightlyTest $ testProperty "target active local below"
-                      (testWithIOSimPOR prop_diffusion_target_active_local_below 10000)
+                                 prop_diffusion_target_active_local_below_iosimpor
     , nightlyTest $ testProperty "async demotion"
-                      (testWithIOSimPOR prop_diffusion_async_demotions 10000)
+                                 prop_diffusion_async_demotions_iosimpor
     , nightlyTest $ testProperty "target active local above"
-                      (testWithIOSimPOR prop_diffusion_target_active_local_above 10000)
+                                 prop_diffusion_target_active_local_above_iosimpor
     , nightlyTest $ testProperty "connection manager valid transitions"
-                      (testWithIOSimPOR prop_diffusion_cm_valid_transitions 10000)
+                                 prop_diffusion_cm_valid_transitions_iosimpor
     , nightlyTest $ testProperty "connection manager valid transition order"
-                      (testWithIOSimPOR prop_diffusion_cm_valid_transition_order_iosim_por 10000)
+                                 prop_diffusion_cm_valid_transition_order_iosimpor
     , nightlyTest $ testProperty "connection manager no dodgy traces"
-                      (testWithIOSimPOR prop_diffusion_cm_no_dodgy_traces 10000)
+                                 prop_diffusion_cm_no_dodgy_traces_iosimpor
     , nightlyTest $ testProperty "peer selection actions no dodgy traces"
-                      (testWithIOSimPOR prop_diffusion_peer_selection_actions_no_dodgy_traces 10000)
+                                 prop_diffusion_peer_selection_actions_no_dodgy_traces_iosimpor
     , nightlyTest $ testProperty "inbound governor valid transitions"
-                      (testWithIOSimPOR prop_diffusion_ig_valid_transitions 10000)
+                                 prop_diffusion_ig_valid_transitions_iosimpor
     , nightlyTest $ testProperty "inbound governor valid transition order"
-                      (testWithIOSimPOR prop_diffusion_ig_valid_transition_order 10000)
+                                 prop_diffusion_ig_valid_transition_order_iosimpor
     , nightlyTest $ testProperty "cm & ig timeouts enforced"
-                      (testWithIOSimPOR prop_diffusion_timeouts_enforced 10000)
+                                 prop_diffusion_timeouts_enforced_iosimpor
     , nightlyTest $ testProperty "any Cold async demotion"
-                      (testWithIOSimPOR prop_track_coolingToCold_demotions 10000)
+                                 prop_track_coolingToCold_demotions_iosimpor
     , nightlyTest $ testProperty "only bootstrap peers in fallback state"
-                      (testWithIOSimPOR prop_only_bootstrap_peers_in_fallback_state 10000)
+                                 prop_only_bootstrap_peers_in_fallback_state_iosimpor
     , nightlyTest $ testProperty "no non trustable peers before caught up state"
-                      (testWithIOSimPOR prop_no_non_trustable_peers_before_caught_up_state 10000)
+                                 prop_no_non_trustable_peers_before_caught_up_state_iosimpor
     , testGroup "Churn"
       [ nightlyTest $ testProperty "no timeouts"
-                        (testWithIOSimPOR prop_churn_notimeouts 10000 absNoAttenuation)
+                                   prop_churn_notimeouts_iosimpor
       , nightlyTest $ testProperty "steps"
-                        (testWithIOSimPOR prop_churn_steps 10000)
+                                   prop_churn_steps_iosimpor
       ]
     , testGroup "unit"
-      [ nightlyTest $ testProperty "unit cm" unit_cm_valid_transitions
+      [ nightlyTest $ testProperty "unit cm"
+                                   unit_cm_valid_transitions
       ]
     ]
   , testGroup "IOSim"
     [ testProperty "no failure"
-                   (testWithIOSim prop_diffusion_nofail 125000)
+                   prop_diffusion_nofail_iosim
     , testProperty "no livelock"
-                   (testWithIOSim prop_diffusion_nolivelock 125000)
+                   prop_diffusion_nolivelock_iosim
     , testProperty "dns can recover from fails"
-                   (testWithIOSim prop_diffusion_dns_can_recover 125000)
+                   prop_diffusion_dns_can_recover_iosim
     , testProperty "unit #4191"
                    unit_4191
     , testProperty "target established public"
-                   (testWithIOSim prop_diffusion_target_established_public 125000)
+                   prop_diffusion_target_established_public_iosim
     , testProperty "target active public"
-                   (testWithIOSim prop_diffusion_target_active_public 125000)
+                   prop_diffusion_target_active_public_iosim
     , testProperty "target established local"
-                   (testWithIOSim prop_diffusion_target_established_local 125000)
+                   prop_diffusion_target_established_local_iosim
     , testProperty "unit reconnect"
                    prop_unit_reconnect
     , testProperty "target active local"
-                   (testWithIOSim prop_diffusion_target_active_local 125000)
+                   prop_diffusion_target_active_local_iosim
     , testProperty "target active root"
-                   (testWithIOSim prop_diffusion_target_active_root 125000)
+                   prop_diffusion_target_active_root_iosim
     , testProperty "target active below"
-                   (testWithIOSim prop_diffusion_target_active_below 125000)
+                   prop_diffusion_target_active_below_iosim
     , testProperty "target active local below"
-                   (testWithIOSim prop_diffusion_target_active_local_below 250000)
+                   prop_diffusion_target_active_local_below_iosim
     , testProperty "async demotion"
-                   (testWithIOSim prop_diffusion_async_demotions 125000)
+                   prop_diffusion_async_demotions_iosim
     , testProperty "async demotion (unit)"
                    unit_diffusion_async_demotions
     , testProperty "target active local above"
-                   (testWithIOSim prop_diffusion_target_active_local_above 125000)
+                   prop_diffusion_target_active_local_above_iosim
     , testProperty "connection manager valid transitions"
-                   (testWithIOSim prop_diffusion_cm_valid_transitions 125000)
+                   prop_diffusion_cm_valid_transitions_iosim
     , testProperty "connection manager valid transition order"
-                   (testWithIOSim prop_diffusion_cm_valid_transition_order 125000)
+                   prop_diffusion_cm_valid_transition_order_iosim
     , testProperty "unit 4258"
                    prop_unit_4258
     , testProperty "connection manager no dodgy traces"
-                   (testWithIOSim prop_diffusion_cm_no_dodgy_traces 125000)
+                   prop_diffusion_cm_no_dodgy_traces_iosim
     , testProperty "peer selection actions no dodgy traces"
-                   (testWithIOSim prop_diffusion_peer_selection_actions_no_dodgy_traces 125000)
+                   prop_diffusion_peer_selection_actions_no_dodgy_traces_iosim
     , testProperty "inbound governor valid transitions"
-                   (testWithIOSim prop_diffusion_ig_valid_transitions 125000)
+                   prop_diffusion_ig_valid_transitions_iosim
     , testProperty "inbound governor valid transition order"
-                   (testWithIOSim prop_diffusion_ig_valid_transition_order 125000)
+                   prop_diffusion_ig_valid_transition_order_iosim
     , testProperty "cm & ig timeouts enforced"
-                   (testWithIOSim prop_diffusion_timeouts_enforced 125000)
+                   prop_diffusion_timeouts_enforced_iosim
     , testProperty "any Cold async demotion"
-                   (testWithIOSim prop_track_coolingToCold_demotions 125000)
-    , testProperty "unit #4177" unit_4177
-    , testProperty "connect failure" prop_connect_failure
-    , testProperty "accept failure" prop_accept_failure
+                   prop_track_coolingToCold_demotions_iosim
+    , testProperty "unit #4177"
+                   unit_4177
+    , testProperty "connect failure"
+                   prop_connect_failure
+    , testProperty "accept failure"
+                   prop_accept_failure
     , testProperty "only bootstrap peers in fallback state"
-                   (testWithIOSim prop_only_bootstrap_peers_in_fallback_state 125000 absNoAttenuation)
+                   prop_only_bootstrap_peers_in_fallback_state_iosim
     , testProperty "no non trustable peers before caught up state"
-                   (testWithIOSim prop_no_non_trustable_peers_before_caught_up_state 125000)
+                   prop_no_non_trustable_peers_before_caught_up_state_iosim
     , testGroup "local root diffusion mode"
         [ testProperty "InitiatorOnly"
           (unit_local_root_diffusion_mode InitiatorOnlyDiffusionMode)
@@ -230,13 +235,12 @@ tests =
     , testGroup "Peer Sharing"
       [ testProperty "share a peer"
                      unit_peer_sharing
-      , testProperty "don't peershare the unwilling" (testWithIOSim prop_no_peershare_unwilling 100000)
+      , testProperty "don't peershare the unwilling"
+                      prop_no_peershare_unwilling_iosim
       ]
     , testGroup "Churn"
-      [ testProperty "no timeouts"
-                     (testWithIOSim prop_churn_notimeouts 125000 absNoAttenuation)
-      , testProperty "steps"
-                     (testWithIOSim prop_churn_steps 5000)
+      [ testProperty "no timeouts" prop_churn_notimeouts_iosim
+      , testProperty "steps" prop_churn_steps_iosim
       ]
     , testGroup "coverage"
       [ testProperty "server trace coverage"
@@ -267,8 +271,26 @@ tests =
     ]
   ]
 
+--
+-- Test execution utils & constants
+--
+
+-- | 125_000s events
+long_trace :: Int
+long_trace = 125_000
+
+-- | 250_000 events
+very_long_trace :: Int
+very_long_trace = 2 * long_trace
+
+-- | 10_000s events
+short_trace :: Int
+short_trace = 10_000
+
+
 traceFromList :: [a] -> Trace (SimResult ()) a
 traceFromList = Trace.fromList (MainReturn  (Time 0) (Labelled (ThreadId []) (Just "main")) () [])
+
 
 testWithIOSim :: (SimTrace Void -> Int -> Property)
               -> Int
@@ -285,6 +307,7 @@ testWithIOSim f traceNumber bi ds =
     $ counterexample (Trace.ppTrace show (ppSimEvent 0 0 0) $ Trace.take traceNumber trace)
     $ f trace traceNumber
 
+
 testWithIOSimPOR :: (SimTrace Void -> Int -> Property)
                  -> Int
                  -> AbsBearerInfo
@@ -300,6 +323,12 @@ testWithIOSimPOR f traceNumber bi ds =
    in labelDiffusionScript ds
     $ exploreSimTrace id sim $ \_ ioSimTrace ->
         f ioSimTrace  traceNumber
+
+
+--
+-- Properties
+--
+
 
 -- | This test checks a IOSimPOR false positive bug with the connection
 -- manager state transition traces no longer happens.
@@ -331,7 +360,7 @@ unit_cm_valid_transitions =
                   [ (HotValency {getHotValency = 1},
                      WarmValency {getWarmValency = 1},
                      Map.fromList [(RelayAccessAddress "0:71:0:1:0:1:0:1" 65534,
-                                    (LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsTrustable))])
+                                    LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsTrustable)])
                    ]
                   (Script (LedgerPools [] :| []))
                   (PeerSelectionTargets
@@ -446,7 +475,7 @@ unit_cm_valid_transitions =
         exploreRaces
         diffusionSimulation (toBearerInfo bi) ds iosimTracer
   in exploreSimTrace (\a -> a { explorationReplay = Just s }) sim $ \_ ioSimTrace ->
-       prop_diffusion_cm_valid_transition_order_iosim_por ioSimTrace 10000
+       prop_diffusion_cm_valid_transition_order' ioSimTrace short_trace
 
 -- | As a basic property we run the governor to explore its state space a bit
 -- and check it does not throw any exceptions (assertions such as invariant
@@ -483,6 +512,16 @@ prop_diffusion_nofail ioSimTrace traceNumber =
        -- the ioSimTrace is infinite, but it will terminate with `AssertionFailed`
        error "impossible!"
 
+prop_diffusion_nofail_iosimpor
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_nofail_iosimpor
+  = testWithIOSimPOR prop_diffusion_nofail short_trace
+
+prop_diffusion_nofail_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_nofail_iosim
+  = testWithIOSim prop_diffusion_nofail long_trace
+
 -- | This test coverage of 'CM.Trace' constructors.
 --
 -- TODO: to turn this test into a property test requires to generate
@@ -507,7 +546,7 @@ unit_connection_manager_trace_coverage =
              . withTimeNameTraceEvents
                 @DiffusionTestTrace
                 @NtNAddr
-             . Trace.take 125000
+             . Trace.take long_trace
              $ runSimTrace sim
 
       eventsSeenNames = map connectionManagerTraceMap events
@@ -610,7 +649,7 @@ unit_connection_manager_transitions_coverage =
       events :: [AbstractTransitionTrace CM.ConnStateId]
       events = fmap (\((WithName _ b)) -> b)
              . selectTraceEventsDynamic' @_ @(CM.ConnectionTransitionTrace NtNAddr)
-             . Trace.take 125000
+             . Trace.take long_trace
              $ trace
 
       -- events from the transition tracer
@@ -622,7 +661,7 @@ unit_connection_manager_transitions_coverage =
                  @DiffusionTestTrace
                  @NtNAddr
               . first (const ())
-              . Trace.take 125000
+              . Trace.take long_trace
               $ trace
 
       transitionsSeenNames = map (snd . validTransitionMap . ttTransition)
@@ -738,7 +777,7 @@ prop_inbound_governor_trace_coverage defaultBearerInfo diffScript =
              . withTimeNameTraceEvents
                 @DiffusionTestTrace
                 @NtNAddr
-             . Trace.take 125000
+             . Trace.take long_trace
              $ runSimTrace sim
 
       eventsSeenNames = map inboundGovernorTraceMap events
@@ -768,7 +807,7 @@ prop_inbound_governor_transitions_coverage defaultBearerInfo diffScript =
              . withTimeNameTraceEvents
                 @DiffusionTestTrace
                 @NtNAddr
-             . Trace.take 125000
+             . Trace.take long_trace
              $ runSimTrace sim
 
       transitionsSeenNames = map (snd . validRemoteTransitionMap . ttTransition)
@@ -800,7 +839,7 @@ prop_fetch_client_state_trace_coverage defaultBearerInfo diffScript =
              . withTimeNameTraceEvents
                 @DiffusionTestTrace
                 @NtNAddr
-             . Trace.take 125000
+             . Trace.take long_trace
              $ runSimTrace sim
 
       transitionsSeenNames = map traceFetchClientStateMap events
@@ -928,6 +967,17 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
             Set.null
             keepNonTrustablePeersTooLong
 
+prop_only_bootstrap_peers_in_fallback_state_iosimpor
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_only_bootstrap_peers_in_fallback_state_iosimpor
+  = testWithIOSimPOR prop_only_bootstrap_peers_in_fallback_state short_trace
+
+prop_only_bootstrap_peers_in_fallback_state_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_only_bootstrap_peers_in_fallback_state_iosim
+  = testWithIOSim prop_only_bootstrap_peers_in_fallback_state long_trace
+
+
 -- | Same as PeerSelection test 'prop_governor_no_non_trustable_peers_before_caught_up_state'
 --
 prop_no_non_trustable_peers_before_caught_up_state :: SimTrace Void
@@ -1040,6 +1090,17 @@ prop_no_non_trustable_peers_before_caught_up_state ioSimTrace traceNumber =
         $ signalProperty 20 show
             Set.null
             keepNonTrustablePeersTooLong
+
+prop_no_non_trustable_peers_before_caught_up_state_iosimpor
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_no_non_trustable_peers_before_caught_up_state_iosimpor
+  = testWithIOSimPOR prop_no_non_trustable_peers_before_caught_up_state short_trace
+
+prop_no_non_trustable_peers_before_caught_up_state_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_no_non_trustable_peers_before_caught_up_state_iosim
+  = testWithIOSim prop_no_non_trustable_peers_before_caught_up_state long_trace
+
 
 -- | Unit test which covers issue #4177
 --
@@ -1221,6 +1282,17 @@ prop_track_coolingToCold_demotions ioSimTracer traceNumber =
        in conjoin
         $ map (signalProperty 20 show Set.null) notInProgressDemoteToColdForTooLong
 
+prop_track_coolingToCold_demotions_iosimpor
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_track_coolingToCold_demotions_iosimpor
+  = testWithIOSimPOR prop_track_coolingToCold_demotions short_trace
+
+prop_track_coolingToCold_demotions_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_track_coolingToCold_demotions_iosim
+  = testWithIOSim prop_track_coolingToCold_demotions long_trace
+
+
 -- | This test coverage of ServerTrace constructors, namely accept errors.
 --
 prop_server_trace_coverage :: AbsBearerInfo
@@ -1242,7 +1314,7 @@ prop_server_trace_coverage defaultBearerInfo diffScript =
              . withTimeNameTraceEvents
                 @DiffusionTestTrace
                 @NtNAddr
-             . Trace.take 125000
+             . Trace.take long_trace
              $ runSimTrace sim
 
       eventsSeenNames = map serverTraceMap events
@@ -1271,7 +1343,7 @@ prop_peer_selection_action_trace_coverage defaultBearerInfo diffScript =
              . withTimeNameTraceEvents
                 @DiffusionTestTrace
                 @NtNAddr
-             . Trace.take 125000
+             . Trace.take long_trace
              $ runSimTrace sim
 
       peerSelectionActionsTraceMap :: PeerSelectionActionsTrace NtNAddr NtNVersion
@@ -1313,7 +1385,7 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
              . withTimeNameTraceEvents
                 @DiffusionTestTrace
                 @NtNAddr
-             . Trace.take 125000
+             . Trace.take long_trace
              $ runSimTrace sim
 
       peerSelectionTraceMap
@@ -1509,6 +1581,17 @@ prop_diffusion_nolivelock ioSimTrace traceNumber =
         countdown _ []       = True
         countdown n (_ : es) = countdown (n-1) es
 
+prop_diffusion_nolivelock_iosimpor
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_nolivelock_iosimpor
+  = testWithIOSimPOR prop_diffusion_nolivelock short_trace
+
+prop_diffusion_nolivelock_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_nolivelock_iosim
+  = testWithIOSim prop_diffusion_nolivelock long_trace
+
+
 -- | Test that verifies that that we can recover from DNS lookup failures.
 --
 -- This checks that if a node is configured with a local root peer through DNS,
@@ -1616,11 +1699,20 @@ prop_diffusion_dns_can_recover ioSimTrace traceNumber =
           verify Map.empty ttlMap recovered t evs
         _ -> verify toRecover ttlMap recovered time evs
 
+prop_diffusion_dns_can_recover_iosimpor
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_dns_can_recover_iosimpor
+  = testWithIOSimPOR prop_diffusion_dns_can_recover short_trace
+
+prop_diffusion_dns_can_recover_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_dns_can_recover_iosim
+  = testWithIOSim prop_diffusion_dns_can_recover long_trace
 
 -- | Unit test which covers issue #4191
 --
 unit_4191 :: Property
-unit_4191 = testWithIOSim prop_diffusion_dns_can_recover 125000 absInfo script
+unit_4191 = testWithIOSim prop_diffusion_dns_can_recover long_trace absInfo script
   where
     ioerr =
       IOError
@@ -1875,7 +1967,7 @@ prop_accept_failure (AbsIOError ioerr) =
     isFatalAccept :: IOError -> Bool
     isFatalAccept = not . Server.isECONNABORTED
 
-    noEvents = 10000
+    noEvents = short_trace
     absInfo =
       AbsBearerInfo
         { abiConnectionDelay = SmallDelay,
@@ -2045,6 +2137,16 @@ prop_diffusion_target_established_public ioSimTrace traceNumber =
         $ tabulate "established public peers" valuesList
           True
 
+prop_diffusion_target_established_public_iosimpor
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_established_public_iosimpor
+  = testWithIOSimPOR prop_diffusion_target_established_public short_trace
+
+prop_diffusion_target_established_public_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_established_public_iosim
+  = testWithIOSim prop_diffusion_target_established_public long_trace
+
 -- | A variant of
 -- 'Test.Ouroboros.Network.PeerSelection.prop_governor_target_active_public'
 -- but for running on Diffusion. This means it has to have in consideration the
@@ -2119,6 +2221,16 @@ prop_diffusion_target_active_public ioSimTrace traceNumber =
           $ tabulate "active public peers" valuesList
             True
 
+prop_diffusion_target_active_public_iosimpor
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_active_public_iosimpor
+  = testWithIOSimPOR prop_diffusion_target_active_public short_trace
+
+prop_diffusion_target_active_public_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_active_public_iosim
+  = testWithIOSim prop_diffusion_target_active_public long_trace
+
 
 -- | This test checks the percentage of local root peers that, at some point,
 -- become active.
@@ -2190,6 +2302,17 @@ prop_diffusion_target_active_local ioSimTrace traceNumber =
                        [("LocalPeers in Active Set", 1)]
           $ tabulate "active local peers" valuesList
             True
+
+prop_diffusion_target_active_local_iosimpor
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_active_local_iosimpor
+  = testWithIOSimPOR prop_diffusion_target_active_local short_trace
+
+prop_diffusion_target_active_local_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_active_local_iosim
+  = testWithIOSim prop_diffusion_target_active_local long_trace
+
 
 -- | This test checks that there's at least one root or local root peers in the
 -- active set.  This is a statistical tests which is not enforced.
@@ -2272,6 +2395,16 @@ prop_diffusion_target_active_root ioSimTrace traceNumber =
           $ tabulate "active root peers" valuesList
             True
 
+prop_diffusion_target_active_root_iosimpor
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_active_root_iosimpor
+  = testWithIOSimPOR prop_diffusion_target_active_root short_trace
+
+prop_diffusion_target_active_root_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_active_root_iosim
+  = testWithIOSim prop_diffusion_target_active_root long_trace
+
 
 -- | This test checks the percentage of public root peers that, at some point,
 -- become active, when using the 'HotDiffusionScript' generator.
@@ -2280,7 +2413,7 @@ prop_hot_diffusion_target_active_public :: NonFailingAbsBearerInfo
                                         -> HotDiffusionScript
                                         -> Property
 prop_hot_diffusion_target_active_public defaultBearerInfo (HotDiffusionScript sa dns hds) =
-  testWithIOSim prop_diffusion_target_active_public 125000 (unNFBI defaultBearerInfo) (DiffusionScript sa dns hds)
+  testWithIOSim prop_diffusion_target_active_public long_trace (unNFBI defaultBearerInfo) (DiffusionScript sa dns hds)
 
 -- | This test checks the percentage of local root peers that, at some point,
 -- become active, when using the 'HotDiffusionScript' generator.
@@ -2289,7 +2422,7 @@ prop_hot_diffusion_target_active_local :: NonFailingAbsBearerInfo
                                        -> HotDiffusionScript
                                        -> Property
 prop_hot_diffusion_target_active_local defaultBearerInfo (HotDiffusionScript sa dns hds) =
-  testWithIOSim prop_diffusion_target_active_local 125000 (unNFBI defaultBearerInfo) (DiffusionScript sa dns hds)
+  testWithIOSim prop_diffusion_target_active_local long_trace (unNFBI defaultBearerInfo) (DiffusionScript sa dns hds)
 
 -- | This test checks the percentage of root peers that, at some point,
 -- become active, when using the 'HotDiffusionScript' generator.
@@ -2298,7 +2431,7 @@ prop_hot_diffusion_target_active_root :: NonFailingAbsBearerInfo
                                       -> HotDiffusionScript
                                       -> Property
 prop_hot_diffusion_target_active_root defaultBearerInfo (HotDiffusionScript sa dns hds) =
-  testWithIOSim prop_diffusion_target_active_root 125000 (unNFBI defaultBearerInfo) (DiffusionScript sa dns hds)
+  testWithIOSim prop_diffusion_target_active_root long_trace (unNFBI defaultBearerInfo) (DiffusionScript sa dns hds)
 
 -- | A variant of
 -- 'Test.Ouroboros.Network.PeerSelection.prop_governor_target_established_local'
@@ -2468,6 +2601,17 @@ prop_diffusion_target_established_local ioSimTrace traceNumber =
                       <*> promotionOpportunities
                       <*> promotionOpportunitiesIgnoredTooLong
               )
+
+prop_diffusion_target_established_local_iosimpor
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_established_local_iosimpor
+  = testWithIOSimPOR prop_diffusion_target_established_local short_trace
+
+prop_diffusion_target_established_local_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_established_local_iosim
+  = testWithIOSim prop_diffusion_target_established_local long_trace
+
 
 -- | A variant of
 -- 'Test.Ouroboros.Network.PeerSelection.prop_governor_target_active_below'
@@ -2662,6 +2806,16 @@ prop_diffusion_target_active_below ioSimTrace traceNumber =
                  <*> promotionOpportunitiesIgnoredTooLong
             )
 
+prop_diffusion_target_active_below_iosimpor
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_active_below_iosimpor
+  = testWithIOSimPOR prop_diffusion_target_active_below short_trace
+
+prop_diffusion_target_active_below_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_active_below_iosim
+  = testWithIOSim prop_diffusion_target_active_below long_trace
+
 
 prop_diffusion_target_active_local_below :: SimTrace Void
                                          -> Int
@@ -2827,8 +2981,18 @@ prop_diffusion_target_active_local_below ioSimTrace traceNumber =
                      <*> promotionOpportunities
                      <*> promotionOpportunitiesIgnoredTooLong)
 
+prop_diffusion_target_active_local_below_iosimpor
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_active_local_below_iosimpor
+  = testWithIOSimPOR prop_diffusion_target_active_local_below short_trace
 
--- | A testing scenario which reproduces issue #4046
+prop_diffusion_target_active_local_below_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_active_local_below_iosim
+  = testWithIOSim prop_diffusion_target_active_local_below (very_long_trace)
+
+
+--_iosim
 --
 async_demotion_network_script :: DiffusionScript
 async_demotion_network_script =
@@ -3068,15 +3232,24 @@ prop_diffusion_async_demotions ioSimTrace traceNumber =
             20 show Set.null
             demotionOpportunitiesTooLong
 
+prop_diffusion_async_demotions_iosimpor
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_async_demotions_iosimpor
+  = testWithIOSimPOR prop_diffusion_async_demotions short_trace
+
+prop_diffusion_async_demotions_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_async_demotions_iosim
+  = testWithIOSim prop_diffusion_async_demotions long_trace
+
 
 unit_diffusion_async_demotions :: Property
 unit_diffusion_async_demotions =
     testWithIOSim
       prop_diffusion_async_demotions
-      125000
+      long_trace
       absNoAttenuation
       async_demotion_network_script
-
 
 
 -- | A variant of
@@ -3196,6 +3369,16 @@ prop_diffusion_target_active_local_above ioSimTrace traceNumber =
                     <*> demotionOpportunities
                     <*> demotionOpportunitiesIgnoredTooLong)
 
+prop_diffusion_target_active_local_above_iosimpor
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_active_local_above_iosimpor
+  = testWithIOSimPOR prop_diffusion_target_active_local_above short_trace
+
+prop_diffusion_target_active_local_above_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_active_local_above_iosim
+  = testWithIOSim prop_diffusion_target_active_local_above long_trace
+
 
 -- | A variant of ouroboros-network-framework
 -- 'Test.Ouroboros.Network.Server.prop_connection_manager_valid_transitions'
@@ -3284,6 +3467,16 @@ prop_diffusion_cm_valid_transitions ioSimTrace traceNumber =
         . groupConns id abstractStateIsFinalTransition
         $ abstractTransitionEvents
 
+prop_diffusion_cm_valid_transitions_iosimpor
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_cm_valid_transitions_iosimpor
+  = testWithIOSimPOR prop_diffusion_cm_valid_transitions short_trace
+
+prop_diffusion_cm_valid_transitions_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_cm_valid_transitions_iosim
+  = testWithIOSim prop_diffusion_cm_valid_transitions long_trace
+
 
 -- | A variant of ouroboros-network-framework
 -- 'Test.Ouroboros.Network.Server.prop_connection_manager_valid_transition_order'
@@ -3302,10 +3495,10 @@ prop_diffusion_cm_valid_transitions ioSimTrace traceNumber =
 -- 'UnknownConnectionSt', since we can't do that here we limit ourselves
 -- to 'TerminatedSt'.
 --
-prop_diffusion_cm_valid_transition_order_iosim_por :: SimTrace Void
-                                                   -> Int
-                                                   -> Property
-prop_diffusion_cm_valid_transition_order_iosim_por ioSimTrace traceNumber =
+prop_diffusion_cm_valid_transition_order' :: SimTrace Void
+                                          -> Int
+                                          -> Property
+prop_diffusion_cm_valid_transition_order' ioSimTrace traceNumber =
     let events :: [Trace () (WithName NtNAddr (WithTime (AbstractTransitionTrace NtNAddr)))]
         events = Trace.toList
             . fmap (Trace.fromList ())
@@ -3346,16 +3539,22 @@ prop_diffusion_cm_valid_transition_order_iosim_por ioSimTrace traceNumber =
        . fmap (map ttTransition)
        . groupConns id abstractStateIsFinalTransitionTVarTracing
 
+prop_diffusion_cm_valid_transition_order_iosimpor
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_cm_valid_transition_order_iosimpor
+  = testWithIOSimPOR prop_diffusion_cm_valid_transition_order' short_trace
+
+
 -- | A variant of ouroboros-network-framework
 -- 'Test.Ouroboros.Network.Server.prop_connection_manager_valid_transition_order'
 -- but for running on Diffusion. This means it has to have in consideration the
 -- the logs for all nodes running will all appear in the trace and the test
 -- property should only be valid while a given node is up and running.
 --
-prop_diffusion_cm_valid_transition_order :: SimTrace Void
-                                         -> Int
-                                         -> Property
-prop_diffusion_cm_valid_transition_order ioSimTrace traceNumber =
+prop_diffusion_cm_valid_transition_order'' :: SimTrace Void
+                                           -> Int
+                                           -> Property
+prop_diffusion_cm_valid_transition_order'' ioSimTrace traceNumber =
     let events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
         events = Trace.toList
                . fmap (Trace.fromList ())
@@ -3394,6 +3593,12 @@ prop_diffusion_cm_valid_transition_order ioSimTrace traceNumber =
          . fmap (map (fmap (fmap ttTransition)))
          . groupConns (wtEvent . wnEvent) abstractStateIsFinalTransition
          $ abstractTransitionEvents
+
+prop_diffusion_cm_valid_transition_order_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_cm_valid_transition_order_iosim
+  = testWithIOSim prop_diffusion_cm_valid_transition_order'' long_trace
+
 
 -- | Unit test that checks issue 4258
 -- https://github.com/intersectmbo/ouroboros-network/issues/4258
@@ -3499,7 +3704,7 @@ prop_unit_4258 =
              Kill 71.11111111111
             ]
          )]
-   in testWithIOSim prop_diffusion_cm_valid_transition_order 125000 bearerInfo diffScript
+   in prop_diffusion_cm_valid_transition_order_iosim bearerInfo diffScript
 
 -- | This unit tests checks that for every * -> TerminatedSt Connection
 -- Manager transition, there's a corresponding peer selection state update
@@ -3516,7 +3721,7 @@ prop_unit_4258 =
 -- and will think it has a connection to it when it does not.
 --
 -- If one wishes to check if the bug is present one should (unless IOSim is
--- patched to explore more schedules or IOSimPOR is made more efficient) add a
+-- patched to explore more schedules or IOSim is made more efficient) add long_trace
 -- 'threadDelay' to 'evalGuardedDecisions' in the outbound governor code to
 -- force it to go to the back of the queue everytime.
 --
@@ -3603,7 +3808,7 @@ prop_unit_reconnect =
              . withTimeNameTraceEvents
                 @DiffusionTestTrace
                 @NtNAddr
-             . Trace.take 125000
+             . Trace.take long_trace
              $ runSimTrace sim
 
    in conjoin
@@ -3688,6 +3893,16 @@ prop_diffusion_cm_no_dodgy_traces ioSimTrace traceNumber =
                CM.TrForbiddenConnection {} -> counterexample (show ev) False
                _                           -> property True
              ) connectionManagerEvents
+
+prop_diffusion_cm_no_dodgy_traces_iosimpor
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_cm_no_dodgy_traces_iosimpor
+  = testWithIOSimPOR prop_diffusion_cm_no_dodgy_traces short_trace
+
+prop_diffusion_cm_no_dodgy_traces_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_cm_no_dodgy_traces_iosim
+  = testWithIOSim prop_diffusion_cm_no_dodgy_traces long_trace
 
 
 prop_diffusion_peer_selection_actions_no_dodgy_traces :: SimTrace Void
@@ -3865,6 +4080,16 @@ prop_diffusion_peer_selection_actions_no_dodgy_traces ioSimTrace traceNumber =
     getConnId (HotToCooling connId)  = Just connId
     getConnId (ColdToWarm (Just localAddress) remoteAddress) = Just ConnectionId { localAddress, remoteAddress }
     getConnId _ = Nothing
+
+prop_diffusion_peer_selection_actions_no_dodgy_traces_iosimpor
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_peer_selection_actions_no_dodgy_traces_iosimpor
+  = testWithIOSimPOR prop_diffusion_peer_selection_actions_no_dodgy_traces short_trace
+
+prop_diffusion_peer_selection_actions_no_dodgy_traces_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_peer_selection_actions_no_dodgy_traces_iosim
+  = testWithIOSim prop_diffusion_peer_selection_actions_no_dodgy_traces long_trace
 
 
 unit_peer_sharing :: Property
@@ -4090,6 +4315,17 @@ prop_churn_notimeouts ioSimTrace traceNumber =
         )
      <$> events
 
+prop_churn_notimeouts_iosimpor
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_churn_notimeouts_iosimpor
+  = testWithIOSimPOR prop_churn_notimeouts short_trace
+
+prop_churn_notimeouts_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_churn_notimeouts_iosim
+  = testWithIOSim prop_churn_notimeouts long_trace
+
+
 -- | Verify that churn trace consists of repeated list of actions:
 --
 -- * `DecreasedActivePeers`
@@ -4152,6 +4388,15 @@ prop_churn_steps ioSimTrace traceNumber =
         , IncreasedEstablishedBigLedgerPeers
         ]
 
+prop_churn_steps_iosimpor
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_churn_steps_iosimpor
+  = testWithIOSimPOR prop_churn_steps short_trace
+
+prop_churn_steps_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_churn_steps_iosim
+  = testWithIOSim prop_churn_steps 5000
 
 
 
@@ -4274,6 +4519,17 @@ prop_diffusion_ig_valid_transitions ioSimTrace traceNumber =
             )
          $ remoteTransitionTraceEvents
 
+prop_diffusion_ig_valid_transitions_iosimpor
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_ig_valid_transitions_iosimpor
+  = testWithIOSimPOR prop_diffusion_ig_valid_transitions short_trace
+
+prop_diffusion_ig_valid_transitions_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_ig_valid_transitions_iosim
+  = testWithIOSim prop_diffusion_ig_valid_transitions long_trace
+
+
 -- | A variant of ouroboros-network-framework
 -- 'Test.Ouroboros.Network.Server.prop_inbound_governor_valid_transition_order'
 -- but for running on Diffusion. This means it has to have in consideration the
@@ -4327,6 +4583,17 @@ prop_diffusion_ig_valid_transition_order ioSimTrace traceNumber =
         . groupConns id remoteStrIsFinalTransition
         $ remoteTransitionTraceEvents
 
+prop_diffusion_ig_valid_transition_order_iosimpor
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_ig_valid_transition_order_iosimpor
+  = testWithIOSimPOR prop_diffusion_ig_valid_transition_order short_trace
+
+prop_diffusion_ig_valid_transition_order_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_ig_valid_transition_order_iosim
+  = testWithIOSim prop_diffusion_ig_valid_transition_order long_trace
+
+
 -- | A variant of ouroboros-network-framework
 -- 'Test.Ouroboros.Network.Server.prop_timeouts_enforced'
 -- but for running on Diffusion. This means it has to have in consideration the
@@ -4379,6 +4646,16 @@ prop_diffusion_timeouts_enforced ioSimTrace traceNumber =
        in property
         $ verifyAllTimeouts True transitionSignal
 
+prop_diffusion_timeouts_enforced_iosimpor
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_timeouts_enforced_iosimpor
+  = testWithIOSimPOR prop_diffusion_timeouts_enforced short_trace
+
+prop_diffusion_timeouts_enforced_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_timeouts_enforced_iosim
+  = testWithIOSim prop_diffusion_timeouts_enforced long_trace
+
 
 newtype ArbDiffusionMode = ArbDiffusionMode { getDiffusionMode :: DiffusionMode }
   deriving (Eq, Show)
@@ -4408,7 +4685,7 @@ unit_local_root_diffusion_mode diffusionMode =
           . withTimeNameTraceEvents
               @DiffusionTestTrace
               @NtNAddr
-          . Trace.take 125000
+          . Trace.take long_trace
           $ runSimTrace sim
     in property $ foldMap (\versionData -> All $ ntnDiffusionMode versionData === diffusionMode) events
   where
@@ -4512,6 +4789,13 @@ prop_no_peershare_unwilling ioSimTrace traceNumber =
           )
           events
 
+prop_no_peershare_unwilling_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_no_peershare_unwilling_iosim
+  = testWithIOSim prop_no_peershare_unwilling long_trace
+
+
+--
 -- Utils
 --
 

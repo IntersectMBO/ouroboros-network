@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -11,6 +12,7 @@ module Test.Ouroboros.Network.LedgerPeers where
 import Codec.CBOR.FlatTerm
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (SomeException (..))
+import Control.Monad (forM)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
@@ -96,16 +98,15 @@ instance Arbitrary ArbitrarySlotNo where
     arbitrary =
       ArbitrarySlotNo . SlotNo <$> arbitrary
 
+
 data StakePool = StakePool {
       spStake :: !Word64
     , spRelay :: NonEmpty RelayAccessPoint
     } deriving Show
 
-
-
 instance Arbitrary StakePool where
     arbitrary = do
-        stake <- choose (0, 1000000)
+        stake <- choose (1, 1_000_000)
         (ArbitraryRelayAccessPoint firstRelay) <- arbitrary
         moreRelays <- filter (/= firstRelay) . nub . map unAddr <$> arbitrary
         return $ StakePool stake (firstRelay :| moreRelays)
@@ -122,13 +123,21 @@ instance Arbitrary StakePool where
                                        (NonEmpty.toList spRelay)
       ]
 
+
 newtype LedgerPools =
   LedgerPools { getLedgerPools :: [(PoolStake, NonEmpty RelayAccessPoint)] }
   deriving Show
 
 instance Arbitrary LedgerPools where
-    arbitrary = LedgerPools . calculateRelativeStake <$> arbitrary
+    arbitrary = LedgerPools . calculateRelativeStake
+            <$> arbitrary `suchThat` (\as -> sum (spStake <$> as) > 0)
 
+
+-- ^ Calculate relative stake.
+--
+-- PRECONDITION: total stake must be > 0, otherwise the exception `Ratio has
+-- zero denominator` is thrown (see
+-- <https://github.com/IntersectMBO/ouroboros-network/issues/5091>).
 calculateRelativeStake :: [StakePool]
                        -> [(PoolStake, NonEmpty RelayAccessPoint)]
 calculateRelativeStake sps =
@@ -136,13 +145,22 @@ calculateRelativeStake sps =
     map (\p -> ( PoolStake (fromIntegral (spStake p) % fromIntegral totalStake)
                , spRelay p)) sps
 
-genLedgerPoolsFrom :: [RelayAccessPoint] -> Gen LedgerPools
+
+-- | Enhance a list of pools, each one represented by a list of
+-- `RelayAccessPoint`, with a stake.
+--
+genLedgerPoolsFrom :: [NonEmpty RelayAccessPoint]
+                   -- ^ each inner list denotes relays of one pool.
+                   -- PRECONDITION: each inner list must be non-empty.
+                   -> Gen LedgerPools
 genLedgerPoolsFrom relays = do
-  stake <- choose (0, 1000000)
-  (ArbitraryRelayAccessPoint firstRelay) <- arbitrary
-  let moreRelays = filter (/= firstRelay) . nub $ relays
-      stakePool = StakePool stake (firstRelay :| moreRelays)
-  return (LedgerPools $ calculateRelativeStake [stakePool])
+  stakePools <-
+    forM relays (\poolRelays -> do
+      stake <- choose (0, 1_000_000)
+      return $ StakePool stake poolRelays)
+    `suchThat` (\pools -> sum (spStake <$> pools) > 0)
+  return (LedgerPools $ calculateRelativeStake stakePools)
+
 
 newtype ArbLedgerPeersKind = ArbLedgerPeersKind LedgerPeersKind
   deriving Show
