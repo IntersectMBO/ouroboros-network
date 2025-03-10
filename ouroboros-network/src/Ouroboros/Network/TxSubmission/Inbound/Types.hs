@@ -81,7 +81,6 @@ data PeerTxState txid tx = PeerTxState {
        --
        unknownTxs               :: !(Set txid),
 
-
        -- | Score is a metric that tracks how usefull a peer has been.
        -- The larger the value the less usefull peer. It slowly decays towards
        -- zero.
@@ -91,7 +90,7 @@ data PeerTxState txid tx = PeerTxState {
        scoreTs                  :: !Time,
 
        -- | A set of TXs downloaded from the peer. They are not yet
-       -- acknowledged and hasn't been sent to the mempool yet.
+       -- acknowledged and haven't been sent to the mempool yet.
        downloadedTxs            :: !(Map txid tx),
 
        -- | A set of TXs on their way to the mempool.
@@ -182,15 +181,14 @@ data SharedTxState peeraddr txid tx = SharedTxState {
       --
       referenceCounts :: !(Map txid Int),
 
-
       -- | A set of timeouts for txids that have been added to bufferedTxs after being
       -- inserted into the mempool.
-      -- Evenry txid entry has a reference count in `referenceCounts`.
-      timedTxs        :: (Map Time [txid]),
+      -- Every txid entry has a reference count in `referenceCounts`.
+      timedTxs        :: Map Time [txid],
 
       -- | A set of txids that have been downloaded by a peer and are on their
-      -- way to the mempool. We won't issue further fetchrequests for TXs in this
-      -- state.
+      -- way to the mempool. We won't issue further fetch-requests for TXs in
+      -- this state.
       limboTxs        :: !(Map txid Int),
 
       -- | Rng used to randomly order peers

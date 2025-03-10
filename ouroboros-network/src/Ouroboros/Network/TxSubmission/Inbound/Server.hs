@@ -76,15 +76,16 @@ txSubmissionInboundV2
       :: m (ServerStIdle Z txid tx m ())
     serverIdle = do
         -- Block on next decision.
-        txd@TxDecision { txdTxsToRequest = txsToReq, txdTxsToMempool = txs }
+        txd@TxDecision { txdTxsToRequest = txsToRequest,
+                         txdTxsToMempool = txsToMempool }
           <- readTxDecision
         traceWith tracer (TraceTxInboundDecision txd)
 
-        let !collected = length txs
+        let !collected = length txsToMempool
 
         -- Only attempt to add TXs if we have some work to do
         when (collected > 0) $ do
-            mapM_ (withMempoolSem . addTx) txs
+            mapM_ (withMempoolSem . addTx) txsToMempool
 
             traceWith tracer $
               TraceTxSubmissionCollected collected
@@ -92,7 +93,7 @@ txSubmissionInboundV2
         -- TODO:
         -- We can update the state so that other `tx-submission` servers will
         -- not try to add these txs to the mempool.
-        if Set.null txsToReq
+        if Set.null txsToRequest
           then serverReqTxIds Zero txd
           else serverReqTxs txd
 
@@ -142,8 +143,8 @@ txSubmissionInboundV2
     -- Pipelined request of txs
     serverReqTxs :: TxDecision txid tx
                  -> m (ServerStIdle Z txid tx m ())
-    serverReqTxs txd@TxDecision { txdTxsToRequest = txsToReq } =
-      pure $ SendMsgRequestTxsPipelined (Set.toList txsToReq)
+    serverReqTxs txd@TxDecision { txdTxsToRequest = txdTxsToRequest } =
+      pure $ SendMsgRequestTxsPipelined (Set.toList txdTxsToRequest)
                                         (serverReqTxIds (Succ Zero) txd)
 
 
