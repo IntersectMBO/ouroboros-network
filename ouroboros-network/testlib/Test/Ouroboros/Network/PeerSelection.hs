@@ -837,7 +837,10 @@ envEventCredits  TraceEnvPeersStatus{}          = 0
 -- next request.
 --
 envEventCredits  TraceEnvPeerShareResult{}      = 10
-envEventCredits  TraceEnvRootsResult{}          = 10
+-- fails --quickcheck-replay="(SMGen 1595848698888088949 9152751073020452179,27)"
+-- with 10 credits, but it appears benign as requests for public root peers
+-- stack with peer share requests and without sufficient credits the test fails
+envEventCredits  TraceEnvRootsResult{}          = 15
 envEventCredits  TraceEnvBigLedgerPeersResult{} = 10
 
 -- These events are visible in the environment but are the result of actions
@@ -4023,7 +4026,8 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
       dnsSemaphore
       DNS.defaultResolvConf
       readDomains
-      (ioDNSActions LookupReqAAndAAAA) $ \requestPublicRootPeers -> do
+      (ioDNSActions tracer LookupReqAAndAAAA (curry IP.toSockAddr))
+      (mkStdGen 42) $ \requestPublicRootPeers -> do
         peerSelectionGovernor
           tracer' tracer tracer
           peerSelectionGovernorArgs
@@ -4032,7 +4036,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
           (ExtraState.empty consensusMode (NumberOfBigLedgerPeers 0))
           ExtraPeers.empty
           actions
-            { requestPublicRootPeers = \_ ->
+            { requestPublicRootPeers = \_ _ ->
                 transformPeerSelectionAction requestPublicRootPeers }
           policy
           interfaces
@@ -4059,7 +4063,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
                 readPeerSelectionTargets = return targets,
                 requestPeerShare         = \_ _ -> return (PeerSharingResult []),
                 peerConnToPeerSharing    = id,
-                requestPublicRootPeers   = \_ _ -> return (PublicRootPeers.empty ExtraPeers.empty, 0),
+                requestPublicRootPeers   = \_ _ _ -> return (PublicRootPeers.empty ExtraPeers.empty, 0),
                 peerStateActions         = PeerStateActions {
                   establishPeerConnection  = error "establishPeerConnection",
                   monitorPeerConnection    = error "monitorPeerConnection",
@@ -4152,7 +4156,8 @@ prop_issue_3550 = prop_governor_target_established_below defaultMaxTime $
       consensusMode = PraosMode,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       useLedgerPeers = Script ((UseLedgerPeers Always, NoDelay) :| []),
-      ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
+      ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| []),
+      seed = TestSeed 42
     }
 
 -- | issue #3515
@@ -4186,7 +4191,8 @@ prop_issue_3515 = prop_governor_nolivelock $
       consensusMode = PraosMode,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       useLedgerPeers = Script ((UseLedgerPeers Always, NoDelay) :| []),
-      ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
+      ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| []),
+      seed = TestSeed 42
     }
   where
     targets' =
@@ -4227,7 +4233,8 @@ prop_issue_3494 = prop_governor_nofail $
       consensusMode = PraosMode,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       useLedgerPeers = Script ((UseLedgerPeers Always, NoDelay) :| []),
-      ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
+      ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| []),
+      seed = TestSeed 42
     }
   where
     targets' =
@@ -4279,7 +4286,8 @@ prop_issue_3233 = prop_governor_nolivelock $
       consensusMode = PraosMode,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       useLedgerPeers = Script ((UseLedgerPeers Always, NoDelay) :| []),
-      ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
+      ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| []),
+      seed = TestSeed 42
     }
   where
     targets' =

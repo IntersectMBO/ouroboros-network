@@ -37,6 +37,6 @@ import Ouroboros.Network.PeerSelection.PeerStateActions as PeerSelection.PeerSta
 import Ouroboros.Network.PeerSelection.PublicRootPeers as PeerSelection.PublicRootPeers
            (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint as PeerSelection.RelayAccessPoint
-           (DomainAccessPoint (..), IP (..), PortNumber, RelayAccessPoint (..))
+           (IP (..), PortNumber, RelayAccessPoint (..))
 import Ouroboros.Network.PeerSelection.Types as PeerSelection
 import Ouroboros.Network.PeerSelection.Types as PeerSelection.Types

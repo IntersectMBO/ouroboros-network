@@ -389,7 +389,7 @@ data PeerSelectionActions extraState extraFlags extraPeers extraAPI extraCounter
        -- It also makes a distinction between normal and big ledger peers to be
        -- fetched.
        --
-       requestPublicRootPeers   :: LedgerPeersKind -> Int -> m (PublicRootPeers extraPeers peeraddr, DiffTime),
+       requestPublicRootPeers   :: LedgerPeersKind -> StdGen -> Int -> m (PublicRootPeers extraPeers peeraddr, DiffTime),
 
        -- | The action to contact a known peer and request a sample of its
        -- known peers.

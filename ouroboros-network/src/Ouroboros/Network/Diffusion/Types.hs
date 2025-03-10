@@ -193,6 +193,8 @@ data Tracers ntnAddr ntnVersion ntnVersionData
     , dtInboundGovernorTransitionTracer
         :: Tracer m (IG.RemoteTransitionTrace ntnAddr)
 
+    , dtDnsTracer :: Tracer m DNSTrace
+
       --
       -- NodeToClient tracers
       --
@@ -243,6 +245,7 @@ nullTracers = Tracers {
   , dtLocalConnectionManagerTracer               = nullTracer
   , dtLocalServerTracer                          = nullTracer
   , dtLocalInboundGovernorTracer                 = nullTracer
+  , dtDnsTracer                                  = nullTracer
   }
 
 -- | Common DiffusionArguments interface between P2P and NonP2P
@@ -380,6 +383,7 @@ data Arguments extraState extraDebugState extraFlags extraPeers
                    -> (Map ntnAddr PeerAdvertise -> extraPeers)
                    -> ( (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set ntnAddr, DiffTime)))
                    -> LedgerPeersKind
+                   -> StdGen
                    -> Int
                    -> m (PublicRootPeers extraPeers ntnAddr, DiffTime)))
 
@@ -665,7 +669,10 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         -- | diffusion dns actions
         --
         diDnsActions
-          :: DNSLookupType -> DNSActions resolver resolverError m,
+          :: Tracer m DNSTrace
+          -> DNSLookupType
+          -> (IP -> Socket.PortNumber -> ntnAddr)
+          -> DNSActions ntnAddr resolver resolverError m,
 
         -- | Update `ntnVersionData` for initiator-only local roots.
         diUpdateVersionData

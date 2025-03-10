@@ -160,7 +160,8 @@ data GovernorMockEnvironment = GovernorMockEnvironment {
        useBootstrapPeers          :: !(TimedScript UseBootstrapPeers),
        consensusMode              :: !ConsensusMode,
        useLedgerPeers             :: !(TimedScript UseLedgerPeers),
-       ledgerStateJudgement       :: !(TimedScript LedgerStateJudgement)
+       ledgerStateJudgement       :: !(TimedScript LedgerStateJudgement),
+       seed                       :: !TestSeed
      }
   deriving (Show, Eq)
 
@@ -239,7 +240,8 @@ governorAction :: GovernorMockEnvironment -> IOSim s Void
 governorAction mockEnv@GovernorMockEnvironment {
                  consensusMode,
                  targets = Script targets',
-                 ledgerStateJudgement = Script ledgerStateJudgement'} = do
+                 ledgerStateJudgement = Script ledgerStateJudgement',
+                 seed = TestSeed seed'} = do
     publicStateVar <- makePublicPeerSelectionStateVar
     lpVar <- playTimedScript (contramap TraceEnvUseLedgerPeers tracerMockEnv)
                              (useLedgerPeers mockEnv)
@@ -247,7 +249,7 @@ governorAction mockEnv@GovernorMockEnvironment {
                               (useBootstrapPeers mockEnv)
     let readUseBootstrapPeers = readTVar usbVar
     -- todo: make NumberOfBigLedgerPeers come from quickcheck
-    debugStateVar <- StrictTVar.newTVarIO (emptyPeerSelectionState (mkStdGen 42) (ExtraState.empty consensusMode (NumberOfBigLedgerPeers 0)) ExtraPeers.empty)
+    debugStateVar <- StrictTVar.newTVarIO (emptyPeerSelectionState (mkStdGen seed') (ExtraState.empty consensusMode (NumberOfBigLedgerPeers 0)) ExtraPeers.empty)
     countersVar <- StrictTVar.newTVarIO (emptyPeerSelectionCounters ExtraSizes.empty)
     policy  <- mockPeerSelectionPolicy mockEnv
     let initialPeerTargets = fst . NonEmpty.head $ targets'
@@ -308,7 +310,7 @@ governorAction mockEnv@GovernorMockEnvironment {
         (tracerDebugPeerSelection <> traceAssociationMode interfaces actions)
         tracerTracePeerSelectionCounters
         peerSelectionGovernorArgs
-        (mkStdGen 42)
+        (mkStdGen seed')
         (ExtraState.empty consensusMode (NumberOfBigLedgerPeers 0)) -- ^ todo: make this come from quickcheck
         ExtraPeers.empty
         actions
@@ -503,7 +505,7 @@ mockPeerSelectionActions' tracer
     }
   where
     -- TODO: make this dynamic
-    requestPublicRootPeers ledgerPeersKind _n = do
+    requestPublicRootPeers ledgerPeersKind _rng _n = do
       traceWith tracer TraceEnvRequestPublicRootPeers
       let ttl :: DiffTime
           ttl = 60
@@ -948,6 +950,7 @@ instance Arbitrary GovernorMockEnvironment where
                                    PraosMode   -> arbitrary
       useLedgerPeers          <- arbitrary
       ledgerStateJudgement0   <- listOf arbitrary
+      seed                    <- arbitrary
       (ledgerStateJudgement, targets) <-
         genLsjWithTargets localRootPeers publicRootPeers ledgerStateJudgement0 consensusMode
 

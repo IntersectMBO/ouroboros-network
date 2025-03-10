@@ -32,6 +32,7 @@ import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPe
 import Ouroboros.Network.PeerSelection.RootPeersDNS (PeerActionsDNS (..))
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore)
 import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
+import System.Random
 
 -- We start by reading the current ledger state judgement, if it is
 -- YoungEnough we only care about fetching for ledger peers, otherwise we
@@ -53,6 +54,7 @@ requestPublicRootPeers
   -- ^ Function to convert DNS result into extra peers
   -> (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
   -> LedgerPeersKind
+  -> StdGen
   -> Int
   -> m (CardanoPublicRootPeers peeraddr, DiffTime)
 requestPublicRootPeers
@@ -63,7 +65,7 @@ requestPublicRootPeers
                      }
   dnsSemaphore
   toExtraPeers
-  getLedgerPeers ledgerPeersKind n = do
+  getLedgerPeers ledgerPeersKind rng n = do
   -- Check if the node is in a sensitive state
   usingBootstrapPeers <- atomically
                        $ requiresBootstrapPeers <$> useBootstrapped
@@ -81,7 +83,9 @@ requestPublicRootPeers
         dnsSemaphore
         toExtraPeers
         getLedgerPeers
-        ledgerPeersKind n
+        ledgerPeersKind
+        rng
+        n
   where
     requestConfiguredBootstrapPeers :: Int -> m (Set peeraddr, DiffTime)
     requestConfiguredBootstrapPeers x = do
@@ -99,4 +103,5 @@ requestPublicRootPeers
                               DNS.defaultResolvConf
                               readBootstrapPeersMap
                               dnsActions
+                              rng
                               (fmap (first Map.keysSet) . ($ x))

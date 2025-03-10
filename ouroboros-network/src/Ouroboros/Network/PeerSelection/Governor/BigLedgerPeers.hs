@@ -27,6 +27,7 @@ import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersAPI (..))
 
+import System.Random
 
 belowTarget
   :: (MonadSTM m, Ord peeraddr, Semigroup extraPeers)
@@ -70,7 +71,8 @@ belowTarget enableAction
               targets = PeerSelectionTargets {
                           targetNumberOfKnownBigLedgerPeers
                         },
-              extraState
+              extraState,
+              stdGen
             }
     | enableAction extraState
 
@@ -85,8 +87,9 @@ belowTarget enableAction
           decisionTrace = [TraceBigLedgerPeersRequest
                              targetNumberOfKnownBigLedgerPeers
                              numBigLedgerPeers],
-          decisionState = st { inProgressBigLedgerPeersReq = True },
-          decisionJobs  = [jobReqBigLedgerPeers actions maxExtraBigLedgerPeers]
+          decisionState = st { inProgressBigLedgerPeersReq = True
+                             , stdGen = fst . split $ stdGen},
+          decisionJobs  = [jobReqBigLedgerPeers actions stdGen maxExtraBigLedgerPeers]
         }
 
     | otherwise
@@ -118,6 +121,7 @@ jobReqBigLedgerPeers
       peeraddr
       peerconn
       m
+  -> StdGen
   -> Int
   -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr
                           peerconn)
@@ -129,6 +133,7 @@ jobReqBigLedgerPeers PeerSelectionActions {
                        },
                        requestPublicRootPeers
                      }
+                     rng
                      numExtraAllowed =
     Job job (return . handler) () "reqBigLedgerPeers"
   where
@@ -162,7 +167,7 @@ jobReqBigLedgerPeers PeerSelectionActions {
 
     job :: m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
     job = do
-      (results, ttl) <- requestPublicRootPeers BigLedgerPeers numExtraAllowed
+      (results, ttl) <- requestPublicRootPeers BigLedgerPeers rng numExtraAllowed
       return $ Completion $ \st now ->
         let -- We make sure the set of big ledger peers disjoint from the sum
             -- of local, public and ledger peers.
