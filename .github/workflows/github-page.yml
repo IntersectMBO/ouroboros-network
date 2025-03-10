@@ -35,7 +35,7 @@ jobs:
 
       # we need nix to later build the spec documents
     - name: Install Nix
-      uses: cachix/install-nix-action@v30
+      uses: cachix/install-nix-action@v31
       with:
         nix_path: nixpkgs=channel:nixos-unstable
         extra_nix_config: |
