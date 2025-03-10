@@ -4,56 +4,98 @@ KES Agent User Guide
 Introduction
 ------------
 
-On the Cardano blockchain, we use KES (Key Evolving Signature) to sign and
-verify blocks, such that signing keys can be cycled regularly, without having
-to publish new verification keys every time. KES achieves this by allowing us
-to "evolve" sign keys, such that the evolved key is different from the original
-one, and the original key cannot be inferred from the evolved key anymore, but
-the original verification key remains valid for the evolved key.
+Key Evolving Signature (KES) cryptography is a cryptographic signing scheme
+where one verification key (VerKey) covers a series of signing keys (SignKey),
+such that:
 
-The ultimate purpose of this setup is "forward security": once a key has been
-evolved, the old key can be deleted, avoiding the possibility of a compromise
-(a key that no longer exist cannot be leaked anymore) - but because the same
-verification key is still valid, we can just use the evolved key, and it will
-still validate against the verification key we've published.
+- Any signature created with any of the SignKeys can be verified with the same
+  VerKey.
+- Future SignKeys can be derived ("evolved") from past ones, but not the other
+  way around, up to a maximum number of evolutions.
 
-However, actual forward security can only be achieved if the deletion of old
-keys is reliable, that is, when we delete it, we must make sure that all traces
-of it are wiped off the face of the Earth. Unfortunately, this is not something
-modern mass storage media can achieve, unless we physically destroy the storage
-device itself; and this means that we cannot store KES sign keys on disk, ever,
-if we want meaningful forward security.
+We use this in Cardano in order to achieve a degree of *forward security*:
 
-But this poses a new problem: `cardano-node` may have to restart itself, and
-when it does, it loses any keys it may have stored in memory.
+- The original SignKey of each series of evolutions is verified with an OpCert,
+  and installed into a Node.
+- Every 36 hours (one "KES Period"), the Node evolves the SignKey, and deletes
+  the old evolution.
+- Once we reach the end of a key's series of evolutions, a new key and OpCert
+  must be generated and installed.
 
-This is where the KES Agent system comes in: it stores KES keys in memory only,
-using a persistent background process to keep the key available across Node
-restarts.
+Once a key is deleted, it can no longer be leaked, and an attacker cannot infer
+the old keys from newer evolutions, which means that any signature made with a
+key gains forward security within no more than 36 hours of signing, at which
+point the sign key will be deleted. However, because the same verification key
+covers all evolutions of the key, there is no need to distribute a new
+verification key for each evolution, which makes the 36-hour periods viable in
+practice.
+
+There is one caveat though: in order for all this to work, we need to actually
+delete those keys, and because reliably erasing data from modern mass storage
+devices (such as harddisks or SSD's) is effectively not a thing, we need to
+handle the keys such that they are never stored on disk. However, we also need
+the Node process to be able to restart, for various reasons, and without
+external storage, this means the key would be lost after a restart.
+
+This is where the KES Agent comes in, an external process that retains a KES
+key in memory, and exchanges it with a locally connected Node. Great care is
+taken to make sure that keys are never stored on disk, and that the RAM they
+are stored in is protected against swapping out to disk ("mlocked"), and when
+sending keys over a network socket, we do it such that the keys are moved
+directly between mlocked memory and the socket file descriptors, without using
+any intermediate data structures for serialization/deserialization.
 
 Design Overview
 ---------------
 
-At the core of the KES Agent system is the KES Agent itself, a long-running
-background process that keeps a KES sign key in memory.
+The KES Agent system consist of 3 components:
 
-A Cardano Node can connect to the Agent to fetch the current key, and to
-receive new keys as they are created. We call `cardano-node` the "Service
-Client" in this context (because the KES Agent sends out KES sign keys as a
-"service")
+- The *Agent* itself, a standalone process that is responsible for:
+    - Generating KES keys
+    - Serving KES sign keys to a block-forging Cardano Node, and, optionally,
+      other KES agent instances
+    - Outputting KES verification keys, for the purpose of generating OpCerts.
+  The KES agent accepts connections on two sockets:
+    - A "service" socket, on which keys are sent out. Nodes and other KES
+      agents will connect to this socket.
+    - A "control" socket, on which commands are received. The Control Client
+      will connect to this socket.
+  The Agent will also automonously evolve keys, such that any keys it sends out
+  on demand will match the current KES period on the ledger. Further, while the
+  KES Agent can generate new KES keys, they have to be signed externally. Any
+  newly generated keys will be held in a *staging area* inside the KES agent
+  process until a matching OpCert is added, at which point the key is activated
+  and sent out to any connected clients.
+- The *Node* (cardano-node), which connects to an Agent's "service" socket, and
+  receives keys upon first connecting and when a fresh key is pushed to the
+  Agent. Once the Node has received a valid key, it will evolve it
+  autonomously, so there is no need for the Agent to send out subsequent
+  evolutions of the same key, unless the Node reconnects. The latter normally
+  only happens when a Node process restarts.
+- The *Control Client* (to be implemented), a utility that can be used to
+  generate keys and OpCerts, and push them to an Agent via the "control"
+  socket. This utility should run on a separate host, and needs access to the
+  "cold" key in order to sign the "hot" keys managed by the Agent.
 
-A CLI tool, `kes-agent-control`, can be used to interact with a running
-`kes-agent` process. The control CLI is called "Control Client" (because it
-connects to the KES Agent in order to "control" it). Through the Control
-Client, we can command the KES Agent to generate new sign keys, export the
-corresponding verification key, and we can upload an OpCert, which triggers the
-KES Agent to start using it.
+This package contains:
 
-And finally, we need a CLI tool for signing KES keys and metadata, producing
+- The `kes-agent` binary (the Agent).
+- The `kes-agent-control` binary (the Control Client, used to interact with
+  running `kes-agent` processes).
+- The `kes-agent` library that contains shared code for all of the above as well
+  as client code to be used in `cardano-node`.
+- A test suite.
+- The `kes-service-client-demo` binary, which implements the service client
+  protocol and can be used as a mock `cardano-node` for testing and
+  demonstration purposes.
+- The `kes-agent-protodocs` binary, a tool that will output documentation of
+  the KES Agent protocols as used in the current versions of the library.
+  **This part is currently disabled due to dependency issues.**
+
+We also need a CLI tool for signing KES keys and metadata, producing
 *Operational Certificates* ("OpCerts"). `cardano-cli` already has functionality
-for this built into it, however, because creating OpCerts requires access to a
-"cold key", which must never ever be leaked, this needs to be done on a
-separate air-gapped machine.
+for this built into it, so we are not providing one from the `kes-agent`
+package.
 
 Summarizing, the following data is handled by the system; items that are
 sensitive to leaks are in **boldface**.
@@ -176,7 +218,15 @@ system.
 
 Simply put the `kes-agent-control` binary somewhere on your `$PATH`.
 
-(TODO: configuration)
+To tell `kes-agent-control` where to find the KES agent, you can use the
+following methods:
+
+1. Set up the kes-agent to listen for control connections on the default path,
+   `/tmp/kes-agent-control.socket`.
+2. Pass the control socket path as a command-line argument to
+   `kes-agent-control`, using the `--control-address` or `-c` option.
+3. Pass the control socket path through the environment, by setting the
+   `KES_AGENT_CONTROL_PATH` environment variable to the desired path.
 
 ### Setting Up An Air-gapped Signing Host
 
@@ -299,3 +349,26 @@ Command Reference
 
 The full list of command line options for `kes-agent` and `kes-agent-control`
 can be printed using the `--help` option.
+
+Using As A Library
+------------------
+
+The `kes-agent` package also contains the `kes-agent` library, which provides
+functionality for the agent itself, the control client, and any service
+clients.
+
+To implement KES agent connectivity in your own software, look at the modules
+in kes-agent/src/Cardano/KESAgent/Processes/:
+
+- kes-agent/src/Cardano/KESAgent/Processes/Agent.hs provides agent
+  functionality. You will not need this unless you want to make your own KES
+  client.
+- kes-agent/src/Cardano/KESAgent/Processes/ControlClient.hs provides control
+  client functionality (query the state of an agent process, requesting a new
+  KES key to be generated, outputting the staged KES verification key,
+  uploading OpCerts to activate the staged key, dropping the current key). You
+  will need this if you want to make a custom frontend for controlling KES
+  agents.
+- kes-agent/src/Cardano/KESAgent/Processes/Agent.hs provides service client
+  functionality (receiving KES sign keys). You will need this if you want your
+  application to connect to a KES agent.
