@@ -281,7 +281,7 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
               stInflight' :: Map txid Int
               stInflight' = Map.unionWith (+) stInflightDelta stInflight
 
-              stLimboTx'      = stLimboTx <> (Set.fromList $ map fst txsToMempool)
+              stLimboTx'      = stLimboTx <> Set.fromList (map fst txsToMempool)
           in
             if requestedTxIdsInflight peerTxState'' > 0
               then
@@ -342,6 +342,7 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
           bufferedTxs' = bufferedTxs
                          `Map.restrictKeys`
                          liveSet
+
           limboTxs' = foldl' updateLimboTxs limboTxs as
 
       in ( sharedState {
@@ -366,17 +367,17 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
          )
 
       where
-        updateLimboTxs :: Map txid Int
-                       -> ((peeraddr, PeerTxState txid tx),
-                                      TxDecision txid tx)
+        updateLimboTxs :: forall a.
+                          Map txid Int
+                       -> (a, TxDecision txid tx)
                        -> Map txid Int
         updateLimboTxs m (_,d) = foldl' fn m $ txdTxsToMempool d
           where
             fn :: Map txid Int
                -> (txid,tx)
                -> Map txid Int
-            fn x (txid,_) = Map.alter (\case Nothing  -> Just 1
-                                             (Just n) -> Just $! succ n) txid x
+            fn x (txid,_) = Map.alter (\case Nothing -> Just 1
+                                             Just n  -> Just $! succ n) txid x
 
 
 -- | Filter peers which can either download a `tx` or acknowledge `txid`s.
@@ -399,12 +400,11 @@ filterActivePeers
                     inflightTxs,
                     inflightTxsSize,
                     limboTxs }
-    | overLimit
+    | inflightTxsSize > maxTxsSizeInflight
     = Map.filter fn peerTxStates
     | otherwise
     = Map.filter gn peerTxStates
   where
-    overLimit = inflightTxsSize > maxTxsSizeInflight
     unrequestable = Map.keysSet (Map.filter (>= txInflightMultiplicity) inflightTxs)
                  <> Map.keysSet bufferedTxs
 
@@ -458,7 +458,7 @@ filterActivePeers
             `Map.withoutKeys` requestedTxsInflight
             `Map.withoutKeys` unknownTxs
             `Map.withoutKeys` unrequestable
-            `Map.withoutKeys` (Map.keysSet limboTxs)
+            `Map.withoutKeys` Map.keysSet limboTxs
 
         -- Split `unacknowledgedTxIds'` into the longest prefix of `txid`s which
         -- can be acknowledged and the unacknowledged `txid`s.

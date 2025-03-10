@@ -660,8 +660,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
           let client = txSubmissionOutbound
                          ((show . (connId,)) `contramap` debugTracer)
                          (NumTxIdsToAck $ getNumTxIdsToReq
-                                        $ maxUnacknowledgedTxIds
-                                        $ txDecisionPolicy)
+                                        $ maxUnacknowledgedTxIds txDecisionPolicy)
                          (getMempoolReader mempool)
                          maxBound
                          controlMessageSTM
