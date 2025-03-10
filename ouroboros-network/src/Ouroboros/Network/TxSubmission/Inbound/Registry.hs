@@ -157,8 +157,7 @@ withPeer tracer
                                 handleReceivedTxIds,
                                 handleReceivedTxs,
                                 countRejectedTxs,
-                                withMempoolSem
-                                }
+                                withMempoolSem }
                   )
 
           atomically $ modifyTVar sharedStateVar registerPeer
@@ -210,9 +209,12 @@ withPeer tracer
              inflightTxsSize = inflightTxsSize',
              limboTxs        = limboTxs' }
       where
-        (PeerTxState { unacknowledgedTxIds, requestedTxsInflight,
-                       requestedTxsInflightSize, toMempoolTxs }
-                     , peerTxStates') =
+        (PeerTxState { unacknowledgedTxIds,
+                       requestedTxsInflight,
+                       requestedTxsInflightSize,
+                       toMempoolTxs }
+          , peerTxStates')
+          =
           Map.alterF
             (\case
               Nothing -> error ("TxSubmission.withPeer: invariant violation for peer " ++ show peeraddr)
@@ -249,6 +251,7 @@ withPeer tracer
           where
             fn (Just n) | n > 1 = Just $! pred n
             fn _                = Nothing
+
     --
     -- PeerTxAPI
     --
@@ -269,12 +272,11 @@ withPeer tracer
                          -> SharedTxState peeraddr txid tx
                          -> SharedTxState peeraddr txid tx
         updateBufferedTx _ (Left (txid,_tx)) st@SharedTxState { peerTxStates
-                                                             , limboTxs } =
+                                                              , limboTxs } =
             st { peerTxStates = peerTxStates'
                , limboTxs = limboTxs' }
           where
-            limboTxs' = Map.update (\case
-                                          1 -> Nothing
+            limboTxs' = Map.update (\case 1 -> Nothing
                                           n -> Just $! pred n) txid limboTxs
 
             peerTxStates' = Map.update fn peeraddr peerTxStates
@@ -294,23 +296,20 @@ withPeer tracer
                , limboTxs = limboTxs'
                }
           where
-            limboTxs' = Map.update (\case
-                                          1 -> Nothing
+            limboTxs' = Map.update (\case 1 -> Nothing
                                           n -> Just $! pred n) txid limboTxs
 
-            timedTxs' = Map.alter atf (addTime bufferedTxsMinLifetime now) timedTxs
+            timedTxs' = Map.alter fn (addTime bufferedTxsMinLifetime now) timedTxs
               where
-                atf :: Maybe [txid]
-                    -> Maybe [txid]
-                atf Nothing      = Just [txid]
-                atf (Just txids) = Just $! (txid:txids)
+                fn :: Maybe [txid] -> Maybe [txid]
+                fn Nothing      = Just [txid]
+                fn (Just txids) = Just $! (txid:txids)
 
-            referenceCounts' = Map.alter afn txid referenceCounts
+            referenceCounts' = Map.alter fn txid referenceCounts
               where
-                afn :: Maybe Int
-                    -> Maybe Int
-                afn Nothing  = Just 1
-                afn (Just n) = Just $! succ n
+                fn :: Maybe Int -> Maybe Int
+                fn Nothing  = Just 1
+                fn (Just n) = Just $! succ n
 
             bufferedTxs' =  Map.insert txid (Just tx) bufferedTxs
 
