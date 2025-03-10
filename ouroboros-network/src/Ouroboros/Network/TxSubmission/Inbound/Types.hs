@@ -189,8 +189,8 @@ data SharedTxState peeraddr txid tx = SharedTxState {
       timedTxs        :: (Map Time [txid]),
 
       -- | A set of txids that have been downloaded by a peer and are on their
-      -- way to the mempool. We won't issue further fetchrequests for TXs in this
-      -- state.
+      -- way to the mempool. We won't issue further fetch-requests for TXs in
+      -- this state.
       limboTxs        :: !(Map txid Int),
 
       -- | Rng used to randomly order peers

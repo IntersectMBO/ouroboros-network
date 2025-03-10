@@ -157,8 +157,7 @@ withPeer tracer
                                 handleReceivedTxIds,
                                 handleReceivedTxs,
                                 countRejectedTxs,
-                                withMempoolSem
-                                }
+                                withMempoolSem }
                   )
 
           atomically $ modifyTVar sharedStateVar registerPeer
@@ -249,6 +248,7 @@ withPeer tracer
           where
             fn (Just n) | n > 1 = Just $! pred n
             fn _                = Nothing
+
     --
     -- PeerTxAPI
     --
@@ -269,7 +269,7 @@ withPeer tracer
                          -> SharedTxState peeraddr txid tx
                          -> SharedTxState peeraddr txid tx
         updateBufferedTx _ (Left (txid,_tx)) st@SharedTxState { peerTxStates
-                                                             , limboTxs } =
+                                                              , limboTxs } =
             st { peerTxStates = peerTxStates'
                , limboTxs = limboTxs' }
           where
