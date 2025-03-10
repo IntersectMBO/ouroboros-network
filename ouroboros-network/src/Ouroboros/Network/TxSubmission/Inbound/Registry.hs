@@ -92,6 +92,10 @@ data PeerTxAPI m txid tx = PeerTxAPI {
     countRejectedTxs    :: Time
                         -> Double
                         -> m Double,
+    -- ^ Update `score` & `scoreTs` fields of `PeerTxState`, return the new
+    -- updated `score`.
+    --
+    -- PRECONDITION: the `Double` argument is non-negative.
 
     withMempoolSem      :: m (Either (txid, tx) (txid, tx))
                         -> m (Either (txid, tx) (txid, tx))
@@ -338,18 +342,17 @@ withPeer tracer
     countRejectedTxs :: Time
                      -> Double
                      -> m Double
-    countRejectedTxs now n = atomically $ do
-      modifyTVar sharedStateVar cntRejects
-      st <- readTVar sharedStateVar
-      case Map.lookup peeraddr (peerTxStates st)  of
-           Nothing -> error ("TxSubmission.withPeer: invariant violation for peer " ++ show peeraddr)
-           Just ps -> return $ score ps
-       where
-        cntRejects :: SharedTxState peeraddr txid tx
-                   -> SharedTxState peeraddr txid tx
-        cntRejects st@SharedTxState { peerTxStates } =
-          let peerTxStates' = Map.update (\ps -> Just $! updateRejects policy now n ps) peeraddr peerTxStates in
-          st {peerTxStates    = peerTxStates'}
+    countRejectedTxs _ n | n < 0 =
+      error ("TxSubmission.countRejectedTxs: invariant violation for peer " ++ show peeraddr)
+    countRejectedTxs now n = atomically $ stateTVar sharedStateVar $ \st ->
+        let (result, peerTxStates') = Map.alterF fn peeraddr (peerTxStates st)
+        in (result, st { peerTxStates = peerTxStates' })
+      where
+        fn :: Maybe (PeerTxState txid tx) -> (Double, Maybe (PeerTxState txid tx))
+        fn Nothing   = error ("TxSubmission.withPeer: invariant violation for peer " ++ show peeraddr)
+        fn (Just ps) = (score ps', Just $! ps')
+          where
+            ps' = updateRejects policy now n ps
 
 updateRejects :: TxDecisionPolicy
               -> Time
