@@ -92,8 +92,7 @@ instance Arbitrary TxSubmissionState where
     txsN <- choose (1, 10)
     txs <- divvy txsN . nubBy (on (==) getTxId) <$> vectorOf (peersN * txsN) arbitrary
     peers <- vectorOf peersN arbitrary
-    peersState <- map (\(a, (b, c)) -> (a, b, c))
-                . zip txs
+    peersState <- zipWith (curry (\(a, (b, c)) -> (a, b, c))) txs
               <$> vectorOf peersN arbitrary
     return TxSubmissionState  { peerMap = Map.fromList (zip peers peersState),
                                 decisionPolicy
@@ -196,8 +195,7 @@ runTxSubmission tracer tracerTxLogic state txDecisionPolicy = do
         let clients = (\(addr, (mempool, ctrlMsgSTM, outDelay, _, outChannel, _)) -> do
                         let client = txSubmissionOutbound (Tracer $ say . show)
                                                (NumTxIdsToAck $ getNumTxIdsToReq
-                                                              $ maxUnacknowledgedTxIds
-                                                              $ txDecisionPolicy)
+                                                              $ maxUnacknowledgedTxIds txDecisionPolicy)
                                                (getMempoolReader mempool)
                                                (maxBound :: NodeToNodeVersion)
                                                ctrlMsgSTM
@@ -271,7 +269,7 @@ txSubmissionSimulation (TxSubmissionState state txDecisionPolicy) = do
                                         )
                                 )
                                 0
-                   $ state''
+                                state''
       controlMessageVars = (\(_, x, _, _) -> x)
                         <$> Map.elems state'
 
