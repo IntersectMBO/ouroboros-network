@@ -1,6 +1,5 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE BlockArguments      #-}
-{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
@@ -101,8 +100,8 @@ acknowledgeTxIds
     -> SharedTxState peeraddr txid tx
     -> PeerTxState txid tx
     -> (NumTxIdsToAck, NumTxIdsToReq, [(txid,tx)], RefCountDiff txid, PeerTxState txid tx)
-    -- ^ number of txid to acknowledge, txids to acknowledge with multiplicities,
-    -- updated PeerTxState.
+    -- ^ number of txid to acknowledge, requests, txs which we can submit to the
+    -- mempool, txids to acknowledge with multiplicities, updated PeerTxState.
 {-# INLINE acknowledgeTxIds #-}
 
 acknowledgeTxIds
@@ -165,10 +164,9 @@ acknowledgeTxIds
 
     toMempoolTxs' = toMempoolTxs <> txsToMempoolMap
 
-    (downloadedTxs', ackedDownloadedTxs) = Map.partitionWithKey (\txid _ -> Set.member txid liveSet) downloadedTxs
-    lateTxs = Map.filterWithKey (\txid _ -> Map.notMember txid txsToMempoolMap) ackedDownloadedTxs
-    score' = score + (fromIntegral $ Map.size lateTxs)
-
+    (downloadedTxs', ackedDownloadedTxs) = Map.partitionWithKey (\txid _ -> txid `Set.member` liveSet) downloadedTxs
+    lateTxs = Map.filterWithKey (\txid _ -> txid `Map.notMember` txsToMempoolMap) ackedDownloadedTxs
+    score' = score + fromIntegral (Map.size lateTxs)
 
     -- the set of live `txids`
     liveSet  = Set.fromList (toList unacknowledgedTxIds')
@@ -184,7 +182,7 @@ acknowledgeTxIds
     unknownTxs' = unknownTxs `Set.intersection` liveSet
 
     refCountDiff = RefCountDiff
-                 $ foldr (\txid -> Map.alter fn txid)
+                 $ foldr (Map.alter fn)
                          Map.empty acknowledgedTxIds
       where
         fn :: Maybe Int -> Maybe Int
@@ -238,8 +236,8 @@ tickTimedTxs now st@SharedTxState{ timedTxs
     let (expiredTxs, timedTxs') = Map.split now timedTxs
         expiredTxs'             =  -- Map.split doesn't include the `now` entry in any map
                                   case Map.lookup now timedTxs of
-                                       (Just txids) -> expiredTxs <> (Map.singleton now txids)
-                                       Nothing      -> expiredTxs
+                                       Just txids -> Map.insert now txids expiredTxs
+                                       Nothing    -> expiredTxs
         refDiff = Map.foldl fn Map.empty expiredTxs'
         referenceCounts' = updateRefCounts referenceCounts (RefCountDiff refDiff)
         liveSet = Map.keysSet referenceCounts'
@@ -458,7 +456,7 @@ collectTxsImpl txSize peeraddr requestedTxIds receivedTxs
                             inflightTxsSize st - requestedSize
 
         st' = st { inflightTxs     = inflightTxs'',
-                     inflightTxsSize = inflightTxsSize''
+                   inflightTxsSize = inflightTxsSize''
                  }
 
         --
@@ -490,7 +488,7 @@ collectTxsImpl txSize peeraddr requestedTxIds receivedTxs
                     unknownTxs               = unknownTxs'',
                     requestedTxsInflightSize = requestedTxsInflightSize',
                     requestedTxsInflight     = requestedTxsInflight',
-                    downloadedTxs            =  downloadedTxs'}
+                    downloadedTxs            = downloadedTxs' }
 
 --
 -- Monadic public API
