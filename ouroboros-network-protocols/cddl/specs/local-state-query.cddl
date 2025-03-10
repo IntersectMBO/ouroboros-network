@@ -2,11 +2,13 @@
 ; LocalStateQuery mini-protocol.
 ;
 
-localStateQueryMessage
+localStateQueryMessage = localStateQueryMessageImpl<query>
+
+localStateQueryMessageImpl<q>
   = msgAcquire
   / msgAcquired
   / msgFailure
-  / msgQuery
+  / msgQuery<q>
   / msgResult
   / msgRelease
   / msgReAcquire
@@ -18,7 +20,16 @@ acquireFailurePointNotOnChain = 1
 failure      = acquireFailurePointTooOld
              / acquireFailurePointNotOnChain
 
-query        = any
+blockQuery      = [0, point]
+getSystemStart  = [1]
+getChainBlockNo = [2]
+getChainPoint   = [3]
+
+query        = blockQuery
+             / getSystemStart
+             / getChainBlockNo
+             / getChainPoint
+
 result       = any
 
 msgAcquire   = [0, point]
@@ -26,7 +37,7 @@ msgAcquire   = [0, point]
              / [10]
 msgAcquired  = [1]
 msgFailure   = [2, failure]
-msgQuery     = [3, query]
+msgQuery<q>  = [3, q]
 msgResult    = [4, result]
 msgRelease   = [5]
 msgReAcquire = [6, point]

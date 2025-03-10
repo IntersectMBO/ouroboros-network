@@ -334,10 +334,10 @@ localStateQueryMessages =
   , AnyMessageWithResult
       (Stateful.AnyMessage
         StateAcquired
-        (MsgQuery (Query largeCBORBS)))
+        (MsgQuery (Query . BlockQuery $ largeCBORBS)))
   , AnyMessageWithResult
       (Stateful.AnyMessage
-        (StateQuerying (Query largeCBORBS))
+        (StateQuerying (Query . BlockQuery $ largeCBORBS))
         (MsgResult (Result (Any CBOR.TNull))))
   , AnyMessageWithResult
       (Stateful.AnyMessage
