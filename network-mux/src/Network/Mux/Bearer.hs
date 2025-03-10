@@ -10,8 +10,10 @@ module Network.Mux.Bearer
   ( Bearer (..)
   , MakeBearer (..)
   , makeSocketBearer
+  , makeSocketBearer'
   , makePipeChannelBearer
   , makeQueueChannelBearer
+  , makeQueueChannelBearer'
 #if defined(mingw32_HOST_OS)
   , makeNamedPipeBearer
 #endif
@@ -55,7 +57,10 @@ pureBearer :: Applicative m
 pureBearer f = \sduTimeout tr fd -> pure (f sduTimeout tr fd)
 
 makeSocketBearer :: MakeBearer IO Socket
-makeSocketBearer = MakeBearer $ pureBearer (socketAsBearer size)
+makeSocketBearer = makeSocketBearer' False
+
+makeSocketBearer' :: Bool -> MakeBearer IO Socket
+makeSocketBearer' bypassEncode = MakeBearer $ pureBearer (socketAsBearer' bypassEncode size)
   where
     size = SDUSize 12_288
 
@@ -69,7 +74,15 @@ makeQueueChannelBearer :: ( MonadSTM   m
                           , MonadThrow m
                           )
                        => MakeBearer m (QueueChannel m)
-makeQueueChannelBearer = MakeBearer $ pureBearer (\_ -> queueChannelAsBearer size)
+makeQueueChannelBearer = makeQueueChannelBearer' False
+
+makeQueueChannelBearer' :: ( MonadSTM   m
+                          , MonadMonotonicTime m
+                          , MonadThrow m
+                          )
+                       => Bool
+                       -> MakeBearer m (QueueChannel m)
+makeQueueChannelBearer' bypassEncode = MakeBearer $ pureBearer (\_ -> queueChannelAsBearer' bypassEncode size)
   where
     size = SDUSize 1_280
 

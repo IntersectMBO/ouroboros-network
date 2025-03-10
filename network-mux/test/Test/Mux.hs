@@ -1193,7 +1193,7 @@ prop_demux_sdu_sim badSdu =
                                                  readQueue  = server_r
                                                }
                 server <- async $ plainServer miniInfoV serverInfoV payload serverTracer serverBearer
-                clientBearer <- getBearer makeQueueChannelBearer
+                clientBearer <- getBearer (makeQueueChannelBearer' True)
                                   (-1)
                                   clientTracer
                                   QueueChannel { writeQueue = server_r,
@@ -1236,7 +1236,7 @@ prop_demux_sdu_io badSdu = ioProperty do
   clientSd <- Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
   Socket.connect clientSd addr
   let clientTracer = contramap (Mx.WithBearer "client") activeTracer
-  clientBearer <- getBearer makeSocketBearer 0 clientTracer clientSd
+  clientBearer <- getBearer (makeSocketBearer' True) 0 clientTracer clientSd
   resultFn <- prop_demux_sdu badSdu clientBearer miniInfoV
   (mux, resultPromise) <- atomically $ takeTMVar serverInfoV
   result <- atomically resultPromise

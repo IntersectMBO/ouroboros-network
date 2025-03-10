@@ -6,6 +6,7 @@
 module Network.Mux.Bearer.Queues
   ( QueueChannel (..)
   , queueChannelAsBearer
+  , queueChannelAsBearer'
   ) where
 
 import Data.ByteString.Lazy qualified as BL
@@ -27,7 +28,6 @@ data QueueChannel m = QueueChannel {
     writeQueue :: StrictTBQueue m BL.ByteString
   }
 
-
 queueChannelAsBearer
   :: forall m.
      ( MonadSTM   m
@@ -38,7 +38,20 @@ queueChannelAsBearer
   -> Tracer m Mx.Trace
   -> QueueChannel m
   -> Bearer m
-queueChannelAsBearer sduSize tracer QueueChannel { writeQueue, readQueue } = do
+queueChannelAsBearer = queueChannelAsBearer' False
+
+queueChannelAsBearer'
+  :: forall m.
+     ( MonadSTM   m
+     , MonadMonotonicTime m
+     , MonadThrow m
+     )
+  => Bool
+  -> Mx.SDUSize
+  -> Tracer m Mx.Trace
+  -> QueueChannel m
+  -> Bearer m
+queueChannelAsBearer' bypassEncode sduSize tracer QueueChannel { writeQueue, readQueue } = do
       Mx.Bearer {
         Mx.read    = readMux,
         Mx.write   = writeMux,
@@ -64,9 +77,10 @@ queueChannelAsBearer sduSize tracer QueueChannel { writeQueue, readQueue } = do
           ts <- getMonotonicTime
           let ts32 = Mx.timestampMicrosecondsLow32Bits ts
               sdu' = Mx.setTimestamp sdu (Mx.RemoteClockModel ts32)
-              buf  = Mx.encodeSDU sdu'
+              buf  = if bypassEncode
+                       then Mx.msBlob sdu
+                       else Mx.encodeSDU sdu'
           traceWith tracer $ Mx.TraceSendStart (Mx.msHeader sdu')
           atomically $ writeTBQueue writeQueue buf
           traceWith tracer Mx.TraceSendEnd
           return ts
-

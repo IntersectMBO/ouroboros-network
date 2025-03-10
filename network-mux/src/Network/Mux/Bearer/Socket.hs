@@ -4,7 +4,10 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Network.Mux.Bearer.Socket (socketAsBearer) where
+module Network.Mux.Bearer.Socket
+  ( socketAsBearer
+  , socketAsBearer'
+  ) where
 
 import Control.Monad (when)
 import Control.Tracer
@@ -43,13 +46,23 @@ import Network.Mux.TCPInfo (SocketOption (TCPInfoSocketOption))
 -- Note: 'IOException's thrown by 'sendAll' and 'recv' are wrapped in
 -- 'MuxError'.
 --
+
 socketAsBearer
   :: Mx.SDUSize
   -> DiffTime
   -> Tracer IO Mx.Trace
   -> Socket.Socket
   -> Bearer IO
-socketAsBearer sduSize sduTimeout tracer sd =
+socketAsBearer = socketAsBearer' False
+
+socketAsBearer'
+  :: Bool
+  -> Mx.SDUSize
+  -> DiffTime
+  -> Tracer IO Mx.Trace
+  -> Socket.Socket
+  -> Bearer IO
+socketAsBearer' bypassEncode sduSize sduTimeout tracer sd =
       Mx.Bearer {
         Mx.read    = readSocket,
         Mx.write   = writeSocket,
@@ -123,7 +136,9 @@ socketAsBearer sduSize sduTimeout tracer sd =
           ts <- getMonotonicTime
           let ts32 = Mx.timestampMicrosecondsLow32Bits ts
               sdu' = Mx.setTimestamp sdu (Mx.RemoteClockModel ts32)
-              buf  = Mx.encodeSDU sdu'
+              buf  = if bypassEncode
+                       then Mx.msBlob sdu
+                       else Mx.encodeSDU sdu'
           traceWith tracer $ Mx.TraceSendStart (Mx.msHeader sdu')
           r <- timeout sduTimeout $
 #if defined(mingw32_HOST_OS)
@@ -147,4 +162,3 @@ socketAsBearer sduSize sduTimeout tracer sd =
                    traceWith tracer $ Mx.TraceTCPInfo tcpi (Mx.mhLength $ Mx.msHeader sdu)
 #endif
                    return ts
-
