@@ -353,6 +353,7 @@ withPeer tracer
           where
             ps' = updateRejects policy now n ps
 
+
 updateRejects :: TxDecisionPolicy
               -> Time
               -> Double
@@ -362,10 +363,12 @@ updateRejects _ now 0 pts | score pts == 0 = pts {scoreTs = now}
 updateRejects TxDecisionPolicy { scoreRate, scoreMax } now n
               pts@PeerTxState { score, scoreTs } =
     let duration = diffTime now scoreTs
-        !drain = realToFrac duration * scoreRate
+        !drain   = realToFrac duration * scoreRate
         !drained = max 0 $ score - drain in
-    pts { score = max 0 $ min scoreMax $ drained + n
-        , scoreTs = now }
+    pts { score   = min scoreMax $ drained + n
+        , scoreTs = now
+        }
+
 
 drainRejectionThread
     :: forall m peeraddr txid tx.
