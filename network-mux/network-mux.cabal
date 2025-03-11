@@ -28,6 +28,11 @@ flag tracetcpinfo
   manual: True
   default: False
 
+flag bypass-sdu-encode
+  description: For running socket bearer tests such that arbitrary data can be sent by the client
+  manual: True
+  default: False
+
 common demo-deps
   default-language: Haskell2010
   default-extensions: ImportQualifiedPost
@@ -72,6 +77,9 @@ library
 
   if flag(tracetcpinfo)
     cpp-options: -DMUX_TRACE_TCPINFO
+
+  if flag(bypass-sdu-encode)
+    cpp-options: -DBYPASS_SDU_ENCODE
   hs-source-dirs: src
   exposed-modules:
     Control.Concurrent.JobPool

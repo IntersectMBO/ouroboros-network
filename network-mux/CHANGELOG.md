@@ -6,6 +6,8 @@
 
 ### Non-breaking changes
 
+* Added socket bearer in demux sdu properties
+
 ## 0.7.0.0 -- 2025-02-25
 
 ### Breaking changes
@@ -28,7 +30,7 @@
 ### Breaking changes
 
 * Removed `Network.Mux.Compat` module with legacy API.
-* `Ouroboros.Network.Mux.toApplication` was removed. 
+* `Ouroboros.Network.Mux.toApplication` was removed.
 * `Ouroboros.Network.Mux.mkMiniProtocolBundle` was renamed to
   `mkMiniProtocolInfos`, its type changed.
 * Removed `MiniProtocolBundle` newtype wrapper.

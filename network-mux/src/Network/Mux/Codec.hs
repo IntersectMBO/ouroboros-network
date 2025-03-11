@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP            #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
 module Network.Mux.Codec where
@@ -25,6 +26,10 @@ import Network.Mux.Types
 --
 -- All fields are in big endian byte order.
 --
+#if defined(BYPASS_SDU_ENCODE)
+encodeSDU :: SDU -> BL.ByteString
+encodeSDU = msBlob
+#else
 encodeSDU :: SDU -> BL.ByteString
 encodeSDU sdu =
   let hdr = Bin.runPut enc in
@@ -38,6 +43,7 @@ encodeSDU sdu =
     putNumAndMode :: MiniProtocolNum -> MiniProtocolDir -> Word16
     putNumAndMode (MiniProtocolNum n) InitiatorDir = n
     putNumAndMode (MiniProtocolNum n) ResponderDir = n .|. 0x8000
+#endif
 
 
 -- | Decode a 'MuSDU' header.  A left inverse of 'encodeSDU'.
