@@ -78,23 +78,27 @@ import Text.Show.Functions ()
 tests :: TestTree
 tests =
   testGroup "Mux"
-  [ testProperty "mux send receive"        prop_mux_snd_recv
-  , testProperty "mux send receive bidir"  prop_mux_snd_recv_bi
-  , testProperty "mux send receive compat" prop_mux_snd_recv_compat
-  , testProperty "1 miniprotocol Queue"    (withMaxSuccess 50 prop_mux_1_mini_Queue)
-  , testProperty "2 miniprotocols Queue"   (withMaxSuccess 50 prop_mux_2_minis_Queue)
-  , testProperty "1 miniprotocol Pipe"     (withMaxSuccess 50 prop_mux_1_mini_Pipe)
-  , testProperty "2 miniprotocols Pipe"    (withMaxSuccess 50 prop_mux_2_minis_Pipe)
-  , testProperty "starvation"              prop_mux_starvation
-  , testProperty "demuxing (Sim)"          prop_demux_sdu_sim
-  , testProperty "demuxing (IO)"           prop_demux_sdu_io
-  , testProperty "mux start and stop"      prop_mux_start
-  , testProperty "mux restart"             prop_mux_restart
-  , testProperty "mux close (Sim)"         prop_mux_close_sim
-  , testProperty "mux close (IO)"          (withMaxSuccess 50 prop_mux_close_io)
+  [ testProperty "mux send receive"             prop_mux_snd_recv
+  , testProperty "mux send receive bidir"       prop_mux_snd_recv_bi
+  , testProperty "mux send receive compat"      prop_mux_snd_recv_compat
+  , testProperty "1 miniprot Queue"             (withMaxSuccess 50 prop_mux_1_mini_Queue)
+  , testProperty "2 miniprots Queue"            (withMaxSuccess 50 prop_mux_2_minis_Queue)
+  , testProperty "1 miniprot Pipe"              (withMaxSuccess 50 prop_mux_1_mini_Pipe)
+  , testProperty "2 miniprots Pipe"             (withMaxSuccess 50 prop_mux_2_minis_Pipe)
+  , testProperty "1 miniprot Socket"            (withMaxSuccess 50 prop_mux_1_mini_Socket)
+  , testProperty "1 miniprot Socket, buffered"  (withMaxSuccess 50 prop_mux_1_mini_Socket_buf)
+  , testProperty "2 miniprot Socket"            (withMaxSuccess 50 prop_mux_2_minis_Socket)
+  , testProperty "2 miniprots Socket, buffered" (withMaxSuccess 50 prop_mux_2_minis_Socket_buf)
+  , testProperty "starvation"                   prop_mux_starvation
+  , testProperty "demuxing (Sim)"               prop_demux_sdu_sim
+  , testProperty "demuxing (IO)"                prop_demux_sdu_io
+  , testProperty "mux start and stop"           prop_mux_start
+  , testProperty "mux restart"                  prop_mux_restart
+  , testProperty "mux close (Sim)"              prop_mux_close_sim
+  , testProperty "mux close (IO)"               (withMaxSuccess 50 prop_mux_close_io)
   , testGroup "Generators"
-    [ testProperty "genByteString"         prop_arbitrary_genByteString
-    , testProperty "genLargeByteString"    prop_arbitrary_genLargeByteString
+    [ testProperty "genByteString"              prop_arbitrary_genByteString
+    , testProperty "genLargeByteString"         prop_arbitrary_genLargeByteString
     ]
   ]
 
@@ -867,6 +871,39 @@ runWithPipe initApps respApps =
     clientTracer = contramap (Mx.WithBearer "client") activeTracer
     serverTracer = contramap (Mx.WithBearer "server") activeTracer
 
+runWithSocket :: Maybe (Mx.ReadBuffer IO) -> Maybe (Mx.ReadBuffer IO) -> RunMuxApplications
+runWithSocket clientBuf_m serverBuf_m initApps respApps = withIOManager (\iocp -> do
+    bracket
+      (do
+        sd <- Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
+        associateWithIOManager iocp (Right sd)
+        ephemAddr :_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
+        Socket.bind sd (Socket.addrAddress ephemAddr)
+        Socket.listen sd 1
+        servAddr <- Socket.getSocketName sd
+        cd <- Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
+        associateWithIOManager iocp (Right cd)
+        Socket.connect cd servAddr
+        (sd', _) <- Socket.accept sd
+        associateWithIOManager iocp (Right sd')
+        Socket.close sd
+        return (cd, sd')
+      )
+      (\(cd, sd) -> do
+        Socket.close cd
+        Socket.close sd
+      )
+      (\(cd, sd) -> do
+        clientB <- mkBearer clientBuf_m cd clientTracer
+        serverB <- mkBearer serverBuf_m sd serverTracer
+
+        runMuxApplication initApps clientB respApps serverB
+      )
+   )
+  where
+    mkBearer buf_m sock tr = getBearer makeSocketBearer (-1) tr sock buf_m
+    clientTracer = contramap (Mx.WithBearer "client") activeTracer
+    serverTracer = contramap (Mx.WithBearer "server") activeTracer
 
 -- | Verify that it is possible to run two miniprotocols over the same bearer.
 -- Makes sure that messages are delivered to the correct miniprotocol in order.
@@ -884,6 +921,13 @@ prop_mux_1_mini_Queue = ioProperty . test_mux_1_mini runWithQueues
 
 prop_mux_1_mini_Pipe :: DummyTrace -> Property
 prop_mux_1_mini_Pipe = ioProperty . test_mux_1_mini runWithPipe
+
+prop_mux_1_mini_Socket :: DummyTrace -> Property
+prop_mux_1_mini_Socket = ioProperty . test_mux_1_mini (runWithSocket Nothing Nothing)
+
+prop_mux_1_mini_Socket_buf :: DummyTrace -> Property
+prop_mux_1_mini_Socket_buf dt = ioProperty $ withReadBufferIO (\buf_a -> withReadBufferIO (\buf_b ->
+    test_mux_1_mini (runWithSocket buf_a buf_b) dt))
 
 -- | Verify that it is possible to run two miniprotocols over the same bearer.
 -- Makes sure that messages are delivered to the correct miniprotocol in order.
@@ -911,6 +955,17 @@ prop_mux_2_minis_Pipe :: DummyTrace
                       -> Property
 prop_mux_2_minis_Pipe a b = ioProperty $ test_mux_2_minis runWithPipe a b
 
+prop_mux_2_minis_Socket :: DummyTrace
+                      -> DummyTrace
+                      -> Property
+prop_mux_2_minis_Socket a b = ioProperty $ test_mux_2_minis (runWithSocket Nothing Nothing) a b
+
+prop_mux_2_minis_Socket_buf :: DummyTrace
+                      -> DummyTrace
+                      -> Property
+prop_mux_2_minis_Socket_buf a b = ioProperty $
+  withReadBufferIO (\buf_a -> withReadBufferIO (\buf_b ->
+      test_mux_2_minis (runWithSocket buf_a buf_b) a b))
 
 -- | Attempt to verify that capacity is diveded fairly between two active
 -- miniprotocols.  Two initiators send a request over two different
