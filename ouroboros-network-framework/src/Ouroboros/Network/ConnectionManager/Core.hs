@@ -381,7 +381,7 @@ with
     -> InResponderMode muxMode (InformationChannel (NewConnectionInfo peerAddr handle) m)
     -- ^ On outbound duplex connections we need to notify the server about
     -- a new connection.
-    -> (ConnectionManager muxMode socket peerAddr handle handleError m -> m a)
+    -> ((Tracer m Int -> ConnectionManager muxMode socket peerAddr handle handleError m) -> m a)
     -- ^ Continuation which receives the 'ConnectionManager'.  It must not leak
     -- outside of scope of this callback.  Once it returns all resources
     -- will be closed.
@@ -452,9 +452,10 @@ with args@Arguments {
             Just DuplexSt                  -> retry
             Just TerminatingSt             -> retry
 
-        connectionManager :: ConnectionManager muxMode socket peerAddr
+        connectionManager :: Tracer m Int ->
+                             ConnectionManager muxMode socket peerAddr
                                                handle handleError m
-        connectionManager =
+        connectionManager tr =
           case connectionHandler of
             WithInitiatorMode outboundHandler ->
               ConnectionManager {

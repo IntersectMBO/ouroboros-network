@@ -386,11 +386,11 @@ runM Interfaces
                   Server.inboundGovernorTracer = dtLocalInboundGovernorTracer,
                   Server.inboundIdleTimeout    = Nothing,
                   Server.connectionLimits      = localConnectionLimits,
-                  Server.connectionManager     = localConnectionManager,
+                  Server.mkConnectionManager   = undefined, --localConnectionManager,
                   Server.connectionDataFlow    = ntcDataFlow,
                   Server.inboundInfoChannel    = localInbInfoChannel
                 }
-              (\inboundGovernorThread _ -> Async.wait inboundGovernorThread)
+              (\inboundGovernorThread _ _ -> Async.wait inboundGovernorThread)
 
 
     -- | mkRemoteThread - create remote connection manager
@@ -718,7 +718,7 @@ runM Interfaces
               f
 
           -- run node-to-node server
-          withServer sockets connectionManager inboundInfoChannel =
+          withServer sockets mkConnectionManager inboundInfoChannel =
             Server.with
               Server.Arguments {
                   Server.sockets               = sockets,
@@ -728,7 +728,7 @@ runM Interfaces
                   Server.debugInboundGovernor  = nullTracer,
                   Server.inboundGovernorTracer = dtInboundGovernorTracer,
                   Server.connectionLimits      = daAcceptedConnectionsLimit,
-                  Server.connectionManager     = connectionManager,
+                  Server.mkConnectionManager,
                   Server.connectionDataFlow    = diNtnDataFlow,
                   Server.inboundIdleTimeout    = Just daProtocolIdleTimeout,
                   Server.inboundInfoChannel    = inboundInfoChannel
@@ -740,31 +740,31 @@ runM Interfaces
       case diffusionMode of
 
         -- InitiatorOnly mode, run peer selection only:
-        InitiatorOnlyDiffusionMode ->
-          withConnectionManagerInitiatorOnlyMode $ \connectionManager-> do
-          debugStateVar <- newTVarIO $ Governor.emptyPeerSelectionState fuzzRng daEmptyExtraState mempty
-          diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
-          withPeerStateActions' connectionManager $ \peerStateActions->
-            withPeerSelectionActions'
-              (return Map.empty)
-              peerStateActions $
-              \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions->
-                Async.withAsync
-                  (peerSelectionGovernor'
-                    dtDebugPeerSelectionInitiatorTracer
-                    debugStateVar
-                    peerSelectionActions) $ \governorThread ->
-                    Async.withAsync
-                      peerChurnGovernor' $ \churnGovernorThread ->
-                      -- wait for any thread to fail:
-                      snd <$> Async.waitAny
-                                [ledgerPeersThread, localRootPeersProvider, governorThread, churnGovernorThread]
+        -- InitiatorOnlyDiffusionMode ->
+        --   withConnectionManagerInitiatorOnlyMode $ \connectionManager-> do
+        --   debugStateVar <- newTVarIO $ Governor.emptyPeerSelectionState fuzzRng daEmptyExtraState mempty
+        --   diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
+        --   withPeerStateActions' connectionManager $ \peerStateActions->
+        --     withPeerSelectionActions'
+        --       (return Map.empty)
+        --       peerStateActions $
+        --       \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions->
+        --         Async.withAsync
+        --           (peerSelectionGovernor'
+        --             dtDebugPeerSelectionInitiatorTracer
+        --             debugStateVar
+        --             peerSelectionActions) $ \governorThread ->
+        --             Async.withAsync
+        --               peerChurnGovernor' $ \churnGovernorThread ->
+        --               -- wait for any thread to fail:
+        --               snd <$> Async.waitAny
+        --                         [ledgerPeersThread, localRootPeersProvider, governorThread, churnGovernorThread]
 
         -- InitiatorAndResponder mode, run peer selection and the server:
         InitiatorAndResponderDiffusionMode -> do
           inboundInfoChannel  <- newInformationChannel
           withConnectionManagerInitiatorAndResponderMode
-            inboundInfoChannel $ \connectionManager ->
+            inboundInfoChannel $ \mkConnectionManager ->
               --
               -- node-to-node sockets
               --
@@ -772,8 +772,8 @@ runM Interfaces
                 --
                 -- node-to-node server
                 --
-                withServer sockets connectionManager inboundInfoChannel $
-                  \inboundGovernorThread readInboundState -> do
+                withServer sockets mkConnectionManager inboundInfoChannel $
+                  \inboundGovernorThread readInboundState connectionManager -> do
                     debugStateVar <- newTVarIO $ Governor.emptyPeerSelectionState fuzzRng daEmptyExtraState mempty
                     diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
                     withPeerStateActions' connectionManager $

@@ -75,7 +75,7 @@ data Arguments (muxMode  :: Mx.Mode) socket initiatorCtx peerAddr versionData ve
       inboundGovernorTracer :: Tracer m (InboundGovernor.Trace peerAddr),
       debugInboundGovernor  :: Tracer m (InboundGovernor.Debug peerAddr versionData),
       connectionLimits      :: AcceptedConnectionsLimit,
-      connectionManager     :: MuxConnectionManager muxMode socket initiatorCtx (ResponderContext peerAddr)
+      mkConnectionManager     :: Tracer m Int -> MuxConnectionManager muxMode socket initiatorCtx (ResponderContext peerAddr)
                                                           peerAddr versionData versionNumber bytes m a b,
 
       -- | Time for which all protocols need to be idle to trigger
@@ -130,7 +130,13 @@ with :: forall muxMode socket initiatorCtx peerAddr versionData versionNumber m 
        )
     => Arguments muxMode socket initiatorCtx peerAddr versionData versionNumber ByteString m a b
     -- ^ record which holds all server arguments
-    -> (Async m Void -> m (InboundGovernor.PublicState peerAddr versionData) -> m x)
+    -> (   Async m Void
+        -> m (InboundGovernor.PublicState peerAddr versionData)
+        -> MuxConnectionManager muxMode socket initiatorCtx
+             (ResponderContext peerAddr) peerAddr
+             versionData versionNumber
+             ByteString m a b
+        -> m x)
     -- ^ a callback which receives a handle to inbound governor thread and can
     -- read `PublicState`.
     --
@@ -147,7 +153,7 @@ with Arguments {
       connectionLimits =
         limits@AcceptedConnectionsLimit { acceptedConnectionsHardLimit = hardLimit },
       inboundIdleTimeout,
-      connectionManager,
+      mkConnectionManager,
       connectionDataFlow,
       inboundInfoChannel
     }
@@ -160,19 +166,19 @@ with Arguments {
           InboundGovernor.transitionTracer   = trTracer,
           InboundGovernor.tracer             = inboundGovernorTracer,
           InboundGovernor.debugTracer        = debugInboundGovernor,
-          InboundGovernor.connectionDataFlow = connectionDataFlow,
+          InboundGovernor.connectionDataFlow,
           InboundGovernor.infoChannel        = inboundInfoChannel,
           InboundGovernor.idleTimeout        = inboundIdleTimeout,
-          InboundGovernor.connectionManager  = connectionManager
-        } $ \inboundGovernorThread readPublicInboundState ->
+          InboundGovernor.mkConnectionManager
+        } $ \inboundGovernorThread readPublicInboundState connectionManager ->
         withAsync (do
                       labelThisThread "Server2 (ouroboros-network-framework)"
-                      k inboundGovernorThread readPublicInboundState) $ \actionThread -> do
+                      k inboundGovernorThread readPublicInboundState connectionManager) $ \actionThread -> do
           let acceptLoops :: [m Void]
               acceptLoops =
                           [ (do
                                 labelThisThread ("accept " ++ show localAddress)
-                                accept snocket socket >>= acceptLoop localAddress)
+                                accept snocket socket >>= acceptLoop localAddress connectionManager)
                               `finally` close snocket socket
                           | (localAddress, socket) <- localAddresses `zip` sockets
                           ]
@@ -203,10 +209,10 @@ with Arguments {
         go as []     = action (reverse as)
         go as (x:xs) = withAsync x (\a -> go (a:as) xs)
 
-    acceptLoop :: peerAddr
-               -> Accept m socket peerAddr
-               -> m Void
-    acceptLoop localAddress acceptOne0 = mask $ \unmask -> do
+    -- acceptLoop :: peerAddr
+    --            -> Accept m socket peerAddr
+    --            -> m Void
+    acceptLoop localAddress connectionManager acceptOne0 = mask $ \unmask -> do
         labelThisThread ("accept-loop-" ++ show localAddress)
         go unmask acceptOne0
         `catch` \ e -> traceWith tracer (TrServerError e)
