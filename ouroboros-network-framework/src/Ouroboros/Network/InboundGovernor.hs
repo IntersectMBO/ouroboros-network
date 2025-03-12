@@ -1,3 +1,4 @@
+{-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
@@ -40,13 +41,15 @@ import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (SomeAsyncException (..))
-import Control.Monad (foldM)
+import Control.Monad (foldM, forever)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, traceWith)
+-- todo: remove qualified when done? or the whole import?
+import Control.Tracer qualified as Tracer
 
 import Data.Bifunctor (first)
 import Data.ByteString.Lazy (ByteString)
@@ -64,7 +67,7 @@ import Network.Mux qualified as Mux
 
 import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionManager.InformationChannel
-           (InboundGovernorInfoChannel)
+           (InboundGovernorInfoChannel, newInformationChannel)
 import Ouroboros.Network.ConnectionManager.InformationChannel qualified as InfoChannel
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context
@@ -103,7 +106,7 @@ data Arguments muxMode socket initiatorCtx peerAddr versionNumber versionData m 
       idleTimeout        :: Maybe DiffTime,
       -- ^ protocol idle timeout.  The remote site must restart a mini-protocol
       -- within given timeframe (Nothing indicates no timeout).
-      connectionManager  :: MuxConnectionManager muxMode socket initiatorCtx
+      mkConnectionManager  :: Tracer m Int -> MuxConnectionManager muxMode socket initiatorCtx
                                                     (ResponderContext peerAddr) peerAddr
                                                     versionData versionNumber
                                                     ByteString m a b
@@ -141,7 +144,13 @@ with :: forall (muxMode :: Mux.Mode) socket initiatorCtx peerAddr versionData ve
         , HasResponder muxMode ~ True
         )
      => Arguments muxMode socket initiatorCtx peerAddr versionNumber versionData m a b
-     -> (Async m Void -> m (PublicState peerAddr versionData) -> m x)
+     -> (   Async m Void
+         -> m (PublicState peerAddr versionData)
+         -> MuxConnectionManager muxMode socket initiatorCtx
+              (ResponderContext peerAddr) peerAddr
+              versionData versionNumber
+              ByteString m a b
+         -> m x)
      -> m x
 with
     Arguments {
@@ -151,19 +160,23 @@ with
       connectionDataFlow = connectionDataFlow,
       infoChannel        = infoChannel,
       idleTimeout        = idleTimeout,
-      connectionManager  = connectionManager
+      mkConnectionManager
     }
     k
     = do
     labelThisThread "inbound-governor"
-    var <- newTVarIO (mkPublicState emptyState)
-    withAsync ((do
-               labelThisThread "inbound-governor-loop"
-               inboundGovernorLoop var emptyState)
-                `catch`
-               handleError var) $
+    stateVar <- newTVarIO emptyState
+    muxTraceChannel <- newInformationChannel
+    let tr :: Tracer m Int = undefined
+        connectionManager = mkConnectionManager tr
+    withAsync (labelThisThread "inbound-governor-loop" >>
+               forever do
+                 !state' <- inboundGovernorStep connectionManager =<< readTVarIO stateVar
+                 atomically . writeTVar stateVar $ state'
+               `catch`
+                 handleError stateVar) $
       \thread ->
-        k thread (readTVarIO var)
+        k thread (mkPublicState <$> readTVarIO stateVar) connectionManager
   where
     emptyState :: State muxMode initiatorCtx peerAddr versionData m a b
     emptyState = State {
@@ -178,11 +191,11 @@ with
     -- NOTE: `inboundGovernorLoop` doesn't throw synchronous exceptions, this is
     -- just need to handle asynchronous exceptions.
     handleError
-      :: StrictTVar m (PublicState peerAddr versionData)
+      :: StrictTVar m (State muxMode initiatorCtx peerAddr versionData m a b)
       -> SomeException
       -> m Void
     handleError var e = do
-      PublicState { remoteStateMap } <- readTVarIO var
+      PublicState { remoteStateMap } <- mkPublicState <$> readTVarIO var
       _ <- Map.traverseWithKey
              (\connId remoteSt ->
                traceWith trTracer $
@@ -193,14 +206,14 @@ with
              remoteStateMap
       throwIO e
 
-    -- The inbound protocol governor recursive loop.  The 'connections' is
-    -- updated as we recurse.
+    -- The inbound protocol governor single step which updates
+    -- the connections.
     --
-    inboundGovernorLoop
-      :: StrictTVar m (PublicState peerAddr versionData)
-      -> State muxMode initiatorCtx peerAddr versionData m a b
-      -> m Void
-    inboundGovernorLoop var !state = do
+    -- inboundGovernorStep
+      -- :: StrictTVar m (PublicState peerAddr versionData)
+      -- :: State muxMode initiatorCtx peerAddr versionData m a b
+      -- -> m (State muxMode initiatorCtx peerAddr versionData m a b)
+    inboundGovernorStep connectionManager state = do
       time <- getMonotonicTime
       inactivityVar <- registerDelay inactionTimeout
 
@@ -544,7 +557,7 @@ with
           pure (Nothing, state)
 
       mask_ $ do
-        atomically $ writeTVar var (mkPublicState state')
+        -- atomically $ writeTVar var (mkPublicState state')
         traceWith debugTracer (Debug state')
         case mbConnId of
           Just cid -> traceWith trTracer (mkRemoteTransitionTrace cid state state')
@@ -564,7 +577,9 @@ with
           state'' | newCounters /= oldCounters = state' { countersCache = Cache newCounters }
                   | otherwise                 = state'
 
-      inboundGovernorLoop var state''
+      return state''
+
+      -- inboundGovernorLoop var state''
 
 
 -- | Run a responder mini-protocol.
