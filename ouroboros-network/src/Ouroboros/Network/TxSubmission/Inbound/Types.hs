@@ -1,8 +1,10 @@
-{-# LANGUAGE DeriveGeneric             #-}
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE FlexibleContexts          #-}
-{-# LANGUAGE NamedFieldPuns            #-}
-{-# LANGUAGE StandaloneDeriving        #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE ExistentialQuantification  #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 
 module Ouroboros.Network.TxSubmission.Inbound.Types
   ( -- * PeerTxState
@@ -10,6 +12,7 @@ module Ouroboros.Network.TxSubmission.Inbound.Types
     -- * SharedTxState
   , SharedTxState (..)
     -- * Decisions
+  , TxsToMempool (..)
   , TxDecision (..)
   , emptyTxDecision
   , SharedDecisionContext (..)
@@ -206,6 +209,10 @@ instance ( NoThunks peeraddr
 -- Decisions
 --
 
+newtype TxsToMempool txid tx = TxsToMempool { listOfTxsToMempool :: [(txid, tx)] }
+  deriving newtype (Eq, Show, Semigroup, Monoid)
+
+
 -- | Decision made by the decision logic.  Each peer will receive a 'Decision'.
 --
 -- /note:/ it is rather non-standard to represent a choice between requesting
@@ -232,7 +239,7 @@ data TxDecision txid tx = TxDecision {
     txdTxsToRequest       :: !(Set txid),
     -- ^ txid's to download.
 
-    txdTxsToMempool       :: ![(txid,tx)]
+    txdTxsToMempool       :: !(TxsToMempool txid tx)
     -- ^ list of `tx`s to submit to the mempool.
   }
   deriving (Show, Eq)
@@ -259,7 +266,7 @@ instance Ord txid => Semigroup (TxDecision txid tx) where
                    txdTxIdsToRequest     = txdTxIdsToRequest + txdTxIdsToRequest',
                    txdPipelineTxIds      = txdPipelineTxIds',
                    txdTxsToRequest       = txdTxsToRequest <> txdTxsToRequest',
-                   txdTxsToMempool       = txdTxsToMempool ++ txdTxsToMempool'
+                   txdTxsToMempool       = txdTxsToMempool <> txdTxsToMempool'
                  }
 
 -- | A no-op decision.
@@ -269,7 +276,7 @@ emptyTxDecision = TxDecision {
     txdTxIdsToRequest     = 0,
     txdPipelineTxIds      = False,
     txdTxsToRequest       = Set.empty,
-    txdTxsToMempool       = []
+    txdTxsToMempool       = mempty
   }
 
 data SharedDecisionContext peeraddr txid tx = SharedDecisionContext {
