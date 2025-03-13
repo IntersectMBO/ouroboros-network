@@ -99,7 +99,12 @@ acknowledgeTxIds
     => TxDecisionPolicy
     -> SharedTxState peeraddr txid tx
     -> PeerTxState txid tx
-    -> (NumTxIdsToAck, NumTxIdsToReq, [(txid,tx)], RefCountDiff txid, PeerTxState txid tx)
+    -> ( NumTxIdsToAck
+       , NumTxIdsToReq
+       , TxsToMempool txid tx
+       , RefCountDiff txid
+       , PeerTxState txid tx
+       )
     -- ^ number of txid to acknowledge, requests, txs which we can submit to the
     -- mempool, txids to acknowledge with multiplicities, updated PeerTxState.
 {-# INLINE acknowledgeTxIds #-}
@@ -123,7 +128,7 @@ acknowledgeTxIds
       then
       ( txIdsToAcknowledge
       , txIdsToRequest
-      , txsToMempool
+      , TxsToMempool txsToMempool
       , refCountDiff
       , ps { unacknowledgedTxIds    = unacknowledgedTxIds',
              availableTxIds         = availableTxIds',
@@ -137,7 +142,7 @@ acknowledgeTxIds
       else
       ( 0
       , 0
-      , []
+      , TxsToMempool []
       , RefCountDiff Map.empty
       , ps
       )

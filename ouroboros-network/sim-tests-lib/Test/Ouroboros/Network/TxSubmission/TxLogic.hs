@@ -654,7 +654,7 @@ prop_acknowledgeTxIds :: ArbDecisionContextWithReceivedTxIds
                       -> Property
 prop_acknowledgeTxIds (ArbDecisionContextWithReceivedTxIds policy SharedDecisionContext { sdcSharedTxState = st } ps _ _ _) =
     case TXS.acknowledgeTxIds policy st ps of
-      (numTxIdsToAck, txIdsToRequest, txIdsTxs, TXS.RefCountDiff { TXS.txIdsToAck }, ps') | txIdsToRequest > 0 ->
+      (numTxIdsToAck, txIdsToRequest, TXS.TxsToMempool txIdsTxs, TXS.RefCountDiff { TXS.txIdsToAck }, ps') | txIdsToRequest > 0 ->
              counterexample "number of tx ids to ack must agree with RefCountDiff"
              ( fromIntegral numTxIdsToAck
                ===

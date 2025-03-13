@@ -77,15 +77,15 @@ txSubmissionInboundV2
     serverIdle = do
         -- Block on next decision.
         txd@TxDecision { txdTxsToRequest = txsToRequest,
-                         txdTxsToMempool = txsToMempool }
+                         txdTxsToMempool = TxsToMempool { listOfTxsToMempool } }
           <- readTxDecision
         traceWith tracer (TraceTxInboundDecision txd)
 
-        let !collected = length txsToMempool
+        let !collected = length listOfTxsToMempool
 
         -- Only attempt to add TXs if we have some work to do
         when (collected > 0) $ do
-            mapM_ (withMempoolSem . addTx) txsToMempool
+            mapM_ (withMempoolSem . addTx) listOfTxsToMempool
 
             traceWith tracer $
               TraceTxSubmissionCollected collected
