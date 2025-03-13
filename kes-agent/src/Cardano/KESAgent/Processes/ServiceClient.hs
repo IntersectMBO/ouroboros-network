@@ -33,6 +33,7 @@ import Cardano.KESAgent.Protocols.VersionHandshake.Protocol
 import Cardano.KESAgent.Protocols.VersionHandshake.Protocol (VersionHandshakeProtocol)
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Serialization.DirectCodec
+import Cardano.KESAgent.Util.PlatformPoison (poisonWindows)
 import Cardano.KESAgent.Util.Pretty (Pretty (..))
 import Cardano.KESAgent.Util.RefCounting (CRef)
 import Cardano.KESAgent.Util.RetrySocket (retrySocket)
@@ -217,6 +218,7 @@ runServiceClient ::
   Tracer m ServiceClientTrace ->
   m ()
 runServiceClient proxy mrb options handleKey tracer = do
+  poisonWindows
   let s = serviceClientSnocket options
   latestOCNumVar <- newMVar Nothing
   let handleKey' bundle = do

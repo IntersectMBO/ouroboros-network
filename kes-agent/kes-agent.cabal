@@ -76,6 +76,7 @@ library
                    Cardano.KESAgent.Util.Pretty
                    Cardano.KESAgent.Util.RefCounting
                    Cardano.KESAgent.Util.RetrySocket
+                   Cardano.KESAgent.Util.PlatformPoison
     build-depends: async
                  , aeson >=2.0
                  , base16-bytestring

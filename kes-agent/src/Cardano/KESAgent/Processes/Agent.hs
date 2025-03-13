@@ -80,6 +80,7 @@ import Cardano.KESAgent.Protocols.VersionHandshake.Peers (versionHandshakeServer
 import Cardano.KESAgent.Protocols.VersionHandshake.Protocol (VersionHandshakeProtocol)
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Serialization.DirectCodec
+import Cardano.KESAgent.Util.PlatformPoison (poisonWindows)
 import Cardano.KESAgent.Util.Pretty (Pretty (..), strLength)
 import Cardano.KESAgent.Util.RefCounting (
   CRef,
@@ -940,6 +941,7 @@ runAgent ::
   Agent c m fd addr ->
   m ()
 runAgent agent = do
+  poisonWindows
   let runEvolution = do
         forever $ do
           -- Check time every 100 milliseconds, update key when period flips

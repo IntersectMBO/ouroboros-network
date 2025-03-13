@@ -49,7 +49,9 @@ tests :: TestTree
 tests =
   testGroup
     "end to end"
-    []
+    [ testCase "kes-agent --help" kesAgentHelp
+    , testCase "kes-agent fails to run" kesAgentFails
+    ]
 #else
 tests :: TestTree
 tests =
@@ -89,6 +91,41 @@ socketAddresses tmpdir =
   ( tmpdir </> "control.socket"
   , tmpdir </> "service.socket"
   )
+
+kesAgentFails :: Assertion
+kesAgentFails = do
+  (agentOutLines, agentErrLines, exitCode) <- withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+    let (controlAddr, serviceAddr) = socketAddresses tmpdir
+        kesKeyFile = tmpdir </> "kes.vkey"
+        opcertFile = tmpdir </> "opcert.cert"
+    coldSignKeyFile <- getDataFileName "fixtures/cold.skey"
+    coldVerKeyFile <- getDataFileName "fixtures/cold.vkey"
+    genesisFile <- getDataFileName "fixtures/mainnet-shelley-genesis.json"
+
+    let args =
+          [ "run"
+          , "--genesis-file"
+          , genesisFile
+          , "--cold-verification-key"
+          , coldVerKeyFile
+          , "--service-address"
+          , serviceAddr
+          , "--control-address"
+          , controlAddr
+          ]
+    withSpawnProcess "kes-agent" args $ \_ (Just hOut) (Just hErr) ph -> do
+      threadDelay 100000
+      terminateProcess ph
+      (outT, errT) <-
+        concurrently
+          (Text.lines <$> Text.hGetContents hOut)
+          (Text.lines <$> Text.hGetContents hErr)
+      exitCode <- waitForProcess ph
+      return (outT, errT, exitCode)
+  assertMatchingOutputLines
+    1
+    (Text.words "This functionality is not supported on Windows")
+    agentErrLines
 
 kesAgentGenesisFile :: Assertion
 kesAgentGenesisFile = do
