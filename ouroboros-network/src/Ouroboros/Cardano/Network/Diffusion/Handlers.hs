@@ -25,10 +25,13 @@ import Ouroboros.Network.PeerSelection.Governor.Types
 import System.Posix.Signals qualified as Signals
 #endif
 
-#ifdef POSIX
 sigUSR1Handler
-  :: Ord ntnAddr
-  => TracersExtra ntnAddr ntnVersion ntnVersionData
+#ifdef POSIX
+  :: Ord ntnAddr =>
+#else
+  ::
+#endif
+     TracersExtra ntnAddr ntnVersion ntnVersionData
                   ntcAddr ntcVersion ntcVersionData
                   resolverError extraState
                   Cardano.DebugPeerSelectionState
@@ -46,6 +49,7 @@ sigUSR1Handler
                    peerconn)
   -> PeerMetrics IO ntnAddr
   -> IO ()
+#ifdef POSIX
 sigUSR1Handler tracersExtra getUseLedgerPeers ownPeerSharing getBootstrapPeers
                getLedgerStateJudgement connectionManager dbgStateVar metrics = do
   _ <- Signals.installHandler
@@ -75,24 +79,5 @@ sigUSR1Handler tracersExtra getUseLedgerPeers ownPeerSharing getBootstrapPeers
          Nothing
   return ()
 #else
-sigUSR1Handler
-  :: TracersExtra ntnAddr ntnVersion ntnVersionData
-                  ntcAddr ntcVersion ntcVersionData
-                  resolverError extraState
-                  Cardano.DebugPeerSelectionState
-                  extraFlags extraPeers extraCounters
-                  IO
-  -> STM IO UseLedgerPeers
-  -> PeerSharing
-  -> UseBootstrapPeers
-  -> STM IO LedgerStateJudgement
-  -> ConnectionManager muxMode socket ntnAddr
-                       handle handleError IO
-  -> StrictTVar IO (PeerSelectionState
-                   Cardano.ExtraState
-                   extraFlags extraPeers ntnAddr
-                   peerconn)
-  -> PeerMetrics IO ntnAddr
-  -> IO ()
 sigUSR1Handler _ _ _ _ _ _ _ _ = pure ()
 #endif
