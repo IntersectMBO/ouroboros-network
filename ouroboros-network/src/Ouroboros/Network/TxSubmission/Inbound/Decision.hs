@@ -214,11 +214,15 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
           sizeInflightOther = sizeInflightAll - requestedTxsInflightSize
 
       in if sizeInflightAll >= maxTxsSizeInflight
-        then let (numTxIdsToAck, numTxIdsToReq, txsToMempool, RefCountDiff { txIdsToAck }, peerTxState') =
-                    acknowledgeTxIds policy sharedState peerTxState
+        then let ( numTxIdsToAck
+                   , numTxIdsToReq
+                   , txsToMempool@TxsToMempool { listOfTxsToMempool }
+                   , RefCountDiff { txIdsToAck }
+                   , peerTxState'
+                   ) = acknowledgeTxIds policy sharedState peerTxState
 
                  stAcknowledged' = Map.unionWith (+) stAcknowledged txIdsToAck
-                 stLimboTx'      = stLimboTx <> (Set.fromList $ map fst txsToMempool)
+                 stLimboTx'      = stLimboTx <> Set.fromList (map fst listOfTxsToMempool)
              in
              if requestedTxIdsInflight peerTxState' > 0
                then
@@ -300,8 +304,12 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                                           <> txsToRequest
                 }
 
-              (numTxIdsToAck, numTxIdsToReq, txsToMempool, RefCountDiff { txIdsToAck }, peerTxState'') =
-                acknowledgeTxIds policy sharedState peerTxState'
+              ( numTxIdsToAck
+                , numTxIdsToReq
+                , txsToMempool@TxsToMempool { listOfTxsToMempool }
+                , RefCountDiff { txIdsToAck }
+                , peerTxState''
+                ) = acknowledgeTxIds policy sharedState peerTxState'
 
               stAcknowledged' = Map.unionWith (+) stAcknowledged txIdsToAck
 
@@ -313,7 +321,7 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
               stInflight' :: Map txid Int
               stInflight' = Map.unionWith (+) stInflightDelta stInflight
 
-              stLimboTx'      = stLimboTx <> Set.fromList (map fst txsToMempool)
+              stLimboTx' = stLimboTx <> Set.fromList (map fst listOfTxsToMempool)
           in
             if requestedTxIdsInflight peerTxState'' > 0
               then
@@ -389,9 +397,9 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                       TxDecision { txdTxIdsToAcknowledge = 0,
                                    txdTxIdsToRequest     = 0,
                                    txdTxsToRequest,
-                                   txdTxsToMempool }
+                                   txdTxsToMempool = TxsToMempool { listOfTxsToMempool } }
                                  | null txdTxsToRequest
-                                 , null txdTxsToMempool
+                                 , null listOfTxsToMempool
                                  -> Nothing
                       _          -> Just (a, b)
                     )
@@ -403,7 +411,8 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                           Map txid Int
                        -> (a, TxDecision txid tx)
                        -> Map txid Int
-        updateLimboTxs m (_,d) = foldl' fn m $ txdTxsToMempool d
+        updateLimboTxs m (_,TxDecision { txdTxsToMempool } ) =
+            foldl' fn m (listOfTxsToMempool txdTxsToMempool)
           where
             fn :: Map txid Int
                -> (txid,tx)
