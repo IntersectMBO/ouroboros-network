@@ -1,3 +1,4 @@
+{-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE BangPatterns         #-}
 {-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE FlexibleContexts     #-}
@@ -69,15 +70,16 @@ import Ouroboros.Network.MuxMode
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket
-
+import Ouroboros.Network.ConnectionHandler
+import Data.ByteString.Lazy (ByteString)
 
 -- | Arguments for a 'ConnectionManager' which are independent of 'MuxMode'.
 --
-data Arguments handlerTrace socket peerAddr handle handleError versionNumber versionData m =
+data Arguments muxMode socket initiatorCtx responderCtx peerAddr handle handleError versionNumber versionData m a b =
     Arguments {
         -- | Connection manager tracer.
         --
-        tracer              :: Tracer m (Trace peerAddr handlerTrace),
+        tracer              :: Tracer m (Trace peerAddr (ConnectionHandlerTrace versionNumber versionData)),
 
         -- | Trace state transitions.
         --
@@ -153,7 +155,12 @@ data Arguments handlerTrace socket peerAddr handle handleError versionNumber ver
 
         -- | Supply for `ConnStateId`-s.
         --
-        connStateIdSupply   :: ConnStateIdSupply m
+        connStateIdSupply   :: ConnStateIdSupply m,
+
+        mch :: SingMuxMode muxMode
+            -> MkMuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr handle handleError versionNumber versionData m a b,
+
+        classifyHandleError :: handleError -> HandleErrorType
       }
 
 
@@ -355,7 +362,7 @@ data DemoteToColdLocal peerAddr handlerTrace handle handleError version m
 -- is responsible for the resource.
 --
 with
-    :: forall (muxMode :: Mx.Mode) peerAddr socket handlerTrace handle handleError version versionData m a.
+    :: forall (muxMode :: Mx.Mode) peerAddr socket initiatorCtx responderCtx handle handleError version versionData m a b x.
        ( Alternative (STM m)
        , MonadLabelledSTM   m
        , MonadTraceSTM      m
@@ -373,19 +380,20 @@ with
        , Show     peerAddr
        , Typeable peerAddr
        )
-    => Arguments handlerTrace socket peerAddr handle handleError version versionData m
-    -> ConnectionHandler  muxMode handlerTrace socket peerAddr handle handleError version versionData m
+    => Arguments muxMode socket initiatorCtx responderCtx peerAddr handle handleError version versionData m a b
+    -> ConnectionHandler muxMode socket peerAddr handle handleError version versionData m
     -- ^ Callback which runs in a thread dedicated for a given connection.
-    -> (handleError -> HandleErrorType)
+    -- -> (handleError -> HandleErrorType)
     -- ^ classify 'handleError's
-    -> InResponderMode muxMode (InformationChannel (NewConnectionInfo peerAddr handle) m)
+    -- -> InResponderMode muxMode (InformationChannel (NewConnectionInfo peerAddr handle) m)
     -- ^ On outbound duplex connections we need to notify the server about
     -- a new connection.
-    -> (ConnectionManager muxMode socket peerAddr handle handleError m -> m a)
+    -- -> MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr version versionData ByteString m a b
+    -> (ConnectionManager muxMode socket peerAddr handle handleError m -> m x)
     -- ^ Continuation which receives the 'ConnectionManager'.  It must not leak
     -- outside of scope of this callback.  Once it returns all resources
     -- will be closed.
-    -> m a
+    -> m x
 with args@Arguments {
          tracer,
          trTracer,
@@ -402,13 +410,13 @@ with args@Arguments {
          prunePolicy,
          connectionsLimits,
          updateVersionData,
-         connStateIdSupply
+         connStateIdSupply,
+         classifyHandleError
        }
+     -- inboundGovernorInfoChannel
      ConnectionHandler {
-         connectionHandler
-       }
-     classifyHandleError
-     inboundGovernorInfoChannel
+       connectionHandler
+     }
      k = do
     ((stateVar, stdGenVar)
        ::  ( StrictTMVar m (ConnectionManagerState peerAddr handle handleError
@@ -607,7 +615,7 @@ with args@Arguments {
       -> socket
       -> ConnectionId peerAddr
       -> PromiseWriter m (Either handleError (HandshakeConnectionResult handle (version, versionData)))
-      -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version versionData m
+      -> ConnectionHandlerFn socket peerAddr handle handleError version versionData m
       -> m (Async m ())
     forkConnectionHandler updateVersionDataFn stateVar
                           mutableConnState@MutableConnState { connStateId, connVar }
@@ -846,7 +854,7 @@ with args@Arguments {
     includeInboundConnectionImpl
         :: HasCallStack
         => StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
-        -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version versionData m
+        -> ConnectionHandlerFn socket peerAddr handle handleError version versionData m
         -> Word32
         -- ^ inbound connections hard limit
         -- TODO: This is needed because the accept loop can not guarantee that
@@ -1046,13 +1054,13 @@ with args@Arguments {
 
                 if connected
                   then do
-                    case inboundGovernorInfoChannel of
-                      InResponderMode infoChannel ->
-                        atomically $ InfoChannel.writeMessage
-                                       infoChannel
-                                       (NewConnectionInfo provenance connId dataFlow handle)
-                      _ -> return ()
-                    return $ Connected connId dataFlow handle
+                    -- case inboundGovernorInfoChannel of
+                    --   InResponderMode infoChannel ->
+                    --     atomically $ InfoChannel.writeMessage
+                    --                    infoChannel
+                    --                    (NewConnectionInfo provenance connId dataFlow handle)
+                    --   _ -> return ()
+                    return $ undefined -- Connected connId dataFlow handle
 
                   -- the connection is in `TerminatingState` or
                   -- `TerminatedState`.
@@ -1313,7 +1321,7 @@ with args@Arguments {
         :: HasCallStack
         => StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
         -> StrictTVar m StdGen
-        -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version versionData m
+        -> ConnectionHandlerFn socket peerAddr handle handleError version versionData m
         -> DiffusionMode
         -> peerAddr
         -> m (Connected peerAddr handle handleError)
@@ -1658,13 +1666,13 @@ with args@Arguments {
                                   -- `includeInboundConnectionImpl`
                                   Outbound -> True
                           writeTVar connVar connState'
-                          case inboundGovernorInfoChannel of
-                            InResponderMode infoChannel | notifyInboundGov ->
-                              InfoChannel.writeMessage
-                                infoChannel
-                                (NewConnectionInfo provenance' connId dataFlow handle)
-                            _ -> return ()
-                          return (Just $ mkTransition connState connState')
+                          -- case inboundGovernorInfoChannel of
+                          --   InResponderMode infoChannel | notifyInboundGov ->
+                          --     InfoChannel.writeMessage
+                          --       infoChannel
+                          --       (NewConnectionInfo provenance' connId dataFlow handle)
+                          --   _ -> return ()
+                          return (Just $ undefined ) --mkTransition connState connState')
 
                     -- @
                     --   SelfConn'^{-1}

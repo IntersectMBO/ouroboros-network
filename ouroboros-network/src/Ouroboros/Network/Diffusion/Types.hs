@@ -506,7 +506,6 @@ type NodeToClientConnectionHandler
       ntcFd ntcAddr ntcVersion ntcVersionData m =
     ConnectionHandler
       Mx.ResponderMode
-      (ConnectionHandlerTrace ntcVersion ntcVersionData)
       ntcFd
       ntcAddr
       (NodeToClientHandle ntcAddr ntcVersionData m)
@@ -516,16 +515,20 @@ type NodeToClientConnectionHandler
       m
 
 type NodeToClientConnectionManagerArguments
-      ntcFd ntcAddr ntcVersion ntcVersionData m =
+      muxMode ntcFd initiatorCtx responderCtx ntcAddr ntcVersion ntcVersionData m a b =
     CM.Arguments
-      (ConnectionHandlerTrace ntcVersion ntcVersionData)
+      muxMode
       ntcFd
+      initiatorCtx
+      responderCtx
       ntcAddr
       (NodeToClientHandle ntcAddr ntcVersionData m)
       (NodeToClientHandleError ntcVersion)
       ntcVersion
       ntcVersionData
       m
+      a
+      b
 
 
 --

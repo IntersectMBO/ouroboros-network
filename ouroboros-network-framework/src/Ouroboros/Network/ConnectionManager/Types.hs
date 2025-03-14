@@ -96,8 +96,6 @@ module Ouroboros.Network.ConnectionManager.Types
     -- ** Connection Handler
     -- $connectionhandler
   , MaskedAction (..)
-  , ConnectionHandlerFn
-  , ConnectionHandler (..)
   , Inactive (..)
   , ExceptionInHandler (..)
   , HandleErrorType (..)
@@ -342,23 +340,6 @@ newtype MaskedAction m a = MaskedAction {
   }
 
 
--- | MaskedAction which is executed by thread designated for a given connection.
---
--- 'PromiseWriter' allows to notify the 'ConnectionManager' about the result of
--- handshake negotiation.
---
--- Note: 'PromiseWriter' could be replaced with an stm action which is
--- accessing the 'TVar' which holds state of the connection.
---
-type ConnectionHandlerFn handlerTrace socket peerAddr handle handleError versionNumber versionData m
-     = (versionData -> versionData)
-    -> socket
-    -> PromiseWriter m (Either handleError (HandshakeConnectionResult handle (versionNumber, versionData)))
-    -> Tracer m handlerTrace
-    -> ConnectionId peerAddr
-    -> (DiffTime -> socket -> m (Mux.Bearer m))
-    -> MaskedAction m ()
-
 data HandshakeConnectionResult handle version
   -- | Handshake saw a query.
   --
@@ -367,19 +348,6 @@ data HandshakeConnectionResult handle version
   -- | Handshake resulted in a connection and version.
   --
   | HandshakeConnectionResult handle version
-
--- | Connection handler action.  It is index by @muxMode :: 'Network.Mux.Mode'@.
--- There's one 'ConnectionHandlerFn' per provenance, possibly limited by
--- @muxMode@.
---
-newtype ConnectionHandler muxMode handlerTrace socket peerAddr handle handleError versionNumber versionData m =
-    ConnectionHandler {
-        -- | Connection handler.
-        --
-        connectionHandler ::
-          WithMuxTuple muxMode
-            (ConnectionHandlerFn handlerTrace socket peerAddr handle handleError versionNumber versionData m)
-      }
 
 
 -- | Boolean like type
