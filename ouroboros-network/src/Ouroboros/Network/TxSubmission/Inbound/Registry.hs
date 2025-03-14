@@ -235,6 +235,7 @@ withPeer tracer
         inflightTxs' = foldl' purgeInflightTxs inflightTxs requestedTxsInflight
         inflightTxsSize' = inflightTxsSize - requestedTxsInflightSize
 
+        -- TODO: describe why we need to add `toMempoolTxs` to `limboTxs`.
         limboTxs' =
           foldl' (flip $ Map.update
                              \cnt -> if cnt > 1

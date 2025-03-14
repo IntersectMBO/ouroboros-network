@@ -145,6 +145,7 @@ acknowledgeTxIds
       , 0
       , TxsToMempool []
       , RefCountDiff Map.empty
+      -- Q: why we don't return `toMempoolTxs'` in this case?
       , ps
       )
   where
@@ -241,6 +242,7 @@ tickTimedTxs now st@SharedTxState{ timedTxs
                                  , bufferedTxs } =
     let (expiredTxs, timedTxs') = Map.split now timedTxs
         expiredTxs'             =  -- Map.split doesn't include the `now` entry in any map
+                                   -- TODO: there must be a better way.
                                   case Map.lookup now timedTxs of
                                        Just txids -> Map.insert now txids expiredTxs
                                        Nothing    -> expiredTxs
