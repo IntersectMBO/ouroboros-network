@@ -141,6 +141,7 @@ acknowledgeTxIds
       , 0
       , TxsToMempool []
       , RefCountDiff Map.empty
+      -- Q: why we don't return `toMempoolTxs'` in this case?
       , ps
       )
   where
