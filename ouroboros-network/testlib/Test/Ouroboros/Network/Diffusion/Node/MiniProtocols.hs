@@ -708,11 +708,11 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
                    aaTxDecisionPolicy
                    sharedTxStateVar
                    (getMempoolReader mempool)
+                   (getMempoolWriter mempool)
                    getTxSize
                    them $ \api -> do
             let server = txSubmissionInboundV2
                            txSubmissionInboundTracer
-                           (getMempoolReader mempool)
                            (getMempoolWriter mempool)
                            api
             labelThisThread "TxSubmissionServer"
