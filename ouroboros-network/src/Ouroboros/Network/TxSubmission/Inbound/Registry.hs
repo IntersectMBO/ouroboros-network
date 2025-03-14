@@ -237,6 +237,8 @@ withPeer tracer
         inflightTxs' = foldl' purgeInflightTxs inflightTxs requestedTxsInflight
         inflightTxsSize' = inflightTxsSize - requestedTxsInflightSize
 
+        -- When we unregister a peer, we need to subtract all txs in the
+        -- `toMempoolTxs`, as they will not be submitted to the mempool.
         limboTxs' =
           foldl' (flip $ Map.update
                              \cnt -> if cnt > 1
