@@ -16,7 +16,6 @@ import Data.Set qualified as Set
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (assert)
 import Control.Monad.Class.MonadThrow
-import Control.Monad.Class.MonadTime.SI
 import Control.Tracer (Tracer, traceWith)
 
 import Network.TypedProtocol
@@ -25,7 +24,6 @@ import Control.Monad (unless, when)
 import Ouroboros.Network.Protocol.TxSubmission2.Server
 import Ouroboros.Network.TxSubmission.Inbound.Registry (PeerTxAPI (..))
 import Ouroboros.Network.TxSubmission.Inbound.Types
-import Ouroboros.Network.TxSubmission.Mempool.Reader
 
 -- | Flag to enable/disable the usage of the new tx submission protocol
 --
@@ -45,29 +43,20 @@ txSubmissionInboundV2
   :: forall txid tx idx m.
      ( MonadSTM   m
      , MonadThrow m
-     , MonadMonotonicTime m
      , Ord txid
      )
   => Tracer m (TraceTxSubmissionInbound txid tx)
-  -> TxSubmissionMempoolReader txid tx idx m
   -> TxSubmissionMempoolWriter txid tx idx m
   -> PeerTxAPI m txid tx
   -> TxSubmissionServerPipelined txid tx m ()
 txSubmissionInboundV2
     tracer
-    TxSubmissionMempoolReader{
-      mempoolGetSnapshot
-    }
-    TxSubmissionMempoolWriter {
-      txId,
-      mempoolAddTxs
-    }
+    TxSubmissionMempoolWriter { txId }
     PeerTxAPI {
       readTxDecision,
       handleReceivedTxIds,
       handleReceivedTxs,
-      countRejectedTxs,
-      withMempoolSem
+      submitTxToMempool
     }
     =
     TxSubmissionServerPipelined serverIdle
@@ -85,7 +74,7 @@ txSubmissionInboundV2
 
         -- Only attempt to add TXs if we have some work to do
         when (collected > 0) $ do
-            mapM_ (withMempoolSem . addTx) listOfTxsToMempool
+            mapM_ (uncurry $ submitTxToMempool tracer) listOfTxsToMempool
 
             traceWith tracer $
               TraceTxSubmissionCollected collected
@@ -96,49 +85,6 @@ txSubmissionInboundV2
         if Set.null txsToRequest
           then serverReqTxIds Zero txd
           else serverReqTxs txd
-
-    addTx :: (txid,tx) -> m (Either (txid, tx) (txid, tx))
-    addTx (txid,tx) = do
-      mpSnapshot <- atomically mempoolGetSnapshot
-
-      -- Note that checking if the mempool contains a TX before
-      -- spending several ms attempting to add it to the pool has
-      -- been judged immoral.
-      if mempoolHasTx mpSnapshot txid
-         then do
-           !now <- getMonotonicTime
-           !s <- countRejectedTxs now 1
-           traceWith tracer $ TraceTxSubmissionProcessed ProcessedTxCount {
-                ptxcAccepted = 0
-              , ptxcRejected = 1
-              , ptxcScore    = s
-              }
-           return $ Left (txid, tx)
-         else do
-           !start <- getMonotonicTime
-           acceptedTxs <- mempoolAddTxs [tx]
-           !end <- getMonotonicTime
-           let duration = diffTime end start
-
-           traceWith tracer $
-             TraceTxInboundAddedToMempool acceptedTxs duration
-           if null acceptedTxs
-              then do
-                  !s <- countRejectedTxs end 1
-                  traceWith tracer $ TraceTxSubmissionProcessed ProcessedTxCount {
-                      ptxcAccepted = 0
-                    , ptxcRejected = 1
-                    , ptxcScore    = s
-                    }
-                  return $ Left (txid, tx)
-              else do
-                  !s <- countRejectedTxs end 0
-                  traceWith tracer $ TraceTxSubmissionProcessed ProcessedTxCount {
-                      ptxcAccepted = 1
-                    , ptxcRejected = 0
-                    , ptxcScore    = s
-                    }
-                  return $ Right (txid, tx)
 
     -- Pipelined request of txs
     serverReqTxs :: TxDecision txid tx
