@@ -678,7 +678,7 @@ makeFDBearer :: forall addr m.
                 , Show addr
                 )
              => MakeBearer m (FD m (TestAddress addr))
-makeFDBearer = MakeBearer $ \sduTimeout muxTracer FD { fdVar } -> do
+makeFDBearer = MakeBearer $ \sduTimeout muxTracer FD { fdVar } _ -> do
         fd_ <- atomically (readTVar fdVar)
         case fd_ of
           FDUninitialised {} ->

@@ -291,6 +291,7 @@ makeConnectionHandler muxTracer singMuxMode
                               connectionId@ConnectionId { localAddress
                                                         , remoteAddress }
                               mkMuxBearer
+                              withBuffer
         = MaskedAction { runWithUnmask }
       where
         runWithUnmask :: (forall x. m x -> m x) -> m ()
@@ -301,7 +302,7 @@ makeConnectionHandler muxTracer singMuxMode
                                     , "-"
                                     , show remoteAddress
                                     ])
-            handshakeBearer <- mkMuxBearer sduHandshakeTimeout socket
+            handshakeBearer <- mkMuxBearer sduHandshakeTimeout socket Nothing
             hsResult <-
               unmask (runHandshakeClient handshakeBearer
                                          connectionId
@@ -334,9 +335,11 @@ makeConnectionHandler muxTracer singMuxMode
                           hVersionData    = agreedOptions
                         }
                   atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
-                  bearer <- mkMuxBearer sduTimeout socket
-                  Mx.run (Mx.WithBearer connectionId `contramap` muxTracer)
-                         mux bearer
+                  withBuffer (\buffer -> do
+                      bearer <- mkMuxBearer sduTimeout socket buffer
+                      Mx.run (Mx.WithBearer connectionId `contramap` muxTracer)
+                             mux bearer
+                    )
 
               Right (HandshakeQueryResult vMap) -> do
                 atomically $ writePromise (Right HandshakeConnectionQuery)
@@ -360,6 +363,7 @@ makeConnectionHandler muxTracer singMuxMode
                              connectionId@ConnectionId { localAddress
                                                        , remoteAddress }
                              mkMuxBearer
+                             withBuffer
         = MaskedAction { runWithUnmask }
       where
         runWithUnmask :: (forall x. m x -> m x) -> m ()
@@ -370,7 +374,7 @@ makeConnectionHandler muxTracer singMuxMode
                                     , "-"
                                     , show remoteAddress
                                     ])
-            handshakeBearer <- mkMuxBearer sduHandshakeTimeout socket
+            handshakeBearer <- mkMuxBearer sduHandshakeTimeout socket Nothing
             hsResult <-
               unmask (runHandshakeServer handshakeBearer
                                          connectionId
@@ -404,10 +408,11 @@ makeConnectionHandler muxTracer singMuxMode
                           hVersionData    = agreedOptions
                         }
                   atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
-                  bearer <- mkMuxBearer sduTimeout socket
-                  Mx.run (Mx.WithBearer connectionId `contramap` muxTracer)
-                         mux bearer
-
+                  withBuffer (\buffer -> do
+                      bearer <- mkMuxBearer sduTimeout socket buffer
+                      Mx.run (Mx.WithBearer connectionId `contramap` muxTracer)
+                             mux bearer
+                    )
               Right (HandshakeQueryResult vMap) -> do
                 atomically $ writePromise (Right HandshakeConnectionQuery)
                 traceWith tracer $ TrHandshakeQuery vMap
