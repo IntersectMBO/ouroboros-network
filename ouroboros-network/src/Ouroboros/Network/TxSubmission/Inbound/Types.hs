@@ -93,10 +93,21 @@ data PeerTxState txid tx = PeerTxState {
 
        -- | A set of TXs downloaded from the peer. They are not yet
        -- acknowledged and haven't been sent to the mempool yet.
+       --
+       -- Life cycle of entries:
+       -- * added when a tx is downloaded (see `collectTxsImpl`)
+       -- * follows `unacknowledgedTxIds` (see `acknowledgeTxIds`)
+       --
        downloadedTxs            :: !(Map txid tx),
 
        -- | A set of TXs on their way to the mempool.
        -- Tracked here so that we can cleanup `limboTxs` if the peer dies.
+       --
+       -- Life cycle of entries:
+       -- * added by `acknowledgeTxIds` (where decide which txs can be
+       --   submitted to the mempool)
+       -- * removed by `withMempoolSem`
+       --
        toMempoolTxs             :: !(Map txid tx)
 
     }
@@ -190,7 +201,15 @@ data SharedTxState peeraddr txid tx = SharedTxState {
 
       -- | A set of txids that have been downloaded by a peer and are on their
       -- way to the mempool. We won't issue further fetch-requests for TXs in
-      -- this state.
+      -- this state.  We track these txs to not re-download them from another
+      -- peer.
+      --
+      -- * We subtract from the counter when a given tx is added or rejected by
+      --   the mempool or do that for all txs in `toMempoolTxs` when a peer is
+      --   unregistered.
+      -- * We add to the counter when a given tx is selected to be added to the
+      --   mempool in `pickTxsToDownload`.
+      --
       limboTxs        :: !(Map txid Int),
 
       -- | Rng used to randomly order peers
