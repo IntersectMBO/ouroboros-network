@@ -89,18 +89,13 @@ data PeerTxAPI m txid tx = PeerTxAPI {
                         -> m (Maybe TxSubmissionProtocolError),
     -- ^ handle received txs
 
-    countRejectedTxs    :: Time
-                        -> Double
-                        -> m Double,
-    -- ^ Update `score` & `scoreTs` fields of `PeerTxState`, return the new
-    -- updated `score`.
-    --
-    -- PRECONDITION: the `Double` argument is non-negative.
-
-    withMempoolSem      :: m (Either (txid, tx) (txid, tx))
-                        -> m (Either (txid, tx) (txid, tx))
+    submitTxToMempool     :: Tracer m (TraceTxSubmissionInbound txid tx)
+                          -> txid -> tx -> m ()
+    -- ^ submit the given (txid, tx) to the mempool.
   }
 
+
+data TxMempoolResult = TxAccepted | TxRejected
 
 -- | A bracket function which registers / de-registers a new peer in
 -- `SharedTxStateVar` and `PeerTxStateVar`s,  which exposes `PeerTxStateAPI`.
@@ -123,6 +118,7 @@ withPeer
     -> TxDecisionPolicy
     -> SharedTxStateVar m peeraddr txid tx
     -> TxSubmissionMempoolReader txid tx idx m
+    -> TxSubmissionMempoolWriter txid tx idx m
     -> (tx -> SizeInBytes)
     -> peeraddr
     --  ^ new peer
@@ -135,6 +131,7 @@ withPeer tracer
          policy@TxDecisionPolicy { bufferedTxsMinLifetime }
          sharedStateVar
          TxSubmissionMempoolReader { mempoolGetSnapshot }
+         TxSubmissionMempoolWriter { mempoolAddTxs }
          txSize
          peeraddr io =
     bracket
@@ -154,8 +151,7 @@ withPeer tracer
                   , PeerTxAPI { readTxDecision = takeMVar chann',
                                 handleReceivedTxIds,
                                 handleReceivedTxs,
-                                countRejectedTxs,
-                                withMempoolSem }
+                                submitTxToMempool }
                   )
 
           atomically $ modifyTVar sharedStateVar registerPeer
@@ -256,23 +252,65 @@ withPeer tracer
     -- PeerTxAPI
     --
 
-    withMempoolSem :: m (Either (txid,tx) (txid, tx)) -> m (Either (txid,tx) (txid,tx))
-    withMempoolSem a =
+    submitTxToMempool :: Tracer m (TraceTxSubmissionInbound txid tx) -> txid -> tx -> m ()
+    submitTxToMempool txTracer txid tx =
         bracket_ (atomically $ waitTSem mempoolSem)
                  (atomically $ signalTSem mempoolSem)
-                 (do
-                     r <- a
-                     now <- getMonotonicTime
-                     atomically $ modifyTVar sharedStateVar (updateBufferedTx now r)
-                     return r
-                 )
+          $ do
+            res <- addTx
+            now <- getMonotonicTime
+            atomically $ modifyTVar sharedStateVar (updateBufferedTx now res)
       where
+        -- add the tx to the mempool
+        addTx :: m TxMempoolResult
+        addTx = do
+          mpSnapshot <- atomically mempoolGetSnapshot
+
+          -- Note that checking if the mempool contains a TX before
+          -- spending several ms attempting to add it to the pool has
+          -- been judged immoral.
+          if mempoolHasTx mpSnapshot txid
+             then do
+               !now <- getMonotonicTime
+               !s <- countRejectedTxs now 1
+               traceWith txTracer $ TraceTxSubmissionProcessed ProcessedTxCount {
+                    ptxcAccepted = 0
+                  , ptxcRejected = 1
+                  , ptxcScore    = s
+                  }
+               return TxRejected
+             else do
+               !start <- getMonotonicTime
+               acceptedTxs <- mempoolAddTxs [tx]
+               !end <- getMonotonicTime
+               let duration = diffTime end start
+
+               traceWith txTracer $
+                 TraceTxInboundAddedToMempool acceptedTxs duration
+               if null acceptedTxs
+                  then do
+                      !s <- countRejectedTxs end 1
+                      traceWith txTracer $ TraceTxSubmissionProcessed ProcessedTxCount {
+                          ptxcAccepted = 0
+                        , ptxcRejected = 1
+                        , ptxcScore    = s
+                        }
+                      return TxRejected
+                  else do
+                      !s <- countRejectedTxs end 0
+                      traceWith txTracer $ TraceTxSubmissionProcessed ProcessedTxCount {
+                          ptxcAccepted = 1
+                        , ptxcRejected = 0
+                        , ptxcScore    = s
+                        }
+                      return TxAccepted
+
         updateBufferedTx :: Time
-                         -> Either (txid, tx) (txid, tx)
+                         -> TxMempoolResult
                          -> SharedTxState peeraddr txid tx
                          -> SharedTxState peeraddr txid tx
-        updateBufferedTx _ (Left (txid,_tx)) st@SharedTxState { peerTxStates
-                                                              , limboTxs } =
+        updateBufferedTx _ TxRejected st@SharedTxState { peerTxStates
+                                                                , limboTxs } =
             st { peerTxStates = peerTxStates'
                , limboTxs = limboTxs' }
           where
@@ -283,7 +321,7 @@ withPeer tracer
               where
                 fn ps = Just $! ps { toMempoolTxs = Map.delete txid (toMempoolTxs ps)}
 
-        updateBufferedTx now (Right (txid, tx))
+        updateBufferedTx now TxAccepted
                          st@SharedTxState { peerTxStates
                                           , bufferedTxs
                                           , referenceCounts
@@ -339,6 +377,10 @@ withPeer tracer
     handleReceivedTxs txids txs =
       collectTxs tracer txSize sharedStateVar peeraddr txids txs
 
+    -- Update `score` & `scoreTs` fields of `PeerTxState`, return the new
+    -- updated `score`.
+    --
+    -- PRECONDITION: the `Double` argument is non-negative.
     countRejectedTxs :: Time
                      -> Double
                      -> m Double
