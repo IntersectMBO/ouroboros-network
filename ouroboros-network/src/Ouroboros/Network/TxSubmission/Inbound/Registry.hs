@@ -234,7 +234,7 @@ withPeer tracer
                        `Map.restrictKeys`
                        liveSet
 
-        inflightTxs' = foldl purgeInflightTxs inflightTxs requestedTxsInflight
+        inflightTxs' = foldl' purgeInflightTxs inflightTxs requestedTxsInflight
         inflightTxsSize' = inflightTxsSize - requestedTxsInflightSize
 
         limboTxs' =
