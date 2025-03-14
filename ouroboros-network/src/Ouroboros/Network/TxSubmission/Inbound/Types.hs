@@ -95,10 +95,21 @@ data PeerTxState txid tx = PeerTxState {
 
        -- | A set of TXs downloaded from the peer. They are not yet
        -- acknowledged and haven't been sent to the mempool yet.
+       --
+       -- Life cycle of entries:
+       -- * added when a tx is downloaded (see `collectTxsImpl`
+       -- * follows `unacknowledgedTxIds` (see `acknowledgeTxIds`)
+       --
        downloadedTxs            :: !(Map txid tx),
 
        -- | A set of TXs on their way to the mempool.
        -- Tracked here so that we can cleanup `limboTxs` if the peer dies.
+       --
+       -- Life cycle of entries:
+       -- * added by `acknowledgeTxIds` (where decide which txs can be
+       --   submitted to the mempool)
+       -- * removed by `withMempoolSem`
+       --
        toMempoolTxs             :: !(Map txid tx)
 
     }
