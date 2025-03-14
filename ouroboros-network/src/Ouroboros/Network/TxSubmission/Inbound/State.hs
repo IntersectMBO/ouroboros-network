@@ -243,7 +243,7 @@ tickTimedTxs now st@SharedTxState{ timedTxs
                                   case Map.lookup now timedTxs of
                                        Just txids -> Map.insert now txids expiredTxs
                                        Nothing    -> expiredTxs
-        refDiff = Map.foldl fn Map.empty expiredTxs'
+        refDiff = Map.foldl' fn Map.empty expiredTxs'
         referenceCounts' = updateRefCounts referenceCounts (RefCountDiff refDiff)
         liveSet = Map.keysSet referenceCounts'
         bufferedTxs' = bufferedTxs `Map.restrictKeys` liveSet in
