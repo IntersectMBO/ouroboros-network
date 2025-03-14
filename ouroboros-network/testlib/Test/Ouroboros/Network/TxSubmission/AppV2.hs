@@ -216,10 +216,10 @@ runTxSubmission tracer tracerTxLogic state txDecisionPolicy = do
                                   txDecisionPolicy
                                   sharedTxStateVar
                                   (getMempoolReader inboundMempool)
+                                  (getMempoolWriter inboundMempool)
                                   getTxSize
                                   addr $ \api -> do
                                     let server = txSubmissionInboundV2 verboseTracer
-                                                                       (getMempoolReader inboundMempool)
                                                                        (getMempoolWriter inboundMempool)
                                                                        api
                                     runPipelinedPeerWithLimits
