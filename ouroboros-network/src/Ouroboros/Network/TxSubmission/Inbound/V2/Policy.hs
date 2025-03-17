@@ -1,6 +1,6 @@
 {-# LANGUAGE NumericUnderscores #-}
 
-module Ouroboros.Network.TxSubmission.Inbound.Policy
+module Ouroboros.Network.TxSubmission.Inbound.V2.Policy
   ( TxDecisionPolicy (..)
   , defaultTxDecisionPolicy
   , max_TX_SIZE
