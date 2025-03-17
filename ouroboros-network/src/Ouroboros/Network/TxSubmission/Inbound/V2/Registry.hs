@@ -5,7 +5,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.TxSubmission.Inbound.Registry
+module Ouroboros.Network.TxSubmission.Inbound.V2.Registry
   ( TxChannels (..)
   , TxChannelsVar
   , TxMempoolSem
@@ -45,10 +45,10 @@ import Data.Void (Void)
 import Control.Tracer (Tracer, traceWith)
 import Ouroboros.Network.DeltaQ (PeerGSV (..))
 import Ouroboros.Network.Protocol.TxSubmission2.Type
-import Ouroboros.Network.TxSubmission.Inbound.Decision
-import Ouroboros.Network.TxSubmission.Inbound.Policy
-import Ouroboros.Network.TxSubmission.Inbound.State
-import Ouroboros.Network.TxSubmission.Inbound.Types
+import Ouroboros.Network.TxSubmission.Inbound.V2.Decision
+import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
+import Ouroboros.Network.TxSubmission.Inbound.V2.State
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 import Ouroboros.Network.TxSubmission.Mempool.Reader
 
 -- | Communication channels between `TxSubmission` client mini-protocol and
