@@ -1,19 +1,21 @@
-cabal-version:      2.4
-name:               kes-agent
-version:            0.1.0.0
+cabal-version: 2.4
+name: kes-agent
+version: 0.1.0.0
 
--- synopsis:
--- description:
+synopsis: KES agent library and binaries
+description: KES agent provides a solution for storing KES keys
+                    in-process, in order to allow them to be erased securely and
+                    enable forward security in the Cardano blockchain.
 
--- bug-reports:
+license: Apache-2.0
+license-files:
+  LICENSE
+  NOTICE
+author: Tobias Dammers
+maintainer: tobias@well-typed.com
 
--- license:
-author:             Tobias Dammers
-maintainer:         tobias@well-typed.com
-
--- copyright:
--- category:
--- extra-source-files:
+copyright: INTERSECT 2024-2025.
+category: Network
 
 data-files: fixtures/*.vkey
           , fixtures/*.skey
@@ -26,7 +28,6 @@ common project-config
          -threaded
          -rtsopts=all
          -haddock
-         -- -ddump-splices
 
 common base-dependencies
     build-depends: base >=4.14.0.0 && <4.20.0.0
@@ -112,7 +113,7 @@ library
                  , time >=1.10
                  , typed-protocols ^>=0.3
                  -- , typed-protocols-doc
-    hs-source-dirs:   src
+    hs-source-dirs: src
     default-language: Haskell2010
     if os(windows)
     else
@@ -193,34 +194,6 @@ executable kes-agent-control
     if os(windows)
     else
         build-depends: hsyslog
-
--- executable kes-agent-protodocs
---     import: project-config
---     import: base-dependencies
---     default-language: Haskell2010
---     hs-source-dirs: protodocs
---     main-is: Main.hs
---     -- other-modules: Cardano.KESAgent.Protodocs.TH
---     if (impl(ghc <= 9.10.0))
---         build-depends: ghc-heap <= 9.10.1
---     build-depends: kes-agent
---                  , bytestring
---                  , blaze-html
---                  , cardano-crypto-class
---                  , containers
---                  , haddock-library
---                  , io-classes
---                  , network
---                  , optparse-applicative
---                  , serdoc-core
---                  , template-haskell
---                  , text
---                  , th-abstraction
---                  , time
---                  , typed-protocols
---                  , typed-protocols-doc
-
-
 
 test-suite kes-agent-tests
     import: project-config
