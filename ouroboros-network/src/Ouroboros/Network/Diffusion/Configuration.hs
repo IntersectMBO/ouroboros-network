@@ -47,7 +47,7 @@ import Ouroboros.Network.PeerSharing (ps_POLICY_PEER_SHARE_MAX_PEERS,
            ps_POLICY_PEER_SHARE_STICKY_TIME)
 import Ouroboros.Network.Protocol.Handshake (handshake_QUERY_SHUTDOWN_DELAY)
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
-import Ouroboros.Network.TxSubmission.Inbound.Server
+import Ouroboros.Network.TxSubmission.Inbound.V2
            (EnableNewTxSubmissionProtocol (..))
 
 -- | Outbound governor targets
