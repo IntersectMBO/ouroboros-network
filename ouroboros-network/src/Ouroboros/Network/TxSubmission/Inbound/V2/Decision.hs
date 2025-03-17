@@ -7,7 +7,7 @@
 {-# LANGUAGE TupleSections       #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
-module Ouroboros.Network.TxSubmission.Inbound.Decision
+module Ouroboros.Network.TxSubmission.Inbound.V2.Decision
   ( TxDecision (..)
   , emptyTxDecision
     -- * Internal API exposed for testing
@@ -32,9 +32,9 @@ import System.Random (random)
 
 import Data.Sequence.Strict qualified as StrictSeq
 import Ouroboros.Network.Protocol.TxSubmission2.Type
-import Ouroboros.Network.TxSubmission.Inbound.Policy
-import Ouroboros.Network.TxSubmission.Inbound.State
-import Ouroboros.Network.TxSubmission.Inbound.Types
+import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
+import Ouroboros.Network.TxSubmission.Inbound.V2.State
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 
 
 -- | Make download decisions.
