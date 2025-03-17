@@ -258,9 +258,9 @@ kesAgentControlInstallValid =
         -- Allow some time for service client to actually receive the key
         threadDelay 10000
     assertMatchingOutputLinesWith
-      ("SERVICE OUTPUT CHECK\n" <> (Text.unpack . Text.unlines $ agentOutLines))
-      0
-      ["KES", "key", "0"]
+      ("SERVICE OUTPUT CHECK\n" {- <> (Text.unpack . Text.unlines $ agentOutLines) -})
+      4
+      ["->", "ServiceClientBlockForging", "0"]
       serviceOutLines
 
 kesAgentControlInstallInvalidOpCert :: Assertion
@@ -296,7 +296,7 @@ kesAgentControlInstallInvalidOpCert =
           (ExitFailure $ fromEnum RecvErrorInvalidOpCert)
           ["Error: OpCert validation failed"]
 
-    assertNoMatchingOutputLines 0 ["KES", "key", "0"] serviceOutLines
+    assertNoMatchingOutputLines 4 ["->", "ServiceClientBlockForging"] serviceOutLines
     assertMatchingOutputLines 1 ["Warning", "Agent:", "RejectingKey"] agentOutLines
 
 kesAgentControlInstallNoKey :: Assertion
@@ -333,7 +333,7 @@ kesAgentControlInstallNoKey =
           (ExitFailure $ fromEnum RecvErrorNoKey)
           ["Error: No KES key found"]
 
-    assertNoMatchingOutputLines 0 ["KES", "key", "0"] serviceOutLines
+    assertNoMatchingOutputLines 4 ["->", "ServiceClientBlockForging"] serviceOutLines
 
 kesAgentControlInstallDroppedKey :: Assertion
 kesAgentControlInstallDroppedKey =
@@ -391,7 +391,7 @@ kesAgentControlInstallDroppedKey =
           (ExitFailure $ fromEnum RecvErrorNoKey)
           ["Error: No KES key found"]
 
-    assertNoMatchingOutputLines 0 ["KES", "key", "0"] serviceOutLines
+    assertNoMatchingOutputLines 4 ["->", "ServiceClientBlockForging"] serviceOutLines
 
 kesAgentControlInstallMultiNodes :: Assertion
 kesAgentControlInstallMultiNodes =
@@ -460,8 +460,8 @@ kesAgentControlInstallMultiNodes =
       serviceOutLines1
     assertMatchingOutputLinesWith
       ("Service2: 'KES key 0'\n" ++ (Text.unpack . Text.unlines $ agentOutLines))
-      0
-      ["KES", "key", "0"]
+      4
+      ["->", "ServiceClientBlockForging", "0"]
       serviceOutLines2
 
 kesAgentEvolvesKey :: Assertion
@@ -522,8 +522,8 @@ kesAgentEvolvesKey =
                 (any (`elem` ["Current evolution: 10 / 64", "Current evolution: 11 / 64"]))
     assertMatchingOutputLinesWith
       ("SERVICE OUTPUT CHECK\n" <> (Text.unpack . Text.unlines $ agentOutLines))
-      0
-      ["KES", "key", "0"]
+      4
+      ["->", "ServiceClientBlockForging", "0"]
       serviceOutLines
 
 kesAgentPropagate :: Assertion
@@ -585,8 +585,8 @@ kesAgentPropagate =
             (any (`elem` ["Current evolution: 0 / 64", "Current evolution: 1 / 64"]))
     assertMatchingOutputLinesWith
       ("SERVICE OUTPUT CHECK\n" <> (Text.unpack . Text.unlines $ agentOutLines1))
-      0
-      ["KES", "key", "0"]
+      4
+      ["->", "ServiceClientBlockForging", "0"]
       serviceOutLines
 
 kesAgentSelfHeal1 :: Assertion
@@ -766,7 +766,8 @@ assertMatchingOutputLines = assertMatchingOutputLinesWith ""
 assertMatchingOutputLinesWith :: String -> Int -> [Text] -> [Text] -> Assertion
 assertMatchingOutputLinesWith extraInfo ignore pattern lines =
   assertBool
-    (extraInfo ++ (Text.unpack . Text.unlines $ lines))
+    ("Pattern not matched: " ++ (Text.unpack . Text.unwords $ pattern) ++ "\n" ++
+     extraInfo ++ (Text.unpack . Text.unlines $ lines))
     (matchOutputLines ignore pattern lines)
 
 assertNoMatchingOutputLines :: Int -> [Text] -> [Text] -> Assertion
@@ -775,7 +776,8 @@ assertNoMatchingOutputLines = assertNoMatchingOutputLinesWith ""
 assertNoMatchingOutputLinesWith :: String -> Int -> [Text] -> [Text] -> Assertion
 assertNoMatchingOutputLinesWith extraInfo ignore pattern lines =
   assertBool
-    (extraInfo ++ (Text.unpack . Text.unlines $ lines))
+    ("Pattern unexpectedly matched: " ++ (Text.unpack . Text.unwords $ pattern) ++ "\n" ++
+     extraInfo ++ (Text.unpack . Text.unlines $ lines))
     (matchNoOutputLines ignore pattern lines)
 
 controlClient :: [String] -> IO (ExitCode, String, String)

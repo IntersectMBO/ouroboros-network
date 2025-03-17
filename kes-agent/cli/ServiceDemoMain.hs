@@ -37,6 +37,7 @@ import Data.Proxy (Proxy (..))
 import qualified Data.Text as Text
 import Data.Text.Encoding (encodeUtf8)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
+import Data.Word (Word64)
 import Network.Socket hiding (Debug)
 import Options.Applicative
 import System.Environment
@@ -121,23 +122,26 @@ stdoutStringTracer maxPrio lock = Tracer $ \(prio, msg) -> do
 
 handleKey ::
   UnsoundKESAlgorithm (KES c) =>
+  (ServiceClientState -> IO ()) ->
   Bundle IO c ->
   IO RecvResult
-handleKey (Bundle skpVar ocert) = withCRefValue skpVar $ \skp -> do
+handleKey setState (Bundle skpVar ocert) = withCRefValue skpVar $ \skp -> do
   skSer <- rawSerialiseSignKeyKES (skWithoutPeriodKES skp)
   let period = periodKES skp
   let certN = ocertN ocert
-  printf
-    "KES key %i @%i: %s\n"
-    certN
-    period
-    (hexShowBS skSer)
+  setState $ ServiceClientBlockForging certN period (take 8 (hexShowBS skSer) ++ "...")
   return RecvOK
 
 hexShowBS :: ByteString -> String
 hexShowBS = concatMap (printf "%02x") . BS.unpack
 
 programDesc = fullDesc
+
+data ServiceClientState
+  = ServiceClientNotRunning
+  | ServiceClientWaitingForCredentials
+  | ServiceClientBlockForging Word64 Period String
+  deriving (Show, Eq, Ord)
 
 main :: IO ()
 main = do
@@ -146,17 +150,26 @@ main = do
   sdoEnv <- sdoFromEnv
   let sdo = sdo' <> sdoEnv <> defServiceDemoOptions
 
+  logLock <- newMVar ()
+  let maxPrio = Debug
+  let tracer = stdoutStringTracer maxPrio logLock
+
+  let stateTracer = contramap (\(old, new) -> (Notice, "State: " ++ show old ++ " -> " ++ show new)) tracer
+  stateVar <- newMVar ServiceClientNotRunning
+  let setState new = do
+        old <- takeMVar stateVar
+        putMVar stateVar new
+        traceWith stateTracer (old, new)
+
   withIOManager $ \ioManager -> do
     serviceClientOptions <- sdoToServiceClientOptions ioManager sdo
-    logLock <- newMVar ()
-    let maxPrio = Debug
-    let tracer = stdoutStringTracer maxPrio logLock
     forever $ do
+      setState ServiceClientWaitingForCredentials
       runServiceClient
         (Proxy @StandardCrypto)
         makeSocketRawBearer
         serviceClientOptions
-        handleKey
+        (handleKey setState)
         (contramap formatServiceTrace tracer)
         `catch` ( \(e :: AsyncCancelled) ->
                     return ()
