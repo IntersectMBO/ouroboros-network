@@ -131,8 +131,8 @@ import Ouroboros.Network.Protocol.TxSubmission2.Codec (byteLimitsTxSubmission2,
            timeLimitsTxSubmission2)
 import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Snocket (Snocket, TestAddress (..))
-import Ouroboros.Network.TxSubmission.Inbound.Policy (TxDecisionPolicy)
-import Ouroboros.Network.TxSubmission.Inbound.Types (TraceTxLogic,
+import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TraceTxLogic,
            TraceTxSubmissionInbound)
 
 import Ouroboros.Network.Mock.ConcreteBlock (Block (..), BlockHeader (..))

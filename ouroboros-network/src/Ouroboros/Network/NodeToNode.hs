@@ -103,7 +103,7 @@ import Ouroboros.Network.Server.RateLimiting
 import Ouroboros.Network.SizeInBytes
 import Ouroboros.Network.Snocket
 import Ouroboros.Network.Socket
-import Ouroboros.Network.TxSubmission.Inbound.Policy (TxDecisionPolicy (..),
+import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy (..),
            defaultTxDecisionPolicy, max_TX_SIZE)
 import Ouroboros.Network.Util.ShowProxy (ShowProxy, showProxy)
 

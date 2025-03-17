@@ -6,7 +6,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.TxSubmission.Inbound.Server where
+module Ouroboros.Network.TxSubmission.Inbound.V2 where
 
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict qualified as Map
@@ -22,8 +22,8 @@ import Network.TypedProtocol
 
 import Control.Monad (unless, when)
 import Ouroboros.Network.Protocol.TxSubmission2.Server
-import Ouroboros.Network.TxSubmission.Inbound.Registry (PeerTxAPI (..))
-import Ouroboros.Network.TxSubmission.Inbound.Types
+import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (PeerTxAPI (..))
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 
 -- | Flag to enable/disable the usage of the new tx submission protocol
 --

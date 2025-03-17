@@ -6,7 +6,7 @@
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 
-module Ouroboros.Network.TxSubmission.Inbound.Types
+module Ouroboros.Network.TxSubmission.Inbound.V2.Types
   ( -- * PeerTxState
     PeerTxState (..)
     -- * SharedTxState
@@ -16,14 +16,15 @@ module Ouroboros.Network.TxSubmission.Inbound.Types
   , TxDecision (..)
   , emptyTxDecision
   , SharedDecisionContext (..)
-    -- * Various
-  , ProcessedTxCount (..)
-    -- * Mempool API
-  , TxSubmissionMempoolWriter (..)
-    -- * Traces
-  , TraceTxSubmissionInbound (..)
   , TraceTxLogic (..)
-    -- * Protocol Error
+    -- * Types shared with V1
+    -- ** Various
+  , ProcessedTxCount (..)
+    -- ** Mempool API
+  , TxSubmissionMempoolWriter (..)
+    -- ** Traces
+  , TraceTxSubmissionInbound (..)
+    -- ** Protocol Error
   , TxSubmissionProtocolError (..)
   ) where
 

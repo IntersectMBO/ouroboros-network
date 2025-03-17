@@ -101,11 +101,11 @@ import Ouroboros.Network.Protocol.TxSubmission2.Server
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..),
            NumTxIdsToReq (..), TxSubmission2)
 import Ouroboros.Network.RethrowPolicy
-import Ouroboros.Network.TxSubmission.Inbound.Policy (TxDecisionPolicy (..))
-import Ouroboros.Network.TxSubmission.Inbound.Registry (SharedTxStateVar,
+import Ouroboros.Network.TxSubmission.Inbound.V2 (txSubmissionInboundV2)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy (..))
+import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (SharedTxStateVar,
            TxChannelsVar, TxMempoolSem, withPeer)
-import Ouroboros.Network.TxSubmission.Inbound.Server (txSubmissionInboundV2)
-import Ouroboros.Network.TxSubmission.Inbound.Types (TraceTxLogic,
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TraceTxLogic,
            TraceTxSubmissionInbound)
 import Ouroboros.Network.TxSubmission.Outbound (txSubmissionOutbound)
 import Ouroboros.Network.Util.ShowProxy

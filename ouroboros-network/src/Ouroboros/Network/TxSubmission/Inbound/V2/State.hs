@@ -5,7 +5,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.TxSubmission.Inbound.State
+module Ouroboros.Network.TxSubmission.Inbound.V2.State
   ( -- * Core API
     SharedTxState (..)
   , PeerTxState (..)
@@ -48,8 +48,8 @@ import GHC.Stack (HasCallStack)
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..),
            NumTxIdsToReq (..))
 import Ouroboros.Network.SizeInBytes (SizeInBytes (..))
-import Ouroboros.Network.TxSubmission.Inbound.Policy
-import Ouroboros.Network.TxSubmission.Inbound.Types
+import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..))
 
 

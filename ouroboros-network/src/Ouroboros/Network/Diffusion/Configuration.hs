@@ -58,7 +58,7 @@ import Ouroboros.Network.Protocol.ChainSync.Codec (ChainSyncTimeout (..))
 import Ouroboros.Network.Protocol.Handshake (handshake_QUERY_SHUTDOWN_DELAY)
 import Ouroboros.Network.Protocol.Limits (shortWait)
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
-import Ouroboros.Network.TxSubmission.Inbound.Server
+import Ouroboros.Network.TxSubmission.Inbound.V2
            (EnableNewTxSubmissionProtocol (..))
 
 -- |Outbound governor targets
