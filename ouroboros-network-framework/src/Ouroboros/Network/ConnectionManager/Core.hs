@@ -1664,12 +1664,12 @@ with args@Arguments {
                                   -- `includeInboundConnectionImpl`
                                   Outbound -> True
                           writeTVar connVar connState'
-                          -- case inboundGovernorInfoChannel of
-                          --   InResponderMode infoChannel | notifyInboundGov ->
-                          --     InfoChannel.writeMessage
-                          --       infoChannel
-                          --       (NewConnectionInfo provenance' connId dataFlow handle)
-                          --   _ -> return ()
+                          case inboundGovernorInfoChannel of
+                            InResponderMode infoChannel | notifyInboundGov ->
+                              InfoChannel.writeMessage
+                                infoChannel $
+                                NewConnection (NewConnectionInfo provenance' connId dataFlow handle)
+                            _ -> return ()
                           return (Just $ undefined ) --mkTransition connState connState')
 
                     -- @

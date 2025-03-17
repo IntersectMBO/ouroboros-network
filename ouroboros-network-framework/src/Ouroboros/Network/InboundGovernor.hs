@@ -36,7 +36,7 @@ module Ouroboros.Network.InboundGovernor
   , TransitionTrace' (..)
     -- * API's exported for testing purposes
   , maturedPeers
-  , InboundGovernorInfoChannel
+  -- , InboundGovernorInfoChannel
   , MkMuxConnectionHandler
   ) where
 
@@ -72,7 +72,7 @@ import Network.Mux qualified as Mux
 
 import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionManager.InformationChannel
-           (InboundGovernorInfoChannel, newInformationChannel)
+           (InboundGovernorInfoChannel, InformationChannel, newInformationChannel)
 import Ouroboros.Network.ConnectionManager.InformationChannel qualified as InfoChannel
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context
@@ -162,6 +162,7 @@ with :: forall (muxMode :: Mux.Mode) socket peerAddr initiatorCtx
      => Arguments muxMode handlerTrace socket peerAddr initiatorCtx
                   handle handleError versionNumber versionData bytes m a b
      -> InboundGovernorInfoChannel muxMode peerAddr initiatorCtx versionData ByteString m a b
+     -> InformationChannel (Event muxMode handle initiatorCtx peerAddr versionData m a b) m
      -> (   Async m Void
          -> m (PublicState peerAddr versionData)
          -> ConnectionManager muxMode socket peerAddr handle handleError m
@@ -178,6 +179,7 @@ with
       mch
     }
     infoChannel
+    aaa
     k
     = do
     labelThisThread "inbound-governor"
@@ -185,22 +187,24 @@ with
     -- inboundInfoChannel <- newInformationChannel
     -- muxTraceChannel    <- newInformationChannel
     let tr :: Tracer m Int = undefined
-        mch' = mch undefined
+        mch' = mch tr
     -- let muxConnHandler =
     --       case singMuxMode of
     --         SingResponderMode -> mch singMuxMode tr undefined --inboundInfoChannel
     --         SingInitiatorResponderMode -> mch singMuxMode tr undefined
-    CM.with undefined {-connectionManagerArgs-} mch' (InResponderMode infoChannel) \connectionManager -> undefined
-      -- withAsync
-      --   (labelThisThread "inbound-governor-loop" >>
-      --    forever do
-      --     !state' <- inboundGovernorStep connectionManager infoChannel =<< readTVarIO stateVar
-      --     atomically . writeTVar stateVar $ state'
-      --   `catch`
-      --     handleError stateVar)
-      -- \thread ->
-      --   k thread (mkPublicState <$> readTVarIO stateVar) connectionManager
+    CM.with connectionManagerArgs mch' (InResponderMode aaa) \connectionManager ->
+      withAsync
+        (labelThisThread "inbound-governor-loop" >>
+         forever do
+          !state' <- inboundGovernorStep connectionManager infoChannel =<< readTVarIO stateVar
+          atomically . writeTVar stateVar $ state'
+        `catch`
+          handleError stateVar)
+      \thread ->
+        k thread (mkPublicState <$> readTVarIO stateVar) connectionManager
   where
+    -- tr2 = Tracer.emit \a -> undefined
+
     emptyState :: State muxMode initiatorCtx peerAddr versionData m a b
     emptyState = State {
         connections       = Map.empty,

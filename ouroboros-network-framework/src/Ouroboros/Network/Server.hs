@@ -143,7 +143,8 @@ with :: forall muxMode socket peerAddr initiatorCtx handle handlerTrace handleEr
     => Arguments muxMode socket peerAddr initiatorCtx handle handlerTrace
                  handleError versionNumber versionData bytes m a b
     -- ^ record which holds all server arguments
-    -> Info.InboundGovernorInfoChannel muxMode peerAddr initiatorCtx versionData ByteString m a b
+    -> InfoChannel.InboundGovernorInfoChannel muxMode peerAddr initiatorCtx versionData ByteString m a b
+    -> InfoChannel.InformationChannel (Event muxMode handle initiatorCtx peerAddr versionData m a b) m
     -- -> InfoChannel.InformationChannel
     --                  (Event muxMode handle initiatorCtx peerAddr versionData m a b)
     --                  m
@@ -175,11 +176,12 @@ with Arguments {
       -- inboundGovernorArgs
     }
     infoChannel
+    aaa
     k
     = do
       let sockets = NonEmpty.toList socks
       localAddresses <- traverse (getLocalAddr snocket) sockets
-      InboundGovernor.with inboundGovernorArgs infoChannel
+      InboundGovernor.with inboundGovernorArgs infoChannel aaa
         \inboundGovernorThread readPublicInboundState connectionManager ->
           withAsync do
             labelThisThread "Server2 (ouroboros-network-framework)"

@@ -797,9 +797,9 @@ runM Interfaces
             --
             -- node-to-node server
             --
-            let mch = makeConnectionHandler' daApplicationInitiatorResponderMode SingInitiatorResponderMode
             inboundInfoChannel <- newInformationChannel
-            withServer sockets mch inboundInfoChannel
+            let mch = makeConnectionHandler' daApplicationInitiatorResponderMode SingInitiatorResponderMode
+            withServer sockets mch inboundInfoChannel inboundInfoChannel
               \inboundGovernorThread readInboundState connectionManager -> do
                 -- -- withConnectionManagerInitiatorAndResponderMode \connectionManager ->
                 debugStateVar <- newTVarIO $ Governor.emptyPeerSelectionState fuzzRng daEmptyExtraState mempty
