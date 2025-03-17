@@ -84,10 +84,10 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSharing (PeerSharingResult (..))
 import Ouroboros.Network.Server qualified as Server
-import Ouroboros.Network.TxSubmission.Inbound.Policy (defaultTxDecisionPolicy,
-           txInflightMultiplicity)
-import Ouroboros.Network.TxSubmission.Inbound.State (inflightTxs)
-import Ouroboros.Network.TxSubmission.Inbound.Types (TraceTxLogic (..),
+import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
+           (defaultTxDecisionPolicy, txInflightMultiplicity)
+import Ouroboros.Network.TxSubmission.Inbound.V2.State (inflightTxs)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TraceTxLogic (..),
            TraceTxSubmissionInbound (..))
 import Ouroboros.Network.TxSubmission.Outbound (TxSubmissionProtocolError (..))
 
