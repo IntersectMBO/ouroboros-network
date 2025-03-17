@@ -109,13 +109,13 @@ library
     Ouroboros.Network.PeerSelection.Types
     Ouroboros.Network.PeerSharing
     Ouroboros.Network.Tracers
-    Ouroboros.Network.TxSubmission.Inbound
-    Ouroboros.Network.TxSubmission.Inbound.Decision
-    Ouroboros.Network.TxSubmission.Inbound.Policy
-    Ouroboros.Network.TxSubmission.Inbound.Registry
-    Ouroboros.Network.TxSubmission.Inbound.Server
-    Ouroboros.Network.TxSubmission.Inbound.State
-    Ouroboros.Network.TxSubmission.Inbound.Types
+    Ouroboros.Network.TxSubmission.Inbound.V1
+    Ouroboros.Network.TxSubmission.Inbound.V2
+    Ouroboros.Network.TxSubmission.Inbound.V2.Decision
+    Ouroboros.Network.TxSubmission.Inbound.V2.Policy
+    Ouroboros.Network.TxSubmission.Inbound.V2.Registry
+    Ouroboros.Network.TxSubmission.Inbound.V2.State
+    Ouroboros.Network.TxSubmission.Inbound.V2.Types
     Ouroboros.Network.TxSubmission.Mempool.Reader
     Ouroboros.Network.TxSubmission.Outbound
 
