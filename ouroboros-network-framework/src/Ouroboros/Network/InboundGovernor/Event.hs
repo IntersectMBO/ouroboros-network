@@ -47,39 +47,16 @@ import Ouroboros.Network.InboundGovernor.State
 import Ouroboros.Network.Mux
 
 
--- | Announcement message for a new connection.
---
-data NewConnectionInfo peerAddr handle
 
-    -- | Announce a new connection.  /Inbound protocol governor/ will start
-    -- responder protocols using 'StartOnDemand' strategy and monitor remote
-    -- transitions: @PromotedToWarm^{Duplex}_{Remote}@ and
-    -- @DemotedToCold^{dataFlow}_{Remote}@.
-    = NewConnectionInfo
-      !Provenance
-      !(ConnectionId peerAddr)
-      !DataFlow
-      !handle
-
-instance Show peerAddr
-      => Show (NewConnectionInfo peerAddr handle) where
-      show (NewConnectionInfo provenance connId dataFlow _) =
-        concat [ "NewConnectionInfo "
-               , show provenance
-               , " "
-               , show connId
-               , " "
-               , show dataFlow
-               ]
 
 -- | Edge triggered events to which the /inbound protocol governor/ reacts.
 --
-data Event (muxMode :: Mux.Mode) initiatorCtx peerAddr versionData m a b
+data Event (muxMode :: Mux.Mode) handle initiatorCtx peerAddr versionData m a b
     -- | A request to start mini-protocol bundle, either from the server or from
     -- connection manager after a duplex connection was negotiated.
     --
     = NewConnection !(NewConnectionInfo peerAddr
-                        (Handle muxMode initiatorCtx (ResponderContext peerAddr) versionData ByteString m a b))
+                        handle --(Handle muxMode initiatorCtx (ResponderContext peerAddr) versionData ByteString m a b))
 
     -- | A multiplexer exited.
     --

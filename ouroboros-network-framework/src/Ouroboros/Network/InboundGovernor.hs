@@ -36,6 +36,8 @@ module Ouroboros.Network.InboundGovernor
   , TransitionTrace' (..)
     -- * API's exported for testing purposes
   , maturedPeers
+  , InboundGovernorInfoChannel
+  , MkMuxConnectionHandler
   ) where
 
 import Data.Typeable (Typeable)
@@ -81,6 +83,7 @@ import Ouroboros.Network.MuxMode
 import Ouroboros.Network.Server.RateLimiting
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
 
+
 -- | Period of time after which a peer transitions from a fresh to a mature one,
 -- see `matureDuplexPeers` and `freshDuplexPeers`.
 --
@@ -95,8 +98,8 @@ inactionTimeout :: DiffTime
 inactionTimeout = 31.415927
 
 
-data Arguments muxMode socket initiatorCtx responderCtx peerAddr
-               handle handleError versionNumber versionData m a b =
+data Arguments muxMode handlerTrace socket peerAddr initiatorCtx
+               handle handleError versionNumber versionData bytes m a b =
   Arguments {
       transitionTracer   :: Tracer m (RemoteTransitionTrace peerAddr),
       -- ^ transition tracer
@@ -113,11 +116,12 @@ data Arguments muxMode socket initiatorCtx responderCtx peerAddr
       -- ^ protocol idle timeout.  The remote site must restart a mini-protocol
       -- within given timeframe (Nothing indicates no timeout).
       connectionManagerArgs
-        :: CM.Arguments muxMode socket initiatorCtx responderCtx peerAddr
-                        handle handleError versionNumber versionData m a b
+        :: CM.Arguments handlerTrace socket peerAddr handle
+                        handleError versionNumber versionData m a b,
       -- ^ connection manager arguments
+      mch :: Tracer m Int
+          -> ConnectionHandler muxMode handlerTrace socket peerAddr handle handleError versionNumber versionData m
     }
-
 
 -- | Run the server, which consists of the following components:
 --
@@ -134,8 +138,8 @@ data Arguments muxMode socket initiatorCtx responderCtx peerAddr
 -- The first one is used in data diffusion for /Node-To-Node protocol/, while the
 -- other is useful for running a server for the /Node-To-Client protocol/.
 --
-with :: forall (muxMode :: Mux.Mode) socket initiatorCtx responderCtx peerAddr
-               handle handleError versionData versionNumber m a b x.
+with :: forall (muxMode :: Mux.Mode) socket peerAddr initiatorCtx
+               handle handlerTrace handleError versionData versionNumber bytes m a b x.
         ( Alternative (STM m)
         , MonadAsync       m
         , MonadCatch       m
@@ -155,9 +159,9 @@ with :: forall (muxMode :: Mux.Mode) socket initiatorCtx responderCtx peerAddr
         , Typeable peerAddr
         , Show peerAddr
         )
-     => Arguments muxMode socket initiatorCtx responderCtx peerAddr
-                  handle handleError versionNumber versionData m a b
-     -> SingMuxMode muxMode
+     => Arguments muxMode handlerTrace socket peerAddr initiatorCtx
+                  handle handleError versionNumber versionData bytes m a b
+     -> InboundGovernorInfoChannel muxMode peerAddr initiatorCtx versionData bytes m a b
      -> (   Async m Void
          -> m (PublicState peerAddr versionData)
          -> ConnectionManager muxMode socket peerAddr handle handleError m
@@ -170,31 +174,32 @@ with
       debugTracer        = debugTracer,
       connectionDataFlow = connectionDataFlow,
       idleTimeout        = idleTimeout,
-      connectionManagerArgs =
-        connectionManagerArgs@CM.Arguments { mch }
+      connectionManagerArgs,
+      mch
     }
-    singMuxMode
+    infoChannel
     k
     = do
     labelThisThread "inbound-governor"
     stateVar <- newTVarIO emptyState
-    inboundInfoChannel <- newInformationChannel
-    muxTraceChannel    <- newInformationChannel
+    -- inboundInfoChannel <- newInformationChannel
+    -- muxTraceChannel    <- newInformationChannel
     let tr :: Tracer m Int = undefined
-        --connectionManager = mkConnectionManager tr
-    let muxConnHandler =
-          case singMuxMode of
-            SingResponderMode -> mch singMuxMode tr undefined --inboundInfoChannel
-            SingInitiatorResponderMode -> mch singMuxMode tr undefined
-    CM.with connectionManagerArgs muxConnHandler \connectionManager ->
-      withAsync (labelThisThread "inbound-governor-loop" >>
-                 forever do
-                   !state' <- inboundGovernorStep connectionManager =<< readTVarIO stateVar
-                   atomically . writeTVar stateVar $ state'
-                 `catch`
-                   handleError stateVar) $
-        \thread ->
-          k thread (mkPublicState <$> readTVarIO stateVar) connectionManager
+        mch' = mch undefined
+    -- let muxConnHandler =
+    --       case singMuxMode of
+    --         SingResponderMode -> mch singMuxMode tr undefined --inboundInfoChannel
+    --         SingInitiatorResponderMode -> mch singMuxMode tr undefined
+    CM.with connectionManagerArgs mch' (InResponderMode infoChannel) \connectionManager ->
+      withAsync
+        (labelThisThread "inbound-governor-loop" >>
+         forever do
+          !state' <- inboundGovernorStep connectionManager infoChannel =<< readTVarIO stateVar
+          atomically . writeTVar stateVar $ state'
+        `catch`
+          handleError stateVar)
+      \thread ->
+        k thread (mkPublicState <$> readTVarIO stateVar) connectionManager
   where
     emptyState :: State muxMode initiatorCtx peerAddr versionData m a b
     emptyState = State {
@@ -231,7 +236,7 @@ with
     --   :: StrictTVar m (PublicState peerAddr versionData)
     --   :: State muxMode initiatorCtx peerAddr versionData m a b
     --   -> m (State muxMode initiatorCtx peerAddr versionData m a b)
-    inboundGovernorStep connectionManager state = do
+    inboundGovernorStep connectionManager infoChannel state = do
       time <- getMonotonicTime
       inactivityVar <- registerDelay inactionTimeout
 
@@ -257,7 +262,7 @@ with
                  )
                  (connections state)
             <> FirstToFinish (
-                 NewConnection <$> undefined --InfoChannel.readMessage infoChannel
+                 InfoChannel.readMessage infoChannel
                )
             <> FirstToFinish (
                   -- spin the inbound governor loop; it will re-run with new

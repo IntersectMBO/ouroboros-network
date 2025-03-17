@@ -46,6 +46,8 @@ module Ouroboros.Network.ConnectionHandler
   , ConnectionHandler (..)
   ) where
 
+-- import Ouroboros.Network.InboundGovernor
+-- import Ouroboros.Network.ConnectionManager.InformationChannel
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (SomeAsyncException)
@@ -83,11 +85,11 @@ import Ouroboros.Network.RethrowPolicy
 -- Note: 'PromiseWriter' could be replaced with an stm action which is
 -- accessing the 'TVar' which holds state of the connection.
 --
-type ConnectionHandlerFn socket peerAddr handle handleError versionNumber versionData m
+type ConnectionHandlerFn handlerTrace socket peerAddr handle handleError versionNumber versionData m
      = (versionData -> versionData)
     -> socket
     -> PromiseWriter m (Either handleError (HandshakeConnectionResult handle (versionNumber, versionData)))
-    -> Tracer m (ConnectionHandlerTrace versionNumber versionData)
+    -> Tracer m handlerTrace
     -> ConnectionId peerAddr
     -> (DiffTime -> socket -> m (Mx.Bearer m))
     -> MaskedAction m ()
@@ -96,13 +98,13 @@ type ConnectionHandlerFn socket peerAddr handle handleError versionNumber versio
 -- There's one 'ConnectionHandlerFn' per provenance, possibly limited by
 -- @muxMode@.
 --
-newtype ConnectionHandler muxMode socket peerAddr handle handleError versionNumber versionData m =
+newtype ConnectionHandler muxMode handlerTrace socket peerAddr handle handleError versionNumber versionData m =
     ConnectionHandler {
         -- | Connection handler.
         --
         connectionHandler ::
           WithMuxTuple muxMode
-            (ConnectionHandlerFn socket peerAddr handle handleError versionNumber versionData m)
+            (ConnectionHandlerFn handlerTrace socket peerAddr handle handleError versionNumber versionData m)
       }
 
 -- | We place an upper limit of `30s` on the time we wait on receiving an SDU.
@@ -151,6 +153,13 @@ data Handle (muxMode :: Mx.Mode) initiatorCtx responderCtx versionData bytes m a
         hVersionData    :: !versionData
       }
 
+-- (InformationChannel (NewConnectionInfo peerAddr handle) m)
+type family MkMuxConnectionHandler (muxMode :: Mx.Mode) socket initiatorCtx responderCtx peerAddr versionNumber versionData m a b =
+  result | result -> socket where
+  MkMuxConnectionHandler Mx.InitiatorMode socket initiatorCtx responderCtx peerAddr versionNumber versionData m a b =
+    MuxConnectionHandler Mx.InitiatorMode socket initiatorCtx responderCtx peerAddr versionNumber versionData ByteString m a b
+  MkMuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr versionNumber versionData m a b =
+    Tracer m Int -> MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr versionNumber versionData ByteString m a b
 
 -- | 'Handle' used by `node-to-node` P2P connections.
 --
@@ -210,12 +219,13 @@ classifyHandleError (HandleError _) =
 
 -- | Type of 'ConnectionHandler' implemented in this module.
 --
-type MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr handle handleError versionNumber versionData bytes m a b =
+type MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr versionNumber versionData bytes m a b =
     ConnectionHandler muxMode
+                      (ConnectionHandlerTrace versionNumber versionData)
                       socket
                       peerAddr
-                      handle --(Handle muxMode initiatorCtx responderCtx versionData bytes m a b)
-                      handleError --(HandleError muxMode versionNumber)
+                      (Handle muxMode initiatorCtx responderCtx versionData bytes m a b)
+                      (HandleError muxMode versionNumber)
                       versionNumber
                       versionData
                       m
@@ -236,13 +246,7 @@ type ConnectionManagerWithExpandedCtx muxMode socket peerAddr versionData versio
                       (HandleError muxMode versionNumber)
                       m
 
--- (InformationChannel (NewConnectionInfo peerAddr handle) m)
-type family MkMuxConnectionHandler (muxMode :: Mx.Mode) socket initiatorCtx responderCtx peerAddr handle handleError versionNumber versionData m a b =
-  result | result -> socket handle handleError where
-  MkMuxConnectionHandler Mx.InitiatorMode socket initiatorCtx responderCtx peerAddr handle handleError versionNumber versionData m a b =
-    MuxConnectionHandler Mx.InitiatorMode socket initiatorCtx responderCtx peerAddr handle handleError versionNumber versionData ByteString m a b
-  MkMuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr handle handleError  versionNumber versionData m a b =
-    Tracer m Int -> Double -> MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr handle handleError versionNumber versionData ByteString m a b
+
 
 -- | To be used as `makeConnectionHandler` field of 'ConnectionManagerArguments'.
 --
@@ -252,7 +256,7 @@ type family MkMuxConnectionHandler (muxMode :: Mx.Mode) socket initiatorCtx resp
 -- independent.
 --
 makeConnectionHandler
-    :: forall initiatorCtx responderCtx peerAddr muxMode handle handleError socket versionNumber versionData m a b.
+    :: forall initiatorCtx responderCtx peerAddr muxMode socket versionNumber versionData m a b.
        ( Alternative (STM m)
        , MonadAsync m
        , MonadDelay m
@@ -276,16 +280,16 @@ makeConnectionHandler
     -- ^ 'ThreadId' and rethrow policy.  Rethrow policy might throw an async
     -- exception to that thread, when trying to terminate the process.
     -> SingMuxMode muxMode
-    -> MkMuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr handle handleError versionNumber versionData m a b
+    -> MkMuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr versionNumber versionData m a b
 makeConnectionHandler muxTracer forkPolicy
                       handshakeArguments
                       versionedApplication
                       (mainThreadId, rethrowPolicy) =
   \case
     SingInitiatorMode -> ConnectionHandler $ WithInitiatorMode (outboundConnectionHandler NotInResponderMode)
-    SingResponderMode -> \tr' channel -> ConnectionHandler $ WithResponderMode (inboundConnectionHandler (InResponderMode (tr', channel)))
-    SingInitiatorResponderMode -> \tr' channel ->
-      let wrm = InResponderMode (tr', channel) in
+    SingResponderMode -> \tr' -> ConnectionHandler $ WithResponderMode (inboundConnectionHandler (InResponderMode tr'))
+    SingInitiatorResponderMode -> \tr' ->
+      let wrm = InResponderMode tr' in
       ConnectionHandler $ WithInitiatorResponderMode (outboundConnectionHandler wrm)
                                                      (inboundConnectionHandler wrm)
   where
@@ -314,15 +318,16 @@ makeConnectionHandler muxTracer forkPolicy
 
     outboundConnectionHandler
       :: InResponderMode muxMode ggg
-      -> ConnectionHandlerFn  --(ConnectionHandlerTrace versionNumber versionData)
+      -> ConnectionHandlerFn (ConnectionHandlerTrace versionNumber versionData)
                              socket
                              peerAddr
-                             handle --(Handle muxMode initiatorCtx responderCtx versionData ByteString m a b)
-                             handleError --(HandleError muxMode versionNumber)
+                             (Handle muxMode initiatorCtx responderCtx versionData ByteString m a b)
+                             (HandleError muxMode versionNumber)
                              versionNumber
                              versionData
                              m
-    outboundConnectionHandler hello versionDataFn
+    outboundConnectionHandler hello
+                              versionDataFn
                               socket
                               PromiseWriter { writePromise }
                               tracer
@@ -358,7 +363,7 @@ makeConnectionHandler muxTracer forkPolicy
 
               Right (HandshakeNegotiationResult app versionNumber agreedOptions) ->
                 unmask $ do
-                  traceWith tracer undefined {-(TrHandshakeSuccess versionNumber agreedOptions)-}
+                  traceWith tracer (TrHandshakeSuccess versionNumber agreedOptions)
                   controlMessageBundle
                     <- (\a b c -> TemperatureBundle (WithHot a) (WithWarm b) (WithEstablished c))
                         <$> newTVarIO Continue
@@ -383,15 +388,16 @@ makeConnectionHandler muxTracer forkPolicy
 
     inboundConnectionHandler
       :: InResponderMode muxMode ggg
-      -> ConnectionHandlerFn -- (ConnectionHandlerTrace versionNumber versionData)
+      -> ConnectionHandlerFn (ConnectionHandlerTrace versionNumber versionData)
                              socket
                              peerAddr
-                             handle --(Handle muxMode initiatorCtx responderCtx versionData ByteString m a b)
-                             handleError --(HandleError muxMode versionNumber)
+                             (Handle muxMode initiatorCtx responderCtx versionData ByteString m a b)
+                             (HandleError muxMode versionNumber)
                              versionNumber
                              versionData
                              m
-    inboundConnectionHandler hello updateVersionDataFn
+    inboundConnectionHandler hello
+                             updateVersionDataFn
                              socket
                              PromiseWriter { writePromise }
                              tracer

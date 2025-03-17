@@ -485,7 +485,7 @@ runM Interfaces
       --       -> CM.Arguments muxMode
       --            (ConnectionHandlerTrace ntnVersion ntnVersionData)
       --            ntnFd initiatorCtx responderCtx ntnAddr handle (HandleError muxMode ntnVersion) ntnVersion ntnVersionData m a b
-      let  connectionManagerArguments' prunePolicy stdGen mch =
+      let  connectionManagerArguments' prunePolicy stdGen =
             CM.Arguments {
                 CM.tracer              = dtConnectionManagerTracer,
                 CM.trTracer            =
@@ -506,7 +506,6 @@ runM Interfaces
                 CM.outboundIdleTimeout = daProtocolIdleTimeout,
                 CM.updateVersionData   = diUpdateVersionData,
                 CM.connStateIdSupply   = diConnStateIdSupply,
-                CM.mch,
                 CM.classifyHandleError
             }
 
@@ -529,7 +528,6 @@ runM Interfaces
               diNtnHandshakeArguments
               versions
               (mainThreadId, rethrowPolicy <> daRethrowPolicy)
-
 
           -- | Capture the two variations (InitiatorMode,InitiatorResponderMode) of
           --   withConnectionManager:
@@ -751,8 +749,9 @@ runM Interfaces
                       idleTimeout = Just daProtocolIdleTimeout,
                       connectionManagerArgs = connectionManagerArguments'
                                                 Diffusion.Policies.prunePolicy
-                                                cmStdGen2
-                                                mkConnectionHandler
+                                                cmStdGen2,
+                                                -- mkConnectionHandler
+                      mch = mkConnectionHandler
                       }
                   -- Server.connectionManagerArgs = connectionManagerArguments'
                   -- Server.debugInboundGovernor  = nullTracer,
@@ -798,8 +797,9 @@ runM Interfaces
             --
             -- node-to-node server
             --
-            let mch = makeConnectionHandler' daApplicationInitiatorResponderMode
-            withServer sockets mch SingInitiatorResponderMode
+            let mch = makeConnectionHandler' daApplicationInitiatorResponderMode SingInitiatorResponderMode
+            inboundInfoChannel <- newInformationChannel
+            withServer sockets mch inboundInfoChannel
               \inboundGovernorThread readInboundState connectionManager -> do
                 -- -- withConnectionManagerInitiatorAndResponderMode \connectionManager ->
                 debugStateVar <- newTVarIO $ Governor.emptyPeerSelectionState fuzzRng daEmptyExtraState mempty

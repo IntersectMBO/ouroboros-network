@@ -12,9 +12,9 @@ import Control.Concurrent.Class.MonadSTM.Strict
 import Data.Functor (($>))
 import GHC.Natural (Natural)
 import Network.Mux qualified as Mux
-import Ouroboros.Network.ConnectionHandler (Handle)
+import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.Context (ResponderContext)
-import Ouroboros.Network.InboundGovernor.Event (NewConnectionInfo)
+import Ouroboros.Network.InboundGovernor.Event
 
 -- | Information channel.
 --
@@ -28,15 +28,6 @@ data InformationChannel a m =
     --
     writeMessage :: a -> STM m ()
   }
-
--- | A channel which instantiates to 'NewConnectionInfo' and
--- 'Handle'.
---
--- * /Producer:/ connection manger for duplex outbound connections.
--- * /Consumer:/ inbound governor.
---
-type InboundGovernorInfoChannel (muxMode :: Mux.Mode) initiatorCtx peerAddr versionData bytes m a b =
-    InformationChannel (NewConnectionInfo peerAddr (Handle muxMode initiatorCtx (ResponderContext peerAddr) versionData bytes m a b)) m
 
 
 -- | Create a new 'InformationChannel' backed by a `TBQueue`.
@@ -53,6 +44,14 @@ newInformationChannel = do
         writeMessage = writeTBQueue channel
       }
 
+-- | A channel which instantiates to 'NewConnectionInfo' and
+-- 'Handle'.
+--
+-- * /Producer:/ connection manger for duplex outbound connections.
+-- * /Consumer:/ inbound governor.
+--
+type InboundGovernorInfoChannel (muxMode :: Mux.Mode) peerAddr initiatorCtx versionData bytes m a b =
+    InformationChannel (Event (muxMode :: Mux.Mode) initiatorCtx peerAddr versionData m a b) m
 
 -- | The 'InformationChannel's 'TBQueue' depth.
 --

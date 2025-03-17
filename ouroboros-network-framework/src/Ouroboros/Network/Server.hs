@@ -29,6 +29,7 @@ module Ouroboros.Network.Server
   , isECONNABORTED
   ) where
 
+import Ouroboros.Network.InboundGovernor.Event
 import Data.Typeable (Typeable)
 import Control.Monad.Fix (MonadFix)
 import Ouroboros.Network.ConnectionManager.InformationChannel qualified as InfoChannel
@@ -53,8 +54,8 @@ import Foreign.C.Error
 import Network.Mux qualified as Mx
 import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
-import Ouroboros.Network.ConnectionManager.InformationChannel
-           (InboundGovernorInfoChannel)
+-- import Ouroboros.Network.ConnectionManager.InformationChannel
+--            (InboundGovernorInfoChannel)
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context (ResponderContext)
 import Ouroboros.Network.InboundGovernor qualified as InboundGovernor
@@ -71,13 +72,13 @@ import Ouroboros.Network.MuxMode (SingMuxMode)
 
 -- | Server static configuration.
 --
-data Arguments muxMode socket initiatorCtx responderCtx peerAddr handle handleError versionNumber versionData bytes m a b =
+data Arguments muxMode socket peerAddr initiatorCtx handle handlerTrace handleError versionNumber versionData bytes m a b =
     Arguments {
       sockets               :: NonEmpty socket,
       snocket               :: Snocket m socket peerAddr,
       tracer                :: Tracer m (Trace peerAddr),
       connectionLimits      :: AcceptedConnectionsLimit,
-      inboundGovernorArgs   :: InboundGovernor.Arguments muxMode socket initiatorCtx responderCtx peerAddr handle handleError versionNumber versionData m a b
+      inboundGovernorArgs   :: InboundGovernor.Arguments muxMode handlerTrace socket peerAddr initiatorCtx handle handleError versionNumber versionData bytes m a b
       -- trTracer              :: Tracer m (InboundGovernor.RemoteTransitionTrace peerAddr),
       -- inboundGovernorTracer :: Tracer m (InboundGovernor.Trace peerAddr),
       -- debugInboundGovernor  :: Tracer m (InboundGovernor.Debug peerAddr versionData),
@@ -119,7 +120,7 @@ server_CONNABORTED_DELAY = 0.5
 -- The first one is used in data diffusion for /Node-To-Node protocol/, while the
 -- other is useful for running a server for the /Node-To-Client protocol/.
 --
-with :: forall muxMode socket initiatorCtx responderCtx peerAddr handle handleError versionNumber versionData bytes m a b x.
+with :: forall muxMode socket peerAddr initiatorCtx handle handlerTrace handleError versionNumber versionData bytes m a b x.
        ( Alternative (STM m)
        , MonadAsync    m
        , MonadDelay    m
@@ -138,30 +139,16 @@ with :: forall muxMode socket initiatorCtx responderCtx peerAddr handle handleEr
        , MonadFix m
        , Typeable peerAddr
        )
-    => Arguments muxMode socket initiatorCtx responderCtx peerAddr handle handleError versionNumber versionData bytes m a b
+    => Arguments muxMode socket peerAddr initiatorCtx handle handlerTrace
+                 handleError versionNumber versionData bytes m a b
     -- ^ record which holds all server arguments
-    -- -> ((   Tracer m Int
-    --      -> m x)
-    --      -> m x)
-    -> SingMuxMode muxMode
+    -> InfoChannel.InformationChannel
+                     (Event muxMode initiatorCtx peerAddr versionData m a b)
+                     m
     -> (   Async m Void
         -> m (InboundGovernor.PublicState peerAddr versionData)
         -> ConnectionManager
-              muxMode
-              socket
-              peerAddr
-              handle
-              -- (Handle
-              --    muxMode
-              --    initiatorCtx
-              --    (ResponderContext peerAddr)
-              --    versionData
-              --    ByteString
-              --    m
-              --    a
-              --    b)
-              handleError --(HandleError muxMode versionNumber)
-              m
+              muxMode socket peerAddr handle handleError m
         -> m x)
     -- ^ a callback which receives a handle to inbound governor thread and can
     -- read `PublicState`.
@@ -185,53 +172,41 @@ with Arguments {
       -- inboundInfoChannel,
       -- inboundGovernorArgs
     }
-    sMuxMode
-    -- hello
+    infoChannel
     k
     = do
       let sockets = NonEmpty.toList socks
       localAddresses <- traverse (getLocalAddr snocket) sockets
-      traceWith tracer (TrServerStarted localAddresses)
-      InboundGovernor.with inboundGovernorArgs
-        -- InboundGovernor.Arguments {
-        --   InboundGovernor.transitionTracer   = trTracer,
-        --   InboundGovernor.tracer             = inboundGovernorTracer,
-        --   InboundGovernor.debugTracer        = debugInboundGovernor,
-        --   InboundGovernor.connectionDataFlow = connectionDataFlow,
-        --   -- InboundGovernor.infoChannel        = inboundInfoChannel,
-        --   InboundGovernor.idleTimeout        = inboundIdleTimeout
-        --   -- InboundGovernor.mkConnectionManager  = undefined --hello
-        -- }
-        sMuxMode
-        -- hello
+      InboundGovernor.with inboundGovernorArgs infoChannel
         \inboundGovernorThread readPublicInboundState connectionManager ->
-          withAsync (do
-                        labelThisThread "Server2 (ouroboros-network-framework)"
-                        k inboundGovernorThread readPublicInboundState connectionManager)
-            \actionThread -> do
-              let acceptLoops :: [m Void]
-                  acceptLoops =
-                              [ (do
-                                    labelThisThread ("accept " ++ show localAddress)
-                                    accept snocket socket >>= acceptLoop localAddress connectionManager)
-                                  `finally` close snocket socket
-                              | (localAddress, socket) <- localAddresses `zip` sockets
-                              ]
-              -- race all `acceptLoops` with `actionThread` and
-              -- `inboundGovernorThread`
-              let waiter = fn <$> (do
-                                      labelThisThread "racing-action-inbound-governor"
-                                      actionThread `waitEither` inboundGovernorThread)
+          withAsync do
+            labelThisThread "Server2 (ouroboros-network-framework)"
+            k inboundGovernorThread readPublicInboundState connectionManager
+          \actionThread -> do
+            traceWith tracer (TrServerStarted localAddresses)
+            let acceptLoops :: [m Void]
+                acceptLoops =
+                            [ (do
+                                  labelThisThread ("accept " ++ show localAddress)
+                                  accept snocket socket >>= acceptLoop localAddress connectionManager)
+                                `finally` close snocket socket
+                            | (localAddress, socket) <- localAddresses `zip` sockets
+                            ]
+            -- race all `acceptLoops` with `actionThread` and
+            -- `inboundGovernorThread`
+            let waiter = fn <$> (do
+                                    labelThisThread "racing-action-inbound-governor"
+                                    actionThread `waitEither` inboundGovernorThread)
 
-              (fn <$> waiter `race` (labelThisThread "racing-accept-loops" >> raceAll acceptLoops))
-                `finally`
-                  traceWith tracer TrServerStopped
-                `catch`
-                  \(e :: SomeException) -> do
-                    case fromException e of
-                      Just (_ :: AsyncCancelled) -> pure ()
-                      Nothing                    -> traceWith tracer (TrServerError e)
-                    throwIO e
+            (fn <$> waiter `race` (labelThisThread "racing-accept-loops" >> raceAll acceptLoops))
+              `finally`
+                traceWith tracer TrServerStopped
+              `catch`
+                \(e :: SomeException) -> do
+                  case fromException e of
+                    Just (_ :: AsyncCancelled) -> pure ()
+                    Nothing                    -> traceWith tracer (TrServerError e)
+                  throwIO e
   where
     fn :: Either x Void -> x
     fn (Left x)  = x
