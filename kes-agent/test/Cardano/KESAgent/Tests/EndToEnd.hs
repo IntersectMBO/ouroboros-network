@@ -766,8 +766,12 @@ assertMatchingOutputLines = assertMatchingOutputLinesWith ""
 assertMatchingOutputLinesWith :: String -> Int -> [Text] -> [Text] -> Assertion
 assertMatchingOutputLinesWith extraInfo ignore pattern lines =
   assertBool
-    ("Pattern not matched: " ++ (Text.unpack . Text.unwords $ pattern) ++ "\n" ++
-     extraInfo ++ (Text.unpack . Text.unlines $ lines))
+    ( "Pattern not matched: "
+        ++ (Text.unpack . Text.unwords $ pattern)
+        ++ "\n"
+        ++ extraInfo
+        ++ (Text.unpack . Text.unlines $ lines)
+    )
     (matchOutputLines ignore pattern lines)
 
 assertNoMatchingOutputLines :: Int -> [Text] -> [Text] -> Assertion
@@ -776,8 +780,12 @@ assertNoMatchingOutputLines = assertNoMatchingOutputLinesWith ""
 assertNoMatchingOutputLinesWith :: String -> Int -> [Text] -> [Text] -> Assertion
 assertNoMatchingOutputLinesWith extraInfo ignore pattern lines =
   assertBool
-    ("Pattern unexpectedly matched: " ++ (Text.unpack . Text.unwords $ pattern) ++ "\n" ++
-     extraInfo ++ (Text.unpack . Text.unlines $ lines))
+    ( "Pattern unexpectedly matched: "
+        ++ (Text.unpack . Text.unwords $ pattern)
+        ++ "\n"
+        ++ extraInfo
+        ++ (Text.unpack . Text.unlines $ lines)
+    )
     (matchNoOutputLines ignore pattern lines)
 
 controlClient :: [String] -> IO (ExitCode, String, String)
