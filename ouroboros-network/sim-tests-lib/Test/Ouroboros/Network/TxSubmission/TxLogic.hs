@@ -2,7 +2,6 @@
 {-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
@@ -12,7 +11,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TupleSections       #-}
-{-# LANGUAGE TypeOperators       #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -45,14 +43,14 @@ import System.Random (mkStdGen, StdGen)
 import NoThunks.Class
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type
-import Ouroboros.Network.TxSubmission.Inbound.Decision
+import Ouroboros.Network.TxSubmission.Inbound.V2.Decision
            (SharedDecisionContext (..), TxDecision (..))
-import Ouroboros.Network.TxSubmission.Inbound.Decision qualified as TXS
-import Ouroboros.Network.TxSubmission.Inbound.Policy
-import Ouroboros.Network.TxSubmission.Inbound.State (PeerTxState (..),
+import Ouroboros.Network.TxSubmission.Inbound.V2.Decision qualified as TXS
+import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
+import Ouroboros.Network.TxSubmission.Inbound.V2.State (PeerTxState (..),
            SharedTxState (..))
-import Ouroboros.Network.TxSubmission.Inbound.State qualified as TXS
-import Ouroboros.Network.TxSubmission.Inbound.Types qualified as TXS
+import Ouroboros.Network.TxSubmission.Inbound.V2.State qualified as TXS
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types qualified as TXS
 
 import Test.Ouroboros.Network.BlockFetch (PeerGSVT (..))
 import Test.Ouroboros.Network.TxSubmission.Types
