@@ -216,7 +216,7 @@ pNormalModeOptions =
           <> short 'c'
           <> value Nothing
           <> metavar "PATH"
-          <> help "Socket address for 'control' connections"
+          <> help "Socket address for 'control' connections (empty to disable)"
       )
     <*> ( Set.fromList
             <$> many
@@ -321,10 +321,14 @@ smoFromEnv = do
 smoFromFiles :: IO ServiceModeOptions
 smoFromFiles = optionsFromFiles defServiceModeOptions serviceModeTomlCodec =<< getConfigPaths
 
+parseControlPath :: String -> Maybe String
+parseControlPath "" = Nothing
+parseControlPath p = Just p
+
 nmoToAgentOptions :: NormalModeOptions -> IO (AgentOptions IO SockAddr StandardCrypto)
 nmoToAgentOptions nmo = do
   servicePath <- maybe (error "No service address") return (nmoServicePath nmo)
-  controlPath <- maybe (error "No control address") return (nmoControlPath nmo)
+  controlPath <- parseControlPath <$> maybe (error "No control address") return (nmoControlPath nmo)
   let bootstrapPaths = Set.toList $ nmoBootstrapPaths nmo
   coldVerKeyPath <- maybe (error "No cold verification key") return (nmoColdVerKeyFile nmo)
   (ColdVerKey coldVerKey) <- either error return =<< decodeTextEnvelopeFile coldVerKeyPath
@@ -336,7 +340,7 @@ nmoToAgentOptions nmo = do
   return
     defAgentOptions
       { agentServiceAddr = SockAddrUnix servicePath
-      , agentControlAddr = SockAddrUnix controlPath
+      , agentControlAddr = SockAddrUnix <$> controlPath
       , agentBootstrapAddr = map SockAddrUnix bootstrapPaths
       , agentColdVerKey = coldVerKey
       , agentGenSeed = mlockedSeedNewRandom
@@ -346,7 +350,7 @@ nmoToAgentOptions nmo = do
 smoToAgentOptions :: ServiceModeOptions -> IO (AgentOptions IO SockAddr StandardCrypto)
 smoToAgentOptions smo = do
   servicePath <- maybe (error "No service address") return (smoServicePath smo)
-  controlPath <- maybe (error "No control address") return (smoControlPath smo)
+  controlPath <- parseControlPath <$> maybe (error "No control address") return (smoControlPath smo)
   let bootstrapPaths = Set.toList $ smoBootstrapPaths smo
   coldVerKeyPath <- maybe (error "No cold verification key") return (smoColdVerKeyFile smo)
   (ColdVerKey coldVerKey) <- either error return =<< decodeTextEnvelopeFile coldVerKeyPath
@@ -358,7 +362,7 @@ smoToAgentOptions smo = do
   return
     defAgentOptions
       { agentServiceAddr = SockAddrUnix servicePath
-      , agentControlAddr = SockAddrUnix controlPath
+      , agentControlAddr = SockAddrUnix <$> controlPath
       , agentBootstrapAddr = map SockAddrUnix bootstrapPaths
       , agentColdVerKey = coldVerKey
       , agentGenSeed = mlockedSeedNewRandom
@@ -424,6 +428,7 @@ agentTracePrio AgentListeningOnControlSocket {} = Notice
 agentTracePrio AgentControlClientConnected {} = Notice
 agentTracePrio AgentControlClientDisconnected {} = Notice
 agentTracePrio AgentControlSocketError {} = Error
+agentTracePrio AgentControlSocketDisabled {} = Notice
 agentTracePrio AgentCheckEvolution {} = Info
 agentTracePrio AgentUpdateKESPeriod {} = Notice
 agentTracePrio AgentKeyNotEvolved {} = Info
@@ -490,7 +495,7 @@ runAsService configPathMay smo' =
       groupName <- maybe (error "Invalid group") return $ smoGroup smo
       userName <- maybe (error "Invalid user") return $ smoUser smo
       servicePath <- maybe (error "Invalid service address") return $ smoServicePath smo
-      controlPath <- maybe (error "Invalid control address") return $ smoControlPath smo
+      controlPath <- parseControlPath <$> maybe (error "Invalid control address") return (smoControlPath smo)
 
       serviced
         simpleDaemon
@@ -505,7 +510,7 @@ runAsService configPathMay smo' =
                   makeSocketRawBearer
                   agentOptions {agentTracer = defaultAgentTracer}
               setOwnerAndGroup servicePath uid gid
-              setOwnerAndGroup controlPath uid gid
+              mapM (\path -> setOwnerAndGroup path uid gid) controlPath
               return agent
           , program = \agent -> do
               runAgent agent `finally` finalizeAgent agent

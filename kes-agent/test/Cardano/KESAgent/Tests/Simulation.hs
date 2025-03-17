@@ -504,7 +504,7 @@ runTestNetwork
                       , slotLength = 1
                       }
                 , agentGetCurrentTime = readMVar timeVar
-                , agentControlAddr = controlAddress
+                , agentControlAddr = Just controlAddress
                 , agentServiceAddr = serviceAddress
                 , agentBootstrapAddr = []
                 , agentTracer = tracer

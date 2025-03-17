@@ -59,6 +59,7 @@ tests =
     "end to end"
     [ testCase "kes-agent --help" kesAgentHelp
     , testCase "kes-agent --genesis-file" kesAgentGenesisFile
+    , testCase "kes-agent --genesis-file no control address" kesAgentNoControlAddress
     , testCase "kes-agent-control --help" kesAgentControlHelp
     , testGroup
         "kes-agent-control install-key"
@@ -158,6 +159,38 @@ kesAgentGenesisFile = do
       exitCode <- waitForProcess ph
       return (outT, errT, exitCode)
   assertMatchingOutputLines 3 ["ListeningOnControlSocket"] agentOutLines
+
+kesAgentNoControlAddress :: Assertion
+kesAgentNoControlAddress = do
+  (agentOutLines, agentErrLines, exitCode) <- withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+    let (controlAddr, serviceAddr) = socketAddresses tmpdir
+        kesKeyFile = tmpdir </> "kes.vkey"
+        opcertFile = tmpdir </> "opcert.cert"
+    coldSignKeyFile <- getDataFileName "fixtures/cold.skey"
+    coldVerKeyFile <- getDataFileName "fixtures/cold.vkey"
+    genesisFile <- getDataFileName "fixtures/mainnet-shelley-genesis.json"
+
+    let args =
+          [ "run"
+          , "--genesis-file"
+          , genesisFile
+          , "--cold-verification-key"
+          , coldVerKeyFile
+          , "--service-address"
+          , serviceAddr
+          , "--control-address"
+          , ""
+          ]
+    withSpawnProcess "kes-agent" args $ \_ (Just hOut) (Just hErr) ph -> do
+      threadDelay 100000
+      terminateProcess ph
+      (outT, errT) <-
+        concurrently
+          (Text.lines <$> Text.hGetContents hOut)
+          (Text.lines <$> Text.hGetContents hErr)
+      exitCode <- waitForProcess ph
+      return (outT, errT, exitCode)
+  assertMatchingOutputLines 3 ["ControlSocketDisabled"] agentOutLines
 
 kesAgentControlHelp :: Assertion
 kesAgentControlHelp = do

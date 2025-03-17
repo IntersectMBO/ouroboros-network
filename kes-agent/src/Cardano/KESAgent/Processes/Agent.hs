@@ -216,6 +216,7 @@ data AgentTrace
   | AgentControlClientConnected String String
   | AgentControlClientDisconnected String
   | AgentControlSocketError String
+  | AgentControlSocketDisabled
   | AgentCheckEvolution KESPeriod
   | AgentUpdateKESPeriod KESPeriod KESPeriod
   | AgentKeyNotEvolved KESPeriod KESPeriod
@@ -244,9 +245,11 @@ instance Pretty AgentTrace where
 data AgentOptions m addr c
   = AgentOptions
   { agentTracer :: Tracer m AgentTrace
-  , agentControlAddr :: addr
+  , agentControlAddr :: Maybe addr
   -- ^ Socket on which the agent will be listening for control messages,
   -- i.e., KES keys being pushed from a control server.
+  -- For \"relay\" agents that don't need to receive any control connections,
+  -- this can be 'Nothing'.
   , agentServiceAddr :: addr
   -- ^ Socket on which the agent will send KES keys to any connected nodes.
   , agentBootstrapAddr :: [addr]
@@ -264,7 +267,7 @@ data AgentOptions m addr c
 defAgentOptions :: MonadTime m => AgentOptions m addr c
 defAgentOptions =
   AgentOptions
-    { agentControlAddr = error "missing control address"
+    { agentControlAddr = Nothing
     , agentServiceAddr = error "missing service address"
     , agentBootstrapAddr = []
     , agentEvolutionConfig = defEvolutionConfig
@@ -313,7 +316,7 @@ data Agent c m fd addr
   , agentStagedKeyVar :: TMVar m (Maybe (CRef m (SignKeyWithPeriodKES (KES c))))
   , agentNextKeyChan :: TChan m (Bundle m c)
   , agentServiceFD :: fd
-  , agentControlFD :: fd
+  , agentControlFD :: Maybe fd
   , agentBootstrapConnections :: TMVar m (Map Text ConnectionStatus)
   }
 
@@ -336,11 +339,8 @@ newAgent _p s mrb options = do
   nextKeyChan <- atomically newBroadcastTChan
   bootstrapConnectionsVar <- newTMVarIO mempty
 
-  serviceFD <- open s (addrFamily s (agentServiceAddr options))
-  bind s serviceFD (agentServiceAddr options)
-
-  controlFD <- open s (addrFamily s (agentControlAddr options))
-  bind s controlFD (agentControlAddr options)
+  serviceFD <- openFD (agentServiceAddr options)
+  controlFD <- mapM openFD (agentControlAddr options)
 
   return
     Agent
@@ -354,12 +354,17 @@ newAgent _p s mrb options = do
       , agentControlFD = controlFD
       , agentBootstrapConnections = bootstrapConnectionsVar
       }
+  where
+    openFD addr = do
+      fd <- open s (addrFamily s addr)
+      bind s fd addr
+      return fd
 
 finalizeAgent :: Monad m => Agent c m fd addr -> m ()
 finalizeAgent agent = do
   let s = agentSnocket agent
   close s (agentServiceFD agent)
-  close s (agentControlFD agent)
+  mapM_ (close s) (agentControlFD agent)
 
 agentTrace :: Agent c m fd addr -> AgentTrace -> m ()
 agentTrace agent = traceWith (agentTracer . agentOptions $ agent)
@@ -1031,34 +1036,39 @@ runAgent agent = do
   let runBootstraps =
         mapConcurrently_ runBootstrap $ agentBootstrapAddr (agentOptions agent)
 
-  let runControl = do
-        labelMyThread "control"
-        runListener
-          (agentSnocket agent)
-          (agentControlFD agent)
-          (show $ agentControlAddr (agentOptions agent))
-          (agentMRB agent)
-          (agentTracer . agentOptions $ agent)
-          AgentListeningOnControlSocket
-          AgentControlSocketClosed
-          AgentControlClientConnected
-          AgentControlClientDisconnected
-          AgentControlSocketError
-          AgentControlDriverTrace
-          ( \bearer tracer' -> do
-              (protocolVersionMay :: Maybe VersionIdentifier, ()) <-
-                runPeerWithDriver
-                  ( versionHandshakeDriver
-                      bearer
-                      (AgentVersionHandshakeDriverTrace >$< (agentTracer . agentOptions $ agent))
-                  )
-                  (versionHandshakeServer (map fst (availableControlDrivers @c @m)))
-              case protocolVersionMay >>= (`lookup` (availableControlDrivers @c @m)) of
-                Nothing ->
-                  traceWith (agentTracer . agentOptions $ agent) AgentControlVersionHandshakeFailed
-                Just run ->
-                  run bearer tracer' agent
-          )
+  let runControl = case agentControlFD agent of
+        Nothing -> do
+          let tracer = agentTracer . agentOptions $ agent
+          traceWith tracer AgentControlSocketDisabled
+          return ()
+        Just fd -> do
+          labelMyThread "control"
+          runListener
+            (agentSnocket agent)
+            fd
+            (maybe "<NO ADDRESS>" show $ agentControlAddr (agentOptions agent))
+            (agentMRB agent)
+            (agentTracer . agentOptions $ agent)
+            AgentListeningOnControlSocket
+            AgentControlSocketClosed
+            AgentControlClientConnected
+            AgentControlClientDisconnected
+            AgentControlSocketError
+            AgentControlDriverTrace
+            ( \bearer tracer' -> do
+                (protocolVersionMay :: Maybe VersionIdentifier, ()) <-
+                  runPeerWithDriver
+                    ( versionHandshakeDriver
+                        bearer
+                        (AgentVersionHandshakeDriverTrace >$< (agentTracer . agentOptions $ agent))
+                    )
+                    (versionHandshakeServer (map fst (availableControlDrivers @c @m)))
+                case protocolVersionMay >>= (`lookup` (availableControlDrivers @c @m)) of
+                  Nothing ->
+                    traceWith (agentTracer . agentOptions $ agent) AgentControlVersionHandshakeFailed
+                  Just run ->
+                    run bearer tracer' agent
+            )
 
   void $
     runService
