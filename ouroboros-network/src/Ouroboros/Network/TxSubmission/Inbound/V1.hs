@@ -9,7 +9,7 @@
 
 {-# OPTIONS_GHC -Wno-partial-fields #-}
 
-module Ouroboros.Network.TxSubmission.Inbound
+module Ouroboros.Network.TxSubmission.Inbound.V1
   ( txSubmissionInbound
   , TxSubmissionMempoolWriter (..)
   , TraceTxSubmissionInbound (..)
@@ -46,7 +46,7 @@ import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import Ouroboros.Network.Protocol.Limits
 import Ouroboros.Network.Protocol.TxSubmission2.Server
 import Ouroboros.Network.Protocol.TxSubmission2.Type
-import Ouroboros.Network.TxSubmission.Inbound.Types (ProcessedTxCount (..),
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types (ProcessedTxCount (..),
            TraceTxSubmissionInbound (..), TxSubmissionMempoolWriter (..),
            TxSubmissionProtocolError (..))
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
