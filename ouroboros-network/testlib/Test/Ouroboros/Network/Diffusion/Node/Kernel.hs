@@ -82,7 +82,7 @@ import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry (..),
            ps_POLICY_PEER_SHARE_MAX_PEERS, ps_POLICY_PEER_SHARE_STICKY_TIME)
 import Ouroboros.Network.Protocol.Handshake.Unversioned
 import Ouroboros.Network.Snocket (TestAddress (..))
-import Ouroboros.Network.TxSubmission.Inbound.Registry (SharedTxStateVar,
+import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (SharedTxStateVar,
            TxChannels (..), TxChannelsVar, TxMempoolSem, newSharedTxStateVar,
            newTxMempoolSem)
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB (ChainDB (..))
