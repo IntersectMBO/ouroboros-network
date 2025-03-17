@@ -63,6 +63,7 @@ import Ouroboros.Network.Mux
 import Ouroboros.Network.Server.RateLimiting
 import Ouroboros.Network.Snocket
 import Ouroboros.Network.MuxMode (SingMuxMode)
+import qualified Ouroboros.Network.InboundGovernor as Info
 
 
 --
@@ -142,9 +143,10 @@ with :: forall muxMode socket peerAddr initiatorCtx handle handlerTrace handleEr
     => Arguments muxMode socket peerAddr initiatorCtx handle handlerTrace
                  handleError versionNumber versionData bytes m a b
     -- ^ record which holds all server arguments
-    -> InfoChannel.InformationChannel
-                     (Event muxMode initiatorCtx peerAddr versionData m a b)
-                     m
+    -> Info.InboundGovernorInfoChannel muxMode peerAddr initiatorCtx versionData ByteString m a b
+    -- -> InfoChannel.InformationChannel
+    --                  (Event muxMode handle initiatorCtx peerAddr versionData m a b)
+    --                  m
     -> (   Async m Void
         -> m (InboundGovernor.PublicState peerAddr versionData)
         -> ConnectionManager

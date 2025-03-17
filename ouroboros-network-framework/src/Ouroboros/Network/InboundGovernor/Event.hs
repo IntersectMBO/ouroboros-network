@@ -56,7 +56,7 @@ data Event (muxMode :: Mux.Mode) handle initiatorCtx peerAddr versionData m a b
     -- connection manager after a duplex connection was negotiated.
     --
     = NewConnection !(NewConnectionInfo peerAddr
-                        handle --(Handle muxMode initiatorCtx (ResponderContext peerAddr) versionData ByteString m a b))
+                        handle) --(Handle muxMode initiatorCtx (ResponderContext peerAddr) versionData ByteString m a b))
 
     -- | A multiplexer exited.
     --
@@ -104,15 +104,15 @@ data Event (muxMode :: Mux.Mode) handle initiatorCtx peerAddr versionData m a b
 -- | A signal which returns an 'Event'.  Signals are combined together and
 -- passed used to fold the current state map.
 --
-type EventSignal (muxMode :: Mux.Mode) initiatorCtx peerAddr versionData m a b =
+type EventSignal (muxMode :: Mux.Mode) handle initiatorCtx peerAddr versionData m a b =
         ConnectionId peerAddr
      -> ConnectionState muxMode initiatorCtx peerAddr versionData m a b
-     -> FirstToFinish (STM m) (Event muxMode initiatorCtx peerAddr versionData m a b)
+     -> FirstToFinish (STM m) (Event muxMode handle initiatorCtx peerAddr versionData m a b)
 
 -- | A mux stopped.  If mux exited cleanly no error is attached.
 --
 firstMuxToFinish :: MonadSTM m
-                 => EventSignal muxMode initiatorCtx peerAddr versionData m a b
+                 => EventSignal muxMode handle initiatorCtx peerAddr versionData m a b
 firstMuxToFinish connId ConnectionState { csMux } =
     FirstToFinish $ MuxFinished connId <$> Mux.stopped csMux
 
@@ -136,7 +136,7 @@ data Terminated muxMode initiatorCtx peerAddr m a b = Terminated {
 --
 firstMiniProtocolToFinish :: Alternative (STM m)
                           => (versionData -> DataFlow)
-                          -> EventSignal muxMode initiatorCtx peerAddr versionData m a b
+                          -> EventSignal muxMode handle initiatorCtx peerAddr versionData m a b
 firstMiniProtocolToFinish
     connDataFlow
     connId
@@ -170,11 +170,11 @@ firstMiniProtocolToFinish
 -- transition, but here we don't make a distinction on @Duplex@ and
 -- @Unidirectional@ connections.
 --
-firstPeerPromotedToWarm :: forall muxMode initiatorCtx peerAddr versionData m a b.
+firstPeerPromotedToWarm :: forall muxMode handle initiatorCtx peerAddr versionData m a b.
                            ( Alternative (STM m)
                            , MonadSTM m
                            )
-                        => EventSignal muxMode initiatorCtx peerAddr versionData m a b
+                        => EventSignal muxMode handle initiatorCtx peerAddr versionData m a b
 firstPeerPromotedToWarm
     connId
     ConnectionState { csMux, csRemoteState }
@@ -207,7 +207,7 @@ firstPeerPromotedToWarm
   where
     fn :: (MiniProtocolNum, MiniProtocolDir)
        -> STM m MiniProtocolStatus
-       -> FirstToFinish (STM m) (Event muxMode initiatorCtx peerAddr versionData m a b)
+       -> FirstToFinish (STM m) (Event muxMode handle initiatorCtx peerAddr versionData m a b)
     fn = \(_miniProtocolNum, miniProtocolDir) miniProtocolStatus ->
       case miniProtocolDir of
         InitiatorDir -> mempty
@@ -224,11 +224,11 @@ firstPeerPromotedToWarm
 -- | Detect when a first warm peer is promoted to hot (any hot mini-protocols
 -- is running).
 --
-firstPeerPromotedToHot :: forall muxMode initiatorCtx peerAddr versionData m a b.
+firstPeerPromotedToHot :: forall muxMode handle initiatorCtx peerAddr versionData m a b.
                           ( Alternative (STM m)
                           , MonadSTM m
                           )
-                       => EventSignal muxMode initiatorCtx peerAddr versionData m a b
+                       => EventSignal muxMode handle initiatorCtx peerAddr versionData m a b
 firstPeerPromotedToHot
    connId connState@ConnectionState { csRemoteState }
    = case csRemoteState of
@@ -275,11 +275,11 @@ firstPeerPromotedToHot
 -- | Detect when all hot mini-protocols terminates, which triggers the
 -- `RemoteHot → RemoteWarm` transition.
 --
-firstPeerDemotedToWarm :: forall muxMode initiatorCtx peerAddr versionData m a b.
+firstPeerDemotedToWarm :: forall muxMode handle initiatorCtx peerAddr versionData m a b.
                           ( Alternative (STM m)
                           , MonadSTM m
                           )
-                       => EventSignal muxMode initiatorCtx peerAddr versionData m a b
+                       => EventSignal muxMode handle initiatorCtx peerAddr versionData m a b
 firstPeerDemotedToWarm
     connId connState@ConnectionState { csRemoteState }
     = case csRemoteState of
@@ -326,7 +326,7 @@ firstPeerDemotedToWarm
 firstPeerDemotedToCold :: ( Alternative (STM m)
                           , MonadSTM m
                           )
-                       => EventSignal muxMode initiatorCtx peerAddr versionData m a b
+                       => EventSignal muxMode handle initiatorCtx peerAddr versionData m a b
 firstPeerDemotedToCold
     connId
     ConnectionState {
@@ -368,7 +368,7 @@ firstPeerDemotedToCold
 -- | First peer for which the 'RemoteIdle' timeout expires.
 --
 firstPeerCommitRemote :: Alternative (STM m)
-                      => EventSignal muxMode initiatorCtx peerAddr versionData m a b
+                      => EventSignal muxMode handle initiatorCtx peerAddr versionData m a b
 firstPeerCommitRemote
     connId ConnectionState { csRemoteState }
     = case csRemoteState of

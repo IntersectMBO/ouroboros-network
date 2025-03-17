@@ -161,7 +161,7 @@ with :: forall (muxMode :: Mux.Mode) socket peerAddr initiatorCtx
         )
      => Arguments muxMode handlerTrace socket peerAddr initiatorCtx
                   handle handleError versionNumber versionData bytes m a b
-     -> InboundGovernorInfoChannel muxMode peerAddr initiatorCtx versionData bytes m a b
+     -> InboundGovernorInfoChannel muxMode peerAddr initiatorCtx versionData ByteString m a b
      -> (   Async m Void
          -> m (PublicState peerAddr versionData)
          -> ConnectionManager muxMode socket peerAddr handle handleError m
@@ -190,16 +190,16 @@ with
     --       case singMuxMode of
     --         SingResponderMode -> mch singMuxMode tr undefined --inboundInfoChannel
     --         SingInitiatorResponderMode -> mch singMuxMode tr undefined
-    CM.with connectionManagerArgs mch' (InResponderMode infoChannel) \connectionManager ->
-      withAsync
-        (labelThisThread "inbound-governor-loop" >>
-         forever do
-          !state' <- inboundGovernorStep connectionManager infoChannel =<< readTVarIO stateVar
-          atomically . writeTVar stateVar $ state'
-        `catch`
-          handleError stateVar)
-      \thread ->
-        k thread (mkPublicState <$> readTVarIO stateVar) connectionManager
+    CM.with undefined {-connectionManagerArgs-} mch' (InResponderMode infoChannel) \connectionManager -> undefined
+      -- withAsync
+      --   (labelThisThread "inbound-governor-loop" >>
+      --    forever do
+      --     !state' <- inboundGovernorStep connectionManager infoChannel =<< readTVarIO stateVar
+      --     atomically . writeTVar stateVar $ state'
+      --   `catch`
+      --     handleError stateVar)
+      -- \thread ->
+      --   k thread (mkPublicState <$> readTVarIO stateVar) connectionManager
   where
     emptyState :: State muxMode initiatorCtx peerAddr versionData m a b
     emptyState = State {
@@ -258,7 +258,7 @@ with
                    <> firstPeerPromotedToHot
                    <> firstPeerDemotedToWarm
 
-                   :: EventSignal muxMode initiatorCtx peerAddr versionData m a b
+                   -- :: EventSignal muxMode handle initiatorCtx peerAddr versionData m a b
                  )
                  (connections state)
             <> FirstToFinish (

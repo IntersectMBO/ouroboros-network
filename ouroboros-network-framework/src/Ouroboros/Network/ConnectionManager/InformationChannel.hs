@@ -51,7 +51,7 @@ newInformationChannel = do
 -- * /Consumer:/ inbound governor.
 --
 type InboundGovernorInfoChannel (muxMode :: Mux.Mode) peerAddr initiatorCtx versionData bytes m a b =
-    InformationChannel (Event (muxMode :: Mux.Mode) initiatorCtx peerAddr versionData m a b) m
+    InformationChannel (Event (muxMode :: Mux.Mode) (Handle muxMode initiatorCtx (ResponderContext peerAddr) versionData bytes m a b) initiatorCtx peerAddr versionData m a b) m
 
 -- | The 'InformationChannel's 'TBQueue' depth.
 --

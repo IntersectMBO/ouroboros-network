@@ -383,7 +383,7 @@ with
     -- -> (handleError -> HandleErrorType)
     -- ^ classify 'handleError's
     -- -> InformationChannel (NewConnectionInfo peerAddr infoChannelHandle) m
-    -> InResponderMode muxMode (InformationChannel (Event muxMode initiatorCtx peerAddr versionData m a b) m)
+    -> InResponderMode muxMode (InformationChannel (Event muxMode handle initiatorCtx peerAddr versionData m a b) m)
     -- ^ On outbound duplex connections we need to notify the server about
     -- a new connection.
     -- -> MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr version versionData ByteString m a b
