@@ -8,6 +8,7 @@ module Cardano.Client.Subscription
   ( -- * Subscription API
     subscribe
   , SubscriptionParams (..)
+  , Decision (..)
   , SubscriptionTracers (..)
   , SubscriptionTrace (..)
     -- * Re-exports
