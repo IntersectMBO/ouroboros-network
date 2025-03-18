@@ -25,10 +25,13 @@ import Control.Concurrent.Class.MonadMVar
 import Control.Monad (forever, replicateM)
 import Control.Monad.Class.MonadThrow (SomeException, bracket, catch, finally, throwIO)
 import Control.Monad.Class.MonadTimer (threadDelay)
+import qualified Data.Aeson as JSON
+import qualified Data.Aeson.KeyMap as KeyMap
 import Data.List (isPrefixOf)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
+import Data.Time.Clock (addUTCTime, getCurrentTime, secondsToNominalDiffTime)
 import System.Environment (lookupEnv, setEnv, unsetEnv)
 import System.Exit (ExitCode (..))
 import System.FilePath ((</>))
@@ -41,8 +44,26 @@ import Test.Tasty.HUnit
 import Debug.Trace
 import Text.Printf
 
-defGenesisTimestamp :: Integer
-defGenesisTimestamp = 1506203091 -- real-world genesis on the production ledger
+-- | Create a genesis file with the @systemStart@ parameter chosen such that the
+-- KES period will roll over within the next second.
+makeMockGenesisFile :: FilePath -> IO ()
+makeMockGenesisFile dst = do
+  src <- getDataFileName "fixtures/mainnet-shelley-genesis.json"
+  settings <- JSON.decodeFileStrict src >>= maybe (error "Invalid JSON") return
+  slotsPerKESPeriod <-
+    jsonResultToMaybe . JSON.fromJSON
+      =<< maybe
+        (error "slotsPerKESPeriod not defined")
+        return
+        (KeyMap.lookup "slotsPerKESPeriod" settings)
+  now <- getCurrentTime
+  let systemStart = addUTCTime (secondsToNominalDiffTime $ negate (slotsPerKESPeriod - 1)) now
+  let settings' = KeyMap.insert "systemStart" (JSON.toJSON systemStart) settings
+  JSON.encodeFile dst settings'
+
+jsonResultToMaybe :: JSON.Result a -> IO a
+jsonResultToMaybe (JSON.Success a) = return a
+jsonResultToMaybe (JSON.Error err) = error $ "Invalid JSON: " ++ err
 
 #if defined(mingw32_HOST_OS)
 tests :: TestTree
@@ -77,7 +98,8 @@ tests =
         ]
     , testGroup
         "evolution"
-        [ testCase "key evolves forward" kesAgentEvolvesKey
+        [ testCase "key evolves forward" kesAgentEvolvesKeyInitially
+        , testCase "key evolves when period flips over" kesAgentEvolvesKey
         ]
     ]
 #endif
@@ -232,7 +254,7 @@ kesAgentControlInstallValid =
           return ()
 
     (agentOutLines, serviceOutLines, ()) <-
-      withAgentAndService controlAddr serviceAddr [] coldVerKeyFile $ do
+      withAgentAndService controlAddr serviceAddr [] coldVerKeyFile [] $ do
         controlClientCheck
           [ "gen-staged-key"
           , "--kes-verification-key-file"
@@ -273,7 +295,7 @@ kesAgentControlInstallInvalidOpCert =
     coldVerKeyFile <- getDataFileName "fixtures/cold.vkey"
 
     (agentOutLines, serviceOutLines, ()) <-
-      withAgentAndService controlAddr serviceAddr [] coldVerKeyFile $ do
+      withAgentAndService controlAddr serviceAddr [] coldVerKeyFile [] $ do
         controlClientCheck
           [ "gen-staged-key"
           , "--kes-verification-key-file"
@@ -321,7 +343,7 @@ kesAgentControlInstallNoKey =
           return ()
 
     (agentOutLines, serviceOutLines, ()) <-
-      withAgentAndService controlAddr serviceAddr [] coldVerKeyFile $ do
+      withAgentAndService controlAddr serviceAddr [] coldVerKeyFile [] $ do
         makeCert
         controlClientCheck
           [ "install-key"
@@ -357,7 +379,7 @@ kesAgentControlInstallDroppedKey =
           return ()
 
     (agentOutLines, serviceOutLines, ()) <-
-      withAgentAndService controlAddr serviceAddr [] coldVerKeyFile $ do
+      withAgentAndService controlAddr serviceAddr [] coldVerKeyFile [] $ do
         controlClientCheck
           [ "gen-staged-key"
           , "--kes-verification-key-file"
@@ -415,7 +437,7 @@ kesAgentControlInstallMultiNodes =
           return ()
 
     (agentOutLines, (serviceOutLines1, serviceOutLines2)) <-
-      withAgent controlAddr serviceAddr [] coldVerKeyFile $ do
+      withAgent controlAddr serviceAddr [] coldVerKeyFile [] $ do
         (serviceOutLines1, ()) <- withService serviceAddr $ do
           -- Little bit of delay here to allow for the version handshake to
           -- finish
@@ -464,8 +486,8 @@ kesAgentControlInstallMultiNodes =
       ["->", "ServiceClientBlockForging", "0"]
       serviceOutLines2
 
-kesAgentEvolvesKey :: Assertion
-kesAgentEvolvesKey =
+kesAgentEvolvesKeyInitially :: Assertion
+kesAgentEvolvesKeyInitially =
   withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
     let (controlAddr, serviceAddr) = socketAddresses tmpdir
         kesKeyFile = tmpdir </> "kes.vkey"
@@ -487,7 +509,7 @@ kesAgentEvolvesKey =
           return ()
 
     (agentOutLines, serviceOutLines, ()) <-
-      withAgentAndService controlAddr serviceAddr [] coldVerKeyFile $
+      withAgentAndService controlAddr serviceAddr [] coldVerKeyFile [] $
         (>>= either error return) $
           race (threadDelay 10000000 >> return "TIMED OUT") $
             do
@@ -526,6 +548,74 @@ kesAgentEvolvesKey =
       ["->", "ServiceClientBlockForging", "0"]
       serviceOutLines
 
+kesAgentEvolvesKey :: Assertion
+kesAgentEvolvesKey =
+  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+    let (controlAddr, serviceAddr) = socketAddresses tmpdir
+        kesKeyFile = tmpdir </> "kes.vkey"
+        opcertFile = tmpdir </> "opcert.cert"
+        genesisFile = tmpdir </> "genesis.json"
+    coldSignKeyFile <- getDataFileName "fixtures/cold.skey"
+    coldVerKeyFile <- getDataFileName "fixtures/cold.vkey"
+    currentKesPeriod <- getCurrentKESPeriod defEvolutionConfig
+    makeMockGenesisFile genesisFile
+
+    let makeCert = do
+          ColdSignKey coldSK <-
+            either error return =<< decodeTextEnvelopeFile @(ColdSignKey (DSIGN StandardCrypto)) coldSignKeyFile
+          ColdVerKey coldVK <-
+            either error return =<< decodeTextEnvelopeFile @(ColdVerKey (DSIGN StandardCrypto)) coldVerKeyFile
+          KESVerKey kesVK <-
+            either error return =<< decodeTextEnvelopeFile @(KESVerKey (KES StandardCrypto)) kesKeyFile
+          let kesPeriod = KESPeriod $ unKESPeriod currentKesPeriod
+          let ocert :: OCert StandardCrypto = makeOCert kesVK 0 kesPeriod coldSK
+          encodeTextEnvelopeFile opcertFile (OpCert ocert coldVK)
+          return ()
+
+    (agentOutLines, serviceOutLines, ()) <-
+      withAgentAndService controlAddr serviceAddr [] coldVerKeyFile ["--genesis-file", genesisFile] $
+        (>>= either error return) $
+          race (threadDelay 10000000 >> return "TIMED OUT") $
+            do
+              controlClientCheck
+                [ "gen-staged-key"
+                , "--kes-verification-key-file"
+                , kesKeyFile
+                , "--control-address"
+                , controlAddr
+                ]
+                ExitSuccess
+                [ "Asking agent to generate a key..."
+                , "KES SignKey generated."
+                , "KES VerKey written to " <> kesKeyFile
+                ]
+              makeCert
+              controlClientCheck
+                [ "install-key"
+                , "--opcert-file"
+                , opcertFile
+                , "--control-address"
+                , controlAddr
+                ]
+                ExitSuccess
+                ["KES key installed."]
+              -- Wait 1.1 seconds; the validity should flip over about 1 second
+              -- after the start of the test run, we add 0.1 second to provide
+              -- some slack.
+              threadDelay 1100000
+              controlClientCheckP
+                [ "info"
+                , "--control-address"
+                , controlAddr
+                ]
+                ExitSuccess
+                (any (`elem` ["Current evolution: 0 / 64", "Current evolution: 1 / 64"]))
+    assertMatchingOutputLinesWith
+      ("SERVICE OUTPUT CHECK\n" <> (Text.unpack . Text.unlines $ agentOutLines))
+      4
+      ["->", "ServiceClientBlockForging", "0"]
+      serviceOutLines
+
 kesAgentPropagate :: Assertion
 kesAgentPropagate =
   withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
@@ -552,8 +642,8 @@ kesAgentPropagate =
           return ()
 
     (agentOutLines1, (agentOutLines2, serviceOutLines, ())) <-
-      withAgent controlAddr1 serviceAddr1 [serviceAddr2] coldVerKeyFile $ do
-        withAgentAndService controlAddr2 serviceAddr2 [serviceAddr1] coldVerKeyFile $ do
+      withAgent controlAddr1 serviceAddr1 [serviceAddr2] coldVerKeyFile [] $ do
+        withAgentAndService controlAddr2 serviceAddr2 [serviceAddr1] coldVerKeyFile [] $ do
           controlClientCheck
             [ "gen-staged-key"
             , "--kes-verification-key-file"
@@ -615,8 +705,8 @@ kesAgentSelfHeal1 =
           return ()
 
     (agentOutLines1, (agentOutLines2, ())) <-
-      withAgent controlAddr1 serviceAddr1 [serviceAddr2] coldVerKeyFile $ do
-        (agentOutLines2a, ()) <- withAgent controlAddr2 serviceAddr2 [serviceAddr1] coldVerKeyFile $ do
+      withAgent controlAddr1 serviceAddr1 [serviceAddr2] coldVerKeyFile [] $ do
+        (agentOutLines2a, ()) <- withAgent controlAddr2 serviceAddr2 [serviceAddr1] coldVerKeyFile [] $ do
           threadDelay 1000000
           controlClientCheck
             [ "gen-staged-key"
@@ -654,7 +744,7 @@ kesAgentSelfHeal1 =
           ]
           (ExitFailure 1)
           (any ("kes-agent-control: Network.Socket.connect: " `isPrefixOf`))
-        (agentOutLines2b, ()) <- withAgent controlAddr2 serviceAddr2 [serviceAddr1] coldVerKeyFile $ do
+        (agentOutLines2b, ()) <- withAgent controlAddr2 serviceAddr2 [serviceAddr1] coldVerKeyFile [] $ do
           threadDelay 1000000
           controlClientCheckP
             [ "info"
@@ -696,8 +786,8 @@ kesAgentSelfHeal2 =
           return ()
 
     (agentOutLines1, (agentOutLines2, ())) <-
-      withAgent controlAddr1 serviceAddr1 [serviceAddr2] coldVerKeyFile $ do
-        (agentOutLines2a, ()) <- withAgent controlAddr2 serviceAddr2 [serviceAddr1] coldVerKeyFile $ do
+      withAgent controlAddr1 serviceAddr1 [serviceAddr2] coldVerKeyFile [] $ do
+        (agentOutLines2a, ()) <- withAgent controlAddr2 serviceAddr2 [serviceAddr1] coldVerKeyFile [] $ do
           threadDelay 1000000
           controlClientCheck
             [ "gen-staged-key"
@@ -730,7 +820,7 @@ kesAgentSelfHeal2 =
           ]
           (ExitFailure 1)
           (any ("kes-agent-control: Network.Socket.connect: " `isPrefixOf`))
-        (agentOutLines2b, ()) <- withAgent controlAddr2 serviceAddr2 [serviceAddr1] coldVerKeyFile $ do
+        (agentOutLines2b, ()) <- withAgent controlAddr2 serviceAddr2 [serviceAddr1] coldVerKeyFile [] $ do
           threadDelay 10000
           controlClientCheckP
             [ "info"
@@ -809,17 +899,24 @@ controlClientCheckP args expectedExitCode outputAsExpected = do
   assertEqual ("CONTROL CLIENT EXIT CODE\n" ++ outStr ++ errStr) expectedExitCode exitCode
 
 withAgentAndService ::
-  FilePath -> FilePath -> [FilePath] -> FilePath -> IO a -> IO ([Text.Text], [Text.Text], a)
-withAgentAndService controlAddr serviceAddr bootstrapAddrs coldVerKeyFile action = do
+  FilePath ->
+  FilePath ->
+  [FilePath] ->
+  FilePath ->
+  [String] ->
+  IO a ->
+  IO ([Text.Text], [Text.Text], a)
+withAgentAndService controlAddr serviceAddr bootstrapAddrs coldVerKeyFile extraAgentArgs action = do
   (agentOutLines, (serviceOutLines, retval)) <-
-    withAgent controlAddr serviceAddr bootstrapAddrs coldVerKeyFile $
+    withAgent controlAddr serviceAddr bootstrapAddrs coldVerKeyFile extraAgentArgs $
       withService
         serviceAddr
         action
   return (agentOutLines, serviceOutLines, retval)
 
-withAgent :: FilePath -> FilePath -> [FilePath] -> FilePath -> IO a -> IO ([Text.Text], a)
-withAgent controlAddr serviceAddr bootstrapAddrs coldVerKeyFile action =
+withAgent ::
+  FilePath -> FilePath -> [FilePath] -> FilePath -> [String] -> IO a -> IO ([Text.Text], a)
+withAgent controlAddr serviceAddr bootstrapAddrs coldVerKeyFile extraAgentArgs action =
   withSpawnProcess "kes-agent" args $ \_ (Just hOut) (Just hErr) ph -> go hOut hErr ph
   where
     go hOut hErr ph = do
@@ -858,6 +955,7 @@ withAgent controlAddr serviceAddr bootstrapAddrs coldVerKeyFile action =
       , "debug"
       ]
         ++ concat [["--bootstrap-address", a] | a <- bootstrapAddrs]
+        ++ extraAgentArgs
 
 withService :: FilePath -> IO a -> IO ([Text.Text], a)
 withService serviceAddr action =
