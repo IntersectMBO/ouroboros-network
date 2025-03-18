@@ -239,11 +239,13 @@ tickTimedTxs :: forall peeraddr tx txid.
 tickTimedTxs now st@SharedTxState{ timedTxs
                                  , referenceCounts
                                  , bufferedTxs } =
-    let (expiredTxs, timedTxs') = Map.split now timedTxs
-        expiredTxs'             =  -- Map.split doesn't include the `now` entry in any map
-                                  case Map.lookup now timedTxs of
-                                       Just txids -> Map.insert now txids expiredTxs
-                                       Nothing    -> expiredTxs
+    let (expiredTxs', timedTxs') =
+          case Map.splitLookup now timedTxs of
+            (expired, Just txids, timed) ->
+              (expired, -- Map.split doesn't include the `now` entry in the map
+                        Map.insert now txids timed)
+            (expired, Nothing, timed) ->
+              (expired, timed)
         refDiff = Map.foldl' fn Map.empty expiredTxs'
         referenceCounts' = updateRefCounts referenceCounts (RefCountDiff refDiff)
         liveSet = Map.keysSet referenceCounts'
