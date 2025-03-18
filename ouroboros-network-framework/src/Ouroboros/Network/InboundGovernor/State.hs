@@ -25,7 +25,7 @@ module Ouroboros.Network.InboundGovernor.State
   , updateRemoteState
   , mapRemoteState
   , MiniProtocolData (..)
-  ) where
+  , TransitionCounters (..)) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (assert)
@@ -185,11 +185,18 @@ data ConnectionState muxMode initiatorCtx peerAddr versionData m a b = Connectio
 
       -- | State of the connection.
       --
-      csRemoteState     :: !(RemoteState m)
+      csRemoteState     :: !(RemoteState m),
+
+      csHotProductive :: !Int,
+
+      csWarmProductive :: !Int
 
     }
 
-
+data TransitionCounters = TransitionCounters {
+  hotDelta :: !Int,
+  warmDelta :: !Int
+  }
 --
 -- State management functions
 --

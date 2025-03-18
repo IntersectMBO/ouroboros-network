@@ -48,6 +48,7 @@ module Ouroboros.Network.ConnectionHandler
 
 -- import Ouroboros.Network.InboundGovernor
 -- import Ouroboros.Network.ConnectionManager.InformationChannel
+import Network.Mux.Trace
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (SomeAsyncException)
@@ -159,7 +160,7 @@ type family MkMuxConnectionHandler (muxMode :: Mx.Mode) socket initiatorCtx resp
   MkMuxConnectionHandler Mx.InitiatorMode socket initiatorCtx responderCtx peerAddr versionNumber versionData m a b =
     MuxConnectionHandler Mx.InitiatorMode socket initiatorCtx responderCtx peerAddr versionNumber versionData ByteString m a b
   MkMuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr versionNumber versionData m a b =
-    Tracer m Int -> MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr versionNumber versionData ByteString m a b
+    Tracer m (WithBearer (ConnectionId peerAddr) Trace) -> MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr versionNumber versionData ByteString m a b
 
 -- | 'Handle' used by `node-to-node` P2P connections.
 --
