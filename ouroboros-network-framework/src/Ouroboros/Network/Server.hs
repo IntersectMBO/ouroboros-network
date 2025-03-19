@@ -73,13 +73,13 @@ import qualified Ouroboros.Network.InboundGovernor as Info
 
 -- | Server static configuration.
 --
-data Arguments muxMode socket peerAddr initiatorCtx handle handlerTrace handleError versionNumber versionData bytes m a b =
+data Arguments muxMode socket peerAddr initiatorCtx handle handlerTrace handleError versionNumber versionData bytes m a b x =
     Arguments {
       sockets               :: NonEmpty socket,
       snocket               :: Snocket m socket peerAddr,
       tracer                :: Tracer m (Trace peerAddr),
       connectionLimits      :: AcceptedConnectionsLimit,
-      inboundGovernorArgs   :: InboundGovernor.Arguments muxMode handlerTrace socket peerAddr initiatorCtx handle handleError versionNumber versionData bytes m a b
+      inboundGovernorArgs   :: InboundGovernor.Arguments muxMode handlerTrace socket peerAddr initiatorCtx handle handleError versionNumber versionData bytes m a b x
       -- trTracer              :: Tracer m (InboundGovernor.RemoteTransitionTrace peerAddr),
       -- inboundGovernorTracer :: Tracer m (InboundGovernor.Trace peerAddr),
       -- debugInboundGovernor  :: Tracer m (InboundGovernor.Debug peerAddr versionData),
@@ -141,10 +141,10 @@ with :: forall muxMode socket peerAddr initiatorCtx handle handlerTrace handleEr
        , Typeable peerAddr
        )
     => Arguments muxMode socket peerAddr initiatorCtx handle handlerTrace
-                 handleError versionNumber versionData bytes m a b
+                 handleError versionNumber versionData bytes m a b x
     -- ^ record which holds all server arguments
-    -> InfoChannel.InboundGovernorInfoChannel muxMode peerAddr initiatorCtx versionData ByteString m a b
-    -> InfoChannel.InformationChannel (Event muxMode handle initiatorCtx peerAddr versionData m a b) m
+    -- -> InfoChannel.InboundGovernorInfoChannel muxMode peerAddr initiatorCtx versionData ByteString m a b
+    -- -> InfoChannel.InformationChannel (Event muxMode handle initiatorCtx peerAddr versionData m a b) m
     -- -> InfoChannel.InformationChannel
     --                  (Event muxMode handle initiatorCtx peerAddr versionData m a b)
     --                  m
@@ -162,26 +162,16 @@ with :: forall muxMode socket peerAddr initiatorCtx handle handlerTrace handleEr
 with Arguments {
       sockets = socks,
       snocket,
-      -- trTracer,
       tracer = tracer,
-      -- inboundGovernorTracer = inboundGovernorTracer,
-      -- debugInboundGovernor,
       connectionLimits =
         limits@AcceptedConnectionsLimit { acceptedConnectionsHardLimit = hardLimit },
       inboundGovernorArgs
-      -- inboundIdleTimeout,
-      -- connectionManager = withConnectionManagerMode,
-      -- connectionDataFlow,
-      -- inboundInfoChannel,
-      -- inboundGovernorArgs
     }
-    infoChannel
-    aaa
     k
     = do
       let sockets = NonEmpty.toList socks
       localAddresses <- traverse (getLocalAddr snocket) sockets
-      InboundGovernor.with inboundGovernorArgs infoChannel aaa
+      InboundGovernor.with inboundGovernorArgs
         \inboundGovernorThread readPublicInboundState connectionManager ->
           withAsync do
             labelThisThread "Server2 (ouroboros-network-framework)"

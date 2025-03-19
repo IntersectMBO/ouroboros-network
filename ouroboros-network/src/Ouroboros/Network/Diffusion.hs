@@ -1,3 +1,4 @@
+{-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE BlockArguments           #-}
 {-# LANGUAGE CPP                      #-}
 {-# LANGUAGE DataKinds                #-}
@@ -487,26 +488,26 @@ runM Interfaces
       --            ntnFd initiatorCtx responderCtx ntnAddr handle (HandleError muxMode ntnVersion) ntnVersion ntnVersionData m a b
       let  connectionManagerArguments' prunePolicy stdGen =
             CM.Arguments {
-                CM.tracer              = dtConnectionManagerTracer,
-                CM.trTracer            =
+                tracer              = dtConnectionManagerTracer,
+                trTracer            =
                   fmap CM.abstractState
                   `contramap` dtConnectionManagerTransitionTracer,
-                CM.muxTracer           = dtMuxTracer,
-                CM.ipv4Address,
-                CM.ipv6Address,
-                CM.addressType         = diNtnAddressType,
-                CM.snocket             = diNtnSnocket,
-                CM.makeBearer          = diNtnBearer,
-                CM.configureSocket     = diNtnConfigureSocket,
-                CM.connectionDataFlow  = diNtnDataFlow,
-                CM.prunePolicy         = prunePolicy,
-                CM.stdGen,
-                CM.connectionsLimits   = daAcceptedConnectionsLimit,
-                CM.timeWaitTimeout     = daTimeWaitTimeout,
-                CM.outboundIdleTimeout = daProtocolIdleTimeout,
-                CM.updateVersionData   = diUpdateVersionData,
-                CM.connStateIdSupply   = diConnStateIdSupply,
-                CM.classifyHandleError
+                muxTracer           = dtMuxTracer,
+                ipv4Address,
+                ipv6Address,
+                addressType         = diNtnAddressType,
+                snocket             = diNtnSnocket,
+                makeBearer          = diNtnBearer,
+                configureSocket     = diNtnConfigureSocket,
+                connectionDataFlow  = diNtnDataFlow,
+                prunePolicy         = prunePolicy,
+                stdGen,
+                connectionsLimits   = daAcceptedConnectionsLimit,
+                timeWaitTimeout     = daTimeWaitTimeout,
+                outboundIdleTimeout = daProtocolIdleTimeout,
+                updateVersionData   = diUpdateVersionData,
+                connStateIdSupply   = diConnStateIdSupply,
+                classifyHandleError
             }
 
       let peerSelectionPolicy =
@@ -544,14 +545,17 @@ runM Interfaces
             --     daApplicationInitiatorMode)
             --   classifyHandleError
 
-          -- withConnectionManagerInitiatorAndResponderMode
-          --   tracer =
-          --     CM.with
-          --       (connectionManagerArguments' Diffusion.Policies.prunePolicy cmStdGen2)
-          --       (makeConnectionHandler'
-          --          SingInitiatorResponderMode
-          --          daApplicationInitiatorResponderMode)
-          --       classifyHandleError
+          withConnectionManagerInitiatorAndResponderMode
+            infoChannel a b =
+              CM.with
+                  (connectionManagerArguments'
+                                                Diffusion.Policies.prunePolicy
+                                                cmStdGen2
+                                                )
+                  infoChannel
+                  a
+                  b
+                  --ndefined  --(InResponderMode infoChannel)
 
       --
       -- peer state actions
@@ -561,20 +565,20 @@ runM Interfaces
       --
 
       let -- | parameterized version of 'withPeerStateActions'
-          withPeerStateActions'
-            :: forall (muxMode :: Mx.Mode) responderCtx socket b c.
-               HasInitiator muxMode ~ True
-            => MuxConnectionManager
-                 muxMode socket (ExpandedInitiatorContext ntnAddr m)
-                 responderCtx ntnAddr ntnVersionData ntnVersion
-                 ByteString m a b
-            -> (Governor.PeerStateActions
-                  ntnAddr
-                  (PeerConnectionHandle muxMode responderCtx ntnAddr
-                     ntnVersionData ByteString m a b)
-                  m
-                -> m c)
-            -> m c
+          -- withPeerStateActions'
+          --   :: forall (muxMode :: Mx.Mode) responderCtx socket b c.
+          --      HasInitiator muxMode ~ True
+          --   => MuxConnectionManager
+          --        muxMode socket (ExpandedInitiatorContext ntnAddr m)
+          --        responderCtx ntnAddr ntnVersionData ntnVersion
+          --        ByteString m a b
+          --   -> (Governor.PeerStateActions
+          --         ntnAddr
+          --         (PeerConnectionHandle muxMode responderCtx ntnAddr
+          --            ntnVersionData ByteString m a b)
+          --         m
+          --       -> m c)
+          --   -> m c
           withPeerStateActions' connectionManager =
             withPeerStateActions
               PeerStateActionsArguments {
@@ -733,7 +737,7 @@ runM Interfaces
               f
 
           -- run node-to-node server
-          withServer sockets mkConnectionHandler =
+          withServer sockets mkConnectionHandler infoChannel =
             Server.with
               Server.Arguments {
                   Server.sockets               = sockets,
@@ -747,11 +751,13 @@ runM Interfaces
                       debugTracer = nullTracer,
                       connectionDataFlow = diNtnDataFlow,
                       idleTimeout = Just daProtocolIdleTimeout,
-                      connectionManagerArgs = connectionManagerArguments'
-                                                Diffusion.Policies.prunePolicy
-                                                cmStdGen2,
-                                                -- mkConnectionHandler
-                      mch = mkConnectionHandler
+                      withConnectionManager = withConnectionManagerInitiatorAndResponderMode (InResponderMode infoChannel),
+                      -- connectionManagerArgs = connectionManagerArguments'
+                      --                           Diffusion.Policies.prunePolicy
+                      --                           cmStdGen2
+                      --                           infoChannel,
+                      mch =  mkConnectionHandler,
+                      infoChannel
                       }
                   -- Server.connectionManagerArgs = connectionManagerArguments'
                   -- Server.debugInboundGovernor  = nullTracer,
@@ -799,7 +805,7 @@ runM Interfaces
             --
             inboundInfoChannel <- newInformationChannel
             let mch = makeConnectionHandler' daApplicationInitiatorResponderMode SingInitiatorResponderMode
-            withServer sockets mch inboundInfoChannel inboundInfoChannel
+            withServer sockets mch inboundInfoChannel
               \inboundGovernorThread readInboundState connectionManager -> do
                 -- -- withConnectionManagerInitiatorAndResponderMode \connectionManager ->
                 debugStateVar <- newTVarIO $ Governor.emptyPeerSelectionState fuzzRng daEmptyExtraState mempty

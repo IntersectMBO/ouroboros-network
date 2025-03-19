@@ -378,14 +378,14 @@ with
        , Typeable peerAddr
        )
     => Arguments handlerTrace socket peerAddr handle handleError version versionData m a b
+    -> InResponderMode muxMode (InformationChannel (Event muxMode handle initiatorCtx peerAddr versionData m a b) m)
+    -- ^ On outbound duplex connections we need to notify the server about
+    -- a new connection.
     -> ConnectionHandler muxMode handlerTrace socket peerAddr handle handleError version versionData m
     -- ^ Callback which runs in a thread dedicated for a given connection.
     -- -> (handleError -> HandleErrorType)
     -- ^ classify 'handleError's
     -- -> InformationChannel (NewConnectionInfo peerAddr infoChannelHandle) m
-    -> InResponderMode muxMode (InformationChannel (Event muxMode handle initiatorCtx peerAddr versionData m a b) m)
-    -- ^ On outbound duplex connections we need to notify the server about
-    -- a new connection.
     -- -> MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr version versionData ByteString m a b
     -> (ConnectionManager muxMode socket peerAddr handle handleError m -> m x)
     -- ^ Continuation which receives the 'ConnectionManager'.  It must not leak
@@ -411,10 +411,10 @@ with args@Arguments {
          connStateIdSupply,
          classifyHandleError
        }
+     inboundGovernorInfoChannel
      ConnectionHandler {
        connectionHandler
      }
-     inboundGovernorInfoChannel
      k = do
     ((stateVar, stdGenVar)
        ::  ( StrictTMVar m (ConnectionManagerState peerAddr handle handleError

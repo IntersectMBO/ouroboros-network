@@ -287,12 +287,11 @@ makeConnectionHandler muxTracer forkPolicy
                       versionedApplication
                       (mainThreadId, rethrowPolicy) =
   \case
-    SingInitiatorMode -> ConnectionHandler $ WithInitiatorMode (outboundConnectionHandler NotInResponderMode)
-    SingResponderMode -> \tr' -> ConnectionHandler $ WithResponderMode (inboundConnectionHandler (InResponderMode tr'))
-    SingInitiatorResponderMode -> \tr' ->
-      let wrm = InResponderMode tr' in
-      ConnectionHandler $ WithInitiatorResponderMode (outboundConnectionHandler wrm)
-                                                     (inboundConnectionHandler wrm)
+    SingInitiatorMode -> ConnectionHandler . WithInitiatorMode $ outboundConnectionHandler
+    SingResponderMode -> ConnectionHandler . WithResponderMode . inboundConnectionHandler
+    SingInitiatorResponderMode ->
+      ConnectionHandler . WithInitiatorResponderMode   outboundConnectionHandler
+                                                     . inboundConnectionHandler
   where
     -- install classify exception handler
     classifyExceptions :: forall x.
@@ -318,8 +317,8 @@ makeConnectionHandler muxTracer forkPolicy
               throwIO (ExceptionInHandler remoteAddress err)
 
     outboundConnectionHandler
-      :: InResponderMode muxMode ggg
-      -> ConnectionHandlerFn (ConnectionHandlerTrace versionNumber versionData)
+      :: HasInitiator muxMode ~ True
+      => ConnectionHandlerFn (ConnectionHandlerTrace versionNumber versionData)
                              socket
                              peerAddr
                              (Handle muxMode initiatorCtx responderCtx versionData ByteString m a b)
@@ -327,8 +326,7 @@ makeConnectionHandler muxTracer forkPolicy
                              versionNumber
                              versionData
                              m
-    outboundConnectionHandler hello
-                              versionDataFn
+    outboundConnectionHandler versionDataFn
                               socket
                               PromiseWriter { writePromise }
                               tracer
@@ -355,12 +353,12 @@ makeConnectionHandler muxTracer forkPolicy
               -- handshake negotiation failures, but not with 'IOException's or
               -- 'MuxError's.
               `catch` \(err :: SomeException) -> do
-                atomically $ writePromise (Left undefined {-(HandleError err)-})
+                atomically $ writePromise (Left (HandleError err))
                 throwIO err
             case hsResult of
               Left !err -> do
-                atomically $ writePromise (Left undefined{-(HandleHandshakeClientError err)-})
-                traceWith tracer undefined --(TrHandshakeClientError err)
+                atomically $ writePromise (Left (HandleHandshakeClientError err))
+                traceWith tracer $ TrHandshakeClientError err
 
               Right (HandshakeNegotiationResult app versionNumber agreedOptions) ->
                 unmask $ do
@@ -377,18 +375,19 @@ makeConnectionHandler muxTracer forkPolicy
                           hControlMessage = controlMessageBundle,
                           hVersionData    = agreedOptions
                         }
-                  atomically $ writePromise (Right $ undefined {-HandshakeConnectionResult handle (versionNumber, agreedOptions)-})
+                  atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
                   bearer <- mkMuxBearer sduTimeout socket
                   Mx.run (Mx.WithBearer connectionId `contramap` muxTracer)
                          mux bearer
 
               Right (HandshakeQueryResult vMap) -> do
                 atomically $ writePromise (Right HandshakeConnectionQuery)
-                traceWith tracer $ undefined{-TrHandshakeQuery vMap-}
+                traceWith tracer $ TrHandshakeQuery vMap
 
 
     inboundConnectionHandler
-      :: InResponderMode muxMode ggg
+      :: HasResponder muxMode ~ True
+      => Tracer m (WithBearer (ConnectionId peerAddr) Trace)
       -> ConnectionHandlerFn (ConnectionHandlerTrace versionNumber versionData)
                              socket
                              peerAddr
@@ -397,7 +396,7 @@ makeConnectionHandler muxTracer forkPolicy
                              versionNumber
                              versionData
                              m
-    inboundConnectionHandler hello
+    inboundConnectionHandler responderIgTracer
                              updateVersionDataFn
                              socket
                              PromiseWriter { writePromise }
@@ -409,7 +408,7 @@ makeConnectionHandler muxTracer forkPolicy
       where
         runWithUnmask :: (forall x. m x -> m x) -> m ()
         runWithUnmask unmask =
-          classifyExceptions undefined {-tracer-} remoteAddress InboundError $ do
+          classifyExceptions tracer remoteAddress InboundError $ do
             labelThisThread (concat ["in-conn-hndlr-"
                                     , show localAddress
                                     , "-"
@@ -425,16 +424,16 @@ makeConnectionHandler muxTracer forkPolicy
               -- handshake negotiation failures, but not with 'IOException's or
               -- 'MuxError's.
               `catch` \(err :: SomeException) -> do
-                atomically $ writePromise undefined --(Left (HandleError err))
+                atomically $ writePromise (Left (HandleError err))
                 throwIO err
 
             case hsResult of
               Left !err -> do
-                atomically $ writePromise undefined --(Left (HandleHandshakeServerError err))
-                traceWith tracer undefined --(TrHandshakeServerError err)
+                atomically $ writePromise (Left (HandleHandshakeServerError err))
+                traceWith tracer (TrHandshakeServerError err)
               Right (HandshakeNegotiationResult app versionNumber agreedOptions) ->
                 unmask $ do
-                  traceWith tracer undefined --(TrHandshakeSuccess versionNumber agreedOptions)
+                  traceWith tracer (TrHandshakeSuccess versionNumber agreedOptions)
                   controlMessageBundle
                     <- (\a b c -> TemperatureBundle (WithHot a) (WithWarm b) (WithEstablished c))
                         <$> newTVarIO Continue
@@ -448,14 +447,14 @@ makeConnectionHandler muxTracer forkPolicy
                           hControlMessage = controlMessageBundle,
                           hVersionData    = agreedOptions
                         }
-                  atomically $ writePromise undefined --(Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
+                  atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
                   bearer <- mkMuxBearer sduTimeout socket
-                  Mx.run (Mx.WithBearer connectionId `contramap` muxTracer)
+                  Mx.run (Mx.WithBearer connectionId `contramap` (muxTracer <> responderIgTracer))
                          mux bearer
 
               Right (HandshakeQueryResult vMap) -> do
                 atomically $ writePromise (Right HandshakeConnectionQuery)
-                traceWith tracer $ undefined --TrHandshakeQuery vMap
+                traceWith tracer $ TrHandshakeQuery vMap
                 -- Wait 20s for client to receive response, who should close the connection.
                 threadDelay handshake_QUERY_SHUTDOWN_DELAY
 
