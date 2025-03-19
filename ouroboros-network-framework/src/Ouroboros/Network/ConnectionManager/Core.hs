@@ -1670,7 +1670,7 @@ with args@Arguments {
                                 infoChannel $
                                 NewConnection (NewConnectionInfo provenance' connId dataFlow handle)
                             _ -> return ()
-                          return (Just $ undefined ) --mkTransition connState connState')
+                          return (Just $ mkTransition connState connState')
 
                     -- @
                     --   SelfConn'^{-1}

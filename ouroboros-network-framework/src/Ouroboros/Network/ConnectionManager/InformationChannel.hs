@@ -44,7 +44,7 @@ newInformationChannel = do
         writeMessage = writeTBQueue channel
       }
 
--- | A channel which instantiates to 'NewConnectionInfo' and
+-- | todo: fixup comment A channel which instantiates to 'NewConnectionInfo' and
 -- 'Handle'.
 --
 -- * /Producer:/ connection manger for duplex outbound connections.

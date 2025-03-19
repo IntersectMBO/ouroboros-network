@@ -124,8 +124,9 @@ data Arguments muxMode handlerTrace socket peerAddr initiatorCtx
         -> (ConnectionManager muxMode socket peerAddr handle handleError m -> m x)
         -> m x,
       -- ^ connection manager arguments
-      mch :: Tracer m (Mux.WithBearer (ConnectionId peerAddr) Mux.Trace)
-          -> ConnectionHandler muxMode handlerTrace socket peerAddr handle handleError versionNumber versionData m
+      mkConnectionHandler
+        :: Tracer m (Mux.WithBearer (ConnectionId peerAddr) Mux.Trace)
+        -> ConnectionHandler muxMode handlerTrace socket peerAddr handle handleError versionNumber versionData m
     }
 
 -- | Run the server, which consists of the following components:
@@ -174,19 +175,19 @@ with :: forall (muxMode :: Mux.Mode) socket peerAddr initiatorCtx
 with
     Arguments {
       transitionTracer   = trTracer,
-      tracer             = tracer,
-      debugTracer        = debugTracer,
-      connectionDataFlow = connectionDataFlow,
-      idleTimeout        = idleTimeout,
+      tracer,
+      debugTracer,
+      connectionDataFlow,
+      idleTimeout,
       infoChannel,
       withConnectionManager,
-      mch
+      mkConnectionHandler
     }
     k
     = do
     labelThisThread "inbound-governor"
     stateVar <- newTVarIO emptyState
-    let connectionHandler = mch $ tr2 stateVar
+    let connectionHandler = mkConnectionHandler $ responderIgTracer stateVar
     withConnectionManager connectionHandler \connectionManager ->
       withAsync
         (labelThisThread "inbound-governor-loop" >>
@@ -198,7 +199,7 @@ with
       \thread ->
         k thread (mkPublicState <$> readTVarIO stateVar) connectionManager
   where
-    tr2 stateVar = Tracer $ \(Mux.WithBearer peer trace) ->
+    responderIgTracer stateVar = Tracer $ \(Mux.WithBearer peer trace) ->
       case trace of
         Mux.TraceTerminating mid _dir -> atomically do
           State { connections } <- readTVar stateVar

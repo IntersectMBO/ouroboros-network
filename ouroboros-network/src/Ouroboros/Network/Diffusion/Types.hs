@@ -516,7 +516,7 @@ type NodeToClientConnectionHandler
       m
 
 type NodeToClientConnectionManagerArguments
-      muxMode ntcFd initiatorCtx responderCtx ntcAddr ntcVersion ntcVersionData m a b =
+      ntcFd ntcAddr ntcVersion ntcVersionData m a b =
     CM.Arguments
       (ConnectionHandlerTrace ntcVersion ntcVersionData)
       ntcFd
