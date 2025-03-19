@@ -154,7 +154,6 @@ module Ouroboros.Network.ConnectionManager.Types
   , TransitionTrace
   , TransitionTrace' (..)
   , AbstractTransitionTrace
-  , NewConnectionInfo (..)
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -181,30 +180,6 @@ import Ouroboros.Network.ConnectionManager.ConnMap (ConnMap)
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 
--- | Announcement message for a new connection.
---
-data NewConnectionInfo peerAddr handle
-
-    -- | Announce a new connection.  /Inbound protocol governor/ will start
-    -- responder protocols using 'StartOnDemand' strategy and monitor remote
-    -- transitions: @PromotedToWarm^{Duplex}_{Remote}@ and
-    -- @DemotedToCold^{dataFlow}_{Remote}@.
-    = NewConnectionInfo
-      !Provenance
-      !(ConnectionId peerAddr)
-      !DataFlow
-      !handle
-
-instance Show peerAddr
-      => Show (NewConnectionInfo peerAddr handle) where
-      show (NewConnectionInfo provenance connId dataFlow _) =
-        concat [ "NewConnectionInfo "
-               , show provenance
-               , " "
-               , show connId
-               , " "
-               , show dataFlow
-               ]
 
 -- | Connection manager supports `IPv4` and `IPv6` addresses.
 --

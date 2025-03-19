@@ -467,7 +467,7 @@ runM Interfaces
       --
 
       let connectionManagerArguments'
-            :: forall muxMode handle handleTrace handleError initiatorCtx responderCtx b.
+            :: forall muxMode handle b.
                PrunePolicy ntnAddr
             -> StdGen
             -> CM.Arguments
