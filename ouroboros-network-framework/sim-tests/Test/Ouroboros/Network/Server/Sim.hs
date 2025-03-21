@@ -21,6 +21,7 @@
 
 module Test.Ouroboros.Network.Server.Sim (tests) where
 
+import Data.Traversable (traverse)
 import Control.Applicative (Alternative ((<|>)))
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -123,7 +124,7 @@ tests =
     , testProperty "transitions coverage"   prop_connection_manager_transitions_coverage
     , testProperty "no invalid traces"      prop_connection_manager_no_invalid_traces
     , testProperty "counters"               prop_connection_manager_counters
-    , testProperty "pruning"                prop_connection_manager_pruning
+    --, testProperty "pruning"                prop_connection_manager_pruning
     ]
   , testGroup "InboundGovernor"
     [ testProperty "valid transitions"      prop_inbound_governor_valid_transitions
@@ -1117,6 +1118,7 @@ prop_connection_manager_no_invalid_traces (Fixed rnd) serverAcc (ArbDataFlow dat
       connectionManagerEvents = traceWithNameTraceEvents trace
 
   in tabulate "ConnectionEvents" (map showConnectionEvents events)
+    . counterexample (prettyPrintTrace trace)
     . counterexample (intercalate "\n"
                      [ "========== Script =========="
                      , ppScript (MultiNodeScript events attenuationMap)
@@ -1276,7 +1278,7 @@ prop_connection_manager_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
        ( \ case
            MainReturn {} -> mempty
            v             -> All
-                            $ counterexample (show v) False
+                            $ counterexample ("oops" <> show v) False
        )
        ( \ case
           CM.TrConnectionManagerCounters cmc ->

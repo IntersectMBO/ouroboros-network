@@ -1,3 +1,4 @@
+{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE DuplicateRecordFields #-}
@@ -43,6 +44,8 @@ module Ouroboros.Network.InboundGovernor
   , MkMuxConnectionHandler
   ) where
 
+import GHC.Stack
+import Debug.Trace qualified as DT
 import Data.Typeable (Typeable)
 import Control.Monad.Fix (MonadFix)
 import Control.Applicative (Alternative)
@@ -164,6 +167,7 @@ with :: forall (muxMode :: Mux.Mode) socket peerAddr initiatorCtx
         , MonadFix m
         , Typeable peerAddr
         , Show peerAddr
+        , HasCallStack
         )
      => Arguments muxMode handlerTrace socket peerAddr initiatorCtx
                   handle handleError versionNumber versionData bytes m a b x
@@ -187,7 +191,8 @@ with
     = do
     labelThisThread "inbound-governor"
     stateVar <- newTVarIO emptyState
-    let connectionHandler = mkConnectionHandler $ responderIgTracer stateVar
+    countersVar <- newTVarIO Map.empty -- ProtocolCounters 0 0
+    let connectionHandler = mkConnectionHandler $ responderIgTracer stateVar countersVar
     withConnectionManager connectionHandler \connectionManager ->
       withAsync
         (labelThisThread "inbound-governor-loop" >>
@@ -199,40 +204,52 @@ with
       \thread ->
         k thread (mkPublicState <$> readTVarIO stateVar) connectionManager
   where
-    responderIgTracer stateVar = Tracer $ \(Mux.WithBearer peer trace) ->
+    -- responderIgTracer :: HasCallStack
+    --                   => StrictTVar m
+    responderIgTracer ::  HasCallStack
+                      => StrictTVar m (State muxMode initiatorCtx peerAddr versionData m a b)
+                      -> StrictTVar m (Map (ConnectionId peerAddr) ResponderCounters)
+                      -> Tracer m (Mux.WithBearer (ConnectionId peerAddr) Mux.Trace)
+    responderIgTracer stateVar countersVar = Tracer $ \(Mux.WithBearer peer trace) ->
       case trace of
-        Mux.TraceTerminating mid _dir -> atomically do
-          State { connections } <- readTVar stateVar
-          let connState@ConnectionState { .. } = connections Map.! peer
-          case iYam mid connState of
-            Hot -> do
-              when (csTraceHotResponders == 1) $
-                InfoChannel.writeMessage infoChannel $ RemoteDemotedToWarm peer
-              adjustHotResponders pred peer
-            _rest -> do
-              when (csTraceWarmResponders == 1) $
-                InfoChannel.writeMessage infoChannel $ WaitIdleRemote peer
-              adjustWarmResponders pred peer
+        Mux.TraceState Mux.Mature -> atomically do
+          -- we block the muxer until the connection manager
+          -- notifies the IG of the new connection
+          check . Map.member peer . connections =<< readTVar stateVar
+          modifyTVar countersVar $ Map.insert peer (ResponderCounters 0 0)
 
         starting | startAny trace -> atomically do
-          State { connections } <- readTVar stateVar
-          let connState@ConnectionState { .. } = connections Map.! peer
-              mid = getMid starting
+          connState <- (Map.! peer) . connections <$> readTVar stateVar
+          ResponderCounters {..} <- (Map.! peer) <$> readTVar countersVar
+          let mid = getMid starting
           case iYam mid connState of
             Hot -> do
-              when (csTraceHotResponders == 0) $
+              when (numTraceHotResponders == 0) $
                 InfoChannel.writeMessage infoChannel $ RemotePromotedToHot peer
               adjustHotResponders succ peer
             _rest -> do
-              when (csTraceWarmResponders == 0) $
+              when (numTraceWarmResponders + numTraceHotResponders == 0) $
                 InfoChannel.writeMessage infoChannel $ AwakeRemote peer
               adjustWarmResponders succ peer
 
-        exit | withResult exit -> atomically do
-          State { connections } <- readTVar stateVar
-          let ConnectionState { .. } = connections Map.! peer
-              mid = getMid exit
+        terminated | withResult terminated -> atomically do
+          connState@ConnectionState {..} <- (Map.! peer) . connections <$> readTVar stateVar
+          ResponderCounters {..} <- (Map.! peer) <$> readTVar countersVar
+          let mid = getMid terminated
               completionAction = csCompletionMap Map.! mid
+              miniProtocolTemp = iYam mid connState
+          case terminated of
+            Mux.TraceCleanExit {} -> do
+              case miniProtocolTemp of
+                Hot   -> adjustHotResponders pred peer
+                _rest -> adjustWarmResponders pred peer
+              if | numTraceHotResponders + numTraceWarmResponders == 1 ->
+                     InfoChannel.writeMessage infoChannel $ WaitIdleRemote peer
+                 | numTraceHotResponders == 1
+                 , Hot <- miniProtocolTemp ->
+                     InfoChannel.writeMessage infoChannel $ RemoteDemotedToWarm peer
+                 | otherwise -> return ()
+            _otherwise -> return ()
           tResult <- completionAction
           InfoChannel.writeMessage infoChannel $
             MiniProtocolTerminated $ Terminated {
@@ -242,29 +259,45 @@ with
               tDataFlow = connectionDataFlow csVersionData,
               tResult }
 
-        Mux.TraceStopped -> atomically do
+        muxStopped | anyStop muxStopped -> atomically do
           State { connections } <- readTVar stateVar
-          let ConnectionState { .. } = connections Map.! peer
-          status <- Mux.stopped csMux
-          InfoChannel.writeMessage infoChannel $
-            MuxFinished peer status
+          counters <- readTVar countersVar
+          case (Map.lookup peer counters, Map.lookup peer connections) of
+            (Just _, Just (ConnectionState {..})) -> do
+              status <- Mux.stopped csMux
+              modifyTVar countersVar $ Map.delete peer
+              InfoChannel.writeMessage infoChannel $
+                MuxFinished peer status
+            (Just _, _) -> modifyTVar countersVar $ Map.delete peer
+            _otherwise -> error "impossible!"
 
         _otherwise -> return ()
       where
+        anyStop = \case
+          Mux.TraceStopped -> True
+          Mux.TraceState Mux.Dead -> True
+          _otherwise -> False
+
         adjustWarmResponders tick peer =
-          modifyTVar stateVar \state@State { connections } -> state {
-            connections =
-              Map.adjust
-                (\connState@ConnectionState { csTraceWarmResponders } -> connState { csTraceWarmResponders = tick csTraceWarmResponders } )
-                peer
-                connections }
+          modifyTVar countersVar $
+            Map.adjust (\rc@ResponderCounters { numTraceWarmResponders } -> rc { numTraceWarmResponders = tick numTraceWarmResponders } )
+                       peer
+          -- modifyTVar stateVar \state@State { connections } -> state {
+          --   connections =
+          --     Map.adjust
+          --       (\connState@ConnectionState { csTraceWarmResponders } -> connState { csTraceWarmResponders = tick csTraceWarmResponders } )
+          --       peer
+          --       connections }
 
         adjustHotResponders tick peer =
-          modifyTVar stateVar \state@State { connections } -> state {
-            connections =
-              Map.adjust
-                (\connState@ConnectionState { csTraceHotResponders } -> connState { csTraceHotResponders = tick csTraceHotResponders } )
-                peer connections }
+          modifyTVar countersVar $
+            Map.adjust (\rc@ResponderCounters { numTraceHotResponders } -> rc { numTraceHotResponders = tick numTraceHotResponders } )
+                       peer
+          -- modifyTVar stateVar \state@State { connections } -> state {
+          --   connections =
+          --     Map.adjust
+          --       (\connState@ConnectionState { csTraceHotResponders } -> connState { csTraceHotResponders = tick csTraceHotResponders } )
+          --       peer connections }
 
         getMid = \case
           Mux.TraceStartEagerly mid _dir -> mid
@@ -273,6 +306,10 @@ with
           Mux.TraceExceptionExit mid _dir _e -> mid
           _otherwise -> error "getMid: impossible!"
 
+        iYam :: HasCallStack
+             => MiniProtocolNum
+             -> ConnectionState muxMode initiatorCtx peerAddr versionData m a b
+             -> ProtocolTemperature
         iYam mid ConnectionState { csMiniProtocolMap } =
           let miniData = csMiniProtocolMap Map.! mid
            in mpdMiniProtocolTemp miniData
@@ -473,9 +510,7 @@ with
                                 csVersionData,
                                 csMiniProtocolMap,
                                 csCompletionMap,
-                                csRemoteState,
-                                csTraceHotResponders = 0,
-                                csTraceWarmResponders = 0
+                                csRemoteState
                               }
 
                         return (Just connState)
@@ -600,6 +635,7 @@ with
           --
           -- NOTE: `promotedToWarmRemote` doesn't throw, hence exception handling
           -- is not needed.
+          -- DT.traceM $ "Awake remote " <> show connId
           res <- promotedToWarmRemote connectionManager connId
           traceWith tracer (TrPromotedToWarmRemote connId res)
 

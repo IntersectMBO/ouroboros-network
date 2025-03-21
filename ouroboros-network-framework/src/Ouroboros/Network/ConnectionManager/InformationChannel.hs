@@ -32,13 +32,14 @@ data InformationChannel a m =
 
 -- | Create a new 'InformationChannel' backed by a `TBQueue`.
 --
-newInformationChannel :: forall a m. MonadLabelledSTM m
+newInformationChannel :: forall a m. (Show a, MonadLabelledSTM m, MonadTraceSTM m)
                       => m (InformationChannel a m)
 newInformationChannel = do
     channel <-
       atomically $
         newTBQueue cc_QUEUE_BOUND
         >>= \q -> labelTBQueue q "server-cc" $> q
+    traceTBQueueIO channel $ \_ -> return . TraceString . show
     pure $ InformationChannel {
         readMessage  = readTBQueue channel,
         writeMessage = writeTBQueue channel

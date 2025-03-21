@@ -5,6 +5,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns        #-}
 
+{-# OPTIONS_GHC -fno-ignore-asserts #-}
+
 -- | Inbound protocol governor state.
 --
 -- The module should be imported qualified.
@@ -24,7 +26,8 @@ module Ouroboros.Network.InboundGovernor.State
   , mkRemoteSt
   , updateRemoteState
   , mapRemoteState
-  , MiniProtocolData (..)) where
+  , MiniProtocolData (..)
+  , ResponderCounters (..)) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (assert)
@@ -184,15 +187,12 @@ data ConnectionState muxMode initiatorCtx peerAddr versionData m a b = Connectio
 
       -- | State of the connection.
       --
-      csRemoteState     :: !(RemoteState m),
-
-      csTraceHotResponders :: !Int,
-
-      csTraceWarmResponders :: !Int
-
-      -- csHotDelta :: !Int,
-      -- csWarmDelta :: !Int
+      csRemoteState     :: !(RemoteState m)
     }
+
+data ResponderCounters = ResponderCounters {
+  numTraceHotResponders :: !Int,
+  numTraceWarmResponders :: !Int }
 
 -- data TransitionCounters = TransitionCounters {
 --   hotDelta :: !Int,

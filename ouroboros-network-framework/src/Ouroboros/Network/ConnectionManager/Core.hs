@@ -10,6 +10,7 @@
 {-# LANGUAGE TupleSections        #-}
 {-# LANGUAGE UndecidableInstances #-}
 
+{-# OPTIONS_GHC -fno-ignore-asserts #-}
 -- | The implementation of connection manager.
 --
 -- The module should be imported qualified.
@@ -1022,7 +1023,7 @@ with args@Arguments {
                       throwSTM (withCallStack (ImpossibleState (remoteAddress connId)))
 
                     -- At this stage the inbound connection cannot be in
-                    -- 'InboundState', it would mean that there was another thread
+                     -- 'InboundState', it would mean that there was another thread
                     -- that included that connection, but this would violate @TCP@
                     -- constraints.
                     InboundState {} ->

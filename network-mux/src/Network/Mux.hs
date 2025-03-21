@@ -247,8 +247,9 @@ run tracer
     -- an exception.  Setting 'muxStatus' is necessary to resolve a possible
     -- deadlock of mini-protocol completion action.
     `catch` \(SomeAsyncException e) -> do
-      atomically $ writeTVar muxStatus (Failed $ toException e)
-      throwIO e
+       atomically $ writeTVar muxStatus (Failed $ toException e)
+       traceWith tracer (TraceState Dead)
+       throwIO e
   where
     muxerJob egressQueue =
       JobPool.Job (muxer egressQueue bearer)
@@ -430,9 +431,10 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
           go monitorCtx
 
         EventJobResult (MiniProtocolException pnum pmode e) -> do
-          traceWith tracer (TraceState Dead)
-          traceWith tracer (TraceExceptionExit pnum pmode e)
+          -- order is significant for IG's `responderIgTracer`
           atomically $ writeTVar muxStatus $ Failed e
+          traceWith tracer (TraceExceptionExit pnum pmode e)
+          traceWith tracer (TraceState Dead)
           throwIO e
 
         -- These two cover internal and protocol errors.  The muxer exception is
@@ -444,8 +446,8 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
         -- the source of the failure, e.g. specific mini-protocol. If we're
         -- propagating exceptions, we don't need to log them.
         EventJobResult (MuxerException e) -> do
-          traceWith tracer (TraceState Dead)
           atomically $ writeTVar muxStatus $ Failed e
+          traceWith tracer (TraceState Dead)
           throwIO e
         EventJobResult (DemuxerException e) -> do
           traceWith tracer (TraceState Dead)
@@ -794,4 +796,3 @@ runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue , muxStatus}
                    <|> return (Left $ toException (Shutdown Nothing st))
            Failed e -> readTMVar completionVar
                    <|> return (Left $ toException (Shutdown (Just e) st))
-

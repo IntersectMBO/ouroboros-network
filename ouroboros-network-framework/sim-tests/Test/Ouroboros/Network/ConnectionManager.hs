@@ -1,3 +1,4 @@
+{-# LANGUAGE DisambiguateRecordFields   #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DeriveGeneric              #-}
@@ -22,6 +23,7 @@ module Test.Ouroboros.Network.ConnectionManager (tests) where
 
 import Prelude hiding (read)
 
+import Debug.Trace qualified as Debug
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (assert)
 import Control.Monad (forever, unless, when, (>=>))
@@ -737,11 +739,11 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
         connStateIdSupply <- atomically $ CM.newConnStateIdSupply Proxy
         let tracer :: Tracer (IOSim s) TestConnectionManagerTrace
             tracer = Tracer (say . show)
-                    {--
-                      - <> Tracer (\msg -> do
-                      -             t <- getMonotonicTime
-                      -             Debug.traceShowM (t, msg))
-                      --}
+
+                      <> Tracer (\msg -> do
+                                   t <- getMonotonicTime
+                                   Debug.traceShowM (t, msg))
+
             -- The above is a useful trick for getting simulation logs in
             -- a ghci session.
 
@@ -750,41 +752,41 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
               fmap CM.abstractState `contramap`
                    Tracer traceM
                 <> Tracer (say . show)
-                {--
-                  - <> Tracer (\msg -> do
-                  -             t <- getMonotonicTime
-                  -             Debug.traceShowM (t, msg))
-                  --}
+
+                <> Tracer (\msg -> do
+                               t <- getMonotonicTime
+                               Debug.traceShowM (t, msg))
+
 
         inbgovInfoChannel <- newInformationChannel
         let connectionHandler = mkConnectionHandler snocket
         result <- CM.with
           CM.Arguments {
-              CM.tracer,
-              CM.trTracer,
-              CM.muxTracer = nullTracer,
-              CM.ipv4Address = myAddress,
-              CM.ipv6Address = Nothing,
-              CM.addressType = \_ -> Just IPv4Address,
-              CM.snocket = snocket,
-              CM.makeBearer = makeFDBearer,
-              CM.configureSocket = \_ _ -> return (),
-              CM.connectionDataFlow = id,
-              CM.prunePolicy = simplePrunePolicy,
-              CM.stdGen = Random.mkStdGen rnd,
-              CM.connectionsLimits = AcceptedConnectionsLimit {
+              tracer,
+              trTracer,
+              muxTracer = nullTracer,
+              ipv4Address = myAddress,
+              ipv6Address = Nothing,
+              addressType = \_ -> Just IPv4Address,
+              snocket = snocket,
+              makeBearer = makeFDBearer,
+              configureSocket = \_ _ -> return (),
+              connectionDataFlow = id,
+              prunePolicy = simplePrunePolicy,
+              stdGen = Random.mkStdGen rnd,
+              connectionsLimits = AcceptedConnectionsLimit {
                   acceptedConnectionsHardLimit = maxBound,
                   acceptedConnectionsSoftLimit = maxBound,
                   acceptedConnectionsDelay     = 0
                 },
-              CM.timeWaitTimeout = testTimeWaitTimeout,
-              CM.outboundIdleTimeout = testOutboundIdleTimeout,
-              CM.updateVersionData = \a _ -> a,
-              CM.connStateIdSupply
+              timeWaitTimeout = testTimeWaitTimeout,
+              outboundIdleTimeout = testOutboundIdleTimeout,
+              updateVersionData = \a _ -> a,
+              connStateIdSupply,
+              classifyHandleError = \_ -> HandshakeFailure
             }
-            connectionHandler
-            (\_ -> HandshakeFailure)
             (InResponderMode inbgovInfoChannel)
+            connectionHandler
           $ \(connectionManager
                 :: ConnectionManager Mx.InitiatorResponderMode (FD (IOSim s))
                                      Addr (Handle m) Void (IOSim s)) -> do

@@ -118,7 +118,9 @@ data Event (muxMode :: Mux.Mode) handle initiatorCtx peerAddr versionData m a b
 
     | InactivityTimeout
 
-
+instance Show peerAddr => Show (Event (muxMode :: Mux.Mode) handle initiatorCtx peerAddr versionData m a b) where
+  show (AwakeRemote peer) = "Awake Remote " <> show peer
+  show _ = ""
 --
 -- STM transactions which detect 'Event's (signals)
 --

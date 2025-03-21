@@ -472,7 +472,7 @@ withBidirectionalConnectionManager name timeouts
                                    acceptedConnLimit k = do
     mainThreadId <- myThreadId
     inbgovInfoChannel <- newInformationChannel
-    let muxTracer = WithName name `contramap` nullTracer -- mux tracer
+    let muxTracer = WithName name `contramap` debugTracerG -- mux tracer
         mkConnectionHandler =
           makeConnectionHandler
             muxTracer
@@ -948,8 +948,8 @@ bidirectionalExperiment
 -- * inbound governor
 -- * server
 --
--- debugTracer :: (MonadSay m, MonadTime m, Show a) => Tracer m a
--- debugTracer = Tracer (\msg -> (,msg) <$> getCurrentTime >>= say . show)
+debugTracerG :: (MonadSay m, MonadTime m, Show a) => Tracer m a
+debugTracerG = Tracer (\msg -> (,msg) <$> getCurrentTime >>= say . show)
            -- <> Tracer Debug.traceShowM
 
 
