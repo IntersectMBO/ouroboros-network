@@ -40,7 +40,7 @@ module Ouroboros.Network.PeerSelection.LedgerPeers
   , resolveLedgerPeers
   ) where
 
-import Control.Monad (when)
+import Control.Monad (foldM, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadTime.SI
 import Control.Tracer (Tracer, traceWith)
@@ -139,8 +139,11 @@ accBigPoolStakeMap = Map.fromAscList      -- the input list is ordered by `AccPo
 
 -- | Try to pick n random peers using stake distribution.
 --
-pickPeers :: forall m. Monad m
-          => StdGen
+pickPeers :: forall g m.
+             (MonadSTM m
+             , RandomGen g
+             )
+          => StrictTVar m g
           -> Tracer m TraceLedgerPeers
           -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
           -- ^ all ledger peers
@@ -148,50 +151,50 @@ pickPeers :: forall m. Monad m
           -- ^ big ledger peers
           -> NumberOfPeers
           -> LedgerPeersKind
-          -> m (StdGen, [RelayAccessPoint])
+          -> m [RelayAccessPoint]
 
-pickPeers inRng _ pools _bigPools _ _ | Map.null pools = return (inRng, [])
+pickPeers _ _ pools _bigPools _ _ | Map.null pools = return []
 
 -- pick big ledger peers using ledger stake distribution
-pickPeers inRng tracer _pools bigPools (NumberOfPeers cnt) BigLedgerPeers =
-    go inRng cnt []
+pickPeers rng tracer _pools bigPools (NumberOfPeers cnt) BigLedgerPeers =
+    go cnt []
   where
-    go :: StdGen -> Word16 -> [RelayAccessPoint] -> m (StdGen, [RelayAccessPoint])
-    go rng 0 picked = return (rng, picked)
-    go rng n picked =
-        let (r :: Word64, rng') = random rng
-            d = maxBound :: Word64
+    go :: Word16 -> [RelayAccessPoint] -> m [RelayAccessPoint]
+    go 0 picked = return picked
+    go n picked = do
+        (r :: Word64) <- atomically $ applyGen random rng
+        let d = maxBound :: Word64
             -- x is the random accumulated stake capped by `bigLedgerPeerQuota`.
             -- We use it to select random big ledger peer according to their
             -- stake distribution.
             x = fromIntegral r % fromIntegral d * (unAccPoolStake bigLedgerPeerQuota)
-        in case Map.lookupGE (AccPoolStake x) bigPools of
+        case Map.lookupGE (AccPoolStake x) bigPools of
              -- XXX We failed pick a peer. Shouldn't this be an error?
-             Nothing -> go rng' (n - 1) picked
+             Nothing -> go (n - 1) picked
              Just (ackStake, (stake, relays)) -> do
-                 let (ix, rng'') = randomR (0, NonEmpty.length relays - 1) rng'
-                     relay = relays NonEmpty.!! ix
+                 ix <- atomically $ applyGen (randomR (0, NonEmpty.length relays - 1)) rng
+                 let relay = relays NonEmpty.!! ix
                  traceWith tracer $ PickedBigLedgerPeer relay ackStake stake
-                 go rng'' (n - 1) (relay : picked)
+                 go (n - 1) (relay : picked)
 
 -- pick ledger peers (not necessarily big ones) using square root of the stake
 -- distribution
-pickPeers inRng tracer pools _bigPools (NumberOfPeers cnt) AllLedgerPeers = go inRng cnt []
+pickPeers rng tracer pools _bigPools (NumberOfPeers cnt) AllLedgerPeers = go cnt []
   where
-    go :: StdGen -> Word16 -> [RelayAccessPoint] -> m (StdGen, [RelayAccessPoint])
-    go rng 0 picked = return (rng, picked)
-    go rng n picked =
-        let (r :: Word64, rng') = random rng
-            d = maxBound :: Word64
-            x = fromIntegral r % fromIntegral d in
+    go :: Word16 -> [RelayAccessPoint] -> m [RelayAccessPoint]
+    go 0 picked = return picked
+    go n picked = do
+        (r :: Word64) <- atomically $ applyGen random rng
+        let d = maxBound :: Word64
+            x = fromIntegral r % fromIntegral d
         case Map.lookupGE (AccPoolStake x) pools of
              -- XXX We failed pick a peer. Shouldn't this be an error?
-             Nothing -> go rng' (n - 1) picked
+             Nothing -> go (n - 1) picked
              Just (ackStake, (stake, relays)) -> do
-                 let (ix, rng'') = randomR (0, NonEmpty.length relays - 1) rng'
-                     relay = relays NonEmpty.!! ix
+                 ix <- atomically $ applyGen (randomR (0, NonEmpty.length relays - 1)) rng
+                 let relay = relays NonEmpty.!! ix
                  traceWith tracer $ PickedLedgerPeer relay ackStake stake
-                 go rng'' (n - 1) (relay : picked)
+                 go (n - 1) (relay : picked)
 
 
 -- | Peer list life time decides how often previous ledger peers should be
@@ -234,15 +237,14 @@ ledgerPeersThread PeerActionsDNS {
                     wlpGetLedgerPeerSnapshot }
                   getReq
                   putResp = do
-    go wlpRng (Time 0) Map.empty Map.empty Nothing
+    go (Time 0) Map.empty Map.empty Nothing
   where
-    go :: StdGen
-       -> Time
+    go :: Time
        -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
        -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
        -> Maybe SlotNo
        -> m Void
-    go rng oldTs peerMap bigPeerMap cachedSlot = do
+    go oldTs peerMap bigPeerMap cachedSlot = do
         traceWith wlpTracer WaitingOnRequest
         -- wait until next request of ledger peers
         ((numRequested, ledgerPeersKind), useLedgerPeers) <- atomically $
@@ -290,11 +292,11 @@ ledgerPeersThread PeerActionsDNS {
                when (isLedgerPeersEnabled useLedgerPeers) $
                    traceWith wlpTracer FallingBackToPublicRootPeers
                atomically $ putResp Nothing
-               go rng ts peerMap' bigPeerMap' cachedSlot'
+               go ts peerMap' bigPeerMap' cachedSlot'
            else do
                let ttl = 5 -- TTL, used as re-request interval by the governor.
 
-               (rng', !pickedPeers) <- pickPeers rng wlpTracer peerMap' bigPeerMap' numRequested ledgerPeersKind
+               !pickedPeers <- pickPeers wlpRng wlpTracer peerMap' bigPeerMap' numRequested ledgerPeersKind
                case ledgerPeersKind of
                  BigLedgerPeers -> do
                    let numBigLedgerPeers = Map.size bigPeerMap'
@@ -322,26 +324,21 @@ ledgerPeersThread PeerActionsDNS {
                                                  paDnsActions
                                                  domains
 
-               let (rng'', rngDomain) = split rng'
-                   pickedAddrs =
-                     snd $ List.foldl' pickDomainAddrs
-                                  (rngDomain, plainAddrs)
-                                  domainAddrs
+               pickedAddrs <- foldM pickDomainAddrs plainAddrs domainAddrs
 
                atomically $ putResp $ Just (pickedAddrs, ttl)
-               go rng'' ts peerMap' bigPeerMap' cachedSlot'
+               go ts peerMap' bigPeerMap' cachedSlot'
 
     -- Randomly pick one of the addresses returned in the DNS result.
-    pickDomainAddrs :: (StdGen, Set peerAddr)
-                    -> Set peerAddr
-                    -> (StdGen, Set peerAddr)
-    pickDomainAddrs (rng,  pickedAddrs) addrs | Set.null addrs = (rng, pickedAddrs)
-    pickDomainAddrs (rng, !pickedAddrs) addrs =
-        let (ix, rng')   = randomR (0, Set.size addrs - 1) rng
-            !pickedAddr  = Set.elemAt ix addrs
+    pickDomainAddrs :: Set peerAddr
+                     -> Set peerAddr
+                     -> m (Set peerAddr)
+    pickDomainAddrs pickedAddrs addrs | Set.null addrs = return pickedAddrs
+    pickDomainAddrs pickedAddrs addrs = do
+        ix <- atomically $ applyGen (randomR (0, Set.size addrs - 1)) wlpRng
+        let !pickedAddr  = Set.elemAt ix addrs
             pickedAddrs' = Set.insert pickedAddr pickedAddrs
-        in (rng', pickedAddrs')
-
+        return pickedAddrs'
 
     -- Divide the picked peers form the ledger into addresses we can use
     -- directly and domain names that we need to resolve.
@@ -414,7 +411,7 @@ stakeMapWithSlotOverSource StakeMapOverSource {
 -- | Argument record for withLedgerPeers
 --
 data WithLedgerPeersArgs m = WithLedgerPeersArgs {
-  wlpRng                   :: StdGen,
+  wlpRng                   :: StrictTVar m StdGen,
   -- ^ Random generator for picking ledger peers
   wlpConsensusInterface    :: LedgerPeersConsensusInterface m,
   wlpTracer                :: Tracer m TraceLedgerPeers,
@@ -454,3 +451,15 @@ withLedgerPeers peerActionsDNS
     withAsync
       (ledgerPeersThread peerActionsDNS ledgerPeerArgs getRequest putResponse)
       $ \ thread -> k request thread
+
+applyGen :: forall a g m.
+             ( MonadSTM m
+             )
+          => (g -> (a, g))
+          -> StrictTVar m g
+          -> STM m a
+applyGen f tvar = do
+  g <- readTVar tvar
+  let (r, !g') = f g
+  writeTVar tvar g'
+  return r

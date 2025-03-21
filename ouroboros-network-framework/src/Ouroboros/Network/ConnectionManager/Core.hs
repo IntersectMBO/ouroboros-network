@@ -145,7 +145,7 @@ data Arguments handlerTrace socket peerAddr handle handleError versionNumber ver
 
         -- | StdGen used by the `PrunePolicy`
         --
-        stdGen              :: StdGen,
+        stdGen              :: StrictTVar m StdGen,
 
         connectionsLimits   :: AcceptedConnectionsLimit,
 
@@ -424,8 +424,7 @@ with args@Arguments {
               Just st -> Just <$> traverse (inspectTVar (Proxy :: Proxy m) . toLazyTVar . connVar) st
             return (TraceString (show st'))
 
-          stdGenVar <- newTVar (stdGen args)
-          return (v, stdGenVar)
+          return (v, stdGen args)
 
     let readState
           :: STM m (State.ConnMap peerAddr AbstractState)

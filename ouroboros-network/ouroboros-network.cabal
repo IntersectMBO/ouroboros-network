@@ -25,6 +25,11 @@ flag txsubmission-delay
   manual: True
   default: True
 
+flag reseed
+  description: Periodically reseed the prngs. Inteded to aid some test tool.
+  manual: True
+  default: False
+
 source-repository head
   type: git
   location: https://github.com/intersectmbo/ouroboros-network
@@ -186,6 +191,9 @@ library
 
   if flag(txsubmission-delay)
     cpp-options: -DTXSUBMISSION_DELAY
+
+  if flag(reseed)
+    cpp-options: -DDIFFUSION_RESEED
 
 -- Simulation Test Library
 library sim-tests-lib
