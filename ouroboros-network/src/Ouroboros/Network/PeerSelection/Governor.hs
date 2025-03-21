@@ -475,19 +475,21 @@ peerSelectionGovernor :: ( Alternative (STM m)
                       => Tracer m (TracePeerSelection peeraddr)
                       -> Tracer m (DebugPeerSelection peeraddr)
                       -> Tracer m PeerSelectionCounters
-                      -> StdGen
+                      -> StrictTVar m StdGen
                       -> ConsensusMode
                       -> MinBigLedgerPeersForTrustedState -- ^ Genesis parameter
                       -> PeerSelectionActions peeraddr peerconn m
                       -> PeerSelectionPolicy  peeraddr m
                       -> PeerSelectionInterfaces peeraddr peerconn m
                       -> m Void
-peerSelectionGovernor tracer debugTracer countersTracer fuzzRng consensusMode minActiveBigLedgerPeers actions policy interfaces =
-    JobPool.withJobPool $ \jobPool ->
+peerSelectionGovernor tracer debugTracer countersTracer fuzzRngVar consensusMode minActiveBigLedgerPeers actions policy interfaces =
+    JobPool.withJobPool $ \jobPool -> do
+      fuzzRng <- atomically $ readTVar fuzzRngVar
       peerSelectionGovernorLoop
         tracer
         debugTracer
         countersTracer
+        fuzzRngVar
         actions
         policy
         interfaces
@@ -522,6 +524,7 @@ peerSelectionGovernorLoop :: forall m peeraddr peerconn.
                           => Tracer m (TracePeerSelection peeraddr)
                           -> Tracer m (DebugPeerSelection peeraddr)
                           -> Tracer m PeerSelectionCounters
+                          -> StrictTVar m StdGen
                           -> PeerSelectionActions peeraddr peerconn m
                           -> PeerSelectionPolicy  peeraddr m
                           -> PeerSelectionInterfaces peeraddr peerconn m
@@ -531,6 +534,7 @@ peerSelectionGovernorLoop :: forall m peeraddr peerconn.
 peerSelectionGovernorLoop tracer
                           debugTracer
                           countersTracer
+                          fuzzRngVar
                           actions
                           policy
                           interfaces@PeerSelectionInterfaces {
@@ -606,7 +610,17 @@ peerSelectionGovernorLoop tracer
       traverse_ (traceWith tracer) decisionTrace
 
       mapM_ (JobPool.forkJob jobPool) decisionJobs
-      loop st'' dbgUpdateAt'
+
+      -- To support re-seeding of the rng we
+      -- replace the state rng with a fresh one split
+      -- from fuzzRngVar every loop itteration
+      rng <- atomically $ do
+          rng <- readTVar fuzzRngVar
+          let (g, g') = split rng
+          writeTVar fuzzRngVar g'
+          return g
+
+      loop (st'' { stdGen = rng }) dbgUpdateAt'
 
     evalGuardedDecisions :: Time
                          -> PeerSelectionState peeraddr peerconn

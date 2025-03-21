@@ -756,6 +756,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
                   --}
 
         inbgovInfoChannel <- newInformationChannel
+        stdGenVar <- newTVarIO (Random.mkStdGen rnd)
         let connectionHandler = mkConnectionHandler snocket
         result <- CM.with
           CM.Arguments {
@@ -770,7 +771,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
               CM.configureSocket = \_ _ -> return (),
               CM.connectionDataFlow = id,
               CM.prunePolicy = simplePrunePolicy,
-              CM.stdGen = Random.mkStdGen rnd,
+              CM.stdGen = stdGenVar,
               CM.connectionsLimits = AcceptedConnectionsLimit {
                   acceptedConnectionsHardLimit = maxBound,
                   acceptedConnectionsSoftLimit = maxBound,

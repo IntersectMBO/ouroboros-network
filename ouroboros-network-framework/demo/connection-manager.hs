@@ -222,6 +222,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
     hotRequestsVar         <- LazySTM.newTVarIO hotInitiatorRequests
     warmRequestsVar        <- LazySTM.newTVarIO warmInitiatorRequests
     establishedRequestsVar <- LazySTM.newTVarIO establishedInitiatorRequests
+    stdGenVar              <- newTVarIO stdGen
     let muxTracer = ("mux",) `contramap` nullTracer -- mux tracer
 
     CM.with
@@ -241,7 +242,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
           CM.outboundIdleTimeout = protocolIdleTimeout,
           CM.connectionDataFlow = \_ -> Duplex,
           CM.prunePolicy = simplePrunePolicy,
-          CM.stdGen      = stdGen,
+          CM.stdGen      = stdGenVar,
           CM.connectionsLimits = AcceptedConnectionsLimit {
               acceptedConnectionsHardLimit = maxBound,
               acceptedConnectionsSoftLimit = maxBound,

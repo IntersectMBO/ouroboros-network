@@ -276,6 +276,7 @@ withInitiatorOnlyConnectionManager
 withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket makeBearer connStateIdSupply
                                    localAddr nextRequests handshakeTimeLimits acceptedConnLimit k = do
     mainThreadId <- myThreadId
+    stdGenVar <- newTVarIO stdGen
     let muxTracer = (name,) `contramap` nullTracer -- mux tracer
     CM.with
       CM.Arguments {
@@ -294,7 +295,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
           CM.configureSocket = \_ _ -> return (),
           CM.connectionDataFlow = \(DataFlowProtocolData df _) -> df,
           CM.prunePolicy = simplePrunePolicy,
-          CM.stdGen,
+          CM.stdGen = stdGenVar,
           CM.connectionsLimits = acceptedConnLimit,
           CM.timeWaitTimeout = tTimeWaitTimeout timeouts,
           CM.outboundIdleTimeout = tOutboundIdleTimeout timeouts,
@@ -465,6 +466,7 @@ withBidirectionalConnectionManager name timeouts
                                    acceptedConnLimit k = do
     mainThreadId <- myThreadId
     inbgovInfoChannel <- newInformationChannel
+    stdGenVar <- newTVarIO stdGen
     let muxTracer = WithName name `contramap` nullTracer -- mux tracer
 
     CM.with
@@ -486,7 +488,7 @@ withBidirectionalConnectionManager name timeouts
           CM.outboundIdleTimeout = tOutboundIdleTimeout timeouts,
           CM.connectionDataFlow = \(DataFlowProtocolData df _) -> df,
           CM.prunePolicy = simplePrunePolicy,
-          CM.stdGen,
+          CM.stdGen = stdGenVar,
           CM.connectionsLimits = acceptedConnLimit,
           CM.updateVersionData = \versionData diffusionMode ->
                                   versionData { getProtocolDataFlow =

@@ -250,6 +250,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
               , Diff.P2P.diUpdateVersionData     = \versionData diffusionMode ->
                                                     versionData { ntnDiffusionMode = diffusionMode }
               , Diff.P2P.diConnStateIdSupply     = iConnStateIdSupply ni
+              , Diff.P2P.diReseeder              = Diff.P2P.reSeederNop
               }
 
             appsExtra :: Diff.P2P.ApplicationsExtra NtNAddr m ()

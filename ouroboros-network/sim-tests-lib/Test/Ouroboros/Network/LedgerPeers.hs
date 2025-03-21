@@ -280,6 +280,7 @@ prop_pick100 seed (NonNegative n) (ArbLedgerPeersKind ledgerPeersKind) (MockRoot
         sim = do
           let dnsMap = scriptHead dnsMapScript
           dnsMapVar <- newTVarIO dnsMap
+          rngVar <- newTVarIO rng
 
           dnsTimeoutScriptVar <- initScript' dnsTimeoutScript
           dnsLookupDelayScriptVar <- initScript' dnsLookupDelayScript
@@ -290,7 +291,7 @@ prop_pick100 seed (NonNegative n) (ArbLedgerPeersKind ledgerPeersKind) (MockRoot
                 PeerActionsDNS { paToPeerAddr = curry IP.toSockAddr,
                                  paDnsActions = (mockDNSActions @SomeException dnsMapVar dnsTimeoutScriptVar dnsLookupDelayScriptVar),
                                  paDnsSemaphore = dnsSemaphore }
-                WithLedgerPeersArgs { wlpRng = rng,
+                WithLedgerPeersArgs { wlpRng = rngVar,
                                       wlpConsensusInterface = interface,
                                       wlpTracer = verboseTracer,
                                       wlpGetUseLedgerPeers = pure $ UseLedgerPeers Always,
@@ -342,6 +343,7 @@ prop_pick (LedgerPools lps) (ArbLedgerPeersKind ledgerPeersKind) count seed (Moc
           dnsMapScriptVar <- initScript' dnsMapScript
           dnsMap <- stepScript' dnsMapScriptVar
           dnsMapVar <- newTVarIO dnsMap
+          rngVar <- newTVarIO rng
 
           dnsTimeoutScriptVar <- initScript' (Script (DNSTimeout 0 :| []))
           dnsLookupDelayScriptVar <- initScript' dnsLookupDelayScript
@@ -351,7 +353,7 @@ prop_pick (LedgerPools lps) (ArbLedgerPeersKind ledgerPeersKind) count seed (Moc
                 PeerActionsDNS { paToPeerAddr = curry IP.toSockAddr,
                                  paDnsActions = mockDNSActions @SomeException dnsMapVar dnsTimeoutScriptVar dnsLookupDelayScriptVar,
                                  paDnsSemaphore = dnsSemaphore }
-                WithLedgerPeersArgs { wlpRng = rng,
+                WithLedgerPeersArgs { wlpRng = rngVar,
                                       wlpConsensusInterface = interface,
                                       wlpTracer = verboseTracer,
                                       wlpGetUseLedgerPeers = pure $ UseLedgerPeers (After 0),
