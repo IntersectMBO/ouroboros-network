@@ -218,6 +218,7 @@ governorAction mockEnv = do
                              (useBootstrapPeers mockEnv)
     debugStateVar <- StrictTVar.newTVarIO (emptyPeerSelectionState (mkStdGen 42))
     countersVar <- StrictTVar.newTVarIO emptyPeerSelectionCounters
+    fuzzRngVar <- StrictTVar.newTVarIO (mkStdGen 42)
     policy  <- mockPeerSelectionPolicy                mockEnv
     actions <- mockPeerSelectionActions tracerMockEnv mockEnv
                                         (readTVar usbVar)
@@ -239,7 +240,7 @@ governorAction mockEnv = do
         tracerTracePeerSelection
         (tracerDebugPeerSelection <> traceAssociationMode interfaces actions)
         tracerTracePeerSelectionCounters
-        (mkStdGen 42)
+        fuzzRngVar
         actions
         policy
         interfaces

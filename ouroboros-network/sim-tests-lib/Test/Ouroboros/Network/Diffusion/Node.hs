@@ -244,6 +244,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
                                                      (iDomainMap ni)
                                                      dnsTimeoutScriptVar
                                                      dnsLookupDelayScriptVar)
+              , Diff.P2P.diReseeder              = Diff.P2P.reSeederNop
               }
 
             appsExtra :: Diff.P2P.ApplicationsExtra NtNAddr m ()

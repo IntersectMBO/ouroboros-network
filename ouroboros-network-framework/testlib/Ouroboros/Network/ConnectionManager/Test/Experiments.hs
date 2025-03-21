@@ -273,9 +273,10 @@ withInitiatorOnlyConnectionManager
           DataFlowProtocolData UnversionedProtocol ByteString m [resp] Void
        -> m a)
     -> m a
-withInitiatorOnlyConnectionManager name timeouts trTracer cmTracer cmStdGen snocket makeBearer localAddr
+withInitiatorOnlyConnectionManager name timeouts trTracer cmTracer stdGen snocket makeBearer localAddr
                                    nextRequests handshakeTimeLimits acceptedConnLimit k = do
     mainThreadId <- myThreadId
+    cmStdGen <- newTVarIO stdGen
     let muxTracer = (name,) `contramap` nullTracer -- mux tracer
     withConnectionManager
       ConnectionManagerArguments {
@@ -453,7 +454,7 @@ withBidirectionalConnectionManager
 withBidirectionalConnectionManager name timeouts
                                    inboundTrTracer trTracer
                                    cmTracer inboundTracer debugTracer
-                                   cmStdGen
+                                   stdGen
                                    snocket makeBearer
                                    confSock socket
                                    localAddress
@@ -462,6 +463,7 @@ withBidirectionalConnectionManager name timeouts
                                    acceptedConnLimit k = do
     mainThreadId <- myThreadId
     inbgovInfoChannel <- newInformationChannel
+    cmStdGen <- newTVarIO stdGen
     let muxTracer = WithName name `contramap` nullTracer -- mux tracer
 
     withConnectionManager

@@ -140,7 +140,7 @@ data ConnectionManagerArguments handlerTrace socket peerAddr handle handleError 
 
         -- | StdGen used by the `PrunePolicy`
         --
-        cmStdGen              :: StdGen,
+        cmStdGen              :: StrictTVar m StdGen,
 
         cmConnectionsLimits   :: AcceptedConnectionsLimit
       }
@@ -607,8 +607,7 @@ withConnectionManager args@ConnectionManagerArguments {
                        (_, _)                   -> pure DontTrace
 
           freshIdSupply <- newFreshIdSupply (Proxy :: Proxy m)
-          stdGenVar <- newTVar (cmStdGen args)
-          return (freshIdSupply, v, stdGenVar)
+          return (freshIdSupply, v, cmStdGen args)
 
     let readState
           :: STM m (Map peerAddr AbstractState)

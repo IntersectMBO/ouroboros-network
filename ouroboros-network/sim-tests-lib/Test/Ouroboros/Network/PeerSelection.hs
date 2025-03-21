@@ -3618,6 +3618,8 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
     countersVar <- newTVarIO emptyPeerSelectionCounters
     publicStateVar <- makePublicPeerSelectionStateVar
     debugStateVar <- newTVarIO $ emptyPeerSelectionState (mkStdGen 42)
+    -- TODO: #3182 Rng seed should come from quickcheck.
+    fuzzRngVar <- newTVarIO $ mkStdGen 42
     dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
     let interfaces = PeerSelectionInterfaces {
             countersVar,
@@ -3634,8 +3636,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
       (ioDNSActions LookupReqAAndAAAA) $ \requestPublicRootPeers -> do
         peerSelectionGovernor
           tracer tracer tracer
-          -- TODO: #3182 Rng seed should come from quickcheck.
-          (mkStdGen 42)
+          fuzzRngVar
           actions
             { requestPublicRootPeers = \_ ->
                 transformPeerSelectionAction requestPublicRootPeers }

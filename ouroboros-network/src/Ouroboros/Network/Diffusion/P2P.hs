@@ -24,6 +24,8 @@ module Ouroboros.Network.Diffusion.P2P
   , run
   , Interfaces (..)
   , runM
+  , reSeederNop
+  , reSeederIO
   , NodeToNodePeerConnectionHandle
     -- * Re-exports
   , AbstractTransitionTrace
@@ -42,6 +44,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Fix (MonadFix)
+import Control.Monad (forever)
 import Control.Tracer (Tracer, contramap, nullTracer, traceWith)
 import Data.ByteString.Lazy (ByteString)
 import Data.Foldable (asum)
@@ -55,7 +58,7 @@ import Data.Maybe (catMaybes, maybeToList)
 import Data.Typeable (Typeable)
 import Data.Void (Void)
 import System.Exit (ExitCode)
-import System.Random (StdGen, newStdGen, split)
+import System.Random (StdGen, initStdGen, newStdGen, split)
 #ifdef POSIX
 import System.Posix.Signals qualified as Signals
 #endif
@@ -516,7 +519,9 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         -- | diffusion dns actions
         --
         diDnsActions
-          :: DNSLookupType -> DNSActions resolver resolverError m
+          :: DNSLookupType -> DNSActions resolver resolverError m,
+
+        diReseeder :: [StrictTVar m StdGen] -> m Void
       }
 
 runM
@@ -593,6 +598,7 @@ runM Interfaces
        , diRng
        , diInstallSigUSR1Handler
        , diDnsActions
+       , diReseeder
        }
      Tracers
        { dtMuxTracer
@@ -699,6 +705,7 @@ runM Interfaces
       withLocalSocket tracer diNtcGetFileDescriptor diNtcSnocket localAddr
       $ \localSocket -> do
         localInbInfoChannel <- newInformationChannel
+        cmLocalStdGenVar <- newTVarIO cmLocalStdGen
 
         let localConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0
 
@@ -735,7 +742,7 @@ runM Interfaces
                   cmOutboundIdleTimeout = local_PROTOCOL_IDLE_TIMEOUT,
                   connectionDataFlow    = localDataFlow,
                   cmPrunePolicy         = Diffusion.Policies.prunePolicy,
-                  cmStdGen              = cmLocalStdGen,
+                  cmStdGen              = cmLocalStdGenVar,
                   cmConnectionsLimits   = localConnectionLimits
                 }
 
@@ -813,6 +820,11 @@ runM Interfaces
 
       countersVar <- newTVarIO emptyPeerSelectionCounters
 
+      ledgerPeersRngVar <- newTVarIO ledgerPeersRng
+      fuzzRngVar <- newTVarIO fuzzRng
+      cmStdGen1Var <- newTVarIO cmStdGen1
+      cmStdGen2Var <- newTVarIO cmStdGen2
+
       -- Design notes:
       --  - We split the following code into two parts:
       --    - Part (a): plumb data flow (in particular arguments and tracersr)
@@ -839,7 +851,7 @@ runM Interfaces
       let connectionManagerArguments'
             :: forall handle handleError.
                PrunePolicy ntnAddr
-            -> StdGen
+            -> StrictTVar m StdGen
             -> ConnectionManagerArguments
                  (ConnectionHandlerTrace ntnVersion ntnVersionData)
                  ntnFd ntnAddr handle handleError ntnVersion ntnVersionData m
@@ -889,7 +901,7 @@ runM Interfaces
 
           withConnectionManagerInitiatorOnlyMode =
             withConnectionManager
-              (connectionManagerArguments' simplePrunePolicy cmStdGen1)
+              (connectionManagerArguments' simplePrunePolicy cmStdGen1Var)
                  -- Server is not running, it will not be able to
                  -- advise which connections to prune.  It's also not
                  -- expected that the governor targets will be larger
@@ -903,7 +915,7 @@ runM Interfaces
           withConnectionManagerInitiatorAndResponderMode
             inbndInfoChannel =
               withConnectionManager
-                (connectionManagerArguments' Diffusion.Policies.prunePolicy cmStdGen2)
+                (connectionManagerArguments' Diffusion.Policies.prunePolicy cmStdGen2Var)
                 (makeConnectionHandler'
                    SingInitiatorResponderMode
                    daApplicationInitiatorResponderMode)
@@ -983,7 +995,7 @@ runM Interfaces
                                              PeerSharingEnabled  -> readInboundPeers,
                                          psUpdateOutboundConnectionsState = daUpdateOutboundConnectionsState }
                                        WithLedgerPeersArgs {
-                                         wlpRng = ledgerPeersRng,
+                                         wlpRng = ledgerPeersRngVar,
                                          wlpConsensusInterface = daLedgerPeersCtx,
                                          wlpTracer = dtTraceLedgerPeersTracer,
                                          wlpGetUseLedgerPeers = daReadUseLedgerPeers }
@@ -1001,7 +1013,7 @@ runM Interfaces
               dtTracePeerSelectionTracer
               peerSelectionTracer
               dtTracePeerSelectionCounters
-              fuzzRng
+              fuzzRngVar
               peerSelectionActions
               peerSelectionPolicy
               PeerSelectionInterfaces {
@@ -1109,8 +1121,9 @@ runM Interfaces
                               traceWith tracer (RunServer addresses)
                               -- end, unique to ...
                               Async.withAsync peerChurnGovernor' $ \churnGovernorThread ->
-                                -- wait for any thread to fail:
-                                snd <$> Async.waitAny [ledgerPeersThread, localRootPeersProvider, governorThread, churnGovernorThread, inboundGovernorThread]
+                                Async.withAsync (diReseeder [policyRngVar, ledgerPeersRngVar, fuzzRngVar, cmStdGen1Var, cmStdGen2Var]) $ \reSeedThread ->
+                                  -- wait for any thread to fail:
+                                  snd <$> Async.waitAny [ledgerPeersThread, localRootPeersProvider, governorThread, churnGovernorThread, inboundGovernorThread, reSeedThread]
 
 -- | Main entry point for data diffusion service.  It allows to:
 --
@@ -1231,10 +1244,32 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
 
                  diRng,
                  diInstallSigUSR1Handler,
-                 diDnsActions = ioDNSActions
+                 diDnsActions = ioDNSActions,
+#ifdef DIFFUSION_RESEED
+                 diReseeder = reSeederIO
+#else
+                 diReseeder = reSeederNop
+#endif
                }
                tracers tracersExtra args argsExtra apps appsExtra
 
+
+reSeederNop :: forall m.
+               ( MonadDelay m
+               )
+            => [StrictTVar m StdGen]
+            -> m Void
+reSeederNop _ = forever $ threadDelay 42
+
+reSeederIO :: [StrictTVar IO StdGen] -> IO Void
+reSeederIO rngVars = forever $ do
+    mapM_ seedIt rngVars
+    threadDelay 17
+  where
+    seedIt :: StrictTVar IO StdGen -> IO ()
+    seedIt rngVar = do
+        rng <- initStdGen
+        atomically $ writeTVar rngVar rng
 
 --
 -- Data flow
