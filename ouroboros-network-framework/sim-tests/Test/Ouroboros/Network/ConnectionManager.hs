@@ -764,7 +764,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
           CM.Arguments {
               tracer,
               trTracer,
-              muxTracer = nullTracer,
+              handlerTracer = nullTracer,
               ipv4Address = myAddress,
               ipv6Address = Nothing,
               addressType = \_ -> Just IPv4Address,

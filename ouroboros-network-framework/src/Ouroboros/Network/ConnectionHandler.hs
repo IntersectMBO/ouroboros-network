@@ -287,11 +287,11 @@ makeConnectionHandler muxTracer forkPolicy
                       versionedApplication
                       (mainThreadId, rethrowPolicy) =
   \case
-    SingInitiatorMode -> ConnectionHandler . WithInitiatorMode $ outboundConnectionHandler
-    SingResponderMode -> ConnectionHandler . WithResponderMode . inboundConnectionHandler
-    SingInitiatorResponderMode ->
-      ConnectionHandler . WithInitiatorResponderMode   outboundConnectionHandler
-                                                     . inboundConnectionHandler
+    SingInitiatorMode -> ConnectionHandler . WithInitiatorMode $ outboundConnectionHandler NotInResponderMode
+    SingResponderMode -> ConnectionHandler . WithResponderMode . inboundConnectionHandler . InResponderMode
+    SingInitiatorResponderMode -> \inboundGovChannelTracer ->
+      ConnectionHandler $ WithInitiatorResponderMode (outboundConnectionHandler (InResponderMode inboundGovChannelTracer))
+                                                     (inboundConnectionHandler (InResponderMode inboundGovChannelTracer))
   where
     -- install classify exception handler
     classifyExceptions :: forall x.
@@ -318,7 +318,8 @@ makeConnectionHandler muxTracer forkPolicy
 
     outboundConnectionHandler
       :: HasInitiator muxMode ~ True
-      => ConnectionHandlerFn (ConnectionHandlerTrace versionNumber versionData)
+      => InResponderMode muxMode (Tracer m (WithBearer (ConnectionId peerAddr) Trace))
+      -> ConnectionHandlerFn (ConnectionHandlerTrace versionNumber versionData)
                              socket
                              peerAddr
                              (Handle muxMode initiatorCtx responderCtx versionData ByteString m a b)
@@ -326,7 +327,8 @@ makeConnectionHandler muxTracer forkPolicy
                              versionNumber
                              versionData
                              m
-    outboundConnectionHandler versionDataFn
+    outboundConnectionHandler inboundGovChannelTracer
+                              versionDataFn
                               socket
                               PromiseWriter { writePromise }
                               tracer
@@ -377,9 +379,13 @@ makeConnectionHandler muxTracer forkPolicy
                         }
                   atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
                   bearer <- mkMuxBearer sduTimeout socket
-                  Mx.run (Mx.WithBearer connectionId `contramap` muxTracer)
-                         mux bearer
-
+                  case inboundGovChannelTracer of
+                    InResponderMode unwrapped ->
+                      Mx.run (Mx.WithBearer connectionId `contramap` (muxTracer <> unwrapped))
+                             mux bearer
+                    NotInResponderMode ->
+                      Mx.run (Mx.WithBearer connectionId `contramap` muxTracer)
+                             mux bearer
               Right (HandshakeQueryResult vMap) -> do
                 atomically $ writePromise (Right HandshakeConnectionQuery)
                 traceWith tracer $ TrHandshakeQuery vMap
@@ -387,7 +393,7 @@ makeConnectionHandler muxTracer forkPolicy
 
     inboundConnectionHandler
       :: HasResponder muxMode ~ True
-      => Tracer m (WithBearer (ConnectionId peerAddr) Trace)
+      => InResponderMode muxMode (Tracer m (WithBearer (ConnectionId peerAddr) Trace))
       -> ConnectionHandlerFn (ConnectionHandlerTrace versionNumber versionData)
                              socket
                              peerAddr
@@ -396,7 +402,7 @@ makeConnectionHandler muxTracer forkPolicy
                              versionNumber
                              versionData
                              m
-    inboundConnectionHandler responderIgTracer
+    inboundConnectionHandler inboundGovChannelTracer
                              updateVersionDataFn
                              socket
                              PromiseWriter { writePromise }
@@ -449,8 +455,13 @@ makeConnectionHandler muxTracer forkPolicy
                         }
                   atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
                   bearer <- mkMuxBearer sduTimeout socket
-                  Mx.run (Mx.WithBearer connectionId `contramap` (muxTracer <> responderIgTracer))
-                         mux bearer
+                  case inboundGovChannelTracer of
+                    InResponderMode unwrapped ->
+                      Mx.run (Mx.WithBearer connectionId `contramap` (muxTracer <> unwrapped))
+                             mux bearer
+                    NotInResponderMode ->
+                      Mx.run (Mx.WithBearer connectionId `contramap` muxTracer)
+                             mux bearer
 
               Right (HandshakeQueryResult vMap) -> do
                 atomically $ writePromise (Right HandshakeConnectionQuery)

@@ -10,7 +10,7 @@
 {-# LANGUAGE TupleSections        #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-{-# OPTIONS_GHC -fno-ignore-asserts #-}
+--{-# OPTIONS_GHC -fno-ignore-asserts #-}
 -- | The implementation of connection manager.
 --
 -- The module should be imported qualified.
@@ -89,9 +89,9 @@ data Arguments handlerTrace socket peerAddr handle handleError versionNumber ver
         trTracer            :: Tracer m (TransitionTrace State.ConnStateId
                                             (ConnectionState peerAddr handle handleError versionNumber m)),
 
-        -- | Mux trace.
+        -- | Connection handler tracer
         --
-        muxTracer           :: Tracer m (Mx.WithBearer (ConnectionId peerAddr) Mx.Trace),
+        handlerTracer           :: Tracer m (Mx.WithBearer (ConnectionId peerAddr) Mx.Trace),
 
         -- | @IPv4@ address of the connection manager.  If given, outbound
         -- connections to an @IPv4@ address will bound to it.  To use
@@ -396,7 +396,7 @@ with
 with args@Arguments {
          tracer,
          trTracer,
-         muxTracer,
+         handlerTracer,
          ipv4Address,
          ipv6Address,
          addressType,
@@ -630,7 +630,7 @@ with args@Arguments {
                      (\bearerTimeout ->
                        getBearer makeBearer
                          bearerTimeout
-                         (Mx.WithBearer connId `contramap` muxTracer)))
+                         (Mx.WithBearer connId `contramap` handlerTracer)))
             unmask
           `finally` cleanup
       where

@@ -32,14 +32,13 @@ data InformationChannel a m =
 
 -- | Create a new 'InformationChannel' backed by a `TBQueue`.
 --
-newInformationChannel :: forall a m. (Show a, MonadLabelledSTM m, MonadTraceSTM m)
+newInformationChannel :: forall a m. (MonadLabelledSTM m)
                       => m (InformationChannel a m)
 newInformationChannel = do
     channel <-
       atomically $
         newTBQueue cc_QUEUE_BOUND
         >>= \q -> labelTBQueue q "server-cc" $> q
-    traceTBQueueIO channel $ \_ -> return . TraceString . show
     pure $ InformationChannel {
         readMessage  = readTBQueue channel,
         writeMessage = writeTBQueue channel
@@ -57,4 +56,4 @@ type InboundGovernorInfoChannel (muxMode :: Mux.Mode) peerAddr initiatorCtx vers
 -- | The 'InformationChannel's 'TBQueue' depth.
 --
 cc_QUEUE_BOUND :: Natural
-cc_QUEUE_BOUND = 10
+cc_QUEUE_BOUND = 100

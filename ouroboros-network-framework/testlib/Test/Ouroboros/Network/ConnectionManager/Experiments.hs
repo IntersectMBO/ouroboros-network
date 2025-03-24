@@ -308,7 +308,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
     trTracer  = (WithName name . fmap CM.abstractState)
                   `contramap` trTracer,
     -- MuxTracer
-    muxTracer,
+    handlerTracer = muxTracer,
     ipv4Address  = localAddr,
     ipv6Address  = Nothing,
     addressType  = \_ -> Just IPv4Address,
@@ -435,6 +435,7 @@ withBidirectionalConnectionManager
                             peerAddr
                             (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
     -> Tracer m (WithName name (InboundGovernor.Trace peerAddr))
+    -> Tracer m (WithName name (Mx.WithBearer (ConnectionId peerAddr) Mx.Trace))
     -> Tracer m (WithName name (InboundGovernor.Debug peerAddr DataFlowProtocolData))
     -> StdGen
     -> Snocket m socket peerAddr
@@ -462,7 +463,7 @@ withBidirectionalConnectionManager
     -> m a
 withBidirectionalConnectionManager name timeouts
                                    inboundTrTracer trTracer
-                                   tracer inboundTracer debugTracer
+                                   tracer inboundTracer muxTracer debugTracer
                                    stdGen
                                    snocket makeBearer connStateIdSupply
                                    confSock socket
@@ -472,10 +473,9 @@ withBidirectionalConnectionManager name timeouts
                                    acceptedConnLimit k = do
     mainThreadId <- myThreadId
     inbgovInfoChannel <- newInformationChannel
-    let muxTracer = WithName name `contramap` debugTracerG -- mux tracer
-        mkConnectionHandler =
+    let mkConnectionHandler =
           makeConnectionHandler
-            muxTracer
+            (WithName name `contramap` muxTracer)
             noBindForkPolicy
             HandshakeArguments {
                 -- TraceSendRecv
@@ -500,8 +500,8 @@ withBidirectionalConnectionManager name timeouts
                           `contramap` tracer,
             trTracer  = (WithName name . fmap CM.abstractState)
                           `contramap` trTracer,
-            -- MuxTracer
-            muxTracer,
+            -- connection handler tracer
+            handlerTracer = nullTracer, --sayTracer,
             ipv4Address  = localAddress,
             ipv6Address  = Nothing,
             addressType  = \_ -> Just IPv4Address,
@@ -752,7 +752,7 @@ unidirectionalExperiment stdGen timeouts snocket makeBearer confSock socket clie
       $ \connectionManager ->
         withBidirectionalConnectionManager "server" timeouts
                                            nullTracer nullTracer nullTracer
-                                           nullTracer nullTracer
+                                           nullTracer nullTracer nullTracer
                                            stdGen''
                                            snocket makeBearer connStateIdSupply
                                            confSock socket Nothing
@@ -836,7 +836,7 @@ bidirectionalExperiment
       nextRequests0 <- oneshotNextRequests clientAndServerData0
       nextRequests1 <- oneshotNextRequests clientAndServerData1
       withBidirectionalConnectionManager "node-0" timeouts
-                                         nullTracer nullTracer nullTracer nullTracer
+                                         nullTracer nullTracer nullTracer nullTracer nullTracer
                                          nullTracer stdGen' snocket makeBearer
                                          connStateIdSupply confSock
                                          socket0 (Just localAddr0)
@@ -846,7 +846,7 @@ bidirectionalExperiment
                                          maxAcceptedConnectionsLimit
         (\connectionManager0 _serverAddr0 _serverAsync0 -> do
           withBidirectionalConnectionManager "node-1" timeouts
-                                             nullTracer nullTracer nullTracer nullTracer
+                                             nullTracer nullTracer nullTracer nullTracer nullTracer
                                              nullTracer stdGen'' snocket makeBearer
                                              connStateIdSupply confSock
                                              socket1 (Just localAddr1)
@@ -939,19 +939,6 @@ bidirectionalExperiment
 --
 -- Utils
 --
-
-
--- | Redefine this tracer to get valuable tracing information from various
--- components:
---
--- * connection-manager
--- * inbound governor
--- * server
---
-debugTracerG :: (MonadSay m, MonadTime m, Show a) => Tracer m a
-debugTracerG = Tracer (\msg -> (,msg) <$> getCurrentTime >>= say . show)
-           -- <> Tracer Debug.traceShowM
-
 
 withLock :: ( MonadSTM   m
             , MonadThrow m

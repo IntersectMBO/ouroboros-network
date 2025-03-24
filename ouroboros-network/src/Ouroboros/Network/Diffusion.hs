@@ -479,7 +479,7 @@ runM Interfaces
                 trTracer            =
                   fmap CM.abstractState
                   `contramap` dtConnectionManagerTransitionTracer,
-                muxTracer           = dtMuxTracer,
+                handlerTracer       = dtMuxTracer,
                 ipv4Address,
                 ipv6Address,
                 addressType         = diNtnAddressType,
