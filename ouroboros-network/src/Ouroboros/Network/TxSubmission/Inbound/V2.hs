@@ -6,7 +6,23 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.TxSubmission.Inbound.V2 where
+module Ouroboros.Network.TxSubmission.Inbound.V2
+  ( -- * TxSubmision Inbound client
+    txSubmissionInboundV2
+    -- * PeerTxAPI
+  , withPeer
+  , PeerTxAPI
+    -- * Supporting types
+  , module V2
+  , TxChannelsVar
+  , newTxChannelsVar
+  , TxMempoolSem
+  , newTxMempoolSem
+  , SharedTxStateVar
+  , newSharedTxStateVar
+  , TxDecisionPolicy (..)
+  , defaultTxDecisionPolicy
+  ) where
 
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict qualified as Map
@@ -22,10 +38,12 @@ import Network.TypedProtocol
 
 import Control.Monad (unless, when)
 import Ouroboros.Network.Protocol.TxSubmission2.Server
-import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (PeerTxAPI (..))
-import Ouroboros.Network.TxSubmission.Inbound.V2.Types
+import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
+import Ouroboros.Network.TxSubmission.Inbound.V2.Registry
+import Ouroboros.Network.TxSubmission.Inbound.V2.State
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types as V2
 
--- | A tx-submission outbound side (server, sic!).
+-- | A tx-submission inbound side (server, sic!).
 --
 -- The server blocks on receiving `TxDecision` from the decision logic. If
 -- there are tx's to download it pipelines two requests: first for tx's second
