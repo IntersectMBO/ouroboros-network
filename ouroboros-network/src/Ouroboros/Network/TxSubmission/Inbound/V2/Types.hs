@@ -20,6 +20,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
     -- * Types shared with V1
     -- ** Various
   , ProcessedTxCount (..)
+  , TxSubmissionLogicVersion (..)
     -- ** Mempool API
   , TxSubmissionMempoolWriter (..)
     -- ** Traces
@@ -42,6 +43,15 @@ import NoThunks.Class (NoThunks (..))
 
 import Ouroboros.Network.DeltaQ (PeerGSV (..))
 import Ouroboros.Network.Protocol.TxSubmission2.Type
+
+-- | Flag to enable/disable the usage of the new tx-submission logic.
+--
+data TxSubmissionLogicVersion =
+      -- | the legacy `Ouroboros.Network.TxSubmission.Inbound.V1`
+      TxSubmissionLogicV1
+      -- | the new `Ouroboros.Network.TxSubmission.Inbound.V2`
+    | TxSubmissionLogicV2
+    deriving (Eq, Enum, Bounded, Show)
 
 --
 -- PeerTxState, SharedTxState
