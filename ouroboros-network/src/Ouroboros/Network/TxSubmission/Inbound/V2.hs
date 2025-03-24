@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
@@ -25,18 +26,20 @@ module Ouroboros.Network.TxSubmission.Inbound.V2
   ) where
 
 import Data.List.NonEmpty qualified as NonEmpty
+import Data.Maybe (fromMaybe)
 import Data.Map.Strict qualified as Map
 import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set qualified as Set
 
-import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (assert)
+import Control.Monad (unless, when)
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, traceWith)
 
 import Network.TypedProtocol
 
-import Control.Monad (unless, when)
+import Ouroboros.Network.Protocol.Limits (longWait)
 import Ouroboros.Network.Protocol.TxSubmission2.Server
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry
@@ -52,7 +55,7 @@ import Ouroboros.Network.TxSubmission.Inbound.V2.Types as V2
 --
 txSubmissionInboundV2
   :: forall txid tx idx m.
-     ( MonadSTM   m
+     ( MonadDelay m
      , MonadThrow m
      , Ord txid
      )
@@ -70,7 +73,13 @@ txSubmissionInboundV2
       submitTxToMempool
     }
     =
-    TxSubmissionServerPipelined serverIdle
+    TxSubmissionServerPipelined $ do
+#ifdef TXSUBMISSION_DELAY
+      -- make the client linger before asking for tx's and expending
+      -- our resources as well, as he may disconnect for some reason
+      threadDelay (fromMaybe (-1) longWait)
+#endif
+      serverIdle
   where
     serverIdle
       :: m (ServerStIdle Z txid tx m ())
