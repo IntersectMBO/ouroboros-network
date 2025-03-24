@@ -9,13 +9,14 @@ module Ouroboros.Network.Diffusion.Configuration
   , defaultDeadlineTargets
   , defaultDeadlineChurnInterval
   , defaultBulkChurnInterval
-  , defaultEnableNewTxSubmissionProtocol
+  , defaultTxSubmissionLogicVersion
     -- re-exports
   , AcceptedConnectionsLimit (..)
   , DiffusionMode (..)
   , PeerSelectionTargets (..)
   , PeerSharing (..)
   , ConsensusMode (..)
+  , TxSubmissionLogicVersion (..)
   , defaultConsensusMode
   , defaultEgressPollInterval
   , deactivateTimeout
@@ -46,8 +47,8 @@ import Ouroboros.Network.PeerSharing (ps_POLICY_PEER_SHARE_MAX_PEERS,
            ps_POLICY_PEER_SHARE_STICKY_TIME)
 import Ouroboros.Network.Protocol.Handshake (handshake_QUERY_SHUTDOWN_DELAY)
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
-import Ouroboros.Network.TxSubmission.Inbound.V2
-           (EnableNewTxSubmissionProtocol (..))
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types
+           (TxSubmissionLogicVersion (..))
 
 -- | Outbound governor targets
 -- Targets may vary depending on whether a node is operating in
@@ -105,5 +106,7 @@ local_TIME_WAIT_TIMEOUT = 0
 defaultEgressPollInterval :: DiffTime
 defaultEgressPollInterval = 0
 
-defaultEnableNewTxSubmissionProtocol :: EnableNewTxSubmissionProtocol
-defaultEnableNewTxSubmissionProtocol = DisableNewTxSubmissionProtocol
+-- | The default logic version is the legacy one, the new one is still
+-- experimental.
+defaultTxSubmissionLogicVersion :: TxSubmissionLogicVersion
+defaultTxSubmissionLogicVersion = TxSubmissionLogicV1
