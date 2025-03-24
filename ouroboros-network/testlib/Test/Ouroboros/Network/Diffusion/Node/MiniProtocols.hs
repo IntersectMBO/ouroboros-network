@@ -245,6 +245,7 @@ data AppArgs header block m = AppArgs
 applications :: forall block header s m.
                 ( Alternative (STM m)
                 , MonadAsync m
+                , MonadDelay m
                 , MonadFork  m
                 , MonadMask  m
                 , MonadMVar  m
