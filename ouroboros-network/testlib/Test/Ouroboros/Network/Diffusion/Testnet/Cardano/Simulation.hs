@@ -13,6 +13,7 @@
 
 module Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Simulation
   ( SimArgs (..)
+  , renderSimArgs
   , mainnetSimArgs
   , NodeArgs (..)
   , ServiceDomainName (..)
@@ -171,6 +172,13 @@ data SimArgs =
     , saTxDecisionPolicy :: TxDecisionPolicy
       -- ^ Decision policy for tx submission protocol
     }
+
+-- | Render `SimArgs`, ignores `saTxDecisionPolicy`; useful for quickcheck
+-- coverage checking.
+--
+renderSimArgs :: SimArgs -> String
+renderSimArgs SimArgs { saSlot, saQuota } =
+    "slotDuration: " ++ show saSlot ++ " quota: " ++ show saQuota
 
 instance Show SimArgs where
     show SimArgs { saSlot, saQuota, saTxDecisionPolicy } =
