@@ -21,6 +21,10 @@
 - Changed signature of `resolveLedgerPeers`, `localRootPeersProvider`, `publicRootPeersProvider`,
   `withPeerSelectionActions` to accept random seed for DNS SRV lookup.
 
+## 0.20.1.0 -- 2025-03-13
+
+* Fixed type signature of `sigUsr1Handler` on `Windows`.
+
 ## 0.20.0.0 -- 2025-02-25
 
 ### Breaking changes
