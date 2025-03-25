@@ -16,6 +16,7 @@ module Ouroboros.Network.PeerSelection.Governor.Monitor
   , connections
   , localRoots
   , ledgerPeerSnapshotChange
+  , monitorCapturePublicStateVar
   ) where
 
 import Data.Map.Strict (Map)
@@ -465,3 +466,19 @@ ledgerPeerSnapshotChange extraStateChange
                                 ledgerPeerSnapshot = ledgerPeerSnapshot'
                               }
                             }
+
+
+monitorCapturePublicStateVar
+  :: MonadSTM m
+  => CapturePublicStateVar peeraddr m
+  -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+  -> Guarded (STM m) (TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
+monitorCapturePublicStateVar v st = Guarded Nothing $ do
+    let pst = toPublicState st
+    handlePublicStateRequest v pst
+    return $ \_ ->
+      Decision {
+        decisionTrace = [TracePublicPeerSelectionState pst],
+        decisionJobs  = [],
+        decisionState = st
+      }

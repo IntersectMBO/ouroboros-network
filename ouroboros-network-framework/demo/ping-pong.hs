@@ -102,8 +102,8 @@ tracer = f `contramapM` stdoutTracer
 -- Ping pong demo
 --
 
-demoProtocol0 :: RunMiniProtocolWithMinimalCtx appType addr bytes m a b
-              -> OuroborosApplicationWithMinimalCtx appType addr bytes m a b
+demoProtocol0 :: RunMiniProtocolWithMinimalCtx appType () addr bytes m a b
+              -> OuroborosApplicationWithMinimalCtx appType () addr bytes m a b
 demoProtocol0 pingPong =
     OuroborosApplication [
       MiniProtocol {
@@ -135,7 +135,7 @@ clientPingPong pipelined =
       defaultLocalSocketAddr
   where
     app :: OuroborosApplicationWithMinimalCtx
-             Mx.InitiatorMode LocalAddress LBS.ByteString IO () Void
+             Mx.InitiatorMode () LocalAddress LBS.ByteString IO () Void
     app = demoProtocol0 pingPongInitiator
 
     pingPongInitiator | pipelined =
@@ -175,7 +175,7 @@ serverPingPong =
       $ \_ serverAsync -> wait serverAsync -- block until server finishes
   where
     app :: OuroborosApplicationWithMinimalCtx
-             Mx.ResponderMode LocalAddress LBS.ByteString IO Void ()
+             Mx.ResponderMode () LocalAddress LBS.ByteString IO Void ()
     app = demoProtocol0 pingPongResponder
 
     pingPongResponder =
@@ -190,9 +190,9 @@ serverPingPong =
 -- Ping pong demo2
 --
 
-demoProtocol1 :: RunMiniProtocolWithMinimalCtx appType addr bytes m a b
-              -> RunMiniProtocolWithMinimalCtx appType addr bytes m a b
-              -> OuroborosApplicationWithMinimalCtx appType addr bytes m a b
+demoProtocol1 :: RunMiniProtocolWithMinimalCtx appType () addr bytes m a b
+              -> RunMiniProtocolWithMinimalCtx appType () addr bytes m a b
+              -> OuroborosApplicationWithMinimalCtx appType () addr bytes m a b
 demoProtocol1 pingPong pingPong' =
     OuroborosApplication [
       MiniProtocol {
@@ -229,7 +229,7 @@ clientPingPong2 =
       defaultLocalSocketAddr
   where
     app :: OuroborosApplicationWithMinimalCtx
-             Mx.InitiatorMode addr LBS.ByteString IO  () Void
+             Mx.InitiatorMode () addr LBS.ByteString IO  () Void
     app = demoProtocol1 pingpong pingpong'
 
     pingpong =
@@ -269,7 +269,7 @@ serverPingPong2 =
       $ \_ serverAsync -> wait serverAsync -- block until async exception
   where
     app :: OuroborosApplicationWithMinimalCtx
-             Mx.ResponderMode addr LBS.ByteString IO Void ()
+             Mx.ResponderMode () addr LBS.ByteString IO Void ()
     app = demoProtocol1 pingpong pingpong'
 
     pingpong =

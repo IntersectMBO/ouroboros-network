@@ -242,7 +242,7 @@ governorAction mockEnv@GovernorMockEnvironment {
                  targets = Script targets',
                  ledgerStateJudgement = Script ledgerStateJudgement',
                  seed = TestSeed seed'} = do
-    publicStateVar <- makePublicPeerSelectionStateVar
+    capturePublicStateVar <- Governor.newCapturePublicStateVar
     lpVar <- playTimedScript (contramap TraceEnvUseLedgerPeers tracerMockEnv)
                              (useLedgerPeers mockEnv)
     usbVar <- playTimedScript (contramap TraceEnvSetUseBootstrapPeers tracerMockEnv)
@@ -289,7 +289,7 @@ governorAction mockEnv@GovernorMockEnvironment {
 
     let interfaces = PeerSelectionInterfaces {
             countersVar,
-            publicStateVar,
+            capturePublicStateVar,
             debugStateVar,
             readUseLedgerPeers = (readTVar lpVar)
           }
@@ -811,6 +811,7 @@ tracerTracePeerSelection = contramap f tracerTestTraceEvent
     f a@(TraceChurnAction !_ !_ !_)                          = GovernorEvent a
     f a@(TraceChurnTimeout !_ !_ !_)                         = GovernorEvent a
     f a@(TraceVerifyPeerSnapshot !_)                         = GovernorEvent a
+    f a@(TracePublicPeerSelectionState !_)                   = GovernorEvent a
 
 tracerDebugPeerSelection :: Tracer (IOSim s) (DebugPeerSelection Cardano.ExtraState PeerTrustable (Cardano.ExtraPeers PeerAddr) PeerAddr)
 tracerDebugPeerSelection = GovernorDebug `contramap` tracerTestTraceEvent

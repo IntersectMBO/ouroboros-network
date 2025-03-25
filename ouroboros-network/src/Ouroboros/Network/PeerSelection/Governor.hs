@@ -23,20 +23,25 @@ module Ouroboros.Network.PeerSelection.Governor
   , PeerSelectionActions (..)
   , PeerSelectionInterfaces (..)
   , PeerStateActions (..)
-  , PeerSelectionGovernorArgs (..)
   , TracePeerSelection (..)
   , ChurnAction (..)
   , DebugPeerSelection (..)
   , AssociationMode (..)
   , readAssociationMode
   , DebugPeerSelectionState (..)
+  , PeerSelectionGovernorArgs (..)
   , peerSelectionGovernor
+    -- * PublicPeerSelectionState API
+  , CapturePublicStateVar
+  , newCapturePublicStateVar
+  , PublicPeerSelectionState (..)
+  , toOutboundState
+  , requestPublicState
     -- * Internals exported for testing
   , assertPeerSelectionState
   , sanePeerSelectionTargets
   , establishedPeersStatus
   , PeerSelectionState (..)
-  , PublicPeerSelectionState (..)
   , makePublicPeerSelectionStateVar
   , PeerSelectionView (..)
   , PeerSelectionCounters
@@ -567,7 +572,7 @@ peerSelectionGovernorLoop tracer
                           policy
                           interfaces@PeerSelectionInterfaces {
                             countersVar,
-                            publicStateVar,
+                            capturePublicStateVar,
                             debugStateVar
                           }
                           jobPool
@@ -578,10 +583,6 @@ peerSelectionGovernorLoop tracer
          -> Time
          -> m Void
     loop !st !dbgUpdateAt = assertPeerSelectionState extraPeersToSet invariantExtraPeers st $ do
-      -- Update public state using 'toPublicState' to compute available peers
-      -- to share for peer sharing
-      atomically $ writeTVar publicStateVar (toPublicState st)
-
       blockedAt <- getMonotonicTime
 
       -- | If there's something utterly wrong with the PeerSelectionState such
@@ -664,8 +665,9 @@ peerSelectionGovernorLoop tracer
       -- All the alternative potentially-blocking decisions.
 
         -- Make sure preBlocking set is in the right place
-        preBlocking policy actions st
+         preBlocking policy actions st
 
+      <> Monitor.monitorCapturePublicStateVar capturePublicStateVar st
       <> Monitor.connections          actions st
       <> Monitor.jobs                 jobPool st
       -- This job monitors for changes in big ledger peer snapshot file (eg. reload)
