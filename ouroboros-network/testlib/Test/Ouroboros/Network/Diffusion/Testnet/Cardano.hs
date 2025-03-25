@@ -5297,7 +5297,7 @@ takeUntilEndofTurn n as =
 labelDiffusionScript :: DiffusionScript -> Property -> Property
 labelDiffusionScript (DiffusionScript args _ nodes) =
       label ("sim args: "
-              ++ show args)
+              ++ renderSimArgs args)
     . label ("Nº nodes: "
               ++ show (length nodes))
     . label ("Nº nodes in InitiatorOnlyDiffusionMode: "
