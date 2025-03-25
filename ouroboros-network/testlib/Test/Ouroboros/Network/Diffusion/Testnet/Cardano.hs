@@ -1346,20 +1346,35 @@ prop_peer_selection_action_trace_coverage defaultBearerInfo diffScript =
              . Trace.take long_trace
              $ runSimTrace sim
 
+      -- we need to avoid leaking addresses, otherwise the report becomes not
+      -- very useful
       peerSelectionActionsTraceMap :: PeerSelectionActionsTrace NtNAddr NtNVersion
                                    -> String
-      peerSelectionActionsTraceMap (PeerStatusChanged _)          =
-        "PeerStatusChanged"
-      peerSelectionActionsTraceMap (PeerStatusChangeFailure _ ft) =
-        "PeerStatusChangeFailure " ++ show ft
-      peerSelectionActionsTraceMap (PeerMonitoringError _ se)     =
-        "PeerMonitoringError " ++ show se
-      peerSelectionActionsTraceMap (PeerMonitoringResult _ wspt)  =
-        "PeerMonitoringResult " ++ show wspt
-      peerSelectionActionsTraceMap (AcquireConnectionError _e)    =
-        "AcquireConnectionError"
+      peerSelectionActionsTraceMap (PeerStatusChanged tp)         =
+        "PeerStatusChanged " ++ renderPeerStatusChangeType tp
+      peerSelectionActionsTraceMap (PeerStatusChangeFailure tp _) =
+          "PeerStatusChangeFailure "
+        ++ renderPeerStatusChangeType tp
+      peerSelectionActionsTraceMap (PeerMonitoringError _ e)      =
+        "PeerMonitoringError " ++ show e
+      peerSelectionActionsTraceMap (PeerMonitoringResult _ _res)  =
+        "PeerMonitoringResult"
+      peerSelectionActionsTraceMap (AcquireConnectionError e)
+        | Just ioe <- fromException e
+        = "AcquireConnectionError: " ++ show (ioe_type ioe)
+        | otherwise
+        = "AcquireConnectionError: " ++ show e
 
       eventsSeenNames = map peerSelectionActionsTraceMap events
+
+      renderPeerStatusChangeType :: PeerStatusChangeType NtNAddr -> String
+      renderPeerStatusChangeType = \case
+        ColdToWarm{}    -> "ColdToWarm"
+        WarmToHot{}     -> "WarmToHot"
+        HotToWarm{}     -> "HotToWarm"
+        WarmToCooling{} -> "WarmToCooling"
+        HotToCooling{}  -> "HotToCooling"
+        CoolingToCold{} -> "CoolingToCold"
 
    -- TODO: Add checkCoverage here
    in tabulate "peer selection actions trace" eventsSeenNames
