@@ -6,6 +6,12 @@
 
 ### Non-breaking changes
 
+## 0.5.1.0 -- 2025-03-35
+
+### Non-breaking changes
+
+* Export `Decision` type.
+
 ## 0.5.0.0 -- 2025-01-02
 
 ### Breaking changes
