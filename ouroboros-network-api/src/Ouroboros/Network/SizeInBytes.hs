@@ -17,6 +17,7 @@ import Quiet (Quiet (..))
 newtype SizeInBytes = SizeInBytes { getSizeInBytes :: Word32 }
   deriving (Eq, Ord)
   deriving Show      via Quiet SizeInBytes
+  deriving Bounded   via Word32
   deriving Enum      via Word32
   deriving Num       via Word32
   deriving Real      via Word32

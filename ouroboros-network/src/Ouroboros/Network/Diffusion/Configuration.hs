@@ -11,6 +11,7 @@ module Ouroboros.Network.Diffusion.Configuration
   , defaultDeadlineTargets
   , defaultDeadlineChurnInterval
   , defaultBulkChurnInterval
+  , defaultTxSubmissionLogicVersion
     -- re-exports
   , AcceptedConnectionsLimit (..)
   , BlockFetchConfiguration (..)
@@ -20,6 +21,7 @@ module Ouroboros.Network.Diffusion.Configuration
   , PeerSelectionTargets (..)
   , PeerSharing (..)
   , ConsensusMode (..)
+  , TxSubmissionLogicVersion (..)
   , defaultConsensusMode
   , defaultMiniProtocolParameters
   , deactivateTimeout
@@ -57,6 +59,8 @@ import Ouroboros.Network.Protocol.ChainSync.Codec (ChainSyncTimeout (..))
 import Ouroboros.Network.Protocol.Handshake (handshake_QUERY_SHUTDOWN_DELAY)
 import Ouroboros.Network.Protocol.Limits (shortWait)
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types
+           (TxSubmissionLogicVersion (..))
 
 -- |Outbound governor targets
 -- Targets may vary depending on whether a node is operating in
@@ -150,3 +154,7 @@ local_PROTOCOL_IDLE_TIMEOUT = 2 -- 2 seconds
 local_TIME_WAIT_TIMEOUT :: DiffTime
 local_TIME_WAIT_TIMEOUT = 0
 
+-- | The default logic version is the legacy one, the new one is still
+-- experimental.
+defaultTxSubmissionLogicVersion :: TxSubmissionLogicVersion
+defaultTxSubmissionLogicVersion = TxSubmissionLogicV1
