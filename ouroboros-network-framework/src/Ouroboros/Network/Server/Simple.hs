@@ -17,7 +17,7 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork (MonadFork)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
-import Control.Monad.Class.MonadTimer.SI (MonadTimer)
+import Control.Monad.Class.MonadTimer.SI (MonadDelay, MonadTimer)
 import Control.Tracer (nullTracer)
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
@@ -36,6 +36,7 @@ import Ouroboros.Network.Socket
 with :: forall fd addr vNumber vData m a b.
         ( Alternative (STM m),
           MonadAsync m,
+          MonadDelay m,
           MonadFork  m,
           MonadLabelledSTM m,
           MonadMask  m,
@@ -75,7 +76,7 @@ with sn makeBearer configureSock addr handshakeArgs versions k =
               -- connection responder thread
               let connId = ConnectionId addr remoteAddr
               bearer <- Mx.getBearer makeBearer
-                        (-1) nullTracer sock'
+                        (-1) nullTracer sock' Nothing
               configureSock sock' addr
               r <- runHandshakeServer bearer connId handshakeArgs versions
               case r of

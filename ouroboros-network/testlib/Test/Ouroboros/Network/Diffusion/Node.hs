@@ -272,6 +272,7 @@ run blockGeneratorArgs limits ni na
             interfaces = Diff.Interfaces
               { Diff.diNtnSnocket            = iNtnSnocket ni
               , Diff.diNtnBearer             = iNtnBearer ni
+              , Diff.diWithBuffer            = \f -> f Nothing
               , Diff.diNtnConfigureSocket    = \_ _ -> return ()
               , Diff.diNtnConfigureSystemdSocket
                                                = \_ _ -> return ()

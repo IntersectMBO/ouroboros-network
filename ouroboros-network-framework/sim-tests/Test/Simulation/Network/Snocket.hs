@@ -37,6 +37,7 @@ import Codec.Serialise (Serialise)
 import Codec.Serialise qualified as Serialise
 
 import Data.ByteString.Lazy (ByteString)
+import Data.ByteString.Lazy qualified as BL
 import Data.Foldable (traverse_)
 import Data.Functor (void)
 import Data.Map qualified as Map
@@ -97,6 +98,23 @@ pingServer = ReqRespServer {
         recvMsgReq  = \req -> pure (req, pingServer),
         recvMsgDone = pure ()
       }
+
+newtype Payload = Payload {
+    unPayload :: ByteString
+  } deriving (Eq, Show)
+
+instance Arbitrary Payload where
+  arbitrary = do
+    -- TODO:
+    -- If this proves too slow copy the DummyPayload instance
+    -- from network-mux.
+    len <- chooseInt (1, 0xffff)
+    as <- vectorOf len arbitrary
+    return $ Payload $ BL.pack as
+
+  shrink (Payload bs) =
+    let bs' = shrink bs in
+    map Payload $ filter (\a -> BL.length a >= 1) bs'
 
 pingClient :: ( Applicative m
               , Eq payload
@@ -228,7 +246,7 @@ clientServerSimulation payloads =
           (accepted, accept1) <- runAccept accept0
           case accepted of
             Accepted fd' remoteAddr -> do
-              bearer <- getBearer makeFDBearer 10 nullTracer fd'
+              bearer <- getBearer makeFDBearer 10 nullTracer fd' Nothing
               thread <- async $ handleConnection bearer remoteAddr
                                 `finally`
                                close snocket fd'
@@ -309,7 +327,7 @@ clientServerSimulation payloads =
                               (\channel -> runPeer tr codecReqResp
                                                    channel
                                                    clientPeer)
-                  bearer <- Mx.getBearer makeFDBearer 10 nullTracer fd
+                  bearer <- Mx.getBearer makeFDBearer 10 nullTracer fd Nothing
 
                   -- kill mux as soon as the client returns
                   withAsync
@@ -388,12 +406,12 @@ verify_no_error sim =
                         False
      Right (Right _) -> property True
 
-prop_client_server :: [ByteString] -> Property
+prop_client_server :: [Payload] -> Property
 prop_client_server payloads =
   verify_no_error sim
   where
     sim :: forall s addr . IOSim s (Either (TestError addr) ())
-    sim = clientServerSimulation payloads
+    sim = clientServerSimulation (map unPayload payloads)
 
 prop_connect_to_accepting_socket :: AbsBearerInfo -> Property
 prop_connect_to_accepting_socket defaultBearerInfo =
@@ -558,8 +576,8 @@ prop_simultaneous_open defaultBearerInfo =
 --
 -- This is how socket API behaves on Linux.
 --
-prop_self_connect :: ByteString -> Property
-prop_self_connect payload =
+prop_self_connect :: Payload -> Property
+prop_self_connect (Payload payload) =
     runSimOrThrow sim
   where
     addr :: TestAddress Int
@@ -577,7 +595,7 @@ prop_self_connect payload =
                   $ \fd -> do
                     bind snocket fd addr
                     connect snocket fd addr
-                    bearer <- getBearer makeFDBearer 10 nullTracer fd
+                    bearer <- getBearer makeFDBearer 10 nullTracer fd Nothing
                     let channel = bearerAsChannel bearer (MiniProtocolNum 0) InitiatorDir
                     send channel payload
                     payload' <- recv channel

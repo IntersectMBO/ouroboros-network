@@ -681,7 +681,7 @@ pingClient stdout stderr PingOpts{..} versions peer = bracket
     let peerStr' = TL.pack peerStr
     unless pingOptsQuiet $ TL.hPutStrLn IO.stdout $ peerStr' <> " " <> (showNetworkRtt $ toSample t0_e t0_s)
 
-    bearer <- getBearer makeSocketBearer sduTimeout nullTracer sd
+    bearer <- getBearer makeSocketBearer sduTimeout nullTracer sd Nothing
 
     !t1_s <- write bearer timeoutfn $ wrap handshakeNum InitiatorDir (handshakeReq versions pingOptsHandshakeQuery)
     (msg, !t1_e) <- nextMsg bearer timeoutfn handshakeNum
