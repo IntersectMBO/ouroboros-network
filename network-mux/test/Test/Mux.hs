@@ -292,6 +292,16 @@ instance Arbitrary ArbitrarySDU where
 instance Arbitrary Mx.BearerState where
      arbitrary = elements [Mx.Mature, Mx.Dead]
 
+newtype DummyCapability = DummyCapability {
+    unDummyCapability :: Maybe Int
+  } deriving (Eq, Show)
+
+instance Arbitrary DummyCapability where
+    arbitrary =
+      frequency [ (1, return $ DummyCapability Nothing)
+                , (8, (DummyCapability . Just) <$> choose (0, 7))
+                , (1, (DummyCapability . Just) <$> arbitrary)
+                ]
 
 
 -- | A pair of two bytestrings which lengths are unevenly distributed
@@ -398,8 +408,10 @@ prop_mux_snd_recv (DummyRun messages) = ioProperty $ do
 -- | Like prop_mux_snd_recv but using a bidirectional mux with client and server
 -- on both endpoints.
 prop_mux_snd_recv_bi :: DummyRun
+                     -> DummyCapability
+                     -> DummyCapability
                      -> Property
-prop_mux_snd_recv_bi (DummyRun messages) = ioProperty $ do
+prop_mux_snd_recv_bi (DummyRun messages) (DummyCapability clientCap) (DummyCapability serverCap) = ioProperty $ do
     client_w <- atomically $ newTBQueue 10
     client_r <- atomically $ newTBQueue 10
 
@@ -430,7 +442,7 @@ prop_mux_snd_recv_bi (DummyRun messages) = ioProperty $ do
                         miniProtocolNum = Mx.MiniProtocolNum 2,
                         miniProtocolDir = Mx.ResponderDirection,
                         miniProtocolLimits = defaultMiniProtocolLimits,
-                        miniProtocolCapability = Nothing
+                        miniProtocolCapability = clientCap
                       }
                      ]
 
@@ -438,7 +450,7 @@ prop_mux_snd_recv_bi (DummyRun messages) = ioProperty $ do
                         miniProtocolNum = Mx.MiniProtocolNum 2,
                         miniProtocolDir = Mx.ResponderDirection,
                         miniProtocolLimits = defaultMiniProtocolLimits,
-                        miniProtocolCapability = Nothing
+                        miniProtocolCapability = serverCap
                        }
                      , MiniProtocolInfo {
                         miniProtocolNum = Mx.MiniProtocolNum 2,
@@ -724,12 +736,13 @@ type RunMuxApplications
     -> IO Bool
 
 
-runMuxApplication :: [Mx.ByteChannel IO -> IO (Bool, Maybe BL.ByteString)]
+runMuxApplication :: DummyCapability
+                  -> [Mx.ByteChannel IO -> IO (Bool, Maybe BL.ByteString)]
                   -> Mx.Bearer IO
                   -> [Mx.ByteChannel IO -> IO (Bool, Maybe BL.ByteString)]
                   -> Mx.Bearer IO
                   -> IO Bool
-runMuxApplication initApps initBearer respApps respBearer = do
+runMuxApplication (DummyCapability rspCap) initApps initBearer respApps respBearer = do
     let clientTracer = contramap (Mx.WithBearer "client") activeTracer
         serverTracer = contramap (Mx.WithBearer "server") activeTracer
         protNum = [1..]
@@ -741,7 +754,7 @@ runMuxApplication initApps initBearer respApps respBearer = do
             miniProtocolNum        = Mx.MiniProtocolNum pn,
             miniProtocolDir        = Mx.ResponderDirectionOnly,
             miniProtocolLimits     = defaultMiniProtocolLimits,
-            miniProtocolCapability = Nothing
+            miniProtocolCapability = rspCap
           }
         )
         respApps'
@@ -790,8 +803,9 @@ runMuxApplication initApps initBearer respApps respBearer = do
              (Left _)  -> return False
              (Right b) -> return b
 
-runWithQueues :: RunMuxApplications
-runWithQueues initApps respApps = do
+runWithQueues :: DummyCapability
+              -> RunMuxApplications
+runWithQueues cap initApps respApps = do
     client_w <- atomically $ newTBQueue 10
     client_r <- atomically $ newTBQueue 10
     let server_w = client_r
@@ -810,10 +824,11 @@ runWithQueues initApps respApps = do
                       serverTracer
                       QueueChannel { writeQueue = server_w, readQueue = server_r }
                       Nothing
-    runMuxApplication initApps clientBearer respApps serverBearer
+    runMuxApplication cap initApps clientBearer respApps serverBearer
 
-runWithPipe :: RunMuxApplications
-runWithPipe initApps respApps =
+runWithPipe :: DummyCapability
+            -> RunMuxApplications
+runWithPipe cap initApps respApps =
 #if defined(mingw32_HOST_OS)
     withIOManager $ \ioManager -> do
       let pipeName = "\\\\.\\pipe\\mux-test-pipe"
@@ -849,7 +864,7 @@ runWithPipe initApps respApps =
              serverBearer <- getBearer makePipeChannelBearer (-1) serverTracer serverChannel Nothing
 
              Win32.Async.connectNamedPipe hSrv
-             runMuxApplication initApps clientBearer respApps serverBearer
+             runMuxApplication cap initApps clientBearer respApps serverBearer
 #else
     bracket
       ((,) <$> createPipe <*> createPipe)
@@ -864,15 +879,18 @@ runWithPipe initApps respApps =
 
         clientBearer <- getBearer makePipeChannelBearer (-1) clientTracer clientChannel Nothing
         serverBearer <- getBearer makePipeChannelBearer (-1) serverTracer serverChannel Nothing
-        runMuxApplication initApps clientBearer respApps serverBearer
+        runMuxApplication cap initApps clientBearer respApps serverBearer
 
 #endif
   where
     clientTracer = contramap (Mx.WithBearer "client") activeTracer
     serverTracer = contramap (Mx.WithBearer "server") activeTracer
 
-runWithSocket :: Maybe (Mx.ReadBuffer IO) -> Maybe (Mx.ReadBuffer IO) -> RunMuxApplications
-runWithSocket clientBuf_m serverBuf_m initApps respApps = withIOManager (\iocp -> do
+runWithSocket :: DummyCapability
+              -> Maybe (Mx.ReadBuffer IO)
+              -> Maybe (Mx.ReadBuffer IO)
+              -> RunMuxApplications
+runWithSocket cap clientBuf_m serverBuf_m initApps respApps = withIOManager (\iocp -> do
     bracket
       (do
         sd <- Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
@@ -897,7 +915,7 @@ runWithSocket clientBuf_m serverBuf_m initApps respApps = withIOManager (\iocp -
         clientB <- mkBearer clientBuf_m cd clientTracer
         serverB <- mkBearer serverBuf_m sd serverTracer
 
-        runMuxApplication initApps clientB respApps serverB
+        runMuxApplication cap initApps clientB respApps serverB
       )
    )
   where
@@ -916,18 +934,18 @@ test_mux_1_mini run msgTrace = do
     run [clientApp] [serverApp]
 
 
-prop_mux_1_mini_Queue :: DummyTrace -> Property
-prop_mux_1_mini_Queue = ioProperty . test_mux_1_mini runWithQueues
+prop_mux_1_mini_Queue :: DummyCapability -> DummyTrace -> Property
+prop_mux_1_mini_Queue cap = ioProperty . test_mux_1_mini (runWithQueues cap)
 
-prop_mux_1_mini_Pipe :: DummyTrace -> Property
-prop_mux_1_mini_Pipe = ioProperty . test_mux_1_mini runWithPipe
+prop_mux_1_mini_Pipe :: DummyCapability -> DummyTrace -> Property
+prop_mux_1_mini_Pipe cap = ioProperty . test_mux_1_mini (runWithPipe cap)
 
-prop_mux_1_mini_Socket :: DummyTrace -> Property
-prop_mux_1_mini_Socket = ioProperty . test_mux_1_mini (runWithSocket Nothing Nothing)
+prop_mux_1_mini_Socket :: DummyCapability -> DummyTrace -> Property
+prop_mux_1_mini_Socket cap = ioProperty . test_mux_1_mini (runWithSocket cap Nothing Nothing)
 
-prop_mux_1_mini_Socket_buf :: DummyTrace -> Property
-prop_mux_1_mini_Socket_buf dt = ioProperty $ withReadBufferIO (\buf_a -> withReadBufferIO (\buf_b ->
-    test_mux_1_mini (runWithSocket buf_a buf_b) dt))
+prop_mux_1_mini_Socket_buf :: DummyCapability -> DummyTrace -> Property
+prop_mux_1_mini_Socket_buf cap dt = ioProperty $ withReadBufferIO (\buf_a -> withReadBufferIO (\buf_b ->
+    test_mux_1_mini (runWithSocket cap buf_a buf_b) dt))
 
 -- | Verify that it is possible to run two miniprotocols over the same bearer.
 -- Makes sure that messages are delivered to the correct miniprotocol in order.
@@ -945,27 +963,31 @@ test_mux_2_minis  run msgTrace0 msgTrace1 = do
     run [clientApp0, clientApp1] [serverApp0, serverApp1]
 
 
-prop_mux_2_minis_Queue :: DummyTrace
+prop_mux_2_minis_Queue :: DummyCapability
+                       -> DummyTrace
                        -> DummyTrace
                        -> Property
-prop_mux_2_minis_Queue a b = ioProperty $ test_mux_2_minis runWithQueues a b
+prop_mux_2_minis_Queue cap a b = ioProperty $ test_mux_2_minis (runWithQueues cap) a b
 
-prop_mux_2_minis_Pipe :: DummyTrace
+prop_mux_2_minis_Pipe :: DummyCapability
+                      -> DummyTrace
                       -> DummyTrace
                       -> Property
-prop_mux_2_minis_Pipe a b = ioProperty $ test_mux_2_minis runWithPipe a b
+prop_mux_2_minis_Pipe cap a b = ioProperty $ test_mux_2_minis (runWithPipe cap) a b
 
-prop_mux_2_minis_Socket :: DummyTrace
-                      -> DummyTrace
-                      -> Property
-prop_mux_2_minis_Socket a b = ioProperty $ test_mux_2_minis (runWithSocket Nothing Nothing) a b
+prop_mux_2_minis_Socket :: DummyCapability
+                        -> DummyTrace
+                        -> DummyTrace
+                        -> Property
+prop_mux_2_minis_Socket cap a b = ioProperty $ test_mux_2_minis (runWithSocket cap Nothing Nothing) a b
 
-prop_mux_2_minis_Socket_buf :: DummyTrace
-                      -> DummyTrace
-                      -> Property
-prop_mux_2_minis_Socket_buf a b = ioProperty $
+prop_mux_2_minis_Socket_buf :: DummyCapability
+                            -> DummyTrace
+                            -> DummyTrace
+                            -> Property
+prop_mux_2_minis_Socket_buf cap a b = ioProperty $
   withReadBufferIO (\buf_a -> withReadBufferIO (\buf_b ->
-      test_mux_2_minis (runWithSocket buf_a buf_b) a b))
+      test_mux_2_minis (runWithSocket cap buf_a buf_b) a b))
 
 -- | Attempt to verify that capacity is diveded fairly between two active
 -- miniprotocols.  Two initiators send a request over two different
