@@ -89,9 +89,9 @@ data Arguments handlerTrace socket peerAddr handle handleError versionNumber ver
         trTracer            :: Tracer m (TransitionTrace State.ConnStateId
                                             (ConnectionState peerAddr handle handleError versionNumber m)),
 
-        -- | Connection handler tracer
+        -- | Mux trace.
         --
-        handlerTracer           :: Tracer m (Mx.WithBearer (ConnectionId peerAddr) Mx.Trace),
+        muxTracer           :: Tracer m (Mx.WithBearer (ConnectionId peerAddr) Mx.Trace),
 
         -- | @IPv4@ address of the connection manager.  If given, outbound
         -- connections to an @IPv4@ address will bound to it.  To use
@@ -396,7 +396,7 @@ with
 with args@Arguments {
          tracer,
          trTracer,
-         handlerTracer,
+         muxTracer,
          ipv4Address,
          ipv6Address,
          addressType,
@@ -425,11 +425,11 @@ with args@Arguments {
       <- atomically $  do
           v  <- newTMVar State.empty
           labelTMVar v "cm-state"
-          traceTMVar (Proxy :: Proxy m) v $ \_ mbst -> do
-            st' <- case mbst of
-              Nothing -> pure Nothing
-              Just st -> Just <$> traverse (inspectTVar (Proxy :: Proxy m) . toLazyTVar . connVar) st
-            return (TraceString (show st'))
+          -- traceTMVar (Proxy :: Proxy m) v $ \_ mbst -> do
+          --   st' <- case mbst of
+          --     Nothing -> pure Nothing
+          --     Just st -> Just <$> traverse (inspectTVar (Proxy :: Proxy m) . toLazyTVar . connVar) st
+          --   return (TraceString ("cm-state: " <> show st'))
 
           stdGenVar <- newTVar (stdGen args)
           return (v, stdGenVar)
@@ -630,7 +630,7 @@ with args@Arguments {
                      (\bearerTimeout ->
                        getBearer makeBearer
                          bearerTimeout
-                         (Mx.WithBearer connId `contramap` handlerTracer)))
+                         (Mx.WithBearer connId `contramap` muxTracer)))
             unmask
           `finally` cleanup
       where

@@ -162,7 +162,7 @@ with :: forall muxMode socket peerAddr initiatorCtx handle handlerTrace handleEr
 with Arguments {
       sockets = socks,
       snocket,
-      tracer = tracer,
+      tracer,
       connectionLimits =
         limits@AcceptedConnectionsLimit { acceptedConnectionsHardLimit = hardLimit },
       inboundGovernorArgs

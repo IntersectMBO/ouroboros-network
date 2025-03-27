@@ -28,6 +28,7 @@ import Data.Bifunctor (first)
 import Data.Dynamic (fromDynamic)
 import Data.Foldable (fold)
 import Data.IP qualified as IP
+import Data.List (intercalate)
 import Data.List qualified as List
 import Data.List.Trace qualified as Trace
 import Data.Map (Map)
@@ -297,14 +298,16 @@ testWithIOSim :: (SimTrace Void -> Int -> Property)
               -> AbsBearerInfo
               -> DiffusionScript
               -> Property
-testWithIOSim f traceNumber bi ds =
+testWithIOSim f traceNumber bi ds = within 10000000 $
   let sim :: forall s . IOSim s Void
       sim = diffusionSimulation (toBearerInfo bi)
                                 ds
                                 iosimTracer
       trace = runSimTrace sim
    in labelDiffusionScript ds
-    $ counterexample (Trace.ppTrace show (ppSimEvent 0 0 0) $ Trace.take traceNumber trace)
+    $ counterexample (intercalate "\n" $
+        selectTraceEventsSay' $ Trace.take traceNumber trace)
+    --counterexample (Trace.ppTrace show (ppSimEvent 0 0 0) $ Trace.take traceNumber trace)
     $ f trace traceNumber
 
 
@@ -1209,6 +1212,8 @@ prop_track_coolingToCold_demotions ioSimTracer traceNumber =
                      $ evsList
          in classifySimulatedTime lastTime
           $ classifyNumberOfEvents (length evsList)
+          -- $ counterexample (intercalate "\n" . map show $ evsList)
+             --selectTraceEventsSay' $ Trace.take traceNumber ioSimTracer)
           $ verify_coolingToColdDemotions ev
         )
       <$> events

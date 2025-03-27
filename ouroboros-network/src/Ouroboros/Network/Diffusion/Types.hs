@@ -20,8 +20,7 @@ module Ouroboros.Network.Diffusion.Types
     -- * NodeToClient type aliases
   , NodeToClientHandle
   , NodeToClientHandleError
-  , NodeToClientConnectionHandler
-  , NodeToClientConnectionManagerArguments
+  , NodeToClientMkConnectionHandler
     -- * NodeToNode type aliases
   , NodeToNodeHandle
   , NodeToNodeConnectionManager
@@ -32,6 +31,7 @@ module Ouroboros.Network.Diffusion.Types
   , IG.RemoteTransitionTrace
   ) where
 
+import Network.Mux.Trace qualified as Mux
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (Exception, SomeException)
 import Control.Monad.Class.MonadTimer.SI
@@ -502,33 +502,19 @@ type NodeToClientHandle ntcAddr versionData m =
 type NodeToClientHandleError ntcVersion =
     HandleError Mx.ResponderMode ntcVersion
 
-type NodeToClientConnectionHandler
+type NodeToClientMkConnectionHandler
       ntcFd ntcAddr ntcVersion ntcVersionData m =
-    ConnectionHandler
-      Mx.ResponderMode
-      (ConnectionHandlerTrace ntcVersion ntcVersionData)
-      ntcFd
-      ntcAddr
-      (NodeToClientHandle ntcAddr ntcVersionData m)
-      (NodeToClientHandleError ntcVersion)
-      ntcVersion
-      ntcVersionData
-      m
-
-type NodeToClientConnectionManagerArguments
-      ntcFd ntcAddr ntcVersion ntcVersionData m a b =
-    CM.Arguments
-      (ConnectionHandlerTrace ntcVersion ntcVersionData)
-      ntcFd
-      ntcAddr
-      (NodeToClientHandle ntcAddr ntcVersionData m)
-      (NodeToClientHandleError ntcVersion)
-      ntcVersion
-      ntcVersionData
-      m
-      a
-      b
-
+       Tracer m (Mux.WithBearer (ConnectionId ntcAddr) Mux.Trace)
+    -> ConnectionHandler
+         Mx.ResponderMode
+         (ConnectionHandlerTrace ntcVersion ntcVersionData)
+         ntcFd
+         ntcAddr
+         (NodeToClientHandle ntcAddr ntcVersionData m)
+         (NodeToClientHandleError ntcVersion)
+         ntcVersion
+         ntcVersionData
+         m
 
 --
 -- Node-To-Node type aliases

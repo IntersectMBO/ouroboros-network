@@ -308,7 +308,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
     trTracer  = (WithName name . fmap CM.abstractState)
                   `contramap` trTracer,
     -- MuxTracer
-    handlerTracer = muxTracer,
+    muxTracer,
     ipv4Address  = localAddr,
     ipv6Address  = Nothing,
     addressType  = \_ -> Just IPv4Address,
@@ -501,7 +501,7 @@ withBidirectionalConnectionManager name timeouts
             trTracer  = (WithName name . fmap CM.abstractState)
                           `contramap` trTracer,
             -- connection handler tracer
-            handlerTracer = nullTracer, --sayTracer,
+            muxTracer = nullTracer, --sayTracer,
             ipv4Address  = localAddress,
             ipv6Address  = Nothing,
             addressType  = \_ -> Just IPv4Address,

@@ -83,7 +83,7 @@ data Event (muxMode :: Mux.Mode) handle initiatorCtx peerAddr versionData m a b
 
     -- | A multiplexer exited.
     --
-    | MuxFinished            !(ConnectionId peerAddr) !(Maybe SomeException)
+    | MuxFinished            !(ConnectionId peerAddr) (STM m (Maybe SomeException)) -- !(Maybe SomeException)
 
     -- | A mini-protocol terminated either cleanly or abruptly.
     --
@@ -139,7 +139,7 @@ type EventSignal (muxMode :: Mux.Mode) handle initiatorCtx peerAddr versionData 
 firstMuxToFinish :: MonadSTM m
                  => EventSignal muxMode handle initiatorCtx peerAddr versionData m a b
 firstMuxToFinish connId ConnectionState { csMux } =
-    FirstToFinish $ MuxFinished connId <$> Mux.stopped csMux
+    FirstToFinish $ MuxFinished connId <$> undefined --Mux.stopped csMux
 
 
 -- | When a mini-protocol terminates we take 'Terminated' out of 'ConnectionState
@@ -151,7 +151,7 @@ data Terminated muxMode initiatorCtx peerAddr m a b = Terminated {
     tMux              :: !(Mux.Mux muxMode m),
     tMiniProtocolData :: !(MiniProtocolData muxMode initiatorCtx peerAddr m a b),
     tDataFlow         :: !DataFlow,
-    tResult           :: !(Either SomeException b)
+    tResult           :: STM m (Either SomeException b) -- !(Either SomeException b)
   }
 
 
@@ -182,7 +182,7 @@ firstMiniProtocolToFinish
               )
           <$> FirstToFinish completionAction
         )
-        csCompletionMap
+        undefined --csCompletionMap
 
 
 -- | Detect when one of the peers was promoted to warm, e.g.

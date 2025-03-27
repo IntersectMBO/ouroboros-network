@@ -50,7 +50,7 @@ import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (assert, SomeAsyncException (..))
-import Control.Monad (foldM, forever, when)
+import Control.Monad (foldM, forever, when, unless)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
@@ -250,22 +250,23 @@ with
                          InfoChannel.writeMessage infoChannel $ RemoteDemotedToWarm peer
                      | otherwise -> return ()
                 _otherwise -> return ()
-              tResult <- completionAction
+              -- tResult <- completionAction
               InfoChannel.writeMessage infoChannel $
                 MiniProtocolTerminated $ Terminated {
                   tConnId = peer,
                   tMux = csMux,
                   tMiniProtocolData = csMiniProtocolMap Map.! mid,
                   tDataFlow = connectionDataFlow csVersionData,
-                  tResult }
+                  tResult = csCompletionMap Map.! mid }
 
         muxStopped | anyStop muxStopped -> atomically do
           State { connections } <- readTVar stateVar
           case Map.lookup peer connections of
             Just ConnectionState {..} -> do
-              status <- Mux.stopped csMux
+              -- status <- Mux.stopped csMux
               InfoChannel.writeMessage infoChannel $
-                MuxFinished peer status
+                -- MuxFinished peer status
+                MuxFinished peer (Mux.stopped csMux)
             _otherwise -> return ()
           modifyTVar countersVar $ Map.delete peer
 
@@ -498,8 +499,9 @@ with
                     }
               return (Just connId, state')
 
-        MuxFinished connId merr -> do
+        MuxFinished connId result -> do
 
+          merr <- atomically result
           case merr of
             Nothing  -> traceWith tracer (TrMuxCleanExit connId)
             Just err -> traceWith tracer (TrMuxErrored connId err)
@@ -514,9 +516,10 @@ with
               tMux,
               tMiniProtocolData = mpd@MiniProtocolData { mpdMiniProtocol = miniProtocol },
               tResult
-            } ->
-          let num = miniProtocolNum miniProtocol in
-          case tResult of
+            } -> do
+          tResult' <- atomically tResult
+          let num = miniProtocolNum miniProtocol
+          case tResult' of
             Left e -> do
               -- a mini-protocol errored.  In this case mux will shutdown, and
               -- the connection manager will tear down the socket.  We can just

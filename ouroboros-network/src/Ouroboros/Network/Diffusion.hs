@@ -329,73 +329,66 @@ runM Interfaces
 
         let localConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0
 
-            -- localConnectionHandler :: NodeToClientConnectionHandler
-            --                             ntcFd ntcAddr ntcVersion ntcVersionData m
-            localConnectionHandler = undefined
-              -- makeConnectionHandler
-              --   dtLocalMuxTracer
-              --   SingResponderMode
-              --   daLocalMuxForkPolicy
-              --   diNtcHandshakeArguments
-              --   ( ( \ (OuroborosApplication apps)
-              --      -> TemperatureBundle
-              --           (WithHot apps)
-              --           (WithWarm [])
-              --           (WithEstablished [])
-              --     ) <$> daLocalResponderApplication )
-              --   (mainThreadId, rethrowPolicy <> daLocalRethrowPolicy)
+            mkLocalConnectionHandler :: NodeToClientMkConnectionHandler
+                                        ntcFd ntcAddr ntcVersion ntcVersionData m
+            mkLocalConnectionHandler responderMuxChannelTracer =
+              makeConnectionHandler
+                dtLocalMuxTracer
+                daLocalMuxForkPolicy
+                diNtcHandshakeArguments
+                ( ( \ (OuroborosApplication apps)
+                   -> TemperatureBundle
+                        (WithHot apps)
+                        (WithWarm [])
+                        (WithEstablished [])
+                  ) <$> daLocalResponderApplication )
+                (mainThreadId, rethrowPolicy <> daLocalRethrowPolicy)
+                SingResponderMode
+                responderMuxChannelTracer
 
-            -- localConnectionManagerArguments
-            --   :: NodeToClientConnectionManagerArguments
-            --        ntcFd ntcAddr ntcVersion ntcVersionData m
-            localConnectionManagerArguments = undefined
-              -- CM.Arguments {
-              --     CM.tracer              = dtLocalConnectionManagerTracer,
-              --     CM.trTracer            = nullTracer, -- TODO: issue #3320
-              --     CM.muxTracer           = dtLocalMuxTracer,
-              --     CM.ipv4Address         = Nothing,
-              --     CM.ipv6Address         = Nothing,
-              --     CM.addressType         = const Nothing,
-              --     CM.snocket             = diNtcSnocket,
-              --     CM.makeBearer          = diNtcBearer,
-              --     CM.configureSocket     = \_ _ -> return (),
-              --     CM.timeWaitTimeout     = local_TIME_WAIT_TIMEOUT,
-              --     CM.outboundIdleTimeout = local_PROTOCOL_IDLE_TIMEOUT,
-              --     CM.connectionDataFlow  = ntcDataFlow,
-              --     CM.prunePolicy         = Diffusion.Policies.prunePolicy,
-              --     CM.stdGen              = cmLocalStdGen,
-              --     CM.connectionsLimits   = localConnectionLimits,
-              --     CM.updateVersionData   = \a _ -> a,
-              --     CM.connStateIdSupply   = diConnStateIdSupply
-              -- }
-        return undefined
-        -- CM.with
-        --   localConnectionManagerArguments
-        --   localConnectionHandler
-        --   classifyHandleError
-        --   (InResponderMode localInbInfoChannel)
-        --   $ \localConnectionManager-> do
-        --     --
-        --     -- run node-to-client server
-        --     --
-        --     traceWith tracer . RunLocalServer
-        --       =<< Snocket.getLocalAddr diNtcSnocket localSocket
+            localWithConnectionManager responderInfoChannel connectionHandler k =
+              CM.with CM.Arguments {
+                  tracer              = dtLocalConnectionManagerTracer,
+                  trTracer            = nullTracer, -- TODO: issue #3320
+                  muxTracer           = dtLocalMuxTracer,
+                  ipv4Address         = Nothing,
+                  ipv6Address         = Nothing,
+                  addressType         = const Nothing,
+                  snocket             = diNtcSnocket,
+                  makeBearer          = diNtcBearer,
+                  configureSocket     = \_ _ -> return (),
+                  timeWaitTimeout     = local_TIME_WAIT_TIMEOUT,
+                  outboundIdleTimeout = local_PROTOCOL_IDLE_TIMEOUT,
+                  connectionDataFlow  = ntcDataFlow,
+                  prunePolicy         = Diffusion.Policies.prunePolicy,
+                  stdGen              = cmLocalStdGen,
+                  connectionsLimits   = localConnectionLimits,
+                  updateVersionData   = \a _ -> a,
+                  connStateIdSupply   = diConnStateIdSupply,
+                  classifyHandleError
+              }
+              (InResponderMode responderInfoChannel)
+              connectionHandler
+              k
 
-        --     Server.with
-        --       Server.Arguments {
-        --           Server.sockets               = localSocket :| [],
-        --           Server.snocket               = diNtcSnocket,
-        --           Server.tracer                = dtLocalServerTracer,
-        --           Server.trTracer              = nullTracer, -- TODO: issue #3320
-        --           Server.debugInboundGovernor  = nullTracer,
-        --           Server.inboundGovernorTracer = dtLocalInboundGovernorTracer,
-        --           Server.inboundIdleTimeout    = Nothing,
-        --           Server.connectionLimits      = localConnectionLimits,
-        --           Server.connectionManager     = localConnectionManager,
-        --           Server.connectionDataFlow    = ntcDataFlow,
-        --           Server.inboundInfoChannel    = localInbInfoChannel
-        --         }
-        --       (\inboundGovernorThread _ _ -> Async.wait inboundGovernorThread)
+        traceWith tracer . RunLocalServer =<< Snocket.getLocalAddr diNtcSnocket localSocket
+        Server.with
+          Server.Arguments {
+              sockets               = localSocket :| [],
+              snocket               = diNtcSnocket,
+              tracer                = dtLocalServerTracer,
+              connectionLimits      = localConnectionLimits,
+              inboundGovernorArgs   =
+                IG.Arguments {
+                  tracer = dtLocalInboundGovernorTracer,
+                  transitionTracer = nullTracer,
+                  debugTracer = nullTracer,
+                  connectionDataFlow = ntcDataFlow,
+                  idleTimeout = Nothing,
+                  withConnectionManager = localWithConnectionManager localInbInfoChannel,
+                  mkConnectionHandler = mkLocalConnectionHandler,
+                  infoChannel = localInbInfoChannel } }
+          (\inboundGovernorThread _ _ -> Async.wait inboundGovernorThread)
 
 
     -- | mkRemoteThread - create remote connection manager
@@ -479,7 +472,7 @@ runM Interfaces
                 trTracer            =
                   fmap CM.abstractState
                   `contramap` dtConnectionManagerTransitionTracer,
-                handlerTracer       = dtMuxTracer,
+                muxTracer           = dtMuxTracer,
                 ipv4Address,
                 ipv6Address,
                 addressType         = diNtnAddressType,
@@ -497,11 +490,11 @@ runM Interfaces
                 classifyHandleError
             }
 
-      let peerSelectionPolicy =
+          peerSelectionPolicy =
             simplePeerSelectionPolicy
               policyRngVar daPeerMetrics (epErrorDelay exitPolicy)
 
-      let makeConnectionHandler'
+          makeConnectionHandler'
             :: forall muxMode initiatorCtx responderCtx b c.
                Versions ntnVersion ntnVersionData
                  (OuroborosBundle muxMode initiatorCtx responderCtx ByteString m b c)
@@ -707,7 +700,7 @@ runM Interfaces
 
         -- InitiatorOnly mode, run peer selection only:
         InitiatorOnlyDiffusionMode ->
-          let withConnectionManagerInitiatorOnlyMode connectionHandler k =
+          let withConnectionManagerInitiatorOnlyMode k =
                 CM.with
                   (connectionManagerArguments' simplePrunePolicy cmStdGen1)
                      -- Server is not running, it will not be able to
@@ -715,13 +708,14 @@ runM Interfaces
                      -- expected that the governor targets will be larger
                      -- than limits imposed by 'cmConnectionsLimits'.
                   NotInResponderMode
-                  connectionHandler
+                  mkConnectionHandler
                   k
 
               mkConnectionHandler =
                 makeConnectionHandler' daApplicationInitiatorMode
                                        SingInitiatorMode in
-          withConnectionManagerInitiatorOnlyMode mkConnectionHandler $ \connectionManager -> do
+
+          withConnectionManagerInitiatorOnlyMode $ \connectionManager -> do
             debugStateVar <- newTVarIO $ Governor.emptyPeerSelectionState fuzzRng daEmptyExtraState mempty
             diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
             withPeerStateActions' connectionManager $ \peerStateActions ->
@@ -785,6 +779,9 @@ runM Interfaces
             --
             -- node-to-node server
             --
+            -- begin, unique to InitiatorAndResponder mode:
+            traceWith tracer (RunServer addresses)
+            -- end, unique to ...
             withServer sockets
               \inboundGovernorThread readInboundState connectionManager -> do
                 debugStateVar <- newTVarIO $ Governor.emptyPeerSelectionState fuzzRng daEmptyExtraState mempty
@@ -800,9 +797,6 @@ runM Interfaces
                             labelThisThread "Peer selection governor"
                             peerSelectionGovernor' dtDebugPeerSelectionInitiatorResponderTracer debugStateVar peerSelectionActions
                           \governorThread -> do
-                            -- begin, unique to InitiatorAndResponder mode:
-                            traceWith tracer (RunServer addresses)
-                            -- end, unique to ...
                             Async.withAsync
                               do
                                 labelThisThread "Peer churn governor"

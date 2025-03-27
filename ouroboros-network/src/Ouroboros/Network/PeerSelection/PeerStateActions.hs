@@ -784,10 +784,10 @@ withPeerStateActions PeerStateActionsArguments {
                                         Just SomeAsyncException {} -> Nothing
                                         Nothing                    -> Just e)
                                      (\e -> do
+                                        traceWith spsTracer (PeerMonitoringError connId e)
                                         atomically $ do
                                           waitForOutboundDemotion spsConnectionManager connId
                                           writeTVar peerStateVar PeerCold
-                                        traceWith spsTracer (PeerMonitoringError connId e)
                                         throwIO e)
                                      (peerMonitoringLoop connHandle $> Nothing))
                                    (return . Just)

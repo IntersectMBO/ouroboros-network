@@ -118,6 +118,9 @@ data BearerState = Mature
                  -- closed.
                  deriving (Eq, Show)
 
+data BearerDataFlow = Unidirectional | Duplex
+  deriving (Eq, Show)
+
 -- | Enumeration of Mux events that can be traced.
 --
 data Trace =
@@ -205,4 +208,3 @@ instance Show Trace where
 #else
     show (TraceTCPInfo _ len) = printf "TCPInfo len %d" len
 #endif
-
