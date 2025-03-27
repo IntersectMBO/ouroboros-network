@@ -388,6 +388,7 @@ runM Interfaces
                   withConnectionManager = localWithConnectionManager localInbInfoChannel,
                   mkConnectionHandler = mkLocalConnectionHandler,
                   infoChannel = localInbInfoChannel } }
+          -- SingResponderMode
           (\inboundGovernorThread _ _ -> Async.wait inboundGovernorThread)
 
 
@@ -501,7 +502,7 @@ runM Interfaces
             -> SingMuxMode muxMode
             -> MkMuxConnectionHandler
                  muxMode ntnFd initiatorCtx responderCtx ntnAddr
-                 ntnVersion ntnVersionData m b c
+                 ntnVersion ntnVersionData ByteString m b c
           makeConnectionHandler' versions singMuxMode =
             makeConnectionHandler
               dtMuxTracer
@@ -739,7 +740,6 @@ runM Interfaces
           inboundInfoChannel <- newInformationChannel
           let mkConnectionHandler =
                 makeConnectionHandler' daApplicationInitiatorResponderMode
-                                       SingInitiatorResponderMode
 
               -- bootstrap node-to-node server continuation
               withServer sockets =
@@ -758,8 +758,9 @@ runM Interfaces
                         idleTimeout = Just daProtocolIdleTimeout,
                         withConnectionManager =
                           withConnectionManagerInitiatorAndResponderMode inboundInfoChannel,
-                        mkConnectionHandler = mkConnectionHandler,
+                        mkConnectionHandler = mkConnectionHandler SingInitiatorResponderMode diNtnDataFlow,
                         infoChannel = inboundInfoChannel } }
+                  -- SingInitiatorResponderMode
 
               -- bootstrap connection manager continuation
               withConnectionManagerInitiatorAndResponderMode

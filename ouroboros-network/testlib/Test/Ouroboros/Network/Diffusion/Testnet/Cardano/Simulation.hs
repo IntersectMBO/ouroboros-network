@@ -8,7 +8,7 @@
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TupleSections         #-}
-
+{-# LANGUAGE TypeApplications      #-}
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
 module Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Simulation
@@ -789,7 +789,7 @@ instance Arbitrary DiffusionScript where
           -- equal to the original `script`
           ((\dnsScript' -> if dnsScript0 == dnsScript' then Nothing else Just dnsScript')
            .  fixupDomainMapScript (getLast dnsScript0))
-          $ shrinkScriptWith (shrinkTuple shrinkMap_ shrink) dnsScript0
+          $ shrinkScriptWith (liftShrink2 shrinkMap_ shrink) dnsScript0
     ] <>
     [DiffusionScript sargs dnsScript0 cmds
     | cmds <- shrinkCmds cmds0
@@ -800,10 +800,6 @@ instance Arbitrary DiffusionScript where
 
       shrinkMap_ :: Ord a => Map a b -> [Map a b]
       shrinkMap_ = map Map.fromList . shrinkList (const []) . Map.toList
-
-      shrinkTuple :: (a -> [a]) -> (b -> [b]) -> (a, b) -> [(a, b)]
-      shrinkTuple f g (a, b) = [(a', b) | a' <- f a]
-                            ++ [(a, b') | b' <- g b]
 
       shrinkCmds [] = error "impossible!"
       shrinkCmds [_single] = []
@@ -816,19 +812,14 @@ instance Arbitrary DiffusionScript where
            <>
            shrunkRest
         where
-          shrinkDelay = map fromRational . shrink . toRational
+          shrinkDelay' = map (fromRational . read @Rational . show)
+                       . takeWhile (> 1.0) . iterate (* 0.5) . read @Float . show
 
           shrinkCommand :: Command -> [Command]
-          shrinkCommand (JoinNetwork d) | d > 1 = Kill 0 : (JoinNetwork <$> shrinkDelay d)
-                                        | d == 0 = [Kill 0]
-                                        | otherwise = [JoinNetwork 0]
-          shrinkCommand (Kill d) | d > 1        = Kill 0 : (Kill <$> shrinkDelay d)
-                                 | d == 0       = []
-                                 | otherwise    = [Kill 0]
-          shrinkCommand (Reconfigure d lrp) | d > 1= Kill 0 : (Reconfigure <$> shrinkDelay d
-                                                                    <*> pure lrp)
-                                            | d == 0 = [Kill 0]
-                                            | otherwise = [Reconfigure 0 lrp]
+          shrinkCommand (JoinNetwork d) = Kill 0 : (JoinNetwork <$> shrinkDelay' d) <> [JoinNetwork 0]
+          shrinkCommand (Kill d) = (Kill <$> shrinkDelay' d) <> [Kill 0]
+          shrinkCommand (Reconfigure d lrp) = Kill 0 : (Reconfigure <$> shrinkDelay' d
+                                                                    <*> pure lrp) <> [Reconfigure 0 lrp]
 
 
 -- | Multinode Hot Diffusion Simulator Script

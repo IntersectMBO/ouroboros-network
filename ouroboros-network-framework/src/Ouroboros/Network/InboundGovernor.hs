@@ -103,7 +103,7 @@ inactionTimeout :: DiffTime
 inactionTimeout = 31.415927
 
 
-data Arguments muxMode handlerTrace socket peerAddr initiatorCtx
+data Arguments muxMode handlerTrace socket peerAddr initiatorCtx responderCtx
                handle handleError versionNumber versionData bytes m a b x =
   Arguments {
       transitionTracer   :: Tracer m (RemoteTransitionTrace peerAddr),
@@ -127,6 +127,8 @@ data Arguments muxMode handlerTrace socket peerAddr initiatorCtx
       -- ^ connection manager arguments
       mkConnectionHandler
         :: Tracer m (Mux.WithBearer (ConnectionId peerAddr) Mux.Trace)
+           -- :: SingMuxMode muxMode
+           -- ::  MkMuxConnectionHandler  muxMode socket initiatorCtx responderCtx peerAddr versionNumber versionData bytes m a b
         -> ConnectionHandler muxMode handlerTrace socket peerAddr handle handleError versionNumber versionData m
     }
 
@@ -145,7 +147,7 @@ data Arguments muxMode handlerTrace socket peerAddr initiatorCtx
 -- The first one is used in data diffusion for /Node-To-Node protocol/, while the
 -- other is useful for running a server for the /Node-To-Client protocol/.
 --
-with :: forall (muxMode :: Mux.Mode) socket peerAddr initiatorCtx
+with :: forall (muxMode :: Mux.Mode) socket peerAddr initiatorCtx responderCtx
                handle handlerTrace handleError versionData versionNumber bytes m a b x.
         ( Alternative (STM m)
         , MonadAsync       m
@@ -166,8 +168,9 @@ with :: forall (muxMode :: Mux.Mode) socket peerAddr initiatorCtx
         , Typeable peerAddr
         , Show peerAddr
         )
-     => Arguments muxMode handlerTrace socket peerAddr initiatorCtx
+     => Arguments muxMode handlerTrace socket peerAddr initiatorCtx responderCtx
                   handle handleError versionNumber versionData bytes m a b x
+     -- -> SingMuxMode muxMode
      -> (   Async m Void
          -> m (PublicState peerAddr versionData)
          -> ConnectionManager muxMode socket peerAddr handle handleError m
@@ -184,6 +187,7 @@ with
       withConnectionManager,
       mkConnectionHandler
     }
+    -- singMuxMode
     k
     = do
     labelThisThread "inbound-governor"
@@ -209,6 +213,7 @@ with
         Mux.TraceState Mux.Mature -> atomically do
           -- we block the muxer until the connection manager
           -- notifies the IG of the new connection to avoid a race
+          --
           check . Map.member peer . connections =<< readTVar stateVar
           modifyTVar countersVar $ Map.insert peer (ResponderCounters 0 0)
 

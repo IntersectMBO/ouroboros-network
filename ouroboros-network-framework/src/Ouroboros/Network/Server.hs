@@ -73,13 +73,13 @@ import qualified Ouroboros.Network.InboundGovernor as Info
 
 -- | Server static configuration.
 --
-data Arguments muxMode socket peerAddr initiatorCtx handle handlerTrace handleError versionNumber versionData bytes m a b x =
+data Arguments muxMode socket peerAddr initiatorCtx responderCtx handle handlerTrace handleError versionNumber versionData bytes m a b x =
     Arguments {
       sockets               :: NonEmpty socket,
       snocket               :: Snocket m socket peerAddr,
       tracer                :: Tracer m (Trace peerAddr),
       connectionLimits      :: AcceptedConnectionsLimit,
-      inboundGovernorArgs   :: InboundGovernor.Arguments muxMode handlerTrace socket peerAddr initiatorCtx handle handleError versionNumber versionData bytes m a b x
+      inboundGovernorArgs   :: InboundGovernor.Arguments muxMode handlerTrace socket peerAddr initiatorCtx responderCtx handle handleError versionNumber versionData bytes m a b x
       -- trTracer              :: Tracer m (InboundGovernor.RemoteTransitionTrace peerAddr),
       -- inboundGovernorTracer :: Tracer m (InboundGovernor.Trace peerAddr),
       -- debugInboundGovernor  :: Tracer m (InboundGovernor.Debug peerAddr versionData),
@@ -121,7 +121,7 @@ server_CONNABORTED_DELAY = 0.5
 -- The first one is used in data diffusion for /Node-To-Node protocol/, while the
 -- other is useful for running a server for the /Node-To-Client protocol/.
 --
-with :: forall muxMode socket peerAddr initiatorCtx handle handlerTrace handleError versionNumber versionData bytes m a b x.
+with :: forall muxMode socket peerAddr initiatorCtx responderCtx handle handlerTrace handleError versionNumber versionData bytes m a b x.
        ( Alternative (STM m)
        , MonadAsync    m
        , MonadDelay    m
@@ -140,7 +140,7 @@ with :: forall muxMode socket peerAddr initiatorCtx handle handlerTrace handleEr
        , MonadFix m
        , Typeable peerAddr
        )
-    => Arguments muxMode socket peerAddr initiatorCtx handle handlerTrace
+    => Arguments muxMode socket peerAddr initiatorCtx responderCtx handle handlerTrace
                  handleError versionNumber versionData bytes m a b x
     -- ^ record which holds all server arguments
     -- -> InfoChannel.InboundGovernorInfoChannel muxMode peerAddr initiatorCtx versionData ByteString m a b
@@ -148,6 +148,7 @@ with :: forall muxMode socket peerAddr initiatorCtx handle handlerTrace handleEr
     -- -> InfoChannel.InformationChannel
     --                  (Event muxMode handle initiatorCtx peerAddr versionData m a b)
     --                  m
+    -- -> SingMuxMode muxMode
     -> (   Async m Void
         -> m (InboundGovernor.PublicState peerAddr versionData)
         -> ConnectionManager
@@ -167,6 +168,7 @@ with Arguments {
         limits@AcceptedConnectionsLimit { acceptedConnectionsHardLimit = hardLimit },
       inboundGovernorArgs
     }
+    -- singMuxMode
     k
     = do
       let sockets = NonEmpty.toList socks

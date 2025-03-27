@@ -473,7 +473,7 @@ withBidirectionalConnectionManager name timeouts
                                    acceptedConnLimit k = do
     mainThreadId <- myThreadId
     inbgovInfoChannel <- newInformationChannel
-    let mkConnectionHandler =
+    let mkConnectionHandler s =
           makeConnectionHandler
             (WithName name `contramap` muxTracer)
             noBindForkPolicy
@@ -491,7 +491,7 @@ withBidirectionalConnectionManager name timeouts
                           <> debugMuxRuntimeErrorRethrowPolicy
                           <> debugIOErrorRethrowPolicy
                           <> assertRethrowPolicy)
-            SingInitiatorResponderMode
+            s
 
         withConnectionManager connectionHandler k' =
           CM.with CM.Arguments {
@@ -550,7 +550,7 @@ withBidirectionalConnectionManager name timeouts
               infoChannel = inbgovInfoChannel,
               idleTimeout = Just (tProtocolIdleTimeout timeouts),
               withConnectionManager,
-              mkConnectionHandler = mkConnectionHandler
+              mkConnectionHandler = mkConnectionHandler SingInitiatorResponderMode (\(DataFlowProtocolData df _) -> df)
               }
           }
           (\inboundGovernorAsync _ connectionManager -> k connectionManager serverAddr inboundGovernorAsync)

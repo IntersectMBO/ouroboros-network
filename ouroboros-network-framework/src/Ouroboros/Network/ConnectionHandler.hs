@@ -155,17 +155,17 @@ data Handle (muxMode :: Mx.Mode) initiatorCtx responderCtx versionData bytes m a
       }
 
 -- (InformationChannel (NewConnectionInfo peerAddr handle) m)
-type family MkMuxConnectionHandler (muxMode :: Mx.Mode) socket initiatorCtx responderCtx peerAddr versionNumber versionData m a b =
+type family MkMuxConnectionHandler (muxMode :: Mx.Mode) socket initiatorCtx responderCtx peerAddr versionNumber versionData bytes m a b =
   result | result -> socket where
-  MkMuxConnectionHandler Mx.InitiatorMode socket initiatorCtx responderCtx peerAddr versionNumber versionData m a b =
-    MuxConnectionHandler Mx.InitiatorMode socket initiatorCtx responderCtx peerAddr versionNumber versionData ByteString m a b
-  MkMuxConnectionHandler Mx.ResponderMode socket initiatorCtx responderCtx peerAddr versionNumber versionData m a b =
+  MkMuxConnectionHandler Mx.InitiatorMode socket initiatorCtx responderCtx peerAddr versionNumber versionData bytes m a b =
+    MuxConnectionHandler Mx.InitiatorMode socket initiatorCtx responderCtx peerAddr versionNumber versionData bytes m a b
+  MkMuxConnectionHandler Mx.ResponderMode socket initiatorCtx responderCtx peerAddr versionNumber versionData bytes m a b =
        Tracer m (WithBearer (ConnectionId peerAddr) Trace)
-    -> MuxConnectionHandler Mx.ResponderMode socket initiatorCtx responderCtx peerAddr versionNumber versionData ByteString m a b
-  MkMuxConnectionHandler Mx.InitiatorResponderMode socket initiatorCtx responderCtx peerAddr versionNumber versionData m a b =
-       Tracer m (WithBearer (ConnectionId peerAddr) Trace)
-    -> (versionData -> DataFlow)
-    -> MuxConnectionHandler Mx.InitiatorResponderMode socket initiatorCtx responderCtx peerAddr versionNumber versionData ByteString m a b
+    -> MuxConnectionHandler Mx.ResponderMode socket initiatorCtx responderCtx peerAddr versionNumber versionData bytes m a b
+  MkMuxConnectionHandler Mx.InitiatorResponderMode socket initiatorCtx responderCtx peerAddr versionNumber versionData bytes m a b =
+       (versionData -> DataFlow)
+    -> Tracer m (WithBearer (ConnectionId peerAddr) Trace)
+    -> MuxConnectionHandler Mx.InitiatorResponderMode socket initiatorCtx responderCtx peerAddr versionNumber versionData bytes m a b
 
 -- | 'Handle' used by `node-to-node` P2P connections.
 --
@@ -286,7 +286,7 @@ makeConnectionHandler
     -- ^ 'ThreadId' and rethrow policy.  Rethrow policy might throw an async
     -- exception to that thread, when trying to terminate the process.
     -> SingMuxMode muxMode
-    -> MkMuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr versionNumber versionData m a b
+    -> MkMuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr versionNumber versionData ByteString m a b
 makeConnectionHandler muxTracer forkPolicy
                       handshakeArguments
                       versionedApplication
@@ -294,7 +294,7 @@ makeConnectionHandler muxTracer forkPolicy
   \case
     SingInitiatorMode -> ConnectionHandler . WithInitiatorMode $ outboundConnectionHandler NotInResponderMode
     SingResponderMode -> ConnectionHandler . WithResponderMode . inboundConnectionHandler
-    SingInitiatorResponderMode -> \inboundGovChannelTracer connectionDataFlow ->
+    SingInitiatorResponderMode -> \connectionDataFlow inboundGovChannelTracer ->
       ConnectionHandler $ WithInitiatorResponderMode (outboundConnectionHandler (InResponderMode (inboundGovChannelTracer, connectionDataFlow)))
                                                      (inboundConnectionHandler inboundGovChannelTracer)
   where
