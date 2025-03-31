@@ -1,13 +1,17 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE BangPatterns          #-}
+{-# LANGUAGE BlockArguments        #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiWayIf            #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE ViewPatterns          #-}
 
 -- 'runResponder' is using a redundant constraint.
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
@@ -25,6 +29,8 @@ module Ouroboros.Network.InboundGovernor
     -- * Trace
   , Trace (..)
   , Debug (..)
+  , Event (..)
+  , NewConnectionInfo (..)
   , RemoteSt (..)
   , RemoteTransition
   , RemoteTransitionTrace
@@ -40,17 +46,18 @@ import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (SomeAsyncException (..))
-import Control.Monad (foldM)
+import Control.Monad (foldM, forM_, forever, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer, traceWith)
+import Control.Tracer (Tracer (..), traceWith)
 
 import Data.Bifunctor (first)
 import Data.ByteString.Lazy (ByteString)
 import Data.Cache
+import Data.Functor (($>))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Monoid.Synchronisation
@@ -61,18 +68,17 @@ import Data.Set qualified as Set
 import Data.Void (Void)
 
 import Network.Mux qualified as Mux
+import Network.Mux.Types qualified as Mux
 
 import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionManager.InformationChannel
-           (InboundGovernorInfoChannel)
+           (InformationChannel)
 import Ouroboros.Network.ConnectionManager.InformationChannel qualified as InfoChannel
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context
-import Ouroboros.Network.InboundGovernor.Event
 import Ouroboros.Network.InboundGovernor.State
 import Ouroboros.Network.Mux
 import Ouroboros.Network.Server.RateLimiting
-
 
 -- | Period of time after which a peer transitions from a fresh to a mature one,
 -- see `matureDuplexPeers` and `freshDuplexPeers`.
@@ -88,7 +94,9 @@ inactionTimeout :: DiffTime
 inactionTimeout = 31.415927
 
 
-data Arguments muxMode socket initiatorCtx peerAddr versionNumber versionData m a b = Arguments {
+data Arguments muxMode handlerTrace socket peerAddr initiatorCtx responderCtx
+               handle handleError versionNumber versionData bytes m a b x =
+  Arguments {
       transitionTracer   :: Tracer m (RemoteTransitionTrace peerAddr),
       -- ^ transition tracer
       tracer             :: Tracer m (Trace peerAddr),
@@ -97,17 +105,25 @@ data Arguments muxMode socket initiatorCtx peerAddr versionNumber versionData m 
       -- ^ debug inbound governor tracer
       connectionDataFlow :: versionData -> DataFlow,
       -- ^ connection data flow
-      infoChannel        :: InboundGovernorInfoChannel muxMode initiatorCtx peerAddr versionData ByteString m a b,
+      infoChannel        :: InboundGovernorInfoChannel muxMode peerAddr initiatorCtx versionData ByteString m a b,
       -- ^ 'InformationChannel' which passes 'NewConnectionInfo' for outbound
       -- connections from connection manager to the inbound governor.
       idleTimeout        :: Maybe DiffTime,
       -- ^ protocol idle timeout.  The remote site must restart a mini-protocol
       -- within given timeframe (Nothing indicates no timeout).
-      connectionManager  :: MuxConnectionManager muxMode socket initiatorCtx
-                                                    (ResponderContext peerAddr) peerAddr
-                                                    versionData versionNumber
-                                                    ByteString m a b
-      -- ^ connection manager
+      withConnectionManager
+        :: ConnectionHandler muxMode handlerTrace socket peerAddr handle handleError versionNumber versionData m
+        -> (ConnectionManager muxMode socket peerAddr handle handleError m -> m x)
+        -> m x,
+      -- ^ connection manager continuation
+      mkConnectionHandler
+        :: Tracer m (Mux.WithBearer (ConnectionId peerAddr) Mux.Trace)
+        -> ConnectionHandler muxMode handlerTrace socket peerAddr handle handleError versionNumber versionData m
+      -- ^ Connection handler builder, which injects a special tracer
+      -- created here and routed into the muxer via the connection manager.
+      -- The purpose is to inform the IG loop
+      -- of miniprotocol responder activity such that proper and efficient
+      -- peer cold/warm/hot transitions can be tracked.
     }
 
 
@@ -126,7 +142,8 @@ data Arguments muxMode socket initiatorCtx peerAddr versionNumber versionData m 
 -- The first one is used in data diffusion for /Node-To-Node protocol/, while the
 -- other is useful for running a server for the /Node-To-Client protocol/.
 --
-with :: forall (muxMode :: Mux.Mode) socket initiatorCtx peerAddr versionData versionNumber m a b x.
+with :: forall (muxMode :: Mux.Mode) socket peerAddr initiatorCtx responderCtx
+               handle handlerTrace handleError versionData versionNumber bytes m a b x.
         ( Alternative (STM m)
         , MonadAsync       m
         , MonadCatch       m
@@ -139,19 +156,28 @@ with :: forall (muxMode :: Mux.Mode) socket initiatorCtx peerAddr versionData ve
         , MonadMask        m
         , Ord peerAddr
         , HasResponder muxMode ~ True
+        , MonadTraceSTM m
+        , MonadFork m
+        , MonadDelay m
+        , Show peerAddr
         )
-     => Arguments muxMode socket initiatorCtx peerAddr versionNumber versionData m a b
-     -> (Async m Void -> m (PublicState peerAddr versionData) -> m x)
+     => Arguments muxMode handlerTrace socket peerAddr initiatorCtx responderCtx
+                  handle handleError versionNumber versionData bytes m a b x
+     -> (   Async m Void
+         -> m (PublicState peerAddr versionData)
+         -> ConnectionManager muxMode socket peerAddr handle handleError m
+         -> m x)
      -> m x
 with
     Arguments {
-      transitionTracer   = trTracer,
-      tracer             = tracer,
-      debugTracer        = debugTracer,
-      connectionDataFlow = connectionDataFlow,
-      infoChannel        = infoChannel,
-      idleTimeout        = idleTimeout,
-      connectionManager  = connectionManager
+      transitionTracer = trTracer,
+      tracer,
+      debugTracer,
+      connectionDataFlow,
+      idleTimeout,
+      infoChannel,
+      withConnectionManager,
+      mkConnectionHandler
     }
     k
     = do
