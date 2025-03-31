@@ -10,6 +10,7 @@ module Network.Mux.Trace
   ( Error (..)
   , handleIOException
   , Trace (..)
+  , Tracers (..)
   , BearerState (..)
   , WithBearer (..)
   , TraceLabelPeer (..)
@@ -22,6 +23,7 @@ import Text.Printf
 import Control.Exception hiding (throwIO)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
+import Control.Tracer (Tracer)
 import Data.Bifunctor (Bifunctor (..))
 import Data.Word
 import GHC.Generics (Generic (..))
@@ -208,3 +210,18 @@ instance Show Trace where
     show (TraceTCPInfo _ len) = printf "TCPInfo len %d" len
 #endif
 
+-- | Bundle of tracers passed to mux
+-- Consult the 'Trace' type to determine which
+-- tags are required/expected to be served by these tracers.
+-- In principle, the channelTracer can be == muxTracer
+-- but performance likely degrades in typical conditions
+-- unnecessarily.
+--
+data Tracers m = Tracers {
+  channelTracer :: Tracer m Trace,
+  -- ^ a low level tracer for events emitted by a bearer. It emits events as frequently
+  -- as receiving individual `SDU`s from the network.
+  muxTracer     :: Tracer m Trace
+  -- ^ mux events which are emitted less frequently.  It emits events which allow one
+  -- to observe the current state of a mini-protocol.
+  }

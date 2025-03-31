@@ -45,6 +45,7 @@ module Network.Mux
   , traceBearerState
   , BearerState (..)
   , Trace (..)
+  , Tracers (..)
   , WithBearer (..)
   ) where
 
@@ -212,11 +213,11 @@ run :: forall m (mode :: Mode).
        , MonadTimer m
        , MonadMask m
        )
-    => Tracer m Trace
+    => Tracers m
     -> Mux mode m
     -> Bearer m
     -> m ()
-run tracer
+run tracers@Tracers { muxTracer = tracer }
     Mux { muxMiniProtocols,
           muxControlCmdQueue,
           muxStatus
@@ -238,7 +239,7 @@ run tracer
         -- Wait for someone to shut us down by calling muxStop or an error.
         -- Outstanding jobs are shut down Upon completion of withJobPool.
         withTimeoutSerial $ \timeout ->
-          monitor tracer
+          monitor tracers
                   timeout
                   jobpool
                   egressQueue
@@ -250,6 +251,7 @@ run tracer
     -- deadlock of mini-protocol completion action.
     `catch` \(SomeAsyncException e) -> do
       atomically $ writeTVar muxStatus (Failed $ toException e)
+      traceWith tracer $ TraceState Dead
       throwIO e
   where
     muxerJob egressQueue =
@@ -272,12 +274,15 @@ miniProtocolJob
      , MonadThread m
      , MonadThrow (STM m)
      )
-  => Tracer m Trace
+  => Tracers m
   -> EgressQueue m
   -> MiniProtocolState mode m
   -> MiniProtocolAction m
   -> JobPool.Job Group m JobResult
-miniProtocolJob tracer egressQueue
+miniProtocolJob Tracers {
+                  muxTracer = tracer,
+                  channelTracer }
+                egressQueue
                 MiniProtocolState {
                   miniProtocolInfo =
                     MiniProtocolInfo {
@@ -300,7 +305,7 @@ miniProtocolJob tracer egressQueue
       labelThisThread (case miniProtocolNum of
                         MiniProtocolNum a -> "prtcl-" ++ show a)
       w <- newTVarIO BL.empty
-      let chan = muxChannel tracer egressQueue (Wanton w)
+      let chan = muxChannel channelTracer egressQueue (Wanton w)
                             miniProtocolNum miniProtocolDirEnum
                             miniProtocolIngressQueue
       (result, remainder) <- miniProtocolAction chan
@@ -390,14 +395,16 @@ monitor :: forall mode m.
            , Alternative (STM m)
            , MonadThrow (STM m)
            )
-        => Tracer m Trace
+        => Tracers m
         -> TimeoutFn m
         -> JobPool.JobPool Group m JobResult
         -> EgressQueue m
         -> StrictTQueue m (ControlCmd mode m)
         -> StrictTVar m Status
         -> m ()
-monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
+monitor tracers@Tracers {
+          muxTracer = tracer }
+        timeout jobpool egressQueue cmdQueue muxStatus =
     go (MonitorCtx Map.empty Map.empty)
   where
     go :: MonitorCtx m mode -> m ()
@@ -433,9 +440,9 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
           go monitorCtx
 
         EventJobResult (MiniProtocolException pnum pmode e) -> do
-          traceWith tracer (TraceState Dead)
-          traceWith tracer (TraceExceptionExit pnum pmode e)
           atomically $ writeTVar muxStatus $ Failed e
+          traceWith tracer (TraceExceptionExit pnum pmode e)
+          traceWith tracer (TraceState Dead)
           throwIO e
 
         -- These two cover internal and protocol errors.  The muxer exception is
@@ -447,11 +454,10 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
         -- the source of the failure, e.g. specific mini-protocol. If we're
         -- propagating exceptions, we don't need to log them.
         EventJobResult (MuxerException e) -> do
-          traceWith tracer (TraceState Dead)
           atomically $ writeTVar muxStatus $ Failed e
+          traceWith tracer (TraceState Dead)
           throwIO e
         EventJobResult (DemuxerException e) -> do
-          traceWith tracer (TraceState Dead)
           r <- atomically $ do
             size <- JobPool.readGroupSize jobpool MiniProtocolJob
             case size of
@@ -460,6 +466,7 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
                 >> return True
               _ -> writeTVar muxStatus (Failed e)
                 >> return False
+          traceWith tracer (TraceState Dead)
           unless r (throwIO e)
 
         EventControlCmd (CmdStartProtocolThread
@@ -478,14 +485,14 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
             Nothing ->
               JobPool.forkJob jobpool $
                 miniProtocolJob
-                  tracer
+                  tracers
                   egressQueue
                   ptclState
                   ptclAction
             Just cap ->
               JobPool.forkJobOn cap jobpool $
                 miniProtocolJob
-                  tracer
+                  tracers
                   egressQueue
                   ptclState
                   ptclAction
@@ -585,14 +592,14 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
         Nothing ->
           JobPool.forkJob jobpool $
             miniProtocolJob
-              tracer
+              tracers
               egressQueue
               ptclState
               ptclAction
         Just cap ->
           JobPool.forkJobOn cap jobpool $
             miniProtocolJob
-              tracer
+              tracers
               egressQueue
               ptclState
               ptclAction
@@ -654,7 +661,7 @@ muxChannel
     -> IngressQueue m
     -> ByteChannel m
 muxChannel tracer egressQueue want@(Wanton w) mc md q =
-    Channel { send, recv}
+    Channel { send, recv }
   where
     -- Limit for the message buffer between send and mux thread.
     perMiniProtocolBufferSize :: Int64
@@ -797,4 +804,3 @@ runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue , muxStatus}
                    <|> return (Left $ toException (Shutdown Nothing st))
            Failed e -> readTMVar completionVar
                    <|> return (Left $ toException (Shutdown (Just e) st))
-
