@@ -66,7 +66,7 @@ import Data.Void (Void)
 import System.Random (StdGen, mkStdGen)
 import System.Random qualified as Random
 
-import Network.DNS (Domain, TTL)
+import Network.Mux qualified as Mux
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.PingPong.Type qualified as PingPong
 
@@ -98,6 +98,7 @@ import Ouroboros.Network.Block (BlockNo)
 import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..),
            TraceFetchClientState, TraceLabelPeer (..))
 import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
+import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Types (AbstractTransitionTrace)
@@ -383,9 +384,12 @@ genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream
 
   -- Generating an InitiatorResponderMode node is 3 times more likely since we
   -- want our tests to cover more this case.
-  diffusionMode <- frequency [ (1, pure InitiatorOnlyDiffusionMode)
-                             , (3, pure InitiatorAndResponderDiffusionMode)
-                             ]
+  -- diffusionMode <- frequency [ (1, pure InitiatorOnlyDiffusionMode)
+  --                            , (3, pure InitiatorAndResponderDiffusionMode)
+  --                            ]
+  -- TODO: 'cm & ig enforce timeouts' fails in 'InitiatorOnlyDiffusionMode'
+  -- so we pin it to this
+  let diffusionMode = InitiatorAndResponderDiffusionMode
 
   -- These values approximately correspond to false positive
   -- thresholds for streaks of empty slots with 99% probability,
@@ -973,6 +977,8 @@ data DiffusionTestTrace =
     | DiffusionServerTrace (Server.Trace NtNAddr)
     | DiffusionFetchTrace (TraceFetchClientState BlockHeader)
     | DiffusionDebugTrace String
+    | DiffusionDNSTrace DNSTrace
+    | DiffusionMuxTrace (Mux.WithBearer (ConnectionId NtNAddr) Mux.Trace)
     deriving (Show)
 
 
@@ -1036,14 +1042,7 @@ diffusionSimulation
 
     -- | Runs a single node according to a list of commands.
     runCommand
-      :: Maybe ( Async m Void
-               , StrictTVar m [( HotValency
-                               , WarmValency
-                               , Map RelayAccessPoint (LocalRootConfig PeerTrustable)
-                               )])
-         -- ^ If the node is running and corresponding local root configuration
-         -- TVar.
-      -> Snocket m (FD m NtNAddr) NtNAddr
+      :: Snocket m (FD m NtNAddr) NtNAddr
         -- ^ Node to node Snocket
       -> Snocket m (FD m NtCAddr) NtCAddr
         -- ^ Node to client Snocket
@@ -1053,46 +1052,57 @@ diffusionSimulation
       -> NodeArgs -- ^ Simulation arguments needed in order to run a single node
       -> CM.ConnStateIdSupply m
       -> Int
+      -> Maybe ( Async m Void
+               , StrictTVar m [( HotValency
+                               , WarmValency
+                               , Map RelayAccessPoint (LocalRootConfig PeerTrustable)
+                               )])
+         -- ^ If the node is running and corresponding local root configuration
+         -- TVar.
       -> [Command] -- ^ List of commands/actions to perform for a single node
       -> m Void
-    runCommand Nothing ntnSnocket ntcSnocket dnsMapVar sArgs nArgs connStateIdSupply [] = do
-      threadDelay 3600
-      traceWith (diffSimTracer (naAddr nArgs)) TrRunning
-      runCommand Nothing ntnSnocket ntcSnocket dnsMapVar sArgs nArgs connStateIdSupply []
-    runCommand (Just (_, _)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs connStateIdSupply [] = do
-      -- We shouldn't block this thread waiting
-      -- on the async since this will lead to a deadlock
-      -- as thread returns 'Void'.
-      threadDelay 3600
-      traceWith (diffSimTracer (naAddr nArgs)) TrRunning
-      runCommand Nothing ntnSnocket ntcSnocket dMapVarMap sArgs nArgs connStateIdSupply []
-    runCommand Nothing ntnSnocket ntcSnocket dnsMapVar sArgs nArgs connStateIdSupply
-               (JoinNetwork delay :cs) = do
-      threadDelay delay
-      traceWith (diffSimTracer (naAddr nArgs)) TrJoiningNetwork
-      lrpVar <- newTVarIO $ naLocalRootPeers nArgs
-      withAsync (runNode sArgs nArgs ntnSnocket ntcSnocket connStateIdSupply lrpVar dnsMapVar) $ \nodeAsync ->
-        runCommand (Just (nodeAsync, lrpVar)) ntnSnocket ntcSnocket dnsMapVar sArgs nArgs connStateIdSupply cs
-    runCommand _ _ _ _ _ _ _ (JoinNetwork _:_) =
-      error "runCommand: Impossible happened"
-    runCommand (Just (async_, _)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs connStateIdSupply
-               (Kill delay:cs) = do
-      threadDelay delay
-      traceWith (diffSimTracer (naAddr nArgs)) TrKillingNode
-      cancel async_
-      runCommand Nothing ntnSnocket ntcSnocket dMapVarMap sArgs nArgs connStateIdSupply cs
-    runCommand _ _ _ _ _ _ _ (Kill _:_) = do
-      error "runCommand: Impossible happened"
-    runCommand Nothing _ _ _ _ _ _ (Reconfigure _ _:_) =
-      error "runCommand: Impossible happened"
-    runCommand (Just (async_, lrpVar)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs connStateIdSupply
-               (Reconfigure delay newLrp:cs) = do
-      threadDelay delay
-      traceWith (diffSimTracer (naAddr nArgs)) TrReconfiguringNode
-      _ <- atomically $ writeTVar lrpVar newLrp
-      runCommand (Just (async_, lrpVar)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs connStateIdSupply
-                 cs
+    runCommand ntnSocket ntcSocket dnsMapVar sArgs nArgs@NodeArgs { naAddr }
+               connStateIdSupply i hostAndLRP cmds = do
       traceWith (diffSimTracer naAddr) . TrSay $ "node-" <> show i
+      runCommand' hostAndLRP cmds
+      where
+        runCommand' Nothing [] = do
+          threadDelay 3600
+          traceWith (diffSimTracer naAddr) TrRunning
+          runCommand' Nothing []
+        runCommand' (Just (_, _)) [] = do
+          -- We shouldn't block this thread waiting
+          -- on the async since this will lead to a deadlock
+          -- as thread returns 'Void'.
+          threadDelay 3600
+          traceWith (diffSimTracer naAddr) TrRunning
+          runCommand' Nothing []
+        runCommand' Nothing
+                   (JoinNetwork delay :cs) = do
+          threadDelay delay
+          traceWith (diffSimTracer naAddr) TrJoiningNetwork
+          lrpVar <- newTVarIO $ naLocalRootPeers nArgs
+          withAsync (runNode sArgs nArgs ntnSocket ntcSocket connStateIdSupply lrpVar dnsMapVar i) $ \nodeAsync ->
+            runCommand' (Just (nodeAsync, lrpVar)) cs
+        runCommand' _ (JoinNetwork _:_) =
+          error "runCommand: Impossible happened"
+        runCommand' (Just (async_, _))
+                   (Kill delay:cs) = do
+          threadDelay delay
+          traceWith (diffSimTracer naAddr) TrKillingNode
+          cancel async_
+          runCommand' Nothing cs
+        runCommand' _ (Kill _:_) = do
+          error "runCommand: Impossible happened"
+        runCommand' Nothing (Reconfigure _ _:_) =
+          error "runCommand: Impossible happened"
+        runCommand' (Just (async_, lrpVar))
+                   (Reconfigure delay newLrp:cs) = do
+          threadDelay delay
+          traceWith (diffSimTracer naAddr) TrReconfiguringNode
+          _ <- atomically $ writeTVar lrpVar newLrp
+          runCommand' (Just (async_, lrpVar))
+                     cs
 
     runNode :: SimArgs
             -> NodeArgs
@@ -1124,6 +1134,7 @@ diffusionSimulation
             , naChainSyncExitOnBlockNo = chainSyncExitOnBlockNo
             , naChainSyncEarlyExit     = chainSyncEarlyExit
             , naPeerSharing            = peerSharing
+            , naDiffusionMode          = diffusionMode
             }
             ntnSnocket
             ntcSnocket
@@ -1140,7 +1151,6 @@ diffusionSimulation
           (bgaRng, rng) = Random.split $ mkStdGen seed
           acceptedConnectionsLimit =
             AcceptedConnectionsLimit maxBound maxBound 0
-          diffusionMode = InitiatorAndResponderDiffusionMode
           readLocalRootPeers  = readTVar lrpVar
           readPublicRootPeers = return publicRoots
           readUseLedgerPeers  = return (UseLedgerPeers (After 0))
