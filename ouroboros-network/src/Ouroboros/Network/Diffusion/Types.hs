@@ -21,8 +21,7 @@ module Ouroboros.Network.Diffusion.Types
     -- * NodeToClient type aliases
   , NodeToClientHandle
   , NodeToClientHandleError
-  , NodeToClientConnectionHandler
-  , NodeToClientConnectionManagerArguments
+  , MkNodeToClientConnectionHandler
     -- * NodeToNode type aliases
   , NodeToNodeHandle
   , NodeToNodeConnectionManager
@@ -41,12 +40,14 @@ import Control.Tracer (Tracer, nullTracer)
 import Data.ByteString.Lazy (ByteString)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Map (Map)
+import Data.Maybe.Strict
 import Data.Set (Set)
 import Data.Typeable (Typeable)
 import Data.Void (Void)
 import System.Random (StdGen)
 
 import Network.Mux qualified as Mx
+import Network.Mux.Trace qualified as Mux
 import Network.Mux.Types (ReadBuffer)
 import Network.Socket qualified as Socket
 
@@ -565,31 +566,20 @@ type NodeToClientHandle ntcAddr versionData m =
 type NodeToClientHandleError ntcVersion =
     HandleError Mx.ResponderMode ntcVersion
 
-type NodeToClientConnectionHandler
+type MkNodeToClientConnectionHandler
       ntcFd ntcAddr ntcVersion ntcVersionData m =
-    ConnectionHandler
-      Mx.ResponderMode
-      (ConnectionHandlerTrace ntcVersion ntcVersionData)
-      ntcFd
-      ntcAddr
-      (NodeToClientHandle ntcAddr ntcVersionData m)
-      (NodeToClientHandleError ntcVersion)
-      ntcVersion
-      ntcVersionData
-      m
-
-type NodeToClientConnectionManagerArguments
-      ntcFd ntcAddr ntcVersion ntcVersionData m =
-    CM.Arguments
-      (ConnectionHandlerTrace ntcVersion ntcVersionData)
-      ntcFd
-      ntcAddr
-      (NodeToClientHandle ntcAddr ntcVersionData m)
-      (NodeToClientHandleError ntcVersion)
-      ntcVersion
-      ntcVersionData
-      m
-
+       (   StrictTVar m (StrictMaybe IG.ResponderCounters)
+        -> Tracer m (Mux.WithBearer (ConnectionId ntcAddr) Mux.Trace))
+    -> ConnectionHandler
+         Mx.ResponderMode
+         (ConnectionHandlerTrace ntcVersion ntcVersionData)
+         ntcFd
+         ntcAddr
+         (NodeToClientHandle ntcAddr ntcVersionData m)
+         (NodeToClientHandleError ntcVersion)
+         ntcVersion
+         ntcVersionData
+         m
 
 --
 -- Node-To-Node type aliases
