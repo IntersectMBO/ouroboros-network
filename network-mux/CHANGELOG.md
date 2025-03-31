@@ -3,15 +3,11 @@
 ## next release
 
 ### Breaking changes
-* Bearer writeMany function for vector IO
-* An optional read buffer for Bearer
-* Polling of the egress queue
+
+* run, miniProtocolJob, monitor now accept Tracers record
+  instead of `Tracer m Trace` type.
 
 ### Non-breaking changes
-* Define msHeaderLength instead of using '8'
-* Benchmark for Socket Bearer
-* Use ByteString.Builder for the ingress queues
-* Signal the kernal that we require at least the full SDU's worth of data
 
 ## 0.8.0.1 -- 2025-06-02
 
@@ -27,6 +23,8 @@
 
 * `MakeBearer` accepts optional `ReadBuffer`
 * added fields `egressInterval`, `writeMany`, `batchSize` to `Bearer`
+  * writeMany provides vector IO, egressInterval supports polling of egress queue
+    for tuning latency vs. network efficiency
 * `socketAsBearer` additionally takes `ReadBuffer`, egress
   interval `DiffTime` for egress polling, and batchSize
 * changed `IngressQueue` type synonym
@@ -35,6 +33,10 @@
 ### Non-breaking changes
 
 * added `makeSocketBearer'`, `ReadBuffer`, `withReadBufferIO`
+* Define msHeaderLength instead of using '8'
+* Benchmark for Socket Bearer
+* Use ByteString.Builder for the ingress queues
+* Signal the kernal that we require at least the full SDU's worth of data
 
 ## 0.7.0.0 -- 2025-02-25
 
