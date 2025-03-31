@@ -372,7 +372,7 @@ prop_socket_recv_error f rerr =
                               [(Mx.ResponderDirectionOnly, void . runMiniProtocolCb initiator respCtx)]
                       ]
 
-                    withAsync (Mx.run nullTracer mux bearer) $ \aid -> do
+                    withAsync (Mx.run (Mx.Tracers nullTracer nullTracer) mux bearer) $ \aid -> do
                       _ <- atomically $ runFirstToFinish $ foldMap FirstToFinish resOps
                       Mx.stop mux
                       wait aid
