@@ -12,7 +12,8 @@
 -- | Types used by the multiplexer.
 --
 module Network.Mux.Types
-  ( MiniProtocolInfo (..)
+  ( ColdBlooded (..)
+  , MiniProtocolInfo (..)
   , MiniProtocolNum (..)
   , MiniProtocolDirection (..)
   , MiniProtocolLimits (..)
@@ -45,7 +46,7 @@ module Network.Mux.Types
 
 import Prelude hiding (read)
 
-import Control.Exception (Exception, SomeException)
+import Control.Exception
 import Data.ByteString.Builder (Builder)
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
@@ -170,6 +171,15 @@ data Status
      -- | Mux stopped.
     | Stopped
     deriving Show
+
+-- | A type belonging to Async exception hierarchy
+-- used when killing the server
+--
+data ColdBlooded = ColdBlooded deriving Show
+
+instance Exception ColdBlooded where
+  toException   = asyncExceptionToException
+  fromException = asyncExceptionFromException
 
 --
 -- Mux internal types
