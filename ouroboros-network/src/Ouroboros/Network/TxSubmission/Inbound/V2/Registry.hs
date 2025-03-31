@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE LambdaCase          #-}
@@ -24,14 +23,10 @@ import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Concurrent.Class.MonadSTM.TSem
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
-import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
 
-import Data.Foldable (traverse_
-#if !MIN_VERSION_base(4,20,0)
-                     , foldl'
-#endif
-                     )
+import Data.Foldable as Foldable (foldl', traverse_)
 import Data.Hashable
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -40,6 +35,7 @@ import Data.Sequence.Strict (StrictSeq)
 import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set (Set)
 import Data.Set qualified as Set
+import Data.Typeable (Typeable)
 import Data.Void (Void)
 
 import Control.Tracer (Tracer, traceWith)
@@ -109,6 +105,7 @@ withPeer
        , MonadMonotonicTime m
        , Ord txid
        , Show txid
+       , Typeable txid
        , Ord peeraddr
        , Show peeraddr
        )
@@ -217,10 +214,12 @@ withPeer tracer
             peerTxStates
 
         referenceCounts' =
-          foldl' (flip $ Map.update
-                             \cnt -> if cnt > 1
-                                     then Just $! pred cnt
-                                     else Nothing)
+          Foldable.foldl'
+            (flip $ Map.update \cnt ->
+              if cnt > 1
+              then Just $! pred cnt
+              else Nothing
+            )
           referenceCounts
           unacknowledgedTxIds
 
@@ -230,16 +229,17 @@ withPeer tracer
                        `Map.restrictKeys`
                        liveSet
 
-        inflightTxs' = foldl' purgeInflightTxs inflightTxs requestedTxsInflight
+        inflightTxs' = Foldable.foldl' purgeInflightTxs inflightTxs requestedTxsInflight
         inflightTxsSize' = inflightTxsSize - requestedTxsInflightSize
 
         -- When we unregister a peer, we need to subtract all txs in the
         -- `toMempoolTxs`, as they will not be submitted to the mempool.
         limboTxs' =
-          foldl' (flip $ Map.update
-                             \cnt -> if cnt > 1
-                                     then Just $! pred cnt
-                                     else Nothing)
+          Foldable.foldl' (flip $ Map.update \cnt ->
+               if cnt > 1
+               then Just $! pred cnt
+               else Nothing
+            )
           limboTxs
           (Map.keysSet toMempoolTxs)
 

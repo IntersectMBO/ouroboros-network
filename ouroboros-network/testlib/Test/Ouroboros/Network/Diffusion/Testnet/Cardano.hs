@@ -29,7 +29,7 @@ import Data.Char (ord)
 import Data.Dynamic (fromDynamic)
 import Data.Foldable (fold, foldr')
 import Data.IP qualified as IP
-import Data.List (foldl', intercalate, sort)
+import Data.List (intercalate, sort)
 import Data.List qualified as List
 import Data.List.Trace qualified as Trace
 import Data.Map (Map)
@@ -951,9 +951,9 @@ unit_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
   where
     -- We need to make sure the transactions are unique, this simplifies
     -- things.
-    uniqueTxsA = map (\(t, i) -> t { getTxId = (foldl' (+) 0 $ map ord "0.0.0.0") + i })
+    uniqueTxsA = map (\(t, i) -> t { getTxId = List.foldl' (+) 0 (map ord "0.0.0.0") + i })
                      (zip txsA [0 :: Int ..])
-    uniqueTxsB = map (\(t, i) -> t { getTxId = (foldl' (+) 0 $ map ord "0.0.0.1") + i })
+    uniqueTxsB = map (\(t, i) -> t { getTxId = List.foldl' (+) 0 (map ord "0.0.0.1") + i })
                      (zip txsB [100 :: Int ..])
 
     -- This checks the property that after running the simulation for a while
@@ -975,7 +975,7 @@ unit_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
           sortedAcceptedTxidsMap :: Map NtNAddr [Int]
           sortedAcceptedTxidsMap =
               foldr (\l r ->
-                foldl' (\rr (WithName n (WithTime _ x)) ->
+                List.foldl' (\rr (WithName n (WithTime _ x)) ->
                   case x of
                     -- When we add txids to the mempool, we collect them
                     -- into the map
