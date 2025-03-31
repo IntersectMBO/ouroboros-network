@@ -377,8 +377,6 @@ with
        , Typeable peerAddr
        )
     => Arguments handlerTrace socket peerAddr handle handleError version versionData m
-    -> ConnectionHandler  muxMode handlerTrace socket peerAddr handle handleError version versionData m
-    -- ^ Callback which runs in a thread dedicated for a given connection.
     -> (handleError -> HandleErrorType)
     -- ^ classify 'handleError's
     -> InResponderMode muxMode (InformationChannel (NewConnectionInfo peerAddr handle) m)
@@ -413,6 +411,9 @@ with args@Arguments {
        }
      classifyHandleError
      inboundGovernorInfoChannel
+     ConnectionHandler {
+       connectionHandler
+     }
      k = do
     ((stateVar, stdGenVar)
        ::  ( StrictTMVar m (ConnectionManagerState peerAddr handle handleError
