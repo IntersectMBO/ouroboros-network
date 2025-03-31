@@ -1,3 +1,4 @@
+{-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
@@ -37,9 +38,10 @@ import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow hiding (handle)
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.Fix (MonadFix)
+
 import Control.Tracer (Tracer, contramap, traceWith)
 
-import Data.ByteString.Lazy (ByteString)
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Maybe (isNothing)
@@ -49,13 +51,8 @@ import GHC.IO.Exception
 import Foreign.C.Error
 #endif
 
-import Network.Mux qualified as Mx
-import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
-import Ouroboros.Network.ConnectionManager.InformationChannel
-           (InboundGovernorInfoChannel)
 import Ouroboros.Network.ConnectionManager.Types
-import Ouroboros.Network.Context (ResponderContext)
 import Ouroboros.Network.InboundGovernor qualified as InboundGovernor
 import Ouroboros.Network.Mux
 import Ouroboros.Network.Server.RateLimiting
@@ -69,31 +66,13 @@ import Ouroboros.Network.Snocket
 
 -- | Server static configuration.
 --
-data Arguments (muxMode  :: Mx.Mode) socket initiatorCtx peerAddr versionData versionNumber bytes m a b =
+data Arguments muxMode socket peerAddr initiatorCtx responderCtx handle handlerTrace handleError versionNumber versionData bytes m a b x =
     Arguments {
       sockets               :: NonEmpty socket,
       snocket               :: Snocket m socket peerAddr,
       tracer                :: Tracer m (Trace peerAddr),
-      trTracer              :: Tracer m (InboundGovernor.RemoteTransitionTrace peerAddr),
-      inboundGovernorTracer :: Tracer m (InboundGovernor.Trace peerAddr),
-      debugInboundGovernor  :: Tracer m (InboundGovernor.Debug peerAddr versionData),
       connectionLimits      :: AcceptedConnectionsLimit,
-      connectionManager     :: MuxConnectionManager muxMode socket initiatorCtx (ResponderContext peerAddr)
-                                                          peerAddr versionData versionNumber bytes m a b,
-
-      -- | Time for which all protocols need to be idle to trigger
-      -- 'DemotedToCold' transition.
-      --
-      inboundIdleTimeout    :: Maybe DiffTime,
-
-      connectionDataFlow    :: versionData -> DataFlow,
-
-      -- | Server control var is passed as an argument; this allows to use the
-      -- server to run and manage responders which needs to be started on
-      -- inbound connections.
-      --
-      inboundInfoChannel    :: InboundGovernorInfoChannel muxMode initiatorCtx peerAddr versionData
-                                                                bytes m a b
+      inboundGovernorArgs   :: InboundGovernor.Arguments muxMode handlerTrace socket peerAddr initiatorCtx responderCtx handle handleError versionNumber versionData bytes m a b x
     }
 
 -- | Server pauses accepting connections after an 'CONNABORTED' error.
@@ -116,7 +95,7 @@ server_CONNABORTED_DELAY = 0.5
 -- The first one is used in data diffusion for /Node-To-Node protocol/, while the
 -- other is useful for running a server for the /Node-To-Client protocol/.
 --
-with :: forall muxMode socket initiatorCtx peerAddr versionData versionNumber m a b x.
+with :: forall muxMode socket peerAddr initiatorCtx responderCtx handle handlerTrace handleError versionNumber versionData bytes m a b x.
        ( Alternative (STM m)
        , MonadAsync    m
        , MonadDelay    m
@@ -130,10 +109,18 @@ with :: forall muxMode socket initiatorCtx peerAddr versionData versionNumber m 
        , HasResponder muxMode ~ True
        , Ord      peerAddr
        , Show     peerAddr
+       , MonadTraceSTM m
+       , MonadFork m
+       , MonadFix m
        )
-    => Arguments muxMode socket initiatorCtx peerAddr versionData versionNumber ByteString m a b
+    => Arguments muxMode socket peerAddr initiatorCtx responderCtx handle handlerTrace
+                 handleError versionNumber versionData bytes m a b x
     -- ^ record which holds all server arguments
-    -> (Async m Void -> m (InboundGovernor.PublicState peerAddr versionData) -> m x)
+    -> (   Async m Void
+        -> m (InboundGovernor.PublicState peerAddr versionData)
+        -> ConnectionManager
+              muxMode socket peerAddr handle handleError m
+        -> m x)
     -- ^ a callback which receives a handle to inbound governor thread and can
     -- read `PublicState`.
     --
@@ -143,56 +130,44 @@ with :: forall muxMode socket initiatorCtx peerAddr versionData versionNumber m 
 with Arguments {
       sockets = socks,
       snocket,
-      trTracer,
-      tracer = tracer,
-      inboundGovernorTracer = inboundGovernorTracer,
-      debugInboundGovernor,
+      tracer,
       connectionLimits =
         limits@AcceptedConnectionsLimit { acceptedConnectionsHardLimit = hardLimit },
-      inboundIdleTimeout,
-      connectionManager,
-      connectionDataFlow,
-      inboundInfoChannel
+      inboundGovernorArgs
     }
-    k = do
+    k
+    = do
       let sockets = NonEmpty.toList socks
       localAddresses <- traverse (getLocalAddr snocket) sockets
-      traceWith tracer (TrServerStarted localAddresses)
-      InboundGovernor.with
-        InboundGovernor.Arguments {
-          InboundGovernor.transitionTracer   = trTracer,
-          InboundGovernor.tracer             = inboundGovernorTracer,
-          InboundGovernor.debugTracer        = debugInboundGovernor,
-          InboundGovernor.connectionDataFlow = connectionDataFlow,
-          InboundGovernor.infoChannel        = inboundInfoChannel,
-          InboundGovernor.idleTimeout        = inboundIdleTimeout,
-          InboundGovernor.connectionManager  = connectionManager
-        } $ \inboundGovernorThread readPublicInboundState ->
-        withAsync (do
-                      labelThisThread "Server2 (ouroboros-network-framework)"
-                      k inboundGovernorThread readPublicInboundState) $ \actionThread -> do
-          let acceptLoops :: [m Void]
-              acceptLoops =
-                          [ (do
-                                labelThisThread ("accept " ++ show localAddress)
-                                accept snocket socket >>= acceptLoop localAddress)
-                              `finally` close snocket socket
-                          | (localAddress, socket) <- localAddresses `zip` sockets
-                          ]
-          -- race all `acceptLoops` with `actionThread` and
-          -- `inboundGovernorThread`
-          let waiter = fn <$> (do
-                                  labelThisThread "racing-action-inbound-governor"
-                                  actionThread `waitEither` inboundGovernorThread)
+      InboundGovernor.with inboundGovernorArgs
+        \inboundGovernorThread readPublicInboundState connectionManager ->
+          withAsync do
+            labelThisThread "Server2 (ouroboros-network-framework)"
+            k inboundGovernorThread readPublicInboundState connectionManager
+          \actionThread -> do
+            traceWith tracer (TrServerStarted localAddresses)
+            let acceptLoops :: [m Void]
+                acceptLoops =
+                            [ (do
+                                  labelThisThread ("accept " ++ show localAddress)
+                                  accept snocket socket >>= acceptLoop localAddress connectionManager)
+                                `finally` close snocket socket
+                            | (localAddress, socket) <- localAddresses `zip` sockets
+                            ]
+            -- race all `acceptLoops` with `actionThread` and
+            -- `inboundGovernorThread`
+            let waiter = fn <$> (do
+                                    labelThisThread "racing-action-inbound-governor"
+                                    actionThread `waitEither` inboundGovernorThread)
 
-          (fn <$> waiter `race` (labelThisThread "racing-accept-loops" >> raceAll acceptLoops))
-            `finally`
-              traceWith tracer TrServerStopped
-            `catch`
-              \(e :: SomeException) -> do
-                when (isNothing $ fromException @SomeAsyncException e) $
-                  traceWith tracer (TrServerError e)
-                throwIO e
+            (fn <$> waiter `race` (labelThisThread "racing-accept-loops" >> raceAll acceptLoops))
+              `finally`
+                traceWith tracer TrServerStopped
+              `catch`
+                \(e :: SomeException) -> do
+                  when (isNothing $ fromException @SomeAsyncException e) $
+                    traceWith tracer (TrServerError e)
+                  throwIO e
   where
     fn :: Either x Void -> x
     fn (Left x)  = x
@@ -206,9 +181,10 @@ with Arguments {
         go as (x:xs) = withAsync x (\a -> go (a:as) xs)
 
     acceptLoop :: peerAddr
+               -> ConnectionManager muxMode socket peerAddr handle handleError m
                -> Accept m socket peerAddr
                -> m Void
-    acceptLoop localAddress acceptOne0 = mask $ \unmask -> do
+    acceptLoop localAddress connectionManager acceptOne0 = mask $ \unmask -> do
         labelThisThread ("accept-loop-" ++ show localAddress)
         go unmask acceptOne0
       where
