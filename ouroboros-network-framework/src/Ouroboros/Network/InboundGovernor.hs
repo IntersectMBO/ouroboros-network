@@ -1,13 +1,15 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE BangPatterns          #-}
+{-# LANGUAGE BlockArguments        #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeOperators         #-}
 
 -- 'runResponder' is using a redundant constraint.
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
@@ -25,6 +27,8 @@ module Ouroboros.Network.InboundGovernor
     -- * Trace
   , Trace (..)
   , Debug (..)
+  , Event (..)
+  , NewConnectionInfo (..)
   , RemoteSt (..)
   , RemoteTransition
   , RemoteTransitionTrace
@@ -41,19 +45,20 @@ import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (SomeAsyncException (..))
-import Control.Monad (foldM)
+import Control.Monad (foldM, forM_, forever, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer, traceWith)
+import Control.Tracer (Tracer (..), traceWith)
 
 import Data.Bifunctor (first)
 import Data.ByteString.Lazy (ByteString)
 import Data.Cache
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Maybe.Strict
 import Data.Monoid.Synchronisation
 import Data.OrdPSQ (OrdPSQ)
 import Data.OrdPSQ qualified as OrdPSQ
@@ -62,18 +67,16 @@ import Data.Set qualified as Set
 import Data.Void (Void)
 
 import Network.Mux qualified as Mux
+import Network.Mux.Types qualified as Mux
 
 import Ouroboros.Network.ConnectionHandler
-import Ouroboros.Network.ConnectionManager.InformationChannel
-           (InboundGovernorInfoChannel)
-import Ouroboros.Network.ConnectionManager.InformationChannel qualified as InfoChannel
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context
-import Ouroboros.Network.InboundGovernor.Event
+import Ouroboros.Network.InboundGovernor.InformationChannel (InformationChannel)
+import Ouroboros.Network.InboundGovernor.InformationChannel qualified as InfoChannel
 import Ouroboros.Network.InboundGovernor.State
 import Ouroboros.Network.Mux
 import Ouroboros.Network.Server.RateLimiting
-
 
 -- | Period of time after which a peer transitions from a fresh to a mature one,
 -- see `matureDuplexPeers` and `freshDuplexPeers`.
@@ -89,7 +92,9 @@ inactionTimeout :: DiffTime
 inactionTimeout = 31.415927
 
 
-data Arguments muxMode socket initiatorCtx peerAddr versionNumber versionData m a b = Arguments {
+data Arguments muxMode handlerTrace socket peerAddr initiatorCtx responderCtx
+               handle handleError versionNumber versionData bytes m a b x =
+  Arguments {
       transitionTracer   :: Tracer m (RemoteTransitionTrace peerAddr),
       -- ^ transition tracer
       tracer             :: Tracer m (Trace peerAddr),
@@ -104,11 +109,20 @@ data Arguments muxMode socket initiatorCtx peerAddr versionNumber versionData m 
       idleTimeout        :: Maybe DiffTime,
       -- ^ protocol idle timeout.  The remote site must restart a mini-protocol
       -- within given timeframe (Nothing indicates no timeout).
-      connectionManager  :: MuxConnectionManager muxMode socket initiatorCtx
-                                                    (ResponderContext peerAddr) peerAddr
-                                                    versionData versionNumber
-                                                    ByteString m a b
-      -- ^ connection manager
+      withConnectionManager
+        :: ConnectionHandler muxMode handlerTrace socket peerAddr handle handleError versionNumber versionData m
+        -> (ConnectionManager muxMode socket peerAddr handle handleError m -> m x)
+        -> m x,
+      -- ^ connection manager continuation
+      mkConnectionHandler
+        :: (   StrictTVar m (StrictMaybe ResponderCounters)
+            -> Tracer m (Mux.WithBearer (ConnectionId peerAddr) Mux.Trace))
+        -> ConnectionHandler muxMode handlerTrace socket peerAddr handle handleError versionNumber versionData m
+      -- ^ Connection handler builder, which injects a special tracer
+      -- created here and routed into the muxer via the connection manager.
+      -- The purpose is to inform the IG loop
+      -- of miniprotocol responder activity such that proper and efficient
+      -- peer cold/warm/hot transitions can be tracked.
     }
 
 
@@ -127,7 +141,8 @@ data Arguments muxMode socket initiatorCtx peerAddr versionNumber versionData m 
 -- The first one is used in data diffusion for /Node-To-Node protocol/, while the
 -- other is useful for running a server for the /Node-To-Client protocol/.
 --
-with :: forall (muxMode :: Mux.Mode) socket initiatorCtx peerAddr versionData versionNumber m a b x.
+with :: forall (muxMode :: Mux.Mode) socket peerAddr initiatorCtx responderCtx
+               handle handlerTrace handleError versionData versionNumber bytes m a b x.
         ( Alternative (STM m)
         , MonadAsync       m
         , MonadCatch       m
@@ -140,31 +155,53 @@ with :: forall (muxMode :: Mux.Mode) socket initiatorCtx peerAddr versionData ve
         , MonadMask        m
         , Ord peerAddr
         , HasResponder muxMode ~ True
+        , MonadTraceSTM m
+        , MonadFork m
+        , MonadDelay m
+        , Show peerAddr
         )
-     => Arguments muxMode socket initiatorCtx peerAddr versionNumber versionData m a b
-     -> (Async m Void -> m (PublicState peerAddr versionData) -> m x)
+     => Arguments muxMode handlerTrace socket peerAddr initiatorCtx responderCtx
+                  handle handleError versionNumber versionData bytes m a b x
+     -> (   Async m Void
+         -> m (PublicState peerAddr versionData)
+         -> ConnectionManager muxMode socket peerAddr handle handleError m
+         -> m x)
      -> m x
 with
     Arguments {
-      transitionTracer   = trTracer,
-      tracer             = tracer,
-      debugTracer        = debugTracer,
-      connectionDataFlow = connectionDataFlow,
-      infoChannel        = infoChannel,
-      idleTimeout        = idleTimeout,
-      connectionManager  = connectionManager
+      transitionTracer = trTracer,
+      tracer,
+      debugTracer,
+      connectionDataFlow,
+      idleTimeout,
+      infoChannel,
+      withConnectionManager,
+      mkConnectionHandler
     }
     k
     = do
-    labelThisThread "inbound-governor"
-    var <- newTVarIO (mkPublicState emptyState)
-    withAsync ((do
-               labelThisThread "inbound-governor-loop"
-               inboundGovernorLoop var emptyState)
-                `catch`
-               handleError var) $
+    stateVar <- newTVarIO emptyState
+    active   <- newTVarIO True -- ^ inbound governor status: True = Active
+    let connectionHandler =
+          mkConnectionHandler $ inboundGovernorMuxTracer infoChannel
+                                                         connectionDataFlow
+                                                         stateVar
+                                                         active
+    withConnectionManager connectionHandler \connectionManager ->
+      withAsync
+        (  labelThisThread "inbound-governor-loop" >>
+           forever (inboundGovernorStep connectionManager stateVar >> yield)
+         `catch` \e -> do
+           -- following the next statement, the ig tracer will no longer
+           -- write to the info channel queue.
+           atomically $ writeTVar active False
+           -- To avoid the risk of a full information channel queue
+           -- and blocking on mux traces which will prevent connection cleanup,
+           -- we drain it here just in case one last time.
+           _ <- atomically $ InfoChannel.readMessages infoChannel
+           handleError stateVar e)
       \thread ->
-        k thread (readTVarIO var)
+        k thread (mkPublicState <$> readTVarIO stateVar) connectionManager
   where
     emptyState :: State muxMode initiatorCtx peerAddr versionData m a b
     emptyState = State {
@@ -179,11 +216,11 @@ with
     -- NOTE: `inboundGovernorLoop` doesn't throw synchronous exceptions, this is
     -- just need to handle asynchronous exceptions.
     handleError
-      :: StrictTVar m (PublicState peerAddr versionData)
+      :: StrictTVar m (State muxMode initiatorCtx peerAddr versionData m a b)
       -> SomeException
       -> m Void
     handleError var e = do
-      PublicState { remoteStateMap } <- readTVarIO var
+      PublicState { remoteStateMap } <- mkPublicState <$> readTVarIO var
       _ <- Map.traverseWithKey
              (\connId remoteSt ->
                traceWith trTracer $
@@ -194,46 +231,48 @@ with
              remoteStateMap
       throwIO e
 
-    -- The inbound protocol governor recursive loop.  The 'connections' is
-    -- updated as we recurse.
-    --
-    inboundGovernorLoop
-      :: StrictTVar m (PublicState peerAddr versionData)
-      -> State muxMode initiatorCtx peerAddr versionData m a b
-      -> m Void
-    inboundGovernorLoop var !state = do
+    -- The inbound protocol governor single step, which may
+    -- process multipe events from the information channel
+    inboundGovernorStep
+      :: ConnectionManager muxMode socket peerAddr handle handleError m
+      -> StrictTVar m (State muxMode initiatorCtx peerAddr versionData m a b)
+      -> m ()
+    inboundGovernorStep connectionManager stateVar = do
       time <- getMonotonicTime
       inactivityVar <- registerDelay inactionTimeout
+      events <- atomically do
+        state <- readTVar stateVar
+        runFirstToFinish $
+            -- we deliberately read the info channel queue after
+            -- the relevant item in each firsttofinish to limit
+            -- contention
+            FirstToFinish do
+              -- mark connections as mature
+              case maturedPeers time (freshDuplexPeers state) of
+                (as, _)     | Map.null as
+                            -> retry
+                (as, fresh) ->
+                  (MaturedDuplexPeers as fresh :) <$> InfoChannel.readMessages infoChannel
+         <> FirstToFinish do
+              firstCommit <- runFirstToFinish $
+                Map.foldMapWithKey firstPeerCommitRemote (connections state)
+              -- it is important we read the channel here, and join it after
+              -- the firstCommit. Registering responder starts are atomic wrt
+              -- handling an expired peer in the tracer. If the CM drops the
+              -- expired connection (CommitRemote below), the tracer must not
+              -- register a promotion activity.
+              (firstCommit :) <$> InfoChannel.readMessages infoChannel
+         <> FirstToFinish do
+              muxEvents <- InfoChannel.readMessages infoChannel
+              check (not . null $ muxEvents) >> pure muxEvents
+         <> FirstToFinish do
+              -- spin the inbound governor loop; it will re-run with new
+              -- time, which allows to make some peers mature.
+              LazySTM.readTVar inactivityVar >>= check >> pure [InactivityTimeout]
 
-      event
-        <- atomically $ runFirstToFinish $
-               FirstToFinish  (
-                 -- mark connections as mature
-                 case maturedPeers time (freshDuplexPeers state) of
-                   (as, _)     | Map.null as
-                               -> retry
-                   (as, fresh) -> pure $ MaturedDuplexPeers as fresh
-               )
-            <> Map.foldMapWithKey
-                 (    firstMuxToFinish
-                   <> firstPeerDemotedToCold
-                   <> firstPeerCommitRemote
-                   <> firstMiniProtocolToFinish connectionDataFlow
-                   <> firstPeerPromotedToWarm
-                   <> firstPeerPromotedToHot
-                   <> firstPeerDemotedToWarm
+      forM_ events \event -> do
+        state <- readTVarIO stateVar
 
-                   :: EventSignal muxMode initiatorCtx peerAddr versionData m a b
-                 )
-                 (connections state)
-            <> FirstToFinish (
-                 NewConnection <$> InfoChannel.readMessage infoChannel
-               )
-            <> FirstToFinish (
-                  -- spin the inbound governor loop; it will re-run with new
-                  -- time, which allows to make some peers mature.
-                  LazySTM.readTVar inactivityVar >>= check >> pure InactivityTimeout
-               )
       (mbConnId, state') <- case event of
         NewConnection
           -- new connection has been announced by either accept loop or
@@ -775,6 +814,129 @@ mkRemoteTransitionTrace connId fromState toState =
                              . csRemoteState
                            <$> Map.lookup connId (connections toState)
                  }
+
+
+-- | A channel which instantiates to 'NewConnectionInfo' and
+-- 'Handle'.
+--
+-- * /Producer:/ connection manger for duplex outbound connections.
+-- * /Consumer:/ inbound governor.
+--
+type InboundGovernorInfoChannel (muxMode :: Mux.Mode) initiatorCtx peerAddr versionData bytes m a b =
+    InformationChannel (Event (muxMode :: Mux.Mode) (Handle muxMode initiatorCtx (ResponderContext peerAddr) versionData bytes m a b) initiatorCtx peerAddr versionData m a b) m
+
+
+-- | Announcement message for a new connection.
+--
+data NewConnectionInfo peerAddr handle
+
+    -- | Announce a new connection.  /Inbound protocol governor/ will start
+    -- responder protocols using 'StartOnDemand' strategy and monitor remote
+    -- transitions: @PromotedToWarm^{Duplex}_{Remote}@ and
+    -- @DemotedToCold^{dataFlow}_{Remote}@.
+    = NewConnectionInfo
+      !Provenance
+      !(ConnectionId peerAddr)
+      !DataFlow
+      !handle
+
+instance Show peerAddr
+      => Show (NewConnectionInfo peerAddr handle) where
+      show (NewConnectionInfo provenance connId dataFlow _) =
+        concat [ "NewConnectionInfo "
+               , show provenance
+               , " "
+               , show connId
+               , " "
+               , show dataFlow
+               ]
+
+
+-- | Edge triggered events to which the /inbound protocol governor/ reacts.
+--
+data Event (muxMode :: Mux.Mode) handle initiatorCtx peerAddr versionData m a b
+    -- | A request to start mini-protocol bundle, either from the server or from
+    -- connection manager after a duplex connection was negotiated.
+    --
+    = NewConnection !(NewConnectionInfo peerAddr handle)
+
+    -- | A multiplexer exited.
+    --
+    | MuxFinished            !(ConnectionId peerAddr) (STM m (Maybe SomeException))
+
+    -- | A mini-protocol terminated either cleanly or abruptly.
+    --
+    | MiniProtocolTerminated !(Terminated muxMode initiatorCtx peerAddr m a b)
+
+    -- | Transition from 'RemoteEstablished' to 'RemoteIdle'.
+    --
+    | WaitIdleRemote         !(ConnectionId peerAddr)
+
+    -- | A remote @warm → hot@ transition.  It is scheduled as soon as all hot
+    -- mini-protocols are running.
+    --
+    | RemotePromotedToHot    !(ConnectionId peerAddr)
+
+    -- | A @hot → warm@ transition.  It is scheduled as soon as any hot
+    -- mini-protocol terminates.
+    --
+    | RemoteDemotedToWarm    !(ConnectionId peerAddr)
+
+    -- | Transition from 'RemoteIdle' to 'RemoteCold'.
+    --
+    | CommitRemote           !(ConnectionId peerAddr)
+
+    -- | Transition from 'RemoteIdle' or 'RemoteCold' to 'RemoteEstablished'.
+    --
+    | AwakeRemote            !(ConnectionId peerAddr)
+
+    -- | Update `igsMatureDuplexPeers` and `igsFreshDuplexPeers`.
+    --
+    | MaturedDuplexPeers   !(Map peerAddr versionData)         -- ^ newly matured duplex peers
+                           !(OrdPSQ peerAddr Time versionData) -- ^ queue of fresh duplex peers
+
+    | InactivityTimeout
+
+
+-- STM transactions which detect 'Event's (signals)
+--
+
+
+-- | A signal which returns an 'Event'.  Signals are combined together and
+-- passed used to fold the current state map.
+--
+type EventSignal (muxMode :: Mux.Mode) handle initiatorCtx peerAddr versionData m a b =
+        ConnectionId peerAddr
+     -> ConnectionState muxMode initiatorCtx peerAddr versionData m a b
+     -> FirstToFinish (STM m) (Event muxMode handle initiatorCtx peerAddr versionData m a b)
+
+
+-- | When a mini-protocol terminates we take 'Terminated' out of 'ConnectionState
+-- and pass it to the main loop.  This is just enough to decide if we need to
+-- restart a mini-protocol and to do the restart.
+--
+data Terminated muxMode initiatorCtx peerAddr m a b = Terminated {
+    tConnId           :: !(ConnectionId peerAddr),
+    tMux              :: !(Mux.Mux muxMode m),
+    tMiniProtocolData :: !(MiniProtocolData muxMode initiatorCtx peerAddr m a b),
+    tDataFlow         :: !DataFlow,
+    tResult           :: STM m (Either SomeException b) -- !(Either SomeException b)
+  }
+
+
+-- | First peer for which the 'RemoteIdle' timeout expires.
+--
+firstPeerCommitRemote :: (Alternative (STM m), MonadSTM m)
+                      => EventSignal muxMode handle initiatorCtx peerAddr versionData m a b
+firstPeerCommitRemote
+    connId ConnectionState { csRemoteState }
+    = case csRemoteState of
+        -- the connection is already in 'RemoteCold' state
+        RemoteCold            -> mempty
+        RemoteEstablished     -> mempty
+        RemoteIdle timeoutSTM -> FirstToFinish do
+          expired <- timeoutSTM
+          if expired then pure $ CommitRemote connId else retry
 
 
 data IGAssertionLocation peerAddr
