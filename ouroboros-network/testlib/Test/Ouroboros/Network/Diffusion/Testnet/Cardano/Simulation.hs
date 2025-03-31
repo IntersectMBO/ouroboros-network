@@ -775,44 +775,48 @@ instance Arbitrary DiffusionScript where
               <$> frequency [ (1, arbitrary >>= genNonHotDiffusionScript)
                             , (1, arbitrary >>= genHotDiffusionScript)]
   -- TODO: shrink dns map
-  -- TODO: we should write more careful shrinking than recursively shrinking
-  -- `DiffusionScript`!
-  shrink (DiffusionScript sargs dnsScript cmds0) = shrinkCmds cmds0 ++ shrinkDns
+  shrink (DiffusionScript sargs dnsScript0 players0) =
+    [DiffusionScript sargs dnsScript0 players
+    | players <- shrinkPlayers players0
+    ] <>
+    [DiffusionScript sargs dnsScript players0
+    | dnsScript <-
+        mapMaybe
+          -- make sure `fixupDomainMapScript` didn't return something that's
+          -- equal to the original `script`
+          ((\dnsScript' -> if dnsScript0 == dnsScript' then Nothing else Just dnsScript')
+           .  fixupDomainMapScript (getLast dnsScript0))
+          $ shrinkScriptWith (liftShrink2 shrinkMap_ shrink) dnsScript0
+    ]
     where
-      shrinkDns =
-        [DiffusionScript sargs script cmds0
-        | script <-
-            mapMaybe
-              -- make sure `fixupDomainMapScript` didn't return something that's
-              -- equal to the original `script`
-              ((\dnsScript' -> if dnsScript == dnsScript' then Nothing else Just dnsScript')
-               .  fixupDomainMapScript (getLast dnsScript))
-              $ shrinkScriptWith (shrinkTuple shrinkMap_ shrink) dnsScript
-        ]
-
       getLast (Script ne) = fst $ NonEmpty.last ne
 
       shrinkMap_ :: Ord a => Map a b -> [Map a b]
       shrinkMap_ = map Map.fromList . shrinkList (const []) . Map.toList
 
-      shrinkTuple :: (a -> [a]) -> (b -> [b]) -> (a, b) -> [(a, b)]
-      shrinkTuple f g (a, b) = [(a', b) | a' <- f a]
-                            ++ [(a, b') | b' <- g b]
+      -- the easiest failure to analyze is the one with the least number of nodes participating.
+      -- Currently we use up to three nodes, but in case we increase the number in the future
+      -- this will be even more useful.
+      shrinkPlayers =
+        filter ((> 1) . length) . shrinkList shrinkPlayer
 
-      shrinkCmds [] = []
-      shrinkCmds ((nargs, cmds):rest) =
-        let shrunkCmdss = fixupCommands <$> shrinkList shrinkCommand cmds
-            rest' = shrinkCmds rest
-        in [DiffusionScript sargs dnsScript ((nargs, shrunkCmds):rest)
-           | shrunkCmds <- shrunkCmdss] ++ rest'
+      shrinkPlayer (nargs, cmds) =
+        map (nargs,) . filter (/= cmds) $ fixupCommands <$> shrinkList shrinkCommand cmds
         where
           shrinkDelay = map fromRational . shrink . toRational
 
+          -- A failing network with the least nodes active at a particular time is the simplest to analyze,
+          -- if for no other reason other than for having the least amount of traces for us to read.
+          -- A dead node is its simplest configuration as that can't contribute to its failure,
+          -- So we shrink to that first to see at least if a failure occurs somewhere else still.
+          -- Otherwise we know that this node has to be running for sure while the exchange is happening.
           shrinkCommand :: Command -> [Command]
-          shrinkCommand (JoinNetwork d)     = JoinNetwork <$> shrinkDelay d
-          shrinkCommand (Kill d)            = Kill        <$> shrinkDelay d
-          shrinkCommand (Reconfigure d lrp) = Reconfigure <$> shrinkDelay d
-                                                          <*> pure lrp
+          shrinkCommand (JoinNetwork d) =   Kill 0 -- ^ try leaving it still 'dead' instead
+                                          : (JoinNetwork <$> shrinkDelay d)
+          shrinkCommand (Kill d) = Kill <$> shrinkDelay d
+          shrinkCommand (Reconfigure d lrp) =   Kill 0 -- ^ try killing it instead to see what happens
+                                              : (Reconfigure <$> shrinkDelay d
+                                                             <*> pure lrp)
 
 
 -- | Multinode Hot Diffusion Simulator Script
