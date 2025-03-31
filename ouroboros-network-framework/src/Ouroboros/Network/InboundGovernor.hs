@@ -156,14 +156,19 @@ with
     k
     = do
     labelThisThread "inbound-governor"
-    var <- newTVarIO (mkPublicState emptyState)
-    withAsync ((do
-               labelThisThread "inbound-governor-loop"
-               inboundGovernorLoop var emptyState)
-                `catch`
-               handleError var) $
+    stateVar <- newTVarIO emptyState
+    countersVar <- newTVarIO Map.empty
+    -- ^ warm and hot responder miniprotocol counters for a peer
+    -- to track and respond to transitions
+    let connectionHandler = mkConnectionHandler $ responderIgTracer stateVar countersVar
+    withConnectionManager connectionHandler \connectionManager ->
+      withAsync
+        (  labelThisThread "inbound-governor-loop" >>
+           forever (inboundGovernorStep connectionManager stateVar)
+         `catch`
+           handleError stateVar)
       \thread ->
-        k thread (readTVarIO var)
+        k thread (mkPublicState <$> readTVarIO stateVar) connectionManager
   where
     -- the responder IG info channel tracer is embedded with the mux tracer unconditionally
     -- by the conn handler on the inbound side and conditionally for 'InitiatorResponderMode'
@@ -293,11 +298,11 @@ with
     -- NOTE: `inboundGovernorLoop` doesn't throw synchronous exceptions, this is
     -- just need to handle asynchronous exceptions.
     handleError
-      :: StrictTVar m (PublicState peerAddr versionData)
+      :: StrictTVar m (State muxMode initiatorCtx peerAddr versionData m a b)
       -> SomeException
       -> m Void
     handleError var e = do
-      PublicState { remoteStateMap } <- readTVarIO var
+      PublicState { remoteStateMap } <- mkPublicState <$> readTVarIO var
       _ <- Map.traverseWithKey
              (\connId remoteSt ->
                traceWith trTracer $
