@@ -15,6 +15,7 @@ module Ouroboros.Network.InboundGovernor.State
   , mkPublicState
   , State (..)
   , ConnectionState (..)
+  , ResponderCounters (..)
   , Counters (..)
   , counters
   , unregisterConnection
@@ -186,9 +187,16 @@ data ConnectionState muxMode initiatorCtx peerAddr versionData m a b = Connectio
       -- | State of the connection.
       --
       csRemoteState     :: !(RemoteState m)
-
     }
 
+-- | The IG maintains a state of the number of hot and warm
+-- miniprotocol responders to track transitions and notify
+-- the connection manager for interesting events.
+--
+data ResponderCounters = ResponderCounters {
+  numTraceHotResponders  :: !Int,
+  numTraceWarmResponders :: !Int
+  }
 
 --
 -- State management functions
