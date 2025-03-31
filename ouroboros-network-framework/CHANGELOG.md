@@ -6,6 +6,16 @@
 
 ### Breaking changes
 
+* IG performance related improvements changing to interfaces of
+  * IG `with` and `Arguments`
+  * CM `with` and `Arguments`
+  * Server `with` and `Arguments`
+  * Deleted `InboundGovernor.Event` module and moved to InboundGovernor:
+    * `NewConnectionInfo`, `Event`, `EventSignal`, `Terminated`, `firstPeerCommitRemote`
+  * signature of `makeConnectionHandler`
+  * moved `InboundGovernorInfoChannel` to IG from InformationChannel
+    and changed its type to contain `Event`'s.
+
 ## 0.17.0.0 -- 2025-02-25
 
 ### Breaking changes
