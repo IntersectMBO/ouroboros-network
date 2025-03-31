@@ -41,7 +41,7 @@ import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (SomeAsyncException (..))
-import Control.Monad (foldM)
+import Control.Monad (foldM, forM_, forever)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
@@ -157,14 +157,16 @@ with
     k
     = do
     labelThisThread "inbound-governor"
-    var <- newTVarIO (mkPublicState emptyState)
-    withAsync ((do
-               labelThisThread "inbound-governor-loop"
-               inboundGovernorLoop var emptyState)
-                `catch`
-               handleError var) $
+    stateVar <- newTVarIO emptyState
+    let connectionHandler = mkConnectionHandler $ responderIgTracer stateVar
+    withConnectionManager connectionHandler \connectionManager ->
+      withAsync
+        (  labelThisThread "inbound-governor-loop" >>
+           forever (inboundGovernorStep connectionManager stateVar >> yield)
+         `catch`
+           handleError stateVar)
       \thread ->
-        k thread (readTVarIO var)
+        k thread (mkPublicState <$> readTVarIO stateVar) connectionManager
   where
     -- the responder IG info channel tracer is embedded with the mux tracer unconditionally
     -- by the conn handler on the inbound side and conditionally for 'InitiatorResponderMode'
@@ -317,11 +319,11 @@ with
     -- NOTE: `inboundGovernorLoop` doesn't throw synchronous exceptions, this is
     -- just need to handle asynchronous exceptions.
     handleError
-      :: StrictTVar m (PublicState peerAddr versionData)
+      :: StrictTVar m (State muxMode initiatorCtx peerAddr versionData m a b)
       -> SomeException
       -> m Void
     handleError var e = do
-      PublicState { remoteStateMap } <- readTVarIO var
+      PublicState { remoteStateMap } <- mkPublicState <$> readTVarIO var
       _ <- Map.traverseWithKey
              (\connId remoteSt ->
                traceWith trTracer $
