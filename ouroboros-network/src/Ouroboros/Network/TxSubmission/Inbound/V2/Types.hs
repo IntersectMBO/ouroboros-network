@@ -35,6 +35,7 @@ import Data.Map.Strict (Map)
 import Data.Sequence.Strict (StrictSeq)
 import Data.Set (Set)
 import Data.Set qualified as Set
+import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import System.Random (StdGen)
 
@@ -384,7 +385,7 @@ data TraceTxSubmissionInbound txid tx =
 data TxSubmissionProtocolError =
        ProtocolErrorTxNotRequested
      | ProtocolErrorTxIdsNotRequested
-     | forall txid. (Show txid)
+     | forall txid. (Typeable txid, Show txid)
        => ProtocolErrorTxSizeError [(txid, SizeInBytes, SizeInBytes)]
      -- ^ a list of txid for which the received size and advertised size didn't
      -- match.
