@@ -887,6 +887,7 @@ data DiffusionSimulationTrace
   | TrUpdatingDNS
   | TrRunning
   | TrErrored SomeException
+  | TrSay String
   deriving (Show)
 
 -- Warning: be careful with writing properties that rely
@@ -926,7 +927,7 @@ iosimTracer :: forall s a.
               , Typeable a
               )
             => Tracer (IOSim s) (WithTime (WithName NtNAddr a))
-iosimTracer = Tracer traceM <> sayTracer
+iosimTracer = Tracer traceM -- <> sayTracer
 
 -- | Run an arbitrary topology
 diffusionSimulation
@@ -965,8 +966,10 @@ diffusionSimulation
       $ \ntcSnocket _ -> do
         dnsMapVar <- fromLazyTVar <$> playTimedScript nullTracer dnsMapScript
         withAsyncAll
-          (map ((\(args, commands) -> runCommand Nothing ntnSnocket ntcSnocket dnsMapVar simArgs args connStateIdSupply commands))
-               nodeArgs)
+          (zipWith
+            (\(args, commands) i -> runCommand ntnSnocket ntcSnocket dnsMapVar simArgs args connStateIdSupply i Nothing commands)
+            nodeArgs
+            [1..])
           $ \nodes -> do
             (_, x) <- waitAny nodes
             return x
@@ -993,6 +996,7 @@ diffusionSimulation
       -> SimArgs -- ^ Simulation arguments needed in order to run a simulation
       -> NodeArgs -- ^ Simulation arguments needed in order to run a single node
       -> CM.ConnStateIdSupply m
+      -> Int
       -> [Command] -- ^ List of commands/actions to perform for a single node
       -> m Void
     runCommand Nothing ntnSnocket ntcSnocket dnsMapVar sArgs nArgs connStateIdSupply [] = do
@@ -1032,6 +1036,7 @@ diffusionSimulation
       _ <- atomically $ writeTVar lrpVar newLrp
       runCommand (Just (async_, lrpVar)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs connStateIdSupply
                  cs
+      traceWith (diffSimTracer naAddr) . TrSay $ "node-" <> show i
 
     runNode :: SimArgs
             -> NodeArgs
@@ -1043,6 +1048,7 @@ diffusionSimulation
                              , Map RelayAccessPoint (LocalRootConfig PeerTrustable)
                              )]
             -> StrictTVar m MockDNSMap
+            -> Int
             -> m Void
     runNode SimArgs
             { saSlot                  = bgaSlotDuration
@@ -1067,7 +1073,7 @@ diffusionSimulation
             ntcSnocket
             connStateIdSupply
             lrpVar
-            dMapVar = do
+            dMapVar i = do
       chainSyncExitVar <- newTVarIO chainSyncExitOnBlockNo
       ledgerPeersVar <- initScript' ledgerPeers
       onlyOutboundConnectionsStateVar <- newTVarIO UntrustedState
@@ -1222,7 +1228,7 @@ diffusionSimulation
               , Node.aExtraChurnArgs = cardanoChurnArgs
               }
 
-          tracers = mkTracers addr
+          tracers = mkTracers addr i
 
           requestPublicRootPeers' =
             requestPublicRootPeers (Diff.dtTracePublicRootPeersTracer tracers)
@@ -1290,60 +1296,70 @@ diffusionSimulation
     diffSimTracer ntnAddr = contramap DiffusionDiffusionSimulationTrace
                           . tracerWithName ntnAddr
                           . tracerWithTime
-                          $ nodeTracer
+                          $ nodeTracer <> sayTracer
 
     mkTracers
       :: NtNAddr
+      -> Int
       -> Diff.Tracers NtNAddr NtNVersion NtNVersionData
                       NtCAddr NtCVersion NtCVersionData
                       SomeException Cardano.ExtraState
                       Cardano.ExtraState PeerTrustable
                       (Cardano.ExtraPeers NtNAddr)
                       (Cardano.ExtraPeerSelectionSetsWithSizes NtNAddr) m
-    mkTracers ntnAddr =
+    mkTracers ntnAddr i =
+      let sayTracer' = Tracer \msg -> say $ "(node-" <> show i <> ")" <> show msg
+          -- toggle and uncomment interesting sayTracer' below
+          nodeTracer' = if True then nodeTracer <> sayTracer' else nodeTracer in
+
       Diff.nullTracers {
+          -- Diff.dtMuxTracer = contramap
+          --                      DiffusionMuxTrace
+          --                  . tracerWithName ntnAddr
+          --                  . tracerWithTime
+          --                  $ nodeTracer' -- <> sayTracer',
           Diff.dtTraceLocalRootPeersTracer       = contramap
                                                     DiffusionLocalRootPeerTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
-                                                 $ nodeTracer
+                                                 $ nodeTracer' -- <> sayTracer'
         , Diff.dtTracePublicRootPeersTracer      = contramap
                                                     DiffusionPublicRootPeerTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
-                                                 $ nodeTracer
+                                                 $ nodeTracer' -- <> sayTracer'
         , Diff.dtTraceLedgerPeersTracer          = contramap
                                                   DiffusionLedgerPeersTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
-                                                 $ nodeTracer
+                                                 $ nodeTracer' -- <> sayTracer'
         , Diff.dtTracePeerSelectionTracer          = contramap
                                                     DiffusionPeerSelectionTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
-                                                 $ nodeTracer
+                                                 $ nodeTracer' -- <> sayTracer'
         , Diff.dtDebugPeerSelectionInitiatorTracer = contramap
                                                     DiffusionDebugPeerSelectionTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
-                                                 $ nodeTracer
+                                                 $ nodeTracer' -- <> sayTracer'
         , Diff.dtDebugPeerSelectionInitiatorResponderTracer
             = contramap DiffusionDebugPeerSelectionTrace
             . tracerWithName ntnAddr
             . tracerWithTime
-            $ nodeTracer
+            $ nodeTracer' -- <> sayTracer'
         , Diff.dtTracePeerSelectionCounters        = nullTracer
         , Diff.dtTraceChurnCounters                = nullTracer
         , Diff.dtPeerSelectionActionsTracer        = contramap
                                                     DiffusionPeerSelectionActionsTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
-                                                 $ nodeTracer
+                                                 $ nodeTracer' -- <> sayTracer'
         , Diff.dtConnectionManagerTracer           = contramap
                                                     DiffusionConnectionManagerTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
-                                                 $ nodeTracer
+                                                 $ nodeTracer' -- <> sayTracer'
         , Diff.dtConnectionManagerTransitionTracer = contramap
                                                      DiffusionConnectionManagerTransitionTrace
                                                  . tracerWithName ntnAddr
@@ -1351,29 +1367,29 @@ diffusionSimulation
           -- note: we have two ways getting transition trace:
           -- * through `traceTVar` installed in `newMutableConnState`
           -- * the `dtConnectionManagerTransitionTracer`
-                                                     $ nodeTracer
+                                                     $ nodeTracer' -- <> sayTracer'
         , Diff.dtServerTracer                      = contramap
                                                      DiffusionServerTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
-                                                 $ nodeTracer
+                                                 $ nodeTracer' -- <> sayTracer'
         , Diff.dtInboundGovernorTracer             = contramap
                                                      DiffusionInboundGovernorTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
-                                                 $ nodeTracer
+                                                 $ nodeTracer' -- <> sayTracer'
         , Diff.dtInboundGovernorTransitionTracer   = contramap
                                                      DiffusionInboundGovernorTransitionTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
-                                                 $ nodeTracer
+                                                 $ nodeTracer' -- <> sayTracer'
         , Diff.dtLocalConnectionManagerTracer      = nullTracer
         , Diff.dtLocalServerTracer                 = nullTracer
         , Diff.dtLocalInboundGovernorTracer        = nullTracer
         , Diff.dtDnsTracer                         = contramap DiffusionDNSTrace
                                                      . tracerWithName ntnAddr
                                                      . tracerWithTime
-                                                     $ nodeTracer
+                                                     $ nodeTracer' -- <> sayTracer'
       }
 
 
