@@ -165,6 +165,121 @@ with
       \thread ->
         k thread (readTVarIO var)
   where
+    -- the responder IG info channel tracer is embedded with the mux tracer unconditionally
+    -- by the conn handler on the inbound side and conditionally for 'InitiatorResponderMode'
+    -- on the outbound side only when the latter has negotiated a 'Duplex' data flow - otherwise
+    -- for unidirectional mode the IG is never provided with the peer handle since the inbound
+    -- is inactive.
+    responderIgTracer :: StrictTVar m (State muxMode initiatorCtx peerAddr versionData m a b)
+                      -> StrictTVar m (Map (ConnectionId peerAddr) ResponderCounters)
+                      -> Tracer m (Mux.WithBearer (ConnectionId peerAddr) Mux.Trace)
+    responderIgTracer stateVar countersVar = Tracer $ \(Mux.WithBearer peer trace) ->
+      -- hello from muxer main thread
+      case trace of
+        Mux.TraceState Mux.Mature -> atomically do
+          -- For inbound and outbound duplex connections, following a successful
+          -- handshake, the muxer begins racing with the connection
+          -- manager on informing the IG of the new connection
+          -- and responder miniprotocols' activity. In principle,
+          -- the problematic case is when the IG tracer registers responder
+          -- miniprotocol launch command before the CM informs the IG of the
+          -- new connection. However unlikely, this will lead to
+          -- incoherent transitions between the two components.
+          -- The muxer blocks itself here to yield right-of-way
+          -- to the CM.
+          check . Map.member peer . connections =<< readTVar stateVar
+          modifyTVar countersVar $ Map.insert peer (ResponderCounters 0 0)
+
+        (startWithID -> Just mid) -> atomically do
+          connections <- connections <$> readTVar stateVar
+          case Map.lookup peer connections of
+            Nothing -> modifyTVar countersVar $ Map.delete peer
+            Just connState -> do
+              ResponderCounters {numTraceHotResponders,
+                                 numTraceWarmResponders}
+                <- (Map.! peer) <$> readTVar countersVar
+              case getProtocolTemp mid connState of
+                Hot -> do
+                  when (numTraceHotResponders == 0) $
+                    InfoChannel.writeMessage infoChannel $ RemotePromotedToHot peer
+                  adjustHotResponders succ peer
+                _rest -> do
+                  when (numTraceWarmResponders + numTraceHotResponders == 0) $
+                    InfoChannel.writeMessage infoChannel $ AwakeRemote peer
+                  adjustWarmResponders succ peer
+
+        (terminateWithID -> Just mid) -> atomically do
+          connections <- connections <$> readTVar stateVar
+          case Map.lookup peer connections of
+            Nothing -> modifyTVar countersVar $ Map.delete peer
+            Just connState@ConnectionState { csMux
+                                           , csMiniProtocolMap
+                                           , csVersionData
+                                           , csCompletionMap } -> do
+              ResponderCounters { numTraceHotResponders
+                                , numTraceWarmResponders } <-
+                (Map.! peer) <$> readTVar countersVar
+              let miniProtocolTemp = getProtocolTemp mid connState
+              case trace of
+                Mux.TraceCleanExit {} -> do
+                  case miniProtocolTemp of
+                    Hot   -> adjustHotResponders pred peer
+                    _rest -> adjustWarmResponders pred peer
+                  if | numTraceHotResponders + numTraceWarmResponders == 1 ->
+                         InfoChannel.writeMessage infoChannel $ WaitIdleRemote peer
+                     | numTraceHotResponders == 1
+                     , Hot <- miniProtocolTemp ->
+                         InfoChannel.writeMessage infoChannel $ RemoteDemotedToWarm peer
+                     | otherwise -> return ()
+                _otherwise -> return ()
+              InfoChannel.writeMessage infoChannel $
+                MiniProtocolTerminated $ Terminated {
+                  tConnId = peer,
+                  tMux = csMux,
+                  tMiniProtocolData = csMiniProtocolMap Map.! mid,
+                  tDataFlow = connectionDataFlow csVersionData,
+                  tResult = csCompletionMap Map.! mid }
+
+        (muxStopped -> True) -> atomically do
+          State { connections } <- readTVar stateVar
+          case Map.lookup peer connections of
+            Just ConnectionState {csMux} ->
+              InfoChannel.writeMessage infoChannel $
+                MuxFinished peer (Mux.stopped csMux)
+            _otherwise -> return ()
+          modifyTVar countersVar $ Map.delete peer
+
+        _otherwise -> return ()
+      where
+        muxStopped = \case
+          Mux.TraceStopped -> True
+          Mux.TraceState Mux.Dead -> True
+          _otherwise -> False
+
+        adjustWarmResponders tick peer =
+          modifyTVar countersVar $
+            Map.adjust (\rc@ResponderCounters { numTraceWarmResponders } -> rc { numTraceWarmResponders = tick numTraceWarmResponders } )
+                       peer
+
+        adjustHotResponders tick peer =
+          modifyTVar countersVar $
+            Map.adjust (\rc@ResponderCounters { numTraceHotResponders } -> rc { numTraceHotResponders = tick numTraceHotResponders } )
+                       peer
+
+        getProtocolTemp mid ConnectionState { csMiniProtocolMap } =
+          let miniData = csMiniProtocolMap Map.! mid
+           in mpdMiniProtocolTemp miniData
+
+        terminateWithID = \case
+          Mux.TraceCleanExit mid Mux.ResponderDir -> Just mid
+          Mux.TraceExceptionExit mid Mux.ResponderDir _e -> Just mid
+          _otherwise -> Nothing
+
+        startWithID = \case
+          Mux.TraceStartEagerly mid Mux.ResponderDir -> Just mid  -- ^ is any responder started eagerly???
+          Mux.TraceStartedOnDemand mid Mux.ResponderDir -> Just mid
+          _otherwise -> Nothing
+
     emptyState :: State muxMode initiatorCtx peerAddr versionData m a b
     emptyState = State {
         connections       = Map.empty,
