@@ -27,6 +27,7 @@ import Data.Bifunctor (first)
 import Data.Dynamic (fromDynamic)
 import Data.Foldable (fold)
 import Data.IP qualified as IP
+import Data.List (intercalate)
 import Data.List qualified as List
 import Data.List.Trace qualified as Trace
 import Data.Map (Map)
@@ -288,7 +289,9 @@ testWithIOSim f traceNumber bi ds =
                                 iosimTracer
       trace = runSimTrace sim
    in labelDiffusionScript ds
-    $ counterexample (Trace.ppTrace show (ppSimEvent 0 0 0) $ Trace.take traceNumber trace)
+    $ counterexample (intercalate "\n" $
+        selectTraceEventsSay' $ Trace.take traceNumber trace)
+    --counterexample (Trace.ppTrace show (ppSimEvent 0 0 0) $ Trace.take traceNumber trace)
     $ f trace traceNumber
 
 testWithIOSimPOR :: (SimTrace Void -> Int -> Property)
