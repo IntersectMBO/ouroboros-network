@@ -268,15 +268,18 @@ readCDDLSpecs = do
     -- append common definitions; they must be appended since the first
     -- definition is the entry point for a cddl spec.
     return CDDLSpecs {
-        cddlHandshakeNodeToClient        = CDDLSpec   handshakeNodeToClient,
-        cddlHandshakeNodeToNodeV14ToLast = CDDLSpec   handshakeNodeToNodeV14ToLast,
+        cddlHandshakeNodeToClient        = CDDLSpec $ handshakeNodeToClient
+                                                   <> common,
+        cddlHandshakeNodeToNodeV14ToLast = CDDLSpec $ handshakeNodeToNodeV14ToLast
+                                                   <> common,
         cddlChainSync                    = CDDLSpec $ chainSync
                                                    <> common,
         cddlBlockFetch                   = CDDLSpec $ blockFetch
                                                    <> common,
         cddlTxSubmission2                = CDDLSpec $ txSubmission2
                                                    <> common,
-        cddlKeepAlive                    = CDDLSpec keepAlive,
+        cddlKeepAlive                    = CDDLSpec $ keepAlive
+                                                   <> common,
         cddlLocalTxSubmission            = CDDLSpec $ localTxSubmission
                                                    <> common,
         cddlLocalTxMonitor               = CDDLSpec $ localTxMonitor

@@ -9,5 +9,3 @@ keepAliveMessage = msgKeepAlive
 msgKeepAlive         = [0, word16]
 msgKeepAliveResponse = [1, word16]
 msgDone              = [2]
-
-word16 = 0..65535
