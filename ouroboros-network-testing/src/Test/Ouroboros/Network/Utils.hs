@@ -4,6 +4,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TupleSections              #-}
 
 module Test.Ouroboros.Network.Utils
   ( -- * Arbitrary Delays
@@ -30,6 +31,7 @@ module Test.Ouroboros.Network.Utils
   , splitWithNameTrace
     -- * Tracers
   , debugTracer
+  , debugTracerG
   , sayTracer
     -- * Tasty Utils
   , nightlyTest
@@ -40,6 +42,7 @@ module Test.Ouroboros.Network.Utils
 
 import Control.Monad.Class.MonadSay
 import Control.Monad.Class.MonadTime.SI
+import Control.Monad.IOSim (IOSim, traceM)
 import Control.Tracer (Contravariant (contramap), Tracer (..), contramapM)
 
 import Data.Bitraversable (bimapAccumR)
@@ -51,6 +54,7 @@ import Data.Maybe (fromJust, isJust)
 import Data.Ratio
 import Data.Set (Set)
 import Data.Set qualified as Set
+import Data.Typeable (Typeable)
 import Text.Pretty.Simple (pPrint)
 
 import Debug.Trace (traceShowM)
@@ -227,6 +231,17 @@ debugTracer = Tracer traceShowM
 sayTracer :: ( Show a, MonadSay m) => Tracer m a
 sayTracer = Tracer (say . show)
 
+-- | Redefine this tracer to get valuable tracing information from various
+-- components:
+--
+-- * connection-manager
+-- * inbound governor
+-- * server
+--
+debugTracerG :: (Show a, Typeable a) => Tracer (IOSim s) a
+debugTracerG =    Tracer (\msg -> getCurrentTime >>= say . show . (,msg))
+               <> Tracer traceM
+            -- <> Tracer Debug.traceShowM
 
 --
 -- Nightly tests
