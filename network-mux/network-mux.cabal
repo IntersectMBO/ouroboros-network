@@ -202,7 +202,7 @@ benchmark socket-read-write-benchmarks
   main-is: Main.hs
   other-modules:
   build-depends:
-    base >=4.14 && <4.21,
+    base >=4.14 && <4.22,
     bytestring,
     contra-tracer,
     io-classes,
