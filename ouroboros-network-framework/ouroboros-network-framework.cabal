@@ -42,7 +42,6 @@ library
     Ouroboros.Network.ErrorPolicy
     Ouroboros.Network.IOManager
     Ouroboros.Network.InboundGovernor
-    Ouroboros.Network.InboundGovernor.Event
     Ouroboros.Network.InboundGovernor.State
     Ouroboros.Network.Mux
     Ouroboros.Network.MuxMode

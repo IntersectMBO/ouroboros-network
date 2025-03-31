@@ -759,6 +759,127 @@ mkRemoteTransitionTrace connId fromState toState =
                  }
 
 
+-- | A channel which instantiates to 'NewConnectionInfo' and
+-- 'Handle'.
+--
+-- * /Producer:/ connection manger for duplex outbound connections.
+-- * /Consumer:/ inbound governor.
+--
+type InboundGovernorInfoChannel (muxMode :: Mux.Mode) peerAddr initiatorCtx versionData bytes m a b =
+    InformationChannel (Event (muxMode :: Mux.Mode) (Handle muxMode initiatorCtx (ResponderContext peerAddr) versionData bytes m a b) initiatorCtx peerAddr versionData m a b) m
+
+
+-- | Announcement message for a new connection.
+--
+data NewConnectionInfo peerAddr handle
+
+    -- | Announce a new connection.  /Inbound protocol governor/ will start
+    -- responder protocols using 'StartOnDemand' strategy and monitor remote
+    -- transitions: @PromotedToWarm^{Duplex}_{Remote}@ and
+    -- @DemotedToCold^{dataFlow}_{Remote}@.
+    = NewConnectionInfo
+      !Provenance
+      !(ConnectionId peerAddr)
+      !DataFlow
+      !handle
+
+instance Show peerAddr
+      => Show (NewConnectionInfo peerAddr handle) where
+      show (NewConnectionInfo provenance connId dataFlow _) =
+        concat [ "NewConnectionInfo "
+               , show provenance
+               , " "
+               , show connId
+               , " "
+               , show dataFlow
+               ]
+
+
+-- | Edge triggered events to which the /inbound protocol governor/ reacts.
+--
+data Event (muxMode :: Mux.Mode) handle initiatorCtx peerAddr versionData m a b
+    -- | A request to start mini-protocol bundle, either from the server or from
+    -- connection manager after a duplex connection was negotiated.
+    --
+    = NewConnection !(NewConnectionInfo peerAddr handle)
+
+    -- | A multiplexer exited.
+    --
+    | MuxFinished            !(ConnectionId peerAddr) (STM m (Maybe SomeException))
+
+    -- | A mini-protocol terminated either cleanly or abruptly.
+    --
+    | MiniProtocolTerminated !(Terminated muxMode initiatorCtx peerAddr m a b)
+
+    -- | Transition from 'RemoteEstablished' to 'RemoteIdle'.
+    --
+    | WaitIdleRemote         !(ConnectionId peerAddr)
+
+    -- | A remote @warm → hot@ transition.  It is scheduled as soon as all hot
+    -- mini-protocols are running.
+    --
+    | RemotePromotedToHot    !(ConnectionId peerAddr)
+
+    -- | A @hot → warm@ transition.  It is scheduled as soon as any hot
+    -- mini-protocol terminates.
+    --
+    | RemoteDemotedToWarm    !(ConnectionId peerAddr)
+
+    -- | Transition from 'RemoteIdle' to 'RemoteCold'.
+    --
+    | CommitRemote           !(ConnectionId peerAddr)
+
+    -- | Transition from 'RemoteIdle' or 'RemoteCold' to 'RemoteEstablished'.
+    --
+    | AwakeRemote            !(ConnectionId peerAddr)
+
+    -- | Update `igsMatureDuplexPeers` and `igsFreshDuplexPeers`.
+    --
+    | MaturedDuplexPeers   !(Map peerAddr versionData)         -- ^ newly matured duplex peers
+                           !(OrdPSQ peerAddr Time versionData) -- ^ queue of fresh duplex peers
+
+    | InactivityTimeout
+
+
+-- STM transactions which detect 'Event's (signals)
+--
+
+
+-- | A signal which returns an 'Event'.  Signals are combined together and
+-- passed used to fold the current state map.
+--
+type EventSignal (muxMode :: Mux.Mode) handle initiatorCtx peerAddr versionData m a b =
+        ConnectionId peerAddr
+     -> ConnectionState muxMode initiatorCtx peerAddr versionData m a b
+     -> FirstToFinish (STM m) (Event muxMode handle initiatorCtx peerAddr versionData m a b)
+
+
+-- | When a mini-protocol terminates we take 'Terminated' out of 'ConnectionState
+-- and pass it to the main loop.  This is just enough to decide if we need to
+-- restart a mini-protocol and to do the restart.
+--
+data Terminated muxMode initiatorCtx peerAddr m a b = Terminated {
+    tConnId           :: !(ConnectionId peerAddr),
+    tMux              :: !(Mux.Mux muxMode m),
+    tMiniProtocolData :: !(MiniProtocolData muxMode initiatorCtx peerAddr m a b),
+    tDataFlow         :: !DataFlow,
+    tResult           :: STM m (Either SomeException b) -- !(Either SomeException b)
+  }
+
+
+-- | First peer for which the 'RemoteIdle' timeout expires.
+--
+firstPeerCommitRemote :: Alternative (STM m)
+                      => EventSignal muxMode handle initiatorCtx peerAddr versionData m a b
+firstPeerCommitRemote
+    connId ConnectionState { csRemoteState }
+    = case csRemoteState of
+        -- the connection is already in 'RemoteCold' state
+        RemoteCold            -> mempty
+        RemoteEstablished     -> mempty
+        RemoteIdle timeoutSTM -> FirstToFinish (timeoutSTM $> CommitRemote connId)
+
+
 data IGAssertionLocation peerAddr
   = InboundGovernorLoop !(Maybe (ConnectionId peerAddr)) !AbstractState
   deriving Show
