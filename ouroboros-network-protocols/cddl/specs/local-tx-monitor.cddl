@@ -1,7 +1,6 @@
 ;
 ; LocalTxMonitor mini-protocol.
 ;
-;
 ; reference implementation of the codec in :
 ; ouroboros-network/src/Ouroboros/Network/Protocol/LocalTxMonitor/Codec.hs
 
@@ -22,15 +21,17 @@ localTxMonitorMessage
 msgDone             = [0]
 
 msgAcquire          = [1]
-msgAcquired         = [2, slotNo]
+msgAcquired         = [2, base.slotNo]
 
 msgAwaitAcquire     = msgAcquire
 msgRelease          = [3]
 msgNextTx           = [5]
-msgReplyNextTx      = [6] / [6, tx]
-msgHasTx            = [7, txId]
+msgReplyNextTx      = [6] / [6, base.tx]
+msgHasTx            = [7, base.txId]
 msgReplyHasTx       = [8, bool]
 msgGetSizes         = [9]
-msgReplyGetSizes    = [10, [word32, word32, word32]]
+msgReplyGetSizes    = [10, [base.word32, base.word32, base.word32]]
 msgGetMeasures      = [11]
-msgReplyGetMeasures = [12, word32, {* text => [integer, integer]}]
+msgReplyGetMeasures = [12, base.word32, {* text => [integer, integer]}]
+
+;# import network.base as base

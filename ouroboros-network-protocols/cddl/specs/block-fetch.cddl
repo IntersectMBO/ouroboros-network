@@ -13,9 +13,11 @@ blockFetchMessage
      / msgBlock
      / msgBatchDone
 
-msgRequestRange = [0, point, point]
+msgRequestRange = [0, base.point, base.point]
 msgClientDone   = [1]
 msgStartBatch   = [2]
 msgNoBlocks     = [3]
-msgBlock        = [4, block]
+msgBlock        = [4, base.block]
 msgBatchDone    = [5]
+
+;# import network.base as base

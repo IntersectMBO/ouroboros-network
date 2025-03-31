@@ -5,10 +5,10 @@
 nodeToNodeVersionData = [ networkMagic, initiatorOnlyDiffusionMode, peerSharing, query ]
 
 ; range between 0 and 0xffffffff
-networkMagic = word32
+networkMagic = base.word32
 initiatorOnlyDiffusionMode = bool
 ; range between 0 and 1
 peerSharing = 0..1
 query = bool
 
-;# import common as base
+;# import network.base as base

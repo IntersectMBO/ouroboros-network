@@ -6,13 +6,15 @@ peerSharingMessage = msgShareRequest
                    / msgSharePeers
                    / msgDone
 
-msgShareRequest = [0, word8]
+msgShareRequest = [0, base.word8]
 msgSharePeers   = [1, peerAddresses]
 msgDone         = [2]
 
 peerAddresses = [* peerAddress]
 
-peerAddress = [0, word32, portNumber]                         ; ipv4 + portNumber
-            / [1, word32, word32, word32, word32, portNumber] ; ipv6 + portNumber
+peerAddress = [0, base.word32, portNumber] ; ipv4 + portNumber
+            / [1, base.word32, base.word32, base.word32, base.word32, portNumber] ; ipv6 + portNumber
 
-portNumber = word16
+portNumber = base.word16
+
+;# import network.base as base

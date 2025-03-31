@@ -6,6 +6,8 @@ keepAliveMessage = msgKeepAlive
                  / msgKeepAliveResponse
                  / msgDone
 
-msgKeepAlive         = [0, word16]
-msgKeepAliveResponse = [1, word16]
+msgKeepAlive         = [0, base.word16]
+msgKeepAliveResponse = [1, base.word16]
 msgDone              = [2]
+
+;# import network.base as base

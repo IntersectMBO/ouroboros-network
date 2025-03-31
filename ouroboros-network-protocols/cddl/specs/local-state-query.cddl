@@ -21,7 +21,7 @@ failure      = acquireFailurePointTooOld
 query        = any
 result       = any
 
-msgAcquire   = [0, point]
+msgAcquire   = [0, base.point]
              / [8]
              / [10]
 msgAcquired  = [1]
@@ -29,7 +29,9 @@ msgFailure   = [2, failure]
 msgQuery     = [3, query]
 msgResult    = [4, result]
 msgRelease   = [5]
-msgReAcquire = [6, point]
+msgReAcquire = [6, base.point]
              / [9]
              / [11]
 lsqMsgDone   = [7]
+
+;# import network.base as base

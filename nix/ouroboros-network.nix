@@ -95,7 +95,7 @@ let
         doCheck = !pkgs.stdenv.hostPlatform.isWindows;
 
         # pkgs are instantiated for the host platform
-        packages.ouroboros-network-protocols.components.tests.cddl.build-tools = [ pkgs.cddl pkgs.cbor-diag ];
+        packages.ouroboros-network-protocols.components.tests.cddl.build-tools = [ pkgs.cddl pkgs.cbor-diag pkgs.cddlc ];
         packages.ouroboros-network-protocols.components.tests.cddl.preCheck = "export HOME=`pwd`";
 
         # don't run checks using Wine when cross compiling

@@ -25,7 +25,7 @@ versionNumber = 32784 / 32785 / 32786 / 32787 / 32788
 ; As of version 15 and higher
 nodeToClientVersionData = [networkMagic, query]
 
-networkMagic = uint
+networkMagic = uint 
 query        = bool
 
 refuseReason
