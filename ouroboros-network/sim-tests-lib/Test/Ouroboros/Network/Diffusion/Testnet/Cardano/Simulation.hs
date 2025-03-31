@@ -827,15 +827,48 @@ instance Arbitrary DiffusionScript where
                           , (1, arbitrary >>= genHotDiffusionScript)
                           ]
   -- TODO: shrink dns map
-  -- TODO: we should write more careful shrinking than recursively shrinking
-  -- `DiffusionScript`!
-  shrink (DiffusionScript _ _ []) = []
-  shrink (DiffusionScript sargs dnsMap ((nargs, cmds):s)) = do
-    shrinkedCmds <- fixupCommands <$> shrinkList shrinkCommand cmds
-    DiffusionScript sa dnsMap' ss <- shrink (DiffusionScript sargs dnsMap s)
-    return (DiffusionScript sa dnsMap' ((nargs, shrinkedCmds) : ss))
+  shrink (DiffusionScript sargs dnsScript0 players0) =
+    [DiffusionScript sargs dnsScript0 players
+    | players <- shrinkPlayers players0
+    ] <>
+    [DiffusionScript sargs dnsScript players0
+    | dnsScript <-
+        mapMaybe
+          -- make sure `fixupDomainMapScript` didn't return something that's
+          -- equal to the original `script`
+          ((\dnsScript' -> if dnsScript0 == dnsScript' then Nothing else Just dnsScript')
+           .  fixupDomainMapScript (getLast dnsScript0))
+          $ shrinkScriptWith (liftShrink2 shrinkMap_ shrink) dnsScript0
+    ]
     where
-      shrinkDelay = map fromRational . shrink . toRational
+      getLast (Script ne) = fst $ NonEmpty.last ne
+
+      shrinkMap_ :: Ord a => Map a b -> [Map a b]
+      shrinkMap_ = map Map.fromList . shrinkList (const []) . Map.toList
+
+      -- the easiest failure to analyze is the one with the least number of nodes participating.
+      -- Currently we use up to three nodes, but in case we increase the number in the future
+      -- this will be even more useful.
+      shrinkPlayers =
+        filter ((> 1) . length) . shrinkList shrinkPlayer
+
+      shrinkPlayer (nargs, cmds) =
+        map (nargs,) . filter (/= cmds) $ fixupCommands <$> shrinkList shrinkCommand cmds
+        where
+          shrinkDelay = map fromRational . shrink . toRational
+
+          -- A failing network with the least nodes active at a particular time is the simplest to analyze,
+          -- if for no other reason other than for having the least amount of traces for us to read.
+          -- A dead node is its simplest configuration as that can't contribute to its failure,
+          -- So we shrink to that first to see at least if a failure occurs somewhere else still.
+          -- Otherwise we know that this node has to be running for sure while the exchange is happening.
+          shrinkCommand :: Command -> [Command]
+          shrinkCommand (JoinNetwork d) =   Kill 0 -- ^ try leaving it still 'dead' instead
+                                          : (JoinNetwork <$> shrinkDelay d)
+          shrinkCommand (Kill d) = Kill <$> shrinkDelay d
+          shrinkCommand (Reconfigure d lrp) =   Kill 0 -- ^ try killing it instead to see what happens
+                                              : (Reconfigure <$> shrinkDelay d
+                                                             <*> pure lrp)
 
       shrinkCommand :: Command -> [Command]
       shrinkCommand (JoinNetwork d)     = JoinNetwork <$> shrinkDelay d

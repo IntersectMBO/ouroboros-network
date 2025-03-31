@@ -226,7 +226,7 @@ data ConnectionEvent req peerAddr
     -- ^ Close an outbound connection.
   | ShutdownClientServer DiffTime peerAddr
     -- ^ Shuts down a client/server (simulates power loss)
-  deriving (Show, Functor)
+  deriving (Eq, Show, Functor)
 
 -- | A sequence of connection events that make up a test scenario for `prop_multinode_Sim`.
 data MultiNodeScript req peerAddr = MultiNodeScript
@@ -458,7 +458,7 @@ maxAcceptedConnectionsLimit = AcceptedConnectionsLimit maxBound maxBound 0
 --
 --   transitions.
 --
-instance Arbitrary req =>
+instance (Eq req, Arbitrary req) =>
          Arbitrary (MultiNodePruningScript req) where
   arbitrary = do
     Positive len <- scale ((* 2) . (`div` 3)) arbitrary
@@ -532,17 +532,20 @@ instance Arbitrary req =>
   -- we could miss which change actually introduces the failure, and be lift
   -- with a larger counter example.
   shrink (MultiNodePruningScript
-            (AcceptedConnectionsLimit hardLimit softLimit delay)
+            acl@(AcceptedConnectionsLimit hardLimit softLimit delay)
             events
             attenuationMap) =
-    MultiNodePruningScript
-        <$> (AcceptedConnectionsLimit
+    let a = AcceptedConnectionsLimit
               <$> shrink hardLimit
               <*> shrink softLimit
-              <*> pure delay)
-        <*> (makeValid
-            <$> shrinkList shrinkEvent events)
-        <*> shrink attenuationMap
+              <*> pure delay in
+      [MultiNodePruningScript a' events attenuationMap
+      | a' <- a] <>
+      [MultiNodePruningScript acl events' attenuationMap
+      | events' <- makeValid <$> shrinkList shrinkEvent events
+      , events' /= events] <>
+      [MultiNodePruningScript acl events attenuationMap'
+      | attenuationMap' <- shrink attenuationMap]
     where
       makeValid = go (ScriptState [] [] [] [] [])
         where
