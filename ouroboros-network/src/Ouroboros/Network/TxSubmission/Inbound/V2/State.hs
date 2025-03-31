@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
@@ -24,15 +23,12 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.State
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Monad.Class.MonadTime.SI
 import Control.Exception (assert)
+import Control.Monad.Class.MonadTime.SI
 import Control.Tracer (Tracer, traceWith)
 
-import Data.Foldable (fold,
-#if !MIN_VERSION_base(4,20,0)
-         foldl',
-#endif
-         toList)
+import Data.Foldable (fold, toList)
+import Data.Foldable qualified as Foldable
 import Data.Functor (($>))
 import Data.Map.Merge.Strict qualified as Map
 import Data.Map.Strict (Map)
@@ -259,7 +255,7 @@ tickTimedTxs now st@SharedTxState{ timedTxs
     fn :: Map txid Int
        -> [txid]
        -> Map txid Int
-    fn m txids = foldl' gn m txids
+    fn m txids = Foldable.foldl' gn m txids
 
     gn :: Map txid Int
        -> txid
@@ -354,11 +350,12 @@ receivedTxIdsImpl
                     <> Map.map (const Nothing) ignoredTxIds
 
         referenceCounts' =
-          foldl' (flip $ Map.alter (\case
-                                       Nothing  -> Just $! 1
-                                       Just cnt -> Just $! succ cnt))
-                 referenceCounts
-                 txidsSeq
+          Foldable.foldl'
+            (flip $ Map.alter (\case
+                                 Nothing  -> Just $! 1
+                                 Just cnt -> Just $! succ cnt))
+            referenceCounts
+            txidsSeq
 
         st' = st { bufferedTxs     = bufferedTxs',
                    referenceCounts = referenceCounts' }

@@ -1,6 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE BlockArguments      #-}
-{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE FlexibleContexts    #-}
@@ -18,15 +17,10 @@ module Test.Ouroboros.Network.TxSubmission.TxLogic where
 
 import Prelude hiding (seq)
 
-import Control.Monad.Class.MonadTime.SI (Time (..))
 import Control.Exception (assert)
+import Control.Monad.Class.MonadTime.SI (Time (..))
 
-import Data.Foldable (
-         fold,
-#if !MIN_VERSION_base(4,20,0)
-         foldl',
-#endif
-         toList)
+import Data.Foldable as Foldable (fold, foldl', toList)
 import Data.List (intercalate, isPrefixOf, isSuffixOf, mapAccumR, nub,
            stripPrefix)
 import Data.Map.Merge.Strict qualified as Map
@@ -38,7 +32,7 @@ import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Typeable
-import System.Random (mkStdGen, StdGen)
+import System.Random (StdGen, mkStdGen)
 
 import NoThunks.Class
 
@@ -149,9 +143,9 @@ sharedTxStateInvariant SharedTxState {
     .&&. counterexample "referenceCounts invariant violation"
          ( referenceCounts
            ===
-           foldl'
+           Foldable.foldl'
              (\m PeerTxState { unacknowledgedTxIds = unacked } ->
-               foldl'
+               Foldable.foldl'
                  (flip $
                    Map.alter (\case
                                 Nothing  -> Just $! 1
@@ -409,7 +403,7 @@ genSharedTxState maxTxIdsInflight = do
                                  | (peeraddr, ArbPeerTxState { arbPeerTxState })
                                    <- pss'
                                  ],
-                 inflightTxs     = foldl' (Map.unionWith (+)) Map.empty
+                 inflightTxs     = Foldable.foldl' (Map.unionWith (+)) Map.empty
                                  [ Map.fromSet (const 1) (Set.map getTxId arbInflightSet)
                                  | ArbPeerTxState { arbInflightSet }
                                    <- pss
@@ -481,9 +475,9 @@ fixupSharedTxState _mempoolHasTx st@SharedTxState { peerTxStates } =
 
 
     referenceCounts' =
-      foldl'
+      Foldable.foldl'
         (\m PeerTxState { unacknowledgedTxIds } ->
-          foldl'
+          Foldable.foldl'
             (flip $
               Map.alter (\case
                            Nothing  -> Just $! 1
@@ -1481,7 +1475,7 @@ instance Arbitrary ArbDecisionContextWithReceivedTxIds where
           txIdsToAck' = take (fromIntegral (TXS.requestedTxIdsInflight $ peerTxStates st' Map.! peeraddr)) txIdsToAck
 
       downTxsNum <- choose (0, length txIdsToAck')
-      let downloadedTxs = foldl' pruneTx Map.empty $ take downTxsNum $ Map.toList (bufferedTxs st')
+      let downloadedTxs = Foldable.foldl' pruneTx Map.empty $ take downTxsNum $ Map.toList (bufferedTxs st')
           ps'' = ps' { downloadedTxs = downloadedTxs }
 
       return ArbDecisionContextWithReceivedTxIds {
@@ -1494,7 +1488,7 @@ instance Arbitrary ArbDecisionContextWithReceivedTxIds where
         }
       where
         pruneTx :: Map TxId tx -> (TxId, Maybe tx) -> Map TxId tx
-        pruneTx m (_, Nothing) = m
+        pruneTx m (_, Nothing)    = m
         pruneTx m (txid, Just tx) = Map.insert txid tx m
 
     shrink ArbDecisionContextWithReceivedTxIds {
