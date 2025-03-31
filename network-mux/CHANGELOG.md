@@ -6,6 +6,8 @@
 * Bearer writeMany function for vector IO
 * An optional read buffer for Bearer
 * Polling of the egress queue
+* run, miniProtocolJob, monitor now accept Tracers record
+  instead of `Tracer m Trace` type.
 
 ### Non-breaking changes
 * Define msHeaderLength instead of using '8'
