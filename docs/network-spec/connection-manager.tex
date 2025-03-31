@@ -2100,15 +2100,18 @@ governor or progress to the \RemoteCold{} state.  This depends on whether the
 connection is used (\warm{} or \hot{}) or not (\cold{}) by the outbound side.
 
 \subsubsection{\RemoteWarm}
-A connection enters \RemoteWarm{} state once any of the mini-protocols starts
-to operate.  Once all hot mini-protocols start, the state will transition to
-\RemoteHot{}.  Note that this is slightly different than the notion of a \warm{}
-peer, for which all \established{} and \warm{} mini-protocols are active, but
-\hot{} ones are idle.
+A connection dwells in \RemoteWarm{} if there are strictly only any warm or established
+responder protocols running. Note also that an established protocol is one that may run
+in both hot and warm states, but cannot be the only type running to maintain hot state
+once all proper hot protocols have terminated. In other words, the connection must be
+demoted in that case.
 
 \subsubsection{\RemoteHot}
-A connection enters \RemoteHot{} transition once all hot protocols started, if
-any of them terminates the connection will be put in \RemoteWarm{}.
+A connection enters \RemoteHot{} state once any hot responder protocol has started.
+In particular, if a hot responder is the first to start, the state cycles through \RemoteWarm{}
+first. Once all hot responders terminate, the connection will be put in \RemoteWarm{} regardless
+of whether there are any warm or established responders left. In the latter case, if there aren't any
+other protocols running, the connection will then follow up with further demotion to \RemoteIdle{}.
 
 \subsection{Transitions}
 
@@ -2166,11 +2169,10 @@ The inbound governor does not notify the connection manager about the
 termination of the connection, as it can detect this by itself.
 
 \subsubsection{\PromotedToHotRemote}
-The inbound governor detects when all \hot{} mini-protocols started.   In such
+The inbound governor detects when any \hot{} mini-protocols have started.   In such
 case a \RemoteWarm{} connection is put in \RemoteHot{} state.
 
 \subsubsection{\DemotedToWarmRemote}
-Dually to \PromotedToHotRemote{} state transition, as soon as any of the \hot{}
-mini-protocols terminates, the connection will transition to \RemoteWarm{}
+Dually to \PromotedToHotRemote{} state transition, as soon as all of the \hot{}
+mini-protocols terminate, the connection will transition to \RemoteWarm{}
 state.
-
