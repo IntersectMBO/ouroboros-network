@@ -12,9 +12,11 @@ localTxSubmissionMessage
     / msgRejectTx
     / ltMsgDone
 
-msgSubmitTx = [0, tx ]
+msgSubmitTx = [0, base.tx ]
 msgAcceptTx = [1]
 msgRejectTx = [2, rejectReason ]
 ltMsgDone   = [3]
 
 rejectReason = int
+
+;# import network.base as base

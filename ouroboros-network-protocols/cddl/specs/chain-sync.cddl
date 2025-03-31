@@ -10,10 +10,11 @@ chainSyncMessage
 
 msgRequestNext         = [0]
 msgAwaitReply          = [1]
-msgRollForward         = [2, header, tip]
-msgRollBackward        = [3, point, tip]
-msgFindIntersect       = [4, points]
-msgIntersectFound      = [5, point, tip]
-msgIntersectNotFound   = [6, tip]
+msgRollForward         = [2, base.header, base.tip]
+msgRollBackward        = [3, base.point, base.tip]
+msgFindIntersect       = [4, base.points]
+msgIntersectFound      = [5, base.point, base.tip]
+msgIntersectNotFound   = [6, base.tip]
 chainSyncMsgDone       = [7]
 
+;# import network.base as base

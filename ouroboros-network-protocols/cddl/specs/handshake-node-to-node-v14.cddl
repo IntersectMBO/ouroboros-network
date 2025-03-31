@@ -8,29 +8,26 @@ handshakeMessage
     / msgQueryReply
 
 msgProposeVersions = [0, versionTable]
-msgAcceptVersion   = [1, versionNumber, nodeToNodeVersionData]
+msgAcceptVersion   = [1, versionNumber_v14, v14.nodeToNodeVersionData]
 msgRefuse          = [2, refuseReason]
 msgQueryReply      = [3, versionTable]
 
 ; The codec only accepts definite-length maps.
-versionTable = { * versionNumber => nodeToNodeVersionData }
+versionTable = { * versionNumber_v14 => v14.nodeToNodeVersionData }
 
-versionNumber = 14
+versionNumber_v14 = 14
 
-nodeToNodeVersionData = [ networkMagic, initiatorOnlyDiffusionMode, peerSharing, query ]
-
-; range between 0 and 0xffffffff
-networkMagic = 0..4294967295
-initiatorOnlyDiffusionMode = bool
-; range between 0 and 1
-peerSharing = 0..1
-query = bool
+; All version numbers
+versionNumbers = versionNumber_v14
 
 refuseReason
     = refuseReasonVersionMismatch
     / refuseReasonHandshakeDecodeError
     / refuseReasonRefused
 
-refuseReasonVersionMismatch      = [0, [ *versionNumber ] ]
-refuseReasonHandshakeDecodeError = [1, versionNumber, tstr]
-refuseReasonRefused              = [2, versionNumber, tstr]
+refuseReasonVersionMismatch      = [0, [ *versionNumbers ] ]
+refuseReasonHandshakeDecodeError = [1, versionNumbers, tstr]
+refuseReasonRefused              = [2, versionNumbers, tstr]
+
+;# import node-to-node-version-data-v14 as v14
+;# import network.base as base

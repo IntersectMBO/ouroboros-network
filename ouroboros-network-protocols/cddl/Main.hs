@@ -44,6 +44,7 @@ import Data.Text qualified as Text
 import Data.Word (Word16)
 
 import System.Directory (doesDirectoryExist)
+import System.Environment (setEnv)
 import System.Exit (ExitCode (..))
 import System.FilePath
 import System.IO (hClose)
@@ -246,47 +247,47 @@ data CDDLSpecs = CDDLSpecs {
   }
 
 
+-- | Use `cddlc` to resolve module directives (`;# include` and `;# import`).
+--
+-- The `CDDL_INCLUDE_PATH` environment variable must be set.
+cddlc :: FilePath -> IO BL.ByteString
+cddlc path = do
+  (_, cddl, _) <- readProcessWithExitCode "cddlc" ["-u", "-2", "-t", "cddl", path] mempty
+  return cddl
+
 readCDDLSpecs :: IO CDDLSpecs
 readCDDLSpecs = do
     dir <- bool (                                  "cddl" </> "specs") -- False
                 ("ouroboros-network-protocols" </> "cddl" </> "specs") -- True
        <$> doesDirectoryExist "ouroboros-network-protocols"
-    common                <- BL.readFile (dir </> "common.cddl")
-    handshakeNodeToClient <- BL.readFile (dir </> "handshake-node-to-client.cddl")
-    handshakeNodeToNodeV14ToLast <- BL.readFile (dir </> "handshake-node-to-node-v14.cddl")
-    chainSync             <- BL.readFile (dir </> "chain-sync.cddl")
-    blockFetch            <- BL.readFile (dir </> "block-fetch.cddl")
-    txSubmission2         <- BL.readFile (dir </> "tx-submission2.cddl")
-    keepAlive             <- BL.readFile (dir </> "keep-alive.cddl")
-    localTxSubmission     <- BL.readFile (dir </> "local-tx-submission.cddl")
-    localTxMonitor        <- BL.readFile (dir </> "local-tx-monitor.cddl")
-    localStateQuery       <- BL.readFile (dir </> "local-state-query.cddl")
+    setEnv "CDDL_INCLUDE_PATH" (dir <> ":")
 
-    peerSharingNodeToNodeV14ToLast <- BL.readFile (dir </> "peer-sharing-v14.cddl")
+    handshakeNodeToClient <- cddlc (dir </> "handshake-node-to-client.cddl")
+    handshakeNodeToNodeV14ToLast
+                          <- cddlc (dir </> "handshake-node-to-node-v14.cddl")
+    chainSync             <- cddlc (dir </> "chain-sync.cddl")
+    blockFetch            <- cddlc (dir </> "block-fetch.cddl")
+    txSubmission2         <- cddlc (dir </> "tx-submission2.cddl")
+    keepAlive             <- cddlc (dir </> "keep-alive.cddl")
+    localTxSubmission     <- cddlc (dir </> "local-tx-submission.cddl")
+    localTxMonitor        <- cddlc (dir </> "local-tx-monitor.cddl")
+    localStateQuery       <- cddlc (dir </> "local-state-query.cddl")
 
-    nodeToNodeVersionDataV14ToLast <- BL.readFile (dir </> "node-to-node-version-data-v14.cddl")
-    -- append common definitions; they must be appended since the first
-    -- definition is the entry point for a cddl spec.
+    peerSharingNodeToNodeV14ToLast <- cddlc (dir </> "peer-sharing-v14.cddl")
+    nodeToNodeVersionDataV14ToLast <- cddlc (dir </> "node-to-node-version-data-v14.cddl")
+
     return CDDLSpecs {
-        cddlHandshakeNodeToClient        = CDDLSpec   handshakeNodeToClient,
-        cddlHandshakeNodeToNodeV14ToLast = CDDLSpec   handshakeNodeToNodeV14ToLast,
-        cddlChainSync                    = CDDLSpec $ chainSync
-                                                   <> common,
-        cddlBlockFetch                   = CDDLSpec $ blockFetch
-                                                   <> common,
-        cddlTxSubmission2                = CDDLSpec $ txSubmission2
-                                                   <> common,
+        cddlHandshakeNodeToClient        = CDDLSpec handshakeNodeToClient,
+        cddlHandshakeNodeToNodeV14ToLast = CDDLSpec handshakeNodeToNodeV14ToLast,
+        cddlChainSync                    = CDDLSpec chainSync,
+        cddlBlockFetch                   = CDDLSpec blockFetch,
+        cddlTxSubmission2                = CDDLSpec txSubmission2,
         cddlKeepAlive                    = CDDLSpec keepAlive,
-        cddlLocalTxSubmission            = CDDLSpec $ localTxSubmission
-                                                   <> common,
-        cddlLocalTxMonitor               = CDDLSpec $ localTxMonitor
-                                                   <> common,
-        cddlLocalStateQuery              = CDDLSpec $ localStateQuery
-                                                   <> common,
+        cddlLocalTxSubmission            = CDDLSpec localTxSubmission,
+        cddlLocalTxMonitor               = CDDLSpec localTxMonitor,
+        cddlLocalStateQuery              = CDDLSpec localStateQuery,
 
-        cddlPeerSharingNodeToNodeV14ToLast = CDDLSpec $ peerSharingNodeToNodeV14ToLast
-                                                     <> common,
-
+        cddlPeerSharingNodeToNodeV14ToLast = CDDLSpec peerSharingNodeToNodeV14ToLast,
         cddlNodeToNodeVersionDataV14ToLast = CDDLSpec nodeToNodeVersionDataV14ToLast
       }
 
@@ -846,7 +847,7 @@ unit_decodeChainSync spec =
       [ SomeAgency ChainSync.SingIdle
       , SomeAgency (ChainSync.SingNext ChainSync.SingCanAwait)
       , SomeAgency (ChainSync.SingNext ChainSync.SingMustReply)
-      , SomeAgency (ChainSync.SingIntersect)
+      , SomeAgency ChainSync.SingIntersect
       ]
       100
 
@@ -873,8 +874,8 @@ unit_decodeTxSubmission2 spec =
       [ SomeAgency TxSubmission2.SingInit
       , SomeAgency $ TxSubmission2.SingTxIds TxSubmission2.SingBlocking
       , SomeAgency $ TxSubmission2.SingTxIds TxSubmission2.SingNonBlocking
-      , SomeAgency $ TxSubmission2.SingTxs
-      , SomeAgency $ TxSubmission2.SingIdle
+      , SomeAgency   TxSubmission2.SingTxs
+      , SomeAgency   TxSubmission2.SingIdle
       ]
       100
 

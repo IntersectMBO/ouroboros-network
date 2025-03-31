@@ -8,7 +8,7 @@
 module Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers (resolveLedgerPeers) where
 
 import Control.Monad.Class.MonadAsync
-import Data.List (foldl')
+import Data.List qualified as List (foldl')
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 
@@ -90,7 +90,7 @@ resolveLedgerPeers dnsSemaphore
             -- configured via the DNS.ResolvConf resolvTimeout field and
             -- defaults to 3 sec.
             results <- withAsyncAll lookups (atomically . mapM waitSTM)
-            return $ foldl' processResult Map.empty results
+            return $ List.foldl' processResult Map.empty results
 
     processResult :: Map DNS.Domain (Set peerAddr)
                   -> (DNS.Domain, DNSLookupResult peerAddr)

@@ -24,11 +24,13 @@ msgReplyTxs     = [3, txList ]
 tsMsgDone       = [4]
 
 tsBlocking      = false / true
-txCount         = word16
+txCount         = base.word16
 ; The codec only accepts indefinite-length lists.
-txIdList        = [ *txId ]
-txList          = [ *tx ]
-txIdAndSize     = [txId, txSizeInBytes]
+txIdList        = [ *base.txId ]
+txList          = [ *base.tx ]
+txIdAndSize     = [base.txId, txSizeInBytes]
 ; The codec only accepts definite-length lists.
 txIdsAndSizes   = [ *txIdAndSize ]
-txSizeInBytes   = word32
+txSizeInBytes   = base.word32
+
+;# import network.base as base
