@@ -68,6 +68,8 @@ putStrLn_ = BSC.putStrLn . BSC.pack
 debugTracer :: Show a => Tracer IO a
 debugTracer = showTracing (Tracer putStrLn_)
 
+nullTracers :: (Applicative m) => Tracers m
+nullTracers = Tracers nullTracer nullTracer
 --
 -- Protocols
 --
@@ -133,7 +135,7 @@ serverWorker bearer = do
       putStrLn $ "Result: " ++ show result
       Mx.stop mux
 
-    Mx.run nullTracer mux bearer
+    Mx.run nullTracers mux bearer
   where
     ptcls :: [MiniProtocolInfo ResponderMode]
     ptcls = [ MiniProtocolInfo {
@@ -193,7 +195,7 @@ clientWorker bearer n msg = do
       putStrLn $ "Result: " ++ show result
       Mx.stop mux
 
-    Mx.run nullTracer mux bearer
+    Mx.run nullTracers mux bearer
   where
     ptcls :: [MiniProtocolInfo Mx.InitiatorMode]
     ptcls = [ MiniProtocolInfo {
@@ -208,4 +210,3 @@ echoClient :: Int -> Int -> ByteString
            -> ReqRespClient ByteString ByteString IO Int
 echoClient !n 0 _      = SendMsgDone (pure n)
 echoClient !n m rawmsg = SendMsgReq rawmsg (pure . echoClient (n+1) (m-1))
-

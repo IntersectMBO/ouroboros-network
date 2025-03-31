@@ -1,16 +1,18 @@
-{-# LANGUAGE CPP                 #-}
-{-# LANGUAGE ConstraintKinds     #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE PolyKinds           #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE BlockArguments           #-}
+{-# LANGUAGE CPP                      #-}
+{-# LANGUAGE ConstraintKinds          #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE DisambiguateRecordFields #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE LambdaCase               #-}
+{-# LANGUAGE NamedFieldPuns           #-}
+{-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE RankNTypes               #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE TupleSections            #-}
+{-# LANGUAGE TypeApplications         #-}
+{-# LANGUAGE TypeOperators            #-}
 
 -- for 'debugTracer'
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
@@ -82,6 +84,8 @@ import Ouroboros.Network.Context
 import Ouroboros.Network.ControlMessage
 import Ouroboros.Network.Driver.Limits
 import Ouroboros.Network.InboundGovernor qualified as InboundGovernor
+import Ouroboros.Network.InboundGovernor.InformationChannel
+           (newInformationChannel)
 import Ouroboros.Network.Mux
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
@@ -102,9 +106,6 @@ import Ouroboros.Network.Snocket qualified as Snocket
 import Test.Ouroboros.Network.ConnectionManager.Timeouts
 import Test.Ouroboros.Network.Orphans ()
 import Test.Ouroboros.Network.Utils (WithName (..))
-
-import Ouroboros.Network.ConnectionManager.InformationChannel
-           (newInformationChannel)
 
 
 --
@@ -276,55 +277,58 @@ withInitiatorOnlyConnectionManager
     -> m a
 withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket makeBearer connStateIdSupply
                                    localAddr nextRequests handshakeTimeLimits acceptedConnLimit k = do
-    mainThreadId <- myThreadId
-    let muxTracer = (name,) `contramap` nullTracer -- mux tracer
-    CM.with
-      CM.Arguments {
-          -- ConnectionManagerTrace
-          CM.tracer    = WithName name
-                        `contramap` tracer,
-          CM.trTracer  = (WithName name . fmap CM.abstractState)
-                        `contramap` trTracer,
-         -- MuxTracer
-          CM.muxTracer = muxTracer,
-          CM.ipv4Address = localAddr,
-          CM.ipv6Address = Nothing,
-          CM.addressType = \_ -> Just IPv4Address,
-          CM.snocket = snocket,
-          CM.makeBearer = makeBearer,
-          CM.withBuffer = \f -> f Nothing,
-          CM.configureSocket = \_ _ -> return (),
-          CM.connectionDataFlow = \(DataFlowProtocolData df _) -> df,
-          CM.prunePolicy = simplePrunePolicy,
-          CM.stdGen,
-          CM.connectionsLimits = acceptedConnLimit,
-          CM.timeWaitTimeout = tTimeWaitTimeout timeouts,
-          CM.outboundIdleTimeout = tOutboundIdleTimeout timeouts,
-          CM.updateVersionData = \a _ -> a,
-          CM.connStateIdSupply
-        }
-      (makeConnectionHandler
-        muxTracer
-        SingInitiatorMode
-        noBindForkPolicy
-        HandshakeArguments {
-            -- TraceSendRecv
-            haHandshakeTracer = (name,) `contramap` nullTracer,
-            haHandshakeCodec = unversionedHandshakeCodec,
-            haVersionDataCodec = cborTermVersionDataCodec dataFlowProtocolDataCodec,
-            haAcceptVersion = acceptableVersion,
-            haQueryVersion = queryVersion,
-            haTimeLimits = handshakeTimeLimits
-          }
-        (dataFlowProtocol Unidirectional clientApplication)
-        (mainThreadId, debugMuxErrorRethrowPolicy
-                    <> debugMuxRuntimeErrorRethrowPolicy
-                    <> debugIOErrorRethrowPolicy
-                    <> assertRethrowPolicy))
-      (\_ -> HandshakeFailure)
-      NotInResponderMode
-      (\cm ->
-        k cm `catch` \(e :: SomeException) -> throwIO e)
+  mainThreadId <- myThreadId
+  let muxTracer = (name,) `contramap` nullTracer -- mux tracer
+      mkConnectionHandler =
+        makeConnectionHandler
+          muxTracer
+          noBindForkPolicy
+          HandshakeArguments {
+              -- TraceSendRecv
+              haHandshakeTracer = WithName name `contramap` nullTracer,
+              haHandshakeCodec = unversionedHandshakeCodec,
+              haVersionDataCodec = cborTermVersionDataCodec dataFlowProtocolDataCodec,
+              haAcceptVersion = acceptableVersion,
+              haQueryVersion = queryVersion,
+              haTimeLimits = handshakeTimeLimits
+            }
+          (dataFlowProtocol Unidirectional clientApplication)
+          (mainThreadId,   debugMuxErrorRethrowPolicy
+                        <> debugMuxRuntimeErrorRethrowPolicy
+                        <> debugIOErrorRethrowPolicy
+                        <> assertRethrowPolicy)
+          MuxInitiatorConnectionHandler
+
+
+  CM.with CM.Arguments {
+    -- ConnectionManagerTrace
+    tracer    = WithName name
+                  `contramap` tracer,
+    trTracer  = (WithName name . fmap CM.abstractState)
+                  `contramap` trTracer,
+    -- This is actually the low level bearer tracer
+    muxTracer = nullTracer,
+    ipv4Address  = localAddr,
+    ipv6Address  = Nothing,
+    addressType  = \_ -> Just IPv4Address,
+    snocket,
+    makeBearer,
+    withBuffer = \f -> f Nothing,
+    configureSocket = \_ _ -> return (),
+    connectionDataFlow = \(DataFlowProtocolData df _) -> df,
+    timeWaitTimeout = tTimeWaitTimeout timeouts,
+    outboundIdleTimeout = tOutboundIdleTimeout timeouts,
+    prunePolicy = simplePrunePolicy,
+    stdGen,
+    connectionsLimits = acceptedConnLimit,
+    updateVersionData = \a _ -> a,
+    connStateIdSupply,
+    classifyHandleError = \_ -> HandshakeFailure
+    }
+    NotInResponderMode
+    mkConnectionHandler
+    \cm ->
+      k cm `catch` \(e :: SomeException) -> throwIO e
   where
     clientApplication :: TemperatureBundle
                            [MiniProtocol Mx.InitiatorMode
@@ -432,6 +436,7 @@ withBidirectionalConnectionManager
                             peerAddr
                             (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
     -> Tracer m (WithName name (InboundGovernor.Trace peerAddr))
+    -> Tracer m (WithName name (Mx.WithBearer (ConnectionId peerAddr) Mx.Trace))
     -> Tracer m (WithName name (InboundGovernor.Debug peerAddr DataFlowProtocolData))
     -> StdGen
     -> Snocket m socket peerAddr
@@ -459,7 +464,7 @@ withBidirectionalConnectionManager
     -> m a
 withBidirectionalConnectionManager name timeouts
                                    inboundTrTracer trTracer
-                                   tracer inboundTracer debugTracer
+                                   tracer inboundTracer muxTracer debugTracer
                                    stdGen
                                    snocket makeBearer connStateIdSupply
                                    confSock socket
@@ -469,82 +474,86 @@ withBidirectionalConnectionManager name timeouts
                                    acceptedConnLimit k = do
     mainThreadId <- myThreadId
     inbgovInfoChannel <- newInformationChannel
-    let muxTracer = WithName name `contramap` nullTracer -- mux tracer
+    let mkConnectionHandler =
+          makeConnectionHandler
+            (WithName name `contramap` muxTracer)
+            noBindForkPolicy
+            HandshakeArguments {
+                -- TraceSendRecv
+                haHandshakeTracer = WithName name `contramap` nullTracer,
+                haHandshakeCodec = unversionedHandshakeCodec,
+                haVersionDataCodec = cborTermVersionDataCodec dataFlowProtocolDataCodec,
+                haAcceptVersion = acceptableVersion,
+                haQueryVersion = queryVersion,
+                haTimeLimits = handshakeTimeLimits
+              }
+            (dataFlowProtocol Duplex serverApplication)
+            (mainThreadId,   debugMuxErrorRethrowPolicy
+                          <> debugMuxRuntimeErrorRethrowPolicy
+                          <> debugIOErrorRethrowPolicy
+                          <> assertRethrowPolicy)
 
-    CM.with
-      CM.Arguments {
-          -- ConnectionManagerTrace
-          CM.tracer    = WithName name
-                        `contramap` tracer,
-          CM.trTracer  = (WithName name . fmap CM.abstractState)
-                        `contramap` trTracer,
-          -- MuxTracer
-          CM.muxTracer    = muxTracer,
-          CM.ipv4Address  = localAddress,
-          CM.ipv6Address  = Nothing,
-          CM.addressType  = \_ -> Just IPv4Address,
-          CM.snocket      = snocket,
-          CM.makeBearer   = makeBearer,
-          CM.withBuffer = \f -> f Nothing,
-          CM.configureSocket = \sock _ -> confSock sock,
-          CM.timeWaitTimeout = tTimeWaitTimeout timeouts,
-          CM.outboundIdleTimeout = tOutboundIdleTimeout timeouts,
-          CM.connectionDataFlow = \(DataFlowProtocolData df _) -> df,
-          CM.prunePolicy = simplePrunePolicy,
-          CM.stdGen,
-          CM.connectionsLimits = acceptedConnLimit,
-          CM.updateVersionData = \versionData diffusionMode ->
+        withConnectionManager connectionHandler k' =
+          CM.with CM.Arguments {
+            -- ConnectionManagerTrace
+            tracer    = WithName name
+                          `contramap` tracer,
+            trTracer  = (WithName name . fmap CM.abstractState)
+                          `contramap` trTracer,
+            -- low level bearer tracer
+            muxTracer = WithName name `contramap` nullTracer, --muxTracer,
+            ipv4Address  = localAddress,
+            ipv6Address  = Nothing,
+            addressType  = \_ -> Just IPv4Address,
+            snocket,
+            makeBearer,
+            withBuffer = \f -> f Nothing,
+            configureSocket = \sock _ -> confSock sock,
+            connectionDataFlow = \(DataFlowProtocolData df _) -> df,
+            timeWaitTimeout = tTimeWaitTimeout timeouts,
+            outboundIdleTimeout = tOutboundIdleTimeout timeouts,
+            -- CM.connectionDataFlow = \(DataFlowProtocolData df _) -> df,
+            prunePolicy = simplePrunePolicy,
+            stdGen,
+            connectionsLimits = acceptedConnLimit,
+            updateVersionData = \versionData diffusionMode ->
                                   versionData { getProtocolDataFlow =
                                                   case diffusionMode of
                                                     InitiatorOnlyDiffusionMode         -> Unidirectional
                                                     InitiatorAndResponderDiffusionMode -> Duplex
                                               },
-          CM.connStateIdSupply
-        }
-        (makeConnectionHandler
-          muxTracer
-          SingInitiatorResponderMode
-          noBindForkPolicy
-          HandshakeArguments {
-              -- TraceSendRecv
-              haHandshakeTracer = WithName name `contramap` nullTracer,
-              haHandshakeCodec = unversionedHandshakeCodec,
-              haVersionDataCodec = cborTermVersionDataCodec dataFlowProtocolDataCodec,
-              haAcceptVersion = acceptableVersion,
-              haQueryVersion = queryVersion,
-              haTimeLimits = handshakeTimeLimits
+            connStateIdSupply,
+            classifyHandleError = (\_ -> HandshakeFailure)
             }
-          (dataFlowProtocol Duplex serverApplication)
-          (mainThreadId,   debugMuxErrorRethrowPolicy
-                        <> debugMuxRuntimeErrorRethrowPolicy
-                        <> debugIOErrorRethrowPolicy
-                        <> assertRethrowPolicy))
-        (\_ -> HandshakeFailure)
-        (InResponderMode inbgovInfoChannel)
-      $ \connectionManager ->
-          do
-            serverAddr <- Snocket.getLocalAddr snocket socket
-            Server.with
-              Server.Arguments {
-                  Server.sockets = socket :| [],
-                  Server.snocket = snocket,
-                  Server.trTracer =
-                    WithName name `contramap` inboundTrTracer,
-                  Server.tracer =
-                    WithName name `contramap` nullTracer, -- ServerTrace
-                  Server.debugInboundGovernor =
-                    WithName name `contramap` debugTracer,
-                  Server.inboundGovernorTracer =
-                    WithName name `contramap` inboundTracer, -- InboundGovernorTrace
-                  Server.connectionLimits = acceptedConnLimit,
-                  Server.connectionManager = connectionManager,
-                  Server.connectionDataFlow = \(DataFlowProtocolData df _) -> df,
-                  Server.inboundIdleTimeout = Just (tProtocolIdleTimeout timeouts),
-                  Server.inboundInfoChannel = inbgovInfoChannel
-                }
-              (\inboundGovernorAsync _ -> k connectionManager serverAddr inboundGovernorAsync)
-          `catch` \(e :: SomeException) -> do
-            throwIO e
+            (InResponderMode inbgovInfoChannel)
+            connectionHandler
+            k'
+
+    serverAddr <- Snocket.getLocalAddr snocket socket
+    handle (\(e :: SomeException) -> throwIO e) $
+      Server.with
+        Server.Arguments {
+          sockets = socket :| [],
+          snocket = snocket,
+          tracer =
+            WithName name `contramap` nullTracer, -- ServerTrace
+          connectionLimits = acceptedConnLimit,
+          inboundGovernorArgs =
+            InboundGovernor.Arguments {
+              transitionTracer =
+               WithName name `contramap` inboundTrTracer,
+              tracer =
+                WithName name `contramap` inboundTracer, -- InboundGovernorTrace
+              debugTracer =
+                WithName name `contramap` debugTracer,
+              connectionDataFlow = \(DataFlowProtocolData df _) -> df,
+              infoChannel = inbgovInfoChannel,
+              idleTimeout = Just (tProtocolIdleTimeout timeouts),
+              withConnectionManager,
+              mkConnectionHandler = mkConnectionHandler . MuxInitiatorResponderConnectionHandler (\(DataFlowProtocolData df _) -> df)
+              }
+          }
+          (\inboundGovernorAsync _ connectionManager -> k connectionManager serverAddr inboundGovernorAsync)
   where
     serverApplication :: TemperatureBundle
                           [MiniProtocol Mx.InitiatorResponderMode
@@ -743,7 +752,7 @@ unidirectionalExperiment stdGen timeouts snocket makeBearer confSock socket clie
       $ \connectionManager ->
         withBidirectionalConnectionManager "server" timeouts
                                            nullTracer nullTracer nullTracer
-                                           nullTracer nullTracer
+                                           nullTracer nullTracer nullTracer
                                            stdGen''
                                            snocket makeBearer connStateIdSupply
                                            confSock socket Nothing
@@ -827,7 +836,7 @@ bidirectionalExperiment
       nextRequests0 <- oneshotNextRequests clientAndServerData0
       nextRequests1 <- oneshotNextRequests clientAndServerData1
       withBidirectionalConnectionManager "node-0" timeouts
-                                         nullTracer nullTracer nullTracer nullTracer
+                                         nullTracer nullTracer nullTracer nullTracer nullTracer
                                          nullTracer stdGen' snocket makeBearer
                                          connStateIdSupply confSock
                                          socket0 (Just localAddr0)
@@ -837,7 +846,7 @@ bidirectionalExperiment
                                          maxAcceptedConnectionsLimit
         (\connectionManager0 _serverAddr0 _serverAsync0 -> do
           withBidirectionalConnectionManager "node-1" timeouts
-                                             nullTracer nullTracer nullTracer nullTracer
+                                             nullTracer nullTracer nullTracer nullTracer nullTracer
                                              nullTracer stdGen'' snocket makeBearer
                                              connStateIdSupply confSock
                                              socket1 (Just localAddr1)
@@ -930,19 +939,6 @@ bidirectionalExperiment
 --
 -- Utils
 --
-
-
--- | Redefine this tracer to get valuable tracing information from various
--- components:
---
--- * connection-manager
--- * inbound governor
--- * server
---
--- debugTracer :: (MonadSay m, MonadTime m, Show a) => Tracer m a
--- debugTracer = Tracer (\msg -> (,msg) <$> getCurrentTime >>= say . show)
-           -- <> Tracer Debug.traceShowM
-
 
 withLock :: ( MonadSTM   m
             , MonadThrow m
