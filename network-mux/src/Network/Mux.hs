@@ -211,6 +211,9 @@ run :: forall m (mode :: Mode).
        , MonadMask m
        )
     => Tracer m Trace
+    -- ^ this tracer may be special for inbound and
+    -- outbound duplex modes - check inbound governor
+    -- module for details.
     -> Mux mode m
     -> Bearer m
     -> m ()
@@ -231,6 +234,9 @@ run tracer
       (\jobpool -> do
         JobPool.forkJob jobpool (muxerJob egressQueue)
         JobPool.forkJob jobpool demuxerJob
+        -- for inbound and outbound duplex modes,
+        -- this call blocks the muxer until the CM
+        -- notifies the IG of the new connection.
         traceWith tracer (TraceState Mature)
 
         -- Wait for someone to shut us down by calling muxStop or an error.
@@ -247,8 +253,12 @@ run tracer
     -- an exception.  Setting 'muxStatus' is necessary to resolve a possible
     -- deadlock of mini-protocol completion action.
     `catch` \(SomeAsyncException e) -> do
-      atomically $ writeTVar muxStatus (Failed $ toException e)
-      throwIO e
+       atomically $ writeTVar muxStatus (Failed $ toException e)
+       -- before bailing out, we let the inbound governor tracer
+       -- clean up its state for inbound and outbound duplex
+       -- connections.
+       traceWith tracer (TraceState Dead)
+       throwIO e
   where
     muxerJob egressQueue =
       JobPool.Job (muxer egressQueue bearer)
@@ -380,6 +390,11 @@ data MonitorCtx m mode = MonitorCtx {
 --  1. It waits for mini-protocol threads to terminate.
 --  2. It starts responder protocol threads on demand when the first
 --     incoming message arrives.
+--  3. For outbound duplex and inbound bearers, it has a back
+--     channel to the inbound governor hidden in the tracer,
+--     informing it of mux start/stop and miniprotocol
+--     exits/terminations such that the IG can perform an
+--     efficient and proper accounting of peer transitions.
 --
 monitor :: forall mode m.
            ( MonadAsync m
@@ -395,6 +410,9 @@ monitor :: forall mode m.
         -> StrictTVar m Status
         -> m ()
 monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
+    -- the tracer may be hooked into the inbound governor
+    -- for inbound or outbound duplex connections, so care
+    -- should be excercised when ordering traces.
     go (MonitorCtx Map.empty Map.empty)
   where
     go :: MonitorCtx m mode -> m ()
@@ -430,9 +448,9 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
           go monitorCtx
 
         EventJobResult (MiniProtocolException pnum pmode e) -> do
-          traceWith tracer (TraceState Dead)
-          traceWith tracer (TraceExceptionExit pnum pmode e)
           atomically $ writeTVar muxStatus $ Failed e
+          traceWith tracer (TraceExceptionExit pnum pmode e)
+          traceWith tracer (TraceState Dead)
           throwIO e
 
         -- These two cover internal and protocol errors.  The muxer exception is
@@ -444,11 +462,10 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
         -- the source of the failure, e.g. specific mini-protocol. If we're
         -- propagating exceptions, we don't need to log them.
         EventJobResult (MuxerException e) -> do
-          traceWith tracer (TraceState Dead)
           atomically $ writeTVar muxStatus $ Failed e
+          traceWith tracer (TraceState Dead)
           throwIO e
         EventJobResult (DemuxerException e) -> do
-          traceWith tracer (TraceState Dead)
           r <- atomically $ do
             size <- JobPool.readGroupSize jobpool MiniProtocolJob
             case size of
@@ -457,6 +474,7 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
                 >> return True
               _ -> writeTVar muxStatus (Failed e)
                 >> return False
+          traceWith tracer (TraceState Dead)
           unless r (throwIO e)
 
         EventControlCmd (CmdStartProtocolThread
@@ -794,4 +812,3 @@ runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue , muxStatus}
                    <|> return (Left $ toException (Shutdown Nothing st))
            Failed e -> readTMVar completionVar
                    <|> return (Left $ toException (Shutdown (Just e) st))
-
