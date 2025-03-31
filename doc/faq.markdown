@@ -138,6 +138,33 @@ Neither of these are realistically feasible for all SPOs. They may be feasible
 for some, and in those cases, they could be an alternative to running a KES
 agent, but for the majority of users, we need something easier (and cheaper).
 
+### What about SSD TRIM? Doesn't that provide secure deletion?
+
+Unfortunately no.
+
+The TRIM command allows an OS to signal to an SSD controller that a certain
+block is no longer used; the SSD controller can use this information to erase
+this block in a timely fashion to make it reusable.
+
+However, there are several valid strategies for doing this - the SSD controller
+may physically erase the block immediately (or shortly after receiving the TRIM
+instruction), but it may also schedule it for future erasing, or simply mark it
+as "unused", and returning all-zeroes for any reads addressed to this block,
+even though the underlying physical memory still holds the original data. Under
+normal usage, each of these methods achieves the intended goal of making the
+relevant block look "erased" and making it available for reuse eventually;
+however, physical deletion is not guaranteed, and depending on how the SSD
+controller implements the spec, erased data could be retrieved using various
+methods, such as:
+
+- addressing the SSD controller directly, bypassing the OS
+- exploiting a vulnerability in the SSD controller firmware
+- overriding or replacing the SSD controller firmware
+- desoldering the SSD and reading the raw chips using custom circuitry
+
+It's also difficult to check which method the SSD controller uses, or to verify
+that deletion actually happened.
+
 ### Why not do the signing on the KES agent? Wouldn't that be better, because it means the key never needs to leave the agent at all?
 
 We have considered this design, but there are a few major downsides to it:
