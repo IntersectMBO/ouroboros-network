@@ -1,16 +1,17 @@
-{-# LANGUAGE CPP                 #-}
-{-# LANGUAGE ConstraintKinds     #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE NumericUnderscores  #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE CPP                      #-}
+{-# LANGUAGE ConstraintKinds          #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE DisambiguateRecordFields #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE KindSignatures           #-}
+{-# LANGUAGE NamedFieldPuns           #-}
+{-# LANGUAGE NumericUnderscores       #-}
+{-# LANGUAGE RankNTypes               #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE TupleSections            #-}
+{-# LANGUAGE TypeApplications         #-}
+{-# LANGUAGE TypeOperators            #-}
 
 -- just to use 'debugTracer'
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
@@ -40,6 +41,7 @@ import Data.Functor (($>))
 import Data.Hashable (Hashable)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Typeable (Typeable)
+import Data.Void
 
 import Network.Mux qualified as Mux
 import Network.Mux.Bearer qualified as Mux
@@ -64,6 +66,7 @@ import Ouroboros.Network.ConnectionManager.InformationChannel
 import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context
+import Ouroboros.Network.InboundGovernor qualified as InboundGovernor
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.Mux
 import Ouroboros.Network.MuxMode
@@ -205,6 +208,7 @@ withBidirectionalConnectionManager
           Mux.InitiatorResponderMode socket peerAddr UnversionedProtocolData
           UnversionedProtocol ByteString m () ()
        -> peerAddr
+       -> Async m Void
        -> m a)
     -> m a
 withBidirectionalConnectionManager snocket makeBearer socket
@@ -229,35 +233,8 @@ withBidirectionalConnectionManager snocket makeBearer socket
     establishedRequestsVar <- LazySTM.newTVarIO establishedInitiatorRequests
     let muxTracer = ("mux",) `contramap` nullTracer -- mux tracer
 
-    CM.with
-      CM.Arguments {
-          -- ConnectionManagerTrace
-          CM.tracer       = ("cm",) `contramap` debugTracer,
-          CM.trTracer     = ("cm-state",) `contramap` debugTracer,
-          -- MuxTracer
-          CM.muxTracer    = muxTracer,
-          CM.ipv4Address  = localAddress,
-          CM.ipv6Address  = Nothing,
-          CM.addressType  = \_ -> Just IPv4Address,
-          CM.snocket      = snocket,
-          CM.makeBearer   = makeBearer,
-          CM.configureSocket = \_ _ -> return (),
-          CM.timeWaitTimeout = timeWaitTimeout,
-          CM.outboundIdleTimeout = protocolIdleTimeout,
-          CM.connectionDataFlow = \_ -> Duplex,
-          CM.prunePolicy = simplePrunePolicy,
-          CM.stdGen      = stdGen,
-          CM.connectionsLimits = AcceptedConnectionsLimit {
-              acceptedConnectionsHardLimit = maxBound,
-              acceptedConnectionsSoftLimit = maxBound,
-              acceptedConnectionsDelay     = 0
-            },
-          CM.updateVersionData = \a _ -> a,
-          CM.connStateIdSupply
-        }
-        (makeConnectionHandler
+        mkConnectionHandler singMuxMode = makeConnectionHandler
           muxTracer
-          SingInitiatorResponderMode
           noBindForkPolicy
           HandshakeArguments {
               -- TraceSendRecv
@@ -273,26 +250,61 @@ withBidirectionalConnectionManager snocket makeBearer socket
                                 warmRequestsVar
                                 establishedRequestsVar))
           (mainThreadId,   debugMuxErrorRethrowPolicy
-                        <> debugIOErrorRethrowPolicy))
-          (\_ -> HandshakeFailure)
-          (InResponderMode inbgovInfoChannel)
-      $ \connectionManager -> do
-            serverAddr <- Snocket.getLocalAddr snocket socket
-            Server.with
-              Server.Arguments {
-                  Server.sockets = socket :| [],
-                  Server.snocket = snocket,
-                  Server.tracer = ("server",) `contramap` debugTracer, -- ServerTrace
-                  Server.trTracer = nullTracer,
-                  Server.inboundGovernorTracer = ("inbound-governor",) `contramap` debugTracer,
-                  Server.debugInboundGovernor = nullTracer,
-                  Server.connectionLimits = AcceptedConnectionsLimit maxBound maxBound 0,
-                  Server.connectionManager = connectionManager,
-                  Server.connectionDataFlow = \_ -> Duplex,
-                  Server.inboundIdleTimeout = Just protocolIdleTimeout,
-                  Server.inboundInfoChannel = inbgovInfoChannel
+                        <> debugIOErrorRethrowPolicy)
+          singMuxMode
+
+        withConnectionManager connectionHandler k' =
+            CM.with
+              CM.Arguments {
+                  -- ConnectionManagerTrace
+                  tracer       = ("cm",) `contramap` debugTracer,
+                  trTracer     = ("cm-state",) `contramap` debugTracer,
+                  -- MuxTracer
+                  muxTracer    = muxTracer,
+                  ipv4Address  = localAddress,
+                  ipv6Address  = Nothing,
+                  addressType  = \_ -> Just IPv4Address,
+                  snocket      = snocket,
+                  makeBearer   = makeBearer,
+                  CM.withBuffer   = \f -> f Nothing,
+                  configureSocket = \_ _ -> return (),
+                  timeWaitTimeout = timeWaitTimeout,
+                  outboundIdleTimeout = protocolIdleTimeout,
+                  connectionDataFlow = \_ -> Duplex,
+                  prunePolicy = simplePrunePolicy,
+                  stdGen      = stdGen,
+                  connectionsLimits = AcceptedConnectionsLimit {
+                      acceptedConnectionsHardLimit = maxBound,
+                      acceptedConnectionsSoftLimit = maxBound,
+                      acceptedConnectionsDelay     = 0
+                    },
+                  updateVersionData = \a _ -> a,
+                  connStateIdSupply,
+                  classifyHandleError = (\_ -> HandshakeFailure)
                 }
-              (\_ _ -> k connectionManager serverAddr)
+              (InResponderMode inbgovInfoChannel)
+              connectionHandler
+              k'
+
+    serverAddr <- Snocket.getLocalAddr snocket socket
+    Server.with
+      Server.Arguments {
+          sockets = socket :| [],
+          snocket = snocket,
+          tracer = ("server",) `contramap` debugTracer, -- ServerTrace
+          connectionLimits = AcceptedConnectionsLimit maxBound maxBound 0,
+          inboundGovernorArgs =
+              InboundGovernor.Arguments {
+                  transitionTracer = nullTracer,
+                  tracer = ("inbound-governor",) `contramap` debugTracer,
+                  debugTracer = nullTracer,
+                  connectionDataFlow = \_ -> Duplex,
+                  infoChannel = inbgovInfoChannel,
+                  idleTimeout = Just protocolIdleTimeout,
+                  withConnectionManager,
+                  mkConnectionHandler = mkConnectionHandler SingInitiatorResponderMode (\_ -> Duplex) }
+        }
+      (\inbGovAsync _ connManager-> k connManager serverAddr inbGovAsync)
   where
     serverApplication :: LazySTM.TVar m [[Int]]
                       -> LazySTM.TVar m [[Int]]
@@ -477,7 +489,7 @@ bidirectionalExperiment
         snocket makeBearer socket0 connStateIdSupply
         protocolIdleTimeout timeWaitTimeout
         (Just localAddr) stdGen clientAndServerData $
-        \connectionManager _serverAddr -> forever' $ do
+        \connectionManager _serverAddr _inbGovAsync -> forever' $ do
           -- runInitiatorProtocols returns a list of results per each protocol
           -- in each bucket (warm \/ hot \/ established); but we run only one
           -- mini-protocol. We can use `concat` to flatten the results.

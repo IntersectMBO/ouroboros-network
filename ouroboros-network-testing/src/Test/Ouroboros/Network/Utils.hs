@@ -4,6 +4,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TupleSections              #-}
 
 module Test.Ouroboros.Network.Utils
   ( -- * Arbitrary Delays
@@ -30,6 +31,7 @@ module Test.Ouroboros.Network.Utils
   , splitWithNameTrace
     -- * Tracers
   , debugTracer
+  , debugTracerG
   , sayTracer
     -- * Tasty Utils
   , nightlyTest
@@ -227,6 +229,16 @@ debugTracer = Tracer traceShowM
 sayTracer :: ( Show a, MonadSay m) => Tracer m a
 sayTracer = Tracer (say . show)
 
+-- | Redefine this tracer to get valuable tracing information from various
+-- components:
+--
+-- * connection-manager
+-- * inbound governor
+-- * server
+--
+debugTracerG :: (MonadSay m, MonadTime m, Show a) => Tracer m a
+debugTracerG = Tracer (\msg -> (,msg) <$> getCurrentTime >>= say . show)
+           -- <> Tracer Debug.traceShowM
 
 --
 -- Nightly tests
