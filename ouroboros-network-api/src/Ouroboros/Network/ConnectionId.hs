@@ -1,17 +1,18 @@
 {-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE DerivingStrategies  #-}
 {-# LANGUAGE DerivingVia         #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE StaticPointers      #-}
 
 module Ouroboros.Network.ConnectionId where
 
 import NoThunks.Class (InspectHeap (..), NoThunks)
 
+import Data.Aeson qualified as Aeson
 import Data.Hashable
+import Data.String (fromString)
 import GHC.Generics (Generic)
 import Ouroboros.Network.Util.ShowProxy (Proxy (..), ShowProxy (..))
 
@@ -28,6 +29,14 @@ data ConnectionId addr = ConnectionId {
   deriving (Eq, Show, Generic)
   deriving NoThunks via InspectHeap (ConnectionId addr)
   deriving Functor
+
+instance Aeson.ToJSON addr => Aeson.ToJSONKey (ConnectionId addr) where
+instance Aeson.ToJSON addr => Aeson.ToJSON (ConnectionId addr) where
+    toEncoding ConnectionId {remoteAddress, localAddress} =
+      Aeson.pairs $
+           fromString "remoteAddress" Aeson..= remoteAddress
+        <> fromString "localAddress"  Aeson..= localAddress
+
 
 -- | Order first by `remoteAddress` then by `localAddress`.
 --

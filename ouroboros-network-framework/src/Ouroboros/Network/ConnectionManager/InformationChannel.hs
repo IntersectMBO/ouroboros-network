@@ -35,8 +35,8 @@ data InformationChannel a m =
 -- * /Producer:/ connection manger for duplex outbound connections.
 -- * /Consumer:/ inbound governor.
 --
-type InboundGovernorInfoChannel (muxMode :: Mux.Mode) initiatorCtx peerAddr versionData bytes m a b =
-    InformationChannel (NewConnectionInfo peerAddr (Handle muxMode initiatorCtx (ResponderContext peerAddr) versionData bytes m a b)) m
+type InboundGovernorInfoChannel (muxMode :: Mux.Mode) initiatorCtx networkState peerAddr versionData bytes m a b =
+    InformationChannel (NewConnectionInfo peerAddr (Handle muxMode initiatorCtx (ResponderContext peerAddr) networkState versionData bytes m a b)) m
 
 
 -- | Create a new 'InformationChannel' backed by a `TBQueue`.

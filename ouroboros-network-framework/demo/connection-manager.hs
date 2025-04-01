@@ -202,7 +202,7 @@ withBidirectionalConnectionManager
     -- ^ series of request possible to do with the bidirectional connection
     -- manager towards some peer.
     -> (ConnectionManagerWithExpandedCtx
-          Mux.InitiatorResponderMode socket peerAddr UnversionedProtocolData
+          Mux.InitiatorResponderMode socket () peerAddr UnversionedProtocolData
           UnversionedProtocol ByteString m () ()
        -> peerAddr
        -> m a)
@@ -291,7 +291,8 @@ withBidirectionalConnectionManager snocket makeBearer socket
                   Server.connectionManager = connectionManager,
                   Server.connectionDataFlow = \_ -> Duplex,
                   Server.inboundIdleTimeout = Just protocolIdleTimeout,
-                  Server.inboundInfoChannel = inbgovInfoChannel
+                  Server.inboundInfoChannel = inbgovInfoChannel,
+                  Server.readNetworkState = return ()
                 }
               (\_ _ -> k connectionManager serverAddr)
   where
@@ -299,8 +300,8 @@ withBidirectionalConnectionManager snocket makeBearer socket
                       -> LazySTM.TVar m [[Int]]
                       -> LazySTM.TVar m [[Int]]
                       -> TemperatureBundle
-                          ([MiniProtocolWithExpandedCtx
-                              Mux.InitiatorResponderMode peerAddr ByteString m () ()])
+                          [MiniProtocolWithExpandedCtx
+                             Mux.InitiatorResponderMode () peerAddr ByteString m () ()]
     serverApplication hotRequestsVar
                       warmRequestsVar
                       establishedRequestsVar
@@ -347,7 +348,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
       :: Mux.MiniProtocolNum
       -> LazySTM.TVar m [[Int]]
       -> RunMiniProtocolWithExpandedCtx
-           Mux.InitiatorResponderMode peerAddr ByteString m () ()
+           Mux.InitiatorResponderMode () peerAddr ByteString m () ()
     reqRespInitiatorAndResponder protocolNum requestsVar =
       InitiatorAndResponderProtocol
         (mkMiniProtocolCbFromPeer
@@ -399,7 +400,7 @@ runInitiatorProtocols
     => SingMuxMode muxMode
     -> Mux.Mux muxMode m
     -> (forall pt. SingProtocolTemperature pt -> ExpandedInitiatorContext addr m)
-    -> OuroborosBundleWithExpandedCtx muxMode addr ByteString m a b
+    -> OuroborosBundleWithExpandedCtx muxMode () addr ByteString m a b
     -> m (Maybe (TemperatureBundle [a]))
 runInitiatorProtocols
     singMuxMode mux getContext
@@ -430,7 +431,7 @@ runInitiatorProtocols
                 (WithEstablished established)
   where
     runInitiator :: SingProtocolTemperature pt
-                 -> MiniProtocolWithExpandedCtx muxMode addr ByteString m a b
+                 -> MiniProtocolWithExpandedCtx muxMode () addr ByteString m a b
                  -> m (STM m (Either SomeException a))
     runInitiator sing ptcl =
         Mux.runMiniProtocol
@@ -548,12 +549,12 @@ bidirectionalExperiment
     connect :: Int
             -> ConnectionManagerWithExpandedCtx
                  Mux.InitiatorResponderMode
-                 socket peerAddr UnversionedProtocolData
+                 socket () peerAddr UnversionedProtocolData
                  UnversionedProtocol ByteString
                  IO () ()
             -> IO (Connected peerAddr
                             (HandleWithExpandedCtx
-                              Mux.InitiatorResponderMode peerAddr
+                              Mux.InitiatorResponderMode () peerAddr
                               UnversionedProtocolData ByteString IO () ())
                             (HandleError
                               Mux.InitiatorResponderMode

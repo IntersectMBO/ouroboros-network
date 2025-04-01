@@ -71,14 +71,15 @@ tests =
   [ testProperty "socket sync demo" prop_socket_demo
   ]
 
+type NetworkState = ()
 
 defaultMiniProtocolLimit :: Int
 defaultMiniProtocolLimit = 3000000
 
 -- | The bundle of mini-protocols in our test protocol: only chain sync
 --
-testProtocols1 :: RunMiniProtocolWithMinimalCtx appType addr bytes m a b
-               -> OuroborosApplicationWithMinimalCtx appType addr bytes m a b
+testProtocols1 :: RunMiniProtocolWithMinimalCtx appType NetworkState addr bytes m a b
+               -> OuroborosApplicationWithMinimalCtx appType NetworkState addr bytes m a b
 testProtocols1 chainSync =
     OuroborosApplication [
       MiniProtocol {
@@ -126,7 +127,8 @@ demo chain0 updates = withIOManager $ \iocp -> do
         target = Chain.headPoint expectedChain
 
         initiatorApp
-          :: OuroborosApplicationWithMinimalCtx Mx.InitiatorMode Socket.SockAddr
+          :: OuroborosApplicationWithMinimalCtx Mx.InitiatorMode NetworkState
+                                                Socket.SockAddr
                                                 BL.ByteString IO () Void
         initiatorApp = testProtocols1 chainSyncInitator
 
@@ -143,7 +145,8 @@ demo chain0 updates = withIOManager $ \iocp -> do
         server = ChainSync.chainSyncServerExample () producerVar id
 
         responderApp
-          :: OuroborosApplicationWithMinimalCtx Mx.ResponderMode Socket.SockAddr
+          :: OuroborosApplicationWithMinimalCtx Mx.ResponderMode NetworkState
+                                                Socket.SockAddr
                                                 BL.ByteString IO Void ()
         responderApp = testProtocols1 chainSyncResponder
 

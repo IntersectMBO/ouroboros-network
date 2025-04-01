@@ -851,15 +851,15 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
          -> peerAddr
          -> StrictTQueue m (ConnectionHandlerMessage peerAddr req)
          -- ^ control channel
-         -> ConnectionManagerWithExpandedCtx muxMode socket peerAddr DataFlowProtocolData UnversionedProtocol ByteString m [resp] a
-         -> Map.Map peerAddr (HandleWithExpandedCtx muxMode peerAddr DataFlowProtocolData ByteString m [resp] a)
+         -> ConnectionManagerWithExpandedCtx muxMode socket () peerAddr DataFlowProtocolData UnversionedProtocol ByteString m [resp] a
+         -> Map.Map peerAddr (HandleWithExpandedCtx muxMode () peerAddr DataFlowProtocolData ByteString m [resp] a)
          -- ^ active connections
          -> StrictTVar m (Map.Map (ConnectionId peerAddr) (TemperatureBundle (StrictTQueue m [req])))
          -- ^ mini protocol queues
          -> m ()
     connectionLoop muxMode localAddr cc cm connMap0 connVar = go connMap0
       where
-        go :: Map.Map peerAddr (HandleWithExpandedCtx muxMode peerAddr DataFlowProtocolData ByteString m [resp] a) -- active connections
+        go :: Map.Map peerAddr (HandleWithExpandedCtx muxMode () peerAddr DataFlowProtocolData ByteString m [resp] a) -- active connections
            -> m ()
         go !connMap = atomically (readTQueue cc) >>= \ case
           NewConnection remoteAddr -> do

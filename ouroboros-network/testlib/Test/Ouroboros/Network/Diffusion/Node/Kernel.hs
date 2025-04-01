@@ -69,8 +69,7 @@ import Ouroboros.Network.Mock.ProducerState
 import Ouroboros.Network.NodeToNode ()
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection (PeerSharing, RelayAccessPoint (..))
-import Ouroboros.Network.PeerSelection.Governor (PublicPeerSelectionState,
-           makePublicPeerSelectionStateVar)
+import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry (..),
            newPeerSharingAPI, newPeerSharingRegistry,
            ps_POLICY_PEER_SHARE_MAX_PEERS, ps_POLICY_PEER_SHARE_STICKY_TIME)
@@ -280,23 +279,23 @@ data NodeKernel header block s m = NodeKernel {
 
       nkPeerSharingAPI :: PeerSharingAPI NtNAddr s m,
 
-      nkPublicPeerSelectionVar :: StrictTVar m (PublicPeerSelectionState NtNAddr)
+      nkCapturePublicStateVar :: Governor.CapturePublicStateVar NtNAddr m
     }
 
 newNodeKernel :: MonadSTM m
               => s -> m (NodeKernel header block s m)
 newNodeKernel rng = do
-    publicStateVar <- makePublicPeerSelectionStateVar
+    capturePublicStateVar <- Governor.newCapturePublicStateVar
     NodeKernel
       <$> newTVarIO Map.empty
       <*> newTVarIO (ChainProducerState Chain.Genesis Map.empty 0)
       <*> newFetchClientRegistry
       <*> newPeerSharingRegistry
       <*> ChainDB.newChainDB
-      <*> newPeerSharingAPI publicStateVar rng
+      <*> newPeerSharingAPI capturePublicStateVar rng
                             ps_POLICY_PEER_SHARE_STICKY_TIME
                             ps_POLICY_PEER_SHARE_MAX_PEERS
-      <*> pure publicStateVar
+      <*> pure capturePublicStateVar
 
 -- | Register a new upstream chain-sync client.
 --

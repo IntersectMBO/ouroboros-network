@@ -11,6 +11,7 @@ module Ouroboros.Network.ConnectionManager.State
   ( -- * ConnectionManagerState API
     ConnectionManagerState
   , module ConnMap
+  , toPublic
     -- ** Monadic API
   , readConnectionStates
   , readAbstractStateMap
@@ -37,6 +38,7 @@ import Prelude hiding (lookup)
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.ConnMap as ConnMap
 import Ouroboros.Network.ConnectionManager.Types
+import Ouroboros.Network.PublicState qualified as PS
 
 import Test.Ouroboros.Network.Utils (WithName (..))
 
@@ -180,6 +182,17 @@ abstractState = \case
     go DuplexState {}                 = DuplexSt
     go TerminatingState {}            = TerminatingSt
     go TerminatedState {}             = TerminatedSt
+
+
+toPublic :: Ord peerAddr
+         => ConnMap peerAddr AbstractState
+         -> PS.ConnectionManagerState peerAddr
+toPublic st = PS.ConnectionManagerState {
+    PS.connectionMap
+      = ConnMap.toMap st,
+    PS.registeredOutboundConnections
+      = ConnMap.unknownSet st
+  }
 
 
 -- | State of a connection.

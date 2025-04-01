@@ -5,7 +5,6 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE TypeOperators       #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -15,6 +14,8 @@
 module Ouroboros.Network.NodeToNode
   ( nodeToNodeProtocols
   , NodeToNodeProtocols (..)
+  , NodeToNodeApplication
+  , UnitNetworkState
   , NodeToNodeProtocolsWithExpandedCtx
   , NodeToNodeProtocolsWithMinimalCtx
   , MiniProtocolParameters (..)
@@ -57,6 +58,7 @@ module Ouroboros.Network.NodeToNode
   , ProtocolLimitFailure
   , Handshake
   , Socket
+  , CapturePublicStateVar
     -- ** Exceptions
   , ExceptionInHandler (..)
     -- ** Traces
@@ -87,8 +89,8 @@ import Ouroboros.Network.Driver (TraceSendRecv (..))
 import Ouroboros.Network.Driver.Limits (ProtocolLimitFailure (..))
 import Ouroboros.Network.Mux
 import Ouroboros.Network.NodeToNode.Version
-import Ouroboros.Network.PeerSelection.Governor.Types
-           (PeerSelectionTargets (..))
+import Ouroboros.Network.PeerSelection.Governor.Types (CapturePublicStateVar,
+           PeerSelectionTargets (..))
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.Protocol.Handshake.Codec
@@ -107,33 +109,33 @@ type HandshakeTr ntnAddr ntnVersion =
                   (TraceSendRecv (Handshake ntnVersion CBOR.Term))
 
 
-data NodeToNodeProtocols appType initiatorCtx responderCtx bytes m a b = NodeToNodeProtocols {
+data NodeToNodeProtocols appType initiatorCtx responderCtx peerAddr bytes m a b = NodeToNodeProtocols {
     -- | chain-sync mini-protocol
     --
-    chainSyncProtocol    :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b,
+    chainSyncProtocol    :: RunMiniProtocol appType initiatorCtx responderCtx peerAddr bytes m a b,
 
     -- | block-fetch mini-protocol
     --
-    blockFetchProtocol   :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b,
+    blockFetchProtocol   :: RunMiniProtocol appType initiatorCtx responderCtx peerAddr bytes m a b,
 
     -- | tx-submission mini-protocol
     --
-    txSubmissionProtocol :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b,
+    txSubmissionProtocol :: RunMiniProtocol appType initiatorCtx responderCtx peerAddr bytes m a b,
 
     -- | keep-alive mini-protocol
     --
-    keepAliveProtocol    :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b,
+    keepAliveProtocol    :: RunMiniProtocol appType initiatorCtx responderCtx peerAddr bytes m a b,
 
     -- | peer sharing mini-protocol
     --
-    peerSharingProtocol  :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b
+    peerSharingProtocol  :: RunMiniProtocol appType initiatorCtx responderCtx peerAddr bytes m a b
 
   }
 
 type NodeToNodeProtocolsWithExpandedCtx appType ntnAddr bytes m a b =
-    NodeToNodeProtocols appType (ExpandedInitiatorContext ntnAddr m) (ResponderContext ntnAddr) bytes m a b
+    NodeToNodeProtocols appType (ExpandedInitiatorContext ntnAddr m) (ResponderContext ntnAddr) ntnAddr bytes m a b
 type NodeToNodeProtocolsWithMinimalCtx  appType ntnAddr bytes m a b =
-    NodeToNodeProtocols appType (MinimalInitiatorContext ntnAddr)  (ResponderContext ntnAddr) bytes m a b
+    NodeToNodeProtocols appType (MinimalInitiatorContext ntnAddr)  (ResponderContext ntnAddr) ntnAddr bytes m a b
 
 
 data MiniProtocolParameters = MiniProtocolParameters {
@@ -167,6 +169,19 @@ defaultMiniProtocolParameters = MiniProtocolParameters {
     , txSubmissionMaxUnacked       = 10
   }
 
+-- We don't expose network state over node-t-node protocol.
+type UnitNetworkState = ()
+
+
+-- | A type alias for the node-to-node protocol bundle used by diffusion.  It
+-- is more general what we need in `Applications` type so it can be used in
+-- `ouroboros-cosnensus-diffusion` (polymorphic `bytes`).
+--
+type NodeToNodeApplication mode ntnAddr bytes m a b =
+    OuroborosBundleWithExpandedCtx
+      mode UnitNetworkState ntnAddr bytes m a b
+
+
 -- | Make an 'OuroborosApplication' for the bundle of mini-protocols that
 -- make up the overall node-to-node protocol.
 --
@@ -187,12 +202,12 @@ defaultMiniProtocolParameters = MiniProtocolParameters {
 --
 nodeToNodeProtocols
   :: MiniProtocolParameters
-  -> NodeToNodeProtocols muxMode initiatorCtx responderCtx bytes m a b
+  -> NodeToNodeProtocols muxMode initiatorCtx responderCtx peerAddr bytes m a b
   -> NodeToNodeVersion
   -- ^ negotiated version number
   -> NodeToNodeVersionData
   -- ^ negotiated version data
-  -> OuroborosBundle muxMode initiatorCtx responderCtx bytes m a b
+  -> OuroborosBundle muxMode initiatorCtx responderCtx peerAddr bytes m a b
 nodeToNodeProtocols miniProtocolParameters protocols
                     _version NodeToNodeVersionData { peerSharing }
                     =
@@ -398,7 +413,7 @@ connectTo
   -> Versions NodeToNodeVersion
               NodeToNodeVersionData
               (OuroborosApplicationWithMinimalCtx
-                 Mx.InitiatorMode Socket.SockAddr BL.ByteString IO a b)
+                 Mx.InitiatorMode () Socket.SockAddr BL.ByteString IO a b)
   -> Maybe Socket.SockAddr
   -> Socket.SockAddr
   -> IO (Either SomeException (Either a b))
