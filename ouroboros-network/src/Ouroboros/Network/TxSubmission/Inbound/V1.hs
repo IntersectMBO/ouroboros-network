@@ -9,7 +9,7 @@
 
 {-# OPTIONS_GHC -Wno-partial-fields #-}
 
-module Ouroboros.Network.TxSubmission.Inbound
+module Ouroboros.Network.TxSubmission.Inbound.V1
   ( txSubmissionInbound
   , TxSubmissionMempoolWriter (..)
   , TraceTxSubmissionInbound (..)
@@ -36,6 +36,7 @@ import Control.Exception (assert)
 import Control.Monad (unless)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, traceWith)
 
@@ -45,62 +46,11 @@ import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import Ouroboros.Network.Protocol.Limits
 import Ouroboros.Network.Protocol.TxSubmission2.Server
 import Ouroboros.Network.Protocol.TxSubmission2.Type
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types (ProcessedTxCount (..),
+           TraceTxSubmissionInbound (..), TxSubmissionMempoolWriter (..),
+           TxSubmissionProtocolError (..))
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
            TxSubmissionMempoolReader (..))
-
--- | The consensus layer functionality that the inbound side of the tx
--- submission logic requires.
---
--- This is provided to the tx submission logic by the consensus layer.
---
-data TxSubmissionMempoolWriter txid tx idx m =
-     TxSubmissionMempoolWriter {
-
-       -- | Compute the transaction id from a transaction.
-       --
-       -- This is used in the protocol handler to verify a full transaction
-       -- matches a previously given transaction id.
-       --
-       txId          :: tx -> txid,
-
-       -- | Supply a batch of transactions to the mempool. They are either
-       -- accepted or rejected individually, but in the order supplied.
-       --
-       -- The 'txid's of all transactions that were added successfully are
-       -- returned.
-       mempoolAddTxs :: [tx] -> m [txid]
-    }
-
-data ProcessedTxCount = ProcessedTxCount {
-      -- | Just accepted this many transactions.
-      ptxcAccepted :: Int
-      -- | Just rejected this many transactions.
-    , ptxcRejected :: Int
-    }
-  deriving (Eq, Show)
-
-data TraceTxSubmissionInbound txid tx =
-    -- | Number of transactions just about to be inserted.
-    TraceTxSubmissionCollected Int
-    -- | Just processed transaction pass/fail breakdown.
-  | TraceTxSubmissionProcessed ProcessedTxCount
-    -- | Server received 'MsgDone'
-  | TraceTxInboundTerminated
-  | TraceTxInboundCanRequestMoreTxs Int
-  | TraceTxInboundCannotRequestMoreTxs Int
-  deriving (Eq, Show)
-
-data TxSubmissionProtocolError =
-       ProtocolErrorTxNotRequested
-     | ProtocolErrorTxIdsNotRequested
-  deriving Show
-
-instance Exception TxSubmissionProtocolError where
-  displayException ProtocolErrorTxNotRequested =
-      "The peer replied with a transaction we did not ask for."
-  displayException ProtocolErrorTxIdsNotRequested =
-      "The peer replied with more txids than we asked for."
-
 
 -- | Information maintained internally in the 'txSubmissionInbound' server
 -- implementation.
@@ -262,7 +212,7 @@ txSubmissionInbound tracer (NumTxIdsToAck maxUnacked) mpReader mpWriter _version
             --
             traceWith tracer (TraceTxInboundCanRequestMoreTxs (natToInt n))
             pure $ CollectPipelined
-              (Just (continueWithState (serverReqTxs (Succ n')) st))
+              (Just (pure $ continueWithState (serverReqTxs (Succ n')) st))
               (collectAndContinueWithState (handleReply n') st)
 
           else do
@@ -365,13 +315,18 @@ txSubmissionInbound tracer (NumTxIdsToAck maxUnacked) mpReader mpWriter _version
         traceWith tracer $
           TraceTxSubmissionCollected collected
 
+        !start <- getMonotonicTime
         txidsAccepted <- mempoolAddTxs txsReady
-
+        !end <- getMonotonicTime
+        let duration = diffTime end start
+        traceWith tracer $
+          TraceTxInboundAddedToMempool txidsAccepted duration
         let !accepted = length txidsAccepted
 
         traceWith tracer $ TraceTxSubmissionProcessed ProcessedTxCount {
             ptxcAccepted = accepted
           , ptxcRejected = collected - accepted
+          , ptxcScore    = 0 -- This implementatin does not track score
           }
 
         continueWithStateM (serverIdle n) st {

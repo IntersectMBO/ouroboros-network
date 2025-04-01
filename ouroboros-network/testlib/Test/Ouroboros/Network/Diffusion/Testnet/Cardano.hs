@@ -24,16 +24,19 @@ import Control.Monad.Class.MonadTime.SI (DiffTime, Time (Time), addTime,
 import Control.Monad.IOSim
 
 import Data.Bifoldable (bifoldMap)
-import Data.Bifunctor (first)
+import Data.Bifunctor (bimap, first)
+import Data.Char (ord)
 import Data.Dynamic (fromDynamic)
-import Data.Foldable (fold)
+import Data.Foldable (fold, foldr')
 import Data.IP qualified as IP
+import Data.List (intercalate, sort)
 import Data.List qualified as List
 import Data.List.Trace qualified as Trace
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (catMaybes, fromJust, fromMaybe, isJust, mapMaybe)
 import Data.Monoid (Sum (..))
+import Data.Ratio (Ratio)
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Time (secondsToDiffTime)
@@ -58,7 +61,7 @@ import Ouroboros.Cardano.Network.PublicRootPeers qualified as Cardano
 import Ouroboros.Cardano.Network.PublicRootPeers qualified as ExtraPeers
 
 import Ouroboros.Network.Block (BlockNo (..))
-import Ouroboros.Network.BlockFetch (PraosFetchMode (..),
+import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..),
            TraceFetchClientState (..))
 import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace (..))
 import Ouroboros.Network.ConnectionId
@@ -81,6 +84,14 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSharing (PeerSharingResult (..))
 import Ouroboros.Network.Server qualified as Server
+import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
+           (defaultTxDecisionPolicy, txInflightMultiplicity)
+import Ouroboros.Network.TxSubmission.Inbound.V2.State (inflightTxs)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TraceTxLogic (..),
+           TraceTxSubmissionInbound (..))
+import Ouroboros.Network.TxSubmission.Outbound (TxSubmissionProtocolError (..))
+
+import Simulation.Network.Snocket (BearerInfo (..), noAttenuation)
 
 import Test.Ouroboros.Network.ConnectionManager.Timeouts
 import Test.Ouroboros.Network.ConnectionManager.Utils
@@ -93,14 +104,15 @@ import Test.Ouroboros.Network.Diffusion.Node.Kernel
 import Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Simulation
 import Test.Ouroboros.Network.InboundGovernor.Utils
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..))
+import Test.Ouroboros.Network.TxSubmission.TxLogic (ArbTxDecisionPolicy (..))
+import Test.Ouroboros.Network.TxSubmission.Types (Tx (..))
 import Test.Ouroboros.Network.Utils hiding (SmallDelay, debugTracer)
-
-import Simulation.Network.Snocket (BearerInfo (..))
 
 import Test.QuickCheck
 import Test.QuickCheck.Monoids
 import Test.Tasty
 import Test.Tasty.QuickCheck (testProperty)
+
 
 tests :: TestTree
 tests =
@@ -156,6 +168,10 @@ tests =
                                  prop_only_bootstrap_peers_in_fallback_state_iosimpor
     , nightlyTest $ testProperty "no non trustable peers before caught up state"
                                  prop_no_non_trustable_peers_before_caught_up_state_iosimpor
+    , testGroup "Tx Submission"
+      [ nightlyTest $ testProperty "no protocol errors"
+                                   prop_no_txSubmission_error_iosimpor
+      ]
     , testGroup "Churn"
       [ nightlyTest $ testProperty "no timeouts"
                                    prop_churn_notimeouts_iosimpor
@@ -237,6 +253,14 @@ tests =
                      unit_peer_sharing
       , testProperty "don't peershare the unwilling"
                       prop_no_peershare_unwilling_iosim
+      ]
+    , testGroup "Tx Submission"
+      [ testProperty "no protocol errors"
+                     prop_no_txSubmission_error_iosim
+      , testProperty "all transactions"
+                     unit_txSubmission_allTransactions
+      , testProperty "inflight coverage"
+                     prop_check_inflight_ratio
       ]
     , testGroup "Churn"
       [ testProperty "no timeouts" prop_churn_notimeouts_iosim
@@ -345,7 +369,7 @@ unit_cm_valid_transitions =
             , abiSDUSize                 = LargeSDU
             }
       ds = DiffusionScript
-            (SimArgs 1 10)
+            (SimArgs 1 10 defaultTxDecisionPolicy)
             (Script ((Map.empty, ShortDelay) :| [(Map.empty, LongDelay)]))
             [ ( NodeArgs
                   (-2)
@@ -387,7 +411,8 @@ unit_cm_valid_transitions =
                     [DNSLookupDelay {getDNSLookupDelay = 0.072}]))
                   Nothing
                   False
-                  (Script (FetchModeBulkSync :| [FetchModeBulkSync]))
+                  (Script (PraosFetchMode FetchModeBulkSync :| [PraosFetchMode FetchModeBulkSync]))
+                  []
                   , [JoinNetwork 0.5]
                 )
               , ( NodeArgs
@@ -428,7 +453,8 @@ unit_cm_valid_transitions =
                   (Script (DNSLookupDelay {getDNSLookupDelay = 0.125} :| []))
                   (Just (BlockNo 2))
                   False
-                  (Script (FetchModeDeadline :| []))
+                  (Script (PraosFetchMode FetchModeDeadline :| []))
+                  []
                   , [JoinNetwork 1.484_848_484_848]
                 )
             ]
@@ -563,7 +589,7 @@ unit_connection_manager_trace_coverage =
 
     script@(DiffusionScript _ _ nodes) =
       DiffusionScript
-        (SimArgs 1 20)
+        (SimArgs 1 20 defaultTxDecisionPolicy)
         (singletonTimedScript Map.empty)
         [ -- a relay node
           (NodeArgs {
@@ -591,7 +617,9 @@ unit_connection_manager_trace_coverage =
              naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0.1} :| []),
              naChainSyncExitOnBlockNo = Nothing,
              naChainSyncEarlyExit = False,
-             naFetchModeScript = Script (FetchModeDeadline :| [])
+             naFetchModeScript = Script (PraosFetchMode FetchModeDeadline :| []),
+             naTxs = []
+
            }
           , [JoinNetwork 0]
           )
@@ -625,7 +653,8 @@ unit_connection_manager_trace_coverage =
              naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0.1} :| []),
              naChainSyncExitOnBlockNo = Nothing,
              naChainSyncEarlyExit = False,
-             naFetchModeScript = Script (FetchModeDeadline :| [])
+             naFetchModeScript = Script (PraosFetchMode FetchModeDeadline :| []),
+             naTxs = []
            }
           , [JoinNetwork 0]
           )
@@ -687,7 +716,7 @@ unit_connection_manager_transitions_coverage =
 
     script@(DiffusionScript _ _ nodes) =
       DiffusionScript
-        (SimArgs 1 20)
+        (SimArgs 1 20 defaultTxDecisionPolicy)
         (singletonTimedScript Map.empty)
         [ -- a relay node
           (NodeArgs {
@@ -715,7 +744,8 @@ unit_connection_manager_transitions_coverage =
              naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0.1} :| []),
              naChainSyncExitOnBlockNo = Nothing,
              naChainSyncEarlyExit = False,
-             naFetchModeScript = Script (FetchModeDeadline :| [])
+             naFetchModeScript = Script (PraosFetchMode FetchModeDeadline :| []),
+             naTxs = []
            }
           , [JoinNetwork 0]
           )
@@ -749,7 +779,8 @@ unit_connection_manager_transitions_coverage =
              naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0.1} :| []),
              naChainSyncExitOnBlockNo = Nothing,
              naChainSyncEarlyExit = False,
-             naFetchModeScript = Script (FetchModeDeadline :| [])
+             naFetchModeScript = Script (PraosFetchMode FetchModeDeadline :| []),
+             naTxs = []
            }
           , [JoinNetwork 0]
           )
@@ -785,6 +816,253 @@ prop_inbound_governor_trace_coverage defaultBearerInfo diffScript =
    -- TODO: Add checkCoverage here
    in tabulate "inbound governor trace" eventsSeenNames
       True
+
+-- | This test check that we don't have any tx submission protocol error
+--
+prop_no_txSubmission_error :: SimTrace Void
+                           -> Int
+                           -> Property
+prop_no_txSubmission_error ioSimTrace traceNumber =
+  let events = Trace.toList
+             . fmap (\(WithTime t (WithName _ b)) -> (t, b))
+             . withTimeNameTraceEvents
+                @DiffusionTestTrace
+                @NtNAddr
+             . Trace.take traceNumber
+             $ ioSimTrace
+
+   in counterexample (intercalate "\n" $ map show $ events)
+    $ all (\case
+             (_, DiffusionInboundGovernorTrace (IG.TrMuxErrored _ err)) ->
+               case fromException err of
+                 Just ProtocolErrorRequestBlocking               -> False
+                 Just ProtocolErrorRequestedNothing              -> False
+                 Just ProtocolErrorAckedTooManyTxids             -> False
+                 Just (ProtocolErrorRequestedTooManyTxids _ _ _) -> False
+                 Just ProtocolErrorRequestNonBlocking            -> False
+                 Just ProtocolErrorRequestedUnavailableTx        -> False
+                 _                                               -> True
+             _                                                   -> True
+          )
+          events
+
+prop_no_txSubmission_error_iosimpor
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_no_txSubmission_error_iosimpor
+  = testWithIOSimPOR prop_no_txSubmission_error short_trace
+
+prop_no_txSubmission_error_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_no_txSubmission_error_iosim
+  = testWithIOSim prop_no_txSubmission_error long_trace
+
+
+-- | This test checks that even in a scenario where nodes keep disconnecting,
+-- but eventually stay online. We manage to get all transactions.
+--
+unit_txSubmission_allTransactions :: ArbTxDecisionPolicy
+                                  -> TurbulentCommands
+                                  -> (NonEmptyList (Tx Int), NonEmptyList (Tx Int))
+                                  -> Property
+unit_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
+                                  (TurbulentCommands commands)
+                                  (NonEmpty txsA, NonEmpty txsB) =
+  let localRootConfig = LocalRootConfig
+                          DoNotAdvertisePeer
+                          InitiatorAndResponderDiffusionMode
+                          IsNotTrustable
+      diffScript =
+        DiffusionScript
+          (SimArgs 1 10 decisionPolicy)
+          (singletonTimedScript Map.empty)
+          [(NodeArgs
+              (-3)
+              InitiatorAndResponderDiffusionMode
+              (Just 224)
+              Map.empty
+              PraosMode
+              (Script (DontUseBootstrapPeers :| []))
+              (TestAddress (IPAddr (read "0.0.0.0") 0))
+              PeerSharingDisabled
+              [ (2,2,Map.fromList [ (RelayAccessAddress "0.0.0.1" 0, localRootConfig)
+                                  , (RelayAccessAddress "0.0.0.2" 0, localRootConfig)
+                                  ])
+              ]
+              (Script (LedgerPools [] :| []))
+              (let targets =
+                    PeerSelectionTargets {
+                      targetNumberOfRootPeers = 1,
+                      targetNumberOfKnownPeers = 1,
+                      targetNumberOfEstablishedPeers = 1,
+                      targetNumberOfActivePeers = 1,
+
+                      targetNumberOfKnownBigLedgerPeers = 0,
+                      targetNumberOfEstablishedBigLedgerPeers = 0,
+                      targetNumberOfActiveBigLedgerPeers = 0
+                    }
+               in (targets, targets))
+              (Script (DNSTimeout {getDNSTimeout = 10} :| []))
+              (Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []))
+              Nothing
+              False
+              (Script (PraosFetchMode FetchModeDeadline :| []))
+              uniqueTxsA
+          , [ JoinNetwork 0
+            ])
+          , (NodeArgs
+               (-1)
+               InitiatorAndResponderDiffusionMode
+               (Just 2)
+               Map.empty
+               PraosMode
+               (Script (DontUseBootstrapPeers :| []))
+               (TestAddress (IPAddr (read "0.0.0.1") 0))
+               PeerSharingDisabled
+               [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.0" 0, localRootConfig)])]
+               (Script (LedgerPools [] :| []))
+               (let targets =
+                      PeerSelectionTargets {
+                        targetNumberOfRootPeers = 1,
+                        targetNumberOfKnownPeers = 1,
+                        targetNumberOfEstablishedPeers = 1,
+                        targetNumberOfActivePeers = 1,
+
+                        targetNumberOfKnownBigLedgerPeers = 0,
+                        targetNumberOfEstablishedBigLedgerPeers = 0,
+                        targetNumberOfActiveBigLedgerPeers = 0
+                      }
+                in (targets, targets)
+               )
+               (Script (DNSTimeout {getDNSTimeout = 10} :| [ ]))
+               (Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []))
+               Nothing
+               False
+               (Script (PraosFetchMode FetchModeDeadline :| []))
+               uniqueTxsB
+         , commands)
+         ]
+   in checkAllTransactions (runSimTrace
+                              (diffusionSimulation noAttenuation
+                                                   diffScript
+                                                   iosimTracer)
+                           )
+                           500000 -- ^ Running for 500k might not be enough.
+  where
+    -- We need to make sure the transactions are unique, this simplifies
+    -- things.
+    uniqueTxsA = map (\(t, i) -> t { getTxId = List.foldl' (+) 0 (map ord "0.0.0.0") + i })
+                     (zip txsA [0 :: Int ..])
+    uniqueTxsB = map (\(t, i) -> t { getTxId = List.foldl' (+) 0 (map ord "0.0.0.1") + i })
+                     (zip txsB [100 :: Int ..])
+
+    -- This checks the property that after running the simulation for a while
+    -- both nodes manage to get all valid transactions.
+    --
+    checkAllTransactions :: SimTrace Void
+                         -> Int
+                         -> Property
+    checkAllTransactions ioSimTrace traceNumber =
+      let events = fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
+                 . withTimeNameTraceEvents
+                    @DiffusionTestTrace
+                    @NtNAddr
+                 . Trace.take traceNumber
+                 $ ioSimTrace
+
+          -- Build the accepted (sorted) txids map for each peer
+          --
+          sortedAcceptedTxidsMap :: Map NtNAddr [Int]
+          sortedAcceptedTxidsMap =
+              foldr (\l r ->
+                List.foldl' (\rr (WithName n (WithTime _ x)) ->
+                  case x of
+                    -- When we add txids to the mempool, we collect them
+                    -- into the map
+                    DiffusionTxSubmissionInbound (TraceTxInboundAddedToMempool txids _) ->
+                      Map.alter (maybe (Just txids) (Just . sort . (txids ++))) n rr
+                    -- When the node is shutdown we have to reset the accepted
+                    -- txids list
+                    DiffusionDiffusionSimulationTrace TrKillingNode ->
+                      Map.alter (Just . const []) n rr
+                    _ -> rr) r l
+              ) Map.empty
+            . Trace.toList
+            . splitWithNameTrace
+            $ events
+
+          -- Construct the list of valid (sorted) txs from peer A and peer B.
+          -- This is essentially our goal lists
+          --
+          (validSortedTxidsA, validSortedTxidsB) =
+            let f = sort
+                  . map (\Tx {getTxId} -> getTxId)
+                  . filter (\Tx {getTxValid} -> getTxValid)
+             in bimap f f (uniqueTxsA, uniqueTxsB)
+
+       in counterexample (intercalate "\n" $ map show $ Trace.toList $ events)
+        $ counterexample ("unique txs: " ++ show uniqueTxsA ++ " " ++ show uniqueTxsB)
+        $ counterexample ("accepted txids map: " ++ show sortedAcceptedTxidsMap)
+        $ counterexample ("valid transactions that should be accepted: "
+                          ++ show validSortedTxidsA ++ " " ++ show validSortedTxidsB)
+
+        -- Success criteria, after running for 500k events, we check the map
+        -- for the two nodes involved in the simulation and verify that indeed
+        -- each peer managed to learn about the other peer' transactions.
+        --
+        $ case ( Map.lookup (TestAddress (IPAddr (read "0.0.0.0") 0)) sortedAcceptedTxidsMap
+               , Map.lookup (TestAddress (IPAddr (read "0.0.0.1") 0)) sortedAcceptedTxidsMap
+               ) of
+           (Just acceptedTxidsA, Just acceptedTxidsB) ->
+                  acceptedTxidsA === validSortedTxidsB
+             .&&. acceptedTxidsB === validSortedTxidsA
+           _ -> counterexample "Didn't find any entry in the map!"
+             $ False
+
+-- | This test checks the ratio of the inflight txs against the allowed by the
+-- TxDecisionPolicy.
+--
+prop_check_inflight_ratio :: AbsBearerInfo
+                          -> DiffusionScript
+                          -> Property
+prop_check_inflight_ratio bi ds@(DiffusionScript simArgs _ _) =
+  let sim :: forall s . IOSim s Void
+      sim = diffusionSimulation (toBearerInfo bi)
+                                ds
+                                iosimTracer
+
+      events :: Events DiffusionTestTrace
+      events = Signal.eventsFromList
+             . Trace.toList
+             . fmap ( (\(WithTime t (WithName _ b)) -> (t, b))
+                    )
+             . withTimeNameTraceEvents
+                @DiffusionTestTrace
+                @NtNAddr
+             . Trace.take 500000
+             $ runSimTrace
+             $ sim
+
+      inflightTxsMap =
+          foldr'
+            (\(_, m) r -> Map.unionWith (max) m r
+            )
+            Map.empty
+        $ Signal.eventsToList
+        $ Signal.selectEvents
+           (\case
+               DiffusionTxLogic (TraceSharedTxState _ d) -> Just (inflightTxs d)
+               _                                         -> Nothing
+           )
+        $ events
+
+      txDecisionPolicy = saTxDecisionPolicy simArgs
+
+   in tabulate "Max observeed ratio of inflight multiplicity by the max stipulated by the policy"
+               (map (\m -> "has " ++ show m ++ " in flight - ratio: "
+                    ++ show @(Ratio Int) (fromIntegral m / fromIntegral (txInflightMultiplicity txDecisionPolicy))
+                    )
+                    (Map.elems inflightTxsMap))
+    $ True
 
 -- | This test coverage of InboundGovernor transitions.
 --
@@ -1111,7 +1389,7 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
   where
     script :: DiffusionScript
     script =
-      DiffusionScript (SimArgs 1 10)
+      DiffusionScript (SimArgs 1 10 defaultTxDecisionPolicy)
         (singletonTimedScript Map.empty)
         [ ( NodeArgs (-6) InitiatorAndResponderDiffusionMode (Just 180)
               (Map.fromList [(RelayAccessDomain "test2" 65_535, DoAdvertisePeer)])
@@ -1135,7 +1413,8 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
               (Script (DNSLookupDelay {getDNSLookupDelay = 0.067} :| [DNSLookupDelay {getDNSLookupDelay = 0.097},DNSLookupDelay {getDNSLookupDelay = 0.101},DNSLookupDelay {getDNSLookupDelay = 0.096},DNSLookupDelay {getDNSLookupDelay = 0.051}]))
               Nothing
               False
-              (Script (FetchModeDeadline :| []))
+              (Script (PraosFetchMode FetchModeDeadline :| []))
+              []
           , [JoinNetwork 1.742_857_142_857
             ,Reconfigure 6.333_333_333_33 [(1,1,Map.fromList [(RelayAccessDomain "test2" 65_535,LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)]),
                                         (1,1,Map.fromList [(RelayAccessAddress "0:6:0:3:0:6:0:5" 65_530,LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)
@@ -1168,7 +1447,8 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
                      ]))
              Nothing
              False
-             (Script (FetchModeDeadline :| []))
+             (Script (PraosFetchMode FetchModeDeadline :| []))
+             []
           , [JoinNetwork 0.183_783_783_783
             ,Reconfigure 4.533_333_333_333 [(1,1,Map.empty)]
             ]
@@ -1755,7 +2035,7 @@ unit_4191 = testWithIOSim prop_diffusion_dns_can_recover long_trace absInfo scri
         }
     script =
       DiffusionScript
-        (SimArgs 1 20)
+        (SimArgs 1 20 defaultTxDecisionPolicy)
         (singletonTimedScript $
            Map.fromList
              [ (("test2", DNS.A), Left [ (read "810b:4c8a:b3b5:741:8c0c:b437:64cf:1bd9", 300)
@@ -1820,11 +2100,12 @@ unit_4191 = testWithIOSim prop_diffusion_dns_can_recover long_trace absInfo scri
                                                                    ]))
             Nothing
             False
-            (Script (FetchModeDeadline :| []))
+            (Script (PraosFetchMode FetchModeDeadline :| []))
+            []
             , [ JoinNetwork 6.710_144_927_536
               , Kill 7.454_545_454_545
               , JoinNetwork 10.763_157_894_736
-              , Reconfigure 0.415_384_615_384 [(1,1,Map.empty)
+              , Reconfigure 0.415_384_615_384 [(1,1,Map.fromList [])
               , (1,1,Map.empty)]
               , Reconfigure 15.550_561_797_752 [(1,1,Map.empty)
               , (1,1,Map.fromList [(RelayAccessDomain "test2" 15,LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])]
@@ -1882,7 +2163,7 @@ prop_connect_failure (AbsIOError ioerr) =
 
     script =
       DiffusionScript
-        (SimArgs 1 20)
+        (SimArgs 1 20 defaultTxDecisionPolicy)
         (singletonTimedScript Map.empty)
         [ (NodeArgs {
             naSeed = 0,
@@ -1909,7 +2190,8 @@ prop_connect_failure (AbsIOError ioerr) =
             naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []),
             naChainSyncExitOnBlockNo = Nothing,
             naChainSyncEarlyExit = False,
-            naFetchModeScript = Script (FetchModeDeadline :| [])
+            naFetchModeScript = Script (PraosFetchMode FetchModeDeadline :| []),
+            naTxs = []
           }
           , [JoinNetwork 10]
           ),
@@ -1938,7 +2220,8 @@ prop_connect_failure (AbsIOError ioerr) =
             naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []),
             naChainSyncExitOnBlockNo = Nothing,
             naChainSyncEarlyExit = False,
-            naFetchModeScript = Script (FetchModeDeadline :| [])
+            naFetchModeScript = Script (PraosFetchMode FetchModeDeadline :| []),
+            naTxs = []
           }
           , [JoinNetwork 0]
           )
@@ -2008,7 +2291,7 @@ prop_accept_failure (AbsIOError ioerr) =
 
     script =
       DiffusionScript
-        (SimArgs 1 20)
+        (SimArgs 1 20 defaultTxDecisionPolicy)
         (singletonTimedScript Map.empty)
         [ (NodeArgs {
             naSeed = 0,
@@ -2035,7 +2318,8 @@ prop_accept_failure (AbsIOError ioerr) =
             naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []),
             naChainSyncExitOnBlockNo = Nothing,
             naChainSyncEarlyExit = False,
-            naFetchModeScript = Script (FetchModeDeadline :| [])
+            naFetchModeScript = Script (PraosFetchMode FetchModeDeadline :| []),
+            naTxs = []
           }
           , [JoinNetwork 10]
           ),
@@ -2064,7 +2348,8 @@ prop_accept_failure (AbsIOError ioerr) =
             naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []),
             naChainSyncExitOnBlockNo = Nothing,
             naChainSyncEarlyExit = False,
-            naFetchModeScript = Script (FetchModeDeadline :| [])
+            naFetchModeScript = Script (PraosFetchMode FetchModeDeadline :| []),
+            naTxs = []
           }
           , [JoinNetwork 0]
           )
@@ -3059,7 +3344,8 @@ async_demotion_network_script =
 
     simArgs = SimArgs {
         saSlot             = secondsToDiffTime 1,
-        saQuota            = 5  -- 5% chance of producing a block
+        saQuota            = 5,  -- 5% chance of producing a block
+        saTxDecisionPolicy = defaultTxDecisionPolicy
       }
     peerTargets = Governor.nullPeerSelectionTargets {
       targetNumberOfKnownPeers = 1,
@@ -3085,7 +3371,8 @@ async_demotion_network_script =
         naChainSyncEarlyExit
                            = False,
         naPeerSharing      = PeerSharingDisabled,
-        naFetchModeScript  = singletonScript FetchModeDeadline
+        naFetchModeScript  = singletonScript (PraosFetchMode FetchModeDeadline),
+        naTxs              = []
       }
 
 
@@ -3646,7 +3933,7 @@ prop_unit_4258 =
                      abiSDUSize = LargeSDU
                    }
       diffScript = DiffusionScript
-        (SimArgs 1 10)
+        (SimArgs 1 10 defaultTxDecisionPolicy)
         (singletonTimedScript Map.empty)
         [( NodeArgs (-3) InitiatorAndResponderDiffusionMode (Just 224)
              Map.empty
@@ -3674,7 +3961,8 @@ prop_unit_4258 =
              (Script (DNSLookupDelay {getDNSLookupDelay = 0.065} :| []))
              Nothing
              False
-             (Script (FetchModeDeadline :| []))
+             (Script (PraosFetchMode FetchModeDeadline :| []))
+             []
          , [ JoinNetwork 4.166_666_666_666,
              Kill 0.3,
              JoinNetwork 1.517_857_142_857,
@@ -3716,7 +4004,8 @@ prop_unit_4258 =
                      ]))
              Nothing
              False
-             (Script (FetchModeDeadline :| []))
+             (Script (PraosFetchMode FetchModeDeadline :| []))
+             []
          , [ JoinNetwork 3.384_615_384_615,
              Reconfigure 3.583_333_333_333 [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])],
              Kill 15.555_555_555_55,
@@ -3749,7 +4038,7 @@ prop_unit_reconnect :: Property
 prop_unit_reconnect =
   let diffScript =
         DiffusionScript
-          (SimArgs 1 10)
+          (SimArgs 1 10 defaultTxDecisionPolicy)
           (singletonTimedScript Map.empty)
           [(NodeArgs
               (-3)
@@ -3779,7 +4068,8 @@ prop_unit_reconnect =
               (Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []))
               Nothing
               False
-              (Script (FetchModeDeadline :| []))
+              (Script (PraosFetchMode FetchModeDeadline :| []))
+              []
           , [ JoinNetwork 0
             ])
           , (NodeArgs
@@ -3807,7 +4097,8 @@ prop_unit_reconnect =
              (Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []))
              Nothing
              False
-             (Script (FetchModeDeadline :| []))
+             (Script (PraosFetchMode FetchModeDeadline :| []))
+             []
          , [ JoinNetwork 10
            ])
          ]
@@ -4222,12 +4513,13 @@ unit_peer_sharing =
         naDNSLookupDelayScript = singletonScript (DNSLookupDelay 0.01),
         naChainSyncEarlyExit = False,
         naChainSyncExitOnBlockNo = Nothing,
-        naFetchModeScript = singletonScript FetchModeDeadline,
-        naConsensusMode
+        naFetchModeScript = singletonScript (PraosFetchMode FetchModeDeadline),
+        naConsensusMode,
+        naTxs = []
       }
 
     script = DiffusionScript
-               (mainnetSimArgs 3)
+               (mainnetSimArgs 3 defaultTxDecisionPolicy)
                (singletonScript (mempty, ShortDelay))
                [ ( (defaultNodeArgs GenesisMode) { naAddr = ip_0,
                                      naLocalRootPeers = [(1, 1, Map.fromList [(ra_1, LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])],
@@ -4710,7 +5002,7 @@ unit_local_root_diffusion_mode diffusionMode =
 
     script =
       DiffusionScript
-        (SimArgs 1 20)
+        (SimArgs 1 20 defaultTxDecisionPolicy)
         (singletonTimedScript Map.empty)
         [ -- a relay node
           (NodeArgs {
@@ -4738,7 +5030,8 @@ unit_local_root_diffusion_mode diffusionMode =
              naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0.1} :| []),
              naChainSyncExitOnBlockNo = Nothing,
              naChainSyncEarlyExit = False,
-             naFetchModeScript = Script (FetchModeDeadline :| [])
+             naFetchModeScript = Script (PraosFetchMode FetchModeDeadline :| []),
+             naTxs = []
            }
           , [JoinNetwork 0]
           )
@@ -4772,7 +5065,8 @@ unit_local_root_diffusion_mode diffusionMode =
              naDNSLookupDelayScript = Script (DNSLookupDelay {getDNSLookupDelay = 0.1} :| []),
              naChainSyncExitOnBlockNo = Nothing,
              naChainSyncEarlyExit = False,
-             naFetchModeScript = Script (FetchModeDeadline :| [])
+             naFetchModeScript = Script (PraosFetchMode FetchModeDeadline :| []),
+             naTxs = []
            }
           , [JoinNetwork 0]
           )
@@ -5004,7 +5298,7 @@ takeUntilEndofTurn n as =
 labelDiffusionScript :: DiffusionScript -> Property -> Property
 labelDiffusionScript (DiffusionScript args _ nodes) =
       label ("sim args: "
-              ++ show args)
+              ++ renderSimArgs args)
     . label ("Nº nodes: "
               ++ show (length nodes))
     . label ("Nº nodes in InitiatorOnlyDiffusionMode: "
