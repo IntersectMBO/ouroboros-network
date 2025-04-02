@@ -6,12 +6,10 @@
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE KindSignatures        #-}
 {-# LANGUAGE LambdaCase            #-}
-{-# LANGUAGE MultiWayIf            #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeOperators         #-}
-{-# LANGUAGE ViewPatterns          #-}
 
 -- 'runResponder' is using a redundant constraint.
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
@@ -46,7 +44,7 @@ import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (SomeAsyncException (..))
-import Control.Monad (foldM, forM_, forever, when)
+import Control.Monad (foldM, forM_, forever)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
@@ -221,7 +219,7 @@ with
           check . Map.member peer . connections =<< readTVar stateVar
           modifyTVar countersVar $ Map.insert peer (ResponderCounters 0 0)
 
-        (startWithID -> Just mid) -> atomically do
+        _ | Just mid <- startWithID trace -> atomically do
           connections <- connections <$> readTVar stateVar
           case Map.lookup peer connections of
             Nothing -> modifyTVar countersVar $ Map.delete peer
@@ -229,17 +227,25 @@ with
               ResponderCounters {numTraceHotResponders,
                                  numTraceWarmResponders}
                 <- (Map.! peer) <$> readTVar countersVar
-              case getProtocolTemp mid connState of
-                Hot -> do
-                  when (numTraceHotResponders == 0) $
-                    InfoChannel.writeMessage infoChannel $ RemotePromotedToHot peer
-                  adjustHotResponders succ peer
-                _rest -> do
-                  when (numTraceWarmResponders + numTraceHotResponders == 0) $
-                    InfoChannel.writeMessage infoChannel $ AwakeRemote peer
-                  adjustWarmResponders succ peer
+              let miniProtocolTemp = getProtocolTemp mid connState
+              case ( miniProtocolTemp
+                   , numTraceWarmResponders
+                   , numTraceHotResponders) of
+                (Hot, 0, 0) -> do
+                      InfoChannel.writeMessage infoChannel $ AwakeRemote peer
+                      InfoChannel.writeMessage infoChannel $ RemotePromotedToHot peer
+                (Hot, _, 0) ->
+                      InfoChannel.writeMessage infoChannel $ RemotePromotedToHot peer
+                (Hot, _, _) -> pure ()
+                (_notHot, 0, 0) -> do
+                  InfoChannel.writeMessage infoChannel $ AwakeRemote peer
+                _otherwise -> pure ()
 
-        (terminateWithID -> Just mid) -> atomically do
+              case miniProtocolTemp of
+                Hot   -> adjustHotResponders succ peer
+                _warm -> adjustWarmResponders succ peer
+
+        _ | Just mid <- terminateWithID trace -> atomically do
           connections <- connections <$> readTVar stateVar
           case Map.lookup peer connections of
             Nothing -> modifyTVar countersVar $ Map.delete peer
@@ -253,16 +259,25 @@ with
               let miniProtocolTemp = getProtocolTemp mid connState
               case trace of
                 Mux.TraceCleanExit {} -> do
+                  case ( getProtocolTemp mid connState
+                       , numTraceWarmResponders
+                       , numTraceHotResponders) of
+                    (Hot, 0, 1) -> do
+                      InfoChannel.writeMessage infoChannel $ RemoteDemotedToWarm peer
+                      InfoChannel.writeMessage infoChannel $ WaitIdleRemote peer
+                    (Hot, _, 1) ->
+                          InfoChannel.writeMessage infoChannel $ RemoteDemotedToWarm peer
+                    (Hot, _, _) -> pure ()
+                    (_notHot, 1, 0) ->
+                      InfoChannel.writeMessage infoChannel $ WaitIdleRemote peer
+                    _otherwise -> pure ()
+
                   case miniProtocolTemp of
                     Hot   -> adjustHotResponders pred peer
                     _rest -> adjustWarmResponders pred peer
-                  if | numTraceHotResponders + numTraceWarmResponders == 1 ->
-                         InfoChannel.writeMessage infoChannel $ WaitIdleRemote peer
-                     | numTraceHotResponders == 1
-                     , Hot <- miniProtocolTemp ->
-                         InfoChannel.writeMessage infoChannel $ RemoteDemotedToWarm peer
-                     | otherwise -> return ()
-                _otherwise -> return ()
+
+                _otherwise -> return () -- muxStopped _should_ be on the queue
+
               InfoChannel.writeMessage infoChannel $
                 MiniProtocolTerminated $ Terminated {
                   tConnId = peer,
@@ -271,7 +286,7 @@ with
                   tDataFlow = connectionDataFlow csVersionData,
                   tResult = csCompletionMap Map.! mid }
 
-        (muxStopped -> True) -> atomically do
+        _ | True <- muxStopped trace -> atomically do
           State { connections } <- readTVar stateVar
           case Map.lookup peer connections of
             Just ConnectionState {csMux} ->
