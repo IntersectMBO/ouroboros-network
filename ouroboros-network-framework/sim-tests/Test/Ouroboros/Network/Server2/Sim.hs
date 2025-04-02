@@ -751,7 +751,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
         forkJob jobpool
           $ Job
               ( withInitiatorOnlyConnectionManager
-                    name simTimeouts nullTracer nullTracer stdGen
+                    name simTimeouts nullTracer cmTracer stdGen
                     snocket makeBearer connStateIdSupply
                     (Just localAddr) (mkNextRequests connVar)
                     timeLimitsHandshake acceptedConnLimit
@@ -1127,6 +1127,8 @@ prop_connection_manager_no_invalid_traces (Fixed rnd) serverAcc (ArbDataFlow dat
                      , ppScript (MultiNodeScript events attenuationMap)
                      , "========== ConnectionManager Events =========="
                      , Trace.ppTrace show show connectionManagerEvents
+                     , "====== Say Events ======"
+                     , intercalate "\n" $ selectTraceEventsSay' trace
                      ])
     . bifoldMap
        ( \ case
@@ -1900,30 +1902,34 @@ prop_connection_manager_pruning (Fixed rnd) serverAcc
              -> Maybe (Either (WithName (Name SimAddr) (AbstractTransitionTrace SimAddr))
                               (WithName (Name SimAddr) (CM.Trace SimAddr
                                                           (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData))))
-          fn _ (EventLog dyn) = Left  <$> fromDynamic dyn
-                            <|> Right <$> fromDynamic dyn
+          fn _ (EventLog dyn) = fromDynamic dyn
           fn _ _              = Nothing
 
   in  tabulate "ConnectionEvents" (map showConnectionEvents events)
-    -- . counterexample (ppScript (MultiNodeScript events attenuationMap))
+    . counterexample (ppScript (MultiNodeScript events attenuationMap))
+    . counterexample (concat
+        [ "\n\n====== Say Events ======\n"
+        , intercalate "\n" $ selectTraceEventsSay' trace
+        , "\n"
+        ])
     . mkPropertyPruning
     . bifoldMap
        ( \ case
            MainReturn {} -> mempty
-           v             -> mempty { tpProperty = counterexample (show v) False }
+           v             -> mempty { tpProperty = counterexample ("\ncounterexample: " <> show v) False }
        )
        ( \ case
            Left trs ->
              TestProperty {
                tpProperty =
                    (counterexample $!
-                     (  "\nconnection:\n"
+                     (  "\ncounterexample\nconnection:\n"
                      ++ intercalate "\n" (map ppTransition trs))
                      )
                  . foldMap ( \ tr
                             -> All
                              . (counterexample $!
-                                 (  "\nUnexpected transition: "
+                                 (  "\ncounterexample\nUnexpected transition: "
                                  ++ show tr)
                                  )
                              . verifyAbstractTransition
@@ -1939,8 +1945,11 @@ prop_connection_manager_pruning (Fixed rnd) serverAcc
                tpActivityTypes       = [classifyActivityType       trs],
                tpTransitions         = trs
             }
-           Right b ->
-              mempty { tpNumberOfPrunings = classifyPruning b }
+           Right b
+             | CM.TrUnexpectedlyFalseAssertion assertionLoc <- b ->
+                 mempty { tpProperty = counterexample ("\ncounterexample: " <> show assertionLoc) False }
+             | otherwise ->
+                 mempty { tpNumberOfPrunings = classifyPruning b }
        )
     . fmap (first (map ttTransition))
     . groupConnsEither id abstractStateIsFinalTransition
@@ -2328,7 +2337,7 @@ multiNodeSim stdGen serverAcc dataFlow defaultBearerInfo
                    acceptedConnLimit events attenuationMap = do
   multiNodeSimTracer stdGen serverAcc dataFlow defaultBearerInfo acceptedConnLimit
                      events attenuationMap dynamicTracer dynamicTracer dynamicTracer
-                     (Tracer traceM) dynamicTracer debugTracerG
+                     (Tracer traceM) dynamicTracer dynamicTracer --debugTracerG
 
 
 -- | Connection terminated while negotiating it.
