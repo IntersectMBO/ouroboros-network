@@ -362,28 +362,27 @@ makeConnectionHandler muxTracer forkPolicy
                           hVersionData    = agreedOptions
                         }
                   atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
-                  withBuffer \buffer -> do
-                    bearer <- mkMuxBearer sduTimeout socket buffer
-                    let muxTracer' =
-                          case inResponderMode of
-                            InResponderMode (inboundGovChannelTracer, connectionDataFlow)
-                              | Duplex <- connectionDataFlow agreedOptions ->
-                                  -- Following this call, the muxer is racing with the CM to write to the
-                                  -- information channel queue.
-                                  -- The IG tracer pauses the muxer main thread when it reaches mature state
-                                  -- until the CM informs the former of new peer connection to ensure
-                                  -- proper sequencing of events.
-                                  muxTracer <> inboundGovChannelTracer
-                            _notResponder ->
-                                  -- If this is InitiatorOnly, or a server where unidirectional flow was negotiated
-                                  -- the IG will never be informed of this remote for obvious reasons. We should not pass
-                                  -- the IG tracer to mux, and must not in the latter case as the muxer will
-                                  -- deadlock itself before it launches any miniprotocols from the command queue.
-                                  -- It will be stuck when reaches mature state, forever waiting for the incoming
-                                  -- peer handle.
-                                  muxTracer
-                    Mx.run (Mx.WithBearer connectionId `contramap` muxTracer')
-                             mux bearer
+                  bearer <- mkMuxBearer sduTimeout socket
+                  let muxTracer' =
+                        case inResponderMode of
+                          InResponderMode (inboundGovChannelTracer, connectionDataFlow)
+                            | Duplex <- connectionDataFlow agreedOptions ->
+                                -- Following this call, the muxer is racing with the CM to write to the
+                                -- information channel queue.
+                                -- The IG tracer pauses the muxer main thread when it reaches mature state
+                                -- until the CM informs the former of new peer connection to ensure
+                                -- proper sequencing of events.
+                                muxTracer <> inboundGovChannelTracer
+                          _notResponder ->
+                                -- If this is InitiatorOnly, or a server where unidirectional flow was negotiated
+                                -- the IG will never be informed of this remote for obvious reasons. We should not pass
+                                -- the IG tracer to mux, and must not in the latter case as the muxer will
+                                -- deadlock itself before it launches any miniprotocols from the command queue.
+                                -- It will be stuck when reaches mature state, forever waiting for the incoming
+                                -- peer handle.
+                                muxTracer
+                  Mx.run (Mx.WithBearer connectionId `contramap` muxTracer')
+                           mux bearer
 
               Right (HandshakeQueryResult vMap) -> do
                 atomically $ writePromise (Right HandshakeConnectionQuery)
@@ -453,7 +452,7 @@ makeConnectionHandler muxTracer forkPolicy
                           hVersionData    = agreedOptions
                         }
                   atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
-                  bearer <- mkMuxBearer sduTimeout socket buffer
+                  bearer <- mkMuxBearer sduTimeout socket
                   Mx.run (Mx.WithBearer connectionId `contramap` (muxTracer <> inboundGovChannelTracer))
                          mux bearer
               Right (HandshakeQueryResult vMap) -> do
