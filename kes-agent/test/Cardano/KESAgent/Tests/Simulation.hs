@@ -26,38 +26,30 @@ module Cardano.KESAgent.Tests.Simulation (
 ) where
 
 import Cardano.KESAgent.KES.Bundle
-import Cardano.KESAgent.KES.Classes
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.Evolution
 import Cardano.KESAgent.KES.OCert
 import Cardano.KESAgent.Processes.Agent
 import Cardano.KESAgent.Processes.ControlClient
 import Cardano.KESAgent.Processes.ServiceClient
-import Cardano.KESAgent.Protocols.AgentInfo
 import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Protocols.StandardCrypto
-import Cardano.KESAgent.Protocols.Types
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Serialization.DirectCodec
 import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting
 
-import Cardano.Binary (FromCBOR)
 import Cardano.Crypto.DSIGN.Class
 import Cardano.Crypto.DSIGN.Class qualified as DSIGN
 import Cardano.Crypto.DSIGN.Ed25519
 import Cardano.Crypto.DirectSerialise
-import Cardano.Crypto.Hash.Blake2b
 import Cardano.Crypto.KES.Class
 import Cardano.Crypto.KES.Single
 import Cardano.Crypto.KES.Sum
 import Cardano.Crypto.Libsodium
-import Cardano.Crypto.Libsodium.MLockedBytes.Internal (MLockedSizedBytes (..))
 import Cardano.Crypto.Libsodium.MLockedSeed
-import Cardano.Crypto.Libsodium.Memory.Internal (MLockedForeignPtr (..))
 import Cardano.Crypto.PinnedSizedBytes (
   PinnedSizedBytes,
-  psbFromByteString,
   psbToByteString,
  )
 import Cardano.Crypto.Seed
@@ -75,88 +67,53 @@ import Control.Concurrent.Class.MonadMVar (
   newMVar,
   putMVar,
   readMVar,
-  swapMVar,
   takeMVar,
   tryReadMVar,
-  tryTakeMVar,
-  withMVar,
  )
-import Control.Monad (forM, forM_, forever, void, when)
+import Control.Monad (when)
 import Control.Monad.Class.MonadAsync
-import Control.Monad.Class.MonadST (MonadST, withLiftST)
+import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow (
   MonadCatch,
   MonadThrow,
   SomeException,
   bracket,
   catch,
-  catchJust,
   finally,
   throwIO,
  )
 import Control.Monad.Class.MonadTime
-import Control.Monad.Class.MonadTimer (MonadDelay, MonadTimer, threadDelay)
+import Control.Monad.Class.MonadTimer (MonadTimer, threadDelay)
 import Control.Monad.IOSim
-import Control.Monad.Primitive (PrimState)
-import Control.Monad.ST (ST, stToIO)
-import Control.Monad.ST.Unsafe (unsafeIOToST)
 import Control.Tracer (Tracer (..), nullTracer, traceWith)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
-import Data.ByteString.Lazy qualified as LBS
-import Data.Coerce
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
-import Data.Primitive
 import Data.Proxy
 import Data.SerDoc.Class
-import Data.SerDoc.TH
 import Data.Text qualified as Text
-import Data.Text.Encoding (decodeUtf8, encodeUtf8)
-import Data.Time (
-  DiffTime,
-  NominalDiffTime,
-  diffTimeToPicoseconds,
-  picosecondsToDiffTime,
- )
+import Data.Text.Encoding (decodeUtf8)
 import Data.Time.Clock.POSIX (
-  getPOSIXTime,
   posixSecondsToUTCTime,
   utcTimeToPOSIXSeconds,
  )
 import Data.Typeable
 import Data.Word
-import Foreign (free, mallocBytes)
-import Foreign.C (CSize)
-import Foreign.ForeignPtr (
-  finalizeForeignPtr,
-  mallocForeignPtrBytes,
-  touchForeignPtr,
- )
-import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
-import Foreign.Ptr (Ptr, castPtr)
 import GHC.Stack (HasCallStack)
-import GHC.TypeLits (KnownNat, Nat, natVal, type (*))
+import GHC.TypeLits (KnownNat)
 import GHC.Types (Type)
-import Network.Mux.Channel qualified as Mux
 import Network.Socket
 import Simulation.Network.Snocket as SimSnocket
 import System.Directory (removeFile)
-import System.IO
 import System.IO.Error (ioeGetErrorType, isDoesNotExistErrorType)
 import System.IO.Unsafe
 import System.IOManager
-import System.Random
 import Test.Crypto.Instances
-import Test.QuickCheck (Arbitrary (..), vectorOf)
 import Test.Tasty
 import Test.Tasty.QuickCheck
 import Text.Printf (printf)
-
-#if !defined(mingw32_HOST_OS)
-import System.Socket.Family.Unix
-#endif
 
 tests ::
   Lock IO ->
@@ -335,7 +292,7 @@ data NodeHooks m c
 data NodeScript m c
   = NodeScript
   { runNodeScript :: NodeHooks m c -> m ()
-  , keyReceived :: NodeHooks m c -> Bundle m c -> m RecvResult
+  , keyReceived :: NodeHooks m c -> TaggedBundle m c -> m RecvResult
   }
 
 newtype PrettyBS
@@ -747,17 +704,21 @@ testOneKeyThroughChain
 
     let nodeScript =
           NodeScript
-            { keyReceived = \hooks (Bundle resultSKPVar resultOC) -> do
-                (resultSKBS, resultPeriod) <- withCRefValue resultSKPVar $ \resultSKP -> do
-                  skp <- rawSerialiseSignKeyKES (skWithoutPeriodKES resultSKP)
-                  return (skp, periodKES resultSKP)
-                let expectedPretty = PrettyBS expectedSKBS
-                    resultPretty = PrettyBS resultSKBS
-                nodeReportProperty
-                  hooks
-                  ((expectedPretty, expectedPeriod) === (resultPretty, resultPeriod))
-                nodeDone hooks
-                return RecvOK
+            { keyReceived = \hooks tbundle -> case taggedBundle tbundle of
+                Just (Bundle resultSKPVar resultOC) -> do
+                  (resultSKBS, resultPeriod) <- withCRefValue resultSKPVar $ \resultSKP -> do
+                    skp <- rawSerialiseSignKeyKES (skWithoutPeriodKES resultSKP)
+                    return (skp, periodKES resultSKP)
+                  let expectedPretty = PrettyBS expectedSKBS
+                      resultPretty = PrettyBS resultSKBS
+                  nodeReportProperty
+                    hooks
+                    ((expectedPretty, expectedPeriod) === (resultPretty, resultPeriod))
+                  nodeDone hooks
+                  return RecvOK
+                Nothing -> do
+                  nodeDone hooks
+                  return RecvOK
             , runNodeScript = const $ return ()
             }
 

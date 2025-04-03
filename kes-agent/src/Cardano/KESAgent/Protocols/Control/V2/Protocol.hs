@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PolyKinds #-}
@@ -13,12 +14,13 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Cardano.KESAgent.Protocols.Control.V0.Protocol
+module Cardano.KESAgent.Protocols.Control.V2.Protocol
 where
 
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
 import Cardano.KESAgent.Protocols.RecvResult
+import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Protocols.VersionedProtocol
 
 import Cardano.Crypto.DSIGN.Class
@@ -28,29 +30,20 @@ import Data.Kind (Type)
 import Data.SerDoc.Info (Description (..))
 import Data.Text (Text)
 import Data.Time (UTCTime)
-import Data.Typeable
 import Data.Word
 import Network.TypedProtocol.Core
 
-data AgentInfo c
+data AgentInfo
   = AgentInfo
-  { agentInfoCurrentBundle :: !(Maybe (BundleInfo c))
-  , agentInfoStagedKey :: !(Maybe (KeyInfo c))
+  { agentInfoCurrentBundle :: !(Maybe TaggedBundleInfo)
+  , agentInfoStagedKey :: !(Maybe KeyInfo)
   , agentInfoCurrentTime :: !UTCTime
   , agentInfoCurrentKESPeriod :: !KESPeriod
   , agentInfoBootstrapConnections :: ![BootstrapInfo]
   }
+  deriving (Show)
 
-deriving instance
-  ( DSIGNAlgorithm (DSIGN c)
-  , KESAlgorithm (KES c)
-  ) =>
-  Show (AgentInfo c)
-deriving instance
-  ( DSIGNAlgorithm (DSIGN c)
-  , KESAlgorithm (KES c)
-  ) =>
-  Eq (AgentInfo c)
+deriving instance Eq (VerKeyKES (KES StandardCrypto)) => Eq AgentInfo
 
 data BootstrapInfo
   = BootstrapInfo
@@ -65,39 +58,32 @@ data ConnectionStatus
   | ConnectionDown
   deriving (Show, Read, Eq, Ord, Enum, Bounded)
 
-data BundleInfo c
-  = BundleInfo
-  { bundleInfoEvolution :: !Word32
-  , bundleInfoStartKESPeriod :: !KESPeriod
-  , bundleInfoOCertN :: !Word64
-  , bundleInfoVK :: !(VerKeyKES (KES c))
-  , bundleInfoSigma :: !(SignedDSIGN (DSIGN c) (OCertSignable c))
-  }
+data TaggedBundleInfo =
+  TaggedBundleInfo
+    { taggedBundleInfo :: Maybe BundleInfo
+    , taggedBundleInfoTimestamp :: Maybe UTCTime
+    }
+    deriving (Show, Eq)
 
-deriving instance
-  ( DSIGNAlgorithm (DSIGN c)
-  , KESAlgorithm (KES c)
-  ) =>
-  Show (BundleInfo c)
-deriving instance
-  ( DSIGNAlgorithm (DSIGN c)
-  , KESAlgorithm (KES c)
-  ) =>
-  Eq (BundleInfo c)
 
-newtype KeyInfo c
+data BundleInfo =
+  BundleInfo
+    { bundleInfoEvolution :: !Word32
+    , bundleInfoStartKESPeriod :: !KESPeriod
+    , bundleInfoOCertN :: !Word64
+    , bundleInfoVK :: !(VerKeyKES (KES StandardCrypto))
+    , bundleInfoSigma :: !(SignedDSIGN (DSIGN StandardCrypto) (OCertSignable StandardCrypto))
+    }
+    deriving (Show, Eq)
+
+newtype KeyInfo
   = KeyInfo
-  { keyInfoVK :: VerKeyKES (KES c)
+  { keyInfoVK :: VerKeyKES (KES StandardCrypto)
   }
+  deriving (Show)
 
-deriving instance
-  KESAlgorithm (KES c) =>
-  Show (KeyInfo c)
-deriving instance
-  ( DSIGNAlgorithm (DSIGN c)
-  , KESAlgorithm (KES c)
-  ) =>
-  Eq (KeyInfo c)
+instance Eq (VerKeyKES (KES StandardCrypto)) => Eq KeyInfo where
+  KeyInfo a == KeyInfo b = a == b
 
 -- | The protocol for pushing KES keys.
 --
@@ -112,22 +98,25 @@ deriving instance
 -- through. This allows the control client to report success to the user, but it
 -- also helps make things more predictable in testing, because it means that
 -- sending keys is now synchronous.
-data ControlProtocol (m :: Type -> Type) (k :: Type) where
+data ControlProtocol (m :: Type -> Type) where
   -- | Default state after connecting, but before the protocol version has been
   -- negotiated.
-  InitialState :: ControlProtocol m k
+  InitialState :: ControlProtocol m
   -- | System is idling, waiting for the server to push the next key.
-  IdleState :: ControlProtocol m k
-  -- | Client has requested a new KES key to be generated in the staging area.
-  WaitForPublicKeyState :: ControlProtocol m k
+  IdleState :: ControlProtocol m
+  -- | Client has made a request that will result in a public key being
+  -- returned.
+  WaitForPublicKeyState :: ControlProtocol m
+  -- | Client has requested an installed key to be dropped.
+  WaitForDropConfirmationState :: ControlProtocol m
   -- | Client has requested agent information
-  WaitForInfoState :: ControlProtocol m k
+  WaitForInfoState :: ControlProtocol m
   -- | An OpCert has been pushed, client must now confirm that it has been
   -- received, and that it matches the staged KES key.
-  WaitForConfirmationState :: ControlProtocol m k
+  WaitForKeyConfirmationState :: ControlProtocol m
   -- | The server has closed the connection, thus signalling the end of the
   -- session.
-  EndState :: ControlProtocol m k
+  EndState :: ControlProtocol m
 
 {-# ANN VersionMessage (Description ["Announce the protocol version."]) #-}
 {-# ANN
@@ -178,6 +167,21 @@ data ControlProtocol (m :: Type -> Type) (k :: Type) where
   )
   #-}
 {-# ANN
+  DropKeyMessage
+  ( Description
+      [ "Ask the KES agent to drop the currently active key."
+      , "Corresponds to the @drop-key@ command."
+      ]
+  )
+  #-}
+{-# ANN
+  DropKeyResultMessage
+  ( Description
+      [ "Returned by the KES agent in response to a @drop-key@ request."
+      ]
+  )
+  #-}
+{-# ANN
   RequestInfoMessage
   ( Description
       [ "Ask the KES agent to report its current state."
@@ -217,59 +221,65 @@ data ControlProtocol (m :: Type -> Type) (k :: Type) where
   )
   #-}
 
-instance Protocol (ControlProtocol m c) where
-  data Message (ControlProtocol m c) st st' where
-    VersionMessage :: Message (ControlProtocol m c) InitialState IdleState
-    GenStagedKeyMessage :: Message (ControlProtocol m c) IdleState WaitForPublicKeyState
-    QueryStagedKeyMessage :: Message (ControlProtocol m c) IdleState WaitForPublicKeyState
-    DropStagedKeyMessage :: Message (ControlProtocol m c) IdleState WaitForPublicKeyState
+instance Protocol (ControlProtocol m) where
+  data Message (ControlProtocol m) st st' where
+    VersionMessage :: Message (ControlProtocol m) InitialState IdleState
+    GenStagedKeyMessage :: Message (ControlProtocol m) IdleState WaitForPublicKeyState
+    QueryStagedKeyMessage :: Message (ControlProtocol m) IdleState WaitForPublicKeyState
+    DropStagedKeyMessage :: Message (ControlProtocol m) IdleState WaitForPublicKeyState
     PublicKeyMessage ::
-      Maybe (VerKeyKES (KES c)) ->
-      Message (ControlProtocol m c) WaitForPublicKeyState IdleState
+      Maybe (VerKeyKES (KES StandardCrypto)) ->
+      Message (ControlProtocol m) WaitForPublicKeyState IdleState
     InstallKeyMessage ::
-      OCert c ->
-      Message (ControlProtocol m c) IdleState WaitForConfirmationState
+      OCert StandardCrypto ->
+      Message (ControlProtocol m) IdleState WaitForKeyConfirmationState
     InstallResultMessage ::
       RecvResult ->
-      Message (ControlProtocol m c) WaitForConfirmationState IdleState
-    RequestInfoMessage :: Message (ControlProtocol m c) IdleState WaitForInfoState
+      Message (ControlProtocol m) WaitForKeyConfirmationState IdleState
+    DropKeyMessage ::
+      Message (ControlProtocol m) IdleState WaitForDropConfirmationState
+    DropKeyResultMessage ::
+      RecvResult ->
+      Message (ControlProtocol m) WaitForDropConfirmationState IdleState
+    RequestInfoMessage :: Message (ControlProtocol m) IdleState WaitForInfoState
     InfoMessage ::
-      AgentInfo c ->
-      Message (ControlProtocol m c) WaitForInfoState IdleState
-    AbortMessage :: Message (ControlProtocol m c) InitialState EndState
-    EndMessage :: Message (ControlProtocol m c) IdleState EndState
-    ProtocolErrorMessage :: Message (ControlProtocol m c) a EndState
+      AgentInfo ->
+      Message (ControlProtocol m) WaitForInfoState IdleState
+    AbortMessage :: Message (ControlProtocol m) InitialState EndState
+    EndMessage :: Message (ControlProtocol m) IdleState EndState
+    ProtocolErrorMessage :: Message (ControlProtocol m) a EndState
 
   type StateAgency InitialState = ServerAgency
   type StateAgency IdleState = ServerAgency
 
-  type StateAgency WaitForConfirmationState = ClientAgency
+  type StateAgency WaitForKeyConfirmationState = ClientAgency
+  type StateAgency WaitForDropConfirmationState = ClientAgency
   type StateAgency WaitForPublicKeyState = ClientAgency
   type StateAgency WaitForInfoState = ClientAgency
+
   type StateAgency EndState = NobodyAgency
 
   type StateToken = SControlProtocol
 
-data SControlProtocol (st :: ControlProtocol m c) where
+data SControlProtocol (st :: ControlProtocol m) where
   SInitialState :: SControlProtocol InitialState
   SIdleState :: SControlProtocol IdleState
-  SWaitForConfirmationState :: SControlProtocol WaitForConfirmationState
+  SWaitForKeyConfirmationState :: SControlProtocol WaitForKeyConfirmationState
+  SWaitForDropConfirmationState :: SControlProtocol WaitForDropConfirmationState
   SWaitForPublicKeyState :: SControlProtocol WaitForPublicKeyState
   SWaitForInfoState :: SControlProtocol WaitForInfoState
   SEndState :: SControlProtocol EndState
 
 instance StateTokenI InitialState where stateToken = SInitialState
 instance StateTokenI IdleState where stateToken = SIdleState
-instance StateTokenI WaitForConfirmationState where stateToken = SWaitForConfirmationState
+instance StateTokenI WaitForKeyConfirmationState where stateToken = SWaitForKeyConfirmationState
 instance StateTokenI WaitForPublicKeyState where stateToken = SWaitForPublicKeyState
+instance StateTokenI WaitForDropConfirmationState where stateToken = SWaitForDropConfirmationState
 instance StateTokenI WaitForInfoState where stateToken = SWaitForInfoState
 instance StateTokenI EndState where stateToken = SEndState
 
-instance NamedCrypto c => VersionedProtocol (ControlProtocol m c) where
-  versionIdentifier = cpVersionIdentifier
+instance VersionedProtocol (ControlProtocol m) where
+  versionIdentifier _ = cpVersionIdentifier
 
-cpVersionIdentifier ::
-  forall m c. NamedCrypto c => Proxy (ControlProtocol m c) -> VersionIdentifier
-cpVersionIdentifier _ =
-  mkVersionIdentifier $
-    "Control:" <> unCryptoName (cryptoName (Proxy @c)) <> ":0.5"
+cpVersionIdentifier :: VersionIdentifier
+cpVersionIdentifier = mkVersionIdentifier "Control:2.0"

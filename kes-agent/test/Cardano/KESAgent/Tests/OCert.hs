@@ -6,14 +6,9 @@ where
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
 import Cardano.KESAgent.Protocols.StandardCrypto
-import Cardano.KESAgent.Protocols.Types
 
 import Cardano.Crypto.DSIGN.Class
 import Cardano.Crypto.KES.Class
-import Cardano.Crypto.Libsodium
-import Cardano.Crypto.Libsodium.MLockedBytes.Internal (MLockedSizedBytes (..))
-import Cardano.Crypto.Libsodium.MLockedSeed
-import Cardano.Crypto.Libsodium.Memory.Internal (MLockedForeignPtr (..))
 import Cardano.Crypto.PinnedSizedBytes
 import Cardano.Crypto.Seed
 import Test.Crypto.Instances

@@ -28,6 +28,7 @@ common project-config
          -threaded
          -rtsopts=all
          -haddock
+         -Wunused-imports
 
 common base-dependencies
     build-depends: base >=4.14.0.0 && <4.20.0.0
@@ -37,12 +38,18 @@ library
     import: base-dependencies
     exposed-modules:
                    Cardano.KESAgent.Priority
-                   Cardano.KESAgent.KES.Classes
                    Cardano.KESAgent.KES.Evolution
                    Cardano.KESAgent.KES.Crypto
                    Cardano.KESAgent.KES.OCert
                    Cardano.KESAgent.KES.Bundle
                    Cardano.KESAgent.Processes.Agent
+                   Cardano.KESAgent.Processes.Agent.Type
+                   Cardano.KESAgent.Processes.Agent.Context
+                   Cardano.KESAgent.Processes.Agent.ControlActions
+                   Cardano.KESAgent.Processes.Agent.CommonActions
+                   Cardano.KESAgent.Processes.Agent.ControlDrivers
+                   Cardano.KESAgent.Processes.Agent.Monad
+                   Cardano.KESAgent.Processes.Agent.ServiceDrivers
                    Cardano.KESAgent.Processes.ControlClient
                    Cardano.KESAgent.Processes.ServiceClient
                    Cardano.KESAgent.Serialization.CBOR
@@ -62,6 +69,9 @@ library
                    Cardano.KESAgent.Protocols.Service.V1.Driver
                    Cardano.KESAgent.Protocols.Service.V1.Peers
                    Cardano.KESAgent.Protocols.Service.V1.Protocol
+                   Cardano.KESAgent.Protocols.Service.V2.Driver
+                   Cardano.KESAgent.Protocols.Service.V2.Peers
+                   Cardano.KESAgent.Protocols.Service.V2.Protocol
 
                    Cardano.KESAgent.Protocols.Control.V0.Driver
                    Cardano.KESAgent.Protocols.Control.V0.Peers
@@ -69,10 +79,14 @@ library
                    Cardano.KESAgent.Protocols.Control.V1.Driver
                    Cardano.KESAgent.Protocols.Control.V1.Peers
                    Cardano.KESAgent.Protocols.Control.V1.Protocol
+                   Cardano.KESAgent.Protocols.Control.V2.Driver
+                   Cardano.KESAgent.Protocols.Control.V2.Peers
+                   Cardano.KESAgent.Protocols.Control.V2.Protocol
 
                    Cardano.KESAgent.Protocols.VersionedProtocol
                    Cardano.KESAgent.Protocols.RecvResult
                    Cardano.KESAgent.Protocols.StandardCrypto
+                   Cardano.KESAgent.Util.HexBS
                    Cardano.KESAgent.Util.Pretty
                    Cardano.KESAgent.Util.RefCounting
                    Cardano.KESAgent.Util.RetrySocket

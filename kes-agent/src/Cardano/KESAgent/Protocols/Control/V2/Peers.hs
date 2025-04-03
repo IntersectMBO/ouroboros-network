@@ -5,13 +5,14 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Cardano.KESAgent.Protocols.Control.V0.Peers
+module Cardano.KESAgent.Protocols.Control.V2.Peers
 where
 
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
-import Cardano.KESAgent.Protocols.Control.V0.Protocol
+import Cardano.KESAgent.Protocols.Control.V2.Protocol
 import Cardano.KESAgent.Protocols.RecvResult
+import Cardano.KESAgent.Protocols.StandardCrypto
 
 import Cardano.Crypto.KES.Class
 
@@ -23,22 +24,22 @@ import Network.TypedProtocol.Peer.Client as Client
 import Network.TypedProtocol.Peer.Server as Server
 
 controlReceiver ::
-  forall (c :: Type) (m :: Type -> Type).
-  KESAlgorithm (KES c) =>
+  forall (m :: Type -> Type).
   Monad m =>
-  m (Maybe (VerKeyKES (KES c))) ->
-  m (Maybe (VerKeyKES (KES c))) ->
-  m (Maybe (VerKeyKES (KES c))) ->
-  (OCert c -> m RecvResult) ->
-  m (AgentInfo c) ->
-  Client (ControlProtocol m c) NonPipelined InitialState m ()
-controlReceiver genKey dropKey queryKey installKey getAgentInfo =
+  m (Maybe (VerKeyKES (KES StandardCrypto))) ->
+  m (Maybe (VerKeyKES (KES StandardCrypto))) ->
+  m (Maybe (VerKeyKES (KES StandardCrypto))) ->
+  (OCert StandardCrypto -> m RecvResult) ->
+  m RecvResult ->
+  m AgentInfo ->
+  Client (ControlProtocol m) NonPipelined InitialState m ()
+controlReceiver genKey dropStagedKey queryKey installKey dropKey getAgentInfo =
   Client.Await $ \case
     VersionMessage -> go
     AbortMessage -> Client.Done ()
     ProtocolErrorMessage -> Client.Done ()
   where
-    go :: Client (ControlProtocol m c) NonPipelined IdleState m ()
+    go :: Client (ControlProtocol m) NonPipelined IdleState m ()
     go = Client.Await $ \case
       InstallKeyMessage oc ->
         Client.Effect $ do
@@ -54,8 +55,12 @@ controlReceiver genKey dropKey queryKey installKey getAgentInfo =
           return $ Client.Yield (PublicKeyMessage vkeyMay) go
       DropStagedKeyMessage ->
         Client.Effect $ do
-          vkeyMay <- dropKey
+          vkeyMay <- dropStagedKey
           return $ Client.Yield (PublicKeyMessage vkeyMay) go
+      DropKeyMessage ->
+        Client.Effect $ do
+          result <- dropKey
+          return $ Client.Yield (DropKeyResultMessage result) go
       RequestInfoMessage ->
         Client.Effect $ do
           info <- getAgentInfo
@@ -65,14 +70,13 @@ controlReceiver genKey dropKey queryKey installKey getAgentInfo =
       ProtocolErrorMessage ->
         Client.Done ()
 
-type ControlPeer c m a = Server (ControlProtocol m c) NonPipelined InitialState m a
+type ControlServer m a = Server (ControlProtocol m) NonPipelined InitialState m a
 
 controlGenKey ::
-  forall (c :: Type) (m :: (Type -> Type)).
-  KESAlgorithm (KES c) =>
+  forall (m :: (Type -> Type)).
   MonadSTM m =>
   MonadThrow m =>
-  ControlPeer c m (Maybe (VerKeyKES (KES c)))
+  ControlServer m (Maybe (VerKeyKES (KES StandardCrypto)))
 controlGenKey = do
   Server.Yield VersionMessage $
     Server.Yield GenStagedKeyMessage $
@@ -81,11 +85,10 @@ controlGenKey = do
           Server.Done vkeyMay
 
 controlQueryKey ::
-  forall (c :: Type) (m :: (Type -> Type)).
-  KESAlgorithm (KES c) =>
+  forall (m :: (Type -> Type)).
   MonadSTM m =>
   MonadThrow m =>
-  ControlPeer c m (Maybe (VerKeyKES (KES c)))
+  ControlServer m (Maybe (VerKeyKES (KES StandardCrypto)))
 controlQueryKey = do
   Server.Yield VersionMessage $
     Server.Yield QueryStagedKeyMessage $
@@ -93,13 +96,12 @@ controlQueryKey = do
         Server.Yield EndMessage $
           Server.Done vkeyMay
 
-controlDropKey ::
-  forall (c :: Type) (m :: (Type -> Type)).
-  KESAlgorithm (KES c) =>
+controlDropStagedKey ::
+  forall (m :: (Type -> Type)).
   MonadSTM m =>
   MonadThrow m =>
-  ControlPeer c m (Maybe (VerKeyKES (KES c)))
-controlDropKey = do
+  ControlServer m (Maybe (VerKeyKES (KES StandardCrypto)))
+controlDropStagedKey = do
   Server.Yield VersionMessage $
     Server.Yield DropStagedKeyMessage $
       Server.Await $ \(PublicKeyMessage vkeyMay) ->
@@ -107,12 +109,11 @@ controlDropKey = do
           Server.Done vkeyMay
 
 controlInstallKey ::
-  forall (c :: Type) (m :: (Type -> Type)).
-  KESAlgorithm (KES c) =>
+  forall (m :: (Type -> Type)).
   MonadSTM m =>
   MonadThrow m =>
-  OCert c ->
-  ControlPeer c m RecvResult
+  OCert StandardCrypto ->
+  ControlServer m RecvResult
 controlInstallKey oc = do
   Server.Yield VersionMessage $
     Server.Yield (InstallKeyMessage oc) $
@@ -120,12 +121,24 @@ controlInstallKey oc = do
         Server.Yield EndMessage $
           Server.Done result
 
-controlGetInfo ::
-  forall (c :: Type) (m :: (Type -> Type)).
-  KESAlgorithm (KES c) =>
+controlDropKey ::
+  forall (m :: (Type -> Type)).
   MonadSTM m =>
   MonadThrow m =>
-  ControlPeer c m (AgentInfo c)
+  ControlServer m RecvResult
+controlDropKey = do
+  Server.Yield VersionMessage $
+    Server.Yield DropKeyMessage $
+      Server.Await $ \(DropKeyResultMessage result) ->
+        Server.Yield EndMessage $
+          Server.Done result
+
+
+controlGetInfo ::
+  forall (m :: (Type -> Type)).
+  MonadSTM m =>
+  MonadThrow m =>
+  ControlServer m AgentInfo
 controlGetInfo = do
   Server.Yield VersionMessage $
     Server.Yield RequestInfoMessage $

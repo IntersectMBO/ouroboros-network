@@ -29,36 +29,20 @@ import Cardano.KESAgent.Protocols.Types
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Serialization.DirectCodec
 import Cardano.KESAgent.Serialization.RawUtil
-import Cardano.KESAgent.Util.Pretty
-import Cardano.KESAgent.Util.RefCounting
 
-import Cardano.Binary
 import Cardano.Crypto.DSIGN.Class
 import Cardano.Crypto.DirectSerialise
 import Cardano.Crypto.KES.Class
-import Cardano.Crypto.Libsodium.Memory (
-  allocaBytes,
-  copyMem,
-  packByteStringCStringLen,
-  unpackByteStringCStringLen,
- )
 
 import Ouroboros.Network.RawBearer
 
 import Control.Concurrent.Class.MonadMVar
-import Control.Monad (replicateM, void, when)
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadSTM
-import Control.Monad.Class.MonadThrow (MonadThrow, bracket)
-import Control.Monad.Extra (whenJust)
+import Control.Monad.Class.MonadThrow (MonadThrow)
 import Control.Monad.Trans (lift)
 import Control.Tracer (Tracer, traceWith)
-import Data.Binary (decode, encode)
-import Data.Bits ((.&.), (.|.))
-import Data.ByteString (ByteString)
-import Data.ByteString qualified as BS
-import Data.ByteString.Lazy qualified as LBS
-import Data.Coerce
+import Data.Bits ((.&.))
 import Data.Functor.Contravariant ((>$<))
 import Data.Maybe (isJust)
 import Data.Proxy
@@ -66,26 +50,18 @@ import Data.SerDoc.Class (
   Codec (..),
   HasInfo (..),
   Serializable (..),
-  ViaEnum (..),
   decodeEnum,
   encodeEnum,
   enumInfo,
  )
-import Data.SerDoc.Info (Description (..), aliasField)
-import Data.SerDoc.Info qualified
+import Data.SerDoc.Info (aliasField)
 import Data.SerDoc.TH (deriveSerDoc)
 import Data.Text qualified as Text
-import Data.Text.Encoding (decodeUtf8, encodeUtf8)
-import Data.Time (UTCTime)
+import Data.Text.Encoding (decodeUtf8)
 import Data.Typeable
 import Data.Word
-import Foreign (Ptr, castPtr, plusPtr)
-import Foreign.C.Types (CChar, CSize)
-import Foreign.Marshal.Alloc (free, mallocBytes)
-import Foreign.Marshal.Utils (copyBytes)
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Driver
-import Text.Printf
 
 flagHasBundle, flagHasStagedKey :: Word8
 flagHasBundle = 0x01
@@ -245,6 +221,8 @@ controlDriver s tracer =
               return (SomeMessage QueryStagedKeyMessage, ())
             DropStagedKeyCmd ->
               return (SomeMessage DropStagedKeyMessage, ())
+            DropKeyCmd ->
+              return (SomeMessage ProtocolErrorMessage, ())
             InstallKeyCmd -> do
               oc <- receiveItem s
               return (SomeMessage (InstallKeyMessage oc), ())

@@ -16,34 +16,9 @@
 module Cardano.KESAgent.Protocols.VersionHandshake.Protocol
 where
 
-import Cardano.KESAgent.KES.Bundle
-import Cardano.KESAgent.KES.Crypto
-import Cardano.KESAgent.KES.OCert
-import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Protocols.VersionedProtocol
-import Cardano.KESAgent.Util.RefCounting
 
-import Cardano.Binary
-import Cardano.Crypto.DSIGN.Class
-import Cardano.Crypto.DSIGN.Ed25519
-import Cardano.Crypto.Hash.Blake2b
-import Cardano.Crypto.KES.Class
-import Cardano.Crypto.KES.Mock
-import Cardano.Crypto.KES.Single
-import Cardano.Crypto.KES.Sum
-import Cardano.Crypto.Util (SignableRepresentation (..))
-
-import Data.ByteString (ByteString)
-import Data.ByteString qualified as BS
-import Data.Proxy (Proxy (..))
-import Data.SerDoc.Class (ViaEnum (..))
-import Data.SerDoc.Info (Description (..))
-import Data.Typeable
-import Data.Word
-import GHC.Generics (Generic)
 import Network.TypedProtocol.Core
-import NoThunks.Class (NoThunks (..))
-import Quiet
 
 data VersionHandshakeProtocol where
   -- | Default state after connecting.

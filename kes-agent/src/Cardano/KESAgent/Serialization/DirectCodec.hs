@@ -30,7 +30,6 @@ import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Serialization.RawUtil
 import Cardano.KESAgent.Util.RefCounting
 
-import Cardano.Binary
 import Cardano.Crypto.DSIGN.Class
 import Cardano.Crypto.DirectSerialise
 import Cardano.Crypto.Hash.Class
@@ -49,23 +48,18 @@ import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Reader
-import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import Data.Coerce
 import Data.Int
 import Data.Kind
 import Data.SerDoc.Class
 import Data.SerDoc.Info
-import Data.SerDoc.TH
 import Data.Text (Text)
-import qualified Data.Text as Text
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Time
 import Data.Typeable
 import Data.Word
 import Foreign.Ptr (castPtr)
-import GHC.TypeLits (KnownNat, Nat, natVal, type (*), type (+))
-import Language.Haskell.TH.Syntax (mkName)
+import GHC.TypeLits (KnownNat, type (*), type (+))
 
 data DirectCodec (m :: Type -> Type)
 
@@ -633,6 +627,17 @@ instance
       , ("vk1", info codec (Proxy @(VerKeyKES kes)))
       ]
 
+-- ** 'Timestamp'
+
+instance HasInfo (DirectCodec m) Timestamp where
+  info codec _ = info codec (Proxy @Word64)
+
+instance (MonadThrow m, MonadST m) => Serializable (DirectCodec m) Timestamp where
+  encode s (Timestamp p) =
+    encode s (fromIntegral p :: Word64)
+  decode s =
+    Timestamp . (fromIntegral @Word64) <$> decode s
+
 -- ** 'KESPeriod'
 
 instance HasInfo (DirectCodec m) KESPeriod where
@@ -727,6 +732,47 @@ instance
     ((((OCert <$> decode p) <*> decode p) <*> decode p) <*> decode p)
 
 -- ** 'Bundle'
+
+instance
+  ( HasInfo (DirectCodec m) (Bundle m c)
+  , Typeable c
+  , Crypto c
+  , KESAlgorithm (KES c)
+  ) =>
+  HasInfo (DirectCodec m) (TaggedBundle m c)
+  where
+  info codec _ =
+    compoundField
+      ("TaggedBundle " ++ algorithmNameKES (Proxy @(KES c)) ++ " " ++ algorithmNameDSIGN (Proxy @(DSIGN c)))
+      [ ("taggedBundle", info codec (Proxy @(Bundle m c)))
+      , ("taggedTimestamp", info codec (Proxy @Timestamp))
+      ]
+
+instance
+  ( MonadThrow m
+  , MonadST m
+  , MonadSTM m
+  , MonadMVar m
+  , Serializable (DirectCodec m) (Bundle m c)
+  , Typeable c
+  , Crypto c
+  , KESAlgorithm (KES c)
+  ) =>
+  Serializable (DirectCodec m) (TaggedBundle m c)
+  where
+  encode codec = encodeWith $ \s tbundle -> do
+    runReaderT (do
+        encode codec $ taggedBundle tbundle
+        encode codec $ taggedBundleTimestamp tbundle
+      ) s
+
+  decode codec = do
+    b <- decode codec
+    t <- decode codec
+    return TaggedBundle
+      { taggedBundle = b
+      , taggedBundleTimestamp = t
+      }
 
 instance
   ( HasInfo (DirectCodec m) (SignKeyKES (KES c))

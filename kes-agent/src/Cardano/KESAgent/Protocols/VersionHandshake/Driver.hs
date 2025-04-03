@@ -21,7 +21,6 @@
 module Cardano.KESAgent.Protocols.VersionHandshake.Driver
 where
 
-import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Protocols.VersionHandshake.Protocol
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Serialization.DirectCodec
@@ -30,9 +29,8 @@ import Cardano.KESAgent.Util.Pretty
 
 import Control.Exception
 import Control.Monad.Class.MonadST
-import Control.Monad.Class.MonadThrow (MonadThrow, bracket)
+import Control.Monad.Class.MonadThrow (MonadThrow)
 import Control.Tracer (Tracer, traceWith)
-import Data.Coerce
 import Data.Kind (Type)
 import Data.Proxy
 import Network.TypedProtocol.Core
@@ -40,18 +38,7 @@ import Network.TypedProtocol.Driver
 
 import Ouroboros.Network.RawBearer
 
-import Data.SerDoc.Class (
-  Codec (..),
-  HasInfo (..),
-  Serializable (..),
-  ViaEnum (..),
-  decodeEnum,
-  encodeEnum,
-  enumInfo,
- )
-import Data.SerDoc.Info (Description (..), aliasField)
-import Data.SerDoc.Info qualified
-import Data.SerDoc.TH (deriveSerDoc)
+import Data.SerDoc.Class (HasInfo (..))
 
 -- | Logging messages that the Driver may send
 data VersionHandshakeDriverTrace

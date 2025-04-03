@@ -6,7 +6,6 @@ module Cardano.KESAgent.Serialization.TextEnvelope
 where
 
 import Cardano.Binary (FromCBOR (..), ToCBOR (..), decodeFull', serialize')
-import qualified Cardano.Binary as Binary
 import qualified Formatting
 
 import Control.Monad (when, (<=<))

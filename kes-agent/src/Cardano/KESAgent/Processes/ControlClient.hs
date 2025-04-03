@@ -26,12 +26,14 @@ import qualified Cardano.KESAgent.Protocols.Control.V0.Protocol as CP0
 import qualified Cardano.KESAgent.Protocols.Control.V1.Driver as CP1
 import qualified Cardano.KESAgent.Protocols.Control.V1.Peers as CP1
 import qualified Cardano.KESAgent.Protocols.Control.V1.Protocol as CP1
+import qualified Cardano.KESAgent.Protocols.Control.V2.Driver as CP2
+import qualified Cardano.KESAgent.Protocols.Control.V2.Peers as CP2
+import qualified Cardano.KESAgent.Protocols.Control.V2.Protocol as CP2
 import Cardano.KESAgent.Protocols.RecvResult (RecvResult (..))
 import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Protocols.Types
 import Cardano.KESAgent.Protocols.VersionHandshake.Driver
 import Cardano.KESAgent.Protocols.VersionHandshake.Peers
-import Cardano.KESAgent.Protocols.VersionHandshake.Protocol
 import Cardano.KESAgent.Protocols.VersionedProtocol (
   NamedCrypto,
   VersionIdentifier,
@@ -39,10 +41,8 @@ import Cardano.KESAgent.Protocols.VersionedProtocol (
  )
 import Cardano.KESAgent.Serialization.DirectCodec
 import Cardano.KESAgent.Util.Pretty (Pretty (..))
-import Cardano.KESAgent.Util.RefCounting (CRef, withCRef)
 import Cardano.KESAgent.Util.RetrySocket (retrySocketWith)
 
-import Cardano.Crypto.DSIGN.Class
 import Cardano.Crypto.DirectSerialise
 import Cardano.Crypto.KES.Class
 
@@ -50,29 +50,18 @@ import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket (Snocket (..))
 
 import Control.Concurrent.Class.MonadMVar (MonadMVar)
-import Control.Monad (forever, void)
 import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadSTM (MonadSTM)
 import Control.Monad.Class.MonadThrow (MonadCatch, MonadThrow, SomeException, bracket)
 import Control.Monad.Class.MonadTimer (MonadDelay)
-import Control.Monad.Extra (whenJust)
 import Control.Tracer (Tracer, traceWith)
 import Data.Coerce
 import Data.Functor.Contravariant ((>$<))
 import Data.Kind
-import Data.Proxy (Proxy (..))
 import Data.SerDoc.Class (
-  Codec (..),
   HasInfo (..),
   Serializable (..),
-  ViaEnum (..),
-  decodeEnum,
-  encodeEnum,
-  enumInfo,
  )
-import Data.SerDoc.Info (Description (..), aliasField, annField)
-import qualified Data.SerDoc.Info
-import Data.SerDoc.TH (deriveSerDoc)
 import Data.Typeable
 import Network.TypedProtocol.Driver (runPeerWithDriver)
 import Network.TypedProtocol.Peer.Server (IsPipelined (..), Server)
@@ -184,6 +173,9 @@ class IsControlHandler proto (m :: Type -> Type) a where
   type InitialState proto :: proto
   toHandler :: Server proto NonPipelined (InitialState proto) m a -> ControlHandler m a
 
+constHandler :: m a -> ControlHandler m a
+constHandler a _ _ = a
+
 type MonadControlHandler m =
   ( MonadThrow m
   , MonadST m
@@ -218,6 +210,14 @@ instance MonadControlHandler m => IsControlHandler (CP1.ControlProtocol m) m a w
         (CP1.controlDriver bearer $ ControlClientDriverTrace >$< tracer)
         peer
 
+instance MonadControlHandler m => IsControlHandler (CP2.ControlProtocol m) m a where
+  type InitialState (CP2.ControlProtocol m) = CP2.InitialState
+  toHandler peer bearer tracer = do
+    fst
+      <$> runPeerWithDriver
+        (CP2.controlDriver bearer $ ControlClientDriverTrace >$< tracer)
+        peer
+
 toHandlerEntry ::
   forall proto m a.
   IsControlHandler proto m a =>
@@ -230,10 +230,11 @@ data ControlClient m c
   = ControlClient
   { controlGenKey :: ControlHandler m (Maybe (VerKeyKES (KES c)))
   , controlQueryKey :: ControlHandler m (Maybe (VerKeyKES (KES c)))
-  , controlDropKey :: ControlHandler m (Maybe (VerKeyKES (KES c)))
+  , controlDropStagedKey :: ControlHandler m (Maybe (VerKeyKES (KES c)))
   , controlInstallKey ::
       OCert c ->
       ControlHandler m RecvResult
+  , controlDropKey :: ControlHandler m RecvResult
   , controlGetInfo :: ControlHandler m (AgentInfo c)
   }
 
@@ -242,6 +243,20 @@ class ControlClientDrivers c where
     forall m.
     ControlClientContext m c =>
     Proxy c -> [(VersionIdentifier, ControlClient m c)]
+
+mkControlClientCP2 ::
+  ControlClientContext m StandardCrypto =>
+  (VersionIdentifier, ControlClient m StandardCrypto)
+mkControlClientCP2 =
+  ( versionIdentifier (Proxy @(CP2.ControlProtocol _))
+  , ControlClient
+      (toHandler CP2.controlGenKey)
+      (toHandler CP2.controlQueryKey)
+      (toHandler CP2.controlDropStagedKey)
+      (toHandler <$> CP2.controlInstallKey)
+      (toHandler CP2.controlDropKey)
+      (fmap (fmap toAgentInfo) <$> toHandler CP2.controlGetInfo)
+  )
 
 mkControlClientCP1 ::
   ControlClientContext m StandardCrypto =>
@@ -253,6 +268,7 @@ mkControlClientCP1 =
       (toHandler CP1.controlQueryKey)
       (toHandler CP1.controlDropKey)
       (toHandler <$> CP1.controlInstallKey)
+      (constHandler $ pure RecvErrorUnsupportedOperation)
       (fmap (fmap toAgentInfo) <$> toHandler CP1.controlGetInfo)
   )
 
@@ -269,12 +285,13 @@ mkControlClientCP0 =
       (toHandler (CP0.controlQueryKey @c))
       (toHandler (CP0.controlDropKey @c))
       (toHandler <$> CP0.controlInstallKey)
+      (constHandler $ pure RecvErrorUnsupportedOperation)
       (fmap (fmap toAgentInfo) <$> toHandler (CP0.controlGetInfo @c))
   )
 
 instance ControlClientDrivers StandardCrypto where
   controlClientDrivers _ =
-    [mkControlClientCP1, mkControlClientCP0]
+    [mkControlClientCP2, mkControlClientCP1, mkControlClientCP0]
 
 instance ControlClientDrivers SingleCrypto where
   controlClientDrivers _ =
@@ -297,14 +314,20 @@ instance ToAgentInfo c (CP0.AgentInfo c) where
       , agentInfoBootstrapConnections = convertBootstrapInfoCP0 <$> CP0.agentInfoBootstrapConnections info
       }
 
-convertBundleInfoCP0 :: CP0.BundleInfo c -> BundleInfo c
+convertBundleInfoCP0 :: CP0.BundleInfo c -> TaggedBundleInfo c
 convertBundleInfoCP0 info =
-  BundleInfo
-    { bundleInfoEvolution = CP0.bundleInfoEvolution info
-    , bundleInfoStartKESPeriod = CP0.bundleInfoStartKESPeriod info
-    , bundleInfoOCertN = CP0.bundleInfoOCertN info
-    , bundleInfoVK = CP0.bundleInfoVK info
-    , bundleInfoSigma = CP0.bundleInfoSigma info
+  TaggedBundleInfo
+    { taggedBundleInfo =
+        Just
+          BundleInfo
+            { bundleInfoEvolution = CP0.bundleInfoEvolution info
+            , bundleInfoStartKESPeriod = CP0.bundleInfoStartKESPeriod info
+            , bundleInfoOCertN = CP0.bundleInfoOCertN info
+            , bundleInfoVK = CP0.bundleInfoVK info
+            , bundleInfoSigma = CP0.bundleInfoSigma info
+            }
+    , taggedBundleInfoTimestamp =
+        Nothing
     }
 
 convertKeyInfoCP0 :: CP0.KeyInfo c -> KeyInfo c
@@ -332,14 +355,20 @@ instance ToAgentInfo StandardCrypto CP1.AgentInfo where
       , agentInfoBootstrapConnections = convertBootstrapInfoCP1 <$> CP1.agentInfoBootstrapConnections info
       }
 
-convertBundleInfoCP1 :: CP1.BundleInfo -> BundleInfo StandardCrypto
+convertBundleInfoCP1 :: CP1.BundleInfo -> TaggedBundleInfo StandardCrypto
 convertBundleInfoCP1 info =
-  BundleInfo
-    { bundleInfoEvolution = CP1.bundleInfoEvolution info
-    , bundleInfoStartKESPeriod = CP1.bundleInfoStartKESPeriod info
-    , bundleInfoOCertN = CP1.bundleInfoOCertN info
-    , bundleInfoVK = CP1.bundleInfoVK info
-    , bundleInfoSigma = CP1.bundleInfoSigma info
+  TaggedBundleInfo
+    { taggedBundleInfo =
+        Just
+          BundleInfo
+            { bundleInfoEvolution = CP1.bundleInfoEvolution info
+            , bundleInfoStartKESPeriod = CP1.bundleInfoStartKESPeriod info
+            , bundleInfoOCertN = CP1.bundleInfoOCertN info
+            , bundleInfoVK = CP1.bundleInfoVK info
+            , bundleInfoSigma = CP1.bundleInfoSigma info
+            }
+    , taggedBundleInfoTimestamp =
+        Nothing
     }
 
 convertKeyInfoCP1 :: CP1.KeyInfo -> KeyInfo StandardCrypto
@@ -356,3 +385,45 @@ convertConnectionStatusCP1 :: CP1.ConnectionStatus -> ConnectionStatus
 convertConnectionStatusCP1 CP1.ConnectionUp = ConnectionUp
 convertConnectionStatusCP1 CP1.ConnectionConnecting = ConnectionConnecting
 convertConnectionStatusCP1 CP1.ConnectionDown = ConnectionDown
+
+instance ToAgentInfo StandardCrypto CP2.AgentInfo where
+  toAgentInfo info =
+    AgentInfo
+      { agentInfoCurrentBundle = convertTaggedBundleInfoCP2 <$> CP2.agentInfoCurrentBundle info
+      , agentInfoStagedKey = convertKeyInfoCP2 <$> CP2.agentInfoStagedKey info
+      , agentInfoCurrentTime = CP2.agentInfoCurrentTime info
+      , agentInfoCurrentKESPeriod = CP2.agentInfoCurrentKESPeriod info
+      , agentInfoBootstrapConnections = convertBootstrapInfoCP2 <$> CP2.agentInfoBootstrapConnections info
+      }
+
+convertTaggedBundleInfoCP2 :: CP2.TaggedBundleInfo -> TaggedBundleInfo StandardCrypto
+convertTaggedBundleInfoCP2 tinfo =
+  TaggedBundleInfo
+    { taggedBundleInfo = convertBundleInfoCP2 <$> CP2.taggedBundleInfo tinfo
+    , taggedBundleInfoTimestamp = CP2.taggedBundleInfoTimestamp tinfo
+    }
+
+convertBundleInfoCP2 :: CP2.BundleInfo -> BundleInfo StandardCrypto
+convertBundleInfoCP2 info =
+  BundleInfo
+    { bundleInfoEvolution = CP2.bundleInfoEvolution info
+    , bundleInfoStartKESPeriod = CP2.bundleInfoStartKESPeriod info
+    , bundleInfoOCertN = CP2.bundleInfoOCertN info
+    , bundleInfoVK = CP2.bundleInfoVK info
+    , bundleInfoSigma = CP2.bundleInfoSigma info
+    }
+
+convertKeyInfoCP2 :: CP2.KeyInfo -> KeyInfo StandardCrypto
+convertKeyInfoCP2 = coerce
+
+convertBootstrapInfoCP2 :: CP2.BootstrapInfo -> BootstrapInfo
+convertBootstrapInfoCP2 info =
+  BootstrapInfo
+    { bootstrapInfoAddress = CP2.bootstrapInfoAddress info
+    , bootstrapInfoStatus = convertConnectionStatusCP2 $ CP2.bootstrapInfoStatus info
+    }
+
+convertConnectionStatusCP2 :: CP2.ConnectionStatus -> ConnectionStatus
+convertConnectionStatusCP2 CP2.ConnectionUp = ConnectionUp
+convertConnectionStatusCP2 CP2.ConnectionConnecting = ConnectionConnecting
+convertConnectionStatusCP2 CP2.ConnectionDown = ConnectionDown

@@ -10,10 +10,8 @@ where
 
 import Cardano.KESAgent.KES.Bundle
 import Cardano.KESAgent.KES.Crypto
-import Cardano.KESAgent.KES.OCert
 import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Protocols.Service.V0.Protocol
-import Cardano.KESAgent.Util.RefCounting
 
 import Cardano.Crypto.KES.Class
 
@@ -56,18 +54,20 @@ servicePusher ::
   MonadThrow m =>
   MonadAsync m =>
   MonadTimer m =>
-  m (Bundle m c) ->
-  m (Bundle m c) ->
+  m (Maybe (Bundle m c)) ->
+  m (Maybe (Bundle m c)) ->
   (RecvResult -> m ()) ->
   Server (ServiceProtocol m c) NonPipelined InitialState m ()
 servicePusher currentKey nextKey handleResult =
   Server.Yield VersionMessage $
     Server.Effect $ do
-      bundle <- currentKey
-      return $
-        Server.Yield (KeyMessage bundle) $
-          Server.Await $
-            \(RecvResultMessage result) -> goR result
+      currentKey >>= \case
+        Nothing -> go
+        Just bundle ->
+          return $
+            Server.Yield (KeyMessage bundle) $
+              Server.Await $
+                \(RecvResultMessage result) -> goR result
   where
     goR :: RecvResult -> Server (ServiceProtocol m c) NonPipelined IdleState m ()
     goR result = Server.Effect $ do
@@ -76,8 +76,12 @@ servicePusher currentKey nextKey handleResult =
 
     go :: m (Server (ServiceProtocol m c) NonPipelined IdleState m ())
     go = do
-      bundle <- nextKey
-      return $
-        Server.Yield (KeyMessage bundle) $
-          Server.Await $
-            \(RecvResultMessage result) -> goR result
+      bundleMay <- nextKey
+      case bundleMay of
+        Nothing ->
+            return $ goR RecvErrorUnsupportedOperation
+        Just bundle ->
+            return $
+              Server.Yield (KeyMessage bundle) $
+                Server.Await $
+                  \(RecvResultMessage result) -> goR result

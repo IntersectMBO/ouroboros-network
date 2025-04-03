@@ -3,28 +3,27 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-deprecations #-}
 
-module Cardano.KESAgent.Protocols.Service.V0.Driver
+module Cardano.KESAgent.Protocols.Service.V2.Driver
 where
 
 import Cardano.KESAgent.KES.Bundle
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.Protocols.RecvResult
-import Cardano.KESAgent.Protocols.Service.V0.Protocol
+import Cardano.KESAgent.Protocols.Service.V2.Protocol
+import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Protocols.Types
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Serialization.DirectCodec
@@ -43,24 +42,35 @@ import Control.Monad.Trans (lift)
 import Control.Tracer (Tracer, traceWith)
 import Data.Functor.Contravariant ((>$<))
 import Data.Proxy
-import Data.SerDoc.Class (HasInfo (..))
+import Data.SerDoc.Class (
+  HasInfo (..),
+  Serializable (..),
+  decodeEnum,
+  encodeEnum,
+ )
 import Data.SerDoc.Info (aliasField, annField)
 import Data.Text qualified as Text
 import Data.Text.Encoding (decodeUtf8)
-import Data.Typeable
+import Data.Word
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Driver
 
+data KeyMessageTypeID
+  = KeyMessageID
+  | DropKeyMessageID
+  deriving (Show, Read, Eq, Ord, Enum, Bounded)
+
+instance (MonadThrow m, MonadST m) => Serializable (DirectCodec m) KeyMessageTypeID where
+  encode p = encodeEnum p (Proxy @Word8)
+  decode p = decodeEnum p (Proxy @Word8)
+
 serviceDriver ::
-  forall c m f t p pr.
-  Crypto c =>
-  Typeable c =>
-  VersionedProtocol (ServiceProtocol m c) =>
-  KESAlgorithm (KES c) =>
-  HasInfo (DirectCodec m) (SignKeyKES (KES c)) =>
-  HasInfo (DirectCodec m) (VerKeyKES (KES c)) =>
-  DirectDeserialise (SignKeyKES (KES c)) =>
-  DirectSerialise (SignKeyKES (KES c)) =>
+  forall m f t p pr.
+  VersionedProtocol (ServiceProtocol m) =>
+  HasInfo (DirectCodec m) (SignKeyKES (KES StandardCrypto)) =>
+  HasInfo (DirectCodec m) (VerKeyKES (KES StandardCrypto)) =>
+  DirectDeserialise (SignKeyKES (KES StandardCrypto)) =>
+  DirectSerialise (SignKeyKES (KES StandardCrypto)) =>
   MonadThrow m =>
   MonadSTM m =>
   MonadMVar m =>
@@ -68,32 +78,37 @@ serviceDriver ::
   MonadST m =>
   RawBearer m ->
   Tracer m ServiceDriverTrace ->
-  Driver (ServiceProtocol m c) pr () m
+  Driver (ServiceProtocol m) pr () m
 serviceDriver s tracer =
   Driver {sendMessage, recvMessage, initialDState = ()}
   where
     sendMessage ::
-      forall (st :: ServiceProtocol m c) (st' :: ServiceProtocol m c).
+      forall (st :: ServiceProtocol m) (st' :: ServiceProtocol m).
       ( StateTokenI st
       , ActiveState st
       ) =>
       ReflRelativeAgency (StateAgency st) WeHaveAgency (Relative pr (StateAgency st)) ->
-      Message (ServiceProtocol m c) st st' ->
+      Message (ServiceProtocol m) st st' ->
       m ()
     sendMessage = \_ msg -> case (stateToken @st, msg) of
       (SInitialState, VersionMessage) -> do
-        let VersionIdentifier v = versionIdentifier (Proxy @(ServiceProtocol m c))
-        sendVersion (Proxy @(ServiceProtocol m c)) s (ServiceDriverSendingVersionID >$< tracer)
+        let VersionIdentifier v = versionIdentifier (Proxy @(ServiceProtocol m))
+        sendVersion (Proxy @(ServiceProtocol m)) s (ServiceDriverSendingVersionID >$< tracer)
       (SInitialState, AbortMessage) -> do
         return ()
-      (SIdleState, KeyMessage bundle) -> do
+      (SIdleState, KeyMessage bundle timestamp) -> do
         traceWith tracer $
-          ServiceDriverSendingKey
-            (mkKeyMutationTrace 0 (Just bundle))
+          ServiceDriverSendingKey (mkKeyMutationTrace timestamp (Just bundle))
+        sendItem s KeyMessageID
+        sendItem s timestamp
         sendItem s bundle
         traceWith tracer $
-          ServiceDriverSentKey
-            (mkKeyMutationTrace 0 (Just bundle))
+          ServiceDriverSentKey (mkKeyMutationTrace timestamp (Just bundle))
+      (SIdleState, DropKeyMessage timestamp) -> do
+        traceWith tracer $ ServiceDriverRequestingKeyDrop timestamp
+        sendItem s DropKeyMessageID
+        sendItem s timestamp
+        traceWith tracer $ ServiceDriverRequestedKeyDrop timestamp
       (SIdleState, ServerDisconnectMessage) -> do
         return ()
       (_, ProtocolErrorMessage) -> do
@@ -105,11 +120,16 @@ serviceDriver s tracer =
           else
             traceWith tracer $ ServiceDriverDecliningKey reason
         sendRecvResult s reason
+        if reason == RecvOK
+          then
+            traceWith tracer ServiceDriverConfirmedKey
+          else
+            traceWith tracer $ ServiceDriverDeclinedKey reason
       (SWaitForConfirmationState, ClientDisconnectMessage) -> do
         return ()
 
     recvMessage ::
-      forall (st :: ServiceProtocol m c).
+      forall (st :: ServiceProtocol m).
       ( StateTokenI st
       , ActiveState st
       ) =>
@@ -119,7 +139,7 @@ serviceDriver s tracer =
     recvMessage = \agency () -> case stateToken @st of
       SInitialState -> do
         traceWith tracer ServiceDriverReceivingVersionID
-        result <- checkVersion (Proxy @(ServiceProtocol m c)) s (ServiceDriverReceivedVersionID >$< tracer)
+        result <- checkVersion (Proxy @(ServiceProtocol m)) s (ServiceDriverReceivedVersionID >$< tracer)
         case result of
           ReadOK _ ->
             return (SomeMessage VersionMessage, ())
@@ -128,12 +148,22 @@ serviceDriver s tracer =
             return (SomeMessage AbortMessage, ())
       SIdleState -> do
         result <- runReadResultT $ do
-          lift $ traceWith tracer ServiceDriverReceivingKey
-          bundle <- receiveItem s
-          lift $ traceWith tracer $
-            ServiceDriverReceivedKey
-              (mkKeyMutationTrace 0 (Just bundle))
-          return (SomeMessage (KeyMessage bundle), ())
+          what <- receiveItem s
+          case what of
+            KeyMessageID -> do
+              lift $ traceWith tracer ServiceDriverReceivingKey
+              timestamp <- receiveItem s
+              bundle <- receiveItem s
+              lift $ traceWith tracer $
+                ServiceDriverReceivedKey
+                  (mkKeyMutationTrace timestamp (Just bundle))
+              return (SomeMessage (KeyMessage bundle timestamp), ())
+            DropKeyMessageID -> do
+              lift $ traceWith tracer ServiceDriverReceivingKeyDrop
+              timestamp <- receiveItem s
+              lift $ traceWith tracer $
+                ServiceDriverReceivedKeyDrop timestamp
+              return (SomeMessage (DropKeyMessage timestamp), ())
         case result of
           ReadOK msg ->
             return msg
@@ -169,51 +199,45 @@ readErrorToServiceDriverTrace (ReadMalformed what) =
 readErrorToServiceDriverTrace (ReadVersionMismatch expected actual) =
   ServiceDriverInvalidVersion expected actual
 
-instance NamedCrypto c => HasInfo (DirectCodec m) (Message (ServiceProtocol m c) InitialState IdleState) where
+instance HasInfo (DirectCodec m) (Message (ServiceProtocol m) InitialState IdleState) where
   info codec _ =
     aliasField
       ( "Message<"
-          ++ (Text.unpack . decodeUtf8 . unVersionIdentifier $ spVersionIdentifier (Proxy @(ServiceProtocol m c)))
+          ++ (Text.unpack . decodeUtf8 . unVersionIdentifier $ versionIdentifier (Proxy @(ServiceProtocol m)))
           ++ ",InitialState,IdleState"
           ++ ">"
       )
       (info codec (Proxy @VersionIdentifier))
 instance
-  ( NamedCrypto c
-  , Crypto c
-  , Typeable c
-  , HasInfo (DirectCodec m) (SignKeyKES (KES c))
-  , HasInfo (DirectCodec m) (VerKeyKES (KES c))
+  ( HasInfo (DirectCodec m) (SignKeyKES (KES StandardCrypto))
+  , HasInfo (DirectCodec m) (VerKeyKES (KES StandardCrypto))
   ) =>
-  HasInfo (DirectCodec m) (Message (ServiceProtocol m c) IdleState WaitForConfirmationState)
+  HasInfo (DirectCodec m) (Message (ServiceProtocol m) IdleState WaitForConfirmationState)
   where
   info codec _ =
     aliasField
       ( "Message<"
-          ++ (Text.unpack . decodeUtf8 . unVersionIdentifier $ spVersionIdentifier (Proxy @(ServiceProtocol m c)))
+          ++ (Text.unpack . decodeUtf8 . unVersionIdentifier $ versionIdentifier (Proxy @(ServiceProtocol m)))
           ++ ",IdleState,WaitForConfirmationState"
           ++ ">"
       )
-      (info codec (Proxy @(Bundle m c)))
-instance
-  NamedCrypto c =>
-  HasInfo (DirectCodec m) (Message (ServiceProtocol m c) WaitForConfirmationState IdleState)
-  where
+      (info codec (Proxy @(Bundle m StandardCrypto)))
+instance HasInfo (DirectCodec m) (Message (ServiceProtocol m) WaitForConfirmationState IdleState) where
   info codec _ =
     aliasField
       ( "Message<"
-          ++ (Text.unpack . decodeUtf8 . unVersionIdentifier $ spVersionIdentifier (Proxy @(ServiceProtocol m c)))
+          ++ (Text.unpack . decodeUtf8 . unVersionIdentifier $ versionIdentifier (Proxy @(ServiceProtocol m)))
           ++ ",WaitForConfirmationState,IdleState"
           ++ ">"
       )
       (info codec (Proxy @RecvResult))
-instance NamedCrypto c => HasInfo (DirectCodec m) (Message (ServiceProtocol m c) _st EndState) where
+instance HasInfo (DirectCodec m) (Message (ServiceProtocol m) _st EndState) where
   info codec _ =
     annField
       "This message is signalled by terminating the network connection, hence the encoding takes zero bytes."
       $ aliasField
         ( "Message<"
-            ++ (Text.unpack . decodeUtf8 . unVersionIdentifier $ spVersionIdentifier (Proxy @(ServiceProtocol m c)))
+            ++ (Text.unpack . decodeUtf8 . unVersionIdentifier $ versionIdentifier (Proxy @(ServiceProtocol m)))
             ++ ",st,EndState"
             ++ ">"
         )

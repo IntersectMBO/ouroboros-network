@@ -28,7 +28,6 @@ import Cardano.Crypto.Libsodium.Memory (
 
 import Ouroboros.Network.RawBearer
 
-import Control.Applicative
 import Control.Concurrent.Class.MonadMVar
 import Control.Monad (void, when)
 import Control.Monad.Class.MonadST
@@ -414,18 +413,18 @@ unsafeReceiveN :: Monad m => RawBearer m -> Ptr CChar -> CSize -> m (ReadResult 
 unsafeReceiveN s buf bufSize = do
   n <- recv s (castPtr buf) (fromIntegral bufSize)
   if fromIntegral n == bufSize
-    then
+    then do
       return (ReadOK bufSize)
-    else
+    else do
       if n == 0
-        then
+        then do
           return ReadEOF
         else runReadResultT $ do
           n' <- ReadResultT $ unsafeReceiveN s (plusPtr buf (fromIntegral n)) (bufSize - fromIntegral n)
           if n' == 0
-            then
+            then do
               readResultT ReadEOF
-            else
+            else do
               return bufSize
 
 sendRecvResult ::
@@ -433,7 +432,7 @@ sendRecvResult ::
   , MonadThrow m
   ) =>
   RawBearer m -> RecvResult -> m ()
-sendRecvResult s r =
+sendRecvResult s r = do
   sendWord32 s (encodeRecvResult r)
 
 receiveRecvResult ::
@@ -442,7 +441,9 @@ receiveRecvResult ::
   ) =>
   RawBearer m -> m (ReadResult RecvResult)
 receiveRecvResult s = runReadResultT $ do
-  w <- ReadResultT $ receiveWord32 s
+  w <- ReadResultT $ do
+          result <- receiveWord32 s
+          return result
   return $ decodeRecvResult w
 
 encodeRecvResult :: RecvResult -> Word32
@@ -450,6 +451,7 @@ encodeRecvResult RecvOK = 0
 encodeRecvResult RecvErrorKeyOutdated = 1
 encodeRecvResult RecvErrorInvalidOpCert = 2
 encodeRecvResult RecvErrorNoKey = 3
+encodeRecvResult RecvErrorUnsupportedOperation = 4
 encodeRecvResult RecvErrorUnknown = 0xFFFF
 
 decodeRecvResult :: Word32 -> RecvResult
@@ -457,4 +459,5 @@ decodeRecvResult 0 = RecvOK
 decodeRecvResult 1 = RecvErrorKeyOutdated
 decodeRecvResult 2 = RecvErrorInvalidOpCert
 decodeRecvResult 3 = RecvErrorNoKey
+decodeRecvResult 4 = RecvErrorUnsupportedOperation
 decodeRecvResult _ = RecvErrorUnknown

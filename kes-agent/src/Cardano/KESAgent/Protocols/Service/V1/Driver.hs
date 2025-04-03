@@ -20,7 +20,6 @@ where
 
 import Cardano.KESAgent.KES.Bundle
 import Cardano.KESAgent.KES.Crypto
-import Cardano.KESAgent.KES.OCert
 import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Protocols.Service.V1.Protocol
 import Cardano.KESAgent.Protocols.StandardCrypto
@@ -28,60 +27,28 @@ import Cardano.KESAgent.Protocols.Types
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Serialization.DirectCodec
 import Cardano.KESAgent.Serialization.RawUtil
-import Cardano.KESAgent.Util.Pretty
-import Cardano.KESAgent.Util.RefCounting
 
-import Cardano.Binary
 import Cardano.Crypto.DirectSerialise
 import Cardano.Crypto.KES.Class
-import Cardano.Crypto.Libsodium.Memory (
-  allocaBytes,
-  copyMem,
-  packByteStringCStringLen,
-  unpackByteStringCStringLen,
- )
 
 import Ouroboros.Network.RawBearer
 
 import Control.Concurrent.Class.MonadMVar
 import Control.Concurrent.Class.MonadSTM
-import Control.Concurrent.Class.MonadSTM.TChan
-import Control.Monad (forM_, forever, void, when)
-import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadST
-import Control.Monad.Class.MonadThrow (Exception, MonadThrow, bracket, throwIO)
-import Control.Monad.ST.Unsafe (unsafeIOToST)
+import Control.Monad.Class.MonadThrow (MonadThrow)
 import Control.Monad.Trans (lift)
 import Control.Tracer (Tracer, traceWith)
-import Data.Binary (decode, encode)
-import Data.ByteString qualified as BS
-import Data.ByteString.Lazy qualified as LBS
-import Data.Coerce
 import Data.Functor.Contravariant ((>$<))
 import Data.Proxy
 import Data.SerDoc.Class (
-  Codec (..),
   HasInfo (..),
-  Serializable (..),
-  ViaEnum (..),
-  decodeEnum,
-  encodeEnum,
-  enumInfo,
  )
-import Data.SerDoc.Info (Description (..), aliasField, annField)
-import Data.SerDoc.Info qualified
-import Data.SerDoc.TH (deriveSerDoc)
+import Data.SerDoc.Info (aliasField, annField)
 import Data.Text qualified as Text
-import Data.Text.Encoding (decodeUtf8, encodeUtf8)
-import Data.Typeable
-import Data.Word
-import Foreign (Ptr, castPtr, plusPtr, poke)
-import Foreign.C.Types (CChar, CSize)
-import Foreign.Marshal.Alloc (free, mallocBytes)
-import Foreign.Marshal.Utils (copyBytes)
+import Data.Text.Encoding (decodeUtf8)
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Driver
-import Text.Printf
 
 serviceDriver ::
   forall m f t p pr.
@@ -116,9 +83,13 @@ serviceDriver s tracer =
       (SInitialState, AbortMessage) -> do
         return ()
       (SIdleState, KeyMessage bundle) -> do
-        traceWith tracer $ ServiceDriverSendingKey (ocertN (bundleOC bundle))
+        traceWith tracer $
+          ServiceDriverSendingKey
+            (mkKeyMutationTrace 0 (Just bundle))
         sendItem s bundle
-        traceWith tracer $ ServiceDriverSentKey (ocertN (bundleOC bundle))
+        traceWith tracer $
+          ServiceDriverSentKey
+            (mkKeyMutationTrace 0 (Just bundle))
       (SIdleState, ServerDisconnectMessage) -> do
         return ()
       (_, ProtocolErrorMessage) -> do
@@ -155,7 +126,9 @@ serviceDriver s tracer =
         result <- runReadResultT $ do
           lift $ traceWith tracer ServiceDriverReceivingKey
           bundle <- receiveItem s
-          lift $ traceWith tracer $ ServiceDriverReceivedKey (ocertN (bundleOC bundle))
+          lift $ traceWith tracer $
+                    ServiceDriverReceivedKey
+                      (mkKeyMutationTrace 0 (Just bundle))
           return (SomeMessage (KeyMessage bundle), ())
         case result of
           ReadOK msg ->
@@ -173,7 +146,7 @@ serviceDriver s tracer =
               RecvOK ->
                 traceWith tracer ServiceDriverConfirmedKey
               err ->
-                traceWith tracer ServiceDriverDeclinedKey
+                traceWith tracer (ServiceDriverDeclinedKey response)
             return (SomeMessage (RecvResultMessage response), ())
           ReadEOF ->
             return (SomeMessage ClientDisconnectMessage, ())

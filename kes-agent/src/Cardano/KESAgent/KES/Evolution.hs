@@ -9,18 +9,16 @@ where
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
 
-import Cardano.Crypto.DSIGN.Class as DSIGN
 import Cardano.Crypto.KES.Class
 
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime
-import Data.Time (NominalDiffTime, nominalDiffTimeToSeconds)
-import Data.Time.Clock.POSIX (posixSecondsToUTCTime, utcTimeToPOSIXSeconds)
+import Data.Time (nominalDiffTimeToSeconds)
+import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 
 import qualified Data.Aeson as JSON
 import Data.Aeson.TH (deriveJSON)
-import qualified Data.Aeson.TH as JSON
 
 data EvolutionConfig
   = EvolutionConfig

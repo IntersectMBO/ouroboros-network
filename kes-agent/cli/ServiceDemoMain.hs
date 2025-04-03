@@ -6,14 +6,13 @@
 module Main
 where
 
-import Cardano.KESAgent.KES.Bundle (Bundle (..))
+import Cardano.KESAgent.KES.Bundle (Bundle (..), TaggedBundle (..))
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
-import Cardano.KESAgent.KES.OCert (KESPeriod (..), OCert (..))
+import Cardano.KESAgent.KES.OCert (OCert (..))
 import Cardano.KESAgent.Priority
 import Cardano.KESAgent.Processes.ServiceClient
 import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Protocols.StandardCrypto
-import Cardano.KESAgent.Protocols.Types
 import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting
 
@@ -26,13 +25,12 @@ import Ouroboros.Network.Snocket
 import Control.Concurrent.Class.MonadMVar
 import Control.Monad (forever, when)
 import Control.Monad.Class.MonadAsync
-import Control.Monad.Class.MonadThrow (SomeException, bracket, catch, finally)
+import Control.Monad.Class.MonadThrow (SomeException, catch)
 import Control.Monad.Class.MonadTime (getCurrentTime)
 import Control.Monad.Class.MonadTimer (threadDelay)
 import Control.Tracer
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import Data.Maybe
 import Data.Proxy (Proxy (..))
 import qualified Data.Text as Text
 import Data.Text.Encoding (encodeUtf8)
@@ -97,6 +95,7 @@ serviceTracePrio ServiceClientSocketClosed {} = Notice
 serviceTracePrio ServiceClientConnected {} = Notice
 serviceTracePrio ServiceClientAttemptReconnect {} = Info
 serviceTracePrio ServiceClientReceivedKey {} = Notice
+serviceTracePrio ServiceClientDroppedKey {} = Notice
 serviceTracePrio ServiceClientAbnormalTermination {} = Error
 serviceTracePrio ServiceClientOpCertNumberCheck {} = Debug
 
@@ -123,13 +122,17 @@ stdoutStringTracer maxPrio lock = Tracer $ \(prio, msg) -> do
 handleKey ::
   UnsoundKESAlgorithm (KES c) =>
   (ServiceClientState -> IO ()) ->
-  Bundle IO c ->
+  TaggedBundle IO c ->
   IO RecvResult
-handleKey setState (Bundle skpVar ocert) = withCRefValue skpVar $ \skp -> do
-  skSer <- rawSerialiseSignKeyKES (skWithoutPeriodKES skp)
-  let period = periodKES skp
-  let certN = ocertN ocert
-  setState $ ServiceClientBlockForging certN period (take 8 (hexShowBS skSer) ++ "...")
+handleKey setState TaggedBundle { taggedBundle = Just (Bundle skpVar ocert) } = do
+  withCRefValue skpVar $ \skp -> do
+    skSer <- rawSerialiseSignKeyKES (skWithoutPeriodKES skp)
+    let period = periodKES skp
+    let certN = ocertN ocert
+    setState $ ServiceClientBlockForging certN period (take 8 (hexShowBS skSer) ++ "...")
+    return RecvOK
+handleKey setState TaggedBundle { taggedBundle = Nothing } = do
+  setState $ ServiceClientWaitingForCredentials
   return RecvOK
 
 hexShowBS :: ByteString -> String
@@ -150,8 +153,8 @@ main = do
   sdoEnv <- sdoFromEnv
   let sdo = sdo' <> sdoEnv <> defServiceDemoOptions
 
-  logLock <- newMVar ()
   let maxPrio = Debug
+  logLock <- newMVar ()
   let tracer = stdoutStringTracer maxPrio logLock
 
   let stateTracer = contramap (\(old, new) -> (Notice, "State: " ++ show old ++ " -> " ++ show new)) tracer
@@ -165,16 +168,19 @@ main = do
     serviceClientOptions <- sdoToServiceClientOptions ioManager sdo
     forever $ do
       setState ServiceClientWaitingForCredentials
+      traceWith tracer (Notice, "RUN SERVICE CLIENT")
       runServiceClient
         (Proxy @StandardCrypto)
         makeSocketRawBearer
         serviceClientOptions
         (handleKey setState)
         (contramap formatServiceTrace tracer)
-        `catch` ( \(e :: AsyncCancelled) ->
+        `catch` ( \(e :: AsyncCancelled) -> do
+                    traceWith tracer (Notice, "SERVICE CLIENT CANCELLED")
                     return ()
                 )
         `catch` ( \(e :: SomeException) ->
-                    traceWith tracer (Emergency, show e)
+                    traceWith tracer (Notice, show e)
                 )
-      threadDelay 10000000
+      traceWith tracer (Notice, "SERVICE CLIENT TERMINATED")
+      threadDelay 100000

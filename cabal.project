@@ -17,7 +17,7 @@ packages:
   kes-agent
 
 package kes-agent
-  ghc-options: -Werror -Wincomplete-patterns
+  ghc-options: -Wincomplete-patterns
 
 package cryptonite
   -- Using RDRAND instead of /dev/urandom as an entropy source for key

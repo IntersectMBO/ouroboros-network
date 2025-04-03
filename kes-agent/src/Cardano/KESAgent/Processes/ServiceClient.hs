@@ -9,10 +9,8 @@
 module Cardano.KESAgent.Processes.ServiceClient
 where
 
-import Cardano.KESAgent.KES.Bundle (Bundle (..))
+import Cardano.KESAgent.KES.Bundle (TaggedBundle (..))
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
-import Cardano.KESAgent.KES.OCert (OCert (..))
-import Cardano.KESAgent.Protocols.AgentInfo
 import Cardano.KESAgent.Protocols.RecvResult (RecvResult (..))
 import qualified Cardano.KESAgent.Protocols.Service.V0.Driver as SP0
 import qualified Cardano.KESAgent.Protocols.Service.V0.Peers as SP0
@@ -20,27 +18,21 @@ import qualified Cardano.KESAgent.Protocols.Service.V0.Protocol as SP0
 import qualified Cardano.KESAgent.Protocols.Service.V1.Driver as SP1
 import qualified Cardano.KESAgent.Protocols.Service.V1.Peers as SP1
 import qualified Cardano.KESAgent.Protocols.Service.V1.Protocol as SP1
+import qualified Cardano.KESAgent.Protocols.Service.V2.Driver as SP2
+import qualified Cardano.KESAgent.Protocols.Service.V2.Peers as SP2
+import qualified Cardano.KESAgent.Protocols.Service.V2.Protocol as SP2
 import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Protocols.Types
 import Cardano.KESAgent.Protocols.VersionHandshake.Driver
-import Cardano.KESAgent.Protocols.VersionHandshake.Driver (
-  VersionHandshakeDriverTrace,
-  versionHandshakeDriver,
- )
 import Cardano.KESAgent.Protocols.VersionHandshake.Peers
-import Cardano.KESAgent.Protocols.VersionHandshake.Peers (versionHandshakeClient)
-import Cardano.KESAgent.Protocols.VersionHandshake.Protocol
-import Cardano.KESAgent.Protocols.VersionHandshake.Protocol (VersionHandshakeProtocol)
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Serialization.DirectCodec
 import Cardano.KESAgent.Util.PlatformPoison (poisonWindows)
 import Cardano.KESAgent.Util.Pretty (Pretty (..))
-import Cardano.KESAgent.Util.RefCounting (CRef)
 import Cardano.KESAgent.Util.RetrySocket (retrySocket)
 
-import Cardano.Crypto.DSIGN.Class
 import Cardano.Crypto.DirectSerialise
-import Cardano.Crypto.KES.Class (SignKeyKES, SignKeyWithPeriodKES (..), VerKeyKES)
+import Cardano.Crypto.KES.Class (SignKeyKES, VerKeyKES)
 
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket (Snocket (..))
@@ -52,21 +44,8 @@ import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow (MonadCatch, MonadThrow, SomeException, bracket, catch)
 import Control.Monad.Class.MonadTimer (MonadDelay, threadDelay)
 import Control.Tracer (Tracer, traceWith)
-import Data.Coerce
 import Data.Functor.Contravariant ((>$<))
-import Data.Proxy (Proxy (..))
-import Data.SerDoc.Class (
-  Codec (..),
-  HasInfo (..),
-  Serializable (..),
-  ViaEnum (..),
-  decodeEnum,
-  encodeEnum,
-  enumInfo,
- )
-import Data.SerDoc.Info (Description (..), aliasField, annField)
-import qualified Data.SerDoc.Info
-import Data.SerDoc.TH (deriveSerDoc)
+import Data.SerDoc.Class (HasInfo (..))
 import Data.Typeable
 import Data.Word (Word64)
 import Network.TypedProtocol.Driver (runPeerWithDriver)
@@ -85,6 +64,7 @@ data ServiceClientTrace
   | ServiceClientConnected !String
   | ServiceClientAttemptReconnect !Int !Int !String !String
   | ServiceClientReceivedKey
+  | ServiceClientDroppedKey
   | ServiceClientOpCertNumberCheck !Word64 !Word64
   | ServiceClientAbnormalTermination !String
   deriving (Show)
@@ -128,7 +108,7 @@ class ServiceClientDrivers c where
     [ ( VersionIdentifier
       , RawBearer m ->
         Tracer m ServiceClientTrace ->
-        (Bundle m c -> m RecvResult) ->
+        (TaggedBundle m c -> m RecvResult) ->
         m ()
       )
     ]
@@ -139,7 +119,7 @@ mkServiceClientDriverSP0 ::
   ( VersionIdentifier
   , RawBearer m ->
     Tracer m ServiceClientTrace ->
-    (Bundle m c -> m RecvResult) ->
+    (TaggedBundle m c -> m RecvResult) ->
     m ()
   )
 mkServiceClientDriverSP0 =
@@ -148,7 +128,10 @@ mkServiceClientDriverSP0 =
       void $
         runPeerWithDriver
           (SP0.serviceDriver bearer $ ServiceClientDriverTrace >$< tracer)
-          (SP0.serviceReceiver $ \bundle -> handleKey bundle <* traceWith tracer ServiceClientReceivedKey)
+          (SP0.serviceReceiver $
+            \bundle ->
+              handleKey (TaggedBundle (Just bundle) 0) <* traceWith tracer ServiceClientReceivedKey
+          )
   )
 
 mkServiceClientDriverSP1 ::
@@ -157,7 +140,7 @@ mkServiceClientDriverSP1 ::
   ( VersionIdentifier
   , RawBearer m ->
     Tracer m ServiceClientTrace ->
-    (Bundle m StandardCrypto -> m RecvResult) ->
+    (TaggedBundle m StandardCrypto -> m RecvResult) ->
     m ()
   )
 mkServiceClientDriverSP1 =
@@ -166,12 +149,36 @@ mkServiceClientDriverSP1 =
       void $
         runPeerWithDriver
           (SP1.serviceDriver bearer $ ServiceClientDriverTrace >$< tracer)
-          (SP1.serviceReceiver $ \bundle -> handleKey bundle <* traceWith tracer ServiceClientReceivedKey)
+          (SP1.serviceReceiver $ \bundle ->
+              handleKey (TaggedBundle (Just bundle) 0) <* traceWith tracer ServiceClientReceivedKey
+          )
+  )
+
+mkServiceClientDriverSP2 ::
+  forall m.
+  ServiceClientContext m StandardCrypto =>
+  ( VersionIdentifier
+  , RawBearer m ->
+    Tracer m ServiceClientTrace ->
+    (TaggedBundle m StandardCrypto -> m RecvResult) ->
+    m ()
+  )
+mkServiceClientDriverSP2 =
+  ( versionIdentifier (Proxy @(SP2.ServiceProtocol _))
+  , \bearer tracer handleKey ->
+      void $
+        runPeerWithDriver
+          (SP2.serviceDriver bearer $ ServiceClientDriverTrace >$< tracer)
+          (SP2.serviceReceiver
+            (\bundle -> handleKey bundle <* traceWith tracer ServiceClientReceivedKey))
   )
 
 instance ServiceClientDrivers StandardCrypto where
   availableServiceClientDrivers =
-    [mkServiceClientDriverSP1, mkServiceClientDriverSP0]
+    [ mkServiceClientDriverSP2
+    , mkServiceClientDriverSP1
+    , mkServiceClientDriverSP0
+    ]
 
 instance ServiceClientDrivers MockCrypto where
   availableServiceClientDrivers =
@@ -192,7 +199,7 @@ runServiceClientForever ::
   Proxy c ->
   MakeRawBearer m fd ->
   ServiceClientOptions m fd addr ->
-  (Bundle m c -> m RecvResult) ->
+  (TaggedBundle m c -> m RecvResult) ->
   Tracer m ServiceClientTrace ->
   m ()
 runServiceClientForever proxy mrb options handleKey tracer =
@@ -214,31 +221,21 @@ runServiceClient ::
   Proxy c ->
   MakeRawBearer m fd ->
   ServiceClientOptions m fd addr ->
-  (Bundle m c -> m RecvResult) ->
+  (TaggedBundle m c -> m RecvResult) ->
   Tracer m ServiceClientTrace ->
   m ()
 runServiceClient proxy mrb options handleKey tracer = do
   poisonWindows
   let s = serviceClientSnocket options
-  latestOCNumVar <- newMVar Nothing
-  let handleKey' bundle = do
-        latestOCNumMay <- takeMVar latestOCNumVar
-        case latestOCNumMay of
-          Nothing -> do
-            -- No key previously handled, so we need to accept this one
-            putMVar latestOCNumVar (Just $ ocertN (bundleOC bundle))
-            handleKey bundle
-          Just latestOCNum -> do
-            -- Have already handled a key before, so check that the received key
-            -- is newer; if not, discard it.
-            traceWith tracer $ ServiceClientOpCertNumberCheck (ocertN (bundleOC bundle)) latestOCNum
-            if ocertN (bundleOC bundle) > latestOCNum
-              then do
-                putMVar latestOCNumVar (Just $ ocertN (bundleOC bundle))
-                handleKey bundle
-              else do
-                putMVar latestOCNumVar (Just latestOCNum)
-                return RecvErrorKeyOutdated
+  latestTimestampVar <- newMVar Nothing
+  let handleKey' tbundle@(TaggedBundle bundleMay timestamp) = do
+        latestTimestamp <- takeMVar latestTimestampVar
+        if Just timestamp <= latestTimestamp then do
+          putMVar latestTimestampVar latestTimestamp
+          return RecvErrorKeyOutdated
+        else do
+          putMVar latestTimestampVar (Just timestamp)
+          handleKey tbundle
 
   void $
     bracket

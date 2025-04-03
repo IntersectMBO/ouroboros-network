@@ -11,10 +11,7 @@ import Cardano.KESAgent.Tests.Simulation qualified as Simulation
 
 import Cardano.Crypto.Libsodium
 
-import Ouroboros.Network.Snocket
-
 import Control.Tracer (nullTracer)
-import Network.Socket
 import System.IOManager
 import Test.Tasty (TestTree, defaultMain, testGroup)
 
