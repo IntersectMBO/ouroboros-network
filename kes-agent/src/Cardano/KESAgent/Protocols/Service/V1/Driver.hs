@@ -21,7 +21,6 @@ where
 import Cardano.KESAgent.KES.Bundle
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
-import Cardano.KESAgent.Protocols.BearerUtil
 import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Protocols.Service.V1.Protocol
 import Cardano.KESAgent.Protocols.StandardCrypto

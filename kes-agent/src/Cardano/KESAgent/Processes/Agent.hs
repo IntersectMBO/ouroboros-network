@@ -56,7 +56,6 @@ import Cardano.KESAgent.Processes.ServiceClient (
   runServiceClientForever,
  )
 import Cardano.KESAgent.Protocols.AgentInfo
-import Cardano.KESAgent.Protocols.BearerUtil
 import qualified Cardano.KESAgent.Protocols.Control.V0.Driver as CP0
 import qualified Cardano.KESAgent.Protocols.Control.V0.Peers as CP0
 import qualified Cardano.KESAgent.Protocols.Control.V0.Protocol as CP0
@@ -745,10 +744,6 @@ runListener
     let logAndContinue :: SomeException -> m ()
         logAndContinue e = traceWith tracer (tSocketError (show e))
 
-        handleClientDisconnect :: fd -> BearerConnectionClosed -> m ()
-        handleClientDisconnect fd _ =
-          traceWith tracer (tClientDisconnected $ show fd)
-
     let loop :: Accept m fd addr -> m ()
         loop a = do
           accepted <- runAccept a
@@ -760,7 +755,6 @@ runListener
               concurrently_
                 (loop next)
                 ( handleConnection fd'
-                    `catch` handleClientDisconnect fd'
                     `catch` logAndContinue
                     `finally` (close s fd' >> traceWith tracer (tSocketClosed $ show fd'))
                 )
@@ -988,8 +982,7 @@ runAgent agent = do
                 Nothing ->
                   traceWith (agentTracer . agentOptions $ agent) AgentServiceVersionHandshakeFailed
                 Just run ->
-                  withDuplexBearer bearer $ \bearer' ->
-                    run bearer' tracer' currentKey nextKey reportPushResult
+                  run bearer tracer' currentKey nextKey reportPushResult
           )
 
   let runBootstrap :: addr -> m ()
