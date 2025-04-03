@@ -114,6 +114,8 @@ import Ouroboros.Network.Snocket (MakeBearer, Snocket, TestAddress (..),
 
 import Simulation.Network.Snocket (AddressType (..), FD)
 
+import Ouroboros.Network.Diffusion.Types (DiffusionArguments (..),
+           DiffusionConfiguration (..))
 import Test.Ouroboros.Network.Data.Script (Script)
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB (addBlock,
            getBlockPointSet)
@@ -266,9 +268,9 @@ run blockGeneratorArgs limits ni na
         peerMetrics <- newPeerMetric PeerMetricsConfiguration { maxEntriesToTrack = 180 }
 
         let -- diffusion interfaces
-            interfaces :: Diff.Interfaces (NtNFD m) NtNAddr NtNVersion NtNVersionData
-                                          (NtCFD m) NtCAddr NtCVersion NtCVersionData
-                                          resolver ResolverException extraState extraFlags extraPeers extraAPI m
+            interfaces :: Diff.Interfaces (NtNFD m) NtNAddr
+                                          (NtCFD m) NtCAddr
+                                          resolver ResolverException m
             interfaces = Diff.Interfaces
               { Diff.diNtnSnocket            = iNtnSnocket ni
               , Diff.diNtnBearer             = iNtnBearer ni
@@ -276,36 +278,12 @@ run blockGeneratorArgs limits ni na
               , Diff.diNtnConfigureSocket    = \_ _ -> return ()
               , Diff.diNtnConfigureSystemdSocket
                                                = \_ _ -> return ()
-              , Diff.diNtnHandshakeArguments =
-                  HandshakeArguments
-                    { haHandshakeTracer  = nullTracer
-                    , haHandshakeCodec   = unversionedHandshakeCodec
-                    , haVersionDataCodec = ntnUnversionedDataCodec
-                    , haAcceptVersion    = iAcceptVersion ni
-                    , haQueryVersion     = const False
-                    , haTimeLimits       = timeLimitsHandshake
-                    }
               , Diff.diNtnAddressType = ntnAddressType
-              , Diff.diNtnDataFlow    = \NtNVersionData { ntnDiffusionMode } ->
-                  case ntnDiffusionMode of
-                    InitiatorOnlyDiffusionMode         -> Unidirectional
-                    InitiatorAndResponderDiffusionMode -> Duplex
-              , Diff.diNtnPeerSharing        = ntnPeerSharing
               , Diff.diNtnToPeerAddr         = \a b -> TestAddress (Node.IPAddr a b)
               , Diff.diNtcSnocket            = iNtcSnocket ni
               , Diff.diNtcBearer             = iNtcBearer ni
-              , Diff.diNtcHandshakeArguments =
-                  HandshakeArguments
-                    { haHandshakeTracer  = nullTracer
-                    , haHandshakeCodec   = unversionedHandshakeCodec
-                    , haVersionDataCodec = unversionedProtocolDataCodec
-                    , haAcceptVersion    = \_ v -> Accept v
-                    , haQueryVersion     = const False
-                    , haTimeLimits       = noTimeLimitsHandshake
-                    }
               , Diff.diNtcGetFileDescriptor  = \_ -> pure invalidFileDescriptor
               , Diff.diRng                   = diffStgGen
-              , Diff.diInstallSigUSR1Handler = \_ _ _ -> pure ()
               , Diff.diDnsActions            = \tracer lookupType toPeerAddr ->
                   mockDNSActions
                     tracer
@@ -314,9 +292,47 @@ run blockGeneratorArgs limits ni na
                     (iDomainMap ni)
                     dnsTimeoutScriptVar
                     dnsLookupDelayScriptVar
-              , Diff.diUpdateVersionData     = \versionData diffusionMode ->
-                                                    versionData { ntnDiffusionMode = diffusionMode }
               , Diff.diConnStateIdSupply     = iConnStateIdSupply ni
+              }
+
+            extraParameters = DiffusionArguments
+              { daNtnDataFlow = \NtNVersionData { ntnDiffusionMode } ->
+                  case ntnDiffusionMode of
+                    InitiatorOnlyDiffusionMode         -> Unidirectional
+                    InitiatorAndResponderDiffusionMode -> Duplex
+              , daNtnPeerSharing = ntnPeerSharing
+              , daUpdateVersionData =
+                  \versionData diffusionMode ->
+                     versionData { ntnDiffusionMode = diffusionMode }
+              , daNtnHandshakeArguments =
+                  HandshakeArguments
+                    { haHandshakeTracer  = nullTracer
+                    , haHandshakeCodec   = unversionedHandshakeCodec
+                    , haVersionDataCodec = ntnUnversionedDataCodec
+                    , haAcceptVersion    = iAcceptVersion ni
+                    , haQueryVersion     = const False
+                    , haTimeLimits       = timeLimitsHandshake
+                    }
+              , daNtcHandshakeArguments =
+                  HandshakeArguments
+                    { haHandshakeTracer  = nullTracer
+                    , haHandshakeCodec   = unversionedHandshakeCodec
+                    , haVersionDataCodec = unversionedProtocolDataCodec
+                    , haAcceptVersion    = \_ v -> Accept v
+                    , haQueryVersion     = const False
+                    , haTimeLimits       = noTimeLimitsHandshake
+                    }
+              , daLedgerPeersCtx                    = iLedgerPeersConsensusInterface ni
+              , daEmptyExtraState                   = emptyExtraState
+              , daEmptyExtraCounters                = emptyExtraCounters
+              , daExtraPeersAPI                     = extraPeersAPI
+              , daInstallSigUSR1Handler             = \_ _ _ -> pure ()
+              , daPeerSelectionGovernorArgs         = psArgs
+              , daPeerSelectionStateToExtraCounters = psToExtraCounters
+              , daToExtraPeers                      = toExtraPeers
+              , daRequestPublicRootPeers            = Just requestPublicRootPeers
+              , daPeerChurnGovernor                 = peerChurnGovernor
+              , daExtraChurnArgs                    = aExtraChurnArgs na
               }
 
             apps = Node.applications
@@ -328,7 +344,8 @@ run blockGeneratorArgs limits ni na
                      blockHeader
 
         withAsync
-           (Diff.runM interfaces
+           (Diff.runM extraParameters
+                      interfaces
                       tracers
                       (mkArgs (nkPublicPeerSelectionVar nodeKernel))
                       apps)
@@ -438,49 +455,33 @@ run blockGeneratorArgs limits ni na
         decodeData _ _                                            = Left (Text.pack "unversionedDataCodec: unexpected term")
 
     mkArgs :: StrictTVar m (PublicPeerSelectionState NtNAddr)
-           -> Diff.Arguments
-                   extraState extraDebugState
-                   extraFlags extraPeers extraAPI
-                   extraChurnArgs extraCounters exception
-                   resolver resolverError
-                   m (NtNFD m) NtNAddr (NtCFD m) NtCAddr
-    mkArgs daPublicPeerSelectionVar = Diff.Arguments
-      { Diff.daIPv4Address   = Right <$> (ntnToIPv4 . aIPAddress) na
-      , Diff.daIPv6Address   = Right <$> (ntnToIPv6 . aIPAddress) na
-      , Diff.daLocalAddress  = Nothing
-      , Diff.daAcceptedConnectionsLimit
+           -> DiffusionConfiguration extraFlags m (NtNFD m) NtNAddr (NtCFD m) NtCAddr
+    mkArgs dcPublicPeerSelectionVar = DiffusionConfiguration
+      { dcIPv4Address   = Right <$> (ntnToIPv4 . aIPAddress) na
+      , dcIPv6Address   = Right <$> (ntnToIPv6 . aIPAddress) na
+      , dcLocalAddress  = Nothing
+      , dcAcceptedConnectionsLimit
                              = aAcceptedLimits na
-      , Diff.daMode          = aDiffusionMode na
-      , Diff.daPublicPeerSelectionVar
-      , Diff.daPeerSelectionTargets   = aPeerTargets na
-      , Diff.daReadLocalRootPeers     = aReadLocalRootPeers na
-      , Diff.daReadPublicRootPeers    = aReadPublicRootPeers na
-      , Diff.daOwnPeerSharing         = aOwnPeerSharing na
-      , Diff.daReadUseLedgerPeers     = aReadUseLedgerPeers na
-      , Diff.daProtocolIdleTimeout    = aProtocolIdleTimeout na
-      , Diff.daTimeWaitTimeout        = aTimeWaitTimeout na
-      , Diff.daDeadlineChurnInterval  = 3300
-      , Diff.daBulkChurnInterval      = 300
-      , Diff.daReadLedgerPeerSnapshot = pure Nothing -- ^ tested independently
-      , Diff.daEmptyExtraState        = emptyExtraState
-      , Diff.daEmptyExtraCounters     = emptyExtraCounters
-      , Diff.daExtraPeersAPI          = extraPeersAPI
-      , Diff.daExtraChurnArgs         = aExtraChurnArgs na
-      , Diff.daToExtraPeers           = toExtraPeers
-      , Diff.daRequestPublicRootPeers = Just requestPublicRootPeers
-      , Diff.daPeerChurnGovernor      = peerChurnGovernor
-      , Diff.daPeerSelectionGovernorArgs         = psArgs
-      , Diff.daPeerSelectionStateToExtraCounters = psToExtraCounters
-      , Diff.daMuxForkPolicy          = noBindForkPolicy
-      , Diff.daLocalMuxForkPolicy     = noBindForkPolicy
+      , dcMode          = aDiffusionMode na
+      , dcPublicPeerSelectionVar
+      , dcPeerSelectionTargets   = aPeerTargets na
+      , dcReadLocalRootPeers     = aReadLocalRootPeers na
+      , dcReadPublicRootPeers    = aReadPublicRootPeers na
+      , dcOwnPeerSharing         = aOwnPeerSharing na
+      , dcReadUseLedgerPeers     = aReadUseLedgerPeers na
+      , dcProtocolIdleTimeout    = aProtocolIdleTimeout na
+      , dcTimeWaitTimeout        = aTimeWaitTimeout na
+      , dcDeadlineChurnInterval  = 3300
+      , dcBulkChurnInterval      = 300
+      , dcReadLedgerPeerSnapshot = pure Nothing -- ^ tested independently
+      , dcMuxForkPolicy          = noBindForkPolicy
+      , dcLocalMuxForkPolicy     = noBindForkPolicy
       }
 
     appArgs :: PeerMetrics m NtNAddr
-            -> Node.AppArgs extraAPI BlockHeader Block m
+            -> Node.AppArgs BlockHeader Block m
     appArgs peerMetrics = Node.AppArgs
-      { Node.aaLedgerPeersConsensusInterface
-                                   = iLedgerPeersConsensusInterface ni
-      , Node.aaKeepAliveStdGen     = keepAliveStdGen
+      { Node.aaKeepAliveStdGen     = keepAliveStdGen
       , Node.aaDiffusionMode       = aDiffusionMode na
       , Node.aaKeepAliveInterval   = aKeepAliveInterval na
       , Node.aaPingPongInterval    = aPingPongInterval na

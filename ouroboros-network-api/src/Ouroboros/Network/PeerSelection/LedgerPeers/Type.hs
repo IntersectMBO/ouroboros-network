@@ -42,6 +42,7 @@ import Data.Aeson
 import Data.List.NonEmpty (NonEmpty)
 import NoThunks.Class
 
+import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 
 -- |The type of big ledger peers that is serialised or later
@@ -236,6 +237,8 @@ data IsBigLedgerPeer
 data LedgerPeersConsensusInterface extraAPI m = LedgerPeersConsensusInterface {
     lpGetLatestSlot  :: STM m (WithOrigin SlotNo)
   , lpGetLedgerPeers :: STM m [(PoolStake, NonEmpty RelayAccessPoint)]
+    -- | Required for BlockFetch protocol
+  , lpReadFetchMode  :: STM m FetchMode
     -- | Extension point so that third party users can add more actions
   , lpExtraAPI       :: extraAPI
   }

@@ -47,6 +47,7 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS
 
+import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..))
 import Test.Ouroboros.Network.Data.Script
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS
 import Test.QuickCheck
@@ -320,6 +321,7 @@ prop_pick100 seed (NonNegative n) (ArbLedgerPeersKind ledgerPeersKind) (MockRoot
               LedgerPeersConsensusInterface
                 (pure $ At slot)
                 (pure (Map.elems accumulatedStakeMap))
+                (pure (PraosFetchMode FetchModeDeadline))
                 ()
 
     in counterexample (show accumulatedStakeMap) $ ioProperty $ do
@@ -387,6 +389,7 @@ prop_pick (LedgerPools lps) (ArbLedgerPeersKind ledgerPeersKind) count seed (Moc
             interface = LedgerPeersConsensusInterface
                           (pure $ At slot)
                           (pure lps)
+                          (pure (PraosFetchMode FetchModeDeadline))
                           ()
 
             domainMap :: Map Domain (Set IP)
@@ -512,6 +515,7 @@ prop_getLedgerPeers (ArbitrarySlotNo curSlot)
     interface = LedgerPeersConsensusInterface
                   (pure $ curSlotWO)
                   (pure (Map.elems (accPoolStake lps)))
+                  (pure (PraosFetchMode FetchModeDeadline))
                   ()
 
 -- | Checks validity of LedgerPeerSnapshot CBOR encoding, and whether
