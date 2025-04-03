@@ -99,6 +99,7 @@ import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState quali
 import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as Cardano.ExtraSizes
 import Ouroboros.Cardano.Network.PeerSelection.PublicRootPeers qualified as Cardano.PublicRootPeers
+import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers (..))
@@ -490,6 +491,7 @@ mockPeerSelectionActions' tracer
       getLedgerStateCtx = LedgerPeersConsensusInterface {
           lpGetLatestSlot = pure Origin,
           lpGetLedgerPeers = pure [],
+          lpReadFetchMode = pure (PraosFetchMode FetchModeDeadline),
           lpExtraAPI = Cardano.LedgerPeersConsensusInterface {
             getLedgerStateJudgement = readLedgerStateJudgement,
             updateOutboundConnectionsState = \a -> do

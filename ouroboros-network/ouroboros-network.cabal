@@ -70,6 +70,7 @@ library
     Ouroboros.Network.Diffusion.Policies
     Ouroboros.Network.Diffusion.Topology
     Ouroboros.Network.Diffusion.Types
+    Ouroboros.Network.Diffusion.Utils
     Ouroboros.Network.ExitPolicy
     Ouroboros.Network.KeepAlive
     Ouroboros.Network.NodeToClient
@@ -100,7 +101,6 @@ library
     Ouroboros.Network.TxSubmission.Outbound
 
   other-modules:
-    Ouroboros.Network.Diffusion.Utils
     Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers
     Ouroboros.Network.PeerSelection.Governor.EstablishedPeers
     Ouroboros.Network.PeerSelection.Governor.KnownPeers
@@ -189,7 +189,7 @@ library cardano-diffusion
   visibility: public
   hs-source-dirs: cardano-diffusion
   exposed-modules:
-    Ouroboros.Cardano.Network.ArgumentsExtra
+    Ouroboros.Cardano.Network.Diffusion
     Ouroboros.Cardano.Network.Diffusion.Configuration
     Ouroboros.Cardano.Network.Diffusion.Handlers
     Ouroboros.Cardano.Network.Diffusion.Policies

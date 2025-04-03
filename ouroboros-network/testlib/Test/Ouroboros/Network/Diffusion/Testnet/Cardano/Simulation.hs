@@ -81,14 +81,12 @@ import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import Cardano.Network.Types (LedgerStateJudgement (..),
            NumberOfBigLedgerPeers (..))
 
-import Ouroboros.Cardano.Network.ArgumentsExtra qualified as Cardano
-import Ouroboros.Cardano.Network.Diffusion.Configuration
-           (defaultNumberOfBigLedgerPeers)
 import Ouroboros.Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Churn (ChurnMode (..),
            TracerChurnMode, peerChurnGovernor)
 import Ouroboros.Cardano.Network.PeerSelection.Churn qualified as Churn
 import Ouroboros.Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
+import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionActions qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano hiding
            (consensusMode)
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as ExtraState
@@ -1150,6 +1148,7 @@ diffusionSimulation
                              $ accPoolStake
                              $ getLedgerPools
                              $ ledgerPools)
+                    (pure (PraosFetchMode FetchModeDeadline))
                     Cardano.LedgerPeersConsensusInterface {
                       Cardano.getLedgerStateJudgement = pure TooOld
                     , Cardano.updateOutboundConnectionsState =
@@ -1176,22 +1175,12 @@ diffusionSimulation
                            | otherwise ->
                 return False
 
-          cardanoExtraArgs :: Cardano.ExtraArguments m
-          cardanoExtraArgs =
-            Cardano.ExtraArguments {
-              Cardano.genesisPeerTargets     = snd peerTargets
-            , Cardano.readUseBootstrapPeers  = readUseBootstrapPeers
-            , Cardano.numberOfBigLedgerPeers = defaultNumberOfBigLedgerPeers
-            , Cardano.consensusMode          = consensusMode
-            }
-
           cardanoChurnArgs :: Churn.ExtraArguments m
           cardanoChurnArgs =
             Churn.ExtraArguments {
               Churn.modeVar             = churnModeVar
-            , Churn.readFetchMode       = pure (PraosFetchMode FetchModeDeadline)
-            , Churn.genesisPeerTargets  = Cardano.genesisPeerTargets cardanoExtraArgs
-            , Churn.readUseBootstrap    = Cardano.readUseBootstrapPeers cardanoExtraArgs
+            , Churn.genesisPeerTargets  = snd peerTargets
+            , Churn.readUseBootstrap    = readUseBootstrapPeers
             , Churn.consensusMode       = consensusMode
             , Churn.tracerChurnMode     = (\s -> WithTime (Time (-1)) (WithName addr (DiffusionChurnModeTrace s)))
                                             `contramap` nodeTracer
@@ -1225,7 +1214,7 @@ diffusionSimulation
 
           requestPublicRootPeers' =
             requestPublicRootPeers (Diff.dtTracePublicRootPeersTracer tracers)
-                                   (Cardano.readUseBootstrapPeers cardanoExtraArgs)
+                                   readUseBootstrapPeers
                                    (pure TooOld)
                                    readPublicRootPeers
 
@@ -1237,7 +1226,9 @@ diffusionSimulation
           ExtraSizes.empty
           Cardano.cardanoPublicRootPeersAPI
           (Cardano.cardanoPeerSelectionGovernorArgs
-            (Cardano.cardanoExtraArgsToPeerSelectionActions cardanoExtraArgs)
+            (Cardano.ExtraPeerSelectionActions
+              (snd peerTargets)
+              readUseBootstrapPeers)
           )
           Cardano.cardanoPeerSelectionStatetoCounters
           (flip Cardano.ExtraPeers Set.empty)

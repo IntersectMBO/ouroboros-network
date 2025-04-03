@@ -29,6 +29,7 @@ module Ouroboros.Network.NodeToNode
   , nullNetworkConnectTracers
   , connectTo
   , AcceptedConnectionsLimit (..)
+  , ntnDataFlow
     -- * P2P Governor
   , PeerAdvertise (..)
   , PeerSelectionTargets (..)
@@ -80,7 +81,8 @@ import Network.Mux qualified as Mx
 import Network.Socket (Socket, StructLinger (..))
 import Network.Socket qualified as Socket
 
-import Ouroboros.Network.ConnectionManager.Types (ExceptionInHandler (..))
+import Ouroboros.Network.ConnectionManager.Types (DataFlow (..),
+           ExceptionInHandler (..))
 import Ouroboros.Network.Context
 import Ouroboros.Network.ControlMessage (ControlMessage (..))
 import Ouroboros.Network.Driver (TraceSendRecv (..))
@@ -420,6 +422,14 @@ connectTo sn tr =
                               (StructLinger { sl_onoff  = 1,
                                               sl_linger = 0 })
 
+-- | Node-To-Node protocol connections which negotiated
+-- `InitiatorAndResponderDiffusionMode` are `Duplex`.
+--
+ntnDataFlow :: NodeToNodeVersionData -> DataFlow
+ntnDataFlow NodeToNodeVersionData { diffusionMode } =
+  case diffusionMode of
+    InitiatorAndResponderDiffusionMode -> Duplex
+    InitiatorOnlyDiffusionMode         -> Unidirectional
 
 type RemoteAddress      = Socket.SockAddr
 

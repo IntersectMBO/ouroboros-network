@@ -107,6 +107,7 @@ import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState quali
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano.ExtraState
 import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as Cardano.ExtraSizes
+import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..))
 import Test.QuickCheck
 import Test.QuickCheck.Monoids
 import Test.Tasty
@@ -4074,8 +4075,9 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
                 readInboundPeers = pure Map.empty,
                 getLedgerStateCtx =
                   LedgerPeersConsensusInterface {
-                    lpGetLatestSlot = pure Origin,
+                    lpGetLatestSlot  = pure Origin,
                     lpGetLedgerPeers = pure [],
+                    lpReadFetchMode  = pure (PraosFetchMode FetchModeDeadline),
                     lpExtraAPI = Cardano.LedgerPeersConsensusInterface {
                       getLedgerStateJudgement = readLedgerStateJudgement,
                       updateOutboundConnectionsState = \a -> do

@@ -56,7 +56,6 @@ newtype TracerChurnMode = TraceChurnMode ChurnMode
 data ExtraArguments m =
   ExtraArguments {
     modeVar            :: StrictTVar m ChurnMode
-  , readFetchMode      :: STM m FetchMode
   , genesisPeerTargets :: PeerSelectionTargets
   , readUseBootstrap   :: STM m UseBootstrapPeers
   , consensusMode      :: ConsensusMode
@@ -132,7 +131,8 @@ peerChurnGovernor PeerChurnArgs {
                     pcaPeerSelectionVar    = peerSelectionVar,
                     pcaReadCounters        = readCounters,
                     getLedgerStateCtx = LedgerPeersConsensusInterface {
-                      lpExtraAPI = Cardano.LedgerPeersConsensusInterface {
+                      lpReadFetchMode = getFetchMode,
+                      lpExtraAPI    = Cardano.LedgerPeersConsensusInterface {
                         Cardano.getLedgerStateJudgement
                       }
                     },
@@ -140,7 +140,6 @@ peerChurnGovernor PeerChurnArgs {
                     getOriginalPeerTargets,
                     getExtraArgs = ExtraArguments {
                       modeVar             = churnModeVar,
-                      readFetchMode       = getFetchMode,
                       readUseBootstrap    = getUseBootstrapPeers,
                       consensusMode       = consensusMode,
                       tracerChurnMode     = tracerChurnMode,

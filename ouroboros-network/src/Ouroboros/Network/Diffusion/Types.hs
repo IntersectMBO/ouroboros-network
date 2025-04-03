@@ -10,9 +10,10 @@ module Ouroboros.Network.Diffusion.Types
   , Failure (..)
   , Tracers (..)
   , nullTracers
-  , Arguments (..)
-  , Applications (..)
+  , DiffusionConfiguration (..)
+  , DiffusionApplications (..)
   , Interfaces (..)
+  , DiffusionArguments (..)
     -- * ForkPolicy
   , Mx.ForkPolicy
   , Mx.noBindForkPolicy
@@ -52,7 +53,6 @@ import Network.Socket qualified as Socket
 import Ouroboros.Network.Mux (OuroborosApplicationWithMinimalCtx,
            OuroborosBundleWithExpandedCtx)
 
-import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
 
 import Ouroboros.Network.ConnectionHandler
@@ -116,7 +116,7 @@ data Failure where
 deriving instance Show Failure
 instance Exception Failure
 
--- | Common DiffusionTracers interface between P2P and NonP2P
+-- | Diffusion Tracers
 --
 data Tracers ntnAddr ntnVersion ntnVersionData
              ntcAddr ntcVersion ntcVersionData
@@ -249,57 +249,181 @@ nullTracers = Tracers {
   , dtDnsTracer                                  = nullTracer
   }
 
--- | Common DiffusionArguments interface between P2P and NonP2P
+-- | Diffusion arguments which allow to instantiate a completely different
+-- diffusion layer. These differ from
 --
-data Arguments extraState extraDebugState extraFlags extraPeers
-               extraAPI extraChurnArgs extraCounters exception
-               resolver resolverError
-               m ntnFd ntnAddr ntcFd ntcAddr = Arguments {
+data DiffusionArguments extraState extraDebugState extraFlags extraPeers
+                     extraAPI extraChurnArgs extraCounters exception
+                     resolver resolverError m
+                     ntnFd ntnAddr ntnVersion ntnVersionData
+                     ntcAddr ntcVersion ntcVersionData =
+  DiffusionArguments {
+
+    -- | node-to-node data flow used by connection manager to classify
+    -- negotiated connections
+    --
+    daNtnDataFlow
+      :: ntnVersionData -> DataFlow
+
+    -- | remote side peer sharing information used by peer selection governor
+    -- to decide which peers are available for performing peer sharing
+  , daNtnPeerSharing
+      :: ntnVersionData -> PeerSharing
+
+    -- | Update `ntnVersionData` for initiator-only local roots.
+  , daUpdateVersionData
+      :: ntnVersionData -> DiffusionMode -> ntnVersionData
+
+    -- | node-to-node handshake configuration
+    --
+  , daNtnHandshakeArguments
+      :: HandshakeArguments (ConnectionId ntnAddr) ntnVersion ntnVersionData m
+
+    -- | node-to-client handshake configuration
+    --
+  , daNtcHandshakeArguments
+      :: HandshakeArguments (ConnectionId ntcAddr) ntcVersion ntcVersionData m
+
+    -- | Interface used to get peers from the current ledger.
+    --
+  , daLedgerPeersCtx :: LedgerPeersConsensusInterface extraAPI m
+
+    -- | Extra State empty value
+    --
+  , daEmptyExtraState        :: extraState
+
+    -- | Extra Counters empty value
+    --
+  , daEmptyExtraCounters     :: extraCounters
+
+    -- | Provide Public Extra Actions for extraPeers to be
+    --
+  , daExtraPeersAPI          :: PublicExtraPeersAPI extraPeers ntnAddr
+
+    -- | callback which is used to register @SIGUSR1@ signal handler.
+  , daInstallSigUSR1Handler
+      :: forall mode x y.
+         NodeToNodeConnectionManager mode ntnFd
+                                     ntnAddr ntnVersionData
+                                     ntnVersion m x y
+      -> StrictTVar m
+           (PeerSelectionState extraState extraFlags extraPeers
+                               ntnAddr
+                               (NodeToNodePeerConnectionHandle
+                                   mode ntnAddr
+                                   ntnVersionData m x y))
+      -> PeerMetrics m ntnAddr
+      -> m ()
+
+  , daPeerSelectionGovernorArgs
+      :: forall muxMode responderCtx bytes a b .
+         PeerSelectionGovernorArgs extraState extraDebugState extraFlags extraPeers
+                                   extraAPI extraCounters
+                                   ntnAddr (PeerConnectionHandle
+                                              muxMode responderCtx ntnAddr
+                                              ntnVersionData bytes m a b)
+                                   exception m
+
+    -- | Function that computes extraCounters from PeerSelectionState
+    --
+  , daPeerSelectionStateToExtraCounters
+      :: forall muxMode responderCtx bytes a b .
+         PeerSelectionState extraState extraFlags extraPeers
+                            ntnAddr (PeerConnectionHandle
+                                       muxMode responderCtx ntnAddr
+                                       ntnVersionData bytes m a b)
+      -> extraCounters
+
+    -- | Function that constructs a 'extraPeers' set from a map of dns
+    -- lookup results.
+    --
+  , daToExtraPeers :: Map ntnAddr PeerAdvertise -> extraPeers
+
+    -- | Request Public Root Peers.
+    --
+    -- If no custom public root peers is provided (i.e. Nothing) just the
+    -- default one from
+    -- 'Ouroboros.Network.PeerSelection.PeerSelectionActions.getPublicRootPeers'
+    --
+  , daRequestPublicRootPeers
+      :: Maybe (    PeerActionsDNS ntnAddr resolver resolverError m
+                 -> DNSSemaphore m
+                 -> (Map ntnAddr PeerAdvertise -> extraPeers)
+                 -> ( (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set ntnAddr, DiffTime)))
+                 -> LedgerPeersKind
+                 -> StdGen
+                 -> Int
+                 -> m (PublicRootPeers extraPeers ntnAddr, DiffTime)))
+
+    -- | Peer Churn Governor if no custom churn governor is required just
+    -- use the default one from
+    -- 'Ouroboros.Network.PeerSelection.Churn.peerChurnGovernor'
+    --
+  , daPeerChurnGovernor
+      :: PeerSelection.PeerChurnArgs
+           m
+           extraChurnArgs
+           extraDebugState
+           extraFlags
+           extraPeers
+           extraAPI
+           extraCounters
+           ntnAddr
+      -> m Void
+
+    -- | Provide extraChurnArgs to be passed to churn governor
+    --
+  , daExtraChurnArgs :: extraChurnArgs
+  }
+
+-- | Required Diffusion Arguments to run network layer
+--
+data DiffusionConfiguration extraFlags m ntnFd ntnAddr ntcFd ntcAddr = DiffusionConfiguration {
       -- | an @IPv4@ socket ready to accept connections or an @IPv4@ addresses
       --
-      daIPv4Address              :: Maybe (Either ntnFd ntnAddr)
+      dcIPv4Address              :: Maybe (Either ntnFd ntnAddr)
 
       -- | an @IPv6@ socket ready to accept connections or an @IPv6@ addresses
       --
-    , daIPv6Address              :: Maybe (Either ntnFd ntnAddr)
+    , dcIPv6Address              :: Maybe (Either ntnFd ntnAddr)
 
       -- | an @AF_UNIX@ socket ready to accept connections or an @AF_UNIX@
       -- socket path
-    , daLocalAddress             :: Maybe (Either ntcFd ntcAddr)
+    , dcLocalAddress             :: Maybe (Either ntcFd ntcAddr)
 
       -- | parameters for limiting number of accepted connections
       --
-    , daAcceptedConnectionsLimit :: AcceptedConnectionsLimit
+    , dcAcceptedConnectionsLimit :: AcceptedConnectionsLimit
 
       -- | run in initiator only mode
       --
-    , daMode                     :: DiffusionMode
+    , dcMode                     :: DiffusionMode
 
       -- | public peer selection state
       --
       -- It is created outside of diffusion, since it is needed to create some
       -- apps (e.g. peer sharing).
       --
-    , daPublicPeerSelectionVar   :: StrictTVar m (PublicPeerSelectionState ntnAddr)
+    , dcPublicPeerSelectionVar   :: StrictTVar m (PublicPeerSelectionState ntnAddr)
 
       -- | selection targets for the peer governor
       --
-    , daPeerSelectionTargets   :: PeerSelectionTargets
-    , daReadLocalRootPeers     :: STM m (LocalRootPeers.Config extraFlags RelayAccessPoint)
-    , daReadPublicRootPeers    :: STM m (Map RelayAccessPoint PeerAdvertise)
+    , dcPeerSelectionTargets   :: PeerSelectionTargets
+    , dcReadLocalRootPeers     :: STM m (LocalRootPeers.Config extraFlags RelayAccessPoint)
+    , dcReadPublicRootPeers    :: STM m (Map RelayAccessPoint PeerAdvertise)
 
     -- | Depending on configuration, node may provide us with
     -- a snapshot of big ledger peers taken at some slot on the chain.
     -- These peers may be selected by ledgerPeersThread when requested
     -- by the peer selection governor when the node is syncing up.
     -- This is especially useful for Genesis consensus mode.
-    , daReadLedgerPeerSnapshot :: STM m (Maybe LedgerPeerSnapshot)
+    , dcReadLedgerPeerSnapshot :: STM m (Maybe LedgerPeerSnapshot)
 
     -- | Peer's own PeerSharing value.
     --
     -- This value comes from the node's configuration file and is static.
-    , daOwnPeerSharing         :: PeerSharing
-    , daReadUseLedgerPeers     :: STM m UseLedgerPeers
+    , dcOwnPeerSharing         :: PeerSharing
+    , dcReadUseLedgerPeers     :: STM m UseLedgerPeers
 
       -- | Timeout which starts once all responder protocols are idle. If the
       -- responders stay idle for duration of the timeout, the connection will
@@ -310,7 +434,7 @@ data Arguments extraState extraDebugState extraFlags extraPeers
       --
       -- See 'serverProtocolIdleTimeout'.
       --
-    , daProtocolIdleTimeout    :: DiffTime
+    , dcProtocolIdleTimeout    :: DiffTime
 
       -- | Time for which /node-to-node/ connections are kept in
       -- 'TerminatingState', it should correspond to the OS configured @TCP@
@@ -320,117 +444,44 @@ data Arguments extraState extraDebugState extraFlags extraPeers
       -- purpose is to be resilient for delayed packets in the same way @TCP@
       -- is using @TIME_WAIT@.
       --
-    , daTimeWaitTimeout        :: DiffTime
+    , dcTimeWaitTimeout        :: DiffTime
 
       -- | Churn interval between churn events in deadline mode.  A small fuzz
       -- is added (max 10 minutes) so that not all nodes churn at the same time.
       --
       -- By default it is set to 3300 seconds.
       --
-    , daDeadlineChurnInterval  :: DiffTime
+    , dcDeadlineChurnInterval  :: DiffTime
 
       -- | Churn interval between churn events in bulk sync mode.  A small fuzz
       -- is added (max 1 minute) so that not all nodes churn at the same time.
       --
       -- By default it is set to 300 seconds.
       --
-    , daBulkChurnInterval      :: DiffTime
-
-      -- | Extra State empty value
-      --
-    , daEmptyExtraState        :: extraState
-
-      -- | Extra Counters empty value
-      --
-    , daEmptyExtraCounters     :: extraCounters
-
-      -- | Provide Public Extra Actions for extraPeers to be
-      --
-    , daExtraPeersAPI          :: PublicExtraPeersAPI extraPeers ntnAddr
-
-    , daPeerSelectionGovernorArgs
-        :: forall muxMode responderCtx ntnVersionData bytes a b .
-           PeerSelectionGovernorArgs extraState extraDebugState extraFlags extraPeers
-                                     extraAPI extraCounters
-                                     ntnAddr (PeerConnectionHandle
-                                                muxMode responderCtx ntnAddr
-                                                ntnVersionData bytes m a b)
-                                     exception m
-
-      -- | Function that computes extraCounters from PeerSelectionState
-      --
-    , daPeerSelectionStateToExtraCounters
-        :: forall muxMode responderCtx ntnVersionData bytes a b .
-           PeerSelectionState extraState extraFlags extraPeers
-                              ntnAddr (PeerConnectionHandle
-                                         muxMode responderCtx ntnAddr
-                                         ntnVersionData bytes m a b)
-        -> extraCounters
-
-      -- | Function that constructs a 'extraPeers' set from a map of dns
-      -- lookup results.
-      --
-    , daToExtraPeers :: Map ntnAddr PeerAdvertise -> extraPeers
-
-      -- | Request Public Root Peers.
-      --
-      -- If no custom public root peers is provided (i.e. Nothing) just the
-      -- default one from
-      -- 'Ouroboros.Network.PeerSelection.PeerSelectionActions.getPublicRootPeers'
-      --
-    , daRequestPublicRootPeers
-        :: Maybe (    PeerActionsDNS ntnAddr resolver resolverError m
-                   -> DNSSemaphore m
-                   -> (Map ntnAddr PeerAdvertise -> extraPeers)
-                   -> ( (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set ntnAddr, DiffTime)))
-                   -> LedgerPeersKind
-                   -> StdGen
-                   -> Int
-                   -> m (PublicRootPeers extraPeers ntnAddr, DiffTime)))
-
-      -- | Peer Churn Governor if no custom churn governor is required just
-      -- use the default one from
-      -- 'Ouroboros.Network.PeerSelection.Churn.peerChurnGovernor'
-      --
-    , daPeerChurnGovernor
-        :: PeerSelection.PeerChurnArgs
-             m
-             extraChurnArgs
-             extraDebugState
-             extraFlags
-             extraPeers
-             extraAPI
-             extraCounters
-             ntnAddr
-        -> m Void
-
-      -- | Provide extraChurnArgs to be passed to churn governor
-      --
-    , daExtraChurnArgs :: extraChurnArgs
+    , dcBulkChurnInterval      :: DiffTime
 
       -- | A fork policy for node-to-node mini-protocol threads spawn by mux.
       --
-    , daMuxForkPolicy :: Mx.ForkPolicy ntnAddr
+    , dcMuxForkPolicy :: Mx.ForkPolicy ntnAddr
 
     -- | A fork policy for node-to-client mini-protocols threads spawn by mux.
     --
-    , daLocalMuxForkPolicy :: Mx.ForkPolicy ntcAddr
+    , dcLocalMuxForkPolicy :: Mx.ForkPolicy ntcAddr
 
   }
 
 
 -- | Versioned mini-protocol bundles run on a negotiated connection.
 --
-data Applications ntnAddr ntnVersion ntnVersionData
-                  ntcAddr ntcVersion ntcVersionData
-                  extraAPI m a =
-  Applications {
+data DiffusionApplications ntnAddr ntnVersion ntnVersionData
+                           ntcAddr ntcVersion ntcVersionData
+                           m a =
+  DiffusionApplications {
       -- | NodeToNode initiator applications for initiator only mode.
       --
       -- TODO: we should accept one or the other, but not both:
       -- 'daApplicationInitiatorMode', 'daApplicationInitiatorResponderMode'.
       --
-      -- Even in non-p2p mode we use p2p apps.
       daApplicationInitiatorMode
         :: Versions ntnVersion
                     ntnVersionData
@@ -459,11 +510,6 @@ data Applications ntnAddr ntnVersion ntnVersionData
                       Mx.ResponderMode ntcAddr
                       ByteString m Void ())
 
-      -- | Interface used to get peers from the current ledger.
-      --
-      -- TODO: it should be in 'InterfaceExtra'
-    , daLedgerPeersCtx :: LedgerPeersConsensusInterface extraAPI m
-
       -- | /node-to-node/ rethrow policy
       --
     , daRethrowPolicy       :: RethrowPolicy
@@ -480,10 +526,6 @@ data Applications ntnAddr ntnVersion ntnVersionData
       -- 'simplePeerSelectionPolicy')
       --
     , daPeerMetrics         :: PeerMetrics m ntnAddr
-
-      -- | Used by churn-governor
-      --
-    , daBlockFetchMode      :: STM m FetchMode
 
       -- | Used for peer sharing protocol
       --
@@ -573,11 +615,8 @@ type NodeToNodePeerSelectionActions extraState extraFlags extraPeers extraAPI ex
       m
 
 
-data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
-                ntcFd ntcAddr ntcVersion ntcVersionData
-                resolver resolverError
-                extraState extraFlags extraPeers extraAPI
-                m =
+data Interfaces ntnFd ntnAddr ntcFd ntcAddr
+                resolver resolverError m =
     Interfaces {
         -- | node-to-node snocket
         --
@@ -603,26 +642,10 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         diNtnConfigureSystemdSocket
           :: ntnFd -> ntnAddr -> m (),
 
-        -- | node-to-node handshake configuration
-        --
-        diNtnHandshakeArguments
-          :: HandshakeArguments (ConnectionId ntnAddr) ntnVersion ntnVersionData m,
-
         -- | node-to-node address type
         --
         diNtnAddressType
           :: ntnAddr -> Maybe AddressType,
-
-        -- | node-to-node data flow used by connection manager to classify
-        -- negotiated connections
-        --
-        diNtnDataFlow
-          :: ntnVersionData -> DataFlow,
-
-        -- | remote side peer sharing information used by peer selection governor
-        -- to decide which peers are available for performing peer sharing
-        diNtnPeerSharing
-          :: ntnVersionData -> PeerSharing,
 
         -- | node-to-node peer address
         --
@@ -639,11 +662,6 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         diNtcBearer
           :: Mx.MakeBearer m ntcFd,
 
-        -- | node-to-client handshake configuration
-        --
-        diNtcHandshakeArguments
-          :: HandshakeArguments (ConnectionId ntcAddr) ntcVersion ntcVersionData m,
-
         -- | node-to-client file descriptor
         --
         diNtcGetFileDescriptor
@@ -656,21 +674,6 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         diRng
           :: StdGen,
 
-        -- | callback which is used to register @SIGUSR1@ signal handler.
-        diInstallSigUSR1Handler
-          :: forall mode x y.
-             NodeToNodeConnectionManager mode ntnFd
-                                         ntnAddr ntnVersionData
-                                         ntnVersion m x y
-          -> StrictTVar m
-               (PeerSelectionState extraState extraFlags extraPeers
-                                   ntnAddr
-                                   (NodeToNodePeerConnectionHandle
-                                       mode ntnAddr
-                                       ntnVersionData m x y))
-          -> PeerMetrics m ntnAddr
-          -> m (),
-
         -- | diffusion dns actions
         --
         diDnsActions
@@ -678,10 +681,6 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
           -> DNSLookupType
           -> (IP -> Socket.PortNumber -> ntnAddr)
           -> DNSActions ntnAddr resolver resolverError m,
-
-        -- | Update `ntnVersionData` for initiator-only local roots.
-        diUpdateVersionData
-          :: ntnVersionData -> DiffusionMode -> ntnVersionData,
 
         -- | `ConnStateIdSupply` used by the connection-manager for this node.
         --
