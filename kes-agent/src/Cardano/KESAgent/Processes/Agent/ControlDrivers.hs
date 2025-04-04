@@ -193,7 +193,7 @@ convertBundleInfoCP1 :: TaggedBundleInfo StandardCrypto -> Maybe CP1.BundleInfo
 convertBundleInfoCP1 TaggedBundleInfo { taggedBundleInfo = Nothing } =
   Nothing
 convertBundleInfoCP1 TaggedBundleInfo { taggedBundleInfo = Just info } =
-  Just 
+  Just
     CP1.BundleInfo
       { CP1.bundleInfoEvolution = bundleInfoEvolution info
       , CP1.bundleInfoStartKESPeriod = bundleInfoStartKESPeriod info
