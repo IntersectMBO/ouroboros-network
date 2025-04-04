@@ -40,7 +40,6 @@ import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Protocols.Types
 import Cardano.KESAgent.Protocols.VersionedProtocol
 
-
 class ControlCrypto c where
   availableControlDrivers ::
     forall m fd addr.
@@ -152,9 +151,9 @@ instance FromAgentInfo c (CP0.AgentInfo c) where
       }
 
 convertBundleInfoCP0 :: TaggedBundleInfo c -> Maybe (CP0.BundleInfo c)
-convertBundleInfoCP0 TaggedBundleInfo { taggedBundleInfo = Nothing } =
+convertBundleInfoCP0 TaggedBundleInfo {taggedBundleInfo = Nothing} =
   Nothing
-convertBundleInfoCP0 TaggedBundleInfo { taggedBundleInfo = Just info } =
+convertBundleInfoCP0 TaggedBundleInfo {taggedBundleInfo = Just info} =
   Just
     CP0.BundleInfo
       { CP0.bundleInfoEvolution = bundleInfoEvolution info
@@ -190,9 +189,9 @@ instance FromAgentInfo StandardCrypto CP1.AgentInfo where
       }
 
 convertBundleInfoCP1 :: TaggedBundleInfo StandardCrypto -> Maybe CP1.BundleInfo
-convertBundleInfoCP1 TaggedBundleInfo { taggedBundleInfo = Nothing } =
+convertBundleInfoCP1 TaggedBundleInfo {taggedBundleInfo = Nothing} =
   Nothing
-convertBundleInfoCP1 TaggedBundleInfo { taggedBundleInfo = Just info } =
+convertBundleInfoCP1 TaggedBundleInfo {taggedBundleInfo = Just info} =
   Just
     CP1.BundleInfo
       { CP1.bundleInfoEvolution = bundleInfoEvolution info
@@ -258,4 +257,3 @@ convertConnectionStatusCP2 :: ConnectionStatus -> CP2.ConnectionStatus
 convertConnectionStatusCP2 ConnectionUp = CP2.ConnectionUp
 convertConnectionStatusCP2 ConnectionConnecting = CP2.ConnectionConnecting
 convertConnectionStatusCP2 ConnectionDown = CP2.ConnectionDown
-

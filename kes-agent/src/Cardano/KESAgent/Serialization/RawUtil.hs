@@ -431,7 +431,9 @@ sendRecvResult ::
   ( MonadST m
   , MonadThrow m
   ) =>
-  RawBearer m -> RecvResult -> m ()
+  RawBearer m ->
+  RecvResult ->
+  m ()
 sendRecvResult s r = do
   sendWord32 s (encodeRecvResult r)
 
@@ -439,11 +441,12 @@ receiveRecvResult ::
   ( MonadST m
   , MonadThrow m
   ) =>
-  RawBearer m -> m (ReadResult RecvResult)
+  RawBearer m ->
+  m (ReadResult RecvResult)
 receiveRecvResult s = runReadResultT $ do
   w <- ReadResultT $ do
-          result <- receiveWord32 s
-          return result
+    result <- receiveWord32 s
+    return result
   return $ decodeRecvResult w
 
 encodeRecvResult :: RecvResult -> Word32

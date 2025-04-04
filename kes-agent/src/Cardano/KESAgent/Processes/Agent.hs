@@ -39,18 +39,18 @@ import Cardano.KESAgent.KES.Evolution (
   EvolutionConfig (..),
   defEvolutionConfig,
  )
+import Cardano.KESAgent.Processes.Agent.CommonActions
+import Cardano.KESAgent.Processes.Agent.Context
+import Cardano.KESAgent.Processes.Agent.ControlDrivers
+import Cardano.KESAgent.Processes.Agent.ServiceDrivers
+import Cardano.KESAgent.Processes.Agent.Type
 import Cardano.KESAgent.Processes.ServiceClient (
+  ServiceClientDrivers (..),
   ServiceClientOptions (..),
   ServiceClientTrace (..),
-  ServiceClientDrivers (..),
   runServiceClientForever,
  )
 import Cardano.KESAgent.Protocols.AgentInfo
-import Cardano.KESAgent.Processes.Agent.Type
-import Cardano.KESAgent.Processes.Agent.Context
-import Cardano.KESAgent.Processes.Agent.CommonActions
-import Cardano.KESAgent.Processes.Agent.ControlDrivers
-import Cardano.KESAgent.Processes.Agent.ServiceDrivers
 import Cardano.KESAgent.Protocols.VersionHandshake.Driver (versionHandshakeDriver)
 import Cardano.KESAgent.Protocols.VersionHandshake.Peers (versionHandshakeServer)
 import Cardano.KESAgent.Protocols.VersionedProtocol

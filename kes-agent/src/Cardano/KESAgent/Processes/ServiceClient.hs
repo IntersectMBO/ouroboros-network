@@ -128,9 +128,9 @@ mkServiceClientDriverSP0 =
       void $
         runPeerWithDriver
           (SP0.serviceDriver bearer $ ServiceClientDriverTrace >$< tracer)
-          (SP0.serviceReceiver $
-            \bundle ->
-              handleKey (TaggedBundle (Just bundle) 0) <* traceWith tracer ServiceClientReceivedKey
+          ( SP0.serviceReceiver $
+              \bundle ->
+                handleKey (TaggedBundle (Just bundle) 0) <* traceWith tracer ServiceClientReceivedKey
           )
   )
 
@@ -149,7 +149,7 @@ mkServiceClientDriverSP1 =
       void $
         runPeerWithDriver
           (SP1.serviceDriver bearer $ ServiceClientDriverTrace >$< tracer)
-          (SP1.serviceReceiver $ \bundle ->
+          ( SP1.serviceReceiver $ \bundle ->
               handleKey (TaggedBundle (Just bundle) 0) <* traceWith tracer ServiceClientReceivedKey
           )
   )
@@ -169,8 +169,9 @@ mkServiceClientDriverSP2 =
       void $
         runPeerWithDriver
           (SP2.serviceDriver bearer $ ServiceClientDriverTrace >$< tracer)
-          (SP2.serviceReceiver
-            (\bundle -> handleKey bundle <* traceWith tracer ServiceClientReceivedKey))
+          ( SP2.serviceReceiver
+              (\bundle -> handleKey bundle <* traceWith tracer ServiceClientReceivedKey)
+          )
   )
 
 instance ServiceClientDrivers StandardCrypto where
@@ -230,12 +231,13 @@ runServiceClient proxy mrb options handleKey tracer = do
   latestTimestampVar <- newMVar Nothing
   let handleKey' tbundle@(TaggedBundle bundleMay timestamp) = do
         latestTimestamp <- takeMVar latestTimestampVar
-        if Just timestamp <= latestTimestamp then do
-          putMVar latestTimestampVar latestTimestamp
-          return RecvErrorKeyOutdated
-        else do
-          putMVar latestTimestampVar (Just timestamp)
-          handleKey tbundle
+        if Just timestamp <= latestTimestamp
+          then do
+            putMVar latestTimestampVar latestTimestamp
+            return RecvErrorKeyOutdated
+          else do
+            putMVar latestTimestampVar (Just timestamp)
+            handleKey tbundle
 
   void $
     bracket

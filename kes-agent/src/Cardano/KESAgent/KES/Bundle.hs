@@ -4,14 +4,14 @@ module Cardano.KESAgent.KES.Bundle where
 
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
-import Cardano.KESAgent.Util.RefCounting
 import Cardano.KESAgent.Util.Pretty
+import Cardano.KESAgent.Util.RefCounting
 
 import Cardano.Crypto.KES.Class
 
-import Data.Word (Word64)
 import Data.Time -- (UTCTime, nominalDiffTimeToSeconds)
 import Data.Time.Clock.POSIX -- (utcTimeToPOSIXSeconds, )
+import Data.Word (Word64)
 import Text.Printf
 
 -- | A bundle of a KES key with a period, plus the matching op cert.
@@ -26,7 +26,7 @@ data Bundle m c
   , bundleOC :: OCert c
   }
 
-newtype Timestamp = Timestamp { timestampValue :: Word64 }
+newtype Timestamp = Timestamp {timestampValue :: Word64}
   deriving (Eq, Ord, Enum, Bounded, Num, Real, Integral)
 
 timestampFromUTC :: UTCTime -> Timestamp
@@ -44,8 +44,9 @@ instance Show Timestamp where
   show (Timestamp micro) =
     printf "%u.%03u" (micro `div` 1000000) (micro `mod` 1000000)
 
-data TaggedBundle m c =
-  TaggedBundle
-    { taggedBundle :: Maybe (Bundle m c) -- ^ Nothing means delete(d)
-    , taggedBundleTimestamp :: Timestamp
-    }
+data TaggedBundle m c
+  = TaggedBundle
+  { taggedBundle :: Maybe (Bundle m c)
+  -- ^ Nothing means delete(d)
+  , taggedBundleTimestamp :: Timestamp
+  }

@@ -180,7 +180,11 @@ withNewCRef = withNewCRefWith nullTracer
 
 withNewCRefWith ::
   (MonadST m, MonadSTM m, MonadThrow m) =>
-  Tracer m CRefEvent -> (a -> m ()) -> a -> (CRef m a -> m b) -> m b
+  Tracer m CRefEvent ->
+  (a -> m ()) ->
+  a ->
+  (CRef m a -> m b) ->
+  m b
 withNewCRefWith tracer finalizer val action = do
   bracket
     (newCRefWith tracer finalizer val)

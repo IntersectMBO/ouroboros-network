@@ -154,15 +154,17 @@ serviceDriver s tracer =
               lift $ traceWith tracer ServiceDriverReceivingKey
               timestamp <- receiveItem s
               bundle <- receiveItem s
-              lift $ traceWith tracer $
-                ServiceDriverReceivedKey
-                  (mkKeyMutationTrace timestamp (Just bundle))
+              lift $
+                traceWith tracer $
+                  ServiceDriverReceivedKey
+                    (mkKeyMutationTrace timestamp (Just bundle))
               return (SomeMessage (KeyMessage bundle timestamp), ())
             DropKeyMessageID -> do
               lift $ traceWith tracer ServiceDriverReceivingKeyDrop
               timestamp <- receiveItem s
-              lift $ traceWith tracer $
-                ServiceDriverReceivedKeyDrop timestamp
+              lift $
+                traceWith tracer $
+                  ServiceDriverReceivedKeyDrop timestamp
               return (SomeMessage (DropKeyMessage timestamp), ())
         case result of
           ReadOK msg ->

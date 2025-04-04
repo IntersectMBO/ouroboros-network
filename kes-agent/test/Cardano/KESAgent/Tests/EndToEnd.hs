@@ -1,5 +1,5 @@
-{-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
@@ -1076,15 +1076,14 @@ kesAgentPropagateUpdate =
 
           threadDelay 100_000
     assertMatchingOutputLinesWith
-      ("SERVICE OUTPUT CHECK\n" <>
-        (Text.unpack . Text.unlines $ agentOutLines1) <>
-        "---------\n" <>
-        (Text.unpack . Text.unlines $ agentOutLines2)
+      ( "SERVICE OUTPUT CHECK\n"
+          <> (Text.unpack . Text.unlines $ agentOutLines1)
+          <> "---------\n"
+          <> (Text.unpack . Text.unlines $ agentOutLines2)
       )
       7
       ["->", "ServiceClientBlockForging", "1"]
       serviceOutLines
-
 
 kesAgentSelfHeal1 :: Assertion
 kesAgentSelfHeal1 =

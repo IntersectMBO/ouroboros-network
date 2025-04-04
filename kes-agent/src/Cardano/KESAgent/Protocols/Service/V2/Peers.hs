@@ -39,18 +39,18 @@ serviceReceiver receiveBundle =
   where
     go :: Client (ServiceProtocol m) NonPipelined IdleState m ()
     go = Client.Await $ \case
-            KeyMessage bundle timestamp ->
-              Client.Effect $ do
-                result <- receiveBundle (TaggedBundle (Just bundle) timestamp)
-                return $ Client.Yield (RecvResultMessage result) go
-            DropKeyMessage timestamp ->
-              Client.Effect $ do
-                result <- receiveBundle (TaggedBundle Nothing timestamp)
-                return $ Client.Yield (RecvResultMessage result) go
-            ProtocolErrorMessage ->
-              Client.Done ()
-            ServerDisconnectMessage ->
-              Client.Done ()
+      KeyMessage bundle timestamp ->
+        Client.Effect $ do
+          result <- receiveBundle (TaggedBundle (Just bundle) timestamp)
+          return $ Client.Yield (RecvResultMessage result) go
+      DropKeyMessage timestamp ->
+        Client.Effect $ do
+          result <- receiveBundle (TaggedBundle Nothing timestamp)
+          return $ Client.Yield (RecvResultMessage result) go
+      ProtocolErrorMessage ->
+        Client.Done ()
+      ServerDisconnectMessage ->
+        Client.Done ()
 
 servicePusher ::
   forall (m :: (Type -> Type)).
@@ -67,14 +67,16 @@ servicePusher currentKey nextKey handleResult =
     Server.Effect $ do
       currentKey >>= goKey
   where
-    goKey :: TaggedBundle m StandardCrypto
-          -> m (Server (ServiceProtocol m) NonPipelined IdleState m ())
+    goKey ::
+      TaggedBundle m StandardCrypto ->
+      m (Server (ServiceProtocol m) NonPipelined IdleState m ())
     goKey (TaggedBundle bundleMay timestamp) = do
       return $
         Server.Yield ((maybe DropKeyMessage KeyMessage bundleMay) timestamp) $
           Server.Effect $ do
-            return $ Server.Await $
-              \(RecvResultMessage result) -> goR result
+            return $
+              Server.Await $
+                \(RecvResultMessage result) -> goR result
 
     goR :: RecvResult -> Server (ServiceProtocol m) NonPipelined IdleState m ()
     goR result = Server.Effect $ do

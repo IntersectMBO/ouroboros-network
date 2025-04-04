@@ -58,23 +58,22 @@ data ConnectionStatus
   | ConnectionDown
   deriving (Show, Read, Eq, Ord, Enum, Bounded)
 
-data TaggedBundleInfo =
-  TaggedBundleInfo
-    { taggedBundleInfo :: Maybe BundleInfo
-    , taggedBundleInfoTimestamp :: Maybe UTCTime
-    }
-    deriving (Show, Eq)
+data TaggedBundleInfo
+  = TaggedBundleInfo
+  { taggedBundleInfo :: Maybe BundleInfo
+  , taggedBundleInfoTimestamp :: Maybe UTCTime
+  }
+  deriving (Show, Eq)
 
-
-data BundleInfo =
-  BundleInfo
-    { bundleInfoEvolution :: !Word32
-    , bundleInfoStartKESPeriod :: !KESPeriod
-    , bundleInfoOCertN :: !Word64
-    , bundleInfoVK :: !(VerKeyKES (KES StandardCrypto))
-    , bundleInfoSigma :: !(SignedDSIGN (DSIGN StandardCrypto) (OCertSignable StandardCrypto))
-    }
-    deriving (Show, Eq)
+data BundleInfo
+  = BundleInfo
+  { bundleInfoEvolution :: !Word32
+  , bundleInfoStartKESPeriod :: !KESPeriod
+  , bundleInfoOCertN :: !Word64
+  , bundleInfoVK :: !(VerKeyKES (KES StandardCrypto))
+  , bundleInfoSigma :: !(SignedDSIGN (DSIGN StandardCrypto) (OCertSignable StandardCrypto))
+  }
+  deriving (Show, Eq)
 
 newtype KeyInfo
   = KeyInfo

@@ -133,7 +133,6 @@ controlDropKey = do
         Server.Yield EndMessage $
           Server.Done result
 
-
 controlGetInfo ::
   forall (m :: (Type -> Type)).
   MonadSTM m =>

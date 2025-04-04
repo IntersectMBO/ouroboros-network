@@ -124,14 +124,14 @@ handleKey ::
   (ServiceClientState -> IO ()) ->
   TaggedBundle IO c ->
   IO RecvResult
-handleKey setState TaggedBundle { taggedBundle = Just (Bundle skpVar ocert) } = do
+handleKey setState TaggedBundle {taggedBundle = Just (Bundle skpVar ocert)} = do
   withCRefValue skpVar $ \skp -> do
     skSer <- rawSerialiseSignKeyKES (skWithoutPeriodKES skp)
     let period = periodKES skp
     let certN = ocertN ocert
     setState $ ServiceClientBlockForging certN period (take 8 (hexShowBS skSer) ++ "...")
     return RecvOK
-handleKey setState TaggedBundle { taggedBundle = Nothing } = do
+handleKey setState TaggedBundle {taggedBundle = Nothing} = do
   setState $ ServiceClientWaitingForCredentials
   return RecvOK
 

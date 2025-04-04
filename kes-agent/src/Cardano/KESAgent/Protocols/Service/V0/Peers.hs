@@ -79,9 +79,9 @@ servicePusher currentKey nextKey handleResult =
       bundleMay <- nextKey
       case bundleMay of
         Nothing ->
-            return $ goR RecvErrorUnsupportedOperation
+          return $ goR RecvErrorUnsupportedOperation
         Just bundle ->
-            return $
-              Server.Yield (KeyMessage bundle) $
-                Server.Await $
-                  \(RecvResultMessage result) -> goR result
+          return $
+            Server.Yield (KeyMessage bundle) $
+              Server.Await $
+                \(RecvResultMessage result) -> goR result

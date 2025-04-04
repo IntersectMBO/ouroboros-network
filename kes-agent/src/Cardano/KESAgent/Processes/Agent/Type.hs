@@ -14,7 +14,6 @@ import Data.Time (UTCTime)
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket (Snocket (..))
 
-import Cardano.KESAgent.Protocols.AgentInfo
 import Cardano.KESAgent.KES.Bundle (TaggedBundle (..))
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import Cardano.KESAgent.KES.Evolution (
@@ -23,6 +22,7 @@ import Cardano.KESAgent.KES.Evolution (
  )
 import Cardano.KESAgent.KES.OCert (KESPeriod (..))
 import Cardano.KESAgent.Processes.ServiceClient (ServiceClientTrace (..))
+import Cardano.KESAgent.Protocols.AgentInfo
 import Cardano.KESAgent.Protocols.Types
 import Cardano.KESAgent.Protocols.VersionHandshake.Driver (VersionHandshakeDriverTrace (..))
 import Cardano.KESAgent.Util.Pretty (Pretty (..), strLength)
@@ -30,7 +30,6 @@ import Cardano.KESAgent.Util.RefCounting (
   CRef,
   CRefEvent (..),
  )
-
 
 {-HLINT ignore "Use underscore" -}
 

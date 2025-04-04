@@ -761,18 +761,21 @@ instance
   Serializable (DirectCodec m) (TaggedBundle m c)
   where
   encode codec = encodeWith $ \s tbundle -> do
-    runReaderT (do
-        encode codec $ taggedBundle tbundle
-        encode codec $ taggedBundleTimestamp tbundle
-      ) s
+    runReaderT
+      ( do
+          encode codec $ taggedBundle tbundle
+          encode codec $ taggedBundleTimestamp tbundle
+      )
+      s
 
   decode codec = do
     b <- decode codec
     t <- decode codec
-    return TaggedBundle
-      { taggedBundle = b
-      , taggedBundleTimestamp = t
-      }
+    return
+      TaggedBundle
+        { taggedBundle = b
+        , taggedBundleTimestamp = t
+        }
 
 instance
   ( HasInfo (DirectCodec m) (SignKeyKES (KES c))

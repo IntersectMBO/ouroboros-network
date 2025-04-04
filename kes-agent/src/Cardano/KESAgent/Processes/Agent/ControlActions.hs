@@ -37,11 +37,16 @@ import Control.Monad.Class.MonadThrow (
 import Control.Monad.Class.MonadTime (MonadTime (..))
 import qualified Data.Map.Strict as Map
 
+import Cardano.KESAgent.KES.Bundle (
+  Bundle (..),
+  TaggedBundle (..),
+  timestampFromUTC,
+  timestampToUTC,
+ )
+import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import Cardano.KESAgent.KES.Evolution (
   getCurrentKESPeriodWith,
  )
-import Cardano.KESAgent.KES.Bundle (TaggedBundle (..), Bundle (..), timestampFromUTC, timestampToUTC)
-import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import Cardano.KESAgent.KES.OCert (OCert (..))
 import Cardano.KESAgent.Processes.Agent.CommonActions
 import Cardano.KESAgent.Processes.Agent.Context
@@ -56,7 +61,8 @@ import Cardano.KESAgent.Util.RefCounting (
 
 genKey ::
   AgentContext m c =>
-  Agent c m fd addr -> m (Maybe (VerKeyKES (KES c)))
+  Agent c m fd addr ->
+  m (Maybe (VerKeyKES (KES c)))
 genKey agent = do
   bracket
     (agentGenSeed . agentOptions $ agent)
@@ -72,20 +78,23 @@ genKey agent = do
 
 dropKey ::
   AgentContext m c =>
-  Agent c m fd addr -> m RecvResult
+  Agent c m fd addr ->
+  m RecvResult
 dropKey agent =
   do
     timestamp <- timestampFromUTC <$> getCurrentTime
-    pushKeyResultToRecvResult <$>
-        pushKey agent
-          TaggedBundle
-            { taggedBundle = Nothing
-            , taggedBundleTimestamp = timestamp
-            }
+    pushKeyResultToRecvResult
+      <$> pushKey
+        agent
+        TaggedBundle
+          { taggedBundle = Nothing
+          , taggedBundleTimestamp = timestamp
+          }
 
 dropStagedKey ::
   AgentContext m c =>
-  Agent c m fd addr -> m (Maybe (VerKeyKES (KES c)))
+  Agent c m fd addr ->
+  m (Maybe (VerKeyKES (KES c)))
 dropStagedKey agent =
   do
     keyMay <- atomically $ takeTMVar (agentStagedKeyVar agent)
@@ -96,7 +105,8 @@ dropStagedKey agent =
 
 queryKey ::
   AgentContext m c =>
-  Agent c m fd addr -> m (Maybe (VerKeyKES (KES c)))
+  Agent c m fd addr ->
+  m (Maybe (VerKeyKES (KES c)))
 queryKey agent = do
   withStagedKey agent "queryKey" $ \keyMay -> do
     case keyMay of
@@ -119,33 +129,35 @@ installKey agent oc = do
         return (Nothing, Just skpVar)
   maybe
     (return RecvErrorNoKey)
-    (\newKey -> do
+    ( \newKey -> do
         utcTime <- getCurrentTime
-        pushKeyResultToRecvResult <$>
-            pushKey agent
-              TaggedBundle
-                { taggedBundle = Just (Bundle newKey oc)
-                , taggedBundleTimestamp = timestampFromUTC utcTime
-                }
+        pushKeyResultToRecvResult
+          <$> pushKey
+            agent
+            TaggedBundle
+              { taggedBundle = Just (Bundle newKey oc)
+              , taggedBundleTimestamp = timestampFromUTC utcTime
+              }
     )
     newKeyMay
 
 getInfo ::
   AgentContext m c =>
-  Agent c m fd addr -> m (AgentInfo c)
+  Agent c m fd addr ->
+  m (AgentInfo c)
 getInfo agent = do
   bundleInfoMay <- do
     withBundle agent "get info" $ \case
       Nothing ->
         return Nothing
-      Just (TaggedBundle { taggedBundle = Nothing, taggedBundleTimestamp = ts }) ->
+      Just (TaggedBundle {taggedBundle = Nothing, taggedBundleTimestamp = ts}) ->
         return $
           Just
             TaggedBundleInfo
               { taggedBundleInfo = Nothing
               , taggedBundleInfoTimestamp = Just (timestampToUTC ts)
               }
-      Just (TaggedBundle { taggedBundle = Just bundle, taggedBundleTimestamp = ts }) ->
+      Just (TaggedBundle {taggedBundle = Just bundle, taggedBundleTimestamp = ts}) ->
         withCRefValue (bundleSKP bundle) $ \skp -> do
           return $
             Just
@@ -186,4 +198,3 @@ getInfo agent = do
       , agentInfoCurrentKESPeriod = kesPeriod
       , agentInfoBootstrapConnections = bootstrapStatuses
       }
-

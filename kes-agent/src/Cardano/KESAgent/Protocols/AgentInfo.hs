@@ -13,36 +13,36 @@ import Cardano.KESAgent.KES.OCert (
   OCertSignable,
  )
 
-data AgentInfo c =
-  AgentInfo
-    { agentInfoCurrentBundle :: !(Maybe (TaggedBundleInfo c))
-    , agentInfoStagedKey :: !(Maybe (KeyInfo c))
-    , agentInfoCurrentTime :: !UTCTime
-    , agentInfoCurrentKESPeriod :: !KESPeriod
-    , agentInfoBootstrapConnections :: ![BootstrapInfo]
-    }
+data AgentInfo c
+  = AgentInfo
+  { agentInfoCurrentBundle :: !(Maybe (TaggedBundleInfo c))
+  , agentInfoStagedKey :: !(Maybe (KeyInfo c))
+  , agentInfoCurrentTime :: !UTCTime
+  , agentInfoCurrentKESPeriod :: !KESPeriod
+  , agentInfoBootstrapConnections :: ![BootstrapInfo]
+  }
 
-data BootstrapInfo =
-  BootstrapInfo
-    { bootstrapInfoAddress :: !Text
-    , bootstrapInfoStatus :: !ConnectionStatus
-    }
-    deriving (Show, Eq)
+data BootstrapInfo
+  = BootstrapInfo
+  { bootstrapInfoAddress :: !Text
+  , bootstrapInfoStatus :: !ConnectionStatus
+  }
+  deriving (Show, Eq)
 
-data BundleInfo c =
-  BundleInfo
-    { bundleInfoEvolution :: !Word32
-    , bundleInfoStartKESPeriod :: !KESPeriod
-    , bundleInfoOCertN :: !Word64
-    , bundleInfoVK :: !(VerKeyKES (KES c))
-    , bundleInfoSigma :: !(DSIGN.SignedDSIGN (DSIGN c) (OCertSignable c))
-    }
+data BundleInfo c
+  = BundleInfo
+  { bundleInfoEvolution :: !Word32
+  , bundleInfoStartKESPeriod :: !KESPeriod
+  , bundleInfoOCertN :: !Word64
+  , bundleInfoVK :: !(VerKeyKES (KES c))
+  , bundleInfoSigma :: !(DSIGN.SignedDSIGN (DSIGN c) (OCertSignable c))
+  }
 
-data TaggedBundleInfo c =
-  TaggedBundleInfo
-    { taggedBundleInfo :: !(Maybe (BundleInfo c))
-    , taggedBundleInfoTimestamp :: !(Maybe UTCTime)
-    }
+data TaggedBundleInfo c
+  = TaggedBundleInfo
+  { taggedBundleInfo :: !(Maybe (BundleInfo c))
+  , taggedBundleInfoTimestamp :: !(Maybe UTCTime)
+  }
 
 newtype KeyInfo c
   = KeyInfo

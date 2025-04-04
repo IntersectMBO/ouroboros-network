@@ -130,9 +130,10 @@ serviceDriver s tracer =
         result <- runReadResultT $ do
           lift $ traceWith tracer ServiceDriverReceivingKey
           bundle <- receiveItem s
-          lift $ traceWith tracer $
-            ServiceDriverReceivedKey
-              (mkKeyMutationTrace 0 (Just bundle))
+          lift $
+            traceWith tracer $
+              ServiceDriverReceivedKey
+                (mkKeyMutationTrace 0 (Just bundle))
           return (SomeMessage (KeyMessage bundle), ())
         case result of
           ReadOK msg ->

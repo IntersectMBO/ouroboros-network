@@ -242,7 +242,8 @@ class ControlClientDrivers c where
   controlClientDrivers ::
     forall m.
     ControlClientContext m c =>
-    Proxy c -> [(VersionIdentifier, ControlClient m c)]
+    Proxy c ->
+    [(VersionIdentifier, ControlClient m c)]
 
 mkControlClientCP2 ::
   ControlClientContext m StandardCrypto =>

@@ -43,7 +43,7 @@ import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket (Snocket (..))
 import Text.Printf
 
-import Cardano.KESAgent.KES.Bundle (TaggedBundle (..), Bundle (..), Timestamp (..))
+import Cardano.KESAgent.KES.Bundle (Bundle (..), TaggedBundle (..), Timestamp (..))
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import Cardano.KESAgent.KES.Evolution (
   getCurrentKESPeriodWith,
@@ -78,36 +78,39 @@ checkEvolution agent = do
       Nothing -> do
         agentTrace agent AgentNoKeyToEvolve
         return (Nothing, ())
-      Just TaggedBundle { taggedBundle = Nothing } -> do
+      Just TaggedBundle {taggedBundle = Nothing} -> do
         agentTrace agent AgentNoKeyToEvolve
         return (Nothing, ())
-      Just TaggedBundle
-            { taggedBundle = Just (Bundle keyVar oc)
-            , taggedBundleTimestamp = timestamp
-            } ->
-        withCRefValue keyVar $ \key -> do
-          let p = KESPeriod $ unKESPeriod (ocertKESPeriod oc) + periodKES key
-          if p < p'
-            then do
-              keyMay' <- updateKESTo () p' oc key
-              case keyMay' of
-                Nothing -> do
-                  agentTrace agent $ AgentKeyExpired p p'
-                  releaseCRef keyVar
-                  return (Nothing, ())
-                Just key' -> do
-                  agentTrace agent $ AgentKeyEvolved p p'
-                  keyVar' <- newCRefWith (agentCRefTracer agent) (forgetSignKeyKES . skWithoutPeriodKES) key'
-                  releaseCRef keyVar
-                  return ( Just TaggedBundle
+      Just
+        TaggedBundle
+          { taggedBundle = Just (Bundle keyVar oc)
+          , taggedBundleTimestamp = timestamp
+          } ->
+          withCRefValue keyVar $ \key -> do
+            let p = KESPeriod $ unKESPeriod (ocertKESPeriod oc) + periodKES key
+            if p < p'
+              then do
+                keyMay' <- updateKESTo () p' oc key
+                case keyMay' of
+                  Nothing -> do
+                    agentTrace agent $ AgentKeyExpired p p'
+                    releaseCRef keyVar
+                    return (Nothing, ())
+                  Just key' -> do
+                    agentTrace agent $ AgentKeyEvolved p p'
+                    keyVar' <- newCRefWith (agentCRefTracer agent) (forgetSignKeyKES . skWithoutPeriodKES) key'
+                    releaseCRef keyVar
+                    return
+                      ( Just
+                          TaggedBundle
                             { taggedBundle = Just (Bundle keyVar' oc)
                             , taggedBundleTimestamp = timestamp
                             }
-                         , ()
-                         )
-            else do
-              agentTrace agent $ AgentKeyNotEvolved p p'
-              return (bundleMay, ())
+                      , ()
+                      )
+              else do
+                agentTrace agent $ AgentKeyNotEvolved p p'
+                return (bundleMay, ())
 
 agentTrace :: Agent c m fd addr -> AgentTrace -> m ()
 agentTrace agent = traceWith (agentTracer . agentOptions $ agent)
@@ -245,37 +248,41 @@ pushKeyResultOCert _ = Nothing
 pushKeyResultVKey :: PushKeyResult c -> Maybe (VerKeyKES (KES c))
 pushKeyResultVKey pkr = ocertVkHot <$> pushKeyResultOCert pkr
 
-validateBundle :: AgentContext m c
-               => Agent c m fd add
-               -> Bundle m c
-               -> m (Either String ())
+validateBundle ::
+  AgentContext m c =>
+  Agent c m fd add ->
+  Bundle m c ->
+  m (Either String ())
 validateBundle agent bundle = do
   vkKES <- withCRefValue (bundleSKP bundle) (deriveVerKeyKES . skWithoutPeriodKES)
-  return $ validateOCert
-    (agentColdVerKey (agentOptions agent))
-    vkKES
-    (bundleOC bundle)
+  return $
+    validateOCert
+      (agentColdVerKey (agentOptions agent))
+      vkKES
+      (bundleOC bundle)
 
-validateTaggedBundle :: AgentContext m c
-               => Agent c m fd add
-               -> TaggedBundle m c
-               -> m (Either String ())
-validateTaggedBundle _ TaggedBundle { taggedBundle = Nothing } = return (Right ())
-validateTaggedBundle agent TaggedBundle { taggedBundle = Just bundle } = validateBundle agent bundle
+validateTaggedBundle ::
+  AgentContext m c =>
+  Agent c m fd add ->
+  TaggedBundle m c ->
+  m (Either String ())
+validateTaggedBundle _ TaggedBundle {taggedBundle = Nothing} = return (Right ())
+validateTaggedBundle agent TaggedBundle {taggedBundle = Just bundle} = validateBundle agent bundle
 
-isTaggedBundleAgeValid :: TaggedBundle m c
-                     -> TaggedBundle m c
-                     -> Bool
+isTaggedBundleAgeValid ::
+  TaggedBundle m c ->
+  TaggedBundle m c ->
+  Bool
 isTaggedBundleAgeValid current new =
   checkTimestamp && checkOCerts
   where
     checkTimestamp
       -- When both timestamps match, deletions trump creation
       | isNothing (taggedBundle new)
-      , isJust (taggedBundle current)
-      = taggedBundleTimestamp current <= taggedBundleTimestamp new
-      | otherwise
-      = taggedBundleTimestamp current < taggedBundleTimestamp new
+      , isJust (taggedBundle current) =
+          taggedBundleTimestamp current <= taggedBundleTimestamp new
+      | otherwise =
+          taggedBundleTimestamp current < taggedBundleTimestamp new
     checkOCerts =
       let snCurrentMay = (ocertN . bundleOC) <$> taggedBundle current
           snNewMay = (ocertN . bundleOC) <$> taggedBundle new
@@ -291,8 +298,8 @@ pushKey ::
   TaggedBundle m c ->
   m (PushKeyResult c)
 pushKey agent tbundle = do
-  validateTaggedBundle agent tbundle >>=
-    either
+  validateTaggedBundle agent tbundle
+    >>= either
       handleInvalidBundle
       (\() -> (handleValidBundle <* checkEvolution agent))
   where
@@ -339,36 +346,39 @@ pushKey agent tbundle = do
               Nothing ->
                 agentTrace agent $ AgentInstallingKeyDrop
               Just bundle ->
-                agentTrace agent $ AgentInstallingNewKey (formatKey (taggedBundleTimestamp tbundle) (bundleOC bundle))
+                agentTrace agent $
+                  AgentInstallingNewKey (formatKey (taggedBundleTimestamp tbundle) (bundleOC bundle))
             return (Just tbundle, PushKeyOK Nothing)
           Just oldTBundle -> do
-            if isTaggedBundleAgeValid oldTBundle tbundle then do
-              releaseResult <- releaseTaggedBundle oldTBundle
-              case (releaseResult, taggedBundle tbundle) of
-                (Nothing, Just bundle) ->
-                  agentTrace agent $
-                    AgentInstallingNewKey (formatKey (taggedBundleTimestamp tbundle) (bundleOC bundle))
-                (Nothing, Nothing) ->
-                  agentTrace agent $
-                    AgentInstallingKeyDrop
-                (Just oldOC, Nothing) ->
-                  agentTrace agent $
-                    AgentDroppingKey (formatKey (taggedBundleTimestamp tbundle) oldOC)
-                (Just oldOC, Just bundle) ->
-                  agentTrace agent $
-                    AgentReplacingPreviousKey
-                      (formatKey (taggedBundleTimestamp oldTBundle) oldOC)
-                      (formatKey (taggedBundleTimestamp tbundle) (bundleOC bundle))
-              return (Just tbundle, PushKeyOK releaseResult)
-            else do
-              releaseResult <- releaseTaggedBundle tbundle
-              agentTrace agent $ AgentRejectingKey $
-                  "Key is too old: " ++
-                      (show . timestampValue $ taggedBundleTimestamp oldTBundle) ++
-                      " > " ++
-                      (show . timestampValue $ taggedBundleTimestamp tbundle)
-              return (Just oldTBundle, PushKeyTooOld)
-      
+            if isTaggedBundleAgeValid oldTBundle tbundle
+              then do
+                releaseResult <- releaseTaggedBundle oldTBundle
+                case (releaseResult, taggedBundle tbundle) of
+                  (Nothing, Just bundle) ->
+                    agentTrace agent $
+                      AgentInstallingNewKey (formatKey (taggedBundleTimestamp tbundle) (bundleOC bundle))
+                  (Nothing, Nothing) ->
+                    agentTrace agent $
+                      AgentInstallingKeyDrop
+                  (Just oldOC, Nothing) ->
+                    agentTrace agent $
+                      AgentDroppingKey (formatKey (taggedBundleTimestamp tbundle) oldOC)
+                  (Just oldOC, Just bundle) ->
+                    agentTrace agent $
+                      AgentReplacingPreviousKey
+                        (formatKey (taggedBundleTimestamp oldTBundle) oldOC)
+                        (formatKey (taggedBundleTimestamp tbundle) (bundleOC bundle))
+                return (Just tbundle, PushKeyOK releaseResult)
+              else do
+                releaseResult <- releaseTaggedBundle tbundle
+                agentTrace agent $
+                  AgentRejectingKey $
+                    "Key is too old: "
+                      ++ (show . timestampValue $ taggedBundleTimestamp oldTBundle)
+                      ++ " > "
+                      ++ (show . timestampValue $ taggedBundleTimestamp tbundle)
+                return (Just oldTBundle, PushKeyTooOld)
+
     broadcastUpdate :: TaggedBundle m c -> m ()
     broadcastUpdate tbundle = do
       agentTrace agent $ AgentPushingKeyUpdate

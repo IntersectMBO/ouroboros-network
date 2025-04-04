@@ -7,14 +7,14 @@
 module Cardano.KESAgent.Protocols.VersionedProtocol
 where
 
+import Cardano.KESAgent.Util.Pretty
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.Kind
 import Data.Proxy
-import GHC.TypeLits
-import Cardano.KESAgent.Util.Pretty
-import Data.Text.Encoding (decodeUtf8)
 import qualified Data.Text as Text
+import Data.Text.Encoding (decodeUtf8)
+import GHC.TypeLits
 
 class VersionedProtocol (p :: Type) where
   versionIdentifier :: Proxy p -> VersionIdentifier
