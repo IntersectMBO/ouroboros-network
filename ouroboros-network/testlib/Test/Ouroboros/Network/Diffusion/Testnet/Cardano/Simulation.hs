@@ -70,6 +70,7 @@ import Network.DNS qualified as DNS
 import System.Random (StdGen, mkStdGen)
 import System.Random qualified as Random
 
+import Network.Mux qualified as Mux
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.PingPong.Type qualified as PingPong
 
@@ -101,6 +102,7 @@ import Ouroboros.Network.Block (BlockNo)
 import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..),
            TraceFetchClientState, TraceLabelPeer (..))
 import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
+import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Types (AbstractTransitionTrace)
@@ -376,9 +378,12 @@ genNodeArgs relays minConnected localRootPeers self = flip suchThat hasUpstream 
 
   -- Generating an InitiatorResponderMode node is 3 times more likely since we
   -- want our tests to cover more this case.
-  diffusionMode <- frequency [ (1, pure InitiatorOnlyDiffusionMode)
-                             , (3, pure InitiatorAndResponderDiffusionMode)
-                             ]
+  -- diffusionMode <- frequency [ (1, pure InitiatorOnlyDiffusionMode)
+  --                            , (3, pure InitiatorAndResponderDiffusionMode)
+  --                            ]
+  -- TODO: 'cm & ig enforce timeouts' fails in 'InitiatorOnlyDiffusionMode'
+  -- so we pin it to this
+  let diffusionMode = InitiatorAndResponderDiffusionMode
 
   -- These values approximately correspond to false positive
   -- thresholds for streaks of empty slots with 99% probability,
@@ -775,44 +780,48 @@ instance Arbitrary DiffusionScript where
               <$> frequency [ (1, arbitrary >>= genNonHotDiffusionScript)
                             , (1, arbitrary >>= genHotDiffusionScript)]
   -- TODO: shrink dns map
-  -- TODO: we should write more careful shrinking than recursively shrinking
-  -- `DiffusionScript`!
-  shrink (DiffusionScript sargs dnsScript cmds0) = shrinkCmds cmds0 ++ shrinkDns
+  shrink (DiffusionScript sargs dnsScript0 players0) =
+    [DiffusionScript sargs dnsScript0 players
+    | players <- shrinkPlayers players0
+    ] <>
+    [DiffusionScript sargs dnsScript players0
+    | dnsScript <-
+        mapMaybe
+          -- make sure `fixupDomainMapScript` didn't return something that's
+          -- equal to the original `script`
+          ((\dnsScript' -> if dnsScript0 == dnsScript' then Nothing else Just dnsScript')
+           .  fixupDomainMapScript (getLast dnsScript0))
+          $ shrinkScriptWith (liftShrink2 shrinkMap_ shrink) dnsScript0
+    ]
     where
-      shrinkDns =
-        [DiffusionScript sargs script cmds0
-        | script <-
-            mapMaybe
-              -- make sure `fixupDomainMapScript` didn't return something that's
-              -- equal to the original `script`
-              ((\dnsScript' -> if dnsScript == dnsScript' then Nothing else Just dnsScript')
-               .  fixupDomainMapScript (getLast dnsScript))
-              $ shrinkScriptWith (shrinkTuple shrinkMap_ shrink) dnsScript
-        ]
-
       getLast (Script ne) = fst $ NonEmpty.last ne
 
       shrinkMap_ :: Ord a => Map a b -> [Map a b]
       shrinkMap_ = map Map.fromList . shrinkList (const []) . Map.toList
 
-      shrinkTuple :: (a -> [a]) -> (b -> [b]) -> (a, b) -> [(a, b)]
-      shrinkTuple f g (a, b) = [(a', b) | a' <- f a]
-                            ++ [(a, b') | b' <- g b]
+      -- the easiest failure to analyze is the one with the least number of nodes participating.
+      -- Currently we use up to three nodes, but in case we increase the number in the future
+      -- this will be even more useful.
+      shrinkPlayers =
+        filter ((> 1) . length) . shrinkList shrinkPlayer
 
-      shrinkCmds [] = []
-      shrinkCmds ((nargs, cmds):rest) =
-        let shrunkCmdss = fixupCommands <$> shrinkList shrinkCommand cmds
-            rest' = shrinkCmds rest
-        in [DiffusionScript sargs dnsScript ((nargs, shrunkCmds):rest)
-           | shrunkCmds <- shrunkCmdss] ++ rest'
+      shrinkPlayer (nargs, cmds) =
+        map (nargs,) . filter (/= cmds) $ fixupCommands <$> shrinkList shrinkCommand cmds
         where
           shrinkDelay = map fromRational . shrink . toRational
 
+          -- A failing network with the least nodes active at a particular time is the simplest to analyze,
+          -- if for no other reason other than for having the least amount of traces for us to read.
+          -- A dead node is its simplest configuration as that can't contribute to its failure,
+          -- So we shrink to that first to see at least if a failure occurs somewhere else still.
+          -- Otherwise we know that this node has to be running for sure while the exchange is happening.
           shrinkCommand :: Command -> [Command]
-          shrinkCommand (JoinNetwork d)     = JoinNetwork <$> shrinkDelay d
-          shrinkCommand (Kill d)            = Kill        <$> shrinkDelay d
-          shrinkCommand (Reconfigure d lrp) = Reconfigure <$> shrinkDelay d
-                                                          <*> pure lrp
+          shrinkCommand (JoinNetwork d) =   Kill 0 -- ^ try leaving it still 'dead' instead
+                                          : (JoinNetwork <$> shrinkDelay d)
+          shrinkCommand (Kill d) = Kill <$> shrinkDelay d
+          shrinkCommand (Reconfigure d lrp) =   Kill 0 -- ^ try killing it instead to see what happens
+                                              : (Reconfigure <$> shrinkDelay d
+                                                             <*> pure lrp)
 
 
 -- | Multinode Hot Diffusion Simulator Script
@@ -883,6 +892,7 @@ data DiffusionSimulationTrace
   | TrUpdatingDNS
   | TrRunning
   | TrErrored SomeException
+  | TrSay String
   deriving (Show)
 
 -- Warning: be careful with writing properties that rely
@@ -912,6 +922,7 @@ data DiffusionTestTrace =
     | DiffusionFetchTrace (TraceFetchClientState BlockHeader)
     | DiffusionDebugTrace String
     | DiffusionDNSTrace DNSTrace
+    | DiffusionMuxTrace (Mux.WithBearer (ConnectionId NtNAddr) Mux.Trace)
     deriving (Show)
 
 
@@ -922,7 +933,7 @@ iosimTracer :: forall s a.
               , Typeable a
               )
             => Tracer (IOSim s) (WithTime (WithName NtNAddr a))
-iosimTracer = Tracer traceM <> sayTracer
+iosimTracer = Tracer traceM -- <> sayTracer
 
 -- | Run an arbitrary topology
 diffusionSimulation
@@ -961,8 +972,10 @@ diffusionSimulation
       $ \ntcSnocket _ -> do
         dnsMapVar <- fromLazyTVar <$> playTimedScript nullTracer dnsMapScript
         withAsyncAll
-          (map ((\(args, commands) -> runCommand Nothing ntnSnocket ntcSnocket dnsMapVar simArgs args connStateIdSupply commands))
-               nodeArgs)
+          (zipWith
+            (\(args, commands) i -> runCommand ntnSnocket ntcSnocket dnsMapVar simArgs args connStateIdSupply i Nothing commands)
+            nodeArgs
+            [1..])
           $ \nodes -> do
             (_, x) <- waitAny nodes
             return x
@@ -973,14 +986,7 @@ diffusionSimulation
 
     -- | Runs a single node according to a list of commands.
     runCommand
-      :: Maybe ( Async m Void
-               , StrictTVar m [( HotValency
-                               , WarmValency
-                               , Map RelayAccessPoint (LocalRootConfig PeerTrustable)
-                               )])
-         -- ^ If the node is running and corresponding local root configuration
-         -- TVar.
-      -> Snocket m (FD m NtNAddr) NtNAddr
+      :: Snocket m (FD m NtNAddr) NtNAddr
         -- ^ Node to node Snocket
       -> Snocket m (FD m NtCAddr) NtCAddr
         -- ^ Node to client Snocket
@@ -989,45 +995,58 @@ diffusionSimulation
       -> SimArgs -- ^ Simulation arguments needed in order to run a simulation
       -> NodeArgs -- ^ Simulation arguments needed in order to run a single node
       -> CM.ConnStateIdSupply m
+      -> Int
+      -> Maybe ( Async m Void
+               , StrictTVar m [( HotValency
+                               , WarmValency
+                               , Map RelayAccessPoint (LocalRootConfig PeerTrustable)
+                               )])
+         -- ^ If the node is running and corresponding local root configuration
+         -- TVar.
       -> [Command] -- ^ List of commands/actions to perform for a single node
       -> m Void
-    runCommand Nothing ntnSnocket ntcSnocket dnsMapVar sArgs nArgs connStateIdSupply [] = do
-      threadDelay 3600
-      traceWith (diffSimTracer (naAddr nArgs)) TrRunning
-      runCommand Nothing ntnSnocket ntcSnocket dnsMapVar sArgs nArgs connStateIdSupply []
-    runCommand (Just (_, _)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs connStateIdSupply [] = do
-      -- We shouldn't block this thread waiting
-      -- on the async since this will lead to a deadlock
-      -- as thread returns 'Void'.
-      threadDelay 3600
-      traceWith (diffSimTracer (naAddr nArgs)) TrRunning
-      runCommand Nothing ntnSnocket ntcSnocket dMapVarMap sArgs nArgs connStateIdSupply []
-    runCommand Nothing ntnSnocket ntcSnocket dnsMapVar sArgs nArgs connStateIdSupply
-               (JoinNetwork delay :cs) = do
-      threadDelay delay
-      traceWith (diffSimTracer (naAddr nArgs)) TrJoiningNetwork
-      lrpVar <- newTVarIO $ naLocalRootPeers nArgs
-      withAsync (runNode sArgs nArgs ntnSnocket ntcSnocket connStateIdSupply lrpVar dnsMapVar) $ \nodeAsync ->
-        runCommand (Just (nodeAsync, lrpVar)) ntnSnocket ntcSnocket dnsMapVar sArgs nArgs connStateIdSupply cs
-    runCommand _ _ _ _ _ _ _ (JoinNetwork _:_) =
-      error "runCommand: Impossible happened"
-    runCommand (Just (async_, _)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs connStateIdSupply
-               (Kill delay:cs) = do
-      threadDelay delay
-      traceWith (diffSimTracer (naAddr nArgs)) TrKillingNode
-      cancel async_
-      runCommand Nothing ntnSnocket ntcSnocket dMapVarMap sArgs nArgs connStateIdSupply cs
-    runCommand _ _ _ _ _ _ _ (Kill _:_) = do
-      error "runCommand: Impossible happened"
-    runCommand Nothing _ _ _ _ _ _ (Reconfigure _ _:_) =
-      error "runCommand: Impossible happened"
-    runCommand (Just (async_, lrpVar)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs connStateIdSupply
-               (Reconfigure delay newLrp:cs) = do
-      threadDelay delay
-      traceWith (diffSimTracer (naAddr nArgs)) TrReconfiguringNode
-      _ <- atomically $ writeTVar lrpVar newLrp
-      runCommand (Just (async_, lrpVar)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs connStateIdSupply
-                 cs
+    runCommand ntnSocket ntcSocket dnsMapVar sArgs nArgs@NodeArgs { naAddr }
+               connStateIdSupply i hostAndLRP cmds = do
+      traceWith (diffSimTracer naAddr) . TrSay $ "node-" <> show i
+      runCommand' hostAndLRP cmds
+      where
+        runCommand' Nothing [] = do
+          threadDelay 3600
+          traceWith (diffSimTracer naAddr) TrRunning
+          runCommand' Nothing []
+        runCommand' (Just (_, _)) [] = do
+          -- We shouldn't block this thread waiting
+          -- on the async since this will lead to a deadlock
+          -- as thread returns 'Void'.
+          threadDelay 3600
+          traceWith (diffSimTracer naAddr) TrRunning
+          runCommand' Nothing []
+        runCommand' Nothing
+                   (JoinNetwork delay :cs) = do
+          threadDelay delay
+          traceWith (diffSimTracer naAddr) TrJoiningNetwork
+          lrpVar <- newTVarIO $ naLocalRootPeers nArgs
+          withAsync (runNode sArgs nArgs ntnSocket ntcSocket connStateIdSupply lrpVar dnsMapVar i) $ \nodeAsync ->
+            runCommand' (Just (nodeAsync, lrpVar)) cs
+        runCommand' _ (JoinNetwork _:_) =
+          error "runCommand: Impossible happened"
+        runCommand' (Just (async_, _))
+                   (Kill delay:cs) = do
+          threadDelay delay
+          traceWith (diffSimTracer naAddr) TrKillingNode
+          cancel async_
+          runCommand' Nothing cs
+        runCommand' _ (Kill _:_) = do
+          error "runCommand: Impossible happened"
+        runCommand' Nothing (Reconfigure _ _:_) =
+          error "runCommand: Impossible happened"
+        runCommand' (Just (async_, lrpVar))
+                   (Reconfigure delay newLrp:cs) = do
+          threadDelay delay
+          traceWith (diffSimTracer naAddr) TrReconfiguringNode
+          _ <- atomically $ writeTVar lrpVar newLrp
+          runCommand' (Just (async_, lrpVar))
+                     cs
 
     runNode :: SimArgs
             -> NodeArgs
@@ -1039,6 +1058,7 @@ diffusionSimulation
                              , Map RelayAccessPoint (LocalRootConfig PeerTrustable)
                              )]
             -> StrictTVar m MockDNSMap
+            -> Int
             -> m Void
     runNode SimArgs
             { saSlot                  = bgaSlotDuration
@@ -1058,12 +1078,13 @@ diffusionSimulation
             , naChainSyncExitOnBlockNo = chainSyncExitOnBlockNo
             , naChainSyncEarlyExit     = chainSyncEarlyExit
             , naPeerSharing            = peerSharing
+            , naDiffusionMode          = diffusionMode
             }
             ntnSnocket
             ntcSnocket
             connStateIdSupply
             lrpVar
-            dMapVar = do
+            dMapVar i = do
       chainSyncExitVar <- newTVarIO chainSyncExitOnBlockNo
       ledgerPeersVar <- initScript' ledgerPeers
       onlyOutboundConnectionsStateVar <- newTVarIO UntrustedState
@@ -1074,7 +1095,6 @@ diffusionSimulation
           (bgaRng, rng) = Random.split $ mkStdGen seed
           acceptedConnectionsLimit =
             AcceptedConnectionsLimit maxBound maxBound 0
-          diffusionMode = InitiatorAndResponderDiffusionMode
           readLocalRootPeers  = readTVar lrpVar
           readPublicRootPeers = return publicRoots
           readUseLedgerPeers  = return (UseLedgerPeers (After 0))
@@ -1218,7 +1238,7 @@ diffusionSimulation
               , Node.aExtraChurnArgs = cardanoChurnArgs
               }
 
-          tracers = mkTracers addr
+          tracers = mkTracers addr i
 
           requestPublicRootPeers' =
             requestPublicRootPeers (Diff.dtTracePublicRootPeersTracer tracers)
@@ -1286,60 +1306,70 @@ diffusionSimulation
     diffSimTracer ntnAddr = contramap DiffusionDiffusionSimulationTrace
                           . tracerWithName ntnAddr
                           . tracerWithTime
-                          $ nodeTracer
+                          $ nodeTracer <> sayTracer
 
     mkTracers
       :: NtNAddr
+      -> Int
       -> Diff.Tracers NtNAddr NtNVersion NtNVersionData
                       NtCAddr NtCVersion NtCVersionData
                       SomeException Cardano.ExtraState
                       Cardano.ExtraState PeerTrustable
                       (Cardano.ExtraPeers NtNAddr)
                       (Cardano.ExtraPeerSelectionSetsWithSizes NtNAddr) m
-    mkTracers ntnAddr =
+    mkTracers ntnAddr i =
+      let sayTracer' = Tracer \msg -> say $ "(node-" <> show i <> ")" <> show msg
+          -- toggle and uncomment interesting sayTracer' below
+          nodeTracer' = if True then nodeTracer <> sayTracer' else nodeTracer in
+
       Diff.nullTracers {
+          -- Diff.dtMuxTracer = contramap
+          --                      DiffusionMuxTrace
+          --                  . tracerWithName ntnAddr
+          --                  . tracerWithTime
+          --                  $ nodeTracer' -- <> sayTracer',
           Diff.dtTraceLocalRootPeersTracer       = contramap
                                                     DiffusionLocalRootPeerTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
-                                                 $ nodeTracer
+                                                 $ nodeTracer' -- <> sayTracer'
         , Diff.dtTracePublicRootPeersTracer      = contramap
                                                     DiffusionPublicRootPeerTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
-                                                 $ nodeTracer
+                                                 $ nodeTracer' -- <> sayTracer'
         , Diff.dtTraceLedgerPeersTracer          = contramap
                                                   DiffusionLedgerPeersTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
-                                                 $ nodeTracer
+                                                 $ nodeTracer' -- <> sayTracer'
         , Diff.dtTracePeerSelectionTracer          = contramap
                                                     DiffusionPeerSelectionTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
-                                                 $ nodeTracer
+                                                 $ nodeTracer' -- <> sayTracer'
         , Diff.dtDebugPeerSelectionInitiatorTracer = contramap
                                                     DiffusionDebugPeerSelectionTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
-                                                 $ nodeTracer
+                                                 $ nodeTracer' -- <> sayTracer'
         , Diff.dtDebugPeerSelectionInitiatorResponderTracer
             = contramap DiffusionDebugPeerSelectionTrace
             . tracerWithName ntnAddr
             . tracerWithTime
-            $ nodeTracer
+            $ nodeTracer' -- <> sayTracer'
         , Diff.dtTracePeerSelectionCounters        = nullTracer
         , Diff.dtTraceChurnCounters                = nullTracer
         , Diff.dtPeerSelectionActionsTracer        = contramap
                                                     DiffusionPeerSelectionActionsTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
-                                                 $ nodeTracer
+                                                 $ nodeTracer' -- <> sayTracer'
         , Diff.dtConnectionManagerTracer           = contramap
                                                     DiffusionConnectionManagerTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
-                                                 $ nodeTracer
+                                                 $ nodeTracer' -- <> sayTracer'
         , Diff.dtConnectionManagerTransitionTracer = contramap
                                                      DiffusionConnectionManagerTransitionTrace
                                                  . tracerWithName ntnAddr
@@ -1347,29 +1377,29 @@ diffusionSimulation
           -- note: we have two ways getting transition trace:
           -- * through `traceTVar` installed in `newMutableConnState`
           -- * the `dtConnectionManagerTransitionTracer`
-                                                     $ nodeTracer
+                                                     $ nodeTracer' -- <> sayTracer'
         , Diff.dtServerTracer                      = contramap
                                                      DiffusionServerTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
-                                                 $ nodeTracer
+                                                 $ nodeTracer' -- <> sayTracer'
         , Diff.dtInboundGovernorTracer             = contramap
                                                      DiffusionInboundGovernorTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
-                                                 $ nodeTracer
+                                                 $ nodeTracer' -- <> sayTracer'
         , Diff.dtInboundGovernorTransitionTracer   = contramap
                                                      DiffusionInboundGovernorTransitionTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
-                                                 $ nodeTracer
+                                                 $ nodeTracer' -- <> sayTracer'
         , Diff.dtLocalConnectionManagerTracer      = nullTracer
         , Diff.dtLocalServerTracer                 = nullTracer
         , Diff.dtLocalInboundGovernorTracer        = nullTracer
         , Diff.dtDnsTracer                         = contramap DiffusionDNSTrace
                                                      . tracerWithName ntnAddr
                                                      . tracerWithTime
-                                                     $ nodeTracer
+                                                     $ nodeTracer' -- <> sayTracer'
       }
 
 

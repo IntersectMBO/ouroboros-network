@@ -1,12 +1,14 @@
 {-# LANGUAGE BangPatterns              #-}
+{-# LANGUAGE BlockArguments            #-}
 {-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTs                     #-}
-{-# LANGUAGE KindSignatures            #-}
+{-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE TypeFamilyDependencies    #-}
 {-# LANGUAGE TypeOperators             #-}
 
 -- | Implementation of 'ConnectionHandler'
@@ -31,6 +33,7 @@ module Ouroboros.Network.ConnectionHandler
   , HandleWithMinimalCtx
   , HandleError (..)
   , classifyHandleError
+  , MkMuxConnectionHandler
   , MuxConnectionHandler
   , makeConnectionHandler
   , MuxConnectionManager
@@ -56,6 +59,7 @@ import Data.Typeable (Typeable)
 
 import Network.Mux (Mux)
 import Network.Mux qualified as Mx
+import Network.Mux.Trace
 
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.ConnectionManager.Types
@@ -115,6 +119,27 @@ data Handle (muxMode :: Mx.Mode) initiatorCtx responderCtx versionData bytes m a
         hVersionData    :: !versionData
       }
 
+type family MkMuxConnectionHandler (muxMode :: Mx.Mode) socket initiatorCtx responderCtx
+                                   peerAddr versionNumber versionData bytes m a b =
+  result | result -> socket where
+  MkMuxConnectionHandler Mx.InitiatorMode socket initiatorCtx responderCtx peerAddr
+                                          versionNumber versionData bytes m a b =
+    MuxConnectionHandler Mx.InitiatorMode socket initiatorCtx responderCtx peerAddr
+                                          versionNumber versionData bytes m a b
+
+  MkMuxConnectionHandler Mx.ResponderMode socket initiatorCtx responderCtx peerAddr
+                                          versionNumber versionData bytes m a b =
+       Tracer m (WithBearer (ConnectionId peerAddr) Trace)
+    -> MuxConnectionHandler Mx.ResponderMode socket initiatorCtx responderCtx peerAddr
+                                             versionNumber versionData bytes m a b
+
+  MkMuxConnectionHandler Mx.InitiatorResponderMode socket initiatorCtx responderCtx peerAddr
+                                                   versionNumber versionData bytes m a b =
+       (versionData -> DataFlow)
+    -> Tracer m (WithBearer (ConnectionId peerAddr) Trace)
+    -> MuxConnectionHandler Mx.InitiatorResponderMode socket initiatorCtx responderCtx
+                                                      peerAddr versionNumber versionData
+                                                      bytes m a b
 
 -- | 'Handle' used by `node-to-node` P2P connections.
 --
@@ -207,6 +232,10 @@ type ConnectionManagerWithExpandedCtx muxMode socket peerAddr versionData versio
 -- different `ConnectionManager`s: one for `node-to-client` and another for
 -- `node-to-node` connections.  But this is ok, as these resources are
 -- independent.
+-- When a server is running, the inbound governor creates a tracer which is passed here,
+-- and the connection handler appends it to the muxer tracer for
+-- inbound and (negotiated) outbound duplex connections. This tracer
+-- efficiently informs the IG loop of miniprotocol activity.
 --
 makeConnectionHandler
     :: forall initiatorCtx responderCtx peerAddr muxMode socket versionNumber versionData m a b.
@@ -223,33 +252,29 @@ makeConnectionHandler
        , Typeable peerAddr
        )
     => Tracer m (Mx.WithBearer (ConnectionId peerAddr) Mx.Trace)
-    -> SingMuxMode muxMode
     -> ForkPolicy peerAddr
-    -- ^ describe whether this is outbound or inbound connection, and bring
-    -- evidence that we can use mux with it.
     -> HandshakeArguments (ConnectionId peerAddr) versionNumber versionData m
     -> Versions versionNumber versionData
                 (OuroborosBundle muxMode initiatorCtx responderCtx ByteString m a b)
     -> (ThreadId m, RethrowPolicy)
     -- ^ 'ThreadId' and rethrow policy.  Rethrow policy might throw an async
     -- exception to that thread, when trying to terminate the process.
-    -> MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr versionNumber versionData ByteString m a b
-makeConnectionHandler muxTracer singMuxMode
-                      forkPolicy
+    -> SingMuxMode muxMode
+    -- ^ describe whether this is outbound or inbound connection, and bring
+    -- evidence that we can use mux with it.
+    -> MkMuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr versionNumber versionData ByteString m a b
+makeConnectionHandler muxTracer forkPolicy
                       handshakeArguments
                       versionedApplication
                       (mainThreadId, rethrowPolicy) =
-    ConnectionHandler {
-        connectionHandler =
-          case singMuxMode of
-            SingInitiatorMode ->
-              WithInitiatorMode outboundConnectionHandler
-            SingResponderMode ->
-              WithResponderMode inboundConnectionHandler
-            SingInitiatorResponderMode ->
-              WithInitiatorResponderMode outboundConnectionHandler
-                                         inboundConnectionHandler
-      }
+  \case
+    SingInitiatorMode -> ConnectionHandler . WithInitiatorMode
+                       $ outboundConnectionHandler NotInResponderMode
+    SingResponderMode -> ConnectionHandler . WithResponderMode . inboundConnectionHandler
+    SingInitiatorResponderMode -> \connectionDataFlow inboundGovChannelTracer ->
+      ConnectionHandler $ WithInitiatorResponderMode
+        (outboundConnectionHandler $ InResponderMode (inboundGovChannelTracer, connectionDataFlow))
+        (inboundConnectionHandler inboundGovChannelTracer)
   where
     -- install classify exception handler
     classifyExceptions :: forall x.
@@ -276,7 +301,9 @@ makeConnectionHandler muxTracer singMuxMode
 
     outboundConnectionHandler
       :: HasInitiator muxMode ~ True
-      => ConnectionHandlerFn (ConnectionHandlerTrace versionNumber versionData)
+      => InResponderMode muxMode (Tracer m (WithBearer (ConnectionId peerAddr) Trace)
+                                 , versionData -> DataFlow)
+      -> ConnectionHandlerFn (ConnectionHandlerTrace versionNumber versionData)
                              socket
                              peerAddr
                              (Handle muxMode initiatorCtx responderCtx versionData ByteString m a b)
@@ -284,7 +311,8 @@ makeConnectionHandler muxTracer singMuxMode
                              versionNumber
                              versionData
                              m
-    outboundConnectionHandler versionDataFn
+    outboundConnectionHandler inResponderMode
+                              versionDataFn
                               socket
                               PromiseWriter { writePromise }
                               tracer
@@ -335,11 +363,28 @@ makeConnectionHandler muxTracer singMuxMode
                           hVersionData    = agreedOptions
                         }
                   atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
-                  withBuffer (\buffer -> do
-                      bearer <- mkMuxBearer sduTimeout socket buffer
-                      Mx.run (Mx.WithBearer connectionId `contramap` muxTracer)
+                  withBuffer \buffer -> do
+                    bearer <- mkMuxBearer sduTimeout socket buffer
+                    let muxTracer' =
+                          case inResponderMode of
+                            InResponderMode (inboundGovChannelTracer, connectionDataFlow)
+                              | Duplex <- connectionDataFlow agreedOptions ->
+                                  -- Following this call, the muxer is racing with the CM to write to the
+                                  -- information channel queue.
+                                  -- The IG tracer pauses the muxer main thread when it reaches mature state
+                                  -- until the CM informs the former of new peer connection to ensure
+                                  -- proper sequencing of events.
+                                  muxTracer <> inboundGovChannelTracer
+                            _notResponder ->
+                                  -- If this is InitiatorOnly, or a server where unidirectional flow was negotiated
+                                  -- the IG will never be informed of this remote for obvious reasons. We should not pass
+                                  -- the IG tracer to mux, and must not in the latter case as the muxer will
+                                  -- deadlock itself before it launches any miniprotocols from the command queue.
+                                  -- It will be stuck when reaches mature state, forever waiting for the incoming
+                                  -- peer handle.
+                                  muxTracer
+                    Mx.run (Mx.WithBearer connectionId `contramap` muxTracer')
                              mux bearer
-                    )
 
               Right (HandshakeQueryResult vMap) -> do
                 atomically $ writePromise (Right HandshakeConnectionQuery)
@@ -348,7 +393,8 @@ makeConnectionHandler muxTracer singMuxMode
 
     inboundConnectionHandler
       :: HasResponder muxMode ~ True
-      => ConnectionHandlerFn (ConnectionHandlerTrace versionNumber versionData)
+      => Tracer m (WithBearer (ConnectionId peerAddr) Trace)
+      -> ConnectionHandlerFn (ConnectionHandlerTrace versionNumber versionData)
                              socket
                              peerAddr
                              (Handle muxMode initiatorCtx responderCtx versionData ByteString m a b)
@@ -356,7 +402,8 @@ makeConnectionHandler muxTracer singMuxMode
                              versionNumber
                              versionData
                              m
-    inboundConnectionHandler updateVersionDataFn
+    inboundConnectionHandler inboundGovChannelTracer
+                             updateVersionDataFn
                              socket
                              PromiseWriter { writePromise }
                              tracer
@@ -410,7 +457,7 @@ makeConnectionHandler muxTracer singMuxMode
                   atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
                   withBuffer (\buffer -> do
                       bearer <- mkMuxBearer sduTimeout socket buffer
-                      Mx.run (Mx.WithBearer connectionId `contramap` muxTracer)
+                      Mx.run (Mx.WithBearer connectionId `contramap` (muxTracer <> inboundGovChannelTracer))
                              mux bearer
                     )
               Right (HandshakeQueryResult vMap) -> do

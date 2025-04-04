@@ -2100,15 +2100,12 @@ governor or progress to the \RemoteCold{} state.  This depends on whether the
 connection is used (\warm{} or \hot{}) or not (\cold{}) by the outbound side.
 
 \subsubsection{\RemoteWarm}
-A connection enters \RemoteWarm{} state once any of the mini-protocols starts
-to operate.  Once all hot mini-protocols start, the state will transition to
-\RemoteHot{}.  Note that this is slightly different than the notion of a \warm{}
-peer, for which all \established{} and \warm{} mini-protocols are active, but
-\hot{} ones are idle.
+A connection enters \RemoteWarm{} state once any of the warm responder mini-protocols start
+to operate.
 
 \subsubsection{\RemoteHot}
-A connection enters \RemoteHot{} transition once all hot protocols started, if
-any of them terminates the connection will be put in \RemoteWarm{}.
+A connection enters \RemoteHot{} transition once any responder hot protocols have started.
+Once all of them have terminated, the connection will be put in \RemoteWarm{}.
 
 \subsection{Transitions}
 
@@ -2173,4 +2170,3 @@ case a \RemoteWarm{} connection is put in \RemoteHot{} state.
 Dually to \PromotedToHotRemote{} state transition, as soon as any of the \hot{}
 mini-protocols terminates, the connection will transition to \RemoteWarm{}
 state.
-

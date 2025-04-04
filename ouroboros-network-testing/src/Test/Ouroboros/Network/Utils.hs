@@ -4,6 +4,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TupleSections              #-}
 
 module Test.Ouroboros.Network.Utils
   ( -- * Arbitrary Delays
@@ -30,6 +31,7 @@ module Test.Ouroboros.Network.Utils
   , splitWithNameTrace
     -- * Tracers
   , debugTracer
+  , debugTracerG
   , sayTracer
     -- * Tasty Utils
   , nightlyTest
@@ -37,6 +39,8 @@ module Test.Ouroboros.Network.Utils
     -- * Auxiliary functions
   , renderRanges
   ) where
+
+import GHC.Real
 
 import Control.Monad.Class.MonadSay
 import Control.Monad.Class.MonadTime.SI
@@ -48,7 +52,6 @@ import Data.List.Trace (Trace)
 import Data.List.Trace qualified as Trace
 import Data.Map qualified as Map
 import Data.Maybe (fromJust, isJust)
-import Data.Ratio
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Text.Pretty.Simple (pPrint)
@@ -61,7 +64,7 @@ import Test.Tasty.ExpectedFailure (ignoreTest)
 
 newtype Delay = Delay { getDelay :: DiffTime }
   deriving Show
-  deriving newtype (Eq, Ord, Num)
+  deriving newtype (Eq, Ord, Num, Fractional, Real)
 
 
 genDelayWithPrecision :: Integer -> Gen DiffTime
@@ -76,18 +79,20 @@ genDelayWithPrecision precision =
 --
 instance Arbitrary Delay where
     arbitrary = Delay <$> genDelayWithPrecision 10
-    shrink (Delay delay) | delay >= 0.1 = [ Delay (delay - 0.1) ]
-                         | otherwise    = []
+    shrink delay | delay > 0.1 =
+      takeWhile (>= 0.1) . map fromRational . shrink . toRational $ delay
+    shrink _delay = []
 
 
 newtype SmallDelay = SmallDelay { getSmallDelay :: DiffTime }
   deriving Show
-  deriving newtype (Eq, Ord, Num)
+  deriving newtype (Eq, Ord, Num, Fractional, Real)
 
 instance Arbitrary SmallDelay where
     arbitrary = resize 5 $ SmallDelay . getDelay <$> suchThat arbitrary (\(Delay d ) -> d < 5)
-    shrink (SmallDelay delay) | delay >= 0.1 = [ SmallDelay (delay - 0.1) ]
-                              | otherwise    = []
+    shrink delay | delay > 0.1 =
+      takeWhile (>= 0.1) . map fromRational . shrink . toRational $ delay
+    shrink _delay = []
 
 -- | Pick a subset of a set, using a 50:50 chance for each set element.
 --
@@ -167,13 +172,19 @@ data WithName name event = WithName {
     wnName  :: name,
     wnEvent :: event
   }
-  deriving (Show, Functor)
+  deriving (Functor)
+
+instance (Show name, Show event) => Show (WithName name event) where
+  show (WithName name ev) = "#" <> show name <> " %" <> show ev
 
 data WithTime event = WithTime {
     wtTime  :: Time,
     wtEvent :: event
   }
-  deriving (Show, Functor)
+  deriving (Functor)
+
+instance Show event => Show (WithTime event) where
+  show (WithTime t ev) = "@" <> show t <> " " <> show ev
 
 tracerWithName :: name -> Tracer m (WithName name a) -> Tracer m a
 tracerWithName name = contramap (WithName name)
@@ -227,6 +238,16 @@ debugTracer = Tracer traceShowM
 sayTracer :: ( Show a, MonadSay m) => Tracer m a
 sayTracer = Tracer (say . show)
 
+-- | Redefine this tracer to get valuable tracing information from various
+-- components:
+--
+-- * connection-manager
+-- * inbound governor
+-- * server
+--
+debugTracerG :: (MonadSay m, MonadTime m, Show a) => Tracer m a
+debugTracerG = Tracer (\msg -> (,msg) <$> getCurrentTime >>= say . show)
+           -- <> Tracer Debug.traceShowM
 
 --
 -- Nightly tests
