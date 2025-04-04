@@ -72,6 +72,7 @@ data ServiceClientTrace
 instance Pretty ServiceClientTrace where
   pretty (ServiceClientDriverTrace d) = "Service: ServiceDriver: " ++ pretty d
   pretty (ServiceClientConnected a) = "Service: Connected to " ++ a
+  pretty (ServiceClientVersionHandshakeTrace a) = "Service: VersionHandshakeTrace: " ++ pretty a
   pretty x = "Service: " ++ drop (length "ServiceClient") (show x)
 
 type MonadServiceClient m =

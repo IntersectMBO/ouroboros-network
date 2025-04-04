@@ -3,16 +3,12 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -32,6 +28,7 @@ import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow (MonadThrow)
 import Control.Tracer (Tracer, traceWith)
 import Data.Kind (Type)
+import Data.List (intercalate)
 import Data.Proxy
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Driver
@@ -49,6 +46,10 @@ data VersionHandshakeDriverTrace
   deriving (Show)
 
 instance Pretty VersionHandshakeDriverTrace where
+  pretty (VersionHandshakeDriverOfferingVersions versions) =
+    "OfferingVersions: [" ++ intercalate ", " (map pretty versions) ++ "]"
+  pretty (VersionHandshakeDriverAcceptingVersion v) =
+    "AcceptingVersion: " ++ pretty v
   pretty (VersionHandshakeDriverMisc x) = x
   pretty x = drop (strLength "VersionHandshakeDriver") (show x)
 
