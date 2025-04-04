@@ -8,6 +8,12 @@
 
 * `IsLedgerPeer` added to `Ouroboros.Network.LedgerPeers.Types` module.
 
+## 0.14.0.0 -- 2025-04-04
+
+### Breaking changes
+
+- Changed type of `unwrapCBORinCBOR`.
+
 ## 0.13.0.0 -- 2025-02-25
 
 ### Breaking changes
