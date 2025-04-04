@@ -1,5 +1,11 @@
 # Revision history for ouroboros-network-protocols
 
+## 0.14.0.1 -- 2025-04-04
+
+### Patch changes
+
+- Use `ouroboros-network-api-0.14.0.0`.
+
 ## 0.14.0.0 -- 2025-02-25
 
 ### Breaking changes

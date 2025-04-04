@@ -178,7 +178,7 @@ library
     network ^>=3.2.7,
     network-mux,
     nothunks,
-    ouroboros-network-api ^>=0.13,
+    ouroboros-network-api >=0.13 && <0.15,
     ouroboros-network-framework ^>=0.17,
     ouroboros-network-protocols ^>=0.14,
     psqueues >=0.2.3 && <0.3,

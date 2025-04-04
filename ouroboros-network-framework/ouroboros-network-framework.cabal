@@ -92,7 +92,7 @@ library
     network-mux ^>=0.7,
     nothunks,
     nothunks ^>=0.1.4 || ^>=0.2,
-    ouroboros-network-api ^>=0.13,
+    ouroboros-network-api >=0.13 && <0.15,
     ouroboros-network-testing,
     psqueues,
     quiet,
