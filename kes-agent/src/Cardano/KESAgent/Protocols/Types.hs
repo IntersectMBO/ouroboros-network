@@ -164,5 +164,20 @@ data ServiceDriverTrace
   deriving (Show)
 
 instance Pretty ServiceDriverTrace where
+  pretty (ServiceDriverSendingVersionID v) = "SendingVersionID " ++ pretty v
+  pretty (ServiceDriverReceivedVersionID v) = "ReceivedVersionID " ++ pretty v
+  pretty (ServiceDriverInvalidVersion v1 v2) = "InvalidVersion " ++ pretty v1 ++ " " ++ pretty v2
+  pretty (ServiceDriverSendingKey k) = "SendingKey " ++ pretty k
+  pretty (ServiceDriverSentKey k) = "SentKey " ++ pretty k
+  pretty (ServiceDriverReceivedKey k) = "ReceivedKey " ++ pretty k
+  pretty (ServiceDriverConfirmingKey) = "ConfirmingKey"
+  pretty (ServiceDriverConfirmedKey) = "ConfirmedKey"
+  pretty (ServiceDriverDecliningKey r) = "DecliningKey " ++ pretty r
+  pretty (ServiceDriverDeclinedKey r) = "DeclinedKey " ++ pretty r
+  pretty (ServiceDriverRequestingKeyDrop ts) = "RequestingKeyDrop " ++ pretty ts
+  pretty (ServiceDriverRequestedKeyDrop ts) = "RequestedKeyDrop " ++ pretty ts
+  pretty (ServiceDriverReceivedKeyDrop ts) = "ReceivedKeyDrop " ++ pretty ts
+  pretty (ServiceDriverCRefEvent e) = "CRefEvent " ++ pretty e
+  pretty (ServiceDriverProtocolError err) = "ProtocolError " ++ err
   pretty (ServiceDriverMisc x) = x
   pretty x = drop (strLength "ServiceDriver") (show x)

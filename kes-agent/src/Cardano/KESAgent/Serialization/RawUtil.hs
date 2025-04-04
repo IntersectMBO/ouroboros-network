@@ -28,6 +28,7 @@ import Cardano.Crypto.Libsodium.Memory (
 
 import Ouroboros.Network.RawBearer
 
+import Control.Applicative
 import Control.Concurrent.Class.MonadMVar
 import Control.Monad (void, when)
 import Control.Monad.Class.MonadST

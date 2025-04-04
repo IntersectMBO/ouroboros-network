@@ -82,6 +82,7 @@ data ControlClientTrace
 instance Pretty ControlClientTrace where
   pretty (ControlClientDriverTrace d) = "Control: ControlDriver: " ++ pretty d
   pretty ControlClientConnected = "Control: Connected"
+  pretty (ControlClientKeyRejected r) = "Control: KeyRejected: " ++ pretty r
   pretty x = "Control: " ++ drop (length "ControlClient") (show x)
 
 data ControlClientOptions m fd addr
