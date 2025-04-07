@@ -74,6 +74,7 @@ data AgentTrace
   deriving (Show)
 
 instance Pretty AgentTrace where
+  pretty (AgentVersionHandshakeDriverTrace d) = "Agent: VersionHandshakeDriver: " ++ pretty d
   pretty (AgentServiceDriverTrace d) = "Agent: ServiceDriver: " ++ pretty d
   pretty (AgentServiceSocketClosed a) = "Agent: ServiceSocketClosed: " ++ a
   pretty (AgentServiceClientConnected a b) = "Agent: ServiceClientConnected: " ++ a ++ " " ++ b
