@@ -387,5 +387,10 @@ pushKey agent tbundle = do
 
     broadcastUpdate :: TaggedBundle m c -> m ()
     broadcastUpdate tbundle = do
-      agentTrace agent $ AgentRequestingKeyUpdate (formatMaybeKey (taggedBundleTimestamp tbundle) (bundleOC <$> taggedBundle tbundle))
+      agentTrace agent $
+        AgentRequestingKeyUpdate
+          ( formatMaybeKey
+              (taggedBundleTimestamp tbundle)
+              (bundleOC <$> taggedBundle tbundle)
+          )
       atomically $ writeTChan (agentNextKeyChan agent) tbundle

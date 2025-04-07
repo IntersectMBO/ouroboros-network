@@ -35,11 +35,11 @@ module Cardano.KESAgent.Processes.Agent (
 )
 where
 
+import Cardano.KESAgent.KES.Bundle (Bundle (..), TaggedBundle (..))
 import Cardano.KESAgent.KES.Evolution (
   EvolutionConfig (..),
   defEvolutionConfig,
  )
-import Cardano.KESAgent.KES.Bundle (TaggedBundle (..), Bundle (..))
 import Cardano.KESAgent.Processes.Agent.CommonActions
 import Cardano.KESAgent.Processes.Agent.Context
 import Cardano.KESAgent.Processes.Agent.ControlDrivers
