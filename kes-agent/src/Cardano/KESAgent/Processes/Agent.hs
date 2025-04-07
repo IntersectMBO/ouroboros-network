@@ -39,6 +39,7 @@ import Cardano.KESAgent.KES.Evolution (
   EvolutionConfig (..),
   defEvolutionConfig,
  )
+import Cardano.KESAgent.KES.Bundle (TaggedBundle (..), Bundle (..))
 import Cardano.KESAgent.Processes.Agent.CommonActions
 import Cardano.KESAgent.Processes.Agent.Context
 import Cardano.KESAgent.Processes.Agent.ControlDrivers
@@ -186,13 +187,6 @@ runAgent agent = do
   let runService :: m ()
       runService = do
         labelMyThread "service"
-        nextKeyChanRcv <- atomically $ dupTChan (agentNextKeyChan agent)
-
-        let currentKey =
-              atomically $ readTMVar (agentCurrentKeyVar agent) >>= maybe retry return
-
-        let nextKey =
-              atomically (readTChan nextKeyChanRcv)
 
         let reportPushResult result =
               agentTrace agent $ AgentDebugTrace $ "Push result: " ++ show result
@@ -215,6 +209,18 @@ runAgent agent = do
                 putTMVar clientCounterVar (succ i)
                 return i
               labelMyThread $ "service" ++ show serviceID
+
+              nextKeyChanRcv <- atomically $ dupTChan (agentNextKeyChan agent)
+              let currentKey =
+                    atomically $ readTMVar (agentCurrentKeyVar agent) >>= maybe retry return
+              let nextKey = do
+                    tbundle <- atomically (readTChan nextKeyChanRcv)
+                    agentTrace agent $
+                      AgentPushingKeyUpdate
+                        (formatMaybeKey (taggedBundleTimestamp tbundle) (bundleOC <$> taggedBundle tbundle))
+                        ("service" ++ show serviceID)
+                    return tbundle
+
               (protocolVersionMay :: Maybe VersionIdentifier, ()) <-
                 runPeerWithDriver
                   ( versionHandshakeDriver
@@ -225,7 +231,7 @@ runAgent agent = do
               case protocolVersionMay >>= (`lookupServiceDriver` (availableServiceDrivers @c @m)) of
                 Nothing ->
                   traceWith (agentTracer . agentOptions $ agent) AgentServiceVersionHandshakeFailed
-                Just run ->
+                Just run -> do
                   run bearer tracer' currentKey nextKey reportPushResult
           )
 

@@ -66,7 +66,8 @@ data AgentTrace
   | AgentServiceSocketError String
   | AgentServiceVersionHandshakeFailed
   | AgentSkippingOldKey String String
-  | AgentPushingKeyUpdate
+  | AgentRequestingKeyUpdate String
+  | AgentPushingKeyUpdate String String
   | AgentHandlingKeyUpdate
   | AgentUpdateKESPeriod KESPeriod KESPeriod
   | AgentDebugTrace String
@@ -83,6 +84,9 @@ instance Pretty AgentTrace where
   pretty (AgentControlClientConnected a b) = "Agent: ControlClientConnected: " ++ a ++ " " ++ b
   pretty (AgentControlClientDisconnected a) = "Agent: ControlClientDisconnected: " ++ a
   pretty (AgentControlSocketError e) = "Agent: ControlSocketError: " ++ e
+  pretty (AgentRejectingKey msg) = "Agent: RejectingKey: " ++ msg
+  pretty (AgentPushingKeyUpdate msg socket) = "Agent: PushingKeyUpdate: " ++ msg ++ " on " ++ socket
+  pretty (AgentRequestingKeyUpdate msg) = "Agent: RequestingKeyUpdate: " ++ msg
   pretty x = "Agent: " ++ drop (strLength "Agent") (show x)
 
 data AgentOptions m addr c

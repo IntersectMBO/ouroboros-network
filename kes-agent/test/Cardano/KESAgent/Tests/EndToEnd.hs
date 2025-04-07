@@ -409,7 +409,7 @@ kesAgentControlInstallInvalidOpCert =
           ["Error: OpCert validation failed"]
 
     assertNoMatchingOutputLines 4 ["->", "ServiceClientBlockForging"] serviceOutLines
-    assertMatchingOutputLines 1 ["Warning", "Agent:", "RejectingKey"] agentOutLines
+    assertMatchingOutputLines 1 ["Notice", "Agent:", "RejectingKey:", "Verification"] agentOutLines
 
 kesAgentControlInstallNoKey :: Assertion
 kesAgentControlInstallNoKey =

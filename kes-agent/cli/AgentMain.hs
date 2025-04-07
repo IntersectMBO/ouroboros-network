@@ -412,7 +412,7 @@ agentTracePrio (AgentBootstrapTrace ServiceClientAbnormalTermination {}) = Error
 agentTracePrio (AgentBootstrapTrace ServiceClientOpCertNumberCheck {}) = Debug
 agentTracePrio AgentReplacingPreviousKey {} = Notice
 agentTracePrio AgentDroppingKey {} = Notice
-agentTracePrio AgentRejectingKey {} = Warning
+agentTracePrio AgentRejectingKey {} = Notice
 agentTracePrio AgentInstallingNewKey {} = Notice
 agentTracePrio AgentInstallingKeyDrop {} = Notice
 agentTracePrio AgentSkippingOldKey {} = Info
@@ -437,8 +437,9 @@ agentTracePrio AgentLockRequest {} = Debug
 agentTracePrio AgentLockAcquired {} = Debug
 agentTracePrio AgentLockReleased {} = Debug
 agentTracePrio AgentCRefEvent {} = Debug
-agentTracePrio AgentPushingKeyUpdate {} = Debug
-agentTracePrio AgentHandlingKeyUpdate {} = Debug
+agentTracePrio AgentRequestingKeyUpdate {} = Info
+agentTracePrio AgentPushingKeyUpdate {} = Notice
+agentTracePrio AgentHandlingKeyUpdate {} = Info
 agentTracePrio AgentDebugTrace {} = Debug
 
 agentTraceFormatBS :: AgentTrace -> ByteString

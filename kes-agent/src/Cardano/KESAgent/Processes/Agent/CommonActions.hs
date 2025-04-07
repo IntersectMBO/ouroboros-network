@@ -180,6 +180,12 @@ withStagedKey agent context f = do
     agentTrace agent (AgentLockReleased context)
     return retval
 
+formatMaybeKey :: Timestamp -> Maybe (OCert c) -> String
+formatMaybeKey ts Nothing =
+  printf "DELETE (%lu)" (timestampValue ts)
+formatMaybeKey ts (Just ocert) =
+  formatKey ts ocert
+
 formatKey :: Timestamp -> OCert c -> String
 formatKey ts ocert =
   let serialNumber = ocertN ocert
@@ -381,5 +387,5 @@ pushKey agent tbundle = do
 
     broadcastUpdate :: TaggedBundle m c -> m ()
     broadcastUpdate tbundle = do
-      agentTrace agent $ AgentPushingKeyUpdate
+      agentTrace agent $ AgentRequestingKeyUpdate (formatMaybeKey (taggedBundleTimestamp tbundle) (bundleOC <$> taggedBundle tbundle))
       atomically $ writeTChan (agentNextKeyChan agent) tbundle
