@@ -54,6 +54,7 @@ import Data.Function ((&))
 import Data.Hashable (Hashable)
 import Data.IP (IP)
 import Data.IP qualified as IP
+import Data.List (isInfixOf)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import Data.Map qualified as Map
@@ -840,9 +841,10 @@ runM Interfaces
           Just {} -> mempty
           Nothing -> mempty)
       <>
-      RethrowPolicy (\ctx err -> case  (ctx, fromException err) of
-                        (OutboundError, Just Mx.UnknownMiniProtocol {})
+      RethrowPolicy (\ctx err -> case ctx of
+                        OutboundError | Just Mx.UnknownMiniProtocol {} <- fromException err
                           -> ShutdownPeer
+                        InboundError | isInfixOf "Map" (displayException err) -> ShutdownNode
                         _ -> mempty)
 
 
