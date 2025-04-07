@@ -37,7 +37,11 @@ import Test.Tasty
 import Test.Tasty.HUnit
 
 -- | Create a genesis file with the @systemStart@ parameter chosen such that the
--- KES period will roll over within the next second.
+-- KES period will roll over 200 milliseconds from now.
+-- The reason we're picking 200 milliseconds is because we are allowing 100
+-- milliseconds for the KES agents and service clients to start up, and we need
+-- a bit of extra headroom to make sure the flipover doesn't happen before our
+-- test case itself runs.
 makeMockGenesisFile :: FilePath -> IO ()
 makeMockGenesisFile dst = do
   src <- getDataFileName "fixtures/mainnet-shelley-genesis.json"
@@ -49,7 +53,10 @@ makeMockGenesisFile dst = do
         return
         (KeyMap.lookup "slotsPerKESPeriod" settings)
   now <- getCurrentTime
-  let systemStart = addUTCTime (secondsToNominalDiffTime $ negate (slotsPerKESPeriod - 1)) now
+  let systemStart =
+        addUTCTime
+          (secondsToNominalDiffTime $ negate (slotsPerKESPeriod - 0.2))
+          now
   let settings' = KeyMap.insert "systemStart" (JSON.toJSON systemStart) settings
   JSON.encodeFile dst settings'
 
@@ -895,11 +902,8 @@ kesAgentEvolvesKey =
                 ]
                 ExitSuccess
                 (all (/= "Current evolution: 1 / 64"))
-              -- Wait 2 seconds; the validity should flip over about 1 second
-              -- after the start of the test run, but only with a 1-second
-              -- granularity, so unfortunately we have to wait another second to
-              -- make sure we capture the flipover.
-              threadDelay 2_000_000
+
+              threadDelay 200_000
               controlClientCheckP
                 "Current evolution is 1"
                 [ "info"
