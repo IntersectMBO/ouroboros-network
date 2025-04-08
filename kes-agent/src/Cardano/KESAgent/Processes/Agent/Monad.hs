@@ -3,6 +3,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 
+-- | Convenience constraint bundles for running 'Agent' processes.
 module Cardano.KESAgent.Processes.Agent.Monad
 where
 
@@ -25,6 +26,7 @@ import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import Cardano.KESAgent.KES.OCert (OCertSignable)
 import Cardano.KESAgent.Protocols.VersionedProtocol
 
+-- | All the monadic typeclasses needed to run agent actions.
 type MonadAgent m =
   ( Monad m
   , MonadAsync m
@@ -36,6 +38,7 @@ type MonadAgent m =
   , MonadTime m
   )
 
+-- | All the typeclasses needed to use a crypto for agent purposes.
 type AgentCrypto c =
   ( ContextDSIGN (DSIGN c) ~ ()
   , ContextKES (KES c) ~ ()

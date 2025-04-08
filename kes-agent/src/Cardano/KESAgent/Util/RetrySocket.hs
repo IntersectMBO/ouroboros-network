@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+-- | Retry socket actions upon errors.
 module Cardano.KESAgent.Util.RetrySocket
 where
 
@@ -24,9 +25,11 @@ retrySocket =
     100000
     10
 
+-- | Null reporter for retry attempts (don't actually report anything)
 reportRetryNull :: Applicative m => e -> Int -> Int -> m ()
 reportRetryNull _ _ _ = pure ()
 
+-- | Report retry attempts on 'stderr'.
 reportRetryStderr :: Exception e => e -> Int -> Int -> IO ()
 reportRetryStderr ex n interval = do
   hPutStrLn stderr $
@@ -38,6 +41,7 @@ reportRetryStderr ex n interval = do
       ++ show (fromIntegral interval / 1000000 :: Double)
       ++ " s..."
 
+-- | Retry socket action according to given parameters.
 retrySocketWith ::
   forall m a e.
   MonadCatch m =>

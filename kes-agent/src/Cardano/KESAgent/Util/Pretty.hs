@@ -1,3 +1,5 @@
+-- | Custom pretty-printing API. Mostly used for trace logging and printing
+-- values to the command line.
 module Cardano.KESAgent.Util.Pretty
 where
 

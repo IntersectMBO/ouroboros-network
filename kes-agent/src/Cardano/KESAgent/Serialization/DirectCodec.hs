@@ -19,6 +19,8 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE NoStarIsType #-}
 
+-- | A codec used for direct serialization (sending and receiving data through
+-- file descriptors without requiring any intermediate memory buffers).
 module Cardano.KESAgent.Serialization.DirectCodec
 where
 
@@ -166,6 +168,10 @@ instance (MonadThrow m, MonadST m) => Serializable (DirectCodec m) Word64 where
   decode _ = decodeWith receiveWord64
 
 -- ** 'UTCTime'
+
+-- Note that the default precision is 1 second. We use 'UTCTime' directly when
+-- reporting times to control clients; timestamps on key bundles have their own
+-- 'Timestamp' type, which serializes to millisecond granularity.
 
 instance HasInfo (DirectCodec m) UTCTime where
   info codec _ =
@@ -731,7 +737,7 @@ instance
   decode p =
     ((((OCert <$> decode p) <*> decode p) <*> decode p) <*> decode p)
 
--- ** 'Bundle'
+-- ** 'TaggedBundle'
 
 instance
   ( HasInfo (DirectCodec m) (Bundle m c)
@@ -776,6 +782,8 @@ instance
         { taggedBundle = b
         , taggedBundleTimestamp = t
         }
+
+-- ** 'Bundle'
 
 instance
   ( HasInfo (DirectCodec m) (SignKeyKES (KES c))

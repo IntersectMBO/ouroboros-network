@@ -3,6 +3,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 
+-- | The main @kes-agent@ program.
 module Main
 where
 
@@ -394,6 +395,7 @@ getConfigPaths = do
     , "/etc/kes-agent" </> tail
     ]
 
+-- | Get logging priority for an 'AgentTrace' message.
 agentTracePrio :: AgentTrace -> Priority
 agentTracePrio AgentVersionHandshakeDriverTrace {} = Debug
 agentTracePrio AgentServiceVersionHandshakeFailed {} = Warning
@@ -442,9 +444,13 @@ agentTracePrio AgentPushingKeyUpdate {} = Notice
 agentTracePrio AgentHandlingKeyUpdate {} = Info
 agentTracePrio AgentDebugTrace {} = Debug
 
+-- | Encode an agent trace message as a 'ByteString'. Needed for the syslog
+-- tracer.
 agentTraceFormatBS :: AgentTrace -> ByteString
 agentTraceFormatBS = encodeUtf8 . Text.pack . pretty
 
+-- | Print log messages on 'stdout'. Requires a lock to avoid concurrent log
+-- messages from different threads getting mangled together.
 stdoutAgentTracer :: Priority -> MVar IO () -> Tracer IO AgentTrace
 stdoutAgentTracer maxPrio lock = Tracer $ \msg -> do
   timestamp <- utcTimeToPOSIXSeconds <$> getCurrentTime
@@ -460,7 +466,7 @@ stdoutAgentTracer maxPrio lock = Tracer $ \msg -> do
 
 #if defined(mingw32_HOST_OS)
 -- Windows OS - no syslog available.
--- TODO: find a reasonable default logging target for Windows
+-- TODO: find a reasonable default logging target for Windows.
 defaultAgentTracer :: Tracer IO AgentTrace
 defaultAgentTracer = nullTracer
 #else
@@ -472,6 +478,8 @@ defaultAgentTracer :: Tracer IO AgentTrace
 defaultAgentTracer = syslogAgentTracer
 #endif
 
+-- | Run @kes-agent@ in service mode (as a daemon), dropping privileges after
+-- loading configuration and setting up sockets.
 runAsService :: Maybe FilePath -> ServiceModeOptions -> IO ()
 #if defined(mingw32_HOST_OS)
 runAsService _ _ =
@@ -520,6 +528,7 @@ runAsService configPathMay smo' =
           }
 #endif
 
+-- | Run @kes-agent@ as a regular process.
 runNormally :: Maybe FilePath -> NormalModeOptions -> IO ()
 runNormally configPathMay nmo' = withIOManager $ \ioManager -> do
   nmoEnv <- nmoFromEnv

@@ -13,6 +13,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 
+-- | Common operations used inside the KES agent process.
 module Cardano.KESAgent.Processes.Agent.CommonActions
 where
 
@@ -66,6 +67,8 @@ import Cardano.KESAgent.Util.RefCounting (
   withCRefValue,
  )
 
+-- | Check whether the current active key bundle need to be evolved, and if so,
+-- evolve it.
 checkEvolution :: AgentContext m c => Agent c m fd addr -> m ()
 checkEvolution agent = do
   p' <-
@@ -76,9 +79,11 @@ checkEvolution agent = do
   alterBundle agent "checkEvolution" $ \bundleMay -> do
     case bundleMay of
       Nothing -> do
+        -- No bundle, no need to evolve anything.
         agentTrace agent AgentNoKeyToEvolve
         return (Nothing, ())
       Just TaggedBundle {taggedBundle = Nothing} -> do
+        -- Active bundle is a key deletion, which we don't need to evolve.
         agentTrace agent AgentNoKeyToEvolve
         return (Nothing, ())
       Just
@@ -86,17 +91,26 @@ checkEvolution agent = do
           { taggedBundle = Just (Bundle keyVar oc)
           , taggedBundleTimestamp = timestamp
           } ->
+          -- We have an active bundle, so we may need to evolve it.
           withCRefValue keyVar $ \key -> do
             let p = KESPeriod $ unKESPeriod (ocertKESPeriod oc) + periodKES key
             if p < p'
               then do
+                -- We need to evolve.
                 keyMay' <- updateKESTo () p' oc key
                 case keyMay' of
                   Nothing -> do
+                    -- No more evolutions available, remove the key.
+                    -- It's OK to just leave the key store empty, rather than
+                    -- storing a key deletion, because the key is expired
+                    -- anyway, so any peer or client who still has that key will
+                    -- also evolve and expire it.
                     agentTrace agent $ AgentKeyExpired p p'
                     releaseCRef keyVar
                     return (Nothing, ())
                   Just key' -> do
+                    -- Key evolved successfully, replace it in our key store,
+                    -- and release the old key.
                     agentTrace agent $ AgentKeyEvolved p p'
                     keyVar' <- newCRefWith (agentCRefTracer agent) (forgetSignKeyKES . skWithoutPeriodKES) key'
                     releaseCRef keyVar
@@ -109,15 +123,26 @@ checkEvolution agent = do
                       , ()
                       )
               else do
+                -- Key bundle is up to date, no need to evolve.
                 agentTrace agent $ AgentKeyNotEvolved p p'
                 return (bundleMay, ())
 
+-- | Convenience wrapper for sending 'AgentTrace' messages to an agent's
+-- default 'Tracer'.
 agentTrace :: Agent c m fd addr -> AgentTrace -> m ()
 agentTrace agent = traceWith (agentTracer . agentOptions $ agent)
 
+-- | Convenience wrapper for tracing refcounting events in an agent context.
 agentCRefTracer :: Agent c m fd addr -> Tracer m CRefEvent
 agentCRefTracer = contramap AgentCRefEvent . agentTracer . agentOptions
 
+-- | Modify the bundle stored in a KES agent in a thread-safe manner.
+-- The key modification function takes and returns a 'Maybe', where 'Nothing'
+-- means that there is no key; returning 'Nothing' will erase the stored key.
+-- Broadcasting the key update (if appropriate), evolving the key to the current
+-- evolution, and securely erasing any old keys, is the responsibility of the
+-- caller.
+-- See 'Agent' for explanations of how keys are stored in a KES agent.
 alterBundle ::
   (MonadSTM m, MonadThrow m) =>
   Agent c m fd addr ->
@@ -133,6 +158,10 @@ alterBundle agent context f = do
     agentTrace agent (AgentLockReleased context)
     return retval
 
+-- | Perform an action on the key bundle stored in a KES agent in a thread-safe
+-- manner. The key bundle should be considered read-only; to manipulate the key
+-- bundle, use 'alterBundle'.
+-- See 'Agent' for explanations of how keys are stored in a KES agent.
 withBundle ::
   (MonadSTM m, MonadThrow m) =>
   Agent c m fd addr ->
@@ -148,6 +177,10 @@ withBundle agent context f = do
     agentTrace agent (AgentLockReleased context)
     return retval
 
+-- | Modify a staged key stored in a KES agent.
+-- The key modification function takes and returns a 'Maybe', where 'Nothing'
+-- means that there is no key; returning 'Nothing' will erase the stored key.
+-- See 'Agent' for explanations of how keys are stored in a KES agent.
 alterStagedKey ::
   (MonadSTM m, MonadThrow m) =>
   Agent c m fd addr ->
@@ -165,6 +198,9 @@ alterStagedKey agent context f = do
     agentTrace agent (AgentLockReleased context)
     return retval
 
+-- | Access a staged key stored in a KES agent. The staged key is read-only
+-- during this operation.
+-- See 'Agent' for explanations of how keys are stored in a KES agent.
 withStagedKey ::
   (MonadSTM m, MonadThrow m) =>
   Agent c m fd addr ->
@@ -180,17 +216,21 @@ withStagedKey agent context f = do
     agentTrace agent (AgentLockReleased context)
     return retval
 
+-- | Format a key bundle, or key deletion, for the purpose of trace logging.
 formatMaybeKey :: Timestamp -> Maybe (OCert c) -> String
 formatMaybeKey ts Nothing =
   printf "DELETE (%lu)" (timestampValue ts)
 formatMaybeKey ts (Just ocert) =
   formatKey ts ocert
 
+-- | Format a key bundle for the purpose of trace logging.
 formatKey :: Timestamp -> OCert c -> String
 formatKey ts ocert =
   let serialNumber = ocertN ocert
   in printf "%i (%lu)" serialNumber (timestampValue ts)
 
+-- | Initialize a new 'Agent'. This will not spawn the actual agent process,
+-- just set up everything it needs.
 newAgent ::
   forall c m fd addr.
   Monad m =>
@@ -202,58 +242,77 @@ newAgent ::
   MakeRawBearer m fd ->
   AgentOptions m addr c ->
   m (Agent c m fd addr)
-newAgent _p s mrb options = do
-  stagedKeyVar :: TMVar m (Maybe (CRef m (SignKeyWithPeriodKES (KES c)))) <-
-    newTMVarIO Nothing
-  currentKeyVar :: TMVar m (Maybe (TaggedBundle m c)) <-
-    newTMVarIO Nothing
-  nextKeyChan <- atomically newBroadcastTChan
-  bootstrapConnectionsVar <- newTMVarIO mempty
+newAgent
+  _p
+  -- \| 'Snocket' for both service and control connections
+  s
+  -- \| Raw-bearer factory, needed for the RawBearer protocols
+  mrb
+  -- \| Agent options
+  options = do
+    stagedKeyVar :: TMVar m (Maybe (CRef m (SignKeyWithPeriodKES (KES c)))) <-
+      newTMVarIO Nothing
+    currentKeyVar :: TMVar m (Maybe (TaggedBundle m c)) <-
+      newTMVarIO Nothing
+    nextKeyChan <- atomically newBroadcastTChan
+    bootstrapConnectionsVar <- newTMVarIO mempty
 
-  serviceFD <- openFD (agentServiceAddr options)
-  controlFD <- mapM openFD (agentControlAddr options)
+    serviceFD <- openFD (agentServiceAddr options)
+    controlFD <- mapM openFD (agentControlAddr options)
 
-  return
-    Agent
-      { agentSnocket = s
-      , agentMRB = mrb
-      , agentOptions = options
-      , agentStagedKeyVar = stagedKeyVar
-      , agentCurrentKeyVar = currentKeyVar
-      , agentNextKeyChan = nextKeyChan
-      , agentServiceFD = serviceFD
-      , agentControlFD = controlFD
-      , agentBootstrapConnections = bootstrapConnectionsVar
-      }
-  where
-    openFD addr = do
-      fd <- open s (addrFamily s addr)
-      bind s fd addr
-      return fd
+    return
+      Agent
+        { agentSnocket = s
+        , agentMRB = mrb
+        , agentOptions = options
+        , agentStagedKeyVar = stagedKeyVar
+        , agentCurrentKeyVar = currentKeyVar
+        , agentNextKeyChan = nextKeyChan
+        , agentServiceFD = serviceFD
+        , agentControlFD = controlFD
+        , agentBootstrapConnections = bootstrapConnectionsVar
+        }
+    where
+      openFD addr = do
+        fd <- open s (addrFamily s addr)
+        bind s fd addr
+        return fd
 
+-- | Clean up after an 'Agent'.
 finalizeAgent :: Monad m => Agent c m fd addr -> m ()
 finalizeAgent agent = do
   let s = agentSnocket agent
   close s (agentServiceFD agent)
   mapM_ (close s) (agentControlFD agent)
 
+-- | The result of pushing a key into an agent.
 data PushKeyResult c
-  = PushKeyOK (Maybe (OCert c))
-  | PushKeyInvalidOCert String
-  | PushKeyTooOld
+  = -- | Push was successful, key is now current.
+    PushKeyOK (Maybe (OCert c))
+  | -- | Push failed due to an invalid operational certificate.
+    PushKeyInvalidOCert String
+  | -- | Push failed because the pushed key is older than the current one.
+    PushKeyTooOld
 
+-- | Convert a 'PushKeyResult' to a 'RecvResult' to report back to a connected
+-- client.
 pushKeyResultToRecvResult :: PushKeyResult c -> RecvResult
 pushKeyResultToRecvResult PushKeyOK {} = RecvOK
 pushKeyResultToRecvResult PushKeyInvalidOCert {} = RecvErrorInvalidOpCert
 pushKeyResultToRecvResult PushKeyTooOld = RecvErrorKeyOutdated
 
+-- | Extract the 'OCert' from a 'PushKeyResult', if any.
 pushKeyResultOCert :: PushKeyResult c -> Maybe (OCert c)
 pushKeyResultOCert (PushKeyOK ocm) = ocm
 pushKeyResultOCert _ = Nothing
 
+-- | Extract the KES verification key from a 'PushKeyResult', if any.
 pushKeyResultVKey :: PushKeyResult c -> Maybe (VerKeyKES (KES c))
 pushKeyResultVKey pkr = ocertVkHot <$> pushKeyResultOCert pkr
 
+-- | Validate a key bundle. This will validate the operational certificate in
+-- the bundle against the cold key configured for the agent, and a
+-- verification key derived from the signing key in the bundle.
 validateBundle ::
   AgentContext m c =>
   Agent c m fd add ->
@@ -267,6 +326,9 @@ validateBundle agent bundle = do
       vkKES
       (bundleOC bundle)
 
+-- | Validate a tagged bundle. This will perform a validation as per
+-- 'validateBundle' if the tagged bundle contains a key; if the tagged bundle
+-- is a deletion (i.e., contains no key), then it always validates.
 validateTaggedBundle ::
   AgentContext m c =>
   Agent c m fd add ->
@@ -275,28 +337,50 @@ validateTaggedBundle ::
 validateTaggedBundle _ TaggedBundle {taggedBundle = Nothing} = return (Right ())
 validateTaggedBundle agent TaggedBundle {taggedBundle = Just bundle} = validateBundle agent bundle
 
+-- Perform an age check on a tagged bundle vs. a current bundle.
+-- The new bundle is considered valid if it is newer than the current bundle,
+-- according to the following checks:
+-- - If both old and new bundles contain keys, the new bundle's
+--   operational certificate serial number must be higher than the old one, and
+--   the timestamp must be strictly newer.
+-- - If only the new bundle contains a key, then the timestamp must be strictly
+--   newer.
+-- - If only the old bundle contains a key, then the timestamp of the new bundle
+--   must be newer or the same: deletions trump creations.
+-- - If neither bundle contains a key, then the timestamp must be strictly
+--   newer.
 isTaggedBundleAgeValid ::
   TaggedBundle m c ->
   TaggedBundle m c ->
   Bool
-isTaggedBundleAgeValid current new =
-  checkTimestamp && checkOCerts
-  where
-    checkTimestamp
-      -- When both timestamps match, deletions trump creation
-      | isNothing (taggedBundle new)
-      , isJust (taggedBundle current) =
-          taggedBundleTimestamp current <= taggedBundleTimestamp new
-      | otherwise =
-          taggedBundleTimestamp current < taggedBundleTimestamp new
-    checkOCerts =
-      let snCurrentMay = (ocertN . bundleOC) <$> taggedBundle current
-          snNewMay = (ocertN . bundleOC) <$> taggedBundle new
-      in case (snCurrentMay, snNewMay) of
-          (Just snCurrent, Just snNew) ->
-            snCurrent <= snNew
-          _ -> True
+isTaggedBundleAgeValid
+  -- \| The currently installed bundle.
+  current
+  -- \| The candidate bundle to install; this one must be newer than the
+  -- installed bundle.
+  new =
+    checkTimestamp && checkOCerts
+    where
+      checkTimestamp
+        -- When both timestamps match, deletions trump creation
+        | isNothing (taggedBundle new)
+        , isJust (taggedBundle current) =
+            taggedBundleTimestamp current <= taggedBundleTimestamp new
+        | otherwise =
+            taggedBundleTimestamp current < taggedBundleTimestamp new
+      checkOCerts =
+        let snCurrentMay = (ocertN . bundleOC) <$> taggedBundle current
+            snNewMay = (ocertN . bundleOC) <$> taggedBundle new
+        in case (snCurrentMay, snNewMay) of
+            (Just snCurrent, Just snNew) ->
+              snCurrent <= snNew
+            _ -> True
 
+-- | Handle an incoming 'TaggedBundle'. This will perform the following steps:
+-- - Validate the tagged bundle against the currently installed bundle, if any.
+--   If validation fails, abort.
+-- - Update the agent's active key store to hold the new bundle.
+-- - Enqueue the key update for broadcasting to connected clients.
 pushKey ::
   forall c m fd addr.
   AgentContext m c =>
@@ -348,6 +432,8 @@ pushKey agent tbundle = do
       alterBundle agent "pushKey" $ \oldTBundleMay -> do
         case oldTBundleMay of
           Nothing -> do
+            -- No old bundle present; we can just install the new one without
+            -- an age check.
             case taggedBundle tbundle of
               Nothing ->
                 agentTrace agent $ AgentInstallingKeyDrop
@@ -356,8 +442,11 @@ pushKey agent tbundle = do
                   AgentInstallingNewKey (formatKey (taggedBundleTimestamp tbundle) (bundleOC bundle))
             return (Just tbundle, PushKeyOK Nothing)
           Just oldTBundle -> do
+            -- We have an old bundle, so we need to do an age check.
             if isTaggedBundleAgeValid oldTBundle tbundle
               then do
+                -- Age check passed, which means we need to release the old
+                -- bundle and install the new one.
                 releaseResult <- releaseTaggedBundle oldTBundle
                 case (releaseResult, taggedBundle tbundle) of
                   (Nothing, Just bundle) ->
@@ -376,6 +465,8 @@ pushKey agent tbundle = do
                         (formatKey (taggedBundleTimestamp tbundle) (bundleOC bundle))
                 return (Just tbundle, PushKeyOK releaseResult)
               else do
+                -- Age check failed, so we keep the old bundle and release the
+                -- new one.
                 releaseResult <- releaseTaggedBundle tbundle
                 agentTrace agent $
                   AgentRejectingKey $

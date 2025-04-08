@@ -13,6 +13,8 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 
+-- | Functions for handling commands issued by a command client within a KES
+-- agent process.
 module Cardano.KESAgent.Processes.Agent.ControlActions
 where
 
@@ -59,6 +61,8 @@ import Cardano.KESAgent.Util.RefCounting (
   withCRefValue,
  )
 
+-- | Generate a new KES key and store it in the staged key slot.
+-- @kes-agent-control gen-key@ command.
 genKey ::
   AgentContext m c =>
   Agent c m fd addr ->
@@ -76,6 +80,8 @@ genKey agent = do
       vk <- deriveVerKeyKES sk
       return $ Just vk
 
+-- | Drop the currently installed KES key.
+-- @kes-agent-control drop-key@ command.
 dropKey ::
   AgentContext m c =>
   Agent c m fd addr ->
@@ -91,6 +97,8 @@ dropKey agent =
           , taggedBundleTimestamp = timestamp
           }
 
+-- | Drop the staged KES key.
+-- @kes-agent-control drop-staged-key@ command.
 dropStagedKey ::
   AgentContext m c =>
   Agent c m fd addr ->
@@ -103,6 +111,8 @@ dropStagedKey agent =
     `finally` do
       atomically $ putTMVar (agentStagedKeyVar agent) Nothing
 
+-- | Get the verification key of the staged key.
+-- @kes-agent-control export-staged-key@ command.
 queryKey ::
   AgentContext m c =>
   Agent c m fd addr ->
@@ -115,6 +125,9 @@ queryKey agent = do
         vk <- deriveVerKeyKES (skWithoutPeriodKES skp)
         return $ Just vk
 
+-- | Add an operational certificate to the staged key, and, if valid, move it
+-- into the active key slot.
+-- @kes-agent-control install-key@ command.
 installKey ::
   AgentContext m c =>
   Agent c m fd addr ->
@@ -141,6 +154,8 @@ installKey agent oc = do
     )
     newKeyMay
 
+-- | Get information about the agent state.
+-- @kes-agent-control info@ command.
 getInfo ::
   AgentContext m c =>
   Agent c m fd addr ->

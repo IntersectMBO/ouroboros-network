@@ -5,8 +5,17 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 
--- | Clients for the KES Agent.
-module Cardano.KESAgent.Processes.ServiceClient
+-- | KES agent service client API
+module Cardano.KESAgent.Processes.ServiceClient (
+  ServiceClientTrace (..),
+  ServiceClientDrivers (..),
+  ServiceClientOptions (..),
+  ServiceClientCrypto,
+  MonadServiceClient,
+  ServiceClientContext,
+  runServiceClientForever,
+  runServiceClient,
+)
 where
 
 import Cardano.KESAgent.KES.Bundle (TaggedBundle (..))
@@ -50,12 +59,17 @@ import Data.Typeable
 import Data.Word (Word64)
 import Network.TypedProtocol.Driver (runPeerWithDriver)
 
+-- | Configuration options for a service client.
 data ServiceClientOptions m fd addr
   = ServiceClientOptions
   { serviceClientSnocket :: Snocket m fd addr
+  -- ^ Snocket implementation to use for socket operations
   , serviceClientAddress :: addr
+  -- ^ Socket address to connect to. A KES agent should be listening for
+  -- service connections here.
   }
 
+-- | Trace logging messages a service client can generate.
 data ServiceClientTrace
   = ServiceClientVersionHandshakeTrace !VersionHandshakeDriverTrace
   | ServiceClientVersionHandshakeFailed
@@ -75,6 +89,7 @@ instance Pretty ServiceClientTrace where
   pretty (ServiceClientVersionHandshakeTrace a) = "Service: VersionHandshakeTrace: " ++ pretty a
   pretty x = "Service: " ++ drop (length "ServiceClient") (show x)
 
+-- | Monadic typeclasses required to run service client actions.
 type MonadServiceClient m =
   ( Monad m
   , MonadFail m
@@ -86,6 +101,7 @@ type MonadServiceClient m =
   , MonadMVar m
   )
 
+-- | Crypto types that support service client operations.
 type ServiceClientCrypto c =
   ( Crypto c
   , NamedCrypto c
@@ -95,6 +111,7 @@ type ServiceClientCrypto c =
   , DirectDeserialise (SignKeyKES (KES c))
   )
 
+-- | Typeclasses required for running service clients against a given crypto.
 type ServiceClientContext m c =
   ( MonadServiceClient m
   , ServiceClientCrypto c
@@ -102,6 +119,7 @@ type ServiceClientContext m c =
   , HasInfo (DirectCodec m) (SignKeyKES (KES c))
   )
 
+-- | Crypto types for which service client drivers are available.
 class ServiceClientDrivers c where
   availableServiceClientDrivers ::
     forall m.
@@ -190,7 +208,7 @@ instance ServiceClientDrivers SingleCrypto where
   availableServiceClientDrivers =
     [mkServiceClientDriverSP0]
 
--- | Run a Service Client indefinitely, restarting the connection once a
+-- | Run a service client indefinitely, restarting the connection once a
 -- session ends.
 -- In case of an abnormal session termination (via an exception), the exception
 -- is logged via the provided 'Tracer', and another connection attempt is made.
@@ -214,8 +232,8 @@ runServiceClientForever proxy mrb options handleKey tracer =
       traceWith tracer $ ServiceClientAbnormalTermination (show e)
       return ()
 
--- | Run a single Service Client session. Once the peer closes the connection,
--- return.
+-- | Run a single service client session. Once the peer closes the connection,
+-- or a failure occurs, return.
 runServiceClient ::
   forall c m fd addr.
   ServiceClientContext m c =>

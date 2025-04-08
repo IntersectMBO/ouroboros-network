@@ -98,12 +98,12 @@ serviceDriver s tracer =
         return ()
       (SIdleState, KeyMessage bundle timestamp) -> do
         traceWith tracer $
-          ServiceDriverSendingKey (mkKeyMutationTrace timestamp (Just bundle))
+          ServiceDriverSendingKey (mkTaggedBundleTrace timestamp (Just bundle))
         sendItem s KeyMessageID
         sendItem s timestamp
         sendItem s bundle
         traceWith tracer $
-          ServiceDriverSentKey (mkKeyMutationTrace timestamp (Just bundle))
+          ServiceDriverSentKey (mkTaggedBundleTrace timestamp (Just bundle))
       (SIdleState, DropKeyMessage timestamp) -> do
         traceWith tracer $ ServiceDriverRequestingKeyDrop timestamp
         sendItem s DropKeyMessageID
@@ -157,7 +157,7 @@ serviceDriver s tracer =
               lift $
                 traceWith tracer $
                   ServiceDriverReceivedKey
-                    (mkKeyMutationTrace timestamp (Just bundle))
+                    (mkTaggedBundleTrace timestamp (Just bundle))
               return (SomeMessage (KeyMessage bundle timestamp), ())
             DropKeyMessageID -> do
               lift $ traceWith tracer ServiceDriverReceivingKeyDrop

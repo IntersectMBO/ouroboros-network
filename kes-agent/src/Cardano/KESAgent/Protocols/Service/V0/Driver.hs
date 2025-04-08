@@ -89,11 +89,11 @@ serviceDriver s tracer =
       (SIdleState, KeyMessage bundle) -> do
         traceWith tracer $
           ServiceDriverSendingKey
-            (mkKeyMutationTrace 0 (Just bundle))
+            (mkTaggedBundleTrace 0 (Just bundle))
         sendItem s bundle
         traceWith tracer $
           ServiceDriverSentKey
-            (mkKeyMutationTrace 0 (Just bundle))
+            (mkTaggedBundleTrace 0 (Just bundle))
       (SIdleState, ServerDisconnectMessage) -> do
         return ()
       (_, ProtocolErrorMessage) -> do
@@ -133,7 +133,7 @@ serviceDriver s tracer =
           lift $
             traceWith tracer $
               ServiceDriverReceivedKey
-                (mkKeyMutationTrace 0 (Just bundle))
+                (mkTaggedBundleTrace 0 (Just bundle))
           return (SomeMessage (KeyMessage bundle), ())
         case result of
           ReadOK msg ->

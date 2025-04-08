@@ -1,3 +1,4 @@
+-- | The 'Agent' type, representing the state of a running KES agent process.
 module Cardano.KESAgent.Processes.Agent.Type
 where
 
@@ -33,6 +34,7 @@ import Cardano.KESAgent.Util.RefCounting (
 
 {-HLINT ignore "Use underscore" -}
 
+-- | Trace messages emitted from a KES agent process.
 data AgentTrace
   = AgentVersionHandshakeDriverTrace VersionHandshakeDriverTrace
   | AgentBootstrapTrace ServiceClientTrace
@@ -90,6 +92,7 @@ instance Pretty AgentTrace where
   pretty (AgentRequestingKeyUpdate msg) = "Agent: RequestingKeyUpdate: " ++ msg
   pretty x = "Agent: " ++ drop (strLength "Agent") (show x)
 
+-- | Configuration options for creating a new KES agent process.
 data AgentOptions m addr c
   = AgentOptions
   { agentTracer :: Tracer m AgentTrace
@@ -109,9 +112,23 @@ data AgentOptions m addr c
   -- 'getPOSIXTime', but overriding this may be desirable for testing
   -- purposes.
   , agentColdVerKey :: VerKeyDSIGN (DSIGN c)
+  -- ^ Cold verification key, used for verifying operational certificates. The
+  -- KES agent will only accept operational certificates signed using the
+  -- corresponding cold signing key.
   , agentGenSeed :: m (MLockedSeed (SeedSizeKES (KES c)))
+  -- ^ Seed generator for generating KES signing keys. This is configurable for
+  -- testing purposes.
+  -- *It is vitally important for the security of generated keys that a
+  -- cryptographically sound seed generator is used here. Production code
+  -- should always use 'mlockedSeedNewRandom' from @cardano-crypto-class@
+  -- here.*
   }
 
+-- | Initialize agent options with reasonable defaults. The following fields
+-- must be overridden before use, otherwise they will 'error':
+-- - 'agentServiceAddr' (a KES agent that doesn't serve any keys is useless)
+-- - 'agentColdVerKey' (a cold verification key is required to verify opcerts)
+-- - 'agentGenSeed' (seed generator is required to generate keys)
 defAgentOptions :: MonadTime m => AgentOptions m addr c
 defAgentOptions =
   AgentOptions
@@ -125,45 +142,41 @@ defAgentOptions =
     , agentGenSeed = error "missing seed generator"
     }
 
--- The key update lock is required because we need to distinguish between two
--- different situations in which the currentKey TMVar may be empty:
--- - No key has been pushed yet (or the previous key has expired).
--- - The key is currently being updated.
--- In both cases, we want consumers to block until a key is present, but
--- producers need to distinguish these cases:
--- - If no key has been pushed yet, or the previous key has expired, the
---   key pusher is allowed to install a new key; the key evolver can't do
---   anything useful, so it will just sleep and try again later (it cannot
---   block, because that would make it impossible for the pusher to install
---   a key, resulting in a deadlock).
--- - If a key has been pushed, but it is currently being evolved, then the
---   pusher must wait until the evolution has finished, and then install the
---   new key.
--- - If the evolver is about to run, but the key is currently being
---   overwritten, then the evolver should wait for the overwriting to finish,
---   and then attempt to evolve the new key.
--- The keyLock setup achieves this, by allowing only one producer at a
--- time to manipulate the currentKeyVar, regardless of whether it is
--- currently empty or not, while consumers are free to perform blocking reads
--- on it without touching the keyLock.
---
--- Concretely, the rules for accessing currentKeyVar are:
---
--- - readTMVar is allowed, and should be done without acquiring the
---   keyLock.
--- - tryReadTMVar is always allowed, but may not be useful.
--- - takeTMVar is not allowed, since it would 1) block, and 2) require
---   acquisition of keyLock, resulting in a deadlock.
--- - tryTakeTMVar is allowed, but only while holding the keyLock.
+-- | KES agent state.
 data Agent c m fd addr
   = Agent
   { agentSnocket :: Snocket m fd addr
   , agentMRB :: MakeRawBearer m fd
   , agentOptions :: AgentOptions m addr c
   , agentCurrentKeyVar :: TMVar m (Maybe (TaggedBundle m c))
+  -- ^ Holds the currently active bundle, if any. By convention, the possible
+  -- states and their meanings are:
+  -- - Empty 'TMVar': a thread is actively accessing the key bundle store.
+  --   Use 'takeTMVar' to block until it's your turn.
+  -- - @Nothing@: no key bundle has been received, or the last active key
+  --   bundle has reached the end of its available evolutions. We do not need
+  --   to propagate this fact to service clients.
+  -- - @Just TaggedBundle { taggedBundle = Nothing }@: a bundle has been
+  --   deleted. We should propagate this to service clients.
+  -- - @Just TaggedBundle { taggedBundle = bundle }@: we have an active
+  --   bundle. We should propagate this to service clients.
+  -- Further, we must hold a reference to any key stored here, and release
+  -- that reference when we remove the key from the store.
   , agentStagedKeyVar :: TMVar m (Maybe (CRef m (SignKeyWithPeriodKES (KES c))))
+  -- ^ Holds the staged KES signing key, if any. We must hold a reference to
+  -- this key for the duration it is stored here. When moving a key from the
+  -- staged area to the current slot ('agentCurrentKeyVar'), we may reuse the
+  -- reference.
   , agentNextKeyChan :: TChan m (TaggedBundle m c)
+  -- ^ Used for broadcasting new keys and forced key deletions as they are
+  -- installed. Clients should obtain a reference to the contained keys before
+  -- using them.
   , agentServiceFD :: fd
+  -- ^ Snocket-specific file descriptor for the service socket.
   , agentControlFD :: Maybe fd
+  -- ^ Snocket-specific file descriptor for the control socket, if any.
   , agentBootstrapConnections :: TMVar m (Map Text ConnectionStatus)
+  -- ^ Boostrapping connections. Each of these acts as a service client to
+  -- another KES agent, receiving keys and installing them locally. This is
+  -- the core mechanism for achieving redundancy / self-healing.
   }

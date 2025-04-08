@@ -2,6 +2,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+-- | Text envelopes for CBOR serialization. Mirrors definitions used in
+-- @cardano-ledger@ and @ouroboros-consensus@.
 module Cardano.KESAgent.Serialization.TextEnvelope
 where
 

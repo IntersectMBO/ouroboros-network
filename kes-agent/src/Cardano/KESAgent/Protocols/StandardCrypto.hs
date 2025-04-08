@@ -2,6 +2,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
 
+-- | Standard crypto implementations. These mirror the respective types in
+-- @ouroboros-consensus@ / @cardano-ledger@; we are redefining them here to
+-- avoid depending on those packages, and skip the parts that aren't relevant
+-- to KES agents.
 module Cardano.KESAgent.Protocols.StandardCrypto
 where
 
@@ -15,12 +19,17 @@ import Cardano.Crypto.KES.Mock
 import Cardano.Crypto.KES.Single
 import Cardano.Crypto.KES.Sum
 
+-- | The standard crypto used on the production chain.
 data StandardCrypto
 
+-- | A variant of 'StandardCrypto' that uses the @Compact@ flavors of the KES
+-- types ('CompactSumKES' and 'CompactSingleKES').
 data CompactStandardCrypto
 
+-- | Crypto that uses 'SingleKES'. Only used for testing.
 data SingleCrypto
 
+-- | Mock crypto. Only used for testing.
 data MockCrypto
 
 instance Crypto StandardCrypto where

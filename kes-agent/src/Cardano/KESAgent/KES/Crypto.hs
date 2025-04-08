@@ -24,7 +24,11 @@ import Cardano.Crypto.KES.Class
 import Data.Kind
 
 -- | Convenience class that bundles associated KES and DSIGN algorithms into a
--- single typeclass
+-- single typeclass. This is a subset of the @Crypto@ class defined in
+-- @ouroboros-consensus@; we redefine it here for two reasons:
+-- 1. To avoid a dependency on @ouroboros-consensus@
+-- 2. Because we only need these two associated types, not the full @Crypto@
+--    typeclass.
 class
   ( KESAlgorithm (KES c)
   , DSIGNAlgorithm (DSIGN c)

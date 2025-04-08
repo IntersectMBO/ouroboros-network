@@ -7,6 +7,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 
+-- | The main @kes-agent-control@ program.
 module Main
 where
 
@@ -304,6 +305,8 @@ eitherError :: Either String a -> IO a
 eitherError (Left err) = error err
 eitherError (Right x) = return x
 
+-- | A tracer that prints control client log messages to 'stdout', formatting
+-- them in a somewhat human friendly way.
 humanFriendlyControlTracer :: Int -> Tracer IO ControlClientTrace
 humanFriendlyControlTracer verbosity = Tracer $ \case
   ControlClientKeyAccepted -> putStrLn "Key accepted."

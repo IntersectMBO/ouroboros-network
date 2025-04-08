@@ -3,6 +3,8 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 
+-- | Functionality for handling key evolution within a KES agent or KES agent
+-- client.
 module Cardano.KESAgent.KES.Evolution
 where
 
@@ -20,6 +22,9 @@ import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import qualified Data.Aeson as JSON
 import Data.Aeson.TH (deriveJSON)
 
+-- | Evolution parameters used to determine which evolution of a given key is
+-- current, and when a key should evolve. Fields are named after the matching
+-- fields of the genesis JSON file.
 data EvolutionConfig
   = EvolutionConfig
   { slotLength :: Int
@@ -30,21 +35,27 @@ data EvolutionConfig
 
 deriveJSON JSON.defaultOptions ''EvolutionConfig
 
+-- | Default evolution parameters, based on the parameters used on the
+-- real-world production ledger at the time of writing.
 defEvolutionConfig :: EvolutionConfig
 defEvolutionConfig =
   EvolutionConfig
-    { systemStart = posixSecondsToUTCTime 1506203091 -- real-world genesis on the production ledger
+    { systemStart = posixSecondsToUTCTime 1506203091
     , slotsPerKESPeriod = 129600
     , slotLength = 1
     }
 
+-- | Load evolution parameters from a genesis JSON file.
 evolutionConfigFromGenesisFile :: FilePath -> IO (Either String EvolutionConfig)
 evolutionConfigFromGenesisFile = JSON.eitherDecodeFileStrict'
 
+-- | Determine the current KES period from the local host's RTC.
 getCurrentKESPeriod :: MonadTime m => EvolutionConfig -> m KESPeriod
 getCurrentKESPeriod = do
   getCurrentKESPeriodWith getCurrentTime
 
+-- | Determine the current KES period from the local host's RTC, based on the
+-- given evolution parameters.
 getCurrentKESPeriodWith :: Monad m => m UTCTime -> EvolutionConfig -> m KESPeriod
 getCurrentKESPeriodWith getNow ec = do
   now <- getNow
@@ -52,6 +63,10 @@ getCurrentKESPeriodWith getNow ec = do
       kesPeriodDuration = fromIntegral (slotLength ec) * fromIntegral (slotsPerKESPeriod ec)
   return $ KESPeriod (diffSecs `div` kesPeriodDuration)
 
+-- | Evolve a KES key to the current period. The old key will be released as
+-- appropriate. If the current period exceeds the key's available evolutions,
+-- return 'Nothing'. If the specified period is before the key's current
+-- evolution, return 'Just' the key at its current evolution.
 updateKESToCurrent ::
   KESAlgorithm (KES v) =>
   MonadTime m =>
@@ -66,6 +81,10 @@ updateKESToCurrent ec context cert skp = do
   currentPeriod <- getCurrentKESPeriod ec
   updateKESTo context currentPeriod cert skp
 
+-- | Evolve a KES key to the specified period. The old key will be released as
+-- appropriate. If the specified period exceeds the key's available evolutions,
+-- return 'Nothing'. If the specified period is before the key's current
+-- evolution, return 'Just' the key at its current evolution.
 updateKESTo ::
   KESAlgorithm (KES v) =>
   MonadST m =>

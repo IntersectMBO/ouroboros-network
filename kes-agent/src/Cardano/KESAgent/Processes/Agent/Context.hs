@@ -12,6 +12,8 @@ import Data.SerDoc.Class (HasInfo (..))
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import Cardano.KESAgent.Processes.Agent.Monad
 
+-- | For convenience: the typeclasses that are required for typical agent
+-- actions.
 type AgentContext m c =
   ( MonadAgent m
   , AgentCrypto c

@@ -69,7 +69,9 @@ instance
         <> BSB.word64BE counter
         <> BSB.word64BE (fromIntegral $ unKESPeriod period)
 
--- | Operational certificate (\"opcert\")
+-- | Operational certificate (\"opcert\"). This matches the @OCert@ type in
+-- @ouroboros-consensus@; we redefine it here to avoid depending on
+-- @ouroboros-consensus@.
 data OCert c = OCert
   { ocertVkHot :: !(VerKeyKES (KES c))
   -- ^ The operational hot key
@@ -132,6 +134,8 @@ makeOCert vkHot n kesPeriod skCold =
     signable = OCertSignable vkHot n kesPeriod
     sig = signedDSIGN () signable skCold
 
+-- | Validate an operational certificate, returning a 'Left' error description,
+-- or 'Right' '()' if the certificate is valid.
 validateOCert ::
   forall c.
   Crypto c =>

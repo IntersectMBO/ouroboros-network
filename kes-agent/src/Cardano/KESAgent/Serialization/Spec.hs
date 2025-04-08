@@ -12,6 +12,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE NoStarIsType #-}
 
+-- | Serialization spec for @serdoc@ and @typed-protocols-doc@.
 module Cardano.KESAgent.Serialization.Spec (
   module Cardano.KESAgent.Serialization.Spec,
   module Cardano.KESAgent.Serialization.Spec.Types,

@@ -13,7 +13,14 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 
-module Cardano.KESAgent.Processes.Agent.ControlDrivers
+-- | Compatibility abstraction for the available control protocols.
+-- This provides the glue necessary to allow agents to use the same
+-- functionality against any supported version of the control protocol.
+module Cardano.KESAgent.Processes.Agent.ControlDrivers (
+  ControlDriverRun,
+  ControlCrypto (..),
+  FromAgentInfo (..),
+)
 where
 
 import Control.Monad (void)
@@ -40,15 +47,21 @@ import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Protocols.Types
 import Cardano.KESAgent.Protocols.VersionedProtocol
 
+-- | Unified interface for control protocol runners.
+type ControlDriverRun m c fd addr =
+  RawBearer m ->
+  Tracer m ControlDriverTrace ->
+  Agent c m fd addr ->
+  m ()
+
+-- | 'Crypto' types for which control drivers are available.
 class ControlCrypto c where
+  -- | The control drivers available for this 'Crypto'.
   availableControlDrivers ::
     forall m fd addr.
     AgentContext m c =>
     [ ( VersionIdentifier
-      , RawBearer m ->
-        Tracer m ControlDriverTrace ->
-        Agent c m fd addr ->
-        m ()
+      , ControlDriverRun m c fd addr
       )
     ]
 
@@ -56,10 +69,7 @@ mkControlDriverCP0 ::
   forall m fd addr c.
   AgentContext m c =>
   ( VersionIdentifier
-  , RawBearer m ->
-    Tracer m ControlDriverTrace ->
-    Agent c m fd addr ->
-    m ()
+  , ControlDriverRun m c fd addr
   )
 mkControlDriverCP0 =
   ( versionIdentifier (Proxy @(CP0.ControlProtocol _ c))
@@ -80,10 +90,7 @@ mkControlDriverCP1 ::
   forall m fd addr.
   AgentContext m StandardCrypto =>
   ( VersionIdentifier
-  , RawBearer m ->
-    Tracer m ControlDriverTrace ->
-    Agent StandardCrypto m fd addr ->
-    m ()
+  , ControlDriverRun m StandardCrypto fd addr
   )
 mkControlDriverCP1 =
   ( versionIdentifier (Proxy @(CP1.ControlProtocol _))
@@ -104,10 +111,7 @@ mkControlDriverCP2 ::
   forall m fd addr.
   AgentContext m StandardCrypto =>
   ( VersionIdentifier
-  , RawBearer m ->
-    Tracer m ControlDriverTrace ->
-    Agent StandardCrypto m fd addr ->
-    m ()
+  , ControlDriverRun m StandardCrypto fd addr
   )
 mkControlDriverCP2 =
   ( versionIdentifier (Proxy @(CP2.ControlProtocol _))
@@ -137,6 +141,8 @@ instance ControlCrypto SingleCrypto where
   availableControlDrivers =
     [mkControlDriverCP0]
 
+-- | Convert from a protocol-agnostic 'AgentInfo' to a protocol-specific agent
+-- info type.
 class FromAgentInfo c a where
   fromAgentInfo :: AgentInfo c -> a
 

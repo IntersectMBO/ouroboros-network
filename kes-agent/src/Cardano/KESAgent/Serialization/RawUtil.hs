@@ -10,6 +10,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# OPTIONS_GHC -Wno-deprecations #-}
 
+-- | Various bits and pieces for raw serialization.
 module Cardano.KESAgent.Serialization.RawUtil
 where
 
@@ -28,7 +29,7 @@ import Cardano.Crypto.Libsodium.Memory (
 
 import Ouroboros.Network.RawBearer
 
-import Control.Applicative
+-- import Control.Applicative
 import Control.Concurrent.Class.MonadMVar
 import Control.Monad (void, when)
 import Control.Monad.Class.MonadST
@@ -48,23 +49,35 @@ import Data.Word
 import Foreign (Ptr, castPtr, plusPtr)
 import Foreign.C.Types (CChar, CSize)
 
+-- * The 'ReadResult' type
+
+-- | Result of a read operation.
 data ReadResult a
-  = ReadOK a
-  | ReadMalformed !String
-  | ReadVersionMismatch !VersionIdentifier !VersionIdentifier
-  | ReadEOF
+  = -- | read succeeded, yielding a result
+    ReadOK a
+  | -- | encountered malformed data
+    ReadMalformed !String
+  | -- | read failed due to a protocol version mismatch
+    ReadVersionMismatch !VersionIdentifier !VersionIdentifier
+  | -- | read failed due to unexpected end of stream/file
+    ReadEOF
   deriving (Show, Eq, Functor)
 
 instance (Show a, Typeable a) => Exception (ReadResult a)
 
+-- * The 'ReadResultT' monad transformer.
+
+-- | This works much like 'ExceptT',
+-- short-circuiting upon encountering any 'ReadResult' other than 'ReadOK'.
 newtype ReadResultT m a = ReadResultT {runReadResultT :: m (ReadResult a)}
   deriving (Functor)
 
+-- | Turn a pure 'ReadResult' into a 'ReadResultT' action.
 readResultT :: Applicative m => ReadResult a -> ReadResultT m a
 readResultT r = ReadResultT (pure r)
 
 instance (Functor m, Applicative m, Monad m) => Applicative (ReadResultT m) where
-  pure = ReadResultT . pure . ReadOK
+  pure = readResultT . ReadOK
 
   liftA2 f a b = ReadResultT $ do
     rA <- runReadResultT a
@@ -88,6 +101,9 @@ instance Monad m => Monad (ReadResultT m) where
 instance MonadTrans ReadResultT where
   lift = ReadResultT . fmap ReadOK
 
+-- * 'ReadResultT' send and receive functions for specific types
+
+-- | Send a 'VersionIdentifier'
 sendVersion ::
   ( VersionedProtocol protocol
   , MonadST m
@@ -103,6 +119,8 @@ sendVersion p s tracer = do
   where
     versionID = versionIdentifier p
 
+-- | Receive a 'VersionIdentifier' and verify that it matches the expected
+-- version.
 checkVersion ::
   forall protocol m.
   ( VersionedProtocol protocol
@@ -124,26 +142,7 @@ checkVersion p s tracer = runReadResultT $ do
     else
       readResultT $ ReadVersionMismatch expectedV v
 
-sendSKP ::
-  ( MonadST m
-  , MonadSTM m
-  , MonadThrow m
-  , KESAlgorithm k
-  , DirectSerialise (SignKeyKES k)
-  ) =>
-  RawBearer m ->
-  CRef m (SignKeyWithPeriodKES k) ->
-  m ()
-sendSKP s skpRef = do
-  withCRefValue skpRef $ \(SignKeyWithPeriodKES sk t) -> do
-    directSerialise
-      ( \buf bufSize -> do
-          n <- send s (castPtr buf) (fromIntegral bufSize)
-          when (fromIntegral n /= bufSize) (error "AAAAA")
-      )
-      sk
-    sendWord32 s (fromIntegral t)
-
+-- | Receive a sign key
 receiveSK ::
   ( MonadST m
   , MonadSTM m
@@ -181,6 +180,28 @@ receiveSK s tracer = do
       forgetSignKeyKES sk
       return $ undefined <$ result
 
+-- | Send a sign key + KES period
+sendSKP ::
+  ( MonadST m
+  , MonadSTM m
+  , MonadThrow m
+  , KESAlgorithm k
+  , DirectSerialise (SignKeyKES k)
+  ) =>
+  RawBearer m ->
+  CRef m (SignKeyWithPeriodKES k) ->
+  m ()
+sendSKP s skpRef = do
+  withCRefValue skpRef $ \(SignKeyWithPeriodKES sk t) -> do
+    directSerialise
+      ( \buf bufSize -> do
+          n <- send s (castPtr buf) (fromIntegral bufSize)
+          when (fromIntegral n /= bufSize) (error "AAAAA")
+      )
+      sk
+    sendWord32 s (fromIntegral t)
+
+-- | Receive a sign key + KES period
 receiveSKP ::
   ( MonadST m
   , MonadSTM m
@@ -410,24 +431,6 @@ receiveEnum label s = runReadResultT $ do
     else
       return $ toEnum w
 
-unsafeReceiveN :: Monad m => RawBearer m -> Ptr CChar -> CSize -> m (ReadResult CSize)
-unsafeReceiveN s buf bufSize = do
-  n <- recv s (castPtr buf) (fromIntegral bufSize)
-  if fromIntegral n == bufSize
-    then do
-      return (ReadOK bufSize)
-    else do
-      if n == 0
-        then do
-          return ReadEOF
-        else runReadResultT $ do
-          n' <- ReadResultT $ unsafeReceiveN s (plusPtr buf (fromIntegral n)) (bufSize - fromIntegral n)
-          if n' == 0
-            then do
-              readResultT ReadEOF
-            else do
-              return bufSize
-
 sendRecvResult ::
   ( MonadST m
   , MonadThrow m
@@ -465,3 +468,35 @@ decodeRecvResult 2 = RecvErrorInvalidOpCert
 decodeRecvResult 3 = RecvErrorNoKey
 decodeRecvResult 4 = RecvErrorUnsupportedOperation
 decodeRecvResult _ = RecvErrorUnknown
+
+-- * Unsafe API
+
+-- | Receive bytes into a memory buffer through a raw pointer.
+-- @unsafeReceiveN s buf bufSize@ will attempt to read up to @bufSize@ bytes
+-- from bearer @s@ into the buffer pointed to by @buf@, returning a 'ReadOK'
+-- with the number of bytes actually read on success, or a suitable 'ReadResult'
+-- on failure.
+-- @buf@ must point to a block of memory at least @bufSize@ bytes in size; it
+-- may be larger though.
+-- @bufSize@ must not be 0.
+-- The return value may signal fewer than @bufSize@ bytes in cases where not
+-- enough bytes are available from the bearer. In such cases, the caller should
+-- call 'unsafeReceiveN' again with an appropriate @bufSize@ to fetch the
+-- remaining bytes.
+unsafeReceiveN :: Monad m => RawBearer m -> Ptr CChar -> CSize -> m (ReadResult CSize)
+unsafeReceiveN s buf bufSize = do
+  n <- recv s (castPtr buf) (fromIntegral bufSize)
+  if fromIntegral n == bufSize
+    then do
+      return (ReadOK bufSize)
+    else do
+      if n == 0
+        then do
+          return ReadEOF
+        else runReadResultT $ do
+          n' <- ReadResultT $ unsafeReceiveN s (plusPtr buf (fromIntegral n)) (bufSize - fromIntegral n)
+          if n' == 0
+            then do
+              readResultT ReadEOF
+            else do
+              return bufSize

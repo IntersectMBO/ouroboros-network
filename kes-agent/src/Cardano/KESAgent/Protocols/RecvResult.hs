@@ -1,3 +1,4 @@
+-- | Representing the result of receiving a key bundle.
 module Cardano.KESAgent.Protocols.RecvResult
 where
 

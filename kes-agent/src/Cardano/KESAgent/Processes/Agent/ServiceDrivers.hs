@@ -13,7 +13,15 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 
-module Cardano.KESAgent.Processes.Agent.ServiceDrivers
+-- | Compatibility abstraction for the available service protocols.
+-- This provides the glue necessary to allow agents to use the same
+-- functionality against any supported version of the service protocol.
+module Cardano.KESAgent.Processes.Agent.ServiceDrivers (
+  ServiceDriver (..),
+  ServiceDriverRun,
+  ServiceCrypto (..),
+  lookupServiceDriver,
+)
 where
 
 import Control.Monad (void)
@@ -39,12 +47,14 @@ import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Protocols.Types
 import Cardano.KESAgent.Protocols.VersionedProtocol
 
+-- | Unified interface for service protocols.
 data ServiceDriver m c
   = ServiceDriver
   { serviceDriverVersionID :: VersionIdentifier
   , serviceDriverRun :: ServiceDriverRun m c
   }
 
+-- | Unified interface for service protocol runners.
 type ServiceDriverRun m c =
   RawBearer m ->
   Tracer m ServiceDriverTrace ->
@@ -53,6 +63,7 @@ type ServiceDriverRun m c =
   (RecvResult -> m ()) ->
   m ()
 
+-- | Find a 'ServiceDriver' by 'VersionIdentifier'
 lookupServiceDriver ::
   VersionIdentifier ->
   [ServiceDriver m c] ->
@@ -65,7 +76,9 @@ lookupServiceDriver vid (x : xs)
   | otherwise =
       lookupServiceDriver vid xs
 
+-- | 'Crypto' types for which service drivers are available.
 class ServiceCrypto c where
+  -- | The service drivers available for this 'Crypto'.
   availableServiceDrivers ::
     forall m.
     AgentContext m c =>

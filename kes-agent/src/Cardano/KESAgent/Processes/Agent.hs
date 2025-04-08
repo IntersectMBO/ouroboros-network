@@ -19,6 +19,34 @@
 --   push new keys into the agent.
 -- - A \"service\" socket, to which a Node can connect in order to receive the
 --   current KES key and future key updates.
+--
+-- The KES Agent has two slots, each of which can hold up to one KES key:
+-- - The \"staged key\" slot can hold just a raw KES signing key; this key is
+--   not shared with service clients, and there is no operational certificate
+--   linked to it. This slot is used to hold a key while an operational
+--   certificate for it is generated. Staged keys are not shared with other
+--   agents, and are always lost when the KES agent restarts. Staged keys do
+--   not have any validity attached to them; they become valid when an
+--   operational certificate is attached and they are moved to the active slot.
+--   Because of this, staged keys will never be evolved by the KES agent, and
+--   when a staged key is installed into the active slot, it will always be at
+--   evolution 0.
+-- - The \"active\" or \"current\" slot may hold a 'TaggedBundle'. A tagged
+--   bundle is always tagged with a timestamp for synchronization purposes, and
+--   may hold a 'Bundle'. A 'Bundle', then, consists of a signing key and a
+--   matching operational certificate. The active key is sent out to service
+--   clients in two situations:
+--   - When a service client first connects, the current key bundle is sent
+--   - When a new key bundle is installed into the active slot, it is sent out
+--     to all connected clients.
+--
+--  The KES Agent also takes care of evolving active keys to the current KES
+--  period, based on genesis parameters ('EvolutionConfig') passed at agent
+--  creation and the host's RTC. While active keys are evolved inside the
+--  agent, these evolved keys will *not* be sent out to connected clients,
+--  because those clients will already have an earlier evolution of the key,
+--  and must evolve those themselves. The evolved key will, however, be served
+--  once to any service client connecting at a later time.
 module Cardano.KESAgent.Processes.Agent (
   Agent,
   AgentOptions (..),
@@ -98,6 +126,7 @@ import qualified Data.Text as Text
 import Network.TypedProtocol.Core (PeerRole (..))
 import Network.TypedProtocol.Driver (runPeerWithDriver)
 
+-- | Helper function for listening on a socket.
 runListener ::
   forall m c fd addr st (pr :: PeerRole) t a.
   MonadThrow m =>
@@ -123,45 +152,71 @@ runListener ::
   m ()
 runListener
   s
+  -- \^ 'Snocket' to use for socket operations
   fd
+  -- \^ File descriptor argument as required by the snocket implementation
   addrStr
+  -- \^ String address of the socket to listen on
   mrb
+  -- \^ Raw bearer factory
   tracer
+  -- \^ Where to send trace logs
   tListeningOnSocket
+  -- \^ How to trace listening-on-socket
   tSocketClosed
+  -- \^ How to trace socket-closed
   tClientConnected
+  -- \^ How to trace client-connected
   tClientDisconnected
+  -- \^ How to trace client-disconnected
   tSocketError
+  -- \^ How to trace socket errors
   tDriverTrace
-  handle = do
-    listen s fd
-    traceWith tracer (tListeningOnSocket addrStr)
+  -- \^ How to wrap driver traces
+  handle =
+    -- \^ How to handle an incoming connection. This will run once for each
+    -- accepted connection, in a separate thread.
+    do
+      listen s fd
+      traceWith tracer (tListeningOnSocket addrStr)
 
-    let handleConnection fd' = do
-          traceWith tracer (tClientConnected (show fd) (show fd'))
-          bearer <- getRawBearer mrb fd'
-          handle bearer (tDriverTrace >$< tracer)
+      let handleConnection fd' = do
+            traceWith tracer (tClientConnected (show fd) (show fd'))
+            bearer <- getRawBearer mrb fd'
+            handle bearer (tDriverTrace >$< tracer)
 
-    let logAndContinue :: SomeException -> m ()
-        logAndContinue e = traceWith tracer (tSocketError (show e))
+      let logAndContinue :: SomeException -> m ()
+          logAndContinue e = traceWith tracer (tSocketError (show e))
 
-    let loop :: Accept m fd addr -> m ()
-        loop a = do
-          accepted <- runAccept a
-          case accepted of
-            (AcceptFailure e, next) -> do
-              traceWith tracer $ tSocketError (show e)
-              loop next
-            (Accepted fd' addr', next) ->
-              concurrently_
-                (loop next)
-                ( handleConnection fd'
-                    `catch` logAndContinue
-                    `finally` (close s fd' >> traceWith tracer (tSocketClosed $ show fd'))
-                )
+      let loop :: Accept m fd addr -> m ()
+          loop a = do
+            accepted <- runAccept a
+            case accepted of
+              (AcceptFailure e, next) -> do
+                traceWith tracer $ tSocketError (show e)
+                loop next
+              (Accepted fd' addr', next) ->
+                concurrently_
+                  (loop next)
+                  ( handleConnection fd'
+                      `catch` logAndContinue
+                      `finally` (close s fd' >> traceWith tracer (tSocketClosed $ show fd'))
+                  )
 
-    (accept s fd >>= loop) `catch` logAndContinue
+      (accept s fd >>= loop) `catch` logAndContinue
 
+-- | Run an agent.
+-- This will spawn the following threads:
+-- - An evolution thread, which regularly checks whether the active key should
+--   be evolved, and if so, evolves it.
+-- - A service listener, listening on the configured service socket, spawning
+--   a service handler for each accepted service connection
+-- - A control listener, listening on the configured control socket, spawning
+--   a control handler for each accepted control connection
+-- - One bootstrap client thread for each configured bootstrapping address.
+--   Each bootstrap client acts as a service client to another agent, taking
+--   care of receiving incoming key updates, comparing them against the current
+--   active key, and installing them if they are valid and newer.
 runAgent ::
   forall c m fd addr.
   AgentContext m c =>

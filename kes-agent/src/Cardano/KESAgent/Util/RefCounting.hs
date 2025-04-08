@@ -35,35 +35,54 @@ import Control.Tracer
 import Data.Word
 import System.IO.Unsafe (unsafePerformIO)
 
+-- | Reference count. We use a signed integer so that we can catch cases where
+-- a reference is released beyond zero (which shouldn't happen, but we want to
+-- be able to detect it when it does).
 type CRefCount = Int
 
+-- | Unique identifier for a 'CRef'. Mainly used for debugging.
 type CRefID = Word32
 
 {-# NOINLINE nextCRefIDVar #-}
+
+-- | Hacky global variable, used to generate unique 'CRefID's.
 nextCRefIDVar :: MVar IO CRefID
 nextCRefIDVar = unsafePerformIO $ newMVar 0
 
+-- | A reference-counted value.
 data CRef m a
   = CRef
   { cDeref :: !a
+  -- ^ The wrapped resource
   , cFinalize :: a -> m ()
+  -- ^ Finalizer; this should deallocate the wrapped resource. It will run
+  -- when the reference count reaches zero.
   , cCount :: !(TMVar m CRefCount)
-  , cID :: !CRefID
-  , cTracer :: Tracer m CRefEvent
+  , -- Reference count.
+    cID :: !CRefID
+  , -- ID, used for debugging etc.
+    cTracer :: Tracer m CRefEvent
+    -- Tracer used for debugging 'CRef' lifecycles.
   }
 
+-- | 'CRef' lifecycle event types.
 data CRefEventType
   = CRefCreate
   | CRefAcquire
   | CRefRelease
   deriving (Show, Eq)
 
+-- | 'CRef' lifecycle events.
 data CRefEvent
   = CRefEvent
   { creType :: !CRefEventType
+  -- ^ what happened
   , creID :: !CRefID
+  -- ^ which CRef was affected
   , creCountBefore :: !CRefCount
+  -- ^ refcount before the event
   , creCountAfter :: !CRefCount
+  -- ^ refcount after the event
   }
   deriving (Show, Eq)
 
@@ -81,6 +100,9 @@ traceCRef :: MonadSTM m => CRefEventType -> CRef m a -> CRefCount -> CRefCount -
 traceCRef event cref before after = do
   traceWith (cTracer cref) (CRefEvent event (cID cref) before after)
 
+-- | Reference underflow exception: this will be thrown when a reference count
+-- is released beyond zero (i.e., becomes negative). This is generally a bug,
+-- caused by user code releasing a reference that it hasn't acquired.
 data ReferenceCountUnderflow
   = ReferenceCountUnderflow
   deriving (Show, Eq)
@@ -137,15 +159,19 @@ readCRef cref =
 
 -- | Create a fresh 'CRef'. Its counter will be initialized to 1; the caller is
 -- responsible for calling 'releaseCRef' to release it.
+-- @newCRef f i@ creates a 'CRef' with an initial value of @i@, and a finalizer
+-- @f@.
 newCRef :: (MonadST m, MonadSTM m, MonadThrow m) => (a -> m ()) -> a -> m (CRef m a)
 newCRef = newCRefWith nullTracer
 
+-- | Generate a unique 'CRefID' from the global supply.
 genCRefID :: MonadST m => m CRefID
 genCRefID = stToIO . unsafeIOToST $ do
   n <- takeMVar nextCRefIDVar
   putMVar nextCRefIDVar (succ n)
   return n
 
+-- | Create a fresh 'CRef' attaching a custom tracer (see 'newCRef').
 newCRefWith ::
   (MonadST m, MonadSTM m, MonadThrow m) =>
   Tracer m CRefEvent ->
@@ -175,9 +201,11 @@ withCRef cref action =
     (releaseCRef cref)
     (action cref)
 
+-- | Create a fresh 'CRef' and operate on it immediately. See 'newCRef'.
 withNewCRef :: (MonadST m, MonadSTM m, MonadThrow m) => (a -> m ()) -> a -> (CRef m a -> m b) -> m b
 withNewCRef = withNewCRefWith nullTracer
 
+-- | Create a fresh 'CRef' with a tracer and operate on it immediately. See 'newCRefWith'.
 withNewCRefWith ::
   (MonadST m, MonadSTM m, MonadThrow m) =>
   Tracer m CRefEvent ->
@@ -200,9 +228,12 @@ withCRefValue cref action =
     (releaseCRef cref)
     (action $ cDeref cref)
 
+-- | Create a fresh 'CRef' and operate on its value immediately. See 'newCRef'.
 withNewCRefValue :: (MonadST m, MonadSTM m, MonadThrow m) => (a -> m ()) -> a -> (a -> m b) -> m b
 withNewCRefValue = withNewCRefValueWith nullTracer
 
+-- | Create a fresh 'CRef' with a tracer and operate on its value immediately.
+-- See 'newCRefWith'.
 withNewCRefValueWith ::
   (MonadST m, MonadSTM m, MonadThrow m) => Tracer m CRefEvent -> (a -> m ()) -> a -> (a -> m b) -> m b
 withNewCRefValueWith tracer finalizer val action = do

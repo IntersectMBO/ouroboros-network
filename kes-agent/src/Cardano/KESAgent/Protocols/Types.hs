@@ -7,6 +7,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UndecidableInstances #-}
 
+-- | Common types used in all/most protocols.
 module Cardano.KESAgent.Protocols.Types
 where
 
@@ -33,45 +34,50 @@ import Data.SerDoc.Class (
 import Data.Word
 import Text.Printf
 
-data KeyTrace
-  = KeyTrace
+-- | Representation of a key bundle in trace logs. Reflects the key's serial
+-- number and verification key (we're not logging the key itself, because that
+-- would potentially leak it to unsafe memory and/or persistent storage).
+data BundleTrace
+  = BundleTrace
   { keyIdentSerial :: !Word64
   , keyIdentVKHex :: !ByteString
   }
   deriving (Show)
 
-instance Pretty KeyTrace where
-  pretty (KeyTrace n vk) =
+instance Pretty BundleTrace where
+  pretty (BundleTrace n vk) =
     printf "#%u:%s..." n (take 10 $ hexShowBS vk)
 
-data KeyMutationTrace
-  = KeyMutationTrace
+-- | Representation of a tagged key bundle in trace logs. We always trace the
+-- timestamp, plus, if present the actual key bundle.
+data TaggedBundleTrace
+  = TaggedBundleTrace
   { keyMutationTimestamp :: !Timestamp
-  , keyMutationKey :: !(Maybe KeyTrace)
+  , keyMutationKey :: !(Maybe BundleTrace)
   }
   deriving (Show)
 
-mkKeyMutationTrace ::
+mkTaggedBundleTrace ::
   KESAlgorithm (KES c) =>
   Timestamp ->
   Maybe (Bundle m c) ->
-  KeyMutationTrace
-mkKeyMutationTrace ts bundle =
-  KeyMutationTrace
+  TaggedBundleTrace
+mkTaggedBundleTrace ts bundle =
+  TaggedBundleTrace
     ts
-    (mkKeyTrace <$> bundle)
+    (mkBundleTrace <$> bundle)
 
-mkKeyTrace ::
+mkBundleTrace ::
   KESAlgorithm (KES c) =>
   Bundle m c ->
-  KeyTrace
-mkKeyTrace bundle =
-  KeyTrace
+  BundleTrace
+mkBundleTrace bundle =
+  BundleTrace
     (ocertN (bundleOC bundle))
     (rawSerialiseVerKeyKES $ ocertVkHot (bundleOC bundle))
 
-instance Pretty KeyMutationTrace where
-  pretty (KeyMutationTrace ts keyMay) =
+instance Pretty TaggedBundleTrace where
+  pretty (TaggedBundleTrace ts keyMay) =
     pretty ts ++ " " ++ maybe "<DROP KEY>" pretty keyMay
 
 -- | Logging messages that the ControlDriver may send
@@ -109,6 +115,7 @@ instance Pretty ControlDriverTrace where
   pretty (ControlDriverMisc x) = x
   pretty x = drop (strLength "ControlDriver") (show x)
 
+-- | Commands that a control client can send
 data Command
   = GenStagedKeyCmd
   | QueryStagedKeyCmd
@@ -145,10 +152,10 @@ data ServiceDriverTrace
   | ServiceDriverReceivingVersionID
   | ServiceDriverReceivedVersionID !VersionIdentifier
   | ServiceDriverInvalidVersion !VersionIdentifier !VersionIdentifier
-  | ServiceDriverSendingKey !KeyMutationTrace
-  | ServiceDriverSentKey !KeyMutationTrace
+  | ServiceDriverSendingKey !TaggedBundleTrace
+  | ServiceDriverSentKey !TaggedBundleTrace
   | ServiceDriverReceivingKey
-  | ServiceDriverReceivedKey !KeyMutationTrace
+  | ServiceDriverReceivedKey !TaggedBundleTrace
   | ServiceDriverConfirmingKey
   | ServiceDriverConfirmedKey
   | ServiceDriverDecliningKey !RecvResult

@@ -13,8 +13,18 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
--- | Clients for the KES Agent.
-module Cardano.KESAgent.Processes.ControlClient
+-- | Control client process.
+-- A control client connects to a KES agent to issue commands, such as
+-- @install-key@, @drop-key@, or @info@. Control clients never exchange KES
+-- signing keys with a KES agent.
+module Cardano.KESAgent.Processes.ControlClient (
+  ControlClientTrace (..),
+  ControlClientOptions (..),
+  ControlClient (..),
+  ControlHandler,
+  runControlClient1,
+  ControlClientCrypto,
+)
 where
 
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
@@ -66,6 +76,7 @@ import Data.Typeable
 import Network.TypedProtocol.Driver (runPeerWithDriver)
 import Network.TypedProtocol.Peer.Server (IsPipelined (..), Server)
 
+-- | Trace log messages a control client can generate.
 data ControlClientTrace
   = ControlClientVersionHandshakeDriverTrace VersionHandshakeDriverTrace
   | ControlClientVersionHandshakeFailed
@@ -85,19 +96,31 @@ instance Pretty ControlClientTrace where
   pretty (ControlClientKeyRejected r) = "Control: KeyRejected: " ++ pretty r
   pretty x = "Control: " ++ drop (length "ControlClient") (show x)
 
+-- | Configuration options for a control client.
 data ControlClientOptions m fd addr
   = ControlClientOptions
   { controlClientSnocket :: Snocket m fd addr
+  -- ^ 'Snocket' implementation for dealing with sockets
   , controlClientAddress :: addr
+  -- ^ Address to connect to. A KES agent should be listening for control
+  -- connections on this address.
   , controlClientLocalAddress :: Maybe addr
+  -- ^ Local address, if available. Used for logging.
   , controlClientRetryDelay :: Int
+  -- ^ Delay, in milliseconds, between reconnection attempts.
   , controlClientRetryExponential :: Bool
+  -- ^ Whether the delay between reconnection attempts should increase
+  -- exponentially ('True') or remain fixed ('False')
   , controlClientRetryAttempts :: Int
+  -- ^ How many reconnection attempts to make before giving up.
   }
 
+-- | Compatibility abstraction over control protocols. A control handler
+-- function should delegate functionality to a suitable
 type ControlHandler m a =
   RawBearer m -> Tracer m ControlClientTrace -> m a
 
+-- | Monadic typeclasses needed to run control client actions.
 type MonadControlClient m =
   ( Monad m
   , MonadThrow m
@@ -109,12 +132,14 @@ type MonadControlClient m =
   , MonadMVar m
   )
 
+-- | Typeclasses needed to use a crypto for control client purposes.
 type ControlClientCrypto c =
   ( Crypto c
   , NamedCrypto c
   , ControlClientDrivers c
   )
 
+-- | Typeclasses needed to run control client actions against a given crypto.
 type ControlClientContext m c =
   ( MonadControlClient m
   , ControlClientCrypto c
@@ -124,6 +149,8 @@ type ControlClientContext m c =
   , DirectDeserialise (SignKeyKES (KES c))
   )
 
+-- | Connect to a KES agent as a control client, send one command, handle the
+-- response, and close the connection.
 runControlClient1 ::
   forall c m fd addr a.
   ControlClientContext m c =>
@@ -170,13 +197,20 @@ runControlClient1 handler proxy mrb options tracer = do
             handler controlClient bearer tracer
     )
 
+-- | Types that can be used as (or converted to) control handlers. These are
+-- generally control protocols.
 class IsControlHandler proto (m :: Type -> Type) a where
   type InitialState proto :: proto
-  toHandler :: Server proto NonPipelined (InitialState proto) m a -> ControlHandler m a
+  -- ^ Should map to the protocol's initial state type.
 
+  toHandler :: Server proto NonPipelined (InitialState proto) m a -> ControlHandler m a
+  -- ^ Run the protocol. This should normally use 'runPeerWithDriver'.
+
+-- | The \"do nothing, just return a constant value\" control handler.
 constHandler :: m a -> ControlHandler m a
 constHandler a _ _ = a
 
+-- | Typeclasses needed to run a control handler.
 type MonadControlHandler m =
   ( MonadThrow m
   , MonadST m
@@ -219,6 +253,8 @@ instance MonadControlHandler m => IsControlHandler (CP2.ControlProtocol m) m a w
         (CP2.controlDriver bearer $ ControlClientDriverTrace >$< tracer)
         peer
 
+-- | Make a handler entry from a control protocol, using the
+-- 'VersionedProtocol' instance to determine the version identifier.
 toHandlerEntry ::
   forall proto m a.
   IsControlHandler proto m a =>
@@ -227,18 +263,26 @@ toHandlerEntry ::
   (VersionIdentifier, ControlHandler m a)
 toHandlerEntry peer = (versionIdentifier (Proxy @proto), toHandler peer)
 
+-- | Control client protocol interface.
 data ControlClient m c
   = ControlClient
   { controlGenKey :: ControlHandler m (Maybe (VerKeyKES (KES c)))
+  -- ^ The @gen-key@ command
   , controlQueryKey :: ControlHandler m (Maybe (VerKeyKES (KES c)))
+  -- ^ The @export-staged-key@ command
   , controlDropStagedKey :: ControlHandler m (Maybe (VerKeyKES (KES c)))
+  -- ^ The @drop-staged-key@ command
   , controlInstallKey ::
       OCert c ->
       ControlHandler m RecvResult
+  -- ^ The @install-key@ command
   , controlDropKey :: ControlHandler m RecvResult
+  -- ^ The @drop-key@ command
   , controlGetInfo :: ControlHandler m (AgentInfo c)
+  -- ^ The @info@ command
   }
 
+-- | Crypto types for which control protocols are available.
 class ControlClientDrivers c where
   controlClientDrivers ::
     forall m.
@@ -303,7 +347,10 @@ instance ControlClientDrivers MockCrypto where
   controlClientDrivers _ =
     [mkControlClientCP0]
 
+-- | Protocol-specific agent info data types that can be converted to the
+-- protocol-agnostic 'AgentInfo' type.
 class ToAgentInfo c a where
+  -- Convert protocol-specific agent info to 'AgentInfo'.
   toAgentInfo :: a -> AgentInfo c
 
 instance ToAgentInfo c (CP0.AgentInfo c) where
