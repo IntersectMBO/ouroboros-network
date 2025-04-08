@@ -1,0 +1,20 @@
+{
+  "localRoots": [
+    {
+      "accessPoints": [],
+      "advertise": false,
+      "valency": 1,
+      "extraFlags": {}
+    }
+  ],
+  "publicRoots": [
+    {
+      "accessPoints": [],
+      "advertise": false
+    }
+  ],
+  "useLedgerAfterSlot": 128908821,
+  "peerSnapshotFile": "decentralized-message-queue/peer-snapshot.json",
+  "extraConfig": {}
+}
+
