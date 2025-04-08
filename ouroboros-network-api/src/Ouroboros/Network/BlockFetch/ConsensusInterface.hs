@@ -203,8 +203,7 @@ data ChainSelStarvation
 -------------------------------------------------------------------------------}
 
 -- | A new type used to emphasize the precondition of
--- 'Ouroboros.Network.BlockFetch.ConsensusInterface.headerForgeUTCTime' and
--- 'Ouroboros.Network.BlockFetch.ConsensusInterface.blockForgeUTCTime' at each
+-- 'Ouroboros.Network.BlockFetch.ConsensusInterface.headerForgeUTCTime' at each
 -- call site.
 --
 -- At time of writing, the @a@ is either a header or a block. The headers are
