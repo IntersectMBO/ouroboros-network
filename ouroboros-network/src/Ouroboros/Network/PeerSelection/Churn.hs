@@ -36,7 +36,6 @@ import Ouroboros.Network.Diffusion.Policies (churnEstablishConnectionTimeout,
            closeConnectionTimeout, deactivateTimeout)
 import Ouroboros.Network.PeerSelection.Governor.Types hiding (targets)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-import Ouroboros.Network.PeerSelection.PeerMetric
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..))
 
 -- | Facilitates composing updates to various targets via back-to-back pipeline
@@ -44,6 +43,7 @@ type ModifyPeerSelectionTargets = PeerSelectionTargets -> PeerSelectionTargets
 type CheckPeerSelectionCounters extraCounters = PeerSelectionCounters extraCounters -> PeerSelectionTargets -> Bool
 
 data ChurnCounters = ChurnCounter ChurnAction Int
+  deriving Show
 
 -- | Record of arguments for peer churn governor
 --
@@ -55,7 +55,6 @@ data PeerChurnArgs m extraArgs extraDebugState extraFlags extraPeers extraAPI ex
   pcaPeerRequestTimeout  :: DiffTime,
   -- ^ the timeout for outbound governor to find new (thus
   -- cold) peers through peer sharing mechanism.
-  pcaMetrics             :: PeerMetrics m peeraddr,
   pcaRng                 :: StdGen,
   pcaPeerSelectionVar    :: StrictTVar m PeerSelectionTargets,
   pcaReadCounters        :: STM m (PeerSelectionCounters extraCounters),

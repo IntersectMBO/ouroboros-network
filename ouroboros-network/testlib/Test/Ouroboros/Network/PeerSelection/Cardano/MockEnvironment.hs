@@ -491,8 +491,8 @@ mockPeerSelectionActions' tracer
       getLedgerStateCtx = LedgerPeersConsensusInterface {
           lpGetLatestSlot = pure Origin,
           lpGetLedgerPeers = pure [],
-          lpReadFetchMode = pure (PraosFetchMode FetchModeDeadline),
           lpExtraAPI = Cardano.LedgerPeersConsensusInterface {
+            readFetchMode = pure (PraosFetchMode FetchModeDeadline),
             getLedgerStateJudgement = readLedgerStateJudgement,
             updateOutboundConnectionsState = \a -> do
               a' <- readTVar outboundConnectionsStateVar

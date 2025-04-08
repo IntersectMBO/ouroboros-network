@@ -131,8 +131,8 @@ peerChurnGovernor PeerChurnArgs {
                     pcaPeerSelectionVar    = peerSelectionVar,
                     pcaReadCounters        = readCounters,
                     getLedgerStateCtx = LedgerPeersConsensusInterface {
-                      lpReadFetchMode = getFetchMode,
                       lpExtraAPI    = Cardano.LedgerPeersConsensusInterface {
+                        Cardano.readFetchMode,
                         Cardano.getLedgerStateJudgement
                       }
                     },
@@ -168,7 +168,7 @@ peerChurnGovernor PeerChurnArgs {
   where
     updateChurnMode :: STM m ChurnMode
     updateChurnMode = do
-        fm <- getFetchMode
+        fm <- readFetchMode
         let mode = case fm of
                      PraosFetchMode FetchModeDeadline -> ChurnModeNormal
                      PraosFetchMode FetchModeBulkSync -> ChurnModeBulkSync
@@ -603,7 +603,7 @@ peerChurnGovernor PeerChurnArgs {
     -- Randomly delay between churnInterval and churnInterval + maxFuzz seconds.
     fuzzyDelay :: StdGen -> DiffTime -> m StdGen
     fuzzyDelay rng execTime = do
-      mode <- atomically getFetchMode
+      mode <- atomically readFetchMode
       -- todo: is this right?
       case (mode, consensusMode) of
         (PraosFetchMode FetchModeDeadline, _) -> longDelay rng execTime

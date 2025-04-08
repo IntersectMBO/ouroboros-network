@@ -1148,9 +1148,9 @@ diffusionSimulation
                              $ accPoolStake
                              $ getLedgerPools
                              $ ledgerPools)
-                    (pure (PraosFetchMode FetchModeDeadline))
                     Cardano.LedgerPeersConsensusInterface {
-                      Cardano.getLedgerStateJudgement = pure TooOld
+                      Cardano.readFetchMode = pure (PraosFetchMode FetchModeDeadline)
+                    , Cardano.getLedgerStateJudgement = pure TooOld
                     , Cardano.updateOutboundConnectionsState =
                         \a -> do
                           a' <- readTVar onlyOutboundConnectionsStateVar

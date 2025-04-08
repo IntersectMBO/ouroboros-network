@@ -63,7 +63,7 @@ import Data.Text qualified as Text
 import Data.Void (Void)
 import GHC.Exception (Exception)
 import Network.DNS (Domain, TYPE)
-import System.Random (StdGen, split)
+import System.Random (StdGen, mkStdGen, split)
 
 import Ouroboros.Network.Mux (noBindForkPolicy)
 import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
@@ -264,6 +264,7 @@ run blockGeneratorArgs limits ni na
         dnsTimeoutScriptVar <- newTVarIO (aDNSTimeoutScript na)
         dnsLookupDelayScriptVar <- newTVarIO (aDNSLookupDelayScript na)
         peerMetrics <- newPeerMetric PeerMetricsConfiguration { maxEntriesToTrack = 180 }
+        policyStdGenVar <- newTVarIO (mkStdGen 12)
 
         let -- diffusion interfaces
             interfaces :: Diffusion.Interfaces (NtNFD m) NtNAddr
@@ -324,7 +325,7 @@ run blockGeneratorArgs limits ni na
               , Diffusion.daEmptyExtraState                   = emptyExtraState
               , Diffusion.daEmptyExtraCounters                = emptyExtraCounters
               , Diffusion.daExtraPeersAPI                     = extraPeersAPI
-              , Diffusion.daInstallSigUSR1Handler             = \_ _ _ -> pure ()
+              , Diffusion.daInstallSigUSR1Handler             = \_ _ -> pure ()
               , Diffusion.daPeerSelectionGovernorArgs         = psArgs
               , Diffusion.daPeerSelectionStateToExtraCounters = psToExtraCounters
               , Diffusion.daToExtraPeers                      = toExtraPeers
@@ -338,7 +339,7 @@ run blockGeneratorArgs limits ni na
                      nodeKernel
                      Node.cborCodecs
                      limits
-                     (appArgs peerMetrics)
+                     (appArgs peerMetrics policyStdGenVar)
                      blockHeader
 
         withAsync
@@ -477,9 +478,11 @@ run blockGeneratorArgs limits ni na
       }
 
     appArgs :: PeerMetrics m NtNAddr
+            -> StrictTVar m StdGen
             -> Node.AppArgs BlockHeader Block m
-    appArgs peerMetrics = Node.AppArgs
+    appArgs peerMetrics stdGenVar = Node.AppArgs
       { Node.aaKeepAliveStdGen     = keepAliveStdGen
+      , Node.aaPolicyStdGen        = stdGenVar
       , Node.aaDiffusionMode       = aDiffusionMode na
       , Node.aaKeepAliveInterval   = aKeepAliveInterval na
       , Node.aaPingPongInterval    = aPingPongInterval na

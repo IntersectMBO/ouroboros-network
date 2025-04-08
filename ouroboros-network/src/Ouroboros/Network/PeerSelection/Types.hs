@@ -2,9 +2,14 @@ module Ouroboros.Network.PeerSelection.Types
   ( PeerSource (..)
   , PeerStatus (..)
   , PublicExtraPeersAPI (..)
+  , nullPublicExtraPeersAPI
   ) where
+
 import Data.Map.Strict
+import Data.Map.Strict qualified as Map
 import Data.Set (Set)
+import Data.Set qualified as Set
+
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 
 -- | Where did this peer come from? Policy functions can choose to treat
@@ -69,4 +74,17 @@ data PublicExtraPeersAPI extraPeers peeraddr =
   -- | Which peers should be advertised
   --
   , toAdvertise            :: extraPeers -> Map peeraddr PeerAdvertise
+  }
+
+nullPublicExtraPeersAPI :: PublicExtraPeersAPI () peeraddr
+nullPublicExtraPeersAPI =
+  PublicExtraPeersAPI {
+    nullExtraPeers         = const True,
+    invariantExtraPeers    = const True,
+    memberExtraPeers       = const (const False),
+    extraPeersToSet        = const Set.empty,
+    sizeExtraPeers         = const 0,
+    differenceExtraPeers   = const (const ()),
+    intersectionExtraPeers = const (const ()),
+    toAdvertise            = const Map.empty
   }
