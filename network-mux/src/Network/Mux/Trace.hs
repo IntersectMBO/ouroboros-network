@@ -10,6 +10,7 @@ module Network.Mux.Trace
   ( Error (..)
   , handleIOException
   , Trace (..)
+  , MuxTracerBundle (..)
   , BearerState (..)
   , WithBearer (..)
   , TraceLabelPeer (..)
@@ -22,6 +23,7 @@ import Text.Printf
 import Control.Exception hiding (throwIO)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
+import Control.Tracer (Tracer)
 import Data.Bifunctor (Bifunctor (..))
 import Data.Word
 import GHC.Generics (Generic (..))
@@ -208,3 +210,20 @@ instance Show Trace where
     show (TraceTCPInfo _ len) = printf "TCPInfo len %d" len
 #endif
 
+-- | Bundle of tracers passed to mux
+-- Consult the 'Trace' type to determine which
+-- tags are required/expected to be served by these tracers.
+-- In principle, the channelTracer can be == muxTracer
+-- but performance likely degrades in typical conditions
+-- unnecessarily.
+--
+data MuxTracerBundle m = MuxTracerBundle {
+  channelTracer :: Tracer m Trace,
+  -- ^ the tracer for individual miniprotocol messages
+  -- to not spam the inbound governor information channel with
+  -- tags which are (a) frequent (b) not interesting
+  muxTracer     :: Tracer m Trace
+  -- ^ the main tracer, which contains an embedded inbound governor
+  -- information channel tracer for inbound and (outbound duplex)
+  -- connections only (see `ConnectionHandler`)
+  }
