@@ -68,6 +68,8 @@ putStrLn_ = BSC.putStrLn . BSC.pack
 debugTracer :: Show a => Tracer IO a
 debugTracer = showTracing (Tracer putStrLn_)
 
+nullMuxTracerBundle :: (Applicative m) => MuxTracerBundle m
+nullMuxTracerBundle = MuxTracerBundle nullTracer nullTracer
 --
 -- Protocols
 --
@@ -133,7 +135,7 @@ serverWorker bearer = do
       putStrLn $ "Result: " ++ show result
       Mx.stop mux
 
-    Mx.run nullTracer mux bearer
+    Mx.run nullMuxTracerBundle mux bearer
   where
     ptcls :: [MiniProtocolInfo ResponderMode]
     ptcls = [ MiniProtocolInfo {
@@ -193,7 +195,7 @@ clientWorker bearer n msg = do
       putStrLn $ "Result: " ++ show result
       Mx.stop mux
 
-    Mx.run nullTracer mux bearer
+    Mx.run nullMuxTracerBundle mux bearer
   where
     ptcls :: [MiniProtocolInfo Mx.InitiatorMode]
     ptcls = [ MiniProtocolInfo {
