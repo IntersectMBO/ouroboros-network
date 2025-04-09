@@ -49,4 +49,4 @@ newInformationChannel = do
 -- | The 'InformationChannel's 'TBQueue' depth.
 --
 cc_QUEUE_BOUND :: Natural
-cc_QUEUE_BOUND = 10
+cc_QUEUE_BOUND = 100
