@@ -1,0 +1,1 @@
+:! . ../run-devel-test-flags.sh; ghcid --test Main.main -c cabal repl kes-agent-tests

@@ -272,7 +272,7 @@ runAgent agent = do
                     tbundle <- atomically (readTChan nextKeyChanRcv)
                     agentTrace agent $
                       AgentPushingKeyUpdate
-                        (formatMaybeKey (taggedBundleTimestamp tbundle) (bundleOC <$> taggedBundle tbundle))
+                        (formatTaggedBundleMaybe (taggedBundleTimestamp tbundle) (bundleOC <$> taggedBundle tbundle))
                         ("service" ++ show serviceID)
                     return tbundle
 

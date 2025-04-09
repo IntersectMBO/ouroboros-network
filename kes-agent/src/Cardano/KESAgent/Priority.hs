@@ -16,6 +16,7 @@ import System.Posix.Syslog.Priority
 -- for the syslog priority type from the @hsyslog@ package.
 data Priority
   = Emergency
+  | Alert
   | Critical
   | Error
   | Warning

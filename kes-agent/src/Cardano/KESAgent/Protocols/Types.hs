@@ -16,12 +16,12 @@ import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import Cardano.KESAgent.KES.OCert (OCert (..))
 import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Protocols.VersionedProtocol
-import Cardano.KESAgent.Util.HexBS
 import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting
 
 import Cardano.Crypto.KES.Class (KESAlgorithm, rawSerialiseVerKeyKES)
 import Data.ByteString (ByteString)
+import Data.Char (toLower)
 import Data.Proxy
 import Data.SerDoc.Class (
   Codec (..),
@@ -32,6 +32,7 @@ import Data.SerDoc.Class (
   encodeEnum,
  )
 import Data.Word
+import Text.Casing
 import Text.Printf
 
 -- | Representation of a key bundle in trace logs. Reflects the key's serial
@@ -46,7 +47,7 @@ data BundleTrace
 
 instance Pretty BundleTrace where
   pretty (BundleTrace n vk) =
-    printf "#%u:%s..." n (take 10 $ hexShowBS vk)
+    printf "#%u:%s" n (pretty vk)
 
 -- | Representation of a tagged key bundle in trace logs. We always trace the
 -- timestamp, plus, if present the actual key bundle.
@@ -112,8 +113,20 @@ data ControlDriverTrace
   deriving (Show)
 
 instance Pretty ControlDriverTrace where
+  pretty (ControlDriverSendingVersionID x) = "sending version ID " ++ pretty x
+  pretty (ControlDriverReceivedVersionID x) = "received version ID " ++ pretty x
+  pretty (ControlDriverInvalidVersion v1 v2) = "invalid version " ++ pretty v1 ++ " " ++ pretty v2
+  pretty (ControlDriverSendingCommand x) = "sending command " ++ pretty x
+  pretty (ControlDriverSentCommand x) = "sent command" ++ pretty x
+  pretty (ControlDriverReceivedKey x) = "received key " ++ pretty x
+  pretty (ControlDriverReceivedCommand x) = "received command " ++ pretty x
   pretty (ControlDriverMisc x) = x
-  pretty x = drop (strLength "ControlDriver") (show x)
+  pretty x = prettify (drop (strLength "ControlDriver") (show x))
+    where
+      prettify str =
+        case words str of
+          [] -> ""
+          x : xs -> unwords ((map toLower . toWords . fromAny) x : xs)
 
 -- | Commands that a control client can send
 data Command
@@ -124,6 +137,9 @@ data Command
   | RequestInfoCmd
   | DropKeyCmd
   deriving (Show, Read, Eq, Ord, Enum, Bounded)
+
+instance Pretty Command where
+  pretty = map toLower . unwords . init . words . toWords . fromAny . show
 
 deriving via
   (ViaEnum Command)
@@ -171,20 +187,25 @@ data ServiceDriverTrace
   deriving (Show)
 
 instance Pretty ServiceDriverTrace where
-  pretty (ServiceDriverSendingVersionID v) = "SendingVersionID " ++ pretty v
-  pretty (ServiceDriverReceivedVersionID v) = "ReceivedVersionID " ++ pretty v
-  pretty (ServiceDriverInvalidVersion v1 v2) = "InvalidVersion " ++ pretty v1 ++ " " ++ pretty v2
-  pretty (ServiceDriverSendingKey k) = "SendingKey " ++ pretty k
-  pretty (ServiceDriverSentKey k) = "SentKey " ++ pretty k
-  pretty (ServiceDriverReceivedKey k) = "ReceivedKey " ++ pretty k
-  pretty (ServiceDriverConfirmingKey) = "ConfirmingKey"
-  pretty (ServiceDriverConfirmedKey) = "ConfirmedKey"
-  pretty (ServiceDriverDecliningKey r) = "DecliningKey " ++ pretty r
-  pretty (ServiceDriverDeclinedKey r) = "DeclinedKey " ++ pretty r
-  pretty (ServiceDriverRequestingKeyDrop ts) = "RequestingKeyDrop " ++ pretty ts
-  pretty (ServiceDriverRequestedKeyDrop ts) = "RequestedKeyDrop " ++ pretty ts
-  pretty (ServiceDriverReceivedKeyDrop ts) = "ReceivedKeyDrop " ++ pretty ts
-  pretty (ServiceDriverCRefEvent e) = "CRefEvent " ++ pretty e
-  pretty (ServiceDriverProtocolError err) = "ProtocolError " ++ err
+  pretty (ServiceDriverSendingVersionID v) = "sending version ID " ++ pretty v
+  pretty (ServiceDriverReceivedVersionID v) = "received version ID " ++ pretty v
+  pretty (ServiceDriverInvalidVersion v1 v2) = "invalid version " ++ pretty v1 ++ " " ++ pretty v2
+  pretty (ServiceDriverSendingKey k) = "sending key " ++ pretty k
+  pretty (ServiceDriverSentKey k) = "sent key " ++ pretty k
+  pretty (ServiceDriverReceivedKey k) = "received key " ++ pretty k
+  pretty (ServiceDriverConfirmingKey) = "confirming key"
+  pretty (ServiceDriverConfirmedKey) = "confirmed key"
+  pretty (ServiceDriverDecliningKey r) = "declining key " ++ pretty r
+  pretty (ServiceDriverDeclinedKey r) = "declined key " ++ pretty r
+  pretty (ServiceDriverRequestingKeyDrop ts) = "requesting key drop " ++ pretty ts
+  pretty (ServiceDriverRequestedKeyDrop ts) = "requested key drop " ++ pretty ts
+  pretty (ServiceDriverReceivedKeyDrop ts) = "received key drop " ++ pretty ts
+  pretty (ServiceDriverCRefEvent e) = "CRef event " ++ pretty e
+  pretty (ServiceDriverProtocolError err) = "protocol error " ++ err
   pretty (ServiceDriverMisc x) = x
-  pretty x = drop (strLength "ServiceDriver") (show x)
+  pretty x = prettify (drop (strLength "ServiceDriver") (show x))
+    where
+      prettify str =
+        case words str of
+          [] -> ""
+          x : xs -> unwords ((map toLower . toWords . fromAny) x : xs)

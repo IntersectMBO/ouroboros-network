@@ -13,6 +13,7 @@ import Cardano.KESAgent.Processes.Agent
 import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Serialization.CBOR
 import Cardano.KESAgent.Serialization.TextEnvelope
+import Cardano.KESAgent.Util.ColoredOutput
 import Cardano.KESAgent.Util.Pretty
 
 import Cardano.Crypto.Libsodium (sodiumInit)
@@ -417,6 +418,10 @@ agentTracePrio AgentDroppingKey {} = Notice
 agentTracePrio AgentRejectingKey {} = Notice
 agentTracePrio AgentInstallingNewKey {} = Notice
 agentTracePrio AgentInstallingKeyDrop {} = Notice
+agentTracePrio AgentGeneratedStagedKey {} = Notice
+agentTracePrio AgentCouldNotGenerateStagedKey {} = Warning
+agentTracePrio AgentNoStagedKeyToDrop {} = Notice
+agentTracePrio AgentDroppedStagedKey {} = Notice
 agentTracePrio AgentSkippingOldKey {} = Info
 agentTracePrio AgentServiceSocketClosed {} = Notice
 agentTracePrio AgentListeningOnServiceSocket {} = Notice
@@ -429,10 +434,10 @@ agentTracePrio AgentControlClientConnected {} = Notice
 agentTracePrio AgentControlClientDisconnected {} = Notice
 agentTracePrio AgentControlSocketError {} = Error
 agentTracePrio AgentControlSocketDisabled {} = Notice
-agentTracePrio AgentCheckEvolution {} = Info
+agentTracePrio AgentCheckEvolution {} = Debug
 agentTracePrio AgentUpdateKESPeriod {} = Notice
-agentTracePrio AgentKeyNotEvolved {} = Info
-agentTracePrio AgentNoKeyToEvolve {} = Info
+agentTracePrio AgentKeyNotEvolved {} = Debug
+agentTracePrio AgentNoKeyToEvolve {} = Debug
 agentTracePrio AgentKeyEvolved {} = Notice
 agentTracePrio AgentKeyExpired {} = Warning
 agentTracePrio AgentLockRequest {} = Debug
@@ -443,6 +448,17 @@ agentTracePrio AgentRequestingKeyUpdate {} = Info
 agentTracePrio AgentPushingKeyUpdate {} = Notice
 agentTracePrio AgentHandlingKeyUpdate {} = Info
 agentTracePrio AgentDebugTrace {} = Debug
+
+-- Assign colors to priority levels
+prioColor :: Priority -> Color
+prioColor Emergency = Color Bright Magenta
+prioColor Alert = Color Dull Magenta
+prioColor Critical = Color Bright Red
+prioColor Error = Color Dull Red
+prioColor Warning = Color Bright Yellow
+prioColor Notice = Color Dull Black
+prioColor Info = Color Dull Cyan
+prioColor Debug = Color Dull White
 
 -- | Encode an agent trace message as a 'ByteString'. Needed for the syslog
 -- tracer.
@@ -455,13 +471,15 @@ stdoutAgentTracer :: Priority -> MVar IO () -> Tracer IO AgentTrace
 stdoutAgentTracer maxPrio lock = Tracer $ \msg -> do
   timestamp <- utcTimeToPOSIXSeconds <$> getCurrentTime
   let prio = agentTracePrio msg
+      color = prioColor prio
   when (prio <= maxPrio) $
     withMVar lock $ \_ -> do
-      printf
-        "%15.3f %-8s %s\n"
-        (realToFrac timestamp :: Double)
-        (show prio)
-        (pretty msg)
+      hcPutStrLn stdout color $
+        printf
+          "%15.3f %-8s %s"
+          (realToFrac timestamp :: Double)
+          (show prio)
+          (pretty msg)
       hFlush stdout
 
 #if defined(mingw32_HOST_OS)

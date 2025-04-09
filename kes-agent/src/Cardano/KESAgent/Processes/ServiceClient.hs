@@ -53,11 +53,13 @@ import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow (MonadCatch, MonadThrow, SomeException, bracket, catch)
 import Control.Monad.Class.MonadTimer (MonadDelay, threadDelay)
 import Control.Tracer (Tracer, traceWith)
+import Data.Char (toLower)
 import Data.Functor.Contravariant ((>$<))
 import Data.SerDoc.Class (HasInfo (..))
 import Data.Typeable
 import Data.Word (Word64)
 import Network.TypedProtocol.Driver (runPeerWithDriver)
+import Text.Casing
 
 -- | Configuration options for a service client.
 data ServiceClientOptions m fd addr
@@ -84,10 +86,15 @@ data ServiceClientTrace
   deriving (Show)
 
 instance Pretty ServiceClientTrace where
-  pretty (ServiceClientDriverTrace d) = "Service: ServiceDriver: " ++ pretty d
-  pretty (ServiceClientConnected a) = "Service: Connected to " ++ a
-  pretty (ServiceClientVersionHandshakeTrace a) = "Service: VersionHandshakeTrace: " ++ pretty a
-  pretty x = "Service: " ++ drop (length "ServiceClient") (show x)
+  pretty (ServiceClientDriverTrace d) = "Service: service driver: " ++ pretty d
+  pretty (ServiceClientConnected a) = "Service: connected to " ++ a
+  pretty (ServiceClientVersionHandshakeTrace a) = "Service: version handshake: " ++ pretty a
+  pretty x = "Service: " ++ prettify (drop (length "ServiceClient") (show x))
+    where
+      prettify str =
+        case words str of
+          [] -> ""
+          x : xs -> unwords ((map toLower . toWords . fromAny) x : xs)
 
 -- | Monadic typeclasses required to run service client actions.
 type MonadServiceClient m =

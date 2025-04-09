@@ -65,6 +65,7 @@ import Control.Monad.Class.MonadSTM (MonadSTM)
 import Control.Monad.Class.MonadThrow (MonadCatch, MonadThrow, SomeException, bracket)
 import Control.Monad.Class.MonadTimer (MonadDelay)
 import Control.Tracer (Tracer, traceWith)
+import Data.Char (toLower)
 import Data.Coerce
 import Data.Functor.Contravariant ((>$<))
 import Data.Kind
@@ -75,6 +76,7 @@ import Data.SerDoc.Class (
 import Data.Typeable
 import Network.TypedProtocol.Driver (runPeerWithDriver)
 import Network.TypedProtocol.Peer.Server (IsPipelined (..), Server)
+import Text.Casing
 
 -- | Trace log messages a control client can generate.
 data ControlClientTrace
@@ -94,7 +96,12 @@ instance Pretty ControlClientTrace where
   pretty (ControlClientDriverTrace d) = "Control: ControlDriver: " ++ pretty d
   pretty ControlClientConnected = "Control: Connected"
   pretty (ControlClientKeyRejected r) = "Control: KeyRejected: " ++ pretty r
-  pretty x = "Control: " ++ drop (length "ControlClient") (show x)
+  pretty x = "Control: " ++ prettify (drop (length "ControlClient") (show x))
+    where
+      prettify str =
+        case words str of
+          [] -> ""
+          x : xs -> unwords ((map toLower . toWords . fromAny) x : xs)
 
 -- | Configuration options for a control client.
 data ControlClientOptions m fd addr

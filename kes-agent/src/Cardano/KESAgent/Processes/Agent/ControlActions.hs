@@ -68,7 +68,7 @@ genKey ::
   Agent c m fd addr ->
   m (Maybe (VerKeyKES (KES c)))
 genKey agent = do
-  bracket
+  vk <- bracket
     (agentGenSeed . agentOptions $ agent)
     mlockedSeedFinalize
     $ \seed -> do
@@ -79,6 +79,8 @@ genKey agent = do
       atomically $ putTMVar (agentStagedKeyVar agent) (Just newSKVar)
       vk <- deriveVerKeyKES sk
       return $ Just vk
+  agentTrace agent $ maybe AgentCouldNotGenerateStagedKey (AgentGeneratedStagedKey . formatVK) vk
+  return vk
 
 -- | Drop the currently installed KES key.
 -- @kes-agent-control drop-key@ command.
@@ -106,7 +108,9 @@ dropStagedKey ::
 dropStagedKey agent =
   do
     keyMay <- atomically $ takeTMVar (agentStagedKeyVar agent)
+    vkMay <- mapM (flip withCRefValue (deriveVerKeyKES . skWithoutPeriodKES)) keyMay
     maybe (return ()) releaseCRef keyMay
+    agentTrace agent $ maybe AgentNoStagedKeyToDrop (AgentDroppedStagedKey . formatVK) vkMay
     return Nothing
     `finally` do
       atomically $ putTMVar (agentStagedKeyVar agent) Nothing

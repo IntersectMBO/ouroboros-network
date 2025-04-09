@@ -9,11 +9,13 @@ import Control.Concurrent.Class.MonadSTM.TChan (TChan)
 import Control.Concurrent.Class.MonadSTM.TMVar (TMVar)
 import Control.Monad.Class.MonadTime (MonadTime, getCurrentTime)
 import Control.Tracer (Tracer (..), nullTracer)
+import Data.Char (toLower)
 import Data.Map.Strict (Map)
 import Data.Text (Text)
 import Data.Time (UTCTime)
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket (Snocket (..))
+import Text.Casing
 
 import Cardano.KESAgent.KES.Bundle (TaggedBundle (..))
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
@@ -72,25 +74,38 @@ data AgentTrace
   | AgentPushingKeyUpdate String String
   | AgentHandlingKeyUpdate
   | AgentUpdateKESPeriod KESPeriod KESPeriod
+  | AgentGeneratedStagedKey String
+  | AgentCouldNotGenerateStagedKey
+  | AgentDroppedStagedKey String
+  | AgentNoStagedKeyToDrop
   | AgentDebugTrace String
   deriving (Show)
 
 instance Pretty AgentTrace where
-  pretty (AgentVersionHandshakeDriverTrace d) = "Agent: VersionHandshakeDriver: " ++ pretty d
-  pretty (AgentServiceDriverTrace d) = "Agent: ServiceDriver: " ++ pretty d
-  pretty (AgentServiceSocketClosed a) = "Agent: ServiceSocketClosed: " ++ a
-  pretty (AgentServiceClientConnected a b) = "Agent: ServiceClientConnected: " ++ a ++ " " ++ b
-  pretty (AgentServiceClientDisconnected a) = "Agent: ServiceClientDisconnected: " ++ a
-  pretty (AgentServiceSocketError e) = "Agent: ServiceSocketError: " ++ e
-  pretty (AgentControlDriverTrace d) = "Agent: ControlDriver: " ++ pretty d
-  pretty (AgentControlSocketClosed a) = "Agent: ControlSocketClosed: " ++ a
-  pretty (AgentControlClientConnected a b) = "Agent: ControlClientConnected: " ++ a ++ " " ++ b
-  pretty (AgentControlClientDisconnected a) = "Agent: ControlClientDisconnected: " ++ a
-  pretty (AgentControlSocketError e) = "Agent: ControlSocketError: " ++ e
-  pretty (AgentRejectingKey msg) = "Agent: RejectingKey: " ++ msg
-  pretty (AgentPushingKeyUpdate msg socket) = "Agent: PushingKeyUpdate: " ++ msg ++ " on " ++ socket
-  pretty (AgentRequestingKeyUpdate msg) = "Agent: RequestingKeyUpdate: " ++ msg
-  pretty x = "Agent: " ++ drop (strLength "Agent") (show x)
+  pretty (AgentVersionHandshakeDriverTrace d) = "Agent: version handshake driver: " ++ pretty d
+  pretty (AgentServiceDriverTrace d) = "Agent: service driver: " ++ pretty d
+  pretty (AgentServiceSocketClosed a) = "Agent: service socket closed: " ++ a
+  pretty (AgentServiceClientConnected a b) = "Agent: service client connected: " ++ a ++ " " ++ b
+  pretty (AgentServiceClientDisconnected a) = "Agent: service client disconnected: " ++ a
+  pretty (AgentServiceSocketError e) = "Agent: service socket error: " ++ e
+  pretty (AgentControlDriverTrace d) = "Agent: control driver: " ++ pretty d
+  pretty (AgentControlSocketClosed a) = "Agent: control socket closed: " ++ a
+  pretty (AgentControlClientConnected a b) = "Agent: control client connected: " ++ a ++ " " ++ b
+  pretty (AgentControlClientDisconnected a) = "Agent: control client disconnected: " ++ a
+  pretty (AgentControlSocketError e) = "Agent: control socket error: " ++ e
+  pretty (AgentRejectingKey msg) = "Agent: rejecting key: " ++ msg
+  pretty (AgentPushingKeyUpdate msg socket) = "Agent: pushing key update: " ++ msg ++ " on " ++ socket
+  pretty (AgentRequestingKeyUpdate msg) = "Agent: requesting key update: " ++ msg
+  pretty (AgentReplacingPreviousKey old new) = "Agent: replacing previous key: " ++ old ++ " -> " ++ new
+  pretty (AgentInstallingNewKey key) = "Agent: installing new key: " ++ key
+  pretty (AgentGeneratedStagedKey key) = "Agent: generated staged key: " ++ key
+  pretty (AgentDroppedStagedKey key) = "Agent: dropped staged key: " ++ key
+  pretty x = "Agent: " ++ prettify (drop (strLength "Agent") (show x))
+    where
+      prettify str =
+        case words str of
+          [] -> ""
+          x : xs -> unwords ((map toLower . toWords . fromAny) x : xs)
 
 -- | Configuration options for creating a new KES agent process.
 data AgentOptions m addr c

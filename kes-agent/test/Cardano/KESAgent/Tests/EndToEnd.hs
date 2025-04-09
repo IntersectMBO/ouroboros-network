@@ -185,7 +185,7 @@ kesAgentGenesisFile = do
           (Text.lines <$> Text.hGetContents hErr)
       exitCode <- waitForProcess ph
       return (outT, errT, exitCode)
-  assertMatchingOutputLines 3 ["ListeningOnControlSocket"] agentOutLines
+  assertMatchingOutputLines 3 (Text.words "listening on control socket") agentOutLines
 
 kesAgentNoControlAddress :: Assertion
 kesAgentNoControlAddress = do
@@ -217,7 +217,7 @@ kesAgentNoControlAddress = do
           (Text.lines <$> Text.hGetContents hErr)
       exitCode <- waitForProcess ph
       return (outT, errT, exitCode)
-  assertMatchingOutputLines 3 ["ControlSocketDisabled"] agentOutLines
+  assertMatchingOutputLines 3 (Text.words "control socket disabled") agentOutLines
 
 kesAgentControlHelp :: Assertion
 kesAgentControlHelp = do
@@ -415,7 +415,7 @@ kesAgentControlInstallInvalidOpCert =
           ["Error: OpCert validation failed"]
 
     assertNoMatchingOutputLines 4 ["->", "ServiceClientBlockForging"] serviceOutLines
-    assertMatchingOutputLines 1 ["Notice", "Agent:", "RejectingKey:", "Verification"] agentOutLines
+    assertMatchingOutputLines 1 (Text.words ("Notice Agent: rejecting key: Verification")) agentOutLines
 
 kesAgentControlInstallNoKey :: Assertion
 kesAgentControlInstallNoKey =
@@ -661,8 +661,8 @@ kesAgentControlInstallMultiNodes =
       serviceOutLines1
     assertMatchingOutputLinesWith
       ("Service1: 'ReceivedVersionID'\n" ++ (Text.unpack . Text.unlines $ agentOutLines))
-      4
-      ["ReceivedVersionID"]
+      5
+      (Text.words "received version ID")
       serviceOutLines1
     assertMatchingOutputLinesWith
       ("Service2: 'KES key 0'\n" ++ (Text.unpack . Text.unlines $ agentOutLines))
@@ -758,8 +758,8 @@ kesAgentControlUpdateMultiNodes =
       serviceOutLines1
     assertMatchingOutputLinesWith
       ("Service1: 'ReceivedVersionID'\n" ++ (Text.unpack . Text.unlines $ agentOutLines))
-      4
-      ["ReceivedVersionID"]
+      5
+      (Text.words "received version ID")
       serviceOutLines1
     assertMatchingOutputLinesWith
       ("Service2: 'KES key 0'\n" ++ (Text.unpack . Text.unlines $ agentOutLines))

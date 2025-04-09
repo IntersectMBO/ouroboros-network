@@ -27,11 +27,13 @@ import Control.Exception
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow (MonadThrow)
 import Control.Tracer (Tracer, traceWith)
+import Data.Char (toLower)
 import Data.Kind (Type)
 import Data.List (intercalate)
 import Data.Proxy
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Driver
+import Text.Casing
 
 import Ouroboros.Network.RawBearer
 
@@ -47,11 +49,16 @@ data VersionHandshakeDriverTrace
 
 instance Pretty VersionHandshakeDriverTrace where
   pretty (VersionHandshakeDriverOfferingVersions versions) =
-    "OfferingVersions: [" ++ intercalate ", " (map pretty versions) ++ "]"
+    "offering versions: [" ++ intercalate ", " (map pretty versions) ++ "]"
   pretty (VersionHandshakeDriverAcceptingVersion v) =
-    "AcceptingVersion: " ++ pretty v
+    "accepting version: " ++ pretty v
   pretty (VersionHandshakeDriverMisc x) = x
-  pretty x = drop (strLength "VersionHandshakeDriver") (show x)
+  pretty x = prettify (drop (strLength "VersionHandshakeDriver") (show x))
+    where
+      prettify str =
+        case words str of
+          [] -> ""
+          x : xs -> unwords ((map toLower . toWords . fromAny) x : xs)
 
 versionHandshakeDriver ::
   forall (m :: Type -> Type) pr.

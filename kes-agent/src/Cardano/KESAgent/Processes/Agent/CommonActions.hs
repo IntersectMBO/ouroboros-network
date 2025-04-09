@@ -58,6 +58,7 @@ import Cardano.KESAgent.KES.OCert (
 import Cardano.KESAgent.Processes.Agent.Context
 import Cardano.KESAgent.Processes.Agent.Type
 import Cardano.KESAgent.Protocols.RecvResult (RecvResult (..))
+import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting (
   CRef,
   CRefEvent (..),
@@ -217,17 +218,31 @@ withStagedKey agent context f = do
     return retval
 
 -- | Format a key bundle, or key deletion, for the purpose of trace logging.
-formatMaybeKey :: Timestamp -> Maybe (OCert c) -> String
-formatMaybeKey ts Nothing =
+formatTaggedBundleMaybe ::
+  KESAlgorithm (KES c) =>
+  Timestamp ->
+  Maybe (OCert c) ->
+  String
+formatTaggedBundleMaybe ts Nothing =
   printf "DELETE (%lu)" (timestampValue ts)
-formatMaybeKey ts (Just ocert) =
-  formatKey ts ocert
+formatTaggedBundleMaybe ts (Just ocert) =
+  formatTaggedBundle ts ocert
 
 -- | Format a key bundle for the purpose of trace logging.
-formatKey :: Timestamp -> OCert c -> String
-formatKey ts ocert =
+formatTaggedBundle ::
+  KESAlgorithm (KES c) =>
+  Timestamp ->
+  OCert c ->
+  String
+formatTaggedBundle ts ocert =
   let serialNumber = ocertN ocert
-  in printf "%i (%lu)" serialNumber (timestampValue ts)
+  in printf "%i (%lu) = %s" serialNumber (timestampValue ts) (formatVK $ ocertVkHot ocert)
+
+formatVK ::
+  KESAlgorithm kes =>
+  VerKeyKES kes ->
+  String
+formatVK = pretty . rawSerialiseVerKeyKES
 
 -- | Initialize a new 'Agent'. This will not spawn the actual agent process,
 -- just set up everything it needs.
@@ -439,7 +454,7 @@ pushKey agent tbundle = do
                 agentTrace agent $ AgentInstallingKeyDrop
               Just bundle ->
                 agentTrace agent $
-                  AgentInstallingNewKey (formatKey (taggedBundleTimestamp tbundle) (bundleOC bundle))
+                  AgentInstallingNewKey (formatTaggedBundle (taggedBundleTimestamp tbundle) (bundleOC bundle))
             return (Just tbundle, PushKeyOK Nothing)
           Just oldTBundle -> do
             -- We have an old bundle, so we need to do an age check.
@@ -451,18 +466,18 @@ pushKey agent tbundle = do
                 case (releaseResult, taggedBundle tbundle) of
                   (Nothing, Just bundle) ->
                     agentTrace agent $
-                      AgentInstallingNewKey (formatKey (taggedBundleTimestamp tbundle) (bundleOC bundle))
+                      AgentInstallingNewKey (formatTaggedBundle (taggedBundleTimestamp tbundle) (bundleOC bundle))
                   (Nothing, Nothing) ->
                     agentTrace agent $
                       AgentInstallingKeyDrop
                   (Just oldOC, Nothing) ->
                     agentTrace agent $
-                      AgentDroppingKey (formatKey (taggedBundleTimestamp tbundle) oldOC)
+                      AgentDroppingKey (formatTaggedBundle (taggedBundleTimestamp tbundle) oldOC)
                   (Just oldOC, Just bundle) ->
                     agentTrace agent $
                       AgentReplacingPreviousKey
-                        (formatKey (taggedBundleTimestamp oldTBundle) oldOC)
-                        (formatKey (taggedBundleTimestamp tbundle) (bundleOC bundle))
+                        (formatTaggedBundle (taggedBundleTimestamp oldTBundle) oldOC)
+                        (formatTaggedBundle (taggedBundleTimestamp tbundle) (bundleOC bundle))
                 return (Just tbundle, PushKeyOK releaseResult)
               else do
                 -- Age check failed, so we keep the old bundle and release the
@@ -480,7 +495,7 @@ pushKey agent tbundle = do
     broadcastUpdate tbundle = do
       agentTrace agent $
         AgentRequestingKeyUpdate
-          ( formatMaybeKey
+          ( formatTaggedBundleMaybe
               (taggedBundleTimestamp tbundle)
               (bundleOC <$> taggedBundle tbundle)
           )
