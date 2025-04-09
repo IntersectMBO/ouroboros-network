@@ -120,9 +120,19 @@ data BearerState = Mature
                  -- closed.
                  deriving (Eq, Show)
 
+-- todo The Trace type mixes tags which are output by
+-- separate components but share the type. It would make more sense
+-- to break this up into separate types. Care must be
+-- excercised to ensure that a particular tracer goes
+-- into the component that outputs the desired tags. For instance,
+-- the low level bearer tags are not output by the tracer which
+-- is passed to Mux via 'Tracers'.
+
 -- | Enumeration of Mux events that can be traced.
 --
 data Trace =
+    -- low level bearer trace tags (these are not traced by the tracer
+    -- which is passed to Mux)
       TraceRecvHeaderStart
     | TraceRecvHeaderEnd SDUHeader
     | TraceRecvDeltaQObservation SDUHeader Time
@@ -133,19 +143,30 @@ data Trace =
     | TraceSendStart SDUHeader
     | TraceSendEnd
     | TraceState BearerState
-    | TraceCleanExit MiniProtocolNum MiniProtocolDir
-    | TraceExceptionExit MiniProtocolNum MiniProtocolDir SomeException
-    | TraceChannelRecvStart MiniProtocolNum
-    | TraceChannelRecvEnd MiniProtocolNum Int
-    | TraceChannelSendStart MiniProtocolNum Int
-    | TraceChannelSendEnd MiniProtocolNum
+    | TraceSDUReadTimeoutException
+    | TraceSDUWriteTimeoutException
+    | TraceTCPInfo StructTCPInfo Word16
+    -- low level handshake bearer tags (not traced by tracer in Mux)
     | TraceHandshakeStart
     | TraceHandshakeClientEnd DiffTime
     | TraceHandshakeServerEnd
     | forall e. Exception e => TraceHandshakeClientError e DiffTime
     | forall e. Exception e => TraceHandshakeServerError e
-    | TraceSDUReadTimeoutException
-    | TraceSDUWriteTimeoutException
+    -- mid level channel tags traced independently by each mini protocol
+    -- job in Mux, for each complete message, by the 'channelTracer'
+    -- within 'Tracers'
+    | TraceChannelRecvStart MiniProtocolNum
+    | TraceChannelRecvEnd MiniProtocolNum Int
+    | TraceChannelSendStart MiniProtocolNum Int
+    | TraceChannelSendEnd MiniProtocolNum
+    -- high level Mux tags traced by the main Mux/Connection handler
+    -- thread forked by CM. These may be monitored by the inbound
+    -- governor information channel tracer. These should be traced
+    -- by muxTracer of 'Tracers' and their ordering
+    -- is significant at call sites or bad things will happen.
+    -- You have been warned.
+    | TraceCleanExit MiniProtocolNum MiniProtocolDir
+    | TraceExceptionExit MiniProtocolNum MiniProtocolDir SomeException
     | TraceStartEagerly MiniProtocolNum MiniProtocolDir
     | TraceStartOnDemand MiniProtocolNum MiniProtocolDir
     | TraceStartOnDemandAny MiniProtocolNum MiniProtocolDir
@@ -153,7 +174,6 @@ data Trace =
     | TraceTerminating MiniProtocolNum MiniProtocolDir
     | TraceStopping
     | TraceStopped
-    | TraceTCPInfo StructTCPInfo Word16
 
 instance Show Trace where
     show TraceRecvHeaderStart = printf "Bearer Receive Header Start"

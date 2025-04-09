@@ -1022,7 +1022,7 @@ prop_mux_starvation (Uneven response0 response1) =
 
     clientBearer <- getBearer makeQueueChannelBearer
                       (-1)
-                      clientTracer
+                      (clientTracer' <> headerTracer)
                       QueueChannel { writeQueue = client_w, readQueue = client_r }
                       Nothing
     serverBearer <- getBearer makeQueueChannelBearer
@@ -1072,7 +1072,7 @@ prop_mux_starvation (Uneven response0 response1) =
                    Mx.StartOnDemand server_long
 
     clientMux <- Mx.new [clientApp2, clientApp3]
-    clientMux_aid <- async $ Mx.run (clientTracer <> headerTracer) clientMux clientBearer
+    clientMux_aid <- async $ Mx.run clientTracer clientMux clientBearer
     clientRes2 <- Mx.runMiniProtocol clientMux (miniProtocolNum clientApp2) (miniProtocolDir clientApp2)
                    Mx.StartEagerly client_short
     clientRes3 <- Mx.runMiniProtocol clientMux (miniProtocolNum clientApp3) (miniProtocolDir clientApp3)
