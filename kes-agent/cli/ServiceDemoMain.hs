@@ -13,6 +13,7 @@ import Cardano.KESAgent.Priority
 import Cardano.KESAgent.Processes.ServiceClient
 import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Protocols.StandardCrypto
+import Cardano.KESAgent.Util.ColoredOutput
 import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting
 
@@ -109,14 +110,16 @@ formatServiceTrace msg =
 
 stdoutStringTracer :: Priority -> MVar IO () -> Tracer IO (Priority, String)
 stdoutStringTracer maxPrio lock = Tracer $ \(prio, msg) -> do
+  let color = prioColor prio
   timestamp <- utcTimeToPOSIXSeconds <$> getCurrentTime
   when (prio <= maxPrio) $
     withMVar lock $ \_ -> do
-      printf
-        "%15.3f %-8s %s\n"
-        (realToFrac timestamp :: Double)
-        (show prio)
-        msg
+      hcPutStrLn stdout color $
+        printf
+          "%15.3f %-8s %s"
+          (realToFrac timestamp :: Double)
+          (show prio)
+          msg
       hFlush stdout
 
 handleKey ::

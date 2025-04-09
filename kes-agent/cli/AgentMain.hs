@@ -449,17 +449,6 @@ agentTracePrio AgentPushingKeyUpdate {} = Notice
 agentTracePrio AgentHandlingKeyUpdate {} = Info
 agentTracePrio AgentDebugTrace {} = Debug
 
--- Assign colors to priority levels
-prioColor :: Priority -> Color
-prioColor Emergency = Color Bright Magenta
-prioColor Alert = Color Dull Magenta
-prioColor Critical = Color Bright Red
-prioColor Error = Color Dull Red
-prioColor Warning = Color Bright Yellow
-prioColor Notice = Color Dull Black
-prioColor Info = Color Dull Cyan
-prioColor Debug = Color Dull White
-
 -- | Encode an agent trace message as a 'ByteString'. Needed for the syslog
 -- tracer.
 agentTraceFormatBS :: AgentTrace -> ByteString
