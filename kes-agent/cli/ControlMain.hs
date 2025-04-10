@@ -233,7 +233,8 @@ pCommonOptions =
           <> short 'c'
           <> value Nothing
           <> metavar "ADDR"
-          <> help "Socket address for 'control' connections to a running kes-agent process"
+          <> help ("Socket address for 'control' connections to a running kes-agent process. "
+                    <> "($KES_AGENT_CONTROL_PATH)")
       )
     <*> option
       (Just <$> auto)
@@ -247,7 +248,8 @@ pCommonOptions =
       ( long "retry-interval"
           <> long "retry-delay"
           <> value Nothing
-          <> help "Connection retry interval (milliseconds)"
+          <> help ("Connection retry interval (milliseconds). "
+                    <> "($KES_AGENT_CONTROL_RETRY_INTERVAL)")
       )
     <*> flag
       Nothing
@@ -259,7 +261,8 @@ pCommonOptions =
       (Just <$> auto)
       ( long "retry-attempts"
           <> value Nothing
-          <> help "Number of connection retry attempts"
+          <> help ("Number of connection retry attempts. "
+                    <> "($KES_AGENT_CONTROL_RETRY_ATTEMPTS)")
       )
 
 pGenKeyOptions =
