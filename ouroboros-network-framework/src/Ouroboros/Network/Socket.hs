@@ -439,7 +439,7 @@ connectToNodeWithMux'
          Mx.withReadBufferIO (\buffer -> do
              bearer <- Mx.getBearer makeBearer sduTimeout muxTracer sd buffer
              mux <- Mx.new (toMiniProtocolInfos (runForkPolicy noBindForkPolicy remoteAddress) app)
-             withAsync (Mx.run muxTracer mux bearer) $ \aid ->
+             withAsync (Mx.run (Mx.MuxTracerBundle muxTracer muxTracer) mux bearer) $ \aid ->
                k connectionId versionNumber agreedOptions app mux aid
            )
 
@@ -616,7 +616,7 @@ beginConnection makeBearer muxTracer handshakeTracer handshakeCodec handshakeTim
                      bearer <- Mx.getBearer makeBearer sduTimeout muxTracer' sd buffer
                      -- non-p2p: use `noBindForkPolicy`
                      mux <- Mx.new (toMiniProtocolInfos (runForkPolicy noBindForkPolicy remoteAddress) app)
-                     withAsync (Mx.run muxTracer' mux bearer) $ \aid ->
+                     withAsync (Mx.run (Mx.MuxTracerBundle muxTracer' muxTracer') mux bearer) $ \aid ->
                        void $ simpleMuxCallback connectionId versionNumber agreedOptions app mux aid
                    )
 

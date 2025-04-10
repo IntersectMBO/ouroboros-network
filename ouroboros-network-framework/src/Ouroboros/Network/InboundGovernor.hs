@@ -188,7 +188,7 @@ with
     withConnectionManager connectionHandler \connectionManager ->
       withAsync
         (  labelThisThread "inbound-governor-loop" >>
-           forever (inboundGovernorStep connectionManager stateVar)
+           forever (inboundGovernorStep connectionManager stateVar >> yield)
          `catch`
            handleError stateVar)
       \thread ->
@@ -220,71 +220,86 @@ with
           modifyTVar countersVar $ Map.insert peer (ResponderCounters 0 0)
 
         _ | Just mid <- startWithID trace -> atomically do
-          connections <- connections <$> readTVar stateVar
-          case Map.lookup peer connections of
-            Nothing -> modifyTVar countersVar $ Map.delete peer
-            Just connState -> do
-              ResponderCounters {numTraceHotResponders,
-                                 numTraceWarmResponders}
-                <- (Map.! peer) <$> readTVar countersVar
-              let miniProtocolTemp = getProtocolTemp mid connState
-              case ( miniProtocolTemp
-                   , numTraceWarmResponders
-                   , numTraceHotResponders) of
-                (Hot, 0, 0) -> do
-                      InfoChannel.writeMessage infoChannel $ AwakeRemote peer
-                      InfoChannel.writeMessage infoChannel $ RemotePromotedToHot peer
-                (Hot, _, 0) ->
-                      InfoChannel.writeMessage infoChannel $ RemotePromotedToHot peer
-                (Hot, _, _) -> pure ()
-                (_notHot, 0, 0) -> do
-                  InfoChannel.writeMessage infoChannel $ AwakeRemote peer
-                _otherwise -> pure ()
+              connections        <- connections <$> readTVar stateVar
+              mResponderCounters <- Map.lookup peer <$> readTVar countersVar
+              case (Map.lookup peer connections,
+                    mResponderCounters) of
+                (Just (ConnectionState { csRemoteState, csMiniProtocolMap }),
+                 Just (ResponderCounters {
+                         numTraceHotResponders,
+                         numTraceWarmResponders })) -> do
+                  let miniProtocolTemp = getProtocolTemp mid csMiniProtocolMap
+                      completion = do
+                        case (miniProtocolTemp,
+                              numTraceWarmResponders,
+                              numTraceHotResponders) of
+                          (Hot, 0, 0) -> do
+                                InfoChannel.writeMessage infoChannel $ AwakeRemote peer
+                                InfoChannel.writeMessage infoChannel $ RemotePromotedToHot peer
+                          (Hot, _, 0) ->
+                                InfoChannel.writeMessage infoChannel $ RemotePromotedToHot peer
+                          (Hot, _, _) -> pure ()
+                          (_orNot, 0, 0) -> do
+                            InfoChannel.writeMessage infoChannel $ AwakeRemote peer
+                          _otherwise -> pure ()
+                        case miniProtocolTemp of
+                          Hot    -> adjustHotResponders succ peer
+                          _orNot -> adjustWarmResponders succ peer
 
-              case miniProtocolTemp of
-                Hot   -> adjustHotResponders succ peer
-                _warm -> adjustWarmResponders succ peer
+                  case csRemoteState of
+                    -- we retry on expired because the connection might get dropped
+                    -- so we should not promote it.
+                    RemoteIdle timeoutSTM -> (`catchSTM` \(_ :: TimeoutExpired) -> retry)  . runFirstToFinish $
+                         FirstToFinish (timeoutSTM >> throwSTM Expired)
+                      <> FirstToFinish completion
+                    _otherwise -> completion
+
+                _otherwise -> modifyTVar countersVar $ Map.delete peer
 
         _ | Just mid <- terminateWithID trace -> atomically do
-          connections <- connections <$> readTVar stateVar
-          case Map.lookup peer connections of
-            Nothing -> modifyTVar countersVar $ Map.delete peer
-            Just connState@ConnectionState { csMux
-                                           , csMiniProtocolMap
-                                           , csVersionData
-                                           , csCompletionMap } -> do
-              ResponderCounters { numTraceHotResponders
-                                , numTraceWarmResponders } <-
-                (Map.! peer) <$> readTVar countersVar
-              let miniProtocolTemp = getProtocolTemp mid connState
-              case trace of
-                Mux.TraceCleanExit {} -> do
-                  case ( getProtocolTemp mid connState
-                       , numTraceWarmResponders
-                       , numTraceHotResponders) of
-                    (Hot, 0, 1) -> do
-                      InfoChannel.writeMessage infoChannel $ RemoteDemotedToWarm peer
-                      InfoChannel.writeMessage infoChannel $ WaitIdleRemote peer
-                    (Hot, _, 1) ->
+              connections        <- connections <$> readTVar stateVar
+              mResponderCounters <- Map.lookup peer <$> readTVar countersVar
+              case (Map.lookup peer connections,
+                    mResponderCounters) of
+                (Just (ConnectionState { csMux,
+                                         csMiniProtocolMap,
+                                         csVersionData,
+                                         csCompletionMap }),
+                 Just (ResponderCounters {
+                         numTraceHotResponders,
+                         numTraceWarmResponders })) -> do
+                  let miniProtocolTemp = getProtocolTemp mid csMiniProtocolMap
+                  case trace of
+                    Mux.TraceCleanExit {} -> do
+                      case ( miniProtocolTemp
+                           , numTraceWarmResponders
+                           , numTraceHotResponders) of
+                        (Hot, 0, 1) -> do
                           InfoChannel.writeMessage infoChannel $ RemoteDemotedToWarm peer
-                    (Hot, _, _) -> pure ()
-                    (_notHot, 1, 0) ->
-                      InfoChannel.writeMessage infoChannel $ WaitIdleRemote peer
-                    _otherwise -> pure ()
+                          InfoChannel.writeMessage infoChannel $ WaitIdleRemote peer
+                        (Hot, _, 1) ->
+                              InfoChannel.writeMessage infoChannel $ RemoteDemotedToWarm peer
+                        (Hot, _, _) -> pure ()
+                        (_orNot, 1, 0) ->
+                          InfoChannel.writeMessage infoChannel $ WaitIdleRemote peer
+                        _otherwise -> pure ()
 
-                  case miniProtocolTemp of
-                    Hot   -> adjustHotResponders pred peer
-                    _rest -> adjustWarmResponders pred peer
+                      case miniProtocolTemp of
+                        Hot    -> adjustHotResponders pred peer
+                        _orNot -> adjustWarmResponders pred peer
 
-                _otherwise -> return () -- muxStopped _should_ be on the queue
+                    _otherwise -> modifyTVar countersVar $ Map.delete peer
 
-              InfoChannel.writeMessage infoChannel $
-                MiniProtocolTerminated $ Terminated {
-                  tConnId = peer,
-                  tMux = csMux,
-                  tMiniProtocolData = csMiniProtocolMap Map.! mid,
-                  tDataFlow = connectionDataFlow csVersionData,
-                  tResult = csCompletionMap Map.! mid }
+                  InfoChannel.writeMessage infoChannel $
+                    MiniProtocolTerminated $ Terminated {
+                      tConnId = peer,
+                      tMux = csMux,
+                      tMiniProtocolData = csMiniProtocolMap Map.! mid,
+                      tDataFlow = connectionDataFlow csVersionData,
+                      tResult = csCompletionMap Map.! mid }
+
+                _otherwise -> modifyTVar countersVar $ Map.delete peer
+
 
         _ | True <- muxStopped trace -> atomically do
           State { connections } <- readTVar stateVar
@@ -312,7 +327,7 @@ with
             Map.adjust (\rc@ResponderCounters { numTraceHotResponders } -> rc { numTraceHotResponders = tick numTraceHotResponders } )
                        peer
 
-        getProtocolTemp mid ConnectionState { csMiniProtocolMap } =
+        getProtocolTemp mid csMiniProtocolMap  =
           let miniData = csMiniProtocolMap Map.! mid
            in mpdMiniProtocolTemp miniData
 
@@ -359,25 +374,30 @@ with
     inboundGovernorStep
       :: ConnectionManager muxMode socket peerAddr handle handleError m
       -> StrictTVar m (State muxMode initiatorCtx peerAddr versionData m a b)
-      -> m () --(State muxMode initiatorCtx peerAddr versionData m a b)
+      -> m ()
     inboundGovernorStep connectionManager stateVar = do
       time <- getMonotonicTime
       inactivityVar <- registerDelay inactionTimeout
       events <- atomically do
         state <- readTVar stateVar
         runFirstToFinish $
+            -- we deliberately read the info channel queue after
+            -- the relevant item in each firsttofinish to limit
+            -- contention
             FirstToFinish do
               -- mark connections as mature
               case maturedPeers time (freshDuplexPeers state) of
                 (as, _)     | Map.null as
                             -> retry
-                (as, fresh) -> pure [MaturedDuplexPeers as fresh]
-         <> ((: []) <$> Map.foldMapWithKey firstPeerCommitRemote (connections state))
+                (as, fresh) -> do
+                  (MaturedDuplexPeers as fresh :) <$> InfoChannel.readMessages infoChannel
+         <> FirstToFinish do
+              firstCommit <- runFirstToFinish $
+                Map.foldMapWithKey firstPeerCommitRemote (connections state)
+              (firstCommit :) <$> InfoChannel.readMessages infoChannel
          <> FirstToFinish do
               infoEvents <- InfoChannel.readMessages infoChannel
-              case infoEvents of
-                []     -> retry
-                events -> pure events
+              check (not . null $ infoEvents) >> pure infoEvents
          <> FirstToFinish do
               -- spin the inbound governor loop; it will re-run with new
               -- time, which allows to make some peers mature.

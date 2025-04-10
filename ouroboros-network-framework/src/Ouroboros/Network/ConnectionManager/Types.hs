@@ -222,6 +222,7 @@ data DataFlow
 data TimeoutExpired = Expired | Ticking
   deriving (Eq, Ord, Show)
 
+instance Exception TimeoutExpired
 
 
 -- | Either unnegotiated or negotiated unidirectional or duplex connections.

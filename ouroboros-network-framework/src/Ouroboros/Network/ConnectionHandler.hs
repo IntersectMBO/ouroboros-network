@@ -363,7 +363,7 @@ makeConnectionHandler muxTracer forkPolicy
                           hVersionData    = agreedOptions
                         }
                   atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
-                  let muxTracer' =
+                  let muxTracer' = contramap (Mx.WithBearer connectionId)
                         case inResponderMode of
                           InResponderMode (inboundGovChannelTracer, connectionDataFlow)
                             | Duplex <- connectionDataFlow agreedOptions ->
@@ -383,7 +383,9 @@ makeConnectionHandler muxTracer forkPolicy
                                 muxTracer
                   withBuffer (\buffer -> do
                       bearer <- mkMuxBearer sduTimeout socket buffer
-                      Mx.run (Mx.WithBearer connectionId `contramap` muxTracer')
+                      Mx.run Mx.MuxTracerBundle {
+                               muxTracer     = muxTracer',
+                               channelTracer = Mx.WithBearer connectionId `contramap` muxTracer }
                              mux bearer
                     )
 
@@ -458,7 +460,10 @@ makeConnectionHandler muxTracer forkPolicy
                   atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
                   withBuffer (\buffer -> do
                       bearer <- mkMuxBearer sduTimeout socket buffer
-                      Mx.run (Mx.WithBearer connectionId `contramap` (muxTracer <> inboundGovChannelTracer))
+                      let traceWithBearer = contramap $ Mx.WithBearer connectionId
+                      Mx.run Mx.MuxTracerBundle {
+                               muxTracer     = traceWithBearer (muxTracer <> inboundGovChannelTracer),
+                               channelTracer = traceWithBearer muxTracer }
                              mux bearer
                     )
               Right (HandshakeQueryResult vMap) -> do

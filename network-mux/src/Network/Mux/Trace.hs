@@ -10,6 +10,7 @@ module Network.Mux.Trace
   ( Error (..)
   , handleIOException
   , Trace (..)
+  , MuxTracerBundle (..)
   , BearerState (..)
   , WithBearer (..)
   , TraceLabelPeer (..)
@@ -30,7 +31,7 @@ import Quiet (Quiet (..))
 import Network.Mux.TCPInfo
 import Network.Mux.Types
 
-
+import Control.Tracer (Tracer)
 --
 -- Errors
 --
@@ -208,3 +209,13 @@ instance Show Trace where
     show (TraceTCPInfo _ len) = printf "TCPInfo len %d" len
 #endif
 
+-- | Bundle of tracers passed to mux
+--
+data MuxTracerBundle m = MuxTracerBundle {
+  channelTracer :: Tracer m Trace,
+  -- ^ the tracer for individual miniprotocol messages
+  -- to not spam the inbound governor information channel
+  muxTracer     :: Tracer m Trace
+  -- ^ the main tracer, which may contain the inbound governor
+  -- information channel tracer
+  }

@@ -45,6 +45,7 @@ module Network.Mux
   , traceBearerState
   , BearerState (..)
   , Trace (..)
+  , MuxTracerBundle (..)
   , WithBearer (..)
   ) where
 
@@ -212,14 +213,14 @@ run :: forall m (mode :: Mode).
        , MonadTimer m
        , MonadMask m
        )
-    => Tracer m Trace
+    => MuxTracerBundle m
     -- ^ this tracer may be special for inbound and
     -- outbound duplex modes - check inbound governor
     -- module for details.
     -> Mux mode m
     -> Bearer m
     -> m ()
-run tracer
+run tracerBundle@MuxTracerBundle { muxTracer = tracer }
     Mux { muxMiniProtocols,
           muxControlCmdQueue,
           muxStatus
@@ -244,7 +245,7 @@ run tracer
         -- Wait for someone to shut us down by calling muxStop or an error.
         -- Outstanding jobs are shut down Upon completion of withJobPool.
         withTimeoutSerial $ \timeout ->
-          monitor tracer
+          monitor tracerBundle
                   timeout
                   jobpool
                   egressQueue
@@ -282,12 +283,15 @@ miniProtocolJob
      , MonadThread m
      , MonadThrow (STM m)
      )
-  => Tracer m Trace
+  => MuxTracerBundle m
   -> EgressQueue m
   -> MiniProtocolState mode m
   -> MiniProtocolAction m
   -> JobPool.Job Group m JobResult
-miniProtocolJob tracer egressQueue
+miniProtocolJob MuxTracerBundle {
+                  muxTracer = tracer,
+                  channelTracer }
+                egressQueue
                 MiniProtocolState {
                   miniProtocolInfo =
                     MiniProtocolInfo {
@@ -310,7 +314,7 @@ miniProtocolJob tracer egressQueue
       labelThisThread (case miniProtocolNum of
                         MiniProtocolNum a -> "prtcl-" ++ show a)
       w <- newTVarIO BL.empty
-      let chan = muxChannel tracer egressQueue (Wanton w)
+      let chan = muxChannel channelTracer egressQueue (Wanton w)
                             miniProtocolNum miniProtocolDirEnum
                             miniProtocolIngressQueue
       (result, remainder) <- miniProtocolAction chan
@@ -405,14 +409,16 @@ monitor :: forall mode m.
            , Alternative (STM m)
            , MonadThrow (STM m)
            )
-        => Tracer m Trace
+        => MuxTracerBundle m
         -> TimeoutFn m
         -> JobPool.JobPool Group m JobResult
         -> EgressQueue m
         -> StrictTQueue m (ControlCmd mode m)
         -> StrictTVar m Status
         -> m ()
-monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
+monitor tracerBundle@MuxTracerBundle {
+          muxTracer = tracer }
+        timeout jobpool egressQueue cmdQueue muxStatus =
     -- the tracer may be hooked into the inbound governor
     -- for inbound or outbound duplex connections, so care
     -- should be excercised when ordering traces.
@@ -496,14 +502,14 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
             Nothing ->
               JobPool.forkJob jobpool $
                 miniProtocolJob
-                  tracer
+                  tracerBundle
                   egressQueue
                   ptclState
                   ptclAction
             Just cap ->
               JobPool.forkJobOn cap jobpool $
                 miniProtocolJob
-                  tracer
+                  tracerBundle
                   egressQueue
                   ptclState
                   ptclAction
@@ -603,14 +609,14 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
         Nothing ->
           JobPool.forkJob jobpool $
             miniProtocolJob
-              tracer
+              tracerBundle
               egressQueue
               ptclState
               ptclAction
         Just cap ->
           JobPool.forkJobOn cap jobpool $
             miniProtocolJob
-              tracer
+              tracerBundle
               egressQueue
               ptclState
               ptclAction
