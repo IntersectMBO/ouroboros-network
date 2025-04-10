@@ -68,7 +68,6 @@ import Cardano.KESAgent.KES.Evolution (
   EvolutionConfig (..),
   defEvolutionConfig,
  )
-import Cardano.KESAgent.Util.Formatting
 import Cardano.KESAgent.Processes.Agent.CommonActions
 import Cardano.KESAgent.Processes.Agent.Context
 import Cardano.KESAgent.Processes.Agent.ControlDrivers
@@ -84,6 +83,7 @@ import Cardano.KESAgent.Protocols.AgentInfo
 import Cardano.KESAgent.Protocols.VersionHandshake.Driver (versionHandshakeDriver)
 import Cardano.KESAgent.Protocols.VersionHandshake.Peers (versionHandshakeServer)
 import Cardano.KESAgent.Protocols.VersionedProtocol
+import Cardano.KESAgent.Util.Formatting
 import Cardano.KESAgent.Util.PlatformPoison (poisonWindows)
 
 import Ouroboros.Network.RawBearer

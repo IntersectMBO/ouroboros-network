@@ -205,8 +205,10 @@ pNormalModeOptions =
           <> short 's'
           <> value Nothing
           <> metavar "PATH"
-          <> help ("Socket address for 'service' connections. "
-                    <> "($KES_AGENT_SERVICE_PATH)")
+          <> help
+            ( "Socket address for 'service' connections. "
+                <> "($KES_AGENT_SERVICE_PATH)"
+            )
       )
     <*> option
       (Just <$> str)
@@ -214,8 +216,10 @@ pNormalModeOptions =
           <> short 'c'
           <> value Nothing
           <> metavar "PATH"
-          <> help ("Socket address for 'control' connections (empty to disable). "
-                    <> "($KES_AGENT_SERVICE_PATH)")
+          <> help
+            ( "Socket address for 'control' connections (empty to disable). "
+                <> "($KES_AGENT_SERVICE_PATH)"
+            )
       )
     <*> ( Set.fromList
             <$> many
@@ -223,8 +227,10 @@ pNormalModeOptions =
                   ( long "bootstrap-address"
                       <> short 'b'
                       <> metavar "PATH"
-                      <> help ("Socket address for 'bootstrapping' connections. "
-                                <> "($KES_AGENT_BOOTSTRAP_PATHS; path separator = ':')")
+                      <> help
+                        ( "Socket address for 'bootstrapping' connections. "
+                            <> "($KES_AGENT_BOOTSTRAP_PATHS; path separator = ':')"
+                        )
                   )
               )
         )
@@ -234,25 +240,30 @@ pNormalModeOptions =
           <> short 'l'
           <> value Nothing
           <> metavar "LEVEL"
-          <> help ("Logging level. One of 'debug', 'info', 'notice', 'warn', 'error', 'critical', 'emergency'. "
-                    <> "($KES_AGENT_LOG_LEVEL)")
-          
+          <> help
+            ( "Logging level. One of 'debug', 'info', 'notice', 'warn', 'error', 'critical', 'emergency'. "
+                <> "($KES_AGENT_LOG_LEVEL)"
+            )
       )
     <*> option
       (Just <$> str)
       ( long "cold-verification-key"
           <> value Nothing
           <> metavar "PATH"
-          <> help ("Cold verification key file, used to validate OpCerts upon receipt. "
-                    <> "($KES_AGENT_COLD_VK)")
+          <> help
+            ( "Cold verification key file, used to validate OpCerts upon receipt. "
+                <> "($KES_AGENT_COLD_VK)"
+            )
       )
     <*> option
       (Just <$> str)
       ( long "genesis-file"
           <> value Nothing
           <> metavar "PATH"
-          <> help ("Genesis file (mainnet-ERA-genesis.json). "
-                    <> "($KES_AGENT_GENESIS_FILE)")
+          <> help
+            ( "Genesis file (mainnet-ERA-genesis.json). "
+                <> "($KES_AGENT_GENESIS_FILE)"
+            )
       )
 
 readLogLevel :: String -> Either String Priority

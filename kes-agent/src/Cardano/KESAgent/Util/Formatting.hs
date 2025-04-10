@@ -11,7 +11,7 @@ import Cardano.Crypto.KES.Class (
  )
 import Text.Printf
 
-import Cardano.KESAgent.KES.Bundle (TaggedBundle (..), Bundle (..), Timestamp (..))
+import Cardano.KESAgent.KES.Bundle (Bundle (..), TaggedBundle (..), Timestamp (..))
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import Cardano.KESAgent.KES.OCert (OCert (..))
 import Cardano.KESAgent.Util.Pretty

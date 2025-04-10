@@ -61,10 +61,10 @@ white :: Color
 white = Color Dull Regular White
 
 bright :: Color -> Color
-bright c = c { colorBrightness = Bright }
+bright c = c {colorBrightness = Bright}
 
 bold :: Color -> Color
-bold c = c { colorWeight = Bold }
+bold c = c {colorWeight = Bold}
 
 colorNumber :: Color -> Int
 colorNumber c = colorNumber3 (colorBase c) + fromEnum (colorBrightness c) * 60
@@ -77,7 +77,7 @@ colorEscape c =
   colorEscapeBase c ++ weightEscape (colorWeight c)
 
 colorEscapeBase :: Color -> String
-colorEscapeBase Color { colorBase = DefaultColor } = resetEscape
+colorEscapeBase Color {colorBase = DefaultColor} = resetEscape
 colorEscapeBase c = "\ESC[" ++ show (colorNumber c) ++ "m"
 
 weightEscape :: FontWeight -> String
@@ -107,10 +107,11 @@ colorsActive ColorsAuto h = hIsTerminalDevice h
 applyColors :: ColorMode -> Handle -> Color -> String -> IO String
 applyColors mode h c str = do
   active <- colorsActive mode h
-  if active then
-    return (colorize c str)
-  else
-    return str
+  if active
+    then
+      return (colorize c str)
+    else
+      return str
 
 hcPutStr :: ColorMode -> Handle -> Color -> String -> IO ()
 hcPutStr mode h c str = hPutStr h =<< applyColors mode h c str

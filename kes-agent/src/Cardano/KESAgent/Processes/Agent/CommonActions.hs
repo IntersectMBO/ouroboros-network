@@ -55,10 +55,10 @@ import Cardano.KESAgent.KES.OCert (
   OCert (..),
   validateOCert,
  )
-import Cardano.KESAgent.Util.Formatting
 import Cardano.KESAgent.Processes.Agent.Context
 import Cardano.KESAgent.Processes.Agent.Type
 import Cardano.KESAgent.Protocols.RecvResult (RecvResult (..))
+import Cardano.KESAgent.Util.Formatting
 import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting (
   CRef,

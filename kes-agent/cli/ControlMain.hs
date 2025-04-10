@@ -101,7 +101,7 @@ instance Semigroup GenKeyOptions where
     GenKeyOptions (c1 <> c2) (vk1 <|> vk2)
 
 instance WithCommonOptions GenKeyOptions where
-  withCommonOptions c o = o { gkoCommon = c <> gkoCommon o }
+  withCommonOptions c o = o {gkoCommon = c <> gkoCommon o}
 
 defGenKeyOptions :: GenKeyOptions =
   GenKeyOptions
@@ -129,7 +129,7 @@ instance Semigroup QueryKeyOptions where
     QueryKeyOptions (c1 <> c2) (vk1 <|> vk2)
 
 instance WithCommonOptions QueryKeyOptions where
-  withCommonOptions c o = o { qkoCommon = c <> qkoCommon o }
+  withCommonOptions c o = o {qkoCommon = c <> qkoCommon o}
 
 defQueryKeyOptions :: QueryKeyOptions =
   QueryKeyOptions
@@ -156,7 +156,7 @@ instance Semigroup DropStagedKeyOptions where
     DropStagedKeyOptions (c1 <> c2)
 
 instance WithCommonOptions DropStagedKeyOptions where
-  withCommonOptions c o = o { dskoCommon = c <> dskoCommon o }
+  withCommonOptions c o = o {dskoCommon = c <> dskoCommon o}
 
 defDropStagedKeyOptions :: DropStagedKeyOptions =
   DropStagedKeyOptions
@@ -182,7 +182,7 @@ instance Semigroup DropKeyOptions where
     DropKeyOptions (c1 <> c2)
 
 instance WithCommonOptions DropKeyOptions where
-  withCommonOptions c o = o { dkoCommon = c <> dkoCommon o }
+  withCommonOptions c o = o {dkoCommon = c <> dkoCommon o}
 
 defDropKeyOptions :: DropKeyOptions =
   DropKeyOptions
@@ -209,7 +209,7 @@ instance Semigroup InstallKeyOptions where
     InstallKeyOptions (c1 <> c2) (vk1 <|> vk2)
 
 instance WithCommonOptions InstallKeyOptions where
-  withCommonOptions c o = o { ikoCommon = c <> ikoCommon o }
+  withCommonOptions c o = o {ikoCommon = c <> ikoCommon o}
 
 defInstallKeyOptions :: InstallKeyOptions =
   InstallKeyOptions
@@ -233,8 +233,10 @@ pCommonOptions =
           <> short 'c'
           <> value Nothing
           <> metavar "ADDR"
-          <> help ("Socket address for 'control' connections to a running kes-agent process. "
-                    <> "($KES_AGENT_CONTROL_PATH)")
+          <> help
+            ( "Socket address for 'control' connections to a running kes-agent process. "
+                <> "($KES_AGENT_CONTROL_PATH)"
+            )
       )
     <*> option
       (Just <$> auto)
@@ -248,8 +250,10 @@ pCommonOptions =
       ( long "retry-interval"
           <> long "retry-delay"
           <> value Nothing
-          <> help ("Connection retry interval (milliseconds). "
-                    <> "($KES_AGENT_CONTROL_RETRY_INTERVAL)")
+          <> help
+            ( "Connection retry interval (milliseconds). "
+                <> "($KES_AGENT_CONTROL_RETRY_INTERVAL)"
+            )
       )
     <*> flag
       Nothing
@@ -261,8 +265,10 @@ pCommonOptions =
       (Just <$> auto)
       ( long "retry-attempts"
           <> value Nothing
-          <> help ("Number of connection retry attempts. "
-                    <> "($KES_AGENT_CONTROL_RETRY_ATTEMPTS)")
+          <> help
+            ( "Number of connection retry attempts. "
+                <> "($KES_AGENT_CONTROL_RETRY_ATTEMPTS)"
+            )
       )
 
 pGenKeyOptions =
@@ -325,9 +331,9 @@ programOptionsWithCommonOptions c (RunGetInfo o) = RunGetInfo (withCommonOptions
 
 pProgramOptions :: Parser ProgramOptions
 pProgramOptions =
-  programOptionsWithCommonOptions <$>
-    pCommonOptions <*>
-    subparser
+  programOptionsWithCommonOptions
+    <$> pCommonOptions
+    <*> subparser
       ( command "gen-staged-key" (info (RunGenKey <$> pGenKeyOptions) idm)
           <> command "drop-staged-key" (info (RunDropStagedKey <$> pDropStagedKeyOptions) idm)
           <> command "export-staged-vkey" (info (RunQueryKey <$> pQueryKeyOptions) idm)

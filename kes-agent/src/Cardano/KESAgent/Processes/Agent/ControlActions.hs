@@ -50,12 +50,12 @@ import Cardano.KESAgent.KES.Evolution (
   getCurrentKESPeriodWith,
  )
 import Cardano.KESAgent.KES.OCert (OCert (..))
-import Cardano.KESAgent.Util.Formatting
 import Cardano.KESAgent.Processes.Agent.CommonActions
 import Cardano.KESAgent.Processes.Agent.Context
 import Cardano.KESAgent.Processes.Agent.Type
 import Cardano.KESAgent.Protocols.AgentInfo
 import Cardano.KESAgent.Protocols.RecvResult (RecvResult (..))
+import Cardano.KESAgent.Util.Formatting
 import Cardano.KESAgent.Util.RefCounting (
   newCRef,
   releaseCRef,

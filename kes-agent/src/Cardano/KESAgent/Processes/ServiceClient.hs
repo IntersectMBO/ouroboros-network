@@ -18,7 +18,7 @@ module Cardano.KESAgent.Processes.ServiceClient (
 )
 where
 
-import Cardano.KESAgent.KES.Bundle (TaggedBundle (..), Bundle (..))
+import Cardano.KESAgent.KES.Bundle (Bundle (..), TaggedBundle (..))
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import Cardano.KESAgent.Protocols.RecvResult (RecvResult (..))
 import qualified Cardano.KESAgent.Protocols.Service.V0.Driver as SP0
@@ -30,13 +30,13 @@ import qualified Cardano.KESAgent.Protocols.Service.V1.Protocol as SP1
 import qualified Cardano.KESAgent.Protocols.Service.V2.Driver as SP2
 import qualified Cardano.KESAgent.Protocols.Service.V2.Peers as SP2
 import qualified Cardano.KESAgent.Protocols.Service.V2.Protocol as SP2
-import Cardano.KESAgent.Util.Formatting
 import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Protocols.Types
 import Cardano.KESAgent.Protocols.VersionHandshake.Driver
 import Cardano.KESAgent.Protocols.VersionHandshake.Peers
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Serialization.DirectCodec
+import Cardano.KESAgent.Util.Formatting
 import Cardano.KESAgent.Util.PlatformPoison (poisonWindows)
 import Cardano.KESAgent.Util.Pretty (Pretty (..))
 import Cardano.KESAgent.Util.RetrySocket (retrySocket)
@@ -158,8 +158,8 @@ mkServiceClientDriverSP0 =
           (SP0.serviceDriver bearer $ ServiceClientDriverTrace >$< tracer)
           ( SP0.serviceReceiver $
               \bundle ->
-                handleKey (TaggedBundle (Just bundle) 0) <*
-                  traceWith tracer (ServiceClientReceivedKey $ formatTaggedBundle 0 (bundleOC bundle))
+                handleKey (TaggedBundle (Just bundle) 0)
+                  <* traceWith tracer (ServiceClientReceivedKey $ formatTaggedBundle 0 (bundleOC bundle))
           )
   )
 
@@ -179,8 +179,8 @@ mkServiceClientDriverSP1 =
         runPeerWithDriver
           (SP1.serviceDriver bearer $ ServiceClientDriverTrace >$< tracer)
           ( SP1.serviceReceiver $ \bundle ->
-              handleKey (TaggedBundle (Just bundle) 0) <*
-                  traceWith tracer (ServiceClientReceivedKey $ formatTaggedBundle 0 (bundleOC bundle))
+              handleKey (TaggedBundle (Just bundle) 0)
+                <* traceWith tracer (ServiceClientReceivedKey $ formatTaggedBundle 0 (bundleOC bundle))
           )
   )
 
@@ -200,15 +200,16 @@ mkServiceClientDriverSP2 =
         runPeerWithDriver
           (SP2.serviceDriver bearer $ ServiceClientDriverTrace >$< tracer)
           ( SP2.serviceReceiver
-              (\bundle -> do
+              ( \bundle -> do
                   result <- handleKey bundle
                   case result of
-                    RecvOK -> 
+                    RecvOK ->
                       traceWith tracer $
                         ServiceClientReceivedKey
-                          (formatTaggedBundleMaybe
-                            (taggedBundleTimestamp bundle)
-                            (bundleOC <$> taggedBundle bundle))
+                          ( formatTaggedBundleMaybe
+                              (taggedBundleTimestamp bundle)
+                              (bundleOC <$> taggedBundle bundle)
+                          )
                     _ ->
                       traceWith tracer $ ServiceClientDeclinedKey (pretty result)
                   return result
