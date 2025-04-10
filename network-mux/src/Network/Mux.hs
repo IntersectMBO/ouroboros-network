@@ -256,12 +256,20 @@ run tracerBundle@MuxTracerBundle { muxTracer = tracer }
     -- an exception.  Setting 'muxStatus' is necessary to resolve a possible
     -- deadlock of mini-protocol completion action.
     `catch` \(SomeAsyncException e) -> do
-       atomically $ writeTVar muxStatus (Failed $ toException e)
-       -- before bailing out, we let the inbound governor tracer
-       -- clean up its state for inbound and outbound duplex
-       -- connections.
-       traceWith tracer (TraceState Dead)
+       case e of
+         _ | Just ColdBlooded <- fromException (toException e) ->
+           -- we don't want to get stuck writing to the info channel queue
+           -- when the server is shutting down and the IG is not draining
+           -- the trace queue
+           atomically $ writeTVar muxStatus (Failed $ toException ColdBlooded)
+         _otherwise -> do
+           atomically $ writeTVar muxStatus (Failed $ toException e)
+           -- before bailing out, we let the inbound governor tracer
+           -- clean up its state for inbound and outbound duplex
+           -- connections.
+           traceWith tracer (TraceState Dead)
        throwIO e
+
   where
     muxerJob egressQueue =
       JobPool.Job (muxer egressQueue bearer)

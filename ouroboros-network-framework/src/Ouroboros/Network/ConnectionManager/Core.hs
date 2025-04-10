@@ -578,7 +578,7 @@ with args@Arguments {
             -- time and making us go above timeout schedules.
             traverse
               (\thread -> do
-                throwTo (asyncThreadId thread) AsyncCancelled
+                throwTo (asyncThreadId thread) Mx.ColdBlooded
                 pure thread
               )
               (getConnThread connState)
