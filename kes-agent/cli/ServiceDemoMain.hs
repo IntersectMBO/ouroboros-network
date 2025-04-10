@@ -96,6 +96,7 @@ serviceTracePrio ServiceClientSocketClosed {} = Notice
 serviceTracePrio ServiceClientConnected {} = Notice
 serviceTracePrio ServiceClientAttemptReconnect {} = Info
 serviceTracePrio ServiceClientReceivedKey {} = Notice
+serviceTracePrio ServiceClientDeclinedKey {} = Notice
 serviceTracePrio ServiceClientDroppedKey {} = Notice
 serviceTracePrio ServiceClientAbnormalTermination {} = Error
 serviceTracePrio ServiceClientOpCertNumberCheck {} = Debug
@@ -108,13 +109,13 @@ formatServiceTrace msg =
   let prio = serviceTracePrio msg
   in (prio, pretty msg)
 
-stdoutStringTracer :: Priority -> MVar IO () -> Tracer IO (Priority, String)
-stdoutStringTracer maxPrio lock = Tracer $ \(prio, msg) -> do
+stdoutStringTracer :: ColorMode -> Priority -> MVar IO () -> Tracer IO (Priority, String)
+stdoutStringTracer mode maxPrio lock = Tracer $ \(prio, msg) -> do
   let color = prioColor prio
   timestamp <- utcTimeToPOSIXSeconds <$> getCurrentTime
   when (prio <= maxPrio) $
     withMVar lock $ \_ -> do
-      hcPutStrLn stdout color $
+      hcPutStrLn mode stdout color $
         printf
           "%15.3f %-8s %s"
           (realToFrac timestamp :: Double)
@@ -158,7 +159,7 @@ main = do
 
   let maxPrio = Debug
   logLock <- newMVar ()
-  let tracer = stdoutStringTracer maxPrio logLock
+  let tracer = stdoutStringTracer ColorsAuto maxPrio logLock
 
   let stateTracer = contramap (\(old, new) -> (Notice, "State: " ++ show old ++ " -> " ++ show new)) tracer
   stateVar <- newMVar ServiceClientNotRunning

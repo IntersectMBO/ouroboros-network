@@ -86,6 +86,7 @@ library
                    Cardano.KESAgent.Protocols.VersionedProtocol
                    Cardano.KESAgent.Protocols.RecvResult
                    Cardano.KESAgent.Protocols.StandardCrypto
+                   Cardano.KESAgent.Util.Formatting
                    Cardano.KESAgent.Util.HexBS
                    Cardano.KESAgent.Util.Pretty
                    Cardano.KESAgent.Util.RefCounting

@@ -406,16 +406,17 @@ agentTracePrio AgentControlDriverTrace {} = Debug
 agentTracePrio (AgentBootstrapTrace ServiceClientVersionHandshakeTrace {}) = Debug
 agentTracePrio (AgentBootstrapTrace ServiceClientVersionHandshakeFailed {}) = Error
 agentTracePrio (AgentBootstrapTrace ServiceClientDriverTrace {}) = Debug
-agentTracePrio (AgentBootstrapTrace ServiceClientSocketClosed {}) = Notice
+agentTracePrio (AgentBootstrapTrace ServiceClientSocketClosed {}) = Info
 agentTracePrio (AgentBootstrapTrace ServiceClientConnected {}) = Notice
 agentTracePrio (AgentBootstrapTrace ServiceClientAttemptReconnect {}) = Info
 agentTracePrio (AgentBootstrapTrace ServiceClientReceivedKey {}) = Notice
+agentTracePrio (AgentBootstrapTrace ServiceClientDeclinedKey {}) = Info
 agentTracePrio (AgentBootstrapTrace ServiceClientDroppedKey {}) = Notice
 agentTracePrio (AgentBootstrapTrace ServiceClientAbnormalTermination {}) = Error
 agentTracePrio (AgentBootstrapTrace ServiceClientOpCertNumberCheck {}) = Debug
 agentTracePrio AgentReplacingPreviousKey {} = Notice
 agentTracePrio AgentDroppingKey {} = Notice
-agentTracePrio AgentRejectingKey {} = Notice
+agentTracePrio AgentRejectingKey {} = Info
 agentTracePrio AgentInstallingNewKey {} = Notice
 agentTracePrio AgentInstallingKeyDrop {} = Notice
 agentTracePrio AgentGeneratedStagedKey {} = Notice
@@ -423,12 +424,12 @@ agentTracePrio AgentCouldNotGenerateStagedKey {} = Warning
 agentTracePrio AgentNoStagedKeyToDrop {} = Notice
 agentTracePrio AgentDroppedStagedKey {} = Notice
 agentTracePrio AgentSkippingOldKey {} = Info
-agentTracePrio AgentServiceSocketClosed {} = Notice
+agentTracePrio AgentServiceSocketClosed {} = Info
 agentTracePrio AgentListeningOnServiceSocket {} = Notice
 agentTracePrio AgentServiceClientConnected {} = Notice
 agentTracePrio AgentServiceClientDisconnected {} = Notice
 agentTracePrio AgentServiceSocketError {} = Error
-agentTracePrio AgentControlSocketClosed {} = Notice
+agentTracePrio AgentControlSocketClosed {} = Info
 agentTracePrio AgentListeningOnControlSocket {} = Notice
 agentTracePrio AgentControlClientConnected {} = Notice
 agentTracePrio AgentControlClientDisconnected {} = Notice
@@ -456,14 +457,14 @@ agentTraceFormatBS = encodeUtf8 . Text.pack . pretty
 
 -- | Print log messages on 'stdout'. Requires a lock to avoid concurrent log
 -- messages from different threads getting mangled together.
-stdoutAgentTracer :: Priority -> MVar IO () -> Tracer IO AgentTrace
-stdoutAgentTracer maxPrio lock = Tracer $ \msg -> do
+stdoutAgentTracer :: ColorMode -> Priority -> MVar IO () -> Tracer IO AgentTrace
+stdoutAgentTracer mode maxPrio lock = Tracer $ \msg -> do
   timestamp <- utcTimeToPOSIXSeconds <$> getCurrentTime
   let prio = agentTracePrio msg
       color = prioColor prio
   when (prio <= maxPrio) $
     withMVar lock $ \_ -> do
-      hcPutStrLn stdout color $
+      hcPutStrLn mode stdout color $
         printf
           "%15.3f %-8s %s"
           (realToFrac timestamp :: Double)
@@ -555,7 +556,7 @@ runNormally configPathMay nmo' = withIOManager $ \ioManager -> do
         (Proxy @StandardCrypto)
         (socketSnocket ioManager)
         makeSocketRawBearer
-        agentOptions {agentTracer = stdoutAgentTracer maxPrio logLock}
+        agentOptions {agentTracer = stdoutAgentTracer ColorsAuto maxPrio logLock}
     )
     finalizeAgent
     runAgent

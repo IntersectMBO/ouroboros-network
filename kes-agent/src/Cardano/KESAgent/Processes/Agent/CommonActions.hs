@@ -55,6 +55,7 @@ import Cardano.KESAgent.KES.OCert (
   OCert (..),
   validateOCert,
  )
+import Cardano.KESAgent.Util.Formatting
 import Cardano.KESAgent.Processes.Agent.Context
 import Cardano.KESAgent.Processes.Agent.Type
 import Cardano.KESAgent.Protocols.RecvResult (RecvResult (..))
@@ -216,33 +217,6 @@ withStagedKey agent context f = do
     atomically $ putTMVar (agentStagedKeyVar agent) skp
     agentTrace agent (AgentLockReleased context)
     return retval
-
--- | Format a key bundle, or key deletion, for the purpose of trace logging.
-formatTaggedBundleMaybe ::
-  KESAlgorithm (KES c) =>
-  Timestamp ->
-  Maybe (OCert c) ->
-  String
-formatTaggedBundleMaybe ts Nothing =
-  printf "DELETE (%lu)" (timestampValue ts)
-formatTaggedBundleMaybe ts (Just ocert) =
-  formatTaggedBundle ts ocert
-
--- | Format a key bundle for the purpose of trace logging.
-formatTaggedBundle ::
-  KESAlgorithm (KES c) =>
-  Timestamp ->
-  OCert c ->
-  String
-formatTaggedBundle ts ocert =
-  let serialNumber = ocertN ocert
-  in printf "%i (%lu) = %s" serialNumber (timestampValue ts) (formatVK $ ocertVkHot ocert)
-
-formatVK ::
-  KESAlgorithm kes =>
-  VerKeyKES kes ->
-  String
-formatVK = pretty . rawSerialiseVerKeyKES
 
 -- | Initialize a new 'Agent'. This will not spawn the actual agent process,
 -- just set up everything it needs.

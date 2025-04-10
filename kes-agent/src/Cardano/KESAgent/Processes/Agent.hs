@@ -68,6 +68,7 @@ import Cardano.KESAgent.KES.Evolution (
   EvolutionConfig (..),
   defEvolutionConfig,
  )
+import Cardano.KESAgent.Util.Formatting
 import Cardano.KESAgent.Processes.Agent.CommonActions
 import Cardano.KESAgent.Processes.Agent.Context
 import Cardano.KESAgent.Processes.Agent.ControlDrivers
