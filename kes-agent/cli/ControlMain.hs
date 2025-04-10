@@ -83,6 +83,12 @@ optFromEnv = do
       , optRetryExponential = Nothing
       }
 
+class WithCommonOptions a where
+  withCommonOptions :: CommonOptions -> a -> a
+
+instance WithCommonOptions CommonOptions where
+  withCommonOptions = (<>)
+
 data GenKeyOptions
   = GenKeyOptions
   { gkoCommon :: CommonOptions
@@ -93,6 +99,9 @@ data GenKeyOptions
 instance Semigroup GenKeyOptions where
   GenKeyOptions c1 vk1 <> GenKeyOptions c2 vk2 =
     GenKeyOptions (c1 <> c2) (vk1 <|> vk2)
+
+instance WithCommonOptions GenKeyOptions where
+  withCommonOptions c o = o { gkoCommon = c <> gkoCommon o }
 
 defGenKeyOptions :: GenKeyOptions =
   GenKeyOptions
@@ -119,6 +128,9 @@ instance Semigroup QueryKeyOptions where
   QueryKeyOptions c1 vk1 <> QueryKeyOptions c2 vk2 =
     QueryKeyOptions (c1 <> c2) (vk1 <|> vk2)
 
+instance WithCommonOptions QueryKeyOptions where
+  withCommonOptions c o = o { qkoCommon = c <> qkoCommon o }
+
 defQueryKeyOptions :: QueryKeyOptions =
   QueryKeyOptions
     { qkoCommon = defCommonOptions
@@ -143,6 +155,9 @@ instance Semigroup DropStagedKeyOptions where
   DropStagedKeyOptions c1 <> DropStagedKeyOptions c2 =
     DropStagedKeyOptions (c1 <> c2)
 
+instance WithCommonOptions DropStagedKeyOptions where
+  withCommonOptions c o = o { dskoCommon = c <> dskoCommon o }
+
 defDropStagedKeyOptions :: DropStagedKeyOptions =
   DropStagedKeyOptions
     { dskoCommon = defCommonOptions
@@ -165,6 +180,9 @@ newtype DropKeyOptions
 instance Semigroup DropKeyOptions where
   DropKeyOptions c1 <> DropKeyOptions c2 =
     DropKeyOptions (c1 <> c2)
+
+instance WithCommonOptions DropKeyOptions where
+  withCommonOptions c o = o { dkoCommon = c <> dkoCommon o }
 
 defDropKeyOptions :: DropKeyOptions =
   DropKeyOptions
@@ -189,6 +207,9 @@ data InstallKeyOptions
 instance Semigroup InstallKeyOptions where
   InstallKeyOptions c1 vk1 <> InstallKeyOptions c2 vk2 =
     InstallKeyOptions (c1 <> c2) (vk1 <|> vk2)
+
+instance WithCommonOptions InstallKeyOptions where
+  withCommonOptions c o = o { ikoCommon = c <> ikoCommon o }
 
 defInstallKeyOptions :: InstallKeyOptions =
   InstallKeyOptions
@@ -291,15 +312,26 @@ data ProgramOptions
   | RunGetInfo CommonOptions -- for now
   deriving (Show, Eq)
 
+programOptionsWithCommonOptions :: CommonOptions -> ProgramOptions -> ProgramOptions
+programOptionsWithCommonOptions c (RunGenKey o) = RunGenKey (withCommonOptions c o)
+programOptionsWithCommonOptions c (RunQueryKey o) = RunQueryKey (withCommonOptions c o)
+programOptionsWithCommonOptions c (RunDropStagedKey o) = RunDropStagedKey (withCommonOptions c o)
+programOptionsWithCommonOptions c (RunInstallKey o) = RunInstallKey (withCommonOptions c o)
+programOptionsWithCommonOptions c (RunDropKey o) = RunDropKey (withCommonOptions c o)
+programOptionsWithCommonOptions c (RunGetInfo o) = RunGetInfo (withCommonOptions c o)
+
+pProgramOptions :: Parser ProgramOptions
 pProgramOptions =
-  subparser
-    ( command "gen-staged-key" (info (RunGenKey <$> pGenKeyOptions) idm)
-        <> command "drop-staged-key" (info (RunDropStagedKey <$> pDropStagedKeyOptions) idm)
-        <> command "export-staged-vkey" (info (RunQueryKey <$> pQueryKeyOptions) idm)
-        <> command "install-key" (info (RunInstallKey <$> pInstallKeyOptions) idm)
-        <> command "drop-key" (info (RunDropKey <$> pDropKeyOptions) idm)
-        <> command "info" (info (RunGetInfo <$> pCommonOptions) idm)
-    )
+  programOptionsWithCommonOptions <$>
+    pCommonOptions <*>
+    subparser
+      ( command "gen-staged-key" (info (RunGenKey <$> pGenKeyOptions) idm)
+          <> command "drop-staged-key" (info (RunDropStagedKey <$> pDropStagedKeyOptions) idm)
+          <> command "export-staged-vkey" (info (RunQueryKey <$> pQueryKeyOptions) idm)
+          <> command "install-key" (info (RunInstallKey <$> pInstallKeyOptions) idm)
+          <> command "drop-key" (info (RunDropKey <$> pDropKeyOptions) idm)
+          <> command "info" (info (RunGetInfo <$> pCommonOptions) idm)
+      )
 
 eitherError :: Either String a -> IO a
 eitherError (Left err) = error err
