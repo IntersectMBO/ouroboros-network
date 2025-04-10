@@ -3,15 +3,10 @@
 module Cardano.KESAgent.Util.Formatting
 where
 
-import Cardano.Crypto.KES.Class (
-  KESAlgorithm (..),
-  SignKeyWithPeriodKES (..),
-  deriveVerKeyKES,
-  forgetSignKeyKES,
- )
+import Cardano.Crypto.KES.Class (KESAlgorithm (..))
 import Text.Printf
 
-import Cardano.KESAgent.KES.Bundle (Bundle (..), TaggedBundle (..), Timestamp (..))
+import Cardano.KESAgent.KES.Bundle (Timestamp (..))
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import Cardano.KESAgent.KES.OCert (OCert (..))
 import Cardano.KESAgent.Util.Pretty

@@ -42,7 +42,6 @@ import Data.Maybe (isJust, isNothing)
 import Data.Proxy (Proxy (..))
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket (Snocket (..))
-import Text.Printf
 
 import Cardano.KESAgent.KES.Bundle (Bundle (..), TaggedBundle (..), Timestamp (..))
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
@@ -59,7 +58,6 @@ import Cardano.KESAgent.Processes.Agent.Context
 import Cardano.KESAgent.Processes.Agent.Type
 import Cardano.KESAgent.Protocols.RecvResult (RecvResult (..))
 import Cardano.KESAgent.Util.Formatting
-import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting (
   CRef,
   CRefEvent (..),
