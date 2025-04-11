@@ -334,46 +334,43 @@ with
              remoteStateMap
       throwIO e
 
-    -- The inbound protocol governor recursive loop.  The 'connections' is
-    -- updated as we recurse.
-    --
-    inboundGovernorLoop
-      :: StrictTVar m (PublicState peerAddr versionData)
-      -> State muxMode initiatorCtx peerAddr versionData m a b
-      -> m Void
-    inboundGovernorLoop var !state = do
+    -- The inbound protocol governor single step, which may
+    -- process multipe events from the information channel
+    inboundGovernorStep
+      :: ConnectionManager muxMode socket peerAddr handle handleError m
+      -> StrictTVar m (State muxMode initiatorCtx peerAddr versionData m a b)
+      -> m ()
+    inboundGovernorStep connectionManager stateVar = do
       time <- getMonotonicTime
       inactivityVar <- registerDelay inactionTimeout
+      events <- atomically do
+        state <- readTVar stateVar
+        runFirstToFinish $
+            -- we deliberately read the info channel queue after
+            -- the relevant item in each firsttofinish to limit
+            -- contention
+            FirstToFinish do
+              -- mark connections as mature
+              case maturedPeers time (freshDuplexPeers state) of
+                (as, _)     | Map.null as
+                            -> retry
+                (as, fresh) ->
+                  (MaturedDuplexPeers as fresh :) <$> InfoChannel.readMessages infoChannel
+         <> FirstToFinish do
+              firstCommit <- runFirstToFinish $
+                Map.foldMapWithKey firstPeerCommitRemote (connections state)
+              (firstCommit :) <$> InfoChannel.readMessages infoChannel
+         <> FirstToFinish do
+              muxEvents <- InfoChannel.readMessages infoChannel
+              check (not . null $ muxEvents) >> pure muxEvents
+         <> FirstToFinish do
+              -- spin the inbound governor loop; it will re-run with new
+              -- time, which allows to make some peers mature.
+              LazySTM.readTVar inactivityVar >>= check >> pure [InactivityTimeout]
 
-      event
-        <- atomically $ runFirstToFinish $
-               FirstToFinish  (
-                 -- mark connections as mature
-                 case maturedPeers time (freshDuplexPeers state) of
-                   (as, _)     | Map.null as
-                               -> retry
-                   (as, fresh) -> pure $ MaturedDuplexPeers as fresh
-               )
-            <> Map.foldMapWithKey
-                 (    firstMuxToFinish
-                   <> firstPeerDemotedToCold
-                   <> firstPeerCommitRemote
-                   <> firstMiniProtocolToFinish connectionDataFlow
-                   <> firstPeerPromotedToWarm
-                   <> firstPeerPromotedToHot
-                   <> firstPeerDemotedToWarm
+      forM_ events \event -> do
+        state <- readTVarIO stateVar
 
-                   :: EventSignal muxMode initiatorCtx peerAddr versionData m a b
-                 )
-                 (connections state)
-            <> FirstToFinish (
-                 NewConnection <$> InfoChannel.readMessage infoChannel
-               )
-            <> FirstToFinish (
-                  -- spin the inbound governor loop; it will re-run with new
-                  -- time, which allows to make some peers mature.
-                  LazySTM.readTVar inactivityVar >>= check >> pure InactivityTimeout
-               )
       (mbConnId, state') <- case event of
         NewConnection
           -- new connection has been announced by either accept loop or
