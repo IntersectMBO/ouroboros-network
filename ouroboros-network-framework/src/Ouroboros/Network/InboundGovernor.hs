@@ -32,6 +32,7 @@ module Ouroboros.Network.InboundGovernor
     -- * Re-exports
   , Transition' (..)
   , TransitionTrace' (..)
+  , ResponderCounters (..)
     -- * API's exported for testing purposes
   , maturedPeers
   ) where
@@ -565,6 +566,136 @@ with
                   | otherwise                 = state'
 
       inboundGovernorLoop var state''
+
+-- | The tracer embedded with the mux tracer by the connection handler
+-- for inbound or outbound duplex connections for efficient tracking
+-- of inbound governor transitions for a given peer
+--
+inboundGovernorMuxTracer
+  :: (MonadSTM m, Ord peerAddr)
+  => InboundGovernorInfoChannel muxMode initiatorCtx peerAddr versionData ByteString m a b
+  -> (versionData -> DataFlow)
+  -> StrictTVar m (State muxMode initiatorCtx peerAddr versionData m a b)
+  -> StrictTVar m Bool
+  -> StrictTVar m (StrictMaybe ResponderCounters)
+  -> Tracer m (Mux.WithBearer (ConnectionId peerAddr) Mux.Trace)
+inboundGovernorMuxTracer infoChannel connectionDataFlow stateVar activeVar countersVar =
+  Tracer \(Mux.WithBearer peer trace) -> do
+    -- hello from muxer main thread
+    -- code here is running in the context of the connection handler/muxer
+    -- so care must be taken not to deadlock ourselves
+    active <- readTVarIO activeVar
+    case (trace, active) of
+      (_, True) | Just miniProtocolNum <- miniProtocolStarted trace -> atomically do
+        connections <- connections <$> readTVar stateVar
+        mCounters   <- readTVar countersVar
+        case (Map.lookup peer connections, mCounters) of
+          (Just (ConnectionState { csRemoteState, csMiniProtocolMap }),
+           SJust rc@ResponderCounters { numTraceHotResponders,
+                                        numTraceNonHotResponders }) -> do
+            let miniProtocolTemp = getProtocolTemp miniProtocolNum csMiniProtocolMap
+                commit = do
+                  case (numTraceNonHotResponders, numTraceHotResponders) of
+                    (0, 0) -> InfoChannel.writeMessage infoChannel
+                                                       (AwakeRemote peer)
+                    _      -> pure ()
+                  case (miniProtocolTemp, numTraceHotResponders) of
+                    (Hot, 0) -> InfoChannel.writeMessage infoChannel
+                                                         (RemotePromotedToHot peer)
+                    _        -> pure ()
+                  case miniProtocolTemp of
+                    Hot    -> writeTVar countersVar $
+                                SJust rc { numTraceHotResponders =
+                                             succ numTraceHotResponders }
+                    _orNot -> writeTVar countersVar $
+                                SJust rc { numTraceNonHotResponders =
+                                             succ numTraceNonHotResponders }
+
+            case csRemoteState of
+              -- we retry on expired because we let the IG
+              -- loop handle this peer. If the connection is released,
+              -- and CM reports CommitTr, this peer will disappear
+              -- from the connections so on retry we will hit the
+              -- _otherwise clause instead and promotion will fail,
+              -- as it should. Otherwise, if KeepTr is returned,
+              -- we can handle 'AwakeRemote' from this peer.
+              RemoteIdle timeoutSTM -> do
+                expired <- timeoutSTM
+                if expired then retry else commit
+              _ -> commit
+
+          _otherwise -> writeTVar countersVar SNothing
+
+      (_, True) | Just miniProtocolNum <- miniProtocolTerminated trace -> atomically do
+        connections <- connections <$> readTVar stateVar
+        mCounters   <- readTVar countersVar
+        case (Map.lookup peer connections, mCounters) of
+          (Just (ConnectionState { csMux,
+                                   csVersionData,
+                                   csMiniProtocolMap,
+                                   csCompletionMap }),
+           SJust rc@ResponderCounters { numTraceHotResponders,
+                                        numTraceNonHotResponders }) -> do
+            InfoChannel.writeMessage infoChannel $
+              MiniProtocolTerminated $ Terminated {
+                tConnId = peer,
+                tMux = csMux,
+                tMiniProtocolData = csMiniProtocolMap Map.! miniProtocolNum,
+                tDataFlow = connectionDataFlow csVersionData,
+                tResult = csCompletionMap Map.! miniProtocolNum }
+            case trace of
+              Mux.TraceCleanExit {} -> do
+                let miniProtocolTemp = getProtocolTemp miniProtocolNum csMiniProtocolMap
+                case (miniProtocolTemp, numTraceHotResponders) of
+                  (Hot, 1) -> InfoChannel.writeMessage infoChannel
+                                                       (RemoteDemotedToWarm peer)
+                  _        -> pure ()
+                when (numTraceHotResponders + numTraceNonHotResponders == 1) $
+                  InfoChannel.writeMessage infoChannel
+                                           (WaitIdleRemote peer)
+                case miniProtocolTemp of
+                    Hot    -> writeTVar countersVar $
+                                SJust rc { numTraceHotResponders =
+                                             pred numTraceHotResponders }
+                    _orNot -> writeTVar countersVar $
+                                SJust rc { numTraceNonHotResponders =
+                                             pred numTraceNonHotResponders }
+
+              _otherwise -> writeTVar countersVar SNothing
+
+          _otherwise -> writeTVar countersVar SNothing
+
+
+      (_, True) | True <- muxStopped trace -> atomically do
+        State { connections } <- readTVar stateVar
+        case Map.lookup peer connections of
+          Just ConnectionState {csMux} ->
+            InfoChannel.writeMessage infoChannel $
+              MuxFinished peer (Mux.stopped csMux)
+          _otherwise -> pure ()
+        writeTVar countersVar SNothing
+
+      _otherwise -> return ()
+    where
+      muxStopped = \case
+        Mux.TraceStopped -> True
+        Mux.TraceState Mux.Dead -> True
+        _otherwise -> False
+
+      getProtocolTemp miniProtocolNum csMiniProtocolMap  =
+        let miniData = csMiniProtocolMap Map.! miniProtocolNum
+         in mpdMiniProtocolTemp miniData
+
+      miniProtocolTerminated = \case
+        Mux.TraceCleanExit miniProtocolNum Mux.ResponderDir -> Just miniProtocolNum
+        Mux.TraceExceptionExit miniProtocolNum Mux.ResponderDir _e -> Just miniProtocolNum
+        _otherwise -> Nothing
+
+      miniProtocolStarted = \case
+        -- is any responder started eagerly???
+        Mux.TraceStartEagerly miniProtocolNum Mux.ResponderDir -> Just miniProtocolNum
+        Mux.TraceStartedOnDemand miniProtocolNum Mux.ResponderDir -> Just miniProtocolNum
+        _otherwise -> Nothing
 
 
 -- | Run a responder mini-protocol.
