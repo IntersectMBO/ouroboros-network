@@ -222,7 +222,7 @@ socketAsBearer sduSize batchSize readBuffer_m sduTimeout pollInterval tracer sd 
           let ts32 = Mx.timestampMicrosecondsLow32Bits ts
               buf  = map (Mx.encodeSDU .
                            (\sdu -> Mx.setTimestamp sdu (Mx.RemoteClockModel ts32))) sdus
-          r <- timeout ((fromIntegral $ length sdus) * sduTimeout) $
+          r <- timeout (fromIntegral (length sdus) * sduTimeout) $
               Socket.sendMany sd (concatMap BL.toChunks buf)
               `catch` Mx.handleIOException "sendAll errored"
           case r of
