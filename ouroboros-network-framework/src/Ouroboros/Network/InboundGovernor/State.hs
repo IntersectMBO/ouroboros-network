@@ -28,6 +28,7 @@ module Ouroboros.Network.InboundGovernor.State
   , MiniProtocolData (..)
   ) where
 
+import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (assert)
 import Control.Monad.Class.MonadThrow hiding (handle)
@@ -271,7 +272,7 @@ data RemoteState m
     --
     -- 'RemoteIdle' is the initial state of an accepted a connection.
     --
-    | RemoteIdle !(STM m ())
+    | RemoteIdle !(forall x. (Bool -> LazySTM.STM m x) -> LazySTM.STM m x)
 
     -- | The 'RemoteCold' state for 'Duplex' connections allows us to have
     -- responders started using the on-demand strategy.  This assures that once

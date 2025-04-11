@@ -55,7 +55,6 @@ import Control.Tracer (Tracer (..), traceWith)
 import Data.Bifunctor (first)
 import Data.ByteString.Lazy (ByteString)
 import Data.Cache
-import Data.Functor (($>))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Monoid.Synchronisation
@@ -229,7 +228,7 @@ with
                          numTraceHotResponders,
                          numTraceWarmResponders })) -> do
                   let miniProtocolTemp = getProtocolTemp mid csMiniProtocolMap
-                      completion = do
+                      complete = do
                         case (miniProtocolTemp,
                               numTraceWarmResponders,
                               numTraceHotResponders) of
@@ -247,12 +246,16 @@ with
                           _orNot -> adjustWarmResponders succ peer
 
                   case csRemoteState of
-                    -- we retry on expired because the connection might get dropped
-                    -- so we should not promote it.
-                    RemoteIdle timeoutSTM -> (`catchSTM` \(_ :: TimeoutExpired) -> retry)  . runFirstToFinish $
-                         FirstToFinish (timeoutSTM >> throwSTM Expired)
-                      <> FirstToFinish completion
-                    _otherwise -> completion
+                    -- we retry on expired because we let the IG
+                    -- loop handle this peer. If the connection is released,
+                    -- and CM reports CommitTr, this peer will disappear
+                    -- from the connections so on retry we will hit the
+                    -- _otherwise clause instead and promotion will fail,
+                    -- as it should. Otherwise, if KeepTr is returned,
+                    -- we can handle 'AwakeRemote' from this peer.
+                    RemoteIdle kTimeoutSTM -> kTimeoutSTM \expired ->
+                      if expired then retry else complete
+                    _gogo -> complete
 
                 _otherwise -> modifyTVar countersVar $ Map.delete peer
 
@@ -396,8 +399,8 @@ with
                 Map.foldMapWithKey firstPeerCommitRemote (connections state)
               (firstCommit :) <$> InfoChannel.readMessages infoChannel
          <> FirstToFinish do
-              infoEvents <- InfoChannel.readMessages infoChannel
-              check (not . null $ infoEvents) >> pure infoEvents
+              muxEvents <- InfoChannel.readMessages infoChannel
+              check (not . null $ muxEvents) >> pure muxEvents
          <> FirstToFinish do
               -- spin the inbound governor loop; it will re-run with new
               -- time, which allows to make some peers mature.
@@ -486,9 +489,9 @@ with
                           let -- initial state is 'RemoteIdle', if the remote end will not
                               -- start any responders this will unregister the inbound side.
                               csRemoteState :: RemoteState m
-                              csRemoteState = RemoteIdle (case mv of
-                                                            Nothing -> retry
-                                                            Just v  -> LazySTM.readTVar v >>= check)
+                              csRemoteState = RemoteIdle (\k' -> case mv of
+                                                            Nothing -> k' False
+                                                            Just v  -> LazySTM.readTVar v >>= k')
 
                               connState = ConnectionState {
                                   csMux,
@@ -589,12 +592,12 @@ with
                 return (Just connId, state')
               OperationSuccess {}  -> do
                 mv <- traverse registerDelay idleTimeout
-                let timeoutSTM :: STM m ()
-                    !timeoutSTM = case mv of
-                      Nothing -> retry
-                      Just v  -> LazySTM.readTVar v >>= check
 
-                let state' = updateRemoteState connId (RemoteIdle timeoutSTM) state
+                let state' =
+                      updateRemoteState connId (RemoteIdle \k' ->
+                        case mv of
+                          Nothing -> k' False
+                          Just v  -> LazySTM.readTVar v >>= k') state
 
                 return (Just connId, state')
               -- It could happen that the connection got deleted by connection
@@ -930,7 +933,7 @@ data Terminated muxMode initiatorCtx peerAddr m a b = Terminated {
 
 -- | First peer for which the 'RemoteIdle' timeout expires.
 --
-firstPeerCommitRemote :: Alternative (STM m)
+firstPeerCommitRemote :: (Alternative (STM m), MonadSTM m)
                       => EventSignal muxMode handle initiatorCtx peerAddr versionData m a b
 firstPeerCommitRemote
     connId ConnectionState { csRemoteState }
@@ -938,7 +941,8 @@ firstPeerCommitRemote
         -- the connection is already in 'RemoteCold' state
         RemoteCold            -> mempty
         RemoteEstablished     -> mempty
-        RemoteIdle timeoutSTM -> FirstToFinish (timeoutSTM $> CommitRemote connId)
+        RemoteIdle kTimeoutSTM -> FirstToFinish $ kTimeoutSTM \expired ->
+          if expired then pure $ CommitRemote connId else retry
 
 
 data IGAssertionLocation peerAddr
