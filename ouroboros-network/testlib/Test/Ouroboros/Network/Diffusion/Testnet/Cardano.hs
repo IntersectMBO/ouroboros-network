@@ -916,6 +916,7 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
             . Signal.selectEvents
                 (\case TrJoiningNetwork -> Just Joined
                        TrKillingNode    -> Just Killed
+                       TrErrored _      -> Just Killed
                        _                -> Nothing
                 )
             . selectDiffusionSimulationTrace
