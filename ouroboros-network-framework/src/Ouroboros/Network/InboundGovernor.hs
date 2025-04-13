@@ -497,7 +497,10 @@ with
               Just err -> traceWith tracer (TrMuxErrored connId err)
 
             -- the connection manager does should realise this on itself.
-            let state' = unregisterConnection connId state
+            -- we bypass the assertion check since MuxFinished could have been
+            -- placed on the queue before we managed to remove the connection from
+            -- the private state.
+            let state' = unregisterConnection True connId state
             return (Just connId, state')
 
           MiniProtocolTerminated
@@ -517,7 +520,7 @@ with
                 traceWith tracer $
                   TrResponderErrored tConnId num e
 
-                let state' = unregisterConnection tConnId state
+                let state' = unregisterConnection False tConnId state
                 return (Just tConnId, state')
 
               Right _ ->
@@ -534,7 +537,7 @@ with
                     traceWith tracer (TrResponderStartFailure tConnId num err)
                     Mux.stop tMux
 
-                    let state' = unregisterConnection tConnId state
+                    let state' = unregisterConnection False tConnId state
 
                     return (Just tConnId, state')
 
@@ -550,7 +553,7 @@ with
             traceWith tracer (TrWaitIdleRemote connId res)
             case res of
               TerminatedConnection {} -> do
-                let state' = unregisterConnection connId state
+                let state' = unregisterConnection False connId state
                 return (Just connId, state')
               OperationSuccess {}  -> do
                 mv <- traverse registerDelay idleTimeout
@@ -566,7 +569,7 @@ with
               -- manager due to some async exception so we need to unregister it
               -- from the inbound governor state.
               UnsupportedState UnknownConnectionSt -> do
-                let state' = unregisterConnection connId state
+                let state' = unregisterConnection False connId state
                 return (Just connId, state')
               UnsupportedState {} -> do
                 return (Just connId, state)
@@ -592,7 +595,7 @@ with
 
             case resultInState res of
               UnknownConnectionSt -> do
-                let state' = unregisterConnection connId state
+                let state' = unregisterConnection False connId state
                 return (Just connId, state')
               _ -> do
                 let state' = updateRemoteState
@@ -627,14 +630,14 @@ with
                 -- @'InOutboundState' 'Unidirectional'@,
                 -- @'InTerminatingState'@,
                 -- @'InTermiantedState'@.
-                let state' = unregisterConnection connId state
+                let state' = unregisterConnection False connId state
                 return (Just connId, state')
 
               TerminatedConnection {} -> do
                 -- 'inState' can be either:
                 -- @'InTerminatingState'@,
                 -- @'InTermiantedState'@.
-                let state' = unregisterConnection connId state
+                let state' = unregisterConnection False connId state
                 return (Just connId, state')
 
               OperationSuccess transition ->
@@ -646,7 +649,7 @@ with
                     --    Commit^{dataFlow}_{Remote} : InboundIdleState dataFlow
                     --                               → TerminatingState
                     -- @
-                    let state' = unregisterConnection connId state
+                    let state' = unregisterConnection False connId state
                     return (Just connId, state')
 
                   -- the connection is still used by p2p-governor, carry on but put
