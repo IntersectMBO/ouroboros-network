@@ -344,12 +344,7 @@ readFetchClientsStateVars (FetchClientRegistry _ registry _ _ _ _) = readTVar re
 -- | A read-only 'STM' action to get the 'PeerGSV's for all fetch
 -- clients in the 'FetchClientRegistry'.
 --
-readPeerGSVs :: forall block header m peer.
-                ( MonadSTM m, Ord peer)
+readPeerGSVs :: MonadSTM m
              => FetchClientRegistry peer header block m
              -> STM m (Map peer PeerGSV)
-readPeerGSVs (FetchClientRegistry _ _ _ dqRegistry keepRegistry _) = do
-  dr <- readTVar dqRegistry
-  kr <- readTVar keepRegistry
-  -- The intersection gives us only the currently hot peers
-  return $ Map.intersection dr kr
+readPeerGSVs (FetchClientRegistry _ _ _ registry _ _) = readTVar registry
