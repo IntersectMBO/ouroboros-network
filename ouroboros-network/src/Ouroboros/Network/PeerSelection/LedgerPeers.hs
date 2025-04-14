@@ -205,7 +205,7 @@ long_PEER_LIST_LIFE_TIME = 1847 -- a prime number!
 
 -- | Run the LedgerPeers worker thread.
 --
-ledgerPeersThread :: forall g m peerAddr resolver exception.
+ledgerPeersThread :: forall m peerAddr resolver exception.
                      ( MonadAsync m
                      , MonadMonotonicTime m
                      , MonadThrow m

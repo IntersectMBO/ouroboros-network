@@ -120,7 +120,7 @@ data FetchClientStateVars m header =
 newFetchClientStateVars :: MonadSTM m => STM m (FetchClientStateVars m header)
 newFetchClientStateVars = do
     fetchClientInFlightVar <- newTVar initialPeerFetchInFlight
-    fetchClientStatusVar   <- newTVar PeerFetchStatusStarting
+    fetchClientStatusVar   <- newTVar (PeerFetchStatusReady Set.empty IsIdle)
     fetchClientRequestVar  <- newTFetchRequestVar
     return FetchClientStateVars {..}
 
@@ -145,9 +145,6 @@ data PeerFetchStatus header =
        -- the peer registry and so will not be considered at all.
        --
        PeerFetchStatusShutdown
-
-       -- | Blockfetch is starting up and waiting on corresponding Chainsync
-     | PeerFetchStatusStarting
 
        -- | The peer is in a potentially-temporary state in which it has not
        -- responded to us within a certain expected time limit. This is not

@@ -175,9 +175,6 @@ data FetchDecline =
      --
    | FetchDeclinePeerShutdown
 
-     -- | Blockfetch is starting up and waiting on corresponding Chainsync.
-   | FetchDeclinePeerStarting
-
 
    -- The reasons above this comment are fundamental and/or obvious. On the
    -- other hand, the reasons below are heuristic.
@@ -661,7 +658,6 @@ filterNotAlreadyInFlightWithOtherPeers FetchModeBulkSync chains =
       Set.unions
         [ case status of
             PeerFetchStatusShutdown -> Set.empty
-            PeerFetchStatusStarting -> Set.empty
             PeerFetchStatusAberrant -> Set.empty
             _other                  -> peerFetchBlocksInFlight inflight
         | (_, status, inflight, _) <- chains ]
@@ -1023,9 +1019,6 @@ fetchRequestDecision _ _ _ _ _ _ (Left decline)
 
 fetchRequestDecision _ _ _ _ _ PeerFetchStatusShutdown _
   = Left FetchDeclinePeerShutdown
-
-fetchRequestDecision _ _ _ _ _ PeerFetchStatusStarting _
-  = Left FetchDeclinePeerStarting
 
 fetchRequestDecision _ _ _ _ _ PeerFetchStatusAberrant _
   = Left FetchDeclinePeerSlow
