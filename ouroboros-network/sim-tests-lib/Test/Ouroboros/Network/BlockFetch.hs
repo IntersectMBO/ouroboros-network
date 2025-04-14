@@ -547,25 +547,9 @@ unit_bracketSyncWithFetchClient step = do
                           Right r -> return r
 
     step "Stopping fetch before sync"
-    checkResultD =<< case runSimStrictShutdown (testSkeleton
-                            (\action -> action (threadDelay 0.1))
-                            (\action -> action (threadDelay 10))
-                            (\action -> threadDelay 0.1 >> action (threadDelay 300))) of
-                          Left e  -> error $ "sim failed with " <> show e
-                          Right r -> return r
-
-    step "Stopping fetch before sync, sync timeout"
     checkResultC =<< case runSimStrictShutdown (testSkeleton
                             (\action -> action (threadDelay 0.1))
-                            (\action -> action (threadDelay 600))
-                            (\action -> threadDelay 0.1 >> action (threadDelay 400))) of
-                          Left e  -> error $ "sim failed with " <> show e
-                          Right r -> return r
-
-    step "Stopping fetch before sync, keepalive exits"
-    checkResultE =<< case runSimStrictShutdown (testSkeleton
-                            (\action -> action (threadDelay 0.1))
-                            (\action -> action (threadDelay 600))
+                            (\action -> action (threadDelay 60))
                             (\action -> threadDelay 0.1 >> action (threadDelay 1))) of
                           Left e  -> error $ "sim failed with " <> show e
                           Right r -> return r
@@ -601,6 +585,7 @@ unit_bracketSyncWithFetchClient step = do
                             (\action -> action (threadDelay 0.1 >> throwIO AsyncCancelled))) of
                           Left e  -> error $ "sim failed with " <> show e
                           Right r -> return r
+
 
     step "Keep alive kills fetch"
     checkResultE =<< case runSimStrictShutdown (testSkeleton
@@ -669,7 +654,7 @@ unit_bracketSyncWithFetchClient step = do
 
     testSkeleton :: forall m a b d.
                     (MonadAsync m, MonadDelay m, MonadFork m, MonadMask m,
-                     MonadThrow (STM m), MonadTimer m)
+                     MonadSTM m, MonadThrow m, MonadThrow (STM m))
                  => ((forall c. m c -> m c) -> m a)
                  -> ((forall c. m c -> m c) -> m b)
                  -> ((forall c. m c -> m c) -> m d)
@@ -779,7 +764,7 @@ prop_terminate (TestChainFork _commonChain forkChain _forkChain) (Positive (Smal
                   realToFrac (Chain.length forkChain) * delay / 2
             threadDelay terminateDelay
             atomically (writeTVar controlMessageVar Terminate)
-            let awaitDelay = delay * 100 + 500
+            let awaitDelay = delay * 100
             threadDelay awaitDelay)
           (do
             threadId <- myThreadId
