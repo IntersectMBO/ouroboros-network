@@ -28,7 +28,6 @@ module Ouroboros.Network.InboundGovernor.State
   , MiniProtocolData (..)
   ) where
 
-import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (assert)
 import Control.Monad.Class.MonadThrow hiding (handle)
@@ -207,12 +206,13 @@ data ResponderCounters = ResponderCounters {
 -- | Remove connection from 'State'.
 --
 unregisterConnection :: Ord peerAddr
-                     => ConnectionId peerAddr
+                     => Bool
+                     -> ConnectionId peerAddr
                      -> State muxMode initiatorCtx peerAddr versionData m a b
                      -> State muxMode initiatorCtx peerAddr versionData m a b
-unregisterConnection connId state =
+unregisterConnection bypass connId state =
     state { connections =
-              assert (connId `Map.member` connections state) $
+              assert (connId `Map.member` connections state || bypass) $
               Map.delete connId (connections state),
 
             matureDuplexPeers =
@@ -272,7 +272,7 @@ data RemoteState m
     --
     -- 'RemoteIdle' is the initial state of an accepted a connection.
     --
-    | RemoteIdle !(forall x. (Bool -> LazySTM.STM m x) -> LazySTM.STM m x)
+    | RemoteIdle !(STM m Bool)
 
     -- | The 'RemoteCold' state for 'Duplex' connections allows us to have
     -- responders started using the on-demand strategy.  This assures that once

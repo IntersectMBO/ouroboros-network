@@ -66,6 +66,7 @@ import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context (ExpandedInitiatorContext,
            MinimalInitiatorContext, ResponderContext)
 import Ouroboros.Network.ControlMessage (ControlMessage (..))
+import Ouroboros.Network.InboundGovernor.State
 import Ouroboros.Network.Mux
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.Protocol.Handshake
@@ -129,14 +130,16 @@ type family MkMuxConnectionHandler (muxMode :: Mx.Mode) socket initiatorCtx resp
 
   MkMuxConnectionHandler Mx.ResponderMode socket initiatorCtx responderCtx peerAddr
                                           versionNumber versionData bytes m a b =
-       Tracer m (WithBearer (ConnectionId peerAddr) Trace)
+       (   StrictTVar m (Maybe ResponderCounters)
+        -> Tracer m (WithBearer (ConnectionId peerAddr) Trace))
     -> MuxConnectionHandler Mx.ResponderMode socket initiatorCtx responderCtx peerAddr
                                              versionNumber versionData bytes m a b
 
   MkMuxConnectionHandler Mx.InitiatorResponderMode socket initiatorCtx responderCtx peerAddr
                                                    versionNumber versionData bytes m a b =
        (versionData -> DataFlow)
-    -> Tracer m (WithBearer (ConnectionId peerAddr) Trace)
+    -> (   StrictTVar m (Maybe ResponderCounters)
+        -> Tracer m (WithBearer (ConnectionId peerAddr) Trace))
     -> MuxConnectionHandler Mx.InitiatorResponderMode socket initiatorCtx responderCtx
                                                       peerAddr versionNumber versionData
                                                       bytes m a b
@@ -301,7 +304,8 @@ makeConnectionHandler muxTracer forkPolicy
 
     outboundConnectionHandler
       :: HasInitiator muxMode ~ True
-      => InResponderMode muxMode (Tracer m (WithBearer (ConnectionId peerAddr) Trace)
+      => InResponderMode muxMode (   StrictTVar m (Maybe ResponderCounters)
+                                  -> Tracer m (WithBearer (ConnectionId peerAddr) Trace)
                                  , versionData -> DataFlow)
       -> ConnectionHandlerFn (ConnectionHandlerTrace versionNumber versionData)
                              socket
@@ -363,31 +367,32 @@ makeConnectionHandler muxTracer forkPolicy
                           hVersionData    = agreedOptions
                         }
                   atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
-                  let muxTracer' = contramap (Mx.WithBearer connectionId)
-                        case inResponderMode of
-                          InResponderMode (inboundGovChannelTracer, connectionDataFlow)
-                            | Duplex <- connectionDataFlow agreedOptions ->
-                                -- Following this call, the muxer is racing with the CM to write to the
-                                -- information channel queue.
-                                -- The IG tracer pauses the muxer main thread when it reaches mature state
-                                -- until the CM informs the former of new peer connection to ensure
-                                -- proper sequencing of events.
-                                muxTracer <> inboundGovChannelTracer
-                          _notResponder ->
-                                -- If this is InitiatorOnly, or a server where unidirectional flow was negotiated
-                                -- the IG will never be informed of this remote for obvious reasons. We should not pass
-                                -- the IG tracer to mux, and must not in the latter case as the muxer will
-                                -- deadlock itself before it launches any miniprotocols from the command queue.
-                                -- It will be stuck when reaches mature state, forever waiting for the incoming
-                                -- peer handle.
-                                muxTracer
-                  withBuffer (\buffer -> do
-                      bearer <- mkMuxBearer sduTimeout socket buffer
-                      Mx.run Mx.MuxTracerBundle {
-                               muxTracer     = muxTracer',
-                               channelTracer = Mx.WithBearer connectionId `contramap` muxTracer }
-                             mux bearer
-                    )
+                  withBuffer \buffer -> do
+                    bearer <- mkMuxBearer sduTimeout socket buffer
+                    muxTracer' <- contramap (Mx.WithBearer connectionId) <$>
+                          case inResponderMode of
+                            InResponderMode (inboundGovChannelTracer, connectionDataFlow)
+                              | Duplex <- connectionDataFlow agreedOptions -> do
+                                  -- In this case, following the Mx.run call below, the muxer begins racing with
+                                  -- the CM to write to the information channel queue. The tracer of mux activity,
+                                  -- while the CM of new connection notification. The latter *should* come first.
+                                  -- The IG tracer will block the muxer on a TVar when it reaches mature state
+                                  -- until the CM informs the former of new peer connection to ensure
+                                  -- proper sequencing of events.
+                                  countersVar <- newTVarIO $ Just $ ResponderCounters 0 0
+                                  pure $ muxTracer <> inboundGovChannelTracer countersVar
+                            _notResponder ->
+                                  -- If this is InitiatorOnly, or a server where unidirectional flow was negotiated
+                                  -- the IG will never be informed of this remote for obvious reasons. There is no
+                                  -- need to pass the responder IG tracer here, and we must not in the latter case
+                                  -- as the muxer will deadlock itself before it launches any miniprotocols from the
+                                  -- command queue. It will be stuck when reaches mature state, forever waiting for
+                                  -- the incoming peer handle.
+                                  pure muxTracer
+                    Mx.run Mx.MuxTracerBundle {
+                             muxTracer     = muxTracer',
+                             channelTracer = Mx.WithBearer connectionId `contramap` muxTracer }
+                           mux bearer
 
               Right (HandshakeQueryResult vMap) -> do
                 atomically $ writePromise (Right HandshakeConnectionQuery)
@@ -396,7 +401,8 @@ makeConnectionHandler muxTracer forkPolicy
 
     inboundConnectionHandler
       :: HasResponder muxMode ~ True
-      => Tracer m (WithBearer (ConnectionId peerAddr) Trace)
+      => (   StrictTVar m (Maybe ResponderCounters)
+          -> Tracer m (WithBearer (ConnectionId peerAddr) Trace))
       -> ConnectionHandlerFn (ConnectionHandlerTrace versionNumber versionData)
                              socket
                              peerAddr
@@ -460,9 +466,10 @@ makeConnectionHandler muxTracer forkPolicy
                   atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
                   withBuffer (\buffer -> do
                       bearer <- mkMuxBearer sduTimeout socket buffer
+                      countersVar <- newTVarIO . Just $ ResponderCounters 0 0
                       let traceWithBearer = contramap $ Mx.WithBearer connectionId
                       Mx.run Mx.MuxTracerBundle {
-                               muxTracer     = traceWithBearer (muxTracer <> inboundGovChannelTracer),
+                               muxTracer     = traceWithBearer (muxTracer <> inboundGovChannelTracer countersVar),
                                channelTracer = traceWithBearer muxTracer }
                              mux bearer
                     )

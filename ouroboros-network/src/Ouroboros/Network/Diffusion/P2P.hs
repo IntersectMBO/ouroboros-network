@@ -498,7 +498,8 @@ type NodeToNodePeerSelectionActions extraState extraFlags extraPeers extraAPI ex
 
 type NodeToClientMkConnectionHandler
       ntcFd ntcAddr ntcVersion ntcVersionData m =
-       Tracer m (Mx.WithBearer (ConnectionId ntcAddr) Mx.Trace)
+    (   StrictTVar m (Maybe IG.ResponderCounters)
+     -> Tracer m (Mx.WithBearer (ConnectionId ntcAddr) Mx.Trace))
     -> ConnectionHandler
          Mx.ResponderMode
          (ConnectionHandlerTrace ntcVersion ntcVersionData)

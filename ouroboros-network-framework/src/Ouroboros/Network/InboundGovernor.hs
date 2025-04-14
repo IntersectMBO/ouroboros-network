@@ -36,6 +36,7 @@ module Ouroboros.Network.InboundGovernor
     -- * Re-exports
   , Transition' (..)
   , TransitionTrace' (..)
+  , ResponderCounters (..)
     -- * API's exported for testing purposes
   , maturedPeers
   ) where
@@ -114,7 +115,8 @@ data Arguments muxMode handlerTrace socket peerAddr initiatorCtx responderCtx
         -> m x,
       -- ^ connection manager continuation
       mkConnectionHandler
-        :: Tracer m (Mux.WithBearer (ConnectionId peerAddr) Mux.Trace)
+        :: (   StrictTVar m (Maybe ResponderCounters)
+            -> Tracer m (Mux.WithBearer (ConnectionId peerAddr) Mux.Trace))
         -> ConnectionHandler muxMode handlerTrace socket peerAddr handle handleError versionNumber versionData m
       -- ^ Connection handler builder, which injects a special tracer
       -- created here and routed into the muxer via the connection manager.
@@ -180,10 +182,7 @@ with
     = do
     labelThisThread "inbound-governor"
     stateVar <- newTVarIO emptyState
-    countersVar <- newTVarIO Map.empty
-    -- ^ warm and hot responder miniprotocol counters for a peer
-    -- to track and respond to transitions
-    let connectionHandler = mkConnectionHandler $ responderIgTracer stateVar countersVar
+    let connectionHandler = mkConnectionHandler $ responderIgTracer stateVar
     withConnectionManager connectionHandler \connectionManager ->
       withAsync
         (  labelThisThread "inbound-governor-loop" >>
@@ -199,7 +198,7 @@ with
     -- for unidirectional mode the IG is never provided with the peer handle since the inbound
     -- is inactive.
     responderIgTracer :: StrictTVar m (State muxMode initiatorCtx peerAddr versionData m a b)
-                      -> StrictTVar m (Map (ConnectionId peerAddr) ResponderCounters)
+                      -> StrictTVar m (Maybe ResponderCounters)
                       -> Tracer m (Mux.WithBearer (ConnectionId peerAddr) Mux.Trace)
     responderIgTracer stateVar countersVar = Tracer $ \(Mux.WithBearer peer trace) ->
       -- hello from muxer main thread
@@ -216,19 +215,17 @@ with
           -- The muxer blocks itself here to yield right-of-way
           -- to the CM.
           check . Map.member peer . connections =<< readTVar stateVar
-          modifyTVar countersVar $ Map.insert peer (ResponderCounters 0 0)
 
         _ | Just mid <- startWithID trace -> atomically do
-              connections        <- connections <$> readTVar stateVar
-              mResponderCounters <- Map.lookup peer <$> readTVar countersVar
+              connections <- connections <$> readTVar stateVar
+              mCounters   <- readTVar countersVar
               case (Map.lookup peer connections,
-                    mResponderCounters) of
+                    mCounters) of
                 (Just (ConnectionState { csRemoteState, csMiniProtocolMap }),
-                 Just (ResponderCounters {
-                         numTraceHotResponders,
-                         numTraceWarmResponders })) -> do
+                 Just rc@ResponderCounters { numTraceHotResponders,
+                                             numTraceWarmResponders }) -> do
                   let miniProtocolTemp = getProtocolTemp mid csMiniProtocolMap
-                      complete = do
+                      commit = do
                         case (miniProtocolTemp,
                               numTraceWarmResponders,
                               numTraceHotResponders) of
@@ -242,8 +239,8 @@ with
                             InfoChannel.writeMessage infoChannel $ AwakeRemote peer
                           _otherwise -> pure ()
                         case miniProtocolTemp of
-                          Hot    -> adjustHotResponders succ peer
-                          _orNot -> adjustWarmResponders succ peer
+                          Hot    -> writeTVar countersVar $ Just rc { numTraceHotResponders = succ numTraceHotResponders }
+                          _orNot -> writeTVar countersVar $ Just rc { numTraceWarmResponders = succ numTraceWarmResponders }
 
                   case csRemoteState of
                     -- we retry on expired because we let the IG
@@ -253,27 +250,34 @@ with
                     -- _otherwise clause instead and promotion will fail,
                     -- as it should. Otherwise, if KeepTr is returned,
                     -- we can handle 'AwakeRemote' from this peer.
-                    RemoteIdle kTimeoutSTM -> kTimeoutSTM \expired ->
-                      if expired then retry else complete
-                    _gogo -> complete
+                    RemoteIdle timeoutSTM -> do
+                      expired <- timeoutSTM
+                      if expired then retry else commit
+                    _gogo -> commit
 
-                _otherwise -> modifyTVar countersVar $ Map.delete peer
+                _otherwise -> writeTVar countersVar Nothing
 
         _ | Just mid <- terminateWithID trace -> atomically do
-              connections        <- connections <$> readTVar stateVar
-              mResponderCounters <- Map.lookup peer <$> readTVar countersVar
+              connections <- connections <$> readTVar stateVar
+              mCounters   <- readTVar countersVar
               case (Map.lookup peer connections,
-                    mResponderCounters) of
+                    mCounters) of
                 (Just (ConnectionState { csMux,
-                                         csMiniProtocolMap,
                                          csVersionData,
+                                         csMiniProtocolMap,
                                          csCompletionMap }),
-                 Just (ResponderCounters {
-                         numTraceHotResponders,
-                         numTraceWarmResponders })) -> do
-                  let miniProtocolTemp = getProtocolTemp mid csMiniProtocolMap
+                 Just rc@ResponderCounters { numTraceHotResponders,
+                                             numTraceWarmResponders }) -> do
+                  InfoChannel.writeMessage infoChannel $
+                    MiniProtocolTerminated $ Terminated {
+                      tConnId = peer,
+                      tMux = csMux,
+                      tMiniProtocolData = csMiniProtocolMap Map.! mid,
+                      tDataFlow = connectionDataFlow csVersionData,
+                      tResult = csCompletionMap Map.! mid }
                   case trace of
                     Mux.TraceCleanExit {} -> do
+                      let miniProtocolTemp = getProtocolTemp mid csMiniProtocolMap
                       case ( miniProtocolTemp
                            , numTraceWarmResponders
                            , numTraceHotResponders) of
@@ -288,30 +292,22 @@ with
                         _otherwise -> pure ()
 
                       case miniProtocolTemp of
-                        Hot    -> adjustHotResponders pred peer
-                        _orNot -> adjustWarmResponders pred peer
+                          Hot    -> writeTVar countersVar $ Just rc { numTraceHotResponders = pred numTraceHotResponders }
+                          _orNot -> writeTVar countersVar $ Just rc { numTraceWarmResponders = pred numTraceWarmResponders }
 
-                    _otherwise -> modifyTVar countersVar $ Map.delete peer
+                    _otherwise -> writeTVar countersVar Nothing
 
-                  InfoChannel.writeMessage infoChannel $
-                    MiniProtocolTerminated $ Terminated {
-                      tConnId = peer,
-                      tMux = csMux,
-                      tMiniProtocolData = csMiniProtocolMap Map.! mid,
-                      tDataFlow = connectionDataFlow csVersionData,
-                      tResult = csCompletionMap Map.! mid }
-
-                _otherwise -> modifyTVar countersVar $ Map.delete peer
+                _otherwise -> writeTVar countersVar Nothing
 
 
         _ | True <- muxStopped trace -> atomically do
-          State { connections } <- readTVar stateVar
-          case Map.lookup peer connections of
-            Just ConnectionState {csMux} ->
-              InfoChannel.writeMessage infoChannel $
-                MuxFinished peer (Mux.stopped csMux)
-            _otherwise -> return ()
-          modifyTVar countersVar $ Map.delete peer
+              State { connections } <- readTVar stateVar
+              case Map.lookup peer connections of
+                Just ConnectionState {csMux} ->
+                  InfoChannel.writeMessage infoChannel $
+                    MuxFinished peer (Mux.stopped csMux)
+                _otherwise -> pure ()
+              writeTVar countersVar Nothing
 
         _otherwise -> return ()
       where
@@ -319,16 +315,6 @@ with
           Mux.TraceStopped -> True
           Mux.TraceState Mux.Dead -> True
           _otherwise -> False
-
-        adjustWarmResponders tick peer =
-          modifyTVar countersVar $
-            Map.adjust (\rc@ResponderCounters { numTraceWarmResponders } -> rc { numTraceWarmResponders = tick numTraceWarmResponders } )
-                       peer
-
-        adjustHotResponders tick peer =
-          modifyTVar countersVar $
-            Map.adjust (\rc@ResponderCounters { numTraceHotResponders } -> rc { numTraceHotResponders = tick numTraceHotResponders } )
-                       peer
 
         getProtocolTemp mid csMiniProtocolMap  =
           let miniData = csMiniProtocolMap Map.! mid
@@ -392,7 +378,7 @@ with
               case maturedPeers time (freshDuplexPeers state) of
                 (as, _)     | Map.null as
                             -> retry
-                (as, fresh) -> do
+                (as, fresh) ->
                   (MaturedDuplexPeers as fresh :) <$> InfoChannel.readMessages infoChannel
          <> FirstToFinish do
               firstCommit <- runFirstToFinish $
@@ -489,9 +475,9 @@ with
                           let -- initial state is 'RemoteIdle', if the remote end will not
                               -- start any responders this will unregister the inbound side.
                               csRemoteState :: RemoteState m
-                              csRemoteState = RemoteIdle (\k' -> case mv of
-                                                            Nothing -> k' False
-                                                            Just v  -> LazySTM.readTVar v >>= k')
+                              csRemoteState = RemoteIdle (case mv of
+                                                            Nothing -> pure False
+                                                            Just v  -> LazySTM.readTVar v)
 
                               connState = ConnectionState {
                                   csMux,
@@ -535,7 +521,10 @@ with
               Just err -> traceWith tracer (TrMuxErrored connId err)
 
             -- the connection manager does should realise this on itself.
-            let state' = unregisterConnection connId state
+            -- we bypass the assertion check since MuxFinished could have been
+            -- placed on the queue before we managed to remove the connection from
+            -- the private state.
+            let state' = unregisterConnection True connId state
             return (Just connId, state')
 
           MiniProtocolTerminated
@@ -555,7 +544,7 @@ with
                 traceWith tracer $
                   TrResponderErrored tConnId num e
 
-                let state' = unregisterConnection tConnId state
+                let state' = unregisterConnection False tConnId state
                 return (Just tConnId, state')
 
               Right _ ->
@@ -572,7 +561,7 @@ with
                     traceWith tracer (TrResponderStartFailure tConnId num err)
                     Mux.stop tMux
 
-                    let state' = unregisterConnection tConnId state
+                    let state' = unregisterConnection False tConnId state
 
                     return (Just tConnId, state')
 
@@ -588,23 +577,23 @@ with
             traceWith tracer (TrWaitIdleRemote connId res)
             case res of
               TerminatedConnection {} -> do
-                let state' = unregisterConnection connId state
+                let state' = unregisterConnection False connId state
                 return (Just connId, state')
               OperationSuccess {}  -> do
                 mv <- traverse registerDelay idleTimeout
+                let timeoutSTM :: STM m Bool
+                    !timeoutSTM = case mv of
+                      Nothing -> pure False
+                      Just v  -> LazySTM.readTVar v
 
-                let state' =
-                      updateRemoteState connId (RemoteIdle \k' ->
-                        case mv of
-                          Nothing -> k' False
-                          Just v  -> LazySTM.readTVar v >>= k') state
+                    state' = updateRemoteState connId (RemoteIdle timeoutSTM) state
 
                 return (Just connId, state')
               -- It could happen that the connection got deleted by connection
               -- manager due to some async exception so we need to unregister it
               -- from the inbound governor state.
               UnsupportedState UnknownConnectionSt -> do
-                let state' = unregisterConnection connId state
+                let state' = unregisterConnection False connId state
                 return (Just connId, state')
               UnsupportedState {} -> do
                 return (Just connId, state)
@@ -630,7 +619,7 @@ with
 
             case resultInState res of
               UnknownConnectionSt -> do
-                let state' = unregisterConnection connId state
+                let state' = unregisterConnection False connId state
                 return (Just connId, state')
               _ -> do
                 let state' = updateRemoteState
@@ -665,14 +654,14 @@ with
                 -- @'InOutboundState' 'Unidirectional'@,
                 -- @'InTerminatingState'@,
                 -- @'InTermiantedState'@.
-                let state' = unregisterConnection connId state
+                let state' = unregisterConnection False connId state
                 return (Just connId, state')
 
               TerminatedConnection {} -> do
                 -- 'inState' can be either:
                 -- @'InTerminatingState'@,
                 -- @'InTermiantedState'@.
-                let state' = unregisterConnection connId state
+                let state' = unregisterConnection False connId state
                 return (Just connId, state')
 
               OperationSuccess transition ->
@@ -684,7 +673,7 @@ with
                     --    Commit^{dataFlow}_{Remote} : InboundIdleState dataFlow
                     --                               → TerminatingState
                     -- @
-                    let state' = unregisterConnection connId state
+                    let state' = unregisterConnection False connId state
                     return (Just connId, state')
 
                   -- the connection is still used by p2p-governor, carry on but put
@@ -941,7 +930,8 @@ firstPeerCommitRemote
         -- the connection is already in 'RemoteCold' state
         RemoteCold            -> mempty
         RemoteEstablished     -> mempty
-        RemoteIdle kTimeoutSTM -> FirstToFinish $ kTimeoutSTM \expired ->
+        RemoteIdle timeoutSTM -> FirstToFinish do
+          expired <- timeoutSTM
           if expired then pure $ CommitRemote connId else retry
 
 
