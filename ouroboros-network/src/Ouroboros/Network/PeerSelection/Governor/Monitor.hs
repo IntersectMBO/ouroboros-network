@@ -29,6 +29,7 @@ import Control.Concurrent.JobPool qualified as JobPool
 import Control.Exception (assert)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
 import System.Random (randomR)
 
 import Ouroboros.Network.ExitPolicy (RepromoteDelay)
@@ -308,7 +309,7 @@ connections PeerSelectionActions{
 -- | Monitor local roots using 'readLocalRootPeers' 'STM' action.
 --
 localRoots :: forall extraState extraDebugState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
-              (MonadSTM m, Ord peeraddr, Eq extraFlags)
+              (MonadTimer m, Ord peeraddr, Eq extraFlags)
            => PeerSelectionActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m
            -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
            -> Guarded (STM m) (TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)

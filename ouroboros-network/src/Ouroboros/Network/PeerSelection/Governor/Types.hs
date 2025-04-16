@@ -24,6 +24,7 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , nullPeerSelectionTargets
   , sanePeerSelectionTargets
   , PickPolicy
+  , c_PEER_DEMOTION_TIMEOUT
 
     -- ** Cardano Node specific functions
   , pickPeers
@@ -123,6 +124,7 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , DebugPeerSelection (..)
     -- * Error types
   , BootstrapPeersCriticalTimeoutError (..)
+  , DemotionTimeoutException (..)
   ) where
 
 import Data.Map.Strict (Map)
@@ -311,6 +313,16 @@ sanePeerSelectionTargets PeerSelectionTargets{..} =
  && targetNumberOfActiveBigLedgerPeers      <= 100
  && targetNumberOfEstablishedBigLedgerPeers <= 1000
  && targetNumberOfKnownBigLedgerPeers       <= 10000
+
+
+-- | The asynchronous demotion action will wait
+-- this long for peer status to change to 'PeerCold'
+-- before removing a peer from the OG state. If this times out,
+-- there is a logic error somewhere as this should happen after
+-- CM drops that peer from its state.
+--
+c_PEER_DEMOTION_TIMEOUT :: DiffTime
+c_PEER_DEMOTION_TIMEOUT = 10*60
 
 
 -- These being pluggable allows:
@@ -1842,6 +1854,11 @@ data ChurnAction = DecreasedActivePeers
                  | IncreasedKnownBigLedgerPeers
   deriving (Eq, Show)
 
+
+newtype DemotionTimeoutException = DemotionTimeoutException (Maybe SomeException)
+  deriving Show
+
+instance Exception DemotionTimeoutException
 
 data BootstrapPeersCriticalTimeoutError =
   BootstrapPeersCriticalTimeoutError

@@ -23,6 +23,7 @@ import Cardano.Network.Types (LedgerStateJudgement (..),
            getNumberOfBigLedgerPeers)
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM
+import Control.Monad.Class.MonadTimer.SI
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Ouroboros.Network.PeerSelection.Governor (readAssociationMode)
@@ -184,7 +185,7 @@ outboundConnectionsState
 
 
 cardanoPeerSelectionGovernorArgs
-  :: ( MonadSTM m
+  :: ( MonadTimer m
      , Alternative (STM m)
      , Ord peeraddr
      )

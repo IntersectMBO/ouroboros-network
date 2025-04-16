@@ -21,6 +21,7 @@ import Data.Set qualified as Set
 
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
 
 import Cardano.Network.ConsensusMode
 import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
@@ -185,7 +186,7 @@ targetPeers Cardano.ExtraPeerSelectionActions {
 -- governor notices it and disconnects from it.
 localRoots
   :: forall extraDebugState extraAPI extraCounters peeraddr peerconn m.
-    (MonadSTM m, Ord peeraddr)
+    (MonadTimer m, Ord peeraddr)
   => PeerSelectionActions
       Cardano.ExtraState
       PeerTrustable
@@ -663,4 +664,3 @@ waitForSystemToQuiesce st@PeerSelectionState{
                                       }
         }
   | otherwise = GuardedSkip Nothing
-

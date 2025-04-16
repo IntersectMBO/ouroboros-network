@@ -56,7 +56,7 @@ import Ouroboros.Network.ControlMessage (ControlMessage (..))
 import Ouroboros.Network.ExitPolicy
 import Ouroboros.Network.Mux
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
-import Ouroboros.Network.PeerSelection.Governor (PeerStateActions (..))
+import Ouroboros.Network.PeerSelection.Governor.Types (PeerStateActions (..))
 import Ouroboros.Network.Protocol.Handshake (HandshakeException)
 import Ouroboros.Network.RethrowPolicy
 
@@ -998,7 +998,7 @@ withPeerStateActions PeerStateActionsArguments {
              then traceWith spsTracer (PeerStatusChanged (HotToWarm pchConnectionId))
              else do
                  traceWith spsTracer (PeerStatusChangeFailure
-                                      (WarmToHot pchConnectionId)
+                                      (HotToWarm pchConnectionId)
                                       ActiveCold)
                  throwIO $ ColdDeactivationException pchConnectionId
 
