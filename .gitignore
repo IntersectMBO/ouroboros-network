@@ -1,2 +1,4 @@
 cabal.project.local
 dist-newstyle
+dist
+dist-build
