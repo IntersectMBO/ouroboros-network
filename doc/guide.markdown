@@ -350,6 +350,244 @@ Command Reference
 The full list of command line options for `kes-agent` and `kes-agent-control`
 can be printed using the `--help` option.
 
+Recommended Setups
+------------------
+
+**Legend:**
+
+- `---S-->`: service protocol connection (one-way)
+- `<==S==>`: service protocol connection (two-way; this actually uses two
+  separate network tunnels)
+- `---C-->`: control protocol connection
+
+In all setups, an air-gapped "cold key host" is assumed, which is used for
+signing operational certificates based on verification keys extracted from a
+running KES agent using the `kes-agent-control` CLI tool. This cold key host
+should be located somewhere within convenient reach of the machine running the
+`kes-agent-control` tool, but it should remain physically disconnected from any
+networks at all times in order to protect the cold key.
+
+Further, it is assumed that the SPO has some sort of local machine available
+from where they control their cardano node; this machine is labelled the
+"control host" in these example setups.
+
+## Single-Agent
+
+This is a simple setup that requires no extra hardware, since the only KES
+Agent process runs on the same machine as the block-forging node.
+
+    ------------ node host ------------
+     +---------+      +--------------+
+     | Agent A |<--S--| cardano-node |
+     +---------+      +--------------+
+          ^
+          |
+    ------|--- control host -----------
+          C
+          |
+     +-------------------+
+     | kes-agent-control |
+     | (CLI)             |
+     +-------------------+
+
+### Properties:
+
+- Key persists through network outages: YES
+- Key persists through restart of cardano-node process: YES
+- Key persists through restart of KES agent process: NO
+- Key persists through reboots/hibernation of the node host: NO
+- Recovery from cardano-node restart: automatic
+- Recovery from agent process restart: manual via cold key host
+- Recovery from node host reboot/hibernation: manual via cold key host
+- Key updates possible during network outages: NO
+
+### Recommended hardening:
+
+- Set up SSH tunneling from the control host to the node host for the control
+  socket only.
+- Run the KES Agent under an locked-down user account that cannot log into a
+  shell and can only access the files it needs (configuration files and local
+  domain sockets for control and service connections).
+- Keep the control host behind a firewall.
+
+## Backup Agent On Control Host
+
+This setup is suitable for SPOs who use a control host that runs most of the
+time; it does not require any additional hardware beyond the node host and the
+control host, and offers a basic degree of redundancy and self-healing. Even if
+the control host does not offer high availability, this setup supports
+scheduled restarts of the node or the host it runs on, as long as the KES
+agent on the control server remains active during the restart.
+
+        ------------ node-host ------------
+         +---------+      +--------------+
+     +==>| Agent A |<--S--| cardano-node |
+     |   +---------+      +--------------+
+     |        
+     S  --------- control host -----------------
+     |   +---------+      +-------------------+
+     +==>| Agent B |<--C--| kes-agent-control |
+         +---------+      | (CLI)             |
+                          +-------------------+
+
+### Properties:
+
+- Key persists through network outages: YES
+- Key persists through restart of cardano-node process: YES
+- Key persists through restart of KES agent process A: YES (as long as KES
+  agent B remains available)
+- Key persists through restart of KES agent process B: YES (as long as KES
+  agent A stays up)
+- Key persists through reboots/hibernation of the node host: YES (as long as
+  KES agent B stays up)
+- Key persists through reboots/hibernation of the control host: YES (as long as
+  KES agent A stays up)
+- Recovery from cardano-node restart: automatic
+- Recovery from agent process restart: automatic
+- Recovery from node host reboot/hibernation: automatic
+- Recovery from control host reboot/hibernation: automatic
+- Recovery from simultaneous restart of both agent processes: manual via cold
+  key host
+- Recovery from simultaneous reboot of both hosts: manual via cold
+  key host
+- Key updates possible during network outages: YES (updates will propagate once
+  network connectivity is restored)
+
+### Recommended hardening:
+
+- Set up SSH tunneling from the control host to the node host for the service
+  sockets only (one in each direction).
+- Disable the control socket on Agent A.
+- Run the KES agent A under an locked-down user account that cannot log into a
+  shell and can only access the files it needs (configuration files and local
+  domain sockets for control and service connections).
+- Keep the control host behind a firewall.
+
+## Basic 3-Agent Setup
+
+This setup is suitable for SPOs who desire more redundancy for more reliable
+persistence / automatic recovery, and are willing to provision an extra host
+for that.
+
+           ------------- node host -------------
+             +---------+      +--------------+
+      +=====>| Agent A |<--S--| cardano-node |
+      |  +==>|         |      +--------------+
+      |  |   +---------+
+      |  |
+      |  S ------------- agent host -------------
+      |  |   +---------+
+      S* +==>| Agent B |
+      |  +==>|         |
+      |  |   +---------+
+      |  |        
+      |  S ---------- control host -----------------
+      |  |   +---------+      +-------------------+
+      |  +==>| Agent C |<--C--| kes-agent-control |
+      +=====>|         |      | (CLI)             |
+             +---------+      +-------------------+
+
+It is advisable to provision the agent host separately from the node host to
+minimize the risk of agents A and B becoming unavailable simultaneously.
+
+The connection between agents A and C, marked with an asterisk, is optional; it
+allows agents A and C to stay in sync during times when agent B is down.
+
+### Properties:
+
+- Key persists through network outages: YES
+- Key persists through restart of cardano-node process: YES
+- Key persists through restart of KES agent process: YES (as long as at least
+  one other KES agent process stays up)
+- Key persists through reboots/hibernation of any host: YES (as long as at
+  least one other KES agent process stays up)
+- Recovery from cardano-node restart: automatic
+- Recovery from agent process restart: automatic
+- Recovery from node host reboot/hibernation: automatic
+- Recovery from control host reboot/hibernation: automatic
+- Recovery from simultaneous restart of up to 2 agent processes: automatic
+- Recovery from simultaneous reboot of up to 2 hosts: automatic
+- Recovery from simultaneous restart of all KES agents: manual via cold key
+  host
+- Recovery from simultaneous reboot/hibernation of all hosts: manual via cold
+  key host
+- Key updates possible during network outages: YES (updates will propagate once
+  network connectivity is restored)
+
+
+### Recommended hardening:
+
+- Set up SSH tunneling from the control host to the agent and node hosts for
+  the service sockets only (one in each direction), and from the agent host to
+  the node host. Alternatively, if you want to avoid SSH connections into the
+  node host, do not make the optional connection between agents A and C, and
+  set up SSH tunnels for the connection between agents A and B from the node
+  host. This way, only outgoing SSH connections need to be allowed from the
+  node host (however, the agent host must accept incoming SSH connections).
+- Disable the control socket on Agents A and B.
+- Run KES agent A and B under locked-down user accounts that cannot log into a
+  shell and can only access the files they need (configuration files and local
+  domain sockets for control and service connections).
+- Keep the control host behind a firewall.
+
+More Elaborate Setups
+---------------------
+
+The Basic 3-Agent Setup can be extended to arbitrarily many KES Agent hosts to
+achieve the desired degree of redundancy and availability. Many topologies are
+possible; the below diagrams show some basic options (only KES agents are
+shown for clarity).
+
+### Bilateral Linear
+
+    +---+     +---+     +---+     +---+     +---+
+    | A |<===>| B |<===>| C |<===>| D |<===>| E |
+    +---+     +---+     +---+     +---+     +---+
+
+Every agent connects to one or two peers.
+
+Propagation will be disrupted whenever one agent goes down, and will be
+restored once that agent comes back up.
+
+### Ring
+
+    +---+     +---+     +---+
+    | A |<===>| B |<===>| C |
+    +---+     +---+     +---+
+      ^                   ^
+      |                   |
+      v                   v
+    +---+               +---+
+    | H |               | D |
+    +---+               +---+
+      ^                   ^
+      |                   |
+      v                   v
+    +---+     +---+     +---+
+    | G |<===>| F |<===>| E |
+    +---+     +---+     +---+
+
+Every agent connects to two peers.
+
+Propagation will be disrupted whenever two agents go down, and will be restored
+once one of them comes back up.
+
+### Web
+
+    +---+     +---+
+    | A |<===>| B |
+    +---+<   >+---+
+      ^   \ /   ^
+      |    X    |
+      v   / \   v
+    +---+<   >+---+
+    | C |<===>| D |
+    +---+     +---+
+
+Every agent connects to every other agent.
+
+Propagation is never disrupted between any two active agents.
+
 Using As A Library
 ------------------
 
