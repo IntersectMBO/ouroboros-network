@@ -3,6 +3,8 @@ PREFIX=/usr/local
 SERVICEDIR=/etc/systemd/system
 CONFIGDIR=/etc/kes-agent
 COLDKEY=
+DO_BUILD=
+BINDIR="$(realpath ./bin)"
 
 while test -n "$1"
 do
@@ -22,6 +24,9 @@ do
         --config-dir)
             shift
             CONFIGDIR="$1"
+            ;;
+        --build)
+            DO_BUILD="1"
             ;;
         -h|--help)
             cat <<EOT
@@ -52,17 +57,25 @@ if test -z "$COLDKEY"; then
 fi
 COLDKEY=`realpath $COLDKEY`
 cd $(dirname "$0")
-if ! test -f $COLDKEY; then
+if ! test -f "$COLDKEY"; then
     echo "File does not exist: $COLDKEY"
     exit 1
 fi
-cabal install exe:kes-agent --installdir=/tmp --install-method=copy
+if test "$DO_BUILD" = "1"; then
+	mkdir -p "$BINDIR"
+    cabal install exe:kes-agent --installdir="$BINDIR" --install-method=copy
+fi
+if ! test -f "$BINDIR/kes-agent"; then
+	echo "File does not exist: $BINDIR/kes-agent"
+	exit 2
+fi
+sudo mkdir -p /etc/kes-agent
 sudo groupadd kes-agent -f
 sudo useradd kes-agent -g kes-agent -r
-sudo install /tmp/kes-agent "$PREFIX/bin/kes-agent"
+sudo install "$BINDIR/kes-agent" "$PREFIX/bin/kes-agent"
 sudo install "$COLDKEY" "$CONFIGDIR/cold.vkey"
 sudo install etc/kes-agent/kes-agent.env "$CONFIGDIR/kes-agent.env"
-sudo install etc/kes-agent/mainnet-shelley-genesis.json "$CONFIGDIR/mainnet-shelley-genesis.json.vkey"
+sudo install etc/kes-agent/mainnet-shelley-genesis.json "$CONFIGDIR/mainnet-shelley-genesis.json"
 sudo install etc/systemd/system/kes-agent.service "$SERVICEDIR"/kes-agent.service
 sudo install etc/systemd/system/kes-agent-hibernate.service "$SERVICEDIR"/kes-agent-hibernate.service
 sudo systemctl daemon-reload

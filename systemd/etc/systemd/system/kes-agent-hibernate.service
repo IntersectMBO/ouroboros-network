@@ -1,0 +1,14 @@
+[Unit]
+Description=KES Agent Hibernation Protection
+Before=sleep.target
+StopWhenUnneeded=yes
+
+[Service]
+Type=oneshot
+StandardOutput=syslog
+RemainAfterExit=yes
+ExecStart=/bin/systemctl stop kes-agent.service
+ExecStop=/bin/systemctl start kes-agent.service
+
+[Install]
+WantedBy=sleep.target
