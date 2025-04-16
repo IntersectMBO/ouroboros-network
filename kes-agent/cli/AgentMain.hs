@@ -406,13 +406,14 @@ optionsFromFiles def codec paths =
 
 getConfigPaths :: IO [FilePath]
 getConfigPaths = do
-  home <- getEnv "HOME"
+  homeMay <- lookupEnv "HOME"
   let tail = "agent.toml"
-  return
-    [ home </> ".kes-agent" </> tail
-    , home </> ".config/kes-agent" </> tail
-    , "/etc/kes-agent" </> tail
-    ]
+  return $
+    catMaybes
+      [ (</> (".kes-agent" </> tail)) <$> homeMay
+      , (</> (".config/kes-agent" </> tail)) <$> homeMay
+      , Just $ "/etc/kes-agent" </> tail
+      ]
 
 -- | Get logging priority for an 'AgentTrace' message.
 agentTracePrio :: AgentTrace -> Priority

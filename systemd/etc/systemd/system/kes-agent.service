@@ -1,5 +1,7 @@
 [Unit]
 Description=KES Agent
+Before=sleep.target
+StopWhenUnneeded=yes
 
 [Service]
 Type=forking
@@ -7,6 +9,7 @@ ExecStart=/usr/local/bin/kes-agent start
 ExecStop=/usr/local/bin/kes-agent stop
 EnvironmentFile=/etc/kes-agent/kes-agent.env
 PIDFile=kes-agent.pid
+RemainAfterExit=yes
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=sleep.target
