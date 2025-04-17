@@ -185,7 +185,7 @@ kesAgentGenesisFile = do
           (Text.lines <$> Text.hGetContents hErr)
       exitCode <- waitForProcess ph
       return (outT, errT, exitCode)
-  assertMatchingOutputLines 3 (Text.words "listening on control socket") agentOutLines
+  assertMatchingOutputLines 3 (Text.words "listening on control socket:") agentOutLines
 
 kesAgentNoControlAddress :: Assertion
 kesAgentNoControlAddress = do
