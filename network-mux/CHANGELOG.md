@@ -6,6 +6,7 @@
 
 * run, miniProtocolJob, monitor now accept Tracers record
   instead of `Tracer m Trace` type.
+* Removed handshake trace events from mux trace.
 
 ### Non-breaking changes
 

@@ -375,7 +375,6 @@ connectToNodeWithMux'
     connectionId <- (\localAddress remoteAddress -> ConnectionId { localAddress, remoteAddress })
                 <$> Snocket.getLocalAddr sn sd <*> Snocket.getRemoteAddr sn sd
     muxTracer <- initDeltaQTracer' $ Mx.WithBearer connectionId `contramap` nctMuxTracer
-    ts_start <- getMonotonicTime
 
     handshakeBearer <- Mx.getBearer makeBearer sduHandshakeTimeout muxTracer sd Nothing
     app_e <-
@@ -392,18 +391,14 @@ connectToNodeWithMux'
           haTimeLimits       = handshakeTimeLimits
         }
         versions
-    ts_end <- getMonotonicTime
     case app_e of
        Left (HandshakeProtocolLimit err) -> do
-         traceWith muxTracer $ Mx.TraceHandshakeClientError err (diffTime ts_end ts_start)
          throwIO err
 
        Left (HandshakeProtocolError err) -> do
-         traceWith muxTracer $ Mx.TraceHandshakeClientError err (diffTime ts_end ts_start)
          throwIO err
 
        Right (HandshakeNegotiationResult app versionNumber agreedOptions) -> do
-         traceWith muxTracer $ Mx.TraceHandshakeClientEnd (diffTime ts_end ts_start)
          Mx.withReadBufferIO (\buffer -> do
              bearer <- Mx.getBearer makeBearer sduTimeout muxTracer sd buffer
              mux <- Mx.new (toMiniProtocolInfos (runForkPolicy noBindForkPolicy remoteAddress) app)
@@ -412,7 +407,6 @@ connectToNodeWithMux'
            )
 
        Right (HandshakeQueryResult _vMap) -> do
-         traceWith muxTracer $ Mx.TraceHandshakeClientEnd (diffTime ts_end ts_start)
          throwIO (QueryNotSupported @vNumber)
 
 
