@@ -15,6 +15,7 @@ import Cardano.KESAgent.Serialization.CBOR
 import Cardano.KESAgent.Serialization.TextEnvelope
 import Cardano.KESAgent.Util.ColoredOutput
 import Cardano.KESAgent.Util.Pretty
+import Cardano.KESAgent.Util.Version
 
 import Cardano.Crypto.Libsodium (sodiumInit)
 import Cardano.Crypto.Libsodium.MLockedSeed
@@ -189,7 +190,7 @@ pProgramOptions =
       )
 
 pProgramModeOptions =
-  subparser
+  hsubparser
     ( command "start" (info (pure $ RunAsService nullServiceModeOptions) idm)
         <> command "stop" (info (pure $ RunAsService nullServiceModeOptions) idm)
         <> command "restart" (info (pure $ RunAsService nullServiceModeOptions) idm)
@@ -584,7 +585,17 @@ programDesc = fullDesc
 
 main = do
   sodiumInit
-  po <- execParser (info (pProgramOptions <**> helper) programDesc)
+  let parserPrefs = prefs $ subparserInline <> helpShowGlobals
+      versionStr = "kes-agent-control " ++ libraryVersion
+  po <- customExecParser
+          parserPrefs
+          (info
+            (pProgramOptions <**>
+              simpleVersioner versionStr <**>
+              helper
+            )
+            programDesc
+          )
   case poMode po of
     RunNormally nmo -> runNormally (poExtraConfigPath po) nmo
     RunAsService smo -> runAsService (poExtraConfigPath po) smo

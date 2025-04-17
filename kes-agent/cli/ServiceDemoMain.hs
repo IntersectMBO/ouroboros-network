@@ -16,6 +16,7 @@ import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Util.ColoredOutput
 import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting
+import Cardano.KESAgent.Util.Version
 
 import Cardano.Crypto.KES.Class
 import Cardano.Crypto.Libsodium (sodiumInit)
@@ -153,7 +154,17 @@ data ServiceClientState
 main :: IO ()
 main = do
   sodiumInit
-  sdo' <- execParser (info (pServiceDemoOptions <**> helper) programDesc)
+  let parserPrefs = prefs $ subparserInline <> helpShowGlobals
+      versionStr = "kes-agent-control " ++ libraryVersion
+  sdo' <- customExecParser
+            parserPrefs
+            (info
+              ( pServiceDemoOptions <**>
+                simpleVersioner versionStr <**>
+                helper
+              )
+              programDesc
+            )
   sdoEnv <- sdoFromEnv
   let sdo = sdo' <> sdoEnv <> defServiceDemoOptions
 

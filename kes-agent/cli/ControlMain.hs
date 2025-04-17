@@ -20,6 +20,7 @@ import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Serialization.CBOR
 import Cardano.KESAgent.Serialization.TextEnvelope
 import Cardano.KESAgent.Util.HexBS
+import Cardano.KESAgent.Util.Version
 
 import Cardano.Crypto.DSIGN.Class
 import Cardano.Crypto.KES.Class
@@ -273,25 +274,25 @@ pCommonOptions =
 
 pGenKeyOptions =
   GenKeyOptions
-    <$> pCommonOptions
+    <$> pure defCommonOptions
     <*> pVerKeyFile
 
 pQueryKeyOptions =
   QueryKeyOptions
-    <$> pCommonOptions
+    <$> pure defCommonOptions
     <*> pVerKeyFile
 
 pDropStagedKeyOptions =
   DropStagedKeyOptions
-    <$> pCommonOptions
+    <$> pure defCommonOptions
 
 pDropKeyOptions =
   DropKeyOptions
-    <$> pCommonOptions
+    <$> pure defCommonOptions
 
 pInstallKeyOptions =
   InstallKeyOptions
-    <$> pCommonOptions
+    <$> pure defCommonOptions
     <*> pOpCertFile
 
 pVerKeyFile =
@@ -339,7 +340,7 @@ pProgramOptions =
           <> command "export-staged-vkey" (info (RunQueryKey <$> pQueryKeyOptions) idm)
           <> command "install-key" (info (RunInstallKey <$> pInstallKeyOptions) idm)
           <> command "drop-key" (info (RunDropKey <$> pDropKeyOptions) idm)
-          <> command "info" (info (RunGetInfo <$> pCommonOptions) idm)
+          <> command "info" (info (pure $ RunGetInfo defCommonOptions) idm)
       )
 
 eitherError :: Either String a -> IO a
@@ -539,7 +540,17 @@ programDesc = fullDesc
 main :: IO ()
 main = do
   sodiumInit
-  programOptions <- execParser (info (pProgramOptions <**> helper) programDesc)
+  let parserPrefs = prefs $ subparserInline <> helpShowGlobals
+      versionStr = "kes-agent-control " ++ libraryVersion
+  programOptions <- customExecParser
+                      parserPrefs
+                      (info
+                        (pProgramOptions <**>
+                          simpleVersioner versionStr <**>
+                          helper
+                        )
+                        programDesc
+                      )
   case programOptions of
     RunGenKey opts' -> runGenKey opts'
     RunQueryKey opts' -> runQueryKey opts'

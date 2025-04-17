@@ -93,6 +93,12 @@ library
                    Cardano.KESAgent.Util.RetrySocket
                    Cardano.KESAgent.Util.PlatformPoison
                    Cardano.KESAgent.Util.ColoredOutput
+                   Cardano.KESAgent.Util.Version
+                   Cardano.KESAgent.Util.GetVersion
+
+                   Paths_kes_agent
+    autogen-modules:
+                   Paths_kes_agent
     build-depends: async
                  , aeson >=2.0
                  , base16-bytestring
@@ -120,6 +126,7 @@ library
                  , network-mux
                  , nothunks
                  , ouroboros-network-framework
+                 , process >=1.6 && <1.7
                  , quiet
                  , serdoc-core
                  , socket >= 0.8.3 && <0.9
