@@ -103,6 +103,7 @@ import Control.Concurrent.Class.MonadSTM.TMVar (
  )
 import Control.Monad (forever, void)
 import Control.Monad.Class.MonadAsync (
+  AsyncCancelled,
   MonadAsync,
   concurrently,
   concurrently_,
@@ -112,10 +113,11 @@ import Control.Monad.Class.MonadFork (labelThread, myThreadId)
 import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadSTM (atomically)
 import Control.Monad.Class.MonadThrow (
+  Handler (..),
   MonadCatch,
   MonadThrow,
   SomeException,
-  catch,
+  catches,
   finally,
  )
 import Control.Monad.Class.MonadTimer (threadDelay)
@@ -137,6 +139,7 @@ runListener ::
   MonadMVar m =>
   MonadAsync m =>
   MonadCatch m =>
+  Show addr =>
   Show fd =>
   Snocket m fd addr ->
   fd ->
@@ -181,13 +184,21 @@ runListener
       listen s fd
       traceWith tracer (tListeningOnSocket addrStr)
 
-      let handleConnection fd' = do
-            traceWith tracer (tClientConnected (show fd) (show fd'))
+      let handleConnection addr' fd' = do
+            traceWith tracer (tClientConnected (addrStr) (show addr'))
             bearer <- getRawBearer mrb fd'
             handle bearer (tDriverTrace >$< tracer)
 
       let logAndContinue :: SomeException -> m ()
           logAndContinue e = traceWith tracer (tSocketError (show e))
+
+      let ignoreAsyncCancelled :: AsyncCancelled -> m ()
+          ignoreAsyncCancelled _ = pure ()
+
+      let handlers =
+            [ Handler ignoreAsyncCancelled
+            , Handler logAndContinue
+            ]
 
       let loop :: Accept m fd addr -> m ()
           loop a = do
@@ -199,12 +210,12 @@ runListener
               (Accepted fd' addr', next) ->
                 concurrently_
                   (loop next)
-                  ( handleConnection fd'
-                      `catch` logAndContinue
-                      `finally` (close s fd' >> traceWith tracer (tSocketClosed $ show fd'))
+                  ( handleConnection addr' fd'
+                      `catches` handlers
+                      `finally` (close s fd' >> traceWith tracer (tSocketClosed $ show addr'))
                   )
 
-      (accept s fd >>= loop) `catch` logAndContinue
+      (accept s fd >>= loop) `catches` handlers
 
 -- | Run an agent.
 -- This will spawn the following threads:
@@ -321,7 +332,7 @@ runAgent agent = do
               _ -> return ()
 
         let parentTracer :: Tracer m ServiceClientTrace
-            parentTracer = AgentBootstrapTrace >$< agentTracer (agentOptions agent)
+            parentTracer = AgentBootstrapTrace (show addr) >$< agentTracer (agentOptions agent)
 
         setConnectionStatus ConnectionConnecting
 

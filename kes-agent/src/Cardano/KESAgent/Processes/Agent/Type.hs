@@ -39,7 +39,7 @@ import Cardano.KESAgent.Util.RefCounting (
 -- | Trace messages emitted from a KES agent process.
 data AgentTrace
   = AgentVersionHandshakeDriverTrace VersionHandshakeDriverTrace
-  | AgentBootstrapTrace ServiceClientTrace
+  | AgentBootstrapTrace String ServiceClientTrace
   | AgentCheckEvolution KESPeriod
   | AgentControlClientConnected String String
   | AgentControlClientDisconnected String
@@ -83,6 +83,7 @@ data AgentTrace
 
 instance Pretty AgentTrace where
   pretty (AgentVersionHandshakeDriverTrace d) = "Agent: version handshake driver: " ++ pretty d
+  pretty (AgentBootstrapTrace b t) = "Agent: bootstrap " ++ b ++ ": " ++ (drop (length "Service: ") (pretty t))
   pretty (AgentServiceDriverTrace d) = "Agent: service driver: " ++ pretty d
   pretty (AgentServiceSocketClosed a) = "Agent: service socket closed: " ++ a
   pretty (AgentServiceClientConnected a b) = "Agent: service client connected: " ++ a ++ " " ++ b
@@ -100,6 +101,8 @@ instance Pretty AgentTrace where
   pretty (AgentInstallingNewKey key) = "Agent: installing new key: " ++ key
   pretty (AgentGeneratedStagedKey key) = "Agent: generated staged key: " ++ key
   pretty (AgentDroppedStagedKey key) = "Agent: dropped staged key: " ++ key
+  pretty (AgentListeningOnControlSocket addr) = "Agent: listening on control socket: " ++ addr
+  pretty (AgentListeningOnServiceSocket addr) = "Agent: listening on service socket: " ++ addr
   pretty x = "Agent: " ++ prettify (drop (strLength "Agent") (show x))
     where
       prettify str =

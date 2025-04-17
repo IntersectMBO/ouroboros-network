@@ -542,15 +542,16 @@ main = do
   sodiumInit
   let parserPrefs = prefs $ subparserInline <> helpShowGlobals
       versionStr = "kes-agent-control " ++ libraryVersion
-  programOptions <- customExecParser
-                      parserPrefs
-                      (info
-                        (pProgramOptions <**>
-                          simpleVersioner versionStr <**>
-                          helper
-                        )
-                        programDesc
-                      )
+  programOptions <-
+    customExecParser
+      parserPrefs
+      ( info
+          ( pProgramOptions
+              <**> simpleVersioner versionStr
+              <**> helper
+          )
+          programDesc
+      )
   case programOptions of
     RunGenKey opts' -> runGenKey opts'
     RunQueryKey opts' -> runQueryKey opts'

@@ -47,11 +47,19 @@ import Cardano.Crypto.KES.Class (SignKeyKES, VerKeyKES)
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket (Snocket (..))
 
+import Control.Concurrent.Async (AsyncCancelled)
 import Control.Concurrent.Class.MonadMVar
 import Control.Concurrent.Class.MonadSTM
 import Control.Monad (forever, void)
 import Control.Monad.Class.MonadST
-import Control.Monad.Class.MonadThrow (MonadCatch, MonadThrow, SomeException, bracket, catch)
+import Control.Monad.Class.MonadThrow (
+  Handler (..),
+  MonadCatch,
+  MonadThrow,
+  SomeException,
+  bracket,
+  catches,
+ )
 import Control.Monad.Class.MonadTimer (MonadDelay, threadDelay)
 import Control.Tracer (Tracer, traceWith)
 import Data.Char (toLower)
@@ -85,12 +93,16 @@ data ServiceClientTrace
   | ServiceClientDroppedKey
   | ServiceClientOpCertNumberCheck !Word64 !Word64
   | ServiceClientAbnormalTermination !String
+  | ServiceClientStopped
   deriving (Show)
 
 instance Pretty ServiceClientTrace where
   pretty (ServiceClientDriverTrace d) = "Service: service driver: " ++ pretty d
   pretty (ServiceClientConnected a) = "Service: connected to " ++ a
   pretty (ServiceClientVersionHandshakeTrace a) = "Service: version handshake: " ++ pretty a
+  pretty (ServiceClientReceivedKey k) = "Service: received key: " ++ k
+  pretty (ServiceClientDeclinedKey k) = "Service: declined key: " ++ k
+  pretty (ServiceClientAbnormalTermination err) = "Service: abnormal termination: " ++ err
   pretty x = "Service: " ++ prettify (drop (length "ServiceClient") (show x))
     where
       prettify str =
@@ -248,9 +260,17 @@ runServiceClientForever ::
   m ()
 runServiceClientForever proxy mrb options handleKey tracer =
   forever $ do
-    runServiceClient proxy mrb options handleKey tracer `catch` handle
+    runServiceClient proxy mrb options handleKey tracer
+      `catches` [ Handler handleAsyncCancelled
+                , Handler handle
+                ]
     threadDelay 1000000
   where
+    handleAsyncCancelled :: AsyncCancelled -> m ()
+    handleAsyncCancelled _ = do
+      traceWith tracer $ ServiceClientStopped
+      return ()
+
     handle :: SomeException -> m ()
     handle e = do
       traceWith tracer $ ServiceClientAbnormalTermination (show e)

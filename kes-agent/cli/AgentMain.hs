@@ -423,17 +423,18 @@ agentTracePrio AgentServiceVersionHandshakeFailed {} = Warning
 agentTracePrio AgentControlVersionHandshakeFailed {} = Warning
 agentTracePrio AgentServiceDriverTrace {} = Debug
 agentTracePrio AgentControlDriverTrace {} = Debug
-agentTracePrio (AgentBootstrapTrace ServiceClientVersionHandshakeTrace {}) = Debug
-agentTracePrio (AgentBootstrapTrace ServiceClientVersionHandshakeFailed {}) = Error
-agentTracePrio (AgentBootstrapTrace ServiceClientDriverTrace {}) = Debug
-agentTracePrio (AgentBootstrapTrace ServiceClientSocketClosed {}) = Info
-agentTracePrio (AgentBootstrapTrace ServiceClientConnected {}) = Notice
-agentTracePrio (AgentBootstrapTrace ServiceClientAttemptReconnect {}) = Info
-agentTracePrio (AgentBootstrapTrace ServiceClientReceivedKey {}) = Notice
-agentTracePrio (AgentBootstrapTrace ServiceClientDeclinedKey {}) = Info
-agentTracePrio (AgentBootstrapTrace ServiceClientDroppedKey {}) = Notice
-agentTracePrio (AgentBootstrapTrace ServiceClientAbnormalTermination {}) = Error
-agentTracePrio (AgentBootstrapTrace ServiceClientOpCertNumberCheck {}) = Debug
+agentTracePrio (AgentBootstrapTrace _ ServiceClientVersionHandshakeTrace {}) = Debug
+agentTracePrio (AgentBootstrapTrace _ ServiceClientVersionHandshakeFailed {}) = Error
+agentTracePrio (AgentBootstrapTrace _ ServiceClientDriverTrace {}) = Debug
+agentTracePrio (AgentBootstrapTrace _ ServiceClientSocketClosed {}) = Info
+agentTracePrio (AgentBootstrapTrace _ ServiceClientConnected {}) = Notice
+agentTracePrio (AgentBootstrapTrace _ ServiceClientAttemptReconnect {}) = Info
+agentTracePrio (AgentBootstrapTrace _ ServiceClientReceivedKey {}) = Notice
+agentTracePrio (AgentBootstrapTrace _ ServiceClientDeclinedKey {}) = Info
+agentTracePrio (AgentBootstrapTrace _ ServiceClientDroppedKey {}) = Notice
+agentTracePrio (AgentBootstrapTrace _ ServiceClientAbnormalTermination {}) = Error
+agentTracePrio (AgentBootstrapTrace _ ServiceClientOpCertNumberCheck {}) = Debug
+agentTracePrio (AgentBootstrapTrace _ ServiceClientStopped {}) = Info
 agentTracePrio AgentReplacingPreviousKey {} = Notice
 agentTracePrio AgentDroppingKey {} = Notice
 agentTracePrio AgentRejectingKey {} = Info
@@ -587,15 +588,16 @@ main = do
   sodiumInit
   let parserPrefs = prefs $ subparserInline <> helpShowGlobals
       versionStr = "kes-agent " ++ libraryVersion
-  po <- customExecParser
-          parserPrefs
-          (info
-            (pProgramOptions <**>
-              simpleVersioner versionStr <**>
-              helper
-            )
-            programDesc
+  po <-
+    customExecParser
+      parserPrefs
+      ( info
+          ( pProgramOptions
+              <**> simpleVersioner versionStr
+              <**> helper
           )
+          programDesc
+      )
   case poMode po of
     RunNormally nmo -> runNormally (poExtraConfigPath po) nmo
     RunAsService smo -> runAsService (poExtraConfigPath po) smo

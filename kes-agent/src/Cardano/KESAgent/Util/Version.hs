@@ -3,8 +3,8 @@
 module Cardano.KESAgent.Util.Version
 where
 
-import Language.Haskell.TH
 import Cardano.KESAgent.Util.GetVersion (getProgramVersion)
+import Language.Haskell.TH
 
 libraryVersion :: String
-libraryVersion = $( litE =<< (stringL <$> runIO getProgramVersion) )
+libraryVersion = $(litE =<< (stringL <$> runIO getProgramVersion))

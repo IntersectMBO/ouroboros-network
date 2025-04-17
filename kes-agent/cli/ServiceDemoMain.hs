@@ -156,15 +156,16 @@ main = do
   sodiumInit
   let parserPrefs = prefs $ subparserInline <> helpShowGlobals
       versionStr = "kes-agent-control " ++ libraryVersion
-  sdo' <- customExecParser
-            parserPrefs
-            (info
-              ( pServiceDemoOptions <**>
-                simpleVersioner versionStr <**>
-                helper
-              )
-              programDesc
-            )
+  sdo' <-
+    customExecParser
+      parserPrefs
+      ( info
+          ( pServiceDemoOptions
+              <**> simpleVersioner versionStr
+              <**> helper
+          )
+          programDesc
+      )
   sdoEnv <- sdoFromEnv
   let sdo = sdo' <> sdoEnv <> defServiceDemoOptions
 
