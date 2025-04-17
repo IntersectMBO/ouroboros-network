@@ -67,6 +67,7 @@ import Cardano.KESAgent.KES.Bundle (Bundle (..), TaggedBundle (..))
 import Cardano.KESAgent.KES.Evolution (
   EvolutionConfig (..),
   defEvolutionConfig,
+  getTimeToNextKESPeriod,
  )
 import Cardano.KESAgent.Processes.Agent.CommonActions
 import Cardano.KESAgent.Processes.Agent.Context
@@ -246,9 +247,8 @@ runAgent agent = do
 
   let runEvolution = do
         forever $ do
-          -- Check time every 100 milliseconds, update key when period flips
-          -- over.
-          threadDelay 100_000
+          delayMicro <- getTimeToNextKESPeriod (agentEvolutionConfig (agentOptions agent))
+          threadDelay delayMicro
           checkEvolution agent
 
   let runService :: m ()

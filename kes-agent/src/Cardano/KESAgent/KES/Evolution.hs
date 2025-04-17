@@ -16,6 +16,7 @@ import Cardano.Crypto.KES.Class
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime
+import Data.Fixed
 import Data.Time (nominalDiffTimeToSeconds)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 
@@ -62,6 +63,18 @@ getCurrentKESPeriodWith getNow ec = do
   let diffSecs = floor (nominalDiffTimeToSeconds $ diffUTCTime now (systemStart ec))
       kesPeriodDuration = fromIntegral (slotLength ec) * fromIntegral (slotsPerKESPeriod ec)
   return $ KESPeriod (diffSecs `div` kesPeriodDuration)
+
+getTimeToNextKESPeriod :: MonadTime m => EvolutionConfig -> m Int
+getTimeToNextKESPeriod =
+  getTimeToNextKESPeriodWith getCurrentTime
+
+getTimeToNextKESPeriodWith :: Monad m => m UTCTime -> EvolutionConfig -> m Int
+getTimeToNextKESPeriodWith getNow ec = do
+  now <- getNow
+  kesPeriod <- getCurrentKESPeriodWith (pure now) ec
+  let (_, end) = getKESPeriodTimes ec kesPeriod
+      MkFixed diffPico = nominalDiffTimeToSeconds (diffUTCTime end now)
+  return . fromInteger $ diffPico `div` 1000000
 
 -- | Get the start and end times of the give KES period, based on the given
 -- evolution parameters
