@@ -586,7 +586,7 @@ programDesc = fullDesc
 main = do
   sodiumInit
   let parserPrefs = prefs $ subparserInline <> helpShowGlobals
-      versionStr = "kes-agent-control " ++ libraryVersion
+      versionStr = "kes-agent " ++ libraryVersion
   po <- customExecParser
           parserPrefs
           (info
