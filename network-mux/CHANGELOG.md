@@ -8,6 +8,7 @@
 * Polling of the egress queue
 * run, miniProtocolJob, monitor now accept MuxTracerBundle record
   instead of `Tracer m Trace` type.
+* Removed handshake trace events from mux trace.
 
 ### Non-breaking changes
 * Define msHeaderLength instead of using '8'
