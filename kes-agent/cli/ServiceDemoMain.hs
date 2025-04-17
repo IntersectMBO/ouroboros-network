@@ -101,6 +101,7 @@ serviceTracePrio ServiceClientDeclinedKey {} = Notice
 serviceTracePrio ServiceClientDroppedKey {} = Notice
 serviceTracePrio ServiceClientAbnormalTermination {} = Error
 serviceTracePrio ServiceClientOpCertNumberCheck {} = Debug
+serviceTracePrio ServiceClientStopped {} = Notice
 
 serviceTraceFormatBS :: ServiceClientTrace -> ByteString
 serviceTraceFormatBS = encodeUtf8 . Text.pack . pretty

@@ -26,7 +26,9 @@ where
 import Control.Monad (void)
 import Control.Tracer (Tracer)
 import Data.Coerce
+import Data.Maybe (fromJust)
 import Data.Proxy (Proxy (..))
+import qualified Data.Text as Text
 import Network.TypedProtocol.Driver (runPeerWithDriver)
 import Ouroboros.Network.RawBearer
 
@@ -43,6 +45,9 @@ import qualified Cardano.KESAgent.Protocols.Control.V1.Protocol as CP1
 import qualified Cardano.KESAgent.Protocols.Control.V2.Driver as CP2
 import qualified Cardano.KESAgent.Protocols.Control.V2.Peers as CP2
 import qualified Cardano.KESAgent.Protocols.Control.V2.Protocol as CP2
+import qualified Cardano.KESAgent.Protocols.Control.V3.Driver as CP3
+import qualified Cardano.KESAgent.Protocols.Control.V3.Peers as CP3
+import qualified Cardano.KESAgent.Protocols.Control.V3.Protocol as CP3
 import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Protocols.Types
 import Cardano.KESAgent.Protocols.VersionedProtocol
@@ -129,9 +134,31 @@ mkControlDriverCP2 =
           )
   )
 
+mkControlDriverCP3 ::
+  forall m fd addr.
+  AgentContext m StandardCrypto =>
+  ( VersionIdentifier
+  , ControlDriverRun m StandardCrypto fd addr
+  )
+mkControlDriverCP3 =
+  ( versionIdentifier (Proxy @(CP3.ControlProtocol _))
+  , \bearer tracer agent ->
+      void $
+        runPeerWithDriver
+          (CP3.controlDriver bearer tracer)
+          ( CP3.controlReceiver
+              (genKey agent)
+              (dropStagedKey agent)
+              (queryKey agent)
+              (installKey agent)
+              (dropKey agent)
+              (fromAgentInfo <$> getInfo agent)
+          )
+  )
+
 instance ControlCrypto StandardCrypto where
   availableControlDrivers =
-    [mkControlDriverCP2, mkControlDriverCP1, mkControlDriverCP0]
+    [mkControlDriverCP3, mkControlDriverCP2, mkControlDriverCP1, mkControlDriverCP0]
 
 instance ControlCrypto MockCrypto where
   availableControlDrivers =
@@ -263,3 +290,48 @@ convertConnectionStatusCP2 :: ConnectionStatus -> CP2.ConnectionStatus
 convertConnectionStatusCP2 ConnectionUp = CP2.ConnectionUp
 convertConnectionStatusCP2 ConnectionConnecting = CP2.ConnectionConnecting
 convertConnectionStatusCP2 ConnectionDown = CP2.ConnectionDown
+
+instance FromAgentInfo StandardCrypto CP3.AgentInfo where
+  fromAgentInfo info =
+    CP3.AgentInfo
+      { CP3.agentInfoProgramVersion = maybe "unknown" Text.pack $ agentInfoProgramVersion info
+      , CP3.agentInfoCurrentBundle = convertTaggedBundleInfoCP3 <$> agentInfoCurrentBundle info
+      , CP3.agentInfoStagedKey = convertKeyInfoCP3 <$> agentInfoStagedKey info
+      , CP3.agentInfoCurrentTime = agentInfoCurrentTime info
+      , CP3.agentInfoCurrentKESPeriod = agentInfoCurrentKESPeriod info
+      , CP3.agentInfoCurrentKESPeriodStart = fromJust $ agentInfoCurrentKESPeriodStart info
+      , CP3.agentInfoCurrentKESPeriodEnd = fromJust $ agentInfoCurrentKESPeriodEnd info
+      , CP3.agentInfoBootstrapConnections = convertBootstrapInfoCP3 <$> agentInfoBootstrapConnections info
+      }
+
+convertTaggedBundleInfoCP3 :: TaggedBundleInfo StandardCrypto -> CP3.TaggedBundleInfo
+convertTaggedBundleInfoCP3 tbi =
+  CP3.TaggedBundleInfo
+    { CP3.taggedBundleInfo = convertBundleInfoCP3 <$> taggedBundleInfo tbi
+    , CP3.taggedBundleInfoTimestamp = taggedBundleInfoTimestamp tbi
+    }
+
+convertBundleInfoCP3 :: BundleInfo StandardCrypto -> CP3.BundleInfo
+convertBundleInfoCP3 info =
+  CP3.BundleInfo
+    { CP3.bundleInfoEvolution = bundleInfoEvolution info
+    , CP3.bundleInfoStartKESPeriod = bundleInfoStartKESPeriod info
+    , CP3.bundleInfoOCertN = bundleInfoOCertN info
+    , CP3.bundleInfoVK = bundleInfoVK info
+    , CP3.bundleInfoSigma = bundleInfoSigma info
+    }
+
+convertKeyInfoCP3 :: KeyInfo StandardCrypto -> CP3.KeyInfo
+convertKeyInfoCP3 = coerce
+
+convertBootstrapInfoCP3 :: BootstrapInfo -> CP3.BootstrapInfo
+convertBootstrapInfoCP3 info =
+  CP3.BootstrapInfo
+    { CP3.bootstrapInfoAddress = bootstrapInfoAddress info
+    , CP3.bootstrapInfoStatus = convertConnectionStatusCP3 $ bootstrapInfoStatus info
+    }
+
+convertConnectionStatusCP3 :: ConnectionStatus -> CP3.ConnectionStatus
+convertConnectionStatusCP3 ConnectionUp = CP3.ConnectionUp
+convertConnectionStatusCP3 ConnectionConnecting = CP3.ConnectionConnecting
+convertConnectionStatusCP3 ConnectionDown = CP3.ConnectionDown

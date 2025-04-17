@@ -18,7 +18,9 @@ import Cardano.KESAgent.KES.OCert (
 -- | Agent state information.
 data AgentInfo c
   = AgentInfo
-  { agentInfoCurrentBundle :: !(Maybe (TaggedBundleInfo c))
+  { agentInfoProgramVersion :: !(Maybe String)
+  -- ^ Version of the @kes-agent@ program, according to itself.
+  , agentInfoCurrentBundle :: !(Maybe (TaggedBundleInfo c))
   -- ^ The currently installed bundle (if any)
   , agentInfoStagedKey :: !(Maybe (KeyInfo c))
   -- ^ The key in the staging area (if any)
@@ -30,6 +32,10 @@ data AgentInfo c
   -- that the KES agent agrees with the live chain - KES agents do not
   -- connect to the chain themselves, so it is important to be able to verify
   -- that their KES period matches that of the chain.
+  , agentInfoCurrentKESPeriodStart :: !(Maybe UTCTime)
+  -- ^ Start of current KES period, according to the KES agent.
+  , agentInfoCurrentKESPeriodEnd :: !(Maybe UTCTime)
+  -- ^ End of current KES period, according to the KES agent.
   , agentInfoBootstrapConnections :: ![BootstrapInfo]
   -- Information about bootstrap connections, i.e., connections to other KES
   -- agents. These are only connections *to* other agents, that is,

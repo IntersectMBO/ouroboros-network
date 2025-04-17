@@ -19,9 +19,9 @@ import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Serialization.CBOR
 import Cardano.KESAgent.Serialization.TextEnvelope
+import Cardano.KESAgent.Util.ColoredOutput
 import Cardano.KESAgent.Util.HexBS
 import Cardano.KESAgent.Util.Version
-import Cardano.KESAgent.Util.ColoredOutput
 
 import Cardano.Crypto.DSIGN.Class
 import Cardano.Crypto.KES.Class
@@ -515,9 +515,13 @@ runGetInfo opt' = withIOManager $ \ioManager -> do
   let cPutStr = hcPutStr cmode stdout
   let cPutStrLn = hcPutStrLn cmode stdout
   cPutStrLn (bold defaultColor) $ printf "--- Agent ---"
+  printf "Agent version: %s\n" $ fromMaybe "<unknown>" (agentInfoProgramVersion info)
   printf "Connected via: %s\n" $ fromMaybe "<unknown>" (optControlPath opt')
   printf "Current time: %s\n" $ show (agentInfoCurrentTime info)
   printf "Current KES period: %u\n" (unKESPeriod $ agentInfoCurrentKESPeriod info)
+  printf "Current KES period started: %s\n" $
+    maybe "<unknown>" show (agentInfoCurrentKESPeriodStart info)
+  printf "Next KES period starts: %s\n" $ maybe "<unknown>" show (agentInfoCurrentKESPeriodEnd info)
   whenJust (agentInfoCurrentBundle info) $ \tbundleInfo -> do
     cPutStrLn (bold defaultColor) $ printf "--- Installed KES SignKey ---"
     printf "Timestamp: %s\n" (maybe "n/a" show $ taggedBundleInfoTimestamp tbundleInfo)

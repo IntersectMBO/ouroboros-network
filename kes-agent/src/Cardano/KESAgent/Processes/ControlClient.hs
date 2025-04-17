@@ -39,6 +39,9 @@ import qualified Cardano.KESAgent.Protocols.Control.V1.Protocol as CP1
 import qualified Cardano.KESAgent.Protocols.Control.V2.Driver as CP2
 import qualified Cardano.KESAgent.Protocols.Control.V2.Peers as CP2
 import qualified Cardano.KESAgent.Protocols.Control.V2.Protocol as CP2
+import qualified Cardano.KESAgent.Protocols.Control.V3.Driver as CP3
+import qualified Cardano.KESAgent.Protocols.Control.V3.Peers as CP3
+import qualified Cardano.KESAgent.Protocols.Control.V3.Protocol as CP3
 import Cardano.KESAgent.Protocols.RecvResult (RecvResult (..))
 import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Protocols.Types
@@ -73,6 +76,7 @@ import Data.SerDoc.Class (
   HasInfo (..),
   Serializable (..),
  )
+import qualified Data.Text as Text
 import Data.Typeable
 import Network.TypedProtocol.Driver (runPeerWithDriver)
 import Network.TypedProtocol.Peer.Server (IsPipelined (..), Server)
@@ -260,6 +264,14 @@ instance MonadControlHandler m => IsControlHandler (CP2.ControlProtocol m) m a w
         (CP2.controlDriver bearer $ ControlClientDriverTrace >$< tracer)
         peer
 
+instance MonadControlHandler m => IsControlHandler (CP3.ControlProtocol m) m a where
+  type InitialState (CP3.ControlProtocol m) = CP3.InitialState
+  toHandler peer bearer tracer = do
+    fst
+      <$> runPeerWithDriver
+        (CP3.controlDriver bearer $ ControlClientDriverTrace >$< tracer)
+        peer
+
 -- | Make a handler entry from a control protocol, using the
 -- 'VersionedProtocol' instance to determine the version identifier.
 toHandlerEntry ::
@@ -296,6 +308,20 @@ class ControlClientDrivers c where
     ControlClientContext m c =>
     Proxy c ->
     [(VersionIdentifier, ControlClient m c)]
+
+mkControlClientCP3 ::
+  ControlClientContext m StandardCrypto =>
+  (VersionIdentifier, ControlClient m StandardCrypto)
+mkControlClientCP3 =
+  ( versionIdentifier (Proxy @(CP3.ControlProtocol _))
+  , ControlClient
+      (toHandler CP3.controlGenKey)
+      (toHandler CP3.controlQueryKey)
+      (toHandler CP3.controlDropStagedKey)
+      (toHandler <$> CP3.controlInstallKey)
+      (toHandler CP3.controlDropKey)
+      (fmap (fmap toAgentInfo) <$> toHandler CP3.controlGetInfo)
+  )
 
 mkControlClientCP2 ::
   ControlClientContext m StandardCrypto =>
@@ -344,7 +370,11 @@ mkControlClientCP0 =
 
 instance ControlClientDrivers StandardCrypto where
   controlClientDrivers _ =
-    [mkControlClientCP2, mkControlClientCP1, mkControlClientCP0]
+    [ mkControlClientCP3
+    , mkControlClientCP2
+    , mkControlClientCP1
+    , mkControlClientCP0
+    ]
 
 instance ControlClientDrivers SingleCrypto where
   controlClientDrivers _ =
@@ -368,6 +398,9 @@ instance ToAgentInfo c (CP0.AgentInfo c) where
       , agentInfoCurrentTime = CP0.agentInfoCurrentTime info
       , agentInfoCurrentKESPeriod = CP0.agentInfoCurrentKESPeriod info
       , agentInfoBootstrapConnections = convertBootstrapInfoCP0 <$> CP0.agentInfoBootstrapConnections info
+      , agentInfoProgramVersion = Nothing
+      , agentInfoCurrentKESPeriodStart = Nothing
+      , agentInfoCurrentKESPeriodEnd = Nothing
       }
 
 convertBundleInfoCP0 :: CP0.BundleInfo c -> TaggedBundleInfo c
@@ -409,6 +442,9 @@ instance ToAgentInfo StandardCrypto CP1.AgentInfo where
       , agentInfoCurrentTime = CP1.agentInfoCurrentTime info
       , agentInfoCurrentKESPeriod = CP1.agentInfoCurrentKESPeriod info
       , agentInfoBootstrapConnections = convertBootstrapInfoCP1 <$> CP1.agentInfoBootstrapConnections info
+      , agentInfoProgramVersion = Nothing
+      , agentInfoCurrentKESPeriodStart = Nothing
+      , agentInfoCurrentKESPeriodEnd = Nothing
       }
 
 convertBundleInfoCP1 :: CP1.BundleInfo -> TaggedBundleInfo StandardCrypto
@@ -450,6 +486,9 @@ instance ToAgentInfo StandardCrypto CP2.AgentInfo where
       , agentInfoCurrentTime = CP2.agentInfoCurrentTime info
       , agentInfoCurrentKESPeriod = CP2.agentInfoCurrentKESPeriod info
       , agentInfoBootstrapConnections = convertBootstrapInfoCP2 <$> CP2.agentInfoBootstrapConnections info
+      , agentInfoProgramVersion = Nothing
+      , agentInfoCurrentKESPeriodStart = Nothing
+      , agentInfoCurrentKESPeriodEnd = Nothing
       }
 
 convertTaggedBundleInfoCP2 :: CP2.TaggedBundleInfo -> TaggedBundleInfo StandardCrypto
@@ -483,3 +522,48 @@ convertConnectionStatusCP2 :: CP2.ConnectionStatus -> ConnectionStatus
 convertConnectionStatusCP2 CP2.ConnectionUp = ConnectionUp
 convertConnectionStatusCP2 CP2.ConnectionConnecting = ConnectionConnecting
 convertConnectionStatusCP2 CP2.ConnectionDown = ConnectionDown
+
+instance ToAgentInfo StandardCrypto CP3.AgentInfo where
+  toAgentInfo info =
+    AgentInfo
+      { agentInfoCurrentBundle = convertTaggedBundleInfoCP3 <$> CP3.agentInfoCurrentBundle info
+      , agentInfoStagedKey = convertKeyInfoCP3 <$> CP3.agentInfoStagedKey info
+      , agentInfoCurrentTime = CP3.agentInfoCurrentTime info
+      , agentInfoCurrentKESPeriod = CP3.agentInfoCurrentKESPeriod info
+      , agentInfoBootstrapConnections = convertBootstrapInfoCP3 <$> CP3.agentInfoBootstrapConnections info
+      , agentInfoProgramVersion = Just . Text.unpack . CP3.agentInfoProgramVersion $ info
+      , agentInfoCurrentKESPeriodStart = Just (CP3.agentInfoCurrentKESPeriodStart info)
+      , agentInfoCurrentKESPeriodEnd = Just (CP3.agentInfoCurrentKESPeriodEnd info)
+      }
+
+convertTaggedBundleInfoCP3 :: CP3.TaggedBundleInfo -> TaggedBundleInfo StandardCrypto
+convertTaggedBundleInfoCP3 tinfo =
+  TaggedBundleInfo
+    { taggedBundleInfo = convertBundleInfoCP3 <$> CP3.taggedBundleInfo tinfo
+    , taggedBundleInfoTimestamp = CP3.taggedBundleInfoTimestamp tinfo
+    }
+
+convertBundleInfoCP3 :: CP3.BundleInfo -> BundleInfo StandardCrypto
+convertBundleInfoCP3 info =
+  BundleInfo
+    { bundleInfoEvolution = CP3.bundleInfoEvolution info
+    , bundleInfoStartKESPeriod = CP3.bundleInfoStartKESPeriod info
+    , bundleInfoOCertN = CP3.bundleInfoOCertN info
+    , bundleInfoVK = CP3.bundleInfoVK info
+    , bundleInfoSigma = CP3.bundleInfoSigma info
+    }
+
+convertKeyInfoCP3 :: CP3.KeyInfo -> KeyInfo StandardCrypto
+convertKeyInfoCP3 = coerce
+
+convertBootstrapInfoCP3 :: CP3.BootstrapInfo -> BootstrapInfo
+convertBootstrapInfoCP3 info =
+  BootstrapInfo
+    { bootstrapInfoAddress = CP3.bootstrapInfoAddress info
+    , bootstrapInfoStatus = convertConnectionStatusCP3 $ CP3.bootstrapInfoStatus info
+    }
+
+convertConnectionStatusCP3 :: CP3.ConnectionStatus -> ConnectionStatus
+convertConnectionStatusCP3 CP3.ConnectionUp = ConnectionUp
+convertConnectionStatusCP3 CP3.ConnectionConnecting = ConnectionConnecting
+convertConnectionStatusCP3 CP3.ConnectionDown = ConnectionDown

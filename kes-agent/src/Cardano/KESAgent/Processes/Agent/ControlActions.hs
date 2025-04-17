@@ -48,6 +48,7 @@ import Cardano.KESAgent.KES.Bundle (
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import Cardano.KESAgent.KES.Evolution (
   getCurrentKESPeriodWith,
+  getKESPeriodTimes,
  )
 import Cardano.KESAgent.KES.OCert (OCert (..))
 import Cardano.KESAgent.Processes.Agent.CommonActions
@@ -61,6 +62,7 @@ import Cardano.KESAgent.Util.RefCounting (
   releaseCRef,
   withCRefValue,
  )
+import Cardano.KESAgent.Util.Version
 
 -- | Generate a new KES key and store it in the staged key slot.
 -- @kes-agent-control gen-key@ command.
@@ -207,14 +209,21 @@ getInfo agent = do
     getCurrentKESPeriodWith
       (agentGetCurrentTime $ agentOptions agent)
       (agentEvolutionConfig $ agentOptions agent)
+  let (kesPeriodStart, kesPeriodEnd) =
+        getKESPeriodTimes
+          (agentEvolutionConfig $ agentOptions agent)
+          kesPeriod
   bootstrapStatusesRaw <- Map.toAscList <$> atomically (readTMVar (agentBootstrapConnections agent))
   let bootstrapStatuses = map (uncurry BootstrapInfo) bootstrapStatusesRaw
 
   return
     AgentInfo
-      { agentInfoCurrentBundle = bundleInfoMay
+      { agentInfoProgramVersion = Just libraryVersion
+      , agentInfoCurrentBundle = bundleInfoMay
       , agentInfoStagedKey = keyInfoMay
       , agentInfoCurrentTime = now
       , agentInfoCurrentKESPeriod = kesPeriod
+      , agentInfoCurrentKESPeriodStart = Just kesPeriodStart
+      , agentInfoCurrentKESPeriodEnd = Just kesPeriodEnd
       , agentInfoBootstrapConnections = bootstrapStatuses
       }

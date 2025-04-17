@@ -63,6 +63,17 @@ getCurrentKESPeriodWith getNow ec = do
       kesPeriodDuration = fromIntegral (slotLength ec) * fromIntegral (slotsPerKESPeriod ec)
   return $ KESPeriod (diffSecs `div` kesPeriodDuration)
 
+-- | Get the start and end times of the give KES period, based on the given
+-- evolution parameters
+getKESPeriodTimes :: EvolutionConfig -> KESPeriod -> (UTCTime, UTCTime)
+getKESPeriodTimes ec (KESPeriod period) =
+  let kesPeriodDuration = slotLength ec * slotsPerKESPeriod ec
+      diffSecs = fromIntegral (fromIntegral period * kesPeriodDuration)
+      slotSecs = fromIntegral kesPeriodDuration
+      start = addUTCTime diffSecs (systemStart ec)
+      end = addUTCTime slotSecs start
+  in (start, end)
+
 -- | Evolve a KES key to the current period. The old key will be released as
 -- appropriate. If the current period exceeds the key's available evolutions,
 -- return 'Nothing'. If the specified period is before the key's current

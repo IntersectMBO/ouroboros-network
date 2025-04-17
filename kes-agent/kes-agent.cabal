@@ -82,6 +82,9 @@ library
                    Cardano.KESAgent.Protocols.Control.V2.Driver
                    Cardano.KESAgent.Protocols.Control.V2.Peers
                    Cardano.KESAgent.Protocols.Control.V2.Protocol
+                   Cardano.KESAgent.Protocols.Control.V3.Driver
+                   Cardano.KESAgent.Protocols.Control.V3.Peers
+                   Cardano.KESAgent.Protocols.Control.V3.Protocol
 
                    Cardano.KESAgent.Protocols.VersionedProtocol
                    Cardano.KESAgent.Protocols.RecvResult
