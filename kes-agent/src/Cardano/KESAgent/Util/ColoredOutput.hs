@@ -82,7 +82,7 @@ colorEscapeBase c = "\ESC[" ++ show (colorNumber c) ++ "m"
 
 weightEscape :: FontWeight -> String
 weightEscape Regular = ""
-weightEscape Bold = "\ESC[0m"
+weightEscape Bold = "\ESC[1m"
 
 colorName :: Color -> String
 colorName c = show (colorBrightness c) ++ " " ++ show (colorBase c)

@@ -21,6 +21,7 @@ import Cardano.KESAgent.Serialization.CBOR
 import Cardano.KESAgent.Serialization.TextEnvelope
 import Cardano.KESAgent.Util.HexBS
 import Cardano.KESAgent.Util.Version
+import Cardano.KESAgent.Util.ColoredOutput
 
 import Cardano.Crypto.DSIGN.Class
 import Cardano.Crypto.KES.Class
@@ -38,6 +39,7 @@ import Network.Socket
 import Options.Applicative
 import System.Environment
 import System.Exit
+import System.IO (stdout)
 import System.IOManager
 import Text.Printf
 import Text.Read (readMaybe)
@@ -509,14 +511,19 @@ runGetInfo opt' = withIOManager $ \ioManager -> do
   optEnv <- optFromEnv
   let opt = opt' <> optEnv <> defCommonOptions
   info <- runControlClientCommand opt ioManager controlGetInfo
+  let cmode = ColorsAuto
+  let cPutStr = hcPutStr cmode stdout
+  let cPutStrLn = hcPutStrLn cmode stdout
+  cPutStrLn (bold defaultColor) $ printf "--- Agent ---"
+  printf "Connected via: %s\n" $ fromMaybe "<unknown>" (optControlPath opt')
   printf "Current time: %s\n" $ show (agentInfoCurrentTime info)
   printf "Current KES period: %u\n" (unKESPeriod $ agentInfoCurrentKESPeriod info)
   whenJust (agentInfoCurrentBundle info) $ \tbundleInfo -> do
-    printf "--- Installed KES SignKey ---\n"
+    cPutStrLn (bold defaultColor) $ printf "--- Installed KES SignKey ---"
     printf "Timestamp: %s\n" (maybe "n/a" show $ taggedBundleInfoTimestamp tbundleInfo)
     case taggedBundleInfo tbundleInfo of
       Nothing -> do
-        printf "{KEY DELETED}"
+        cPutStr red $ printf "{KEY DELETED}"
       Just bundleInfo -> do
         printf "VerKey: %s\n" (hexShowBS . rawSerialiseVerKeyKES $ bundleInfoVK bundleInfo)
         printf "Valid from period: %u\n" (unKESPeriod $ bundleInfoStartKESPeriod bundleInfo)
@@ -528,12 +535,16 @@ runGetInfo opt' = withIOManager $ \ioManager -> do
         let (SignedDSIGN sig) = bundleInfoSigma bundleInfo
         printf "OpCert signature: %s\n" (hexShowBS . rawSerialiseSigDSIGN $ sig)
   whenJust (agentInfoStagedKey info) $ \keyInfo -> do
-    printf "--- Staged KES SignKey ---\n"
+    cPutStrLn (bold defaultColor) $ printf "--- Staged KES SignKey ---"
     printf "VerKey: %s\n" (hexShowBS . rawSerialiseVerKeyKES $ keyInfoVK keyInfo)
   unless (null $ agentInfoBootstrapConnections info) $ do
-    printf "--- Bootstrap Agents ---\n"
+    cPutStrLn (bold defaultColor) $ printf "--- Bootstrap Peers ---"
     forM_ (agentInfoBootstrapConnections info) $ \(BootstrapInfo addr status) -> do
-      printf "%+30s %s\n" addr (show status)
+      let (color, label) = case status of
+            ConnectionUp -> (green, "up")
+            ConnectionConnecting -> (yellow, "connecting...")
+            ConnectionDown -> (red, "down")
+      cPutStrLn color $ printf "%+30s: %s" addr (label :: String)
 
 programDesc = fullDesc
 
