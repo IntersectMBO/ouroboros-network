@@ -51,15 +51,18 @@ EOT
     esac
 done
 
-read -p "Enter path to cold key file (default: ./cold.vkey): " COLDKEY
+if ! test -f "$CONFIGDIR/cold.vkey"; then
+    read -p "Enter path to cold key file (default: ./cold.vkey): " COLDKEY
+fi
 if test -z "$COLDKEY"; then
     COLDKEY=./cold.vkey
 fi
 COLDKEY=`realpath $COLDKEY`
 cd $(dirname "$0")
-if ! test -f "$COLDKEY"; then
-    echo "File does not exist: $COLDKEY"
-    exit 1
+if ! test -f "$CONFIGDIR/cold.vkey"; then
+    if ! test -f "$COLDKEY"; then
+        echo "File does not exist: $COLDKEY"
+    fi
 fi
 if test "$DO_BUILD" = "1"; then
 	mkdir -p "$BINDIR"
@@ -69,18 +72,22 @@ if ! test -f "$BINDIR/kes-agent"; then
 	echo "File does not exist: $BINDIR/kes-agent"
 	exit 2
 fi
-sudo mkdir -p /etc/kes-agent
-sudo groupadd kes-agent -f
-sudo useradd kes-agent -g kes-agent -r
-sudo install "$BINDIR/kes-agent" "$PREFIX/bin/kes-agent"
-sudo install "$COLDKEY" "$CONFIGDIR/cold.vkey"
-sudo install etc/kes-agent/kes-agent.env "$CONFIGDIR/kes-agent.env"
-sudo install etc/kes-agent/mainnet-shelley-genesis.json "$CONFIGDIR/mainnet-shelley-genesis.json"
-sudo install etc/systemd/system/kes-agent.service "$SERVICEDIR"/kes-agent.service
-sudo install etc/systemd/system/kes-agent-hibernate.service "$SERVICEDIR"/kes-agent-hibernate.service
-sudo systemctl daemon-reload
-sudo systemctl start kes-agent
-sudo systemctl start kes-agent-hibernate
-sudo systemctl enable kes-agent
-sudo systemctl enable kes-agent-hibernate
-sudo systemctl status kes-agent
+mkdir -p /etc/kes-agent
+groupadd kes-agent -f
+useradd kes-agent -g kes-agent -r
+install "$BINDIR/kes-agent" "$PREFIX/bin/kes-agent"
+if ! test -f "$CONFIGDIR/cold.vkey"; then
+    install "$COLDKEY" "$CONFIGDIR/cold.vkey"
+fi
+if ! test -f "$CONFIGDIR/kes-agent.env"; then
+    install etc/kes-agent/kes-agent.env "$CONFIGDIR/kes-agent.env"
+fi
+install etc/kes-agent/mainnet-shelley-genesis.json "$CONFIGDIR/mainnet-shelley-genesis.json"
+install etc/systemd/system/kes-agent.service "$SERVICEDIR"/kes-agent.service
+install etc/systemd/system/kes-agent-hibernate.service "$SERVICEDIR"/kes-agent-hibernate.service
+systemctl daemon-reload
+systemctl start kes-agent
+systemctl start kes-agent-hibernate
+systemctl enable kes-agent
+systemctl enable kes-agent-hibernate
+systemctl status kes-agent
