@@ -194,8 +194,8 @@ data ConnectionState muxMode initiatorCtx peerAddr versionData m a b = Connectio
 -- the connection manager for interesting events.
 --
 data ResponderCounters = ResponderCounters {
-  numTraceHotResponders  :: !Int,
-  numTraceWarmResponders :: !Int
+  numTraceHotResponders    :: !Int,
+  numTraceNonHotResponders :: !Int
   }
 
 --
@@ -268,7 +268,7 @@ data RemoteState m
     -- | After @DemotedToCold^{dataFlow}_{Remote}@ is detected.  This state
     -- corresponds to 'InboundIdleState'. In this state we are checking
     -- if the responder protocols are idle during protocol idle timeout
-    -- (represented by an 'STM' action)
+    -- (represented by an 'STM' with a boolean representing expired timeout state)
     --
     -- 'RemoteIdle' is the initial state of an accepted a connection.
     --

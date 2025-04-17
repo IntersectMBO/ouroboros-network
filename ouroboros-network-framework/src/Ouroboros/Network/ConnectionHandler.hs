@@ -54,6 +54,7 @@ import Control.Tracer (Tracer, contramap, traceWith)
 
 import Data.ByteString.Lazy (ByteString)
 import Data.Map (Map)
+import Data.Maybe.Strict
 import Data.Text (Text)
 import Data.Typeable (Typeable)
 
@@ -130,7 +131,7 @@ type family MkMuxConnectionHandler (muxMode :: Mx.Mode) socket initiatorCtx resp
 
   MkMuxConnectionHandler Mx.ResponderMode socket initiatorCtx responderCtx peerAddr
                                           versionNumber versionData bytes m a b =
-       (   StrictTVar m (Maybe ResponderCounters)
+       (   StrictTVar m (StrictMaybe ResponderCounters)
         -> Tracer m (WithBearer (ConnectionId peerAddr) Trace))
     -> MuxConnectionHandler Mx.ResponderMode socket initiatorCtx responderCtx peerAddr
                                              versionNumber versionData bytes m a b
@@ -138,7 +139,7 @@ type family MkMuxConnectionHandler (muxMode :: Mx.Mode) socket initiatorCtx resp
   MkMuxConnectionHandler Mx.InitiatorResponderMode socket initiatorCtx responderCtx peerAddr
                                                    versionNumber versionData bytes m a b =
        (versionData -> DataFlow)
-    -> (   StrictTVar m (Maybe ResponderCounters)
+    -> (   StrictTVar m (StrictMaybe ResponderCounters)
         -> Tracer m (WithBearer (ConnectionId peerAddr) Trace))
     -> MuxConnectionHandler Mx.InitiatorResponderMode socket initiatorCtx responderCtx
                                                       peerAddr versionNumber versionData
@@ -304,7 +305,7 @@ makeConnectionHandler muxTracer forkPolicy
 
     outboundConnectionHandler
       :: HasInitiator muxMode ~ True
-      => InResponderMode muxMode (   StrictTVar m (Maybe ResponderCounters)
+      => InResponderMode muxMode (   StrictTVar m (StrictMaybe ResponderCounters)
                                   -> Tracer m (WithBearer (ConnectionId peerAddr) Trace)
                                  , versionData -> DataFlow)
       -> ConnectionHandlerFn (ConnectionHandlerTrace versionNumber versionData)
@@ -351,33 +352,32 @@ makeConnectionHandler muxTracer forkPolicy
                 atomically $ writePromise (Left (HandleHandshakeClientError err))
                 traceWith tracer (TrHandshakeClientError err)
 
-              Right (HandshakeNegotiationResult app versionNumber agreedOptions) ->
-                unmask $ do
-                  traceWith tracer (TrHandshakeSuccess versionNumber agreedOptions)
-                  controlMessageBundle
-                    <- (\a b c -> TemperatureBundle (WithHot a) (WithWarm b) (WithEstablished c))
-                        <$> newTVarIO Continue
-                        <*> newTVarIO Continue
-                        <*> newTVarIO Continue
-                  mux <- Mx.new (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
-                  let !handle = Handle {
-                          hMux            = mux,
-                          hMuxBundle      = app,
-                          hControlMessage = controlMessageBundle,
-                          hVersionData    = agreedOptions
-                        }
-                  atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
-                  withBuffer \buffer -> do
-                    bearer <- mkMuxBearer sduTimeout socket buffer
-                    muxTracer' <- contramap (Mx.WithBearer connectionId) <$>
-                          case inResponderMode of
-                            InResponderMode (inboundGovChannelTracer, connectionDataFlow)
-                              | Duplex <- connectionDataFlow agreedOptions -> do
-                                  countersVar <- newTVarIO $ Just $ ResponderCounters 0 0
-                                  pure $ muxTracer <> inboundGovChannelTracer countersVar
-                            _notResponder ->
-                                  pure muxTracer
-                    Mx.run Mx.MuxTracerBundle {
+              Right (HandshakeNegotiationResult app versionNumber agreedOptions) -> do
+                traceWith tracer (TrHandshakeSuccess versionNumber agreedOptions)
+                controlMessageBundle
+                  <- (\a b c -> TemperatureBundle (WithHot a) (WithWarm b) (WithEstablished c))
+                      <$> newTVarIO Continue
+                      <*> newTVarIO Continue
+                      <*> newTVarIO Continue
+                mux <- Mx.new (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
+                let !handle = Handle {
+                        hMux            = mux,
+                        hMuxBundle      = app,
+                        hControlMessage = controlMessageBundle,
+                        hVersionData    = agreedOptions
+                      }
+                atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
+                withBuffer \buffer -> do
+                  bearer <- mkMuxBearer sduTimeout socket buffer
+                  muxTracer' <-
+                    contramap (Mx.WithBearer connectionId) <$> case inResponderMode of
+                      InResponderMode (inboundGovernorMuxTracer, connectionDataFlow)
+                        | Duplex <- connectionDataFlow agreedOptions -> do
+                            countersVar <- newTVarIO . SJust $ ResponderCounters 0 0
+                            pure $ muxTracer <> inboundGovernorMuxTracer countersVar
+                      _notResponder ->
+                            pure muxTracer
+                  unmask $ Mx.run Mx.Tracers {
                              muxTracer     = muxTracer',
                              channelTracer = Mx.WithBearer connectionId `contramap` muxTracer }
                            mux bearer
@@ -389,7 +389,7 @@ makeConnectionHandler muxTracer forkPolicy
 
     inboundConnectionHandler
       :: HasResponder muxMode ~ True
-      => (   StrictTVar m (Maybe ResponderCounters)
+      => (   StrictTVar m (StrictMaybe ResponderCounters)
           -> Tracer m (WithBearer (ConnectionId peerAddr) Trace))
       -> ConnectionHandlerFn (ConnectionHandlerTrace versionNumber versionData)
                              socket
@@ -399,7 +399,7 @@ makeConnectionHandler muxTracer forkPolicy
                              versionNumber
                              versionData
                              m
-    inboundConnectionHandler inboundGovChannelTracer
+    inboundConnectionHandler inboundGovernorMuxTracer
                              updateVersionDataFn
                              socket
                              PromiseWriter { writePromise }
@@ -435,32 +435,30 @@ makeConnectionHandler muxTracer forkPolicy
               Left !err -> do
                 atomically $ writePromise (Left (HandleHandshakeServerError err))
                 traceWith tracer (TrHandshakeServerError err)
-              Right (HandshakeNegotiationResult app versionNumber agreedOptions) ->
-                unmask $ do
-                  traceWith tracer (TrHandshakeSuccess versionNumber agreedOptions)
-                  controlMessageBundle
-                    <- (\a b c -> TemperatureBundle (WithHot a) (WithWarm b) (WithEstablished c))
-                        <$> newTVarIO Continue
-                        <*> newTVarIO Continue
-                        <*> newTVarIO Continue
-                  mux <- Mx.new (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
+              Right (HandshakeNegotiationResult app versionNumber agreedOptions) -> do
+               traceWith tracer (TrHandshakeSuccess versionNumber agreedOptions)
+               controlMessageBundle
+                 <- (\a b c -> TemperatureBundle (WithHot a) (WithWarm b) (WithEstablished c))
+                     <$> newTVarIO Continue
+                     <*> newTVarIO Continue
+                     <*> newTVarIO Continue
+               mux <- Mx.new (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
 
-                  let !handle = Handle {
-                          hMux            = mux,
-                          hMuxBundle      = app,
-                          hControlMessage = controlMessageBundle,
-                          hVersionData    = agreedOptions
-                        }
-                  atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
-                  withBuffer (\buffer -> do
-                      bearer <- mkMuxBearer sduTimeout socket buffer
-                      countersVar <- newTVarIO . Just $ ResponderCounters 0 0
-                      let traceWithBearer = contramap $ Mx.WithBearer connectionId
-                      Mx.run Mx.MuxTracerBundle {
-                               muxTracer     = traceWithBearer (muxTracer <> inboundGovChannelTracer countersVar),
-                               channelTracer = traceWithBearer muxTracer }
-                             mux bearer
-                    )
+               let !handle = Handle {
+                       hMux            = mux,
+                       hMuxBundle      = app,
+                       hControlMessage = controlMessageBundle,
+                       hVersionData    = agreedOptions
+                     }
+               atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
+               withBuffer \buffer -> do
+                 bearer <- mkMuxBearer sduTimeout socket buffer
+                 countersVar <- newTVarIO . SJust $ ResponderCounters 0 0
+                 let traceWithBearer = contramap $ Mx.WithBearer connectionId
+                 unmask $ Mx.run Mx.Tracers {
+                            muxTracer     = traceWithBearer (muxTracer <> inboundGovernorMuxTracer countersVar),
+                            channelTracer = traceWithBearer muxTracer }
+                          mux bearer
               Right (HandshakeQueryResult vMap) -> do
                 atomically $ writePromise (Right HandshakeConnectionQuery)
                 traceWith tracer $ TrHandshakeQuery vMap

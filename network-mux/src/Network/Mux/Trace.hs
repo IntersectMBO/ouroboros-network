@@ -10,7 +10,7 @@ module Network.Mux.Trace
   ( Error (..)
   , handleIOException
   , Trace (..)
-  , MuxTracerBundle (..)
+  , Tracers (..)
   , BearerState (..)
   , WithBearer (..)
   , TraceLabelPeer (..)
@@ -126,7 +126,7 @@ data BearerState = Mature
 -- excercised to ensure that a particular tracer goes
 -- into the component that outputs the desired tags. For instance,
 -- the low level bearer tags are not output by the tracer which
--- is passed to Mux via 'MuxTracerBundle'.
+-- is passed to Mux via 'Tracers'.
 
 -- | Enumeration of Mux events that can be traced.
 --
@@ -154,7 +154,7 @@ data Trace =
     | forall e. Exception e => TraceHandshakeServerError e
     -- mid level channel tags traced independently by each mini protocol
     -- job in Mux, for each complete message, by the 'channelTracer'
-    -- within 'MuxTracerBundle'
+    -- within 'Tracers'
     | TraceChannelRecvStart MiniProtocolNum
     | TraceChannelRecvEnd MiniProtocolNum Int
     | TraceChannelSendStart MiniProtocolNum Int
@@ -162,7 +162,7 @@ data Trace =
     -- high level Mux tags traced by the main Mux/Connection handler
     -- thread forked by CM. These may be monitored by the inbound
     -- governor information channel tracer. These should be traced
-    -- by muxTracer of 'MuxTracerBundle' and their ordering
+    -- by muxTracer of 'Tracers' and their ordering
     -- is significant at call sites or bad things will happen.
     -- You have been warned.
     | TraceCleanExit MiniProtocolNum MiniProtocolDir
@@ -237,13 +237,11 @@ instance Show Trace where
 -- but performance likely degrades in typical conditions
 -- unnecessarily.
 --
-data MuxTracerBundle m = MuxTracerBundle {
+data Tracers m = Tracers {
   channelTracer :: Tracer m Trace,
-  -- ^ the tracer for individual miniprotocol messages
-  -- to not spam the inbound governor information channel with
-  -- tags which are (a) frequent (b) not interesting
+  -- ^ a low level tracer for events emitted by a bearer. It emits events as frequently
+  -- as receiving individual `SDU`s from the network.
   muxTracer     :: Tracer m Trace
-  -- ^ the main tracer, which contains an embedded inbound governor
-  -- information channel tracer for inbound and (outbound duplex)
-  -- connections only (see `ConnectionHandler`)
+  -- ^ mux events which are emitted less frequently.  It emits events which allow one
+  -- to observe the current state of a mini-protocol.
   }

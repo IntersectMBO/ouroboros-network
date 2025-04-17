@@ -127,8 +127,8 @@ activeTracer = nullTracer
 _sayTracer :: MonadSay m => Tracer m String
 _sayTracer = Tracer say
 
-nullMuxTracerBundle :: (Applicative m) => Mx.MuxTracerBundle m
-nullMuxTracerBundle = Mx.MuxTracerBundle nullTracer nullTracer
+nullTracers :: (Applicative m) => Mx.Tracers m
+nullTracers = Mx.Tracers nullTracer nullTracer
 
 --
 -- Generators
@@ -362,8 +362,8 @@ prop_mux_snd_recv (DummyRun messages) = ioProperty $ do
 
         clientTracer' = contramap (Mx.WithBearer "client") activeTracer
         serverTracer' = contramap (Mx.WithBearer "server") activeTracer
-        clientTracer = Mx.MuxTracerBundle clientTracer' clientTracer'
-        serverTracer = Mx.MuxTracerBundle serverTracer' serverTracer'
+        clientTracer = Mx.Tracers clientTracer' clientTracer'
+        serverTracer = Mx.Tracers serverTracer' serverTracer'
 
         clientApp = MiniProtocolInfo {
                        miniProtocolNum = Mx.MiniProtocolNum 2,
@@ -425,8 +425,8 @@ prop_mux_snd_recv_bi (DummyRun messages) (DummyCapability clientCap) (DummyCapab
 
         clientTracer' = contramap (Mx.WithBearer "client") activeTracer
         serverTracer' = contramap (Mx.WithBearer "server") activeTracer
-        clientTracer  = Mx.MuxTracerBundle clientTracer' clientTracer'
-        serverTracer  = Mx.MuxTracerBundle serverTracer' serverTracer'
+        clientTracer  = Mx.Tracers clientTracer' clientTracer'
+        serverTracer  = Mx.Tracers serverTracer' serverTracer'
 
     clientBearer <- getBearer makeQueueChannelBearer
                       (-1)
@@ -538,8 +538,8 @@ prop_mux_snd_recv_compat messages = ioProperty $ do
 
         clientTracer' = contramap (Mx.WithBearer "client") activeTracer
         serverTracer' = contramap (Mx.WithBearer "server") activeTracer
-        clientTracer  = Mx.MuxTracerBundle clientTracer' clientTracer'
-        serverTracer  = Mx.MuxTracerBundle serverTracer' serverTracer'
+        clientTracer  = Mx.Tracers clientTracer' clientTracer'
+        serverTracer  = Mx.Tracers serverTracer' serverTracer'
 
 
     clientBearer <- getBearer makeQueueChannelBearer
@@ -754,8 +754,8 @@ runMuxApplication :: DummyCapability
 runMuxApplication (DummyCapability rspCap) initApps initBearer respApps respBearer = do
     let clientTracer' = contramap (Mx.WithBearer "client") activeTracer
         serverTracer' = contramap (Mx.WithBearer "server") activeTracer
-        clientTracer  = Mx.MuxTracerBundle clientTracer' clientTracer'
-        serverTracer  = Mx.MuxTracerBundle serverTracer' serverTracer'
+        clientTracer  = Mx.Tracers clientTracer' clientTracer'
+        serverTracer  = Mx.Tracers serverTracer' serverTracer'
         protNum = [1..]
         respApps' = zip protNum respApps
         initApps' = zip protNum initApps
@@ -1029,8 +1029,8 @@ prop_mux_starvation (Uneven response0 response1) =
 
         clientTracer' = contramap (Mx.WithBearer "client") activeTracer
         serverTracer' = contramap (Mx.WithBearer "server") activeTracer
-        clientTracer  = Mx.MuxTracerBundle clientTracer' clientTracer'
-        serverTracer  = Mx.MuxTracerBundle serverTracer' serverTracer'
+        clientTracer  = Mx.Tracers clientTracer' clientTracer'
+        serverTracer  = Mx.Tracers serverTracer' serverTracer'
 
 
 
@@ -1276,7 +1276,7 @@ prop_demux_sdu a = do
         server_r <- atomically $ newTBQueue 10
 
         let serverTracer' = contramap (Mx.WithBearer "server") activeTracer
-            serverTracer  = Mx.MuxTracerBundle serverTracer' serverTracer'
+            serverTracer  = Mx.Tracers serverTracer' serverTracer'
 
         serverBearer <- getBearer makeQueueChannelBearer
                           (-1)
@@ -1591,7 +1591,7 @@ prop_mux_restart_m (DummyRestartingInitiatorApps apps) = do
     let minis = map (appToInfo Mx.InitiatorDirectionOnly . fst) apps
 
     mux <- Mx.new minis
-    mux_aid <- async $ Mx.run nullMuxTracerBundle mux bearer
+    mux_aid <- async $ Mx.run nullTracers mux bearer
     getRes <- sequence [ Mx.runMiniProtocol
                            mux
                           (daNum $ fst app)
@@ -1640,7 +1640,7 @@ prop_mux_restart_m (DummyRestartingResponderApps rapps) = do
         minis = map (appToInfo Mx.ResponderDirectionOnly) apps
 
     mux <- Mx.new minis
-    mux_aid <- async $ Mx.run nullMuxTracerBundle mux bearer
+    mux_aid <- async $ Mx.run nullTracers mux bearer
     getRes <- sequence [ Mx.runMiniProtocol
                            mux
                           (daNum $ fst app)
@@ -1692,7 +1692,7 @@ prop_mux_restart_m (DummyRestartingInitiatorResponderApps rapps) = do
         respMinis = map (appToInfo Mx.ResponderDirection) apps
 
     mux <- Mx.new $ initMinis ++ respMinis
-    mux_aid <- async $ Mx.run nullMuxTracerBundle mux bearer
+    mux_aid <- async $ Mx.run nullTracers mux bearer
     getInitRes <- sequence [ Mx.runMiniProtocol
                                mux
                                (daNum $ fst app)
@@ -1777,7 +1777,7 @@ prop_mux_start_m bearer _ checkRes (DummyInitiatorApps apps) runTime _ = do
         minRunTime = minimum $ runTime : (map daRunTime $ filter (\app -> daAction app == DummyAppFail) apps)
 
     mux <- Mx.new minis
-    mux_aid <- async $ Mx.run nullMuxTracerBundle mux bearer
+    mux_aid <- async $ Mx.run nullTracers mux bearer
     killer <- async $ (threadDelay runTime) >> Mx.stop mux
     getRes <- sequence [ Mx.runMiniProtocol
                            mux
@@ -1937,8 +1937,8 @@ muxVerboseTracer :: forall m.
                        , MonadMonotonicTime m
                        , MonadSay m
                        )
-                 => Mx.MuxTracerBundle m
-muxVerboseTracer = Mx.MuxTracerBundle verboseTracer verboseTracer
+                 => Mx.Tracers m
+muxVerboseTracer = Mx.Tracers verboseTracer verboseTracer
 
 threadAndTimeTracer :: forall a m.
                        ( MonadAsync m
@@ -2023,8 +2023,8 @@ close_experiment
       fault tracer muxTracer clientCtx serverCtx reqs0 fn acc0 = do
     let clientMuxTracer' = (Client,) `contramap` muxTracer
         serverMuxTracer' = (Server,) `contramap` muxTracer
-        clientMuxTracer  = Mx.MuxTracerBundle clientMuxTracer' clientMuxTracer'
-        serverMuxTracer  = Mx.MuxTracerBundle serverMuxTracer' serverMuxTracer'
+        clientMuxTracer  = Mx.Tracers clientMuxTracer' clientMuxTracer'
+        serverMuxTracer  = Mx.Tracers serverMuxTracer' serverMuxTracer'
     withAsync
       -- run client thread
       (bracket (Mx.new [ MiniProtocolInfo {
