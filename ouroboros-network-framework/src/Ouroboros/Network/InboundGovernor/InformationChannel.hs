@@ -1,7 +1,8 @@
+{-# LANGUAGE BangPatterns   #-}
 {-# LANGUAGE DataKinds      #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE RankNTypes     #-}
-module Ouroboros.Network.ConnectionManager.InformationChannel
+module Ouroboros.Network.InboundGovernor.InformationChannel
   ( InformationChannel (..)
   , newInformationChannel
   ) where
@@ -42,7 +43,7 @@ newInformationChannel = do
     pure $ InformationChannel {
         readMessage  = readTBQueue channel,
         readMessages = flushTBQueue channel,
-        writeMessage = writeTBQueue channel
+        writeMessage = \(!a) -> writeTBQueue channel a
       }
 
 

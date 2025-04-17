@@ -61,12 +61,12 @@ import Network.TypedProtocol.ReqResp.Type (ReqResp)
 
 import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
-import Ouroboros.Network.ConnectionManager.InformationChannel
-           (newInformationChannel)
 import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context
 import Ouroboros.Network.InboundGovernor qualified as InboundGovernor
+import Ouroboros.Network.InboundGovernor.InformationChannel
+           (newInformationChannel)
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.Mux
 import Ouroboros.Network.MuxMode

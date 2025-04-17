@@ -291,7 +291,7 @@ clientServerSimulation payloads =
                           (("server", connId,)
                              `contramap`
                              traceTime (Tracer (say . show)))
-                    Mx.run (Mx.MuxTracerBundle serverTracer serverTracer)
+                    Mx.run (Mx.Tracers serverTracer serverTracer)
                            mux bearer)
                 $ \_muxThread -> do
                   res <- atomically resSTM
@@ -338,7 +338,7 @@ clientServerSimulation payloads =
                               (("client", connId,)
                                  `contramap`
                                  traceTime (Tracer (say . show)))
-                        Mx.run (Mx.MuxTracerBundle clientTracer clientTracer)
+                        Mx.run (Mx.Tracers clientTracer clientTracer)
                                mux bearer)
                     $ \_ -> do
                       res <- atomically resSTM

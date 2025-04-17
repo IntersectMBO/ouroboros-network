@@ -21,7 +21,7 @@ module Ouroboros.Network.Diffusion.Types
     -- * NodeToClient type aliases
   , NodeToClientHandle
   , NodeToClientHandleError
-  , NodeToClientMkConnectionHandler
+  , MkNodeToClientConnectionHandler
     -- * NodeToNode type aliases
   , NodeToNodeHandle
   , NodeToNodeConnectionManager
@@ -40,6 +40,7 @@ import Control.Tracer (Tracer, nullTracer)
 import Data.ByteString.Lazy (ByteString)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Map (Map)
+import Data.Maybe.Strict
 import Data.Set (Set)
 import Data.Typeable (Typeable)
 import Data.Void (Void)
@@ -545,9 +546,11 @@ type NodeToClientHandle ntcAddr versionData m =
 type NodeToClientHandleError ntcVersion =
     HandleError Mx.ResponderMode ntcVersion
 
-type NodeToClientMkConnectionHandler
-      ntcFd ntcAddr ntcVersion ntcVersionData m =
-       (   StrictTVar m (Maybe IG.ResponderCounters)
+type MkNodeToClientConnectionHandler
+      muxMode initiatorCtx responderCtx ntcFd ntcAddr ntcVersion ntcVersionData m a b =
+       (   NewConnectionInfo ntcAddr
+                             (Handle muxMode initiatorCtx responderCtx ntcVersionData ByteString m a b)
+        -> StrictTVar m (StrictMaybe IG.ResponderCounters)
         -> Tracer m (Mux.WithBearer (ConnectionId ntcAddr) Mux.Trace))
     -> ConnectionHandler
          Mx.ResponderMode

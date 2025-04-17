@@ -44,6 +44,7 @@ import GHC.Real
 
 import Control.Monad.Class.MonadSay
 import Control.Monad.Class.MonadTime.SI
+import Control.Monad.IOSim (IOSim, traceM)
 import Control.Tracer (Contravariant (contramap), Tracer (..), contramapM)
 
 import Data.Bitraversable (bimapAccumR)
@@ -54,6 +55,7 @@ import Data.Map qualified as Map
 import Data.Maybe (fromJust, isJust)
 import Data.Set (Set)
 import Data.Set qualified as Set
+import Data.Typeable (Typeable)
 import Text.Pretty.Simple (pPrint)
 
 import Debug.Trace (traceShowM)
@@ -245,9 +247,10 @@ sayTracer = Tracer (say . show)
 -- * inbound governor
 -- * server
 --
-debugTracerG :: (MonadSay m, MonadTime m, Show a) => Tracer m a
-debugTracerG = Tracer (\msg -> (,msg) <$> getCurrentTime >>= say . show)
-           -- <> Tracer Debug.traceShowM
+debugTracerG :: (Show a, Typeable a) => Tracer (IOSim s) a
+debugTracerG =    Tracer (\msg -> getCurrentTime >>= say . show . (,msg))
+               <> Tracer traceM
+            -- <> Tracer Debug.traceShowM
 
 --
 -- Nightly tests

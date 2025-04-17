@@ -84,6 +84,8 @@ import Ouroboros.Network.Context
 import Ouroboros.Network.ControlMessage
 import Ouroboros.Network.Driver.Limits
 import Ouroboros.Network.InboundGovernor qualified as InboundGovernor
+import Ouroboros.Network.InboundGovernor.InformationChannel
+           (newInformationChannel)
 import Ouroboros.Network.Mux
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
@@ -104,9 +106,6 @@ import Ouroboros.Network.Snocket qualified as Snocket
 import Test.Ouroboros.Network.ConnectionManager.Timeouts
 import Test.Ouroboros.Network.Orphans ()
 import Test.Ouroboros.Network.Utils (WithName (..))
-
-import Ouroboros.Network.ConnectionManager.InformationChannel
-           (newInformationChannel)
 
 
 --

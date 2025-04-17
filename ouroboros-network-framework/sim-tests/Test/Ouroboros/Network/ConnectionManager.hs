@@ -71,9 +71,9 @@ import Ouroboros.Network.Snocket (Accept (..), Accepted (..),
 
 import Test.Ouroboros.Network.ConnectionManager.Utils (verifyAbstractTransition)
 
-import Ouroboros.Network.ConnectionManager.InformationChannel
+import Ouroboros.Network.InboundGovernor.InformationChannel
            (newInformationChannel)
-import Ouroboros.Network.ConnectionManager.InformationChannel qualified as InfoChannel
+import Ouroboros.Network.InboundGovernor.InformationChannel qualified as InfoChannel
 
 
 

@@ -409,7 +409,7 @@ connectToNodeWithMux'
          Mx.withReadBufferIO (\buffer -> do
              bearer <- Mx.getBearer makeBearer sduTimeout muxTracer sd buffer
              mux <- Mx.new (toMiniProtocolInfos (runForkPolicy noBindForkPolicy remoteAddress) app)
-             withAsync (Mx.run (Mx.MuxTracerBundle muxTracer muxTracer) mux bearer) $ \aid ->
+             withAsync (Mx.run (Mx.Tracers muxTracer muxTracer) mux bearer) $ \aid ->
                k connectionId versionNumber agreedOptions app mux aid
            )
 

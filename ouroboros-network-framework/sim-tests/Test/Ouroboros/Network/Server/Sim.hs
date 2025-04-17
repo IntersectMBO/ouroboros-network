@@ -535,12 +535,12 @@ instance (Eq req, Arbitrary req) =>
             acl@(AcceptedConnectionsLimit hardLimit softLimit delay)
             events
             attenuationMap) =
-    let a = AcceptedConnectionsLimit
-              <$> shrink hardLimit
-              <*> shrink softLimit
-              <*> pure delay in
-      [MultiNodePruningScript a' events attenuationMap
-      | a' <- a] <>
+    let acls = AcceptedConnectionsLimit
+                <$> shrink hardLimit
+                <*> shrink softLimit
+                <*> pure delay in
+      [MultiNodePruningScript acl' events attenuationMap
+      | acl' <- acls] <>
       [MultiNodePruningScript acl events' attenuationMap
       | events' <- makeValid <$> shrinkList shrinkEvent events
       , events' /= events] <>
