@@ -146,12 +146,6 @@ data Trace =
     | TraceSDUReadTimeoutException
     | TraceSDUWriteTimeoutException
     | TraceTCPInfo StructTCPInfo Word16
-    -- low level handshake bearer tags (not traced by tracer in Mux)
-    | TraceHandshakeStart
-    | TraceHandshakeClientEnd DiffTime
-    | TraceHandshakeServerEnd
-    | forall e. Exception e => TraceHandshakeClientError e DiffTime
-    | forall e. Exception e => TraceHandshakeServerError e
     -- mid level channel tags traced independently by each mini protocol
     -- job in Mux, for each complete message, by the 'channelTracer'
     -- within 'Tracers'
@@ -198,13 +192,6 @@ instance Show Trace where
     show (TraceChannelSendStart mid len) = printf "Channel Send Start on (%s) %d" (show mid)
         len
     show (TraceChannelSendEnd mid) = printf "Channel Send End on %s" (show mid)
-    show TraceHandshakeStart = "Handshake start"
-    show (TraceHandshakeClientEnd duration) = printf "Handshake Client end, duration %s" (show duration)
-    show TraceHandshakeServerEnd = "Handshake Server end"
-    show (TraceHandshakeClientError e duration) =
-         -- Client Error can include an error string from the peer which could be very large.
-        printf "Handshake Client Error %s duration %s" (take 256 $ show e) (show duration)
-    show (TraceHandshakeServerError e) = printf "Handshake Server Error %s" (show e)
     show TraceSDUReadTimeoutException = "Timed out reading SDU"
     show TraceSDUWriteTimeoutException = "Timed out writing SDU"
     show (TraceStartEagerly mid dir) = printf "Eagerly started (%s) in %s" (show mid) (show dir)
