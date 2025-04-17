@@ -383,6 +383,9 @@ with
          <> FirstToFinish do
               firstCommit <- runFirstToFinish $
                 Map.foldMapWithKey firstPeerCommitRemote (connections state)
+              -- it is important we read the channel here, and join it after
+              -- the firstCommit. Registering protocol starts are synchronized
+              -- with handling an expired peer in an atomic action in the tracer.
               (firstCommit :) <$> InfoChannel.readMessages infoChannel
          <> FirstToFinish do
               muxEvents <- InfoChannel.readMessages infoChannel
@@ -394,7 +397,7 @@ with
 
       forM_ events \event -> do
         state <- readTVarIO stateVar
-        (mbConnId, !state') <- case event of
+        decision <- case event of
           NewConnection
             -- new connection has been announced by either accept loop or
             -- by connection manager (in which case the connection is in
@@ -501,17 +504,16 @@ with
                   connId
                   (connections state)
 
-                time' <- getMonotonicTime
                 -- update state and continue the recursive loop
                 let state' = state {
                         connections,
                         freshDuplexPeers =
                           case dataFlow of
                             Unidirectional -> freshDuplexPeers state
-                            Duplex         -> OrdPSQ.insert (remoteAddress connId) time' csVersionData
+                            Duplex         -> OrdPSQ.insert (remoteAddress connId) time csVersionData
                                                             (freshDuplexPeers state)
                       }
-                return (Just connId, state')
+                return $ StateWithPeerTransition state' connId
 
           MuxFinished connId result -> do
 
@@ -523,9 +525,9 @@ with
             -- the connection manager does should realise this on itself.
             -- we bypass the assertion check since MuxFinished could have been
             -- placed on the queue before we managed to remove the connection from
-            -- the private state.
+            -- the private state, but this is benign.
             let state' = unregisterConnection True connId state
-            return (Just connId, state')
+            return $ StateWithPeerTransition state' connId -- ^ even though it might not be true, but it's benign
 
           MiniProtocolTerminated
             Terminated {
@@ -539,20 +541,20 @@ with
             case tResult' of
               Left e -> do
                 -- a mini-protocol errored.  In this case mux will shutdown, and
-                -- the connection manager will tear down the socket.  We can just
-                -- forget the connection from 'State'.
+                -- the connection manager will tear down the socket. Before bailing out,
+                -- the IG tracer will emit BearState Dead which will unregister the connection
+                -- in some following iteration via MuxFinished, but for this peer it should
+                -- be the very next message.
                 traceWith tracer $
                   TrResponderErrored tConnId num e
-
-                let state' = unregisterConnection False tConnId state
-                return (Just tConnId, state')
+                return TraceOnly
 
               Right _ ->
                 runResponder tMux mpd >>= \case
                   Right completionAction -> do
                     traceWith tracer (TrResponderRestarted tConnId num)
                     let state' = updateMiniProtocol tConnId num completionAction state
-                    return (Nothing, state')
+                    return $ OnlyStateChange state'
 
                   Left err -> do
                     -- there is no way to recover from synchronous exceptions; we
@@ -560,11 +562,7 @@ with
                     -- connection manager.
                     traceWith tracer (TrResponderStartFailure tConnId num err)
                     Mux.stop tMux
-
-                    let state' = unregisterConnection False tConnId state
-
-                    return (Just tConnId, state')
-
+                    return TraceOnly
 
           WaitIdleRemote connId -> do
             -- @
@@ -576,9 +574,6 @@ with
             res <- demotedToColdRemote connectionManager connId
             traceWith tracer (TrWaitIdleRemote connId res)
             case res of
-              TerminatedConnection {} -> do
-                let state' = unregisterConnection False connId state
-                return (Just connId, state')
               OperationSuccess {}  -> do
                 mv <- traverse registerDelay idleTimeout
                 let timeoutSTM :: STM m Bool
@@ -588,15 +583,12 @@ with
 
                     state' = updateRemoteState connId (RemoteIdle timeoutSTM) state
 
-                return (Just connId, state')
-              -- It could happen that the connection got deleted by connection
-              -- manager due to some async exception so we need to unregister it
-              -- from the inbound governor state.
-              UnsupportedState UnknownConnectionSt -> do
-                let state' = unregisterConnection False connId state
-                return (Just connId, state')
-              UnsupportedState {} -> do
-                return (Just connId, state)
+                return $ StateWithPeerTransition state' connId
+              -- if the connection handler failed by this time, it will have
+              -- written BearerState Dead to the IG tracer and we will handle this
+              -- in MuxFinished case on the next iteration, where it will unregister
+              -- the connection
+              _otherwise -> return TraceOnly
 
           -- @
           --    PromotedToWarm^{Duplex}_{Remote}
@@ -617,28 +609,21 @@ with
             res <- promotedToWarmRemote connectionManager connId
             traceWith tracer (TrPromotedToWarmRemote connId res)
 
-            case resultInState res of
-              UnknownConnectionSt -> do
-                let state' = unregisterConnection False connId state
-                return (Just connId, state')
-              _ -> do
-                let state' = updateRemoteState
-                               connId
-                               RemoteWarm
-                               state
-                return (Just connId, state')
+            let state' = updateRemoteState
+                           connId
+                           RemoteWarm
+                           state
+            return $ StateWithPeerTransition state' connId
 
           RemotePromotedToHot connId -> do
             traceWith tracer (TrPromotedToHotRemote connId)
             let state' = updateRemoteState connId RemoteHot state
-
-            return (Just connId, state')
+            return $ StateWithPeerTransition state' connId
 
           RemoteDemotedToWarm connId -> do
             traceWith tracer (TrDemotedToWarmRemote connId)
             let state' = updateRemoteState connId RemoteWarm state
-
-            return (Just connId, state')
+            return $ StateWithPeerTransition state' connId
 
           CommitRemote connId -> do
             -- NOTE: `releaseInboundConnection` doesn't throw, hence exception
@@ -646,24 +631,6 @@ with
             res <- releaseInboundConnection connectionManager connId
             traceWith tracer $ TrDemotedToColdRemote connId res
             case res of
-              UnsupportedState {} -> do
-                -- 'inState' can be either:
-                -- @'UnknownConnection'@,
-                -- @'InReservedOutboundState'@,
-                -- @'InUnnegotiatedState',
-                -- @'InOutboundState' 'Unidirectional'@,
-                -- @'InTerminatingState'@,
-                -- @'InTermiantedState'@.
-                let state' = unregisterConnection False connId state
-                return (Just connId, state')
-
-              TerminatedConnection {} -> do
-                -- 'inState' can be either:
-                -- @'InTerminatingState'@,
-                -- @'InTermiantedState'@.
-                let state' = unregisterConnection False connId state
-                return (Just connId, state')
-
               OperationSuccess transition ->
                 case transition of
                   -- the following two cases are when the connection was not used
@@ -674,7 +641,7 @@ with
                     --                               → TerminatingState
                     -- @
                     let state' = unregisterConnection False connId state
-                    return (Just connId, state')
+                    return $ StateWithPeerTransition state' connId
 
                   -- the connection is still used by p2p-governor, carry on but put
                   -- it in 'RemoteCold' state.  This will ensure we keep ready to
@@ -695,42 +662,56 @@ with
                   -- manager was requested outbound connection.
                   KeepTr -> do
                     let state' = updateRemoteState connId RemoteCold state
+                    return $ StateWithPeerTransition state' connId
 
-                    return (Just connId, state')
+              _otherwise -> return TraceOnly
 
           MaturedDuplexPeers newMatureDuplexPeers freshDuplexPeers -> do
             traceWith tracer $ TrMaturedConnections (Map.keysSet newMatureDuplexPeers)
                                                     (Set.fromList $ OrdPSQ.keys freshDuplexPeers)
-            pure (Nothing, state { matureDuplexPeers = newMatureDuplexPeers
-                                                    <> matureDuplexPeers state,
-                                   freshDuplexPeers })
+            return $ OnlyStateChange state { matureDuplexPeers = newMatureDuplexPeers
+                                                               <> matureDuplexPeers state,
+                                             freshDuplexPeers }
 
           InactivityTimeout -> do
             traceWith tracer $ TrInactive ((\(a,b,_) -> (a,b)) <$> OrdPSQ.toList (freshDuplexPeers state))
-            pure (Nothing, state)
+            return TraceOnly
 
         mask_ $ do
-          atomically $ writeTVar stateVar state'
-          traceWith debugTracer (Debug state')
-          case mbConnId of
-            Just cid -> traceWith trTracer (mkRemoteTransitionTrace cid state state')
-            Nothing  -> pure ()
+          case decision of
+            OnlyStateChange state' -> do
+              atomically $ writeTVar stateVar state'
+              traceWith debugTracer (Debug state')
+            StateWithPeerTransition state' p -> do
+              atomically $ writeTVar stateVar state'
+              traceWith debugTracer (Debug state')
+              traceWith trTracer (mkRemoteTransitionTrace p state state')
+            _otherwise -> pure ()
 
-        mapTraceWithCache TrInboundGovernorCounters
-                          tracer
-                          (countersCache state')
-                          (counters state')
-        traceWith tracer $ TrRemoteState $
-              mkRemoteSt . csRemoteState
-          <$> connections state'
+        case decision of
+          _ | Just state' <- withState -> do
+                mapTraceWithCache TrInboundGovernorCounters
+                                  tracer
+                                  (countersCache state')
+                                  (counters state')
+                traceWith tracer $ TrRemoteState $
+                      mkRemoteSt . csRemoteState
+                  <$> connections state'
 
-        -- Update Inbound Governor Counters cache values
-        let newCounters       = counters state'
-            Cache oldCounters = countersCache state'
-            state'' | newCounters /= oldCounters = state' { countersCache = Cache newCounters }
-                    | otherwise                 = state'
+                -- Update Inbound Governor Counters cache values
+                let newCounters       = counters state'
+                    Cache oldCounters = countersCache state'
+                    state'' | newCounters /= oldCounters = state' { countersCache = Cache newCounters }
+                            | otherwise                 = state'
 
-        atomically $ writeTVar stateVar state''
+                atomically $ writeTVar stateVar state''
+            where
+              withState = case decision of
+                OnlyStateChange s            -> Just s
+                StateWithPeerTransition s _p -> Just s
+                _otherwise                   -> Nothing
+
+          _otherwise -> return ()
 
 
 -- | Run a responder mini-protocol.
@@ -967,3 +948,7 @@ data Trace peerAddr
 
 data Debug peerAddr versionData = forall muxMode initiatorCtx m a b.
     Debug (State muxMode initiatorCtx peerAddr versionData m a b)
+
+data LoopDecision state peer = TraceOnly
+                             | OnlyStateChange !state
+                             | StateWithPeerTransition !state peer
