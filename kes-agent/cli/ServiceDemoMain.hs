@@ -25,8 +25,8 @@ import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket
 
 import Control.Concurrent.Class.MonadMVar
-import Control.Monad (forever, when)
-import Control.Monad.Class.MonadAsync
+import Control.Exception (AsyncException (..))
+import Control.Monad (when, unless)
 import Control.Monad.Class.MonadThrow (SomeException, catch)
 import Control.Monad.Class.MonadTime (getCurrentTime)
 import Control.Monad.Class.MonadTimer (threadDelay)
@@ -93,12 +93,12 @@ serviceTracePrio :: ServiceClientTrace -> Priority
 serviceTracePrio ServiceClientVersionHandshakeTrace {} = Debug
 serviceTracePrio ServiceClientDriverTrace {} = Debug
 serviceTracePrio ServiceClientVersionHandshakeFailed {} = Error
-serviceTracePrio ServiceClientSocketClosed {} = Notice
-serviceTracePrio ServiceClientConnected {} = Notice
+serviceTracePrio ServiceClientSocketClosed {} = Info
+serviceTracePrio ServiceClientConnected {} = Info
 serviceTracePrio ServiceClientAttemptReconnect {} = Info
-serviceTracePrio ServiceClientReceivedKey {} = Notice
-serviceTracePrio ServiceClientDeclinedKey {} = Notice
-serviceTracePrio ServiceClientDroppedKey {} = Notice
+serviceTracePrio ServiceClientReceivedKey {} = Info
+serviceTracePrio ServiceClientDeclinedKey {} = Info
+serviceTracePrio ServiceClientDroppedKey {} = Info
 serviceTracePrio ServiceClientAbnormalTermination {} = Error
 serviceTracePrio ServiceClientOpCertNumberCheck {} = Debug
 serviceTracePrio ServiceClientStopped {} = Notice
@@ -183,21 +183,27 @@ main = do
 
   withIOManager $ \ioManager -> do
     serviceClientOptions <- sdoToServiceClientOptions ioManager sdo
-    forever $ do
-      setState ServiceClientWaitingForCredentials
-      traceWith tracer (Notice, "RUN SERVICE CLIENT")
-      runServiceClient
-        (Proxy @StandardCrypto)
-        makeSocketRawBearer
-        serviceClientOptions
-        (handleKey setState)
-        (contramap formatServiceTrace tracer)
-        `catch` ( \(e :: AsyncCancelled) -> do
-                    traceWith tracer (Notice, "SERVICE CLIENT CANCELLED")
-                    return ()
-                )
-        `catch` ( \(e :: SomeException) ->
-                    traceWith tracer (Notice, show e)
-                )
-      traceWith tracer (Notice, "SERVICE CLIENT TERMINATED")
-      threadDelay 100000
+    exitVar <- newMVar False
+    traceWith tracer (Notice, "RUN SERVICE CLIENT")
+    let go = do
+          setState ServiceClientWaitingForCredentials
+          runServiceClient
+            (Proxy @StandardCrypto)
+            makeSocketRawBearer
+            serviceClientOptions
+            (handleKey setState)
+            (contramap formatServiceTrace tracer)
+            `catch` ( \(e :: AsyncException) -> do
+                        traceWith tracer (Notice, "SERVICE CLIENT CANCELLED")
+                        _ <- tryTakeMVar exitVar
+                        putMVar exitVar True
+                    )
+            `catch` ( \(e :: SomeException) ->
+                        traceWith tracer (Notice, show e)
+                    )
+          shouldExit <- readMVar exitVar
+          unless shouldExit $ do
+            threadDelay 100000
+            go
+    go
+    traceWith tracer (Notice, "SERVICE CLIENT TERMINATED")

@@ -79,7 +79,7 @@ mkBundleTrace bundle =
 
 instance Pretty TaggedBundleTrace where
   pretty (TaggedBundleTrace ts keyMay) =
-    pretty ts ++ " " ++ maybe "<DROP KEY>" pretty keyMay
+    maybe "<DROP KEY>" pretty keyMay ++ "[" ++ pretty ts ++ "]"
 
 -- | Logging messages that the ControlDriver may send
 data ControlDriverTrace

@@ -43,15 +43,15 @@ data AgentTrace
   | AgentCheckEvolution KESPeriod
   | AgentControlClientConnected String String
   | AgentControlClientDisconnected String
-  | AgentControlDriverTrace ControlDriverTrace
+  | AgentControlDriverTrace String ControlDriverTrace
   | AgentControlSocketClosed String
   | AgentControlSocketDisabled
   | AgentControlSocketError String
   | AgentControlVersionHandshakeFailed
   | AgentCRefEvent CRefEvent
-  | AgentDroppingKey String
+  | AgentDroppingKey TaggedBundleTrace
   | AgentInstallingKeyDrop
-  | AgentInstallingNewKey String
+  | AgentInstallingNewKey TaggedBundleTrace
   | AgentKeyEvolved KESPeriod KESPeriod
   | AgentKeyExpired KESPeriod KESPeriod
   | AgentKeyNotEvolved KESPeriod KESPeriod
@@ -62,16 +62,16 @@ data AgentTrace
   | AgentLockRequest String
   | AgentNoKeyToEvolve
   | AgentRejectingKey String
-  | AgentReplacingPreviousKey String String
+  | AgentReplacingPreviousKey TaggedBundleTrace TaggedBundleTrace
   | AgentServiceClientConnected String String
   | AgentServiceClientDisconnected String
-  | AgentServiceDriverTrace ServiceDriverTrace
+  | AgentServiceDriverTrace String ServiceDriverTrace
   | AgentServiceSocketClosed String
   | AgentServiceSocketError String
   | AgentServiceVersionHandshakeFailed
   | AgentSkippingOldKey String String
-  | AgentRequestingKeyUpdate String
-  | AgentPushingKeyUpdate String String
+  | AgentRequestingKeyUpdate TaggedBundleTrace
+  | AgentPushingKeyUpdate TaggedBundleTrace String
   | AgentHandlingKeyUpdate
   | AgentUpdateKESPeriod KESPeriod KESPeriod
   | AgentGeneratedStagedKey String
@@ -83,22 +83,22 @@ data AgentTrace
 
 instance Pretty AgentTrace where
   pretty (AgentVersionHandshakeDriverTrace d) = "Agent: version handshake driver: " ++ pretty d
-  pretty (AgentBootstrapTrace b t) = "Agent: bootstrap " ++ b ++ ": " ++ (drop (length "Service: ") (pretty t))
-  pretty (AgentServiceDriverTrace d) = "Agent: service driver: " ++ pretty d
+  pretty (AgentBootstrapTrace b t) = "Agent: bootstrap " ++ b ++ ": " ++ drop (length "Service: ") (pretty t)
+  pretty (AgentServiceDriverTrace addr d) = "Agent: service driver " ++ addr ++ ": " ++ pretty d
   pretty (AgentServiceSocketClosed a) = "Agent: service socket closed: " ++ a
   pretty (AgentServiceClientConnected a b) = "Agent: service client connected: " ++ a ++ " " ++ b
   pretty (AgentServiceClientDisconnected a) = "Agent: service client disconnected: " ++ a
   pretty (AgentServiceSocketError e) = "Agent: service socket error: " ++ e
-  pretty (AgentControlDriverTrace d) = "Agent: control driver: " ++ pretty d
+  pretty (AgentControlDriverTrace addr d) = "Agent: control driver " ++ addr ++ ": " ++ pretty d
   pretty (AgentControlSocketClosed a) = "Agent: control socket closed: " ++ a
   pretty (AgentControlClientConnected a b) = "Agent: control client connected: " ++ a ++ " " ++ b
   pretty (AgentControlClientDisconnected a) = "Agent: control client disconnected: " ++ a
   pretty (AgentControlSocketError e) = "Agent: control socket error: " ++ e
   pretty (AgentRejectingKey msg) = "Agent: rejecting key: " ++ msg
-  pretty (AgentPushingKeyUpdate msg socket) = "Agent: pushing key update: " ++ msg ++ " on " ++ socket
-  pretty (AgentRequestingKeyUpdate msg) = "Agent: requesting key update: " ++ msg
-  pretty (AgentReplacingPreviousKey old new) = "Agent: replacing previous key: " ++ old ++ " -> " ++ new
-  pretty (AgentInstallingNewKey key) = "Agent: installing new key: " ++ key
+  pretty (AgentPushingKeyUpdate tb socket) = "Agent: pushing key update: " ++ pretty tb ++ " to " ++ socket
+  pretty (AgentRequestingKeyUpdate tb) = "Agent: requesting key update: " ++ pretty tb
+  pretty (AgentReplacingPreviousKey old new) = "Agent: replacing previous key: " ++ pretty old ++ " -> " ++ pretty new
+  pretty (AgentInstallingNewKey key) = "Agent: installing new key: " ++ pretty key
   pretty (AgentGeneratedStagedKey key) = "Agent: generated staged key: " ++ key
   pretty (AgentDroppedStagedKey key) = "Agent: dropped staged key: " ++ key
   pretty (AgentListeningOnControlSocket addr) = "Agent: listening on control socket: " ++ addr

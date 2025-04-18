@@ -4,13 +4,11 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
 
 -- | The main Agent program.
 -- The KES Agent opens two sockets:
@@ -63,7 +61,7 @@ module Cardano.KESAgent.Processes.Agent (
 )
 where
 
-import Cardano.KESAgent.KES.Bundle (Bundle (..), TaggedBundle (..))
+import Cardano.KESAgent.KES.Bundle (TaggedBundle (..))
 import Cardano.KESAgent.KES.Evolution (
   EvolutionConfig (..),
   defEvolutionConfig,
@@ -81,10 +79,10 @@ import Cardano.KESAgent.Processes.ServiceClient (
   runServiceClientForever,
  )
 import Cardano.KESAgent.Protocols.AgentInfo
+import Cardano.KESAgent.Protocols.Types
 import Cardano.KESAgent.Protocols.VersionHandshake.Driver (versionHandshakeDriver)
 import Cardano.KESAgent.Protocols.VersionHandshake.Peers (versionHandshakeServer)
 import Cardano.KESAgent.Protocols.VersionedProtocol
-import Cardano.KESAgent.Util.Formatting
 import Cardano.KESAgent.Util.PlatformPoison (poisonWindows)
 
 import Ouroboros.Network.RawBearer
@@ -97,7 +95,7 @@ import Control.Concurrent.Class.MonadSTM.TChan (
   readTChan,
  )
 import Control.Concurrent.Class.MonadSTM.TMVar (
-  newTMVar,
+  newTMVarIO,
   putTMVar,
   readTMVar,
   takeTMVar,
@@ -152,7 +150,7 @@ runListener ::
   (String -> String -> AgentTrace) ->
   (String -> AgentTrace) ->
   (String -> AgentTrace) ->
-  (t -> AgentTrace) ->
+  (String -> t -> AgentTrace) ->
   (RawBearer m -> Tracer m t -> m ()) ->
   m ()
 runListener
@@ -186,9 +184,9 @@ runListener
       traceWith tracer (tListeningOnSocket addrStr)
 
       let handleConnection addr' fd' = do
-            traceWith tracer (tClientConnected (addrStr) (show addr'))
+            traceWith tracer (tClientConnected addrStr (show addr'))
             bearer <- getRawBearer mrb fd'
-            handle bearer (tDriverTrace >$< tracer)
+            handle bearer (tDriverTrace (show addr') >$< tracer)
 
       let logAndContinue :: SomeException -> m ()
           logAndContinue e = traceWith tracer (tSocketError (show e))
@@ -243,7 +241,7 @@ runAgent ::
 runAgent agent = do
   poisonWindows
 
-  clientCounterVar <- atomically $ newTMVar (0 :: Int)
+  clientCounterVar <- newTMVarIO (0 :: Int)
 
   let runEvolution = do
         forever $ do
@@ -256,7 +254,7 @@ runAgent agent = do
         labelMyThread "service"
 
         let reportPushResult result =
-              agentTrace agent $ AgentDebugTrace $ "Push result: " ++ show result
+              return ()
 
         runListener
           (agentSnocket agent)
@@ -278,13 +276,18 @@ runAgent agent = do
               labelMyThread $ "service" ++ show serviceID
 
               nextKeyChanRcv <- atomically $ dupTChan (agentNextKeyChan agent)
-              let currentKey =
-                    atomically $ readTMVar (agentCurrentKeyVar agent) >>= maybe retry return
+              let currentKey = do
+                    tbundle <- atomically $ readTMVar (agentCurrentKeyVar agent) >>= maybe retry return
+                    agentTrace agent $
+                      AgentPushingKeyUpdate
+                        (mkTaggedBundleTrace (taggedBundleTimestamp tbundle) (taggedBundle tbundle))
+                        ("service" ++ show serviceID)
+                    return tbundle
               let nextKey = do
                     tbundle <- atomically (readTChan nextKeyChanRcv)
                     agentTrace agent $
                       AgentPushingKeyUpdate
-                        (formatTaggedBundleMaybe (taggedBundleTimestamp tbundle) (bundleOC <$> taggedBundle tbundle))
+                        (mkTaggedBundleTrace (taggedBundleTimestamp tbundle) (taggedBundle tbundle))
                         ("service" ++ show serviceID)
                     return tbundle
 

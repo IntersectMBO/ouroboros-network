@@ -4,6 +4,7 @@
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE NumericUnderscores #-}
 
 -- | KES agent service client API
 module Cardano.KESAgent.Processes.ServiceClient (
@@ -18,7 +19,7 @@ module Cardano.KESAgent.Processes.ServiceClient (
 )
 where
 
-import Cardano.KESAgent.KES.Bundle (Bundle (..), TaggedBundle (..))
+import Cardano.KESAgent.KES.Bundle (TaggedBundle (..))
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import Cardano.KESAgent.Protocols.RecvResult (RecvResult (..))
 import qualified Cardano.KESAgent.Protocols.Service.V0.Driver as SP0
@@ -36,7 +37,6 @@ import Cardano.KESAgent.Protocols.VersionHandshake.Driver
 import Cardano.KESAgent.Protocols.VersionHandshake.Peers
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Serialization.DirectCodec
-import Cardano.KESAgent.Util.Formatting
 import Cardano.KESAgent.Util.PlatformPoison (poisonWindows)
 import Cardano.KESAgent.Util.Pretty (Pretty (..))
 import Cardano.KESAgent.Util.RetrySocket (retrySocket)
@@ -50,7 +50,8 @@ import Ouroboros.Network.Snocket (Snocket (..))
 import Control.Concurrent.Async (AsyncCancelled)
 import Control.Concurrent.Class.MonadMVar
 import Control.Concurrent.Class.MonadSTM
-import Control.Monad (forever, void)
+import Control.Exception (AsyncException)
+import Control.Monad (void, unless)
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow (
   Handler (..),
@@ -69,6 +70,7 @@ import Data.Typeable
 import Data.Word (Word64)
 import Network.TypedProtocol.Driver (runPeerWithDriver)
 import Text.Casing
+import Text.Printf
 
 -- | Configuration options for a service client.
 data ServiceClientOptions m fd addr
@@ -88,20 +90,39 @@ data ServiceClientTrace
   | ServiceClientSocketClosed
   | ServiceClientConnected !String
   | ServiceClientAttemptReconnect !Int !Int !String !String
-  | ServiceClientReceivedKey !String
-  | ServiceClientDeclinedKey !String
+  | ServiceClientReceivedKey !TaggedBundleTrace
+  | ServiceClientDeclinedKey !TaggedBundleTrace
   | ServiceClientDroppedKey
   | ServiceClientOpCertNumberCheck !Word64 !Word64
   | ServiceClientAbnormalTermination !String
   | ServiceClientStopped
   deriving (Show)
 
+formatDelayMicro :: Int -> String
+formatDelayMicro us
+  | us < 1_000
+  = show us ++ "μs"
+  | us < 1_000_000
+  = show (us `div` 1_000) ++ "ms"
+  | us < 4_000_000
+  = printf "%0.2fs" ((fromIntegral us :: Double) / 1_000_000)
+  | us < 10_000_000
+  = printf "%0.1fs" ((fromIntegral us :: Double) / 1_000_000)
+  | us < 60_000_000
+  = printf "%0.0fs" ((fromIntegral us :: Double) / 1_000_000)
+  | us < 3600_000_000
+  = printf "%i:$02i minutes" (us `div` 60_000_000) ((us `mod` 60_000_000) `div` 1_000_000)
+  | otherwise
+  = printf "%i:$02i hours" (us `div` 3600_000_000) ((us `mod` 3600_000_000) `div` 60_000_000)
+
 instance Pretty ServiceClientTrace where
   pretty (ServiceClientDriverTrace d) = "Service: service driver: " ++ pretty d
   pretty (ServiceClientConnected a) = "Service: connected to " ++ a
+  pretty (ServiceClientAttemptReconnect count delayMicro err addr) =
+    "Service: service driver: failed to connect to " ++ addr ++ ": " ++ err ++ "; connection attempts left: " ++ show count ++ ", next connection attempt in " ++ formatDelayMicro delayMicro
   pretty (ServiceClientVersionHandshakeTrace a) = "Service: version handshake: " ++ pretty a
-  pretty (ServiceClientReceivedKey k) = "Service: received key: " ++ k
-  pretty (ServiceClientDeclinedKey k) = "Service: declined key: " ++ k
+  pretty (ServiceClientReceivedKey k) = "Service: received key: " ++ pretty k
+  pretty (ServiceClientDeclinedKey k) = "Service: declined key: " ++ pretty k
   pretty (ServiceClientAbnormalTermination err) = "Service: abnormal termination: " ++ err
   pretty x = "Service: " ++ prettify (drop (length "ServiceClient") (show x))
     where
@@ -171,7 +192,10 @@ mkServiceClientDriverSP0 =
           ( SP0.serviceReceiver $
               \bundle ->
                 handleKey (TaggedBundle (Just bundle) 0)
-                  <* traceWith tracer (ServiceClientReceivedKey $ formatTaggedBundle 0 (bundleOC bundle))
+                  <* traceWith tracer
+                      (ServiceClientReceivedKey $
+                        mkTaggedBundleTrace 0 (Just bundle)
+                      )
           )
   )
 
@@ -192,7 +216,10 @@ mkServiceClientDriverSP1 =
           (SP1.serviceDriver bearer $ ServiceClientDriverTrace >$< tracer)
           ( SP1.serviceReceiver $ \bundle ->
               handleKey (TaggedBundle (Just bundle) 0)
-                <* traceWith tracer (ServiceClientReceivedKey $ formatTaggedBundle 0 (bundleOC bundle))
+                <* traceWith tracer
+                    (ServiceClientReceivedKey $
+                      mkTaggedBundleTrace 0 (Just bundle)
+                    )
           )
   )
 
@@ -218,12 +245,16 @@ mkServiceClientDriverSP2 =
                     RecvOK ->
                       traceWith tracer $
                         ServiceClientReceivedKey
-                          ( formatTaggedBundleMaybe
+                          ( mkTaggedBundleTrace
                               (taggedBundleTimestamp bundle)
-                              (bundleOC <$> taggedBundle bundle)
+                              (taggedBundle bundle)
                           )
                     _ ->
-                      traceWith tracer $ ServiceClientDeclinedKey (pretty result)
+                      traceWith tracer $ ServiceClientDeclinedKey
+                          ( mkTaggedBundleTrace
+                              (taggedBundleTimestamp bundle)
+                              (taggedBundle bundle)
+                          )
                   return result
               )
           )
@@ -258,23 +289,41 @@ runServiceClientForever ::
   (TaggedBundle m c -> m RecvResult) ->
   Tracer m ServiceClientTrace ->
   m ()
-runServiceClientForever proxy mrb options handleKey tracer =
-  forever $ do
-    runServiceClient proxy mrb options handleKey tracer
-      `catches` [ Handler handleAsyncCancelled
-                , Handler handle
-                ]
-    threadDelay 1000000
+runServiceClientForever proxy mrb options handleKey tracer = do
+  exitVar <- newMVar False
+  let go :: m ()
+      go = do
+        runServiceClient proxy mrb options handleKey tracer
+          `catches` [ Handler (handleAbort exitVar)
+                    , Handler (handleAsyncCancelled exitVar)
+                    , Handler handle
+                    ]
+        traceWith tracer $
+          ServiceClientAttemptReconnect
+            0 10_000_000
+            "Ran out of attempts"
+            (show $ serviceClientAddress options)
+        exit <- readMVar exitVar
+        unless exit $ do
+          threadDelay 10_000_000
+          go
+  go
+  traceWith tracer ServiceClientStopped
+
   where
-    handleAsyncCancelled :: AsyncCancelled -> m ()
-    handleAsyncCancelled _ = do
-      traceWith tracer $ ServiceClientStopped
-      return ()
+    handleAbort :: MVar m Bool -> AsyncException -> m ()
+    handleAbort exitVar _ = do
+      _ <- tryTakeMVar exitVar
+      putMVar exitVar True
+
+    handleAsyncCancelled :: MVar m Bool -> AsyncCancelled -> m ()
+    handleAsyncCancelled exitVar _ = do
+      _ <- tryTakeMVar exitVar
+      putMVar exitVar True
 
     handle :: SomeException -> m ()
     handle e = do
       traceWith tracer $ ServiceClientAbnormalTermination (show e)
-      return ()
 
 -- | Run a single service client session. Once the peer closes the connection,
 -- or a failure occurs, return.

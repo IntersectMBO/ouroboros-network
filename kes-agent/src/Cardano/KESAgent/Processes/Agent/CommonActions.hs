@@ -2,16 +2,12 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
 
 -- | Common operations used inside the KES agent process.
 module Cardano.KESAgent.Processes.Agent.CommonActions
@@ -57,7 +53,7 @@ import Cardano.KESAgent.KES.OCert (
 import Cardano.KESAgent.Processes.Agent.Context
 import Cardano.KESAgent.Processes.Agent.Type
 import Cardano.KESAgent.Protocols.RecvResult (RecvResult (..))
-import Cardano.KESAgent.Util.Formatting
+import Cardano.KESAgent.Protocols.Types
 import Cardano.KESAgent.Util.RefCounting (
   CRef,
   CRefEvent (..),
@@ -426,7 +422,8 @@ pushKey agent tbundle = do
                 agentTrace agent $ AgentInstallingKeyDrop
               Just bundle ->
                 agentTrace agent $
-                  AgentInstallingNewKey (formatTaggedBundle (taggedBundleTimestamp tbundle) (bundleOC bundle))
+                  AgentInstallingNewKey
+                    (mkTaggedBundleTrace (taggedBundleTimestamp tbundle) (taggedBundle tbundle))
             return (Just tbundle, PushKeyOK Nothing)
           Just oldTBundle -> do
             -- We have an old bundle, so we need to do an age check.
@@ -438,18 +435,20 @@ pushKey agent tbundle = do
                 case (releaseResult, taggedBundle tbundle) of
                   (Nothing, Just bundle) ->
                     agentTrace agent $
-                      AgentInstallingNewKey (formatTaggedBundle (taggedBundleTimestamp tbundle) (bundleOC bundle))
+                      AgentInstallingNewKey
+                        (mkTaggedBundleTrace (taggedBundleTimestamp tbundle) (taggedBundle tbundle))
                   (Nothing, Nothing) ->
                     agentTrace agent $
                       AgentInstallingKeyDrop
                   (Just oldOC, Nothing) ->
                     agentTrace agent $
-                      AgentDroppingKey (formatTaggedBundle (taggedBundleTimestamp tbundle) oldOC)
+                      AgentDroppingKey
+                        (mkTaggedBundleTrace (taggedBundleTimestamp tbundle) (taggedBundle tbundle))
                   (Just oldOC, Just bundle) ->
                     agentTrace agent $
                       AgentReplacingPreviousKey
-                        (formatTaggedBundle (taggedBundleTimestamp oldTBundle) oldOC)
-                        (formatTaggedBundle (taggedBundleTimestamp tbundle) (bundleOC bundle))
+                        (mkTaggedBundleTrace (taggedBundleTimestamp oldTBundle) (taggedBundle oldTBundle))
+                        (mkTaggedBundleTrace (taggedBundleTimestamp tbundle) (taggedBundle tbundle))
                 return (Just tbundle, PushKeyOK releaseResult)
               else do
                 -- Age check failed, so we keep the old bundle and release the
@@ -467,8 +466,5 @@ pushKey agent tbundle = do
     broadcastUpdate tbundle = do
       agentTrace agent $
         AgentRequestingKeyUpdate
-          ( formatTaggedBundleMaybe
-              (taggedBundleTimestamp tbundle)
-              (bundleOC <$> taggedBundle tbundle)
-          )
+          (mkTaggedBundleTrace (taggedBundleTimestamp tbundle) (taggedBundle tbundle))
       atomically $ writeTChan (agentNextKeyChan agent) tbundle
