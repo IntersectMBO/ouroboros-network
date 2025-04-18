@@ -412,11 +412,11 @@ makeLocalRawBearer = MakeRawBearer (return . localSocketToRawBearer)
 
 makeLocalBearer :: MakeBearer IO LocalSocket
 #if defined(mingw32_HOST_OS)
-makeLocalBearer = MakeBearer $ \sduTimeout tracer LocalSocket { getLocalHandle = fd } rb ->
-  getBearer makeNamedPipeBearer sduTimeout tracer fd rb
+makeLocalBearer = MakeBearer $ \sduTimeout LocalSocket { getLocalHandle = fd } rb ->
+  getBearer makeNamedPipeBearer sduTimeout fd rb
 #else
-makeLocalBearer = MakeBearer $ \sduTimeout tracer (LocalSocket fd) rb ->
-  getBearer makeSocketBearer sduTimeout tracer fd rb
+makeLocalBearer = MakeBearer $ \sduTimeout (LocalSocket fd) rb ->
+  getBearer makeSocketBearer sduTimeout fd rb
 #endif
 
 -- | System dependent LocalSnocket

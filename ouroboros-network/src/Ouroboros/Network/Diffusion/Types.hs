@@ -136,6 +136,17 @@ data Tracers ntnAddr ntnVersion ntnVersionData
       dtMuxTracer
         :: Tracer m (Mx.WithBearer (ConnectionId ntnAddr) Mx.Trace)
 
+      -- | Mux's channel tracer
+      --
+    , dtChannelTracer
+        :: Tracer m (Mx.WithBearer (ConnectionId ntnAddr) Mx.ChannelTrace)
+
+      -- | Bearer tracer
+      --
+    , dtBearerTracer
+        :: Tracer m (Mx.WithBearer (ConnectionId ntnAddr) Mx.BearerTrace)
+
+
       -- | Handshake protocol tracer
     , dtHandshakeTracer
         :: Tracer m (NodeToNode.HandshakeTr ntnAddr ntnVersion)
@@ -145,8 +156,19 @@ data Tracers ntnAddr ntnVersion ntnVersionData
       --
 
       -- | Mux tracer for local clients
+      --
     , dtLocalMuxTracer
         :: Tracer m (Mx.WithBearer (ConnectionId ntcAddr) Mx.Trace)
+
+      -- | Mux's channel tracer for local clients
+      --
+    , dtLocalChannelTracer
+        :: Tracer m (Mx.WithBearer (ConnectionId ntcAddr) Mx.ChannelTrace)
+
+      -- | Bearer tracer for local clients
+      --
+    , dtLocalBearerTracer
+        :: Tracer m (Mx.WithBearer (ConnectionId ntcAddr) Mx.BearerTrace)
 
       -- | Handshake protocol tracer for local clients
     , dtLocalHandshakeTracer
@@ -235,8 +257,12 @@ nullTracers :: Applicative m
                        extraFlags extraPeers extraCounters m
 nullTracers = Tracers {
     dtMuxTracer                                  = nullTracer
+  , dtChannelTracer                              = nullTracer
+  , dtBearerTracer                               = nullTracer
   , dtHandshakeTracer                            = nullTracer
   , dtLocalMuxTracer                             = nullTracer
+  , dtLocalChannelTracer                         = nullTracer
+  , dtLocalBearerTracer                          = nullTracer
   , dtLocalHandshakeTracer                       = nullTracer
   , dtDiffusionTracer                            = nullTracer
   , dtTraceLocalRootPeersTracer                  = nullTracer

@@ -99,7 +99,7 @@ import Ouroboros.Network.Snocket qualified as Snocket
 -- 'Ouroboros.Network.NodeToClient.connectTo).
 --
 data NetworkConnectTracers addr vNumber = NetworkConnectTracers {
-      nctMuxTracer         :: Tracer IO (Mx.WithBearer (ConnectionId addr)  Mx.Trace),
+      nctMuxTracers        :: Mx.TracersWithBearer (ConnectionId addr) IO,
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
       nctHandshakeTracer   :: Tracer IO (Mx.WithBearer (ConnectionId addr)
@@ -110,7 +110,7 @@ data NetworkConnectTracers addr vNumber = NetworkConnectTracers {
 
 nullNetworkConnectTracers :: NetworkConnectTracers addr vNumber
 nullNetworkConnectTracers = NetworkConnectTracers {
-      nctMuxTracer       = nullTracer,
+      nctMuxTracers      = Mx.nullTracers,
       nctHandshakeTracer = nullTracer
     }
 
@@ -118,7 +118,9 @@ nullNetworkConnectTracers = NetworkConnectTracers {
 debuggingNetworkConnectTracers :: (Show addr, Show vNumber)
                                => NetworkConnectTracers addr vNumber
 debuggingNetworkConnectTracers = NetworkConnectTracers {
-      nctMuxTracer       = showTracing stdoutTracer,
+      nctMuxTracers      = Mx.Tracers (showTracing stdoutTracer)
+                                      (showTracing stdoutTracer)
+                                      (showTracing stdoutTracer),
       nctHandshakeTracer = showTracing stdoutTracer
     }
 
@@ -366,7 +368,7 @@ connectToNodeWithMux'
       ctaVersionDataCodec    = versionDataCodec,
       ctaConnectTracers      =
         NetworkConnectTracers {
-          nctMuxTracer,
+          nctMuxTracers,
           nctHandshakeTracer
         },
       ctaHandshakeCallbacks  = handshakeCallbacks
@@ -374,21 +376,22 @@ connectToNodeWithMux'
   versions sd k = do
     connectionId <- (\localAddress remoteAddress -> ConnectionId { localAddress, remoteAddress })
                 <$> Snocket.getLocalAddr sn sd <*> Snocket.getRemoteAddr sn sd
-    muxTracer <- initDeltaQTracer' $ Mx.WithBearer connectionId `contramap` nctMuxTracer
+    muxTracers <- initDeltaQTracers $ Mx.tracersWithBearer connectionId nctMuxTracers
 
-    handshakeBearer <- Mx.getBearer makeBearer sduHandshakeTimeout muxTracer sd Nothing
+    handshakeBearer <- Mx.getBearer makeBearer sduHandshakeTimeout sd Nothing
     app_e <-
       runHandshakeClient
         handshakeBearer
         connectionId
         -- TODO: push 'HandshakeArguments' up the call stack.
         HandshakeArguments {
-          haHandshakeTracer  = nctHandshakeTracer,
-          haHandshakeCodec   = handshakeCodec,
-          haVersionDataCodec = versionDataCodec,
-          haAcceptVersion    = acceptCb handshakeCallbacks,
-          haQueryVersion     = queryCb handshakeCallbacks,
-          haTimeLimits       = handshakeTimeLimits
+          haHandshakeTracer   = nctHandshakeTracer,
+          haBearerTracer      = Mx.bearerTracer nctMuxTracers,
+          haHandshakeCodec    = handshakeCodec,
+          haVersionDataCodec  = versionDataCodec,
+          haAcceptVersion     = acceptCb handshakeCallbacks,
+          haQueryVersion      = queryCb handshakeCallbacks,
+          haTimeLimits        = handshakeTimeLimits
         }
         versions
     case app_e of
@@ -400,9 +403,9 @@ connectToNodeWithMux'
 
        Right (HandshakeNegotiationResult app versionNumber agreedOptions) -> do
          Mx.withReadBufferIO (\buffer -> do
-             bearer <- Mx.getBearer makeBearer sduTimeout muxTracer sd buffer
+             bearer <- Mx.getBearer makeBearer sduTimeout sd buffer
              mux <- Mx.new (toMiniProtocolInfos (runForkPolicy noBindForkPolicy remoteAddress) app)
-             withAsync (Mx.run (Mx.Tracers muxTracer muxTracer) mux bearer) $ \aid ->
+             withAsync (Mx.run muxTracers mux bearer) $ \aid ->
                k connectionId versionNumber agreedOptions app mux aid
            )
 

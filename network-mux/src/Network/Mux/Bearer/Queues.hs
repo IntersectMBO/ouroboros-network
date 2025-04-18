@@ -35,22 +35,21 @@ queueChannelAsBearer
      , MonadThrow m
      )
   => Mx.SDUSize
-  -> Tracer m Mx.Trace
   -> QueueChannel m
   -> Bearer m
-queueChannelAsBearer sduSize tracer QueueChannel { writeQueue, readQueue } = do
+queueChannelAsBearer sduSize QueueChannel { writeQueue, readQueue } = do
       Mx.Bearer {
         Mx.read           = readMux,
         Mx.write          = writeMux,
         Mx.writeMany      = writeMuxMany,
         Mx.sduSize        = sduSize,
-        Mx.batchSize      = 2 * (fromIntegral $ Mx.getSDUSize sduSize),
+        Mx.batchSize      = 2 * fromIntegral (Mx.getSDUSize sduSize),
         Mx.name           = "queue-channel",
         Mx.egressInterval = 0
       }
     where
-      readMux :: Mx.TimeoutFn m -> m (Mx.SDU, Time)
-      readMux _ = do
+      readMux :: Tracer m Mx.BearerTrace -> Mx.TimeoutFn m -> m (Mx.SDU, Time)
+      readMux tracer _ = do
           traceWith tracer Mx.TraceRecvHeaderStart
           buf <- atomically $ readTBQueue readQueue
           let (hbuf, payload) = BL.splitAt 8 buf
@@ -62,8 +61,8 @@ queueChannelAsBearer sduSize tracer QueueChannel { writeQueue, readQueue } = do
                   traceWith tracer $ Mx.TraceRecvDeltaQObservation (Mx.msHeader header) ts
                   return (header {Mx.msBlob = payload}, ts)
 
-      writeMux :: Mx.TimeoutFn m -> Mx.SDU -> m Time
-      writeMux _ sdu = do
+      writeMux :: Tracer m Mx.BearerTrace -> Mx.TimeoutFn m -> Mx.SDU -> m Time
+      writeMux tracer _ sdu = do
           ts <- getMonotonicTime
           let ts32 = Mx.timestampMicrosecondsLow32Bits ts
               sdu' = Mx.setTimestamp sdu (Mx.RemoteClockModel ts32)
@@ -73,9 +72,9 @@ queueChannelAsBearer sduSize tracer QueueChannel { writeQueue, readQueue } = do
           traceWith tracer Mx.TraceSendEnd
           return ts
 
-      writeMuxMany :: Mx.TimeoutFn m -> [Mx.SDU] -> m Time
-      writeMuxMany timeoutFn sdus = do
+      writeMuxMany :: Tracer m Mx.BearerTrace -> Mx.TimeoutFn m -> [Mx.SDU] -> m Time
+      writeMuxMany tracer timeoutFn sdus = do
         ts <- getMonotonicTime
-        mapM_ (writeMux timeoutFn) sdus
+        mapM_ (writeMux tracer timeoutFn) sdus
         return ts
 

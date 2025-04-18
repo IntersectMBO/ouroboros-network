@@ -1326,18 +1326,14 @@ prop_channel_simultaneous_open_sim codec versionDataCodec
               (Snocket.connect sn fdConn' addr)
             bearer  <- Mx.getBearer makeFDBearer
                         1
-                        nullTracer
-                        -- (("client",) `contramap` Tracer Debug.traceShowM)
                         fdConn
                         Nothing
             bearer' <- Mx.getBearer makeFDBearer
                         1
-                        nullTracer
-                        -- (("server",) `contramap` Tracer Debug.traceShowM)
                         fdConn'
                         Nothing
-            let chann  = bearerAsChannel bearer  (MiniProtocolNum 0) InitiatorDir
-                chann' = bearerAsChannel bearer' (MiniProtocolNum 0) InitiatorDir
+            let chann  = bearerAsChannel nullTracer bearer  (MiniProtocolNum 0) InitiatorDir
+                chann' = bearerAsChannel nullTracer bearer' (MiniProtocolNum 0) InitiatorDir
             res <- prop_channel_simultaneous_open
               (pure (chann, chann'))
               codec
