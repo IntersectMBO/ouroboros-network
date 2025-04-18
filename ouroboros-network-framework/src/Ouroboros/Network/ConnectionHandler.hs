@@ -50,7 +50,7 @@ import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow hiding (handle)
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer, contramap, traceWith)
+import Control.Tracer (Tracer, traceWith)
 
 import Data.ByteString.Lazy (ByteString)
 import Data.Map (Map)
@@ -254,7 +254,7 @@ makeConnectionHandler
        , Show     peerAddr
        , Typeable peerAddr
        )
-    => Tracer m (Mx.WithBearer (ConnectionId peerAddr) Mx.Trace)
+    => Mx.TracersWithBearer (ConnectionId peerAddr) m
     -> ForkPolicy peerAddr
     -> HandshakeArguments (ConnectionId peerAddr) versionNumber versionData m
     -> Versions versionNumber versionData
@@ -266,7 +266,7 @@ makeConnectionHandler
     -- ^ describe whether this is outbound or inbound connection, and bring
     -- evidence that we can use mux with it.
     -> MkMuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr versionNumber versionData ByteString m a b
-makeConnectionHandler muxTracer forkPolicy
+makeConnectionHandler muxTracers forkPolicy
                       handshakeArguments
                       versionedApplication
                       (mainThreadId, rethrowPolicy) =
@@ -369,30 +369,29 @@ makeConnectionHandler muxTracer forkPolicy
                   atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
                   withBuffer \buffer -> do
                     bearer <- mkMuxBearer sduTimeout socket buffer
-                    muxTracer' <- contramap (Mx.WithBearer connectionId) <$>
-                          case inResponderMode of
-                            InResponderMode (inboundGovChannelTracer, connectionDataFlow)
-                              | Duplex <- connectionDataFlow agreedOptions -> do
-                                  -- In this case, following the Mx.run call below, the muxer begins racing with
-                                  -- the CM to write to the information channel queue. The tracer of mux activity,
-                                  -- while the CM of new connection notification. The latter *should* come first.
-                                  -- The IG tracer will block the muxer on a TVar when it reaches mature state
-                                  -- until the CM informs the former of new peer connection to ensure
-                                  -- proper sequencing of events.
-                                  countersVar <- newTVarIO $ Just $ ResponderCounters 0 0
-                                  pure $ muxTracer <> inboundGovChannelTracer countersVar
-                            _notResponder ->
-                                  -- If this is InitiatorOnly, or a server where unidirectional flow was negotiated
-                                  -- the IG will never be informed of this remote for obvious reasons. There is no
-                                  -- need to pass the responder IG tracer here, and we must not in the latter case
-                                  -- as the muxer will deadlock itself before it launches any miniprotocols from the
-                                  -- command queue. It will be stuck when reaches mature state, forever waiting for
-                                  -- the incoming peer handle.
-                                  pure muxTracer
-                    Mx.run Mx.MuxTracerBundle {
-                             muxTracer     = muxTracer',
-                             channelTracer = Mx.WithBearer connectionId `contramap` muxTracer }
-                           mux bearer
+                    muxTracers' <- case inResponderMode of
+                      InResponderMode (inboundGovChannelTracer, connectionDataFlow)
+                        | Duplex <- connectionDataFlow agreedOptions -> do
+                            -- In this case, following the Mx.run call below, the muxer begins racing with
+                            -- the CM to write to the information channel queue. The tracer of mux activity,
+                            -- while the CM of new connection notification. The latter *should* come first.
+                            -- The IG tracer will block the muxer on a TVar when it reaches mature state
+                            -- until the CM informs the former of new peer connection to ensure
+                            -- proper sequencing of events.
+                            countersVar <- newTVarIO $ Just $ ResponderCounters 0 0
+                            pure $ Mx.tracersWithBearer connectionId muxTracers {
+                                  Mx.tracer = Mx.tracer muxTracers <> inboundGovChannelTracer countersVar
+                                }
+                      _notResponder ->
+                            -- If this is InitiatorOnly, or a server where unidirectional flow was negotiated
+                            -- the IG will never be informed of this remote for obvious reasons. There is no
+                            -- need to pass the responder IG tracer here, and we must not in the latter case
+                            -- as the muxer will deadlock itself before it launches any miniprotocols from the
+                            -- command queue. It will be stuck when reaches mature state, forever waiting for
+                            -- the incoming peer handle.
+                            pure $ Mx.tracersWithBearer connectionId muxTracers
+
+                    Mx.run muxTracers' mux bearer
 
               Right (HandshakeQueryResult vMap) -> do
                 atomically $ writePromise (Right HandshakeConnectionQuery)
@@ -467,10 +466,9 @@ makeConnectionHandler muxTracer forkPolicy
                   withBuffer (\buffer -> do
                       bearer <- mkMuxBearer sduTimeout socket buffer
                       countersVar <- newTVarIO . Just $ ResponderCounters 0 0
-                      let traceWithBearer = contramap $ Mx.WithBearer connectionId
-                      Mx.run Mx.MuxTracerBundle {
-                               muxTracer     = traceWithBearer (muxTracer <> inboundGovChannelTracer countersVar),
-                               channelTracer = traceWithBearer muxTracer }
+                      Mx.run (Mx.tracersWithBearer connectionId muxTracers {
+                               Mx.tracer = Mx.tracer muxTracers <> inboundGovChannelTracer countersVar
+                             })
                              mux bearer
                     )
               Right (HandshakeQueryResult vMap) -> do

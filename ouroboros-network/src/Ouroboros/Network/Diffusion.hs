@@ -187,7 +187,11 @@ runM Interfaces
        }
      Tracers
        { dtMuxTracer
+       , dtChannelTracer
+       , dtBearerTracer
        , dtLocalMuxTracer
+       , dtLocalChannelTracer
+       , dtLocalBearerTracer
        , dtDiffusionTracer = tracer
        , dtTracePeerSelectionTracer
        , dtTraceChurnCounters
@@ -332,7 +336,11 @@ runM Interfaces
                                         ntcFd ntcAddr ntcVersion ntcVersionData m
             mkLocalConnectionHandler responderMuxChannelTracer =
               makeConnectionHandler
-                dtLocalMuxTracer
+                Mx.Tracers {
+                  Mx.tracer        = dtLocalMuxTracer,
+                  Mx.channelTracer = dtLocalChannelTracer,
+                  Mx.bearerTracer  = dtLocalBearerTracer
+                }
                 daLocalMuxForkPolicy
                 diNtcHandshakeArguments
                 ( ( \ (OuroborosApplication apps)
@@ -349,7 +357,6 @@ runM Interfaces
               CM.with CM.Arguments {
                   tracer              = dtLocalConnectionManagerTracer,
                   trTracer            = nullTracer, -- TODO: issue #3320
-                  muxTracer           = dtLocalMuxTracer,
                   ipv4Address         = Nothing,
                   ipv6Address         = Nothing,
                   addressType         = const Nothing,
@@ -472,7 +479,6 @@ runM Interfaces
                 trTracer            =
                   fmap CM.abstractState
                   `contramap` dtConnectionManagerTransitionTracer,
-                muxTracer           = dtMuxTracer,
                 ipv4Address,
                 ipv6Address,
                 addressType         = diNtnAddressType,
@@ -505,7 +511,11 @@ runM Interfaces
                  ntnVersion ntnVersionData ByteString m b c
           makeConnectionHandler' versions singMuxMode =
             makeConnectionHandler
-              dtMuxTracer
+              Mx.Tracers {
+                Mx.tracer        = dtMuxTracer,
+                Mx.channelTracer = dtChannelTracer,
+                Mx.bearerTracer  = dtBearerTracer
+              }
               daMuxForkPolicy
               diNtnHandshakeArguments
               versions
@@ -881,6 +891,7 @@ run sigUSR1Signal tracers args apps = do
         diNtnHandshakeArguments =
           HandshakeArguments {
               haHandshakeTracer = dtHandshakeTracer tracers,
+              haBearerTracer    = dtBearerTracer tracers,
               haHandshakeCodec  = NodeToNode.nodeToNodeHandshakeCodec,
               haVersionDataCodec =
                 cborTermVersionDataCodec
@@ -892,6 +903,7 @@ run sigUSR1Signal tracers args apps = do
         diNtcHandshakeArguments =
           HandshakeArguments {
               haHandshakeTracer  = dtLocalHandshakeTracer tracers,
+              haBearerTracer     = dtLocalBearerTracer tracers,
               haHandshakeCodec   = NodeToClient.nodeToClientHandshakeCodec,
               haVersionDataCodec =
                 cborTermVersionDataCodec

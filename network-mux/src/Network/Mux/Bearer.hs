@@ -9,6 +9,7 @@
 module Network.Mux.Bearer
   ( Bearer (..)
   , MakeBearer (..)
+  , BearerTrace (..)
   , makeSocketBearer
   , makePipeChannelBearer
   , makeQueueChannelBearer
@@ -22,7 +23,6 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime.SI
-import           Control.Tracer (Tracer)
 
 import           Data.ByteString.Lazy qualified as BL
 import           Network.Socket (Socket)
@@ -45,8 +45,6 @@ newtype MakeBearer m fd = MakeBearer {
       :: DiffTime
       -- timeout for reading an SDU segment, if negative no
       -- timeout is applied.
-      -> Tracer m Trace
-      -- tracer
       -> fd
       -- file descriptor
       -> Maybe (ReadBuffer m)
@@ -55,14 +53,14 @@ newtype MakeBearer m fd = MakeBearer {
   }
 
 pureBearer :: Applicative m
-           => (DiffTime -> Tracer m Trace -> fd -> Maybe (ReadBuffer m) ->   Bearer m)
-           ->  DiffTime -> Tracer m Trace -> fd -> Maybe (ReadBuffer m) -> m (Bearer m)
-pureBearer f = \sduTimeout rb tr fd -> pure (f sduTimeout rb tr fd)
+           => (DiffTime -> fd -> Maybe (ReadBuffer m) ->    Bearer m)
+           ->  DiffTime -> fd -> Maybe (ReadBuffer m) -> m (Bearer m)
+pureBearer f = \sduTimeout rb fd -> pure (f sduTimeout rb fd)
 
 
 makeSocketBearer :: MakeBearer IO Socket
-makeSocketBearer = MakeBearer $ (\sduTimeout tr fd rb -> do
-    return $ socketAsBearer size batch rb sduTimeout tr fd)
+makeSocketBearer = MakeBearer $ \sduTimeout fd rb ->
+    return $ socketAsBearer size batch rb sduTimeout fd
   where
     size = SDUSize 12_288
     batch = 131_072
@@ -70,7 +68,7 @@ makeSocketBearer = MakeBearer $ (\sduTimeout tr fd rb -> do
 withReadBufferIO :: (Maybe (ReadBuffer IO) -> IO b)
                  -> IO b
 withReadBufferIO f = allocaBytesAligned size 8 $ \ptr -> do
-    v <- atomically $ newTVar BL.empty
+    v <- newTVarIO BL.empty
     f $ Just $ ReadBuffer v ptr size
   where
     -- Maximum amount of data read in one call.
@@ -80,7 +78,7 @@ withReadBufferIO f = allocaBytesAligned size 8 $ \ptr -> do
     size = 131_072
 
 makePipeChannelBearer :: MakeBearer IO PipeChannel
-makePipeChannelBearer = MakeBearer $ pureBearer (\_ tr fd _ -> pipeAsBearer size tr fd)
+makePipeChannelBearer = MakeBearer $ pureBearer (\_ fd _ -> pipeAsBearer size fd)
   where
     size = SDUSize 32_768
 
@@ -89,13 +87,13 @@ makeQueueChannelBearer :: ( MonadSTM   m
                           , MonadThrow m
                           )
                        => MakeBearer m (QueueChannel m)
-makeQueueChannelBearer = MakeBearer $ pureBearer (\_ tr q _-> queueChannelAsBearer size tr q)
+makeQueueChannelBearer = MakeBearer $ pureBearer (\_ q _ -> queueChannelAsBearer size q)
   where
     size = SDUSize 1_280
 
 #if defined(mingw32_HOST_OS)
 makeNamedPipeBearer :: MakeBearer IO HANDLE
-makeNamedPipeBearer = MakeBearer $ pureBearer (\_ tr fd _-> namedPipeAsBearer size tr fd)
+makeNamedPipeBearer = MakeBearer $ pureBearer (\_ fd _tr -> namedPipeAsBearer size fd)
   where
     size = SDUSize 24_576
 #endif

@@ -279,6 +279,7 @@ run blockGeneratorArgs limits ni na
               , Diff.diNtnHandshakeArguments =
                   HandshakeArguments
                     { haHandshakeTracer  = nullTracer
+                    , haBearerTracer     = nullTracer
                     , haHandshakeCodec   = unversionedHandshakeCodec
                     , haVersionDataCodec = ntnUnversionedDataCodec
                     , haAcceptVersion    = iAcceptVersion ni
@@ -297,6 +298,7 @@ run blockGeneratorArgs limits ni na
               , Diff.diNtcHandshakeArguments =
                   HandshakeArguments
                     { haHandshakeTracer  = nullTracer
+                    , haBearerTracer     = nullTracer
                     , haHandshakeCodec   = unversionedHandshakeCodec
                     , haVersionDataCodec = unversionedProtocolDataCodec
                     , haAcceptVersion    = \_ v -> Accept v
