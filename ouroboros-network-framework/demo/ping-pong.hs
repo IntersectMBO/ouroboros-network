@@ -164,12 +164,13 @@ serverPingPong =
       mempty
       defaultLocalSocketAddr
       HandshakeArguments {
-        haHandshakeTracer  = nullTracer,
-        haHandshakeCodec   = unversionedHandshakeCodec,
-        haVersionDataCodec = unversionedProtocolDataCodec,
-        haAcceptVersion    = acceptableVersion,
-        haQueryVersion     = queryVersion,
-        haTimeLimits       = noTimeLimitsHandshake
+        haHandshakeTracer       = nullTracer,
+        haBearerTracer = nullTracer,
+        haHandshakeCodec        = unversionedHandshakeCodec,
+        haVersionDataCodec      = unversionedProtocolDataCodec,
+        haAcceptVersion         = acceptableVersion,
+        haQueryVersion          = queryVersion,
+        haTimeLimits            = noTimeLimitsHandshake
       }
       (unversionedProtocol (SomeResponderApplication app))
       $ \_ serverAsync -> wait serverAsync -- block until server finishes
@@ -259,6 +260,7 @@ serverPingPong2 =
       defaultLocalSocketAddr
       HandshakeArguments {
         haHandshakeTracer  = nullTracer,
+        haBearerTracer     = nullTracer,
         haHandshakeCodec   = unversionedHandshakeCodec,
         haVersionDataCodec = unversionedProtocolDataCodec,
         haAcceptVersion    = acceptableVersion,

@@ -22,6 +22,7 @@ import Control.Monad
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
+import Control.Tracer (Tracer)
 
 import Network.Mux.Timeout
 import Network.Mux.Trace
@@ -99,13 +100,14 @@ data MiniProtocolDispatchInfo m =
 demuxer :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
             MonadTimer m)
       => [MiniProtocolState mode m]
+      -> Tracer m BearerTrace
       -> Bearer m
       -> m void
-demuxer ptcls bearer =
+demuxer ptcls tracer bearer =
   let !dispatchTable = setupDispatchTable ptcls in
   withTimeoutSerial $ \timeout ->
   forever $ do
-    (sdu, _) <- Mx.read bearer timeout
+    (sdu, _) <- Mx.read bearer tracer timeout
     -- say $ printf "demuxing sdu on mid %s mode %s lenght %d " (show $ msId sdu) (show $ msDir sdu)
     --             (BL.length $ msBlob sdu)
     case lookupMiniProtocol dispatchTable (msNum sdu)

@@ -61,6 +61,7 @@ import Ouroboros.Network.Server.Simple qualified as Server.Simple
 import Network.Mux qualified as Mx
 import Network.Mux.Bearer qualified as Mx
 import Network.Mux.Timeout
+import Network.Mux.Trace qualified as Mx
 import Network.Mux.Types (MiniProtocolDir (..), RemoteClockModel (..))
 import Network.Mux.Types qualified as Mx
 
@@ -253,6 +254,7 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
           responderAddr
           HandshakeArguments {
             haHandshakeTracer  = nullTracer,
+            haBearerTracer     = nullTracer,
             haHandshakeCodec   = unversionedHandshakeCodec,
             haVersionDataCodec = unversionedProtocolDataCodec,
             haAcceptVersion    = acceptableVersion,
@@ -268,7 +270,7 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
                 ctaHandshakeCodec      = unversionedHandshakeCodec,
                 ctaHandshakeTimeLimits = noTimeLimitsHandshake,
                 ctaVersionDataCodec    = unversionedProtocolDataCodec,
-                ctaConnectTracers      = NetworkConnectTracers activeMuxTracer nullTracer,
+                ctaConnectTracers      = NetworkConnectTracers (Mx.tracersWith activeMuxTracer) nullTracer,
                 ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
               }
               (`configureSock` Nothing)
@@ -348,7 +350,7 @@ prop_socket_recv_error f rerr =
                             localAddress = Socket.addrAddress muxAddress,
                             remoteAddress
                           }
-                    bearer <- Mx.getBearer Mx.makeSocketBearer timeout nullTracer sd' Nothing
+                    bearer <- Mx.getBearer Mx.makeSocketBearer timeout sd' Nothing
                     _ <- async $ do
                       threadDelay 0.1
                       atomically $ putTMVar lock ()
@@ -372,7 +374,7 @@ prop_socket_recv_error f rerr =
                               [(Mx.ResponderDirectionOnly, void . runMiniProtocolCb initiator respCtx)]
                       ]
 
-                    withAsync (Mx.run (Mx.MuxTracerBundle nullTracer nullTracer) mux bearer) $ \aid -> do
+                    withAsync (Mx.run Mx.nullTracers mux bearer) $ \aid -> do
                       _ <- atomically $ runFirstToFinish $ foldMap FirstToFinish resOps
                       Mx.stop mux
                       wait aid
@@ -448,11 +450,11 @@ prop_socket_send_error rerr =
                     let sduTimeout = if rerr == SendSDUTimeout then 0.10
                                                                else (-1) -- No timeout
                         blob = BL.pack $ replicate 0xffff 0xa5
-                    bearer <- Mx.getBearer Mx.makeSocketBearer sduTimeout nullTracer sd' Nothing
+                    bearer <- Mx.getBearer Mx.makeSocketBearer sduTimeout sd' Nothing
                     withTimeoutSerial $ \timeout ->
                       -- send maximum mux sdus until we've filled the window.
                       replicateM 100 $ do
-                        ((), Nothing) <$ Mx.write bearer timeout (wrap blob ResponderDir (MiniProtocolNum 0))
+                        ((), Nothing) <$ Mx.write bearer nullTracer timeout (wrap blob ResponderDir (MiniProtocolNum 0))
           )
           $ \muxAsync -> do
 
@@ -526,7 +528,7 @@ prop_socket_client_connect_error _ xs =
           ctaHandshakeCodec      = unversionedHandshakeCodec,
           ctaHandshakeTimeLimits = noTimeLimitsHandshake,
           ctaVersionDataCodec    = unversionedProtocolDataCodec,
-          ctaConnectTracers      = NetworkConnectTracers activeMuxTracer nullTracer,
+          ctaConnectTracers      = NetworkConnectTracers (Mx.tracersWith activeMuxTracer) nullTracer,
           ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
         }
         (flip configureSocket Nothing)
