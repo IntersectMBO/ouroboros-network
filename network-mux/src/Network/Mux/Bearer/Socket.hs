@@ -30,7 +30,7 @@ import Network.Mux.Codec qualified as Mx
 import Network.Mux.Time qualified as Mx
 import Network.Mux.Timeout qualified as Mx
 import Network.Mux.Trace qualified as Mx
-import Network.Mux.Types (Bearer)
+import Network.Mux.Types (Bearer, BearerTrace)
 import Network.Mux.Types qualified as Mx
 #if defined(linux_HOST_OS) && defined(MUX_TRACE_TCPINFO)
 import Network.Mux.TCPInfo (SocketOption (TCPInfoSocketOption))
@@ -51,12 +51,11 @@ socketAsBearer
   :: Mx.SDUSize
   -> Int
   -> Maybe (Mx.ReadBuffer IO)
-  -> DiffTime
-  -> DiffTime
-  -> Tracer IO Mx.Trace
+  -> DiffTime -- ^ SDU timeout
+  -> DiffTime -- ^ egress poll interval
   -> Socket.Socket
   -> Bearer IO
-socketAsBearer sduSize batchSize readBuffer_m sduTimeout pollInterval tracer sd =
+socketAsBearer sduSize batchSize readBuffer_m sduTimeout pollInterval sd =
       Mx.Bearer {
         Mx.read           = readSocket,
         Mx.write          = writeSocket,
@@ -67,8 +66,8 @@ socketAsBearer sduSize batchSize readBuffer_m sduTimeout pollInterval tracer sd 
         Mx.egressInterval = pollInterval
       }
     where
-      readSocket :: Mx.TimeoutFn IO -> IO (Mx.SDU, Time)
-      readSocket timeout = do
+      readSocket :: Tracer IO BearerTrace -> Mx.TimeoutFn IO -> IO (Mx.SDU, Time)
+      readSocket tracer timeout = do
           traceWith tracer Mx.TraceRecvHeaderStart
 
           -- Wait for the first part of the header without any timeout
@@ -79,109 +78,109 @@ socketAsBearer sduSize batchSize readBuffer_m sduTimeout pollInterval tracer sd 
           case r_m of
                 Nothing -> do
                     traceWith tracer Mx.TraceSDUReadTimeoutException
-                    throwIO $ Mx.SDUReadTimeout
+                    throwIO Mx.SDUReadTimeout
                 Just r -> return r
+        where
+          recvRem :: BL.ByteString -> IO (Mx.SDU, Time)
+          recvRem !h0 = do
+              hbuf <- recvLen' (Mx.msHeaderLength - BL.length h0) [h0]
+              case Mx.decodeSDU hbuf of
+                   Left  e ->  throwIO e
+                   Right header@Mx.SDU { Mx.msHeader } -> do
+                       traceWith tracer $ Mx.TraceRecvHeaderEnd msHeader
+                       !blob <- recvLen' (fromIntegral $ Mx.mhLength msHeader) []
 
-      recvRem :: BL.ByteString -> IO (Mx.SDU, Time)
-      recvRem !h0 = do
-          hbuf <- recvLen' (Mx.msHeaderLength - BL.length h0) [h0]
-          case Mx.decodeSDU hbuf of
-               Left  e ->  throwIO e
-               Right header@Mx.SDU { Mx.msHeader } -> do
-                   traceWith tracer $ Mx.TraceRecvHeaderEnd msHeader
-                   !blob <- recvLen' (fromIntegral $ Mx.mhLength msHeader) []
+                       !ts <- getMonotonicTime
+                       let !header' = header {Mx.msBlob = blob}
+                       traceWith tracer (Mx.TraceRecvDeltaQObservation msHeader ts)
+                       return (header', ts)
 
-                   !ts <- getMonotonicTime
-                   let !header' = header {Mx.msBlob = blob}
-                   traceWith tracer (Mx.TraceRecvDeltaQObservation msHeader ts)
-                   return (header', ts)
+          recvLen' ::  Int64 -> [BL.ByteString] -> IO BL.ByteString
+          recvLen' 0 bufs = return $ BL.concat $ reverse bufs
+          recvLen' l bufs = do
+              buf <- recvAtMost False l
+              recvLen' (l - BL.length buf) (buf : bufs)
 
-      recvLen' ::  Int64 -> [BL.ByteString] -> IO BL.ByteString
-      recvLen' 0 bufs = return $ BL.concat $ reverse bufs
-      recvLen' l bufs = do
-          buf <- recvAtMost False l
-          recvLen' (l - BL.length buf) (buf : bufs)
+          recvAtMost :: Bool -> Int64 -> IO BL.ByteString
+          recvAtMost waitingOnNxtHeader l = do
+              traceWith tracer $ Mx.TraceRecvStart $ fromIntegral l
 
-      recvAtMost :: Bool -> Int64 -> IO BL.ByteString
-      recvAtMost waitingOnNxtHeader l = do
-          traceWith tracer $ Mx.TraceRecvStart $ fromIntegral l
+              case readBuffer_m of
+                   Nothing -> -- No read buffer available; read directly from socket
+                       recvFromSocket waitingOnNxtHeader l
+                   Just Mx.ReadBuffer{Mx.rbVar, Mx.rbSize} -> do
+                       availableData <- atomically $ do
+                           buf <- readTVar rbVar
+                           if BL.length buf >= l
+                              then do
+                                let (toProcess, remaining) = BL.splitAt l buf
+                                writeTVar rbVar remaining
+                                return toProcess
+                              else do
+                                writeTVar rbVar BL.empty
+                                return buf
 
-          case readBuffer_m of
-               Nothing -> -- No read buffer available; read directly from socket
-                   recvFromSocket waitingOnNxtHeader l
-               Just Mx.ReadBuffer{Mx.rbVar, Mx.rbSize} -> do
-                   availableData <- atomically $ do
-                       buf <- readTVar rbVar
-                       if BL.length buf >= l
+                       if BL.null availableData
                           then do
-                            let (toProcess, remaining) = BL.splitAt l buf
-                            writeTVar rbVar remaining
-                            return toProcess
+#if !defined(mingw32_HOST_OS)
+                            -- Not data in buffer; read more from socket
+                            when (not waitingOnNxtHeader) $
+                              -- Don't let the kernel wake us up until there is
+                              -- at least l bytes of data.
+                              Socket.setSocketOption sd Socket.RecvLowWater $ fromIntegral l
+#endif
+                            newBuf <- recvFromSocket waitingOnNxtHeader $ fromIntegral rbSize
+                            atomically $ modifyTVar rbVar (`BL.append` newBuf)
+#if !defined(mingw32_HOST_OS)
+                            when (not waitingOnNxtHeader) $
+                              Socket.setSocketOption sd Socket.RecvLowWater 1
+#endif
+                            recvAtMost waitingOnNxtHeader l
                           else do
-                            writeTVar rbVar BL.empty
-                            return buf
-
-                   if BL.null availableData
-                      then do
+                            traceWith tracer $ Mx.TraceRecvEnd $ fromIntegral $ BL.length availableData
+                            return availableData
 #if !defined(mingw32_HOST_OS)
-                        -- Not data in buffer; read more from socket
-                        when (not waitingOnNxtHeader) $
-                          -- Don't let the kernel wake us up until there is
-                          -- at least l bytes of data.
-                          Socket.setSocketOption sd Socket.RecvLowWater $ fromIntegral l
-#endif
-                        newBuf <- recvFromSocket waitingOnNxtHeader $ fromIntegral rbSize
-                        atomically $ modifyTVar rbVar (`BL.append` newBuf)
-#if !defined(mingw32_HOST_OS)
-                        when (not waitingOnNxtHeader) $
-                          Socket.setSocketOption sd Socket.RecvLowWater 1
-#endif
-                        recvAtMost waitingOnNxtHeader l
-                      else do
-                        traceWith tracer $ Mx.TraceRecvEnd $ fromIntegral $ BL.length availableData
-                        return availableData
-#if !defined(mingw32_HOST_OS)
-      -- Read at most `min rbSize maxLen` bytes from the socket
-      -- into rbBuf.
-      -- Creates and returns a Bytestring matching the exact size
-      -- of the number of bytes read.
-      recvBuf :: Mx.ReadBuffer IO -> Int64 -> IO BL.ByteString
-      recvBuf Mx.ReadBuffer{Mx.rbBuf, Mx.rbSize} maxLen = do
-        len <- Socket.recvBuf sd rbBuf (min rbSize $ fromIntegral maxLen)
-        traceWith tracer $ Mx.TraceRecvRaw len
-        if len > 0
-           then do
-             bs <- create len (\dest -> copyBytes dest rbBuf len)
-             return $ BL.fromStrict bs
-           else return $ BL.empty
+          -- Read at most `min rbSize maxLen` bytes from the socket
+          -- into rbBuf.
+          -- Creates and returns a Bytestring matching the exact size
+          -- of the number of bytes read.
+          recvBuf :: Mx.ReadBuffer IO -> Int64 -> IO BL.ByteString
+          recvBuf Mx.ReadBuffer{Mx.rbBuf, Mx.rbSize} maxLen = do
+            len <- Socket.recvBuf sd rbBuf (min rbSize $ fromIntegral maxLen)
+            traceWith tracer $ Mx.TraceRecvRaw len
+            if len > 0
+               then do
+                 bs <- create len (\dest -> copyBytes dest rbBuf len)
+                 return $ BL.fromStrict bs
+               else return $ BL.empty
 #endif
 
-      recvFromSocket :: Bool -> Int64 -> IO BL.ByteString
-      recvFromSocket waitingOnNxtHeader l = do
+          recvFromSocket :: Bool -> Int64 -> IO BL.ByteString
+          recvFromSocket waitingOnNxtHeader l = do
 #if defined(mingw32_HOST_OS)
-          buf <- Win32.Async.recv sd (fromIntegral l)
+              buf <- Win32.Async.recv sd (fromIntegral l)
 #else
-          buf <- (case readBuffer_m of
-                      Nothing         -> Socket.recv sd l
-                      Just readBuffer -> recvBuf readBuffer l
-                     )
+              buf <- (case readBuffer_m of
+                          Nothing         -> Socket.recv sd l
+                          Just readBuffer -> recvBuf readBuffer l
+                         )
 #endif
-                    `catch` Mx.handleIOException "recv errored"
-          if BL.null buf
-              then do
-                  when waitingOnNxtHeader $
-                      {- This may not be an error, but could be an orderly shutdown.
-                       - We wait 1 seconds to give the mux protocols time to perform
-                       - a clean up and exit.
-                       -}
-                      threadDelay 1
-                  throwIO $ Mx.BearerClosed (show sd ++
-                      " closed when reading data, waiting on next header " ++
-                      show waitingOnNxtHeader)
-              else return buf
+                        `catch` Mx.handleIOException "recv errored"
+              if BL.null buf
+                  then do
+                      when waitingOnNxtHeader $
+                          {- This may not be an error, but could be an orderly shutdown.
+                           - We wait 1 seconds to give the mux protocols time to perform
+                           - a clean up and exit.
+                           -}
+                          threadDelay 1
+                      throwIO $ Mx.BearerClosed (show sd ++
+                          " closed when reading data, waiting on next header " ++
+                          show waitingOnNxtHeader)
+                  else return buf
 
-      writeSocket :: Mx.TimeoutFn IO -> Mx.SDU -> IO Time
-      writeSocket timeout sdu = do
+      writeSocket :: Tracer IO BearerTrace -> Mx.TimeoutFn IO -> Mx.SDU -> IO Time
+      writeSocket tracer timeout sdu = do
           ts <- getMonotonicTime
           let ts32 = Mx.timestampMicrosecondsLow32Bits ts
               sdu' = Mx.setTimestamp sdu (Mx.RemoteClockModel ts32)
@@ -210,14 +209,14 @@ socketAsBearer sduSize batchSize readBuffer_m sduTimeout pollInterval tracer sd 
 #endif
                    return ts
 
-      writeSocketMany :: Mx.TimeoutFn IO -> [Mx.SDU] -> IO Time
+      writeSocketMany :: Tracer IO BearerTrace -> Mx.TimeoutFn IO -> [Mx.SDU] -> IO Time
 #if defined(mingw32_HOST_OS)
-      writeSocketMany timeout sdus = do
+      writeSocketMany tracer timeout sdus = do
         ts <- getMonotonicTime
-        mapM_ (writeSocket timeout) sdus
+        mapM_ (writeSocket tracer timeout) sdus
         return ts
 #else
-      writeSocketMany timeout sdus = do
+      writeSocketMany tracer timeout sdus = do
           ts <- getMonotonicTime
           let ts32 = Mx.timestampMicrosecondsLow32Bits ts
               buf  = map (Mx.encodeSDU .

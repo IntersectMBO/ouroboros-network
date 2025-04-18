@@ -165,6 +165,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
       producerAddress
       HandshakeArguments {
         haHandshakeTracer  = nullTracer,
+        haBearerTracer     = nullTracer,
         haHandshakeCodec   = nodeToNodeHandshakeCodec,
         haVersionDataCodec = cborTermVersionDataCodec nodeToNodeCodecCBORTerm,
         haAcceptVersion    = acceptableVersion,

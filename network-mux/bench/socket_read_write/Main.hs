@@ -52,9 +52,9 @@ readBenchmark sndSizeV sndSize addr = do
       atomically $ putTMVar sndSizeV sndSize
       Socket.connect sd addr
       withReadBufferIO (\buffer -> do
-        bearer <- getBearer makeSocketBearer sduTimeout activeTracer sd buffer
+        bearer <- getBearer makeSocketBearer sduTimeout sd buffer
 
-        let chan = bearerAsChannel bearer (MiniProtocolNum 42) InitiatorDir
+        let chan = bearerAsChannel activeTracer bearer (MiniProtocolNum 42) InitiatorDir
         doRead chan 0
        )
     )
@@ -79,9 +79,9 @@ readDemuxerQueueBenchmark sndSizeV sndSize addr = do
 
       Socket.connect sd addr
       withReadBufferIO (\buffer -> do
-        bearer <- getBearer makeSocketBearer sduTimeout activeTracer sd buffer
+        bearer <- getBearer makeSocketBearer sduTimeout sd buffer
         ms42 <- mkMiniProtocolState 42
-        withAsync (demuxer [ms42] bearer) $ \aid -> do
+        withAsync (demuxer [ms42] activeTracer bearer) $ \aid -> do
           doRead 0xa5 (totalPayloadLen sndSize) (miniProtocolIngressQueue ms42)
           cancel aid
        )
@@ -111,10 +111,10 @@ readDemuxerBenchmark sndSizeV sndSize addr = do
 
       Socket.connect sd addr
       withReadBufferIO (\buffer -> do
-        bearer <- getBearer makeSocketBearer sduTimeout activeTracer sd buffer
+        bearer <- getBearer makeSocketBearer sduTimeout sd buffer
         ms42 <- mkMiniProtocolState 42
         ms41 <- mkMiniProtocolState 41
-        withAsync (demuxer [ms41, ms42] bearer) $ \aid -> do
+        withAsync (demuxer [ms41, ms42] activeTracer bearer) $ \aid -> do
           withAsync (doRead 42 (totalPayloadLen sndSize) (miniProtocolIngressQueue ms42) 0) $ \aid42 -> do
             withAsync (doRead 41 (totalPayloadLen 10) (miniProtocolIngressQueue ms41) 0) $ \aid41 -> do
               _ <- waitBoth aid42 aid41
@@ -151,10 +151,10 @@ startServer :: StrictTMVar IO Int64 -> Socket -> IO ()
 startServer sndSizeV ad = forever $ do
     (sd, _) <- Socket.accept ad
     withReadBufferIO (\buffer -> do
-      bearer <- getBearer makeSocketBearer sduTimeout activeTracer sd buffer
+      bearer <- getBearer makeSocketBearer sduTimeout sd buffer
       sndSize <- atomically $ takeTMVar sndSizeV
 
-      let chan = bearerAsChannel bearer (MiniProtocolNum 42) ResponderDir
+      let chan = bearerAsChannel activeTracer bearer (MiniProtocolNum 42) ResponderDir
           payload = BL.replicate sndSize 0xa5
           maxData = totalPayloadLen sndSize
           numberOfSdus = fromIntegral $ maxData `div` sndSize
@@ -167,7 +167,7 @@ startServerMany :: StrictTMVar IO Int64 -> Socket -> IO ()
 startServerMany sndSizeV ad = forever $ do
     (sd, _) <- Socket.accept ad
     withReadBufferIO (\buffer -> do
-      bearer <- getBearer makeSocketBearer sduTimeout activeTracer sd buffer
+      bearer <- getBearer makeSocketBearer sduTimeout sd buffer
       sndSize <- atomically $ takeTMVar sndSizeV
 
       let maxData = totalPayloadLen sndSize
@@ -178,10 +178,10 @@ startServerMany sndSizeV ad = forever $ do
       withTimeoutSerial $ \timeoutFn -> do
         replicateM_ numberOfCalls $ do
           let sdus = replicate 10 $ wrap $ BL.replicate sndSize 0xa5
-          void $ writeMany bearer timeoutFn sdus
+          void $ writeMany bearer activeTracer timeoutFn sdus
         when (runtSdus > 0) $ do
           let sdus = replicate runtSdus $ wrap $ BL.replicate sndSize 0xa5
-          void $ writeMany bearer timeoutFn sdus
+          void $ writeMany bearer activeTracer timeoutFn sdus
      )
  where
   -- wrap a 'ByteString' as 'SDU'
@@ -205,7 +205,7 @@ startServerEgresss :: DiffTime -> StrictTMVar IO Int64 -> Socket -> IO ()
 startServerEgresss pollInterval sndSizeV ad = forever $ do
     (sd, _) <- Socket.accept ad
     withReadBufferIO (\buffer -> do
-      bearer <- getBearer (makeSocketBearer' pollInterval) sduTimeout activeTracer sd buffer
+      bearer <- getBearer (makeSocketBearer' pollInterval) sduTimeout sd buffer
       sndSize <- atomically $ takeTMVar sndSizeV
       eq <- atomically $ newTBQueue 100
       w42 <- newTVarIO BL.empty
@@ -216,7 +216,7 @@ startServerEgresss pollInterval sndSizeV ad = forever $ do
           numberOfCalls = numberOfSdus `div` 10 :: Int
           runtSdus = numberOfSdus `mod` 10 :: Int
 
-      withAsync (muxer eq bearer) $ \aid -> do
+      withAsync (muxer eq activeTracer bearer) $ \aid -> do
 
         replicateM_ numberOfCalls $ do
           let payload42s = replicate 10 $ BL.replicate sndSize 42

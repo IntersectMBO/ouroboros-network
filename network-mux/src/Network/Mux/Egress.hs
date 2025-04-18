@@ -22,6 +22,7 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
+import Control.Tracer (Tracer)
 
 import Network.Mux.Timeout
 import Network.Mux.Types
@@ -142,19 +143,20 @@ muxer
        , MonadTimer m
        )
     => EgressQueue m
+    -> Tracer m BearerTrace
     -> Bearer m
     -> m void
-muxer egressQueue Bearer { writeMany, sduSize, batchSize, egressInterval } =
+muxer egressQueue tracer Bearer { writeMany, sduSize, batchSize, egressInterval } =
     withTimeoutSerial $ \timeout ->
     forever $ do
       start <- getMonotonicTime
       TLSRDemand mpc md d <- atomically $ readTBQueue egressQueue
       sdu <- processSingleWanton egressQueue sduSize mpc md d
       sdus <- buildBatch [sdu] (sduLength sdu)
-      void $ writeMany timeout sdus
+      void $ writeMany tracer timeout sdus
       end <- getMonotonicTime
       empty <- atomically $ isEmptyTBQueue egressQueue
-      when (empty) $ do
+      when empty $ do
         let delta = diffTime end start
         threadDelay (egressInterval - delta)
 

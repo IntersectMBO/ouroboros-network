@@ -18,7 +18,6 @@ import Control.Monad.Class.MonadFork (MonadFork)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI (MonadDelay, MonadTimer)
-import Control.Tracer (nullTracer)
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
 import Data.Typeable (Typeable)
@@ -75,8 +74,7 @@ with sn makeBearer configureSock addr handshakeArgs versions k =
         let connThread = do
               -- connection responder thread
               let connId = ConnectionId addr remoteAddr
-              bearer <- Mx.getBearer makeBearer
-                        (-1) nullTracer sock' Nothing
+              bearer <- Mx.getBearer makeBearer (-1) sock' Nothing
               configureSock sock' addr
               r <- runHandshakeServer bearer connId handshakeArgs versions
               case r of
@@ -85,7 +83,7 @@ with sn makeBearer configureSock addr handshakeArgs versions k =
                 Right HandshakeQueryResult {}   -> error "handshake query is not supported"
                 Right (HandshakeNegotiationResult (SomeResponderApplication app) vNumber vData) -> do
                   mux <- Mx.new (toMiniProtocolInfos (runForkPolicy noBindForkPolicy (remoteAddress connId)) app)
-                  withAsync (Mx.run (Mx.Tracers nullTracer nullTracer) mux bearer) $ \aid -> do
+                  withAsync (Mx.run Mx.nullTracers mux bearer) $ \aid -> do
                     void $ simpleMuxCallback connId vNumber vData app mux aid
 
             errorHandler = \e -> throwIO e

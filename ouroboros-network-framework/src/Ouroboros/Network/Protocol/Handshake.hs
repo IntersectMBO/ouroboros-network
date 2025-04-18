@@ -85,8 +85,13 @@ tryHandshake doHandshake = do
 data HandshakeArguments connectionId vNumber vData m = HandshakeArguments {
       -- | 'Handshake' tracer
       --
-      haHandshakeTracer :: Tracer m (Mx.WithBearer connectionId
-                                     (TraceSendRecv (Handshake vNumber CBOR.Term))),
+      haHandshakeTracer
+        :: Tracer m (Mx.WithBearer connectionId
+                                   (TraceSendRecv (Handshake vNumber CBOR.Term))),
+
+      haBearerTracer
+        :: Tracer m (Mx.WithBearer connectionId Mx.BearerTrace),
+
       -- | Codec for protocol messages.
       --
       haHandshakeCodec
@@ -132,6 +137,7 @@ runHandshakeClient bearer
                    connectionId
                    HandshakeArguments {
                      haHandshakeTracer,
+                     haBearerTracer,
                      haHandshakeCodec,
                      haVersionDataCodec,
                      haAcceptVersion,
@@ -145,7 +151,8 @@ runHandshakeClient bearer
           haHandshakeCodec
           byteLimitsHandshake
           haTimeLimits
-          (Mx.bearerAsChannel bearer handshakeProtocolNum Mx.InitiatorDir)
+          (Mx.bearerAsChannel (Mx.WithBearer connectionId `contramap` haBearerTracer)
+                              bearer handshakeProtocolNum Mx.InitiatorDir)
           (handshakeClientPeer haVersionDataCodec haAcceptVersion versions))
 
 
@@ -169,6 +176,7 @@ runHandshakeServer bearer
                    connectionId
                    HandshakeArguments {
                      haHandshakeTracer,
+                     haBearerTracer,
                      haHandshakeCodec,
                      haVersionDataCodec,
                      haAcceptVersion,
@@ -183,7 +191,8 @@ runHandshakeServer bearer
           haHandshakeCodec
           byteLimitsHandshake
           haTimeLimits
-          (Mx.bearerAsChannel bearer handshakeProtocolNum Mx.ResponderDir)
+          (Mx.bearerAsChannel (Mx.WithBearer connectionId `contramap` haBearerTracer)
+                              bearer handshakeProtocolNum Mx.ResponderDir)
           (handshakeServerPeer haVersionDataCodec haAcceptVersion haQueryVersion versions))
 
 -- | A 20s delay after query result was send back, before we close the

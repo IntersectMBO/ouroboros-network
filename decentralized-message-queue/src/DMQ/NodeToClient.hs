@@ -14,7 +14,7 @@ import Data.Text qualified as T
 import GHC.Generics (Generic)
 
 import Control.Monad.Class.MonadST (MonadST)
-import Control.Tracer (Tracer)
+import Control.Tracer (Tracer, nullTracer)
 import Ouroboros.Network.CodecCBORTerm (CodecCBORTerm (..))
 import Ouroboros.Network.ConnectionId (ConnectionId)
 import Ouroboros.Network.Handshake.Acceptable (Acceptable (..))
@@ -118,6 +118,7 @@ ntcHandshakeArguments
 ntcHandshakeArguments tracer =
   HandshakeArguments {
     haHandshakeTracer  = tracer
+  , haBearerTracer     = nullTracer -- TODO
   , haHandshakeCodec   = codecHandshake nodeToClientVersionCodec
   , haVersionDataCodec =
       cborTermVersionDataCodec
