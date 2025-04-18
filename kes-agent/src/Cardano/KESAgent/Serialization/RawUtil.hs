@@ -29,7 +29,6 @@ import Cardano.Crypto.Libsodium.Memory (
 
 import Ouroboros.Network.RawBearer
 
--- import Control.Applicative
 import Control.Concurrent.Class.MonadMVar
 import Control.Monad (void, when)
 import Control.Monad.Class.MonadST
@@ -78,17 +77,16 @@ readResultT r = ReadResultT (pure r)
 
 instance (Functor m, Applicative m, Monad m) => Applicative (ReadResultT m) where
   pure = readResultT . ReadOK
-
-  liftA2 f a b = ReadResultT $ do
-    rA <- runReadResultT a
-    case rA of
-      ReadOK valA -> do
-        rB <- runReadResultT b
-        case rB of
-          ReadOK valB -> do
-            pure . ReadOK $ f valA valB
-          x -> pure $ undefined <$ x
-      x -> pure $ undefined <$ x
+  
+  fa <*> fx = ReadResultT $
+    runReadResultT fa >>= \case
+      ReadOK f ->
+        runReadResultT fx >>= \case
+          ReadOK x ->
+            pure . ReadOK $ f x
+          e ->
+            pure $ undefined <$ e
+      e -> pure $ undefined <$ e
 
 instance Monad m => Monad (ReadResultT m) where
   ReadResultT aM >>= f =
