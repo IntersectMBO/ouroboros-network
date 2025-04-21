@@ -14,7 +14,7 @@ type CardanoNetworkTopology =
 isValidTrustedPeerConfiguration :: CardanoNetworkTopology -> Bool
 isValidTrustedPeerConfiguration
   NetworkTopology { localRootPeersGroups = LocalRootPeersGroups lprgs
-                  , extraConfig         = ubp
+                  , extraConfig          = ubp
                   } =
     case ubp of
       DontUseBootstrapPeers   -> True

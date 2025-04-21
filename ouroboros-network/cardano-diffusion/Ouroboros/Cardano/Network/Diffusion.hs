@@ -39,8 +39,8 @@ import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState quali
 import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as Cardano.Types
 import Ouroboros.Cardano.Network.PeerSelection.PeerSelectionActions qualified as Cardano
-import Ouroboros.Network.Diffusion (mkInterfaces, runM)
-import Ouroboros.Network.Diffusion.Types
+import Ouroboros.Network.Diffusion qualified as Diffusion
+import Ouroboros.Network.Diffusion.Types qualified as Diffusion
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.NodeToClient (NodeToClientVersion (..),
            NodeToClientVersionData)
@@ -67,7 +67,7 @@ import Ouroboros.Network.Snocket (LocalAddress, LocalSocket (..))
 run :: LedgerPeersConsensusInterface (Cardano.LedgerPeersConsensusInterface IO) IO
     -> Tracer IO Cardano.Churn.TracerChurnMode
     -> Cardano.LC.LocalConfiguration IO
-    -> Tracers
+    -> Diffusion.Tracers
         RemoteAddress
         NodeToNodeVersion
         NodeToNodeVersionData
@@ -81,14 +81,14 @@ run :: LedgerPeersConsensusInterface (Cardano.LedgerPeersConsensusInterface IO) 
         (Cardano.ExtraPeers RemoteAddress)
         (Cardano.ExtraPeerSelectionSetsWithSizes RemoteAddress)
         IO
-    -> DiffusionConfiguration
+    -> Diffusion.Configuration
         PeerTrustable
         IO
         Socket
         RemoteAddress
         LocalSocket
         LocalAddress
-    -> DiffusionApplications
+    -> Diffusion.Applications
         RemoteAddress
         NodeToNodeVersion
         NodeToNodeVersionData
@@ -99,10 +99,10 @@ run :: LedgerPeersConsensusInterface (Cardano.LedgerPeersConsensusInterface IO) 
         a
     -> IO Void
 run lpci tracerChurnMode localConfig tracers args apps = do
-    let tracer = dtDiffusionTracer tracers
+    let tracer = Diffusion.dtDiffusionTracer tracers
         daNtnHandshakeArguments =
           HandshakeArguments {
-              haHandshakeTracer = dtHandshakeTracer tracers,
+              haHandshakeTracer = Diffusion.dtHandshakeTracer tracers,
               haHandshakeCodec  = NodeToNode.nodeToNodeHandshakeCodec,
               haVersionDataCodec =
                 cborTermVersionDataCodec
@@ -113,7 +113,7 @@ run lpci tracerChurnMode localConfig tracers args apps = do
             }
         daNtcHandshakeArguments =
           HandshakeArguments {
-              haHandshakeTracer  = dtLocalHandshakeTracer tracers,
+              haHandshakeTracer  = Diffusion.dtLocalHandshakeTracer tracers,
               haHandshakeCodec   = NodeToClient.nodeToClientHandshakeCodec,
               haVersionDataCodec =
                 cborTermVersionDataCodec
@@ -132,12 +132,12 @@ run lpci tracerChurnMode localConfig tracers args apps = do
     handleJust (\e -> case fromException e :: Maybe ExitCode of
                   Nothing -> Just e
                   Just {} -> Nothing)
-               (\e -> traceWith tracer (DiffusionErrored e)
-                   >> throwIO (DiffusionError e))
+               (\e -> traceWith tracer (Diffusion.DiffusionErrored e)
+                   >> throwIO (Diffusion.DiffusionError e))
          $ withIOManager $ \iocp -> do
-             interfaces <- mkInterfaces iocp tracer
-             runM
-               DiffusionArguments {
+             interfaces <- Diffusion.mkInterfaces iocp tracer
+             Diffusion.runM
+               Diffusion.Arguments {
                   daNtnDataFlow    = ntnDataFlow,
                   daNtnPeerSharing = peerSharing,
                   daUpdateVersionData = \versionData diffusionMode -> versionData { diffusionMode },
@@ -153,8 +153,8 @@ run lpci tracerChurnMode localConfig tracers args apps = do
                   daInstallSigUSR1Handler             =
                     Cardano.sigUSR1Handler
                       tracers
-                      (dcReadUseLedgerPeers args)
-                      (dcOwnPeerSharing args)
+                      (Diffusion.dcReadUseLedgerPeers args)
+                      (Diffusion.dcOwnPeerSharing args)
                       (Cardano.LC.readUseBootstrapPeers localConfig)
                       (Cardano.getLedgerStateJudgement (lpExtraAPI lpci)),
                   daPeerSelectionGovernorArgs         =
@@ -167,10 +167,10 @@ run lpci tracerChurnMode localConfig tracers args apps = do
                   daToExtraPeers                      = flip Cardano.ExtraPeers Set.empty,
                   daRequestPublicRootPeers            =
                       Just $ Cardano.requestPublicRootPeers
-                               (dtTracePublicRootPeersTracer tracers)
+                               (Diffusion.dtTracePublicRootPeersTracer tracers)
                                (Cardano.LC.readUseBootstrapPeers localConfig)
                                (Cardano.getLedgerStateJudgement (lpExtraAPI lpci))
-                               (dcReadPublicRootPeers args),
+                               (Diffusion.dcReadPublicRootPeers args),
                   daPeerChurnGovernor                 = Cardano.Churn.peerChurnGovernor,
                   daExtraChurnArgs                    =
                     Cardano.Churn.ExtraArguments {

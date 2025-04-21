@@ -15,7 +15,7 @@ import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Governor.Types
            (ExtraPeerSelectionSetsWithSizes)
-import Ouroboros.Network.Diffusion
+import Ouroboros.Network.Diffusion.Types (Configuration, Tracers)
 import Ouroboros.Network.NodeToClient (LocalAddress, LocalSocket,
            NodeToClientVersion, NodeToClientVersionData)
 import Ouroboros.Network.NodeToNode (NodeToNodeVersion, NodeToNodeVersionData,
@@ -35,8 +35,8 @@ type CardanoNetworkTracers =
           PeerTrustable (ExtraPeers RemoteAddress)
           (ExtraPeerSelectionSetsWithSizes RemoteAddress) IO
 
-type CardanoDiffusionConfiguration =
-  DiffusionConfiguration
+type CardanoConfiguration =
+  Configuration
     PeerTrustable
     IO
     Socket

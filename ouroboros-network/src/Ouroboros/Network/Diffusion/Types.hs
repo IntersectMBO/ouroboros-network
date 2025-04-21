@@ -10,10 +10,10 @@ module Ouroboros.Network.Diffusion.Types
   , Failure (..)
   , Tracers (..)
   , nullTracers
-  , DiffusionConfiguration (..)
-  , DiffusionApplications (..)
+  , Configuration (..)
+  , Applications (..)
+  , Arguments (..)
   , Interfaces (..)
-  , DiffusionArguments (..)
     -- * ForkPolicy
   , Mx.ForkPolicy
   , Mx.noBindForkPolicy
@@ -252,12 +252,12 @@ nullTracers = Tracers {
 -- | Diffusion arguments which allow to instantiate a completely different
 -- diffusion layer. These differ from
 --
-data DiffusionArguments extraState extraDebugState extraFlags extraPeers
-                     extraAPI extraChurnArgs extraCounters exception
-                     resolver resolverError m
-                     ntnFd ntnAddr ntnVersion ntnVersionData
-                     ntcAddr ntcVersion ntcVersionData =
-  DiffusionArguments {
+data Arguments extraState extraDebugState extraFlags extraPeers
+               extraAPI extraChurnArgs extraCounters exception
+               resolver resolverError m
+               ntnFd ntnAddr ntnVersion ntnVersionData
+               ntcAddr ntcVersion ntcVersionData =
+  Arguments {
 
     -- | node-to-node data flow used by connection manager to classify
     -- negotiated connections
@@ -378,7 +378,7 @@ data DiffusionArguments extraState extraDebugState extraFlags extraPeers
 
 -- | Required Diffusion Arguments to run network layer
 --
-data DiffusionConfiguration extraFlags m ntnFd ntnAddr ntcFd ntcAddr = DiffusionConfiguration {
+data Configuration extraFlags m ntnFd ntnAddr ntcFd ntcAddr = Configuration {
       -- | an @IPv4@ socket ready to accept connections or an @IPv4@ addresses
       --
       dcIPv4Address              :: Maybe (Either ntnFd ntnAddr)
@@ -473,10 +473,10 @@ data DiffusionConfiguration extraFlags m ntnFd ntnAddr ntcFd ntcAddr = Diffusion
 
 -- | Versioned mini-protocol bundles run on a negotiated connection.
 --
-data DiffusionApplications ntnAddr ntnVersion ntnVersionData
-                           ntcAddr ntcVersion ntcVersionData
-                           m a =
-  DiffusionApplications {
+data Applications ntnAddr ntnVersion ntnVersionData
+                  ntcAddr ntcVersion ntcVersionData
+                  m a =
+  Applications {
       -- | NodeToNode initiator applications for initiator only mode.
       --
       -- TODO: we should accept one or the other, but not both:

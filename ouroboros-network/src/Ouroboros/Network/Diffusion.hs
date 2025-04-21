@@ -9,21 +9,13 @@
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TypeOperators            #-}
 
--- | This module is expected to be imported qualified (it will clash
--- with the "Ouroboros.Network.Diffusion.NonP2P").
+-- | This module is expected to be imported qualified.
 --
 module Ouroboros.Network.Diffusion
-  ( Tracers (..)
-  , nullTracers
-  , DiffusionConfiguration (..)
-  , run
-  , Interfaces (..)
+  ( run
   , runM
   , mkInterfaces
   , socketAddressType
-    -- * Re-exports
-  , AbstractTransitionTrace
-  , IG.RemoteTransitionTrace
   ) where
 
 
@@ -136,12 +128,12 @@ runM
        , Exception exception
        )
     => -- | arguments
-       DiffusionArguments extraState extraDebugState extraFlags
-                          extraPeers extraAPI extraChurnArgs
-                          extraCounters exception resolver
-                          resolverError m ntnFd
-                          ntnAddr ntnVersion ntnVersionData
-                          ntcAddr ntcVersion ntcVersionData
+       Arguments extraState extraDebugState extraFlags
+                 extraPeers extraAPI extraChurnArgs
+                 extraCounters exception resolver
+                 resolverError m ntnFd
+                 ntnAddr ntnVersion ntnVersionData
+                 ntcAddr ntcVersion ntcVersionData
       -- | interfaces
     -> Interfaces ntnFd ntnAddr ntcFd ntcAddr
                   resolver resolverError m
@@ -152,14 +144,14 @@ runM
                extraState extraDebugState extraFlags
                extraPeers extraCounters m
     -> -- | configuration
-       DiffusionConfiguration extraFlags m ntnFd ntnAddr ntcFd ntcAddr
+       Configuration extraFlags m ntnFd ntnAddr ntcFd ntcAddr
 
     -> -- | protocol handlers
-       DiffusionApplications ntnAddr ntnVersion ntnVersionData
-                             ntcAddr ntcVersion ntcVersionData
-                             m a
+       Applications ntnAddr ntnVersion ntnVersionData
+                    ntcAddr ntcVersion ntcVersionData
+                    m a
     -> m Void
-runM DiffusionArguments
+runM Arguments
        { daNtnDataFlow
        , daNtnPeerSharing
        , daUpdateVersionData
@@ -215,7 +207,7 @@ runM DiffusionArguments
        , dtLocalInboundGovernorTracer
        , dtDnsTracer
        }
-     DiffusionConfiguration
+     Configuration
        { dcIPv4Address
        , dcIPv6Address
        , dcLocalAddress
@@ -235,7 +227,7 @@ runM DiffusionArguments
        , dcMuxForkPolicy
        , dcLocalMuxForkPolicy
        }
-     DiffusionApplications
+     Applications
        { daApplicationInitiatorMode
        , daApplicationInitiatorResponderMode
        , daLocalResponderApplication
@@ -824,7 +816,7 @@ run :: ( Monoid extraPeers
        , Show ntnVersionData
        , Ord ntcVersion
        )
-    => DiffusionArguments
+    => Arguments
         extraState
         extraDebugState
         extraFlags
@@ -857,14 +849,14 @@ run :: ( Monoid extraPeers
         extraPeers
         extraCounters
         IO
-    -> DiffusionConfiguration
+    -> Configuration
         extraFlags
         IO
         Socket
         RemoteAddress
         LocalSocket
         LocalAddress
-    -> DiffusionApplications
+    -> Applications
         RemoteAddress
         ntnVersion
         ntnVersionData

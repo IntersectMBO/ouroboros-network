@@ -74,7 +74,7 @@ import Ouroboros.Network.Block (HasHeader, HeaderHash, Point)
 import Ouroboros.Network.Block qualified as Block
 import Ouroboros.Network.Context
 import Ouroboros.Network.ControlMessage (ControlMessage (..))
-import Ouroboros.Network.Diffusion.Types
+import Ouroboros.Network.Diffusion.Types qualified as Diffusion
 import Ouroboros.Network.Driver.Limits
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.KeepAlive
@@ -237,9 +237,9 @@ applications :: forall block header s m.
              -> LimitsAndTimeouts header block
              -> AppArgs header block m
              -> (block -> header)
-             -> DiffusionApplications NtNAddr NtNVersion NtNVersionData
-                                      NtCAddr NtCVersion NtCVersionData
-                                      m ()
+             -> Diffusion.Applications NtNAddr NtNVersion NtNVersionData
+                                       NtCAddr NtCVersion NtCVersionData
+                                       m ()
 applications debugTracer nodeKernel
              Codecs { chainSyncCodec, blockFetchCodec
                     , keepAliveCodec, pingPongCodec
@@ -257,32 +257,32 @@ applications debugTracer nodeKernel
                , aaPeerMetrics
                }
              toHeader =
-    DiffusionApplications
-      { daApplicationInitiatorMode =
+    Diffusion.Applications
+      { Diffusion.daApplicationInitiatorMode =
           simpleSingletonVersions UnversionedProtocol
                                   (NtNVersionData InitiatorOnlyDiffusionMode aaOwnPeerSharing)
                                   (\NtNVersionData {ntnPeerSharing} -> initiatorApp ntnPeerSharing)
-      , daApplicationInitiatorResponderMode =
+      , Diffusion.daApplicationInitiatorResponderMode =
           simpleSingletonVersions UnversionedProtocol
                                   (NtNVersionData aaDiffusionMode aaOwnPeerSharing)
                                   (\NtNVersionData {ntnPeerSharing} -> initiatorAndResponderApp ntnPeerSharing)
-      , daLocalResponderApplication =
+      , Diffusion.daLocalResponderApplication =
           simpleSingletonVersions UnversionedProtocol
                                   UnversionedProtocolData
                                   (\_ -> localResponderApp)
 
-      , daRethrowPolicy          =
+      , Diffusion.daRethrowPolicy          =
              muxErrorRethrowPolicy
           <> ioErrorRethrowPolicy
 
         -- we are not using local connections, so we can make all the
         -- errors fatal.
-      , daLocalRethrowPolicy     =
+      , Diffusion.daLocalRethrowPolicy     =
              mkRethrowPolicy
                (\ _ (_ :: SomeException) -> ShutdownNode)
-      , daPeerMetrics            = aaPeerMetrics
-      , daReturnPolicy           = \_ -> config_REPROMOTE_DELAY
-      , daPeerSharingRegistry    = nkPeerSharingRegistry nodeKernel
+      , Diffusion.daPeerMetrics            = aaPeerMetrics
+      , Diffusion.daReturnPolicy           = \_ -> config_REPROMOTE_DELAY
+      , Diffusion.daPeerSharingRegistry    = nkPeerSharingRegistry nodeKernel
       }
   where
     initiatorApp
