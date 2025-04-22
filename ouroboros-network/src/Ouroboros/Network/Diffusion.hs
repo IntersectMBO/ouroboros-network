@@ -128,15 +128,8 @@ runM
        , Eq extraCounters
        , Exception exception
        )
-    => -- | arguments
-       Arguments extraState extraDebugState extraFlags
-                 extraPeers extraAPI extraChurnArgs
-                 extraCounters exception resolver
-                 resolverError m ntnFd
-                 ntnAddr ntnVersion ntnVersionData
-                 ntcAddr ntcVersion ntcVersionData
-      -- | interfaces
-    -> Interfaces ntnFd ntnAddr ntcFd ntcAddr
+       -- | interfaces
+    => Interfaces ntnFd ntnAddr ntcFd ntcAddr
                   resolver resolverError m
     -> -- | tracers
        Tracers ntnAddr ntnVersion ntnVersionData
@@ -144,6 +137,13 @@ runM
                resolverError
                extraState extraDebugState extraFlags
                extraPeers extraCounters m
+       -- | arguments
+    -> Arguments extraState extraDebugState extraFlags
+                 extraPeers extraAPI extraChurnArgs
+                 extraCounters exception resolver
+                 resolverError m ntnFd
+                 ntnAddr ntnVersion ntnVersionData
+                 ntcAddr ntcVersion ntcVersionData
     -> -- | configuration
        Configuration extraFlags m ntnFd ntnAddr ntcFd ntcAddr
 
@@ -152,25 +152,7 @@ runM
                     ntcAddr ntcVersion ntcVersionData
                     m a
     -> m Void
-runM Arguments
-       { daNtnDataFlow
-       , daNtnPeerSharing
-       , daUpdateVersionData
-       , daNtnHandshakeArguments
-       , daNtcHandshakeArguments
-       , daLedgerPeersCtx
-       , daEmptyExtraState
-       , daEmptyExtraCounters
-       , daExtraPeersAPI
-       , daInstallSigUSR1Handler
-       , daPeerSelectionGovernorArgs
-       , daPeerSelectionStateToExtraCounters
-       , daToExtraPeers
-       , daRequestPublicRootPeers
-       , daPeerChurnGovernor
-       , daExtraChurnArgs
-       }
-     Interfaces
+runM Interfaces
        { diNtnSnocket
        , diNtnBearer
        , diWithBuffer
@@ -207,6 +189,24 @@ runM Arguments
        , dtLocalServerTracer
        , dtLocalInboundGovernorTracer
        , dtDnsTracer
+       }
+    Arguments
+       { daNtnDataFlow
+       , daNtnPeerSharing
+       , daUpdateVersionData
+       , daNtnHandshakeArguments
+       , daNtcHandshakeArguments
+       , daLedgerPeersCtx
+       , daEmptyExtraState
+       , daEmptyExtraCounters
+       , daExtraPeersAPI
+       , daInstallSigUSR1Handler
+       , daPeerSelectionGovernorArgs
+       , daPeerSelectionStateToExtraCounters
+       , daToExtraPeers
+       , daRequestPublicRootPeers
+       , daPeerChurnGovernor
+       , daExtraChurnArgs
        }
      Configuration
        { dcIPv4Address
@@ -883,10 +883,11 @@ run extraParams tracers args apps = do
 
              interfaces <- mkInterfaces iocp tracer
 
-             runM
-               extraParams
-               interfaces
-               tracers args apps
+             runM interfaces
+                  tracers
+                  extraParams
+                  args
+                  apps
 
 --
 -- Interfaces

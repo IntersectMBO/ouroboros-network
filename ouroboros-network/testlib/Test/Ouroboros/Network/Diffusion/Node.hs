@@ -342,11 +342,11 @@ run blockGeneratorArgs limits ni na
                      blockHeader
 
         withAsync
-           (Diffusion.runM extraParameters
-                      interfaces
-                      tracers
-                      (mkArgs (nkPublicPeerSelectionVar nodeKernel))
-                      apps)
+           (Diffusion.runM interfaces
+                           tracers
+                           extraParameters
+                           (mkArgs (nkPublicPeerSelectionVar nodeKernel))
+                           apps)
            $ \ diffusionThread ->
                withAsync (blockFetch nodeKernel) $ \blockFetchLogicThread ->
                  wait diffusionThread

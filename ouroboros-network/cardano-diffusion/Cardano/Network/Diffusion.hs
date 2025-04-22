@@ -136,6 +136,8 @@ run lpci tracerChurnMode localConfig tracers args apps = do
          $ withIOManager $ \iocp -> do
              interfaces <- Diffusion.mkInterfaces iocp tracer
              Diffusion.runM
+               interfaces
+               tracers
                Diffusion.Arguments {
                   daNtnDataFlow    = ntnDataFlow,
                   daNtnPeerSharing = peerSharing,
@@ -180,4 +182,4 @@ run lpci tracerChurnMode localConfig tracers args apps = do
                       Cardano.Churn.tracerChurnMode    = tracerChurnMode
                     }
                 }
-               interfaces tracers args apps
+               args apps
