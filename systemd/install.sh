@@ -82,8 +82,8 @@ fi
 if ! test -f "$CONFIGDIR/kes-agent.env"; then
     install etc/kes-agent/kes-agent.env "$CONFIGDIR/kes-agent.env"
 fi
-if ! test -f "$CONFIGDIR/kes-agent.toml"; then
-    install etc/kes-agent/kes-agent.toml "$CONFIGDIR/kes-agent.toml"
+if ! test -f "$CONFIGDIR/agent.toml"; then
+    install etc/kes-agent/agent.toml "$CONFIGDIR/agent.toml"
 fi
 install etc/kes-agent/mainnet-shelley-genesis.json "$CONFIGDIR/mainnet-shelley-genesis.json"
 install etc/systemd/system/kes-agent.service "$SERVICEDIR"/kes-agent.service
