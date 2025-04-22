@@ -40,7 +40,6 @@ import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
 import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano.Types
 import Cardano.Network.PeerSelection.PeerSelectionActions qualified as Cardano
 import Ouroboros.Network.Diffusion qualified as Diffusion
-import Ouroboros.Network.Diffusion.Types qualified as Diffusion
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.NodeToClient (NodeToClientVersion (..),
            NodeToClientVersionData)

@@ -114,7 +114,6 @@ import Ouroboros.Network.Snocket (MakeBearer, Snocket, TestAddress (..),
 
 import Simulation.Network.Snocket (AddressType (..), FD)
 
-import Ouroboros.Network.Diffusion.Types qualified as Diffusion
 import Test.Ouroboros.Network.Data.Script (Script)
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB (addBlock,
            getBlockPointSet)

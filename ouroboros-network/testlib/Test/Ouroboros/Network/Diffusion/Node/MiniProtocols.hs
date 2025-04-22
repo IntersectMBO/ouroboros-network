@@ -74,7 +74,7 @@ import Ouroboros.Network.Block (HasHeader, HeaderHash, Point)
 import Ouroboros.Network.Block qualified as Block
 import Ouroboros.Network.Context
 import Ouroboros.Network.ControlMessage (ControlMessage (..))
-import Ouroboros.Network.Diffusion.Types qualified as Diffusion
+import Ouroboros.Network.Diffusion qualified as Diffusion
 import Ouroboros.Network.Driver.Limits
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.KeepAlive

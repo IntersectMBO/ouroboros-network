@@ -102,6 +102,7 @@ import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Types (AbstractTransitionTrace)
+import Ouroboros.Network.Diffusion qualified as Diffusion
 import Ouroboros.Network.Driver.Limits (ProtocolSizeLimits (..),
            ProtocolTimeLimits (..))
 import Ouroboros.Network.Handshake.Acceptable (Acceptable (acceptableVersion))
@@ -131,7 +132,6 @@ import Ouroboros.Network.Snocket (Snocket, TestAddress (..))
 import Simulation.Network.Snocket (BearerInfo (..), FD, SnocketTrace,
            WithAddr (..), makeFDBearer, withSnocket)
 
-import Ouroboros.Network.Diffusion.Types qualified as Diffusion
 import Test.Ouroboros.Network.Data.Script
 import Test.Ouroboros.Network.Diffusion.Node as Node
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..), genLedgerPoolsFrom)
