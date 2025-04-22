@@ -21,6 +21,7 @@ import Cardano.Crypto.KES.Class (
  )
 import Control.Concurrent.Class.MonadSTM (MonadSTM, atomically)
 import Control.Concurrent.Class.MonadSTM.TChan (
+  TChan,
   newBroadcastTChan,
   writeTChan,
  )
@@ -226,22 +227,75 @@ newAgent ::
   AgentOptions m addr c ->
   m (Agent c m fd addr)
 newAgent
-  _p
-  -- \| 'Snocket' for both service and control connections
+  p
+  -- | 'Snocket' for both service and control connections
   s
-  -- \| Raw-bearer factory, needed for the RawBearer protocols
+  -- | Raw-bearer factory, needed for the RawBearer protocols
   mrb
-  -- \| Agent options
+  -- | Agent options
   options = do
     stagedKeyVar :: TMVar m (Maybe (CRef m (SignKeyWithPeriodKES (KES c)))) <-
       newTMVarIO Nothing
     currentKeyVar :: TMVar m (Maybe (TaggedBundle m c)) <-
       newTMVarIO Nothing
     nextKeyChan <- atomically newBroadcastTChan
-    bootstrapConnectionsVar <- newTMVarIO mempty
+    initAgent p s mrb options stagedKeyVar currentKeyVar nextKeyChan
 
+-- | Initialize a new 'Agent'. This will not spawn the actual agent process,
+-- just set up everything it needs.
+renewAgent ::
+  forall c m fd addr.
+  Monad m =>
+  MonadSTM m =>
+  Show addr =>
+  Show fd =>
+  Proxy c ->
+  Snocket m fd addr ->
+  MakeRawBearer m fd ->
+  AgentOptions m addr c ->
+  Agent c m fd addr ->
+  m (Agent c m fd addr)
+renewAgent p s mrb options agent = do
+  finalizeAgent agent
+  initAgent
+    p s mrb options
+    (agentStagedKeyVar agent)
+    (agentCurrentKeyVar agent)
+    (agentNextKeyChan agent)
+
+-- | Initialize a new 'Agent'. This will not spawn the actual agent process,
+-- just set up everything it needs.
+initAgent ::
+  forall c m fd addr.
+  Monad m =>
+  MonadSTM m =>
+  Show addr =>
+  Show fd =>
+  Proxy c ->
+  Snocket m fd addr ->
+  MakeRawBearer m fd ->
+  AgentOptions m addr c ->
+  TMVar m (Maybe (CRef m (SignKeyWithPeriodKES (KES c)))) ->
+  TMVar m (Maybe (TaggedBundle m c)) ->
+  TChan m (TaggedBundle m c) ->
+  m (Agent c m fd addr)
+initAgent
+  _p
+  -- | 'Snocket' for both service and control connections
+  s
+  -- | Raw-bearer factory, needed for the RawBearer protocols
+  mrb
+  -- | Agent options
+  options
+  -- | Variable holding the staged key
+  stagedKeyVar
+  -- | Variable holding the current active key bundle
+  currentKeyVar
+  -- | Channel for posting key updates
+  nextKeyChan = do
     serviceFD <- openFD (agentServiceAddr options)
     controlFD <- mapM openFD (agentControlAddr options)
+    bootstrapConnectionsVar <- newTMVarIO mempty
 
     return
       Agent

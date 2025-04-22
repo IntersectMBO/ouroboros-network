@@ -24,6 +24,7 @@ import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket
 
 import Control.Arrow ((>>>))
+import Control.Concurrent.Async (race)
 import Control.Concurrent.Class.MonadMVar
 import Control.Monad (when, (<=<))
 import Control.Monad.Class.MonadThrow (SomeException, bracket, catch, finally)
@@ -44,7 +45,7 @@ import Options.Applicative
 import System.Directory
 import System.Environment
 import System.FilePath ((</>))
-import System.IO (hFlush, stdout)
+import System.IO (hFlush, stdout, hPutStrLn, stderr)
 import System.IOManager
 import Text.Printf
 import Toml (TomlCodec, (.=))
@@ -53,6 +54,7 @@ import qualified Toml
 import System.Posix.Daemonize
 import System.Posix.Files as Posix
 import System.Posix.User as Posix
+import System.Posix.Signals as Posix
 #endif
 
 data NormalModeOptions
@@ -392,7 +394,7 @@ optionsFromFile def codec path = do
     then do
       -- putStrLn $ "Loading configuration file: " <> path
       tomlRes <- Toml.decodeFileEither codec path
-      print tomlRes
+      -- print tomlRes
       case tomlRes of
         Left errs -> do
           error . Text.unpack $ Toml.prettyTomlDecodeErrors errs
@@ -560,18 +562,52 @@ runAsService configPathMay smo' =
 -- | Run @kes-agent@ as a regular process.
 runNormally :: Maybe FilePath -> NormalModeOptions -> IO ()
 runNormally configPathMay nmo' = withIOManager $ \ioManager -> do
-  nmoEnv <- nmoFromEnv
-  nmoExtra <-
-    maybe
-      (pure defNormalModeOptions)
-      (optionsFromFile defNormalModeOptions normalModeTomlCodec)
-      configPathMay
-  nmoFiles <- nmoFromFiles
-  let nmo = nmo' <> nmoEnv <> nmoExtra <> nmoFiles <> defNormalModeOptions
-  agentOptions <- nmoToAgentOptions nmo
-  maxPrio <- maybe (error "invalid priority") return $ nmoLogLevel nmo
+  let loadOptions :: IO (AgentOptions IO SockAddr StandardCrypto, Priority)
+      loadOptions = do
+        nmoEnv <- nmoFromEnv
+        nmoExtra <-
+          maybe
+            (pure defNormalModeOptions)
+            (optionsFromFile defNormalModeOptions normalModeTomlCodec)
+            configPathMay
+        nmoFiles <- nmoFromFiles
+        let nmo = nmo' <> nmoEnv <> nmoExtra <> nmoFiles <> defNormalModeOptions
+        agentOptions <- nmoToAgentOptions nmo
+        maxPrio <- maybe (error "invalid priority") return $ nmoLogLevel nmo
+        return (agentOptions, maxPrio)
 
+  (agentOptions, maxPrio) <- loadOptions
+
+  optionsSignal <- newEmptyMVar
+
+  -- install SIGHUP handler
+  let handler = Posix.Catch $ putMVar optionsSignal ()
+  oldSighup <- Posix.installHandler Posix.lostConnection handler Nothing
   logLock <- newMVar ()
+
+  let goRun agent = do
+        result <- race (takeMVar optionsSignal) (runAgent agent)
+        case result of
+          Left _ -> (do
+                -- Received a SIGHUP: reload configuration
+                (agentOptions', maxPrio') <- loadOptions
+                agent' <-
+                  renewAgent
+                    (Proxy @StandardCrypto)
+                    (socketSnocket ioManager)
+                    makeSocketRawBearer
+                    agentOptions' {agentTracer = stdoutAgentTracer ColorsAuto maxPrio' logLock}
+                    agent
+                goRun agent'
+            ) `catch` (\(e :: SomeException) -> do
+              hPutStrLn stderr (show e)
+              goRun agent
+            )
+
+
+          Right _ ->
+            return ()
+
   bracket
     ( newAgent
         (Proxy @StandardCrypto)
@@ -579,8 +615,11 @@ runNormally configPathMay nmo' = withIOManager $ \ioManager -> do
         makeSocketRawBearer
         agentOptions {agentTracer = stdoutAgentTracer ColorsAuto maxPrio logLock}
     )
-    finalizeAgent
-    runAgent
+    (\agent -> do
+      finalizeAgent agent
+      Posix.installHandler Posix.lostConnection oldSighup Nothing
+    )
+    goRun
 
 programDesc = fullDesc
 

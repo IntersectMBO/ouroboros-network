@@ -153,6 +153,7 @@ executable kes-agent
     hs-source-dirs: cli
     main-is: AgentMain.hs
     build-depends: kes-agent
+                 , async
                  , bytestring
                  , cardano-crypto-class
                  , contra-tracer

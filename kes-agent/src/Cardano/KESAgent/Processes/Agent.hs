@@ -56,6 +56,7 @@ module Cardano.KESAgent.Processes.Agent (
   ServiceClientTrace (..),
   defAgentOptions,
   newAgent,
+  renewAgent,
   runAgent,
   finalizeAgent,
 )
