@@ -1,4 +1,4 @@
-module Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState where
+module Cardano.Network.PeerSelection.Governor.PeerSelectionState where
 
 import Cardano.Network.ConsensusMode (ConsensusMode)
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))

@@ -81,18 +81,18 @@ import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import Cardano.Network.Types (LedgerStateJudgement (..),
            NumberOfBigLedgerPeers (..))
 
-import Ouroboros.Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.Churn (ChurnMode (..),
-           TracerChurnMode, peerChurnGovernor)
-import Ouroboros.Cardano.Network.PeerSelection.Churn qualified as Churn
-import Ouroboros.Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionActions qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano hiding
+import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
+import Cardano.Network.PeerSelection.Churn (ChurnMode (..), TracerChurnMode,
+           peerChurnGovernor)
+import Cardano.Network.PeerSelection.Churn qualified as Churn
+import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
+import Cardano.Network.PeerSelection.Governor.PeerSelectionActions qualified as Cardano
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano hiding
            (consensusMode)
-import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as ExtraState
-import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as ExtraSizes
-import Ouroboros.Cardano.Network.PeerSelection.PeerSelectionActions
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as ExtraState
+import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
+import Cardano.Network.PeerSelection.Governor.Types qualified as ExtraSizes
+import Cardano.Network.PeerSelection.PeerSelectionActions
            (requestPublicRootPeers)
 
 import Ouroboros.Network.Block (BlockNo)

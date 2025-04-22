@@ -189,21 +189,21 @@ library cardano-diffusion
   visibility: public
   hs-source-dirs: cardano-diffusion
   exposed-modules:
-    Ouroboros.Cardano.Network.Diffusion
-    Ouroboros.Cardano.Network.Diffusion.Configuration
-    Ouroboros.Cardano.Network.Diffusion.Handlers
-    Ouroboros.Cardano.Network.Diffusion.Policies
-    Ouroboros.Cardano.Network.Diffusion.Topology
-    Ouroboros.Cardano.Network.Diffusion.Types
-    Ouroboros.Cardano.Network.LedgerPeerConsensusInterface
-    Ouroboros.Cardano.Network.PeerSelection.Churn
-    Ouroboros.Cardano.Network.PeerSelection.ExtraRootPeers
-    Ouroboros.Cardano.Network.PeerSelection.Governor.Monitor
-    Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionActions
-    Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState
-    Ouroboros.Cardano.Network.PeerSelection.Governor.Types
-    Ouroboros.Cardano.Network.PeerSelection.PeerSelectionActions
-    Ouroboros.Cardano.Network.PeerSelection.PublicRootPeers
+    Cardano.Network.Diffusion
+    Cardano.Network.Diffusion.Configuration
+    Cardano.Network.Diffusion.Handlers
+    Cardano.Network.Diffusion.Policies
+    Cardano.Network.Diffusion.Topology
+    Cardano.Network.Diffusion.Types
+    Cardano.Network.LedgerPeerConsensusInterface
+    Cardano.Network.PeerSelection.Churn
+    Cardano.Network.PeerSelection.ExtraRootPeers
+    Cardano.Network.PeerSelection.Governor.Monitor
+    Cardano.Network.PeerSelection.Governor.PeerSelectionActions
+    Cardano.Network.PeerSelection.Governor.PeerSelectionState
+    Cardano.Network.PeerSelection.Governor.Types
+    Cardano.Network.PeerSelection.PeerSelectionActions
+    Cardano.Network.PeerSelection.PublicRootPeers
 
   other-modules:
   reexported-modules:

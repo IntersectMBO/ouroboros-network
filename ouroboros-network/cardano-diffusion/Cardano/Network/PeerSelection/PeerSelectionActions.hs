@@ -7,7 +7,7 @@
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TupleSections            #-}
 
-module Ouroboros.Cardano.Network.PeerSelection.PeerSelectionActions (requestPublicRootPeers) where
+module Cardano.Network.PeerSelection.PeerSelectionActions (requestPublicRootPeers) where
 
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
@@ -26,10 +26,9 @@ import Data.Map qualified as Map
 import Data.Set (Set)
 import Network.DNS qualified as DNS
 
-import Ouroboros.Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.PublicRootPeers
-           (CardanoPublicRootPeers)
-import Ouroboros.Cardano.Network.PeerSelection.PublicRootPeers qualified as Cardano.PublicRootPeers
+import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
+import Cardano.Network.PeerSelection.PublicRootPeers (CardanoPublicRootPeers)
+import Cardano.Network.PeerSelection.PublicRootPeers qualified as Cardano.PublicRootPeers
 import Ouroboros.Network.PeerSelection.LedgerPeers hiding (getLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSelectionActions qualified as Ouroboros

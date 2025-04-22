@@ -1,6 +1,6 @@
 {-# LANGUAGE NamedFieldPuns #-}
 
-module Ouroboros.Cardano.Network.Diffusion.Topology where
+module Cardano.Network.Diffusion.Topology where
 
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))

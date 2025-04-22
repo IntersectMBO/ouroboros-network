@@ -12,7 +12,7 @@
 -- | This module is expected to be imported qualified (it will clash
 -- with the "Ouroboros.Network.Diffusion.NonP2P").
 --
-module Ouroboros.Cardano.Network.Diffusion (run) where
+module Cardano.Network.Diffusion (run) where
 
 
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -28,17 +28,17 @@ import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
 
 import Data.Set qualified as Set
 
-import Ouroboros.Cardano.Network.Diffusion.Configuration qualified as Cardano.LC
-import Ouroboros.Cardano.Network.Diffusion.Handlers qualified as Cardano
-import Ouroboros.Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.Churn qualified as Cardano.Churn
-import Ouroboros.Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionActions qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano.PeerSelectionState
-import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as Cardano.Types
-import Ouroboros.Cardano.Network.PeerSelection.PeerSelectionActions qualified as Cardano
+import Cardano.Network.Diffusion.Configuration qualified as Cardano.LC
+import Cardano.Network.Diffusion.Handlers qualified as Cardano
+import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
+import Cardano.Network.PeerSelection.Churn qualified as Cardano.Churn
+import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
+import Cardano.Network.PeerSelection.Governor.PeerSelectionActions qualified as Cardano
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano.PeerSelectionState
+import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
+import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano.Types
+import Cardano.Network.PeerSelection.PeerSelectionActions qualified as Cardano
 import Ouroboros.Network.Diffusion qualified as Diffusion
 import Ouroboros.Network.Diffusion.Types qualified as Diffusion
 import Ouroboros.Network.IOManager

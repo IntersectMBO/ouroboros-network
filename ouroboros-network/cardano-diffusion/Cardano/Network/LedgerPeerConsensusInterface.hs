@@ -1,4 +1,4 @@
-module Ouroboros.Cardano.Network.LedgerPeerConsensusInterface where
+module Cardano.Network.LedgerPeerConsensusInterface where
 
 import Cardano.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
 import Cardano.Network.Types (LedgerStateJudgement)

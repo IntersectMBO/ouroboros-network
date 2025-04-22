@@ -62,7 +62,7 @@ import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
 import Cardano.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
-import Ouroboros.Cardano.Network.PeerSelection.PublicRootPeers qualified as Cardano.PublicRootPeers
+import Cardano.Network.PeerSelection.PublicRootPeers qualified as Cardano.PublicRootPeers
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..),
@@ -97,16 +97,16 @@ import Test.Ouroboros.Network.Utils (disjointSetsProperty, isSubsetProperty,
 
 import Control.Monad.IOSim
 
+import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
+import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
+import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano.ExtraPeers
+import Cardano.Network.PeerSelection.Governor.PeerSelectionActions qualified as Cardano
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano.ExtraState
+import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
+import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano.ExtraSizes
 import Cardano.Network.Types (LedgerStateJudgement (..),
            NumberOfBigLedgerPeers (..))
-import Ouroboros.Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano.ExtraPeers
-import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionActions qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano.ExtraState
-import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as Cardano.ExtraSizes
 import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..))
 import Test.QuickCheck
 import Test.QuickCheck.Monoids
