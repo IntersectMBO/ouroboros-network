@@ -98,9 +98,8 @@ normalModeTomlCodec =
   NormalModeOptions
     <$> Toml.dioptional (Toml.string "service-path") .= nmoServicePath
     <*> Toml.dioptional (Toml.string "control-path") .= nmoControlPath
-    <*> Toml.arraySetOf Toml._String "bootstrap-paths" .= nmoBootstrapPaths
-    <*> (Just <$> Toml.match (_ReadLogLevel >>> Toml._String) "log-level")
-      .= (fromMaybe Notice . nmoLogLevel)
+    <*> (fromMaybe mempty <$> Toml.dioptional (Toml.arraySetOf Toml._String "bootstrap-paths")) .= (Just . nmoBootstrapPaths)
+    <*> Toml.dioptional (Toml.match (_ReadLogLevel >>> Toml._String) "log-level") .= nmoLogLevel
     <*> Toml.dioptional (Toml.string "cold-vkey") .= nmoColdVerKeyFile
     <*> Toml.dioptional (Toml.string "genesis-file") .= nmoGenesisFile
 
