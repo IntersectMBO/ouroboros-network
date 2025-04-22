@@ -80,6 +80,7 @@ import Cardano.KESAgent.Processes.ServiceClient (
  )
 import Cardano.KESAgent.Protocols.AgentInfo
 import Cardano.KESAgent.Protocols.Types
+import Cardano.KESAgent.Protocols.BearerUtil
 import Cardano.KESAgent.Protocols.VersionHandshake.Driver (versionHandshakeDriver)
 import Cardano.KESAgent.Protocols.VersionHandshake.Peers (versionHandshakeServer)
 import Cardano.KESAgent.Protocols.VersionedProtocol
@@ -116,6 +117,7 @@ import Control.Monad.Class.MonadThrow (
   MonadCatch,
   MonadThrow,
   SomeException,
+  catch,
   catches,
   finally,
  )
@@ -194,6 +196,10 @@ runListener
       let ignoreAsyncCancelled :: AsyncCancelled -> m ()
           ignoreAsyncCancelled _ = pure ()
 
+          handleClientDisconnect :: fd -> BearerConnectionClosed -> m ()
+          handleClientDisconnect fd _ =
+            traceWith tracer (tClientDisconnected $ show fd)
+
       let handlers =
             [ Handler ignoreAsyncCancelled
             , Handler logAndContinue
@@ -210,8 +216,9 @@ runListener
                 concurrently_
                   (loop next)
                   ( handleConnection addr' fd'
+                      `catch` handleClientDisconnect fd'
                       `catches` handlers
-                      `finally` (close s fd' >> traceWith tracer (tSocketClosed $ show addr'))
+                      `finally` (close s fd' >> traceWith tracer (tSocketClosed $ show fd'))
                   )
 
       (accept s fd >>= loop) `catches` handlers
@@ -301,8 +308,11 @@ runAgent agent = do
               case protocolVersionMay >>= (`lookupServiceDriver` (availableServiceDrivers @c @m)) of
                 Nothing ->
                   traceWith (agentTracer . agentOptions $ agent) AgentServiceVersionHandshakeFailed
-                Just run -> do
-                  run bearer tracer' currentKey nextKey reportPushResult
+                Just run ->
+                  -- Using withDuplexBearer is OK here, because we only ever
+                  -- send, never receive, anything that needs to be mlocked.
+                  withDuplexBearer bearer $ \bearer' ->
+                    run bearer' tracer' currentKey nextKey reportPushResult
           )
 
   let runBootstrap :: addr -> m ()

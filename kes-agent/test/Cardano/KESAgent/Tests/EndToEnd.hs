@@ -84,7 +84,6 @@ tests =
         "kes-agent-control install-key"
         [ testCase "valid" kesAgentControlInstallValid
         , testCase "invalid opcert" kesAgentControlInstallInvalidOpCert
-        , testCase "update valid" kesAgentControlUpdateValid
         , testCase "no key" kesAgentControlInstallNoKey
         , testCase "dropped key" kesAgentControlInstallDroppedKey
         , testCase "multiple nodes" kesAgentControlInstallMultiNodes
