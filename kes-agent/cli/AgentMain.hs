@@ -45,7 +45,7 @@ import Options.Applicative
 import System.Directory
 import System.Environment
 import System.FilePath ((</>))
-import System.IO (hFlush, stdout, hPutStrLn, stderr)
+import System.IO (hFlush, hPutStrLn, stderr, stdout)
 import System.IOManager
 import Text.Printf
 import Toml (TomlCodec, (.=))
@@ -98,7 +98,8 @@ normalModeTomlCodec =
   NormalModeOptions
     <$> Toml.dioptional (Toml.string "service-path") .= nmoServicePath
     <*> Toml.dioptional (Toml.string "control-path") .= nmoControlPath
-    <*> (fromMaybe mempty <$> Toml.dioptional (Toml.arraySetOf Toml._String "bootstrap-paths")) .= (Just . nmoBootstrapPaths)
+    <*> (fromMaybe mempty <$> Toml.dioptional (Toml.arraySetOf Toml._String "bootstrap-paths"))
+      .= (Just . nmoBootstrapPaths)
     <*> Toml.dioptional (Toml.match (_ReadLogLevel >>> Toml._String) "log-level") .= nmoLogLevel
     <*> Toml.dioptional (Toml.string "cold-vkey") .= nmoColdVerKeyFile
     <*> Toml.dioptional (Toml.string "genesis-file") .= nmoGenesisFile
@@ -587,7 +588,8 @@ runNormally configPathMay nmo' = withIOManager $ \ioManager -> do
   let goRun agent = do
         result <- race (takeMVar optionsSignal) (runAgent agent)
         case result of
-          Left _ -> (do
+          Left _ ->
+            ( do
                 -- Received a SIGHUP: reload configuration
                 (agentOptions', maxPrio') <- loadOptions
                 agent' <-
@@ -598,12 +600,11 @@ runNormally configPathMay nmo' = withIOManager $ \ioManager -> do
                     agentOptions' {agentTracer = stdoutAgentTracer ColorsAuto maxPrio' logLock}
                     agent
                 goRun agent'
-            ) `catch` (\(e :: SomeException) -> do
-              hPutStrLn stderr (show e)
-              goRun agent
             )
-
-
+              `catch` ( \(e :: SomeException) -> do
+                          hPutStrLn stderr (show e)
+                          goRun agent
+                      )
           Right _ ->
             return ()
 
@@ -614,9 +615,9 @@ runNormally configPathMay nmo' = withIOManager $ \ioManager -> do
         makeSocketRawBearer
         agentOptions {agentTracer = stdoutAgentTracer ColorsAuto maxPrio logLock}
     )
-    (\agent -> do
-      finalizeAgent agent
-      Posix.installHandler Posix.lostConnection oldSighup Nothing
+    ( \agent -> do
+        finalizeAgent agent
+        Posix.installHandler Posix.lostConnection oldSighup Nothing
     )
     goRun
 

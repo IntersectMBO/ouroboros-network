@@ -1,10 +1,10 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MonoLocalBinds #-}
+{-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE NumericUnderscores #-}
 
 -- | KES agent service client API
 module Cardano.KESAgent.Processes.ServiceClient (
@@ -51,7 +51,7 @@ import Control.Concurrent.Async (AsyncCancelled)
 import Control.Concurrent.Class.MonadMVar
 import Control.Concurrent.Class.MonadSTM
 import Control.Exception (AsyncException)
-import Control.Monad (void, unless)
+import Control.Monad (unless, void)
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow (
   Handler (..),
@@ -100,26 +100,33 @@ data ServiceClientTrace
 
 formatDelayMicro :: Int -> String
 formatDelayMicro us
-  | us < 1_000
-  = show us ++ "μs"
-  | us < 1_000_000
-  = show (us `div` 1_000) ++ "ms"
-  | us < 4_000_000
-  = printf "%0.2fs" ((fromIntegral us :: Double) / 1_000_000)
-  | us < 10_000_000
-  = printf "%0.1fs" ((fromIntegral us :: Double) / 1_000_000)
-  | us < 60_000_000
-  = printf "%0.0fs" ((fromIntegral us :: Double) / 1_000_000)
-  | us < 3600_000_000
-  = printf "%i:$02i minutes" (us `div` 60_000_000) ((us `mod` 60_000_000) `div` 1_000_000)
-  | otherwise
-  = printf "%i:$02i hours" (us `div` 3600_000_000) ((us `mod` 3600_000_000) `div` 60_000_000)
+  | us < 1_000 =
+      show us ++ "μs"
+  | us < 1_000_000 =
+      show (us `div` 1_000) ++ "ms"
+  | us < 4_000_000 =
+      printf "%0.2fs" ((fromIntegral us :: Double) / 1_000_000)
+  | us < 10_000_000 =
+      printf "%0.1fs" ((fromIntegral us :: Double) / 1_000_000)
+  | us < 60_000_000 =
+      printf "%0.0fs" ((fromIntegral us :: Double) / 1_000_000)
+  | us < 3600_000_000 =
+      printf "%i:$02i minutes" (us `div` 60_000_000) ((us `mod` 60_000_000) `div` 1_000_000)
+  | otherwise =
+      printf "%i:$02i hours" (us `div` 3600_000_000) ((us `mod` 3600_000_000) `div` 60_000_000)
 
 instance Pretty ServiceClientTrace where
   pretty (ServiceClientDriverTrace d) = "Service: service driver: " ++ pretty d
   pretty (ServiceClientConnected a) = "Service: connected to " ++ a
   pretty (ServiceClientAttemptReconnect count delayMicro err addr) =
-    "Service: service driver: failed to connect to " ++ addr ++ ": " ++ err ++ "; connection attempts left: " ++ show count ++ ", next connection attempt in " ++ formatDelayMicro delayMicro
+    "Service: service driver: failed to connect to "
+      ++ addr
+      ++ ": "
+      ++ err
+      ++ "; connection attempts left: "
+      ++ show count
+      ++ ", next connection attempt in "
+      ++ formatDelayMicro delayMicro
   pretty (ServiceClientVersionHandshakeTrace a) = "Service: version handshake: " ++ pretty a
   pretty (ServiceClientReceivedKey k) = "Service: received key: " ++ pretty k
   pretty (ServiceClientDeclinedKey k) = "Service: declined key: " ++ pretty k
@@ -192,10 +199,11 @@ mkServiceClientDriverSP0 =
           ( SP0.serviceReceiver $
               \bundle ->
                 handleKey (TaggedBundle (Just bundle) 0)
-                  <* traceWith tracer
-                      (ServiceClientReceivedKey $
+                  <* traceWith
+                    tracer
+                    ( ServiceClientReceivedKey $
                         mkTaggedBundleTrace 0 (Just bundle)
-                      )
+                    )
           )
   )
 
@@ -216,10 +224,11 @@ mkServiceClientDriverSP1 =
           (SP1.serviceDriver bearer $ ServiceClientDriverTrace >$< tracer)
           ( SP1.serviceReceiver $ \bundle ->
               handleKey (TaggedBundle (Just bundle) 0)
-                <* traceWith tracer
-                    (ServiceClientReceivedKey $
+                <* traceWith
+                  tracer
+                  ( ServiceClientReceivedKey $
                       mkTaggedBundleTrace 0 (Just bundle)
-                    )
+                  )
           )
   )
 
@@ -250,7 +259,8 @@ mkServiceClientDriverSP2 =
                               (taggedBundle bundle)
                           )
                     _ ->
-                      traceWith tracer $ ServiceClientDeclinedKey
+                      traceWith tracer $
+                        ServiceClientDeclinedKey
                           ( mkTaggedBundleTrace
                               (taggedBundleTimestamp bundle)
                               (taggedBundle bundle)
@@ -300,7 +310,8 @@ runServiceClientForever proxy mrb options handleKey tracer = do
                     ]
         traceWith tracer $
           ServiceClientAttemptReconnect
-            0 10_000_000
+            0
+            10_000_000
             "Ran out of attempts"
             (show $ serviceClientAddress options)
         exit <- readMVar exitVar
@@ -309,7 +320,6 @@ runServiceClientForever proxy mrb options handleKey tracer = do
           go
   go
   traceWith tracer ServiceClientStopped
-
   where
     handleAbort :: MVar m Bool -> AsyncException -> m ()
     handleAbort exitVar _ = do

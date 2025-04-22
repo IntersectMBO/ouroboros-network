@@ -77,16 +77,17 @@ readResultT r = ReadResultT (pure r)
 
 instance (Functor m, Applicative m, Monad m) => Applicative (ReadResultT m) where
   pure = readResultT . ReadOK
-  
-  fa <*> fx = ReadResultT $
-    runReadResultT fa >>= \case
-      ReadOK f ->
-        runReadResultT fx >>= \case
-          ReadOK x ->
-            pure . ReadOK $ f x
-          e ->
-            pure $ undefined <$ e
-      e -> pure $ undefined <$ e
+
+  fa <*> fx =
+    ReadResultT $
+      runReadResultT fa >>= \case
+        ReadOK f ->
+          runReadResultT fx >>= \case
+            ReadOK x ->
+              pure . ReadOK $ f x
+            e ->
+              pure $ undefined <$ e
+        e -> pure $ undefined <$ e
 
 instance Monad m => Monad (ReadResultT m) where
   ReadResultT aM >>= f =

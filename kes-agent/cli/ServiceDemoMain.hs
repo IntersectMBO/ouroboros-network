@@ -26,7 +26,7 @@ import Ouroboros.Network.Snocket
 
 import Control.Concurrent.Class.MonadMVar
 import Control.Exception (AsyncException (..))
-import Control.Monad (when, unless)
+import Control.Monad (unless, when)
 import Control.Monad.Class.MonadThrow (SomeException, catch)
 import Control.Monad.Class.MonadTime (getCurrentTime)
 import Control.Monad.Class.MonadTimer (threadDelay)

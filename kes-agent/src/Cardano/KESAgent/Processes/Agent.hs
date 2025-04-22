@@ -80,8 +80,8 @@ import Cardano.KESAgent.Processes.ServiceClient (
   runServiceClientForever,
  )
 import Cardano.KESAgent.Protocols.AgentInfo
-import Cardano.KESAgent.Protocols.Types
 import Cardano.KESAgent.Protocols.BearerUtil
+import Cardano.KESAgent.Protocols.Types
 import Cardano.KESAgent.Protocols.VersionHandshake.Driver (versionHandshakeDriver)
 import Cardano.KESAgent.Protocols.VersionHandshake.Peers (versionHandshakeServer)
 import Cardano.KESAgent.Protocols.VersionedProtocol

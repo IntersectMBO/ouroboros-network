@@ -228,11 +228,11 @@ newAgent ::
   m (Agent c m fd addr)
 newAgent
   p
-  -- | 'Snocket' for both service and control connections
+  -- \| 'Snocket' for both service and control connections
   s
-  -- | Raw-bearer factory, needed for the RawBearer protocols
+  -- \| Raw-bearer factory, needed for the RawBearer protocols
   mrb
-  -- | Agent options
+  -- \| Agent options
   options = do
     stagedKeyVar :: TMVar m (Maybe (CRef m (SignKeyWithPeriodKES (KES c)))) <-
       newTMVarIO Nothing
@@ -258,7 +258,10 @@ renewAgent ::
 renewAgent p s mrb options agent = do
   finalizeAgent agent
   initAgent
-    p s mrb options
+    p
+    s
+    mrb
+    options
     (agentStagedKeyVar agent)
     (agentCurrentKeyVar agent)
     (agentNextKeyChan agent)
@@ -281,17 +284,17 @@ initAgent ::
   m (Agent c m fd addr)
 initAgent
   _p
-  -- | 'Snocket' for both service and control connections
+  -- \| 'Snocket' for both service and control connections
   s
-  -- | Raw-bearer factory, needed for the RawBearer protocols
+  -- \| Raw-bearer factory, needed for the RawBearer protocols
   mrb
-  -- | Agent options
+  -- \| Agent options
   options
-  -- | Variable holding the staged key
+  -- \| Variable holding the staged key
   stagedKeyVar
-  -- | Variable holding the current active key bundle
+  -- \| Variable holding the current active key bundle
   currentKeyVar
-  -- | Channel for posting key updates
+  -- \| Channel for posting key updates
   nextKeyChan = do
     serviceFD <- openFD (agentServiceAddr options)
     controlFD <- mapM openFD (agentControlAddr options)
