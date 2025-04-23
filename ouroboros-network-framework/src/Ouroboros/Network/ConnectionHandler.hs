@@ -40,6 +40,7 @@ module Ouroboros.Network.ConnectionHandler
   , ConnectionManagerWithExpandedCtx
     -- * tracing
   , ConnectionHandlerTrace (..)
+  , NewConnectionInfo (..)
   ) where
 
 import Control.Applicative (Alternative)
@@ -54,6 +55,7 @@ import Control.Tracer (Tracer, contramap, traceWith)
 
 import Data.ByteString.Lazy (ByteString)
 import Data.Map (Map)
+import Data.Maybe.Strict
 import Data.Text (Text)
 import Data.Typeable (Typeable)
 
@@ -130,7 +132,9 @@ type family MkMuxConnectionHandler (muxMode :: Mx.Mode) socket initiatorCtx resp
 
   MkMuxConnectionHandler Mx.ResponderMode socket initiatorCtx responderCtx peerAddr
                                           versionNumber versionData bytes m a b =
-       (   StrictTVar m (Maybe ResponderCounters)
+       (versionData -> DataFlow)
+    -> (   NewConnectionInfo peerAddr (Handle Mx.ResponderMode initiatorCtx responderCtx versionData bytes m a b)
+        -> StrictTVar m (StrictMaybe ResponderCounters)
         -> Tracer m (WithBearer (ConnectionId peerAddr) Trace))
     -> MuxConnectionHandler Mx.ResponderMode socket initiatorCtx responderCtx peerAddr
                                              versionNumber versionData bytes m a b
@@ -138,7 +142,8 @@ type family MkMuxConnectionHandler (muxMode :: Mx.Mode) socket initiatorCtx resp
   MkMuxConnectionHandler Mx.InitiatorResponderMode socket initiatorCtx responderCtx peerAddr
                                                    versionNumber versionData bytes m a b =
        (versionData -> DataFlow)
-    -> (   StrictTVar m (Maybe ResponderCounters)
+    -> (   NewConnectionInfo peerAddr (Handle Mx.InitiatorResponderMode initiatorCtx responderCtx versionData bytes m a b)
+        -> StrictTVar m (StrictMaybe ResponderCounters)
         -> Tracer m (WithBearer (ConnectionId peerAddr) Trace))
     -> MuxConnectionHandler Mx.InitiatorResponderMode socket initiatorCtx responderCtx
                                                       peerAddr versionNumber versionData
@@ -273,11 +278,12 @@ makeConnectionHandler muxTracer forkPolicy
   \case
     SingInitiatorMode -> ConnectionHandler . WithInitiatorMode
                        $ outboundConnectionHandler NotInResponderMode
-    SingResponderMode -> ConnectionHandler . WithResponderMode . inboundConnectionHandler
-    SingInitiatorResponderMode -> \connectionDataFlow inboundGovChannelTracer ->
+    SingResponderMode -> ((ConnectionHandler . WithResponderMode) .) . inboundConnectionHandler
+    SingInitiatorResponderMode -> \connectionDataFlow inboundGovernorMuxTracer ->
+      -- the tracer is defined in the InboundGovernor module
       ConnectionHandler $ WithInitiatorResponderMode
-        (outboundConnectionHandler $ InResponderMode (inboundGovChannelTracer, connectionDataFlow))
-        (inboundConnectionHandler inboundGovChannelTracer)
+        (outboundConnectionHandler $ InResponderMode (inboundGovernorMuxTracer, connectionDataFlow))
+        (inboundConnectionHandler connectionDataFlow inboundGovernorMuxTracer)
   where
     -- install classify exception handler
     classifyExceptions :: forall x.
@@ -304,7 +310,8 @@ makeConnectionHandler muxTracer forkPolicy
 
     outboundConnectionHandler
       :: HasInitiator muxMode ~ True
-      => InResponderMode muxMode (   StrictTVar m (Maybe ResponderCounters)
+      => InResponderMode muxMode (   NewConnectionInfo peerAddr (Handle muxMode initiatorCtx responderCtx versionData ByteString m a b)
+                                  -> StrictTVar m (StrictMaybe ResponderCounters)
                                   -> Tracer m (WithBearer (ConnectionId peerAddr) Trace)
                                  , versionData -> DataFlow)
       -> ConnectionHandlerFn (ConnectionHandlerTrace versionNumber versionData)
@@ -371,7 +378,7 @@ makeConnectionHandler muxTracer forkPolicy
                     bearer <- mkMuxBearer sduTimeout socket buffer
                     muxTracer' <- contramap (Mx.WithBearer connectionId) <$>
                           case inResponderMode of
-                            InResponderMode (inboundGovChannelTracer, connectionDataFlow)
+                            InResponderMode (inboundGovernorMuxTracer, connectionDataFlow)
                               | Duplex <- connectionDataFlow agreedOptions -> do
                                   -- In this case, following the Mx.run call below, the muxer begins racing with
                                   -- the CM to write to the information channel queue. The tracer of mux activity,
@@ -379,8 +386,10 @@ makeConnectionHandler muxTracer forkPolicy
                                   -- The IG tracer will block the muxer on a TVar when it reaches mature state
                                   -- until the CM informs the former of new peer connection to ensure
                                   -- proper sequencing of events.
-                                  countersVar <- newTVarIO $ Just $ ResponderCounters 0 0
-                                  pure $ muxTracer <> inboundGovChannelTracer countersVar
+                                  countersVar <- newTVarIO . SJust $ ResponderCounters 0 0
+                                  let newConnection =
+                                        NewConnectionInfo Outbound connectionId Duplex handle
+                                  pure $ muxTracer <> inboundGovernorMuxTracer newConnection countersVar
                             _notResponder ->
                                   -- If this is InitiatorOnly, or a server where unidirectional flow was negotiated
                                   -- the IG will never be informed of this remote for obvious reasons. There is no
@@ -401,7 +410,9 @@ makeConnectionHandler muxTracer forkPolicy
 
     inboundConnectionHandler
       :: HasResponder muxMode ~ True
-      => (   StrictTVar m (Maybe ResponderCounters)
+      => (versionData -> DataFlow)
+      -> (   NewConnectionInfo peerAddr (Handle muxMode initiatorCtx responderCtx versionData ByteString m a b)
+          -> StrictTVar m (StrictMaybe ResponderCounters)
           -> Tracer m (WithBearer (ConnectionId peerAddr) Trace))
       -> ConnectionHandlerFn (ConnectionHandlerTrace versionNumber versionData)
                              socket
@@ -411,7 +422,8 @@ makeConnectionHandler muxTracer forkPolicy
                              versionNumber
                              versionData
                              m
-    inboundConnectionHandler inboundGovChannelTracer
+    inboundConnectionHandler connectionDataFlow
+                             inboundGovernorMuxTracer
                              updateVersionDataFn
                              socket
                              PromiseWriter { writePromise }
@@ -466,10 +478,12 @@ makeConnectionHandler muxTracer forkPolicy
                   atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
                   withBuffer (\buffer -> do
                       bearer <- mkMuxBearer sduTimeout socket buffer
-                      countersVar <- newTVarIO . Just $ ResponderCounters 0 0
+                      countersVar <- newTVarIO . SJust $ ResponderCounters 0 0
                       let traceWithBearer = contramap $ Mx.WithBearer connectionId
+                          newConnection =
+                            NewConnectionInfo Inbound connectionId (connectionDataFlow agreedOptions) handle
                       Mx.run Mx.MuxTracerBundle {
-                               muxTracer     = traceWithBearer (muxTracer <> inboundGovChannelTracer countersVar),
+                               muxTracer     = traceWithBearer (muxTracer <> inboundGovernorMuxTracer newConnection countersVar),
                                channelTracer = traceWithBearer muxTracer }
                              mux bearer
                     )
@@ -503,3 +517,28 @@ data ConnectionHandlerTrace versionNumber versionData =
         (HandshakeException versionNumber)
     | TrConnectionHandlerError ErrorContext SomeException ErrorCommand
   deriving Show
+
+-- | Announcement message for a new connection.
+--
+data NewConnectionInfo peerAddr handle
+
+    -- | Announce a new connection.  /Inbound protocol governor/ will start
+    -- responder protocols using 'StartOnDemand' strategy and monitor remote
+    -- transitions: @PromotedToWarm^{Duplex}_{Remote}@ and
+    -- @DemotedToCold^{dataFlow}_{Remote}@.
+    = NewConnectionInfo
+      !Provenance
+      !(ConnectionId peerAddr)
+      !DataFlow
+      !handle
+
+instance Show peerAddr
+      => Show (NewConnectionInfo peerAddr handle) where
+      show (NewConnectionInfo provenance connId dataFlow _) =
+        concat [ "NewConnectionInfo "
+               , show provenance
+               , " "
+               , show connId
+               , " "
+               , show dataFlow
+               ]

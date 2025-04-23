@@ -496,20 +496,22 @@ type NodeToNodePeerSelectionActions extraState extraFlags extraPeers extraAPI ex
       (NodeToNodePeerConnectionHandle mode ntnAddr ntnVersionData m a b)
       m
 
-type NodeToClientMkConnectionHandler
-      ntcFd ntcAddr ntcVersion ntcVersionData m =
-    (   StrictTVar m (Maybe IG.ResponderCounters)
-     -> Tracer m (Mx.WithBearer (ConnectionId ntcAddr) Mx.Trace))
-    -> ConnectionHandler
-         Mx.ResponderMode
-         (ConnectionHandlerTrace ntcVersion ntcVersionData)
-         ntcFd
-         ntcAddr
-         (NodeToClientHandle ntcAddr ntcVersionData m)
-         (NodeToClientHandleError ntcVersion)
-         ntcVersion
-         ntcVersionData
-         m
+-- type NodeToClientMkConnectionHandler
+--       muxMode initiatorCtx responderCtx ntcFd ntcAddr ntcVersion ntcVersionData m a b =
+--     (   NewConnectionInfo ntcAddr
+--                           (Handle muxMode initiatorCtx responderCtx ntcVersionData ByteString m a b)
+--      -> StrictTVar m (StrictMaybe IG.ResponderCounters)
+--      -> Tracer m (Mx.WithBearer (ConnectionId ntcAddr) Mx.Trace))
+--     -> ConnectionHandler
+--          Mx.ResponderMode
+--          (ConnectionHandlerTrace ntcVersion ntcVersionData)
+--          ntcFd
+--          ntcAddr
+--          (NodeToClientHandle ntcAddr ntcVersionData m)
+--          (NodeToClientHandleError ntcVersion)
+--          ntcVersion
+--          ntcVersionData
+--          m
 
 data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
                 ntcFd ntcAddr ntcVersion ntcVersionData
@@ -865,8 +867,8 @@ runM Interfaces
 
         let localConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0
 
-            mkLocalConnectionHandler :: NodeToClientMkConnectionHandler
-                                        ntcFd ntcAddr ntcVersion ntcVersionData m
+            -- mkLocalConnectionHandler :: NodeToClientMkConnectionHandler
+            --                             ntcFd ntcAddr ntcVersion ntcVersionData m
             mkLocalConnectionHandler responderMuxChannelTracer =
               makeConnectionHandler
                 dtLocalMuxTracer
@@ -880,6 +882,7 @@ runM Interfaces
                   ) <$> daLocalResponderApplication )
                 (mainThreadId, rethrowPolicy <> daLocalRethrowPolicy)
                 SingResponderMode
+                ntcDataFlow
                 responderMuxChannelTracer
 
             localWithConnectionManager responderInfoChannel connectionHandler k =

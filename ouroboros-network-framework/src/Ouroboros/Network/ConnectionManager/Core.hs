@@ -1,3 +1,4 @@
+{-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE BangPatterns             #-}
 {-# LANGUAGE DataKinds                #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
@@ -30,7 +31,7 @@ import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (assert)
-import Control.Monad (forM_, guard, unless, when, (>=>))
+import Control.Monad (forM_, forever, guard, unless, when, (>=>))
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork (throwTo)
 import Control.Monad.Class.MonadThrow hiding (handle)
@@ -66,7 +67,7 @@ import Ouroboros.Network.ConnectionManager.State (ConnStateIdSupply,
            ConnectionManagerState, ConnectionState (..), MutableConnState (..))
 import Ouroboros.Network.ConnectionManager.State qualified as State
 import Ouroboros.Network.ConnectionManager.Types
-import Ouroboros.Network.InboundGovernor (Event (..), NewConnectionInfo (..))
+import Ouroboros.Network.InboundGovernor (Event (..))
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
@@ -578,14 +579,20 @@ with args@Arguments {
             -- time and making us go above timeout schedules.
             traverse
               (\thread -> do
-                throwTo (asyncThreadId thread) Mx.ColdBlooded
+                throwTo (asyncThreadId thread) AsyncCancelled
                 pure thread
               )
               (getConnThread connState)
           ) state
 
-        atomically $ runLastToFinishM
-                   $ foldMap (LastToFinishM . void <$> waitCatchSTM) asyncs
+        withAsync
+          case inboundGovernorInfoChannel of
+            NotInResponderMode -> pure ()
+            InResponderMode infoChannel ->
+              forever atomically $
+                check . not . null =<< InfoChannel.readMessages infoChannel
+          \_aid -> atomically $ runLastToFinishM
+                     $ foldMap (LastToFinishM . void <$> waitCatchSTM) asyncs
       )
   where
     traceCounters :: StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m) -> m ()
@@ -980,7 +987,7 @@ with args@Arguments {
 
               Right (HandshakeConnectionResult handle (_version, versionData)) -> do
                 let dataFlow = connectionDataFlow versionData
-                (connected, mbTransition, provenance) <- atomically $ do
+                (connected, mbTransition) <- atomically $ do
                   connState <- readTVar connVar
                   case connState of
                     -- Inbound connections cannot be found in this state at this
@@ -1001,13 +1008,12 @@ with args@Arguments {
                       writeTVar connVar connState'
                       return ( True
                              , Just $ mkTransition connState connState'
-                             , Inbound
                              )
 
                     -- Self connection: the inbound side lost the race to update
                     -- the state after negotiating the connection.
-                    OutboundUniState {} -> return (True, Nothing, Outbound)
-                    OutboundDupState {} -> return (True, Nothing, Outbound)
+                    OutboundUniState {} -> return (True, Nothing)
+                    OutboundDupState {} -> return (True, Nothing)
 
                     OutboundIdleState _ _ _ dataFlow' -> do
                       let connState' = InboundIdleState
@@ -1016,7 +1022,6 @@ with args@Arguments {
                       writeTVar connVar connState'
                       return ( True
                              , Just $ mkTransition connState connState'
-                             , Outbound
                              )
 
                     InboundIdleState {} ->
@@ -1032,9 +1037,9 @@ with args@Arguments {
                     DuplexState {} ->
                       throwSTM (withCallStack (ImpossibleState (remoteAddress connId)))
 
-                    TerminatingState {} -> return (False, Nothing, Inbound)
+                    TerminatingState {} -> return (False, Nothing)
 
-                    TerminatedState {} -> return (False, Nothing, Inbound)
+                    TerminatedState {} -> return (False, Nothing)
 
                 traverse_ (traceWith trTracer . TransitionTrace connStateId) mbTransition
                 traceCounters stateVar
@@ -1053,12 +1058,6 @@ with args@Arguments {
 
                 if connected
                   then do
-                    case inboundGovernorInfoChannel of
-                      InResponderMode infoChannel ->
-                        atomically $ InfoChannel.writeMessage
-                                       infoChannel $
-                                       NewConnection (NewConnectionInfo provenance connId dataFlow handle)
-                      _ -> return ()
                     return $ Connected connId dataFlow handle
 
                   -- the connection is in `TerminatingState` or
@@ -1638,7 +1637,7 @@ with args@Arguments {
                 mbTransition <- atomically $ do
                   connState <- readTVar  connVar
                   case connState of
-                    UnnegotiatedState provenance' _ _ ->
+                    UnnegotiatedState _ _ _ ->
                       case dataFlow of
                         Unidirectional -> do
                           -- @
@@ -1657,16 +1656,6 @@ with args@Arguments {
                           -- @
                           let connState' = OutboundDupState connId connThread handle Ticking
                           writeTVar connVar connState'
-                          case provenance' of
-                            Outbound | InResponderMode infoChannel <- inboundGovernorInfoChannel ->
-                              InfoChannel.writeMessage infoChannel .
-                                NewConnection $ NewConnectionInfo provenance' connId dataFlow handle
-                            -- This is a connection to oneself; We don't
-                            -- need to notify the inbound governor, as
-                            -- it's already done by
-                            -- `includeInboundConnectionImpl`
-                            _otherwise -> return ()
-
                           return (Just $ mkTransition connState connState')
 
                     -- @
