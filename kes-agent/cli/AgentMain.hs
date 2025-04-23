@@ -639,6 +639,19 @@ runAsService configPathMay smo' =
           }
 #endif
 
+#if defined(mingw32_HOST_OS)
+installSighupHandler _ =
+  return ()
+restoreSighupHandler () =
+  return ()
+#else
+installSighupHandler optionsSignal = do
+  let handler = Posix.Catch $ putMVar optionsSignal ()
+  Posix.installHandler Posix.lostConnection handler Nothing
+restoreSighupHandler oldSighup =
+  Posix.installHandler Posix.lostConnection oldSighup Nothing
+#endif
+
 -- | Run @kes-agent@ as a regular process.
 runNormally :: Maybe FilePath -> NormalModeOptions -> IO ()
 runNormally configPathMay nmo' = withIOManager $ \ioManager -> do
@@ -656,14 +669,6 @@ runNormally configPathMay nmo' = withIOManager $ \ioManager -> do
         maxPrio <- maybe (error "invalid priority") return $ nmoLogLevel nmo
         return (agentOptions, maxPrio, fromMaybe LogStdout $ nmoLogTarget nmo)
 
-#if !defined(mingw32_HOST_OS)
-  optionsSignal <- newEmptyMVar
-
-  -- install SIGHUP handler
-  let handler = Posix.Catch $ putMVar optionsSignal ()
-  oldSighup <- Posix.installHandler Posix.lostConnection handler Nothing
-#endif
-
   logLock <- newMVar ()
 
   let mkTracer logTarget maxPrio =
@@ -672,9 +677,9 @@ runNormally configPathMay nmo' = withIOManager $ \ioManager -> do
           LogSyslog -> syslogAgentTracer
           LogStdout -> stdoutAgentTracer ColorsAuto maxPrio logLock
 
-#if defined(mingw32_HOST_OS)
-  let goRun = runAgent
-#else
+  optionsSignal <- newEmptyMVar
+  oldSighup <- installSighupHandler optionsSignal
+
   let goRun agent = do
         result <- race (takeMVar optionsSignal) (runAgent agent)
         case result of
@@ -699,7 +704,6 @@ runNormally configPathMay nmo' = withIOManager $ \ioManager -> do
                       )
           Right _ ->
             return ()
-#endif
 
   (agentOptions, maxPrio, logTarget) <- loadOptions
 
@@ -712,9 +716,7 @@ runNormally configPathMay nmo' = withIOManager $ \ioManager -> do
     )
     ( \agent -> do
         finalizeAgent agent
-#if !defined(mingw32_HOST_OS)
-        Posix.installHandler Posix.lostConnection oldSighup Nothing
-#endif
+        restoreSighupHandler oldSighup
     )
     goRun
 

@@ -858,7 +858,6 @@ kesAgentKeySurvivesSighup =
     return ()
 #endif
 
-
 kesAgentEvolvesKeyInitially :: Assertion
 kesAgentEvolvesKeyInitially =
   withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
@@ -1447,7 +1446,13 @@ withAgent controlAddr serviceAddr bootstrapAddrs coldVerKeyFile extraAgentArgs a
     (const action)
 
 withAgentPID ::
-  Maybe FilePath -> Maybe FilePath -> [FilePath] -> FilePath -> [String] -> (Pid -> IO a) -> IO ([Text.Text], a)
+  Maybe FilePath ->
+  Maybe FilePath ->
+  [FilePath] ->
+  FilePath ->
+  [String] ->
+  (Pid -> IO a) ->
+  IO ([Text.Text], a)
 withAgentPID controlAddr serviceAddr bootstrapAddrs coldVerKeyFile extraAgentArgs action =
   withSpawnProcess "kes-agent" args $ \_ (Just hOut) (Just hErr) ph -> go hOut hErr ph
   where
@@ -1484,19 +1489,16 @@ withAgentPID controlAddr serviceAddr bootstrapAddrs coldVerKeyFile extraAgentArg
       , "--log-level"
       , "debug"
       ]
-        ++
-      maybe [] (\a -> ["--control-address", a]) controlAddr
-        ++
-      maybe [] (\a -> ["--service-address", a]) serviceAddr
-        ++ 
-      (
-        if "--config-file" `elem` extraAgentArgs then
-          []
-        else
-          [ "--config-file"
-          , "/dev/null"
-          ]
-      )
+        ++ maybe [] (\a -> ["--control-address", a]) controlAddr
+        ++ maybe [] (\a -> ["--service-address", a]) serviceAddr
+        ++ ( if "--config-file" `elem` extraAgentArgs
+              then
+                []
+              else
+                [ "--config-file"
+                , "/dev/null"
+                ]
+           )
         ++ concat [["--bootstrap-address", a] | a <- bootstrapAddrs]
         ++ extraAgentArgs
 
