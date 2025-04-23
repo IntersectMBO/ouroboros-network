@@ -255,6 +255,8 @@ data Bearer m = Bearer {
     , batchSize :: Int
     -- | Name of the bearer
     , name    :: String
+    -- | Egress poll interval
+    , egressInterval :: DiffTime
     }
 
 newtype SDUSize = SDUSize { getSDUSize :: Word16 }
