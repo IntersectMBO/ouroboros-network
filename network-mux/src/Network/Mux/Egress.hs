@@ -144,7 +144,7 @@ muxer
     => EgressQueue m
     -> Bearer m
     -> m void
-muxer egressQueue Bearer { writeMany, sduSize, batchSize } =
+muxer egressQueue Bearer { writeMany, sduSize, batchSize, egressInterval } =
     withTimeoutSerial $ \timeout ->
     forever $ do
       start <- getMonotonicTime
@@ -156,12 +156,9 @@ muxer egressQueue Bearer { writeMany, sduSize, batchSize } =
       empty <- atomically $ isEmptyTBQueue egressQueue
       when (empty) $ do
         let delta = diffTime end start
-        threadDelay (loopInterval - delta)
+        threadDelay (egressInterval - delta)
 
   where
-    loopInterval :: DiffTime
-    loopInterval = 0.001
-
     maxSDUsPerBatch :: Int
     maxSDUsPerBatch = 100
 

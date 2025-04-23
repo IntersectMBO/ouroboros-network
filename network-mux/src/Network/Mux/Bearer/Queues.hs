@@ -40,12 +40,13 @@ queueChannelAsBearer
   -> Bearer m
 queueChannelAsBearer sduSize tracer QueueChannel { writeQueue, readQueue } = do
       Mx.Bearer {
-        Mx.read      = readMux,
-        Mx.write     = writeMux,
-        Mx.writeMany = writeMuxMany,
-        Mx.sduSize   = sduSize,
-        Mx.batchSize = 2 * (fromIntegral $ Mx.getSDUSize sduSize),
-        Mx.name      = "queue-channel"
+        Mx.read           = readMux,
+        Mx.write          = writeMux,
+        Mx.writeMany      = writeMuxMany,
+        Mx.sduSize        = sduSize,
+        Mx.batchSize      = 2 * (fromIntegral $ Mx.getSDUSize sduSize),
+        Mx.name           = "queue-channel",
+        Mx.egressInterval = 0
       }
     where
       readMux :: Mx.TimeoutFn m -> m (Mx.SDU, Time)
