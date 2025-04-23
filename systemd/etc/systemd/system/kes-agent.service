@@ -5,6 +5,7 @@ Description=KES Agent
 Type=forking
 ExecStart=/usr/local/bin/kes-agent start
 ExecStop=/usr/local/bin/kes-agent stop
+ExecReload=/bin/kill -HUP $MAINPID
 EnvironmentFile=/etc/kes-agent/kes-agent.env
 PIDFile=kes-agent.pid
 

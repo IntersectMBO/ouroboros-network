@@ -79,6 +79,7 @@ data AgentTrace
   | AgentDroppedStagedKey String
   | AgentNoStagedKeyToDrop
   | AgentDebugTrace String
+  | AgentConfigurationError String
   deriving (Show)
 
 instance Pretty AgentTrace where
@@ -103,6 +104,7 @@ instance Pretty AgentTrace where
   pretty (AgentDroppedStagedKey key) = "Agent: dropped staged key: " ++ key
   pretty (AgentListeningOnControlSocket addr) = "Agent: listening on control socket: " ++ addr
   pretty (AgentListeningOnServiceSocket addr) = "Agent: listening on service socket: " ++ addr
+  pretty (AgentConfigurationError err) = "Agent: configuration error: " ++ err
   pretty x = "Agent: " ++ prettify (drop (strLength "Agent") (show x))
     where
       prettify str =

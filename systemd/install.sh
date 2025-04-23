@@ -93,4 +93,3 @@ systemctl start kes-agent
 systemctl start kes-agent-hibernate
 systemctl enable kes-agent
 systemctl enable kes-agent-hibernate
-systemctl status kes-agent

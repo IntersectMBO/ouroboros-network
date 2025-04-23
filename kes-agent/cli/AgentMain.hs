@@ -10,6 +10,7 @@ where
 import Cardano.KESAgent.KES.Evolution
 import Cardano.KESAgent.Priority
 import Cardano.KESAgent.Processes.Agent
+import Cardano.KESAgent.Processes.Agent.Type (Agent (agentOptions))
 import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Serialization.CBOR
 import Cardano.KESAgent.Serialization.TextEnvelope
@@ -45,7 +46,7 @@ import Options.Applicative
 import System.Directory
 import System.Environment
 import System.FilePath ((</>))
-import System.IO (hFlush, hPutStrLn, stderr, stdout)
+import System.IO (hFlush, stdout)
 import System.IOManager
 import Text.Printf
 import Toml (TomlCodec, (.=))
@@ -57,6 +58,12 @@ import System.Posix.User as Posix
 import System.Posix.Signals as Posix
 #endif
 
+data LogTarget
+  = LogDevNull
+  | LogStdout
+  | LogSyslog
+  deriving (Show, Read, Eq, Ord, Enum, Bounded)
+
 data NormalModeOptions
   = NormalModeOptions
   { nmoServicePath :: Maybe String
@@ -65,12 +72,13 @@ data NormalModeOptions
   , nmoLogLevel :: Maybe Priority
   , nmoColdVerKeyFile :: Maybe FilePath
   , nmoGenesisFile :: Maybe FilePath
+  , nmoLogTarget :: Maybe LogTarget
   }
   deriving (Show)
 
 instance Semigroup NormalModeOptions where
-  NormalModeOptions sp1 cp1 bps1 ll1 vkp1 gf1
-    <> NormalModeOptions sp2 cp2 bps2 ll2 vkp2 gf2 =
+  NormalModeOptions sp1 cp1 bps1 ll1 vkp1 gf1 lt1
+    <> NormalModeOptions sp2 cp2 bps2 ll2 vkp2 gf2 lt2 =
       NormalModeOptions
         (sp1 <|> sp2)
         (cp1 <|> cp2)
@@ -78,6 +86,7 @@ instance Semigroup NormalModeOptions where
         (ll1 <|> ll2)
         (vkp1 <|> vkp2)
         (gf1 <|> gf2)
+        (lt1 <|> lt2)
 
 defNormalModeOptions :: NormalModeOptions
 defNormalModeOptions =
@@ -88,6 +97,7 @@ defNormalModeOptions =
     , nmoLogLevel = Just Notice
     , nmoColdVerKeyFile = Nothing -- Just "./cold.vkey"
     , nmoGenesisFile = Nothing
+    , nmoLogTarget = Nothing
     }
 
 instance Monoid NormalModeOptions where
@@ -103,6 +113,7 @@ normalModeTomlCodec =
     <*> Toml.dioptional (Toml.match (_ReadLogLevel >>> Toml._String) "log-level") .= nmoLogLevel
     <*> Toml.dioptional (Toml.string "cold-vkey") .= nmoColdVerKeyFile
     <*> Toml.dioptional (Toml.string "genesis-file") .= nmoGenesisFile
+    <*> Toml.dioptional (Toml.match (_ReadLogTarget >>> Toml._String) "log-target") .= nmoLogTarget
 
 data ServiceModeOptions
   = ServiceModeOptions
@@ -160,7 +171,8 @@ serviceModeTomlCodec =
   ServiceModeOptions
     <$> Toml.dioptional (Toml.string "service-path") .= smoServicePath
     <*> Toml.dioptional (Toml.string "control-path") .= smoControlPath
-    <*> Toml.arraySetOf Toml._String "bootstrap-paths" .= smoBootstrapPaths
+    <*> (fromMaybe mempty <$> Toml.dioptional (Toml.arraySetOf Toml._String "bootstrap-paths"))
+      .= (Just . smoBootstrapPaths)
     <*> Toml.dioptional (Toml.string "user") .= smoUser
     <*> Toml.dioptional (Toml.string "group") .= smoGroup
     <*> Toml.dioptional (Toml.string "cold-vkey") .= smoColdVerKeyFile
@@ -268,6 +280,16 @@ pNormalModeOptions =
                 <> "($KES_AGENT_GENESIS_FILE)"
             )
       )
+    <*> option
+      (Just <$> eitherReader readLogTarget)
+      ( long "log-target"
+          <> value Nothing
+          <> metavar "TARGET"
+          <> help
+            ( "Logging target. One of 'null', 'stdout', 'syslog'."
+                <> "($KES_AGENT_LOG_TARGET)"
+            )
+      )
 
 readLogLevel :: String -> Either String Priority
 readLogLevel "debug" = Right Debug
@@ -279,11 +301,23 @@ readLogLevel "critical" = Right Critical
 readLogLevel "emergency" = Right Emergency
 readLogLevel x = Left $ "Invalid log level " ++ show x
 
+readLogTarget :: String -> Either String LogTarget
+readLogTarget "null" = Right LogDevNull
+readLogTarget "stdout" = Right LogStdout
+readLogTarget "syslog" = Right LogSyslog
+readLogTarget x = Left $ "Invalid log target " ++ show x
+
 _ReadLogLevel :: Toml.TomlBiMap Priority String
 _ReadLogLevel =
   Toml.BiMap
     (Right . map toLower . show)
     (first (Toml.ArbitraryError . Text.pack) . readLogLevel)
+
+_ReadLogTarget :: Toml.TomlBiMap LogTarget String
+_ReadLogTarget =
+  Toml.BiMap
+    (Right . map toLower . show)
+    (first (Toml.ArbitraryError . Text.pack) . readLogTarget)
 
 splitBy :: Ord a => a -> [a] -> [[a]]
 splitBy sep [] = []
@@ -301,6 +335,7 @@ nmoFromEnv = do
   coldVerKeyPath <- lookupEnv "KES_AGENT_COLD_VK"
   genesisFile <- lookupEnv "KES_AGENT_GENESIS_FILE"
   logLevel <- fmap (either error id . readLogLevel) <$> lookupEnv "KES_AGENT_LOG_LEVEL"
+  logTarget <- fmap (either error id . readLogTarget) <$> lookupEnv "KES_AGENT_LOG_TARGET"
   return
     NormalModeOptions
       { nmoServicePath = servicePath
@@ -309,6 +344,7 @@ nmoFromEnv = do
       , nmoLogLevel = logLevel
       , nmoColdVerKeyFile = coldVerKeyPath
       , nmoGenesisFile = genesisFile
+      , nmoLogTarget = logTarget
       }
 
 nmoFromFiles :: IO NormalModeOptions
@@ -472,6 +508,7 @@ agentTracePrio AgentRequestingKeyUpdate {} = Info
 agentTracePrio AgentPushingKeyUpdate {} = Notice
 agentTracePrio AgentHandlingKeyUpdate {} = Info
 agentTracePrio AgentDebugTrace {} = Debug
+agentTracePrio AgentConfigurationError {} = Critical
 
 -- | Encode an agent trace message as a 'ByteString'. Needed for the syslog
 -- tracer.
@@ -524,19 +561,62 @@ runAsService configPathMay smo' =
   where
     go :: IO ()
     go = withIOManager $ \ioManager -> do
-      smoEnv <- smoFromEnv
-      smoExtra <-
-        maybe
-          (pure defServiceModeOptions)
-          (optionsFromFile defServiceModeOptions serviceModeTomlCodec)
-          configPathMay
-      smoFiles <- smoFromFiles
-      let smo = smo' <> smoEnv <> smoExtra <> smoFiles <> defServiceModeOptions
-      agentOptions <- smoToAgentOptions smo
-      groupName <- maybe (error "Invalid group") return $ smoGroup smo
-      userName <- maybe (error "Invalid user") return $ smoUser smo
-      servicePath <- maybe (error "Invalid service address") return $ smoServicePath smo
-      controlPath <- parseControlPath <$> maybe (error "Invalid control address") return (smoControlPath smo)
+      let loadOptions :: IO (AgentOptions IO SockAddr StandardCrypto, String, String, FilePath, Maybe FilePath)
+          loadOptions = do
+            smoEnv <- smoFromEnv
+            smoExtra <-
+              maybe
+                (pure defServiceModeOptions)
+                (optionsFromFile defServiceModeOptions serviceModeTomlCodec)
+                configPathMay
+            smoFiles <- smoFromFiles
+            let smo = smo' <> smoEnv <> smoExtra <> smoFiles <> defServiceModeOptions
+            agentOptions <- smoToAgentOptions smo
+            groupName <- maybe (error "Invalid group") return $ smoGroup smo
+            userName <- maybe (error "Invalid user") return $ smoUser smo
+            servicePath <- maybe (error "Invalid service address") return $ smoServicePath smo
+            controlPath <- parseControlPath <$> maybe (error "Invalid control address") return (smoControlPath smo)
+            return (agentOptions, groupName, userName, servicePath, controlPath)
+
+
+      let goRun agent = do
+            optionsSignal <- newEmptyMVar
+
+            -- install SIGHUP handler
+            let handler = Posix.CatchOnce $ putMVar optionsSignal ()
+            oldSighup <- Posix.installHandler Posix.lostConnection handler Nothing
+
+            result <- race (takeMVar optionsSignal) (runAgent agent)
+
+            case result of
+              Left _ ->
+                ( do
+                    -- Received a SIGHUP: reload configuration
+                    (agentOptions', userName', groupName', servicePath', controlPath') <- loadOptions
+                    gid <- groupID <$> Posix.getGroupEntryForName groupName'
+                    uid <- userID <$> Posix.getUserEntryForName userName'
+                    Posix.setFileCreationMask 0770
+                    agent' <-
+                      renewAgent
+                        (Proxy @StandardCrypto)
+                        (socketSnocket ioManager)
+                        makeSocketRawBearer
+                        agentOptions' { agentTracer = defaultAgentTracer }
+                        agent
+                    setOwnerAndGroup servicePath' uid gid
+                    mapM_ (\path -> setOwnerAndGroup path uid gid) controlPath'
+                    goRun agent'
+                )
+                  `catch` ( \(e :: SomeException) -> do
+                              traceWith
+                                (agentTracer $ agentOptions agent)
+                                (AgentConfigurationError $ show e)
+                              goRun agent
+                          )
+              Right _ ->
+                return ()
+
+      (agentOptions, groupName, userName, servicePath, controlPath) <- loadOptions
 
       serviced
         simpleDaemon
@@ -551,10 +631,10 @@ runAsService configPathMay smo' =
                   makeSocketRawBearer
                   agentOptions {agentTracer = defaultAgentTracer}
               setOwnerAndGroup servicePath uid gid
-              mapM (\path -> setOwnerAndGroup path uid gid) controlPath
+              mapM_ (\path -> setOwnerAndGroup path uid gid) controlPath
               return agent
           , program = \agent -> do
-              runAgent agent `finally` finalizeAgent agent
+              goRun agent `finally` finalizeAgent agent
           , group = Just groupName
           }
 #endif
@@ -562,7 +642,7 @@ runAsService configPathMay smo' =
 -- | Run @kes-agent@ as a regular process.
 runNormally :: Maybe FilePath -> NormalModeOptions -> IO ()
 runNormally configPathMay nmo' = withIOManager $ \ioManager -> do
-  let loadOptions :: IO (AgentOptions IO SockAddr StandardCrypto, Priority)
+  let loadOptions :: IO (AgentOptions IO SockAddr StandardCrypto, Priority, LogTarget)
       loadOptions = do
         nmoEnv <- nmoFromEnv
         nmoExtra <-
@@ -574,9 +654,7 @@ runNormally configPathMay nmo' = withIOManager $ \ioManager -> do
         let nmo = nmo' <> nmoEnv <> nmoExtra <> nmoFiles <> defNormalModeOptions
         agentOptions <- nmoToAgentOptions nmo
         maxPrio <- maybe (error "invalid priority") return $ nmoLogLevel nmo
-        return (agentOptions, maxPrio)
-
-  (agentOptions, maxPrio) <- loadOptions
+        return (agentOptions, maxPrio, fromMaybe LogStdout $ nmoLogTarget nmo)
 
   optionsSignal <- newEmptyMVar
 
@@ -585,35 +663,45 @@ runNormally configPathMay nmo' = withIOManager $ \ioManager -> do
   oldSighup <- Posix.installHandler Posix.lostConnection handler Nothing
   logLock <- newMVar ()
 
+  let mkTracer logTarget maxPrio =
+        case logTarget of
+          LogDevNull -> nullTracer
+          LogSyslog -> syslogAgentTracer
+          LogStdout -> stdoutAgentTracer ColorsAuto maxPrio logLock
+
   let goRun agent = do
         result <- race (takeMVar optionsSignal) (runAgent agent)
         case result of
           Left _ ->
             ( do
                 -- Received a SIGHUP: reload configuration
-                (agentOptions', maxPrio') <- loadOptions
+                (agentOptions', maxPrio', logTarget') <- loadOptions
                 agent' <-
                   renewAgent
                     (Proxy @StandardCrypto)
                     (socketSnocket ioManager)
                     makeSocketRawBearer
-                    agentOptions' {agentTracer = stdoutAgentTracer ColorsAuto maxPrio' logLock}
+                    agentOptions' {agentTracer = mkTracer logTarget' maxPrio'}
                     agent
                 goRun agent'
             )
               `catch` ( \(e :: SomeException) -> do
-                          hPutStrLn stderr (show e)
+                          traceWith
+                            (agentTracer $ agentOptions agent)
+                            (AgentConfigurationError $ show e)
                           goRun agent
                       )
           Right _ ->
             return ()
+
+  (agentOptions, maxPrio, logTarget) <- loadOptions
 
   bracket
     ( newAgent
         (Proxy @StandardCrypto)
         (socketSnocket ioManager)
         makeSocketRawBearer
-        agentOptions {agentTracer = stdoutAgentTracer ColorsAuto maxPrio logLock}
+        agentOptions {agentTracer = mkTracer logTarget maxPrio}
     )
     ( \agent -> do
         finalizeAgent agent
