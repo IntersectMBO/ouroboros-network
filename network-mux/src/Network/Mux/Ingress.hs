@@ -12,7 +12,8 @@ module Network.Mux.Ingress
   ) where
 
 import Data.Array
-import Data.ByteString.Builder.Internal (lazyByteStringInsert, lazyByteStringThreshold)
+import Data.ByteString.Builder.Internal (lazyByteStringInsert,
+           lazyByteStringThreshold)
 import Data.ByteString.Lazy qualified as BL
 import Data.List (nub)
 

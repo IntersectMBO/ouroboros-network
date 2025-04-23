@@ -460,6 +460,7 @@ run blockGeneratorArgs limits ni na
                              = aAcceptedLimits na
       , Common.daMode          = aDiffusionMode na
       , Common.daPublicPeerSelectionVar
+      , Common.daEgressPollInterval = 0.001
       }
 
     argsExtra :: P2P.ArgumentsExtra

@@ -17,6 +17,7 @@ module Ouroboros.Network.Diffusion.Common
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI (DiffTime)
 import Control.Tracer (Tracer, nullTracer)
 import Data.ByteString.Lazy (ByteString)
 import Data.List.NonEmpty (NonEmpty)
@@ -146,6 +147,9 @@ data Arguments m ntnFd ntnAddr ntcFd ntcAddr = Arguments {
       -- apps (e.g. peer sharing).
       --
     , daPublicPeerSelectionVar   :: StrictTVar m (PublicPeerSelectionState ntnAddr)
+
+    -- | Mux egress queue poll interval
+    , daEgressPollInterval       :: DiffTime
   }
 
 

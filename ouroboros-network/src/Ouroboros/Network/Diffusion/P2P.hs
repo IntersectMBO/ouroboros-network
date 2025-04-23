@@ -71,7 +71,7 @@ import Network.Mux.Bearer (withReadBufferIO)
 
 import Ouroboros.Network.Context (ResponderContext)
 import Ouroboros.Network.Snocket (LocalAddress, LocalSocket (..), Snocket,
-           localSocketFileDescriptor, makeLocalBearer, makeSocketBearer)
+           localSocketFileDescriptor, makeLocalBearer, makeSocketBearer')
 import Ouroboros.Network.Snocket (FileDescriptor)
 import Ouroboros.Network.Snocket qualified as Snocket
 import Ouroboros.Network.Context (ExpandedInitiatorContext)
@@ -1448,10 +1448,14 @@ run sigUSR1Signal tracers tracersExtra args argsExtra apps appsExtra = do
                (\e -> traceWith tracer (DiffusionErrored e)
                    >> throwIO (DiffusionError e))
          $ withIOManager $ \iocp -> do
+
+             -- Clamp the mux egress poll interval to sane values.
+             let egressInterval = max 0 $ min 0.200 (daEgressPollInterval args)
+
              runM
                Interfaces {
                  diNtnSnocket                = Snocket.socketSnocket iocp,
-                 diNtnBearer                 = makeSocketBearer,
+                 diNtnBearer                 = makeSocketBearer' egressInterval,
                  diWithBuffer                = withReadBufferIO,
                  diNtnConfigureSocket        = configureSocket,
                  diNtnConfigureSystemdSocket =

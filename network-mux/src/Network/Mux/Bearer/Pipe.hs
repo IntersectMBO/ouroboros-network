@@ -75,12 +75,13 @@ pipeAsBearer
   -> Bearer IO
 pipeAsBearer sduSize tracer channel =
       Mx.Bearer {
-          Mx.read      = readPipe,
-          Mx.write     = writePipe,
-          Mx.writeMany = writePipeMany,
-          Mx.sduSize   = sduSize,
-          Mx.name      = "pipe",
-          Mx.batchSize = fromIntegral $ Mx.getSDUSize sduSize
+          Mx.read           = readPipe,
+          Mx.write          = writePipe,
+          Mx.writeMany      = writePipeMany,
+          Mx.sduSize        = sduSize,
+          Mx.name           = "pipe",
+          Mx.batchSize      = fromIntegral $ Mx.getSDUSize sduSize,
+          Mx.egressInterval = 0
         }
     where
       readPipe :: Mx.TimeoutFn IO -> IO (Mx.SDU, Time)

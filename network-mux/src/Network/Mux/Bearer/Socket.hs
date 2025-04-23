@@ -19,10 +19,10 @@ import Control.Monad.Class.MonadTimer.SI hiding (timeout)
 
 import Network.Socket qualified as Socket
 #if !defined(mingw32_HOST_OS)
-import Network.Socket.ByteString.Lazy qualified as Socket (recv, sendAll)
-import Network.Socket.ByteString qualified as Socket (sendMany)
 import Data.ByteString.Internal (create)
 import Foreign.Marshal.Utils
+import Network.Socket.ByteString qualified as Socket (sendMany)
+import Network.Socket.ByteString.Lazy qualified as Socket (recv, sendAll)
 #else
 import System.Win32.Async.Socket.ByteString.Lazy qualified as Win32.Async
 #endif
@@ -53,17 +53,19 @@ socketAsBearer
   -> Int
   -> Maybe (Mx.ReadBuffer IO)
   -> DiffTime
+  -> DiffTime
   -> Tracer IO Mx.Trace
   -> Socket.Socket
   -> Bearer IO
-socketAsBearer sduSize batchSize readBuffer_m sduTimeout tracer sd =
+socketAsBearer sduSize batchSize readBuffer_m sduTimeout pollInterval tracer sd =
       Mx.Bearer {
-        Mx.read      = readSocket,
-        Mx.write     = writeSocket,
-        Mx.writeMany = writeSocketMany,
-        Mx.sduSize   = sduSize,
-        Mx.batchSize = batchSize,
-        Mx.name      = "socket-bearer"
+        Mx.read           = readSocket,
+        Mx.write          = writeSocket,
+        Mx.writeMany      = writeSocketMany,
+        Mx.sduSize        = sduSize,
+        Mx.batchSize      = batchSize,
+        Mx.name           = "socket-bearer",
+        Mx.egressInterval = pollInterval
       }
     where
       readSocket :: Mx.TimeoutFn IO -> IO (Mx.SDU, Time)

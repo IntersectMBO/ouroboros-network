@@ -20,8 +20,8 @@ import Data.ByteString.Lazy qualified as BL
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
-import Control.Monad.Class.MonadTimer.SI hiding (timeout)
 import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI hiding (timeout)
 
 import Network.Mux.Timeout
 import Network.Mux.Types
@@ -144,7 +144,7 @@ muxer
     => EgressQueue m
     -> Bearer m
     -> m void
-muxer egressQueue Bearer { writeMany, sduSize, batchSize } =
+muxer egressQueue Bearer { writeMany, sduSize, batchSize, egressInterval } =
     withTimeoutSerial $ \timeout ->
     forever $ do
       start <- getMonotonicTime
@@ -156,12 +156,9 @@ muxer egressQueue Bearer { writeMany, sduSize, batchSize } =
       empty <- atomically $ isEmptyTBQueue egressQueue
       when (empty) $ do
         let delta = diffTime end start
-        threadDelay (loopInterval - delta)
+        threadDelay (egressInterval - delta)
 
   where
-    loopInterval :: DiffTime
-    loopInterval = 0.001
-
     maxSDUsPerBatch :: Int
     maxSDUsPerBatch = 100
 
