@@ -581,13 +581,13 @@ runAsService configPathMay smo' =
 
       let goRun agent = do
             optionsSignal <- newEmptyMVar
-
             -- install SIGHUP handler
             let handler = Posix.CatchOnce $ putMVar optionsSignal ()
             oldSighup <- Posix.installHandler Posix.lostConnection handler Nothing
 
             result <- race (takeMVar optionsSignal) (runAgent agent)
-
+            runAgent agent
+            let result = Right ()
             case result of
               Left _ ->
                 ( do
@@ -656,11 +656,14 @@ runNormally configPathMay nmo' = withIOManager $ \ioManager -> do
         maxPrio <- maybe (error "invalid priority") return $ nmoLogLevel nmo
         return (agentOptions, maxPrio, fromMaybe LogStdout $ nmoLogTarget nmo)
 
+#if !defined(mingw32_HOST_OS)
   optionsSignal <- newEmptyMVar
 
   -- install SIGHUP handler
   let handler = Posix.Catch $ putMVar optionsSignal ()
   oldSighup <- Posix.installHandler Posix.lostConnection handler Nothing
+#endif
+
   logLock <- newMVar ()
 
   let mkTracer logTarget maxPrio =
@@ -669,6 +672,9 @@ runNormally configPathMay nmo' = withIOManager $ \ioManager -> do
           LogSyslog -> syslogAgentTracer
           LogStdout -> stdoutAgentTracer ColorsAuto maxPrio logLock
 
+#if defined(mingw32_HOST_OS)
+  let goRun = runAgent
+#else
   let goRun agent = do
         result <- race (takeMVar optionsSignal) (runAgent agent)
         case result of
@@ -693,6 +699,7 @@ runNormally configPathMay nmo' = withIOManager $ \ioManager -> do
                       )
           Right _ ->
             return ()
+#endif
 
   (agentOptions, maxPrio, logTarget) <- loadOptions
 
@@ -705,7 +712,9 @@ runNormally configPathMay nmo' = withIOManager $ \ioManager -> do
     )
     ( \agent -> do
         finalizeAgent agent
+#if !defined(mingw32_HOST_OS)
         Posix.installHandler Posix.lostConnection oldSighup Nothing
+#endif
     )
     goRun
 
