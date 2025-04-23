@@ -225,15 +225,19 @@ testCrypto proxyC lock tracer ioManager =
   testGroup
     name
     [ testGroup
-        "IO"
-        [ testProperty "one key through chain" $
-            testIO lock (testOneKeyThroughChain proxyC)
-        ]
-    , testGroup
         "IOSim"
         [ testProperty "one key through chain" $
             testIOSim (testOneKeyThroughChain proxyC)
         ]
+
+    -- These take a very long time to run, and we are already exercising the
+    -- @IO@ instances through the end-to-end tests, so we'll keep this
+    -- disabled.
+    -- , testGroup
+    --     "IO"
+    --     [ testProperty "one key through chain" $
+    --         testIO lock (testOneKeyThroughChain proxyC)
+    --     ]
     ]
   where
     name =
