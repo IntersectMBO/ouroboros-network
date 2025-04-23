@@ -919,7 +919,7 @@ runWithSocket cap clientBuf_m serverBuf_m initApps respApps = withIOManager (\io
       )
    )
   where
-    mkBearer buf_m sock tr = getBearer makeSocketBearer (-1) tr sock buf_m
+    mkBearer buf_m sock tr = getBearer (makeSocketBearer' 0.001) (-1) tr sock buf_m
     clientTracer = contramap (Mx.WithBearer "client") activeTracer
     serverTracer = contramap (Mx.WithBearer "server") activeTracer
 

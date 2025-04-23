@@ -37,6 +37,7 @@
 - Renamed `Arguments` to `DiffusionConfiguration`
 - Renamed `Applications` to `DiffusionApplications`
 - `runM` function now receives `ExtraParameters` as an argument
+- Configurable Mux Egress Poll Interval
 
 ## 0.20.1.0 -- 2025-03-13
 

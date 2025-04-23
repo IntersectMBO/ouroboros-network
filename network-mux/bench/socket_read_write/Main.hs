@@ -201,11 +201,11 @@ startServerMany sndSizeV ad = forever $ do
 -- It will send streams of data over the 41 and 42 miniprotocol.
 -- Multiplexing is done with a separate thread running
 -- the Egress.muxer function.
-startServerEgresss :: StrictTMVar IO Int64 -> Socket -> IO ()
-startServerEgresss sndSizeV ad = forever $ do
+startServerEgresss :: DiffTime -> StrictTMVar IO Int64 -> Socket -> IO ()
+startServerEgresss pollInterval sndSizeV ad = forever $ do
     (sd, _) <- Socket.accept ad
     withReadBufferIO (\buffer -> do
-      bearer <-getBearer makeSocketBearer sduTimeout activeTracer sd buffer
+      bearer <- getBearer (makeSocketBearer' pollInterval) sduTimeout activeTracer sd buffer
       sndSize <- atomically $ takeTMVar sndSizeV
       eq <- atomically $ newTBQueue 100
       w42 <- newTVarIO BL.empty
@@ -273,25 +273,28 @@ main = do
         ad1 <- Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
         ad2 <- Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
         ad3 <- Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
+        ad4 <- Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
 
-        return (ad1, ad2, ad3)
+        return (ad1, ad2, ad3, ad4)
       )
-      (\(ad1, ad2, ad3) -> do
+      (\(ad1, ad2, ad3, ad4) -> do
         Socket.close ad1
         Socket.close ad2
         Socket.close ad3
+        Socket.close ad4
       )
-      (\(ad1, ad2, ad3) -> do
+      (\(ad1, ad2, ad3, ad4) -> do
         sndSizeV <- newEmptyTMVarIO
         sndSizeMV <- newEmptyTMVarIO
         sndSizeEV <- newEmptyTMVarIO
         addr <- setupServer ad1
         addrM <- setupServer ad2
         addrE <- setupServer ad3
+        addrF <- setupServer ad4
 
         withAsync (startServer sndSizeV ad1) $ \said -> do
           withAsync (startServerMany sndSizeMV ad2) $ \saidM -> do
-            withAsync (startServerEgresss sndSizeEV ad3) $ \saidE -> do
+            withAsync (startServerEgresss 0.001 sndSizeEV ad3) $ \saidE -> withAsync (startServerEgresss 0 sndSizeEV ad4) $ \saidF -> do
               defaultMain [
                   -- Suggested Max SDU size for Socket bearer
                   bench "Read/Write Benchmark 12288 byte SDUs"  $ nfIO $ readBenchmark sndSizeV 12288 addr
@@ -305,9 +308,13 @@ main = do
                 , bench "Read/Write-Many Benchmark 914 byte SDUs"  $ nfIO $ readBenchmark sndSizeMV 914 addrM
                 , bench "Read/Write-Many Benchmark 10 byte SDUs"  $ nfIO $ readBenchmark sndSizeMV 10 addrM
 
-                  -- Use standard muxer and demuxer
-                , bench "Read/Write Mux Benchmark 800+10 byte SDUs"  $ nfIO $ readDemuxerBenchmark sndSizeEV 800 addrE
-                , bench "Read/Write Mux Benchmark 12288+10 byte SDUs"  $ nfIO $ readDemuxerBenchmark sndSizeEV 12288 addrE
+                  -- Use standard muxer and demuxer, 1ms poll
+                , bench "Read/Write Mux Benchmark 800+10 byte SDUs, 1ms Poll"  $ nfIO $ readDemuxerBenchmark sndSizeEV 800 addrE
+                , bench "Read/Write Mux Benchmark 12288+10 byte SDUs, 1ms Poll"  $ nfIO $ readDemuxerBenchmark sndSizeEV 12288 addrE
+
+                  -- Use standard muxer and demuxer, 0ms poll
+                , bench "Read/Write Mux Benchmark 800+10 byte SDUs, 0ms Poll"  $ nfIO $ readDemuxerBenchmark sndSizeEV 800 addrF
+                , bench "Read/Write Mux Benchmark 12288+10 byte SDUs, 0ms Poll"  $ nfIO $ readDemuxerBenchmark sndSizeEV 12288 addrF
 
                   -- Use standard demuxer
                 , bench "Read/Write Demuxer Queuing Benchmark 10 byte SDUs"  $ nfIO $ readDemuxerQueueBenchmark sndSizeV 10 addr
@@ -316,4 +323,5 @@ main = do
               cancel said
               cancel saidM
               cancel saidE
+              cancel saidF
       )

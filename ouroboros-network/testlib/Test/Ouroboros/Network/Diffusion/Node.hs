@@ -475,6 +475,7 @@ run blockGeneratorArgs limits ni na
       , Diffusion.dcReadLedgerPeerSnapshot = pure Nothing -- ^ tested independently
       , Diffusion.dcMuxForkPolicy          = noBindForkPolicy
       , Diffusion.dcLocalMuxForkPolicy     = noBindForkPolicy
+      , Diffusion.dcEgressPollInterval     = 0.001
       }
 
     appArgs :: PeerMetrics m NtNAddr

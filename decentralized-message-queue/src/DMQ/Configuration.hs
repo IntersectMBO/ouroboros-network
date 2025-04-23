@@ -214,6 +214,7 @@ mkDiffusionConfiguration
       , Diffusion.dcBulkChurnInterval        = dmqcChurnInterval
       , Diffusion.dcMuxForkPolicy            = Diffusion.noBindForkPolicy -- TODO: Make option flag for responderForkPolicy
       , Diffusion.dcLocalMuxForkPolicy       = Diffusion.noBindForkPolicy -- TODO: Make option flag for responderForkPolicy
+      , Diffusion.dcEgressPollInterval       = 0                          -- TODO: Make option flag for egress poll interval
       }
   where
     hints = defaultHints {
