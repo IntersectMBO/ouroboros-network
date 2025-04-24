@@ -1531,6 +1531,5 @@ withSpawnProcess cmd args action = do
           , std_out = CreatePipe
           , std_err = CreatePipe
           , new_session = True
-          , env = Just []
           }
   withCreateProcess cp action
