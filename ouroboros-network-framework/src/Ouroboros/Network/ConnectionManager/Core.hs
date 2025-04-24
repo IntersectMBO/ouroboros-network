@@ -28,7 +28,7 @@ module Ouroboros.Network.ConnectionManager.Core
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Exception (assert)
+import Control.Exception (SomeAsyncException, assert)
 import Control.Monad (forM_, guard, unless, when, (>=>))
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork (throwTo)
@@ -1532,12 +1532,18 @@ with args@Arguments {
                     _ -> pure ()
 
                   traceWith tracer (TrConnect addr peerAddr diffusionMode)
-                  connect snocket socket peerAddr
-                    `catch` \e -> do
+                  catchJust
+                    (\e ->
+                      case fromException e :: Maybe SomeAsyncException of
+                        Just {} -> Nothing
+                        Nothing -> Just e
+                    )
+                    (connect snocket socket peerAddr)
+                    (\e -> do
                       traceWith tracer (TrConnectError addr peerAddr e)
                       -- the handler attached by `bracketOnError` will
                       -- reset the state
-                      throwIO e
+                      throwIO e)
                   localAddress <- getLocalAddr snocket socket
                   let connId = ConnectionId { localAddress
                                             , remoteAddress = peerAddr
