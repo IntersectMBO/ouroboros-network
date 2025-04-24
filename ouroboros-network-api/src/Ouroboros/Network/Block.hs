@@ -448,6 +448,10 @@ wrapCBORinCBOR enc = encode . mkSerialised enc
 --
 -- The CBOR-in-CBOR encoding gives us the 'ByteString' we need in order to
 -- to construct annotations.
+--
+-- It is non-incremental: see
+-- https://github.com/IntersectMBO/ouroboros-network/issues/5114
+--
 unwrapCBORinCBOR :: (forall s. Decoder s (Lazy.ByteString -> a))
                  -> (forall s. Decoder s a)
 unwrapCBORinCBOR dec = fromSerialised dec =<< decode
