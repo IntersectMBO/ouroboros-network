@@ -1,6 +1,6 @@
 {-# LANGUAGE NamedFieldPuns #-}
 
-module Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionActions where
+module Cardano.Network.PeerSelection.Governor.PeerSelectionActions where
 
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
 import Control.Concurrent.Class.MonadSTM

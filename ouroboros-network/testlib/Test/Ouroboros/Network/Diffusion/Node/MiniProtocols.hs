@@ -74,7 +74,7 @@ import Ouroboros.Network.Block (HasHeader, HeaderHash, Point)
 import Ouroboros.Network.Block qualified as Block
 import Ouroboros.Network.Context
 import Ouroboros.Network.ControlMessage (ControlMessage (..))
-import Ouroboros.Network.Diffusion.Types qualified as Diff
+import Ouroboros.Network.Diffusion qualified as Diffusion
 import Ouroboros.Network.Driver.Limits
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.KeepAlive
@@ -86,7 +86,6 @@ import Ouroboros.Network.NodeToNode (blockFetchMiniProtocolNum,
            chainSyncMiniProtocolNum, keepAliveMiniProtocolNum,
            peerSharingMiniProtocolNum)
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
-import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 import Ouroboros.Network.PeerSelection.PeerSharing qualified as PSTypes
 import Ouroboros.Network.PeerSharing (PeerSharingAPI, bracketPeerSharingClient,
@@ -185,10 +184,8 @@ data LimitsAndTimeouts header block = LimitsAndTimeouts
 
 -- | Arguments for protocol handlers required by 'nodeApplications'.
 --
-data AppArgs extraAPI header block m = AppArgs
-  { aaLedgerPeersConsensusInterface
-     :: LedgerPeersConsensusInterface extraAPI m
-  , aaKeepAliveStdGen
+data AppArgs header block m = AppArgs
+  { aaKeepAliveStdGen
      :: StdGen
   , aaDiffusionMode
      :: DiffusionMode
@@ -215,7 +212,7 @@ data AppArgs extraAPI header block m = AppArgs
 
 -- | Protocol handlers.
 --
-applications :: forall extraAPI block header s m.
+applications :: forall block header s m.
                 ( Alternative (STM m)
                 , MonadAsync m
                 , MonadFork  m
@@ -238,11 +235,11 @@ applications :: forall extraAPI block header s m.
              -> NodeKernel header block s m
              -> Codecs NtNAddr header block m
              -> LimitsAndTimeouts header block
-             -> AppArgs extraAPI header block m
+             -> AppArgs header block m
              -> (block -> header)
-             -> Diff.Applications NtNAddr NtNVersion NtNVersionData
-                                  NtCAddr NtCVersion NtCVersionData
-                                  extraAPI m ()
+             -> Diffusion.Applications NtNAddr NtNVersion NtNVersionData
+                                       NtCAddr NtCVersion NtCVersionData
+                                       m ()
 applications debugTracer nodeKernel
              Codecs { chainSyncCodec, blockFetchCodec
                     , keepAliveCodec, pingPongCodec
@@ -250,8 +247,7 @@ applications debugTracer nodeKernel
                     }
              limits
              AppArgs
-               { aaLedgerPeersConsensusInterface
-               , aaDiffusionMode
+               { aaDiffusionMode
                , aaKeepAliveStdGen
                , aaKeepAliveInterval
                , aaPingPongInterval
@@ -261,36 +257,32 @@ applications debugTracer nodeKernel
                , aaPeerMetrics
                }
              toHeader =
-    Diff.Applications
-      { Diff.daApplicationInitiatorMode =
+    Diffusion.Applications
+      { Diffusion.daApplicationInitiatorMode =
           simpleSingletonVersions UnversionedProtocol
                                   (NtNVersionData InitiatorOnlyDiffusionMode aaOwnPeerSharing)
                                   (\NtNVersionData {ntnPeerSharing} -> initiatorApp ntnPeerSharing)
-      , Diff.daApplicationInitiatorResponderMode =
+      , Diffusion.daApplicationInitiatorResponderMode =
           simpleSingletonVersions UnversionedProtocol
                                   (NtNVersionData aaDiffusionMode aaOwnPeerSharing)
                                   (\NtNVersionData {ntnPeerSharing} -> initiatorAndResponderApp ntnPeerSharing)
-      , Diff.daLocalResponderApplication =
+      , Diffusion.daLocalResponderApplication =
           simpleSingletonVersions UnversionedProtocol
                                   UnversionedProtocolData
                                   (\_ -> localResponderApp)
-      , Diff.daLedgerPeersCtx =
-          aaLedgerPeersConsensusInterface
 
-      , Diff.daRethrowPolicy          =
+      , Diffusion.daRethrowPolicy          =
              muxErrorRethrowPolicy
           <> ioErrorRethrowPolicy
 
         -- we are not using local connections, so we can make all the
         -- errors fatal.
-      , Diff.daLocalRethrowPolicy     =
+      , Diffusion.daLocalRethrowPolicy     =
              mkRethrowPolicy
                (\ _ (_ :: SomeException) -> ShutdownNode)
-      , Diff.daPeerMetrics            = aaPeerMetrics
-        -- fetch mode is not used (no block-fetch mini-protocol)
-      , Diff.daBlockFetchMode         = pure (PraosFetchMode FetchModeDeadline)
-      , Diff.daReturnPolicy           = \_ -> config_REPROMOTE_DELAY
-      , Diff.daPeerSharingRegistry    = nkPeerSharingRegistry nodeKernel
+      , Diffusion.daPeerMetrics            = aaPeerMetrics
+      , Diffusion.daReturnPolicy           = \_ -> config_REPROMOTE_DELAY
+      , Diffusion.daPeerSharingRegistry    = nkPeerSharingRegistry nodeKernel
       }
   where
     initiatorApp

@@ -1,14 +1,14 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- Constants used in 'Ouroboros.Network.Diffusion'
-module Ouroboros.Cardano.Network.Diffusion.Policies where
+module Cardano.Network.Diffusion.Policies where
 
 import Control.Concurrent.Class.MonadSTM.Strict
 
+import Cardano.Network.PeerSelection.Churn (ChurnMode (..))
 import Data.List (sortOn)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
-import Ouroboros.Cardano.Network.Types (ChurnMode (..))
 import Ouroboros.Network.Diffusion.Policies (addRand, optionalMerge,
            simplePeerSelectionPolicy)
 import Ouroboros.Network.ExitPolicy

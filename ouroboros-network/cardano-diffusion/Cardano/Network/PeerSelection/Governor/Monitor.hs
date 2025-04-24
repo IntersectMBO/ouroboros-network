@@ -9,7 +9,7 @@
 -- * monitoring the completion of asynchronous governor job
 -- * monitoring connections
 --
-module Ouroboros.Cardano.Network.PeerSelection.Governor.Monitor
+module Cardano.Network.PeerSelection.Governor.Monitor
   ( targetPeers
   , localRoots
   , monitorLedgerStateJudgement
@@ -23,18 +23,19 @@ import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
 
 import Cardano.Network.ConsensusMode
+import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
 import Cardano.Network.PeerSelection.Bootstrap (isBootstrapPeersEnabled,
            isNodeAbleToMakeProgress, requiresBootstrapPeers)
+import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
+import Cardano.Network.PeerSelection.Governor.PeerSelectionActions qualified as Cardano
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
+import Cardano.Network.PeerSelection.PublicRootPeers qualified as Cardano.PublicRootPeers
 import Cardano.Network.Types (LedgerStateJudgement (..))
 import Control.Exception (assert)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
-import Ouroboros.Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionActions qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
-import Ouroboros.Cardano.Network.PublicRootPeers qualified as Cardano
 import Ouroboros.Network.PeerSelection.Governor.ActivePeers
            (jobDemoteActivePeer)
 import Ouroboros.Network.PeerSelection.Governor.Monitor (jobVerifyPeerSnapshot)
@@ -279,7 +280,7 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
             Set.null $ KnownPeers.toSet knownPeers'
                        `Set.difference`
                        (  LocalRootPeers.keysSet localRootPeers'
-                       <> PublicRootPeers.getBootstrapPeers publicRootPeers')
+                       <> Cardano.PublicRootPeers.getBootstrapPeers publicRootPeers')
 
           -- If the node is in a vulnerable position, i.e. connected to a
           -- local root that is no longer deemed trustable we have to
@@ -418,7 +419,7 @@ monitorBootstrapPeersFlag Cardano.ExtraPeerSelectionActions { Cardano.readUseBoo
     ubp <- readUseBootstrapPeers
     check (ubp /= bootstrapPeersFlag)
     let nonEstablishedBootstrapPeers =
-          PublicRootPeers.getBootstrapPeers publicRootPeers
+          Cardano.PublicRootPeers.getBootstrapPeers publicRootPeers
           Set.\\
           EstablishedPeers.toSet establishedPeers
           Set.\\
@@ -554,7 +555,7 @@ monitorLedgerStateJudgement PeerSelectionActions{
             })
         YoungEnough -> do
           let nonEstablishedBootstrapPeers =
-                PublicRootPeers.getBootstrapPeers publicRootPeers
+                Cardano.PublicRootPeers.getBootstrapPeers publicRootPeers
                 Set.\\
                 EstablishedPeers.toSet establishedPeers
                 Set.\\
@@ -641,7 +642,7 @@ waitForSystemToQuiesce st@PeerSelectionState{
         (LocalRootPeers.toMap localRootPeers)
   -- Are the known peers all trustable or all in progress to be demoted?
   , KnownPeers.toSet knownPeers `Set.isSubsetOf`
-    (  PublicRootPeers.getBootstrapPeers publicRootPeers
+    (  Cardano.PublicRootPeers.getBootstrapPeers publicRootPeers
     <> LocalRootPeers.keysSet (LocalRootPeers.clampToTrustable localRootPeers)
     )
 

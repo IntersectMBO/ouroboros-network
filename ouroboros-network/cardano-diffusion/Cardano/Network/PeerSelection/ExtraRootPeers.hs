@@ -1,18 +1,19 @@
 {-# LANGUAGE NamedFieldPuns #-}
 
-module Ouroboros.Cardano.Network.PublicRootPeers where
+module Cardano.Network.PeerSelection.ExtraRootPeers where
 
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
+
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.Types
 
 data ExtraPeers peeraddr =
   ExtraPeers
-    { getPublicConfigPeers :: !(Map peeraddr PeerAdvertise)
-    , getBootstrapPeers    :: !(Set peeraddr)
+    { publicConfigPeers :: !(Map peeraddr PeerAdvertise)
+    , bootstrapPeers    :: !(Set peeraddr)
     }
   deriving (Eq, Show)
 
@@ -42,7 +43,6 @@ cardanoPublicRootPeersAPI =
   }
 
 -- Map and Set are disjoint
---
 invariant :: Ord peeraddr => ExtraPeers peeraddr -> Bool
 invariant (ExtraPeers a b) = all (`Map.notMember` a) b
 
@@ -58,12 +58,12 @@ empty :: ExtraPeers peeraddr
 empty = ExtraPeers Map.empty Set.empty
 
 nullPublicConfig :: ExtraPeers peeraddr -> Bool
-nullPublicConfig ExtraPeers { getPublicConfigPeers } =
-  Map.null getPublicConfigPeers
+nullPublicConfig ExtraPeers { publicConfigPeers } =
+  Map.null publicConfigPeers
 
 nullBootstrap :: ExtraPeers peeraddr -> Bool
-nullBootstrap ExtraPeers { getBootstrapPeers } =
-  Set.null getBootstrapPeers
+nullBootstrap ExtraPeers { bootstrapPeers } =
+  Set.null bootstrapPeers
 
 nullAll :: ExtraPeers peeraddr -> Bool
 nullAll cprp = nullPublicConfig cprp && nullBootstrap cprp
@@ -85,7 +85,6 @@ difference :: Ord peeraddr
 difference (ExtraPeers a b) addrs =
   ExtraPeers (Map.withoutKeys a addrs)
                          (Set.difference b addrs)
-
 
 intersection :: Ord peeraddr
              => ExtraPeers peeraddr

@@ -6,12 +6,12 @@
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 #endif
 
-module Ouroboros.Cardano.Network.Diffusion.Handlers where
+module Cardano.Network.Diffusion.Handlers where
 
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
 import Cardano.Network.Types (LedgerStateJudgement)
 import Control.Concurrent.Class.MonadSTM.Strict
-import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Diffusion.Types (Tracers (..))
 import Ouroboros.Network.PeerSelection.Governor

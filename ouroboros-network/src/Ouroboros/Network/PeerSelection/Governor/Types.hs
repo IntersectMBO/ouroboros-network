@@ -162,7 +162,6 @@ import Ouroboros.Network.PeerSelection.Types (PeerSource (..),
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
            PeerSharingResult (..))
 import Cardano.Network.Types (LedgerStateJudgement (..))
-import Ouroboros.Cardano.Network.Types (ChurnMode)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
 
 -- | A peer pick policy is an action that picks a subset of elements from a
@@ -1797,7 +1796,6 @@ data TracePeerSelection extraDebugState extraFlags extraPeers peeraddr =
      --
 
      | TraceChurnWait          DiffTime
-     | TraceChurnMode          ChurnMode
      | TraceChurnAction
          DiffTime    -- ^ duration of the churn action
          ChurnAction -- ^ churn action type

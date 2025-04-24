@@ -7,28 +7,31 @@
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TupleSections            #-}
 
-module Ouroboros.Cardano.PeerSelection.PeerSelectionActions (requestPublicRootPeers) where
-
+module Cardano.Network.PeerSelection.PeerSelectionActions (requestPublicRootPeers) where
 
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
 import Cardano.Network.Types (LedgerStateJudgement)
+
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadAsync (MonadAsync)
 import Control.Monad.Class.MonadThrow (Exception, MonadThrow)
 import Control.Monad.Class.MonadTime.SI
+
 import Control.Tracer (Tracer)
+
 import Data.Bifunctor (first)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Set (Set)
 import Network.DNS qualified as DNS
-import Ouroboros.Cardano.Network.PublicRootPeers qualified as Cardano
-import Ouroboros.Cardano.Network.Types (CardanoPublicRootPeers)
+
+import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
+import Cardano.Network.PeerSelection.PublicRootPeers (CardanoPublicRootPeers)
+import Cardano.Network.PeerSelection.PublicRootPeers qualified as Cardano.PublicRootPeers
 import Ouroboros.Network.PeerSelection.LedgerPeers hiding (getLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSelectionActions qualified as Ouroboros
-import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.RootPeersDNS (PeerActionsDNS (..))
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore)
 import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
@@ -74,7 +77,7 @@ requestPublicRootPeers
      then do
       -- If the ledger state is in sensitive state we should get trustable peers.
       (bootstrapPeers, dt) <- requestConfiguredBootstrapPeers n
-      pure (PublicRootPeers.fromBootstrapPeers bootstrapPeers, dt)
+      pure (Cardano.PublicRootPeers.fromBootstrapPeers bootstrapPeers, dt)
      else do
       Ouroboros.requestPublicRootPeers
         publicTracer

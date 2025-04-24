@@ -12,7 +12,12 @@
 
 -- | This subsystem manages the discovery and selection of /upstream/ peers.
 --
-module Ouroboros.Cardano.PeerSelection.Churn (peerChurnGovernor) where
+module Cardano.Network.PeerSelection.Churn
+  ( ChurnMode (..)
+  , TracerChurnMode (..)
+  , ExtraArguments (..)
+  , peerChurnGovernor
+  ) where
 
 import Data.Void (Void)
 
@@ -20,18 +25,16 @@ import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (traceWith)
+import Control.Tracer (Tracer, traceWith)
 import System.Random
 
 import Cardano.Network.ConsensusMode (ConsensusMode (..))
+import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Cardano.Network.Types (LedgerStateJudgement (..))
 import Control.Applicative (Alternative)
 import Data.Functor (($>))
 import Data.Monoid.Synchronisation (FirstToFinish (..))
-import Ouroboros.Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.Churn.ExtraArguments qualified as Churn
-import Ouroboros.Cardano.Network.Types (ChurnMode (..))
 import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..))
 import Ouroboros.Network.Diffusion.Policies (churnEstablishConnectionTimeout,
            closeConnectionTimeout, deactivateTimeout)
@@ -40,6 +43,24 @@ import Ouroboros.Network.PeerSelection.Churn (CheckPeerSelectionCounters,
 import Ouroboros.Network.PeerSelection.Governor.Types hiding (targets)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..))
+
+data ChurnMode = ChurnModeBulkSync
+               | ChurnModeNormal
+               deriving Show
+
+newtype TracerChurnMode = TraceChurnMode ChurnMode
+  deriving Show
+
+-- | Cardano Churn Extra Arguments
+--
+data ExtraArguments m =
+  ExtraArguments {
+    modeVar            :: StrictTVar m ChurnMode
+  , genesisPeerTargets :: PeerSelectionTargets
+  , readUseBootstrap   :: STM m UseBootstrapPeers
+  , consensusMode      :: ConsensusMode
+  , tracerChurnMode    :: Tracer m TracerChurnMode
+  }
 
 -- | Tag indicating churning approach
 -- There are three syncing methods that networking layer supports, the legacy
@@ -92,7 +113,7 @@ peerChurnGovernor
      )
   => PeerChurnArgs
       m
-      (Churn.ExtraArguments m)
+      (ExtraArguments m)
       extraState
       extraFlags
       extraPeers
@@ -110,18 +131,19 @@ peerChurnGovernor PeerChurnArgs {
                     pcaPeerSelectionVar    = peerSelectionVar,
                     pcaReadCounters        = readCounters,
                     getLedgerStateCtx = LedgerPeersConsensusInterface {
-                      lpExtraAPI = Cardano.LedgerPeersConsensusInterface {
+                      lpReadFetchMode = getFetchMode,
+                      lpExtraAPI    = Cardano.LedgerPeersConsensusInterface {
                         Cardano.getLedgerStateJudgement
                       }
                     },
                     getLocalRootHotTarget,
                     getOriginalPeerTargets,
-                    getExtraArgs = Churn.ExtraArguments {
-                      Churn.modeVar             = churnModeVar,
-                      Churn.readFetchMode       = getFetchMode,
-                      Churn.readUseBootstrap    = getUseBootstrapPeers,
-                      Churn.consensusMode       = consensusMode,
-                      Churn.genesisPeerTargets
+                    getExtraArgs = ExtraArguments {
+                      modeVar             = churnModeVar,
+                      readUseBootstrap    = getUseBootstrapPeers,
+                      consensusMode       = consensusMode,
+                      tracerChurnMode     = tracerChurnMode,
+                      genesisPeerTargets
                     }
                   } = do
   -- Wait a while so that not only the closest peers have had the time
@@ -484,7 +506,7 @@ peerChurnGovernor PeerChurnArgs {
       startTs <- getMonotonicTime
 
       churnMode <- atomically updateChurnMode
-      traceWith tracer $ TraceChurnMode churnMode
+      traceWith tracerChurnMode $ TraceChurnMode churnMode
 
       -- Purge the worst active big ledger peers.
       updateTargets DecreasedActiveBigLedgerPeers

@@ -81,20 +81,18 @@ import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import Cardano.Network.Types (LedgerStateJudgement (..),
            NumberOfBigLedgerPeers (..))
 
-import Ouroboros.Cardano.Network.ArgumentsExtra qualified as Cardano
-import Ouroboros.Cardano.Network.Diffusion.Configuration
-           (defaultNumberOfBigLedgerPeers)
-import Ouroboros.Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.Churn.ExtraArguments qualified as Churn
-import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano hiding
+import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
+import Cardano.Network.PeerSelection.Churn (ChurnMode (..), TracerChurnMode,
+           peerChurnGovernor)
+import Cardano.Network.PeerSelection.Churn qualified as Churn
+import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
+import Cardano.Network.PeerSelection.Governor.PeerSelectionActions qualified as Cardano
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano hiding
            (consensusMode)
-import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as ExtraState
-import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.Governor.Types qualified as ExtraSizes
-import Ouroboros.Cardano.Network.PublicRootPeers qualified as Cardano
-import Ouroboros.Cardano.Network.Types (ChurnMode (..))
-import Ouroboros.Cardano.PeerSelection.Churn (peerChurnGovernor)
-import Ouroboros.Cardano.PeerSelection.PeerSelectionActions
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as ExtraState
+import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
+import Cardano.Network.PeerSelection.Governor.Types qualified as ExtraSizes
+import Cardano.Network.PeerSelection.PeerSelectionActions
            (requestPublicRootPeers)
 
 import Ouroboros.Network.Block (BlockNo)
@@ -104,7 +102,7 @@ import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Types (AbstractTransitionTrace)
-import Ouroboros.Network.Diffusion qualified as Diff
+import Ouroboros.Network.Diffusion qualified as Diffusion
 import Ouroboros.Network.Driver.Limits (ProtocolSizeLimits (..),
            ProtocolTimeLimits (..))
 import Ouroboros.Network.Handshake.Acceptable (Acceptable (acceptableVersion))
@@ -910,6 +908,7 @@ data DiffusionTestTrace =
     | DiffusionInboundGovernorTrace (IG.Trace NtNAddr)
     | DiffusionServerTrace (Server.Trace NtNAddr)
     | DiffusionFetchTrace (TraceFetchClientState BlockHeader)
+    | DiffusionChurnModeTrace TracerChurnMode
     | DiffusionDebugTrace String
     | DiffusionDNSTrace DNSTrace
     deriving (Show)
@@ -1149,6 +1148,7 @@ diffusionSimulation
                              $ accPoolStake
                              $ getLedgerPools
                              $ ledgerPools)
+                    (pure (PraosFetchMode FetchModeDeadline))
                     Cardano.LedgerPeersConsensusInterface {
                       Cardano.getLedgerStateJudgement = pure TooOld
                     , Cardano.updateOutboundConnectionsState =
@@ -1175,23 +1175,15 @@ diffusionSimulation
                            | otherwise ->
                 return False
 
-          cardanoExtraArgs :: Cardano.ExtraArguments m
-          cardanoExtraArgs =
-            Cardano.ExtraArguments {
-              Cardano.genesisPeerTargets     = snd peerTargets
-            , Cardano.readUseBootstrapPeers  = readUseBootstrapPeers
-            , Cardano.numberOfBigLedgerPeers = defaultNumberOfBigLedgerPeers
-            , Cardano.consensusMode          = consensusMode
-            }
-
           cardanoChurnArgs :: Churn.ExtraArguments m
           cardanoChurnArgs =
             Churn.ExtraArguments {
               Churn.modeVar             = churnModeVar
-            , Churn.readFetchMode       = pure (PraosFetchMode FetchModeDeadline)
-            , Churn.genesisPeerTargets  = Cardano.genesisPeerTargets cardanoExtraArgs
-            , Churn.readUseBootstrap    = Cardano.readUseBootstrapPeers cardanoExtraArgs
+            , Churn.genesisPeerTargets  = snd peerTargets
+            , Churn.readUseBootstrap    = readUseBootstrapPeers
             , Churn.consensusMode       = consensusMode
+            , Churn.tracerChurnMode     = (\s -> WithTime (Time (-1)) (WithName addr (DiffusionChurnModeTrace s)))
+                                            `contramap` nodeTracer
             }
 
           arguments :: Node.Arguments (Churn.ExtraArguments m) PeerTrustable m
@@ -1221,8 +1213,8 @@ diffusionSimulation
           tracers = mkTracers addr
 
           requestPublicRootPeers' =
-            requestPublicRootPeers (Diff.dtTracePublicRootPeersTracer tracers)
-                                   (Cardano.readUseBootstrapPeers cardanoExtraArgs)
+            requestPublicRootPeers (Diffusion.dtTracePublicRootPeersTracer tracers)
+                                   readUseBootstrapPeers
                                    (pure TooOld)
                                    readPublicRootPeers
 
@@ -1234,7 +1226,9 @@ diffusionSimulation
           ExtraSizes.empty
           Cardano.cardanoPublicRootPeersAPI
           (Cardano.cardanoPeerSelectionGovernorArgs
-            (Cardano.cardanoExtraArgsToPeerSelectionActions cardanoExtraArgs)
+            (Cardano.ExtraPeerSelectionActions
+              (snd peerTargets)
+              readUseBootstrapPeers)
           )
           Cardano.cardanoPeerSelectionStatetoCounters
           (flip Cardano.ExtraPeers Set.empty)
@@ -1290,83 +1284,86 @@ diffusionSimulation
 
     mkTracers
       :: NtNAddr
-      -> Diff.Tracers NtNAddr NtNVersion NtNVersionData
-                      NtCAddr NtCVersion NtCVersionData
-                      SomeException Cardano.ExtraState
-                      Cardano.ExtraState PeerTrustable
-                      (Cardano.ExtraPeers NtNAddr)
-                      (Cardano.ExtraPeerSelectionSetsWithSizes NtNAddr) m
+      -> Diffusion.Tracers NtNAddr NtNVersion NtNVersionData
+                           NtCAddr NtCVersion NtCVersionData
+                           SomeException Cardano.ExtraState
+                           Cardano.ExtraState PeerTrustable
+                           (Cardano.ExtraPeers NtNAddr)
+                           (Cardano.ExtraPeerSelectionSetsWithSizes NtNAddr) m
     mkTracers ntnAddr =
-      Diff.nullTracers {
-          Diff.dtTraceLocalRootPeersTracer       = contramap
+      Diffusion.nullTracers {
+          Diffusion.dtTraceLocalRootPeersTracer  = contramap
                                                     DiffusionLocalRootPeerTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
                                                  $ nodeTracer
-        , Diff.dtTracePublicRootPeersTracer      = contramap
+        , Diffusion.dtTracePublicRootPeersTracer = contramap
                                                     DiffusionPublicRootPeerTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
                                                  $ nodeTracer
-        , Diff.dtTraceLedgerPeersTracer          = contramap
+        , Diffusion.dtTraceLedgerPeersTracer     = contramap
                                                   DiffusionLedgerPeersTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
                                                  $ nodeTracer
-        , Diff.dtTracePeerSelectionTracer          = contramap
+        , Diffusion.dtTracePeerSelectionTracer   = contramap
                                                     DiffusionPeerSelectionTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
                                                  $ nodeTracer
-        , Diff.dtDebugPeerSelectionInitiatorTracer = contramap
+        , Diffusion.dtDebugPeerSelectionInitiatorTracer
+                                                 = contramap
                                                     DiffusionDebugPeerSelectionTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
                                                  $ nodeTracer
-        , Diff.dtDebugPeerSelectionInitiatorResponderTracer
+        , Diffusion.dtDebugPeerSelectionInitiatorResponderTracer
             = contramap DiffusionDebugPeerSelectionTrace
             . tracerWithName ntnAddr
             . tracerWithTime
             $ nodeTracer
-        , Diff.dtTracePeerSelectionCounters        = nullTracer
-        , Diff.dtTraceChurnCounters                = nullTracer
-        , Diff.dtPeerSelectionActionsTracer        = contramap
+        , Diffusion.dtTracePeerSelectionCounters = nullTracer
+        , Diffusion.dtTraceChurnCounters         = nullTracer
+        , Diffusion.dtPeerSelectionActionsTracer = contramap
                                                     DiffusionPeerSelectionActionsTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
                                                  $ nodeTracer
-        , Diff.dtConnectionManagerTracer           = contramap
+        , Diffusion.dtConnectionManagerTracer    = contramap
                                                     DiffusionConnectionManagerTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
                                                  $ nodeTracer
-        , Diff.dtConnectionManagerTransitionTracer = contramap
+        , Diffusion.dtConnectionManagerTransitionTracer
+                                                 = contramap
                                                      DiffusionConnectionManagerTransitionTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
           -- note: we have two ways getting transition trace:
           -- * through `traceTVar` installed in `newMutableConnState`
           -- * the `dtConnectionManagerTransitionTracer`
-                                                     $ nodeTracer
-        , Diff.dtServerTracer                      = contramap
+                                                 $ nodeTracer
+        , Diffusion.dtServerTracer               = contramap
                                                      DiffusionServerTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
                                                  $ nodeTracer
-        , Diff.dtInboundGovernorTracer             = contramap
+        , Diffusion.dtInboundGovernorTracer      = contramap
                                                      DiffusionInboundGovernorTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
                                                  $ nodeTracer
-        , Diff.dtInboundGovernorTransitionTracer   = contramap
+        , Diffusion.dtInboundGovernorTransitionTracer
+                                                 = contramap
                                                      DiffusionInboundGovernorTransitionTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
                                                  $ nodeTracer
-        , Diff.dtLocalConnectionManagerTracer      = nullTracer
-        , Diff.dtLocalServerTracer                 = nullTracer
-        , Diff.dtLocalInboundGovernorTracer        = nullTracer
-        , Diff.dtDnsTracer                         = contramap DiffusionDNSTrace
+        , Diffusion.dtLocalConnectionManagerTracer   = nullTracer
+        , Diffusion.dtLocalServerTracer              = nullTracer
+        , Diffusion.dtLocalInboundGovernorTracer     = nullTracer
+        , Diffusion.dtDnsTracer                      = contramap DiffusionDNSTrace
                                                      . tracerWithName ntnAddr
                                                      . tracerWithTime
                                                      $ nodeTracer

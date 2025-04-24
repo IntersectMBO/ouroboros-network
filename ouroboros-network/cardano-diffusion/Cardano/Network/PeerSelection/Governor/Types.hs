@@ -2,28 +2,29 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE NamedFieldPuns   #-}
 
-module Ouroboros.Cardano.Network.PeerSelection.Governor.Types where
+module Cardano.Network.PeerSelection.Governor.Types where
 
 import Cardano.Network.ConsensusMode (ConsensusMode (..))
+import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
+import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
+import Cardano.Network.PeerSelection.Governor.Monitor
+           (monitorBootstrapPeersFlag, monitorLedgerStateJudgement,
+           waitForSystemToQuiesce)
+import Cardano.Network.PeerSelection.Governor.Monitor qualified as Cardano
+import Cardano.Network.PeerSelection.Governor.PeerSelectionActions qualified as Cardano
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
 import Cardano.Network.PeerSelection.LocalRootPeers
            (OutboundConnectionsState (..))
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
+import Cardano.Network.PeerSelection.PublicRootPeers qualified as Cardano.PublicRootPeers
 import Cardano.Network.Types (LedgerStateJudgement (..),
            getNumberOfBigLedgerPeers)
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM
 import Data.Set (Set)
 import Data.Set qualified as Set
-import Ouroboros.Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.Governor.Monitor
-           (monitorBootstrapPeersFlag, monitorLedgerStateJudgement,
-           waitForSystemToQuiesce)
-import Ouroboros.Cardano.Network.PeerSelection.Governor.Monitor qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionActions qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
-import Ouroboros.Cardano.Network.PublicRootPeers qualified as Cardano
 import Ouroboros.Network.PeerSelection.Governor (readAssociationMode)
 import Ouroboros.Network.PeerSelection.Governor.Types (AssociationMode (..),
            BootstrapPeersCriticalTimeoutError (..), ExtraGuardedDecisions (..),
@@ -32,7 +33,7 @@ import Ouroboros.Network.PeerSelection.Governor.Types (AssociationMode (..),
            PeerSelectionState (..), PeerSelectionView (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
            (LedgerPeersConsensusInterface (lpExtraAPI))
-import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
+import Ouroboros.Network.PeerSelection.PublicRootPeers (getBigLedgerPeers)
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 
@@ -101,7 +102,7 @@ cardanoPeerSelectionStatetoCounters
 
     -- common sets
     establishedSet = EstablishedPeers.toSet establishedPeers
-    bigLedgerSet   = PublicRootPeers.getBigLedgerPeers publicRootPeers
+    bigLedgerSet   = getBigLedgerPeers publicRootPeers
 
     -- non big ledger peers
     establishedPeersSet = establishedSet Set.\\ establishedBigLedgerPeersSet
@@ -112,7 +113,7 @@ cardanoPeerSelectionStatetoCounters
     activeBigLedgerPeersSet      = establishedBigLedgerPeersSet `Set.intersection` activePeers
 
     -- bootstrap peers
-    bootstrapSet                 = PublicRootPeers.getBootstrapPeers publicRootPeers
+    bootstrapSet                 = Cardano.PublicRootPeers.getBootstrapPeers publicRootPeers
     -- bootstrap peers and big ledger peers are disjoint, hence we can use
     -- `knownPeersSet`, `establishedPeersSet` and `activePeersSet` below.
     knownBootstrapPeersSet       = bootstrapSet

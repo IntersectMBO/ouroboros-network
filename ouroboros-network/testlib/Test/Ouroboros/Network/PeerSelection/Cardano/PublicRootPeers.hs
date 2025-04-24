@@ -15,15 +15,17 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
-import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 
 import Test.Ouroboros.Network.PeerSelection.Instances
 import Test.Ouroboros.Network.Utils (ShrinkCarefully, prop_shrink_nonequal,
            prop_shrink_valid)
 
-import Ouroboros.Cardano.Network.PublicRootPeers qualified as Cardano
+import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
+import Cardano.Network.PeerSelection.PublicRootPeers (CardanoPublicRootPeers)
+import Cardano.Network.PeerSelection.PublicRootPeers qualified as Cardano.PublicRootPeers
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers (..))
+import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
@@ -48,7 +50,7 @@ tests =
   ]
 
 arbitraryCardanoExtraPeers :: (Ord peeraddr, Arbitrary peeraddr)
-                                => Gen (PublicRootPeers (Cardano.ExtraPeers peeraddr) peeraddr)
+                                => Gen (CardanoPublicRootPeers peeraddr)
 arbitraryCardanoExtraPeers = do
   peeraddrs <- arbitrary
   let peersSize = Set.size peeraddrs
@@ -61,15 +63,15 @@ arbitraryCardanoExtraPeers = do
   let publicConfigPeersMap = Map.fromList
                            $ zip (Set.toList publicConfigPeers) advertiseInfo
 
-  return (PublicRootPeers.fromMapAndSet publicConfigPeersMap bootstrapPeers normalLedgerPeers bigLedgerPeers)
+  return (Cardano.PublicRootPeers.fromMapAndSet publicConfigPeersMap bootstrapPeers normalLedgerPeers bigLedgerPeers)
 
 instance ( Arbitrary peeraddr
          , Ord peeraddr
-         ) => Arbitrary (PublicRootPeers (Cardano.ExtraPeers peeraddr) peeraddr) where
+         ) => Arbitrary (CardanoPublicRootPeers peeraddr) where
     arbitrary = arbitraryCardanoExtraPeers
 
     shrink (PublicRootPeers lp blp (Cardano.ExtraPeers pp bsp)) =
-        PublicRootPeers.fromMapAndSet <$> shrink pp
+        Cardano.PublicRootPeers.fromMapAndSet <$> shrink pp
                                       <*> shrink bsp
                                       <*> shrink lp
                                       <*> shrink blp
@@ -93,11 +95,11 @@ prop_fromMapAndSet :: Map PeerAddr PeerAdvertise
 prop_fromMapAndSet pp bsp lp =
   let newPP = pp `Map.withoutKeys` bsp
    in PublicRootPeers.invariant Cardano.invariant Cardano.toSet
-    . PublicRootPeers.fromMapAndSet newPP bsp lp
+    . Cardano.PublicRootPeers.fromMapAndSet newPP bsp lp
 
-prop_fromToMapAndSet :: PublicRootPeers (Cardano.ExtraPeers PeerAddr) PeerAddr -> Bool
+prop_fromToMapAndSet :: CardanoPublicRootPeers PeerAddr -> Bool
 prop_fromToMapAndSet prp@(PublicRootPeers lp blp (Cardano.ExtraPeers pp bsp)) =
-  PublicRootPeers.fromMapAndSet pp bsp lp blp == prp
+  Cardano.PublicRootPeers.fromMapAndSet pp bsp lp blp == prp
 
 prop_fromMapAndSet' :: Map PeerAddr PeerAdvertise
                    -> Set PeerAddr
@@ -109,52 +111,52 @@ prop_fromMapAndSet' pp bsp lp blp =
   let pp'  = Map.withoutKeys pp (bsp <> lp <> blp)
       bsp' = Set.difference bsp (lp <> blp)
       lp'  = Set.difference lp blp
-      prp = PublicRootPeers.fromMapAndSet pp' bsp' lp' blp
-   in  PublicRootPeers.getPublicConfigPeers prp === pp'
-    .&&. PublicRootPeers.getBootstrapPeers prp  === bsp'
+      prp = Cardano.PublicRootPeers.fromMapAndSet pp' bsp' lp' blp
+   in  Cardano.PublicRootPeers.getPublicConfigPeers prp === pp'
+    .&&. Cardano.PublicRootPeers.getBootstrapPeers prp  === bsp'
     .&&. PublicRootPeers.getLedgerPeers prp       === lp'
     .&&. PublicRootPeers.getBigLedgerPeers prp    === blp
 
-prop_merge :: PublicRootPeers (Cardano.ExtraPeers PeerAddr) PeerAddr
-           -> PublicRootPeers (Cardano.ExtraPeers PeerAddr) PeerAddr
+prop_merge :: CardanoPublicRootPeers PeerAddr
+           -> CardanoPublicRootPeers PeerAddr
            -> Bool
 prop_merge prp = PublicRootPeers.invariant Cardano.invariant Cardano.toSet
                . (<> prp)
 
-prop_insertPublicConfigPeer :: PublicRootPeers (Cardano.ExtraPeers PeerAddr) PeerAddr
+prop_insertPublicConfigPeer :: CardanoPublicRootPeers PeerAddr
                             -> PeerAddr
                             -> PeerAdvertise
                             -> Bool
 prop_insertPublicConfigPeer prp p pa =
-  PublicRootPeers.invariant Cardano.invariant Cardano.toSet (PublicRootPeers.insertPublicConfigPeer p pa prp)
+  PublicRootPeers.invariant Cardano.invariant Cardano.toSet (Cardano.PublicRootPeers.insertPublicConfigPeer p pa prp)
 
-prop_insertBootstrapPeer :: PublicRootPeers (Cardano.ExtraPeers PeerAddr) PeerAddr
+prop_insertBootstrapPeer :: CardanoPublicRootPeers PeerAddr
                          -> PeerAddr
                          -> Bool
 prop_insertBootstrapPeer prp p =
-  PublicRootPeers.invariant Cardano.invariant Cardano.toSet (PublicRootPeers.insertBootstrapPeer p prp)
+  PublicRootPeers.invariant Cardano.invariant Cardano.toSet (Cardano.PublicRootPeers.insertBootstrapPeer p prp)
 
-prop_insertLedgerPeer :: PublicRootPeers (Cardano.ExtraPeers PeerAddr) PeerAddr
+prop_insertLedgerPeer :: CardanoPublicRootPeers PeerAddr
                       -> PeerAddr
                       -> Bool
 prop_insertLedgerPeer prp p =
-  PublicRootPeers.invariant Cardano.invariant Cardano.toSet (PublicRootPeers.insertLedgerPeer p prp)
+  PublicRootPeers.invariant Cardano.invariant Cardano.toSet (Cardano.PublicRootPeers.insertLedgerPeer p prp)
 
-prop_insertBigLedgerPeer :: PublicRootPeers (Cardano.ExtraPeers PeerAddr) PeerAddr
+prop_insertBigLedgerPeer :: CardanoPublicRootPeers PeerAddr
                          -> PeerAddr
                          -> Bool
 prop_insertBigLedgerPeer prp p =
-  PublicRootPeers.invariant Cardano.invariant Cardano.toSet (PublicRootPeers.insertBigLedgerPeer p prp)
+  PublicRootPeers.invariant Cardano.invariant Cardano.toSet (Cardano.PublicRootPeers.insertBigLedgerPeer p prp)
 
 prop_fromPeers :: PeerAddr
                -> PeerAdvertise
                -> Bool
 prop_fromPeers peer peerAdvertise =
-  let insertPP  = PublicRootPeers.insertPublicConfigPeer peer peerAdvertise (PublicRootPeers.empty Cardano.empty)
-      insertBSP = PublicRootPeers.insertBootstrapPeer peer (PublicRootPeers.empty Cardano.empty)
-      insertLP  = PublicRootPeers.insertLedgerPeer peer (PublicRootPeers.empty Cardano.empty)
-      insertBLP = PublicRootPeers.insertBigLedgerPeer peer (PublicRootPeers.empty Cardano.empty)
-   in    PublicRootPeers.getPublicConfigPeers insertPP == Map.singleton peer peerAdvertise
-      && PublicRootPeers.getBootstrapPeers insertBSP   == Set.singleton peer
+  let insertPP  = Cardano.PublicRootPeers.insertPublicConfigPeer peer peerAdvertise (PublicRootPeers.empty Cardano.empty)
+      insertBSP = Cardano.PublicRootPeers.insertBootstrapPeer peer (PublicRootPeers.empty Cardano.empty)
+      insertLP  = Cardano.PublicRootPeers.insertLedgerPeer peer (PublicRootPeers.empty Cardano.empty)
+      insertBLP = Cardano.PublicRootPeers.insertBigLedgerPeer peer (PublicRootPeers.empty Cardano.empty)
+   in    Cardano.PublicRootPeers.getPublicConfigPeers insertPP == Map.singleton peer peerAdvertise
+      && Cardano.PublicRootPeers.getBootstrapPeers insertBSP   == Set.singleton peer
       && PublicRootPeers.getLedgerPeers insertLP       == Set.singleton peer
       && PublicRootPeers.getBigLedgerPeers insertBLP   == Set.singleton peer

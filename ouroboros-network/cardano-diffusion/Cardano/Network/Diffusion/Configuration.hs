@@ -2,18 +2,32 @@
 -- | One stop shop for configuring diffusion layer for upstream clients
 -- This module contains Cardano specific configuration parameters
 
-module Ouroboros.Cardano.Network.Diffusion.Configuration
-  ( DefaultNumBootstrapPeers (..)
+module Cardano.Network.Diffusion.Configuration
+  ( LocalConfiguration (..)
+  , DefaultNumBootstrapPeers (..)
   , NumberOfBigLedgerPeers (..)
   , defaultNumBootstrapPeers
   , defaultSyncTargets
   , defaultNumberOfBigLedgerPeers
   ) where
 
+import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
 import Cardano.Network.Types (NumberOfBigLedgerPeers (..))
-import Ouroboros.Network.Diffusion.Configuration (defaultDeadlineTargets)
+import Control.Concurrent.Class.MonadSTM (STM)
+import Ouroboros.Network.Diffusion.Configuration (ConsensusMode,
+           defaultDeadlineTargets)
 import Ouroboros.Network.PeerSelection.Governor.Types
            (PeerSelectionTargets (..))
+
+-- | Local Configuration values required to instantiate Cardano Node Diffusion
+--
+data LocalConfiguration m =
+  LocalConfiguration {
+    consensusMode         :: ConsensusMode
+  , numBigLedgerPeers     :: NumberOfBigLedgerPeers
+  , genesisPeerTargets    :: PeerSelectionTargets
+  , readUseBootstrapPeers :: STM m UseBootstrapPeers
+  }
 
 -- | Default number of bootstrap peers
 --

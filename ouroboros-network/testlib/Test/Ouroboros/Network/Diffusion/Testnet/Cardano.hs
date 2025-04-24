@@ -52,10 +52,10 @@ import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 import Cardano.Network.Types (LedgerStateJudgement, NumberOfBigLedgerPeers (..))
 
-import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
-import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as ExtraState
-import Ouroboros.Cardano.Network.PublicRootPeers qualified as Cardano
-import Ouroboros.Cardano.Network.PublicRootPeers qualified as ExtraPeers
+import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
+import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano.ExtraPeers
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano.ExtraState
 
 import Ouroboros.Network.Block (BlockNo (..))
 import Ouroboros.Network.BlockFetch (PraosFetchMode (..),
@@ -97,6 +97,7 @@ import Test.Ouroboros.Network.Utils hiding (SmallDelay, debugTracer)
 
 import Simulation.Network.Snocket (BearerInfo (..))
 
+import Cardano.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Test.QuickCheck
 import Test.QuickCheck.Monoids
 import Test.Tasty
@@ -1468,8 +1469,6 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
         "TraceGovernorWakeup"
       peerSelectionTraceMap TraceChurnWait {}                        =
         "TraceChurnWait"
-      peerSelectionTraceMap (TraceChurnMode cm)                      =
-        "TraceChurnMode " ++ show cm
       peerSelectionTraceMap TraceForgetBigLedgerPeers {}             =
         "TraceForgetBigLedgerPeers"
       peerSelectionTraceMap TraceBigLedgerPeersRequest {}            =
@@ -2115,7 +2114,7 @@ prop_diffusion_target_established_public ioSimTrace traceNumber =
       let govPublicRootPeersSig :: Signal (Set NtNAddr)
           govPublicRootPeersSig =
             selectDiffusionPeerSelectionState
-              (PublicRootPeers.toSet ExtraPeers.toSet . Governor.publicRootPeers)
+              (PublicRootPeers.toSet Cardano.ExtraPeers.toSet . Governor.publicRootPeers)
               events
 
           govEstablishedPeersSig :: Signal (Set NtNAddr)
@@ -2208,7 +2207,7 @@ prop_diffusion_target_active_public ioSimTrace traceNumber =
         let govPublicRootPeersSig :: Signal (Set NtNAddr)
             govPublicRootPeersSig =
               selectDiffusionPeerSelectionState
-                (PublicRootPeers.toSet ExtraPeers.toSet . Governor.publicRootPeers)
+                (PublicRootPeers.toSet Cardano.ExtraPeers.toSet . Governor.publicRootPeers)
                 events
 
             govActivePeersSig :: Signal (Set NtNAddr)
@@ -2380,7 +2379,7 @@ prop_diffusion_target_active_root ioSimTrace traceNumber =
             govPublicRootPeersSig :: Signal (Set NtNAddr)
             govPublicRootPeersSig =
               selectDiffusionPeerSelectionState
-                (PublicRootPeers.toSet ExtraPeers.toSet . Governor.publicRootPeers) events
+                (PublicRootPeers.toSet Cardano.ExtraPeers.toSet . Governor.publicRootPeers) events
 
             govRootPeersSig :: Signal (Set NtNAddr)
             govRootPeersSig = Set.union <$> govLocalRootPeersSig
@@ -4887,8 +4886,8 @@ selectDiffusionPeerSelectionState f =
     initialState consensusMode =
       f $ Governor.emptyPeerSelectionState
             (mkStdGen 42)
-            (ExtraState.empty consensusMode (NumberOfBigLedgerPeers 0)) -- ^ todo: fix
-            ExtraPeers.empty
+            (Cardano.ExtraState.empty consensusMode (NumberOfBigLedgerPeers 0)) -- ^ todo: fix
+            Cardano.ExtraPeers.empty
 
 selectDiffusionPeerSelectionState' :: (forall peerconn. Governor.PeerSelectionState Cardano.ExtraState PeerTrustable (Cardano.ExtraPeers NtNAddr) NtNAddr peerconn -> a)
                                   -> Events DiffusionTestTrace
@@ -4898,8 +4897,8 @@ selectDiffusionPeerSelectionState' f =
     Signal.fromChangeEvents
       (f $ Governor.emptyPeerSelectionState
              (mkStdGen 42)
-             (ExtraState.empty PraosMode (NumberOfBigLedgerPeers 0))
-             ExtraPeers.empty)
+             (Cardano.ExtraState.empty PraosMode (NumberOfBigLedgerPeers 0))
+             Cardano.ExtraPeers.empty)
   . Signal.selectEvents
       (\case
         DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just (f st)
