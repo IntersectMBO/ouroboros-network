@@ -58,7 +58,7 @@ makeMockGenesisFile dst = do
   now <- getCurrentTime
   let systemStart =
         addUTCTime
-          (secondsToNominalDiffTime $ negate (slotsPerKESPeriod - 0.5))
+          (secondsToNominalDiffTime $ negate (slotsPerKESPeriod - 1.5))
           now
   let settings' = KeyMap.insert "systemStart" (JSON.toJSON systemStart) settings
   JSON.encodeFile dst settings'
@@ -950,7 +950,7 @@ kesAgentEvolvesKey =
     (agentOutLines, serviceOutLines, ()) <-
       withAgentAndService controlAddr serviceAddr [] coldVerKeyFile ["--genesis-file", genesisFile] $
         (>>= either error return) $
-          race (threadDelay 10000000 >> return "TIMED OUT") $
+          race (threadDelay 10_000_000 >> return "TIMED OUT") $
             do
               controlClientCheck
                 "Key generated"
@@ -993,7 +993,7 @@ kesAgentEvolvesKey =
                 ExitSuccess
                 (all (/= "Current evolution: 1 / 64"))
 
-              threadDelay 500_000
+              threadDelay 1_500_000
               controlClientCheckP
                 "Current evolution is 1"
                 [ "info"
