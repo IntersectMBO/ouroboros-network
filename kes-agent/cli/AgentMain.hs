@@ -640,16 +640,32 @@ runAsService configPathMay smo' =
 #endif
 
 #if defined(mingw32_HOST_OS)
+
 installSighupHandler _ =
   return ()
 restoreSighupHandler () =
   return ()
+
+mkTracer logLock logTarget maxPrio =
+    case logTarget of
+      LogDevNull -> nullTracer
+      LogSyslog -> error "Syslog is not supported on Windows"
+      LogStdout -> stdoutAgentTracer ColorsAuto maxPrio logLock
+
 #else
+
 installSighupHandler optionsSignal = do
   let handler = Posix.Catch $ putMVar optionsSignal ()
   Posix.installHandler Posix.lostConnection handler Nothing
 restoreSighupHandler oldSighup =
   Posix.installHandler Posix.lostConnection oldSighup Nothing
+
+mkTracer logLock logTarget maxPrio =
+    case logTarget of
+      LogDevNull -> nullTracer
+      LogSyslog -> syslogAgentTracer
+      LogStdout -> stdoutAgentTracer ColorsAuto maxPrio logLock
+
 #endif
 
 -- | Run @kes-agent@ as a regular process.
@@ -671,12 +687,6 @@ runNormally configPathMay nmo' = withIOManager $ \ioManager -> do
 
   logLock <- newMVar ()
 
-  let mkTracer logTarget maxPrio =
-        case logTarget of
-          LogDevNull -> nullTracer
-          LogSyslog -> syslogAgentTracer
-          LogStdout -> stdoutAgentTracer ColorsAuto maxPrio logLock
-
   optionsSignal <- newEmptyMVar
   oldSighup <- installSighupHandler optionsSignal
 
@@ -692,7 +702,7 @@ runNormally configPathMay nmo' = withIOManager $ \ioManager -> do
                     (Proxy @StandardCrypto)
                     (socketSnocket ioManager)
                     makeSocketRawBearer
-                    agentOptions' {agentTracer = mkTracer logTarget' maxPrio'}
+                    agentOptions' {agentTracer = mkTracer logLock logTarget' maxPrio'}
                     agent
                 goRun agent'
             )
@@ -712,7 +722,7 @@ runNormally configPathMay nmo' = withIOManager $ \ioManager -> do
         (Proxy @StandardCrypto)
         (socketSnocket ioManager)
         makeSocketRawBearer
-        agentOptions {agentTracer = mkTracer logTarget maxPrio}
+        agentOptions {agentTracer = mkTracer logLock logTarget maxPrio}
     )
     ( \agent -> do
         finalizeAgent agent
