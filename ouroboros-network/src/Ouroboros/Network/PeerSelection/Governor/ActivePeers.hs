@@ -16,7 +16,7 @@ import GHC.Stack (HasCallStack)
 
 import Control.Applicative (Alternative)
 import Control.Concurrent.JobPool (Job (..))
-import Control.Exception (SomeException, assert)
+import Control.Exception hiding (throwIO)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
@@ -30,7 +30,8 @@ import Ouroboros.Network.PeerSelection.State.KnownPeers (setTepidFlag)
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
-import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersAPI (..))
+import Ouroboros.Network.PeerSelection.Types (PeerStatus (..),
+           PublicExtraPeersAPI (..))
 
 
 ----------------------------
@@ -598,7 +599,7 @@ aboveTarget
   :: forall extraState extraDebugState extraFlags extraPeers extraAPI
             extraCounters peeraddr peerconn m.
      ( Alternative (STM m)
-     , MonadSTM m
+     , MonadTimer m
      , Ord peeraddr
      , HasCallStack
      )
@@ -630,7 +631,7 @@ aboveTarget = aboveTargetBigLedgerPeers
 aboveTargetBigLedgerPeers
   :: forall extraState extraDebugState extraFlags extraPeers extraAPI
            extraCounters peeraddr peerconn m.
-     ( MonadSTM m
+     ( MonadTimer m
      , Ord peeraddr
      )
   => PeerSelectionActions
@@ -727,7 +728,7 @@ aboveTargetBigLedgerPeers actions@PeerSelectionActions {
 aboveTargetLocal
   :: forall extraState extraDebugState extraFlags extraPeers extraAPI
             extraCounters peeraddr peerconn m.
-     ( MonadSTM m
+     ( MonadTimer m
      , Ord peeraddr
      , HasCallStack
      )
@@ -831,7 +832,7 @@ aboveTargetLocal actions@PeerSelectionActions {
 aboveTargetOther
   :: forall extraState extraDebugState extraFlags extraPeers extraAPI
             extraCounters peeraddr peerconn m.
-     ( MonadSTM m
+     ( MonadTimer m
      , Ord peeraddr
      , HasCallStack
      )
@@ -930,7 +931,7 @@ aboveTargetOther actions@PeerSelectionActions {
 
 jobDemoteActivePeer
   :: forall extraState extraDebugState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
-     ( Monad m
+     ( MonadTimer m
      , Ord peeraddr
      )
   => PeerSelectionActions
@@ -946,18 +947,29 @@ jobDemoteActivePeer
   -> peerconn
   -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr
                           peerconn)
-jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {deactivatePeerConnection}}
+jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {deactivatePeerConnection,
+                                                                              monitorPeerConnection}}
                     peeraddr peerconn =
     Job job handler () "demoteActivePeer"
   where
     handler :: SomeException -> m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
-    handler e = return $
-      -- It's quite bad if demoting fails. The peer is cooling so
-      -- we can't remove it from the set of established and hot peers.
-      --
-      Completion $ \st@PeerSelectionState {
+    handler e = do
+      -- cf. issue #5111 - we wait for the connection to be forgotten by the CM
+      -- before we return. Otherwise, if the same peer is promoted too quickly by
+      -- eg. churn, the connection will fail.
+      (timeoutFault, e') <- do
+        res <-
+          timeout c_PEER_DEMOTION_TIMEOUT $
+                  atomically $
+                    monitorPeerConnection peerconn >>= check . (== PeerCold) . fst
+        case res of
+          Nothing -> return (True, toException $ DemotionTimeoutException (Just e))
+          Just _ -> return (False, e)
+      return . Completion $ \st@PeerSelectionState {
                       publicRootPeers,
                       activePeers,
+                      establishedPeers,
+                      knownPeers,
                       inProgressDemoteHot,
                       targets = PeerSelectionTargets {
                                   targetNumberOfActivePeers,
@@ -967,6 +979,15 @@ jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {de
                     _ ->
         let
             inProgressDemoteHot'  = Set.delete peeraddr inProgressDemoteHot
+            (activePeers', knownPeers', establishedPeers') =
+              if timeoutFault
+                -- It's quite bad if demoting fails. The peer is cooling so
+                -- we can't remove it from the set of established and hot peers.
+                --
+                then (activePeers, knownPeers, establishedPeers)
+                else (Set.delete peeraddr activePeers,
+                      setTepidFlag peeraddr knownPeers,
+                      EstablishedPeers.delete peeraddr establishedPeers)
             bigLedgerPeersSet     = PublicRootPeers.getBigLedgerPeers publicRootPeers
          in Decision {
               decisionTrace = if peeraddr `Set.member` bigLedgerPeersSet
@@ -975,14 +996,17 @@ jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {de
                                      (Set.size $ activePeers
                                                  `Set.intersection`
                                                  bigLedgerPeersSet)
-                                     peeraddr e]
+                                     peeraddr e']
                               else [TraceDemoteHotFailed
                                      targetNumberOfActivePeers
                                      (Set.size $ activePeers
                                           Set.\\ bigLedgerPeersSet)
-                                     peeraddr e],
+                                     peeraddr e'],
               decisionState = st {
-                                inProgressDemoteHot = inProgressDemoteHot'
+                                inProgressDemoteHot = inProgressDemoteHot',
+                                establishedPeers    = establishedPeers',
+                                knownPeers          = knownPeers',
+                                activePeers         = activePeers'
                               },
               decisionJobs  = []
             }
@@ -990,7 +1014,7 @@ jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {de
     job :: m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
     job = do
       deactivatePeerConnection peerconn
-      return $ Completion $ \st@PeerSelectionState {
+      return . Completion $ \st@PeerSelectionState {
                                 publicRootPeers,
                                 activePeers,
                                 knownPeers,
