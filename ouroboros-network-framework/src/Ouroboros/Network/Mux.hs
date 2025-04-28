@@ -38,6 +38,7 @@ module Ouroboros.Network.Mux
   , MiniProtocolNum (..)
   , MiniProtocolLimits (..)
   , ForkPolicy (..)
+  , ForkPolicyCb
   , noBindForkPolicy
   , responderForkPolicy
     -- * MiniProtocol bundle
@@ -440,27 +441,28 @@ fromOuroborosBundle :: OuroborosBundle      mode initiatorCtx responderCtx bytes
 fromOuroborosBundle = OuroborosApplication . fold
 
 
--- | `ForkPolicy` guards to which capability each mini-protocol is bound.
+-- | `ForkPolicyCb` guards to which capability each mini-protocol is bound.
 --
 type ForkPolicyCb =  Mux.MiniProtocolNum
                   -> Mux.MiniProtocolDir
                   -> Maybe Int
 
--- | Extension of a `ForkPolicyCb` used by `ouroboros-network-framework` outside
--- of this module.
+-- | An extension of `ForkPolicyCb`.
 --
 newtype ForkPolicy peerAddr = ForkPolicy {
     runForkPolicy :: peerAddr -> ForkPolicyCb
   }
 
 
--- | A `ForkPolicy` which does not bind mini-protocol threads to a given capability.
+-- | A `ForkPolicy` which does not bind mini-protocol threads to a given
+-- capability.
 --
 noBindForkPolicy :: ForkPolicy peerAddr
 noBindForkPolicy = ForkPolicy (\_ _ _ -> Nothing)
 
 
--- | A `ForkPolicy` which binds responders mini-protocols to lower capabilities.
+-- | A `ForkPolicy` which binds responders mini-protocol threads to lower
+-- capabilities.
 --
 responderForkPolicy :: Hashable peerAddr
                     => Int -- ^ salt
