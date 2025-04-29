@@ -1,0 +1,11 @@
+prefix=/usr/local
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: libblst
+Version: 0.3.14
+Description: BLS12-381 implementation
+
+Libs: -L${libdir} -lblst
+Cflags: -I${includedir}

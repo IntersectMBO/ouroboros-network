@@ -1,0 +1,4 @@
+cold-vkey="/etc/kes-agent/cold.vkey"
+genesis-file="/etc/kes-agent/mainnet-shelley-genesis.json"
+service-path="/tmp/kes-agent-service.socket"
+control-path="/tmp/kes-agent-control.socket"
