@@ -39,6 +39,6 @@ RUN ldconfig
 WORKDIR /opt/kes-agent
 RUN cabal update
 RUN cabal build exe:kes-agent
-RUN cabal install exe:kes-agent --installdir=/usr/local/bin/ --install-method=copy --overwrite-policy=always
+RUN cabal install exe:kes-agent exe:kes-agent-control --installdir=/usr/local/bin/ --install-method=copy --overwrite-policy=always
 
 CMD /usr/local/bin/kes-agent -F /etc/kes-agent/agent.toml run
