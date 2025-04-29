@@ -41,4 +41,4 @@ RUN cabal update
 RUN cabal build exe:kes-agent
 RUN cabal install exe:kes-agent --installdir=/usr/local/bin/ --install-method=copy --overwrite-policy=always
 
-CMD /usr/local/bin/kes-agent run
+CMD /usr/local/bin/kes-agent -F /etc/kes-agent/agent.toml run
