@@ -155,6 +155,27 @@ cold server for generating OpCerts.
 Installation
 ------------
 
+### Using a tarball
+
+1. Download a suitable installer tarball for your OS and architecture.
+2. Unpack
+3. Run the included `./install.sh` script as root
+
+This will install `kes-agent` as a systemd service. To actually use it, the
+following steps are required:
+
+1. Copy your cold key file (`cold.vkey`) into `/etc/kes-agent/cold.vkey`
+2. Edit `/etc/kes-agent/agent.toml` as desired
+3. Reload the `kes-agent` configuration (`systemctl reload kes-agent`).
+
+### Docker
+
+A Docker image is available (TODO: document image name). The image includes a
+default configuration, but, for obvious reasons, no cold verification key. To
+provide one, mount it into the container, like so:
+
+    docker run --mount type=bind,source=/path/to/your/cold.vkey,target=/etc/kes-agent/cold.vkey cardano/kes-agent:0.1
+
 ### Building From Source
 
 #### Build Prerequisites
@@ -162,10 +183,19 @@ Installation
 - The `git` version control system
 - The `gcc` compiler, including C++ support
 - Developer libraries for `libsodium`
+- Developer libraries for `secp256k1` (https://github.com/bitcoin-core/secp256k1)
+- Developer libraries for `libblst` (https://github.com/supranational/blst).
+  Note that installation requires some undocumented manual steps:
+  - Copying the headers into an appropriate system-wide location
+    (`/usr/local/include/`).
+  - Copying the library `libblst.a` into an appropriate system-wide location
+    (`/usr/local/lib/`).
+  - Creating a `pkgconf` entry so that the build tooling can find the library.
+  - Running `ldconf` to register the library with the system-wide linker.
 - GHC, the Haskell compiler
 - The Haskell build tool, Cabal
 
-#### Building
+#### Building KES Agent
 
 1. Check out source code from github:
     ```sh
@@ -174,10 +204,11 @@ Installation
 2. Build and install with cabal:
     ```sh
     cd kes-agent
+    cabal update
     cabal install exe:kes-agent exe:kes-agent-control
     ```
 
-### Installing KES Agent
+#### Installing KES Agent
 
 KES Agent can run in two modes:
 
@@ -211,10 +242,9 @@ To run KES Agent as a daemon using systemd, the following steps are necessary:
 8. Start the kes-agent service (`systemctl start kes-agent`).
 
 An example installation script that performs the above steps is provided in
-`etc/systemd/install.sh`; it should work on a typical Debian or Debian-based
-system.
+`etc/systemd/install.sh`.
 
-### Installing KES Agent Control
+#### Installing KES Agent Control
 
 Simply put the `kes-agent-control` binary somewhere on your `$PATH`.
 
@@ -277,7 +307,61 @@ socket forwarding; this will use the existing authentication and encryption
 mechanisms built into OpenSSH, and the processes on either side will be
 blissfully unaware of the fact that there is a network connection between them.
 
-(TODO: explicit instructions)
+A simple command for setting up a tunnel from a host running `cardano-node` to
+a host running `kes-agent` might look like this:
+
+```sh
+ssh kes-agent-host -L /tmp/kes-agent-service-remote.socket:/tmp/kes-agent-service.socket
+```
+
+However, in practice, you would want to add a few options to background the
+`ssh` process, skip opening a terminal, and automatically delete the local
+socket file if it already exists, like so:
+
+```sh
+ssh kes-agent-host \
+    -L /tmp/kes-agent-service-remote.socket:/tmp/kes-agent-service.socket \
+    -nNT \
+    -o StreamLocalBindUnlink=yes \
+    & disown
+```
+
+Further, if you want the ssh connection to be automatically resumed whenever it
+gets disconnected, try `autossh`:
+
+```sh
+autossh -M0 \
+    kes-agent-host \
+    -L /tmp/kes-agent-service-remote.socket:/tmp/kes-agent-service.socket \
+    -nNT \
+    -o StreamLocalBindUnlink=yes \
+    & disown
+```
+
+The options explained in detail:
+
+- `-L /tmp/kes-agent-service-remote.socket:/tmp/kes-agent-service.socket`: this
+  sets up the domain socket forwarding.
+- `-n`: prevent reading from `stdin`.
+- `-N`: do not execute a remote command.
+- `-T`: disable pseudo-terminal allocation
+- `-o StreamLocalBindUnlink=yes`: automatically delete (stale) local sockets if
+  they clash with the newly created local sockets. Forwarded local socket files
+  will remain on the local filesystem after the forwarding ssh process
+  terminates, and subsequent attempts at binding the same address will fail;
+  this option chances that, so that the existing file will instead be deleted.
+
+You may also want to wrap this up in a systemd service; note however that you
+must set up authentication in such a way that it never requires any user
+interaction (e.g., asking for a password or passphrase).
+
+Similar forwardings will be needed for "bootstrapping" connections and control
+client connections.
+
+You can also set up the tunnel from the other side, using the `-R` option;
+note, however, that there is no equivalent option to `StreamLocalBindUnlink`
+that can clean up stale sockets on the remote, so you will have to take care of
+that separately.
 
 Usage
 -----
