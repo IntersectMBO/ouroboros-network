@@ -169,7 +169,7 @@ library
     random,
     si-timers,
     strict-checked-vars ^>=0.2,
-    strict-stm,
+    strict-stm >=1.0 && <1.6,
     transformers,
     typed-protocols ^>=0.3,
     typed-protocols-stateful,
@@ -355,7 +355,7 @@ library testlib
     tasty-hunit,
     tasty-quickcheck,
     text,
-    time,
+    time >=1.9.1 && <1.14,
     typed-protocols,
     typed-protocols-examples,
 
