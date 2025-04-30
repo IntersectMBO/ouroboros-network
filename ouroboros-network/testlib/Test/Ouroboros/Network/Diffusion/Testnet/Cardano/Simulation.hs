@@ -23,7 +23,6 @@ module Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Simulation
   , prop_diffusionScript_fixupCommands
   , prop_diffusionScript_commandScript_valid
   , fixupCommands
-  , TurbulentCommands (..)
   , diffusionSimulation
   , Command (..)
     -- * Tracing
@@ -341,50 +340,6 @@ fixupCommands (jn@(JoinNetwork _):t) = jn : go jn 0 t
         (_               , Kill d          ) -> Kill (d + accDelay) : go cmd 0 cmds
         (_               , Reconfigure d c ) -> Reconfigure (d + accDelay) c : go cmd 0 cmds
 fixupCommands (_:t) = fixupCommands t
-
--- | Turbulent commands have some turbulence by connecting and disconnecting
--- the node, but eventually keeping the node online.
---
-newtype TurbulentCommands = TurbulentCommands [Command]
-  deriving (Eq, Show)
-
-instance Arbitrary TurbulentCommands where
-  arbitrary = do
-    turbulenceNumber <- choose (2, 7)
-    -- Make sure turbulenceNumber is an even number
-    -- This simplifies making sure we keep the node online.
-    let turbulenceNumber' =
-          if odd turbulenceNumber
-             then turbulenceNumber + 1
-             else turbulenceNumber
-    delays <- vectorOf turbulenceNumber' delay
-    let commands = zipWith (\f d -> f d) (cycle [JoinNetwork, Kill]) delays
-                 ++ [JoinNetwork 0]
-    return (TurbulentCommands commands)
-    where
-      delay = frequency [ (3, genDelayWithPrecision 65)
-                        , (1, (/ 10) <$> genDelayWithPrecision 60)
-                        ]
-  shrink (TurbulentCommands xs) =
-    [ TurbulentCommands xs' | xs' <- shrinkList shrinkCommand xs, invariant xs' ] ++
-    [ TurbulentCommands (take n xs) | n <- [0, length xs - 3], n `mod` 3 == 0, invariant (take n xs) ]
-
-    where
-      shrinkDelay = map fromRational . shrink . toRational
-
-      shrinkCommand :: Command -> [Command]
-      shrinkCommand (JoinNetwork d)     = JoinNetwork <$> shrinkDelay d
-      shrinkCommand (Kill d)            = Kill        <$> shrinkDelay d
-      shrinkCommand (Reconfigure d lrp) =   Skip d
-                                          : (Reconfigure <$> shrinkDelay d
-                                                         <*> pure lrp)
-      shrinkCommand (Skip _d)           = []
-
-      invariant :: [Command] -> Bool
-      invariant [JoinNetwork _]                                 = True
-      invariant [JoinNetwork _, Kill _, JoinNetwork _]          = True
-      invariant (JoinNetwork _ : Kill _ : JoinNetwork _ : rest) = invariant rest
-      invariant _                                               = False
 
 -- | Simulation arguments.
 --
