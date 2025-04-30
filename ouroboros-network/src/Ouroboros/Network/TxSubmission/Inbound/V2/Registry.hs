@@ -258,8 +258,14 @@ withPeer tracer
                  (atomically $ signalTSem mempoolSem)
           $ do
             res <- addTx
-            now <- getMonotonicTime
-            atomically $ modifyTVar sharedStateVar (updateBufferedTx now res)
+            start <- getMonotonicTime
+            atomically $ modifyTVar sharedStateVar (updateBufferedTx start res)
+            end <- getMonotonicTime
+            let duration = end `diffTime` start
+            case res of
+              TxAccepted -> traceWith txTracer (TraceTxInboundAddedToMempool [txid] duration)
+              TxRejected -> traceWith txTracer (TraceTxInboundRejectedFromMempool [txid] duration)
+
       where
         -- add the tx to the mempool
         addTx :: m TxMempoolResult
@@ -280,13 +286,8 @@ withPeer tracer
                   }
                return TxRejected
              else do
-               !start <- getMonotonicTime
                acceptedTxs <- mempoolAddTxs [tx]
-               !end <- getMonotonicTime
-               let duration = diffTime end start
-
-               traceWith txTracer $
-                 TraceTxInboundAddedToMempool acceptedTxs duration
+               end <- getMonotonicTime
                if null acceptedTxs
                   then do
                       !s <- countRejectedTxs end 1
@@ -310,7 +311,7 @@ withPeer tracer
                          -> SharedTxState peeraddr txid tx
                          -> SharedTxState peeraddr txid tx
         updateBufferedTx _ TxRejected st@SharedTxState { peerTxStates
-                                                                , limboTxs } =
+                                                       , limboTxs } =
             st { peerTxStates = peerTxStates'
                , limboTxs = limboTxs' }
           where
