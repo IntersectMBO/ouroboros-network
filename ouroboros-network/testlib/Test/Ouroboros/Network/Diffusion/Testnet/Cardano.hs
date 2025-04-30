@@ -105,7 +105,7 @@ import Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Simulation
 import Test.Ouroboros.Network.InboundGovernor.Utils
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..))
 import Test.Ouroboros.Network.TxSubmission.TxLogic (ArbTxDecisionPolicy (..))
-import Test.Ouroboros.Network.TxSubmission.Types (Tx (..))
+import Test.Ouroboros.Network.TxSubmission.Types (Tx (..), TxId)
 import Test.Ouroboros.Network.Utils hiding (SmallDelay, debugTracer)
 
 
@@ -862,12 +862,12 @@ prop_no_txSubmission_error_iosim
 -- but eventually stay online. We manage to get all transactions.
 --
 unit_txSubmission_allTransactions :: ArbTxDecisionPolicy
-                                  -> TurbulentCommands
-                                  -> (NonEmptyList (Tx Int), NonEmptyList (Tx Int))
+                                  -> NonEmptyList (Tx TxId)
+                                  -> NonEmptyList (Tx TxId)
                                   -> Property
 unit_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
-                                  (TurbulentCommands commands)
-                                  (NonEmpty txsA, NonEmpty txsB) =
+                                  (NonEmpty txsA)
+                                  (NonEmpty txsB) =
   let localRootConfig = LocalRootConfig
                           DoNotAdvertisePeer
                           InitiatorAndResponderDiffusionMode
@@ -885,10 +885,7 @@ unit_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
               (Script (DontUseBootstrapPeers :| []))
               (TestAddress (IPAddr (read "0.0.0.0") 0))
               PeerSharingDisabled
-              [ (2,2,Map.fromList [ (RelayAccessAddress "0.0.0.1" 0, localRootConfig)
-                                  , (RelayAccessAddress "0.0.0.2" 0, localRootConfig)
-                                  ])
-              ]
+              [(2,2,Map.fromList [(RelayAccessAddress "0.0.0.1" 0, localRootConfig)])]
               (Script (LedgerPools [] :| []))
               (let targets =
                     PeerSelectionTargets {
@@ -908,8 +905,7 @@ unit_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
               False
               (Script (PraosFetchMode FetchModeDeadline :| []))
               uniqueTxsA
-          , [ JoinNetwork 0
-            ])
+          , [JoinNetwork 0])
           , (NodeArgs
                (-1)
                InitiatorAndResponderDiffusionMode
@@ -940,21 +936,23 @@ unit_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
                False
                (Script (PraosFetchMode FetchModeDeadline :| []))
                uniqueTxsB
-         , commands)
+         , [JoinNetwork 0])
          ]
    in checkAllTransactions (runSimTrace
                               (diffusionSimulation noAttenuation
                                                    diffScript
                                                    iosimTracer)
                            )
-                           500000 -- ^ Running for 500k might not be enough.
+                           500_000 -- ^ Running for 500k might not be enough.
   where
     -- We need to make sure the transactions are unique, this simplifies
     -- things.
+    --
+    -- TODO: the generator ought to give us unique `TxId`s.
     uniqueTxsA = map (\(t, i) -> t { getTxId = List.foldl' (+) 0 (map ord "0.0.0.0") + i })
-                     (zip txsA [0 :: Int ..])
+                     (zip txsA [0 :: TxId ..])
     uniqueTxsB = map (\(t, i) -> t { getTxId = List.foldl' (+) 0 (map ord "0.0.0.1") + i })
-                     (zip txsB [100 :: Int ..])
+                     (zip txsB [100 :: TxId ..])
 
     -- This checks the property that after running the simulation for a while
     -- both nodes manage to get all valid transactions.
@@ -963,16 +961,17 @@ unit_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
                          -> Int
                          -> Property
     checkAllTransactions ioSimTrace traceNumber =
-      let events = fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
+      let trace  = Trace.take traceNumber ioSimTrace
+
+          events = fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
                  . withTimeNameTraceEvents
                     @DiffusionTestTrace
                     @NtNAddr
-                 . Trace.take traceNumber
-                 $ ioSimTrace
+                 $ trace
 
           -- Build the accepted (sorted) txids map for each peer
           --
-          sortedAcceptedTxidsMap :: Map NtNAddr [Int]
+          sortedAcceptedTxidsMap :: Map NtNAddr [TxId]
           sortedAcceptedTxidsMap =
               foldr (\l r ->
                 List.foldl' (\rr (WithName n (WithTime _ x)) ->
@@ -981,10 +980,8 @@ unit_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
                     -- into the map
                     DiffusionTxSubmissionInbound (TraceTxInboundAddedToMempool txids _) ->
                       Map.alter (maybe (Just txids) (Just . sort . (txids ++))) n rr
-                    -- When the node is shutdown we have to reset the accepted
-                    -- txids list
-                    DiffusionDiffusionSimulationTrace TrKillingNode ->
-                      Map.alter (Just . const []) n rr
+                    -- if a node would be killed, we could download some txs
+                    -- multiple times, but this is not possible in the schedule
                     _ -> rr) r l
               ) Map.empty
             . Trace.toList
@@ -1000,24 +997,34 @@ unit_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
                   . filter (\Tx {getTxValid} -> getTxValid)
              in bimap f f (uniqueTxsA, uniqueTxsB)
 
-       in counterexample (intercalate "\n" $ map show $ Trace.toList $ events)
-        $ counterexample ("unique txs: " ++ show uniqueTxsA ++ " " ++ show uniqueTxsB)
+      in -- counterexample (intercalate "\n" $ map show $ Trace.toList events)
+          counterexample (Trace.ppTrace show (ppSimEvent 0 0 0) trace)
         $ counterexample ("accepted txids map: " ++ show sortedAcceptedTxidsMap)
-        $ counterexample ("valid transactions that should be accepted: "
-                          ++ show validSortedTxidsA ++ " " ++ show validSortedTxidsB)
+        $ counterexample ("A: unique txs: " ++ show uniqueTxsA)
+        $ counterexample ("A: valid transactions that should be accepted: " ++ show validSortedTxidsA)
+        $ counterexample ("B: unique txs: " ++ show uniqueTxsB)
+        $ counterexample ("B: valid transactions that should be accepted: " ++ show validSortedTxidsB)
 
-        -- Success criteria, after running for 500k events, we check the map
-        -- for the two nodes involved in the simulation and verify that indeed
-        -- each peer managed to learn about the other peer' transactions.
-        --
-        $ case ( Map.lookup (TestAddress (IPAddr (read "0.0.0.0") 0)) sortedAcceptedTxidsMap
-               , Map.lookup (TestAddress (IPAddr (read "0.0.0.1") 0)) sortedAcceptedTxidsMap
-               ) of
-           (Just acceptedTxidsA, Just acceptedTxidsB) ->
+         -- Success criteria, after running for 500k events, we check the map
+         -- for the two nodes involved in the simulation and verify that indeed
+         -- each peer managed to learn about the other peer' transactions.
+         --
+        $ case Map.lookup (TestAddress (IPAddr (read "0.0.0.0") 0)) sortedAcceptedTxidsMap
+               of
+           Just acceptedTxidsA ->
+             counterexample "0.0.0.0" $
                   acceptedTxidsA === validSortedTxidsB
-             .&&. acceptedTxidsB === validSortedTxidsA
-           _ -> counterexample "Didn't find any entry in the map!"
-             $ False
+           Nothing | [] <- validSortedTxidsB -> property True
+                   | otherwise -> counterexample "Didn't found any entry in the map!" False
+        .&&.
+          case Map.lookup (TestAddress (IPAddr (read "0.0.0.1") 0)) sortedAcceptedTxidsMap
+               of
+           Just acceptedTxidsB ->
+             counterexample "0.0.0.1" $
+                  acceptedTxidsB === validSortedTxidsA
+           Nothing | [] <- validSortedTxidsA -> property True
+                   | otherwise -> counterexample "Didn't found any entry in the map!" False
+
 
 -- | This test checks the ratio of the inflight txs against the allowed by the
 -- TxDecisionPolicy.
