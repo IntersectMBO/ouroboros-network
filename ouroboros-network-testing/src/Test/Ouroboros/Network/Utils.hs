@@ -174,7 +174,7 @@ data WithName name event = WithName {
     wnName  :: name,
     wnEvent :: event
   }
-  deriving (Functor)
+  deriving Functor
 
 instance (Show name, Show event) => Show (WithName name event) where
   show (WithName name ev) = "#" <> show name <> " %" <> show ev
@@ -183,7 +183,7 @@ data WithTime event = WithTime {
     wtTime  :: Time,
     wtEvent :: event
   }
-  deriving (Functor)
+  deriving Functor
 
 instance Show event => Show (WithTime event) where
   show (WithTime t ev) = "@" <> show t <> " " <> show ev
