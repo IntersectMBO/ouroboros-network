@@ -45,7 +45,7 @@ import Control.Monad.Class.MonadAsync (MonadAsync (wait, withAsync))
 import Control.Monad.Class.MonadFork (MonadFork)
 import Control.Monad.Class.MonadSay
 import Control.Monad.Class.MonadST (MonadST)
-import Control.Monad.Class.MonadThrow (MonadEvaluate, MonadMask, MonadThrow)
+import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI (DiffTime, MonadTime, Time (..))
 import Control.Monad.Class.MonadTimer.SI (MonadDelay, MonadTimer)
 import Control.Monad.Fix (MonadFix)
@@ -60,7 +60,6 @@ import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Void (Void)
-import GHC.Exception (Exception)
 import Network.DNS (Domain, TYPE)
 import System.Random (StdGen, mkStdGen, split)
 

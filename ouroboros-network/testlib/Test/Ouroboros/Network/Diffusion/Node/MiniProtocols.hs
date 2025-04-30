@@ -258,6 +258,7 @@ applications :: forall block header s m.
                 , HasHeader header
                 , HasHeader block
                 , HeaderHash header ~ HeaderHash block
+                , Show header
                 , Show block
                 , ShowProxy block
                 , ShowProxy header
@@ -375,9 +376,9 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
                   InitiatorAndResponderProtocol
                     (txSubmissionInitiator aaTxDecisionPolicy (nkMempool nodeKernel))
                     (txSubmissionResponder (nkMempool nodeKernel)
-                                          (nkTxChannelsVar nodeKernel)
-                                          (nkTxMempoolSem nodeKernel)
-                                          (nkSharedTxStateVar nodeKernel))
+                                           (nkTxChannelsVar nodeKernel)
+                                           (nkTxMempoolSem nodeKernel)
+                                           (nkSharedTxStateVar nodeKernel))
             }
           ]
       , withWarm = WithWarm
@@ -463,7 +464,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
                           (\_ -> unregisterClientChains nodeKernel (remoteAddress connId))
                           (\chainVar ->
                             runPeerWithLimitsRnd
-                              nullTracer
+                              (((ppNtNConnId connId ++) . (" " ++) . show) `contramap` debugTracer)
                               (mkStdGen 0) -- TODO
                               chainSyncCodec
                               (chainSyncSizeLimits limits)
@@ -477,10 +478,12 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
 
     chainSyncResponder
       :: MiniProtocolCb (ResponderContext NtNAddr) ByteString m ()
-    chainSyncResponder = MiniProtocolCb $ \_ctx channel -> do
+    chainSyncResponder = MiniProtocolCb $
+      \ ResponderContext { rcConnectionId = connId }
+        channel -> do
       labelThisThread "ChainSyncServer"
       runPeerWithLimitsRnd
-        nullTracer
+        (((ppNtNConnId connId ++) . (" " ++) . show) `contramap` debugTracer)
         (mkStdGen 0)
         chainSyncCodec
         (chainSyncSizeLimits limits)
@@ -495,7 +498,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
     blockFetchInitiator  =
       MiniProtocolCb $
       \  ExpandedInitiatorContext {
-           eicConnectionId   = ConnectionId { remoteAddress },
+           eicConnectionId   = connId@ConnectionId { remoteAddress },
            eicControlMessage = controlMessageSTM
          }
          channel
@@ -505,7 +508,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
                                remoteAddress
                                $ \clientCtx ->
               runPeerWithLimits
-                nullTracer
+                (((ppNtNConnId connId ++) . (" " ++) . show) `contramap` debugTracer)
                 blockFetchCodec
                 (blockFetchSizeLimits limits)
                 (blockFetchTimeLimits limits)
@@ -517,10 +520,12 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
     blockFetchResponder
       :: MiniProtocolCb (ResponderContext NtNAddr) ByteString m ()
     blockFetchResponder =
-      MiniProtocolCb $ \_ctx channel -> do
+      MiniProtocolCb $
+        \ ResponderContext { rcConnectionId = connId }
+          channel -> do
         labelThisThread "BlockFetchServer"
         runPeerWithLimits
-          nullTracer
+          (((ppNtNConnId connId ++) . (" " ++) . show) `contramap` debugTracer)
           blockFetchCodec
           (blockFetchSizeLimits limits)
           (blockFetchTimeLimits limits)
@@ -549,7 +554,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
       -> do labelThisThread "KeepAliveClient"
             let kacApp =
                   \ctxVar -> runPeerWithLimits
-                               ((show . (connId,)) `contramap` debugTracer)
+                               (((ppNtNConnId connId ++) . (" " ++) . show) `contramap` debugTracer)
                                keepAliveCodec
                                (keepAliveSizeLimits limits)
                                (keepAliveTimeLimits limits)
@@ -568,10 +573,12 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
 
     keepAliveResponder
       :: MiniProtocolCb (ResponderContext NtNAddr) ByteString m ()
-    keepAliveResponder = MiniProtocolCb $ \_ctx channel -> do
+    keepAliveResponder = MiniProtocolCb $
+      \ ResponderContext { rcConnectionId = connId }
+        channel -> do
       labelThisThread "KeepAliveServer"
       runPeerWithLimits
-        nullTracer
+        (((ppNtNConnId connId ++) . (" " ++) . show) `contramap` debugTracer)
         keepAliveCodec
         (keepAliveSizeLimits limits)
         (keepAliveTimeLimits limits)
@@ -614,7 +621,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
                    then return   pingPongClient
                    else return $ PingPong.SendMsgDone ()
            in runPeerWithLimits
-               ((show . (connId,)) `contramap` debugTracer)
+               (((ppNtNConnId connId ++) . (" " ++) . show) `contramap` debugTracer)
                pingPongCodec
                (pingPongSizeLimits limits)
                (pingPongTimeLimits limits)
@@ -626,7 +633,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
     pingPongResponder  = MiniProtocolCb $
       \ResponderContext { rcConnectionId = connId } channel ->
       runPeerWithLimits
-        ((show . (connId,)) `contramap` debugTracer)
+        (((ppNtNConnId connId ++) . (" " ++) . show) `contramap` debugTracer)
         pingPongCodec
         (pingPongSizeLimits limits)
         (pingPongTimeLimits limits)
@@ -648,7 +655,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
                $ \controller -> do
                  psClient <- peerSharingClient controlMessageSTM controller
                  runPeerWithLimits
-                   ((show . (connId,)) `contramap` debugTracer)
+                   (((ppNtNConnId connId ++) . (" " ++) . show) `contramap` debugTracer)
                    peerSharingCodec
                    (peerSharingSizeLimits limits)
                    (peerSharingTimeLimits limits)
@@ -658,10 +665,12 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
     peerSharingResponder
       :: PeerSharingAPI NtNAddr s m
       -> MiniProtocolCb (ResponderContext NtNAddr) ByteString m ()
-    peerSharingResponder psAPI = MiniProtocolCb $ \ResponderContext { rcConnectionId = connId } channel -> do
+    peerSharingResponder psAPI = MiniProtocolCb $
+      \ ResponderContext { rcConnectionId = connId }
+        channel -> do
       labelThisThread "PeerSharingServer"
       runPeerWithLimits
-        ((show . (connId,)) `contramap` debugTracer)
+        (((ppNtNConnId connId ++) . (" " ++) . show) `contramap` debugTracer)
         peerSharingCodec
         (peerSharingSizeLimits limits)
         (peerSharingTimeLimits limits)
@@ -682,7 +691,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
           channel
         -> do
           let client = txSubmissionOutbound
-                         ((show . (connId,)) `contramap` debugTracer)
+                         (((ppNtNConnId connId ++) . (" " ++) . show) `contramap` debugTracer)
                          (NumTxIdsToAck $ getNumTxIdsToReq
                                         $ maxUnacknowledgedTxIds txDecisionPolicy)
                          (getMempoolReader mempool)
@@ -690,7 +699,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
                          controlMessageSTM
           labelThisThread "TxSubmissionClient"
           runPeerWithLimits
-            ((show . (connId,)) `contramap` debugTracer)
+            (((ppNtNConnId connId ++) . (" " ++) . show) `contramap` debugTracer)
             txSubmissionCodec
             (txSubmissionSizeLimits limits)
             (txSubmissionTimeLimits limits)
@@ -722,7 +731,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
                            api
             labelThisThread "TxSubmissionServer"
             runPipelinedPeerWithLimits
-              ((show . (connId,)) `contramap` debugTracer)
+              (((ppNtNConnId connId ++) . (" " ++) . show) `contramap` debugTracer)
               txSubmissionCodec
               (txSubmissionSizeLimits limits)
               (txSubmissionTimeLimits limits)
