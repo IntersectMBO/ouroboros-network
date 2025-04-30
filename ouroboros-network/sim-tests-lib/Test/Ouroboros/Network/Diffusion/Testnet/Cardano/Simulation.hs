@@ -26,6 +26,7 @@ module Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Simulation
   , Command (..)
     -- * Tracing
   , DiffusionTestTrace (..)
+  , ppDiffusionTestTrace
   , iosimTracer
     -- * Re-exports
   , TestAddress (..)
@@ -62,7 +63,6 @@ import Data.Proxy (Proxy (..))
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Time.Clock (secondsToDiffTime)
-import Data.Typeable (Typeable)
 import Data.Void (Void)
 import System.Random (StdGen, mkStdGen)
 import System.Random qualified as Random
@@ -154,7 +154,7 @@ import Test.Ouroboros.Network.Diffusion.Node (PeerAdvertise)
 import Test.Ouroboros.Network.Diffusion.Node qualified as Node
 import Test.Ouroboros.Network.Diffusion.Node.Kernel (NtCAddr, NtCVersion,
            NtCVersionData, NtNAddr, NtNAddr_ (IPAddr), NtNVersion,
-           NtNVersionData)
+           NtNVersionData, ppNtNAddr)
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..), genLedgerPoolsFrom)
 import Test.Ouroboros.Network.PeerSelection.Cardano.Instances ()
 import Test.Ouroboros.Network.PeerSelection.Instances qualified as PeerSelection
@@ -994,7 +994,7 @@ data DiffusionSimulationTrace
   | TrUpdatingDNS
   | TrRunning
   | TrErrored SomeException
-  deriving (Show)
+  deriving Show
 
 -- Warning: be careful with writing properties that rely
 -- on trace events from multiple components environment.
@@ -1024,17 +1024,37 @@ data DiffusionTestTrace =
     | DiffusionTxSubmissionInbound (TraceTxSubmissionInbound Int (Tx Int))
     | DiffusionTxLogic (TraceTxLogic NtNAddr Int (Tx Int))
     | DiffusionDebugTrace String
-    deriving (Show)
+    deriving Show
+
+
+ppDiffusionTestTrace :: DiffusionTestTrace -> String
+ppDiffusionTestTrace (DiffusionLocalRootPeerTrace tr)               = show tr
+ppDiffusionTestTrace (DiffusionPublicRootPeerTrace tr)              = show tr
+ppDiffusionTestTrace (DiffusionLedgerPeersTrace tr)                 = show tr
+ppDiffusionTestTrace (DiffusionPeerSelectionTrace tr)               = show tr
+ppDiffusionTestTrace (DiffusionPeerSelectionActionsTrace tr)        = show tr
+ppDiffusionTestTrace (DiffusionDebugPeerSelectionTrace tr)          = show tr
+ppDiffusionTestTrace (DiffusionConnectionManagerTrace tr)           = show tr
+ppDiffusionTestTrace (DiffusionDiffusionSimulationTrace tr)         = show tr
+ppDiffusionTestTrace (DiffusionConnectionManagerTransitionTrace tr) = show tr
+ppDiffusionTestTrace (DiffusionInboundGovernorTrace tr)             = show tr
+ppDiffusionTestTrace (DiffusionInboundGovernorTransitionTrace tr)   = show tr
+ppDiffusionTestTrace (DiffusionServerTrace tr)                      = show tr
+ppDiffusionTestTrace (DiffusionFetchTrace tr)                       = show tr
+ppDiffusionTestTrace (DiffusionTxSubmissionInbound tr)              = show tr
+ppDiffusionTestTrace (DiffusionTxLogic tr)                          = show tr
+ppDiffusionTestTrace (DiffusionDebugTrace tr)                       =      tr
 
 
 -- | A debug tracer which embeds events in DiffusionTestTrace.
 --
-iosimTracer :: forall s a.
-              ( Show a
-              , Typeable a
-              )
-            => Tracer (IOSim s) (WithTime (WithName NtNAddr a))
-iosimTracer = Tracer traceM <> sayTracer
+iosimTracer :: forall s.
+               Tracer (IOSim s) (WithTime (WithName NtNAddr DiffusionTestTrace))
+iosimTracer =
+     Tracer traceM
+  <> Tracer (\WithTime { wtEvent = WithName { wnName, wnEvent } } ->
+              -- don't log time, it's in the trace
+              say $ ppNtNAddr wnName ++ " @ " ++ ppDiffusionTestTrace wnEvent)
 
 -- | Run an arbitrary topology
 diffusionSimulation
@@ -1329,8 +1349,9 @@ diffusionSimulation
               , Node.aTimeWaitTimeout      = 30
               , Node.aDNSTimeoutScript     = dnsTimeout
               , Node.aDNSLookupDelayScript = dnsLookupDelay
-              , Node.aDebugTracer          = (\s -> WithTime (Time (-1)) (WithName addr (DiffusionDebugTrace s)))
-                                                   `contramap` nodeTracer
+              , Node.aDebugTracer          = Tracer (\s -> do
+                                              t <- getMonotonicTime
+                                              traceWith nodeTracer $ WithTime t (WithName addr (DiffusionDebugTrace s)))
               , Node.aExtraChurnArgs = cardanoChurnArgs
               , Node.aTxDecisionPolicy     = txDecisionPolicy
               , Node.aTxs                  = txs
