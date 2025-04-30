@@ -94,10 +94,9 @@ txSubmissionInboundV2
 
         -- Only attempt to add TXs if we have some work to do
         when (collected > 0) $ do
-            mapM_ (uncurry $ submitTxToMempool tracer) listOfTxsToMempool
-
-            traceWith tracer $
-              TraceTxSubmissionCollected collected
+          -- submitTxToMempool traces: `TraceTxSubmissionProcessed` and
+          -- `TraceTxInboundAddedToMempool` events
+          mapM_ (uncurry $ submitTxToMempool tracer) listOfTxsToMempool
 
         -- TODO:
         -- We can update the state so that other `tx-submission` servers will
@@ -207,6 +206,7 @@ txSubmissionInboundV2
           throwIO ProtocolErrorTxNotRequested
 
         mbe <- handleReceivedTxs requested received
+        traceWith tracer $ TraceTxSubmissionCollected (txId `map` txs)
         case mbe of
           -- one of `tx`s had a wrong size
           Just e  -> throwIO e
