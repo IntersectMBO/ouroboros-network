@@ -363,13 +363,13 @@ data TxSubmissionMempoolWriter txid tx idx m =
 
 data TraceTxSubmissionInbound txid tx =
     -- | Number of transactions just about to be inserted.
-    TraceTxSubmissionCollected Int
+    TraceTxSubmissionCollected [txid]
     -- | Just processed transaction pass/fail breakdown.
   | TraceTxSubmissionProcessed ProcessedTxCount
-    -- | Server received 'MsgDone'
   | TraceTxInboundCanRequestMoreTxs Int
   | TraceTxInboundCannotRequestMoreTxs Int
   | TraceTxInboundAddedToMempool [txid] DiffTime
+  | TraceTxInboundRejectedFromMempool [txid] DiffTime
 
   --
   -- messages emitted by the new implementation of the server in
@@ -377,6 +377,7 @@ data TraceTxSubmissionInbound txid tx =
   -- used in this module.
   --
 
+  -- | Server received 'MsgDone'
   | TraceTxInboundTerminated
   | TraceTxInboundDecision (TxDecision txid tx)
   deriving (Eq, Show)
