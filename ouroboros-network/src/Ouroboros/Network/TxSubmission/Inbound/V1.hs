@@ -311,9 +311,8 @@ txSubmissionInbound tracer (NumTxIdsToAck maxUnacked) mpReader mpWriter _version
             bufferedTxs3 = forceElemsToWHNF $ bufferedTxs2 <>
                                Map.fromList (zip live (repeat Nothing))
 
-        let !collected = length txs
         traceWith tracer $
-          TraceTxSubmissionCollected collected
+          TraceTxSubmissionCollected (txId `map` txs)
 
         !start <- getMonotonicTime
         txidsAccepted <- mempoolAddTxs txsReady
@@ -325,7 +324,7 @@ txSubmissionInbound tracer (NumTxIdsToAck maxUnacked) mpReader mpWriter _version
 
         traceWith tracer $ TraceTxSubmissionProcessed ProcessedTxCount {
             ptxcAccepted = accepted
-          , ptxcRejected = collected - accepted
+          , ptxcRejected = length txs - accepted
           , ptxcScore    = 0 -- This implementatin does not track score
           }
 
