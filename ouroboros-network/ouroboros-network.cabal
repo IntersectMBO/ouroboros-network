@@ -169,7 +169,7 @@ library
     random,
     si-timers,
     strict-checked-vars ^>=0.2,
-    strict-stm,
+    strict-stm >=1.0 && <1.6,
     transformers,
     typed-protocols ^>=0.3,
     typed-protocols-stateful,
@@ -183,6 +183,57 @@ library
 
   if flag(txsubmission-delay)
     cpp-options: -DTXSUBMISSION_DELAY
+
+library ouroboros-orphan-instances
+  import: ghc-options
+  visibility: public
+  hs-source-dirs: ouroboros-orphan-instances
+  exposed-modules:
+    Ouroboros.Cardano.Network.OrphanInstances
+    Ouroboros.Network.OrphanInstances
+
+  other-modules:
+  reexported-modules:
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  other-extensions:
+    BangPatterns
+    DataKinds
+    EmptyCase
+    ExistentialQuantification
+    FlexibleContexts
+    FlexibleInstances
+    FunctionalDependencies
+    GADTSyntax
+    GADTs
+    GeneralizedNewtypeDeriving
+    MultiParamTypeClasses
+    NamedFieldPuns
+    OverloadedStrings
+    PolyKinds
+    RankNTypes
+    RecordWildCards
+    ScopedTypeVariables
+    TemplateHaskell
+    TupleSections
+    TypeApplications
+    TypeFamilies
+    TypeInType
+
+  build-depends:
+    aeson,
+    base >=4.14 && <4.22,
+    containers,
+    iproute,
+    network,
+    network-mux,
+    ouroboros-network:{ouroboros-network, cardano-diffusion},
+    ouroboros-network-api ^>=0.13,
+    ouroboros-network-framework ^>=0.17,
+    text,
+
+  if flag(asserts)
+    ghc-options: -fno-ignore-asserts
 
 library cardano-diffusion
   import: ghc-options
@@ -304,7 +355,7 @@ library testlib
     tasty-hunit,
     tasty-quickcheck,
     text,
-    time,
+    time >=1.9.1 && <1.14,
     typed-protocols,
     typed-protocols-examples,
 

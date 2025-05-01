@@ -59,7 +59,6 @@ import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context (ExpandedInitiatorContext)
 import Ouroboros.Network.Diffusion.Configuration
-import Ouroboros.Network.Diffusion.Policies (simplePeerSelectionPolicy)
 import Ouroboros.Network.Diffusion.Policies qualified as Diffusion.Policies
 import Ouroboros.Network.Diffusion.Types
 import Ouroboros.Network.Diffusion.Utils
@@ -235,7 +234,7 @@ runM Interfaces
        , daRethrowPolicy
        , daLocalRethrowPolicy
        , daReturnPolicy
-       , daPeerMetrics
+       , daPeerSelectionPolicy
        , daPeerSharingRegistry
        }
   = do
@@ -247,17 +246,16 @@ runM Interfaces
     mkRemoteThread mainThreadId &
       (case dcLocalAddress of
          Nothing -> id
-         Just addr -> (fmap (either id id) . (`Async.race` mkLocalThread mainThreadId addr))
+         Just addr -> fmap (either id id) . (`Async.race` mkLocalThread mainThreadId addr)
       )
 
   where
     (ledgerPeersRng, rng1) = split diRng
-    (policyRng,      rng2) = split rng1
-    (churnRng,       rng3) = split rng2
-    (fuzzRng,        rng4) = split rng3
-    (cmLocalStdGen,  rng5) = split rng4
-    (cmStdGen1,      rng6) = split rng5
-    (cmStdGen2, peerSelectionActionsRng) = split rng6
+    (churnRng,       rng2) = split rng1
+    (fuzzRng,        rng3) = split rng2
+    (cmLocalStdGen,  rng4) = split rng3
+    (cmStdGen1,      rng5) = split rng4
+    (cmStdGen2, peerSelectionActionsRng) = split rng5
 
     mkInboundPeersMap :: IG.PublicState ntnAddr ntnVersionData
                       -> Map ntnAddr PeerSharing
@@ -423,10 +421,6 @@ runM Interfaces
                            (Just _ , Just _ ) -> return RootPeersDNS.LookupReqAAndAAAA
                            (Nothing, Nothing) -> throwIO NoSocket
 
-      -- RNGs used for picking random peers from the ledger and for
-      -- demoting/promoting peers.
-      policyRngVar <- newTVarIO policyRng
-
       localRootsVar <- newTVarIO mempty
 
       peerSelectionTargetsVar <- newTVarIO dcPeerSelectionTargets
@@ -486,10 +480,6 @@ runM Interfaces
                 CM.updateVersionData   = daUpdateVersionData,
                 CM.connStateIdSupply   = diConnStateIdSupply
             }
-
-      let peerSelectionPolicy =
-            simplePeerSelectionPolicy
-              policyRngVar daPeerMetrics (epErrorDelay exitPolicy)
 
       let makeConnectionHandler'
             :: forall muxMode socket initiatorCtx responderCtx b c.
@@ -664,7 +654,7 @@ runM Interfaces
               daEmptyExtraState
               mempty
               peerSelectionActions
-              peerSelectionPolicy
+              daPeerSelectionPolicy
               PeerSelectionInterfaces {
                 countersVar,
                 publicStateVar     = dcPublicPeerSelectionVar,
@@ -683,8 +673,7 @@ runM Interfaces
               , pcaChurnTracer         = dtTraceChurnCounters
               , pcaDeadlineInterval    = dcDeadlineChurnInterval
               , pcaBulkInterval        = dcBulkChurnInterval
-              , pcaPeerRequestTimeout  = policyPeerShareOverallTimeout peerSelectionPolicy
-              , pcaMetrics             = daPeerMetrics
+              , pcaPeerRequestTimeout  = policyPeerShareOverallTimeout daPeerSelectionPolicy
               , pcaRng                 = churnRng
               , pcaPeerSelectionVar    = peerSelectionTargetsVar
               , pcaReadCounters        = readTVar countersVar
@@ -739,7 +728,7 @@ runM Interfaces
         InitiatorOnlyDiffusionMode ->
           withConnectionManagerInitiatorOnlyMode $ \connectionManager-> do
           debugStateVar <- newTVarIO $ Governor.emptyPeerSelectionState fuzzRng daEmptyExtraState mempty
-          daInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
+          daInstallSigUSR1Handler connectionManager debugStateVar
           withPeerStateActions' connectionManager $ \peerStateActions->
             withPeerSelectionActions'
               (return Map.empty)
@@ -771,7 +760,7 @@ runM Interfaces
                 withServer sockets connectionManager inboundInfoChannel $
                   \inboundGovernorThread readInboundState -> do
                     debugStateVar <- newTVarIO $ Governor.emptyPeerSelectionState fuzzRng daEmptyExtraState mempty
-                    daInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
+                    daInstallSigUSR1Handler connectionManager debugStateVar
                     withPeerStateActions' connectionManager $
                       \peerStateActions ->
                         withPeerSelectionActions'

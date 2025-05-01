@@ -39,17 +39,17 @@ sigUSR1Handler
   -> PeerSharing
   -> STM IO UseBootstrapPeers
   -> STM IO LedgerStateJudgement
+  -> PeerMetrics IO ntnAddr
   -> ConnectionManager muxMode socket ntnAddr
                        handle handleError IO
   -> StrictTVar IO (PeerSelectionState
                    Cardano.ExtraState
                    extraFlags extraPeers ntnAddr
                    peerconn)
-  -> PeerMetrics IO ntnAddr
   -> IO ()
 #ifdef POSIX
 sigUSR1Handler tracersExtra getUseLedgerPeers ownPeerSharing getBootstrapPeers
-               getLedgerStateJudgement connectionManager dbgStateVar metrics = do
+               getLedgerStateJudgement metrics connectionManager dbgStateVar = do
   _ <- Signals.installHandler
          Signals.sigUSR1
          (Signals.Catch

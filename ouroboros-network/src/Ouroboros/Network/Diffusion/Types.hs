@@ -312,7 +312,6 @@ data Arguments extraState extraDebugState extraFlags extraPeers
                                (NodeToNodePeerConnectionHandle
                                    mode ntnAddr
                                    ntnVersionData m x y))
-      -> PeerMetrics m ntnAddr
       -> m ()
 
   , daPeerSelectionGovernorArgs
@@ -522,10 +521,10 @@ data Applications ntnAddr ntnVersion ntnVersionData
       --
     , daLocalRethrowPolicy  :: RethrowPolicy
 
-      -- | 'PeerMetrics' used by peer selection policy (see
-      -- 'simplePeerSelectionPolicy')
+      -- | 'PeerSelectionPolicy' used by the outbound governor to pick peers to
+      -- promote/demote ((see 'simplePeerSelectionPolicy').
       --
-    , daPeerMetrics         :: PeerMetrics m ntnAddr
+    , daPeerSelectionPolicy :: PeerSelectionPolicy ntnAddr m
 
       -- | Used for peer sharing protocol
       --

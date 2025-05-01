@@ -5,7 +5,6 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE TypeOperators       #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -22,6 +21,7 @@ module Ouroboros.Network.NodeToNode
   , blockFetchProtocolLimits
   , txSubmissionProtocolLimits
   , keepAliveProtocolLimits
+  , peerSharingProtocolLimits
   , defaultMiniProtocolParameters
   , NodeToNodeVersion (..)
   , NodeToNodeVersionData (..)
@@ -30,6 +30,7 @@ module Ouroboros.Network.NodeToNode
   , connectTo
   , AcceptedConnectionsLimit (..)
   , ntnDataFlow
+  , addSafetyMargin
     -- * P2P Governor
   , PeerAdvertise (..)
   , PeerSelectionTargets (..)

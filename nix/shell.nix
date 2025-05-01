@@ -19,6 +19,10 @@ let
     else ouroboros-network;
 in
 hsPkgs.shellFor {
+  buildInputs = [
+    pkgs.bashInteractive
+  ];
+
   nativeBuildInputs = [
     pkgs.cabal
     pkgs.cabal-gild
@@ -51,6 +55,7 @@ hsPkgs.shellFor {
       };
 
   shellHook = ''
+    export SHELL=/run/current-system/sw/bin/bash
     export LANG="en_US.UTF-8"
   '' + lib.optionalString
     (pkgs.glibcLocales != null && pkgs.stdenv.hostPlatform.libc == "glibc") ''

@@ -70,6 +70,7 @@ fd . './ouroboros-network-mock'      $FD_OPTS
 fd . './ouroboros-network-protocols' $FD_OPTS
 fd . './ouroboros-network'           $FD_OPTS
 fd . './cardano-client'              $FD_OPTS
+fd . './decentralized-message-queue' $FD_OPTS
 
 if [ $USE_GIT == 1 ]; then
 git --no-pager diff --exit-code

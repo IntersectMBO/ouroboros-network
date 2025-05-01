@@ -97,6 +97,7 @@ import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharing)
 import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.Util.ShowProxy
 
+import Ouroboros.Network.Diffusion.Policies (simplePeerSelectionPolicy)
 import Test.Ouroboros.Network.Diffusion.Node.Kernel
 
 
@@ -187,6 +188,8 @@ data LimitsAndTimeouts header block = LimitsAndTimeouts
 data AppArgs header block m = AppArgs
   { aaKeepAliveStdGen
      :: StdGen
+  , aaPolicyStdGen
+     :: StrictTVar m StdGen
   , aaDiffusionMode
      :: DiffusionMode
   , aaKeepAliveInterval
@@ -249,6 +252,7 @@ applications debugTracer nodeKernel
              AppArgs
                { aaDiffusionMode
                , aaKeepAliveStdGen
+               , aaPolicyStdGen
                , aaKeepAliveInterval
                , aaPingPongInterval
                , aaShouldChainSyncExit
@@ -280,7 +284,7 @@ applications debugTracer nodeKernel
       , Diffusion.daLocalRethrowPolicy     =
              mkRethrowPolicy
                (\ _ (_ :: SomeException) -> ShutdownNode)
-      , Diffusion.daPeerMetrics            = aaPeerMetrics
+      , Diffusion.daPeerSelectionPolicy    = simplePeerSelectionPolicy aaPolicyStdGen aaPeerMetrics (RepromoteDelay 10)
       , Diffusion.daReturnPolicy           = \_ -> config_REPROMOTE_DELAY
       , Diffusion.daPeerSharingRegistry    = nkPeerSharingRegistry nodeKernel
       }

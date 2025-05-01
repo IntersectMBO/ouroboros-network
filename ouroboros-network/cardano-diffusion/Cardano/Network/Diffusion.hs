@@ -49,6 +49,7 @@ import Ouroboros.Network.NodeToNode (NodeToNodeVersion (..),
 import Ouroboros.Network.NodeToNode qualified as NodeToNode
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeersConsensusInterface (..))
+import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 import Ouroboros.Network.Protocol.Handshake
 import Ouroboros.Network.Protocol.Handshake.Codec
 import Ouroboros.Network.Protocol.Handshake.Version
@@ -66,6 +67,7 @@ import Ouroboros.Network.Snocket (LocalAddress, LocalSocket (..))
 run :: LedgerPeersConsensusInterface (Cardano.LedgerPeersConsensusInterface IO) IO
     -> Tracer IO Cardano.Churn.TracerChurnMode
     -> Cardano.LC.LocalConfiguration IO
+    -> PeerMetrics IO RemoteAddress
     -> Diffusion.Tracers
         RemoteAddress
         NodeToNodeVersion
@@ -97,7 +99,7 @@ run :: LedgerPeersConsensusInterface (Cardano.LedgerPeersConsensusInterface IO) 
         IO
         a
     -> IO Void
-run lpci tracerChurnMode localConfig tracers args apps = do
+run lpci tracerChurnMode localConfig metrics tracers args apps = do
     let tracer = Diffusion.dtDiffusionTracer tracers
         daNtnHandshakeArguments =
           HandshakeArguments {
@@ -157,7 +159,8 @@ run lpci tracerChurnMode localConfig tracers args apps = do
                       (Diffusion.dcReadUseLedgerPeers args)
                       (Diffusion.dcOwnPeerSharing args)
                       (Cardano.LC.readUseBootstrapPeers localConfig)
-                      (Cardano.getLedgerStateJudgement (lpExtraAPI lpci)),
+                      (Cardano.getLedgerStateJudgement (lpExtraAPI lpci))
+                      metrics,
                   daPeerSelectionGovernorArgs         =
                     Cardano.Types.cardanoPeerSelectionGovernorArgs
                       Cardano.ExtraPeerSelectionActions {
