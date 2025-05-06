@@ -70,6 +70,7 @@ import Network.Mux.Bearer (withReadBufferIO)
 import Network.Socket (Socket)
 import Network.Socket qualified as Socket
 
+import Network.DNS (Resolver)
 import Ouroboros.Network.Context (ResponderContext)
 import Ouroboros.Network.Snocket (LocalAddress, LocalSocket (..), Snocket,
            localSocketFileDescriptor, makeLocalBearer, makeSocketBearer')
@@ -82,14 +83,12 @@ import Ouroboros.Network.Protocol.Handshake.Version
 import Ouroboros.Network.Socket (configureSocket, configureSystemdSocket)
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionHandler
-import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.InformationChannel
            (newInformationChannel)
 import Ouroboros.Network.ConnectionManager.State (ConnStateId,
            ConnStateIdSupply, newConnStateIdSupply)
 import Ouroboros.Network.ConnectionManager.Types
-import Ouroboros.Network.Context (ExpandedInitiatorContext, ResponderContext)
 import Ouroboros.Network.Diffusion.Common hiding (nullTracers)
 import Ouroboros.Network.Diffusion.Configuration
 import Ouroboros.Network.Diffusion.Policies (simplePeerSelectionPolicy)
@@ -133,16 +132,8 @@ import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersAPI)
 import Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
-import Ouroboros.Network.Protocol.Handshake
-import Ouroboros.Network.Protocol.Handshake.Codec
-import Ouroboros.Network.Protocol.Handshake.Version
 import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.Server2 qualified as Server
-import Ouroboros.Network.Snocket (FileDescriptor, LocalAddress,
-           LocalSocket (..), Snocket, localSocketFileDescriptor,
-           makeLocalBearer, makeSocketBearer)
-import Ouroboros.Network.Snocket qualified as Snocket
-import Ouroboros.Network.Socket (configureSocket, configureSystemdSocket)
 
 
 -- | P2P DiffusionTracers Extras
