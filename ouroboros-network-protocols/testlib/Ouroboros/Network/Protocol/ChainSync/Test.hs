@@ -479,7 +479,7 @@ codecWrapped :: ( MonadST m
                       S.DeserialiseFailure
                       m ByteString
 codecWrapped =
-    codecChainSync (wrapCBORinCBOR S.encode) (unwrapCBORinCBOR (const <$> S.decode))
+    codecChainSync (wrapCBORinCBOR S.encode) (unwrapCBORinCBOR (const S.decode))
                    S.encode                  S.decode
                    (encodeTip S.encode)      (decodeTip S.decode)
 
