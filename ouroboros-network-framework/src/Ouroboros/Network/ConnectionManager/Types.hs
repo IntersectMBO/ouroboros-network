@@ -695,16 +695,17 @@ data ConnectionManagerCounters = ConnectionManagerCounters {
                                    --   (including DuplexState connections)
       unidirectionalConns :: !Int, -- ^ number of negotiated unidirectional connections
       inboundConns        :: !Int, -- ^ number of inbound connections
-      outboundConns       :: !Int  -- ^ number of outbound connections
+      outboundConns       :: !Int, -- ^ number of outbound connections
+      terminatingConns    :: !Int  -- ^ number of terminating connections
     }
   deriving (Show, Eq, Ord)
 
 instance Semigroup ConnectionManagerCounters where
-    ConnectionManagerCounters fd1 d1 s1 i1 o1 <> ConnectionManagerCounters fd2 d2 s2 i2 o2 =
-      ConnectionManagerCounters (fd1 + fd2) (d1 + d2) (s1 + s2) (i1 + i2) (o1 + o2)
+    ConnectionManagerCounters fd1 d1 s1 i1 o1 t1 <> ConnectionManagerCounters fd2 d2 s2 i2 o2 t2 =
+      ConnectionManagerCounters (fd1 + fd2) (d1 + d2) (s1 + s2) (i1 + i2) (o1 + o2) (t1 + t2)
 
 instance Monoid ConnectionManagerCounters where
-    mempty = ConnectionManagerCounters 0 0 0 0 0
+    mempty = ConnectionManagerCounters 0 0 0 0 0 0
 
 -- | Exceptions used by 'ConnectionManager'.
 --

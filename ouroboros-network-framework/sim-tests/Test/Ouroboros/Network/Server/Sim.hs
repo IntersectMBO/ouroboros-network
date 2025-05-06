@@ -1330,17 +1330,17 @@ prop_connection_manager_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
             . List.foldl'
                (\ st ce -> case ce of
                  StartClient _ ta ->
-                   Map.alter (let c = ConnectionManagerCounters 0 0 1 0 0 in
+                   Map.alter (let c = ConnectionManagerCounters 0 0 1 0 0 0 in
                               maybe (Just c) (Just . maxCounters c))
                              ta st
 
                  OutboundConnection _ ta ->
-                   Map.alter (let c = ConnectionManagerCounters 0 ifDuplex ifUni 0 1 in
+                   Map.alter (let c = ConnectionManagerCounters 0 ifDuplex ifUni 0 1 0 in
                               maybe (Just c) (Just . maxCounters c))
                              ta st
 
                  InboundConnection _ ta ->
-                   Map.alter (let c = ConnectionManagerCounters 0 ifDuplex ifUni 1 0 in
+                   Map.alter (let c = ConnectionManagerCounters 0 ifDuplex ifUni 1 0 0 in
                               maybe (Just c) (Just . maxCounters c))
                              ta st
 
@@ -1359,8 +1359,8 @@ prop_connection_manager_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                            (\cmc' provenance ->
                              cmc' <>
                              if provenance == serverAddress
-                                then ConnectionManagerCounters 0 0 0 0 1
-                                else ConnectionManagerCounters 0 0 0 1 0
+                                then ConnectionManagerCounters 0 0 0 0 1 0
+                                else ConnectionManagerCounters 0 0 0 1 0 0
                            )
                            mempty
                            conns
@@ -1372,14 +1372,15 @@ prop_connection_manager_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
     maxCounters :: ConnectionManagerCounters
                 -> ConnectionManagerCounters
                 -> ConnectionManagerCounters
-    maxCounters (ConnectionManagerCounters a b c d e)
-                (ConnectionManagerCounters a' b' c' d' e') =
+    maxCounters (ConnectionManagerCounters a b c d e f)
+                (ConnectionManagerCounters a' b' c' d' e' f') =
       ConnectionManagerCounters
         (max a a')
         (max b b')
         (max c c')
         (max d d')
         (max e e')
+        (max f f')
 
     -- It is possible for the ObservableNetworkState to have discrepancies between the
     -- counters traced by TrConnectionManagerCounters. This leads to different
@@ -1402,10 +1403,14 @@ prop_connection_manager_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                              -- of the total sum.
                      -> ConnectionManagerCounters
                      -> (Int, Int, Int)
-    collapseCounters t (ConnectionManagerCounters _ a b c d) =
+    collapseCounters t ConnectionManagerCounters { duplexConns,
+                                                   unidirectionalConns,
+                                                   inboundConns,
+                                                   outboundConns
+                                                 } =
       if t
-         then (a, b, c + d)
-         else (a, b, c + d - a)
+         then (duplexConns, unidirectionalConns, inboundConns + outboundConns)
+         else (duplexConns, unidirectionalConns, inboundConns + outboundConns - duplexConns)
 
     networkStateTracer getState =
       Tracer $ \_ -> getState >>= traceM
