@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -406,13 +407,18 @@ awaitAllResults :: MonadSTM m
 awaitAllResults tok bundle = do
     results <-  readTVar (getMiniProtocolsVar tok bundle)
             >>= sequence
-    return $ Map.foldMapWithKey
+    if any (\case
+             NotStarted -> True
+             _          -> False
+           ) (Map.elems results)
+      then retry
+      else return $ Map.foldMapWithKey
                (\num r -> case r of
                           Errored  e           -> SomeErrored [MiniProtocolException num e]
                           Returned a           -> AllSucceeded (Map.singleton num a)
                           NotRunning (Right a) -> AllSucceeded (Map.singleton num a)
                           NotRunning (Left e)  -> SomeErrored [MiniProtocolException num e]
-                          NotStarted           -> AllSucceeded mempty)
+                          NotStarted           -> error "Impossible NotStarted" )
                results
 
 
