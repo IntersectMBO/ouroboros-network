@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -263,6 +264,9 @@ data HasReturned a
     -- | A mini-protocol has never been started yet.
   | NotStarted
 
+    -- | A mini-protocol is about to start. Currently only used by Hot protocols.
+  | Starting
+
 hasReturnedFromEither :: Either SomeException a -> HasReturned a
 hasReturnedFromEither (Left e)  = Errored e
 hasReturnedFromEither (Right a) = Returned a
@@ -370,6 +374,7 @@ awaitFirstResult tok bundle = do
       -- returned.
       NotRunning _ -> retry
       NotStarted   -> retry
+      Starting     -> retry
 
 
 -- | Data structure used in last-to-finish synchronisation for all
@@ -406,13 +411,19 @@ awaitAllResults :: MonadSTM m
 awaitAllResults tok bundle = do
     results <-  readTVar (getMiniProtocolsVar tok bundle)
             >>= sequence
-    return $ Map.foldMapWithKey
+    if any (\case
+             Starting -> True
+             _        -> False
+           ) (Map.elems results)
+       then retry
+       else return $ Map.foldMapWithKey
                (\num r -> case r of
                           Errored  e           -> SomeErrored [MiniProtocolException num e]
                           Returned a           -> AllSucceeded (Map.singleton num a)
                           NotRunning (Right a) -> AllSucceeded (Map.singleton num a)
                           NotRunning (Left e)  -> SomeErrored [MiniProtocolException num e]
-                          NotStarted           -> AllSucceeded mempty)
+                          NotStarted           -> AllSucceeded mempty
+                          Starting             -> error "Impossible Starting")
                results
 
 
@@ -878,6 +889,7 @@ withPeerStateActions PeerStateActionsArguments {
                                     Left {} -> Just $ epErrorDelay spsExitPolicy
                                     Right b -> Just $ epReturnDelay spsExitPolicy b
         h (Just NotStarted)     = Nothing
+        h (Just Starting)       = Nothing
         h Nothing               = Nothing
 
         -- the delay in the `PeerCooling` state is ignored, let's make it
@@ -909,6 +921,12 @@ withPeerStateActions PeerStateActionsArguments {
         when notCold $ do
           writeTVar (getControlVar SingHot pchAppHandles) Continue
           writeTVar (getControlVar SingWarm pchAppHandles) Quiesce
+
+          -- Flag the hot protocols as starting so that we don't deactivate the
+          -- connection before all hot protocols have started in case of an error.
+          let ptcls = getProtocols SingHot pchAppHandles
+          writeTVar (getMiniProtocolsVar SingHot pchAppHandles)
+                    (Map.fromList $ zip (miniProtocolNum `map` ptcls) (repeat (pure Starting)))
         return notCold
       when (not wasWarm) $ do
         traceWith spsTracer (PeerStatusChangeFailure
