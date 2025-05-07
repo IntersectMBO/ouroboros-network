@@ -257,6 +257,7 @@ run tracerBundle@MuxTracerBundle { muxTracer = tracer }
     -- deadlock of mini-protocol completion action.
     `catch` \(SomeAsyncException e) -> do
       atomically $ writeTVar muxStatus (Failed $ toException e)
+      traceWith tracer $ TraceState Dead
       throwIO e
   where
     muxerJob egressQueue =
