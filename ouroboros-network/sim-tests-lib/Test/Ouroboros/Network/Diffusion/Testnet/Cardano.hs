@@ -908,7 +908,7 @@ unit_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
                                                    diffScript
                                                    iosimTracer)
                            )
-                           500_000 -- ^ Running for 500k might not be enough.
+                           500000 -- ^ Running for 500k might not be enough.
   where
     -- We need to make sure the transactions are unique, this simplifies
     -- things.

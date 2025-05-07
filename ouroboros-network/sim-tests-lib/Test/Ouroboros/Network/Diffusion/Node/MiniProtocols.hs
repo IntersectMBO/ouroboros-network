@@ -97,7 +97,8 @@ import Ouroboros.Network.Protocol.TxSubmission2.Server
            (txSubmissionServerPeerPipelined)
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..),
            NumTxIdsToReq (..), TxSubmission2)
-import Ouroboros.Network.TxSubmission.Inbound.V2 (txSubmissionInboundV2)
+import Ouroboros.Network.TxSubmission.Inbound.V2 (TxSubmissionInitDelay (..),
+           txSubmissionInboundV2)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (SharedTxStateVar,
            TxChannelsVar, TxMempoolSem, withPeer)
@@ -704,6 +705,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
                    them $ \api -> do
             let server = txSubmissionInboundV2
                            txSubmissionInboundTracer
+                           NoTxSubmissionInitDelay
                            (getMempoolWriter mempool)
                            api
             labelThisThread "TxSubmissionServer"
