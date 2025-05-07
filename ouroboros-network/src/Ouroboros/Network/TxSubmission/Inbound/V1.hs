@@ -1,5 +1,4 @@
 {-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE GADTs               #-}
@@ -11,6 +10,7 @@
 
 module Ouroboros.Network.TxSubmission.Inbound.V1
   ( txSubmissionInbound
+  , TxSubmissionInitDelay (..)
   , TxSubmissionMempoolWriter (..)
   , TraceTxSubmissionInbound (..)
   , TxSubmissionProtocolError (..)
@@ -21,7 +21,6 @@ import Data.Foldable as Foldable (foldl', toList)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe
 import Data.Sequence.Strict (StrictSeq)
 import Data.Sequence.Strict qualified as Seq
 import Data.Set qualified as Set
@@ -43,12 +42,11 @@ import Control.Tracer (Tracer, traceWith)
 import Network.TypedProtocol.Core (N, Nat (..), natToInt)
 
 import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
-import Ouroboros.Network.Protocol.Limits
 import Ouroboros.Network.Protocol.TxSubmission2.Server
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (ProcessedTxCount (..),
-           TraceTxSubmissionInbound (..), TxSubmissionMempoolWriter (..),
-           TxSubmissionProtocolError (..))
+           TraceTxSubmissionInbound (..), TxSubmissionInitDelay (..),
+           TxSubmissionMempoolWriter (..), TxSubmissionProtocolError (..))
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
            TxSubmissionMempoolReader (..))
 
@@ -133,18 +131,17 @@ txSubmissionInbound
      , MonadDelay m
      )
   => Tracer m (TraceTxSubmissionInbound txid tx)
+  -> TxSubmissionInitDelay
   -> NumTxIdsToAck  -- ^ Maximum number of unacknowledged txids allowed
   -> TxSubmissionMempoolReader txid tx idx m
   -> TxSubmissionMempoolWriter txid tx idx m
   -> NodeToNodeVersion
   -> TxSubmissionServerPipelined txid tx m ()
-txSubmissionInbound tracer (NumTxIdsToAck maxUnacked) mpReader mpWriter _version =
+txSubmissionInbound tracer initDelay (NumTxIdsToAck maxUnacked) mpReader mpWriter _version =
     TxSubmissionServerPipelined $ do
-#ifdef TXSUBMISSION_DELAY
-      -- make the client linger before asking for tx's and expending
-      -- our resources as well, as he may disconnect for some reason
-      threadDelay (fromMaybe (-1) longWait)
-#endif
+      case initDelay of
+        TxSubmissionInitDelay delay -> threadDelay delay
+        NoTxSubmissionInitDelay     -> return ()
       continueWithStateM (serverIdle Zero) initialServerState
   where
     -- TODO #1656: replace these fixed limits by policies based on
