@@ -17,6 +17,8 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
   , emptyTxDecision
   , SharedDecisionContext (..)
   , TraceTxLogic (..)
+  , TxSubmissionInitDelay (..)
+  , defaultTxSubmissionInitDelay
     -- * Types shared with V1
     -- ** Various
   , ProcessedTxCount (..)
@@ -400,3 +402,11 @@ instance Exception TxSubmissionProtocolError where
       "The peer replied with more txids than we asked for."
   displayException (ProtocolErrorTxSizeError txids) =
       "The peer received txs with wrong sizes " ++ show txids
+
+data TxSubmissionInitDelay =
+     TxSubmissionInitDelay DiffTime
+ | NoTxSubmissionInitDelay
+ deriving (Eq, Show)
+
+defaultTxSubmissionInitDelay :: TxSubmissionInitDelay
+defaultTxSubmissionInitDelay = TxSubmissionInitDelay 60
