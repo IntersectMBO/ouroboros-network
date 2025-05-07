@@ -1,5 +1,4 @@
 {-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
@@ -27,7 +26,6 @@ module Ouroboros.Network.TxSubmission.Inbound.V2
 
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe)
 import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set qualified as Set
 
@@ -39,7 +37,6 @@ import Control.Tracer (Tracer, traceWith)
 
 import Network.TypedProtocol
 
-import Ouroboros.Network.Protocol.Limits (longWait)
 import Ouroboros.Network.Protocol.TxSubmission2.Server
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry
@@ -60,11 +57,13 @@ txSubmissionInboundV2
      , Ord txid
      )
   => Tracer m (TraceTxSubmissionInbound txid tx)
+  -> TxSubmissionInitDelay
   -> TxSubmissionMempoolWriter txid tx idx m
   -> PeerTxAPI m txid tx
   -> TxSubmissionServerPipelined txid tx m ()
 txSubmissionInboundV2
     tracer
+    initDelay
     TxSubmissionMempoolWriter { txId }
     PeerTxAPI {
       readTxDecision,
@@ -74,11 +73,9 @@ txSubmissionInboundV2
     }
     =
     TxSubmissionServerPipelined $ do
-#ifdef TXSUBMISSION_DELAY
-      -- make the client linger before asking for tx's and expending
-      -- our resources as well, as he may disconnect for some reason
-      threadDelay (fromMaybe (-1) longWait)
-#endif
+      case initDelay of
+        TxSubmissionInitDelay delay -> threadDelay delay
+        NoTxSubmissionInitDelay     -> return ()
       serverIdle
   where
     serverIdle
