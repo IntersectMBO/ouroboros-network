@@ -131,6 +131,7 @@ txSubmissionSimulation tracer maxUnacked outboundTxs
     inboundPeer inboundMempool =
       txSubmissionInbound
         nullTracer
+        NoTxSubmissionInitDelay
         maxUnacked
         (getMempoolReader inboundMempool)
         (getMempoolWriter inboundMempool)
