@@ -6,13 +6,13 @@
 {-# LANGUAGE RankNTypes               #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TupleSections            #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Ouroboros.Network.PeerSelection.PeerSelectionActions
   ( withPeerSelectionActions
   , requestPeerSharingResult
   , requestPublicRootPeers
   ) where
-
 
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadMVar (MonadMVar (..))
@@ -22,7 +22,7 @@ import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer)
+import Control.Tracer
 
 import Data.Map (Map)
 import Data.Map qualified as Map
@@ -77,7 +77,7 @@ withPeerSelectionActions
   getPeerSelectionActions
   ledgerPeersArgs
   k = do
-    withLedgerPeers
+    flip finally (traceWith localTracer $ TraceLocalRootError (DomainAccessPoint "" 1) (toException . userError $ "exiting withPeerSelectionActions")) $ withLedgerPeers
       peerActionsDNS
       ledgerPeersArgs
       (\getLedgerPeers lpThread -> do
@@ -85,7 +85,7 @@ withPeerSelectionActions
                 { readLocalRootPeersFromFile
                 } = getPeerSelectionActions getLedgerPeers
           withAsync
-            (do
+            ((do
              labelThisThread "local-roots-peers"
              localRootPeersProvider
               localTracer
@@ -94,8 +94,8 @@ withPeerSelectionActions
               -- of https://github.com/kazu-yamamoto/dns/issues/174
               DNS.defaultResolvConf
               readLocalRootPeersFromFile
-              localRootsVar)
-            (\lrppThread -> k (lpThread, lrppThread) peerSelectionActions))
+              localRootsVar) `finally` (traceWith localTracer $ TraceLocalRootError (DomainAccessPoint "" 1) (toException . userError $ "exiting async localRootPeersProvider")))
+            (\lrppThread -> flip finally (traceWith localTracer $ TraceLocalRootError (DomainAccessPoint "" 1) (toException . userError $ "withPeerSelectionActions continuation exit")) $ k (lpThread, lrppThread) peerSelectionActions))
 
 requestPeerSharingResult :: ( MonadSTM m
                             , MonadMVar m

@@ -482,7 +482,7 @@ peerSelectionGovernor :: ( Alternative (STM m)
                       -> m Void
 peerSelectionGovernor tracer debugTracer countersTracer peerSelectionArgs fuzzRng
                       extraState extraPeers actions policy interfaces =
-    JobPool.withJobPool $ \jobPool ->
+    flip finally (traceWith tracer (TraceOutboundGovernorCriticalFailure (toException $ userError "closed OG job pool"))) $ JobPool.withJobPool $ \jobPool ->
       peerSelectionGovernorLoop
         tracer
         debugTracer
