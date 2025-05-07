@@ -21,7 +21,7 @@ import Control.Exception (assert)
 
 import Data.Bifunctor (second)
 import Data.Hashable
-import Data.List (foldl', mapAccumR, sortOn)
+import Data.List qualified as List
 import Data.Map.Merge.Strict qualified as Map
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -85,7 +85,7 @@ orderByRejections :: Hashable peeraddr
                   -> Map peeraddr (PeerTxState txid tx)
                   -> [ (peeraddr, PeerTxState txid tx)]
 orderByRejections salt =
-        sortOn (\(peeraddr, ps) -> (score ps, hashWithSalt salt peeraddr))
+        List.sortOn (\(peeraddr, ps) -> (score ps, hashWithSalt salt peeraddr))
       . Map.toList
 
 -- | Internal state of `pickTxsToDownload` computation.
@@ -144,7 +144,7 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                                               limboTxs,
                                               referenceCounts } =
     -- outer fold: fold `[(peeraddr, PeerTxState txid tx)]`
-    mapAccumR
+    List.mapAccumR
       accumFn
       -- initial state
       St { stInflight     = inflightTxs,
@@ -351,7 +351,7 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                          `Map.restrictKeys`
                          liveSet
 
-          limboTxs' = foldl' updateLimboTxs limboTxs as
+          limboTxs' = List.foldl' updateLimboTxs limboTxs as
 
       in ( sharedState {
              peerTxStates    = peerTxStates',
@@ -380,7 +380,7 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                        -> (a, TxDecision txid tx)
                        -> Map txid Int
         updateLimboTxs m (_,TxDecision { txdTxsToMempool } ) =
-            foldl' fn m (listOfTxsToMempool txdTxsToMempool)
+            List.foldl' fn m (listOfTxsToMempool txdTxsToMempool)
           where
             fn :: Map txid Int
                -> (txid,tx)
