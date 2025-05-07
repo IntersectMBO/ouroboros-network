@@ -189,6 +189,8 @@ with
       withAsync
         (  labelThisThread "inbound-governor-loop" >>
            forever (inboundGovernorStep connectionManager stateVar >> yield)
+         `finally`
+           traceWith tracer (TrInboundGovernorError $ toException $ userError "bailing IG step") -- ^ dummy trace
          `catch`
            handleError stateVar)
       \thread ->
@@ -506,6 +508,7 @@ with
 
           MuxFinished connId result -> do
 
+            traceWith tracer (TrMuxCleanExit connId) -- ^ dummy trace
             merr <- atomically result
             case merr of
               Nothing  -> traceWith tracer (TrMuxCleanExit connId)
@@ -525,8 +528,9 @@ with
                 tMiniProtocolData = mpd@MiniProtocolData { mpdMiniProtocol = miniProtocol },
                 tResult
               } -> do
-            tResult' <- atomically tResult
             let num = miniProtocolNum miniProtocol
+            traceWith tracer $ TrResponderRestarted tConnId num -- ^ dummy trace
+            tResult' <- atomically tResult
             case tResult' of
               Left e -> do
                 -- a mini-protocol errored.  In this case mux will shutdown, and

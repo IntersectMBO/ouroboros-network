@@ -597,8 +597,8 @@ withPeerStateActions PeerStateActionsArguments {
                        spsMainThreadId
                      }
                      k =
-    JobPool.withJobPool $ \jobPool ->
-      k PeerStateActions {
+    flip finally (traceWith spsTracer . AcquireConnectionError . toException . userError $ "closed sps pool") $ JobPool.withJobPool $ \jobPool ->
+      flip finally (traceWith spsTracer . AcquireConnectionError . toException . userError $ "closing sps pool") $ k PeerStateActions {
           establishPeerConnection = establishPeerConnection jobPool,
           monitorPeerConnection,
           activatePeerConnection,
@@ -784,10 +784,10 @@ withPeerStateActions PeerStateActionsArguments {
                                         Just SomeAsyncException {} -> Nothing
                                         Nothing                    -> Just e)
                                      (\e -> do
+                                        traceWith spsTracer (PeerMonitoringError connId e)
                                         atomically $ do
                                           waitForOutboundDemotion spsConnectionManager connId
                                           writeTVar peerStateVar PeerCold
-                                        traceWith spsTracer (PeerMonitoringError connId e)
                                         throwIO e)
                                      (peerMonitoringLoop connHandle $> Nothing))
                                    (return . Just)

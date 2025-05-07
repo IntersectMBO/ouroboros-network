@@ -380,23 +380,13 @@ makeConnectionHandler muxTracer forkPolicy
                           case inResponderMode of
                             InResponderMode (inboundGovernorMuxTracer, connectionDataFlow)
                               | Duplex <- connectionDataFlow agreedOptions -> do
-                                  -- In this case, following the Mx.run call below, the muxer begins racing with
-                                  -- the CM to write to the information channel queue. The tracer of mux activity,
-                                  -- while the CM of new connection notification. The latter *should* come first.
-                                  -- The IG tracer will block the muxer on a TVar when it reaches mature state
-                                  -- until the CM informs the former of new peer connection to ensure
-                                  -- proper sequencing of events.
                                   countersVar <- newTVarIO . SJust $ ResponderCounters 0 0
                                   let newConnection =
                                         NewConnectionInfo Outbound connectionId Duplex handle
                                   pure $ muxTracer <> inboundGovernorMuxTracer newConnection countersVar
                             _notResponder ->
                                   -- If this is InitiatorOnly, or a server where unidirectional flow was negotiated
-                                  -- the IG will never be informed of this remote for obvious reasons. There is no
-                                  -- need to pass the responder IG tracer here, and we must not in the latter case
-                                  -- as the muxer will deadlock itself before it launches any miniprotocols from the
-                                  -- command queue. It will be stuck when reaches mature state, forever waiting for
-                                  -- the incoming peer handle.
+                                  -- the IG will never be informed of this remote for obvious reasons.
                                   pure muxTracer
                     Mx.run Mx.MuxTracerBundle {
                              muxTracer     = muxTracer',
