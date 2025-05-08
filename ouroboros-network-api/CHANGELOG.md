@@ -8,6 +8,7 @@
 
 * `IsLedgerPeer` added to `Ouroboros.Network.LedgerPeers.Types` module.
 * Added `ProtocolTimeLimitsWithRnd` to `Ouroboros.Network.Protocol.Limits`
+* Derived `Bounded` instance for `SizeInBytes`.
 
 ## 0.14.0.0 - 2025-05-13
 
