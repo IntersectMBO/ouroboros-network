@@ -6,6 +6,10 @@
 
 ### Non-breaking changes
 
+* `renderRanges`: print a range using math notation for open/closed intervals.
+* Pretty print `WithName` using `Show` instance.
+* Pretty print `WithTime` using `Show` instance.
+
 ## 0.8.1.0 -- 2025-02-25
 
 ### Non-breaking changes
