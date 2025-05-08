@@ -6,6 +6,31 @@
 
 ### Non-breaking changes
 
+## 0.15.0.0 -- 28.06.2025
+
+### Breaking changes
+
+* Chain-sync protocol is providing `ProtocolTimeLimitsWithRnd`.  It now must be
+  run using either `runPeerWithLimitsRnd` or `runPipelinedPeerWithLimitsRnd`.
+* `ChainSyncTimeout` data type is removed.
+* `timeLimitsChainSync` changed type: it is a function which takes the idle timeout as an argument.
+* `Ouroboros.Network.Protocols.TxSubmission2.Codec.{encode,decode}TxSubmission2`
+  are no longer exported.
+* `CollectPipelined` constructor for `TxSubmission2.Server` was modified: now
+  one can run a monadic action in the continuation when no message is available.
+
+### Non-breaking changes
+
+* Improved haddocks of `node-to-node` mini-protocol codecs.
+
+## 0.14.0.2 -- 2025-07-17
+
+### Breaking changes
+
+### Non-breaking changes
+
+* loosen upper bound for QuickCheck to <2.16
+
 ## 0.14.0.1 -- 2025-05-13
 
 ### Breaking changes
