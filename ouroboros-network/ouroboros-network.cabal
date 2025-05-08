@@ -20,11 +20,6 @@ flag asserts
   manual: False
   default: False
 
-flag txsubmission-delay
-  description: Delay initial request for transactions from outbound/client peer
-  manual: True
-  default: True
-
 source-repository head
   type: git
   location: https://github.com/intersectmbo/ouroboros-network
@@ -187,9 +182,6 @@ library
 
   if flag(asserts)
     ghc-options: -fno-ignore-asserts
-
-  if flag(txsubmission-delay)
-    cpp-options: -DTXSUBMISSION_DELAY
 
 library ouroboros-orphan-instances
   import: ghc-options
