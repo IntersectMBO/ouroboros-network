@@ -16,6 +16,8 @@
 * `timeLimitsChainSync` changed type: it is a function which takes the idle timeout as an argument.
 * `Ouroboros.Network.Protocols.TxSubmission2.Codec.{encode,decode}TxSubmission2`
   are no longer exported.
+* `CollectPipelined` constructor for `TxSubmission2.Server` was modified: now
+  one can run a monadic action in the continuation when no message is available.
 
 ### Non-breaking changes
 
