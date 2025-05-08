@@ -52,17 +52,19 @@ socketAsBearer
   -> Int
   -> Maybe (Mx.ReadBuffer IO)
   -> DiffTime
+  -> DiffTime
   -> Tracer IO Mx.Trace
   -> Socket.Socket
   -> Bearer IO
-socketAsBearer sduSize batchSize readBuffer_m sduTimeout tracer sd =
+socketAsBearer sduSize batchSize readBuffer_m sduTimeout pollInterval tracer sd =
       Mx.Bearer {
-        Mx.read      = readSocket,
-        Mx.write     = writeSocket,
-        Mx.writeMany = writeSocketMany,
-        Mx.sduSize   = sduSize,
-        Mx.batchSize = batchSize,
-        Mx.name      = "socket-bearer"
+        Mx.read           = readSocket,
+        Mx.write          = writeSocket,
+        Mx.writeMany      = writeSocketMany,
+        Mx.sduSize        = sduSize,
+        Mx.batchSize      = batchSize,
+        Mx.name           = "socket-bearer",
+        Mx.egressInterval = pollInterval
       }
     where
       readSocket :: Mx.TimeoutFn IO -> IO (Mx.SDU, Time)

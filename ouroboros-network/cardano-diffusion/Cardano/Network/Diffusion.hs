@@ -136,7 +136,7 @@ run lpci tracerChurnMode localConfig metrics tracers args apps = do
                (\e -> traceWith tracer (Diffusion.DiffusionErrored e)
                    >> throwIO (Diffusion.DiffusionError e))
          $ withIOManager $ \iocp -> do
-             interfaces <- Diffusion.mkInterfaces iocp tracer
+             interfaces <- Diffusion.mkInterfaces iocp tracer (Diffusion.dcEgressPollInterval args)
              Diffusion.runM
                interfaces
                tracers

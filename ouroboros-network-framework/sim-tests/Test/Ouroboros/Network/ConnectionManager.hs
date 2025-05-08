@@ -347,12 +347,13 @@ makeFDBearer :: MonadDelay m
              => MakeBearer m (FD m)
 makeFDBearer = MakeBearer $ \_ _ _ _ ->
       return Mx.Bearer {
-          Mx.write     = \_ _ -> getMonotonicTime,
-          Mx.writeMany = \_ _ -> getMonotonicTime,
-          Mx.read      = \_ -> forever (threadDelay 3600),
-          Mx.sduSize   = Mx.SDUSize 1500,
-          Mx.batchSize = 1500,
-          Mx.name      = "FD"
+          Mx.write          = \_ _ -> getMonotonicTime,
+          Mx.writeMany      = \_ _ -> getMonotonicTime,
+          Mx.read           = \_ -> forever (threadDelay 3600),
+          Mx.sduSize        = Mx.SDUSize 1500,
+          Mx.batchSize      = 1500,
+          Mx.name           = "FD",
+          Mx.egressInterval = 0
         }
 
 -- | We only keep exceptions here which should not be handled by the test

@@ -467,6 +467,9 @@ data Configuration extraFlags m ntnFd ntnAddr ntcFd ntcAddr = Configuration {
     --
     , dcLocalMuxForkPolicy :: Mx.ForkPolicy ntcAddr
 
+    -- | Mux egress queue's poll interval
+    , dcEgressPollInterval :: DiffTime
+
   }
 
 

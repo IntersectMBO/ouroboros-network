@@ -78,7 +78,7 @@ import Ouroboros.Network.Protocol.Handshake
 import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Snocket (LocalAddress, LocalSocket (..),
-           localSocketFileDescriptor, makeLocalBearer, makeSocketBearer)
+           localSocketFileDescriptor, makeLocalBearer, makeSocketBearer')
 import Ouroboros.Network.Snocket qualified as Snocket
 import Ouroboros.Network.Socket (configureSocket, configureSystemdSocket)
 
@@ -870,7 +870,7 @@ run extraParams tracers args apps = do
                    >> throwIO (DiffusionError e))
          $ withIOManager $ \iocp -> do
 
-             interfaces <- mkInterfaces iocp tracer
+             interfaces <- mkInterfaces iocp tracer (dcEgressPollInterval args)
 
              runM interfaces
                   tracers
@@ -884,6 +884,7 @@ run extraParams tracers args apps = do
 
 mkInterfaces :: IOManager
              -> Tracer IO (DiffusionTracer ntnAddr ntcAddr)
+             -> DiffTime
              -> IO (Interfaces Socket
                                RemoteAddress
                                LocalSocket
@@ -891,14 +892,17 @@ mkInterfaces :: IOManager
                                Resolver
                                IOException
                                IO)
-mkInterfaces iocp tracer = do
+mkInterfaces iocp tracer egressPollInterval = do
 
   diRng <- newStdGen
   diConnStateIdSupply <- atomically $ CM.newConnStateIdSupply Proxy
 
+  -- Clamp the mux egress poll interval to sane values.
+  let egressInterval = max 0 $ min 0.200 egressPollInterval
+
   return $ Interfaces {
     diNtnSnocket                = Snocket.socketSnocket iocp,
-    diNtnBearer                 = makeSocketBearer,
+    diNtnBearer                 = makeSocketBearer' egressInterval,
     diWithBuffer                = withReadBufferIO,
     diNtnConfigureSocket        = configureSocket,
     diNtnConfigureSystemdSocket =
