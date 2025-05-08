@@ -969,6 +969,7 @@ unit_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
         $ counterexample ("A: valid transactions that should be accepted: " ++ show validSortedTxidsA)
         $ counterexample ("B: unique txs: " ++ show uniqueTxsB)
         $ counterexample ("B: valid transactions that should be accepted: " ++ show validSortedTxidsB)
+        $ label ("number of valid tx transferred: " ++ renderRanges 10 (getSum . foldMap (Sum . List.length) $ sortedAcceptedTxidsMap))
 
          -- Success criteria, after running for 500k events, we check the map
          -- for the two nodes involved in the simulation and verify that indeed
