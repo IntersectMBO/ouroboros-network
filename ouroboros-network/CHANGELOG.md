@@ -4,6 +4,14 @@
 
 ### Breaking changes
 
+* `Ouroboros.Network.NodeTo{Client,Node}` modules moved to
+  `ouroboros-network:cardano-diffusion` (as `Cardano.Network.NodeTo{Node,Client}`)
+* Adapt to simplified type of `headerForgeUTCTime` in `BlockFetchConsensusInterface`.
+* `Ouroboros.Network.TxSubmission.Inbound` moved to `Ouroboros.Network.TxSubmission.Inbound.V1`
+* `Ouroboros.Network.TxSubmission.Inbound.V1.txSubmissionInbound` takes extra argument: `TxSubmissionInitDelay` (previously configurable through `cabal` flags).
+* Removed the `txsubmission-delay` cabal flag.
+* `ProtocolErrorRequestedTooManyTxids` includes number of unacked txids.
+
 ### Non-breaking changes
 
 ## 0.21.5.0 -- 2025-12-23

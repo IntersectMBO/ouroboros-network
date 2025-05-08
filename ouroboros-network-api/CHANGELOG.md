@@ -1,6 +1,27 @@
 # Revision history for ouroboros-network-api
 
-## next version
+## next release
+
+### Breaking changes
+
+* Simplify type of `headerForgeUTCTime` in `BlockFetchConsensusInterface`, and
+  remove the supporting type `FromConsensus`.
+
+### Non-breaking changes
+
+## 0.15.0.0 -- 2025-06-28
+
+### Breaking changes
+
+* Added `NodeToClientV_21`.
+
+### Non-breaking changes
+
+* `IsLedgerPeer` added to `Ouroboros.Network.LedgerPeers.Types` module.
+* Added `ProtocolTimeLimitsWithRnd` to `Ouroboros.Network.Protocol.Limits`
+* Derived `Bounded` instance for `SizeInBytes`.
+
+## 0.14.1.0 -- 2025-07-17
 
 ### Breaking changes
 
