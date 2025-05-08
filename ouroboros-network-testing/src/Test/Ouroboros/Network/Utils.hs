@@ -57,6 +57,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Typeable (Typeable)
 import Text.Pretty.Simple (pPrint)
+import Text.Printf
 
 import Debug.Trace (traceShowM)
 import Test.QuickCheck
@@ -143,7 +144,7 @@ prop_shrink_valid valid (ShrinkCarefully x) =
 -- | Use in 'tabulate' to help summarise data into buckets.
 --
 renderRanges :: Int -> Int -> String
-renderRanges r n = show lower ++ " -- " ++ show upper
+renderRanges r n = "[" ++ printf "% 3d" lower ++ ", " ++ printf "% 3d" upper ++ ")"
   where
     lower = n - n `mod` r
     upper = lower + (r-1)
