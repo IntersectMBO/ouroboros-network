@@ -4,7 +4,14 @@
 
 ### Breaking changes
 
+- `Ouroboros.Network.TxSubmission.Inbound` moved to `Ouroboros.Network.TxSubmission.Inbound.V1`
+- `Ouroboros.Network.TxSubmission.Inbound.V1.txSubmissionInbound` takes extra argument: `TxSubmissionInitDelay` (previously configurable through `cabal` flags).
+- Removed the `txsubmission-delay` cabal flag.
+- `ProtocolErrorRequestedTooManyTxids` includes number of unacked txids.
+
 ### Non-breaking changes
+
+* Added `Ouroboros.Network.TxSubmission.Inbound.V2`.
 
 ## 0.21.0.0 -- 2025-05-13
 
