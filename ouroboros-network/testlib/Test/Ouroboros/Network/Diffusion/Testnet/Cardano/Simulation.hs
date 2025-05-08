@@ -430,13 +430,14 @@ instance Arbitrary SmallPeerSelectionTargets where
 
 -- | Given a NtNAddr generate the necessary things to run a node in
 -- Simulation
-genNodeArgs :: [TestnetRelayInfo]
+genNodeArgs :: SimArgs
+            -> [TestnetRelayInfo]
             -> Int
             -> [(HotValency, WarmValency, Map RelayAccessPoint (LocalRootConfig PeerTrustable))]
             -> TestnetRelayInfo
             -> [Tx Int]
             -> Gen NodeArgs
-genNodeArgs relays minConnected localRootPeers self txs = flip suchThat hasUpstream $ do
+genNodeArgs SimArgs {saSlot, saQuota} relays minConnected localRootPeers self txs = flip suchThat hasUpstream $ do
   -- Slot length needs to be greater than 0 else we get a livelock on
   -- the IOSim.
   --
@@ -450,19 +451,12 @@ genNodeArgs relays minConnected localRootPeers self txs = flip suchThat hasUpstr
                              , (3, pure InitiatorAndResponderDiffusionMode)
                              ]
 
-  -- These values approximately correspond to false positive
-  -- thresholds for streaks of empty slots with 99% probability,
-  -- 99.9% probability up to 99.999% probability.
-  -- t = T_s [log (1-Y) / log (1-f)]
-  -- Y = [0.99, 0.999...]
-  --
-  -- T_s = slot length of 1s.
-  -- f = 0.05
-  -- The timeout is randomly picked per bearer to avoid all bearers
-  -- going down at the same time in case of a long streak of empty
-  -- slots. TODO: workaround until peer selection governor.
-  -- Taken from ouroboros-consensus/src/Ouroboros/Consensus/Node.hs
-  mustReplyTimeout <- Just <$> oneof (pure <$> [90, 135, 180, 224, 269])
+  -- Number of slots for which a single node will not produce a block with
+  -- probability higher than 99%
+  (mustReplyTimeoutInSlots :: Double) <-
+    arbitrary `suchThat` (\x -> x >= log(0.99) / log(1 - fromIntegral saQuota / 100))
+  let mustReplyTimeout :: DiffTime
+      mustReplyTimeout = saSlot * realToFrac mustReplyTimeoutInSlots
 
   -- Make sure our targets for active peers cover the maximum of peers
   -- one generated
@@ -512,7 +506,7 @@ genNodeArgs relays minConnected localRootPeers self txs = flip suchThat hasUpstr
    $ NodeArgs
       { naSeed                   = seed
       , naDiffusionMode          = diffusionMode
-      , naMbTime                 = mustReplyTimeout
+      , naMbTime                 = Just mustReplyTimeout
       , naPublicRoots            = publicRoots
         -- TODO: we haven't been using public root peers so far because we set
         -- `UseLedgerPeers 0`!
@@ -690,7 +684,7 @@ genDiffusionScript genLocalRootPeers
     dnsMapScript <- genDomainMapScript relays
     txs <- makeUniqueIds 0
        <$> vectorOf (length relays') (choose (10, 100) >>= \c -> vectorOf c arbitrary)
-    nodesWithCommands <- mapM go (zip relays' txs)
+    nodesWithCommands <- mapM (go simArgs) (zip relays' txs)
     return (simArgs, dnsMapScript, nodesWithCommands)
   where
     relays' = unTestnetRelays relays
@@ -706,13 +700,13 @@ genDiffusionScript genLocalRootPeers
                          , i + length l + 1
                          )
 
-    go :: (TestnetRelayInfo, [Tx Int]) -> Gen (NodeArgs, [Command])
-    go (relay, txs) = do
+    go :: SimArgs -> (TestnetRelayInfo, [Tx Int]) -> Gen (NodeArgs, [Command])
+    go simArgs (relay, txs) = do
       let otherRelays  = relay `delete` relays'
           minConnected = 3 `max` (length relays' - 1) -- ^ TODO is this ever different from 3?
                                                       -- since we generate {2,3} relays?
       localRts <- genLocalRootPeers otherRelays relay
-      nodeArgs <- genNodeArgs relays' minConnected localRts relay txs
+      nodeArgs <- genNodeArgs simArgs relays' minConnected localRts relay txs
       commands <- genCommands localRts
       return (nodeArgs, commands)
 
@@ -1218,6 +1212,12 @@ diffusionSimulation
                 { Node.chainSyncLimits      = defaultMiniProtocolsLimit
                 , Node.chainSyncSizeLimits  = byteLimitsChainSync (fromIntegral . BL.length)
                 , Node.chainSyncTimeLimits  =
+                    -- timeLimitsChainSync ChainSyncTimeout
+                    --   { canAwaitTimeout  = Nothing
+                    --   , intersectTimeout = Nothing
+                    --   , mustReplyTimeout = Nothing
+                    --   , idleTimeout      = Nothing
+                    --   }
                     timeLimitsChainSync stdChainSyncTimeout
                 , Node.blockFetchLimits     = defaultMiniProtocolsLimit
                 , Node.blockFetchSizeLimits = byteLimitsBlockFetch (fromIntegral . BL.length)
