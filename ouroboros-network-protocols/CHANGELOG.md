@@ -4,6 +4,9 @@
 
 ### Breaking changes
 
+* `CollectPipelined` constructor for `TxSubmission2.Server` was modified: now
+  one can run a monadic action in the continuation when no message is available.
+
 ### Non-breaking changes
 
 ## 0.14.0.1 -- 2025-05-13

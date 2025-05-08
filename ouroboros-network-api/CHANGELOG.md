@@ -7,6 +7,7 @@
 ### Non-breaking changes
 
 * `IsLedgerPeer` added to `Ouroboros.Network.LedgerPeers.Types` module.
+* Derived `Bounded` instance for `SizeInBytes`.
 
 ## 0.14.0.0 - 2025-05-13
 
