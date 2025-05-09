@@ -358,37 +358,36 @@ makeConnectionHandler muxTracer forkPolicy
                 atomically $ writePromise (Left (HandleHandshakeClientError err))
                 traceWith tracer (TrHandshakeClientError err)
 
-              Right (HandshakeNegotiationResult app versionNumber agreedOptions) ->
-                unmask $ do
-                  traceWith tracer (TrHandshakeSuccess versionNumber agreedOptions)
-                  controlMessageBundle
-                    <- (\a b c -> TemperatureBundle (WithHot a) (WithWarm b) (WithEstablished c))
-                        <$> newTVarIO Continue
-                        <*> newTVarIO Continue
-                        <*> newTVarIO Continue
-                  mux <- Mx.new (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
-                  let !handle = Handle {
-                          hMux            = mux,
-                          hMuxBundle      = app,
-                          hControlMessage = controlMessageBundle,
-                          hVersionData    = agreedOptions
-                        }
-                  atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
-                  withBuffer \buffer -> do
-                    bearer <- mkMuxBearer sduTimeout socket buffer
-                    muxTracer' <- contramap (Mx.WithBearer connectionId) <$>
-                          case inResponderMode of
-                            InResponderMode (inboundGovernorMuxTracer, connectionDataFlow)
-                              | Duplex <- connectionDataFlow agreedOptions -> do
-                                  countersVar <- newTVarIO . SJust $ ResponderCounters 0 0
-                                  let newConnection =
-                                        NewConnectionInfo Outbound connectionId Duplex handle
-                                  pure $ muxTracer <> inboundGovernorMuxTracer newConnection countersVar
-                            _notResponder ->
-                                  -- If this is InitiatorOnly, or a server where unidirectional flow was negotiated
-                                  -- the IG will never be informed of this remote for obvious reasons.
-                                  pure muxTracer
-                    Mx.run Mx.MuxTracerBundle {
+              Right (HandshakeNegotiationResult app versionNumber agreedOptions) -> do
+                traceWith tracer (TrHandshakeSuccess versionNumber agreedOptions)
+                controlMessageBundle
+                  <- (\a b c -> TemperatureBundle (WithHot a) (WithWarm b) (WithEstablished c))
+                      <$> newTVarIO Continue
+                      <*> newTVarIO Continue
+                      <*> newTVarIO Continue
+                mux <- Mx.new (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
+                let !handle = Handle {
+                        hMux            = mux,
+                        hMuxBundle      = app,
+                        hControlMessage = controlMessageBundle,
+                        hVersionData    = agreedOptions
+                      }
+                atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
+                withBuffer \buffer -> do
+                  bearer <- mkMuxBearer sduTimeout socket buffer
+                  muxTracer' <-
+                    contramap (Mx.WithBearer connectionId) <$> case inResponderMode of
+                      InResponderMode (inboundGovernorMuxTracer, connectionDataFlow)
+                        | Duplex <- connectionDataFlow agreedOptions -> do
+                            countersVar <- newTVarIO . SJust $ ResponderCounters 0 0
+                            let newConnection =
+                                  NewConnectionInfo Outbound connectionId Duplex handle
+                            pure $ muxTracer <> inboundGovernorMuxTracer newConnection countersVar
+                      _notResponder ->
+                            -- If this is InitiatorOnly, or a server where unidirectional flow was negotiated
+                            -- the IG will never be informed of this remote for obvious reasons.
+                            pure muxTracer
+                  unmask $ Mx.run Mx.MuxTracerBundle {
                              muxTracer     = muxTracer',
                              channelTracer = Mx.WithBearer connectionId `contramap` muxTracer }
                            mux bearer
@@ -449,34 +448,32 @@ makeConnectionHandler muxTracer forkPolicy
               Left !err -> do
                 atomically $ writePromise (Left (HandleHandshakeServerError err))
                 traceWith tracer (TrHandshakeServerError err)
-              Right (HandshakeNegotiationResult app versionNumber agreedOptions) ->
-                unmask $ do
-                  traceWith tracer (TrHandshakeSuccess versionNumber agreedOptions)
-                  controlMessageBundle
-                    <- (\a b c -> TemperatureBundle (WithHot a) (WithWarm b) (WithEstablished c))
-                        <$> newTVarIO Continue
-                        <*> newTVarIO Continue
-                        <*> newTVarIO Continue
-                  mux <- Mx.new (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
+              Right (HandshakeNegotiationResult app versionNumber agreedOptions) -> do
+               traceWith tracer (TrHandshakeSuccess versionNumber agreedOptions)
+               controlMessageBundle
+                 <- (\a b c -> TemperatureBundle (WithHot a) (WithWarm b) (WithEstablished c))
+                     <$> newTVarIO Continue
+                     <*> newTVarIO Continue
+                     <*> newTVarIO Continue
+               mux <- Mx.new (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
 
-                  let !handle = Handle {
-                          hMux            = mux,
-                          hMuxBundle      = app,
-                          hControlMessage = controlMessageBundle,
-                          hVersionData    = agreedOptions
-                        }
-                  atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
-                  withBuffer (\buffer -> do
-                      bearer <- mkMuxBearer sduTimeout socket buffer
-                      countersVar <- newTVarIO . SJust $ ResponderCounters 0 0
-                      let traceWithBearer = contramap $ Mx.WithBearer connectionId
-                          newConnection =
-                            NewConnectionInfo Inbound connectionId (connectionDataFlow agreedOptions) handle
-                      Mx.run Mx.MuxTracerBundle {
-                               muxTracer     = traceWithBearer (muxTracer <> inboundGovernorMuxTracer newConnection countersVar),
-                               channelTracer = traceWithBearer muxTracer }
-                             mux bearer
-                    )
+               let !handle = Handle {
+                       hMux            = mux,
+                       hMuxBundle      = app,
+                       hControlMessage = controlMessageBundle,
+                       hVersionData    = agreedOptions
+                     }
+               atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
+               withBuffer \buffer -> do
+                 bearer <- mkMuxBearer sduTimeout socket buffer
+                 countersVar <- newTVarIO . SJust $ ResponderCounters 0 0
+                 let traceWithBearer = contramap $ Mx.WithBearer connectionId
+                     newConnection =
+                       NewConnectionInfo Inbound connectionId (connectionDataFlow agreedOptions) handle
+                 unmask $ Mx.run Mx.MuxTracerBundle {
+                            muxTracer     = traceWithBearer (muxTracer <> inboundGovernorMuxTracer newConnection countersVar),
+                            channelTracer = traceWithBearer muxTracer }
+                          mux bearer
               Right (HandshakeQueryResult vMap) -> do
                 atomically $ writePromise (Right HandshakeConnectionQuery)
                 traceWith tracer $ TrHandshakeQuery vMap
