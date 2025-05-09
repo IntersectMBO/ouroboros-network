@@ -139,7 +139,7 @@ acknowledgeTxIds
       else
       ( 0
       , 0
-      , TxsToMempool []
+      , TxsToMempool txsToMempool
       , RefCountDiff Map.empty
       , ps
       )
