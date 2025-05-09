@@ -15,7 +15,8 @@
 
 module Test.Ouroboros.Network.Diffusion.Testnet.Cardano (tests) where
 
-import Control.Exception (AssertionFailed (..), catch, evaluate, fromException)
+import Control.Exception (AssertionFailed (..), catch, displayException,
+           evaluate, fromException)
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadTest (exploreRaces)
 import Control.Monad.Class.MonadTime.SI (DiffTime, Time (Time), addTime,
@@ -2153,13 +2154,15 @@ prop_accept_failure (AbsIOError ioerr) =
            counterexample (show evs)
          . (if isFatalAccept ioerr
            then -- verify that the node was killed by the right exception
-                any (\case
+                counterexample ("fatal exception " ++ displayException ioerr ++ " not propagated")
+              . any (\case
                       TrErrored e | Just e' <- fromException e
                                   , e' == ioerr
                                   -> True
                       _           -> False)
            else -- verify that the node was not killed by the `ioerr` exception
-                all (\case
+                counterexample ("non-fatal exception " ++ displayException ioerr ++ " propagated")
+              . all (\case
                       TrErrored {} -> False
                       _            -> True)
            )
