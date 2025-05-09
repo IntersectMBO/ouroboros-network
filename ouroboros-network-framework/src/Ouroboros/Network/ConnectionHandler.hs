@@ -358,47 +358,36 @@ makeConnectionHandler muxTracer forkPolicy
                 atomically $ writePromise (Left (HandleHandshakeClientError err))
                 traceWith tracer (TrHandshakeClientError err)
 
-              Right (HandshakeNegotiationResult app versionNumber agreedOptions) ->
-                unmask $ do
-                  traceWith tracer (TrHandshakeSuccess versionNumber agreedOptions)
-                  controlMessageBundle
-                    <- (\a b c -> TemperatureBundle (WithHot a) (WithWarm b) (WithEstablished c))
-                        <$> newTVarIO Continue
-                        <*> newTVarIO Continue
-                        <*> newTVarIO Continue
-                  mux <- Mx.new (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
-                  let !handle = Handle {
-                          hMux            = mux,
-                          hMuxBundle      = app,
-                          hControlMessage = controlMessageBundle,
-                          hVersionData    = agreedOptions
-                        }
-                  atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
-                  withBuffer \buffer -> do
-                    bearer <- mkMuxBearer sduTimeout socket buffer
-                    muxTracer' <- contramap (Mx.WithBearer connectionId) <$>
-                          case inResponderMode of
-                            InResponderMode (inboundGovernorMuxTracer, connectionDataFlow)
-                              | Duplex <- connectionDataFlow agreedOptions -> do
-                                  -- In this case, following the Mx.run call below, the muxer begins racing with
-                                  -- the CM to write to the information channel queue. The tracer of mux activity,
-                                  -- while the CM of new connection notification. The latter *should* come first.
-                                  -- The IG tracer will block the muxer on a TVar when it reaches mature state
-                                  -- until the CM informs the former of new peer connection to ensure
-                                  -- proper sequencing of events.
-                                  countersVar <- newTVarIO . SJust $ ResponderCounters 0 0
-                                  let newConnection =
-                                        NewConnectionInfo Outbound connectionId Duplex handle
-                                  pure $ muxTracer <> inboundGovernorMuxTracer newConnection countersVar
-                            _notResponder ->
-                                  -- If this is InitiatorOnly, or a server where unidirectional flow was negotiated
-                                  -- the IG will never be informed of this remote for obvious reasons. There is no
-                                  -- need to pass the responder IG tracer here, and we must not in the latter case
-                                  -- as the muxer will deadlock itself before it launches any miniprotocols from the
-                                  -- command queue. It will be stuck when reaches mature state, forever waiting for
-                                  -- the incoming peer handle.
-                                  pure muxTracer
-                    Mx.run Mx.MuxTracerBundle {
+              Right (HandshakeNegotiationResult app versionNumber agreedOptions) -> do
+                traceWith tracer (TrHandshakeSuccess versionNumber agreedOptions)
+                controlMessageBundle
+                  <- (\a b c -> TemperatureBundle (WithHot a) (WithWarm b) (WithEstablished c))
+                      <$> newTVarIO Continue
+                      <*> newTVarIO Continue
+                      <*> newTVarIO Continue
+                mux <- Mx.new (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
+                let !handle = Handle {
+                        hMux            = mux,
+                        hMuxBundle      = app,
+                        hControlMessage = controlMessageBundle,
+                        hVersionData    = agreedOptions
+                      }
+                atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
+                withBuffer \buffer -> do
+                  bearer <- mkMuxBearer sduTimeout socket buffer
+                  muxTracer' <-
+                    contramap (Mx.WithBearer connectionId) <$> case inResponderMode of
+                      InResponderMode (inboundGovernorMuxTracer, connectionDataFlow)
+                        | Duplex <- connectionDataFlow agreedOptions -> do
+                            countersVar <- newTVarIO . SJust $ ResponderCounters 0 0
+                            let newConnection =
+                                  NewConnectionInfo Outbound connectionId Duplex handle
+                            pure $ muxTracer <> inboundGovernorMuxTracer newConnection countersVar
+                      _notResponder ->
+                            -- If this is InitiatorOnly, or a server where unidirectional flow was negotiated
+                            -- the IG will never be informed of this remote for obvious reasons.
+                            pure muxTracer
+                  unmask $ Mx.run Mx.MuxTracerBundle {
                              muxTracer     = muxTracer',
                              channelTracer = Mx.WithBearer connectionId `contramap` muxTracer }
                            mux bearer
@@ -459,34 +448,32 @@ makeConnectionHandler muxTracer forkPolicy
               Left !err -> do
                 atomically $ writePromise (Left (HandleHandshakeServerError err))
                 traceWith tracer (TrHandshakeServerError err)
-              Right (HandshakeNegotiationResult app versionNumber agreedOptions) ->
-                unmask $ do
-                  traceWith tracer (TrHandshakeSuccess versionNumber agreedOptions)
-                  controlMessageBundle
-                    <- (\a b c -> TemperatureBundle (WithHot a) (WithWarm b) (WithEstablished c))
-                        <$> newTVarIO Continue
-                        <*> newTVarIO Continue
-                        <*> newTVarIO Continue
-                  mux <- Mx.new (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
+              Right (HandshakeNegotiationResult app versionNumber agreedOptions) -> do
+               traceWith tracer (TrHandshakeSuccess versionNumber agreedOptions)
+               controlMessageBundle
+                 <- (\a b c -> TemperatureBundle (WithHot a) (WithWarm b) (WithEstablished c))
+                     <$> newTVarIO Continue
+                     <*> newTVarIO Continue
+                     <*> newTVarIO Continue
+               mux <- Mx.new (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
 
-                  let !handle = Handle {
-                          hMux            = mux,
-                          hMuxBundle      = app,
-                          hControlMessage = controlMessageBundle,
-                          hVersionData    = agreedOptions
-                        }
-                  atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
-                  withBuffer (\buffer -> do
-                      bearer <- mkMuxBearer sduTimeout socket buffer
-                      countersVar <- newTVarIO . SJust $ ResponderCounters 0 0
-                      let traceWithBearer = contramap $ Mx.WithBearer connectionId
-                          newConnection =
-                            NewConnectionInfo Inbound connectionId (connectionDataFlow agreedOptions) handle
-                      Mx.run Mx.MuxTracerBundle {
-                               muxTracer     = traceWithBearer (muxTracer <> inboundGovernorMuxTracer newConnection countersVar),
-                               channelTracer = traceWithBearer muxTracer }
-                             mux bearer
-                    )
+               let !handle = Handle {
+                       hMux            = mux,
+                       hMuxBundle      = app,
+                       hControlMessage = controlMessageBundle,
+                       hVersionData    = agreedOptions
+                     }
+               atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
+               withBuffer \buffer -> do
+                 bearer <- mkMuxBearer sduTimeout socket buffer
+                 countersVar <- newTVarIO . SJust $ ResponderCounters 0 0
+                 let traceWithBearer = contramap $ Mx.WithBearer connectionId
+                     newConnection =
+                       NewConnectionInfo Inbound connectionId (connectionDataFlow agreedOptions) handle
+                 unmask $ Mx.run Mx.MuxTracerBundle {
+                            muxTracer     = traceWithBearer (muxTracer <> inboundGovernorMuxTracer newConnection countersVar),
+                            channelTracer = traceWithBearer muxTracer }
+                          mux bearer
               Right (HandshakeQueryResult vMap) -> do
                 atomically $ writePromise (Right HandshakeConnectionQuery)
                 traceWith tracer $ TrHandshakeQuery vMap

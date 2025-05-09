@@ -620,6 +620,7 @@ with args@Arguments {
       -> socket
       -> ConnectionId peerAddr
       -> PromiseWriter m (Either handleError (HandshakeConnectionResult handle (version, versionData)))
+      -> (forall c. m c -> m c)
       -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version versionData m
       -> m (Async m ())
     forkConnectionHandler updateVersionDataFn stateVar
@@ -627,8 +628,8 @@ with args@Arguments {
                           socket
                           connId
                           writer
-                          handler =
-        mask $ \unmask -> async $ do
+                          unmask
+                          handler = async $ flip finally cleanup do
           runWithUnmask
             (handler updateVersionDataFn socket writer
                      (TrConnectionHandler connId `contramap` tracer)
@@ -639,7 +640,6 @@ with args@Arguments {
                          (Mx.WithBearer connId `contramap` muxTracer))
                      withBuffer)
             unmask
-          `finally` cleanup
       where
         cleanup :: m ()
         cleanup =
@@ -651,7 +651,7 @@ with args@Arguments {
           -- function after all is interruptible, because we unmask async
           -- exceptions around 'threadDelay', but even if an async exception
           -- hits there we will update `connVar`.
-          uninterruptibleMask $ \unmask -> do
+          uninterruptibleMask_ do
             traceWith tracer (TrConnectionCleanup connId)
             mbTransition <- modifyTMVar stateVar $ \state -> do
               eTransition <- atomically $ do
@@ -953,8 +953,8 @@ with args@Arguments {
                         return (v', Just connState0')
 
                 connThread' <-
-                  forkConnectionHandler
-                     id stateVar mutableConnVar' socket connId writer handler
+                  mask \unmask -> forkConnectionHandler
+                     id stateVar mutableConnVar' socket connId writer unmask handler
                 return (connThread', mutableConnVar', connState0', connState')
 
             traceWith trTracer (TransitionTrace (connStateId connVar)
@@ -1487,91 +1487,86 @@ with args@Arguments {
               --  * closing the socket
               --  * freeing the slot in connection manager state map
               --
-              mask $ \unmask -> do
+              --
+              -- connect
+              --
+              bracketOnError
+                (openToConnect snocket peerAddr)
+                (\socket -> uninterruptibleMask_ $ do
+                  close snocket socket
+                  trs <- atomically $ modifyTMVarSTM stateVar $ \state -> do
+                    connState <- readTVar connVar
+                    let state' = State.deleteAtRemoteAddr peerAddr mutableConnState state
+                        connState' = TerminatedState Nothing
+                    writeTVar connVar connState'
+                    return
+                      ( state'
+                      , [ mkTransition connState connState'
+                        , Transition (Known connState')
+                                     Unknown
+                        ]
+                      )
 
-                --
-                -- connect
-                --
+                  traverse_ (traceWith trTracer . TransitionTrace connStateId) trs
+                  traceCounters stateVar
+                )
+                $ \socket -> do
+                  traceWith tracer (TrConnectionNotFound provenance peerAddr)
+                  let addr = case addressType peerAddr of
+                               Nothing          -> Nothing
+                               Just IPv4Address -> ipv4Address
+                               Just IPv6Address -> ipv6Address
+                  configureSocket socket addr
+                  -- only bind to the ip address if:
+                  -- the diffusion is given `ipv4/6` addresses;
+                  -- `diffusionMode` for this connection is
+                  -- `InitiatorAndResponderMode`.
+                  case addressType peerAddr of
+                    Just IPv4Address | InitiatorAndResponderDiffusionMode
+                                       <- diffusionMode ->
+                         traverse_ (bind snocket socket)
+                                   ipv4Address
+                    Just IPv6Address | InitiatorAndResponderDiffusionMode
+                                       <- diffusionMode ->
+                         traverse_ (bind snocket socket)
+                                   ipv6Address
+                    _ -> pure ()
 
-                (socket, connId) <-
-                  unmask $ bracketOnError
-                    (openToConnect snocket peerAddr)
-                    (\socket -> uninterruptibleMask_ $ do
-                      close snocket socket
-                      trs <- atomically $ modifyTMVarSTM stateVar $ \state -> do
-                        connState <- readTVar connVar
-                        let state' = State.deleteAtRemoteAddr peerAddr mutableConnState state
-                            connState' = TerminatedState Nothing
-                        writeTVar connVar connState'
-                        return
-                          ( state'
-                          , [ mkTransition connState connState'
-                            , Transition (Known connState')
-                                         Unknown
-                            ]
-                          )
+                  traceWith tracer (TrConnect addr peerAddr diffusionMode)
+                  connect snocket socket peerAddr
+                    `catch` \e -> do
+                      traceWith tracer (TrConnectError addr peerAddr e)
+                      -- the handler attached by `bracketOnError` will
+                      -- reset the state
+                      throwIO e
+                  localAddress <- getLocalAddr snocket socket
+                  let connId = ConnectionId { localAddress
+                                            , remoteAddress = peerAddr
+                                            }
+                  updated <- atomically $ modifyTMVarPure stateVar (swap . State.updateLocalAddr connId)
+                  unless updated $
+                    -- there exists a connection with exact same
+                    -- `ConnectionId`
+                    --
+                    -- NOTE:
+                    -- When we are connecting from our own `(ip, port)` to
+                    -- itself.  In this case on linux, the `connect`
+                    -- returns, while `accept` doesn't.  The outbound
+                    -- socket is connected to itself (simultaneuos TCP
+                    -- open?).  Since the `accept` call never returns, the
+                    -- `connId` slot must have been available, and thus
+                    -- `State.updateLocalAddr` must have returned `True`.
+                    throwIO (withCallStack $ ConnectionExists provenance peerAddr)
 
-                      traverse_ (traceWith trTracer . TransitionTrace connStateId) trs
-                      traceCounters stateVar
-                    )
-                    $ \socket -> do
-                      traceWith tracer (TrConnectionNotFound provenance peerAddr)
-                      let addr = case addressType peerAddr of
-                                   Nothing          -> Nothing
-                                   Just IPv4Address -> ipv4Address
-                                   Just IPv6Address -> ipv6Address
-                      configureSocket socket addr
-                      -- only bind to the ip address if:
-                      -- the diffusion is given `ipv4/6` addresses;
-                      -- `diffusionMode` for this connection is
-                      -- `InitiatorAndResponderMode`.
-                      case addressType peerAddr of
-                        Just IPv4Address | InitiatorAndResponderDiffusionMode
-                                           <- diffusionMode ->
-                             traverse_ (bind snocket socket)
-                                       ipv4Address
-                        Just IPv6Address | InitiatorAndResponderDiffusionMode
-                                           <- diffusionMode ->
-                             traverse_ (bind snocket socket)
-                                       ipv6Address
-                        _ -> pure ()
+                  --
+                  -- fork connection handler; it will unmask exceptions
+                  --
 
-                      traceWith tracer (TrConnect addr peerAddr diffusionMode)
-                      connect snocket socket peerAddr
-                        `catch` \e -> do
-                          traceWith tracer (TrConnectError addr peerAddr e)
-                          -- the handler attached by `bracketOnError` will
-                          -- reset the state
-                          throwIO e
-                      localAddress <- getLocalAddr snocket socket
-                      let connId = ConnectionId { localAddress
-                                                , remoteAddress = peerAddr
-                                                }
-                      updated <- atomically $ modifyTMVarPure stateVar (swap . State.updateLocalAddr connId)
-                      unless updated $
-                        -- there exists a connection with exact same
-                        -- `ConnectionId`
-                        --
-                        -- NOTE:
-                        -- When we are connecting from our own `(ip, port)` to
-                        -- itself.  In this case on linux, the `connect`
-                        -- returns, while `accept` doesn't.  The outbound
-                        -- socket is connected to itself (simultaneuos TCP
-                        -- open?).  Since the `accept` call never returns, the
-                        -- `connId` slot must have been available, and thus
-                        -- `State.updateLocalAddr` must have returned `True`.
-                        throwIO (withCallStack $ ConnectionExists provenance peerAddr)
+                  connThread <-
+                    mask \unmask -> forkConnectionHandler
+                      (`updateVersionData` diffusionMode) stateVar mutableConnState socket connId writer unmask handler
 
-                      return (socket, connId)
-
-                --
-                -- fork connection handler; it will unmask exceptions
-                --
-
-                connThread <-
-                  forkConnectionHandler
-                    (`updateVersionData` diffusionMode) stateVar mutableConnState socket connId writer handler
-                return (connId, connThread)
+                  return (connId, connThread)
 
             (trans, mbAssertion) <- atomically $ do
               connState <- readTVar connVar
