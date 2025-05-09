@@ -620,6 +620,7 @@ with args@Arguments {
       -> socket
       -> ConnectionId peerAddr
       -> PromiseWriter m (Either handleError (HandshakeConnectionResult handle (version, versionData)))
+      -> (forall c. m c -> m c)
       -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version versionData m
       -> m (Async m ())
     forkConnectionHandler updateVersionDataFn stateVar
@@ -627,8 +628,8 @@ with args@Arguments {
                           socket
                           connId
                           writer
-                          handler =
-        mask $ \unmask -> async $ do
+                          unmask
+                          handler = async $ flip finally cleanup do
           runWithUnmask
             (handler updateVersionDataFn socket writer
                      (TrConnectionHandler connId `contramap` tracer)
@@ -639,7 +640,6 @@ with args@Arguments {
                          (Mx.WithBearer connId `contramap` muxTracer))
                      withBuffer)
             unmask
-          `finally` cleanup
       where
         cleanup :: m ()
         cleanup =
@@ -651,7 +651,7 @@ with args@Arguments {
           -- function after all is interruptible, because we unmask async
           -- exceptions around 'threadDelay', but even if an async exception
           -- hits there we will update `connVar`.
-          uninterruptibleMask $ \unmask -> do
+          uninterruptibleMask_ do
             traceWith tracer (TrConnectionCleanup connId)
             mbTransition <- modifyTMVar stateVar $ \state -> do
               eTransition <- atomically $ do
@@ -953,8 +953,8 @@ with args@Arguments {
                         return (v', Just connState0')
 
                 connThread' <-
-                  forkConnectionHandler
-                     id stateVar mutableConnVar' socket connId writer handler
+                  mask \unmask -> forkConnectionHandler
+                     id stateVar mutableConnVar' socket connId writer unmask handler
                 return (connThread', mutableConnVar', connState0', connState')
 
             traceWith trTracer (TransitionTrace (connStateId connVar)
@@ -1570,7 +1570,7 @@ with args@Arguments {
 
                 connThread <-
                   forkConnectionHandler
-                    (`updateVersionData` diffusionMode) stateVar mutableConnState socket connId writer handler
+                    (`updateVersionData` diffusionMode) stateVar mutableConnState socket connId writer unmask handler
                 return (connId, connThread)
 
             (trans, mbAssertion) <- atomically $ do
