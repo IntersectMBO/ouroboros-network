@@ -38,6 +38,7 @@ import Control.Concurrent.Class.MonadSTM.Strict
 import Control.DeepSeq (NFData (..))
 import Control.Monad (replicateM, when)
 import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
@@ -408,6 +409,7 @@ withNodeKernelThread
      ( Alternative (STM m)
      , MonadAsync         m
      , MonadDelay         m
+     , MonadFork          m
      , MonadThrow         m
      , MonadThrow    (STM m)
      , Strict.MonadMVar   m
@@ -415,13 +417,15 @@ withNodeKernelThread
      , RandomGen seed
      , Eq txid
      )
-  => BlockGeneratorArgs block seed
+  => NtNAddr
+  -- ^ just for naming a thread
+  -> BlockGeneratorArgs block seed
   -> [Tx txid]
   -> (NodeKernel header block seed txid m -> Async m Void -> m a)
   -- ^ The continuation which has a handle to the chain selection \/ block
   -- production thread.  The thread might throw an exception.
   -> m a
-withNodeKernelThread BlockGeneratorArgs { bgaSlotDuration, bgaBlockGenerator, bgaSeed }
+withNodeKernelThread addr BlockGeneratorArgs { bgaSlotDuration, bgaBlockGenerator, bgaSeed }
                      txs
                      k = do
     kernel <- newNodeKernel psSeed txSeed txs
@@ -436,7 +440,8 @@ withNodeKernelThread BlockGeneratorArgs { bgaSlotDuration, bgaBlockGenerator, bg
                         -> m Void
     blockProducerThread NodeKernel { nkChainProducerState, nkChainDB }
                         waitForSlot
-                      = loop (Block.SlotNo 1) bpSeed
+                      =  labelThisThread ("krnl-" ++ ppNtNAddr addr)
+                      >> loop (Block.SlotNo 1) bpSeed
       where
         loop :: SlotNo -> seed -> m Void
         loop nextSlot seed = do
