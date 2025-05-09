@@ -42,7 +42,7 @@ import Control.Concurrent.Class.MonadMVar (MonadMVar)
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad ((>=>))
 import Control.Monad.Class.MonadAsync (MonadAsync (wait, withAsync))
-import Control.Monad.Class.MonadFork (MonadFork)
+import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
 import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow
@@ -264,8 +264,9 @@ run blockGeneratorArgs limits ni na
     extraPeersAPI psArgs psToExtraCounters
     toExtraPeers requestPublicRootPeers peerChurnGovernor
     tracers tracerBlockFetch tracerTxSubmissionInbound
-    tracerTxLogic =
-    Node.withNodeKernelThread blockGeneratorArgs (aTxs na)
+    tracerTxLogic = do
+    labelThisThread ("node-" ++ Node.ppNtNAddr (aIPAddress na))
+    Node.withNodeKernelThread (aIPAddress na) blockGeneratorArgs (aTxs na)
       $ \ nodeKernel nodeKernelThread -> do
         dnsTimeoutScriptVar <- newTVarIO (aDNSTimeoutScript na)
         dnsLookupDelayScriptVar <- newTVarIO (aDNSLookupDelayScript na)
