@@ -222,6 +222,12 @@ instance Protocol (TxSubmission2 txid tx) where
     -- * The non-blocking case must be used when there are non-zero remaining
     --   unacknowledged transactions.
     --
+    -- It is a protocol error to:
+    --
+    --  * make a blocking request with  `NumTxIdsToReq 0`;
+    --
+    --  * make a non-blocking request with both `NumTxIdsToAck 0` and `NumTxIdsReq 0`.
+    --
     MsgRequestTxIds
       :: forall (blocking :: StBlockingStyle) txid tx.
          SingBlockingStyle blocking
