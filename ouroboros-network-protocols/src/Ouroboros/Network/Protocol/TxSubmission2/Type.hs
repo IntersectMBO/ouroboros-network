@@ -216,11 +216,14 @@ instance Protocol (TxSubmission2 txid tx) where
     -- unacknowledged transactions (after taking into account the ones
     -- acknowledged in this message):
     --
-    -- * The blocking case must be used when there are zero remaining
+    -- * The blocking case __MUST__ be used when there are zero remaining
     --   unacknowledged transactions.
     --
-    -- * The non-blocking case must be used when there are non-zero remaining
+    -- * The non-blocking case __MUST__ be used when there are non-zero remaining
     --   unacknowledged transactions.
+    --
+    -- It is a protocol error to make a blocking or non-blocking request for
+    -- zero txids.
     --
     MsgRequestTxIds
       :: forall (blocking :: StBlockingStyle) txid tx.

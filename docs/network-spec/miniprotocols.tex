@@ -1277,7 +1277,8 @@ Version 2 is used since \texttt{NodeToNode\_V6} of the node-to-node protocol.
       The client immediately replies (possibly with an empty list).
 \item [\MsgRequestTxIdsB{} {\boldmath $(ack,req)$}]
       The server asks for new transaction ids and acknowledges old ids.
-      The client will block until new transactions are available.
+      The client will block until new transactions are available, thus the
+      respond will always have at least one transaction identifier. 
 \item [\MsgReplyTxIds{} {\boldmath ($\langle (id, size) \rangle$) }]
       The client replies with a list of available transactions.
       The list contains pairs of transaction ids and the corresponding size of the transaction in bytes.
@@ -1305,6 +1306,22 @@ Version 2 is used since \texttt{NodeToNode\_V6} of the node-to-node protocol.
   \end{tabular}
   \caption{Tx-Submission mini-protocol (version 2) messages.}
 \end{table}
+
+\subsubsection{Protocol Errors}
+
+There is no choice about when to use \MsgRequestTxIdsNB{} versus
+\MsgRequestTxIdsB{}, it depends on whether there are any remaining
+unacknowledged transactions (after taking into account the ones
+acknowledged in this message):
+\begin{itemize}
+  \item The blocking case MUST be used when there are zero remaining
+        unacknowledged transactions.
+  \item The non-blocking case MUST be used when there are non-zero remaining
+        unacknowledged transactions.
+\end{itemize}
+It is a protocol error if a wrong message will be send.  It is also a protocol
+error to make a \MsgRequestTxIdsNB{} or \MsgRequestTxIdsB{} requesting no
+transaction identifiers.
 
 \subsection{Size limits per state}
 
