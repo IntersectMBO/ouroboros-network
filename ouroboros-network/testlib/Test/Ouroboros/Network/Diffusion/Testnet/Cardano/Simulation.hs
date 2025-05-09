@@ -699,7 +699,7 @@ genDiffusionScript genLocalRootPeers
     dnsMapScript <- genDomainMapScript relays
     txs <- makeUniqueIds 0
        <$> vectorOf (length relays') (choose (10, 100) >>= \c -> vectorOf c arbitrary)
-    nodesWithCommands <- mapM (go simArgs) (zip relays' txs)
+    nodesWithCommands <- mapM go (zip relays' txs)
     return (simArgs, dnsMapScript, nodesWithCommands)
   where
     relays' = unTestnetRelays relays
@@ -715,8 +715,8 @@ genDiffusionScript genLocalRootPeers
                          , i + length l + 1
                          )
 
-    go :: SimArgs -> (TestnetRelayInfo, [Tx Int]) -> Gen (NodeArgs, [Command])
-    go simArgs (relay, txs) = do
+    go :: (TestnetRelayInfo, [Tx Int]) -> Gen (NodeArgs, [Command])
+    go (relay, txs) = do
       let otherRelays  = relay `delete` relays'
           minConnected = 3 `max` (length relays' - 1) -- ^ TODO is this ever different from 3?
                                                       -- since we generate {2,3} relays?
@@ -1097,7 +1097,9 @@ diffusionSimulation
         dnsMapVar <- fromLazyTVar <$> playTimedScript nullTracer dnsMapScript
         withAsyncAll
           (zipWith
-            (\(args, commands) i -> runCommand ntnSnocket ntcSnocket dnsMapVar simArgs args connStateIdSupply i Nothing commands)
+            (\(args, commands) i -> do
+              labelThisThread ("ctrl-" ++ ppNtNAddr (naAddr args))
+              runCommand ntnSnocket ntcSnocket dnsMapVar simArgs args connStateIdSupply i Nothing commands)
             nodeArgs
             [1..])
           $ \nodes -> do
