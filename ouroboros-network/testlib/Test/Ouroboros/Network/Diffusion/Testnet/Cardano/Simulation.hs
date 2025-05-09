@@ -1101,7 +1101,9 @@ diffusionSimulation
         dnsMapVar <- fromLazyTVar <$> playTimedScript nullTracer dnsMapScript
         withAsyncAll
           (zipWith
-            (\(args, commands) i -> runCommand ntnSnocket ntcSnocket dnsMapVar simArgs args connStateIdSupply i Nothing commands)
+            (\(args, commands) i -> do
+              labelThisThread ("ctrl-" ++ ppNtNAddr (naAddr args))
+              runCommand ntnSnocket ntcSnocket dnsMapVar simArgs args connStateIdSupply i Nothing commands)
             nodeArgs
             [1..])
           $ \nodes -> do
