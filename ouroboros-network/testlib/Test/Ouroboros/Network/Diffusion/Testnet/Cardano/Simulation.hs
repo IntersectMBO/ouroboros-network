@@ -1068,7 +1068,9 @@ diffusionSimulation
       $ \ntcSnocket _ -> do
         dnsMapVar <- fromLazyTVar <$> playTimedScript nullTracer dnsMapScript
         withAsyncAll
-          (map ((\(args, commands) -> runCommand Nothing ntnSnocket ntcSnocket dnsMapVar simArgs args connStateIdSupply commands))
+          (map ((\(args, commands) -> do
+            labelThisThread ("ctrl-" ++ ppNtNAddr (naAddr args))
+            runCommand Nothing ntnSnocket ntcSnocket dnsMapVar simArgs args connStateIdSupply commands))
                nodeArgs)
           $ \nodes -> do
             (_, x) <- waitAny nodes
