@@ -20,11 +20,6 @@ flag asserts
   manual: False
   default: False
 
-flag txsubmission-delay
-  description: Delay initial request for transactions from outbound/client peer
-  manual: True
-  default: True
-
 source-repository head
   type: git
   location: https://github.com/intersectmbo/ouroboros-network
@@ -96,7 +91,13 @@ library
     Ouroboros.Network.PeerSelection.State.LocalRootPeers
     Ouroboros.Network.PeerSelection.Types
     Ouroboros.Network.PeerSharing
-    Ouroboros.Network.TxSubmission.Inbound
+    Ouroboros.Network.TxSubmission.Inbound.V1
+    Ouroboros.Network.TxSubmission.Inbound.V2
+    Ouroboros.Network.TxSubmission.Inbound.V2.Decision
+    Ouroboros.Network.TxSubmission.Inbound.V2.Policy
+    Ouroboros.Network.TxSubmission.Inbound.V2.Registry
+    Ouroboros.Network.TxSubmission.Inbound.V2.State
+    Ouroboros.Network.TxSubmission.Inbound.V2.Types
     Ouroboros.Network.TxSubmission.Mempool.Reader
     Ouroboros.Network.TxSubmission.Outbound
 
@@ -169,7 +170,8 @@ library
     random,
     si-timers,
     strict-checked-vars ^>=0.2,
-    strict-stm >=1.0 && <1.6,
+    strict-mvar,
+    strict-stm,
     transformers,
     typed-protocols ^>=0.3,
     typed-protocols-stateful,
@@ -180,9 +182,6 @@ library
 
   if flag(asserts)
     ghc-options: -fno-ignore-asserts
-
-  if flag(txsubmission-delay)
-    cpp-options: -DTXSUBMISSION_DELAY
 
 library ouroboros-orphan-instances
   import: ghc-options
@@ -321,6 +320,7 @@ library testlib
     bytestring,
     cardano-binary,
     cardano-slotting,
+    cardano-strict-containers,
     cborg,
     containers,
     contra-tracer,
@@ -350,6 +350,7 @@ library testlib
     random,
     serialise,
     si-timers,
+    strict-mvar,
     strict-stm,
     tasty,
     tasty-hunit,
@@ -390,6 +391,10 @@ library testlib
     Test.Ouroboros.Network.PeerSelection.PeerMetric
     Test.Ouroboros.Network.PeerSelection.RootPeersDNS
     Test.Ouroboros.Network.TxSubmission
+    Test.Ouroboros.Network.TxSubmission.AppV1
+    Test.Ouroboros.Network.TxSubmission.AppV2
+    Test.Ouroboros.Network.TxSubmission.TxLogic
+    Test.Ouroboros.Network.TxSubmission.Types
     Test.Ouroboros.Network.Version
 
 -- Simulation tests, and IO tests which don't require native system calls.
