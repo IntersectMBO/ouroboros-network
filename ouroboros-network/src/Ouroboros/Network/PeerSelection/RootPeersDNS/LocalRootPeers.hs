@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
@@ -136,7 +137,9 @@ localRootPeersProvider tracer
       -- going to lookup into the new DNS Domain Map and replace that entry
       -- with the lookup result.
       domainsGroups' <-
-        withAsyncAllWithCtx (monitorDomain rr dnsSemaphore dnsDomainMapVar `map` domains) $ \as -> do
+        withAsyncAllWithCtx (monitorDomain rr dnsSemaphore dnsDomainMapVar `map` domains) $ \as ->
+        flip finally (traceWith tracer $ TraceLocalRootError (DomainAccessPoint "" 1) (toException . userError $ "bailing domain monitoring")) $
+        do
           let tagErrWithDomain (domain, _, res) = either (Left . (domain,)) absurd res
           res <- atomically $
                   -- wait until any of the monitoring threads errors
@@ -213,7 +216,9 @@ localRootPeersProvider tracer
           --- Resolve 'domain'
           reply <- resolveDomain dnsSemaphore resolver domain
           case reply of
-            Left errs -> go (minimum $ map (\err -> ttlForDnsError err ttl) errs)
+            Left errs -> do
+              traceWith tracer $ TraceLocalRootError domain (toException . userError $ "resolveDomain error")
+              go (minimum $ map (\err -> ttlForDnsError err ttl) errs)
                            rr'
             Right results -> do
               (newRootPeersGroups, newDNSDomainMap) <- atomically $ do
