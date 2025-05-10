@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -76,14 +77,14 @@ forkJob' :: forall group m a.
             ( MonadAsync m, MonadMask m
             , Ord group
             )
-         => (m () -> m (Async m ()))
+         => (((forall x. m x -> m x) -> m ()) -> m (Async m ()))
          -- ^ how to fork a thread, e.g. `async`, `asyncOn`.
          -> JobPool group m a
          -> Job     group m a
          -> m ()
 forkJob' doFork JobPool{jobsVar, completionQueue} (Job action handler group label) =
-    mask $ \restore -> do
-      jobAsync <- doFork $ do
+    mask_ do
+      jobAsync <- doFork \restore -> do
         tid <- myThreadId
         io tid restore
           `onException`
@@ -120,7 +121,7 @@ forkJob :: forall group m a.
         => JobPool group m a
         -> Job     group m a
         -> m ()
-forkJob = forkJob' async
+forkJob = forkJob' asyncWithUnmask
 
 
 -- | Fork a `Job` using `asyncOn`.
@@ -133,7 +134,7 @@ forkJobOn :: forall group m a.
           -> JobPool group m a
           -> Job     group m a
           -> m ()
-forkJobOn cap = forkJob' (asyncOn cap)
+forkJobOn cap = forkJob' (asyncOnWithUnmask cap)
 
 
 readSize :: MonadSTM m => JobPool group m a -> STM m Int
@@ -168,5 +169,3 @@ cancelGroup JobPool { jobsVar } group = do
                   cancel thread
              )
              jobs
-
-
