@@ -478,7 +478,7 @@ makeConnectionHandler muxTracer forkPolicy
                 atomically $ writePromise (Right HandshakeConnectionQuery)
                 traceWith tracer $ TrHandshakeQuery vMap
                 -- Wait 20s for client to receive response, who should close the connection.
-                threadDelay handshake_QUERY_SHUTDOWN_DELAY
+                unmask $ threadDelay handshake_QUERY_SHUTDOWN_DELAY
 
 
 
