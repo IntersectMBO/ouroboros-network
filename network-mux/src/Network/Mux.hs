@@ -166,7 +166,7 @@ stop Mux{muxControlCmdQueue} =
 --
 data Group = MuxJob
            | MiniProtocolJob
-  deriving (Eq, Ord)
+  deriving (Show, Eq, Ord)
 
 
 -- | run starts a mux bearer for the specified protocols corresponding to

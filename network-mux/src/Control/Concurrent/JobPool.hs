@@ -20,6 +20,7 @@ module Control.Concurrent.JobPool
   , cancelGroup
   ) where
 
+import Debug.Trace qualified as DT
 import Data.Functor (($>))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -49,7 +50,7 @@ data Job group m a =
         String                 -- ^ thread label
 
 withJobPool :: forall group m a b.
-               (MonadAsync m, MonadThrow m, MonadLabelledSTM m)
+               (Show group, MonadAsync m, MonadThrow m, MonadLabelledSTM m)
             => (JobPool group m a -> m b) -> m b
 withJobPool =
     bracket create close
@@ -70,7 +71,10 @@ withJobPool =
     close :: JobPool group m a -> m ()
     close JobPool{jobsVar} = do
       jobs <- readTVarIO jobsVar
+      DT.traceM $ "closing job pool jobs: " <> show (Map.keys jobs)
       mapM_ uninterruptibleCancel jobs
+      jobs' <- readTVarIO jobsVar
+      DT.traceM $ "remaining jobs: " <> show (Map.keys jobs')
 
 
 forkJob' :: forall group m a.
