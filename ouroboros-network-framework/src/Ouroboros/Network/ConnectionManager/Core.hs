@@ -653,7 +653,7 @@ with args@Arguments {
           -- hits there we will update `connVar`.
           uninterruptibleMask_ do
             traceWith tracer (TrConnectionCleanup connId)
-            mbTransition <- modifyTMVar stateVar $ \state -> do
+            mbTransition <- modifyTMVar id stateVar $ \state -> do
               eTransition <- atomically $ do
                 connState <- readTVar connVar
                 let connState' = TerminatedState Nothing
@@ -711,7 +711,7 @@ with args@Arguments {
                            { fromState = Known (TerminatedState Nothing)
                            , toState   = Unknown
                            }
-                mbTransition' <- modifyTMVar stateVar $ \state ->
+                mbTransition' <- modifyTMVar id stateVar $ \state ->
                   case State.lookup connId state of
                     Nothing -> pure (state, Nothing)
                     Just v  ->
@@ -878,7 +878,7 @@ with args@Arguments {
                                  hardLimit
                                  socket
                                  connId = do
-        r <- modifyTMVar stateVar $ \state -> do
+        r <- mask \unmask -> modifyTMVar unmask stateVar \state -> do
           numberOfCons <- atomically $ countIncomingConnections state
 
           let -- Check if after accepting this connection we get above the
@@ -952,8 +952,7 @@ with args@Arguments {
                         labelTVar (connVar v') ("conn-state-" ++ show connId)
                         return (v', Just connState0')
 
-                connThread' <-
-                  mask \unmask -> forkConnectionHandler
+                connThread' <- mask_ $ forkConnectionHandler
                      id stateVar mutableConnVar' socket connId writer unmask handler
                 return (connThread', mutableConnVar', connState0', connState')
 
@@ -2398,13 +2397,13 @@ modifyTMVar :: ( MonadEvaluate m
                , MonadMask     m
                , MonadSTM      m
                )
-            => StrictTMVar m a
+            => (forall x. m x -> m x)
+            -> StrictTMVar m a
             -> (a -> m (a, b))
             -> m b
-modifyTMVar v k =
-  mask $ \restore -> do
+modifyTMVar unmask v k = do
     a <- atomically (takeTMVar v)
-    (a',b) <- restore (k a >>= evaluate)
+    (a',b) <- unmask (k a >>= evaluate)
       `onException`
         atomically (putTMVar v a)
     atomically (putTMVar v a')
