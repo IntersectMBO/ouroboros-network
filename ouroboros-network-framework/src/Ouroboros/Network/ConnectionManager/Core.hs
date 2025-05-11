@@ -620,7 +620,7 @@ with args@Arguments {
       -> socket
       -> ConnectionId peerAddr
       -> PromiseWriter m (Either handleError (HandshakeConnectionResult handle (version, versionData)))
-      -> (forall c. m c -> m c)
+      -- -> (forall c. m c -> m c)
       -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version versionData m
       -> m (Async m ())
     forkConnectionHandler updateVersionDataFn stateVar
@@ -628,8 +628,8 @@ with args@Arguments {
                           socket
                           connId
                           writer
-                          unmask
-                          handler = async $ flip finally cleanup do
+                          -- unmask
+                          handler = mask_ $ asyncWithUnmask \unmask -> flip finally (cleanup unmask) do
           runWithUnmask
             (handler updateVersionDataFn socket writer
                      (TrConnectionHandler connId `contramap` tracer)
@@ -641,8 +641,8 @@ with args@Arguments {
                      withBuffer)
             unmask
       where
-        cleanup :: m ()
-        cleanup =
+        cleanup :: (forall c. m c -> m c) -> m ()
+        cleanup unmask =
           -- We must ensure that we update 'connVar',
           -- `acquireOutboundConnection` might be blocked on it awaiting for:
           -- - handshake negotiation; or
@@ -952,8 +952,8 @@ with args@Arguments {
                         labelTVar (connVar v') ("conn-state-" ++ show connId)
                         return (v', Just connState0')
 
-                connThread' <- mask_ $ forkConnectionHandler
-                     id stateVar mutableConnVar' socket connId writer unmask handler
+                connThread' <- forkConnectionHandler
+                     id stateVar mutableConnVar' socket connId writer handler
                 return (connThread', mutableConnVar', connState0', connState')
 
             traceWith trTracer (TransitionTrace (connStateId connVar)
@@ -1562,8 +1562,8 @@ with args@Arguments {
                   --
 
                   connThread <-
-                    mask \unmask -> forkConnectionHandler
-                      (`updateVersionData` diffusionMode) stateVar mutableConnState socket connId writer unmask handler
+                    forkConnectionHandler
+                      (`updateVersionData` diffusionMode) stateVar mutableConnState socket connId writer handler
 
                   return (connId, connThread)
 
