@@ -71,10 +71,18 @@
            {\href{https://ouroboros-network.cardano.intersectmbo.org/#2}
                  {\emph{haddock documentation}: \texttt{#1}}
            }
+\newcommand{\haddockrefwithtitle}[3]
+           {\href{https://ouroboros-network.cardano.intersectmbo.org/#3}
+                 {\emph{#1}: \texttt{#2}}
+           }
 \newcommand{\haddockrefraw}[2]
            {\href{#2}
                  {\emph{haddock documentation}: \texttt{#1}}
            }
+\newcommand{\codechaddockref}[2]
+           {\haddockrefwithtitle{codec haddocks}{#1}{#2}}
+\newcommand{\protocolhaddockref}[2]
+           {\haddockrefwithtitle{protocol haddocks}{#1}{#2}}
 \newcommand{\trans}[1]{\texttt{#1}}
 \newcommand{\state}[1]{\texttt{#1}}
 \newcommand{\msg}[1]{\textbf{\texttt{#1}}}

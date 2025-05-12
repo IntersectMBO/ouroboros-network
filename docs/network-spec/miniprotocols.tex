@@ -414,7 +414,8 @@ The protocol uses the following messages.
 \end{table}
 
 \section{Handshake mini-protocol}
-\haddockref{Ouroboros.Network.Protocol.Handshake.Type}{ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Type\#t:Handshake}\\
+\protocolhaddockref{Ouroboros.Network.Protocol.Handshake.Type}{ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Type\#t:Handshake}\\
+\codechaddockref{Ouroboros.Network.Protocol.Handshake.Codec}{ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Codec\#v:codecHandshake}\\
 \hyperref[table:node-to-node-protocol-numbers]{\textit{node-to-node mini-protocol number}}: \texttt{0}\\
 \hyperref[table:node-to-client-protocol-numbers]{\textit{node-to-client mini-protocol number}}: \texttt{0}\\
 \hyperref[sec:nodetoclientcddl]{node-to-client handshake CDDL spec}
@@ -720,7 +721,8 @@ node-to-client protocol.
 
 \section{Chain-Sync mini-protocol}
 \label{chain-sync-protocol}
-\haddockref{Ouroboros.Network.Protocol.ChainSync.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Type\#t:ChainSync}\\
+\protocolhaddockref{Ouroboros.Network.Protocol.ChainSync.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Type\#t:ChainSync}\\
+\codechaddockref{Ouroboros.Network.Protocol.ChainSync.Codec}{ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Codec\#v:codecChainSync}\\
 \hyperref[table:node-to-node-protocol-numbers]{\textit{node-to-node mini-protocol number}}: \texttt{2}\\
 \hyperref[table:node-to-client-protocol-numbers]{\textit{node-to-client mini-protocol number}}: \texttt{5}\\
 
@@ -1046,7 +1048,8 @@ See appendix \ref{cddl-common} for common definitions.
 
 \section{Block-Fetch mini-protocol}
 \label{block-fetch-protocol}
-\haddockref{Ouroboros.Network.Protocol.BlockFetch.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-BlockFetch-Type\#t:BlockFetch}\\
+\protocolhaddockref{Ouroboros.Network.Protocol.BlockFetch.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-BlockFetch-Type\#t:BlockFetch}\\
+\codechaddockref{Ouroboros.Network.Protocol.BlockFetch.Codec}{ouroboros-network-protocols/Ouroboros-Network-Protocol-BlockFetch-Codec\#v:codecBlockFetch}\\
 \hyperref[table:node-to-node-protocol-numbers]{\textit{node-to-node mini-protocol number}}: \texttt{3}\\
 
 \renewcommand{\StIdle}{\state{StIdle}}
@@ -1171,7 +1174,8 @@ a message.  If a timeout is violated, the connection SHOULD be torn down.
 See appendix \ref{cddl-common} for common definitions.
 
 \section{Tx-Submission mini-protocol}
-\haddockref{Ouroboros.Network.Protocol.TxSubmission2.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-TxSubmission2-Type\#t:TxSubmission2}\\
+\protocolhaddockref{Ouroboros.Network.Protocol.TxSubmission2.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-TxSubmission2-Type\#t:TxSubmission2}\\
+\codechaddockref{Ouroboros.Network.Protocol.TxSubmission2.Codec}{ouroboros-network-protocols/Ouroboros-Network-Protocol-TxSubmission2-Codec\#v:codecTxSubmission2}\\
 \hyperref[table:node-to-node-protocol-numbers]{\textit{node-to-node mini-protocol number}}: \texttt{4}\\
 \label{tx-submission-protocol}
 \label{tx-submission-protocol2}
@@ -1360,7 +1364,8 @@ It replies with not more than the requested number of ids (possibly with an empt
 A blocking request, on the other side, waits until at least one transaction is available.
 
 \section{Keep Alive Mini Protocol}
-\haddockref{Ouroboros.Network.Protocol.KeepAlive.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-KeepAlive-Type\#t:KeepAlive}\\
+\protocolhaddockref{Ouroboros.Network.Protocol.KeepAlive.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-KeepAlive-Type\#t:KeepAlive}\\
+\codechaddockref{Ouroboros.Network.Protocol.KeepAlive.Codec}{ouroboros-network-protocols/Ouroboros-Network-Protocol-KeepAlive-Codec\#v:codecKeepAlive\_v2}\\
 \hyperref[table:node-to-node-protocol-numbers]{\textit{node-to-node mini-protocol number}}: \texttt{8}\\
 
 \label{keep-alive-protocol}
@@ -1450,7 +1455,8 @@ a message.  If a timeout is violated, the connection SHOULD be torn down.
 \lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/keep-alive.cddl}
 
 \section{Peer Sharing mini-protocol}
-\haddockref{Ouroboros.Network.Protocol.PeerSharing.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-PeerSharing-Type\#t:PeerSharing}\\
+\protocolhaddockref{Ouroboros.Network.Protocol.PeerSharing.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-PeerSharing-Type\#t:PeerSharing}\\
+\codechaddockref{Ouroboros.Network.Protocol.PeerSharing.Codec}{ouroboros-network-protocols/Ouroboros-Network-Protocol-PeerSharing-Codec\#v:codecPeerSharing}\\
 \hyperref[table:node-to-node-protocol-numbers]{\textit{node-to-node mini-protocol number}}: \texttt{10}\\
 \label{peer-sharing-protocol}
 \subsection{Description}
@@ -1605,7 +1611,8 @@ function application all the way to diffusion and share the relevant parts of
 \lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/peer-sharing-v14.cddl}
 
 \section{Local Tx-Submission mini-protocol}
-\haddockref{Ouroboros.Network.Protocol.LocalTxSubmission.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalTxSubmission-Type\#t:LocalTxSubmission}\\
+\protocolhaddockref{Ouroboros.Network.Protocol.LocalTxSubmission.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalTxSubmission-Type\#t:LocalTxSubmission}\\
+\codechaddockref{Ouroboros.Network.Protocol.LocalTxSubmission.Codec}{ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalTxSubmission-Codec\#v:codecLocalTxSubmission}\\
 \hyperref[table:node-to-client-protocol-numbers]{\textit{node-to-client mini-protocol number}}: \texttt{6}\\
 \label{local-tx-submission-protocol}
 \subsection{Description}
@@ -1682,7 +1689,8 @@ See appendix \ref{cddl-common} for common definitions.
 
 \section{Local State Query mini-protocol}
 \label{local-state-query-protocol}
-\haddockref{Ouroboros.Network.Protocol.LocalStateQuery.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalStateQuery-Type\#t:LocalStateQuery}\\
+\protocolhaddockref{Ouroboros.Network.Protocol.LocalStateQuery.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalStateQuery-Type\#t:LocalStateQuery}\\
+\codechaddockref{Ouroboros.Network.Protocol.LocalStateQuery.Codec}{ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalStateQuery-Codec\#v:codecLocalStateQuery}\\
 \hyperref[table:node-to-client-protocol-numbers]{\textit{node-to-client mini-protocol number}}: \texttt{7}\\
 \newcommand{\StAcquiring}{\state{Acquiring}}
 \newcommand{\StAcquired}{\state{Acquired}}
@@ -1783,7 +1791,8 @@ No timeouts.
 See appendix \ref{cddl-common} for common definitions.
 
 \section{Local Tx-Monitor mini-protocol}
-\haddockref{Ouroboros.Network.Protocol.LocalTxMonitor.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalTxMonitor-Type\#t:LocalTxMonitor}\\
+\protocolhaddockref{Ouroboros.Network.Protocol.LocalTxMonitor.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalTxMonitor-Type\#t:LocalTxMonitor}\\
+\codechaddockref{Ouroboros.Network.Protocol.LocalTxMonitor.Codec}{ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalTxMonitor-Codec\#v:codecLocalTxMonitor}\\
 \hyperref[table:node-to-client-protocol-numbers]{\textit{node-to-client mini-protocol number}}: \texttt{9}\\
 \label{local-tx-monitor-protocol}
 \newcommand{\MsgAwaitAcquire}{\msg{MsgAwaitAcquire}}
