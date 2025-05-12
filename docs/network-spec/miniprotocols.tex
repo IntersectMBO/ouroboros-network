@@ -278,23 +278,27 @@ written in CDDL,
 see \href{https://cbor-wg.github.io/cddl/draft-ietf-cbor-cddl.html}{'Coincise
 data definition language (CDDL)'}.
 
-Note that the networking layer knows very little about blocks, transactions or
-their identifiers.  We use parametric polymorphism in the implementation, which
-is not present in CDDL.  For this reason, we use \texttt{any} in our CDDL specifications.
-If you want to find concrete instatiations of these types in by `Cardano`, you
-will need to consult
+The networking layer knows little about blocks, transactions or
+their identifiers.  In \texttt{ouroboros-network} we use parametric
+polymorphism for blocks, tx, txids, etc, and we only assume these data types have their own valid CDDL
+encoding (and CDDL specifications).  For testing against the \texttt{ouroboros-network} CDDL, we need
+concrete values; for this reason, we use \texttt{any} in our CDDL specification.
+This describes very closely what the \texttt{ouroboros-network} implementation
+does.  It doesn't mean the payloads are not validated, the full codecs of
+messages transferred on the wire are composed from network, consensus \& ledger
+codecs.   There is an ongoing effort to capture combined CDDLs.  If you want to
+find concrete instantiations of these types by `Cardano`, you will need to
+consult
 \href{https://github.com/intersectmbo/cardano-ledger}{cardano-ledger} and
-\href{https://github.com/intersectmbo/ouroboros-consensus}{ouroboros-consensus}.
+\href{https://github.com/intersectmbo/ouroboros-consensus}{ouroboros-consensus} (in particular \href{https://github.com/IntersectMBO/ouroboros-consensus/pull/1422}{ouroboros-consensus\#1422}).
 Each ledger era has its own CDDL spec, which you can find
 \href{https://github.com/intersectmbo/cardano-ledger#cardano-ledger}{here}.
-Note that there's also the hard fork combinator (HFC), which allows us to
+Note that the hard fork combinator (HFC) also allows us to
 combine multiple eras into a single blockchain.  It affects how many of the
-data types are encoded across different eras.  Currently, this is not properly
-documented (see
-\href{https://github.com/intersectmbo/ouroboros-consensus/issues/7}{issue
-\#7}). In the meantime, we can only offer informal advice: data is encoded
-as tuples (length two lists), where the first element is a zero-based index of an
-era while the second item is the era-dependent encoding.
+data types are encoded across different eras.
+
+We want to retain the ability to decode messages incrementally, which for the
+Praos protocol might allow us to improve performance.
 
 \section{Dummy Protocols}
 Dummy protocols are only used for testing and are not needed either for
