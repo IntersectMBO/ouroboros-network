@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
@@ -129,7 +130,11 @@ testVersionCodecCBORTerm !_ =
     decodeTerm :: CBOR.Term -> Either Text TestVersionData
     decodeTerm (CBOR.TList [CBOR.TInt x])
       | x >= 0
+#if !defined(wasm32_HOST_ARCH)
       , x <= 0xffffffff
+#else
+      , x <= 0x7fffffff
+#endif
       = Right
           TestVersionData {
               networkMagic = NetworkMagic (fromIntegral x)
