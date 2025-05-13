@@ -499,39 +499,6 @@ Messages of the protocol:
 \end{table}
 }
 
-\subsection{Size limits per state}
-
-These bounds limit how many bytes can be sent in a given state; indirectly, this
-limits the payload size of each message.  If a space limit is violated, the
-connection SHOULD be torn down.
-
-\begin{table}[h!]
-  \begin{center}
-    \begin{tabular}{l|r}
-      \header{state} & \header{size limit in bytes} \\\hline
-      \StPropose & \texttt{5760} \\
-      \StConfirm & \texttt{5760} \\
-    \end{tabular}
-    % \caption{size limits per state}
-  \end{center}
-\end{table}
-
-\subsection{Timeouts per state}
-
-These limits bound how much time the receiver side can wait for the arrival of
-a message.  If a timeout is violated, the connection SHOULD be torn down.
-
-\begin{table}[h!]
-  \begin{center}
-    \begin{tabular}{l|r}
-      \header{state} & \header{timeout} \\\hline
-      \StPropose     & \texttt{10}s \\
-      \StConfirm     & \texttt{10}s \\
-    \end{tabular}
-    % \caption{timeouts per state}
-  \end{center}
-\end{table}
-
 \subsection{Node-to-node handshake}
 
 The node-to-node handshake instantiates version data\footnote{To be precise, in
@@ -568,6 +535,39 @@ negotiation is a new version data record which consists of:
 If the negotiation is successful, the negotiated version data is sent back
 using \MsgAcceptVersion{}, otherwise \MsgRefuse{} SHOULD be sent.
 
+\subsubsection{Size limits per state}
+
+These bounds limit how many bytes can be sent in a given state; indirectly, this
+limits the payload size of each message.  If a space limit is violated, the
+connection SHOULD be torn down.
+
+\begin{table}[h!]
+  \begin{center}
+    \begin{tabular}{l|r}
+      \header{state} & \header{size limit in bytes} \\\hline
+      \StPropose & \texttt{5760} \\
+      \StConfirm & \texttt{5760} \\
+    \end{tabular}
+    % \caption{size limits per state}
+  \end{center}
+\end{table}
+
+\subsubsection{Timeouts per state}
+
+These limits bound how much time the receiver side can wait for the arrival of
+a message.  If a timeout is violated, the connection SHOULD be torn down.
+
+\begin{table}[h!]
+  \begin{center}
+    \begin{tabular}{l|r}
+      \header{state} & \header{timeout} \\\hline
+      \StPropose     & \texttt{10}s \\
+      \StConfirm     & \texttt{10}s \\
+    \end{tabular}
+    % \caption{timeouts per state}
+  \end{center}
+\end{table}
+
 \subsection{Node-to-client handshake}
 
 The node-to-node handshake instantiates version data to a record which consists
@@ -589,6 +589,26 @@ protocol:
 If the negotiation is successful, the negotiated version data is sent back
 using \MsgAcceptVersion{}, otherwise \MsgRefuse{} SHOULD be sent.
 
+\subsubsection{Size limits per state}
+
+These bounds limit how many bytes can be sent in a given state; indirectly, this
+limits the payload size of each message.  If a space limit is violated, the
+connection SHOULD be torn down.
+
+\begin{table}[h!]
+  \begin{center}
+    \begin{tabular}{l|r}
+      \header{state} & \header{size limit in bytes} \\\hline
+      \StPropose & \texttt{5760} \\
+      \StConfirm & \texttt{5760} \\
+    \end{tabular}
+    % \caption{size limits per state}
+  \end{center}
+\end{table}
+
+\subsubsection{Timeouts per state}
+
+No timeouts are used for node-to-client handshake.
 
 \subsection{Client and Server Implementation}
 Section~\ref{handshake-cddl} contains the CDDL specification of the binary format of the handshake messages.

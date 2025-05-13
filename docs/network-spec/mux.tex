@@ -76,13 +76,13 @@ to reassemble mini-protocol byte streams.
       \multicolumn{32}{|c|}{} \\ \hline
     \end{tabular}
     \endgroup
-    \caption{Multiplexer's segment binary encoding, see
+    \caption{Multiplexer's segment data unit (SDU) encoding, see
     \href{https://ouroboros-network.cardano.intersectmbo.org/network-mux/Network-Mux-Codec}{Network.Mux.Codec}.}
     \label{segment-header}
   \end{center}
 \end{table}
 
-Table~\ref{segment-header} shows the layout of the data segments of the multiplexing protocol
+Table~\ref{segment-header} shows the layout of the service data unit (SDU) of the multiplexing protocol
 in big-endian bit order.  The segment header contains the following data:
 \begin{description}
 \item[Transmission Time]
@@ -133,6 +133,17 @@ protocol and the MUX/DEMUX layer shuts down the connection to the peer.
 For ingress buffer limits for each mini-protocol
 see~\ref{table:node-to-node-ingress-buffer-limits}.
 
+For Cardano Node, each SDU for the \textit{node-to-node mini-protocol} has the size at most of
+$12\,288$ bytes.  This is not a protocol limit, Cardano Node can handle larger
+SDUs.  In general this is implementation dependent.
+
+Each SDU for the \textit{node-to-client mini-protocol} has the size at most
+$12\,288$ bytes ($24\,576$ bytes on Windows).
+
+When receiving SDU we place a timeout. For the handshake mini-protocol we use
+a \textit{10s} timeout, for all other node-to-node and node-to-client mini-protocols
+a \textit{30s} timeout is used.
+
 \section{Node-to-node and node-to-client protocol numbers}
 \noindent\haddockref{Network.Mux.Types}{network-mux/Network-Mux-Types}
 \newline\haddockref{Ouroboros.Network.NodeToNode}{ouroboros-network/Ouroboros-Network-NodeToNode}
@@ -144,4 +155,3 @@ communication across the Internet, while \emph{node-to-client} is an inter-proce
 The protocol numbers of both protocols
 are specified in tables~\ref{table:node-to-node-protocol-numbers}
 and~\ref{table:node-to-client-protocol-numbers}.
-
