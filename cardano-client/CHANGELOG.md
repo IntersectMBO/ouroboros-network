@@ -6,6 +6,14 @@
 
 ### Non-breaking changes
 
+## 0.5.1.1 -- 2025-05-13
+
+### Breaking changes
+
+### Non-breaking changes
+
+* bump dependencies
+
 ## 0.5.1.0 -- 2025-03-35
 
 ### Non-breaking changes

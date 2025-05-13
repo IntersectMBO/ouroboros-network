@@ -1,6 +1,6 @@
 cabal-version: 3.0
 name: network-mux
-version: 0.7
+version: 0.8
 synopsis: Multiplexing library
 description: Multiplexing library.
 license: Apache-2.0
