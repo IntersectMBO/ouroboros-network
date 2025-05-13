@@ -1197,8 +1197,17 @@ transactions between full nodes.  The protocol follows a pull-based strategy
 where the initiator asks for new transactions, and the responder sends them
 back.  It is suitable for a trustless setting where both sides need to guard
 against resource consumption attacks from the other side.  The local
-transaction submission protocol, which is used when the server trusts a local
+transaction submission protocol, is a simpler which is used when the server trusts a local
 client, is described in Section \ref{local-tx-submission-protocol}.
+
+The \textit{tx-submission} mini-protocol is designed in a way that the
+information (e.g. transactions) flows across the system in the other direction
+than in the \textit{chain-sync} or \textit{block-fetch} protocols.
+Transactions must flow toward the block producer, while headers and blocks
+disseminate from it to the rest of the system.  This is reflected in the
+protocol graphs, transactions are sent from a client to
+a server.  However, to preserve that all mini-protocols start on the client,
+the \StInit{} state was added in version 2 of the protocol.
 
 Note that Version 1 of the tx-submission protocol is no longer supported.
 Version 2 is used since \texttt{NodeToNode\_V6} of the node-to-node protocol.
