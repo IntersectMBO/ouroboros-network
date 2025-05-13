@@ -2011,16 +2011,42 @@ assigned to each node-to-node mini-protocol.
   \begin{center}
     \begin{tabular}{l|c}
       \header{mini-protocol}                                             & \header{mini-protocol number} \\\hline
-      \hyperref[handshake-protocol]{Handshake}                           & 0  \\
-      \hyperref[chain-sync-protocol]{Chain-Sync}                         & 2  \\
-      \hyperref[block-fetch-protocol]{Block-Fetch}                       & 3  \\
-      \hyperref[tx-submission-protocol2]{Tx-Submission}                  & 4  \\
-      \hyperref[keep-alive-protocol]{Keep-Alive}                         & 8  \\
-      \hyperref[peer-sharing-protocol]{Peer-Sharing} \small{(optional)}  & 10 \\
+      \hyperref[handshake-protocol]{Handshake}                           & $0$  \\
+      \hyperref[chain-sync-protocol]{Chain-Sync}                         & $2$  \\
+      \hyperref[block-fetch-protocol]{Block-Fetch}                       & $3$  \\
+      \hyperref[tx-submission-protocol2]{Tx-Submission}                  & $4$  \\
+      \hyperref[keep-alive-protocol]{Keep-Alive}                         & $8$  \\
+      \hyperref[peer-sharing-protocol]{Peer-Sharing} \small{(optional)}  & $10$ \\
     \end{tabular}
   \end{center}
   \caption{Node-to-node protocol numbers}
   \label{table:node-to-node-protocol-numbers}
+\end{table}
+
+\subsection{Node-to-node mux ingress buffer size limits}
+
+Ingress buffer is the buffer which holds received data for a given
+mini-protocol.  It is an internal detail of the multiplexer. Each
+implementation should define its ingress buffer size limits.  Here we specify
+the default choices we made for Cardano Node.  These limits depend on how much
+pipelining depth a given mini-protocol can do.  This is an internal
+implementation detail since the amount of pipelining is controlled by the peer
+who owns its ingress buffer.
+
+\begin{table}[ht]
+  \begin{center}
+    \begin{tabular}{l|r}
+      \header{mini-protocol}                            & \header{ingress size limit in bytes} \\\hline
+      \hyperref[handshake-protocol]{Handshake}          &  - \\
+      \hyperref[chain-sync-protocol]{Chain-Sync}        &  $462\,000$ \\
+      \hyperref[block-fetch-protocol]{Block-Fetch}      &  $230\,686\,940$ \\
+      \hyperref[tx-submission-protocol2]{Tx-Submission} &  $721\,424$ \\
+      \hyperref[keep-alive-protocol]{Keep-Alive}        &  $1\,408$ \\
+      \hyperref[peer-sharing-protocol]{Peer-Sharing}    &  $5\,760$ \\
+    \end{tabular}
+    \caption{Mux ingress buffer sizes for each mini-protocol}
+    \label{table:node-to-node-ingress-buffer-limits}
+  \end{center}
 \end{table}
 
 \section{Node-to-client protocol}
@@ -2059,13 +2085,18 @@ assigned to each node-to-client mini-protocol.
   \begin{center}
     \begin{tabular}{l|c}
       \header{mini-protocol}                                       & \header{mini-protocol number} \\\hline
-      \hyperref[handshake-protocol]{Handshake}                     & 0 \\
-      \hyperref[chain-sync-protocol]{Chain-Sync}                   & 5 \\
-      \hyperref[local-tx-submission-protocol]{Local Tx-Submission} & 6 \\
-      \hyperref[local-state-query-protocol]{Local State Query}     & 7 \\
-      \hyperref[local-tx-monitor-protocol]{Local Tx-Monitor}       & 9 \\
+      \hyperref[handshake-protocol]{Handshake}                     & $0$ \\
+      \hyperref[chain-sync-protocol]{Chain-Sync}                   & $5$ \\
+      \hyperref[local-tx-submission-protocol]{Local Tx-Submission} & $6$ \\
+      \hyperref[local-state-query-protocol]{Local State Query}     & $7$ \\
+      \hyperref[local-tx-monitor-protocol]{Local Tx-Monitor}       & $9$ \\
     \end{tabular}
   \end{center}
   \caption{Node-to-client protocol numbers}
   \label{table:node-to-client-protocol-numbers}
 \end{table}
+
+\subsection{Node-to-client mux ingress buffer size limits}
+
+All \textit{node-to-client protocols} are using very large ingress buffer size
+limits of $4\,294\,967\,295$ bytes, effectively there are no size limits.

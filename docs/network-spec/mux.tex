@@ -130,7 +130,8 @@ never overflows (see Section~\ref{pipelining}.).
 If the demultiplexer detects an overflow of the buffer, it means that the peer violated the
 protocol and the MUX/DEMUX layer shuts down the connection to the peer.
 
-\todo[inline]{Specify ingress buffer sizes for each mini-protocol}
+For ingress buffer limits for each mini-protocol
+see~\ref{table:node-to-node-ingress-buffer-limits}.
 
 \section{Node-to-node and node-to-client protocol numbers}
 \noindent\haddockref{Network.Mux.Types}{network-mux/Network-Mux-Types}
