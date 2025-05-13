@@ -24,13 +24,13 @@ library
     base >=4.14 && <4.22,
     bytestring >=0.10 && <0.13,
     cborg >=0.2.8 && <0.3,
-    containers >=0.5 && <0.8,
+    containers >=0.5 && <0.9,
     contra-tracer >=0.1 && <0.3,
-    network-mux >=0.6 && <0.8,
-    ouroboros-network >=0.19 && <0.21,
-    ouroboros-network-api >=0.12 && <0.14,
-    ouroboros-network-framework >=0.15 && <0.18,
-    si-timers ^>=1.5,
+    network-mux >=0.6 && <0.9,
+    ouroboros-network >=0.19 && <0.22,
+    ouroboros-network-api >=0.12 && <0.15,
+    ouroboros-network-framework >=0.15 && <0.19,
+    si-timers,
 
   ghc-options:
     -Wall
