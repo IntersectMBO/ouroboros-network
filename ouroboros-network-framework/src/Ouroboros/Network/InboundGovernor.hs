@@ -115,8 +115,7 @@ data Arguments muxMode handlerTrace socket peerAddr initiatorCtx responderCtx
         -> m x,
       -- ^ connection manager continuation
       mkConnectionHandler
-        :: (   NewConnectionInfo peerAddr (Handle muxMode initiatorCtx (ResponderContext peerAddr) versionData ByteString m a b)
-            -> StrictTVar m (StrictMaybe ResponderCounters)
+        :: (   StrictTVar m (StrictMaybe ResponderCounters)
             -> Tracer m (Mux.WithBearer (ConnectionId peerAddr) Mux.Trace))
         -> ConnectionHandler muxMode handlerTrace socket peerAddr handle handleError versionNumber versionData m
       -- ^ Connection handler builder, which injects a special tracer
@@ -142,6 +141,7 @@ data Arguments muxMode handlerTrace socket peerAddr initiatorCtx responderCtx
 -- The first one is used in data diffusion for /Node-To-Node protocol/, while the
 -- other is useful for running a server for the /Node-To-Client protocol/.
 --
+
 with :: forall (muxMode :: Mux.Mode) socket peerAddr initiatorCtx responderCtx
                handle handlerTrace handleError versionData versionNumber bytes m a b x.
         ( Alternative (STM m)
@@ -183,14 +183,17 @@ with
     = do
     labelThisThread "inbound-governor"
     stateVar <- newTVarIO emptyState
+    active <- newTVarIO True
     let connectionHandler =
-          mkConnectionHandler $ responderIgTracer stateVar
+          mkConnectionHandler $ responderIgTracer stateVar active
     withConnectionManager connectionHandler \connectionManager ->
       withAsync
         (  labelThisThread "inbound-governor-loop" >>
            forever (inboundGovernorStep connectionManager stateVar >> yield)
-         `catch`
-           handleError stateVar)
+         `catch` \e -> do
+           atomically $ writeTVar active False
+           _ <- atomically $ InfoChannel.readMessages infoChannel
+           handleError stateVar e)
       \thread ->
         k thread (mkPublicState <$> readTVarIO stateVar) connectionManager
   where
@@ -202,13 +205,11 @@ with
     -- responderIgTracer :: StrictTVar m (State muxMode initiatorCtx peerAddr versionData m a b)
     --                   -> StrictTVar m (Maybe ResponderCounters)
     --                   -> Tracer m (Mux.WithBearer (ConnectionId peerAddr) Mux.Trace)
-    responderIgTracer stateVar newConnection countersVar = Tracer $ \(Mux.WithBearer peer trace) ->
+    responderIgTracer stateVar active countersVar = Tracer $ \(Mux.WithBearer peer trace) -> do
       -- hello from muxer main thread
-      case trace of
-        Mux.TraceState Mux.Mature -> atomically $
-          InfoChannel.writeMessage infoChannel (NewConnection newConnection)
-
-        _ | Just miniProtocolNum <- miniProtocolStarted trace -> atomically do
+      active' <- readTVarIO active
+      case (trace, active') of
+        (_, True) | Just miniProtocolNum <- miniProtocolStarted trace -> atomically do
               connections <- connections <$> readTVar stateVar
               mCounters   <- readTVar countersVar
               case (Map.lookup peer connections, mCounters) of
@@ -248,7 +249,7 @@ with
 
                 _otherwise -> writeTVar countersVar SNothing
 
-        _ | Just miniProtocolNum <- miniProtocolTerminated trace -> atomically do
+        (_, True) | Just miniProtocolNum <- miniProtocolTerminated trace -> atomically do
               connections <- connections <$> readTVar stateVar
               mCounters   <- readTVar countersVar
               case (Map.lookup peer connections, mCounters) of
@@ -288,7 +289,7 @@ with
                 _otherwise -> writeTVar countersVar SNothing
 
 
-        _ | True <- muxStopped trace -> atomically do
+        (_, True) | True <- muxStopped trace -> atomically do
               State { connections } <- readTVar stateVar
               case Map.lookup peer connections of
                 Just ConnectionState {csMux} ->

@@ -883,7 +883,6 @@ runM Interfaces
                   ) <$> daLocalResponderApplication )
                 (mainThreadId, rethrowPolicy <> daLocalRethrowPolicy)
                 SingResponderMode
-                ntcDataFlow
                 responderMuxChannelTracer
 
             localWithConnectionManager responderInfoChannel connectionHandler k =

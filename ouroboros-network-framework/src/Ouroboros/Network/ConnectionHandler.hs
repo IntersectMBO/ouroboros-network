@@ -132,9 +132,7 @@ type family MkMuxConnectionHandler (muxMode :: Mx.Mode) socket initiatorCtx resp
 
   MkMuxConnectionHandler Mx.ResponderMode socket initiatorCtx responderCtx peerAddr
                                           versionNumber versionData bytes m a b =
-       (versionData -> DataFlow)
-    -> (   NewConnectionInfo peerAddr (Handle Mx.ResponderMode initiatorCtx responderCtx versionData bytes m a b)
-        -> StrictTVar m (StrictMaybe ResponderCounters)
+       (   StrictTVar m (StrictMaybe ResponderCounters)
         -> Tracer m (WithBearer (ConnectionId peerAddr) Trace))
     -> MuxConnectionHandler Mx.ResponderMode socket initiatorCtx responderCtx peerAddr
                                              versionNumber versionData bytes m a b
@@ -142,8 +140,7 @@ type family MkMuxConnectionHandler (muxMode :: Mx.Mode) socket initiatorCtx resp
   MkMuxConnectionHandler Mx.InitiatorResponderMode socket initiatorCtx responderCtx peerAddr
                                                    versionNumber versionData bytes m a b =
        (versionData -> DataFlow)
-    -> (   NewConnectionInfo peerAddr (Handle Mx.InitiatorResponderMode initiatorCtx responderCtx versionData bytes m a b)
-        -> StrictTVar m (StrictMaybe ResponderCounters)
+    -> (   StrictTVar m (StrictMaybe ResponderCounters)
         -> Tracer m (WithBearer (ConnectionId peerAddr) Trace))
     -> MuxConnectionHandler Mx.InitiatorResponderMode socket initiatorCtx responderCtx
                                                       peerAddr versionNumber versionData
@@ -278,12 +275,11 @@ makeConnectionHandler muxTracer forkPolicy
   \case
     SingInitiatorMode -> ConnectionHandler . WithInitiatorMode
                        $ outboundConnectionHandler NotInResponderMode
-    SingResponderMode -> ((ConnectionHandler . WithResponderMode) .) . inboundConnectionHandler
-    SingInitiatorResponderMode -> \connectionDataFlow inboundGovernorMuxTracer ->
-      -- the tracer is defined in the InboundGovernor module
+    SingResponderMode -> ConnectionHandler . WithResponderMode . inboundConnectionHandler
+    SingInitiatorResponderMode -> \connectionDataFlow inboundGovChannelTracer ->
       ConnectionHandler $ WithInitiatorResponderMode
-        (outboundConnectionHandler $ InResponderMode (inboundGovernorMuxTracer, connectionDataFlow))
-        (inboundConnectionHandler connectionDataFlow inboundGovernorMuxTracer)
+        (outboundConnectionHandler $ InResponderMode (inboundGovChannelTracer, connectionDataFlow))
+        (inboundConnectionHandler inboundGovChannelTracer)
   where
     -- install classify exception handler
     classifyExceptions :: forall x.
@@ -310,8 +306,7 @@ makeConnectionHandler muxTracer forkPolicy
 
     outboundConnectionHandler
       :: HasInitiator muxMode ~ True
-      => InResponderMode muxMode (   NewConnectionInfo peerAddr (Handle muxMode initiatorCtx responderCtx versionData ByteString m a b)
-                                  -> StrictTVar m (StrictMaybe ResponderCounters)
+      => InResponderMode muxMode (   StrictTVar m (StrictMaybe ResponderCounters)
                                   -> Tracer m (WithBearer (ConnectionId peerAddr) Trace)
                                  , versionData -> DataFlow)
       -> ConnectionHandlerFn (ConnectionHandlerTrace versionNumber versionData)
@@ -380,9 +375,7 @@ makeConnectionHandler muxTracer forkPolicy
                       InResponderMode (inboundGovernorMuxTracer, connectionDataFlow)
                         | Duplex <- connectionDataFlow agreedOptions -> do
                             countersVar <- newTVarIO . SJust $ ResponderCounters 0 0
-                            let newConnection =
-                                  NewConnectionInfo Outbound connectionId Duplex handle
-                            pure $ muxTracer <> inboundGovernorMuxTracer newConnection countersVar
+                            pure $ muxTracer <> inboundGovernorMuxTracer countersVar
                       _notResponder ->
                             -- If this is InitiatorOnly, or a server where unidirectional flow was negotiated
                             -- the IG will never be informed of this remote for obvious reasons.
@@ -399,9 +392,7 @@ makeConnectionHandler muxTracer forkPolicy
 
     inboundConnectionHandler
       :: HasResponder muxMode ~ True
-      => (versionData -> DataFlow)
-      -> (   NewConnectionInfo peerAddr (Handle muxMode initiatorCtx responderCtx versionData ByteString m a b)
-          -> StrictTVar m (StrictMaybe ResponderCounters)
+      => (   StrictTVar m (StrictMaybe ResponderCounters)
           -> Tracer m (WithBearer (ConnectionId peerAddr) Trace))
       -> ConnectionHandlerFn (ConnectionHandlerTrace versionNumber versionData)
                              socket
@@ -411,8 +402,7 @@ makeConnectionHandler muxTracer forkPolicy
                              versionNumber
                              versionData
                              m
-    inboundConnectionHandler connectionDataFlow
-                             inboundGovernorMuxTracer
+    inboundConnectionHandler inboundGovernorMuxTracer
                              updateVersionDataFn
                              socket
                              PromiseWriter { writePromise }
@@ -468,10 +458,8 @@ makeConnectionHandler muxTracer forkPolicy
                  bearer <- mkMuxBearer sduTimeout socket buffer
                  countersVar <- newTVarIO . SJust $ ResponderCounters 0 0
                  let traceWithBearer = contramap $ Mx.WithBearer connectionId
-                     newConnection =
-                       NewConnectionInfo Inbound connectionId (connectionDataFlow agreedOptions) handle
                  unmask $ Mx.run Mx.MuxTracerBundle {
-                            muxTracer     = traceWithBearer (muxTracer <> inboundGovernorMuxTracer newConnection countersVar),
+                            muxTracer     = traceWithBearer (muxTracer <> inboundGovernorMuxTracer countersVar),
                             channelTracer = traceWithBearer muxTracer }
                           mux bearer
               Right (HandshakeQueryResult vMap) -> do
