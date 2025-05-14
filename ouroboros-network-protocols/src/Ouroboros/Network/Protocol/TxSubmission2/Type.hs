@@ -187,7 +187,7 @@ instance Protocol (TxSubmission2 txid tx) where
     -- | Request a non-empty list of transaction identifiers from the client,
     -- and confirm a number of outstanding transaction identifiers.
     --
-    -- With 'TokBlocking' this is a a blocking operation: the response will
+    -- With 'TokBlocking' this is a blocking operation: the response will
     -- always have at least one transaction identifier, and it does not expect
     -- a prompt response: there is no timeout. This covers the case when there
     -- is nothing else to do but wait. For example this covers leaf nodes that
@@ -202,14 +202,13 @@ instance Protocol (TxSubmission2 txid tx) where
     -- The request gives the maximum number of transaction identifiers that
     -- can be accepted in the response. This must be greater than zero in the
     -- 'TokBlocking' case. In the 'TokNonBlocking' case either the numbers
-    -- acknowledged or the number requested must be non-zero. In either case,
-    -- the number requested must not put the total outstanding over the fixed
-    -- protocol limit.
+    -- acknowledged or the number requested __MUST__ be non-zero. In either
+    -- case, the number requested __MUST__ not put the total outstanding over
+    -- the fixed protocol limit.
     --
-    -- The request also gives the number of outstanding transaction
-    -- identifiers that can now be acknowledged. The actual transactions
-    -- to acknowledge are known to the peer based on the FIFO order in which
-    -- they were provided.
+    -- The request also gives the number of outstanding transaction identifiers
+    -- that can now be acknowledged. The actual transactions to acknowledge are
+    -- known to the peer based on the FIFO order in which they were provided.
     --
     -- There is no choice about when to use the blocking case versus the
     -- non-blocking case, it depends on whether there are any remaining
@@ -221,9 +220,6 @@ instance Protocol (TxSubmission2 txid tx) where
     --
     -- * The non-blocking case __MUST__ be used when there are non-zero remaining
     --   unacknowledged transactions.
-    --
-    -- It is a protocol error to make a blocking or non-blocking request for
-    -- zero txids.
     --
     MsgRequestTxIds
       :: forall (blocking :: StBlockingStyle) txid tx.

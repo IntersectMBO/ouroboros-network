@@ -101,7 +101,7 @@ instance Protocol (LocalTxSubmission tx reject) where
   --
   data Message (LocalTxSubmission tx reject) from to where
 
-    -- | The client submits a single transaction and waits a reply.
+    -- | The client submits a single transaction and MUST wait for a reply.
     --
     MsgSubmitTx
       :: tx
