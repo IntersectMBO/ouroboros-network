@@ -21,6 +21,7 @@ module Ouroboros.Network.Snocket
   , AddressFamily (..)
   , Snocket (..)
   , makeSocketBearer
+  , makeSocketBearer'
   , makeLocalRawBearer
     -- ** Socket based Snockets
   , SocketSnocket
@@ -49,7 +50,6 @@ import Control.Exception
 import Data.Bifoldable (Bifoldable (..))
 import Data.Bifunctor (Bifunctor (..))
 import Data.Hashable
-import Data.Typeable (Typeable)
 import Data.Word
 import GHC.Generics (Generic)
 import Quiet (Quiet (..))
@@ -202,7 +202,7 @@ instance Hashable LocalAddress where
     hashWithSalt s (LocalAddress path) = hashWithSalt s path
 
 newtype TestAddress addr = TestAddress { getTestAddress :: addr }
-  deriving (Eq, Ord, Typeable, Generic, NFData)
+  deriving (Eq, Ord, Generic, NFData)
   deriving NoThunks via InspectHeap (TestAddress addr)
   deriving Show via Quiet (TestAddress addr)
 
@@ -413,11 +413,11 @@ makeLocalRawBearer = MakeRawBearer (return . localSocketToRawBearer)
 
 makeLocalBearer :: MakeBearer IO LocalSocket
 #if defined(mingw32_HOST_OS)
-makeLocalBearer = MakeBearer $ \sduTimeout tracer LocalSocket { getLocalHandle = fd } ->
-  getBearer makeNamedPipeBearer sduTimeout tracer fd
+makeLocalBearer = MakeBearer $ \sduTimeout tracer LocalSocket { getLocalHandle = fd } rb ->
+  getBearer makeNamedPipeBearer sduTimeout tracer fd rb
 #else
-makeLocalBearer = MakeBearer $ \sduTimeout tracer (LocalSocket fd) ->
-  getBearer makeSocketBearer sduTimeout tracer fd
+makeLocalBearer = MakeBearer $ \sduTimeout tracer (LocalSocket fd) rb ->
+  getBearer makeSocketBearer sduTimeout tracer fd rb
 #endif
 
 -- | System dependent LocalSnocket

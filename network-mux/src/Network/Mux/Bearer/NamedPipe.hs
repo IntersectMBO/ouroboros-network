@@ -33,16 +33,19 @@ namedPipeAsBearer :: Mx.SDUSize
                   -> Mx.Bearer IO
 namedPipeAsBearer sduSize tracer h =
     Mx.Bearer {
-        Mx.read    = readNamedPipe,
-        Mx.write   = writeNamedPipe,
-        Mx.sduSize = sduSize,
-        Mx.name    = "named-pipe"
+        Mx.read           = readNamedPipe,
+        Mx.write          = writeNamedPipe,
+        Mx.writeMany      = writeNamedPipeMany,
+        Mx.sduSize        = sduSize,
+        Mx.batchSize      = fromIntegral $ Mx.getSDUSize sduSize,
+        Mx.name           = "named-pipe",
+        Mx.egressInterval = 0
       }
   where
     readNamedPipe :: Mx.TimeoutFn IO -> IO (Mx.SDU, Time)
     readNamedPipe _ = do
       traceWith tracer Mx.TraceRecvHeaderStart
-      hbuf <- recvLen' True 8 []
+      hbuf <- recvLen' True Mx.msHeaderLength []
       case Mx.decodeSDU hbuf of
         Left e -> throwIO e
         Right header@Mx.SDU { Mx.msHeader } -> do
@@ -79,4 +82,10 @@ namedPipeAsBearer sduSize tracer h =
       traverse_ (Win32.Async.writeHandle h) (BL.toChunks buf)
         `catch` Mx.handleIOException "writeHandle errored"
       traceWith tracer Mx.TraceSendEnd
+      return ts
+
+    writeNamedPipeMany :: Mx.TimeoutFn IO -> [Mx.SDU] -> IO Time
+    writeNamedPipeMany timeoutFn sdus = do
+      ts <- getMonotonicTime
+      mapM_ (writeNamedPipe timeoutFn) sdus
       return ts

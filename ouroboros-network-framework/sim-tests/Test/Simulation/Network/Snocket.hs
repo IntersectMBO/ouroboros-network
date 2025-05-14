@@ -37,6 +37,7 @@ import Codec.Serialise (Serialise)
 import Codec.Serialise qualified as Serialise
 
 import Data.ByteString.Lazy (ByteString)
+import Data.ByteString.Lazy qualified as BL
 import Data.Foldable (traverse_)
 import Data.Functor (void)
 import Data.Map qualified as Map
@@ -228,7 +229,7 @@ clientServerSimulation payloads =
           (accepted, accept1) <- runAccept accept0
           case accepted of
             Accepted fd' remoteAddr -> do
-              bearer <- getBearer makeFDBearer 10 nullTracer fd'
+              bearer <- getBearer makeFDBearer 10 nullTracer fd' Nothing
               thread <- async $ handleConnection bearer remoteAddr
                                 `finally`
                                close snocket fd'
@@ -309,7 +310,7 @@ clientServerSimulation payloads =
                               (\channel -> runPeer tr codecReqResp
                                                    channel
                                                    clientPeer)
-                  bearer <- Mx.getBearer makeFDBearer 10 nullTracer fd
+                  bearer <- Mx.getBearer makeFDBearer 10 nullTracer fd Nothing
 
                   -- kill mux as soon as the client returns
                   withAsync
@@ -560,6 +561,7 @@ prop_simultaneous_open defaultBearerInfo =
 --
 prop_self_connect :: ByteString -> Property
 prop_self_connect payload =
+  BL.length payload > 0 && BL.length payload <= 0xffff ==>
     runSimOrThrow sim
   where
     addr :: TestAddress Int
@@ -577,7 +579,7 @@ prop_self_connect payload =
                   $ \fd -> do
                     bind snocket fd addr
                     connect snocket fd addr
-                    bearer <- getBearer makeFDBearer 10 nullTracer fd
+                    bearer <- getBearer makeFDBearer 10 nullTracer fd Nothing
                     let channel = bearerAsChannel bearer (MiniProtocolNum 0) InitiatorDir
                     send channel payload
                     payload' <- recv channel

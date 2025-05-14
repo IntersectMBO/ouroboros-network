@@ -1,5 +1,19 @@
 # Revision history for ouroboros-network-protocols
 
+## next release
+
+### Breaking changes
+
+### Non-breaking changes
+
+## 0.14.0.1 -- 2025-05-13
+
+### Breaking changes
+
+### Non-breaking changes
+
+* Adapt to buffered socket bearers from network-mux 0.8
+
 ## 0.14.0.0 -- 2025-02-25
 
 ### Breaking changes

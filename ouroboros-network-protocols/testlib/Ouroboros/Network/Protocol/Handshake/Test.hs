@@ -1009,12 +1009,12 @@ prop_peerSharing_symmetric createChannels codec versionDataCodec clientVersions 
     (  Right (HandshakeNegotiationResult _ v (ArbitraryNodeToNodeVersionData clientResult))
      , Right (HandshakeNegotiationResult _ v' (ArbitraryNodeToNodeVersionData serverResult))
      ) | v == v'
-       , v >= NodeToNodeV_13 ->
+       , v >= NodeToNodeV_14 ->
          counterexample
               ("VersionNumber: " ++ show v)
           $ clientResult === serverResult
        | v == v'
-       , v < NodeToNodeV_13  -> property True
+       , v < NodeToNodeV_14  -> property True
        | otherwise  -> counterexample "Version mismatch" False
     (Right _, Left _) -> counterexample "Acceptance mismatch" False
     (Left _, Right _) -> counterexample "Acceptance mismatch" False
@@ -1329,11 +1329,13 @@ prop_channel_simultaneous_open_sim codec versionDataCodec
                         nullTracer
                         -- (("client",) `contramap` Tracer Debug.traceShowM)
                         fdConn
+                        Nothing
             bearer' <- Mx.getBearer makeFDBearer
                         1
                         nullTracer
                         -- (("server",) `contramap` Tracer Debug.traceShowM)
                         fdConn'
+                        Nothing
             let chann  = bearerAsChannel bearer  (MiniProtocolNum 0) InitiatorDir
                 chann' = bearerAsChannel bearer' (MiniProtocolNum 0) InitiatorDir
             res <- prop_channel_simultaneous_open

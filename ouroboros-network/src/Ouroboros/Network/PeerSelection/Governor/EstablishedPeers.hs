@@ -16,9 +16,11 @@ import GHC.Stack (HasCallStack)
 
 import Control.Applicative (Alternative)
 import Control.Concurrent.JobPool (Job (..))
-import Control.Exception (SomeException)
+import Control.Exception hiding (throwIO)
 import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
 import System.Random (randomR)
 
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
@@ -31,7 +33,8 @@ import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as Estab
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (WarmValency (..))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
-import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersAPI (..))
+import Ouroboros.Network.PeerSelection.Types (PeerStatus (..),
+           PublicExtraPeersAPI (..))
 
 
 ---------------------------------
@@ -616,7 +619,8 @@ aboveTarget
   :: forall extraState extraDebugState extraFlags extraPeers extraAPI
             extraCounters peeraddr peerconn m.
      ( Alternative (STM m)
-     , MonadSTM m
+     , MonadThrow m
+     , MonadTimer m
      , Ord peeraddr
      )
   => PeerSelectionActions
@@ -641,7 +645,8 @@ aboveTarget =  aboveTargetBigLedgerPeers <> aboveTargetOther
 aboveTargetOther
   :: forall extraState extraDebugState extraFlags extraPeers extraAPI
             extraCounters peeraddr peerconn m.
-     ( MonadSTM m
+     ( MonadThrow m
+     , MonadTimer m
      , Ord peeraddr
      , HasCallStack
      )
@@ -754,7 +759,8 @@ aboveTargetOther actions@PeerSelectionActions {
 aboveTargetBigLedgerPeers
   :: forall extraState extraDebugState extraFlags extraPeers extraAPI
             extraCounters peeraddr peerconn m.
-     ( MonadSTM m
+     ( MonadThrow m
+     , MonadTimer m
      , Ord peeraddr
      , HasCallStack
      )
@@ -859,7 +865,8 @@ aboveTargetBigLedgerPeers actions@PeerSelectionActions {
 jobDemoteEstablishedPeer
   :: forall extraState extraDebugState extraFlags extraPeers extraAPI
             extraCounters peeraddr peerconn m.
-     ( Monad m
+     ( MonadThrow m
+     , MonadTimer m
      , Ord peeraddr
      )
   => PeerSelectionActions
@@ -877,7 +884,8 @@ jobDemoteEstablishedPeer
                           peeraddr peerconn)
 jobDemoteEstablishedPeer PeerSelectionActions {
                            peerStateActions =
-                             PeerStateActions {closePeerConnection}
+                             PeerStateActions {closePeerConnection,
+                                               monitorPeerConnection}
                          }
                          peeraddr peerconn =
     Job job handler () "demoteEstablishedPeer"
@@ -885,11 +893,23 @@ jobDemoteEstablishedPeer PeerSelectionActions {
     handler :: SomeException
             -> m (Completion m extraState extraDebugState extraFlags extraPeers
                              peeraddr peerconn)
-    handler e = return $
-      -- It's quite bad if closing fails. The peer is cooling so
-      -- we can't remove it from the set of established peers.
-      --
-      Completion $ \st@PeerSelectionState {
+    handler e = do
+      -- cf. issue #5111 - we wait for the connection to be forgotten by the CM
+      -- before we return. Otherwise, if the same peer is promoted too quickly by
+      -- eg. churn, the connection will fail.
+      (timeoutFault, e') <-
+        case fromException e :: Maybe DemotionTimeoutException of
+          Just _ -> return (True, e)
+          Nothing -> do
+            res <-
+              timeout c_PEER_DEMOTION_TIMEOUT $
+                      atomically $
+                        monitorPeerConnection peerconn >>= check . (== PeerCold) . fst
+            case res of
+              Nothing -> return (True, toException $ DemotionTimeoutException (Just e))
+              Just _ -> return (False, e)
+
+      return $ Completion $ \st@PeerSelectionState {
                        publicRootPeers,
                        establishedPeers,
                        inProgressDemoteWarm,
@@ -900,6 +920,12 @@ jobDemoteEstablishedPeer PeerSelectionActions {
                      }
                      _ ->
         let inProgressDemoteWarm' = Set.delete peeraddr inProgressDemoteWarm
+            establishedPeers' =
+              -- It's quite bad if closing fails due to timeout. The peer is cooling so
+              -- we can't remove it from the set of established peers.
+              if timeoutFault
+                then establishedPeers
+                else EstablishedPeers.delete peeraddr establishedPeers
             bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
          in
         Decision {
@@ -909,14 +935,15 @@ jobDemoteEstablishedPeer PeerSelectionActions {
                                  (Set.size $ EstablishedPeers.toSet establishedPeers
                                              `Set.intersection`
                                              bigLedgerPeersSet)
-                                 peeraddr e]
+                                 peeraddr e']
                           else [TraceDemoteWarmFailed
                                  targetNumberOfEstablishedPeers
                                  (Set.size $ EstablishedPeers.toSet establishedPeers
                                       Set.\\ bigLedgerPeersSet)
-                                 peeraddr e],
+                                 peeraddr e'],
           decisionState = st {
-                            inProgressDemoteWarm = inProgressDemoteWarm'
+                            inProgressDemoteWarm = inProgressDemoteWarm',
+                            establishedPeers     = establishedPeers'
                           },
           decisionJobs  = []
       }
@@ -924,6 +951,17 @@ jobDemoteEstablishedPeer PeerSelectionActions {
     job :: m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
     job = do
       closePeerConnection peerconn
+      -- cf. issue #5111 - we wait for the connection to be forgotten by the CM
+      -- before we return. Otherwise, if the same peer is promoted too quickly by
+      -- eg. churn, the connection will fail.
+      res <-
+        timeout c_PEER_DEMOTION_TIMEOUT $
+          atomically $
+            monitorPeerConnection peerconn >>= check . (== PeerCold) . fst
+      case res of
+        Nothing -> throwIO $ DemotionTimeoutException Nothing
+        Just _  -> pure ()
+
       return $ Completion $ \st@PeerSelectionState {
                                publicRootPeers,
                                establishedPeers,

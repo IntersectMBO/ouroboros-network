@@ -276,6 +276,7 @@ run blockGeneratorArgs limits ni na
             interfaces = P2P.Interfaces
               { P2P.diNtnSnocket            = iNtnSnocket ni
               , P2P.diNtnBearer             = iNtnBearer ni
+              , P2P.diWithBuffer            = \f -> f Nothing
               , P2P.diNtnConfigureSocket    = \_ _ -> return ()
               , P2P.diNtnConfigureSystemdSocket
                                                = \_ _ -> return ()
@@ -459,6 +460,7 @@ run blockGeneratorArgs limits ni na
                              = aAcceptedLimits na
       , Common.daMode          = aDiffusionMode na
       , Common.daPublicPeerSelectionVar
+      , Common.daEgressPollInterval = 0.001
       }
 
     argsExtra :: P2P.ArgumentsExtra

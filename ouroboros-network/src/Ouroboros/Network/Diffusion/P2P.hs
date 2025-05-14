@@ -66,10 +66,12 @@ import System.Random (StdGen, newStdGen, split)
 import Network.Socket (Socket)
 import Network.Socket qualified as Socket
 import Network.Mux qualified as Mx
+import Network.Mux.Types (ReadBuffer)
+import Network.Mux.Bearer (withReadBufferIO)
 
 import Ouroboros.Network.Context (ResponderContext)
 import Ouroboros.Network.Snocket (LocalAddress, LocalSocket (..), Snocket,
-           localSocketFileDescriptor, makeLocalBearer, makeSocketBearer)
+           localSocketFileDescriptor, makeLocalBearer, makeSocketBearer')
 import Ouroboros.Network.Snocket (FileDescriptor)
 import Ouroboros.Network.Snocket qualified as Snocket
 import Ouroboros.Network.Context (ExpandedInitiatorContext)
@@ -510,6 +512,10 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         diNtnBearer
           :: Mx.MakeBearer m ntnFd,
 
+        -- | readbuffer
+        diWithBuffer
+          :: ((Maybe (ReadBuffer m) -> m ()) -> m ()),
+
         -- | node-to-node socket configuration
         --
         diNtnConfigureSocket
@@ -678,6 +684,7 @@ runM
 runM Interfaces
        { diNtnSnocket
        , diNtnBearer
+       , diWithBuffer
        , diNtnConfigureSocket
        , diNtnConfigureSystemdSocket
        , diNtnHandshakeArguments
@@ -872,6 +879,7 @@ runM Interfaces
                   CM.addressType         = const Nothing,
                   CM.snocket             = diNtcSnocket,
                   CM.makeBearer          = diNtcBearer,
+                  CM.withBuffer          = diWithBuffer,
                   CM.configureSocket     = \_ _ -> return (),
                   CM.timeWaitTimeout     = local_TIME_WAIT_TIMEOUT,
                   CM.outboundIdleTimeout = local_PROTOCOL_IDLE_TIMEOUT,
@@ -999,6 +1007,7 @@ runM Interfaces
                 CM.addressType         = diNtnAddressType,
                 CM.snocket             = diNtnSnocket,
                 CM.makeBearer          = diNtnBearer,
+                CM.withBuffer          = diWithBuffer,
                 CM.configureSocket     = diNtnConfigureSocket,
                 CM.connectionDataFlow  = diNtnDataFlow,
                 CM.prunePolicy         = prunePolicy,
@@ -1439,10 +1448,15 @@ run sigUSR1Signal tracers tracersExtra args argsExtra apps appsExtra = do
                (\e -> traceWith tracer (DiffusionErrored e)
                    >> throwIO (DiffusionError e))
          $ withIOManager $ \iocp -> do
+
+             -- Clamp the mux egress poll interval to sane values.
+             let egressInterval = max 0 $ min 0.200 (daEgressPollInterval args)
+
              runM
                Interfaces {
                  diNtnSnocket                = Snocket.socketSnocket iocp,
-                 diNtnBearer                 = makeSocketBearer,
+                 diNtnBearer                 = makeSocketBearer' egressInterval,
+                 diWithBuffer                = withReadBufferIO,
                  diNtnConfigureSocket        = configureSocket,
                  diNtnConfigureSystemdSocket =
                    configureSystemdSocket

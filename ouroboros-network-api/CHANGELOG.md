@@ -1,5 +1,19 @@
 # Revision history for ouroboros-network-api
 
+## next version
+
+### Breaking changes
+
+### Non-breaking changes
+
+## 0.14.0.0 - 2025-05-13
+
+### Breaking changes
+
+* Removed `NodeToNodeV_13`
+
+### Non-breaking changes
+
 ## 0.13.0.0 -- 2025-02-25
 
 ### Breaking changes

@@ -49,7 +49,6 @@ import Data.IP qualified as IP
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Monoid.Synchronisation
-import Data.Typeable (Typeable)
 import Data.Void (Void)
 import GHC.Generics (Generic)
 import Numeric.Natural (Natural)
@@ -359,7 +358,7 @@ withSlotTime slotDuration k = do
 -- | Node kernel erros.
 --
 data NodeKernelError = UnexpectedSlot !SlotNo !SlotNo
-  deriving (Typeable, Show)
+  deriving Show
 
 instance Exception NodeKernelError where
 
