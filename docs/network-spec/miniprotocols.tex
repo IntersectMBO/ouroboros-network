@@ -477,10 +477,11 @@ Messages of the protocol:
       data.  Note that different version numbers might use different version
       data (e.g. supporting a different set of parameters).
   \item [\MsgReplyVersions{} {\boldmath $(versionTable)$}]
-      In TCP simultaneous open, the client will receive \MsgReplyVersions{}
-      (which was sent as \MsgProposeVersions{}) as a reply to its own
-      \MsgProposeVersions{}; thus both \MsgProposeVersions{} and
-      \MsgReplyVersions{} have to have the same CBOR encoding.
+      This message must not be explicitly sent, it's only to support TCP
+      simultaneous open scenario in which both sides sent
+      \MsgProposeVersions{}.  In this case, the received \MsgProposeVersions{}
+      is interpreted as \MsgReplyVersions{} and thus it MUST have the same CBOR
+      decoding as \MsgProposeVersions{}.
   \item [\MsgAcceptVersion{} {\boldmath $(versionNumber,extraParameters)$}]
       The server accepts $versionNumber$ and returns possible extra protocol parameters.
   \item [\MsgRefuse{} {\boldmath $(reason)$}]
@@ -849,7 +850,8 @@ is used to diffuse full blocks.
 The protocol uses the following messages:
 \begin{description}
 \item [\MsgRequestNext]
-      Request the next update from the producer.
+      Request the next update from the producer.  The response can be a roll
+      forward, a roll back or wait.
 \item [\MsgAwaitReply]
       Acknowledge the request but require the consumer to wait for the next update.
       This means that the consumer is synced with the producer, and
@@ -1311,23 +1313,87 @@ Version 2 is used since \texttt{NodeToNode\_V6} of the node-to-node protocol.
 \begin{description}
 \item [\MsgInit] initial message of the protocol
 \item [\MsgRequestTxIdsNB{} {\boldmath $(ack,req)$}]
-      The server asks for new transaction ids and acknowledges old ids.
-      The client immediately replies (possibly with an empty list).
+      Request a non-empty list of transaction identifiers from the client,
+      and confirm a number of outstanding transaction identifiers.
+
+      This is a non-blocking operation: the response
+      may be an empty list and this does expect a prompt response. This
+      covers high throughput use cases where we wish to pipeline, by
+      interleaving requests for additional transaction identifiers with
+      requests for transactions, which requires these requests not block.
+
+      The request gives the maximum number of transaction identifiers that
+      can be accepted in the response. Either the numbers acknowledged or the
+      number requested MUST be non-zero. In either case, the number requested
+      MUST not put the total outstanding over the fixed protocol limit.
+
+      The request also gives the number of outstanding transaction identifiers
+      that can now be acknowledged. The actual transactions to acknowledge are
+      known to the peer based on the FIFO order in which they were provided.
+
+      The request MUST be made (over \MsgRequestTxIdsB{}) if there are non-zer
+      remaining unacknowledged transactions.
 \item [\MsgRequestTxIdsB{} {\boldmath $(ack,req)$}]
       The server asks for new transaction ids and acknowledges old ids.
       The client will block until new transactions are available, thus the
       respond will always have at least one transaction identifier. 
+
+      This is a blocking operation: the response will always have at least one
+      transaction identifier, and it does not expect a prompt response: there
+      is no timeout. This covers the case when there is nothing else to do but
+      wait. For example this covers leaf nodes that rarely, if ever, create and
+      submit a transaction.
+
+      The request gives the maximum number of transaction identifiers that
+      can be accepted in the response. This must be greater than zero.
+      The number requested ids MUST not put the total outstanding over
+      the fixed protocol limit.
+
+      The request also gives the number of outstanding transaction identifiers
+      that can now be acknowledged. The actual transactions to acknowledge are
+      known to the peer based on the FIFO order in which they were provided.
+
+      The request MUST be made (over \MsgRequestTxIdsNB{}) if there are zero
+      remaining unacknowledged transactions.
 \item [\MsgReplyTxIds{} {\boldmath ($\langle (id, size) \rangle$) }]
       The client replies with a list of available transactions.
       The list contains pairs of transaction ids and the corresponding size of the transaction in bytes.
-      In the blocking case, the reply is guaranteed to contain at least one transaction.
+      In the blocking case, the reply MUST contain at least one transaction identifier.
       In the non-blocking case, the reply may contain an empty list.
+
+      These transactions are added to the notional FIFO of outstanding
+      transaction identifiers for the protocol.
+
+      The order in which these transaction identifiers are returned must be the
+      order in which they are submitted to the mempool, to preserve dependent
+      transactions.
 \item [\MsgRequestTxs{} {\boldmath ($\langle ids \rangle$)}]
-      The server requests transactions by sending a list of transaction-ids.
+      The server requests transactions by sending a non-empty list of transaction-ids.
+
+      While it is the responsibility of the replying peer to keep within
+      pipelining in-flight limits, the sender must also cooperate by keeping
+      the total requested across all in-flight requests within the limits.
+
+      It is an error to ask for transaction identifiers that were not
+      previously announced (via \MsgReplyTxIds{}).
+
+      It is an error to ask for transaction identifiers that are not
+      outstanding or that were already asked for.
 \item [\MsgReplyTxs{} {\boldmath ($\langle txs \rangle$})]
-      The client replies with a list of transactions.
+      The client replies with a list of transactions.  It may implicitly
+      discard transaction-ids which were requested.
+
+      Transactions can become invalid between the time the transaction
+      identifier was sent and the transaction being requested. Invalid
+      (including committed) transactions do not need to be sent.
+
+      Any transaction identifiers requested but not provided in this reply
+      should be considered as if this peer had never announced them. (Note
+      that this is no guarantee that the transaction is invalid, it may still
+      be valid and available from another peer).
 \item [\MsgDone]
-      The client terminates the mini protocol.
+      Termination message, initiated by the client when the server is making
+      a blocking call for more transaction identifiers.
 \end{description}
 
 \begin{table}[h!]
@@ -1344,22 +1410,6 @@ Version 2 is used since \texttt{NodeToNode\_V6} of the node-to-node protocol.
   \end{tabular}
   \caption{Tx-Submission mini-protocol (version 2) messages.}
 \end{table}
-
-\subsubsection{Protocol Errors}
-
-There is no choice about when to use \MsgRequestTxIdsNB{} versus
-\MsgRequestTxIdsB{}, it depends on whether there are any remaining
-unacknowledged transactions (after taking into account the ones
-acknowledged in this message):
-\begin{itemize}
-  \item The blocking case MUST be used when there are zero remaining
-        unacknowledged transactions.
-  \item The non-blocking case MUST be used when there are non-zero remaining
-        unacknowledged transactions.
-\end{itemize}
-It is a protocol error if a wrong message will be send.  It is also a protocol
-error to make a \MsgRequestTxIdsNB{} or \MsgRequestTxIdsB{} requesting no
-transaction identifiers.
 
 \subsection{Size limits per state}
 
@@ -1586,9 +1636,13 @@ The Peer-Sharing mini-protocol is a simple Request-Reply mini-protocol. The mini
   amount should limited by a protocol level constant to disallow a bad actor from
   requesting too many peers.
 \item [\MsgSharePeers{} ${[}peerAddress{]}$]
-  The server replies with a set of peers. Ideally, the amount of information (e.g. reply
-  byte size) SHOULD be limited by a protocol level constant to disallow a bad actor from
-  sending too much information (see the size limits below).
+  The server replies with a set of peers. The amount of information send is
+    limited by message size limit (see below).
+
+  It is a protocol error to send more peers than it was requested.
+
+  The server should only share peers with which it has (or recently had) an
+  successful inbound or outbound session.
 \item [\MsgDone]
   Terminating message.
 \end{description}
@@ -1754,11 +1808,11 @@ This is acceptable because this mini-protocol is only to be used between a node 
 \paragraph{Protocol messages}
 \begin{description}
 \item [\MsgSubmitTx{} {\boldmath $(t)$}]
-      The client submits a transaction.
+      The client submits a single transaction.  It MUST wait for a reply.
 \item [\MsgAcceptTx]
-      The server accepts the transaction.
+      The server confirms that it accepted the transaction.
 \item [\MsgRejectTx{} {\boldmath $(reason)$}]
-      The server rejects the transactions and replies with the $reason$.
+      The server informs the client that it rejected the transaction and provides a $reason$.
 \item [\MsgDone]
       The client terminates the mini protocol.
 \end{description}
@@ -1838,15 +1892,46 @@ ledger state.
 
 \paragraph{Protocol messages}
 
-See Figure~\ref{fig:lsq-messages}, in which $AcquireFailure$ is either
-$AcquireFailurePointTooOld$ or $AcquireFailurePointNotOnChain$, and $Target$ is
-either $ImmutableTip$, $VolatileTip$, or $SpecificPoint pt$.
+See Figure~\ref{fig:lsq-messages}, where $AcquireFailure$ is either:
+\begin{itemize}
+  \item $AcquireFailurePointTooOld$, or
+  \item $AcquireFailurePointNotOnChain$
+\end{itemize}
+$Target$ is either $ImmutableTip$, $VolatileTip$, or $SpecificPoint pt$.
 
 The primary motivation for being able to acquire the $ImmutableTip$ is that
 it's the most recent ledger state that the node will never abandon: the node
 will never rollback to a prefix of that immutable chain (unless the on-disk
 ChainDB is corrupted/manipulated). Therefore, answers to queries against the
 $ImmutableTip$ is necessarily not subject to rollback.
+
+\begin{description}
+  \item [\MsgAcquire{}]
+    The client requests that the $Target$ ledger state on the server's be made
+    available to query, and waits for confirmation or failure.
+  \item [\MsgAcquired{}]
+    The server can confirm that it has the state at the requested point.
+  \item [\MsgFailure{}]
+    The server can report that it cannot obtain the state for the requested
+    point.
+  \item [\MsgQuery{}]
+    The client can perform queries on the current acquired state.
+  \item [\MsgResult{}]
+    The server must reply with the queries.
+  \item [\MsgRelease{}]
+    The client can instruct the server to release the state. This lets the
+    server free resources.
+  \item [\MsgReAcquire{}]
+    This is like \MsgAcquire{} but for when the client already has a state. By
+    moving to another state directly without a \MsgRelease{} it
+    enables optimisations on the server side (e.g. moving to the state for
+    the immediate next block).
+
+    Note that failure to re-acquire is equivalent to \MsgRelease{},
+    rather than keeping the exiting acquired state.
+  \item [\MsgDone{}]
+    The client can terminate the protocol.
+\end{description}
 
 % TODO natural language description of each message
 
