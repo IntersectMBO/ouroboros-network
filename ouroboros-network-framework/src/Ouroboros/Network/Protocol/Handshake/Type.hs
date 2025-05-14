@@ -88,16 +88,14 @@ instance Protocol (Handshake vNumber vParams) where
 
     data Message (Handshake vNumber vParams) from to where
 
-      -- |
-      -- Propose versions together with version parameters.  It must be
+      -- | Propose versions together with version parameters.  It must be
       -- encoded to a sorted list.
       --
       MsgProposeVersions
         :: Map vNumber vParams
         -> Message (Handshake vNumber vParams) StPropose StConfirm
 
-      -- |
-      -- `MsgReplyVersions` received as a response to 'MsgProposeVersions'.  It
+      -- | `MsgReplyVersions` received as a response to 'MsgProposeVersions'.  It
       -- is not supported to explicitly send this message. It can only be
       -- received as a copy of 'MsgProposeVersions' in a simultaneous open
       -- scenario.
@@ -106,8 +104,7 @@ instance Protocol (Handshake vNumber vParams) where
         :: Map vNumber vParams
         -> Message (Handshake vNumber vParams) StConfirm StDone
 
-      -- |
-      -- `MsgQueryReply` received as a response to 'MsgProposeVersions'.  It
+      -- | `MsgQueryReply` received as a response to 'MsgProposeVersions'.  It
       -- is only sent when a version query was received. This will cause the
       -- connection to terminate.
       --
@@ -115,8 +112,7 @@ instance Protocol (Handshake vNumber vParams) where
         :: Map vNumber vParams
         -> Message (Handshake vNumber vParams) StConfirm StDone
 
-      -- |
-      -- The remote end decides which version to use and sends chosen version.
+      -- | The remote end decides which version to use and sends chosen version.
       -- The server is allowed to modify version parameters.
       --
       MsgAcceptVersion
@@ -124,8 +120,7 @@ instance Protocol (Handshake vNumber vParams) where
         -> vParams
         -> Message (Handshake vNumber vParams) StConfirm StDone
 
-      -- |
-      -- or it refuses to run any version,
+      -- | or it refuses to run any version,
       --
       MsgRefuse
         :: RefuseReason vNumber

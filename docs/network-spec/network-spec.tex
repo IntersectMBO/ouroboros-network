@@ -71,10 +71,18 @@
            {\href{https://ouroboros-network.cardano.intersectmbo.org/#2}
                  {\emph{haddock documentation}: \texttt{#1}}
            }
+\newcommand{\haddockrefwithtitle}[3]
+           {\href{https://ouroboros-network.cardano.intersectmbo.org/#3}
+                 {\emph{#1}: \texttt{#2}}
+           }
 \newcommand{\haddockrefraw}[2]
            {\href{#2}
                  {\emph{haddock documentation}: \texttt{#1}}
            }
+\newcommand{\codechaddockref}[2]
+           {\haddockrefwithtitle{codec haddocks}{#1}{#2}}
+\newcommand{\protocolhaddockref}[2]
+           {\haddockrefwithtitle{protocol haddocks}{#1}{#2}}
 \newcommand{\trans}[1]{\texttt{#1}}
 \newcommand{\state}[1]{\texttt{#1}}
 \newcommand{\msg}[1]{\textbf{\texttt{#1}}}
@@ -168,7 +176,7 @@
 \and
   Alex Vieth\footnote{{\small \texttt{alex@well-typed.com}}}
 }
-\date{{\small Version 1.5.0, \today}}
+\date{\today}
 
 \maketitle
 
@@ -188,27 +196,6 @@
 
 \tableofcontents
 
-\pagebreak
-\section*{Version history}
-
-\begin{description}
-\item[Version 1.0.0 Nov 2019] State machines and wire format for Ouroboros-Network-1.0.0.
-\item[Version 1.1.0 Apr 2021] Connection Manager for Ouroboros-Network-Framework.
-\item[Version 1.2.0 Apr 2021] tx-submission version 2, local-state-query, keep-alive mini-protocols.
-\item[Version 1.3.0 Jul 2021] Review of the multiplexer documentation.
-\item[Version 1.4.0 Oct 2024] Extended Connection-Manager documentation.
-\item[Version 1.5.0 Jan 2025] Changes:
-  \begin{itemize}
-    \item Added Local Tx-Monitor mini-protocol specification.
-    \item Added space and time limits for mini-protocols.
-    \item Added mini-protocol mux numbers in their specification.
-    \item Added state agency tables for each mini-protocol.
-    \item Moved section on mini-protocol numbers to node-to-node and node-to-client sections.
-    \item Formatted tables and diagrams.
-    \item Improved Handshake documentation.
-    \item Reviewed language \& grammar.
-  \end{itemize}
-\end{description}
 \listoftodos
 \pagebreak
 
@@ -216,6 +203,7 @@
 \include{architecture}
 \include{mux}
 \include{miniprotocols}
+\include{limits}
 \include{connection-manager}
 % \include{rest}
 

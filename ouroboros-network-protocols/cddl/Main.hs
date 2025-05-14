@@ -193,7 +193,7 @@ tests CDDLSpecs { cddlChainSync
       , testProperty "NodeToNodeVersionData V14 to Last" (prop_encodeNodeToNodeVersionDataV14ToLast
                                                             cddlNodeToNodeVersionDataV14ToLast)
       ]
-    , testGroup "decoder"
+    , testGroup "decoding"
       -- validate decoder by generating messages from the specification
       [ testCase "NodeToNode.Handshake V14 to Last"
                                      (unit_decodeHandshakeNodeToNode

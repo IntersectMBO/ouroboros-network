@@ -20,8 +20,8 @@
 -- already sent to the client.
 --
 -- @
---                   START
---                     ⇓
+--                        START
+--                          ⇓
 --                   ┌───────────────┐
 --           ┌──────▶│     Idle      │⇒ DONE
 --           │       └───┬───────────┘
