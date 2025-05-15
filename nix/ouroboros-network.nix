@@ -53,7 +53,7 @@ let
 
     # we also want cross compilation to windows on linux (and only with default compiler).
     crossPlatforms =
-      p: lib.optionals (pkgs.stdenv.hostPlatform.isLinux && config.compiler-nix-name == crossGHCVersion) [ p.mingwW64 ];
+      p: lib.optionals (pkgs.stdenv.hostPlatform.isLinux && config.compiler-nix-name == crossGHCVersion) [ p.ucrt64 ];
 
     #
     # VARIANTS
@@ -108,6 +108,9 @@ let
           if buildSystem == "x86_64-linux" then "export GHCRTS=-M500M" else "";
         packages.ouroboros-network.components.tests.sim-tests.preCheck =
           if buildSystem == "x86_64-linux" then "export GHCRTS=-M600M" else "";
+      })
+      ({ pkgs, ... }: lib.mkIf pkgs.stdenv.hostPlatform.isWindows {
+        packages.basement.configureFlags = [ "--hsc2hs-options=--cflag=-Wno-int-conversion" ];
       })
     ];
   });
