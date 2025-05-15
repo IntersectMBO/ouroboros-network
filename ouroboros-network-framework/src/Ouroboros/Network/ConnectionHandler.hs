@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns              #-}
+{-# LANGUAGE BlockArguments            #-}
 {-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
@@ -65,6 +66,7 @@ import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context (ExpandedInitiatorContext,
            MinimalInitiatorContext, ResponderContext)
 import Ouroboros.Network.ControlMessage (ControlMessage (..))
+import Ouroboros.Network.InboundGovernor.State
 import Ouroboros.Network.Mux
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.Protocol.Handshake
@@ -128,14 +130,16 @@ type family MkMuxConnectionHandler (muxMode :: Mx.Mode) socket initiatorCtx resp
 
   MkMuxConnectionHandler Mx.ResponderMode socket initiatorCtx responderCtx peerAddr
                                           versionNumber versionData bytes m a b =
-       Tracer m (WithBearer (ConnectionId peerAddr) Trace)
+       (   StrictTVar m (Maybe ResponderCounters)
+        -> Tracer m (WithBearer (ConnectionId peerAddr) Trace))
     -> MuxConnectionHandler Mx.ResponderMode socket initiatorCtx responderCtx peerAddr
                                              versionNumber versionData bytes m a b
 
   MkMuxConnectionHandler Mx.InitiatorResponderMode socket initiatorCtx responderCtx peerAddr
                                                    versionNumber versionData bytes m a b =
        (versionData -> DataFlow)
-    -> Tracer m (WithBearer (ConnectionId peerAddr) Trace)
+    -> (   StrictTVar m (Maybe ResponderCounters)
+        -> Tracer m (WithBearer (ConnectionId peerAddr) Trace))
     -> MuxConnectionHandler Mx.InitiatorResponderMode socket initiatorCtx responderCtx
                                                       peerAddr versionNumber versionData
                                                       bytes m a b
@@ -300,7 +304,10 @@ makeConnectionHandler muxTracer forkPolicy
 
     outboundConnectionHandler
       :: HasInitiator muxMode ~ True
-      => ConnectionHandlerFn (ConnectionHandlerTrace versionNumber versionData)
+      => InResponderMode muxMode (   StrictTVar m (Maybe ResponderCounters)
+                                  -> Tracer m (WithBearer (ConnectionId peerAddr) Trace)
+                                 , versionData -> DataFlow)
+      -> ConnectionHandlerFn (ConnectionHandlerTrace versionNumber versionData)
                              socket
                              peerAddr
                              (Handle muxMode initiatorCtx responderCtx versionData ByteString m a b)
@@ -308,7 +315,8 @@ makeConnectionHandler muxTracer forkPolicy
                              versionNumber
                              versionData
                              m
-    outboundConnectionHandler versionDataFn
+    outboundConnectionHandler inResponderMode
+                              versionDataFn
                               socket
                               PromiseWriter { writePromise }
                               tracer
@@ -359,11 +367,20 @@ makeConnectionHandler muxTracer forkPolicy
                           hVersionData    = agreedOptions
                         }
                   atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
-                  withBuffer (\buffer -> do
-                      bearer <- mkMuxBearer sduTimeout socket buffer
-                      Mx.run (Mx.WithBearer connectionId `contramap` muxTracer)
-                             mux bearer
-                    )
+                  withBuffer \buffer -> do
+                    bearer <- mkMuxBearer sduTimeout socket buffer
+                    muxTracer' <- contramap (Mx.WithBearer connectionId) <$>
+                          case inResponderMode of
+                            InResponderMode (inboundGovChannelTracer, connectionDataFlow)
+                              | Duplex <- connectionDataFlow agreedOptions -> do
+                                  countersVar <- newTVarIO $ Just $ ResponderCounters 0 0
+                                  pure $ muxTracer <> inboundGovChannelTracer countersVar
+                            _notResponder ->
+                                  pure muxTracer
+                    Mx.run Mx.MuxTracerBundle {
+                             muxTracer     = muxTracer',
+                             channelTracer = Mx.WithBearer connectionId `contramap` muxTracer }
+                           mux bearer
 
               Right (HandshakeQueryResult vMap) -> do
                 atomically $ writePromise (Right HandshakeConnectionQuery)
@@ -372,7 +389,9 @@ makeConnectionHandler muxTracer forkPolicy
 
     inboundConnectionHandler
       :: HasResponder muxMode ~ True
-      => ConnectionHandlerFn (ConnectionHandlerTrace versionNumber versionData)
+      => (   StrictTVar m (Maybe ResponderCounters)
+          -> Tracer m (WithBearer (ConnectionId peerAddr) Trace))
+      -> ConnectionHandlerFn (ConnectionHandlerTrace versionNumber versionData)
                              socket
                              peerAddr
                              (Handle muxMode initiatorCtx responderCtx versionData ByteString m a b)
@@ -380,7 +399,8 @@ makeConnectionHandler muxTracer forkPolicy
                              versionNumber
                              versionData
                              m
-    inboundConnectionHandler updateVersionDataFn
+    inboundConnectionHandler inboundGovChannelTracer
+                             updateVersionDataFn
                              socket
                              PromiseWriter { writePromise }
                              tracer
@@ -434,7 +454,11 @@ makeConnectionHandler muxTracer forkPolicy
                   atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
                   withBuffer (\buffer -> do
                       bearer <- mkMuxBearer sduTimeout socket buffer
-                      Mx.run (Mx.WithBearer connectionId `contramap` muxTracer)
+                      countersVar <- newTVarIO . Just $ ResponderCounters 0 0
+                      let traceWithBearer = contramap $ Mx.WithBearer connectionId
+                      Mx.run Mx.MuxTracerBundle {
+                               muxTracer     = traceWithBearer (muxTracer <> inboundGovChannelTracer countersVar),
+                               channelTracer = traceWithBearer muxTracer }
                              mux bearer
                     )
               Right (HandshakeQueryResult vMap) -> do
