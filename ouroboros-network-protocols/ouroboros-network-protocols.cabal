@@ -109,10 +109,7 @@ library
     serialise,
     singletons,
     text,
-    typed-protocols ^>=0.3,
-    typed-protocols-cborg ^>=0.3,
-    typed-protocols-stateful,
-    typed-protocols-stateful-cborg,
+    typed-protocols:{typed-protocols, cborg, stateful, stateful-cborg} ^>=1.0,
 
   ghc-options:
     -Wall
@@ -199,8 +196,7 @@ library testlib
     tasty,
     tasty-quickcheck,
     text,
-    typed-protocols,
-    typed-protocols-stateful,
+    typed-protocols:{typed-protocols, stateful},
 
   ghc-options:
     -Wall
@@ -275,8 +271,7 @@ test-suite cddl
     tasty-quickcheck,
     temporary,
     text,
-    typed-protocols,
-    typed-protocols-stateful,
+    typed-protocols:{typed-protocols, stateful},
 
   ghc-options:
     -threaded
@@ -305,8 +300,7 @@ test-suite bench
     ouroboros-network-protocols,
     ouroboros-network-protocols:testlib,
     tasty-bench,
-    typed-protocols,
-    typed-protocols-stateful,
+    typed-protocols:{typed-protocols, stateful},
 
   ghc-options:
     -Wall

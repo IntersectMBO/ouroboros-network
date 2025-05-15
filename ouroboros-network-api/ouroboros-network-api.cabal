@@ -76,7 +76,7 @@ library
     quiet,
     serialise >=0.2 && <0.3,
     text >=1.2 && <2.2,
-    typed-protocols ^>=0.3,
+    typed-protocols ^>=1.0,
 
   ghc-options:
     -Wall

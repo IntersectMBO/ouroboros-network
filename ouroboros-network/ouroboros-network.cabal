@@ -168,8 +168,7 @@ library
     random,
     strict-checked-vars ^>=0.2,
     transformers,
-    typed-protocols ^>=0.3,
-    typed-protocols-stateful,
+    typed-protocols:{typed-protocols, stateful} ^>=1.0,
 
   if !os(windows)
     build-depends:
@@ -349,8 +348,7 @@ library testlib
     tasty-quickcheck,
     text,
     time >=1.9.1 && <1.14,
-    typed-protocols,
-    typed-protocols-examples,
+    typed-protocols:{typed-protocols, examples},
 
   exposed-modules:
     Ouroboros.Network.BlockFetch.Examples
