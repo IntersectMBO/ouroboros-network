@@ -31,7 +31,7 @@ import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (assert)
-import Control.Monad (forM_, forever, guard, unless, when, (>=>))
+import Control.Monad (forM_, guard, unless, when, (>=>))
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork (throwTo)
 import Control.Monad.Class.MonadThrow hiding (handle)
@@ -62,7 +62,6 @@ import Network.Mux.Types qualified as Mx
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.InformationChannel
            (InformationChannel)
-import Ouroboros.Network.ConnectionManager.InformationChannel qualified as InfoChannel
 import Ouroboros.Network.ConnectionManager.State (ConnStateIdSupply,
            ConnectionManagerState, ConnectionState (..), MutableConnState (..))
 import Ouroboros.Network.ConnectionManager.State qualified as State
@@ -412,7 +411,7 @@ with args@Arguments {
          connStateIdSupply,
          classifyHandleError
        }
-     inboundGovernorInfoChannel
+     _inboundGovernorInfoChannel
      ConnectionHandler {
        connectionHandler
      }
@@ -585,14 +584,8 @@ with args@Arguments {
               (getConnThread connState)
           ) state
 
-        withAsync
-          case inboundGovernorInfoChannel of
-            NotInResponderMode -> pure ()
-            InResponderMode infoChannel ->
-              forever atomically $
-                check . not . null =<< InfoChannel.readMessages infoChannel
-          \_aid -> atomically $ runLastToFinishM
-                     $ foldMap (LastToFinishM . void <$> waitCatchSTM) asyncs
+        atomically $ runLastToFinishM
+                   $ foldMap (LastToFinishM . void <$> waitCatchSTM) asyncs
       )
   where
     traceCounters :: StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m) -> m ()
