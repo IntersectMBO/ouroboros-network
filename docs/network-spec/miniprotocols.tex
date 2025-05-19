@@ -904,11 +904,12 @@ The protocol uses the following messages:
   \caption{Chain-Sync mini-protocol messages.}
 \end{table}
 
-\subsection{Size limits per state}
+\subsection{Node-to-node size limits per state}
 
 Table~\ref {table:chain-sync-size-limits} specifies how many bytes can be sent
-in a given state; indirectly, this limits the payload size of each message.  If
-a space limit is violated, the connection SHOULD be torn down.
+in a given state in the chain-sync mini-protocol of the node-to-node protocol;
+indirectly, this limits the payload size of each message.  If a space limit is
+violated, the connection SHOULD be torn down.
 
 \begin{table}[h!]
   \begin{center}
@@ -924,7 +925,7 @@ a space limit is violated, the connection SHOULD be torn down.
   \end{center}
 \end{table}
 
-\subsection{Timeouts per state}
+\subsection{Node-to-node timeouts per state}
 \label{subsec:chain-sync-timeouts}
 
 The table~\ref{table:chain-sync-timeouts} specifies message timeouts in a given
@@ -943,6 +944,12 @@ state.  If a timeout is violated, the connection SHOULD be torn down.
     \label{table:chain-sync-timeouts}
   \end{center}
 \end{table}
+
+\subsection{Node-to-client size limits and timeouts}
+
+There are no size-limits nor timeouts for the chain-sync mini-protocol of the
+node-to-client protocol.
+
 
 \newcommand{\readpointer}{\emph{read-pointer}}
 \subsection{Implementation of the Chain Producer}
