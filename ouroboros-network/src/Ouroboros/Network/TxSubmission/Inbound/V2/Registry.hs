@@ -192,13 +192,13 @@ withPeer tracer
                                       referenceCounts,
                                       inflightTxs,
                                       inflightTxsSize,
-                                      limboTxs } =
-        st { peerTxStates    = peerTxStates',
-             bufferedTxs     = bufferedTxs',
-             referenceCounts = referenceCounts',
-             inflightTxs     = inflightTxs',
-             inflightTxsSize = inflightTxsSize',
-             limboTxs        = limboTxs' }
+                                      inSubmissionToMempoolTxs } =
+        st { peerTxStates             = peerTxStates',
+             bufferedTxs              = bufferedTxs',
+             referenceCounts          = referenceCounts',
+             inflightTxs              = inflightTxs',
+             inflightTxsSize          = inflightTxsSize',
+             inSubmissionToMempoolTxs = inSubmissionToMempoolTxs' }
       where
         (PeerTxState { unacknowledgedTxIds,
                        requestedTxsInflight,
@@ -234,13 +234,13 @@ withPeer tracer
 
         -- When we unregister a peer, we need to subtract all txs in the
         -- `toMempoolTxs`, as they will not be submitted to the mempool.
-        limboTxs' =
+        inSubmissionToMempoolTxs' =
           Foldable.foldl' (flip $ Map.update \cnt ->
                if cnt > 1
                then Just $! pred cnt
                else Nothing
             )
-          limboTxs
+          inSubmissionToMempoolTxs
           (Map.keysSet toMempoolTxs)
 
         purgeInflightTxs m txid = Map.alter fn txid m
@@ -311,12 +311,13 @@ withPeer tracer
                          -> SharedTxState peeraddr txid tx
                          -> SharedTxState peeraddr txid tx
         updateBufferedTx _ TxRejected st@SharedTxState { peerTxStates
-                                                       , limboTxs } =
+                                                       , inSubmissionToMempoolTxs } =
             st { peerTxStates = peerTxStates'
-               , limboTxs = limboTxs' }
+               , inSubmissionToMempoolTxs = inSubmissionToMempoolTxs' }
           where
-            limboTxs' = Map.update (\case 1 -> Nothing
-                                          n -> Just $! pred n) txid limboTxs
+            inSubmissionToMempoolTxs' =
+              Map.update (\case 1 -> Nothing; n -> Just $! pred n)
+                         txid inSubmissionToMempoolTxs
 
             peerTxStates' = Map.update fn peeraddr peerTxStates
               where
@@ -327,16 +328,17 @@ withPeer tracer
                                           , bufferedTxs
                                           , referenceCounts
                                           , timedTxs
-                                          , limboTxs } =
+                                          , inSubmissionToMempoolTxs } =
             st { peerTxStates = peerTxStates'
                , bufferedTxs = bufferedTxs'
                , timedTxs = timedTxs'
                , referenceCounts = referenceCounts'
-               , limboTxs = limboTxs'
+               , inSubmissionToMempoolTxs = inSubmissionToMempoolTxs'
                }
           where
-            limboTxs' = Map.update (\case 1 -> Nothing
-                                          n -> Just $! pred n) txid limboTxs
+            inSubmissionToMempoolTxs' =
+              Map.update (\case 1 -> Nothing; n -> Just $! pred n)
+                         txid inSubmissionToMempoolTxs
 
             timedTxs' = Map.alter fn (addTime bufferedTxsMinLifetime now) timedTxs
               where
