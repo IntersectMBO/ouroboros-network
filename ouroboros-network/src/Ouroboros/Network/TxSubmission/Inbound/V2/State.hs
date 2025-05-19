@@ -505,14 +505,16 @@ type SharedTxStateVar m peeraddr txid tx = StrictTVar m (SharedTxState peeraddr 
 newSharedTxStateVar :: MonadSTM m
                     => StdGen
                     -> m (SharedTxStateVar m peeraddr txid tx)
-newSharedTxStateVar rng = newTVarIO SharedTxState { peerTxStates    = Map.empty,
-                                                inflightTxs     = Map.empty,
-                                                inflightTxsSize = 0,
-                                                bufferedTxs     = Map.empty,
-                                                referenceCounts = Map.empty,
-                                                timedTxs        = Map.empty,
-                                                limboTxs        = Map.empty,
-                                                peerRng         = rng }
+newSharedTxStateVar rng = newTVarIO SharedTxState {
+    peerTxStates             = Map.empty,
+    inflightTxs              = Map.empty,
+    inflightTxsSize          = 0,
+    bufferedTxs              = Map.empty,
+    referenceCounts          = Map.empty,
+    timedTxs                 = Map.empty,
+    inSubmissionToMempoolTxs = Map.empty,
+    peerRng                  = rng
+  }
 
 
 -- | Acknowledge `txid`s, return the number of `txids` to be acknowledged to the
