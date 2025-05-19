@@ -1037,7 +1037,7 @@ withPeerStateActions PeerStateActionsArguments {
             traceWith spsTracer (PeerStatusChangeFailure
                                   (WarmToCooling pchConnectionId)
                                   TimeoutError)
-          return wasWarm
+          (<= PeerCooling) <$> readTVarIO pchPeerStatus
 
         Just (SomeErrored errs) -> do
           -- some mini-protocol errored
@@ -1058,11 +1058,11 @@ withPeerStateActions PeerStateActionsArguments {
           -- 'unregisterOutboundConnection' could only fail to demote the peer if
           -- connection manager would simultaneously promote it, but this is not
           -- possible.
-          _ <- releaseOutboundConnection spsConnectionManager pchConnectionId
           wasWarm <- atomically (updateUnlessCoolingOrCold pchPeerStatus PeerCooling)
-          when wasWarm $
+          when wasWarm $ do
+            _ <- releaseOutboundConnection spsConnectionManager pchConnectionId
             traceWith spsTracer (PeerStatusChanged (WarmToCooling pchConnectionId))
-          return wasWarm
+          (<= PeerCooling) <$> readTVarIO pchPeerStatus
 
 --
 -- Utilities
