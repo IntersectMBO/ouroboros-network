@@ -133,6 +133,8 @@ import Test.Ouroboros.Network.Diffusion.Node.MiniProtocols qualified as Node
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay,
            DNSTimeout, mockDNSActions)
 import Test.Ouroboros.Network.TxSubmission.Types (Tx)
+import Test.Ouroboros.Network.Utils
+
 
 
 data Interfaces extraAPI m = Interfaces
@@ -369,6 +371,7 @@ run blockGeneratorArgs limits ni na
 
                  withAsync (decisionLogicThread
                               tracerTxLogic
+                              sayTracer
                               (aTxDecisionPolicy na)
                               (nkTxChannelsVar nodeKernel)
                               (nkSharedTxStateVar nodeKernel)) $ \decLogicThread ->

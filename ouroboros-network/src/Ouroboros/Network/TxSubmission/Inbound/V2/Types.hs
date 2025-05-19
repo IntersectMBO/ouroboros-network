@@ -26,6 +26,8 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
   , TxSubmissionMempoolWriter (..)
     -- ** Traces
   , TraceTxSubmissionInbound (..)
+  , TxSubmissionCounters (..)
+  , mkTxSubmissionCounters
     -- ** Protocol Error
   , TxSubmissionProtocolError (..)
   ) where
@@ -33,6 +35,8 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
 import Control.Exception (Exception (..))
 import Control.Monad.Class.MonadTime.SI
 import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Monoid (Sum (..))
 import Data.Sequence.Strict (StrictSeq)
 import Data.Set (Set)
 import Data.Set qualified as Set
@@ -374,6 +378,43 @@ data TraceTxSubmissionInbound txid tx =
   | TraceTxInboundTerminated
   | TraceTxInboundDecision (TxDecision txid tx)
   deriving (Eq, Show)
+
+
+data TxSubmissionCounters =
+    TxSubmissionCounters {
+      numOfOutstandingTxIds         :: Int,
+      -- ^ txids which are not yet downloaded.  This is a diff of keys sets of
+      -- `referenceCounts` and a sum of `bufferedTxs` and
+      -- `inbubmissionToMempoolTxs` maps.
+      numOfBufferedTxs              :: Int,
+      -- ^ number of all buffered txs (downloaded or not available)
+      numOfInSubmissionToMempoolTxs :: Int,
+      -- ^ number of all tx's which were submitted to the mempool
+      numOfTxIdsInflight            :: Int
+      -- ^ number of all in-flight txid's.
+    }
+    deriving (Eq, Show)
+
+mkTxSubmissionCounters
+  :: Ord txid
+  => SharedTxState peeraddr txid tx
+  -> TxSubmissionCounters
+mkTxSubmissionCounters
+  SharedTxState {
+    inflightTxs,
+    bufferedTxs,
+    referenceCounts,
+    inSubmissionToMempoolTxs
+  }
+  =
+  TxSubmissionCounters {
+    numOfOutstandingTxIds         = Set.size $ Map.keysSet referenceCounts
+                                        Set.\\ Map.keysSet bufferedTxs
+                                        Set.\\ Map.keysSet inSubmissionToMempoolTxs,
+    numOfBufferedTxs              = Map.size bufferedTxs,
+    numOfInSubmissionToMempoolTxs = Map.size inSubmissionToMempoolTxs,
+    numOfTxIdsInflight            = getSum $ foldMap Sum inflightTxs
+  }
 
 
 data TxSubmissionProtocolError =
