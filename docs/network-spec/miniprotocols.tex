@@ -1325,7 +1325,8 @@ Version 2 is used since \texttt{NodeToNode\_V6} of the node-to-node protocol.
       The request gives the maximum number of transaction identifiers that
       can be accepted in the response. Either the numbers acknowledged or the
       number requested MUST be non-zero. In either case, the number requested
-      MUST not put the total outstanding over the fixed protocol limit.
+      MUST not put the total outstanding over the fixed protocol limit (see
+      below in section~\ref{tx-submission-size-limits}).
 
       The request also gives the number of outstanding transaction identifiers
       that can now be acknowledged. The actual transactions to acknowledge are
@@ -1347,7 +1348,8 @@ Version 2 is used since \texttt{NodeToNode\_V6} of the node-to-node protocol.
       The request gives the maximum number of transaction identifiers that
       can be accepted in the response. This must be greater than zero.
       The number requested ids MUST not put the total outstanding over
-      the fixed protocol limit.
+      the fixed protocol limit (see below in
+      section~\ref{tx-submission-size-limits}).
 
       The request also gives the number of outstanding transaction identifiers
       that can now be acknowledged. The actual transactions to acknowledge are
@@ -1412,6 +1414,7 @@ Version 2 is used since \texttt{NodeToNode\_V6} of the node-to-node protocol.
 \end{table}
 
 \subsection{Size limits per state}
+\label{tx-submission-size-limits}
 
 Table~\ref{table:tx-submission-size-limits} specifies how many bytes can be sent
 in a given state; indirectly, this limits the payload size of each message.  If
@@ -1431,6 +1434,11 @@ a space limit is violated, the connection SHOULD be torn down.
     \label{table:tx-submission-size-limits}
   \end{center}
 \end{table}
+
+\subsubsection{Maximum number of unacknowledged transaction identifiers}
+
+The maximal number of unacknowledged transactions ids is \texttt{10}.  It is
+a protocol error to exceed it.
 
 \subsection{Timeouts per state}
 
