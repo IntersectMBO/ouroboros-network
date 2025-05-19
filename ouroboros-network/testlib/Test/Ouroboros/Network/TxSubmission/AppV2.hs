@@ -190,7 +190,8 @@ runTxSubmission tracer tracerTxLogic state txDecisionPolicy = do
         -> m b
     run st txChannelsVar txMempoolSem sharedTxStateVar
         inboundMempool k =
-      withAsync (decisionLogicThread tracerTxLogic txDecisionPolicy txChannelsVar sharedTxStateVar) $ \a -> do
+      withAsync (decisionLogicThread tracerTxLogic sayTracer
+                                     txDecisionPolicy txChannelsVar sharedTxStateVar) $ \a -> do
             -- Construct txSubmission outbound client
         let clients = (\(addr, (mempool, ctrlMsgSTM, outDelay, _, outChannel, _)) -> do
                         let client = txSubmissionOutbound (Tracer $ say . show)
