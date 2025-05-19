@@ -278,23 +278,27 @@ written in CDDL,
 see \href{https://cbor-wg.github.io/cddl/draft-ietf-cbor-cddl.html}{'Coincise
 data definition language (CDDL)'}.
 
-Note that the networking layer knows very little about blocks, transactions or
-their identifiers.  We use parametric polymorphism in the implementation, which
-is not present in CDDL.  For this reason, we use \texttt{any} in our CDDL specifications.
-If you want to find concrete instatiations of these types in by `Cardano`, you
-will need to consult
+The networking layer knows little about blocks, transactions or
+their identifiers.  In \texttt{ouroboros-network} we use parametric
+polymorphism for blocks, tx, txids, etc, and we only assume these data types have their own valid CDDL
+encoding (and CDDL specifications).  For testing against the \texttt{ouroboros-network} CDDL, we need
+concrete values; for this reason, we use \texttt{any} in our CDDL specification.
+This describes very closely what the \texttt{ouroboros-network} implementation
+does.  It doesn't mean the payloads are not validated, the full codecs of
+messages transferred on the wire are composed from network, consensus \& ledger
+codecs.   There is an ongoing effort to capture combined CDDLs.  If you want to
+find concrete instantiations of these types by `Cardano`, you will need to
+consult
 \href{https://github.com/intersectmbo/cardano-ledger}{cardano-ledger} and
-\href{https://github.com/intersectmbo/ouroboros-consensus}{ouroboros-consensus}.
+\href{https://github.com/intersectmbo/ouroboros-consensus}{ouroboros-consensus} (in particular \href{https://github.com/IntersectMBO/ouroboros-consensus/pull/1422}{ouroboros-consensus\#1422}).
 Each ledger era has its own CDDL spec, which you can find
 \href{https://github.com/intersectmbo/cardano-ledger#cardano-ledger}{here}.
-Note that there's also the hard fork combinator (HFC), which allows us to
+Note that the hard fork combinator (HFC) also allows us to
 combine multiple eras into a single blockchain.  It affects how many of the
-data types are encoded across different eras.  Currently, this is not properly
-documented (see
-\href{https://github.com/intersectmbo/ouroboros-consensus/issues/7}{issue
-\#7}). In the meantime, we can only offer informal advice: data is encoded
-as tuples (length two lists), where the first element is a zero-based index of an
-era while the second item is the era-dependent encoding.
+data types are encoded across different eras.
+
+We want to retain the ability to decode messages incrementally, which for the
+Praos protocol might allow us to improve performance.
 
 \section{Dummy Protocols}
 Dummy protocols are only used for testing and are not needed either for
@@ -410,7 +414,8 @@ The protocol uses the following messages.
 \end{table}
 
 \section{Handshake mini-protocol}
-\haddockref{Ouroboros.Network.Protocol.Handshake.Type}{ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Type\#t:Handshake}\\
+\protocolhaddockref{Ouroboros.Network.Protocol.Handshake.Type}{ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Type\#t:Handshake}\\
+\codechaddockref{Ouroboros.Network.Protocol.Handshake.Codec}{ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Codec\#v:codecHandshake}\\
 \hyperref[table:node-to-node-protocol-numbers]{\textit{node-to-node mini-protocol number}}: \texttt{0}\\
 \hyperref[table:node-to-client-protocol-numbers]{\textit{node-to-client mini-protocol number}}: \texttt{0}\\
 \hyperref[sec:nodetoclientcddl]{node-to-client handshake CDDL spec}
@@ -472,10 +477,11 @@ Messages of the protocol:
       data.  Note that different version numbers might use different version
       data (e.g. supporting a different set of parameters).
   \item [\MsgReplyVersions{} {\boldmath $(versionTable)$}]
-      In TCP simultaneous open, the client will receive \MsgReplyVersions{}
-      (which was sent as \MsgProposeVersions{}) as a reply to its own
-      \MsgProposeVersions{}; thus both \MsgProposeVersions{} and
-      \MsgReplyVersions{} have to have the same CBOR encoding.
+      This message must not be explicitly sent, it's only to support TCP
+      simultaneous open scenario in which both sides sent
+      \MsgProposeVersions{}.  In this case, the received \MsgProposeVersions{}
+      is interpreted as \MsgReplyVersions{} and thus it MUST have the same CBOR
+      decoding as \MsgProposeVersions{}.
   \item [\MsgAcceptVersion{} {\boldmath $(versionNumber,extraParameters)$}]
       The server accepts $versionNumber$ and returns possible extra protocol parameters.
   \item [\MsgRefuse{} {\boldmath $(reason)$}]
@@ -508,6 +514,7 @@ connection SHOULD be torn down.
       \StConfirm & \texttt{5760} \\
     \end{tabular}
     % \caption{size limits per state}
+    \label{table:handshake-size-limits}
   \end{center}
 \end{table}
 
@@ -523,7 +530,8 @@ a message.  If a timeout is violated, the connection SHOULD be torn down.
       \StPropose     & \texttt{10}s \\
       \StConfirm     & \texttt{10}s \\
     \end{tabular}
-    % \caption{timeouts per state}
+    \caption{timeouts per state}
+    \label{table:handshake-timeouts}
   \end{center}
 \end{table}
 
@@ -563,6 +571,39 @@ negotiation is a new version data record which consists of:
 If the negotiation is successful, the negotiated version data is sent back
 using \MsgAcceptVersion{}, otherwise \MsgRefuse{} SHOULD be sent.
 
+\subsubsection{Size limits per state}
+
+These bounds limit how many bytes can be sent in a given state; indirectly, this
+limits the payload size of each message.  If a space limit is violated, the
+connection SHOULD be torn down.
+
+\begin{table}[h!]
+  \begin{center}
+    \begin{tabular}{l|r}
+      \header{state} & \header{size limit in bytes} \\\hline
+      \StPropose & \texttt{5760} \\
+      \StConfirm & \texttt{5760} \\
+    \end{tabular}
+    % \caption{size limits per state}
+  \end{center}
+\end{table}
+
+\subsubsection{Timeouts per state}
+
+These limits bound how much time the receiver side can wait for the arrival of
+a message.  If a timeout is violated, the connection SHOULD be torn down.
+
+\begin{table}[h!]
+  \begin{center}
+    \begin{tabular}{l|r}
+      \header{state} & \header{timeout} \\\hline
+      \StPropose     & \texttt{10}s \\
+      \StConfirm     & \texttt{10}s \\
+    \end{tabular}
+    % \caption{timeouts per state}
+  \end{center}
+\end{table}
+
 \subsection{Node-to-client handshake}
 
 The node-to-node handshake instantiates version data to a record which consists
@@ -584,6 +625,26 @@ protocol:
 If the negotiation is successful, the negotiated version data is sent back
 using \MsgAcceptVersion{}, otherwise \MsgRefuse{} SHOULD be sent.
 
+\subsubsection{Size limits per state}
+
+These bounds limit how many bytes can be sent in a given state; indirectly, this
+limits the payload size of each message.  If a space limit is violated, the
+connection SHOULD be torn down.
+
+\begin{table}[h!]
+  \begin{center}
+    \begin{tabular}{l|r}
+      \header{state} & \header{size limit in bytes} \\\hline
+      \StPropose & \texttt{5760} \\
+      \StConfirm & \texttt{5760} \\
+    \end{tabular}
+    % \caption{size limits per state}
+  \end{center}
+\end{table}
+
+\subsubsection{Timeouts per state}
+
+No timeouts are used for node-to-client handshake.
 
 \subsection{Client and Server Implementation}
 Section~\ref{handshake-cddl} contains the CDDL specification of the binary format of the handshake messages.
@@ -716,7 +777,8 @@ node-to-client protocol.
 
 \section{Chain-Sync mini-protocol}
 \label{chain-sync-protocol}
-\haddockref{Ouroboros.Network.Protocol.ChainSync.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Type\#t:ChainSync}\\
+\protocolhaddockref{Ouroboros.Network.Protocol.ChainSync.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Type\#t:ChainSync}\\
+\codechaddockref{Ouroboros.Network.Protocol.ChainSync.Codec}{ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Codec\#v:codecChainSync}\\
 \hyperref[table:node-to-node-protocol-numbers]{\textit{node-to-node mini-protocol number}}: \texttt{2}\\
 \hyperref[table:node-to-client-protocol-numbers]{\textit{node-to-client mini-protocol number}}: \texttt{5}\\
 
@@ -788,7 +850,8 @@ is used to diffuse full blocks.
 The protocol uses the following messages:
 \begin{description}
 \item [\MsgRequestNext]
-      Request the next update from the producer.
+      Request the next update from the producer.  The response can be a roll
+      forward, a roll back or wait.
 \item [\MsgAwaitReply]
       Acknowledge the request but require the consumer to wait for the next update.
       This means that the consumer is synced with the producer, and
@@ -841,11 +904,12 @@ The protocol uses the following messages:
   \caption{Chain-Sync mini-protocol messages.}
 \end{table}
 
-\subsection{Size limits per state}
+\subsection{Node-to-node size limits per state}
 
 Table~\ref {table:chain-sync-size-limits} specifies how many bytes can be sent
-in a given state; indirectly, this limits the payload size of each message.  If
-a space limit is violated, the connection SHOULD be torn down.
+in a given state in the chain-sync mini-protocol of the node-to-node protocol;
+indirectly, this limits the payload size of each message.  If a space limit is
+violated, the connection SHOULD be torn down.
 
 \begin{table}[h!]
   \begin{center}
@@ -861,7 +925,8 @@ a space limit is violated, the connection SHOULD be torn down.
   \end{center}
 \end{table}
 
-\subsection{Timeouts per state}
+\subsection{Node-to-node timeouts per state}
+\label{subsec:chain-sync-timeouts}
 
 The table~\ref{table:chain-sync-timeouts} specifies message timeouts in a given
 state.  If a timeout is violated, the connection SHOULD be torn down.
@@ -879,6 +944,12 @@ state.  If a timeout is violated, the connection SHOULD be torn down.
     \label{table:chain-sync-timeouts}
   \end{center}
 \end{table}
+
+\subsection{Node-to-client size limits and timeouts}
+
+There are no size-limits nor timeouts for the chain-sync mini-protocol of the
+node-to-client protocol.
+
 
 \newcommand{\readpointer}{\emph{read-pointer}}
 \subsection{Implementation of the Chain Producer}
@@ -1042,7 +1113,8 @@ See appendix \ref{cddl-common} for common definitions.
 
 \section{Block-Fetch mini-protocol}
 \label{block-fetch-protocol}
-\haddockref{Ouroboros.Network.Protocol.BlockFetch.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-BlockFetch-Type\#t:BlockFetch}\\
+\protocolhaddockref{Ouroboros.Network.Protocol.BlockFetch.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-BlockFetch-Type\#t:BlockFetch}\\
+\codechaddockref{Ouroboros.Network.Protocol.BlockFetch.Codec}{ouroboros-network-protocols/Ouroboros-Network-Protocol-BlockFetch-Codec\#v:codecBlockFetch}\\
 \hyperref[table:node-to-node-protocol-numbers]{\textit{node-to-node mini-protocol number}}: \texttt{3}\\
 
 \renewcommand{\StIdle}{\state{StIdle}}
@@ -1142,6 +1214,7 @@ connection SHOULD be torn down.
       \StStreaming   & \texttt{2500000} \\
     \end{tabular}
     % \caption{size limits per state}
+    \label{table:block-fetch-size-limits}
   \end{center}
 \end{table}
 
@@ -1158,7 +1231,8 @@ a message.  If a timeout is violated, the connection SHOULD be torn down.
       \StBusy        & \texttt{60}s \\
       \StStreaming   & \texttt{60}s \\
     \end{tabular}
-    % \caption{timeouts per state}
+    \caption{timeouts per state}
+    \label{table:block-fetch-timeouts}
   \end{center}
 \end{table}
 
@@ -1167,7 +1241,8 @@ a message.  If a timeout is violated, the connection SHOULD be torn down.
 See appendix \ref{cddl-common} for common definitions.
 
 \section{Tx-Submission mini-protocol}
-\haddockref{Ouroboros.Network.Protocol.TxSubmission2.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-TxSubmission2-Type\#t:TxSubmission2}\\
+\protocolhaddockref{Ouroboros.Network.Protocol.TxSubmission2.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-TxSubmission2-Type\#t:TxSubmission2}\\
+\codechaddockref{Ouroboros.Network.Protocol.TxSubmission2.Codec}{ouroboros-network-protocols/Ouroboros-Network-Protocol-TxSubmission2-Codec\#v:codecTxSubmission2}\\
 \hyperref[table:node-to-node-protocol-numbers]{\textit{node-to-node mini-protocol number}}: \texttt{4}\\
 \label{tx-submission-protocol}
 \label{tx-submission-protocol2}
@@ -1189,8 +1264,17 @@ transactions between full nodes.  The protocol follows a pull-based strategy
 where the initiator asks for new transactions, and the responder sends them
 back.  It is suitable for a trustless setting where both sides need to guard
 against resource consumption attacks from the other side.  The local
-transaction submission protocol, which is used when the server trusts a local
+transaction submission protocol, is a simpler which is used when the server trusts a local
 client, is described in Section \ref{local-tx-submission-protocol}.
+
+The \textit{tx-submission} mini-protocol is designed in a way that the
+information (e.g. transactions) flows across the system in the other direction
+than in the \textit{chain-sync} or \textit{block-fetch} protocols.
+Transactions must flow toward the block producer, while headers and blocks
+disseminate from it to the rest of the system.  This is reflected in the
+protocol graphs, transactions are sent from a client to
+a server.  However, to preserve that all mini-protocols start on the client,
+the \StInit{} state was added in version 2 of the protocol.
 
 Note that Version 1 of the tx-submission protocol is no longer supported.
 Version 2 is used since \texttt{NodeToNode\_V6} of the node-to-node protocol.
@@ -1236,22 +1320,89 @@ Version 2 is used since \texttt{NodeToNode\_V6} of the node-to-node protocol.
 \begin{description}
 \item [\MsgInit] initial message of the protocol
 \item [\MsgRequestTxIdsNB{} {\boldmath $(ack,req)$}]
-      The server asks for new transaction ids and acknowledges old ids.
-      The client immediately replies (possibly with an empty list).
+      Request a non-empty list of transaction identifiers from the client,
+      and confirm a number of outstanding transaction identifiers.
+
+      This is a non-blocking operation: the response
+      may be an empty list and this does expect a prompt response. This
+      covers high throughput use cases where we wish to pipeline, by
+      interleaving requests for additional transaction identifiers with
+      requests for transactions, which requires these requests not block.
+
+      The request gives the maximum number of transaction identifiers that
+      can be accepted in the response. Either the numbers acknowledged or the
+      number requested MUST be non-zero. In either case, the number requested
+      MUST not put the total outstanding over the fixed protocol limit (see
+      below in section~\ref{tx-submission-size-limits}).
+
+      The request also gives the number of outstanding transaction identifiers
+      that can now be acknowledged. The actual transactions to acknowledge are
+      known to the peer based on the FIFO order in which they were provided.
+
+      The request MUST be made (over \MsgRequestTxIdsB{}) if there are non-zer
+      remaining unacknowledged transactions.
 \item [\MsgRequestTxIdsB{} {\boldmath $(ack,req)$}]
       The server asks for new transaction ids and acknowledges old ids.
-      The client will block until new transactions are available.
+      The client will block until new transactions are available, thus the
+      respond will always have at least one transaction identifier. 
+
+      This is a blocking operation: the response will always have at least one
+      transaction identifier, and it does not expect a prompt response: there
+      is no timeout. This covers the case when there is nothing else to do but
+      wait. For example this covers leaf nodes that rarely, if ever, create and
+      submit a transaction.
+
+      The request gives the maximum number of transaction identifiers that
+      can be accepted in the response. This must be greater than zero.
+      The number requested ids MUST not put the total outstanding over
+      the fixed protocol limit (see below in
+      section~\ref{tx-submission-size-limits}).
+
+      The request also gives the number of outstanding transaction identifiers
+      that can now be acknowledged. The actual transactions to acknowledge are
+      known to the peer based on the FIFO order in which they were provided.
+
+      The request MUST be made (over \MsgRequestTxIdsNB{}) if there are zero
+      remaining unacknowledged transactions.
 \item [\MsgReplyTxIds{} {\boldmath ($\langle (id, size) \rangle$) }]
       The client replies with a list of available transactions.
       The list contains pairs of transaction ids and the corresponding size of the transaction in bytes.
-      In the blocking case, the reply is guaranteed to contain at least one transaction.
+      In the blocking case, the reply MUST contain at least one transaction identifier.
       In the non-blocking case, the reply may contain an empty list.
+
+      These transactions are added to the notional FIFO of outstanding
+      transaction identifiers for the protocol.
+
+      The order in which these transaction identifiers are returned must be the
+      order in which they are submitted to the mempool, to preserve dependent
+      transactions.
 \item [\MsgRequestTxs{} {\boldmath ($\langle ids \rangle$)}]
-      The server requests transactions by sending a list of transaction-ids.
+      The server requests transactions by sending a non-empty list of transaction-ids.
+
+      While it is the responsibility of the replying peer to keep within
+      pipelining in-flight limits, the sender must also cooperate by keeping
+      the total requested across all in-flight requests within the limits.
+
+      It is an error to ask for transaction identifiers that were not
+      previously announced (via \MsgReplyTxIds{}).
+
+      It is an error to ask for transaction identifiers that are not
+      outstanding or that were already asked for.
 \item [\MsgReplyTxs{} {\boldmath ($\langle txs \rangle$})]
-      The client replies with a list of transactions.
+      The client replies with a list of transactions.  It may implicitly
+      discard transaction-ids which were requested.
+
+      Transactions can become invalid between the time the transaction
+      identifier was sent and the transaction being requested. Invalid
+      (including committed) transactions do not need to be sent.
+
+      Any transaction identifiers requested but not provided in this reply
+      should be considered as if this peer had never announced them. (Note
+      that this is no guarantee that the transaction is invalid, it may still
+      be valid and available from another peer).
 \item [\MsgDone]
-      The client terminates the mini protocol.
+      Termination message, initiated by the client when the server is making
+      a blocking call for more transaction identifiers.
 \end{description}
 
 \begin{table}[h!]
@@ -1270,6 +1421,7 @@ Version 2 is used since \texttt{NodeToNode\_V6} of the node-to-node protocol.
 \end{table}
 
 \subsection{Size limits per state}
+\label{tx-submission-size-limits}
 
 Table~\ref{table:tx-submission-size-limits} specifies how many bytes can be sent
 in a given state; indirectly, this limits the payload size of each message.  If
@@ -1289,6 +1441,11 @@ a space limit is violated, the connection SHOULD be torn down.
     \label{table:tx-submission-size-limits}
   \end{center}
 \end{table}
+
+\subsubsection{Maximum number of unacknowledged transaction identifiers}
+
+The maximal number of unacknowledged transactions ids is \texttt{10}.  It is
+a protocol error to exceed it.
 
 \subsection{Timeouts per state}
 
@@ -1356,7 +1513,8 @@ It replies with not more than the requested number of ids (possibly with an empt
 A blocking request, on the other side, waits until at least one transaction is available.
 
 \section{Keep Alive Mini Protocol}
-\haddockref{Ouroboros.Network.Protocol.KeepAlive.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-KeepAlive-Type\#t:KeepAlive}\\
+\protocolhaddockref{Ouroboros.Network.Protocol.KeepAlive.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-KeepAlive-Type\#t:KeepAlive}\\
+\codechaddockref{Ouroboros.Network.Protocol.KeepAlive.Codec}{ouroboros-network-protocols/Ouroboros-Network-Protocol-KeepAlive-Codec\#v:codecKeepAlive\_v2}\\
 \hyperref[table:node-to-node-protocol-numbers]{\textit{node-to-node mini-protocol number}}: \texttt{8}\\
 
 \label{keep-alive-protocol}
@@ -1423,6 +1581,7 @@ connection SHOULD be torn down.
       \StServer      & \texttt{65535} \\
     \end{tabular}
     % \caption{size limits per state}
+    \label{table:keep-alive-size-limits}
   \end{center}
 \end{table}
 
@@ -1438,7 +1597,8 @@ a message.  If a timeout is violated, the connection SHOULD be torn down.
       \StClient      & \texttt{97}s \\
       \StServer      & \texttt{60}s \\
     \end{tabular}
-    % \caption{timeouts per state}
+    \caption{timeouts per state}
+    \label{table:keep-alive-timeouts}
   \end{center}
 \end{table}
 
@@ -1446,7 +1606,8 @@ a message.  If a timeout is violated, the connection SHOULD be torn down.
 \lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/keep-alive.cddl}
 
 \section{Peer Sharing mini-protocol}
-\haddockref{Ouroboros.Network.Protocol.PeerSharing.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-PeerSharing-Type\#t:PeerSharing}\\
+\protocolhaddockref{Ouroboros.Network.Protocol.PeerSharing.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-PeerSharing-Type\#t:PeerSharing}\\
+\codechaddockref{Ouroboros.Network.Protocol.PeerSharing.Codec}{ouroboros-network-protocols/Ouroboros-Network-Protocol-PeerSharing-Codec\#v:codecPeerSharing}\\
 \hyperref[table:node-to-node-protocol-numbers]{\textit{node-to-node mini-protocol number}}: \texttt{10}\\
 \label{peer-sharing-protocol}
 \subsection{Description}
@@ -1490,9 +1651,13 @@ The Peer-Sharing mini-protocol is a simple Request-Reply mini-protocol. The mini
   amount should limited by a protocol level constant to disallow a bad actor from
   requesting too many peers.
 \item [\MsgSharePeers{} ${[}peerAddress{]}$]
-  The server replies with a set of peers. Ideally, the amount of information (e.g. reply
-  byte size) SHOULD be limited by a protocol level constant to disallow a bad actor from
-  sending too much information (see the size limits below).
+  The server replies with a set of peers. The amount of information send is
+    limited by message size limit (see below).
+
+  It is a protocol error to send more peers than it was requested.
+
+  The server should only share peers with which it has (or recently had) an
+  successful inbound or outbound session.
 \item [\MsgDone]
   Terminating message.
 \end{description}
@@ -1511,6 +1676,7 @@ connection SHOULD be torn down.
       \StBusy        & \texttt{5760} \\
     \end{tabular}
     % \caption{size limits per state}
+    \label{table:peer-share-size-limits}
   \end{center}
 \end{table}
 
@@ -1526,7 +1692,8 @@ a message.  If a timeout is violated, the connection SHOULD be torn down.
       \StIdle        & - \\
       \StBusy        & \texttt{60}s \\
     \end{tabular}
-    % \caption{timeouts per state}
+    \caption{timeouts per state}
+    \label{table:peer-share-timeouts}
   \end{center}
 \end{table}
 
@@ -1601,7 +1768,8 @@ function application all the way to diffusion and share the relevant parts of
 \lstinputlisting[style=cddl]{../../ouroboros-network-protocols/cddl/specs/peer-sharing-v14.cddl}
 
 \section{Local Tx-Submission mini-protocol}
-\haddockref{Ouroboros.Network.Protocol.LocalTxSubmission.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalTxSubmission-Type\#t:LocalTxSubmission}\\
+\protocolhaddockref{Ouroboros.Network.Protocol.LocalTxSubmission.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalTxSubmission-Type\#t:LocalTxSubmission}\\
+\codechaddockref{Ouroboros.Network.Protocol.LocalTxSubmission.Codec}{ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalTxSubmission-Codec\#v:codecLocalTxSubmission}\\
 \hyperref[table:node-to-client-protocol-numbers]{\textit{node-to-client mini-protocol number}}: \texttt{6}\\
 \label{local-tx-submission-protocol}
 \subsection{Description}
@@ -1655,11 +1823,11 @@ This is acceptable because this mini-protocol is only to be used between a node 
 \paragraph{Protocol messages}
 \begin{description}
 \item [\MsgSubmitTx{} {\boldmath $(t)$}]
-      The client submits a transaction.
+      The client submits a single transaction.  It MUST wait for a reply.
 \item [\MsgAcceptTx]
-      The server accepts the transaction.
+      The server confirms that it accepted the transaction.
 \item [\MsgRejectTx{} {\boldmath $(reason)$}]
-      The server rejects the transactions and replies with the $reason$.
+      The server informs the client that it rejected the transaction and provides a $reason$.
 \item [\MsgDone]
       The client terminates the mini protocol.
 \end{description}
@@ -1678,7 +1846,8 @@ See appendix \ref{cddl-common} for common definitions.
 
 \section{Local State Query mini-protocol}
 \label{local-state-query-protocol}
-\haddockref{Ouroboros.Network.Protocol.LocalStateQuery.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalStateQuery-Type\#t:LocalStateQuery}\\
+\protocolhaddockref{Ouroboros.Network.Protocol.LocalStateQuery.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalStateQuery-Type\#t:LocalStateQuery}\\
+\codechaddockref{Ouroboros.Network.Protocol.LocalStateQuery.Codec}{ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalStateQuery-Codec\#v:codecLocalStateQuery}\\
 \hyperref[table:node-to-client-protocol-numbers]{\textit{node-to-client mini-protocol number}}: \texttt{7}\\
 \newcommand{\StAcquiring}{\state{Acquiring}}
 \newcommand{\StAcquired}{\state{Acquired}}
@@ -1738,15 +1907,46 @@ ledger state.
 
 \paragraph{Protocol messages}
 
-See Figure~\ref{fig:lsq-messages}, in which $AcquireFailure$ is either
-$AcquireFailurePointTooOld$ or $AcquireFailurePointNotOnChain$, and $Target$ is
-either $ImmutableTip$, $VolatileTip$, or $SpecificPoint pt$.
+See Figure~\ref{fig:lsq-messages}, where $AcquireFailure$ is either:
+\begin{itemize}
+  \item $AcquireFailurePointTooOld$, or
+  \item $AcquireFailurePointNotOnChain$
+\end{itemize}
+$Target$ is either $ImmutableTip$, $VolatileTip$, or $SpecificPoint pt$.
 
 The primary motivation for being able to acquire the $ImmutableTip$ is that
 it's the most recent ledger state that the node will never abandon: the node
 will never rollback to a prefix of that immutable chain (unless the on-disk
 ChainDB is corrupted/manipulated). Therefore, answers to queries against the
 $ImmutableTip$ is necessarily not subject to rollback.
+
+\begin{description}
+  \item [\MsgAcquire{}]
+    The client requests that the $Target$ ledger state on the server's be made
+    available to query, and waits for confirmation or failure.
+  \item [\MsgAcquired{}]
+    The server can confirm that it has the state at the requested point.
+  \item [\MsgFailure{}]
+    The server can report that it cannot obtain the state for the requested
+    point.
+  \item [\MsgQuery{}]
+    The client can perform queries on the current acquired state.
+  \item [\MsgResult{}]
+    The server must reply with the queries.
+  \item [\MsgRelease{}]
+    The client can instruct the server to release the state. This lets the
+    server free resources.
+  \item [\MsgReAcquire{}]
+    This is like \MsgAcquire{} but for when the client already has a state. By
+    moving to another state directly without a \MsgRelease{} it
+    enables optimisations on the server side (e.g. moving to the state for
+    the immediate next block).
+
+    Note that failure to re-acquire is equivalent to \MsgRelease{},
+    rather than keeping the exiting acquired state.
+  \item [\MsgDone{}]
+    The client can terminate the protocol.
+\end{description}
 
 % TODO natural language description of each message
 
@@ -1779,7 +1979,8 @@ No timeouts.
 See appendix \ref{cddl-common} for common definitions.
 
 \section{Local Tx-Monitor mini-protocol}
-\haddockref{Ouroboros.Network.Protocol.LocalTxMonitor.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalTxMonitor-Type\#t:LocalTxMonitor}\\
+\protocolhaddockref{Ouroboros.Network.Protocol.LocalTxMonitor.Type}{ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalTxMonitor-Type\#t:LocalTxMonitor}\\
+\codechaddockref{Ouroboros.Network.Protocol.LocalTxMonitor.Codec}{ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalTxMonitor-Codec\#v:codecLocalTxMonitor}\\
 \hyperref[table:node-to-client-protocol-numbers]{\textit{node-to-client mini-protocol number}}: \texttt{9}\\
 \label{local-tx-monitor-protocol}
 \newcommand{\MsgAwaitAcquire}{\msg{MsgAwaitAcquire}}
@@ -1817,22 +2018,28 @@ the client.
     \node[state, myblue, right of=Acquired]                          (BusyHasTx)       {\StBusy\ \HasTx};
     \node[state, myblue, above of=BusyHasTx]                         (BusyNextTx)      {\StBusy\ \NextTx};
     \node[state, myblue, below of=BusyHasTx]                         (BusyGetSizes)    {\StBusy\ \GetSizes};
-    \node[state, myblue, below of=BusyHasTx]                         (BusyGetMeasures) {\StBusy\ \GetMeasures};
+    \node[state, myblue, below of=Acquired]                          (BusyGetMeasures) {\StBusy\ \GetMeasures};
     \node[state, below of=Idle]                                      (Done)            {\StDone};
 
-    \draw (Idle)            edge               node{\MsgAcquire}          (Acquiring);
-    \draw (Acquiring)       edge[bend left=45] node{\MsgAcquired}         (Acquired);
-    \draw (Acquired)        edge[bend left=45] node{\MsgAwaitAcquire}     (Acquiring);
-    \draw (Acquired)        edge[bend left=45] node{\MsgRelease}          (Idle);
-    \draw (Acquired)        edge[bend left=20] node{\MsgNextTx}           (BusyNextTx);
-    \draw (BusyNextTx)      edge[bend left=20] node{\MsgReplyNextTx}      (Acquired);
-    \draw (Acquired)        edge[bend left=20] node{\MsgHasTx}            (BusyHasTx);
-    \draw (BusyHasTx)       edge[bend left=20] node{\MsgReplyHasTx}       (Acquired);
-    \draw (Acquired)        edge[bend left=20] node{\MsgGetSizes}         (BusyGetSizes);
-    \draw (Acquired)        edge[bend left=20] node{\MsgGetMeasures}      (BusyGetMeasures);
-    \draw (BusyGetSizes)    edge[bend left=20] node{\MsgReplyGetSizes}    (Acquired);
-    \draw (BusyGetMeasures) edge[bend left=20] node{\MsgReplyGetMeasures} (Acquired);
-    \draw (Idle)            edge               node{\MsgDone}             (Done);
+    \draw (Idle)            edge               node{\MsgAcquire}                   (Acquiring);
+    \draw (Acquiring)       edge[bend left=45] node{\MsgAcquired}                  (Acquired);
+    \draw (Acquired)        edge[bend left=45] node{\MsgRelease}                   (Idle);
+    \draw (Acquired)        edge[bend left=45] node[fill=white]{\MsgAwaitAcquire}  (Acquiring);
+    \draw (Acquired)        edge[bend left=20] node[left=-20pt,fill=white]{\MsgNextTx}
+                                                                                   (BusyNextTx);
+    \draw (BusyNextTx)      edge[bend left=20] node[right=-20pt,fill=white]{\MsgReplyNextTx}
+                                                                                   (Acquired);
+    \draw (Acquired)        edge[bend left=20] node[right=-20pt,fill=white]{\MsgGetSizes}
+                                               (BusyGetSizes);
+    \draw (BusyGetSizes)    edge[bend left=20] node[right=-20pt,pos=0.56,fill=white]{\MsgReplyGetSizes}
+                                               (Acquired);
+    \draw (Acquired)        edge[bend left=20] node[pos=0.7,right=-20pt,fill=white]{\MsgGetMeasures}
+                                               (BusyGetMeasures);
+    \draw (BusyGetMeasures) edge[bend left=20] node[pos=0.20,left=-15pt,fill=white]{\MsgReplyGetMeasures}
+                                               (Acquired);
+    \draw (Acquired)        edge[bend left=20] node[fill=white]{\MsgHasTx}         (BusyHasTx);
+    \draw (BusyHasTx)       edge[bend left=20] node[fill=white,pos=0.45]{\MsgReplyHasTx}    (Acquired);
+    \draw (Idle)            edge               node{\MsgDone}                      (Done);
   \end{tikzpicture}
   \caption{State machine of the Local Tx-Monitor mini-protocol.}
 \end{figure}
@@ -1989,16 +2196,42 @@ assigned to each node-to-node mini-protocol.
   \begin{center}
     \begin{tabular}{l|c}
       \header{mini-protocol}                                             & \header{mini-protocol number} \\\hline
-      \hyperref[handshake-protocol]{Handshake}                           & 0  \\
-      \hyperref[chain-sync-protocol]{Chain-Sync}                         & 2  \\
-      \hyperref[block-fetch-protocol]{Block-Fetch}                       & 3  \\
-      \hyperref[tx-submission-protocol2]{Tx-Submission}                  & 4  \\
-      \hyperref[keep-alive-protocol]{Keep-Alive}                         & 8  \\
-      \hyperref[peer-sharing-protocol]{Peer-Sharing} \small{(optional)}  & 10 \\
+      \hyperref[handshake-protocol]{Handshake}                           & $0$  \\
+      \hyperref[chain-sync-protocol]{Chain-Sync}                         & $2$  \\
+      \hyperref[block-fetch-protocol]{Block-Fetch}                       & $3$  \\
+      \hyperref[tx-submission-protocol2]{Tx-Submission}                  & $4$  \\
+      \hyperref[keep-alive-protocol]{Keep-Alive}                         & $8$  \\
+      \hyperref[peer-sharing-protocol]{Peer-Sharing} \small{(optional)}  & $10$ \\
     \end{tabular}
   \end{center}
   \caption{Node-to-node protocol numbers}
   \label{table:node-to-node-protocol-numbers}
+\end{table}
+
+\subsection{Node-to-node mux ingress buffer size limits}
+
+Ingress buffer is the buffer which holds received data for a given
+mini-protocol.  It is an internal detail of the multiplexer. Each
+implementation should define its ingress buffer size limits.  Here we specify
+the default choices we made for Cardano Node.  These limits depend on how much
+pipelining depth a given mini-protocol can do.  This is an internal
+implementation detail since the amount of pipelining is controlled by the peer
+who owns its ingress buffer.
+
+\begin{table}[ht]
+  \begin{center}
+    \begin{tabular}{l|r}
+      \header{mini-protocol}                            & \header{ingress size limit in bytes} \\\hline
+      \hyperref[handshake-protocol]{Handshake}          &  - \\
+      \hyperref[chain-sync-protocol]{Chain-Sync}        &  $462\,000$ \\
+      \hyperref[block-fetch-protocol]{Block-Fetch}      &  $230\,686\,940$ \\
+      \hyperref[tx-submission-protocol2]{Tx-Submission} &  $721\,424$ \\
+      \hyperref[keep-alive-protocol]{Keep-Alive}        &  $1\,408$ \\
+      \hyperref[peer-sharing-protocol]{Peer-Sharing}    &  $5\,760$ \\
+    \end{tabular}
+    \caption{Mux ingress buffer sizes for each mini-protocol}
+    \label{table:node-to-node-ingress-buffer-limits}
+  \end{center}
 \end{table}
 
 \section{Node-to-client protocol}
@@ -2037,13 +2270,18 @@ assigned to each node-to-client mini-protocol.
   \begin{center}
     \begin{tabular}{l|c}
       \header{mini-protocol}                                       & \header{mini-protocol number} \\\hline
-      \hyperref[handshake-protocol]{Handshake}                     & 0 \\
-      \hyperref[chain-sync-protocol]{Chain-Sync}                   & 5 \\
-      \hyperref[local-tx-submission-protocol]{Local Tx-Submission} & 6 \\
-      \hyperref[local-state-query-protocol]{Local State Query}     & 7 \\
-      \hyperref[local-tx-monitor-protocol]{Local Tx-Monitor}       & 9 \\
+      \hyperref[handshake-protocol]{Handshake}                     & $0$ \\
+      \hyperref[chain-sync-protocol]{Chain-Sync}                   & $5$ \\
+      \hyperref[local-tx-submission-protocol]{Local Tx-Submission} & $6$ \\
+      \hyperref[local-state-query-protocol]{Local State Query}     & $7$ \\
+      \hyperref[local-tx-monitor-protocol]{Local Tx-Monitor}       & $9$ \\
     \end{tabular}
   \end{center}
   \caption{Node-to-client protocol numbers}
   \label{table:node-to-client-protocol-numbers}
 \end{table}
+
+\subsection{Node-to-client mux ingress buffer size limits}
+
+All \textit{node-to-client protocols} are using very large ingress buffer size
+limits of $4\,294\,967\,295$ bytes, effectively there are no size limits.

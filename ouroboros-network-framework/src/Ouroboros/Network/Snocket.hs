@@ -190,9 +190,8 @@ berkeleyAccept ioManager sock =
           Just (SomeAsyncException _) -> throwIO err
           Nothing                     -> pure (AcceptFailure err, go cnt addr)
 
--- | Local address, on Unix is associated with `Socket.AF_UNIX` family, on
---
--- Windows with `named-pipes`.
+-- | Local address, on Unix is associated with `Socket.AF_UNIX` family or
+-- `named-pipes` on Windows.
 --
 newtype LocalAddress = LocalAddress { getFilePath :: FilePath }
   deriving (Eq, Ord, Generic)

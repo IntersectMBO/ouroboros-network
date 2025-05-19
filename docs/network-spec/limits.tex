@@ -1,0 +1,67 @@
+\chapter{Time and size limits}
+
+\section{Timeouts}
+\label{section:timeouts}
+
+There are several layers, where timeouts play a crucial way in making the
+system secure.  At the lowest layer is a mux timeout which we explain next.
+After establishing a connection (either a Node-to-Node or Node-to-Client one),
+the handshake is using a bearer with \texttt{10s} timeout on receiving each
+mux SDU.  Note, this is a timeout which bounds how long it takes to receive
+a single mux SDU, e.g. from receiving the leading edge of the mux SDU until
+receiving its trailing edge, not how long we wait to receive a next SDU.
+Handshake protocol is then imposing its own timeouts, see
+table~\ref{table:handshake-timeouts}.
+
+After handshake negotiation is done, mux is using a bearer with \texttt{30s}
+timeout on receiving a mux SDU (the previous note applies as well). Once
+a mini-protocol is in execution it must enforce it's own set of timeouts
+which we included in the previous chapter and for convenience we referenced
+them in the table~\ref{Node-To-Node-timeouts} below.
+
+\begin{figure}[ht]
+  \begin{center}
+    \begin{tabular}{ll}
+      \header{mini-protocol} & \header{timeouts} \\\hline
+      Handshake              & table~\ref{table:handshake-timeouts} \\
+      Chain-Sync             & table~\ref{table:chain-sync-timeouts} \\
+      Block-Fetch            & table~\ref{table:block-fetch-timeouts} \\
+      Tx-Submission          & table~\ref{table:tx-submission-timeouts} \\
+      Keep-Alive             & table~\ref{table:keep-alive-timeouts} \\
+      Peer-Share             & table~\ref{table:peer-share-timeouts}
+    \end{tabular}
+    \caption{Node-To-Node mini-protocol timeouts}
+    \label{Node-To-Node-timeouts}
+  \end{center}
+\end{figure}
+
+On the inbound side of the Node-to-Node protocol, we also include a \texttt{5s}
+idleness timeout.  It starts either when a connection is accepted or when all
+responder mini-protocols terminated.  If this timeout expires, without
+receiving any message from a remote end, the connection must be closed unless
+it is a duplex connection which is used by the outbound side.
+
+Once all outbound and inbound mini-protocols have terminated and the idleness
+timeout expired, the connection is reset and put on a \texttt{60s} timeout.
+See section~\ref{sec:connection-close} why this timeout is required.
+% TODO: if connection-manager is removed from this document, we need to
+% preserve `sec:connection-close`.
+
+% TODO
+\section{Space limits}
+All per mini-protocol size limits are referenced in table~\ref{Node-To-Node-size-limits}:
+\begin{figure}[ht]
+  \begin{center}
+    \begin{tabular}{ll}
+      \header{mini-protocol} & \header{space limits} \\\hline
+      Handshake              & table~\ref{table:handshake-size-limits} \\
+      Chain-Sync             & table~\ref{table:chain-sync-size-limits} \\
+      Block-Fetch            & table~\ref{table:block-fetch-size-limits} \\
+      Tx-Submission          & table~\ref{table:tx-submission-size-limits} \\
+      Keep-Alive             & table~\ref{table:keep-alive-size-limits} \\
+      Peer-Share             & table~\ref{table:peer-share-size-limits}
+    \end{tabular}
+    \caption{Node-To-Node mini-protocol size limits}
+    \label{Node-To-Node-size-limits}
+  \end{center}
+\end{figure}

@@ -387,7 +387,25 @@ data Configuration extraFlags m ntnFd ntnAddr ntcFd ntcAddr = Configuration {
     , dcIPv6Address              :: Maybe (Either ntnFd ntnAddr)
 
       -- | an @AF_UNIX@ socket ready to accept connections or an @AF_UNIX@
-      -- socket path
+      -- socket path or name of `named-pipe` on `Windows`.
+      --
+      -- __Windows Named Pipes__
+      -- Names of named-pipes must follow
+      -- https://learn.microsoft.com/en-us/windows/win32/ipc/pipe-names, in
+      -- particular:
+      --
+      -- * It must be well formed, e.g. @\\.\pipe\PipeName@
+      -- * The pipe name string specified by @PipeName@ can include any character
+      --   other than a backslash, including numbers and special characters.
+      -- * The entire pipe name string can be up to 256 characters long. Pipe
+      --   names are not case-sensitive.
+      --  * @PipeName@ has to include an app name to avoid clashes with other
+      --    applications, e.g. @cardano-node-mainnet@.
+      --  * @PipeName@ should be different for different parallel-installable
+      --    instances, e.g. mainnet vs testnet.
+      --  * default file permissions should be right: it will be accessible to
+      --    the same user.
+      --
     , dcLocalAddress             :: Maybe (Either ntcFd ntcAddr)
 
       -- | parameters for limiting number of accepted connections

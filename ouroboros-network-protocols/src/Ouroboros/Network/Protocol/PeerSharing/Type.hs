@@ -73,10 +73,19 @@ instance StateTokenI StDone where stateToken = SingDone
 
 instance Protocol (PeerSharing peerAddress) where
   data Message (PeerSharing peerAddress) from to where
+    -- | Request `PeerSharingAmount` of peers.
     MsgShareRequest :: PeerSharingAmount
                     -> Message (PeerSharing peerAddress) StIdle StBusy
+                    --
+    -- | Respond with peer address information.  It is a protocol error to
+    -- respond with more peers than requested.
+    --
+    -- The server should only share peers with which it has (or recently had) an
+    -- successful inbound or outbound session.
+    --
     MsgSharePeers   :: [peerAddress]
                     -> Message (PeerSharing peerAddress) StBusy StIdle
+
     MsgDone         :: Message (PeerSharing peerAddress) StIdle StDone
 
   type StateAgency StIdle = ClientAgency
