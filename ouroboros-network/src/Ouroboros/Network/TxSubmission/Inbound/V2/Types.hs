@@ -115,7 +115,8 @@ data PeerTxState txid tx = PeerTxState {
        downloadedTxs            :: !(Map txid tx),
 
        -- | A set of TXs on their way to the mempool.
-       -- Tracked here so that we can cleanup `limboTxs` if the peer dies.
+       -- Tracked here so that we can cleanup `inSubmissionToMempoolTxs` if the
+       -- peer dies.
        --
        -- Life cycle of entries:
        -- * added by `acknowledgeTxIds` (where decide which txs can be
@@ -224,7 +225,7 @@ data SharedTxState peeraddr txid tx = SharedTxState {
       -- * We add to the counter when a given tx is selected to be added to the
       --   mempool in `pickTxsToDownload`.
       --
-      limboTxs        :: !(Map txid Int),
+      inSubmissionToMempoolTxs :: !(Map txid Int),
 
       -- | Rng used to randomly order peers
       peerRng         :: !StdGen
