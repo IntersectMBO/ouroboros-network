@@ -418,7 +418,8 @@ genSharedTxState maxTxIdsInflight = do
                                  ],
                  referenceCounts = Map.empty,
                  timedTxs        = Map.empty,
-                 limboTxs        = Map.empty,
+                 inSubmissionToMempoolTxs
+                                 = Map.empty,
                  peerRng         = mkStdGen seed
                }
 
