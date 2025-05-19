@@ -131,6 +131,8 @@ import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay,
            DNSTimeout, DomainAccessPoint (..), MockDNSLookupResult,
            mockDNSActions)
 import Test.Ouroboros.Network.TxSubmission.Types (Tx)
+import Test.Ouroboros.Network.Utils
+
 
 
 data Interfaces extraAPI m = Interfaces
@@ -365,6 +367,7 @@ run blockGeneratorArgs limits ni na
 
                  withAsync (decisionLogicThread
                               tracerTxLogic
+                              sayTracer
                               (aTxDecisionPolicy na)
                               (nkTxChannelsVar nodeKernel)
                               (nkSharedTxStateVar nodeKernel)) $ \decLogicThread ->
