@@ -13,7 +13,6 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Decision
     -- * Internal API exposed for testing
   , makeDecisions
   , filterActivePeers
-  , SharedDecisionContext (..)
   , pickTxsToDownload
   ) where
 
@@ -50,7 +49,7 @@ makeDecisions
        )
     => TxDecisionPolicy
     -- ^ decision policy
-    -> SharedDecisionContext peeraddr txid tx
+    -> SharedTxState peeraddr txid tx
     -- ^ decision context
     -> Map peeraddr (PeerTxState txid tx)
     -- ^ list of available peers.
@@ -62,10 +61,7 @@ makeDecisions
     -> ( SharedTxState peeraddr txid tx
        , Map peeraddr (TxDecision txid tx)
        )
-makeDecisions policy SharedDecisionContext {
-      sdcPeerGSV = _peerGSV,
-      sdcSharedTxState = st
-    }
+makeDecisions policy st
     = let (salt, rng') = random (peerRng st)
           st' = st { peerRng = rng' } in
     fn
