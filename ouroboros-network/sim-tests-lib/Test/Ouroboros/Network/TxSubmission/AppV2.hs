@@ -44,7 +44,6 @@ import System.Random (mkStdGen)
 
 import Ouroboros.Network.Channel
 import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)
-import Ouroboros.Network.DeltaQ (PeerGSV)
 import Ouroboros.Network.Driver
 import Ouroboros.Network.NodeToNode (NodeToNodeVersion (..))
 import Ouroboros.Network.Protocol.TxSubmission2.Client
@@ -159,15 +158,12 @@ runTxSubmission tracer tracerTxLogic state txDecisionPolicy = do
     txMempoolSem <- newTxMempoolSem
     sharedTxStateVar <- newSharedTxStateVar txRng
     labelTVarIO sharedTxStateVar "shared-tx-state"
-    gsvVar <- newTVarIO Map.empty
-    labelTVarIO gsvVar "gsv"
 
     run state'
         txChannelsMVar
         txMempoolSem
         sharedTxStateVar
         inboundMempool
-        gsvVar
         (\(a, as) -> do
           _ <- waitAnyCancel as
           cancel a
@@ -190,12 +186,11 @@ runTxSubmission tracer tracerTxLogic state txDecisionPolicy = do
         -> TxMempoolSem m
         -> SharedTxStateVar m peeraddr txid (Tx txid)
         -> Mempool m txid -- ^ Inbound mempool
-        -> StrictTVar m (Map peeraddr PeerGSV)
         -> ((Async m Void, [Async m ((), Maybe ByteString)]) -> m b)
         -> m b
     run st txChannelsVar txMempoolSem sharedTxStateVar
-        inboundMempool gsvVar k =
-      withAsync (decisionLogicThread tracerTxLogic txDecisionPolicy (readTVar gsvVar) txChannelsVar sharedTxStateVar) $ \a -> do
+        inboundMempool k =
+      withAsync (decisionLogicThread tracerTxLogic txDecisionPolicy txChannelsVar sharedTxStateVar) $ \a -> do
             -- Construct txSubmission outbound client
         let clients = (\(addr, (mempool, ctrlMsgSTM, outDelay, _, outChannel, _)) -> do
                         let client = txSubmissionOutbound (Tracer $ say . show)
