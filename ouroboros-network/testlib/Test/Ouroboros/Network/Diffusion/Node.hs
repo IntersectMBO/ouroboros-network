@@ -77,7 +77,6 @@ import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.Block (MaxSlotNo (..), maxSlotNoFromWithOrigin,
            pointSlot)
 import Ouroboros.Network.BlockFetch
-import Ouroboros.Network.BlockFetch.ClientRegistry (readPeerGSVs)
 import Ouroboros.Network.BlockFetch.ConsensusInterface
            (ChainSelStarvation (ChainSelStarvationEndedAt))
 import Ouroboros.Network.ConnectionManager.State (ConnStateIdSupply)
@@ -366,7 +365,6 @@ run blockGeneratorArgs limits ni na
                  withAsync (decisionLogicThread
                               tracerTxLogic
                               (aTxDecisionPolicy na)
-                              (readPeerGSVs (nkFetchClientRegistry nodeKernel))
                               (nkTxChannelsVar nodeKernel)
                               (nkSharedTxStateVar nodeKernel)) $ \decLogicThread ->
                       wait diffusionThread

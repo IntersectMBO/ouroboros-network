@@ -39,7 +39,6 @@ import Data.Typeable (Typeable)
 import Data.Void (Void)
 
 import Control.Tracer (Tracer, traceWith)
-import Ouroboros.Network.DeltaQ (PeerGSV (..))
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Inbound.V2.Decision
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
@@ -463,11 +462,10 @@ decisionLogicThread
        )
     => Tracer m (TraceTxLogic peeraddr txid tx)
     -> TxDecisionPolicy
-    -> STM m (Map peeraddr PeerGSV)
     -> TxChannelsVar m peeraddr txid tx
     -> SharedTxStateVar m peeraddr txid tx
     -> m Void
-decisionLogicThread tracer policy readGSVVar txChannelsVar sharedStateVar = do
+decisionLogicThread tracer policy txChannelsVar sharedStateVar = do
     labelThisThread "tx-decision"
     go
   where
@@ -478,16 +476,13 @@ decisionLogicThread tracer policy readGSVVar txChannelsVar sharedStateVar = do
       threadDelay 0.005 -- 5ms
 
       (decisions, st) <- atomically do
-        sharedCtx <-
-              SharedDecisionContext
-          <$> readGSVVar
-          <*> readTVar sharedStateVar
-        let activePeers = filterActivePeers policy (sdcSharedTxState sharedCtx)
+        sharedTxState <- readTVar sharedStateVar
+        let activePeers = filterActivePeers policy sharedTxState
 
         -- block until at least one peer is active
         check (not (Map.null activePeers))
 
-        let (sharedState, decisions) = makeDecisions policy sharedCtx activePeers
+        let (sharedState, decisions) = makeDecisions policy sharedTxState activePeers
         writeTVar sharedStateVar sharedState
         return (decisions, sharedState)
       traceWith tracer (TraceSharedTxState "decisionLogicThread" st)
