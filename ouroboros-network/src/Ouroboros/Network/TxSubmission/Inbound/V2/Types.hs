@@ -15,7 +15,6 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
   , TxsToMempool (..)
   , TxDecision (..)
   , emptyTxDecision
-  , SharedDecisionContext (..)
   , TraceTxLogic (..)
   , TxSubmissionInitDelay (..)
   , defaultTxSubmissionInitDelay
@@ -43,7 +42,6 @@ import System.Random (StdGen)
 
 import NoThunks.Class (NoThunks (..))
 
-import Ouroboros.Network.DeltaQ (PeerGSV (..))
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 
 -- | Flag to enable/disable the usage of the new tx-submission logic.
@@ -312,14 +310,6 @@ emptyTxDecision = TxDecision {
     txdTxsToRequest       = Set.empty,
     txdTxsToMempool       = mempty
   }
-
-data SharedDecisionContext peeraddr txid tx = SharedDecisionContext {
-    -- TODO: check how to access it.
-    sdcPeerGSV       :: !(Map peeraddr PeerGSV),
-
-    sdcSharedTxState :: !(SharedTxState peeraddr txid tx)
-  }
-  deriving Show
 
 
 -- | TxLogic tracer.
