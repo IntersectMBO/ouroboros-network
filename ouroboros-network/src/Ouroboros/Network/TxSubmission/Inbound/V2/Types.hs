@@ -26,6 +26,8 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
   , TxSubmissionMempoolWriter (..)
     -- ** Traces
   , TraceTxSubmissionInbound (..)
+  , TxSubmissionCounters (..)
+  , mkTxSubmissionCounters
     -- ** Protocol Error
   , TxSubmissionProtocolError (..)
   ) where
@@ -33,6 +35,8 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
 import Control.Exception (Exception (..))
 import Control.Monad.Class.MonadTime.SI
 import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Monoid (Sum (..))
 import Data.Sequence.Strict (StrictSeq)
 import Data.Set (Set)
 import Data.Set qualified as Set
@@ -158,7 +162,7 @@ data SharedTxState peeraddr txid tx = SharedTxState {
       -- there's always an entry in this map even if the set of `txid`s is
       -- empty.
       --
-      peerTxStates    :: !(Map peeraddr (PeerTxState txid tx)),
+      peerTxStates             :: !(Map peeraddr (PeerTxState txid tx)),
 
       -- | Set of transactions which are in-flight (have already been
       -- requested) together with multiplicities (from how many peers it is
@@ -166,11 +170,11 @@ data SharedTxState peeraddr txid tx = SharedTxState {
       --
       -- This set can intersect with `availableTxIds`.
       --
-      inflightTxs     :: !(Map txid Int),
+      inflightTxs              :: !(Map txid Int),
 
       -- | Overall size of all `tx`s in-flight.
       --
-      inflightTxsSize :: !SizeInBytes,
+      inflightTxsSize          :: !SizeInBytes,
 
       -- | Map of `tx` which:
       --
@@ -190,7 +194,7 @@ data SharedTxState peeraddr txid tx = SharedTxState {
       -- This map is useful to acknowledge `txid`s, it's basically taking the
       -- longest prefix which contains entries in `bufferedTxs` or `unknownTxs`.
       --
-      bufferedTxs     :: !(Map txid (Maybe tx)),
+      bufferedTxs              :: !(Map txid (Maybe tx)),
 
       -- | We track reference counts of all unacknowledged and timedTxs txids.
       -- Once the count reaches 0, a tx is removed from `bufferedTxs`.
@@ -205,12 +209,12 @@ data SharedTxState peeraddr txid tx = SharedTxState {
       --    * @Map.keysSet bufferedTxs `Set.isSubsetOf` Map.keysSet referenceCounts@;
       --    * all counts are positive integers.
       --
-      referenceCounts :: !(Map txid Int),
+      referenceCounts          :: !(Map txid Int),
 
       -- | A set of timeouts for txids that have been added to bufferedTxs after being
       -- inserted into the mempool.
       -- Every txid entry has a reference count in `referenceCounts`.
-      timedTxs        :: Map Time [txid],
+      timedTxs                 :: Map Time [txid],
 
       -- | A set of txids that have been downloaded by a peer and are on their
       -- way to the mempool. We won't issue further fetch-requests for TXs in
@@ -226,7 +230,7 @@ data SharedTxState peeraddr txid tx = SharedTxState {
       inSubmissionToMempoolTxs :: !(Map txid Int),
 
       -- | Rng used to randomly order peers
-      peerRng         :: !StdGen
+      peerRng                  :: !StdGen
     }
     deriving (Eq, Show, Generic)
 
@@ -374,6 +378,43 @@ data TraceTxSubmissionInbound txid tx =
   | TraceTxInboundTerminated
   | TraceTxInboundDecision (TxDecision txid tx)
   deriving (Eq, Show)
+
+
+data TxSubmissionCounters =
+    TxSubmissionCounters {
+      numOfOutstandingTxIds         :: Int,
+      -- ^ txids which are not yet downloaded.  This is a diff of keys sets of
+      -- `referenceCounts` and a sum of `bufferedTxs` and
+      -- `inbubmissionToMempoolTxs` maps.
+      numOfBufferedTxs              :: Int,
+      -- ^ number of all buffered txs (downloaded or not available)
+      numOfInSubmissionToMempoolTxs :: Int,
+      -- ^ number of all tx's which were submitted to the mempool
+      numOfTxIdsInflight            :: Int
+      -- ^ number of all in-flight txid's.
+    }
+    deriving (Eq, Show)
+
+mkTxSubmissionCounters
+  :: Ord txid
+  => SharedTxState peeraddr txid tx
+  -> TxSubmissionCounters
+mkTxSubmissionCounters
+  SharedTxState {
+    inflightTxs,
+    bufferedTxs,
+    referenceCounts,
+    inSubmissionToMempoolTxs
+  }
+  =
+  TxSubmissionCounters {
+    numOfOutstandingTxIds         = Set.size $ Map.keysSet referenceCounts
+                                        Set.\\ Map.keysSet bufferedTxs
+                                        Set.\\ Map.keysSet inSubmissionToMempoolTxs,
+    numOfBufferedTxs              = Map.size bufferedTxs,
+    numOfInSubmissionToMempoolTxs = Map.size inSubmissionToMempoolTxs,
+    numOfTxIdsInflight            = getSum $ foldMap Sum inflightTxs
+  }
 
 
 data TxSubmissionProtocolError =
