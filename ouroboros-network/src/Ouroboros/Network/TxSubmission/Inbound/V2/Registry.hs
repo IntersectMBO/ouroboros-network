@@ -461,11 +461,12 @@ decisionLogicThread
        , Hashable peeraddr
        )
     => Tracer m (TraceTxLogic peeraddr txid tx)
+    -> Tracer m TxSubmissionCounters
     -> TxDecisionPolicy
     -> TxChannelsVar m peeraddr txid tx
     -> SharedTxStateVar m peeraddr txid tx
     -> m Void
-decisionLogicThread tracer policy txChannelsVar sharedStateVar = do
+decisionLogicThread tracer counterTracer policy txChannelsVar sharedStateVar = do
     labelThisThread "tx-decision"
     go
   where
@@ -493,6 +494,7 @@ decisionLogicThread tracer policy txChannelsVar sharedStateVar = do
         (Map.intersectionWith (,)
           txChannelMap
           decisions)
+      traceWith counterTracer (mkTxSubmissionCounters st)
       go
 
     -- Variant of modifyMVar_ that puts a default value if the MVar is empty.
