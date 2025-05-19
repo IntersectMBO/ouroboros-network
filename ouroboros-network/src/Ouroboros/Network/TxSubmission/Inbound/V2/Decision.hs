@@ -124,17 +124,17 @@ _orderByDeltaQ dq =
 -- | Internal state of `pickTxsToDownload` computation.
 --
 data St peeraddr txid tx =
-   St { stInflightSize :: !SizeInBytes,
+   St { stInflightSize             :: !SizeInBytes,
         -- ^ size of all `tx`s in-flight.
 
-        stInflight     :: !(Map txid Int),
+        stInflight                 :: !(Map txid Int),
         -- ^ `txid`s in-flight.
 
-        stAcknowledged :: !(Map txid Int),
+        stAcknowledged             :: !(Map txid Int),
         -- ^ acknowledged `txid` with multiplicities.  It is used to update
         -- `referenceCounts`.
 
-        stLimboTx      :: Set txid
+        stInSubmissionToMempoolTxs :: Set txid
         -- ^ TXs on their way to the mempool. Used to prevent issueing new
         -- fetch requests for them.
       }
@@ -174,16 +174,16 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                                               inflightTxs,
                                               inflightTxsSize,
                                               bufferedTxs,
-                                              limboTxs,
+                                              inSubmissionToMempoolTxs,
                                               referenceCounts } =
     -- outer fold: fold `[(peeraddr, PeerTxState txid tx)]`
     List.mapAccumR
       accumFn
       -- initial state
-      St { stInflight     = inflightTxs,
-           stInflightSize = inflightTxsSize,
-           stAcknowledged = Map.empty,
-           stLimboTx      = Map.keysSet limboTxs }
+      St { stInflight                 = inflightTxs,
+           stInflightSize             = inflightTxsSize,
+           stAcknowledged             = Map.empty,
+           stInSubmissionToMempoolTxs = Map.keysSet inSubmissionToMempoolTxs }
 
     >>>
       gn
@@ -199,7 +199,7 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
       st@St { stInflight,
               stInflightSize,
               stAcknowledged,
-              stLimboTx }
+              stInSubmissionToMempoolTxs }
       ( peeraddr
       , peerTxState@PeerTxState { availableTxIds,
                                   unknownTxs,
@@ -223,13 +223,14 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                    ) = acknowledgeTxIds policy sharedState peerTxState
 
                  stAcknowledged' = Map.unionWith (+) stAcknowledged txIdsToAck
-                 stLimboTx'      = stLimboTx <> Set.fromList (map fst listOfTxsToMempool)
+                 stInSubmissionToMempoolTxs' = stInSubmissionToMempoolTxs
+                                            <> Set.fromList (map fst listOfTxsToMempool)
              in
              if requestedTxIdsInflight peerTxState' > 0
                then
                  -- we have txids to request
-                 ( st { stAcknowledged = stAcknowledged'
-                      , stLimboTx      = stLimboTx' }
+                 ( st { stAcknowledged             = stAcknowledged'
+                      , stInSubmissionToMempoolTxs = stInSubmissionToMempoolTxs' }
                  , ( (peeraddr, peerTxState')
                      , TxDecision { txdTxIdsToAcknowledge = numTxIdsToAck,
                                     txdTxIdsToRequest     = numTxIdsToReq,
@@ -290,7 +291,7 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                     -- other peer or are in-flight or unknown by this peer.
                     `Map.withoutKeys`
                     (Map.keysSet bufferedTxs <> requestedTxsInflight <> unknownTxs
-                        <> stLimboTx)
+                        <> stInSubmissionToMempoolTxs)
 
                   )
                   requestedTxsInflightSize
@@ -322,15 +323,16 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
               stInflight' :: Map txid Int
               stInflight' = Map.unionWith (+) stInflightDelta stInflight
 
-              stLimboTx' = stLimboTx <> Set.fromList (map fst listOfTxsToMempool)
+              stInSubmissionToMempoolTxs' = stInSubmissionToMempoolTxs
+                                         <> Set.fromList (map fst listOfTxsToMempool)
           in
             if requestedTxIdsInflight peerTxState'' > 0
               then
                 -- we can request `txid`s & `tx`s
-                ( St { stInflight     = stInflight',
-                       stInflightSize = sizeInflightOther + requestedTxsInflightSize',
-                       stAcknowledged = stAcknowledged',
-                       stLimboTx      = stLimboTx' }
+                ( St { stInflight                 = stInflight',
+                       stInflightSize             = sizeInflightOther + requestedTxsInflightSize',
+                       stAcknowledged             = stAcknowledged',
+                       stInSubmissionToMempoolTxs = stInSubmissionToMempoolTxs' }
                 , ( (peeraddr, peerTxState'')
                   , TxDecision { txdTxIdsToAcknowledge = numTxIdsToAck,
                                  txdPipelineTxIds      = not
@@ -345,9 +347,9 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                 )
               else
                 -- there are no `txid`s to request, only `tx`s.
-                ( st { stInflight     = stInflight',
-                       stInflightSize = sizeInflightOther + requestedTxsInflightSize',
-                       stLimboTx      = stLimboTx'
+                ( st { stInflight                 = stInflight',
+                       stInflightSize             = sizeInflightOther + requestedTxsInflightSize',
+                       stInSubmissionToMempoolTxs = stInSubmissionToMempoolTxs'
                      }
                 , ( (peeraddr, peerTxState'')
                   , emptyTxDecision { txdTxsToRequest = txsToRequest }
@@ -384,15 +386,16 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                          `Map.restrictKeys`
                          liveSet
 
-          limboTxs' = List.foldl' updateLimboTxs limboTxs as
+          inSubmissionToMempoolTxs' =
+            List.foldl' updateInSubmissionToMempoolTxs inSubmissionToMempoolTxs as
 
       in ( sharedState {
-             peerTxStates    = peerTxStates',
-             inflightTxs     = stInflight,
-             inflightTxsSize = stInflightSize,
-             bufferedTxs     = bufferedTxs',
-             referenceCounts = referenceCounts',
-             limboTxs        = limboTxs'}
+             peerTxStates             = peerTxStates',
+             inflightTxs              = stInflight,
+             inflightTxsSize          = stInflightSize,
+             bufferedTxs              = bufferedTxs',
+             referenceCounts          = referenceCounts',
+             inSubmissionToMempoolTxs = inSubmissionToMempoolTxs'}
          , -- exclude empty results
            mapMaybe (\((a, _), b) -> case b of
                       TxDecision { txdTxIdsToAcknowledge = 0,
@@ -408,11 +411,12 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
          )
 
       where
-        updateLimboTxs :: forall a.
-                          Map txid Int
-                       -> (a, TxDecision txid tx)
-                       -> Map txid Int
-        updateLimboTxs m (_,TxDecision { txdTxsToMempool } ) =
+        updateInSubmissionToMempoolTxs
+          :: forall a.
+             Map txid Int
+          -> (a, TxDecision txid tx)
+          -> Map txid Int
+        updateInSubmissionToMempoolTxs m (_,TxDecision { txdTxsToMempool } ) =
             List.foldl' fn m (listOfTxsToMempool txdTxsToMempool)
           where
             fn :: Map txid Int
@@ -441,7 +445,7 @@ filterActivePeers
                     bufferedTxs,
                     inflightTxs,
                     inflightTxsSize,
-                    limboTxs }
+                    inSubmissionToMempoolTxs }
     | inflightTxsSize > maxTxsSizeInflight
     = Map.filter fn peerTxStates
     | otherwise
@@ -501,7 +505,7 @@ filterActivePeers
             `Map.withoutKeys` requestedTxsInflight
             `Map.withoutKeys` unknownTxs
             `Map.withoutKeys` unrequestable
-            `Map.withoutKeys` Map.keysSet limboTxs
+            `Map.withoutKeys` Map.keysSet inSubmissionToMempoolTxs
 
         -- Split `unacknowledgedTxIds'` into the longest prefix of `txid`s which
         -- can be acknowledged and the unacknowledged `txid`s.
