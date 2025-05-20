@@ -11,7 +11,6 @@ module Ouroboros.Network.Diffusion.Configuration
   , defaultDeadlineTargets
   , defaultDeadlineChurnInterval
   , defaultBulkChurnInterval
-  , defaultTxSubmissionLogicVersion
     -- re-exports
   , AcceptedConnectionsLimit (..)
   , BlockFetchConfiguration (..)
@@ -153,8 +152,3 @@ local_PROTOCOL_IDLE_TIMEOUT = 2 -- 2 seconds
 --
 local_TIME_WAIT_TIMEOUT :: DiffTime
 local_TIME_WAIT_TIMEOUT = 0
-
--- | The default logic version is the legacy one, the new one is still
--- experimental.
-defaultTxSubmissionLogicVersion :: TxSubmissionLogicVersion
-defaultTxSubmissionLogicVersion = TxSubmissionLogicV1
