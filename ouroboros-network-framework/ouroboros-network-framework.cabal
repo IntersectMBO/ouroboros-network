@@ -31,7 +31,6 @@ library
     Ouroboros.Network.ConnectionId
     Ouroboros.Network.ConnectionManager.ConnMap
     Ouroboros.Network.ConnectionManager.Core
-    Ouroboros.Network.ConnectionManager.InformationChannel
     Ouroboros.Network.ConnectionManager.State
     Ouroboros.Network.ConnectionManager.Types
     Ouroboros.Network.Context
@@ -41,7 +40,7 @@ library
     Ouroboros.Network.Driver.Stateful
     Ouroboros.Network.IOManager
     Ouroboros.Network.InboundGovernor
-    Ouroboros.Network.InboundGovernor.Event
+    Ouroboros.Network.InboundGovernor.InformationChannel
     Ouroboros.Network.InboundGovernor.State
     Ouroboros.Network.Mux
     Ouroboros.Network.MuxMode
@@ -68,6 +67,7 @@ library
     Win32-network ^>=0.2,
     base >=4.12 && <4.22,
     bytestring >=0.10 && <0.13,
+    cardano-strict-containers,
     cborg >=0.2.1 && <0.3,
     containers >=0.5 && <0.8,
     contra-tracer,
