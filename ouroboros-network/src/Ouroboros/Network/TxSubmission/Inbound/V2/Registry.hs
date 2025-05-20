@@ -256,18 +256,16 @@ withPeer tracer
         bracket_ (atomically $ waitTSem mempoolSem)
                  (atomically $ signalTSem mempoolSem)
           $ do
-            res <- addTx
+            (res, cnts) <- addTx
             start <- getMonotonicTime
             atomically $ modifyTVar sharedStateVar (updateBufferedTx start res)
             end <- getMonotonicTime
             let duration = end `diffTime` start
-            case res of
-              TxAccepted -> traceWith txTracer (TraceTxInboundAddedToMempool [txid] duration)
-              TxRejected -> traceWith txTracer (TraceTxInboundRejectedFromMempool [txid] duration)
+            traceWith txTracer (TraceTxSubmissionProcessed cnts duration)
 
       where
         -- add the tx to the mempool
-        addTx :: m TxMempoolResult
+        addTx :: m (TxMempoolResult, ProcessedTxCount)
         addTx = do
           mpSnapshot <- atomically mempoolGetSnapshot
 
@@ -278,32 +276,38 @@ withPeer tracer
              then do
                !now <- getMonotonicTime
                !s <- countRejectedTxs now 1
-               traceWith txTracer $ TraceTxSubmissionProcessed ProcessedTxCount {
-                    ptxcAccepted = 0
-                  , ptxcRejected = 1
-                  , ptxcScore    = s
-                  }
-               return TxRejected
+               return
+                 ( TxRejected
+                 , ProcessedTxCount {
+                     ptxcAccepted = 0
+                   , ptxcRejected = 1
+                   , ptxcScore    = s
+                    }
+                 )
              else do
                acceptedTxs <- mempoolAddTxs [tx]
                end <- getMonotonicTime
                if null acceptedTxs
                   then do
                       !s <- countRejectedTxs end 1
-                      traceWith txTracer $ TraceTxSubmissionProcessed ProcessedTxCount {
-                          ptxcAccepted = 0
-                        , ptxcRejected = 1
-                        , ptxcScore    = s
-                        }
-                      return TxRejected
+                      return
+                        ( TxRejected
+                        , ProcessedTxCount {
+                            ptxcAccepted = 0
+                          , ptxcRejected = 1
+                          , ptxcScore    = s
+                          }
+                        )
                   else do
                       !s <- countRejectedTxs end 0
-                      traceWith txTracer $ TraceTxSubmissionProcessed ProcessedTxCount {
-                          ptxcAccepted = 1
-                        , ptxcRejected = 0
-                        , ptxcScore    = s
-                        }
-                      return TxAccepted
+                      return
+                        ( TxAccepted
+                        , ProcessedTxCount {
+                            ptxcAccepted = 1
+                          , ptxcRejected = 0
+                          , ptxcScore    = s
+                          }
+                        )
 
         updateBufferedTx :: Time
                          -> TxMempoolResult

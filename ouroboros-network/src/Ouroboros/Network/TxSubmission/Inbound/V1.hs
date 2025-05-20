@@ -315,8 +315,6 @@ txSubmissionInbound tracer initDelay (NumTxIdsToAck maxUnacked) mpReader mpWrite
         txidsAccepted <- mempoolAddTxs txsReady
         !end <- getMonotonicTime
         let duration = diffTime end start
-        traceWith tracer $
-          TraceTxInboundAddedToMempool txidsAccepted duration
         let !accepted = length txidsAccepted
 
         traceWith tracer $ TraceTxSubmissionProcessed ProcessedTxCount {
@@ -324,6 +322,7 @@ txSubmissionInbound tracer initDelay (NumTxIdsToAck maxUnacked) mpReader mpWrite
           , ptxcRejected = length txs - accepted
           , ptxcScore    = 0 -- This implementatin does not track score
           }
+          duration
 
         continueWithStateM (serverIdle n) st {
           bufferedTxs         = bufferedTxs3,
