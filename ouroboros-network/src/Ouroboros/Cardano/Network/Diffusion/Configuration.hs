@@ -8,12 +8,16 @@ module Ouroboros.Cardano.Network.Diffusion.Configuration
   , defaultNumBootstrapPeers
   , defaultSyncTargets
   , defaultNumberOfBigLedgerPeers
+  , defaultTxSubmissionInitDelay
+  , defaultTxSubmissionLogicVersion
   ) where
 
 import Cardano.Network.Types (NumberOfBigLedgerPeers (..))
 import Ouroboros.Network.Diffusion.Configuration (defaultDeadlineTargets)
 import Ouroboros.Network.PeerSelection.Governor.Types
            (PeerSelectionTargets (..))
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types
+           (TxSubmissionLogicVersion (..), defaultTxSubmissionInitDelay)
 
 -- | Default number of bootstrap peers
 --
@@ -48,3 +52,9 @@ defaultSyncTargets =
 --
 defaultNumberOfBigLedgerPeers :: NumberOfBigLedgerPeers
 defaultNumberOfBigLedgerPeers = NumberOfBigLedgerPeers 5
+
+
+-- | The default logic version is the legacy one, the new one is still
+-- experimental.
+defaultTxSubmissionLogicVersion :: TxSubmissionLogicVersion
+defaultTxSubmissionLogicVersion = TxSubmissionLogicV1
