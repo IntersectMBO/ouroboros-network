@@ -82,9 +82,9 @@ data ServerStIdle (n :: N) txid tx m a where
   -- | Collect a pipelined result.
   --
   CollectPipelined
-    :: Maybe                 (ServerStIdle (S n) txid tx m a)
-    -> (Collect txid tx -> m (ServerStIdle    n  txid tx m a))
-    ->                        ServerStIdle (S n) txid tx m a
+    :: Maybe                 (m (ServerStIdle (S n) txid tx m a))
+    -> (Collect txid tx -> m (   ServerStIdle    n  txid tx m a))
+    ->                           ServerStIdle (S n) txid tx m a
 
 
 -- | Transform a 'TxSubmissionServerPipelined' into a 'PeerPipelined'.
@@ -134,6 +134,6 @@ txSubmissionServerPeerPipelined (TxSubmissionServerPipelined server) =
         (Effect (go <$> k))
 
     go (CollectPipelined mNone collect) =
-      Collect (fmap go mNone)
-              (Effect . fmap go . collect)
+      Collect (Effect . fmap go <$> mNone)
+              (Effect . fmap go  .  collect)
 
