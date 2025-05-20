@@ -362,11 +362,9 @@ data TraceTxSubmissionInbound txid tx =
     -- | Number of transactions just about to be inserted.
     TraceTxSubmissionCollected [txid]
     -- | Just processed transaction pass/fail breakdown.
-  | TraceTxSubmissionProcessed ProcessedTxCount
+  | TraceTxSubmissionProcessed ProcessedTxCount DiffTime
   | TraceTxInboundCanRequestMoreTxs Int
   | TraceTxInboundCannotRequestMoreTxs Int
-  | TraceTxInboundAddedToMempool [txid] DiffTime
-  | TraceTxInboundRejectedFromMempool [txid] DiffTime
 
   --
   -- messages emitted by the new implementation of the server in
