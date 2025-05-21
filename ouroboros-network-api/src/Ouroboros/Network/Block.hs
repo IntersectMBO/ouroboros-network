@@ -448,7 +448,7 @@ wrapCBORinCBOR enc = encode . mkSerialised enc
 --
 -- The CBOR-in-CBOR encoding gives us the 'ByteString' we need in order to
 -- to construct annotations.
-unwrapCBORinCBOR :: (forall s. Decoder s (Lazy.ByteString -> a))
+unwrapCBORinCBOR :: (forall s. Lazy.ByteString -> Decoder s a)
                  -> (forall s. Decoder s a)
 unwrapCBORinCBOR dec = fromSerialised dec =<< decode
 
@@ -460,14 +460,14 @@ mkSerialised enc = Serialised . Write.toLazyByteString . enc
 --
 -- Unlike a regular 'Decoder', which has an implicit input stream,
 -- 'fromSerialised' takes the 'Serialised' value as an argument.
-fromSerialised :: (forall s. Decoder s (Lazy.ByteString -> a))
+fromSerialised :: (forall s. Lazy.ByteString -> Decoder s a)
                -> Serialised a -> (forall s. Decoder s a)
 fromSerialised dec (Serialised payload) =
-    case Read.deserialiseFromBytes dec payload of
+    case Read.deserialiseFromBytes (dec payload) payload of
       Left (Read.DeserialiseFailure _ reason) -> fail reason
-      Right (trailing, mkA)
+      Right (trailing, result)
         | not (Lazy.null trailing) -> fail "trailing bytes in CBOR-in-CBOR"
-        | otherwise                -> return (mkA payload)
+        | otherwise                -> return result
 
 -- | CBOR-in-CBOR
 --
