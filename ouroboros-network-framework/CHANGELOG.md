@@ -6,6 +6,8 @@
 
 ### Breaking changes
 
+* Added `terminatingConns` to `ConnectionManagerCounters`
+
 ## 0.17.0.0 -- 2025-02-25
 
 ### Breaking changes

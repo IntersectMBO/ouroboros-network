@@ -6,6 +6,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
 
 -- 'runResponder' is using a redundant constraint.
@@ -30,6 +31,7 @@ module Ouroboros.Network.Server
 
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad (when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow hiding (handle)
@@ -40,6 +42,7 @@ import Control.Tracer (Tracer, contramap, traceWith)
 import Data.ByteString.Lazy (ByteString)
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
+import Data.Maybe (isNothing)
 import Data.Void (Void, absurd)
 import GHC.IO.Exception
 #if !defined(mingw32_HOST_OS)
@@ -187,9 +190,8 @@ with Arguments {
               traceWith tracer TrServerStopped
             `catch`
               \(e :: SomeException) -> do
-                case fromException e of
-                  Just (_ :: AsyncCancelled) -> pure ()
-                  Nothing                    -> traceWith tracer (TrServerError e)
+                when (isNothing $ fromException @SomeAsyncException e) $
+                  traceWith tracer (TrServerError e)
                 throwIO e
   where
     fn :: Either x Void -> x
@@ -209,8 +211,6 @@ with Arguments {
     acceptLoop localAddress acceptOne0 = mask $ \unmask -> do
         labelThisThread ("accept-loop-" ++ show localAddress)
         go unmask acceptOne0
-        `catch` \ e -> traceWith tracer (TrServerError e)
-                    >> throwIO e
       where
         -- we must guarantee that 'includeInboundConnection' is called,
         -- otherwise we will have a resource leak.

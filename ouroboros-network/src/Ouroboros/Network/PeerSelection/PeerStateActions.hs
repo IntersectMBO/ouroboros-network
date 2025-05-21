@@ -6,6 +6,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
 
 -- 'startProtocols' is using 'HasInitiator' constraint to limit pattern
@@ -47,6 +48,7 @@ import Data.ByteString.Lazy (ByteString)
 import Data.Functor (void, ($>))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (isNothing)
 import Data.Typeable (Typeable, cast)
 
 import Network.Mux qualified as Mux
@@ -741,7 +743,8 @@ withPeerStateActions PeerStateActionsArguments {
                          remotePeerAddr
           case res of
             Left e -> do
-              traceWith spsTracer (AcquireConnectionError e)
+              when (isNothing $ fromException @SomeAsyncException e) $
+                traceWith spsTracer (AcquireConnectionError e)
               case runRethrowPolicy spsRethrowPolicy OutboundError e of
                 ShutdownNode -> throwTo spsMainThreadId e
                              >> throwIO e
