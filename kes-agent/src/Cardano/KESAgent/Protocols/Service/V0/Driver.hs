@@ -57,8 +57,6 @@ serviceDriver ::
   Typeable c =>
   VersionedProtocol (ServiceProtocol m c) =>
   KESAlgorithm (KES c) =>
-  HasInfo (DirectCodec m) (SignKeyKES (KES c)) =>
-  HasInfo (DirectCodec m) (VerKeyKES (KES c)) =>
   DirectDeserialise (SignKeyKES (KES c)) =>
   DirectSerialise (SignKeyKES (KES c)) =>
   MonadThrow m =>

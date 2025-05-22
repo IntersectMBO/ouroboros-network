@@ -53,8 +53,6 @@ import Network.TypedProtocol.Driver
 serviceDriver ::
   forall m f t p pr.
   VersionedProtocol (ServiceProtocol m) =>
-  HasInfo (DirectCodec m) (SignKeyKES (KES StandardCrypto)) =>
-  HasInfo (DirectCodec m) (VerKeyKES (KES StandardCrypto)) =>
   DirectDeserialise (SignKeyKES (KES StandardCrypto)) =>
   DirectSerialise (SignKeyKES (KES StandardCrypto)) =>
   MonadThrow m =>

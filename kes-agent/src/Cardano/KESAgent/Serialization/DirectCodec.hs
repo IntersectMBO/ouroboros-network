@@ -425,7 +425,6 @@ instance
   , DirectSerialise (SignKeyKES kes)
   , DirectDeserialise (SignKeyKES kes)
   , KESAlgorithm kes
-  , HasInfo (DirectCodec m) (SignKeyKES kes)
   ) =>
   Serializable (DirectCodec m) (SignKeyKES kes)
   where
@@ -461,7 +460,6 @@ instance
   , MonadST m
   , MonadThrow m
   , KESAlgorithm kes
-  , HasInfo (DirectCodec m) (VerKeyKES kes)
   ) =>
   Serializable (DirectCodec m) (VerKeyKES kes)
   where

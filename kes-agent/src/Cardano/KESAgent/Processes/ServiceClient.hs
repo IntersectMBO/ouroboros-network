@@ -36,13 +36,12 @@ import Cardano.KESAgent.Protocols.Types
 import Cardano.KESAgent.Protocols.VersionHandshake.Driver
 import Cardano.KESAgent.Protocols.VersionHandshake.Peers
 import Cardano.KESAgent.Protocols.VersionedProtocol
-import Cardano.KESAgent.Serialization.DirectCodec
 import Cardano.KESAgent.Util.PlatformPoison (poisonWindows)
 import Cardano.KESAgent.Util.Pretty (Pretty (..))
 import Cardano.KESAgent.Util.RetrySocket (retrySocket)
 
 import Cardano.Crypto.DirectSerialise
-import Cardano.Crypto.KES.Class (SignKeyKES, VerKeyKES)
+import Cardano.Crypto.KES.Class (SignKeyKES)
 
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket (Snocket (..))
@@ -65,7 +64,6 @@ import Control.Monad.Class.MonadTimer (MonadDelay, threadDelay)
 import Control.Tracer (Tracer, traceWith)
 import Data.Char (toLower)
 import Data.Functor.Contravariant ((>$<))
-import Data.SerDoc.Class (HasInfo (..))
 import Data.Typeable
 import Data.Word (Word64)
 import Network.TypedProtocol.Driver (runPeerWithDriver)
@@ -164,8 +162,6 @@ type ServiceClientCrypto c =
 type ServiceClientContext m c =
   ( MonadServiceClient m
   , ServiceClientCrypto c
-  , HasInfo (DirectCodec m) (VerKeyKES (KES c))
-  , HasInfo (DirectCodec m) (SignKeyKES (KES c))
   )
 
 -- | Crypto types for which service client drivers are available.

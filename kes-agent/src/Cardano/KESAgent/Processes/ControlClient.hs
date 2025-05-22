@@ -72,10 +72,7 @@ import Data.Char (toLower)
 import Data.Coerce
 import Data.Functor.Contravariant ((>$<))
 import Data.Kind
-import Data.SerDoc.Class (
-  HasInfo (..),
-  Serializable (..),
- )
+import Data.SerDoc.Class (Serializable (..))
 import qualified Data.Text as Text
 import Data.Typeable
 import Network.TypedProtocol.Driver (runPeerWithDriver)
@@ -154,7 +151,6 @@ type ControlClientCrypto c =
 type ControlClientContext m c =
   ( MonadControlClient m
   , ControlClientCrypto c
-  , HasInfo (DirectCodec m) (VerKeyKES (KES c))
   , Serializable (DirectCodec m) (VerKeyKES (KES c))
   , DirectSerialise (SignKeyKES (KES c))
   , DirectDeserialise (SignKeyKES (KES c))
@@ -235,7 +231,6 @@ instance
   , Crypto c
   , Typeable c
   , NamedCrypto c
-  , HasInfo (DirectCodec m) (VerKeyKES (KES c))
   , DirectSerialise (SignKeyKES (KES c))
   , DirectDeserialise (SignKeyKES (KES c))
   ) =>

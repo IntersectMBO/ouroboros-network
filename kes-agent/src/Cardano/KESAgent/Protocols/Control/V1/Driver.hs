@@ -122,8 +122,6 @@ $(deriveSerDoc ''DirectCodec [] ''AgentInfo)
 controlDriver ::
   forall (m :: Type -> Type) f t p pr.
   VersionedProtocol (ControlProtocol m) =>
-  HasInfo (DirectCodec m) (VerKeyKES (KES StandardCrypto)) =>
-  HasInfo (DirectCodec m) AgentInfo =>
   Serializable (DirectCodec m) AgentInfo =>
   MonadThrow m =>
   MonadSTM m =>
