@@ -691,7 +691,7 @@ config_REPROMOTE_DELAY = 10
 snapshotPeersStatus :: MonadInspectSTM m
                     => proxy m
                     -> Map PeerAddr (TVar m PeerStatus)
-                    -> InspectMonad m (Map PeerAddr PeerStatus)
+                    -> InspectMonadSTM m (Map PeerAddr PeerStatus)
 snapshotPeersStatus p conns = traverse (inspectTVar p) conns
 
 
