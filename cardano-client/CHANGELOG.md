@@ -6,6 +6,12 @@
 
 ### Non-breaking changes
 
+## 0.5.2.0 -- 2025-05-23
+
+### Non-breaking changes
+
+* Fixed how asynchronous exceptions are handled.
+
 ## 0.5.1.0 -- 2025-03-25
 
 ### Non-breaking changes
