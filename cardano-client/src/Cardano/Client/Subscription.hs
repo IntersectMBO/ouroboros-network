@@ -2,6 +2,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
 
 module Cardano.Client.Subscription
@@ -132,7 +133,13 @@ subscribe snocket networkMagic supportedVersions
   where
     loop :: (forall x. IO x -> IO x) -> IO (Either SomeException a) -> IO ()
     loop unmask act = do
-      r <- squashLefts <$> try (unmask act)
+      r <- squashLefts <$>
+           tryJust
+              -- only catch synchronous exceptions
+              (\e -> maybe (Just e) (\_ -> Nothing)
+                   . fromException @SomeAsyncException
+                   $ e)
+              (unmask act)
       case r of
         Right a -> traceWith tracer (SubscriptionResult a)
         Left  e -> traceWith tracer (SubscriptionError e)
