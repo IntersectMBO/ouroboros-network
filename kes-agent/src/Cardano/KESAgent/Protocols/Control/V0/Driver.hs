@@ -131,8 +131,6 @@ controlDriver ::
   Typeable c =>
   VersionedProtocol (ControlProtocol m c) =>
   KESAlgorithm (KES c) =>
-  HasInfo (DirectCodec m) (VerKeyKES (KES c)) =>
-  HasInfo (DirectCodec m) (AgentInfo c) =>
   Serializable (DirectCodec m) (AgentInfo c) =>
   DirectDeserialise (SignKeyKES (KES c)) =>
   DirectSerialise (SignKeyKES (KES c)) =>

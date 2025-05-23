@@ -35,7 +35,6 @@ import Cardano.KESAgent.Processes.ServiceClient
 import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Protocols.VersionedProtocol
-import Cardano.KESAgent.Serialization.DirectCodec
 import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting
 
@@ -92,7 +91,6 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Proxy
-import Data.SerDoc.Class
 import Data.Text qualified as Text
 import Data.Text.Encoding (decodeUtf8)
 import Data.Time.Clock.POSIX (
@@ -189,8 +187,6 @@ type TestNetworkCrypto c =
 type TestNetworkContext m c =
   ( MonadTestNetwork m
   , TestNetworkCrypto c
-  , HasInfo (DirectCodec m) (VerKeyKES (KES c))
-  , HasInfo (DirectCodec m) (SignKeyKES (KES c))
   )
 
 testCrypto ::
@@ -199,10 +195,6 @@ testCrypto ::
   UnsoundKESAlgorithm kes =>
   TestNetworkCrypto c =>
   Show (SignKeyWithPeriodKES (KES c)) =>
-  HasInfo (DirectCodec IO) (VerKeyKES kes) =>
-  HasInfo (DirectCodec IO) (SignKeyKES kes) =>
-  (forall s. HasInfo (DirectCodec (IOSim s)) (VerKeyKES kes)) =>
-  (forall s. HasInfo (DirectCodec (IOSim s)) (SignKeyKES kes)) =>
   Proxy c ->
   Lock IO ->
   (forall a. (Show a, Pretty a) => Tracer IO a) ->
