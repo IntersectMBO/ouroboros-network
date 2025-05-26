@@ -60,4 +60,5 @@ source-repository-package
   location: https://github.com/IntersectMBO/io-classes-extra
   tag: ebe6278d7a169c598e9dbe3ef755e2a658502d07
   --sha256: sha256-R0m332O0H20lLC3bmnrmDHldK3DCnDh2c+Gudp37VH0=
-  subdir: strict-checked-vars
+  subdir:
+    strict-checked-vars
