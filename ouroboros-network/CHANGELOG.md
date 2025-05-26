@@ -6,6 +6,14 @@
 
 ### Non-breaking changes
 
+## 0.21.1.0 -- 2025-05-26
+
+### Non-breaking changes
+
+* Lowered default established targets:
+  - ledger peers:     30 (deadline mode)
+  - big ledgerp pers: 40 (syncing mode)
+
 ## 0.21.0.0 -- 2025-05-13
 
 ### Breaking changes
