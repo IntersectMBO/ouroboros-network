@@ -46,7 +46,7 @@ defaultSyncTargets =
   defaultDeadlineTargets {
     targetNumberOfActivePeers               = 0,
     targetNumberOfKnownBigLedgerPeers       = 100,
-    targetNumberOfEstablishedBigLedgerPeers = 50,
+    targetNumberOfEstablishedBigLedgerPeers = 40,
     targetNumberOfActiveBigLedgerPeers      = 30 }
 
 -- | This parameter controls the minimum number of active connections
