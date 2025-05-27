@@ -100,7 +100,9 @@ let
 
         # don't run checks using Wine when cross compiling
         packages.network-mux.components.tests.test.preCheck =
-          if buildSystem == "x86_64-linux" then "export GHCRTS=-M500M" else "";
+          if buildSystem == "x86_64-linux" then "export GHCRTS=-M800M" else "";
+        packages.ouroboros-network.components.tests.sim-tests.preCheck =
+          if buildSystem == "x86_64-linux" then "export GHCRTS=-M1000M" else "";
       })
     ];
   });
