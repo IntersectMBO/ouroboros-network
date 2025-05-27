@@ -11,7 +11,6 @@ module Ouroboros.Cardano.Network.Diffusion.Configuration
   ) where
 
 import Cardano.Network.Types (NumberOfBigLedgerPeers (..))
-import Ouroboros.Network.Diffusion.Configuration (defaultDeadlineTargets)
 import Ouroboros.Network.PeerSelection.Governor.Types
            (PeerSelectionTargets (..))
 
@@ -27,9 +26,9 @@ defaultNumBootstrapPeers = DefaultNumBootstrapPeers 30
 -- | These targets are established when Genesis mode is enabled
 -- in node configuration and when the node is syncing up
 --
-defaultSyncTargets :: PeerSelectionTargets
-defaultSyncTargets =
-  defaultDeadlineTargets {
+defaultSyncTargets :: PeerSelectionTargets -> PeerSelectionTargets
+defaultSyncTargets deadlineTargets =
+  deadlineTargets {
     targetNumberOfActivePeers               = 0,
     targetNumberOfKnownBigLedgerPeers       = 100,
     targetNumberOfEstablishedBigLedgerPeers = 40,
