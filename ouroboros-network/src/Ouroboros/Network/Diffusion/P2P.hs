@@ -961,7 +961,7 @@ runM Interfaces
 
       localRootsVar <- newTVarIO mempty
 
-      peerSelectionTargetsVar <- newTVarIO daPeerSelectionTargets
+      peerSelectionTargetsVar <- newTVarIO nullPeerSelectionTargets
 
       countersVar <- newTVarIO (emptyPeerSelectionCounters daEmptyExtraCounters)
 
