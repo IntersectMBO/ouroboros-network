@@ -53,6 +53,8 @@ data NodeToClientVersion
     | NodeToClientV_20
     -- ^ added @QueryStakePoolDefaultVote@,
     -- added @MsgGetMeasures@ / @MsgReplyGetMeasures@ to @LocalTxMonitor@
+    | NodeToClientV_21
+    -- ^ New codecs for PParams and CompactGenesis
   deriving (Eq, Ord, Enum, Bounded, Show, Generic, NFData)
 
 -- | We set 16ths bit to distinguish `NodeToNodeVersion` and
@@ -71,6 +73,7 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
           NodeToClientV_18 -> enc 18
           NodeToClientV_19 -> enc 19
           NodeToClientV_20 -> enc 20
+          NodeToClientV_21 -> enc 21
         where
           enc :: Int -> CBOR.Term
           enc = CBOR.TInt . (`setBit` nodeToClientVersionBit)
@@ -82,6 +85,7 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
             18 -> Right NodeToClientV_18
             19 -> Right NodeToClientV_19
             20 -> Right NodeToClientV_20
+            21 -> Right NodeToClientV_21
             n  -> Left (unknownTag n)
         where
           dec :: CBOR.Term -> Either (Text, Maybe Int) Int
