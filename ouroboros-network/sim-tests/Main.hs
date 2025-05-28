@@ -12,6 +12,7 @@ import Test.Ouroboros.Network.LedgerPeers qualified (tests)
 import Test.Ouroboros.Network.MockNode qualified (tests)
 import Test.Ouroboros.Network.NodeToClient.Version qualified (tests)
 import Test.Ouroboros.Network.NodeToNode.Version qualified (tests)
+import Test.Ouroboros.Network.OrphanInstances.Tests qualified (tests)
 import Test.Ouroboros.Network.PeerSelection qualified (tests)
 import Test.Ouroboros.Network.PeerSelection.Cardano.LocalRootPeers qualified
 import Test.Ouroboros.Network.PeerSelection.Cardano.MockEnvironment qualified
@@ -41,6 +42,7 @@ tests =
   , Test.Ouroboros.Network.TxSubmission.tests
   , Test.Ouroboros.Network.NodeToClient.Version.tests
   , Test.Ouroboros.Network.NodeToNode.Version.tests
+  , Test.Ouroboros.Network.OrphanInstances.Tests.tests
   , Test.Ouroboros.Network.PeerSelection.Json.tests
   , Test.Ouroboros.Network.PeerSelection.KnownPeers.tests
   , Test.Ouroboros.Network.PeerSelection.LocalRootPeers.tests

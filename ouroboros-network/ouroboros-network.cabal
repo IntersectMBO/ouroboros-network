@@ -329,7 +329,7 @@ library testlib
     network,
     network-mux,
     nothunks,
-    ouroboros-network:{ouroboros-network, cardano-diffusion},
+    ouroboros-network:{ouroboros-network, cardano-diffusion, orphan-instances},
     ouroboros-network-api,
     ouroboros-network-framework,
     ouroboros-network-framework:testlib,
@@ -366,6 +366,7 @@ library testlib
     Test.Ouroboros.Network.Mux
     Test.Ouroboros.Network.NodeToClient.Version
     Test.Ouroboros.Network.NodeToNode.Version
+    Test.Ouroboros.Network.OrphanInstances.Tests
     Test.Ouroboros.Network.Orphans
     Test.Ouroboros.Network.PeerSelection
     Test.Ouroboros.Network.PeerSelection.Cardano.Instances
