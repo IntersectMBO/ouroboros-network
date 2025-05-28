@@ -69,7 +69,7 @@ defaultDeadlineTargets =
   PeerSelectionTargets {
     targetNumberOfRootPeers                 = 60,
     targetNumberOfKnownPeers                = 85,
-    targetNumberOfEstablishedPeers          = 40,
+    targetNumberOfEstablishedPeers          = 30,
     targetNumberOfActivePeers               = 15,
     targetNumberOfKnownBigLedgerPeers       = 15,
     targetNumberOfEstablishedBigLedgerPeers = 10,

@@ -13,6 +13,21 @@
 * Use ByteString.Builder for the ingress queues
 * Signal the kernal that we require at least the full SDU's worth of data
 
+## 0.8.0.0 -- 205-05-13
+
+### Breaking changes
+
+* `MakeBearer` accepts optional `ReadBuffer`
+* added fields `egressInterval`, `writeMany`, `batchSize` to `Bearer`
+* `socketAsBearer` additionally takes `ReadBuffer`, egress
+  interval `DiffTime` for egress polling, and batchSize
+* changed `IngressQueue` type synonym
+* Added `TraceRecvRaw` tag to `Trace`
+
+### Non-breaking changes
+
+* added `makeSocketBearer'`, `ReadBuffer`, `withReadBufferIO`
+
 ## 0.7.0.0 -- 2025-02-25
 
 ### Breaking changes
@@ -35,7 +50,7 @@
 ### Breaking changes
 
 * Removed `Network.Mux.Compat` module with legacy API.
-* `Ouroboros.Network.Mux.toApplication` was removed. 
+* `Ouroboros.Network.Mux.toApplication` was removed.
 * `Ouroboros.Network.Mux.mkMiniProtocolBundle` was renamed to
   `mkMiniProtocolInfos`, its type changed.
 * Removed `MiniProtocolBundle` newtype wrapper.

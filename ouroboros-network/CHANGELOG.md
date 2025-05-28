@@ -39,6 +39,27 @@
 - `runM` function now receives `ExtraParameters` as an argument
 - Configurable Mux Egress Poll Interval
 
+## 0.21.1.0 -- 2025-05-26
+
+### Non-breaking changes
+
+* Lowered default established targets:
+  - ledger peers:     30 (deadline mode)
+  - big ledgerp pers: 40 (syncing mode)
+
+## 0.21.0.0 -- 2025-05-13
+
+### Breaking changes
+
+* added `diWithBuffer` to `Interfaces` record which integrates
+  support for mux buffered socket bearers
+* added `daEgressPollInterval` to diffusion `Arguments` record
+  which specifies the cork duration of mux egress queue at the
+  application layer. This provides a configurable latency/efficieny
+  tradeoff.
+
+### Non-breaking changes
+
 ## 0.20.1.0 -- 2025-03-13
 
 * Fixed type signature of `sigUsr1Handler` on `Windows`.

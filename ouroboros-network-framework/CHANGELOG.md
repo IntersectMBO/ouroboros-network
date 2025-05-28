@@ -2,9 +2,19 @@
 
 ## next release
 
+### Breaking changes
+
 ### Non-breaking changes
 
+## 0.18.0.0 -- 2025-05-13
+
 ### Breaking changes
+
+* `ConnectionHandlerFn` takes an optional `ReadBuffer` for mux socket bearers
+* ConnectionManager's `Args` record exposes a `withBuffer` combinator
+  for working with buffered socket bearers introduced in the network-mux package
+
+### Non-breaking changes
 
 ## 0.17.0.0 -- 2025-02-25
 

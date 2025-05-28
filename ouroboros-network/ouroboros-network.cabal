@@ -1,6 +1,6 @@
 cabal-version: 3.4
 name: ouroboros-network
-version: 0.20.1.0
+version: 0.21.1.0
 synopsis: A networking layer for the Ouroboros blockchain protocol
 description: A networking layer for the Ouroboros blockchain protocol.
 license: Apache-2.0
@@ -162,8 +162,8 @@ library
     network ^>=3.2.7,
     network-mux,
     nothunks,
-    ouroboros-network-api ^>=0.13,
-    ouroboros-network-framework ^>=0.17,
+    ouroboros-network-api ^>=0.14,
+    ouroboros-network-framework ^>=0.18,
     ouroboros-network-protocols ^>=0.14,
     psqueues >=0.2.3 && <0.3,
     random,
@@ -228,8 +228,8 @@ library ouroboros-orphan-instances
     network,
     network-mux,
     ouroboros-network:{ouroboros-network, cardano-diffusion},
-    ouroboros-network-api ^>=0.13,
-    ouroboros-network-framework ^>=0.17,
+    ouroboros-network-api ^>=0.14,
+    ouroboros-network-framework ^>=0.18,
     text,
 
   if flag(asserts)
@@ -293,8 +293,8 @@ library cardano-diffusion
     monoidal-synchronisation,
     network ^>=3.2.7,
     ouroboros-network,
-    ouroboros-network-api ^>=0.13,
-    ouroboros-network-framework ^>=0.17,
+    ouroboros-network-api ^>=0.14,
+    ouroboros-network-framework ^>=0.18,
     random,
     si-timers,
     strict-stm,
