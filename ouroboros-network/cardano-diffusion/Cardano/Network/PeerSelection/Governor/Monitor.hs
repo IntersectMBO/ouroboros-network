@@ -112,6 +112,12 @@ targetPeers Cardano.ExtraPeerSelectionActions {
             } =
     Guarded Nothing $ do
       churnTargets <- readPeerSelectionTargets
+      -- TODO: the following check is only necessary to support legacy sync mode
+      -- and can be removed once Genesis is fully adopted.
+      -- this is to give a head start to local root peers and big ledger peers
+      -- in Praos mode - see Churn
+      check (churnTargets /= nullPeerSelectionTargets)
+
       -- Genesis consensus mode:
       -- we check if targets proposed by churn are stale
       -- in the sense that they are the targets for
