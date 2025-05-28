@@ -585,7 +585,7 @@ peerChurnGovernor PeerChurnArgs {
       -- todo: is this right?
       case (mode, consensusMode) of
         (PraosFetchMode FetchModeDeadline, _) -> longDelay rng execTime
-        (_, GenesisMode)                      -> longDelay rng execTime
+        (_, GenesisMode)                      -> shortDelay rng execTime
         _otherwise                            -> shortDelay rng execTime
 
     fuzzyDelay' :: DiffTime -> Double -> StdGen -> DiffTime -> m StdGen
