@@ -386,29 +386,30 @@ stakeMapWithSlotOverSource StakeMapOverSource {
                              bigPeerMap,
                              ula } =
   case (ledgerWithOrigin, ledgerPeers, peerSnapshot) of
-    (At ledgerSlotNo, LedgerPeers ledgerRelays, Just (LedgerPeerSnapshot (At snapshotSlotNo, accSnapshotRelays)))
-      | snapshotSlotNo >= ledgerSlotNo -> -- ^ we cache the peers from the snapshot
-                                          -- to avoid unnecessary work
-        case cachedSlot of
-          Just thatSlot | thatSlot == snapshotSlotNo ->
-                          (peerMap, bigPeerMap, cachedSlot)
-          _otherwise -> ( accPoolStake (map snd accSnapshotRelays)
-                        , Map.fromAscList accSnapshotRelays
-                        , Just snapshotSlotNo)
-      | otherwise -> (accPoolStake ledgerRelays, accBigPoolStakeMap ledgerRelays, Nothing)
+    -- check if we can use the snapshot first
+    (ledgerSlotNo, _, Just (LedgerPeerSnapshot (At snapshotSlotNo, accSnapshotRelays)))
+      | snapshotSlotNo >= ledgerSlotNo'
+      , snapshotSlotNo >= ula' ->
+          -- we cache the peers from the snapshot
+          -- to avoid unnecessary work
+          case cachedSlot of
+            Just thatSlot | thatSlot == snapshotSlotNo ->
+                              (peerMap, bigPeerMap, cachedSlot)
+            _otherwise    -> ( accPoolStake (map snd accSnapshotRelays)
+                             , Map.fromAscList accSnapshotRelays
+                             , Just snapshotSlotNo)
+      where
+        ledgerSlotNo' = case ledgerSlotNo of
+          Origin -> 0
+          At x   -> x
+        ula' = case ula of
+          Always     -> 0
+          After slot -> slot
 
-    (_, LedgerPeers ledgerRelays, Nothing) -> ( accPoolStake ledgerRelays
-                                              , accBigPoolStakeMap ledgerRelays
-                                              , Nothing)
-
-    (_, _, Just (LedgerPeerSnapshot (At snapshotSlotNo, accSnapshotRelays)))
-      | After slot <- ula, snapshotSlotNo >= slot -> do
-        case cachedSlot of
-          Just thatSlot | thatSlot == snapshotSlotNo ->
-                          (peerMap, bigPeerMap, cachedSlot)
-          _otherwise -> ( accPoolStake (map snd accSnapshotRelays)
-                        , Map.fromAscList accSnapshotRelays
-                        , Just snapshotSlotNo)
+    -- otherwise are the peers from ledger available?
+    (_, LedgerPeers ledgerRelays, _) -> ( accPoolStake ledgerRelays
+                                        , accBigPoolStakeMap ledgerRelays
+                                        , Nothing)
 
     _otherwise -> (Map.empty, Map.empty, Nothing)
 
