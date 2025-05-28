@@ -11,7 +11,6 @@ module Ouroboros.Cardano.Network.Diffusion.Configuration
   ) where
 
 import Cardano.Network.Types (NumberOfBigLedgerPeers (..))
-import Ouroboros.Network.Diffusion.Configuration (defaultDeadlineTargets)
 import Ouroboros.Network.PeerSelection.Governor.Types
            (PeerSelectionTargets (..))
 
@@ -29,8 +28,11 @@ defaultNumBootstrapPeers = DefaultNumBootstrapPeers 30
 --
 defaultSyncTargets :: PeerSelectionTargets
 defaultSyncTargets =
-  defaultDeadlineTargets {
-    targetNumberOfActivePeers               = 0,
+  PeerSelectionTargets {
+    targetNumberOfRootPeers                 = 0,
+    targetNumberOfKnownPeers                = 150,
+    targetNumberOfEstablishedPeers          = 10,
+    targetNumberOfActivePeers               = 5,
     targetNumberOfKnownBigLedgerPeers       = 100,
     targetNumberOfEstablishedBigLedgerPeers = 40,
     targetNumberOfActiveBigLedgerPeers      = 30 }
