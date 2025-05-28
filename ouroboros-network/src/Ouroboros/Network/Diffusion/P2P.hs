@@ -961,7 +961,8 @@ runM Interfaces
 
       localRootsVar <- newTVarIO mempty
 
-      peerSelectionTargetsVar <- newTVarIO daPeerSelectionTargets
+      -- churn will set initial targets
+      peerSelectionTargetsVar <- newTVarIO nullPeerSelectionTargets
 
       countersVar <- newTVarIO (emptyPeerSelectionCounters daEmptyExtraCounters)
 
