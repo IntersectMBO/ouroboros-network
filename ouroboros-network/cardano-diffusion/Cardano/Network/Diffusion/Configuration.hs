@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 
 -- | One stop shop for configuring diffusion layer for upstream clients
 -- This module contains Cardano specific configuration parameters
@@ -8,12 +9,14 @@ module Cardano.Network.Diffusion.Configuration
   , defaultNumBootstrapPeers
   , defaultSyncTargets
   , defaultNumberOfBigLedgerPeers
+  , srvPrefix
   ) where
 
 import Cardano.Network.Types (NumberOfBigLedgerPeers (..))
 
 import Ouroboros.Network.PeerSelection.Governor.Types
            (PeerSelectionTargets (..))
+import Ouroboros.Network.PeerSelection.RelayAccessPoint (SRVPrefix)
 
 -- | Default number of bootstrap peers
 --
@@ -51,3 +54,6 @@ defaultSyncTargets =
 --
 defaultNumberOfBigLedgerPeers :: NumberOfBigLedgerPeers
 defaultNumberOfBigLedgerPeers = NumberOfBigLedgerPeers 5
+
+srvPrefix :: SRVPrefix
+srvPrefix = "_cardano._tcp"

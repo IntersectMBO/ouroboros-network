@@ -1,6 +1,7 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE KindSignatures   #-}
-{-# LANGUAGE NamedFieldPuns   #-}
+{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE KindSignatures    #-}
+{-# LANGUAGE NamedFieldPuns    #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module DMQ.Diffusion.Arguments (diffusionArguments) where
 
@@ -24,6 +25,7 @@ import Ouroboros.Network.PeerSelection.Governor.Types
            (ExtraGuardedDecisions (..), PeerSelectionGovernorArgs (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeersConsensusInterface (..))
+import Ouroboros.Network.PeerSelection.RelayAccessPoint (SRVPrefix)
 import Ouroboros.Network.PeerSelection.Types (nullPublicExtraPeersAPI)
 
 diffusionArguments
@@ -88,4 +90,11 @@ diffusionArguments handshakeNtNTracer
   , Diffusion.daRequestPublicRootPeers            = Nothing
   , Diffusion.daPeerChurnGovernor                 = peerChurnGovernor
   , Diffusion.daExtraChurnArgs                    = ()
+  , Diffusion.daSRVPrefix                         = dmqSRVPrefix
   }
+
+
+-- | SRVPrefix as registerd in `CIP#0155`.
+--
+dmqSRVPrefix :: SRVPrefix
+dmqSRVPrefix = "_dmq._mithril._cardano._tcp"

@@ -24,6 +24,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 
 import Cardano.Network.ConsensusMode
+import Cardano.Network.Diffusion.Configuration qualified as Cardano (srvPrefix)
 import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
 import Cardano.Network.PeerSelection.Bootstrap (isBootstrapPeersEnabled,
            isNodeAbleToMakeProgress, requiresBootstrapPeers)
@@ -520,7 +521,7 @@ monitorLedgerStateJudgement PeerSelectionActions{
           decisionTrace = [TraceLedgerStateJudgementChanged lsj],
           decisionJobs = case (lsj, ledgerPeerSnapshot) of
                            (TooOld, Just ledgerPeerSnapshot') ->
-                             [jobVerifyPeerSnapshot ledgerPeerSnapshot' ledgerCtx]
+                             [jobVerifyPeerSnapshot Cardano.srvPrefix ledgerPeerSnapshot' ledgerCtx]
                            _otherwise -> [],
           decisionState = st {
             extraState = cpst {

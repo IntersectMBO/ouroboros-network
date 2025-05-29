@@ -6,6 +6,9 @@
 
 module Ouroboros.Network.PeerSelection.RelayAccessPoint
   ( RelayAccessPoint (..)
+  , LedgerRelayAccessPoint (..)
+  , SRVPrefix
+  , prefixLedgerRelayAccessPoint
   , IP.IP (..)
     -- * Socket type re-exports
   , Socket.PortNumber
@@ -32,6 +35,7 @@ import Network.Socket qualified as Socket
 --
 data RelayAccessPoint = RelayAccessDomain    !DNS.Domain !Socket.PortNumber
                       | RelayAccessSRVDomain !DNS.Domain
+                        -- ^ SRV domain, prefixed (as defined in CIP#0155)
                       | RelayAccessAddress   !IP.IP      !Socket.PortNumber
   deriving (Eq, Ord)
 
@@ -137,3 +141,135 @@ instance FromCBOR RelayAccessPoint where
       _ -> fail $ "Unrecognized RelayAccessPoint tag: " <> show constructorTag
     where
       decodePort = fromIntegral @Int <$> fromCBOR
+
+
+-- | A Relay as registered on the ledger.
+--
+-- The only difference with  `RelayAccessPoint` is that
+-- `LedgerRelayAccessSRVDomain` is not prefixed, as required by CIP#0155.
+--
+data LedgerRelayAccessPoint =
+    LedgerRelayAccessDomain    !DNS.Domain !Socket.PortNumber
+  | LedgerRelayAccessSRVDomain !DNS.Domain
+    -- ^ SRV domain as registered on the ledger
+  | LedgerRelayAccessAddress   !IP.IP      !Socket.PortNumber
+  deriving (Eq, Ord)
+
+instance Show LedgerRelayAccessPoint where
+    show (LedgerRelayAccessDomain domain port) =
+      "LedgerRelayAccessDomain " ++ show domain ++ " " ++ show port
+    show (LedgerRelayAccessSRVDomain domain) =
+      "LedgerRelayAccessSRVDomain " ++ show domain
+    show (LedgerRelayAccessAddress ip port) =
+      "RelayAccessAddress \"" ++ show ip ++ "\" " ++ show port
+
+-- 'IP' nor 'IPv6' is strict, 'IPv4' is strict only because it's a newtype for
+-- a primitive type ('Word32').
+--
+instance NFData LedgerRelayAccessPoint where
+  rnf (LedgerRelayAccessDomain !_domain !_port) = ()
+  rnf (LedgerRelayAccessSRVDomain !_domain) = ()
+  rnf (LedgerRelayAccessAddress ip !_port) =
+    case ip of
+      IP.IPv4 ipv4 -> rnf (IP.fromIPv4w ipv4)
+      IP.IPv6 ipv6 -> rnf (IP.fromIPv6w ipv6)
+
+instance FromJSON LedgerRelayAccessPoint where
+  parseJSON = withObject "RelayAccessPoint" $ \o -> do
+    addr <- encodeUtf8 <$> o .: "address"
+    let res = flip parseMaybe o $ const do
+          port <- o .: "port"
+          return (toRelayAccessPoint addr port)
+    case res of
+      Nothing  -> return $ LedgerRelayAccessSRVDomain (fullyQualified addr)
+      Just rap -> return rap
+
+    where
+      toRelayAccessPoint :: DNS.Domain -> Int -> LedgerRelayAccessPoint
+      toRelayAccessPoint address port =
+          case readMaybe (unpack address) of
+            Nothing   -> LedgerRelayAccessDomain (fullyQualified address) (fromIntegral port)
+            Just addr -> LedgerRelayAccessAddress addr (fromIntegral port)
+      fullyQualified = \case
+        domain | Just (_, '.') <- unsnoc domain -> domain
+               | otherwise -> domain `snoc` '.'
+
+instance ToJSON LedgerRelayAccessPoint where
+  toJSON (LedgerRelayAccessDomain addr port) =
+    object
+      [ "address" .= decodeUtf8 addr
+      , "port" .= (fromIntegral port :: Int)
+      ]
+  toJSON (LedgerRelayAccessSRVDomain domain) =
+    object
+      [ "address" .= decodeUtf8 domain
+      ]
+  toJSON (LedgerRelayAccessAddress ip port) =
+    object
+      [ "address" .= Text.pack (show ip)
+      , "port" .= (fromIntegral port :: Int)
+      ]
+
+instance ToCBOR LedgerRelayAccessPoint where
+  toCBOR rap = case rap of
+    LedgerRelayAccessDomain domain port ->
+         Codec.encodeListLen 3
+      <> Codec.encodeWord8 0
+      <> toCBOR domain
+      <> serialise' port
+    LedgerRelayAccessAddress (IP.IPv4 ipv4) port ->
+         Codec.encodeListLen 3
+      <> Codec.encodeWord8 1
+      <> toCBOR (IP.fromIPv4 ipv4)
+      <> serialise' port
+    LedgerRelayAccessAddress (IP.IPv6 ip6) port ->
+         Codec.encodeListLen 3
+      <> Codec.encodeWord8 2
+      <> toCBOR (IP.fromIPv6 ip6)
+      <> serialise' port
+    LedgerRelayAccessSRVDomain domain ->
+         Codec.encodeListLen 2
+      <> Codec.encodeWord8 3
+      <> toCBOR domain
+    where
+      serialise' = toCBOR . toInteger
+
+instance FromCBOR LedgerRelayAccessPoint where
+  fromCBOR = do
+    listLen <- Codec.decodeListLen
+    constructorTag <- Codec.decodeWord8
+    unless (   listLen == 3
+            || (listLen == 2 && constructorTag == 3))
+      $ fail $ "Unrecognized LedgerRelayAccessPoint list length "
+               <> show listLen <> "for constructor tag "
+               <> show constructorTag
+    case constructorTag of
+      0 -> do
+        LedgerRelayAccessDomain <$> fromCBOR <*> decodePort
+      1 -> do
+        let ip4 = IP.IPv4 . IP.toIPv4 <$> fromCBOR
+        LedgerRelayAccessAddress <$> ip4 <*> decodePort
+      2 -> do
+        let ip6 = IP.IPv6 . IP.toIPv6 <$> fromCBOR
+        LedgerRelayAccessAddress <$> ip6 <*> decodePort
+      3 -> do
+        LedgerRelayAccessSRVDomain <$> fromCBOR
+      _ -> fail $ "Unrecognized LedgerRelayAccessPoint tag: " <> show constructorTag
+    where
+      decodePort = fromIntegral @Int <$> fromCBOR
+
+
+-- | Type of a DNS SRV prefix as defined by CIP#0155
+--
+type SRVPrefix = DNS.Domain
+
+prefixLedgerRelayAccessPoint
+  :: SRVPrefix
+  -> LedgerRelayAccessPoint
+  -> RelayAccessPoint
+prefixLedgerRelayAccessPoint _prefix (LedgerRelayAccessDomain domain port)
+  = RelayAccessDomain domain port
+prefixLedgerRelayAccessPoint  prefix (LedgerRelayAccessSRVDomain domain)
+  = RelayAccessSRVDomain (prefix <> "." <> domain)
+prefixLedgerRelayAccessPoint _prefix (LedgerRelayAccessAddress ip port)
+  = RelayAccessAddress ip port
