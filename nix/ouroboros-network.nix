@@ -15,18 +15,23 @@ let
   #
   # NOTE: cross compilation with `ghc-9.6.2` doesn't currently work
   # https://ci.iog.io/build/623082/nixlog/2
-  crossGHCVersion = "ghc8107";
+  crossGHCVersion = "ghc966";
 
   # alternative compilers
-  otherCompilers = [ "ghc810" ];
+  otherCompilers = [ "ghc966" ];
 
   # from https://github.com/input-output-hk/haskell.nix/issues/298#issuecomment-767936405
-  forAllProjectPackages = cfg: args@{ lib, ... }: {
-    options.packages = lib.mkOption {
-      type = lib.types.attrsOf (lib.types.submodule ({ config, ... }: {
-        config = lib.mkIf config.package.isProject (cfg args);
-      }));
-    };
+  forAllProjectPackages = cfg: args@{ config, lib, ... }: {
+    options.packages =
+      lib.genAttrs config.package-keys (_:
+        lib.mkOption {
+          type = lib.types.submodule ({ config, ... }:
+            {
+              config = lib.mkIf config.package.isProject (cfg args);
+            }
+          );
+        }
+      );
   };
 
   # We use cabalProject' to ensure we don't build the plan for
@@ -48,7 +53,7 @@ let
 
     # we also want cross compilation to windows on linux (and only with default compiler).
     crossPlatforms =
-      p: lib.optionals (pkgs.stdenv.hostPlatform.isLinux && config.compiler-nix-name == crossGHCVersion) [ p.mingwW64 ];
+      p: lib.optionals (pkgs.stdenv.hostPlatform.isLinux && config.compiler-nix-name == crossGHCVersion) [ p.ucrt64 ];
 
     #
     # VARIANTS
@@ -100,9 +105,12 @@ let
 
         # don't run checks using Wine when cross compiling
         packages.network-mux.components.tests.test.preCheck =
-          if buildSystem == "x86_64-linux" then "export GHCRTS=-M500M" else "";
+          if buildSystem == "x86_64-linux" then "export GHCRTS=-M800M" else "";
         packages.ouroboros-network.components.tests.sim-tests.preCheck =
-          if buildSystem == "x86_64-linux" then "export GHCRTS=-M600M" else "";
+          if buildSystem == "x86_64-linux" then "export GHCRTS=-M2400M" else "";
+      })
+      ({ pkgs, ... }: lib.mkIf pkgs.stdenv.hostPlatform.isWindows {
+        packages.basement.configureFlags = [ "--hsc2hs-options=--cflag=-Wno-int-conversion" ];
       })
     ];
   });

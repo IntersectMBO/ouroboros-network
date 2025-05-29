@@ -15,7 +15,7 @@ repository cardano-haskell-packages
 -- repeat the index-state for hackage to work around haskell.nix parsing limitation
 index-state:
   -- Bump this if you need newer packages from Hackage
-  , hackage.haskell.org 2025-02-25T02:50:27Z
+  , hackage.haskell.org 2025-05-05T15:09:20Z
 
   -- Bump this if you need newer packages from CHaP
   , cardano-haskell-packages 2025-02-15T18:39:38Z
@@ -54,14 +54,3 @@ package network-mux
 
 package ouroboros-network
   flags: +asserts +cddl
-
-allow-newer:
-  -- https://github.com/well-typed/cborg/pull/339
-  , cborg:base
-  , cborg:ghc-prim
-  , serialise:base
-  , serialise:ghc-prim
-
-  -- https://github.com/haskellari/tree-diff/issues/97
-  , tree-diff:base
-
