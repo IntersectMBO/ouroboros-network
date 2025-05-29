@@ -24,6 +24,7 @@ import Data.Hashable
 import Data.IP qualified as IP
 import Data.Word (Word16, Word32, Word64)
 
+import Cardano.Network.Diffusion.Configuration qualified as Cardano (srvPrefix)
 import Cardano.Slotting.Slot (SlotNo (..))
 
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
@@ -145,10 +146,13 @@ instance Arbitrary PortNumber where
          . fromIntegral @PortNumber @Word16
 
 instance Arbitrary RelayAccessPoint where
+    arbitrary = prefixLedgerRelayAccessPoint Cardano.srvPrefix <$> arbitrary
+
+instance Arbitrary LedgerRelayAccessPoint where
   arbitrary =
-      frequency [ (4, RelayAccessAddress <$> oneof [genIPv4, genIPv6] <*> arbitrary)
-                , (4, RelayAccessDomain <$> genDomainName <*> arbitrary)
-                , (1, RelayAccessSRVDomain <$> genDomainName)]
+      frequency [ (4, LedgerRelayAccessAddress <$> oneof [genIPv4, genIPv6] <*> arbitrary)
+                , (4, LedgerRelayAccessDomain <$> genDomainName <*> arbitrary)
+                , (1, LedgerRelayAccessSRVDomain <$> genDomainName)]
     where
       genDomainName = elements $ (\i -> "test" <> (BSC.pack . show $ i)) <$> [1..6 :: Int]
 
