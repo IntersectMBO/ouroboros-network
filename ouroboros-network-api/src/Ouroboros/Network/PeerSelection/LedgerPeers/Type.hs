@@ -4,7 +4,7 @@
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -21,13 +21,20 @@ module Ouroboros.Network.PeerSelection.LedgerPeers.Type
   , IsLedgerPeer (..)
   , IsBigLedgerPeer (..)
   , LedgerPeersConsensusInterface (..)
+  , getRelayAccessPointsFromLedger
   , mapExtraAPI
   , UseLedgerPeers (..)
   , AfterSlot (..)
   , LedgerPeersKind (..)
   , LedgerPeerSnapshot (.., LedgerPeerSnapshot)
+  , getRelayAccessPointsFromLedgerPeerSnapshot
   , isLedgerPeersEnabled
   , compareLedgerPeerSnapshotApproximate
+    -- * Re-exports
+  , SRVPrefix
+  , RelayAccessPoint (..)
+  , LedgerRelayAccessPoint (..)
+  , prefixLedgerRelayAccessPoint
   ) where
 
 import GHC.Generics (Generic)
@@ -39,6 +46,7 @@ import Control.Concurrent.Class.MonadSTM
 import Control.DeepSeq (NFData (..))
 import Control.Monad (forM)
 import Data.Aeson
+import Data.Bifunctor (first)
 import Data.List.NonEmpty (NonEmpty)
 import NoThunks.Class
 
@@ -49,15 +57,24 @@ import Ouroboros.Network.PeerSelection.RelayAccessPoint
 -- to connect to when syncing.
 --
 data LedgerPeerSnapshot =
-  LedgerPeerSnapshotV2 (WithOrigin SlotNo, [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))])
+  LedgerPeerSnapshotV2 (WithOrigin SlotNo, [(AccPoolStake, (PoolStake, NonEmpty LedgerRelayAccessPoint))])
   -- ^ Internal use for version 2, use pattern synonym for public API
   deriving (Eq, Show)
+
+
+getRelayAccessPointsFromLedgerPeerSnapshot
+  :: SRVPrefix
+  -> LedgerPeerSnapshot
+  -> (WithOrigin SlotNo, [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))])
+getRelayAccessPointsFromLedgerPeerSnapshot srvPrefix (LedgerPeerSnapshotV2 as) =
+    fmap (fmap (fmap (fmap (fmap (prefixLedgerRelayAccessPoint srvPrefix))))) as
+
 
 -- |Public API to access snapshot data. Currently access to only most recent version is available.
 -- Nonetheless, serialisation from the node into JSON is supported for older versions via internal
 -- api so that newer CLI can still support older node formats.
 --
-pattern LedgerPeerSnapshot :: (WithOrigin SlotNo, [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))])
+pattern LedgerPeerSnapshot :: (WithOrigin SlotNo, [(AccPoolStake, (PoolStake, NonEmpty LedgerRelayAccessPoint))])
                            -> LedgerPeerSnapshot
 pattern LedgerPeerSnapshot payload <- LedgerPeerSnapshotV2 payload where
   LedgerPeerSnapshot payload = LedgerPeerSnapshotV2 payload
@@ -74,21 +91,27 @@ pattern LedgerPeerSnapshot payload <- LedgerPeerSnapshotV2 payload where
 --   The two approximate values should be equal if they were created
 --   from the same 'faithful' data.
 --
-compareLedgerPeerSnapshotApproximate :: LedgerPeerSnapshot
-                                     -> LedgerPeerSnapshot
+compareLedgerPeerSnapshotApproximate :: [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))]
+                                     -> [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))]
                                      -> Bool
 compareLedgerPeerSnapshotApproximate baseline candidate =
   case tripIt of
     Success candidate' -> candidate' == baseline
     Error _            -> False
   where
-    tripIt = fromJSON . toJSON $ candidate
+    tripIt = fmap (fmap (fmap (first unPoolStakeCoded)))
+           . fmap (fmap (first unAccPoolStakeCoded))
+           . fromJSON
+           . toJSON
+           . fmap (fmap (first PoolStakeCoded))
+           . fmap (first AccPoolStakeCoded)
+           $ candidate
 
 -- | In case the format changes in the future, this function provides a migration functionality
 -- when possible.
 --
 migrateLedgerPeerSnapshot :: LedgerPeerSnapshot
-                          -> Maybe (WithOrigin SlotNo, [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))])
+                          -> Maybe (WithOrigin SlotNo, [(AccPoolStake, (PoolStake, NonEmpty LedgerRelayAccessPoint))])
 migrateLedgerPeerSnapshot (LedgerPeerSnapshotV2 lps) = Just lps
 
 instance ToJSON LedgerPeerSnapshot where
@@ -118,7 +141,7 @@ instance FromJSON LedgerPeerSnapshot where
                                  return (accStake, (reStake, relays))
                          withObject ("bigLedgerPools[" <> show idx <> "]") f (Object poolO)
 
-          return $ LedgerPeerSnapshotV2 (slot, bigPools')
+          return $ LedgerPeerSnapshot (slot, bigPools')
         _ -> fail $ "Network.LedgerPeers.Type: parseJSON: failed to parse unsupported version " <> show vNum
     case migrateLedgerPeerSnapshot parsedSnapshot of
       Just payload -> return $ LedgerPeerSnapshot payload
@@ -198,7 +221,7 @@ newtype PoolStake = PoolStake { unPoolStake :: Rational }
   deriving (Eq, Ord, Show)
   deriving newtype (Fractional, Num, NFData)
 
-newtype PoolStakeCoded = PoolStakeCoded PoolStake
+newtype PoolStakeCoded = PoolStakeCoded { unPoolStakeCoded :: PoolStake }
   deriving (ToCBOR, FromCBOR, FromJSON, ToJSON) via Rational
 
 -- | The accumulated relative stake of a stake pool, like PoolStake but it also includes the
@@ -208,7 +231,7 @@ newtype AccPoolStake = AccPoolStake { unAccPoolStake :: Rational }
     deriving (Eq, Ord, Show)
     deriving newtype (Fractional, Num)
 
-newtype AccPoolStakeCoded = AccPoolStakeCoded AccPoolStake
+newtype AccPoolStakeCoded = AccPoolStakeCoded { unAccPoolStakeCoded :: AccPoolStake }
   deriving (ToCBOR, FromCBOR, FromJSON, ToJSON) via Rational
 
 -- | Identifies a peer as coming from ledger or not.
@@ -235,10 +258,22 @@ data IsBigLedgerPeer
 --
 data LedgerPeersConsensusInterface extraAPI m = LedgerPeersConsensusInterface {
     lpGetLatestSlot  :: STM m (WithOrigin SlotNo)
-  , lpGetLedgerPeers :: STM m [(PoolStake, NonEmpty RelayAccessPoint)]
+  , lpGetLedgerPeers :: STM m [(PoolStake, NonEmpty LedgerRelayAccessPoint)]
     -- | Extension point so that third party users can add more actions
   , lpExtraAPI       :: extraAPI
   }
+
+getRelayAccessPointsFromLedger
+  :: MonadSTM m
+  => SRVPrefix
+  -> LedgerPeersConsensusInterface extraAPI m
+  -> STM m [(PoolStake, NonEmpty RelayAccessPoint)]
+getRelayAccessPointsFromLedger
+  srvPrefix
+  LedgerPeersConsensusInterface {lpGetLedgerPeers}
+  =
+  fmap (fmap (fmap (fmap (prefixLedgerRelayAccessPoint srvPrefix)))) lpGetLedgerPeers
+
 
 mapExtraAPI :: (a -> b) -> LedgerPeersConsensusInterface a m -> LedgerPeersConsensusInterface b m
 mapExtraAPI f lpci@LedgerPeersConsensusInterface{ lpExtraAPI = api } =

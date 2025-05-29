@@ -11,6 +11,7 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
   ( -- * DNS based actions for local and public root providers
     DNSActions (..)
   , PeerActionsDNS (..)
+  , SRVPrefix
     -- * DNSActions IO
   , ioDNSActions
   , DNSLookupType (..)
@@ -66,6 +67,7 @@ import System.Random
 
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeersKind)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
+
 
 -- | Bundled with DNS lookup trace for observability
 --
@@ -227,8 +229,8 @@ data DNSActions peerAddr resolver exception m = DNSActions {
 -- TODO: rename as `PeerDNSActions`; can we bundle `paToPeerAddr` with
 -- `DNSActions`?
 data PeerActionsDNS peeraddr resolver exception m = PeerActionsDNS {
-  paToPeerAddr :: IP -> PortNumber -> peeraddr,
-  paDnsActions :: DNSActions peeraddr resolver exception m
+    paToPeerAddr :: IP -> PortNumber -> peeraddr,
+    paDnsActions :: DNSActions peeraddr resolver exception m
   }
 
 
@@ -261,7 +263,7 @@ ioDNSActions tracer lookupType toPeerAddr =
       dnsResolverResource      = resolverResource,
       dnsAsyncResolverResource = asyncResolverResource,
       dnsLookupWithTTL         = dispatchLookupWithTTL lookupType mkResolveDNSIOAction tracer toPeerAddr
-      }
+    }
   where
     mkResolveDNSIOAction resolver resolvConf domain ofType =
       timeout (microsecondsAsIntToDiffTime
