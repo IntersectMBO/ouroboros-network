@@ -49,6 +49,7 @@ import Control.Monad.Fix
 import Control.Monad.IOSim (IOSim, traceM)
 import Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 
+import Data.Bifunctor (first)
 import Data.Bool (bool)
 import Data.ByteString.Char8 qualified as BSC
 import Data.ByteString.Lazy qualified as BL
@@ -95,6 +96,7 @@ import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
 import Cardano.Network.PeerSelection.Governor.Types qualified as ExtraSizes
 import Cardano.Network.PeerSelection.PeerSelectionActions
            (requestPublicRootPeers)
+import Ouroboros.Network.PeerSelection.RelayAccessPoint
 
 import Ouroboros.Network.Block (BlockNo)
 import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..),
@@ -136,7 +138,8 @@ import Simulation.Network.Snocket (BearerInfo (..), FD, SnocketTrace,
 
 import Test.Ouroboros.Network.Data.Script
 import Test.Ouroboros.Network.Diffusion.Node as Node
-import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..), genLedgerPoolsFrom)
+import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..), cardanoSRVPrefix,
+           genLedgerPoolsFrom)
 import Test.Ouroboros.Network.PeerSelection.Cardano.Instances ()
 import Test.Ouroboros.Network.PeerSelection.Instances qualified as PeerSelection
 import Test.Ouroboros.Network.PeerSelection.LocalRootPeers ()
@@ -426,16 +429,18 @@ genNodeArgs relays minConnected localRootPeers self = flip suchThat hasUpstream 
 
   peerSharing <- arbitrary
 
-  let (ledgerPeersRelays, publicRootsRelays) =
+  let ledgerPeersRelays, publicRootsRelays :: [TestnetRelayInfo]
+      (ledgerPeersRelays, publicRootsRelays) =
         splitAt (length relays `div` 2) relays
+      publicRoots :: Map RelayAccessPoint PeerAdvertise
       publicRoots =
-        Map.fromList [ (other, advertise)
+        Map.fromList [ (prefixLedgerRelayAccessPoint cardanoSRVPrefix relayAccessPoint, advertise)
                      | pubRelay <- publicRootsRelays
                      , pubRelay /= self
-                     , let (other, _, _, advertise) = pubRelay
+                     , let (relayAccessPoint, _, _, advertise) = pubRelay
                      ]
 
-  ledgerPeers :: [[NonEmpty RelayAccessPoint]]
+  ledgerPeers :: [[NonEmpty LedgerRelayAccessPoint]]
      <- listOf1 (listOf1 (sublistOf1 (NonEmpty.fromList $ makeRelayAccessPoint <$> ledgerPeersRelays)))
   ledgerPeersScript_ <- traverse genLedgerPoolsFrom ledgerPeers
   let ledgerPeersScript = Script (NonEmpty.fromList ledgerPeersScript_)
@@ -516,7 +521,6 @@ genDomainMapScript relays = do
   fixupDomainMapScript mockMap <$>
     arbitraryScriptOf 10 ((,) <$> alterDomainMap mockMap <*> arbitrary)
   where
-    them = unTestnetRelays relays
     dnsType = case relays of
       TestnetRelays4 {} -> DNS.A
       TestnetRelays6 {} -> DNS.AAAA
@@ -550,9 +554,21 @@ genDomainMapScript relays = do
 
     tosses count = vectorOf count (frequency [(4, pure True), (1, pure False)])
 
+    dnsMapGen :: Gen MockDNSMap
     dnsMapGen = do
-      let (srvs, nonsrvs) = partition isSRV them
-          srvs' = [(k, d, ip, port)
+      let srvs, nonsrvs :: [(RelayAccessPoint, IP, PortNumber, PeerAdvertise)]
+          (srvs, nonsrvs) = partition isSRV
+                            -- we need to add the `_cardano._tcp` prefix
+                          . fmap (\(lrap, ip, port, adv) ->
+                                   ( prefixLedgerRelayAccessPoint cardanoSRVPrefix lrap
+                                   , ip
+                                   , port
+                                   , adv
+                                   ))
+                          . unTestnetRelays
+                          $ relays
+          srvs' =
+                  [(k, d, ip, port)
                   | (relay, k) <- zip srvs [0..]
                   , let (RelayAccessSRVDomain d, ip, port, _) = relay]
       srvMap <- foldlM stepSRV Map.empty srvs'
@@ -665,12 +681,16 @@ genNonHotDiffusionScript = genDiffusionScript genLocalRootPeers
           sizePerGroup = (size `div` nrGroups) + 1
 
       localRootConfigs <- vectorOf size arbitrary
-      let relaysAdv = zipWith (\(rap, _ip, _port, _advertise) lrc ->
-                                 (rap, lrc))
+      let relaysAdv = zipWith (\(lrap, _ip, _port, _advertise) lrc ->
+                                (lrap, lrc))
                               others
                               localRootConfigs
+          relayGroups :: [[(LedgerRelayAccessPoint, LocalRootConfig PeerTrustable)]]
           relayGroups = divvy sizePerGroup relaysAdv
-          relayGroupsMap = Map.fromList <$> relayGroups
+          relayGroupsMap =  Map.fromList
+                            -- add cardano prefix
+                         .  map (first (prefixLedgerRelayAccessPoint cardanoSRVPrefix))
+                        <$> relayGroups
 
       target <- forM relayGroups
                     (\x -> if null x
@@ -702,7 +722,7 @@ genNonHotDiffusionScript = genDiffusionScript genLocalRootPeers
 -- | there's some duplication of information, but saves some silly pattern
 -- matches where we don't care about the particular value of RelayAccessPoint
 --
-type TestnetRelayInfo = (RelayAccessPoint, IP, PortNumber, PeerAdvertise)
+type TestnetRelayInfo = (LedgerRelayAccessPoint, IP, PortNumber, PeerAdvertise)
 data TestnetRelayInfos = TestnetRelays4 { unTestnetRelays :: [TestnetRelayInfo] }
                        | TestnetRelays6 { unTestnetRelays :: [TestnetRelayInfo] }
 
@@ -720,9 +740,9 @@ instance Arbitrary TestnetRelayInfos where
         (vectorOf i arbitrary >>= traverse (uncurry $ extractOrGen genIP)) `suchThat` uniqueIps
 
       extractOrGen genIP peerAdvertise = \case
-        raa@(RelayAccessAddress ip port) -> pure (raa, ip, port, peerAdvertise)
-        rad@(RelayAccessDomain _d port) -> (rad,, port, peerAdvertise) <$> genIP
-        ras@(RelayAccessSRVDomain _d) -> (ras,,, peerAdvertise) <$> genIP <*> arbitrary
+        raa@(LedgerRelayAccessAddress ip port) -> pure (raa, ip, port, peerAdvertise)
+        rad@(LedgerRelayAccessDomain _d port) -> (rad,, port, peerAdvertise) <$> genIP
+        ras@(LedgerRelayAccessSRVDomain _d) -> (ras,,, peerAdvertise) <$> genIP <*> arbitrary
 
   shrink = \case
     TestnetRelays4 infos -> TestnetRelays4 <$> go infos
@@ -755,11 +775,13 @@ genHotDiffusionScript = genDiffusionScript genLocalRootPeers
                                 )]
       genLocalRootPeers others _self = flip suchThat hasUpstream $ do
         localRootConfigs <- vectorOf (length others) arbitrary
-        let relaysAdv = zipWith (\(rap, _ip, _port, _advertise) lrc ->
-                                    (rap, lrc))
+        let relaysAdv = zipWith (\(lrap, _ip, _port, _advertise) lrc ->
+                                  (lrap, lrc))
                               others
                               localRootConfigs
-            relayGroupsMap = Map.fromList relaysAdv
+            relayGroupsMap = Map.fromList
+                           . map (first (prefixLedgerRelayAccessPoint cardanoSRVPrefix))
+                           $ relaysAdv
             warmTarget     = length relaysAdv
 
         hotTarget <- choose (0 , warmTarget)
