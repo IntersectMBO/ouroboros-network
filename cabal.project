@@ -72,13 +72,3 @@ source-repository-package
     ouroboros-network-api
     ouroboros-network-testing
     network-mux
-
-allow-newer:
-  base,
-  *:aeson,
-  monoidal-containers:aeson,
-  size-based:template-haskell,
-  network-mux:vector,
-  cardano-crypto-class:io-sim,
-  cardano-crypto-class:io-classes,
-  strict-stm
