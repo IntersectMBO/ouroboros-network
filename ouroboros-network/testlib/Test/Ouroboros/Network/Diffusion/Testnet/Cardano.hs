@@ -65,6 +65,7 @@ import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Types
+import Ouroboros.Network.Diffusion.Policies qualified as Diffusion
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.Mock.ConcreteBlock (BlockHeader)
@@ -952,8 +953,14 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
               -- frequently and disconnection timeouts we have to increase
               -- this value
               300 -- seconds
-              (\(knownPeers, useBootstrapPeers, trustedPeers, lsj, isAlive) ->
-                if isAlive && requiresBootstrapPeers useBootstrapPeers lsj
+              (\( knownPeers
+                , useBootstrapPeers
+                , trustedPeers
+                , ledgerStateJudgement
+                , isAlive
+                ) ->
+                if    isAlive
+                   && requiresBootstrapPeers useBootstrapPeers ledgerStateJudgement
                    then knownPeers `Set.difference` trustedPeers
                    else Set.empty
               )
@@ -961,7 +968,7 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
                       <*> govUseBootstrapPeers
                       <*> govTrustedPeers
                       <*> govLedgerStateJudgement
-                       <*> trIsNodeAlive
+                      <*> trIsNodeAlive
               )
        in counterexample (List.intercalate "\n" $ map show $ Signal.eventsToList events)
         $ signalProperty 20 show
@@ -981,6 +988,9 @@ prop_only_bootstrap_peers_in_fallback_state_iosim
 
 -- | Same as PeerSelection test 'prop_governor_no_non_trustable_peers_before_caught_up_state'
 --
+-- NOTE: the only difference from `prop_only_bootstrap_peers_in_fallback_state`
+-- is that the test verifies we only have bootstrap peers after
+-- `UseBootstrapPeers` was set.  We use slightly lower timeout.
 prop_no_non_trustable_peers_before_caught_up_state :: SimTrace Void
                                                    -> Int
                                                    -> Property
@@ -1072,13 +1082,27 @@ prop_no_non_trustable_peers_before_caught_up_state ioSimTrace traceNumber =
           keepNonTrustablePeersTooLong :: Signal (Set NtNAddr)
           keepNonTrustablePeersTooLong =
             Signal.keyedTimeout
-              10 -- seconds
-              (\( knownPeers, trustedPeers
-                , useBootstrapPeers, lsj, hasOnlyBootstrapPeers, isAlive) ->
-                  if isAlive && hasOnlyBootstrapPeers && requiresBootstrapPeers useBootstrapPeers lsj
+              -- it might take `closeConnectionTimeout` (120)s to close a connection.
+              Diffusion.closeConnectionTimeout
+              -- timeout arming function
+              (\( knownPeers
+                , trustedPeers
+                , useBootstrapPeers
+                , ledgerStateJudgement
+                , hasOnlyBootstrapPeers
+                , isAlive
+                ) ->
+                  -- arm the signal as soon as
+                  -- * the node is live
+                  -- * we are in a state which requires bootstrap peers
+                  -- * there are non trusted known peers
+                  if    isAlive
+                     && hasOnlyBootstrapPeers
+                     && requiresBootstrapPeers useBootstrapPeers ledgerStateJudgement
                      then Set.difference knownPeers trustedPeers
                      else Set.empty
               )
+              -- signal
               ((,,,,,) <$> govKnownPeers
                        <*> govTrustedPeers
                        <*> govUseBootstrapPeers
