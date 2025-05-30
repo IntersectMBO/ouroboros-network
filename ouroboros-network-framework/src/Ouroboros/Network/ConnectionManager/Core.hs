@@ -28,7 +28,7 @@ module Ouroboros.Network.ConnectionManager.Core
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Exception (assert)
+import Control.Exception (SomeAsyncException, assert)
 import Control.Monad (forM_, guard, unless, when, (>=>))
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork (throwTo)
@@ -44,12 +44,12 @@ import Data.Typeable (Typeable)
 import GHC.Stack (CallStack, HasCallStack, callStack)
 import System.Random (StdGen, split)
 
+import Data.List qualified as List
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Set qualified as Set
-
 import Data.Monoid.Synchronisation
 import Data.Set (Set)
+import Data.Set qualified as Set
 import Data.Tuple (swap)
 import Data.Wedge
 import Data.Word (Word32)
@@ -210,14 +210,15 @@ connectionStateToCounters state =
                                              <> inboundConn
                                             <> outboundConn
 
-      TerminatingState {}                   -> mempty
+      TerminatingState {}                   -> terminatingConn
       TerminatedState {}                    -> mempty
   where
-    fullDuplexConn     = ConnectionManagerCounters 1 0 0 0 0
-    duplexConn         = ConnectionManagerCounters 0 1 0 0 0
-    unidirectionalConn = ConnectionManagerCounters 0 0 1 0 0
-    inboundConn        = ConnectionManagerCounters 0 0 0 1 0
-    outboundConn       = ConnectionManagerCounters 0 0 0 0 1
+    fullDuplexConn     = ConnectionManagerCounters 1 0 0 0 0 0
+    duplexConn         = ConnectionManagerCounters 0 1 0 0 0 0
+    unidirectionalConn = ConnectionManagerCounters 0 0 1 0 0 0
+    inboundConn        = ConnectionManagerCounters 0 0 0 1 0 0
+    outboundConn       = ConnectionManagerCounters 0 0 0 0 1 0
+    terminatingConn    = ConnectionManagerCounters 0 0 0 0 0 1
 
 
 getConnThread :: ConnectionState peerAddr handle handleError version m
@@ -781,7 +782,8 @@ with args@Arguments {
                        else return [ ]
 
                   traverse_ (traceWith trTracer . TransitionTrace connStateId) trs
-                  traceCounters stateVar
+                  when (not $ List.null trs) $
+                    traceCounters stateVar
 
     -- Pruning is done in two stages:
     -- * an STM transaction which selects which connections to prune, and sets
@@ -1532,12 +1534,18 @@ with args@Arguments {
                     _ -> pure ()
 
                   traceWith tracer (TrConnect addr peerAddr diffusionMode)
-                  connect snocket socket peerAddr
-                    `catch` \e -> do
+                  catchJust
+                    (\e ->
+                      case fromException e :: Maybe SomeAsyncException of
+                        Just {} -> Nothing
+                        Nothing -> Just e
+                    )
+                    (connect snocket socket peerAddr)
+                    (\e -> do
                       traceWith tracer (TrConnectError addr peerAddr e)
                       -- the handler attached by `bracketOnError` will
                       -- reset the state
-                      throwIO e
+                      throwIO e)
                   localAddress <- getLocalAddr snocket socket
                   let connId = ConnectionId { localAddress
                                             , remoteAddress = peerAddr

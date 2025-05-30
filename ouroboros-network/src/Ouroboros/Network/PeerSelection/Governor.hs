@@ -57,6 +57,7 @@ import Control.Applicative (Alternative ((<|>)))
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Concurrent.JobPool (JobPool)
 import Control.Concurrent.JobPool qualified as JobPool
+import Control.Exception (SomeAsyncException (..))
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
@@ -571,8 +572,17 @@ peerSelectionGovernorLoop tracer
                             debugStateVar
                           }
                           jobPool
-                          pst = do
-    loop pst (Time 0) `catch` (\e -> traceWith tracer (TraceOutboundGovernorCriticalFailure e) >> throwIO e)
+                          pst =
+    catchJust
+      (\e ->
+        case fromException e :: Maybe SomeAsyncException of
+          Just {} -> Nothing
+          Nothing -> Just e
+      )
+      (loop pst (Time 0))
+      (\e -> traceWith tracer (TraceOutboundGovernorCriticalFailure e)
+          >> throwIO e
+      )
   where
     loop :: PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
          -> Time
