@@ -276,10 +276,10 @@ ledgerPeersThread PeerActionsDNS {
                DontUseLedgerPeers -> do
                  traceWith wlpTracer DisabledLedgerPeers
                  return (Map.empty, Map.empty, Nothing, now)
-               UseLedgerPeers ula -> do
+               UseLedgerPeers useLedgerAfter -> do
                  (ledgerWithOrigin, ledgerPeers, peerSnapshot) <-
                    atomically ((,,) <$> lpGetLatestSlot wlpConsensusInterface
-                                    <*> getLedgerPeers wlpSRVPrefix wlpConsensusInterface ula
+                                    <*> getLedgerPeers wlpSRVPrefix wlpConsensusInterface useLedgerAfter
                                     <*> wlpGetLedgerPeerSnapshot)
 
                  let (peersStakeMap, bigPeersStakeMap, cachedSlot'') =
@@ -290,7 +290,7 @@ ledgerPeersThread PeerActionsDNS {
                                                     cachedSlot,
                                                     peerMap,
                                                     bigPeerMap,
-                                                    ula,
+                                                    useLedgerAfter,
                                                     srvPrefix = wlpSRVPrefix
                                                   }
                  when (isJust cachedSlot'') $ traceWith wlpTracer UsingBigLedgerPeerSnapshot
@@ -386,7 +386,7 @@ data StakeMapOverSource = StakeMapOverSource {
     cachedSlot       :: Maybe SlotNo,
     peerMap          :: Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint),
     bigPeerMap       :: Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint),
-    ula              :: AfterSlot,
+    useLedgerAfter   :: AfterSlot,
     srvPrefix        :: SRVPrefix
   }
   deriving Show
@@ -406,7 +406,7 @@ stakeMapWithSlotOverSource StakeMapOverSource {
                              cachedSlot,
                              peerMap,
                              bigPeerMap,
-                             ula,
+                             useLedgerAfter,
                              srvPrefix
                            } =
   case (ledgerWithOrigin, ledgerPeers, peerSnapshot) of
@@ -427,7 +427,7 @@ stakeMapWithSlotOverSource StakeMapOverSource {
                                               , Nothing)
 
     (_, _, Just (LedgerPeerSnapshot (At snapshotSlotNo, accSnapshotRelays)))
-      | After slot <- ula, snapshotSlotNo >= slot ->
+      | After slot <- useLedgerAfter, snapshotSlotNo >= slot ->
         let snapshotRelays = fmap (fmap (fmap (fmap (prefixLedgerRelayAccessPoint srvPrefix)))) accSnapshotRelays in
         case cachedSlot of
           Just thatSlot | thatSlot == snapshotSlotNo ->
