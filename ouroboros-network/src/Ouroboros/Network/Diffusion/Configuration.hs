@@ -21,6 +21,7 @@ module Ouroboros.Network.Diffusion.Configuration
   , PeerSharing (..)
   , ConsensusMode (..)
   , defaultConsensusMode
+  , defaultEgressPollInterval
   , defaultMiniProtocolParameters
   , deactivateTimeout
   , closeConnectionTimeout
@@ -87,7 +88,7 @@ defaultAcceptedConnectionsLimit =
 -- | Node's peer sharing participation flag
 --
 defaultPeerSharing :: PeerSharing
-defaultPeerSharing = PeerSharingDisabled
+defaultPeerSharing = PeerSharingEnabled
 
 -- | Configuration for FetchDecisionPolicy.
 --
@@ -149,3 +150,8 @@ local_PROTOCOL_IDLE_TIMEOUT = 2 -- 2 seconds
 --
 local_TIME_WAIT_TIMEOUT :: DiffTime
 local_TIME_WAIT_TIMEOUT = 0
+
+-- | Mux egress queue polling
+-- for tuning latency vs. network efficiency
+defaultEgressPollInterval :: DiffTime
+defaultEgressPollInterval = 0
