@@ -722,7 +722,7 @@ instance Arbitrary TestnetRelayInfos where
       extractOrGen genIP peerAdvertise = \case
         raa@(RelayAccessAddress ip port) -> pure (raa, ip, port, peerAdvertise)
         rad@(RelayAccessDomain _d port) -> (rad,, port, peerAdvertise) <$> genIP
-        ras@(RelayAccessSRVDomain _d) -> (ras,,, peerAdvertise) <$> genIP <*> PeerSelection.genPort
+        ras@(RelayAccessSRVDomain _d) -> (ras,,, peerAdvertise) <$> genIP <*> arbitrary
 
   shrink = \case
     TestnetRelays4 infos -> TestnetRelays4 <$> go infos

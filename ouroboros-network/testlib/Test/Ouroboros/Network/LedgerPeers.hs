@@ -7,6 +7,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
+{-# OPTIONS_GHC -Wno-orphans #-}
+
 module Test.Ouroboros.Network.LedgerPeers where
 
 import Codec.CBOR.FlatTerm
@@ -44,7 +46,6 @@ import Cardano.Slotting.Slot (SlotNo (..), WithOrigin (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
            (recomputeRelativeStake)
-import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS
 
 import Test.Ouroboros.Network.Data.Script
@@ -67,38 +68,6 @@ tests = testGroup "Ouroboros.Network.LedgerPeers"
 
 type ExtraTestInterface = ()
 
-newtype ArbitraryPortNumber = ArbitraryPortNumber { getArbitraryPortNumber :: PortNumber }
-
-instance Arbitrary ArbitraryPortNumber where
-    arbitrary = elements
-              $ map (ArbitraryPortNumber . read . show)
-              $ ([1000..1100] :: [Int])
-
-newtype ArbitraryRelayAccessPoint =
-  ArbitraryRelayAccessPoint { getArbitraryRelayAccessPoint :: RelayAccessPoint }
-  deriving (Eq, Ord) via RelayAccessPoint
-
-instance Arbitrary ArbitraryRelayAccessPoint where
-    arbitrary =
-      ArbitraryRelayAccessPoint <$>
-        oneof [ RelayAccessAddress (read "1.1.1.1")     . getArbitraryPortNumber <$> arbitrary
-              , RelayAccessDomain  "relay.iohk.example" . getArbitraryPortNumber <$> arbitrary
-              , pure $ RelayAccessSRVDomain  "_cardano._tcp.example.org"
-              ]
-
--- TODO: import the `SlotNo` instance from
--- `Test.Ouroboros.Network.PeerSelection.Instances`
-newtype ArbitrarySlotNo =
-  ArbitrarySlotNo {
-    getArbitrarySlotNo :: SlotNo
-  } deriving Show
-
--- We generate integers including negative ones, which is fine for the purpose
--- of the tests we run.
-instance Arbitrary ArbitrarySlotNo where
-    arbitrary =
-      ArbitrarySlotNo . SlotNo <$> arbitrary
-
 
 data StakePool = StakePool {
       spStake :: !Word64
@@ -108,11 +77,9 @@ data StakePool = StakePool {
 instance Arbitrary StakePool where
     arbitrary = do
         stake <- choose (1, 1_000_000)
-        (ArbitraryRelayAccessPoint firstRelay) <- arbitrary
-        moreRelays <- filter (/= firstRelay) . nub . map unAddr <$> arbitrary
+        firstRelay <- arbitrary
+        moreRelays <- filter (/= firstRelay) . nub <$> arbitrary
         return $ StakePool stake (firstRelay :| moreRelays)
-      where
-        unAddr (ArbitraryRelayAccessPoint a) = a
 
     shrink sp@StakePool { spStake, spRelay } =
       [ sp { spStake = spStake' }
@@ -163,18 +130,12 @@ genLedgerPoolsFrom relays = do
   return (LedgerPools $ calculateRelativeStake stakePools)
 
 
-newtype ArbLedgerPeersKind = ArbLedgerPeersKind LedgerPeersKind
-  deriving Show
+instance Arbitrary LedgerPeersKind where
+    arbitrary =  elements [AllLedgerPeers, BigLedgerPeers]
+    shrink AllLedgerPeers = [BigLedgerPeers]
+    shrink BigLedgerPeers = []
 
-instance Arbitrary ArbLedgerPeersKind where
-    arbitrary = ArbLedgerPeersKind <$> elements [AllLedgerPeers, BigLedgerPeers]
-    shrink (ArbLedgerPeersKind AllLedgerPeers) = [ArbLedgerPeersKind BigLedgerPeers]
-    shrink (ArbLedgerPeersKind BigLedgerPeers) = []
-
-newtype ArbStakeMapOverSource = ArbStakeMapOverSource { getArbStakeMapOverSource :: StakeMapOverSource }
-  deriving Show
-
-instance Arbitrary ArbStakeMapOverSource where
+instance Arbitrary StakeMapOverSource where
   arbitrary = do
     peerSnapshot <-
       oneof [ pure Nothing, Just <$> genPeerSnapshot ]
@@ -193,7 +154,7 @@ instance Arbitrary ArbStakeMapOverSource where
                  Just (LedgerPeerSnapshotV2 (At slot, accPools))
                    -> (Map.fromList accPools, Map.fromList accPools, Just slot)
                  _otherwise -> error "impossible!"
-    return $ ArbStakeMapOverSource StakeMapOverSource {
+    return $ StakeMapOverSource {
       ledgerWithOrigin,
       ledgerPeers,
       peerSnapshot,
@@ -203,7 +164,7 @@ instance Arbitrary ArbStakeMapOverSource where
       cachedSlot }
     where
       genWithOrigin = do
-        ArbitrarySlotNo slotNo <- arbitrary
+        slotNo <- arbitrary
         return $ if slotNo == 0 then Origin else At slotNo
       genPeerSnapshot = do
         slotNo <- At . getPositive <$> arbitrary
@@ -214,14 +175,16 @@ instance Arbitrary ArbStakeMapOverSource where
 -- when snapshot data is available. For each request, peers must be returned from the right
 -- source - either the ledger or snapshot, depending on whether which source is fresher.
 --
-prop_ledgerPeerSnapshot_requests :: ArbStakeMapOverSource
+prop_ledgerPeerSnapshot_requests :: StakeMapOverSource
                                  -> Property
-prop_ledgerPeerSnapshot_requests ArbStakeMapOverSource {
-      getArbStakeMapOverSource = params@StakeMapOverSource {
-          ledgerWithOrigin,
-          ledgerPeers,
-          peerSnapshot,
-          ula } } =
+prop_ledgerPeerSnapshot_requests
+  params@StakeMapOverSource {
+    ledgerWithOrigin,
+    ledgerPeers,
+    peerSnapshot,
+    ula
+  }
+  =
   counterexample (unlines
                    ["Counterexample:", "Ledger slot " ++ show ledgerWithOrigin,
                     "Ledger pools: " ++ show ledgerPeers,
@@ -261,14 +224,14 @@ prop_ledgerPeerSnapshot_requests ArbStakeMapOverSource {
 -- | A pool with 100% stake should always be picked.
 prop_pick100 :: Word16
              -> NonNegative Int -- ^ number of pools with 0 stake
-             -> ArbLedgerPeersKind
+             -> LedgerPeersKind
              -> MockRoots
              -> DelayAndTimeoutScripts
-             -> ArbitrarySlotNo
+             -> SlotNo
              -> Property
-prop_pick100 seed (NonNegative n) (ArbLedgerPeersKind ledgerPeersKind) (MockRoots _ dnsMapScript _ _)
+prop_pick100 seed (NonNegative n) ledgerPeersKind (MockRoots _ dnsMapScript _ _)
              (DelayAndTimeoutScripts dnsLookupDelayScript dnsTimeoutScript)
-             (ArbitrarySlotNo slot) =
+             slot =
     let rng = mkStdGen $ fromIntegral seed
         sps = [ (0, RelayAccessAddress (read $ "0.0.0." ++ show a) 1 :| [])
               | a <- [0..n]
@@ -335,15 +298,15 @@ prop_pick100 seed (NonNegative n) (ArbLedgerPeersKind ledgerPeersKind) (MockRoot
 
 -- | Verify that given at least one peer we manage to pick `count` peers.
 prop_pick :: LedgerPools
-          -> ArbLedgerPeersKind
+          -> LedgerPeersKind
           -> Word16
           -> Word16
           -> MockRoots
           -> Script DNSLookupDelay
-          -> ArbitrarySlotNo
+          -> SlotNo
           -> Property
-prop_pick (LedgerPools lps) (ArbLedgerPeersKind ledgerPeersKind) count seed (MockRoots _ dnsMapScript _ _)
-          dnsLookupDelayScript (ArbitrarySlotNo slot) =
+prop_pick (LedgerPools lps) ledgerPeersKind count seed (MockRoots _ dnsMapScript _ _)
+          dnsLookupDelayScript slot =
     let rng = mkStdGen $ fromIntegral seed
 
         sim :: IOSim s [RelayAccessPoint]
@@ -483,13 +446,13 @@ prop_recomputeRelativeStake (LedgerPools lps) = property $ do
     go _ _ (accStake, relayAccessPointsUnchangedNonNegativeStake) = (accStake, relayAccessPointsUnchangedNonNegativeStake)
 
 
-prop_getLedgerPeers :: ArbitrarySlotNo
+prop_getLedgerPeers :: SlotNo
                     -> LedgerPools
-                    -> ArbitrarySlotNo
+                    -> SlotNo
                     -> Property
-prop_getLedgerPeers (ArbitrarySlotNo curSlot)
+prop_getLedgerPeers curSlot
                     (LedgerPools lps)
-                    (ArbitrarySlotNo slot) =
+                    slot =
   let afterSlot = if slot == 0
                      then Always
                      else After slot
@@ -517,7 +480,7 @@ prop_getLedgerPeers (ArbitrarySlotNo curSlot)
 -- | Checks validity of LedgerPeerSnapshot CBOR encoding, and whether
 --   round trip cycle is the identity function
 --
-prop_ledgerPeerSnapshotCBORV2 :: ArbitrarySlotNo
+prop_ledgerPeerSnapshotCBORV2 :: SlotNo
                               -> LedgerPools
                               -> Property
 prop_ledgerPeerSnapshotCBORV2 slotNo
@@ -535,7 +498,7 @@ prop_ledgerPeerSnapshotCBORV2 slotNo
 
 -- | Tests if LedgerPeerSnapshot JSON round trip is the identity function
 --
-prop_ledgerPeerSnapshotJSONV2 :: ArbitrarySlotNo
+prop_ledgerPeerSnapshotJSONV2 :: SlotNo
                               -> LedgerPools
                               -> Property
 prop_ledgerPeerSnapshotJSONV2 slotNo
@@ -589,10 +552,10 @@ prop_ledgerPeerSnapshotJSONV2 slotNo
 
 -- | helper functions for ledgerpeersnapshot encoding tests
 --
-snapshotV2 :: ArbitrarySlotNo
+snapshotV2 :: SlotNo
            -> LedgerPools
            -> LedgerPeerSnapshot
-snapshotV2 (ArbitrarySlotNo slot)
+snapshotV2 slot
            (LedgerPools pools) = LedgerPeerSnapshotV2 (originOrSlot, poolStakeWithAccumulation)
   where
     poolStakeWithAccumulation = Map.assocs . accPoolStake $ pools
