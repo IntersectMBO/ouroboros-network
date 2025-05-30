@@ -3,6 +3,7 @@
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -13,7 +14,6 @@ module Test.Ouroboros.Network.PeerSelection.Instances
     -- generators
   , genIPv4
   , genIPv6
-  , genPort
     -- generator tests
   , prop_arbitrary_PeerSelectionTargets
   , prop_shrink_PeerSelectionTargets
@@ -24,6 +24,7 @@ import Data.Hashable
 import Data.IP qualified as IP
 import Data.Word (Word16, Word32, Word64)
 
+import Cardano.Network.Diffusion.Configuration qualified as Cardano (srvPrefix)
 import Cardano.Slotting.Slot (SlotNo (..))
 
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
@@ -126,10 +127,6 @@ genIPv4 :: Gen IP.IP
 genIPv4 =
     IP.IPv4 . IP.toIPv4w <$> resize 200 arbitrary `suchThat` (> 100)
 
-genPort :: Gen PortNumber
-genPort =
-    fromIntegral <$> (arbitrary :: Gen Word16)
-
 genIPv6 :: Gen IP.IP
 genIPv6 =
     IP.IPv6 . IP.toIPv6w <$> genFourWord32
@@ -141,11 +138,21 @@ genIPv6 =
              <*> arbitrary
              <*> arbitrary
 
+instance Arbitrary PortNumber where
+  arbitrary = elements [1000..1100]
+  shrink = map fromIntegral
+         . filter (>=1000)
+         . shrink
+         . fromIntegral @PortNumber @Word16
+
 instance Arbitrary RelayAccessPoint where
+    arbitrary = prefixLedgerRelayAccessPoint Cardano.srvPrefix <$> arbitrary
+
+instance Arbitrary LedgerRelayAccessPoint where
   arbitrary =
-      frequency [ (4, RelayAccessAddress <$> oneof [genIPv4, genIPv6] <*> genPort)
-                , (4, RelayAccessDomain <$> genDomainName <*> genPort)
-                , (1, RelayAccessSRVDomain <$> genDomainName)]
+      frequency [ (4, LedgerRelayAccessAddress <$> oneof [genIPv4, genIPv6] <*> arbitrary)
+                , (4, LedgerRelayAccessDomain <$> genDomainName <*> arbitrary)
+                , (1, LedgerRelayAccessSRVDomain <$> genDomainName)]
     where
       genDomainName = elements $ (\i -> "test" <> (BSC.pack . show $ i)) <$> [1..6 :: Int]
 

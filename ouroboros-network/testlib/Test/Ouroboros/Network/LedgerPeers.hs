@@ -7,6 +7,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
+{-# OPTIONS_GHC -Wno-orphans #-}
+
 module Test.Ouroboros.Network.LedgerPeers where
 
 import Codec.CBOR.FlatTerm
@@ -40,11 +42,11 @@ import System.Random
 import Network.DNS (Domain)
 
 import Cardano.Binary
+import Cardano.Network.Diffusion.Configuration qualified as Cardano (srvPrefix)
 import Cardano.Slotting.Slot (SlotNo (..), WithOrigin (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
            (recomputeRelativeStake)
-import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS
 
 import Test.Ouroboros.Network.Data.Script
@@ -67,52 +69,21 @@ tests = testGroup "Ouroboros.Network.LedgerPeers"
 
 type ExtraTestInterface = ()
 
-newtype ArbitraryPortNumber = ArbitraryPortNumber { getArbitraryPortNumber :: PortNumber }
 
-instance Arbitrary ArbitraryPortNumber where
-    arbitrary = elements
-              $ map (ArbitraryPortNumber . read . show)
-              $ ([1000..1100] :: [Int])
-
-newtype ArbitraryRelayAccessPoint =
-  ArbitraryRelayAccessPoint { getArbitraryRelayAccessPoint :: RelayAccessPoint }
-  deriving (Eq, Ord) via RelayAccessPoint
-
-instance Arbitrary ArbitraryRelayAccessPoint where
-    arbitrary =
-      ArbitraryRelayAccessPoint <$>
-        oneof [ RelayAccessAddress (read "1.1.1.1")     . getArbitraryPortNumber <$> arbitrary
-              , RelayAccessDomain  "relay.iohk.example" . getArbitraryPortNumber <$> arbitrary
-              , pure $ RelayAccessSRVDomain  "_cardano._tcp.example.org"
-              ]
-
--- TODO: import the `SlotNo` instance from
--- `Test.Ouroboros.Network.PeerSelection.Instances`
-newtype ArbitrarySlotNo =
-  ArbitrarySlotNo {
-    getArbitrarySlotNo :: SlotNo
-  } deriving Show
-
--- We generate integers including negative ones, which is fine for the purpose
--- of the tests we run.
-instance Arbitrary ArbitrarySlotNo where
-    arbitrary =
-      ArbitrarySlotNo . SlotNo <$> arbitrary
-
+cardanoSRVPrefix :: SRVPrefix
+cardanoSRVPrefix = Cardano.srvPrefix
 
 data StakePool = StakePool {
       spStake :: !Word64
-    , spRelay :: NonEmpty RelayAccessPoint
+    , spRelay :: NonEmpty LedgerRelayAccessPoint
     } deriving Show
 
 instance Arbitrary StakePool where
     arbitrary = do
         stake <- choose (1, 1_000_000)
-        (ArbitraryRelayAccessPoint firstRelay) <- arbitrary
-        moreRelays <- filter (/= firstRelay) . nub . map unAddr <$> arbitrary
+        firstRelay <- arbitrary
+        moreRelays <- filter (/= firstRelay) . nub <$> arbitrary
         return $ StakePool stake (firstRelay :| moreRelays)
-      where
-        unAddr (ArbitraryRelayAccessPoint a) = a
 
     shrink sp@StakePool { spStake, spRelay } =
       [ sp { spStake = spStake' }
@@ -126,7 +97,7 @@ instance Arbitrary StakePool where
 
 
 newtype LedgerPools =
-  LedgerPools { getLedgerPools :: [(PoolStake, NonEmpty RelayAccessPoint)] }
+  LedgerPools { getLedgerPools :: [(PoolStake, NonEmpty LedgerRelayAccessPoint)] }
   deriving Show
 
 instance Arbitrary LedgerPools where
@@ -140,7 +111,7 @@ instance Arbitrary LedgerPools where
 -- zero denominator` is thrown (see
 -- <https://github.com/IntersectMBO/ouroboros-network/issues/5091>).
 calculateRelativeStake :: [StakePool]
-                       -> [(PoolStake, NonEmpty RelayAccessPoint)]
+                       -> [(PoolStake, NonEmpty LedgerRelayAccessPoint)]
 calculateRelativeStake sps =
     let totalStake = List.foldl' (\s p -> s + spStake p) 0 sps in
     map (\p -> ( PoolStake (fromIntegral (spStake p) % fromIntegral totalStake)
@@ -150,7 +121,7 @@ calculateRelativeStake sps =
 -- | Enhance a list of pools, each one represented by a list of
 -- `RelayAccessPoint`, with a stake.
 --
-genLedgerPoolsFrom :: [NonEmpty RelayAccessPoint]
+genLedgerPoolsFrom :: [NonEmpty LedgerRelayAccessPoint]
                    -- ^ each inner list denotes relays of one pool.
                    -- PRECONDITION: each inner list must be non-empty.
                    -> Gen LedgerPools
@@ -163,47 +134,54 @@ genLedgerPoolsFrom relays = do
   return (LedgerPools $ calculateRelativeStake stakePools)
 
 
-newtype ArbLedgerPeersKind = ArbLedgerPeersKind LedgerPeersKind
-  deriving Show
+instance Arbitrary LedgerPeersKind where
+    arbitrary =  elements [AllLedgerPeers, BigLedgerPeers]
+    shrink AllLedgerPeers = [BigLedgerPeers]
+    shrink BigLedgerPeers = []
 
-instance Arbitrary ArbLedgerPeersKind where
-    arbitrary = ArbLedgerPeersKind <$> elements [AllLedgerPeers, BigLedgerPeers]
-    shrink (ArbLedgerPeersKind AllLedgerPeers) = [ArbLedgerPeersKind BigLedgerPeers]
-    shrink (ArbLedgerPeersKind BigLedgerPeers) = []
-
-newtype ArbStakeMapOverSource = ArbStakeMapOverSource { getArbStakeMapOverSource :: StakeMapOverSource }
-  deriving Show
-
-instance Arbitrary ArbStakeMapOverSource where
+instance Arbitrary StakeMapOverSource where
   arbitrary = do
     peerSnapshot <-
       oneof [ pure Nothing, Just <$> genPeerSnapshot ]
     ledgerWithOrigin <- genWithOrigin
-    ula <- arbitrary
+    useLedgerAfter <- arbitrary
     ledgerPeers <-
-      case (ula, ledgerWithOrigin) of
-        (Always, _) -> LedgerPeers . getLedgerPools <$> arbitrary
+      case (useLedgerAfter, ledgerWithOrigin) of
+        (Always, _) ->
+              LedgerPeers
+            . fmap (fmap (fmap (prefixLedgerRelayAccessPoint cardanoSRVPrefix)))
+            . getLedgerPools
+          <$> arbitrary
         (After slotNo, Origin) | slotNo > 0 -> return BeforeSlot
         (After afterSlotNo, At atSlotNo)
-          | afterSlotNo <= atSlotNo -> LedgerPeers . getLedgerPools <$> arbitrary
+          | afterSlotNo <= atSlotNo ->
+              LedgerPeers
+            . fmap (fmap (fmap (prefixLedgerRelayAccessPoint cardanoSRVPrefix)))
+            . getLedgerPools
+          <$> arbitrary
         _otherwise -> return BeforeSlot
     (peerMap, bigPeerMap, cachedSlot) <-
       return $ case peerSnapshot of
                  Nothing -> (Map.empty, Map.empty, Nothing)
                  Just (LedgerPeerSnapshotV2 (At slot, accPools))
-                   -> (Map.fromList accPools, Map.fromList accPools, Just slot)
+                   ->
+                     let accPools' =
+                           fmap (fmap (fmap (fmap (prefixLedgerRelayAccessPoint cardanoSRVPrefix)))) accPools
+                     in (Map.fromList accPools', Map.fromList accPools', Just slot)
                  _otherwise -> error "impossible!"
-    return $ ArbStakeMapOverSource StakeMapOverSource {
+    return $ StakeMapOverSource {
       ledgerWithOrigin,
       ledgerPeers,
       peerSnapshot,
       peerMap,
       bigPeerMap,
-      ula,
-      cachedSlot }
+      useLedgerAfter,
+      cachedSlot,
+      srvPrefix = cardanoSRVPrefix
+    }
     where
       genWithOrigin = do
-        ArbitrarySlotNo slotNo <- arbitrary
+        slotNo <- arbitrary
         return $ if slotNo == 0 then Origin else At slotNo
       genPeerSnapshot = do
         slotNo <- At . getPositive <$> arbitrary
@@ -214,19 +192,21 @@ instance Arbitrary ArbStakeMapOverSource where
 -- when snapshot data is available. For each request, peers must be returned from the right
 -- source - either the ledger or snapshot, depending on whether which source is fresher.
 --
-prop_ledgerPeerSnapshot_requests :: ArbStakeMapOverSource
+prop_ledgerPeerSnapshot_requests :: StakeMapOverSource
                                  -> Property
-prop_ledgerPeerSnapshot_requests ArbStakeMapOverSource {
-      getArbStakeMapOverSource = params@StakeMapOverSource {
-          ledgerWithOrigin,
-          ledgerPeers,
-          peerSnapshot,
-          ula } } =
+prop_ledgerPeerSnapshot_requests
+  params@StakeMapOverSource {
+    ledgerWithOrigin,
+    ledgerPeers,
+    peerSnapshot,
+    useLedgerAfter
+  }
+  =
   counterexample (unlines
                    ["Counterexample:", "Ledger slot " ++ show ledgerWithOrigin,
                     "Ledger pools: " ++ show ledgerPeers,
                     "Snapshot? :" ++ show peerSnapshot,
-                    "UseLedgerAfter: " ++ show ula]) $
+                    "UseLedgerAfter: " ++ show useLedgerAfter]) $
     let (poolMap, bigPoolMap, _slot) = stakeMapWithSlotOverSource params
         bigPoolRelays = fmap (snd . snd) . Map.toList $ bigPoolMap
         poolRelays    = fmap (snd . snd) . Map.toList $ poolMap
@@ -238,7 +218,8 @@ prop_ledgerPeerSnapshot_requests ArbStakeMapOverSource {
                  bigPoolRelays === ledgerBigPoolRelays
             .&&.    poolRelays === ledgerRelays
           where
-            snapshotRelays = fmap (snd . snd) snapshotAccStake
+            snapshotRelays :: [NonEmpty RelayAccessPoint]
+            snapshotRelays = fmap (fmap (prefixLedgerRelayAccessPoint cardanoSRVPrefix) . snd . snd) snapshotAccStake
             ledgerBigPoolRelays   = fmap (snd . snd) (accumulateBigLedgerStake ledgerPools)
             ledgerRelays = fmap (snd . snd) . Map.toList $ accPoolStake ledgerPools
 
@@ -250,10 +231,11 @@ prop_ledgerPeerSnapshot_requests ArbStakeMapOverSource {
             ledgerRelays = fmap (snd . snd) . Map.toList $ accPoolStake ledgerPools
 
         (_, _, Just (LedgerPeerSnapshot (At t', snapshotAccStake)))
-          | After slot <- ula, t' >= slot ->
+          | After slot <- useLedgerAfter, t' >= slot ->
             snapshotRelays === bigPoolRelays .&&. bigPoolRelays === poolRelays
           where
-            snapshotRelays = fmap (snd . snd) snapshotAccStake
+            snapshotRelays :: [NonEmpty RelayAccessPoint]
+            snapshotRelays = fmap (fmap (prefixLedgerRelayAccessPoint cardanoSRVPrefix) . snd . snd) snapshotAccStake
 
         _otherwise -> bigPoolRelays === [] .&&. poolRelays === []
 
@@ -261,19 +243,19 @@ prop_ledgerPeerSnapshot_requests ArbStakeMapOverSource {
 -- | A pool with 100% stake should always be picked.
 prop_pick100 :: Word16
              -> NonNegative Int -- ^ number of pools with 0 stake
-             -> ArbLedgerPeersKind
+             -> LedgerPeersKind
              -> MockRoots
              -> DelayAndTimeoutScripts
-             -> ArbitrarySlotNo
+             -> SlotNo
              -> Property
-prop_pick100 seed (NonNegative n) (ArbLedgerPeersKind ledgerPeersKind) (MockRoots _ dnsMapScript _ _)
+prop_pick100 seed (NonNegative n) ledgerPeersKind (MockRoots _ dnsMapScript _ _)
              (DelayAndTimeoutScripts dnsLookupDelayScript dnsTimeoutScript)
-             (ArbitrarySlotNo slot) =
+             slot =
     let rng = mkStdGen $ fromIntegral seed
-        sps = [ (0, RelayAccessAddress (read $ "0.0.0." ++ show a) 1 :| [])
+        sps = [ (0, LedgerRelayAccessAddress (read $ "0.0.0." ++ show a) 1 :| [])
               | a <- [0..n]
               ]
-           ++ [ (1, RelayAccessAddress (read "1.1.1.1") 1  :| []) ]
+           ++ [ (1, LedgerRelayAccessAddress (read "1.1.1.1") 1  :| []) ]
 
         accumulatedStakeMap = case ledgerPeersKind of
           AllLedgerPeers -> accPoolStake sps
@@ -303,7 +285,8 @@ prop_pick100 seed (NonNegative n) (ArbLedgerPeersKind ledgerPeersKind) (MockRoot
                                       wlpTracer = verboseTracer,
                                       wlpGetUseLedgerPeers = pure $ UseLedgerPeers Always,
                                       wlpGetLedgerPeerSnapshot = pure Nothing,
-                                      wlpSemaphore = dnsSemaphore
+                                      wlpSemaphore = dnsSemaphore,
+                                      wlpSRVPrefix = cardanoSRVPrefix
                                     }
                 (\request _ -> do
                   threadDelay 1900 -- we need to invalidate ledger peer's cache
@@ -335,15 +318,15 @@ prop_pick100 seed (NonNegative n) (ArbLedgerPeersKind ledgerPeersKind) (MockRoot
 
 -- | Verify that given at least one peer we manage to pick `count` peers.
 prop_pick :: LedgerPools
-          -> ArbLedgerPeersKind
+          -> LedgerPeersKind
           -> Word16
           -> Word16
           -> MockRoots
           -> Script DNSLookupDelay
-          -> ArbitrarySlotNo
+          -> SlotNo
           -> Property
-prop_pick (LedgerPools lps) (ArbLedgerPeersKind ledgerPeersKind) count seed (MockRoots _ dnsMapScript _ _)
-          dnsLookupDelayScript (ArbitrarySlotNo slot) =
+prop_pick (LedgerPools lps) ledgerPeersKind count seed (MockRoots _ dnsMapScript _ _)
+          dnsLookupDelayScript slot =
     let rng = mkStdGen $ fromIntegral seed
 
         sim :: IOSim s [RelayAccessPoint]
@@ -370,7 +353,8 @@ prop_pick (LedgerPools lps) (ArbLedgerPeersKind ledgerPeersKind) count seed (Moc
                                       wlpTracer = verboseTracer,
                                       wlpGetUseLedgerPeers = pure $ UseLedgerPeers (After 0),
                                       wlpGetLedgerPeerSnapshot = pure Nothing,
-                                      wlpSemaphore = dnsSemaphore
+                                      wlpSemaphore = dnsSemaphore,
+                                      wlpSRVPrefix = cardanoSRVPrefix
                                     }
                 (\request _ -> do
                   threadDelay 1900 -- we need to invalidate ledger peer's cache
@@ -483,18 +467,18 @@ prop_recomputeRelativeStake (LedgerPools lps) = property $ do
     go _ _ (accStake, relayAccessPointsUnchangedNonNegativeStake) = (accStake, relayAccessPointsUnchangedNonNegativeStake)
 
 
-prop_getLedgerPeers :: ArbitrarySlotNo
+prop_getLedgerPeers :: SlotNo
                     -> LedgerPools
-                    -> ArbitrarySlotNo
+                    -> SlotNo
                     -> Property
-prop_getLedgerPeers (ArbitrarySlotNo curSlot)
+prop_getLedgerPeers curSlot
                     (LedgerPools lps)
-                    (ArbitrarySlotNo slot) =
+                    slot =
   let afterSlot = if slot == 0
                      then Always
                      else After slot
       sim :: IOSim m LedgerPeers
-      sim = atomically $ getLedgerPeers interface afterSlot
+      sim = atomically $ getLedgerPeers cardanoSRVPrefix interface afterSlot
 
       result :: LedgerPeers
       result = runSimOrThrow sim
@@ -517,7 +501,7 @@ prop_getLedgerPeers (ArbitrarySlotNo curSlot)
 -- | Checks validity of LedgerPeerSnapshot CBOR encoding, and whether
 --   round trip cycle is the identity function
 --
-prop_ledgerPeerSnapshotCBORV2 :: ArbitrarySlotNo
+prop_ledgerPeerSnapshotCBORV2 :: SlotNo
                               -> LedgerPools
                               -> Property
 prop_ledgerPeerSnapshotCBORV2 slotNo
@@ -535,7 +519,7 @@ prop_ledgerPeerSnapshotCBORV2 slotNo
 
 -- | Tests if LedgerPeerSnapshot JSON round trip is the identity function
 --
-prop_ledgerPeerSnapshotJSONV2 :: ArbitrarySlotNo
+prop_ledgerPeerSnapshotJSONV2 :: SlotNo
                               -> LedgerPools
                               -> Property
 prop_ledgerPeerSnapshotJSONV2 slotNo
@@ -563,13 +547,13 @@ prop_ledgerPeerSnapshotJSONV2 slotNo
                             (compareApprox relaysWithAccStake relaysWithAccStake')
 
     stripFQN (_, (_, relays)) = step <$> relays
-    step it@(RelayAccessDomain domain port) =
+    step it@(LedgerRelayAccessDomain domain port) =
       case BS.unsnoc domain of
-        Just (prefix, '.') -> RelayAccessDomain prefix port
+        Just (prefix, '.') -> LedgerRelayAccessDomain prefix port
         _otherwise         -> it
-    step it@(RelayAccessSRVDomain domain) =
+    step it@(LedgerRelayAccessSRVDomain domain) =
       case BS.unsnoc domain of
-        Just (prefix, '.') -> RelayAccessSRVDomain prefix
+        Just (prefix, '.') -> LedgerRelayAccessSRVDomain prefix
         _otherwise         -> it
     step it = it
 
@@ -589,10 +573,10 @@ prop_ledgerPeerSnapshotJSONV2 slotNo
 
 -- | helper functions for ledgerpeersnapshot encoding tests
 --
-snapshotV2 :: ArbitrarySlotNo
+snapshotV2 :: SlotNo
            -> LedgerPools
            -> LedgerPeerSnapshot
-snapshotV2 (ArbitrarySlotNo slot)
+snapshotV2 slot
            (LedgerPools pools) = LedgerPeerSnapshotV2 (originOrSlot, poolStakeWithAccumulation)
   where
     poolStakeWithAccumulation = Map.assocs . accPoolStake $ pools

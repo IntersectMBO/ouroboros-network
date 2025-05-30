@@ -183,6 +183,7 @@ run lpci tracerChurnMode localConfig metrics tracers args apps = do
                       Cardano.Churn.readUseBootstrap   = Cardano.LC.readUseBootstrapPeers localConfig,
                       Cardano.Churn.consensusMode      = Cardano.LC.consensusMode localConfig,
                       Cardano.Churn.tracerChurnMode    = tracerChurnMode
-                    }
+                    },
+                  daSRVPrefix                         = Cardano.LC.srvPrefix
                 }
                args apps
