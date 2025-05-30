@@ -21,6 +21,7 @@ module Ouroboros.Network.Diffusion.Configuration
   , PeerSharing (..)
   , ConsensusMode (..)
   , defaultConsensusMode
+  , defaultEgressPollInterval
   , defaultMiniProtocolParameters
   , deactivateTimeout
   , closeConnectionTimeout
@@ -58,7 +59,7 @@ import Ouroboros.Network.Protocol.Handshake (handshake_QUERY_SHUTDOWN_DELAY)
 import Ouroboros.Network.Protocol.Limits (shortWait)
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 
--- |Outbound governor targets
+-- | Outbound governor targets
 -- Targets may vary depending on whether a node is operating in
 -- Genesis mode.
 
@@ -68,9 +69,9 @@ defaultDeadlineTargets :: PeerSelectionTargets
 defaultDeadlineTargets =
   PeerSelectionTargets {
     targetNumberOfRootPeers                 = 60,
-    targetNumberOfKnownPeers                = 85,
+    targetNumberOfKnownPeers                = 150,
     targetNumberOfEstablishedPeers          = 30,
-    targetNumberOfActivePeers               = 15,
+    targetNumberOfActivePeers               = 20,
     targetNumberOfKnownBigLedgerPeers       = 15,
     targetNumberOfEstablishedBigLedgerPeers = 10,
     targetNumberOfActiveBigLedgerPeers      = 5 }
@@ -87,7 +88,7 @@ defaultAcceptedConnectionsLimit =
 -- | Node's peer sharing participation flag
 --
 defaultPeerSharing :: PeerSharing
-defaultPeerSharing = PeerSharingDisabled
+defaultPeerSharing = PeerSharingEnabled
 
 -- | Configuration for FetchDecisionPolicy.
 --
@@ -150,3 +151,7 @@ local_PROTOCOL_IDLE_TIMEOUT = 2 -- 2 seconds
 local_TIME_WAIT_TIMEOUT :: DiffTime
 local_TIME_WAIT_TIMEOUT = 0
 
+-- | Mux egress queue polling
+-- for tuning latency vs. network efficiency
+defaultEgressPollInterval :: DiffTime
+defaultEgressPollInterval = 0

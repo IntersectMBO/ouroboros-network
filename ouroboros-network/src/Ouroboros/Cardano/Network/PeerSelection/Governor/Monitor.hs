@@ -111,6 +111,10 @@ targetPeers Cardano.ExtraPeerSelectionActions {
             } =
     Guarded Nothing $ do
       churnTargets <- readPeerSelectionTargets
+      -- TODO: the following is only necessary to support legacy sync mode
+      -- and can be removed once Genesis is fully adopted.
+      check (churnTargets /= nullPeerSelectionTargets)
+
       -- Genesis consensus mode:
       -- we check if targets proposed by churn are stale
       -- in the sense that they are the targets for
