@@ -144,9 +144,9 @@ instance Arbitrary StakeMapOverSource where
     peerSnapshot <-
       oneof [ pure Nothing, Just <$> genPeerSnapshot ]
     ledgerWithOrigin <- genWithOrigin
-    ula <- arbitrary
+    useLedgerAfter <- arbitrary
     ledgerPeers <-
-      case (ula, ledgerWithOrigin) of
+      case (useLedgerAfter, ledgerWithOrigin) of
         (Always, _) ->
               LedgerPeers
             . fmap (fmap (fmap (prefixLedgerRelayAccessPoint cardanoSRVPrefix)))
@@ -175,7 +175,7 @@ instance Arbitrary StakeMapOverSource where
       peerSnapshot,
       peerMap,
       bigPeerMap,
-      ula,
+      useLedgerAfter,
       cachedSlot,
       srvPrefix = cardanoSRVPrefix
     }
@@ -199,14 +199,14 @@ prop_ledgerPeerSnapshot_requests
     ledgerWithOrigin,
     ledgerPeers,
     peerSnapshot,
-    ula
+    useLedgerAfter
   }
   =
   counterexample (unlines
                    ["Counterexample:", "Ledger slot " ++ show ledgerWithOrigin,
                     "Ledger pools: " ++ show ledgerPeers,
                     "Snapshot? :" ++ show peerSnapshot,
-                    "UseLedgerAfter: " ++ show ula]) $
+                    "UseLedgerAfter: " ++ show useLedgerAfter]) $
     let (poolMap, bigPoolMap, _slot) = stakeMapWithSlotOverSource params
         bigPoolRelays = fmap (snd . snd) . Map.toList $ bigPoolMap
         poolRelays    = fmap (snd . snd) . Map.toList $ poolMap
@@ -231,7 +231,7 @@ prop_ledgerPeerSnapshot_requests
             ledgerRelays = fmap (snd . snd) . Map.toList $ accPoolStake ledgerPools
 
         (_, _, Just (LedgerPeerSnapshot (At t', snapshotAccStake)))
-          | After slot <- ula, t' >= slot ->
+          | After slot <- useLedgerAfter, t' >= slot ->
             snapshotRelays === bigPoolRelays .&&. bigPoolRelays === poolRelays
           where
             snapshotRelays :: [NonEmpty RelayAccessPoint]
