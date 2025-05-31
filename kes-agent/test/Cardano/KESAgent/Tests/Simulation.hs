@@ -55,8 +55,8 @@ import Cardano.Crypto.Seed
 
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket
-import Ouroboros.Network.Testing.Data.AbsBearerInfo hiding (delay)
-import Ouroboros.Network.Testing.Data.AbsBearerInfo qualified as ABI (delay)
+import Test.Ouroboros.Network.Data.AbsBearerInfo hiding (delay)
+import Test.Ouroboros.Network.Data.AbsBearerInfo qualified as ABI (delay)
 
 import Control.Concurrent.Class.MonadMVar (
   MVar,

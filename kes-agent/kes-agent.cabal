@@ -31,7 +31,7 @@ common project-config
          -Wunused-imports
 
 common base-dependencies
-    build-depends: base >=4.14.0.0 && <4.20.0.0
+    build-depends: base >=4.14.0.0 && <4.22.0.0
 
 library
     import: project-config
@@ -256,7 +256,7 @@ test-suite kes-agent-tests
                  , network
                  , network-mux
                  , ouroboros-network-framework
-                 , ouroboros-network-testing
+                 , ouroboros-network-testing >=0.8
                  , primitive >=0.7.4 && <0.10
                  , process
                  , QuickCheck
