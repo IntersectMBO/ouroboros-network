@@ -39,6 +39,21 @@
 - `runM` function now receives `ExtraParameters` as an argument
 - Configurable Mux Egress Poll Interval
 
+## 0.21.2.0 -- 2025-06-02
+
+### Breaking changes
+
+### Non-breaking changes
+
+* Bugfix retrieve ledger peers from snapshot when `useLedgerPeers: 0`
+  in the topology file
+* Explicitly provide the following peer selection sync target defaults:
+  targetNumberOfRootPeers, targetNumberOfKnownPeers, targetNumberOfEstablishedPeers,
+  targetNumberOfActivePeers
+* Update peer selection deadline default targets to match agreed upon
+  values which the node has been released with in the configuration files
+* minor churn bugfixes and improvements
+
 ## 0.21.1.0 -- 2025-05-26
 
 ### Non-breaking changes

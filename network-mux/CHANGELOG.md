@@ -13,7 +13,15 @@
 * Use ByteString.Builder for the ingress queues
 * Signal the kernal that we require at least the full SDU's worth of data
 
-## 0.8.0.0 -- 205-05-13
+## 0.8.0.1 -- 2025-06-02
+
+### Breaking changes
+
+### Non-breaking changes
+
+* Properly unmask async exceptions in the job pool
+
+## 0.8.0.0 -- 2025-05-13
 
 ### Breaking changes
 
