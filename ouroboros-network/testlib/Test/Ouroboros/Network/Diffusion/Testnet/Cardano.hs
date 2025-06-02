@@ -984,7 +984,7 @@ unit_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
                       Map.alter (maybe (Just txids) (Just . sort . (txids ++))) n rr
                     -- When the node is shutdown we have to reset the accepted
                     -- txids list
-                    DiffusionDiffusionSimulationTrace TrKillingNode ->
+                    DiffusionSimulationTrace TrKillingNode ->
                       Map.alter (Just . const []) n rr
                     _ -> rr) r l
               ) Map.empty
