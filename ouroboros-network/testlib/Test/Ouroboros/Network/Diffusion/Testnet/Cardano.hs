@@ -1733,7 +1733,7 @@ prop_diffusion_dns_can_recover ioSimTrace traceNumber =
                                   (recovered + 1)
                                   t
                                   evs
-        DiffusionDiffusionSimulationTrace TrReconfiguringNode ->
+        DiffusionSimulationTrace TrReconfiguringNode ->
           verify Map.empty ttlMap recovered t evs
         _ -> verify toRecover ttlMap recovered time evs
 
@@ -2917,9 +2917,9 @@ prop_diffusion_target_active_local_below ioSimTrace traceNumber =
           trJoinKillSig =
               Signal.fromChangeEvents Killed -- Default to TrKillingNode
             . Signal.selectEvents
-                    (\case DiffusionDiffusionSimulationTrace TrJoiningNetwork
+                    (\case DiffusionSimulationTrace TrJoiningNetwork
                             -> Just Joined
-                           DiffusionDiffusionSimulationTrace TrKillingNode
+                           DiffusionSimulationTrace TrKillingNode
                             -> Just Killed
                            DiffusionConnectionManagerTrace CM.TrShutdown
                             -> Just Killed
@@ -4882,7 +4882,7 @@ selectDiffusionPeerSelectionEvents = Signal.selectEvents
 selectDiffusionSimulationTrace :: Events DiffusionTestTrace
                                -> Events DiffusionSimulationTrace
 selectDiffusionSimulationTrace = Signal.selectEvents
-                    (\case DiffusionDiffusionSimulationTrace e -> Just e
+                    (\case DiffusionSimulationTrace e -> Just e
                            _                                   -> Nothing)
 
 selectDiffusionPeerSelectionState :: Eq a

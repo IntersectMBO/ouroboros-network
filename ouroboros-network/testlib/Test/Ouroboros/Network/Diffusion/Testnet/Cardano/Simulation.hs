@@ -900,7 +900,7 @@ data DiffusionTestTrace =
     | DiffusionConnectionManagerTrace
         (CM.Trace NtNAddr
           (ConnectionHandlerTrace NtNVersion NtNVersionData))
-    | DiffusionDiffusionSimulationTrace DiffusionSimulationTrace
+    | DiffusionSimulationTrace DiffusionSimulationTrace
     | DiffusionConnectionManagerTransitionTrace
         (AbstractTransitionTrace CM.ConnStateId)
     | DiffusionInboundGovernorTransitionTrace
@@ -1277,7 +1277,7 @@ diffusionSimulation
            in fst <$> ipsttls
 
     diffSimTracer :: NtNAddr -> Tracer m DiffusionSimulationTrace
-    diffSimTracer ntnAddr = contramap DiffusionDiffusionSimulationTrace
+    diffSimTracer ntnAddr = contramap DiffusionSimulationTrace
                           . tracerWithName ntnAddr
                           . tracerWithTime
                           $ nodeTracer
