@@ -401,7 +401,9 @@ peerChurnGovernor PeerChurnArgs {
       -> ModifyPeerSelectionTargets
     decreaseKnownPeers _ _ base targets =
       targets {
-          targetNumberOfRootPeers =
+          -- we clamp from above to not accidentally actually increase
+          -- the number of root peers
+          targetNumberOfRootPeers = min (targetNumberOfRootPeers base) $
             decrease (targetNumberOfRootPeers base - targetNumberOfEstablishedPeers base)
             + targetNumberOfEstablishedPeers base
         , targetNumberOfKnownPeers =
