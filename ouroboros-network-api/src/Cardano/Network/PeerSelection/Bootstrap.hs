@@ -12,6 +12,9 @@ import Cardano.Network.Types (LedgerStateJudgement (..))
 import GHC.Generics (Generic)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
 
+-- | `UseBootstrapPeers` is read from the topology file.  It's value might
+-- changed by the user while the node is running.
+--
 data UseBootstrapPeers = DontUseBootstrapPeers
                        | UseBootstrapPeers [RelayAccessPoint]
   deriving (Eq, Show, Ord, Generic)
