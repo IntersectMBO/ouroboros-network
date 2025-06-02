@@ -910,10 +910,10 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
 
           trJoinKillSig :: Signal JoinedOrKilled
           trJoinKillSig =
-              Signal.fromChangeEvents Killed -- Default to TrKillingNode
+              Signal.fromChangeEvents Terminated -- Default to TrKillingNode
             . Signal.selectEvents
                 (\case TrJoiningNetwork -> Just Joined
-                       TrKillingNode    -> Just Killed
+                       TrTerminated     -> Just Terminated
                        _                -> Nothing
                 )
             . selectDiffusionSimulationTrace
@@ -939,10 +939,10 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
           trIsNodeAlive :: Signal Bool
           trIsNodeAlive =
                 not . Set.null
-            <$> Signal.keyedUntil (fromJoinedOrKilled (Set.singleton ())
-                                                      Set.empty)
-                                  (fromJoinedOrKilled Set.empty
-                                                      (Set.singleton ()))
+            <$> Signal.keyedUntil (fromJoinedOrTerminated (Set.singleton ())
+                                                           Set.empty)
+                                  (fromJoinedOrTerminated  Set.empty
+                                                          (Set.singleton ()))
                                   (const False)
                                   trJoinKillSig
 
@@ -1054,10 +1054,10 @@ prop_no_non_trustable_peers_before_caught_up_state ioSimTrace traceNumber =
 
           trJoinKillSig :: Signal JoinedOrKilled
           trJoinKillSig =
-              Signal.fromChangeEvents Killed -- Default to TrKillingNode
+              Signal.fromChangeEvents Terminated -- Default to TrKillingNode
             . Signal.selectEvents
                 (\case TrJoiningNetwork -> Just Joined
-                       TrKillingNode    -> Just Killed
+                       TrTerminated     -> Just Terminated
                        _                -> Nothing
                 )
             . selectDiffusionSimulationTrace
@@ -1072,10 +1072,10 @@ prop_no_non_trustable_peers_before_caught_up_state ioSimTrace traceNumber =
           trIsNodeAlive :: Signal Bool
           trIsNodeAlive =
                 not . Set.null
-            <$> Signal.keyedUntil (fromJoinedOrKilled (Set.singleton ())
-                                                      Set.empty)
-                                  (fromJoinedOrKilled Set.empty
-                                                      (Set.singleton ()))
+            <$> Signal.keyedUntil (fromJoinedOrTerminated (Set.singleton ())
+                                                           Set.empty)
+                                  (fromJoinedOrTerminated  Set.empty
+                                                          (Set.singleton ()))
                                   (const False)
                                   trJoinKillSig
 
@@ -1251,10 +1251,10 @@ prop_track_coolingToCold_demotions ioSimTracer traceNumber =
 
           trJoinKillSig :: Signal JoinedOrKilled
           trJoinKillSig =
-              Signal.fromChangeEvents Killed -- Default to TrKillingNode
+              Signal.fromChangeEvents Terminated -- Default to TrKillingNode
             . Signal.selectEvents
                 (\case TrJoiningNetwork -> Just Joined
-                       TrKillingNode    -> Just Killed
+                       TrTerminated     -> Just Terminated
                        _                -> Nothing
                 )
             . selectDiffusionSimulationTrace
@@ -1269,10 +1269,10 @@ prop_track_coolingToCold_demotions ioSimTracer traceNumber =
           trIsNodeAlive :: Signal Bool
           trIsNodeAlive =
                 not . Set.null
-            <$> Signal.keyedUntil (fromJoinedOrKilled (Set.singleton ())
-                                                      Set.empty)
-                                  (fromJoinedOrKilled Set.empty
-                                                      (Set.singleton ()))
+            <$> Signal.keyedUntil (fromJoinedOrTerminated (Set.singleton ())
+                                                           Set.empty)
+                                  (fromJoinedOrTerminated  Set.empty
+                                                          (Set.singleton ()))
                                   (const False)
                                   trJoinKillSig
 
@@ -2574,10 +2574,10 @@ prop_diffusion_target_established_local ioSimTrace traceNumber =
 
           trJoinKillSig :: Signal JoinedOrKilled
           trJoinKillSig =
-              Signal.fromChangeEvents Killed -- Default to TrKillingNode
+              Signal.fromChangeEvents Terminated -- Default to TrKillingNode
             . Signal.selectEvents
                 (\case TrJoiningNetwork -> Just Joined
-                       TrKillingNode    -> Just Killed
+                       TrKillingNode    -> Just Terminated
                        _                -> Nothing
                 )
             . selectDiffusionSimulationTrace
@@ -2592,10 +2592,10 @@ prop_diffusion_target_established_local ioSimTrace traceNumber =
           trIsNodeAlive :: Signal Bool
           trIsNodeAlive =
                 not . Set.null
-            <$> Signal.keyedUntil (fromJoinedOrKilled (Set.singleton ())
-                                                      Set.empty)
-                                  (fromJoinedOrKilled Set.empty
-                                                      (Set.singleton ()))
+            <$> Signal.keyedUntil (fromJoinedOrTerminated (Set.singleton ())
+                                                           Set.empty)
+                                  (fromJoinedOrTerminated  Set.empty
+                                                          (Set.singleton ()))
                                   (const False)
                                   trJoinKillSig
 
@@ -2765,10 +2765,10 @@ prop_diffusion_target_active_below ioSimTrace traceNumber =
 
           trJoinKillSig :: Signal JoinedOrKilled
           trJoinKillSig =
-              Signal.fromChangeEvents Killed -- Default to TrKillingNode
+              Signal.fromChangeEvents Terminated -- Default to TrKillingNode
             . Signal.selectEvents
                 (\case TrJoiningNetwork -> Just Joined
-                       TrKillingNode    -> Just Killed
+                       TrTerminated     -> Just Terminated
                        _                -> Nothing
                 )
             . selectDiffusionSimulationTrace
@@ -2783,10 +2783,10 @@ prop_diffusion_target_active_below ioSimTrace traceNumber =
           trIsNodeAlive :: Signal Bool
           trIsNodeAlive =
                 not . Set.null
-            <$> Signal.keyedUntil (fromJoinedOrKilled (Set.singleton ())
-                                                      Set.empty)
-                                  (fromJoinedOrKilled Set.empty
-                                                      (Set.singleton ()))
+            <$> Signal.keyedUntil (fromJoinedOrTerminated (Set.singleton ())
+                                                           Set.empty)
+                                  (fromJoinedOrTerminated  Set.empty
+                                                          (Set.singleton ()))
                                   (const False)
                                   trJoinKillSig
 
@@ -2915,14 +2915,14 @@ prop_diffusion_target_active_local_below ioSimTrace traceNumber =
 
           trJoinKillSig :: Signal JoinedOrKilled
           trJoinKillSig =
-              Signal.fromChangeEvents Killed -- Default to TrKillingNode
+              Signal.fromChangeEvents Terminated -- Default to TrKillingNode
             . Signal.selectEvents
                     (\case DiffusionSimulationTrace TrJoiningNetwork
                             -> Just Joined
-                           DiffusionSimulationTrace TrKillingNode
-                            -> Just Killed
+                           DiffusionSimulationTrace TrTerminated
+                            -> Just Terminated
                            DiffusionConnectionManagerTrace CM.TrShutdown
-                            -> Just Killed
+                            -> Just Terminated
                            _ -> Nothing
                     )
             $ events
@@ -2936,10 +2936,10 @@ prop_diffusion_target_active_local_below ioSimTrace traceNumber =
           trIsNodeAlive :: Signal Bool
           trIsNodeAlive =
                 not . Set.null
-            <$> Signal.keyedUntil (fromJoinedOrKilled (Set.singleton ())
-                                                      Set.empty)
-                                  (fromJoinedOrKilled Set.empty
-                                                      (Set.singleton ()))
+            <$> Signal.keyedUntil (fromJoinedOrTerminated (Set.singleton ())
+                                                           Set.empty)
+                                  (fromJoinedOrTerminated  Set.empty
+                                                          (Set.singleton ()))
                                   (const False)
                                   trJoinKillSig
 
@@ -3348,10 +3348,10 @@ prop_diffusion_target_active_local_above ioSimTrace traceNumber =
 
           trJoinKillSig :: Signal JoinedOrKilled
           trJoinKillSig =
-              Signal.fromChangeEvents Killed -- Default to TrKillingNode
+              Signal.fromChangeEvents Terminated -- Default to TrKillingNode
             . Signal.selectEvents
                 (\case TrJoiningNetwork -> Just Joined
-                       TrKillingNode    -> Just Killed
+                       TrTerminated     -> Just Terminated
                        _                -> Nothing
                 )
             . selectDiffusionSimulationTrace
@@ -3366,10 +3366,10 @@ prop_diffusion_target_active_local_above ioSimTrace traceNumber =
           trIsNodeAlive :: Signal Bool
           trIsNodeAlive =
                 not . Set.null
-            <$> Signal.keyedUntil (fromJoinedOrKilled (Set.singleton ())
-                                                      Set.empty)
-                                  (fromJoinedOrKilled Set.empty
-                                                      (Set.singleton ()))
+            <$> Signal.keyedUntil (fromJoinedOrTerminated (Set.singleton ())
+                                                           Set.empty)
+                                  (fromJoinedOrTerminated  Set.empty
+                                                          (Set.singleton ()))
                                   (const False)
                                   trJoinKillSig
 
@@ -4837,13 +4837,13 @@ prop_no_peershare_unwilling_iosim
 -- Utils
 --
 
-data JoinedOrKilled = Joined | Killed
+data JoinedOrKilled = Joined | Terminated
   deriving (Eq, Show)
 
 -- Similar to 'either' but for 'JoinedOrKilled'
-fromJoinedOrKilled :: c -> c -> JoinedOrKilled -> c
-fromJoinedOrKilled j _ Joined = j
-fromJoinedOrKilled _ k Killed = k
+fromJoinedOrTerminated :: c -> c -> JoinedOrKilled -> c
+fromJoinedOrTerminated j _ Joined     = j
+fromJoinedOrTerminated _ k Terminated = k
 
 getTime :: (Time, ThreadId (IOSim s), Maybe ThreadLabel, SimEventType) -> Time
 getTime (t, _, _, _) = t

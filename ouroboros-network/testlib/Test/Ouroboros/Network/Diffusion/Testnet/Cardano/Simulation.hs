@@ -881,7 +881,8 @@ data DiffusionSimulationTrace
   | TrUpdatingDNS
   | TrRunning
   | TrErrored SomeException
-  deriving (Show)
+  | TrTerminated
+  deriving Show
 
 -- Warning: be careful with writing properties that rely
 -- on trace events from multiple components environment.
@@ -1241,6 +1242,7 @@ diffusionSimulation
           $ nodeTracer)
         `catch` \e -> traceWith (diffSimTracer addr) (TrErrored e)
                    >> throwIO e
+        `finally`     traceWith (diffSimTracer addr) TrTerminated
 
     domainResolver :: StrictTVar m MockDNSMap
                    -> DNSLookupType
