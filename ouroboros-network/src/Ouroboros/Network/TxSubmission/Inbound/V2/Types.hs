@@ -30,6 +30,8 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
   , mkTxSubmissionCounters
     -- ** Protocol Error
   , TxSubmissionProtocolError (..)
+    -- * Re-exports
+  , SizeInBytes (..)
   ) where
 
 import Control.Exception (Exception (..))

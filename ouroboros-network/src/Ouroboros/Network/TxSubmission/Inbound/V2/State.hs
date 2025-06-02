@@ -44,7 +44,6 @@ import System.Random (StdGen)
 import GHC.Stack (HasCallStack)
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..),
            NumTxIdsToReq (..))
-import Ouroboros.Network.SizeInBytes (SizeInBytes (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..))
