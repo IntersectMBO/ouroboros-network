@@ -50,7 +50,7 @@ import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow hiding (handle)
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer, contramap, traceWith)
+import Control.Tracer (Tracer, traceWith)
 
 import Data.ByteString.Lazy (ByteString)
 import Data.Map (Map)
@@ -248,7 +248,7 @@ makeConnectionHandler
        , Show     peerAddr
        , Typeable peerAddr
        )
-    => Tracer m (Mx.WithBearer (ConnectionId peerAddr) Mx.Trace)
+    => Mx.TracersWithBearer (ConnectionId peerAddr) m
     -> ForkPolicy peerAddr
     -> HandshakeArguments (ConnectionId peerAddr) versionNumber versionData m
     -> Versions versionNumber versionData
@@ -259,7 +259,7 @@ makeConnectionHandler
     -> MkMuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr versionNumber versionData ByteString m a b
     -> MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr
                             versionNumber versionData ByteString m a b
-makeConnectionHandler muxTracer forkPolicy
+makeConnectionHandler muxTracers forkPolicy
                       handshakeArguments
                       versionedApplication
                       (mainThreadId, rethrowPolicy) =
@@ -363,20 +363,18 @@ makeConnectionHandler muxTracer forkPolicy
                 atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
                 withBuffer \buffer -> do
                   bearer <- mkMuxBearer sduTimeout socket buffer
-                  muxTracer' <-
-                    contramap (Mx.WithBearer connectionId) <$> case inResponderMode of
-                      InResponderMode (inboundGovernorMuxTracer, connectionDataFlow)
-                        | Duplex <- connectionDataFlow agreedOptions -> do
-                            countersVar <- newTVarIO . SJust $ ResponderCounters 0 0
-                            pure $ muxTracer <> inboundGovernorMuxTracer countersVar
-                      _notResponder ->
-                            -- If this is InitiatorOnly, or a server where unidirectional flow was negotiated
-                            -- the IG will never be informed of this remote for obvious reasons.
-                            pure muxTracer
-                  unmask $ Mx.run Mx.Tracers {
-                             muxTracer     = muxTracer',
-                             channelTracer = Mx.WithBearer connectionId `contramap` muxTracer }
-                           mux bearer
+                  muxTracers' <- case inResponderMode of
+                    InResponderMode (inboundGovernorMuxTracer, connectionDataFlow)
+                      | Duplex <- connectionDataFlow agreedOptions -> do
+                          countersVar <- newTVarIO . SJust $ ResponderCounters 0 0
+                          pure $ Mx.tracersWithBearer connectionId muxTracers {
+                              Mx.tracer = Mx.tracer muxTracers <> inboundGovernorMuxTracer countersVar
+                            }
+                    _notResponder ->
+                          -- If this is InitiatorOnly, or a server where unidirectional flow was negotiated
+                          -- the IG will never be informed of this remote for obvious reasons.
+                          pure $ Mx.tracersWithBearer connectionId muxTracers
+                  unmask $ Mx.run muxTracers' mux bearer
 
               Right (HandshakeQueryResult vMap) -> do
                 atomically $ writePromise (Right HandshakeConnectionQuery)
@@ -450,11 +448,10 @@ makeConnectionHandler muxTracer forkPolicy
                withBuffer \buffer -> do
                  bearer <- mkMuxBearer sduTimeout socket buffer
                  countersVar <- newTVarIO . SJust $ ResponderCounters 0 0
-                 let traceWithBearer = contramap $ Mx.WithBearer connectionId
-                 unmask $ Mx.run Mx.Tracers {
-                            muxTracer     = traceWithBearer (muxTracer <> inboundGovernorMuxTracer countersVar),
-                            channelTracer = traceWithBearer muxTracer }
-                          mux bearer
+                 unmask $ Mx.run (Mx.tracersWithBearer connectionId muxTracers {
+                               Mx.tracer = Mx.tracer muxTracers <> inboundGovernorMuxTracer countersVar
+                             })
+                             mux bearer
               Right (HandshakeQueryResult vMap) -> do
                 atomically $ writePromise (Right HandshakeConnectionQuery)
                 traceWith tracer $ TrHandshakeQuery vMap

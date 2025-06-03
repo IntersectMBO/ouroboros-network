@@ -153,14 +153,12 @@ demo chain0 updates delay = do
 
     clientBearer <- Mx.getBearer Mx.makeQueueChannelBearer
                       (-1)
-                      activeTracer
                       Mx.QueueChannel { Mx.writeQueue = client_w,
                                         Mx.readQueue = client_r
                                       }
                        Nothing
     serverBearer <- Mx.getBearer Mx.makeQueueChannelBearer
                        (-1)
-                       activeTracer
                        Mx.QueueChannel { Mx.writeQueue = server_w,
                                          Mx.readQueue = server_r
                                        }
@@ -186,7 +184,7 @@ demo chain0 updates delay = do
               InitiatorProtocolOnly initiator ->
                 [(Mx.InitiatorDirectionOnly, void . runMiniProtocolCb initiator initCtx)]
         ]
-      withAsync (Mx.run (Mx.Tracers nullTracer nullTracer) clientMux clientBearer) $ \aid -> do
+      withAsync (Mx.run (Mx.Tracers activeTracer activeTracer activeTracer) clientMux clientBearer) $ \aid -> do
         _ <- atomically $ runFirstToFinish $ foldMap FirstToFinish resOps
         Mx.stop clientMux
         wait aid
@@ -211,7 +209,7 @@ demo chain0 updates delay = do
               ResponderProtocolOnly responder ->
                 [(Mx.ResponderDirectionOnly, void . runMiniProtocolCb responder respCtx)]
         ]
-      withAsync (Mx.run (Mx.Tracers nullTracer nullTracer) serverMux serverBearer) $ \aid -> do
+      withAsync (Mx.run (Mx.Tracers activeTracer activeTracer activeTracer) serverMux serverBearer) $ \aid -> do
         _ <- atomically $ runFirstToFinish $ foldMap FirstToFinish resOps
         Mx.stop serverMux
         wait aid

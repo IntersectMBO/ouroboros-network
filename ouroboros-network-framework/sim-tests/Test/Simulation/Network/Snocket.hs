@@ -246,7 +246,7 @@ clientServerSimulation payloads =
           (accepted, accept1) <- runAccept accept0
           case accepted of
             Accepted fd' remoteAddr -> do
-              bearer <- getBearer makeFDBearer 10 nullTracer fd' Nothing
+              bearer <- getBearer makeFDBearer 10 fd' Nothing
               thread <- async $ handleConnection bearer remoteAddr
                                 `finally`
                                close snocket fd'
@@ -287,11 +287,12 @@ clientServerSimulation payloads =
                                                serverPeer)
               withAsync
                 (do labelThisThread "server-mux"
-                    let serverTracer =
+                    let serverTracer :: forall x. Show x => Tracer m x
+                        serverTracer =
                           (("server", connId,)
                              `contramap`
                              traceTime (Tracer (say . show)))
-                    Mx.run (Mx.Tracers serverTracer serverTracer)
+                    Mx.run (Mx.Tracers serverTracer serverTracer serverTracer)
                            mux bearer)
                 $ \_muxThread -> do
                   res <- atomically resSTM
@@ -329,16 +330,17 @@ clientServerSimulation payloads =
                               (\channel -> runPeer tr codecReqResp
                                                    channel
                                                    clientPeer)
-                  bearer <- Mx.getBearer makeFDBearer 10 nullTracer fd Nothing
+                  bearer <- Mx.getBearer makeFDBearer 10 fd Nothing
 
                   -- kill mux as soon as the client returns
                   withAsync
                     (do labelThisThread "client-mux"
-                        let clientTracer =
+                        let clientTracer :: forall x. Show x => Tracer m x
+                            clientTracer =
                               (("client", connId,)
                                  `contramap`
                                  traceTime (Tracer (say . show)))
-                        Mx.run (Mx.Tracers clientTracer clientTracer)
+                        Mx.run (Mx.Tracers clientTracer clientTracer clientTracer)
                                mux bearer)
                     $ \_ -> do
                       res <- atomically resSTM
@@ -599,8 +601,8 @@ prop_self_connect (Payload payload) =
                   $ \fd -> do
                     bind snocket fd addr
                     connect snocket fd addr
-                    bearer <- getBearer makeFDBearer 10 nullTracer fd Nothing
-                    let channel = bearerAsChannel bearer (MiniProtocolNum 0) InitiatorDir
+                    bearer <- getBearer makeFDBearer 10 fd Nothing
+                    let channel = bearerAsChannel nullTracer bearer (MiniProtocolNum 0) InitiatorDir
                     send channel payload
                     payload' <- recv channel
                     threadDelay 1
