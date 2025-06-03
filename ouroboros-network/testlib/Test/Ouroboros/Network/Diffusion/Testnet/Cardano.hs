@@ -969,7 +969,7 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
               -- Due to the possibilities of the node being reconfigured
               -- frequently and disconnection timeouts we have to increase
               -- this value
-              300 -- seconds
+              Diffusion.closeConnectionTimeout
               (\( knownPeers
                 , useBootstrapPeers
                 , useBootstrapPeersChanged
