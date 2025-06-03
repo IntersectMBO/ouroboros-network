@@ -156,8 +156,6 @@ tests =
                                  prop_track_coolingToCold_demotions_iosimpor
     , nightlyTest $ testProperty "only bootstrap peers in fallback state"
                                  prop_only_bootstrap_peers_in_fallback_state_iosimpor
-    , nightlyTest $ testProperty "no non trustable peers before caught up state"
-                                 prop_no_non_trustable_peers_before_caught_up_state_iosimpor
     , testGroup "Churn"
       [ nightlyTest $ testProperty "no timeouts"
                                    prop_churn_notimeouts_iosimpor
@@ -226,8 +224,6 @@ tests =
                    prop_accept_failure
     , testProperty "only bootstrap peers in fallback state"
                    prop_only_bootstrap_peers_in_fallback_state_iosim
-    , testProperty "no non trustable peers before caught up state"
-                   prop_no_non_trustable_peers_before_caught_up_state_iosim
     , testGroup "local root diffusion mode"
         [ testProperty "InitiatorOnly"
           (unit_local_root_diffusion_mode InitiatorOnlyDiffusionMode)
@@ -1004,168 +1000,6 @@ prop_only_bootstrap_peers_in_fallback_state_iosim
   :: AbsBearerInfo -> DiffusionScript -> Property
 prop_only_bootstrap_peers_in_fallback_state_iosim
   = testWithIOSim prop_only_bootstrap_peers_in_fallback_state long_trace
-
-
--- | Same as PeerSelection test 'prop_governor_no_non_trustable_peers_before_caught_up_state'
---
--- NOTE: the only difference from `prop_only_bootstrap_peers_in_fallback_state`
--- is that the test verifies we only have bootstrap peers after
--- `UseBootstrapPeers` was set.  We use slightly lower timeout.
-prop_no_non_trustable_peers_before_caught_up_state :: SimTrace Void
-                                                   -> Int
-                                                   -> Property
-prop_no_non_trustable_peers_before_caught_up_state ioSimTrace traceNumber =
-  let events :: [Events DiffusionTestTrace]
-      events = Trace.toList
-             . fmap ( Signal.eventsFromList
-                    . fmap (\(WithName _ (WithTime t b)) -> (t, b))
-                    )
-             . splitWithNameTrace
-             . fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
-             . withTimeNameTraceEvents
-                @DiffusionTestTrace
-                @NtNAddr
-             . Trace.take traceNumber
-             $ ioSimTrace
-
-     in conjoin
-      $ (\ev ->
-        let evsList = eventsToList ev
-            lastTime = fst
-                     . last
-                     $ evsList
-         in classifySimulatedTime lastTime
-          $ classifyNumberOfEvents (length evsList)
-          $ verify_no_non_trustable_peers_before_caught_up_state ev
-        )
-      <$> events
-
-  where
-    verify_no_non_trustable_peers_before_caught_up_state events =
-      let govUseBootstrapPeers :: Signal UseBootstrapPeers
-          govUseBootstrapPeers =
-            selectDiffusionPeerSelectionState
-              (Cardano.bootstrapPeersFlag . Governor.extraState)
-              events
-
-          govLedgerStateJudgement :: Signal LedgerStateJudgement
-          govLedgerStateJudgement =
-            selectDiffusionPeerSelectionState (Cardano.ledgerStateJudgement . Governor.extraState)
-                                              events
-
-          govKnownPeers :: Signal (Set NtNAddr)
-          govKnownPeers =
-            selectDiffusionPeerSelectionState (KnownPeers.toSet . Governor.knownPeers)
-                                              events
-
-          govTrustedPeers :: Signal (Set NtNAddr)
-          govTrustedPeers =
-            selectDiffusionPeerSelectionState
-              (\st -> LocalRootPeers.keysSet (LocalRootPeers.clampToTrustable (Governor.localRootPeers st))
-                   <> PublicRootPeers.getBootstrapPeers (Governor.publicRootPeers st)
-              )
-              events
-
-          govHasOnlyBootstrapPeers :: Signal Bool
-          govHasOnlyBootstrapPeers =
-            selectDiffusionPeerSelectionState
-              (Cardano.hasOnlyBootstrapPeers . Governor.extraState)
-              events
-
-          trJoinKillSig :: Signal JoinedOrKilled
-          trJoinKillSig =
-              Signal.fromChangeEvents Terminated -- Default to TrKillingNode
-            . Signal.selectEvents
-                (\case TrJoiningNetwork -> Just Joined
-                       TrTerminated     -> Just Terminated
-                       _                -> Nothing
-                )
-            . selectDiffusionSimulationTrace
-            $ events
-
-          -- A signal which shows when bootstrap peers changed and are no
-          -- longer a subset of previous bootstrap peers set.  This is a more
-          -- refined version of simply observing `TraceUseBootstrapPeersChanged
-          -- UseBootstrapPeers{}`
-          useBootstrapPeersChangedSig :: Signal Bool
-          useBootstrapPeersChangedSig =
-              Signal.fromChangeEvents False
-            . Signal.selectEvents
-                (\case
-                 TraceUseBootstrapPeersChanged UseBootstrapPeers{}
-                   -> Just True
-                 _ -> Nothing
-                )
-            . selectDiffusionPeerSelectionEvents
-            $ events
-
-          -- Signal.keyedUntil receives 2 functions one that sets start of the
-          -- set signal, one that ends it and another that stops all.
-          --
-          -- In this particular case we want a signal that is keyed beginning
-          -- on a TrJoiningNetwork and ends on TrKillingNode, giving us a Signal
-          -- with the periods when a node was alive.
-          trIsNodeAlive :: Signal Bool
-          trIsNodeAlive =
-                not . Set.null
-            <$> Signal.keyedUntil (fromJoinedOrTerminated (Set.singleton ())
-                                                           Set.empty)
-                                  (fromJoinedOrTerminated  Set.empty
-                                                          (Set.singleton ()))
-                                  (const False)
-                                  trJoinKillSig
-
-          keepNonTrustablePeersTooLong :: Signal (Set NtNAddr)
-          keepNonTrustablePeersTooLong =
-            Signal.keyedTimeout
-              -- it might take `closeConnectionTimeout` (120)s to close a connection.
-              Diffusion.closeConnectionTimeout
-              -- timeout arming function
-              (\( knownPeers
-                , trustedPeers
-                , useBootstrapPeers
-                , useBootstrapPeersChanged
-                , ledgerStateJudgement
-                , hasOnlyBootstrapPeers
-                , isAlive
-                ) ->
-                  -- arm the signal as soon as
-                  -- * the node is live
-                  -- * we are in a state which requires bootstrap peers
-                  -- * there are non trusted known peers
-                  -- un-arm the signal if the node was reconfigured with new
-                  -- bootstrap peers set
-                  if    isAlive
-                     && hasOnlyBootstrapPeers
-                     && not useBootstrapPeersChanged
-                     && requiresBootstrapPeers useBootstrapPeers ledgerStateJudgement
-                     then Set.difference knownPeers trustedPeers
-                     else Set.empty
-              )
-              -- signal
-              ((,,,,,,) <$> govKnownPeers
-                        <*> govTrustedPeers
-                        <*> govUseBootstrapPeers
-                        <*> useBootstrapPeersChangedSig
-                        <*> govLedgerStateJudgement
-                        <*> govHasOnlyBootstrapPeers
-                        <*> trIsNodeAlive
-              )
-
-       in counterexample (List.intercalate "\n" $ map show $ Signal.eventsToList events)
-        $ signalProperty 20 show
-            Set.null
-            keepNonTrustablePeersTooLong
-
-prop_no_non_trustable_peers_before_caught_up_state_iosimpor
-  :: AbsBearerInfo -> DiffusionScript -> Property
-prop_no_non_trustable_peers_before_caught_up_state_iosimpor
-  = testWithIOSimPOR prop_no_non_trustable_peers_before_caught_up_state short_trace
-
-prop_no_non_trustable_peers_before_caught_up_state_iosim
-  :: AbsBearerInfo -> DiffusionScript -> Property
-prop_no_non_trustable_peers_before_caught_up_state_iosim
-  = testWithIOSim prop_no_non_trustable_peers_before_caught_up_state long_trace
 
 
 -- | Unit test which covers issue #4177
