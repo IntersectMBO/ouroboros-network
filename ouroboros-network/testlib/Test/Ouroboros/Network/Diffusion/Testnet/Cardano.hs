@@ -902,6 +902,23 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
               (Cardano.bootstrapPeersFlag . Governor.extraState)
               events
 
+          -- A signal which shows when bootstrap peers changed and are no
+          -- longer a subset of previous bootstrap peers set.  This is a more
+          -- refined version of simply observing `TraceUseBootstrapPeersChanged
+          -- UseBootstrapPeers{}`
+          useBootstrapPeersChangedSig :: Signal Bool
+          useBootstrapPeersChangedSig =
+              Signal.fromChangeEvents False
+            . Signal.selectEvents
+                (\case
+                 TraceUseBootstrapPeersChanged UseBootstrapPeers{}
+                   -> Just True
+                 _ -> Nothing
+                )
+            . selectDiffusionPeerSelectionEvents
+            $ events
+
+
           govLedgerStateJudgement :: Signal LedgerStateJudgement
           govLedgerStateJudgement =
             selectDiffusionPeerSelectionState
@@ -955,20 +972,23 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
               300 -- seconds
               (\( knownPeers
                 , useBootstrapPeers
+                , useBootstrapPeersChanged
                 , trustedPeers
                 , ledgerStateJudgement
                 , isAlive
                 ) ->
                 if    isAlive
+                   && not useBootstrapPeersChanged
                    && requiresBootstrapPeers useBootstrapPeers ledgerStateJudgement
                    then knownPeers `Set.difference` trustedPeers
                    else Set.empty
               )
-              ((,,,,) <$> govKnownPeers
-                      <*> govUseBootstrapPeers
-                      <*> govTrustedPeers
-                      <*> govLedgerStateJudgement
-                      <*> trIsNodeAlive
+              ((,,,,,) <$> govKnownPeers
+                       <*> govUseBootstrapPeers
+                       <*> useBootstrapPeersChangedSig
+                       <*> govTrustedPeers
+                       <*> govLedgerStateJudgement
+                       <*> trIsNodeAlive
               )
        in counterexample (List.intercalate "\n" $ map show $ Signal.eventsToList events)
         $ signalProperty 20 show
@@ -1063,6 +1083,22 @@ prop_no_non_trustable_peers_before_caught_up_state ioSimTrace traceNumber =
             . selectDiffusionSimulationTrace
             $ events
 
+          -- A signal which shows when bootstrap peers changed and are no
+          -- longer a subset of previous bootstrap peers set.  This is a more
+          -- refined version of simply observing `TraceUseBootstrapPeersChanged
+          -- UseBootstrapPeers{}`
+          useBootstrapPeersChangedSig :: Signal Bool
+          useBootstrapPeersChangedSig =
+              Signal.fromChangeEvents False
+            . Signal.selectEvents
+                (\case
+                 TraceUseBootstrapPeersChanged UseBootstrapPeers{}
+                   -> Just True
+                 _ -> Nothing
+                )
+            . selectDiffusionPeerSelectionEvents
+            $ events
+
           -- Signal.keyedUntil receives 2 functions one that sets start of the
           -- set signal, one that ends it and another that stops all.
           --
@@ -1088,6 +1124,7 @@ prop_no_non_trustable_peers_before_caught_up_state ioSimTrace traceNumber =
               (\( knownPeers
                 , trustedPeers
                 , useBootstrapPeers
+                , useBootstrapPeersChanged
                 , ledgerStateJudgement
                 , hasOnlyBootstrapPeers
                 , isAlive
@@ -1096,19 +1133,23 @@ prop_no_non_trustable_peers_before_caught_up_state ioSimTrace traceNumber =
                   -- * the node is live
                   -- * we are in a state which requires bootstrap peers
                   -- * there are non trusted known peers
+                  -- un-arm the signal if the node was reconfigured with new
+                  -- bootstrap peers set
                   if    isAlive
                      && hasOnlyBootstrapPeers
+                     && not useBootstrapPeersChanged
                      && requiresBootstrapPeers useBootstrapPeers ledgerStateJudgement
                      then Set.difference knownPeers trustedPeers
                      else Set.empty
               )
               -- signal
-              ((,,,,,) <$> govKnownPeers
-                       <*> govTrustedPeers
-                       <*> govUseBootstrapPeers
-                       <*> govLedgerStateJudgement
-                       <*> govHasOnlyBootstrapPeers
-                       <*> trIsNodeAlive
+              ((,,,,,,) <$> govKnownPeers
+                        <*> govTrustedPeers
+                        <*> govUseBootstrapPeers
+                        <*> useBootstrapPeersChangedSig
+                        <*> govLedgerStateJudgement
+                        <*> govHasOnlyBootstrapPeers
+                        <*> trIsNodeAlive
               )
 
        in counterexample (List.intercalate "\n" $ map show $ Signal.eventsToList events)
