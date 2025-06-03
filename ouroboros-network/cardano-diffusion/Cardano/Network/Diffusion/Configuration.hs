@@ -14,8 +14,7 @@ module Cardano.Network.Diffusion.Configuration
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
 import Cardano.Network.Types (NumberOfBigLedgerPeers (..))
 import Control.Concurrent.Class.MonadSTM (STM)
-import Ouroboros.Network.Diffusion.Configuration (ConsensusMode,
-           defaultDeadlineTargets)
+import Ouroboros.Network.Diffusion.Configuration (ConsensusMode)
 import Ouroboros.Network.PeerSelection.Governor.Types
            (PeerSelectionTargets (..))
 
@@ -43,8 +42,11 @@ defaultNumBootstrapPeers = DefaultNumBootstrapPeers 30
 --
 defaultSyncTargets :: PeerSelectionTargets
 defaultSyncTargets =
-  defaultDeadlineTargets {
-    targetNumberOfActivePeers               = 0,
+  PeerSelectionTargets {
+    targetNumberOfRootPeers                 = 0,
+    targetNumberOfKnownPeers                = 150,
+    targetNumberOfEstablishedPeers          = 10,
+    targetNumberOfActivePeers               = 5,
     targetNumberOfKnownBigLedgerPeers       = 100,
     targetNumberOfEstablishedBigLedgerPeers = 40,
     targetNumberOfActiveBigLedgerPeers      = 30 }

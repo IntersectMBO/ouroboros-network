@@ -149,18 +149,25 @@ peerChurnGovernor PeerChurnArgs {
   -- Wait a while so that not only the closest peers have had the time
   -- to become warm.
   startTs0 <- getMonotonicTime
-  -- TODO: revisit the policy once we have local root peers in the governor.
-  -- The intention is to give local root peers give head start and avoid
-  -- giving advantage to hostile and quick root peers.
-  threadDelay 3
-  atomically $ do
-    (churnMode, ledgerStateJudgement, useBootstrapPeers, ltt)
-      <- (,,,) <$> updateChurnMode <*> getLedgerStateJudgement <*> getUseBootstrapPeers <*> getLocalRootHotTarget
-    let regime  = pickChurnRegime consensusMode churnMode useBootstrapPeers
-        targets = getPeerSelectionTargets consensusMode ledgerStateJudgement getOriginalPeerTargets genesisPeerTargets
 
-    modifyTVar peerSelectionVar ( increaseActivePeers regime ltt targets
-                                . increaseEstablishedPeers regime ltt targets)
+  -- if this code here is removed, then the initial peer churn targets
+  -- in the TVar must not be nullPeerselectionTargets otherwise
+  -- targetPeers in Monitor will not work due to a check!
+  atomically $ do
+    ledgerStateJudgement0 <- getLedgerStateJudgement
+    let targets0 = getPeerSelectionTargets consensusMode ledgerStateJudgement0 getOriginalPeerTargets genesisPeerTargets
+        targets0' = case consensusMode of
+          -- in legacy sync mode, we give a head start to big ledger & local root peers by disabling root peers
+          PraosMode  -> targets0 { targetNumberOfRootPeers = 0 }
+          _otherwise -> targets0
+    writeTVar peerSelectionVar targets0'
+
+  threadDelay 3
+
+  atomically $ do
+    ledgerStateJudgement <- getLedgerStateJudgement
+    let targets = getPeerSelectionTargets consensusMode ledgerStateJudgement getOriginalPeerTargets genesisPeerTargets
+    writeTVar peerSelectionVar targets
 
   endTs0 <- getMonotonicTime
   fuzzyDelay inRng (endTs0 `diffTime` startTs0) >>= churnLoop
@@ -416,7 +423,9 @@ peerChurnGovernor PeerChurnArgs {
       -> ModifyPeerSelectionTargets
     decreaseKnownPeers _ _ base targets =
       targets {
-          targetNumberOfRootPeers =
+          -- we clamp from above to not accidentally actually increase
+          -- the number of root peers
+          targetNumberOfRootPeers = min (targetNumberOfRootPeers base) $
             decrease (targetNumberOfRootPeers base - targetNumberOfEstablishedPeers base)
             + targetNumberOfEstablishedPeers base
         , targetNumberOfKnownPeers =
