@@ -6,6 +6,14 @@
 
 ### Non-breaking changes
 
+## 0.18.0.1 -- 2025-06-02
+
+### Breaking changes
+
+### Non-breaking changes
+
+* properly unmask async exceptions in the CM
+
 ## 0.18.0.0 -- 2025-05-13
 
 ### Breaking changes

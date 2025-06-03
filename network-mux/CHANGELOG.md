@@ -6,7 +6,15 @@
 
 ### Non-breaking changes
 
-## 0.8.0.0 -- 205-05-13
+## 0.8.0.1 -- 2025-06-02
+
+### Breaking changes
+
+### Non-breaking changes
+
+* Properly unmask async exceptions in the job pool
+
+## 0.8.0.0 -- 2025-05-13
 
 ### Breaking changes
 
