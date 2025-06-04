@@ -2,7 +2,16 @@
 {-# LANGUAGE GADTs          #-}
 {-# LANGUAGE KindSignatures #-}
 
-module Cardano.Network.Diffusion.Types where
+module Cardano.Network.Diffusion.Types
+  ( Tracers
+  , Configuration
+  , Applications
+  , CardanoPeerSelectionCounters
+  , CardanoLocalRootConfig
+  , CardanoTraceLocalRootPeers
+  , CardanoTracePeerSelection
+  , CardanoDebugPeerSelection
+  ) where
 
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
 
@@ -10,11 +19,13 @@ import Control.Exception (IOException, SomeException)
 import Network.Socket (SockAddr, Socket)
 
 import Cardano.Network.PeerSelection.ExtraRootPeers (ExtraPeers)
+import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState (ExtraState)
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
 import Cardano.Network.PeerSelection.Governor.Types
            (ExtraPeerSelectionSetsWithSizes)
-import Ouroboros.Network.Diffusion.Types (Configuration, Tracers)
+import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
+import Ouroboros.Network.Diffusion qualified as Diffusion
 import Ouroboros.Network.NodeToClient (LocalAddress, LocalSocket,
            NodeToClientVersion, NodeToClientVersionData)
 import Ouroboros.Network.NodeToNode (NodeToNodeVersion, NodeToNodeVersionData,
@@ -25,17 +36,22 @@ import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
            (TraceLocalRootPeers)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (LocalRootConfig)
 
-type CardanoLocalRootConfig = LocalRootConfig PeerTrustable
 
-type CardanoNetworkTracers =
-  Tracers RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
-          LocalAddress  NodeToClientVersion NodeToClientVersionData
-          IOException Cardano.ExtraState Cardano.DebugPeerSelectionState
-          PeerTrustable (ExtraPeers RemoteAddress)
-          (ExtraPeerSelectionSetsWithSizes RemoteAddress) IO
+type Tracers =
+  Diffusion.Tracers
+    RemoteAddress NodeToNodeVersion  NodeToNodeVersionData
+    LocalAddress  NodeToClientVersion NodeToClientVersionData
+    IOException
+    Cardano.ExtraState
+    Cardano.DebugPeerSelectionState
+    PeerTrustable
+    (Cardano.ExtraPeers RemoteAddress)
+    (Cardano.ExtraPeerSelectionSetsWithSizes RemoteAddress)
+    IO
 
-type CardanoConfiguration =
-  Configuration
+
+type Configuration =
+  Diffusion.Configuration
     PeerTrustable
     IO
     Socket
@@ -43,8 +59,27 @@ type CardanoConfiguration =
     LocalSocket
     LocalAddress
 
+
+type Applications a =
+  Diffusion.Applications
+    RemoteAddress
+    NodeToNodeVersion
+    NodeToNodeVersionData
+    LocalAddress
+    NodeToClientVersion
+    NodeToClientVersionData
+    IO
+    a
+
+
+-- TODO: do we need to expose these?
+
+type CardanoLocalRootConfig = LocalRootConfig PeerTrustable
+
+
 type CardanoTraceLocalRootPeers =
   TraceLocalRootPeers PeerTrustable RemoteAddress SomeException
+
 
 type CardanoTracePeerSelection =
   TracePeerSelection Cardano.DebugPeerSelectionState
@@ -52,11 +87,13 @@ type CardanoTracePeerSelection =
                      (ExtraPeers SockAddr)
                      RemoteAddress
 
+
 type CardanoDebugPeerSelection =
   DebugPeerSelection ExtraState
                      PeerTrustable
                      (ExtraPeers RemoteAddress)
                      RemoteAddress
+
 
 type CardanoPeerSelectionCounters =
   PeerSelectionCounters (ExtraPeerSelectionSetsWithSizes RemoteAddress)
