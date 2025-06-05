@@ -234,6 +234,7 @@ runM Interfaces
        , daRethrowPolicy
        , daLocalRethrowPolicy
        , daReturnPolicy
+       , daRepromoteDelay
        , daPeerSelectionPolicy
        , daPeerSharingRegistry
        }
@@ -393,7 +394,10 @@ runM Interfaces
       labelThisThread "remote connection manager"
       let
         exitPolicy :: ExitPolicy a
-        exitPolicy = stdExitPolicy daReturnPolicy
+        exitPolicy = ExitPolicy {
+          epReturnDelay = daReturnPolicy,
+          epErrorDelay  = daRepromoteDelay
+        }
 
       ipv4Address
         <- traverse (either (Snocket.getLocalAddr diNtnSnocket) pure)

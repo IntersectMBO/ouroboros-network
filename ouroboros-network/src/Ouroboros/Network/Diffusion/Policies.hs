@@ -87,6 +87,13 @@ maxInboundPeers :: Int
 maxInboundPeers = 10
 
 
+-- | Delay before a peer is re-promoted by the outbound-governor after an
+-- error.
+--
+repromoteDelay :: RepromoteDelay
+repromoteDelay = 10
+
+
 -- | Merge two dictionaries where values of the first one are obligatory, while
 -- the second one are optional.
 --
