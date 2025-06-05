@@ -531,13 +531,22 @@ data Applications ntnAddr ntnVersion ntnVersionData
                       Mx.ResponderMode ntcAddr
                       ByteString m Void ())
 
-      -- | /node-to-node/ rethrow policy
+      -- | /node-to-node/ rethrow policy.
+      --
+      -- TODO: should it be part of `ExitPolicy`?
       --
     , daRethrowPolicy       :: RethrowPolicy
 
       -- | /node-to-node/ return policy
       --
+      -- Internally packed into `ExitPolicy` record.
+      --
     , daReturnPolicy        :: ReturnPolicy a
+
+      -- | /node-to-node/ error delay.
+      --
+      -- Internally packed into `ExitPolicy` record.
+    , daRepromoteErrorDelay :: RepromoteDelay
 
       -- | /node-to-client/ rethrow policy
       --

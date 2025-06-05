@@ -99,9 +99,14 @@ diffusionApplications
         ]
   , daRethrowPolicy                     =  muxErrorRethrowPolicy
                                         <> ioErrorRethrowPolicy
-  , daReturnPolicy                      = const (RepromoteDelay 0)
+  , daReturnPolicy                      = const dmqRepromoteDelay
+  , daRepromoteErrorDelay               = dmqRepromoteDelay
   , daLocalRethrowPolicy                = mempty
   , daPeerSelectionPolicy               = peerSelectionPolicy
   , daPeerSharingRegistry               = peerSharingRegistry
   }
 
+
+-- | PeerSelection RepromoteDelay used after
+dmqRepromoteDelay :: RepromoteDelay
+dmqRepromoteDelay = 10
