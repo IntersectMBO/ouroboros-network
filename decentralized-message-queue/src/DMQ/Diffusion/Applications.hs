@@ -99,7 +99,10 @@ diffusionApplications
         ]
   , daRethrowPolicy                     =  muxErrorRethrowPolicy
                                         <> ioErrorRethrowPolicy
-  , daReturnPolicy                      = const (RepromoteDelay 0)
+    -- TODO: move to a policy module
+  , daReturnPolicy                      = const (RepromoteDelay 10)
+    -- TODO: move to a policy module
+  , daRepromoteErrorDelay               = RepromoteDelay 10
   , daLocalRethrowPolicy                = mempty
   , daPeerSelectionPolicy               = peerSelectionPolicy
   , daPeerSharingRegistry               = peerSharingRegistry
