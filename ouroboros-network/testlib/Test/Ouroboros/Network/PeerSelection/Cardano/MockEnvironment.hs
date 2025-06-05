@@ -293,7 +293,7 @@ governorAction mockEnv@GovernorMockEnvironment {
             countersVar,
             publicStateVar,
             debugStateVar,
-            readUseLedgerPeers = (readTVar lpVar)
+            readUseLedgerPeers = readTVar lpVar
           }
 
         peerSelectionGovernorArgs =
@@ -486,7 +486,8 @@ mockPeerSelectionActions' tracer
           monitorPeerConnection,
           activatePeerConnection,
           deactivatePeerConnection,
-          closePeerConnection
+          closePeerConnection,
+          errorDelay = config_REPROMOTE_DELAY
         },
       getLedgerStateCtx = LedgerPeersConsensusInterface {
           lpGetLatestSlot = pure Origin,
@@ -727,8 +728,7 @@ mockPeerSelectionPolicy GovernorMockEnvironment {
       policyPeerShareRetryTime         = 3600, -- seconds
       policyPeerShareBatchWaitTime     = 3,    -- seconds
       policyPeerShareOverallTimeout    = 10,   -- seconds
-      policyPeerShareActivationDelay   = 300,  -- seconds
-      policyErrorDelay                 = 10    -- seconds
+      policyPeerShareActivationDelay   = 300   -- seconds
     }
 
 --
