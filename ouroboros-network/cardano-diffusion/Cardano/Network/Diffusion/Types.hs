@@ -3,7 +3,8 @@
 {-# LANGUAGE KindSignatures #-}
 
 module Cardano.Network.Diffusion.Types
-  ( Tracers
+  ( Arguments (..)
+  , Tracers
   , Configuration
   , Applications
   , CardanoPeerSelectionCounters
@@ -11,30 +12,58 @@ module Cardano.Network.Diffusion.Types
   , CardanoTraceLocalRootPeers
   , CardanoTracePeerSelection
   , CardanoDebugPeerSelection
+    -- * Re-exports
+  , PeerMetrics
+  , Cardano.Churn.TracerChurnMode
   ) where
 
-import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
 
+import Control.Concurrent.Class.MonadSTM (STM)
 import Control.Exception (IOException)
+import Control.Tracer (Tracer)
 import Network.Socket (SockAddr, Socket)
 
+import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
+import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
+import Cardano.Network.PeerSelection.Churn qualified as Cardano.Churn
 import Cardano.Network.PeerSelection.ExtraRootPeers (ExtraPeers)
 import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState (ExtraState)
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
-import Cardano.Network.PeerSelection.Governor.Types
-           (ExtraPeerSelectionSetsWithSizes)
 import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
+import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
+import Cardano.Network.Types (NumberOfBigLedgerPeers (..))
+
 import Ouroboros.Network.Diffusion qualified as Diffusion
+import Ouroboros.Network.Diffusion.Configuration (ConsensusMode)
 import Ouroboros.Network.NodeToClient (LocalAddress, LocalSocket,
            NodeToClientVersion, NodeToClientVersionData)
 import Ouroboros.Network.NodeToNode (NodeToNodeVersion, NodeToNodeVersionData,
            RemoteAddress)
 import Ouroboros.Network.PeerSelection.Governor.Types (DebugPeerSelection,
-           PeerSelectionCounters, TracePeerSelection)
+           PeerSelectionCounters, PeerSelectionTargets (..), TracePeerSelection)
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type
+           (LedgerPeersConsensusInterface (..))
+import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
            (TraceLocalRootPeers)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (LocalRootConfig)
+
+-- | Arguments required to instantiate Cardano Node Diffusion
+--
+-- NOTE: it is instantiated in `ouroboros-consensus-diffusion`.
+-- TODO: we might need to split this type into two parts.
+--
+data Arguments =
+  Arguments {
+    consensusMode         :: ConsensusMode
+  , numBigLedgerPeers     :: NumberOfBigLedgerPeers
+  , genesisPeerTargets    :: PeerSelectionTargets
+  , readUseBootstrapPeers :: STM IO UseBootstrapPeers
+  , tracerChurnMode       :: Tracer IO Cardano.Churn.TracerChurnMode
+  , churnMetrics          :: PeerMetrics IO RemoteAddress
+  , ledgerPeersAPI        :: LedgerPeersConsensusInterface (Cardano.LedgerPeersConsensusInterface IO) IO
+  }
 
 type DNSResolverError = IOException
 
@@ -96,4 +125,4 @@ type CardanoDebugPeerSelection =
 
 
 type CardanoPeerSelectionCounters =
-  PeerSelectionCounters (ExtraPeerSelectionSetsWithSizes RemoteAddress)
+  PeerSelectionCounters (Cardano.ExtraPeerSelectionSetsWithSizes RemoteAddress)

@@ -12,7 +12,8 @@
 -- with the "Ouroboros.Network.Diffusion.NonP2P").
 --
 module Cardano.Network.Diffusion
-  ( Tracers
+  ( Arguments (..)
+  , Tracers
   , Configuration
   , Applications
   , run
@@ -21,13 +22,12 @@ module Cardano.Network.Diffusion
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadThrow
-import Control.Tracer (Tracer, traceWith)
+import Control.Tracer (traceWith)
 import Data.Set qualified as Set
 import Data.Void (Void)
 import System.Exit (ExitCode)
 
 
-import Cardano.Network.Diffusion.Configuration qualified as Cardano.Config
 import Cardano.Network.Diffusion.Handlers qualified as Cardano
 import Cardano.Network.Diffusion.Types
 import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
@@ -37,15 +37,14 @@ import Cardano.Network.PeerSelection.Governor.PeerSelectionActions qualified as 
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano.PeerSelectionState
 import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano.Types
 import Cardano.Network.PeerSelection.PeerSelectionActions qualified as Cardano
+
 import Ouroboros.Network.Diffusion qualified as Diffusion
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.NodeToClient qualified as NodeToClient
-import Ouroboros.Network.NodeToNode (NodeToNodeVersionData (..), RemoteAddress,
-           ntnDataFlow)
+import Ouroboros.Network.NodeToNode (NodeToNodeVersionData (..), ntnDataFlow)
 import Ouroboros.Network.NodeToNode qualified as NodeToNode
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeersConsensusInterface (..))
-import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 import Ouroboros.Network.Protocol.Handshake
 import Ouroboros.Network.Protocol.Handshake.Codec
 import Ouroboros.Network.Protocol.Handshake.Version
@@ -59,15 +58,20 @@ import Ouroboros.Network.Protocol.Handshake.Version
 --   information from the running system.  This is used by 'cardano-cli' or
 --   a wallet and a like local services.
 --
-run :: LedgerPeersConsensusInterface (Cardano.LedgerPeersConsensusInterface IO) IO
-    -> Tracer IO Cardano.Churn.TracerChurnMode
-    -> Cardano.Config.LocalConfiguration IO
-    -> PeerMetrics IO RemoteAddress
+run :: Arguments
     -> Tracers
     -> Configuration
     -> Applications a
     -> IO Void
-run lpci tracerChurnMode localConfig metrics tracers args apps = do
+run Arguments { consensusMode,
+                numBigLedgerPeers,
+                genesisPeerTargets,
+                readUseBootstrapPeers,
+                tracerChurnMode,
+                churnMetrics,
+                ledgerPeersAPI
+              }
+    tracers config apps = do
     let tracer = Diffusion.dtDiffusionTracer tracers
         daNtnHandshakeArguments =
           HandshakeArguments {
@@ -104,7 +108,7 @@ run lpci tracerChurnMode localConfig metrics tracers args apps = do
                (\e -> traceWith tracer (Diffusion.DiffusionErrored e)
                    >> throwIO (Diffusion.DiffusionError e))
          $ withIOManager $ \iocp -> do
-             interfaces <- Diffusion.mkInterfaces iocp tracer (Diffusion.dcEgressPollInterval args)
+             interfaces <- Diffusion.mkInterfaces iocp tracer (Diffusion.dcEgressPollInterval config)
              Diffusion.runM
                interfaces
                tracers
@@ -114,43 +118,43 @@ run lpci tracerChurnMode localConfig metrics tracers args apps = do
                   daUpdateVersionData = \versionData diffusionMode -> versionData { diffusionMode },
                   daNtnHandshakeArguments,
                   daNtcHandshakeArguments,
-                  daLedgerPeersCtx                    = lpci,
+                  daLedgerPeersCtx                    = ledgerPeersAPI,
                   daEmptyExtraState                   =
                     Cardano.PeerSelectionState.empty
-                      (Cardano.Config.consensusMode localConfig)
-                      (Cardano.Config.numBigLedgerPeers localConfig),
+                      consensusMode
+                      numBigLedgerPeers,
                   daEmptyExtraCounters                = Cardano.Types.empty,
                   daExtraPeersAPI                     = Cardano.cardanoPublicRootPeersAPI,
                   daInstallSigUSR1Handler             =
                     Cardano.sigUSR1Handler
                       tracers
-                      (Diffusion.dcReadUseLedgerPeers args)
-                      (Diffusion.dcOwnPeerSharing args)
-                      (Cardano.Config.readUseBootstrapPeers localConfig)
-                      (Cardano.getLedgerStateJudgement (lpExtraAPI lpci))
-                      metrics,
+                      (Diffusion.dcReadUseLedgerPeers config)
+                      (Diffusion.dcOwnPeerSharing config)
+                      readUseBootstrapPeers
+                      (Cardano.getLedgerStateJudgement (lpExtraAPI ledgerPeersAPI))
+                      churnMetrics,
                   daPeerSelectionGovernorArgs         =
                     Cardano.Types.cardanoPeerSelectionGovernorArgs
                       Cardano.ExtraPeerSelectionActions {
-                        Cardano.genesisPeerTargets    = Cardano.Config.genesisPeerTargets localConfig,
-                        Cardano.readUseBootstrapPeers = Cardano.Config.readUseBootstrapPeers localConfig
+                        Cardano.genesisPeerTargets    = genesisPeerTargets,
+                        Cardano.readUseBootstrapPeers = readUseBootstrapPeers
                       },
                   daPeerSelectionStateToExtraCounters = Cardano.Types.cardanoPeerSelectionStatetoCounters,
                   daToExtraPeers                      = flip Cardano.ExtraPeers Set.empty,
                   daRequestPublicRootPeers            =
                       Just $ Cardano.requestPublicRootPeers
                                (Diffusion.dtTracePublicRootPeersTracer tracers)
-                               (Cardano.Config.readUseBootstrapPeers localConfig)
-                               (Cardano.getLedgerStateJudgement (lpExtraAPI lpci))
-                               (Diffusion.dcReadPublicRootPeers args),
+                               readUseBootstrapPeers
+                               (Cardano.getLedgerStateJudgement (lpExtraAPI ledgerPeersAPI))
+                               (Diffusion.dcReadPublicRootPeers config),
                   daPeerChurnGovernor                 = Cardano.Churn.peerChurnGovernor,
                   daExtraChurnArgs                    =
                     Cardano.Churn.ExtraArguments {
                       Cardano.Churn.modeVar            = churnModeVar,
-                      Cardano.Churn.genesisPeerTargets = Cardano.Config.genesisPeerTargets localConfig,
-                      Cardano.Churn.readUseBootstrap   = Cardano.Config.readUseBootstrapPeers localConfig,
-                      Cardano.Churn.consensusMode      = Cardano.Config.consensusMode localConfig,
+                      Cardano.Churn.genesisPeerTargets = genesisPeerTargets,
+                      Cardano.Churn.readUseBootstrap   = readUseBootstrapPeers,
+                      Cardano.Churn.consensusMode      = consensusMode,
                       Cardano.Churn.tracerChurnMode    = tracerChurnMode
                     }
                 }
-               args apps
+               config apps
