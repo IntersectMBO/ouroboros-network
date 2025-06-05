@@ -3,10 +3,13 @@
 {-# LANGUAGE KindSignatures #-}
 
 module Cardano.Network.Diffusion.Types
-  ( Arguments (..)
-  , Tracers
-  , Configuration
-  , Applications
+  ( CardanoArguments (..)
+  , CardanoTracers
+  , CardanoConfiguration
+  , CardanoApplications
+  , Diffusion.Tracers (..)
+  , Diffusion.Configuration (..)
+  , Diffusion.Applications (..)
   , CardanoPeerSelectionCounters
   , CardanoLocalRootConfig
   , CardanoTraceLocalRootPeers
@@ -54,8 +57,8 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (LocalRootConfig)
 -- NOTE: it is instantiated in `ouroboros-consensus-diffusion`.
 -- TODO: we might need to split this type into two parts.
 --
-data Arguments =
-  Arguments {
+data CardanoArguments =
+  CardanoArguments {
     consensusMode         :: ConsensusMode
   , numBigLedgerPeers     :: NumberOfBigLedgerPeers
   , genesisPeerTargets    :: PeerSelectionTargets
@@ -67,7 +70,7 @@ data Arguments =
 
 type DNSResolverError = IOException
 
-type Tracers =
+type CardanoTracers =
   Diffusion.Tracers
     RemoteAddress NodeToNodeVersion  NodeToNodeVersionData
     LocalAddress  NodeToClientVersion NodeToClientVersionData
@@ -80,7 +83,7 @@ type Tracers =
     IO
 
 
-type Configuration =
+type CardanoConfiguration =
   Diffusion.Configuration
     PeerTrustable
     IO
@@ -90,7 +93,7 @@ type Configuration =
     LocalAddress
 
 
-type Applications a =
+type CardanoApplications a =
   Diffusion.Applications
     RemoteAddress
     NodeToNodeVersion

@@ -12,10 +12,7 @@
 -- with the "Ouroboros.Network.Diffusion.NonP2P").
 --
 module Cardano.Network.Diffusion
-  ( Arguments (..)
-  , Tracers
-  , Configuration
-  , Applications
+  ( module Cardano.Network.Diffusion.Types
   , run
   ) where
 
@@ -58,19 +55,20 @@ import Ouroboros.Network.Protocol.Handshake.Version
 --   information from the running system.  This is used by 'cardano-cli' or
 --   a wallet and a like local services.
 --
-run :: Arguments
-    -> Tracers
-    -> Configuration
-    -> Applications a
+run :: CardanoArguments
+    -> CardanoTracers
+    -> CardanoConfiguration
+    -> CardanoApplications a
     -> IO Void
-run Arguments { consensusMode,
-                numBigLedgerPeers,
-                genesisPeerTargets,
-                readUseBootstrapPeers,
-                tracerChurnMode,
-                churnMetrics,
-                ledgerPeersAPI
-              }
+run CardanoArguments {
+      consensusMode,
+      numBigLedgerPeers,
+      genesisPeerTargets,
+      readUseBootstrapPeers,
+      tracerChurnMode,
+      churnMetrics,
+      ledgerPeersAPI
+    }
     tracers config apps = do
     let tracer = Diffusion.dtDiffusionTracer tracers
         daNtnHandshakeArguments =
