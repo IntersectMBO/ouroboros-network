@@ -21,7 +21,7 @@ module Cardano.Network.Diffusion.Types
   ) where
 
 
-import Control.Concurrent.Class.MonadSTM (STM)
+import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (IOException)
 import Control.Tracer (Tracer)
 import Network.Socket (SockAddr, Socket)
@@ -57,15 +57,16 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (LocalRootConfig)
 -- NOTE: it is instantiated in `ouroboros-consensus-diffusion`.
 -- TODO: we might need to split this type into two parts.
 --
-data CardanoArguments =
+data CardanoArguments m =
   CardanoArguments {
     consensusMode         :: ConsensusMode
   , numBigLedgerPeers     :: NumberOfBigLedgerPeers
   , genesisPeerTargets    :: PeerSelectionTargets
-  , readUseBootstrapPeers :: STM IO UseBootstrapPeers
-  , tracerChurnMode       :: Tracer IO Cardano.Churn.TracerChurnMode
-  , churnMetrics          :: PeerMetrics IO RemoteAddress
-  , ledgerPeersAPI        :: LedgerPeersConsensusInterface (Cardano.LedgerPeersConsensusInterface IO) IO
+  , readUseBootstrapPeers :: STM m UseBootstrapPeers
+  , tracerChurnMode       :: Tracer m Cardano.Churn.TracerChurnMode
+  , churnModeVar          :: StrictTVar m Cardano.Churn.ChurnMode
+  , churnMetrics          :: PeerMetrics m RemoteAddress
+  , ledgerPeersAPI        :: LedgerPeersConsensusInterface (Cardano.LedgerPeersConsensusInterface m) m
   }
 
 type DNSResolverError = IOException

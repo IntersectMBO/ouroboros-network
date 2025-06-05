@@ -16,14 +16,11 @@ module Cardano.Network.Diffusion
   , run
   ) where
 
-
-import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadThrow
 import Control.Tracer (traceWith)
 import Data.Set qualified as Set
 import Data.Void (Void)
 import System.Exit (ExitCode)
-
 
 import Cardano.Network.Diffusion.Handlers qualified as Cardano
 import Cardano.Network.Diffusion.Types
@@ -55,7 +52,7 @@ import Ouroboros.Network.Protocol.Handshake.Version
 --   information from the running system.  This is used by 'cardano-cli' or
 --   a wallet and a like local services.
 --
-run :: CardanoArguments
+run :: CardanoArguments IO
     -> CardanoTracers
     -> CardanoConfiguration
     -> CardanoApplications a
@@ -66,6 +63,7 @@ run CardanoArguments {
       genesisPeerTargets,
       readUseBootstrapPeers,
       tracerChurnMode,
+      churnModeVar,
       churnMetrics,
       ledgerPeersAPI
     }
@@ -93,8 +91,6 @@ run CardanoArguments {
               haQueryVersion = queryVersion,
               haTimeLimits = noTimeLimitsHandshake
             }
-
-    churnModeVar <- newTVarIO Cardano.Churn.ChurnModeNormal
 
     -- We run two services: for /node-to-node/ and /node-to-client/.  The
     -- naming convention is that we use /local/ prefix for /node-to-client/
