@@ -75,6 +75,7 @@ import Ouroboros.Network.Block qualified as Block
 import Ouroboros.Network.Context
 import Ouroboros.Network.ControlMessage (ControlMessage (..))
 import Ouroboros.Network.Diffusion qualified as Diffusion
+import Ouroboros.Network.Diffusion.Policies qualified as Diffusion.Policies
 import Ouroboros.Network.Driver.Limits
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.KeepAlive
@@ -97,7 +98,6 @@ import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharing)
 import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.Util.ShowProxy
 
-import Ouroboros.Network.Diffusion.Policies (simplePeerSelectionPolicy)
 import Test.Ouroboros.Network.Diffusion.Node.Kernel
 
 
@@ -284,9 +284,10 @@ applications debugTracer nodeKernel
       , Diffusion.daLocalRethrowPolicy     =
              mkRethrowPolicy
                (\ _ (_ :: SomeException) -> ShutdownNode)
-      , Diffusion.daPeerSelectionPolicy    = simplePeerSelectionPolicy aaPolicyStdGen aaPeerMetrics (RepromoteDelay 10)
+      , Diffusion.daPeerSelectionPolicy    = Diffusion.Policies.simplePeerSelectionPolicy aaPolicyStdGen aaPeerMetrics
       , Diffusion.daReturnPolicy           = \_ -> config_REPROMOTE_DELAY
       , Diffusion.daPeerSharingRegistry    = nkPeerSharingRegistry nodeKernel
+      , Diffusion.daRepromoteErrorDelay    = Diffusion.Policies.repromoteErrorDelay
       }
   where
     initiatorApp
@@ -633,4 +634,4 @@ instance ShowProxy PingPong where
 --
 
 config_REPROMOTE_DELAY :: RepromoteDelay
-config_REPROMOTE_DELAY = 10
+config_REPROMOTE_DELAY = Diffusion.Policies.repromoteErrorDelay

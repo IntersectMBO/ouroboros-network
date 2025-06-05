@@ -24,7 +24,6 @@ import System.Random
 import NoThunks.Class.Orphans ()
 
 import Cardano.Slotting.Slot (SlotNo (..))
-import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.PeerSelection (PeerSource (..))
 import Ouroboros.Network.PeerSelection.Governor
 import Ouroboros.Network.PeerSelection.PeerMetric
@@ -159,7 +158,6 @@ prop_hotToWarmM ArbitraryPolicyArguments{..} seed = do
             rngVar
             (readTVar cmVar)
             metrics
-            (RepromoteDelay 10)
     picked <- atomically $ policyPickHotPeersToDemote policies
                   (const PeerSourceLocalRoot)
                   peerConnectFailCount
@@ -224,7 +222,6 @@ prop_randomDemotionM ArbitraryPolicyArguments{..} seed = do
             rngVar
             (readTVar cmVar)
             metrics
-            (RepromoteDelay 10)
     doDemotion numberOfTries policies Map.empty
 
 
