@@ -35,7 +35,8 @@ import Cardano.Network.PeerSelection.PeerSelectionActions qualified as Cardano
 import Ouroboros.Network.Diffusion qualified as Diffusion
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.NodeToClient qualified as NodeToClient
-import Ouroboros.Network.NodeToNode (NodeToNodeVersionData (..), ntnDataFlow)
+import Ouroboros.Network.NodeToNode (NodeToNodeVersionData (..), RemoteAddress,
+           ntnDataFlow)
 import Ouroboros.Network.NodeToNode qualified as NodeToNode
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeersConsensusInterface (..))
@@ -52,20 +53,30 @@ import Ouroboros.Network.Protocol.Handshake.Version
 --   information from the running system.  This is used by 'cardano-cli' or
 --   a wallet and a like local services.
 --
-run :: CardanoArguments IO
+run :: CardanoNodeArguments IO
+    -- ^ node API: instantiated in `cardano-node`.
+    -> CardanoConsensusArguments RemoteAddress IO
+    -- ^ consensus API; instantiated in `ouroboros-consensus-diffusion` (with
+    -- exception of `readUseBootstrapPeers` field).
     -> CardanoTracers
+    -- ^ generic diffusion tracers; instantiated in `cardano-node`.
     -> CardanoConfiguration
+    -- ^ generic diffusion configuration; instantiated in `cardano-node`.
     -> CardanoApplications a
+    -- ^ cardano specific applications; instantiated in
+    -- `ouroboros-consensus-diffusion`.
     -> IO Void
-run CardanoArguments {
+run CardanoNodeArguments {
       consensusMode,
-      numBigLedgerPeers,
       genesisPeerTargets,
-      readUseBootstrapPeers,
-      tracerChurnMode,
+      minNumOfBigLedgerPeers,
+      tracerChurnMode
+    }
+    CardanoConsensusArguments {
       churnModeVar,
       churnMetrics,
-      ledgerPeersAPI
+      ledgerPeersAPI,
+      readUseBootstrapPeers
     }
     tracers config apps = do
     let tracer = Diffusion.dtDiffusionTracer tracers
@@ -116,7 +127,7 @@ run CardanoArguments {
                   daEmptyExtraState                   =
                     Cardano.PeerSelectionState.empty
                       consensusMode
-                      numBigLedgerPeers,
+                      minNumOfBigLedgerPeers,
                   daEmptyExtraCounters                = Cardano.Types.empty,
                   daExtraPeersAPI                     = Cardano.cardanoPublicRootPeersAPI,
                   daInstallSigUSR1Handler             =

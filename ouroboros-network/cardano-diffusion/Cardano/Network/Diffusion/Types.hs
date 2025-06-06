@@ -3,7 +3,8 @@
 {-# LANGUAGE KindSignatures #-}
 
 module Cardano.Network.Diffusion.Types
-  ( CardanoArguments (..)
+  ( CardanoNodeArguments (..)
+  , CardanoConsensusArguments (..)
   , CardanoTracers
   , CardanoConfiguration
   , CardanoApplications
@@ -54,19 +55,46 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (LocalRootConfig)
 
 -- | Arguments required to instantiate Cardano Node Diffusion
 --
--- NOTE: it is instantiated in `ouroboros-consensus-diffusion`.
--- TODO: we might need to split this type into two parts.
+data CardanoNodeArguments m = CardanoNodeArguments {
+    consensusMode          :: ConsensusMode,
+    -- ^ Field which comes from `cardano-node` configuration file
+    -- (`ncConsensusMode`).
+    genesisPeerTargets     :: PeerSelectionTargets,
+    -- ^ Fields which come from `cardano-node` configuration file.
+    minNumOfBigLedgerPeers :: NumberOfBigLedgerPeers,
+    -- ^ Field which comes from `cardano-node` configuration file.
+    tracerChurnMode        :: Tracer m Cardano.Churn.TracerChurnMode
+    -- ^ Field which comes from `cardano-node` tracing system.
+  }
+
+-- | Arguments required to instantiate Cardano Node Diffusion.
 --
-data CardanoArguments m =
-  CardanoArguments {
-    consensusMode         :: ConsensusMode
-  , numBigLedgerPeers     :: NumberOfBigLedgerPeers
-  , genesisPeerTargets    :: PeerSelectionTargets
-  , readUseBootstrapPeers :: STM m UseBootstrapPeers
-  , tracerChurnMode       :: Tracer m Cardano.Churn.TracerChurnMode
-  , churnModeVar          :: StrictTVar m Cardano.Churn.ChurnMode
-  , churnMetrics          :: PeerMetrics m RemoteAddress
-  , ledgerPeersAPI        :: LedgerPeersConsensusInterface (Cardano.LedgerPeersConsensusInterface m) m
+data CardanoConsensusArguments ntnAddr m =
+  CardanoConsensusArguments {
+    churnModeVar           :: StrictTVar m Cardano.Churn.ChurnMode,
+    -- ^ churn mode var is created in `ouroboros-consensus-diffusion` and shared
+    -- with diffusion and peer selection policy (instantiated in
+    -- `ouroboros-consensus-diffusion):
+    --
+    -- * peer selection is updating it;
+    -- * peer selection policy is reading it.
+
+    churnMetrics           :: PeerMetrics m ntnAddr,
+    -- ^ churn metrics are used in cardano diffusion by `SIGUSR1` handler; in
+    -- consensus they are passed to
+    --
+    -- * applications (e.g. `chain-sync` and `block-fetch`), where they are
+    --   updated;
+    -- * peer selection policy, where they are read.
+
+    ledgerPeersAPI         :: LedgerPeersConsensusInterface (Cardano.LedgerPeersConsensusInterface m) m,
+    -- ^ ledger and consensus APIs
+
+    readUseBootstrapPeers  :: STM m UseBootstrapPeers
+    -- ^ `UseBootstrapPeers` from topology file.
+    --
+    -- `readUseBootstrapPeers` is created in `cardano-node`, then passed to
+    -- consensus through `RunNodeArgs`, from which it is passed to diffusion.
   }
 
 type DNSResolverError = IOException
