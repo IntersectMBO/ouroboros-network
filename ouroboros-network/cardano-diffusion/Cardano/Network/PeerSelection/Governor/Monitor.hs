@@ -391,7 +391,6 @@ monitorBootstrapPeersFlag
   => Cardano.ExtraPeerSelectionActions m
   -> PeerSelectionActions
       Cardano.ExtraState
-
       extraFlags
       (Cardano.ExtraPeers peeraddr)
       extraAPI

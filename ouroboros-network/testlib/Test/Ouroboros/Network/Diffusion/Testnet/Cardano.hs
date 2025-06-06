@@ -65,6 +65,7 @@ import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Types
+import Ouroboros.Network.Diffusion.Policies qualified as Diffusion
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.Mock.ConcreteBlock (BlockHeader)
@@ -155,8 +156,6 @@ tests =
                                  prop_track_coolingToCold_demotions_iosimpor
     , nightlyTest $ testProperty "only bootstrap peers in fallback state"
                                  prop_only_bootstrap_peers_in_fallback_state_iosimpor
-    , nightlyTest $ testProperty "no non trustable peers before caught up state"
-                                 prop_no_non_trustable_peers_before_caught_up_state_iosimpor
     , testGroup "Churn"
       [ nightlyTest $ testProperty "no timeouts"
                                    prop_churn_notimeouts_iosimpor
@@ -225,8 +224,6 @@ tests =
                    prop_accept_failure
     , testProperty "only bootstrap peers in fallback state"
                    prop_only_bootstrap_peers_in_fallback_state_iosim
-    , testProperty "no non trustable peers before caught up state"
-                   prop_no_non_trustable_peers_before_caught_up_state_iosim
     , testGroup "local root diffusion mode"
         [ testProperty "InitiatorOnly"
           (unit_local_root_diffusion_mode InitiatorOnlyDiffusionMode)
@@ -901,6 +898,23 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
               (Cardano.bootstrapPeersFlag . Governor.extraState)
               events
 
+          -- A signal which shows when bootstrap peers changed and are no
+          -- longer a subset of previous bootstrap peers set.  This is a more
+          -- refined version of simply observing `TraceUseBootstrapPeersChanged
+          -- UseBootstrapPeers{}`
+          useBootstrapPeersChangedSig :: Signal Bool
+          useBootstrapPeersChangedSig =
+              Signal.fromChangeEvents False
+            . Signal.selectEvents
+                (\case
+                 TraceUseBootstrapPeersChanged UseBootstrapPeers{}
+                   -> Just True
+                 _ -> Nothing
+                )
+            . selectDiffusionPeerSelectionEvents
+            $ events
+
+
           govLedgerStateJudgement :: Signal LedgerStateJudgement
           govLedgerStateJudgement =
             selectDiffusionPeerSelectionState
@@ -909,10 +923,10 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
 
           trJoinKillSig :: Signal JoinedOrKilled
           trJoinKillSig =
-              Signal.fromChangeEvents Killed -- Default to TrKillingNode
+              Signal.fromChangeEvents Terminated -- Default to TrKillingNode
             . Signal.selectEvents
                 (\case TrJoiningNetwork -> Just Joined
-                       TrKillingNode    -> Just Killed
+                       TrTerminated     -> Just Terminated
                        _                -> Nothing
                 )
             . selectDiffusionSimulationTrace
@@ -938,10 +952,10 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
           trIsNodeAlive :: Signal Bool
           trIsNodeAlive =
                 not . Set.null
-            <$> Signal.keyedUntil (fromJoinedOrKilled (Set.singleton ())
-                                                      Set.empty)
-                                  (fromJoinedOrKilled Set.empty
-                                                      (Set.singleton ()))
+            <$> Signal.keyedUntil (fromJoinedOrTerminated (Set.singleton ())
+                                                           Set.empty)
+                                  (fromJoinedOrTerminated  Set.empty
+                                                          (Set.singleton ()))
                                   (const False)
                                   trJoinKillSig
 
@@ -951,16 +965,25 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
               -- Due to the possibilities of the node being reconfigured
               -- frequently and disconnection timeouts we have to increase
               -- this value
-              300 -- seconds
-              (\(knownPeers, useBootstrapPeers, trustedPeers, lsj, isAlive) ->
-                if isAlive && requiresBootstrapPeers useBootstrapPeers lsj
+              Diffusion.closeConnectionTimeout
+              (\( knownPeers
+                , useBootstrapPeers
+                , useBootstrapPeersChanged
+                , trustedPeers
+                , ledgerStateJudgement
+                , isAlive
+                ) ->
+                if    isAlive
+                   && not useBootstrapPeersChanged
+                   && requiresBootstrapPeers useBootstrapPeers ledgerStateJudgement
                    then knownPeers `Set.difference` trustedPeers
                    else Set.empty
               )
-              ((,,,,) <$> govKnownPeers
-                      <*> govUseBootstrapPeers
-                      <*> govTrustedPeers
-                      <*> govLedgerStateJudgement
+              ((,,,,,) <$> govKnownPeers
+                       <*> govUseBootstrapPeers
+                       <*> useBootstrapPeersChangedSig
+                       <*> govTrustedPeers
+                       <*> govLedgerStateJudgement
                        <*> trIsNodeAlive
               )
        in counterexample (List.intercalate "\n" $ map show $ Signal.eventsToList events)
@@ -977,130 +1000,6 @@ prop_only_bootstrap_peers_in_fallback_state_iosim
   :: AbsBearerInfo -> DiffusionScript -> Property
 prop_only_bootstrap_peers_in_fallback_state_iosim
   = testWithIOSim prop_only_bootstrap_peers_in_fallback_state long_trace
-
-
--- | Same as PeerSelection test 'prop_governor_no_non_trustable_peers_before_caught_up_state'
---
-prop_no_non_trustable_peers_before_caught_up_state :: SimTrace Void
-                                                   -> Int
-                                                   -> Property
-prop_no_non_trustable_peers_before_caught_up_state ioSimTrace traceNumber =
-  let events :: [Events DiffusionTestTrace]
-      events = Trace.toList
-             . fmap ( Signal.eventsFromList
-                    . fmap (\(WithName _ (WithTime t b)) -> (t, b))
-                    )
-             . splitWithNameTrace
-             . fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
-             . withTimeNameTraceEvents
-                @DiffusionTestTrace
-                @NtNAddr
-             . Trace.take traceNumber
-             $ ioSimTrace
-
-     in conjoin
-      $ (\ev ->
-        let evsList = eventsToList ev
-            lastTime = fst
-                     . last
-                     $ evsList
-         in classifySimulatedTime lastTime
-          $ classifyNumberOfEvents (length evsList)
-          $ verify_no_non_trustable_peers_before_caught_up_state ev
-        )
-      <$> events
-
-  where
-    verify_no_non_trustable_peers_before_caught_up_state events =
-      let govUseBootstrapPeers :: Signal UseBootstrapPeers
-          govUseBootstrapPeers =
-            selectDiffusionPeerSelectionState
-              (Cardano.bootstrapPeersFlag . Governor.extraState)
-              events
-
-          govLedgerStateJudgement :: Signal LedgerStateJudgement
-          govLedgerStateJudgement =
-            selectDiffusionPeerSelectionState (Cardano.ledgerStateJudgement . Governor.extraState)
-                                              events
-
-          govKnownPeers :: Signal (Set NtNAddr)
-          govKnownPeers =
-            selectDiffusionPeerSelectionState (KnownPeers.toSet . Governor.knownPeers)
-                                              events
-
-          govTrustedPeers :: Signal (Set NtNAddr)
-          govTrustedPeers =
-            selectDiffusionPeerSelectionState
-              (\st -> LocalRootPeers.keysSet (LocalRootPeers.clampToTrustable (Governor.localRootPeers st))
-                   <> PublicRootPeers.getBootstrapPeers (Governor.publicRootPeers st)
-              )
-              events
-
-          govHasOnlyBootstrapPeers :: Signal Bool
-          govHasOnlyBootstrapPeers =
-            selectDiffusionPeerSelectionState
-              (Cardano.hasOnlyBootstrapPeers . Governor.extraState)
-              events
-
-          trJoinKillSig :: Signal JoinedOrKilled
-          trJoinKillSig =
-              Signal.fromChangeEvents Killed -- Default to TrKillingNode
-            . Signal.selectEvents
-                (\case TrJoiningNetwork -> Just Joined
-                       TrKillingNode    -> Just Killed
-                       _                -> Nothing
-                )
-            . selectDiffusionSimulationTrace
-            $ events
-
-          -- Signal.keyedUntil receives 2 functions one that sets start of the
-          -- set signal, one that ends it and another that stops all.
-          --
-          -- In this particular case we want a signal that is keyed beginning
-          -- on a TrJoiningNetwork and ends on TrKillingNode, giving us a Signal
-          -- with the periods when a node was alive.
-          trIsNodeAlive :: Signal Bool
-          trIsNodeAlive =
-                not . Set.null
-            <$> Signal.keyedUntil (fromJoinedOrKilled (Set.singleton ())
-                                                      Set.empty)
-                                  (fromJoinedOrKilled Set.empty
-                                                      (Set.singleton ()))
-                                  (const False)
-                                  trJoinKillSig
-
-          keepNonTrustablePeersTooLong :: Signal (Set NtNAddr)
-          keepNonTrustablePeersTooLong =
-            Signal.keyedTimeout
-              10 -- seconds
-              (\( knownPeers, trustedPeers
-                , useBootstrapPeers, lsj, hasOnlyBootstrapPeers, isAlive) ->
-                  if isAlive && hasOnlyBootstrapPeers && requiresBootstrapPeers useBootstrapPeers lsj
-                     then Set.difference knownPeers trustedPeers
-                     else Set.empty
-              )
-              ((,,,,,) <$> govKnownPeers
-                       <*> govTrustedPeers
-                       <*> govUseBootstrapPeers
-                       <*> govLedgerStateJudgement
-                       <*> govHasOnlyBootstrapPeers
-                       <*> trIsNodeAlive
-              )
-
-       in counterexample (List.intercalate "\n" $ map show $ Signal.eventsToList events)
-        $ signalProperty 20 show
-            Set.null
-            keepNonTrustablePeersTooLong
-
-prop_no_non_trustable_peers_before_caught_up_state_iosimpor
-  :: AbsBearerInfo -> DiffusionScript -> Property
-prop_no_non_trustable_peers_before_caught_up_state_iosimpor
-  = testWithIOSimPOR prop_no_non_trustable_peers_before_caught_up_state short_trace
-
-prop_no_non_trustable_peers_before_caught_up_state_iosim
-  :: AbsBearerInfo -> DiffusionScript -> Property
-prop_no_non_trustable_peers_before_caught_up_state_iosim
-  = testWithIOSim prop_no_non_trustable_peers_before_caught_up_state long_trace
 
 
 -- | Unit test which covers issue #4177
@@ -1227,10 +1126,10 @@ prop_track_coolingToCold_demotions ioSimTracer traceNumber =
 
           trJoinKillSig :: Signal JoinedOrKilled
           trJoinKillSig =
-              Signal.fromChangeEvents Killed -- Default to TrKillingNode
+              Signal.fromChangeEvents Terminated -- Default to TrKillingNode
             . Signal.selectEvents
                 (\case TrJoiningNetwork -> Just Joined
-                       TrKillingNode    -> Just Killed
+                       TrTerminated     -> Just Terminated
                        _                -> Nothing
                 )
             . selectDiffusionSimulationTrace
@@ -1245,10 +1144,10 @@ prop_track_coolingToCold_demotions ioSimTracer traceNumber =
           trIsNodeAlive :: Signal Bool
           trIsNodeAlive =
                 not . Set.null
-            <$> Signal.keyedUntil (fromJoinedOrKilled (Set.singleton ())
-                                                      Set.empty)
-                                  (fromJoinedOrKilled Set.empty
-                                                      (Set.singleton ()))
+            <$> Signal.keyedUntil (fromJoinedOrTerminated (Set.singleton ())
+                                                           Set.empty)
+                                  (fromJoinedOrTerminated  Set.empty
+                                                          (Set.singleton ()))
                                   (const False)
                                   trJoinKillSig
 
@@ -1709,7 +1608,7 @@ prop_diffusion_dns_can_recover ioSimTrace traceNumber =
                                   (recovered + 1)
                                   t
                                   evs
-        DiffusionDiffusionSimulationTrace TrReconfiguringNode ->
+        DiffusionSimulationTrace TrReconfiguringNode ->
           verify Map.empty ttlMap recovered t evs
         _ -> verify toRecover ttlMap recovered time evs
 
@@ -2550,10 +2449,10 @@ prop_diffusion_target_established_local ioSimTrace traceNumber =
 
           trJoinKillSig :: Signal JoinedOrKilled
           trJoinKillSig =
-              Signal.fromChangeEvents Killed -- Default to TrKillingNode
+              Signal.fromChangeEvents Terminated -- Default to TrKillingNode
             . Signal.selectEvents
                 (\case TrJoiningNetwork -> Just Joined
-                       TrKillingNode    -> Just Killed
+                       TrKillingNode    -> Just Terminated
                        _                -> Nothing
                 )
             . selectDiffusionSimulationTrace
@@ -2568,10 +2467,10 @@ prop_diffusion_target_established_local ioSimTrace traceNumber =
           trIsNodeAlive :: Signal Bool
           trIsNodeAlive =
                 not . Set.null
-            <$> Signal.keyedUntil (fromJoinedOrKilled (Set.singleton ())
-                                                      Set.empty)
-                                  (fromJoinedOrKilled Set.empty
-                                                      (Set.singleton ()))
+            <$> Signal.keyedUntil (fromJoinedOrTerminated (Set.singleton ())
+                                                           Set.empty)
+                                  (fromJoinedOrTerminated  Set.empty
+                                                          (Set.singleton ()))
                                   (const False)
                                   trJoinKillSig
 
@@ -2741,10 +2640,10 @@ prop_diffusion_target_active_below ioSimTrace traceNumber =
 
           trJoinKillSig :: Signal JoinedOrKilled
           trJoinKillSig =
-              Signal.fromChangeEvents Killed -- Default to TrKillingNode
+              Signal.fromChangeEvents Terminated -- Default to TrKillingNode
             . Signal.selectEvents
                 (\case TrJoiningNetwork -> Just Joined
-                       TrKillingNode    -> Just Killed
+                       TrTerminated     -> Just Terminated
                        _                -> Nothing
                 )
             . selectDiffusionSimulationTrace
@@ -2759,10 +2658,10 @@ prop_diffusion_target_active_below ioSimTrace traceNumber =
           trIsNodeAlive :: Signal Bool
           trIsNodeAlive =
                 not . Set.null
-            <$> Signal.keyedUntil (fromJoinedOrKilled (Set.singleton ())
-                                                      Set.empty)
-                                  (fromJoinedOrKilled Set.empty
-                                                      (Set.singleton ()))
+            <$> Signal.keyedUntil (fromJoinedOrTerminated (Set.singleton ())
+                                                           Set.empty)
+                                  (fromJoinedOrTerminated  Set.empty
+                                                          (Set.singleton ()))
                                   (const False)
                                   trJoinKillSig
 
@@ -2891,14 +2790,14 @@ prop_diffusion_target_active_local_below ioSimTrace traceNumber =
 
           trJoinKillSig :: Signal JoinedOrKilled
           trJoinKillSig =
-              Signal.fromChangeEvents Killed -- Default to TrKillingNode
+              Signal.fromChangeEvents Terminated -- Default to TrKillingNode
             . Signal.selectEvents
-                    (\case DiffusionDiffusionSimulationTrace TrJoiningNetwork
+                    (\case DiffusionSimulationTrace TrJoiningNetwork
                             -> Just Joined
-                           DiffusionDiffusionSimulationTrace TrKillingNode
-                            -> Just Killed
+                           DiffusionSimulationTrace TrTerminated
+                            -> Just Terminated
                            DiffusionConnectionManagerTrace CM.TrShutdown
-                            -> Just Killed
+                            -> Just Terminated
                            _ -> Nothing
                     )
             $ events
@@ -2912,10 +2811,10 @@ prop_diffusion_target_active_local_below ioSimTrace traceNumber =
           trIsNodeAlive :: Signal Bool
           trIsNodeAlive =
                 not . Set.null
-            <$> Signal.keyedUntil (fromJoinedOrKilled (Set.singleton ())
-                                                      Set.empty)
-                                  (fromJoinedOrKilled Set.empty
-                                                      (Set.singleton ()))
+            <$> Signal.keyedUntil (fromJoinedOrTerminated (Set.singleton ())
+                                                           Set.empty)
+                                  (fromJoinedOrTerminated  Set.empty
+                                                          (Set.singleton ()))
                                   (const False)
                                   trJoinKillSig
 
@@ -3324,10 +3223,10 @@ prop_diffusion_target_active_local_above ioSimTrace traceNumber =
 
           trJoinKillSig :: Signal JoinedOrKilled
           trJoinKillSig =
-              Signal.fromChangeEvents Killed -- Default to TrKillingNode
+              Signal.fromChangeEvents Terminated -- Default to TrKillingNode
             . Signal.selectEvents
                 (\case TrJoiningNetwork -> Just Joined
-                       TrKillingNode    -> Just Killed
+                       TrTerminated     -> Just Terminated
                        _                -> Nothing
                 )
             . selectDiffusionSimulationTrace
@@ -3342,10 +3241,10 @@ prop_diffusion_target_active_local_above ioSimTrace traceNumber =
           trIsNodeAlive :: Signal Bool
           trIsNodeAlive =
                 not . Set.null
-            <$> Signal.keyedUntil (fromJoinedOrKilled (Set.singleton ())
-                                                      Set.empty)
-                                  (fromJoinedOrKilled Set.empty
-                                                      (Set.singleton ()))
+            <$> Signal.keyedUntil (fromJoinedOrTerminated (Set.singleton ())
+                                                           Set.empty)
+                                  (fromJoinedOrTerminated  Set.empty
+                                                          (Set.singleton ()))
                                   (const False)
                                   trJoinKillSig
 
@@ -4813,13 +4712,13 @@ prop_no_peershare_unwilling_iosim
 -- Utils
 --
 
-data JoinedOrKilled = Joined | Killed
+data JoinedOrKilled = Joined | Terminated
   deriving (Eq, Show)
 
 -- Similar to 'either' but for 'JoinedOrKilled'
-fromJoinedOrKilled :: c -> c -> JoinedOrKilled -> c
-fromJoinedOrKilled j _ Joined = j
-fromJoinedOrKilled _ k Killed = k
+fromJoinedOrTerminated :: c -> c -> JoinedOrKilled -> c
+fromJoinedOrTerminated j _ Joined     = j
+fromJoinedOrTerminated _ k Terminated = k
 
 getTime :: (Time, ThreadId (IOSim s), Maybe ThreadLabel, SimEventType) -> Time
 getTime (t, _, _, _) = t
@@ -4858,7 +4757,7 @@ selectDiffusionPeerSelectionEvents = Signal.selectEvents
 selectDiffusionSimulationTrace :: Events DiffusionTestTrace
                                -> Events DiffusionSimulationTrace
 selectDiffusionSimulationTrace = Signal.selectEvents
-                    (\case DiffusionDiffusionSimulationTrace e -> Just e
+                    (\case DiffusionSimulationTrace e -> Just e
                            _                                   -> Nothing)
 
 selectDiffusionPeerSelectionState :: Eq a

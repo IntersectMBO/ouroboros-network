@@ -881,7 +881,8 @@ data DiffusionSimulationTrace
   | TrUpdatingDNS
   | TrRunning
   | TrErrored SomeException
-  deriving (Show)
+  | TrTerminated
+  deriving Show
 
 -- Warning: be careful with writing properties that rely
 -- on trace events from multiple components environment.
@@ -900,7 +901,7 @@ data DiffusionTestTrace =
     | DiffusionConnectionManagerTrace
         (CM.Trace NtNAddr
           (ConnectionHandlerTrace NtNVersion NtNVersionData))
-    | DiffusionDiffusionSimulationTrace DiffusionSimulationTrace
+    | DiffusionSimulationTrace DiffusionSimulationTrace
     | DiffusionConnectionManagerTransitionTrace
         (AbstractTransitionTrace CM.ConnStateId)
     | DiffusionInboundGovernorTransitionTrace
@@ -1241,6 +1242,7 @@ diffusionSimulation
           $ nodeTracer)
         `catch` \e -> traceWith (diffSimTracer addr) (TrErrored e)
                    >> throwIO e
+        `finally`     traceWith (diffSimTracer addr) TrTerminated
 
     domainResolver :: StrictTVar m MockDNSMap
                    -> DNSLookupType
@@ -1277,7 +1279,7 @@ diffusionSimulation
            in fst <$> ipsttls
 
     diffSimTracer :: NtNAddr -> Tracer m DiffusionSimulationTrace
-    diffSimTracer ntnAddr = contramap DiffusionDiffusionSimulationTrace
+    diffSimTracer ntnAddr = contramap DiffusionSimulationTrace
                           . tracerWithName ntnAddr
                           . tracerWithTime
                           $ nodeTracer
