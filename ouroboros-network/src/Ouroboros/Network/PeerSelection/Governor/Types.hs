@@ -315,11 +315,10 @@ sanePeerSelectionTargets PeerSelectionTargets{..} =
  && targetNumberOfKnownBigLedgerPeers       <= 10000
 
 
--- | The asynchronous demotion action will wait
--- this long for peer status to change to 'PeerCold'
--- before removing a peer from the OG state. If this times out,
--- there is a logic error somewhere as this should happen after
--- CM drops that peer from its state.
+-- | The asynchronous demotion action will wait this long for peer status to
+-- change to 'PeerCold' before removing a peer from the OG state. If this times
+-- out, there is a logic error somewhere as this should happen after CM drops
+-- that peer from its state.
 --
 c_PEER_DEMOTION_TIMEOUT :: DiffTime
 c_PEER_DEMOTION_TIMEOUT = 10*60
