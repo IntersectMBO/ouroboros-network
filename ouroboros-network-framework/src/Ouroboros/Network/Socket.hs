@@ -127,9 +127,9 @@ debuggingNetworkConnectTracers = NetworkConnectTracers {
 sockAddrFamily
     :: Socket.SockAddr
     -> Socket.Family
-sockAddrFamily (Socket.SockAddrInet  _ _    ) = Socket.AF_INET
-sockAddrFamily (Socket.SockAddrInet6 _ _ _ _) = Socket.AF_INET6
-sockAddrFamily (Socket.SockAddrUnix _       ) = Socket.AF_UNIX
+sockAddrFamily Socket.SockAddrInet {}  = Socket.AF_INET
+sockAddrFamily Socket.SockAddrInet6 {} = Socket.AF_INET6
+sockAddrFamily Socket.SockAddrUnix {}  = Socket.AF_UNIX
 
 
 -- | Configure a socket.  Either 'Socket.AF_INET' or 'Socket.AF_INET6' socket
