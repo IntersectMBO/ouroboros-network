@@ -316,12 +316,13 @@ data Arguments extraState extraDebugState extraFlags extraPeers
 
   , daPeerSelectionGovernorArgs
       :: forall muxMode responderCtx bytes a b .
-         PeerSelectionGovernorArgs extraState extraDebugState extraFlags extraPeers
-                                   extraAPI extraCounters
-                                   ntnAddr (PeerConnectionHandle
-                                              muxMode responderCtx ntnAddr
-                                              ntnVersionData bytes m a b)
-                                   exception m
+         PeerSelectionGovernorArgs
+           extraState extraDebugState extraFlags extraPeers
+           extraAPI extraCounters
+           ntnAddr
+           (PeerConnectionHandle muxMode responderCtx
+                                 ntnAddr ntnVersionData bytes m a b)
+           exception m
 
     -- | Function that computes extraCounters from PeerSelectionState
     --
