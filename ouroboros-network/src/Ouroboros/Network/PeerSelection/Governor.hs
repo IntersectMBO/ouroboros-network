@@ -589,7 +589,10 @@ peerSelectionGovernorLoop tracer
         Nothing        -> pure ()
         Just exception -> throwIO exception
 
-      dbgUpdateAt' <- if dbgUpdateAt <= blockedAt
+      nullDebugSt <- atomically $ do
+                       dbSt <- readTVar debugStateVar
+                       return $ targets dbSt == nullPeerSelectionTargets
+      dbgUpdateAt' <- if dbgUpdateAt <= blockedAt || nullDebugSt
                          then do
                            atomically $ writeTVar debugStateVar st
                            return $ 83 `addTime` blockedAt
