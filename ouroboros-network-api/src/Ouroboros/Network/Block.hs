@@ -473,16 +473,13 @@ fromSerialised dec (Serialised payload) =
 --
 -- TODO: replace with encodeEmbeddedCBOR from cborg-0.2.4 once
 -- it is available, since that will be faster.
---
--- TODO: Avoid converting to a strict ByteString, as that requires copying O(n)
--- in case the lazy ByteString consists of more than one chunks.
 instance Serialise (Serialised a) where
   encode (Serialised bs) = mconcat [
         Enc.encodeTag 24
-      , Enc.encodeBytes (Lazy.toStrict bs)
+        encode bs
       ]
 
   decode = do
       tag <- Dec.decodeTag
       when (tag /= 24) $ fail "expected tag 24 (CBOR-in-CBOR)"
-      Serialised . Lazy.fromStrict <$> Dec.decodeBytes
+      Serialised <$> decode
