@@ -88,7 +88,7 @@ library
     network-mux ^>=0.8,
     nothunks ^>=0.1.4 || ^>=0.2,
     optparse-applicative ^>=0.18,
-    ouroboros-network:{ouroboros-network, ouroboros-orphan-instances} ^>=0.21,
+    ouroboros-network:{ouroboros-network, orphan-instances} ^>=0.21,
     ouroboros-network-api ^>=0.14,
     ouroboros-network-framework ^>=0.18,
     ouroboros-network-protocols ^>=0.14.0.1,

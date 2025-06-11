@@ -4,7 +4,7 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Cardano.Network.OrphanInstances () where
+module Cardano.Network.OrphanInstances () where
 
 import Cardano.Network.PeerSelection.Bootstrap
 import Cardano.Network.PeerSelection.PublicRootPeers (CardanoPublicRootPeers,
