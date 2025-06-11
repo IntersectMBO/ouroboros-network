@@ -65,9 +65,7 @@ import Network.Mux.Types (MiniProtocolDir (..), RemoteClockModel (..))
 import Network.Mux.Types qualified as Mx
 
 import Ouroboros.Network.Protocol.Handshake
-import Ouroboros.Network.Protocol.Handshake.Codec
 import Ouroboros.Network.Protocol.Handshake.Unversioned
-import Ouroboros.Network.Protocol.Handshake.Version
 
 import Test.Ouroboros.Network.Orphans ()
 
