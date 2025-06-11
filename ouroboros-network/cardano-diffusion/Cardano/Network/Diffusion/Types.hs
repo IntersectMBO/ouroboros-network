@@ -6,9 +6,10 @@ module Cardano.Network.Diffusion.Types
   ( CardanoNodeArguments (..)
   , CardanoConsensusArguments (..)
   , CardanoTracers
+  , Diffusion.Tracers (..)
+  , Diffusion.nullTracers
   , CardanoConfiguration
   , CardanoApplications
-  , Diffusion.Tracers (..)
   , Diffusion.Configuration (..)
   , Diffusion.Applications (..)
   , CardanoPeerSelectionCounters
