@@ -56,11 +56,11 @@ run :: CardanoNodeArguments IO
     -> CardanoConsensusArguments RemoteAddress IO
     -- ^ consensus API; instantiated in `ouroboros-consensus-diffusion` (with
     -- exception of `readUseBootstrapPeers` field).
-    -> CardanoTracers
+    -> CardanoTracers IO
     -- ^ generic diffusion tracers; instantiated in `cardano-node`.
-    -> CardanoConfiguration
+    -> CardanoConfiguration IO
     -- ^ generic diffusion configuration; instantiated in `cardano-node`.
-    -> CardanoApplications a
+    -> CardanoApplications IO a
     -- ^ cardano specific applications; instantiated in
     -- `ouroboros-consensus-diffusion`.
     -> IO Void

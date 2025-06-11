@@ -98,7 +98,7 @@ data CardanoConsensusArguments ntnAddr m =
     -- consensus through `RunNodeArgs`, from which it is passed to diffusion.
   }
 
-type CardanoTracers =
+type CardanoTracers m =
   Diffusion.Tracers
     RemoteAddress NodeToNodeVersion  NodeToNodeVersionData
     LocalAddress  NodeToClientVersion NodeToClientVersionData
@@ -108,20 +108,20 @@ type CardanoTracers =
     PeerTrustable
     (Cardano.ExtraPeers RemoteAddress)
     (Cardano.ExtraPeerSelectionSetsWithSizes RemoteAddress)
-    IO
+    m
 
 
-type CardanoConfiguration =
+type CardanoConfiguration m =
   Diffusion.Configuration
     PeerTrustable
-    IO
+    m
     Socket
     RemoteAddress
     LocalSocket
     LocalAddress
 
 
-type CardanoApplications a =
+type CardanoApplications m a =
   Diffusion.Applications
     RemoteAddress
     NodeToNodeVersion
@@ -129,8 +129,7 @@ type CardanoApplications a =
     LocalAddress
     NodeToClientVersion
     NodeToClientVersionData
-    IO
-    a
+    m a
 
 
 -- TODO: do we need to expose these?
