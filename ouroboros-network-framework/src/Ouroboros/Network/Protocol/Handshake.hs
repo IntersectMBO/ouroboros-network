@@ -16,6 +16,12 @@ module Ouroboros.Network.Protocol.Handshake
   , RefuseReason (..)
   , Accept (..)
   , handshake_QUERY_SHUTDOWN_DELAY
+    -- * Re-exports
+  , module Ouroboros.Network.Protocol.Handshake.Type
+  , module Ouroboros.Network.Protocol.Handshake.Codec
+  , module Ouroboros.Network.Protocol.Handshake.Version
+  , Acceptable (..)
+  , Queryable (..)
   ) where
 
 import Control.Monad.Class.MonadAsync

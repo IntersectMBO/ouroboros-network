@@ -89,8 +89,6 @@ import Ouroboros.Network.Handshake (HandshakeCallbacks (..))
 import Ouroboros.Network.IOManager (IOManager)
 import Ouroboros.Network.Mux
 import Ouroboros.Network.Protocol.Handshake
-import Ouroboros.Network.Protocol.Handshake.Codec
-import Ouroboros.Network.Protocol.Handshake.Type
 import Ouroboros.Network.Server.ConnectionTable
 import Ouroboros.Network.Snocket (Snocket)
 import Ouroboros.Network.Snocket qualified as Snocket

@@ -60,9 +60,7 @@ import Ouroboros.Network.Socket
 
 import Ouroboros.Network.Driver
 import Ouroboros.Network.Protocol.Handshake
-import Ouroboros.Network.Protocol.Handshake.Codec
 import Ouroboros.Network.Protocol.Handshake.Unversioned
-import Ouroboros.Network.Protocol.Handshake.Version
 
 import Ouroboros.Network.Protocol.ChainSync.Client qualified as ChainSync
 import Ouroboros.Network.Protocol.ChainSync.Codec qualified as ChainSync
