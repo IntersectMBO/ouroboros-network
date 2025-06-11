@@ -184,12 +184,12 @@ library
   if flag(txsubmission-delay)
     cpp-options: -DTXSUBMISSION_DELAY
 
-library ouroboros-orphan-instances
+library orphan-instances
   import: ghc-options
   visibility: public
-  hs-source-dirs: ouroboros-orphan-instances
+  hs-source-dirs: orphan-instances
   exposed-modules:
-    Ouroboros.Cardano.Network.OrphanInstances
+    Cardano.Network.OrphanInstances
     Ouroboros.Network.OrphanInstances
 
   other-modules:
