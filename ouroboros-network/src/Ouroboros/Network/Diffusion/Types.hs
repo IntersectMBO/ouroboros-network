@@ -31,6 +31,15 @@ module Ouroboros.Network.Diffusion.Types
     -- * Re-exports
   , AbstractTransitionTrace
   , IG.RemoteTransitionTrace
+  , DNSTrace (..)
+  , TraceLocalRootPeers (..)
+  , TracePublicRootPeers (..)
+  , TraceLedgerPeers (..)
+  , TracePeerSelection (..)
+  , DebugPeerSelection (..)
+  , PeerSelectionCounters
+  , PeerSelection.ChurnCounters (..)
+  , PeerSelectionActionsTrace (..)
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict

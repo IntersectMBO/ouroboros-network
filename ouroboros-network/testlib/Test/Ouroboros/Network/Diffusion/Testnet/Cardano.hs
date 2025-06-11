@@ -1698,7 +1698,7 @@ prop_diffusion_dns_can_recover ioSimTrace traceNumber =
         DiffusionLocalRootPeerTrace
           (TraceLocalRootReconfigured _ _) ->
             verify Map.empty ttlMap recovered t evs
-        DiffusionDNSTrace (DNSResult DNSLocalPeer domain srvDomain ipsttls) ->
+        DiffusionDNSTrace (DNSLookupResult DNSLocalPeer domain srvDomain ipsttls) ->
           let primaryDomain = fromMaybe domain srvDomain
               ttls = map getTTLs ipsttls
               ttlMap' = Map.insert primaryDomain (ttlForResults ttls) ttlMap
