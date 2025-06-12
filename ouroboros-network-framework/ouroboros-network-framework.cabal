@@ -85,7 +85,7 @@ library
     dns <4.3,
     hashable,
     stm,
-    io-classes:{io-classes, si-timers, strict-stm} ^>=1.8,
+    io-classes:{io-classes, si-timers, strict-stm} ^>=1.8.0.1,
     iproute >=1.7 && <1.8,
     monoidal-synchronisation ^>=0.1.0.6,
     mtl,
