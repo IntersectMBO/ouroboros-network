@@ -189,7 +189,7 @@ runM Interfaces
        , dtLocalInboundGovernorTracer
        , dtDnsTracer
        }
-    Arguments
+     Arguments
        { daNtnDataFlow
        , daNtnPeerSharing
        , daUpdateVersionData
@@ -217,7 +217,7 @@ runM Interfaces
        , dcPeerSelectionTargets
        , dcReadLocalRootPeers
        , dcReadPublicRootPeers
-       , dcOwnPeerSharing
+       , dcPeerSharing
        , dcReadUseLedgerPeers
        , dcProtocolIdleTimeout
        , dcTimeWaitTimeout
@@ -604,7 +604,7 @@ runM Interfaces
                                          getLedgerStateCtx          = daLedgerPeersCtx,
                                          readLocalRootPeersFromFile = dcReadLocalRootPeers,
                                          readLocalRootPeers         = readTVar localRootsVar,
-                                         peerSharing                = dcOwnPeerSharing,
+                                         peerSharing                = dcPeerSharing,
                                          peerConnToPeerSharing      = pchPeerSharing daNtnPeerSharing,
                                          requestPeerShare           =
                                            requestPeerSharingResult (readTVar (getPeerSharingRegistry daPeerSharingRegistry)),
@@ -621,7 +621,7 @@ runM Interfaces
                                              Just requestPublicRootPeers' ->
                                                requestPublicRootPeers' dnsActions dnsSemaphore daToExtraPeers getLedgerPeers,
                                          readInboundPeers =
-                                           case dcOwnPeerSharing of
+                                           case dcPeerSharing of
                                              PeerSharingDisabled -> pure Map.empty
                                              PeerSharingEnabled  -> readInboundPeers,
                                          readLedgerPeerSnapshot = dcReadLedgerPeerSnapshot,

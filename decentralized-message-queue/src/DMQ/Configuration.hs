@@ -206,7 +206,7 @@ mkDiffusionConfiguration
       , Diffusion.dcReadLocalRootPeers       = readTVar localRootsVar
       , Diffusion.dcReadPublicRootPeers      = readTVar publicRootsVar
       , Diffusion.dcReadLedgerPeerSnapshot   = readTVar ledgerPeerSnapshotVar
-      , Diffusion.dcOwnPeerSharing           = dmqcPeerSharing
+      , Diffusion.dcPeerSharing              = dmqcPeerSharing
       , Diffusion.dcReadUseLedgerPeers       = readTVar useLedgerVar
       , Diffusion.dcProtocolIdleTimeout      = dmqcProtocolIdleTimeout
       , Diffusion.dcTimeWaitTimeout          = defaultTimeWaitTimeout
