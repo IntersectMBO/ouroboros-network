@@ -67,7 +67,7 @@ library
     contra-tracer,
     deepseq,
     dns,
-    io-classes:{io-classes, si-timers, strict-stm} ^>=1.8,
+    io-classes:{io-classes, si-timers, strict-stm} ^>=1.8.0.1,
     iproute ^>=1.7.15,
     measures,
     network ^>=3.2.7,

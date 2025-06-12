@@ -31,7 +31,7 @@ library
     bytestring >=0.10 && <0.13,
     cborg >=0.2.8 && <0.3,
     contra-tracer >=0.1 && <0.3,
-    io-classes:{si-timers, strict-stm} ^>=1.8,
+    io-classes:{si-timers, strict-stm} ^>=1.8.0.1,
     iproute ^>=1.7.15,
     network ^>=3.2.7,
     network-mux ^>=0.8,

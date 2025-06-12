@@ -69,7 +69,7 @@ library
     containers,
     contra-tracer,
     deque ^>=0.4,
-    io-classes:{io-classes, si-timers, strict-stm} ^>=1.8,
+    io-classes:{io-classes, si-timers, strict-stm} ^>=1.8.0.1,
     io-sim,
     network-mux,
     pretty-simple,
