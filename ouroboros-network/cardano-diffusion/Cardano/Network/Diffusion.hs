@@ -132,7 +132,7 @@ run CardanoNodeArguments {
                     Cardano.sigUSR1Handler
                       tracers
                       (Diffusion.dcReadUseLedgerPeers config)
-                      (Diffusion.dcOwnPeerSharing config)
+                      (Diffusion.dcPeerSharing config)
                       readUseBootstrapPeers
                       (Cardano.getLedgerStateJudgement (lpExtraAPI ledgerPeersAPI))
                       churnMetrics,

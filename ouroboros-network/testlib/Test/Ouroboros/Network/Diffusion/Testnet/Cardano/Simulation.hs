@@ -82,7 +82,7 @@ import Cardano.Network.Types (LedgerStateJudgement (..),
            NumberOfBigLedgerPeers (..))
 
 import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
-import Cardano.Network.PeerSelection.Churn (ChurnMode (..), TracerChurnMode,
+import Cardano.Network.PeerSelection.Churn (ChurnMode (..), TraceChurnMode,
            peerChurnGovernor)
 import Cardano.Network.PeerSelection.Churn qualified as Churn
 import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
@@ -203,7 +203,7 @@ data NodeArgs =
     , naAddr                   :: NtNAddr
       -- ^ 'Arguments' 'aIPAddress' value
     , naPeerSharing            :: PeerSharing
-      -- ^ 'Arguments' 'aOwnPeerSharing' value
+      -- ^ 'Arguments' 'aPeerSharing' value
     , naLocalRootPeers         :: [( HotValency
                                    , WarmValency
                                    , Map RelayAccessPoint (LocalRootConfig PeerTrustable)
@@ -908,7 +908,7 @@ data DiffusionTestTrace =
     | DiffusionInboundGovernorTrace (IG.Trace NtNAddr)
     | DiffusionServerTrace (Server.Trace NtNAddr)
     | DiffusionFetchTrace (TraceFetchClientState BlockHeader)
-    | DiffusionChurnModeTrace TracerChurnMode
+    | DiffusionChurnModeTrace TraceChurnMode
     | DiffusionDebugTrace String
     | DiffusionDNSTrace DNSTrace
     deriving (Show)
@@ -1199,7 +1199,7 @@ diffusionSimulation
               , Node.aChainSyncEarlyExit   = chainSyncEarlyExit
               , Node.aReadLocalRootPeers   = readLocalRootPeers
               , Node.aReadPublicRootPeers  = readPublicRootPeers
-              , Node.aOwnPeerSharing       = peerSharing
+              , Node.aPeerSharing          = peerSharing
               , Node.aReadUseLedgerPeers   = readUseLedgerPeers
               , Node.aProtocolIdleTimeout  = 5
               , Node.aTimeWaitTimeout      = 30

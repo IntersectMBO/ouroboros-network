@@ -19,7 +19,7 @@ module Cardano.Network.Diffusion.Types
   , CardanoDebugPeerSelection
     -- * Re-exports
   , PeerMetrics
-  , Cardano.Churn.TracerChurnMode
+  , Cardano.Churn.TraceChurnMode (..)
   ) where
 
 
@@ -65,7 +65,7 @@ data CardanoNodeArguments m = CardanoNodeArguments {
     -- ^ Fields which come from `cardano-node` configuration file.
     minNumOfBigLedgerPeers :: NumberOfBigLedgerPeers,
     -- ^ Field which comes from `cardano-node` configuration file.
-    tracerChurnMode        :: Tracer m Cardano.Churn.TracerChurnMode
+    tracerChurnMode        :: Tracer m Cardano.Churn.TraceChurnMode
     -- ^ Field which comes from `cardano-node` tracing system.
   }
 

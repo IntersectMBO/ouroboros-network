@@ -446,11 +446,14 @@ data Configuration extraFlags m ntnFd ntnAddr ntcFd ntcAddr = Configuration {
     -- This is especially useful for Genesis consensus mode.
     , dcReadLedgerPeerSnapshot :: STM m (Maybe LedgerPeerSnapshot)
 
+    -- | `UseLedgerPeers` from topology file.
+    --
+    , dcReadUseLedgerPeers     :: STM m UseLedgerPeers
+
     -- | Peer's own PeerSharing value.
     --
     -- This value comes from the node's configuration file and is static.
-    , dcOwnPeerSharing         :: PeerSharing
-    , dcReadUseLedgerPeers     :: STM m UseLedgerPeers
+    , dcPeerSharing            :: PeerSharing
 
       -- | Timeout which starts once all responder protocols are idle. If the
       -- responders stay idle for duration of the timeout, the connection will

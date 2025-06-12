@@ -157,7 +157,7 @@ data Arguments extraChurnArgs extraFlags m = Arguments
                                       , WarmValency
                                       , Map RelayAccessPoint (LocalRootConfig extraFlags))]
     , aReadPublicRootPeers  :: STM m (Map RelayAccessPoint PeerAdvertise)
-    , aOwnPeerSharing       :: PeerSharing
+    , aPeerSharing          :: PeerSharing
     , aReadUseLedgerPeers   :: STM m UseLedgerPeers
     , aProtocolIdleTimeout  :: DiffTime
     , aTimeWaitTimeout      :: DiffTime
@@ -466,7 +466,7 @@ run blockGeneratorArgs limits ni na
       , Diffusion.dcPeerSelectionTargets   = aPeerTargets na
       , Diffusion.dcReadLocalRootPeers     = aReadLocalRootPeers na
       , Diffusion.dcReadPublicRootPeers    = aReadPublicRootPeers na
-      , Diffusion.dcOwnPeerSharing         = aOwnPeerSharing na
+      , Diffusion.dcPeerSharing            = aPeerSharing na
       , Diffusion.dcReadUseLedgerPeers     = aReadUseLedgerPeers na
       , Diffusion.dcProtocolIdleTimeout    = aProtocolIdleTimeout na
       , Diffusion.dcTimeWaitTimeout        = aTimeWaitTimeout na
@@ -489,7 +489,7 @@ run blockGeneratorArgs limits ni na
       , Node.aaPingPongInterval    = aPingPongInterval na
       , Node.aaShouldChainSyncExit = aShouldChainSyncExit na
       , Node.aaChainSyncEarlyExit  = aChainSyncEarlyExit na
-      , Node.aaOwnPeerSharing      = aOwnPeerSharing na
+      , Node.aaPeerSharing         = aPeerSharing na
       , Node.aaPeerMetrics         = peerMetrics
       }
 

@@ -206,7 +206,7 @@ data AppArgs header block m = AppArgs
     -- simulates too far behind the chain in a crude way.
     --
   , aaChainSyncEarlyExit  :: Bool
-  , aaOwnPeerSharing
+  , aaPeerSharing
      :: PSTypes.PeerSharing
   , aaPeerMetrics
      :: PeerMetrics m NtNAddr
@@ -257,18 +257,18 @@ applications debugTracer nodeKernel
                , aaPingPongInterval
                , aaShouldChainSyncExit
                , aaChainSyncEarlyExit
-               , aaOwnPeerSharing
+               , aaPeerSharing
                , aaPeerMetrics
                }
              toHeader =
     Diffusion.Applications
       { Diffusion.daApplicationInitiatorMode =
           simpleSingletonVersions UnversionedProtocol
-                                  (NtNVersionData InitiatorOnlyDiffusionMode aaOwnPeerSharing)
+                                  (NtNVersionData InitiatorOnlyDiffusionMode aaPeerSharing)
                                   (\NtNVersionData {ntnPeerSharing} -> initiatorApp ntnPeerSharing)
       , Diffusion.daApplicationInitiatorResponderMode =
           simpleSingletonVersions UnversionedProtocol
-                                  (NtNVersionData aaDiffusionMode aaOwnPeerSharing)
+                                  (NtNVersionData aaDiffusionMode aaPeerSharing)
                                   (\NtNVersionData {ntnPeerSharing} -> initiatorAndResponderApp ntnPeerSharing)
       , Diffusion.daLocalResponderApplication =
           simpleSingletonVersions UnversionedProtocol
