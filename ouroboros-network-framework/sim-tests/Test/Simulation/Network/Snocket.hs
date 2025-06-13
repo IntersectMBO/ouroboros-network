@@ -287,9 +287,11 @@ clientServerSimulation payloads =
                                                serverPeer)
               withAsync
                 (do labelThisThread "server-mux"
-                    Mx.run (("server", connId,)
+                    let serverTracer =
+                          (("server", connId,)
                              `contramap`
                              traceTime (Tracer (say . show)))
+                    Mx.run (Mx.Tracers serverTracer serverTracer)
                            mux bearer)
                 $ \_muxThread -> do
                   res <- atomically resSTM
@@ -332,9 +334,11 @@ clientServerSimulation payloads =
                   -- kill mux as soon as the client returns
                   withAsync
                     (do labelThisThread "client-mux"
-                        Mx.run (("client", connId,)
+                        let clientTracer =
+                              (("client", connId,)
                                  `contramap`
                                  traceTime (Tracer (say . show)))
+                        Mx.run (Mx.Tracers clientTracer clientTracer)
                                mux bearer)
                     $ \_ -> do
                       res <- atomically resSTM

@@ -409,7 +409,7 @@ connectToNodeWithMux'
          Mx.withReadBufferIO (\buffer -> do
              bearer <- Mx.getBearer makeBearer sduTimeout muxTracer sd buffer
              mux <- Mx.new (toMiniProtocolInfos (runForkPolicy noBindForkPolicy remoteAddress) app)
-             withAsync (Mx.run muxTracer mux bearer) $ \aid ->
+             withAsync (Mx.run (Mx.Tracers muxTracer muxTracer) mux bearer) $ \aid ->
                k connectionId versionNumber agreedOptions app mux aid
            )
 
@@ -502,4 +502,3 @@ data SomeResponderApplication addr bytes m b where
           Mx.HasResponder muxMode ~ True
        => (OuroborosApplicationWithMinimalCtx muxMode addr bytes m a b)
        -> SomeResponderApplication addr bytes m b
-

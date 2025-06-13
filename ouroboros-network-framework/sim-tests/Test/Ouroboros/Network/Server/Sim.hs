@@ -106,7 +106,7 @@ import Test.Ouroboros.Network.InboundGovernor.Utils
            validRemoteTransitionMap, verifyRemoteTransition,
            verifyRemoteTransitionOrder)
 import Test.Ouroboros.Network.Orphans ()
-import Test.Ouroboros.Network.Utils (WithName (..), WithTime (..),
+import Test.Ouroboros.Network.Utils (WithName (..), WithTime (..), debugTracerG,
            genDelayWithPrecision, nightlyTest, sayTracer, tracerWithTime)
 import Test.Simulation.Network.Snocket hiding (tests)
 
@@ -226,7 +226,7 @@ data ConnectionEvent req peerAddr
     -- ^ Close an outbound connection.
   | ShutdownClientServer DiffTime peerAddr
     -- ^ Shuts down a client/server (simulates power loss)
-  deriving (Show, Functor)
+  deriving (Eq, Show, Functor)
 
 -- | A sequence of connection events that make up a test scenario for `prop_multinode_Sim`.
 data MultiNodeScript req peerAddr = MultiNodeScript
@@ -458,7 +458,7 @@ maxAcceptedConnectionsLimit = AcceptedConnectionsLimit maxBound maxBound 0
 --
 --   transitions.
 --
-instance Arbitrary req =>
+instance (Eq req, Arbitrary req) =>
          Arbitrary (MultiNodePruningScript req) where
   arbitrary = do
     Positive len <- scale ((* 2) . (`div` 3)) arbitrary
@@ -532,17 +532,20 @@ instance Arbitrary req =>
   -- we could miss which change actually introduces the failure, and be lift
   -- with a larger counter example.
   shrink (MultiNodePruningScript
-            (AcceptedConnectionsLimit hardLimit softLimit delay)
+            acl@(AcceptedConnectionsLimit hardLimit softLimit delay)
             events
             attenuationMap) =
-    MultiNodePruningScript
-        <$> (AcceptedConnectionsLimit
-              <$> shrink hardLimit
-              <*> shrink softLimit
-              <*> pure delay)
-        <*> (makeValid
-            <$> shrinkList shrinkEvent events)
-        <*> shrink attenuationMap
+    let acls = AcceptedConnectionsLimit
+                <$> shrink hardLimit
+                <*> shrink softLimit
+                <*> pure delay in
+      [MultiNodePruningScript acl' events attenuationMap
+      | acl' <- acls] <>
+      [MultiNodePruningScript acl events' attenuationMap
+      | events' <- makeValid <$> shrinkList shrinkEvent events
+      , events' /= events] <>
+      [MultiNodePruningScript acl events attenuationMap'
+      | attenuationMap' <- shrink attenuationMap]
     where
       makeValid = go (ScriptState [] [] [] [] [])
         where
@@ -635,6 +638,7 @@ multinodeExperiment
                           (CM.Trace
                             peerAddr
                             (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
+    -> Tracer m (WithName (Name peerAddr) (Mux.WithBearer (ConnectionId peerAddr) Mux.Trace))
     -> StdGen
     -> Snocket m socket peerAddr
     -> Mux.MakeBearer m socket
@@ -647,7 +651,7 @@ multinodeExperiment
     -> MultiNodeScript req peerAddr
     -> m ()
 multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
-                    stdGen0 snocket makeBearer addrFamily serverAddr accInit
+                    muxTracer stdGen0 snocket makeBearer addrFamily serverAddr accInit
                     dataFlow0 acceptedConnLimit
                     (MultiNodeScript script _) =
   withJobPool $ \jobpool -> do
@@ -746,7 +750,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
         forkJob jobpool
           $ Job
               ( withInitiatorOnlyConnectionManager
-                    name simTimeouts nullTracer nullTracer stdGen
+                    name simTimeouts nullTracer cmTracer stdGen
                     snocket makeBearer connStateIdSupply
                     (Just localAddr) (mkNextRequests connVar)
                     timeLimitsHandshake acceptedConnLimit
@@ -783,7 +787,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
                   Job ( withBidirectionalConnectionManager
                           name simTimeouts
                           inboundTrTracer trTracer cmTracer
-                          inboundTracer debugTracer
+                          inboundTracer muxTracer debugTracer
                           stdGen
                           snocket makeBearer connStateIdSupply
                           (\_ -> pure ()) fd (Just localAddr) serverAcc
@@ -1122,6 +1126,8 @@ prop_connection_manager_no_invalid_traces (Fixed rnd) serverAcc (ArbDataFlow dat
                      , ppScript (MultiNodeScript events attenuationMap)
                      , "========== ConnectionManager Events =========="
                      , Trace.ppTrace show show connectionManagerEvents
+                     , "====== Say Events ======"
+                     , intercalate "\n" $ selectTraceEventsSay' trace
                      ])
     . bifoldMap
        ( \ case
@@ -1429,6 +1435,7 @@ prop_connection_manager_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                                     (   sayTracer
                                      <> Tracer traceM
                                      <> networkStateTracer getState)
+                                    debugTracerG
                                     (mkStdGen rnd)
                                     snocket
                                     makeFDBearer
@@ -1485,6 +1492,7 @@ prop_timeouts_enforced (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                              dynamicTracer
                              nullTracer
                              dynamicTracer
+                             debugTracerG
 
 -- | Property wrapping `multinodeExperiment`.
 --
@@ -1898,30 +1906,34 @@ prop_connection_manager_pruning (Fixed rnd) serverAcc
              -> Maybe (Either (WithName (Name SimAddr) (AbstractTransitionTrace SimAddr))
                               (WithName (Name SimAddr) (CM.Trace SimAddr
                                                           (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData))))
-          fn _ (EventLog dyn) = Left  <$> fromDynamic dyn
-                            <|> Right <$> fromDynamic dyn
+          fn _ (EventLog dyn) = fromDynamic dyn
           fn _ _              = Nothing
 
   in  tabulate "ConnectionEvents" (map showConnectionEvents events)
-    -- . counterexample (ppScript (MultiNodeScript events attenuationMap))
+    . counterexample (ppScript (MultiNodeScript events attenuationMap))
+    . counterexample (concat
+        [ "\n\n====== Say Events ======\n"
+        , intercalate "\n" $ selectTraceEventsSay' trace
+        , "\n"
+        ])
     . mkPropertyPruning
     . bifoldMap
        ( \ case
            MainReturn {} -> mempty
-           v             -> mempty { tpProperty = counterexample (show v) False }
+           v             -> mempty { tpProperty = counterexample ("\ncounterexample: " <> show v) False }
        )
        ( \ case
            Left trs ->
              TestProperty {
                tpProperty =
                    (counterexample $!
-                     (  "\nconnection:\n"
+                     (  "\ncounterexample\nconnection:\n"
                      ++ intercalate "\n" (map ppTransition trs))
                      )
                  . foldMap ( \ tr
                             -> All
                              . (counterexample $!
-                                 (  "\nUnexpected transition: "
+                                 (  "\ncounterexample\nUnexpected transition: "
                                  ++ show tr)
                                  )
                              . verifyAbstractTransition
@@ -1937,8 +1949,11 @@ prop_connection_manager_pruning (Fixed rnd) serverAcc
                tpActivityTypes       = [classifyActivityType       trs],
                tpTransitions         = trs
             }
-           Right b ->
-              mempty { tpNumberOfPrunings = classifyPruning b }
+           Right b
+             | CM.TrUnexpectedlyFalseAssertion assertionLoc <- b ->
+                 mempty { tpProperty = counterexample ("\ncounterexample: " <> show assertionLoc) False }
+             | otherwise ->
+                 mempty { tpNumberOfPrunings = classifyPruning b }
        )
     . fmap (first (map ttTransition))
     . groupConnsEither id abstractStateIsFinalTransition
@@ -2196,7 +2211,7 @@ prop_server_accept_error (Fixed rnd) (AbsIOError ioerr) =
                withBidirectionalConnectionManager "node-0" simTimeouts
                                                   nullTracer nullTracer
                                                   nullTracer nullTracer
-                                                  nullTracer
+                                                  nullTracer nullTracer
                                                   (mkStdGen rnd)
                                                   snock
                                                   makeFDBearer
@@ -2261,6 +2276,8 @@ multiNodeSimTracer :: ( Alternative (STM m), Monad m, MonadFix m
                    -> Tracer m
                       (WithName (Name SimAddr) (IG.Debug SimAddr DataFlowProtocolData))
                    -> Tracer m
+                      (WithName (Name SimAddr) (Mux.WithBearer (ConnectionId SimAddr) Mux.Trace))
+                   -> Tracer m
                       (WithName
                        (Name SimAddr)
                         (CM.Trace
@@ -2271,7 +2288,7 @@ multiNodeSimTracer :: ( Alternative (STM m), Monad m, MonadFix m
 multiNodeSimTracer stdGen serverAcc dataFlow defaultBearerInfo
                    acceptedConnLimit events attenuationMap
                    remoteTrTracer abstractTrTracer
-                   inboundGovTracer debugTracer connMgrTracer = do
+                   inboundGovTracer debugTracer muxTracer connMgrTracer = do
 
       let attenuationMap' = (fmap toBearerInfo <$>)
                           . Map.mapKeys ( normaliseId
@@ -2289,6 +2306,7 @@ multiNodeSimTracer stdGen serverAcc dataFlow defaultBearerInfo
                                      inboundGovTracer
                                      debugTracer
                                      connMgrTracer
+                                     muxTracer
                                      stdGen
                                      snocket
                                      makeFDBearer
@@ -2323,7 +2341,7 @@ multiNodeSim stdGen serverAcc dataFlow defaultBearerInfo
                    acceptedConnLimit events attenuationMap = do
   multiNodeSimTracer stdGen serverAcc dataFlow defaultBearerInfo acceptedConnLimit
                      events attenuationMap dynamicTracer dynamicTracer dynamicTracer
-                     (Tracer traceM) dynamicTracer
+                     (Tracer traceM) dynamicTracer dynamicTracer --debugTracerG
 
 
 -- | Connection terminated while negotiating it.
