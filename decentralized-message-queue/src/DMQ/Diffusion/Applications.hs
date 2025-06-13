@@ -63,7 +63,7 @@ diffusionApplications
   }
   Diffusion.Configuration {
     dcMode
-  , dcOwnPeerSharing
+  , dcPeerSharing
   }
   ntnLimitsAndTimeouts
   ntnApps
@@ -73,7 +73,7 @@ diffusionApplications
       combineVersions
         [ simpleSingletonVersions
             version
-            (stdVersionDataNTN dmqcNetworkMagic dcMode dcOwnPeerSharing)
+            (stdVersionDataNTN dmqcNetworkMagic dcMode dcPeerSharing)
             (NTN.initiatorProtocols ntnLimitsAndTimeouts ntnApps version)
         | version <- [minBound..maxBound]
         ]
@@ -81,7 +81,7 @@ diffusionApplications
       combineVersions
         [ simpleSingletonVersions
             version
-            (stdVersionDataNTN dmqcNetworkMagic dcMode dcOwnPeerSharing)
+            (stdVersionDataNTN dmqcNetworkMagic dcMode dcPeerSharing)
             (NTN.initiatorAndResponderProtocols ntnLimitsAndTimeouts ntnApps version)
         | version <- [minBound..maxBound]
         ]
@@ -99,7 +99,10 @@ diffusionApplications
         ]
   , daRethrowPolicy                     =  muxErrorRethrowPolicy
                                         <> ioErrorRethrowPolicy
-  , daReturnPolicy                      = const (RepromoteDelay 0)
+    -- TODO: move to a policy module
+  , daReturnPolicy                      = const (RepromoteDelay 10)
+    -- TODO: move to a policy module
+  , daRepromoteErrorDelay               = RepromoteDelay 10
   , daLocalRethrowPolicy                = mempty
   , daPeerSelectionPolicy               = peerSelectionPolicy
   , daPeerSharingRegistry               = peerSharingRegistry

@@ -14,7 +14,7 @@
 --
 module Cardano.Network.PeerSelection.Churn
   ( ChurnMode (..)
-  , TracerChurnMode (..)
+  , TraceChurnMode (..)
   , ExtraArguments (..)
   , peerChurnGovernor
   ) where
@@ -48,7 +48,7 @@ data ChurnMode = ChurnModeBulkSync
                | ChurnModeNormal
                deriving Show
 
-newtype TracerChurnMode = TraceChurnMode ChurnMode
+newtype TraceChurnMode = TraceChurnMode ChurnMode
   deriving Show
 
 -- | Cardano Churn Extra Arguments
@@ -59,7 +59,7 @@ data ExtraArguments m =
   , genesisPeerTargets :: PeerSelectionTargets
   , readUseBootstrap   :: STM m UseBootstrapPeers
   , consensusMode      :: ConsensusMode
-  , tracerChurnMode    :: Tracer m TracerChurnMode
+  , tracerChurnMode    :: Tracer m TraceChurnMode
   }
 
 -- | Tag indicating churning approach

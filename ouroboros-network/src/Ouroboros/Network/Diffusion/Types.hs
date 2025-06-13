@@ -31,6 +31,15 @@ module Ouroboros.Network.Diffusion.Types
     -- * Re-exports
   , AbstractTransitionTrace
   , IG.RemoteTransitionTrace
+  , DNSTrace (..)
+  , TraceLocalRootPeers (..)
+  , TracePublicRootPeers (..)
+  , TraceLedgerPeers (..)
+  , TracePeerSelection (..)
+  , DebugPeerSelection (..)
+  , PeerSelectionCounters
+  , PeerSelection.ChurnCounters (..)
+  , PeerSelectionActionsTrace (..)
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -316,12 +325,13 @@ data Arguments extraState extraDebugState extraFlags extraPeers
 
   , daPeerSelectionGovernorArgs
       :: forall muxMode responderCtx bytes a b .
-         PeerSelectionGovernorArgs extraState extraDebugState extraFlags extraPeers
-                                   extraAPI extraCounters
-                                   ntnAddr (PeerConnectionHandle
-                                              muxMode responderCtx ntnAddr
-                                              ntnVersionData bytes m a b)
-                                   exception m
+         PeerSelectionGovernorArgs
+           extraState extraDebugState extraFlags extraPeers
+           extraAPI extraCounters
+           ntnAddr
+           (PeerConnectionHandle muxMode responderCtx
+                                 ntnAddr ntnVersionData bytes m a b)
+           exception m
 
     -- | Function that computes extraCounters from PeerSelectionState
     --
@@ -436,11 +446,14 @@ data Configuration extraFlags m ntnFd ntnAddr ntcFd ntcAddr = Configuration {
     -- This is especially useful for Genesis consensus mode.
     , dcReadLedgerPeerSnapshot :: STM m (Maybe LedgerPeerSnapshot)
 
+    -- | `UseLedgerPeers` from topology file.
+    --
+    , dcReadUseLedgerPeers     :: STM m UseLedgerPeers
+
     -- | Peer's own PeerSharing value.
     --
     -- This value comes from the node's configuration file and is static.
-    , dcOwnPeerSharing         :: PeerSharing
-    , dcReadUseLedgerPeers     :: STM m UseLedgerPeers
+    , dcPeerSharing            :: PeerSharing
 
       -- | Timeout which starts once all responder protocols are idle. If the
       -- responders stay idle for duration of the timeout, the connection will
@@ -530,13 +543,22 @@ data Applications ntnAddr ntnVersion ntnVersionData
                       Mx.ResponderMode ntcAddr
                       ByteString m Void ())
 
-      -- | /node-to-node/ rethrow policy
+      -- | /node-to-node/ rethrow policy.
+      --
+      -- TODO: should it be part of `ExitPolicy`?
       --
     , daRethrowPolicy       :: RethrowPolicy
 
       -- | /node-to-node/ return policy
       --
+      -- Internally packed into `ExitPolicy` record.
+      --
     , daReturnPolicy        :: ReturnPolicy a
+
+      -- | /node-to-node/ error delay.
+      --
+      -- Internally packed into `ExitPolicy` record.
+    , daRepromoteErrorDelay :: RepromoteDelay
 
       -- | /node-to-client/ rethrow policy
       --

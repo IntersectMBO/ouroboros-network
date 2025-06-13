@@ -1,8 +1,8 @@
 {-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-{-# LANGUAGE NamedFieldPuns    #-}
 
 module DMQ.Configuration where
 
@@ -66,19 +66,19 @@ instance FromJSON (Configuration ntnFd ntnAddr ntcFd ntcAddr) where
                            .!= InitiatorAndResponderDiffusionMode
 
     dmqcTargetOfRootPeers                 <- v .:? "TargetNumberOfRootPeers"
-                                               .!= (targetNumberOfRootPeers defaultDeadlineTargets)
+                                               .!= targetNumberOfRootPeers defaultDeadlineTargets
     dmqcTargetOfKnownPeers                <- v .:? "TargetNumberOfKnownPeers"
-                                               .!= (targetNumberOfKnownPeers defaultDeadlineTargets)
+                                               .!= targetNumberOfKnownPeers defaultDeadlineTargets
     dmqcTargetOfEstablishedPeers          <- v .:? "TargetNumberOfEstablishedPeers"
-                                               .!= (targetNumberOfEstablishedPeers defaultDeadlineTargets)
+                                               .!= targetNumberOfEstablishedPeers defaultDeadlineTargets
     dmqcTargetOfActivePeers               <- v .:? "TargetNumberOfActivePeers"
-                                               .!= (targetNumberOfActivePeers defaultDeadlineTargets)
+                                               .!= targetNumberOfActivePeers defaultDeadlineTargets
     dmqcTargetOfKnownBigLedgerPeers       <- v .:? "TargetNumberOfKnownBigLedgerPeers"
-                                               .!= (targetNumberOfKnownBigLedgerPeers defaultDeadlineTargets)
+                                               .!= targetNumberOfKnownBigLedgerPeers defaultDeadlineTargets
     dmqcTargetOfEstablishedBigLedgerPeers <- v .:? "TargetNumberOfEstablishedBigLedgerPeers"
-                                               .!= (targetNumberOfEstablishedBigLedgerPeers defaultDeadlineTargets)
+                                               .!= targetNumberOfEstablishedBigLedgerPeers defaultDeadlineTargets
     dmqcTargetOfActiveBigLedgerPeers      <- v .:? "TargetNumberOfActiveBigLedgerPeers"
-                                               .!= (targetNumberOfActiveBigLedgerPeers defaultDeadlineTargets)
+                                               .!= targetNumberOfActiveBigLedgerPeers defaultDeadlineTargets
 
     dmqcProtocolIdleTimeout <- v .:? "ProtocolIdleTimeout"
                                  .!= defaultProtocolIdleTimeout
@@ -169,7 +169,7 @@ mkDiffusionConfiguration
   , dmqcChurnInterval
   , dmqcPeerSharing
   } = do
-    s <- (addrAddress . NonEmpty.head)
+    s <-  addrAddress . NonEmpty.head
       <$> getAddrInfo (Just hints)
                       (Just (show ipv4))
                       (Just (show port))
@@ -206,7 +206,7 @@ mkDiffusionConfiguration
       , Diffusion.dcReadLocalRootPeers       = readTVar localRootsVar
       , Diffusion.dcReadPublicRootPeers      = readTVar publicRootsVar
       , Diffusion.dcReadLedgerPeerSnapshot   = readTVar ledgerPeerSnapshotVar
-      , Diffusion.dcOwnPeerSharing           = dmqcPeerSharing
+      , Diffusion.dcPeerSharing              = dmqcPeerSharing
       , Diffusion.dcReadUseLedgerPeers       = readTVar useLedgerVar
       , Diffusion.dcProtocolIdleTimeout      = dmqcProtocolIdleTimeout
       , Diffusion.dcTimeWaitTimeout          = defaultTimeWaitTimeout
@@ -227,7 +227,7 @@ mkDiffusionConfiguration
                              -> IO (Maybe LedgerPeerSnapshot)
     updateLedgerPeerSnapshot readLedgerPeerPath writeVar = do
       mPeerSnapshotFile <- atomically readLedgerPeerPath
-      mLedgerPeerSnapshot <- forM mPeerSnapshotFile $ readPeerSnapshotFileOrError
+      mLedgerPeerSnapshot <- forM mPeerSnapshotFile readPeerSnapshotFileOrError
       atomically . writeVar $ mLedgerPeerSnapshot
       pure mLedgerPeerSnapshot
 

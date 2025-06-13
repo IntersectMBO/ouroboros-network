@@ -87,6 +87,13 @@ maxInboundPeers :: Int
 maxInboundPeers = 10
 
 
+-- | Delay before a peer is re-promoted by the outbound-governor after an
+-- error.
+--
+repromoteErrorDelay :: RepromoteDelay
+repromoteErrorDelay = 10
+
+
 -- | Merge two dictionaries where values of the first one are obligatory, while
 -- the second one are optional.
 --
@@ -107,10 +114,8 @@ simplePeerSelectionPolicy :: forall m peerAddr.
                              )
                           => StrictTVar m StdGen
                           -> PeerMetrics m peerAddr
-                          -> RepromoteDelay
-                          -- ^ delay on error
                           -> PeerSelectionPolicy peerAddr m
-simplePeerSelectionPolicy rngVar metrics errorDelay = PeerSelectionPolicy {
+simplePeerSelectionPolicy rngVar metrics = PeerSelectionPolicy {
       policyPickKnownPeersForPeerShare = simplePromotionPolicy,
       policyPickColdPeersToPromote     = simplePromotionPolicy,
       policyPickWarmPeersToPromote     = simplePromotionPolicy,
@@ -125,9 +130,7 @@ simplePeerSelectionPolicy rngVar metrics errorDelay = PeerSelectionPolicy {
       policyPeerShareRetryTime         = 900,  -- seconds
       policyPeerShareBatchWaitTime     = 3,    -- seconds
       policyPeerShareOverallTimeout    = 10,   -- seconds
-      policyPeerShareActivationDelay   = 300,  -- seconds
-
-      policyErrorDelay = ExitPolicy.repromoteDelay errorDelay
+      policyPeerShareActivationDelay   = 300   -- seconds
     }
   where
 

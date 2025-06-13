@@ -69,24 +69,43 @@ import Ouroboros.Network.PeerSelection.RelayAccessPoint
 
 -- | Bundled with DNS lookup trace for observability
 --
-data DNSPeersKind = DNSLocalPeer | DNSPublicPeer | DNSLedgerPeer !LedgerPeersKind
+data DNSPeersKind = DNSLocalPeer
+                  | DNSPublicPeer
+                  | DNSLedgerPeer LedgerPeersKind
   deriving (Show)
 
 -- | Provides DNS lookup trace information
 --
-data DNSTrace = DNSResult
-                  DNSPeersKind
-                  DNS.Domain
-                  -- ^ source of addresses
-                  (Maybe DNS.Domain)
-                  -- ^ SRV domain, if relevant
-                  [(IP, PortNumber, DNS.TTL)]
-                  -- ^ payload
-              | DNSTraceLookupError !DNSPeersKind !(Maybe DNSLookupType) !DNS.Domain !DNS.DNSError
-              | DNSSRVFail
-                 !DNSPeersKind
-                 !DNS.Domain -- ^ SRV domain
+data DNSTrace =
+  -- | DNS lookup result
+    DNSLookupResult
+      DNSPeersKind
+      DNS.Domain
+      -- ^ source of addresses
+      (Maybe DNS.Domain)
+      -- ^ SRV domain, if relevant
+      [(IP, PortNumber, DNS.TTL)]
+      -- ^ payload
+
+    -- | `DNS` lookup error
+  | DNSLookupError
+      DNSPeersKind
+      (Maybe DNSLookupType)
+      DNS.Domain
+      DNS.DNSError
+
+  | SRVLookupResult
+      DNSPeersKind
+      DNS.Domain
+      [(DNS.Domain, Word16, Word16, Word16, DNS.TTL)]
+
+    -- | `SRV` resolution errors, all dns errors are traced with
+    -- `DNSLookupError`
+  | SRVLookupError
+     DNSPeersKind
+     DNS.Domain -- ^ SRV domain
   deriving (Show)
+
 
 data DNSLookupType = LookupReqAOnly
                    | LookupReqAAAAOnly
@@ -402,17 +421,18 @@ srvRecordLookupWithTTL ofType tracer toPeerAddr peerType domainSRV resolveDNS rn
     reply <- resolveDNS domainSRV DNS.SRV
     case reply of
       Nothing          -> do
-        traceWith tracer $ DNSTraceLookupError peerType Nothing domainSRV DNS.TimeoutExpired
+        traceWith tracer $ DNSLookupError peerType Nothing domainSRV DNS.TimeoutExpired
         return . Left $ [DNS.TimeoutExpired]
       Just (Left  err) -> do
-        traceWith tracer $ DNSTraceLookupError peerType Nothing domainSRV err
+        traceWith tracer $ DNSLookupError peerType Nothing domainSRV err
         return . Left $ [err]
       Just (Right msg) ->
         case DNS.fromDNSMessage msg selectSRV of
           Left err -> do
-            traceWith tracer $ DNSTraceLookupError peerType Nothing domainSRV err
+            traceWith tracer $ DNSLookupError peerType Nothing domainSRV err
             return . Left $ [err]
           Right services -> do
+            traceWith tracer $ SRVLookupResult peerType domainSRV services
             let srvByPriority = filter ((BS.pack "." /=) . pickDomain) $ sortOn priority services
                 grouped       = NE.groupWith priority srvByPriority
             (result, domain) <- do
@@ -427,9 +447,9 @@ srvRecordLookupWithTTL ofType tracer toPeerAddr peerType domainSRV resolveDNS rn
                       runWeightedLookup many
                 Nothing -> return (Right [], "")
             case result of
-              Left {} -> traceWith tracer $ DNSSRVFail peerType domainSRV
+              Left {}  -> traceWith tracer $ SRVLookupError peerType domainSRV
               Right ipsttls ->
-                traceWith tracer $ DNSResult peerType domain (Just domainSRV) ipsttls
+                traceWith tracer $ DNSLookupResult peerType domain (Just domainSRV) ipsttls
             return $ map (\(ip, port, ttl) -> (toPeerAddr ip port, ttl)) <$> result
 
       where
@@ -482,7 +502,7 @@ dispatchLookupWithTTL lookupType mkResolveDNS tracer toPeerAddr peerType domain 
     RelayAccessDomain d p -> do
       result <- domainLookupWithTTL tracer lookupType d peerType resolveDNS
       let trace = map (\(ip, ttl) -> (ip, p, ttl)) <$> result
-      Fold.traverse_ (traceWith tracer . DNSResult peerType d Nothing) trace
+      Fold.traverse_ (traceWith tracer . DNSLookupResult peerType d Nothing) trace
       return $ map (\(ip, _ttl) -> (toPeerAddr ip p, _ttl)) <$> result
     RelayAccessSRVDomain d -> srvRecordLookupWithTTL lookupType tracer toPeerAddr peerType d resolveDNS rng
     RelayAccessAddress addr p  -> return . Right $ [(toPeerAddr addr p, maxBound)]
@@ -501,7 +521,7 @@ domainLookupWithTTL tracer look@LookupReqAOnly d peerType resolveDNS = do
     res <- domainALookupWithTTL (resolveDNS d DNS.A)
     case res of
          Left err -> do
-           traceWith tracer $ DNSTraceLookupError peerType (Just look) d err
+           traceWith tracer $ DNSLookupError peerType (Just look) d err
            return . Left $ [err]
          Right r  -> return . Right $ r
 
@@ -509,7 +529,7 @@ domainLookupWithTTL tracer look@LookupReqAAAAOnly d peerType resolveDNS = do
     res <- domainAAAALookupWithTTL (resolveDNS d DNS.AAAA)
     case res of
          Left err -> do
-           traceWith tracer $ DNSTraceLookupError peerType (Just look) d err
+           traceWith tracer $ DNSLookupError peerType (Just look) d err
            return . Left $ [err] --([err], [])
          Right r  -> return . Right $ r
 
@@ -518,17 +538,17 @@ domainLookupWithTTL tracer LookupReqAAndAAAA d peerType resolveDNS = do
                                      (domainALookupWithTTL (resolveDNS d DNS.A))
     case (r_ipv6, r_ipv4) of
          (Left  e6, Left  e4) -> do
-           traceWith tracer $ DNSTraceLookupError
+           traceWith tracer $ DNSLookupError
                                 peerType (Just LookupReqAOnly) d e4
-           traceWith tracer $ DNSTraceLookupError
+           traceWith tracer $ DNSLookupError
                                 peerType (Just LookupReqAAAAOnly) d e6
            return . Left $ [e6, e4]
          (Right r6, Left  e4) -> do
-           traceWith tracer $ DNSTraceLookupError
+           traceWith tracer $ DNSLookupError
                                 peerType (Just LookupReqAOnly) d e4
            return . Right $ r6
          (Left  e6, Right r4) -> do
-           traceWith tracer $ DNSTraceLookupError
+           traceWith tracer $ DNSLookupError
                                 peerType (Just LookupReqAAAAOnly) d e6
            return . Right $ r4
          (Right r6, Right r4) -> return . Right $ r6 <> r4

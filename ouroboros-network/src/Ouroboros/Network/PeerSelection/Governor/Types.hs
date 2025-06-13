@@ -209,12 +209,8 @@ data PeerSelectionPolicy peeraddr m = PeerSelectionPolicy {
        policyPeerShareOverallTimeout    :: !DiffTime,
        -- ^ Amount of time the overall batches of peer sharing requests are
        -- allowed to take
-       policyPeerShareActivationDelay   :: !DiffTime,
+       policyPeerShareActivationDelay   :: !DiffTime
        -- ^ Delay until we consider a peer suitable for peer sharing
-
-       -- | Re-promote delay, passed from `ExitPolicy`.
-       --
-       policyErrorDelay                 :: !DiffTime
      }
 
 
@@ -475,7 +471,12 @@ data PeerStateActions peeraddr peerconn m = PeerStateActions {
 
     -- | Close a connection: warm to cold transition.
     --
-    closePeerConnection      :: peerconn -> m ()
+    closePeerConnection      :: peerconn -> m (),
+
+    -- | Expose repromote delay received as `spsExitPolicy` through
+    -- `PeerStateActionsArguments`.
+    --
+    errorDelay               :: RepromoteDelay
   }
 
 -----------------------

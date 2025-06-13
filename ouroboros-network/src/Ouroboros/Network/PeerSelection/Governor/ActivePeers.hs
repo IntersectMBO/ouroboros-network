@@ -22,6 +22,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import System.Random (randomR)
 
+import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (IsBigLedgerPeer (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
@@ -439,9 +440,13 @@ jobPromoteWarmPeer
   -> peerconn
   -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr
                          peerconn)
-jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {activatePeerConnection}}
-                   PeerSelectionPolicy { policyErrorDelay }
-                   peeraddr isBigLedgerPeer peerconn =
+jobPromoteWarmPeer PeerSelectionActions{ peerStateActions =
+                                           PeerStateActions {
+                                             activatePeerConnection,
+                                             errorDelay
+                                           }
+                                       }
+                   _ peeraddr isBigLedgerPeer peerconn =
     Job job handler () "promoteWarmPeer"
   where
     handler :: SomeException
@@ -480,7 +485,7 @@ jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {act
                  then let establishedPeers' = EstablishedPeers.delete peeraddr
                                                 establishedPeers
                           (fuzz, stdGen')  = randomR (-2, 2 :: Double) stdGen
-                          delay             = realToFrac fuzz + policyErrorDelay
+                          delay             = realToFrac fuzz + repromoteDelay errorDelay
                           knownPeers'       = if peeraddr `KnownPeers.member` knownPeers
                                                  then KnownPeers.setConnectTimes
                                                         (Map.singleton

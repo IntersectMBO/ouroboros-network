@@ -1,11 +1,9 @@
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
-{-# LANGUAGE NamedFieldPuns             #-}
 
 module Ouroboros.Network.ExitPolicy
   ( RepromoteDelay (..)
   , ExitPolicy (..)
-  , stdExitPolicy
   , ReturnPolicy
   , alwaysCleanReturnPolicy
   ) where
@@ -46,12 +44,3 @@ data ExitPolicy a =
 alwaysCleanReturnPolicy :: RepromoteDelay -- ^ re-promote delay on error
                         -> ExitPolicy a
 alwaysCleanReturnPolicy = ExitPolicy $ \_ -> 0
-
--- | 'ExitPolicy' with 10s error delay.
---
-stdExitPolicy :: ReturnPolicy a -> ExitPolicy a
-stdExitPolicy epReturnDelay =
-    ExitPolicy {
-        epReturnDelay,
-        epErrorDelay = 10
-      }

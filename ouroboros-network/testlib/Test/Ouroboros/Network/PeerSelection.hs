@@ -4069,7 +4069,8 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
                   monitorPeerConnection    = error "monitorPeerConnection",
                   activatePeerConnection   = error "activatePeerConnection",
                   deactivatePeerConnection = error "deactivatePeerConnection",
-                  closePeerConnection      = error "closePeerConnection"
+                  closePeerConnection      = error "closePeerConnection",
+                  errorDelay               = config_REPROMOTE_DELAY
                 },
                 readLocalRootPeersFromFile = return [],
                 readInboundPeers = pure Map.empty,
@@ -4112,8 +4113,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
                 policyPeerShareRetryTime         = 0, -- seconds
                 policyPeerShareBatchWaitTime     = 0, -- seconds
                 policyPeerShareOverallTimeout    = 0, -- seconds
-                policyPeerShareActivationDelay   = 2, -- seconds
-                policyErrorDelay              = 0  -- seconds
+                policyPeerShareActivationDelay   = 2  -- seconds
               }
     pickTrivially :: Applicative m => Set SockAddr -> Int -> m (Set SockAddr)
     pickTrivially m n = pure . Set.take n $ m

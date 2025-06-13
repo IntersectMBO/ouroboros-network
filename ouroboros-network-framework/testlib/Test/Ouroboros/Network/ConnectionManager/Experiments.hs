@@ -86,12 +86,7 @@ import Ouroboros.Network.Mux
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.Protocol.Handshake
-import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
-           noTimeLimitsHandshake, timeLimitsHandshake)
-import Ouroboros.Network.Protocol.Handshake.Type (Handshake)
 import Ouroboros.Network.Protocol.Handshake.Unversioned
-import Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..),
-           Queryable (..))
 import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.Server (RemoteTransitionTrace)
 import Ouroboros.Network.Server qualified as Server
