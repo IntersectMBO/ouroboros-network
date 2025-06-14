@@ -102,18 +102,14 @@ library
     cborg >=0.2.1 && <0.3,
     containers,
     deepseq,
-    io-classes ^>=1.5.0,
+    io-classes:{io-classes, si-timers} ^>=1.8,
     nothunks,
     ouroboros-network-api ^>=0.14,
     quiet,
     serialise,
-    si-timers,
     singletons,
     text,
-    typed-protocols ^>=0.3,
-    typed-protocols-cborg ^>=0.3,
-    typed-protocols-stateful,
-    typed-protocols-stateful-cborg,
+    typed-protocols:{typed-protocols, cborg, stateful, stateful-cborg} ^>=1.0,
 
   ghc-options:
     -Wall
@@ -186,7 +182,7 @@ library testlib
     containers,
     contra-tracer,
     deepseq,
-    io-classes,
+    io-classes:{io-classes, si-timers, strict-stm},
     io-sim,
     network,
     network-mux,
@@ -197,13 +193,10 @@ library testlib
     pipes,
     quickcheck-instances,
     serialise,
-    si-timers,
-    strict-stm,
     tasty,
     tasty-quickcheck,
     text,
-    typed-protocols,
-    typed-protocols-stateful,
+    typed-protocols:{typed-protocols, stateful},
 
   ghc-options:
     -Wall
@@ -278,8 +271,7 @@ test-suite cddl
     tasty-quickcheck,
     temporary,
     text,
-    typed-protocols,
-    typed-protocols-stateful,
+    typed-protocols:{typed-protocols, stateful},
 
   ghc-options:
     -threaded
@@ -308,8 +300,7 @@ test-suite bench
     ouroboros-network-protocols,
     ouroboros-network-protocols:testlib,
     tasty-bench,
-    typed-protocols,
-    typed-protocols-stateful,
+    typed-protocols:{typed-protocols, stateful},
 
   ghc-options:
     -Wall
