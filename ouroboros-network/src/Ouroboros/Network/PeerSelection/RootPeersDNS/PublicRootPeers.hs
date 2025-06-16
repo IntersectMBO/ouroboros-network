@@ -46,15 +46,15 @@ data TracePublicRootPeers =
 -- | fulfills a request from 'requestPublicRootPeers'
 --
 publicRootPeersProvider
-  :: forall peerAddr resolver exception a m.
-     (MonadThrow m, MonadAsync m, Exception exception,
+  :: forall peerAddr resolver a m.
+     (MonadThrow m, MonadAsync m,
       Ord peerAddr)
   => Tracer m TracePublicRootPeers
   -> (IP -> Socket.PortNumber -> peerAddr)
   -> DNSSemaphore m
   -> DNS.ResolvConf
   -> STM m (Map RelayAccessPoint PeerAdvertise)
-  -> DNSActions peerAddr resolver exception m
+  -> DNSActions peerAddr resolver m
   -> StdGen
   -> ((Int -> m (Map peerAddr PeerAdvertise, DiffTime)) -> m a)
   -> m a
@@ -76,7 +76,7 @@ publicRootPeersProvider tracer
     action (requestPublicRootPeers resourceVar)
   where
     requestPublicRootPeers
-      :: StrictTVar m (Resource m (Either (DNSorIOError exception) resolver))
+      :: StrictTVar m (Resource m (Either DNSorIOError resolver))
       -> Int
       -> m (Map peerAddr PeerAdvertise, DiffTime)
     requestPublicRootPeers resourceVar _numRequested = do

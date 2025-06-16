@@ -396,7 +396,7 @@ instance Arbitrary DNSLookupDelay where
 -- | Mock DNSActions data structure for testing purposes.
 -- Adds DNS Lookup function for IOSim with different timeout and lookup
 -- delays for every attempt.
-mockDNSActions :: forall exception peerAddr m.
+mockDNSActions :: forall peerAddr m.
                   ( MonadDelay m
                   , MonadTimer m
                   , MonadAsync m
@@ -407,7 +407,7 @@ mockDNSActions :: forall exception peerAddr m.
                -> StrictTVar m MockDNSMap
                -> StrictTVar m (Script DNSTimeout)
                -> StrictTVar m (Script DNSLookupDelay)
-               -> DNSActions peerAddr () exception m
+               -> DNSActions peerAddr () m
 mockDNSActions tracer ofType0 toPeerAddr dnsMapVar dnsTimeoutScript dnsLookupDelayScript =
     DNSActions {
       dnsResolverResource,
@@ -460,7 +460,7 @@ mockLocalRootPeersProvider :: forall m.
                               , MonadTraceSTM m
                               , MonadLabelledSTM m
                               )
-                           => Tracer m (TestTraceEvent (TraceLocalRootPeers () SockAddr Failure))
+                           => Tracer m (TestTraceEvent (TraceLocalRootPeers () SockAddr))
                            -> MockRoots
                            -> Script DNSTimeout
                            -> Script DNSLookupDelay
@@ -549,7 +549,7 @@ mockPublicRootPeersProvider tracer (MockRoots _ _ publicRootPeers dnsMapScript)
                                 dnsSemaphore
                                 DNSResolver.defaultResolvConf
                                 (readTVar publicRootPeersVar)
-                                (mockDNSActions @Failure
+                                (mockDNSActions
                                   (contramap Right tracer)
                                   LookupReqAOnly
                                   (curry toSockAddr)
@@ -589,7 +589,7 @@ mockResolveLedgerPeers tracer (MockRoots _ _ publicRootPeers dnsMapScript)
       traceWith tracer . Left $ TraceLedgerPeersDomains relays
       resolveLedgerPeers dnsSemaphore
                          DNSResolver.defaultResolvConf
-                         (mockDNSActions @Failure
+                         (mockDNSActions
                            (contramap Right tracer)
                            LookupReqAOnly
                            (curry toSockAddr)
@@ -606,7 +606,7 @@ mockResolveLedgerPeers tracer (MockRoots _ _ publicRootPeers dnsMapScript)
 
 type TestTraceEvent a = Either a DNSTrace
 
-tracerTraceLocalRoots :: Tracer (IOSim s) (TestTraceEvent (TraceLocalRootPeers () SockAddr Failure))
+tracerTraceLocalRoots :: Tracer (IOSim s) (TestTraceEvent (TraceLocalRootPeers () SockAddr))
 tracerTraceLocalRoots = Tracer traceM
 
 tracerTracePublicRoots :: Tracer (IOSim s) (TestTraceEvent TracePublicRootPeers)
@@ -629,7 +629,7 @@ selectTestTraceEvents = go
     go TraceLoop                     = error "IOSimPOR step time limit exceeded"
 
 selectLocalRootPeersWithDNSEvents :: SimTrace a
-                                  -> [(Time, TestTraceEvent (TraceLocalRootPeers () SockAddr Failure))]
+                                  -> [(Time, TestTraceEvent (TraceLocalRootPeers () SockAddr))]
 selectLocalRootPeersWithDNSEvents = filter them . selectTestTraceEvents
   where
     them (_t, Right dns) =
@@ -641,7 +641,7 @@ selectLocalRootPeersWithDNSEvents = filter them . selectTestTraceEvents
         _otherwise                           -> False
     them _ = True
 
-selectLocalRootGroupsEvents :: [(Time, TestTraceEvent (TraceLocalRootPeers () SockAddr Failure))]
+selectLocalRootGroupsEvents :: [(Time, TestTraceEvent (TraceLocalRootPeers () SockAddr))]
                             -> [(Time, [(HotValency, WarmValency, Map SockAddr (LocalRootConfig ()))])]
 selectLocalRootGroupsEvents trace = [ (t, r)
                                     | (t, Left (TraceLocalRootGroups r)) <- trace ]

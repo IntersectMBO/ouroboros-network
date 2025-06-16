@@ -24,7 +24,6 @@ module Cardano.Network.Diffusion.Types
 
 
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Exception (IOException)
 import Control.Tracer (Tracer)
 import Network.Socket (SockAddr, Socket)
 
@@ -98,13 +97,10 @@ data CardanoConsensusArguments ntnAddr m =
     -- consensus through `RunNodeArgs`, from which it is passed to diffusion.
   }
 
-type DNSResolverError = IOException
-
 type CardanoTracers m =
   Diffusion.Tracers
     RemoteAddress NodeToNodeVersion  NodeToNodeVersionData
     LocalAddress  NodeToClientVersion NodeToClientVersionData
-    DNSResolverError
     Cardano.ExtraState
     Cardano.DebugPeerSelectionState
     PeerTrustable
@@ -139,7 +135,7 @@ type CardanoLocalRootConfig = LocalRootConfig PeerTrustable
 
 
 type CardanoTraceLocalRootPeers =
-  TraceLocalRootPeers PeerTrustable RemoteAddress DNSResolverError
+  TraceLocalRootPeers PeerTrustable RemoteAddress
 
 
 type CardanoTracePeerSelection =

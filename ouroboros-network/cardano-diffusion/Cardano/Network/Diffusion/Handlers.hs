@@ -31,7 +31,7 @@ sigUSR1Handler
   :: Ord ntnAddr
   => Tracers ntnAddr ntnVersion ntnVersionData
              ntcAddr ntcVersion ntcVersionData
-             resolverError extraState
+             extraState
              Cardano.DebugPeerSelectionState
              extraFlags extraPeers extraCounters
              IO

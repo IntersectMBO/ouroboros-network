@@ -88,11 +88,10 @@ debugTracers :: ( Applicative m
                 , Show ntnAddr
                 , Show ntnVersion
                 , Show ntnVersionData
-                , Show resolverError
                 )
             => Diffusion.Tracers ntnAddr ntnVersion ntnVersionData
                                  ntcAddr ntcVersion ntcVersionData
-                                 resolverError extraState extraDebugState
+                                 extraState extraDebugState
                                  extraFlags extraPeers extraCounters m
 debugTracers =
   Diffusion.Tracers {

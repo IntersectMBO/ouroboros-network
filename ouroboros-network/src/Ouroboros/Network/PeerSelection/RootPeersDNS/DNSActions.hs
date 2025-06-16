@@ -39,7 +39,6 @@ import Data.Map qualified as Map
 import Data.Maybe (fromJust, listToMaybe)
 import Data.Word (Word16)
 
-import Control.Exception (IOException)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.Trans ()
@@ -112,9 +111,9 @@ data DNSLookupType = LookupReqAOnly
                    | LookupReqAAndAAAA
                    deriving Show
 
-data DNSorIOError exception
+data DNSorIOError
     = DNSError !DNSError
-    | IOError  !exception
+    | IOError  !IOError
   deriving Show
 
 -- | Wraps lookup result for client code
@@ -122,7 +121,7 @@ data DNSorIOError exception
 type DNSLookupResult peerAddr =
     Either [DNS.DNSError] [(peerAddr, DNS.TTL)]
 
-instance Exception exception => Exception (DNSorIOError exception) where
+instance Exception DNSorIOError where
 
 -----------------------------------------------
 -- Resource
@@ -206,14 +205,14 @@ data TimedResolver
 
 -- | Dictionary of DNS actions vocabulary
 --
-data DNSActions peerAddr resolver exception m = DNSActions {
+data DNSActions peerAddr resolver m = DNSActions {
 
     -- |
     --
     -- TODO: it could be useful for `publicRootPeersProvider`.
     --
     dnsResolverResource      :: DNS.ResolvConf
-                             -> m (Resource m (Either (DNSorIOError exception) resolver)),
+                             -> m (Resource m (Either DNSorIOError resolver)),
 
     -- | `Resource` which passes the 'DNS.Resolver' (or abstract resolver type)
     -- through a 'StrictTVar'. Better than 'resolverResource' when using in
@@ -225,7 +224,7 @@ data DNSActions peerAddr resolver exception m = DNSActions {
     -- changed.  The 'dns' library is using 'GetNetworkParams@ win32 api call
     -- to get the list of default dns servers.
     dnsAsyncResolverResource :: DNS.ResolvConf
-                             -> m (Resource m (Either (DNSorIOError exception) resolver)),
+                             -> m (Resource m (Either DNSorIOError resolver)),
 
     -- | Like 'DNS.lookupA' but also return the TTL for the results.
     --
@@ -245,9 +244,9 @@ data DNSActions peerAddr resolver exception m = DNSActions {
 --
 -- TODO: rename as `PeerDNSActions`; can we bundle `paToPeerAddr` with
 -- `DNSActions`?
-data PeerActionsDNS peeraddr resolver exception m = PeerActionsDNS {
+data PeerActionsDNS peeraddr resolver m = PeerActionsDNS {
   paToPeerAddr :: IP -> PortNumber -> peeraddr,
-  paDnsActions :: DNSActions peeraddr resolver exception m
+  paDnsActions :: DNSActions peeraddr resolver m
   }
 
 
@@ -274,7 +273,7 @@ getResolver resolvConf = do
 ioDNSActions :: Tracer IO DNSTrace
              -> DNSLookupType
              -> (IP -> PortNumber -> peerAddr)
-             -> DNSActions peerAddr DNS.Resolver IOException IO
+             -> DNSActions peerAddr DNS.Resolver IO
 ioDNSActions tracer lookupType toPeerAddr =
     DNSActions {
       dnsResolverResource      = resolverResource,
@@ -292,7 +291,7 @@ ioDNSActions tracer lookupType toPeerAddr =
     -- TODO: it could be useful for `publicRootPeersProvider`.
     --
     resolverResource :: DNS.ResolvConf
-                     -> IO (Resource IO (Either (DNSorIOError IOException) DNS.Resolver))
+                     -> IO (Resource IO (Either DNSorIOError DNS.Resolver))
     resolverResource resolvConf = do
         rs <- DNS.makeResolvSeed resolvConf
         case DNS.resolvInfo resolvConf of
@@ -302,14 +301,14 @@ ioDNSActions tracer lookupType toPeerAddr =
           _ -> DNS.withResolver rs (pure . fmap Right . constantResource)
 
       where
-        handlers :: [ Handler IO (Either (DNSorIOError IOException) a) ]
+        handlers :: [ Handler IO (Either DNSorIOError a) ]
         handlers  = [ Handler $ pure . Left . IOError
                     , Handler $ pure . Left . DNSError
                     ]
 
         go :: FilePath
            -> TimedResolver
-           -> Resource IO (Either (DNSorIOError IOException) DNS.Resolver)
+           -> Resource IO (Either DNSorIOError DNS.Resolver)
         go filePath tr@NoResolver = Resource $
           do
             result
@@ -344,7 +343,7 @@ ioDNSActions tracer lookupType toPeerAddr =
     -- than 'resolverResource' when using in multiple threads.
     --
     asyncResolverResource :: DNS.ResolvConf
-                          -> IO (Resource IO (Either (DNSorIOError IOException) DNS.Resolver))
+                          -> IO (Resource IO (Either DNSorIOError DNS.Resolver))
 
     asyncResolverResource resolvConf =
         case DNS.resolvInfo resolvConf of
@@ -354,13 +353,13 @@ ioDNSActions tracer lookupType toPeerAddr =
           _ -> do
             fmap Right . constantResource <$> getResolver resolvConf
       where
-        handlers :: [ Handler IO (Either (DNSorIOError IOException) a) ]
+        handlers :: [ Handler IO (Either DNSorIOError a) ]
         handlers  = [ Handler $ pure . Left . IOError
                     , Handler $ pure . Left . DNSError
                     ]
 
         go :: FilePath -> StrictTVar IO TimedResolver
-           -> Resource IO (Either (DNSorIOError IOException) DNS.Resolver)
+           -> Resource IO (Either DNSorIOError DNS.Resolver)
         go filePath resourceVar = Resource $ do
           r <- readTVarIO resourceVar
           case r of

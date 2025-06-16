@@ -891,7 +891,7 @@ data DiffusionSimulationTrace
 -- that check conditions synchronously.
 --
 data DiffusionTestTrace =
-      DiffusionLocalRootPeerTrace (TraceLocalRootPeers PeerTrustable NtNAddr SomeException)
+      DiffusionLocalRootPeerTrace (TraceLocalRootPeers PeerTrustable NtNAddr)
     | DiffusionPublicRootPeerTrace TracePublicRootPeers
     | DiffusionLedgerPeersTrace TraceLedgerPeers
     | DiffusionPeerSelectionTrace (Governor.TracePeerSelection Cardano.ExtraState PeerTrustable (Cardano.ExtraPeers NtNAddr) NtNAddr)
@@ -1286,7 +1286,7 @@ diffusionSimulation
       :: NtNAddr
       -> Diffusion.Tracers NtNAddr NtNVersion NtNVersionData
                            NtCAddr NtCVersion NtCVersionData
-                           SomeException Cardano.ExtraState
+                           Cardano.ExtraState
                            Cardano.ExtraState PeerTrustable
                            (Cardano.ExtraPeers NtNAddr)
                            (Cardano.ExtraPeerSelectionSetsWithSizes NtNAddr) m

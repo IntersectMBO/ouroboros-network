@@ -33,15 +33,14 @@ import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore,
 -- Concurrently resolve DNS names, respecting the 'maxDNSConcurrency' limit.
 --
 resolveLedgerPeers
-  :: forall m peerAddr resolver exception.
+  :: forall m peerAddr resolver.
      ( Ord peerAddr
      , MonadThrow m
      , MonadAsync m
-     , Exception exception
      )
   => DNSSemaphore m
   -> DNS.ResolvConf
-  -> DNSActions peerAddr resolver exception m
+  -> DNSActions peerAddr resolver m
   -> LedgerPeersKind
   -> [RelayAccessPoint]
   -> StdGen
@@ -61,7 +60,7 @@ resolveLedgerPeers dnsSemaphore
     resolveDomains resourceVar
   where
     resolveDomains
-      :: StrictTVar m (Resource m (Either (DNSorIOError exception) resolver))
+      :: StrictTVar m (Resource m (Either DNSorIOError resolver))
       -> m (Map DNS.Domain (Set peerAddr))
     resolveDomains resourceVar = do
         rr <- readTVarIO resourceVar

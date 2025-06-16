@@ -47,18 +47,17 @@ import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount (..))
 import System.Random
 
 withPeerSelectionActions
-  :: forall extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn resolver exception m a.
+  :: forall extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn resolver m a.
      ( Alternative (STM m)
      , MonadAsync m
      , MonadDelay m
      , MonadThrow m
      , Ord peeraddr
-     , Exception exception
      , Eq extraFlags
      )
-  => Tracer m (TraceLocalRootPeers extraFlags peeraddr exception)
+  => Tracer m (TraceLocalRootPeers extraFlags peeraddr)
   -> StrictTVar m (Config extraFlags peeraddr)
-  -> PeerActionsDNS peeraddr resolver exception m
+  -> PeerActionsDNS peeraddr resolver m
   -> ( (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
      -> PeerSelectionActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m)
   -> WithLedgerPeersArgs extraAPI m
@@ -126,16 +125,15 @@ requestPeerSharingResult sharingController amount peer = do
 -- public root peers and the time taken for the operation.
 --
 requestPublicRootPeers
-  :: forall m peeraddr extraPeers resolver exception .
+  :: forall m peeraddr extraPeers resolver.
     ( MonadThrow m
     , MonadAsync m
-    , Exception exception
     , Monoid extraPeers
     , Ord peeraddr
     )
   => Tracer m TracePublicRootPeers
   -> STM m (Map RelayAccessPoint PeerAdvertise)
-  -> PeerActionsDNS peeraddr resolver exception m
+  -> PeerActionsDNS peeraddr resolver m
   -> DNSSemaphore m
   -> (Map peeraddr PeerAdvertise -> extraPeers)
   -- ^ Function to convert DNS result into extra peers
