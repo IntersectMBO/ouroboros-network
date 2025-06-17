@@ -776,33 +776,33 @@ splitBeforePoint pt = go []
 -- Block generator
 --
 
-prop_chainGenerator :: RandomGen g => g -> Bool
+prop_chainGenerator :: SplitGen g => g -> Bool
 prop_chainGenerator =
     Chain.valid
   . Chain.fromOldestFirst
   . Inf.take 1000
   . chainGenerator
 
-chainGenerator :: RandomGen g => g -> Infinite Block
+chainGenerator :: SplitGen g => g -> Infinite Block
 chainGenerator g =
     genBlockChain g Nothing
 
-genBlockChain :: RandomGen g => g -> Maybe BlockHeader -> Infinite Block
+genBlockChain :: SplitGen g => g -> Maybe BlockHeader -> Infinite Block
 genBlockChain !g prevHeader =
     block :< genBlockChain g'' (Just (blockHeader block))
   where
     block     = genBlock g' prevHeader
-    (g', g'') = split g
+    (g', g'') = splitGen g
 
-genBlock :: RandomGen g => g -> Maybe BlockHeader -> Block
+genBlock :: SplitGen g => g -> Maybe BlockHeader -> Block
 genBlock g prevHeader =
     Block { blockBody, blockHeader }
   where
     blockBody   = genBlockBody g'
     blockHeader = genBlockHeader g'' prevHeader blockBody
-    (g', g'')   = split g
+    (g', g'')   = splitGen g
 
-genBlockHeader :: RandomGen g
+genBlockHeader :: SplitGen g
                => g -> Maybe BlockHeader -> BlockBody -> BlockHeader
 genBlockHeader g prevHeader body =
     header
@@ -819,7 +819,7 @@ genBlockHeader g prevHeader body =
     addSlotGap :: Int -> SlotNo -> SlotNo
     addSlotGap m (SlotNo n) = SlotNo (n + fromIntegral m)
 
-genBlockBody :: RandomGen g => g -> BlockBody
+genBlockBody :: SplitGen g => g -> BlockBody
 genBlockBody g =
     BlockBody . BSC.take len . BSC.drop offset . BSC.pack $ bodyData
   where

@@ -88,7 +88,7 @@ belowTarget enableAction
                              targetNumberOfKnownBigLedgerPeers
                              numBigLedgerPeers],
           decisionState = st { inProgressBigLedgerPeersReq = True
-                             , stdGen = fst . split $ stdGen},
+                             , stdGen = fst . splitGen $ stdGen},
           decisionJobs  = [jobReqBigLedgerPeers actions stdGen maxExtraBigLedgerPeers]
         }
 

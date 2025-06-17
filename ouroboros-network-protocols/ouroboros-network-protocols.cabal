@@ -221,7 +221,7 @@ test-suite test
     -- long and too much memory.
     -- Possibly due to ByteString
     -- generator changes.
-    QuickCheck ^>=2.14,
+    QuickCheck ^>=2.16,
     base >=4.14 && <4.22,
     ouroboros-network-api,
     ouroboros-network-mock,

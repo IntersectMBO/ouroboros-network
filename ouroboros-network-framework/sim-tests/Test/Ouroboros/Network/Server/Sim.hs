@@ -59,12 +59,11 @@ import Data.Proxy (Proxy (..))
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Typeable (Typeable)
-import System.Random (StdGen, mkStdGen, split)
+import System.Random (StdGen, mkStdGen, splitGen)
 
 import Text.Printf
 
 import Test.QuickCheck
-import Test.QuickCheck.Monoids (All (..))
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck
 
@@ -742,7 +741,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
         connVar <- newTVarIO Map.empty
         labelTVarIO connVar $ "connVar/" ++ show name
         threadId <- myThreadId
-        stdGen <- atomically (stateTVar stdGenVar split)
+        stdGen <- atomically (stateTVar stdGenVar splitGen)
         forkJob jobpool
           $ Job
               ( withInitiatorOnlyConnectionManager
@@ -776,7 +775,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
         connVar <- newTVarIO Map.empty
         labelTVarIO connVar $ "connVar/" ++ show name
         threadId <- myThreadId
-        stdGen <- atomically (stateTVar stdGenVar split)
+        stdGen <- atomically (stateTVar stdGenVar splitGen)
         let job =
               case dataFlow of
                 Duplex ->
@@ -965,7 +964,7 @@ validate_transitions mns@(MultiNodeScript events _) trace =
                      ++ intercalate "\n" (map ppTransition trs))
                      )
                  . foldMap ( \ tr
-                            -> All
+                            -> Every
                              . (counterexample $!
                                  (  "\nUnexpected transition: "
                                  ++ show tr)
@@ -1126,12 +1125,12 @@ prop_connection_manager_no_invalid_traces (Fixed rnd) serverAcc (ArbDataFlow dat
     . bifoldMap
        ( \ case
            MainReturn {} -> mempty
-           v             -> All (counterexample (show v) False)
+           v             -> Every (counterexample (show v) False)
        )
        ( \ tr
         -> case tr of
           CM.TrUnexpectedlyFalseAssertion _
-            -> All (counterexample (show tr) False)
+            -> Every (counterexample (show tr) False)
           _ -> mempty
        )
     $ connectionManagerEvents
@@ -1171,7 +1170,7 @@ prop_connection_manager_valid_transition_order (Fixed rnd) serverAcc (ArbDataFlo
     . bifoldMap
        ( \ case
            MainReturn {} -> mempty
-           _             -> All False
+           _             -> Every False
        )
        (verifyAbstractTransitionOrder id True)
     . fmap (map ttTransition)
@@ -1211,7 +1210,7 @@ prop_connection_manager_valid_transition_order_racy (Fixed rnd) serverAcc (ArbDa
         . bifoldMap
            ( \ case
                MainReturn {} -> mempty
-               _             -> All False
+               _             -> Every False
            )
            (verifyAbstractTransitionOrder id True)
         . fmap (map ttTransition)
@@ -1275,12 +1274,12 @@ prop_connection_manager_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
     . bifoldMap
        ( \ case
            MainReturn {} -> mempty
-           v             -> All
-                            $ counterexample (show v) False
+           v             -> Every
+                          $ counterexample (show v) False
        )
        ( \ case
           CM.TrConnectionManagerCounters cmc ->
-            All
+            Every
               $ counterexample
                   ("Upper bound is: " ++ show upperBound
                   ++ "\n But got: " ++ show cmc)
@@ -1512,9 +1511,9 @@ prop_inbound_governor_valid_transitions (Fixed rnd) serverAcc (ArbDataFlow dataF
     . counterexample (Trace.ppTrace show show remoteTransitionTraceEvents)
     -- Verify that all Inbound Governor remote transitions are valid
     . bifoldMap
-       ( \ _ -> All True )
+       ( \ _ -> Every True )
        ( \ TransitionTrace {ttPeerAddr = peerAddr, ttTransition = tr} ->
-             All
+             Every
            . counterexample (concat [ "Unexpected transition: "
                                     , show peerAddr
                                     , " "
@@ -1559,25 +1558,25 @@ prop_inbound_governor_no_unsupported_state (Fixed rnd) serverAcc (ArbDataFlow da
     -- Verify we do not return unsupported states in any of the
     -- RemoteTransitionTrace
     . bifoldMap
-        ( \ _ -> All True)
+        ( \ _ -> Every True)
         ( \ tr -> case tr of
             -- verify that 'unregisterInboundConnection' does not return
             -- 'UnsupportedState'.
             IG.TrDemotedToColdRemote _ res ->
               case res of
                 UnsupportedState {}
-                  -> All (counterexample (show tr) False)
-                _ -> All True
+                  -> Every (counterexample (show tr) False)
+                _ -> Every True
 
             -- verify that 'demotedToColdRemote' does not return
             -- 'UnsupportedState'
             IG.TrWaitIdleRemote _ res ->
               case res of
                 UnsupportedState {}
-                  -> All (counterexample (show tr) False)
-                _ -> All True
+                  -> Every (counterexample (show tr) False)
+                _ -> Every True
 
-            _     -> All True
+            _     -> Every True
         )
     $ inboundGovernorEvents
   where
@@ -1620,12 +1619,12 @@ prop_inbound_governor_no_invalid_traces (Fixed rnd) serverAcc (ArbDataFlow dataF
     . bifoldMap
        ( \ case
            MainReturn {} -> mempty
-           v             -> All (counterexample (show v) False)
+           v             -> Every (counterexample (show v) False)
        )
        ( \ tr
         -> case tr of
           IG.TrUnexpectedlyFalseAssertion _
-            -> All (counterexample (show tr) False)
+            -> Every (counterexample (show tr) False)
           _ -> mempty
        )
     $ inboundGovernorEvents
@@ -1704,7 +1703,7 @@ prop_inbound_governor_valid_transition_order (Fixed rnd) serverAcc (ArbDataFlow 
     . bifoldMap
        ( \ case
            MainReturn {} -> mempty
-           _             -> All False
+           _             -> Every False
        )
        (verifyRemoteTransitionOrder True)
     . fmap (map ttTransition)
@@ -1745,12 +1744,12 @@ prop_inbound_governor_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
     . bifoldMap
        (\ case
           MainReturn {} -> mempty
-          v             -> All
+          v             -> Every
                          $ counterexample (show v) (property False)
        )
        (\ case
           IG.TrInboundGovernorCounters igc ->
-            All
+            Every
               $ counterexample
                   ("Upper bound is: " ++ show upperBound
                   ++ "\n But got: " ++ show igc)
@@ -1838,9 +1837,9 @@ prop_inbound_governor_state (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
     . bifoldMap
        ( \ case
            MainReturn {} -> mempty
-           _             -> All False
+           _             -> Every False
        )
-       (All . inboundGovernorStateInvariant)
+       (Every . inboundGovernorStateInvariant)
     $ evs
   where
     sim :: IOSim s ()
@@ -1919,7 +1918,7 @@ prop_connection_manager_pruning (Fixed rnd) serverAcc
                      ++ intercalate "\n" (map ppTransition trs))
                      )
                  . foldMap ( \ tr
-                            -> All
+                            -> Every
                              . (counterexample $!
                                  (  "\nUnexpected transition: "
                                  ++ show tr)
@@ -1986,7 +1985,7 @@ prop_inbound_governor_pruning (Fixed rnd) serverAcc
   in tabulate "ConnectionEvents" (map showConnectionEvents events)
     -- . counterexample (ppTrace trace)
     . bifoldMap
-        (\ _ -> All True)
+        (\ _ -> Every True)
         (\ case
            Left tr ->
              case tr of
@@ -1995,30 +1994,30 @@ prop_inbound_governor_pruning (Fixed rnd) serverAcc
                IG.TrDemotedToColdRemote _ res ->
                  case res of
                    UnsupportedState {} ->
-                     All
+                     Every
                        $ counterexample
                            ("Unexpected UnsupportedState "
                            ++ "in unregisterInboundConnection "
                            ++ show tr)
                            False
-                   _ -> All True
+                   _ -> Every True
 
                -- verify that 'demotedToColdRemote' does not return
                -- 'UnsupportedState'
                IG.TrWaitIdleRemote _ UnsupportedState {} ->
-                 All
+                 Every
                    $ counterexample
                        ("Unexpected UnsupportedState "
                        ++ "in demotedToColdRemote "
                        ++ show tr)
                        False
 
-               _ -> All True
+               _ -> Every True
 
            -- Verify we do not return unsupported states in any of the
            -- RemoteTransitionTrace
            Right TransitionTrace {ttPeerAddr = peerAddr, ttTransition = tr } ->
-                   All
+                   Every
                  . counterexample (concat [ "Unexpected transition: "
                                           , show peerAddr
                                           , " "
@@ -2057,11 +2056,11 @@ instance (Arbitrary peerAddr, Arbitrary versionData, Ord peerAddr)
 prop_inbound_governor_maturedPeers :: FreshPeers Int Int -> Property
 prop_inbound_governor_maturedPeers (FreshPeers now fresh) = property $
          -- all peers which are kept as fresh are younger than `15min`
-         foldMap (\(addr, t, _) -> All $ counterexample (show (addr, t, now))
-                                       $ t >= (-delay) `addTime` now)
+         foldMap (\(addr, t, _) -> Every $ counterexample (show (addr, t, now))
+                                         $ t >= (-delay) `addTime` now)
                  (OrdPSQ.toList fresh')
          -- peers are preserved
-      <> (All $ Map.keysSet matured <> keysSet fresh' === keysSet fresh)
+      <> (Every $ Map.keysSet matured <> keysSet fresh' === keysSet fresh)
     where
       (matured, fresh') = IG.maturedPeers now fresh
 
@@ -2117,12 +2116,12 @@ prop_never_above_hardlimit (Fixed rnd) serverAcc
         ( \ case
             MainReturn {} -> mempty
             MainException _ _ e _
-                          -> All (counterexample (show e) False)
-            _             -> All False
+                          -> Every (counterexample (show e) False)
+            _             -> Every False
         )
         ( \ case
             (CM.TrConnectionManagerCounters cmc) ->
-                  All
+                  Every
                 . counterexample ("HardLimit: " ++ show hardlimit ++
                                   ", but got: " ++ show (inboundConns cmc) ++
                                   " inbound connections!\n" ++
@@ -2130,7 +2129,7 @@ prop_never_above_hardlimit (Fixed rnd) serverAcc
                                  )
                 $! inboundConns cmc <= fromIntegral hardlimit
             (CM.TrPruneConnections prunnedSet numberToPrune choiceSet) ->
-              ( All
+              ( Every
               . counterexample (concat
                                [ "prunned set too small: "
                                , show numberToPrune
@@ -2139,7 +2138,7 @@ prop_never_above_hardlimit (Fixed rnd) serverAcc
                                ])
               $ numberToPrune <= length prunnedSet )
               <>
-              ( All
+              ( Every
               . counterexample (concat [ "prunnedSet not a subset of choice set: "
                                        , show prunnedSet
                                        , " ⊈ "

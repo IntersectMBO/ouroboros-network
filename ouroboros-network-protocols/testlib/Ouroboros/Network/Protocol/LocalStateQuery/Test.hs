@@ -53,7 +53,7 @@ import Ouroboros.Network.Protocol.LocalStateQuery.Type
 import Test.ChainGenerators ()
 import Test.Ouroboros.Network.Protocol.Utils
 
-import Test.QuickCheck as QC hiding (Result)
+import Test.QuickCheck as QC hiding (Result, Some (Some))
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
 import Text.Show.Functions ()

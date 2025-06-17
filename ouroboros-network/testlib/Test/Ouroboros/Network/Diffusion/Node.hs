@@ -63,7 +63,7 @@ import Data.Text qualified as Text
 import Data.Void (Void)
 import GHC.Exception (Exception)
 import Network.DNS (Domain, TYPE)
-import System.Random (StdGen, mkStdGen, split)
+import System.Random (StdGen, mkStdGen, splitGen)
 
 import Ouroboros.Network.Mux (noBindForkPolicy)
 import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
@@ -429,7 +429,7 @@ run blockGeneratorArgs limits ni na
     ntnAddressType (TestAddress (Node.IPAddr (IPv6 _) _))   = Just IPv6Address
 
     -- various pseudo random generators
-    (diffStgGen, keepAliveStdGen) = split (iRng ni)
+    (diffStgGen, keepAliveStdGen) = splitGen (iRng ni)
 
     ntnUnversionedDataCodec :: VersionDataCodec CBOR.Term NtNVersion NtNVersionData
     ntnUnversionedDataCodec = VersionDataCodec { encodeData, decodeData }
