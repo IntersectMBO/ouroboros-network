@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveFoldable             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
@@ -334,6 +335,7 @@ data BlockingReplyList (blocking :: StBlockingStyle) a where
 
 deriving instance Eq   a => Eq   (BlockingReplyList blocking a)
 deriving instance Show a => Show (BlockingReplyList blocking a)
+deriving instance Foldable (BlockingReplyList blocking)
 
 instance NFData a => NFData (BlockingReplyList blocking a) where
   rnf (BlockingReply as)    = rnf as
