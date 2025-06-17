@@ -49,7 +49,9 @@ import Ouroboros.Network.Protocol.ChainSync.Examples qualified as ChainSyncExamp
 import Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined qualified as ChainSyncExamples
 import Ouroboros.Network.Protocol.ChainSync.Server
 import Ouroboros.Network.Protocol.ChainSync.Type
+
 import Test.Data.PipeliningDepth (PipeliningDepth (..))
+import Test.Ouroboros.Network.Utils (renderRanges)
 
 import Test.ChainGenerators ()
 import Test.ChainProducerState (ChainProducerStateForkTest (..))
@@ -77,12 +79,12 @@ tests = testGroup "Ouroboros.Network.Protocol"
     , testProperty "connectPipelinedMin IO" propChainSyncPipelinedMinConnectIO
     , testProperty "codec"            prop_codec_ChainSync
     , testProperty "codec 2-splits"   prop_codec_splits2_ChainSync
-    , testProperty "codec 3-splits"   $ withMaxSuccess 30 prop_codec_splits3_ChainSync
+    , testProperty "codec 3-splits"   $ withMaxSize 30 prop_codec_splits3_ChainSync
     , testProperty "codec cbor"       prop_codec_cbor
     , testProperty "codec valid cbor" prop_codec_valid_cbor
     , testProperty "codecSerialised"            prop_codec_ChainSyncSerialised
     , testProperty "codecSerialised 2-splits"   prop_codec_splits2_ChainSyncSerialised
-    , testProperty "codecSerialised 3-splits" $ withMaxSuccess 30
+    , testProperty "codecSerialised 3-splits" $ withMaxSize 30
                                                 prop_codec_splits3_ChainSyncSerialised
     , testProperty "codecSerialised cbor"       prop_codec_cbor_ChainSyncSerialised
     , testProperty "codec/codecSerialised bin compat"  prop_codec_binary_compat_ChainSync_ChainSyncSerialised
@@ -500,8 +502,9 @@ prop_codec_splits2_ChainSync msg =
 
 prop_codec_splits3_ChainSync
   :: AnyMessage ChainSync_BlockHeader
-  -> Bool
+  -> Property
 prop_codec_splits3_ChainSync msg =
+    labelMsg msg $
     ST.runST $ prop_codec_splitsM
       splits3
       codec
@@ -809,3 +812,16 @@ propChainSyncDemoPipelinedMinBufferedIO cps (PipeliningDepth n) (PipeliningDepth
   where
     omin = min n m
     omax = max n m
+
+labelMsg :: AnyMessage (ChainSync header point tip) -> Bool -> Property
+labelMsg (AnyMessage msg) =
+    label (case msg of
+            MsgRequestNext {}       -> "MsgRequestNext"
+            MsgAwaitReply{}         -> "MsgAwaitReply"
+            MsgRollForward {}       -> "MsgRollForward"
+            MsgRollBackward {}      -> "MsgRollBackward"
+            MsgFindIntersect ps     -> "MsgFindIntersect " ++ renderRanges 10 (length ps)
+            MsgIntersectFound {}    -> "MsgIntersectFound"
+            MsgIntersectNotFound {} -> "MsgIntersectNotFound"
+            MsgDone {}              -> "MsgDone"
+          )
