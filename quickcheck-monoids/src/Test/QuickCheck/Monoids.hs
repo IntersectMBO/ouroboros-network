@@ -9,6 +9,7 @@ module Test.QuickCheck.Monoids
   ( All (..)
   , Any (..)
   ) where
+{-# DEPRECATED Test.QuickCheck.Monoids "Use QuickCheck >= 2.16" #-}
 
 import Data.List.NonEmpty as NonEmpty
 import Data.Semigroup (Semigroup (..))
@@ -20,6 +21,7 @@ import Test.QuickCheck
 -- existential variables.
 --
 data All = forall p. Testable p => All { getAll :: p }
+{-# DEPRECATED All "Use 'Every' from QuickCheck >= 2.16" #-}
 
 instance Testable All where
     property (All p) = property p
@@ -39,6 +41,7 @@ instance Monoid All where
 -- existential variables.
 --
 data Any = forall p. Testable p => Any { getAny :: p }
+{-# DEPRECATED All "Use 'Some' from QuickCheck >= 2.16" #-}
 
 instance Testable Any where
     property (Any p) = property p
