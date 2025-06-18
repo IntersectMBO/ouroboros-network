@@ -110,9 +110,10 @@ compareLedgerPeerSnapshotApproximate baseline candidate =
 -- | In case the format changes in the future, this function provides a migration functionality
 -- when possible.
 --
-migrateLedgerPeerSnapshot :: LedgerPeerSnapshot
-                          -> Maybe (WithOrigin SlotNo, [(AccPoolStake, (PoolStake, NonEmpty LedgerRelayAccessPoint))])
-migrateLedgerPeerSnapshot (LedgerPeerSnapshotV2 lps) = Just lps
+migrateLedgerPeerSnapshot
+  :: LedgerPeerSnapshot
+  -> Maybe LedgerPeerSnapshot
+migrateLedgerPeerSnapshot snapshot@LedgerPeerSnapshotV2{} = Just snapshot
 
 instance ToJSON LedgerPeerSnapshot where
   toJSON (LedgerPeerSnapshotV2 (slot, pools)) =
@@ -128,7 +129,7 @@ instance ToJSON LedgerPeerSnapshot where
 instance FromJSON LedgerPeerSnapshot where
   parseJSON = withObject "LedgerPeerSnapshot" $ \v -> do
     vNum :: Int <- v .: "version"
-    parsedSnapshot <-
+    ledgerPeerSnapshot <-
       case vNum of
         2 -> do
           slot <- v .: "slotNo"
@@ -141,11 +142,11 @@ instance FromJSON LedgerPeerSnapshot where
                                  return (accStake, (reStake, relays))
                          withObject ("bigLedgerPools[" <> show idx <> "]") f (Object poolO)
 
-          return $ LedgerPeerSnapshot (slot, bigPools')
+          return $ LedgerPeerSnapshotV2 (slot, bigPools')
         _ -> fail $ "Network.LedgerPeers.Type: parseJSON: failed to parse unsupported version " <> show vNum
-    case migrateLedgerPeerSnapshot parsedSnapshot of
-      Just payload -> return $ LedgerPeerSnapshot payload
-      Nothing      -> fail "Network.LedgerPeers.Type: parseJSON: failed to migrate big ledger peer snapshot"
+    case migrateLedgerPeerSnapshot ledgerPeerSnapshot of
+      Just ledgerPeerSnapshot' -> return ledgerPeerSnapshot'
+      Nothing                  -> fail "Network.LedgerPeers.Type: parseJSON: failed to migrate big ledger peer snapshot"
 
 -- | cardano-slotting provides its own {To,From}CBOR instances for WithOrigin a
 -- but to pin down the encoding for CDDL we provide a wrapper with custom
