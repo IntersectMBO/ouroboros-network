@@ -6,6 +6,8 @@
 
 ### Non-breaking changes
 
+* Lower the time to cache DNS errors to at most 15min.
+
 ## 0.21.2.0 -- 2025-06-02
 
 ### Breaking changes
