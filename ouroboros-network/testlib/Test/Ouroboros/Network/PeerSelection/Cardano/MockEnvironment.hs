@@ -216,9 +216,12 @@ validGovernorMockEnvironment GovernorMockEnvironment {
            , counterexample "public root peers not a subset of  all peers" $
              property (PublicRootPeers.toSet Cardano.ExtraPeers.toSet publicRootPeers `Set.isSubsetOf` allPeersSet)
            , counterexample "failed peer selection targets sanity check" $
-             property (foldl (\ !p ((t, t'), _) -> p && all sanePeerSelectionTargets [t, t'])
-                        True
-                        targets)
+             foldl (\ !p ((t1, t2), _) ->  p
+                                     .&&. counterexample ("deadline targets: " ++ show t1) (sanePeerSelectionTargets t1)
+                                     .&&. counterexample ("sync targets: " ++ show t2) (sanePeerSelectionTargets t2)
+                   )
+                   (property True)
+                   targets
            , counterexample "big ledger peers not a subset of public roots"
                 (PublicRootPeers.invariant Cardano.ExtraPeers.invariant Cardano.ExtraPeers.toSet publicRootPeers)
            ]
@@ -1050,7 +1053,7 @@ instance Arbitrary GovernorMockEnvironment where
                                   targetNumberOfEstablishedPeers = genesisEst,
                                   targetNumberOfActivePeers = genesisAct,
                                   targetNumberOfKnownBigLedgerPeers = genesisBigKnown,
-                                  targetNumberOfEstablishedBigLedgerPeers = genesisBigKnown,
+                                  targetNumberOfEstablishedBigLedgerPeers = genesisBigEst,
                                   targetNumberOfActiveBigLedgerPeers = genesisBigAct }
                           let lsjWithDelay = (,) lsj <$> elements [ShortDelay, NoDelay]
                               -- synchronize target basis with ledger state judgement
