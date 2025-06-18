@@ -306,13 +306,13 @@ ttlForResults ttls = clipTTLBelow
 -- | Limit insane TTL choices.
 clipTTLAbove, clipTTLBelow :: DiffTime -> DiffTime
 clipTTLBelow = max 60     -- between 1min
-clipTTLAbove = min 86400  -- and 24hrs
+clipTTLAbove = min 900    -- and 15min
 
 -- | Policy for TTL for negative results
--- Cache negative response for 3hrs
+-- Cache negative response for 15min
 -- Otherwise, use exponential backoff, up to a limit
 ttlForDnsError :: DiffTime -> DNS.DNSError -> DiffTime
-ttlForDnsError _   DNS.NameError = 10800
+ttlForDnsError _   DNS.NameError = 900
 ttlForDnsError ttl _             = clipTTLAbove (ttl * 2 + 5)
 
 -- | `withAsyncAll`, but the actions are tagged with a context

@@ -10,6 +10,7 @@
   are captured by the `DNSPeersKind` type, which also distinguishes the type
   of ledger peer.
 * Added `dispatchLookupWithTTL`
+* Lower the time to cache DNS errors to at most 15min.
 
 ### Breaking changes
 
