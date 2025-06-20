@@ -9,7 +9,7 @@ let
   onLinux = buildSystem == "x86_64-linux";
 
   # default compiler used on all systems, also provided within the shell
-  defaultCompiler = "ghc982";
+  defaultCompiler = "ghc966";
 
   # the compiler used for cross compilation
   # alternative compilers only used on Linux
@@ -19,7 +19,8 @@ let
   crossGHCVersion = "ghc966";
 
   # alternative compilers
-  otherCompilers = [ "ghc966" ];
+  otherCompilers =
+    if onLinux then [ "ghc982" ] else [ ];
 
   # from https://github.com/input-output-hk/haskell.nix/issues/298#issuecomment-767936405
   forAllProjectPackages = cfg: args@{ config, lib, ... }: {
