@@ -11,7 +11,6 @@ import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Ouroboros.Network.Diffusion.Policies (addRand, optionalMerge,
            simplePeerSelectionPolicy)
-import Ouroboros.Network.ExitPolicy
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.PeerMetric
 import System.Random
@@ -24,11 +23,9 @@ simpleChurnModePeerSelectionPolicy
   => StrictTVar m StdGen
   -> STM m ChurnMode
   -> PeerMetrics m peerAddr
-  -> RepromoteDelay
-  -- ^ delay on error
   -> PeerSelectionPolicy peerAddr m
-simpleChurnModePeerSelectionPolicy rngVar getChurnMode metrics errorDelay =
-  (simplePeerSelectionPolicy rngVar metrics errorDelay) {
+simpleChurnModePeerSelectionPolicy rngVar getChurnMode metrics =
+  (simplePeerSelectionPolicy rngVar metrics) {
     policyPickHotPeersToDemote = hotDemotionPolicy
   }
   where

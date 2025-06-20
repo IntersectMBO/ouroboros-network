@@ -217,14 +217,13 @@ long_PEER_LIST_LIFE_TIME = 1847 -- a prime number!
 
 -- | Run the LedgerPeers worker thread.
 --
-ledgerPeersThread :: forall m peerAddr resolver extraAPI exception.
+ledgerPeersThread :: forall m peerAddr resolver extraAPI.
                      ( MonadAsync m
                      , MonadMonotonicTime m
                      , MonadThrow m
-                     , Exception exception
                      , Ord peerAddr
                      )
-                  => PeerActionsDNS peerAddr resolver exception m
+                  => PeerActionsDNS peerAddr resolver m
                   -> WithLedgerPeersArgs extraAPI m
                   -- blocking request for ledger peers
                   -> STM m (NumberOfPeers, LedgerPeersKind)
@@ -445,14 +444,13 @@ data WithLedgerPeersArgs extraAPI m = WithLedgerPeersArgs {
 
 -- | For a LedgerPeers worker thread and submit request and receive responses.
 --
-withLedgerPeers :: forall peerAddr resolver exception extraAPI m a.
+withLedgerPeers :: forall peerAddr resolver extraAPI m a.
                    ( MonadAsync m
                    , MonadThrow m
                    , MonadMonotonicTime m
-                   , Exception exception
                    , Ord peerAddr
                    )
-                => PeerActionsDNS peerAddr resolver exception m
+                => PeerActionsDNS peerAddr resolver m
                 -> WithLedgerPeersArgs extraAPI m
                 -> ((NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peerAddr, DiffTime)))
                      -> Async m Void

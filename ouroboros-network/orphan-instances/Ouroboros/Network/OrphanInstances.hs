@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# LANGUAGE LambdaCase        #-}
@@ -17,7 +18,7 @@ import Data.IP (fromHostAddress, fromHostAddress6)
 import Data.Maybe (fromMaybe)
 import Data.Text (Text, pack)
 import Network.Mux.Trace (TraceLabelPeer (..))
-import Network.Socket (SockAddr (..))
+import Network.Socket (PortNumber, SockAddr (..))
 import Ouroboros.Network.Block (SlotNo (SlotNo))
 import Ouroboros.Network.BlockFetch.Decision (FetchDecision)
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
@@ -459,3 +460,6 @@ instance ToJSONKey RemoteAddress where
 instance ToJSONKey LocalAddress where
 
 instance (ToJSON addr, ToJSONKey addr) => ToJSONKey (ConnectionId addr) where
+
+instance ToJSON PortNumber where
+  toJSON = toJSON . fromIntegral @_ @Int

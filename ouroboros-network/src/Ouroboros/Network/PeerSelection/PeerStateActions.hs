@@ -605,7 +605,8 @@ withPeerStateActions PeerStateActionsArguments {
           monitorPeerConnection,
           activatePeerConnection,
           deactivatePeerConnection,
-          closePeerConnection = void . closePeerConnection
+          closePeerConnection = void . closePeerConnection,
+          errorDelay = epErrorDelay spsExitPolicy
         }
 
   where

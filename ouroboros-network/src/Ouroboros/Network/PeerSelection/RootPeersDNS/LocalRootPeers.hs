@@ -39,7 +39,7 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
            LocalRootConfig, WarmValency)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 
-data TraceLocalRootPeers extraFlags peerAddr exception =
+data TraceLocalRootPeers extraFlags peerAddr =
        TraceLocalRootDomains (LocalRootPeers.Config extraFlags RelayAccessPoint)
        -- ^ 'Int' is the configured valency for the local producer groups
      | TraceLocalRootWaiting RelayAccessPoint DiffTime
@@ -49,7 +49,7 @@ data TraceLocalRootPeers extraFlags peerAddr exception =
        -- ^ This traces the results of the domain name resolution
      | TraceLocalRootReconfigured (LocalRootPeers.Config extraFlags RelayAccessPoint) -- ^ Old value
                                   (LocalRootPeers.Config extraFlags RelayAccessPoint) -- ^ New value
-     | TraceLocalRootFailure RelayAccessPoint (DNSorIOError exception)
+     | TraceLocalRootFailure RelayAccessPoint DNSorIOError
        --TODO: classify DNS errors, config error vs transitory
      | TraceLocalRootError DNS.Domain SomeException
   deriving Show
@@ -60,7 +60,7 @@ data TraceLocalRootPeers extraFlags peerAddr exception =
 -- the output 'StrictTVar'.
 --
 localRootPeersProvider
-  :: forall m extraFlags peerAddr resolver exception.
+  :: forall m extraFlags peerAddr resolver.
      ( Alternative (STM m)
      , MonadAsync m
      , MonadDelay m
@@ -68,8 +68,8 @@ localRootPeersProvider
      , Ord peerAddr
      , Eq extraFlags
      )
-  => Tracer m (TraceLocalRootPeers extraFlags peerAddr exception)
-  -> PeerActionsDNS peerAddr resolver exception m
+  => Tracer m (TraceLocalRootPeers extraFlags peerAddr)
+  -> PeerActionsDNS peerAddr resolver m
   -> DNS.ResolvConf
   -> StdGen
   -> STM m [( HotValency
@@ -175,7 +175,7 @@ localRootPeersProvider tracer
     -- domain name in the static configuration with the most up to date results
     -- from the DNS Domain Map.
     monitorDomain
-      :: Resource m (Either (DNSorIOError exception) resolver)
+      :: Resource m (Either DNSorIOError resolver)
       -> DNSSemaphore m
       -> StrictTVar m (Map RelayAccessPoint [peerAddr])
       -> StrictTVar m StdGen

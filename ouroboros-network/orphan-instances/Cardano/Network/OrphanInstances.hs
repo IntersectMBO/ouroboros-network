@@ -1,17 +1,19 @@
-{-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE OverloadedStrings    #-}
-{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Cardano.Network.OrphanInstances () where
+module Cardano.Network.OrphanInstances () where
+
+import Data.Aeson
+import Data.Aeson qualified as Aeson
+import Data.Map qualified as Map
 
 import Cardano.Network.PeerSelection.Bootstrap
+import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 import Cardano.Network.PeerSelection.PublicRootPeers (CardanoPublicRootPeers,
            getBootstrapPeers, getPublicConfigPeers)
 import Cardano.Network.Types
-import Data.Aeson
-import Data.Map qualified as Map
 import Ouroboros.Network.PeerSelection.PublicRootPeers
 
 instance ToJSON LedgerStateJudgement where
@@ -39,3 +41,14 @@ instance ToJSON peerAddr => ToJSON (CardanoPublicRootPeers peerAddr) where
            , "bigLedgerPeers"    .= getBigLedgerPeers prp
            , "publicConfigPeers" .= Map.keysSet (getPublicConfigPeers prp)
            ]
+
+instance FromJSON PeerTrustable where
+  parseJSON = Aeson.withBool "PeerTrustable" $ \b ->
+    pure $ if b then IsTrustable
+                else IsNotTrustable
+
+instance ToJSON PeerTrustable where
+  toJSON IsTrustable    = Bool True
+  toJSON IsNotTrustable = Bool False
+
+instance ToJSONKey PeerTrustable where

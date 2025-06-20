@@ -2,7 +2,6 @@
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE LambdaCase               #-}
-{-# LANGUAGE NamedFieldPuns           #-}
 {-# LANGUAGE RankNTypes               #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TupleSections            #-}
@@ -15,7 +14,7 @@ import Cardano.Network.Types (LedgerStateJudgement)
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadAsync (MonadAsync)
-import Control.Monad.Class.MonadThrow (Exception, MonadThrow)
+import Control.Monad.Class.MonadThrow (MonadThrow)
 import Control.Monad.Class.MonadTime.SI
 
 import Control.Tracer (Tracer)
@@ -41,17 +40,16 @@ import System.Random
 -- YoungEnough we only care about fetching for ledger peers, otherwise we
 -- aim to fetch bootstrap peers.
 requestPublicRootPeers
-  :: forall m peeraddr resolver exception .
+  :: forall m peeraddr resolver.
     ( MonadThrow m
     , MonadAsync m
-    , Exception exception
     , Ord peeraddr
     )
   => Tracer m TracePublicRootPeers
   -> STM m UseBootstrapPeers
   -> STM m LedgerStateJudgement
   -> STM m (Map RelayAccessPoint PeerAdvertise)
-  -> PeerActionsDNS peeraddr resolver exception m
+  -> PeerActionsDNS peeraddr resolver m
   -> DNSSemaphore m
   -> (Map peeraddr PeerAdvertise -> Cardano.ExtraPeers peeraddr)
   -- ^ Function to convert DNS result into extra peers

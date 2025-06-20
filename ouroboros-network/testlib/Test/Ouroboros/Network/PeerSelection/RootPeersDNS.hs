@@ -395,7 +395,7 @@ instance Arbitrary DNSLookupDelay where
 -- | Mock DNSActions data structure for testing purposes.
 -- Adds DNS Lookup function for IOSim with different timeout and lookup
 -- delays for every attempt.
-mockDNSActions :: forall exception peerAddr m.
+mockDNSActions :: forall peerAddr m.
                   ( MonadDelay m
                   , MonadTimer m
                   , MonadAsync m
@@ -406,7 +406,7 @@ mockDNSActions :: forall exception peerAddr m.
                -> StrictTVar m MockDNSMap
                -> StrictTVar m (Script DNSTimeout)
                -> StrictTVar m (Script DNSLookupDelay)
-               -> DNSActions peerAddr () exception m
+               -> DNSActions peerAddr () m
 mockDNSActions tracer ofType0 toPeerAddr dnsMapVar dnsTimeoutScript dnsLookupDelayScript =
     DNSActions {
       dnsResolverResource,
@@ -459,7 +459,7 @@ mockLocalRootPeersProvider :: forall m.
                               , MonadTraceSTM m
                               , MonadLabelledSTM m
                               )
-                           => Tracer m (TestTraceEvent (TraceLocalRootPeers () SockAddr Failure))
+                           => Tracer m (TestTraceEvent (TraceLocalRootPeers () SockAddr))
                            -> MockRoots
                            -> Script DNSTimeout
                            -> Script DNSLookupDelay
@@ -548,7 +548,7 @@ mockPublicRootPeersProvider tracer (MockRoots _ _ publicRootPeers dnsMapScript)
                                 dnsSemaphore
                                 DNSResolver.defaultResolvConf
                                 (readTVar publicRootPeersVar)
-                                (mockDNSActions @Failure
+                                (mockDNSActions
                                   (contramap Right tracer)
                                   LookupReqAOnly
                                   (curry toSockAddr)
@@ -588,7 +588,7 @@ mockResolveLedgerPeers tracer (MockRoots _ _ publicRootPeers dnsMapScript)
       traceWith tracer . Left $ TraceLedgerPeersDomains relays
       resolveLedgerPeers dnsSemaphore
                          DNSResolver.defaultResolvConf
-                         (mockDNSActions @Failure
+                         (mockDNSActions
                            (contramap Right tracer)
                            LookupReqAOnly
                            (curry toSockAddr)
@@ -605,7 +605,7 @@ mockResolveLedgerPeers tracer (MockRoots _ _ publicRootPeers dnsMapScript)
 
 type TestTraceEvent a = Either a DNSTrace
 
-tracerTraceLocalRoots :: Tracer (IOSim s) (TestTraceEvent (TraceLocalRootPeers () SockAddr Failure))
+tracerTraceLocalRoots :: Tracer (IOSim s) (TestTraceEvent (TraceLocalRootPeers () SockAddr))
 tracerTraceLocalRoots = Tracer traceM
 
 tracerTracePublicRoots :: Tracer (IOSim s) (TestTraceEvent TracePublicRootPeers)
@@ -628,18 +628,19 @@ selectTestTraceEvents = go
     go TraceLoop                     = error "IOSimPOR step time limit exceeded"
 
 selectLocalRootPeersWithDNSEvents :: SimTrace a
-                                  -> [(Time, TestTraceEvent (TraceLocalRootPeers () SockAddr Failure))]
+                                  -> [(Time, TestTraceEvent (TraceLocalRootPeers () SockAddr))]
 selectLocalRootPeersWithDNSEvents = filter them . selectTestTraceEvents
   where
     them (_t, Right dns) =
       case dns of
-        (DNSResult DNSLocalPeer _ _ _)           -> True
-        (DNSTraceLookupError DNSLocalPeer _ _ _) -> True
-        (DNSSRVFail DNSLocalPeer _)              -> True
-        _otherwise                               -> False
+        (DNSLookupResult DNSLocalPeer _ _ _) -> True
+        (DNSLookupError DNSLocalPeer _ _ _)  -> True
+        (SRVLookupResult DNSLocalPeer _ _)   -> True
+        (SRVLookupError DNSLocalPeer _)      -> True
+        _otherwise                           -> False
     them _ = True
 
-selectLocalRootGroupsEvents :: [(Time, TestTraceEvent (TraceLocalRootPeers () SockAddr Failure))]
+selectLocalRootGroupsEvents :: [(Time, TestTraceEvent (TraceLocalRootPeers () SockAddr))]
                             -> [(Time, [(HotValency, WarmValency, Map SockAddr (LocalRootConfig ()))])]
 selectLocalRootGroupsEvents trace = [ (t, r)
                                     | (t, Left (TraceLocalRootGroups r)) <- trace ]
@@ -650,16 +651,17 @@ selectPublicRootPeersWithDNSEvents = filter them . selectTestTraceEvents
   where
     them (_t, Right dns) =
       case dns of
-        (DNSResult DNSPublicPeer _ _ _)           -> True
-        (DNSTraceLookupError DNSPublicPeer _ _ _) -> True
-        (DNSSRVFail DNSPublicPeer _)              -> True
-        _otherwise                                -> False
+        (DNSLookupResult DNSPublicPeer _ _ _) -> True
+        (DNSLookupError DNSPublicPeer _ _ _)  -> True
+        (SRVLookupResult DNSPublicPeer _ _)   -> True
+        (SRVLookupError DNSPublicPeer _)      -> True
+        _otherwise                            -> False
     them _ = True
 
 selectDnsResultEvents :: [(Time, TestTraceEvent a)]
                       -> [(Time, DNSTrace)]
 selectDnsResultEvents trace = [(t, r)
-                              | (t, Right r@(DNSResult {})) <- trace]
+                              | (t, Right r@(DNSLookupResult {})) <- trace]
 
 --
 -- Local Root Peers Provider Tests
@@ -802,13 +804,13 @@ prop_local_resolvesDomainsCorrectly mockRoots@(MockRoots localRoots lDNSMap _ _)
         -- domains that were resolved during simulation
         resultMap :: Set (DNS.Domain, DNS.TYPE)
         resultMap = Set.fromList
-                    $ mapMaybe (filtering . snd)
-                    $ selectDnsResultEvents
-                    $ tr
+                  . mapMaybe (filtering . snd)
+                  . selectDnsResultEvents
+                  $ tr
           where
             filtering = \case
-              DNSResult _ domain Nothing _ -> Just (domain, DNS.A)
-              DNSResult _ _ (Just domain) _ -> Just (domain, DNS.SRV)
+              DNSLookupResult _ domain Nothing _ -> Just (domain, DNS.A)
+              DNSLookupResult _ _ (Just domain) _ -> Just (domain, DNS.SRV)
               _otherwise -> Nothing
 
         -- all domains that could have been resolved in each script
@@ -820,16 +822,17 @@ prop_local_resolvesDomainsCorrectly mockRoots@(MockRoots localRoots lDNSMap _ _)
         -- all domains that were tried to resolve during the simulation
         allTriedDomains :: Set (DNS.Domain, DNS.TYPE)
         allTriedDomains = Set.fromList
-                          $ map filtering
-                          $ mapMaybe (selectDnsTraces . snd)
-                          $ tr
+                        . map filtering
+                        . mapMaybe (selectDnsTraces . snd)
+                        $ tr
           where
             filtering = \case
-              DNSResult _ domain Nothing _ -> (domain, DNS.A)
-              DNSResult _ _ (Just domain) _ -> (domain, DNS.SRV)
-              DNSSRVFail _ domain -> (domain, DNS.SRV)
-              DNSTraceLookupError _ Nothing srvDomain _ -> (srvDomain, DNS.SRV)
-              DNSTraceLookupError _ (Just _) domain _ -> (domain, DNS.A)
+              DNSLookupResult _ domain Nothing _ -> (domain, DNS.A)
+              DNSLookupResult _ _ (Just domain) _ -> (domain, DNS.SRV)
+              DNSLookupError _ Nothing srvDomain _ -> (srvDomain, DNS.SRV)
+              DNSLookupError _ (Just _) domain _ -> (domain, DNS.A)
+              SRVLookupResult _ domain _ -> (domain, DNS.A)
+              SRVLookupError _ domain -> (domain, DNS.SRV)
             selectDnsTraces = \case
               Right trace -> Just trace
               Left  _ -> Nothing
@@ -893,7 +896,7 @@ prop_local_updatesDomainsCorrectly mockRoots@(MockRoots lrp _ _ _)
 
                          in (arePreserved && b, (t', y))
                       -- Last DNS lookup result   , Current result groups value
-                      (Right (DNSResult _ dFollow dSRV ipsttls@(ipttl : _)), Left (TraceLocalRootGroups lrpg)) ->
+                      (Right (DNSLookupResult _ dFollow dSRV ipsttls@(ipttl : _)), Left (TraceLocalRootGroups lrpg)) ->
                         -- create and index db for each group
                         let rap =
                               case dSRV of
@@ -927,7 +930,7 @@ prop_local_updatesDomainsCorrectly mockRoots@(MockRoots lrp _ _ _)
                             arePresent = all ((`elem` ipsAtIndex) . ip) ipsttls
                          in (arePresent && b, (t', y))
                       -- the empty DNS result trivially passes
-                      (Right (DNSResult _ _ _ []), Left (TraceLocalRootGroups {})) ->
+                      (Right (DNSLookupResult _ _ _ []), Left (TraceLocalRootGroups {})) ->
                         (b, (t', y))
                       (Right {}, _) -> (b, (t, x))
                       (_, _)        -> (b, (t', y))
@@ -964,7 +967,7 @@ fixupDelayAndTimeoutScripts (DelayAndTimeoutScripts lookupScript@(Script delays)
               then Script (delays <> (DNSLookupDelay (lastTimeout / 2) :| []))
               else lookupScript
 
-      in (DelayAndTimeoutScripts lookupScript' timeoutScript)
+      in DelayAndTimeoutScripts lookupScript' timeoutScript
 
 instance Arbitrary DelayAndTimeoutScripts where
     arbitrary = fmap fixupDelayAndTimeoutScripts
@@ -1015,15 +1018,16 @@ prop_public_resolvesDomainsCorrectly
                                          ($ n)
 
         successes = selectDnsResultEvents @TracePublicRootPeers
-                  $ selectTestTraceEvents
+                  . selectTestTraceEvents
                   $ tr
 
         successes' = map snd successes
 
-        step (DNSResult _ "" (Just srvDomain) []) r =
+        step :: DNSTrace -> Property -> Property
+        step (DNSLookupResult _ "" (Just srvDomain) []) r =
           counterexample "SRV record not found in mock lookup map" $
             Map.member (srvDomain, DNS.SRV) pDNSMap' .&&. r
-        step (DNSResult _ domain srvDomain ipsttls) r =
+        step (DNSLookupResult _ domain srvDomain ipsttls) r =
           case srvDomain of
             Nothing ->
                counterexample "DNS.A IP mismatch error" $
@@ -1051,6 +1055,8 @@ prop_public_resolvesDomainsCorrectly
                                 <> " not found."
                           fromTrace = ip <$> ipsttls
 
+        step (SRVLookupResult _ domain _) r =
+          Map.member (domain, DNS.SRV) pDNSMap' .&&. r
         step _ _ = error "impossible!"
      in
        foldr step (property True) successes'

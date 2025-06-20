@@ -45,8 +45,7 @@ import Control.Monad.Class.MonadAsync (MonadAsync (wait, withAsync))
 import Control.Monad.Class.MonadFork (MonadFork)
 import Control.Monad.Class.MonadSay
 import Control.Monad.Class.MonadST (MonadST)
-import Control.Monad.Class.MonadThrow (MonadEvaluate, MonadMask, MonadThrow,
-           SomeException)
+import Control.Monad.Class.MonadThrow (MonadEvaluate, MonadMask, MonadThrow)
 import Control.Monad.Class.MonadTime.SI (DiffTime, MonadTime, Time (..))
 import Control.Monad.Class.MonadTimer.SI (MonadDelay, MonadTimer)
 import Control.Monad.Fix (MonadFix)
@@ -157,7 +156,7 @@ data Arguments extraChurnArgs extraFlags m = Arguments
                                       , WarmValency
                                       , Map RelayAccessPoint (LocalRootConfig extraFlags))]
     , aReadPublicRootPeers  :: STM m (Map RelayAccessPoint PeerAdvertise)
-    , aOwnPeerSharing       :: PeerSharing
+    , aPeerSharing          :: PeerSharing
     , aReadUseLedgerPeers   :: STM m UseLedgerPeers
     , aProtocolIdleTimeout  :: DiffTime
     , aTimeWaitTimeout      :: DiffTime
@@ -167,14 +166,9 @@ data Arguments extraChurnArgs extraFlags m = Arguments
     , aExtraChurnArgs       :: extraChurnArgs
     }
 
--- The 'mockDNSActions' is not using \/ specifying 'resolverException', thus we
--- set it to 'SomeException'.
---
-type ResolverException = SomeException
-
 run :: forall extraState extraDebugState extraAPI
              extraPeers extraFlags extraChurnArgs extraCounters
-             exception resolver resolverError m.
+             exception resolver m.
        ( Alternative (STM m)
        , MonadAsync       m
        , MonadDelay       m
@@ -197,7 +191,6 @@ run :: forall extraState extraDebugState extraAPI
        , Exception exception
 
        , resolver ~ ()
-       , resolverError ~ ResolverException
        , forall a. Semigroup a => Semigroup (m a)
        )
     => Node.BlockGeneratorArgs Block StdGen
@@ -230,7 +223,7 @@ run :: forall extraState extraDebugState extraAPI
              muxMode responderCtx NtNAddr ntnVersionData bytes m a b)
         -> extraCounters)
     -> (Map NtNAddr PeerAdvertise -> extraPeers)
-    -> (   PeerActionsDNS NtNAddr resolver resolverError m
+    -> (   PeerActionsDNS NtNAddr resolver m
         -> DNSSemaphore m
         -> (Map NtNAddr PeerAdvertise -> extraPeers)
         -> (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set NtNAddr, DiffTime)))
@@ -250,7 +243,7 @@ run :: forall extraState extraDebugState extraAPI
         -> m Void)
     -> Diffusion.Tracers NtNAddr NtNVersion NtNVersionData
                          NtCAddr NtCVersion NtCVersionData
-                         ResolverException extraState extraDebugState extraFlags
+                         extraState extraDebugState extraFlags
                          extraPeers extraCounters m
     -> Tracer m (TraceLabelPeer NtNAddr (TraceFetchClientState BlockHeader))
     -> m Void
@@ -269,7 +262,7 @@ run blockGeneratorArgs limits ni na
         let -- diffusion interfaces
             interfaces :: Diffusion.Interfaces (NtNFD m) NtNAddr
                                                (NtCFD m) NtCAddr
-                                               resolver ResolverException m
+                                               resolver m
             interfaces = Diffusion.Interfaces
               { Diffusion.diNtnSnocket            = iNtnSnocket ni
               , Diffusion.diNtnBearer             = iNtnBearer ni
@@ -466,7 +459,7 @@ run blockGeneratorArgs limits ni na
       , Diffusion.dcPeerSelectionTargets   = aPeerTargets na
       , Diffusion.dcReadLocalRootPeers     = aReadLocalRootPeers na
       , Diffusion.dcReadPublicRootPeers    = aReadPublicRootPeers na
-      , Diffusion.dcOwnPeerSharing         = aOwnPeerSharing na
+      , Diffusion.dcPeerSharing            = aPeerSharing na
       , Diffusion.dcReadUseLedgerPeers     = aReadUseLedgerPeers na
       , Diffusion.dcProtocolIdleTimeout    = aProtocolIdleTimeout na
       , Diffusion.dcTimeWaitTimeout        = aTimeWaitTimeout na
@@ -489,7 +482,7 @@ run blockGeneratorArgs limits ni na
       , Node.aaPingPongInterval    = aPingPongInterval na
       , Node.aaShouldChainSyncExit = aShouldChainSyncExit na
       , Node.aaChainSyncEarlyExit  = aChainSyncEarlyExit na
-      , Node.aaOwnPeerSharing      = aOwnPeerSharing na
+      , Node.aaPeerSharing         = aPeerSharing na
       , Node.aaPeerMetrics         = peerMetrics
       }
 

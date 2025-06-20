@@ -89,8 +89,6 @@ import Ouroboros.Network.Handshake (HandshakeCallbacks (..))
 import Ouroboros.Network.IOManager (IOManager)
 import Ouroboros.Network.Mux
 import Ouroboros.Network.Protocol.Handshake
-import Ouroboros.Network.Protocol.Handshake.Codec
-import Ouroboros.Network.Protocol.Handshake.Type
 import Ouroboros.Network.Server.ConnectionTable
 import Ouroboros.Network.Snocket (Snocket)
 import Ouroboros.Network.Snocket qualified as Snocket
@@ -127,9 +125,9 @@ debuggingNetworkConnectTracers = NetworkConnectTracers {
 sockAddrFamily
     :: Socket.SockAddr
     -> Socket.Family
-sockAddrFamily (Socket.SockAddrInet  _ _    ) = Socket.AF_INET
-sockAddrFamily (Socket.SockAddrInet6 _ _ _ _) = Socket.AF_INET6
-sockAddrFamily (Socket.SockAddrUnix _       ) = Socket.AF_UNIX
+sockAddrFamily Socket.SockAddrInet {}  = Socket.AF_INET
+sockAddrFamily Socket.SockAddrInet6 {} = Socket.AF_INET6
+sockAddrFamily Socket.SockAddrUnix {}  = Socket.AF_UNIX
 
 
 -- | Configure a socket.  Either 'Socket.AF_INET' or 'Socket.AF_INET6' socket
