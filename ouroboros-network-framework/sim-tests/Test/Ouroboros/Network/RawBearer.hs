@@ -6,7 +6,6 @@
 
 module Test.Ouroboros.Network.RawBearer where
 
-import Ouroboros.Network.IOManager
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket
 
@@ -17,21 +16,15 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork (labelThisThread)
 import Control.Monad.Class.MonadSay
 import Control.Monad.Class.MonadST (MonadST, stToIO)
-import Control.Monad.Class.MonadThrow (MonadThrow, bracket, catchJust, finally,
-           throwIO)
+import Control.Monad.Class.MonadThrow (MonadThrow, bracket, finally, throwIO)
 import Control.Monad.IOSim hiding (liftST)
 import Control.Monad.ST.Unsafe (unsafeIOToST)
 import Control.Tracer (Tracer (..), nullTracer, traceWith)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
-import Data.Word (Word32)
 import Foreign.Marshal (copyBytes, free, mallocBytes)
 import Foreign.Ptr (castPtr, plusPtr)
-import Network.Socket qualified as Socket
 import Simulation.Network.Snocket as SimSnocket
-import System.Directory (removeFile)
-import System.IO.Error (ioeGetErrorType, isDoesNotExistErrorType)
-import System.IO.Unsafe
 
 import Test.Ouroboros.Network.Data.AbsBearerInfo
 import Test.Simulation.Network.Snocket (toBearerInfo)
@@ -41,11 +34,6 @@ import Test.Tasty.QuickCheck
 tests :: TestTree
 tests = testGroup "Ouroboros.Network.RawBearer"
   [ testProperty "raw bearer send receive simulated socket" prop_raw_bearer_send_and_receive_iosim
-#if !defined(mingw32_HOST_OS)
-  , testProperty "raw bearer send receive local socket" prop_raw_bearer_send_and_receive_local
-  , testProperty "raw bearer send receive unix socket" prop_raw_bearer_send_and_receive_unix
-#endif
-  , testProperty "raw bearer send receive inet socket" prop_raw_bearer_send_and_receive_inet
   ]
 
 iosimTracer :: forall s. Tracer (IOSim s) String
@@ -57,90 +45,6 @@ ioTracer = nullTracer
 onlyIf :: Bool -> a -> Maybe a
 onlyIf False = const Nothing
 onlyIf True  = Just
-
-{-# NOINLINE nextPort #-}
-nextPort :: MVar IO Int
-nextPort = unsafePerformIO $ newMVar 7000
-
-prop_raw_bearer_send_and_receive_inet :: Message -> Property
-prop_raw_bearer_send_and_receive_inet msg =
-  ioProperty $ withIOManager $ \iomgr -> do
-    serverPort <- modifyMVar nextPort (\i -> return (succ i, succ i))
-    let serverAddr = Socket.SockAddrInet (fromIntegral serverPort) localhost
-    rawBearerSendAndReceive
-      ioTracer
-      (socketSnocket iomgr)
-      makeSocketRawBearer
-      serverAddr
-      Nothing
-      msg
-
-newtype ArbPosInt = ArbPosInt { unArbPosInt :: Int }
-  deriving newtype (Show, Eq, Ord)
-
-instance Arbitrary ArbPosInt where
-  shrink _ = []
-  arbitrary = ArbPosInt . getPositive <$> arbitrary
-
-prop_raw_bearer_send_and_receive_local :: ArbPosInt -> ArbPosInt -> Message -> Property
-prop_raw_bearer_send_and_receive_local serverInt clientInt msg =
-  ioProperty $ withIOManager $ \iomgr -> do
-#if defined(mingw32_HOST_OS)
-    let serverName = "\\\\.\\pipe\\local_socket_server.test" ++ show serverInt
-    let clientName = "\\\\.\\pipe\\local_socket_client.test" ++ show clientInt
-#else
-    let serverName = "local_socket_server.test" ++ show serverInt
-    let clientName = "local_socket_client.test" ++ show clientInt
-#endif
-    cleanUp serverName
-    cleanUp clientName
-    let serverAddr = localAddressFromPath serverName
-    let clientAddr = localAddressFromPath clientName
-    rawBearerSendAndReceive
-      ioTracer
-      (localSnocket iomgr)
-      makeLocalRawBearer
-      serverAddr
-      (Just clientAddr)
-      msg `finally` do
-        cleanUp serverName
-        cleanUp clientName
-  where
-#if defined(mingw32_HOST_OS)
-    cleanUp _ = return ()
-#else
-    cleanUp name = do
-        catchJust (\e -> if isDoesNotExistErrorType (ioeGetErrorType e) then Just () else Nothing)
-                  (removeFile name)
-                  (\_ -> return ())
-#endif
-
-
-localhost :: Word32
-localhost = Socket.tupleToHostAddress (127, 0, 0, 1)
-
-prop_raw_bearer_send_and_receive_unix :: Int -> Int -> Message -> Property
-prop_raw_bearer_send_and_receive_unix serverInt clientInt msg =
-  ioProperty $ withIOManager $ \iomgr -> do
-    let serverName = "unix_socket_server.test"++ show serverInt
-    let clientName = "unix_socket_client.test"++ show clientInt
-    cleanUp serverName
-    cleanUp clientName
-    let serverAddr = Socket.SockAddrUnix serverName
-    let clientAddr = Socket.SockAddrUnix clientName
-    rawBearerSendAndReceive
-      ioTracer
-      (socketSnocket iomgr)
-      makeSocketRawBearer
-      serverAddr
-      (Just clientAddr)
-      msg `finally` do
-        cleanUp serverName
-  where
-    cleanUp name = do
-        catchJust (\e -> if isDoesNotExistErrorType (ioeGetErrorType e) then Just () else Nothing)
-                  (removeFile name)
-                  (\_ -> return ())
 
 prop_raw_bearer_send_and_receive_iosim :: Int -> Int -> Message -> Property
 prop_raw_bearer_send_and_receive_iosim serverInt clientInt msg =
