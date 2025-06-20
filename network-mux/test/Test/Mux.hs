@@ -439,7 +439,8 @@ prop_mux_snd_recv_bi (DummyRun messages) (DummyCapability clientCap) (DummyCapab
                       QueueChannel { writeQueue = server_w, readQueue = server_r }
                       Nothing
 
-    let clientApps = [ MiniProtocolInfo {
+    let clientApps :: [MiniProtocolInfo Mx.InitiatorResponderMode]
+        clientApps = [ MiniProtocolInfo {
                         miniProtocolNum = Mx.MiniProtocolNum 2,
                         miniProtocolDir = Mx.InitiatorDirection,
                         miniProtocolLimits = defaultMiniProtocolLimits,
@@ -453,6 +454,7 @@ prop_mux_snd_recv_bi (DummyRun messages) (DummyCapability clientCap) (DummyCapab
                       }
                      ]
 
+        serverApps :: [MiniProtocolInfo Mx.InitiatorResponderMode]
         serverApps = [ MiniProtocolInfo {
                         miniProtocolNum = Mx.MiniProtocolNum 2,
                         miniProtocolDir = Mx.ResponderDirection,
@@ -1052,7 +1054,8 @@ prop_mux_starvation (Uneven response0 response1) =
                          $ DummyTrace [(request, response1)]
 
 
-    let clientApp2 = MiniProtocolInfo {
+    let clientApp2, clientApp3 :: MiniProtocolInfo Mx.InitiatorMode
+        clientApp2 = MiniProtocolInfo {
                          miniProtocolNum = Mx.MiniProtocolNum 2,
                          miniProtocolDir = Mx.InitiatorDirectionOnly,
                          miniProtocolLimits = defaultMiniProtocolLimits,
@@ -1065,6 +1068,7 @@ prop_mux_starvation (Uneven response0 response1) =
                          miniProtocolCapability = Nothing
                        }
 
+        serverApp2, serverApp3 :: MiniProtocolInfo Mx.ResponderMode
         serverApp2 = MiniProtocolInfo {
                          miniProtocolNum = Mx.MiniProtocolNum 2,
                          miniProtocolDir = Mx.ResponderDirectionOnly,
@@ -1094,10 +1098,10 @@ prop_mux_starvation (Uneven response0 response1) =
 
 
     -- Fetch results
-    srvRes2 <- atomically serverRes2
-    srvRes3 <- atomically serverRes3
-    cliRes2 <- atomically clientRes2
-    cliRes3 <- atomically clientRes3
+    srvRes2 :: Either SomeException Bool <- atomically serverRes2
+    srvRes3 :: Either SomeException Bool <- atomically serverRes3
+    cliRes2 :: Either SomeException Bool <- atomically clientRes2
+    cliRes3 :: Either SomeException Bool <- atomically clientRes3
 
     -- First verify that all messages where received correctly
     let res_short = case (srvRes2, cliRes2) of
@@ -2247,7 +2251,9 @@ prop_mux_close_io fault reqs fn acc = ioProperty $ withIOManager $ \iocp -> do
       associateWithIOManager iocp (Right serverSocket)
       Socket.bind serverSocket (Socket.addrAddress serverAddr)
       Socket.listen serverSocket 1
-      let serverCtx = NetworkCtx {
+      let serverCtx :: NetworkCtx Socket.Socket IO
+                                  (Either SomeException ())
+          serverCtx = NetworkCtx {
               ncSocket = do
                 (sock, _) <- Socket.accept serverSocket
                 associateWithIOManager iocp (Right sock)
@@ -2259,6 +2265,8 @@ prop_mux_close_io fault reqs fn acc = ioProperty $ withIOManager $ \iocp -> do
                             )
 
             }
+          clientCtx :: NetworkCtx Socket.Socket IO
+                                  (Either SomeException (Either [Int] [Int]))
           clientCtx = NetworkCtx {
               ncSocket = do
                 sock <- Socket.socket Socket.AF_INET Socket.Stream
@@ -2302,7 +2310,7 @@ prop_mux_close_sim :: FaultInjection
 prop_mux_close_sim fault (Positive sduSize_) reqs fn acc =
     runSimOrThrow experiment
   where
-    experiment :: IOSim s Property
+    experiment :: forall s. IOSim s Property
     experiment = do
       (chann, chann')
         <- atomically $ newConnectedAttenuatedChannelPair
@@ -2320,6 +2328,9 @@ prop_mux_close_sim fault (Positive sduSize_) reqs fn acc =
             noAttenuation
       let sduSize = Mx.SDUSize sduSize_
           sduTimeout = 10
+          clientCtx :: NetworkCtx (AttenuatedChannel (IOSim s))
+                                  (IOSim s)
+                                  (Either SomeException (Either [Int] [Int]))
           clientCtx = NetworkCtx {
               ncSocket = return chann,
               ncClose  = acClose,
@@ -2328,6 +2339,9 @@ prop_mux_close_sim fault (Positive sduSize_) reqs fn acc =
                                      sduSize sduTimeout
                                      nullTracer fd
             }
+          serverCtx :: NetworkCtx (AttenuatedChannel (IOSim s))
+                                  (IOSim s)
+                                  (Either SomeException ())
           serverCtx = NetworkCtx {
               ncSocket = return chann',
               ncClose  = acClose,

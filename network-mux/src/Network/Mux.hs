@@ -748,7 +748,7 @@ runMiniProtocol :: forall mode m a.
                 -> StartOnDemandOrEagerly
                 -> (ByteChannel m -> m (a, Maybe BL.ByteString))
                 -> m (STM m (Either SomeException a))
-runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue , muxStatus}
+runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue, muxStatus}
                 ptclNum ptclDir startMode protocolAction
 
     -- Ensure the mini-protocol is known and get the status var
