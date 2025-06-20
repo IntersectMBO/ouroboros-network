@@ -165,11 +165,9 @@ test-suite sim-tests
     cborg,
     containers,
     contra-tracer,
-    directory,
     io-classes:{io-classes, si-timers, strict-stm},
     io-sim,
     monoidal-synchronisation,
-    network,
     network-mux,
     ouroboros-network-api,
     ouroboros-network-framework,
@@ -187,11 +185,6 @@ test-suite sim-tests
     text,
     typed-protocols:{typed-protocols, cborg, examples},
     with-utf8,
-
-  if os(windows)
-    build-depends: Win32-network <0.3
-  else
-    build-depends: directory
 
   default-language: Haskell2010
   default-extensions: ImportQualifiedPost
