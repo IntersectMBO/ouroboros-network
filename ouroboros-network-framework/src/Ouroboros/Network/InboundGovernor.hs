@@ -362,7 +362,8 @@ with
                                   csVersionData,
                                   csMiniProtocolMap,
                                   csCompletionMap,
-                                  csRemoteState
+                                  csRemoteState,
+                                  csTime = Nothing
                                 }
 
                           return (Just connState)
@@ -482,11 +483,13 @@ with
             -- NOTE: `promotedToWarmRemote` doesn't throw, hence exception handling
             -- is not needed.
             res <- promotedToWarmRemote connectionManager connId
+            startTime <- getMonotonicTime
             traceWith tracer (TrPromotedToWarmRemote connId res)
 
-            let state' = updateRemoteState
+            let state' = updateRemoteStateTimed
                            connId
                            RemoteWarm
+                           startTime
                            state
             return . Just $ StateWithPeerTransition state' connId
 
@@ -504,7 +507,10 @@ with
             -- NOTE: `releaseInboundConnection` doesn't throw, hence exception
             -- handling is not needed.
             res <- releaseInboundConnection connectionManager connId
-            traceWith tracer $ TrDemotedToColdRemote connId res
+            now <- getMonotonicTime
+            let mConnState = Map.lookup connId (connections state)
+                dt = fmap (now `diffTime`) . csTime =<< mConnState
+            traceWith tracer $ TrDemotedToColdRemote connId dt res
             case res of
               OperationSuccess transition ->
                 case transition of
@@ -935,7 +941,8 @@ data Trace peerAddr
     | TrPromotedToWarmRemote         !(ConnectionId peerAddr) !(OperationResult AbstractState)
     | TrPromotedToHotRemote          !(ConnectionId peerAddr)
     | TrDemotedToWarmRemote          !(ConnectionId peerAddr)
-    | TrDemotedToColdRemote          !(ConnectionId peerAddr) !(OperationResult DemotedToColdRemoteTr)
+    | TrDemotedToColdRemote          !(ConnectionId peerAddr) !(Maybe DiffTime)
+                                     !(OperationResult DemotedToColdRemoteTr)
     -- ^ All mini-protocols terminated.  The boolean is true if this connection
     -- was not used by p2p-governor, and thus the connection will be terminated.
     | TrWaitIdleRemote               !(ConnectionId peerAddr) !(OperationResult AbstractState)

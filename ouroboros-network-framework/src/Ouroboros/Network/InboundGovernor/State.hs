@@ -24,6 +24,7 @@ module Ouroboros.Network.InboundGovernor.State
   , RemoteSt (..)
   , mkRemoteSt
   , updateRemoteState
+  , updateRemoteStateTimed
   , mapRemoteState
   , MiniProtocolData (..)
   ) where
@@ -186,7 +187,11 @@ data ConnectionState muxMode initiatorCtx peerAddr versionData m a b = Connectio
 
       -- | State of the connection.
       --
-      csRemoteState     :: !(RemoteState m)
+      csRemoteState     :: !(RemoteState m),
+
+      -- | Time when the inbound side was awakened by the remote side
+      --
+      csTime            :: !(Maybe Time)
     }
 
 -- | The IG maintains a state of the number of hot and warm
@@ -314,6 +319,26 @@ updateRemoteState connId csRemoteState state =
           connId
           (connections state)
     }
+
+
+-- | Set 'csRemoteState' for a given connection which
+-- also updates the remote awake time
+--
+updateRemoteStateTimed :: Ord peerAddr
+                       => ConnectionId peerAddr
+                       -> RemoteState m
+                       -> Time
+                       -> State muxMode initiatorCtx peerAddr versionData m a b
+                       -> State muxMode initiatorCtx peerAddr versionData m a b
+updateRemoteStateTimed connId csRemoteState time state =
+    state {
+      connections =
+        Map.adjust
+          (\connState -> connState { csRemoteState, csTime = Just $! time })
+          connId
+          (connections state)
+    }
+
 
 mapRemoteState :: Ord peerAddr
                => ConnectionId peerAddr

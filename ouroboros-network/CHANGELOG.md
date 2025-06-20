@@ -39,6 +39,9 @@
 - Renamed `Applications` to `DiffusionApplications`
 - `runM` function now receives `ExtraParameters` as an argument
 - Configurable Mux Egress Poll Interval
+- Added field to `PeerConnectionHandle` to track outbound initiation time
+- Added tag `PeerOutboundDuration` to `PeerSelectionActionsTrace` tracing outbound
+  connection duration at closing time.
 
 ## 0.21.2.0 -- 2025-06-02
 

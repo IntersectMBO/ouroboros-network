@@ -13,6 +13,9 @@
   * signature of `makeConnectionHandler`
   * moved `InboundGovernorInfoChannel` to IG from InformationChannel
     and changed its type to contain `Event`'s.
+* Tracking of inbound connection durations
+  * Added field csTime to `ConnectionState`
+  * Added time field to `TrDemotedToColdRemote` which tracks remote awake time
 
 ### Non-breaking changes
 

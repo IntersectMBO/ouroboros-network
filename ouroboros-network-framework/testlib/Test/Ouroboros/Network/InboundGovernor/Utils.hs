@@ -189,8 +189,8 @@ inboundGovernorTraceMap (IG.TrPromotedToHotRemote _)            =
   "TrPromotedToHotRemote"
 inboundGovernorTraceMap (IG.TrDemotedToWarmRemote _)            =
   "TrDemotedToWarmRemote"
-inboundGovernorTraceMap (IG.TrDemotedToColdRemote _ ora)         =
-  "TrDemotedToColdRemote " ++ show ora
+inboundGovernorTraceMap (IG.TrDemotedToColdRemote _ mDuration ora)         =
+  "TrDemotedToColdRemote " ++ show mDuration ++ " " ++ show ora
 inboundGovernorTraceMap (IG.TrWaitIdleRemote _ ora)              =
   "TrWaitIdleRemote " ++ show ora
 inboundGovernorTraceMap (IG.TrMuxCleanExit _)                   =
