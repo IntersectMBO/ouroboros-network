@@ -15,6 +15,7 @@ module Ouroboros.Network.InboundGovernor.State
   , mkPublicState
   , State (..)
   , ConnectionState (..)
+  , ResponderCounters (..)
   , Counters (..)
   , counters
   , unregisterConnection
@@ -186,9 +187,16 @@ data ConnectionState muxMode initiatorCtx peerAddr versionData m a b = Connectio
       -- | State of the connection.
       --
       csRemoteState     :: !(RemoteState m)
-
     }
 
+-- | The IG maintains a state of the number of hot and warm
+-- miniprotocol responders to track transitions and notify
+-- the connection manager for interesting events.
+--
+data ResponderCounters = ResponderCounters {
+  numTraceHotResponders    :: !Int,
+  numTraceNonHotResponders :: !Int
+  }
 
 --
 -- State management functions
@@ -198,12 +206,13 @@ data ConnectionState muxMode initiatorCtx peerAddr versionData m a b = Connectio
 -- | Remove connection from 'State'.
 --
 unregisterConnection :: Ord peerAddr
-                     => ConnectionId peerAddr
+                     => Bool
+                     -> ConnectionId peerAddr
                      -> State muxMode initiatorCtx peerAddr versionData m a b
                      -> State muxMode initiatorCtx peerAddr versionData m a b
-unregisterConnection connId state =
+unregisterConnection bypass connId state =
     state { connections =
-              assert (connId `Map.member` connections state) $
+              assert (connId `Map.member` connections state || bypass) $
               Map.delete connId (connections state),
 
             matureDuplexPeers =
@@ -259,11 +268,11 @@ data RemoteState m
     -- | After @DemotedToCold^{dataFlow}_{Remote}@ is detected.  This state
     -- corresponds to 'InboundIdleState'. In this state we are checking
     -- if the responder protocols are idle during protocol idle timeout
-    -- (represented by an 'STM' action)
+    -- (represented by an 'STM' with a boolean representing expired timeout state)
     --
     -- 'RemoteIdle' is the initial state of an accepted a connection.
     --
-    | RemoteIdle !(STM m ())
+    | RemoteIdle !(STM m Bool)
 
     -- | The 'RemoteCold' state for 'Duplex' connections allows us to have
     -- responders started using the on-demand strategy.  This assures that once

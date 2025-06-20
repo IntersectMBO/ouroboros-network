@@ -1,3 +1,4 @@
+{-# LANGUAGE BlockArguments           #-}
 {-# LANGUAGE CPP                      #-}
 {-# LANGUAGE DataKinds                #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
@@ -48,13 +49,12 @@ import System.Random (StdGen, newStdGen, split)
 import Network.DNS (Resolver)
 import Network.Mux qualified as Mx
 import Network.Mux.Bearer (withReadBufferIO)
+import Network.Mux.Types
 import Network.Socket (Socket)
 import Network.Socket qualified as Socket
 
 import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
-import Ouroboros.Network.ConnectionManager.InformationChannel
-           (newInformationChannel)
 import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context (ExpandedInitiatorContext)
@@ -64,6 +64,8 @@ import Ouroboros.Network.Diffusion.Types
 import Ouroboros.Network.Diffusion.Utils
 import Ouroboros.Network.ExitPolicy
 import Ouroboros.Network.InboundGovernor qualified as IG
+import Ouroboros.Network.InboundGovernor.InformationChannel (InformationChannel,
+           newInformationChannel)
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.Mux hiding (MiniProtocol (..))
 import Ouroboros.Network.MuxMode
@@ -316,12 +318,11 @@ runM Interfaces
 
         let localConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0
 
-            localConnectionHandler :: NodeToClientConnectionHandler
-                                        ntcFd ntcAddr ntcVersion ntcVersionData m
-            localConnectionHandler =
+            mkLocalConnectionHandler :: MkNodeToClientConnectionHandler
+                                          ntcFd ntcAddr ntcVersion ntcVersionData m
+            mkLocalConnectionHandler responderMuxChannelTracer =
               makeConnectionHandler
                 dtLocalMuxTracer
-                SingResponderMode
                 dcLocalMuxForkPolicy
                 daNtcHandshakeArguments
                 ( ( \ (OuroborosApplication apps)
@@ -331,12 +332,20 @@ runM Interfaces
                         (WithEstablished [])
                   ) <$> daLocalResponderApplication )
                 (mainThreadId, rethrowPolicy <> daLocalRethrowPolicy)
+                (MuxResponderConnectionHandler responderMuxChannelTracer)
 
-            localConnectionManagerArguments
-              :: NodeToClientConnectionManagerArguments
-                   ntcFd ntcAddr ntcVersion ntcVersionData m
-            localConnectionManagerArguments =
-              CM.Arguments {
+            localWithConnectionManager
+              :: InformationChannel
+                   (IG.Event 'ResponderMode handle initiatorCtx ntcAddr versionData m c b) m
+              -> ConnectionHandler 'ResponderMode (ConnectionHandlerTrace ntcVersion ntcVersionData)
+                                   ntcFd ntcAddr handle (HandleError muxMode versionNumber) version
+                                   versionData m
+              -> (   ConnectionManager 'ResponderMode ntcFd ntcAddr handle
+                                       (HandleError muxMode versionNumber) m
+                  -> m x)
+              -> m x
+            localWithConnectionManager responderInfoChannel connectionHandler k =
+              CM.with CM.Arguments {
                   CM.tracer              = dtLocalConnectionManagerTracer,
                   CM.trTracer            = nullTracer, -- TODO: issue #3320
                   CM.muxTracer           = dtLocalMuxTracer,
@@ -354,36 +363,33 @@ runM Interfaces
                   CM.stdGen              = cmLocalStdGen,
                   CM.connectionsLimits   = localConnectionLimits,
                   CM.updateVersionData   = \a _ -> a,
-                  CM.connStateIdSupply   = diConnStateIdSupply
+                  CM.connStateIdSupply   = diConnStateIdSupply,
+                  CM.classifyHandleError
               }
+              (InResponderMode responderInfoChannel)
+              connectionHandler
+              k
 
-        CM.with
-          localConnectionManagerArguments
-          localConnectionHandler
-          classifyHandleError
-          (InResponderMode localInbInfoChannel)
-          $ \localConnectionManager-> do
-            --
-            -- run node-to-client server
-            --
-            traceWith tracer . RunLocalServer
-              =<< Snocket.getLocalAddr diNtcSnocket localSocket
-
-            Server.with
-              Server.Arguments {
-                  Server.sockets               = localSocket :| [],
-                  Server.snocket               = diNtcSnocket,
-                  Server.tracer                = dtLocalServerTracer,
-                  Server.trTracer              = nullTracer, -- TODO: issue #3320
-                  Server.debugInboundGovernor  = nullTracer,
-                  Server.inboundGovernorTracer = dtLocalInboundGovernorTracer,
-                  Server.inboundIdleTimeout    = Nothing,
-                  Server.connectionLimits      = localConnectionLimits,
-                  Server.connectionManager     = localConnectionManager,
-                  Server.connectionDataFlow    = ntcDataFlow,
-                  Server.inboundInfoChannel    = localInbInfoChannel
-                }
-              (\inboundGovernorThread _ -> Async.wait inboundGovernorThread)
+        traceWith tracer . RunLocalServer =<< Snocket.getLocalAddr diNtcSnocket localSocket
+        Server.with
+          Server.Arguments {
+              Server.sockets          = localSocket :| [],
+              Server.snocket          = diNtcSnocket,
+              Server.tracer           = dtLocalServerTracer,
+              Server.connectionLimits = localConnectionLimits,
+              inboundGovernorArgs =
+                IG.Arguments {
+                  tracer                = dtLocalInboundGovernorTracer,
+                  transitionTracer      = nullTracer,
+                  debugTracer           = nullTracer,
+                  connectionDataFlow    = ntcDataFlow,
+                  idleTimeout           = Nothing,
+                  withConnectionManager = localWithConnectionManager localInbInfoChannel,
+                  mkConnectionHandler   = mkLocalConnectionHandler,
+                  infoChannel           = localInbInfoChannel
+                  }
+              }
+          (\inboundGovernorThread _ _ -> Async.wait inboundGovernorThread)
 
 
     -- | mkRemoteThread - create remote connection manager
@@ -452,12 +458,12 @@ runM Interfaces
       --
 
       let connectionManagerArguments'
-            :: forall handle handleError.
+            :: forall muxMode handle b.
                PrunePolicy ntnAddr
             -> StdGen
             -> CM.Arguments
                  (ConnectionHandlerTrace ntnVersion ntnVersionData)
-                 ntnFd ntnAddr handle handleError ntnVersion ntnVersionData m
+                 ntnFd ntnAddr handle (HandleError muxMode ntnVersion) ntnVersion ntnVersionData m a b
           connectionManagerArguments' prunePolicy stdGen =
             CM.Arguments {
                 CM.tracer              = dtConnectionManagerTracer,
@@ -479,21 +485,22 @@ runM Interfaces
                 CM.timeWaitTimeout     = dcTimeWaitTimeout,
                 CM.outboundIdleTimeout = dcProtocolIdleTimeout,
                 CM.updateVersionData   = daUpdateVersionData,
-                CM.connStateIdSupply   = diConnStateIdSupply
+                CM.connStateIdSupply   = diConnStateIdSupply,
+                CM.classifyHandleError
             }
 
       let makeConnectionHandler'
-            :: forall muxMode socket initiatorCtx responderCtx b c.
-               SingMuxMode muxMode
-            -> Versions ntnVersion ntnVersionData
+            :: forall muxMode initiatorCtx responderCtx b c.
+               Versions ntnVersion ntnVersionData
                  (OuroborosBundle muxMode initiatorCtx responderCtx ByteString m b c)
-            -> MuxConnectionHandler
-                 muxMode socket initiatorCtx responderCtx ntnAddr
+            -> MkMuxConnectionHandler
+                 muxMode ntnFd initiatorCtx responderCtx ntnAddr
                  ntnVersion ntnVersionData ByteString m b c
-          makeConnectionHandler' muxMode versions =
+            -> MuxConnectionHandler muxMode ntnFd initiatorCtx responderCtx ntnAddr
+                                    ntnVersion ntnVersionData ByteString m b c
+          makeConnectionHandler' versions =
             makeConnectionHandler
               dtMuxTracer
-              muxMode
               dcMuxForkPolicy
               daNtnHandshakeArguments
               versions
@@ -502,28 +509,26 @@ runM Interfaces
           -- | Capture the two variations (InitiatorMode,InitiatorResponderMode) of
           --   withConnectionManager:
 
-          withConnectionManagerInitiatorOnlyMode =
+          withConnectionManagerInitiatorOnlyMode k =
             CM.with
               (connectionManagerArguments' simplePrunePolicy cmStdGen1)
                  -- Server is not running, it will not be able to
                  -- advise which connections to prune.  It's also not
                  -- expected that the governor targets will be larger
                  -- than limits imposed by 'cmConnectionsLimits'.
-              (makeConnectionHandler'
-                SingInitiatorMode
-                daApplicationInitiatorMode)
-              classifyHandleError
               NotInResponderMode
+              (makeConnectionHandler' daApplicationInitiatorMode
+                                      MuxInitiatorConnectionHandler)
+              k
 
           withConnectionManagerInitiatorAndResponderMode
-            inbndInfoChannel =
+            responderInfoChannel connectionHandler k =
               CM.with
-                (connectionManagerArguments' Diffusion.Policies.prunePolicy cmStdGen2)
-                (makeConnectionHandler'
-                   SingInitiatorResponderMode
-                   daApplicationInitiatorResponderMode)
-                classifyHandleError
-                (InResponderMode inbndInfoChannel)
+                  (connectionManagerArguments' Diffusion.Policies.prunePolicy
+                                               cmStdGen2)
+                  (InResponderMode responderInfoChannel)
+                  connectionHandler
+                  k
 
       --
       -- peer state actions
@@ -704,21 +709,29 @@ runM Interfaces
               f
 
           -- run node-to-node server
-          withServer sockets connectionManager inboundInfoChannel =
-            Server.with
-              Server.Arguments {
-                  Server.sockets               = sockets,
-                  Server.snocket               = diNtnSnocket,
-                  Server.tracer                = dtServerTracer,
-                  Server.trTracer              = dtInboundGovernorTransitionTracer,
-                  Server.debugInboundGovernor  = nullTracer,
-                  Server.inboundGovernorTracer = dtInboundGovernorTracer,
-                  Server.connectionLimits      = dcAcceptedConnectionsLimit,
-                  Server.connectionManager     = connectionManager,
-                  Server.connectionDataFlow    = daNtnDataFlow,
-                  Server.inboundIdleTimeout    = Just dcProtocolIdleTimeout,
-                  Server.inboundInfoChannel    = inboundInfoChannel
-                }
+          withServer sockets inboundInfoChannel =
+           Server.with
+             Server.Arguments {
+               Server.sockets      = sockets,
+               Server.snocket      = diNtnSnocket,
+               Server.tracer       = dtServerTracer,
+               Server.connectionLimits
+                                   = dcAcceptedConnectionsLimit,
+               inboundGovernorArgs =
+                 IG.Arguments {
+                   tracer                = dtInboundGovernorTracer,
+                   transitionTracer      = dtInboundGovernorTransitionTracer,
+                   debugTracer           = nullTracer,
+                   connectionDataFlow    = daNtnDataFlow,
+                   idleTimeout           = Just dcProtocolIdleTimeout,
+                   withConnectionManager =
+                     withConnectionManagerInitiatorAndResponderMode inboundInfoChannel,
+                   mkConnectionHandler   =
+                       makeConnectionHandler' daApplicationInitiatorResponderMode
+                     . MuxInitiatorResponderConnectionHandler daNtnDataFlow,
+                   infoChannel           = inboundInfoChannel
+                 }
+             }
 
       --
       -- Part (b): capturing the major control-flow of runM:
@@ -727,7 +740,7 @@ runM Interfaces
 
         -- InitiatorOnly mode, run peer selection only:
         InitiatorOnlyDiffusionMode ->
-          withConnectionManagerInitiatorOnlyMode $ \connectionManager-> do
+          withConnectionManagerInitiatorOnlyMode $ \connectionManager -> do
           debugStateVar <- newTVarIO $ Governor.emptyPeerSelectionState fuzzRng daEmptyExtraState mempty
           daInstallSigUSR1Handler connectionManager debugStateVar
           withPeerStateActions' connectionManager $ \peerStateActions->
@@ -748,45 +761,43 @@ runM Interfaces
 
         -- InitiatorAndResponder mode, run peer selection and the server:
         InitiatorAndResponderDiffusionMode -> do
-          inboundInfoChannel  <- newInformationChannel
-          withConnectionManagerInitiatorAndResponderMode
-            inboundInfoChannel $ \connectionManager ->
-              --
-              -- node-to-node sockets
-              --
-              withSockets' $ \sockets addresses -> do
-                --
-                -- node-to-node server
-                --
-                withServer sockets connectionManager inboundInfoChannel $
-                  \inboundGovernorThread readInboundState -> do
-                    debugStateVar <- newTVarIO $ Governor.emptyPeerSelectionState fuzzRng daEmptyExtraState mempty
-                    daInstallSigUSR1Handler connectionManager debugStateVar
-                    withPeerStateActions' connectionManager $
-                      \peerStateActions ->
-                        withPeerSelectionActions'
-                          (mkInboundPeersMap <$> readInboundState)
-                          peerStateActions $
-                            \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions ->
-                              Async.withAsync
-                                (do
-                                  labelThisThread "Peer selection governor"
-                                  peerSelectionGovernor' dtDebugPeerSelectionInitiatorResponderTracer debugStateVar peerSelectionActions) $
-                                    \governorThread -> do
-                                      -- begin, unique to InitiatorAndResponder mode:
-                                      traceWith tracer (RunServer addresses)
-                                      -- end, unique to ...
-                                      Async.withAsync (do
-                                                          labelThisThread "Peer churn governor"
-                                                          peerChurnGovernor') $
-                                        \churnGovernorThread ->
-                                          -- wait for any thread to fail:
-                                          snd <$> Async.waitAny [ ledgerPeersThread
-                                                                , localRootPeersProvider
-                                                                , governorThread
-                                                                , churnGovernorThread
-                                                                , inboundGovernorThread
-                                                                ]
+          inboundInfoChannel <- newInformationChannel
+          --
+          -- node-to-node sockets
+          --
+          withSockets' \sockets addresses -> do
+            --
+            -- node-to-node server
+            --
+            -- begin, unique to InitiatorAndResponder mode:
+            traceWith tracer (RunServer addresses)
+            -- end, unique to ...
+            withServer sockets inboundInfoChannel
+              \inboundGovernorThread readInboundState connectionManager -> do
+                debugStateVar <- newTVarIO $ Governor.emptyPeerSelectionState fuzzRng daEmptyExtraState mempty
+                daInstallSigUSR1Handler connectionManager debugStateVar
+                withPeerStateActions' connectionManager $
+                  \peerStateActions ->
+                    withPeerSelectionActions'
+                      (mkInboundPeersMap <$> readInboundState)
+                      peerStateActions $
+                        \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions ->
+                          Async.withAsync
+                            (do
+                              labelThisThread "Peer selection governor"
+                              peerSelectionGovernor' dtDebugPeerSelectionInitiatorResponderTracer debugStateVar peerSelectionActions) $
+                                \governorThread -> do
+                                  Async.withAsync (do
+                                                      labelThisThread "Peer churn governor"
+                                                      peerChurnGovernor') $
+                                    \churnGovernorThread ->
+                                      -- wait for any thread to fail:
+                                      snd <$> Async.waitAny [ ledgerPeersThread
+                                                            , localRootPeersProvider
+                                                            , governorThread
+                                                            , churnGovernorThread
+                                                            , inboundGovernorThread
+                                                            ]
 
 -- | Main entry point for data diffusion service.  It allows to:
 --

@@ -1,15 +1,17 @@
-{-# LANGUAGE BangPatterns         #-}
-{-# LANGUAGE BlockArguments       #-}
-{-# LANGUAGE DataKinds            #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE GADTs                #-}
-{-# LANGUAGE KindSignatures       #-}
-{-# LANGUAGE NamedFieldPuns       #-}
-{-# LANGUAGE RankNTypes           #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE TupleSections        #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE BangPatterns             #-}
+{-# LANGUAGE BlockArguments           #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE DisambiguateRecordFields #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE KindSignatures           #-}
+{-# LANGUAGE NamedFieldPuns           #-}
+{-# LANGUAGE RankNTypes               #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE TupleSections            #-}
+{-# LANGUAGE UndecidableInstances     #-}
 
+--{-# OPTIONS_GHC -fno-ignore-asserts #-}
 -- | The implementation of connection manager.
 --
 -- The module should be imported qualified.
@@ -58,23 +60,21 @@ import Network.Mux.Trace qualified as Mx
 import Network.Mux.Types qualified as Mx
 
 import Ouroboros.Network.ConnectionId
-import Ouroboros.Network.ConnectionManager.InformationChannel
-           (InformationChannel)
-import Ouroboros.Network.ConnectionManager.InformationChannel qualified as InfoChannel
 import Ouroboros.Network.ConnectionManager.State (ConnStateIdSupply,
            ConnectionManagerState, ConnectionState (..), MutableConnState (..))
 import Ouroboros.Network.ConnectionManager.State qualified as State
 import Ouroboros.Network.ConnectionManager.Types
-import Ouroboros.Network.InboundGovernor.Event (NewConnectionInfo (..))
+import Ouroboros.Network.InboundGovernor (Event (..), NewConnectionInfo (..))
+import Ouroboros.Network.InboundGovernor.InformationChannel (InformationChannel)
+import Ouroboros.Network.InboundGovernor.InformationChannel qualified as InfoChannel
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket
 
-
 -- | Arguments for a 'ConnectionManager' which are independent of 'MuxMode'.
 --
-data Arguments handlerTrace socket peerAddr handle handleError versionNumber versionData m =
+data Arguments handlerTrace socket peerAddr handle handleError versionNumber versionData m a b =
     Arguments {
         -- | Connection manager tracer.
         --
@@ -157,7 +157,9 @@ data Arguments handlerTrace socket peerAddr handle handleError versionNumber ver
 
         -- | Supply for `ConnStateId`-s.
         --
-        connStateIdSupply   :: ConnStateIdSupply m
+        connStateIdSupply   :: ConnStateIdSupply m,
+
+        classifyHandleError :: handleError -> HandleErrorType
       }
 
 
@@ -360,7 +362,7 @@ data DemoteToColdLocal peerAddr handlerTrace handle handleError version m
 -- is responsible for the resource.
 --
 with
-    :: forall (muxMode :: Mx.Mode) peerAddr socket handlerTrace handle handleError version versionData m a.
+    :: forall (muxMode :: Mx.Mode) peerAddr socket initiatorCtx handlerTrace handle handleError version versionData m a b x.
        ( Alternative (STM m)
        , MonadLabelledSTM   m
        , MonadTraceSTM      m
@@ -378,19 +380,17 @@ with
        , Show     peerAddr
        , Typeable peerAddr
        )
-    => Arguments handlerTrace socket peerAddr handle handleError version versionData m
-    -> ConnectionHandler  muxMode handlerTrace socket peerAddr handle handleError version versionData m
-    -- ^ Callback which runs in a thread dedicated for a given connection.
-    -> (handleError -> HandleErrorType)
-    -- ^ classify 'handleError's
-    -> InResponderMode muxMode (InformationChannel (NewConnectionInfo peerAddr handle) m)
+    => Arguments handlerTrace socket peerAddr handle handleError version versionData m a b
+    -> InResponderMode muxMode (InformationChannel (Event muxMode handle initiatorCtx peerAddr versionData m a b) m)
     -- ^ On outbound duplex connections we need to notify the server about
     -- a new connection.
-    -> (ConnectionManager muxMode socket peerAddr handle handleError m -> m a)
+    -> ConnectionHandler muxMode handlerTrace socket peerAddr handle handleError version versionData m
+    -- ^ ConnectionHandler which negotiates a connection and hosts the mux
+    -> (ConnectionManager muxMode socket peerAddr handle handleError m -> m x)
     -- ^ Continuation which receives the 'ConnectionManager'.  It must not leak
     -- outside of scope of this callback.  Once it returns all resources
     -- will be closed.
-    -> m a
+    -> m x
 with args@Arguments {
          tracer,
          trTracer,
@@ -408,13 +408,13 @@ with args@Arguments {
          prunePolicy,
          connectionsLimits,
          updateVersionData,
-         connStateIdSupply
+         connStateIdSupply,
+         classifyHandleError
        }
-     ConnectionHandler {
-         connectionHandler
-       }
-     classifyHandleError
      inboundGovernorInfoChannel
+     ConnectionHandler {
+       connectionHandler
+     }
      k = do
     ((stateVar, stdGenVar)
        ::  ( StrictTMVar m (ConnectionManagerState peerAddr handle handleError
@@ -428,7 +428,7 @@ with args@Arguments {
             st' <- case mbst of
               Nothing -> pure Nothing
               Just st -> Just <$> traverse (inspectTVar (Proxy :: Proxy m) . toLazyTVar . connVar) st
-            return (TraceString (show st'))
+            return (TraceString ("cm-state: " <> show st'))
 
           stdGenVar <- newTVar (stdGen args)
           return (v, stdGenVar)
@@ -1056,8 +1056,8 @@ with args@Arguments {
                     case inboundGovernorInfoChannel of
                       InResponderMode infoChannel ->
                         atomically $ InfoChannel.writeMessage
-                                       infoChannel
-                                       (NewConnectionInfo provenance connId dataFlow handle)
+                                       infoChannel $
+                                       NewConnection (NewConnectionInfo provenance connId dataFlow handle)
                       _ -> return ()
                     return $ Connected connId dataFlow handle
 
@@ -1075,7 +1075,7 @@ with args@Arguments {
            m (ConnectionManagerState peerAddr handle handleError version m)
       -> MutableConnState peerAddr handle handleError version m
       -> Maybe handleError
-      -> m (Connected peerAddr handle1 handleError)
+      -> m (Connected peerAddr handle handleError)
     terminateInboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState handleErrorM = do
         transitions <- atomically $ do
           connState <- readTVar connVar
@@ -1657,21 +1657,17 @@ with args@Arguments {
                           --    → OutboundDupState^\tau Outbound
                           -- @
                           let connState' = OutboundDupState connId connThread handle Ticking
-                              notifyInboundGov =
-                                case provenance' of
-                                  Inbound  -> False
-                                  -- This is a connection to oneself; We don't
-                                  -- need to notify the inbound governor, as
-                                  -- it's already done by
-                                  -- `includeInboundConnectionImpl`
-                                  Outbound -> True
                           writeTVar connVar connState'
-                          case inboundGovernorInfoChannel of
-                            InResponderMode infoChannel | notifyInboundGov ->
-                              InfoChannel.writeMessage
-                                infoChannel
-                                (NewConnectionInfo provenance' connId dataFlow handle)
-                            _ -> return ()
+                          case provenance' of
+                            Outbound | InResponderMode infoChannel <- inboundGovernorInfoChannel ->
+                              InfoChannel.writeMessage infoChannel .
+                                NewConnection $ NewConnectionInfo provenance' connId dataFlow handle
+                            -- This is a connection to oneself; We don't
+                            -- need to notify the inbound governor, as
+                            -- it's already done by
+                            -- `includeInboundConnectionImpl`
+                            _otherwise -> return ()
+
                           return (Just $ mkTransition connState connState')
 
                     -- @

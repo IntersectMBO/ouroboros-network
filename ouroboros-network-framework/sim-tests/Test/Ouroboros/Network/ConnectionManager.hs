@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE DisambiguateRecordFields   #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
@@ -70,9 +71,9 @@ import Ouroboros.Network.Snocket (Accept (..), Accepted (..),
 
 import Test.Ouroboros.Network.ConnectionManager.Utils (verifyAbstractTransition)
 
-import Ouroboros.Network.ConnectionManager.InformationChannel
+import Ouroboros.Network.InboundGovernor.InformationChannel
            (newInformationChannel)
-import Ouroboros.Network.ConnectionManager.InformationChannel qualified as InfoChannel
+import Ouroboros.Network.InboundGovernor.InformationChannel qualified as InfoChannel
 
 
 
@@ -762,32 +763,31 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
         let connectionHandler = mkConnectionHandler snocket
         result <- CM.with
           CM.Arguments {
-              CM.tracer,
-              CM.trTracer,
-              CM.muxTracer = nullTracer,
-              CM.ipv4Address = myAddress,
-              CM.ipv6Address = Nothing,
-              CM.addressType = \_ -> Just IPv4Address,
-              CM.snocket = snocket,
-              CM.makeBearer = makeFDBearer,
-              CM.withBuffer = \f -> f Nothing,
-              CM.configureSocket = \_ _ -> return (),
-              CM.connectionDataFlow = id,
-              CM.prunePolicy = simplePrunePolicy,
-              CM.stdGen = Random.mkStdGen rnd,
-              CM.connectionsLimits = AcceptedConnectionsLimit {
-                  acceptedConnectionsHardLimit = maxBound,
-                  acceptedConnectionsSoftLimit = maxBound,
-                  acceptedConnectionsDelay     = 0
-                },
-              CM.timeWaitTimeout = testTimeWaitTimeout,
-              CM.outboundIdleTimeout = testOutboundIdleTimeout,
-              CM.updateVersionData = \a _ -> a,
-              CM.connStateIdSupply
-            }
-            connectionHandler
-            (\_ -> HandshakeFailure)
-            (InResponderMode inbgovInfoChannel)
+            tracer,
+            trTracer,
+            muxTracer = nullTracer,
+            ipv4Address = myAddress,
+            ipv6Address = Nothing,
+            addressType = \_ -> Just IPv4Address,
+            snocket = snocket,
+            makeBearer = makeFDBearer,
+            withBuffer = \f -> f Nothing,
+            configureSocket = \_ _ -> return (),
+            connectionDataFlow = id,
+            prunePolicy = simplePrunePolicy,
+            stdGen = Random.mkStdGen rnd,
+            connectionsLimits = AcceptedConnectionsLimit {
+                acceptedConnectionsHardLimit = maxBound,
+                acceptedConnectionsSoftLimit = maxBound,
+                acceptedConnectionsDelay     = 0
+              },
+            timeWaitTimeout = testTimeWaitTimeout,
+            outboundIdleTimeout = testOutboundIdleTimeout,
+            updateVersionData = \a _ -> a,
+            connStateIdSupply,
+            classifyHandleError = \_ -> HandshakeFailure }
+          (InResponderMode inbgovInfoChannel)
+          connectionHandler
           $ \(connectionManager
                 :: ConnectionManager Mx.InitiatorResponderMode (FD (IOSim s))
                                      Addr (Handle m) Void (IOSim s)) -> do
