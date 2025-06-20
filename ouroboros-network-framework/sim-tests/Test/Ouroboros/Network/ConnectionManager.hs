@@ -33,7 +33,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim
-import Control.Tracer (Tracer (..), contramap, nullTracer)
+import Control.Tracer (Tracer (..), contramap)
 
 import GHC.Generics
 import GHC.IO.Exception
@@ -346,11 +346,11 @@ newtype FD m = FD { fdState :: StrictTVar m FDState }
 
 makeFDBearer :: MonadDelay m
              => MakeBearer m (FD m)
-makeFDBearer = MakeBearer $ \_ _ _ _ ->
+makeFDBearer = MakeBearer $ \_ _ _ ->
       return Mx.Bearer {
-          Mx.write          = \_ _ -> getMonotonicTime,
-          Mx.writeMany      = \_ _ -> getMonotonicTime,
-          Mx.read           = \_ -> forever (threadDelay 3600),
+          Mx.write          = \_ _ _ -> getMonotonicTime,
+          Mx.writeMany      = \_ _ _ -> getMonotonicTime,
+          Mx.read           = \_ _ -> forever (threadDelay 3600),
           Mx.sduSize        = Mx.SDUSize 1500,
           Mx.batchSize      = 1500,
           Mx.name           = "FD",
@@ -765,7 +765,6 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
           CM.Arguments {
             tracer,
             trTracer,
-            muxTracer = nullTracer,
             ipv4Address = myAddress,
             ipv6Address = Nothing,
             addressType = \_ -> Just IPv4Address,

@@ -537,6 +537,7 @@ ntnHandshakeArguments
 ntnHandshakeArguments tracer =
   HandshakeArguments {
     haHandshakeTracer  = tracer
+  , haBearerTracer     = nullTracer -- TODO
   , haHandshakeCodec   = codecHandshake nodeToNodeVersionCodec
   , haVersionDataCodec = cborTermVersionDataCodec nodeToNodeCodecCBORTerm
   , haAcceptVersion    = acceptableVersion

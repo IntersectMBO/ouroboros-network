@@ -32,6 +32,7 @@ module Test.Ouroboros.Network.ConnectionManager.Experiments
   , withBidirectionalConnectionManager
   , runInitiatorProtocols
   , oneshotNextRequests
+  , WithNameAndBearer
   ) where
 
 import Control.Applicative (Alternative)
@@ -52,6 +53,7 @@ import Codec.Serialise.Class (Serialise)
 import Data.ByteString.Lazy (ByteString)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Functor (($>), (<&>))
+import Data.Functor.Compose
 import Data.Hashable
 import Data.List (mapAccumL)
 import Data.List.NonEmpty (NonEmpty (..))
@@ -273,14 +275,20 @@ withInitiatorOnlyConnectionManager
 withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket makeBearer connStateIdSupply
                                    localAddr nextRequests handshakeTimeLimits acceptedConnLimit k = do
   mainThreadId <- myThreadId
-  let muxTracer = (name,) `contramap` nullTracer -- mux tracer
+  let muxTracers :: Mx.TracersWithBearer (ConnectionId peerAddr) m
+      muxTracers = Mx.Tracers {
+        Mx.tracer        = WithName name `contramap` nullTracer,
+        Mx.channelTracer = WithName name `contramap` nullTracer,
+        Mx.bearerTracer  = WithName name `contramap` nullTracer
+      }
       mkConnectionHandler =
         makeConnectionHandler
-          muxTracer
+          muxTracers
           noBindForkPolicy
           HandshakeArguments {
               -- TraceSendRecv
               haHandshakeTracer = WithName name `contramap` nullTracer,
+              haBearerTracer = WithName name `contramap` nullTracer,
               haHandshakeCodec = unversionedHandshakeCodec,
               haVersionDataCodec = cborTermVersionDataCodec dataFlowProtocolDataCodec,
               haAcceptVersion = acceptableVersion,
@@ -302,7 +310,6 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
     trTracer  = (WithName name . fmap CM.abstractState)
                   `contramap` trTracer,
     -- This is actually the low level bearer tracer
-    muxTracer = nullTracer,
     ipv4Address  = localAddr,
     ipv6Address  = Nothing,
     addressType  = \_ -> Just IPv4Address,
@@ -395,6 +402,7 @@ assertRethrowPolicy =
     mkRethrowPolicy $
       \_ (_ :: AssertionFailed) -> ShutdownNode
 
+type WithNameAndBearer name addr = Compose (WithName name) (Mx.WithBearer (ConnectionId addr))
 
 -- | Runs an example server which runs a single 'ReqResp' protocol for any hot
 -- \/ warm \/ established peers and also gives access to bidirectional
@@ -431,7 +439,7 @@ withBidirectionalConnectionManager
                             peerAddr
                             (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
     -> Tracer m (WithName name (InboundGovernor.Trace peerAddr))
-    -> Tracer m (WithName name (Mx.WithBearer (ConnectionId peerAddr) Mx.Trace))
+    -> Mx.Tracers' m (WithNameAndBearer name peerAddr)
     -> Tracer m (WithName name (InboundGovernor.Debug peerAddr DataFlowProtocolData))
     -> StdGen
     -> Snocket m socket peerAddr
@@ -471,11 +479,12 @@ withBidirectionalConnectionManager name timeouts
     inbgovInfoChannel <- newInformationChannel
     let mkConnectionHandler =
           makeConnectionHandler
-            (WithName name `contramap` muxTracer)
+            ((Compose . WithName name) `Mx.contramapTracers'` muxTracer)
             noBindForkPolicy
             HandshakeArguments {
                 -- TraceSendRecv
                 haHandshakeTracer = WithName name `contramap` nullTracer,
+                haBearerTracer = WithName `contramap` nullTracer,
                 haHandshakeCodec = unversionedHandshakeCodec,
                 haVersionDataCodec = cborTermVersionDataCodec dataFlowProtocolDataCodec,
                 haAcceptVersion = acceptableVersion,
@@ -496,7 +505,6 @@ withBidirectionalConnectionManager name timeouts
             trTracer  = (WithName name . fmap CM.abstractState)
                           `contramap` trTracer,
             -- low level bearer tracer
-            muxTracer = WithName name `contramap` nullTracer, --muxTracer,
             ipv4Address  = localAddress,
             ipv6Address  = Nothing,
             addressType  = \_ -> Just IPv4Address,
@@ -747,7 +755,7 @@ unidirectionalExperiment stdGen timeouts snocket makeBearer confSock socket clie
       $ \connectionManager ->
         withBidirectionalConnectionManager "server" timeouts
                                            nullTracer nullTracer nullTracer
-                                           nullTracer nullTracer nullTracer
+                                           nullTracer Mx.nullTracers nullTracer
                                            stdGen''
                                            snocket makeBearer connStateIdSupply
                                            confSock socket Nothing
@@ -831,7 +839,7 @@ bidirectionalExperiment
       nextRequests0 <- oneshotNextRequests clientAndServerData0
       nextRequests1 <- oneshotNextRequests clientAndServerData1
       withBidirectionalConnectionManager "node-0" timeouts
-                                         nullTracer nullTracer nullTracer nullTracer nullTracer
+                                         nullTracer nullTracer nullTracer nullTracer Mx.nullTracers
                                          nullTracer stdGen' snocket makeBearer
                                          connStateIdSupply confSock
                                          socket0 (Just localAddr0)
@@ -841,7 +849,7 @@ bidirectionalExperiment
                                          maxAcceptedConnectionsLimit
         (\connectionManager0 _serverAddr0 _serverAsync0 -> do
           withBidirectionalConnectionManager "node-1" timeouts
-                                             nullTracer nullTracer nullTracer nullTracer nullTracer
+                                             nullTracer nullTracer nullTracer nullTracer Mx.nullTracers
                                              nullTracer stdGen'' snocket makeBearer
                                              connStateIdSupply confSock
                                              socket1 (Just localAddr1)

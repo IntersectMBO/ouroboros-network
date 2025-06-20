@@ -299,6 +299,7 @@ run blockGeneratorArgs limits ni na
               , Diffusion.daNtnHandshakeArguments =
                   HandshakeArguments
                     { haHandshakeTracer  = nullTracer
+                    , haBearerTracer     = nullTracer
                     , haHandshakeCodec   = unversionedHandshakeCodec
                     , haVersionDataCodec = ntnUnversionedDataCodec
                     , haAcceptVersion    = iAcceptVersion ni
@@ -308,6 +309,7 @@ run blockGeneratorArgs limits ni na
               , Diffusion.daNtcHandshakeArguments =
                   HandshakeArguments
                     { haHandshakeTracer  = nullTracer
+                    , haBearerTracer     = nullTracer
                     , haHandshakeCodec   = unversionedHandshakeCodec
                     , haVersionDataCodec = unversionedProtocolDataCodec
                     , haAcceptVersion    = \_ v -> Accept v

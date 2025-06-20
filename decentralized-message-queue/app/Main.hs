@@ -95,8 +95,12 @@ debugTracers :: ( Applicative m
                                  extraFlags extraPeers extraCounters m
 debugTracers =
   Diffusion.Tracers {
-    Diffusion.dtMuxTracer                                  = debugTracer
+    Diffusion.dtBearerTracer                               = debugTracer
+  , Diffusion.dtChannelTracer                              = debugTracer
+  , Diffusion.dtMuxTracer                                  = debugTracer
   , Diffusion.dtHandshakeTracer                            = debugTracer
+  , Diffusion.dtLocalBearerTracer                          = debugTracer
+  , Diffusion.dtLocalChannelTracer                         = debugTracer
   , Diffusion.dtLocalMuxTracer                             = debugTracer
   , Diffusion.dtLocalHandshakeTracer                       = debugTracer
   , Diffusion.dtDiffusionTracer                            = debugTracer

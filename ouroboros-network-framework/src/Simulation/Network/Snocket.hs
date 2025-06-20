@@ -678,8 +678,8 @@ makeFDBearer :: forall addr m.
                 , Show addr
                 )
              => MakeBearer m (FD m (TestAddress addr))
-makeFDBearer = MakeBearer $ \sduTimeout muxTracer FD { fdVar } _ -> do
-        fd_ <- atomically (readTVar fdVar)
+makeFDBearer = MakeBearer $ \sduTimeout FD { fdVar } _ -> do
+        fd_ <- readTVarIO fdVar
         case fd_ of
           FDUninitialised {} ->
             throwIO (invalidError fd_)
@@ -689,7 +689,7 @@ makeFDBearer = MakeBearer $ \sduTimeout muxTracer FD { fdVar } _ -> do
             throwIO (invalidError fd_)
           FDConnected _ conn -> do
             return $ attenuationChannelAsBearer (connSDUSize conn)
-                                                sduTimeout muxTracer
+                                                sduTimeout
                                                 (connChannelLocal conn)
           FDClosed {} ->
             throwIO (invalidError fd_)

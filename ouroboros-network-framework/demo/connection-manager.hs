@@ -59,6 +59,8 @@ import Network.TypedProtocol.ReqResp.Examples
 import Network.TypedProtocol.ReqResp.Server
 import Network.TypedProtocol.ReqResp.Type (ReqResp)
 
+import Network.Mux qualified as Mx
+
 import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.State qualified as CM
@@ -228,14 +230,18 @@ withBidirectionalConnectionManager snocket makeBearer socket
     hotRequestsVar         <- LazySTM.newTVarIO hotInitiatorRequests
     warmRequestsVar        <- LazySTM.newTVarIO warmInitiatorRequests
     establishedRequestsVar <- LazySTM.newTVarIO establishedInitiatorRequests
-    let muxTracer = ("mux",) `contramap` nullTracer -- mux tracer
-
+    let muxTracers = Mx.Tracers {
+          Mx.tracer        = ("mux",) `contramap` nullTracer,
+          Mx.channelTracer = ("mux",) `contramap` nullTracer,
+          Mx.bearerTracer  = ("mux",) `contramap` nullTracer
+        }
         mkConnectionHandler = makeConnectionHandler
-          muxTracer
+          muxTracers
           noBindForkPolicy
           HandshakeArguments {
               -- TraceSendRecv
               haHandshakeTracer = ("handshake",) `contramap` debugTracer,
+              haBearerTracer = ("hanshake",) `contramap` nullTracer,
               haHandshakeCodec = unversionedHandshakeCodec,
               haVersionDataCodec = unversionedProtocolDataCodec,
               haAcceptVersion = acceptableVersion,
@@ -255,8 +261,6 @@ withBidirectionalConnectionManager snocket makeBearer socket
                   -- ConnectionManagerTrace
                   tracer       = ("cm",) `contramap` debugTracer,
                   trTracer     = ("cm-state",) `contramap` debugTracer,
-                  -- MuxTracer
-                  muxTracer    = muxTracer,
                   ipv4Address  = localAddress,
                   ipv6Address  = Nothing,
                   addressType  = \_ -> Just IPv4Address,

@@ -194,8 +194,8 @@ demo chain0 updates = do
                                      , ChainSync.chainSyncServerPeer server
                                      )
 
-        clientBearer <- Mx.getBearer Mx.makePipeChannelBearer (-1) activeTracer chan1 Nothing
-        serverBearer <- Mx.getBearer Mx.makePipeChannelBearer (-1) activeTracer chan2 Nothing
+        clientBearer <- Mx.getBearer Mx.makePipeChannelBearer (-1) chan1 Nothing
+        serverBearer <- Mx.getBearer Mx.makePipeChannelBearer (-1) chan2 Nothing
 
         _ <- async $ do
               clientMux <- Mx.new (toMiniProtocolInfos (\_ _ -> Nothing) consumerApp)
@@ -217,7 +217,7 @@ demo chain0 updates = do
                       InitiatorProtocolOnly initiator ->
                         [(Mx.InitiatorDirectionOnly, void . runMiniProtocolCb initiator initCtx)]
                 ]
-              withAsync (Mx.run (Mx.Tracers nullTracer nullTracer) clientMux clientBearer) $ \aid -> do
+              withAsync (Mx.run (Mx.Tracers activeTracer activeTracer activeTracer) clientMux clientBearer) $ \aid -> do
                 _ <- atomically $ runFirstToFinish $ foldMap FirstToFinish resOps
                 Mx.stop clientMux
                 wait aid
@@ -242,7 +242,7 @@ demo chain0 updates = do
                       ResponderProtocolOnly responder ->
                         [(Mx.ResponderDirectionOnly, void . runMiniProtocolCb responder respCtx)]
                 ]
-              withAsync (Mx.run (Mx.Tracers nullTracer nullTracer) serverMux serverBearer) $ \aid -> do
+              withAsync (Mx.run (Mx.Tracers activeTracer activeTracer activeTracer) serverMux serverBearer) $ \aid -> do
                 _ <- atomically $ runFirstToFinish $ foldMap FirstToFinish resOps
                 Mx.stop serverMux
                 wait aid
