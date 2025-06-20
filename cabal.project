@@ -15,14 +15,13 @@ repository cardano-haskell-packages
 -- repeat the index-state for hackage to work around haskell.nix parsing limitation
 index-state:
   -- Bump this if you need newer packages from Hackage
-  , hackage.haskell.org 2025-05-22T12:39:42Z
+  , hackage.haskell.org 2025-06-17T07:53:04Z
 
   -- Bump this if you need newer packages from CHaP
   , cardano-haskell-packages 2025-02-15T18:39:38Z
 
 packages: ./cardano-ping
           ./monoidal-synchronisation
-          ./quickcheck-monoids
           ./network-mux
           ./ouroboros-network
           ./ouroboros-network-api
@@ -54,3 +53,7 @@ package network-mux
 
 package ouroboros-network
   flags: +asserts +cddl
+
+allow-newer: aeson:QuickCheck,
+             tree-diff:QuickCheck,
+             quickcheck-instances:QuickCheck

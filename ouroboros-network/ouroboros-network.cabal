@@ -340,7 +340,6 @@ library testlib
     pipes,
     pretty-simple,
     psqueues,
-    quickcheck-monoids,
     random,
     serialise,
     tasty,

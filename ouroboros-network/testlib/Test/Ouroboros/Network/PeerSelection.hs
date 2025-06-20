@@ -105,7 +105,6 @@ import Cardano.Network.Types (LedgerStateJudgement (..),
            NumberOfBigLedgerPeers (..))
 import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..))
 import Test.QuickCheck
-import Test.QuickCheck.Monoids
 import Test.Tasty
 import Test.Tasty.QuickCheck
 import Text.Pretty.Simple
@@ -241,8 +240,8 @@ prop_peerSelectionView_sizes env =
     in property $
        foldMap (\(_, TraceGovernorState _ _ st) ->
                      let view = peerSelectionStateToView Cardano.ExtraPeers.toSet Cardano.ExtraSizes.cardanoPeerSelectionStatetoCounters st in
-                        All (viewInvariant (fst <$> view))
-                     <> All (viewSizeInvariant view))
+                        Every (viewInvariant (fst <$> view))
+                     <> Every (viewSizeInvariant view))
                evs
   where
     viewInvariant :: PeerSelectionView (Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr) (Set PeerAddr)
@@ -4260,19 +4259,19 @@ prop_governor_repromote_delay (MaxTime maxTime) env =
       . foldMap (\case
                    TraceDemoteAsynchronous m ->
                      foldMap
-                       (\(st, mx) -> maybe mempty (\x -> All
+                       (\(st, mx) -> maybe mempty (\x -> Every
                                                    $ counterexample (show st)
                                                    $ x =/= config_REPROMOTE_DELAY) mx)
                        m
                    TraceDemoteLocalAsynchronous m ->
                      foldMap
-                       (\(st, mx) -> maybe mempty (\x -> All
+                       (\(st, mx) -> maybe mempty (\x -> Every
                                                    $ counterexample (show st)
                                                    $ x =/= config_REPROMOTE_DELAY) mx)
                        m
                    TraceDemoteBigLedgerPeersAsynchronous m ->
                      foldMap
-                       (\(st, mx) -> maybe mempty (\x -> All
+                       (\(st, mx) -> maybe mempty (\x -> Every
                                                    $ counterexample (show st)
                                                    $ x =/= config_REPROMOTE_DELAY) mx)
                        m

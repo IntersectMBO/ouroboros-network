@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DeriveTraversable          #-}
 {-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
@@ -86,6 +87,7 @@ import Data.Kind (Type)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import NoThunks.Class (NoThunks)
+import Quiet
 
 import Cardano.Slotting.Block
 import Cardano.Slotting.Slot (SlotNo (..))
@@ -211,7 +213,8 @@ newtype Point block = Point
 
 deriving newtype instance StandardHash block => Eq       (Point block)
 deriving newtype instance StandardHash block => Ord      (Point block)
-deriving newtype instance StandardHash block => Show     (Point block)
+deriving via (Quiet (Point block))
+                 instance StandardHash block => Show     (Point block)
 deriving newtype instance StandardHash block => NoThunks (Point block)
 
 instance ShowProxy block => ShowProxy (Point block) where

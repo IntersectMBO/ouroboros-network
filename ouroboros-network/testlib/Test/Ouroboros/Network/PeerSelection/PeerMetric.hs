@@ -46,7 +46,6 @@ import NoThunks.Class
 import Test.Ouroboros.Network.Data.Script
 
 import Test.QuickCheck
-import Test.QuickCheck.Monoids
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
 
@@ -258,8 +257,8 @@ prop_insert_peer script =
             FixedScript (Script (a :| _)) -> eventSlot a
 
     go :: (Maybe PeerMetricsTrace, PeerMetricsTrace)
-       -> All
-    go (Nothing, _) = All True
+       -> Every
+    go (Nothing, _) = Every True
     go (Just prev, res@PeerMetricsTrace { pmtPeer             = peer,
                                           pmtUpstreamyness    = upstreamynessResults,
                                           pmtFetchynessBytes  = fetchynessBytesResults,
@@ -269,13 +268,13 @@ prop_insert_peer script =
       if peer `Map.member` pmtUpstreamyness prev
       || peer `Map.member` pmtFetchynessBytes prev
       || peer `Map.member` pmtFetchynessBlocks prev
-      then All True
-      else All ( counterexample (show (res, prev))
-               $ checkResult "upstreamyness"    peer joinedAtResults upstreamynessResults)
-        <> All ( counterexample (show (res ,prev))
-               $ checkResult "fetchynessBytes"  peer joinedAtResults fetchynessBytesResults)
-        <> All ( counterexample (show (res, prev))
-               $ checkResult "fetchynessBlocks" peer joinedAtResults fetchynessBlocksResults)
+      then Every True
+      else Every ( counterexample (show (res, prev))
+                 $ checkResult "upstreamyness"    peer joinedAtResults upstreamynessResults)
+        <> Every ( counterexample (show (res ,prev))
+                 $ checkResult "fetchynessBytes"  peer joinedAtResults fetchynessBytesResults)
+        <> Every ( counterexample (show (res, prev))
+                 $ checkResult "fetchynessBlocks" peer joinedAtResults fetchynessBlocksResults)
 
     -- check that the peer is not in 20% worst peers, but only if there are more
     -- than 5 results.
@@ -350,22 +349,22 @@ prop_metrics_are_bounded script =
           Script as -> as
 
 
-    go :: PeerMetricsTrace -> All
+    go :: PeerMetricsTrace -> Every
     go PeerMetricsTrace { pmtUpstreamyness,
                           pmtFetchynessBytes,
                           pmtFetchynessBlocks
                         } =
-         foldMap (\a -> All
+         foldMap (\a -> Every
                       $ counterexample
                           (show ("upstreameness", a, bound, pmtUpstreamyness))
                           (a >= 0))
                  pmtUpstreamyness
-      <> foldMap (\a -> All
+      <> foldMap (\a -> Every
                       $ counterexample
                           (show ("fetchynessBytes", a, fetchyness_bytes_bound, pmtFetchynessBytes))
                           (a >= 0 && a <= fetchyness_bytes_bound))
                  pmtFetchynessBytes
-      <> foldMap (\a -> All
+      <> foldMap (\a -> Every
                       $ counterexample
                           (show ("fetchynessBlocks", a, bound))
                           (a >= 0))
@@ -401,32 +400,32 @@ prop_bounded_size (Positive maxEntriesToTrack) script =
     bound :: Int
     bound = maxEntriesToTrack * number_of_peers
 
-    go :: PeerMetricsTrace -> All
+    go :: PeerMetricsTrace -> Every
     go PeerMetricsTrace {
            pmtUpstreamyness,
            pmtFetchynessBytes,
            pmtFetchynessBlocks
-         } = All ( counterexample
+         } = Every ( counterexample
                      (    "upstreamyness: "
                        ++ show (Map.size pmtUpstreamyness)
                        ++ " ≰ "
                        ++ show maxEntriesToTrack )
                      ( Map.size pmtUpstreamyness <= bound )
-                 )
-          <> All ( counterexample
+                   )
+          <> Every ( counterexample
                      (    "fetchynessBytes: "
                        ++ show (Map.size pmtFetchynessBytes)
                        ++ " ≰ "
                        ++ show maxEntriesToTrack)
                      ( Map.size pmtFetchynessBytes <= bound )
-                 )
-          <> All ( counterexample
+                   )
+          <> Every ( counterexample
                      (    "fetchynessBlocks: "
                        ++ show (Map.size pmtFetchynessBlocks)
                        ++ " ≰ "
                        ++ show maxEntriesToTrack)
                      ( Map.size pmtFetchynessBlocks <= bound )
-                 )
+                   )
 
 --
 -- The following are focused on creating micro-benchmarks
@@ -470,12 +469,12 @@ prop_simScript script =
     trace :: [PeerMetricsTrace]
     trace = selectTraceEventsDynamic (runSimTrace sim)
 
-    go :: PeerMetricsTrace -> All
+    go :: PeerMetricsTrace -> Every
     go PeerMetricsTrace { pmtUpstreamyness,
                           pmtFetchynessBytes=_,
                           pmtFetchynessBlocks=_
                         } =
-         foldMap (\a -> All
+         foldMap (\a -> Every
                       $ counterexample
                           (show ("upstreamyness", a, pmtUpstreamyness))
                           (a >= 0))

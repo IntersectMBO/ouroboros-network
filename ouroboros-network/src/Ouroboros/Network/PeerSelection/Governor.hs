@@ -735,7 +735,7 @@ wakeupDecision :: PeerSelectionState extraState extraFlags extraPeers peeraddr p
 wakeupDecision st _now =
   Decision {
     decisionTrace = [TraceGovernorWakeup],
-    decisionState = st { stdGen = fst (split (stdGen st)) } ,
+    decisionState = st { stdGen = fst (splitGen (stdGen st)) } ,
     decisionJobs  = []
   }
 

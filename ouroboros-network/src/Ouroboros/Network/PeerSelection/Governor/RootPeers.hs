@@ -74,7 +74,7 @@ belowTarget actions@PeerSelectionActions {
                            targetNumberOfRootPeers
                            numRootPeers],
         decisionState = st { inProgressPublicRootsReq = True
-                           , stdGen = fst . split $ stdGen },
+                           , stdGen = fst . splitGen $ stdGen },
         decisionJobs  = [jobReqPublicRootPeers actions stdGen maxExtraRootPeers]
       }
 

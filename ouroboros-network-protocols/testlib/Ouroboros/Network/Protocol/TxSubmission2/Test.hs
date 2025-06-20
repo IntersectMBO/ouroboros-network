@@ -53,6 +53,7 @@ import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Test.Data.CDDL (Any (..))
 import Test.Ouroboros.Network.Protocol.Utils (prop_codec_cborM,
            prop_codec_valid_cbor_encoding, splits2, splits3)
+import Test.Ouroboros.Network.Utils (renderRanges)
 
 import Control.DeepSeq
 import GHC.Generics
@@ -77,7 +78,7 @@ tests =
         , testProperty "codec"               prop_codec
         , testProperty "codec id"            prop_codec_id
         , testProperty "codec 2-splits"      prop_codec_splits2
-        , testProperty "codec 3-splits"    $ withMaxSuccess 30
+        , testProperty "codec 3-splits"    $ withMaxSize 10
                                              prop_codec_splits3
         , testProperty "codec cbor"          prop_codec_cbor
         , testProperty "codec valid cbor"    prop_codec_valid_cbor
@@ -338,8 +339,9 @@ prop_codec_splits2 msg =
 
 -- | Check for data chunk boundary problems in the codec using 3 chunks.
 --
-prop_codec_splits3 :: AnyMessage (TxSubmission2 TxId Tx) -> Bool
+prop_codec_splits3 :: AnyMessage (TxSubmission2 TxId Tx) -> Property
 prop_codec_splits3 msg =
+  labelMsg msg $
   runST (prop_codec_splitsM splits3 codec_v2 msg)
 
 prop_codec_cbor
@@ -389,3 +391,14 @@ instance (Eq a, Arbitrary a) => Arbitrary (DistinctList a) where
   shrink (DistinctList xs) =
     [ DistinctList (nub xs') | xs' <- shrink xs ]
 
+
+labelMsg :: AnyMessage (TxSubmission2 txid tx) -> Bool -> Property
+labelMsg (AnyMessage msg) =
+  label (case msg of
+           MsgInit            -> "MsgInit"
+           MsgRequestTxIds {} -> "MsgRequestTxIds"
+           MsgReplyTxIds as   -> "MsgReplyTxIds " ++ renderRanges 3 (length as)
+           MsgRequestTxs as   -> "MsgRequestTxs " ++ renderRanges 3 (length as)
+           MsgReplyTxs as     -> "MsgReplyTxs " ++ renderRanges 3 (length as)
+           MsgDone            -> "MsgDone"
+        )

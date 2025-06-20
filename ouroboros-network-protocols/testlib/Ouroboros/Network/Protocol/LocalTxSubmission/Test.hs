@@ -67,7 +67,7 @@ tests =
         , testProperty "connect"             prop_connect
         , testProperty "codec"               prop_codec
         , testProperty "codec 2-splits"      prop_codec_splits2
-        , testProperty "codec 3-splits"    $ withMaxSuccess 30
+        , testProperty "codec 3-splits"    $ withMaxSize 30
                                              prop_codec_splits3
         , testProperty "codec cbor"          prop_codec_cbor
         , testProperty "codec valid cbor"    prop_codec_valid_cbor
@@ -253,8 +253,9 @@ prop_codec_splits2 msg =
 
 -- | Check for data chunk boundary problems in the codec using 3 chunks.
 --
-prop_codec_splits3 :: AnyMessage (LocalTxSubmission Tx Reject) -> Bool
+prop_codec_splits3 :: AnyMessage (LocalTxSubmission Tx Reject) -> Property
 prop_codec_splits3 msg =
+  labelMsg msg $
   runST (prop_codec_splitsM splits3 codec msg)
 
 prop_codec_cbor
@@ -269,3 +270,12 @@ prop_codec_valid_cbor
   :: AnyMessage (LocalTxSubmission Tx Reject)
   -> Property
 prop_codec_valid_cbor = prop_codec_valid_cbor_encoding codec
+
+labelMsg :: AnyMessage (LocalTxSubmission txid tx) -> Bool -> Property
+labelMsg (AnyMessage msg) =
+  label (case msg of
+          MsgSubmitTx {} -> "MsgSubmitTx"
+          MsgAcceptTx {} -> "MsgAcceptTx"
+          MsgRejectTx {} -> "MsgRejectTx"
+          MsgDone        -> "MsgDone"
+        )

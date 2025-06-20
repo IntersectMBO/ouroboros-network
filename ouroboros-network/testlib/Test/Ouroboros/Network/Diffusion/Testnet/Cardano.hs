@@ -100,7 +100,6 @@ import Simulation.Network.Snocket (BearerInfo (..))
 
 import Cardano.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Test.QuickCheck
-import Test.QuickCheck.Monoids
 import Test.Tasty
 import Test.Tasty.QuickCheck (testProperty)
 
@@ -3364,7 +3363,7 @@ prop_diffusion_cm_valid_transitions ioSimTrace traceNumber =
                        ++ List.intercalate "\n" (map ppTransition trs))
                        )
                    . foldMap ( \ tr
-                              -> All
+                              -> Every
                                . (counterexample $!
                                    (  "\nUnexpected transition: "
                                    ++ show tr)
@@ -4049,7 +4048,7 @@ unit_peer_sharing =
 
         verify :: NtNAddr
                -> [TracePeerSelection extraDebugState extraFlags extraPeers NtNAddr]
-               -> All
+               -> Every
         verify addr as | addr == ip_2 =
           let receivedPeers :: Set NtNAddr
               receivedPeers =
@@ -4060,13 +4059,13 @@ unit_peer_sharing =
                                                                        ]
                               _ -> Nothing)
                 $          as
-          in All $
+          in Every $
              counterexample (concat [ show ip_0
                                     , " is not a member of received peers "
                                     , show receivedPeers
                                     ]) $
              ip_0 `Set.member` receivedPeers
-        verify _ _ = All True
+        verify _ _ = Every True
 
     in
       -- counterexample (ppEvents trace) $
@@ -4421,9 +4420,9 @@ prop_diffusion_ig_valid_transitions ioSimTrace traceNumber =
 
        in  property
          . bifoldMap
-            ( \ _ -> All True )
+            ( \ _ -> Every True )
             ( \ TransitionTrace {ttPeerAddr = peerAddr, ttTransition = tr} ->
-                  All
+                  Every
                 . counterexample (concat [ "Unexpected transition: "
                                          , show peerAddr
                                          , " "
@@ -4602,7 +4601,7 @@ unit_local_root_diffusion_mode diffusionMode =
               @NtNAddr
           . Trace.take long_trace
           $ runSimTrace sim
-    in property $ foldMap (\versionData -> All $ ntnDiffusionMode versionData === diffusionMode) events
+    in property $ foldMap (\versionData -> Every $ ntnDiffusionMode versionData === diffusionMode) events
   where
     addr, addr' :: NtNAddr
     addr  = TestAddress (IPAddr (read "127.0.0.2") 1000)
@@ -4696,11 +4695,11 @@ prop_no_peershare_unwilling ioSimTrace traceNumber =
             case fromException err of
               -- Technically we fail on more than the peersharing protocol.
               -- Which is fine.
-              Just (Mx.UnknownMiniProtocol num) -> All
+              Just (Mx.UnknownMiniProtocol num) -> Every
                                                  $ counterexample (show num) False
-              Just _                            -> All True
-              Nothing                           -> All True
-          _                                     -> All True
+              Just _                            -> Every True
+              Nothing                           -> Every True
+          _                                     -> Every True
           )
           events
 

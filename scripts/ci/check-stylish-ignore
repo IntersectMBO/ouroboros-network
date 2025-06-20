@@ -8,3 +8,4 @@ network-mux/src/Network/Mux/TCPInfo.hs
 network-mux/src/Network/Mux/Bearer.hs
 network-mux/src/Network/Mux/Bearer/Pipe.hs
 network-mux/src/Network/Mux/Channel.hs
+quickcheck-monoids/src/Test/QuickCheck/Monoids.hs

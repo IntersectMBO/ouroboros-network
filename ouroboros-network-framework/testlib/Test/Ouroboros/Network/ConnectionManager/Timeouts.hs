@@ -38,9 +38,7 @@ import Data.Monoid (Sum (Sum))
 
 import Text.Printf (printf)
 
-import Test.QuickCheck (Arbitrary (..), Property, choose, counterexample, cover,
-           frequency, label, property, shrink, tabulate, (.&&.))
-import Test.QuickCheck.Monoids (All (..))
+import Test.QuickCheck
 
 import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
@@ -54,16 +52,16 @@ import Ouroboros.Network.Snocket qualified as Snocket
 verifyAllTimeouts :: Show addr
                   => Bool
                   -> Trace (SimResult ()) [(Time, AbstractTransitionTrace addr)]
-                  -> All
+                  -> Every
 verifyAllTimeouts inDiffusion =
   bifoldMap
    ( \ case
        MainReturn {} -> mempty
-       v             -> All
+       v             -> Every
                      $ counterexample (show v) False
    )
    (\ tr ->
-     All
+       Every
      $ counterexample ("\nConnection transition trace:\n"
                      ++ intercalate "\n" (map show tr)
                      )
