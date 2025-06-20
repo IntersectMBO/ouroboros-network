@@ -156,7 +156,6 @@ test-suite sim-tests
     Test.Ouroboros.Network.RateLimiting
     Test.Ouroboros.Network.RawBearer
     Test.Ouroboros.Network.Server.Sim
-    Test.Ouroboros.Network.Socket
     Test.Simulation.Network.Snocket
 
   build-depends:
@@ -186,7 +185,6 @@ test-suite sim-tests
     tasty,
     tasty-quickcheck,
     text,
-    time,
     typed-protocols:{typed-protocols, cborg, examples},
     with-utf8,
 
