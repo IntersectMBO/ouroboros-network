@@ -6,6 +6,7 @@ let
   inherit (prev) pkgs;
   inherit (final) haskell-nix;
   buildSystem = pkgs.buildPlatform.system;
+  onLinux = buildSystem == "x86_64-linux";
 
   # default compiler used on all systems, also provided within the shell
   defaultCompiler = "ghc982";
@@ -102,6 +103,9 @@ let
         # pkgs are instantiated for the host platform
         packages.ouroboros-network-protocols.components.tests.cddl.build-tools = [ pkgs.cddl pkgs.cbor-diag pkgs.cddlc ];
         packages.ouroboros-network-protocols.components.tests.cddl.preCheck = "export HOME=`pwd`";
+
+        packages.ouroboros-network-framework.components.tests.sim-tests.doCheck = onLinux;
+        packages.ouroboros-network.components.tests.sim-tests.doCheck = onLinux;
 
         # don't run checks using Wine when cross compiling
         packages.network-mux.components.tests.test.preCheck =
