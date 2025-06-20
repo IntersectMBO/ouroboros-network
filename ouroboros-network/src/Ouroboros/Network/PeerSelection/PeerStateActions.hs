@@ -38,6 +38,7 @@ import Control.Monad (when, (<=<))
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 
 import Control.Concurrent.JobPool (Job (..), JobPool)
@@ -428,11 +429,12 @@ awaitAllResults tok bundle = do
 -- together with their state 'StrictTVar's.
 --
 data PeerConnectionHandle (muxMode :: Mux.Mode) responderCtx peerAddr versionData bytes m a b = PeerConnectionHandle {
-    pchConnectionId :: ConnectionId peerAddr,
-    pchPeerStatus   :: StrictTVar m PeerStatus,
-    pchMux          :: Mux.Mux muxMode m,
-    pchAppHandles   :: TemperatureBundle (ApplicationHandle muxMode responderCtx peerAddr bytes m a b),
-    pchVersionData  :: !versionData
+    pchConnectionId :: !(ConnectionId peerAddr),
+    pchPeerStatus   :: !(StrictTVar m PeerStatus),
+    pchMux          :: !(Mux.Mux muxMode m),
+    pchAppHandles   :: !(TemperatureBundle (ApplicationHandle muxMode responderCtx peerAddr bytes m a b)),
+    pchVersionData  :: !versionData,
+    pchStartTime    :: !Time
   }
 
 mkInitiatorContext :: MonadSTM m
@@ -768,6 +770,7 @@ withPeerStateActions PeerStateActionsArguments {
                 writeTVar (projectBundle SingEstablished controlMessageBundle) Continue
 
               awaitVarBundle <- atomically $ mkAwaitVars muxBundle
+              pchStartTime   <- getMonotonicTime
 
               let connHandle =
                     PeerConnectionHandle {
@@ -778,7 +781,8 @@ withPeerStateActions PeerStateActionsArguments {
                                             muxBundle
                                             controlMessageBundle
                                             awaitVarBundle,
-                        pchVersionData  = versionData
+                        pchVersionData  = versionData,
+                        pchStartTime
                       }
 
               startProtocols SingWarm isBigLedgerPeer connHandle
@@ -1021,7 +1025,8 @@ withPeerStateActions PeerStateActionsArguments {
             pchConnectionId,
             pchPeerStatus,
             pchAppHandles,
-            pchMux
+            pchMux,
+            pchStartTime
           } = do
       atomically $ do
         writeTVar (getControlVar SingWarm pchAppHandles) Terminate
@@ -1039,7 +1044,10 @@ withPeerStateActions PeerStateActionsArguments {
                     <$> awaitAllResults SingHot pchAppHandles
                     <*> awaitAllResults SingWarm pchAppHandles
                     <*> awaitAllResults SingEstablished pchAppHandles)
-      case res of
+
+      now <- getMonotonicTime
+      let dt = now `diffTime` pchStartTime
+      traceWith spsTracer (PeerOutboundDuration pchConnectionId dt) *> case res of
         Nothing -> do
           -- timeout fired
           Mux.stop pchMux
@@ -1206,4 +1214,5 @@ data PeerSelectionActionsTrace peerAddr vNumber =
     | PeerMonitoringError     (ConnectionId peerAddr) SomeException
     | PeerMonitoringResult    (ConnectionId peerAddr) (Maybe (WithSomeProtocolTemperature FirstToFinishResult))
     | AcquireConnectionError  SomeException
+    | PeerOutboundDuration    !(ConnectionId peerAddr) !DiffTime
   deriving Show

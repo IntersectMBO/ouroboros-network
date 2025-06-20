@@ -1571,7 +1571,7 @@ prop_inbound_governor_no_unsupported_state (Fixed rnd) serverAcc (ArbDataFlow da
         ( \ tr -> case tr of
             -- verify that 'unregisterInboundConnection' does not return
             -- 'UnsupportedState'.
-            IG.TrDemotedToColdRemote _ res ->
+            IG.TrDemotedToColdRemote _ _ res ->
               case res of
                 UnsupportedState {}
                   -> All (counterexample (show tr) False)
@@ -2007,7 +2007,7 @@ prop_inbound_governor_pruning (Fixed rnd) serverAcc
              case tr of
                -- verify that 'unregisterInboundConnection' does not return
                -- 'UnsupportedState'.
-               IG.TrDemotedToColdRemote _ res ->
+               IG.TrDemotedToColdRemote _ _ res ->
                  case res of
                    UnsupportedState {} ->
                      All

@@ -1266,6 +1266,8 @@ prop_peer_selection_action_trace_coverage defaultBearerInfo diffScript =
         = "AcquireConnectionError: " ++ show (ioe_type ioe)
         | otherwise
         = "AcquireConnectionError: " ++ show e
+      peerSelectionActionsTraceMap (PeerOutboundDuration _id _dt) =
+        "PeerOutboundDuration"
 
       eventsSeenNames = map peerSelectionActionsTraceMap events
 
@@ -3984,7 +3986,8 @@ prop_diffusion_peer_selection_actions_no_dodgy_traces ioSimTrace traceNumber =
                 WithTime _ (PeerStatusChangeFailure type_ _) -> getConnId type_
                 WithTime _ (PeerMonitoringError connId _)    -> Just connId
                 WithTime _ (PeerMonitoringResult connId _)   -> Just connId
-                WithTime _ (AcquireConnectionError _)        -> Nothing)
+                WithTime _ (AcquireConnectionError _)        -> Nothing
+                WithTime _ (PeerOutboundDuration connId _)   -> Just connId)
          $ peerSelectionActionsEvents
          )
 
