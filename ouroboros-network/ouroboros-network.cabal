@@ -154,7 +154,7 @@ library
     dlist,
     dns,
     hashable,
-    io-classes:{io-classes, mtl, si-timers, strict-stm} ^>=1.8,
+    io-classes:{io-classes, mtl, si-timers, strict-stm} ^>=1.8.0.1,
     iproute,
     monoidal-synchronisation,
     mtl,

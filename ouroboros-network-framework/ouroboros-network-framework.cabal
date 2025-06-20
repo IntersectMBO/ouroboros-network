@@ -73,7 +73,7 @@ library
     contra-tracer,
     deepseq,
     hashable,
-    io-classes:{io-classes, si-timers, strict-stm} ^>=1.8,
+    io-classes:{io-classes, si-timers, strict-stm} ^>=1.8.0.1,
     monoidal-synchronisation ^>=0.1.0.6,
     network ^>=3.2.7,
     network-mux ^>=0.8.0.1,
