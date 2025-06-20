@@ -30,6 +30,7 @@ module Ouroboros.Network.Diffusion.Types
     -- * Re-exports
   , AbstractTransitionTrace
   , IG.RemoteTransitionTrace
+  , SRVPrefix
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -374,6 +375,10 @@ data Arguments extraState extraDebugState extraFlags extraPeers
     -- | Provide extraChurnArgs to be passed to churn governor
     --
   , daExtraChurnArgs :: extraChurnArgs
+
+    -- | SRV Prefix, as defined in CIP#0155
+    --
+  , daSRVPrefix :: SRVPrefix
   }
 
 -- | Required Diffusion Arguments to run network layer

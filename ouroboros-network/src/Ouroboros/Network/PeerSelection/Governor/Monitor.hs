@@ -40,7 +40,9 @@ import Ouroboros.Network.PeerSelection.Governor.Types hiding
            (PeerSelectionCounters)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeerSnapshot (..), LedgerPeersConsensusInterface (..),
-           compareLedgerPeerSnapshotApproximate)
+           SRVPrefix, compareLedgerPeerSnapshotApproximate,
+           getRelayAccessPointsFromLedger,
+           getRelayAccessPointsFromLedgerPeerSnapshot)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
@@ -410,16 +412,19 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
 -- ledger state once the node catches up to the slot at which the
 -- snapshot was ostensibly taken
 --
-jobVerifyPeerSnapshot :: ( MonadSTM m )
-                      => LedgerPeerSnapshot
+jobVerifyPeerSnapshot :: MonadSTM m
+                      => SRVPrefix
+                      -> LedgerPeerSnapshot
                       -> LedgerPeersConsensusInterface extraAPI m
                       -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
-jobVerifyPeerSnapshot baseline@(LedgerPeerSnapshot (slot, _))
-                      LedgerPeersConsensusInterface {
-                        lpGetLatestSlot,
-                        lpGetLedgerPeers }
+jobVerifyPeerSnapshot srvPrefix
+                      ledgerPeerSnapshot
+                      ledgerCtx@LedgerPeersConsensusInterface { lpGetLatestSlot }
   = Job job (const (completion False)) () "jobVerifyPeerSnapshot"
   where
+    (slot, snapshotPeers) =
+      getRelayAccessPointsFromLedgerPeerSnapshot srvPrefix ledgerPeerSnapshot
+
     completion result = return . Completion $ \st _now ->
       Decision {
         decisionTrace = [TraceVerifyPeerSnapshot result],
@@ -430,9 +435,10 @@ jobVerifyPeerSnapshot baseline@(LedgerPeerSnapshot (slot, _))
       ledgerPeers <-
         atomically $ do
           check . (>= slot) =<< lpGetLatestSlot
-          accumulateBigLedgerStake <$> lpGetLedgerPeers
-      let candidate = LedgerPeerSnapshot (slot, ledgerPeers) -- ^ slot here is intentional
-      completion $ compareLedgerPeerSnapshotApproximate baseline candidate
+          accumulateBigLedgerStake <$> getRelayAccessPointsFromLedger srvPrefix ledgerCtx
+      completion $ snapshotPeers
+                   `compareLedgerPeerSnapshotApproximate`
+                   ledgerPeers
 
 -- |This job monitors for any changes in the big ledger peer snapshot
 -- and flips ledger state judgement private state so that monitoring action

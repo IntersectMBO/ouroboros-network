@@ -332,6 +332,7 @@ run blockGeneratorArgs limits ni na
               , Diffusion.daRequestPublicRootPeers            = Just requestPublicRootPeers
               , Diffusion.daPeerChurnGovernor                 = peerChurnGovernor
               , Diffusion.daExtraChurnArgs                    = aExtraChurnArgs na
+              , Diffusion.daSRVPrefix                         = "_cardano._tcp"
               }
 
             apps = Node.applications

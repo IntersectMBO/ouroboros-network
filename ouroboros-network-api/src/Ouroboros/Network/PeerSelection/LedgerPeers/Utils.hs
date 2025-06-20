@@ -1,5 +1,6 @@
-{-# LANGUAGE BangPatterns     #-}
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module Ouroboros.Network.PeerSelection.LedgerPeers.Utils
   ( bigLedgerPeerQuota
@@ -18,7 +19,6 @@ import Data.Ord (Down (..))
 import Data.Ratio ((%))
 
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-import Ouroboros.Network.PeerSelection.RelayAccessPoint
 
 -- | The total accumulated stake of big ledger peers.
 --
@@ -29,8 +29,10 @@ bigLedgerPeerQuota = 0.9
 -- and tag each one with cumulative stake, with a cutoff
 -- at 'bigLedgerPeerQuota'
 --
-accumulateBigLedgerStake :: [(PoolStake, NonEmpty RelayAccessPoint)]
-                         -> [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))]
+accumulateBigLedgerStake
+  :: forall relayAccessPoint.
+     [(PoolStake, NonEmpty relayAccessPoint)]
+  -> [(AccPoolStake, (PoolStake, NonEmpty relayAccessPoint))]
 accumulateBigLedgerStake =
     takeWhilePrev (\(acc, _) -> acc <= bigLedgerPeerQuota)
     . go 0
@@ -45,8 +47,8 @@ accumulateBigLedgerStake =
 
     -- natural fold
     go :: AccPoolStake
-       -> [(PoolStake, NonEmpty RelayAccessPoint)]
-       -> [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))]
+       -> [(PoolStake, NonEmpty relayAccessPoint)]
+       -> [(AccPoolStake, (PoolStake, NonEmpty relayAccessPoint))]
     go _acc [] = []
     go !acc (a@(s, _) : as) =
       let acc' = acc + AccPoolStake (unPoolStake s)
@@ -55,9 +57,10 @@ accumulateBigLedgerStake =
 -- | Not all stake pools have valid \/ usable relay information. This means that
 -- we need to recalculate the relative stake for each pool.
 --
-recomputeRelativeStake :: LedgerPeersKind
-                -> [(PoolStake, NonEmpty RelayAccessPoint)]
-                -> [(PoolStake, NonEmpty RelayAccessPoint)]
+recomputeRelativeStake
+  :: LedgerPeersKind
+  -> [(PoolStake, NonEmpty relayAccessPoint)]
+  -> [(PoolStake, NonEmpty relayAccessPoint)]
 recomputeRelativeStake ledgerPeersKind pl =
     let pl'   = first adjustment <$> pl
         total = List.foldl' (+) 0 (fst <$> pl')
