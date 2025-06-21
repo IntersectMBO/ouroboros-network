@@ -40,18 +40,6 @@ deactivateTimeout = 300
 closeConnectionTimeout :: DiffTime
 closeConnectionTimeout = 120
 
-
--- | Chain sync `mustReplayTimeout` lower bound.
---
-minChainSyncTimeout :: DiffTime
-minChainSyncTimeout = 135
-
-
--- | Chain sync `mustReplayTimeout` upper bound.
---
-maxChainSyncTimeout :: DiffTime
-maxChainSyncTimeout = 269
-
 -- | Churn timeouts after 60s trying to establish a connection.
 --
 -- This doesn't mean the connection is terminated after it, just churns moves

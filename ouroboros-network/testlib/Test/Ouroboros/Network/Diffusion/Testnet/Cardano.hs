@@ -350,7 +350,6 @@ unit_cm_valid_transitions =
             [ ( NodeArgs
                   (-2)
                   InitiatorAndResponderDiffusionMode
-                  (Just 269)
                   (Map.fromList [(RelayAccessAddress "0:71:0:1:0:1:0:1" 65_534,
                                   DoAdvertisePeer)])
                   GenesisMode
@@ -393,7 +392,6 @@ unit_cm_valid_transitions =
               , ( NodeArgs
                   0
                   InitiatorAndResponderDiffusionMode
-                  (Just 90)
                   Map.empty
                   GenesisMode
                   (Script (DontUseBootstrapPeers :| []))
@@ -569,7 +567,6 @@ unit_connection_manager_trace_coverage =
           (NodeArgs {
              naSeed = 0,
              naDiffusionMode = InitiatorAndResponderDiffusionMode,
-             naMbTime = Just 224,
              naPublicRoots = Map.empty,
              naConsensusMode = PraosMode,
              naBootstrapPeers = Script (DontUseBootstrapPeers :| []),
@@ -599,7 +596,6 @@ unit_connection_manager_trace_coverage =
           (NodeArgs {
              naSeed = 0,
              naDiffusionMode = InitiatorAndResponderDiffusionMode,
-             naMbTime = Just 224,
              naPublicRoots = Map.empty,
              naConsensusMode = PraosMode,
              naBootstrapPeers = Script (DontUseBootstrapPeers :| []),
@@ -693,7 +689,6 @@ unit_connection_manager_transitions_coverage =
           (NodeArgs {
              naSeed = 0,
              naDiffusionMode = InitiatorAndResponderDiffusionMode,
-             naMbTime = Just 224,
              naPublicRoots = Map.empty,
              naConsensusMode = PraosMode,
              naBootstrapPeers = Script (DontUseBootstrapPeers :| []),
@@ -723,7 +718,6 @@ unit_connection_manager_transitions_coverage =
           (NodeArgs {
              naSeed = 0,
              naDiffusionMode = InitiatorAndResponderDiffusionMode,
-             naMbTime = Just 224,
              naPublicRoots = Map.empty,
              naConsensusMode = PraosMode,
              naBootstrapPeers = Script (DontUseBootstrapPeers :| []),
@@ -1015,7 +1009,7 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
     script =
       DiffusionScript (SimArgs 1 10)
         (singletonTimedScript Map.empty)
-        [ ( NodeArgs (-6) InitiatorAndResponderDiffusionMode (Just 180)
+        [ ( NodeArgs (-6) InitiatorAndResponderDiffusionMode
               (Map.fromList [(RelayAccessDomain "test2" 65_535, DoAdvertisePeer)])
               PraosMode
               (Script (UseBootstrapPeers [RelayAccessDomain "bootstrap" 0] :| []))
@@ -1046,7 +1040,7 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
             ,Reconfigure 4.870_967_741_935 [(1,1,Map.fromList [(RelayAccessDomain "test2" 65_535,LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])]
             ]
           )
-        , ( NodeArgs 1 InitiatorAndResponderDiffusionMode (Just 135)
+        , ( NodeArgs 1 InitiatorAndResponderDiffusionMode
              (Map.fromList [(RelayAccessAddress "0:7:0:7::" 65_533, DoAdvertisePeer)])
              PraosMode
               (Script (UseBootstrapPeers [RelayAccessDomain "bootstrap" 0] :| []))
@@ -1671,7 +1665,6 @@ unit_4191 = testWithIOSim prop_diffusion_dns_can_recover long_trace absInfo scri
         [(NodeArgs
             16
             InitiatorAndResponderDiffusionMode
-            (Just 224)
             Map.empty
             PraosMode
             (Script (UseBootstrapPeers [RelayAccessDomain "bootstrap" 0] :| []))
@@ -1787,7 +1780,6 @@ prop_connect_failure (AbsIOError ioerr) =
         [ (NodeArgs {
             naSeed = 0,
             naDiffusionMode = InitiatorAndResponderDiffusionMode,
-            naMbTime = Just 224,
             naPublicRoots = Map.empty,
             naConsensusMode = PraosMode,
             naBootstrapPeers = Script (DontUseBootstrapPeers :| []),
@@ -1816,7 +1808,6 @@ prop_connect_failure (AbsIOError ioerr) =
           (NodeArgs {
             naSeed = 0,
             naDiffusionMode = InitiatorAndResponderDiffusionMode,
-            naMbTime = Just 224,
             naPublicRoots = Map.empty,
             naConsensusMode = PraosMode,
             naBootstrapPeers = Script (DontUseBootstrapPeers :| []),
@@ -1913,7 +1904,6 @@ prop_accept_failure (AbsIOError ioerr) =
         [ (NodeArgs {
             naSeed = 0,
             naDiffusionMode = InitiatorAndResponderDiffusionMode,
-            naMbTime = Just 224,
             naPublicRoots = Map.empty,
             naConsensusMode = PraosMode,
             naBootstrapPeers = Script (DontUseBootstrapPeers :| []),
@@ -1942,7 +1932,6 @@ prop_accept_failure (AbsIOError ioerr) =
           (NodeArgs {
             naSeed = 0,
             naDiffusionMode = InitiatorAndResponderDiffusionMode,
-            naMbTime = Just 224,
             naPublicRoots = Map.empty,
             naConsensusMode = PraosMode,
             naBootstrapPeers = Script (DontUseBootstrapPeers :| []),
@@ -2969,7 +2958,6 @@ async_demotion_network_script =
     common = NodeArgs {
         naSeed             = 10,
         naDiffusionMode    = InitiatorAndResponderDiffusionMode,
-        naMbTime           = Just 1,
         naPublicRoots      = Map.empty,
         naConsensusMode    = PraosMode,
         naBootstrapPeers   = Script (UseBootstrapPeers [RelayAccessDomain "bootstrap" 0] :| []),
@@ -3548,8 +3536,8 @@ prop_unit_4258 =
       diffScript = DiffusionScript
         (SimArgs 1 10)
         (singletonTimedScript Map.empty)
-        [( NodeArgs (-3) InitiatorAndResponderDiffusionMode (Just 224)
-             Map.empty
+        [( NodeArgs (-3) InitiatorAndResponderDiffusionMode
+             (Map.fromList [])
              PraosMode
              (Script (UseBootstrapPeers [RelayAccessDomain "bootstrap" 0] :| []))
              (TestAddress (IPAddr (read "0.0.0.4") 9))
@@ -3582,7 +3570,7 @@ prop_unit_4258 =
              Reconfigure 4.190_476_190_476 []
            ]
          ),
-         ( NodeArgs (-5) InitiatorAndResponderDiffusionMode (Just 269)
+         ( NodeArgs (-5) InitiatorAndResponderDiffusionMode
              (Map.fromList [(RelayAccessAddress "0.0.0.4" 9, DoAdvertisePeer)])
              PraosMode
              (Script (UseBootstrapPeers [RelayAccessDomain "bootstrap" 0] :| []))
@@ -3654,7 +3642,6 @@ prop_unit_reconnect =
           [(NodeArgs
               (-3)
               InitiatorAndResponderDiffusionMode
-              (Just 224)
               Map.empty
               PraosMode
               (Script (DontUseBootstrapPeers :| []))
@@ -3685,7 +3672,6 @@ prop_unit_reconnect =
           , (NodeArgs
                (-1)
                InitiatorAndResponderDiffusionMode
-               (Just 2)
                Map.empty
                PraosMode
                (Script (DontUseBootstrapPeers :| []))
@@ -4110,7 +4096,6 @@ unit_peer_sharing =
     defaultNodeArgs naConsensusMode = NodeArgs {
         naSeed = 0,
         naDiffusionMode = InitiatorAndResponderDiffusionMode,
-        naMbTime = Nothing,
         naPublicRoots = mempty,
         naBootstrapPeers = singletonScript DontUseBootstrapPeers,
         naAddr = undefined,
@@ -4616,7 +4601,6 @@ unit_local_root_diffusion_mode diffusionMode =
           (NodeArgs {
              naSeed = 0,
              naDiffusionMode = InitiatorAndResponderDiffusionMode,
-             naMbTime = Just 224,
              naPublicRoots = Map.empty,
              naConsensusMode = PraosMode,
              naBootstrapPeers = Script (DontUseBootstrapPeers :| []),
@@ -4646,7 +4630,6 @@ unit_local_root_diffusion_mode diffusionMode =
           (NodeArgs {
              naSeed = 0,
              naDiffusionMode = InitiatorAndResponderDiffusionMode,
-             naMbTime = Just 224,
              naPublicRoots = Map.empty,
              naConsensusMode = PraosMode,
              naBootstrapPeers = Script (DontUseBootstrapPeers :| []),
