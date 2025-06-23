@@ -9,8 +9,7 @@ import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
 import Ouroboros.Network.ConnectionManager.Core as CM
 import Ouroboros.Network.ConnectionManager.Types
 
-import Test.QuickCheck (counterexample, property)
-import Test.QuickCheck.Monoids (All (..))
+import Test.QuickCheck
 
 
 verifyAbstractTransition :: AbstractTransition
@@ -200,31 +199,31 @@ verifyAbstractTransitionOrder :: forall a. Show a
                                       --    distinguish Diffusion layer tests
                                       --    vs non-Diffusion ones.
                               -> [a]
-                              -> All
+                              -> Every
 verifyAbstractTransitionOrder _ _ [] = mempty
 verifyAbstractTransitionOrder get checkLast (h:t) = go t h
   where
-    go :: [a] -> a -> All
+    go :: [a] -> a -> Every
     -- All transitions must end in the 'UnknownConnectionSt', and since we
     -- assume that all transitions are valid we do not have to check the
     -- 'fromState'.
     go [] a | (Transition _ UnknownConnectionSt) <- get a = mempty
     go [] a | tr@(Transition _ _) <- get a =
-      All
-        $ counterexample
-            ("\nUnexpected last transition: " ++ show tr)
-            (property (not checkLast))
+        Every
+      $ counterexample
+          ("\nUnexpected last transition: " ++ show tr)
+          (property (not checkLast))
     -- All transitions have to be in a correct order, which means that the
     -- current state we are looking at (current toState) needs to be equal to
     -- the next 'fromState', in order for the transition chain to be correct.
     go (a : as) b | (Transition nextFromState _) <- get a
                   , (Transition _ currToState) <- get b =
-         All
-           (counterexample
-              ("\nUnexpected transition order!\nWent from: "
-              ++ show b ++ "\nto: " ++ show a)
-              (property (currToState == nextFromState)))
-         <> go as a
+        Every
+          (counterexample
+             ("\nUnexpected transition order!\nWent from: "
+             ++ show b ++ "\nto: " ++ show a)
+             (property (currToState == nextFromState)))
+      <> go as a
 
 
 -- | List of all valid transition's names.

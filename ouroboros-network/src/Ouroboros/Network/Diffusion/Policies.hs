@@ -220,7 +220,7 @@ addRand :: ( MonadSTM m
 addRand rngVar available scaleFn = do
   inRng <- readTVar rngVar
 
-  let (rng, rng') = split inRng
+  let (rng, rng') = splitGen inRng
       rns = take (Set.size available) $ unfoldr (Just . random)  rng :: [Word32]
       available' = Map.fromList $ zipWith scaleFn (Set.toList available) rns
   writeTVar rngVar rng'

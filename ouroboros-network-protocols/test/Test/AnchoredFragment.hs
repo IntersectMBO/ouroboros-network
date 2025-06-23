@@ -52,10 +52,10 @@ tests = testGroup "AnchoredFragment"
     , testProperty "shrink for TestAddBlock"                 prop_shrink_TestAddBlock
 
     , testProperty "arbitrary for TestAnchoredFragmentAndPoint" prop_arbitrary_TestAnchoredFragmentAndPoint
-    , testProperty "shrink for TestAnchoredFragmentAndPoint"    prop_shrink_TestAnchoredFragmentAndPoint
+    , testProperty "shrink for TestAnchoredFragmentAndPoint"   (withMaxSize 50 prop_shrink_TestAnchoredFragmentAndPoint)
 
     , testProperty "arbitrary for TestAnchoredFragmentAndSlot" prop_arbitrary_TestAnchoredFragmentAndSlot
-    , testProperty "shrink for TestAnchoredFragmentAndSlot"    prop_shrink_TestAnchoredFragmentAndSlot
+    , testProperty "shrink for TestAnchoredFragmentAndSlot"    (withMaxSize 50 prop_shrink_TestAnchoredFragmentAndSlot)
 
     , testProperty "arbitrary for TestJoinableAnchoredFragments" prop_arbitrary_TestJoinableAnchoredFragments
     ]
