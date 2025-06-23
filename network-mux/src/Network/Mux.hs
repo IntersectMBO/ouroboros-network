@@ -5,6 +5,7 @@
 {-# LANGUAGE GADTSyntax                #-}
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE PatternSynonyms           #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TypeFamilies              #-}
@@ -65,6 +66,7 @@ import Data.Map (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (isNothing)
 import Data.Monoid.Synchronisation (FirstToFinish (..))
+import Data.Strict.Tuple (pattern (:!:))
 
 import Control.Applicative
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -154,7 +156,7 @@ mkMiniProtocolState :: MonadSTM m
                     => MiniProtocolInfo mode
                     -> m (MiniProtocolState mode m)
 mkMiniProtocolState miniProtocolInfo = do
-    miniProtocolIngressQueue <- newTVarIO (0, mempty)
+    miniProtocolIngressQueue <- newTVarIO $ 0 :!: mempty
     miniProtocolStatusVar    <- newTVarIO StatusIdle
     return MiniProtocolState {
        miniProtocolInfo,
@@ -334,8 +336,8 @@ miniProtocolJob TracersI {
           `orElse` throwSTM (BlockedOnCompletionVar miniProtocolNum)
         case remainder of
           Just trailing ->
-            modifyTVar miniProtocolIngressQueue (\(l, b) ->
-              (l + BL.length trailing, b <> lazyByteString trailing))
+            modifyTVar miniProtocolIngressQueue (\(l :!: b) ->
+              l + BL.length trailing :!: b <> lazyByteString trailing)
           Nothing ->
             pure ()
 
@@ -623,7 +625,7 @@ monitor tracers@TracersI {
 
     checkNonEmptyQueue :: IngressQueue m -> STM m ()
     checkNonEmptyQueue q = do
-      (l, _) <- readTVar q
+      l :!: _ <- readTVar q
       check (l /= 0)
 
     protocolKey :: MiniProtocolState mode m -> MiniProtocolKey
@@ -709,10 +711,10 @@ muxChannel tracer egressQueue want@(Wanton w) mc md q =
         -- matching ingress queue. This is the same queue the 'demux' thread writes to.
         traceWith tracer $ TraceChannelRecvStart mc
         blob <- atomically $ do
-            (l, blob) <- readTVar q
+            l :!: blob <- readTVar q
             if l == 0
                 then retry
-                else writeTVar q (0, mempty) >> return (toLazyByteString blob)
+                else writeTVar q (0 :!: mempty) >> return (toLazyByteString blob)
         -- say $ printf "recv mid %s mode %s blob len %d" (show mid) (show md) (BL.length blob)
         traceWith tracer $ TraceChannelRecvEnd mc (fromIntegral $ BL.length blob)
         return $ Just blob

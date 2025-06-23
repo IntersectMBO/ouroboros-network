@@ -4,6 +4,8 @@
 
 ### Breaking changes
 
+* `IngressQueue` is parameterized by a strict `Pair` type
+
 ### Non-breaking changes
 
 ## 0.9.0.0 -- 2025-06-28
