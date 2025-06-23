@@ -156,12 +156,11 @@ acknowledgeTxIds
 
     txsToMempool = [ (txid,tx)
                    | txid <- toList toMempoolTxIds
+                   , txid `Map.notMember` bufferedTxs
                    , tx <- maybeToList $ txid `Map.lookup` downloadedTxs
                    ]
     (toMempoolTxIds, _) =
-      StrictSeq.spanl (\txid -> txid `Map.member` downloadedTxs
-                             && txid `Map.notMember` bufferedTxs)
-                      acknowledgedTxIds
+      StrictSeq.spanl (`Map.member` downloadedTxs) acknowledgedTxIds
     txsToMempoolMap = Map.fromList txsToMempool
 
     toMempoolTxs' = toMempoolTxs <> txsToMempoolMap
