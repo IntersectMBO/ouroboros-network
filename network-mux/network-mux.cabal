@@ -61,6 +61,7 @@ library
     quiet,
     si-timers,
     statistics-linreg >=0.3 && <0.4,
+    strict,
     strict-stm,
     time >=1.9.1 && <1.14,
     vector >=0.12 && <0.14,
@@ -209,6 +210,7 @@ benchmark socket-read-write
     network,
     network-mux,
     si-timers,
+    strict,
     strict-stm,
     tasty-bench,
 

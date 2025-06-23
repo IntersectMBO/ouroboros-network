@@ -51,6 +51,7 @@ import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
 import Data.Int
 import Data.Ix (Ix (..))
+import Data.Strict.Tuple as Strict (Pair)
 import Data.Word
 import Foreign.Ptr (Ptr)
 import Quiet
@@ -175,7 +176,7 @@ data Status
 -- Mux internal types
 --
 
-type IngressQueue m = StrictTVar m (Int64, Builder)
+type IngressQueue m = StrictTVar m (Strict.Pair Int64 Builder)
 
 -- | The index of a protocol in a MuxApplication, used for array indices
 newtype MiniProtocolIx = MiniProtocolIx Int
