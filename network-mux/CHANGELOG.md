@@ -6,6 +6,7 @@
 
 * run, miniProtocolJob, monitor now accept Tracers record
   instead of `Tracer m Trace` type.
+* `IngressQueue` is parameterized by a strict `Pair` type
 
 ### Non-breaking changes
 
