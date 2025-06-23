@@ -139,7 +139,7 @@ data LimitsAndTimeouts header block = LimitsAndTimeouts
       :: ProtocolSizeLimits (ChainSync header (Point block) (Tip block))
                             ByteString
   , chainSyncTimeLimits
-      :: StdGen -> ProtocolTimeLimits (ChainSync header (Point block) (Tip block))
+      :: ProtocolTimeLimitsWithRnd (ChainSync header (Point block) (Tip block))
 
     -- block-fetch
   , blockFetchLimits

@@ -11,6 +11,7 @@ module Ouroboros.Network.Protocol.Limits where
 
 import Control.Exception
 import Control.Monad.Class.MonadTime.SI
+import System.Random (StdGen)
 
 import Network.TypedProtocol.Core
 
@@ -28,6 +29,11 @@ newtype ProtocolTimeLimits ps = ProtocolTimeLimits {
        timeLimitForState :: forall  (st :: ps). ActiveState st
                          => StateToken st -> Maybe DiffTime
      }
+
+newtype ProtocolTimeLimitsWithRnd ps = ProtocolTimeLimitsWithRnd {
+      timeLimitForStateWithRnd :: forall (st :: ps). ActiveState st
+                               => StateToken st -> StdGen -> (Maybe DiffTime, StdGen)
+    }
 
 data ProtocolLimitFailure where
     ExceededSizeLimit :: forall ps (st :: ps).

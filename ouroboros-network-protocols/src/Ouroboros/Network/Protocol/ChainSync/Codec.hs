@@ -22,6 +22,7 @@ import Network.TypedProtocol.Codec.CBOR hiding (decode, encode)
 import Ouroboros.Network.Protocol.ChainSync.Type
 import Ouroboros.Network.Protocol.Limits
 
+import Data.Bifunctor (first)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Kind (Type)
 import Data.Singletons (withSingI)
@@ -80,16 +81,16 @@ maxChainSyncTimeout = 269
 -- +----------------------------+-------------------------------------------------------------+
 --
 timeLimitsChainSync :: forall (header :: Type) (point :: Type) (tip :: Type).
-                       StdGen
-                    -> ProtocolTimeLimits (ChainSync header point tip)
-timeLimitsChainSync rnd = ProtocolTimeLimits stateToLimit
+                       ProtocolTimeLimitsWithRnd (ChainSync header point tip)
+timeLimitsChainSync = ProtocolTimeLimitsWithRnd stateToLimit
   where
     stateToLimit :: forall (st :: ChainSync header point tip).
-                    ActiveState st => StateToken st -> Maybe DiffTime
-    stateToLimit SingIdle                 = Just 3673
-    stateToLimit SingIntersect            = shortWait
-    stateToLimit (SingNext SingCanAwait)  = shortWait
-    stateToLimit (SingNext SingMustReply) =
+                    ActiveState st
+                 => StateToken st -> StdGen -> (Maybe DiffTime, StdGen)
+    stateToLimit SingIdle                 rnd = (Just 3673, rnd)
+    stateToLimit SingIntersect            rnd = (shortWait, rnd)
+    stateToLimit (SingNext SingCanAwait)  rnd = (shortWait, rnd)
+    stateToLimit (SingNext SingMustReply) rnd =
       -- We draw from a range for which streaks of empty slots ranges
       -- from 0.0001% up to 1% probability.
       -- t = T_s [log (1-Y) / log (1-f)]
@@ -102,13 +103,13 @@ timeLimitsChainSync rnd = ProtocolTimeLimits stateToLimit
       -- the interval 135 - 269, which corresponds to 99.9% to
       -- 99.9999% thresholds.
       let timeout :: DiffTime
-          timeout = realToFrac . fst
-                  . randomR ( realToFrac minChainSyncTimeout :: Double
-                            , realToFrac maxChainSyncTimeout :: Double
-                            )
-                  $ rnd
-      in Just timeout
-    stateToLimit a@SingDone = notActiveState a
+          (timeout, rnd') = first realToFrac
+                          . randomR ( realToFrac minChainSyncTimeout :: Double
+                                    , realToFrac maxChainSyncTimeout :: Double
+                                    )
+                          $ rnd
+      in (Just timeout, rnd')
+    stateToLimit a@SingDone rnd = (notActiveState a, rnd)
 
 -- | Codec for chain sync that encodes/decodes headers, points & tips.
 --

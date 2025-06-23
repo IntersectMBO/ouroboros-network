@@ -18,6 +18,7 @@ module Ouroboros.Network.Driver.Limits
   ( -- * Limits
     ProtocolSizeLimits (..)
   , ProtocolTimeLimits (..)
+  , ProtocolTimeLimitsWithRnd (..)
   , ProtocolLimitFailure (..)
     -- * Normal peers
   , runPeerWithLimits
@@ -33,6 +34,7 @@ module Ouroboros.Network.Driver.Limits
   , runConnectedPipelinedPeersWithLimitsRnd
   ) where
 
+import Data.Bifunctor (first)
 import Data.Maybe (fromMaybe)
 import System.Random
 
@@ -124,13 +126,13 @@ driverWithLimitsRnd :: forall ps (pr :: PeerRole) failure bytes m.
                     -> StdGen
                     -> Codec ps failure m bytes
                     -> ProtocolSizeLimits ps bytes
-                    -> (StdGen -> ProtocolTimeLimits ps)
+                    -> ProtocolTimeLimitsWithRnd ps
                     -> Channel m bytes
                     -> Driver ps pr (Maybe bytes, StdGen) m
 driverWithLimitsRnd tracer timeoutFn rnd0
                     Codec{encode, decode}
                     ProtocolSizeLimits{sizeLimitForState, dataSize}
-                    genProtocolTimeLimits
+                    ProtocolTimeLimitsWithRnd{timeLimitForStateWithRnd}
                     channel@Channel{send} =
     Driver { sendMessage, recvMessage, initialDState = (Nothing, rnd0) }
   where
@@ -155,10 +157,8 @@ driverWithLimitsRnd tracer timeoutFn rnd0
       let tok = stateToken
       decoder <- decode tok
       let sizeLimit = sizeLimitForState @st stateToken
-
-      let (rnd', rnd'') = split rnd
-          ProtocolTimeLimits{timeLimitForState} = genProtocolTimeLimits rnd''
-          timeLimit = fromMaybe (-1) $ timeLimitForState @st stateToken
+          (timeLimit, rnd') = first (fromMaybe (-1))
+                            $ timeLimitForStateWithRnd @st stateToken rnd
       result  <- timeoutFn timeLimit $
                    runDecoderWithLimit sizeLimit dataSize
                                        channel trailing decoder
@@ -263,7 +263,7 @@ runPeerWithLimitsRnd
   -> StdGen
   -> Codec ps failure m bytes
   -> ProtocolSizeLimits ps bytes
-  -> (StdGen -> ProtocolTimeLimits ps)
+  -> ProtocolTimeLimitsWithRnd ps
   -> Channel m bytes
   -> Peer ps pr NonPipelined st m a
   -> m (a, Maybe bytes)
@@ -323,7 +323,7 @@ runPipelinedPeerWithLimitsRnd
   -> StdGen
   -> Codec ps failure m bytes
   -> ProtocolSizeLimits ps bytes
-  -> (StdGen -> ProtocolTimeLimits ps)
+  -> ProtocolTimeLimitsWithRnd ps
   -> Channel m bytes
   -> PeerPipelined ps pr st m a
   -> m (a, Maybe bytes)
@@ -392,7 +392,7 @@ runConnectedPeersWithLimitsRnd
   -> StdGen
   -> Codec ps failure m bytes
   -> ProtocolSizeLimits ps bytes
-  -> (StdGen -> ProtocolTimeLimits ps)
+  -> ProtocolTimeLimitsWithRnd ps
   -> Peer ps             pr  NonPipelined st m a
   -> Peer ps (FlipAgency pr) NonPipelined st m b
   -> m (a, b)
@@ -467,7 +467,7 @@ runConnectedPipelinedPeersWithLimitsRnd
   -> StdGen
   -> Codec ps failure m bytes
   -> ProtocolSizeLimits ps bytes
-  -> (StdGen -> ProtocolTimeLimits ps)
+  -> ProtocolTimeLimitsWithRnd ps
   -> PeerPipelined ps    pr               st m a
   -> Peer ps (FlipAgency pr) NonPipelined st m b
   -> m (a, b)
