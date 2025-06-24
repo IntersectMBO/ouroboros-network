@@ -75,7 +75,7 @@ instance Arbitrary txid => Arbitrary (Tx txid) where
       -- generating small tx sizes avoids overflow error when semigroup
       -- instance of `SizeInBytes` is used (summing up all inflight tx
       -- sizes).
-      (size, advSize) <- frequency [ (9, (\a -> (a,a)) <$> chooseEnum (0, maxTxSize))
+      (size, advSize) <- frequency [ (99, (\a -> (a,a)) <$> chooseEnum (0, maxTxSize))
                                    , (1, (,) <$> chooseEnum (0, maxTxSize) <*> chooseEnum (0, maxTxSize))
                                    ]
       Tx <$> arbitrary
@@ -135,7 +135,7 @@ getMempoolReader (Mempool mempool) =
        }
 
     f :: Int -> Tx txid -> (txid, Int, SizeInBytes)
-    f idx Tx {getTxId, getTxSize} = (getTxId, idx, getTxSize)
+    f idx Tx {getTxId, getTxAdvSize} = (getTxId, idx, getTxAdvSize)
 
 
 getMempoolWriter :: forall txid m.
