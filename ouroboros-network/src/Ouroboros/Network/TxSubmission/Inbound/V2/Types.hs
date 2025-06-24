@@ -217,7 +217,7 @@ data SharedTxState peeraddr txid tx = SharedTxState {
       -- | A set of timeouts for txids that have been added to bufferedTxs after being
       -- inserted into the mempool.
       -- Every txid entry has a reference count in `referenceCounts`.
-      timedTxs                 :: Map Time [txid],
+      timedTxs                 :: !(Map Time [txid]),
 
       -- | A set of txids that have been downloaded by a peer and are on their
       -- way to the mempool. We won't issue further fetch-requests for TXs in
