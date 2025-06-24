@@ -141,7 +141,7 @@ acknowledgeTxIds
       , 0
       , TxsToMempool txsToMempool
       , RefCountDiff Map.empty
-      , ps
+      , ps { toMempoolTxs = toMempoolTxs' }
       )
   where
     -- Split `unacknowledgedTxIds'` into the longest prefix of `txid`s which
