@@ -209,5 +209,6 @@ txSubmissionInboundV2
         traceWith tracer $ TraceTxSubmissionCollected (txId `map` txs)
         case mbe of
           -- one of `tx`s had a wrong size
-          Just e  -> throwIO e
+          Just e  -> traceWith tracer (TraceTxInboundError e)
+                  >> throwIO e
           Nothing -> k
