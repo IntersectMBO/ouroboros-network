@@ -121,8 +121,8 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
            LocalRootConfig, WarmValency (..))
 import Ouroboros.Network.Protocol.BlockFetch.Codec (byteLimitsBlockFetch,
            timeLimitsBlockFetch)
-import Ouroboros.Network.Protocol.ChainSync.Codec (ChainSyncTimeout (..),
-           byteLimitsChainSync, timeLimitsChainSync)
+import Ouroboros.Network.Protocol.ChainSync.Codec (byteLimitsChainSync,
+           timeLimitsChainSync)
 import Ouroboros.Network.Protocol.KeepAlive.Codec (byteLimitsKeepAlive,
            timeLimitsKeepAlive)
 import Ouroboros.Network.Protocol.Limits (shortWait, smallByteLimit)
@@ -195,8 +195,6 @@ data NodeArgs =
     { naSeed                   :: Int
       -- ^ 'randomBlockGenerationArgs' seed argument
     , naDiffusionMode          :: DiffusionMode
-    , naMbTime                 :: Maybe DiffTime
-      -- ^ 'LimitsAndTimeouts' argument
     , naPublicRoots            :: Map RelayAccessPoint PeerAdvertise
       -- ^ 'Interfaces' relays auxiliary value
     , naConsensusMode          :: ConsensusMode
@@ -224,7 +222,7 @@ data NodeArgs =
     }
 
 instance Show NodeArgs where
-    show NodeArgs { naSeed, naDiffusionMode, naMbTime, naBootstrapPeers,
+    show NodeArgs { naSeed, naDiffusionMode, naBootstrapPeers,
                     naPublicRoots, naAddr, naPeerSharing, naLedgerPeers,
                     naLocalRootPeers, naPeerTargets, naDNSTimeoutScript,
                     naDNSLookupDelayScript, naChainSyncExitOnBlockNo,
@@ -232,7 +230,6 @@ instance Show NodeArgs where
       unwords [ "NodeArgs"
               , "(" ++ show naSeed ++ ")"
               , show naDiffusionMode
-              , "(" ++ show naMbTime ++ ")"
               , "(" ++ show naPublicRoots ++ ")"
               , show naConsensusMode
               , "(" ++ show naBootstrapPeers ++ ")"
@@ -390,20 +387,6 @@ genNodeArgs relays minConnected localRootPeers self = flip suchThat hasUpstream 
   -- so we pin it to this
   let diffusionMode = InitiatorAndResponderDiffusionMode
 
-  -- These values approximately correspond to false positive
-  -- thresholds for streaks of empty slots with 99% probability,
-  -- 99.9% probability up to 99.999% probability.
-  -- t = T_s [log (1-Y) / log (1-f)]
-  -- Y = [0.99, 0.999...]
-  --
-  -- T_s = slot length of 1s.
-  -- f = 0.05
-  -- The timeout is randomly picked per bearer to avoid all bearers
-  -- going down at the same time in case of a long streak of empty
-  -- slots. TODO: workaround until peer selection governor.
-  -- Taken from ouroboros-consensus/src/Ouroboros/Consensus/Node.hs
-  mustReplyTimeout <- Just <$> oneof (pure <$> [90, 135, 180, 224, 269])
-
   -- Make sure our targets for active peers cover the maximum of peers
   -- one generated
   SmallTargets deadlineTargets <- resize (length relays * 2) arbitrary
@@ -452,7 +435,6 @@ genNodeArgs relays minConnected localRootPeers self = flip suchThat hasUpstream 
    $ NodeArgs
       { naSeed                   = seed
       , naDiffusionMode          = diffusionMode
-      , naMbTime                 = mustReplyTimeout
       , naPublicRoots            = publicRoots
         -- TODO: we haven't been using public root peers so far because we set
         -- `UseLedgerPeers 0`!
@@ -1075,7 +1057,6 @@ diffusionSimulation
             }
             NodeArgs
             { naSeed                   = seed
-            , naMbTime                 = mustReplyTimeout
             , naPublicRoots            = publicRoots
             , naConsensusMode          = consensusMode
             , naBootstrapPeers         = bootstrapPeers
@@ -1118,22 +1099,12 @@ diffusionSimulation
                                            bgaRng
                                            quota
 
-          stdChainSyncTimeout :: ChainSyncTimeout
-          stdChainSyncTimeout = do
-              ChainSyncTimeout
-                { canAwaitTimeout  = shortWait
-                , intersectTimeout = shortWait
-                , mustReplyTimeout
-                , idleTimeout      = Nothing
-                }
-
           limitsAndTimeouts :: Node.LimitsAndTimeouts BlockHeader Block
           limitsAndTimeouts
             = Node.LimitsAndTimeouts
                 { Node.chainSyncLimits      = defaultMiniProtocolsLimit
                 , Node.chainSyncSizeLimits  = byteLimitsChainSync (const 0)
-                , Node.chainSyncTimeLimits  =
-                    timeLimitsChainSync stdChainSyncTimeout
+                , Node.chainSyncTimeLimits  = timeLimitsChainSync
                 , Node.blockFetchLimits     = defaultMiniProtocolsLimit
                 , Node.blockFetchSizeLimits = byteLimitsBlockFetch (const 0)
                 , Node.blockFetchTimeLimits = timeLimitsBlockFetch
@@ -1177,7 +1148,7 @@ diffusionSimulation
                       return $ Map.elems
                              $ accPoolStake
                              $ getLedgerPools
-                             $ ledgerPools)
+                               ledgerPools)
                     Cardano.LedgerPeersConsensusInterface {
                       Cardano.readFetchMode = pure (PraosFetchMode FetchModeDeadline)
                     , Cardano.getLedgerStateJudgement = pure TooOld

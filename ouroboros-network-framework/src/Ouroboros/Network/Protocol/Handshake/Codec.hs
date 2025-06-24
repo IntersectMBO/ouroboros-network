@@ -99,6 +99,14 @@ byteLimitsHandshake = ProtocolSizeLimits stateToLimit (fromIntegral . BL.length)
 
 -- | Time limits.
 --
+-- +--------------------+-------------+
+-- | 'Handshake' state  | timeout (s) |
+-- +====================+=============+
+-- | `StPropose`        | `shortWait` |
+-- +--------------------+-------------+
+-- | `StConfirm`        | `shortWait` |
+-- +--------------------+-------------+
+--
 timeLimitsHandshake :: forall vNumber. ProtocolTimeLimits (Handshake vNumber CBOR.Term)
 timeLimitsHandshake = ProtocolTimeLimits stateToLimit
   where
@@ -123,10 +131,9 @@ noTimeLimitsHandshake = ProtocolTimeLimits stateToLimit
 
 -- |
 -- @'Handshake'@ codec.  The @'MsgProposeVersions'@ encodes proposed map in
--- ascending order and it expects to receive them in this order.  This allows
--- to construct the map in linear time.  There is also another limiting factor
--- to the number of versions on can present: the whole message must fit into
--- a single TCP segment.
+-- ascending order and it expects to receive them in this order.  The whole
+-- `MsgProposeVersions` message must fit into a single TCP segment which limits
+-- number of versions that can be proposed.
 --
 codecHandshake
   :: forall vNumber m failure.
@@ -135,6 +142,7 @@ codecHandshake
      , Show failure
      )
   => CodecCBORTerm (failure, Maybe Int) vNumber
+  -- ^ `CBOR.Term` codec for `vNumber`
   -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure m ByteString
 codecHandshake versionNumberCodec = mkCodecCborLazyBS encodeMsg decodeMsg
     where

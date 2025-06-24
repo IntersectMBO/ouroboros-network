@@ -1,7 +1,6 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
-{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -18,20 +17,21 @@ import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadTime.SI
 
 import Data.ByteString.Lazy qualified as LBS
+import Data.Kind (Type)
 
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 import Text.Printf
 
-import Network.TypedProtocol.Codec.CBOR
+import Network.TypedProtocol.Codec.CBOR hiding (decode, encode)
 
 import Ouroboros.Network.Protocol.BlockFetch.Type
 import Ouroboros.Network.Protocol.Limits
 
 -- | Byte Limit.
-byteLimitsBlockFetch :: forall bytes block point.
-                        (bytes -> Word)
+byteLimitsBlockFetch :: forall bytes (block :: Type) (point :: Type).
+                        (bytes -> Word) -- ^ compute size of bytes
                      -> ProtocolSizeLimits (BlockFetch block point) bytes
 byteLimitsBlockFetch = ProtocolSizeLimits stateToLimit
   where
@@ -44,10 +44,17 @@ byteLimitsBlockFetch = ProtocolSizeLimits stateToLimit
 
 -- | Time Limits
 --
--- `TokIdle' No timeout
--- `TokBusy` `longWait` timeout
--- `TokStreaming` `longWait` timeout
-timeLimitsBlockFetch :: forall block point.
+-- +------------------+---------------+
+-- | BlockFetch state | timeout (s)   |
+-- +==================+===============+
+-- | `BFIdle`         | `waitForever` |
+-- +------------------+---------------+
+-- | `BFBusy`         | `longWait`    |
+-- +------------------+---------------+
+-- | `BFStreaming`    | `longWait`    |
+-- +------------------+---------------+
+--
+timeLimitsBlockFetch :: forall (block :: Type) (point :: Type).
                         ProtocolTimeLimits (BlockFetch block point)
 timeLimitsBlockFetch = ProtocolTimeLimits stateToLimit
   where
@@ -58,17 +65,21 @@ timeLimitsBlockFetch = ProtocolTimeLimits stateToLimit
     stateToLimit SingBFStreaming = longWait
     stateToLimit a@SingBFDone    = notActiveState a
 
--- | Codec for chain sync that encodes/decodes blocks
+-- | Codec for chain sync that encodes/decodes blocks and points.
 --
--- NOTE: See 'wrapCBORinCBOR' and 'unwrapCBORinCBOR' if you want to use this
+-- /NOTE:/ See 'wrapCBORinCBOR' and 'unwrapCBORinCBOR' if you want to use this
 -- with a block type that has annotations.
 codecBlockFetch
   :: forall block point m.
      MonadST m
   => (block            -> CBOR.Encoding)
+  -- ^ encode block
   -> (forall s. CBOR.Decoder s block)
+  -- ^ decode block
   -> (point -> CBOR.Encoding)
+  -- ^ encode point
   -> (forall s. CBOR.Decoder s point)
+  -- ^ decode point
   -> Codec (BlockFetch block point) CBOR.DeserialiseFailure m LBS.ByteString
 codecBlockFetch encodeBlock decodeBlock
                 encodePoint decodePoint =
@@ -128,7 +139,7 @@ codecBlockFetch encodeBlock decodeBlock
 
 
 codecBlockFetchId
-  :: forall block point m.
+  :: forall (block :: Type) (point :: Type) m.
      Monad m
   => Codec (BlockFetch block point) CodecFailure m
            (AnyMessage (BlockFetch block point))

@@ -10,21 +10,20 @@
 module Ouroboros.Network.Protocol.TxSubmission2.Codec
   ( codecTxSubmission2
   , codecTxSubmission2Id
-  , encodeTxSubmission2
-  , decodeTxSubmission2
   , byteLimitsTxSubmission2
   , timeLimitsTxSubmission2
   ) where
 
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadTime.SI
+import Data.ByteString.Lazy (ByteString)
+import Data.Kind (Type)
 import Data.List.NonEmpty qualified as NonEmpty
+import Text.Printf
 
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
-import Data.ByteString.Lazy (ByteString)
-import Text.Printf
 
 import Network.TypedProtocol.Codec.CBOR
 
@@ -47,13 +46,23 @@ byteLimitsTxSubmission2 = ProtocolSizeLimits stateToLimit
     stateToLimit a@SingDone                  = notActiveState a
 
 
--- | Time Limits.
+-- | 'TxSubmission2' time limits.
 --
--- `SingTxIds SingBlocking` No timeout
--- `SingTxIds SingNonBlocking` `shortWait` timeout
--- `SingTxs` `shortWait` timeout
--- `SingIdle` `shortWait` timeout
-timeLimitsTxSubmission2 :: forall txid tx. ProtocolTimeLimits (TxSubmission2 txid tx)
+-- +-----------------------------+---------------+
+-- | 'TxSubmission2' state       | timeout (s)   |
+-- +=============================+===============+
+-- | `StInit`                    | `waitForever` |
+-- +-----------------------------+---------------+
+-- | `StIdle`                    | `waitForever` |
+-- +-----------------------------+---------------+
+-- | @'StTxIds' 'StBlocking'@    | `waitForever` |
+-- +-----------------------------+---------------+
+-- | @'StTxIds' 'StNonBlocking'@ | `shortWait`   |
+-- +-----------------------------+---------------+
+-- | `StTxs`                     | `shortWait`   |
+-- +-----------------------------+---------------+
+--
+timeLimitsTxSubmission2 :: forall (txid :: Type) (tx :: Type). ProtocolTimeLimits (TxSubmission2 txid tx)
 timeLimitsTxSubmission2 = ProtocolTimeLimits stateToLimit
   where
     stateToLimit :: forall (st :: TxSubmission2 txid tx).
@@ -67,12 +76,16 @@ timeLimitsTxSubmission2 = ProtocolTimeLimits stateToLimit
 
 
 codecTxSubmission2
-  :: forall txid tx m.
+  :: forall (txid :: Type) (tx :: Type) m.
      MonadST m
   => (txid -> CBOR.Encoding)
+  -- ^ encode 'txid'
   -> (forall s . CBOR.Decoder s txid)
+  -- ^ decode 'txid'
   -> (tx -> CBOR.Encoding)
+  -- ^ encode transaction
   -> (forall s . CBOR.Decoder s tx)
+  -- ^ decode transaction
   -> Codec (TxSubmission2 txid tx) CBOR.DeserialiseFailure m ByteString
 codecTxSubmission2 encodeTxId decodeTxId
                    encodeTx   decodeTx =
@@ -90,16 +103,17 @@ codecTxSubmission2 encodeTxId decodeTxId
       decodeTxSubmission2 decodeTxId decodeTx stok len key
 
 encodeTxSubmission2
-    :: forall txid tx.
+    :: forall (txid :: Type) (tx :: Type) (st :: TxSubmission2 txid tx) (st' :: TxSubmission2 txid tx).
        (txid -> CBOR.Encoding)
+    -- ^ encode 'txid'
     -> (tx -> CBOR.Encoding)
-    -> (forall (st :: TxSubmission2 txid tx) (st' :: TxSubmission2 txid tx).
-               Message (TxSubmission2 txid tx) st st'
-            -> CBOR.Encoding)
+    -- ^ encode 'tx'
+    -> Message (TxSubmission2 txid tx) st st'
+    -> CBOR.Encoding
 encodeTxSubmission2 encodeTxId encodeTx = encode
   where
-    encode :: forall st st'.
-              Message (TxSubmission2 txid tx) st st'
+    encode :: forall st0 st1.
+              Message (TxSubmission2 txid tx) st0 st1
            -> CBOR.Encoding
     encode MsgInit =
         CBOR.encodeListLen 1
@@ -148,23 +162,24 @@ encodeTxSubmission2 encodeTxId encodeTx = encode
 
 
 decodeTxSubmission2
-    :: forall txid tx.
-       (forall s . CBOR.Decoder s txid)
-    -> (forall s . CBOR.Decoder s tx)
-    -> (forall (st :: TxSubmission2 txid tx) s.
-               ActiveState st
-            => StateToken st
-            -> Int
-            -> Word
-            -> CBOR.Decoder s (SomeMessage st))
+    :: forall (txid :: Type) (tx :: Type) (st :: TxSubmission2 txid tx) s.
+       ActiveState st
+    => (forall s'. CBOR.Decoder s' txid)
+    -- ^ decode 'txid'
+    -> (forall s'. CBOR.Decoder s' tx)
+    -- ^ decode transaction
+    -> StateToken st
+    -> Int
+    -> Word
+    -> CBOR.Decoder s (SomeMessage st)
 decodeTxSubmission2 decodeTxId decodeTx = decode
   where
-    decode :: forall s (st :: TxSubmission2 txid tx).
-              ActiveState st
-           => StateToken st
+    decode :: forall (st' :: TxSubmission2 txid tx).
+              ActiveState st'
+           => StateToken st'
            -> Int
            -> Word
-           -> CBOR.Decoder s (SomeMessage st)
+           -> CBOR.Decoder s (SomeMessage st')
     decode stok len key = do
       case (stok, len, key) of
         (SingInit,       1, 6) ->
