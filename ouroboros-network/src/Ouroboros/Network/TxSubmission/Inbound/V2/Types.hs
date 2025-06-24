@@ -2,9 +2,12 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeApplications           #-}
 
 module Ouroboros.Network.TxSubmission.Inbound.V2.Types
   ( -- * PeerTxState
@@ -40,7 +43,7 @@ import Data.Monoid (Sum (..))
 import Data.Sequence.Strict (StrictSeq)
 import Data.Set (Set)
 import Data.Set qualified as Set
-import Data.Typeable (Typeable)
+import Data.Typeable (Typeable, eqT, (:~:)(Refl))
 import GHC.Generics (Generic)
 import System.Random (StdGen)
 
@@ -367,6 +370,7 @@ data TraceTxSubmissionInbound txid tx =
   | TraceTxInboundCannotRequestMoreTxs Int
   | TraceTxInboundAddedToMempool [txid] DiffTime
   | TraceTxInboundRejectedFromMempool [txid] DiffTime
+  | TraceTxInboundError TxSubmissionProtocolError
 
   --
   -- messages emitted by the new implementation of the server in
@@ -420,10 +424,22 @@ mkTxSubmissionCounters
 data TxSubmissionProtocolError =
        ProtocolErrorTxNotRequested
      | ProtocolErrorTxIdsNotRequested
-     | forall txid. (Typeable txid, Show txid)
+     | forall txid. (Typeable txid, Show txid, Eq txid)
        => ProtocolErrorTxSizeError [(txid, SizeInBytes, SizeInBytes)]
      -- ^ a list of txid for which the received size and advertised size didn't
      -- match.
+
+instance Eq   TxSubmissionProtocolError where
+    ProtocolErrorTxNotRequested    == ProtocolErrorTxNotRequested      = True
+    ProtocolErrorTxNotRequested    == _                                = False
+    ProtocolErrorTxIdsNotRequested == ProtocolErrorTxIdsNotRequested   = True
+    ProtocolErrorTxIdsNotRequested == _                                = True
+    ProtocolErrorTxSizeError (as :: [(a, SizeInBytes, SizeInBytes)])
+      == ProtocolErrorTxSizeError (as' :: [(a', SizeInBytes, SizeInBytes)]) =
+        case eqT @a @a' of
+          Nothing   -> False
+          Just Refl -> as == as'
+    ProtocolErrorTxSizeError {} == _ = False
 
 deriving instance Show TxSubmissionProtocolError
 
