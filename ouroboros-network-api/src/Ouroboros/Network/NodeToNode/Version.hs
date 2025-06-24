@@ -68,14 +68,18 @@ data NodeToNodeVersion =
     --   peer sharing server side and can not reply to requests.
     NodeToNodeV_14
     -- ^ Plomin HF, mandatory on mainnet as of 2025.01.29
+  | NodeToNodeV_15
+    -- ^ SRV support
   deriving (Eq, Ord, Enum, Bounded, Show, Generic, NFData)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
 nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
   where
     encodeTerm NodeToNodeV_14 = CBOR.TInt 14
+    encodeTerm NodeToNodeV_15 = CBOR.TInt 15
 
     decodeTerm (CBOR.TInt 14) = Right NodeToNodeV_14
+    decodeTerm (CBOR.TInt 15) = Right NodeToNodeV_15
     decodeTerm (CBOR.TInt n) = Left ( T.pack "decode NodeToNodeVersion: unknown tag: "
                                         <> T.pack (show n)
                                     , Just n
@@ -146,14 +150,14 @@ instance Queryable NodeToNodeVersionData where
 
 nodeToNodeCodecCBORTerm :: NodeToNodeVersion -> CodecCBORTerm Text NodeToNodeVersionData
 nodeToNodeCodecCBORTerm =
-  \case
-    NodeToNodeV_14 -> v14
-
+    \case
+      NodeToNodeV_14 -> codec
+      NodeToNodeV_15 -> codec
   where
-    v14 = CodecCBORTerm { encodeTerm = encodeTerm14, decodeTerm = decodeTerm14 }
+    codec = CodecCBORTerm { encodeTerm = encodeTerm, decodeTerm = decodeTerm }
 
-    encodeTerm14 :: NodeToNodeVersionData -> CBOR.Term
-    encodeTerm14 NodeToNodeVersionData { networkMagic, diffusionMode, peerSharing, query }
+    encodeTerm :: NodeToNodeVersionData -> CBOR.Term
+    encodeTerm NodeToNodeVersionData { networkMagic, diffusionMode, peerSharing, query }
       = CBOR.TList
           [ CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
           , CBOR.TBool (case diffusionMode of
@@ -165,8 +169,8 @@ nodeToNodeCodecCBORTerm =
           , CBOR.TBool query
           ]
 
-    decodeTerm14 :: CBOR.Term -> Either Text NodeToNodeVersionData
-    decodeTerm14 (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode, CBOR.TInt peerSharing, CBOR.TBool query])
+    decodeTerm :: CBOR.Term -> Either Text NodeToNodeVersionData
+    decodeTerm (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode, CBOR.TInt peerSharing, CBOR.TBool query])
       | x >= 0
       , x <= 0xffffffff
       , Just ps <- case peerSharing of
@@ -186,7 +190,7 @@ nodeToNodeCodecCBORTerm =
       = Left $ T.pack $ "networkMagic out of bound: " <> show x
       | otherwise -- peerSharing < 0 || peerSharing > 1
       = Left $ T.pack $ "peerSharing is out of bound: " <> show peerSharing
-    decodeTerm14 t
+    decodeTerm t
       = Left $ T.pack $ "unknown encoding: " ++ show t
 
 
