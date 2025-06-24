@@ -323,7 +323,7 @@ ledgerPeersThread PeerActionsDNS {
                let (plainAddrs, domains) =
                      List.foldl' partitionPeer (Set.empty, []) pickedPeers
 
-               let (rng2, rngResolv) = splitGen rng'
+               let (rng2, rngResolv) = split rng'
                -- NOTE: we don't set `resolveConcurrent` because
                -- of https://github.com/kazu-yamamoto/dns/issues/174
                traceWith wlpTracer (TraceLedgerPeersDomains domains)
@@ -336,7 +336,7 @@ ledgerPeersThread PeerActionsDNS {
                    domains
                    rngResolv
 
-               let (rng3, rngDomain) = splitGen rng2
+               let (rng3, rngDomain) = split rng2
                    pickedAddrs =
                      snd $ List.foldl' pickDomainAddrs
                                   (rngDomain, plainAddrs)

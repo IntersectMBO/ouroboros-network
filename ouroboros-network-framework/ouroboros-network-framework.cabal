@@ -83,7 +83,7 @@ library
     ouroboros-network-testing,
     psqueues,
     quiet,
-    random,
+    random ^>=1.2,
     text,
     typed-protocols:{typed-protocols, cborg, stateful} ^>=1.0,
 

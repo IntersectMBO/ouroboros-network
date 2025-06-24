@@ -44,7 +44,8 @@ import Data.Functor (void, ($>))
 import Data.Proxy (Proxy (..))
 import Data.Typeable (Typeable)
 import GHC.Stack (CallStack, HasCallStack, callStack)
-import System.Random (StdGen, splitGen)
+import System.Random (StdGen)
+import System.Random qualified as Random
 
 import Data.List qualified as List
 import Data.Map.Strict (Map)
@@ -826,7 +827,7 @@ with args@Arguments {
               Just a  -> Map.insert connId (a, connThread, connVar)
                                     choiceMap'
 
-      stdGen <- stateTVar stdGenVar splitGen
+      stdGen <- stateTVar stdGenVar Random.split
       let pruneSet = prunePolicy
                        stdGen
                        ((\(a,_,_) -> a) <$> choiceMap)
@@ -1330,7 +1331,7 @@ with args@Arguments {
         (trace, mutableConnState@MutableConnState { connVar, connStateId }
               , eHandleWedge) <- atomically $ do
           state <- readTMVar stateVar
-          stdGen <- stateTVar stdGenVar splitGen
+          stdGen <- stateTVar stdGenVar Random.split
           case State.lookupByRemoteAddr stdGen peerAddr state of
             Just mutableConnState@MutableConnState { connVar, connStateId } -> do
               connState <- readTVar connVar

@@ -35,7 +35,8 @@ import Control.Monad.Class.MonadTime.SI (Time (..))
 import Control.Tracer
 
 import System.Directory
-import System.Random
+import System.Random (RandomGen, StdGen)
+import System.Random qualified as Random
 
 import Options.Applicative qualified as Opts
 
@@ -270,8 +271,8 @@ serverChainSync :: FilePath
                 -> IO Void
 serverChainSync sockAddr slotLength seed = withIOManager $ \iocp -> do
     prng <- case seed of
-      Nothing -> initStdGen
-      Just a  -> return (mkStdGen a)
+      Nothing -> Random.initStdGen
+      Just a  -> return (Random.mkStdGen a)
     Server.Simple.with
       (localSnocket iocp)
       makeLocalBearer
@@ -544,8 +545,8 @@ serverBlockFetch :: FilePath
                  -> IO Void
 serverBlockFetch sockAddr slotLength seed = withIOManager $ \iocp -> do
     prng <- case seed of
-      Nothing -> initStdGen
-      Just a  -> return (mkStdGen a)
+      Nothing -> Random.initStdGen
+      Just a  -> return (Random.mkStdGen a)
     Server.Simple.with
       (localSnocket iocp)
       makeLocalBearer
@@ -774,33 +775,33 @@ splitBeforePoint pt = go []
 -- Block generator
 --
 
-prop_chainGenerator :: SplitGen g => g -> Bool
+prop_chainGenerator :: RandomGen g => g -> Bool
 prop_chainGenerator =
     Chain.valid
   . Chain.fromOldestFirst
   . Inf.take 1000
   . chainGenerator
 
-chainGenerator :: SplitGen g => g -> Infinite Block
+chainGenerator :: RandomGen g => g -> Infinite Block
 chainGenerator g =
     genBlockChain g Nothing
 
-genBlockChain :: SplitGen g => g -> Maybe BlockHeader -> Infinite Block
+genBlockChain :: RandomGen g => g -> Maybe BlockHeader -> Infinite Block
 genBlockChain !g prevHeader =
     block :< genBlockChain g'' (Just (blockHeader block))
   where
     block     = genBlock g' prevHeader
-    (g', g'') = splitGen g
+    (g', g'') = Random.split g
 
-genBlock :: SplitGen g => g -> Maybe BlockHeader -> Block
+genBlock :: RandomGen g => g -> Maybe BlockHeader -> Block
 genBlock g prevHeader =
     Block { blockBody, blockHeader }
   where
     blockBody   = genBlockBody g'
     blockHeader = genBlockHeader g'' prevHeader blockBody
-    (g', g'')   = splitGen g
+    (g', g'')   = Random.split g
 
-genBlockHeader :: SplitGen g
+genBlockHeader :: RandomGen g
                => g -> Maybe BlockHeader -> BlockBody -> BlockHeader
 genBlockHeader g prevHeader body =
     header
@@ -812,17 +813,17 @@ genBlockHeader g prevHeader body =
       headerBlockNo  = maybe 1 (succ             . headerBlockNo) prevHeader,
       headerBodyHash = hashBody body
     }
-    (slotGap, _) = randomR (1,3) g
+    (slotGap, _) = Random.randomR (1,3) g
 
     addSlotGap :: Int -> SlotNo -> SlotNo
     addSlotGap m (SlotNo n) = SlotNo (n + fromIntegral m)
 
-genBlockBody :: SplitGen g => g -> BlockBody
+genBlockBody :: RandomGen g => g -> BlockBody
 genBlockBody g =
     BlockBody . BSC.take len . BSC.drop offset . BSC.pack $ bodyData
   where
-    (offset, g') = randomR (0, bodyDataCycle-1)    g
-    (len   , _ ) = randomR (1, bodyDataCycle*10-1) g'
+    (offset, g') = Random.randomR (0, bodyDataCycle-1)    g
+    (len   , _ ) = Random.randomR (1, bodyDataCycle*10-1) g'
 
 bodyData :: String
 bodyData = concat

@@ -52,7 +52,8 @@ import Data.Monoid.Synchronisation
 import Data.Void (Void)
 import GHC.Generics (Generic)
 import Numeric.Natural (Natural)
-import System.Random (SplitGen, StdGen, randomR, splitGen)
+import System.Random (RandomGen, StdGen)
+import System.Random qualified as Random
 
 import Network.Socket (PortNumber)
 
@@ -255,7 +256,7 @@ randomBlockGenerationArgs bgaSlotDuration bgaSeed quota =
                                       --  * cycle through some bodies
                                       --
                                       $ ConcreteBlock.BlockBody (BSC.pack "")
-                            in case randomR (0, 100) seed of
+                            in case Random.randomR (0, 100) seed of
                                 (r, seed') | r <= quota ->
                                              (Just block, seed')
                                            | otherwise  ->
@@ -372,7 +373,7 @@ withNodeKernelThread
      , MonadThrow         m
      , MonadThrow    (STM m)
      , HasFullHeader block
-     , SplitGen seed
+     , RandomGen seed
      )
   => BlockGeneratorArgs block seed
   -> (NodeKernel header block seed m -> Async m Void -> m a)
@@ -385,7 +386,7 @@ withNodeKernelThread BlockGeneratorArgs { bgaSlotDuration, bgaBlockGenerator, bg
     withSlotTime bgaSlotDuration $ \waitForSlot ->
       withAsync (blockProducerThread kernel waitForSlot) (k kernel)
   where
-    (bpSeed, psSeed) = splitGen bgaSeed
+    (bpSeed, psSeed) = Random.split bgaSeed
 
     blockProducerThread :: NodeKernel header block seed m
                         -> (SlotNo -> STM m SlotNo)

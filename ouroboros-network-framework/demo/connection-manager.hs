@@ -50,7 +50,7 @@ import Network.TypedProtocol.Peer
 
 import Options.Applicative
 
-import System.Random (SplitGen)
+import System.Random (RandomGen)
 import System.Random qualified as Random
 
 import Network.TypedProtocol.ReqResp.Client
@@ -105,24 +105,24 @@ data ClientAndServerData = ClientAndServerData {
 
 
 {-
-genList :: SplitGen g => (g -> a) -> Int -> g -> [a]
+genList :: RandomGen g => (g -> a) -> Int -> g -> [a]
 genList gen = go []
   where
     go !acc len _g | len < 0 = acc
     go !acc len  g =
         go (a : acc) (pred len) g''
       where
-        (g', g'') = Random.splitGen g
+        (g', g'') = Random.split g
         !a = gen g'
 -}
 
-genInfList :: SplitGen g => (g -> a) -> g -> [a]
+genInfList :: RandomGen g => (g -> a) -> g -> [a]
 genInfList gen g =
-    case Random.splitGen g of
+    case Random.split g of
       (g', g'') -> gen g' : genInfList gen g''
 
 
-genClientAndServerData :: forall g. SplitGen g
+genClientAndServerData :: forall g. RandomGen g
                        => g -> Int -> ClientAndServerData
 genClientAndServerData g0 len = ClientAndServerData {
         hotInitiatorRequests         = genListOfLists g1,
@@ -130,7 +130,7 @@ genClientAndServerData g0 len = ClientAndServerData {
         establishedInitiatorRequests = genListOfLists g3
       }
     where
-      (g1, (g2, g3)) = Random.splitGen <$> Random.splitGen g0
+      (g1, (g2, g3)) = Random.split <$> Random.split g0
 
       genListOfLists :: g -> [[Int]]
       genListOfLists = \g -> genInfList (take len . Random.randoms) g
