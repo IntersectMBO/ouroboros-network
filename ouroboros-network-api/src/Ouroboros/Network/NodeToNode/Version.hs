@@ -120,20 +120,14 @@ data NodeToNodeVersionData = NodeToNodeVersionData
 instance Acceptable NodeToNodeVersionData where
     -- | Check that both side use the same 'networkMagic'.  Choose smaller one
     -- from both 'diffusionMode's, e.g. if one is running in 'InitiatorOnlyMode'
-    -- agree on it. Agree on the same 'PeerSharing' value, if the negotiated
-    -- diffusion mode is 'InitiatorAndResponder', otherwise default to
-    -- 'PeerSharingDisabled'.
+    -- agree on it. Agree on the same 'PeerSharing' value.
     acceptableVersion local remote
       | networkMagic local == networkMagic remote
       = let acceptedDiffusionMode = diffusionMode local `min` diffusionMode remote
          in Accept NodeToNodeVersionData
               { networkMagic  = networkMagic local
               , diffusionMode = acceptedDiffusionMode
-              , peerSharing   = case acceptedDiffusionMode of
-                                  InitiatorAndResponderDiffusionMode ->
-                                    peerSharing local <> peerSharing remote
-                                  InitiatorOnlyDiffusionMode         ->
-                                    PeerSharingDisabled
+              , peerSharing   = peerSharing local <> peerSharing remote
               , query         = query local || query remote
               }
       | otherwise
