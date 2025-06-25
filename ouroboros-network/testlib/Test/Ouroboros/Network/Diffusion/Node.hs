@@ -114,7 +114,7 @@ import Ouroboros.Network.Snocket (MakeBearer, Snocket, TestAddress (..),
            invalidFileDescriptor)
 
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy)
-import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (decisionLogicThread)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (decisionLogicThreads)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TraceTxLogic,
            TraceTxSubmissionInbound)
 
@@ -365,7 +365,7 @@ run blockGeneratorArgs limits ni na
            $ \ diffusionThread ->
                withAsync (blockFetch nodeKernel) $ \blockFetchLogicThread ->
 
-                 withAsync (decisionLogicThread
+                 withAsync (decisionLogicThreads
                               tracerTxLogic
                               sayTracer
                               (aTxDecisionPolicy na)

@@ -37,7 +37,7 @@ import Data.List (nubBy)
 import Data.List qualified as List
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (isJust, fromMaybe)
+import Data.Maybe (fromMaybe, isJust)
 import System.Random (mkStdGen)
 
 import Cardano.Network.NodeToNode (NodeToNodeVersion (..))
@@ -160,8 +160,8 @@ runTxSubmission tracer tracerTxLogic st0 txDecisionPolicy = do
     sharedTxStateVar <- newSharedTxStateVar txRng
     labelTVarIO sharedTxStateVar "shared-tx-state"
 
-    withAsync (decisionLogicThread tracerTxLogic sayTracer
-                                   txDecisionPolicy txChannelsVar sharedTxStateVar) $ \a -> do
+    withAsync (decisionLogicThreads tracerTxLogic sayTracer
+                                    txDecisionPolicy txChannelsVar sharedTxStateVar) $ \a -> do
           -- Construct txSubmission outbound client
       let clients = (\(addr, (mempool {- txs -}, ctrlMsgSTM, outDelay, _, outChannel, _)) -> do
                       let client = txSubmissionOutbound
@@ -213,7 +213,7 @@ runTxSubmission tracer tracerTxLogic st0 txDecisionPolicy = do
         inmp <- readMempool inboundMempool
         let outmp = map (\(txs, _, _, _) -> txs)
                   $ Map.elems st0
-                     
+
         return (inmp, outmp)
   where
     waitAllServers :: [(Async m x, Async m x)] -> m [Either SomeException x]
@@ -344,7 +344,7 @@ prop_txSubmission st@(TxSubmissionState peers _) =
              --
              -- This is ok, the peer is cheating.
              property True
-         
+
 
          x@(False, True) ->
            -- If we are presented with a stream of valid txids then we should have
