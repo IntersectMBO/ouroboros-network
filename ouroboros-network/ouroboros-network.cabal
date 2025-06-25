@@ -142,7 +142,7 @@ library
     bytestring >=0.10 && <0.13,
     cardano-prelude,
     cardano-slotting,
-    cardano-strict-containers,
+    cardano-strict-containers >=0.1.4,
     cborg >=0.2.1 && <0.3,
     containers,
     contra-tracer,
