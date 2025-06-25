@@ -81,7 +81,6 @@ import Test.Ouroboros.Network.Utils
 
 import Test.QuickCheck
 import Test.QuickCheck.Function (apply)
-import Test.QuickCheck.Monoids (All (..))
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
 import Text.Pretty.Simple
