@@ -916,7 +916,7 @@ prop_SharedTxState_shrinker
   -> Property
 prop_SharedTxState_shrinker =
     property
-  . foldMap (\(ArbSharedTxState _ st) -> All $ sharedTxStateInvariant st)
+  . foldMap (\(ArbSharedTxState _ st) -> Every $ sharedTxStateInvariant st)
   . shrink
   . getFixed
 
