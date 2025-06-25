@@ -12,6 +12,7 @@
 #if __GLASGOW_HASKELL__ >= 908
 {-# OPTIONS_GHC -Wno-x-partial #-}
 #endif
+{-# OPTIONS_GHC -Wno-unused-imports #-}
 
 module Test.Ouroboros.Network.Diffusion.Testnet.Cardano (tests) where
 
@@ -36,7 +37,7 @@ import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (catMaybes, fromJust, fromMaybe, isJust, mapMaybe)
 import Data.Monoid (Sum (..))
-import Data.Ratio (Ratio)
+import Data.Ratio
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Time (secondsToDiffTime)
@@ -90,10 +91,7 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRo
 import Ouroboros.Network.PeerSelection.Types
 import Ouroboros.Network.Server2 qualified as Server
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
-           (defaultTxDecisionPolicy, txInflightMultiplicity)
-import Ouroboros.Network.TxSubmission.Inbound.V2.State (inflightTxs)
-import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TraceTxLogic (..),
-           TraceTxSubmissionInbound (..))
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 import Ouroboros.Network.TxSubmission.Outbound (TxSubmissionProtocolError (..))
 
 import Simulation.Network.Snocket (BearerInfo (..), noAttenuation)
