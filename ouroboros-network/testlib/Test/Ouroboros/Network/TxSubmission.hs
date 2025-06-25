@@ -1194,8 +1194,8 @@ prop_collectTxs_shrinker
   -> Property
 prop_collectTxs_shrinker (Fixed txs) =
     property $ foldMap (\a@(ArbCollectTxs _ _ _ _ _ st) ->
-                         All . counterexample (show st) $
-                               f a =/= f txs
+                         Every . counterexample (show st) $
+                                 f a =/= f txs
                           .&&. sharedTxStateInvariant st
                        ) (shrink txs)
   where
