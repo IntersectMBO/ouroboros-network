@@ -42,8 +42,7 @@ import Data.Typeable (Typeable)
 import System.Random (StdGen)
 
 import GHC.Stack (HasCallStack)
-import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..),
-           NumTxIdsToReq (..))
+import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..))
 import Ouroboros.Network.SizeInBytes (SizeInBytes (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
@@ -226,6 +225,7 @@ updateRefCounts referenceCounts (RefCountDiff diff) =
               referenceCounts
               diff
 
+
 tickTimedTxs :: forall peeraddr tx txid.
                 (Ord txid)
              => Time
@@ -249,7 +249,6 @@ tickTimedTxs now st@SharedTxState{ timedTxs
        , referenceCounts = referenceCounts'
        , bufferedTxs     = bufferedTxs'
        }
-
   where
     fn :: Map txid Int
        -> [txid]
@@ -439,8 +438,6 @@ collectTxsImpl txSize peeraddr requestedTxIds receivedTxs
 
         requestedSize = fold $ availableTxIds ps `Map.restrictKeys` requestedTxIds
         requestedTxsInflightSize' =
-          -- TODO: VALIDATE size of received txs against what was announced
-          -- earlier;
           assert (requestedTxsInflightSize ps >= requestedSize) $
           requestedTxsInflightSize ps - requestedSize
 
