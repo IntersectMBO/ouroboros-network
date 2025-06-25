@@ -4,6 +4,8 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Policy
   ( TxDecisionPolicy (..)
   , defaultTxDecisionPolicy
   , max_TX_SIZE
+    -- * Re-exports
+  , NumTxIdsToReq (..)
   ) where
 
 import Control.Monad.Class.MonadTime.SI

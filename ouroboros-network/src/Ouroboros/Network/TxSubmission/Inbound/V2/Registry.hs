@@ -184,6 +184,7 @@ withPeer tracer
          }
 
     -- TODO: this function needs to be tested!
+    -- Issue: https://github.com/IntersectMBO/ouroboros-network/issues/5151
     unregisterPeer :: SharedTxState peeraddr txid tx
                    -> SharedTxState peeraddr txid tx
     unregisterPeer st@SharedTxState { peerTxStates,
@@ -256,10 +257,10 @@ withPeer tracer
         bracket_ (atomically $ waitTSem mempoolSem)
                  (atomically $ signalTSem mempoolSem)
           $ do
-            res <- addTx
             start <- getMonotonicTime
-            atomically $ modifyTVar sharedStateVar (updateBufferedTx start res)
+            res <- addTx
             end <- getMonotonicTime
+            atomically $ modifyTVar sharedStateVar (updateBufferedTx end res)
             let duration = end `diffTime` start
             case res of
               TxAccepted -> traceWith txTracer (TraceTxInboundAddedToMempool [txid] duration)
@@ -474,7 +475,7 @@ decisionLogicThread tracer counterTracer policy txChannelsVar sharedStateVar = d
     go = do
       -- We rate limit the decision making process, it could overwhelm the CPU
       -- if there are too many inbound connections.
-      threadDelay 0.005 -- 5ms
+      threadDelay _DECISION_LOOP_DELAY
 
       (decisions, st) <- atomically do
         sharedTxState <- readTVar sharedStateVar
@@ -507,3 +508,8 @@ decisionLogicThread tracer counterTracer policy txChannelsVar sharedStateVar = d
             a' <- restore (io a) `onException` putMVar m a
             putMVar m a'
           Nothing -> putMVar m d
+
+
+-- `5ms` delay
+_DECISION_LOOP_DELAY :: DiffTime
+_DECISION_LOOP_DELAY = 0.005
