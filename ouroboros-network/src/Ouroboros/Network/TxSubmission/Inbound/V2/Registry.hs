@@ -13,14 +13,14 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Registry
   , newTxChannelsVar
   , newTxMempoolSem
   , PeerTxAPI (..)
-  , decisionLogicThread
-  , drainRejectionThread
+  , decisionLogicThreads
   , withPeer
   ) where
 
 import Control.Concurrent.Class.MonadMVar.Strict
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Concurrent.Class.MonadSTM.TSem
+import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
@@ -450,6 +450,7 @@ drainRejectionThread policy sharedStateVar = do
          then go $ addTime drainInterval now
          else go nextDrain
 
+
 decisionLogicThread
     :: forall m peeraddr txid tx.
        ( MonadDelay m
@@ -508,6 +509,32 @@ decisionLogicThread tracer counterTracer policy txChannelsVar sharedStateVar = d
             a' <- restore (io a) `onException` putMVar m a
             putMVar m a'
           Nothing -> putMVar m d
+
+
+-- | Run `decisionLogicThread` and `drainRejectionThread`.
+--
+decisionLogicThreads
+    :: forall m peeraddr txid tx.
+       ( MonadDelay m
+       , MonadMVar  m
+       , MonadMask  m
+       , MonadAsync m
+       , MonadFork  m
+       , Ord peeraddr
+       , Ord txid
+       , Hashable peeraddr
+       )
+    => Tracer m (TraceTxLogic peeraddr txid tx)
+    -> Tracer m TxSubmissionCounters
+    -> TxDecisionPolicy
+    -> TxChannelsVar m peeraddr txid tx
+    -> SharedTxStateVar m peeraddr txid tx
+    -> m Void
+decisionLogicThreads tracer counterTracer policy txChannelsVar sharedStateVar =
+  uncurry (<>) <$>
+    drainRejectionThread policy sharedStateVar
+    `concurrently`
+    decisionLogicThread tracer counterTracer policy txChannelsVar sharedStateVar
 
 
 -- `5ms` delay
