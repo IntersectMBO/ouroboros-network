@@ -457,12 +457,9 @@ genNodeArgs relays minConnected localRootPeers self txs = flip suchThat hasUpstr
 
   -- Generating an InitiatorResponderMode node is 3 times more likely since we
   -- want our tests to cover more this case.
-  -- diffusionMode <- frequency [ (1, pure InitiatorOnlyDiffusionMode)
-  --                            , (3, pure InitiatorAndResponderDiffusionMode)
-  --                            ]
-  -- TODO: 'cm & ig enforce timeouts' fails in 'InitiatorOnlyDiffusionMode'
-  -- so we pin it to this
-  let diffusionMode = InitiatorAndResponderDiffusionMode
+  diffusionMode <- frequency [ (1, pure InitiatorOnlyDiffusionMode)
+                             , (3, pure InitiatorAndResponderDiffusionMode)
+                             ]
 
   -- Make sure our targets for active peers cover the maximum of peers
   -- one generated
@@ -702,7 +699,7 @@ genDiffusionScript genLocalRootPeers
     dnsMapScript <- genDomainMapScript relays
     txs <- makeUniqueIds 0
        <$> vectorOf (length relays') (choose (10, 100) >>= \c -> vectorOf c arbitrary)
-    nodesWithCommands <- mapM go (zip relays' txs)
+    nodesWithCommands <- mapM (go simArgs) (zip relays' txs)
     return (simArgs, dnsMapScript, nodesWithCommands)
   where
     relays' = unTestnetRelays relays
@@ -718,8 +715,8 @@ genDiffusionScript genLocalRootPeers
                          , i + length l + 1
                          )
 
-    go :: (TestnetRelayInfo, [Tx Int]) -> Gen (NodeArgs, [Command])
-    go (relay, txs) = do
+    go :: SimArgs -> (TestnetRelayInfo, [Tx Int]) -> Gen (NodeArgs, [Command])
+    go simArgs (relay, txs) = do
       let otherRelays  = relay `delete` relays'
           minConnected = 3 `max` (length relays' - 1) -- ^ TODO is this ever different from 3?
                                                       -- since we generate {2,3} relays?
