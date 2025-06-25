@@ -264,13 +264,13 @@ instance Show NodeArgs where
               , "(" ++ show naAddr ++ ")"
               , show naPeerSharing
               , show naLocalRootPeers
-              , show naLedgerPeers
+              , "(" ++ show naLedgerPeers ++ ")"
               , show naPeerTargets
               , "(" ++ show naDNSTimeoutScript ++ ")"
               , "(" ++ show naDNSLookupDelayScript ++ ")"
               , "(" ++ show naChainSyncExitOnBlockNo ++ ")"
               , show naChainSyncEarlyExit
-              , show naFetchModeScript
+              , "(" ++ show naFetchModeScript ++ ")"
               , show naTxs
               ]
 
