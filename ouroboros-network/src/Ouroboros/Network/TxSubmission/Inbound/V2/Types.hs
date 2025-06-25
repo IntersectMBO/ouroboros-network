@@ -5,8 +5,8 @@
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 
 module Ouroboros.Network.TxSubmission.Inbound.V2.Types
@@ -43,7 +43,7 @@ import Data.Monoid (Sum (..))
 import Data.Sequence.Strict (StrictSeq)
 import Data.Set (Set)
 import Data.Set qualified as Set
-import Data.Typeable (Typeable, eqT, (:~:)(Refl))
+import Data.Typeable (Typeable, eqT, (:~:) (Refl))
 import GHC.Generics (Generic)
 import System.Random (StdGen)
 
@@ -84,8 +84,8 @@ data PeerTxState txid tx = PeerTxState {
        requestedTxIdsInflight   :: !NumTxIdsToReq,
 
        -- | The size in bytes of transactions that we have requested but which
-       -- have not yet been replied to. We need to track this it keep our
-       -- requests within the limit on the number of unacknowledged txids.
+       -- have not yet been replied to. We need to track this to keep our
+       -- requests within the `maxTxsSizeInflight` limit.
        --
        requestedTxsInflightSize :: !SizeInBytes,
 
@@ -93,8 +93,9 @@ data PeerTxState txid tx = PeerTxState {
        --
        requestedTxsInflight     :: !(Set txid),
 
-       -- | A subset of `unacknowledgedTxIds` which were unknown to the peer.
-       -- We need to track these `txid`s since they need to be acknowledged.
+       -- | A subset of `unacknowledgedTxIds` which were unknown to the peer
+       -- (i.e. requested but not received). We need to track these `txid`s
+       -- since they need to be acknowledged.
        --
        -- We track these `txid` per peer, rather than in `bufferedTxs` map,
        -- since that could potentially lead to corrupting the node, not being
@@ -216,7 +217,13 @@ data SharedTxState peeraddr txid tx = SharedTxState {
 
       -- | A set of timeouts for txids that have been added to bufferedTxs after being
       -- inserted into the mempool.
+      --
+      -- We need these short timeouts to avoid re-downloading a `tx`.  We could
+      -- acknowledge this `txid` to all peers, when a peer from another
+      -- continent presents us it again.
+      --
       -- Every txid entry has a reference count in `referenceCounts`.
+      --
       timedTxs                 :: !(Map Time [txid]),
 
       -- | A set of txids that have been downloaded by a peer and are on their
