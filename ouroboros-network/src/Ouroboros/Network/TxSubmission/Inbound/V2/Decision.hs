@@ -403,17 +403,19 @@ filterActivePeers
     -> SharedTxState peeraddr txid tx
     -> Map peeraddr (PeerTxState txid tx)
 filterActivePeers
-    TxDecisionPolicy { maxUnacknowledgedTxIds,
-                       txsSizeInflightPerPeer,
-                       maxTxsSizeInflight,
-                       txInflightMultiplicity,
-                       maxNumTxIdsToRequest
-                     }
-    SharedTxState { peerTxStates,
-                    bufferedTxs,
-                    inflightTxs,
-                    inflightTxsSize,
-                    inSubmissionToMempoolTxs }
+    policy@TxDecisionPolicy {
+      maxUnacknowledgedTxIds,
+      txsSizeInflightPerPeer,
+      maxTxsSizeInflight,
+      txInflightMultiplicity
+    }
+    sharedTxState@SharedTxState {
+      peerTxStates,
+      bufferedTxs,
+      inflightTxs,
+      inflightTxsSize,
+      inSubmissionToMempoolTxs
+    }
     | inflightTxsSize > maxTxsSizeInflight
       -- we might be able to request txids, we cannot download txs
     = Map.filter fn peerTxStates
@@ -425,12 +427,9 @@ filterActivePeers
                  <> Map.keysSet bufferedTxs
 
     fn :: PeerTxState txid tx -> Bool
-    fn PeerTxState { unacknowledgedTxIds,
-                     requestedTxIdsInflight,
-                     unknownTxs,
-                     downloadedTxs,
-                     requestedTxsInflight
-                   } =
+    fn peerTxState@PeerTxState {
+        requestedTxIdsInflight
+       } =
            requestedTxIdsInflight == 0
            -- if a peer has txids in-flight, we cannot request more txids or txs.
         && requestedTxIdsInflight + numOfUnacked <= maxUnacknowledgedTxIds
@@ -438,34 +437,20 @@ filterActivePeers
       where
         -- Split `unacknowledgedTxIds'` into the longest prefix of `txid`s which
         -- can be acknowledged and the unacknowledged `txid`s.
-        (acknowledgedTxIds, _) =
-          StrictSeq.spanl (\txid -> (txid `Map.member` bufferedTxs
-                                 || txid `Set.member` unknownTxs
-                                 || txid `Map.member` downloadedTxs)
-                                 && txid `Set.notMember` requestedTxsInflight
-                          )
-                          unacknowledgedTxIds
-        numOfUnacked = fromIntegral (StrictSeq.length unacknowledgedTxIds)
-        numOfAcked   = StrictSeq.length acknowledgedTxIds
-        unackedAndRequested = numOfUnacked + requestedTxIdsInflight
-        txIdsToRequest =
-            assert (unackedAndRequested <= maxUnacknowledgedTxIds) $
-            assert (requestedTxIdsInflight <= maxNumTxIdsToRequest) $
-            (maxUnacknowledgedTxIds - unackedAndRequested + fromIntegral numOfAcked)
-            `min`
-            (maxNumTxIdsToRequest - requestedTxIdsInflight)
+        (txIdsToRequest, _, unackedTxIds) = splitAcknowledgedTxIds policy sharedTxState peerTxState
+        numOfUnacked = fromIntegral (StrictSeq.length unackedTxIds)
 
     gn :: PeerTxState txid tx -> Bool
-    gn PeerTxState { unacknowledgedTxIds,
-                     requestedTxIdsInflight,
-                     requestedTxsInflight,
-                     requestedTxsInflightSize,
-                     availableTxIds,
-                     downloadedTxs,
-                     unknownTxs } =
+    gn peerTxState@PeerTxState { unacknowledgedTxIds,
+                                 requestedTxIdsInflight,
+                                 requestedTxsInflight,
+                                 requestedTxsInflightSize,
+                                 availableTxIds,
+                                 unknownTxs
+                               } =
           (    requestedTxIdsInflight == 0
             && requestedTxIdsInflight + numOfUnacked <= maxUnacknowledgedTxIds
-            &&  txIdsToRequest > 0
+            && txIdsToRequest > 0
           )
         || (underSizeLimit && not (Map.null downloadable))
       where
@@ -479,21 +464,7 @@ filterActivePeers
 
         -- Split `unacknowledgedTxIds'` into the longest prefix of `txid`s which
         -- can be acknowledged and the unacknowledged `txid`s.
-        (acknowledgedTxIds, _) =
-          StrictSeq.spanl (\txid -> txid `Map.member` bufferedTxs
-                                 || txid `Set.member` unknownTxs
-                                 || txid `Map.member` downloadedTxs
-                                 && txid `Set.notMember` requestedTxsInflight
-                          )
-                          unacknowledgedTxIds
-        numOfAcked   = StrictSeq.length acknowledgedTxIds
-        unackedAndRequested = numOfUnacked + requestedTxIdsInflight
-        txIdsToRequest =
-            assert (unackedAndRequested <= maxUnacknowledgedTxIds) $
-            assert (requestedTxIdsInflight <= maxNumTxIdsToRequest) $
-            (maxUnacknowledgedTxIds - unackedAndRequested + fromIntegral numOfAcked)
-            `min`
-            (maxNumTxIdsToRequest - requestedTxIdsInflight)
+        (txIdsToRequest, _, _) = splitAcknowledgedTxIds policy sharedTxState peerTxState
 
 --
 -- Auxiliary functions
