@@ -522,7 +522,7 @@ sharedTxStateInvariant SharedTxState {
 
          -- PeerTxState invariants
     .&&. counterexample "PeerTxState invariant violation"
-         (foldMap (\ps -> All
+         (foldMap (\ps -> Every
                         . counterexample (show ps)
                         . peerTxStateInvariant
                         $ ps
