@@ -41,20 +41,19 @@ data NodeToClientVersion
     -- | NodeToClientV_15
     -- -- ^ added `query` to NodeToClientVersionData
     = NodeToClientV_16
-    -- ^ added @ImmutableTip@ to @LocalStateQuery@, enabled
-    -- @CardanoNodeToClientVersion11@, i.e., Conway and
-    -- @GetStakeDelegDeposits@.
+    -- ^  Conway era (enabled @CardanoNodeToClientVersion11@);
+    -- added @ImmutableTip@ and @GetStakeDelegDeposits@ queries to @LocalStateQuery@
     | NodeToClientV_17
     -- ^ added @GetProposals@ and @GetRatifyState@ queries
     | NodeToClientV_18
     -- ^ added @GetFuturePParams@ query
     | NodeToClientV_19
-    -- ^ added @GetLedgerPeerSnapshot@
+    -- ^ added @GetBigLedgerPeerSnapshot@ query
     | NodeToClientV_20
-    -- ^ added @QueryStakePoolDefaultVote@,
-    -- added @MsgGetMeasures@ / @MsgReplyGetMeasures@ to @LocalTxMonitor@
+    -- ^ added @QueryStakePoolDefaultVote@ query;
+    -- added @MsgGetMeasures@ and @MsgReplyGetMeasures@ to @LocalTxMonitor@
     | NodeToClientV_21
-    -- ^ New codecs for PParams and CompactGenesis
+    -- ^ new codecs for @PParams@ and @CompactGenesis@
   deriving (Eq, Ord, Enum, Bounded, Show, Generic, NFData)
 
 -- | We set 16ths bit to distinguish `NodeToNodeVersion` and
