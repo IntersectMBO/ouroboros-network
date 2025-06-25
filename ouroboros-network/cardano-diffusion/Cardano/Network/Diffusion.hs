@@ -22,6 +22,7 @@ import Data.Set qualified as Set
 import Data.Void (Void)
 import System.Exit (ExitCode)
 
+import Cardano.Network.Diffusion.Configuration qualified as Cardano
 import Cardano.Network.Diffusion.Handlers qualified as Cardano
 import Cardano.Network.Diffusion.Types
 import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
@@ -158,6 +159,7 @@ run CardanoNodeArguments {
                       Cardano.Churn.readUseBootstrap   = readUseBootstrapPeers,
                       Cardano.Churn.consensusMode      = consensusMode,
                       Cardano.Churn.tracerChurnMode    = tracerChurnMode
-                    }
+                    },
+                  daSRVPrefix                         = Cardano.srvPrefix
                 }
                config apps

@@ -64,6 +64,8 @@ import GHC.Exception (Exception)
 import Network.DNS (Domain, TYPE)
 import System.Random (StdGen, mkStdGen, splitGen)
 
+import Cardano.Network.Diffusion.Configuration qualified as Cardano
+
 import Ouroboros.Network.Mux (noBindForkPolicy)
 import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
 import Ouroboros.Network.Protocol.Handshake.Codec (VersionDataCodec (..),
@@ -325,6 +327,7 @@ run blockGeneratorArgs limits ni na
               , Diffusion.daRequestPublicRootPeers            = Just requestPublicRootPeers
               , Diffusion.daPeerChurnGovernor                 = peerChurnGovernor
               , Diffusion.daExtraChurnArgs                    = aExtraChurnArgs na
+              , Diffusion.daSRVPrefix                         = Cardano.srvPrefix
               }
 
             apps = Node.applications

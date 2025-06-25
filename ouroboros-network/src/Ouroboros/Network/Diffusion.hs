@@ -206,6 +206,7 @@ runM Interfaces
        , daRequestPublicRootPeers
        , daPeerChurnGovernor
        , daExtraChurnArgs
+       , daSRVPrefix
        }
      Configuration
        { dcIPv4Address
@@ -638,7 +639,8 @@ runM Interfaces
                                          wlpTracer                = dtTraceLedgerPeersTracer,
                                          wlpGetUseLedgerPeers     = dcReadUseLedgerPeers,
                                          wlpGetLedgerPeerSnapshot = dcReadLedgerPeerSnapshot,
-                                         wlpSemaphore             = dnsSemaphore
+                                         wlpSemaphore             = dnsSemaphore,
+                                         wlpSRVPrefix             = daSRVPrefix
                                        }
                                        peerSelectionActionsRng
 

@@ -65,7 +65,6 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
            (accumulateBigLedgerStake, bigLedgerPeerQuota,
            recomputeRelativeStake)
-import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS
 
 -- | Ledger Peer request result
@@ -92,19 +91,20 @@ data LedgerPeers =
 --
 getLedgerPeers
   :: MonadSTM m
-  => LedgerPeersConsensusInterface extraAPI m
+  => SRVPrefix
+  -> LedgerPeersConsensusInterface extraAPI m
   -> AfterSlot
   -> STM m LedgerPeers
-getLedgerPeers LedgerPeersConsensusInterface
-                 { lpGetLatestSlot
-                 , lpGetLedgerPeers
-                 }
+getLedgerPeers srvPrefix
+               ledgerCtx@LedgerPeersConsensusInterface
+                 { lpGetLatestSlot }
                ulp = do
   wOrigin <- lpGetLatestSlot
   case (wOrigin, ulp) of
-    (_         , Always) -> LedgerPeers <$> lpGetLedgerPeers
-    (At curSlot, After slot)
-      | curSlot >= slot -> LedgerPeers <$> lpGetLedgerPeers
+    (_         , Always) ->
+      LedgerPeers <$> getRelayAccessPointsFromLedger srvPrefix ledgerCtx
+    (At curSlot, After slot) | curSlot >= slot ->
+      LedgerPeers <$> getRelayAccessPointsFromLedger srvPrefix ledgerCtx
     _ -> pure BeforeSlot
 
 -- | Convert a list of pools with stake to a Map keyed on the accumulated stake.
@@ -115,16 +115,17 @@ getLedgerPeers LedgerPeersConsensusInterface
 -- O(log n) time by taking advantage of Map.lookupGE (returns the smallest key greater or equal
 -- to the provided value).
 --
-accPoolStake :: [(PoolStake, NonEmpty RelayAccessPoint)]
-             -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
+accPoolStake :: forall relayAccessPoint.
+                [(PoolStake, NonEmpty relayAccessPoint)]
+             -> Map AccPoolStake (PoolStake, NonEmpty relayAccessPoint)
 accPoolStake =
       Map.fromList
     . List.foldl' fn []
     . recomputeRelativeStake AllLedgerPeers
   where
-    fn :: [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))]
-       -> (PoolStake, NonEmpty RelayAccessPoint)
-       -> [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))]
+    fn :: [(AccPoolStake, (PoolStake, NonEmpty relayAccessPoint))]
+       -> (PoolStake, NonEmpty relayAccessPoint)
+       -> [(AccPoolStake, (PoolStake, NonEmpty relayAccessPoint))]
     fn [] (s, rs) =
         [(AccPoolStake (unPoolStake s), (s, rs))]
     fn ps (s, !rs) =
@@ -135,8 +136,9 @@ accPoolStake =
 
 -- | Take the result of 'accBigPoolStake' and turn it into
 --
-accBigPoolStakeMap :: [(PoolStake, NonEmpty RelayAccessPoint)]
-                   -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
+accBigPoolStakeMap :: forall relayAccessPoint.
+                      [(PoolStake, NonEmpty relayAccessPoint)]
+                   -> Map AccPoolStake (PoolStake, NonEmpty relayAccessPoint)
 accBigPoolStakeMap = Map.fromAscList      -- the input list is ordered by `AccPoolStake`, thus we
                                           -- can use `fromAscList`
                    . accumulateBigLedgerStake
@@ -240,7 +242,8 @@ ledgerPeersThread PeerActionsDNS {
                     wlpTracer,
                     wlpGetUseLedgerPeers,
                     wlpGetLedgerPeerSnapshot,
-                    wlpSemaphore
+                    wlpSemaphore,
+                    wlpSRVPrefix
                   }
                   getReq
                   putResp = do
@@ -272,10 +275,10 @@ ledgerPeersThread PeerActionsDNS {
                DontUseLedgerPeers -> do
                  traceWith wlpTracer DisabledLedgerPeers
                  return (Map.empty, Map.empty, Nothing, now)
-               UseLedgerPeers ula -> do
+               UseLedgerPeers useLedgerAfter -> do
                  (ledgerWithOrigin, ledgerPeers, peerSnapshot) <-
                    atomically ((,,) <$> lpGetLatestSlot wlpConsensusInterface
-                                    <*> getLedgerPeers wlpConsensusInterface ula
+                                    <*> getLedgerPeers wlpSRVPrefix wlpConsensusInterface useLedgerAfter
                                     <*> wlpGetLedgerPeerSnapshot)
 
                  let (peersStakeMap, bigPeersStakeMap, cachedSlot'') =
@@ -286,7 +289,9 @@ ledgerPeersThread PeerActionsDNS {
                                                     cachedSlot,
                                                     peerMap,
                                                     bigPeerMap,
-                                                    ula}
+                                                    useLedgerAfter,
+                                                    srvPrefix = wlpSRVPrefix
+                                                  }
                  when (isJust cachedSlot'') $ traceWith wlpTracer UsingBigLedgerPeerSnapshot
 
                  traceWith wlpTracer $ FetchingNewLedgerState (Map.size peersStakeMap) (Map.size bigPeersStakeMap)
@@ -374,13 +379,15 @@ ledgerPeersThread PeerActionsDNS {
 -- | Arguments record to stakeMapWithSlotOverSource function
 --
 data StakeMapOverSource = StakeMapOverSource {
-  ledgerWithOrigin :: WithOrigin SlotNo,
-  ledgerPeers      :: LedgerPeers,
-  peerSnapshot     :: Maybe LedgerPeerSnapshot,
-  cachedSlot       :: Maybe SlotNo,
-  peerMap          :: Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint),
-  bigPeerMap       :: Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint),
-  ula              :: AfterSlot }
+    ledgerWithOrigin :: WithOrigin SlotNo,
+    ledgerPeers      :: LedgerPeers,
+    peerSnapshot     :: Maybe LedgerPeerSnapshot,
+    cachedSlot       :: Maybe SlotNo,
+    peerMap          :: Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint),
+    bigPeerMap       :: Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint),
+    useLedgerAfter   :: AfterSlot,
+    srvPrefix        :: SRVPrefix
+  }
   deriving Show
 
 -- | Build up a stake map to sample ledger peers from. The SlotNo, if different from 0,
@@ -398,25 +405,29 @@ stakeMapWithSlotOverSource StakeMapOverSource {
                              cachedSlot,
                              peerMap,
                              bigPeerMap,
-                             ula } =
+                             useLedgerAfter,
+                             srvPrefix
+                           } =
   case (ledgerWithOrigin, ledgerPeers, peerSnapshot) of
     -- check if we can use the snapshot first
-    (ledgerSlotNo, _, Just (LedgerPeerSnapshot (At snapshotSlotNo, accSnapshotRelays)))
-      | snapshotSlotNo >= ledgerSlotNo'
-      , snapshotSlotNo >= ula' ->
+    (ledgerSlotNo, _, Just ledgerPeerSnapshot)
+      | (At snapshotSlotNo, snapshotRelays)
+        <- getRelayAccessPointsFromLedgerPeerSnapshot srvPrefix ledgerPeerSnapshot
+      , snapshotSlotNo >= ledgerSlotNo'
+      , snapshotSlotNo >= useLedgerAfter' ->
           -- we cache the peers from the snapshot
           -- to avoid unnecessary work
           case cachedSlot of
             Just thatSlot | thatSlot == snapshotSlotNo ->
                               (peerMap, bigPeerMap, cachedSlot)
-            _otherwise    -> ( accPoolStake (map snd accSnapshotRelays)
-                             , Map.fromAscList accSnapshotRelays
+            _otherwise    -> ( accPoolStake (map snd snapshotRelays)
+                             , Map.fromAscList snapshotRelays
                              , Just snapshotSlotNo)
       where
         ledgerSlotNo' = case ledgerSlotNo of
           Origin -> 0
           At x   -> x
-        ula' = case ula of
+        useLedgerAfter' = case useLedgerAfter of
           Always     -> 0
           After slot -> slot
 
@@ -439,7 +450,9 @@ data WithLedgerPeersArgs extraAPI m = WithLedgerPeersArgs {
   -- ^ Get Use Ledger After value
   wlpGetLedgerPeerSnapshot :: STM m (Maybe LedgerPeerSnapshot),
   -- ^ Get ledger peer snapshot from file read by node
-  wlpSemaphore             :: DNSSemaphore m
+  wlpSemaphore             :: DNSSemaphore m,
+  wlpSRVPrefix             :: SRVPrefix
+  -- ^ SRV prefix (CIP#0155)
   }
 
 -- | For a LedgerPeers worker thread and submit request and receive responses.

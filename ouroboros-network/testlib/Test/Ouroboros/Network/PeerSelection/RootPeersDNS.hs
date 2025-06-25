@@ -119,7 +119,7 @@ instance Arbitrary DomainAccessPoint where
     where
       plain = DomainAccessPoint
                 <$> genDomainName
-                <*> genPort
+                <*> arbitrary
       srv = DomainSRVAccessPoint <$> genDomainName
 
 genDomainName :: Gen BSC.ByteString
@@ -283,7 +283,7 @@ genGroupSrvs = go []
     let worker grouped 0 _ = shuffle grouped
         worker grouped count domains' = do
           howMany <- chooseInt (1, count)
-          port <- genPort
+          port <- arbitrary
           prio <- arbitrary
           wts <- vectorOf howMany arbitrary
           let group = take howMany domains'
