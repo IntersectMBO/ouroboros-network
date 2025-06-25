@@ -248,7 +248,7 @@ data NodeArgs =
 
 instance Show NodeArgs where
     show NodeArgs { naSeed, naDiffusionMode, naMbTime, naBootstrapPeers, naPublicRoots,
-                   naAddr, naPeerSharing, naLocalRootPeers, naPeerTargets,
+                   naAddr, naPeerSharing, naLocalRootPeers, naLedgerPeers, naPeerTargets,
                    naDNSTimeoutScript, naDNSLookupDelayScript, naChainSyncExitOnBlockNo,
                    naChainSyncEarlyExit, naFetchModeScript, naConsensusMode, naTxs } =
       unwords [ "NodeArgs"
@@ -261,12 +261,13 @@ instance Show NodeArgs where
               , "(" ++ show naAddr ++ ")"
               , show naPeerSharing
               , show naLocalRootPeers
+              , "(" ++ show naLedgerPeers ++ ")"
               , show naPeerTargets
               , "(" ++ show naDNSTimeoutScript ++ ")"
               , "(" ++ show naDNSLookupDelayScript ++ ")"
               , "(" ++ show naChainSyncExitOnBlockNo ++ ")"
               , show naChainSyncEarlyExit
-              , show naFetchModeScript
+              , "(" ++ show naFetchModeScript ++ ")"
               , show naTxs
               ]
 
