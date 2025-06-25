@@ -77,7 +77,7 @@ tests = testGroup "TxLogic"
     , testProperty "acknowledgeTxIds"           prop_acknowledgeTxIds
     , testProperty "receivedTxIdsImpl"          prop_receivedTxIdsImpl
     , testProperty "collectTxsImpl"             prop_collectTxsImpl
-    , testProperty "numTxIdsToRequest"          prop_numTxIdsToRequest
+    , testProperty "splitAcknowledgedTxIds"     prop_splitAcknowledgedTxIds
     , testGroup "NoThunks"
       [ testProperty "receivedTxIdsImpl"        prop_receivedTxIdsImpl_nothunks
       , testProperty "collectTxsImpl"           prop_collectTxsImpl_nothunks
@@ -987,15 +987,59 @@ fixupTxDecisionPolicy a@TxDecisionPolicy { txsSizeInflightPerPeer,
    maxTxsSizeInflight'     = max txsSizeInflightPerPeer maxTxsSizeInflight
 
 
--- | Generate  `TxDecisionPolicy` and a valid `PeerTxState` with respect to
--- that policy.
---
-data ArbPeerTxStateWithPolicy =
-    ArbPeerTxStateWithPolicy {
-        ptspState  :: PeerTxState TxId (Tx TxId),
-        ptspPolicy :: TxDecisionPolicy
+prop_splitAcknowledgedTxIds
+  :: ArbDecisionContexts TxId
+  -> Property
+prop_splitAcknowledgedTxIds
+    ArbDecisionContexts {
+      arbDecisionPolicy = policy@TxDecisionPolicy { maxNumTxIdsToRequest,
+                                                    maxUnacknowledgedTxIds },
+      arbSharedState  = st
     }
-    deriving Show
+    =
+           counterexample "ackedTxIds <> unackedTxIds ≠ unacknowledgedTxIds ps"
+           (ackedTxIds <> unackedTxIds === unacknowledgedTxIds ps)
+      .&&. counterexample "unackedAndRequested ≰ maxUnacknowledgedTxIds"
+           (unackedAndRequested <= maxUnacknowledgedTxIds)
+      .&&. counterexample "requestedTxIdsInflight ps ≰ maxNumTxIdsToRequest"
+           (requestedTxIdsInflight ps <= maxNumTxIdsToRequest)
+      .&&. counterexample "numTxIdsToReq ≰ maxNumTxIdsToRequest - requestedTxIdsInflight ps"
+           (numTxIdsToReq <= maxNumTxIdsToRequest - requestedTxIdsInflight ps)
+      .&&. counterexample "numTxIdsToReq ≰ maxUnacknowledgedTxIds - unackedAndRequested + fromIntegral numOfAckedTxIds"
+           (numTxIdsToReq <= maxUnacknowledgedTxIds - unackedAndRequested + fromIntegral numOfAckedTxIds)
+  where
+    ps = case Map.elems $ TXS.peerTxStates st of
+      a : _ -> a
+      []    -> error "generator invariant violation: empty peerTxStates map"
+    (numTxIdsToReq, ackedTxIds, unackedTxIds)
+      = TXS.splitAcknowledgedTxIds policy st ps
+    numOfAckedTxIds     = StrictSeq.length ackedTxIds
+    numOfUnackedTxIds   = StrictSeq.length unackedTxIds
+    unackedAndRequested = fromIntegral numOfUnackedTxIds + requestedTxIdsInflight ps
+
+
+data ArbDecisionContexts txid = ArbDecisionContexts {
+    arbDecisionPolicy :: TxDecisionPolicy,
+
+    arbSharedState    :: SharedTxState PeerAddr txid (Tx txid),
+
+    arbMempoolHasTx   :: Fun txid Bool
+    -- ^ needed just for shrinking
+  }
+
+instance Show txid => Show (ArbDecisionContexts txid) where
+  show ArbDecisionContexts {
+      arbDecisionPolicy,
+      arbSharedState = st,
+      arbMempoolHasTx
+    }
+    =
+    intercalate "\n\t"
+    [ "ArbDecisionContext"
+    , show arbDecisionPolicy
+    , show st
+    , show arbMempoolHasTx
+    ]
 
 -- | Fix-up `PeerTxState` according to `TxDecisionPolicy`.
 --
@@ -1035,62 +1079,6 @@ fixupPeerTxStateWithPolicy
                               `min` (maxUnacknowledgedTxIds - fromIntegral (StrictSeq.length unacknowledgedTxIds'))
     unknownTxs'             = unknownTxs `Set.intersection` unackedSet
 
-
-instance Arbitrary ArbPeerTxStateWithPolicy where
-    arbitrary = do
-      mempoolHasTx <- arbitrary
-      ArbTxDecisionPolicy policy
-        <- arbitrary
-      ArbPeerTxState { arbPeerTxState = ps }
-        <- genArbPeerTxState
-            mempoolHasTx
-            (fromIntegral (maxUnacknowledgedTxIds policy))
-      return ArbPeerTxStateWithPolicy { ptspState  = fixupPeerTxStateWithPolicy policy ps,
-                                        ptspPolicy = policy
-                                      }
-
-
-prop_numTxIdsToRequest
-  :: ArbPeerTxStateWithPolicy
-  -> Property
-prop_numTxIdsToRequest
-    ArbPeerTxStateWithPolicy {
-      ptspPolicy = policy@TxDecisionPolicy { maxNumTxIdsToRequest,
-                                             maxUnacknowledgedTxIds },
-      ptspState  = ps
-    }
-    =
-    case TXS.numTxIdsToRequest policy ps of
-      (numToReq, ps') ->
-             numToReq <= maxNumTxIdsToRequest
-        .&&. numToReq + requestedTxIdsInflight ps === requestedTxIdsInflight ps'
-        .&&. fromIntegral (StrictSeq.length (unacknowledgedTxIds ps'))
-           + requestedTxIdsInflight ps'
-          <= maxUnacknowledgedTxIds
-
-
-data ArbDecisionContexts txid = ArbDecisionContexts {
-    arbDecisionPolicy :: TxDecisionPolicy,
-
-    arbSharedState    :: SharedTxState PeerAddr txid (Tx txid),
-
-    arbMempoolHasTx   :: Fun txid Bool
-    -- ^ needed just for shrinking
-  }
-
-instance Show txid => Show (ArbDecisionContexts txid) where
-  show ArbDecisionContexts {
-      arbDecisionPolicy,
-      arbSharedState = st,
-      arbMempoolHasTx
-    }
-    =
-    intercalate "\n\t"
-    [ "ArbDecisionContext"
-    , show arbDecisionPolicy
-    , show st
-    , show arbMempoolHasTx
-    ]
 
 
 -- | Fix-up `SharedTxState` so it satisfies `TxDecisionPolicy`.
