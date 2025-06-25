@@ -8,12 +8,12 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.State
   ( -- * Core API
     SharedTxState (..)
   , PeerTxState (..)
-  , numTxIdsToRequest
   , SharedTxStateVar
   , newSharedTxStateVar
   , receivedTxIds
   , collectTxs
   , acknowledgeTxIds
+  , splitAcknowledgedTxIds
   , tickTimedTxs
     -- * Internals, only exported for testing purposes:
   , RefCountDiff (..)
@@ -49,42 +49,6 @@ import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..))
 
 
--- | Compute number of `txids` to request respecting `TxDecisionPolicy`; update
--- `PeerTxState`.
---
-numTxIdsToRequest :: TxDecisionPolicy
-                  -> PeerTxState txid tx
-                  -> (NumTxIdsToReq, PeerTxState txid tx)
-numTxIdsToRequest
-    TxDecisionPolicy { maxNumTxIdsToRequest,
-                       maxUnacknowledgedTxIds }
-    ps@PeerTxState { unacknowledgedTxIds,
-                     requestedTxIdsInflight }
-    =
-    ( txIdsToRequest
-    , ps { requestedTxIdsInflight = requestedTxIdsInflight
-                                  + txIdsToRequest }
-    )
-  where
-    -- we are forcing two invariants here:
-    -- * there are at most `maxUnacknowledgedTxIds` (what we request is added to
-    --   `unacknowledgedTxIds`)
-    -- * there are at most `maxNumTxIdsToRequest` txid requests at a time per
-    --   peer
-    --
-    -- TODO: both conditions provide an upper bound for overall requests for
-    -- `txid`s to all inbound peers.
-    txIdsToRequest, unacked, unackedAndRequested :: NumTxIdsToReq
-
-    txIdsToRequest =
-        assert (unackedAndRequested <= maxUnacknowledgedTxIds) $
-        assert (requestedTxIdsInflight <= maxNumTxIdsToRequest) $
-        (maxUnacknowledgedTxIds - unackedAndRequested)
-        `min` (maxNumTxIdsToRequest - requestedTxIdsInflight)
-
-    unackedAndRequested = unacked + requestedTxIdsInflight
-    unacked = fromIntegral $ StrictSeq.length unacknowledgedTxIds
-
 --
 -- Pure public API
 --
@@ -106,17 +70,15 @@ acknowledgeTxIds
 {-# INLINE acknowledgeTxIds #-}
 
 acknowledgeTxIds
-    TxDecisionPolicy { maxNumTxIdsToRequest,
-                       maxUnacknowledgedTxIds }
-    SharedTxState { bufferedTxs }
+    policy
+    sharedTxState
     ps@PeerTxState { availableTxIds,
-                     unacknowledgedTxIds,
                      unknownTxs,
                      requestedTxIdsInflight,
                      downloadedTxs,
                      score,
-                     toMempoolTxs,
-                     requestedTxsInflight }
+                     toMempoolTxs
+                   }
     =
     -- We can only acknowledge txids when we can request new ones, since
     -- a `MsgRequestTxIds` for 0 txids is a protocol error.
@@ -145,21 +107,18 @@ acknowledgeTxIds
   where
     -- Split `unacknowledgedTxIds'` into the longest prefix of `txid`s which
     -- can be acknowledged and the unacknowledged `txid`s.
-    (acknowledgedTxIds, unacknowledgedTxIds') =
-      StrictSeq.spanl (\txid -> (txid `Map.member` bufferedTxs
-                             || txid `Set.member` unknownTxs
-                             || txid `Map.member` downloadedTxs)
-                             && txid `Set.notMember` requestedTxsInflight
-                      )
-                      unacknowledgedTxIds
+    (txIdsToRequest, acknowledgedTxIds, unacknowledgedTxIds')
+      = splitAcknowledgedTxIds policy sharedTxState ps
 
-    txsToMempool = [ (txid,tx)
+    txsToMempool = [ (txid, tx)
                    | txid <- toList toMempoolTxIds
-                   , txid `Map.notMember` bufferedTxs
+                   , txid `Map.notMember` bufferedTxs sharedTxState
                    , tx <- maybeToList $ txid `Map.lookup` downloadedTxs
                    ]
     (toMempoolTxIds, _) =
       StrictSeq.spanl (`Map.member` downloadedTxs) acknowledgedTxIds
+
+
     txsToMempoolMap = Map.fromList txsToMempool
 
     toMempoolTxs' = toMempoolTxs <> txsToMempoolMap
@@ -192,17 +151,52 @@ acknowledgeTxIds
     txIdsToAcknowledge :: NumTxIdsToAck
     txIdsToAcknowledge = fromIntegral $ StrictSeq.length acknowledgedTxIds
 
-    txIdsToRequest, unacked, unackedAndRequested :: NumTxIdsToReq
+
+-- | Split unacknowledged txids into acknowledged and unacknowledged parts, also
+-- return number of txids which can be requested.
+--
+splitAcknowledgedTxIds
+  :: Ord txid
+  => TxDecisionPolicy
+  -> SharedTxState peer txid tx
+  -> PeerTxState  txid tx
+  -> (NumTxIdsToReq, StrictSeq.StrictSeq txid, StrictSeq.StrictSeq txid)
+  -- ^ number of txids to request, acknowledged txids, unacknowledged txids
+splitAcknowledgedTxIds
+    TxDecisionPolicy {
+      maxUnacknowledgedTxIds,
+      maxNumTxIdsToRequest
+    }
+    SharedTxState {
+      bufferedTxs
+    }
+    PeerTxState {
+      unacknowledgedTxIds,
+      unknownTxs,
+      downloadedTxs,
+      requestedTxsInflight,
+      requestedTxIdsInflight
+    }
+    =
+    (txIdsToRequest, acknowledgedTxIds', unacknowledgedTxIds')
+  where
+    (acknowledgedTxIds', unacknowledgedTxIds')
+      = StrictSeq.spanl (\txid -> (txid `Map.member` bufferedTxs
+                         || txid `Set.member` unknownTxs
+                         || txid `Map.member` downloadedTxs)
+                         && txid `Set.notMember` requestedTxsInflight
+                        )
+                        unacknowledgedTxIds
+    numOfUnacked = StrictSeq.length unacknowledgedTxIds
+    numOfAcked   = StrictSeq.length acknowledgedTxIds'
+    unackedAndRequested = fromIntegral numOfUnacked + requestedTxIdsInflight
 
     txIdsToRequest =
         assert (unackedAndRequested <= maxUnacknowledgedTxIds) $
         assert (requestedTxIdsInflight <= maxNumTxIdsToRequest) $
-        (maxUnacknowledgedTxIds - unackedAndRequested + fromIntegral txIdsToAcknowledge)
+        (maxUnacknowledgedTxIds - unackedAndRequested + fromIntegral numOfAcked)
         `min`
         (maxNumTxIdsToRequest - requestedTxIdsInflight)
-
-    unackedAndRequested = unacked + requestedTxIdsInflight
-    unacked = fromIntegral $ StrictSeq.length unacknowledgedTxIds
 
 
 -- | `RefCountDiff` represents a map of `txid` which can be acknowledged
