@@ -74,7 +74,7 @@ makeDecisions policy st =
 
 -- | Order peers by how useful the TXs they have provided are.
 --
--- TXs delivered late will fail to apply because they where included in
+-- TXs delivered late will fail to apply because they were included in
 -- a recently adopted block. Peers can race against each other by setting
 -- `txInflightMultiplicity` to > 1. In case of a tie a hash of the peeraddr
 -- is used as a tie breaker. Since every invocation use a new salt a given
@@ -87,6 +87,7 @@ orderByRejections :: Hashable peeraddr
 orderByRejections salt =
         List.sortOn (\(peeraddr, ps) -> (score ps, hashWithSalt salt peeraddr))
       . Map.toList
+
 
 -- | Internal state of `pickTxsToDownload` computation.
 --
@@ -414,8 +415,10 @@ filterActivePeers
                     inflightTxsSize,
                     inSubmissionToMempoolTxs }
     | inflightTxsSize > maxTxsSizeInflight
+      -- we might be able to request txids, we cannot download txs
     = Map.filter fn peerTxStates
     | otherwise
+      -- we might be able to request txids or txs.
     = Map.filter gn peerTxStates
   where
     unrequestable = Map.keysSet (Map.filter (>= txInflightMultiplicity) inflightTxs)
@@ -428,7 +431,8 @@ filterActivePeers
                      downloadedTxs,
                      requestedTxsInflight
                    } =
-           requestedTxIdsInflight == 0 -- document why it's not <= maxTxIdsInFlightPerPeer
+           requestedTxIdsInflight == 0
+           -- if a peer has txids in-flight, we cannot request more txids or txs.
         && requestedTxIdsInflight + numOfUnacked <= maxUnacknowledgedTxIds
         && txIdsToRequest > 0
       where
