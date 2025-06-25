@@ -133,7 +133,7 @@ sharedTxStateInvariant SharedTxState {
 
          -- the set of buffered txids is equal to sum of the sets of
          -- unacknowledged txids.
-         counterexample "bufferedTxs txid not a subset of unacknoledged txids"
+         counterexample "bufferedTxs txid not a subset of unacknowledged txids"
          (bufferedTxsSet
            `Set.isSubsetOf`
            foldr (\PeerTxState { unacknowledgedTxIds } r ->
