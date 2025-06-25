@@ -125,6 +125,8 @@ instance Arbitrary DomainAccessPoint where
 genDomainName :: Gen BSC.ByteString
 genDomainName = elements $ (\i -> "test" <> (BSC.pack . show $ i)) <$> [1..6 :: Int]
 
+-- TODO: this type alias should be turned into a newtype with a `Show` instance
+-- which displays `IP` as a string literal.
 type MockDNSLookupResult = Either [(IP, TTL)]
                                   [( DNS.Domain
                                    , Word16 -- ^ priority
