@@ -25,6 +25,8 @@ module Ouroboros.Network.Protocol.TxSubmission2.Server
   ) where
 
 import Data.List.NonEmpty (NonEmpty)
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Peer.Server
@@ -51,7 +53,7 @@ data Collect txid tx =
        -- contains the transactions sent, but this pairs them up with the
        -- transactions requested. This is because the peer can determine that
        -- some transactions are no longer needed.
-     | CollectTxs [txid] [tx]
+     | CollectTxs (Map txid SizeInBytes) [tx]
 
 
 data ServerStIdle (n :: N) txid tx m a where
@@ -77,7 +79,7 @@ data ServerStIdle (n :: N) txid tx m a where
   -- |
   --
   SendMsgRequestTxsPipelined
-    :: [txid]
+    :: Map txid SizeInBytes
     -> m (ServerStIdle (S n) txid tx m a)
     -> ServerStIdle       n  txid tx m a
 
@@ -127,7 +129,7 @@ txSubmissionServerPeerPipelined (TxSubmissionServerPipelined server) =
 
     go (SendMsgRequestTxsPipelined txids k) =
       YieldPipelined
-        (MsgRequestTxs txids)
+        (MsgRequestTxs $ Map.keys txids)
         (ReceiverAwait \case
            MsgReplyTxs txs -> ReceiverDone (CollectTxs txids txs))
         (Effect (go <$> k))

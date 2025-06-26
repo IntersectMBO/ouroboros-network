@@ -206,7 +206,7 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                                                           . StrictSeq.null
                                                           . unacknowledgedTxIds
                                                           $ peerTxState',
-                                    txdTxsToRequest       = Set.empty,
+                                    txdTxsToRequest       = Map.empty,
                                     txdTxsToMempool       = txsToMempool
                                   }
                      )
@@ -221,9 +221,9 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                  )
         else
           let requestedTxsInflightSize' :: SizeInBytes
-              txsToRequest :: Set txid
+              txsToRequestMap :: Map txid SizeInBytes
 
-              (requestedTxsInflightSize', txsToRequest) =
+              (requestedTxsInflightSize', txsToRequestMap) =
                 -- inner fold: fold available `txid`s
                 --
                 -- Note: although `Map.foldrWithKey` could be used here, it
@@ -242,7 +242,7 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                     && inflightMultiplicity < txInflightMultiplicity
                     -- TODO: we must validate that `txSize` is smaller than
                     -- maximum txs size
-                    then Just (sizeInflight + txSize, txid)
+                    then Just (sizeInflight + txSize, (txid, txSize))
                     else Nothing
                   )
                   (Map.assocs $
@@ -268,6 +268,7 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                   -- will be selected only once from a given peer (at least
                   -- in each round).
 
+              txsToRequest = Map.keysSet txsToRequestMap
               peerTxState' = peerTxState {
                   requestedTxsInflightSize = requestedTxsInflightSize',
                   requestedTxsInflight     = requestedTxsInflight
@@ -308,7 +309,7 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                                                        . unacknowledgedTxIds
                                                        $ peerTxState'',
                                  txdTxIdsToRequest     = numTxIdsToReq,
-                                 txdTxsToRequest       = txsToRequest,
+                                 txdTxsToRequest       = txsToRequestMap,
                                  txdTxsToMempool       = txsToMempool
                                }
                   )
@@ -320,7 +321,7 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                        stInSubmissionToMempoolTxs = stInSubmissionToMempoolTxs'
                      }
                 , ( (peeraddr, peerTxState'')
-                  , emptyTxDecision { txdTxsToRequest = txsToRequest }
+                  , emptyTxDecision { txdTxsToRequest = txsToRequestMap }
                   )
                 )
 
@@ -474,23 +475,23 @@ filterActivePeers
 -- fusion optimisation.
 --
 foldWithState
-  :: forall s a b.
+  :: forall s a b c.
      Ord b
-  => (a -> s -> Maybe (s, b))
-  -> [a] -> s -> (s, Set b)
+  => (a -> s -> Maybe (s, (b, c)))
+  -> [a] -> s -> (s, Map b c)
 {-# INLINE foldWithState #-}
 
 foldWithState f = foldr cons nil
   where
     cons :: a
-         -> (s -> (s, Set b))
-         -> (s -> (s, Set b))
+         -> (s -> (s, Map b c))
+         -> (s -> (s, Map b c))
     cons a k = \ !s ->
       case f a s of
         Nothing -> nil s
-        Just (!s', !b) ->
-          case Set.insert b `second` k s' of
+        Just (!s', (!b, !c)) ->
+          case Map.insert b c `second` k s' of
             r@(!_s, !_bs) -> r
 
-    nil :: s -> (s, Set b)
-    nil = \ !s -> (s, Set.empty)
+    nil :: s -> (s, Map b c)
+    nil = \ !s -> (s, Map.empty)
