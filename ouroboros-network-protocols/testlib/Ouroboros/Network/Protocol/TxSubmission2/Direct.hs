@@ -7,6 +7,8 @@
 
 module Ouroboros.Network.Protocol.TxSubmission2.Direct (directPipelined) where
 
+import Data.Map.Strict qualified as Map
+
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Proofs (Queue (..), enqueue)
 
@@ -51,7 +53,7 @@ directPipelined (TxSubmissionServerPipelined mserver)
     directSender q (SendMsgRequestTxsPipelined txids serverNext)
                    ClientStIdle{recvMsgRequestTxs} = do
       server' <- serverNext
-      SendMsgReplyTxs txs client' <- recvMsgRequestTxs txids
+      SendMsgReplyTxs txs client' <- recvMsgRequestTxs (Map.keys txids)
       directSender (enqueue (CollectTxs txids txs) q) server' client'
 
     directSender q (CollectPipelined (Just server) _) client = do

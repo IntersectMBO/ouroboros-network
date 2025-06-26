@@ -264,7 +264,7 @@ txSubmissionInbound tracer initDelay (NumTxIdsToAck maxUnacked) mpReader mpWrite
             txsMap = Map.fromList [ (txId tx, tx) | tx <- txs ]
 
             txidsReceived  = Map.keysSet txsMap
-            txidsRequested = Set.fromList txids
+            txidsRequested = Map.keysSet txids
 
         unless (txidsReceived `Set.isSubsetOf` txidsRequested) $
           throwIO ProtocolErrorTxNotRequested
@@ -415,7 +415,7 @@ txSubmissionInbound tracer initDelay (NumTxIdsToAck maxUnacked) mpReader mpWrite
               Map.splitAt (fromIntegral maxTxToRequest) (availableTxids st)
 
         SendMsgRequestTxsPipelined
-          (Map.keys txsToRequest)
+          txsToRequest
           (continueWithStateM (serverReqTxIds (Succ n)) st {
              availableTxids = availableTxids'
            })
