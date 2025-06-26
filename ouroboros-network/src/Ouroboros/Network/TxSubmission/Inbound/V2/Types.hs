@@ -191,9 +191,9 @@ data SharedTxState peeraddr txid tx = SharedTxState {
       -- /Note:/ `txid`s which `tx` were unknown by a peer are tracked
       -- separately in `unknownTxs`.
       --
-      -- /Note:/ previous implementation also needed to explicitly tracked
+      -- /Note:/ previous implementation also needed to explicitly track
       -- `txid`s which were already acknowledged, but are still unacknowledged.
-      -- In this implementation, this is done due to reference counting.
+      -- In this implementation, this is done using reference counting.
       --
       -- This map is useful to acknowledge `txid`s, it's basically taking the
       -- longest prefix which contains entries in `bufferedTxs` or `unknownTxs`.
@@ -282,7 +282,7 @@ data TxDecision txid tx = TxDecision {
     -- ^ the tx-submission protocol only allows to pipeline `txid`'s requests
     -- if we have non-acknowledged `txid`s.
 
-    txdTxsToRequest       :: !(Set txid),
+    txdTxsToRequest       :: !(Map txid SizeInBytes),
     -- ^ txid's to download.
 
     txdTxsToMempool       :: !(TxsToMempool txid tx)
@@ -321,7 +321,7 @@ emptyTxDecision = TxDecision {
     txdTxIdsToAcknowledge = 0,
     txdTxIdsToRequest     = 0,
     txdPipelineTxIds      = False,
-    txdTxsToRequest       = Set.empty,
+    txdTxsToRequest       = Map.empty,
     txdTxsToMempool       = mempty
   }
 
