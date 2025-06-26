@@ -36,7 +36,6 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (fromJust, maybeToList)
 import Data.Sequence.Strict (StrictSeq)
 import Data.Sequence.Strict qualified as StrictSeq
-import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Typeable (Typeable)
 import System.Random (StdGen)
@@ -366,15 +365,15 @@ collectTxsImpl
        )
     => (tx -> SizeInBytes) -- ^ compute tx size
     -> peeraddr
-    -> Set txid    -- ^ set of requested txids
-    -> Map txid tx -- ^ received txs
+    -> Map txid SizeInBytes -- ^ requested txids
+    -> Map txid tx          -- ^ received txs
     -> SharedTxState peeraddr txid tx
     -> Either TxSubmissionProtocolError
               (SharedTxState peeraddr txid tx)
     -- ^ Return list of `txid` which sizes didn't match or a new state.
     -- If one of the `tx` has wrong size, we return an error.  The
     -- mini-protocol will throw, which will clean the state map from this peer.
-collectTxsImpl txSize peeraddr requestedTxIds receivedTxs
+collectTxsImpl txSize peeraddr requestedTxIdsMap receivedTxs
                st@SharedTxState { peerTxStates } =
 
     -- using `alterF` so the update of `PeerTxState` is done in one lookup
@@ -408,23 +407,21 @@ collectTxsImpl txSize peeraddr requestedTxIds receivedTxs
             map (\(a, (b,c)) -> (a,b,c))
           . Map.toList
           $ Map.merge
-              (Map.mapMaybeMissing \_ _ -> Nothing)
-              (Map.mapMaybeMissing \_ _ -> Nothing)
+              Map.dropMissing
+              Map.dropMissing
               (Map.zipWithMaybeMatched \_ receivedSize advertisedSize ->
                 if receivedSize == advertisedSize
                   then Nothing
                   else Just (receivedSize, advertisedSize)
               )
               (txSize `Map.map` receivedTxs)
-              (availableTxIds ps)
+              requestedTxIdsMap
 
-
-        notReceived = requestedTxIds Set.\\ Map.keysSet receivedTxs
-
+        requestedTxIds = Map.keysSet requestedTxIdsMap
+        notReceived    = requestedTxIds Set.\\ Map.keysSet receivedTxs
         downloadedTxs' = downloadedTxs ps <> receivedTxs
-
         -- Add not received txs to `unknownTxs` before acknowledging txids.
-        unknownTxs'  = unknownTxs ps <> notReceived
+        unknownTxs'    = unknownTxs ps <> notReceived
 
         requestedTxsInflight' =
           assert (requestedTxIds `Set.isSubsetOf` requestedTxsInflight ps) $
@@ -543,8 +540,8 @@ collectTxs
   -> (tx -> SizeInBytes)
   -> SharedTxStateVar m peeraddr txid tx
   -> peeraddr
-  -> Set txid    -- ^ set of requested txids
-  -> Map txid tx -- ^ received txs
+  -> Map txid SizeInBytes -- ^ set of requested txids with their announced size
+  -> Map txid tx          -- ^ received txs
   -> m (Maybe TxSubmissionProtocolError)
   -- ^ number of txids to be acknowledged and txs to be added to the
   -- mempool
