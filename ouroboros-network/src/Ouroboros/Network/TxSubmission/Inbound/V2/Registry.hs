@@ -33,7 +33,6 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Sequence.Strict (StrictSeq)
 import Data.Sequence.Strict qualified as StrictSeq
-import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Typeable (Typeable)
 import Data.Void (Void)
@@ -77,7 +76,7 @@ data PeerTxAPI m txid tx = PeerTxAPI {
                         -> m (),
     -- ^ handle received txids
 
-    handleReceivedTxs   :: Set txid
+    handleReceivedTxs   :: Map txid SizeInBytes
                         -- ^ requested txids
                         -> Map txid tx
                         -- ^ received txs
@@ -372,8 +371,8 @@ withPeer tracer
                     txidsMap
 
 
-    handleReceivedTxs :: Set txid
-                      -- ^ requested txids
+    handleReceivedTxs :: Map txid SizeInBytes
+                      -- ^ requested txids with their announced size
                       -> Map txid tx
                       -- ^ received txs
                       -> m (Maybe TxSubmissionProtocolError)

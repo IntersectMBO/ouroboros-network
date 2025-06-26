@@ -326,7 +326,7 @@ txSubmissionServer tracer txId maxUnacked maxTxIdsToRequest maxTxToRequest =
           [ (txid, mbTx)
           | let txsMap :: Map txid tx
                 txsMap = Map.fromList [ (txId tx, tx) | tx <- txs ]
-          , txid <- txids
+          , txid <- Map.keys txids
           , let !mbTx = Map.lookup txid txsMap
           ]
 
@@ -354,7 +354,7 @@ txSubmissionServer tracer txId maxUnacked maxTxIdsToRequest maxTxToRequest =
                  -> ServerStIdle n txid tx m [tx]
     serverReqTxs accum n st =
         SendMsgRequestTxsPipelined
-          (Map.keys txsToRequest)
+          txsToRequest
           (do traceWith tracer (EventRequestTxsPipelined st (Map.keys txsToRequest))
               pure $ serverReqTxIds accum (Succ n) st {
                 availableTxids = availableTxids'
