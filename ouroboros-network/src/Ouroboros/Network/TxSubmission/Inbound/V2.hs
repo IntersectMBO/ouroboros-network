@@ -101,7 +101,7 @@ txSubmissionInboundV2
         -- TODO:
         -- We can update the state so that other `tx-submission` servers will
         -- not try to add these txs to the mempool.
-        if Set.null txsToRequest
+        if Map.null txsToRequest
           then serverReqTxIds Zero txd
           else serverReqTxs txd
 
@@ -109,7 +109,7 @@ txSubmissionInboundV2
     serverReqTxs :: TxDecision txid tx
                  -> m (ServerStIdle Z txid tx m ())
     serverReqTxs txd@TxDecision { txdTxsToRequest = txdTxsToRequest } =
-      pure $ SendMsgRequestTxsPipelined (Set.toList txdTxsToRequest)
+      pure $ SendMsgRequestTxsPipelined txdTxsToRequest
                                         (serverReqTxIds (Succ Zero) txd)
 
 
@@ -199,13 +199,13 @@ txSubmissionInboundV2
         handleReceivedTxIds txIdsToReq txidsSeq txidsMap
         k
       CollectTxs txids txs -> do
-        let requested = Set.fromList txids
+        let requested = Map.keysSet txids
             received  = Map.fromList [ (txId tx, tx) | tx <- txs ]
 
         unless (Map.keysSet received `Set.isSubsetOf` requested) $
           throwIO ProtocolErrorTxNotRequested
 
-        mbe <- handleReceivedTxs requested received
+        mbe <- handleReceivedTxs txids received
         traceWith tracer $ TraceTxSubmissionCollected (txId `map` txs)
         case mbe of
           -- one of `tx`s had a wrong size
