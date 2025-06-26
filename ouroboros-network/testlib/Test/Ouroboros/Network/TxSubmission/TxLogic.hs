@@ -735,13 +735,13 @@ prop_receivedTxIdsImpl_nothunks (ArbReceivedTxIds mempoolHasTxFun txs peeraddr _
 
 
 data ArbCollectTxs =
-    ArbCollectTxs (Fun TxId Bool)      -- ^ mempoolHasTx
-                  (Set TxId)           -- ^ requested txid's
-                  (Map TxId (Tx TxId)) -- ^ received txs
-                  PeerAddr             -- ^ peeraddr
+    ArbCollectTxs (Fun TxId Bool)        -- ^ mempoolHasTx
+                  (Map TxId SizeInBytes) -- ^ requested txid's
+                  (Map TxId (Tx TxId))   -- ^ received txs
+                  PeerAddr               -- ^ peeraddr
                   (PeerTxState TxId (Tx TxId))
                   (SharedTxState PeerAddr TxId (Tx TxId))
-                                       -- ^ 'InboundState'
+                                         -- ^ 'InboundState'
     deriving Show
 
 
@@ -762,7 +762,7 @@ instance Arbitrary ArbCollectTxs where
 
         -- Limit the requested `txid`s to satisfy `requestedTxsInflightSize`.
         let requestedTxIds' = fmap fst
-                            . takeWhile (\(_,s) -> s <= requestedTxsInflightSize)
+                            $ takeWhile (\(_,s) -> s <= requestedTxsInflightSize)
                             $ zip requestedTxIds
                                   (scanl1 (<>) [availableTxIds Map.! txid | txid <- requestedTxIds ])
 
@@ -783,7 +783,10 @@ instance Arbitrary ArbCollectTxs where
 
         pure $ assert (foldMap getTxAdvSize receivedTx <= requestedTxsInflightSize)
              $ ArbCollectTxs mempoolHasTxFun
-                              (Set.fromList requestedTxIds')
+                              (Map.fromList [ (txid, advSize)
+                                            | txid <- requestedTxIds'
+                                            , let advSize = availableTxIds Map.! txid
+                                            ])
                               (Map.fromList [ (getTxId tx, tx) | tx <- receivedTx ])
                               peeraddr
                               ps
@@ -791,10 +794,10 @@ instance Arbitrary ArbCollectTxs where
 
     shrink (ArbCollectTxs mempoolHasTx requestedTxs receivedTxs peeraddr ps st) =
       [ ArbCollectTxs mempoolHasTx
-                      requestedTxs'
+                      (Map.restrictKeys requestedTxs requestedTxs')
                       (receivedTxs `Map.restrictKeys` requestedTxs')
                       peeraddr ps st
-      | requestedTxs' <- Set.fromList <$> shrinkList (\_ -> []) (Set.toList requestedTxs)
+      | requestedTxs' <- Set.fromList <$> shrinkList (\_ -> []) (Map.keys requestedTxs)
       ]
       ++
       [ ArbCollectTxs mempoolHasTx
@@ -806,8 +809,8 @@ instance Arbitrary ArbCollectTxs where
       ++
       [ ArbCollectTxs mempoolHasTx
                      (requestedTxs
-                       `Set.intersection` unacked
-                       `Set.intersection` inflightTxSet)
+                       `Map.restrictKeys` unacked
+                       `Map.restrictKeys` inflightTxSet)
                      (receivedTxs
                        `Map.restrictKeys` unacked
                        `Map.restrictKeys` inflightTxSet)
@@ -836,12 +839,22 @@ prop_collectTxs_generator (ArbCollectTxs _ requestedTxIds receivedTxs peeraddr
     .&&. counterexample "inflightTxsSize must be greater than requestedSize"
          (inflightTxsSize st >= requestedSize)
     .&&. counterexample ("receivedTxs must be a subset of requestedTxIds "
-                         ++ show (Map.keysSet receivedTxs Set.\\ requestedTxIds))
-         (Map.keysSet receivedTxs `Set.isSubsetOf` requestedTxIds)
+                         ++ show (Map.keysSet receivedTxs Set.\\ requestedTxIdsSet))
+         (Map.keysSet receivedTxs `Set.isSubsetOf` requestedTxIdsSet)
     .&&. counterexample "peerTxState"
          (Map.lookup peeraddr (peerTxStates st) === Just ps)
+    .&&. -- advertised sizes should agree with `getTxAdvSize of received txs.
+         property ( foldMap Every
+                  $ Map.intersectionWith
+                      (\advSize Tx {getTxId, getTxAdvSize} ->
+                          counterexample (show getTxId)
+                        $ advSize === getTxAdvSize)
+                      requestedTxIds
+                      receivedTxs
+                  )
   where
-    requestedSize = fold (availableTxIds `Map.restrictKeys` requestedTxIds)
+    requestedTxIdsSet = Map.keysSet requestedTxIds
+    requestedSize = fold (availableTxIds `Map.restrictKeys` requestedTxIdsSet)
 
 
 prop_collectTxs_shrinker
@@ -871,7 +884,7 @@ prop_collectTxsImpl
 prop_collectTxsImpl (ArbCollectTxs _mempoolHasTxFun txidsRequested txsReceived peeraddr ps st) =
 
       label ("number of txids inflight "  ++ labelInt 25 5 (Map.size $ inflightTxs st)) $
-      label ("number of txids requested " ++ labelInt 25 5 (Set.size txidsRequested)) $
+      label ("number of txids requested " ++ labelInt 25 5 (Map.size txidsRequested)) $
       label ("number of txids received "  ++ labelInt 10 2 (Map.size txsReceived)) $
       label ("hasTxSizeError " ++ show hasTxSizeErr) $
 
@@ -897,8 +910,9 @@ prop_collectTxsImpl (ArbCollectTxs _mempoolHasTxFun txidsRequested txsReceived p
             counterexample "collectTxsImpl should return Left"
           . counterexample (show txsReceived)
           $ False
-        Left _ | not hasTxSizeErr ->
-          counterexample "collectTxsImpl should return Right" False
+        Left e | not hasTxSizeErr ->
+          counterexample "collectTxsImpl should return Right" $
+          counterexample (show e) False
 
         Left (TXS.ProtocolErrorTxSizeError as) ->
             counterexample (show as)
@@ -1227,7 +1241,7 @@ prop_makeDecisions_inflight
     let (sharedState', decisions) = TXS.makeDecisions policy sharedTxState (peerTxStates sharedTxState)
 
         inflightSet :: Set TxId
-        inflightSet = foldMap txdTxsToRequest decisions
+        inflightSet = foldMap (Map.keysSet . txdTxsToRequest) decisions
 
         inflightSize :: Map PeerAddr SizeInBytes
         inflightSize = Map.foldrWithKey
@@ -1235,7 +1249,7 @@ prop_makeDecisions_inflight
                           Map.insert peer
                             (foldMap (\txid -> fromMaybe 0 $ Map.lookup peer (peerTxStates sharedTxState)
                                                          >>= Map.lookup txid . availableTxIds)
-                                     txdTxsToRequest)
+                                     (Map.keysSet txdTxsToRequest))
                             m
                         ) Map.empty decisions
 
@@ -1302,7 +1316,7 @@ prop_makeDecisions_inflight
                                                  . counterexample (show peeraddr)
                                                  $ a `Set.isSubsetOf` b))
              -- map of requested txs
-             (Map.fromList [ (peeraddr, txids)
+             (Map.fromList [ (peeraddr, Map.keysSet txids)
                            | (peeraddr, TxDecision { txdTxsToRequest = txids })
                              <- Map.assocs decisions
                            ])
