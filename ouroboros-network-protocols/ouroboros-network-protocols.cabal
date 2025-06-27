@@ -61,6 +61,10 @@ library
     Ouroboros.Network.Protocol.LocalTxSubmission.Codec
     Ouroboros.Network.Protocol.LocalTxSubmission.Server
     Ouroboros.Network.Protocol.LocalTxSubmission.Type
+    Ouroboros.Network.Protocol.ObjectDiffusion.Codec
+    Ouroboros.Network.Protocol.ObjectDiffusion.Inbound
+    Ouroboros.Network.Protocol.ObjectDiffusion.Outbound
+    Ouroboros.Network.Protocol.ObjectDiffusion.Type
     Ouroboros.Network.Protocol.PeerSharing.Client
     Ouroboros.Network.Protocol.PeerSharing.Codec
     Ouroboros.Network.Protocol.PeerSharing.Server
