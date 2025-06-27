@@ -139,10 +139,10 @@ sharedTxStateInvariant invariantStrength
                          timedTxs
                        } =
 
-    --      -- `inflightTxs` and `bufferedTxs` are disjoint
-    --      counterexample "inflightTxs not disjoint with bufferedTxs"
-    --      (null (Map.keysSet inflightTxs `Set.intersection` bufferedTxsSet))
-    -- .&&.
+         -- `inflightTxs` and `bufferedTxs` are disjoint
+         counterexample "inflightTxs not disjoint with bufferedTxs"
+         (null (Map.keysSet inflightTxs `Set.intersection` bufferedTxsSet))
+    .&&.
          counterexample "bufferedTxs txid not a subset of unacknowledged txids"
          let unacknowledgedSet =
                foldr (\PeerTxState { unacknowledgedTxIds } r ->
