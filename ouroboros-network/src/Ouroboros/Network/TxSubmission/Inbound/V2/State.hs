@@ -38,9 +38,9 @@ import Data.Sequence.Strict (StrictSeq)
 import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set qualified as Set
 import Data.Typeable (Typeable)
+import GHC.Stack (HasCallStack)
 import System.Random (StdGen)
 
-import GHC.Stack (HasCallStack)
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..))
 import Ouroboros.Network.SizeInBytes (SizeInBytes (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
@@ -55,6 +55,7 @@ import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..))
 acknowledgeTxIds
     :: forall peeraddr tx txid.
        Ord txid
+    => HasCallStack
     => TxDecisionPolicy
     -> SharedTxState peeraddr txid tx
     -> PeerTxState txid tx
@@ -156,6 +157,7 @@ acknowledgeTxIds
 --
 splitAcknowledgedTxIds
   :: Ord txid
+  => HasCallStack
   => TxDecisionPolicy
   -> SharedTxState peer txid tx
   -> PeerTxState  txid tx

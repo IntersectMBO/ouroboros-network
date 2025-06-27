@@ -422,10 +422,11 @@ drainRejectionThread
        , MonadThread m
        , Ord txid
        )
-    => TxDecisionPolicy
+    => Tracer m (TraceTxLogic peeraddr txid tx)
+    -> TxDecisionPolicy
     -> SharedTxStateVar m peeraddr txid tx
     -> m Void
-drainRejectionThread policy sharedStateVar = do
+drainRejectionThread tracer policy sharedStateVar = do
     labelThisThread "tx-rejection-drain"
     now <- getMonotonicTime
     go $ addTime drainInterval now
@@ -438,12 +439,15 @@ drainRejectionThread policy sharedStateVar = do
       threadDelay 1
 
       !now <- getMonotonicTime
-      atomically $ do
+      st'' <- atomically $ do
         st <- readTVar sharedStateVar
         let ptss = if now > nextDrain then Map.map (updateRejects policy now 0) (peerTxStates st)
                                       else peerTxStates st
             st' = tickTimedTxs now st
-        writeTVar sharedStateVar (st' { peerTxStates = ptss })
+                    { peerTxStates = ptss }
+        writeTVar sharedStateVar st'
+        return st'
+      traceWith tracer (TraceSharedTxState "drainRejectionThread" st'')
 
       if now > nextDrain
          then go $ addTime drainInterval now
@@ -531,7 +535,7 @@ decisionLogicThreads
     -> m Void
 decisionLogicThreads tracer counterTracer policy txChannelsVar sharedStateVar =
   uncurry (<>) <$>
-    drainRejectionThread policy sharedStateVar
+    drainRejectionThread tracer policy sharedStateVar
     `concurrently`
     decisionLogicThread tracer counterTracer policy txChannelsVar sharedStateVar
 
