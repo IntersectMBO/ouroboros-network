@@ -11,6 +11,7 @@
   of ledger peer.
 * Added `dispatchLookupWithTTL`
 * Lower the time to cache DNS errors to at most 15min.
+* Added `Ouroboros.Network.TxSubmission.Inbound.V2`.
 
 ### Breaking changes
 
@@ -39,6 +40,10 @@
 - Renamed `Applications` to `DiffusionApplications`
 - `runM` function now receives `ExtraParameters` as an argument
 - Configurable Mux Egress Poll Interval
+- `Ouroboros.Network.TxSubmission.Inbound` moved to `Ouroboros.Network.TxSubmission.Inbound.V1`
+- `Ouroboros.Network.TxSubmission.Inbound.V1.txSubmissionInbound` takes extra argument: `TxSubmissionInitDelay` (previously configurable through `cabal` flags).
+- Removed the `txsubmission-delay` cabal flag.
+- `ProtocolErrorRequestedTooManyTxids` includes number of unacked txids.
 
 ## 0.21.2.0 -- 2025-06-02
 
