@@ -20,6 +20,7 @@ module Ouroboros.Network.PeerSelection.PeerStateActions
     -- * Create PeerStateActions
     PeerStateActionsArguments (..)
   , PeerConnectionHandle
+  , getPromotedHotTime
   , withPeerStateActions
   , pchPeerSharing
     -- * Exceptions
@@ -438,6 +439,15 @@ data PeerConnectionHandle (muxMode :: Mux.Mode) responderCtx peerAddr versionDat
     pchVersionData     :: !versionData,
     pchPromotedHotVar  :: !(StrictTVar m (Maybe Time))
   }
+
+-- | Retrieve the time the remote peer has been promoted to hot state
+-- or Nothing if either the peer was not promoted or is being currently demoted
+--
+getPromotedHotTime :: (MonadSTM m)
+                   => PeerConnectionHandle muxMode responderCtx peerAddr versionData bytes m a b
+                   -> STM m (Maybe Time)
+getPromotedHotTime PeerConnectionHandle { pchPromotedHotVar } =
+  readTVar pchPromotedHotVar
 
 mkInitiatorContext :: MonadSTM m
                    => SingProtocolTemperature pt

@@ -253,7 +253,7 @@ data IsLedgerPeer = IsLedgerPeer
 data IsBigLedgerPeer
    = IsBigLedgerPeer
    | IsNotBigLedgerPeer
-  deriving Eq
+  deriving (Eq, Show)
 
 -- | Return ledger state information and ledger peers.
 --

@@ -8,6 +8,8 @@
 
 module Cardano.Network.Diffusion.Handlers where
 
+import Control.Monad.Class.MonadTime.SI
+
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
 import Cardano.Network.Types (LedgerStateJudgement)
@@ -19,7 +21,6 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type (UseLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerMetric
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 #ifdef POSIX
-import Control.Monad.Class.MonadTime.SI
 import Control.Tracer (traceWith)
 import Ouroboros.Network.ConnectionManager.Core (Trace (..))
 import Ouroboros.Network.PeerSelection.Governor.Types
@@ -40,6 +41,7 @@ sigUSR1Handler
   -> STM IO UseBootstrapPeers
   -> STM IO LedgerStateJudgement
   -> PeerMetrics IO ntnAddr
+  -> (peerconn -> STM IO (Maybe Time))
   -> ConnectionManager muxMode socket ntnAddr
                        handle handleError IO
   -> StrictTVar IO (PeerSelectionState
@@ -49,7 +51,7 @@ sigUSR1Handler
   -> IO ()
 #ifdef POSIX
 sigUSR1Handler tracersExtra getUseLedgerPeers ownPeerSharing getBootstrapPeers
-               getLedgerStateJudgement metrics connectionManager dbgStateVar = do
+               getLedgerStateJudgement metrics getPromotedHotTime connectionManager dbgStateVar = do
   _ <- Signals.installHandler
          Signals.sigUSR1
          (Signals.Catch
@@ -66,7 +68,7 @@ sigUSR1Handler tracersExtra getUseLedgerPeers ownPeerSharing getBootstrapPeers
                                 useBootstrapPeers
                           <*> readTVar dbgStateVar
 
-               let dbgState = makeDebugPeerSelectionState ps up bp lsj am
+               dbgState <- makeDebugPeerSelectionState ps up bp lsj am getPromotedHotTime now
 
                traceWith (dtConnectionManagerTracer tracersExtra)
                          (TrState state)
@@ -77,5 +79,5 @@ sigUSR1Handler tracersExtra getUseLedgerPeers ownPeerSharing getBootstrapPeers
          Nothing
   return ()
 #else
-sigUSR1Handler _ _ _ _ _ _ _ _ = pure ()
+sigUSR1Handler _ _ _ _ _ _ _ _ _ = pure ()
 #endif
