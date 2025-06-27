@@ -13,7 +13,13 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.Ouroboros.Network.TxSubmission.TxLogic where
+module Test.Ouroboros.Network.TxSubmission.TxLogic
+  ( tests
+  , ArbTxDecisionPolicy (..)
+  , PeerAddr
+  , sharedTxStateInvariant
+  , InvariantStrength (..)
+  ) where
 
 import Prelude hiding (seq)
 
@@ -109,6 +115,9 @@ tests = testGroup "TxLogic"
 
 type PeerAddr = Int
 
+data InvariantStrength = WeakInvariant
+                       | StrongInvariant
+
 -- | 'InboundState` invariant.
 --
 sharedTxStateInvariant
@@ -117,44 +126,76 @@ sharedTxStateInvariant
      , Show txid
      , Show tx
      )
-  => SharedTxState peeraddr txid tx
+  => InvariantStrength
+  -> SharedTxState peeraddr txid tx
   -> Property
-sharedTxStateInvariant SharedTxState {
+sharedTxStateInvariant invariantStrength
+                       SharedTxState {
                          peerTxStates,
                          inflightTxs,
                          inflightTxsSize,
                          bufferedTxs,
-                         referenceCounts
+                         referenceCounts,
+                         timedTxs
                        } =
 
-         -- -- `inflightTxs` and `bufferedTxs` are disjoint
-         -- counterexample "inflightTxs not disjoint with bufferedTxs"
-         -- (null (inflightTxsSet `Set.intersection` bufferedTxsSet))
-
-         -- the set of buffered txids is equal to sum of the sets of
-         -- unacknowledged txids.
+    --      -- `inflightTxs` and `bufferedTxs` are disjoint
+    --      counterexample "inflightTxs not disjoint with bufferedTxs"
+    --      (null (Map.keysSet inflightTxs `Set.intersection` bufferedTxsSet))
+    -- .&&.
          counterexample "bufferedTxs txid not a subset of unacknowledged txids"
-         (bufferedTxsSet
-           `Set.isSubsetOf`
-           foldr (\PeerTxState { unacknowledgedTxIds } r ->
-                   r <> Set.fromList (toList unacknowledgedTxIds))
-                 Set.empty txStates)
+         let unacknowledgedSet =
+               foldr (\PeerTxState { unacknowledgedTxIds } r ->
+                       r <> Set.fromList (toList unacknowledgedTxIds))
+                     Set.empty txStates
+             timedSet = foldMap Set.fromList timedTxs
+         in case invariantStrength of
+           WeakInvariant   ->
+             -- `submitTxToMempool` caches buffered `txs`, we check here that
+             -- they do not leak
+             counterexample ("unacknowledgedSet: " ++ show unacknowledgedSet) $
+             counterexample ("bufferedTxsSet: " ++ show bufferedTxsSet) $
+             counterexample ("timedTxsSet: " ++ show timedSet) $
+             (bufferedTxsSet Set.\\ unacknowledgedSet)
+             `Set.isSubsetOf`
+             timedSet
+
+           StrongInvariant -> property $
+             -- the set of buffered txids must be a subset of sum of the sets of
+             -- unacknowledged txids
+             bufferedTxsSet
+             `Set.isSubsetOf`
+             unacknowledgedSet
 
     .&&. counterexample "referenceCounts invariant violation"
-         ( referenceCounts
-           ===
-           Foldable.foldl'
-             (\m PeerTxState { unacknowledgedTxIds = unacked } ->
-               Foldable.foldl'
-                 (flip $
-                   Map.alter (\case
-                                Nothing  -> Just $! 1
-                                Just cnt -> Just $! succ cnt)
-                 )
-                 m
-                 unacked
-             )
-             Map.empty txStates
+         (
+             referenceCounts
+             ===
+             -- fold unacknowledgedTxIds
+             Foldable.foldl'
+               (\m PeerTxState { unacknowledgedTxIds = unacked } ->
+                 Foldable.foldl'
+                   (flip $
+                     Map.alter (\case
+                                  Nothing  -> Just $! 1
+                                  Just cnt -> Just $! succ cnt)
+                   )
+                   m
+                   unacked
+               )
+               -- fold timedTxs
+               (Foldable.foldl'
+                  (Foldable.foldl'
+                     (flip $
+                       Map.alter (\case
+                                    Nothing  -> Just $! 1
+                                    Just cnt -> Just $! succ cnt)
+                     )
+                  )
+                  Map.empty
+                  timedTxs
+               )
+               txStates
          )
 
     .&&. counterexample ("bufferedTxs contain tx which should be gc-ed: "
@@ -571,7 +612,7 @@ prop_SharedTxState_nothunks (ArbSharedTxState _ !st) =
 prop_SharedTxState_generator
   :: ArbSharedTxState
   -> Property
-prop_SharedTxState_generator (ArbSharedTxState _ st) = sharedTxStateInvariant st
+prop_SharedTxState_generator (ArbSharedTxState _ st) = sharedTxStateInvariant StrongInvariant st
 
 
 prop_SharedTxState_shrinker
@@ -579,7 +620,7 @@ prop_SharedTxState_shrinker
   -> Property
 prop_SharedTxState_shrinker =
     property
-  . foldMap (\(ArbSharedTxState _ st) -> All $ sharedTxStateInvariant st)
+  . foldMap (\(ArbSharedTxState _ st) -> All $ sharedTxStateInvariant StrongInvariant st)
   . shrink
   . getFixed
 
@@ -629,7 +670,7 @@ prop_receivedTxIds_generator
 prop_receivedTxIds_generator (ArbReceivedTxIds _ someTxsToAck _peeraddr _ps st) =
     label ("numToAck " ++ labelInt 100 10 (length someTxsToAck))
   . counterexample (show st)
-  $ sharedTxStateInvariant st
+  $ sharedTxStateInvariant StrongInvariant st
 
 
 -- | This property verifies that `acknowledgeTxIds` acknowledges a prefix of
@@ -687,7 +728,7 @@ prop_receivedTxIdsImpl (ArbReceivedTxIds mempoolHasTxFun txs peeraddr ps st) =
          ++ "InboundState invariant violation:\n" ++
             show st'
          )
-         (sharedTxStateInvariant st')
+         (sharedTxStateInvariant StrongInvariant st')
 
          -- unacknowledged txs are well formed
     .&&. counterexample "unacknowledged txids are not well formed"
@@ -866,7 +907,7 @@ prop_collectTxs_shrinker (Fixed txs) =
     property $ foldMap (\a@(ArbCollectTxs _ _ _ _ _ st) ->
                          All . counterexample (show st) $
                                  f a =/= f txs
-                          .&&. sharedTxStateInvariant st
+                          .&&. sharedTxStateInvariant StrongInvariant st
                        ) (shrink txs)
   where
     f (ArbCollectTxs _ reqSet recvMap peeraddr ps st) = (reqSet, recvMap, peeraddr, ps, st)
@@ -897,7 +938,7 @@ prop_collectTxsImpl (ArbCollectTxs _mempoolHasTxFun txidsRequested txsReceived p
                  (  "InboundState invariant violation:\n" ++ show st' ++ "\n"
                  ++ show ps'
                  )
-                 (sharedTxStateInvariant st')
+                 (sharedTxStateInvariant StrongInvariant st')
 
           .&&.
                -- `collectTxsImpl` doesn't modify unacknowledged TxId's
@@ -1191,7 +1232,7 @@ prop_ArbDecisionContexts_generator
   ArbDecisionContexts { arbSharedState = st }
   =
   -- whenFail (pPrint a) $
-  sharedTxStateInvariant st
+  sharedTxStateInvariant StrongInvariant st
 
 
 prop_ArbDecisionContexts_shrinker
@@ -1203,7 +1244,7 @@ prop_ArbDecisionContexts_shrinker
   foldMap (\a ->
             All
           . counterexample (show a)
-          . sharedTxStateInvariant
+          . sharedTxStateInvariant StrongInvariant
           . arbSharedState
           $ a)
         $ shrink ctx
@@ -1220,7 +1261,7 @@ prop_makeDecisions_sharedstate
     let (sharedState, decisions) = TXS.makeDecisions policy sharedTxState (peerTxStates sharedTxState)
     in counterexample (show sharedState)
      $ counterexample (show decisions)
-     $ sharedTxStateInvariant sharedState
+     $ sharedTxStateInvariant StrongInvariant sharedState
 
 
 -- | Verify that `makeDecisions`:

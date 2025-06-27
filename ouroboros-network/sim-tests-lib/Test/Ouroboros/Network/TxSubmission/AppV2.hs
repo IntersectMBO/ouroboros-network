@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
@@ -25,10 +26,10 @@ import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Monad.IOSim hiding (SimResult)
+import Control.Monad.IOSim
 import Control.Tracer (Tracer (..), contramap)
 
-
+import Data.Bifoldable
 import Data.ByteString.Lazy qualified as BSL
 import Data.Foldable (traverse_)
 import Data.Function (on)
@@ -38,6 +39,9 @@ import Data.List qualified as List
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, isJust)
+import Data.Monoid (Sum (..))
+import Data.Set qualified as Set
+import Data.Typeable (Typeable)
 import System.Random (mkStdGen)
 
 import Ouroboros.Network.NodeToNode (NodeToNodeVersion (..))
@@ -49,11 +53,10 @@ import Ouroboros.Network.Protocol.TxSubmission2.Client
 import Ouroboros.Network.Protocol.TxSubmission2.Codec
 import Ouroboros.Network.Protocol.TxSubmission2.Server
 import Ouroboros.Network.Protocol.TxSubmission2.Type
-import Ouroboros.Network.TxSubmission.Inbound.V2 (TxSubmissionInitDelay (..),
-           txSubmissionInboundV2)
+import Ouroboros.Network.TxSubmission.Inbound.V2 (txSubmissionInboundV2)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry
-import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TraceTxLogic)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 import Ouroboros.Network.TxSubmission.Outbound
 import Ouroboros.Network.Util.ShowProxy
 
@@ -62,14 +65,17 @@ import Test.Ouroboros.Network.TxSubmission.Types
 import Test.Ouroboros.Network.Utils hiding (debugTracer)
 
 import Test.QuickCheck
+import Test.QuickCheck.Monoids
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
 
 
 tests :: TestTree
 tests = testGroup "AppV2"
-  [ testProperty "txSubmission" prop_txSubmission
-  , testProperty "inflight" prop_txSubmission_inflight
+  [ testProperty "diffusion"     prop_txSubmission_diffusion
+  , testProperty "inflight"      prop_txSubmission_inflight
+  , testProperty "SharedTxState" $ withMaxSuccess 25
+                                 prop_sharedTxStateInvariant
   ]
 
 data TxSubmissionState =
@@ -112,6 +118,12 @@ instance Arbitrary TxSubmissionState where
         where
           singletonMaps = [Map.singleton k v | (k, v) <- Map.toList m]
 
+
+newtype TxStateTrace peeraddr txid =
+    TxStateTrace (SharedTxState peeraddr txid (Tx txid))
+type TxStateTraceType = TxStateTrace PeerAddr TxId
+
+
 runTxSubmission
   :: forall m peeraddr txid.
      ( MonadAsync m
@@ -126,13 +138,16 @@ runTxSubmission
      , MonadThrow m
      , MonadThrow (STM m)
      , MonadMonotonicTime m
+     , MonadTraceSTM m
      , Ord txid
      , Eq  txid
      , ShowProxy txid
      , NoThunks (Tx txid)
+     , Typeable txid
      , Show peeraddr
      , Ord peeraddr
      , Hashable peeraddr
+     , Typeable peeraddr
 
      , txid ~ Int
      )
@@ -158,6 +173,7 @@ runTxSubmission tracer tracerTxLogic st0 txDecisionPolicy = do
     txChannelsVar <- newMVar (TxChannels Map.empty)
     txMempoolSem <- newTxMempoolSem
     sharedTxStateVar <- newSharedTxStateVar txRng
+    traceTVarIO sharedTxStateVar \_ -> return . TraceDynamic . TxStateTrace
     labelTVarIO sharedTxStateVar "shared-tx-state"
 
     withAsync (decisionLogicThreads tracerTxLogic sayTracer
@@ -274,8 +290,10 @@ txSubmissionSimulation (TxSubmissionState state txDecisionPolicy) = do
     (do threadDelay (simDelayTime + 1000)
         atomically (traverse_ (`writeTVar` Terminate) controlMessageVars)
     ) \_ -> do
-      let tracer :: forall a. Show a => Tracer (IOSim s) a
-          tracer = verboseTracer <> debugTracer
+      let tracer :: forall a. (Show a, Typeable a) => Tracer (IOSim s) a
+          tracer = verboseTracer
+                <> debugTracer
+                <> Tracer traceM
       runTxSubmission tracer tracer state'' txDecisionPolicy
 
 filterValidTxs :: [Tx txid] -> [Tx txid]
@@ -287,8 +305,8 @@ filterValidTxs
 -- property test are the same as for tx submission v1. We need this to know we
 -- didn't regress.
 --
-prop_txSubmission :: TxSubmissionState -> Property
-prop_txSubmission st@(TxSubmissionState peers _) =
+prop_txSubmission_diffusion :: TxSubmissionState -> Property
+prop_txSubmission_diffusion st@(TxSubmissionState peers _) =
     let tr = runSimTrace (txSubmissionSimulation st)
         numPeersWithWronglySizedTx :: Int
         numPeersWithWronglySizedTx =
@@ -300,6 +318,13 @@ prop_txSubmission st@(TxSubmissionState peers _) =
             ) 0 peers
     in
         label ("number of peers: " ++ renderRanges 3 (Map.size peers))
+      . label ("number of txs: "
+              ++
+              renderRanges 10
+                ( Set.size
+                . foldMap (Set.fromList . (\(txs, _, _) -> getTxId <$> txs))
+                $ Map.elems peers
+                ))
       . label ("number of peers with wrongly sized tx: "
              ++ show numPeersWithWronglySizedTx)
       $ case traceResult True tr of
@@ -407,6 +432,43 @@ prop_txSubmission_inflight st@(TxSubmissionState state _) =
                     = Map.insert tx 1 rr
                     | otherwise
                     = rr
+
+
+prop_sharedTxStateInvariant :: TxSubmissionState -> Property
+prop_sharedTxStateInvariant initialState@(TxSubmissionState st0 _) =
+  let tr = runSimTrace (() <$ txSubmissionSimulation initialState)
+  in case traceResult True tr of
+    Left err -> counterexample (ppTrace tr)
+              . counterexample (show err)
+              $ False
+    Right _ ->
+      let tr' :: Trace (SimResult ()) TxStateTraceType
+          tr' = traceSelectTraceEventsDynamic tr
+      in case
+         bifoldMap (\_ -> (All (property True), Sum 0))
+                   (\case
+                      (TxStateTrace st)-> ( All $ counterexample (show st)
+                                                $ sharedTxStateInvariant WeakInvariant st
+                                          , Sum 1
+                                          )
+                   )
+                   tr'
+         of (p, Sum c) ->
+               label ("number of txs: "
+                       ++
+                       renderRanges 10
+                         ( Set.size
+                         . foldMap (Set.fromList . (\(txs, _, _) -> getTxId <$> txs))
+                         $ Map.elems st0
+                         ))
+             . label ("number of evaluated states: "
+                       ++ renderRanges 100 c)
+             $ p
+
+
+--
+-- Utils
+--
 
 -- | Check that the inbound mempool contains all outbound `tx`s as a proper
 -- subsequence.  It might contain more `tx`s from other peers.
