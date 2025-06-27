@@ -1,5 +1,7 @@
+{-# LANGUAGE BlockArguments  #-}
 {-# LANGUAGE DataKinds       #-}
 {-# LANGUAGE GADTs           #-}
+{-# LANGUAGE LambdaCase      #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Ouroboros.Network.Protocol.PeerSharing.Server where
@@ -7,7 +9,7 @@ module Ouroboros.Network.Protocol.PeerSharing.Server where
 import Network.TypedProtocol.Peer.Server
 import Ouroboros.Network.Protocol.PeerSharing.Type
 
-data PeerSharingServer peerAddress m = PeerSharingServer {
+newtype PeerSharingServer peerAddress m = PeerSharingServer {
   -- | The client sent us a 'MsgShareRequest'. We have need to compute the
   -- response.
   --
@@ -22,14 +24,13 @@ peerSharingServerPeer :: Monad m
                       -> Server (PeerSharing peerAddress) NonPipelined StIdle m ()
 peerSharingServerPeer PeerSharingServer{..} =
   -- Await to receive a message
-  Await $ \msg ->
+  Await \case
     -- Can be either 'MsgShareRequest' or 'MsgDone'
-    case msg of
+    MsgShareRequest amount -> Effect do
       -- Compute the response and send 'MsgSharePeers' message
-      MsgShareRequest amount -> Effect $ do
-        (resp, server) <- recvMsgShareRequest amount
-        return $
-          Yield (MsgSharePeers resp)
-                (peerSharingServerPeer server)
-      -- Nothing to do.
-      MsgDone -> Done ()
+      (resp, server) <- recvMsgShareRequest amount
+      return $
+        Yield (MsgSharePeers resp)
+              (peerSharingServerPeer server)
+    -- Nothing to do.
+    MsgDone -> Done ()

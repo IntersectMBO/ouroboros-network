@@ -1,6 +1,8 @@
+{-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
@@ -108,29 +110,26 @@ txSubmissionServerPeerPipelined (TxSubmissionServerPipelined server) =
     go (SendMsgRequestTxIdsBlocking ackNo reqNo kDone k) =
       Yield
         (MsgRequestTxIds SingBlocking ackNo reqNo) $
-      Await $ \msg ->
-        case msg of
-          MsgDone ->
-            Effect (Done <$> kDone)
+      Await \case
+        MsgDone ->
+          Effect (Done <$> kDone)
 
-          MsgReplyTxIds (BlockingReply txids) ->
-            Effect (go <$> k txids)
+        MsgReplyTxIds (BlockingReply txids) ->
+          Effect (go <$> k txids)
 
     go (SendMsgRequestTxIdsPipelined ackNo reqNo k) =
       YieldPipelined
         (MsgRequestTxIds SingNonBlocking ackNo reqNo)
-        (ReceiverAwait $ \msg ->
-           case msg of
-             MsgReplyTxIds (NonBlockingReply txids) ->
-               ReceiverDone (CollectTxIds reqNo txids))
+        (ReceiverAwait \case
+           MsgReplyTxIds (NonBlockingReply txids) ->
+             ReceiverDone (CollectTxIds reqNo txids))
         (Effect (go <$> k))
 
     go (SendMsgRequestTxsPipelined txids k) =
       YieldPipelined
         (MsgRequestTxs txids)
-        (ReceiverAwait $ \msg ->
-           case msg of
-             MsgReplyTxs txs -> ReceiverDone (CollectTxs txids txs))
+        (ReceiverAwait \case
+           MsgReplyTxs txs -> ReceiverDone (CollectTxs txids txs))
         (Effect (go <$> k))
 
     go (CollectPipelined mNone collect) =

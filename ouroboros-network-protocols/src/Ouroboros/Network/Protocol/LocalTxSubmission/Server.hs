@@ -1,6 +1,8 @@
+{-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -61,8 +63,8 @@ localTxSubmissionServerPeer server =
     go :: LocalTxSubmissionServer tx reject m a
        -> Server (LocalTxSubmission tx reject) NonPipelined StIdle m a
     go LocalTxSubmissionServer{recvMsgSubmitTx, recvMsgDone} =
-      Await $ \msg -> case msg of
-        MsgSubmitTx tx -> Effect $ do
+      Await \case
+        MsgSubmitTx tx -> Effect do
           (result, k) <- recvMsgSubmitTx tx
           return $
             case result of

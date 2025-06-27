@@ -1,6 +1,8 @@
+{-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -54,40 +56,40 @@ blockFetchClientPeer
   => BlockFetchClient block point m a
   -> Client (BlockFetch block point) NonPipelined BFIdle m a
 blockFetchClientPeer (BlockFetchClient mclient) =
-  Effect $ blockFetchRequestPeer <$> mclient
+   Effect $ blockFetchRequestPeer <$> mclient
  where
-  blockFetchRequestPeer
-    :: BlockFetchRequest block point m a
-    -> Client (BlockFetch block point) NonPipelined BFIdle m a
+   blockFetchRequestPeer
+     :: BlockFetchRequest block point m a
+     -> Client (BlockFetch block point) NonPipelined BFIdle m a
 
-  blockFetchRequestPeer (SendMsgClientDone result) =
-    Yield MsgClientDone (Done result)
+   blockFetchRequestPeer (SendMsgClientDone result) =
+     Yield MsgClientDone (Done result)
 
-  blockFetchRequestPeer (SendMsgRequestRange range resp next) =
-    Yield
-      (MsgRequestRange range)
-      (blockFetchResponsePeer next resp)
+   blockFetchRequestPeer (SendMsgRequestRange range resp next) =
+     Yield
+       (MsgRequestRange range)
+       (blockFetchResponsePeer next resp)
 
 
-  blockFetchResponsePeer
-    :: BlockFetchClient block point m a
-    -> BlockFetchResponse block m a
-    -> Client (BlockFetch block point) NonPipelined BFBusy m a
-  blockFetchResponsePeer next BlockFetchResponse{handleNoBlocks, handleStartBatch} =
-    Await $ \msg -> case msg of
-      MsgStartBatch -> Effect $ blockReceiver next <$> handleStartBatch
-      MsgNoBlocks   -> Effect $ handleNoBlocks >> (blockFetchRequestPeer <$> runBlockFetchClient next)
+   blockFetchResponsePeer
+     :: BlockFetchClient block point m a
+     -> BlockFetchResponse block m a
+     -> Client (BlockFetch block point) NonPipelined BFBusy m a
+   blockFetchResponsePeer next BlockFetchResponse{handleNoBlocks, handleStartBatch} =
+     Await \case
+       MsgStartBatch -> Effect $ blockReceiver next <$> handleStartBatch
+       MsgNoBlocks   -> Effect $ handleNoBlocks >> (blockFetchRequestPeer <$> runBlockFetchClient next)
 
-  blockReceiver
-    :: BlockFetchClient block point m a
-    -> BlockFetchReceiver block m
-    -> Client (BlockFetch block point) NonPipelined BFStreaming m a
-  blockReceiver next BlockFetchReceiver{handleBlock, handleBatchDone} =
-    Await $ \msg -> case msg of
-      MsgBlock block -> Effect $ blockReceiver next <$> handleBlock block
-      MsgBatchDone   -> Effect $ do
-        handleBatchDone
-        blockFetchRequestPeer <$> runBlockFetchClient next
+   blockReceiver
+     :: BlockFetchClient block point m a
+     -> BlockFetchReceiver block m
+     -> Client (BlockFetch block point) NonPipelined BFStreaming m a
+   blockReceiver next BlockFetchReceiver{handleBlock, handleBatchDone} =
+     Await \case
+       MsgBlock block -> Effect $ blockReceiver next <$> handleBlock block
+       MsgBatchDone   -> Effect do
+         handleBatchDone
+         blockFetchRequestPeer <$> runBlockFetchClient next
 
 --
 -- Pipelined client
@@ -152,7 +154,7 @@ blockFetchClientPeerSender (SendMsgRequestRangePipelined range c0 receive next) 
   -- consume a stream of blocks.
   YieldPipelined
     (MsgRequestRange range)
-    (ReceiverAwait $ \msg -> case msg of
+    (ReceiverAwait \case
       MsgStartBatch -> receiveBlocks c0
       MsgNoBlocks   -> ReceiverDone c0)
     (blockFetchClientPeerSender next)
@@ -160,7 +162,7 @@ blockFetchClientPeerSender (SendMsgRequestRangePipelined range c0 receive next) 
   receiveBlocks
     :: c
     -> Receiver (BlockFetch block point) BFStreaming BFIdle m c
-  receiveBlocks c = ReceiverAwait $ \msg -> case msg of
+  receiveBlocks c = ReceiverAwait \case
     -- received a block, run an acction and compute the result
     MsgBlock block -> ReceiverEffect $ do
       c' <- receive (Just block) c

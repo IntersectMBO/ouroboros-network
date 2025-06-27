@@ -1,5 +1,7 @@
+{-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -196,23 +198,21 @@ chainSyncClientPeer (ChainSyncClient mclient) =
           -- This code could be factored more easily by changing the protocol type
           -- to put both roll forward and back under a single constructor.
           MsgAwaitReply ->
-            Effect $ do
+            Effect do
               stAwait
-              pure $ Await $ \resp' ->
-                case resp' of
-                  MsgRollForward header tip ->
-                      chainSyncClientPeer (recvMsgRollForward header tip)
-                    where
-                      ClientStNext{recvMsgRollForward} = stNext
-                  MsgRollBackward pRollback tip ->
-                      chainSyncClientPeer (recvMsgRollBackward pRollback tip)
-                    where
-                      ClientStNext{recvMsgRollBackward} = stNext
+              pure $ Await \case
+                MsgRollForward header tip ->
+                    chainSyncClientPeer (recvMsgRollForward header tip)
+                  where
+                    ClientStNext{recvMsgRollForward} = stNext
+                MsgRollBackward pRollback tip ->
+                    chainSyncClientPeer (recvMsgRollBackward pRollback tip)
+                  where
+                    ClientStNext{recvMsgRollBackward} = stNext
 
     chainSyncClientPeer_ (SendMsgFindIntersect points stIntersect) =
         Yield (MsgFindIntersect points) $
-        Await $ \resp ->
-        case resp of
+        Await \case
           MsgIntersectFound pIntersect tip ->
             chainSyncClientPeer (recvMsgIntersectFound pIntersect tip)
 

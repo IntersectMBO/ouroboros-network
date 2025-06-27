@@ -1,5 +1,7 @@
+{-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds      #-}
 {-# LANGUAGE GADTs          #-}
+{-# LANGUAGE LambdaCase     #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
 module Ouroboros.Network.Protocol.KeepAlive.Server
@@ -24,13 +26,12 @@ keepAliveServerPeer
     => KeepAliveServer m a
     -> Server KeepAlive NonPipelined StClient m a
 keepAliveServerPeer KeepAliveServer { recvMsgKeepAlive, recvMsgDone } =
-    Await $ \msg ->
-      case msg of
-        MsgDone -> Effect $ Done <$> recvMsgDone
+    Await \case
+      MsgDone -> Effect $ Done <$> recvMsgDone
 
-        MsgKeepAlive cookie ->
-          Effect $
-            fmap (\server ->
-                    Yield (MsgKeepAliveResponse cookie)
-                          (keepAliveServerPeer server))
-                 recvMsgKeepAlive
+      MsgKeepAlive cookie ->
+        Effect $
+          fmap (\server ->
+                  Yield (MsgKeepAliveResponse cookie)
+                        (keepAliveServerPeer server))
+               recvMsgKeepAlive

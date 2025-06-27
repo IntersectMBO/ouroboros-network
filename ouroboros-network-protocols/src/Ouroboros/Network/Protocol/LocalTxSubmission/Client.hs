@@ -1,5 +1,7 @@
+{-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -96,7 +98,7 @@ localTxSubmissionClientPeer (LocalTxSubmissionClient client) =
        -> Client (LocalTxSubmission tx reject) NonPipelined StIdle m a
     go (SendMsgSubmitTx tx k) =
       Yield (MsgSubmitTx tx) $
-      Await $ \msg -> case msg of
+      Await \case
         MsgAcceptTx        -> Effect (go <$> k SubmitSuccess)
         MsgRejectTx reject -> Effect (go <$> k (SubmitFail reject))
 

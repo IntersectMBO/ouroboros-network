@@ -1,5 +1,7 @@
+{-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.Protocol.BlockFetch.Server where
@@ -53,7 +55,7 @@ blockFetchServerPeer
   => BlockFetchServer block point m a
   -> Server (BlockFetch block point) NonPipelined BFIdle m a
 blockFetchServerPeer (BlockFetchServer requestHandler result) =
-    Await $ \msg -> case msg of
+    Await \case
       MsgRequestRange range -> Effect $ sendBatch <$> requestHandler range
       MsgClientDone         -> Done result
  where
