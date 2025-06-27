@@ -1,5 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
@@ -194,33 +196,32 @@ blockFetchClient _version controlMessageSTM reportFetched
                  -> Receiver (BlockFetch block (Point block))
                              BFBusy BFIdle m ()
     receiverBusy range fragment inflightlimits =
-      ReceiverAwait $ \msg ->
-        case msg of
-          -- The server is reporting that the range we asked for does not exist.
-          -- This can happen (even if we didn't make any mistakes) if their
-          -- chain forked in the time between when they told us and when we
-          -- asked for this range of blocks. If this happens, it should
-          -- certainly be the case that this peer doesn't continue to tell us
-          -- that this range of blocks is in their chain.
-          --
-          -- FIXME: For now we will not do the detailed error checking to check
-          -- that the peer is not cheating us. Nor will we track these failure
-          -- points to make sure we do not ask for extensions of this again.
-          MsgNoBlocks   ->
-            ReceiverEffect $ do
-              -- Update our in-flight stats and our current status
-              rejectedFetchBatch tracer blockFetchSize inflightlimits
-                                 range headers stateVars
-              return (ReceiverDone ())
-            where
-              headers = AF.toOldestFirst fragment
+      ReceiverAwait \case
+        -- The server is reporting that the range we asked for does not exist.
+        -- This can happen (even if we didn't make any mistakes) if their
+        -- chain forked in the time between when they told us and when we
+        -- asked for this range of blocks. If this happens, it should
+        -- certainly be the case that this peer doesn't continue to tell us
+        -- that this range of blocks is in their chain.
+        --
+        -- FIXME: For now we will not do the detailed error checking to check
+        -- that the peer is not cheating us. Nor will we track these failure
+        -- points to make sure we do not ask for extensions of this again.
+        MsgNoBlocks   ->
+          ReceiverEffect $ do
+            -- Update our in-flight stats and our current status
+            rejectedFetchBatch tracer blockFetchSize inflightlimits
+                               range headers stateVars
+            return (ReceiverDone ())
+          where
+            headers = AF.toOldestFirst fragment
 
-          MsgStartBatch ->
-            ReceiverEffect $ do
-              startedFetchBatch tracer inflightlimits range stateVars
-              return (receiverStreaming inflightlimits range headers)
-            where
-              headers = AF.toOldestFirst fragment
+        MsgStartBatch ->
+          ReceiverEffect $ do
+            startedFetchBatch tracer inflightlimits range stateVars
+            return (receiverStreaming inflightlimits range headers)
+          where
+            headers = AF.toOldestFirst fragment
 
     receiverStreaming :: PeerFetchInFlightLimits
                       -> ChainRange (Point header)

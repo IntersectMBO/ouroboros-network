@@ -84,7 +84,7 @@ data ClientStAcquired block point query m a where
 --
 --  * a result
 --
-data ClientStQuerying block point query m a result = ClientStQuerying {
+newtype ClientStQuerying block point query m a result = ClientStQuerying {
       recvMsgResult :: result -> m (ClientStAcquired block point query m a)
     }
 

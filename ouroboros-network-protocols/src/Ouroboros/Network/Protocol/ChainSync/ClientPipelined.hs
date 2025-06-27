@@ -1,3 +1,4 @@
+{-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
@@ -202,8 +203,8 @@ chainSyncClientPeerSender
 chainSyncClientPeerSender n@Zero (SendMsgRequestNext stAwait stNext) =
 
     Yield
-      MsgRequestNext
-      (Await $ \case
+      MsgRequestNext $
+      Await \case
         MsgRollForward header tip -> Effect $
             chainSyncClientPeerSender n
               <$> recvMsgRollForward header tip
@@ -216,9 +217,9 @@ chainSyncClientPeerSender n@Zero (SendMsgRequestNext stAwait stNext) =
           where
             ClientStNext {recvMsgRollBackward} = stNext
 
-        MsgAwaitReply -> Effect $ do
+        MsgAwaitReply -> Effect do
           stAwait
-          pure $ Await $ \case
+          pure $ Await \case
             MsgRollForward header tip -> Effect $
                 chainSyncClientPeerSender n
                   <$> recvMsgRollForward header tip
@@ -229,7 +230,7 @@ chainSyncClientPeerSender n@Zero (SendMsgRequestNext stAwait stNext) =
                 chainSyncClientPeerSender n
                   <$> recvMsgRollBackward pRollback tip
               where
-                ClientStNext {recvMsgRollBackward} = stNext)
+                ClientStNext {recvMsgRollBackward} = stNext
 
 
 chainSyncClientPeerSender n (SendMsgRequestNextPipelined await next) =
@@ -239,15 +240,15 @@ chainSyncClientPeerSender n (SendMsgRequestNextPipelined await next) =
       MsgRequestNext
       (ReceiverAwait
         -- await for the reply
-        $ \case
+        \case
           MsgRollForward  header    tip -> ReceiverDone (RollForward header tip)
           MsgRollBackward pRollback tip -> ReceiverDone (RollBackward pRollback tip)
 
           -- we need to wait for the next message; this time it must come with
           -- an instruction
-          MsgAwaitReply -> ReceiverEffect $ do
+          MsgAwaitReply -> ReceiverEffect do
             await
-            pure $ ReceiverAwait $ \case
+            pure $ ReceiverAwait \case
               MsgRollForward  header    tip -> ReceiverDone (RollForward header tip)
               MsgRollBackward pRollback tip -> ReceiverDone (RollBackward pRollback tip))
 
@@ -264,7 +265,7 @@ chainSyncClientPeerSender n (SendMsgFindIntersect points
       (MsgFindIntersect points)
       (Await
         -- await for the response and recurse
-        $ \case
+        \case
           MsgIntersectFound pIntersect tip -> Effect $
               chainSyncClientPeerSender n <$> recvMsgIntersectFound pIntersect tip
           MsgIntersectNotFound tip -> Effect $

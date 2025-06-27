@@ -1,3 +1,4 @@
+{-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
@@ -126,7 +127,7 @@ localTxMonitorClientPeer (LocalTxMonitorClient mClient) =
     handleStIdle = \case
       SendMsgAcquire stAcquired ->
         Yield MsgAcquire $
-          Await $ \case
+          Await \case
             MsgAcquired slot -> Effect $ handleStAcquired <$> stAcquired slot
       SendMsgDone a ->
         Yield MsgDone (Done a)
@@ -137,27 +138,27 @@ localTxMonitorClientPeer (LocalTxMonitorClient mClient) =
     handleStAcquired = \case
       SendMsgNextTx stAcquired ->
         Yield MsgNextTx $
-          Await $ \case
+          Await \case
             MsgReplyNextTx tx ->
               Effect $ handleStAcquired <$> stAcquired tx
       SendMsgHasTx txid stAcquired ->
         Yield (MsgHasTx txid) $
-          Await $ \case
+          Await \case
             MsgReplyHasTx res ->
               Effect $ handleStAcquired <$> stAcquired res
       SendMsgGetSizes stAcquired ->
         Yield MsgGetSizes $
-          Await $ \case
+          Await \case
             MsgReplyGetSizes sizes ->
               Effect $ handleStAcquired <$> stAcquired sizes
       SendMsgGetMeasures stAcquired ->
         Yield MsgGetMeasures $
-          Await $ \case
+          Await \case
             MsgReplyGetMeasures measures ->
               Effect $ handleStAcquired <$> stAcquired measures
       SendMsgAwaitAcquire stAcquired ->
         Yield MsgAwaitAcquire $
-          Await $ \case
+          Await \case
             MsgAcquired slot ->
               Effect $ handleStAcquired <$> stAcquired slot
       SendMsgRelease stIdle ->

@@ -1,3 +1,4 @@
+{-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
@@ -118,7 +119,7 @@ localTxMonitorServerPeer (LocalTxMonitorServer mServer) =
       -> Server (LocalTxMonitor txid tx slot) NonPipelined StIdle m a
     handleStIdle = \case
       ServerStIdle{recvMsgDone, recvMsgAcquire} ->
-        Await $ \case
+        Await \case
           MsgAcquire ->
             Effect $ handleStAcquiring <$> recvMsgAcquire
           MsgDone ->
@@ -143,7 +144,7 @@ localTxMonitorServerPeer (LocalTxMonitorServer mServer) =
         , recvMsgGetMeasures
         , recvMsgAwaitAcquire
         , recvMsgRelease
-        } -> Await $ \case
+        } -> Await \case
           MsgNextTx ->
             Effect $ handleNextTx <$> recvMsgNextTx
           MsgHasTx txid ->
