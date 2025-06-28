@@ -81,6 +81,7 @@ run CardanoNodeArguments {
     let tracer = Diffusion.dtDiffusionTracer tracers
         daNtnHandshakeArguments =
           HandshakeArguments {
+              haBearerTracer    = Diffusion.dtBearerTracer tracers,
               haHandshakeTracer = Diffusion.dtHandshakeTracer tracers,
               haHandshakeCodec  = NodeToNode.nodeToNodeHandshakeCodec,
               haVersionDataCodec =
@@ -92,6 +93,7 @@ run CardanoNodeArguments {
             }
         daNtcHandshakeArguments =
           HandshakeArguments {
+              haBearerTracer     = Diffusion.dtLocalBearerTracer tracers,
               haHandshakeTracer  = Diffusion.dtLocalHandshakeTracer tracers,
               haHandshakeCodec   = NodeToClient.nodeToClientHandshakeCodec,
               haVersionDataCodec =

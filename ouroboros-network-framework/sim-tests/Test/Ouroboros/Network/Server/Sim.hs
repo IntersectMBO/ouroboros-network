@@ -637,7 +637,7 @@ multinodeExperiment
                           (CM.Trace
                             peerAddr
                             (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
-    -> Tracer m (WithName (Name peerAddr) (Mux.WithBearer (ConnectionId peerAddr) Mux.Trace))
+    -> Mux.Tracers' m (WithNameAndBearer (Name peerAddr) peerAddr)
     -> StdGen
     -> Snocket m socket peerAddr
     -> Mux.MakeBearer m socket
@@ -650,7 +650,7 @@ multinodeExperiment
     -> MultiNodeScript req peerAddr
     -> m ()
 multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
-                    muxTracer stdGen0 snocket makeBearer addrFamily serverAddr accInit
+                    muxTracers stdGen0 snocket makeBearer addrFamily serverAddr accInit
                     dataFlow0 acceptedConnLimit
                     (MultiNodeScript script _) =
   withJobPool $ \jobpool -> do
@@ -786,7 +786,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
                   Job ( withBidirectionalConnectionManager
                           name simTimeouts
                           inboundTrTracer trTracer cmTracer
-                          inboundTracer muxTracer debugTracer
+                          inboundTracer muxTracers debugTracer
                           stdGen
                           snocket makeBearer connStateIdSupply
                           (\_ -> pure ()) fd (Just localAddr) serverAcc
@@ -1434,7 +1434,7 @@ prop_connection_manager_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                                     (   sayTracer
                                      <> Tracer traceM
                                      <> networkStateTracer getState)
-                                    debugTracerG
+                                    (Mux.Tracers debugTracerG debugTracerG debugTracerG)
                                     (mkStdGen rnd)
                                     snocket
                                     makeFDBearer
@@ -1490,7 +1490,7 @@ prop_timeouts_enforced (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                              (tracerWithTime (Tracer traceM) <> dynamicTracer)
                              dynamicTracer
                              nullTracer
-                             dynamicTracer
+                             (Mux.Tracers dynamicTracer dynamicTracer dynamicTracer)
                              debugTracerG
 
 -- | Property wrapping `multinodeExperiment`.
@@ -2210,7 +2210,7 @@ prop_server_accept_error (Fixed rnd) (AbsIOError ioerr) =
                withBidirectionalConnectionManager "node-0" simTimeouts
                                                   nullTracer nullTracer
                                                   nullTracer nullTracer
-                                                  nullTracer nullTracer
+                                                  Mux.nullTracers nullTracer
                                                   (mkStdGen rnd)
                                                   snock
                                                   makeFDBearer
@@ -2274,8 +2274,7 @@ multiNodeSimTracer :: ( Alternative (STM m), Monad m, MonadFix m
                       (WithName (Name SimAddr) (IG.Trace SimAddr))
                    -> Tracer m
                       (WithName (Name SimAddr) (IG.Debug SimAddr DataFlowProtocolData))
-                   -> Tracer m
-                      (WithName (Name SimAddr) (Mux.WithBearer (ConnectionId SimAddr) Mux.Trace))
+                   -> Mux.Tracers' m (WithNameAndBearer (Name SimAddr) SimAddr)
                    -> Tracer m
                       (WithName
                        (Name SimAddr)
@@ -2287,7 +2286,7 @@ multiNodeSimTracer :: ( Alternative (STM m), Monad m, MonadFix m
 multiNodeSimTracer stdGen serverAcc dataFlow defaultBearerInfo
                    acceptedConnLimit events attenuationMap
                    remoteTrTracer abstractTrTracer
-                   inboundGovTracer debugTracer muxTracer connMgrTracer = do
+                   inboundGovTracer debugTracer muxTracers connMgrTracer = do
 
       let attenuationMap' = (fmap toBearerInfo <$>)
                           . Map.mapKeys ( normaliseId
@@ -2305,7 +2304,7 @@ multiNodeSimTracer stdGen serverAcc dataFlow defaultBearerInfo
                                      inboundGovTracer
                                      debugTracer
                                      connMgrTracer
-                                     muxTracer
+                                     muxTracers
                                      stdGen
                                      snocket
                                      makeFDBearer
@@ -2340,7 +2339,7 @@ multiNodeSim stdGen serverAcc dataFlow defaultBearerInfo
                    acceptedConnLimit events attenuationMap = do
   multiNodeSimTracer stdGen serverAcc dataFlow defaultBearerInfo acceptedConnLimit
                      events attenuationMap dynamicTracer dynamicTracer dynamicTracer
-                     (Tracer traceM) dynamicTracer dynamicTracer --debugTracerG
+                     (Tracer traceM) (Mux.Tracers dynamicTracer dynamicTracer dynamicTracer) dynamicTracer --debugTracerG
 
 
 -- | Connection terminated while negotiating it.

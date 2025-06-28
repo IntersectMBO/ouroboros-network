@@ -279,6 +279,7 @@ serverChainSync sockAddr slotLength seed = withIOManager $ \iocp -> do
       (localAddressFromPath sockAddr)
       HandshakeArguments {
         haHandshakeTracer  = nullTracer,
+        haBearerTracer     = nullTracer,
         haHandshakeCodec   = unversionedHandshakeCodec,
         haVersionDataCodec = unversionedProtocolDataCodec,
         haAcceptVersion    = acceptableVersion,
@@ -553,6 +554,7 @@ serverBlockFetch sockAddr slotLength seed = withIOManager $ \iocp -> do
       (localAddressFromPath sockAddr)
       HandshakeArguments {
         haHandshakeTracer  = nullTracer,
+        haBearerTracer     = nullTracer,
         haHandshakeCodec   = unversionedHandshakeCodec,
         haVersionDataCodec = unversionedProtocolDataCodec,
         haAcceptVersion    = acceptableVersion,

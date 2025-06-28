@@ -681,9 +681,9 @@ pingClient stdout stderr PingOpts{..} versions peer = bracket
     let peerStr' = TL.pack peerStr
     unless pingOptsQuiet $ TL.hPutStrLn IO.stdout $ peerStr' <> " " <> (showNetworkRtt $ toSample t0_e t0_s)
 
-    bearer <- getBearer makeSocketBearer sduTimeout nullTracer sd Nothing
+    bearer <- getBearer makeSocketBearer sduTimeout sd Nothing
 
-    !t1_s <- write bearer timeoutfn $ wrap handshakeNum InitiatorDir (handshakeReq versions pingOptsHandshakeQuery)
+    !t1_s <- write bearer nullTracer timeoutfn $ wrap handshakeNum InitiatorDir (handshakeReq versions pingOptsHandshakeQuery)
     (msg, !t1_e) <- nextMsg bearer timeoutfn handshakeNum
     unless pingOptsQuiet $ TL.hPutStrLn IO.stdout $ peerStr' <> " " <> (showHandshakeRtt $ diffTime t1_e t1_s)
 
@@ -713,7 +713,7 @@ pingClient stdout stderr PingOpts{..} versions peer = bracket
                  then getTip bearer timeoutfn peerStr
                  else keepAlive bearer timeoutfn peerStr version (tdigest []) 0
               -- send terminating message
-              _ <- write bearer timeoutfn $ wrap keepaliveNum InitiatorDir (keepAliveDone version)
+              _ <- write bearer nullTracer timeoutfn $ wrap keepaliveNum InitiatorDir (keepAliveDone version)
               return ()
             -- protocol idle timeout
             MT.threadDelay idleTimeout
@@ -771,7 +771,7 @@ pingClient stdout stderr PingOpts{..} versions peer = bracket
 
     nextMsg ::  Mx.Bearer IO -> TimeoutFn IO -> MiniProtocolNum -> IO (LBS.ByteString, Time)
     nextMsg bearer timeoutfn ptclNum = do
-      (sdu, t_e) <- Network.Mux.Types.read bearer timeoutfn
+      (sdu, t_e) <- Network.Mux.Types.read bearer nullTracer timeoutfn
       if Mx.mhNum (Mx.msHeader sdu) == ptclNum
         then return (Mx.msBlob sdu, t_e)
         else nextMsg bearer timeoutfn ptclNum
@@ -786,7 +786,7 @@ pingClient stdout stderr PingOpts{..} versions peer = bracket
     keepAlive _ _ _ _ _ cookie | cookie == pingOptsCount = return ()
     keepAlive bearer timeoutfn peerStr version td !cookie = do
       let cookie16 = fromIntegral cookie
-      !t_s <- write bearer timeoutfn $ wrap keepaliveNum InitiatorDir (keepAliveReq version cookie16)
+      !t_s <- write bearer nullTracer timeoutfn $ wrap keepaliveNum InitiatorDir (keepAliveReq version cookie16)
       (!msg, !t_e) <- nextMsg bearer timeoutfn keepaliveNum
       let rtt = toSample t_e t_s
           td' = insert rtt td
@@ -810,7 +810,7 @@ pingClient stdout stderr PingOpts{..} versions peer = bracket
            -> String
            -> IO ()
     getTip bearer timeoutfn peerStr = do
-      !t_s <- write bearer timeoutfn $ wrap chainSyncNum InitiatorDir chainSyncFindIntersect
+      !t_s <- write bearer nullTracer timeoutfn $ wrap chainSyncNum InitiatorDir chainSyncFindIntersect
       (!msg, !t_e) <- nextMsg bearer timeoutfn chainSyncNum
       case CBOR.deserialiseFromBytes chainSyncIntersectNotFoundDec msg of
            Left err -> throwIO (PingClientFindIntersectDeserialiseFailure err peerStr)

@@ -56,7 +56,6 @@ import Data.Tuple (swap)
 import Data.Wedge
 import Data.Word (Word32)
 
-import Network.Mux.Trace qualified as Mx
 import Network.Mux.Types qualified as Mx
 
 import Ouroboros.Network.ConnectionId
@@ -86,10 +85,6 @@ data Arguments handlerTrace socket peerAddr handle handleError versionNumber ver
         -- `newNetworkMutableState` instead.
         trTracer            :: Tracer m (TransitionTrace State.ConnStateId
                                             (ConnectionState peerAddr handle handleError versionNumber m)),
-
-        -- | Mux trace.
-        --
-        muxTracer           :: Tracer m (Mx.WithBearer (ConnectionId peerAddr) Mx.Trace),
 
         -- | @IPv4@ address of the connection manager.  If given, outbound
         -- connections to an @IPv4@ address will bound to it.  To use
@@ -394,7 +389,6 @@ with
 with args@Arguments {
          tracer,
          trTracer,
-         muxTracer,
          ipv4Address,
          ipv6Address,
          addressType,
@@ -626,10 +620,7 @@ with args@Arguments {
             (handler updateVersionDataFn socket writer
                      (TrConnectionHandler connId `contramap` tracer)
                      connId
-                     (\bearerTimeout ->
-                       getBearer makeBearer
-                         bearerTimeout
-                         (Mx.WithBearer connId `contramap` muxTracer))
+                     (\bearerTimeout -> getBearer makeBearer bearerTimeout)
                      withBuffer)
             unmask
       where

@@ -72,7 +72,9 @@ data Decision =
     -- ^ reconnect
 
 data SubscriptionTracers a = SubscriptionTracers {
-      stMuxTracer          :: Tracer IO (Mx.WithBearer (ConnectionId LocalAddress) MuxTrace),
+      stMuxTracer          :: Tracer IO (Mx.WithBearer (ConnectionId LocalAddress) Mx.Trace),
+      stMuxChannelTracer   :: Tracer IO (Mx.WithBearer (ConnectionId LocalAddress) Mx.ChannelTrace),
+      stMuxBearerTracer    :: Tracer IO (Mx.WithBearer (ConnectionId LocalAddress) Mx.BearerTrace),
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
       stHandshakeTracer    :: Tracer IO (Mx.WithBearer (ConnectionId LocalAddress)
@@ -111,6 +113,8 @@ subscribe
 subscribe snocket networkMagic supportedVersions
                   SubscriptionTracers {
                     stMuxTracer = muxTracer,
+                    stMuxChannelTracer = muxChannelTracer,
+                    stMuxBearerTracer = muxBearerTracer,
                     stHandshakeTracer = handshakeTracer,
                     stSubscriptionTracer = tracer
                   }
@@ -125,7 +129,12 @@ subscribe snocket networkMagic supportedVersions
         NtC.connectTo
           snocket
           NetworkConnectTracers {
-            nctMuxTracer       = muxTracer,
+            nctMuxTracers =
+              Mx.Tracers {
+                Mx.tracer        = muxTracer,
+                Mx.channelTracer = muxChannelTracer,
+                Mx.bearerTracer  = muxBearerTracer
+              },
             nctHandshakeTracer = handshakeTracer
           }
           (versionedProtocols networkMagic supportedVersions protocols)

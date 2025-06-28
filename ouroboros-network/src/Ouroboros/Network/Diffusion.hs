@@ -168,7 +168,11 @@ runM Interfaces
        }
      Tracers
        { dtMuxTracer
+       , dtChannelTracer
+       , dtBearerTracer
        , dtLocalMuxTracer
+       , dtLocalChannelTracer
+       , dtLocalBearerTracer
        , dtDiffusionTracer = tracer
        , dtTracePeerSelectionTracer
        , dtTraceChurnCounters
@@ -322,7 +326,11 @@ runM Interfaces
                                           ntcFd ntcAddr ntcVersion ntcVersionData m
             mkLocalConnectionHandler responderMuxChannelTracer =
               makeConnectionHandler
-                dtLocalMuxTracer
+                Mx.Tracers {
+                  Mx.tracer        = dtLocalMuxTracer,
+                  Mx.channelTracer = dtLocalChannelTracer,
+                  Mx.bearerTracer  = dtLocalBearerTracer
+                }
                 dcLocalMuxForkPolicy
                 daNtcHandshakeArguments
                 ( ( \ (OuroborosApplication apps)
@@ -348,7 +356,6 @@ runM Interfaces
               CM.with CM.Arguments {
                   CM.tracer              = dtLocalConnectionManagerTracer,
                   CM.trTracer            = nullTracer, -- TODO: issue #3320
-                  CM.muxTracer           = dtLocalMuxTracer,
                   CM.ipv4Address         = Nothing,
                   CM.ipv6Address         = Nothing,
                   CM.addressType         = const Nothing,
@@ -469,27 +476,26 @@ runM Interfaces
                  ntnFd ntnAddr handle (HandleError muxMode ntnVersion) ntnVersion ntnVersionData m a b
           connectionManagerArguments' prunePolicy stdGen =
             CM.Arguments {
-                CM.tracer              = dtConnectionManagerTracer,
-                CM.trTracer            =
-                  fmap CM.abstractState
-                  `contramap` dtConnectionManagerTransitionTracer,
-                CM.muxTracer           = dtMuxTracer,
-                CM.ipv4Address,
-                CM.ipv6Address,
-                CM.addressType         = diNtnAddressType,
-                CM.snocket             = diNtnSnocket,
-                CM.makeBearer          = diNtnBearer,
-                CM.withBuffer          = diWithBuffer,
-                CM.configureSocket     = diNtnConfigureSocket,
-                CM.connectionDataFlow  = daNtnDataFlow,
-                CM.prunePolicy         = prunePolicy,
-                CM.stdGen,
-                CM.connectionsLimits   = dcAcceptedConnectionsLimit,
-                CM.timeWaitTimeout     = dcTimeWaitTimeout,
-                CM.outboundIdleTimeout = dcProtocolIdleTimeout,
-                CM.updateVersionData   = daUpdateVersionData,
-                CM.connStateIdSupply   = diConnStateIdSupply,
-                CM.classifyHandleError
+              CM.tracer              = dtConnectionManagerTracer,
+              CM.trTracer            =
+                fmap CM.abstractState
+                `contramap` dtConnectionManagerTransitionTracer,
+              CM.ipv4Address,
+              CM.ipv6Address,
+              CM.addressType         = diNtnAddressType,
+              CM.snocket             = diNtnSnocket,
+              CM.makeBearer          = diNtnBearer,
+              CM.withBuffer          = diWithBuffer,
+              CM.configureSocket     = diNtnConfigureSocket,
+              CM.connectionDataFlow  = daNtnDataFlow,
+              CM.prunePolicy         = prunePolicy,
+              CM.stdGen,
+              CM.connectionsLimits   = dcAcceptedConnectionsLimit,
+              CM.timeWaitTimeout     = dcTimeWaitTimeout,
+              CM.outboundIdleTimeout = dcProtocolIdleTimeout,
+              CM.updateVersionData   = daUpdateVersionData,
+              CM.connStateIdSupply   = diConnStateIdSupply,
+              CM.classifyHandleError
             }
 
       let makeConnectionHandler'
@@ -503,7 +509,11 @@ runM Interfaces
                                     ntnVersion ntnVersionData ByteString m b c
           makeConnectionHandler' versions =
             makeConnectionHandler
-              dtMuxTracer
+              Mx.Tracers {
+                Mx.tracer        = dtMuxTracer,
+                Mx.channelTracer = dtChannelTracer,
+                Mx.bearerTracer  = dtBearerTracer
+              }
               dcMuxForkPolicy
               daNtnHandshakeArguments
               versions
