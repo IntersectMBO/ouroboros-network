@@ -59,7 +59,7 @@ import Data.Proxy (Proxy (..))
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Typeable (Typeable)
-import System.Random (StdGen, mkStdGen, splitGen)
+import System.Random (StdGen, mkStdGen, split)
 
 import Text.Printf
 
@@ -745,7 +745,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
         connVar <- newTVarIO Map.empty
         labelTVarIO connVar $ "connVar/" ++ show name
         threadId <- myThreadId
-        stdGen <- atomically (stateTVar stdGenVar splitGen)
+        stdGen <- atomically (stateTVar stdGenVar split)
         forkJob jobpool
           $ Job
               ( withInitiatorOnlyConnectionManager
@@ -779,7 +779,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
         connVar <- newTVarIO Map.empty
         labelTVarIO connVar $ "connVar/" ++ show name
         threadId <- myThreadId
-        stdGen <- atomically (stateTVar stdGenVar splitGen)
+        stdGen <- atomically (stateTVar stdGenVar split)
         let job =
               case dataFlow of
                 Duplex ->

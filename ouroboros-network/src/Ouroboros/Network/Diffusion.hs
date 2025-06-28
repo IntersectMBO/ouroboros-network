@@ -44,7 +44,7 @@ import Data.Maybe (catMaybes)
 import Data.Typeable (Proxy (..), Typeable)
 import Data.Void (Void)
 import System.Exit (ExitCode)
-import System.Random (StdGen, newStdGen, splitGen)
+import System.Random (StdGen, newStdGen, split)
 
 import Network.DNS (Resolver)
 import Network.Mux qualified as Mx
@@ -256,12 +256,12 @@ runM Interfaces
       )
 
   where
-    (ledgerPeersRng, rng1) = splitGen diRng
-    (churnRng,       rng2) = splitGen rng1
-    (fuzzRng,        rng3) = splitGen rng2
-    (cmLocalStdGen,  rng4) = splitGen rng3
-    (cmStdGen1,      rng5) = splitGen rng4
-    (cmStdGen2, peerSelectionActionsRng) = splitGen rng5
+    (ledgerPeersRng, rng1) = split diRng
+    (churnRng,       rng2) = split rng1
+    (fuzzRng,        rng3) = split rng2
+    (cmLocalStdGen,  rng4) = split rng3
+    (cmStdGen1,      rng5) = split rng4
+    (cmStdGen2, peerSelectionActionsRng) = split rng5
 
     mkInboundPeersMap :: IG.PublicState ntnAddr ntnVersionData
                       -> Map ntnAddr PeerSharing

@@ -2253,9 +2253,13 @@ table~\ref{table:node-to-client-protocol-versions}.
   \begin{center}
     \begin{tabular}{l|l}
       \header{version} & \header{description} \\\hline
-      \texttt{NodeToClientV\_16} & Add ImmutableTip to LocalStateQuery, Conway, GetStakeDelegDeposits query \\
-      \texttt{NodeToClientV\_17} & GetProposals, GetRatifyState queries \\
-      \texttt{NodeToClientV\_18} & GetFuturePParams query \\
+      \texttt{NodeToClientV\_16} & Conway era, \texttt{ImmutableTip} and \texttt{GetStakeDelegDeposits} queries \\
+      \texttt{NodeToClientV\_17} & \texttt{GetProposals}, \texttt{GetRatifyState} queries \\
+      \texttt{NodeToClientV\_18} & \texttt{GetFuturePParams} query \\
+      \texttt{NodeToClientV\_19} & \texttt{GetBigLedgerPeerSnapshot} query\\
+      \texttt{NodeToClientV\_20} & \texttt{QueryStakePoolDefaultVote} query; \\
+                                 & added \texttt{MsgGetMeasures} and \texttt{MsgReplyGetMeasures} queries \\
+      \texttt{NodeToClientV\_21} & new codecs for \texttt{PParams} and \texttt{CompactGenesis} \\
     \end{tabular}
     \caption{Node-to-client protocol versions}
     \label{table:node-to-client-protocol-versions}

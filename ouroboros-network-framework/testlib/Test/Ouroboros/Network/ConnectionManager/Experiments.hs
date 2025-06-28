@@ -61,7 +61,8 @@ import Data.Proxy (Proxy (..))
 import Data.Typeable (Typeable)
 import Data.Void (Void)
 
-import System.Random (StdGen, splitGen)
+import System.Random (StdGen)
+import System.Random qualified as Random
 
 import Test.QuickCheck
 
@@ -746,7 +747,7 @@ unidirectionalExperiment
     -> ClientAndServerData req
     -> m Property
 unidirectionalExperiment stdGen timeouts snocket makeBearer confSock socket clientAndServerData = do
-    let (stdGen', stdGen'') = splitGen stdGen
+    let (stdGen', stdGen'') = Random.split stdGen
     nextReqs <- oneshotNextRequests clientAndServerData
     connStateIdSupply <- atomically $ CM.newConnStateIdSupply (Proxy @m)
     withInitiatorOnlyConnectionManager
@@ -833,7 +834,7 @@ bidirectionalExperiment
 bidirectionalExperiment
     useLock stdGen timeouts snocket makeBearer confSock socket0 socket1 localAddr0 localAddr1
     clientAndServerData0 clientAndServerData1 = do
-      let (stdGen', stdGen'') = splitGen stdGen
+      let (stdGen', stdGen'') = Random.split stdGen
       lock <- newTMVarIO ()
       connStateIdSupply <- atomically $ CM.newConnStateIdSupply (Proxy @m)
       nextRequests0 <- oneshotNextRequests clientAndServerData0

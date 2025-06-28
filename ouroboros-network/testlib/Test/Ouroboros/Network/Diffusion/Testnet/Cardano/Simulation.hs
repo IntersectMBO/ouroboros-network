@@ -1104,7 +1104,7 @@ diffusionSimulation
       churnModeVar <- newTVarIO ChurnModeNormal
 
       let readUseBootstrapPeers = stepScriptSTM' useBootstrapPeersScriptVar
-          (bgaRng, rng) = Random.splitGen $ mkStdGen seed
+          (bgaRng, rng) = Random.split $ mkStdGen seed
           acceptedConnectionsLimit =
             AcceptedConnectionsLimit maxBound maxBound 0
           readLocalRootPeers  = readTVar lrpVar

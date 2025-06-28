@@ -92,7 +92,7 @@ library
     ouroboros-network-api ^>=0.14,
     ouroboros-network-framework ^>=0.18,
     ouroboros-network-protocols ^>=0.14.0.1,
-    random >=1 && <1.4,
+    random ^>=1.2,
     text >=1.2.4 && <2.2,
     typed-protocols ^>=1.0,
 

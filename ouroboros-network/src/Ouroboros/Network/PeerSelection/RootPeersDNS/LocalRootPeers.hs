@@ -203,7 +203,7 @@ localRootPeersProvider tracer
           (resolver, rr') <- withResource rr
 
           --- Resolve 'domain'
-          rng <- atomically . stateTVar varRng $ splitGen
+          rng <- atomically . stateTVar varRng $ split
           reply <- withDNSSemaphore dnsSemaphore
                                     (dnsLookupWithTTL
                                       DNSLocalPeer

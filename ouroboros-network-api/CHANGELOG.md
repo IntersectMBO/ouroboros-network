@@ -4,6 +4,8 @@
 
 ### Breaking changes
 
+* Added `NodeToClientV_21`.
+
 ### Non-breaking changes
 
 * `IsLedgerPeer` added to `Ouroboros.Network.LedgerPeers.Types` module.

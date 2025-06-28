@@ -9,7 +9,7 @@ import Control.Tracer (Tracer (..))
 import Data.Void (Void)
 import Debug.Trace (traceShowM)
 import Options.Applicative
-import System.Random (newStdGen, splitGen)
+import System.Random (newStdGen, split)
 
 import DMQ.Configuration (mkDiffusionConfiguration,
            readConfigurationFileOrError)
@@ -44,7 +44,7 @@ runDMQ cliopts@CLIOptions {
   nt <- readTopologyFileOrError @() @() topologyFile
 
   stdGen <- newStdGen
-  let (psRng, policyRng) = splitGen stdGen
+  let (psRng, policyRng) = split stdGen
 
   nodeKernel <- newNodeKernel psRng
 
