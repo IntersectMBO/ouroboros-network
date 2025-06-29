@@ -12,6 +12,7 @@ module Ouroboros.Network.Protocol.ChainSync.Codec
   , timeLimitsChainSync
   , maxChainSyncTimeout
   , minChainSyncTimeout
+  , ChainSyncIdleTimeout (..)
   ) where
 
 import Control.Monad.Class.MonadST
@@ -63,6 +64,11 @@ maxChainSyncTimeout :: DiffTime
 maxChainSyncTimeout = 269
 
 
+newtype ChainSyncIdleTimeout = ChainSyncIdleTimeout {
+    getChainSyncIdleTimeout :: Maybe DiffTime
+  }
+
+
 -- | Time Limits
 --
 -- +----------------------------+-------------------------------------------------------------+
@@ -81,13 +87,16 @@ maxChainSyncTimeout = 269
 -- +----------------------------+-------------------------------------------------------------+
 --
 timeLimitsChainSync :: forall (header :: Type) (point :: Type) (tip :: Type).
-                       ProtocolTimeLimitsWithRnd (ChainSync header point tip)
-timeLimitsChainSync = ProtocolTimeLimitsWithRnd stateToLimit
+                       ChainSyncIdleTimeout
+                    -- ^ idle timeout, the default value
+                    -- `Configuration.defaultChainSyncIdleTimeout`.
+                    -> ProtocolTimeLimitsWithRnd (ChainSync header point tip)
+timeLimitsChainSync (ChainSyncIdleTimeout idleTimeout) = ProtocolTimeLimitsWithRnd stateToLimit
   where
     stateToLimit :: forall (st :: ChainSync header point tip).
                     ActiveState st
                  => StateToken st -> StdGen -> (Maybe DiffTime, StdGen)
-    stateToLimit SingIdle                 rnd = (Just 3673, rnd)
+    stateToLimit SingIdle                 rnd = (idleTimeout, rnd)
     stateToLimit SingIntersect            rnd = (shortWait, rnd)
     stateToLimit (SingNext SingCanAwait)  rnd = (shortWait, rnd)
     stateToLimit (SingNext SingMustReply) rnd =

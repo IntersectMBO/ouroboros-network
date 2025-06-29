@@ -9,11 +9,15 @@ module Cardano.Network.Diffusion.Configuration
   , defaultNumBootstrapPeers
   , defaultSyncTargets
   , defaultNumberOfBigLedgerPeers
+  , defaultChainSyncIdleTimeout
   , srvPrefix
+  -- * Re-exports
+  , ChainSyncIdleTimeout (..)
   ) where
 
 import Cardano.Network.Types (NumberOfBigLedgerPeers (..))
 
+import Ouroboros.Network.Protocol.ChainSync.Codec (ChainSyncIdleTimeout (..))
 import Ouroboros.Network.PeerSelection.Governor.Types
            (PeerSelectionTargets (..))
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (SRVPrefix)
@@ -54,6 +58,9 @@ defaultSyncTargets =
 --
 defaultNumberOfBigLedgerPeers :: NumberOfBigLedgerPeers
 defaultNumberOfBigLedgerPeers = NumberOfBigLedgerPeers 5
+
+defaultChainSyncIdleTimeout :: ChainSyncIdleTimeout
+defaultChainSyncIdleTimeout = ChainSyncIdleTimeout (Just 3373)
 
 srvPrefix :: SRVPrefix
 srvPrefix = "_cardano._tcp"
