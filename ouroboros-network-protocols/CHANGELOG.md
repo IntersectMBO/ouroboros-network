@@ -6,6 +6,8 @@
 
 * Chain-sync protocol is providing `ProtocolTimeLimitsWithRnd`.  It now must be
   run using either `runPeerWithLimitsRnd` or `runPipelinedPeerWithLimitsRnd`.
+* `ChainSyncTimeout` data type is removed.
+* `timeLimitsChainSync` changed type: it is a function which takes the idle timeout as an argument.
 * `Ouroboros.Network.Protocols.TxSubmission2.Codec.{encode,decode}TxSubmission2`
   are no longer exported.
 
