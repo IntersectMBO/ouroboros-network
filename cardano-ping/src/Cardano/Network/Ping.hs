@@ -140,18 +140,12 @@ supportedNodeToNodeVersions magic =
 
 supportedNodeToClientVersions :: Word32 -> [NodeVersion]
 supportedNodeToClientVersions magic =
-  [ NodeToClientVersionV9  magic
-  , NodeToClientVersionV10 magic
-  , NodeToClientVersionV11 magic
-  , NodeToClientVersionV12 magic
-  , NodeToClientVersionV13 magic
-  , NodeToClientVersionV14 magic
-  , NodeToClientVersionV15 magic
-  , NodeToClientVersionV16 magic
+  [ NodeToClientVersionV16 magic
   , NodeToClientVersionV17 magic
   , NodeToClientVersionV18 magic
   , NodeToClientVersionV19 magic
   , NodeToClientVersionV20 magic
+  , NodeToClientVersionV21 magic
   ]
 
 data InitiatorOnly = InitiatorOnly | InitiatorAndResponder
@@ -177,18 +171,12 @@ peerSharingFromWord32 1 = PeerSharingEnabled
 peerSharingFromWord32 _ = PeerSharingDisabled
 
 data NodeVersion
-  = NodeToClientVersionV9  Word32
-  | NodeToClientVersionV10 Word32
-  | NodeToClientVersionV11 Word32
-  | NodeToClientVersionV12 Word32
-  | NodeToClientVersionV13 Word32
-  | NodeToClientVersionV14 Word32
-  | NodeToClientVersionV15 Word32
-  | NodeToClientVersionV16 Word32
+  = NodeToClientVersionV16 Word32
   | NodeToClientVersionV17 Word32
   | NodeToClientVersionV18 Word32
   | NodeToClientVersionV19 Word32
   | NodeToClientVersionV20 Word32
+  | NodeToClientVersionV21 Word32
   | NodeToNodeVersionV1    Word32
   | NodeToNodeVersionV2    Word32
   | NodeToNodeVersionV3    Word32
@@ -208,18 +196,12 @@ data NodeVersion
 instance ToJSON NodeVersion where
   toJSON nv =
     object $ case nv of
-      NodeToClientVersionV9  m -> go2 "NodeToClientVersionV9" m
-      NodeToClientVersionV10 m -> go2 "NodeToClientVersionV10" m
-      NodeToClientVersionV11 m -> go2 "NodeToClientVersionV11" m
-      NodeToClientVersionV12 m -> go2 "NodeToClientVersionV12" m
-      NodeToClientVersionV13 m -> go2 "NodeToClientVersionV13" m
-      NodeToClientVersionV14 m -> go2 "NodeToClientVersionV14" m
-      NodeToClientVersionV15 m -> go2 "NodeToClientVersionV15" m
       NodeToClientVersionV16 m -> go2 "NodeToClientVersionV16" m
       NodeToClientVersionV17 m -> go2 "NodeToClientVersionV17" m
       NodeToClientVersionV18 m -> go2 "NodeToClientVersionV18" m
       NodeToClientVersionV19 m -> go2 "NodeToClientVersionV19" m
       NodeToClientVersionV20 m -> go2 "NodeToClientVersionV20" m
+      NodeToClientVersionV21 m -> go2 "NodeToClientVersionV21" m
       NodeToNodeVersionV1    m -> go2 "NodeToNodeVersionV1" m
       NodeToNodeVersionV2    m -> go2 "NodeToNodeVersionV2" m
       NodeToNodeVersionV3    m -> go2 "NodeToNodeVersionV3" m
@@ -329,27 +311,6 @@ handshakeReqEnc versions query =
     encodeVersion :: NodeVersion -> CBOR.Encoding
 
     -- node-to-client
-    encodeVersion (NodeToClientVersionV9 magic) =
-          CBOR.encodeWord (9 `setBit` nodeToClientVersionBit)
-      <>  CBOR.encodeInt (fromIntegral magic)
-    encodeVersion (NodeToClientVersionV10 magic) =
-          CBOR.encodeWord (10 `setBit` nodeToClientVersionBit)
-      <>  CBOR.encodeInt (fromIntegral magic)
-    encodeVersion (NodeToClientVersionV11 magic) =
-          CBOR.encodeWord (11 `setBit` nodeToClientVersionBit)
-      <>  CBOR.encodeInt (fromIntegral magic)
-    encodeVersion (NodeToClientVersionV12 magic) =
-          CBOR.encodeWord (12 `setBit` nodeToClientVersionBit)
-      <>  CBOR.encodeInt (fromIntegral magic)
-    encodeVersion (NodeToClientVersionV13 magic) =
-          CBOR.encodeWord (13 `setBit` nodeToClientVersionBit)
-      <>  CBOR.encodeInt (fromIntegral magic)
-    encodeVersion (NodeToClientVersionV14 magic) =
-          CBOR.encodeWord (14 `setBit` nodeToClientVersionBit)
-      <>  CBOR.encodeInt (fromIntegral magic)
-    encodeVersion (NodeToClientVersionV15 magic) =
-          CBOR.encodeWord (15 `setBit` nodeToClientVersionBit)
-      <> nodeToClientDataWithQuery magic
     encodeVersion (NodeToClientVersionV16 magic) =
           CBOR.encodeWord (16 `setBit` nodeToClientVersionBit)
       <>  nodeToClientDataWithQuery magic
@@ -364,6 +325,9 @@ handshakeReqEnc versions query =
       <>  nodeToClientDataWithQuery magic
     encodeVersion (NodeToClientVersionV20 magic) =
           CBOR.encodeWord (20 `setBit` nodeToClientVersionBit)
+      <>  nodeToClientDataWithQuery magic
+    encodeVersion (NodeToClientVersionV21 magic) =
+          CBOR.encodeWord (21 `setBit` nodeToClientVersionBit)
       <>  nodeToClientDataWithQuery magic
 
     -- node-to-node
@@ -502,18 +466,12 @@ handshakeDec = do
         (13, False) -> decodeWithModeQueryAndPeerSharing NodeToNodeVersionV13
         (14, False) -> decodeWithModeQueryAndPeerSharing NodeToNodeVersionV14
 
-        (9,  True)  -> Right . NodeToClientVersionV9 <$> CBOR.decodeWord32
-        (10, True)  -> Right . NodeToClientVersionV10 <$> CBOR.decodeWord32
-        (11, True)  -> Right . NodeToClientVersionV11 <$> CBOR.decodeWord32
-        (12, True)  -> Right . NodeToClientVersionV12 <$> CBOR.decodeWord32
-        (13, True)  -> Right . NodeToClientVersionV13 <$> CBOR.decodeWord32
-        (14, True)  -> Right . NodeToClientVersionV14 <$> CBOR.decodeWord32
-        (15, True)  -> Right . NodeToClientVersionV15 <$> (CBOR.decodeListLen *> CBOR.decodeWord32 <* (modeFromBool <$> CBOR.decodeBool))
         (16, True)  -> Right . NodeToClientVersionV16 <$> (CBOR.decodeListLen *> CBOR.decodeWord32 <* (modeFromBool <$> CBOR.decodeBool))
         (17, True)  -> Right . NodeToClientVersionV17 <$> (CBOR.decodeListLen *> CBOR.decodeWord32 <* (modeFromBool <$> CBOR.decodeBool))
         (18, True)  -> Right . NodeToClientVersionV18 <$> (CBOR.decodeListLen *> CBOR.decodeWord32 <* (modeFromBool <$> CBOR.decodeBool))
         (19, True)  -> Right . NodeToClientVersionV19 <$> (CBOR.decodeListLen *> CBOR.decodeWord32 <* (modeFromBool <$> CBOR.decodeBool))
         (20, True)  -> Right . NodeToClientVersionV20 <$> (CBOR.decodeListLen *> CBOR.decodeWord32 <* (modeFromBool <$> CBOR.decodeBool))
+        (21, True)  -> Right . NodeToClientVersionV21 <$> (CBOR.decodeListLen *> CBOR.decodeWord32 <* (modeFromBool <$> CBOR.decodeBool))
         _           -> return $ Left $ UnknownVersionInRsp version
 
     decodeWithMode :: (Word32 -> InitiatorOnly -> NodeVersion) -> CBOR.Decoder s (Either HandshakeFailure NodeVersion)
@@ -697,8 +655,7 @@ pingClient stdout stderr PingOpts{..} versions peer = bracket
             let isUnixSocket = case Socket.addrFamily peer of
                   Socket.AF_UNIX -> True
                   _              -> False
-                querySupported = not isUnixSocket && (version >= NodeToNodeVersionV11 minBound minBound)
-                              ||     isUnixSocket && (version >= NodeToClientVersionV15 minBound)
+                querySupported = isUnixSocket
 
             when (   (not pingOptsHandshakeQuery && not pingOptsQuiet)
                   || (    pingOptsHandshakeQuery && not querySupported)) $
@@ -825,18 +782,12 @@ pingClient stdout stderr PingOpts{..} versions peer = bracket
 isSameVersionAndMagic :: NodeVersion -> NodeVersion -> Bool
 isSameVersionAndMagic v1 v2 = extract v1 == extract v2
   where extract :: NodeVersion -> (Int, Word32)
-        extract (NodeToClientVersionV9 m)  = (-9, m)
-        extract (NodeToClientVersionV10 m) = (-10, m)
-        extract (NodeToClientVersionV11 m) = (-11, m)
-        extract (NodeToClientVersionV12 m) = (-12, m)
-        extract (NodeToClientVersionV13 m) = (-13, m)
-        extract (NodeToClientVersionV14 m) = (-14, m)
-        extract (NodeToClientVersionV15 m) = (-15, m)
         extract (NodeToClientVersionV16 m) = (-16, m)
         extract (NodeToClientVersionV17 m) = (-17, m)
         extract (NodeToClientVersionV18 m) = (-18, m)
         extract (NodeToClientVersionV19 m) = (-19, m)
         extract (NodeToClientVersionV20 m) = (-20, m)
+        extract (NodeToClientVersionV21 m) = (-21, m)
         extract (NodeToNodeVersionV1 m)    = (1, m)
         extract (NodeToNodeVersionV2 m)    = (2, m)
         extract (NodeToNodeVersionV3 m)    = (3, m)

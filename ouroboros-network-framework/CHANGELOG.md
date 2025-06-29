@@ -4,6 +4,12 @@
 
 ### Breaking changes
 
+### Non-breaking changes
+
+## 0.19.0.0 -- 28.06.2025
+
+### Breaking changes
+
 * IG performance related improvements changing to interfaces of
   * IG `with` and `Arguments`
   * CM `with` and `Arguments`

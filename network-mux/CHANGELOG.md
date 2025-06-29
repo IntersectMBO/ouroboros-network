@@ -4,13 +4,17 @@
 
 ### Breaking changes
 
+### Non-breaking changes
+
+## 0.9.0.0 -- 2025-06-28
+
+### Breaking changes
+
 * run, miniProtocolJob, monitor now accept Tracers record
   instead of `Tracer m Trace` type.
 * Removed handshake trace events from mux trace.
 * `Trace` was split into three traces: `Trace` of mux events, `ChannelTrace`
    & `BearerTrace`.  As a result `run` & `Bearer` API were modified.
-
-### Non-breaking changes
 
 ## 0.8.0.1 -- 2025-06-02
 
