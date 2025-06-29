@@ -5,6 +5,7 @@
 ### Breaking changes
 
 * Added support of `NodeToClientV_21`.
+* Dropped support of versions `<= NodeToClientV_15`.
 
 ### Non-breaking changes
 
