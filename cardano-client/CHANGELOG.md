@@ -6,6 +6,16 @@
 
 ### Non-breaking changes
 
+## 0.6.0.0 -- 2025-06-28
+
+### Breaking changes
+
+* SubscriptionTracers: mux tracer was split into two parts.
+
+### Non-breaking changes
+
+* Updated to `io-classes-1.8`
+
 ## 0.5.2.0 -- 2025-05-23
 
 ### Non-breaking changes

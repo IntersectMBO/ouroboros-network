@@ -4,6 +4,12 @@
 
 ### Breaking changes
 
+### Non-breaking changes
+
+## 0.15.0.0 -- 28.06.2025
+
+### Breaking changes
+
 * Chain-sync protocol is providing `ProtocolTimeLimitsWithRnd`.  It now must be
   run using either `runPeerWithLimitsRnd` or `runPipelinedPeerWithLimitsRnd`.
 * `ChainSyncTimeout` data type is removed.

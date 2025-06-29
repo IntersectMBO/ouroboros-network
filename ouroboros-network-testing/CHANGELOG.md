@@ -6,6 +6,14 @@
 
 ### Non-breaking changes
 
+## 0.8.2.0 -- 28.06.2025
+
+### Non-breaking changes
+
+* Support `io-classes-1.8`.
+* Improved `Arbitrary` instances for `Delay` and `SmallDelay`.
+* Improved `Show` instances for `WithName` and `WithTime`.
+
 ## 0.8.1.0 -- 2025-02-25
 
 ### Non-breaking changes
