@@ -4,6 +4,8 @@
 
 ### Breaking changes
 
+* Added support of `NodeToClientV_21`.
+
 ### Non-breaking changes
 
 ## 0.8.0.1 -- 2025-05-13
