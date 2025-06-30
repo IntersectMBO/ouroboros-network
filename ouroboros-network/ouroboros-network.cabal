@@ -376,7 +376,6 @@ library testlib
     Test.Ouroboros.Network.PeerSelection.Cardano.PublicRootPeers
     Test.Ouroboros.Network.PeerSelection.Gource
     Test.Ouroboros.Network.PeerSelection.Instances
-    Test.Ouroboros.Network.PeerSelection.Json
     Test.Ouroboros.Network.PeerSelection.KnownPeers
     Test.Ouroboros.Network.PeerSelection.LocalRootPeers
     Test.Ouroboros.Network.PeerSelection.PeerGraph

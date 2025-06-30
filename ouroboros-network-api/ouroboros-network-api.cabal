@@ -103,11 +103,12 @@ test-suite test
     Test.Ouroboros.Network.PeerSelection.RelayAccessPoint
 
   build-depends:
-    QuickCheck,
+    aeson,
     base >=4.14 && <4.22,
     bytestring,
     cardano-binary,
     cborg,
+    QuickCheck,
     iproute,
     ouroboros-network-api,
     tasty,

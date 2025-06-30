@@ -17,7 +17,6 @@ import Test.Ouroboros.Network.PeerSelection qualified (tests)
 import Test.Ouroboros.Network.PeerSelection.Cardano.LocalRootPeers qualified
 import Test.Ouroboros.Network.PeerSelection.Cardano.MockEnvironment qualified
 import Test.Ouroboros.Network.PeerSelection.Cardano.PublicRootPeers qualified
-import Test.Ouroboros.Network.PeerSelection.Json qualified (tests)
 import Test.Ouroboros.Network.PeerSelection.KnownPeers qualified
 import Test.Ouroboros.Network.PeerSelection.LocalRootPeers qualified
 import Test.Ouroboros.Network.PeerSelection.PeerMetric qualified
@@ -43,7 +42,6 @@ tests =
   , Test.Ouroboros.Network.NodeToClient.Version.tests
   , Test.Ouroboros.Network.NodeToNode.Version.tests
   , Test.Ouroboros.Network.OrphanInstances.Tests.tests
-  , Test.Ouroboros.Network.PeerSelection.Json.tests
   , Test.Ouroboros.Network.PeerSelection.KnownPeers.tests
   , Test.Ouroboros.Network.PeerSelection.LocalRootPeers.tests
   , Test.Ouroboros.Network.PeerSelection.PeerMetric.tests
