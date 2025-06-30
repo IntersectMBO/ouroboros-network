@@ -97,6 +97,9 @@ jobs:
 
     # Test network packages
 
+    - name: ouroboros-network-api [test]
+      run: cabal run ouroboros-network-api:test
+
     - name: ntp-client [test]
       run: cabal run ntp-client:test -- +RTS -maxN2 -RTS
 
