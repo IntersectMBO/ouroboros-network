@@ -7,6 +7,7 @@
 module Ouroboros.Network.PeerSelection.RelayAccessPoint
   ( RelayAccessPoint (..)
   , LedgerRelayAccessPoint (..)
+  , LedgerRelayAccessPointV1 (..)
   , SRVPrefix
   , prefixLedgerRelayAccessPoint
   , IP.IP (..)
@@ -19,7 +20,7 @@ import Control.Monad (unless)
 
 import Data.Aeson
 import Data.Aeson.Types
-import Data.ByteString.Char8 (snoc, unpack, unsnoc)
+import Data.ByteString.Char8 qualified as BSC
 import Data.IP qualified as IP
 import Data.Text qualified as Text
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
@@ -71,12 +72,12 @@ instance FromJSON RelayAccessPoint where
     where
       toRelayAccessPoint :: DNS.Domain -> Int -> RelayAccessPoint
       toRelayAccessPoint address port =
-          case readMaybe (unpack address) of
+          case readMaybe (BSC.unpack address) of
             Nothing   -> RelayAccessDomain (fullyQualified address) (fromIntegral port)
             Just addr -> RelayAccessAddress addr (fromIntegral port)
       fullyQualified = \case
-        domain | Just (_, '.') <- unsnoc domain -> domain
-               | otherwise -> domain `snoc` '.'
+        domain | Just (_, '.') <- BSC.unsnoc domain -> domain
+               | otherwise -> domain `BSC.snoc` '.'
 
 instance ToJSON RelayAccessPoint where
   toJSON (RelayAccessDomain addr port) =
@@ -187,12 +188,12 @@ instance FromJSON LedgerRelayAccessPoint where
     where
       toRelayAccessPoint :: DNS.Domain -> Int -> LedgerRelayAccessPoint
       toRelayAccessPoint address port =
-          case readMaybe (unpack address) of
+          case readMaybe (BSC.unpack address) of
             Nothing   -> LedgerRelayAccessDomain (fullyQualified address) (fromIntegral port)
             Just addr -> LedgerRelayAccessAddress addr (fromIntegral port)
       fullyQualified = \case
-        domain | Just (_, '.') <- unsnoc domain -> domain
-               | otherwise -> domain `snoc` '.'
+        domain | Just (_, '.') <- BSC.unsnoc domain -> domain
+               | otherwise -> domain `BSC.snoc` '.'
 
 instance ToJSON LedgerRelayAccessPoint where
   toJSON (LedgerRelayAccessDomain addr port) =
@@ -257,6 +258,33 @@ instance FromCBOR LedgerRelayAccessPoint where
       _ -> fail $ "Unrecognized LedgerRelayAccessPoint tag: " <> show constructorTag
     where
       decodePort = fromIntegral @Int <$> fromCBOR
+
+
+-- | A new type wrapper which provides backward compatible `FromJSON` instance
+-- for `LedgerRelayAccessPoint`.
+--
+newtype LedgerRelayAccessPointV1 = LedgerRelayAccessPointV1 { getLedgerReelayAccessPointV1 :: LedgerRelayAccessPoint }
+
+instance FromJSON LedgerRelayAccessPointV1 where
+  parseJSON = withObject "RelayAccessPoint" $ \o -> do
+    addr <- encodeUtf8 <$> o .: "address"
+    let res = flip parseMaybe o $ const do
+          port <- o .: "port"
+          return (toRelayAccessPoint addr port)
+    case res of
+      Nothing  -> return $ LedgerRelayAccessPointV1 $ LedgerRelayAccessSRVDomain (fullyQualified addr)
+      Just rap -> return $ LedgerRelayAccessPointV1 rap
+
+    where
+      toRelayAccessPoint :: DNS.Domain -> Int -> LedgerRelayAccessPoint
+      toRelayAccessPoint address port =
+          case readMaybe (BSC.unpack address) of
+            Nothing   -> LedgerRelayAccessDomain (fullyQualified address) (fromIntegral port)
+            Just addr -> LedgerRelayAccessAddress addr (fromIntegral port)
+
+      fullyQualified = \case
+        domain | Just (_, '.') <- BSC.unsnoc domain -> domain
+               | otherwise -> domain `BSC.snoc` '.'
 
 
 -- | Type of a DNS SRV prefix as defined by CIP#0155
