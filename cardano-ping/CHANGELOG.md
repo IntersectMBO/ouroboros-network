@@ -6,6 +6,16 @@
 
 ### Non-breaking changes
 
+## 0.9.0.0 -- 2026-06-28
+
+### Breaking changes
+
+* Added support of `NodeToClientV_21`.
+
+### Non-breaking changes
+
+* Updated to `network-mux-0.9`
+
 ## 0.8.0.1 -- 2025-05-13
 
 ### Breaking changes

@@ -76,6 +76,7 @@ import Network.TypedProtocol.Core
 import Network.TypedProtocol.PingPong.Type qualified as PingPong
 
 import Cardano.Network.ConsensusMode
+import Cardano.Network.Diffusion.Configuration qualified as Cardano
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Cardano.Network.PeerSelection.LocalRootPeers
            (OutboundConnectionsState (..))
@@ -1126,7 +1127,7 @@ diffusionSimulation
             = Node.LimitsAndTimeouts
                 { Node.chainSyncLimits      = defaultMiniProtocolsLimit
                 , Node.chainSyncSizeLimits  = byteLimitsChainSync (const 0)
-                , Node.chainSyncTimeLimits  = timeLimitsChainSync
+                , Node.chainSyncTimeLimits  = timeLimitsChainSync Cardano.defaultChainSyncIdleTimeout
                 , Node.blockFetchLimits     = defaultMiniProtocolsLimit
                 , Node.blockFetchSizeLimits = byteLimitsBlockFetch (const 0)
                 , Node.blockFetchTimeLimits = timeLimitsBlockFetch

@@ -2,15 +2,11 @@
 
 ## next release
 
+### Breaking changes
+
 ### Non-breaking changes
 
-* Tracing of DNS results is now directly performed by `dnsLookupWithTTL`,
-  which is captured by the new `DNSTrace` type. Results are tagged with
-  the new `DNSLookupResult` type. The type of peer that traces are tagged with
-  are captured by the `DNSPeersKind` type, which also distinguishes the type
-  of ledger peer.
-* Added `dispatchLookupWithTTL`
-* Lower the time to cache DNS errors to at most 15min.
+## 0.22.0.0 -- 28.06.2025
 
 ### Breaking changes
 
@@ -39,6 +35,16 @@
 - Renamed `Applications` to `DiffusionApplications`
 - `runM` function now receives `ExtraParameters` as an argument
 - Configurable Mux Egress Poll Interval
+
+### Non-breaking changes
+
+* Tracing of DNS results is now directly performed by `dnsLookupWithTTL`,
+  which is captured by the new `DNSTrace` type. Results are tagged with
+  the new `DNSLookupResult` type. The type of peer that traces are tagged with
+  are captured by the `DNSPeersKind` type, which also distinguishes the type
+  of ledger peer.
+* Added `dispatchLookupWithTTL`
+* Lower the time to cache DNS errors to at most 15min.
 
 ## 0.21.2.0 -- 2025-06-02
 

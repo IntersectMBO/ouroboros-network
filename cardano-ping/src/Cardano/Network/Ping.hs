@@ -152,6 +152,7 @@ supportedNodeToClientVersions magic =
   , NodeToClientVersionV18 magic
   , NodeToClientVersionV19 magic
   , NodeToClientVersionV20 magic
+  , NodeToClientVersionV21 magic
   ]
 
 data InitiatorOnly = InitiatorOnly | InitiatorAndResponder
@@ -189,6 +190,7 @@ data NodeVersion
   | NodeToClientVersionV18 Word32
   | NodeToClientVersionV19 Word32
   | NodeToClientVersionV20 Word32
+  | NodeToClientVersionV21 Word32
   | NodeToNodeVersionV1    Word32
   | NodeToNodeVersionV2    Word32
   | NodeToNodeVersionV3    Word32
@@ -220,6 +222,7 @@ instance ToJSON NodeVersion where
       NodeToClientVersionV18 m -> go2 "NodeToClientVersionV18" m
       NodeToClientVersionV19 m -> go2 "NodeToClientVersionV19" m
       NodeToClientVersionV20 m -> go2 "NodeToClientVersionV20" m
+      NodeToClientVersionV21 m -> go2 "NodeToClientVersionV21" m
       NodeToNodeVersionV1    m -> go2 "NodeToNodeVersionV1" m
       NodeToNodeVersionV2    m -> go2 "NodeToNodeVersionV2" m
       NodeToNodeVersionV3    m -> go2 "NodeToNodeVersionV3" m
@@ -364,6 +367,9 @@ handshakeReqEnc versions query =
       <>  nodeToClientDataWithQuery magic
     encodeVersion (NodeToClientVersionV20 magic) =
           CBOR.encodeWord (20 `setBit` nodeToClientVersionBit)
+      <>  nodeToClientDataWithQuery magic
+    encodeVersion (NodeToClientVersionV21 magic) =
+          CBOR.encodeWord (21 `setBit` nodeToClientVersionBit)
       <>  nodeToClientDataWithQuery magic
 
     -- node-to-node
@@ -514,6 +520,7 @@ handshakeDec = do
         (18, True)  -> Right . NodeToClientVersionV18 <$> (CBOR.decodeListLen *> CBOR.decodeWord32 <* (modeFromBool <$> CBOR.decodeBool))
         (19, True)  -> Right . NodeToClientVersionV19 <$> (CBOR.decodeListLen *> CBOR.decodeWord32 <* (modeFromBool <$> CBOR.decodeBool))
         (20, True)  -> Right . NodeToClientVersionV20 <$> (CBOR.decodeListLen *> CBOR.decodeWord32 <* (modeFromBool <$> CBOR.decodeBool))
+        (21, True)  -> Right . NodeToClientVersionV21 <$> (CBOR.decodeListLen *> CBOR.decodeWord32 <* (modeFromBool <$> CBOR.decodeBool))
         _           -> return $ Left $ UnknownVersionInRsp version
 
     decodeWithMode :: (Word32 -> InitiatorOnly -> NodeVersion) -> CBOR.Decoder s (Either HandshakeFailure NodeVersion)
@@ -837,6 +844,7 @@ isSameVersionAndMagic v1 v2 = extract v1 == extract v2
         extract (NodeToClientVersionV18 m) = (-18, m)
         extract (NodeToClientVersionV19 m) = (-19, m)
         extract (NodeToClientVersionV20 m) = (-20, m)
+        extract (NodeToClientVersionV21 m) = (-21, m)
         extract (NodeToNodeVersionV1 m)    = (1, m)
         extract (NodeToNodeVersionV2 m)    = (2, m)
         extract (NodeToNodeVersionV3 m)    = (3, m)

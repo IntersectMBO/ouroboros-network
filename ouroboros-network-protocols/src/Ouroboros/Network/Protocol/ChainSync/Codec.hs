@@ -12,6 +12,7 @@ module Ouroboros.Network.Protocol.ChainSync.Codec
   , timeLimitsChainSync
   , maxChainSyncTimeout
   , minChainSyncTimeout
+  , ChainSyncIdleTimeout (..)
   ) where
 
 import Control.Monad.Class.MonadST
@@ -63,6 +64,15 @@ maxChainSyncTimeout :: DiffTime
 maxChainSyncTimeout = 269
 
 
+-- | ChainSync timeout for the `StIdle` state, e.g. how long the client can
+-- await for `MsgRollForward`, `MsgRollBackward`, `MsgIntersectFound` or
+-- `MsgIntersectNotFound`.
+--
+data ChainSyncIdleTimeout
+  = ChainSyncIdleTimeout DiffTime
+  | ChainSyncNoIdleTimeout
+
+
 -- | Time Limits
 --
 -- +----------------------------+-------------------------------------------------------------+
@@ -81,13 +91,19 @@ maxChainSyncTimeout = 269
 -- +----------------------------+-------------------------------------------------------------+
 --
 timeLimitsChainSync :: forall (header :: Type) (point :: Type) (tip :: Type).
-                       ProtocolTimeLimitsWithRnd (ChainSync header point tip)
-timeLimitsChainSync = ProtocolTimeLimitsWithRnd stateToLimit
+                       ChainSyncIdleTimeout
+                    -- ^ idle timeout, the default value
+                    -- `Configuration.defaultChainSyncIdleTimeout`.
+                    -> ProtocolTimeLimitsWithRnd (ChainSync header point tip)
+timeLimitsChainSync idleTimeout = ProtocolTimeLimitsWithRnd stateToLimit
   where
     stateToLimit :: forall (st :: ChainSync header point tip).
                     ActiveState st
                  => StateToken st -> StdGen -> (Maybe DiffTime, StdGen)
-    stateToLimit SingIdle                 rnd = (Just 3673, rnd)
+    stateToLimit SingIdle                 rnd | ChainSyncIdleTimeout timeout <- idleTimeout
+                                              = (Just timeout, rnd)
+                                              | otherwise
+                                              = (Nothing, rnd)
     stateToLimit SingIntersect            rnd = (shortWait, rnd)
     stateToLimit (SingNext SingCanAwait)  rnd = (shortWait, rnd)
     stateToLimit (SingNext SingMustReply) rnd =
