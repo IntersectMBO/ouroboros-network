@@ -27,8 +27,9 @@ tests = testGroup "Ouroboros.Network.PeerSelection"
     , testProperty "RelayAccessPoint"      prop_cbor_RelayAccessPoint
     ]
   , testGroup "json"
-    [ testProperty "RelayAccessPoint"  prop_json_RelayAccessPoint
-    , testProperty "PeerAdvertise"     prop_json_PeerAdvertise
+    [ testProperty "RelayAccessPoint"       prop_json_RelayAccessPoint
+    , testProperty "LedgerRelayAccessPoint" prop_json_LedgerRelayAccessPoint
+    , testProperty "PeerAdvertise"          prop_json_PeerAdvertise
     ]
   ]
 
@@ -94,6 +95,25 @@ prop_cbor_RelayAccessPoint ap =
   case CBOR.deserialiseFromBytes fromCBOR (CBOR.toLazyByteString $ toCBOR ap) of
     Left err       -> counterexample (show err) False
     Right (_, ap') -> ap === ap'
+
+
+prop_json_LedgerRelayAccessPoint :: LedgerRelayAccessPoint
+                                 -> Property
+prop_json_LedgerRelayAccessPoint ap =
+    Aeson.decode (Aeson.encode ap) === Just (fullyQualified ap)
+    .&&.
+    Aeson.fromJSON (Aeson.toJSON ap) === pure (fullyQualified ap)
+  where
+    fullyQualified :: LedgerRelayAccessPoint -> LedgerRelayAccessPoint
+    fullyQualified it@(LedgerRelayAccessAddress {}) = it
+    fullyQualified (LedgerRelayAccessDomain d p) =
+      LedgerRelayAccessDomain (fullyQualified' d) p
+    fullyQualified (LedgerRelayAccessSRVDomain d) =
+      LedgerRelayAccessSRVDomain (fullyQualified' d)
+
+    fullyQualified' domain = case domain of
+      _ | Just (_, '.') <- BSC.unsnoc domain -> domain
+        | otherwise -> domain `BSC.snoc` '.'
 
 
 -- | Test round trip identify, modulo fully qualified domain names
