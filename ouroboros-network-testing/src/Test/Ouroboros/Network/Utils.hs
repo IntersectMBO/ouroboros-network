@@ -171,7 +171,7 @@ data WithName name event = WithName {
   deriving Functor
 
 instance (Show name, Show event) => Show (WithName name event) where
-  show (WithName name ev) = "#" <> show name <> " %" <> show ev
+  show (WithName name ev) = "#" <> show name <> " % " <> show ev
 
 data WithTime event = WithTime {
     wtTime  :: Time,
@@ -180,7 +180,7 @@ data WithTime event = WithTime {
   deriving Functor
 
 instance Show event => Show (WithTime event) where
-  show (WithTime t ev) = "@" <> show t <> " " <> show ev
+  show (WithTime (Time t) ev) = show t <> " @ " <> show ev
 
 tracerWithName :: name -> Tracer m (WithName name a) -> Tracer m a
 tracerWithName name = contramap (WithName name)

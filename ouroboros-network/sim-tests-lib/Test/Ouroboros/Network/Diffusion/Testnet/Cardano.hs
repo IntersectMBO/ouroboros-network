@@ -255,7 +255,7 @@ tests =
       [ testProperty "no protocol errors"
                      prop_no_txSubmission_error_iosim
       , testProperty "all transactions"
-                     unit_txSubmission_allTransactions
+                     prop_txSubmission_allTransactions
       , testProperty "inflight coverage"
                      prop_check_inflight_ratio
       ]
@@ -821,16 +821,34 @@ prop_no_txSubmission_error_iosim
   = testWithIOSim prop_no_txSubmission_error 125000
 
 
+newtype WellSizedTx = WellSizedTx { getTx :: Tx TxId }
+  deriving Show
+
+fixupWellSizedTx :: Tx TxId -> Tx TxId
+fixupWellSizedTx tx@Tx { getTxSize } = tx { getTxAdvSize = getTxSize }
+
+instance Arbitrary WellSizedTx where
+  arbitrary =  WellSizedTx
+            .  fixupWellSizedTx
+           <$> arbitrary
+  shrink = map (WellSizedTx . fixupWellSizedTx)
+         . shrink
+         . getTx
+
+
 -- | This test checks that even in a scenario where nodes keep disconnecting,
 -- but eventually stay online. We manage to get all transactions.
 --
-unit_txSubmission_allTransactions :: ArbTxDecisionPolicy
-                                  -> NonEmptyList (Tx TxId)
-                                  -> NonEmptyList (Tx TxId)
+-- We exclude txs which are not advertise the right size, since they disconnect
+-- the nodes, and as a result not all tx-s might transfer.
+--
+prop_txSubmission_allTransactions :: ArbTxDecisionPolicy
+                                  -> NonEmptyList WellSizedTx
+                                  -> NonEmptyList WellSizedTx
                                   -> Property
-unit_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
-                                  (NonEmpty txsA)
-                                  (NonEmpty txsB) =
+prop_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
+                                  (NonEmpty txsA')
+                                  (NonEmpty txsB') =
   let localRootConfig = LocalRootConfig
                           DoNotAdvertisePeer
                           InitiatorAndResponderDiffusionMode
@@ -908,6 +926,9 @@ unit_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
                            )
                            500000 -- ^ Running for 500k might not be enough.
   where
+    txsA = getTx <$> txsA'
+    txsB = getTx <$> txsB'
+
     -- We need to make sure the transactions are unique, this simplifies
     -- things.
     --
@@ -957,11 +978,12 @@ unit_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
           (validSortedTxidsA, validSortedTxidsB) =
             let f = sort
                   . map (\Tx {getTxId} -> getTxId)
-                  . filter (\Tx {getTxValid} -> getTxValid)
+                  . filter (\Tx {getTxSize, getTxAdvSize, getTxValid} -> getTxSize == getTxAdvSize
+                                                                      && getTxValid)
              in bimap f f (uniqueTxsA, uniqueTxsB)
 
-      in -- counterexample (intercalate "\n" $ map show $ Trace.toList events)
-          counterexample (Trace.ppTrace show (ppSimEvent 0 0 0) trace)
+      in counterexample (intercalate "\n" $ map show $ Trace.toList events)
+          -- counterexample (Trace.ppTrace show (ppSimEvent 0 0 0) trace)
         $ counterexample ("accepted txids map: " ++ show sortedAcceptedTxidsMap)
         $ counterexample ("A: unique txs: " ++ show uniqueTxsA)
         $ counterexample ("A: valid transactions that should be accepted: " ++ show validSortedTxidsA)
