@@ -14,18 +14,33 @@ import Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests = testGroup "Cardano.Network.NodeToClient.Version"
-    [ testProperty "nodeToClientCodecCBORTerm" prop_nodeToClientCodec
+    [ testProperty "nodeToClientVersionCodec"  prop_nodeToClientVersionCodec
+    , testProperty "nodeToClientCodecCBORTerm" prop_nodeToClientCodec
     ]
 
 data VersionAndVersionData =
     VersionAndVersionData NodeToClientVersion NodeToClientVersionData
   deriving Show
 
+instance Arbitrary NodeToClientVersion where
+    arbitrary = elements [minBound..maxBound]
+
 instance Arbitrary VersionAndVersionData where
     arbitrary =
       VersionAndVersionData
         <$> elements [ minBound .. maxBound]
         <*> (NodeToClientVersionData . NetworkMagic <$> arbitrary <*> arbitrary)
+
+
+prop_nodeToClientVersionCodec :: NodeToClientVersion
+                              -> Bool
+prop_nodeToClientVersionCodec version =
+    case decodeTerm (encodeTerm version) of
+        Right version' -> version == version'
+        Left {}        -> False
+  where
+      CodecCBORTerm { encodeTerm, decodeTerm } = nodeToClientVersionCodec
+
 
 prop_nodeToClientCodec :: VersionAndVersionData -> Bool
 prop_nodeToClientCodec (VersionAndVersionData vNumber vData) =
