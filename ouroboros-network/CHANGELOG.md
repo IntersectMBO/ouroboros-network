@@ -35,6 +35,9 @@
 - Renamed `Applications` to `DiffusionApplications`
 - `runM` function now receives `ExtraParameters` as an argument
 - Configurable Mux Egress Poll Interval
+- Added `pchPromotedHotVar` to `PeerConnectionHandle` to track when a peer has been promoted to hot
+- Added tag `PeerHotDuration` to `PeerSelectionActionsTrace` to indicate how long a remote
+  peer has been in hot mode until it was either demoted or closed.
 
 ### Non-breaking changes
 
