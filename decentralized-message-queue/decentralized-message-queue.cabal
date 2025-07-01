@@ -96,6 +96,7 @@ test-suite dmq-test
   default-language: Haskell2010
   default-extensions: ImportQualifiedPost
   other-modules:
+    Test.DMQ.NodeToClient
     Test.DMQ.NodeToNode
 
   type: exitcode-stdio-1.0
