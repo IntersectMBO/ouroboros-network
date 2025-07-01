@@ -105,6 +105,9 @@ let
           if buildSystem == "x86_64-linux" then "export GHCRTS=-M1000M" else "";
         packages.ouroboros-network-protocols.components.tests.bench.doCheck = lib.mkForce (buildSystem != "aarch64-darwin");
       })
+      ({ pkgs, ... }: lib.mkIf pkgs.stdenv.hostPlatform.isWindows {
+        packages.basement.configureFlags = [ "--hsc2hs-options=--cflag=-Wno-int-conversion" ];
+      })
     ];
   });
 in
