@@ -200,31 +200,31 @@ ntnDataFlow NodeToNodeVersionData { diffusionMode } =
 mapNtNDMQtoOuroboros :: NodeToNodeVersion -> NTN.NodeToNodeVersion
 mapNtNDMQtoOuroboros _ = maxBound
 
-type ClientApp addr bytes m a =
+type ClientApp addr m a =
      NodeToNodeVersion
   -> ExpandedInitiatorContext addr m
-  -> Channel m bytes
-  -> m (a, Maybe bytes)
+  -> Channel m BL.ByteString
+  -> m (a, Maybe BL.ByteString)
 
-type ServerApp addr bytes m a =
+type ServerApp addr m a =
      NodeToNodeVersion
   -> ResponderContext addr
-  -> Channel m bytes
-  -> m (a, Maybe bytes)
+  -> Channel m BL.ByteString
+  -> m (a, Maybe BL.ByteString)
 
-data Apps addr bKA bPS m a b =
+data Apps addr m a b =
   Apps {
     -- | Start a keep-alive client.
-    aKeepAliveClient   :: ClientApp addr bKA m a
+    aKeepAliveClient   :: ClientApp addr m a
 
     -- | Start a keep-alive server.
-  , aKeepAliveServer   :: ServerApp addr bKA m b
+  , aKeepAliveServer   :: ServerApp addr m b
 
     -- | Start a peer-sharing client.
-  , aPeerSharingClient :: ClientApp addr bPS m a
+  , aPeerSharingClient :: ClientApp addr m a
 
     -- | Start a peer-sharing server.
-  , aPeerSharingServer :: ServerApp addr bPS m b
+  , aPeerSharingServer :: ServerApp addr m b
   }
 
 ntnApps
@@ -244,7 +244,7 @@ ntnApps
  => NodeKernel addr m
  -> Codecs addr m
  -> LimitsAndTimeouts addr
- -> Apps addr BL.ByteString BL.ByteString m () ()
+ -> Apps addr m () ()
 ntnApps NodeKernel {
           fetchClientRegistry
         , peerSharingRegistry
@@ -426,10 +426,10 @@ nodeToNodeProtocols LimitsAndTimeouts {
 
 initiatorProtocols
   :: LimitsAndTimeouts addr
-  -> Apps addr bytes bytes m a b
+  -> Apps addr m a b
   -> NodeToNodeVersion
   -> NodeToNodeVersionData
-  -> OuroborosBundleWithExpandedCtx 'InitiatorMode addr bytes m a Void
+  -> OuroborosBundleWithExpandedCtx 'InitiatorMode addr BL.ByteString m a Void
 initiatorProtocols limitsAndTimeouts
                    Apps {
                      aKeepAliveClient
@@ -448,10 +448,10 @@ initiatorProtocols limitsAndTimeouts
 
 initiatorAndResponderProtocols
   :: LimitsAndTimeouts addr
-  -> Apps addr bytes bytes m a b
+  -> Apps addr m a b
   -> NodeToNodeVersion
   -> NodeToNodeVersionData
-  -> OuroborosBundleWithExpandedCtx 'InitiatorResponderMode addr bytes m a b
+  -> OuroborosBundleWithExpandedCtx 'InitiatorResponderMode addr BL.ByteString m a b
 initiatorAndResponderProtocols limitsAndTimeouts
                                Apps {
                                  aKeepAliveClient
