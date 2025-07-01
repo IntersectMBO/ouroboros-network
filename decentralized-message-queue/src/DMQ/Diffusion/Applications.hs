@@ -21,7 +21,6 @@ import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI (MonadTimer)
 
-import Data.ByteString.Lazy qualified as BL
 import Data.Hashable (Hashable)
 
 import Ouroboros.Network.Diffusion.Types qualified as Diffusion
@@ -50,7 +49,7 @@ diffusionApplications
   -> Configuration ntnFd ntnAddr ntcFd ntcAddr
   -> Diffusion.Configuration extraFlags m ntnFd ntnAddr ntcFd ntcAddr
   -> NTN.LimitsAndTimeouts ntnAddr
-  -> NTN.Apps ntnAddr BL.ByteString BL.ByteString m a ()
+  -> NTN.Apps ntnAddr m a ()
   -> PeerSelectionPolicy ntnAddr m
   -> Diffusion.Applications ntnAddr NodeToNodeVersion   NodeToNodeVersionData
                             ntcAddr NodeToClientVersion NodeToClientVersionData
