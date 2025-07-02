@@ -42,6 +42,8 @@ library
     DMQ.Diffusion.PeerSelection
     DMQ.NodeToClient
     DMQ.NodeToNode
+    DMQ.Protocol.SigSubmission.Type
+    DMQ.Protocol.SigSubmission.Codec
 
   build-depends:
     aeson >=2.1.1.0 && <3,
@@ -65,7 +67,7 @@ library
     ouroboros-network-protocols ^>=0.15,
     random ^>=1.2,
     text >=1.2.4 && <2.2,
-    typed-protocols ^>=1.1,
+    typed-protocols:{cborg, typed-protocols} ^>=1.1,
 
   hs-source-dirs: src
   default-language: Haskell2010
