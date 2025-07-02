@@ -57,6 +57,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Typeable (Typeable)
 import Text.Pretty.Simple (pPrint)
+import Text.Printf
 
 import Debug.Trace (traceShowM)
 import Test.QuickCheck
@@ -143,7 +144,7 @@ prop_shrink_valid valid (ShrinkCarefully x) =
 -- | Use in 'tabulate' to help summarise data into buckets.
 --
 renderRanges :: Int -> Int -> String
-renderRanges r n = show lower ++ " -- " ++ show upper
+renderRanges r n = "[" ++ printf "% 3d" lower ++ ", " ++ printf "% 3d" upper ++ ")"
   where
     lower = n - n `mod` r
     upper = lower + (r-1)
@@ -174,19 +175,19 @@ data WithName name event = WithName {
     wnName  :: name,
     wnEvent :: event
   }
-  deriving (Functor)
+  deriving Functor
 
 instance (Show name, Show event) => Show (WithName name event) where
-  show (WithName name ev) = "#" <> show name <> " %" <> show ev
+  show (WithName name ev) = "#" <> show name <> " % " <> show ev
 
 data WithTime event = WithTime {
     wtTime  :: Time,
     wtEvent :: event
   }
-  deriving (Functor)
+  deriving Functor
 
 instance Show event => Show (WithTime event) where
-  show (WithTime t ev) = "@" <> show t <> " " <> show ev
+  show (WithTime (Time t) ev) = show t <> " @ " <> show ev
 
 tracerWithName :: name -> Tracer m (WithName name a) -> Tracer m a
 tracerWithName name = contramap (WithName name)

@@ -6,6 +6,8 @@
 
 ### Non-breaking changes
 
+* Added `Ouroboros.Network.TxSubmission.Inbound.V2`.
+
 ## 0.22.0.0 -- 28.06.2025
 
 ### Breaking changes
@@ -35,6 +37,10 @@
 - Renamed `Applications` to `DiffusionApplications`
 - `runM` function now receives `ExtraParameters` as an argument
 - Configurable Mux Egress Poll Interval
+- `Ouroboros.Network.TxSubmission.Inbound` moved to `Ouroboros.Network.TxSubmission.Inbound.V1`
+- `Ouroboros.Network.TxSubmission.Inbound.V1.txSubmissionInbound` takes extra argument: `TxSubmissionInitDelay` (previously configurable through `cabal` flags).
+- Removed the `txsubmission-delay` cabal flag.
+- `ProtocolErrorRequestedTooManyTxids` includes number of unacked txids.
 
 ### Non-breaking changes
 
