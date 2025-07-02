@@ -82,7 +82,7 @@ largeByteLimit :: Word
 largeByteLimit = 2500000
 
 smallByteLimit :: Word
-smallByteLimit = 0xffff
+smallByteLimit = 0xffff -- 65535
 
 shortWait :: Maybe DiffTime
 shortWait = Just 10
