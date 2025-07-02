@@ -131,6 +131,19 @@ instance FromJSON LedgerPeerSnapshot where
     vNum :: Int <- v .: "version"
     ledgerPeerSnapshot <-
       case vNum of
+        1 -> do
+          slot <- v .: "slotNo"
+          bigPools <- v .: "bigLedgerPools"
+          bigPools' <- forM (zip [0 :: Int ..] bigPools) \(idx, poolO) -> do
+                         let f poolV = do
+                                 AccPoolStakeCoded accStake <- poolV .: "accumulatedStake"
+                                 PoolStakeCoded reStake <- poolV .: "relativeStake"
+                                 -- decode using `LedgerRelayAccessPointV1` instance
+                                 relays <- fmap getLedgerReelayAccessPointV1 <$> poolV .: "relays"
+                                 return (accStake, (reStake, relays))
+                         withObject ("bigLedgerPools[" <> show idx <> "]") f (Object poolO)
+
+          return $ LedgerPeerSnapshotV2 (slot, bigPools')
         2 -> do
           slot <- v .: "slotNo"
           bigPools <- v .: "bigLedgerPools"

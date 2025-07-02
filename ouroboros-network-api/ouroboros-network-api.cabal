@@ -92,3 +92,37 @@ library
 
   if flag(asserts)
     ghc-options: -fno-ignore-asserts
+
+test-suite test
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs: test
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  other-modules:
+    Test.Ouroboros.Network.PeerSelection.RelayAccessPoint
+
+  build-depends:
+    QuickCheck,
+    aeson,
+    base >=4.14 && <4.22,
+    bytestring,
+    cardano-binary,
+    cborg,
+    iproute,
+    ouroboros-network-api,
+    tasty,
+    tasty-quickcheck,
+    with-utf8,
+
+  ghc-options:
+    -Wall
+    -Wno-unticked-promoted-constructors
+    -Wcompat
+    -Wincomplete-uni-patterns
+    -Wincomplete-record-updates
+    -Wpartial-fields
+    -Widentities
+    -Wredundant-constraints
+    -Wunused-packages
+    -rtsopts

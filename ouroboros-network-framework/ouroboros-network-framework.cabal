@@ -116,7 +116,7 @@ library testlib
 
   other-modules:
   build-depends:
-    QuickCheck,
+    QuickCheck >=2.16,
     base >=4.14 && <4.22,
     bytestring,
     cborg,
@@ -158,7 +158,7 @@ test-suite sim-tests
     Test.Simulation.Network.Snocket
 
   build-depends:
-    QuickCheck,
+    QuickCheck >=2.16,
     base >=4.14 && <4.22,
     bytestring,
     cborg,
@@ -213,7 +213,7 @@ test-suite io-tests
     Test.Ouroboros.Network.Socket
 
   build-depends:
-    QuickCheck,
+    QuickCheck >=2.16,
     base >=4.14 && <4.22,
     bytestring,
     contra-tracer,

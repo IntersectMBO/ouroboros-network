@@ -1,6 +1,9 @@
 # Revision history for quickcheck-monoids
 
-## Next version
+## 0.1.0.2 -- 2025-06-28
+
+* Package is deprecated, use `QuickCheck >= 2.16` which provides `Every` and
+  `Some` monoids.
 
 ## 0.1.0.1 -- 2024-08-07
 
