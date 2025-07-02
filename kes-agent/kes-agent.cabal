@@ -124,7 +124,7 @@ library
                  , extra >=1.7.12 && <1.8
                  , formatting
                  , ghc-prim
-                 , io-classes >=1.5.0.0
+                 , io-classes >=1.8.0.0
                  , mtl
                  , network
                  , network-mux
@@ -138,7 +138,7 @@ library
                  , text
                  , template-haskell >=2.18.0.0
                  , time >=1.10
-                 , typed-protocols ^>=0.3
+                 , typed-protocols ^>=1.0
                  -- , typed-protocols-doc
     hs-source-dirs: src
     default-language: Haskell2010

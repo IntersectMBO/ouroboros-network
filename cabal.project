@@ -11,8 +11,8 @@ repository cardano-haskell-packages
 
 -- run `nix flake lock --update-input hackageNix` after updating index-state.
 index-state:
-  hackage.haskell.org 2025-05-30T13:21:47Z,
-  cardano-haskell-packages 2025-05-28T12:02:33Z,
+  hackage.haskell.org 2025-07-02T11:58:57Z,
+  cardano-haskell-packages 2025-07-02T14:54:39Z,
 
 packages:
   kes-agent
@@ -25,7 +25,10 @@ package cryptonite
   -- generation is dubious. Set the flag so we use /dev/urandom by default.
   flags: -support_rdrand
 
-allow-newer: bytestring
+allow-newer:
+  bytestring,
+  serdoc-core:tasty-quickcheck,
+  tree-diff:QuickCheck,
 
 -- ---------------------------------------------------------
 -- Disable all tests by default
