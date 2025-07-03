@@ -77,12 +77,12 @@ instance Exception TxSubmissionProtocolError where
 
 
 txSubmissionOutbound
-  :: forall txid tx idx m.
+  :: forall version txid tx idx m.
      (Ord txid, Ord idx, MonadSTM m, MonadThrow m)
   => Tracer m (TraceTxSubmissionOutbound txid tx)
   -> NumTxIdsToAck  -- ^ Maximum number of unacknowledged txids allowed
   -> TxSubmissionMempoolReader txid tx idx m
-  -> NodeToNodeVersion
+  -> version
   -> ControlMessageSTM m
   -> TxSubmissionClient txid tx m ()
 txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version controlMessageSTM =
