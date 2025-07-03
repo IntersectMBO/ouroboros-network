@@ -696,7 +696,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
                          (NumTxIdsToAck $ getNumTxIdsToReq
                                         $ maxUnacknowledgedTxIds txDecisionPolicy)
                          (getMempoolReader mempool)
-                         maxBound
+                         (maxBound :: UnversionedProtocol)
                          controlMessageSTM
           labelThisThread "TxSubmissionClient"
           runPeerWithLimits
