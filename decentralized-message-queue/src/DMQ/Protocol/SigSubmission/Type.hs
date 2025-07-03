@@ -21,13 +21,17 @@ import Data.Word
 import Ouroboros.Network.Protocol.TxSubmission2.Type as SigSubmission hiding
            (TxSubmission2)
 import Ouroboros.Network.Protocol.TxSubmission2.Type as TxSubmission2
+import Ouroboros.Network.Util.ShowProxy
 
 
 newtype SigHash = SigHash { getSigHash :: ByteString }
-  deriving stock (Show, Eq)
+  deriving stock (Show, Eq, Ord)
 
 newtype SigId = SigId { getSigId :: SigHash }
-  deriving stock (Show, Eq)
+  deriving stock (Show, Eq, Ord)
+
+instance ShowProxy SigId where
+  showProxy _ = "SigId"
 
 newtype SigBody = SigBody { getSigBody :: ByteString }
   deriving stock (Show, Eq)
@@ -55,6 +59,9 @@ data Sig = Sig {
     sigOpCertificate :: SigOpCertificate
   }
   deriving stock (Show, Eq)
+
+instance ShowProxy Sig where
+  showProxy _ = "Sig"
 
 
 type SigSubmission = TxSubmission2.TxSubmission2 SigId Sig

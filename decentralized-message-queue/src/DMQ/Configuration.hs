@@ -1,10 +1,16 @@
-{-# LANGUAGE DeriveGeneric     #-}
-{-# LANGUAGE NamedFieldPuns    #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE NamedFieldPuns     #-}
+{-# LANGUAGE NumericUnderscores #-}
+{-# LANGUAGE OverloadedStrings  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module DMQ.Configuration where
+module DMQ.Configuration
+  ( Configuration (..)
+  , readConfigurationFileOrError
+  , mkDiffusionConfiguration
+  , defaultSigDecisionPolicy
+  ) where
 
 import Control.Concurrent.Class.MonadSTM (MonadSTM (..))
 import Control.Exception (Exception (..), IOException, try)
@@ -38,6 +44,7 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeerSnapshot (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
+import Ouroboros.Network.TxSubmission.Inbound.V2 (TxDecisionPolicy (..))
 
 data Configuration ntnFd ntnAddr ntcFd ntcAddr =
   Configuration {
@@ -234,3 +241,17 @@ mkDiffusionConfiguration
       atomically . writeVar $ mLedgerPeerSnapshot
       pure mLedgerPeerSnapshot
 
+
+-- TODO: review this once we know what is the size of a `Sig`.
+-- TODO: parts of should be configurable
+defaultSigDecisionPolicy :: TxDecisionPolicy
+defaultSigDecisionPolicy = TxDecisionPolicy {
+    maxNumTxIdsToRequest   = 10,
+    maxUnacknowledgedTxIds = 40,
+    txsSizeInflightPerPeer = 100_000,
+    maxTxsSizeInflight     = 250_000,
+    txInflightMultiplicity = 1,
+    bufferedTxsMinLifetime = 0,
+    scoreRate              = 0.1,
+    scoreMax               = 15 * 60
+  }

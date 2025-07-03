@@ -11,8 +11,7 @@ import Debug.Trace (traceShowM)
 import Options.Applicative
 import System.Random (newStdGen, split)
 
-import DMQ.Configuration (mkDiffusionConfiguration,
-           readConfigurationFileOrError)
+import DMQ.Configuration
 import DMQ.Configuration.CLIOptions (CLIOptions (..), parseCLIOptions)
 import DMQ.Configuration.Topology (readTopologyFileOrError)
 import DMQ.Diffusion.Applications (diffusionApplications)
@@ -55,6 +54,7 @@ runDMQ cliopts@CLIOptions {
                 (dmqCodecs (encodeRemoteAddress (mapNtNDMQtoOuroboros maxBound))
                            (decodeRemoteAddress (mapNtNDMQtoOuroboros maxBound)))
                 dmqLimitsAndTimeouts
+                defaultSigDecisionPolicy
       dmqDiffusionArguments =
         diffusionArguments @_ @IOException
                            debugTracer
