@@ -118,7 +118,7 @@ txSubmissionSimulation tracer maxUnacked outboundTxs
     return (inmp, outmp)
   where
 
-    outboundPeer :: Mempool m txid -> TxSubmissionClient txid (Tx txid) m ()
+    outboundPeer :: Mempool m (Tx txid) -> TxSubmissionClient txid (Tx txid) m ()
     outboundPeer outboundMempool =
       txSubmissionOutbound
         nullTracer
@@ -127,7 +127,7 @@ txSubmissionSimulation tracer maxUnacked outboundTxs
         (maxBound :: NodeToNodeVersion)
         controlMessageSTM
 
-    inboundPeer :: Mempool m txid -> TxSubmissionServerPipelined txid (Tx txid) m ()
+    inboundPeer :: Mempool m (Tx txid) -> TxSubmissionServerPipelined txid (Tx txid) m ()
     inboundPeer inboundMempool =
       txSubmissionInbound
         nullTracer

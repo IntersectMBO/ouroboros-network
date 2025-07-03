@@ -311,7 +311,7 @@ data NodeKernel header block s txid m = NodeKernel {
         :: StrictTVar m (PublicPeerSelectionState NtNAddr),
 
       nkMempool
-        :: Mempool m txid,
+        :: Mempool m (Tx txid),
 
       nkTxChannelsVar
         :: TxChannelsVar m NtNAddr txid (Tx txid),

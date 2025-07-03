@@ -97,6 +97,7 @@ library
     Ouroboros.Network.TxSubmission.Inbound.V2.State
     Ouroboros.Network.TxSubmission.Inbound.V2.Types
     Ouroboros.Network.TxSubmission.Mempool.Reader
+    Ouroboros.Network.TxSubmission.Mempool.Simple
     Ouroboros.Network.TxSubmission.Outbound
 
   other-modules:
