@@ -4,13 +4,27 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
-{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
-{-# LANGUAGE TypeOperators       #-}
 
-module Test.Ouroboros.Network.TxSubmission.Types where
+module Test.Ouroboros.Network.TxSubmission.Types
+  ( Tx (..)
+  , TxId
+  , Mempool
+  , emptyMempool
+  , newMempool
+  , readMempool
+  , getMempoolReader
+  , getMempoolWriter
+  , maxTxSize
+  , LargeNonEmptyList (..)
+  , SimResults (..)
+  , WithThreadAndTime (..)
+  , txSubmissionCodec2
+  , evaluateTrace
+  , verboseTracer
+  , debugTracer
+  ) where
 
 import Prelude hiding (seq)
 
@@ -33,13 +47,6 @@ import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 
 import Data.ByteString.Lazy (ByteString)
-import Data.Foldable as Foldable (find, foldl', toList)
-import Data.Function (on)
-import Data.List (nubBy)
-import Data.Maybe (isJust)
-import Data.Sequence (Seq)
-import Data.Sequence qualified as Seq
-import Data.Set qualified as Set
 import GHC.Generics (Generic)
 
 import Network.TypedProtocol.Codec
@@ -48,6 +55,8 @@ import Ouroboros.Network.Protocol.TxSubmission2.Codec
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Inbound.V1
 import Ouroboros.Network.TxSubmission.Mempool.Reader
+import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool)
+import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 import Ouroboros.Network.Util.ShowProxy
 
 import Test.QuickCheck
@@ -91,51 +100,23 @@ maxTxSize = 65536
 
 type TxId = Int
 
-newtype Mempool m txid = Mempool (TVar m (Seq (Tx txid)))
+emptyMempool :: MonadSTM m => m (Mempool m (Tx txid))
+emptyMempool = Mempool.empty
 
+newMempool :: MonadSTM m => [Tx txid] -> m (Mempool m (Tx txid))
+newMempool   = Mempool.new
 
-emptyMempool :: MonadSTM m => m (Mempool m txid)
-emptyMempool = Mempool <$> newTVarIO Seq.empty
-
-newMempool :: ( MonadSTM m
-              , Eq txid
-              )
-           => [Tx txid]
-           -> m (Mempool m txid)
-newMempool = fmap Mempool
-           . newTVarIO
-           . Seq.fromList
-
-readMempool :: MonadSTM m => Mempool m txid -> m [Tx txid]
-readMempool (Mempool mempool) = toList <$> readTVarIO mempool
-
+readMempool :: MonadSTM m => Mempool m (Tx txid) -> m [Tx txid]
+readMempool  = Mempool.read
 
 getMempoolReader :: forall txid m.
                     ( MonadSTM m
                     , Eq txid
                     , Show txid
                     )
-                 => Mempool m txid
+                 => Mempool m (Tx txid)
                  -> TxSubmissionMempoolReader txid (Tx txid) Int m
-getMempoolReader (Mempool mempool) =
-    TxSubmissionMempoolReader { mempoolGetSnapshot, mempoolZeroIdx = 0 }
-  where
-    mempoolGetSnapshot :: STM m (MempoolSnapshot txid (Tx txid) Int)
-    mempoolGetSnapshot = getSnapshot <$> readTVar mempool
-
-    getSnapshot :: Seq (Tx txid)
-                -> MempoolSnapshot txid (Tx txid) Int
-    getSnapshot seq =
-      MempoolSnapshot {
-          mempoolTxIdsAfter =
-            \idx -> zipWith f [idx + 1 ..] (toList $ Seq.drop idx seq),
-          -- why do I need to use `pred`?
-          mempoolLookupTx   = flip Seq.lookup seq . pred,
-          mempoolHasTx      = \txid -> isJust $ find (\tx -> getTxId tx == txid) seq
-       }
-
-    f :: Int -> Tx txid -> (txid, Int, SizeInBytes)
-    f idx Tx {getTxId, getTxAdvSize} = (getTxId, idx, getTxAdvSize)
+getMempoolReader = Mempool.getReader getTxId getTxAdvSize
 
 
 getMempoolWriter :: forall txid m.
@@ -143,26 +124,9 @@ getMempoolWriter :: forall txid m.
                     , Ord txid
                     , Eq txid
                     )
-                 => Mempool m txid
+                 => Mempool m (Tx txid)
                  -> TxSubmissionMempoolWriter txid (Tx txid) Int m
-getMempoolWriter (Mempool mempool) =
-    TxSubmissionMempoolWriter {
-        txId = getTxId,
-
-        mempoolAddTxs = \txs -> do
-          atomically $ do
-            mempoolTxs <- readTVar mempool
-            let currentIds = Set.fromList (map getTxId (toList mempoolTxs))
-                validTxs = nubBy (on (==) getTxId)
-                         $ filter
-                             (\Tx { getTxId, getTxValid } ->
-                                  getTxValid
-                               && getTxId `Set.notMember` currentIds)
-                           txs
-                mempoolTxs' = Foldable.foldl' (Seq.|>) mempoolTxs validTxs
-            writeTVar mempool mempoolTxs'
-            return (map getTxId validTxs)
-      }
+getMempoolWriter = Mempool.getWriter getTxId getTxValid
 
 
 txSubmissionCodec2 :: MonadST m
