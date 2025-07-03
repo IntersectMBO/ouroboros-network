@@ -1,5 +1,8 @@
+{-# LANGUAGE PackageImports   #-}
 {-# LANGUAGE TypeApplications #-}
+
 {-# OPTIONS_GHC -Wno-orphans #-}
+{-# OPTIONS_GHC -Wno-deprecations #-}
 
 module Main (main) where
 
@@ -7,7 +10,7 @@ import Data.List.NonEmpty
 import Data.Semigroup (Semigroup (..))
 
 import Test.QuickCheck
-import Test.QuickCheck.Monoids
+import "quickcheck-monoids" Test.QuickCheck.Monoids
 import Test.Tasty
 import Test.Tasty.QuickCheck
 
