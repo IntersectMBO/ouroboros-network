@@ -51,6 +51,10 @@ import Network.TypedProtocol.PingPong.Examples
 import Network.TypedProtocol.PingPong.Server
 import Network.TypedProtocol.PingPong.Type
 
+import Cardano.Network.NodeToNode (blockFetchMiniProtocolNum,
+           chainSyncMiniProtocolNum, keepAliveMiniProtocolNum,
+           peerSharingMiniProtocolNum)
+
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.BlockFetch.Client
 import Ouroboros.Network.Protocol.BlockFetch.Codec
@@ -83,9 +87,6 @@ import Ouroboros.Network.Mock.Chain qualified as Chain
 import Ouroboros.Network.Mock.ConcreteBlock
 import Ouroboros.Network.Mock.ProducerState
 import Ouroboros.Network.Mux
-import Ouroboros.Network.NodeToNode (blockFetchMiniProtocolNum,
-           chainSyncMiniProtocolNum, keepAliveMiniProtocolNum,
-           peerSharingMiniProtocolNum)
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 import Ouroboros.Network.PeerSelection.PeerSharing qualified as PSTypes

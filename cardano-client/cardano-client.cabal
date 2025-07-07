@@ -28,7 +28,7 @@ library
     contra-tracer >=0.1 && <0.3,
     io-classes:si-timers ^>=1.8.0.1,
     network-mux ^>=0.9,
-    ouroboros-network ^>=0.22,
+    ouroboros-network:cardano-diffusion ^>=0.22,
     ouroboros-network-api ^>=0.15,
     ouroboros-network-framework ^>=0.19,
 

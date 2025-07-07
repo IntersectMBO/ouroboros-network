@@ -44,10 +44,11 @@ import GHC.Generics (Generic)
 
 import Network.TypedProtocol.Codec
 
+import Cardano.Network.NodeToNode (NodeToNodeVersion (..))
+
 import Ouroboros.Network.Channel
 import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)
 import Ouroboros.Network.Driver
-import Ouroboros.Network.NodeToNode (NodeToNodeVersion (..))
 import Ouroboros.Network.Protocol.TxSubmission2.Client
 import Ouroboros.Network.Protocol.TxSubmission2.Codec
 import Ouroboros.Network.Protocol.TxSubmission2.Server

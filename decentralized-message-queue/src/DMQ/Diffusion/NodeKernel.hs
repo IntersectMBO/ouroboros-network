@@ -9,7 +9,7 @@ import Control.DeepSeq (NFData)
 import NoThunks.Class (NoThunks)
 import Ouroboros.Network.BlockFetch (FetchClientRegistry,
            newFetchClientRegistry)
-import Ouroboros.Network.NodeToNode (ConnectionId (..))
+import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.PeerSelection.Governor.Types
            (makePublicPeerSelectionStateVar)
 import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry,

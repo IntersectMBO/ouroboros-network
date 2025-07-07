@@ -46,15 +46,15 @@ import Network.TypedProtocol.Codec
 
 import Network.Mux qualified as Mx
 
+import Cardano.Network.NodeToClient
+import Cardano.Network.NodeToNode
+
 import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.Block
 import Ouroboros.Network.ControlMessage (continueForever)
-import Ouroboros.Network.IOManager
 import Ouroboros.Network.Mock.Chain qualified as Chain
 import Ouroboros.Network.Mock.ConcreteBlock
 import Ouroboros.Network.Mux
-import Ouroboros.Network.NodeToClient (LocalConnectionId)
-import Ouroboros.Network.NodeToNode
 import Ouroboros.Network.Point (WithOrigin (..))
 import Ouroboros.Network.Snocket
 import Ouroboros.Network.Socket

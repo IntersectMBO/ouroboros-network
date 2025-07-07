@@ -41,17 +41,17 @@ import Data.Void (Void)
 
 import Network.Mux qualified as Mx
 
+import Cardano.Network.NodeToClient (Handshake, LocalAddress (..),
+           NetworkConnectTracers (..), NodeToClientProtocols,
+           NodeToClientVersion, NodeToClientVersionData (..), TraceSendRecv,
+           Versions)
+import Cardano.Network.NodeToClient qualified as NtC
+
+import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.ControlMessage (ControlMessage (..))
 import Ouroboros.Network.Magic (NetworkMagic)
 import Ouroboros.Network.Mux (MiniProtocolCb (..),
            OuroborosApplicationWithMinimalCtx, RunMiniProtocol (..))
-
-import Ouroboros.Network.ConnectionId (ConnectionId (..))
-import Ouroboros.Network.NodeToClient (Handshake, LocalAddress (..),
-           NetworkConnectTracers (..), NodeToClientProtocols,
-           NodeToClientVersion, NodeToClientVersionData (..), TraceSendRecv,
-           Versions)
-import Ouroboros.Network.NodeToClient qualified as NtC
 import Ouroboros.Network.Snocket qualified as Snocket
 
 type MuxMode  = Mx.Mode
