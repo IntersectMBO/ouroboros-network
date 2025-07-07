@@ -9,7 +9,6 @@ repository cardano-haskell-packages
     c00aae8461a256275598500ea0e187588c35a5d5d7454fb57eac18d9edb86a56
     d4a35cd3121aa00d18544bb0ac01c3e1691d618f462c46129271bccf39f7e8ee
 
--- run `nix flake lock --update-input hackageNix` after updating index-state.
 index-state:
   hackage.haskell.org 2025-07-02T11:58:57Z,
   cardano-haskell-packages 2025-07-02T14:54:39Z,
@@ -44,10 +43,3 @@ package kes-agent
 
 package cardano-crypto-class
   flags: +secp256k1-support
-
--- ---------------------------------------------------------
-
--- The two following one-liners will cut off / restore the remainder of this file (for nix-shell users):
--- when using the "cabal" wrapper script provided by nix-shell.
--- --------------------------- 8< --------------------------
--- Please do not put any `source-repository-package` clause above this line.
