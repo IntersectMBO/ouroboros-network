@@ -81,7 +81,7 @@ jobs:
       id: setup-haskell
       with:
         ghc-version: ${{ matrix.ghc }}
-        cabal-version: 3.10.1.0
+        cabal-version: 3.14.2.0
 
     - name: Install system dependencies
       uses: input-output-hk/actions/base@latest
