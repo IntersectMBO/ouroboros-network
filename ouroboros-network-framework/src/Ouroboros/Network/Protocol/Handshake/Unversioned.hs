@@ -37,7 +37,7 @@ import Ouroboros.Network.Protocol.Handshake.Version
 -- tests and demos where proper versioning is excessive.
 --
 data UnversionedProtocol = UnversionedProtocol
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Bounded, Show)
 
 
 data UnversionedProtocolData = UnversionedProtocolData
@@ -113,8 +113,8 @@ dataFlowProtocolDataCodec _ = CodecCBORTerm {encodeTerm, decodeTerm}
       toPeerSharing _ = Left "toPeerSharing: out of bounds"
 
       decodeTerm :: CBOR.Term -> Either Text DataFlowProtocolData
-      decodeTerm (CBOR.TList [CBOR.TBool False, CBOR.TInt a]) = DataFlowProtocolData Unidirectional <$> (toPeerSharing a)
-      decodeTerm (CBOR.TList [CBOR.TBool True, CBOR.TInt a])  = DataFlowProtocolData Duplex <$> (toPeerSharing a)
+      decodeTerm (CBOR.TList [CBOR.TBool False, CBOR.TInt a]) = DataFlowProtocolData Unidirectional <$> toPeerSharing a
+      decodeTerm (CBOR.TList [CBOR.TBool True, CBOR.TInt a])  = DataFlowProtocolData Duplex <$> toPeerSharing a
       decodeTerm t                  = Left $ T.pack $ "unexpected term: " ++ show t
 
 dataFlowProtocol :: DataFlow
