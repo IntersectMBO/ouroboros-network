@@ -124,6 +124,9 @@ acknowledgeTxIds
     toMempoolTxs' = toMempoolTxs <> txsToMempoolMap
 
     (downloadedTxs', ackedDownloadedTxs) = Map.partitionWithKey (\txid _ -> txid `Set.member` liveSet) downloadedTxs
+    -- latexTxs: transactions which were downloaded by another peer before we
+    -- downloaded them; it relies on that `txToMempool` filters out
+    -- `bufferedTxs`.
     lateTxs = Map.filterWithKey (\txid _ -> txid `Map.notMember` txsToMempoolMap) ackedDownloadedTxs
     score' = score + fromIntegral (Map.size lateTxs)
 
