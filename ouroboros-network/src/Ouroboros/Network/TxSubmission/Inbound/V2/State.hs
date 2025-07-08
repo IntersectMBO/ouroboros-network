@@ -27,14 +27,13 @@ import Control.Exception (assert)
 import Control.Monad.Class.MonadTime.SI
 import Control.Tracer (Tracer, traceWith)
 
-import Data.Bifunctor (second)
 import Data.Foldable (fold, toList)
 import Data.Foldable qualified as Foldable
 import Data.Functor (($>))
 import Data.Map.Merge.Strict qualified as Map
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromJust, isJust)
+import Data.Maybe (fromJust, maybeToList)
 import Data.Sequence.Strict (StrictSeq)
 import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set qualified as Set
@@ -111,11 +110,14 @@ acknowledgeTxIds
     (txIdsToRequest, acknowledgedTxIds, unacknowledgedTxIds')
       = splitAcknowledgedTxIds policy sharedTxState ps
 
-    txsToMempool = toList
-                 . fmap (second fromJust)
-                 . StrictSeq.takeWhileL (isJust . snd)
-                 . fmap (\txid -> (txid, Map.lookup txid downloadedTxs))
-                 $ acknowledgedTxIds
+    txsToMempool = [ (txid, tx)
+                   | txid <- toList toMempoolTxIds
+                   , txid `Map.notMember` bufferedTxs sharedTxState
+                   , tx <- maybeToList $ txid `Map.lookup` downloadedTxs
+                   ]
+    (toMempoolTxIds, _) =
+      StrictSeq.spanl (`Map.member` downloadedTxs) acknowledgedTxIds
+
 
     txsToMempoolMap = Map.fromList txsToMempool
 
