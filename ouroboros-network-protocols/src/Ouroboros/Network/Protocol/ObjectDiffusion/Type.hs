@@ -1,92 +1,115 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveFoldable #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE DerivingVia #-}
-{-# LANGUAGE EmptyCase #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveFoldable             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE EmptyCase                  #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE StandaloneKindSignatures #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE PolyKinds                  #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE StandaloneKindSignatures   #-}
+{-# LANGUAGE TypeFamilies               #-}
 
 -- | The type of the object diffusion protocol.
 --
 -- This is used to diffuse generic objects between nodes.
 module Ouroboros.Network.Protocol.ObjectDiffusion.Type
-  ( ObjectDiffusion (..),
-    Message (..),
-    SingObjectDiffusion (..),
-    SingBlockingStyle (..),
-    StBlockingStyle (..),
-    BlockingReplyList (..),
-    NumObjectIdsToAck (..),
-    NumObjectIdsToReq (..),
-    -- re-exports
-    SizeInBytes (..),
+  ( Polarity (..)
+  , GetAgency
+  , ClientInboundDiffusion
+  , ClientOutboundDiffusion
+  , ObjectDiffusion (..)
+  , Message (..)
+  , SingObjectDiffusion (..)
+  , SingBlockingStyle (..)
+  , StBlockingStyle (..)
+  , BlockingReplyList (..)
+  , NumObjectIdsToAck (..)
+  , NumObjectIdsToReq (..)
+  -- re-exports
+  , SizeInBytes (..)
   )
 where
 
-import Control.DeepSeq
-import Data.Kind (Type)
-import Data.List.NonEmpty (NonEmpty)
-import Data.Monoid (Sum (..))
-import Data.Singletons
-import Data.Word (Word16)
-import GHC.Generics
-import Network.TypedProtocol.Core
-import NoThunks.Class (NoThunks (..))
-import Ouroboros.Network.SizeInBytes (SizeInBytes (..))
-import Ouroboros.Network.Util.ShowProxy
-import Quiet (Quiet (..))
+import           Control.DeepSeq
+import           Data.Kind                        (Type)
+import           Data.List.NonEmpty               (NonEmpty)
+import           Data.Monoid                      (Sum (..))
+import           Data.Singletons
+import           Data.Word                        (Word16)
+import           GHC.Generics
+import           Network.TypedProtocol.Core
+import           NoThunks.Class                   (NoThunks (..))
+import           Ouroboros.Network.SizeInBytes    (SizeInBytes (..))
+import           Ouroboros.Network.Util.ShowProxy
+import           Quiet                            (Quiet (..))
+
+data Polarity = ClientInbound | ClientOutbound
+
+-- see https://moduscreate.slack.com/archives/C0937JQQ1F0/p1752155221158189 to see why we need such complication
+-- Basically, the StateAgency associated type in the Protocol class only inspects the state, but we need to inspect the polarity variable which is part of the kind of the state to know the agency.
+type GetAgency ::
+  forall polarity objectId object. ObjectDiffusion polarity objectId object -> Agency
+type family GetAgency (st :: ObjectDiffusion polarity objectId object) where
+  GetAgency StInit = ClientAgency
+  GetAgency @ClientInbound StIdle = ClientAgency
+  GetAgency @ClientOutbound StIdle = ServerAgency
+  GetAgency @ClientInbound (StObjectIds b) = ServerAgency
+  GetAgency @ClientOutbound (StObjectIds b) = ClientAgency
+  GetAgency @ClientInbound StObjects = ServerAgency
+  GetAgency @ClientOutbound StObjects = ClientAgency
+  GetAgency StDone = NobodyAgency
 
 -- | The kind of the object diffusion protocol, and the types of the states in
 -- the protocol state machine.
 --
 -- We describe this protocol using the label \"inbound\" for the peer that is
--- receiving objects, and \"inbound\" for the one sending them.
-type ObjectDiffusion :: Type -> Type -> Type
-data ObjectDiffusion objectId object where
+-- receiving objects, and \"outbound\" for the one sending them.
+type ObjectDiffusion :: Polarity -> Type -> Type -> Type
+data ObjectDiffusion polarity objectId object where
   -- | Initial protocol message.
-  StInit :: ObjectDiffusion objectId object
+  StInit :: ObjectDiffusion polarity objectId object
   -- | The inbound node has agency; it can either terminate, ask for object
   -- identifiers or ask for objects.
   --
   -- There is no timeout in this state.
-  StIdle :: ObjectDiffusion objectId object
+  StIdle :: ObjectDiffusion polarity objectId object
   -- | The outbound node has agency; it must reply with a list of object
   -- identifiers that it wishes to submit.
   --
   -- There are two sub-states for this, for blocking and non-blocking cases.
-  StObjectIds :: StBlockingStyle -> ObjectDiffusion objectId object
+  StObjectIds :: StBlockingStyle -> ObjectDiffusion polarity objectId object
   -- | The outbound node has agency; it must reply with the list of
   -- objects.
-  StObjects :: ObjectDiffusion objectId object
+  StObjects :: ObjectDiffusion polarity objectId object
   -- | Nobody has agency; termination state.
-  StDone :: ObjectDiffusion objectId object
+  StDone :: ObjectDiffusion polarity objectId object
+
+type ClientInboundDiffusion = ObjectDiffusion 'ClientInbound
+type ClientOutboundDiffusion = ObjectDiffusion 'ClientOutbound
 
 instance
-  ( ShowProxy objectId,
-    ShowProxy object
+  ( ShowProxy objectId
+  , ShowProxy object
   ) =>
-  ShowProxy (ObjectDiffusion objectId object)
+  ShowProxy (ObjectDiffusion polarity objectId object)
   where
   showProxy _ =
     concat
-      [ "ObjectDiffusion ",
-        showProxy (Proxy :: Proxy objectId),
-        " ",
-        showProxy (Proxy :: Proxy object)
+      [ "ObjectDiffusion "
+      , showProxy (Proxy :: Proxy objectId)
+      , " "
+      , showProxy (Proxy :: Proxy object)
       ]
 
-instance ShowProxy (StIdle :: ObjectDiffusion objectId object) where
+instance ShowProxy (StIdle :: ObjectDiffusion polarity objectId object) where
   showProxy _ = "StIdle"
 
 type SingObjectDiffusion ::
-  ObjectDiffusion objectId object ->
+  ObjectDiffusion polarity objectId object ->
   Type
 data SingObjectDiffusion k where
   SingInit :: SingObjectDiffusion StInit
@@ -104,7 +127,7 @@ instance StateTokenI StInit where stateToken = SingInit
 instance StateTokenI StIdle where stateToken = SingIdle
 
 instance
-  (SingI stBlocking) =>
+  SingI stBlocking =>
   StateTokenI (StObjectIds stBlocking)
   where
   stateToken = SingObjectIds sing
@@ -122,22 +145,22 @@ data StBlockingStyle where
 newtype NumObjectIdsToAck = NumObjectIdsToAck {getNumObjectIdsToAck :: Word16}
   deriving (Eq, Ord, NFData, Generic)
   deriving newtype (Num, Enum, Real, Integral, Bounded, NoThunks)
-  deriving (Semigroup) via (Sum Word16)
-  deriving (Monoid) via (Sum Word16)
-  deriving (Show) via (Quiet NumObjectIdsToAck)
+  deriving Semigroup via (Sum Word16)
+  deriving Monoid via (Sum Word16)
+  deriving Show via (Quiet NumObjectIdsToAck)
 
 newtype NumObjectIdsToReq = NumObjectIdsToReq {getNumObjectIdsToReq :: Word16}
   deriving (Eq, Ord, NFData, Generic)
   deriving newtype (Num, Enum, Real, Integral, Bounded, NoThunks)
-  deriving (Semigroup) via (Sum Word16)
-  deriving (Monoid) via (Sum Word16)
-  deriving (Show) via (Quiet NumObjectIdsToReq)
+  deriving Semigroup via (Sum Word16)
+  deriving Monoid via (Sum Word16)
+  deriving Show via (Quiet NumObjectIdsToReq)
 
 -- | There are some constraints of the protocol that are not captured in the
 -- types of the messages, but are documented with the messages. Violation
 -- of these constraints is also a protocol error. The constraints are intended
 -- to ensure that implementations are able to work in bounded space.
-instance Protocol (ObjectDiffusion objectId object) where
+instance Protocol (ObjectDiffusion polarity objectId object) where
   -- \| The messages in the object diffusion protocol.
   --
   -- In this protocol the consumer (inbound side, server role) always
@@ -158,9 +181,9 @@ instance Protocol (ObjectDiffusion objectId object) where
   -- acknowledged in the same FIFO order they were provided in. The
   -- acknowledgement is included in the same messages used to ask for more
   -- object identifiers.
-  data Message (ObjectDiffusion objectId object) from to where
+  data Message (ObjectDiffusion polarity objectId object) from to where
     MsgInit ::
-      Message (ObjectDiffusion objectId object) StInit StIdle
+      Message (ObjectDiffusion polarity objectId object) StInit StIdle
     -- \| Request a list of object identifiers from the client, and confirm a
     -- number of outstanding object identifiers.
     --
@@ -197,13 +220,13 @@ instance Protocol (ObjectDiffusion objectId object) where
     -- \* The non-blocking case __MUST__ be used when there are non-zero
     --   remaining unacknowledged objects.
     MsgRequestObjectIds ::
-      forall (blocking :: StBlockingStyle) objectId object.
+      forall (blocking :: StBlockingStyle) polarity objectId object.
       SingBlockingStyle blocking ->
       NumObjectIdsToAck ->
       -- \^ Acknowledge this number of outstanding objects
       NumObjectIdsToReq ->
       -- \^ Request up to this number of object ids
-      Message (ObjectDiffusion objectId object) StIdle (StObjectIds blocking)
+      Message (ObjectDiffusion polarity objectId object) StIdle (StObjectIds blocking)
     -- \| Reply with a list of object identifiers for available objects, along
     -- with the size of each object.
     --
@@ -220,7 +243,7 @@ instance Protocol (ObjectDiffusion objectId object) where
     -- objects.
     MsgReplyObjectIds ::
       BlockingReplyList blocking (objectId, SizeInBytes) ->
-      Message (ObjectDiffusion objectId object) (StObjectIds blocking) StIdle
+      Message (ObjectDiffusion polarity objectId object) (StObjectIds blocking) StIdle
     -- \| Request one or more objects corresponding to the given object
     -- identifiers.
     --
@@ -235,7 +258,7 @@ instance Protocol (ObjectDiffusion objectId object) where
     -- outstanding or that were already asked for.
     MsgRequestObjects ::
       [objectId] ->
-      Message (ObjectDiffusion objectId object) StIdle StObjects
+      Message (ObjectDiffusion polarity objectId object) StIdle StObjects
     -- \| Reply with the requested objects, or implicitly discard.
     --
     -- Objects can become invalid between the time the object
@@ -248,30 +271,25 @@ instance Protocol (ObjectDiffusion objectId object) where
     -- be valid and available from another peer).
     MsgReplyObjects ::
       [object] ->
-      Message (ObjectDiffusion objectId object) StObjects StIdle
+      Message (ObjectDiffusion polarity objectId object) StObjects StIdle
     -- \| Termination message, initiated by the client when the server is making
     -- a blocking call for more object identifiers.
     MsgDone ::
-      Message (ObjectDiffusion objectId object) (StObjectIds StBlocking) StDone
+      Message (ObjectDiffusion polarity objectId object) (StObjectIds StBlocking) StDone
 
-  type StateAgency StInit = ClientAgency -- FIXME: do not change
-  type StateAgency StIdle = ServerAgency -- FIXME: ClientAgency TODO: generalise to inboundAgency
-  type StateAgency (StObjectIds b) = ClientAgency -- FIXME: ServerAgency TODO: generalise to outboundAgency
-  type StateAgency StObjects = ClientAgency -- FIXME: ServerAgency TODO: generalise to outboundAgency
-  type StateAgency StDone = NobodyAgency
-
+  type StateAgency st = GetAgency st -- FIXME: do not change
   type StateToken = SingObjectDiffusion
 
 instance
   (NFData objectId, NFData object) =>
-  NFData (Message (ObjectDiffusion objectId object) from to)
+  NFData (Message (ObjectDiffusion polarity objectId object) from to)
   where
-  rnf MsgInit = ()
+  rnf MsgInit                          = ()
   rnf (MsgRequestObjectIds tkbs w1 w2) = rnf tkbs `seq` rnf w1 `seq` rnf w2
-  rnf (MsgReplyObjectIds brl) = rnf brl
-  rnf (MsgRequestObjects objIds) = rnf objIds
-  rnf (MsgReplyObjects objects) = rnf objects
-  rnf MsgDone = ()
+  rnf (MsgReplyObjectIds brl)          = rnf brl
+  rnf (MsgRequestObjects objIds)       = rnf objIds
+  rnf (MsgReplyObjects objects)        = rnf objects
+  rnf MsgDone                          = ()
 
 -- | The value level equivalent of 'BlockingStyle'.
 --
@@ -292,7 +310,7 @@ instance SingI StBlocking where sing = SingBlocking
 instance SingI StNonBlocking where sing = SingNonBlocking
 
 instance NFData (SingBlockingStyle b) where
-  rnf SingBlocking = ()
+  rnf SingBlocking    = ()
   rnf SingNonBlocking = ()
 
 -- | We have requests for lists of things. In the blocking case the
@@ -302,20 +320,20 @@ data BlockingReplyList (blocking :: StBlockingStyle) a where
   BlockingReply :: NonEmpty a -> BlockingReplyList StBlocking a
   NonBlockingReply :: [a] -> BlockingReplyList StNonBlocking a
 
-deriving instance (Eq a) => Eq (BlockingReplyList blocking a)
+deriving instance Eq a => Eq (BlockingReplyList blocking a)
 
-deriving instance (Show a) => Show (BlockingReplyList blocking a)
+deriving instance Show a => Show (BlockingReplyList blocking a)
 
 deriving instance Foldable (BlockingReplyList blocking)
 
-instance (NFData a) => NFData (BlockingReplyList blocking a) where
-  rnf (BlockingReply as) = rnf as
+instance NFData a => NFData (BlockingReplyList blocking a) where
+  rnf (BlockingReply as)    = rnf as
   rnf (NonBlockingReply as) = rnf as
 
 deriving instance
   (Eq objectId, Eq object) =>
-  Eq (Message (ObjectDiffusion objectId object) from to)
+  Eq (Message (ObjectDiffusion polarity objectId object) from to)
 
 deriving instance
   (Show objectId, Show object) =>
-  Show (Message (ObjectDiffusion objectId object) from to)
+  Show (Message (ObjectDiffusion polarity objectId object) from to)
