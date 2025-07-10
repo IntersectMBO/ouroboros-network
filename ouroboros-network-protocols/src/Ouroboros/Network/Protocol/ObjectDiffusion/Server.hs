@@ -1,9 +1,9 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeApplications    #-}
 
 -- | A view of the object diffusion protocol from the point of view of
 -- the server.
@@ -16,19 +16,19 @@ module Ouroboros.Network.Protocol.ObjectDiffusion.Server
   ( -- * Protocol type for the server
 
     -- | The protocol states from the point of view of the server.
-    ObjectDiffusionServerPipelined (..),
-    ServerStIdle (..),
-    Collect (..),
+    ObjectDiffusionServerPipelined (..)
+  , ServerStIdle (..)
+  , Collect (..)
 
     -- * Execution as a typed protocol
-    objectDiffusionServerPeerPipelined,
+  , objectDiffusionServerPeerPipelined
   )
 where
 
-import Data.List.NonEmpty (NonEmpty)
-import Network.TypedProtocol.Core
-import Network.TypedProtocol.Peer.Server
-import Ouroboros.Network.Protocol.ObjectDiffusion.Type
+import           Data.List.NonEmpty                              (NonEmpty)
+import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Peer.Server
+import           Ouroboros.Network.Protocol.ObjectDiffusion.Type
 
 data ObjectDiffusionServerPipelined objectId object m a where
   ObjectDiffusionServerPipelined ::
@@ -77,40 +77,41 @@ data ServerStIdle (n :: N) objectId object m a where
 
 -- | Transform a 'ObjectDiffusionServerPipelined' into a 'PeerPipelined'.
 objectDiffusionServerPeerPipelined ::
-  forall objectId object m a.
-  (Functor m) =>
+  forall polarity objectId object m a.
+  Functor m =>
   ObjectDiffusionServerPipelined objectId object m a ->
-  ServerPipelined (ObjectDiffusion objectId object) StInit m a
+  ServerPipelined (ObjectDiffusion polarity objectId object) StInit m a
 objectDiffusionServerPeerPipelined (ObjectDiffusionServerPipelined server) =
   ServerPipelined $
     -- We need to assist GHC to infer the existentially quantified `c` as
     -- `Collect objectId object`
     Await @_ @(Pipelined Z (Collect objectId object))
       (\MsgInit -> Effect (go <$> server))
-  where
-    go ::
-      forall (n :: N).
-      ServerStIdle n objectId object m a ->
-      Server (ObjectDiffusion objectId object) (Pipelined n (Collect objectId object)) StIdle m a
+ where
+  go ::
+    forall (n :: N).
+    ServerStIdle n objectId object m a ->
+    Server (ObjectDiffusion polarity objectId object) (Pipelined n (Collect objectId object)) StIdle m a
 
-    go (SendMsgRequestObjectIdsBlocking ackNo reqNo kDone k) =
-      Yield
-        (MsgRequestObjectIds SingBlocking ackNo reqNo)
-        $ Await
-        $ \case
-          MsgDone -> Effect (Done <$> kDone)
-          MsgReplyObjectIds (BlockingReply objectIds) -> Effect (go <$> k objectIds)
-    go (SendMsgRequestObjectIdsPipelined ackNo reqNo k) =
-      YieldPipelined
-        (MsgRequestObjectIds SingNonBlocking ackNo reqNo)
-        (ReceiverAwait $ \(MsgReplyObjectIds (NonBlockingReply objectIds)) -> ReceiverDone (CollectObjectIds reqNo objectIds))
-        (Effect (go <$> k))
-    go (SendMsgRequestObjectsPipelined objectIds k) =
-      YieldPipelined
-        (MsgRequestObjects objectIds)
-        (ReceiverAwait $ \(MsgReplyObjects objects) -> ReceiverDone (CollectObjects objectIds objects))
-        (Effect (go <$> k))
-    go (CollectPipelined mNone collect) =
-      Collect
-        (fmap go mNone)
-        (Effect . fmap go . collect)
+  go (SendMsgRequestObjectIdsBlocking ackNo reqNo kDone k) =
+    Yield
+      (MsgRequestObjectIds SingBlocking ackNo reqNo)
+      $ Await
+      $ \case
+        MsgDone -> Effect (Done <$> kDone)
+        MsgReplyObjectIds (BlockingReply objectIds) -> Effect (go <$> k objectIds)
+  go (SendMsgRequestObjectIdsPipelined ackNo reqNo k) =
+    YieldPipelined
+      (MsgRequestObjectIds SingNonBlocking ackNo reqNo)
+      ( ReceiverAwait $ \(MsgReplyObjectIds (NonBlockingReply objectIds)) -> ReceiverDone (CollectObjectIds reqNo objectIds)
+      )
+      (Effect (go <$> k))
+  go (SendMsgRequestObjectsPipelined objectIds k) =
+    YieldPipelined
+      (MsgRequestObjects objectIds)
+      (ReceiverAwait $ \(MsgReplyObjects objects) -> ReceiverDone (CollectObjects objectIds objects))
+      (Effect (go <$> k))
+  go (CollectPipelined mNone collect) =
+    Collect
+      (fmap go mNone)
+      (Effect . fmap go . collect)

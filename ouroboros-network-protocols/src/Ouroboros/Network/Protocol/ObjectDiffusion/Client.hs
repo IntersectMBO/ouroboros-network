@@ -1,8 +1,8 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | A view of the object diffusion protocol from the point of view of
@@ -17,21 +17,21 @@ module Ouroboros.Network.Protocol.ObjectDiffusion.Client
   ( -- * Protocol type for the client
 
     -- | The protocol states from the point of view of the client.
-    ObjectDiffusionClient (..),
-    ClientStIdle (..),
-    ClientStObjectIds (..),
-    ClientStObjects (..),
-    SingBlockingStyle (..),
-    BlockingReplyList (..),
+    ObjectDiffusionClient (..)
+  , ClientStIdle (..)
+  , ClientStObjectIds (..)
+  , ClientStObjects (..)
+  , SingBlockingStyle (..)
+  , BlockingReplyList (..)
 
     -- * Execution as a typed protocol
-    objectDiffusionClientPeer,
+  , objectDiffusionClientPeer
   )
 where
 
-import Network.TypedProtocol.Core
-import Network.TypedProtocol.Peer.Client
-import Ouroboros.Network.Protocol.ObjectDiffusion.Type
+import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Peer.Client
+import           Ouroboros.Network.Protocol.ObjectDiffusion.Type
 
 -- | The client side of the object diffusion protocol.
 --
@@ -55,8 +55,8 @@ data ClientStIdle txid tx m a = ClientStIdle
       SingBlockingStyle blocking ->
       NumObjectIdsToAck ->
       NumObjectIdsToReq ->
-      m (ClientStObjectIds blocking txid tx m a),
-    recvMsgRequestObjects ::
+      m (ClientStObjectIds blocking txid tx m a)
+  , recvMsgRequestObjects ::
       [txid] ->
       m (ClientStObjects txid tx m a)
   }
@@ -78,43 +78,43 @@ data ClientStObjects txid tx m a where
 
 -- | A non-pipelined 'Peer' representing the 'ObjectDiffusionClient'.
 objectDiffusionClientPeer ::
-  forall txid tx m a.
-  (Monad m) =>
+  forall polarity txid tx m a.
+  Monad m =>
   ObjectDiffusionClient txid tx m a ->
-  Client (ObjectDiffusion txid tx) NonPipelined StInit m a
+  Client (ObjectDiffusion polarity txid tx) NonPipelined StInit m a
 objectDiffusionClientPeer (ObjectDiffusionClient client) =
   Yield MsgInit $
     Effect $
       go <$> client
-  where
-    go ::
-      ClientStIdle txid tx m a ->
-      Client (ObjectDiffusion txid tx) NonPipelined StIdle m a
-    go ClientStIdle {recvMsgRequestObjectIds, recvMsgRequestObjects} =
-      Await $ \msg -> case msg of
-        MsgRequestObjectIds blocking ackNo reqNo -> Effect $ do
-          reply <- recvMsgRequestObjectIds blocking ackNo reqNo
-          case reply of
-            SendMsgReplyObjectIds txids k ->
-              -- TODO: investigate why GHC cannot infer `SingI`; it used to in
-              -- `coot/typed-protocols-rewrite` branch
-              return $ case blocking of
-                SingBlocking ->
-                  Yield
-                    (MsgReplyObjectIds txids)
-                    (go k)
-                SingNonBlocking ->
-                  Yield
-                    (MsgReplyObjectIds txids)
-                    (go k)
-            SendMsgDone result ->
-              return $
+ where
+  go ::
+    ClientStIdle txid tx m a ->
+    Client (ObjectDiffusion polarity txid tx) NonPipelined StIdle m a
+  go ClientStIdle{recvMsgRequestObjectIds, recvMsgRequestObjects} =
+    Await $ \msg -> case msg of
+      MsgRequestObjectIds blocking ackNo reqNo -> Effect $ do
+        reply <- recvMsgRequestObjectIds blocking ackNo reqNo
+        case reply of
+          SendMsgReplyObjectIds txids k ->
+            -- TODO: investigate why GHC cannot infer `SingI`; it used to in
+            -- `coot/typed-protocols-rewrite` branch
+            return $ case blocking of
+              SingBlocking ->
                 Yield
-                  MsgDone
-                  (Done result)
-        MsgRequestObjects txids -> Effect $ do
-          SendMsgReplyObjects txs k <- recvMsgRequestObjects txids
-          return $
-            Yield
-              (MsgReplyObjects txs)
-              (go k)
+                  (MsgReplyObjectIds txids)
+                  (go k)
+              SingNonBlocking ->
+                Yield
+                  (MsgReplyObjectIds txids)
+                  (go k)
+          SendMsgDone result ->
+            return $
+              Yield
+                MsgDone
+                (Done result)
+      MsgRequestObjects txids -> Effect $ do
+        SendMsgReplyObjects txs k <- recvMsgRequestObjects txids
+        return $
+          Yield
+            (MsgReplyObjects txs)
+            (go k)
