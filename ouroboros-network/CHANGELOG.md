@@ -4,6 +4,10 @@
 
 ### Breaking changes
 
+- Added `pchPromotedHotVar` to `PeerConnectionHandle` to track when a peer has been promoted to hot
+- Added tag `PeerHotDuration` to `PeerSelectionActionsTrace` to indicate how long a remote
+  peer has been in hot mode until it was either demoted or closed.
+
 ### Non-breaking changes
 
 ## 0.22.0.0 -- 28.06.2025
