@@ -57,6 +57,8 @@ import System.Random qualified as Random
 
 import Network.Socket (PortNumber)
 
+import Cardano.Network.NodeToNode ()
+
 import Ouroboros.Network.AnchoredFragment (Anchor (..))
 import Ouroboros.Network.Block (HasFullHeader, SlotNo)
 import Ouroboros.Network.Block qualified as Block
@@ -67,7 +69,6 @@ import Ouroboros.Network.Mock.Chain qualified as Chain
 import Ouroboros.Network.Mock.ConcreteBlock (Block)
 import Ouroboros.Network.Mock.ConcreteBlock qualified as ConcreteBlock
 import Ouroboros.Network.Mock.ProducerState
-import Ouroboros.Network.NodeToNode ()
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection (PeerSharing, RelayAccessPoint (..))
 import Ouroboros.Network.PeerSelection.Governor (PublicPeerSelectionState,

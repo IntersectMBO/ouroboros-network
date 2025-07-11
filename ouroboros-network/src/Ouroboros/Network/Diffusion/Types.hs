@@ -38,6 +38,7 @@ import Control.Exception (Exception, SomeException)
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, nullTracer)
 
+import Codec.CBOR.Term qualified as CBOR
 import Data.ByteString.Lazy (ByteString)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Map (Map)
@@ -48,7 +49,6 @@ import Data.Void (Void)
 import System.Random (StdGen)
 
 import Network.Mux qualified as Mx
-import Network.Mux.Trace qualified as Mux
 import Network.Mux.Types (ReadBuffer)
 import Network.Socket qualified as Socket
 
@@ -62,22 +62,23 @@ import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context
+import Ouroboros.Network.Driver.Simple (TraceSendRecv)
 import Ouroboros.Network.ExitPolicy
 import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.Mux qualified as Mx
-import Ouroboros.Network.Protocol.Handshake (HandshakeArguments, Versions)
+import Ouroboros.Network.Protocol.Handshake (Handshake, HandshakeArguments,
+           Versions)
 import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Snocket (FileDescriptor, Snocket)
 import Ouroboros.Network.Socket (SystemdSocketTracer)
 
-import Ouroboros.Network.NodeToClient qualified as NodeToClient
-import Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit, DiffusionMode)
-import Ouroboros.Network.NodeToNode qualified as NodeToNode
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode)
 import Ouroboros.Network.PeerSelection as PeerSelection
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.RootPeersDNS
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
+import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit)
 
 -- | The 'DiffusionTracer' logs
 --
@@ -141,7 +142,7 @@ data Tracers ntnAddr ntnVersion ntnVersionData
 
       -- | Handshake protocol tracer
     , dtHandshakeTracer
-        :: Tracer m (NodeToNode.HandshakeTr ntnAddr ntnVersion)
+        :: Tracer m (Mx.WithBearer (ConnectionId ntnAddr) (TraceSendRecv (Handshake ntnVersion CBOR.Term)))
 
       --
       -- NodeToClient tracers
@@ -164,7 +165,7 @@ data Tracers ntnAddr ntnVersion ntnVersionData
 
       -- | Handshake protocol tracer for local clients
     , dtLocalHandshakeTracer
-        :: Tracer m (NodeToClient.HandshakeTr ntcAddr ntcVersion)
+        :: Tracer m (Mx.WithBearer (ConnectionId ntcAddr) (TraceSendRecv (Handshake ntcVersion CBOR.Term)))
 
       -- | Diffusion initialisation tracer
     , dtDiffusionTracer
@@ -613,7 +614,7 @@ type NodeToClientHandleError ntcVersion =
 type MkNodeToClientConnectionHandler
       ntcFd ntcAddr ntcVersion ntcVersionData m =
        (   StrictTVar m (StrictMaybe IG.ResponderCounters)
-        -> Tracer m (Mux.WithBearer (ConnectionId ntcAddr) Mux.Trace))
+        -> Tracer m (Mx.WithBearer (ConnectionId ntcAddr) Mx.Trace))
     -> ConnectionHandler
          Mx.ResponderMode
          (ConnectionHandlerTrace ntcVersion ntcVersionData)

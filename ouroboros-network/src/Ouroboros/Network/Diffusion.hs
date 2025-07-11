@@ -69,7 +69,6 @@ import Ouroboros.Network.InboundGovernor.InformationChannel (InformationChannel,
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.Mux hiding (MiniProtocol (..))
 import Ouroboros.Network.MuxMode
-import Ouroboros.Network.NodeToNode (RemoteAddress)
 import Ouroboros.Network.PeerSelection as PeerSelection
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.RootPeersDNS (PeerActionsDNS (..))
@@ -79,7 +78,7 @@ import Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
 import Ouroboros.Network.Protocol.Handshake
 import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.Server qualified as Server
-import Ouroboros.Network.Snocket (LocalAddress, LocalSocket (..),
+import Ouroboros.Network.Snocket (LocalAddress, LocalSocket (..), RemoteAddress,
            localSocketFileDescriptor, makeLocalBearer, makeSocketBearer')
 import Ouroboros.Network.Snocket qualified as Snocket
 import Ouroboros.Network.Socket (configureSocket, configureSystemdSocket)

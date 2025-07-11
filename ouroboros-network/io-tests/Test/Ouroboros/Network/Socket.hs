@@ -31,13 +31,14 @@ import Ouroboros.Network.Mux
 import Ouroboros.Network.Snocket
 import Ouroboros.Network.Socket
 
+import Cardano.Network.NodeToNode
+
 import Ouroboros.Network.Block (Tip, decodeTip, encodeTip)
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.Magic
 import Ouroboros.Network.Mock.Chain (Chain, ChainUpdate, Point)
 import Ouroboros.Network.Mock.Chain qualified as Chain
 import Ouroboros.Network.Mock.ProducerState qualified as CPS
-import Ouroboros.Network.NodeToNode
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.Protocol.ChainSync.Client qualified as ChainSync
 import Ouroboros.Network.Protocol.ChainSync.Codec qualified as ChainSync

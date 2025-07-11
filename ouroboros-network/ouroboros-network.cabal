@@ -73,8 +73,6 @@ library
     Ouroboros.Network.Diffusion.Utils
     Ouroboros.Network.ExitPolicy
     Ouroboros.Network.KeepAlive
-    Ouroboros.Network.NodeToClient
-    Ouroboros.Network.NodeToNode
     Ouroboros.Network.PeerSelection
     Ouroboros.Network.PeerSelection.Churn
     Ouroboros.Network.PeerSelection.Governor
@@ -111,8 +109,6 @@ library
     Ouroboros.Network.AnchoredFragment,
     Ouroboros.Network.AnchoredSeq,
     Ouroboros.Network.Magic,
-    Ouroboros.Network.NodeToClient.Version,
-    Ouroboros.Network.NodeToNode.Version,
 
   default-language: Haskell2010
   default-extensions: ImportQualifiedPost
@@ -141,7 +137,6 @@ library
     TypeInType
 
   build-depends:
-    async >=2.2 && <2.3,
     base >=4.14 && <4.22,
     bytestring >=0.10 && <0.13,
     cardano-prelude,
@@ -168,7 +163,7 @@ library
     random,
     strict-checked-vars ^>=0.2,
     transformers,
-    typed-protocols:{typed-protocols, stateful} ^>=1.0,
+    typed-protocols ^>=1.0,
 
   if !os(windows)
     build-depends:
@@ -243,6 +238,8 @@ library cardano-diffusion
     Cardano.Network.Diffusion.Topology
     Cardano.Network.Diffusion.Types
     Cardano.Network.LedgerPeerConsensusInterface
+    Cardano.Network.NodeToClient
+    Cardano.Network.NodeToNode
     Cardano.Network.PeerSelection.Churn
     Cardano.Network.PeerSelection.ExtraRootPeers
     Cardano.Network.PeerSelection.Governor.Monitor
@@ -282,17 +279,20 @@ library cardano-diffusion
 
   build-depends:
     base >=4.14 && <4.22,
+    bytestring,
     containers,
     contra-tracer,
     dns,
     io-classes:{io-classes, si-timers, strict-stm} ^>=1.8,
     monoidal-synchronisation,
     network ^>=3.2.7,
+    network-mux,
     ouroboros-network,
     ouroboros-network-api ^>=0.15,
     ouroboros-network-framework ^>=0.19,
     ouroboros-network-protocols ^>=0.15,
     random,
+    typed-protocols:{typed-protocols, stateful} ^>=1.0,
 
   if !os(windows)
     build-depends:
@@ -353,6 +353,10 @@ library testlib
   exposed-modules:
     Ouroboros.Network.BlockFetch.Examples
     Ouroboros.Network.MockNode
+    Test.Cardano.Network.NodeToClient.Version
+    Test.Cardano.Network.NodeToNode.Version
+    Test.Cardano.Network.OrphanInstances.Tests
+    Test.Cardano.Network.Version
     Test.Ouroboros.Network.BlockFetch
     Test.Ouroboros.Network.Diffusion.Node
     Test.Ouroboros.Network.Diffusion.Node.ChainDB
@@ -365,9 +369,6 @@ library testlib
     Test.Ouroboros.Network.LedgerPeers
     Test.Ouroboros.Network.MockNode
     Test.Ouroboros.Network.Mux
-    Test.Ouroboros.Network.NodeToClient.Version
-    Test.Ouroboros.Network.NodeToNode.Version
-    Test.Ouroboros.Network.OrphanInstances.Tests
     Test.Ouroboros.Network.Orphans
     Test.Ouroboros.Network.PeerSelection
     Test.Ouroboros.Network.PeerSelection.Cardano.Instances
@@ -383,7 +384,6 @@ library testlib
     Test.Ouroboros.Network.PeerSelection.RootPeersDNS
     Test.Ouroboros.Network.PeerSelection.Utils
     Test.Ouroboros.Network.TxSubmission
-    Test.Ouroboros.Network.Version
 
 -- Simulation tests, and IO tests which don't require native system calls.
 -- (i.e. they don't require system call API provided by `Win32-network` or
@@ -434,7 +434,7 @@ test-suite io-tests
     monoidal-synchronisation,
     network,
     network-mux,
-    ouroboros-network,
+    ouroboros-network:cardano-diffusion,
     ouroboros-network-api,
     ouroboros-network-framework,
     ouroboros-network-mock,
@@ -475,7 +475,7 @@ executable demo-chain-sync
     io-classes:{si-timers, strict-stm},
     network-mux,
     optparse-applicative,
-    ouroboros-network,
+    ouroboros-network:{ouroboros-network, cardano-diffusion},
     ouroboros-network-api,
     ouroboros-network-framework,
     ouroboros-network-mock,

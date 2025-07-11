@@ -14,6 +14,7 @@ import Control.DeepSeq (NFData)
 import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
+import System.Random (mkStdGen)
 
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
@@ -30,15 +31,26 @@ import Control.Tracer (Tracer, nullTracer)
 import Data.ByteString.Lazy qualified as BL
 import Data.Hashable (Hashable)
 import Data.Void (Void)
-import DMQ.Diffusion.NodeKernel (NodeKernel (..))
-import Network.Mux.Types (Mode (..))
+
+import Network.Mux (Mode (..))
+import Network.Mux qualified as Mx
 import Network.TypedProtocol.Codec (Codec)
+
+import DMQ.Diffusion.NodeKernel (NodeKernel (..))
+
+-- TODO: remove this dependency
+import Cardano.Network.NodeToNode (addSafetyMargin, keepAliveMiniProtocolNum,
+           peerSharingMiniProtocolNum)
+
 import Ouroboros.Network.BlockFetch.ClientRegistry (bracketKeepAliveClient)
 import Ouroboros.Network.Channel (Channel)
 import Ouroboros.Network.CodecCBORTerm (CodecCBORTerm (..))
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
+import Ouroboros.Network.Context (ExpandedInitiatorContext (..),
+           ResponderContext (..))
 import Ouroboros.Network.Driver.Limits (runPeerWithLimits)
+import Ouroboros.Network.Driver.Simple (TraceSendRecv)
 import Ouroboros.Network.Handshake.Acceptable (Accept (..), Acceptable (..))
 import Ouroboros.Network.Handshake.Queryable (Queryable (..))
 import Ouroboros.Network.KeepAlive (KeepAliveInterval (..), keepAliveClient,
@@ -49,15 +61,12 @@ import Ouroboros.Network.Mux (MiniProtocol (..), MiniProtocolCb (..),
            OuroborosBundleWithExpandedCtx, RunMiniProtocol (..),
            StartOnDemandOrEagerly (..), TemperatureBundle (..),
            WithProtocolTemperature (..))
-import Ouroboros.Network.NodeToNode (DiffusionMode (..),
-           ExpandedInitiatorContext (..), HandshakeTr, ResponderContext (..),
-           addSafetyMargin, keepAliveMiniProtocolNum,
-           peerSharingMiniProtocolNum)
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.NodeToNode.Version qualified as NTN
 import Ouroboros.Network.PeerSelection (PeerSharing (..))
 import Ouroboros.Network.PeerSharing (bracketPeerSharingClient,
            peerSharingClient, peerSharingServer)
-import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
+import Ouroboros.Network.Protocol.Handshake (Handshake, HandshakeArguments (..))
 import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
            codecHandshake, timeLimitsHandshake)
 import Ouroboros.Network.Protocol.KeepAlive.Client (keepAliveClientPeer)
@@ -72,7 +81,7 @@ import Ouroboros.Network.Protocol.PeerSharing.Codec (byteLimitsPeerSharing,
            codecPeerSharing, timeLimitsPeerSharing)
 import Ouroboros.Network.Protocol.PeerSharing.Server (peerSharingServerPeer)
 import Ouroboros.Network.Protocol.PeerSharing.Type qualified as Protocol
-import System.Random (mkStdGen)
+
 
 data NodeToNodeVersion =
   NodeToNodeV_1
@@ -395,6 +404,7 @@ nodeToNodeProtocols LimitsAndTimeouts {
       -- Established protocols: 'keep-alive'.
       (WithEstablished $
         MiniProtocol {
+          -- TODO: we SHOULDN'T use cardano keep alive mini-protocol number
           miniProtocolNum    = keepAliveMiniProtocolNum
         , miniProtocolStart  = StartOnDemandAny
         , miniProtocolLimits = keepAliveLimits
@@ -403,6 +413,7 @@ nodeToNodeProtocols LimitsAndTimeouts {
         : case peerSharing of
             PeerSharingEnabled ->
               [ MiniProtocol {
+                  -- TODO: we SHOULDN'T use cardano peer sharing mini-protocol number
                   miniProtocolNum    = peerSharingMiniProtocolNum
                 , miniProtocolStart  = StartOnDemand
                 , miniProtocolLimits = peerSharingLimits
@@ -526,9 +537,11 @@ dmqLimitsAndTimeouts =
   , peerSharingSizeLimits = byteLimitsPeerSharing (fromIntegral . BL.length)
   }
 
+type HandshakeTr ntnAddr = Mx.WithBearer (ConnectionId ntnAddr) (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term))
+
 ntnHandshakeArguments
   :: MonadST m
-  => Tracer m (HandshakeTr ntnAddr NodeToNodeVersion)
+  => Tracer m (HandshakeTr ntnAddr)
   -> HandshakeArguments
       (ConnectionId ntnAddr)
       NodeToNodeVersion

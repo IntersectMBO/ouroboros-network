@@ -2,13 +2,13 @@
 
 -- | Test `NodeToNodeVersion` and `NodeToClientVersion` codecs.
 --
-module Test.Ouroboros.Network.Version (tests) where
+module Test.Cardano.Network.Version (tests) where
 
-import Ouroboros.Network.CodecCBORTerm
-import Ouroboros.Network.NodeToClient (NodeToClientVersion (..),
+import Cardano.Network.NodeToClient (NodeToClientVersion (..),
            nodeToClientVersionCodec)
-import Ouroboros.Network.NodeToNode (NodeToNodeVersion (..),
+import Cardano.Network.NodeToNode (NodeToNodeVersion (..),
            nodeToNodeVersionCodec)
+import Ouroboros.Network.CodecCBORTerm
 
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit
@@ -16,7 +16,7 @@ import Test.Tasty.HUnit
 
 tests :: TestTree
 tests =
-  testGroup "Ouroboros.Network.Protocol.Handshake.Version"
+  testGroup "Cardano.Network.Protocol.Handshake.Version"
     [ testGroup "NodeToClientVersion"
       [ testCase "NodeToClientVersion round-trip codec property"
                  (roundTripPropAll nodeToClientVersionCodec)

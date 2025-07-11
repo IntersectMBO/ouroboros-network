@@ -47,6 +47,7 @@ import Network.DNS.Types qualified as DNS
 import Network.Mux.Trace qualified as Mx
 
 import Cardano.Network.ConsensusMode
+import Cardano.Network.NodeToNode (DiffusionMode (..))
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
@@ -69,7 +70,6 @@ import Ouroboros.Network.Diffusion.Policies qualified as Diffusion
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.Mock.ConcreteBlock (BlockHeader)
-import Ouroboros.Network.NodeToNode (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection
 import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor

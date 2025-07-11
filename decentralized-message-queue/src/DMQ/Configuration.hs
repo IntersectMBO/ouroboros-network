@@ -30,7 +30,7 @@ import Ouroboros.Network.Diffusion.Topology (NetworkTopology (..),
            producerAddresses)
 import Ouroboros.Network.Diffusion.Types qualified as Diffusion
 import Ouroboros.Network.Magic (NetworkMagic (..))
-import Ouroboros.Network.NodeToNode (DiffusionMode (..))
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.OrphanInstances ()
 import Ouroboros.Network.PeerSelection.Governor.Types
            (PeerSelectionTargets (..), makePublicPeerSelectionStateVar)

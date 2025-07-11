@@ -8,6 +8,7 @@
 
 module Ouroboros.Network.OrphanInstances where
 
+import Cardano.Network.NodeToClient (LocalAddress (..), ProtocolLimitFailure)
 import Control.Applicative (Alternative ((<|>)))
 import Data.Aeson (FromJSON (parseJSON, parseJSONList), KeyValue ((.=)),
            ToJSON (toJSON, toJSONList), ToJSONKey,
@@ -34,21 +35,13 @@ import Ouroboros.Network.Diffusion.Topology (LocalRootPeersGroup (..),
            PublicRootPeers (..), RootConfig (..))
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (repromoteDelay))
 import Ouroboros.Network.InboundGovernor.State (RemoteSt)
-import Ouroboros.Network.Magic (NetworkMagic (NetworkMagic))
 import Ouroboros.Network.Mux (MiniProtocolNum (..))
-import Ouroboros.Network.NodeToClient (LocalAddress (LocalAddress),
-           NodeToClientVersion (..),
-           NodeToClientVersionData (NodeToClientVersionData),
-           ProtocolLimitFailure)
-import Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit (..),
-           DiffusionMode (..), NodeToNodeVersion (..),
-           NodeToNodeVersionData (NodeToNodeVersionData),
-           PeerAdvertise (DoNotAdvertisePeer),
-           PeerSelectionTargets (PeerSelectionTargets), RemoteAddress)
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.Governor.Types (AssociationMode (..),
-           PeerSharingResult (..))
+           PeerSelectionTargets (..), PeerSharingResult (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (AfterSlot (After, Always), UseLedgerPeers (..))
+import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
 import Ouroboros.Network.PeerSelection.State.KnownPeers
@@ -64,6 +57,8 @@ import Ouroboros.Network.Protocol.Handshake (HandshakeException (..),
            HandshakeProtocolError (..), RefuseReason (..))
 import Ouroboros.Network.Protocol.Limits
            (ProtocolLimitFailure (ExceededSizeLimit, ExceededTimeLimit))
+import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
+import Ouroboros.Network.Snocket (RemoteAddress)
 
 -- Helper function for ToJSON instances with a "kind" field
 kindObject :: Text -> [Pair] -> Value
@@ -222,51 +217,6 @@ instance FromJSON AcceptedConnectionsLimit where
       <*> v .: "softLimit"
       <*> v .: "delay"
 
-
-instance FromJSON NodeToNodeVersion where
-  parseJSON = \case
-    Number 14 -> pure NodeToNodeV_14
-    Number 15 -> pure NodeToNodeV_15
-    Number x  -> fail $ "FromJSON.NodeToNodeVersion: unsupported node-to-node protocol version " ++ show x
-    x         -> fail $ "FromJSON.NodeToNodeVersion: error parsing NodeToNodeVersion: " ++ show x
-
-instance ToJSON NodeToNodeVersion where
-  toJSON NodeToNodeV_14 = Number 14
-  toJSON NodeToNodeV_15 = Number 15
-
-instance FromJSON NodeToClientVersion where
-  parseJSON = \case
-    Number 16 -> pure NodeToClientV_16
-    Number 17 -> pure NodeToClientV_17
-    Number 18 -> pure NodeToClientV_18
-    Number 19 -> pure NodeToClientV_19
-    Number 20 -> pure NodeToClientV_20
-    Number 21 -> pure NodeToClientV_21
-    Number x  -> fail $ "FromJSON.NodeToClientVersion: unsupported node-to-client protocol version " ++ show x
-    x         -> fail $ "FromJSON.NodeToClientVersion: error parsing NodeToClientVersion: " ++ show x
-
-instance ToJSON NodeToClientVersion where
-  toJSON = \case
-    NodeToClientV_16 -> Number 16
-    NodeToClientV_17 -> Number 17
-    NodeToClientV_18 -> Number 18
-    NodeToClientV_19 -> Number 19
-    NodeToClientV_20 -> Number 20
-    NodeToClientV_21 -> Number 21
-
-instance ToJSON NodeToNodeVersionData where
-  toJSON (NodeToNodeVersionData (NetworkMagic m) dm ps q) = object
-    [ "networkMagic"  .= toJSON m
-    , "diffusionMode" .= show dm
-    , "peerSharing"   .= show ps
-    , "query"         .= toJSON q
-    ]
-
-instance ToJSON NodeToClientVersionData where
-  toJSON (NodeToClientVersionData (NetworkMagic m) q) = object
-    [ "networkMagic" .= toJSON m
-    , "query"        .= toJSON q
-    ]
 
 instance ToJSON MiniProtocolNum where
   toJSON (MiniProtocolNum w) = kindObject "MiniProtocolNum" [ "num" .= w ]

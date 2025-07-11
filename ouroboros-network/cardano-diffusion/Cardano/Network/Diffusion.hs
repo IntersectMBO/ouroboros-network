@@ -26,6 +26,10 @@ import Cardano.Network.Diffusion.Configuration qualified as Cardano
 import Cardano.Network.Diffusion.Handlers qualified as Cardano
 import Cardano.Network.Diffusion.Types
 import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
+import Cardano.Network.NodeToClient qualified as NodeToClient
+import Cardano.Network.NodeToNode (NodeToNodeVersionData (..), RemoteAddress,
+           ntnDataFlow)
+import Cardano.Network.NodeToNode qualified as NodeToNode
 import Cardano.Network.PeerSelection.Churn qualified as Cardano.Churn
 import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
 import Cardano.Network.PeerSelection.Governor.PeerSelectionActions qualified as Cardano
@@ -35,10 +39,6 @@ import Cardano.Network.PeerSelection.PeerSelectionActions qualified as Cardano
 
 import Ouroboros.Network.Diffusion qualified as Diffusion
 import Ouroboros.Network.IOManager
-import Ouroboros.Network.NodeToClient qualified as NodeToClient
-import Ouroboros.Network.NodeToNode (NodeToNodeVersionData (..), RemoteAddress,
-           ntnDataFlow)
-import Ouroboros.Network.NodeToNode qualified as NodeToNode
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeersConsensusInterface (..))
 import Ouroboros.Network.Protocol.Handshake

@@ -1,7 +1,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.Ouroboros.Network.NodeToNode.Version (tests) where
+module Test.Cardano.Network.NodeToNode.Version (tests) where
 
 import Ouroboros.Network.CodecCBORTerm
 import Ouroboros.Network.Magic
@@ -14,7 +14,7 @@ import Test.Tasty.QuickCheck (testProperty)
 
 
 tests :: TestTree
-tests = testGroup "Ouroboros.Network.NodeToNode.Version"
+tests = testGroup "Cardano.Network.NodeToNode.Version"
     [ testProperty "nodeToNodeCodecCBORTerm" prop_nodeToNodeCodec
     ]
 

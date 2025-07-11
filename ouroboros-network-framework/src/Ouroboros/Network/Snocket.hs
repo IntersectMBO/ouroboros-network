@@ -9,10 +9,13 @@
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeSynonymInstances       #-}
 
 #if !defined(mingw32_HOST_OS)
 #define POSIX
 #endif
+
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Network.Snocket
   ( -- * Snocket Interface
@@ -20,6 +23,8 @@ module Ouroboros.Network.Snocket
   , Accepted (..)
   , AddressFamily (..)
   , Snocket (..)
+  , RemoteAddress
+  , RemoteConnectionId
   , makeSocketBearer
   , makeSocketBearer'
   , makeLocalRawBearer
@@ -34,6 +39,7 @@ module Ouroboros.Network.Snocket
   , makeLocalBearer
   , LocalSocket (..)
   , LocalAddress (..)
+  , LocalConnectionId
   , localAddressFromPath
   , TestAddress (..)
   , FileDescriptor
@@ -68,8 +74,17 @@ import Network.Socket qualified as Socket
 
 import Network.Mux.Bearer
 
+import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.RawBearer
+import Ouroboros.Network.Util.ShowProxy (ShowProxy, showProxy)
+
+
+type RemoteAddress      = Socket.SockAddr
+type RemoteConnectionId = ConnectionId RemoteAddress
+
+instance ShowProxy RemoteAddress where
+  showProxy _ = "SockAddr"
 
 
 -- | Named pipes and Berkeley sockets have different API when accepting
@@ -197,6 +212,7 @@ newtype LocalAddress = LocalAddress { getFilePath :: FilePath }
   deriving (Eq, Ord, Generic)
   deriving Show via Quiet LocalAddress
 
+
 instance Hashable LocalAddress where
     hashWithSalt s (LocalAddress path) = hashWithSalt s path
 
@@ -206,6 +222,8 @@ newtype TestAddress addr = TestAddress { getTestAddress :: addr }
   deriving Show via Quiet (TestAddress addr)
 
 instance Hashable addr => Hashable (TestAddress addr)
+
+type LocalConnectionId = ConnectionId LocalAddress
 
 -- | We support either sockets or named pipes.
 --

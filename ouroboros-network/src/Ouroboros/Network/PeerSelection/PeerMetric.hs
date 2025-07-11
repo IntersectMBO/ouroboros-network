@@ -6,8 +6,6 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-
 
 module Ouroboros.Network.PeerSelection.PeerMetric
   ( -- * Peer metrics
@@ -53,8 +51,8 @@ import NoThunks.Class
 import NoThunks.Class.Orphans ()
 
 import Cardano.Slotting.Slot (SlotNo (..))
+import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.DeltaQ (SizeInBytes)
-import Ouroboros.Network.NodeToNode (ConnectionId (..))
 import Ouroboros.Network.PeerSelection.PeerMetric.Type
 
 

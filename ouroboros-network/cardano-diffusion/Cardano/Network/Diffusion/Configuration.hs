@@ -1,3 +1,4 @@
+{-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 -- | One stop shop for configuring diffusion layer for upstream clients
@@ -10,13 +11,21 @@ module Cardano.Network.Diffusion.Configuration
   , defaultSyncTargets
   , defaultNumberOfBigLedgerPeers
   , defaultChainSyncIdleTimeout
+  , defaultBlockFetchConfiguration
+  , defaultMiniProtocolParameters
   , srvPrefix
     -- * Re-exports
   , ChainSyncIdleTimeout (..)
+  , BlockFetchConfiguration (..)
+  , MiniProtocolParameters (..)
   ) where
 
+import Cardano.Network.NodeToNode (MiniProtocolParameters (..),
+           defaultMiniProtocolParameters)
 import Cardano.Network.Types (NumberOfBigLedgerPeers (..))
 
+import Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..),
+           GenesisBlockFetchConfiguration (..))
 import Ouroboros.Network.PeerSelection.Governor.Types
            (PeerSelectionTargets (..))
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (SRVPrefix)
@@ -64,3 +73,18 @@ defaultChainSyncIdleTimeout = ChainSyncIdleTimeout 3373
 
 srvPrefix :: SRVPrefix
 srvPrefix = "_cardano._tcp"
+
+
+-- | Configuration for FetchDecisionPolicy.
+--
+defaultBlockFetchConfiguration :: Int -> BlockFetchConfiguration
+defaultBlockFetchConfiguration bfcSalt =
+  BlockFetchConfiguration {
+    bfcMaxConcurrencyBulkSync = 1,
+    bfcMaxConcurrencyDeadline = 1,
+    bfcMaxRequestsInflight    = fromIntegral $ blockFetchPipeliningMax defaultMiniProtocolParameters,
+    bfcDecisionLoopIntervalGenesis = 0.04,  -- 40ms
+    bfcDecisionLoopIntervalPraos = 0.01,  -- 10ms
+    bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
+      { gbfcGracePeriod = 10 },  -- seconds
+    bfcSalt }

@@ -20,15 +20,16 @@ import Control.Monad.Class.MonadFork (MonadFork, MonadThread)
 import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI (MonadTimer)
+
 import Data.ByteString.Lazy qualified as BL
 import Data.Hashable (Hashable)
+
 import Ouroboros.Network.Diffusion.Types qualified as Diffusion
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.Mux (OuroborosApplication (..))
-import Ouroboros.Network.NodeToClient (combineVersions)
-import Ouroboros.Network.NodeToNode ()
 import Ouroboros.Network.PeerSelection.Governor.Types (PeerSelectionPolicy)
-import Ouroboros.Network.Protocol.Handshake.Version (simpleSingletonVersions)
+import Ouroboros.Network.Protocol.Handshake.Version (combineVersions,
+           simpleSingletonVersions)
 import Ouroboros.Network.RethrowPolicy (ioErrorRethrowPolicy,
            muxErrorRethrowPolicy)
 
