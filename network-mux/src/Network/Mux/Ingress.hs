@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE PatternSynonyms       #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
@@ -16,6 +17,7 @@ import Data.ByteString.Builder.Internal (lazyByteStringInsert,
            lazyByteStringThreshold)
 import Data.ByteString.Lazy qualified as BL
 import Data.List (nub)
+import Data.Strict.Tuple (pattern (:!:))
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad
@@ -119,7 +121,7 @@ demuxer ptcls tracer bearer =
                    throwIO (InitiatorOnly (msNum sdu))
       Just (MiniProtocolDispatchInfo q qMax) ->
         atomically $ do
-          (len, buf) <- readTVar q
+          len :!: buf <- readTVar q
           let !len' = len + BL.length (msBlob sdu)
           if len' <= fromIntegral qMax
               then do
@@ -128,7 +130,7 @@ demuxer ptcls tracer bearer =
                                  lazyByteStringInsert $ msBlob sdu
                                else -- Copy payloads smaller than 128 bytes
                                  buf <> lazyByteStringThreshold 128 (msBlob sdu)
-                writeTVar q $ (len', buf')
+                writeTVar q $ len' :!: buf'
               else throwSTM $ IngressQueueOverRun (msNum sdu) (msDir sdu)
 
 lookupMiniProtocol :: MiniProtocolDispatch m
@@ -210,4 +212,3 @@ setupDispatchTable ptcls =
     minpnum, maxpnum :: MiniProtocolNum
     minpnum = minimum pnums
     maxpnum = maximum pnums
-
