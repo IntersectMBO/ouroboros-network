@@ -295,16 +295,23 @@ prop_intersect :: TestAnchoredFragmentFork -> Property
 prop_intersect (TestAnchoredFragmentFork origP1 origP2 c1 c2) =
   case AF.intersect c1 c2 of
     Nothing ->
+      counterexample "No intersection" $
       L.intersect (pointsList c1) (pointsList c2) === []
     Just (p1, p2, s1, s2) ->
-      p1 === origP1 .&&. p2 === origP2 .&&.
-      AF.join p1 s1 === Just c1 .&&.
-      AF.join p2 s2 === Just c2 .&&.
-      AF.headPoint p1   === AF.headPoint   p2 .&&.
-      AF.anchorPoint p1 === AF.anchorPoint c1 .&&.
-      AF.anchorPoint p2 === AF.anchorPoint c2 .&&.
-      AF.anchorPoint s1 === AF.headPoint   p1 .&&.
-      AF.anchorPoint s2 === AF.headPoint   p2
+      counterexample "p1 === origP1" (p1 === origP1) .&&.
+      counterexample "p2 === origP2" (p2 === origP2) .&&.
+      counterexample "AF.join p1 s1 === Just c1" (AF.join p1 s1 === Just c1) .&&.
+      counterexample "AF.join p2 s2 === Just c2" (AF.join p2 s2 === Just c2) .&&.
+      counterexample "AF.headPoint p1 === AF.headPoint p2"
+        (AF.headPoint p1   === AF.headPoint   p2) .&&.
+      counterexample "AF.anchorPoint p1 === AF.anchorPoint c1"
+        (AF.anchorPoint p1 === AF.anchorPoint c1) .&&.
+      counterexample "AF.anchorPoint p2 === AF.anchorPoint c2"
+        (AF.anchorPoint p2 === AF.anchorPoint c2) .&&.
+      counterexample "AF.anchorPoint s1 === AF.headPoint p1"
+        (AF.anchorPoint s1 === AF.headPoint   p1) .&&.
+      counterexample "AF.anchorPoint s2 === AF.headPoint p2"
+        (AF.anchorPoint s2 === AF.headPoint   p2)
   where
     pointsList c = AF.anchorPoint c : map blockPoint (AF.toOldestFirst c)
 
