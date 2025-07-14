@@ -44,6 +44,10 @@ library
     DMQ.NodeToNode
     DMQ.Protocol.SigSubmission.Type
     DMQ.Protocol.SigSubmission.Codec
+    DMQ.Protocol.LocalMsgSubmission.Client
+    DMQ.Protocol.LocalMsgSubmission.Server
+    DMQ.Protocol.LocalMsgSubmission.Codec
+    DMQ.Protocol.LocalMsgSubmission.Type
 
   build-depends:
     aeson >=2.1.1.0 && <3,
