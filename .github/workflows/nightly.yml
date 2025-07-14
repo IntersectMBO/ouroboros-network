@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ghc: ["8.10", "9.8"]
+        ghc: ["9.6", "9.8"]
         os: [ubuntu-latest]
 
     env:
@@ -56,6 +56,11 @@ jobs:
       if: runner.os == 'Linux'
       run: |
         gem install cddl -v 0.8.27
+
+    - name: Install cddlc
+      if: runner.os == 'Linux'
+      run: |
+        gem install cddlc
 
     - uses: actions/checkout@v4
 
