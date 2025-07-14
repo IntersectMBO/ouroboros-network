@@ -1,4 +1,6 @@
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE NamedFieldPuns     #-}
+{-# LANGUAGE PatternSynonyms    #-}
 
 module DMQ.Protocol.SigSubmission.Type
   ( -- * Data types
@@ -9,7 +11,7 @@ module DMQ.Protocol.SigSubmission.Type
   , SigTTL (..)
   , SigKesSignature (..)
   , SigOpCertificate (..)
-  , Sig (..)
+  , Sig (SigRaw, Sig, sigId, sigBody, sigBlockNumber, sigTTL, sigOpCertificate, sigKesSignature)
     -- * `TxSubmission` mini-protocol
   , SigSubmission
   , module SigSubmission
@@ -39,6 +41,8 @@ newtype SigBody = SigBody { getSigBody :: ByteString }
 newtype SigTTL = SigTTL { getSigTTL :: Word16 }
   deriving stock (Show, Eq)
 
+-- TODO:
+-- This type should be something like: `SignedKES (KES crypto) SigPayload`
 newtype SigKesSignature = SigKesSignature { getSigKesSignature :: ByteString }
   deriving stock (Show, Eq)
 
@@ -49,16 +53,74 @@ newtype BlockNo = BlockNo { getBlockNo :: Word32 }
 newtype SigOpCertificate = SigOpCertificate { getSigOpCertificate :: ByteString }
   deriving stock (Show, Eq)
 
-
-data Sig = Sig {
-    sigId            :: SigId,
-    sigBody          :: SigBody,
-    sigBlockNumber   :: BlockNo,
-    sigTTL           :: SigTTL,
-    sigKesSignature  :: SigKesSignature,
-    sigOpCertificate :: SigOpCertificate
+-- | Sig type consists of payload and its KES signature.
+--
+data Sig = SigRaw {
+    sigRawPayload      :: SigPayload,
+    sigRawKesSignature :: SigKesSignature
   }
   deriving stock (Show, Eq)
+
+data SigPayload = SigPayload {
+    sigPayloadId            :: SigId,
+    sigPayloadBody          :: SigBody,
+    sigPayloadBlockNumber   :: BlockNo,
+    sigPayloadTTL           :: SigTTL,
+    sigPayloadOpCertificate :: SigOpCertificate
+  }
+  deriving stock (Show, Eq)
+
+-- | A convenient bidirectional pattern synonym for the `Sig` type.
+--
+pattern Sig
+  :: SigId
+  -> SigBody
+  -> BlockNo
+  -> SigTTL
+  -> SigOpCertificate
+  -> SigKesSignature
+  -> Sig
+pattern
+    Sig { sigId,
+          sigBody,
+          sigBlockNumber,
+          sigTTL,
+          sigOpCertificate,
+          sigKesSignature
+        }
+    <-
+    SigRaw {
+      sigRawPayload =
+        SigPayload {
+          sigPayloadId            = sigId,
+          sigPayloadBody          = sigBody,
+          sigPayloadBlockNumber   = sigBlockNumber,
+          sigPayloadTTL           = sigTTL,
+          sigPayloadOpCertificate = sigOpCertificate
+        },
+      sigRawKesSignature = sigKesSignature
+    }
+  where
+    Sig sigPayloadId
+        sigPayloadBody
+        sigPayloadBlockNumber
+        sigPayloadTTL
+        sigPayloadOpCertificate
+        sigRawKesSignature
+      =
+      SigRaw {
+        sigRawPayload =
+          SigPayload {
+            sigPayloadId,
+            sigPayloadBody,
+            sigPayloadBlockNumber,
+            sigPayloadTTL,
+            sigPayloadOpCertificate
+          },
+        sigRawKesSignature
+      }
+{-# COMPLETE Sig #-}
+
 
 instance ShowProxy Sig where
   showProxy _ = "Sig"
