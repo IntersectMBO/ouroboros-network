@@ -57,6 +57,11 @@ jobs:
       run: |
         gem install cddl -v 0.8.27
 
+    - name: Install cddlc
+      if: runner.os == 'Linux'
+      run: |
+        gem install cddlc
+
     - uses: actions/checkout@v4
 
     - name: "Configure cabal.project.local"
