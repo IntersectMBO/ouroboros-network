@@ -4,7 +4,7 @@
 \newcommand{\Client}{\textcolor{mygreen}{\textbf{Client}}}
 \newcommand{\Server}{\textcolor{myblue}{\textbf{Server}}}
 
-\section{Mini Protocols and Protocol Families}
+\section{Mini Protocols and Protocol Families}https://hackage.haskell.org/package/typed-protocols-doc
 A mini protocol is a well-defined and modular building block of
 the network protocol.
 Structuring a protocol around mini-protocols helps manage the overall complexity of
@@ -1415,7 +1415,7 @@ Version 2 is used since \texttt{NodeToNode\_V6} of the node-to-node protocol.
     \StTxIdsBlocking    & \MsgReplyTxIds      & $\langle (id, size) \rangle$  & \StIdle             \\
     \StIdle             & \MsgRequestTxs      & $\langle ids \rangle$         & \StTxs              \\
     \StTxs              & \MsgReplyTxs        & $\langle txs \rangle$         & \StIdle             \\
-    \StIdle             & \MsgDone            &                               & \StDone             \\
+    \StTxIdsBlocking    & \MsgDone            &                               & \StDone             \\
   \end{tabular}
   \caption{Tx-Submission mini-protocol (version 2) messages.}
 \end{table}
