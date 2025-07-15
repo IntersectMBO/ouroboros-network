@@ -52,7 +52,6 @@ import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Inbound.Policy
 import Ouroboros.Network.TxSubmission.Inbound.Registry
 import Ouroboros.Network.TxSubmission.Inbound.Server (txSubmissionInboundV2)
-import Ouroboros.Network.TxSubmission.Inbound.State
 import Ouroboros.Network.TxSubmission.Inbound.Types (TraceTxLogic)
 import Ouroboros.Network.TxSubmission.Outbound
 import Ouroboros.Network.Util.ShowProxy
