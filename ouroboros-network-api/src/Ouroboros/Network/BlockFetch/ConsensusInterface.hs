@@ -178,7 +178,6 @@ data ChainSelStarvation
   | ChainSelStarvationEndedAt Time
   deriving (Eq, Show, NoThunks, Generic)
 
-
 data ChainComparison header =
      ChainComparison {
        -- | Given the current chain, is the given chain plausible as a candidate
