@@ -10,6 +10,7 @@ NOTE: morally this ought to be a major release.
 
 * Type of `defaultSyncTargets` changed.
 * Type of `defaultPeerSharing` changed.
+* Adapted to changes of `BlockFetchConsensusInterface`.
 
 ## 0.22.1.0 -- 28.07.2025
 
