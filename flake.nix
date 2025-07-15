@@ -30,14 +30,14 @@
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = inputs: inputs.flake-utils.lib.eachDefaultSystem (system: 
+  outputs = inputs: inputs.flake-utils.lib.eachDefaultSystem (system:
     import ./nix/outputs.nix { inherit inputs system; }
   );
 
   nixConfig = {
-    extra-substituters = [ 
-      "https://cache.iog.io" 
-      "https://cache.zw3rk.com" 
+    extra-substituters = [
+      "https://cache.iog.io"
+      "https://cache.zw3rk.com"
     ];
     extra-trusted-public-keys = [
       "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ="
