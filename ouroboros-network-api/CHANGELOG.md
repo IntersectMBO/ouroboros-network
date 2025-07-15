@@ -6,6 +6,14 @@
 
 ### Non-breaking changes
 
+## 0.14.1.0 -- 2025-07-15
+
+### Breaking changes
+
+### Non-breaking changes
+
+* Allow for peer sharing in `InitiatorOnly` mode
+
 ## 0.14.0.0 - 2025-05-13
 
 ### Breaking changes
