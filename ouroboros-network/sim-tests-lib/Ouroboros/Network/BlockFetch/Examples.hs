@@ -53,6 +53,7 @@ import Ouroboros.Network.Protocol.BlockFetch.Server
 import Ouroboros.Network.Protocol.BlockFetch.Type
 import Ouroboros.Network.Util.ShowProxy
 
+import Ouroboros.Network.BlockFetch.ConsensusInterface (initialWithFingerprint)
 import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
 import Ouroboros.Network.Mock.ConcreteBlock
 
@@ -294,8 +295,10 @@ sampleBlockFetchPolicy1 fetchMode headerFieldsForgeUTCTime blockHeap currentChai
                                getTestFetchedBlocks blockHeap,
       mkAddFetchedBlock      = pure $ addTestFetchedBlock blockHeap,
 
-      plausibleCandidateChain,
-      compareCandidateChains,
+      readChainComparison    = pure $ initialWithFingerprint ChainComparison {
+            plausibleCandidateChain,
+            compareCandidateChains
+          },
 
       blockFetchSize         = \_ -> 2000,
       blockMatchesHeader     = \_ _ -> True,
