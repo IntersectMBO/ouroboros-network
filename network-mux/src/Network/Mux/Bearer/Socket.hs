@@ -124,15 +124,19 @@ socketAsBearer sduSize batchSize readBuffer_m sduTimeout pollInterval tracer sd 
 
                    if BL.null availableData
                       then do
-                        -- Not data in buffer; read more from socket
+#if !defined(mingw32_HOST_OS)
+                        -- No data in buffer; read more from socket
                         when (not waitingOnNxtHeader) $
                           -- Don't let the kernel wake us up until there is
                           -- at least l bytes of data.
                           Socket.setSocketOption sd Socket.RecvLowWater $ fromIntegral l
+#endif
                         newBuf <- recvFromSocket $ fromIntegral rbSize
                         atomically $ modifyTVar rbVar (`BL.append` newBuf)
+#if !defined(mingw32_HOST_OS)
                         when (not waitingOnNxtHeader) $
                           Socket.setSocketOption sd Socket.RecvLowWater 1
+#endif
                         recvAtMost waitingOnNxtHeader l
                       else do
                         traceWith tracer $ Mx.TraceRecvEnd $ fromIntegral $ BL.length availableData
