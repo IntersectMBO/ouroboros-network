@@ -2,7 +2,7 @@
 
 let
   cabalProject = pkgs.haskell-nix.cabalProject' (
-    
+
     { config, pkgs, ... }:
 
     {
@@ -13,7 +13,7 @@ let
       src = lib.cleanSource ../.;
 
       flake.variants = {
-        ghc966 = {};
+        ghc966 = { };
 
         # Disabled other compilers for now, uncomment if needed
         # but the dependencies pinned in the kes-agent.cabal 
@@ -32,15 +32,15 @@ let
             # A small helper function to generate post-install
             # scripts for CLI tools to add completions
             # to bash and zsh.
-            postInstallCompletion = exeName:  
+            postInstallCompletion = exeName:
               "  BASH_COMPLETIONS=$out/share/bash-completion/completions\n  ZSH_COMPLETIONS=$out/share/zsh/site-functions\n  mkdir -p $BASH_COMPLETIONS $ZSH_COMPLETIONS\n  $out/bin/${exeName} --bash-completion-script ${exeName} > $BASH_COMPLETIONS/${exeName}\n  $out/bin/${exeName} --zsh-completion-script ${exeName} > $ZSH_COMPLETIONS/_${exeName}\n";
-          in 
-            # we need git at compile time since we use git to generate
+          in
+          # we need git at compile time since we use git to generate
             # the version number in the binary
             # Try `nix run .#kes-agent -- --version'
-            lib.mkIf (!pkgs.stdenv.hostPlatform.isWindows) {
-              packages.kes-agent.components.library.build-tools =
-                lib.mkForce [ pkgs.gitMinimal ];
+          lib.mkIf (!pkgs.stdenv.hostPlatform.isWindows) {
+            packages.kes-agent.components.library.build-tools =
+              lib.mkForce [ pkgs.gitMinimal ];
 
             # Wrap the test binary to have CLI tools in PATH
             # This so that the E2E test can run with the CLI tools
