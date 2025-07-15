@@ -405,9 +405,8 @@ run blockGeneratorArgs limits ni na
         plausibleCandidateChain cur candidate =
             AF.headBlockNo candidate > AF.headBlockNo cur
 
-        headerForgeUTCTime (FromConsensus hdr) =
-            pure $
-            convertSlotToTimeForTestsAssumingNoHardFork (headerSlot hdr)
+        headerForgeUTCTime =
+            convertSlotToTimeForTestsAssumingNoHardFork . headerSlot
 
         compareCandidateChains c1 c2 =
           AF.headBlockNo c1 `compare` AF.headBlockNo c2

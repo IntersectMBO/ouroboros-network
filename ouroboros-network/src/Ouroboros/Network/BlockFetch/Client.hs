@@ -41,9 +41,9 @@ import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.BlockFetch.ClientState (FetchClientContext (..),
            FetchClientPolicy (..), FetchClientStateVars (..), FetchRequest (..),
-           FromConsensus (..), TraceFetchClientState (..),
-           acknowledgeFetchRequest, completeBlockDownload, completeFetchBatch,
-           fetchClientCtxStateVars, rejectedFetchBatch, startedFetchBatch)
+           TraceFetchClientState (..), acknowledgeFetchRequest,
+           completeBlockDownload, completeFetchBatch, fetchClientCtxStateVars,
+           rejectedFetchBatch, startedFetchBatch)
 import Ouroboros.Network.BlockFetch.DeltaQ (PeerFetchInFlightLimits (..),
            PeerGSV (..))
 import Ouroboros.Network.PeerSelection.PeerMetric.Type (FetchedMetricsTracer)
@@ -267,8 +267,7 @@ blockFetchClient _version controlMessageSTM reportFetched
             -- Add the block to the chain DB, notifying of any new chains.
             addFetchedBlock (castPoint (blockPoint header)) block
 
-            forgeTime <- atomically $ headerForgeUTCTime $ FromConsensus header
-            let blockDelay = diffUTCTime now forgeTime
+            let blockDelay = diffUTCTime now (headerForgeUTCTime header)
 
             let hf = getHeaderFields header
                 slotNo = headerFieldSlot hf

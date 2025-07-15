@@ -99,7 +99,6 @@ module Ouroboros.Network.BlockFetch
     -- * Re-export types used by 'BlockFetchConsensusInterface'
   , PraosFetchMode (..)
   , FetchMode (..)
-  , FromConsensus (..)
   , SizeInBytes
   ) where
 
@@ -122,7 +121,7 @@ import Ouroboros.Network.BlockFetch.ClientRegistry (FetchClientPolicy (..),
            readFetchClientsStateVars, readFetchClientsStatus, readPeerGSVs,
            setFetchClientContext)
 import Ouroboros.Network.BlockFetch.ConsensusInterface
-           (BlockFetchConsensusInterface (..), FromConsensus (..))
+           (BlockFetchConsensusInterface (..))
 import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
 import Ouroboros.Network.BlockFetch.State
 
