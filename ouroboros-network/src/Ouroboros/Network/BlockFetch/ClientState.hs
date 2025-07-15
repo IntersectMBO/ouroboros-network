@@ -33,7 +33,6 @@ module Ouroboros.Network.BlockFetch.ClientState
   , TraceLabelPeer (..)
   , ChainRange (..)
     -- * Ancillary
-  , FromConsensus (..)
   , PeersOrder (..)
   ) where
 
@@ -57,7 +56,6 @@ import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.Block (HasHeader, HeaderHash, MaxSlotNo (..), Point,
            blockPoint, castPoint)
-import Ouroboros.Network.BlockFetch.ConsensusInterface (FromConsensus (..))
 import Ouroboros.Network.BlockFetch.DeltaQ (PeerFetchInFlightLimits (..),
            PeerGSV, SizeInBytes, calculatePeerFetchInFlightLimits)
 import Ouroboros.Network.ControlMessage (ControlMessageSTM,
@@ -84,7 +82,7 @@ data FetchClientPolicy header block m =
        blockFetchSize     :: header -> SizeInBytes,
        blockMatchesHeader :: header -> block -> Bool,
        addFetchedBlock    :: Point block -> block -> m (),
-       headerForgeUTCTime :: FromConsensus header -> STM m UTCTime
+       headerForgeUTCTime :: header -> UTCTime
      }
 
 -- | A set of variables shared between the block fetch logic thread and each
