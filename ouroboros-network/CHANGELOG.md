@@ -9,6 +9,7 @@
 * Adapt to simplified type of `headerForgeUTCTime` in `BlockFetchConsensusInterface`.
 * Type of `defaultSyncTargets` changed.
 * Type of `defaultPeerSharing` changed.
+* Adapted to changes of `BlockFetchConsensusInterface`.
 
 ### Non-breaking changes
 
