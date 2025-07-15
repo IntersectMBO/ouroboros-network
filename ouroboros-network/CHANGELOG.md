@@ -4,6 +4,9 @@
 
 ### Breaking changes
 
+* `Ouroboros.Network.NodeTo{Client,Node}` modules moved to
+  `ouroboros-network:cardano-diffusion` (as `Cardano.Network.NodeTo{Node,Client}`)
+
 ### Non-breaking changes
 
 ## 0.22.0.0 -- 28.06.2025

@@ -28,6 +28,10 @@ import Control.Tracer (Tracer)
 import Network.Socket (SockAddr, Socket)
 
 import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
+import Cardano.Network.NodeToClient (LocalAddress, LocalSocket,
+           NodeToClientVersion, NodeToClientVersionData)
+import Cardano.Network.NodeToNode (NodeToNodeVersion, NodeToNodeVersionData,
+           RemoteAddress)
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
 import Cardano.Network.PeerSelection.Churn qualified as Cardano.Churn
 import Cardano.Network.PeerSelection.ExtraRootPeers (ExtraPeers)
@@ -40,10 +44,6 @@ import Cardano.Network.Types (NumberOfBigLedgerPeers (..))
 
 import Ouroboros.Network.Diffusion qualified as Diffusion
 import Ouroboros.Network.Diffusion.Configuration (ConsensusMode)
-import Ouroboros.Network.NodeToClient (LocalAddress, LocalSocket,
-           NodeToClientVersion, NodeToClientVersionData)
-import Ouroboros.Network.NodeToNode (NodeToNodeVersion, NodeToNodeVersionData,
-           RemoteAddress)
 import Ouroboros.Network.PeerSelection.Governor.Types (DebugPeerSelection,
            PeerSelectionCounters, PeerSelectionTargets (..), TracePeerSelection)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type

@@ -5,12 +5,11 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE TypeOperators       #-}
 
 -- | This is the starting point for a module that will bring together the
 -- overall node to client protocol, as a collection of mini-protocols.
 --
-module Ouroboros.Network.NodeToClient
+module Cardano.Network.NodeToClient
   ( nodeToClientProtocols
   , NodeToClientProtocols (..)
   , NodeToClientVersion (..)
@@ -50,15 +49,13 @@ module Ouroboros.Network.NodeToClient
   , TraceSendRecv (..)
   , ProtocolLimitFailure
   , Handshake
-  , HandshakeTr
   ) where
 
-import Control.Concurrent.Async qualified as Async
 import Control.Exception (SomeException)
 import Control.Monad (forever)
+import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadTimer.SI
 
-import Codec.CBOR.Term qualified as CBOR
 import Data.ByteString.Lazy qualified as BL
 import Data.Kind (Type)
 import Data.Void (Void, absurd)
@@ -86,11 +83,6 @@ import Ouroboros.Network.Protocol.LocalTxSubmission.Client as LocalTxSubmission
 import Ouroboros.Network.Protocol.LocalTxSubmission.Type qualified as LocalTxSubmission
 import Ouroboros.Network.Snocket
 import Ouroboros.Network.Socket
-
--- The Handshake tracer types are simply terrible.
-type HandshakeTr ntcAddr ntcVersion =
-    Mx.WithBearer (ConnectionId ntcAddr)
-                  (TraceSendRecv (Handshake ntcVersion CBOR.Term))
 
 
 -- | Record of node-to-client mini protocols.
@@ -257,7 +249,7 @@ connectToWithMux
        -> NodeToClientVersionData
        -> OuroborosApplicationWithMinimalCtx Mx.InitiatorMode LocalAddress BL.ByteString IO a b
        -> Mx.Mux Mx.InitiatorMode IO
-       -> Async.Async ()
+       -> Async IO ()
        -> IO x)
   -- ^ callback which has access to negotiated protocols and mux handle created for
   -- that connection.  The `Async` is a handle the the thread which runs
@@ -282,8 +274,6 @@ connectToWithMux snocket tracers versions path k =
     (localAddressFromPath path)
     k
 
-
-type LocalConnectionId = ConnectionId LocalAddress
 
 --
 -- Null Protocol Peers

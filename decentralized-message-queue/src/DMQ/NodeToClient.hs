@@ -15,13 +15,16 @@ import GHC.Generics (Generic)
 
 import Control.Monad.Class.MonadST (MonadST)
 import Control.Tracer (Tracer, nullTracer)
+
+import Network.Mux qualified as Mx
+
 import Ouroboros.Network.CodecCBORTerm (CodecCBORTerm (..))
 import Ouroboros.Network.ConnectionId (ConnectionId)
+import Ouroboros.Network.Driver.Simple (TraceSendRecv)
 import Ouroboros.Network.Handshake.Acceptable (Acceptable (..))
 import Ouroboros.Network.Handshake.Queryable (Queryable (..))
 import Ouroboros.Network.Magic (NetworkMagic (..))
-import Ouroboros.Network.NodeToClient (HandshakeTr)
-import Ouroboros.Network.Protocol.Handshake (Accept (..),
+import Ouroboros.Network.Protocol.Handshake (Accept (..), Handshake,
            HandshakeArguments (..))
 import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
            codecHandshake, noTimeLimitsHandshake)
@@ -107,9 +110,11 @@ data Protocols =
   Protocols {
   }
 
+type HandshakeTr ntcAddr = Mx.WithBearer (ConnectionId ntcAddr) (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term))
+
 ntcHandshakeArguments
   :: MonadST m
-  => Tracer m (HandshakeTr ntcAddr NodeToClientVersion)
+  => Tracer m (HandshakeTr ntcAddr)
   -> HandshakeArguments
       (ConnectionId ntcAddr)
       NodeToClientVersion

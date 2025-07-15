@@ -39,6 +39,8 @@ import Ouroboros.Network.Block
 
 import Network.TypedProtocol.Peer.Client
 
+import Cardano.Network.NodeToNode (NodeToNodeVersion (..))
+
 import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.BlockFetch.Client
@@ -47,7 +49,6 @@ import Ouroboros.Network.Channel
 import Ouroboros.Network.ControlMessage
 import Ouroboros.Network.DeltaQ
 import Ouroboros.Network.Driver
-import Ouroboros.Network.NodeToNode (NodeToNodeVersion (..))
 import Ouroboros.Network.Protocol.BlockFetch.Codec
 import Ouroboros.Network.Protocol.BlockFetch.Server
 import Ouroboros.Network.Protocol.BlockFetch.Type

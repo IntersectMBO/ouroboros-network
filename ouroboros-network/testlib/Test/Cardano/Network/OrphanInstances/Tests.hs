@@ -1,7 +1,8 @@
-module Test.Ouroboros.Network.OrphanInstances.Tests (tests) where
+module Test.Cardano.Network.OrphanInstances.Tests (tests) where
 
 import Data.Aeson
 
+import Cardano.Network.OrphanInstances ()
 import Ouroboros.Network.OrphanInstances ()
 import Ouroboros.Network.Protocol.Handshake.Test hiding (tests)
 
@@ -11,7 +12,7 @@ import Test.Tasty.QuickCheck
 
 
 tests :: TestTree
-tests = testGroup "Ouroboros.Network.OrphanInstances"
+tests = testGroup "Cardano.Network.OrphanInstances"
         [ testProperty "NodeToNodeVersion" prop_json_NodeToNodeVersion
         , testProperty "NodeToClientVersion" prop_json_NodeToClientVersion
         ]

@@ -11,7 +11,7 @@
 -- | This is the starting point for a module that will bring together the
 -- overall node to node protocol, as a collection of mini-protocols.
 --
-module Ouroboros.Network.NodeToNode
+module Cardano.Network.NodeToNode
   ( nodeToNodeProtocols
   , NodeToNodeProtocols (..)
   , NodeToNodeProtocolsWithExpandedCtx
@@ -64,7 +64,6 @@ module Ouroboros.Network.NodeToNode
     -- ** Traces
   , AcceptConnectionsPolicyTrace (..)
   , TraceSendRecv (..)
-  , HandshakeTr
     -- * For Consensus ThreadNet Tests
   , chainSyncMiniProtocolNum
   , blockFetchMiniProtocolNum
@@ -75,9 +74,9 @@ module Ouroboros.Network.NodeToNode
 
 import Control.Exception (SomeException)
 
-import Codec.CBOR.Term qualified as CBOR
 import Data.ByteString.Lazy qualified as BL
 import Data.Word
+
 import Network.Mux qualified as Mx
 import Network.Socket (Socket, StructLinger (..))
 import Network.Socket qualified as Socket
@@ -101,13 +100,6 @@ import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..))
 import Ouroboros.Network.Server.RateLimiting
 import Ouroboros.Network.Snocket
 import Ouroboros.Network.Socket
-import Ouroboros.Network.Util.ShowProxy (ShowProxy, showProxy)
-
-
--- The Handshake tracer types are simply terrible.
-type HandshakeTr ntnAddr ntnVersion =
-    Mx.WithBearer (ConnectionId ntnAddr)
-                  (TraceSendRecv (Handshake ntnVersion CBOR.Term))
 
 
 data NodeToNodeProtocols appType initiatorCtx responderCtx bytes m a b = NodeToNodeProtocols {
@@ -431,10 +423,3 @@ ntnDataFlow NodeToNodeVersionData { diffusionMode } =
   case diffusionMode of
     InitiatorAndResponderDiffusionMode -> Duplex
     InitiatorOnlyDiffusionMode         -> Unidirectional
-
-type RemoteAddress      = Socket.SockAddr
-
-instance ShowProxy RemoteAddress where
-  showProxy _ = "SockAddr"
-
-type RemoteConnectionId = ConnectionId RemoteAddress

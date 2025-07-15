@@ -6,21 +6,17 @@
 module Ouroboros.Network.Diffusion.Configuration
   ( defaultAcceptedConnectionsLimit
   , defaultPeerSharing
-  , defaultBlockFetchConfiguration
   , defaultDeadlineTargets
   , defaultDeadlineChurnInterval
   , defaultBulkChurnInterval
     -- re-exports
   , AcceptedConnectionsLimit (..)
-  , BlockFetchConfiguration (..)
   , DiffusionMode (..)
-  , MiniProtocolParameters (..)
   , PeerSelectionTargets (..)
   , PeerSharing (..)
   , ConsensusMode (..)
   , defaultConsensusMode
   , defaultEgressPollInterval
-  , defaultMiniProtocolParameters
   , deactivateTimeout
   , closeConnectionTimeout
   , peerMetricsConfiguration
@@ -37,14 +33,11 @@ module Ouroboros.Network.Diffusion.Configuration
 import Control.Monad.Class.MonadTime.SI
 
 import Cardano.Network.ConsensusMode
-import Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..),
-           GenesisBlockFetchConfiguration (..))
 import Ouroboros.Network.ConnectionManager.Core (defaultProtocolIdleTimeout,
            defaultResetTimeout, defaultTimeWaitTimeout)
 import Ouroboros.Network.Diffusion.Policies (closeConnectionTimeout,
            deactivateTimeout, peerMetricsConfiguration)
-import Ouroboros.Network.NodeToNode (DiffusionMode (..),
-           MiniProtocolParameters (..), defaultMiniProtocolParameters)
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.Governor.Types
            (PeerSelectionTargets (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
@@ -83,20 +76,6 @@ defaultAcceptedConnectionsLimit =
 --
 defaultPeerSharing :: PeerSharing
 defaultPeerSharing = PeerSharingEnabled
-
--- | Configuration for FetchDecisionPolicy.
---
-defaultBlockFetchConfiguration :: Int -> BlockFetchConfiguration
-defaultBlockFetchConfiguration bfcSalt =
-  BlockFetchConfiguration {
-    bfcMaxConcurrencyBulkSync = 1,
-    bfcMaxConcurrencyDeadline = 1,
-    bfcMaxRequestsInflight    = fromIntegral $ blockFetchPipeliningMax defaultMiniProtocolParameters,
-    bfcDecisionLoopIntervalGenesis = 0.04,  -- 40ms
-    bfcDecisionLoopIntervalPraos = 0.01,  -- 10ms
-    bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
-      { gbfcGracePeriod = 10 },  -- seconds
-    bfcSalt }
 
 defaultDeadlineChurnInterval :: DiffTime
 defaultDeadlineChurnInterval = 3300
