@@ -79,7 +79,7 @@ import Ouroboros.Network.Block (MaxSlotNo (..), maxSlotNoFromWithOrigin,
            pointSlot)
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.BlockFetch.ConsensusInterface
-           (ChainSelStarvation (ChainSelStarvationEndedAt))
+           (ChainSelStarvation (ChainSelStarvationEndedAt), mkWithFingerprint)
 import Ouroboros.Network.ConnectionManager.State (ConnStateIdSupply)
 import Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
 import Ouroboros.Network.Diffusion.Common qualified as Common
@@ -389,8 +389,10 @@ run blockGeneratorArgs limits ni na
               pure $ \_p b ->
                 atomically (addBlock b (nkChainDB nodeKernel)),
 
-          plausibleCandidateChain,
-          compareCandidateChains,
+          readChainComparison = pure $ mkWithFingerprint ChainComparison {
+                plausibleCandidateChain,
+                compareCandidateChains
+              },
 
           blockFetchSize         = \_ -> 1000,
           blockMatchesHeader     = \_ _ -> True,

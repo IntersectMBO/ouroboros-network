@@ -1,8 +1,10 @@
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveFunctor  #-}
-{-# LANGUAGE DeriveGeneric  #-}
-{-# LANGUAGE LambdaCase     #-}
-{-# LANGUAGE RankNTypes     #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE RankNTypes                 #-}
 
 module Ouroboros.Network.BlockFetch.ConsensusInterface
   ( PraosFetchMode (..)
@@ -10,7 +12,12 @@ module Ouroboros.Network.BlockFetch.ConsensusInterface
   , BlockFetchConsensusInterface (..)
   , FromConsensus (..)
   , ChainSelStarvation (..)
+  , ChainComparison (..)
   , mkReadFetchMode
+    -- * Utilities
+  , WithFingerprint (..)
+  , Fingerprint (..)
+  , mkWithFingerprint
   ) where
 
 import Control.Monad.Class.MonadSTM
@@ -19,6 +26,7 @@ import Control.Monad.Class.MonadTime.SI (Time)
 import Data.Functor ((<&>))
 
 import Data.Map.Strict (Map)
+import Data.Word (Word64)
 import GHC.Generics (Generic)
 import GHC.Stack (HasCallStack)
 import NoThunks.Class (NoThunks)
@@ -130,24 +138,9 @@ data BlockFetchConsensusInterface peer header block m =
        -- have been downloaded anyway.
        readFetchedMaxSlotNo    :: STM m MaxSlotNo,
 
-       -- | Given the current chain, is the given chain plausible as a
-       -- candidate chain. Classically for Ouroboros this would simply
-       -- check if the candidate is strictly longer, but for Ouroboros
-       -- with operational key certificates there are also cases where
-       -- we would consider a chain of equal length to the current chain.
-       --
-       plausibleCandidateChain :: HasCallStack
-                               => AnchoredFragment header
-                               -> AnchoredFragment header -> Bool,
-
-       -- | Compare two candidate chains and return a preference ordering.
-       -- This is used as part of selecting which chains to prioritise for
-       -- downloading block bodies.
-       --
-       compareCandidateChains  :: HasCallStack
-                               => AnchoredFragment header
-                               -> AnchoredFragment header
-                               -> Ordering,
+       -- | Compare chain fragments. This might involve further state, such as
+       -- Peras certificates (which give certain blocks additional weight).
+       readChainComparison     :: STM m (WithFingerprint (ChainComparison header)),
 
        -- | Much of the logic for deciding which blocks to download from which
        -- peer depends on making estimates based on recent performance metrics.
@@ -197,6 +190,55 @@ data ChainSelStarvation
   = ChainSelStarvationOngoing
   | ChainSelStarvationEndedAt Time
   deriving (Eq, Show, NoThunks, Generic)
+
+data ChainComparison header =
+     ChainComparison {
+       -- | Given the current chain, is the given chain plausible as a candidate
+       -- chain. Classically for Ouroboros this would simply check if the
+       -- candidate is strictly longer, but it can also involve further
+       -- criteria:
+       --
+       --  * Tiebreakers (e.g. based on the opcert numbers and VRFs) for chains
+       --    of equal length.
+       --
+       --  * Weight in the context of Ouroboros Peras, due to a boost from a
+       --    Peras certificate.
+       --
+       plausibleCandidateChain :: HasCallStack
+                               => AnchoredFragment header
+                               -> AnchoredFragment header -> Bool,
+
+       -- | Compare two candidate chains and return a preference ordering.
+       -- This is used as part of selecting which chains to prioritise for
+       -- downloading block bodies.
+       --
+       compareCandidateChains  :: HasCallStack
+                               => AnchoredFragment header
+                               -> AnchoredFragment header
+                               -> Ordering
+     }
+
+{-------------------------------------------------------------------------------
+  Utilities
+-------------------------------------------------------------------------------}
+
+-- | Simple type that can be used to indicate something in a mutable location
+-- has changed.
+newtype Fingerprint = Fingerprint Word64
+  deriving stock (Show, Eq, Generic)
+  deriving newtype (Enum)
+  deriving anyclass (NoThunks)
+
+-- | Store a value together with its fingerprint.
+data WithFingerprint a = WithFingerprint
+  { forgetFingerprint :: !a
+  , getFingerprint    :: !Fingerprint
+  }
+  deriving stock (Show, Eq, Functor, Generic)
+  deriving anyclass (NoThunks)
+
+mkWithFingerprint :: a -> WithFingerprint a
+mkWithFingerprint a = WithFingerprint a (Fingerprint 0)
 
 {-------------------------------------------------------------------------------
   Syntactic indicator of key precondition about Consensus time conversions
