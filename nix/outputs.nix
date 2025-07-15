@@ -11,7 +11,21 @@ let
 
   mkShell = ghc: import ./shell.nix { inherit inputs pkgs lib project utils ghc; };
 
-  packages = { };
+  exposed-haskell-packages = {
+    kes-agent-test = project.flake'.packages."kes-agent:test:kes-agent-tests";
+    kes-agent = project.flake'.packages."kes-agent:exe:kes-agent";
+    kes-service-client-demo = project.flake'.packages."kes-agent:exe:kes-service-client-demo";
+    kes-agent-control = project.flake'.packages."kes-agent:exe:kes-agent-control";
+  };
+
+  static-haskell-packages = {
+    # TODO: the pkgs.gitMinimal (needed for the kes-agent version command) at compile time gives an error for the musl64 build
+    # musl64-kes-agent = project.projectCross.musl64.hsPkgs.kes-agent.components.exes.kes-agent;
+  };
+
+  packages = 
+    exposed-haskell-packages //
+    static-haskell-packages;
 
   devShells = rec {
     default = ghc966; 
