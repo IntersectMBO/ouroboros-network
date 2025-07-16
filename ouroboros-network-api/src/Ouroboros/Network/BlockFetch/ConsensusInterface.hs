@@ -8,7 +8,6 @@ module Ouroboros.Network.BlockFetch.ConsensusInterface
   ( PraosFetchMode (..)
   , FetchMode (..)
   , BlockFetchConsensusInterface (..)
-  , FromConsensus (..)
   , ChainSelStarvation (..)
   , mkReadFetchMode
   ) where
@@ -162,19 +161,7 @@ data BlockFetchConsensusInterface peer header block m =
        blockMatchesHeader      :: header -> block -> Bool,
 
        -- | Calculate when a header's block was forged.
-       --
-       -- PRECONDITION: This function will succeed and give a _correct_ result
-       -- when applied to headers obtained via this interface (ie via
-       -- Consensus, ie via 'readCurrentChain' or 'readCandidateChains').
-       --
-       -- WARNING: This function may fail or, worse, __give an incorrect result
-       -- (!!)__ if applied to headers obtained from sources outside of this
-       -- interface. The 'FromConsensus' newtype wrapper is intended to make it
-       -- difficult to make that mistake, so please pay that syntactic price
-       -- and consider its meaning at each call to this function. Relatedly,
-       -- preserve that argument wrapper as much as possible when deriving
-       -- ancillary functions\/interfaces from this function.
-       headerForgeUTCTime :: FromConsensus header -> STM m UTCTime,
+       headerForgeUTCTime      :: header -> UTCTime,
 
        -- | Information on the ChainSel starvation status; whether it is ongoing
        -- or has ended recently. Needed by the bulk sync decision logic.
@@ -197,22 +184,3 @@ data ChainSelStarvation
   = ChainSelStarvationOngoing
   | ChainSelStarvationEndedAt Time
   deriving (Eq, Show, NoThunks, Generic)
-
-{-------------------------------------------------------------------------------
-  Syntactic indicator of key precondition about Consensus time conversions
--------------------------------------------------------------------------------}
-
--- | A new type used to emphasize the precondition of
--- 'Ouroboros.Network.BlockFetch.ConsensusInterface.headerForgeUTCTime' at each
--- call site.
---
--- At time of writing, the @a@ is either a header or a block. The headers are
--- literally from Consensus (ie provided by ChainSync). Blocks, on the other
--- hand, are indirectly from Consensus: they were fetched only because we
--- favored the corresponding header that Consensus provided.
-newtype FromConsensus a = FromConsensus {unFromConsensus :: a}
-  deriving (Functor)
-
-instance Applicative FromConsensus where
-  pure = FromConsensus
-  FromConsensus f <*> FromConsensus a = FromConsensus (f a)
