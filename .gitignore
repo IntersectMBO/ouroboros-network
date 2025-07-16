@@ -1,4 +1,34 @@
-cabal.project.local
+# Cabal
+.ghc.environment*
+tags
 dist-newstyle
 dist
-dist-build
+cabal-dev
+.cabal-sandbox/
+cabal.sandbox.config
+cabal.config
+cabal.project.local
+cabal.project.freeze
+
+# Stack
+.stack-work
+stack.yaml.lock
+
+# Haskell output files
+*.o
+*.hi
+*.dyn_o
+*.dyn_hi
+*.chi
+*.chs.h
+*.prof
+.liquid/
+
+# Nix
+result*
+pkgs/.cabal
+pkgs/.cache
+pkgs/.stack
+
+# Misc
+.pre-commit-config.yaml
