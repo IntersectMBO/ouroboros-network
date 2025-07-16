@@ -33,7 +33,7 @@ import Data.Set qualified as Set
 import Data.Function (on)
 import Data.Hashable
 import Data.List as List (foldl', groupBy, sortBy, transpose)
-import Data.Maybe (mapMaybe)
+import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Set (Set)
 
 import Control.Exception (assert)
@@ -473,8 +473,19 @@ empty fetch range, but this is ok since we never request empty ranges.
 --
 -- A 'ChainSuffix' must be non-empty, as an empty suffix, i.e. the candidate
 -- chain is equal to the current chain, would not be a plausible candidate.
-newtype ChainSuffix header =
-    ChainSuffix { getChainSuffix :: AnchoredFragment header }
+--
+-- Additionally, we store the full candidate (with the same anchor as our
+-- current chain), as this is needed for comparing different candidates via
+-- 'compareCandidateChains'.
+data ChainSuffix header = ChainSuffix {
+   -- | The suffix of the candidate after the intersection with the current
+   -- chain.
+   getChainSuffix   :: !(AnchoredFragment header),
+   -- | The full candidate, characterized by having the same tip as
+   -- 'getChainSuffix' and the same anchor as our current chain. In particular,
+   -- 'getChainSuffix' is a suffix of 'getFullCandidate'.
+   getFullCandidate :: !(AnchoredFragment header)
+ }
 
 {-
 We define the /chain suffix/ as the suffix of the candidate chain up until (but
@@ -511,25 +522,31 @@ interested in this candidate at all.
 -- current chain.
 --
 chainForkSuffix
-  :: (HasHeader header, HasHeader block,
-      HeaderHash header ~ HeaderHash block)
-  => AnchoredFragment block  -- ^ Current chain.
-  -> AnchoredFragment header -- ^ Candidate chain
+  :: HasHeader header
+  => AnchoredFragment header
+  -> AnchoredFragment header
   -> Maybe (ChainSuffix header)
 chainForkSuffix current candidate =
     case AF.intersect current candidate of
       Nothing                         -> Nothing
-      Just (_, _, _, candidateSuffix) ->
+      Just (currentChainPrefix, _, _, candidateSuffix) ->
         -- If the suffix is empty, it means the candidate chain was equal to
         -- the current chain and didn't fork off. Such a candidate chain is
         -- not a plausible candidate, so it must have been filtered out.
         assert (not (AF.null candidateSuffix)) $
-        Just (ChainSuffix candidateSuffix)
+        Just ChainSuffix {
+            getChainSuffix   = candidateSuffix,
+            getFullCandidate = fullCandidate
+          }
+        where
+          fullCandidate =
+            fromMaybe (error "invariant violation of AF.intersect") $
+              AF.join currentChainPrefix candidateSuffix
+
 
 selectForkSuffixes
-  :: (HasHeader header, HasHeader block,
-      HeaderHash header ~ HeaderHash block)
-  => AnchoredFragment block
+  :: HasHeader header
+  => AnchoredFragment header
   -> [(FetchDecision (AnchoredFragment header), peerinfo)]
   -> [(FetchDecision (ChainSuffix      header), peerinfo)]
 selectForkSuffixes current chains =
@@ -743,7 +760,11 @@ prioritisePeerChains FetchModeDeadline salt compareCandidateChains blockFetchSiz
                 (equatingPair
                    -- compare on probability band first, then preferred chain
                    (==)
-                   (equateCandidateChains `on` getChainSuffix)
+                   -- Precondition of 'compareCandidateChains' (used by
+                   -- 'equateCandidateChains') is fulfilled as all
+                   -- 'getFullCandidate's intersect pairwise (due to having the
+                   -- same anchor as our current chain).
+                   (equateCandidateChains `on` getFullCandidate)
                  `on`
                    (\(band, chain, _fragments) -> (band, chain)))))
   . sortBy  (descendingOrder
@@ -752,7 +773,10 @@ prioritisePeerChains FetchModeDeadline salt compareCandidateChains blockFetchSiz
                   (comparingPair
                      -- compare on probability band first, then preferred chain
                      compare
-                     (compareCandidateChains `on` getChainSuffix)
+                     -- Precondition of 'compareCandidateChains' is fulfilled as
+                     -- all 'getFullCandidate's intersect pairwise (due to
+                     -- having the same anchor as our current chain).
+                     (compareCandidateChains `on` getFullCandidate)
                    `on`
                       (\(band, chain, _fragments) -> (band, chain))))))
   . map annotateProbabilityBand
@@ -776,7 +800,7 @@ prioritisePeerChains FetchModeDeadline salt compareCandidateChains blockFetchSiz
       | EQ <- compareCandidateChains chain1 chain2 = True
       | otherwise                                  = False
 
-    chainHeadPoint (_,ChainSuffix c,_) = AF.headPoint c
+    chainHeadPoint (_,ChainSuffix {getChainSuffix = c},_) = AF.headPoint c
 
 prioritisePeerChains FetchModeBulkSync salt compareCandidateChains blockFetchSize =
     map (\(decision, peer) ->
@@ -785,7 +809,11 @@ prioritisePeerChains FetchModeBulkSync salt compareCandidateChains blockFetchSiz
              (comparingRight
                (comparingPair
                   -- compare on preferred chain first, then duration
-                  (compareCandidateChains `on` getChainSuffix)
+                  --
+                  -- Precondition of 'compareCandidateChains' is fulfilled as
+                  -- all 'getFullCandidate's intersect pairwise (due to having
+                  -- the same anchor as our current chain).
+                  (compareCandidateChains `on` getFullCandidate)
                   compare
                 `on`
                   (\(duration, chain, _fragments) -> (chain, duration)))))
