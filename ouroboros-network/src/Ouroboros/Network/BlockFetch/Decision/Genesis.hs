@@ -468,7 +468,7 @@ selectTheCandidate
                 -- maximumBy yields the last element in case of a tie while we
                 -- prefer the first one
                 chainSfx = fst $
-                  List.foldl1' (maxChainOn (getChainSuffix . fst)) inRace
+                  List.foldl1' (maxChainOn (getChainSuffixAfterImmutableTip . fst)) inRace
             pure $ Just (chainSfx, inRace)
 
 -- | Given _the_ candidate fragment to sync from, and a list of peers (with
