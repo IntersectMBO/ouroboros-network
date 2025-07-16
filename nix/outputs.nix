@@ -20,6 +20,7 @@ let
 
   static-haskell-packages = {
     # TODO: the pkgs.gitMinimal (needed for the kes-agent version command) at compile time gives an error for the musl64 build
+    # see: https://github.com/input-output-hk/kes-agent/pull/59#discussion_r2209172573
     # musl64-kes-agent = project.projectCross.musl64.hsPkgs.kes-agent.components.exes.kes-agent;
   };
 
