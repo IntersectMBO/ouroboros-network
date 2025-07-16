@@ -8,12 +8,12 @@ let
     {
       name = "kes-agent";
 
-      compiler-nix-name = lib.mkDefault "ghc966";
+      compiler-nix-name = lib.mkDefault "ghc967";
 
       src = lib.cleanSource ../.;
 
       flake.variants = {
-        ghc966 = { };
+        ghc967 = { };
 
         # Disabled other compilers for now, uncomment if needed
         # but the dependencies pinned in the kes-agent.cabal 

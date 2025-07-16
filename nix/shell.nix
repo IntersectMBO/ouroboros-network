@@ -3,12 +3,6 @@
 let
 
   allTools = {
-    "ghc966".cabal = project.projectVariants.ghc966.tool "cabal" "latest";
-    "ghc966".cabal-fmt = project.projectVariants.ghc966.tool "cabal-fmt" "latest";
-    "ghc966".haskell-language-server = project.projectVariants.ghc966.tool "haskell-language-server" "latest";
-    "ghc966".stylish-haskell = project.projectVariants.ghc966.tool "stylish-haskell" "latest";
-    "ghc966".fourmolu = project.projectVariants.ghc966.tool "fourmolu" "latest";
-    "ghc966".hlint = project.projectVariants.ghc966.tool "hlint" "latest";
 
     "ghc984".cabal = project.projectVariants.ghc984.tool "cabal" "latest";
     "ghc984".cabal-fmt = project.projectVariants.ghc984.tool "cabal-fmt" "latest";
@@ -30,6 +24,12 @@ let
     "ghc9122".stylish-haskell = project.projectVariants.ghc9122.tool "stylish-haskell" "latest";
     "ghc9122".fourmolu = project.projectVariants.ghc9122.tool "fourmolu" "latest";
     "ghc9122".hlint = project.projectVariants.ghc9122.tool "hlint" "latest";
+    "ghc967".cabal = project.projectVariants.ghc967.tool "cabal" "latest";
+    "ghc967".cabal-fmt = project.projectVariants.ghc967.tool "cabal-fmt" "latest";
+    "ghc967".haskell-language-server = project.projectVariants.ghc967.tool "haskell-language-server" "latest";
+    "ghc967".stylish-haskell = project.projectVariants.ghc967.tool "stylish-haskell" "latest";
+    "ghc967".fourmolu = project.projectVariants.ghc967.tool "fourmolu" "latest";
+    "ghc967".hlint = project.projectVariants.ghc967.tool "hlint" "latest";
   };
 
   tools = allTools.${ghc};

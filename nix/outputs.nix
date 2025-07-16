@@ -29,8 +29,8 @@ let
     static-haskell-packages;
 
   devShells = rec {
-    default = ghc966;
-    ghc966 = mkShell "ghc966";
+    default = ghc967;
+    ghc967 = mkShell "ghc967";
     # ghc984 = mkShell "ghc984";
     # ghc9102 = mkShell "ghc9102";
     # ghc9122 = mkShell "ghc9122";
@@ -39,10 +39,10 @@ let
   projectFlake = project.flake { };
 
   defaultHydraJobs = {
-    ghc966 = projectFlake.hydraJobs.ghc966;
     # ghc984 = projectFlake.hydraJobs.ghc984;
     # ghc9102 = projectFlake.hydraJobs.ghc9102;
     # ghc9122 = projectFlake.hydraJobs.ghc9122;
+    ghc967 = projectFlake.hydraJobs.ghc967;
     inherit packages;
     inherit devShells;
     required = utils.makeHydraRequiredJob hydraJobs;
