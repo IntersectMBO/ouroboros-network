@@ -38,7 +38,7 @@ let
           # we need git at compile time since we use git to generate
             # the version number in the binary
             # Try `nix run .#kes-agent -- --version'
-          lib.mkIf (!pkgs.stdenv.hostPlatform.isWindows) {
+          {
             packages.kes-agent.components.library.build-tools =
               lib.mkForce [ pkgs.gitMinimal ];
 
