@@ -21,6 +21,14 @@
 
 * Improved haddocks of `node-to-node` mini-protocol codecs.
 
+## 0.14.0.2 -- 2025-07-17
+
+### Breaking changes
+
+### Non-breaking changes
+
+* loosen upper bound for QuickCheck to <2.16
+
 ## 0.14.0.1 -- 2025-05-13
 
 ### Breaking changes

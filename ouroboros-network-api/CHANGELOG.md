@@ -20,6 +20,14 @@
 * `IsLedgerPeer` added to `Ouroboros.Network.LedgerPeers.Types` module.
 * Added `ProtocolTimeLimitsWithRnd` to `Ouroboros.Network.Protocol.Limits`
 
+## 0.14.1.0 -- 2025-07-17
+
+### Breaking changes
+
+### Non-breaking changes
+
+* Allow/restore capability for peer sharing in `InitiatorOnly` mode
+
 ## 0.14.0.0 - 2025-05-13
 
 ### Breaking changes

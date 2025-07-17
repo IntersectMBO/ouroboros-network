@@ -24,6 +24,14 @@
 
 * Added `terminatingConns` to `ConnectionManagerCounters`
 
+## 0.18.0.2 -- 2025-07-17
+
+### Breaking changes
+
+### Non-breaking changes
+
+* dependencies version bounds update for base and QuickCheck
+
 ## 0.18.0.1 -- 2025-06-02
 
 ### Non-breaking changes
