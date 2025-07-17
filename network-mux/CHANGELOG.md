@@ -4,8 +4,6 @@
 
 ### Breaking changes
 
-* `IngressQueue` is parameterized by a strict `Pair` type
-
 ### Non-breaking changes
 
 ## 0.9.0.0 -- 2025-06-28
@@ -17,6 +15,14 @@
 * Removed handshake trace events from mux trace.
 * `Trace` was split into three traces: `Trace` of mux events, `ChannelTrace`
    & `BearerTrace`.  As a result `run` & `Bearer` API were modified.
+
+## 0.8.0.2 -- 2025-07-17
+
+### Breaking changes
+
+* `IngressQueue` is using strict `Pair` type
+
+### Non-breaking changes
 
 ## 0.8.0.1 -- 2025-06-02
 
