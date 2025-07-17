@@ -1,6 +1,6 @@
 cabal-version: 3.0
 name: ouroboros-network-protocols
-version: 0.14.0.1
+version: 0.14.0.2
 synopsis: Ouroboros Network Protocols
 description: Ouroboros Network Protocols.
 license: Apache-2.0
@@ -228,7 +228,7 @@ test-suite test
     -- long and too much memory.
     -- Possibly due to ByteString
     -- generator changes.
-    QuickCheck ^>=2.14,
+    QuickCheck >=2.14 && <2.16,
     base >=4.14 && <4.21,
     ouroboros-network-api,
     ouroboros-network-mock,

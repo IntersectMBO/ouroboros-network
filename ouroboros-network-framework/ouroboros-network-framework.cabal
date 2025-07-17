@@ -1,6 +1,6 @@
 cabal-version: 3.0
 name: ouroboros-network-framework
-version: 0.18.0.1
+version: 0.18.0.2
 synopsis: Ouroboros network framework
 description: Ouroboros network framework.
 license: Apache-2.0
@@ -75,7 +75,7 @@ library
     -- ^ only to derive nothunk instances
     Win32-network ^>=0.2,
     async >=2.1 && <2.3,
-    base >=4.12 && <4.21,
+    base >=4.12 && <4.22,
     bytestring >=0.10 && <0.13,
     cardano-prelude,
     cborg >=0.2.1 && <0.3,
@@ -89,7 +89,7 @@ library
     monoidal-synchronisation ^>=0.1.0.6,
     mtl,
     network ^>=3.2.7,
-    network-mux ^>=0.8.0.1,
+    network-mux ^>=0.8.0.2,
     nothunks,
     nothunks ^>=0.1.4 || ^>=0.2,
     ouroboros-network-api ^>=0.14,
@@ -134,8 +134,8 @@ library testlib
 
   other-modules:
   build-depends:
-    QuickCheck,
-    base >=4.14 && <4.21,
+    QuickCheck >=2.14 && <2.16,
+    base >=4.14 && <4.22,
     bytestring,
     cborg,
     containers,
@@ -183,7 +183,7 @@ test-suite sim-tests
 
   build-depends:
     QuickCheck,
-    base >=4.14 && <4.21,
+    base >=4.14 && <4.22,
     bytestring,
     cborg,
     containers,
@@ -254,7 +254,7 @@ test-suite io-tests
 
   build-depends:
     QuickCheck,
-    base >=4.14 && <4.21,
+    base >=4.14 && <4.22,
     bytestring,
     containers,
     contra-tracer,
@@ -302,7 +302,7 @@ executable demo-ping-pong
   main-is: ping-pong.hs
   build-depends:
     async,
-    base >=4.14 && <4.21,
+    base >=4.14 && <4.22,
     bytestring,
     contra-tracer,
     directory,
@@ -329,7 +329,7 @@ executable demo-connection-manager
   hs-source-dirs: demo
   main-is: connection-manager.hs
   build-depends:
-    base >=4.14 && <4.21,
+    base >=4.14 && <4.22,
     bytestring,
     contra-tracer,
     hashable,

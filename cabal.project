@@ -53,3 +53,7 @@ package network-mux
 
 package ouroboros-network
   flags: +asserts +cddl
+
+-- For 0.21.3 release only for CI tests
+constraints:
+    QuickCheck ^>=2.14

@@ -14,6 +14,7 @@ import Data.ByteString.Builder (Builder, toLazyByteString)
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
 import Data.Int
+import Data.Strict.Tuple as Strict (Pair ((:!:)))
 import Data.Word
 import Network.Socket (Socket)
 import Network.Socket qualified as Socket
@@ -87,10 +88,10 @@ readDemuxerQueueBenchmark sndSizeV sndSize addr = do
        )
     )
  where
-   doRead :: Word8 -> Int64 -> StrictTVar IO (Int64, Builder) -> IO ()
+   doRead :: Word8 -> Int64 -> StrictTVar IO (Strict.Pair Int64 Builder) -> IO ()
    doRead tag maxData queue = do
      msg <- atomically $ do
-       (l,b) <- readTVar queue
+       l :!: b <- readTVar queue
        if l == maxData
           then
             return (toLazyByteString b)
@@ -123,15 +124,15 @@ readDemuxerBenchmark sndSizeV sndSize addr = do
        )
     )
  where
-   doRead :: Word8 -> Int64 -> StrictTVar IO (Int64, Builder) -> Int64 -> IO ()
+   doRead :: Word8 -> Int64 -> StrictTVar IO (Strict.Pair Int64 Builder) -> Int64 -> IO ()
    doRead _ maxData _ cnt | cnt >= maxData = return ()
    doRead tag maxData queue !cnt = do
      msg <- atomically $ do
-       (l,b) <- readTVar queue
+       l :!: b <- readTVar queue
        if l == 0
           then retry
           else do
-            writeTVar queue (0, mempty)
+            writeTVar queue $ 0 :!: mempty
             return (toLazyByteString b)
      if BL.all ( == tag) msg
         then doRead tag maxData queue (cnt + BL.length msg)
@@ -139,7 +140,7 @@ readDemuxerBenchmark sndSizeV sndSize addr = do
 
 mkMiniProtocolState :: MonadSTM m => Word16 -> m (MiniProtocolState 'InitiatorMode m)
 mkMiniProtocolState num = do
-  mpq <- newTVarIO (0, mempty)
+  mpq <- newTVarIO $ 0 :!: mempty
   mpv    <- newTVarIO StatusRunning
 
   let mpi = MiniProtocolInfo (MiniProtocolNum num) InitiatorDirectionOnly

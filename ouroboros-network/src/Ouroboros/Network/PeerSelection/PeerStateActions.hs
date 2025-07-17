@@ -712,13 +712,21 @@ withPeerStateActions PeerStateActionsArguments {
           -- supposed to terminate (unless the remote peer did something
           -- wrong).
           Just (WithSomeProtocolTemperature (WithWarm MiniProtocolSuccess {})) -> do
-            isCooling <- closePeerConnection pch
-            when isCooling
-              $ peerMonitoringLoop pch
+            _peerStatus <- closePeerConnection pch
+            -- if peerStatus is `PeerCold`, in the next loop we'll log
+            -- `CoolingToCold`; it's likely it is `PeerCooling` in which case
+            -- we'll block until whole connection is demoted.
+            peerMonitoringLoop pch
           Just (WithSomeProtocolTemperature (WithEstablished MiniProtocolSuccess {})) -> do
-            isCooling <- closePeerConnection pch
-            when isCooling
-              $ peerMonitoringLoop pch
+            _peerStatus <- closePeerConnection pch
+            -- if peerStatus is `PeerCold`, in the next loop we'll log
+            -- `CoolingToCold`; it's likely it is `PeerCooling` in which case
+            -- we'll block until whole connection is demoted.
+            peerMonitoringLoop pch
+
+          --
+          -- peerMonitingLoop exit
+          --
 
           Nothing ->
             traceWith spsTracer (PeerStatusChanged (CoolingToCold pchConnectionId))
@@ -1004,7 +1012,7 @@ withPeerStateActions PeerStateActionsArguments {
 
 
     closePeerConnection :: PeerConnectionHandle muxMode responderCtx peerAddr versionData ByteString m a b
-                        -> m Bool
+                        -> m PeerStatus
     closePeerConnection
         PeerConnectionHandle {
             pchConnectionId,
@@ -1037,7 +1045,7 @@ withPeerStateActions PeerStateActionsArguments {
             traceWith spsTracer (PeerStatusChangeFailure
                                   (WarmToCooling pchConnectionId)
                                   TimeoutError)
-          (<= PeerCooling) <$> readTVarIO pchPeerStatus
+          readTVarIO pchPeerStatus
 
         Just (SomeErrored errs) -> do
           -- some mini-protocol errored
@@ -1062,7 +1070,7 @@ withPeerStateActions PeerStateActionsArguments {
           when wasWarm $ do
             _ <- releaseOutboundConnection spsConnectionManager pchConnectionId
             traceWith spsTracer (PeerStatusChanged (WarmToCooling pchConnectionId))
-          (<= PeerCooling) <$> readTVarIO pchPeerStatus
+          readTVarIO pchPeerStatus
 
 --
 -- Utilities
