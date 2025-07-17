@@ -42,10 +42,6 @@ import DMQ.Diffusion.NodeKernel (NodeKernel (..))
 import DMQ.Protocol.SigSubmission.Codec
 import DMQ.Protocol.SigSubmission.Type
 
--- TODO: remove this dependency
-import Cardano.Network.NodeToNode (addSafetyMargin, keepAliveMiniProtocolNum,
-           peerSharingMiniProtocolNum)
-
 import Ouroboros.Network.BlockFetch.ClientRegistry (bracketKeepAliveClient)
 import Ouroboros.Network.Channel (Channel)
 import Ouroboros.Network.CodecCBORTerm (CodecCBORTerm (..))
@@ -479,6 +475,12 @@ data Protocols appType initiatorCtx responderCtx bytes m a b =
 sigSubmissionMiniProtocolNum :: Mx.MiniProtocolNum
 sigSubmissionMiniProtocolNum = Mx.MiniProtocolNum 11
 
+keepAliveMiniProtocolNum :: Mx.MiniProtocolNum
+keepAliveMiniProtocolNum = Mx.MiniProtocolNum 12
+
+peerSharingMiniProtocolNum :: Mx.MiniProtocolNum
+peerSharingMiniProtocolNum = Mx.MiniProtocolNum 13
+
 nodeToNodeProtocols
   :: LimitsAndTimeouts addr
   -> Protocols appType initiatorCtx responderCtx bytes m a b
@@ -519,7 +521,6 @@ nodeToNodeProtocols LimitsAndTimeouts {
       -- Established protocols: 'keep-alive', 'peer-sharing'.
       (WithEstablished $
         MiniProtocol {
-          -- TODO: we SHOULDN'T use cardano keep alive mini-protocol number
           miniProtocolNum    = keepAliveMiniProtocolNum
         , miniProtocolStart  = StartOnDemandAny
         , miniProtocolLimits = keepAliveLimits
@@ -528,7 +529,6 @@ nodeToNodeProtocols LimitsAndTimeouts {
         : case peerSharing of
             PeerSharingEnabled ->
               [ MiniProtocol {
-                  -- TODO: we SHOULDN'T use cardano peer sharing mini-protocol number
                   miniProtocolNum    = peerSharingMiniProtocolNum
                 , miniProtocolStart  = StartOnDemand
                 , miniProtocolLimits = peerSharingLimits
@@ -723,3 +723,9 @@ _MAX_SIGS_TO_ACK = 20
 
 _SIG_SUBMISSION_INIT_DELAY :: TxSubmissionInitDelay
 _SIG_SUBMISSION_INIT_DELAY = NoTxSubmissionInitDelay
+
+
+-- TODO: this is duplicated code, similar function is in
+-- `Cardano.Network.NodeToNode` module.
+addSafetyMargin :: Int -> Int
+addSafetyMargin x = x + x `div` 10
