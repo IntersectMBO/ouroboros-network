@@ -12,17 +12,6 @@ import DMQ.NodeToNode (NodeToNodeVersion, NodeToNodeVersionData,
            stdVersionDataNTN)
 import DMQ.NodeToNode qualified as NTN
 
-import Control.Applicative (Alternative)
-import Control.Concurrent.Class.MonadMVar (MonadMVar)
-import Control.Concurrent.Class.MonadSTM (MonadSTM (..))
-import Control.Monad.Class.MonadAsync (MonadAsync)
-import Control.Monad.Class.MonadFork (MonadFork, MonadThread)
-import Control.Monad.Class.MonadST (MonadST)
-import Control.Monad.Class.MonadThrow
-import Control.Monad.Class.MonadTimer.SI (MonadTimer)
-
-import Data.Hashable (Hashable)
-
 import Ouroboros.Network.Diffusion.Types qualified as Diffusion
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.Mux (OuroborosApplication (..))
@@ -33,19 +22,7 @@ import Ouroboros.Network.RethrowPolicy (ioErrorRethrowPolicy,
            muxErrorRethrowPolicy)
 
 diffusionApplications
-  :: ( Alternative (STM m)
-     , MonadAsync m
-     , MonadFork m
-     , MonadMask m
-     , MonadMVar m
-     , MonadST m
-     , MonadThread m
-     , MonadThrow (STM m)
-     , MonadTimer m
-     , Ord ntnAddr
-     , Hashable ntnAddr
-     )
-  => NodeKernel ntnAddr m
+  :: NodeKernel ntnAddr m
   -> Configuration ntnFd ntnAddr ntcFd ntcAddr
   -> Diffusion.Configuration extraFlags m ntnFd ntnAddr ntcFd ntcAddr
   -> NTN.LimitsAndTimeouts ntnAddr

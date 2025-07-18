@@ -3,7 +3,6 @@
 
 module Main where
 
-import Control.Exception (IOException)
 import Control.Monad (void)
 import Control.Tracer (Tracer (..))
 import Data.Void (Void)
@@ -55,8 +54,7 @@ runDMQ cliopts@CLIOptions {
                   dmqLimitsAndTimeouts
                   defaultSigDecisionPolicy
         dmqDiffusionArguments =
-          diffusionArguments @_ @IOException
-                             debugTracer
+          diffusionArguments debugTracer
                              debugTracer
         dmqDiffusionApplications =
           diffusionApplications nodeKernel
