@@ -7,7 +7,7 @@ module DMQ.Diffusion.Arguments (diffusionArguments) where
 
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM (MonadSTM (..))
-import Control.Exception (Exception)
+import Control.Exception (IOException)
 import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow (MonadCatch)
 import Control.Monad.Class.MonadTimer.SI (MonadDelay, MonadTimer)
@@ -32,15 +32,13 @@ diffusionArguments
      , MonadCatch m
      , MonadDelay m
      , MonadST m
-     , MonadSTM m
      , MonadTimer m
-     , Exception exception
      )
   => Tracer m (NtN.HandshakeTr ntnAddr)
   -> Tracer m (NtC.HandshakeTr ntcAddr)
   -> Diffusion.Arguments
        () () () () () () ()
-       exception
+       IOException
        Resolver
        m
        Socket
