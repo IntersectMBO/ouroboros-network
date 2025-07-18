@@ -46,8 +46,8 @@
 - New data type `LedgerRelayAccessPoint`, similar to `RelayAccessPoint` but using unqualified srv domain names (according to CIP#155).
 - CBOR encoding of `LedgerRelayAccessPoint` changed (compared to `RelayAccessPoint`).
 - JSON encoding of `LedgerRelayAccessPoint` changed (compared to `RelayAccessPoint`), `LedgerRelayAccessPointV1` newtype wrapper is provided.
-- CBOR encodign of `RelayAccessPont` changed.
-- JSON encodign of `RelayAccessPont` changed.
+- CBOR encoding of `RelayAccessPont` changed.
+- JSON encoding of `RelayAccessPont` changed.
 
 ### Non-breaking changes
 
