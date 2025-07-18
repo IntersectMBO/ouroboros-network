@@ -16,7 +16,7 @@ import DMQ.Configuration.CLIOptions (CLIOptions (..), parseCLIOptions)
 import DMQ.Configuration.Topology (readTopologyFileOrError)
 import DMQ.Diffusion.Applications (diffusionApplications)
 import DMQ.Diffusion.Arguments (diffusionArguments)
-import DMQ.Diffusion.NodeKernel (newNodeKernel)
+import DMQ.Diffusion.NodeKernel (withNodeKernel)
 import DMQ.NodeToNode (dmqCodecs, dmqLimitsAndTimeouts, mapNtNDMQtoOuroboros,
            ntnApps)
 
@@ -45,32 +45,31 @@ runDMQ cliopts@CLIOptions {
   stdGen <- newStdGen
   let (psRng, policyRng) = split stdGen
 
-  nodeKernel <- newNodeKernel psRng
+  withNodeKernel psRng $ \nodeKernel -> do
+    dmqDiffusionConfiguration <- mkDiffusionConfiguration cliopts nt dmqConfig
 
-  dmqDiffusionConfiguration <- mkDiffusionConfiguration cliopts nt dmqConfig
+    let dmqNtNApps =
+          ntnApps nodeKernel
+                  (dmqCodecs (encodeRemoteAddress (mapNtNDMQtoOuroboros maxBound))
+                             (decodeRemoteAddress (mapNtNDMQtoOuroboros maxBound)))
+                  dmqLimitsAndTimeouts
+                  defaultSigDecisionPolicy
+        dmqDiffusionArguments =
+          diffusionArguments @_ @IOException
+                             debugTracer
+                             debugTracer
+        dmqDiffusionApplications =
+          diffusionApplications nodeKernel
+                                dmqConfig
+                                dmqDiffusionConfiguration
+                                dmqLimitsAndTimeouts
+                                dmqNtNApps
+                                (policy policyRng)
 
-  let dmqNtNApps =
-        ntnApps nodeKernel
-                (dmqCodecs (encodeRemoteAddress (mapNtNDMQtoOuroboros maxBound))
-                           (decodeRemoteAddress (mapNtNDMQtoOuroboros maxBound)))
-                dmqLimitsAndTimeouts
-                defaultSigDecisionPolicy
-      dmqDiffusionArguments =
-        diffusionArguments @_ @IOException
-                           debugTracer
-                           debugTracer
-      dmqDiffusionApplications =
-        diffusionApplications nodeKernel
-                              dmqConfig
-                              dmqDiffusionConfiguration
-                              dmqLimitsAndTimeouts
-                              dmqNtNApps
-                              (policy policyRng)
-
-  Diffusion.run dmqDiffusionArguments
-                debugTracers
-                dmqDiffusionConfiguration
-                dmqDiffusionApplications
+    Diffusion.run dmqDiffusionArguments
+                  debugTracers
+                  dmqDiffusionConfiguration
+                  dmqDiffusionApplications
 
 debugTracer :: (Show a, Applicative m) => Tracer m a
 debugTracer = Tracer traceShowM
