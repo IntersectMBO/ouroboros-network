@@ -91,33 +91,29 @@ codecSigSubmission =
     encodeSig :: Sig -> CBOR.Encoding
     encodeSig Sig { sigId,
                     sigBody,
-                    sigBlockNumber,
                     sigTTL,
                     sigKesSignature,
                     sigOpCertificate
                   }
-       = CBOR.encodeListLen 6
+       = CBOR.encodeListLen 5
       <> encodeSigId sigId
       <> CBOR.encodeBytes (getSigBody sigBody)
-      <> CBOR.encodeWord32 (getBlockNo sigBlockNumber)
-      <> CBOR.encodeWord16 (getSigTTL sigTTL)
+      <> CBOR.encodeWord32 (getSigTTL sigTTL)
       <> CBOR.encodeBytes (getSigKesSignature sigKesSignature)
       <> CBOR.encodeBytes (getSigOpCertificate sigOpCertificate)
 
     decodeSig :: forall s. CBOR.Decoder s Sig
     decodeSig = do
       a <- CBOR.decodeListLen
-      when (a /= 6) $ fail (printf "codecSigSubmission: unexpected number of parameters %d" a)
+      when (a /= 5) $ fail (printf "codecSigSubmission: unexpected number of parameters %d" a)
       sigId <- decodeSigId
       sigBody <- SigBody <$> CBOR.decodeBytes
-      sigBlockNumber <- BlockNo <$> CBOR.decodeWord32
-      sigTTL <- SigTTL <$> CBOR.decodeWord16
+      sigTTL <- SigTTL <$> CBOR.decodeWord32
       sigKesSignature <- SigKesSignature <$> CBOR.decodeBytes
       sigOpCertificate <- SigOpCertificate <$> CBOR.decodeBytes
       return Sig {
           sigId,
           sigBody,
-          sigBlockNumber,
           sigTTL,
           sigKesSignature,
           sigOpCertificate

@@ -4,20 +4,21 @@
 
 module DMQ.Protocol.SigSubmission.Type
   ( -- * Data types
-    BlockNo (..)
-  , SigHash (..)
+    SigHash (..)
   , SigId (..)
   , SigBody (..)
   , SigTTL (..)
+  , sigTTLToPOSIXSeconds
   , SigKesSignature (..)
   , SigOpCertificate (..)
-  , Sig (SigRaw, Sig, sigId, sigBody, sigBlockNumber, sigTTL, sigOpCertificate, sigKesSignature)
+  , Sig (SigRaw, Sig, sigId, sigBody, sigTTL, sigOpCertificate, sigKesSignature)
     -- * `TxSubmission` mini-protocol
   , SigSubmission
   , module SigSubmission
   ) where
 
 import Data.ByteString (ByteString)
+import Data.Time.Clock.POSIX (POSIXTime)
 import Data.Word
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type as SigSubmission hiding
@@ -38,16 +39,19 @@ instance ShowProxy SigId where
 newtype SigBody = SigBody { getSigBody :: ByteString }
   deriving stock (Show, Eq)
 
-newtype SigTTL = SigTTL { getSigTTL :: Word16 }
+
+-- | POSIX time since epoch in seconds.
+--
+newtype SigTTL = SigTTL { getSigTTL :: Word32 }
   deriving stock (Show, Eq)
+
+sigTTLToPOSIXSeconds :: SigTTL -> POSIXTime
+sigTTLToPOSIXSeconds = fromIntegral . getSigTTL
+
 
 -- TODO:
 -- This type should be something like: `SignedKES (KES crypto) SigPayload`
 newtype SigKesSignature = SigKesSignature { getSigKesSignature :: ByteString }
-  deriving stock (Show, Eq)
-
--- TODO: `cardano` is using `Word64` block numbers
-newtype BlockNo = BlockNo { getBlockNo :: Word32 }
   deriving stock (Show, Eq)
 
 newtype SigOpCertificate = SigOpCertificate { getSigOpCertificate :: ByteString }
@@ -64,7 +68,6 @@ data Sig = SigRaw {
 data SigPayload = SigPayload {
     sigPayloadId            :: SigId,
     sigPayloadBody          :: SigBody,
-    sigPayloadBlockNumber   :: BlockNo,
     sigPayloadTTL           :: SigTTL,
     sigPayloadOpCertificate :: SigOpCertificate
   }
@@ -75,7 +78,6 @@ data SigPayload = SigPayload {
 pattern Sig
   :: SigId
   -> SigBody
-  -> BlockNo
   -> SigTTL
   -> SigOpCertificate
   -> SigKesSignature
@@ -83,7 +85,6 @@ pattern Sig
 pattern
     Sig { sigId,
           sigBody,
-          sigBlockNumber,
           sigTTL,
           sigOpCertificate,
           sigKesSignature
@@ -94,7 +95,6 @@ pattern
         SigPayload {
           sigPayloadId            = sigId,
           sigPayloadBody          = sigBody,
-          sigPayloadBlockNumber   = sigBlockNumber,
           sigPayloadTTL           = sigTTL,
           sigPayloadOpCertificate = sigOpCertificate
         },
@@ -103,7 +103,6 @@ pattern
   where
     Sig sigPayloadId
         sigPayloadBody
-        sigPayloadBlockNumber
         sigPayloadTTL
         sigPayloadOpCertificate
         sigRawKesSignature
@@ -113,7 +112,6 @@ pattern
           SigPayload {
             sigPayloadId,
             sigPayloadBody,
-            sigPayloadBlockNumber,
             sigPayloadTTL,
             sigPayloadOpCertificate
           },
