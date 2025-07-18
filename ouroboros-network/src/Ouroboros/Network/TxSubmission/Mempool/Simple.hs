@@ -4,7 +4,7 @@
 -- | The module should be imported qualified.
 --
 module Ouroboros.Network.TxSubmission.Mempool.Simple
-  ( Mempool
+  ( Mempool (..)
   , empty
   , new
   , read
@@ -14,7 +14,7 @@ module Ouroboros.Network.TxSubmission.Mempool.Simple
 
 import Prelude hiding (read, seq)
 
-import Control.Concurrent.Class.MonadSTM
+import Control.Concurrent.Class.MonadSTM.Strict
 
 import Data.Foldable (toList)
 import Data.Foldable qualified as Foldable
@@ -32,7 +32,7 @@ import Ouroboros.Network.TxSubmission.Mempool.Reader
 
 -- | A simple in-memory mempool implementation.
 --
-newtype Mempool m tx = Mempool (TVar m (Seq tx))
+newtype Mempool m tx = Mempool (StrictTVar m (Seq tx))
 
 
 empty :: MonadSTM m => m (Mempool m tx)
