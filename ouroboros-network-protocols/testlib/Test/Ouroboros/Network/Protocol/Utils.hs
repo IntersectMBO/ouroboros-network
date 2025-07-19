@@ -33,11 +33,12 @@ prop_codec_cborM
   :: forall ps m. Monad m
   => Codec ps CBOR.DeserialiseFailure m LBS.ByteString
   -> AnyMessage ps
-  -> m Bool
+  -> m Property
 prop_codec_cborM codec (AnyMessage msg)
     = case CBOR.deserialiseFromBytes CBOR.decodeTerm $ encode codec msg of
-        Left _err               -> return False
-        Right (leftover, _term) -> return $ LBS.null leftover
+        Left err                -> return $ counterexample (show err) False
+        Right (leftover, _term) -> return $ counterexample (show leftover)
+                                          $ LBS.null leftover
 
 
 -- | This property checks that the encoder is producing a valid CBOR.  It
