@@ -18,6 +18,7 @@ module Ouroboros.Network.Protocol.TxSubmission2.Test
   ( tests
   , Tx (..)
   , TxId (..)
+  , labelMsg
   ) where
 
 import Data.Bifunctor (second)

@@ -8,6 +8,7 @@ module DMQ.Protocol.SigSubmission.Codec
   ( codecSigSubmission
   , byteLimitsSigSubmission
   , timeLimitsSigSubmission
+  , codecSigSubmissionId
   ) where
 
 import Control.Monad (when)
@@ -118,3 +119,9 @@ codecSigSubmission =
           sigKesSignature,
           sigOpCertificate
         }
+
+
+codecSigSubmissionId
+  :: Monad m
+  => Codec SigSubmission CodecFailure m (AnyMessage SigSubmission)
+codecSigSubmissionId = TX.codecTxSubmission2Id
