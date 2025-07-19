@@ -98,7 +98,7 @@ codecSigSubmission =
        = CBOR.encodeListLen 5
       <> encodeSigId sigId
       <> CBOR.encodeBytes (getSigBody sigBody)
-      <> CBOR.encodeWord32 (getSigTTL sigTTL)
+      <> CBOR.encodeWord32 (floor $ getSigTTL sigTTL)
       <> CBOR.encodeBytes (getSigKesSignature sigKesSignature)
       <> CBOR.encodeBytes (getSigOpCertificate sigOpCertificate)
 
@@ -108,7 +108,7 @@ codecSigSubmission =
       when (a /= 5) $ fail (printf "codecSigSubmission: unexpected number of parameters %d" a)
       sigId <- decodeSigId
       sigBody <- SigBody <$> CBOR.decodeBytes
-      sigTTL <- SigTTL <$> CBOR.decodeWord32
+      sigTTL <- SigTTL . realToFrac <$> CBOR.decodeWord32
       sigKesSignature <- SigKesSignature <$> CBOR.decodeBytes
       sigOpCertificate <- SigOpCertificate <$> CBOR.decodeBytes
       return Sig {

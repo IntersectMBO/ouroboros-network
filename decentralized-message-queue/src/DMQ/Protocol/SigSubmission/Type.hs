@@ -8,7 +8,6 @@ module DMQ.Protocol.SigSubmission.Type
   , SigId (..)
   , SigBody (..)
   , SigTTL (..)
-  , sigTTLToPOSIXSeconds
   , SigKesSignature (..)
   , SigOpCertificate (..)
   , Sig (SigRaw, Sig, sigId, sigBody, sigTTL, sigOpCertificate, sigKesSignature)
@@ -19,7 +18,6 @@ module DMQ.Protocol.SigSubmission.Type
 
 import Data.ByteString (ByteString)
 import Data.Time.Clock.POSIX (POSIXTime)
-import Data.Word
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type as SigSubmission hiding
            (TxSubmission2)
@@ -42,11 +40,8 @@ newtype SigBody = SigBody { getSigBody :: ByteString }
 
 -- | POSIX time since epoch in seconds.
 --
-newtype SigTTL = SigTTL { getSigTTL :: Word32 }
+newtype SigTTL = SigTTL { getSigTTL :: POSIXTime }
   deriving stock (Show, Eq)
-
-sigTTLToPOSIXSeconds :: SigTTL -> POSIXTime
-sigTTLToPOSIXSeconds = fromIntegral . getSigTTL
 
 
 -- TODO:
