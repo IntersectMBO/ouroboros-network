@@ -163,7 +163,7 @@ prop_codec_PeerSharing msg =
 -- `prop_codec_PeerSharing` subsume it.
 prop_codec_cbor
   :: AnyMessage (PeerSharing Int)
-  -> Bool
+  -> Property
 prop_codec_cbor msg =
   runST (prop_codec_cborM (codecPeerSharing CBOR.encodeInt CBOR.decodeInt) msg)
 
