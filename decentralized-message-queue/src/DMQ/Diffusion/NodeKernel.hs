@@ -33,7 +33,7 @@ import Ouroboros.Network.TxSubmission.Inbound.V2.Registry
 import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool (..))
 import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 
-import DMQ.Protocol.SigSubmission.Type (Sig (..), SigId, SigTTL (..))
+import DMQ.Protocol.SigSubmission.Type (Sig (..), SigId)
 
 
 data NodeKernel ntnAddr m =
@@ -121,9 +121,9 @@ mempoolWorker (Mempool v) = loop
         (sigs :: Seq.Seq Sig) <- readTVar v
         let sigs' :: Seq.Seq Sig
             (resumeTime, sigs') =
-              foldr (\a (rt, as) -> if getSigTTL (sigTTL a) <= now
+              foldr (\a (rt, as) -> if sigTTL a <= now
                                     then (rt, as)
-                                    else (rt `min` getSigTTL (sigTTL a), a Seq.<| as))
+                                    else (rt `min` sigTTL a, a Seq.<| as))
                     (now, Seq.empty)
                     sigs
         writeTVar v sigs'
