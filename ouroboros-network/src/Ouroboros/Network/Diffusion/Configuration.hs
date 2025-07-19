@@ -9,6 +9,7 @@ module Ouroboros.Network.Diffusion.Configuration
   , defaultDeadlineTargets
   , defaultDeadlineChurnInterval
   , defaultBulkChurnInterval
+  , BlockProducerOrRelay (..)
     -- re-exports
   , AcceptedConnectionsLimit (..)
   , DiffusionMode (..)
@@ -50,13 +51,23 @@ import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 -- Targets may vary depending on whether a node is operating in
 -- Genesis mode.
 
+
+-- | A Boolean like type to differentiate between a node which is configured as
+-- a block producer and a relay.  Some default options depend on that value.
+--
+data BlockProducerOrRelay = BlockProducer | Relay
+  deriving Show
+
+
 -- | Default peer targets in Praos mode
 --
-defaultDeadlineTargets :: PeerSelectionTargets
-defaultDeadlineTargets =
+defaultDeadlineTargets :: BlockProducerOrRelay
+                       -- ^ block producer or relay node
+                       -> PeerSelectionTargets
+defaultDeadlineTargets bp =
   PeerSelectionTargets {
-    targetNumberOfRootPeers                 = 60,
-    targetNumberOfKnownPeers                = 150,
+    targetNumberOfRootPeers                 = case bp of { BlockProducer -> 100; Relay -> 60  },
+    targetNumberOfKnownPeers                = case bp of { BlockProducer -> 100; Relay -> 150 },
     targetNumberOfEstablishedPeers          = 30,
     targetNumberOfActivePeers               = 20,
     targetNumberOfKnownBigLedgerPeers       = 15,
@@ -74,8 +85,10 @@ defaultAcceptedConnectionsLimit =
 
 -- | Node's peer sharing participation flag
 --
-defaultPeerSharing :: PeerSharing
-defaultPeerSharing = PeerSharingEnabled
+defaultPeerSharing :: BlockProducerOrRelay
+                   -> PeerSharing
+defaultPeerSharing BlockProducer = PeerSharingDisabled
+defaultPeerSharing Relay         = PeerSharingEnabled
 
 defaultDeadlineChurnInterval :: DiffTime
 defaultDeadlineChurnInterval = 3300

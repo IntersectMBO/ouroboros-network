@@ -7,8 +7,12 @@
 * `Ouroboros.Network.NodeTo{Client,Node}` modules moved to
   `ouroboros-network:cardano-diffusion` (as `Cardano.Network.NodeTo{Node,Client}`)
 * Adapt to simplified type of `headerForgeUTCTime` in `BlockFetchConsensusInterface`.
+* Type of `defaultSyncTargets` changed.
+* Type of `defaultPeerSharing` changed.
 
 ### Non-breaking changes
+
+* Added `IsBlockProducer` type in `Ouroboros.Network.Diffusion.Configuration`.
 
 ## 0.22.0.0 -- 28.06.2025
 
@@ -42,8 +46,8 @@
 - New data type `LedgerRelayAccessPoint`, similar to `RelayAccessPoint` but using unqualified srv domain names (according to CIP#155).
 - CBOR encoding of `LedgerRelayAccessPoint` changed (compared to `RelayAccessPoint`).
 - JSON encoding of `LedgerRelayAccessPoint` changed (compared to `RelayAccessPoint`), `LedgerRelayAccessPointV1` newtype wrapper is provided.
-- CBOR encodign of `RelayAccessPont` changed.
-- JSON encodign of `RelayAccessPont` changed.
+- CBOR encoding of `RelayAccessPont` changed.
+- JSON encoding of `RelayAccessPont` changed.
 
 ### Non-breaking changes
 
