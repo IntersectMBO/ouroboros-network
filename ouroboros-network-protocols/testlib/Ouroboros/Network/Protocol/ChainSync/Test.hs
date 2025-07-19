@@ -513,7 +513,7 @@ prop_codec_splits3_ChainSync msg =
 
 prop_codec_cbor
   :: AnyMessage ChainSync_BlockHeader
-  -> Bool
+  -> Property
 prop_codec_cbor msg =
     ST.runST (prop_codec_cborM codec msg)
 
@@ -560,7 +560,7 @@ prop_codec_splits3_ChainSyncSerialised msg =
 
 prop_codec_cbor_ChainSyncSerialised
   :: AnyMessage ChainSync_Serialised_BlockHeader
-  -> Bool
+  -> Property
 prop_codec_cbor_ChainSyncSerialised msg =
     ST.runST (prop_codec_cborM codecSerialised msg)
 

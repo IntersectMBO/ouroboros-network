@@ -261,7 +261,7 @@ prop_codec_splits3 msg =
 
 prop_codec_cbor
   :: AnyMessage (LocalTxSubmission Tx Reject)
-  -> Bool
+  -> Property
 prop_codec_cbor msg =
   runST (prop_codec_cborM codec msg)
 
