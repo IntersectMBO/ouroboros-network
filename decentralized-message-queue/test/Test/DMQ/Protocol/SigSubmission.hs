@@ -73,6 +73,7 @@ instance Arbitrary SigOpCertificate where
 instance Arbitrary Sig where
   arbitrary = Sig <$> arbitrary
                   <*> arbitrary
+                  <*> (getSigTTL <$> arbitrary)
                   <*> arbitrary
                   <*> arbitrary
   shrink sig@Sig { sigId, sigBody, sigTTL, sigOpCertificate, sigKesSignature } =
@@ -85,7 +86,7 @@ instance Arbitrary Sig where
     ]
     ++
     [ sig { sigTTL = sigTTL' }
-    | sigTTL' <- shrink sigTTL
+    | SigTTL sigTTL' <- shrink (SigTTL sigTTL)
     ]
     ++
     [ sig { sigOpCertificate = sigOpCertificate' }

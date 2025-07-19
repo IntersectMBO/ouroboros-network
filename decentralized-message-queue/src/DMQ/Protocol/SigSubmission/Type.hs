@@ -73,7 +73,7 @@ data SigPayload = SigPayload {
 pattern Sig
   :: SigId
   -> SigBody
-  -> SigTTL
+  -> POSIXTime
   -> SigOpCertificate
   -> SigKesSignature
   -> Sig
@@ -90,7 +90,7 @@ pattern
         SigPayload {
           sigPayloadId            = sigId,
           sigPayloadBody          = sigBody,
-          sigPayloadTTL           = sigTTL,
+          sigPayloadTTL           = SigTTL sigTTL,
           sigPayloadOpCertificate = sigOpCertificate
         },
       sigRawKesSignature = sigKesSignature
@@ -98,7 +98,7 @@ pattern
   where
     Sig sigPayloadId
         sigPayloadBody
-        sigPayloadTTL
+        sigTTL
         sigPayloadOpCertificate
         sigRawKesSignature
       =
@@ -107,7 +107,7 @@ pattern
           SigPayload {
             sigPayloadId,
             sigPayloadBody,
-            sigPayloadTTL,
+            sigPayloadTTL = SigTTL sigTTL,
             sigPayloadOpCertificate
           },
         sigRawKesSignature
