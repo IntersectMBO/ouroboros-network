@@ -96,7 +96,7 @@ prop_codecM_LocalTxMonitor msg =
 
 prop_codec_cborM_LocalTxMonitor ::
      AnyMessage (LocalTxMonitor TxId Tx SlotNo)
-  -> Bool
+  -> Property
 prop_codec_cborM_LocalTxMonitor msg =
   ST.runST $ prop_codec_cborM codec msg
 

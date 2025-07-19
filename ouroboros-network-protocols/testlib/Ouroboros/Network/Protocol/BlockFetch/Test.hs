@@ -418,7 +418,7 @@ prop_codec_splits3_BlockFetch msg =
 
 prop_codec_cbor_BlockFetch
   :: AnyMessage (BlockFetch Block (Point Block))
-  -> Bool
+  -> Property
 prop_codec_cbor_BlockFetch msg =
   runST (prop_codec_cborM codec msg)
 
@@ -447,7 +447,7 @@ prop_codec_splits3_BlockFetchSerialised msg =
 
 prop_codec_cbor_BlockFetchSerialised
   :: AnyMessage (BlockFetch (Serialised Block) (Point Block))
-  -> Bool
+  -> Property
 prop_codec_cbor_BlockFetchSerialised msg =
   runST (prop_codec_cborM codecSerialised msg)
 
