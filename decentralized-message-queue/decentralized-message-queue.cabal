@@ -89,7 +89,7 @@ library
     nothunks ^>=0.1.4 || ^>=0.2,
     optparse-applicative ^>=0.18,
     ouroboros-network:{ouroboros-network, orphan-instances} ^>=0.22,
-    ouroboros-network-api ^>=0.15,
+    ouroboros-network-api ^>=0.16,
     ouroboros-network-framework ^>=0.19,
     ouroboros-network-protocols ^>=0.15,
     random ^>=1.2,

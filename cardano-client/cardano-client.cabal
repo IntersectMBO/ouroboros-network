@@ -29,7 +29,7 @@ library
     io-classes:si-timers ^>=1.8.0.1,
     network-mux ^>=0.9,
     ouroboros-network ^>=0.22,
-    ouroboros-network-api ^>=0.15,
+    ouroboros-network-api ^>=0.16,
     ouroboros-network-framework ^>=0.19,
 
   ghc-options:

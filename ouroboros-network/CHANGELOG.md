@@ -6,7 +6,13 @@
 
 ### Non-breaking changes
 
+## 0.22.1.0 -- 28.06.2025
+
 ## 0.22.0.0 -- 28.06.2025
+
+### Non-breaking changes
+
+* Fixed CBOR encoding of the `LedgerPeerSnapshot`.
 
 ### Breaking changes
 
