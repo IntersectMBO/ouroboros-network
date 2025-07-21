@@ -184,10 +184,18 @@ instance FromCBOR WithOriginCoded where
       (2, _) -> fail "LedgerPeers.Type: Expected tag for At constructor"
       _      -> fail "LedgerPeers.Type: Unrecognized list length while decoding WithOrigin SlotNo"
 
+
+-- TODO: don't use `ToCBOR` type class but a function:
+-- ```
+-- encodeLedgerPeerSnapshot :: NodeToClientVersion -> Encoding
+-- ```
+-- Also note that if we use `NodeToClientVersion` we don't need to encode the
+-- version of the `LedgerPeerSnapshot` encoding (e.g. the internal version below).
+--
 instance ToCBOR LedgerPeerSnapshot where
   toCBOR (LedgerPeerSnapshotV2 (wOrigin, pools)) =
        Codec.encodeListLen 2
-    <> Codec.encodeWord8 2
+    <> Codec.encodeWord8 1 -- internal version
     <> toCBOR (WithOriginCoded wOrigin, pools')
     where
       pools' =
@@ -195,12 +203,16 @@ instance ToCBOR LedgerPeerSnapshot where
         | (accPoolStake, (relStake, relays)) <- pools
         ]
 
+-- TODO: don't use `FromCBOR` type class but a function:
+-- ```
+-- decodeLedgerPeerSnapshot :: NodeToClientVersion -> Decoder s LedgerPeerSnapshot
+-- ```
 instance FromCBOR LedgerPeerSnapshot where
   fromCBOR = do
     Codec.decodeListLenOf 2
     version <- Codec.decodeWord8
     case version of
-      2 -> LedgerPeerSnapshotV2 <$> do
+      1 -> LedgerPeerSnapshotV2 <$> do
              (WithOriginCoded wOrigin, pools) <- fromCBOR
              let pools' = [(accStake, (relStake, relays))
                           | (AccPoolStakeCoded accStake, (PoolStakeCoded relStake, relays)) <- pools
