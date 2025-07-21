@@ -4,6 +4,7 @@
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PatternSynonyms            #-}
@@ -27,6 +28,9 @@ module Ouroboros.Network.PeerSelection.LedgerPeers.Type
   , AfterSlot (..)
   , LedgerPeersKind (..)
   , LedgerPeerSnapshot (.., LedgerPeerSnapshot)
+  , LedgerPeerSnapshotSRVSupport (..)
+  , encodeLedgerPeerSnapshot
+  , decodeLedgerPeerSnapshot
   , getRelayAccessPointsFromLedgerPeerSnapshot
   , isLedgerPeersEnabled
   , compareLedgerPeerSnapshotApproximate
@@ -39,6 +43,7 @@ module Ouroboros.Network.PeerSelection.LedgerPeers.Type
 
 import GHC.Generics (Generic)
 
+-- TODO: remove `FromCBOR` and `ToCBOR` type classes
 import Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import Cardano.Binary qualified as Codec
 import Cardano.Slotting.Slot (SlotNo (..), WithOrigin (..))
@@ -46,8 +51,9 @@ import Control.Concurrent.Class.MonadSTM
 import Control.DeepSeq (NFData (..))
 import Control.Monad (forM)
 import Data.Aeson
-import Data.Bifunctor (first)
+import Data.Bifunctor (first, second)
 import Data.List.NonEmpty (NonEmpty)
+import Data.List.NonEmpty qualified as NonEmpty
 import NoThunks.Class
 
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
@@ -161,59 +167,71 @@ instance FromJSON LedgerPeerSnapshot where
       Just ledgerPeerSnapshot' -> return ledgerPeerSnapshot'
       Nothing                  -> fail "Network.LedgerPeers.Type: parseJSON: failed to migrate big ledger peer snapshot"
 
--- | cardano-slotting provides its own {To,From}CBOR instances for WithOrigin a
--- but to pin down the encoding for CDDL we provide a wrapper with custom
--- instances
---
-newtype WithOriginCoded = WithOriginCoded (WithOrigin SlotNo)
 
--- | Hand cranked CBOR instances to facilitate CDDL spec
---
-instance ToCBOR WithOriginCoded where
-  toCBOR (WithOriginCoded Origin) = Codec.encodeListLen 1 <> Codec.encodeWord8 0
-  toCBOR (WithOriginCoded (At slotNo)) = Codec.encodeListLen 2 <> Codec.encodeWord8 1 <> toCBOR slotNo
+encodeWithOrigin :: WithOrigin SlotNo -> Codec.Encoding
+encodeWithOrigin Origin      = Codec.encodeListLen 1 <> Codec.encodeWord8 0
+encodeWithOrigin (At slotNo) = Codec.encodeListLen 2 <> Codec.encodeWord8 1 <> toCBOR slotNo
 
-instance FromCBOR WithOriginCoded where
-  fromCBOR = do
+decodeWithOrigin :: Codec.Decoder s (WithOrigin SlotNo)
+decodeWithOrigin = do
     listLen <- Codec.decodeListLen
     tag <- Codec.decodeWord8
     case (listLen, tag) of
-      (1, 0) -> pure $ WithOriginCoded Origin
+      (1, 0) -> pure $ Origin
       (1, _) -> fail "LedgerPeers.Type: Expected tag for Origin constructor"
-      (2, 1) -> WithOriginCoded . At <$> fromCBOR
+      (2, 1) -> At <$> fromCBOR
       (2, _) -> fail "LedgerPeers.Type: Expected tag for At constructor"
       _      -> fail "LedgerPeers.Type: Unrecognized list length while decoding WithOrigin SlotNo"
 
 
--- TODO: don't use `ToCBOR` type class but a function:
--- ```
--- encodeLedgerPeerSnapshot :: NodeToClientVersion -> Encoding
--- ```
--- Also note that if we use `NodeToClientVersion` we don't need to encode the
--- version of the `LedgerPeerSnapshot` encoding (e.g. the internal version below).
---
-instance ToCBOR LedgerPeerSnapshot where
-  toCBOR (LedgerPeerSnapshotV2 (wOrigin, pools)) =
+data LedgerPeerSnapshotSRVSupport
+  = LedgerPeerSnapshotSupportsSRV
+  -- ^ since `NodeToClientV_22`
+  | LedgerPeerSnapshotDoesntSupportSRV
+  deriving (Show, Eq)
+
+encodeLedgerPeerSnapshot :: LedgerPeerSnapshotSRVSupport -> LedgerPeerSnapshot -> Codec.Encoding
+encodeLedgerPeerSnapshot LedgerPeerSnapshotDoesntSupportSRV (LedgerPeerSnapshotV2 (wOrigin, pools)) =
        Codec.encodeListLen 2
     <> Codec.encodeWord8 1 -- internal version
-    <> toCBOR (WithOriginCoded wOrigin, pools')
+    <> Codec.encodeListLen 2
+    <> encodeWithOrigin wOrigin
+    <> toCBOR pools'
+    where
+      pools' =
+        [(AccPoolStakeCoded accPoolStake, (PoolStakeCoded relStake, relays))
+        | (accPoolStake, (relStake, relays)) <-
+            -- filter out SRV domains, not supported by `< NodeToClientV_22`
+            map
+              (second $ second $ NonEmpty.filter
+                (\case
+                    LedgerRelayAccessSRVDomain {} -> False
+                    _ -> True)
+              )
+            pools
+        , not (null relays)
+        ]
+encodeLedgerPeerSnapshot LedgerPeerSnapshotSupportsSRV (LedgerPeerSnapshotV2 (wOrigin, pools)) =
+       Codec.encodeListLen 2
+    <> Codec.encodeWord8 1 -- internal version
+    <> Codec.encodeListLen 2
+    <> encodeWithOrigin wOrigin
+    <> toCBOR pools'
     where
       pools' =
         [(AccPoolStakeCoded accPoolStake, (PoolStakeCoded relStake, relays))
         | (accPoolStake, (relStake, relays)) <- pools
         ]
 
--- TODO: don't use `FromCBOR` type class but a function:
--- ```
--- decodeLedgerPeerSnapshot :: NodeToClientVersion -> Decoder s LedgerPeerSnapshot
--- ```
-instance FromCBOR LedgerPeerSnapshot where
-  fromCBOR = do
+decodeLedgerPeerSnapshot :: LedgerPeerSnapshotSRVSupport -> Codec.Decoder s LedgerPeerSnapshot
+decodeLedgerPeerSnapshot _ = do
     Codec.decodeListLenOf 2
     version <- Codec.decodeWord8
     case version of
       1 -> LedgerPeerSnapshotV2 <$> do
-             (WithOriginCoded wOrigin, pools) <- fromCBOR
+             Codec.decodeListLenOf 2
+             wOrigin <- decodeWithOrigin
+             pools <- fromCBOR
              let pools' = [(accStake, (relStake, relays))
                           | (AccPoolStakeCoded accStake, (PoolStakeCoded relStake, relays)) <- pools
                           ]

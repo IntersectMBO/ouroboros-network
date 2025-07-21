@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DerivingVia         #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE OverloadedStrings   #-}
@@ -41,7 +42,6 @@ import System.Random
 
 import Network.DNS (Domain)
 
-import Cardano.Binary
 import Cardano.Network.Diffusion.Configuration qualified as Cardano (srvPrefix)
 import Cardano.Slotting.Slot (SlotNo (..), WithOrigin (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
@@ -498,27 +498,55 @@ prop_getLedgerPeers curSlot
                   (pure (Map.elems (accPoolStake lps)))
                   ()
 
+instance Arbitrary LedgerPeerSnapshotSRVSupport where
+  arbitrary = elements [ LedgerPeerSnapshotSupportsSRV
+                       , LedgerPeerSnapshotDoesntSupportSRV
+                       ]
+
 -- | Checks validity of LedgerPeerSnapshot CBOR encoding, and whether
 --   round trip cycle is the identity function
 --
-prop_ledgerPeerSnapshotCBORV2 :: SlotNo
+-- TODO: move to `ouroboros-network-api:test`
+prop_ledgerPeerSnapshotCBORV2 :: LedgerPeerSnapshotSRVSupport
+                              -> SlotNo
                               -> LedgerPools
                               -> Property
-prop_ledgerPeerSnapshotCBORV2 slotNo
+prop_ledgerPeerSnapshotCBORV2 srvSupport slotNo
                               ledgerPools =
   counterexample (show snapshot) $
          counterexample ("Invalid CBOR encoding" <> show encoded)
                         (validFlatTerm encoded)
     .&&. either ((`counterexample` False) . ("CBOR decode failed: " <>))
-                (counterexample . ("CBOR round trip failed: " <>) . show <*> (snapshot ==))
+                (counterexample . ("CBOR round trip failed: " <>) . show <*> (result ==))
                 decoded
   where
     snapshot = snapshotV2 slotNo ledgerPools
-    encoded = toFlatTerm . toCBOR $ snapshot
-    decoded = fromFlatTerm fromCBOR encoded
+    encoded = toFlatTerm . encodeLedgerPeerSnapshot srvSupport $ snapshot
+    decoded = fromFlatTerm (decodeLedgerPeerSnapshot srvSupport) encoded
+
+    result = case srvSupport of
+      LedgerPeerSnapshotSupportsSRV      -> snapshot
+      LedgerPeerSnapshotDoesntSupportSRV ->
+          -- filter out SRV records
+          LedgerPeerSnapshotV2
+            ( slotNo'
+            , [ (accStake, (stake, NonEmpty.fromList relays'))
+              | (accStake, (stake, relays)) <- peers
+              , let relays' = NonEmpty.filter
+                      (\case
+                         LedgerRelayAccessSRVDomain {} -> False
+                         _ -> True
+                      )
+                      relays
+              , not (null relays')
+              ]
+            )
+        where
+          LedgerPeerSnapshotV2 (slotNo', peers) = snapshot
 
 -- | Tests if LedgerPeerSnapshot JSON round trip is the identity function
 --
+-- TODO: move to `ouroboros-network-api:test`
 prop_ledgerPeerSnapshotJSONV2 :: SlotNo
                               -> LedgerPools
                               -> Property
