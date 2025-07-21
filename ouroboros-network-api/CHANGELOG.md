@@ -2,9 +2,12 @@
 
 ## next release
 
+## 0.16.0.0 -- 2025-07-21
+
 ### Breaking changes
 
-### Non-breaking changes
+* Added `encodeLedgerPeerSnapshot` and `decodeLedgerPeerSnapshot`; removed
+  `{To,From}CBOR` instances for `LedgerPeerSnapshot`.
 
 ## 0.15.0.0 -- 2025-06-28
 

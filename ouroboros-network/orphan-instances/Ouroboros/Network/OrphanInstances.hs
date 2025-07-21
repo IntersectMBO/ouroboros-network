@@ -253,6 +253,7 @@ instance ToJSON NodeToClientVersion where
     NodeToClientV_19 -> Number 19
     NodeToClientV_20 -> Number 20
     NodeToClientV_21 -> Number 21
+    NodeToClientV_22 -> Number 22
 
 instance ToJSON NodeToNodeVersionData where
   toJSON (NodeToNodeVersionData (NetworkMagic m) dm ps q) = object
