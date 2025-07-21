@@ -100,18 +100,18 @@ instance ToCBOR RelayAccessPoint where
     RelayAccessDomain domain port ->
          Codec.encodeListLen 3
       <> Codec.encodeWord8 0
-      <> toCBOR domain
       <> serialise' port
+      <> toCBOR domain
     RelayAccessAddress (IP.IPv4 ipv4) port ->
          Codec.encodeListLen 3
       <> Codec.encodeWord8 1
-      <> toCBOR (IP.fromIPv4 ipv4)
       <> serialise' port
+      <> toCBOR (IP.fromIPv4 ipv4)
     RelayAccessAddress (IP.IPv6 ip6) port ->
          Codec.encodeListLen 3
       <> Codec.encodeWord8 2
-      <> toCBOR (IP.fromIPv6 ip6)
       <> serialise' port
+      <> toCBOR (IP.fromIPv6 ip6)
     RelayAccessSRVDomain domain ->
          Codec.encodeListLen 2
       <> Codec.encodeWord8 3
@@ -130,13 +130,17 @@ instance FromCBOR RelayAccessPoint where
                <> show constructorTag
     case constructorTag of
       0 -> do
-        RelayAccessDomain <$> fromCBOR <*> decodePort
+        port <- decodePort
+        domain <- fromCBOR
+        return $ RelayAccessDomain domain port
       1 -> do
-        let ip4 = IP.IPv4 . IP.toIPv4 <$> fromCBOR
-        RelayAccessAddress <$> ip4 <*> decodePort
+        port <- decodePort
+        ip <- IP.IPv4 . IP.toIPv4 <$> fromCBOR
+        return $ RelayAccessAddress ip port
       2 -> do
-        let ip6 = IP.IPv6 . IP.toIPv6 <$> fromCBOR
-        RelayAccessAddress <$> ip6 <*> decodePort
+        port <- decodePort
+        ip <- IP.IPv6 . IP.toIPv6 <$> fromCBOR
+        return $ RelayAccessAddress ip port
       3 -> do
         RelayAccessSRVDomain <$> fromCBOR
       _ -> fail $ "Unrecognized RelayAccessPoint tag: " <> show constructorTag
@@ -216,18 +220,18 @@ instance ToCBOR LedgerRelayAccessPoint where
     LedgerRelayAccessDomain domain port ->
          Codec.encodeListLen 3
       <> Codec.encodeWord8 0
-      <> toCBOR domain
       <> serialise' port
+      <> toCBOR domain
     LedgerRelayAccessAddress (IP.IPv4 ipv4) port ->
          Codec.encodeListLen 3
       <> Codec.encodeWord8 1
-      <> toCBOR (IP.fromIPv4 ipv4)
       <> serialise' port
+      <> toCBOR (IP.fromIPv4 ipv4)
     LedgerRelayAccessAddress (IP.IPv6 ip6) port ->
          Codec.encodeListLen 3
       <> Codec.encodeWord8 2
-      <> toCBOR (IP.fromIPv6 ip6)
       <> serialise' port
+      <> toCBOR (IP.fromIPv6 ip6)
     LedgerRelayAccessSRVDomain domain ->
          Codec.encodeListLen 2
       <> Codec.encodeWord8 3
@@ -246,13 +250,17 @@ instance FromCBOR LedgerRelayAccessPoint where
                <> show constructorTag
     case constructorTag of
       0 -> do
-        LedgerRelayAccessDomain <$> fromCBOR <*> decodePort
+        port <- decodePort
+        domain <- fromCBOR
+        return $ LedgerRelayAccessDomain domain port
       1 -> do
-        let ip4 = IP.IPv4 . IP.toIPv4 <$> fromCBOR
-        LedgerRelayAccessAddress <$> ip4 <*> decodePort
+        port <- decodePort
+        ip <- IP.IPv4 . IP.toIPv4 <$> fromCBOR
+        return $ LedgerRelayAccessAddress ip port
       2 -> do
-        let ip6 = IP.IPv6 . IP.toIPv6 <$> fromCBOR
-        LedgerRelayAccessAddress <$> ip6 <*> decodePort
+        port <- decodePort
+        ip <- IP.IPv6 . IP.toIPv6 <$> fromCBOR
+        return $ LedgerRelayAccessAddress ip port
       3 -> do
         LedgerRelayAccessSRVDomain <$> fromCBOR
       _ -> fail $ "Unrecognized LedgerRelayAccessPoint tag: " <> show constructorTag
