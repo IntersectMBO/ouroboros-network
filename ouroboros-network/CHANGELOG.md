@@ -1,8 +1,6 @@
 # Revision history for ouroboros-network
 
-## 0.22.1.0 -- 2025-07-
-
-### Breaking changes
+## 0.22.1.0 -- 28.07.2025
 
 ### Non-breaking changes
 
@@ -11,6 +9,10 @@
   peer has been in hot mode until it was either demoted or closed.
 
 ## 0.22.0.0 -- 28.06.2025
+
+### Non-breaking changes
+
+* Fixed CBOR encoding of the `LedgerPeerSnapshot`.
 
 ### Breaking changes
 
