@@ -63,29 +63,22 @@ import Data.Void (Void)
 import System.Exit (ExitCode)
 import System.Random (StdGen, newStdGen, split)
 
+import Network.Mux qualified as Mx
+import Network.Mux.Bearer (withReadBufferIO)
+import Network.Mux.Types (ReadBuffer)
 import Network.Socket (Socket)
 import Network.Socket qualified as Socket
-import Network.Mux qualified as Mx
-import Network.Mux.Types (ReadBuffer)
-import Network.Mux.Bearer (withReadBufferIO)
 
-import Ouroboros.Network.Context (ResponderContext)
-import Ouroboros.Network.Snocket (LocalAddress, LocalSocket (..), Snocket,
-           localSocketFileDescriptor, makeLocalBearer, makeSocketBearer')
-import Ouroboros.Network.Snocket (FileDescriptor)
-import Ouroboros.Network.Snocket qualified as Snocket
-import Ouroboros.Network.Context (ExpandedInitiatorContext)
-import Ouroboros.Network.Protocol.Handshake
-import Ouroboros.Network.Protocol.Handshake.Codec
-import Ouroboros.Network.Protocol.Handshake.Version
-import Ouroboros.Network.Socket (configureSocket, configureSystemdSocket)
-import Ouroboros.Network.ConnectionId
+import Network.DNS (Resolver)
 import Ouroboros.Network.ConnectionHandler
+import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
-import Ouroboros.Network.ConnectionManager.InformationChannel (newInformationChannel)
+import Ouroboros.Network.ConnectionManager.InformationChannel
+           (newInformationChannel)
 import Ouroboros.Network.ConnectionManager.State (ConnStateId,
-         ConnStateIdSupply, newConnStateIdSupply)
+           ConnStateIdSupply, newConnStateIdSupply)
 import Ouroboros.Network.ConnectionManager.Types
+import Ouroboros.Network.Context (ExpandedInitiatorContext, ResponderContext)
 import Ouroboros.Network.Diffusion.Common hiding (nullTracers)
 import Ouroboros.Network.Diffusion.Configuration
 import Ouroboros.Network.Diffusion.Policies (simplePeerSelectionPolicy)
@@ -105,9 +98,9 @@ import Ouroboros.Network.NodeToNode qualified as NodeToNode
 import Ouroboros.Network.PeerSelection.Churn (ChurnCounters, PeerChurnArgs (..))
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.Governor.Types hiding (peerSharing)
-import Ouroboros.Network.PeerSelection.LedgerPeers (LedgerPeersKind,
-         LedgerPeerSnapshot (..), NumberOfPeers, UseLedgerPeers (..),
-         TraceLedgerPeers, WithLedgerPeersArgs (..))
+import Ouroboros.Network.PeerSelection.LedgerPeers (LedgerPeerSnapshot (..),
+           LedgerPeersKind, NumberOfPeers, TraceLedgerPeers,
+           UseLedgerPeers (..), WithLedgerPeersArgs (..))
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import Ouroboros.Network.PeerSelection.PeerMetric
 import Ouroboros.Network.PeerSelection.PeerSelectionActions
@@ -118,20 +111,27 @@ import Ouroboros.Network.PeerSelection.PeerStateActions (PeerConnectionHandle,
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
 import Ouroboros.Network.PeerSelection.RootPeersDNS
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSActions,
+           DNSLookupType (..), ioDNSActions)
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore,
+           newLedgerAndPublicRootDNSSemaphore)
 import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
            (TraceLocalRootPeers)
 import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
            (TracePublicRootPeers)
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
-           (DNSActions, DNSLookupType (..), ioDNSActions)
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
-           (DNSSemaphore, newLedgerAndPublicRootDNSSemaphore)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersAPI)
 import Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
+import Ouroboros.Network.Protocol.Handshake
+import Ouroboros.Network.Protocol.Handshake.Codec
+import Ouroboros.Network.Protocol.Handshake.Version
 import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.Server2 qualified as Server
-import Network.DNS (Resolver)
+import Ouroboros.Network.Snocket (FileDescriptor, LocalAddress,
+           LocalSocket (..), Snocket, localSocketFileDescriptor,
+           makeLocalBearer, makeSocketBearer')
+import Ouroboros.Network.Snocket qualified as Snocket
+import Ouroboros.Network.Socket (configureSocket, configureSystemdSocket)
 
 
 -- | P2P DiffusionTracers Extras
@@ -822,7 +822,7 @@ runM Interfaces
       --
       -- The `ouroboros-network` guarantees running on a fixed number of file
       -- descriptors given a topology file, see
-      -- https://github.com/IntersectMBO/ouroboros-network/issues/4585#issuecomment-1591777447 
+      -- https://github.com/IntersectMBO/ouroboros-network/issues/4585#issuecomment-1591777447
       -- There's also a calculation for `ouroboros-consensus`, see
       -- https://github.com/IntersectMBO/ouroboros-consensus/issues/20#issuecomment-1514554680
       -- File descriptors could be drained by the tracing system in
