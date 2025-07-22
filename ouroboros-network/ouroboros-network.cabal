@@ -288,11 +288,11 @@ library sim-tests-lib
     Test.Ouroboros.Network.PeerSelection.RootPeersDNS
     Test.Ouroboros.Network.PeerState
     Test.Ouroboros.Network.TxSubmission
-    Test.Ouroboros.Network.Version
     Test.Ouroboros.Network.TxSubmission.AppV1
     Test.Ouroboros.Network.TxSubmission.AppV2
     Test.Ouroboros.Network.TxSubmission.TxLogic
     Test.Ouroboros.Network.TxSubmission.Types
+    Test.Ouroboros.Network.Version
 
 -- Simulation tests, and IO tests which don't require native system calls.
 -- (i.e. they don't require system call API provided by `Win32-network` or

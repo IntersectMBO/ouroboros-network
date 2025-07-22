@@ -154,9 +154,9 @@ import Ouroboros.Network.Subscription.Ip qualified as Subscription
 import Ouroboros.Network.Subscription.Worker (LocalAddresses (..),
            SubscriberError)
 import Ouroboros.Network.Tracers
-import Ouroboros.Network.TxSubmission.Inbound.V2.Types qualified as TxInbound
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy (..),
            defaultTxDecisionPolicy, max_TX_SIZE)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types qualified as TxInbound
 import Ouroboros.Network.TxSubmission.Outbound qualified as TxOutbound
 import Ouroboros.Network.Util.ShowProxy (ShowProxy, showProxy)
 
