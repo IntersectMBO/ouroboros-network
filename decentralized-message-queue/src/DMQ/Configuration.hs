@@ -22,8 +22,8 @@ import GHC.Generics (Generic)
 import Network.Socket (AddrInfo (..), AddrInfoFlag (..), SockAddr,
            SocketType (..), defaultHints, getAddrInfo)
 
-import Ouroboros.Network.Diffusion.Configuration
-           (defaultAcceptedConnectionsLimit, defaultDeadlineChurnInterval,
+import Ouroboros.Network.Diffusion.Configuration (BlockProducerOrRelay (..),
+           defaultAcceptedConnectionsLimit, defaultDeadlineChurnInterval,
            defaultDeadlineTargets, defaultProtocolIdleTimeout,
            defaultTimeWaitTimeout)
 import Ouroboros.Network.Diffusion.Topology (NetworkTopology (..),
@@ -59,53 +59,56 @@ data Configuration ntnFd ntnAddr ntcFd ntcAddr =
 
 instance FromJSON (Configuration ntnFd ntnAddr ntcFd ntcAddr) where
   parseJSON = withObject "DMQConfiguration" $ \v -> do
-    dmqcAcceptedConnectionsLimit <- v .:? "AcceptedConnectionsLimit"
-                                      .!= defaultAcceptedConnectionsLimit
+      dmqcAcceptedConnectionsLimit <- v .:? "AcceptedConnectionsLimit"
+                                        .!= defaultAcceptedConnectionsLimit
 
-    dmqcDiffusionMode <- v .:? "DiffusionMode"
-                           .!= InitiatorAndResponderDiffusionMode
+      dmqcDiffusionMode <- v .:? "DiffusionMode"
+                             .!= InitiatorAndResponderDiffusionMode
 
-    dmqcTargetOfRootPeers                 <- v .:? "TargetNumberOfRootPeers"
-                                               .!= targetNumberOfRootPeers defaultDeadlineTargets
-    dmqcTargetOfKnownPeers                <- v .:? "TargetNumberOfKnownPeers"
-                                               .!= targetNumberOfKnownPeers defaultDeadlineTargets
-    dmqcTargetOfEstablishedPeers          <- v .:? "TargetNumberOfEstablishedPeers"
-                                               .!= targetNumberOfEstablishedPeers defaultDeadlineTargets
-    dmqcTargetOfActivePeers               <- v .:? "TargetNumberOfActivePeers"
-                                               .!= targetNumberOfActivePeers defaultDeadlineTargets
-    dmqcTargetOfKnownBigLedgerPeers       <- v .:? "TargetNumberOfKnownBigLedgerPeers"
-                                               .!= targetNumberOfKnownBigLedgerPeers defaultDeadlineTargets
-    dmqcTargetOfEstablishedBigLedgerPeers <- v .:? "TargetNumberOfEstablishedBigLedgerPeers"
-                                               .!= targetNumberOfEstablishedBigLedgerPeers defaultDeadlineTargets
-    dmqcTargetOfActiveBigLedgerPeers      <- v .:? "TargetNumberOfActiveBigLedgerPeers"
-                                               .!= targetNumberOfActiveBigLedgerPeers defaultDeadlineTargets
+      dmqcTargetOfRootPeers                 <- v .:? "TargetNumberOfRootPeers"
+                                                 .!= targetNumberOfRootPeers deadlineTargets
+      dmqcTargetOfKnownPeers                <- v .:? "TargetNumberOfKnownPeers"
+                                                 .!= targetNumberOfKnownPeers deadlineTargets
+      dmqcTargetOfEstablishedPeers          <- v .:? "TargetNumberOfEstablishedPeers"
+                                                 .!= targetNumberOfEstablishedPeers deadlineTargets
+      dmqcTargetOfActivePeers               <- v .:? "TargetNumberOfActivePeers"
+                                                 .!= targetNumberOfActivePeers deadlineTargets
+      dmqcTargetOfKnownBigLedgerPeers       <- v .:? "TargetNumberOfKnownBigLedgerPeers"
+                                                 .!= targetNumberOfKnownBigLedgerPeers deadlineTargets
+      dmqcTargetOfEstablishedBigLedgerPeers <- v .:? "TargetNumberOfEstablishedBigLedgerPeers"
+                                                 .!= targetNumberOfEstablishedBigLedgerPeers deadlineTargets
+      dmqcTargetOfActiveBigLedgerPeers      <- v .:? "TargetNumberOfActiveBigLedgerPeers"
+                                                 .!= targetNumberOfActiveBigLedgerPeers deadlineTargets
 
-    dmqcProtocolIdleTimeout <- v .:? "ProtocolIdleTimeout"
-                                 .!= defaultProtocolIdleTimeout
+      dmqcProtocolIdleTimeout <- v .:? "ProtocolIdleTimeout"
+                                   .!= defaultProtocolIdleTimeout
 
-    dmqcChurnInterval <- v .:? "ChurnInterval"
-                           .!= defaultDeadlineChurnInterval
+      dmqcChurnInterval <- v .:? "ChurnInterval"
+                             .!= defaultDeadlineChurnInterval
 
-    dmqcPeerSharing <- v .:? "PeerSharing"
-                         .!= PeerSharingEnabled
-    networkMagic <- v .: "NetworkMagic"
+      dmqcPeerSharing <- v .:? "PeerSharing"
+                           .!= PeerSharingEnabled
+      networkMagic <- v .: "NetworkMagic"
 
-    pure $
-      Configuration
-        { dmqcAcceptedConnectionsLimit
-        , dmqcDiffusionMode
-        , dmqcTargetOfRootPeers
-        , dmqcTargetOfKnownPeers
-        , dmqcTargetOfEstablishedPeers
-        , dmqcTargetOfActivePeers
-        , dmqcTargetOfKnownBigLedgerPeers
-        , dmqcTargetOfEstablishedBigLedgerPeers
-        , dmqcTargetOfActiveBigLedgerPeers
-        , dmqcProtocolIdleTimeout
-        , dmqcChurnInterval
-        , dmqcPeerSharing
-        , dmqcNetworkMagic = NetworkMagic networkMagic
-        }
+      pure $
+        Configuration
+          { dmqcAcceptedConnectionsLimit
+          , dmqcDiffusionMode
+          , dmqcTargetOfRootPeers
+          , dmqcTargetOfKnownPeers
+          , dmqcTargetOfEstablishedPeers
+          , dmqcTargetOfActivePeers
+          , dmqcTargetOfKnownBigLedgerPeers
+          , dmqcTargetOfEstablishedBigLedgerPeers
+          , dmqcTargetOfActiveBigLedgerPeers
+          , dmqcProtocolIdleTimeout
+          , dmqcChurnInterval
+          , dmqcPeerSharing
+          , dmqcNetworkMagic = NetworkMagic networkMagic
+          }
+    where
+      -- TODO: use DMQ's own default values
+      deadlineTargets = defaultDeadlineTargets Relay
 
 -- | Read the `DMQConfiguration` from the specified file.
 --

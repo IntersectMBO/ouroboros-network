@@ -376,14 +376,11 @@ Note that `cabal`'s persistent state includes which index states it is
 aware of, so when you bump the pinned index state you may need to
 call `cabal update` for `cabal` to be happy.
 
-Whenever using a newer Hackage's index, one also needs to update `index-state` and `index-sha256`
-in `./nix/ouroboros-network.nix` file.  To update the latter, run
+Whenever using a newer Hackage's index, one needs to run:
 ```bash
-nix build .\#hydraJobs.x86_64-linux.required
+nix flake lock --update-input hackageNix
 ```
-and use the new value of the hash shown in the terminal.
-
-When using a newer `CHaP`'s index one needs to run:
+and when using a newer `CHaP`'s index:
 ```bash
 nix flake lock --update-input CHaP
 ```
