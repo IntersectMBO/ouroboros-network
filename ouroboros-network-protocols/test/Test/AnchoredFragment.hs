@@ -295,21 +295,31 @@ prop_intersect :: TestAnchoredFragmentFork -> Property
 prop_intersect (TestAnchoredFragmentFork origP1 origP2 c1 c2) =
   case AF.intersect c1 c2 of
     Nothing ->
+      classify False "Fragments intersect" $
+      counterexample "No intersection" $
       L.intersect (pointsList c1) (pointsList c2) === []
     Just (p1, p2, s1, s2) ->
-      p1 === origP1 .&&. p2 === origP2 .&&.
-      AF.join p1 s1 === Just c1 .&&.
-      AF.join p2 s2 === Just c2 .&&.
-      AF.headPoint p1   === AF.headPoint   p2 .&&.
-      AF.anchorPoint p1 === AF.anchorPoint c1 .&&.
-      AF.anchorPoint p2 === AF.anchorPoint c2 .&&.
-      AF.anchorPoint s1 === AF.headPoint   p1 .&&.
-      AF.anchorPoint s2 === AF.headPoint   p2
+      classify True "Fragments intersect" $
+      counterexample "p1 === origP1" (p1 === origP1) .&&.
+      counterexample "p2 === origP2" (p2 === origP2) .&&.
+      counterexample "AF.join p1 s1 === Just c1" (AF.join p1 s1 === Just c1) .&&.
+      counterexample "AF.join p2 s2 === Just c2" (AF.join p2 s2 === Just c2) .&&.
+      counterexample "AF.headPoint p1 === AF.headPoint p2"
+        (AF.headPoint p1   === AF.headPoint   p2) .&&.
+      counterexample "AF.anchorPoint p1 === AF.anchorPoint c1"
+        (AF.anchorPoint p1 === AF.anchorPoint c1) .&&.
+      counterexample "AF.anchorPoint p2 === AF.anchorPoint c2"
+        (AF.anchorPoint p2 === AF.anchorPoint c2) .&&.
+      counterexample "AF.anchorPoint s1 === AF.headPoint p1"
+        (AF.anchorPoint s1 === AF.headPoint   p1) .&&.
+      counterexample "AF.anchorPoint s2 === AF.headPoint p2"
+        (AF.anchorPoint s2 === AF.headPoint   p2)
   where
     pointsList c = AF.anchorPoint c : map blockPoint (AF.toOldestFirst c)
 
 prop_intersect_bounds :: TestAnchoredFragmentFork -> Property
 prop_intersect_bounds (TestAnchoredFragmentFork _ _ c1 c2) =
+    classify intersects "Fragments intersect" $
     intersects === (AF.withinFragmentBounds (AF.anchorPoint c1) c2 ||
                     AF.withinFragmentBounds (AF.anchorPoint c2) c1)
   where
@@ -710,16 +720,24 @@ instance Show TestAnchoredFragmentFork where
 instance Arbitrary TestAnchoredFragmentFork where
   arbitrary = do
     TestBlockAnchoredFragment c <- arbitrary
-    -- at least 50% should have the same prefix
-    samePrefixes <- oneof [pure True, pure False]
     (l1, l2) <-
-      if samePrefixes
-      then return (c, c)
-      else do
-        let len = fromIntegral $ AF.length c
-        keepNewest1 <- choose (0, len)
-        keepNewest2 <- choose (0, len)
-        return (AF.anchorNewest keepNewest1 c, AF.anchorNewest keepNewest2 c)
+      frequency
+        [ -- at least 50% should have the same prefix
+          (10, return (c, c))
+        , (9, do
+            -- take away some old blocks from the prefix
+            let len = fromIntegral $ AF.length c
+            keepNewest1 <- choose (0, len)
+            keepNewest2 <- choose (0, len)
+            return (AF.anchorNewest keepNewest1 c, AF.anchorNewest keepNewest2 c))
+        , (1, do
+            -- generate non-intersecting prefixes
+            a <- genChainAnchor `suchThat` \a ->
+              not $ AF.withinFragmentBounds (AF.anchorToPoint a) c
+            n2 <- genNonNegative
+            c' <- genAddBlocks n2 (Empty a) Nothing
+            return (c, c'))
+        ]
     -- at least 5% of forks should be equal
     sameForks <- frequency [(1, pure True), (19, pure False)]
     (c1, c2) <-
