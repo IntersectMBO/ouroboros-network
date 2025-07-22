@@ -4,6 +4,8 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+{-# OPTIONS_GHC -Wno-redundant-constraints #-}
+
 module Ouroboros.Network.TxSubmission.Inbound.V2.State
   ( -- * Core API
     SharedTxState (..)

@@ -108,7 +108,8 @@ import Ouroboros.Network.InboundGovernor (RemoteTransitionTrace)
 import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.Mux (MiniProtocolLimits (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
-import Ouroboros.Network.PeerSelection.Governor.Types as PeerSelection hiding (requestPublicRootPeers)
+import Ouroboros.Network.PeerSelection.Governor.Types as PeerSelection hiding
+           (requestPublicRootPeers)
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.PeerAdvertise
 import Ouroboros.Network.PeerSelection.PeerSharing
@@ -145,8 +146,7 @@ import Test.Ouroboros.Network.Diffusion.Node qualified as Node
 import Test.Ouroboros.Network.Diffusion.Node.Kernel (NtCAddr, NtCVersion,
            NtCVersionData, NtNAddr, NtNAddr_ (IPAddr), NtNVersion,
            NtNVersionData, ppNtNAddr)
-import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..),
-           genLedgerPoolsFrom)
+import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..), genLedgerPoolsFrom)
 import Test.Ouroboros.Network.PeerSelection.Cardano.Instances ()
 import Test.Ouroboros.Network.PeerSelection.Instances qualified as PeerSelection
 import Test.Ouroboros.Network.PeerSelection.LocalRootPeers ()
