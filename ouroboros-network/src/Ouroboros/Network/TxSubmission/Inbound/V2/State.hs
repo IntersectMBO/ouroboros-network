@@ -22,6 +22,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.State
   , updateRefCounts
   , receivedTxIdsImpl
   , collectTxsImpl
+  , config_MAX_TX_SIZE_DISCREPANCY
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -362,6 +363,11 @@ receivedTxIdsImpl
                    unacknowledgedTxIds    = unacknowledgedTxIds',
                    requestedTxIdsInflight = requestedTxIdsInflight - reqNo }
 
+-- | We check advertised sizes up in a fuzzy way.  The advertised and received
+-- sizes need to agree up to `config_MAX_TX_SIZE_DISCREPANCY`.
+--
+config_MAX_TX_SIZE_DISCREPANCY :: SizeInBytes
+config_MAX_TX_SIZE_DISCREPANCY = 32
 
 collectTxsImpl
     :: forall peeraddr tx txid.
@@ -417,12 +423,21 @@ collectTxsImpl txSize peeraddr requestedTxIdsMap receivedTxs
               Map.dropMissing
               Map.dropMissing
               (Map.zipWithMaybeMatched \_ receivedSize advertisedSize ->
-                if receivedSize == advertisedSize
+                if receivedSize `checkTxSize` advertisedSize
                   then Nothing
                   else Just (receivedSize, advertisedSize)
               )
               (txSize `Map.map` receivedTxs)
               requestedTxIdsMap
+
+        checkTxSize :: SizeInBytes
+                    -> SizeInBytes
+                    -> Bool
+        checkTxSize received advertised
+          | received > advertised
+          = received - advertised <= config_MAX_TX_SIZE_DISCREPANCY
+          | otherwise
+          = advertised - received <= config_MAX_TX_SIZE_DISCREPANCY
 
         requestedTxIds = Map.keysSet requestedTxIdsMap
         notReceived    = requestedTxIds Set.\\ Map.keysSet receivedTxs
