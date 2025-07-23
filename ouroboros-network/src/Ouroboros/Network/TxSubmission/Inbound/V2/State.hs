@@ -360,6 +360,11 @@ receivedTxIdsImpl
                    unacknowledgedTxIds    = unacknowledgedTxIds',
                    requestedTxIdsInflight = requestedTxIdsInflight - reqNo }
 
+-- | We check advertised sizes up in a fuzzy way.  The advertised and received
+-- sizes need to agree up to `_MAX_SIZE_DISCREPENCY`.
+--
+_MAX_SIZE_DISCREPENCY :: SizeInBytes
+_MAX_SIZE_DISCREPENCY = 32
 
 collectTxsImpl
     :: forall peeraddr tx txid.
@@ -415,12 +420,21 @@ collectTxsImpl txSize peeraddr requestedTxIdsMap receivedTxs
               Map.dropMissing
               Map.dropMissing
               (Map.zipWithMaybeMatched \_ receivedSize advertisedSize ->
-                if receivedSize == advertisedSize
+                if receivedSize `checkTxSize` advertisedSize
                   then Nothing
                   else Just (receivedSize, advertisedSize)
               )
               (txSize `Map.map` receivedTxs)
               requestedTxIdsMap
+
+        checkTxSize :: SizeInBytes
+                    -> SizeInBytes
+                    -> Bool
+        checkTxSize received advertised
+          | received > advertised
+          = received - advertised <= _MAX_SIZE_DISCREPENCY
+          | otherwise
+          = advertised - received <= _MAX_SIZE_DISCREPENCY
 
         requestedTxIds = Map.keysSet requestedTxIdsMap
         notReceived    = requestedTxIds Set.\\ Map.keysSet receivedTxs
