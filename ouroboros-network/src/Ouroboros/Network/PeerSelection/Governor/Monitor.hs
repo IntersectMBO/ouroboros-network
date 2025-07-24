@@ -416,14 +416,15 @@ jobVerifyPeerSnapshot :: MonadSTM m
                       => SRVPrefix
                       -> LedgerPeerSnapshot
                       -> LedgerPeersConsensusInterface extraAPI m
+                      -> (Maybe (WithOrigin SlotNo) -> STM m (StandardHashWitness blk, Point blk))
                       -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
-jobVerifyPeerSnapshot srvPrefix
-                      ledgerPeerSnapshot
-                      ledgerCtx@LedgerPeersConsensusInterface { lpGetLatestSlot }
+jobVerifyPeerSnapshot _srvPrefix
+                      (LedgerPeerSnapshot point _pools)
+                      _ledgerCtx
+                      demoConsensusAPI
   = Job job (const (completion False)) () "jobVerifyPeerSnapshot"
   where
-    (slot, snapshotPeers) =
-      getRelayAccessPointsFromLedgerPeerSnapshot srvPrefix ledgerPeerSnapshot
+    (snapshotSlot, snapshotHash) = (pointSlot point, pointHash point)
 
     completion result = return . Completion $ \st _now ->
       Decision {
@@ -432,13 +433,33 @@ jobVerifyPeerSnapshot srvPrefix
         decisionJobs  = [] }
 
     job = do
-      ledgerPeers <-
+      result <-
         atomically $ do
-          check . (>= slot) =<< lpGetLatestSlot
-          accumulateBigLedgerStake <$> getRelayAccessPointsFromLedger srvPrefix ledgerCtx
-      completion $ snapshotPeers
-                   `compareLedgerPeerSnapshotApproximate`
-                   ledgerPeers
+          pointExtra <- demoConsensusAPI Nothing
+          let currSlot = snd $ second pointSlot pointExtra
+          -- todo instead of polling consensus may have a mechanism
+          -- that they can expose via an API which will unblock
+          -- at the right time
+          check (currSlot >= snapshotSlot)
+          -- TODO: OR the consensus API should be changed
+          -- to give us a Point for a given slot number
+          -- so we can compare, otherwise in some circumstances
+          -- the above inequality will be strict and we won't be
+          -- able to do so. Below code is demo
+          -- and assumes that we can stop when ==, and comparison
+          -- should be moved out of the atomic block.
+          pointExtra' <- demoConsensusAPI (Just snapshotSlot)
+          case second pointHash pointExtra' of
+            (StandardHashWitness, tipChainHash)  ->
+              case cast snapshotHash of
+                Just snapshotHash' -> return $ tipChainHash == snapshotHash'
+                Nothing  -> return False
+      return . Completion $ \st _now ->
+            Decision {
+              decisionTrace = [TraceVerifyPeerSnapshot result],
+              decisionState = st,
+              decisionJobs  = [] }
+
 
 -- |This job monitors for any changes in the big ledger peer snapshot
 -- and flips ledger state judgement private state so that monitoring action
@@ -461,8 +482,8 @@ ledgerPeerSnapshotChange extraStateChange
     ledgerPeerSnapshot' <- readLedgerPeerSnapshot
     case (ledgerPeerSnapshot', ledgerPeerSnapshot) of
       (Nothing, _) -> retry
-      (Just (LedgerPeerSnapshot (slot, _)), Just (LedgerPeerSnapshot (slot', _)))
-        | slot == slot' -> retry
+      (Just (LedgerPeerSnapshot point _), Just (LedgerPeerSnapshot point' _))
+        | pointSlot point == pointSlot point' -> retry
       _otherwise ->
         return $ \_now ->
                    Decision { decisionTrace = [],
