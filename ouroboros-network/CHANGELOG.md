@@ -1,10 +1,14 @@
 # Revision history for ouroboros-network
 
-## next release
+## 0.22.1.0 -- 2025-07-
 
 ### Breaking changes
 
 ### Non-breaking changes
+
+- Added `pchPromotedHotVar` to `PeerConnectionHandle` to track when a peer has been promoted to hot
+- Added tag `PeerHotDuration` to `PeerSelectionActionsTrace` to indicate how long a remote
+  peer has been in hot mode until it was either demoted or closed.
 
 ## 0.22.0.0 -- 28.06.2025
 
@@ -50,6 +54,10 @@
   of ledger peer.
 * Added `dispatchLookupWithTTL`
 * Lower the time to cache DNS errors to at most 15min.
+
+## 0.21.3.0
+
+Consult changelog on main
 
 ## 0.21.2.0 -- 2025-06-02
 
