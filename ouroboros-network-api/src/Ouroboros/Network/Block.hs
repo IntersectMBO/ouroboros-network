@@ -178,14 +178,45 @@ class ( Eq       (HeaderHash b)
       , Show     (HeaderHash b)
       , Typeable (HeaderHash b)
       , NoThunks (HeaderHash b)
+      , ToJSON   (HeaderHash b)
+      , FromJSON (HeaderHash b)
       ) => StandardHash (b :: k)
 
-data ChainHash b = GenesisHash | BlockHash !(HeaderHash b)
-  deriving (Generic)
+-- TODO
+-- This witness hides the block type from proliferating all over the place
+-- in the o-n libraries where it is used only in one place really (jobVerifyPeerSnapshot)
+-- the typeable is here so that we don't have to lug around this constraint, threading it
+-- the the 'jobVerifyPeerSnapshot' from the top level.
+data StandardHashWitness b where
+  StandardHashWitness :: (StandardHash b, Typeable b) => StandardHashWitness b
+
+deriving instance Eq (StandardHashWitness b)
+deriving instance Show (StandardHashWitness b)
+deriving instance Ord (StandardHashWitness b)
+
+-- TODO have to hand crank these due to constraints
+instance NoThunks (StandardHashWitness b) where
+  wNoThunks = undefined
+  showTypeOf = undefined
+
+-- TODO this witness can be moved to the consensus API so we pay for it
+-- only when we need it (to verify ledger peer snapshot)
+-- it is here because we derive a Generic instance which for eg. NoThunks depends on
+-- so putting a constraint here is not possible, or probably even desirable
+data ChainHash b = GenesisHash | BlockHash !(StandardHashWitness b) !(HeaderHash b)
+  deriving Generic
 
 deriving instance StandardHash block => Eq   (ChainHash block)
 deriving instance StandardHash block => Ord  (ChainHash block)
 deriving instance StandardHash block => Show (ChainHash block)
+
+-- TODO maybe rework this
+pattern BlockHash' :: (StandardHash b, Typeable b)
+                   => HeaderHash b
+                   -> ChainHash b
+pattern BlockHash' h <- BlockHash StandardHashWitness h
+  where
+    BlockHash' h = BlockHash StandardHashWitness h
 
 instance (StandardHash block, Typeable block) => NoThunks (ChainHash block)
   -- use generic instance

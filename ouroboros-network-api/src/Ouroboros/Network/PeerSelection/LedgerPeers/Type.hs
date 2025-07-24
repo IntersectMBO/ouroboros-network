@@ -62,10 +62,19 @@ import Ouroboros.Network.PeerSelection.RelayAccessPoint
 -- provided by node configuration for the networking layer
 -- to connect to when syncing.
 --
-data LedgerPeerSnapshot =
-  LedgerPeerSnapshotV2 (WithOrigin SlotNo, [(AccPoolStake, (PoolStake, NonEmpty LedgerRelayAccessPoint))])
+data LedgerPeerSnapshot where
+    LedgerPeerSnapshotV2
+      :: (WithOrigin SlotNo, [(AccPoolStake, (PoolStake, NonEmpty LedgerRelayAccessPoint))])
+      -> LedgerPeerSnapshot
+
+    LedgerPeerSnapshotV3
+      :: (Typeable blk, StandardHash blk)
+      => !(Point blk)
+      -> ![(AccPoolStake, (PoolStake, NonEmpty LedgerRelayAccessPoint))]
+      -> LedgerPeerSnapshot
+
+deriving instance Show LedgerPeerSnapshot
   -- ^ Internal use for version 2, use pattern synonym for public API
-  deriving (Eq, Show)
 
 
 getRelayAccessPointsFromLedgerPeerSnapshot
@@ -80,10 +89,14 @@ getRelayAccessPointsFromLedgerPeerSnapshot srvPrefix (LedgerPeerSnapshotV2 as) =
 -- Nonetheless, serialisation from the node into JSON is supported for older versions via internal
 -- api so that newer CLI can still support older node formats.
 --
-pattern LedgerPeerSnapshot :: (WithOrigin SlotNo, [(AccPoolStake, (PoolStake, NonEmpty LedgerRelayAccessPoint))])
+pattern LedgerPeerSnapshot :: ()
+                           => (Typeable blk, StandardHash blk)
+                           => Point blk
+                           -> [(AccPoolStake, (PoolStake, NonEmpty LedgerRelayAccessPoint))]
                            -> LedgerPeerSnapshot
-pattern LedgerPeerSnapshot payload <- LedgerPeerSnapshotV2 payload where
-  LedgerPeerSnapshot payload = LedgerPeerSnapshotV2 payload
+pattern LedgerPeerSnapshot pt as <- LedgerPeerSnapshotV3 pt as
+  where
+    LedgerPeerSnapshot pt (force -> pools) = LedgerPeerSnapshotV3 pt pools
 
 {-# COMPLETE LedgerPeerSnapshot #-}
 
