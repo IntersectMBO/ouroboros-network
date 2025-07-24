@@ -1,3 +1,7 @@
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE BlockArguments             #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
@@ -10,6 +14,9 @@
 {-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE ViewPatterns               #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE GADTs #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans       #-}
 
@@ -41,22 +48,25 @@ module Ouroboros.Network.PeerSelection.LedgerPeers.Type
   , prefixLedgerRelayAccessPoint
   ) where
 
+import Data.Typeable
 import GHC.Generics (Generic)
 
 -- TODO: remove `FromCBOR` and `ToCBOR` type classes
 import Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import Cardano.Binary qualified as Codec
-import Cardano.Slotting.Slot (SlotNo (..), WithOrigin (..))
+import Cardano.Slotting.Slot (WithOrigin (..))
 import Control.Concurrent.Class.MonadSTM
-import Control.DeepSeq (NFData (..))
+import Control.DeepSeq (NFData (..), force)
 import Control.Monad (forM)
-import Data.Aeson
+import Data.Aeson hiding (encode)
 import Data.Bifunctor (first, second)
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
 import NoThunks.Class
 
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
+import Ouroboros.Network.Block
+import Control.Applicative ((<|>))
 
 -- |The type of big ledger peers that is serialised or later
 -- provided by node configuration for the networking layer
@@ -81,8 +91,9 @@ getRelayAccessPointsFromLedgerPeerSnapshot
   :: SRVPrefix
   -> LedgerPeerSnapshot
   -> (WithOrigin SlotNo, [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))])
-getRelayAccessPointsFromLedgerPeerSnapshot srvPrefix (LedgerPeerSnapshotV2 as) =
-    fmap (fmap (fmap (fmap (fmap (prefixLedgerRelayAccessPoint srvPrefix))))) as
+getRelayAccessPointsFromLedgerPeerSnapshot srvPrefix (LedgerPeerSnapshotV3 pt as) =
+  let as' = fmap (fmap (fmap (fmap (prefixLedgerRelayAccessPoint srvPrefix)))) as
+  in  (pointSlot pt, as')
 
 
 -- |Public API to access snapshot data. Currently access to only most recent version is available.
@@ -99,6 +110,7 @@ pattern LedgerPeerSnapshot pt as <- LedgerPeerSnapshotV3 pt as
     LedgerPeerSnapshot pt (force -> pools) = LedgerPeerSnapshotV3 pt pools
 
 {-# COMPLETE LedgerPeerSnapshot #-}
+
 
 -- | Since ledger peer snapshot is serialised with all domain names
 --   fully qualified, and all stake values are approximate in floating
@@ -126,13 +138,16 @@ compareLedgerPeerSnapshotApproximate baseline candidate =
            . fmap (first AccPoolStakeCoded)
            $ candidate
 
+
 -- | In case the format changes in the future, this function provides a migration functionality
 -- when possible.
 --
 migrateLedgerPeerSnapshot
   :: LedgerPeerSnapshot
   -> Maybe LedgerPeerSnapshot
-migrateLedgerPeerSnapshot snapshot@LedgerPeerSnapshotV2{} = Just snapshot
+migrateLedgerPeerSnapshot snapshot@LedgerPeerSnapshotV3{} = Just snapshot
+migrateLedgerPeerSnapshot LedgerPeerSnapshotV2{} = Nothing
+
 
 instance ToJSON LedgerPeerSnapshot where
   toJSON (LedgerPeerSnapshotV2 (slot, pools)) =
@@ -144,15 +159,24 @@ instance ToJSON LedgerPeerSnapshot where
                                    , "relays"   .= relays]
                                    | (AccPoolStake accStake, (PoolStake relStake, relays)) <- pools
                                    ]]
+  toJSON (LedgerPeerSnapshotV3 pt pools) =
+    object [ "NodeToClientVersion" .= (22 :: Int)
+           , "Point" .= toJSON pt
+           , "bigLedgerPools" .= [ object
+                                   [ "accumulatedStake" .= fromRational @Double accStake
+                                   , "relativeStake"  .= fromRational @Double relStake
+                                   , "relays"   .= relays]
+                                   | (AccPoolStake accStake, (PoolStake relStake, relays)) <- pools
+                                   ]]
 
 instance FromJSON LedgerPeerSnapshot where
   parseJSON = withObject "LedgerPeerSnapshot" $ \v -> do
-    vNum :: Int <- v .: "version"
+    vNum :: Maybe Int <- v .:? "version" <|> v.:? "NodeToClientVersion"
+    bigPools <- v .: "bigLedgerPools"
     ledgerPeerSnapshot <-
       case vNum of
-        1 -> do
+        Just 1 -> do
           slot <- v .: "slotNo"
-          bigPools <- v .: "bigLedgerPools"
           bigPools' <- forM (zip [0 :: Int ..] bigPools) \(idx, poolO) -> do
                          let f poolV = do
                                  AccPoolStakeCoded accStake <- poolV .: "accumulatedStake"
@@ -163,9 +187,8 @@ instance FromJSON LedgerPeerSnapshot where
                          withObject ("bigLedgerPools[" <> show idx <> "]") f (Object poolO)
 
           return $ LedgerPeerSnapshotV2 (slot, bigPools')
-        2 -> do
+        Just 2 -> do
           slot <- v .: "slotNo"
-          bigPools <- v .: "bigLedgerPools"
           bigPools' <- forM (zip [0 :: Int ..] bigPools) \(idx, poolO) -> do
                          let f poolV = do
                                  AccPoolStakeCoded accStake <- poolV .: "accumulatedStake"
@@ -175,7 +198,20 @@ instance FromJSON LedgerPeerSnapshot where
                          withObject ("bigLedgerPools[" <> show idx <> "]") f (Object poolO)
 
           return $ LedgerPeerSnapshotV2 (slot, bigPools')
-        _ -> fail $ "Network.LedgerPeers.Type: parseJSON: failed to parse unsupported version " <> show vNum
+        -- TODO
+        -- Just 22 -> do
+        --   point     <- v .: "Point"
+        --   bigPools' <- forM (zip [0 :: Int ..] bigPools) \(idx, poolO) -> do
+        --                  let f poolV = do
+        --                          AccPoolStakeCoded accStake <- poolV .: "accumulatedStake"
+        --                          PoolStakeCoded reStake <- poolV .: "relativeStake"
+        --                          relays <- poolV .: "relays"
+        --                          return (accStake, (reStake, relays))
+        --                  withObject ("bigLedgerPools[" <> show idx <> "]") f (Object poolO)
+
+        --   return $ LedgerPeerSnapshotV3 point bigPools'
+        Just _  -> undefined
+        Nothing -> fail $ "Network.LedgerPeers.Type: parseJSON: failed to parse unsupported version " <> show vNum
     case migrateLedgerPeerSnapshot ledgerPeerSnapshot of
       Just ledgerPeerSnapshot' -> return ledgerPeerSnapshot'
       Nothing                  -> fail "Network.LedgerPeers.Type: parseJSON: failed to migrate big ledger peer snapshot"
@@ -235,6 +271,17 @@ encodeLedgerPeerSnapshot LedgerPeerSnapshotSupportsSRV (LedgerPeerSnapshotV2 (wO
         [(AccPoolStakeCoded accPoolStake, (PoolStakeCoded relStake, relays))
         | (accPoolStake, (relStake, relays)) <- pools
         ]
+encodeLedgerPeerSnapshot _LedgerPeerSnapshotSupportsSRV (LedgerPeerSnapshotV3 pt pools) =
+       Codec.encodeListLen 2
+    <> Codec.encodeWord8 2 -- internal version
+    <> Codec.encodeListLen 2
+    <> undefined
+    <> toCBOR pools'
+    where
+      pools' =
+        [(AccPoolStakeCoded accPoolStake, (PoolStakeCoded relStake, relays))
+        | (accPoolStake, (relStake, relays)) <- pools
+        ]
 
 decodeLedgerPeerSnapshot :: LedgerPeerSnapshotSRVSupport -> Codec.Decoder s LedgerPeerSnapshot
 decodeLedgerPeerSnapshot _ = do
@@ -286,7 +333,7 @@ newtype PoolStakeCoded = PoolStakeCoded { unPoolStakeCoded :: PoolStake }
 --
 newtype AccPoolStake = AccPoolStake { unAccPoolStake :: Rational }
     deriving (Eq, Ord, Show)
-    deriving newtype (Fractional, Num)
+    deriving newtype (Fractional, Num, NFData)
 
 newtype AccPoolStakeCoded = AccPoolStakeCoded { unAccPoolStakeCoded :: AccPoolStake }
   deriving (ToCBOR, FromCBOR, FromJSON, ToJSON) via Rational

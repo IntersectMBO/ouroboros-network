@@ -4,6 +4,7 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE NumDecimals                #-}
@@ -33,7 +34,7 @@ module Ouroboros.Network.Block
   , blockHash
   , HasFullHeader (..)
   , StandardHash
-  , ChainHash (..)
+  , ChainHash (.., BlockHash')
   , castHash
   , Point (..)
   , pointSlot
@@ -69,6 +70,7 @@ module Ouroboros.Network.Block
   , unwrapCBORinCBOR
   , mkSerialised
   , fromSerialised
+  , StandardHashWitness (..)
   ) where
 
 import Codec.CBOR.Decoding (Decoder)
@@ -86,7 +88,7 @@ import Data.Coerce (Coercible, coerce)
 import Data.Kind (Type)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
-import NoThunks.Class (NoThunks)
+import NoThunks.Class
 import Quiet
 
 import Cardano.Slotting.Block
@@ -96,6 +98,7 @@ import Ouroboros.Network.Point (WithOrigin (..), block, fromWithOrigin, origin,
            withOriginToMaybe)
 import Ouroboros.Network.Point qualified as Point (Block (..))
 import Ouroboros.Network.Util.ShowProxy
+import Data.Aeson (ToJSON, FromJSON)
 
 genesisPoint :: Point block
 genesisPoint = Point origin
@@ -223,7 +226,7 @@ instance (StandardHash block, Typeable block) => NoThunks (ChainHash block)
 
 castHash :: Coercible (HeaderHash b) (HeaderHash b') => ChainHash b -> ChainHash b'
 castHash GenesisHash   = GenesisHash
-castHash (BlockHash h) = BlockHash (coerce h)
+-- castHash (BlockHash h) = BlockHash (coerce h)
 
 {-------------------------------------------------------------------------------
   Point on a chain
@@ -241,6 +244,8 @@ newtype Point block = Point
     { getPoint :: WithOrigin (Point.Block SlotNo (HeaderHash block))
     }
   deriving (Generic)
+
+deriving newtype instance (ToJSON (HeaderHash blk)) => ToJSON (Point blk)
 
 deriving newtype instance StandardHash block => Eq       (Point block)
 deriving newtype instance StandardHash block => Ord      (Point block)
@@ -265,7 +270,7 @@ pointSlot (Point pt) = fmap Point.blockPointSlot pt
 pointHash :: Point block -> ChainHash block
 pointHash (Point pt) = case pt of
     Origin -> GenesisHash
-    At blk -> BlockHash (Point.blockPointHash blk)
+    -- At blk -> BlockHash (Point.blockPointHash blk)
 
 castPoint :: Coercible (HeaderHash b) (HeaderHash b') => Point b -> Point b'
 castPoint GenesisPoint           = GenesisPoint
@@ -418,7 +423,7 @@ encodeChainHash :: (HeaderHash block -> Encoding)
 encodeChainHash encodeHash chainHash =
     case chainHash of
       GenesisHash -> Enc.encodeListLen 0
-      BlockHash h -> Enc.encodeListLen 1 <> encodeHash h
+      -- BlockHash h -> Enc.encodeListLen 1 <> encodeHash h
 
 decodeChainHash :: (forall s. Decoder s (HeaderHash block))
                 -> (forall s. Decoder s (ChainHash  block))
@@ -426,7 +431,7 @@ decodeChainHash decodeHash = do
     tag <- Dec.decodeListLen
     case tag of
       0 -> return GenesisHash
-      1 -> BlockHash <$> decodeHash
+      -- 1 -> BlockHash <$> decodeHash
       _ -> fail "decodeChainHash: invalid tag"
 
 encodePoint :: (HeaderHash block -> Encoding)

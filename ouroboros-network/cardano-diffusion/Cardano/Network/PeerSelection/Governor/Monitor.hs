@@ -521,7 +521,7 @@ monitorLedgerStateJudgement PeerSelectionActions{
           decisionTrace = [TraceLedgerStateJudgementChanged lsj],
           decisionJobs = case (lsj, ledgerPeerSnapshot) of
                            (TooOld, Just ledgerPeerSnapshot') ->
-                             [jobVerifyPeerSnapshot Cardano.srvPrefix ledgerPeerSnapshot' ledgerCtx]
+                             [jobVerifyPeerSnapshot Cardano.srvPrefix ledgerPeerSnapshot' ledgerCtx undefined]
                            _otherwise -> [],
           decisionState = st {
             extraState = cpst {

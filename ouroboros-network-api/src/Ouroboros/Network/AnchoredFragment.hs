@@ -185,7 +185,7 @@ anchorToSlotNo (Anchor s _h _b) = At s
 -- Returns 'GenesisHash' if the anchor is 'AnchorGenesis'.
 anchorToHash :: Anchor block -> ChainHash block
 anchorToHash AnchorGenesis    = GenesisHash
-anchorToHash (Anchor _s h _b) = BlockHash h
+-- anchorToHash (Anchor _s h _b) = BlockHash h
 
 anchorToHeaderFields :: Anchor block -> WithOrigin (HeaderFields block)
 anchorToHeaderFields AnchorGenesis  = Origin
@@ -335,7 +335,7 @@ headSlot = either anchorToSlotNo (At . blockSlot) . head
 -- | \( O(1) \). When the fragment is empty, the hash of the anchor point is
 -- returned.
 headHash :: HasHeader block => AnchoredFragment block -> ChainHash block
-headHash = either anchorToHash (BlockHash . blockHash) . head
+headHash = undefined --either anchorToHash (BlockHash . blockHash) . head
 
 -- | \( O(1) \). When the fragment is empty, the block number of the anchor
 -- point is returned.

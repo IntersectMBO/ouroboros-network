@@ -18,11 +18,13 @@ module Ouroboros.Network.PeerSelection.Governor.Monitor
   , ledgerPeerSnapshotChange
   ) where
 
+import Data.Bifunctor (second)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, isJust)
 import Data.Set (Set)
 import Data.Set qualified as Set
+import Data.Typeable (cast)
 
 import Control.Concurrent.JobPool (Job (..), JobPool)
 import Control.Concurrent.JobPool qualified as JobPool
@@ -32,6 +34,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import System.Random (randomR)
 
+import Ouroboros.Network.Block
 import Ouroboros.Network.ExitPolicy (RepromoteDelay)
 import Ouroboros.Network.ExitPolicy qualified as ExitPolicy
 import Ouroboros.Network.PeerSelection.Governor.ActivePeers
@@ -51,6 +54,7 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers
            (LocalRootConfig (..))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSelection.Types
+import Ouroboros.Network.Point
 
 -- | Monitor 'PeerSelectionTargets', if they change, we just need to update
 -- 'PeerSelectionState', since we return it in a 'Decision' action it will be
