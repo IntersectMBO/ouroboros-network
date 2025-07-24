@@ -1,7 +1,9 @@
+{-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -18,6 +20,7 @@ module Ouroboros.Network.PeerSelection.PeerStateActions
     -- * Create PeerStateActions
     PeerStateActionsArguments (..)
   , PeerConnectionHandle
+  , getPromotedHotTime
   , withPeerStateActions
   , pchPeerSharing
     -- * Exceptions
@@ -38,6 +41,7 @@ import Control.Monad (when, (<=<))
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 
 import Control.Concurrent.JobPool (Job (..), JobPool)
@@ -428,12 +432,22 @@ awaitAllResults tok bundle = do
 -- together with their state 'StrictTVar's.
 --
 data PeerConnectionHandle (muxMode :: Mux.Mode) responderCtx peerAddr versionData bytes m a b = PeerConnectionHandle {
-    pchConnectionId :: ConnectionId peerAddr,
-    pchPeerStatus   :: StrictTVar m PeerStatus,
-    pchMux          :: Mux.Mux muxMode m,
-    pchAppHandles   :: TemperatureBundle (ApplicationHandle muxMode responderCtx peerAddr bytes m a b),
-    pchVersionData  :: !versionData
+    pchConnectionId    :: !(ConnectionId peerAddr),
+    pchPeerStatus      :: !(StrictTVar m PeerStatus),
+    pchMux             :: !(Mux.Mux muxMode m),
+    pchAppHandles      :: !(TemperatureBundle (ApplicationHandle muxMode responderCtx peerAddr bytes m a b)),
+    pchVersionData     :: !versionData,
+    pchPromotedHotVar  :: !(StrictTVar m (Maybe Time))
   }
+
+-- | Retrieve the time the remote peer has been promoted to hot state
+-- or Nothing if either the peer was not promoted or is being currently demoted
+--
+getPromotedHotTime :: (MonadSTM m)
+                   => PeerConnectionHandle muxMode responderCtx peerAddr versionData bytes m a b
+                   -> STM m (Maybe Time)
+getPromotedHotTime PeerConnectionHandle { pchPromotedHotVar } =
+  readTVar pchPromotedHotVar
 
 mkInitiatorContext :: MonadSTM m
                    => SingProtocolTemperature pt
@@ -624,10 +638,25 @@ withPeerStateActions PeerStateActionsArguments {
     isNotCoolingOrCold stateVar =
       (> PeerCooling) <$> readTVar stateVar
 
+    tracePeerHotDuration
+      :: PeerConnectionHandle muxMode responderCtx peerAddr versionData bytes m a b
+      -> m ()
+    tracePeerHotDuration PeerConnectionHandle { pchConnectionId, pchPromotedHotVar } = do
+      pchPromotedHot <- atomically $ stateTVar pchPromotedHotVar (, Nothing)
+      case pchPromotedHot of
+        Just t1 -> do
+          dt <- (`diffTime` t1) <$> getMonotonicTime
+          traceWith spsTracer (PeerHotDuration pchConnectionId dt)
+        Nothing -> pure ()
+
     peerMonitoringLoop
       :: PeerConnectionHandle muxMode responderCtx peerAddr versionData ByteString m a b
       -> m ()
-    peerMonitoringLoop pch@PeerConnectionHandle { pchConnectionId, pchPeerStatus, pchAppHandles } = do
+    peerMonitoringLoop pch@PeerConnectionHandle {
+                             pchConnectionId,
+                             pchPeerStatus,
+                             pchAppHandles
+                           } = do
         -- A first-to-finish synchronisation on all the bundles; As a result
         -- this is a first-to-finish synchronisation between all the
         -- mini-protocols runs toward the given peer.
@@ -732,6 +761,7 @@ withPeerStateActions PeerStateActionsArguments {
           --
 
           Nothing ->
+            tracePeerHotDuration pch >>
             traceWith spsTracer (PeerStatusChanged (CoolingToCold pchConnectionId))
 
     establishPeerConnection :: JobPool () m (Maybe SomeException)
@@ -768,7 +798,8 @@ withPeerStateActions PeerStateActionsArguments {
                 writeTVar (projectBundle SingWarm        controlMessageBundle) Continue
                 writeTVar (projectBundle SingEstablished controlMessageBundle) Continue
 
-              awaitVarBundle <- atomically $ mkAwaitVars muxBundle
+              awaitVarBundle    <- atomically $ mkAwaitVars muxBundle
+              pchPromotedHotVar <- newTVarIO Nothing
 
               let connHandle =
                     PeerConnectionHandle {
@@ -779,7 +810,8 @@ withPeerStateActions PeerStateActionsArguments {
                                             muxBundle
                                             controlMessageBundle
                                             awaitVarBundle,
-                        pchVersionData  = versionData
+                        pchVersionData  = versionData,
+                        pchPromotedHotVar
                       }
 
               startProtocols SingWarm isBigLedgerPeer connHandle
@@ -796,9 +828,10 @@ withPeerStateActions PeerStateActionsArguments {
                                         Just SomeAsyncException {} -> Nothing
                                         Nothing                    -> Just e)
                                      (\e -> do
-                                        atomically $ do
+                                        atomically do
                                           waitForOutboundDemotion spsConnectionManager connId
                                           writeTVar peerStateVar PeerCold
+                                        tracePeerHotDuration connHandle
                                         traceWith spsTracer (PeerMonitoringError connId e)
                                         throwIO e)
                                      (peerMonitoringLoop connHandle $> Nothing))
@@ -913,7 +946,8 @@ withPeerStateActions PeerStateActionsArguments {
         connHandle@PeerConnectionHandle {
             pchConnectionId,
             pchPeerStatus,
-            pchAppHandles } = do
+            pchAppHandles,
+            pchPromotedHotVar } = do
       -- quiesce warm peer protocols and set hot ones in 'Continue' mode.
       wasWarm <- atomically $ do
         -- if the peer is cold we can't activate it.
@@ -930,6 +964,7 @@ withPeerStateActions PeerStateActionsArguments {
 
       -- start hot peer protocols
       startProtocols SingHot isBigLedgerPeer connHandle
+      atomically . writeTVar pchPromotedHotVar . (Just $!) =<< getMonotonicTime
 
       -- Only set the status to PeerHot if the peer isn't PeerCold.
       -- This can happen asynchronously between the check above and now.
@@ -946,7 +981,7 @@ withPeerStateActions PeerStateActionsArguments {
     -- Take a hot peer and demote it to a warm one.
     deactivatePeerConnection :: PeerConnectionHandle muxMode responderCtx peerAddr versionData ByteString m a b -> m ()
     deactivatePeerConnection
-        PeerConnectionHandle {
+        pch@PeerConnectionHandle {
             pchConnectionId,
             pchPeerStatus,
             pchMux,
@@ -969,7 +1004,9 @@ withPeerStateActions PeerStateActionsArguments {
       -- Hot protocols should stop within 'spsDeactivateTimeout'.
       res <-
         timeout spsDeactivateTimeout
-                (atomically $ awaitAllResults SingHot pchAppHandles)
+                do
+                  res <- atomically $ awaitAllResults SingHot pchAppHandles
+                  res <$ tracePeerHotDuration pch
       case res of
         Nothing -> do
           Mux.stop pchMux
@@ -1207,4 +1244,5 @@ data PeerSelectionActionsTrace peerAddr vNumber =
     | PeerMonitoringError     (ConnectionId peerAddr) SomeException
     | PeerMonitoringResult    (ConnectionId peerAddr) (Maybe (WithSomeProtocolTemperature FirstToFinishResult))
     | AcquireConnectionError  SomeException
+    | PeerHotDuration         (ConnectionId peerAddr) DiffTime
   deriving Show
