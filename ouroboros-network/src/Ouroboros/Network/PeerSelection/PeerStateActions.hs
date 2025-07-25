@@ -985,7 +985,8 @@ withPeerStateActions PeerStateActionsArguments {
             pchConnectionId,
             pchPeerStatus,
             pchMux,
-            pchAppHandles
+            pchAppHandles,
+            pchPromotedHotVar
           } = do
       wasCold <- atomically $ do
         notCold <- isNotCoolingOrCold pchPeerStatus
@@ -1004,7 +1005,15 @@ withPeerStateActions PeerStateActionsArguments {
       -- Hot protocols should stop within 'spsDeactivateTimeout'.
       res <-
         timeout spsDeactivateTimeout
-                (atomically $ awaitAllResults SingHot pchAppHandles)
+                do
+                  (res, pchPromotedHot) <-
+                    atomically $ (,) <$> awaitAllResults SingHot pchAppHandles
+                                     <*> stateTVar pchPromotedHotVar (, Nothing)
+                  res <$ case pchPromotedHot of
+                    Just t1 -> do
+                      dt <- diffTime <$> getMonotonicTime <*> pure t1
+                      traceWith spsTracer (PeerHotDuration pchConnectionId dt)
+                    Nothing -> pure ()
       case res of
         Nothing -> do
           Mux.stop pchMux
