@@ -26,6 +26,7 @@ import Control.Tracer (nullTracer)
 import Control.Monad.IOSim (runSimOrThrow)
 
 import Network.TypedProtocol.Codec
+import Network.TypedProtocol.Codec.Properties
 import Network.TypedProtocol.Proofs (connect, connectPipelined)
 
 import Ouroboros.Network.Channel
@@ -487,13 +488,13 @@ codecWrapped =
 
 prop_codec_ChainSync
   :: AnyMessage ChainSync_BlockHeader
-  -> Bool
+  -> Property
 prop_codec_ChainSync msg =
     ST.runST $ prop_codecM codec msg
 
 prop_codec_splits2_ChainSync
   :: AnyMessage ChainSync_BlockHeader
-  -> Bool
+  -> Property
 prop_codec_splits2_ChainSync msg =
     ST.runST $ prop_codec_splitsM
       splits2
@@ -535,13 +536,13 @@ codecSerialised = codecChainSync
 
 prop_codec_ChainSyncSerialised
   :: AnyMessage ChainSync_Serialised_BlockHeader
-  -> Bool
+  -> Property
 prop_codec_ChainSyncSerialised msg =
     ST.runST $ prop_codecM codecSerialised msg
 
 prop_codec_splits2_ChainSyncSerialised
   :: AnyMessage ChainSync_Serialised_BlockHeader
-  -> Bool
+  -> Property
 prop_codec_splits2_ChainSyncSerialised msg =
     ST.runST $ prop_codec_splitsM
       splits2
@@ -550,7 +551,7 @@ prop_codec_splits2_ChainSyncSerialised msg =
 
 prop_codec_splits3_ChainSyncSerialised
   :: AnyMessage ChainSync_Serialised_BlockHeader
-  -> Bool
+  -> Property
 prop_codec_splits3_ChainSyncSerialised msg =
     ST.runST $ prop_codec_splitsM
       splits3
@@ -565,7 +566,7 @@ prop_codec_cbor_ChainSyncSerialised msg =
 
 prop_codec_binary_compat_ChainSync_ChainSyncSerialised
   :: AnyMessage ChainSync_BlockHeader
-  -> Bool
+  -> Property
 prop_codec_binary_compat_ChainSync_ChainSyncSerialised msg =
     ST.runST (prop_codec_binary_compatM codecWrapped codecSerialised stokEq msg)
   where
@@ -586,7 +587,7 @@ prop_codec_binary_compat_ChainSync_ChainSyncSerialised msg =
 
 prop_codec_binary_compat_ChainSyncSerialised_ChainSync
   :: AnyMessage ChainSync_Serialised_BlockHeader
-  -> Bool
+  -> Property
 prop_codec_binary_compat_ChainSyncSerialised_ChainSync msg =
     ST.runST (prop_codec_binary_compatM codecSerialised codecWrapped stokEq msg)
   where
@@ -813,7 +814,10 @@ propChainSyncDemoPipelinedMinBufferedIO cps (PipeliningDepth n) (PipeliningDepth
     omin = min n m
     omax = max n m
 
-labelMsg :: AnyMessage (ChainSync header point tip) -> Bool -> Property
+labelMsg :: forall prop header point tip.
+            Testable prop
+         => AnyMessage (ChainSync header point tip)
+         -> prop -> Property
 labelMsg (AnyMessage msg) =
     label (case msg of
             MsgRequestNext {}       -> "MsgRequestNext"

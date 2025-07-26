@@ -29,7 +29,8 @@ import Control.Tracer (nullTracer)
 import Codec.Serialise (DeserialiseFailure, Serialise)
 import Codec.Serialise qualified as Serialise (decode, encode)
 
-import Network.TypedProtocol.Codec hiding (prop_codec)
+import Network.TypedProtocol.Codec
+import Network.TypedProtocol.Codec.Properties hiding (prop_codec)
 import Network.TypedProtocol.Proofs
 
 import Ouroboros.Network.Channel
@@ -241,13 +242,13 @@ codec = codecLocalTxSubmission
 
 -- | Check the codec round trip property.
 --
-prop_codec :: AnyMessage (LocalTxSubmission Tx Reject) -> Bool
+prop_codec :: AnyMessage (LocalTxSubmission Tx Reject) -> Property
 prop_codec msg =
   runST (prop_codecM codec msg)
 
 -- | Check for data chunk boundary problems in the codec using 2 chunks.
 --
-prop_codec_splits2 :: AnyMessage (LocalTxSubmission Tx Reject) -> Bool
+prop_codec_splits2 :: AnyMessage (LocalTxSubmission Tx Reject) -> Property
 prop_codec_splits2 msg =
   runST (prop_codec_splitsM splits2 codec msg)
 
@@ -271,7 +272,10 @@ prop_codec_valid_cbor
   -> Property
 prop_codec_valid_cbor = prop_codec_valid_cbor_encoding codec
 
-labelMsg :: AnyMessage (LocalTxSubmission txid tx) -> Bool -> Property
+labelMsg :: forall prop txid tx.
+            Testable prop
+         => AnyMessage (LocalTxSubmission txid tx)
+         -> prop -> Property
 labelMsg (AnyMessage msg) =
   label (case msg of
           MsgSubmitTx {} -> "MsgSubmitTx"

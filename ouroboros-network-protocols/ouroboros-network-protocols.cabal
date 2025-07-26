@@ -110,7 +110,7 @@ library
     serialise,
     singletons,
     text,
-    typed-protocols:{typed-protocols, cborg, stateful, stateful-cborg} ^>=1.0,
+    typed-protocols:{typed-protocols, cborg, stateful, stateful-cborg} ^>=1.1,
 
   ghc-options:
     -Wall
@@ -198,7 +198,7 @@ library testlib
     tasty,
     tasty-quickcheck,
     text,
-    typed-protocols:{typed-protocols, stateful},
+    typed-protocols:{typed-protocols, codec-properties, stateful},
 
   ghc-options:
     -Wall

@@ -36,7 +36,8 @@ import Control.Tracer (Tracer (..), contramap, nullTracer)
 import Codec.Serialise (DeserialiseFailure, Serialise)
 import Codec.Serialise qualified as Serialise (decode, encode)
 
-import Network.TypedProtocol.Codec hiding (prop_codec)
+import Network.TypedProtocol.Codec
+import Network.TypedProtocol.Codec.Properties hiding (prop_codec)
 import Network.TypedProtocol.Proofs
 
 import Ouroboros.Network.Channel
@@ -321,19 +322,19 @@ codec_v2 = codecTxSubmission2
 
 -- | Check the codec round trip property.
 --
-prop_codec :: AnyMessage (TxSubmission2 TxId Tx) -> Bool
+prop_codec :: AnyMessage (TxSubmission2 TxId Tx) -> Property
 prop_codec msg =
   runST (prop_codecM codec_v2 msg)
 
 -- | Check the codec round trip property for the id condec.
 --
-prop_codec_id :: AnyMessage (TxSubmission2 TxId Tx) -> Bool
+prop_codec_id :: AnyMessage (TxSubmission2 TxId Tx) -> Property
 prop_codec_id msg =
   runST (prop_codecM codecTxSubmission2Id msg)
 
 -- | Check for data chunk boundary problems in the codec using 2 chunks.
 --
-prop_codec_splits2 :: AnyMessage (TxSubmission2 TxId Tx) -> Bool
+prop_codec_splits2 :: AnyMessage (TxSubmission2 TxId Tx) -> Property
 prop_codec_splits2 msg =
   runST (prop_codec_splitsM splits2 codec_v2 msg)
 
@@ -392,7 +393,10 @@ instance (Eq a, Arbitrary a) => Arbitrary (DistinctList a) where
     [ DistinctList (nub xs') | xs' <- shrink xs ]
 
 
-labelMsg :: AnyMessage (TxSubmission2 txid tx) -> Bool -> Property
+labelMsg :: forall prop txid tx.
+            Testable prop
+         => AnyMessage (TxSubmission2 txid tx)
+         -> prop -> Property
 labelMsg (AnyMessage msg) =
   label (case msg of
            MsgInit            -> "MsgInit"

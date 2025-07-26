@@ -24,6 +24,7 @@ import Control.Monad.IOSim (runSimOrThrow)
 import Control.Tracer (nullTracer)
 
 import Network.TypedProtocol.Codec
+import Network.TypedProtocol.Codec.Properties
 import Network.TypedProtocol.Proofs
 
 import Ouroboros.Network.Channel
@@ -399,19 +400,19 @@ instance Arbitrary (Serialised Block) where
 
 prop_codec_BlockFetch
   :: AnyMessage (BlockFetch Block (Point Block))
-  -> Bool
+  -> Property
 prop_codec_BlockFetch msg =
   runST (prop_codecM codec msg)
 
 prop_codec_splits2_BlockFetch
   :: AnyMessage (BlockFetch Block (Point Block))
-  -> Bool
+  -> Property
 prop_codec_splits2_BlockFetch msg =
   runST (prop_codec_splitsM splits2 codec msg)
 
 prop_codec_splits3_BlockFetch
   :: AnyMessage (BlockFetch Block (Point Block))
-  -> Bool
+  -> Property
 prop_codec_splits3_BlockFetch msg =
   runST (prop_codec_splitsM splits3 codec msg)
 
@@ -428,19 +429,19 @@ prop_codec_valid_cbor_BlockFetch = prop_codec_valid_cbor_encoding codec
 
 prop_codec_BlockFetchSerialised
   :: AnyMessage (BlockFetch (Serialised Block) (Point Block))
-  -> Bool
+  -> Property
 prop_codec_BlockFetchSerialised msg =
   runST (prop_codecM codecSerialised msg)
 
 prop_codec_splits2_BlockFetchSerialised
   :: AnyMessage (BlockFetch (Serialised Block) (Point Block))
-  -> Bool
+  -> Property
 prop_codec_splits2_BlockFetchSerialised msg =
   runST (prop_codec_splitsM splits2 codecSerialised msg)
 
 prop_codec_splits3_BlockFetchSerialised
   :: AnyMessage (BlockFetch (Serialised Block) (Point Block))
-  -> Bool
+  -> Property
 prop_codec_splits3_BlockFetchSerialised msg =
   runST (prop_codec_splitsM splits3 codecSerialised msg)
 
@@ -453,7 +454,7 @@ prop_codec_cbor_BlockFetchSerialised msg =
 
 prop_codec_binary_compat_BlockFetch_BlockFetchSerialised
   :: AnyMessage (BlockFetch Block (Point Block))
-  -> Bool
+  -> Property
 prop_codec_binary_compat_BlockFetch_BlockFetchSerialised msg =
     runST (prop_codec_binary_compatM codecWrapped codecSerialised stokEq msg)
   where
@@ -469,7 +470,7 @@ prop_codec_binary_compat_BlockFetch_BlockFetchSerialised msg =
 
 prop_codec_binary_compat_BlockFetchSerialised_BlockFetch
   :: AnyMessage (BlockFetch (Serialised Block) (Point Block))
-  -> Bool
+  -> Property
 prop_codec_binary_compat_BlockFetchSerialised_BlockFetch msg =
     runST (prop_codec_binary_compatM codecSerialised codecWrapped stokEq msg)
   where
