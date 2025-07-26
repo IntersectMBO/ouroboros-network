@@ -97,10 +97,8 @@ codecTxSubmission2 encodeTxId decodeTxId
               ActiveState st
            => StateToken st
            -> forall s. CBOR.Decoder s (SomeMessage st)
-    decode stok = do
-      len <- CBOR.decodeListLen
-      key <- CBOR.decodeWord
-      decodeTxSubmission2 decodeTxId decodeTx stok len key
+    decode stok = decodeTxSubmission2 decodeTxId decodeTx stok
+
 
 encodeTxSubmission2
     :: forall (txid :: Type) (tx :: Type) (st :: TxSubmission2 txid tx) (st' :: TxSubmission2 txid tx).
@@ -169,79 +167,73 @@ decodeTxSubmission2
     -> (forall s'. CBOR.Decoder s' tx)
     -- ^ decode transaction
     -> StateToken st
-    -> Int
-    -> Word
+    -- ^ protocol state token
     -> CBOR.Decoder s (SomeMessage st)
-decodeTxSubmission2 decodeTxId decodeTx = decode
-  where
-    decode :: forall (st' :: TxSubmission2 txid tx).
-              ActiveState st'
-           => StateToken st'
-           -> Int
-           -> Word
-           -> CBOR.Decoder s (SomeMessage st')
-    decode stok len key = do
-      case (stok, len, key) of
-        (SingInit,       1, 6) ->
-          return (SomeMessage MsgInit)
-        (SingIdle,       4, 0) -> do
-          blocking <- CBOR.decodeBool
-          ackNo    <- NumTxIdsToAck <$> CBOR.decodeWord16
-          reqNo    <- NumTxIdsToReq <$> CBOR.decodeWord16
-          return $! case blocking of
-            True  -> SomeMessage (MsgRequestTxIds SingBlocking    ackNo reqNo)
-            False -> SomeMessage (MsgRequestTxIds SingNonBlocking ackNo reqNo)
+decodeTxSubmission2 decodeTxId decodeTx stok = do
+  len <- CBOR.decodeListLen
+  key <- CBOR.decodeWord
+  case (stok, len, key) of
+    (SingInit,       1, 6) ->
+      return (SomeMessage MsgInit)
+    (SingIdle,       4, 0) -> do
+      blocking <- CBOR.decodeBool
+      ackNo    <- NumTxIdsToAck <$> CBOR.decodeWord16
+      reqNo    <- NumTxIdsToReq <$> CBOR.decodeWord16
+      return $! case blocking of
+        True  -> SomeMessage (MsgRequestTxIds SingBlocking    ackNo reqNo)
+        False -> SomeMessage (MsgRequestTxIds SingNonBlocking ackNo reqNo)
 
-        (SingTxIds b,  2, 1) -> do
-          CBOR.decodeListLenIndef
-          txids <- CBOR.decodeSequenceLenIndef
-                     (flip (:)) [] reverse
-                     (do CBOR.decodeListLenOf 2
-                         txid <- decodeTxId
-                         sz   <- CBOR.decodeWord32
-                         return (txid, SizeInBytes sz))
-          case (b, txids) of
-            (SingBlocking, t:ts) ->
-              return $
-                SomeMessage (MsgReplyTxIds (BlockingReply (t NonEmpty.:| ts)))
+    (SingTxIds b,  2, 1) -> do
+      CBOR.decodeListLenIndef
+      txids <- CBOR.decodeSequenceLenIndef
+                 (flip (:)) [] reverse
+                 (do CBOR.decodeListLenOf 2
+                     txid <- decodeTxId
+                     sz   <- CBOR.decodeWord32
+                     return (txid, SizeInBytes sz))
+      case (b, txids) of
+        (SingBlocking, t:ts) ->
+          return $
+            SomeMessage (MsgReplyTxIds (BlockingReply (t NonEmpty.:| ts)))
 
-            (SingNonBlocking, ts) ->
-              return $
-                SomeMessage (MsgReplyTxIds (NonBlockingReply ts))
+        (SingNonBlocking, ts) ->
+          return $
+            SomeMessage (MsgReplyTxIds (NonBlockingReply ts))
 
-            (SingBlocking, []) ->
-              fail "codecTxSubmission: MsgReplyTxIds: empty list not permitted"
+        (SingBlocking, []) ->
+          fail "codecTxSubmission: MsgReplyTxIds: empty list not permitted"
 
 
-        (SingIdle,       2, 2) -> do
-          CBOR.decodeListLenIndef
-          txids <- CBOR.decodeSequenceLenIndef (flip (:)) [] reverse decodeTxId
-          return (SomeMessage (MsgRequestTxs txids))
+    (SingIdle,       2, 2) -> do
+      CBOR.decodeListLenIndef
+      txids <- CBOR.decodeSequenceLenIndef (flip (:)) [] reverse decodeTxId
+      return (SomeMessage (MsgRequestTxs txids))
 
-        (SingTxs,     2, 3) -> do
-          CBOR.decodeListLenIndef
-          txids <- CBOR.decodeSequenceLenIndef (flip (:)) [] reverse decodeTx
-          return (SomeMessage (MsgReplyTxs txids))
+    (SingTxs,     2, 3) -> do
+      CBOR.decodeListLenIndef
+      txids <- CBOR.decodeSequenceLenIndef (flip (:)) [] reverse decodeTx
+      return (SomeMessage (MsgReplyTxs txids))
 
-        (SingTxIds SingBlocking, 1, 4) ->
-          return (SomeMessage MsgDone)
+    (SingTxIds SingBlocking, 1, 4) ->
+      return (SomeMessage MsgDone)
 
-        (SingDone, _, _) -> notActiveState stok
+    (SingDone, _, _) -> notActiveState stok
 
-        --
-        -- failures per protocol state
-        --
+    --
+    -- failures per protocol state
+    --
 
-        (SingInit, _, _) ->
-            fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
-        (SingTxIds SingBlocking, _, _) ->
-            fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
-        (SingTxIds SingNonBlocking, _, _) ->
-            fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
-        (SingTxs, _, _) ->
-            fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
-        (SingIdle, _, _) ->
-            fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
+    (SingInit, _, _) ->
+        fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
+    (SingTxIds SingBlocking, _, _) ->
+        fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
+    (SingTxIds SingNonBlocking, _, _) ->
+        fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
+    (SingTxs, _, _) ->
+        fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
+    (SingIdle, _, _) ->
+        fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
+
 
 codecTxSubmission2Id
   :: forall txid tx m. Monad m
