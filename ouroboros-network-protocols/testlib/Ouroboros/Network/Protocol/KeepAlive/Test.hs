@@ -20,7 +20,8 @@ import Codec.CBOR.Read qualified as CBOR
 import Data.ByteString.Lazy (ByteString)
 import Data.ByteString.Lazy qualified as BL
 
-import Network.TypedProtocol.Codec hiding (prop_codec)
+import Network.TypedProtocol.Codec
+import Network.TypedProtocol.Codec.Properties
 import Network.TypedProtocol.Proofs
 
 import Ouroboros.Network.Channel
@@ -144,15 +145,15 @@ instance Eq (AnyMessage KeepAlive) where
     AnyMessage MsgDone                        == AnyMessage MsgDone                        = True
     _ == _ = False
 
-prop_codec_v2 :: AnyMessage KeepAlive -> Bool
+prop_codec_v2 :: AnyMessage KeepAlive -> Property
 prop_codec_v2 msg =
     runST (prop_codecM codecKeepAlive_v2 msg)
 
-prop_codec_v2_splits2 :: AnyMessage KeepAlive -> Bool
+prop_codec_v2_splits2 :: AnyMessage KeepAlive -> Property
 prop_codec_v2_splits2 msg =
     runST (prop_codec_splitsM splits2 codecKeepAlive_v2 msg)
 
-prop_codec_v2_splits3 :: AnyMessage KeepAlive -> Bool
+prop_codec_v2_splits3 :: AnyMessage KeepAlive -> Property
 prop_codec_v2_splits3 msg =
     runST (prop_codec_splitsM splits3 codecKeepAlive_v2 msg)
 

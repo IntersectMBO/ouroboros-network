@@ -43,6 +43,7 @@ import Network.Mux.Bearer qualified as Mx
 import Network.Mux.Types (MiniProtocolDir (..), MiniProtocolNum (..),
            bearerAsChannel)
 import Network.TypedProtocol.Codec
+import Network.TypedProtocol.Codec.Properties
 import Network.TypedProtocol.Proofs
 
 import Test.Ouroboros.Network.Protocol.Utils (prop_codec_cborM,
@@ -1466,19 +1467,19 @@ prop_codec_RefuseReason (ArbitraryRefuseReason vReason) =
 
 prop_codec_Handshake
   :: AnyMessage (Handshake VersionNumber CBOR.Term)
-  -> Bool
+  -> Property
 prop_codec_Handshake msg =
   runSimOrThrow (prop_codecM (codecHandshake versionNumberCodec) msg)
 
 prop_codec_splits2_Handshake
   :: AnyMessage (Handshake VersionNumber CBOR.Term)
-  -> Bool
+  -> Property
 prop_codec_splits2_Handshake msg =
   runSimOrThrow (prop_codec_splitsM splits2 (codecHandshake versionNumberCodec) msg)
 
 prop_codec_splits3_Handshake
   :: AnyMessage (Handshake VersionNumber CBOR.Term)
-  -> Bool
+  -> Property
 prop_codec_splits3_Handshake msg =
   runSimOrThrow (prop_codec_splitsM splits3 (codecHandshake versionNumberCodec) msg)
 
