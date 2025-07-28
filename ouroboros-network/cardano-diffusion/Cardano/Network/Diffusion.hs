@@ -41,6 +41,7 @@ import Ouroboros.Network.Diffusion qualified as Diffusion
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeersConsensusInterface (..))
+import Ouroboros.Network.PeerSelection.PeerStateActions
 import Ouroboros.Network.Protocol.Handshake
 
 -- | Main entry point for Cardano data diffusion service.  It allows to:
@@ -138,7 +139,8 @@ run CardanoNodeArguments {
                       (Diffusion.dcPeerSharing config)
                       readUseBootstrapPeers
                       (Cardano.getLedgerStateJudgement (lpExtraAPI ledgerPeersAPI))
-                      churnMetrics,
+                      churnMetrics
+                      getPromotedHotTime,
                   daPeerSelectionGovernorArgs         =
                     Cardano.Types.cardanoPeerSelectionGovernorArgs
                       Cardano.ExtraPeerSelectionActions {
