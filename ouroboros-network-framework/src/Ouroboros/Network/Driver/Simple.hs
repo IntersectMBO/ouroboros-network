@@ -22,15 +22,18 @@ module Ouroboros.Network.Driver.Simple
     -- $intro
     -- * Normal peers
     runPeer
-  , runPipelinedPeer
+  , runAnnotatedPeer
   , TraceSendRecv (..)
-  , Role (..)
   , DecoderFailure (..)
+    -- * Pipelined peers
+  , runPipelinedPeer
+  , runPipelinedAnnotatedPeer
     -- * Connected peers
     -- TODO: move these to a test lib
+  , Role (..)
   , runConnectedPeers
-  , runConnectedPeersPipelined
   , runConnectedPeersAsymmetric
+  , runConnectedPeersPipelined
   ) where
 
 import Network.TypedProtocol.Codec
@@ -45,6 +48,8 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Tracer (Tracer (..), contramap, traceWith)
+import Data.Functor.Identity (Identity (..))
+import Data.Maybe (maybeToList)
 
 
 -- $intro
@@ -111,17 +116,30 @@ instance Show DecoderFailure where
 instance Exception DecoderFailure where
 
 
-driverSimple :: forall ps (pr :: PeerRole) failure bytes m.
-                ( MonadThrow m
-                , ShowProxy ps
-                , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
-                , Show failure
-                )
-             => Tracer m (TraceSendRecv ps)
-             -> Codec ps failure m bytes
-             -> Channel m bytes
-             -> Driver ps pr (Maybe bytes) m
-driverSimple tracer Codec{encode, decode} channel@Channel{send} =
+mkSimpleDriver :: forall ps (pr :: PeerRole) failure bytes m f annotator.
+                 ( MonadThrow m
+                 , ShowProxy ps
+                 , forall (st :: ps) stok. stok ~ StateToken st => Show stok
+                 , Show failure
+                 )
+              => (forall a.
+                      Channel m bytes
+                   -> Maybe bytes
+                   -> DecodeStep bytes failure m (f a)
+                   -> m (Either failure (a, Maybe bytes))
+                 )
+              -- ^ run incremental decoder against a channel
+
+              -> (forall (st :: ps). annotator st -> f (SomeMessage st))
+              -- ^ transform annotator to a container holding the decoded
+              -- message
+
+              -> Tracer m (TraceSendRecv ps)
+              -> CodecF ps failure m annotator bytes
+              -> Channel m bytes
+              -> Driver ps pr (Maybe bytes) m
+
+mkSimpleDriver runDecodeSteps nat tracer Codec{encode, decode} channel@Channel{send} =
     Driver { sendMessage, recvMessage, initialDState = Nothing }
   where
     sendMessage :: forall (st :: ps) (st' :: ps).
@@ -143,13 +161,41 @@ driverSimple tracer Codec{encode, decode} channel@Channel{send} =
     recvMessage !_ trailing = do
       let tok = stateToken
       decoder <- decode tok
-      result  <- runDecoderWithChannel channel trailing decoder
+      result  <- runDecodeSteps channel trailing (nat <$> decoder)
       case result of
         Right x@(SomeMessage !msg, _trailing') -> do
           traceWith tracer (TraceRecvMsg (AnyMessage msg))
           return x
         Left failure ->
           throwIO (DecoderFailure tok failure)
+
+
+simpleDriver :: forall ps (pr :: PeerRole) failure bytes m.
+                ( MonadThrow m
+                , ShowProxy ps
+                , forall (st :: ps) stok. stok ~ StateToken st => Show stok
+                , Show failure
+                )
+             => Tracer m (TraceSendRecv ps)
+             -> Codec ps failure m bytes
+             -> Channel m bytes
+             -> Driver ps pr (Maybe bytes) m
+simpleDriver = mkSimpleDriver runDecoderWithChannel Identity
+
+
+annotatedSimpleDriver
+             :: forall ps (pr :: PeerRole) failure bytes m.
+                ( MonadThrow m
+                , Monoid bytes
+                , ShowProxy ps
+                , forall (st :: ps) stok. stok ~ StateToken st => Show stok
+                , Show failure
+                )
+             => Tracer m (TraceSendRecv ps)
+             -> AnnotatedCodec ps failure m bytes
+             -> Channel m bytes
+             -> Driver ps pr (Maybe bytes) m
+annotatedSimpleDriver = mkSimpleDriver runAnnotatedDecoderWithChannel runAnnotator
 
 
 -- | Run a peer with the given channel via the given codec.
@@ -171,7 +217,30 @@ runPeer
 runPeer tracer codec channel peer =
     runPeerWithDriver driver peer
   where
-    driver = driverSimple tracer codec channel
+    driver = simpleDriver tracer codec channel
+
+
+-- | Run a peer with the given channel via the given annotated codec.
+--
+-- This runs the peer to completion (if the protocol allows for termination).
+--
+runAnnotatedPeer
+  :: forall ps (st :: ps) pr failure bytes m a .
+     ( MonadThrow m
+     , Monoid bytes
+     , ShowProxy ps
+     , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , Show failure
+     )
+  => Tracer m (TraceSendRecv ps)
+  -> AnnotatedCodec ps failure m bytes
+  -> Channel m bytes
+  -> Peer ps pr NonPipelined st m a
+  -> m (a, Maybe bytes)
+runAnnotatedPeer tracer codec channel peer =
+    runPeerWithDriver driver peer
+  where
+    driver = annotatedSimpleDriver tracer codec channel
 
 
 -- | Run a pipelined peer with the given channel via the given codec.
@@ -197,7 +266,34 @@ runPipelinedPeer
 runPipelinedPeer tracer codec channel peer =
     runPipelinedPeerWithDriver driver peer
   where
-    driver = driverSimple tracer codec channel
+    driver = simpleDriver tracer codec channel
+
+
+-- | Run a pipelined peer with the given channel via the given annotated codec.
+--
+-- This runs the peer to completion (if the protocol allows for termination).
+--
+-- Unlike normal peers, running pipelined peers rely on concurrency, hence the
+-- 'MonadAsync' constraint.
+--
+runPipelinedAnnotatedPeer
+  :: forall ps (st :: ps) pr failure bytes m a.
+     ( MonadAsync m
+     , MonadThrow m
+     , Monoid bytes
+     , ShowProxy ps
+     , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , Show failure
+     )
+  => Tracer m (TraceSendRecv ps)
+  -> AnnotatedCodec ps failure m bytes
+  -> Channel m bytes
+  -> PeerPipelined ps pr st m a
+  -> m (a, Maybe bytes)
+runPipelinedAnnotatedPeer tracer codec channel peer =
+    runPipelinedPeerWithDriver driver peer
+  where
+    driver = annotatedSimpleDriver tracer codec channel
 
 --
 -- Utils
@@ -209,15 +305,37 @@ runPipelinedPeer tracer codec channel peer =
 runDecoderWithChannel :: Monad m
                       => Channel m bytes
                       -> Maybe bytes
-                      -> DecodeStep bytes failure m a
+                      -> DecodeStep bytes failure m (Identity a)
                       -> m (Either failure (a, Maybe bytes))
 
 runDecoderWithChannel Channel{recv} = go
   where
-    go _ (DecodeDone x trailing)         = return (Right (x, trailing))
-    go _ (DecodeFail failure)            = return (Left failure)
-    go Nothing         (DecodePartial k) = recv >>= k        >>= go Nothing
-    go (Just trailing) (DecodePartial k) = k (Just trailing) >>= go Nothing
+    go _ (DecodeDone (Identity x) trailing) = return (Right (x, trailing))
+    go _ (DecodeFail failure)               = return (Left failure)
+    go Nothing         (DecodePartial k)    = recv >>= k        >>= go Nothing
+    go (Just trailing) (DecodePartial k)    = k (Just trailing) >>= go Nothing
+
+
+runAnnotatedDecoderWithChannel
+  :: forall m bytes failure a.
+     ( Monad m
+     , Monoid bytes
+     )
+  => Channel m bytes
+  -> Maybe bytes
+  -> DecodeStep bytes failure m (bytes -> a)
+  -> m (Either failure (a, Maybe bytes))
+
+runAnnotatedDecoderWithChannel Channel{recv} bs0 = go (maybeToList bs0) bs0
+  where
+    go :: [bytes]
+       -> Maybe bytes
+       -> DecodeStep bytes failure m (bytes -> a)
+       -> m (Either failure (a, Maybe bytes))
+    go !bytes  _ (DecodeDone f trailing)        = return $ Right (f $ mconcat (reverse bytes), trailing)
+    go _bytes _ (DecodeFail failure)            = return (Left failure)
+    go !bytes Nothing         (DecodePartial k) = recv >>= \bs -> k bs >>= go (maybe bytes (: bytes) bs) Nothing
+    go !bytes (Just trailing) (DecodePartial k) = k (Just trailing) >>= go (trailing : bytes) Nothing
 
 
 data Role = Client | Server
