@@ -12,12 +12,25 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 -- | The type of the object diffusion protocol.
 --
 -- This is used to diffuse generic objects between nodes.
 module Ouroboros.Network.Protocol.ObjectDiffusion.Type
-  ( ObjectDiffusion (..),
+  ( pattern InboundAgency,
+    InboundAgency,
+    pattern OutboundAgency,
+    OutboundAgency,
+    pattern AsInbound,
+    AsInbound,
+    pattern AsOutbound,
+    AsOutbound,
+    pattern ReflInboundAgency,
+    ReflInboundAgency,
+    pattern ReflOutboundAgency,
+    ReflOutboundAgency,
+    ObjectDiffusion (..),
     Message (..),
     SingObjectDiffusion (..),
     SingBlockingStyle (..),
@@ -43,30 +56,54 @@ import Ouroboros.Network.SizeInBytes (SizeInBytes (..))
 import Ouroboros.Network.Util.ShowProxy
 import Quiet (Quiet (..))
 
+pattern OutboundAgency :: Agency
+pattern OutboundAgency = ClientAgency
+type OutboundAgency = 'ClientAgency
+
+pattern InboundAgency :: Agency
+pattern InboundAgency = ServerAgency
+type InboundAgency = 'ServerAgency
+
+pattern AsOutbound :: PeerRole
+pattern AsOutbound = AsClient
+type AsOutbound = 'AsClient
+
+pattern AsInbound :: PeerRole
+pattern AsInbound = AsServer
+type AsInbound = 'AsServer
+
+pattern ReflOutboundAgency :: ReflRelativeAgency ClientAgency (r :: RelativeAgency) (r :: RelativeAgency)
+pattern ReflOutboundAgency = ReflClientAgency
+type ReflOutboundAgency = 'ReflClientAgency
+
+pattern ReflInboundAgency :: ReflRelativeAgency ServerAgency (r :: RelativeAgency) (r :: RelativeAgency)
+pattern ReflInboundAgency = ReflServerAgency
+type ReflInboundAgency = 'ReflServerAgency
+
 -- | The kind of the object diffusion protocol, and the types of the states in
 -- the protocol state machine.
 --
 -- We describe this protocol using the label \"inbound\" for the peer that is
 -- receiving objects, and \"inbound\" for the one sending them.
-type ObjectDiffusion :: Type -> Type -> Type
-data ObjectDiffusion objectId object where
+type ObjectDiffusion :: Agency -> Type -> Type -> Type
+data ObjectDiffusion initAgency objectId object where
   -- | Initial protocol message.
-  StInit :: ObjectDiffusion objectId object
+  StInit :: ObjectDiffusion initAgency objectId object
   -- | The inbound node has agency; it can either terminate, ask for object
   -- identifiers or ask for objects.
   --
   -- There is no timeout in this state.
-  StIdle :: ObjectDiffusion objectId object
+  StIdle :: ObjectDiffusion initAgency objectId object
   -- | The outbound node has agency; it must reply with a list of object
   -- identifiers that it wishes to submit.
   --
   -- There are two sub-states for this, for blocking and non-blocking cases.
-  StObjectIds :: StBlockingStyle -> ObjectDiffusion objectId object
+  StObjectIds :: StBlockingStyle -> ObjectDiffusion initAgency objectId object
   -- | The outbound node has agency; it must reply with the list of
   -- objects.
-  StObjects :: ObjectDiffusion objectId object
+  StObjects :: ObjectDiffusion initAgency objectId object
   -- | Nobody has agency; termination state.
-  StDone :: ObjectDiffusion objectId object
+  StDone :: ObjectDiffusion initAgency objectId object
 
 instance
   ( ShowProxy objectId,
@@ -82,11 +119,11 @@ instance
         showProxy (Proxy :: Proxy object)
       ]
 
-instance ShowProxy (StIdle :: ObjectDiffusion objectId object) where
+instance ShowProxy (StIdle :: ObjectDiffusion initAgency objectId object) where
   showProxy _ = "StIdle"
 
 type SingObjectDiffusion ::
-  ObjectDiffusion objectId object ->
+  ObjectDiffusion initAgency objectId object ->
   Type
 data SingObjectDiffusion k where
   SingInit :: SingObjectDiffusion StInit
@@ -137,7 +174,7 @@ newtype NumObjectIdsToReq = NumObjectIdsToReq {getNumObjectIdsToReq :: Word16}
 -- types of the messages, but are documented with the messages. Violation
 -- of these constraints is also a protocol error. The constraints are intended
 -- to ensure that implementations are able to work in bounded space.
-instance Protocol (ObjectDiffusion objectId object) where
+instance Protocol (ObjectDiffusion initAgency objectId object) where
   -- \| The messages in the object diffusion protocol.
   --
   -- In this protocol the consumer (inbound side, server role) always
@@ -158,9 +195,9 @@ instance Protocol (ObjectDiffusion objectId object) where
   -- acknowledged in the same FIFO order they were provided in. The
   -- acknowledgement is included in the same messages used to ask for more
   -- object identifiers.
-  data Message (ObjectDiffusion objectId object) from to where
+  data Message (ObjectDiffusion initAgency objectId object) from to where
     MsgInit ::
-      Message (ObjectDiffusion objectId object) StInit StIdle
+      Message (ObjectDiffusion initAgency objectId object) StInit StIdle
     -- \| Request a list of object identifiers from the client, and confirm a
     -- number of outstanding object identifiers.
     --
@@ -197,13 +234,13 @@ instance Protocol (ObjectDiffusion objectId object) where
     -- \* The non-blocking case __MUST__ be used when there are non-zero
     --   remaining unacknowledged objects.
     MsgRequestObjectIds ::
-      forall (blocking :: StBlockingStyle) objectId object.
+      forall (blocking :: StBlockingStyle) initAgency objectId object.
       SingBlockingStyle blocking ->
       NumObjectIdsToAck ->
       -- \^ Acknowledge this number of outstanding objects
       NumObjectIdsToReq ->
       -- \^ Request up to this number of object ids
-      Message (ObjectDiffusion objectId object) StIdle (StObjectIds blocking)
+      Message (ObjectDiffusion initAgency objectId object) StIdle (StObjectIds blocking)
     -- \| Reply with a list of object identifiers for available objects, along
     -- with the size of each object.
     --
@@ -220,7 +257,7 @@ instance Protocol (ObjectDiffusion objectId object) where
     -- objects.
     MsgReplyObjectIds ::
       BlockingReplyList blocking (objectId, SizeInBytes) ->
-      Message (ObjectDiffusion objectId object) (StObjectIds blocking) StIdle
+      Message (ObjectDiffusion initAgency objectId object) (StObjectIds blocking) StIdle
     -- \| Request one or more objects corresponding to the given object
     -- identifiers.
     --
@@ -235,7 +272,7 @@ instance Protocol (ObjectDiffusion objectId object) where
     -- outstanding or that were already asked for.
     MsgRequestObjects ::
       [objectId] ->
-      Message (ObjectDiffusion objectId object) StIdle StObjects
+      Message (ObjectDiffusion initAgency objectId object) StIdle StObjects
     -- \| Reply with the requested objects, or implicitly discard.
     --
     -- Objects can become invalid between the time the object
@@ -248,23 +285,24 @@ instance Protocol (ObjectDiffusion objectId object) where
     -- be valid and available from another peer).
     MsgReplyObjects ::
       [object] ->
-      Message (ObjectDiffusion objectId object) StObjects StIdle
+      Message (ObjectDiffusion initAgency objectId object) StObjects StIdle
     -- \| Termination message, initiated by the client when the server is making
     -- a blocking call for more object identifiers.
     MsgDone ::
-      Message (ObjectDiffusion objectId object) (StObjectIds StBlocking) StDone
+      Message (ObjectDiffusion initAgency objectId object) (StObjectIds StBlocking) StDone
 
-  type StateAgency StInit = ClientAgency -- FIXME: do not change
-  type StateAgency StIdle = ServerAgency -- FIXME: ClientAgency TODO: generalise to inboundAgency
-  type StateAgency (StObjectIds b) = ClientAgency -- FIXME: ServerAgency TODO: generalise to outboundAgency
-  type StateAgency StObjects = ClientAgency -- FIXME: ServerAgency TODO: generalise to outboundAgency
+   -- FIXME: do not change
+  type StateAgency StIdle = InboundAgency -- FIXME: OutboundAgency TODO: generalise to inboundAgency
+  type StateAgency (StObjectIds b) = OutboundAgency -- FIXME: InboundAgency TODO: generalise to outboundAgency
+  type StateAgency StObjects = OutboundAgency -- FIXME: InboundAgency TODO: generalise to outboundAgency
   type StateAgency StDone = NobodyAgency
+  type StateAgency (StInit :: ObjectDiffusion initAgency objectId object) = initAgency
 
   type StateToken = SingObjectDiffusion
 
 instance
   (NFData objectId, NFData object) =>
-  NFData (Message (ObjectDiffusion objectId object) from to)
+  NFData (Message (ObjectDiffusion initAgency objectId object) from to)
   where
   rnf MsgInit = ()
   rnf (MsgRequestObjectIds tkbs w1 w2) = rnf tkbs `seq` rnf w1 `seq` rnf w2
@@ -314,8 +352,8 @@ instance (NFData a) => NFData (BlockingReplyList blocking a) where
 
 deriving instance
   (Eq objectId, Eq object) =>
-  Eq (Message (ObjectDiffusion objectId object) from to)
+  Eq (Message (ObjectDiffusion initAgency objectId object) from to)
 
 deriving instance
   (Show objectId, Show object) =>
-  Show (Message (ObjectDiffusion objectId object) from to)
+  Show (Message (ObjectDiffusion initAgency objectId object) from to)
