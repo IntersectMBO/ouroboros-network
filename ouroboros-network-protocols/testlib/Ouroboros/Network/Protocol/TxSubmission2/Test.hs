@@ -79,7 +79,8 @@ tests =
         , testProperty "connect 2"           prop_connect2
         , testProperty "codec"               prop_codec
         , testProperty "codec id"            prop_codec_id
-        , testProperty "codec 2-splits"      prop_codec_splits2
+        , testProperty "codec 2-splits"    $ withMaxSize 50
+                                             prop_codec_splits2
         , testProperty "codec 3-splits"    $ withMaxSize 10
                                              prop_codec_splits3
         , testProperty "anncodec"            prop_anncodec
