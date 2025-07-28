@@ -9,7 +9,6 @@ module Test.QuickCheck.Monoids
   ( All (..)
   , Any (..)
   ) where
-{-# DEPRECATED Test.QuickCheck.Monoids "Use QuickCheck >= 2.16" #-}
 
 import Data.List.NonEmpty as NonEmpty
 import Data.Semigroup (Semigroup (..))
