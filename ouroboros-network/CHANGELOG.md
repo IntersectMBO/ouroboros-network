@@ -14,6 +14,14 @@
 
 * Added `IsBlockProducer` type in `Ouroboros.Network.Diffusion.Configuration`.
 
+## 0.22.1.0 -- 28.07.2025
+
+### Non-breaking changes
+
+- Added `pchPromotedHotVar` to `PeerConnectionHandle` to track when a peer has been promoted to hot
+- Added tag `PeerHotDuration` to `PeerSelectionActionsTrace` to indicate how long a remote
+  peer has been in hot mode until it was either demoted or closed.
+
 ## 0.22.0.0 -- 28.06.2025
 
 ### Breaking changes
@@ -57,6 +65,7 @@
   are captured by the `DNSPeersKind` type, which also distinguishes the type
   of ledger peer.
 * Added `dispatchLookupWithTTL`
+* Fixed CBOR encoding of the `LedgerPeerSnapshot`.
 
 ## 0.21.3.0 -- 2025-07-17
 

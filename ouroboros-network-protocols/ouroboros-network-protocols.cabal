@@ -104,7 +104,7 @@ library
     deepseq,
     io-classes:{io-classes, si-timers} ^>=1.8.0.1,
     nothunks,
-    ouroboros-network-api ^>=0.15,
+    ouroboros-network-api ^>=0.16,
     quiet,
     random,
     serialise,

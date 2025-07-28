@@ -23,8 +23,8 @@ import Test.Tasty.QuickCheck (testProperty)
 tests :: TestTree
 tests = testGroup "Ouroboros.Network.PeerSelection"
   [ testGroup "cbor"
-    [ testProperty "LedgeRelayAccessPoint" prop_cbor_LedgerRelayAccessPoint
-    , testProperty "RelayAccessPoint"      prop_cbor_RelayAccessPoint
+    [ testProperty "LedgerRelayAccessPoint" prop_cbor_LedgerRelayAccessPoint
+    , testProperty "RelayAccessPoint"       prop_cbor_RelayAccessPoint
     ]
   , testGroup "json"
     [ testProperty "RelayAccessPoint"       prop_json_RelayAccessPoint

@@ -62,7 +62,6 @@ done
 # TODO CPP pragmas in export lists are not supported by stylish-haskell
 FD_OPTS="-e hs --ignore-file ./scripts/ci/check-stylish-ignore -X stylish-haskell $STYLISH_HASKELL_ARGS"
 
-fd . './quickcheck-monoids'          $FD_OPTS
 fd . './network-mux'                 $FD_OPTS
 fd . './ouroboros-network-api'       $FD_OPTS
 fd . './ouroboros-network-framework' $FD_OPTS

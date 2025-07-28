@@ -32,7 +32,6 @@ packages: ./cardano-ping
           ./ntp-client
           ./cardano-client
           ./decentralized-message-queue
-          ./quickcheck-monoids
 
 tests: True
 benchmarks: True
