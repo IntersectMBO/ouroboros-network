@@ -7,6 +7,7 @@
 module Test.DMQ.Protocol.SigSubmission where
 
 import Control.Monad.ST (runST)
+import Data.Time.Clock.POSIX (POSIXTime)
 import Data.Word (Word32)
 
 import Network.TypedProtocol.Codec
@@ -51,12 +52,11 @@ instance Arbitrary SigBody where
   arbitrary = SigBody <$> arbitrary
   shrink = map SigBody . shrink . getSigBody
 
-instance Arbitrary SigTTL where
+instance Arbitrary POSIXTime where
   -- generate only whole seconds (this is what we receive on the wire)
-  arbitrary = SigTTL . realToFrac @Word32 <$> arbitrary
+  arbitrary = realToFrac @Word32 <$> arbitrary
   -- shrink via Word32 (e.g. in seconds)
-  shrink (SigTTL posix) = SigTTL . realToFrac
-                      <$> shrink (floor @_ @Word32 posix)
+  shrink posix = realToFrac <$> shrink (floor @_ @Word32 posix)
 
 instance Arbitrary SigKesSignature where
   arbitrary = SigKesSignature <$> arbitrary
@@ -69,11 +69,10 @@ instance Arbitrary SigOpCertificate where
 instance Arbitrary Sig where
   arbitrary = Sig <$> arbitrary
                   <*> arbitrary
-                  <*> (getSigTTL <$> arbitrary)
                   <*> arbitrary
                   <*> arbitrary
                   <*> arbitrary
-  shrink sig@Sig { sigId, sigBody, sigTTL, sigOpCertificate, sigKesSignature } =
+  shrink sig@Sig { sigId, sigBody, sigExpiresAt, sigOpCertificate, sigKesSignature } =
     [ sig { sigId = sigId' }
     | sigId' <- shrink sigId
     ]
@@ -82,8 +81,8 @@ instance Arbitrary Sig where
     | sigBody' <- shrink sigBody
     ]
     ++
-    [ sig { sigTTL = sigTTL' }
-    | SigTTL sigTTL' <- shrink (SigTTL sigTTL)
+    [ sig { sigExpiresAt = sigExpiresAt' }
+    | sigExpiresAt' <- shrink sigExpiresAt
     ]
     ++
     [ sig { sigOpCertificate = sigOpCertificate' }
