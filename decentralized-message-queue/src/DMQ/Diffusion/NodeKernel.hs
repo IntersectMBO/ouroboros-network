@@ -121,9 +121,9 @@ mempoolWorker (Mempool v) = loop
         (sigs :: Seq.Seq Sig) <- readTVar v
         let sigs' :: Seq.Seq Sig
             (resumeTime, sigs') =
-              foldr (\a (rt, as) -> if sigTTL a <= now
+              foldr (\a (rt, as) -> if sigExpiresAt a <= now
                                     then (rt, as)
-                                    else (rt `min` sigTTL a, a Seq.<| as))
+                                    else (rt `min` sigExpiresAt a, a Seq.<| as))
                     (now, Seq.empty)
                     sigs
         writeTVar v sigs'

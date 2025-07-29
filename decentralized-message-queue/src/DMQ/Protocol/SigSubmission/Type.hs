@@ -7,10 +7,9 @@ module DMQ.Protocol.SigSubmission.Type
     SigHash (..)
   , SigId (..)
   , SigBody (..)
-  , SigTTL (..)
   , SigKesSignature (..)
   , SigOpCertificate (..)
-  , Sig (SigRaw, Sig, sigId, sigBody, sigTTL, sigOpCertificate, sigKesSignature)
+  , Sig (SigRaw, Sig, sigId, sigBody, sigExpiresAt, sigOpCertificate, sigKesSignature)
     -- * `TxSubmission` mini-protocol
   , SigSubmission
   , module SigSubmission
@@ -38,12 +37,6 @@ newtype SigBody = SigBody { getSigBody :: ByteString }
   deriving stock (Show, Eq)
 
 
--- | POSIX time since epoch in seconds.
---
-newtype SigTTL = SigTTL { getSigTTL :: POSIXTime }
-  deriving stock (Show, Eq)
-
-
 -- TODO:
 -- This type should be something like: `SignedKES (KES crypto) SigPayload`
 newtype SigKesSignature = SigKesSignature { getSigKesSignature :: ByteString }
@@ -63,7 +56,7 @@ data Sig = SigRaw {
 data SigPayload = SigPayload {
     sigPayloadId            :: SigId,
     sigPayloadBody          :: SigBody,
-    sigPayloadTTL           :: SigTTL,
+    sigPayloadExpiresAt     :: POSIXTime,
     sigPayloadOpCertificate :: SigOpCertificate
   }
   deriving stock (Show, Eq)
@@ -80,7 +73,7 @@ pattern Sig
 pattern
     Sig { sigId,
           sigBody,
-          sigTTL,
+          sigExpiresAt,
           sigOpCertificate,
           sigKesSignature
         }
@@ -90,7 +83,7 @@ pattern
         SigPayload {
           sigPayloadId            = sigId,
           sigPayloadBody          = sigBody,
-          sigPayloadTTL           = SigTTL sigTTL,
+          sigPayloadExpiresAt     = sigExpiresAt,
           sigPayloadOpCertificate = sigOpCertificate
         },
       sigRawKesSignature = sigKesSignature
@@ -98,7 +91,7 @@ pattern
   where
     Sig sigPayloadId
         sigPayloadBody
-        sigTTL
+        sigPayloadExpiresAt
         sigPayloadOpCertificate
         sigRawKesSignature
       =
@@ -107,7 +100,7 @@ pattern
           SigPayload {
             sigPayloadId,
             sigPayloadBody,
-            sigPayloadTTL = SigTTL sigTTL,
+            sigPayloadExpiresAt,
             sigPayloadOpCertificate
           },
         sigRawKesSignature

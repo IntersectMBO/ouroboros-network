@@ -114,7 +114,8 @@ test-suite dmq-test
     quickcheck-instances,
     tasty,
     tasty-quickcheck,
-    typed-protocols:{typed-protocols,codec-properties},
+    time,
+    typed-protocols:{typed-protocols, codec-properties},
     with-utf8,
 
   ghc-options:
