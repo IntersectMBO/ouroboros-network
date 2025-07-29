@@ -114,6 +114,7 @@ test-suite dmq-test
     quickcheck-instances,
     tasty,
     tasty-quickcheck,
+    time,
     typed-protocols,
     with-utf8,
 
