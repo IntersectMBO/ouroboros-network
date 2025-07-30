@@ -20,11 +20,6 @@ flag asserts
   manual: False
   default: False
 
-flag txsubmission-delay
-  description: Delay initial request for transactions from outbound/client peer
-  manual: True
-  default: True
-
 source-repository head
   type: git
   location: https://github.com/intersectmbo/ouroboros-network
@@ -94,7 +89,13 @@ library
     Ouroboros.Network.PeerSelection.State.LocalRootPeers
     Ouroboros.Network.PeerSelection.Types
     Ouroboros.Network.PeerSharing
-    Ouroboros.Network.TxSubmission.Inbound
+    Ouroboros.Network.TxSubmission.Inbound.V1
+    Ouroboros.Network.TxSubmission.Inbound.V2
+    Ouroboros.Network.TxSubmission.Inbound.V2.Decision
+    Ouroboros.Network.TxSubmission.Inbound.V2.Policy
+    Ouroboros.Network.TxSubmission.Inbound.V2.Registry
+    Ouroboros.Network.TxSubmission.Inbound.V2.State
+    Ouroboros.Network.TxSubmission.Inbound.V2.Types
     Ouroboros.Network.TxSubmission.Mempool.Reader
     Ouroboros.Network.TxSubmission.Outbound
 
@@ -141,7 +142,7 @@ library
     bytestring >=0.10 && <0.13,
     cardano-prelude,
     cardano-slotting,
-    cardano-strict-containers,
+    cardano-strict-containers >=0.1.4,
     cborg >=0.2.1 && <0.3,
     containers,
     contra-tracer,
@@ -149,7 +150,7 @@ library
     dlist,
     dns,
     hashable,
-    io-classes:{io-classes, mtl, si-timers, strict-stm} ^>=1.8.0.1,
+    io-classes:{io-classes, mtl, si-timers, strict-mvar, strict-stm} ^>=1.8.0.1,
     iproute,
     monoidal-synchronisation,
     mtl,
@@ -171,9 +172,6 @@ library
 
   if flag(asserts)
     ghc-options: -fno-ignore-asserts
-
-  if flag(txsubmission-delay)
-    cpp-options: -DTXSUBMISSION_DELAY
 
 library orphan-instances
   import: ghc-options
@@ -315,13 +313,14 @@ library testlib
     base >=4.14 && <4.22,
     bytestring,
     cardano-slotting,
+    cardano-strict-containers,
     cborg,
     containers,
     contra-tracer,
     deepseq,
     dns,
     hashable,
-    io-classes:{io-classes, si-timers, strict-stm},
+    io-classes:{io-classes, si-timers, strict-mvar, strict-stm},
     io-sim,
     iproute,
     monoidal-synchronisation,
@@ -383,6 +382,10 @@ library testlib
     Test.Ouroboros.Network.PeerSelection.RootPeersDNS
     Test.Ouroboros.Network.PeerSelection.Utils
     Test.Ouroboros.Network.TxSubmission
+    Test.Ouroboros.Network.TxSubmission.AppV1
+    Test.Ouroboros.Network.TxSubmission.AppV2
+    Test.Ouroboros.Network.TxSubmission.TxLogic
+    Test.Ouroboros.Network.TxSubmission.Types
 
 -- Simulation tests, and IO tests which don't require native system calls.
 -- (i.e. they don't require system call API provided by `Win32-network` or
