@@ -94,7 +94,7 @@ library
     ouroboros-network-protocols ^>=0.15,
     random ^>=1.2,
     text >=1.2.4 && <2.2,
-    typed-protocols ^>=1.0,
+    typed-protocols ^>=1.1,
 
   -- Directories containing source files.
   hs-source-dirs: src

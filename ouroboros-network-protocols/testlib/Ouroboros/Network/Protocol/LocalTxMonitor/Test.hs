@@ -21,6 +21,7 @@ import Control.Monad.ST qualified as ST
 import Control.Tracer (nullTracer)
 
 import Network.TypedProtocol.Codec
+import Network.TypedProtocol.Codec.Properties
 import Network.TypedProtocol.Proofs
 
 import Ouroboros.Network.Block (SlotNo)
@@ -89,7 +90,7 @@ codecId = codecLocalTxMonitorId
 
 prop_codecM_LocalTxMonitor ::
      AnyMessage (LocalTxMonitor TxId Tx SlotNo)
-  -> Bool
+  -> Property
 prop_codecM_LocalTxMonitor msg =
     ST.runST $ prop_codecM codec msg
 
@@ -102,7 +103,7 @@ prop_codec_cborM_LocalTxMonitor msg =
 prop_codec_splitsM_LocalTxMonitor ::
      (ByteString -> [[ByteString]])
   -> AnyMessage (LocalTxMonitor TxId Tx SlotNo)
-  -> Bool
+  -> Property
 prop_codec_splitsM_LocalTxMonitor splitN msg =
   ST.runST $ prop_codec_splitsM splitN codec msg
 
@@ -114,7 +115,7 @@ prop_codec_valid_cbor_encoding_LocalTxMonitor =
 
 prop_codecIdM_LocalTxMonitor ::
      AnyMessage (LocalTxMonitor TxId Tx SlotNo)
-  -> Bool
+  -> Property
 prop_codecIdM_LocalTxMonitor msg =
     ST.runST $ prop_codecM codecId msg
 

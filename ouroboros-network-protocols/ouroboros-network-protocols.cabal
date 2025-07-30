@@ -100,6 +100,7 @@ library
     base >=4.14 && <4.22,
     bytestring >=0.10 && <0.13,
     cborg >=0.2.1 && <0.3,
+    constraints,
     containers,
     deepseq,
     io-classes:{io-classes, si-timers} ^>=1.8.0.1,
@@ -110,7 +111,7 @@ library
     serialise,
     singletons,
     text,
-    typed-protocols:{typed-protocols, cborg, stateful, stateful-cborg} ^>=1.0,
+    typed-protocols:{typed-protocols, cborg, stateful, stateful-cborg} ^>=1.1,
 
   ghc-options:
     -Wall
@@ -198,7 +199,7 @@ library testlib
     tasty,
     tasty-quickcheck,
     text,
-    typed-protocols:{typed-protocols, stateful},
+    typed-protocols:{typed-protocols, codec-properties, stateful},
 
   ghc-options:
     -Wall
