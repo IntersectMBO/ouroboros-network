@@ -580,7 +580,7 @@ join :: HasHeader block
 join = AS.join $ \aOrB a ->
     either anchorToPoint blockPoint aOrB == anchorToPoint a
 
--- | \( O(n_2 \log(n_1)) \). Look for the most recent intersection of two
+-- | \( O(\log(n_1)\log(n_2)) \). Look for the most recent intersection of two
 -- 'AnchoredFragment's @c1@ and @c2@.
 --
 -- The fragments need not have the same anchor point.
@@ -661,41 +661,62 @@ intersect
     -> Maybe (AnchoredFragment block1, AnchoredFragment block2,
               AnchoredFragment block1, AnchoredFragment block2)
 intersect c1 c2
-    | length c2 > length c1
-      -- Note that 'intersect' is linear in its second argument. It iterates
-      -- over the elements in the second fragment, starting from the end,
-      -- looking for a match in the first fragment (with a /O(log(n))/ cost).
-      -- So by using the shortest fragment as the second argument, we get the
-      -- same result with a lower cost than the other way around.
-    = (\(p2, p1, s2, s1) -> (p1, p2, s1, s2)) <$> intersect c2 c1
-
-    | pointSlot (headPoint c1) < pointSlot (anchorPoint c2) ||
-      pointSlot (headPoint c2) < pointSlot (anchorPoint c1)
-      -- If there is no overlap in slot numbers, there will be no overlap
-    = Nothing
-
+    -- Check if @c1@ contains the anchor of @c2@. If so, they definitely
+    -- intersect.
+    | Just (p1, s1) <- splitAfterPoint c1 (anchorPoint c2)
+    = Just $ work (p1, s1) c1 c2
+    -- Like the previous case, but with @c1@ and @c2@ swapped.
+    | Just (p2, s2) <- splitAfterPoint c2 (anchorPoint c1)
+    = Just $ (\(a2, a1, b2, b1) -> (a1, a2, b1, b2)) $ work (p2, s2) c2 c1
+    -- If neither anchor lies on the other fragment, they do not intersect.
     | otherwise
-    = go c2
+    = Nothing
   where
-    go :: AnchoredFragment block2
-       -> Maybe (AnchoredFragment block1, AnchoredFragment block2,
-                 AnchoredFragment block1, AnchoredFragment block2)
-    go (Empty a2)
-      | Just (p1, s1) <- splitAfterPoint c1 (anchorToPoint a2)
-      = Just (p1, Empty a2, s1, c2)
-      | otherwise
-      = Nothing
-    go (c2' :> b)
-      | let pt = blockPoint b
-      , Just (p1, s1) <- splitAfterPoint c1 pt
-      , Just (p2, s2) <- splitAfterPoint c2 pt
-        -- splitAfterPoint c2 pt cannot fail,
-        -- since pt comes out of c2
-      = Just (p1, p2, s1, s2)
-      | otherwise
-      = go c2'
+    -- Compute the intersection of @f1@ and @f2@, also given fragments @fp1@ and
+    -- @fs1@ such that @join fp1 fs1 == Just f1@ as well as @anchor fs1 ==
+    -- anchor f2@.
+    work
+      :: (HasHeader blk1, HasHeader blk2, HeaderHash blk1 ~ HeaderHash blk2)
+      => (AnchoredFragment blk1, AnchoredFragment blk1)
+      -> AnchoredFragment blk1
+      -> AnchoredFragment blk2
+      -> (AnchoredFragment blk1, AnchoredFragment blk2,
+          AnchoredFragment blk1, AnchoredFragment blk2)
+    work (fp1, fs1) f1 f2
+        | let (p1, s1) = splitAt (lenFp1 + ubMax) f1
+              (p2, s2) = splitAt ubMax f2
+        , headPoint p1 == castPoint (headPoint p2)
+        = (p1, p2, s1, s2)
+        | otherwise
+        = go 0 (fp1, Empty (anchor f2), fs1, f2) ubMax
+      where
+        lenFp1 = length fp1
+        ubMax = min (length f1 - lenFp1) (length f2)
 
--- | \( O(n_2 \log(n_1)) \). Look for the most recent intersection point of
+        -- Do a binary search to find the last common point of @fs1@ and @f2@.
+        --
+        -- @lb@ is the most recent block index on @fs1@/@f2@ that we currently
+        -- know is equal on both of them, and @res@ is the corresponding result
+        -- to 'intersect' if it actually turns out to be the last such index.
+        --
+        -- @ub@ is the oldest block index that we currently know is different on
+        -- @fs1@/@f2@.
+        --
+        -- Note that the @i@-th block on @fs1@ is the @lenFp1 + i@-th block on
+        -- @f1@.
+        go lb res ub
+          | lb + 1 == ub
+          = res
+          | headPoint p1 == castPoint (headPoint p2)
+          = go mid (p1, p2, s1, s2) ub
+          | otherwise
+          = go lb res mid
+          where
+            mid = (lb + ub) `div` 2
+            (p1, s1) = splitAt (lenFp1 + mid) f1
+            (p2, s2) = splitAt mid f2
+
+-- | \( O(\log(n_1)\log(n_2)) \). Look for the most recent intersection point of
 -- two 'AnchoredFragment's
 --
 -- The fragments need not have the same anchor point.
