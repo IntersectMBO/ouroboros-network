@@ -13,8 +13,8 @@ module DMQ.Configuration
   ) where
 
 import Control.Concurrent.Class.MonadSTM (MonadSTM (..))
-import Control.Exception (Exception (..), IOException, try)
 import Control.Monad (forM)
+import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI (DiffTime)
 import Data.Aeson
 import Data.ByteString qualified as BS
@@ -133,7 +133,7 @@ readConfigurationFile nc = do
           Left err -> return $ Left (handlerJSON err)
           Right t  -> return $ Right t
   where
-    handler :: IOException -> Text
+    handler :: IOError -> Text
     handler e = Text.pack $ "DMQ.Configurations.readConfigurationFile: "
                           ++ displayException e
     handlerJSON :: String -> Text
@@ -159,6 +159,7 @@ mkDiffusionConfiguration
 mkDiffusionConfiguration
   CLIOptions {
     ipv4
+  , ipv6
   , port
   }
   nt@NetworkTopology {
@@ -179,10 +180,26 @@ mkDiffusionConfiguration
   , dmqcChurnInterval
   , dmqcPeerSharing
   } = do
-    s <-  addrAddress . NonEmpty.head
-      <$> getAddrInfo (Just hints)
-                      (Just (show ipv4))
-                      (Just (show port))
+    case (ipv4, ipv6) of
+      (Nothing, Nothing) ->
+           throwIO NoAddressInformation
+      _ -> return ()
+    addrIPv4 <-
+      case ipv4 of
+        Just ipv4' ->
+          Just . addrAddress . NonEmpty.head
+            <$> getAddrInfo (Just hints)
+                            (Just (show ipv4'))
+                            (Just (show port))
+        Nothing -> return Nothing
+    addrIPv6 <-
+      case ipv6 of
+        Just ipv6' ->
+          Just . addrAddress . NonEmpty.head
+            <$> getAddrInfo (Just hints)
+                            (Just (show ipv6'))
+                            (Just (show port))
+        Nothing -> return Nothing
 
     publicPeerSelectionVar <- makePublicPeerSelectionStateVar
 
@@ -197,8 +214,8 @@ mkDiffusionConfiguration
 
     return $
       Diffusion.Configuration {
-        Diffusion.dcIPv4Address              = Just (Right s)
-      , Diffusion.dcIPv6Address              = Nothing
+        Diffusion.dcIPv4Address              = Right <$> addrIPv4
+      , Diffusion.dcIPv6Address              = Right <$> addrIPv6
       , Diffusion.dcLocalAddress             = Nothing
       , Diffusion.dcAcceptedConnectionsLimit = dmqcAcceptedConnectionsLimit
       , Diffusion.dcMode                     = dmqcDiffusionMode
@@ -255,3 +272,12 @@ defaultSigDecisionPolicy = TxDecisionPolicy {
     scoreRate              = 0.1,
     scoreMax               = 15 * 60
   }
+
+data ConfigurationError =
+    NoAddressInformation -- ^ dmq was not configured with IPv4 or IPv6 address
+  deriving Show
+
+instance Exception ConfigurationError where
+  displayException NoAddressInformation = "no ipv4 or ipv6 address specified, use --host-addr or --host-ipv6-addr"
+
+
