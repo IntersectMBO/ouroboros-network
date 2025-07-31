@@ -74,6 +74,7 @@ library
     ouroboros-network-framework ^>=0.19,
     ouroboros-network-protocols ^>=0.15,
     random ^>=1.2,
+    singletons,
     text >=1.2.4 && <2.2,
     time ^>=1.12,
     typed-protocols:{typed-protocols, cborg} ^>=1.1,
