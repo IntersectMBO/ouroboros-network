@@ -9,6 +9,10 @@ module DMQ.Protocol.SigSubmission.Codec
   , byteLimitsSigSubmission
   , timeLimitsSigSubmission
   , codecSigSubmissionId
+  , encodeSig
+  , decodeSig
+  , encodeSigId
+  , decodeSigId
   ) where
 
 import Control.Monad (when)
@@ -82,43 +86,51 @@ codecSigSubmission
 codecSigSubmission =
     TX.codecTxSubmission2 encodeSigId decodeSigId
                           encodeSig   decodeSig
-  where
-    encodeSigId :: SigId -> CBOR.Encoding
-    encodeSigId SigId { getSigId } = CBOR.encodeBytes (getSigHash getSigId)
 
-    decodeSigId :: forall s. CBOR.Decoder s SigId
-    decodeSigId = SigId . SigHash <$> CBOR.decodeBytes
 
-    encodeSig :: Sig -> CBOR.Encoding
-    encodeSig Sig { sigId,
-                    sigBody,
-                    sigExpiresAt,
-                    sigKesSignature,
-                    sigOpCertificate
-                  }
-       = CBOR.encodeListLen 5
-      <> encodeSigId sigId
-      <> CBOR.encodeBytes (getSigBody sigBody)
-      <> CBOR.encodeWord32 (floor sigExpiresAt)
-      <> CBOR.encodeBytes (getSigKesSignature sigKesSignature)
-      <> CBOR.encodeBytes (getSigOpCertificate sigOpCertificate)
+--
+-- encoding primitives
+--
 
-    decodeSig :: forall s. CBOR.Decoder s Sig
-    decodeSig = do
-      a <- CBOR.decodeListLen
-      when (a /= 5) $ fail (printf "codecSigSubmission: unexpected number of parameters %d" a)
-      sigId <- decodeSigId
-      sigBody <- SigBody <$> CBOR.decodeBytes
-      sigExpiresAt <- realToFrac <$> CBOR.decodeWord32
-      sigKesSignature <- SigKesSignature <$> CBOR.decodeBytes
-      sigOpCertificate <- SigOpCertificate <$> CBOR.decodeBytes
-      return Sig {
-          sigId,
-          sigBody,
-          sigExpiresAt,
-          sigKesSignature,
-          sigOpCertificate
-        }
+encodeSigId :: SigId -> CBOR.Encoding
+encodeSigId SigId { getSigId } = CBOR.encodeBytes (getSigHash getSigId)
+
+
+decodeSigId :: forall s. CBOR.Decoder s SigId
+decodeSigId = SigId . SigHash <$> CBOR.decodeBytes
+
+
+encodeSig :: Sig -> CBOR.Encoding
+encodeSig Sig { sigId,
+                sigBody,
+                sigExpiresAt,
+                sigKesSignature,
+                sigOpCertificate
+              }
+   = CBOR.encodeListLen 5
+  <> encodeSigId sigId
+  <> CBOR.encodeBytes (getSigBody sigBody)
+  <> CBOR.encodeWord32 (floor sigExpiresAt)
+  <> CBOR.encodeBytes (getSigKesSignature sigKesSignature)
+  <> CBOR.encodeBytes (getSigOpCertificate sigOpCertificate)
+
+
+decodeSig :: forall s. CBOR.Decoder s Sig
+decodeSig = do
+  a <- CBOR.decodeListLen
+  when (a /= 5) $ fail (printf "codecSigSubmission: unexpected number of parameters %d" a)
+  sigId <- decodeSigId
+  sigBody <- SigBody <$> CBOR.decodeBytes
+  sigExpiresAt <- realToFrac <$> CBOR.decodeWord32
+  sigKesSignature <- SigKesSignature <$> CBOR.decodeBytes
+  sigOpCertificate <- SigOpCertificate <$> CBOR.decodeBytes
+  return Sig {
+      sigId,
+      sigBody,
+      sigExpiresAt,
+      sigKesSignature,
+      sigOpCertificate
+    }
 
 
 codecSigSubmissionId
