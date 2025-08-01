@@ -23,6 +23,10 @@ data NoExtraConfig = NoExtraConfig
 data NoExtraFlags  = NoExtraFlags
   deriving (Eq, Show)
 
+instance ToJSON NoExtraFlags where
+  toJSON _ = Null
+  omitField _ = True
+
 instance FromJSON (NetworkTopology NoExtraConfig NoExtraFlags) where
   parseJSON = networkTopologyFromJSON
                 (localRootPeersGroupsFromJSON (\_ -> pure NoExtraFlags))

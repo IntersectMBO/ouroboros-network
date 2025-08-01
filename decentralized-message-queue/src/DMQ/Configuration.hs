@@ -25,8 +25,8 @@ module DMQ.Configuration
   , mkDiffusionConfiguration
   , defaultSigDecisionPolicy
   , defaultConfiguration
-  , NoExtraConfig
-  , NoExtraFlags
+  , NoExtraConfig (..)
+  , NoExtraFlags (..)
   ) where
 
 import Control.Concurrent.Class.MonadSTM (MonadSTM (..))
@@ -45,11 +45,12 @@ import Data.Monoid (Last (..))
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Generic.Data (gmappend, gmempty)
-import DMQ.Configuration.Topology (NoExtraConfig, NoExtraFlags, readPeerSnapshotFileOrError)
+import DMQ.Configuration.Topology (NoExtraConfig (..), NoExtraFlags (..),
+         readPeerSnapshotFileOrError)
 import GHC.Generics (Generic)
 import GHC.Stack (HasCallStack)
-import Network.Socket (AddrInfo (..), AddrInfoFlag (..), SockAddr,
-           SocketType (..), PortNumber, defaultHints, getAddrInfo)
+import Network.Socket (AddrInfo (..), AddrInfoFlag (..), SocketType (..),
+         PortNumber, defaultHints, getAddrInfo)
 import System.Directory qualified as Directory
 import System.FilePath qualified as FilePath
 import System.IO.Error (isDoesNotExistError)
@@ -72,6 +73,8 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2 (TxDecisionPolicy (..))
+
+import DMQ.NodeToNode (RemoteAddress)
 
 
 -- | Configuration comes in two flavours paramemtrised by `f` functor:
@@ -97,7 +100,8 @@ data Configuration' f =
     dmqcProtocolIdleTimeout               :: f DiffTime,
     dmqcChurnInterval                     :: f DiffTime,
     dmqcPeerSharing                       :: f PeerSharing,
-    dmqcNetworkMagic                      :: f NetworkMagic
+    dmqcNetworkMagic                      :: f NetworkMagic,
+    dmqcPrettyLog                         :: f Bool
   }
   deriving Generic
 
@@ -168,7 +172,8 @@ defaultConfiguration = Configuration {
       dmqcTargetOfActiveBigLedgerPeers      = I targetNumberOfActiveBigLedgerPeers,
       dmqcProtocolIdleTimeout               = I defaultProtocolIdleTimeout,
       dmqcChurnInterval                     = I defaultDeadlineChurnInterval,
-      dmqcPeerSharing                       = I PeerSharingEnabled
+      dmqcPeerSharing                       = I PeerSharingEnabled,
+      dmqcPrettyLog                         = I False
     }
   where
     PeerSelectionTargets {
@@ -213,6 +218,8 @@ instance FromJSON PartialConfig where
       dmqcProtocolIdleTimeout <- Last <$> v .:? "ProtocolIdleTimeout"
       dmqcChurnInterval <- Last <$> v .:? "ChurnInterval"
 
+      dmqcPrettyLog <- Last <$> v .:? "PrettyLog"
+
       pure $
         Configuration
           { dmqcIPv4 = Last dmqcIPv4
@@ -233,6 +240,7 @@ instance FromJSON PartialConfig where
           , dmqcChurnInterval
           , dmqcPeerSharing
           , dmqcNetworkMagic
+          , dmqcPrettyLog
           }
 
 -- | ToJSON instance used by logging system.
@@ -256,28 +264,30 @@ instance ToJSON Configuration where
       dmqcProtocolIdleTimeout,
       dmqcChurnInterval,
       dmqcPeerSharing,
-      dmqcNetworkMagic
+      dmqcNetworkMagic,
+      dmqcPrettyLog
     }
     =
-    object [ "IPv4"                              .= (show <$> runI dmqcIPv4)
-           , "IPv6"                              .= (show <$> runI dmqcIPv6)
-           , "PortNumber"                        .= runI dmqcPortNumber
-           , "ConfigFile"                        .= runI dmqcConfigFile
-           , "TopologyFile"                      .= runI dmqcTopologyFile
+    object [ "IPv4"                              .= (show <$> unI dmqcIPv4)
+           , "IPv6"                              .= (show <$> unI dmqcIPv6)
+           , "PortNumber"                        .= unI dmqcPortNumber
+           , "ConfigFile"                        .= unI dmqcConfigFile
+           , "TopologyFile"                      .= unI dmqcTopologyFile
            , "AcceptedConnectionsLimit"
-                                                 .= runI dmqcAcceptedConnectionsLimit
-           , "DiffusionMode"                     .= runI dmqcDiffusionMode
-           , "TargetOfRootPeers"                 .= runI dmqcTargetOfRootPeers
-           , "TargetOfKnownPeers"                .= runI dmqcTargetOfKnownPeers
-           , "TargetOfEstablishedPeers"          .= runI dmqcTargetOfEstablishedPeers
-           , "TargetOfActivePeers"               .= runI dmqcTargetOfActivePeers
-           , "TargetOfKnownBigLedgerPeers"       .= runI dmqcTargetOfKnownBigLedgerPeers
-           , "TargetOfEstablishedBigLedgerPeers" .= runI dmqcTargetOfEstablishedBigLedgerPeers
-           , "TargetOfActiveBigLedgerPeers"      .= runI dmqcTargetOfActiveBigLedgerPeers
-           , "ProtocolIdleTimeout"               .= runI dmqcProtocolIdleTimeout
-           , "ChurnInterval"                     .= runI dmqcChurnInterval
-           , "PeerSharing"                       .= runI dmqcPeerSharing
-           , "NetworkMagic"                      .= unNetworkMagic (runI dmqcNetworkMagic)
+                                                 .= unI dmqcAcceptedConnectionsLimit
+           , "DiffusionMode"                     .= unI dmqcDiffusionMode
+           , "TargetOfRootPeers"                 .= unI dmqcTargetOfRootPeers
+           , "TargetOfKnownPeers"                .= unI dmqcTargetOfKnownPeers
+           , "TargetOfEstablishedPeers"          .= unI dmqcTargetOfEstablishedPeers
+           , "TargetOfActivePeers"               .= unI dmqcTargetOfActivePeers
+           , "TargetOfKnownBigLedgerPeers"       .= unI dmqcTargetOfKnownBigLedgerPeers
+           , "TargetOfEstablishedBigLedgerPeers" .= unI dmqcTargetOfEstablishedBigLedgerPeers
+           , "TargetOfActiveBigLedgerPeers"      .= unI dmqcTargetOfActiveBigLedgerPeers
+           , "ProtocolIdleTimeout"               .= unI dmqcProtocolIdleTimeout
+           , "ChurnInterval"                     .= unI dmqcChurnInterval
+           , "PeerSharing"                       .= unI dmqcPeerSharing
+           , "NetworkMagic"                      .= unNetworkMagic (unI dmqcNetworkMagic)
+           , "PrettyLog"                         .= unI dmqcPrettyLog
            ]
 
 -- | Read the `DMQConfiguration` from the specified file.
@@ -320,7 +330,7 @@ mkDiffusionConfiguration
   :: HasCallStack
   => Configuration
   -> NetworkTopology NoExtraConfig NoExtraFlags
-  -> IO (Diffusion.Configuration NoExtraFlags IO ntnFd SockAddr ntcFd ntcAddr)
+  -> IO (Diffusion.Configuration NoExtraFlags IO ntnFd RemoteAddress ntcFd ntcAddr)
 mkDiffusionConfiguration
   Configuration {
     dmqcIPv4                              = I ipv4

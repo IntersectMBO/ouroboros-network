@@ -44,11 +44,13 @@ library
     DMQ.NodeToNode
     DMQ.Protocol.SigSubmission.Type
     DMQ.Protocol.SigSubmission.Codec
+    DMQ.Tracer
 
   build-depends:
     acts,
     acts-generic,
     aeson >=2.1.1.0 && <3,
+    aeson-pretty,
     base >=4.14 && <4.22,
     bytestring >=0.10 && <0.13,
     cborg >=0.2.1 && <0.3,
@@ -88,6 +90,7 @@ executable dmq-exe
   build-depends:
     acts,
     base,
+    aeson,
     contra-tracer >=0.1 && <0.3,
     decentralized-message-queue,
     optparse-applicative,
