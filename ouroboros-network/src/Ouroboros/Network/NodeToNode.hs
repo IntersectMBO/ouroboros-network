@@ -102,6 +102,7 @@ import Ouroboros.Network.Server.RateLimiting
 import Ouroboros.Network.Snocket
 import Ouroboros.Network.Socket
 import Ouroboros.Network.Util.ShowProxy (ShowProxy, showProxy)
+import Ouroboros.Network.Protocol.ObjectDiffusion.Type (NumObjectIdsToAck)
 
 
 -- The Handshake tracer types are simply terrible.
@@ -157,9 +158,11 @@ data MiniProtocolParameters = MiniProtocolParameters {
       blockFetchPipeliningMax     :: !Word16,
       -- ^ maximal number of pipelined messages in 'block-fetch' mini-protocol.
 
-      txSubmissionMaxUnacked      :: !NumTxIdsToAck
+      txSubmissionMaxUnacked      :: !NumTxIdsToAck,
       -- ^ maximal number of unacked tx (pipelining is bounded by twice this
       -- number)
+
+      certDiffusionMaxUnacked :: !NumObjectIdsToAck
     }
 
 defaultMiniProtocolParameters :: MiniProtocolParameters
@@ -168,6 +171,7 @@ defaultMiniProtocolParameters = MiniProtocolParameters {
     , chainSyncPipeliningHighMark = 300
     , blockFetchPipeliningMax     = 100
     , txSubmissionMaxUnacked       = 10
+    , certDiffusionMaxUnacked     = 10
   }
 
 -- | Make an 'OuroborosApplication' for the bundle of mini-protocols that
