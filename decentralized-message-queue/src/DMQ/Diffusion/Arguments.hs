@@ -3,7 +3,17 @@
 {-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module DMQ.Diffusion.Arguments (diffusionArguments) where
+module DMQ.Diffusion.Arguments
+  ( diffusionArguments
+  , NoExtraPeers (..)
+  , NoExtraState (..)
+  , NoExtraDebugState (..)
+  , NoExtraCounters (..)
+  , NoExtraFlags (..)
+  , NoExtraConfig (..)
+  , NoExtraAPI (..)
+  , NoExtraChurnArgs (..)
+  ) where
 
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM (MonadSTM (..))
@@ -15,10 +25,10 @@ import Control.Tracer (Tracer)
 import Network.DNS (Resolver)
 import Network.Socket (Socket)
 
-import DMQ.Configuration (NoExtraFlags)
 import DMQ.NodeToClient as NtC
 import DMQ.NodeToNode as NtN
 import DMQ.NodeToNode qualified as DMQ
+import DMQ.Tracer
 
 import Ouroboros.Network.Diffusion.Types qualified as Diffusion
 import Ouroboros.Network.PeerSelection.Churn (peerChurnGovernor)
@@ -28,6 +38,7 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeersConsensusInterface (..))
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (SRVPrefix)
 import Ouroboros.Network.PeerSelection.Types (nullPublicExtraPeersAPI)
+
 
 diffusionArguments
   :: ( Alternative (STM m)
@@ -39,7 +50,7 @@ diffusionArguments
   => Tracer m (NtN.HandshakeTr ntnAddr)
   -> Tracer m (NtC.HandshakeTr ntcAddr)
   -> Diffusion.Arguments
-       () () NoExtraFlags () () () ()
+       NoExtraState NoExtraDebugState NoExtraFlags NoExtraPeers NoExtraAPI NoExtraChurnArgs NoExtraCounters
        IOException
        Resolver
        m
@@ -63,10 +74,10 @@ diffusionArguments handshakeNtNTracer
       LedgerPeersConsensusInterface {
         lpGetLatestSlot  = return minBound
       , lpGetLedgerPeers = return []
-      , lpExtraAPI       = ()
+      , lpExtraAPI       = NoExtraAPI
       }
-  , Diffusion.daEmptyExtraState           = ()
-  , Diffusion.daEmptyExtraCounters        = ()
+  , Diffusion.daEmptyExtraState           = NoExtraState
+  , Diffusion.daEmptyExtraCounters        = NoExtraCounters
   , Diffusion.daExtraPeersAPI             = nullPublicExtraPeersAPI
   , Diffusion.daInstallSigUSR1Handler     = \_ _ -> pure ()
   , Diffusion.daPeerSelectionGovernorArgs =
@@ -84,16 +95,16 @@ diffusionArguments handshakeNtNTracer
           , ledgerPeerSnapshotExtraStateChange = id
           }
       }
-  , Diffusion.daPeerSelectionStateToExtraCounters = const ()
-  , Diffusion.daToExtraPeers                      = const ()
+  , Diffusion.daPeerSelectionStateToExtraCounters = const NoExtraCounters
+  , Diffusion.daToExtraPeers                      = const NoExtraPeers
   , Diffusion.daRequestPublicRootPeers            = Nothing
   , Diffusion.daPeerChurnGovernor                 = peerChurnGovernor
-  , Diffusion.daExtraChurnArgs                    = ()
+  , Diffusion.daExtraChurnArgs                    = NoExtraChurnArgs
   , Diffusion.daSRVPrefix                         = dmqSRVPrefix
   }
 
 
--- | SRVPrefix as registerd in `CIP#0155`.
+-- | SRVPrefix as registered in `CIP#0155`.
 --
 dmqSRVPrefix :: SRVPrefix
 dmqSRVPrefix = "_dmq._mithril._cardano._tcp"

@@ -3,9 +3,10 @@
 module Main where
 
 import Control.Monad (void)
-import Control.Tracer (Tracer (..))
+import Control.Tracer (Tracer (..), traceWith)
 
 import Data.Act
+import Data.Aeson (ToJSON)
 import Data.Void (Void)
 import Debug.Trace (traceShowM)
 import Options.Applicative
@@ -15,9 +16,10 @@ import DMQ.Configuration
 import DMQ.Configuration.CLIOptions (parseCLIOptions)
 import DMQ.Configuration.Topology (readTopologyFileOrError)
 import DMQ.Diffusion.Applications (diffusionApplications)
-import DMQ.Diffusion.Arguments (diffusionArguments)
+import DMQ.Diffusion.Arguments
 import DMQ.Diffusion.NodeKernel (withNodeKernel)
 import DMQ.NodeToNode (dmqCodecs, dmqLimitsAndTimeouts, ntnApps)
+import DMQ.Tracer
 
 import DMQ.Diffusion.PeerSelection (policy)
 import Ouroboros.Network.Diffusion qualified as Diffusion
@@ -44,13 +46,18 @@ runDMQ commandLineConfig = do
     -- combine default configuration, configuration file and command line
     -- options
     let dmqConfig@Configuration {
+          dmqcPrettyLog    = I prettyLog,
           dmqcTopologyFile = I topologyFile
         } = config' <> commandLineConfig
             `act`
             defaultConfiguration
 
-    print dmqConfig
+    let tracer :: ToJSON ev => Tracer IO (String, ev)
+        tracer = dmqTracer prettyLog
+
+    traceWith tracer ("Configuration", dmqConfig)
     nt <- readTopologyFileOrError topologyFile
+    traceWith tracer ("NetworkTopology", nt)
 
     stdGen <- newStdGen
     let (psRng, policyRng) = split stdGen
@@ -79,57 +86,9 @@ runDMQ commandLineConfig = do
                                   (policy policyRng)
 
       Diffusion.run dmqDiffusionArguments
-                    debugTracers
+                    (dmqDiffusionTracers dmqConfig tracer)
                     dmqDiffusionConfiguration
                     dmqDiffusionApplications
 
 debugTracer :: (Show a, Applicative m) => Tracer m a
 debugTracer = Tracer traceShowM
-
-debugTracers :: ( Applicative m
-                , Ord ntnAddr
-                , Show extraCounters
-                , Show extraDebugState
-                , Show extraPeers
-                , Show extraState
-                , Show ntcAddr
-                , Show ntcVersion
-                , Show ntcVersionData
-                , Show ntnAddr
-                , Show ntnVersion
-                , Show ntnVersionData
-                )
-            => Diffusion.Tracers ntnAddr ntnVersion ntnVersionData
-                                 ntcAddr ntcVersion ntcVersionData
-                                 extraState extraDebugState
-                                 NoExtraFlags extraPeers extraCounters m
-debugTracers =
-  Diffusion.Tracers {
-    Diffusion.dtBearerTracer                               = debugTracer
-  , Diffusion.dtChannelTracer                              = debugTracer
-  , Diffusion.dtMuxTracer                                  = debugTracer
-  , Diffusion.dtHandshakeTracer                            = debugTracer
-  , Diffusion.dtLocalBearerTracer                          = debugTracer
-  , Diffusion.dtLocalChannelTracer                         = debugTracer
-  , Diffusion.dtLocalMuxTracer                             = debugTracer
-  , Diffusion.dtLocalHandshakeTracer                       = debugTracer
-  , Diffusion.dtDiffusionTracer                            = debugTracer
-  , Diffusion.dtTraceLocalRootPeersTracer                  = debugTracer
-  , Diffusion.dtTracePublicRootPeersTracer                 = debugTracer
-  , Diffusion.dtTraceLedgerPeersTracer                     = debugTracer
-  , Diffusion.dtTracePeerSelectionTracer                   = debugTracer
-  , Diffusion.dtTraceChurnCounters                         = debugTracer
-  , Diffusion.dtDebugPeerSelectionInitiatorTracer          = debugTracer
-  , Diffusion.dtDebugPeerSelectionInitiatorResponderTracer = debugTracer
-  , Diffusion.dtTracePeerSelectionCounters                 = debugTracer
-  , Diffusion.dtPeerSelectionActionsTracer                 = debugTracer
-  , Diffusion.dtConnectionManagerTracer                    = debugTracer
-  , Diffusion.dtConnectionManagerTransitionTracer          = debugTracer
-  , Diffusion.dtServerTracer                               = debugTracer
-  , Diffusion.dtInboundGovernorTracer                      = debugTracer
-  , Diffusion.dtInboundGovernorTransitionTracer            = debugTracer
-  , Diffusion.dtLocalConnectionManagerTracer               = debugTracer
-  , Diffusion.dtLocalServerTracer                          = debugTracer
-  , Diffusion.dtLocalInboundGovernorTracer                 = debugTracer
-  , Diffusion.dtDnsTracer                                  = debugTracer
-  }
