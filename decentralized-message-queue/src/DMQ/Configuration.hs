@@ -30,7 +30,6 @@ module DMQ.Configuration
   ) where
 
 import Control.Concurrent.Class.MonadSTM (MonadSTM (..))
-import Control.Monad (forM)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI (DiffTime)
 import Data.Act
@@ -49,8 +48,11 @@ import DMQ.Configuration.Topology (NoExtraConfig, NoExtraFlags,
            readPeerSnapshotFileOrError)
 import Generic.Data (gmappend, gmempty)
 import GHC.Generics (Generic)
+import GHC.Stack (HasCallStack)
 import Network.Socket (AddrInfo (..), AddrInfoFlag (..), PortNumber, SockAddr,
            SocketType (..), defaultHints, getAddrInfo)
+import System.Directory qualified as Directory
+import System.FilePath qualified as FilePath
 import System.IO.Error (isDoesNotExistError)
 import Text.Read (readMaybe)
 
@@ -234,6 +236,51 @@ instance FromJSON PartialConfig where
           , dmqcNetworkMagic
           }
 
+-- | ToJSON instance used by logging system.
+--
+instance ToJSON Configuration where
+  toJSON Configuration {
+      dmqcIPv4,
+      dmqcIPv6,
+      dmqcPortNumber,
+      dmqcConfigFile,
+      dmqcTopologyFile,
+      dmqcAcceptedConnectionsLimit,
+      dmqcDiffusionMode,
+      dmqcTargetOfRootPeers,
+      dmqcTargetOfKnownPeers,
+      dmqcTargetOfEstablishedPeers,
+      dmqcTargetOfActivePeers,
+      dmqcTargetOfKnownBigLedgerPeers,
+      dmqcTargetOfEstablishedBigLedgerPeers,
+      dmqcTargetOfActiveBigLedgerPeers,
+      dmqcProtocolIdleTimeout,
+      dmqcChurnInterval,
+      dmqcPeerSharing,
+      dmqcNetworkMagic
+    }
+    =
+    object [ "IPv4"                              .= (show <$> unI dmqcIPv4)
+           , "IPv6"                              .= (show <$> unI dmqcIPv6)
+           , "PortNumber"                        .= unI dmqcPortNumber
+           , "ConfigFile"                        .= unI dmqcConfigFile
+           , "TopologyFile"                      .= unI dmqcTopologyFile
+           , "AcceptedConnectionsLimit"
+                                                 .= unI dmqcAcceptedConnectionsLimit
+           , "DiffusionMode"                     .= unI dmqcDiffusionMode
+           , "TargetOfRootPeers"                 .= unI dmqcTargetOfRootPeers
+           , "TargetOfKnownPeers"                .= unI dmqcTargetOfKnownPeers
+           , "TargetOfEstablishedPeers"          .= unI dmqcTargetOfEstablishedPeers
+           , "TargetOfActivePeers"               .= unI dmqcTargetOfActivePeers
+           , "TargetOfKnownBigLedgerPeers"       .= unI dmqcTargetOfKnownBigLedgerPeers
+           , "TargetOfEstablishedBigLedgerPeers" .= unI dmqcTargetOfEstablishedBigLedgerPeers
+           , "TargetOfActiveBigLedgerPeers"      .= unI dmqcTargetOfActiveBigLedgerPeers
+           , "ProtocolIdleTimeout"               .= unI dmqcProtocolIdleTimeout
+           , "ChurnInterval"                     .= unI dmqcChurnInterval
+           , "PeerSharing"                       .= unI dmqcPeerSharing
+           , "NetworkMagic"                      .= unNetworkMagic (unI dmqcNetworkMagic)
+           ]
+
 -- | Read the `DMQConfiguration` from the specified file.
 --
 readConfigurationFile
@@ -271,13 +318,15 @@ readConfigurationFileOrError nc =
              pure
 
 mkDiffusionConfiguration
-  :: Configuration
+  :: HasCallStack
+  => Configuration
   -> NetworkTopology NoExtraConfig NoExtraFlags
   -> IO (Diffusion.Configuration NoExtraFlags IO ntnFd SockAddr ntcFd ntcAddr)
 mkDiffusionConfiguration
   Configuration {
     dmqcIPv4                              = I ipv4
   , dmqcIPv6                              = I ipv6
+  , dmqcTopologyFile                      = I topologyFile
   , dmqcPortNumber                        = I portNumber
   , dmqcDiffusionMode                     = I diffusionMode
   , dmqcAcceptedConnectionsLimit          = I acceptedConnectionsLimit
@@ -324,7 +373,9 @@ mkDiffusionConfiguration
     publicRootsVar  <- newTVarIO publicRoots
     useLedgerVar    <- newTVarIO useLedgerPeers
     ledgerPeerSnapshotPathVar <- newTVarIO peerSnapshotPath
+    topologyDir <- FilePath.takeDirectory <$> Directory.makeAbsolute topologyFile
     ledgerPeerSnapshotVar <- newTVarIO =<< updateLedgerPeerSnapshot
+                                            topologyDir
                                             (readTVar ledgerPeerSnapshotPathVar)
                                             (const . pure $ ())
 
@@ -365,12 +416,20 @@ mkDiffusionConfiguration
             , addrSocketType = Stream
             }
 
-    updateLedgerPeerSnapshot :: STM IO (Maybe FilePath)
+    updateLedgerPeerSnapshot :: HasCallStack
+                             => FilePath
+                             -> STM IO (Maybe FilePath)
                              -> (Maybe LedgerPeerSnapshot -> STM IO ())
                              -> IO (Maybe LedgerPeerSnapshot)
-    updateLedgerPeerSnapshot readLedgerPeerPath writeVar = do
+    updateLedgerPeerSnapshot topologyDir readLedgerPeerPath writeVar = do
       mPeerSnapshotFile <- atomically readLedgerPeerPath
-      mLedgerPeerSnapshot <- forM mPeerSnapshotFile readPeerSnapshotFileOrError
+      mLedgerPeerSnapshot <- case mPeerSnapshotFile of
+        Nothing -> pure Nothing
+        Just peerSnapshotFile | FilePath.isRelative peerSnapshotFile -> do
+          peerSnapshotFile' <- Directory.makeAbsolute $ topologyDir FilePath.</> peerSnapshotFile
+          Just <$> readPeerSnapshotFileOrError peerSnapshotFile'
+        Just peerSnapshotFile ->
+          Just <$> readPeerSnapshotFileOrError peerSnapshotFile
       atomically . writeVar $ mLedgerPeerSnapshot
       pure mLedgerPeerSnapshot
 

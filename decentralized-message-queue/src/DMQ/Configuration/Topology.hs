@@ -79,7 +79,7 @@ readPeerSnapshotFile psf = do
           Right t  -> return $ Right t
   where
     handler :: IOException -> Text
-    handler e = Text.pack $ "DMQ.Topology.readPeerSnapshotFile: "
+    handler e = Text.pack $ "DMQ.Topology.readLedgerPeerSnapshotFile: "
                           ++ displayException e
     handlerJSON :: String -> Text
     handlerJSON err = mconcat
@@ -88,8 +88,8 @@ readPeerSnapshotFile psf = do
       ]
 
 readPeerSnapshotFileOrError :: FilePath -> IO LedgerPeerSnapshot
-readPeerSnapshotFileOrError nc =
-      readPeerSnapshotFile nc
-  >>= either (\err -> error $ "DMQ.Topology.readTopologyFile: "
+readPeerSnapshotFileOrError psf =
+      readPeerSnapshotFile psf
+  >>= either (\err -> error $ "DMQ.Topology.readLedgerPeerSnapshotFile: "
                            <> Text.unpack err)
              pure
