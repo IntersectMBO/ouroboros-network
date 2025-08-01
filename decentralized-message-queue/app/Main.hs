@@ -17,8 +17,7 @@ import DMQ.Configuration.Topology (readTopologyFileOrError)
 import DMQ.Diffusion.Applications (diffusionApplications)
 import DMQ.Diffusion.Arguments (diffusionArguments)
 import DMQ.Diffusion.NodeKernel (withNodeKernel)
-import DMQ.NodeToNode (dmqCodecs, dmqLimitsAndTimeouts, mapNtNDMQtoOuroboros,
-           ntnApps)
+import DMQ.NodeToNode (dmqCodecs, dmqLimitsAndTimeouts, ntnApps)
 
 import DMQ.Diffusion.PeerSelection (policy)
 import Ouroboros.Network.Diffusion qualified as Diffusion
@@ -61,8 +60,11 @@ runDMQ commandLineConfig = do
 
       let dmqNtNApps =
             ntnApps nodeKernel
-                    (dmqCodecs (encodeRemoteAddress (mapNtNDMQtoOuroboros maxBound))
-                               (decodeRemoteAddress (mapNtNDMQtoOuroboros maxBound)))
+                    (dmqCodecs
+                              -- TODO: `maxBound :: Cardano.Network.NodeToNode.NodeToNodeVersion`
+                              -- is unsafe here!
+                               (encodeRemoteAddress maxBound)
+                               (decodeRemoteAddress maxBound))
                     dmqLimitsAndTimeouts
                     defaultSigDecisionPolicy
           dmqDiffusionArguments =

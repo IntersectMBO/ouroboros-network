@@ -4,10 +4,32 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module DMQ.NodeToNode where
+module DMQ.NodeToNode
+  ( RemoteAddress
+  , NodeToNodeVersion (..)
+  , NodeToNodeVersionData (..)
+  , nodeToNodeCodecCBORTerm
+  , nodeToNodeVersionCodec
+  , ntnDataFlow
+  , ClientApp
+  , ServerApp
+  , Apps (..)
+  , ntnApps
+  , Protocols (..)
+  , nodeToNodeProtocols
+  , initiatorProtocols
+  , initiatorAndResponderProtocols
+  , dmqCodecs
+  , LimitsAndTimeouts
+  , dmqLimitsAndTimeouts
+  , HandshakeTr
+  , ntnHandshakeArguments
+  , stdVersionDataNTN
+  ) where
 
 
 import Control.Applicative (Alternative)
@@ -25,6 +47,7 @@ import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 import Codec.CBOR.Term qualified as CBOR
+import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy qualified as BL
 import Data.Hashable (Hashable)
 import Data.Text (Text)
@@ -63,13 +86,15 @@ import Ouroboros.Network.Mux (MiniProtocol (..), MiniProtocolCb (..),
            StartOnDemandOrEagerly (..), TemperatureBundle (..),
            WithProtocolTemperature (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
-import Ouroboros.Network.NodeToNode.Version qualified as NTN
 import Ouroboros.Network.PeerSelection (PeerSharing (..))
 import Ouroboros.Network.PeerSharing (bracketPeerSharingClient,
            peerSharingClient, peerSharingServer)
+import Ouroboros.Network.Snocket (RemoteAddress)
 import Ouroboros.Network.TxSubmission.Inbound.V2 as SigSubmission
 import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 import Ouroboros.Network.TxSubmission.Outbound
+
+import Ouroboros.Network.OrphanInstances ()
 
 import Ouroboros.Network.Protocol.Handshake (Handshake, HandshakeArguments (..))
 import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
@@ -94,6 +119,10 @@ import Ouroboros.Network.Protocol.TxSubmission2.Server
 data NodeToNodeVersion =
   NodeToNodeV_1
   deriving (Eq, Ord, Enum, Bounded, Show, Generic, NFData)
+
+instance Aeson.ToJSON NodeToNodeVersion where
+  toJSON NodeToNodeV_1 = Aeson.toJSON (1 :: Int)
+instance Aeson.ToJSONKey NodeToNodeVersion where
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
 nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
@@ -121,6 +150,21 @@ data NodeToNodeVersionData = NodeToNodeVersionData
   , query         :: !Bool
   }
   deriving (Show, Eq)
+
+instance Aeson.ToJSON NodeToNodeVersionData where
+  toJSON NodeToNodeVersionData {
+      networkMagic,
+      diffusionMode,
+      peerSharing,
+      query
+    }
+    =
+    Aeson.object [ "NetworkMagic" Aeson..= unNetworkMagic networkMagic
+                 , "DiffusionMode" Aeson..= diffusionMode
+                 , "PeerSharing" Aeson..= peerSharing
+                 , "Query" Aeson..= query
+                 ]
+
 
 instance Acceptable NodeToNodeVersionData where
     -- | Check that both side use the same 'networkMagic'.  Choose smaller one
@@ -200,13 +244,6 @@ ntnDataFlow NodeToNodeVersionData { diffusionMode } =
   case diffusionMode of
     InitiatorAndResponderDiffusionMode -> Duplex
     InitiatorOnlyDiffusionMode         -> Unidirectional
-
--- | Map between DMQ NTNVersion and Ouroboros NTNVersion
---
--- Useful for reusing codecs and other functions
---
-mapNtNDMQtoOuroboros :: NodeToNodeVersion -> NTN.NodeToNodeVersion
-mapNtNDMQtoOuroboros _ = maxBound
 
 -- TODO: if we add `versionNumber` to `ctx` we could use `RunMiniProtocolCb`.
 -- This makes sense, since `ctx` already contains `versionData`.
