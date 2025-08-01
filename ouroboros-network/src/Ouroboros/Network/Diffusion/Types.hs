@@ -85,6 +85,7 @@ import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit)
 -- * diffusion initialisation messages
 -- * terminal errors thrown by diffusion
 --
+-- TODO: rename as `DiffusionTrace`
 data DiffusionTracer ntnAddr ntcAddr
   = RunServer (NonEmpty ntnAddr)
   | RunLocalServer ntcAddr
