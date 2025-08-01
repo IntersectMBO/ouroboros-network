@@ -1,13 +1,25 @@
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric  #-}
-{-# LANGUAGE LambdaCase     #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE DeriveAnyClass    #-}
+{-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE NamedFieldPuns    #-}
+{-# LANGUAGE OverloadedStrings #-}
 
-module DMQ.NodeToClient where
+module DMQ.NodeToClient
+  ( LocalAddress (..)
+  , NodeToClientVersion (..)
+  , NodeToClientVersionData (..)
+  , stdVersionDataNTC
+  , nodeToClientCodecCBORTerm
+  , nodeToClientVersionCodec
+  , Protocols (..)
+  , HandshakeTr
+  , ntcHandshakeArguments
+  ) where
 
 import Codec.CBOR.Term qualified as CBOR
 import Control.DeepSeq (NFData)
 import Control.Monad ((>=>))
+import Data.Aeson qualified as Aeson
 import Data.Bits (Bits (..))
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -28,10 +40,15 @@ import Ouroboros.Network.Protocol.Handshake (Accept (..), Handshake,
            HandshakeArguments (..))
 import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
            codecHandshake, noTimeLimitsHandshake)
+import Ouroboros.Network.Snocket (LocalAddress (..))
 
 data NodeToClientVersion =
   NodeToClientV_1
   deriving (Eq, Ord, Enum, Bounded, Show, Generic, NFData)
+
+instance Aeson.ToJSON NodeToClientVersion where
+  toJSON NodeToClientV_1 = Aeson.toJSON (1 :: Int)
+instance Aeson.ToJSONKey NodeToClientVersion where
 
 nodeToClientVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToClientVersion
 nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
@@ -74,6 +91,16 @@ data NodeToClientVersionData = NodeToClientVersionData
   , query        :: !Bool
   }
   deriving (Eq, Show)
+
+instance Aeson.ToJSON NodeToClientVersionData where
+  toJSON NodeToClientVersionData {
+      networkMagic,
+      query
+    }
+    =
+    Aeson.object [ "NetworkMagic" Aeson..= unNetworkMagic networkMagic
+                 , "Query" Aeson..= query
+                 ]
 
 instance Acceptable NodeToClientVersionData where
     acceptableVersion local remote
