@@ -1,9 +1,10 @@
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE NamedFieldPuns    #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RankNTypes        #-}
-{-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE TupleSections     #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -151,7 +152,9 @@ instance ToJSON (DebugPeerSelection NoExtraState NoExtraFlags NoExtraPeers Remot
            ]
 
 dmqDiffusionTracers
-  :: Configuration
+  :: forall m.
+     Applicative m
+  => Configuration
   -> (forall ev. ToJSON ev => Tracer m (String, ev))
   -> Diffusion.Tracers RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
                        LocalAddress  NodeToClientVersion NodeToClientVersionData
@@ -162,34 +165,97 @@ dmqDiffusionTracers
                        NoExtraCounters
                        m
 dmqDiffusionTracers
-    Configuration {} -- TODO on/off options for tracers
+    Configuration {
+      dmqcMuxTracer                                  = I muxTracer,
+      dmqcChannelTracer                              = I channelTracer,
+      dmqcBearerTracer                               = I bearerTracer,
+      dmqcHandshakeTracer                            = I handshakeTracer,
+      dmqcLocalMuxTracer                             = I localMuxTracer,
+      dmqcLocalChannelTracer                         = I localChannelTracer,
+      dmqcLocalBearerTracer                          = I localBearerTracer,
+      dmqcLocalHandshakeTracer                       = I localHandshakeTracer,
+      dmqcDiffusionTracer                            = I diffusionTracer,
+      dmqcTraceLocalRootPeersTracer                  = I traceLocalRootPeersTracer,
+      dmqcTracePublicRootPeersTracer                 = I tracePublicRootPeersTracer,
+      dmqcTraceLedgerPeersTracer                     = I traceLedgerPeersTracer,
+      dmqcTracePeerSelectionTracer                   = I tracePeerSelectionTracer,
+      dmqcTraceChurnCounters                         = I traceChurnCounters,
+      dmqcDebugPeerSelectionInitiatorTracer          = I debugPeerSelectionInitiatorTracer,
+      dmqcDebugPeerSelectionInitiatorResponderTracer = I debugPeerSelectionInitiatorResponderTracer,
+      dmqcTracePeerSelectionCounters                 = I tracePeerSelectionCounters,
+      dmqcPeerSelectionActionsTracer                 = I peerSelectionActionsTracer,
+      dmqcConnectionManagerTracer                    = I connectionManagerTracer,
+      dmqcConnectionManagerTransitionTracer          = I connectionManagerTransitionTracer,
+      dmqcServerTracer                               = I serverTracer,
+      dmqcInboundGovernorTracer                      = I inboundGovernorTracer,
+      dmqcInboundGovernorTransitionTracer            = I inboundGovernorTransitionTracer,
+      dmqcLocalConnectionManagerTracer               = I localConnectionManagerTracer,
+      dmqcLocalServerTracer                          = I localServerTracer,
+      dmqcLocalInboundGovernorTracer                 = I localInboundGovernorTracer,
+      dmqcDnsTracer                                  = I dnsTracer
+    }
     tracer
   = Diffusion.Tracers {
-    Diffusion.dtMuxTracer = ("Mux",) >$< tracer,
-    Diffusion.dtChannelTracer = ("Channel",) >$< tracer,
-    Diffusion.dtBearerTracer = ("Bearer",) >$< tracer,
-    Diffusion.dtHandshakeTracer = ("Handshake",) >$< tracer,
-    Diffusion.dtLocalMuxTracer = ("LocalMux",) >$< tracer,
-    Diffusion.dtLocalChannelTracer = ("LocalChannel",) >$< tracer,
-    Diffusion.dtLocalBearerTracer = ("LocalBearer",) >$< tracer,
-    Diffusion.dtLocalHandshakeTracer = ("LocalHandshake",) >$< tracer,
-    Diffusion.dtDiffusionTracer = ("Diffusion",) >$< tracer,
-    Diffusion.dtTraceLocalRootPeersTracer = ("LocalRootPeers",) >$< tracer,
-    Diffusion.dtTracePublicRootPeersTracer = ("PublicRoorPeers",) >$< tracer,
-    Diffusion.dtTraceLedgerPeersTracer = ("LedgerPeers",) >$< tracer,
-    Diffusion.dtTracePeerSelectionTracer = ("PeerSelection",) >$< tracer,
-    Diffusion.dtDebugPeerSelectionInitiatorTracer = ("DebugPeerSelectionIntiiator",) >$< tracer,
-    Diffusion.dtDebugPeerSelectionInitiatorResponderTracer = ("DebugPeerSelectionInitiatorResponder",) >$< tracer,
-    Diffusion.dtTracePeerSelectionCounters = ("PeerSelectionCounters",) >$< tracer,
-    Diffusion.dtTraceChurnCounters = ("ChurnCounters",) >$< tracer,
-    Diffusion.dtPeerSelectionActionsTracer = ("PeerSelectionActions",) >$< tracer,
-    Diffusion.dtConnectionManagerTracer = ("ConnectionManager",) >$< tracer,
-    Diffusion.dtConnectionManagerTransitionTracer = ("ConnectionManagerTransition",) >$< tracer,
-    Diffusion.dtServerTracer = ("Server",) >$< tracer,
-    Diffusion.dtInboundGovernorTracer = ("InboundGovernor",) >$< tracer,
-    Diffusion.dtInboundGovernorTransitionTracer = ("InboundGovernorTransition",) >$< tracer,
-    Diffusion.dtDnsTracer = ("dtDnsTracer",) >$< tracer,
-    Diffusion.dtLocalConnectionManagerTracer = ("dtLocalConnectionManagerTracer",) >$< tracer,
-    Diffusion.dtLocalServerTracer = ("dtLocalServerTracer",) >$< tracer,
-    Diffusion.dtLocalInboundGovernorTracer = ("dtLocalInboundGovernorTracer",) >$< tracer
+    Diffusion.dtMuxTracer                                  = muxTracer
+                                                          .- ("Mux",) >$< tracer,
+    Diffusion.dtChannelTracer                              = channelTracer
+                                                          .- ("Channel",) >$< tracer,
+    Diffusion.dtBearerTracer                               = bearerTracer
+                                                          .- ("Bearer",) >$< tracer,
+    Diffusion.dtHandshakeTracer                            = handshakeTracer
+                                                          .- ("Handshake",) >$< tracer,
+    Diffusion.dtLocalMuxTracer                             = localMuxTracer
+                                                          .- ("LocalMux",) >$< tracer,
+    Diffusion.dtLocalChannelTracer                         = localChannelTracer
+                                                          .- ("LocalChannel",) >$< tracer,
+    Diffusion.dtLocalBearerTracer                          = localBearerTracer
+                                                          .- ("LocalBearer",) >$< tracer,
+    Diffusion.dtLocalHandshakeTracer                       = localHandshakeTracer
+                                                          .- ("LocalHandshake",) >$< tracer,
+    Diffusion.dtDiffusionTracer                            = diffusionTracer
+                                                          .- ("Diffusion",) >$< tracer,
+    Diffusion.dtTraceLocalRootPeersTracer                  = traceLocalRootPeersTracer
+                                                          .- ("LocalRootPeers",) >$< tracer,
+    Diffusion.dtTracePublicRootPeersTracer                 = tracePublicRootPeersTracer
+                                                          .- ("PublicRootPeers",) >$< tracer,
+    Diffusion.dtTraceLedgerPeersTracer                     = traceLedgerPeersTracer
+                                                          .- ("LedgerPeers",) >$< tracer,
+    Diffusion.dtTracePeerSelectionTracer                   = tracePeerSelectionTracer
+                                                          .- ("PeerSelection",) >$< tracer,
+    Diffusion.dtDebugPeerSelectionInitiatorTracer          = debugPeerSelectionInitiatorTracer
+                                                          .- ("DebugPeerSelectionInitiator",) >$< tracer,
+    Diffusion.dtDebugPeerSelectionInitiatorResponderTracer = debugPeerSelectionInitiatorResponderTracer
+                                                          .- ("DebugPeerSelectionInitiatorResponder",) >$< tracer,
+    Diffusion.dtTracePeerSelectionCounters                 = tracePeerSelectionCounters
+                                                          .- ("PeerSelectionCounters",) >$< tracer,
+    Diffusion.dtTraceChurnCounters                         = traceChurnCounters
+                                                          .- ("ChurnCounters",) >$< tracer,
+    Diffusion.dtPeerSelectionActionsTracer                 = peerSelectionActionsTracer
+                                                          .- ("PeerSelectionActions",) >$< tracer,
+    Diffusion.dtConnectionManagerTracer                    = connectionManagerTracer
+                                                          .- ("ConnectionManager",) >$< tracer,
+    Diffusion.dtConnectionManagerTransitionTracer          = connectionManagerTransitionTracer
+                                                          .- ("ConnectionManagerTransition",) >$< tracer,
+    Diffusion.dtServerTracer                               = serverTracer
+                                                          .- ("Server",) >$< tracer,
+    Diffusion.dtInboundGovernorTracer                      = inboundGovernorTracer
+                                                          .- ("InboundGovernor",) >$< tracer,
+    Diffusion.dtInboundGovernorTransitionTracer            = inboundGovernorTransitionTracer
+                                                          .- ("InboundGovernorTransition",) >$< tracer,
+    Diffusion.dtDnsTracer                                  = dnsTracer
+                                                          .- ("dtDnsTracer",) >$< tracer,
+    Diffusion.dtLocalConnectionManagerTracer               = localConnectionManagerTracer
+                                                          .- ("dtLocalConnectionManagerTracer",) >$< tracer,
+    Diffusion.dtLocalServerTracer                          = localServerTracer
+                                                          .- ("dtLocalServerTracer",) >$< tracer,
+    Diffusion.dtLocalInboundGovernorTracer                 = localInboundGovernorTracer
+                                                          .- ("dtLocalInboundGovernorTracer",) >$< tracer
   }
+  where
+    (.-) :: Bool
+                 -> Tracer m a
+                 -> Tracer m a
+    True  .- a = a
+    False .- _ = nullTracer
+
+    infixl 3 .-
