@@ -23,8 +23,8 @@ import Ouroboros.Network.RethrowPolicy (ioErrorRethrowPolicy,
 
 diffusionApplications
   :: NodeKernel ntnAddr m
-  -> Configuration ntnFd ntnAddr ntcFd ntcAddr
-  -> Diffusion.Configuration extraFlags m ntnFd ntnAddr ntcFd ntcAddr
+  -> Configuration
+  -> Diffusion.Configuration NoExtraFlags m ntnFd ntnAddr ntcFd ntcAddr
   -> NTN.LimitsAndTimeouts ntnAddr
   -> NTN.Apps ntnAddr m a ()
   -> PeerSelectionPolicy ntnAddr m
@@ -36,7 +36,7 @@ diffusionApplications
     peerSharingRegistry
   }
   Configuration {
-    dmqcNetworkMagic
+    dmqcNetworkMagic = I networkMagic
   }
   Diffusion.Configuration {
     dcMode
@@ -50,7 +50,7 @@ diffusionApplications
       combineVersions
         [ simpleSingletonVersions
             version
-            (stdVersionDataNTN dmqcNetworkMagic dcMode dcPeerSharing)
+            (stdVersionDataNTN networkMagic dcMode dcPeerSharing)
             (NTN.initiatorProtocols ntnLimitsAndTimeouts ntnApps version)
         | version <- [minBound..maxBound]
         ]
@@ -58,7 +58,7 @@ diffusionApplications
       combineVersions
         [ simpleSingletonVersions
             version
-            (stdVersionDataNTN dmqcNetworkMagic dcMode dcPeerSharing)
+            (stdVersionDataNTN networkMagic dcMode dcPeerSharing)
             (NTN.initiatorAndResponderProtocols ntnLimitsAndTimeouts ntnApps version)
         | version <- [minBound..maxBound]
         ]
@@ -66,7 +66,7 @@ diffusionApplications
       combineVersions
         [ simpleSingletonVersions
             version
-            (stdVersionDataNTC dmqcNetworkMagic)
+            (stdVersionDataNTC networkMagic)
             (\_versionData ->
                 OuroborosApplication
                   [

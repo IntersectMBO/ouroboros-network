@@ -15,9 +15,11 @@ import Control.Tracer (Tracer)
 import Network.DNS (Resolver)
 import Network.Socket (Socket)
 
+import DMQ.Configuration (NoExtraFlags)
 import DMQ.NodeToClient as NtC
 import DMQ.NodeToNode as NtN
 import DMQ.NodeToNode qualified as DMQ
+
 import Ouroboros.Network.Diffusion.Types qualified as Diffusion
 import Ouroboros.Network.PeerSelection.Churn (peerChurnGovernor)
 import Ouroboros.Network.PeerSelection.Governor.Types
@@ -37,7 +39,7 @@ diffusionArguments
   => Tracer m (NtN.HandshakeTr ntnAddr)
   -> Tracer m (NtC.HandshakeTr ntcAddr)
   -> Diffusion.Arguments
-       () () () () () () ()
+       () () NoExtraFlags () () () ()
        IOException
        Resolver
        m
