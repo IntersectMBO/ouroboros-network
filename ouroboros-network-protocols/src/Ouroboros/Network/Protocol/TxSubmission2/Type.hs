@@ -224,7 +224,8 @@ instance Protocol (TxSubmission2 txid tx) where
     --
     MsgRequestTxIds
       :: forall (blocking :: StBlockingStyle) txid tx.
-         SingBlockingStyle blocking
+         SingI blocking
+      => SingBlockingStyle blocking
       -> NumTxIdsToAck -- ^ Acknowledge this number of outstanding txids
       -> NumTxIdsToReq -- ^ Request up to this number of txids.
       -> Message (TxSubmission2 txid tx) StIdle (StTxIds blocking)

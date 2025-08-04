@@ -97,14 +97,8 @@ txSubmissionClientPeer (TxSubmissionClient client) =
           reply <- recvMsgRequestTxIds blocking ackNo reqNo
           case reply of
             SendMsgReplyTxIds txids k ->
-              -- TODO: investigate why GHC cannot infer `SingI`; it used to in
-              -- `coot/typed-protocols-rewrite` branch
-              return $ case blocking of
-                SingBlocking    -> Yield (MsgReplyTxIds txids)
-                                         (go k)
-                SingNonBlocking -> Yield (MsgReplyTxIds txids)
-                                         (go k)
-
+              return $ Yield (MsgReplyTxIds txids)
+                             (go k)
             SendMsgDone result ->
               return $ Yield MsgDone
                              (Done result)
