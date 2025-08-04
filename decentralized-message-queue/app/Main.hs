@@ -52,12 +52,12 @@ runDMQ commandLineConfig = do
             `act`
             defaultConfiguration
 
-    let tracer :: ToJSON ev => Tracer IO (String, ev)
+    let tracer :: ToJSON ev => Tracer IO (WithEventType ev)
         tracer = dmqTracer prettyLog
 
-    traceWith tracer ("Configuration", dmqConfig)
+    traceWith tracer (WithEventType "Configuration" dmqConfig)
     nt <- readTopologyFileOrError topologyFile
-    traceWith tracer ("NetworkTopology", nt)
+    traceWith tracer (WithEventType "NetworkTopology" nt)
 
     stdGen <- newStdGen
     let (psRng, policyRng) = split stdGen
