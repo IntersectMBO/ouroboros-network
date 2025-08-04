@@ -37,9 +37,14 @@ import Network.TypedProtocol.Codec (AnyMessage (..))
 import Ouroboros.Network.Protocol.Handshake (HandshakeException (..),
            HandshakeProtocolError (..), RefuseReason (..))
 import Ouroboros.Network.Protocol.Handshake.Type (Handshake, Message (..))
+import Ouroboros.Network.Protocol.KeepAlive.Type (KeepAlive)
+import Ouroboros.Network.Protocol.KeepAlive.Type qualified as KeepAlive
 import Ouroboros.Network.Protocol.Limits
            (ProtocolLimitFailure (ExceededSizeLimit, ExceededTimeLimit))
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount (..))
+import Ouroboros.Network.Protocol.PeerSharing.Type qualified as PeerSharing
+import Ouroboros.Network.Protocol.TxSubmission2.Type (TxSubmission2)
+import Ouroboros.Network.Protocol.TxSubmission2.Type qualified as Tx
 
 import Ouroboros.Network.Block (SlotNo (SlotNo))
 import Ouroboros.Network.BlockFetch.Decision (FetchDecision)
@@ -1583,3 +1588,75 @@ instance ToJSON DNSTrace where
            , "peer" .= show peerKind
            , "domain" .= String (Text.decodeUtf8With Text.ignore domain)
            ]
+
+instance (Show txid, Show tx)
+      => ToJSON (AnyMessage (TxSubmission2 txid tx)) where
+  toJSON (AnyMessageAndAgency stok Tx.MsgInit) =
+    object
+      [ "kind" .= String "MsgInit"
+      , "agency" .= String (pack $ show stok)
+      ]
+  toJSON (AnyMessageAndAgency stok (Tx.MsgRequestTxs txids)) =
+    object
+      [ "kind" .= String "MsgRequestTxs"
+      , "agency" .= String (pack $ show stok)
+      , "txIds" .= String (pack $ show txids)
+      ]
+  toJSON (AnyMessageAndAgency stok (Tx.MsgReplyTxs txs)) =
+    object
+      [ "kind" .= String "MsgReplyTxs"
+      , "agency" .= String (pack $ show stok)
+      , "txs" .= String (pack $ show txs)
+      ]
+  toJSON (AnyMessageAndAgency stok Tx.MsgRequestTxIds{}) =
+    object
+      [ "kind" .= String "MsgRequestTxIds"
+      , "agency" .= String (pack $ show stok)
+      ]
+  toJSON (AnyMessageAndAgency stok (Tx.MsgReplyTxIds _)) =
+    object
+      [ "kind" .= String "MsgReplyTxIds"
+      , "agency" .= String (pack $ show stok)
+      ]
+  toJSON (AnyMessageAndAgency stok Tx.MsgDone) =
+    object
+      [ "kind" .= String "MsgDone"
+      , "agency" .= String (pack $ show stok)
+      ]
+
+instance ToJSON (AnyMessage KeepAlive) where
+  toJSON (AnyMessageAndAgency stok KeepAlive.MsgKeepAlive {}) =
+    object
+      [ "kind" .= String "MsgKeepAlive"
+      , "agency" .= String (pack $ show stok)
+      ]
+  toJSON (AnyMessageAndAgency stok KeepAlive.MsgKeepAliveResponse {}) =
+    object
+      [ "kind" .= String "MsgKeepAliveResponse"
+      , "agency" .= String (pack $ show stok)
+      ]
+  toJSON (AnyMessageAndAgency stok KeepAlive.MsgDone) =
+    object
+      [ "kind" .= String "MsgDone"
+      , "agency" .= String (pack $ show stok)
+      ]
+
+instance ToJSON peerAddr => ToJSON (AnyMessage (PeerSharing.PeerSharing peerAddr)) where
+  toJSON (AnyMessageAndAgency stok (PeerSharing.MsgShareRequest num)) =
+    object
+      [ "kind" .= String "MsgShareRequest"
+      , "agency" .= String (pack $ show stok)
+      , "amount" .= PeerSharing.getAmount num
+      ]
+  toJSON (AnyMessageAndAgency stok (PeerSharing.MsgSharePeers peers)) =
+    object
+      [ "kind" .= String "MsgSharePeers"
+      , "agency" .= String (pack $ show stok)
+      , "peers" .= peers
+      ]
+  toJSON (AnyMessageAndAgency stok PeerSharing.MsgDone) =
+    object
+      [ "kind" .= String "MsgDone"
+      , "agency" .= String (pack $ show stok)
+      ]
+

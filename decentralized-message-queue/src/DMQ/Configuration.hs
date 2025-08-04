@@ -130,8 +130,11 @@ data Configuration' f =
     dmqcLocalInboundGovernorTracer                 :: f Bool,
     dmqcDnsTracer                                  :: f Bool,
     dmqcSigSubmissionClientTracer                  :: f Bool,
-    dmqcSigSubmissionServerTracer                  :: f Bool
-
+    dmqcSigSubmissionServerTracer                  :: f Bool,
+    dmqcKeepAliveClientTracer                      :: f Bool,
+    dmqcKeepAliveServerTracer                      :: f Bool,
+    dmqcPeerSharingClientTracer                    :: f Bool,
+    dmqcPeerSharingServerTracer                    :: f Bool
   }
   deriving Generic
 
@@ -232,7 +235,11 @@ defaultConfiguration = Configuration {
       dmqcLocalInboundGovernorTracer                 = I False,
       dmqcDnsTracer                                  = I False,
       dmqcSigSubmissionClientTracer                  = I False,
-      dmqcSigSubmissionServerTracer                  = I False
+      dmqcSigSubmissionServerTracer                  = I False,
+      dmqcKeepAliveClientTracer                      = I False,
+      dmqcKeepAliveServerTracer                      = I False,
+      dmqcPeerSharingClientTracer                    = I False,
+      dmqcPeerSharingServerTracer                    = I False
     }
   where
     PeerSelectionTargets {
@@ -308,6 +315,10 @@ instance FromJSON PartialConfig where
       dmqcDnsTracer                                  <- Last <$> v .:? "DnsTracer"
       dmqcSigSubmissionClientTracer                  <- Last <$> v .:? "SigSubmissionServerTracer"
       dmqcSigSubmissionServerTracer                  <- Last <$> v .:? "SigSubmissionClientTracer"
+      dmqcKeepAliveClientTracer                      <- Last <$> v .:? "KeepAliveServerTracer"
+      dmqcKeepAliveServerTracer                      <- Last <$> v .:? "KeepAliveClientTracer"
+      dmqcPeerSharingClientTracer                    <- Last <$> v .:? "PeerSharingServerTracer"
+      dmqcPeerSharingServerTracer                    <- Last <$> v .:? "PeerSharingClientTracer"
 
       pure $
         Configuration
@@ -359,6 +370,10 @@ instance FromJSON PartialConfig where
           , dmqcDnsTracer
           , dmqcSigSubmissionClientTracer
           , dmqcSigSubmissionServerTracer
+          , dmqcKeepAliveClientTracer
+          , dmqcKeepAliveServerTracer
+          , dmqcPeerSharingClientTracer
+          , dmqcPeerSharingServerTracer
           }
 
 -- | ToJSON instance used by logging system.
@@ -412,7 +427,11 @@ instance ToJSON Configuration where
       dmqcLocalInboundGovernorTracer,
       dmqcDnsTracer,
       dmqcSigSubmissionClientTracer,
-      dmqcSigSubmissionServerTracer
+      dmqcSigSubmissionServerTracer,
+      dmqcKeepAliveClientTracer,
+      dmqcKeepAliveServerTracer,
+      dmqcPeerSharingClientTracer,
+      dmqcPeerSharingServerTracer
     }
     =
     object [ "IPv4"                                       .= (show <$> unI dmqcIPv4)
@@ -463,6 +482,10 @@ instance ToJSON Configuration where
            , "DnsTracer"                                  .= unI dmqcDnsTracer
            , "SigSubmissionClientTracer"                  .= unI dmqcSigSubmissionClientTracer
            , "SigSubmissionServerTracer"                  .= unI dmqcSigSubmissionServerTracer
+           , "KeepAliveClientTracer"                      .= unI dmqcKeepAliveClientTracer
+           , "KeepAliveServerTracer"                      .= unI dmqcKeepAliveServerTracer
+           , "PeerSharingClientTracer"                    .= unI dmqcPeerSharingClientTracer
+           , "PeerSharingServerTracer"                    .= unI dmqcPeerSharingServerTracer
            ]
 
 -- | Read the `DMQConfiguration` from the specified file.

@@ -39,7 +39,9 @@ import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 import Codec.CBOR.Term qualified as CBOR
+import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy qualified as BL
+import Data.Functor.Contravariant ((>$<))
 import Data.Hashable (Hashable)
 import Data.Void (Void)
 import System.Random (mkStdGen)
@@ -49,10 +51,12 @@ import Network.Mux.Types (Mode (..))
 import Network.Mux.Types qualified as Mx
 import Network.TypedProtocol.Codec (Codec)
 
+import DMQ.Configuration (Configuration, Configuration' (..), I (..))
 import DMQ.Diffusion.NodeKernel (NodeKernel (..))
 import DMQ.NodeToNode.Version
 import DMQ.Protocol.SigSubmission.Codec
 import DMQ.Protocol.SigSubmission.Type
+import DMQ.Tracer
 
 import Ouroboros.Network.BlockFetch.ClientRegistry (bracketKeepAliveClient)
 import Ouroboros.Network.Channel (Channel)
@@ -150,13 +154,25 @@ ntnApps
     , Ord addr
     , Show addr
     , Hashable addr
+    , Aeson.ToJSON addr
     )
- => NodeKernel addr m
+ => (forall ev. Aeson.ToJSON ev => Tracer m (WithEventType ev))
+ -> Configuration
+ -> NodeKernel addr m
  -> Codecs addr m
  -> LimitsAndTimeouts addr
  -> TxDecisionPolicy
  -> Apps addr m () ()
 ntnApps
+    tracer
+    Configuration {
+      dmqcSigSubmissionClientTracer = I sigSubmissionClientTracer
+    , dmqcSigSubmissionServerTracer = I sigSubmissionServerTracer
+    , dmqcKeepAliveClientTracer     = I keepAliveClientTracer
+    , dmqcKeepAliveServerTracer     = I keepAliveServerTracer
+    , dmqcPeerSharingClientTracer   = I peerSharingClientTracer
+    , dmqcPeerSharingServerTracer   = I peerSharingServerTracer
+    }
     NodeKernel {
       fetchClientRegistry
     , peerSharingRegistry
@@ -210,10 +226,13 @@ ntnApps
       -> m ((), Maybe BL.ByteString)
     aSigSubmissionClient version
                          ExpandedInitiatorContext {
+                           eicConnectionId   = connId,
                            eicControlMessage = controlMessage
                          } channel =
       runPeerWithLimits
-        nullTracer
+        (if sigSubmissionClientTracer
+          then WithEventType "SigSubmissionClient" . Mx.WithBearer connId >$< tracer
+          else nullTracer)
         sigSubmissionCodec
         sigSubmissionSizeLimits
         sigSubmissionTimeLimits
@@ -245,7 +264,9 @@ ntnApps
           (remoteAddress connId)
           $ \(peerSigAPI :: PeerTxAPI m SigId Sig) ->
             runPipelinedPeerWithLimits
-              nullTracer
+              (if sigSubmissionServerTracer
+                 then WithEventType "SigSubmissionServer" . Mx.WithBearer connId >$< tracer
+                 else nullTracer)
               sigSubmissionCodec
               sigSubmissionSizeLimits
               sigSubmissionTimeLimits
@@ -265,14 +286,16 @@ ntnApps
       -> m ((), Maybe BL.ByteString)
     aKeepAliveClient _version
                      ExpandedInitiatorContext {
-                       eicConnectionId   = them
+                       eicConnectionId   = connId
                      , eicControlMessage = controlMessageSTM
                      }
                      channel = do
       labelThisThread "KeepAliveClient"
       let kacApp dqCtx =
             runPeerWithLimits
-              nullTracer
+              (if keepAliveClientTracer
+                 then WithEventType "KeepAliveClient" . Mx.WithBearer connId >$< tracer
+                 else nullTracer)
               keepAliveCodec
               keepAliveSizeLimits
               keepAliveTimeLimits
@@ -281,26 +304,28 @@ ntnApps
               $ keepAliveClient nullTracer
                                 (mkStdGen 0)
                                 controlMessageSTM
-                                them
+                                connId
                                 dqCtx
                                 (KeepAliveInterval 10)
 
-      ((), trailing) <- bracketKeepAliveClient fetchClientRegistry them kacApp
+      ((), trailing) <- bracketKeepAliveClient fetchClientRegistry connId kacApp
       return ((), trailing)
 
     aKeepAliveServer
       :: NodeToNodeVersion
-      -> ResponderContext ntnAddr
+      -> ResponderContext addr
       -> Channel m BL.ByteString
       -> m ((), Maybe BL.ByteString)
     aKeepAliveServer _version
                      ResponderContext {
-                       rcConnectionId = _them
+                       rcConnectionId = connId
                      }
                      channel = do
       labelThisThread "KeepAliveServer"
       runPeerWithLimits
-        nullTracer
+        (if keepAliveServerTracer
+           then WithEventType "KeepAliveServer" . Mx.WithBearer connId >$< tracer
+           else nullTracer)
         keepAliveCodec
         keepAliveSizeLimits
         keepAliveTimeLimits
@@ -315,16 +340,18 @@ ntnApps
       -> m ((), Maybe BL.ByteString)
     aPeerSharingClient _version
                        ExpandedInitiatorContext {
-                         eicConnectionId   = them
+                         eicConnectionId   = connId
                        , eicControlMessage = controlMessageSTM
                        }
                        channel = do
       labelThisThread "PeerSharingClient"
-      bracketPeerSharingClient peerSharingRegistry (remoteAddress them)
+      bracketPeerSharingClient peerSharingRegistry (remoteAddress connId)
         $ \controller -> do
           psClient <- peerSharingClient controlMessageSTM controller
           ((), trailing) <- runPeerWithLimits
-            nullTracer
+            (if peerSharingClientTracer
+               then WithEventType "PeerSharingClient" . Mx.WithBearer connId >$< tracer
+               else nullTracer)
             peerSharingCodec
             peerSharingSizeLimits
             peerSharingTimeLimits
@@ -339,12 +366,14 @@ ntnApps
       -> m ((), Maybe BL.ByteString)
     aPeerSharingServer _version
                        ResponderContext {
-                         rcConnectionId = _them
+                         rcConnectionId = connId
                        }
                        channel = do
       labelThisThread "PeerSharingServer"
       runPeerWithLimits
-        nullTracer
+        (if peerSharingServerTracer
+           then WithEventType "PeerSharingServer" . Mx.WithBearer connId >$< tracer
+           else nullTracer)
         peerSharingCodec
         peerSharingSizeLimits
         peerSharingTimeLimits

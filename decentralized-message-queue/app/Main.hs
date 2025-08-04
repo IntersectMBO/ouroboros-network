@@ -66,7 +66,9 @@ runDMQ commandLineConfig = do
       dmqDiffusionConfiguration <- mkDiffusionConfiguration dmqConfig nt
 
       let dmqNtNApps =
-            ntnApps nodeKernel
+            ntnApps tracer
+                    dmqConfig
+                    nodeKernel
                     (dmqCodecs
                               -- TODO: `maxBound :: Cardano.Network.NodeToNode.NodeToNodeVersion`
                               -- is unsafe here!
