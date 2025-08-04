@@ -44,10 +44,12 @@ import Ouroboros.Network.OrphanInstances ()
 import Ouroboros.Network.PeerSelection.Governor.Types qualified as Governor
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
+import Ouroboros.Network.OrphanInstances ()
+import Ouroboros.Network.Snocket (LocalAddress, RemoteAddress)
 
 import DMQ.Configuration
-import DMQ.NodeToClient
-import DMQ.NodeToNode
+import DMQ.NodeToClient.Version
+import DMQ.NodeToNode.Version
 
 data TraceEvent ev = TraceEvent
   { time      :: UTCTime

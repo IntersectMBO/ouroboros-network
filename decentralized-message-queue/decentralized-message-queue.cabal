@@ -41,7 +41,9 @@ library
     DMQ.Diffusion.NodeKernel
     DMQ.Diffusion.PeerSelection
     DMQ.NodeToClient
+    DMQ.NodeToClient.Version
     DMQ.NodeToNode
+    DMQ.NodeToNode.Version
     DMQ.Protocol.SigSubmission.Codec
     DMQ.Protocol.SigSubmission.Type
     DMQ.Tracer

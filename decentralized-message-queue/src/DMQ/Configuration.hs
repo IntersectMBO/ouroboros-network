@@ -70,12 +70,11 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeerSnapshot (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
+import Ouroboros.Network.Snocket (RemoteAddress)
 import Ouroboros.Network.TxSubmission.Inbound.V2 (TxDecisionPolicy (..))
 
 import DMQ.Configuration.Topology (NoExtraConfig (..), NoExtraFlags (..),
            readPeerSnapshotFileOrError)
-import DMQ.NodeToNode (RemoteAddress)
-
 
 -- | Configuration comes in two flavours paramemtrised by `f` functor:
 -- `PartialConfig` is using `Last` and `Configuration` is using an identity
@@ -129,7 +128,10 @@ data Configuration' f =
     dmqcLocalConnectionManagerTracer               :: f Bool,
     dmqcLocalServerTracer                          :: f Bool,
     dmqcLocalInboundGovernorTracer                 :: f Bool,
-    dmqcDnsTracer                                  :: f Bool
+    dmqcDnsTracer                                  :: f Bool,
+    dmqcSigSubmissionClientTracer                  :: f Bool,
+    dmqcSigSubmissionServerTracer                  :: f Bool
+
   }
   deriving Generic
 
@@ -228,7 +230,9 @@ defaultConfiguration = Configuration {
       dmqcLocalConnectionManagerTracer               = I False,
       dmqcLocalServerTracer                          = I False,
       dmqcLocalInboundGovernorTracer                 = I False,
-      dmqcDnsTracer                                  = I False
+      dmqcDnsTracer                                  = I False,
+      dmqcSigSubmissionClientTracer                  = I False,
+      dmqcSigSubmissionServerTracer                  = I False
     }
   where
     PeerSelectionTargets {
@@ -302,6 +306,8 @@ instance FromJSON PartialConfig where
       dmqcLocalServerTracer                          <- Last <$> v .:? "LocalServerTracer"
       dmqcLocalInboundGovernorTracer                 <- Last <$> v .:? "LocalInboundGovernorTracer"
       dmqcDnsTracer                                  <- Last <$> v .:? "DnsTracer"
+      dmqcSigSubmissionClientTracer                  <- Last <$> v .:? "SigSubmissionServerTracer"
+      dmqcSigSubmissionServerTracer                  <- Last <$> v .:? "SigSubmissionClientTracer"
 
       pure $
         Configuration
@@ -351,6 +357,8 @@ instance FromJSON PartialConfig where
           , dmqcLocalServerTracer
           , dmqcLocalInboundGovernorTracer
           , dmqcDnsTracer
+          , dmqcSigSubmissionClientTracer
+          , dmqcSigSubmissionServerTracer
           }
 
 -- | ToJSON instance used by logging system.
@@ -402,7 +410,9 @@ instance ToJSON Configuration where
       dmqcLocalConnectionManagerTracer,
       dmqcLocalServerTracer,
       dmqcLocalInboundGovernorTracer,
-      dmqcDnsTracer
+      dmqcDnsTracer,
+      dmqcSigSubmissionClientTracer,
+      dmqcSigSubmissionServerTracer
     }
     =
     object [ "IPv4"                                       .= (show <$> unI dmqcIPv4)
@@ -451,6 +461,8 @@ instance ToJSON Configuration where
            , "LocalServerTracer"                          .= unI dmqcLocalServerTracer
            , "LocalInboundGovernorTracer"                 .= unI dmqcLocalInboundGovernorTracer
            , "DnsTracer"                                  .= unI dmqcDnsTracer
+           , "SigSubmissionClientTracer"                  .= unI dmqcSigSubmissionClientTracer
+           , "SigSubmissionServerTracer"                  .= unI dmqcSigSubmissionServerTracer
            ]
 
 -- | Read the `DMQConfiguration` from the specified file.
