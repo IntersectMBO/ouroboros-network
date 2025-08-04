@@ -30,21 +30,15 @@ import Data.Aeson.Encode.Pretty (encodePretty)
 import Data.Bool (bool)
 import Data.ByteString.Lazy.Char8 qualified as LBS.Char8
 import Data.Functor.Contravariant ((>$<))
--- import Data.Map.Strict qualified as Map
--- import Data.Monoid (Monoid (..))
--- import Data.Semigroup (Semigroup (..))
 import Data.Set qualified as Set
 import Data.Text qualified as Text
 
 import Ouroboros.Network.Diffusion qualified as Diffusion
 import Ouroboros.Network.OrphanInstances ()
 import Ouroboros.Network.PeerSelection (DebugPeerSelection (..))
--- import Ouroboros.Network.PeerSelection qualified as PeerSelection
-import Ouroboros.Network.OrphanInstances ()
 import Ouroboros.Network.PeerSelection.Governor.Types qualified as Governor
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
-import Ouroboros.Network.OrphanInstances ()
 import Ouroboros.Network.Snocket (LocalAddress, RemoteAddress)
 
 import DMQ.Configuration
@@ -259,10 +253,7 @@ dmqDiffusionTracers
                                                           .- WithEventType "dtLocalInboundGovernorTracer" >$< tracer
   }
   where
-    (.-) :: Bool
-                 -> Tracer m a
-                 -> Tracer m a
+    (.-) :: Bool -> Tracer m a -> Tracer m a
     True  .- a = a
     False .- _ = nullTracer
-
     infixl 3 .-
