@@ -18,6 +18,7 @@ import DMQ.Configuration.Topology (readTopologyFileOrError)
 import DMQ.Diffusion.Applications (diffusionApplications)
 import DMQ.Diffusion.Arguments
 import DMQ.Diffusion.NodeKernel (withNodeKernel)
+import DMQ.NodeToClient qualified as NtC
 import DMQ.NodeToNode (dmqCodecs, dmqLimitsAndTimeouts,
            ntnApps)
 import DMQ.Tracer
@@ -41,7 +42,7 @@ runDMQ commandLineConfig = do
     let configFilePath = unI
                        $ dmqcConfigFile commandLineConfig
                    `act` dmqcConfigFile defaultConfiguration
-                      
+
     -- read & parse configuration file
     config' <- readConfigurationFileOrError configFilePath
     -- combine default configuration, configuration file and command line
@@ -79,6 +80,9 @@ runDMQ commandLineConfig = do
                                (decodeRemoteAddress maxBound))
                     dmqLimitsAndTimeouts
                     defaultSigDecisionPolicy
+          dmqNtCApps =
+            NtC.ntcApps nodeKernel
+                        NtC.dmqCodecs
           dmqDiffusionArguments =
             diffusionArguments (if handshakeTracer
                                   then WithEventType "Handshake" >$< tracer
@@ -92,6 +96,7 @@ runDMQ commandLineConfig = do
                                   dmqDiffusionConfiguration
                                   dmqLimitsAndTimeouts
                                   dmqNtNApps
+                                  dmqNtCApps
                                   (policy policyRng)
 
       Diffusion.run dmqDiffusionArguments

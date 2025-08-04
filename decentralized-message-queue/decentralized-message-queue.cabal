@@ -56,6 +56,8 @@ library
     DMQ.NodeToClient.Version
     DMQ.NodeToNode
     DMQ.NodeToNode.Version
+    DMQ.NtC_Applications.LocalMsgSubmission
+    DMQ.NtC_Applications.LocalMsgNotification
     DMQ.Protocol.LocalMsgNotification.Client
     DMQ.Protocol.LocalMsgNotification.Codec
     DMQ.Protocol.LocalMsgNotification.Server
