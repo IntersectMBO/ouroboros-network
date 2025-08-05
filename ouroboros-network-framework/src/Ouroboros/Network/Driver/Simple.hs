@@ -332,10 +332,10 @@ runAnnotatedDecoderWithChannel Channel{recv} bs0 = go (maybeToList bs0) bs0
        -> Maybe bytes
        -> DecodeStep bytes failure m (bytes -> a)
        -> m (Either failure (a, Maybe bytes))
-    go !bytes  _ (DecodeDone f trailing)        = return $ Right (f $ mconcat (reverse bytes), trailing)
-    go _bytes _ (DecodeFail failure)            = return (Left failure)
-    go !bytes Nothing         (DecodePartial k) = recv >>= \bs -> k bs >>= go (maybe bytes (: bytes) bs) Nothing
     go !bytes (Just trailing) (DecodePartial k) = k (Just trailing) >>= go (trailing : bytes) Nothing
+    go !bytes Nothing         (DecodePartial k) = recv >>= \bs -> k bs >>= go (maybe bytes (: bytes) bs) Nothing
+    go !bytes _ (DecodeDone f trailing)         = return $ Right (f $ mconcat (reverse bytes), trailing)
+    go _bytes _ (DecodeFail failure)            = return (Left failure)
 
 
 data Role = Client | Server

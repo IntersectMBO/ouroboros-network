@@ -298,13 +298,6 @@ runDecoderWithLimit limit size Channel{recv} =
        -> DecodeStep bytes failure m (Identity a)
        -> m (Either (Maybe failure) (a, Maybe bytes))
 
-    go !sz !_ (DecodeDone (Identity x) trailing)
-      | let sz' = sz - maybe 0 size trailing
-      , sz' > limit = return (Left Nothing)
-      | otherwise   = return (Right (x, trailing))
-
-    go !_ !_ (DecodeFail failure) = return (Left (Just failure))
-
     go !sz trailing (DecodePartial k)
       | sz > limit = return (Left Nothing)
       | otherwise  = case trailing of
@@ -313,6 +306,13 @@ runDecoderWithLimit limit size Channel{recv} =
                                      go sz' Nothing =<< k mbs
                        Just bs -> do let sz' = sz + size bs
                                      go sz' Nothing =<< k (Just bs)
+
+    go !sz !_ (DecodeDone (Identity x) trailing)
+      | let sz' = sz - maybe 0 size trailing
+      , sz' > limit = return (Left Nothing)
+      | otherwise   = return (Right (x, trailing))
+
+    go !_ !_ (DecodeFail failure) = return (Left (Just failure))
 
 
 runAnnotatedDecoderWithLimit
@@ -350,15 +350,14 @@ runAnnotatedDecoderWithLimit limit size Channel{recv} =
        -> DecodeStep bytes failure m (bytes -> a)
        -> m (Either (Maybe failure) (a, Maybe bytes))
 
-    go !bytes !sz !_ (DecodeDone f trailing)
-      | let sz' = sz - maybe 0 size trailing
-      , sz' > limit = return (Left Nothing)
-      | otherwise   = return (Right (f (mconcat $ reverse bytes), trailing))
-
-    go !_ !_ !_ (DecodeFail failure) = return (Left (Just failure))
 
     go !_ !sz !_ DecodePartial {} | sz > limit =
       return (Left Nothing)
+
+    go !bytes !sz (Just trailing) (DecodePartial k) = do
+      let sz' = sz + size trailing
+      step <- k (Just trailing)
+      go (trailing : bytes) sz' Nothing step
 
     go !bytes !sz Nothing (DecodePartial k) = do
       mbs <- recv
@@ -369,10 +368,12 @@ runAnnotatedDecoderWithLimit limit size Channel{recv} =
             Just bs -> bs : bytes)
          sz' Nothing step
 
-    go !bytes !sz (Just trailing) (DecodePartial k) = do
-      let sz' = sz + size trailing
-      step <- k (Just trailing)
-      go (trailing : bytes) sz' Nothing step
+    go !bytes !sz !_ (DecodeDone f trailing)
+      | let sz' = sz - maybe 0 size trailing
+      , sz' > limit = return (Left Nothing)
+      | otherwise   = return (Right (f (mconcat $ reverse bytes), trailing))
+
+    go !_ !_ !_ (DecodeFail failure) = return (Left (Just failure))
 
 
 -- | Run a peer with limits.
