@@ -295,14 +295,14 @@ instance FromJSON PartialConfig where
       dmqcLocalBearerTracer                          <- Last <$> v .:? "LocalBearerTracer"
       dmqcLocalHandshakeTracer                       <- Last <$> v .:? "LocalHandshakeTracer"
       dmqcDiffusionTracer                            <- Last <$> v .:? "DiffusionTracer"
-      dmqcTraceLocalRootPeersTracer                  <- Last <$> v .:? "TraceLocalRootPeersTracer"
-      dmqcTracePublicRootPeersTracer                 <- Last <$> v .:? "TracePublicRootPeersTracer"
-      dmqcTraceLedgerPeersTracer                     <- Last <$> v .:? "TraceLedgerPeersTracer"
-      dmqcTracePeerSelectionTracer                   <- Last <$> v .:? "TracePeerSelectionTracer"
-      dmqcTraceChurnCounters                         <- Last <$> v .:? "TraceChurnCounters"
+      dmqcTraceLocalRootPeersTracer                  <- Last <$> v .:? "LocalRootPeersTracer"
+      dmqcTracePublicRootPeersTracer                 <- Last <$> v .:? "PublicRootPeersTracer"
+      dmqcTraceLedgerPeersTracer                     <- Last <$> v .:? "LedgerPeersTracer"
+      dmqcTracePeerSelectionTracer                   <- Last <$> v .:? "PeerSelectionTracer"
+      dmqcTraceChurnCounters                         <- Last <$> v .:? "ChurnCounters"
       dmqcDebugPeerSelectionInitiatorTracer          <- Last <$> v .:? "DebugPeerSelectionInitiatorTracer"
       dmqcDebugPeerSelectionInitiatorResponderTracer <- Last <$> v .:? "DebugPeerSelectionInitiatorResponderTracer"
-      dmqcTracePeerSelectionCounters                 <- Last <$> v .:? "TracePeerSelectionCounters"
+      dmqcTracePeerSelectionCounters                 <- Last <$> v .:? "PeerSelectionCounters"
       dmqcPeerSelectionActionsTracer                 <- Last <$> v .:? "PeerSelectionActionsTracer"
       dmqcConnectionManagerTracer                    <- Last <$> v .:? "ConnectionManagerTracer"
       dmqcConnectionManagerTransitionTracer          <- Last <$> v .:? "ConnectionManagerTransitionTracer"
@@ -462,14 +462,14 @@ instance ToJSON Configuration where
            , "LocalBearerTracer"                          .= unI dmqcLocalBearerTracer
            , "LocalHandshakeTracer"                       .= unI dmqcLocalHandshakeTracer
            , "DiffusionTracer"                            .= unI dmqcDiffusionTracer
-           , "TraceLocalRootPeersTracer"                  .= unI dmqcTraceLocalRootPeersTracer
-           , "TracePublicRootPeersTracer"                 .= unI dmqcTracePublicRootPeersTracer
-           , "TraceLedgerPeersTracer"                     .= unI dmqcTraceLedgerPeersTracer
-           , "TracePeerSelectionTracer"                   .= unI dmqcTracePeerSelectionTracer
-           , "TraceChurnCounters"                         .= unI dmqcTraceChurnCounters
+           , "LocalRootPeersTracer"                       .= unI dmqcTraceLocalRootPeersTracer
+           , "PublicRootPeersTracer"                      .= unI dmqcTracePublicRootPeersTracer
+           , "LedgerPeersTracer"                          .= unI dmqcTraceLedgerPeersTracer
+           , "PeerSelectionTracer"                        .= unI dmqcTracePeerSelectionTracer
+           , "ChurnCounters"                              .= unI dmqcTraceChurnCounters
            , "DebugPeerSelectionInitiatorTracer"          .= unI dmqcDebugPeerSelectionInitiatorTracer
            , "DebugPeerSelectionInitiatorResponderTracer" .= unI dmqcDebugPeerSelectionInitiatorResponderTracer
-           , "TracePeerSelectionCounters"                 .= unI dmqcTracePeerSelectionCounters
+           , "PeerSelectionCounters"                      .= unI dmqcTracePeerSelectionCounters
            , "PeerSelectionActionsTracer"                 .= unI dmqcPeerSelectionActionsTracer
            , "ConnectionManagerTracer"                    .= unI dmqcConnectionManagerTracer
            , "ConnectionManagerTransitionTracer"          .= unI dmqcConnectionManagerTransitionTracer
