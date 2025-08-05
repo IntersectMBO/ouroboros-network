@@ -121,7 +121,7 @@ library
                  , contra-tracer ==0.1.0.1
                  , containers >=0.6.5.1 && <0.9
                  , casing >=0.1.4.1 && <0.2
-                 , extra >=1.7.12 && <1.8
+                 , extra >=1.7.12 && <1.9
                  , formatting
                  , ghc-prim
                  , io-classes >=1.8.0.0
@@ -209,7 +209,7 @@ executable kes-agent-control
                  , bytestring
                  , cardano-crypto-class
                  , contra-tracer
-                 , extra >=1.7.12 && <1.8
+                 , extra >=1.7.12 && <1.9
                  , io-classes
                  , network
                  , ouroboros-network-framework
