@@ -3,12 +3,12 @@
 module Main where
 
 import Control.Monad (void)
-import Control.Tracer (Tracer (..), traceWith)
+import Control.Tracer (Tracer (..), nullTracer, traceWith)
 
 import Data.Aeson (ToJSON)
 import Data.Act
+import Data.Functor.Contravariant ((>$<))
 import Data.Void (Void)
-import Debug.Trace (traceShowM)
 import Options.Applicative
 import System.Random (newStdGen, split)
 
@@ -47,8 +47,10 @@ runDMQ commandLineConfig = do
     -- combine default configuration, configuration file and command line
     -- options
     let dmqConfig@Configuration {
-          dmqcPrettyLog    = I prettyLog,
-          dmqcTopologyFile = I topologyFile
+          dmqcPrettyLog            = I prettyLog,
+          dmqcTopologyFile         = I topologyFile,
+          dmqcHandshakeTracer      = I handshakeTracer,
+          dmqcLocalHandshakeTracer = I localHandshakeTracer
         } = config' <> commandLineConfig
             `act`
             defaultConfiguration
@@ -78,8 +80,12 @@ runDMQ commandLineConfig = do
                     dmqLimitsAndTimeouts
                     defaultSigDecisionPolicy
           dmqDiffusionArguments =
-            diffusionArguments debugTracer
-                               debugTracer
+            diffusionArguments (if handshakeTracer
+                                  then WithEventType "Handshake" >$< tracer
+                                  else nullTracer)
+                               (if localHandshakeTracer
+                                  then WithEventType "Handshake" >$< tracer
+                                  else nullTracer)
           dmqDiffusionApplications =
             diffusionApplications nodeKernel
                                   dmqConfig
@@ -92,6 +98,3 @@ runDMQ commandLineConfig = do
                     (dmqDiffusionTracers dmqConfig tracer)
                     dmqDiffusionConfiguration
                     dmqDiffusionApplications
-
-debugTracer :: (Show a, Applicative m) => Tracer m a
-debugTracer = Tracer traceShowM
