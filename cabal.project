@@ -10,8 +10,8 @@ repository cardano-haskell-packages
     d4a35cd3121aa00d18544bb0ac01c3e1691d618f462c46129271bccf39f7e8ee
 
 index-state:
-  hackage.haskell.org 2025-07-02T11:58:57Z,
-  cardano-haskell-packages 2025-07-02T14:54:39Z,
+  hackage.haskell.org 2025-08-05T11:23:47Z,
+  cardano-haskell-packages 2025-07-30T14:13:57Z,
 
 packages:
   kes-agent
@@ -23,11 +23,6 @@ package cryptonite
   -- Using RDRAND instead of /dev/urandom as an entropy source for key
   -- generation is dubious. Set the flag so we use /dev/urandom by default.
   flags: -support_rdrand
-
-allow-newer:
-  bytestring,
-  serdoc-core:tasty-quickcheck,
-  tree-diff:QuickCheck,
 
 -- ---------------------------------------------------------
 -- Disable all tests by default
