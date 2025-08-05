@@ -56,7 +56,8 @@ newtype TraceChurnMode = TraceChurnMode ChurnMode
 data ExtraArguments m =
   ExtraArguments {
     modeVar            :: StrictTVar m ChurnMode
-  , genesisPeerTargets :: PeerSelectionTargets
+  , genesisPeerSelectionTargets
+                       :: PeerSelectionTargets
   , readUseBootstrap   :: STM m UseBootstrapPeers
   , consensusMode      :: ConsensusMode
   , tracerChurnMode    :: Tracer m TraceChurnMode
@@ -137,13 +138,13 @@ peerChurnGovernor PeerChurnArgs {
                       }
                     },
                     getLocalRootHotTarget,
-                    getOriginalPeerTargets,
+                    pcaPeerSelectionTargets = peerSelectionTargets,
                     getExtraArgs = ExtraArguments {
                       modeVar             = churnModeVar,
                       readUseBootstrap    = getUseBootstrapPeers,
                       consensusMode       = consensusMode,
                       tracerChurnMode     = tracerChurnMode,
-                      genesisPeerTargets
+                      genesisPeerSelectionTargets
                     }
                   } = do
   -- Wait a while so that not only the closest peers have had the time
@@ -155,7 +156,7 @@ peerChurnGovernor PeerChurnArgs {
   -- targetPeers in Monitor will not work due to a check!
   atomically $ do
     ledgerStateJudgement0 <- getLedgerStateJudgement
-    let targets0 = getPeerSelectionTargets consensusMode ledgerStateJudgement0 getOriginalPeerTargets genesisPeerTargets
+    let targets0 = getPeerSelectionTargets consensusMode ledgerStateJudgement0 peerSelectionTargets genesisPeerSelectionTargets
         targets0' = case consensusMode of
           -- in legacy sync mode, we give a head start to big ledger & local root peers by disabling root peers
           PraosMode  -> targets0 { targetNumberOfRootPeers = 0 }
@@ -166,7 +167,9 @@ peerChurnGovernor PeerChurnArgs {
 
   atomically $ do
     ledgerStateJudgement <- getLedgerStateJudgement
-    let targets = getPeerSelectionTargets consensusMode ledgerStateJudgement getOriginalPeerTargets genesisPeerTargets
+    let targets = getPeerSelectionTargets consensusMode ledgerStateJudgement
+                                          peerSelectionTargets
+                                          genesisPeerSelectionTargets
     writeTVar peerSelectionVar targets
 
   endTs0 <- getMonotonicTime
@@ -206,7 +209,9 @@ peerChurnGovernor PeerChurnArgs {
         ltt       <- getLocalRootHotTarget
         lsj       <- getLedgerStateJudgement
         regime    <- pickChurnRegime consensusMode churnMode <$> getUseBootstrapPeers
-        let targets = getPeerSelectionTargets consensusMode lsj getOriginalPeerTargets genesisPeerTargets
+        let targets = getPeerSelectionTargets consensusMode lsj
+                                              peerSelectionTargets
+                                              genesisPeerSelectionTargets
 
         (,) <$> (getCounter <$> readCounters)
             <*> stateTVar peerSelectionVar ((\a -> (a, a)) . modifyTargets regime ltt targets)

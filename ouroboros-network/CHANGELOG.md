@@ -22,6 +22,12 @@
   UseBootstrapPeers PeerTrustable` to `Cardano.Network.OrphanInstances`
 * Added `localRootPeersGroupFromJSON`, localRootPeersGroupsFromJSON`,
   `networkTopologyFromJSON to `Ouroboros.Network.OrphanInstances`
+* Renamed `PeerChurnArgs` field: `getOriginalPeerSelectionTargets` -> `pcaPeerSelectionTargets`
+* Renamed `genesisPeerTargets` -> `genesisPeerSelectionTargets` in the following types:
+  * `Cardano.Network.Diffusion.Types.CardanoNodeArguments`
+  * `Cardano.Network.Diffusion.Types.ExtraPeerSelectionActions`
+  * `Cardano.Network.PeerSelection.Churn.ExtraArguments`
+  * `Cardano.Network.PeerSelection.Governor.PeerSelectionActions.ExtraPeerSelectionActions`
 
 ### Non-breaking changes
 

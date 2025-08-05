@@ -58,8 +58,13 @@ withPeerSelectionActions
   => Tracer m (TraceLocalRootPeers extraFlags peeraddr)
   -> StrictTVar m (Config extraFlags peeraddr)
   -> PeerActionsDNS peeraddr resolver m
-  -> ( (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
-     -> PeerSelectionActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m)
+  -> (   (    NumberOfPeers
+           -> LedgerPeersKind
+           -> m (Maybe (Set peeraddr, DiffTime))
+         )
+      -> PeerSelectionActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m)
+  -- ^ construct PeerSelectionActions given a function which obtains ledger
+  -- peers that is supplied by `withLedgerPeers`.
   -> WithLedgerPeersArgs extraAPI m
   -> StdGen
   -> (   (Async m Void, Async m Void)

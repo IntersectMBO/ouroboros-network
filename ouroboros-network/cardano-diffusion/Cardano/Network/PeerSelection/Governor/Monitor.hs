@@ -93,7 +93,7 @@ targetPeers
             (TimedDecision m Cardano.ExtraState extraDebugState PeerTrustable
                            extraPeers peeraddr peerconn)
 targetPeers Cardano.ExtraPeerSelectionActions {
-              Cardano.genesisPeerTargets
+              Cardano.genesisPeerSelectionTargets
             }
             PeerSelectionActions {
               peerSelectionTargets,
@@ -131,11 +131,11 @@ targetPeers Cardano.ExtraPeerSelectionActions {
       let targets' =
             case (ledgerStateJudgement, consensusMode) of
               (YoungEnough, GenesisMode)
-                | churnTargets == genesisPeerTargets ->
+                | churnTargets == genesisPeerSelectionTargets ->
                   peerSelectionTargets
               (TooOld, GenesisMode)
                 | churnTargets == peerSelectionTargets ->
-                  genesisPeerTargets
+                  genesisPeerSelectionTargets
               _otherwise -> churnTargets
 
       -- nb. first check is redundant in Genesis mode

@@ -596,9 +596,7 @@ peerSelectionGovernorLoop tracer
 
       -- | If there's something utterly wrong with the PeerSelectionState such
       -- that the abortion of the Governor is required.
-      case abortGovernor blockedAt st of
-        Nothing        -> pure ()
-        Just exception -> throwIO exception
+      traverse_ throwIO (abortGovernor blockedAt st)
 
       dbgUpdateAt' <- if dbgUpdateAt <= blockedAt
                          then do
@@ -639,7 +637,9 @@ peerSelectionGovernorLoop tracer
       -- Trace peer selection
       traverse_ (traceWith tracer) decisionTrace
 
-      mapM_ (JobPool.forkJob jobPool) decisionJobs
+      -- Fork decision jobs
+      traverse_ (JobPool.forkJob jobPool) decisionJobs
+
       loop st'' dbgUpdateAt'
 
     evalGuardedDecisions :: Time

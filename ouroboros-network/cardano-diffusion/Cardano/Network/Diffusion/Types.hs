@@ -59,7 +59,8 @@ data CardanoNodeArguments m = CardanoNodeArguments {
     consensusMode          :: ConsensusMode,
     -- ^ Field which comes from `cardano-node` configuration file
     -- (`ncConsensusMode`).
-    genesisPeerTargets     :: PeerSelectionTargets,
+    genesisPeerSelectionTargets
+                           :: PeerSelectionTargets,
     -- ^ Fields which come from `cardano-node` configuration file.
     minNumOfBigLedgerPeers :: NumberOfBigLedgerPeers,
     -- ^ Field which comes from `cardano-node` configuration file.

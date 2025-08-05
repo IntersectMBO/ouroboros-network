@@ -3948,7 +3948,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
         peerSelectionGovernorArgs =
           Cardano.cardanoPeerSelectionGovernorArgs
             Cardano.ExtraPeerSelectionActions {
-              genesisPeerTargets    = targets,
+              genesisPeerSelectionTargets = targets,
               readUseBootstrapPeers = readUseBootstrapPeers
             }
 
