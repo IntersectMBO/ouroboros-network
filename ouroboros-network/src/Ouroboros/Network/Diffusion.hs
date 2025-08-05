@@ -612,7 +612,7 @@ runM Interfaces
                                        localRootsVar
                                        dnsActions
                                        (\getLedgerPeers -> PeerSelectionActions {
-                                         peerSelectionTargets = dcPeerSelectionTargets,
+                                         peerSelectionTargets       = dcPeerSelectionTargets,
                                          readPeerSelectionTargets   = readTVar peerSelectionTargetsVar,
                                          getLedgerStateCtx          = daLedgerPeersCtx,
                                          readLocalRootPeersFromFile = dcReadLocalRootPeers,
@@ -701,7 +701,7 @@ runM Interfaces
                    LocalRootPeers.hotTarget
                  . LocalRootPeers.fromGroups
                  <$> readTVar localRootsVar
-              , getOriginalPeerTargets = dcPeerSelectionTargets
+              , pcaPeerSelectionTargets= dcPeerSelectionTargets
               , getExtraArgs           = daExtraChurnArgs
               }
 

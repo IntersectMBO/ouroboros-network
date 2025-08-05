@@ -295,23 +295,32 @@ data NodeKernel header block s txid m = NodeKernel {
       nkChainProducerState
         :: StrictTVar m (ChainProducerState block),
 
-      nkFetchClientRegistry :: FetchClientRegistry NtNAddr header block m,
+      nkFetchClientRegistry
+        :: FetchClientRegistry NtNAddr header block m,
 
-      nkPeerSharingRegistry :: PeerSharingRegistry NtNAddr m,
+      nkPeerSharingRegistry
+        :: PeerSharingRegistry NtNAddr m,
 
-      nkChainDB :: ChainDB block m,
+      nkChainDB
+        :: ChainDB block m,
 
-      nkPeerSharingAPI :: PeerSharingAPI NtNAddr s m,
+      nkPeerSharingAPI
+        :: PeerSharingAPI NtNAddr s m,
 
-      nkPublicPeerSelectionVar :: StrictTVar m (PublicPeerSelectionState NtNAddr),
+      nkPublicPeerSelectionVar
+        :: StrictTVar m (PublicPeerSelectionState NtNAddr),
 
-      nkMempool :: Mempool m txid,
+      nkMempool
+        :: Mempool m txid,
 
-      nkTxChannelsVar :: TxChannelsVar m NtNAddr txid (Tx txid),
+      nkTxChannelsVar
+        :: TxChannelsVar m NtNAddr txid (Tx txid),
 
-      nkTxMempoolSem :: TxMempoolSem m,
+      nkTxMempoolSem
+        :: TxMempoolSem m,
 
-      nkSharedTxStateVar :: SharedTxStateVar m NtNAddr txid (Tx txid)
+      nkSharedTxStateVar
+        :: SharedTxStateVar m NtNAddr txid (Tx txid)
     }
 
 newNodeKernel :: ( MonadSTM m

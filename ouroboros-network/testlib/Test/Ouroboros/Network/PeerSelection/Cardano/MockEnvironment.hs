@@ -302,7 +302,7 @@ governorAction mockEnv@GovernorMockEnvironment {
         peerSelectionGovernorArgs =
           Cardano.cardanoPeerSelectionGovernorArgs
             Cardano.ExtraPeerSelectionActions {
-              Cardano.genesisPeerTargets    = snd initialPeerTargets,
+              Cardano.genesisPeerSelectionTargets = snd initialPeerTargets,
               Cardano.readUseBootstrapPeers = readUseBootstrapPeers
             }
 

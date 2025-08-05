@@ -16,9 +16,9 @@ data ExtraPeerSelectionActions m =
     -- | Retrieve peer targets for Genesis & non-Genesis modes
     -- from node's configuration for the current state
     --
-    genesisPeerTargets    :: PeerSelectionTargets
+    genesisPeerSelectionTargets :: PeerSelectionTargets
 
     -- | Read the current bootstrap peers flag
-  , readUseBootstrapPeers :: STM m UseBootstrapPeers
+  , readUseBootstrapPeers       :: STM m UseBootstrapPeers
   }
 
