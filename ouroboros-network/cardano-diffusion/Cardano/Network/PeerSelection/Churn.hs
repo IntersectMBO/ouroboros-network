@@ -151,14 +151,17 @@ peerChurnGovernor PeerChurnArgs {
   -- to become warm.
   startTs0 <- getMonotonicTime
 
-  -- if this code here is removed, then the initial peer churn targets
-  -- in the TVar must not be nullPeerselectionTargets otherwise
-  -- targetPeers in Monitor will not work due to a check!
+  -- Set initial targets.
+  --
+  -- If this code here is removed, then the initial peer churn targets in the
+  -- TVar must not be `nullPeerselectionTargets` otherwise targetPeers in
+  -- Monitor will not work due to a check!
   atomically $ do
     ledgerStateJudgement0 <- getLedgerStateJudgement
     let targets0 = getPeerSelectionTargets consensusMode ledgerStateJudgement0 peerSelectionTargets genesisPeerSelectionTargets
         targets0' = case consensusMode of
-          -- in legacy sync mode, we give a head start to big ledger & local root peers by disabling root peers
+          -- In the `PraosMode` give a head start to big ledger & local root
+          -- peers by disabling root peers.
           PraosMode  -> targets0 { targetNumberOfRootPeers = 0 }
           _otherwise -> targets0
     writeTVar peerSelectionVar targets0'
