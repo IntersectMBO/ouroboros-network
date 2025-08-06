@@ -1,5 +1,12 @@
 # Revision history for ouroboros-network
 
+## 0.22.2.0 -- 05.08.2025
+
+NOTE: morally this ought to be a major release.
+
+* Type of `defaultSyncTargets` changed.
+* Type of `defaultPeerSharing` changed.
+
 ## 0.22.1.0 -- 28.07.2025
 
 ### Non-breaking changes
