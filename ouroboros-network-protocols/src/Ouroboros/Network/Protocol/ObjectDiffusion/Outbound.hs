@@ -25,8 +25,8 @@ module Ouroboros.Network.Protocol.ObjectDiffusion.Outbound
     BlockingReplyList (..),
 
     -- * Execution as a typed protocol
-    objectDiffusionNonInitOutboundPeer,
-    objectDiffusionInitOutboundPeer,
+    objectDiffusionOutboundServerPeer,
+    objectDiffusionOutboundClientPeer,
   )
 where
 
@@ -112,22 +112,22 @@ outboundRun OutboundStIdle {recvMsgRequestObjectIds, recvMsgRequestObjects} =
           (outboundRun k)
 
 -- | A non-pipelined 'Peer' representing the 'ObjectDiffusionOutbound'.
-objectDiffusionNonInitOutboundPeer ::
+objectDiffusionOutboundServerPeer ::
   forall txid tx m a.
   (Monad m) =>
   ObjectDiffusionOutbound txid tx m a ->
   Peer (ObjectDiffusion InboundAgency txid tx) AsOutbound NonPipelined StInit m a
-objectDiffusionNonInitOutboundPeer (ObjectDiffusionOutbound outboundSt) =
+objectDiffusionOutboundServerPeer (ObjectDiffusionOutbound outboundSt) =
     -- We need to assist GHC to infer the existentially quantified `c` as
     -- `Collect objectId object`
     Await ReflInboundAgency
       (\MsgInit -> Effect (outboundRun <$> outboundSt))
 
-objectDiffusionInitOutboundPeer ::
+objectDiffusionOutboundClientPeer ::
   forall txid tx m a.
   (Monad m) =>
   ObjectDiffusionOutbound txid tx m a ->
   Peer (ObjectDiffusion OutboundAgency txid tx) AsOutbound NonPipelined StInit m a
-objectDiffusionInitOutboundPeer (ObjectDiffusionOutbound outboundSt) =
+objectDiffusionOutboundClientPeer (ObjectDiffusionOutbound outboundSt) =
   Yield ReflOutboundAgency MsgInit $
     Effect $ outboundRun <$> outboundSt
