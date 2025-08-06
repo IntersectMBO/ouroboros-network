@@ -21,8 +21,8 @@ module Ouroboros.Network.Protocol.ObjectDiffusion.Inbound
     Collect (..),
 
     -- * Execution as a typed protocol
-    objectDiffusionInitInboundPeerPipelined,
-    objectDiffusionNonInitInboundPeerPipelined,
+    objectDiffusionInboundClientPeerPipelined,
+    objectDiffusionInboundServerPeerPipelined,
   )
 where
 
@@ -104,23 +104,23 @@ inboundRun (CollectPipelined mNone collect) =
         (Effect . fmap inboundRun . collect)
 
 -- | Transform a 'ObjectDiffusionInboundPipelined' into a 'PeerPipelined'.
-objectDiffusionInitInboundPeerPipelined ::
+objectDiffusionInboundClientPeerPipelined ::
   forall objectId object m a.
   (Functor m) =>
   ObjectDiffusionInboundPipelined objectId object m a ->
   PeerPipelined (ObjectDiffusion InboundAgency objectId object) AsInbound StInit m a
-objectDiffusionInitInboundPeerPipelined (ObjectDiffusionInboundPipelined inboundSt) =
+objectDiffusionInboundClientPeerPipelined (ObjectDiffusionInboundPipelined inboundSt) =
   PeerPipelined $
     Yield ReflInboundAgency MsgInit $
     Effect $
       inboundRun <$> inboundSt
 
-objectDiffusionNonInitInboundPeerPipelined ::
+objectDiffusionInboundServerPeerPipelined ::
   forall objectId object m a.
   (Functor m) =>
   ObjectDiffusionInboundPipelined objectId object m a ->
   PeerPipelined (ObjectDiffusion OutboundAgency objectId object) AsInbound StInit m a
-objectDiffusionNonInitInboundPeerPipelined (ObjectDiffusionInboundPipelined inboundSt) =
+objectDiffusionInboundServerPeerPipelined (ObjectDiffusionInboundPipelined inboundSt) =
   PeerPipelined $
      Await @_ @_ @(Pipelined Z (Collect objectId object)) ReflOutboundAgency
       (\MsgInit -> Effect (inboundRun <$> inboundSt))
