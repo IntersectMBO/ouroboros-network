@@ -34,6 +34,7 @@ import Codec.Serialise qualified as Serialise (decode, encode)
 import Codec.Serialise.Class qualified as SerialiseClass
 
 import Network.TypedProtocol.Stateful.Codec qualified as Stateful
+import Network.TypedProtocol.Stateful.Codec.Properties qualified as Stateful
 import Network.TypedProtocol.Stateful.Proofs qualified as Stateful
 
 import Ouroboros.Network.Channel
@@ -401,7 +402,7 @@ codec =
 --
 prop_codec_LocalStateQuery
   :: AnyMessageWithResult Block (Point Block) Query MockLedgerState
-  -> Bool
+  -> Property
 prop_codec_LocalStateQuery (AnyMessageWithResult msg) =
   runST (Stateful.prop_codecM codec msg)
 
@@ -409,7 +410,7 @@ prop_codec_LocalStateQuery (AnyMessageWithResult msg) =
 --
 prop_codec_splits2
   :: AnyMessageWithResult Block (Point Block) Query MockLedgerState
-  -> Bool
+  -> Property
 prop_codec_splits2 (AnyMessageWithResult msg) =
   runST (Stateful.prop_codec_splitsM splits2 codec msg)
 
@@ -417,7 +418,7 @@ prop_codec_splits2 (AnyMessageWithResult msg) =
 --
 prop_codec_splits3
   :: AnyMessageWithResult Block (Point Block) Query MockLedgerState
-  -> Bool
+  -> Property
 prop_codec_splits3 (AnyMessageWithResult msg) =
   runST (Stateful.prop_codec_splitsM splits3 codec msg)
 

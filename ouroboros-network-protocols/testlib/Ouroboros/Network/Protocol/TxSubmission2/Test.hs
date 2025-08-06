@@ -33,10 +33,12 @@ import Control.Monad.IOSim
 import Control.Monad.ST (runST)
 import Control.Tracer (Tracer (..), contramap, nullTracer)
 
+import Codec.CBOR.Write qualified as CBOR
 import Codec.Serialise (DeserialiseFailure, Serialise)
 import Codec.Serialise qualified as Serialise (decode, encode)
 
-import Network.TypedProtocol.Codec hiding (prop_codec)
+import Network.TypedProtocol.Codec
+import Network.TypedProtocol.Codec.Properties hiding (prop_anncodec, prop_codec)
 import Network.TypedProtocol.Proofs
 
 import Ouroboros.Network.Channel
@@ -77,9 +79,15 @@ tests =
         , testProperty "connect 2"           prop_connect2
         , testProperty "codec"               prop_codec
         , testProperty "codec id"            prop_codec_id
-        , testProperty "codec 2-splits"      prop_codec_splits2
+        , testProperty "codec 2-splits"    $ withMaxSize 50
+                                             prop_codec_splits2
         , testProperty "codec 3-splits"    $ withMaxSize 10
                                              prop_codec_splits3
+        , testProperty "anncodec"            prop_anncodec
+        , testProperty "anncodec 2-splits" $ withMaxSize 50
+                                             prop_anncodec_splits2
+        , testProperty "anncodec 3-splits" $ withMaxSize 20
+                                             prop_anncodec_splits3
         , testProperty "codec cbor"          prop_codec_cbor
         , testProperty "codec valid cbor"    prop_codec_valid_cbor
         , testProperty "channel ST"          prop_channel_ST
@@ -249,7 +257,7 @@ deriving newtype instance Arbitrary NumTxIdsToAck
 deriving newtype instance Arbitrary NumTxIdsToReq
 
 
-instance Arbitrary (AnyMessage (TxSubmission2 TxId Tx)) where
+instance (Arbitrary txid, Arbitrary tx) => Arbitrary (AnyMessage (TxSubmission2 txid tx)) where
   arbitrary = oneof
     [ pure $ AnyMessage MsgInit
     , AnyMessage  <$>
@@ -310,6 +318,20 @@ instance (Eq txid, Eq tx) => Eq (AnyMessage (TxSubmission2 txid tx)) where
   _ == _ = False
 
 
+instance (Serialise a, Arbitrary a) => Arbitrary (WithBytes a) where
+  arbitrary = do
+    cborPayload <- arbitrary
+    let cborBytes = CBOR.toLazyByteString $ Serialise.encode cborPayload
+    return WithBytes { cborPayload, cborBytes }
+
+  shrink WithBytes {cborPayload} =
+    [ WithBytes { cborPayload = cborPayload'
+                , cborBytes   = CBOR.toLazyByteString $ Serialise.encode cborPayload'
+                }
+    | cborPayload' <- shrink cborPayload
+    ]
+
+
 codec_v2 :: MonadST m
          => Codec (TxSubmission2 TxId Tx)
                    DeserialiseFailure
@@ -318,24 +340,42 @@ codec_v2 = codecTxSubmission2
            Serialise.encode Serialise.decode
            Serialise.encode Serialise.decode
 
+anncodec_v2 :: MonadST m
+            => AnnotatedCodec (TxSubmission2 TxId (WithBytes Tx))
+                              DeserialiseFailure
+                              m ByteString
+anncodec_v2 = anncodecTxSubmission2
+              Serialise.encode Serialise.decode
+              Serialise.decode
+
+
 
 -- | Check the codec round trip property.
 --
-prop_codec :: AnyMessage (TxSubmission2 TxId Tx) -> Bool
+prop_codec :: AnyMessage (TxSubmission2 TxId Tx) -> Property
 prop_codec msg =
   runST (prop_codecM codec_v2 msg)
 
+
+prop_anncodec :: AnyMessage (TxSubmission2 TxId (WithBytes Tx)) -> Property
+prop_anncodec msg = runST (prop_anncodecM anncodec_v2 msg)
+
+
 -- | Check the codec round trip property for the id condec.
 --
-prop_codec_id :: AnyMessage (TxSubmission2 TxId Tx) -> Bool
+prop_codec_id :: AnyMessage (TxSubmission2 TxId Tx) -> Property
 prop_codec_id msg =
   runST (prop_codecM codecTxSubmission2Id msg)
 
 -- | Check for data chunk boundary problems in the codec using 2 chunks.
 --
-prop_codec_splits2 :: AnyMessage (TxSubmission2 TxId Tx) -> Bool
+prop_codec_splits2 :: AnyMessage (TxSubmission2 TxId Tx) -> Property
 prop_codec_splits2 msg =
   runST (prop_codec_splitsM splits2 codec_v2 msg)
+
+prop_anncodec_splits2 :: AnyMessage (TxSubmission2 TxId (WithBytes Tx)) -> Property
+prop_anncodec_splits2 msg =
+  runST (prop_anncodec_splitsM splits2 anncodec_v2 msg)
 
 -- | Check for data chunk boundary problems in the codec using 3 chunks.
 --
@@ -343,6 +383,11 @@ prop_codec_splits3 :: AnyMessage (TxSubmission2 TxId Tx) -> Property
 prop_codec_splits3 msg =
   labelMsg msg $
   runST (prop_codec_splitsM splits3 codec_v2 msg)
+
+prop_anncodec_splits3 :: AnyMessage (TxSubmission2 TxId (WithBytes Tx)) -> Property
+prop_anncodec_splits3 msg =
+  labelMsg msg $
+  runST (prop_anncodec_splitsM splits3 anncodec_v2 msg)
 
 prop_codec_cbor
   :: AnyMessage (TxSubmission2 TxId Tx)
@@ -392,7 +437,10 @@ instance (Eq a, Arbitrary a) => Arbitrary (DistinctList a) where
     [ DistinctList (nub xs') | xs' <- shrink xs ]
 
 
-labelMsg :: AnyMessage (TxSubmission2 txid tx) -> Bool -> Property
+labelMsg :: forall prop txid tx.
+            Testable prop
+         => AnyMessage (TxSubmission2 txid tx)
+         -> prop -> Property
 labelMsg (AnyMessage msg) =
   label (case msg of
            MsgInit            -> "MsgInit"

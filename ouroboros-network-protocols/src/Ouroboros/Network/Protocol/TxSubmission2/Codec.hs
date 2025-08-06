@@ -5,20 +5,28 @@
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE TypeOperators       #-}
 
 module Ouroboros.Network.Protocol.TxSubmission2.Codec
   ( codecTxSubmission2
+  , anncodecTxSubmission2
   , codecTxSubmission2Id
   , byteLimitsTxSubmission2
   , timeLimitsTxSubmission2
+  , WithBytes (..)
   ) where
 
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadTime.SI
 import Data.ByteString.Lazy (ByteString)
+import Data.ByteString.Lazy qualified as BSL
+import Data.Constraint
+import Data.Functor.Identity
 import Data.Kind (Type)
 import Data.List.NonEmpty qualified as NonEmpty
+import Data.Type.Equality
 import Text.Printf
 
 import Codec.CBOR.Decoding qualified as CBOR
@@ -75,6 +83,151 @@ timeLimitsTxSubmission2 = ProtocolTimeLimits stateToLimit
     stateToLimit a@SingDone                  = notActiveState a
 
 
+data WithBytes a = WithBytes {
+      cborBytes   :: ByteString,
+      -- ^ cbor encoding
+      cborPayload :: a
+      -- ^ decoded structure
+    }
+  deriving (Show, Eq)
+
+encodeWithBytes :: WithBytes a -> CBOR.Encoding
+encodeWithBytes =
+    -- this should be equivalent to
+    -- `CBOR.encodePreEncoded . BSL.toStrict . cborBytes`
+    -- but it doesn't copy the bytes
+    foldMap CBOR.encodePreEncoded . BSL.toChunks . cborBytes
+
+-- | A bytespan functor.
+--
+newtype WithByteSpan a = WithByteSpan (a, CBOR.ByteOffset, CBOR.ByteOffset)
+
+anncodecTxSubmission2
+  :: forall (txid :: Type) (tx :: Type) m.
+     MonadST m
+  => (txid -> CBOR.Encoding)
+  -- ^ encode 'txid'
+  -> (forall s . CBOR.Decoder s txid)
+  -- ^ decode 'txid'
+  -> (forall s . CBOR.Decoder s tx)
+  -- ^ decode transaction
+  -> AnnotatedCodec (TxSubmission2 txid (WithBytes tx)) CBOR.DeserialiseFailure m ByteString
+anncodecTxSubmission2 encodeTxId decodeTxId
+                                 decodeTx =
+    mkCodecCborLazyBS
+      (encodeTxSubmission2 encodeTxId encodeWithBytes)
+      decode
+  where
+    decode :: forall (st :: TxSubmission2 txid (WithBytes tx)).
+              ActiveState st
+           => StateToken st
+           -> forall s. CBOR.Decoder s (Annotator ByteString st)
+    decode =
+      decodeTxSubmission2 @WithBytes
+                          @WithByteSpan
+                          @ByteString
+                          mkWithBytes
+                          decodeWithByteSpan
+                          decodeTxId decodeTx
+
+    mkWithBytes
+      :: ByteString
+      -> WithByteSpan a
+      -> WithBytes a
+    mkWithBytes bytes (WithByteSpan (cborPayload, start, end)) =
+        WithBytes {
+          cborBytes = BSL.take (end - start) $ BSL.drop start bytes,
+          cborPayload
+        }
+
+    decodeWithByteSpan :: CBOR.Decoder s a -> CBOR.Decoder s (WithByteSpan a)
+    decodeWithByteSpan = fmap WithByteSpan . CBOR.decodeWithByteSpan
+
+
+--
+-- Map protocol state & messages from `TxSubmission2 txid (Identity tx)` to
+-- `TxSubmission2 txid tx`
+--
+
+type family FromIdentity (st :: TxSubmission2 txid (Identity tx)) :: TxSubmission2 txid tx where
+  FromIdentity StInit        = StInit
+  FromIdentity StIdle        = StIdle
+  FromIdentity (StTxIds blk) = StTxIds blk
+  FromIdentity StTxs         = StTxs
+  FromIdentity StDone        = StDone
+
+type family ToIdentity (st :: TxSubmission2 txid tx) :: TxSubmission2 txid (Identity tx) where
+  ToIdentity StInit        = StInit
+  ToIdentity StIdle        = StIdle
+  ToIdentity (StTxIds blk) = StTxIds blk
+  ToIdentity StTxs         = StTxs
+  ToIdentity StDone        = StDone
+
+singToIdentity
+  :: forall txid tx (st :: TxSubmission2 txid tx).
+     StateToken st
+  -> StateToken (ToIdentity st)
+singToIdentity SingInit        = SingInit
+singToIdentity SingIdle        = SingIdle
+singToIdentity (SingTxIds blk) = SingTxIds blk
+singToIdentity SingTxs         = SingTxs
+singToIdentity SingDone        = SingDone
+
+--
+-- Proofs
+--
+
+-- | A proof that `FromIdentity` is a left inverse of `ToIdentity`.
+--
+proof_FromTo
+  :: forall txid tx (st :: TxSubmission2 txid tx).
+     StateToken st
+  -> FromIdentity (ToIdentity st) :~: st
+proof_FromTo SingInit    = Refl
+proof_FromTo SingIdle    = Refl
+proof_FromTo SingTxIds{} = Refl
+proof_FromTo SingTxs     = Refl
+proof_FromTo SingDone    = Refl
+{-# INLINE proof_FromTo #-}
+
+-- | A proof that `ActiveState` constraint is preserved by `ToIdentity`.
+--
+proof_activeState
+  :: forall txid tx (st :: TxSubmission2 txid tx).
+     StateToken st
+  -> Dict (ActiveState st)
+  -> Dict (ActiveState (ToIdentity st))
+proof_activeState SingInit      Dict = Dict
+proof_activeState SingIdle      Dict = Dict
+proof_activeState SingTxIds{}   Dict = Dict
+proof_activeState SingTxs       Dict = Dict
+proof_activeState sing@SingDone Dict = notActiveState sing
+{-# INLINE proof_activeState #-}
+
+
+msgFromIdentity
+  :: forall txid tx (st :: TxSubmission2 txid (Identity tx)).
+     SomeMessage st
+  -> SomeMessage (FromIdentity st)
+msgFromIdentity (SomeMessage MsgInit)
+              =  SomeMessage MsgInit
+msgFromIdentity (SomeMessage (MsgRequestTxIds blk@SingBlocking ack req))
+              =  SomeMessage (MsgRequestTxIds blk ack req)
+msgFromIdentity (SomeMessage (MsgRequestTxIds blk@SingNonBlocking ack req))
+              =  SomeMessage (MsgRequestTxIds blk ack req)
+msgFromIdentity (SomeMessage (MsgReplyTxIds txids@BlockingReply{}))
+              =  SomeMessage (MsgReplyTxIds txids)
+msgFromIdentity (SomeMessage (MsgReplyTxIds txids@NonBlockingReply{}))
+              =  SomeMessage (MsgReplyTxIds txids)
+msgFromIdentity (SomeMessage (MsgRequestTxs txids))
+              =  SomeMessage (MsgRequestTxs txids)
+msgFromIdentity (SomeMessage (MsgReplyTxs txs))
+              =  SomeMessage (MsgReplyTxs (runIdentity <$> txs))
+msgFromIdentity (SomeMessage MsgDone)
+              =  SomeMessage MsgDone
+{-# INLINE msgFromIdentity #-}
+
+
 codecTxSubmission2
   :: forall (txid :: Type) (tx :: Type) m.
      MonadST m
@@ -88,19 +241,54 @@ codecTxSubmission2
   -- ^ decode transaction
   -> Codec (TxSubmission2 txid tx) CBOR.DeserialiseFailure m ByteString
 codecTxSubmission2 encodeTxId decodeTxId
-                   encodeTx   decodeTx =
-    mkCodecCborLazyBS
+                   encodeTx   decodeTx
+  = mkCodecCborLazyBS
       (encodeTxSubmission2 encodeTxId encodeTx)
       decode
   where
-    decode :: forall (st :: TxSubmission2 txid tx).
+    decode :: forall (st :: TxSubmission2 txid tx) s.
+                         ActiveState st
+                      => StateToken st
+                      -> CBOR.Decoder s (SomeMessage st)
+    decode sing =
+      case proof_FromTo sing of { Refl ->
+        case proof_activeState sing Dict of { Dict ->
+          -- The `decode'` function requires the `ActiveState (Identity st)` constraint,
+          -- which is provided by the `proof_activeState` proof for the given
+          -- state token.
+          --
+          -- The `msgFromIdentity` function is applied to transform the result of `decode'`
+          -- into a value of type `SomeMessage (FromIdentity (ToIdentity st))`. The
+          -- `proof_FromTo` proof is then used to establish the type equality between
+          -- `SomeMessage (FromIdentity (ToIdentity st))` and `SomeMessage st`, allowing
+          -- GHC to infer the correct type.
+          msgFromIdentity <$> decode' (singToIdentity sing)
+        }
+      }
+
+    decode' :: forall (st :: TxSubmission2 txid (Identity tx)).
               ActiveState st
            => StateToken st
            -> forall s. CBOR.Decoder s (SomeMessage st)
-    decode stok = do
-      len <- CBOR.decodeListLen
-      key <- CBOR.decodeWord
-      decodeTxSubmission2 decodeTxId decodeTx stok len key
+    decode' stok =
+      mapAnnotator <$>
+        decodeTxSubmission2 @Identity
+                            @Identity
+                            @()
+                            mkWithBytes
+                            decodeWithByteSpan
+                            decodeTxId decodeTx
+                            stok
+
+    mapAnnotator :: Annotator () st -> SomeMessage st
+    mapAnnotator Annotator { runAnnotator } = runAnnotator ()
+
+    mkWithBytes :: () -> Identity tx -> Identity tx
+    mkWithBytes _ = id
+
+    decodeWithByteSpan :: CBOR.Decoder s a -> CBOR.Decoder s (Identity a)
+    decodeWithByteSpan = fmap Identity
+
 
 encodeTxSubmission2
     :: forall (txid :: Type) (tx :: Type) (st :: TxSubmission2 txid tx) (st' :: TxSubmission2 txid tx).
@@ -161,87 +349,103 @@ encodeTxSubmission2 encodeTxId encodeTx = encode
      <> CBOR.encodeWord 4
 
 
+-- | Decode tx-submission mini-protocol message.  This decoder is polymorphic
+-- in `txid`, `tx`, but also in:
+--
+-- * annotator's bytes
+-- * tx's annotation, e.g. `withBytes`
+-- * offsets used by the tx's annotator, e.g. `byteOffsetF`
+--
 decodeTxSubmission2
-    :: forall (txid :: Type) (tx :: Type) (st :: TxSubmission2 txid tx) s.
+    :: forall (withBytes    :: Type -> Type) -- tx annotator functor
+              (withByteSpan :: Type -> Type) -- withByteSpan functor
+              (bytes        :: Type)         -- annotation bytes
+              (txid :: Type) (tx :: Type)
+              (st :: TxSubmission2 txid (withBytes tx))
+              s.
        ActiveState st
-    => (forall s'. CBOR.Decoder s' txid)
-    -- ^ decode 'txid'
+    => (bytes -> withByteSpan tx -> withBytes tx)
+    -- ^ mkWithBytes: smart constructor for `withBytes` functor.
+    -> (forall a s'. CBOR.Decoder s' a -> CBOR.Decoder s' (withByteSpan a))
+    -- ^ turn a `CBOR.Decoder` into a decoder of `withByteSpan a`, e.g.
+    -- `CBOR.decodeWithByteSpan`.
+    -> (forall s'. CBOR.Decoder s' txid)
+    -- ^ decode a transaction id
     -> (forall s'. CBOR.Decoder s' tx)
-    -- ^ decode transaction
+    -- ^ decode a transaction
     -> StateToken st
-    -> Int
-    -> Word
-    -> CBOR.Decoder s (SomeMessage st)
-decodeTxSubmission2 decodeTxId decodeTx = decode
-  where
-    decode :: forall (st' :: TxSubmission2 txid tx).
-              ActiveState st'
-           => StateToken st'
-           -> Int
-           -> Word
-           -> CBOR.Decoder s (SomeMessage st')
-    decode stok len key = do
-      case (stok, len, key) of
-        (SingInit,       1, 6) ->
-          return (SomeMessage MsgInit)
-        (SingIdle,       4, 0) -> do
-          blocking <- CBOR.decodeBool
-          ackNo    <- NumTxIdsToAck <$> CBOR.decodeWord16
-          reqNo    <- NumTxIdsToReq <$> CBOR.decodeWord16
-          return $! case blocking of
-            True  -> SomeMessage (MsgRequestTxIds SingBlocking    ackNo reqNo)
-            False -> SomeMessage (MsgRequestTxIds SingNonBlocking ackNo reqNo)
+    -- ^ protocol state token
+    -> CBOR.Decoder s (Annotator bytes st)
+decodeTxSubmission2 mkWithBytes decodeWithByteSpan
+                    decodeTxId decodeTx
+                    stok
+  = do
+  len <- CBOR.decodeListLen
+  key <- CBOR.decodeWord
+  case (stok, len, key) of
+    (SingInit, 1, 6) ->
+      return (Annotator $ \_ -> SomeMessage MsgInit)
 
-        (SingTxIds b,  2, 1) -> do
-          CBOR.decodeListLenIndef
-          txids <- CBOR.decodeSequenceLenIndef
-                     (flip (:)) [] reverse
-                     (do CBOR.decodeListLenOf 2
-                         txid <- decodeTxId
-                         sz   <- CBOR.decodeWord32
-                         return (txid, SizeInBytes sz))
-          case (b, txids) of
-            (SingBlocking, t:ts) ->
-              return $
-                SomeMessage (MsgReplyTxIds (BlockingReply (t NonEmpty.:| ts)))
+    (SingIdle, 4, 0) -> do
+      blocking <- CBOR.decodeBool
+      ackNo    <- NumTxIdsToAck <$> CBOR.decodeWord16
+      reqNo    <- NumTxIdsToReq <$> CBOR.decodeWord16
+      return $!
+        if blocking
+        then Annotator $ \_ -> SomeMessage (MsgRequestTxIds SingBlocking    ackNo reqNo)
+        else Annotator $ \_ -> SomeMessage (MsgRequestTxIds SingNonBlocking ackNo reqNo)
 
-            (SingNonBlocking, ts) ->
-              return $
-                SomeMessage (MsgReplyTxIds (NonBlockingReply ts))
+    (SingTxIds b, 2, 1) -> do
+      CBOR.decodeListLenIndef
+      txids <- CBOR.decodeSequenceLenIndef
+                 (flip (:)) [] reverse
+                 (do CBOR.decodeListLenOf 2
+                     txid <- decodeTxId
+                     sz   <- CBOR.decodeWord32
+                     return (txid, SizeInBytes sz))
+      case (b, txids) of
+        (SingBlocking, t:ts) ->
+          return $ Annotator $ \_ ->
+            SomeMessage (MsgReplyTxIds (BlockingReply (t NonEmpty.:| ts)))
 
-            (SingBlocking, []) ->
-              fail "codecTxSubmission: MsgReplyTxIds: empty list not permitted"
+        (SingNonBlocking, ts) ->
+          return $ Annotator $ \_ ->
+            SomeMessage (MsgReplyTxIds (NonBlockingReply ts))
 
+        (SingBlocking, []) ->
+          fail "codecTxSubmission: MsgReplyTxIds: empty list not permitted"
 
-        (SingIdle,       2, 2) -> do
-          CBOR.decodeListLenIndef
-          txids <- CBOR.decodeSequenceLenIndef (flip (:)) [] reverse decodeTxId
-          return (SomeMessage (MsgRequestTxs txids))
+    (SingIdle, 2, 2) -> do
+      CBOR.decodeListLenIndef
+      txids <- CBOR.decodeSequenceLenIndef (flip (:)) [] reverse decodeTxId
+      return (Annotator $ \_ -> SomeMessage (MsgRequestTxs txids))
 
-        (SingTxs,     2, 3) -> do
-          CBOR.decodeListLenIndef
-          txids <- CBOR.decodeSequenceLenIndef (flip (:)) [] reverse decodeTx
-          return (SomeMessage (MsgReplyTxs txids))
+    (SingTxs, 2, 3) -> do
+      CBOR.decodeListLenIndef
+      txs <- CBOR.decodeSequenceLenIndef (flip (:)) [] reverse (decodeWithByteSpan decodeTx)
+      return (Annotator  $
+                \bytes -> SomeMessage (MsgReplyTxs $ mkWithBytes bytes `map` txs))
 
-        (SingTxIds SingBlocking, 1, 4) ->
-          return (SomeMessage MsgDone)
+    (SingTxIds SingBlocking, 1, 4) ->
+      return (Annotator $ \_ -> SomeMessage MsgDone)
 
-        (SingDone, _, _) -> notActiveState stok
+    (SingDone, _, _) -> notActiveState stok
 
-        --
-        -- failures per protocol state
-        --
+    --
+    -- failures per protocol state
+    --
 
-        (SingInit, _, _) ->
-            fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
-        (SingTxIds SingBlocking, _, _) ->
-            fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
-        (SingTxIds SingNonBlocking, _, _) ->
-            fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
-        (SingTxs, _, _) ->
-            fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
-        (SingIdle, _, _) ->
-            fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
+    (SingInit, _, _) ->
+        fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
+    (SingTxIds SingBlocking, _, _) ->
+        fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
+    (SingTxIds SingNonBlocking, _, _) ->
+        fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
+    (SingTxs, _, _) ->
+        fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
+    (SingIdle, _, _) ->
+        fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
+
 
 codecTxSubmission2Id
   :: forall txid tx m. Monad m

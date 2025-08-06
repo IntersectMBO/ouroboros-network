@@ -163,7 +163,7 @@ library
     random,
     strict-checked-vars ^>=0.2,
     transformers,
-    typed-protocols ^>=1.0,
+    typed-protocols ^>=1.1,
 
   if !os(windows)
     build-depends:
@@ -292,7 +292,7 @@ library cardano-diffusion
     ouroboros-network-framework ^>=0.19,
     ouroboros-network-protocols ^>=0.15,
     random,
-    typed-protocols:{typed-protocols, stateful} ^>=1.0,
+    typed-protocols:{typed-protocols, stateful} ^>=1.1,
 
   if !os(windows)
     build-depends:

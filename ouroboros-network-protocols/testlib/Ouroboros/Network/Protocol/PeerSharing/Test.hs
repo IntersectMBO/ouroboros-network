@@ -23,6 +23,7 @@ import Data.Foldable as Foldable (foldl')
 import Data.Word (Word8)
 
 import Network.TypedProtocol.Codec
+import Network.TypedProtocol.Codec.Properties
 import Network.TypedProtocol.Proofs
 
 import Ouroboros.Network.Channel (createConnectedChannels)
@@ -154,8 +155,7 @@ instance Eq peer => Eq (AnyMessage (PeerSharing peer)) where
     AnyMessage MsgDone                   == AnyMessage MsgDone                   = True
     _ == _                                                                       = False
 
-prop_codec_PeerSharing :: AnyMessage (PeerSharing Int)
-               -> Bool
+prop_codec_PeerSharing :: AnyMessage (PeerSharing Int) -> Property
 prop_codec_PeerSharing msg =
   runST (prop_codecM (codecPeerSharing CBOR.encodeInt CBOR.decodeInt) msg)
 
@@ -172,13 +172,13 @@ prop_codec_valid_cbor = prop_codec_valid_cbor_encoding (codecPeerSharing CBOR.en
 
 -- | Check for data chunk boundary problems in the codec using 2 chunks.
 --
-prop_codec_splits2 :: AnyMessage (PeerSharing Int) -> Bool
+prop_codec_splits2 :: AnyMessage (PeerSharing Int) -> Property
 prop_codec_splits2 msg =
   runST (prop_codec_splitsM splits2 (codecPeerSharing CBOR.encodeInt CBOR.decodeInt) msg)
 
 -- | Check for data chunk boundary problems in the codec using 3 chunks.
 --
-prop_codec_splits3 :: AnyMessage (PeerSharing Int) -> Bool
+prop_codec_splits3 :: AnyMessage (PeerSharing Int) -> Property
 prop_codec_splits3 msg =
   runST (prop_codec_splitsM splits3 (codecPeerSharing CBOR.encodeInt CBOR.decodeInt) msg)
 
