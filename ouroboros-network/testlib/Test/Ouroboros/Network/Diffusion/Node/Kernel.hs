@@ -13,6 +13,8 @@ module Test.Ouroboros.Network.Diffusion.Node.Kernel
   , encodeNtNAddr
   , decodeNtNAddr
   , ntnAddrToRelayAccessPoint
+  , ppNtNAddr
+  , ppNtNConnId
   , NtNVersion
   , NtNVersionData (..)
   , NtCAddr
@@ -31,11 +33,13 @@ module Test.Ouroboros.Network.Diffusion.Node.Kernel
   ) where
 
 import Control.Applicative (Alternative)
+import Control.Concurrent.Class.MonadMVar.Strict qualified as Strict
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.DeepSeq (NFData (..))
 import Control.Monad (replicateM, when)
 import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
@@ -63,12 +67,16 @@ import Ouroboros.Network.AnchoredFragment (Anchor (..))
 import Ouroboros.Network.Block (HasFullHeader, SlotNo)
 import Ouroboros.Network.Block qualified as Block
 import Ouroboros.Network.BlockFetch
+import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.Handshake.Acceptable (Accept (..), Acceptable (..))
 import Ouroboros.Network.Mock.Chain (Chain (..))
 import Ouroboros.Network.Mock.Chain qualified as Chain
 import Ouroboros.Network.Mock.ConcreteBlock (Block)
 import Ouroboros.Network.Mock.ConcreteBlock qualified as ConcreteBlock
 import Ouroboros.Network.Mock.ProducerState
+
+import Simulation.Network.Snocket (AddressType (..), GlobalAddressScheme (..))
+
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection (PeerSharing, RelayAccessPoint (..))
 import Ouroboros.Network.PeerSelection.Governor (PublicPeerSelectionState,
@@ -78,12 +86,13 @@ import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry (..),
            ps_POLICY_PEER_SHARE_MAX_PEERS, ps_POLICY_PEER_SHARE_STICKY_TIME)
 import Ouroboros.Network.Protocol.Handshake.Unversioned
 import Ouroboros.Network.Snocket (TestAddress (..))
-
-import Simulation.Network.Snocket (AddressType (..), GlobalAddressScheme (..))
-
+import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (SharedTxStateVar,
+           TxChannels (..), TxChannelsVar, TxMempoolSem, newSharedTxStateVar,
+           newTxMempoolSem)
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB (ChainDB (..))
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB qualified as ChainDB
 import Test.Ouroboros.Network.Orphans ()
+import Test.Ouroboros.Network.TxSubmission.Types (Mempool, Tx, newMempool)
 import Test.QuickCheck (Arbitrary (..), choose, chooseInt, frequency, oneof)
 
 
@@ -119,6 +128,11 @@ instance Show NtNAddr_ where
     show (EphemeralIPv6Addr n) = "EphemeralIPv6Addr " ++ show n
     show (IPAddr ip port)      = "IPAddr (read \"" ++ show ip ++ "\") " ++ show port
 
+ppNtNAddr_ :: NtNAddr_ -> String
+ppNtNAddr_ (EphemeralIPv4Addr n) = "eph.v4." ++ show n
+ppNtNAddr_ (EphemeralIPv6Addr n) = "eph.v6." ++ show n
+ppNtNAddr_ (IPAddr ip port)      = show ip ++ ":" ++ show port
+
 instance GlobalAddressScheme NtNAddr_ where
     getAddressType (TestAddress addr) =
       case addr of
@@ -138,6 +152,13 @@ data NtNVersionData = NtNVersionData
   , ntnPeerSharing   :: PeerSharing
   }
   deriving Show
+
+ppNtNAddr :: NtNAddr -> String
+ppNtNAddr (TestAddress addr) = ppNtNAddr_ addr
+
+ppNtNConnId :: ConnectionId NtNAddr -> String
+ppNtNConnId ConnectionId { localAddress, remoteAddress } =
+  ppNtNAddr localAddress ++ "→" ++ ppNtNAddr remoteAddress
 
 instance Acceptable NtNVersionData where
   acceptableVersion
@@ -265,7 +286,7 @@ randomBlockGenerationArgs bgaSlotDuration bgaSeed quota =
     , bgaSeed
     }
 
-data NodeKernel header block s m = NodeKernel {
+data NodeKernel header block s txid m = NodeKernel {
       -- | upstream chains
       nkClientChains
         :: StrictTVar m (Map NtNAddr (StrictTVar m (Chain header))),
@@ -282,12 +303,27 @@ data NodeKernel header block s m = NodeKernel {
 
       nkPeerSharingAPI :: PeerSharingAPI NtNAddr s m,
 
-      nkPublicPeerSelectionVar :: StrictTVar m (PublicPeerSelectionState NtNAddr)
+      nkPublicPeerSelectionVar :: StrictTVar m (PublicPeerSelectionState NtNAddr),
+
+      nkMempool :: Mempool m txid,
+
+      nkTxChannelsVar :: TxChannelsVar m NtNAddr txid (Tx txid),
+
+      nkTxMempoolSem :: TxMempoolSem m,
+
+      nkSharedTxStateVar :: SharedTxStateVar m NtNAddr txid (Tx txid)
     }
 
-newNodeKernel :: MonadSTM m
-              => s -> m (NodeKernel header block s m)
-newNodeKernel rng = do
+newNodeKernel :: ( MonadSTM m
+                 , Strict.MonadMVar m
+                 , RandomGen rng
+                 , Eq txid
+                 )
+              => rng
+              -> Int
+              -> [Tx txid]
+              -> m (NodeKernel header block rng txid m)
+newNodeKernel psRng txSeed txs = do
     publicStateVar <- makePublicPeerSelectionStateVar
     NodeKernel
       <$> newTVarIO Map.empty
@@ -295,15 +331,19 @@ newNodeKernel rng = do
       <*> newFetchClientRegistry
       <*> newPeerSharingRegistry
       <*> ChainDB.newChainDB
-      <*> newPeerSharingAPI publicStateVar rng
+      <*> newPeerSharingAPI publicStateVar psRng
                             ps_POLICY_PEER_SHARE_STICKY_TIME
                             ps_POLICY_PEER_SHARE_MAX_PEERS
       <*> pure publicStateVar
+      <*> newMempool txs
+      <*> Strict.newMVar (TxChannels Map.empty)
+      <*> newTxMempoolSem
+      <*> newSharedTxStateVar (Random.mkStdGen txSeed)
 
 -- | Register a new upstream chain-sync client.
 --
 registerClientChains :: MonadSTM m
-                     => NodeKernel header block s m
+                     => NodeKernel header block s txid m
                      -> NtNAddr
                      -> m (StrictTVar m (Chain header))
 registerClientChains NodeKernel { nkClientChains } peerAddr = atomically $ do
@@ -315,7 +355,7 @@ registerClientChains NodeKernel { nkClientChains } peerAddr = atomically $ do
 -- | Unregister an upstream chain-sync client.
 --
 unregisterClientChains :: MonadSTM m
-                       => NodeKernel header block s m
+                       => NodeKernel header block s txid m
                        -> NtNAddr
                        -> m ()
 unregisterClientChains NodeKernel { nkClientChains } peerAddr = atomically $
@@ -367,34 +407,43 @@ instance Exception NodeKernelError where
 -- | Run chain selection \/ block production thread.
 --
 withNodeKernelThread
-  :: forall block header m seed a.
+  :: forall block header m seed txid a.
      ( Alternative (STM m)
      , MonadAsync         m
      , MonadDelay         m
+     , MonadFork          m
      , MonadThrow         m
      , MonadThrow    (STM m)
+     , Strict.MonadMVar   m
      , HasFullHeader block
      , RandomGen seed
+     , Eq txid
      )
-  => BlockGeneratorArgs block seed
-  -> (NodeKernel header block seed m -> Async m Void -> m a)
+  => NtNAddr
+  -- ^ just for naming a thread
+  -> BlockGeneratorArgs block seed
+  -> [Tx txid]
+  -> (NodeKernel header block seed txid m -> Async m Void -> m a)
   -- ^ The continuation which has a handle to the chain selection \/ block
   -- production thread.  The thread might throw an exception.
   -> m a
-withNodeKernelThread BlockGeneratorArgs { bgaSlotDuration, bgaBlockGenerator, bgaSeed }
+withNodeKernelThread addr BlockGeneratorArgs { bgaSlotDuration, bgaBlockGenerator, bgaSeed }
+                     txs
                      k = do
-    kernel <- newNodeKernel psSeed
+    kernel <- newNodeKernel psSeed txSeed txs
     withSlotTime bgaSlotDuration $ \waitForSlot ->
       withAsync (blockProducerThread kernel waitForSlot) (k kernel)
   where
-    (bpSeed, psSeed) = Random.split bgaSeed
+    (bpSeed, rng) = Random.split bgaSeed
+    (txSeed, psSeed) = Random.random rng
 
-    blockProducerThread :: NodeKernel header block seed m
+    blockProducerThread :: NodeKernel header block seed txid m
                         -> (SlotNo -> STM m SlotNo)
                         -> m Void
     blockProducerThread NodeKernel { nkChainProducerState, nkChainDB }
                         waitForSlot
-                      = loop (Block.SlotNo 1) bpSeed
+                      =  labelThisThread ("krnl-" ++ ppNtNAddr addr)
+                      >> loop (Block.SlotNo 1) bpSeed
       where
         loop :: SlotNo -> seed -> m Void
         loop nextSlot seed = do

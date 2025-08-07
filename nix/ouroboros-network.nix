@@ -114,7 +114,7 @@ let
         packages.ouroboros-network-protocols.components.tests.test.preCheck =
           if buildSystem == "x86_64-linux" then "export GHCRTS=-M800M" else "";
         packages.ouroboros-network.components.tests.sim-tests.preCheck =
-          if buildSystem == "x86_64-linux" then "export GHCRTS=-M2400M" else "";
+          if buildSystem == "x86_64-linux" then "export GHCRTS=-M7000M" else "";
       })
       ({ pkgs, ... }: lib.mkIf pkgs.stdenv.hostPlatform.isWindows {
         packages.basement.configureFlags = [ "--hsc2hs-options=--cflag=-Wno-int-conversion" ];

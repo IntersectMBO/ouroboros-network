@@ -10,10 +10,15 @@
 * Type of `defaultSyncTargets` changed.
 * Type of `defaultPeerSharing` changed.
 * Adapted to changes of `BlockFetchConsensusInterface`.
+* `Ouroboros.Network.TxSubmission.Inbound` moved to `Ouroboros.Network.TxSubmission.Inbound.V1`
+* `Ouroboros.Network.TxSubmission.Inbound.V1.txSubmissionInbound` takes extra argument: `TxSubmissionInitDelay` (previously configurable through `cabal` flags).
+* Removed the `txsubmission-delay` cabal flag.
+* `ProtocolErrorRequestedTooManyTxids` includes number of unacked txids.
 
 ### Non-breaking changes
 
 * Added `IsBlockProducer` type in `Ouroboros.Network.Diffusion.Configuration`.
+* Added `Ouroboros.Network.TxSubmission.Inbound.V2`.
 
 ## 0.22.1.0 -- 28.07.2025
 

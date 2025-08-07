@@ -4,6 +4,7 @@
 {-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -98,8 +99,11 @@ import Ouroboros.Network.Protocol.Handshake.Type
 import Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..))
 import Ouroboros.Network.Server.RateLimiting
+import Ouroboros.Network.SizeInBytes
 import Ouroboros.Network.Snocket
 import Ouroboros.Network.Socket
+import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy (..),
+           defaultTxDecisionPolicy, max_TX_SIZE)
 
 
 data NodeToNodeProtocols appType initiatorCtx responderCtx bytes m a b = NodeToNodeProtocols {
@@ -149,9 +153,8 @@ data MiniProtocolParameters = MiniProtocolParameters {
       blockFetchPipeliningMax     :: !Word16,
       -- ^ maximal number of pipelined messages in 'block-fetch' mini-protocol.
 
-      txSubmissionMaxUnacked      :: !NumTxIdsToAck
-      -- ^ maximal number of unacked tx (pipelining is bounded by twice this
-      -- number)
+      txDecisionPolicy            :: !TxDecisionPolicy
+      -- ^ tx submission protocol decision logic parameters
     }
 
 defaultMiniProtocolParameters :: MiniProtocolParameters
@@ -159,7 +162,7 @@ defaultMiniProtocolParameters = MiniProtocolParameters {
       chainSyncPipeliningLowMark  = 200
     , chainSyncPipeliningHighMark = 300
     , blockFetchPipeliningMax     = 100
-    , txSubmissionMaxUnacked       = 10
+    , txDecisionPolicy            = defaultTxDecisionPolicy
   }
 
 -- | Make an 'OuroborosApplication' for the bundle of mini-protocols that
@@ -287,7 +290,9 @@ blockFetchProtocolLimits MiniProtocolParameters { blockFetchPipeliningMax } = Mi
       max (10 * 2_097_154 :: Int) (fromIntegral blockFetchPipeliningMax * 90_112)
   }
 
-txSubmissionProtocolLimits MiniProtocolParameters { txSubmissionMaxUnacked } = MiniProtocolLimits {
+txSubmissionProtocolLimits MiniProtocolParameters
+                             { txDecisionPolicy = TxDecisionPolicy { maxUnacknowledgedTxIds }
+                             } = MiniProtocolLimits {
       -- tx-submission server can pipeline both 'MsgRequestTxIds' and
       -- 'MsgRequestTx'. This means that there can be many
       -- 'MsgReplyTxIds', 'MsgReplyTxs' messages in an inbound queue (their
@@ -345,12 +350,12 @@ txSubmissionProtocolLimits MiniProtocolParameters { txSubmissionMaxUnacked } = M
       -- queue of 'txSubmissionOutbound' is bounded by the ingress side of
       -- the 'txSubmissionInbound'
       --
-      -- Currently the value of 'txSubmissionMaxUnacked' is '100', for
-      -- which the upper bound is `100 * (44 + 65_540) = 6_558_400`, we add
+      -- Currently the value of 'txSubmissionMaxUnacked' is '10', for
+      -- which the upper bound is `10 * (44 + 65_540) = 655_840`, we add
       -- 10% as a safety margin.
       --
       maximumIngressQueue = addSafetyMargin $
-          fromIntegral txSubmissionMaxUnacked * (44 + 65_540)
+          fromIntegral maxUnacknowledgedTxIds * (44 + fromIntegral @SizeInBytes @Int max_TX_SIZE)
     }
 
 keepAliveProtocolLimits _ =
