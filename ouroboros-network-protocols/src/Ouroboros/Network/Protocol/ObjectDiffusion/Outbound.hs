@@ -38,8 +38,8 @@ import Ouroboros.Network.Protocol.ObjectDiffusion.Type
 --
 -- The peer in the outbound role submits objects to the peer in the server
 -- role.
-newtype ObjectDiffusionOutbound txid tx m a = ObjectDiffusionOutbound
-  { runObjectDiffusionOutbound :: m (OutboundStIdle txid tx m a)
+newtype ObjectDiffusionOutbound objectId object m a = ObjectDiffusionOutbound
+  { runObjectDiffusionOutbound :: m (OutboundStIdle objectId object m a)
   }
 
 -- | In the 'StIdle' protocol state, the outbound does not have agency. Instead
@@ -50,73 +50,73 @@ newtype ObjectDiffusionOutbound txid tx m a = ObjectDiffusionOutbound
 -- * a termination message
 --
 -- It must be prepared to handle any of these.
-data OutboundStIdle txid tx m a = OutboundStIdle
+data OutboundStIdle objectId object m a = OutboundStIdle
   { recvMsgRequestObjectIds ::
       forall blocking.
       SingBlockingStyle blocking ->
       NumObjectIdsToAck ->
       NumObjectIdsToReq ->
-      m (OutboundStObjectIds blocking txid tx m a),
+      m (OutboundStObjectIds blocking objectId object m a),
     recvMsgRequestObjects ::
-      [txid] ->
-      m (OutboundStObjects txid tx m a)
+      [objectId] ->
+      m (OutboundStObjects objectId object m a)
   }
 
-data OutboundStObjectIds blocking txid tx m a where
+data OutboundStObjectIds blocking objectId object m a where
   SendMsgReplyObjectIds ::
-    BlockingReplyList blocking (txid, SizeInBytes) ->
-    OutboundStIdle txid tx m a ->
-    OutboundStObjectIds blocking txid tx m a
+    BlockingReplyList blocking (objectId, SizeInBytes) ->
+    OutboundStIdle objectId object m a ->
+    OutboundStObjectIds blocking objectId object m a
   -- | In the blocking case, the outbound can terminate the protocol. This could
   -- be used when the outbound knows there will be no more objects to submit.
-  SendMsgDone :: a -> OutboundStObjectIds StBlocking txid tx m a
+  SendMsgDone :: a -> OutboundStObjectIds StBlocking objectId object m a
 
-data OutboundStObjects txid tx m a where
+data OutboundStObjects objectId object m a where
   SendMsgReplyObjects ::
-    [tx] ->
-    OutboundStIdle txid tx m a ->
-    OutboundStObjects txid tx m a
+    [object] ->
+    OutboundStIdle objectId object m a ->
+    OutboundStObjects objectId object m a
 
 outboundRun ::
-  forall (initAgency :: Agency) txid tx m a.
+  forall (initAgency :: Agency) objectId object m a.
   (Monad m) =>
-  OutboundStIdle txid tx m a ->
-  Peer (ObjectDiffusion initAgency txid tx) AsOutbound NonPipelined StIdle m a
+  OutboundStIdle objectId object m a ->
+  Peer (ObjectDiffusion initAgency objectId object) AsOutbound NonPipelined StIdle m a
 outboundRun OutboundStIdle {recvMsgRequestObjectIds, recvMsgRequestObjects} =
   Await ReflInboundAgency $ \msg -> case msg of
     MsgRequestObjectIds blocking ackNo reqNo -> Effect $ do
       reply <- recvMsgRequestObjectIds blocking ackNo reqNo
       case reply of
-        SendMsgReplyObjectIds txids k ->
+        SendMsgReplyObjectIds objectIds k ->
           -- TODO: investigate why GHC cannot infer `SingI`; it used to in
           -- `coot/typed-protocols-rewrite` branch
           return $ case blocking of
             SingBlocking ->
               Yield ReflOutboundAgency
-                (MsgReplyObjectIds txids)
+                (MsgReplyObjectIds objectIds)
                 (outboundRun k)
             SingNonBlocking ->
               Yield ReflOutboundAgency
-                (MsgReplyObjectIds txids)
+                (MsgReplyObjectIds objectIds)
                 (outboundRun k)
         SendMsgDone result ->
           return $
             Yield ReflOutboundAgency
               MsgDone
               (Done ReflNobodyAgency result)
-    MsgRequestObjects txids -> Effect $ do
-      SendMsgReplyObjects txs k <- recvMsgRequestObjects txids
+    MsgRequestObjects objectIds -> Effect $ do
+      SendMsgReplyObjects objects k <- recvMsgRequestObjects objectIds
       return $
         Yield ReflOutboundAgency
-          (MsgReplyObjects txs)
+          (MsgReplyObjects objects)
           (outboundRun k)
 
 -- | A non-pipelined 'Peer' representing the 'ObjectDiffusionOutbound'.
 objectDiffusionOutboundServerPeer ::
-  forall txid tx m a.
+  forall objectId object m a.
   (Monad m) =>
-  ObjectDiffusionOutbound txid tx m a ->
-  Peer (ObjectDiffusion InboundAgency txid tx) AsOutbound NonPipelined StInit m a
+  ObjectDiffusionOutbound objectId object m a ->
+  Peer (ObjectDiffusion InboundAgency objectId object) AsOutbound NonPipelined StInit m a
 objectDiffusionOutboundServerPeer (ObjectDiffusionOutbound outboundSt) =
     -- We need to assist GHC to infer the existentially quantified `c` as
     -- `Collect objectId object`
@@ -124,10 +124,10 @@ objectDiffusionOutboundServerPeer (ObjectDiffusionOutbound outboundSt) =
       (\MsgInit -> Effect (outboundRun <$> outboundSt))
 
 objectDiffusionOutboundClientPeer ::
-  forall txid tx m a.
+  forall objectId object m a.
   (Monad m) =>
-  ObjectDiffusionOutbound txid tx m a ->
-  Peer (ObjectDiffusion OutboundAgency txid tx) AsOutbound NonPipelined StInit m a
+  ObjectDiffusionOutbound objectId object m a ->
+  Peer (ObjectDiffusion OutboundAgency objectId object) AsOutbound NonPipelined StInit m a
 objectDiffusionOutboundClientPeer (ObjectDiffusionOutbound outboundSt) =
   Yield ReflOutboundAgency MsgInit $
     Effect $ outboundRun <$> outboundSt
