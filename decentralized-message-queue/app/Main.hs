@@ -8,6 +8,7 @@ import Control.Tracer (Tracer (..), nullTracer, traceWith)
 import Data.Aeson (ToJSON)
 import Data.Act
 import Data.Functor.Contravariant ((>$<))
+import Data.Proxy
 import Data.Void (Void)
 import Options.Applicative
 import System.Random (newStdGen, split)
@@ -18,8 +19,10 @@ import DMQ.Configuration.Topology (readTopologyFileOrError)
 import DMQ.Diffusion.Applications (diffusionApplications)
 import DMQ.Diffusion.Arguments
 import DMQ.Diffusion.NodeKernel (withNodeKernel)
+import DMQ.NodeToClient qualified as NtC
 import DMQ.NodeToNode (dmqCodecs, dmqLimitsAndTimeouts,
            ntnApps)
+import DMQ.Protocol.SigSubmission.Codec
 import DMQ.Tracer
 
 import DMQ.Diffusion.PeerSelection (policy)
@@ -41,7 +44,7 @@ runDMQ commandLineConfig = do
     let configFilePath = unI
                        $ dmqcConfigFile commandLineConfig
                    `act` dmqcConfigFile defaultConfiguration
-                      
+
     -- read & parse configuration file
     config' <- readConfigurationFileOrError configFilePath
     -- combine default configuration, configuration file and command line
@@ -79,6 +82,9 @@ runDMQ commandLineConfig = do
                                (decodeRemoteAddress maxBound))
                     dmqLimitsAndTimeouts
                     defaultSigDecisionPolicy
+          dmqNtCApps =
+            NtC.ntcApps (Proxy :: Proxy Int) nodeKernel
+                        (NtC.dmqCodecs encodeSig decodeSig)
           dmqDiffusionArguments =
             diffusionArguments (if handshakeTracer
                                   then WithEventType "Handshake" >$< tracer
@@ -92,6 +98,7 @@ runDMQ commandLineConfig = do
                                   dmqDiffusionConfiguration
                                   dmqLimitsAndTimeouts
                                   dmqNtNApps
+                                  dmqNtCApps
                                   (policy policyRng)
 
       Diffusion.run dmqDiffusionArguments
