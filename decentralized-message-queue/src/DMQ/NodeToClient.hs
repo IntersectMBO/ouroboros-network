@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds      #-}
+{-# LANGUAGE RankNTypes     #-}
 
 module DMQ.NodeToClient
   ( module DMQ.NodeToClient.Version
@@ -21,13 +22,14 @@ import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow
 import Control.Tracer (Tracer, nullTracer)
 
+import Codec.CBOR.Decoding qualified as CBOR
+import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Term qualified as CBOR
 
 import Network.Mux qualified as Mx
 import Network.TypedProtocol.Codec hiding (encode, decode)
 import Network.TypedProtocol.Codec.CBOR qualified as CBOR
 
-import DMQ.Diffusion.NodeKernel
 import DMQ.NodeToClient.LocalMsgSubmission
 import DMQ.NodeToClient.LocalMsgNotification
 import DMQ.NodeToClient.Version
@@ -37,8 +39,6 @@ import DMQ.Protocol.LocalMsgNotification.Type
 import DMQ.Protocol.LocalMsgSubmission.Codec
 import DMQ.Protocol.LocalMsgSubmission.Server
 import DMQ.Protocol.LocalMsgSubmission.Type
-import DMQ.Protocol.SigSubmission.Codec
-import DMQ.Protocol.SigSubmission.Type
 
 import Ouroboros.Network.Context
 import Ouroboros.Network.Driver.Simple
@@ -49,7 +49,9 @@ import Ouroboros.Network.Protocol.Handshake (Handshake,
            HandshakeArguments (..))
 import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
            codecHandshake, noTimeLimitsHandshake)
-import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
+import Ouroboros.Network.Util.ShowProxy
+import Ouroboros.Network.TxSubmission.Mempool.Reader
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TxSubmissionMempoolWriter)
 
 
 type HandshakeTr ntcAddr = Mx.WithBearer (ConnectionId ntcAddr) (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term))
@@ -75,23 +77,22 @@ ntcHandshakeArguments tracer =
   , haTimeLimits    = noTimeLimitsHandshake
   }
 
--- TODO: delete these aliases
-type LocalMsgSubmission' = LocalMsgSubmission Sig Int
-type LocalMsgNotification' = LocalMsgNotification Sig
 
-data Codecs m =
+data Codecs m msg reject =
   Codecs {
     msgSubmissionCodec
-      :: !(Codec LocalMsgSubmission'
+      :: !(Codec (LocalMsgSubmission msg reject)
                  CBOR.DeserialiseFailure m ByteString)
   , msgNotificationCodec
-      :: !(Codec LocalMsgNotification'
+      :: !(Codec (LocalMsgNotification msg)
                CBOR.DeserialiseFailure m ByteString)
   }
 
-dmqCodecs :: MonadST m
-          => Codecs m
-dmqCodecs =
+dmqCodecs :: (MonadST m, Serialise reject)
+          => (msg -> CBOR.Encoding)
+          -> (forall s. CBOR.Decoder s msg)
+          -> Codecs m msg reject
+dmqCodecs encodeSig decodeSig =
   Codecs {
     msgSubmissionCodec = codecLocalMsgSubmission encodeSig decodeSig encode decode
   , msgNotificationCodec = codecLocalMsgNotification encodeSig decodeSig
@@ -120,23 +121,19 @@ data Apps ntcAddr m a =
 -- | Construct applications for the node-to-client protocols
 --
 ntcApps
-  :: (MonadThrow m, MonadThread m, MonadSTM m)
-  => NodeKernel ntnAddr m
-  -> Codecs m
+  :: (MonadThrow m, MonadThread m, MonadSTM m, ShowProxy reject, ShowProxy msg)
+  => Proxy reject
+  -> TxSubmissionMempoolReader msgid msg idx m
+  -> TxSubmissionMempoolWriter msgid msg idx m
+  -> Codecs m msg reject
   -> Apps ntcAddr m ()
-ntcApps NodeKernel { mempool }
+ntcApps _proxy mempoolReader mempoolWriter
         Codecs { msgSubmissionCodec, msgNotificationCodec } =
   Apps {
     aLocalMsgSubmission
   , aLocalMsgNotification
   }
   where
-    sigSize :: Sig -> SizeInBytes
-    sigSize _ = 0 -- TODO
-
-    mempoolReader = Mempool.getReader sigId sigSize mempool
-    mempoolWriter = Mempool.getWriter sigId (const True) mempool
-
     aLocalMsgSubmission _version _ctx channel = do
       labelThisThread "LocalMsgSubmissionServer"
       runPeer

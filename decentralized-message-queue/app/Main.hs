@@ -8,6 +8,7 @@ import Control.Tracer (Tracer (..), nullTracer, traceWith)
 import Data.Aeson (ToJSON)
 import Data.Act
 import Data.Functor.Contravariant ((>$<))
+import Data.Proxy
 import Data.Void (Void)
 import Options.Applicative
 import System.Random (newStdGen, split)
@@ -17,16 +18,19 @@ import DMQ.Configuration.CLIOptions (parseCLIOptions)
 import DMQ.Configuration.Topology (readTopologyFileOrError)
 import DMQ.Diffusion.Applications (diffusionApplications)
 import DMQ.Diffusion.Arguments
-import DMQ.Diffusion.NodeKernel (withNodeKernel)
+import DMQ.Diffusion.NodeKernel (mempool, withNodeKernel)
 import DMQ.NodeToClient qualified as NtC
 import DMQ.NodeToNode (dmqCodecs, dmqLimitsAndTimeouts,
            ntnApps)
+import DMQ.Protocol.SigSubmission.Codec
+import DMQ.Protocol.SigSubmission.Type (Sig (..))
 import DMQ.Tracer
 
 import DMQ.Diffusion.PeerSelection (policy)
 import Ouroboros.Network.Diffusion qualified as Diffusion
 import Ouroboros.Network.PeerSelection.PeerSharing.Codec (decodeRemoteAddress,
            encodeRemoteAddress)
+import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 
 main :: IO ()
 main = void . runDMQ =<< execParser opts
@@ -81,8 +85,11 @@ runDMQ commandLineConfig = do
                     dmqLimitsAndTimeouts
                     defaultSigDecisionPolicy
           dmqNtCApps =
-            NtC.ntcApps nodeKernel
-                        NtC.dmqCodecs
+            let sigSize _ = 0 -- TODO
+                mempoolReader = Mempool.getReader sigId sigSize (mempool nodeKernel)
+                mempoolWriter = Mempool.getWriter sigId (const True) (mempool nodeKernel)
+             in NtC.ntcApps (Proxy :: Proxy Int) mempoolReader mempoolWriter
+                            (NtC.dmqCodecs encodeSig decodeSig)
           dmqDiffusionArguments =
             diffusionArguments (if handshakeTracer
                                   then WithEventType "Handshake" >$< tracer
