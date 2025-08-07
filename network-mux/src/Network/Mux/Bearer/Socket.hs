@@ -55,7 +55,7 @@ socketAsBearer
   -> DiffTime -- ^ egress poll interval
   -> Socket.Socket
   -> Bearer IO
-socketAsBearer sduSize batchSize readBuffer_m sduTimeout pollInterval sd =
+socketAsBearer sduSize batchSize readBuffer_m sduTimeout egressInterval sd =
       Mx.Bearer {
         Mx.read           = readSocket,
         Mx.write          = writeSocket,
@@ -63,7 +63,7 @@ socketAsBearer sduSize batchSize readBuffer_m sduTimeout pollInterval sd =
         Mx.sduSize        = sduSize,
         Mx.batchSize      = batchSize,
         Mx.name           = "socket-bearer",
-        Mx.egressInterval = pollInterval
+        Mx.egressInterval
       }
     where
       readSocket :: Tracer IO BearerTrace -> Mx.TimeoutFn IO -> IO (Mx.SDU, Time)

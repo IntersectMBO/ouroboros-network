@@ -8,6 +8,7 @@
 
 module Network.Mux.Bearer
   ( Bearer (..)
+  , MakeBearerCb
   , MakeBearer (..)
   , BearerTrace (..)
   , makeSocketBearer
@@ -36,22 +37,33 @@ import           Network.Mux.Bearer.Pipe
 import           Network.Mux.Bearer.Queues
 import           Network.Mux.Bearer.Socket
 import           Network.Mux.Trace
-import           Network.Mux.Types hiding (sduSize)
+import           Network.Mux.Types hiding (egressInterval)
 #if defined(mingw32_HOST_OS)
 import           Network.Mux.Bearer.NamedPipe
 #endif
 
-newtype MakeBearer m fd = MakeBearer {
-    getBearer
-      :: DiffTime
-      -- timeout for reading an SDU segment, if negative no
-      -- timeout is applied.
-      -> fd
-      -- file descriptor
-      -> Maybe (ReadBuffer m)
-      -- Optional Readbuffer
-      -> m (Bearer m)
-  }
+-- | Callback which constructs a bearer, see `MakeBearer`.
+--
+type MakeBearerCb m fd =
+       DiffTime
+    -- ^ Timeout for reading an SDU segment, if negative no timeout is
+    -- applied.  The timeout is not applied to the first SDU segment received
+    -- from the network, which allows a mini-protocol to have longer
+    -- timeouts than the one given here (or even have no timeout).
+    --
+    -- NOTE: a mini-protocol timeouts (which are not responsibility of
+    -- `network-mux` library) might include the time waiting for the response,
+    -- receiving all bytes, and the time required to parse the message.
+    -> fd
+    -- ^ file descriptor
+    -> Maybe (ReadBuffer m)
+    -- ^ optional `ReadBuffer`
+    -> m (Bearer m)
+
+
+-- | Construct a bearer using a `MakeBearerCb`.
+--
+newtype MakeBearer m fd = MakeBearer { getBearer :: MakeBearerCb m fd }
 
 pureBearer :: Applicative m
            => (DiffTime -> fd -> Maybe (ReadBuffer m) ->    Bearer m)
@@ -59,12 +71,17 @@ pureBearer :: Applicative m
 pureBearer f = \sduTimeout rb fd -> pure (f sduTimeout rb fd)
 
 
+-- | `Socket` Bearer without egress interval.
+--
 makeSocketBearer :: MakeBearer IO Socket
 makeSocketBearer = makeSocketBearer' 0
 
-makeSocketBearer' :: DiffTime -> MakeBearer IO Socket
-makeSocketBearer' pt = MakeBearer $ \sduTimeout fd rb ->
-    return $ socketAsBearer size batch rb sduTimeout pt fd
+makeSocketBearer'
+  :: DiffTime
+  -- ^ egress interval
+  -> MakeBearer IO Socket
+makeSocketBearer' egressInterval = MakeBearer $ pureBearer $ \sduTimeout fd rb ->
+    socketAsBearer size batch rb sduTimeout egressInterval fd
   where
     size = SDUSize 12_288
     batch = 131_072
