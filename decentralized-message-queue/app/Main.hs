@@ -8,6 +8,7 @@ import Control.Tracer (Tracer (..), nullTracer, traceWith)
 import Data.Aeson (ToJSON)
 import Data.Act
 import Data.Functor.Contravariant ((>$<))
+import Data.Proxy
 import Data.Void (Void)
 import Options.Applicative
 import System.Random (newStdGen, split)
@@ -21,6 +22,7 @@ import DMQ.Diffusion.NodeKernel (withNodeKernel)
 import DMQ.NodeToClient qualified as NtC
 import DMQ.NodeToNode (dmqCodecs, dmqLimitsAndTimeouts,
            ntnApps)
+import DMQ.Protocol.SigSubmission.Codec
 import DMQ.Tracer
 
 import DMQ.Diffusion.PeerSelection (policy)
@@ -81,8 +83,8 @@ runDMQ commandLineConfig = do
                     dmqLimitsAndTimeouts
                     defaultSigDecisionPolicy
           dmqNtCApps =
-            NtC.ntcApps nodeKernel
-                        NtC.dmqCodecs
+            NtC.ntcApps (Proxy :: Proxy Int) nodeKernel
+                        (NtC.dmqCodecs encodeSig decodeSig)
           dmqDiffusionArguments =
             diffusionArguments (if handshakeTracer
                                   then WithEventType "Handshake" >$< tracer
