@@ -97,6 +97,7 @@ library
     Ouroboros.Network.TxSubmission.Inbound.V2.State
     Ouroboros.Network.TxSubmission.Inbound.V2.Types
     Ouroboros.Network.TxSubmission.Mempool.Reader
+    Ouroboros.Network.TxSubmission.Mempool.Simple
     Ouroboros.Network.TxSubmission.Outbound
 
   other-modules:
@@ -213,13 +214,16 @@ library orphan-instances
     aeson,
     base >=4.14 && <4.22,
     containers,
+    io-classes:si-timers,
     iproute,
     network,
     network-mux,
     ouroboros-network:{ouroboros-network, cardano-diffusion},
     ouroboros-network-api ^>=0.16,
     ouroboros-network-framework ^>=0.19,
+    ouroboros-network-protocols,
     text,
+    typed-protocols,
 
   if flag(asserts)
     ghc-options: -fno-ignore-asserts

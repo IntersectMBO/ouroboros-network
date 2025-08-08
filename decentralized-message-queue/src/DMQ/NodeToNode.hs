@@ -1,57 +1,72 @@
 {-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DeriveAnyClass      #-}
-{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module DMQ.NodeToNode where
+module DMQ.NodeToNode
+  ( RemoteAddress
+  , module DMQ.NodeToNode.Version
+  , ClientApp
+  , ServerApp
+  , Apps (..)
+  , ntnApps
+  , Protocols (..)
+  , nodeToNodeProtocols
+  , initiatorProtocols
+  , initiatorAndResponderProtocols
+  , dmqCodecs
+  , LimitsAndTimeouts
+  , dmqLimitsAndTimeouts
+  , HandshakeTr
+  , ntnHandshakeArguments
+  , stdVersionDataNTN
+  ) where
 
-import Codec.CBOR.Term qualified as CBOR
-import Control.DeepSeq (NFData)
-import Data.Text (Text)
-import Data.Text qualified as T
-import GHC.Generics (Generic)
-import System.Random (mkStdGen)
+
+import Control.Applicative (Alternative)
+import Control.Concurrent.Class.MonadMVar.Strict
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer, nullTracer)
 
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
-import Control.Applicative (Alternative)
-import Control.Concurrent.Class.MonadMVar (MonadMVar)
-import Control.Concurrent.Class.MonadSTM (MonadSTM (..))
-import Control.Monad.Class.MonadAsync (MonadAsync)
-import Control.Monad.Class.MonadFork (MonadFork, MonadThread, labelThisThread)
-import Control.Monad.Class.MonadST (MonadST)
-import Control.Monad.Class.MonadThrow (MonadMask, MonadThrow)
-import Control.Monad.Class.MonadTimer.SI (MonadTimer)
-import Control.Tracer (Tracer, nullTracer)
+import Codec.CBOR.Term qualified as CBOR
+import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy qualified as BL
+import Data.Functor.Contravariant ((>$<))
 import Data.Hashable (Hashable)
 import Data.Void (Void)
+import System.Random (mkStdGen)
 
-import Network.Mux (Mode (..))
-import Network.Mux qualified as Mx
+import Network.Mux.Trace qualified as Mx
+import Network.Mux.Types (Mode (..))
+import Network.Mux.Types qualified as Mx
 import Network.TypedProtocol.Codec (Codec)
 
+import DMQ.Configuration (Configuration, Configuration' (..), I (..))
 import DMQ.Diffusion.NodeKernel (NodeKernel (..))
-
--- TODO: remove this dependency
-import Cardano.Network.NodeToNode (addSafetyMargin, keepAliveMiniProtocolNum,
-           peerSharingMiniProtocolNum)
+import DMQ.NodeToNode.Version
+import DMQ.Protocol.SigSubmission.Codec
+import DMQ.Protocol.SigSubmission.Type
+import DMQ.Tracer
 
 import Ouroboros.Network.BlockFetch.ClientRegistry (bracketKeepAliveClient)
 import Ouroboros.Network.Channel (Channel)
-import Ouroboros.Network.CodecCBORTerm (CodecCBORTerm (..))
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
-import Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
 import Ouroboros.Network.Context (ExpandedInitiatorContext (..),
            ResponderContext (..))
-import Ouroboros.Network.Driver.Limits (runPeerWithLimits)
+import Ouroboros.Network.Driver.Limits (runPeerWithLimits,
+           runPipelinedPeerWithLimits)
 import Ouroboros.Network.Driver.Simple (TraceSendRecv)
-import Ouroboros.Network.Handshake.Acceptable (Accept (..), Acceptable (..))
+import Ouroboros.Network.Handshake.Acceptable (Acceptable (..))
 import Ouroboros.Network.Handshake.Queryable (Queryable (..))
 import Ouroboros.Network.KeepAlive (KeepAliveInterval (..), keepAliveClient,
            keepAliveServer)
@@ -62,10 +77,16 @@ import Ouroboros.Network.Mux (MiniProtocol (..), MiniProtocolCb (..),
            StartOnDemandOrEagerly (..), TemperatureBundle (..),
            WithProtocolTemperature (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
-import Ouroboros.Network.NodeToNode.Version qualified as NTN
 import Ouroboros.Network.PeerSelection (PeerSharing (..))
 import Ouroboros.Network.PeerSharing (bracketPeerSharingClient,
            peerSharingClient, peerSharingServer)
+import Ouroboros.Network.Snocket (RemoteAddress)
+import Ouroboros.Network.TxSubmission.Inbound.V2 as SigSubmission
+import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
+import Ouroboros.Network.TxSubmission.Outbound
+
+import Ouroboros.Network.OrphanInstances ()
+
 import Ouroboros.Network.Protocol.Handshake (Handshake, HandshakeArguments (..))
 import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
            codecHandshake, timeLimitsHandshake)
@@ -81,192 +102,183 @@ import Ouroboros.Network.Protocol.PeerSharing.Codec (byteLimitsPeerSharing,
            codecPeerSharing, timeLimitsPeerSharing)
 import Ouroboros.Network.Protocol.PeerSharing.Server (peerSharingServerPeer)
 import Ouroboros.Network.Protocol.PeerSharing.Type qualified as Protocol
+import Ouroboros.Network.Protocol.TxSubmission2.Client (txSubmissionClientPeer)
+import Ouroboros.Network.Protocol.TxSubmission2.Server
+           (txSubmissionServerPeerPipelined)
 
-
-data NodeToNodeVersion =
-  NodeToNodeV_1
-  deriving (Eq, Ord, Enum, Bounded, Show, Generic, NFData)
-
-nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
-nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
-  where
-    encodeTerm NodeToNodeV_1 = CBOR.TInt 1
-
-    decodeTerm (CBOR.TInt 1) = Right NodeToNodeV_1
-    decodeTerm (CBOR.TInt n) = Left ( T.pack "decode NodeToNodeVersion: unknown tag: "
-                                        <> T.pack (show n)
-                                    , Just n
-                                    )
-    decodeTerm _ = Left ( T.pack "decode NodeToNodeVersion: unexpected term"
-                        , Nothing)
-
--- | Version data for NodeToNode protocols
---
--- This data type is inpired by the one defined in 'ouroboros-network-api',
--- however, it is redefined here to tie it to our custom `NodeToNodeVersion`
--- and to avoid divergences.
---
-data NodeToNodeVersionData = NodeToNodeVersionData
-  { networkMagic  :: !NetworkMagic
-  , diffusionMode :: !DiffusionMode
-  , peerSharing   :: !PeerSharing
-  , query         :: !Bool
-  }
-  deriving (Show, Eq)
-
-instance Acceptable NodeToNodeVersionData where
-    -- | Check that both side use the same 'networkMagic'.  Choose smaller one
-    -- from both 'diffusionMode's, e.g. if one is running in 'InitiatorOnlyMode'
-    -- agree on it. Agree on the same 'PeerSharing' value, if the negotiated
-    -- diffusion mode is 'InitiatorAndResponder', otherwise default to
-    -- 'PeerSharingDisabled'.
-    acceptableVersion local remote
-      | networkMagic local == networkMagic remote
-      = let acceptedDiffusionMode = diffusionMode local `min` diffusionMode remote
-         in Accept NodeToNodeVersionData
-              { networkMagic  = networkMagic local
-              , diffusionMode = acceptedDiffusionMode
-              , peerSharing   = case acceptedDiffusionMode of
-                                  InitiatorAndResponderDiffusionMode ->
-                                    peerSharing local <> peerSharing remote
-                                  InitiatorOnlyDiffusionMode         ->
-                                    PeerSharingDisabled
-              , query         = query local || query remote
-              }
-      | otherwise
-      = Refuse $ T.pack $ "version data mismatch: "
-                       ++ show local
-                       ++ " /= " ++ show remote
-
-instance Queryable NodeToNodeVersionData where
-    queryVersion = query
-
-nodeToNodeCodecCBORTerm :: NodeToNodeVersion
-                        -> CodecCBORTerm Text NodeToNodeVersionData
-nodeToNodeCodecCBORTerm =
-  \case
-    NodeToNodeV_1 -> v1
-
-  where
-    v1 = CodecCBORTerm { encodeTerm = encodeTerm1, decodeTerm = decodeTerm1 }
-
-    encodeTerm1 :: NodeToNodeVersionData -> CBOR.Term
-    encodeTerm1 NodeToNodeVersionData { networkMagic, diffusionMode, peerSharing, query }
-      = CBOR.TList
-          [ CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
-          , CBOR.TBool (case diffusionMode of
-                         InitiatorOnlyDiffusionMode         -> True
-                         InitiatorAndResponderDiffusionMode -> False)
-          , CBOR.TInt (case peerSharing of
-                         PeerSharingDisabled -> 0
-                         PeerSharingEnabled  -> 1)
-          , CBOR.TBool query
-          ]
-
-    decodeTerm1 :: CBOR.Term -> Either Text NodeToNodeVersionData
-    decodeTerm1 (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode, CBOR.TInt peerSharing, CBOR.TBool query])
-      | x >= 0
-      , x <= 0xffffffff
-      , Just ps <- case peerSharing of
-                    0 -> Just PeerSharingDisabled
-                    1 -> Just PeerSharingEnabled
-                    _ -> Nothing
-      = Right
-          NodeToNodeVersionData {
-              networkMagic = NetworkMagic (fromIntegral x),
-              diffusionMode = if diffusionMode
-                              then InitiatorOnlyDiffusionMode
-                              else InitiatorAndResponderDiffusionMode,
-              peerSharing = ps,
-              query = query
-            }
-      | x < 0 || x > 0xffffffff
-      = Left $ T.pack $ "networkMagic out of bound: " <> show x
-      | otherwise -- peerSharing < 0 || peerSharing > 1
-      = Left $ T.pack $ "peerSharing is out of bound: " <> show peerSharing
-    decodeTerm1 t
-      = Left $ T.pack $ "unknown encoding: " ++ show t
-
-ntnDataFlow :: NodeToNodeVersionData -> DataFlow
-ntnDataFlow NodeToNodeVersionData { diffusionMode } =
-  case diffusionMode of
-    InitiatorAndResponderDiffusionMode -> Duplex
-    InitiatorOnlyDiffusionMode         -> Unidirectional
-
--- | Map between DMQ NTNVersion and Ouroboros NTNVersion
---
--- Useful for reusing codecs and other functions
---
-mapNtNDMQtoOuroboros :: NodeToNodeVersion -> NTN.NodeToNodeVersion
-mapNtNDMQtoOuroboros _ = maxBound
-
-type ClientApp addr bytes m a =
+-- TODO: if we add `versionNumber` to `ctx` we could use `RunMiniProtocolCb`.
+-- This makes sense, since `ctx` already contains `versionData`.
+type ClientApp addr m a =
      NodeToNodeVersion
   -> ExpandedInitiatorContext addr m
-  -> Channel m bytes
-  -> m (a, Maybe bytes)
+  -> Channel m BL.ByteString
+  -> m (a, Maybe BL.ByteString)
 
-type ServerApp addr bytes m a =
+type ServerApp addr m a =
      NodeToNodeVersion
   -> ResponderContext addr
-  -> Channel m bytes
-  -> m (a, Maybe bytes)
+  -> Channel m BL.ByteString
+  -> m (a, Maybe BL.ByteString)
 
-data Apps addr bKA bPS m a b =
+data Apps addr m a b =
   Apps {
+    -- | Start a sig-submission client
+    aSigSubmissionClient :: ClientApp addr m a
+
+    -- | Start a sig-submission server
+  , aSigSubmissionServer :: ServerApp addr m b
+
     -- | Start a keep-alive client.
-    aKeepAliveClient   :: ClientApp addr bKA m a
+  , aKeepAliveClient     :: ClientApp addr m a
 
     -- | Start a keep-alive server.
-  , aKeepAliveServer   :: ServerApp addr bKA m b
+  , aKeepAliveServer     :: ServerApp addr m b
 
     -- | Start a peer-sharing client.
-  , aPeerSharingClient :: ClientApp addr bPS m a
+  , aPeerSharingClient   :: ClientApp addr m a
 
     -- | Start a peer-sharing server.
-  , aPeerSharingServer :: ServerApp addr bPS m b
+  , aPeerSharingServer   :: ServerApp addr m b
   }
 
 ntnApps
   :: forall m addr .
     ( Alternative (STM m)
     , MonadAsync m
+    , MonadDelay m
     , MonadFork m
     , MonadMask m
     , MonadMVar m
-    , MonadST m
-    , MonadThread m
     , MonadThrow (STM m)
     , MonadTimer m
     , Ord addr
+    , Show addr
     , Hashable addr
+    , Aeson.ToJSON addr
     )
- => NodeKernel addr m
+ => (forall ev. Aeson.ToJSON ev => Tracer m (WithEventType ev))
+ -> Configuration
+ -> NodeKernel addr m
  -> Codecs addr m
  -> LimitsAndTimeouts addr
- -> Apps addr BL.ByteString BL.ByteString m () ()
-ntnApps NodeKernel {
-          fetchClientRegistry
-        , peerSharingRegistry
-        , peerSharingAPI
-        }
-        Codecs {
-          keepAliveCodec
-        , peerSharingCodec
-        }
-        LimitsAndTimeouts {
-          keepAliveSizeLimits
-        , keepAliveTimeLimits
-        , peerSharingTimeLimits
-        , peerSharingSizeLimits
-        } =
-  Apps {
-    aKeepAliveClient
-  , aKeepAliveServer
-  , aPeerSharingClient
-  , aPeerSharingServer
-  }
+ -> TxDecisionPolicy
+ -> Apps addr m () ()
+ntnApps
+    tracer
+    Configuration {
+      dmqcSigSubmissionClientTracer = I sigSubmissionClientTracer
+    , dmqcSigSubmissionServerTracer = I sigSubmissionServerTracer
+    , dmqcKeepAliveClientTracer     = I keepAliveClientTracer
+    , dmqcKeepAliveServerTracer     = I keepAliveServerTracer
+    , dmqcPeerSharingClientTracer   = I peerSharingClientTracer
+    , dmqcPeerSharingServerTracer   = I peerSharingServerTracer
+    }
+    NodeKernel {
+      fetchClientRegistry
+    , peerSharingRegistry
+    , peerSharingAPI
+    , mempool
+    , sigChannelVar
+    , sigMempoolSem
+    , sigSharedTxStateVar
+    }
+    Codecs {
+      sigSubmissionCodec
+    , keepAliveCodec
+    , peerSharingCodec
+    }
+    LimitsAndTimeouts {
+      sigSubmissionSizeLimits
+    , sigSubmissionTimeLimits
+    , keepAliveSizeLimits
+    , keepAliveTimeLimits
+    , peerSharingTimeLimits
+    , peerSharingSizeLimits
+    }
+    sigDecisionPolicy
+    =
+    Apps {
+      aSigSubmissionClient
+    , aSigSubmissionServer
+    , aKeepAliveClient
+    , aKeepAliveServer
+    , aPeerSharingClient
+    , aPeerSharingServer
+    }
   where
+    sigSize :: Sig -> SizeInBytes
+    sigSize _ = 0 -- TODO
+
+    mempoolReader = Mempool.getReader sigId sigSize mempool
+    mempoolWriter = Mempool.getWriter sigId sigValid mempool
+      where
+        -- Note: invalid signatures are just omitted from the mempool. For DMQ
+        -- we need to validate signatures when we received them, and shutdown
+        -- connection if we receive one, rather than validate them in the
+        -- mempool.
+        sigValid :: Sig -> Bool
+        sigValid _ = True
+
+    aSigSubmissionClient
+      :: NodeToNodeVersion
+      -> ExpandedInitiatorContext addr m
+      -> Channel m BL.ByteString
+      -> m ((), Maybe BL.ByteString)
+    aSigSubmissionClient version
+                         ExpandedInitiatorContext {
+                           eicConnectionId   = connId,
+                           eicControlMessage = controlMessage
+                         } channel =
+      runPeerWithLimits
+        (if sigSubmissionClientTracer
+          then WithEventType "SigSubmissionClient" . Mx.WithBearer connId >$< tracer
+          else nullTracer)
+        sigSubmissionCodec
+        sigSubmissionSizeLimits
+        sigSubmissionTimeLimits
+        channel
+        $ txSubmissionClientPeer
+        $ txSubmissionOutbound
+            nullTracer
+            _MAX_SIGS_TO_ACK
+            mempoolReader
+            version
+            controlMessage
+
+
+    aSigSubmissionServer
+      :: NodeToNodeVersion
+      -> ResponderContext addr
+      -> Channel m BL.ByteString
+      -> m ((), Maybe BL.ByteString)
+    aSigSubmissionServer _version ResponderContext { rcConnectionId = connId } channel =
+        SigSubmission.withPeer
+          nullTracer
+          sigChannelVar
+          sigMempoolSem
+          sigDecisionPolicy
+          sigSharedTxStateVar
+          mempoolReader
+          mempoolWriter
+          sigSize
+          (remoteAddress connId)
+          $ \(peerSigAPI :: PeerTxAPI m SigId Sig) ->
+            runPipelinedPeerWithLimits
+              (if sigSubmissionServerTracer
+                 then WithEventType "SigSubmissionServer" . Mx.WithBearer connId >$< tracer
+                 else nullTracer)
+              sigSubmissionCodec
+              sigSubmissionSizeLimits
+              sigSubmissionTimeLimits
+              channel
+              $ txSubmissionServerPeerPipelined
+              $ txSubmissionInboundV2
+                  nullTracer
+                  _SIG_SUBMISSION_INIT_DELAY
+                  mempoolWriter
+                  peerSigAPI
+
+
     aKeepAliveClient
       :: NodeToNodeVersion
       -> ExpandedInitiatorContext addr m
@@ -274,14 +286,16 @@ ntnApps NodeKernel {
       -> m ((), Maybe BL.ByteString)
     aKeepAliveClient _version
                      ExpandedInitiatorContext {
-                       eicConnectionId   = them
+                       eicConnectionId   = connId
                      , eicControlMessage = controlMessageSTM
                      }
                      channel = do
       labelThisThread "KeepAliveClient"
       let kacApp dqCtx =
             runPeerWithLimits
-              nullTracer
+              (if keepAliveClientTracer
+                 then WithEventType "KeepAliveClient" . Mx.WithBearer connId >$< tracer
+                 else nullTracer)
               keepAliveCodec
               keepAliveSizeLimits
               keepAliveTimeLimits
@@ -290,32 +304,34 @@ ntnApps NodeKernel {
               $ keepAliveClient nullTracer
                                 (mkStdGen 0)
                                 controlMessageSTM
-                                them
+                                connId
                                 dqCtx
                                 (KeepAliveInterval 10)
 
-      ((), trailing) <- bracketKeepAliveClient fetchClientRegistry them kacApp
+      ((), trailing) <- bracketKeepAliveClient fetchClientRegistry connId kacApp
       return ((), trailing)
 
     aKeepAliveServer
       :: NodeToNodeVersion
-      -> ResponderContext ntnAddr
+      -> ResponderContext addr
       -> Channel m BL.ByteString
       -> m ((), Maybe BL.ByteString)
     aKeepAliveServer _version
                      ResponderContext {
-                       rcConnectionId = _them
+                       rcConnectionId = connId
                      }
                      channel = do
       labelThisThread "KeepAliveServer"
       runPeerWithLimits
-        nullTracer
+        (if keepAliveServerTracer
+           then WithEventType "KeepAliveServer" . Mx.WithBearer connId >$< tracer
+           else nullTracer)
         keepAliveCodec
         keepAliveSizeLimits
         keepAliveTimeLimits
         channel
         $ keepAliveServerPeer
-        $ keepAliveServer
+          keepAliveServer
 
     aPeerSharingClient
       :: NodeToNodeVersion
@@ -324,16 +340,18 @@ ntnApps NodeKernel {
       -> m ((), Maybe BL.ByteString)
     aPeerSharingClient _version
                        ExpandedInitiatorContext {
-                         eicConnectionId   = them
+                         eicConnectionId   = connId
                        , eicControlMessage = controlMessageSTM
                        }
                        channel = do
       labelThisThread "PeerSharingClient"
-      bracketPeerSharingClient peerSharingRegistry (remoteAddress them)
+      bracketPeerSharingClient peerSharingRegistry (remoteAddress connId)
         $ \controller -> do
           psClient <- peerSharingClient controlMessageSTM controller
           ((), trailing) <- runPeerWithLimits
-            nullTracer
+            (if peerSharingClientTracer
+               then WithEventType "PeerSharingClient" . Mx.WithBearer connId >$< tracer
+               else nullTracer)
             peerSharingCodec
             peerSharingSizeLimits
             peerSharingTimeLimits
@@ -348,12 +366,14 @@ ntnApps NodeKernel {
       -> m ((), Maybe BL.ByteString)
     aPeerSharingServer _version
                        ResponderContext {
-                         rcConnectionId = _them
+                         rcConnectionId = connId
                        }
                        channel = do
       labelThisThread "PeerSharingServer"
       runPeerWithLimits
-        nullTracer
+        (if peerSharingServerTracer
+           then WithEventType "PeerSharingServer" . Mx.WithBearer connId >$< tracer
+           else nullTracer)
         peerSharingCodec
         peerSharingSizeLimits
         peerSharingTimeLimits
@@ -364,14 +384,25 @@ ntnApps NodeKernel {
 
 data Protocols appType initiatorCtx responderCtx bytes m a b =
   Protocols {
+    sigSubmissionProtocol :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b
+
     -- | keep-alive mini-protocol
     --
-    keepAliveProtocol   :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b
+  , keepAliveProtocol    :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b
 
     -- | peer sharing mini-protocol
     --
-  , peerSharingProtocol :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b
+  , peerSharingProtocol  :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b
   }
+
+sigSubmissionMiniProtocolNum :: Mx.MiniProtocolNum
+sigSubmissionMiniProtocolNum = Mx.MiniProtocolNum 11
+
+keepAliveMiniProtocolNum :: Mx.MiniProtocolNum
+keepAliveMiniProtocolNum = Mx.MiniProtocolNum 12
+
+peerSharingMiniProtocolNum :: Mx.MiniProtocolNum
+peerSharingMiniProtocolNum = Mx.MiniProtocolNum 13
 
 nodeToNodeProtocols
   :: LimitsAndTimeouts addr
@@ -382,11 +413,13 @@ nodeToNodeProtocols
   -- ^ negotiated version data
   -> OuroborosBundle appType initiatorCtx responderCtx bytes m a b
 nodeToNodeProtocols LimitsAndTimeouts {
-                      keepAliveLimits
+                      sigSubmissionLimits
+                    , keepAliveLimits
                     , peerSharingLimits
                     }
                     Protocols {
-                      keepAliveProtocol
+                      sigSubmissionProtocol
+                    , keepAliveProtocol
                     , peerSharingProtocol
                     }
                     _version
@@ -395,16 +428,22 @@ nodeToNodeProtocols LimitsAndTimeouts {
                     }
                     =
     TemperatureBundle
-      -- Hot protocols: 'chain-sync', 'block-fetch' and 'tx-submission'.
-      (WithHot [])
+      -- Hot protocols
+      (WithHot [
+        MiniProtocol {
+          miniProtocolNum    = sigSubmissionMiniProtocolNum
+        , miniProtocolStart  = StartOnDemandAny
+        , miniProtocolLimits = sigSubmissionLimits
+        , miniProtocolRun    = sigSubmissionProtocol
+        }
+      ])
 
-      -- Warm protocols: reserved for 'tip-sample'.
+      -- Warm protocols
       (WithWarm [])
 
-      -- Established protocols: 'keep-alive'.
+      -- Established protocols: 'keep-alive', 'peer-sharing'.
       (WithEstablished $
         MiniProtocol {
-          -- TODO: we SHOULDN'T use cardano keep alive mini-protocol number
           miniProtocolNum    = keepAliveMiniProtocolNum
         , miniProtocolStart  = StartOnDemandAny
         , miniProtocolLimits = keepAliveLimits
@@ -413,7 +452,6 @@ nodeToNodeProtocols LimitsAndTimeouts {
         : case peerSharing of
             PeerSharingEnabled ->
               [ MiniProtocol {
-                  -- TODO: we SHOULDN'T use cardano peer sharing mini-protocol number
                   miniProtocolNum    = peerSharingMiniProtocolNum
                 , miniProtocolStart  = StartOnDemand
                 , miniProtocolLimits = peerSharingLimits
@@ -426,20 +464,23 @@ nodeToNodeProtocols LimitsAndTimeouts {
 
 initiatorProtocols
   :: LimitsAndTimeouts addr
-  -> Apps addr bytes bytes m a b
+  -> Apps addr m a b
   -> NodeToNodeVersion
   -> NodeToNodeVersionData
-  -> OuroborosBundleWithExpandedCtx 'InitiatorMode addr bytes m a Void
+  -> OuroborosBundleWithExpandedCtx 'InitiatorMode addr BL.ByteString m a Void
 initiatorProtocols limitsAndTimeouts
                    Apps {
-                     aKeepAliveClient
+                     aSigSubmissionClient
+                   , aKeepAliveClient
                    , aPeerSharingClient
                    }
                    version =
   nodeToNodeProtocols
     limitsAndTimeouts
     (Protocols {
-      keepAliveProtocol =
+      sigSubmissionProtocol =
+        InitiatorProtocolOnly (MiniProtocolCb (aSigSubmissionClient version))
+    , keepAliveProtocol =
         InitiatorProtocolOnly (MiniProtocolCb (aKeepAliveClient version))
     , peerSharingProtocol =
         InitiatorProtocolOnly (MiniProtocolCb (aPeerSharingClient version))
@@ -448,13 +489,15 @@ initiatorProtocols limitsAndTimeouts
 
 initiatorAndResponderProtocols
   :: LimitsAndTimeouts addr
-  -> Apps addr bytes bytes m a b
+  -> Apps addr m a b
   -> NodeToNodeVersion
   -> NodeToNodeVersionData
-  -> OuroborosBundleWithExpandedCtx 'InitiatorResponderMode addr bytes m a b
+  -> OuroborosBundleWithExpandedCtx 'InitiatorResponderMode addr BL.ByteString m a b
 initiatorAndResponderProtocols limitsAndTimeouts
                                Apps {
-                                 aKeepAliveClient
+                                 aSigSubmissionClient
+                               , aSigSubmissionServer
+                               , aKeepAliveClient
                                , aKeepAliveServer
                                , aPeerSharingClient
                                , aPeerSharingServer
@@ -463,7 +506,11 @@ initiatorAndResponderProtocols limitsAndTimeouts
   nodeToNodeProtocols
     limitsAndTimeouts
     (Protocols {
-      keepAliveProtocol =
+      sigSubmissionProtocol =
+        InitiatorAndResponderProtocol
+           (MiniProtocolCb (aSigSubmissionClient version))
+           (MiniProtocolCb (aSigSubmissionServer version))
+    , keepAliveProtocol =
         InitiatorAndResponderProtocol
            (MiniProtocolCb (aKeepAliveClient version))
            (MiniProtocolCb (aKeepAliveServer version))
@@ -476,10 +523,12 @@ initiatorAndResponderProtocols limitsAndTimeouts
 
 data Codecs addr m =
   Codecs {
-    keepAliveCodec   :: Codec KeepAlive
-                          CBOR.DeserialiseFailure m BL.ByteString
-  , peerSharingCodec :: Codec (Protocol.PeerSharing addr)
-                          CBOR.DeserialiseFailure m BL.ByteString
+    sigSubmissionCodec :: Codec SigSubmission
+                            CBOR.DeserialiseFailure m BL.ByteString
+  , keepAliveCodec     :: Codec KeepAlive
+                            CBOR.DeserialiseFailure m BL.ByteString
+  , peerSharingCodec   :: Codec (Protocol.PeerSharing addr)
+                            CBOR.DeserialiseFailure m BL.ByteString
   }
 
 dmqCodecs :: MonadST m
@@ -488,14 +537,23 @@ dmqCodecs :: MonadST m
           -> Codecs addr m
 dmqCodecs encodeAddr decodeAddr =
   Codecs {
-    keepAliveCodec   = codecKeepAlive_v2
-  , peerSharingCodec = codecPeerSharing encodeAddr decodeAddr
+    sigSubmissionCodec = codecSigSubmission
+  , keepAliveCodec     = codecKeepAlive_v2
+  , peerSharingCodec   = codecPeerSharing encodeAddr decodeAddr
   }
 
 data LimitsAndTimeouts addr =
   LimitsAndTimeouts {
+    -- sig-submission
+    sigSubmissionLimits
+      :: MiniProtocolLimits
+  , sigSubmissionSizeLimits
+      :: ProtocolSizeLimits SigSubmission BL.ByteString
+  , sigSubmissionTimeLimits
+      :: ProtocolTimeLimits SigSubmission
+
     -- keep-alive
-    keepAliveLimits
+  , keepAliveLimits
       :: MiniProtocolLimits
   , keepAliveSizeLimits
       :: ProtocolSizeLimits KeepAlive BL.ByteString
@@ -513,29 +571,41 @@ data LimitsAndTimeouts addr =
 
 dmqLimitsAndTimeouts :: LimitsAndTimeouts addr
 dmqLimitsAndTimeouts =
-  LimitsAndTimeouts {
-    keepAliveLimits     =
-      MiniProtocolLimits {
-        -- One small outstanding message.
-        maximumIngressQueue = addSafetyMargin 1280
-      }
+    LimitsAndTimeouts {
+      sigSubmissionLimits =
+        MiniProtocolLimits {
+          -- TODO
+          maximumIngressQueue = maxBound
+        }
+    , sigSubmissionTimeLimits = timeLimitsSigSubmission
+    , sigSubmissionSizeLimits = byteLimitsSigSubmission size
 
-  , keepAliveTimeLimits = timeLimitsKeepAlive
-  , keepAliveSizeLimits = byteLimitsKeepAlive (fromIntegral . BL.length)
+    , keepAliveLimits     =
+        MiniProtocolLimits {
+          -- One small outstanding message.
+          maximumIngressQueue = addSafetyMargin 1280
+        }
 
-  , peerSharingLimits   =
-      MiniProtocolLimits {
-        -- This protocol does not need to be pipelined and a peer can only ask
-        -- for a maximum of 255 peers each time. Hence a reply can have up to
-        -- 255 IP (IPv4 or IPv6) addresses so 255 * 16 = 4080. TCP has an initial
-        -- window size of 4 and a TCP segment is 1440, which gives us 4 * 1440 =
-        -- 5760 bytes to fit into a single RTT. So setting the maximum ingress
-        -- queue to be a single RTT should be enough to cover for CBOR overhead.
-        maximumIngressQueue = 4 * 1440
-      }
-  , peerSharingTimeLimits = timeLimitsPeerSharing
-  , peerSharingSizeLimits = byteLimitsPeerSharing (fromIntegral . BL.length)
-  }
+    , keepAliveTimeLimits = timeLimitsKeepAlive
+    , keepAliveSizeLimits = byteLimitsKeepAlive size
+
+    , peerSharingLimits   =
+        MiniProtocolLimits {
+          -- This protocol does not need to be pipelined and a peer can only ask
+          -- for a maximum of 255 peers each time. Hence a reply can have up to
+          -- 255 IP (IPv4 or IPv6) addresses so 255 * 16 = 4080. TCP has an initial
+          -- window size of 4 and a TCP segment is 1440, which gives us 4 * 1440 =
+          -- 5760 bytes to fit into a single RTT. So setting the maximum ingress
+          -- queue to be a single RTT should be enough to cover for CBOR overhead.
+          maximumIngressQueue = 4 * 1440
+        }
+    , peerSharingTimeLimits = timeLimitsPeerSharing
+    , peerSharingSizeLimits = byteLimitsPeerSharing size
+    }
+  where
+    size :: BL.ByteString -> Word
+    size = fromIntegral . BL.length
+
 
 type HandshakeTr ntnAddr = Mx.WithBearer (ConnectionId ntnAddr) (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term))
 
@@ -570,3 +640,15 @@ stdVersionDataNTN networkMagic diffusionMode peerSharing =
     , query = False
     }
 
+-- TODO: choose wisely, is a protocol parameter.
+_MAX_SIGS_TO_ACK :: NumTxIdsToAck
+_MAX_SIGS_TO_ACK = 20
+
+_SIG_SUBMISSION_INIT_DELAY :: TxSubmissionInitDelay
+_SIG_SUBMISSION_INIT_DELAY = NoTxSubmissionInitDelay
+
+
+-- TODO: this is duplicated code, similar function is in
+-- `Cardano.Network.NodeToNode` module.
+addSafetyMargin :: Int -> Int
+addSafetyMargin x = x + x `div` 10

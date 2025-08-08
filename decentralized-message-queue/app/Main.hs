@@ -1,25 +1,25 @@
-{-# LANGUAGE NamedFieldPuns   #-}
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Main where
 
-import Control.Exception (IOException)
 import Control.Monad (void)
-import Control.Tracer (Tracer (..))
+import Control.Tracer (Tracer (..), nullTracer, traceWith)
+
+import Data.Act
+import Data.Aeson (ToJSON)
+import Data.Functor.Contravariant ((>$<))
 import Data.Void (Void)
-import Debug.Trace (traceShowM)
 import Options.Applicative
 import System.Random (newStdGen, split)
 
-import DMQ.Configuration (mkDiffusionConfiguration,
-           readConfigurationFileOrError)
-import DMQ.Configuration.CLIOptions (CLIOptions (..), parseCLIOptions)
+import DMQ.Configuration
+import DMQ.Configuration.CLIOptions (parseCLIOptions)
 import DMQ.Configuration.Topology (readTopologyFileOrError)
 import DMQ.Diffusion.Applications (diffusionApplications)
-import DMQ.Diffusion.Arguments (diffusionArguments)
-import DMQ.Diffusion.NodeKernel (newNodeKernel)
-import DMQ.NodeToNode (dmqCodecs, dmqLimitsAndTimeouts, mapNtNDMQtoOuroboros,
-           ntnApps)
+import DMQ.Diffusion.Arguments
+import DMQ.Diffusion.NodeKernel (withNodeKernel)
+import DMQ.NodeToNode (dmqCodecs, dmqLimitsAndTimeouts, ntnApps)
+import DMQ.Tracer
 
 import DMQ.Diffusion.PeerSelection (policy)
 import Ouroboros.Network.Diffusion qualified as Diffusion
@@ -34,92 +34,66 @@ main = void . runDMQ =<< execParser opts
                 <> progDesc "Run the POC DMQ node"
                 )
 
-runDMQ :: CLIOptions -> IO Void
-runDMQ cliopts@CLIOptions {
-         configFile
-       , topologyFile
-       } = do
+runDMQ :: PartialConfig -> IO Void
+runDMQ commandLineConfig = do
+    -- get the configuration file path
+    let configFilePath = unI
+                       $ dmqcConfigFile commandLineConfig
+                   `act` dmqcConfigFile defaultConfiguration
 
-  dmqConfig <- readConfigurationFileOrError configFile
-  nt <- readTopologyFileOrError @() @() topologyFile
+    -- read & parse configuration file
+    config' <- readConfigurationFileOrError configFilePath
+    -- combine default configuration, configuration file and command line
+    -- options
+    let dmqConfig@Configuration {
+          dmqcPrettyLog            = I prettyLog,
+          dmqcTopologyFile         = I topologyFile,
+          dmqcHandshakeTracer      = I handshakeTracer,
+          dmqcLocalHandshakeTracer = I localHandshakeTracer
+        } = config' <> commandLineConfig
+            `act`
+            defaultConfiguration
 
-  stdGen <- newStdGen
-  let (psRng, policyRng) = split stdGen
+    let tracer :: ToJSON ev => Tracer IO (WithEventType ev)
+        tracer = dmqTracer prettyLog
 
-  nodeKernel <- newNodeKernel psRng
+    traceWith tracer (WithEventType "Configuration" dmqConfig)
+    nt <- readTopologyFileOrError topologyFile
+    traceWith tracer (WithEventType "NetworkTopology" nt)
 
-  dmqDiffusionConfiguration <- mkDiffusionConfiguration cliopts nt dmqConfig
+    stdGen <- newStdGen
+    let (psRng, policyRng) = split stdGen
 
-  let dmqNtNApps =
-        ntnApps nodeKernel
-                (dmqCodecs (encodeRemoteAddress (mapNtNDMQtoOuroboros maxBound))
-                           (decodeRemoteAddress (mapNtNDMQtoOuroboros maxBound)))
-                dmqLimitsAndTimeouts
-      dmqDiffusionArguments =
-        diffusionArguments @_ @IOException
-                           debugTracer
-                           debugTracer
-      dmqDiffusionApplications =
-        diffusionApplications nodeKernel
-                              dmqConfig
-                              dmqDiffusionConfiguration
-                              dmqLimitsAndTimeouts
-                              dmqNtNApps
-                              (policy policyRng)
+    withNodeKernel psRng $ \nodeKernel -> do
+      dmqDiffusionConfiguration <- mkDiffusionConfiguration dmqConfig nt
 
-  Diffusion.run dmqDiffusionArguments
-                debugTracers
-                dmqDiffusionConfiguration
-                dmqDiffusionApplications
+      let dmqNtNApps =
+            ntnApps tracer
+                    dmqConfig
+                    nodeKernel
+                    (dmqCodecs
+                              -- TODO: `maxBound :: Cardano.Network.NodeToNode.NodeToNodeVersion`
+                              -- is unsafe here!
+                               (encodeRemoteAddress maxBound)
+                               (decodeRemoteAddress maxBound))
+                    dmqLimitsAndTimeouts
+                    defaultSigDecisionPolicy
+          dmqDiffusionArguments =
+            diffusionArguments (if handshakeTracer
+                                  then WithEventType "Handshake" >$< tracer
+                                  else nullTracer)
+                               (if localHandshakeTracer
+                                  then WithEventType "Handshake" >$< tracer
+                                  else nullTracer)
+          dmqDiffusionApplications =
+            diffusionApplications nodeKernel
+                                  dmqConfig
+                                  dmqDiffusionConfiguration
+                                  dmqLimitsAndTimeouts
+                                  dmqNtNApps
+                                  (policy policyRng)
 
-debugTracer :: (Show a, Applicative m) => Tracer m a
-debugTracer = Tracer traceShowM
-
-debugTracers :: ( Applicative m
-                , Ord ntnAddr
-                , Show extraCounters
-                , Show extraDebugState
-                , Show extraFlags
-                , Show extraPeers
-                , Show extraState
-                , Show ntcAddr
-                , Show ntcVersion
-                , Show ntcVersionData
-                , Show ntnAddr
-                , Show ntnVersion
-                , Show ntnVersionData
-                )
-            => Diffusion.Tracers ntnAddr ntnVersion ntnVersionData
-                                 ntcAddr ntcVersion ntcVersionData
-                                 extraState extraDebugState
-                                 extraFlags extraPeers extraCounters m
-debugTracers =
-  Diffusion.Tracers {
-    Diffusion.dtBearerTracer                               = debugTracer
-  , Diffusion.dtChannelTracer                              = debugTracer
-  , Diffusion.dtMuxTracer                                  = debugTracer
-  , Diffusion.dtHandshakeTracer                            = debugTracer
-  , Diffusion.dtLocalBearerTracer                          = debugTracer
-  , Diffusion.dtLocalChannelTracer                         = debugTracer
-  , Diffusion.dtLocalMuxTracer                             = debugTracer
-  , Diffusion.dtLocalHandshakeTracer                       = debugTracer
-  , Diffusion.dtDiffusionTracer                            = debugTracer
-  , Diffusion.dtTraceLocalRootPeersTracer                  = debugTracer
-  , Diffusion.dtTracePublicRootPeersTracer                 = debugTracer
-  , Diffusion.dtTraceLedgerPeersTracer                     = debugTracer
-  , Diffusion.dtTracePeerSelectionTracer                   = debugTracer
-  , Diffusion.dtTraceChurnCounters                         = debugTracer
-  , Diffusion.dtDebugPeerSelectionInitiatorTracer          = debugTracer
-  , Diffusion.dtDebugPeerSelectionInitiatorResponderTracer = debugTracer
-  , Diffusion.dtTracePeerSelectionCounters                 = debugTracer
-  , Diffusion.dtPeerSelectionActionsTracer                 = debugTracer
-  , Diffusion.dtConnectionManagerTracer                    = debugTracer
-  , Diffusion.dtConnectionManagerTransitionTracer          = debugTracer
-  , Diffusion.dtServerTracer                               = debugTracer
-  , Diffusion.dtInboundGovernorTracer                      = debugTracer
-  , Diffusion.dtInboundGovernorTransitionTracer            = debugTracer
-  , Diffusion.dtLocalConnectionManagerTracer               = debugTracer
-  , Diffusion.dtLocalServerTracer                          = debugTracer
-  , Diffusion.dtLocalInboundGovernorTracer                 = debugTracer
-  , Diffusion.dtDnsTracer                                  = debugTracer
-  }
+      Diffusion.run dmqDiffusionArguments
+                    (dmqDiffusionTracers dmqConfig tracer)
+                    dmqDiffusionConfiguration
+                    dmqDiffusionApplications

@@ -1,46 +1,58 @@
-{-# LANGUAGE NamedFieldPuns   #-}
-{-# LANGUAGE TypeApplications #-}
+module DMQ.Configuration.CLIOptions (parseCLIOptions) where
 
-module DMQ.Configuration.CLIOptions where
-
-import Data.IP (IPv4)
-import Network.Socket (PortNumber)
+import Data.Monoid (Last (..))
 import Options.Applicative
 
-data CLIOptions =
-  CLIOptions {
-    ipv4         :: IPv4
-  , port         :: PortNumber
-  , configFile   :: FilePath
-  , topologyFile :: FilePath
-  }
+import DMQ.Configuration
 
-parseCLIOptions :: Parser CLIOptions
+parseCLIOptions :: Parser PartialConfig
 parseCLIOptions =
-  CLIOptions
-    <$> option auto
-        ( long "address"
-       <> short 'a'
-       <> value (read "0.0.0.0")
-       <> showDefault
-       <> metavar "IPv4"
-       <> help "IPv4 that the node will bind to" )
-    <*> option auto
-        ( long "port"
-       <> short 'p'
-       <> value (read "1234")
-       <> showDefault
-       <> metavar "Port Number"
-       <> help "Port Number that the node will bind to" )
-    <*> strOption
-        ( long "configuration-file"
-       <> short 'c'
-       <> metavar "FILENAME"
-       <> help "Configuration file for DMQ Node" )
-    <*> strOption
-        ( long "topology-file"
-       <> short 't'
-       <> metavar "FILENAME"
-       <> help "Topology file for DMQ Node" )
+  mkConfiguration
+    <$> optional (
+          option auto
+          (  long "host-addr"
+          <> metavar "IPv4"
+          <> help "IPv4 that the node will bind to"
+          )
+        )
+    <*> optional (
+          option auto
+           (  long "host-ipv6-addr"
+           <> metavar "IPv6"
+           <> help "IPv6 that the node will bind to"
+           )
+        )
+    <*> optional (
+          option auto
+          (  long "port"
+          <> short 'p'
+          <> metavar "Port Number"
+          <> help "Port Number that the node will bind to"
+          )
+        )
+    <*> optional (
+          strOption
+          (  long "configuration-file"
+          <> short 'c'
+          <> metavar "FILENAME"
+          <> help "Configuration file for DMQ Node"
+          )
+        )
+    <*> optional (
+          strOption
+          (  long "topology-file"
+          <> short 't'
+          <> metavar "FILENAME"
+          <> help "Topology file for DMQ Node"
+          )
+        )
+  where
+    mkConfiguration ipv4 ipv6 portNumber configFile topologyFile =
+      mempty { dmqcIPv4 = Last (Just <$> ipv4),
+               dmqcIPv6 = Last (Just <$> ipv6),
+               dmqcPortNumber = Last portNumber,
+               dmqcConfigFile = Last configFile,
+               dmqcTopologyFile = Last topologyFile
+             }
 
 

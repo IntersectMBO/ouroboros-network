@@ -49,7 +49,7 @@ hsPkgs.shellFor {
     lib.optionalAttrs hls
       {
         haskell-language-server = {
-          src = inputs.haskellNix.inputs."hls-2.10";
+          src = inputs.haskellNix.inputs."hls-2.11";
           configureArgs = "--disable-benchmarks --disable-tests";
         };
       };

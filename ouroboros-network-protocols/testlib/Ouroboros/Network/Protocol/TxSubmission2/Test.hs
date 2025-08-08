@@ -18,6 +18,7 @@ module Ouroboros.Network.Protocol.TxSubmission2.Test
   ( tests
   , Tx (..)
   , TxId (..)
+  , labelMsg
   ) where
 
 import Data.Bifunctor (second)
@@ -391,7 +392,7 @@ prop_anncodec_splits3 msg =
 
 prop_codec_cbor
   :: AnyMessage (TxSubmission2 TxId Tx)
-  -> Bool
+  -> Property
 prop_codec_cbor msg =
   runST (prop_codec_cborM codec_v2 msg)
 

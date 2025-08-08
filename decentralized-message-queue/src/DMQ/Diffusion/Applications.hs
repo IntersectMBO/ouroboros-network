@@ -12,18 +12,6 @@ import DMQ.NodeToNode (NodeToNodeVersion, NodeToNodeVersionData,
            stdVersionDataNTN)
 import DMQ.NodeToNode qualified as NTN
 
-import Control.Applicative (Alternative)
-import Control.Concurrent.Class.MonadMVar (MonadMVar)
-import Control.Concurrent.Class.MonadSTM (MonadSTM (..))
-import Control.Monad.Class.MonadAsync (MonadAsync)
-import Control.Monad.Class.MonadFork (MonadFork, MonadThread)
-import Control.Monad.Class.MonadST (MonadST)
-import Control.Monad.Class.MonadThrow
-import Control.Monad.Class.MonadTimer.SI (MonadTimer)
-
-import Data.ByteString.Lazy qualified as BL
-import Data.Hashable (Hashable)
-
 import Ouroboros.Network.Diffusion.Types qualified as Diffusion
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.Mux (OuroborosApplication (..))
@@ -34,23 +22,11 @@ import Ouroboros.Network.RethrowPolicy (ioErrorRethrowPolicy,
            muxErrorRethrowPolicy)
 
 diffusionApplications
-  :: ( Alternative (STM m)
-     , MonadAsync m
-     , MonadFork m
-     , MonadMask m
-     , MonadMVar m
-     , MonadST m
-     , MonadThread m
-     , MonadThrow (STM m)
-     , MonadTimer m
-     , Ord ntnAddr
-     , Hashable ntnAddr
-     )
-  => NodeKernel ntnAddr m
-  -> Configuration ntnFd ntnAddr ntcFd ntcAddr
-  -> Diffusion.Configuration extraFlags m ntnFd ntnAddr ntcFd ntcAddr
+  :: NodeKernel ntnAddr m
+  -> Configuration
+  -> Diffusion.Configuration NoExtraFlags m ntnFd ntnAddr ntcFd ntcAddr
   -> NTN.LimitsAndTimeouts ntnAddr
-  -> NTN.Apps ntnAddr BL.ByteString BL.ByteString m a ()
+  -> NTN.Apps ntnAddr m a ()
   -> PeerSelectionPolicy ntnAddr m
   -> Diffusion.Applications ntnAddr NodeToNodeVersion   NodeToNodeVersionData
                             ntcAddr NodeToClientVersion NodeToClientVersionData
@@ -60,7 +36,7 @@ diffusionApplications
     peerSharingRegistry
   }
   Configuration {
-    dmqcNetworkMagic
+    dmqcNetworkMagic = I networkMagic
   }
   Diffusion.Configuration {
     dcMode
@@ -74,7 +50,7 @@ diffusionApplications
       combineVersions
         [ simpleSingletonVersions
             version
-            (stdVersionDataNTN dmqcNetworkMagic dcMode dcPeerSharing)
+            (stdVersionDataNTN networkMagic dcMode dcPeerSharing)
             (NTN.initiatorProtocols ntnLimitsAndTimeouts ntnApps version)
         | version <- [minBound..maxBound]
         ]
@@ -82,7 +58,7 @@ diffusionApplications
       combineVersions
         [ simpleSingletonVersions
             version
-            (stdVersionDataNTN dmqcNetworkMagic dcMode dcPeerSharing)
+            (stdVersionDataNTN networkMagic dcMode dcPeerSharing)
             (NTN.initiatorAndResponderProtocols ntnLimitsAndTimeouts ntnApps version)
         | version <- [minBound..maxBound]
         ]
@@ -90,7 +66,7 @@ diffusionApplications
       combineVersions
         [ simpleSingletonVersions
             version
-            (stdVersionDataNTC dmqcNetworkMagic)
+            (stdVersionDataNTC networkMagic)
             (\_versionData ->
                 OuroborosApplication
                   [

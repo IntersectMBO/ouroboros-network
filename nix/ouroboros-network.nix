@@ -108,7 +108,8 @@ let
         packages.ouroboros-network-framework.components.tests.sim-tests.doCheck = onLinux;
         packages.ouroboros-network.components.tests.sim-tests.doCheck = onLinux;
 
-        # don't run checks using Wine when cross compiling
+        packages.decentralized-message-queue.components.tests.dmq-test.preCheck =
+          if buildSystem == "x86_64-linux" then "export GHCRTS=-M800M" else "";
         packages.network-mux.components.tests.test.preCheck =
           if buildSystem == "x86_64-linux" then "export GHCRTS=-M800M" else "";
         packages.ouroboros-network-protocols.components.tests.test.preCheck =

@@ -1,63 +1,94 @@
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE NamedFieldPuns    #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeApplications  #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE LambdaCase           #-}
+{-# LANGUAGE NamedFieldPuns       #-}
+{-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-{-# LANGUAGE LambdaCase        #-}
 
 module Ouroboros.Network.OrphanInstances where
 
 import Cardano.Network.NodeToClient (LocalAddress (..), ProtocolLimitFailure)
 import Control.Applicative (Alternative ((<|>)))
-import Data.Aeson (FromJSON (parseJSON, parseJSONList), KeyValue ((.=)),
-           ToJSON (toJSON, toJSONList), ToJSONKey,
-           Value (Bool, Null, Number, Object, String), object, withBool,
-           withObject, withText, (.!=), (.:), (.:?))
-import Data.Aeson.Types (Pair)
+import Control.Exception (Exception (..))
+import Control.Monad (zipWithM)
+import Control.Monad.Class.MonadTime.SI (Time (..))
+import Data.Aeson
+import Data.Aeson.Types (Pair, Parser, listValue)
+import Data.Bifunctor (first)
+import Data.Foldable (toList)
 import Data.IP (fromHostAddress, fromHostAddress6)
+import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
+import Data.Set qualified as Set
 import Data.Text (Text, pack)
-import Network.Mux.Trace (TraceLabelPeer (..))
-import Network.Socket (PortNumber, SockAddr (..))
+import Data.Text.Encoding qualified as Text
+import Data.Text.Encoding.Error qualified as Text
+
+import Network.Mux.Trace qualified as Mux
+import Network.Mux.Types qualified as Mux
+import Network.Socket (SockAddr (..))
+
+import Network.TypedProtocol.Codec (AnyMessage (..))
+
+import Ouroboros.Network.Protocol.Handshake (HandshakeException (..),
+           HandshakeProtocolError (..), RefuseReason (..))
+import Ouroboros.Network.Protocol.Handshake.Type (Handshake, Message (..))
+import Ouroboros.Network.Protocol.KeepAlive.Type (KeepAlive)
+import Ouroboros.Network.Protocol.KeepAlive.Type qualified as KeepAlive
+import Ouroboros.Network.Protocol.Limits
+           (ProtocolLimitFailure (ExceededSizeLimit, ExceededTimeLimit))
+import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount (..))
+import Ouroboros.Network.Protocol.PeerSharing.Type qualified as PeerSharing
+import Ouroboros.Network.Protocol.TxSubmission2.Type (TxSubmission2)
+import Ouroboros.Network.Protocol.TxSubmission2.Type qualified as Tx
+
 import Ouroboros.Network.Block (SlotNo (SlotNo))
 import Ouroboros.Network.BlockFetch.Decision (FetchDecision)
+import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace (..))
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
-import Ouroboros.Network.ConnectionManager.State (ConnStateId (..),
-           LocalAddr (..))
+import Ouroboros.Network.ConnectionManager.Core as ConnMgr
+import Ouroboros.Network.ConnectionManager.State (ConnMap (..),
+           ConnStateId (..), LocalAddr (..))
 import Ouroboros.Network.ConnectionManager.Types (AbstractState (..),
            ConnectionManagerCounters (..), MaybeUnknown (..),
            OperationResult (..))
+import Ouroboros.Network.ConnectionManager.Types qualified as ConnMgr
 import Ouroboros.Network.DeltaQ (GSV (GSV),
            PeerGSV (PeerGSV, inboundGSV, outboundGSV))
 import Ouroboros.Network.Diffusion.Topology (LocalRootPeersGroup (..),
            LocalRootPeersGroups (..), NetworkTopology (..),
            PublicRootPeers (..), RootConfig (..))
+import Ouroboros.Network.Diffusion.Types (DiffusionTracer (..))
+import Ouroboros.Network.Driver.Simple
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (repromoteDelay))
+import Ouroboros.Network.InboundGovernor qualified as InboundGovernor
 import Ouroboros.Network.InboundGovernor.State (RemoteSt)
+import Ouroboros.Network.InboundGovernor.State qualified as InboundGovernor
 import Ouroboros.Network.Mux (MiniProtocolNum (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
+import Ouroboros.Network.PeerSelection hiding (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.Governor.Types (AssociationMode (..),
-           PeerSelectionTargets (..), PeerSharingResult (..))
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-           (AfterSlot (After, Always), UseLedgerPeers (..))
-import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
-import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
+           DebugPeerSelectionState (..), PeerSharingResult (..),
+           TracePeerSelection (..))
+import Ouroboros.Network.PeerSelection.LedgerPeers (PoolStake (..))
+import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
+import Ouroboros.Network.PeerSelection.RootPeersDNS
 import Ouroboros.Network.PeerSelection.State.KnownPeers
            (KnownPeerInfo (KnownPeerInfo))
+import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers
            (HotValency (HotValency),
            LocalRootConfig (LocalRootConfig, peerAdvertise), LocalRootPeers,
            WarmValency (WarmValency))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LRP
-import Ouroboros.Network.PeerSelection.Types (PeerStatus)
-import Ouroboros.Network.Protocol.Handshake (HandshakeException (..),
-           HandshakeProtocolError (..), RefuseReason (..))
-import Ouroboros.Network.Protocol.Limits
-           (ProtocolLimitFailure (ExceededSizeLimit, ExceededTimeLimit))
-import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
+import Ouroboros.Network.Server qualified as Server
+import Ouroboros.Network.Server.RateLimiting (AcceptConnectionsPolicyTrace (..),
+           AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (RemoteAddress)
 
 -- Helper function for ToJSON instances with a "kind" field
@@ -89,35 +120,60 @@ instance ToJSON DiffusionMode where
   toJSON = String . pack . show
 
 -- | Does not use the 'FromJSON' instance of 'RootConfig', so that
--- 'accessPoints', 'advertise', 'valency' and 'warmValency' fields are attached to the
--- same object.
-instance FromJSON extraFlags => FromJSON (LocalRootPeersGroup extraFlags) where
-  parseJSON = withObject "LocalRootPeersGroup" $ \o -> do
-                hv@(HotValency v) <- o .: "valency"
-                                 <|> o .: "hotValency"
-                LocalRootPeersGroup
-                  <$> parseJSON (Object o)
-                  <*> pure hv
-                  <*> o .:? "warmValency" .!= WarmValency v
-                  <*> (fromMaybe InitiatorAndResponderDiffusionMode
-                        <$> o .:? "diffusionMode")
-                  <*> o .: "extraFlags"
+-- 'accessPoints', 'advertise', 'valency' and 'warmValency' fields are attached
+-- to the same object.
+localRootPeersGroupFromJSON
+  :: (Object -> Parser extraFlags)
+  -> Object
+  -> Parser (LocalRootPeersGroup extraFlags)
+localRootPeersGroupFromJSON parseExtraFlags o = do
+    hv@(HotValency v) <- o .: "valency"
+                     <|> o .: "hotValency"
+    LocalRootPeersGroup
+      <$> parseJSON (Object o)
+      <*> pure hv
+      <*> o .:? "warmValency" .!= WarmValency v
+      <*> (fromMaybe InitiatorAndResponderDiffusionMode
+            <$> o .:? "diffusionMode")
+      <*> parseExtraFlags o
 
-instance ToJSON extraFlags => ToJSON (LocalRootPeersGroup extraFlags) where
-  toJSON lrpg = object
-    [ "accessPoints"  .= rootAccessPoints (localRoots lrpg)
-    , "advertise"     .= rootAdvertise (localRoots lrpg)
-    , "hotValency"    .= hotValency lrpg
-    , "warmValency"   .= warmValency lrpg
-    , "extraFlags"    .= extraFlags lrpg
-    , "diffusionMode" .= rootDiffusionMode lrpg
-    ]
+localRootPeersGroupToJSON :: (extraFlags -> Maybe (Key, Value))
+                          -- ^ if `Nothing` is returned the `extraFlags` are
+                          -- not encoded in the JSON value
+                          -> LocalRootPeersGroup extraFlags
+                          -> Value
+localRootPeersGroupToJSON extraFlagsToJSON lrpg =
+    Object $
+         ("accessPoints"  .?= rootAccessPoints (localRoots lrpg))
+      <> ("advertise"     .?= rootAdvertise (localRoots lrpg))
+      <> ("hotValency"    .?= hotValency lrpg)
+      <> ("warmValency"   .?= warmValency lrpg)
+      <> (case mv of
+            Nothing     -> mempty
+            Just (k, v) -> k .?= v)
+      <> ("diffusionMode" .?= rootDiffusionMode lrpg)
+  where
+    mv = extraFlagsToJSON (extraFlags lrpg)
 
-instance FromJSON extraFlags => FromJSON (LocalRootPeersGroups extraFlags) where
-  parseJSON = fmap LocalRootPeersGroups . parseJSONList
+localRootPeersGroupsFromJSON
+  :: (Object -> Parser extraFlags)
+  -> Value
+  -> Parser (LocalRootPeersGroups extraFlags)
+localRootPeersGroupsFromJSON parseExtraFlags =
+  withArray "[]" $ \a ->
+      fmap LocalRootPeersGroups
+    . zipWithM
+        (parseIndexedJSON $ withObject "LocalRootPeersGroup" (localRootPeersGroupFromJSON parseExtraFlags))
+        [0..]
+    . toList
+    $ a
 
-instance ToJSON extraFlags => ToJSON (LocalRootPeersGroups extraFlags) where
-  toJSON = toJSONList . groups
+localRootPeersGroupsToJSON
+  :: (extraFlags -> Maybe (Key, Value))
+  -> LocalRootPeersGroups extraFlags
+  -> Value
+localRootPeersGroupsToJSON extraFlagsToJSON LocalRootPeersGroups {groups} =
+  listValue (localRootPeersGroupToJSON extraFlagsToJSON) groups
 
 instance FromJSON PublicRootPeers where
   parseJSON = fmap PublicRootPeers . parseJSON
@@ -125,28 +181,44 @@ instance FromJSON PublicRootPeers where
 instance ToJSON PublicRootPeers where
   toJSON = toJSON . publicRoots
 
-instance (FromJSON extraConfig, FromJSON extraFlags) => FromJSON (NetworkTopology extraConfig extraFlags) where
-  parseJSON = withObject "NetworkTopology" $ \o ->
-                NetworkTopology <$> o .: "localRoots"
-                                <*> o .: "publicRoots"
-                                <*> o .:? "useLedgerAfterSlot" .!= DontUseLedgerPeers
-                                <*> o .: "peerSnapshotFile"
-                                <*> o .: "extraConfig"
+networkTopologyFromJSON
+  :: (Value -> Parser (LocalRootPeersGroups extraFlags))
+  -> (Object -> Parser extraConfig)
+  -> Value
+  -> Parser (NetworkTopology extraConfig extraFlags)
+networkTopologyFromJSON parseLocalRoots parseExtraConfig =
+  withObject "NetworkTopology" $ \o ->
+              NetworkTopology <$> (o .: "localRoots" >>= parseLocalRoots)
+                              <*> o .: "publicRoots"
+                              <*> o .:? "useLedgerAfterSlot" .!= DontUseLedgerPeers
+                              <*> o .: "peerSnapshotFile"
+                              <*> parseExtraConfig o
 
-instance (ToJSON extraConfig, ToJSON extraFlags) => ToJSON (NetworkTopology extraConfig extraFlags) where
-  toJSON NetworkTopology
-          { localRootPeersGroups
-          , publicRootPeers
-          , useLedgerPeers
-          , peerSnapshotPath
-          , extraConfig
-          } = object
-    [ "localRoots"         .= localRootPeersGroups
-    , "publicRoots"        .= publicRootPeers
-    , "useLedgerAfterSlot" .= useLedgerPeers
-    , "peerSnapshotFile"   .= peerSnapshotPath
-    , "extraConfig"        .= extraConfig
-    ]
+networkTopologyToJSON
+  :: (extraConfig -> Maybe (Key, Value))
+  -> (extraFlags  -> Maybe (Key, Value))
+  -> NetworkTopology extraConfig extraFlags
+  -> Value
+networkTopologyToJSON
+  extraConfigToJSON
+  extraFlagsToJSON
+  NetworkTopology {
+    localRootPeersGroups,
+    publicRootPeers,
+    useLedgerPeers,
+    peerSnapshotPath,
+    extraConfig
+  } =
+    Object $
+         (explicitToFieldOmit (const False) id "localRoots" (localRootPeersGroupsToJSON extraFlagsToJSON localRootPeersGroups))
+      <> ("publicRoots"        .?= publicRootPeers)
+      <> ("useLedgerAfterSlot" .?= useLedgerPeers)
+      <> ("peerSnapshotFile"   .?= peerSnapshotPath)
+      <> (case mv of
+            Nothing    -> mempty
+            Just (k,v) -> k .?= v)
+  where
+    mv = extraConfigToJSON extraConfig
 
 instance FromJSON PeerSharing where
   parseJSON = withBool "PeerSharing" $ \b ->
@@ -248,27 +320,27 @@ instance ToJSON ProtocolLimitFailure where
     ExceededSizeLimit tok -> kindObject "ProtocolLimitFailure" [ "agency" .= show tok ]
     ExceededTimeLimit tok -> kindObject "ProtocolLimitFailure" [ "agency" .= show tok ]
 
-instance Show vNumber => ToJSON (RefuseReason vNumber) where
+instance ToJSON vNumber => ToJSON (RefuseReason vNumber) where
   toJSON = \case
     VersionMismatch vNumber tags -> kindObject "VersionMismatch"
-      [ "versionNumber" .= show vNumber
-      , "tags" .= toJSONList tags
+      [ "versionNumbers" .= vNumber
+      , "unknownVersionNumbers" .= toJSONList tags
       ]
     HandshakeDecodeError vNumber t -> kindObject "HandshakeDecodeError"
-      [ "versionNumber" .= show vNumber
-      , "text" .= String (pack $ show t)
+      [ "versionNumber" .= vNumber
+      , "decodeError" .= String t
       ]
     Refused vNumber t -> kindObject "Refused"
-      [ "versionNumber" .= show vNumber
-      , "text" .= String (pack $ show t)
+      [ "versionNumber" .= vNumber
+      , "text" .= String t
       ]
 
-instance Show vNumber => ToJSON (HandshakeProtocolError vNumber) where
+instance ToJSON vNumber => ToJSON (HandshakeProtocolError vNumber) where
   toJSON = \case
-    HandshakeError rvNumber          -> kindObject "HandshakeError" [ "reason" .= toJSON rvNumber ]
-    NotRecognisedVersion vNumber     -> kindObject "NotRecognisedVersion" [ "versionNumber" .= show vNumber ]
+    HandshakeError rvNumber          -> kindObject "HandshakeError" [ "reason" .= rvNumber ]
+    NotRecognisedVersion vNumber     -> kindObject "NotRecognisedVersion" [ "versionNumber" .= vNumber ]
     InvalidServerSelection vNumber t -> kindObject "InvalidServerSelection"
-      [ "versionNumber" .= show vNumber
+      [ "versionNumber" .= vNumber
       , "reason" .= String (pack $ show t)
       ]
     QueryNotSupported -> kindObject "QueryNotSupported" []
@@ -316,7 +388,7 @@ instance ToJSON KnownPeerInfo where
 instance ToJSON PeerStatus where
   toJSON = String . pack . show
 
-instance (ToJSON extraFlags, ToJSONKey peerAddr, ToJSON peerAddr, Ord peerAddr, Show peerAddr)
+instance (ToJSON extraFlags, ToJSONKey peerAddr, ToJSON peerAddr, Ord peerAddr)
   => ToJSON (LocalRootPeers extraFlags peerAddr) where
   toJSON lrp = kindObject "LocalRootPeers"
     [ "groups" .= toJSONList (LocalRootPeers.toGroups lrp) ]
@@ -371,8 +443,8 @@ instance ToJSON RemoteAddress where
     SockAddrUnix path ->
       object [ "socketPath" .= show path ]
 
-instance (ToJSON peer, ToJSON point) => ToJSON (TraceLabelPeer peer (FetchDecision [point])) where
-  toJSON (TraceLabelPeer peer decision) = object
+instance (ToJSON peer, ToJSON point) => ToJSON (Mux.TraceLabelPeer peer (FetchDecision [point])) where
+  toJSON (Mux.TraceLabelPeer peer decision) = object
     [ "peer"     .= peer
     , "decision" .=
          case decision of
@@ -418,3 +490,1173 @@ instance (ToJSON addr, ToJSONKey addr) => ToJSONKey (ConnectionId addr) where
 
 instance ToJSON PortNumber where
   toJSON = toJSON . fromIntegral @_ @Int
+
+instance (ToJSON peer, ToJSON a) => ToJSON (Mux.WithBearer peer a) where
+  toJSON (Mux.WithBearer peer ev) =
+    object [ "bearer" .= peer
+           , "event"  .= ev
+           ]
+
+instance ToJSON Mux.MiniProtocolDir where
+  toJSON miniProtocolDir = String (pack . show $ miniProtocolDir)
+
+instance ToJSON Mux.Trace where
+  toJSON = \case
+    Mux.TraceState state ->
+      object [ "type"  .= String "State"
+             , "state" .= String (pack . show $ state)
+             ]
+    Mux.TraceCleanExit miniProtocolNum miniProtocolDir ->
+      object [ "type" .= String "CleanExit"
+             , "miniProtocolNum" .= miniProtocolNum
+             , "miniProtocolDir" .= miniProtocolDir
+             ]
+    Mux.TraceExceptionExit miniProtocolNum miniProtocolDir err ->
+      object [ "type" .= String "ExceptionExit"
+             , "miniProtocolNum" .= miniProtocolNum
+             , "miniProtocolDir" .= miniProtocolDir
+             , "error"           .= String (pack . displayException $ err)
+             ]
+    Mux.TraceStartEagerly miniProtocolNum miniProtocolDir ->
+      object [ "type" .= String "StartEagerly"
+             , "miniProtocolNum" .= miniProtocolNum
+             , "miniProtocolDir" .= miniProtocolDir
+             ]
+    Mux.TraceStartOnDemand miniProtocolNum miniProtocolDir ->
+      object [ "type" .= String "StartOnDemand"
+             , "miniProtocolNum" .= miniProtocolNum
+             , "miniProtocolDir" .= miniProtocolDir
+             ]
+    Mux.TraceStartOnDemandAny miniProtocolNum miniProtocolDir ->
+      object [ "type" .= String "StartOnDemandAny"
+             , "miniProtocolNum" .= miniProtocolNum
+             , "miniProtocolDir" .= miniProtocolDir
+             ]
+    Mux.TraceStartedOnDemand miniProtocolNum miniProtocolDir ->
+      object [ "type" .= String "StartedOnDemand"
+             , "miniProtocolNum" .= miniProtocolNum
+             , "miniProtocolDir" .= miniProtocolDir
+             ]
+    Mux.TraceTerminating miniProtocolNum miniProtocolDir ->
+      object [ "type" .= String "Terminating"
+             , "miniProtocolNum" .= miniProtocolNum
+             , "miniProtocolDir" .= miniProtocolDir
+             ]
+    Mux.TraceStopping ->
+      object [ "type" .= String "Stopping"
+             ]
+    Mux.TraceStopped ->
+      object [ "type" .= String "Stopped"
+             ]
+
+
+instance ToJSON Mux.ChannelTrace where
+  toJSON = \case
+    Mux.TraceChannelRecvStart miniProtocolNum ->
+      object [ "type" .= String "RecvStart"
+             , "miniProtocolNum" .= miniProtocolNum
+             ]
+    Mux.TraceChannelRecvEnd miniProtocolNum len ->
+      object [ "type" .= String "RecvEnd"
+             , "miniProtocolNum" .= miniProtocolNum
+             , "length" .= len
+             ]
+    Mux.TraceChannelSendStart miniProtocolNum len ->
+      object [ "type" .= String "SendStart"
+             , "miniProtocolNum" .= miniProtocolNum
+             , "length" .= len
+             ]
+    Mux.TraceChannelSendEnd miniProtocolNum ->
+      object [ "type" .= String "SendEnd"
+             , "miniProtocolNum" .= miniProtocolNum
+             ]
+
+
+-- TODO
+instance ToJSON Mux.BearerTrace where
+  toJSON ev = String (pack . show $ ev)
+
+instance ToJSON (AnyMessage ps) => ToJSON (TraceSendRecv ps) where
+  toJSON = \case
+    TraceSendMsg msg ->
+      object [ "type"    .= String "SendMsg"
+             , "message" .= msg
+             ]
+    TraceRecvMsg msg ->
+      object [ "type"    .= String "RecvMsg"
+             , "message" .= msg
+             ]
+
+instance (ToJSON version, ToJSONKey version, ToJSON params) => ToJSON (AnyMessage (Handshake version params)) where
+  toJSON = \case
+    AnyMessage (MsgProposeVersions versionDict) ->
+      object [ "type" .= String "MsgProposeVersions"
+             , "versions" .= versionDict
+             ]
+    AnyMessage (MsgReplyVersions versionDict) ->
+      object [ "type" .= String "MsgReplyVersions"
+             , "versions" .= versionDict
+             ]
+
+    AnyMessage (MsgQueryReply versionDict) ->
+      object [ "type" .= String "MsgQueryVersions"
+             , "versions" .= versionDict
+             ]
+    AnyMessage (MsgAcceptVersion version params) ->
+      object [ "type" .= String "MsgAcceptVersion"
+             , "version" .= version
+             , "params" .= params
+             ]
+    AnyMessage (MsgRefuse reason) ->
+      object [ "type" .= String "MsgRefuse"
+             , "reason" .= reason
+             ]
+
+instance (ToJSON localAddress, ToJSON remoteAddress) => ToJSON (DiffusionTracer localAddress remoteAddress) where
+  toJSON (RunServer sockAddr) = object
+    [ "kind" .= String "RunServer"
+    , "addresses" .= sockAddr
+    ]
+
+  toJSON (RunLocalServer localAddress) = object
+    [ "kind" .= String "RunLocalServer"
+    , "addresses" .= localAddress
+    ]
+  toJSON (UsingSystemdSocket localAddress) = object
+    [ "kind" .= String "UsingSystemdSocket"
+    , "address" .= localAddress
+    ]
+
+  toJSON (CreateSystemdSocketForSnocketPath localAddress) = object
+    [ "kind" .= String "CreateSystemdSocketForSnocketaddress"
+    , "address" .= localAddress
+    ]
+  toJSON (CreatedLocalSocket localAddress) = object
+    [ "kind" .= String "CreatedLocalSocket"
+    , "address" .= localAddress
+    ]
+  toJSON (ConfiguringLocalSocket localAddress socket) = object
+    [ "kind" .= String "ConfiguringLocalSocket"
+    , "address" .= localAddress
+    , "socket" .= String (pack (show socket))
+    ]
+  toJSON (ListeningLocalSocket localAddress socket) = object
+    [ "kind" .= String "ListeningLocalSocket"
+    , "address" .= localAddress
+    , "socket" .= String (pack (show socket))
+    ]
+  toJSON (LocalSocketUp localAddress fd) = object
+    [ "kind" .= String "LocalSocketUp"
+    , "address" .= localAddress
+    , "socket" .= String (pack (show fd))
+    ]
+  toJSON (CreatingServerSocket sockAddr) = object
+    [ "kind" .= String "CreatingServerSocket"
+    , "address" .= sockAddr
+    ]
+  toJSON (ListeningServerSocket sockAddr) = object
+    [ "kind" .= String "ListeningServerSocket"
+    , "address" .= sockAddr
+    ]
+  toJSON (ServerSocketUp sockAddr) = object
+    [ "kind" .= String "ServerSocketUp"
+    , "address" .= sockAddr
+    ]
+  toJSON (ConfiguringServerSocket sockAddr) = object
+    [ "kind" .= String "ConfiguringServerSocket"
+    , "address" .= sockAddr
+    ]
+  toJSON (UnsupportedLocalSystemdSocket addr) = object
+    [ "kind" .= String "UnsupportedLocalSystemdSocket"
+    , "address" .= addr
+    ]
+  toJSON UnsupportedReadySocketCase = object
+    [ "kind" .= String "UnsupportedReadySocketCase"
+    ]
+  toJSON (DiffusionErrored exception) = object
+    [ "kind" .= String "DiffusionErrored"
+    , "error" .= String (pack (show exception))
+    ]
+  toJSON (SystemdSocketConfiguration config) = object
+    [ "kind" .= String "SystemdSocketConfiguration"
+    , "message" .= String (pack (show config))
+    ]
+
+
+instance (ToJSON extraFlags, ToJSON peerAddr, ToJSONKey peerAddr) => ToJSON (TraceLocalRootPeers extraFlags peerAddr) where
+  toJSON (TraceLocalRootDomains groups) =
+    object [ "kind" .= String "LocalRootDomains"
+           , "localRootDomains" .= groups
+           ]
+  toJSON (TraceLocalRootWaiting d dt) =
+    object [ "kind" .= String "LocalRootWaiting"
+           , "domainAddress" .= d
+           , "diffTime" .= show dt
+           ]
+  toJSON (TraceLocalRootGroups groups) =
+    object [ "kind" .= String "LocalRootGroups"
+           , "localRootGroups" .= groups
+           ]
+  toJSON (TraceLocalRootFailure d dexception) =
+    object [ "kind" .= String "LocalRootFailure"
+           , "domainAddress" .= d
+           , "reason" .= show dexception
+           ]
+  toJSON (TraceLocalRootError d dexception) =
+    object [ "kind" .= String "LocalRootError"
+           , "domainAddress" .= String (Text.decodeUtf8With Text.ignore d)
+           , "reason" .= show dexception
+           ]
+  toJSON (TraceLocalRootReconfigured _ _) =
+    object [ "kind" .= String "LocalRootReconfigured"
+           ]
+  toJSON (TraceLocalRootDNSMap dnsMap) =
+    object
+      [ "kind" .= String "TraceLocalRootDNSMap"
+      , "dnsMap" .= dnsMap
+      ]
+
+instance ToJSON TracePublicRootPeers where
+  toJSON (TracePublicRootRelayAccessPoint relays) =
+    object [ "kind" .= String "PublicRootRelayAddresses"
+           , "relayAddresses" .= relays
+           ]
+  toJSON (TracePublicRootDomains domains) =
+    object [ "kind" .= String "PublicRootDomains"
+           , "domainAddresses" .= domains
+           ]
+
+instance ToJSON TraceLedgerPeers where
+  toJSON (PickedBigLedgerPeer addr _ackStake stake) =
+    object
+      [ "kind" .= String "PickedBigLedgerPeer"
+      , "address" .= addr
+      , "relativeStake" .= (realToFrac (unPoolStake stake) :: Double)
+      ]
+  toJSON (PickedBigLedgerPeers (NumberOfPeers n) addrs) =
+    object
+      [ "kind" .= String "PickedBigLedgerPeers"
+      , "desiredCount" .= n
+      , "count" .= length addrs
+      , "addresses" .= addrs
+      ]
+  toJSON (PickedLedgerPeer addr _ackStake stake) =
+    object
+      [ "kind" .= String "PickedLedgerPeer"
+      , "address" .= show addr
+      , "relativeStake" .= (realToFrac (unPoolStake stake) :: Double)
+      ]
+  toJSON (PickedLedgerPeers (NumberOfPeers n) addrs) =
+    object
+      [ "kind" .= String "PickedLedgerPeers"
+      , "desiredCount" .= n
+      , "count" .= length addrs
+      , "addresses" .= addrs
+      ]
+  toJSON (FetchingNewLedgerState cnt bigCnt) =
+    object
+      [ "kind" .= String "FetchingNewLedgerState"
+      , "numberOfLedgerPeers" .= cnt
+      , "numberOfBigLedgerPeers" .= bigCnt
+      ]
+  toJSON DisabledLedgerPeers =
+    object
+      [ "kind" .= String "DisabledLedgerPeers"
+      ]
+  toJSON (TraceUseLedgerPeers ulp) =
+    object
+      [ "kind" .= String "UseLedgerPeers"
+      , "useLedgerPeers" .= ulp
+      ]
+  toJSON WaitingOnRequest =
+    object
+      [ "kind" .= String "WaitingOnRequest"
+      ]
+  toJSON (RequestForPeers (NumberOfPeers np)) =
+    object
+      [ "kind" .= String "RequestForPeers"
+      , "numberOfPeers" .= np
+      ]
+  toJSON (ReusingLedgerState cnt age) =
+    object
+      [ "kind" .= String "ReusingLedgerState"
+      , "numberOfPools" .= cnt
+      , "ledgerStateAge" .= age
+      ]
+  toJSON FallingBackToPublicRootPeers =
+    object
+      [ "kind" .= String "FallingBackToBootstrapPeers"
+      ]
+  toJSON (NotEnoughLedgerPeers (NumberOfPeers target) numOfLedgerPeers) =
+    object
+      [ "kind" .= String "NotEnoughLedgerPeers"
+      , "target" .= target
+      , "numOfLedgerPeers" .= numOfLedgerPeers
+      ]
+  toJSON (NotEnoughBigLedgerPeers (NumberOfPeers target) numOfBigLedgerPeers) =
+    object
+      [ "kind" .= String "NotEnoughBigLedgerPeers"
+      , "target" .= target
+      , "numOfBigLedgerPeers" .= numOfBigLedgerPeers
+      ]
+  toJSON (TraceLedgerPeersDomains daps) =
+    object
+      [ "kind" .= String "TraceLedgerPeersDomains"
+      , "domainAccessPoints" .= daps
+      ]
+  toJSON UsingBigLedgerPeerSnapshot =
+    object
+      [ "kind" .= String "UsingBigLedgerPeerSnapshot"
+      ]
+
+instance ToJSON Time where
+  toJSON = String . pack . show
+
+instance ( ToJSON extraDebugState
+         , ToJSON extraFlags
+         , ToJSON extraPeers
+         , ToJSON peerAddr
+         , ToJSONKey peerAddr
+         , Ord peerAddr
+         , ToJSON (PublicRootPeers.PublicRootPeers extraPeers peerAddr)
+         )
+       => ToJSON (TracePeerSelection extraDebugState extraFlags extraPeers peerAddr) where
+  toJSON (TraceLocalRootPeersChanged lrp lrp') =
+    object [ "kind" .= String "LocalRootPeersChanged"
+           , "previous" .= lrp
+           , "current" .= lrp'
+           ]
+  toJSON (TraceTargetsChanged pst pst') =
+    object [ "kind" .= String "TargetsChanged"
+           , "previous" .= pst
+           , "current" .= pst'
+           ]
+  toJSON (TracePublicRootsRequest tRootPeers nRootPeers) =
+    object [ "kind" .= String "PublicRootsRequest"
+           , "targetNumberOfRootPeers" .= tRootPeers
+           , "numberOfRootPeers" .= nRootPeers
+           ]
+  toJSON (TracePublicRootsResults res group dt) =
+    object [ "kind" .= String "PublicRootsResults"
+           , "result" .= res
+           , "group" .= group
+           , "diffTime" .= dt
+           ]
+  toJSON (TracePublicRootsFailure err group dt) =
+    object [ "kind" .= String "PublicRootsFailure"
+           , "reason" .= show err
+           , "group" .= group
+           , "diffTime" .= dt
+           ]
+  toJSON (TraceBigLedgerPeersRequest tBigLedgerPeers nBigLedgerPeers) =
+    object [ "kind" .= String "BigLedgerPeersRequest"
+           , "targetNumberOfBigLedgerPeers" .= tBigLedgerPeers
+           , "numberOfBigLedgerPeers" .= nBigLedgerPeers
+           ]
+  toJSON (TraceBigLedgerPeersResults res group dt) =
+    object [ "kind" .= String "BigLedgerPeersResults"
+           , "result" .= toList res
+           , "group" .= group
+           , "diffTime" .= dt
+           ]
+  toJSON (TraceBigLedgerPeersFailure err group dt) =
+    object [ "kind" .= String "BigLedgerPeersFailure"
+           , "reason" .= show err
+           , "group" .= group
+           , "diffTime" .= dt
+           ]
+  toJSON (TraceForgetBigLedgerPeers targetKnown actualKnown sp) =
+    object [ "kind" .= String "ForgetBigLedgerPeers"
+           , "targetKnown" .= targetKnown
+           , "actualKnown" .= actualKnown
+           , "selectedPeers" .= toList sp
+           ]
+  toJSON (TracePeerShareRequests targetKnown actualKnown (PeerSharingAmount numRequested) aps sps) =
+    object [ "kind" .= String "PeerShareRequests"
+           , "targetKnown" .= targetKnown
+           , "actualKnown" .= actualKnown
+           , "numRequested" .= numRequested
+           , "availablePeers" .= toList aps
+           , "selectedPeers" .= toList sps
+           ]
+  toJSON (TracePeerShareResults res) =
+    object [ "kind" .= String "PeerShareResults"
+           , "result" .= map ( first show <$> ) res
+           ]
+  toJSON (TracePeerShareResultsFiltered res) =
+    object [ "kind" .= String "PeerShareResultsFiltered"
+           , "result" .= res
+           ]
+  toJSON (TraceForgetColdPeers targetKnown actualKnown sp) =
+    object [ "kind" .= String "ForgetColdPeers"
+           , "targetKnown" .= targetKnown
+           , "actualKnown" .= actualKnown
+           , "selectedPeers" .= toList sp
+           ]
+  toJSON (TracePromoteColdPeers targetKnown actualKnown sp) =
+    object [ "kind" .= String "PromoteColdPeers"
+           , "targetEstablished" .= targetKnown
+           , "actualEstablished" .= actualKnown
+           , "selectedPeers" .= toList sp
+           ]
+  toJSON (TracePromoteColdLocalPeers tLocalEst sp) =
+    object [ "kind" .= String "PromoteColdLocalPeers"
+           , "targetLocalEstablished" .= tLocalEst
+           , "selectedPeers" .= toList sp
+           ]
+  toJSON (TracePromoteColdFailed tEst aEst p d err) =
+    object [ "kind" .= String "PromoteColdFailed"
+           , "targetEstablished" .= tEst
+           , "actualEstablished" .= aEst
+           , "peer" .= p
+           , "delay" .= d
+           , "reason" .= show err
+           ]
+  toJSON (TracePromoteColdDone tEst aEst p) =
+    object [ "kind" .= String "PromoteColdDone"
+           , "targetEstablished" .= tEst
+           , "actualEstablished" .= aEst
+           , "peer" .= p
+           ]
+  toJSON (TracePromoteColdBigLedgerPeers targetKnown actualKnown sp) =
+    object [ "kind" .= String "PromoteColdBigLedgerPeers"
+           , "targetEstablished" .= targetKnown
+           , "actualEstablished" .= actualKnown
+           , "selectedPeers" .= toList sp
+           ]
+  toJSON (TracePromoteColdBigLedgerPeerFailed tEst aEst p d err) =
+    object [ "kind" .= String "PromoteColdBigLedgerPeerFailed"
+           , "targetEstablished" .= tEst
+           , "actualEstablished" .= aEst
+           , "peer" .= p
+           , "delay" .= d
+           , "reason" .= show err
+           ]
+  toJSON (TracePromoteColdBigLedgerPeerDone tEst aEst p) =
+    object [ "kind" .= String "PromoteColdBigLedgerPeerDone"
+           , "targetEstablished" .= tEst
+           , "actualEstablished" .= aEst
+           , "peer" .= p
+           ]
+  toJSON (TracePromoteWarmPeers tActive aActive sp) =
+    object [ "kind" .= String "PromoteWarmPeers"
+           , "targetActive" .= tActive
+           , "actualActive" .= aActive
+           , "selectedPeers" .= toList sp
+           ]
+  toJSON (TracePromoteWarmLocalPeers taa sp) =
+    object [ "kind" .= String "PromoteWarmLocalPeers"
+           , "targetActualActive" .= taa
+           , "selectedPeers" .= toList sp
+           ]
+  toJSON (TracePromoteWarmFailed tActive aActive p err) =
+    object [ "kind" .= String "PromoteWarmFailed"
+           , "targetActive" .= tActive
+           , "actualActive" .= aActive
+           , "peer" .= p
+           , "reason" .= show err
+           ]
+  toJSON (TracePromoteWarmDone tActive aActive p) =
+    object [ "kind" .= String "PromoteWarmDone"
+           , "targetActive" .= tActive
+           , "actualActive" .= aActive
+           , "peer" .= p
+           ]
+  toJSON (TracePromoteWarmAborted tActive aActive p) =
+    object [ "kind" .= String "PromoteWarmAborted"
+           , "targetActive" .= tActive
+           , "actualActive" .= aActive
+           , "peer" .= p
+           ]
+  toJSON (TracePromoteWarmBigLedgerPeers tActive aActive sp) =
+    object [ "kind" .= String "PromoteWarmBigLedgerPeers"
+           , "targetActive" .= tActive
+           , "actualActive" .= aActive
+           , "selectedPeers" .= toList sp
+           ]
+  toJSON (TracePromoteWarmBigLedgerPeerFailed tActive aActive p err) =
+    object [ "kind" .= String "PromoteWarmBigLedgerPeerFailed"
+           , "targetActive" .= tActive
+           , "actualActive" .= aActive
+           , "peer" .= p
+           , "reason" .= show err
+           ]
+  toJSON (TracePromoteWarmBigLedgerPeerDone tActive aActive p) =
+    object [ "kind" .= String "PromoteWarmBigLedgerPeerDone"
+           , "targetActive" .= tActive
+           , "actualActive" .= aActive
+           , "peer" .= p
+           ]
+  toJSON (TracePromoteWarmBigLedgerPeerAborted tActive aActive p) =
+    object [ "kind" .= String "PromoteWarmBigLedgerPeerAborted"
+           , "targetActive" .= tActive
+           , "actualActive" .= aActive
+           , "peer" .= p
+           ]
+  toJSON (TraceDemoteWarmPeers tEst aEst sp) =
+    object [ "kind" .= String "DemoteWarmPeers"
+           , "targetEstablished" .= tEst
+           , "actualEstablished" .= aEst
+           , "selectedPeers" .= toList sp
+           ]
+  toJSON (TraceDemoteWarmFailed tEst aEst p err) =
+    object [ "kind" .= String "DemoteWarmFailed"
+           , "targetEstablished" .= tEst
+           , "actualEstablished" .= aEst
+           , "peer" .= p
+           , "reason" .= show err
+           ]
+  toJSON (TraceDemoteWarmDone tEst aEst p) =
+    object [ "kind" .= String "DemoteWarmDone"
+           , "targetEstablished" .= tEst
+           , "actualEstablished" .= aEst
+           , "peer" .= p
+           ]
+  toJSON (TraceDemoteWarmBigLedgerPeers tEst aEst sp) =
+    object [ "kind" .= String "DemoteWarmBigLedgerPeers"
+           , "targetEstablished" .= tEst
+           , "actualEstablished" .= aEst
+           , "selectedPeers" .= toList sp
+           ]
+  toJSON (TraceDemoteWarmBigLedgerPeerFailed tEst aEst p err) =
+    object [ "kind" .= String "DemoteWarmBigLedgerPeerFailed"
+           , "targetEstablished" .= tEst
+           , "actualEstablished" .= aEst
+           , "peer" .= p
+           , "reason" .= show err
+           ]
+  toJSON (TraceDemoteWarmBigLedgerPeerDone tEst aEst p) =
+    object [ "kind" .= String "DemoteWarmBigLedgerPeerDone"
+           , "targetEstablished" .= tEst
+           , "actualEstablished" .= aEst
+           , "peer" .= p
+           ]
+  toJSON (TraceDemoteHotPeers tActive aActive sp) =
+    object [ "kind" .= String "DemoteHotPeers"
+           , "targetActive" .= tActive
+           , "actualActive" .= aActive
+           , "selectedPeers" .= toList sp
+           ]
+  toJSON (TraceDemoteLocalHotPeers taa sp) =
+    object [ "kind" .= String "DemoteLocalHotPeers"
+           , "targetActualActive" .= taa
+           , "selectedPeers" .= toList sp
+           ]
+  toJSON (TraceDemoteHotFailed tActive aActive p err) =
+    object [ "kind" .= String "DemoteHotFailed"
+           , "targetActive" .= tActive
+           , "actualActive" .= aActive
+           , "peer" .= p
+           , "reason" .= show err
+           ]
+  toJSON (TraceDemoteHotDone tActive aActive p) =
+    object [ "kind" .= String "DemoteHotDone"
+           , "targetActive" .= tActive
+           , "actualActive" .= aActive
+           , "peer" .= p
+           ]
+  toJSON (TraceDemoteHotBigLedgerPeers tActive aActive sp) =
+    object [ "kind" .= String "DemoteHotBigLedgerPeers"
+           , "targetActive" .= tActive
+           , "actualActive" .= aActive
+           , "selectedPeers" .= toList sp
+           ]
+  toJSON (TraceDemoteHotBigLedgerPeerFailed tActive aActive p err) =
+    object [ "kind" .= String "DemoteHotBigLedgerPeerFailed"
+           , "targetActive" .= tActive
+           , "actualActive" .= aActive
+           , "peer" .= p
+           , "reason" .= show err
+           ]
+  toJSON (TraceDemoteHotBigLedgerPeerDone tActive aActive p) =
+    object [ "kind" .= String "DemoteHotBigLedgerPeerDone"
+           , "targetActive" .= tActive
+           , "actualActive" .= aActive
+           , "peer" .= p
+           ]
+  toJSON (TraceDemoteAsynchronous msp) =
+    object [ "kind" .= String "DemoteAsynchronous"
+           , "state" .= msp
+           ]
+  toJSON (TraceDemoteLocalAsynchronous msp) =
+    object [ "kind" .= String "DemoteLocalAsynchronous"
+           , "state" .= msp
+           ]
+  toJSON (TraceDemoteBigLedgerPeersAsynchronous msp) =
+    object [ "kind" .= String "DemoteBigLedgerPeersAsynchronous"
+           , "state" .= msp
+           ]
+  toJSON TraceGovernorWakeup =
+    object [ "kind" .= String "GovernorWakeup"
+           ]
+  toJSON (TraceChurnWait dt) =
+    object [ "kind" .= String "ChurnWait"
+           , "diffTime" .= dt
+           ]
+  toJSON (TracePickInboundPeers targetNumberOfKnownPeers numberOfKnownPeers selected available) =
+    object [ "kind" .= String "PickInboundPeers"
+           , "targetKnown" .= targetNumberOfKnownPeers
+           , "actualKnown" .= numberOfKnownPeers
+           , "selected" .= selected
+           , "available" .= available
+           ]
+  toJSON (TraceLedgerStateJudgementChanged new) =
+    object [ "kind" .= String "LedgerStateJudgementChanged"
+           , "LedgerStateJudgement" .= show new
+           ]
+  toJSON TraceOnlyBootstrapPeers =
+    object [ "kind" .= String "OnlyBootstrapPeers" ]
+  toJSON (TraceUseBootstrapPeersChanged ubp) =
+    object [ "kind" .= String "UseBootstrapPeersChanged"
+           , "UseBootstrapPeers" .= show ubp
+           ]
+  toJSON TraceBootstrapPeersFlagChangedWhilstInSensitiveState =
+    object [ "kind" .= String "BootstrapPeersFlagChangedWhilstInSensitiveState"
+           ]
+  toJSON (TraceVerifyPeerSnapshot result) =
+    object [ "kind" .= String "VerifyPeerSnapshot"
+           , "result" .= result ]
+  toJSON (TraceOutboundGovernorCriticalFailure err) =
+    object [ "kind" .= String "OutboundGovernorCriticalFailure"
+           , "reason" .= show err
+           ]
+  toJSON (TraceChurnAction duration action counter) =
+    object [ "kind" .= String "ChurnAction"
+           , "action" .= show action
+           , "counter" .= counter
+           , "duration" .= duration
+           ]
+  toJSON (TraceChurnTimeout duration action counter) =
+    object [ "kind" .= String "ChurnTimeout"
+           , "action" .= show action
+           , "counter" .= counter
+           , "duration" .= duration
+           ]
+  toJSON (TraceDebugState mtime ds) =
+   object [ "kind" .= String "DebugState"
+          , "monotonicTime" .= mtime
+          , "targets" .= peerSelectionTargetsToObject (dpssTargets ds)
+          , "localRootPeers" .= dpssLocalRootPeers ds
+          , "publicRootPeers" .= dpssPublicRootPeers ds
+          , "knownPeers" .= KnownPeers.allPeers (dpssKnownPeers ds)
+          , "establishedPeers" .= dpssEstablishedPeers ds
+          , "activePeers" .= dpssActivePeers ds
+          , "publicRootBackoffs" .= dpssPublicRootBackoffs ds
+          , "publicRootRetryTime" .= dpssPublicRootRetryTime ds
+          , "bigLedgerPeerBackoffs" .= dpssBigLedgerPeerBackoffs ds
+          , "bigLedgerPeerRetryTime" .= dpssBigLedgerPeerRetryTime ds
+          , "inProgressBigLedgerPeersReq" .= dpssInProgressBigLedgerPeersReq ds
+          , "inProgressPeerShareReqs" .= dpssInProgressPeerShareReqs ds
+          , "inProgressPromoteCold" .= dpssInProgressPromoteCold ds
+          , "inProgressPromoteWarm" .= dpssInProgressPromoteWarm ds
+          , "inProgressDemoteWarm" .= dpssInProgressDemoteWarm ds
+          , "inProgressDemoteHot" .= dpssInProgressDemoteHot ds
+          , "inProgressDemoteToCold" .= dpssInProgressDemoteToCold ds
+          , "upstreamyness" .= dpssUpstreamyness ds
+          , "fetchynessBlocks" .= dpssFetchynessBlocks ds
+          , "ledgerStateJudgement" .= dpssExtraState ds
+          , "associationMode" .= dpssAssociationMode ds
+          ]
+
+peerSelectionTargetsToObject :: PeerSelectionTargets -> Value
+peerSelectionTargetsToObject
+  PeerSelectionTargets { targetNumberOfRootPeers,
+                         targetNumberOfKnownPeers,
+                         targetNumberOfEstablishedPeers,
+                         targetNumberOfActivePeers,
+                         targetNumberOfKnownBigLedgerPeers,
+                         targetNumberOfEstablishedBigLedgerPeers,
+                         targetNumberOfActiveBigLedgerPeers
+                       } =
+    object
+      [ "roots" .= targetNumberOfRootPeers
+       , "knownPeers" .= targetNumberOfKnownPeers
+       , "established" .= targetNumberOfEstablishedPeers
+       , "active" .= targetNumberOfActivePeers
+       , "knownBigLedgerPeers" .= targetNumberOfKnownBigLedgerPeers
+       , "establishedBigLedgerPeers" .= targetNumberOfEstablishedBigLedgerPeers
+       , "activeBigLedgerPeers" .= targetNumberOfActiveBigLedgerPeers
+       ]
+
+instance ToJSON ChurnCounters where
+  toJSON (ChurnCounter action cnt) =
+    object [ "action"  .= show action
+           , "counter" .= cnt
+           ]
+
+instance (ToJSON peerAddr, Show peerAddr, Show versionNumber)
+      => ToJSON (PeerSelectionActionsTrace peerAddr versionNumber) where
+  toJSON (PeerStatusChanged ps) =
+    object [ "kind" .= String "PeerStatusChanged"
+           , "peerStatusChangeType" .= show ps
+           ]
+  toJSON (PeerStatusChangeFailure ps f) =
+    object [ "kind" .= String "PeerStatusChangeFailure"
+           , "peerStatusChangeType" .= String (pack . show $ ps)
+           , "reason" .= show f
+           ]
+  toJSON (PeerMonitoringError connId s) =
+    object [ "kind" .= String "PeerMonitoringError"
+            , "connectionId" .= connId
+            , "reason" .= show s
+            ]
+  toJSON (PeerMonitoringResult connId wf) =
+    object [ "kind" .= String "PeerMonitoringResult"
+            , "connectionId" .= toJSON connId
+            , "withProtocolTemp" .= show wf
+            ]
+  toJSON (AcquireConnectionError exception) =
+    object [ "kind" .= String "AcquireConnectionError"
+           , "error" .= displayException exception
+           ]
+  toJSON (PeerHotDuration connId duration) =
+    object [ "kind" .= String "PeerHotDuration"
+           , "connId" .= connId
+           , "duration" .= duration
+           ]
+
+instance (Show versionNumber, ToJSON versionNumber, ToJSON agreedOptions)
+  => ToJSON (ConnectionHandlerTrace versionNumber agreedOptions) where
+  toJSON (TrHandshakeSuccess versionNumber agreedOptions) =
+    object
+      [ "kind" .= String "HandshakeSuccess"
+      , "versionNumber" .= versionNumber
+      , "agreedOptions" .= agreedOptions
+      ]
+  toJSON (TrHandshakeQuery vMap) =
+    object
+      [ "kind" .= String "HandshakeQuery"
+      , "versions" .= toJSON ((\(k,v) -> object [
+          "versionNumber" .= k
+        , "options" .= v
+        ]) <$> Map.toList vMap)
+      ]
+  toJSON (TrHandshakeClientError err) =
+    object
+      [ "kind" .= String "HandshakeClientError"
+      , "reason" .= err
+      ]
+  toJSON (TrHandshakeServerError err) =
+    object
+      [ "kind" .= String "HandshakeServerError"
+      , "reason" .= err
+      ]
+  toJSON (TrConnectionHandlerError e err cerr) =
+    object
+      [ "kind" .= String "Error"
+      , "context" .= show e
+      , "reason"  .= show err
+      , "command" .= show cerr
+      ]
+
+instance (Show addr, Show versionNumber, Show agreedOptions,
+          ToJSON addr, ToJSON versionNumber, ToJSON agreedOptions)
+      => ToJSON (ConnMgr.Trace addr (ConnectionHandlerTrace versionNumber agreedOptions)) where
+  toJSON = \case
+    TrIncludeConnection prov peerAddr ->
+      object
+        [ "kind" .= String "IncludeConnection"
+        , "remoteAddress" .= peerAddr
+        , "provenance" .= String (pack . show $ prov)
+        ]
+    TrReleaseConnection prov connId ->
+      object
+        [ "kind" .= String "UnregisterConnection"
+        , "remoteAddress" .= toJSON connId
+        , "provenance" .= String (pack . show $ prov)
+        ]
+    TrConnect (Just localAddress) remoteAddress diffusionMode ->
+      object
+        [ "kind" .= String "Connect"
+        , "connectionId" .= toJSON ConnectionId { localAddress, remoteAddress }
+        , "diffusionMode" .= toJSON diffusionMode
+        ]
+    TrConnect Nothing remoteAddress diffusionMode ->
+      object
+        [ "kind" .= String "Connect"
+        , "remoteAddress" .= remoteAddress
+        , "diffusionMode" .= toJSON diffusionMode
+        ]
+    TrConnectError (Just localAddress) remoteAddress err ->
+      object
+        [ "kind" .= String "ConnectError"
+        , "connectionId" .= toJSON ConnectionId { localAddress, remoteAddress }
+        , "reason" .= String (pack . show $ err)
+        ]
+    TrConnectError Nothing remoteAddress err ->
+      object
+        [ "kind" .= String "ConnectError"
+        , "remoteAddress" .= remoteAddress
+        , "reason" .= String (pack . show $ err)
+        ]
+    TrTerminatingConnection prov connId ->
+      object
+        [ "kind" .= String "TerminatingConnection"
+        , "provenance" .= String (pack . show $ prov)
+        , "connectionId" .= toJSON connId
+        ]
+    TrTerminatedConnection prov remoteAddress ->
+      object
+        [ "kind" .= String "TerminatedConnection"
+        , "provenance" .= String (pack . show $ prov)
+        , "remoteAddress" .= remoteAddress
+        ]
+    TrConnectionHandler connId a ->
+      object
+        [ "kind" .= String "ConnectionHandler"
+        , "connectionId" .= connId
+        , "connectionHandler" .= a
+        ]
+    TrShutdown ->
+      object
+        [ "kind" .= String "Shutdown"
+        ]
+    TrConnectionExists prov remoteAddress inState ->
+      object
+        [ "kind" .= String "ConnectionExists"
+        , "provenance" .= String (pack . show $ prov)
+        , "remoteAddress" .= remoteAddress
+        , "state" .= toJSON inState
+        ]
+    TrForbiddenConnection connId ->
+      object
+        [ "kind" .= String "ForbiddenConnection"
+        , "connectionId" .= toJSON connId
+        ]
+    TrConnectionFailure connId ->
+      object
+        [ "kind" .= String "ConnectionFailure"
+        , "connectionId" .= toJSON connId
+        ]
+    TrConnectionNotFound prov remoteAddress ->
+      object
+        [ "kind" .= String "ConnectionNotFound"
+        , "remoteAddress" .= remoteAddress
+        , "provenance" .= String (pack . show $ prov)
+        ]
+    TrForbiddenOperation remoteAddress connState ->
+      object
+        [ "kind" .= String "ForbiddenOperation"
+        , "remoteAddress" .= remoteAddress
+        , "connectionState" .= connState
+        ]
+    TrPruneConnections pruningSet numberPruned chosenPeers ->
+      object
+        [ "kind" .= String "PruneConnections"
+        , "prunedPeers" .= toJSON pruningSet
+        , "numberPrunedPeers" .= toJSON numberPruned
+        , "choiceSet" .= toJSON (toJSON `Set.map` chosenPeers)
+        ]
+    TrConnectionCleanup connId ->
+      object
+        [ "kind" .= String "ConnectionCleanup"
+        , "connectionId" .= toJSON connId
+        ]
+    TrConnectionTimeWait connId ->
+      object
+        [ "kind" .= String "ConnectionTimeWait"
+        , "connectionId" .= toJSON connId
+        ]
+    TrConnectionTimeWaitDone connId ->
+      object
+        [ "kind" .= String "ConnectionTimeWaitDone"
+        , "connectionId" .= toJSON connId
+        ]
+    TrConnectionManagerCounters cmCounters ->
+      object
+        [ "kind"  .= String "ConnectionManagerCounters"
+        , "state" .= toJSON cmCounters
+        ]
+    TrState cmState ->
+      object
+        [ "kind"  .= String "ConnectionManagerState"
+        , "state" .= listValue (\(remoteAddr, inner) ->
+                                       object
+                                         [ "connections" .=
+                                           listValue (\(localAddr, connState) ->
+                                              object
+                                                [ "localAddress" .= localAddr
+                                                , "state" .= toJSON connState
+                                                ]
+                                           )
+                                           (Map.toList inner)
+                                         , "remoteAddress" .= toJSON remoteAddr
+                                         ]
+                               )
+                               (Map.toList (getConnMap cmState))
+        ]
+    ConnMgr.TrUnexpectedlyFalseAssertion info ->
+      object
+        [ "kind" .= String "UnexpectedlyFalseAssertion"
+        , "info" .= String (pack . show $ info)
+        ]
+
+instance (Show addr, ToJSON addr)
+      => ToJSON (ConnMgr.AbstractTransitionTrace addr) where
+    toJSON (ConnMgr.TransitionTrace addr tr) =
+      object
+        [ "kind"    .= String "ConnectionManagerTransition"
+        , "address" .= addr
+        , "from"    .= ConnMgr.fromState tr
+        , "to"      .= ConnMgr.toState tr
+        ]
+
+
+instance ToJSON AcceptConnectionsPolicyTrace where
+  toJSON (ServerTraceAcceptConnectionRateLimiting delay numOfConnections) =
+    object [ "kind" .= String "ServerTraceAcceptConnectionRateLimiting"
+           , "delay" .= show delay
+           , "numberOfConnection" .= show numOfConnections
+           ]
+  toJSON (ServerTraceAcceptConnectionHardLimit softLimit) =
+    object [ "kind" .= String "ServerTraceAcceptConnectionHardLimit"
+           , "softLimit" .= show softLimit
+           ]
+  toJSON (ServerTraceAcceptConnectionResume numOfConnections) =
+    object [ "kind" .= String "ServerTraceAcceptConnectionResume"
+           , "numberOfConnection" .= show numOfConnections
+           ]
+
+instance (Show addr, ToJSON addr)
+      => ToJSON (Server.Trace addr) where
+  toJSON (Server.TrAcceptConnection connId)     =
+    object [ "kind" .= String "AcceptConnection"
+           , "connectionId" .= connId
+           ]
+  toJSON (Server.TrAcceptError exception)         =
+    object [ "kind" .= String "AcceptError"
+           , "error" .= show exception
+           ]
+  toJSON (Server.TrAcceptPolicyTrace policyTrace) =
+    object [ "kind" .= String "AcceptPolicyServer.Trace"
+           , "policy" .= policyTrace
+           ]
+  toJSON (Server.TrServerStarted peerAddrs)       =
+    object [ "kind" .= String "AcceptPolicyServer.Trace"
+           , "addresses" .= peerAddrs
+           ]
+  toJSON Server.TrServerStopped                   =
+    object [ "kind" .= String "ServerStopped"
+           ]
+  toJSON (Server.TrServerError exception)         =
+    object [ "kind" .= String "ServerError"
+           , "reason" .= show exception
+           ]
+
+instance (ToJSON addr, ToJSONKey addr, Show addr)
+      => ToJSON (InboundGovernor.Trace addr) where
+  toJSON (InboundGovernor.TrNewConnection p connId)            =
+    object [ "kind" .= String "NewConnection"
+           , "provenance" .= show p
+           , "connectionId" .= toJSON connId
+           ]
+  toJSON (InboundGovernor.TrResponderRestarted connId m)       =
+    object [ "kind" .= String "ResponderStarted"
+           , "connectionId" .= toJSON connId
+           , "miniProtocolNum" .= toJSON m
+           ]
+  toJSON (InboundGovernor.TrResponderStartFailure connId m s)  =
+    object [ "kind" .= String "ResponderStartFailure"
+           , "connectionId" .= toJSON connId
+           , "miniProtocolNum" .= toJSON m
+           , "reason" .= show s
+           ]
+  toJSON (InboundGovernor.TrResponderErrored connId m s)       =
+    object [ "kind" .= String "ResponderErrored"
+           , "connectionId" .= toJSON connId
+           , "miniProtocolNum" .= toJSON m
+           , "reason" .= show s
+           ]
+  toJSON (InboundGovernor.TrResponderStarted connId m)         =
+    object [ "kind" .= String "ResponderStarted"
+           , "connectionId" .= toJSON connId
+           , "miniProtocolNum" .= toJSON m
+           ]
+  toJSON (InboundGovernor.TrResponderTerminated connId m)      =
+    object [ "kind" .= String "ResponderTerminated"
+           , "connectionId" .= toJSON connId
+           , "miniProtocolNum" .= toJSON m
+           ]
+  toJSON (InboundGovernor.TrPromotedToWarmRemote connId opRes) =
+    object [ "kind" .= String "PromotedToWarmRemote"
+           , "connectionId" .= toJSON connId
+           , "result" .= toJSON opRes
+           ]
+  toJSON (InboundGovernor.TrPromotedToHotRemote connId)        =
+    object [ "kind" .= String "PromotedToHotRemote"
+           , "connectionId" .= toJSON connId
+           ]
+  toJSON (InboundGovernor.TrDemotedToColdRemote connId od)     =
+    object [ "kind" .= String "DemotedToColdRemote"
+           , "connectionId" .= toJSON connId
+           , "result" .= show od
+           ]
+  toJSON (InboundGovernor.TrDemotedToWarmRemote connId)     =
+    object [ "kind" .= String "DemotedToWarmRemote"
+           , "connectionId" .= toJSON connId
+           ]
+  toJSON (InboundGovernor.TrWaitIdleRemote connId opRes) =
+    object [ "kind" .= String "WaitIdleRemote"
+           , "connectionId" .= toJSON connId
+           , "result" .= toJSON opRes
+           ]
+  toJSON (InboundGovernor.TrMuxCleanExit connId)               =
+    object [ "kind" .= String "MuxCleanExit"
+           , "connectionId" .= toJSON connId
+           ]
+  toJSON (InboundGovernor.TrMuxErrored connId s)               =
+    object [ "kind" .= String "MuxErrored"
+           , "connectionId" .= toJSON connId
+           , "reason" .= show s
+           ]
+  toJSON (InboundGovernor.TrInboundGovernorCounters counters) =
+    object [ "kind" .= String "InboundGovernorCounters"
+           , "idlePeers" .= InboundGovernor.idlePeersRemote counters
+           , "coldPeers" .= InboundGovernor.coldPeersRemote counters
+           , "warmPeers" .= InboundGovernor.warmPeersRemote counters
+           , "hotPeers" .= InboundGovernor.hotPeersRemote counters
+           ]
+  toJSON (InboundGovernor.TrRemoteState st) =
+    object [ "kind" .= String "RemoteState"
+           , "remoteSt" .= st
+           ]
+  toJSON (InboundGovernor.TrUnexpectedlyFalseAssertion info) =
+    object [ "kind" .= String "UnexpectedlyFalseAssertion"
+           , "remoteSt" .= String (pack . show $ info)
+           ]
+  toJSON (InboundGovernor.TrInboundGovernorError err) =
+    object [ "kind" .= String "InboundGovernorError"
+           , "remoteSt" .= String (pack . show $ err)
+           ]
+  toJSON (InboundGovernor.TrMaturedConnections matured fresh) =
+    object [ "kind" .= String "MaturedConnections"
+           , "matured" .= toJSON matured
+           , "fresh" .= toJSON fresh
+           ]
+  toJSON (InboundGovernor.TrInactive fresh) =
+    object [ "kind" .= String "Inactive"
+           , "fresh" .= toJSON fresh
+           ]
+
+instance ToJSON addr
+      => ToJSON (Server.RemoteTransitionTrace addr) where
+    toJSON (ConnMgr.TransitionTrace addr tr) =
+      object [ "kind"    .= String "InboundGovernorTransition"
+             , "address" .= addr
+             , "from"    .= ConnMgr.fromState tr
+             , "to"      .= ConnMgr.toState tr
+             ]
+
+instance ToJSON DNSTrace where
+  toJSON (DNSLookupResult peerKind domain Nothing results) =
+    object [ "type" .= String "DNSLookupResult"
+           , "peer" .= show peerKind
+           , "domain" .= String (Text.decodeUtf8With Text.ignore domain)
+           , "results" .= (\(ip, port, ttl) -> (show ip, port, ttl))
+                          `map` results
+           ]
+  toJSON (DNSLookupResult peerKind domain (Just srvDomain) results) =
+    object [ "type" .= String "DNSLookupResult"
+           , "peer" .= show peerKind
+           , "domain" .= String (Text.decodeUtf8With Text.ignore domain)
+           , "srvDomain" .= String (Text.decodeUtf8With Text.ignore srvDomain)
+           , "results" .= (\(ip, port, ttl) -> (show ip, port, ttl))
+                          `map` results
+           ]
+  toJSON (DNSLookupError peerKind Nothing domain err) =
+    object [ "type" .= String "DNSLookupError"
+           , "peer" .= show peerKind
+           , "domain" .= String (Text.decodeUtf8With Text.ignore domain)
+           , "error" .= displayException err
+           ]
+  toJSON (DNSLookupError peerKind (Just lookupType) domain err) =
+    object [ "type" .= String "DNSLookupError"
+           , "lookupType" .= show lookupType
+           , "peer" .= show peerKind
+           , "domain" .= String (Text.decodeUtf8With Text.ignore domain)
+           , "error" .= displayException err
+           ]
+  toJSON (SRVLookupResult peerKind domain results) =
+    object [ "type" .= String "SRVLookupResult"
+           , "peer" .= show peerKind
+           , "domain" .= String (Text.decodeUtf8With Text.ignore domain)
+           , "results" .= (\(domain', a, b, c, d) -> (show domain', a, b, c, d))
+                          `map` results
+           ]
+  toJSON (SRVLookupError peerKind domain) =
+    object [ "type" .= String "SRVLookupError"
+           , "peer" .= show peerKind
+           , "domain" .= String (Text.decodeUtf8With Text.ignore domain)
+           ]
+
+instance (Show txid, Show tx)
+      => ToJSON (AnyMessage (TxSubmission2 txid tx)) where
+  toJSON (AnyMessageAndAgency stok Tx.MsgInit) =
+    object
+      [ "kind" .= String "MsgInit"
+      , "agency" .= String (pack $ show stok)
+      ]
+  toJSON (AnyMessageAndAgency stok (Tx.MsgRequestTxs txids)) =
+    object
+      [ "kind" .= String "MsgRequestTxs"
+      , "agency" .= String (pack $ show stok)
+      , "txIds" .= String (pack $ show txids)
+      ]
+  toJSON (AnyMessageAndAgency stok (Tx.MsgReplyTxs txs)) =
+    object
+      [ "kind" .= String "MsgReplyTxs"
+      , "agency" .= String (pack $ show stok)
+      , "txs" .= String (pack $ show txs)
+      ]
+  toJSON (AnyMessageAndAgency stok Tx.MsgRequestTxIds{}) =
+    object
+      [ "kind" .= String "MsgRequestTxIds"
+      , "agency" .= String (pack $ show stok)
+      ]
+  toJSON (AnyMessageAndAgency stok (Tx.MsgReplyTxIds _)) =
+    object
+      [ "kind" .= String "MsgReplyTxIds"
+      , "agency" .= String (pack $ show stok)
+      ]
+  toJSON (AnyMessageAndAgency stok Tx.MsgDone) =
+    object
+      [ "kind" .= String "MsgDone"
+      , "agency" .= String (pack $ show stok)
+      ]
+
+instance ToJSON (AnyMessage KeepAlive) where
+  toJSON (AnyMessageAndAgency stok KeepAlive.MsgKeepAlive {}) =
+    object
+      [ "kind" .= String "MsgKeepAlive"
+      , "agency" .= String (pack $ show stok)
+      ]
+  toJSON (AnyMessageAndAgency stok KeepAlive.MsgKeepAliveResponse {}) =
+    object
+      [ "kind" .= String "MsgKeepAliveResponse"
+      , "agency" .= String (pack $ show stok)
+      ]
+  toJSON (AnyMessageAndAgency stok KeepAlive.MsgDone) =
+    object
+      [ "kind" .= String "MsgDone"
+      , "agency" .= String (pack $ show stok)
+      ]
+
+instance ToJSON peerAddr => ToJSON (AnyMessage (PeerSharing.PeerSharing peerAddr)) where
+  toJSON (AnyMessageAndAgency stok (PeerSharing.MsgShareRequest num)) =
+    object
+      [ "kind" .= String "MsgShareRequest"
+      , "agency" .= String (pack $ show stok)
+      , "amount" .= PeerSharing.getAmount num
+      ]
+  toJSON (AnyMessageAndAgency stok (PeerSharing.MsgSharePeers peers)) =
+    object
+      [ "kind" .= String "MsgSharePeers"
+      , "agency" .= String (pack $ show stok)
+      , "peers" .= peers
+      ]
+  toJSON (AnyMessageAndAgency stok PeerSharing.MsgDone) =
+    object
+      [ "kind" .= String "MsgDone"
+      , "agency" .= String (pack $ show stok)
+      ]
+

@@ -76,7 +76,8 @@ data PublicExtraPeersAPI extraPeers peeraddr =
   , toAdvertise            :: extraPeers -> Map peeraddr PeerAdvertise
   }
 
-nullPublicExtraPeersAPI :: PublicExtraPeersAPI () peeraddr
+nullPublicExtraPeersAPI :: Monoid extraPeers
+                        => PublicExtraPeersAPI extraPeers peeraddr
 nullPublicExtraPeersAPI =
   PublicExtraPeersAPI {
     nullExtraPeers         = const True,
@@ -84,7 +85,7 @@ nullPublicExtraPeersAPI =
     memberExtraPeers       = const (const False),
     extraPeersToSet        = const Set.empty,
     sizeExtraPeers         = const 0,
-    differenceExtraPeers   = const (const ()),
-    intersectionExtraPeers = const (const ()),
+    differenceExtraPeers   = \_ _ -> mempty,
+    intersectionExtraPeers = \_ _ -> mempty,
     toAdvertise            = const Map.empty
   }

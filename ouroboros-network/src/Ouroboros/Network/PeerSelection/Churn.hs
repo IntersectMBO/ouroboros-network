@@ -60,7 +60,8 @@ data PeerChurnArgs m extraArgs extraDebugState extraFlags extraPeers extraAPI ex
   pcaReadCounters        :: STM m (PeerSelectionCounters extraCounters),
   getLedgerStateCtx      :: LedgerPeersConsensusInterface extraAPI m,
   getLocalRootHotTarget  :: STM m HotValency,
-  getOriginalPeerTargets :: PeerSelectionTargets,
+  pcaPeerSelectionTargets:: PeerSelectionTargets,
+  -- ^ configured peer selection targets
   getExtraArgs           :: extraArgs }
 
 -- | Churn governor.
@@ -81,31 +82,33 @@ peerChurnGovernor :: forall m extraArgs extraDebugState extraFlags extraPeers ex
                   -> m Void
 peerChurnGovernor
   PeerChurnArgs {
-    pcaPeerSelectionTracer = tracer,
-    pcaChurnTracer         = churnTracer,
-    pcaBulkInterval        = bulkChurnInterval,
-    pcaPeerRequestTimeout  = requestPeersTimeout,
-    pcaRng                 = inRng,
-    pcaPeerSelectionVar    = peerSelectionVar,
-    pcaReadCounters        = readCounters
+    pcaPeerSelectionTracer  = tracer,
+    pcaChurnTracer          = churnTracer,
+    pcaBulkInterval         = bulkChurnInterval,
+    pcaPeerRequestTimeout   = requestPeersTimeout,
+    pcaRng                  = inRng,
+    pcaPeerSelectionVar     = peerSelectionVar,
+    pcaReadCounters         = readCounters,
+    pcaPeerSelectionTargets = peerSelectionTargets
   } = do
-  -- Wait a while so that not only the closest peers have had the time
-  -- to become warm.
-  startTs0 <- getMonotonicTime
-  -- TODO: revisit the policy once we have local root peers in the governor.
-  -- The intention is to give local root peers give head start and avoid
-  -- giving advantage to hostile and quick root peers.
-  threadDelay 3
-  atomically $ do
-    targets <- readTVar peerSelectionVar
+    -- Wait a while so that not only the closest peers have had the time
+    -- to become warm.
+    startTs0 <- getMonotonicTime
 
-    modifyTVar peerSelectionVar ( increaseActivePeers targets
-                                . increaseEstablishedPeers targets
-                                )
+    -- Set initial targets.
+    atomically $ do
+      -- Give a head start to big ledger & local root peers by disabling root
+      -- peers.
+      let peerSelectionTargets0 = peerSelectionTargets { targetNumberOfRootPeers = 0 }
+      writeTVar peerSelectionVar peerSelectionTargets0
 
-  endTs0 <- getMonotonicTime
-  fuzzyDelay inRng (endTs0 `diffTime` startTs0) >>= churnLoop
+    threadDelay 3
 
+    atomically $
+      writeTVar peerSelectionVar peerSelectionTargets
+
+    endTs0 <- getMonotonicTime
+    fuzzyDelay inRng (endTs0 `diffTime` startTs0) >>= churnLoop
   where
     -- | Update the targets to a given value, and block until they are reached.
     -- The time we are blocked is limited by a timeout.

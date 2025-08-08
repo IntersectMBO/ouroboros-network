@@ -21,7 +21,10 @@ import Cardano.Network.PeerSelection.PublicRootPeers (CardanoPublicRootPeers,
            getBootstrapPeers, getPublicConfigPeers)
 import Cardano.Network.Types
 
+import Ouroboros.Network.Diffusion.Topology
 import Ouroboros.Network.Magic (NetworkMagic (..))
+import Ouroboros.Network.OrphanInstances (localRootPeersGroupsFromJSON,
+           networkTopologyFromJSON, networkTopologyToJSON)
 import Ouroboros.Network.PeerSelection.PublicRootPeers
 
 instance ToJSON LedgerStateJudgement where
@@ -108,3 +111,12 @@ instance ToJSON NodeToClientVersionData where
     , "query"        .= toJSON q
     ]
 
+instance FromJSON (NetworkTopology UseBootstrapPeers PeerTrustable) where
+  parseJSON = networkTopologyFromJSON
+                (localRootPeersGroupsFromJSON (\o -> o .:? "trustable" .!= IsNotTrustable))
+                (\o -> o .:? "bootstrapPeers" .!= DontUseBootstrapPeers)
+
+instance ToJSON (NetworkTopology UseBootstrapPeers PeerTrustable) where
+  toJSON = networkTopologyToJSON
+             (\useBootstrapPeers -> Just ("bootstrapPeers", toJSON useBootstrapPeers))
+             (\peerTrustable     -> Just ("trustable", toJSON peerTrustable))

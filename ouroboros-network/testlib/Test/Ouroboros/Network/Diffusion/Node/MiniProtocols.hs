@@ -114,7 +114,7 @@ import Ouroboros.Network.TxSubmission.Outbound (txSubmissionOutbound)
 import Ouroboros.Network.Util.ShowProxy
 
 import Test.Ouroboros.Network.Diffusion.Node.Kernel
-import Test.Ouroboros.Network.TxSubmission.Types (Mempool, Tx (..),
+import Test.Ouroboros.Network.TxSubmission.Types (Mempool, Tx (..), TxId,
            getMempoolReader, getMempoolWriter, txSubmissionCodec2)
 
 
@@ -681,7 +681,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
 
     txSubmissionInitiator
       :: TxDecisionPolicy
-      -> Mempool m Int
+      -> Mempool m (Tx TxId)
       -> MiniProtocolCb (ExpandedInitiatorContext NtNAddr m) ByteString m ()
     txSubmissionInitiator txDecisionPolicy mempool =
       MiniProtocolCb $
@@ -696,7 +696,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
                          (NumTxIdsToAck $ getNumTxIdsToReq
                                         $ maxUnacknowledgedTxIds txDecisionPolicy)
                          (getMempoolReader mempool)
-                         maxBound
+                         (maxBound :: UnversionedProtocol)
                          controlMessageSTM
           labelThisThread "TxSubmissionClient"
           runPeerWithLimits
@@ -708,7 +708,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
             (txSubmissionClientPeer client)
 
     txSubmissionResponder
-      :: Mempool m Int
+      :: Mempool m (Tx TxId)
       -> TxChannelsVar m NtNAddr Int (Tx Int)
       -> TxMempoolSem m
       -> SharedTxStateVar m NtNAddr Int (Tx Int)

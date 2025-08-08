@@ -1280,7 +1280,8 @@ diffusionSimulation
           cardanoChurnArgs =
             Churn.ExtraArguments {
               Churn.modeVar             = churnModeVar
-            , Churn.genesisPeerTargets  = snd peerTargets
+            , Churn.genesisPeerSelectionTargets
+                                        = snd peerTargets
             , Churn.readUseBootstrap    = readUseBootstrapPeers
             , Churn.consensusMode       = consensusMode
             , Churn.tracerChurnMode     = (\s -> WithTime (Time (-1)) (WithName addr (DiffusionChurnModeTrace s)))

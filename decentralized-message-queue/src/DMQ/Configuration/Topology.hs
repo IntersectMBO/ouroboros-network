@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -13,17 +14,32 @@ import Data.ByteString.Lazy qualified as LBS
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Ouroboros.Network.Diffusion.Topology (NetworkTopology (..))
-import Ouroboros.Network.OrphanInstances ()
+import Ouroboros.Network.OrphanInstances (localRootPeersGroupsFromJSON,
+           networkTopologyFromJSON, networkTopologyToJSON)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot)
+
+data NoExtraConfig = NoExtraConfig
+  deriving Show
+data NoExtraFlags  = NoExtraFlags
+  deriving (Eq, Show)
+
+instance ToJSON NoExtraFlags where
+  toJSON _ = Null
+  omitField _ = True
+
+instance FromJSON (NetworkTopology NoExtraConfig NoExtraFlags) where
+  parseJSON = networkTopologyFromJSON
+                (localRootPeersGroupsFromJSON (\_ -> pure NoExtraFlags))
+                (\_ -> pure NoExtraConfig)
+
+instance ToJSON (NetworkTopology NoExtraConfig NoExtraFlags) where
+  toJSON = networkTopologyToJSON (const Nothing) (const Nothing)
 
 -- | Read the `NetworkTopology` configuration from the specified file.
 --
 readTopologyFile
-  :: ( FromJSON extraConfig
-     , FromJSON extraFlags
-     )
-  => FilePath
-  -> IO (Either Text (NetworkTopology extraConfig extraFlags))
+  :: FilePath
+  -> IO (Either Text (NetworkTopology NoExtraConfig NoExtraFlags))
 readTopologyFile nc = do
   eBs <- try $ BS.readFile nc
 
@@ -47,11 +63,8 @@ readTopologyFile nc = do
       ]
 
 readTopologyFileOrError
-  :: ( FromJSON extraConfig
-     , FromJSON extraFlags
-     )
-  => FilePath
-  -> IO (NetworkTopology extraConfig extraFlags)
+  :: FilePath
+  -> IO (NetworkTopology NoExtraConfig NoExtraFlags)
 readTopologyFileOrError nc =
       readTopologyFile nc
   >>= either (\err -> error $ "DMQ.Topology.readTopologyFile: "
@@ -70,7 +83,7 @@ readPeerSnapshotFile psf = do
           Right t  -> return $ Right t
   where
     handler :: IOException -> Text
-    handler e = Text.pack $ "DMQ.Topology.readPeerSnapshotFile: "
+    handler e = Text.pack $ "DMQ.Topology.readLedgerPeerSnapshotFile: "
                           ++ displayException e
     handlerJSON :: String -> Text
     handlerJSON err = mconcat
@@ -79,8 +92,8 @@ readPeerSnapshotFile psf = do
       ]
 
 readPeerSnapshotFileOrError :: FilePath -> IO LedgerPeerSnapshot
-readPeerSnapshotFileOrError nc =
-      readPeerSnapshotFile nc
-  >>= either (\err -> error $ "DMQ.Topology.readTopologyFile: "
+readPeerSnapshotFileOrError psf =
+      readPeerSnapshotFile psf
+  >>= either (\err -> error $ "DMQ.Topology.readLedgerPeerSnapshotFile: "
                            <> Text.unpack err)
              pure

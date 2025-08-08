@@ -68,7 +68,7 @@ run :: CardanoNodeArguments IO
     -> IO Void
 run CardanoNodeArguments {
       consensusMode,
-      genesisPeerTargets,
+      genesisPeerSelectionTargets,
       minNumOfBigLedgerPeers,
       tracerChurnMode
     }
@@ -144,8 +144,8 @@ run CardanoNodeArguments {
                   daPeerSelectionGovernorArgs         =
                     Cardano.Types.cardanoPeerSelectionGovernorArgs
                       Cardano.ExtraPeerSelectionActions {
-                        Cardano.genesisPeerTargets    = genesisPeerTargets,
-                        Cardano.readUseBootstrapPeers = readUseBootstrapPeers
+                        Cardano.genesisPeerSelectionTargets = genesisPeerSelectionTargets,
+                        Cardano.readUseBootstrapPeers       = readUseBootstrapPeers
                       },
                   daPeerSelectionStateToExtraCounters = Cardano.Types.cardanoPeerSelectionStatetoCounters,
                   daToExtraPeers                      = flip Cardano.ExtraPeers Set.empty,
@@ -159,7 +159,8 @@ run CardanoNodeArguments {
                   daExtraChurnArgs                    =
                     Cardano.Churn.ExtraArguments {
                       Cardano.Churn.modeVar            = churnModeVar,
-                      Cardano.Churn.genesisPeerTargets = genesisPeerTargets,
+                      Cardano.Churn.genesisPeerSelectionTargets
+                                                       = genesisPeerSelectionTargets,
                       Cardano.Churn.readUseBootstrap   = readUseBootstrapPeers,
                       Cardano.Churn.consensusMode      = consensusMode,
                       Cardano.Churn.tracerChurnMode    = tracerChurnMode

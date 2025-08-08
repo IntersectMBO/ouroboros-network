@@ -1485,7 +1485,7 @@ prop_codec_splits3_Handshake msg =
 
 prop_codec_cbor
   :: AnyMessage (Handshake VersionNumber CBOR.Term)
-  -> Bool
+  -> Property
 prop_codec_cbor msg =
   runSimOrThrow (prop_codec_cborM (codecHandshake versionNumberCodec) msg)
 

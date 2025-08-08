@@ -14,6 +14,20 @@
 * `Ouroboros.Network.TxSubmission.Inbound.V1.txSubmissionInbound` takes extra argument: `TxSubmissionInitDelay` (previously configurable through `cabal` flags).
 * Removed the `txsubmission-delay` cabal flag.
 * `ProtocolErrorRequestedTooManyTxids` includes number of unacked txids.
+* Renamed `PeerChurnArgs` field: `getOriginalPeerSelectionTargets` -> `pcaPeerSelectionTargets`
+* Renamed `genesisPeerTargets` -> `genesisPeerSelectionTargets` in the following types:
+  * `Cardano.Network.Diffusion.Types.CardanoNodeArguments`
+  * `Cardano.Network.Diffusion.Types.ExtraPeerSelectionActions`
+  * `Cardano.Network.PeerSelection.Churn.ExtraArguments`
+  * `Cardano.Network.PeerSelection.Governor.PeerSelectionActions.ExtraPeerSelectionActions`
+* Added `localRootPeersGroupToJSON`, `localRootPeersGroupsToJSON`,
+`networkToplogogyToJSON` to `Ouroboros.Network.OrphanInstances`
+* Removed `ToJSON` and `FromJSON` instances for `NetworkTopology extraConfig
+  extraFlags` from `Ouroboros.Network.OrphanInstances`.
+* Addded `ToJSON` and `FromJSON` instances for `NetworkTopology
+  UseBootstrapPeers PeerTrustable` to `Cardano.Network.OrphanInstances`
+* Added `localRootPeersGroupFromJSON`, localRootPeersGroupsFromJSON`,
+  `networkTopologyFromJSON to `Ouroboros.Network.OrphanInstances`
 
 ### Non-breaking changes
 
