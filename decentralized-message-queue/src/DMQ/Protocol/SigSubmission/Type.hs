@@ -1,6 +1,8 @@
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE FlexibleInstances  #-}
 {-# LANGUAGE NamedFieldPuns     #-}
 {-# LANGUAGE PatternSynonyms    #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 
 module DMQ.Protocol.SigSubmission.Type
   ( -- * Data types
@@ -9,13 +11,15 @@ module DMQ.Protocol.SigSubmission.Type
   , SigBody (..)
   , SigKesSignature (..)
   , SigOpCertificate (..)
-  , Sig (SigRaw, Sig, sigId, sigBody, sigExpiresAt, sigOpCertificate, sigKesSignature)
+  , SigRaw (..)
+  , Sig (Sig, SigWithBytes, sigRaw, sigRawBytes, sigId, sigBody, sigExpiresAt, sigOpCertificate, sigKesSignature, sigBytes)
     -- * `TxSubmission` mini-protocol
   , SigSubmission
   , module SigSubmission
   ) where
 
 import Data.ByteString (ByteString)
+import Data.ByteString.Lazy qualified as LBS
 import Data.Time.Clock.POSIX (POSIXTime)
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type as SigSubmission hiding
@@ -38,26 +42,29 @@ newtype SigBody = SigBody { getSigBody :: ByteString }
 
 
 -- TODO:
--- This type should be something like: `SignedKES (KES crypto) SigPayload`
+-- This type should be something like: `SignedKES (KES crypto) SigBody`.
 newtype SigKesSignature = SigKesSignature { getSigKesSignature :: ByteString }
   deriving stock (Show, Eq)
 
+-- TODO:
+-- This type should be more than just a `ByteString`.
 newtype SigOpCertificate = SigOpCertificate { getSigOpCertificate :: ByteString }
   deriving stock (Show, Eq)
 
 -- | Sig type consists of payload and its KES signature.
 --
-data Sig = SigRaw {
-    sigRawPayload      :: SigPayload,
-    sigRawKesSignature :: SigKesSignature
+data SigRaw = SigRaw {
+    sigRawId            :: SigId,
+    sigRawBody          :: SigBody,
+    sigRawExpiresAt     :: POSIXTime,
+    sigRawOpCertificate :: SigOpCertificate,
+    sigRawKesSignature  :: SigKesSignature
   }
   deriving stock (Show, Eq)
 
-data SigPayload = SigPayload {
-    sigPayloadId            :: SigId,
-    sigPayloadBody          :: SigBody,
-    sigPayloadExpiresAt     :: POSIXTime,
-    sigPayloadOpCertificate :: SigOpCertificate
+data Sig = SigWithBytes {
+    sigRawBytes :: LBS.ByteString,
+    sigRaw      :: SigRaw
   }
   deriving stock (Show, Eq)
 
@@ -69,41 +76,46 @@ pattern Sig
   -> POSIXTime
   -> SigOpCertificate
   -> SigKesSignature
+  -> LBS.ByteString
   -> Sig
 pattern
     Sig { sigId,
           sigBody,
           sigExpiresAt,
           sigOpCertificate,
-          sigKesSignature
+          sigKesSignature,
+          sigBytes
         }
     <-
-    SigRaw {
-      sigRawPayload =
-        SigPayload {
-          sigPayloadId            = sigId,
-          sigPayloadBody          = sigBody,
-          sigPayloadExpiresAt     = sigExpiresAt,
-          sigPayloadOpCertificate = sigOpCertificate
-        },
-      sigRawKesSignature = sigKesSignature
-    }
+    SigWithBytes {
+      sigRawBytes = sigBytes,
+      sigRaw =
+        SigRaw {
+          sigRawId            = sigId,
+          sigRawBody          = sigBody,
+          sigRawExpiresAt     = sigExpiresAt,
+          sigRawOpCertificate = sigOpCertificate,
+          sigRawKesSignature  = sigKesSignature
+        }
+      }
   where
-    Sig sigPayloadId
-        sigPayloadBody
-        sigPayloadExpiresAt
-        sigPayloadOpCertificate
+    Sig sigRawId
+        sigRawBody
+        sigRawExpiresAt
+        sigRawOpCertificate
         sigRawKesSignature
+        sigRawBytes
       =
-      SigRaw {
-        sigRawPayload =
-          SigPayload {
-            sigPayloadId,
-            sigPayloadBody,
-            sigPayloadExpiresAt,
-            sigPayloadOpCertificate
-          },
-        sigRawKesSignature
+      SigWithBytes {
+        sigRawBytes = sigRawBytes,
+        sigRaw      =
+          SigRaw {
+            sigRawId,
+            sigRawBody,
+            sigRawExpiresAt,
+            sigRawOpCertificate,
+            sigRawKesSignature
+          }
       }
 {-# COMPLETE Sig #-}
 
