@@ -21,7 +21,6 @@ import DMQ.Diffusion.NodeKernel (mempool, withNodeKernel)
 import DMQ.NodeToClient qualified as NtC
 import DMQ.NodeToNode (dmqCodecs, dmqLimitsAndTimeouts, ntnApps)
 import DMQ.Protocol.LocalMsgSubmission.Codec
-import DMQ.Protocol.SigSubmission.Codec
 import DMQ.Protocol.SigSubmission.Type (Sig (..))
 import DMQ.Tracer
 
@@ -89,7 +88,7 @@ runDMQ commandLineConfig = do
                 mempoolReader = Mempool.getReader sigId sigSize (mempool nodeKernel)
                 mempoolWriter = Mempool.getWriter sigId (const True) (mempool nodeKernel)
              in NtC.ntcApps mempoolReader mempoolWriter maxMsgs
-                            (NtC.dmqCodecs encodeSig decodeSig encodeReject decodeReject)
+                            (NtC.dmqCodecs encodeReject decodeReject)
           dmqDiffusionArguments =
             diffusionArguments (if handshakeTracer
                                   then WithEventType "Handshake" >$< tracer

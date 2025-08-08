@@ -14,6 +14,8 @@ module DMQ.Protocol.SigSubmission.Codec
   , decodeSig
   , encodeSigId
   , decodeSigId
+    -- * Utils for testing
+  , encodeSigRaw
   ) where
 
 import Control.Monad (when)
@@ -29,6 +31,7 @@ import Codec.CBOR.Read qualified as CBOR
 import Network.TypedProtocol.Codec.CBOR
 
 import DMQ.Protocol.SigSubmission.Type
+import Ouroboros.Network.Protocol.Codec.Utils qualified as Utils
 import Ouroboros.Network.Protocol.Limits
 import Ouroboros.Network.Protocol.TxSubmission2.Codec qualified as TX
 
@@ -78,56 +81,62 @@ byteLimitsSigSubmission = ProtocolSizeLimits stateToLimit
     stateToLimit a@SingDone                  = notActiveState a
 
 
--- | 'SigSubmission' protocol codec.
---
-codecSigSubmission
-  :: forall m.
-     MonadST m
-  => Codec SigSubmission CBOR.DeserialiseFailure m ByteString
-codecSigSubmission =
-    TX.codecTxSubmission2 encodeSigId decodeSigId
-                          encodeSig   decodeSig
-
-
-
 encodeSigId :: SigId -> CBOR.Encoding
 encodeSigId SigId { getSigId } = CBOR.encodeBytes (getSigHash getSigId)
-
 
 decodeSigId :: forall s. CBOR.Decoder s SigId
 decodeSigId = SigId . SigHash <$> CBOR.decodeBytes
 
 
+encodeSigRaw :: SigRaw
+             -> CBOR.Encoding
+encodeSigRaw SigRaw {
+    sigRawId,
+    sigRawBody,
+    sigRawKESSignature,
+    sigRawOpCertificate,
+    sigRawExpiresAt
+  }
+  =  CBOR.encodeListLen 5
+  <> encodeSigId sigRawId
+  <> CBOR.encodeBytes (getSigBody sigRawBody)
+  <> CBOR.encodeWord32 (floor sigRawExpiresAt)
+  <> CBOR.encodeBytes (getSigOpCertificate sigRawOpCertificate)
+  <> CBOR.encodeBytes (getSigKESSignature sigRawKESSignature)
+
+
+
+-- | 'SigSubmission' protocol codec.
+--
+codecSigSubmission
+  :: forall m.
+     MonadST m
+  => AnnotatedCodec SigSubmission CBOR.DeserialiseFailure m ByteString
+codecSigSubmission =
+    TX.anncodecTxSubmission2'
+      SigWithBytes
+      encodeSigId decodeSigId
+      encodeSig   decodeSig
+
+
 encodeSig :: Sig -> CBOR.Encoding
-encodeSig Sig { sigId,
-                sigBody,
-                sigExpiresAt,
-                sigKESSignature,
-                sigOpCertificate
-              }
-   = CBOR.encodeListLen 5
-  <> encodeSigId sigId
-  <> CBOR.encodeBytes (getSigBody sigBody)
-  <> CBOR.encodeWord32 (floor sigExpiresAt)
-  <> CBOR.encodeBytes (getSigKESSignature sigKESSignature)
-  <> CBOR.encodeBytes (getSigOpCertificate sigOpCertificate)
+encodeSig = Utils.encodeBytes . sigRawBytes
 
-
-decodeSig :: forall s. CBOR.Decoder s Sig
+decodeSig :: forall s. CBOR.Decoder s (ByteString -> SigRaw)
 decodeSig = do
   a <- CBOR.decodeListLen
   when (a /= 5) $ fail (printf "codecSigSubmission: unexpected number of parameters %d" a)
-  sigId <- decodeSigId
-  sigBody <- SigBody <$> CBOR.decodeBytes
-  sigExpiresAt <- realToFrac <$> CBOR.decodeWord32
-  sigKESSignature <- SigKESSignature <$> CBOR.decodeBytes
-  sigOpCertificate <- SigOpCertificate <$> CBOR.decodeBytes
-  return Sig {
-      sigId,
-      sigBody,
-      sigExpiresAt,
-      sigKESSignature,
-      sigOpCertificate
+  sigRawId <- decodeSigId
+  sigRawBody <- SigBody <$> CBOR.decodeBytes
+  sigRawExpiresAt <- realToFrac <$> CBOR.decodeWord32
+  sigRawOpCertificate <- SigOpCertificate <$> CBOR.decodeBytes
+  sigRawKESSignature <- SigKESSignature <$> CBOR.decodeBytes
+  return $ \_ -> SigRaw {
+      sigRawId,
+      sigRawBody,
+      sigRawKESSignature,
+      sigRawOpCertificate,
+      sigRawExpiresAt
     }
 
 

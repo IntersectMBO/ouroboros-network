@@ -26,14 +26,12 @@ import DMQ.Protocol.LocalMsgNotification.Codec
 import DMQ.Protocol.LocalMsgNotification.Examples
 import DMQ.Protocol.LocalMsgNotification.Server
 import DMQ.Protocol.LocalMsgNotification.Type
-import DMQ.Protocol.SigSubmission.Codec
 import DMQ.Protocol.SigSubmission.Type hiding (SingTxSubmission (..))
 import Network.TypedProtocol
 import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Codec.Properties hiding (prop_codec)
 import Ouroboros.Network.Channel
 import Ouroboros.Network.Driver.Simple
-import Ouroboros.Network.Util.ShowProxy
 import Test.DMQ.Protocol.SigSubmission ()
 import Test.Ouroboros.Network.Protocol.Utils
 import Test.Ouroboros.Network.Utils
@@ -61,16 +59,16 @@ tests =
 -- | Check the codec round trip property.
 --
 prop_codec :: AnyMessage (LocalMsgNotification Sig) -> Property
-prop_codec msg = runST (prop_codecM codec msg)
+prop_codec msg = runST (prop_anncodecM codec msg)
 
 prop_codec_splits2 :: AnyMessage (LocalMsgNotification Sig) -> Property
 prop_codec_splits2 msg =
-  runST (prop_codec_splitsM splits2 codec msg)
+  runST (prop_anncodec_splitsM splits2 codec msg)
 
 prop_codec_splits3 :: AnyMessage (LocalMsgNotification Sig) -> Property
 prop_codec_splits3 msg =
   labelMsg msg $
-  runST (prop_codec_splitsM splits3 codec msg)
+  runST (prop_anncodec_splitsM splits3 codec msg)
 
 prop_codec_cbor
   :: AnyMessage (LocalMsgNotification Sig)
@@ -105,20 +103,19 @@ prop_connect (Positive maxMsgs) (DistinctNEList msgs) =
 
 -- | Run a local tx-submission client and server using connected channels.
 --
-prop_channel :: (MonadAsync m, MonadCatch m, Eq msg, Show msg, ShowProxy msg)
+prop_channel :: (MonadAsync m, MonadCatch m, MonadST m)
              => m (Channel m ByteString, Channel m ByteString)
-             -> LocalMsgNotificationCodec m msg
              -> Positive Word16
-             -> DistinctNEList msg
+             -> DistinctNEList Sig
              -> m Property
-prop_channel createChannels codec'
+prop_channel createChannels
              (Positive maxMsgs) (DistinctNEList msgs) =
   (\((), msgs') -> msgs' === NE.toList msgs) <$>
 
-  runConnectedPeers
+  runAnnotatedConnectedPeers
     createChannels
     testTracer
-    codec'
+    codec
     (localMsgNotificationServerPeer $
        testServer (("server",) `contramap` testTracer) maxMsgs msgs)
     (localMsgNotificationClientPeer $
@@ -130,7 +127,7 @@ prop_channel_ST :: Positive Word16 -> DistinctNEList Sig
                 -> Property
 prop_channel_ST maxMsgs msgs =
   runSimOrThrow
-    (prop_channel createConnectedChannels codec maxMsgs msgs)
+    (prop_channel createConnectedChannels maxMsgs msgs)
 
 -- | Run 'prop_channel' in the IO monad.
 --
@@ -138,7 +135,7 @@ prop_channel_IO :: Positive Word16 -> DistinctNEList Sig
                 -> Property
 prop_channel_IO maxMsgs msgs =
     ioProperty $
-      prop_channel createConnectedBufferedChannelsUnbounded codec maxMsgs msgs
+      prop_channel createConnectedBufferedChannelsUnbounded maxMsgs msgs
 
 --
 -- Properties going directly, not via Peer.
@@ -190,13 +187,13 @@ direct (LocalMsgNotificationServer mserver0) (LocalMsgNotificationClient mclient
 --
 
 type LocalMsgNotificationCodec m msg =
-  Codec (LocalMsgNotification msg)
-        DeserialiseFailure m
-        ByteString
+    AnnotatedCodec (LocalMsgNotification msg)
+                   DeserialiseFailure m
+                   ByteString
 
 codec :: MonadST m
       => LocalMsgNotificationCodec m Sig
-codec = codecLocalMsgNotification encodeSig decodeSig
+codec = codecLocalMsgNotification
 
 
 instance Arbitrary HasMore where
