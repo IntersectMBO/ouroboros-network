@@ -1,6 +1,8 @@
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE NamedFieldPuns     #-}
-{-# LANGUAGE PatternSynonyms    #-}
+{-# LANGUAGE DerivingStrategies   #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE NamedFieldPuns       #-}
+{-# LANGUAGE PatternSynonyms      #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 
 module DMQ.Protocol.SigSubmission.Type
   ( -- * Data types
@@ -9,14 +11,15 @@ module DMQ.Protocol.SigSubmission.Type
   , SigBody (..)
   , SigKESSignature (..)
   , SigOpCertificate (..)
-  , SigPayload (..)
-  , Sig (SigRaw, Sig, sigId, sigBody, sigExpiresAt, sigOpCertificate, sigKESSignature)
+  , SigRaw (..)
+  , Sig (Sig, SigWithBytes, sigRaw, sigRawBytes, sigId, sigBody, sigExpiresAt, sigOpCertificate, sigKESSignature, sigBytes)
     -- * `TxSubmission` mini-protocol
   , SigSubmission
   , module SigSubmission
   ) where
 
 import Data.ByteString (ByteString)
+import Data.ByteString.Lazy qualified as LBS
 import Data.Time.Clock.POSIX (POSIXTime)
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type as SigSubmission hiding
@@ -43,22 +46,26 @@ newtype SigBody = SigBody { getSigBody :: ByteString }
 newtype SigKESSignature = SigKESSignature { getSigKESSignature :: ByteString }
   deriving stock (Show, Eq)
 
+-- TODO:
+-- This type should be more than just a `ByteString`.
 newtype SigOpCertificate = SigOpCertificate { getSigOpCertificate :: ByteString }
   deriving stock (Show, Eq)
 
 -- | Sig type consists of payload and its KES signature.
 --
-data Sig = SigRaw {
-    sigRawPayload      :: SigPayload,
-    sigRawKESSignature :: SigKESSignature
+-- TODO: add signed bytes.
+data SigRaw = SigRaw {
+    sigRawId            :: SigId,
+    sigRawBody          :: SigBody,
+    sigRawKESSignature  :: SigKESSignature,
+    sigRawOpCertificate :: SigOpCertificate,
+    sigRawExpiresAt     :: POSIXTime
   }
   deriving stock (Show, Eq)
 
-data SigPayload = SigPayload {
-    sigPayloadId            :: SigId,
-    sigPayloadBody          :: SigBody,
-    sigPayloadExpiresAt     :: POSIXTime,
-    sigPayloadOpCertificate :: SigOpCertificate
+data Sig = SigWithBytes {
+    sigRawBytes :: LBS.ByteString,
+    sigRaw      :: SigRaw
   }
   deriving stock (Show, Eq)
 
@@ -67,44 +74,49 @@ data SigPayload = SigPayload {
 pattern Sig
   :: SigId
   -> SigBody
-  -> POSIXTime
-  -> SigOpCertificate
   -> SigKESSignature
+  -> SigOpCertificate
+  -> POSIXTime
+  -> LBS.ByteString
   -> Sig
 pattern
     Sig { sigId,
           sigBody,
-          sigExpiresAt,
+          sigKESSignature,
           sigOpCertificate,
-          sigKESSignature
+          sigExpiresAt,
+          sigBytes
         }
     <-
-    SigRaw {
-      sigRawPayload =
-        SigPayload {
-          sigPayloadId            = sigId,
-          sigPayloadBody          = sigBody,
-          sigPayloadExpiresAt     = sigExpiresAt,
-          sigPayloadOpCertificate = sigOpCertificate
-        },
-      sigRawKESSignature = sigKESSignature
-    }
+    SigWithBytes {
+      sigRawBytes = sigBytes,
+      sigRaw =
+        SigRaw {
+          sigRawId            = sigId,
+          sigRawBody          = sigBody,
+          sigRawKESSignature  = sigKESSignature,
+          sigRawOpCertificate = sigOpCertificate,
+          sigRawExpiresAt     = sigExpiresAt
+        }
+      }
   where
-    Sig sigPayloadId
-        sigPayloadBody
-        sigPayloadExpiresAt
-        sigPayloadOpCertificate
+    Sig sigRawId
+        sigRawBody
         sigRawKESSignature
+        sigRawOpCertificate
+        sigRawExpiresAt
+        sigRawBytes
       =
-      SigRaw {
-        sigRawPayload =
-          SigPayload {
-            sigPayloadId,
-            sigPayloadBody,
-            sigPayloadExpiresAt,
-            sigPayloadOpCertificate
-          },
-        sigRawKESSignature
+      SigWithBytes {
+        sigRawBytes = sigRawBytes,
+        sigRaw      =
+          SigRaw {
+            sigRawId,
+            sigRawBody,
+            sigRawKESSignature,
+            sigRawOpCertificate,
+            sigRawExpiresAt
+          }
       }
 {-# COMPLETE Sig #-}
 

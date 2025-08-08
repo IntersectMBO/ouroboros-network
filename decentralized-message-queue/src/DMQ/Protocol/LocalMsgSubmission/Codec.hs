@@ -1,3 +1,4 @@
+{-# LANGUAGE PolyKinds  #-}
 {-# LANGUAGE RankNTypes #-}
 
 -- | The codec for the local message submission miniprotocol
@@ -12,19 +13,20 @@ import Data.ByteString.Lazy (ByteString)
 import Text.Printf
 
 import DMQ.Protocol.LocalMsgSubmission.Type
+import DMQ.Protocol.SigSubmission.Codec qualified as SigSubmission
+import DMQ.Protocol.SigSubmission.Type (Sig (..))
+
 import Network.TypedProtocol.Codec.CBOR
-import Ouroboros.Network.Protocol.LocalTxSubmission.Codec
+import Ouroboros.Network.Protocol.LocalTxSubmission.Codec qualified as LTX
 
 codecLocalMsgSubmission
-  :: forall sig m.
+  :: forall m.
      MonadST m
-  => (sig -> CBOR.Encoding)
-  -> (forall s. CBOR.Decoder s sig)
-  -> (SigMempoolFail -> CBOR.Encoding)
+  => (SigMempoolFail -> CBOR.Encoding)
   -> (forall s. CBOR.Decoder s SigMempoolFail)
-  -> Codec (LocalMsgSubmission sig) CBOR.DeserialiseFailure m ByteString
+  -> AnnotatedCodec (LocalMsgSubmission Sig) CBOR.DeserialiseFailure m ByteString
 codecLocalMsgSubmission =
-  codecLocalTxSubmission
+  LTX.anncodecLocalTxSubmission' SigWithBytes SigSubmission.encodeSig SigSubmission.decodeSig
 
 encodeReject :: SigMempoolFail -> CBOR.Encoding
 encodeReject = \case

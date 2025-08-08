@@ -6,6 +6,7 @@
 
 module Test.DMQ.Protocol.SigSubmission where
 
+import Codec.CBOR.Write qualified as CBOR
 import Control.Monad.ST (runST)
 import Data.Time.Clock.POSIX (POSIXTime)
 import Data.Word (Word32)
@@ -66,37 +67,53 @@ instance Arbitrary SigOpCertificate where
   arbitrary = SigOpCertificate <$> arbitrary
   shrink = map SigOpCertificate . shrink . getSigOpCertificate
 
-instance Arbitrary Sig where
-  arbitrary = Sig <$> arbitrary
-                  <*> arbitrary
-                  <*> arbitrary
-                  <*> arbitrary
-                  <*> arbitrary
-  shrink sig@Sig { sigId, sigBody, sigExpiresAt, sigOpCertificate, sigKESSignature } =
-    [ sig { sigId = sigId' }
-    | sigId' <- shrink sigId
+instance Arbitrary SigRaw where
+  arbitrary = SigRaw <$> arbitrary
+                     <*> arbitrary
+                     <*> arbitrary
+                     <*> arbitrary
+                     <*> arbitrary
+  shrink sig@SigRaw { sigRawId,
+                      sigRawBody,
+                      sigRawKESSignature,
+                      sigRawOpCertificate,
+                      sigRawExpiresAt
+                    } =
+    [ sig { sigRawId = sigRawId' }
+    | sigRawId' <- shrink sigRawId
     ]
     ++
-    [ sig { sigBody = sigBody' }
-    | sigBody' <- shrink sigBody
+    [ sig { sigRawBody = sigRawBody' }
+    | sigRawBody' <- shrink sigRawBody
     ]
     ++
-    [ sig { sigExpiresAt = sigExpiresAt' }
-    | sigExpiresAt' <- shrink sigExpiresAt
+    [ sig { sigRawKESSignature = sigRawKESSignature' }
+    | sigRawKESSignature' <- shrink sigRawKESSignature
     ]
     ++
-    [ sig { sigOpCertificate = sigOpCertificate' }
-    | sigOpCertificate' <- shrink sigOpCertificate
+    [ sig { sigRawOpCertificate = sigRawOpCertificate' }
+    | sigRawOpCertificate' <- shrink sigRawOpCertificate
     ]
     ++
-    [ sig { sigKESSignature = sigKESSignature' }
-    | sigKESSignature' <- shrink sigKESSignature
+    [ sig { sigRawExpiresAt = sigRawExpiresAt' }
+    | sigRawExpiresAt' <- shrink sigRawExpiresAt
     ]
 
+-- NOTE: this function is not exposed in the main library on purpose.  We
+-- should never construct `Sig` by serialising `SigRaw`.
+--
+mkSig :: SigRaw -> Sig
+mkSig sigRaw = SigWithBytes {sigRawBytes, sigRaw}
+  where
+    sigRawBytes = CBOR.toLazyByteString (encodeSigRaw sigRaw)
+
+instance Arbitrary Sig where
+  arbitrary = mkSig <$> arbitrary
+  shrink SigWithBytes {sigRaw} = mkSig <$> shrink sigRaw
 
 prop_codec :: AnyMessage SigSubmission -> Property
 prop_codec msg =
-  runST (prop_codecM codecSigSubmission msg)
+  runST (prop_anncodecM codecSigSubmission msg)
 
 prop_codec_id :: AnyMessage SigSubmission -> Property
 prop_codec_id msg =
@@ -104,12 +121,12 @@ prop_codec_id msg =
 
 prop_codec_splits2 :: AnyMessage SigSubmission -> Property
 prop_codec_splits2 msg =
-  runST (prop_codec_splitsM splits2 codecSigSubmission msg)
+  runST (prop_anncodec_splitsM splits2 codecSigSubmission msg)
 
 prop_codec_splits3 :: AnyMessage SigSubmission -> Property
 prop_codec_splits3 msg =
   labelMsg msg $
-  runST (prop_codec_splitsM splits3 codecSigSubmission msg)
+  runST (prop_anncodec_splitsM splits3 codecSigSubmission msg)
 
 
 prop_codec_cbor

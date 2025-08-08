@@ -40,6 +40,7 @@ import DMQ.Protocol.LocalMsgNotification.Type
 import DMQ.Protocol.LocalMsgSubmission.Codec
 import DMQ.Protocol.LocalMsgSubmission.Server
 import DMQ.Protocol.LocalMsgSubmission.Type
+import DMQ.Protocol.SigSubmission.Type (Sig)
 
 import Ouroboros.Network.Context
 import Ouroboros.Network.Driver.Simple
@@ -82,23 +83,21 @@ ntcHandshakeArguments tracer =
 data Codecs m sig =
   Codecs {
     msgSubmissionCodec
-      :: !(Codec (LocalMsgSubmission sig)
+      :: !(AnnotatedCodec (LocalMsgSubmission sig)
                  CBOR.DeserialiseFailure m ByteString)
   , msgNotificationCodec
-      :: !(Codec (LocalMsgNotification sig)
+      :: !(AnnotatedCodec (LocalMsgNotification sig)
                CBOR.DeserialiseFailure m ByteString)
   }
 
 dmqCodecs :: MonadST m
-          => (sig -> CBOR.Encoding)
-          -> (forall s. CBOR.Decoder s sig)
-          -> (SigMempoolFail -> CBOR.Encoding)
+          => (SigMempoolFail -> CBOR.Encoding)
           -> (forall s. CBOR.Decoder s SigMempoolFail)
-          -> Codecs m sig
-dmqCodecs encodeSig decodeSig encodeReject' decodeReject' =
+          -> Codecs m Sig
+dmqCodecs encodeReject' decodeReject' =
   Codecs {
-    msgSubmissionCodec = codecLocalMsgSubmission encodeSig decodeSig encodeReject' decodeReject'
-  , msgNotificationCodec = codecLocalMsgNotification encodeSig decodeSig
+    msgSubmissionCodec   = codecLocalMsgSubmission encodeReject' decodeReject'
+  , msgNotificationCodec = codecLocalMsgNotification
   }
 
 
@@ -139,7 +138,7 @@ ntcApps mempoolReader mempoolWriter maxMsgs
   where
     aLocalMsgSubmission _version _ctx channel = do
       labelThisThread "LocalMsgSubmissionServer"
-      runPeer
+      runAnnotatedPeer
         nullTracer
         msgSubmissionCodec
         channel
@@ -148,7 +147,7 @@ ntcApps mempoolReader mempoolWriter maxMsgs
 
     aLocalMsgNotification _version _ctx channel = do
       labelThisThread "LocalMsgNotificationServer"
-      runPeer
+      runAnnotatedPeer
         nullTracer
         msgNotificationCodec
         channel
