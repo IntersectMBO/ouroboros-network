@@ -10,11 +10,10 @@ module Ouroboros.Network.OrphanInstances where
 
 import Cardano.Network.NodeToClient (LocalAddress (..), ProtocolLimitFailure)
 import Control.Applicative (Alternative ((<|>)))
-import Data.Aeson (FromJSON (parseJSON, parseJSONList), KeyValue ((.=)),
-           ToJSON (toJSON, toJSONList), ToJSONKey,
-           Value (Bool, Null, Number, Object, String), object, withBool,
-           withObject, withText, (.!=), (.:), (.:?))
-import Data.Aeson.Types (Pair)
+import Control.Monad (zipWithM)
+import Data.Aeson
+import Data.Aeson.Types (Pair, Parser, listValue)
+import Data.Foldable (toList)
 import Data.IP (fromHostAddress, fromHostAddress6)
 import Data.Maybe (fromMaybe)
 import Data.Text (Text, pack)
@@ -89,35 +88,59 @@ instance ToJSON DiffusionMode where
   toJSON = String . pack . show
 
 -- | Does not use the 'FromJSON' instance of 'RootConfig', so that
--- 'accessPoints', 'advertise', 'valency' and 'warmValency' fields are attached to the
--- same object.
-instance FromJSON extraFlags => FromJSON (LocalRootPeersGroup extraFlags) where
-  parseJSON = withObject "LocalRootPeersGroup" $ \o -> do
-                hv@(HotValency v) <- o .: "valency"
-                                 <|> o .: "hotValency"
-                LocalRootPeersGroup
-                  <$> parseJSON (Object o)
-                  <*> pure hv
-                  <*> o .:? "warmValency" .!= WarmValency v
-                  <*> (fromMaybe InitiatorAndResponderDiffusionMode
-                        <$> o .:? "diffusionMode")
-                  <*> o .: "extraFlags"
+-- 'accessPoints', 'advertise', 'valency' and 'warmValency' fields are attached
+-- to the same object.
+localRootPeersGroupFromJSON
+  :: (Object -> Parser extraFlags)
+  -> Object
+  -> Parser (LocalRootPeersGroup extraFlags)
+localRootPeersGroupFromJSON parseExtraFlags o = do
+    hv@(HotValency v) <- o .: "valency"
+                     <|> o .: "hotValency"
+    LocalRootPeersGroup
+      <$> parseJSON (Object o)
+      <*> pure hv
+      <*> o .:? "warmValency" .!= WarmValency v
+      <*> (fromMaybe InitiatorAndResponderDiffusionMode
+            <$> o .:? "diffusionMode")
+      <*> parseExtraFlags o
 
-instance ToJSON extraFlags => ToJSON (LocalRootPeersGroup extraFlags) where
-  toJSON lrpg = object
-    [ "accessPoints"  .= rootAccessPoints (localRoots lrpg)
-    , "advertise"     .= rootAdvertise (localRoots lrpg)
-    , "hotValency"    .= hotValency lrpg
-    , "warmValency"   .= warmValency lrpg
-    , "extraFlags"    .= extraFlags lrpg
-    , "diffusionMode" .= rootDiffusionMode lrpg
-    ]
+localRootPeersGroupToJSON :: (extraFlags -> Maybe (Key, Value))
+                          -- ^ if `Nothing` is returned the `extraFlags` are
+                          -- not encoded in the JSON value
+                          -> LocalRootPeersGroup extraFlags
+localRootPeersGroupToJSON extraFlagsToJSON lrpg =
+    Object $
+         ("accessPoints"  .?= rootAccessPoints (localRoots lrpg))
+      <> ("advertise"     .?= rootAdvertise (localRoots lrpg))
+      <> ("hotValency"    .?= hotValency lrpg)
+      <> ("warmValency"   .?= warmValency lrpg)
+      <> (case mv of
+            Nothing     -> mempty
+            Just (k, v) -> k .?= v)
+      <> ("diffusionMode" .?= rootDiffusionMode lrpg)
+  where
+    mv = extraFlagsToJSON (extraFlags lrpg)
 
-instance FromJSON extraFlags => FromJSON (LocalRootPeersGroups extraFlags) where
-  parseJSON = fmap LocalRootPeersGroups . parseJSONList
+localRootPeersGroupsFromJSON
+  :: (Object -> Parser extraFlags)
+  -> Value
+  -> Parser (LocalRootPeersGroups extraFlags)
+localRootPeersGroupsFromJSON parseExtraFlags =
+  withArray "[]" $ \a ->
+      fmap LocalRootPeersGroups
+    . zipWithM
+        (parseIndexedJSON $ withObject "LocalRootPeersGroup" (localRootPeersGroupFromJSON parseExtraFlags))
+        [0..]
+    . toList
+    $ a
 
-instance ToJSON extraFlags => ToJSON (LocalRootPeersGroups extraFlags) where
-  toJSON = toJSONList . groups
+localRootPeersGroupsToJSON
+  :: (extraFlags -> Maybe (Key, Value))
+  -> LocalRootPeersGroups extraFlags
+  -> Value
+localRootPeersGroupsToJSON extraFlagsToJSON LocalRootPeersGroups {groups} =
+  listValue (localRootPeersGroupToJSON extraFlagsToJSON) groups
 
 instance FromJSON PublicRootPeers where
   parseJSON = fmap PublicRootPeers . parseJSON
@@ -125,28 +148,44 @@ instance FromJSON PublicRootPeers where
 instance ToJSON PublicRootPeers where
   toJSON = toJSON . publicRoots
 
-instance (FromJSON extraConfig, FromJSON extraFlags) => FromJSON (NetworkTopology extraConfig extraFlags) where
-  parseJSON = withObject "NetworkTopology" $ \o ->
-                NetworkTopology <$> o .: "localRoots"
-                                <*> o .: "publicRoots"
-                                <*> o .:? "useLedgerAfterSlot" .!= DontUseLedgerPeers
-                                <*> o .: "peerSnapshotFile"
-                                <*> o .: "extraConfig"
+networkTopologyFromJSON
+  :: (Value -> Parser (LocalRootPeersGroups extraFlags))
+  -> (Object -> Parser extraConfig)
+  -> Value
+  -> Parser (NetworkTopology extraConfig extraFlags)
+networkTopologyFromJSON parseLocalRoots parseExtraConfig =
+  withObject "NetworkTopology" $ \o ->
+              NetworkTopology <$> (o .: "localRoots" >>= parseLocalRoots)
+                              <*> o .: "publicRoots"
+                              <*> o .:? "useLedgerAfterSlot" .!= DontUseLedgerPeers
+                              <*> o .: "peerSnapshotFile"
+                              <*> parseExtraConfig o
 
-instance (ToJSON extraConfig, ToJSON extraFlags) => ToJSON (NetworkTopology extraConfig extraFlags) where
-  toJSON NetworkTopology
-          { localRootPeersGroups
-          , publicRootPeers
-          , useLedgerPeers
-          , peerSnapshotPath
-          , extraConfig
-          } = object
-    [ "localRoots"         .= localRootPeersGroups
-    , "publicRoots"        .= publicRootPeers
-    , "useLedgerAfterSlot" .= useLedgerPeers
-    , "peerSnapshotFile"   .= peerSnapshotPath
-    , "extraConfig"        .= extraConfig
-    ]
+networkTopologyToJSON
+  :: (extraConfig -> Maybe (Key, Value))
+  -> (extraFlags  -> Maybe (Key, Value))
+  -> NetworkTopology extraConfig extraFlags
+  -> Value
+networkTopologyToJSON
+  extraConfigToJSON
+  extraFlagsToJSON
+  NetworkTopology {
+    localRootPeersGroups,
+    publicRootPeers,
+    useLedgerPeers,
+    peerSnapshotPath,
+    extraConfig
+  } =
+    Object $
+         (explicitToFieldOmit (const False) id "localRoots" (localRootPeersGroupsToJSON extraFlagsToJSON localRootPeersGroups))
+      <> ("publicRoots"        .?= publicRootPeers)
+      <> ("useLedgerAfterSlot" .?= useLedgerPeers)
+      <> ("peerSnapshotFile"   .?= peerSnapshotPath)
+      <> (case mv of
+            Nothing    -> mempty
+            Just (k,v) -> k .?= v)
+  where
+    mv = extraConfigToJSON extraConfig
 
 instance FromJSON PeerSharing where
   parseJSON = withBool "PeerSharing" $ \b ->

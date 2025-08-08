@@ -1,4 +1,6 @@
 {-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -13,15 +15,22 @@ import Data.ByteString.Lazy qualified as LBS
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Ouroboros.Network.Diffusion.Topology (NetworkTopology (..))
-import Ouroboros.Network.OrphanInstances ()
+import Ouroboros.Network.OrphanInstances (localRootPeersGroupsFromJSON,
+           networkTopologyFromJSON, networkTopologyToJSON)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot)
+
+instance FromJSON (NetworkTopology () ()) where
+  parseJSON = networkTopologyFromJSON
+                (localRootPeersGroupsFromJSON (\_ -> pure ()))
+                (\_ -> pure ())
+
+instance ToJSON (NetworkTopology () ()) where
+  toJSON = networkTopologyToJSON (const Nothing) (const Nothing)
 
 -- | Read the `NetworkTopology` configuration from the specified file.
 --
 readTopologyFile
-  :: ( FromJSON extraConfig
-     , FromJSON extraFlags
-     )
+  :: FromJSON (NetworkTopology extraConfig extraFlags)
   => FilePath
   -> IO (Either Text (NetworkTopology extraConfig extraFlags))
 readTopologyFile nc = do
@@ -47,9 +56,7 @@ readTopologyFile nc = do
       ]
 
 readTopologyFileOrError
-  :: ( FromJSON extraConfig
-     , FromJSON extraFlags
-     )
+  :: FromJSON (NetworkTopology extraConfig extraFlags)
   => FilePath
   -> IO (NetworkTopology extraConfig extraFlags)
 readTopologyFileOrError nc =

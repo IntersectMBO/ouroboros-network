@@ -20,6 +20,14 @@
   * `Cardano.Network.Diffusion.Types.ExtraPeerSelectionActions`
   * `Cardano.Network.PeerSelection.Churn.ExtraArguments`
   * `Cardano.Network.PeerSelection.Governor.PeerSelectionActions.ExtraPeerSelectionActions`
+* Added `localRootPeersGroupToJSON`, `localRootPeersGroupsToJSON`,
+`networkToplogogyToJSON` to `Ouroboros.Network.OrphanInstances`
+* Removed `ToJSON` and `FromJSON` instances for `NetworkTopology extraConfig
+  extraFlags` from `Ouroboros.Network.OrphanInstances`.
+* Addded `ToJSON` and `FromJSON` instances for `NetworkTopology
+  UseBootstrapPeers PeerTrustable` to `Cardano.Network.OrphanInstances`
+* Added `localRootPeersGroupFromJSON`, localRootPeersGroupsFromJSON`,
+  `networkTopologyFromJSON to `Ouroboros.Network.OrphanInstances`
 
 ### Non-breaking changes
 
