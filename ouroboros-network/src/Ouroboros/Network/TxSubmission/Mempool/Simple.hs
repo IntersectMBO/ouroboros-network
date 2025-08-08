@@ -60,7 +60,11 @@ getReader :: forall tx txid m.
           -> Mempool m tx
           -> TxSubmissionMempoolReader txid tx Int m
 getReader getTxId getTxSize (Mempool mempool) =
-    TxSubmissionMempoolReader { mempoolGetSnapshot, mempoolZeroIdx = 0 }
+    -- Using `0`-based index.  `mempoolZeroIdx = -1` so that
+    -- `mempoolTxIdsAfter mempoolZeroIdx` returns all txs.
+    TxSubmissionMempoolReader { mempoolGetSnapshot,
+                                mempoolZeroIdx = -1
+                              }
   where
     mempoolGetSnapshot :: STM m (MempoolSnapshot txid tx Int)
     mempoolGetSnapshot = getSnapshot <$> readTVar mempool
@@ -69,10 +73,9 @@ getReader getTxId getTxSize (Mempool mempool) =
                 -> MempoolSnapshot txid tx Int
     getSnapshot seq =
       MempoolSnapshot {
-          mempoolTxIdsAfter =
-            \idx -> zipWith f [idx + 1 ..] (toList $ Seq.drop idx seq),
-          -- why do I need to use `pred`?
-          mempoolLookupTx   = flip Seq.lookup seq . pred,
+          mempoolTxIdsAfter = \idx -> zipWith f [idx + 1..]
+                                                (toList $ Seq.drop (idx + 1) seq),
+          mempoolLookupTx   = \idx -> Seq.lookup idx seq,
           mempoolHasTx      = \txid -> isJust $ find (\tx -> getTxId tx == txid) seq
        }
 
