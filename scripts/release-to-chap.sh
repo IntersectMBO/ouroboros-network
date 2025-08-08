@@ -53,10 +53,10 @@ if [[ $REPORT == 1 ]] then
   for cbl in $(fd -e cabal); do
     v=$(grep '^version:' $cbl | awk '{print $2}')
     n=$(dirname $cbl)
-    x=$(git --no-pager log --oneline $n-$v.. -- $(dirname $cbl) | wc -l)
+    x=$(git --no-pager log --oneline $n-$v.. -- $(dirname $cbl) || true | wc -l)
     if [[ !($x == "0") ]]; then
       trace "$n changes since $v"
-      git --no-pager log --oneline --graph $n-$v.. -- $(dirname $cbl)
+      git --no-pager log --oneline --graph $n-$v.. -- $(dirname $cbl) || true
     fi
   done
 else
