@@ -55,4 +55,7 @@ package network-mux
 package ouroboros-network
   flags: +asserts +cddl
 
+package acts
+  flags: -finitary
+
 allow-newer: quickcheck-instances:QuickCheck
