@@ -49,7 +49,7 @@ import System.Random (mkStdGen)
 import Network.Mux.Trace qualified as Mx
 import Network.Mux.Types (Mode (..))
 import Network.Mux.Types qualified as Mx
-import Network.TypedProtocol.Codec (Codec)
+import Network.TypedProtocol.Codec (AnnotatedCodec, Codec)
 
 import DMQ.Configuration (Configuration, Configuration' (..), I (..))
 import DMQ.Diffusion.NodeKernel (NodeKernel (..))
@@ -63,8 +63,8 @@ import Ouroboros.Network.Channel (Channel)
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.Context (ExpandedInitiatorContext (..),
            ResponderContext (..))
-import Ouroboros.Network.Driver.Limits (runPeerWithLimits,
-           runPipelinedPeerWithLimits)
+import Ouroboros.Network.Driver.Limits (runAnnotatedPeerWithLimits,
+           runPeerWithLimits, runPipelinedAnnotatedPeerWithLimits)
 import Ouroboros.Network.Driver.Simple (TraceSendRecv)
 import Ouroboros.Network.Handshake.Acceptable (Acceptable (..))
 import Ouroboros.Network.Handshake.Queryable (Queryable (..))
@@ -229,7 +229,7 @@ ntnApps
                            eicConnectionId   = connId,
                            eicControlMessage = controlMessage
                          } channel =
-      runPeerWithLimits
+      runAnnotatedPeerWithLimits
         (if sigSubmissionClientTracer
           then WithEventType "SigSubmissionClient" . Mx.WithBearer connId >$< tracer
           else nullTracer)
@@ -263,7 +263,7 @@ ntnApps
           sigSize
           (remoteAddress connId)
           $ \(peerSigAPI :: PeerTxAPI m SigId Sig) ->
-            runPipelinedPeerWithLimits
+            runPipelinedAnnotatedPeerWithLimits
               (if sigSubmissionServerTracer
                  then WithEventType "SigSubmissionServer" . Mx.WithBearer connId >$< tracer
                  else nullTracer)
@@ -523,7 +523,7 @@ initiatorAndResponderProtocols limitsAndTimeouts
 
 data Codecs addr m =
   Codecs {
-    sigSubmissionCodec :: Codec SigSubmission
+    sigSubmissionCodec :: AnnotatedCodec SigSubmission
                             CBOR.DeserialiseFailure m BL.ByteString
   , keepAliveCodec     :: Codec KeepAlive
                             CBOR.DeserialiseFailure m BL.ByteString

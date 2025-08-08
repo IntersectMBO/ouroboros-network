@@ -119,6 +119,7 @@ test-suite dmq-test
   build-depends:
     QuickCheck,
     base >=4.14 && <4.22,
+    cborg,
     decentralized-message-queue,
     ouroboros-network-api,
     ouroboros-network-protocols:testlib,

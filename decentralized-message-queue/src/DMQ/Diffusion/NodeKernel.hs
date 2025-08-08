@@ -33,7 +33,7 @@ import Ouroboros.Network.TxSubmission.Inbound.V2.Registry
 import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool (..))
 import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 
-import DMQ.Protocol.SigSubmission.Type (Sig (..), SigId)
+import DMQ.Protocol.SigSubmission.Type (Sig (sigExpiresAt), SigId)
 
 
 data NodeKernel ntnAddr m =
