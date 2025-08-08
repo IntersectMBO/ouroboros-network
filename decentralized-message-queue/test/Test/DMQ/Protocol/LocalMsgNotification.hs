@@ -120,3 +120,28 @@ labelMsg (AnyMessage msg) =
            MsgServerDone      -> "MsgServerDone"
            MsgClientDone      -> "MsgClientDone"
         )
+
+--
+-- Properties using a channel
+--
+
+-- | Run a local tx-submission client and server using connected channels.
+--
+prop_channel :: (MonadAsync m, MonadCatch m, MonadST m)
+             => m (Channel m ByteString, Channel m ByteString)
+             -> (Sig -> SubmitResult Reject) -> [Tx]
+             -> m Bool
+prop_channel createChannels p txs =
+
+    ((txs', txs') ==) <$>
+
+    runConnectedPeers
+      createChannels
+      nullTracer
+      codec
+      (localTxSubmissionClientPeer $
+       localTxSubmissionClient txs)
+      (localTxSubmissionServerPeer $ pure $
+       localTxSubmissionServer p)
+  where
+    txs' = [ (tx, p tx) | tx <- txs ]
