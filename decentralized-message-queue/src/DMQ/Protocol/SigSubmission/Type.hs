@@ -1,6 +1,8 @@
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE FlexibleInstances  #-}
 {-# LANGUAGE NamedFieldPuns     #-}
 {-# LANGUAGE PatternSynonyms    #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 
 module DMQ.Protocol.SigSubmission.Type
   ( -- * Data types
@@ -11,13 +13,15 @@ module DMQ.Protocol.SigSubmission.Type
   , SigKESPeriod
   , SigOpCertificate (..)
   , SigColdKey (..)
-  , Sig (SigRaw, Sig, sigId, sigBody, sigExpiresAt, sigOpCertificate, sigKESSignature, sigKESPeriod, sigColdKey)
+  , SigRaw (..)
+  , Sig (Sig, SigWithBytes, sigRaw, sigRawBytes, sigId, sigBody, sigExpiresAt, sigOpCertificate, sigKESPeriod, sigKESSignature, sigColdKey, sigBytes)
     -- * `TxSubmission` mini-protocol
   , SigSubmission
   , module SigSubmission
   ) where
 
 import Data.ByteString (ByteString)
+import Data.ByteString.Lazy qualified as LBS
 import Data.Time.Clock.POSIX (POSIXTime)
 import Data.Word (Word32)
 
@@ -45,6 +49,8 @@ newtype SigBody = SigBody { getSigBody :: ByteString }
 newtype SigKESSignature = SigKESSignature { getSigKESSignature :: ByteString }
   deriving stock (Show, Eq)
 
+-- TODO:
+-- This type should be more than just a `ByteString`.
 newtype SigOpCertificate = SigOpCertificate { getSigOpCertificate :: ByteString }
   deriving stock (Show, Eq)
 
@@ -55,19 +61,21 @@ newtype SigColdKey = SigColdKey { getSigColdKey :: ByteString }
 
 -- | Sig type consists of payload and its KES signature.
 --
-data Sig = SigRaw {
-    sigRawPayload      :: SigPayload,
-    sigRawKESSignature :: SigKESSignature
+-- TODO: add signed bytes.
+data SigRaw = SigRaw {
+    sigRawId            :: SigId,
+    sigRawBody          :: SigBody,
+    sigRawKESSignature  :: SigKESSignature,
+    sigRawKESPeriod     :: SigKESPeriod,
+    sigRawOpCertificate :: SigOpCertificate,
+    sigRawColdKey       :: SigColdKey,
+    sigRawExpiresAt     :: POSIXTime
   }
   deriving stock (Show, Eq)
 
-data SigPayload = SigPayload {
-    sigPayloadId            :: SigId,
-    sigPayloadBody          :: SigBody,
-    sigPayloadKESPeriod     :: SigKESPeriod,
-    sigPayloadExpiresAt     :: POSIXTime,
-    sigPayloadOpCertificate :: SigOpCertificate,
-    sigPayloadColdKey       :: SigColdKey
+data Sig = SigWithBytes {
+    sigRawBytes :: LBS.ByteString,
+    sigRaw      :: SigRaw
   }
   deriving stock (Show, Eq)
 
@@ -81,6 +89,7 @@ pattern Sig
   -> SigOpCertificate
   -> SigColdKey
   -> POSIXTime
+  -> LBS.ByteString
   -> Sig
 pattern
     Sig { sigId,
@@ -89,41 +98,45 @@ pattern
           sigKESPeriod,
           sigOpCertificate,
           sigColdKey,
-          sigExpiresAt
+          sigExpiresAt,
+          sigBytes
         }
     <-
-    SigRaw {
-      sigRawPayload =
-        SigPayload {
-          sigPayloadId            = sigId,
-          sigPayloadBody          = sigBody,
-          sigPayloadKESPeriod     = sigKESPeriod,
-          sigPayloadOpCertificate = sigOpCertificate,
-          sigPayloadColdKey       = sigColdKey,
-          sigPayloadExpiresAt     = sigExpiresAt
-        },
-      sigRawKESSignature = sigKESSignature
-    }
+    SigWithBytes {
+      sigRawBytes = sigBytes,
+      sigRaw =
+        SigRaw {
+          sigRawId            = sigId,
+          sigRawBody          = sigBody,
+          sigRawKESSignature  = sigKESSignature,
+          sigRawKESPeriod     = sigKESPeriod,
+          sigRawOpCertificate = sigOpCertificate,
+          sigRawColdKey       = sigColdKey,
+          sigRawExpiresAt     = sigExpiresAt
+        }
+      }
   where
-    Sig sigPayloadId
-        sigPayloadBody
+    Sig sigRawId
+        sigRawBody
         sigRawKESSignature
-        sigPayloadKESPeriod
-        sigPayloadOpCertificate
-        sigPayloadColdKey
-        sigPayloadExpiresAt
+        sigRawKESPeriod
+        sigRawOpCertificate
+        sigRawColdKey
+        sigRawExpiresAt
+        sigRawBytes
       =
-      SigRaw {
-        sigRawPayload =
-          SigPayload {
-            sigPayloadId,
-            sigPayloadBody,
-            sigPayloadKESPeriod,
-            sigPayloadOpCertificate,
-            sigPayloadColdKey,
-            sigPayloadExpiresAt
-          },
-        sigRawKESSignature
+      SigWithBytes {
+        sigRawBytes = sigRawBytes,
+        sigRaw      =
+          SigRaw {
+            sigRawId,
+            sigRawBody,
+            sigRawKESPeriod,
+            sigRawKESSignature,
+            sigRawColdKey,
+            sigRawExpiresAt,
+            sigRawOpCertificate
+          }
       }
 {-# COMPLETE Sig #-}
 
