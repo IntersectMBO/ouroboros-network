@@ -54,7 +54,8 @@ data MempoolSnapshot txid tx idx =
      MempoolSnapshot {
        mempoolTxIdsAfter :: idx -> [(txid, idx, SizeInBytes)],
        mempoolLookupTx   :: idx -> Maybe tx,
-       mempoolHasTx      :: txid -> Bool
+       mempoolHasTx      :: txid -> Bool,
+       mempoolLastTicket :: !(Maybe idx)
      }
 
 mapMempoolSnapshot ::

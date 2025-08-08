@@ -12,7 +12,7 @@ module Ouroboros.Network.TxSubmission.Outbound
 
 import Data.Foldable (find)
 import Data.List.NonEmpty qualified as NonEmpty
-import Data.Maybe (catMaybes, isNothing, mapMaybe)
+import Data.Maybe (catMaybes, fromJust, isJust, isNothing, mapMaybe)
 import Data.Sequence.Strict (StrictSeq)
 import Data.Sequence.Strict qualified as Seq
 import Data.Word (Word16)
@@ -113,17 +113,16 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
           let !unackedSeq' = Seq.drop (fromIntegral ackNo) unackedSeq
 
           -- Update our tracking state with any extra txs available.
-          let update txs =
+          let update txs mLastIdx' =
                 -- These txs should all be fresh
-                assert (all (\(_, idx, _) -> idx > lastIdx) txs) $
+                assert (    isJust mLastIdx' &&
+                        all (\(_, idx, _) -> idx > lastIdx) txs) $
                   let !unackedSeq'' = unackedSeq' <> Seq.fromList
                                         [ (txid, idx) | (txid, idx, _) <- txs ]
-                      !lastIdx'
-                        | null txs  = lastIdx
-                        | otherwise = idx where (_, idx, _) = last txs
+                      !lastIdx''    = if null txs then lastIdx else fromJust mLastIdx'
                       txs'         :: [(txid, SizeInBytes)]
                       txs'          = [ (txid, size) | (txid, _, size) <- txs ]
-                      client'       = client unackedSeq'' lastIdx'
+                      client'       = client unackedSeq'' lastIdx''
                   in  (txs', client')
 
           -- Grab info about any new txs after the last tx idx we've seen,
@@ -137,15 +136,16 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
 
               mbtxs <- timeoutWithControlMessage controlMessageSTM $
                 do
-                  MempoolSnapshot{mempoolTxIdsAfter} <- mempoolGetSnapshot
-                  let txs = mempoolTxIdsAfter lastIdx
+                  snapshot <- mempoolGetSnapshot
+                  let txs = mempoolTxIdsAfter snapshot lastIdx
                   check (not $ null txs)
-                  pure (take (fromIntegral reqNo) txs)
+                  pure ( mempoolLastTicket snapshot
+                       , take (fromIntegral reqNo) txs)
 
               case mbtxs of
                 Nothing -> pure (SendMsgDone ())
-                Just txs ->
-                  let !(txs', client') = update txs
+                Just (mLastIdx', txs) ->
+                  let !(txs', client') = update txs mLastIdx'
                       txs'' = case NonEmpty.nonEmpty txs' of
                         Just x -> x
                         -- Assert txs is non-empty: we blocked until txs was non-null,
@@ -159,12 +159,13 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
               when (Seq.null unackedSeq') $
                 throwIO ProtocolErrorRequestNonBlocking
 
-              txs <- atomically $ do
-                MempoolSnapshot{mempoolTxIdsAfter} <- mempoolGetSnapshot
-                let txs = mempoolTxIdsAfter lastIdx
-                return (take (fromIntegral reqNo) txs)
+              (mLastIdx', txs) <- atomically $ do
+                snapshot <- mempoolGetSnapshot
+                let txs = mempoolTxIdsAfter snapshot lastIdx
+                return ( mempoolLastTicket snapshot
+                       , take (fromIntegral reqNo) txs)
 
-              let !(txs', client') = update txs
+              let !(txs', client') = update txs mLastIdx'
               pure (SendMsgReplyTxIds (NonBlockingReply txs') client')
 
         recvMsgRequestTxs :: [txid]

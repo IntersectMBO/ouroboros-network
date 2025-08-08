@@ -14,6 +14,7 @@
 * `Ouroboros.Network.TxSubmission.Inbound.V1.txSubmissionInbound` takes extra argument: `TxSubmissionInitDelay` (previously configurable through `cabal` flags).
 * Removed the `txsubmission-delay` cabal flag.
 * `ProtocolErrorRequestedTooManyTxids` includes number of unacked txids.
+* Added `mempoolLastTicket` to `MempoolSnapshot`
 
 ### Non-breaking changes
 
