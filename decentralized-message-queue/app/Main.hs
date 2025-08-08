@@ -1,17 +1,18 @@
-{-# LANGUAGE NamedFieldPuns   #-}
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Main where
 
 import Control.Monad (void)
 import Control.Tracer (Tracer (..))
+
+import Data.Act
 import Data.Void (Void)
 import Debug.Trace (traceShowM)
 import Options.Applicative
 import System.Random (newStdGen, split)
 
 import DMQ.Configuration
-import DMQ.Configuration.CLIOptions (CLIOptions (..), parseCLIOptions)
+import DMQ.Configuration.CLIOptions (parseCLIOptions)
 import DMQ.Configuration.Topology (readTopologyFileOrError)
 import DMQ.Diffusion.Applications (diffusionApplications)
 import DMQ.Diffusion.Arguments (diffusionArguments)
@@ -32,42 +33,53 @@ main = void . runDMQ =<< execParser opts
                 <> progDesc "Run the POC DMQ node"
                 )
 
-runDMQ :: CLIOptions -> IO Void
-runDMQ cliopts@CLIOptions {
-         configFile
-       , topologyFile
-       } = do
+runDMQ :: PartialConfig -> IO Void
+runDMQ commandLineConfig = do
+    -- get the configuration file path
+    let configFilePath = unI
+                       $ dmqcConfigFile commandLineConfig
+                   `act` dmqcConfigFile defaultConfiguration
 
-  dmqConfig <- readConfigurationFileOrError configFile
-  nt <- readTopologyFileOrError @() @() topologyFile
+    -- read & parse configuration file
+    config' <- readConfigurationFileOrError configFilePath
+    -- combine default configuration, configuration file and command line
+    -- options
+    let dmqConfig@Configuration {
+          dmqcTopologyFile = I topologyFile
+        } = config' <> commandLineConfig
+            `act`
+            defaultConfiguration
 
-  stdGen <- newStdGen
-  let (psRng, policyRng) = split stdGen
+    print dmqConfig
+    nt <- readTopologyFileOrError topologyFile
 
-  withNodeKernel psRng $ \nodeKernel -> do
-    dmqDiffusionConfiguration <- mkDiffusionConfiguration cliopts nt dmqConfig
+    stdGen <- newStdGen
+    let (psRng, policyRng) = split stdGen
 
-    let dmqNtNApps =
-          ntnApps nodeKernel
-                  (dmqCodecs (encodeRemoteAddress (mapNtNDMQtoOuroboros maxBound))
-                             (decodeRemoteAddress (mapNtNDMQtoOuroboros maxBound)))
-                  dmqLimitsAndTimeouts
-                  defaultSigDecisionPolicy
-        dmqDiffusionArguments =
-          diffusionArguments debugTracer
-                             debugTracer
-        dmqDiffusionApplications =
-          diffusionApplications nodeKernel
-                                dmqConfig
-                                dmqDiffusionConfiguration
-                                dmqLimitsAndTimeouts
-                                dmqNtNApps
-                                (policy policyRng)
+    withNodeKernel psRng $ \nodeKernel -> do
+      dmqDiffusionConfiguration <- mkDiffusionConfiguration dmqConfig nt
 
-    Diffusion.run dmqDiffusionArguments
-                  debugTracers
-                  dmqDiffusionConfiguration
-                  dmqDiffusionApplications
+      let dmqNtNApps =
+            ntnApps nodeKernel
+                    (dmqCodecs (encodeRemoteAddress (mapNtNDMQtoOuroboros maxBound))
+                               (decodeRemoteAddress (mapNtNDMQtoOuroboros maxBound)))
+                    dmqLimitsAndTimeouts
+                    defaultSigDecisionPolicy
+          dmqDiffusionArguments =
+            diffusionArguments debugTracer
+                               debugTracer
+          dmqDiffusionApplications =
+            diffusionApplications nodeKernel
+                                  dmqConfig
+                                  dmqDiffusionConfiguration
+                                  dmqLimitsAndTimeouts
+                                  dmqNtNApps
+                                  (policy policyRng)
+
+      Diffusion.run dmqDiffusionArguments
+                    debugTracers
+                    dmqDiffusionConfiguration
+                    dmqDiffusionApplications
 
 debugTracer :: (Show a, Applicative m) => Tracer m a
 debugTracer = Tracer traceShowM
@@ -76,7 +88,6 @@ debugTracers :: ( Applicative m
                 , Ord ntnAddr
                 , Show extraCounters
                 , Show extraDebugState
-                , Show extraFlags
                 , Show extraPeers
                 , Show extraState
                 , Show ntcAddr
@@ -89,7 +100,7 @@ debugTracers :: ( Applicative m
             => Diffusion.Tracers ntnAddr ntnVersion ntnVersionData
                                  ntcAddr ntcVersion ntcVersionData
                                  extraState extraDebugState
-                                 extraFlags extraPeers extraCounters m
+                                 NoExtraFlags extraPeers extraCounters m
 debugTracers =
   Diffusion.Tracers {
     Diffusion.dtBearerTracer                               = debugTracer

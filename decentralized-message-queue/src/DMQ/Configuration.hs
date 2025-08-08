@@ -1,32 +1,58 @@
-{-# LANGUAGE DeriveGeneric      #-}
-{-# LANGUAGE NamedFieldPuns     #-}
-{-# LANGUAGE NumericUnderscores #-}
-{-# LANGUAGE OverloadedStrings  #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE NumericUnderscores         #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE QuantifiedConstraints      #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module DMQ.Configuration
-  ( Configuration (..)
+  ( Configuration' (..)
+  , PartialConfig
+  , Configuration
+  , I (..)
   , readConfigurationFileOrError
   , mkDiffusionConfiguration
   , defaultSigDecisionPolicy
+  , defaultConfiguration
+  , NoExtraConfig
+  , NoExtraFlags
   ) where
 
 import Control.Concurrent.Class.MonadSTM (MonadSTM (..))
 import Control.Monad (forM)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI (DiffTime)
+import Data.Act
+import Data.Act.Generic (gpact)
 import Data.Aeson
+import Data.Aeson.Types (parseFail)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
+import Data.Functor.Identity
+import Data.IP
 import Data.List.NonEmpty qualified as NonEmpty
+import Data.Monoid (Last (..))
 import Data.Text (Text)
 import Data.Text qualified as Text
-import DMQ.Configuration.CLIOptions (CLIOptions (..))
-import DMQ.Configuration.Topology (readPeerSnapshotFileOrError)
+import DMQ.Configuration.Topology (NoExtraConfig, NoExtraFlags,
+           readPeerSnapshotFileOrError)
+import Generic.Data (gmappend, gmempty)
 import GHC.Generics (Generic)
-import Network.Socket (AddrInfo (..), AddrInfoFlag (..), SockAddr,
+import Network.Socket (AddrInfo (..), AddrInfoFlag (..), PortNumber, SockAddr,
            SocketType (..), defaultHints, getAddrInfo)
+import System.IO.Error (isDoesNotExistError)
+import Text.Read (readMaybe)
 
 import Ouroboros.Network.Diffusion.Configuration (BlockProducerOrRelay (..),
            defaultAcceptedConnectionsLimit, defaultDeadlineChurnInterval,
@@ -46,60 +72,154 @@ import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2 (TxDecisionPolicy (..))
 
-data Configuration ntnFd ntnAddr ntcFd ntcAddr =
+
+-- | Configuration comes in two flavours paramemtrised by `f` functor:
+-- `PartialConfig` is using `Last` and `Configuration` is using an identity
+-- functor `I`.
+--
+data Configuration' f =
   Configuration {
-    dmqcAcceptedConnectionsLimit          :: AcceptedConnectionsLimit
-  , dmqcDiffusionMode                     :: DiffusionMode
-  , dmqcTargetOfRootPeers                 :: Int
-  , dmqcTargetOfKnownPeers                :: Int
-  , dmqcTargetOfEstablishedPeers          :: Int
-  , dmqcTargetOfActivePeers               :: Int
-  , dmqcTargetOfKnownBigLedgerPeers       :: Int
-  , dmqcTargetOfEstablishedBigLedgerPeers :: Int
-  , dmqcTargetOfActiveBigLedgerPeers      :: Int
-  , dmqcProtocolIdleTimeout               :: DiffTime
-  , dmqcChurnInterval                     :: DiffTime
-  , dmqcPeerSharing                       :: PeerSharing
-  , dmqcNetworkMagic                      :: NetworkMagic
+    dmqcIPv4                              :: f (Maybe IPv4),
+    dmqcIPv6                              :: f (Maybe IPv6),
+    dmqcPortNumber                        :: f PortNumber,
+    dmqcConfigFile                        :: f FilePath,
+    dmqcTopologyFile                      :: f FilePath,
+    dmqcAcceptedConnectionsLimit          :: f AcceptedConnectionsLimit,
+    dmqcDiffusionMode                     :: f DiffusionMode,
+    dmqcTargetOfRootPeers                 :: f Int,
+    dmqcTargetOfKnownPeers                :: f Int,
+    dmqcTargetOfEstablishedPeers          :: f Int,
+    dmqcTargetOfActivePeers               :: f Int,
+    dmqcTargetOfKnownBigLedgerPeers       :: f Int,
+    dmqcTargetOfEstablishedBigLedgerPeers :: f Int,
+    dmqcTargetOfActiveBigLedgerPeers      :: f Int,
+    dmqcProtocolIdleTimeout               :: f DiffTime,
+    dmqcChurnInterval                     :: f DiffTime,
+    dmqcPeerSharing                       :: f PeerSharing,
+    dmqcNetworkMagic                      :: f NetworkMagic
   }
   deriving Generic
 
-instance FromJSON (Configuration ntnFd ntnAddr ntcFd ntcAddr) where
+instance (forall a. Semigroup (f a))
+      => Semigroup (Configuration' f) where
+  (<>) = gmappend
+instance (forall a. Monoid (f a))
+      => Monoid (Configuration' f) where
+  mempty = gmempty
+
+-- Using an action, eliminates the need to use `undefined`, e.g. instead of
+-- transforming
+-- ```
+--   (defaultConfig <> configFileOptions <> cliOptions) :: PartialConfig
+-- ```
+-- to `Configuration` we just have
+-- ```
+--   (configFileOptions <> cliOptions • defaultConfig) :: Configuration
+-- ```
+-- without any partial functions.
+--
+--
+instance (forall a. Act (f a) (g a))
+      => Act (Configuration' f) (Configuration' g) where
+  act = gpact
+
+deriving instance Show Configuration
+deriving instance Show PartialConfig
+
+-- | An Identity functor, but shorter to type.
+--
+newtype I a = I { unI :: a }
+  deriving stock Generic
+  deriving newtype Show
+  deriving (Functor, Applicative, Monad) via Identity
+
+-- NOTE: it would be more convenient to have a right action of `Last` on `I`,
+-- but `acts` library only provides left actions.
+instance Act (Last a) (I a) where
+  act (Last Nothing)  i = i
+  act (Last (Just a)) _ = I a
+
+type Configuration = Configuration' I
+type PartialConfig = Configuration' Last
+
+
+-- | By using `Configuration` type we enforce that every value has a default,
+-- except of IP addresses, which are using `Maybe` values.  This is needed to
+-- make sure one can configure only the IP addresses which are available on the
+-- system.
+--
+defaultConfiguration :: Configuration
+defaultConfiguration = Configuration {
+      dmqcIPv4                              = I Nothing,
+      dmqcIPv6                              = I Nothing,
+      dmqcPortNumber                        = I 3_141,
+      dmqcNetworkMagic                      = I $ NetworkMagic 3_141_592,
+      dmqcConfigFile                        = I "dmq.configuration.yaml",
+      dmqcTopologyFile                      = I "dmq.topology.json",
+      dmqcAcceptedConnectionsLimit          = I defaultAcceptedConnectionsLimit,
+      dmqcDiffusionMode                     = I InitiatorAndResponderDiffusionMode,
+      dmqcTargetOfRootPeers                 = I targetNumberOfRootPeers,
+      dmqcTargetOfKnownPeers                = I targetNumberOfKnownPeers,
+      dmqcTargetOfEstablishedPeers          = I targetNumberOfEstablishedPeers,
+      dmqcTargetOfActivePeers               = I targetNumberOfActivePeers,
+      dmqcTargetOfKnownBigLedgerPeers       = I targetNumberOfKnownBigLedgerPeers,
+      dmqcTargetOfEstablishedBigLedgerPeers = I targetNumberOfEstablishedBigLedgerPeers,
+      dmqcTargetOfActiveBigLedgerPeers      = I targetNumberOfActiveBigLedgerPeers,
+      dmqcProtocolIdleTimeout               = I defaultProtocolIdleTimeout,
+      dmqcChurnInterval                     = I defaultDeadlineChurnInterval,
+      dmqcPeerSharing                       = I PeerSharingEnabled
+    }
+  where
+    PeerSelectionTargets {
+      targetNumberOfRootPeers,
+      targetNumberOfKnownPeers,
+      targetNumberOfEstablishedPeers,
+      targetNumberOfActivePeers,
+      targetNumberOfKnownBigLedgerPeers,
+      targetNumberOfEstablishedBigLedgerPeers,
+      targetNumberOfActiveBigLedgerPeers
+    } = defaultDeadlineTargets Relay
+    -- TODO: use DMQ's own default values
+
+
+-- | Parsing configuration used when reading it from disk
+--
+instance FromJSON PartialConfig where
   parseJSON = withObject "DMQConfiguration" $ \v -> do
-      dmqcAcceptedConnectionsLimit <- v .:? "AcceptedConnectionsLimit"
-                                        .!= defaultAcceptedConnectionsLimit
 
-      dmqcDiffusionMode <- v .:? "DiffusionMode"
-                             .!= InitiatorAndResponderDiffusionMode
+      dmqcIPv4 <- fmap readMaybe <$> v .:? "IPv4"
+      case dmqcIPv4 of
+        Just Nothing -> parseFail "couldn't parse IPv4 address"
+        _            -> pure ()
+      dmqcIPv6 <- fmap readMaybe <$> v .:? "IPv6"
+      case dmqcIPv6 of
+        Just Nothing -> parseFail "couldn't parse IPv6 address"
+        _            -> pure ()
+      dmqcPortNumber <- Last . fmap (fromIntegral @Int) <$> v.:? "PortNumber"
+      dmqcNetworkMagic <- Last . fmap NetworkMagic <$> v .:? "NetworkMagic"
+      dmqcDiffusionMode <- Last <$> v .:? "DiffusionMode"
+      dmqcPeerSharing <- Last <$> v .:? "PeerSharing"
 
-      dmqcTargetOfRootPeers                 <- v .:? "TargetNumberOfRootPeers"
-                                                 .!= targetNumberOfRootPeers deadlineTargets
-      dmqcTargetOfKnownPeers                <- v .:? "TargetNumberOfKnownPeers"
-                                                 .!= targetNumberOfKnownPeers deadlineTargets
-      dmqcTargetOfEstablishedPeers          <- v .:? "TargetNumberOfEstablishedPeers"
-                                                 .!= targetNumberOfEstablishedPeers deadlineTargets
-      dmqcTargetOfActivePeers               <- v .:? "TargetNumberOfActivePeers"
-                                                 .!= targetNumberOfActivePeers deadlineTargets
-      dmqcTargetOfKnownBigLedgerPeers       <- v .:? "TargetNumberOfKnownBigLedgerPeers"
-                                                 .!= targetNumberOfKnownBigLedgerPeers deadlineTargets
-      dmqcTargetOfEstablishedBigLedgerPeers <- v .:? "TargetNumberOfEstablishedBigLedgerPeers"
-                                                 .!= targetNumberOfEstablishedBigLedgerPeers deadlineTargets
-      dmqcTargetOfActiveBigLedgerPeers      <- v .:? "TargetNumberOfActiveBigLedgerPeers"
-                                                 .!= targetNumberOfActiveBigLedgerPeers deadlineTargets
+      dmqcTargetOfRootPeers                 <- Last <$> v .:? "TargetNumberOfRootPeers"
+      dmqcTargetOfKnownPeers                <- Last <$> v .:? "TargetNumberOfKnownPeers"
+      dmqcTargetOfEstablishedPeers          <- Last <$> v .:? "TargetNumberOfEstablishedPeers"
+      dmqcTargetOfActivePeers               <- Last <$> v .:? "TargetNumberOfActivePeers"
+      dmqcTargetOfKnownBigLedgerPeers       <- Last <$> v .:? "TargetNumberOfKnownBigLedgerPeers"
+      dmqcTargetOfEstablishedBigLedgerPeers <- Last <$> v .:? "TargetNumberOfEstablishedBigLedgerPeers"
+      dmqcTargetOfActiveBigLedgerPeers      <- Last <$> v .:? "TargetNumberOfActiveBigLedgerPeers"
 
-      dmqcProtocolIdleTimeout <- v .:? "ProtocolIdleTimeout"
-                                   .!= defaultProtocolIdleTimeout
-
-      dmqcChurnInterval <- v .:? "ChurnInterval"
-                             .!= defaultDeadlineChurnInterval
-
-      dmqcPeerSharing <- v .:? "PeerSharing"
-                           .!= PeerSharingEnabled
-      networkMagic <- v .: "NetworkMagic"
+      dmqcAcceptedConnectionsLimit <- Last <$> v .:? "AcceptedConnectionsLimit"
+      dmqcProtocolIdleTimeout <- Last <$> v .:? "ProtocolIdleTimeout"
+      dmqcChurnInterval <- Last <$> v .:? "ChurnInterval"
 
       pure $
         Configuration
-          { dmqcAcceptedConnectionsLimit
+          { dmqcIPv4 = Last dmqcIPv4
+          , dmqcIPv6 = Last dmqcIPv6
+          , dmqcPortNumber
+          , dmqcConfigFile = mempty
+          , dmqcTopologyFile = mempty
+          , dmqcAcceptedConnectionsLimit
           , dmqcDiffusionMode
           , dmqcTargetOfRootPeers
           , dmqcTargetOfKnownPeers
@@ -111,27 +231,26 @@ instance FromJSON (Configuration ntnFd ntnAddr ntcFd ntcAddr) where
           , dmqcProtocolIdleTimeout
           , dmqcChurnInterval
           , dmqcPeerSharing
-          , dmqcNetworkMagic = NetworkMagic networkMagic
+          , dmqcNetworkMagic
           }
-    where
-      -- TODO: use DMQ's own default values
-      deadlineTargets = defaultDeadlineTargets Relay
 
 -- | Read the `DMQConfiguration` from the specified file.
 --
 readConfigurationFile
   :: FilePath
-  -> IO (Either Text (Configuration ntnFd ntnAddr ntcFd ntcAddr))
+  -> IO (Either Text PartialConfig)
 readConfigurationFile nc = do
-  eBs <- try $ BS.readFile nc
-
-  case eBs of
+  ebs <- try $ BS.readFile nc
+  case ebs of
+    -- use the default configuration if it's not on disk
+    Left e | isDoesNotExistError e
+           -> return $ Right mempty
     Left e -> return . Left $ handler e
-    Right bs ->
-      let bs' = LBS.fromStrict bs in
-        case eitherDecode bs' of
-          Left err -> return $ Left (handlerJSON err)
-          Right t  -> return $ Right t
+    Right bs -> do
+      let bs' = LBS.fromStrict bs
+      case eitherDecode bs' of
+        Left err -> return $ Left (handlerJSON err)
+        Right t  -> return (Right t)
   where
     handler :: IOError -> Text
     handler e = Text.pack $ "DMQ.Configurations.readConfigurationFile: "
@@ -144,41 +263,38 @@ readConfigurationFile nc = do
 
 readConfigurationFileOrError
   :: FilePath
-  -> IO (Configuration ntnFd ntnAddr ntcFd ntcAddr)
+  -> IO PartialConfig
 readConfigurationFileOrError nc =
       readConfigurationFile nc
-  >>= either (\err -> error $ "DMQ.Topology.readTopologyFile: "
+  >>= either (\err -> error $ "DMQ.Topology.eeadConfigurationFile: "
                            <> Text.unpack err)
              pure
 
 mkDiffusionConfiguration
-  :: CLIOptions
-  -> NetworkTopology extraConfig extraFlags
-  -> Configuration ntnFd SockAddr ntcFd ntcAddr
-  -> IO (Diffusion.Configuration extraFlags IO ntnFd SockAddr ntcFd ntcAddr)
+  :: Configuration
+  -> NetworkTopology NoExtraConfig NoExtraFlags
+  -> IO (Diffusion.Configuration NoExtraFlags IO ntnFd SockAddr ntcFd ntcAddr)
 mkDiffusionConfiguration
-  CLIOptions {
-    ipv4
-  , ipv6
-  , port
+  Configuration {
+    dmqcIPv4                              = I ipv4
+  , dmqcIPv6                              = I ipv6
+  , dmqcPortNumber                        = I portNumber
+  , dmqcDiffusionMode                     = I diffusionMode
+  , dmqcAcceptedConnectionsLimit          = I acceptedConnectionsLimit
+  , dmqcTargetOfRootPeers                 = I targetOfRootPeers
+  , dmqcTargetOfKnownPeers                = I targetOfKnownPeers
+  , dmqcTargetOfEstablishedPeers          = I targetOfEstablishedPeers
+  , dmqcTargetOfActivePeers               = I targetOfActivePeers
+  , dmqcTargetOfKnownBigLedgerPeers       = I targetOfKnownBigLedgerPeers
+  , dmqcTargetOfEstablishedBigLedgerPeers = I targetOfEstablishedBigLedgerPeers
+  , dmqcTargetOfActiveBigLedgerPeers      = I targetOfActiveBigLedgerPeers
+  , dmqcProtocolIdleTimeout               = I protocolIdleTimeout
+  , dmqcChurnInterval                     = I churnInterval
+  , dmqcPeerSharing                       = I peerSharing
   }
   nt@NetworkTopology {
     useLedgerPeers
   , peerSnapshotPath
-  }
-  Configuration {
-    dmqcAcceptedConnectionsLimit
-  , dmqcDiffusionMode
-  , dmqcTargetOfRootPeers
-  , dmqcTargetOfKnownPeers
-  , dmqcTargetOfEstablishedPeers
-  , dmqcTargetOfActivePeers
-  , dmqcTargetOfKnownBigLedgerPeers
-  , dmqcTargetOfEstablishedBigLedgerPeers
-  , dmqcTargetOfActiveBigLedgerPeers
-  , dmqcProtocolIdleTimeout
-  , dmqcChurnInterval
-  , dmqcPeerSharing
   } = do
     case (ipv4, ipv6) of
       (Nothing, Nothing) ->
@@ -190,7 +306,7 @@ mkDiffusionConfiguration
           Just . addrAddress . NonEmpty.head
             <$> getAddrInfo (Just hints)
                             (Just (show ipv4'))
-                            (Just (show port))
+                            (Just (show portNumber))
         Nothing -> return Nothing
     addrIPv6 <-
       case ipv6 of
@@ -198,7 +314,7 @@ mkDiffusionConfiguration
           Just . addrAddress . NonEmpty.head
             <$> getAddrInfo (Just hints)
                             (Just (show ipv6'))
-                            (Just (show port))
+                            (Just (show portNumber))
         Nothing -> return Nothing
 
     publicPeerSelectionVar <- makePublicPeerSelectionStateVar
@@ -217,28 +333,28 @@ mkDiffusionConfiguration
         Diffusion.dcIPv4Address              = Right <$> addrIPv4
       , Diffusion.dcIPv6Address              = Right <$> addrIPv6
       , Diffusion.dcLocalAddress             = Nothing
-      , Diffusion.dcAcceptedConnectionsLimit = dmqcAcceptedConnectionsLimit
-      , Diffusion.dcMode                     = dmqcDiffusionMode
+      , Diffusion.dcAcceptedConnectionsLimit = acceptedConnectionsLimit
+      , Diffusion.dcMode                     = diffusionMode
       , Diffusion.dcPublicPeerSelectionVar   = publicPeerSelectionVar
       , Diffusion.dcPeerSelectionTargets     =
           PeerSelectionTargets {
-            targetNumberOfRootPeers                 = dmqcTargetOfRootPeers
-          , targetNumberOfKnownPeers                = dmqcTargetOfKnownPeers
-          , targetNumberOfEstablishedPeers          = dmqcTargetOfEstablishedPeers
-          , targetNumberOfActivePeers               = dmqcTargetOfActivePeers
-          , targetNumberOfKnownBigLedgerPeers       = dmqcTargetOfKnownBigLedgerPeers
-          , targetNumberOfEstablishedBigLedgerPeers = dmqcTargetOfEstablishedBigLedgerPeers
-          , targetNumberOfActiveBigLedgerPeers      = dmqcTargetOfActiveBigLedgerPeers
+            targetNumberOfRootPeers                 = targetOfRootPeers
+          , targetNumberOfKnownPeers                = targetOfKnownPeers
+          , targetNumberOfEstablishedPeers          = targetOfEstablishedPeers
+          , targetNumberOfActivePeers               = targetOfActivePeers
+          , targetNumberOfKnownBigLedgerPeers       = targetOfKnownBigLedgerPeers
+          , targetNumberOfEstablishedBigLedgerPeers = targetOfEstablishedBigLedgerPeers
+          , targetNumberOfActiveBigLedgerPeers      = targetOfActiveBigLedgerPeers
           }
       , Diffusion.dcReadLocalRootPeers       = readTVar localRootsVar
       , Diffusion.dcReadPublicRootPeers      = readTVar publicRootsVar
       , Diffusion.dcReadLedgerPeerSnapshot   = readTVar ledgerPeerSnapshotVar
-      , Diffusion.dcPeerSharing              = dmqcPeerSharing
+      , Diffusion.dcPeerSharing              = peerSharing
       , Diffusion.dcReadUseLedgerPeers       = readTVar useLedgerVar
-      , Diffusion.dcProtocolIdleTimeout      = dmqcProtocolIdleTimeout
+      , Diffusion.dcProtocolIdleTimeout      = protocolIdleTimeout
       , Diffusion.dcTimeWaitTimeout          = defaultTimeWaitTimeout
-      , Diffusion.dcDeadlineChurnInterval    = dmqcChurnInterval
-      , Diffusion.dcBulkChurnInterval        = dmqcChurnInterval
+      , Diffusion.dcDeadlineChurnInterval    = churnInterval
+      , Diffusion.dcBulkChurnInterval        = churnInterval
       , Diffusion.dcMuxForkPolicy            = Diffusion.noBindForkPolicy -- TODO: Make option flag for responderForkPolicy
       , Diffusion.dcLocalMuxForkPolicy       = Diffusion.noBindForkPolicy -- TODO: Make option flag for responderForkPolicy
       , Diffusion.dcEgressPollInterval       = 0                          -- TODO: Make option flag for egress poll interval

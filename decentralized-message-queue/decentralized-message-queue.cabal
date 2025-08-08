@@ -46,6 +46,8 @@ library
     DMQ.Protocol.SigSubmission.Codec
 
   build-depends:
+    acts,
+    acts-generic,
     aeson >=2.1.1.0 && <3,
     base >=4.14 && <4.22,
     bytestring >=0.10 && <0.13,
@@ -54,6 +56,7 @@ library
     contra-tracer >=0.1 && <0.3,
     deepseq >=1.0 && <1.6,
     dns >=1.0 && <4.3,
+    generic-data,
     hashable >=1.0 && <1.6,
     io-classes:{io-classes, si-timers, strict-mvar, strict-stm} ^>=1.8.0.1,
     iproute ^>=1.7.15,
@@ -81,6 +84,8 @@ executable dmq-exe
     -rtsopts
 
   build-depends:
+    acts,
+    aeson,
     base,
     contra-tracer >=0.1 && <0.3,
     decentralized-message-queue,

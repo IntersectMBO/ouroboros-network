@@ -1,5 +1,4 @@
 {-# LANGUAGE DeriveGeneric     #-}
-{-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -19,20 +18,24 @@ import Ouroboros.Network.OrphanInstances (localRootPeersGroupsFromJSON,
            networkTopologyFromJSON, networkTopologyToJSON)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot)
 
-instance FromJSON (NetworkTopology () ()) where
-  parseJSON = networkTopologyFromJSON
-                (localRootPeersGroupsFromJSON (\_ -> pure ()))
-                (\_ -> pure ())
+data NoExtraConfig = NoExtraConfig
+  deriving Show
+data NoExtraFlags  = NoExtraFlags
+  deriving (Eq, Show)
 
-instance ToJSON (NetworkTopology () ()) where
+instance FromJSON (NetworkTopology NoExtraConfig NoExtraFlags) where
+  parseJSON = networkTopologyFromJSON
+                (localRootPeersGroupsFromJSON (\_ -> pure NoExtraFlags))
+                (\_ -> pure NoExtraConfig)
+
+instance ToJSON (NetworkTopology NoExtraConfig NoExtraFlags) where
   toJSON = networkTopologyToJSON (const Nothing) (const Nothing)
 
 -- | Read the `NetworkTopology` configuration from the specified file.
 --
 readTopologyFile
-  :: FromJSON (NetworkTopology extraConfig extraFlags)
-  => FilePath
-  -> IO (Either Text (NetworkTopology extraConfig extraFlags))
+  :: FilePath
+  -> IO (Either Text (NetworkTopology NoExtraConfig NoExtraFlags))
 readTopologyFile nc = do
   eBs <- try $ BS.readFile nc
 
@@ -56,9 +59,8 @@ readTopologyFile nc = do
       ]
 
 readTopologyFileOrError
-  :: FromJSON (NetworkTopology extraConfig extraFlags)
-  => FilePath
-  -> IO (NetworkTopology extraConfig extraFlags)
+  :: FilePath
+  -> IO (NetworkTopology NoExtraConfig NoExtraFlags)
 readTopologyFileOrError nc =
       readTopologyFile nc
   >>= either (\err -> error $ "DMQ.Topology.readTopologyFile: "
