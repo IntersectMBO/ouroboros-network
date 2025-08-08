@@ -131,7 +131,8 @@ getMempoolReader (Mempool mempool) =
             \idx -> zipWith f [idx + 1 ..] (toList $ Seq.drop idx seq),
           -- why do I need to use `pred`?
           mempoolLookupTx   = flip Seq.lookup seq . pred,
-          mempoolHasTx      = \txid -> isJust $ find (\tx -> getTxId tx == txid) seq
+          mempoolHasTx      = \txid -> isJust $ find (\tx -> getTxId tx == txid) seq,
+          mempoolLastTicket = Just $ Seq.length seq
        }
 
     f :: Int -> Tx txid -> (txid, Int, SizeInBytes)
