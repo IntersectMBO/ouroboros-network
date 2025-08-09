@@ -12,10 +12,12 @@
 module Ouroboros.Network.Protocol.TxSubmission2.Codec
   ( codecTxSubmission2
   , anncodecTxSubmission2
+  , anncodecTxSubmission2'
   , codecTxSubmission2Id
   , byteLimitsTxSubmission2
   , timeLimitsTxSubmission2
   , WithBytes (..)
+  , WithByteSpan (..)
   ) where
 
 import Control.Monad.Class.MonadST
@@ -102,6 +104,8 @@ encodeWithBytes =
 --
 newtype WithByteSpan a = WithByteSpan (a, CBOR.ByteOffset, CBOR.ByteOffset)
 
+-- | An 'AnnotatedCodec' paired with `WithBytes` functor.
+--
 anncodecTxSubmission2
   :: forall (txid :: Type) (tx :: Type) m.
      MonadST m
@@ -113,23 +117,11 @@ anncodecTxSubmission2
   -- ^ decode transaction
   -> AnnotatedCodec (TxSubmission2 txid (WithBytes tx)) CBOR.DeserialiseFailure m ByteString
 anncodecTxSubmission2 encodeTxId decodeTxId
-                                 decodeTx =
-    mkCodecCborLazyBS
-      (encodeTxSubmission2 encodeTxId encodeWithBytes)
-      decode
+                                 decodeTx
+    =
+    anncodecTxSubmission2' mkWithBytes encodeTxId decodeTxId
+                                       encodeWithBytes decodeTx
   where
-    decode :: forall (st :: TxSubmission2 txid (WithBytes tx)).
-              ActiveState st
-           => StateToken st
-           -> forall s. CBOR.Decoder s (Annotator ByteString st)
-    decode =
-      decodeTxSubmission2 @WithBytes
-                          @WithByteSpan
-                          @ByteString
-                          mkWithBytes
-                          decodeWithByteSpan
-                          decodeTxId decodeTx
-
     mkWithBytes
       :: ByteString
       -> WithByteSpan (ByteString -> a)
@@ -141,6 +133,45 @@ anncodecTxSubmission2 encodeTxId decodeTxId
         }
       where
         cborBytes = BSL.take (end - start) $ BSL.drop start bytes
+
+
+-- | An 'AnnotatedCodec' with a custom `withBytes` functor.
+--
+-- This annotated codec allows to annotated sub-structures of `tx` with bytes
+-- received from the network, as well as annotated the whole `tx`.  An example
+-- is `anncodecTxSubmission2` which only annotates `tx`.
+--
+anncodecTxSubmission2'
+  :: forall (txid :: Type) (tx :: Type) m (withBytes :: Type -> Type).
+     MonadST m
+  => (forall a. ByteString -> WithByteSpan (ByteString -> a) -> withBytes a)
+  -- ^ `withBytes` constructor
+  -> (txid -> CBOR.Encoding)
+  -- ^ encode 'txid'
+  -> (forall s . CBOR.Decoder s txid)
+  -- ^ decode 'txid'
+  -> (withBytes tx -> CBOR.Encoding)
+  -- ^ encode `tx`
+  -> (forall s . CBOR.Decoder s (ByteString -> tx))
+  -- ^ decode transaction
+  -> AnnotatedCodec (TxSubmission2 txid (withBytes tx)) CBOR.DeserialiseFailure m ByteString
+anncodecTxSubmission2' mkWithBytes encodeTxId decodeTxId
+                                   encodeTx   decodeTx =
+    mkCodecCborLazyBS
+      (encodeTxSubmission2 encodeTxId encodeTx)
+      decode
+  where
+    decode :: forall (st :: TxSubmission2 txid (withBytes tx)).
+              ActiveState st
+           => StateToken st
+           -> forall s. CBOR.Decoder s (Annotator ByteString st)
+    decode =
+      decodeTxSubmission2 @withBytes
+                          @WithByteSpan
+                          @ByteString
+                          mkWithBytes
+                          decodeWithByteSpan
+                          decodeTxId decodeTx
 
     decodeWithByteSpan :: CBOR.Decoder s a -> CBOR.Decoder s (WithByteSpan a)
     decodeWithByteSpan = fmap WithByteSpan . CBOR.decodeWithByteSpan
