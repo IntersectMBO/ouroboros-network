@@ -17,7 +17,8 @@ module Ouroboros.Network.Protocol.TxSubmission2.Codec
   , byteLimitsTxSubmission2
   , timeLimitsTxSubmission2
   , WithBytes (..)
-  , WithByteSpan (..)
+    -- * CBOR Utils
+  , encodeBytes
   ) where
 
 import Control.Monad.Class.MonadST
@@ -93,12 +94,15 @@ data WithBytes a = WithBytes {
     }
   deriving (Show, Eq)
 
-encodeWithBytes :: WithBytes a -> CBOR.Encoding
-encodeWithBytes =
+encodeBytes :: ByteString -> CBOR.Encoding
+encodeBytes =
     -- this should be equivalent to
     -- `CBOR.encodePreEncoded . BSL.toStrict . cborBytes`
     -- but it doesn't copy the bytes
-    foldMap CBOR.encodePreEncoded . BSL.toChunks . cborBytes
+    foldMap CBOR.encodePreEncoded . BSL.toChunks
+
+encodeWithBytes :: WithBytes a -> CBOR.Encoding
+encodeWithBytes = encodeBytes . cborBytes
 
 -- | A bytespan functor.
 --
@@ -119,62 +123,60 @@ anncodecTxSubmission2
 anncodecTxSubmission2 encodeTxId decodeTxId
                                  decodeTx
     =
-    anncodecTxSubmission2' mkWithBytes encodeTxId decodeTxId
-                                       encodeWithBytes decodeTx
+    anncodecTxSubmission2' WithBytes encodeTxId decodeTxId
+                                     encodeTx   decodeTx
   where
-    mkWithBytes
-      :: ByteString
-      -> WithByteSpan (ByteString -> a)
-      -> WithBytes a
-    mkWithBytes bytes (WithByteSpan (cborPayloadFn, start, end)) =
-        WithBytes {
-          cborBytes,
-          cborPayload = cborPayloadFn cborBytes
-        }
-      where
-        cborBytes = BSL.take (end - start) $ BSL.drop start bytes
+    encodeTx :: WithBytes tx -> CBOR.Encoding
+    encodeTx = encodeWithBytes
 
 
--- | An 'AnnotatedCodec' with a custom `withBytes` functor.
---
--- This annotated codec allows to annotated sub-structures of `tx` with bytes
--- received from the network, as well as annotated the whole `tx`.  An example
--- is `anncodecTxSubmission2` which only annotates `tx`.
+-- | An 'AnnotatedCodec' with a custom `txWithBytes` wrapper of `tx`,
+-- e.g. `txWithBytes ~ WithBytes tx` as in `anncodecTxSubmission2`.
 --
 anncodecTxSubmission2'
-  :: forall (txid :: Type) (tx :: Type) m (withBytes :: Type -> Type).
+  :: forall (txid :: Type) (tx :: Type) (txWithBytes :: Type) m.
      MonadST m
-  => (forall a. ByteString -> WithByteSpan (ByteString -> a) -> withBytes a)
+  => (ByteString -> tx -> txWithBytes)
   -- ^ `withBytes` constructor
   -> (txid -> CBOR.Encoding)
   -- ^ encode 'txid'
   -> (forall s . CBOR.Decoder s txid)
   -- ^ decode 'txid'
-  -> (withBytes tx -> CBOR.Encoding)
+  -> (txWithBytes -> CBOR.Encoding)
   -- ^ encode `tx`
   -> (forall s . CBOR.Decoder s (ByteString -> tx))
   -- ^ decode transaction
-  -> AnnotatedCodec (TxSubmission2 txid (withBytes tx)) CBOR.DeserialiseFailure m ByteString
+  -> AnnotatedCodec (TxSubmission2 txid txWithBytes) CBOR.DeserialiseFailure m ByteString
 anncodecTxSubmission2' mkWithBytes encodeTxId decodeTxId
                                    encodeTx   decodeTx =
     mkCodecCborLazyBS
       (encodeTxSubmission2 encodeTxId encodeTx)
       decode
   where
-    decode :: forall (st :: TxSubmission2 txid (withBytes tx)).
+    decode :: forall (st :: TxSubmission2 txid txWithBytes).
               ActiveState st
            => StateToken st
            -> forall s. CBOR.Decoder s (Annotator ByteString st)
     decode =
-      decodeTxSubmission2 @withBytes
+      decodeTxSubmission2 @tx
+                          @txWithBytes
                           @WithByteSpan
                           @ByteString
-                          mkWithBytes
+                          mkWithBytes'
                           decodeWithByteSpan
                           decodeTxId decodeTx
 
     decodeWithByteSpan :: CBOR.Decoder s a -> CBOR.Decoder s (WithByteSpan a)
     decodeWithByteSpan = fmap WithByteSpan . CBOR.decodeWithByteSpan
+
+    mkWithBytes' :: ByteString
+                 -> WithByteSpan (ByteString -> tx)
+                 -> txWithBytes
+    mkWithBytes' bytes (WithByteSpan (fn, start, end)) =
+        mkWithBytes cborBytes (fn bytes)
+      where
+        cborBytes = BSL.take (end - start) $ BSL.drop start bytes
+
 
 
 --
@@ -305,9 +307,10 @@ codecTxSubmission2 encodeTxId decodeTxId
            -> forall s. CBOR.Decoder s (SomeMessage st)
     decode' stok =
       mapAnnotator <$>
-        decodeTxSubmission2 @Identity
-                            @Identity
-                            @()
+        decodeTxSubmission2 @tx            -- tx without bytes
+                            @(Identity tx) -- tx with bytes
+                            @Identity      -- withByteSpan functor
+                            @()            -- bytes
                             mkWithBytes
                             decodeWithByteSpan
                             decodeTxId
@@ -340,6 +343,7 @@ encodeTxSubmission2 encodeTxId encodeTx = encode
     encode MsgInit =
         CBOR.encodeListLen 1
      <> CBOR.encodeWord 6
+
     encode (MsgRequestTxIds blocking (NumTxIdsToAck ackNo) (NumTxIdsToReq reqNo)) =
         CBOR.encodeListLen 4
      <> CBOR.encodeWord 0
@@ -391,14 +395,15 @@ encodeTxSubmission2 encodeTxId encodeTx = encode
 -- * offsets used by the tx's annotator, e.g. `byteOffsetF`
 --
 decodeTxSubmission2
-    :: forall (withBytes    :: Type -> Type) -- tx annotator functor
+    :: forall (tx           :: Type)         -- tx without bytes
+              (txWithBytes  :: Type)         -- tx with bytes
               (withByteSpan :: Type -> Type) -- withByteSpan functor
               (bytes        :: Type)         -- annotation bytes
-              (txid :: Type) (tx :: Type)
-              (st :: TxSubmission2 txid (withBytes tx))
+              (txid :: Type)
+              (st :: TxSubmission2 txid txWithBytes)
               s.
        ActiveState st
-    => (forall a. bytes -> withByteSpan (bytes -> a) -> withBytes a)
+    => (bytes -> withByteSpan (bytes -> tx) -> txWithBytes)
     -- ^ mkWithBytes: smart constructor for `withBytes` functor.
     -> (forall a s'. CBOR.Decoder s' a -> CBOR.Decoder s' (withByteSpan a))
     -- ^ turn a `CBOR.Decoder` into a decoder of `withByteSpan a`, e.g.
