@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns     #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE NamedFieldPuns   #-}
+{-# LANGUAGE PolyKinds        #-}
 {-# LANGUAGE RankNTypes       #-}
 module Test.Ouroboros.Network.Protocol.Utils where
 
@@ -9,6 +10,7 @@ import Codec.CBOR.Read qualified as CBOR
 import Codec.CBOR.Term qualified as CBOR
 import Data.ByteString.Lazy (ByteString)
 import Data.ByteString.Lazy qualified as LBS
+import Data.Kind (Type)
 
 import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Stateful.Codec qualified as Stateful
@@ -30,8 +32,8 @@ splits3 bs =
 -- that is decodeable by CBOR.decodeTerm.
 --
 prop_codec_cborM
-  :: forall ps m. Monad m
-  => Codec ps CBOR.DeserialiseFailure m LBS.ByteString
+  :: forall ps m (f :: ps -> Type). Monad m
+  => CodecF ps CBOR.DeserialiseFailure m f LBS.ByteString
   -> AnyMessage ps
   -> m Property
 prop_codec_cborM codec (AnyMessage msg)
@@ -39,6 +41,7 @@ prop_codec_cborM codec (AnyMessage msg)
         Left err                -> return $ counterexample (show err) False
         Right (leftover, _term) -> return $ counterexample (show leftover)
                                           $ LBS.null leftover
+                                          --
 
 
 -- | This property checks that the encoder is producing a valid CBOR.  It
@@ -46,8 +49,8 @@ prop_codec_cborM codec (AnyMessage msg)
 -- bytestring which is the fed into 'CBOR.validFlatTerm'.
 --
 prop_codec_valid_cbor_encoding
-  :: forall ps.
-     Codec ps CBOR.DeserialiseFailure IO ByteString
+  :: forall ps (f :: ps -> Type).
+     CodecF ps CBOR.DeserialiseFailure IO f ByteString
   -> AnyMessage ps
   -> Property
 prop_codec_valid_cbor_encoding Codec {encode} (AnyMessage msg) =
