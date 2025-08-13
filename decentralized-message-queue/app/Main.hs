@@ -1,7 +1,9 @@
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Main where
 
+import Control.Exception (throwIO)
 import Control.Monad (void)
 import Control.Tracer (Tracer (..), nullTracer, traceWith)
 
@@ -11,6 +13,9 @@ import Data.Functor.Contravariant ((>$<))
 import Data.Void (Void)
 import Options.Applicative
 import System.Random (newStdGen, split)
+
+import Cardano.KESAgent.Protocols.StandardCrypto (StandardCrypto)
+import Cardano.KESAgent.KES.Evolution qualified as KES
 
 import DMQ.Configuration
 import DMQ.Configuration.CLIOptions (parseCLIOptions)
@@ -48,14 +53,20 @@ runDMQ commandLineConfig = do
     let dmqConfig@Configuration {
           dmqcPrettyLog            = I prettyLog,
           dmqcTopologyFile         = I topologyFile,
+          dmqcShelleyGenesisFile   = I genesisFile,
           dmqcHandshakeTracer      = I handshakeTracer,
           dmqcLocalHandshakeTracer = I localHandshakeTracer
         } = config' <> commandLineConfig
             `act`
             defaultConfiguration
-
     let tracer :: ToJSON ev => Tracer IO (WithEventType ev)
         tracer = dmqTracer prettyLog
+
+    res <- KES.evolutionConfigFromGenesisFile genesisFile
+    evolutionConfig <- case res of
+      Left err -> traceWith tracer (WithEventType "ShelleyGenesisFile" err)
+               >> throwIO (userError $ err)
+      Right ev -> return ev
 
     traceWith tracer (WithEventType "Configuration" dmqConfig)
     nt <- readTopologyFileOrError topologyFile
@@ -64,7 +75,7 @@ runDMQ commandLineConfig = do
     stdGen <- newStdGen
     let (psRng, policyRng) = split stdGen
 
-    withNodeKernel psRng $ \nodeKernel -> do
+    withNodeKernel @StandardCrypto evolutionConfig psRng $ \nodeKernel -> do
       dmqDiffusionConfiguration <- mkDiffusionConfiguration dmqConfig nt
 
       let dmqNtNApps =

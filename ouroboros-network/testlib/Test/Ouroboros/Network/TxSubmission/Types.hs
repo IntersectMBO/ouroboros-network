@@ -47,6 +47,7 @@ import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 
 import Data.ByteString.Lazy (ByteString)
+import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
 import Network.TypedProtocol.Codec
@@ -121,12 +122,21 @@ getMempoolReader = Mempool.getReader getTxId getTxAdvSize
 
 getMempoolWriter :: forall txid m.
                     ( MonadSTM m
+                    , MonadThrow m
                     , Ord txid
                     , Eq txid
+                    , Typeable txid
+                    , Show txid
                     )
                  => Mempool m (Tx txid)
                  -> TxSubmissionMempoolWriter txid (Tx txid) Int m
-getMempoolWriter = Mempool.getWriter getTxId getTxValid
+getMempoolWriter = Mempool.getWriter getTxId
+                                     (pure ())
+                                     (\_ tx -> if getTxValid tx
+                                               then Right ()
+                                               else Left ()
+                                     )
+                                     (\_ -> False)
 
 
 txSubmissionCodec2 :: MonadST m
