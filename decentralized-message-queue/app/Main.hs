@@ -1,4 +1,5 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module Main where
 
@@ -11,6 +12,8 @@ import Data.Functor.Contravariant ((>$<))
 import Data.Void (Void)
 import Options.Applicative
 import System.Random (newStdGen, split)
+
+import Cardano.KESAgent.Protocols.StandardCrypto (StandardCrypto)
 
 import DMQ.Configuration
 import DMQ.Configuration.CLIOptions (parseCLIOptions)
@@ -57,7 +60,6 @@ runDMQ commandLineConfig = do
         } = config' <> commandLineConfig
             `act`
             defaultConfiguration
-
     let tracer :: ToJSON ev => Tracer IO (WithEventType ev)
         tracer = dmqTracer prettyLog
 
@@ -68,7 +70,7 @@ runDMQ commandLineConfig = do
     stdGen <- newStdGen
     let (psRng, policyRng) = split stdGen
 
-    withNodeKernel psRng $ \nodeKernel -> do
+    withNodeKernel @StandardCrypto psRng $ \nodeKernel -> do
       dmqDiffusionConfiguration <- mkDiffusionConfiguration dmqConfig nt
 
       let dmqNtNApps =
@@ -86,7 +88,10 @@ runDMQ commandLineConfig = do
             let sigSize _ = 0 -- TODO
                 maxMsgs = 1000 -- TODO: make this dynamic?
                 mempoolReader = Mempool.getReader sigId sigSize (mempool nodeKernel)
-                mempoolWriter = Mempool.getWriter sigId (const True) (mempool nodeKernel)
+                mempoolWriter = Mempool.getWriter sigId (pure ())
+                                                        (\_ _ -> Right () :: Either Void ())
+                                                        (\_ -> True)
+                                                        (mempool nodeKernel)
              in NtC.ntcApps mempoolReader mempoolWriter maxMsgs
                             (NtC.dmqCodecs encodeReject decodeReject)
           dmqDiffusionArguments =

@@ -22,10 +22,10 @@ import Ouroboros.Network.RethrowPolicy (ioErrorRethrowPolicy,
            muxErrorRethrowPolicy)
 
 diffusionApplications
-  :: NodeKernel ntnAddr m
+  :: NodeKernel crypto ntnAddr m
   -> Configuration
   -> Diffusion.Configuration NoExtraFlags m ntnFd ntnAddr ntcFd ntcAddr
-  -> NTN.LimitsAndTimeouts ntnAddr
+  -> NTN.LimitsAndTimeouts crypto ntnAddr
   -> NTN.Apps ntnAddr m a ()
   -> NTC.Apps ntcAddr m ()
   -> PeerSelectionPolicy ntnAddr m

@@ -14,6 +14,7 @@ module DMQ.NodeToClient
   ) where
 
 import Data.ByteString.Lazy (ByteString)
+import Data.Typeable
 import Data.Void
 import Data.Word
 
@@ -26,6 +27,8 @@ import Control.Tracer (Tracer, nullTracer)
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Term qualified as CBOR
+
+import Cardano.KESAgent.KES.Crypto (Crypto (..))
 
 import Network.Mux qualified as Mx
 import Network.TypedProtocol.Codec hiding (decode, encode)
@@ -90,10 +93,13 @@ data Codecs m sig =
                CBOR.DeserialiseFailure m ByteString)
   }
 
-dmqCodecs :: MonadST m
+dmqCodecs :: ( MonadST m
+             , Crypto crypto
+             , Typeable crypto
+             )
           => (SigMempoolFail -> CBOR.Encoding)
           -> (forall s. CBOR.Decoder s SigMempoolFail)
-          -> Codecs m Sig
+          -> Codecs m (Sig crypto)
 dmqCodecs encodeReject' decodeReject' =
   Codecs {
     msgSubmissionCodec   = codecLocalMsgSubmission encodeReject' decodeReject'

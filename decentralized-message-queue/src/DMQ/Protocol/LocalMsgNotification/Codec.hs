@@ -7,7 +7,10 @@
 
 -- | The codec for the local message notification miniprotocol
 --
-module DMQ.Protocol.LocalMsgNotification.Codec (codecLocalMsgNotification) where
+module DMQ.Protocol.LocalMsgNotification.Codec
+  ( codecLocalMsgNotification
+  , codecLocalMsgNotification'
+  ) where
 
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
@@ -16,7 +19,10 @@ import Control.Monad.Class.MonadST
 import Data.ByteString.Lazy (ByteString)
 import Data.Functor ((<&>))
 import Data.List.NonEmpty qualified as NonEmpty
+import Data.Typeable
 import Text.Printf
+
+import Cardano.KESAgent.KES.Crypto (Crypto (..))
 
 import Ouroboros.Network.Protocol.Codec.Utils qualified as Utils
 
@@ -29,16 +35,19 @@ import Network.TypedProtocol.Codec.CBOR
 -- | The codec for the loca message notification miniprotocol instantiated for dmq-node.
 --
 codecLocalMsgNotification
-  :: forall m.
-     MonadST m
-  => AnnotatedCodec (LocalMsgNotification Sig) CBOR.DeserialiseFailure m ByteString
+  :: forall crypto m.
+     ( MonadST m
+     , Crypto crypto
+     , Typeable crypto
+     )
+  => AnnotatedCodec (LocalMsgNotification (Sig crypto)) CBOR.DeserialiseFailure m ByteString
 codecLocalMsgNotification =
     codecLocalMsgNotification' mkSigWithBytes SigSubmission.encodeSig SigSubmission.decodeSig
   where
     mkSigWithBytes
       :: ByteString
-      -> Utils.WithByteSpan (ByteString -> SigRawWithSignedBytes)
-      -> Sig
+      -> Utils.WithByteSpan (ByteString -> SigRawWithSignedBytes crypto)
+      -> Sig crypto
     mkSigWithBytes bytes (Utils.WithByteSpan (f, start, end)) =
       SigWithBytes {
         sigRawBytes = Utils.bytesBetweenOffsets start end bytes,

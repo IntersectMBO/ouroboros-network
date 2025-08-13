@@ -59,3 +59,13 @@ package acts
   flags: -finitary
 
 allow-newer: quickcheck-instances:QuickCheck
+
+-- kes-agent is not yet in CHaP, so we pull it from its GitHub repo
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/kes-agent
+  tag: 2a9ac9c017aa33c4f64b052c2d91babbbed842d3
+  --sha256: sha256-ztllx/uDQqPeV8lcmapJTB9y5bjb9HEHYK+4+x5JxiI=
+  subdir: kes-agent
+
+allow-newer: kes-agent:typed-protocols

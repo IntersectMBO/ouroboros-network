@@ -10,7 +10,10 @@ import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 import Control.Monad.Class.MonadST
 import Data.ByteString.Lazy (ByteString)
+import Data.Typeable
 import Text.Printf
+
+import Cardano.KESAgent.KES.Crypto (Crypto (..))
 
 import DMQ.Protocol.LocalMsgSubmission.Type
 import DMQ.Protocol.SigSubmission.Codec qualified as SigSubmission
@@ -20,11 +23,14 @@ import Network.TypedProtocol.Codec.CBOR
 import Ouroboros.Network.Protocol.LocalTxSubmission.Codec qualified as LTX
 
 codecLocalMsgSubmission
-  :: forall m.
-     MonadST m
+  :: forall crypto m.
+     ( MonadST m
+     , Crypto crypto
+     , Typeable crypto
+     )
   => (SigMempoolFail -> CBOR.Encoding)
   -> (forall s. CBOR.Decoder s SigMempoolFail)
-  -> AnnotatedCodec (LocalMsgSubmission Sig) CBOR.DeserialiseFailure m ByteString
+  -> AnnotatedCodec (LocalMsgSubmission (Sig crypto)) CBOR.DeserialiseFailure m ByteString
 codecLocalMsgSubmission =
   LTX.anncodecLocalTxSubmission' SigWithBytes SigSubmission.encodeSig SigSubmission.decodeSig
 
