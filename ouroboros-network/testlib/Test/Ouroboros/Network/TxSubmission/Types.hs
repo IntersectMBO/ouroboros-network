@@ -101,13 +101,14 @@ maxTxSize = 65536
 
 type TxId = Int
 
-emptyMempool :: MonadSTM m => m (Mempool m (Tx txid))
+emptyMempool :: MonadSTM m => m (Mempool m txid (Tx txid))
 emptyMempool = Mempool.empty
 
-newMempool :: MonadSTM m => [Tx txid] -> m (Mempool m (Tx txid))
-newMempool   = Mempool.new
+newMempool :: (MonadSTM m, Ord txid)
+           => [Tx txid] -> m (Mempool m txid (Tx txid))
+newMempool = Mempool.new getTxId
 
-readMempool :: MonadSTM m => Mempool m (Tx txid) -> m [Tx txid]
+readMempool :: MonadSTM m => Mempool m txid (Tx txid) -> m [Tx txid]
 readMempool  = Mempool.read
 
 getMempoolReader :: forall txid m.
@@ -115,7 +116,7 @@ getMempoolReader :: forall txid m.
                     , Eq txid
                     , Show txid
                     )
-                 => Mempool m (Tx txid)
+                 => Mempool m txid (Tx txid)
                  -> TxSubmissionMempoolReader txid (Tx txid) Int m
 getMempoolReader = Mempool.getReader getTxId getTxAdvSize
 
@@ -128,7 +129,7 @@ getMempoolWriter :: forall txid m.
                     , Typeable txid
                     , Show txid
                     )
-                 => Mempool m (Tx txid)
+                 => Mempool m txid (Tx txid)
                  -> TxSubmissionMempoolWriter txid (Tx txid) Int m
 getMempoolWriter = Mempool.getWriter getTxId
                                      (pure ())
