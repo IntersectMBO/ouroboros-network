@@ -82,7 +82,7 @@ library
   default-language: Haskell2010
   default-extensions: ImportQualifiedPost
 
-executable dmq-exe
+executable dmq-node
   import: warnings
   main-is: Main.hs
   ghc-options:
