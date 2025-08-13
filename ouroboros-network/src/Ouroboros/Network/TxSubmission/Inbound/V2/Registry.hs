@@ -30,7 +30,7 @@ import Data.Foldable as Foldable (foldl', traverse_)
 import Data.Hashable
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, listToMaybe)
 import Data.Sequence.Strict (StrictSeq)
 import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set qualified as Set
@@ -310,8 +310,9 @@ withPeer tracer
                          -> SharedTxState peeraddr txid tx
                          -> SharedTxState peeraddr txid tx
         updateBufferedTx _ TxRejected st@SharedTxState { peerTxStates
-                                                       , inSubmissionToMempoolTxs } =
-            st { peerTxStates = peerTxStates'
+                                                       , inSubmissionToMempoolTxs
+                                                       , bufferedTxs } =
+            st { peerTxStates = peerTxStates''
                , inSubmissionToMempoolTxs = inSubmissionToMempoolTxs' }
           where
             inSubmissionToMempoolTxs' =
@@ -321,6 +322,28 @@ withPeer tracer
             peerTxStates' = Map.update fn peeraddr peerTxStates
               where
                 fn ps = Just $! ps { toMempoolTxs = Map.delete txid (toMempoolTxs ps)}
+
+
+            peerTxStates'' =
+              if Map.member txid bufferedTxs
+                 then peerTxStates'
+                 else case findEligiblePeer peerTxStates' of
+                           Nothing -> peerTxStates' -- No eligible peer found
+                           Just nextPeer ->
+                             Map.adjust (\ps -> ps { downloadedTxs = Map.insert txid tx (downloadedTxs ps)
+                                                   , availableTxIds = Map.delete txid (availableTxIds ps) })
+                                        nextPeer
+                                        peerTxStates'
+             where
+              findEligiblePeer :: (Eq peeraddr, Ord txid)
+                 => Map peeraddr (PeerTxState txid tx)
+                 -> Maybe peeraddr
+              findEligiblePeer peerStates =
+                listToMaybe
+                  [nextPeer | (nextPeer, state) <- Map.toList peerStates
+                            , nextPeer /= peeraddr                             -- Exclude the current peer
+                            , txid `Map.member` availableTxIds state           -- Has the TX available
+                            , txid `Set.notMember` requestedTxsInflight state] -- Not already requested
 
         updateBufferedTx now TxAccepted
                          st@SharedTxState { peerTxStates
