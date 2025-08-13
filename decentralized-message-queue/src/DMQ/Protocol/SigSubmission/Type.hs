@@ -1,8 +1,11 @@
 {-# LANGUAGE DerivingStrategies   #-}
+{-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE NamedFieldPuns       #-}
 {-# LANGUAGE PatternSynonyms      #-}
+{-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module DMQ.Protocol.SigSubmission.Type
   ( -- * Data types
@@ -24,6 +27,12 @@ module DMQ.Protocol.SigSubmission.Type
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Time.Clock.POSIX (POSIXTime)
+import Data.Typeable
+
+import Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm)
+import Cardano.Crypto.KES.Class (VerKeyKES)
+import Cardano.KESAgent.KES.Crypto as KES
+import Cardano.KESAgent.KES.OCert (OCert)
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type as SigSubmission hiding
            (TxSubmission2)
@@ -38,7 +47,6 @@ newtype SigId = SigId { getSigId :: SigHash }
   deriving stock (Show, Eq, Ord)
 
 instance ShowProxy SigId where
-  showProxy _ = "SigId"
 
 newtype SigBody = SigBody { getSigBody :: ByteString }
   deriving stock (Show, Eq)
@@ -51,8 +59,16 @@ newtype SigKESSignature = SigKESSignature { getSigKESSignature :: ByteString }
 
 -- TODO:
 -- This type should be more than just a `ByteString`.
-newtype SigOpCertificate = SigOpCertificate { getSigOpCertificate :: ByteString }
-  deriving stock (Show, Eq)
+newtype SigOpCertificate crypto = SigOpCertificate { getSigOpCertificate :: OCert crypto }
+
+deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
+                  , Show (VerKeyKES (KES crypto))
+                  )
+                => Show (SigOpCertificate crypto)
+deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
+                  , Eq (VerKeyKES (KES crypto))
+                  ) => Eq   (SigOpCertificate crypto)
+
 
 type SigKESPeriod = Word
 
@@ -62,7 +78,7 @@ newtype SigColdKey = SigColdKey { getSigColdKey :: ByteString }
 -- | Sig type consists of payload and its KES signature.
 --
 -- TODO: add signed bytes.
-data SigRaw = SigRaw {
+data SigRaw crypto = SigRaw {
     sigRawId            :: SigId,
     sigRawBody          :: SigBody,
     sigRawKESPeriod     :: SigKESPeriod,
@@ -72,28 +88,51 @@ data SigRaw = SigRaw {
     -- requires `Word64`, thus we're only supporting 64-bit architectures.
     sigRawExpiresAt     :: POSIXTime,
     sigRawKESSignature  :: SigKESSignature,
-    sigRawOpCertificate :: SigOpCertificate,
+    sigRawOpCertificate :: SigOpCertificate crypto,
     sigRawColdKey       :: SigColdKey
   }
-  deriving stock (Show, Eq)
 
+deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
+                  , Show (VerKeyKES (KES crypto))
+                  )
+               => Show (SigRaw crypto)
+deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
+                  , Eq (VerKeyKES (KES crypto))
+                  )
+               => Eq (SigRaw crypto)
 
-data SigRawWithSignedBytes = SigRawWithSignedBytes {
+data SigRawWithSignedBytes crypto = SigRawWithSignedBytes {
     sigRawSignedBytes :: LBS.ByteString,
     -- ^ bytes signed by the KES key
-    sigRaw            :: SigRaw
+    sigRaw            :: SigRaw crypto
     -- ^ the `SigRaw` data type
   }
-  deriving stock (Show, Eq)
+
+deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
+                  , Show (VerKeyKES (KES crypto))
+                  )
+               => Show (SigRawWithSignedBytes crypto)
+deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
+                  , Eq (VerKeyKES (KES crypto))
+                  )
+               => Eq (SigRawWithSignedBytes crypto)
 
 
-data Sig = SigWithBytes {
+data Sig crypto = SigWithBytes {
     sigRawBytes           :: LBS.ByteString,
     -- ^ encoded `SigRaw` data type
-    sigRawWithSignedBytes :: SigRawWithSignedBytes
+    sigRawWithSignedBytes :: SigRawWithSignedBytes crypto
     -- ^ the `SigRaw` data type along with signed bytes
   }
-  deriving stock (Show, Eq)
+
+deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
+                  , Show (VerKeyKES (KES crypto))
+                  )
+               => Show (Sig crypto)
+deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
+                  , Eq (VerKeyKES (KES crypto))
+                  )
+               => Eq (Sig crypto)
 
 
 -- | A convenient bidirectional pattern synonym for the `Sig` type.
@@ -103,12 +142,12 @@ pattern Sig
   -> SigBody
   -> SigKESSignature
   -> SigKESPeriod
-  -> SigOpCertificate
+  -> SigOpCertificate crypto
   -> SigColdKey
   -> POSIXTime
   -> LBS.ByteString
   -> LBS.ByteString
-  -> Sig
+  -> Sig crypto
 pattern
     Sig { sigId,
           sigBody,
@@ -165,9 +204,6 @@ pattern
       }
 {-# COMPLETE Sig #-}
 
+instance Typeable crypto => ShowProxy (Sig crypto) where
 
-instance ShowProxy Sig where
-  showProxy _ = "Sig"
-
-
-type SigSubmission = TxSubmission2.TxSubmission2 SigId Sig
+type SigSubmission crypto = TxSubmission2.TxSubmission2 SigId (Sig crypto)
