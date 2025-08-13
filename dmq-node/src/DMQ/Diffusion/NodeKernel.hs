@@ -19,6 +19,7 @@ import Data.Aeson qualified as Aeson
 import Data.Function (on)
 import Data.Functor.Contravariant ((>$<))
 import Data.Hashable
+import Data.Sequence (Seq)
 import Data.Sequence qualified as Seq
 import Data.Time.Clock.POSIX (POSIXTime)
 import Data.Time.Clock.POSIX qualified as Time
@@ -37,11 +38,11 @@ import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry,
            newPeerSharingAPI, newPeerSharingRegistry,
            ps_POLICY_PEER_SHARE_MAX_PEERS, ps_POLICY_PEER_SHARE_STICKY_TIME)
 import Ouroboros.Network.TxSubmission.Inbound.V2
-import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool (..))
+import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool (..), MempoolSeq (..))
 import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 
 import DMQ.Configuration
-import DMQ.Protocol.SigSubmission.Type (Sig (sigExpiresAt), SigId)
+import DMQ.Protocol.SigSubmission.Type (Sig (sigId, sigExpiresAt), SigId)
 import DMQ.Tracer
 
 
@@ -54,7 +55,7 @@ data NodeKernel crypto ntnAddr m =
     -- the PeerSharing protocol
   , peerSharingRegistry :: !(PeerSharingRegistry ntnAddr m)
   , peerSharingAPI      :: !(PeerSharingAPI ntnAddr StdGen m)
-  , mempool             :: !(Mempool m (Sig crypto))
+  , mempool             :: !(Mempool m SigId (Sig crypto))
   , sigChannelVar       :: !(TxChannelsVar m ntnAddr SigId (Sig crypto))
   , sigMempoolSem       :: !(TxMempoolSem m)
   , sigSharedTxStateVar :: !(SharedTxStateVar m ntnAddr SigId (Sig crypto))
@@ -146,22 +147,36 @@ mempoolWorker :: forall crypto m.
                  , MonadSTM   m
                  , MonadTime  m
                  )
-              => Mempool m (Sig crypto)
+              => Mempool m SigId (Sig crypto)
               -> m Void
 mempoolWorker (Mempool v) = loop
   where
     loop = do
       now <- getCurrentPOSIXTime
       rt <- atomically $ do
-        (sigs :: Seq.Seq (Sig crypto)) <- readTVar v
-        let sigs' :: Seq.Seq (Sig crypto)
-            (resumeTime, sigs') =
-              foldr (\a (rt, as) -> if sigExpiresAt a <= now
-                                    then (rt, as)
-                                    else (rt `min` sigExpiresAt a, a Seq.<| as))
-                    (now, Seq.empty)
-                    sigs
-        writeTVar v sigs'
+        MempoolSeq { mempoolSeq, mempoolSet } <- readTVar v
+        let mempoolSeq' :: Seq (Sig crypto)
+            mempoolSet', expiredSet' :: Set SigId
+
+            (resumeTime, expiredSet', mempoolSeq') =
+              foldr (\sig (rt, expiredSet, sigs) ->
+                      if sigExpiresAt sig <= now
+                      then ( rt
+                           , sigId sig `Set.insert` expiredSet
+                           , sigs
+                           )
+                      else ( rt `min` sigExpiresAt sig
+                           , expiredSet
+                           , sig Seq.<| sigs
+                           )
+                    )
+                    (now, Set.empty, Seq.empty)
+                    mempoolSeq
+
+            mempoolSet' = mempoolSet `Set.difference` expiredSet'
+
+        writeTVar v MempoolSeq { mempoolSet = mempoolSet',
+                                 mempoolSeq = mempoolSeq' }
         return resumeTime
 
       now' <- getCurrentPOSIXTime
