@@ -45,6 +45,9 @@
           overlays = [
             # haskellNix.overlay can be configured by later overlays, so need to come before them.
             inputs.haskellNix.overlay
+            # dmq-node depends cardano-crypto-class, so we need crypto overlays
+            inputs.iohkNix.overlays.crypto
+            inputs.iohkNix.overlays.haskell-nix-crypto
             (import ./nix/tools.nix inputs)
             (import ./nix/ouroboros-network.nix inputs)
             (import ./nix/network-docs.nix inputs)

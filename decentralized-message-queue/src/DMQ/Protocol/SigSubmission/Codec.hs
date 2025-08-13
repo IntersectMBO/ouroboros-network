@@ -3,6 +3,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module DMQ.Protocol.SigSubmission.Codec
@@ -21,6 +22,7 @@ import Control.Monad (when)
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadTime.SI
 import Data.ByteString.Lazy (ByteString)
+import Data.Typeable
 import Text.Printf
 
 import Codec.CBOR.Decoding qualified as CBOR
@@ -28,6 +30,9 @@ import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 
 import Network.TypedProtocol.Codec.CBOR
+
+import Cardano.Binary (FromCBOR (..))
+import Cardano.KESAgent.KES.Crypto (Crypto (..))
 
 import DMQ.Protocol.SigSubmission.Type
 import Ouroboros.Network.Protocol.Codec.Utils qualified as Utils
@@ -51,10 +56,10 @@ import Ouroboros.Network.Protocol.TxSubmission2.Codec qualified as TX
 -- | `StTxs`                     | `shortWait`   |
 -- +-----------------------------+---------------+
 --
-timeLimitsSigSubmission :: ProtocolTimeLimits SigSubmission
+timeLimitsSigSubmission :: forall crypto. ProtocolTimeLimits (SigSubmission crypto)
 timeLimitsSigSubmission = ProtocolTimeLimits stateToLimit
   where
-    stateToLimit :: forall (st :: SigSubmission).
+    stateToLimit :: forall (st :: SigSubmission crypto).
                     ActiveState st => StateToken st -> Maybe DiffTime
     stateToLimit SingInit                    = waitForever
     stateToLimit (SingTxIds SingBlocking)    = waitForever
@@ -65,12 +70,12 @@ timeLimitsSigSubmission = ProtocolTimeLimits stateToLimit
 
 
 -- TODO: these limits needs to be checked with the mithril team
-byteLimitsSigSubmission :: forall bytes.
+byteLimitsSigSubmission :: forall crypto bytes.
                            (bytes -> Word)
-                        -> ProtocolSizeLimits SigSubmission bytes
+                        -> ProtocolSizeLimits (SigSubmission crypto) bytes
 byteLimitsSigSubmission = ProtocolSizeLimits stateToLimit
   where
-    stateToLimit :: forall (st :: SigSubmission).
+    stateToLimit :: forall (st :: SigSubmission crypto).
                     ActiveState st => StateToken st -> Word
     stateToLimit SingInit                    = smallByteLimit
     stateToLimit (SingTxIds SingBlocking)    = smallByteLimit
@@ -90,9 +95,12 @@ decodeSigId = SigId . SigHash <$> CBOR.decodeBytes
 -- | 'SigSubmission' protocol codec.
 --
 codecSigSubmission
-  :: forall m.
-     MonadST m
-  => AnnotatedCodec SigSubmission CBOR.DeserialiseFailure m ByteString
+  :: forall crypto m.
+     ( Crypto crypto
+     , Typeable crypto
+     , MonadST m
+     )
+  => AnnotatedCodec (SigSubmission crypto) CBOR.DeserialiseFailure m ByteString
 codecSigSubmission =
     TX.anncodecTxSubmission2'
       SigWithBytes
@@ -100,10 +108,14 @@ codecSigSubmission =
       encodeSig   decodeSig
 
 
-encodeSig :: Sig -> CBOR.Encoding
+encodeSig :: Sig crypto -> CBOR.Encoding
 encodeSig = Utils.encodeBytes . sigRawBytes
 
-decodeSig :: forall s. CBOR.Decoder s (ByteString -> SigRawWithSignedBytes)
+decodeSig :: forall crypto s.
+             ( Crypto crypto
+             , Typeable crypto
+             )
+          => CBOR.Decoder s (ByteString -> SigRawWithSignedBytes crypto)
 decodeSig = do
   -- start of signed data
   startOffset <- CBOR.peekByteOffset
@@ -117,7 +129,7 @@ decodeSig = do
   endOffset <- CBOR.peekByteOffset
 
   sigRawKESSignature <- SigKESSignature <$> CBOR.decodeBytes
-  sigRawOpCertificate <- SigOpCertificate <$> CBOR.decodeBytes
+  sigRawOpCertificate <- SigOpCertificate <$> fromCBOR
   sigRawColdKey <- SigColdKey <$> CBOR.decodeBytes
   return $ \bytes -- ^ full bytes of the message, not just the sig part
          -> SigRawWithSignedBytes {
@@ -136,5 +148,5 @@ decodeSig = do
 
 codecSigSubmissionId
   :: Monad m
-  => Codec SigSubmission CodecFailure m (AnyMessage SigSubmission)
+  => Codec (SigSubmission crypto) CodecFailure m (AnyMessage (SigSubmission crypto))
 codecSigSubmissionId = TX.codecTxSubmission2Id
