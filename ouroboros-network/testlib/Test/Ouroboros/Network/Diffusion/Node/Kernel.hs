@@ -311,7 +311,7 @@ data NodeKernel header block s txid m = NodeKernel {
         :: StrictTVar m (PublicPeerSelectionState NtNAddr),
 
       nkMempool
-        :: Mempool m (Tx txid),
+        :: Mempool m txid (Tx txid),
 
       nkTxChannelsVar
         :: TxChannelsVar m NtNAddr txid (Tx txid),
@@ -326,6 +326,7 @@ data NodeKernel header block s txid m = NodeKernel {
 newNodeKernel :: ( MonadSTM m
                  , Strict.MonadMVar m
                  , RandomGen rng
+                 , Ord txid
                  , Eq txid
                  )
               => rng
@@ -427,6 +428,7 @@ withNodeKernelThread
      , HasFullHeader block
      , RandomGen seed
      , Eq txid
+     , Ord txid
      )
   => NtNAddr
   -- ^ just for naming a thread
