@@ -59,3 +59,12 @@ package acts
   flags: -finitary
 
 allow-newer: quickcheck-instances:QuickCheck
+
+source-repository-package
+  type: git
+  location: https://github.com/coot/kes-agent
+  tag: 6fe419baef978a586e46a747a17631ab8a13947e
+  --sha256: sha256-FUYn+JhkweKstKe6fhsiYbG3cumLs/RMOzNNUGDmUvY=
+  subdir: kes-agent
+
+allow-newer: kes-agent:typed-protocols
