@@ -2,6 +2,8 @@ module Main (main) where
 
 import Main.Utf8 (withUtf8)
 
+import Cardano.Crypto.Libsodium
+
 import Test.DMQ.NodeToClient qualified
 import Test.DMQ.NodeToNode qualified
 import Test.DMQ.Protocol.SigSubmission qualified
@@ -10,7 +12,9 @@ import Test.Tasty
 
 
 main :: IO ()
-main = withUtf8 $ defaultMain tests
+main = do
+    sodiumInit
+    withUtf8 $ defaultMain tests
 
 
 tests :: TestTree

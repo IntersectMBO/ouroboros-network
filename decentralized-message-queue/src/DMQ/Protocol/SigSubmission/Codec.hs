@@ -2,6 +2,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module DMQ.Protocol.SigSubmission.Codec
@@ -17,6 +18,7 @@ import Control.Monad (when)
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadTime.SI
 import Data.ByteString.Lazy (ByteString)
+import Data.Typeable
 import Text.Printf
 
 import Codec.CBOR.Decoding qualified as CBOR
@@ -24,6 +26,9 @@ import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 
 import Network.TypedProtocol.Codec.CBOR
+
+import Cardano.KESAgent.KES.Crypto (Crypto (..))
+import Cardano.Binary (FromCBOR (..), ToCBOR (..))
 
 import DMQ.Protocol.SigSubmission.Type
 import Ouroboros.Network.Protocol.Limits
@@ -46,10 +51,10 @@ import Ouroboros.Network.Protocol.TxSubmission2.Codec qualified as TX
 -- | `StTxs`                     | `shortWait`   |
 -- +-----------------------------+---------------+
 --
-timeLimitsSigSubmission :: ProtocolTimeLimits SigSubmission
+timeLimitsSigSubmission :: forall crypto. ProtocolTimeLimits (SigSubmission crypto)
 timeLimitsSigSubmission = ProtocolTimeLimits stateToLimit
   where
-    stateToLimit :: forall (st :: SigSubmission).
+    stateToLimit :: forall (st :: SigSubmission crypto).
                     ActiveState st => StateToken st -> Maybe DiffTime
     stateToLimit SingInit                    = waitForever
     stateToLimit (SingTxIds SingBlocking)    = waitForever
@@ -60,12 +65,12 @@ timeLimitsSigSubmission = ProtocolTimeLimits stateToLimit
 
 
 -- TODO: these limits needs to be checked with the mithril team
-byteLimitsSigSubmission :: forall bytes.
+byteLimitsSigSubmission :: forall crypto bytes.
                            (bytes -> Word)
-                        -> ProtocolSizeLimits SigSubmission bytes
+                        -> ProtocolSizeLimits (SigSubmission crypto) bytes
 byteLimitsSigSubmission = ProtocolSizeLimits stateToLimit
   where
-    stateToLimit :: forall (st :: SigSubmission).
+    stateToLimit :: forall (st :: SigSubmission crypto).
                     ActiveState st => StateToken st -> Word
     stateToLimit SingInit                    = smallByteLimit
     stateToLimit (SingTxIds SingBlocking)    = smallByteLimit
@@ -82,7 +87,10 @@ decodeSigId :: forall s. CBOR.Decoder s SigId
 decodeSigId = SigId . SigHash <$> CBOR.decodeBytes
 
 
-encodeSigRaw :: SigRaw
+encodeSigRaw :: ( Crypto crypto
+                , Typeable crypto
+                )
+             => SigRaw crypto
              -> CBOR.Encoding
 encodeSigRaw SigRaw {
     sigRawId,
@@ -96,24 +104,27 @@ encodeSigRaw SigRaw {
   <> CBOR.encodeBytes (getSigBody sigRawBody)
   <> CBOR.encodeWord32 (floor sigRawExpiresAt)
   <> CBOR.encodeBytes (getSigKesSignature sigRawKesSignature)
-  <> CBOR.encodeBytes (getSigOpCertificate sigRawOpCertificate)
+  <> toCBOR (getSigOpCertificate sigRawOpCertificate)
 
 -- | 'SigSubmission' protocol codec.
 --
 codecSigSubmission
-  :: forall m.
-     MonadST m
-  => AnnotatedCodec SigSubmission CBOR.DeserialiseFailure m ByteString
+  :: forall crypto m.
+     ( Crypto crypto
+     , Typeable crypto
+     , MonadST m
+     )
+  => AnnotatedCodec (SigSubmission crypto) CBOR.DeserialiseFailure m ByteString
 codecSigSubmission =
     TX.anncodecTxSubmission2'
       SigWithBytes
       encodeSigId decodeSigId
       encodeSig   decodeSig
   where
-    encodeSig :: Sig -> CBOR.Encoding
+    encodeSig :: Sig crypto -> CBOR.Encoding
     encodeSig = TX.encodeBytes . sigRawBytes
 
-    decodeSig :: forall s. CBOR.Decoder s (ByteString -> SigRaw)
+    decodeSig :: forall s. CBOR.Decoder s (ByteString -> SigRaw crypto)
     decodeSig = do
       a <- CBOR.decodeListLen
       when (a /= 5) $ fail (printf "codecSigSubmission: unexpected number of parameters %d" a)
@@ -121,7 +132,7 @@ codecSigSubmission =
       sigRawBody <- SigBody <$> CBOR.decodeBytes
       sigRawExpiresAt <- realToFrac <$> CBOR.decodeWord32
       sigRawKesSignature <- SigKesSignature <$> CBOR.decodeBytes
-      sigRawOpCertificate <- SigOpCertificate <$> CBOR.decodeBytes
+      sigRawOpCertificate <- SigOpCertificate <$> fromCBOR
       return $ \_ -> SigRaw {
           sigRawId,
           sigRawBody,
@@ -133,5 +144,5 @@ codecSigSubmission =
 
 codecSigSubmissionId
   :: Monad m
-  => Codec SigSubmission CodecFailure m (AnyMessage SigSubmission)
+  => Codec (SigSubmission crypto) CodecFailure m (AnyMessage (SigSubmission crypto))
 codecSigSubmissionId = TX.codecTxSubmission2Id
