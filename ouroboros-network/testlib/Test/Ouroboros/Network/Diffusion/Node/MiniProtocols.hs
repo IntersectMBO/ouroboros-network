@@ -681,7 +681,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
 
     txSubmissionInitiator
       :: TxDecisionPolicy
-      -> Mempool m (Tx TxId)
+      -> Mempool m TxId (Tx TxId)
       -> MiniProtocolCb (ExpandedInitiatorContext NtNAddr m) ByteString m ()
     txSubmissionInitiator txDecisionPolicy mempool =
       MiniProtocolCb $
@@ -708,7 +708,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
             (txSubmissionClientPeer client)
 
     txSubmissionResponder
-      :: Mempool m (Tx TxId)
+      :: Mempool m TxId (Tx TxId)
       -> TxChannelsVar m NtNAddr Int (Tx Int)
       -> TxMempoolSem m
       -> SharedTxStateVar m NtNAddr Int (Tx Int)
