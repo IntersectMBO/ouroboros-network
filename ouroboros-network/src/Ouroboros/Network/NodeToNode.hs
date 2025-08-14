@@ -102,7 +102,6 @@ import Ouroboros.Network.Server.RateLimiting
 import Ouroboros.Network.Snocket
 import Ouroboros.Network.Socket
 import Ouroboros.Network.Util.ShowProxy (ShowProxy, showProxy)
-import Ouroboros.Network.Protocol.ObjectDiffusion.Type (NumObjectIdsToAck)
 import Ouroboros.Network.Protocol.ObjectDiffusion.Type (NumObjectsInFifo)
 
 

@@ -64,7 +64,7 @@ data OutboundStIdle objectId object m a = OutboundStIdle
 
 data OutboundStObjectIds blocking objectId object m a where
   SendMsgReplyObjectIds ::
-    BlockingReplyList blocking (objectId, SizeInBytes) ->
+    BlockingReplyList blocking objectId ->
     OutboundStIdle objectId object m a ->
     OutboundStObjectIds blocking objectId object m a
   -- | In the blocking case, the outbound can terminate the protocol. This could

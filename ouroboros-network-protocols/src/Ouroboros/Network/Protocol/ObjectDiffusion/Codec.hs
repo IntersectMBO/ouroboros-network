@@ -137,16 +137,15 @@ encodeObjectDiffusion encodeObjectId encodeObject = encode
         <> CBOR.encodeWord 1
         <> CBOR.encodeListLenIndef
         <> foldr
-          ( \(objId, SizeInBytes sz) r ->
+          ( \objId r ->
               CBOR.encodeListLen 2
                 <> encodeObjectId objId
-                <> CBOR.encodeWord32 sz
                 <> r
           )
           CBOR.encodeBreak
           objIds'
       where
-        objIds' :: [(objectId, SizeInBytes)]
+        objIds' :: [objectId]
         objIds' = case objIds of
           BlockingReply xs -> NonEmpty.toList xs
           NonBlockingReply xs -> xs
@@ -204,9 +203,7 @@ decodeObjectDiffusion decodeObjectId decodeObject = decode
               reverse
               ( do
                   CBOR.decodeListLenOf 2
-                  objId <- decodeObjectId
-                  sz <- CBOR.decodeWord32
-                  return (objId, SizeInBytes sz)
+                  decodeObjectId
               )
           case (b, objIds) of
             (SingBlocking, t : ts) ->

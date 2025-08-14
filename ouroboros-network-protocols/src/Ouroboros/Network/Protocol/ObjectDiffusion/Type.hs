@@ -272,7 +272,7 @@ instance Protocol (ObjectDiffusion initAgency objectId object) where
     -- order in which they are submitted to the mempool, to preserve dependent
     -- objects.
     MsgReplyObjectIds ::
-      BlockingReplyList blocking (objectId, SizeInBytes) ->
+      BlockingReplyList blocking objectId ->
       Message (ObjectDiffusion initAgency objectId object) (StObjectIds blocking) StIdle
     -- \| Request one or more objects corresponding to the given object
     -- identifiers.
