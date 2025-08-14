@@ -500,9 +500,7 @@ decisionLogicThread tracer counterTracer policy txChannelsVar sharedStateVar = d
   where
     go :: m Void
     go = do
-      -- We rate limit the decision making process, it could overwhelm the CPU
-      -- if there are too many inbound connections.
-      threadDelay _DECISION_LOOP_DELAY
+      start <- getMonotonicTime
 
       (decisions, st) <- atomically do
         sharedTxState <- readTVar sharedStateVar
@@ -523,6 +521,13 @@ decisionLogicThread tracer counterTracer policy txChannelsVar sharedStateVar = d
           txChannelMap
           decisions)
       traceWith counterTracer (mkTxSubmissionCounters st)
+      end <- getMonotonicTime
+      let delta = diffTime end start
+
+      -- We rate limit the decision making process, it could overwhelm the CPU
+      -- if there are too many inbound connections.
+      threadDelay $ _DECISION_LOOP_DELAY - delta
+
       go
 
     -- Variant of modifyMVar_ that puts a default value if the MVar is empty.
@@ -563,6 +568,6 @@ decisionLogicThreads tracer counterTracer policy txChannelsVar sharedStateVar =
     decisionLogicThread tracer counterTracer policy txChannelsVar sharedStateVar
 
 
--- `5ms` delay
+-- `11ms` delay
 _DECISION_LOOP_DELAY :: DiffTime
-_DECISION_LOOP_DELAY = 0.005
+_DECISION_LOOP_DELAY = 0.011
