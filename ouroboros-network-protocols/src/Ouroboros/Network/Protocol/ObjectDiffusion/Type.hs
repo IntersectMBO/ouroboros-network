@@ -38,6 +38,8 @@ module Ouroboros.Network.Protocol.ObjectDiffusion.Type
     BlockingReplyList (..),
     NumObjectIdsToAck (..),
     NumObjectIdsToReq (..),
+    NumObjectsToReq (..),
+    NumObjectsInFifo (..),
     -- re-exports
     SizeInBytes (..),
   )
@@ -169,6 +171,20 @@ newtype NumObjectIdsToReq = NumObjectIdsToReq {getNumObjectIdsToReq :: Word16}
   deriving (Semigroup) via (Sum Word16)
   deriving (Monoid) via (Sum Word16)
   deriving (Show) via (Quiet NumObjectIdsToReq)
+
+newtype NumObjectsToReq = NumObjectsToReq {getNumObjectsToReq :: Word16}
+  deriving (Eq, Ord, NFData, Generic)
+  deriving newtype (Num, Enum, Real, Integral, Bounded, NoThunks)
+  deriving (Semigroup) via (Sum Word16)
+  deriving (Monoid) via (Sum Word16)
+  deriving (Show) via (Quiet NumObjectsToReq)
+
+newtype NumObjectsInFifo = NumObjectsInFifo {getNumObjectsInFifo :: Word16}
+  deriving (Eq, Ord, NFData, Generic)
+  deriving newtype (Num, Enum, Real, Integral, Bounded, NoThunks)
+  deriving (Semigroup) via (Sum Word16)
+  deriving (Monoid) via (Sum Word16)
+  deriving (Show) via (Quiet NumObjectsInFifo)
 
 -- | There are some constraints of the protocol that are not captured in the
 -- types of the messages, but are documented with the messages. Violation

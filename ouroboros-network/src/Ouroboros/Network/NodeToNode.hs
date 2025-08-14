@@ -103,6 +103,7 @@ import Ouroboros.Network.Snocket
 import Ouroboros.Network.Socket
 import Ouroboros.Network.Util.ShowProxy (ShowProxy, showProxy)
 import Ouroboros.Network.Protocol.ObjectDiffusion.Type (NumObjectIdsToAck)
+import Ouroboros.Network.Protocol.ObjectDiffusion.Type (NumObjectsInFifo)
 
 
 -- The Handshake tracer types are simply terrible.
@@ -162,16 +163,35 @@ data MiniProtocolParameters = MiniProtocolParameters {
       -- ^ maximal number of unacked tx (pipelining is bounded by twice this
       -- number)
 
-      certDiffusionMaxUnacked :: !NumObjectIdsToAck
+      perasCertDiffusionMaxFifoLength :: !NumObjectsInFifo
+    -- ^ Maximum number of PerasCerts in the outbound peer's outstanding FIFO.
+    --
+    -- This indirectly limits the number of pipelined requests from the inbound peer:
+    -- the inbound peer can only request @n@ new IDs if the execution of preceding
+    -- requests would result in at least @n@ empty seats in the FIFO.
+    --
+    -- In the worst case:
+    --
+    --   * The inbound peer requests IDs and objects one by one.
+    --   * The inbound peer is aware of @perasCertDiffusionMaxFifoLength@ IDs for objects
+    --     it hasn't requested yet (i.e., the FIFO is full).
+    --
+    -- Then, the inbound peer can pipeline at most @perasCertDiffusionMaxFifoLength@
+    -- requests for one object each (with a known ID), and up to
+    -- @perasCertDiffusionMaxFifoLength@ requests for one new ID each.
+    --
+    -- So, the theoretical maximum pipeline size is
+    -- @2 * perasCertDiffusionMaxFifoLength@, but in practice the pipeline size will
+    -- be much smaller, as the inbound peer typically batches requests.
     }
 
 defaultMiniProtocolParameters :: MiniProtocolParameters
 defaultMiniProtocolParameters = MiniProtocolParameters {
-      chainSyncPipeliningLowMark  = 200
-    , chainSyncPipeliningHighMark = 300
-    , blockFetchPipeliningMax     = 100
-    , txSubmissionMaxUnacked       = 10
-    , certDiffusionMaxUnacked     = 10
+      chainSyncPipeliningLowMark      = 200
+    , chainSyncPipeliningHighMark     = 300
+    , blockFetchPipeliningMax         = 100
+    , txSubmissionMaxUnacked          = 10
+    , perasCertDiffusionMaxFifoLength = 10
   }
 
 -- | Make an 'OuroborosApplication' for the bundle of mini-protocols that
