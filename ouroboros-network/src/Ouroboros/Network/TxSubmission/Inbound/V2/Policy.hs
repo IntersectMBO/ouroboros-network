@@ -69,8 +69,8 @@ defaultTxDecisionPolicy =
   TxDecisionPolicy {
     maxNumTxIdsToRequest   = 3,
     maxUnacknowledgedTxIds = 10, -- must be the same as txSubmissionMaxUnacked
-    txsSizeInflightPerPeer = max_TX_SIZE * 6,
-    maxTxsSizeInflight     = max_TX_SIZE * 20,
+    txsSizeInflightPerPeer = max_TX_SIZE * 1,
+    maxTxsSizeInflight     = max_TX_SIZE * 2,
     txInflightMultiplicity = 2,
     bufferedTxsMinLifetime = 2,
     scoreRate              = 0.1,
