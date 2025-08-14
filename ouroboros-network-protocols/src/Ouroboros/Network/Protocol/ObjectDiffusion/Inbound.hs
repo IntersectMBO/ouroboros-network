@@ -42,7 +42,7 @@ data ObjectDiffusionInboundPipelined objectId object m a where
 data Collect objectId object
   = -- | The result of 'SendMsgRequestObjectIdsPipelined'. It also carries
     -- the number of objectIds originally requested.
-    CollectObjectIds NumObjectIdsToReq [objectId]
+    CollectObjectIds NumObjectIdsReq [objectId]
   | -- | The result of 'SendMsgRequestObjectsPipelined'. The actual reply only
     -- contains the objects sent, but this pairs them up with the
     -- objects requested. This is because the peer can determine that
@@ -52,9 +52,9 @@ data Collect objectId object
 data InboundStIdle (n :: N) objectId object m a where
   SendMsgRequestObjectIdsBlocking ::
     -- | number of objectIds to acknowledge
-    NumObjectIdsToAck ->
+    NumObjectIdsAck ->
     -- | number of objectIds to request
-    NumObjectIdsToReq ->
+    NumObjectIdsReq ->
     -- | Result if done
     m a ->
     ( NonEmpty objectId ->
@@ -62,8 +62,8 @@ data InboundStIdle (n :: N) objectId object m a where
     ) ->
     InboundStIdle Z objectId object m a
   SendMsgRequestObjectIdsPipelined ::
-    NumObjectIdsToAck ->
-    NumObjectIdsToReq ->
+    NumObjectIdsAck ->
+    NumObjectIdsReq ->
     m (InboundStIdle (S n) objectId object m a) ->
     InboundStIdle n objectId object m a
   SendMsgRequestObjectsPipelined ::

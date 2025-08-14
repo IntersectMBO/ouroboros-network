@@ -54,8 +54,8 @@ data OutboundStIdle objectId object m a = OutboundStIdle
   { recvMsgRequestObjectIds ::
       forall blocking.
       SingBlockingStyle blocking ->
-      NumObjectIdsToAck ->
-      NumObjectIdsToReq ->
+      NumObjectIdsAck ->
+      NumObjectIdsReq ->
       m (OutboundStObjectIds blocking objectId object m a),
     recvMsgRequestObjects ::
       [objectId] ->

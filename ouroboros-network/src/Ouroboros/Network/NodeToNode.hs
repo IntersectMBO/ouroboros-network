@@ -102,7 +102,7 @@ import Ouroboros.Network.Server.RateLimiting
 import Ouroboros.Network.Snocket
 import Ouroboros.Network.Socket
 import Ouroboros.Network.Util.ShowProxy (ShowProxy, showProxy)
-import Ouroboros.Network.Protocol.ObjectDiffusion.Type (NumObjectsInFifo)
+import Ouroboros.Network.Protocol.ObjectDiffusion.Type (NumObjectsOutstanding)
 
 
 -- The Handshake tracer types are simply terrible.
@@ -162,7 +162,7 @@ data MiniProtocolParameters = MiniProtocolParameters {
       -- ^ maximal number of unacked tx (pipelining is bounded by twice this
       -- number)
 
-      perasCertDiffusionMaxFifoLength :: !NumObjectsInFifo
+      perasCertDiffusionMaxFifoLength :: !NumObjectsOutstanding
     -- ^ Maximum number of PerasCerts in the outbound peer's outstanding FIFO.
     --
     -- This indirectly limits the number of pipelined requests from the inbound peer:

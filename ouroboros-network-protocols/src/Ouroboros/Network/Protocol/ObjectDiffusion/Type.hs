@@ -36,10 +36,10 @@ module Ouroboros.Network.Protocol.ObjectDiffusion.Type
     SingBlockingStyle (..),
     StBlockingStyle (..),
     BlockingReplyList (..),
-    NumObjectIdsToAck (..),
-    NumObjectIdsToReq (..),
-    NumObjectsToReq (..),
-    NumObjectsInFifo (..),
+    NumObjectIdsAck (..),
+    NumObjectIdsReq (..),
+    NumObjectsReq (..),
+    NumObjectsOutstanding (..),
     -- re-exports
     SizeInBytes (..),
   )
@@ -158,33 +158,33 @@ data StBlockingStyle where
   -- | In this state the peer must reply. There is a timeout.
   StNonBlocking :: StBlockingStyle
 
-newtype NumObjectIdsToAck = NumObjectIdsToAck {getNumObjectIdsToAck :: Word16}
+newtype NumObjectIdsAck = NumObjectIdsToAck {getNumObjectIdsToAck :: Word16}
   deriving (Eq, Ord, NFData, Generic)
   deriving newtype (Num, Enum, Real, Integral, Bounded, NoThunks)
   deriving (Semigroup) via (Sum Word16)
   deriving (Monoid) via (Sum Word16)
-  deriving (Show) via (Quiet NumObjectIdsToAck)
+  deriving (Show) via (Quiet NumObjectIdsAck  )
 
-newtype NumObjectIdsToReq = NumObjectIdsToReq {getNumObjectIdsToReq :: Word16}
+newtype NumObjectIdsReq = NumObjectIdsToReq {getNumObjectIdsToReq :: Word16}
   deriving (Eq, Ord, NFData, Generic)
   deriving newtype (Num, Enum, Real, Integral, Bounded, NoThunks)
   deriving (Semigroup) via (Sum Word16)
   deriving (Monoid) via (Sum Word16)
-  deriving (Show) via (Quiet NumObjectIdsToReq)
+  deriving (Show) via (Quiet NumObjectIdsReq  )
 
-newtype NumObjectsToReq = NumObjectsToReq {getNumObjectsToReq :: Word16}
+newtype NumObjectsReq = NumObjectsToReq {getNumObjectsToReq :: Word16}
   deriving (Eq, Ord, NFData, Generic)
   deriving newtype (Num, Enum, Real, Integral, Bounded, NoThunks)
   deriving (Semigroup) via (Sum Word16)
   deriving (Monoid) via (Sum Word16)
-  deriving (Show) via (Quiet NumObjectsToReq)
+  deriving (Show) via (Quiet NumObjectsReq  )
 
-newtype NumObjectsInFifo = NumObjectsInFifo {getNumObjectsInFifo :: Word16}
+newtype NumObjectsOutstanding = NumObjectsInFifo {getNumObjectsInFifo :: Word16}
   deriving (Eq, Ord, NFData, Generic)
   deriving newtype (Num, Enum, Real, Integral, Bounded, NoThunks)
   deriving (Semigroup) via (Sum Word16)
   deriving (Monoid) via (Sum Word16)
-  deriving (Show) via (Quiet NumObjectsInFifo)
+  deriving (Show) via (Quiet NumObjectsOutstanding)
 
 -- | There are some constraints of the protocol that are not captured in the
 -- types of the messages, but are documented with the messages. Violation
@@ -252,9 +252,9 @@ instance Protocol (ObjectDiffusion initAgency objectId object) where
     MsgRequestObjectIds ::
       forall (blocking :: StBlockingStyle) initAgency objectId object.
       SingBlockingStyle blocking ->
-      NumObjectIdsToAck ->
+      NumObjectIdsAck ->
       -- \^ Acknowledge this number of outstanding objects
-      NumObjectIdsToReq ->
+      NumObjectIdsReq ->
       -- \^ Request up to this number of object ids
       Message (ObjectDiffusion initAgency objectId object) StIdle (StObjectIds blocking)
     -- \| Reply with a list of object identifiers for available objects, along
