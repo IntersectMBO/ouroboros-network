@@ -11,6 +11,8 @@ module Test.Ouroboros.Network.Utils
     Delay (..)
   , genDelayWithPrecision
   , SmallDelay (..)
+    -- * Utilities
+  , DistinctList (..)
     -- * Set properties
   , isSubsetProperty
   , disjointSetsProperty
@@ -48,7 +50,7 @@ import Control.Monad.IOSim (IOSim, traceM)
 import Control.Tracer (Contravariant (contramap), Tracer (..), contramapM)
 
 import Data.Bitraversable (bimapAccumR)
-import Data.List (delete)
+import Data.List (delete, nub)
 import Data.List.Trace (Trace)
 import Data.List.Trace qualified as Trace
 import Data.Map qualified as Map
@@ -230,6 +232,16 @@ splitWithNameTrace =
         )
       )
       Map.empty
+
+
+newtype DistinctList a = DistinctList { fromDistinctList :: [a] }
+  deriving Show
+
+instance (Eq a, Arbitrary a) => Arbitrary (DistinctList a) where
+  arbitrary = DistinctList . nub <$> arbitrary
+
+  shrink (DistinctList xs) =
+    [ DistinctList (nub xs') | xs' <- shrink xs ]
 
 --
 -- Debugging tools
