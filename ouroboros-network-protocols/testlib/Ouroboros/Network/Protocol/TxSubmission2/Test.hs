@@ -23,7 +23,6 @@ module Ouroboros.Network.Protocol.TxSubmission2.Test
 
 import Data.Bifunctor (second)
 import Data.ByteString.Lazy (ByteString)
-import Data.List (nub)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Word (Word16)
 
@@ -56,7 +55,7 @@ import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Test.Data.CDDL (Any (..))
 import Test.Ouroboros.Network.Protocol.Utils (prop_codec_cborM,
            prop_codec_valid_cbor_encoding, splits2, splits3)
-import Test.Ouroboros.Network.Utils (renderRanges)
+import Test.Ouroboros.Network.Utils (DistinctList (..), renderRanges)
 
 import Control.DeepSeq
 import GHC.Generics
@@ -426,16 +425,6 @@ instance Arbitrary TxSubmissionTestParams where
   shrink (TxSubmissionTestParams a b c d) =
     [ TxSubmissionTestParams a' b' c' d'
     | (a', b', c', d') <- shrink (a, b, c, d) ]
-
-
-newtype DistinctList a = DistinctList { fromDistinctList :: [a] }
-  deriving Show
-
-instance (Eq a, Arbitrary a) => Arbitrary (DistinctList a) where
-  arbitrary = DistinctList . nub <$> arbitrary
-
-  shrink (DistinctList xs) =
-    [ DistinctList (nub xs') | xs' <- shrink xs ]
 
 
 labelMsg :: forall prop txid tx.
