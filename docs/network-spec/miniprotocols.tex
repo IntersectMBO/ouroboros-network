@@ -876,9 +876,10 @@ The protocol uses the following messages:
       The consumer can decide whether to send more points.
       The message also tells the consumer about the $tip$ of the producer.
       Whenever the server replies with \MsgIntersectFound{}, the client can
-      \MsgRollBackward{} to the specified $point_{intersect}$ (which makes
-      handling state updates on the client side easier).
       expect the next update (i.e. a reply to \MsgRequestNext{}) to be
+      \MsgRollBackward{}, either to the specified $point_{intersect}$ or an earlier
+      point if the producer switched to a different fork in the meantime.
+      This makes handling state updates on the client side easier.
 \item [\MsgIntersectNotFound{} {\boldmath $(tip)$}]
       Reply to the consumer that no intersection was found: none of the
       points the consumer supplied are on the producer chain.
