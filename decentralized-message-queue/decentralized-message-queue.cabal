@@ -56,8 +56,11 @@ library
     DMQ.NodeToClient.Version
     DMQ.NodeToNode
     DMQ.NodeToNode.Version
+    DMQ.NodeToClient.LocalMsgSubmission
+    DMQ.NodeToClient.LocalMsgNotification
     DMQ.Protocol.LocalMsgNotification.Client
     DMQ.Protocol.LocalMsgNotification.Codec
+    DMQ.Protocol.LocalMsgNotification.Examples
     DMQ.Protocol.LocalMsgNotification.Server
     DMQ.Protocol.LocalMsgNotification.Type
     DMQ.Protocol.LocalMsgSubmission.Client
@@ -143,8 +146,10 @@ test-suite dmq-test
     QuickCheck,
     base >=4.14 && <4.22,
     bytestring,
+    contra-tracer,
     decentralized-message-queue,
     ouroboros-network-api,
+    ouroboros-network-framework,
     ouroboros-network-protocols:testlib,
     ouroboros-network-testing,
     quickcheck-instances,
@@ -154,7 +159,8 @@ test-suite dmq-test
     time,
     typed-protocols:{typed-protocols, codec-properties},
     with-utf8,
-    io-classes
+    io-classes,
+    io-sim
 
   ghc-options:
     -fno-ignore-asserts
