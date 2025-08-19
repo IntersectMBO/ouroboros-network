@@ -8,6 +8,7 @@ import Control.Tracer (Tracer (..), nullTracer, traceWith)
 import Data.Act
 import Data.Aeson (ToJSON)
 import Data.Functor.Contravariant ((>$<))
+import Data.Proxy
 import Data.Void (Void)
 import Options.Applicative
 import System.Random (newStdGen, split)
@@ -17,14 +18,18 @@ import DMQ.Configuration.CLIOptions (parseCLIOptions)
 import DMQ.Configuration.Topology (readTopologyFileOrError)
 import DMQ.Diffusion.Applications (diffusionApplications)
 import DMQ.Diffusion.Arguments
-import DMQ.Diffusion.NodeKernel (withNodeKernel)
+import DMQ.Diffusion.NodeKernel (mempool, withNodeKernel)
+import DMQ.NodeToClient qualified as NtC
 import DMQ.NodeToNode (dmqCodecs, dmqLimitsAndTimeouts, ntnApps)
+import DMQ.Protocol.SigSubmission.Codec
+import DMQ.Protocol.SigSubmission.Type (Sig (..))
 import DMQ.Tracer
 
 import DMQ.Diffusion.PeerSelection (policy)
 import Ouroboros.Network.Diffusion qualified as Diffusion
 import Ouroboros.Network.PeerSelection.PeerSharing.Codec (decodeRemoteAddress,
            encodeRemoteAddress)
+import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 
 main :: IO ()
 main = void . runDMQ =<< execParser opts
@@ -78,6 +83,13 @@ runDMQ commandLineConfig = do
                                (decodeRemoteAddress maxBound))
                     dmqLimitsAndTimeouts
                     defaultSigDecisionPolicy
+          dmqNtCApps =
+            let sigSize _ = 0 -- TODO
+                maxMsgs = 1000 -- TODO: make this dynamic?
+                mempoolReader = Mempool.getReader sigId sigSize (mempool nodeKernel)
+                mempoolWriter = Mempool.getWriter sigId (const True) (mempool nodeKernel)
+             in NtC.ntcApps (Proxy :: Proxy ()) mempoolReader mempoolWriter maxMsgs
+                            (NtC.dmqCodecs encodeSig decodeSig)
           dmqDiffusionArguments =
             diffusionArguments (if handshakeTracer
                                   then WithEventType "Handshake" >$< tracer
@@ -91,6 +103,7 @@ runDMQ commandLineConfig = do
                                   dmqDiffusionConfiguration
                                   dmqLimitsAndTimeouts
                                   dmqNtNApps
+                                  dmqNtCApps
                                   (policy policyRng)
 
       Diffusion.run dmqDiffusionArguments
