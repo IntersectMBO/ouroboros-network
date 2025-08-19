@@ -8,13 +8,13 @@ import DMQ.Configuration
 import DMQ.Diffusion.NodeKernel (NodeKernel (..))
 import DMQ.NodeToClient (NodeToClientVersion, NodeToClientVersionData,
            stdVersionDataNTC)
+import DMQ.NodeToClient qualified as NTC
 import DMQ.NodeToNode (NodeToNodeVersion, NodeToNodeVersionData,
            stdVersionDataNTN)
 import DMQ.NodeToNode qualified as NTN
 
 import Ouroboros.Network.Diffusion.Types qualified as Diffusion
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
-import Ouroboros.Network.Mux (OuroborosApplication (..))
 import Ouroboros.Network.PeerSelection.Governor.Types (PeerSelectionPolicy)
 import Ouroboros.Network.Protocol.Handshake.Version (combineVersions,
            simpleSingletonVersions)
@@ -27,6 +27,7 @@ diffusionApplications
   -> Diffusion.Configuration NoExtraFlags m ntnFd ntnAddr ntcFd ntcAddr
   -> NTN.LimitsAndTimeouts ntnAddr
   -> NTN.Apps ntnAddr m a ()
+  -> NTC.Apps ntcAddr m ()
   -> PeerSelectionPolicy ntnAddr m
   -> Diffusion.Applications ntnAddr NodeToNodeVersion   NodeToNodeVersionData
                             ntcAddr NodeToClientVersion NodeToClientVersionData
@@ -44,6 +45,7 @@ diffusionApplications
   }
   ntnLimitsAndTimeouts
   ntnApps
+  ntcApps
   peerSelectionPolicy =
   Diffusion.Applications {
     daApplicationInitiatorMode =
@@ -67,11 +69,7 @@ diffusionApplications
         [ simpleSingletonVersions
             version
             (stdVersionDataNTC networkMagic)
-            (\_versionData ->
-                OuroborosApplication
-                  [
-                  ]
-            )
+            (NTC.responders ntcApps version)
         | version <- [minBound..maxBound]
         ]
   , daRethrowPolicy                     =  muxErrorRethrowPolicy
