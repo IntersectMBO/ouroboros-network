@@ -44,6 +44,7 @@ library
   import:
     warnings,
     extensions
+
   exposed-modules:
     DMQ.Configuration
     DMQ.Configuration.CLIOptions
@@ -53,11 +54,14 @@ library
     DMQ.Diffusion.NodeKernel
     DMQ.Diffusion.PeerSelection
     DMQ.NodeToClient
+    DMQ.NodeToClient.LocalMsgNotification
+    DMQ.NodeToClient.LocalMsgSubmission
     DMQ.NodeToClient.Version
     DMQ.NodeToNode
     DMQ.NodeToNode.Version
     DMQ.Protocol.LocalMsgNotification.Client
     DMQ.Protocol.LocalMsgNotification.Codec
+    DMQ.Protocol.LocalMsgNotification.Examples
     DMQ.Protocol.LocalMsgNotification.Server
     DMQ.Protocol.LocalMsgNotification.Type
     DMQ.Protocol.LocalMsgSubmission.Client
@@ -106,6 +110,7 @@ executable dmq-exe
   import:
     warnings,
     extensions
+
   main-is: Main.hs
   ghc-options:
     -threaded
@@ -126,15 +131,17 @@ executable dmq-exe
   default-language: Haskell2010
 
 test-suite dmq-test
-  import: warnings,
-          extensions
+  import:
+    warnings,
+    extensions
+
   default-language: Haskell2010
   other-modules:
     Test.DMQ.NodeToClient
     Test.DMQ.NodeToNode
-    Test.DMQ.Protocol.SigSubmission
     Test.DMQ.Protocol.LocalMsgNotification
     Test.DMQ.Protocol.LocalMsgSubmission
+    Test.DMQ.Protocol.SigSubmission
 
   type: exitcode-stdio-1.0
   hs-source-dirs: test
@@ -143,8 +150,12 @@ test-suite dmq-test
     QuickCheck,
     base >=4.14 && <4.22,
     bytestring,
+    contra-tracer,
     decentralized-message-queue,
+    io-classes,
+    io-sim,
     ouroboros-network-api,
+    ouroboros-network-framework,
     ouroboros-network-protocols:testlib,
     ouroboros-network-testing,
     quickcheck-instances,
@@ -154,7 +165,6 @@ test-suite dmq-test
     time,
     typed-protocols:{typed-protocols, codec-properties},
     with-utf8,
-    io-classes
 
   ghc-options:
     -fno-ignore-asserts

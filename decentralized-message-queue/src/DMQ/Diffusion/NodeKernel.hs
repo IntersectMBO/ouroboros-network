@@ -39,16 +39,16 @@ import DMQ.Protocol.SigSubmission.Type (Sig (..), SigId)
 data NodeKernel ntnAddr m =
   NodeKernel {
     -- | The fetch client registry, used for the keep alive clients.
-    fetchClientRegistry :: FetchClientRegistry (ConnectionId ntnAddr) () () m
+    fetchClientRegistry :: !(FetchClientRegistry (ConnectionId ntnAddr) () () m)
 
     -- | Read the current peer sharing registry, used for interacting with
     -- the PeerSharing protocol
-  , peerSharingRegistry :: PeerSharingRegistry ntnAddr m
-  , peerSharingAPI      :: PeerSharingAPI ntnAddr StdGen m
-  , mempool             :: Mempool m Sig
-  , sigChannelVar       :: TxChannelsVar m ntnAddr SigId Sig
-  , sigMempoolSem       :: TxMempoolSem m
-  , sigSharedTxStateVar :: SharedTxStateVar m ntnAddr SigId Sig
+  , peerSharingRegistry :: !(PeerSharingRegistry ntnAddr m)
+  , peerSharingAPI      :: !(PeerSharingAPI ntnAddr StdGen m)
+  , mempool             :: !(Mempool m Sig)
+  , sigChannelVar       :: !(TxChannelsVar m ntnAddr SigId Sig)
+  , sigMempoolSem       :: !(TxMempoolSem m)
+  , sigSharedTxStateVar :: !(SharedTxStateVar m ntnAddr SigId Sig)
   }
 
 newNodeKernel :: ( MonadLabelledSTM m
