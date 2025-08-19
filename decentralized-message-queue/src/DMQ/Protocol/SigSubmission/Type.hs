@@ -9,6 +9,7 @@ module DMQ.Protocol.SigSubmission.Type
   , SigBody (..)
   , SigKesSignature (..)
   , SigOpCertificate (..)
+  , SigPayload (..)
   , Sig (SigRaw, Sig, sigId, sigBody, sigExpiresAt, sigOpCertificate, sigKesSignature)
     -- * `TxSubmission` mini-protocol
   , SigSubmission
