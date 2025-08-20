@@ -125,8 +125,8 @@ data NodeToNodeProtocols appType initiatorCtx responderCtx bytes m a b = NodeToN
 
     -- | peer sharing mini-protocol
     --
-    peerSharingProtocol  :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b
-
+    peerSharingProtocol
+      :: RunMiniProtocol Mx.InitiatorResponderMode initiatorCtx responderCtx bytes m a b
   }
 
 type NodeToNodeProtocolsWithExpandedCtx appType ntnAddr bytes m a b =
@@ -206,19 +206,19 @@ nodeToNodeProtocols miniProtocolParameters protocols
                 miniProtocolNum    = chainSyncMiniProtocolNum,
                 miniProtocolStart  = StartOnDemand,
                 miniProtocolLimits = chainSyncProtocolLimits miniProtocolParameters,
-                miniProtocolRun    = chainSyncProtocol
+                miniProtocolRun    = SomeMiniProtocol OuroborosMiniProtocolStart chainSyncProtocol
               }
             , MiniProtocol {
                 miniProtocolNum    = blockFetchMiniProtocolNum,
                 miniProtocolStart  = StartOnDemand,
                 miniProtocolLimits = blockFetchProtocolLimits miniProtocolParameters,
-                miniProtocolRun    = blockFetchProtocol
+                miniProtocolRun    = SomeMiniProtocol OuroborosMiniProtocolStart blockFetchProtocol
               }
             , MiniProtocol {
                 miniProtocolNum    = txSubmissionMiniProtocolNum,
                 miniProtocolStart  = StartOnDemand,
                 miniProtocolLimits = txSubmissionProtocolLimits miniProtocolParameters,
-                miniProtocolRun    = txSubmissionProtocol
+                miniProtocolRun    = SomeMiniProtocol OuroborosMiniProtocolStart txSubmissionProtocol
               }
             ])
 
@@ -234,7 +234,7 @@ nodeToNodeProtocols miniProtocolParameters protocols
                 miniProtocolNum    = keepAliveMiniProtocolNum,
                 miniProtocolStart  = StartOnDemandAny,
                 miniProtocolLimits = keepAliveProtocolLimits miniProtocolParameters,
-                miniProtocolRun    = keepAliveProtocol
+                miniProtocolRun    = SomeMiniProtocol OuroborosMiniProtocolStart keepAliveProtocol
               }
             : case peerSharing of
                 PeerSharingEnabled ->
@@ -242,7 +242,8 @@ nodeToNodeProtocols miniProtocolParameters protocols
                       miniProtocolNum    = peerSharingMiniProtocolNum,
                       miniProtocolStart  = StartOnDemand,
                       miniProtocolLimits = peerSharingProtocolLimits miniProtocolParameters,
-                      miniProtocolRun    = peerSharingProtocol
+                      miniProtocolRun    = SomeMiniProtocol StartOnDemandUnidirectionalPairReversePolarity
+                                                            peerSharingProtocol
                     }
                   ]
                 PeerSharingDisabled ->

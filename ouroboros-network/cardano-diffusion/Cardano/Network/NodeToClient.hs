@@ -146,25 +146,25 @@ nodeToClientProtocols protocols _version _versionData =
         miniProtocolNum    = MiniProtocolNum 5,
         miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = maximumMiniProtocolLimits,
-        miniProtocolRun    = localChainSyncProtocol
+        miniProtocolRun    = SomeMiniProtocol OuroborosMiniProtocolStart localChainSyncProtocol
       }
     localTxSubmissionMiniProtocol localTxSubmissionProtocol = MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 6,
         miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = maximumMiniProtocolLimits,
-        miniProtocolRun    = localTxSubmissionProtocol
+        miniProtocolRun    = SomeMiniProtocol OuroborosMiniProtocolStart localTxSubmissionProtocol
       }
     localStateQueryMiniProtocol localStateQueryProtocol = MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 7,
         miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = maximumMiniProtocolLimits,
-        miniProtocolRun    = localStateQueryProtocol
+        miniProtocolRun    = SomeMiniProtocol OuroborosMiniProtocolStart localStateQueryProtocol
       }
     localTxMonitorMiniProtocol localTxMonitorProtocol = MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 9,
         miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = maximumMiniProtocolLimits,
-        miniProtocolRun    = localTxMonitorProtocol
+        miniProtocolRun    = SomeMiniProtocol OuroborosMiniProtocolStart localTxMonitorProtocol
     }
 
 maximumMiniProtocolLimits :: MiniProtocolLimits
