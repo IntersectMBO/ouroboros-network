@@ -43,6 +43,7 @@ module Network.Mux.Types
   , RuntimeError (..)
   , ReadBuffer (..)
   , BearerTrace (..)
+  , StartOnDemandOrEagerly (..)
   ) where
 
 import Prelude hiding (read)
@@ -134,16 +135,33 @@ type family HasResponder (mode :: Mode) :: Bool where
     HasResponder ResponderMode          = True
     HasResponder InitiatorResponderMode = True
 
+-- | Strategy how to start a mini-protocol.
+--
+data StartOnDemandOrEagerly =
+    -- | Start a mini-protocol promptly.
+    StartEagerly
+    -- | Start a mini-protocol when data is received for the given
+    -- mini-protocol.  Must be used only when initial message is sent by the
+    -- remote side.
+  | StartOnDemand
+    -- | Like `StartOnDemand`, but start a mini-protocol if data is received for
+    -- any mini-protocol set to `StartOnDemand`.
+  | StartOnDemandAny
+  deriving (Eq, Show)
+
+
 -- | A static description of a mini-protocol.
 --
-data MiniProtocolInfo (mode :: Mode) =
+data MiniProtocolInfo =
      MiniProtocolInfo {
        miniProtocolNum        :: !MiniProtocolNum,
        -- ^ Unique mini-protocol number.
-       miniProtocolDir        :: !(MiniProtocolDirection mode),
+       miniProtocolDir        :: !MiniProtocolDir,
        -- ^ Mini-protocol direction.
        miniProtocolLimits     :: !MiniProtocolLimits,
        -- ^ ingress queue limits for the protocol
+       miniProtocolStart      :: !StartOnDemandOrEagerly,
+       -- ^ starting strategy
        miniProtocolCapability :: !(Maybe Int)
        -- ^ capability on which the mini-protocol should run
      }
@@ -196,8 +214,9 @@ protocolDirEnum ResponderDirectionOnly = ResponderDir
 protocolDirEnum InitiatorDirection     = InitiatorDir
 protocolDirEnum ResponderDirection     = ResponderDir
 
-data MiniProtocolState mode m = MiniProtocolState {
-       miniProtocolInfo         :: MiniProtocolInfo mode,
+
+data MiniProtocolState m = MiniProtocolState {
+       miniProtocolInfo         :: MiniProtocolInfo,
        miniProtocolIngressQueue :: IngressQueue m,
        miniProtocolStatusVar    :: StrictTVar m MiniProtocolStatus
      }

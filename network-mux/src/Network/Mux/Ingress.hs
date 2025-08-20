@@ -101,7 +101,7 @@ data MiniProtocolDispatchInfo m =
 -- the underlying Bearer and forwards it to the matching ingress queue.
 demuxer :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
             MonadTimer m)
-      => [MiniProtocolState mode m]
+      => [MiniProtocolState m]
       -> Tracer m BearerTrace
       -> Bearer m
       -> m void
@@ -145,8 +145,8 @@ lookupMiniProtocol (MiniProtocolDispatch pnumArray ptclArray) pnum pdir
 -- | Construct the table that maps 'MiniProtocolNum' and 'MiniProtocolDir' to
 -- 'MiniProtocolDispatchInfo'. Use 'lookupMiniProtocol' to index it.
 --
-setupDispatchTable :: forall mode m.
-                      [MiniProtocolState mode m] -> MiniProtocolDispatch m
+setupDispatchTable :: forall m.
+                      [MiniProtocolState m] -> MiniProtocolDispatch m
 setupDispatchTable ptcls =
     MiniProtocolDispatch pnumArray ptclArray
   where
@@ -194,7 +194,7 @@ setupDispatchTable ptcls =
                      -- `pnumArray` is constructed to ensure that every
                      -- `miniProtocolNum` in `ptcls` indexes to a `Just` value.
                      Nothing -> error ("setupDispatchTable: impossible: missing " ++ show miniProtocolNum)
-                  dir      = protocolDirEnum miniProtocolDir
+                  dir      = miniProtocolDir
                   qMax     = maximumIngressQueue miniProtocolLimits
             ]
 

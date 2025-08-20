@@ -31,6 +31,7 @@ module Network.Mux
   , stop
     -- ** Run a mini-protocol
   , runMiniProtocol
+  , runMiniProtocol'
   , StartOnDemandOrEagerly (..)
   , ByteChannel
   , Channel (..)
@@ -97,8 +98,8 @@ import Network.Mux.Types
 data Mux (mode :: Mode) m =
      Mux {
        muxMiniProtocols   :: !(Map (MiniProtocolNum, MiniProtocolDir)
-                                   (MiniProtocolState mode m)),
-       muxControlCmdQueue :: !(StrictTQueue m (ControlCmd mode m)),
+                                   (MiniProtocolState m)),
+       muxControlCmdQueue :: !(StrictTQueue m (ControlCmd m)),
        muxStatus          :: StrictTVar m Status
      }
 
@@ -127,7 +128,7 @@ stopped Mux { muxStatus } =
 --
 new :: forall (mode :: Mode) m.
        MonadLabelledSTM m
-    => [MiniProtocolInfo mode]
+    => [MiniProtocolInfo]
     -- ^ description of protocols run by the mux layer.  Only these protocols
     -- one will be able to execute.
     -> m (Mux mode m)
@@ -142,19 +143,19 @@ new ptcls = do
     }
 
 mkMiniProtocolStateMap :: MonadSTM m
-                       => [MiniProtocolInfo mode]
+                       => [MiniProtocolInfo]
                        -> m (Map (MiniProtocolNum, MiniProtocolDir)
-                                 (MiniProtocolState mode m))
+                                 (MiniProtocolState m))
 mkMiniProtocolStateMap ptcls =
     Map.fromList <$>
     sequence
       [ do state <- mkMiniProtocolState ptcl
-           return ((miniProtocolNum, protocolDirEnum miniProtocolDir), state)
+           return ((miniProtocolNum, miniProtocolDir), state)
       | ptcl@MiniProtocolInfo {miniProtocolNum, miniProtocolDir} <- ptcls ]
 
 mkMiniProtocolState :: MonadSTM m
-                    => MiniProtocolInfo mode
-                    -> m (MiniProtocolState mode m)
+                    => MiniProtocolInfo
+                    -> m (MiniProtocolState m)
 mkMiniProtocolState miniProtocolInfo = do
     miniProtocolIngressQueue <- newTVarIO $ 0 :!: mempty
     miniProtocolStatusVar    <- newTVarIO StatusIdle
@@ -283,14 +284,14 @@ run tracers@TracersI { tracer_,
 -- | Mini-protocol thread executed by `JobPool` which executes `protocolAction`.
 --
 miniProtocolJob
-  :: forall mode m.
+  :: forall m.
      ( MonadSTM m
      , MonadThread m
      , MonadThrow (STM m)
      )
   => Tracers m
   -> EgressQueue m
-  -> MiniProtocolState mode m
+  -> MiniProtocolState m
   -> MiniProtocolAction m
   -> JobPool.Job Group m JobResult
 miniProtocolJob TracersI {
@@ -314,17 +315,17 @@ miniProtocolJob TracersI {
     JobPool.Job jobAction
                 jobHandler
                 MiniProtocolJob
-                (show miniProtocolNum ++ "." ++ show miniProtocolDirEnum)
+                (show miniProtocolNum ++ "." ++ show miniProtocolDir)
   where
     jobAction = do
       labelThisThread (case miniProtocolNum of
                         MiniProtocolNum a -> "prtcl-" ++ show a)
       w <- newTVarIO BL.empty
       let chan = muxChannel channelTracer_ egressQueue (Wanton w)
-                            miniProtocolNum miniProtocolDirEnum
+                            miniProtocolNum miniProtocolDir
                             miniProtocolIngressQueue
       (result, remainder) <- miniProtocolAction chan
-      traceWith tracer_ (TraceTerminating miniProtocolNum miniProtocolDirEnum)
+      traceWith tracer_ (TraceTerminating miniProtocolNum miniProtocolDir)
       atomically $ do
         -- The Wanton w is the SDUs that are queued but not yet sent for this job.
         -- Job threads will be prevented from exiting until all their SDUs have been
@@ -341,7 +342,7 @@ miniProtocolJob TracersI {
           Nothing ->
             pure ()
 
-      return (MiniProtocolShutdown miniProtocolNum miniProtocolDirEnum)
+      return (MiniProtocolShutdown miniProtocolNum miniProtocolDir)
 
     jobHandler :: SomeException -> m JobResult
     jobHandler e = do
@@ -349,31 +350,16 @@ miniProtocolJob TracersI {
         putTMVar completionVar (Left e)
         `orElse`
         throwSTM (BlockedOnCompletionVar miniProtocolNum)
-      return (MiniProtocolException miniProtocolNum miniProtocolDirEnum e)
+      return (MiniProtocolException miniProtocolNum miniProtocolDir e)
 
-    miniProtocolDirEnum :: MiniProtocolDir
-    miniProtocolDirEnum = protocolDirEnum miniProtocolDir
 
-data ControlCmd mode m =
+data ControlCmd m =
      CmdStartProtocolThread
        !StartOnDemandOrEagerly
-       !(MiniProtocolState mode m)
+       !(MiniProtocolState m)
        !(MiniProtocolAction m)
    | CmdShutdown
 
--- | Strategy how to start a mini-protocol.
---
-data StartOnDemandOrEagerly =
-    -- | Start a mini-protocol promptly.
-    StartEagerly
-    -- | Start a mini-protocol when data is received for the given
-    -- mini-protocol.  Must be used only when initial message is sent by the
-    -- remote side.
-  | StartOnDemand
-    -- | Like `StartOnDemand`, but start a mini-protocol if data is received for
-    -- any mini-protocol set to `StartOnDemand`.
-  | StartOnDemandAny
-  deriving (Eq, Show)
 
 data MiniProtocolAction m where
     MiniProtocolAction :: forall m a.
@@ -390,12 +376,12 @@ data MonitorCtx m mode = MonitorCtx {
     -- | Mini-Protocols started on demand and waiting to be scheduled.
     --
     mcOnDemandProtocols :: !(Map MiniProtocolKey
-                               (MiniProtocolState mode m, MiniProtocolAction m))
+                               (MiniProtocolState m, MiniProtocolAction m))
     -- | Mini-Protocols started on demand any and waiting to be scheduled.
     -- Disjoint from `mcOnDemandProtocols`.
     --
   , mcOnDemandAnyProtocols :: !(Map MiniProtocolKey
-                                  (MiniProtocolState mode m, MiniProtocolAction m))
+                                  (MiniProtocolState m, MiniProtocolAction m))
   }
 
 -- | The monitoring loop does two jobs:
@@ -404,7 +390,7 @@ data MonitorCtx m mode = MonitorCtx {
 --  2. It starts responder protocol threads on demand when the first
 --     incoming message arrives.
 --
-monitor :: forall mode m.
+monitor :: forall m.
            ( MonadAsync m
            , MonadMask m
            , Alternative (STM m)
@@ -414,7 +400,7 @@ monitor :: forall mode m.
         -> TimeoutFn m
         -> JobPool.JobPool Group m JobResult
         -> EgressQueue m
-        -> StrictTQueue m (ControlCmd mode m)
+        -> StrictTQueue m (ControlCmd m)
         -> StrictTVar m Status
         -> m ()
 monitor tracers@TracersI {
@@ -499,7 +485,7 @@ monitor tracers@TracersI {
                            }
                            ptclAction) -> do
           traceWith tracer (TraceStartEagerly miniProtocolNum
-                                              (protocolDirEnum miniProtocolDir))
+                                              miniProtocolDir)
           case miniProtocolCapability of
             Nothing ->
               JobPool.forkJob jobpool $
@@ -532,7 +518,7 @@ monitor tracers@TracersI {
                                                       mcOnDemandProtocols
                                        }
           traceWith tracer (TraceStartOnDemand miniProtocolNum
-                             (protocolDirEnum miniProtocolDir))
+                             miniProtocolDir)
           go monitorCtx'
 
         EventControlCmd (CmdStartProtocolThread
@@ -550,7 +536,7 @@ monitor tracers@TracersI {
                                                       mcOnDemandAnyProtocols
                                        }
           traceWith tracer (TraceStartOnDemandAny miniProtocolNum
-                             (protocolDirEnum miniProtocolDir))
+                             miniProtocolDir)
           go monitorCtx'
 
         EventControlCmd CmdShutdown -> do
@@ -592,7 +578,7 @@ monitor tracers@TracersI {
 
           go $ monitorCtx { mcOnDemandAnyProtocols = Map.empty }
 
-    doStartOnDemand :: MiniProtocolState mode m
+    doStartOnDemand :: MiniProtocolState m
                         -> MiniProtocolAction m
                         -> m ()
     doStartOnDemand ptclState@MiniProtocolState {
@@ -605,7 +591,7 @@ monitor tracers@TracersI {
                     }
                     ptclAction = do
       traceWith tracer (TraceStartedOnDemand miniProtocolNum
-                                             (protocolDirEnum miniProtocolDir))
+                                             miniProtocolDir)
       atomically $ modifyTVar miniProtocolStatusVar (\a -> assert (a /= StatusRunning) StatusRunning)
       case miniProtocolCapability of
         Nothing ->
@@ -628,19 +614,19 @@ monitor tracers@TracersI {
       l :!: _ <- readTVar q
       check (l /= 0)
 
-    protocolKey :: MiniProtocolState mode m -> MiniProtocolKey
+    protocolKey :: MiniProtocolState m -> MiniProtocolKey
     protocolKey MiniProtocolState {
                   miniProtocolInfo = MiniProtocolInfo {
                     miniProtocolNum,
                     miniProtocolDir
                   }
                 } =
-      (miniProtocolNum, protocolDirEnum miniProtocolDir)
+      (miniProtocolNum, miniProtocolDir)
 
-data MonitorEvent mode m =
+data MonitorEvent m =
      EventJobResult  JobResult
-   | EventControlCmd (ControlCmd mode m)
-   | EventStartOnDemand (MiniProtocolState mode m)
+   | EventControlCmd (ControlCmd m)
+   | EventStartOnDemand (MiniProtocolState m)
                         (MiniProtocolAction m)
    | EventStartOnDemandAny
 
@@ -767,12 +753,27 @@ runMiniProtocol :: forall mode m a.
                 -> StartOnDemandOrEagerly
                 -> (ByteChannel m -> m (a, Maybe BL.ByteString))
                 -> m (STM m (Either SomeException a))
-runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue, muxStatus}
+runMiniProtocol mux ptclNum ptclDir =
+  runMiniProtocol' mux ptclNum (protocolDirEnum ptclDir)
+
+runMiniProtocol' :: forall mode m a.
+                   ( Alternative (STM m)
+                   , MonadSTM   m
+                   , MonadThrow m
+                   , MonadThrow (STM m)
+                   )
+                => Mux mode m
+                -> MiniProtocolNum
+                -> MiniProtocolDir
+                -> StartOnDemandOrEagerly
+                -> (ByteChannel m -> m (a, Maybe BL.ByteString))
+                -> m (STM m (Either SomeException a))
+runMiniProtocol' Mux { muxMiniProtocols, muxControlCmdQueue, muxStatus}
                 ptclNum ptclDir startMode protocolAction
 
     -- Ensure the mini-protocol is known and get the status var
   | Just ptclState@MiniProtocolState{miniProtocolStatusVar}
-      <- Map.lookup (ptclNum, ptclDir') muxMiniProtocols
+      <- Map.lookup (ptclNum, ptclDir) muxMiniProtocols
 
   = atomically $ do
       st <- readTVar muxStatus
@@ -785,7 +786,7 @@ runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue, muxStatus}
       -- indicate a thread is running (or ready to start on demand)
       status <- readTVar miniProtocolStatusVar
       unless (status == StatusIdle) $
-        throwSTM (ProtocolAlreadyRunning ptclNum ptclDir' status)
+        throwSTM (ProtocolAlreadyRunning ptclNum ptclDir status)
       let !status' = case startMode of
                        StartOnDemand    -> StatusStartOnDemand
                        StartOnDemandAny -> StatusStartOnDemandAny
@@ -805,10 +806,8 @@ runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue, muxStatus}
     -- It is a programmer error to get the wrong protocol, but this is also
     -- very easy to avoid.
   | otherwise
-  = throwIO (UnknownProtocolInternalError ptclNum ptclDir')
+  = throwIO (UnknownProtocolInternalError ptclNum ptclDir)
   where
-    ptclDir' = protocolDirEnum ptclDir
-
     -- Wait for the miniprotocol to complete.
     -- If the mux was stopped through a call to 'stop' (Stopped)
     -- or in case of an error (Failed) we return the result of
