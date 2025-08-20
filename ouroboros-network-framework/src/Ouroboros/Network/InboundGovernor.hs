@@ -7,6 +7,7 @@
 {-# LANGUAGE KindSignatures        #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeOperators         #-}
@@ -45,7 +46,7 @@ import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (SomeAsyncException (..))
-import Control.Monad (foldM, forM_, forever, when)
+import Control.Monad (foldM, forM_, forM, forever, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
@@ -58,6 +59,7 @@ import Data.ByteString.Lazy (ByteString)
 import Data.Cache
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (catMaybes, fromJust, isJust)
 import Data.Maybe.Strict
 import Data.Monoid.Synchronisation
 import Data.OrdPSQ (OrdPSQ)
@@ -109,6 +111,9 @@ data Arguments muxMode handlerTrace socket peerAddr initiatorCtx responderCtx
       idleTimeout        :: Maybe DiffTime,
       -- ^ protocol idle timeout.  The remote site must restart a mini-protocol
       -- within given timeframe (Nothing indicates no timeout).
+      mkInitiatorCtx     :: Maybe (ConnectionId peerAddr -> initiatorCtx),
+      -- ^ Make initiator context to run an eligible initiator protocol back
+      -- to the client when unidirectional diffusion was negotiated
       withConnectionManager
         :: ConnectionHandler muxMode handlerTrace socket peerAddr handle handleError versionNumber versionData m
         -> (ConnectionManager muxMode socket peerAddr handle handleError m -> m x)
@@ -176,7 +181,8 @@ with
       idleTimeout,
       infoChannel,
       withConnectionManager,
-      mkConnectionHandler
+      mkConnectionHandler,
+      mkInitiatorCtx
     }
     k
     = do
@@ -294,44 +300,66 @@ with
                   (\case
                     -- connection
                     Nothing -> do
-                      let csMPMHot =
-                            [ ( miniProtocolNum mpH
-                              , MiniProtocolData mpH responderContext Hot
-                              )
-                            | mpH <- projectBundle SingHot muxBundle
-                            ]
-                          csMPMWarm =
-                            [ ( miniProtocolNum mpW
-                              , MiniProtocolData mpW responderContext Warm
-                              )
-                            | mpW <- projectBundle SingWarm muxBundle
-                            ]
-                          csMPMEstablished =
-                            [ ( miniProtocolNum mpE
-                              , MiniProtocolData mpE responderContext Established
-                              )
-                            | mpE <- projectBundle SingEstablished muxBundle
-                            ]
-                          csMiniProtocolMap =
-                              Map.fromList
-                              (csMPMHot ++ csMPMWarm ++ csMPMEstablished)
+                      let project :: SingProtocolTemperature temp -> ProtocolTemperature
+                                  -> m [( MiniProtocolNum
+                                        , MiniProtocolData initiatorCtx peerAddr m a b)]
+                          project sing temp = do
+                            let mkInfo mp =
+                                  Mux.MiniProtocolInfo mp.miniProtocolNum Mux.ResponderDir
+                                                       mp.miniProtocolLimits mp.miniProtocolStart
+                                                       Nothing
+                            catMaybes <$> forM (projectBundle sing muxBundle) \mp -> do
+                              case miniProtocolRun mp of
+                                SomeMiniProtocol _ InitiatorProtocolOnly{}      -> return Nothing
+                                SomeMiniProtocol _ (ResponderProtocolOnly resp) ->
+                                  return . Just $
+                                    ( mp.miniProtocolNum
+                                    , MiniProtocolData (mkInfo mp) resp responderContext temp)
+                                SomeMiniProtocol start (InitiatorAndResponderProtocol initiator responder) -> do
+                                  when (   dataFlow == Unidirectional
+                                        && start    == StartOnDemandUnidirectionalPairReversePolarity
+                                        && isJust mkInitiatorCtx) do
+                                    result <- tryJust (\e -> case fromException e of
+                                                Just (SomeAsyncException _) -> Nothing
+                                                Nothing                     -> Just e) $
+                                      Mux.runMiniProtocol'
+                                        csMux
+                                        mp.miniProtocolNum
+                                        Mux.InitiatorDir
+                                        Mux.StartEagerly
+                                        (runMiniProtocolCb initiator (fromJust mkInitiatorCtx connId))
+                                    case result of
+                                      Left e ->
+                                        traceWith tracer $ TrInitiatorStartFailure connId mp.miniProtocolNum e
+                                      _e     -> pure ()
+                                  return . Just $
+                                    ( mp.miniProtocolNum
+                                    , MiniProtocolData (mkInfo mp) responder responderContext temp)
+
+                          csMPMHot         = project SingHot Hot
+                          csMPMWarm        = project SingWarm Warm
+                          csMPMEstablished = project SingEstablished Established
+
+                      csMiniProtocolMap <-
+                        Map.fromList . mconcat <$>
+                          sequence [csMPMHot, csMPMWarm, csMPMEstablished]
 
                       mCompletionMap
                         <-
                         foldM
-                          (\acc mpd@MiniProtocolData { mpdMiniProtocol } ->
+                          (\acc mpd ->
                             runResponder csMux mpd >>= \case
                               -- synchronous exceptions when starting
                               -- a mini-protocol are non-recoverable; we
                               -- close the connection and allow the server
                               -- to continue.
                               Left err -> do
-                                traceWith tracer (TrResponderStartFailure connId (miniProtocolNum mpdMiniProtocol) err)
+                                traceWith tracer (TrResponderStartFailure connId mpd.mpdMiniProtocolInfo.miniProtocolNum err)
                                 Mux.stop csMux
                                 return Nothing
 
                               Right completion ->  do
-                                let acc' = Map.insert (miniProtocolNum mpdMiniProtocol)
+                                let acc' = Map.insert mpd.mpdMiniProtocolInfo.miniProtocolNum
                                                       completion
                                        <$> acc
                                 -- force under lazy 'Maybe'
@@ -408,11 +436,11 @@ with
             Terminated {
                 tConnId,
                 tMux,
-                tMiniProtocolData = mpd@MiniProtocolData { mpdMiniProtocol = miniProtocol },
+                tMiniProtocolData = mpd,
                 tResult
               } -> do
             tResult' <- atomically tResult
-            let num = miniProtocolNum miniProtocol
+            let num = mpd.mpdMiniProtocolInfo.miniProtocolNum
             case tResult' of
               Left e -> do
                 -- a mini-protocol errored.  In this case mux will shutdown, and
@@ -734,31 +762,27 @@ runResponder :: forall (mode :: Mux.Mode) initiatorCtx peerAddr m a b.
                  , MonadThrow  (STM m)
                  )
               => Mux.Mux mode m
-              -> MiniProtocolData mode initiatorCtx peerAddr m a b
+              -> MiniProtocolData initiatorCtx peerAddr m a b
               -> m (Either SomeException (STM m (Either SomeException b)))
 runResponder mux
              MiniProtocolData {
-               mpdMiniProtocol     = miniProtocol,
+               mpdMiniProtocolInfo = Mux.MiniProtocolInfo {
+                                       miniProtocolNum
+                                     , miniProtocolStart
+                                     },
+               mpdMiniProtocolRun,
                mpdResponderContext = responderContext
              } =
     -- do not catch asynchronous exceptions, which are non recoverable
     tryJust (\e -> case fromException e of
               Just (SomeAsyncException _) -> Nothing
               Nothing                     -> Just e) $
-      case miniProtocolRun miniProtocol of
-        ResponderProtocolOnly responder ->
-          Mux.runMiniProtocol
-            mux (miniProtocolNum miniProtocol)
-            Mux.ResponderDirectionOnly
-            (miniProtocolStart miniProtocol)
-            (runMiniProtocolCb responder responderContext)
-
-        InitiatorAndResponderProtocol _ responder ->
-          Mux.runMiniProtocol
-            mux (miniProtocolNum miniProtocol)
-            Mux.ResponderDirection
-            (miniProtocolStart miniProtocol)
-            (runMiniProtocolCb responder responderContext)
+      Mux.runMiniProtocol'
+        mux
+        miniProtocolNum
+        Mux.ResponderDir
+        miniProtocolStart
+        (runMiniProtocolCb mpdMiniProtocolRun responderContext)
 
 
 maturedPeers :: Ord peerAddr
@@ -900,7 +924,7 @@ type EventSignal (muxMode :: Mux.Mode) handle initiatorCtx peerAddr versionData 
 data Terminated muxMode initiatorCtx peerAddr m a b = Terminated {
     tConnId           :: !(ConnectionId peerAddr),
     tMux              :: !(Mux.Mux muxMode m),
-    tMiniProtocolData :: !(MiniProtocolData muxMode initiatorCtx peerAddr m a b),
+    tMiniProtocolData :: !(MiniProtocolData initiatorCtx peerAddr m a b),
     tDataFlow         :: !DataFlow,
     tResult           :: STM m (Either SomeException b) -- !(Either SomeException b)
   }
@@ -929,6 +953,7 @@ data Trace peerAddr
     = TrNewConnection                !Provenance !(ConnectionId peerAddr)
     | TrResponderRestarted           !(ConnectionId peerAddr) !MiniProtocolNum
     | TrResponderStartFailure        !(ConnectionId peerAddr) !MiniProtocolNum !SomeException
+    | TrInitiatorStartFailure        !(ConnectionId peerAddr) !MiniProtocolNum !SomeException
     | TrResponderErrored             !(ConnectionId peerAddr) !MiniProtocolNum !SomeException
     | TrResponderStarted             !(ConnectionId peerAddr) !MiniProtocolNum
     | TrResponderTerminated          !(ConnectionId peerAddr) !MiniProtocolNum

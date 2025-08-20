@@ -66,13 +66,17 @@ import Ouroboros.Network.Snocket
 
 -- | Server static configuration.
 --
-data Arguments muxMode socket peerAddr initiatorCtx responderCtx handle handlerTrace handleError versionNumber versionData bytes m a b x =
+data Arguments muxMode socket peerAddr initiatorCtx responderCtx handle
+               handlerTrace handleError versionNumber versionData bytes m a b x =
     Arguments {
       sockets               :: NonEmpty socket,
       snocket               :: Snocket m socket peerAddr,
       tracer                :: Tracer m (Trace peerAddr),
       connectionLimits      :: AcceptedConnectionsLimit,
-      inboundGovernorArgs   :: InboundGovernor.Arguments muxMode handlerTrace socket peerAddr initiatorCtx responderCtx handle handleError versionNumber versionData bytes m a b x
+      inboundGovernorArgs
+        :: InboundGovernor.Arguments muxMode handlerTrace socket peerAddr initiatorCtx
+                                     responderCtx handle handleError versionNumber
+                                     versionData bytes m a b x
     }
 
 -- | Server pauses accepting connections after an 'CONNABORTED' error.

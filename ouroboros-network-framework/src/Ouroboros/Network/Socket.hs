@@ -1,3 +1,4 @@
+{-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DerivingVia         #-}
@@ -80,6 +81,7 @@ import Control.Tracer
 
 import Network.Mux qualified as Mx
 import Network.Mux.Bearer qualified as Mx
+import Network.Mux.Types qualified as Mx
 import Network.Mux.DeltaQ.TraceTransformer
 import Network.TypedProtocol.Codec hiding (decode, encode)
 
@@ -437,7 +439,7 @@ simpleMuxCallback connectionId _ _ app mux aid = do
         respCtx = ResponderContext connectionId
 
     resOps <- sequence
-      [ Mx.runMiniProtocol
+      [ Mx.runMiniProtocol'
           mux
           miniProtocolNum
           miniProtocolDir
@@ -447,13 +449,13 @@ simpleMuxCallback connectionId _ _ app mux aid = do
           <- getOuroborosApplication app
       , (miniProtocolDir, action) <-
           case miniProtocolRun of
-            InitiatorProtocolOnly initiator ->
-              [(Mx.InitiatorDirectionOnly, fmap (first Left) . runMiniProtocolCb initiator initCtx)]
-            ResponderProtocolOnly responder ->
-              [(Mx.ResponderDirectionOnly, fmap (first Right) . runMiniProtocolCb responder respCtx)]
-            InitiatorAndResponderProtocol initiator responder ->
-              [(Mx.InitiatorDirection, fmap (first Left) . runMiniProtocolCb initiator initCtx)
-              ,(Mx.ResponderDirection, fmap (first Right) . runMiniProtocolCb responder respCtx)]
+            SomeMiniProtocol _ (InitiatorProtocolOnly initiator) ->
+              [(Mx.ResponderDir, fmap (first Left) . runMiniProtocolCb initiator initCtx)]
+            SomeMiniProtocol _ (ResponderProtocolOnly responder) ->
+              [(Mx.ResponderDir, fmap (first Right) . runMiniProtocolCb responder respCtx)]
+            SomeMiniProtocol _ (InitiatorAndResponderProtocol initiator responder) ->
+              [(Mx.InitiatorDir, fmap (first Left) . runMiniProtocolCb initiator initCtx)
+              ,(Mx.ResponderDir, fmap (first Right) . runMiniProtocolCb responder respCtx)]
       ]
 
     -- Wait for the first MuxApplication to finish, then stop the mux.

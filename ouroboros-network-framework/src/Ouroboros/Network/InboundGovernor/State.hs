@@ -149,10 +149,12 @@ counters State { connections } =
             connections
 
 
-data MiniProtocolData muxMode initiatorCtx peerAddr m a b = MiniProtocolData {
+data MiniProtocolData initiatorCtx peerAddr m a b = MiniProtocolData {
     -- | Static 'MiniProtocol' description.
     --
-    mpdMiniProtocol     :: !(MiniProtocol muxMode initiatorCtx (ResponderContext peerAddr) ByteString m a b),
+    mpdMiniProtocolInfo :: !Mux.MiniProtocolInfo,
+
+    mpdMiniProtocolRun  :: !(MiniProtocolCb (ResponderContext peerAddr) ByteString m b),
 
     mpdResponderContext :: !(ResponderContext peerAddr),
 
@@ -177,7 +179,7 @@ data ConnectionState muxMode initiatorCtx peerAddr versionData m a b = Connectio
       -- 'ProtocolTemperature'
       --
       csMiniProtocolMap :: !(Map MiniProtocolNum
-                                 (MiniProtocolData muxMode initiatorCtx peerAddr m a b)),
+                                 (MiniProtocolData initiatorCtx peerAddr m a b)),
 
       -- | Map of all running mini-protocol completion STM actions.
       --

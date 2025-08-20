@@ -37,6 +37,8 @@ module Ouroboros.Network.Mux
   , MiniProtocolNum (..)
   , MiniProtocolLimits (..)
   , ForkPolicy (..)
+  , SomeMiniProtocol (..)
+  , OuroborosMiniProtocolStart (..)
   , noBindForkPolicy
   , responderForkPolicy
     -- * MiniProtocol bundle
@@ -213,7 +215,7 @@ instance Applicative TemperatureBundle where
 --
 
 type OuroborosBundle   (mode :: Mux.Mode) initiatorCtx responderCtx bytes m a b =
-    TemperatureBundle [MiniProtocol mode initiatorCtx responderCtx bytes m a b]
+    TemperatureBundle [MiniProtocol initiatorCtx responderCtx bytes m a b]
 
 -- | 'OuroborosBundle' used in P2P.
 --
@@ -236,7 +238,7 @@ type OuroborosBundleWithMinimalCtx (mode :: Mux.Mode) peerAddr bytes m a b =
 -- * ingress size limit, and
 -- * callbacks.
 --
-data MiniProtocol (mode :: Mux.Mode) initiatorCtx responderCtx bytes m a b =
+data MiniProtocol initiatorCtx responderCtx bytes m a b =
      MiniProtocol {
        miniProtocolNum    :: !MiniProtocolNum,
        -- ^ mini-protocol number
@@ -245,48 +247,59 @@ data MiniProtocol (mode :: Mux.Mode) initiatorCtx responderCtx bytes m a b =
        -- started using `StartEagerly`.
        miniProtocolLimits :: !MiniProtocolLimits,
        -- ^ mini-protocol limits
-       miniProtocolRun    :: !(RunMiniProtocol mode initiatorCtx responderCtx bytes m a b)
+       miniProtocolRun    :: !(SomeMiniProtocol initiatorCtx responderCtx bytes m a b)
        -- ^ mini-protocol callback(s)
      }
 
+data SomeMiniProtocol initiatorCtx responderCtx bytes m a b =
+  forall mode . SomeMiniProtocol
+                  !OuroborosMiniProtocolStart
+                  !(RunMiniProtocol mode initiatorCtx responderCtx bytes m a b)
+
+data OuroborosMiniProtocolStart =
+  OuroborosMiniProtocolStart | StartOnDemandUnidirectionalPairReversePolarity
+  deriving (Eq, Show)
+
 mkMiniProtocolInfo :: ForkPolicyCb
-                   -> MiniProtocol mode initiatorCtx responderCtx bytes m a b
-                   -> [MiniProtocolInfo mode]
+                   -> MiniProtocol initiatorCtx responderCtx bytes m a b
+                   -> [MiniProtocolInfo]
 mkMiniProtocolInfo forkPolicy MiniProtocol {
      miniProtocolNum,
      miniProtocolLimits,
-     miniProtocolRun
+     miniProtocolRun,
+     miniProtocolStart
    }
   =
   [ Mux.MiniProtocolInfo {
       Mux.miniProtocolNum,
+      Mux.miniProtocolStart,
       Mux.miniProtocolDir = dir,
       Mux.miniProtocolLimits,
       Mux.miniProtocolCapability =
-        forkPolicy miniProtocolNum
-                  (Mux.protocolDirEnum dir)
+        forkPolicy miniProtocolNum dir
     }
   | dir <- case miniProtocolRun of
-             InitiatorProtocolOnly{}         -> [ Mux.InitiatorDirectionOnly ]
-             ResponderProtocolOnly{}         -> [ Mux.ResponderDirectionOnly ]
-             InitiatorAndResponderProtocol{} -> [ Mux.InitiatorDirection
-                                                , Mux.ResponderDirection ]
+             SomeMiniProtocol _ InitiatorProtocolOnly{}         -> [ Mux.InitiatorDir ]
+             SomeMiniProtocol _ ResponderProtocolOnly{}         -> [ Mux.ResponderDir ]
+             SomeMiniProtocol _ InitiatorAndResponderProtocol{} ->
+                                                  [ Mux.InitiatorDir
+                                                  , Mux.ResponderDir ]
   ]
 
 
 -- | 'MiniProtocol' type used in P2P.
 --
-type MiniProtocolWithExpandedCtx mode peerAddr bytes m a b =
-     MiniProtocol mode (ExpandedInitiatorContext peerAddr m)
-                       (ResponderContext peerAddr)
-                       bytes m a b
+type MiniProtocolWithExpandedCtx peerAddr bytes m a b =
+     MiniProtocol (ExpandedInitiatorContext peerAddr m)
+                  (ResponderContext peerAddr)
+                  bytes m a b
 
 -- | 'MiniProtocol' type used in non-P2P.
 --
-type MiniProtocolWithMinimalCtx mode peerAddr bytes m a b =
-     MiniProtocol mode (MinimalInitiatorContext peerAddr)
-                       (ResponderContext peerAddr)
-                       bytes m a b
+type MiniProtocolWithMinimalCtx peerAddr bytes m a b =
+     MiniProtocol (MinimalInitiatorContext peerAddr)
+                  (ResponderContext peerAddr)
+                  bytes m a b
 
 
 -- | 'RunMiniProtocol'.  It also capture context (the `IsBigLedgerPeer`) which
@@ -420,10 +433,10 @@ contramapMiniProtocolCbCtx f (MiniProtocolCb cb) = MiniProtocolCb (cb . f)
 -- @Channel -> m a@ action.
 --
 -- Note: Only used in some non-P2P contexts.
-newtype OuroborosApplication  (mode :: Mux.Mode) initiatorCtx responderCtx bytes m a b =
+newtype OuroborosApplication (mode :: Mux.Mode) initiatorCtx responderCtx bytes m a b =
   OuroborosApplication {
     getOuroborosApplication
-      :: [MiniProtocol mode initiatorCtx responderCtx bytes m a b]
+      :: [MiniProtocol initiatorCtx responderCtx bytes m a b]
   }
 
 -- | 'OuroborosApplication' used in NonP2P mode.
@@ -478,7 +491,7 @@ responderForkPolicy salt numCapabilities = ForkPolicy {
 
 toMiniProtocolInfos :: ForkPolicyCb
                     -> OuroborosApplication mode initiatorCtx responderCtx bytes m a b
-                    -> [MiniProtocolInfo mode]
+                    -> [MiniProtocolInfo]
 toMiniProtocolInfos forkPolicy =
     foldMap (mkMiniProtocolInfo forkPolicy) . getOuroborosApplication
 
@@ -486,15 +499,17 @@ toMiniProtocolInfos forkPolicy =
 contramapInitiatorCtx :: (initiatorCtx' -> initiatorCtx)
                       -> OuroborosApplication mode initiatorCtx  responderCtx bytes m a b
                       -> OuroborosApplication mode initiatorCtx' responderCtx bytes m a b
-contramapInitiatorCtx f (OuroborosApplication ptcls) = OuroborosApplication
+contramapInitiatorCtx f (OuroborosApplication ptcls) =
+  OuroborosApplication
   [ ptcl { miniProtocolRun =
              case miniProtocolRun ptcl of
-               InitiatorProtocolOnly initiator ->
-                 InitiatorProtocolOnly (contramapMiniProtocolCbCtx f initiator)
-               ResponderProtocolOnly responder ->
-                 ResponderProtocolOnly responder
-               InitiatorAndResponderProtocol initiator responder ->
-                 InitiatorAndResponderProtocol (contramapMiniProtocolCbCtx f initiator) responder
+               SomeMiniProtocol start (InitiatorProtocolOnly initiator) ->
+                 SomeMiniProtocol start $ InitiatorProtocolOnly (contramapMiniProtocolCbCtx f initiator)
+               SomeMiniProtocol start (ResponderProtocolOnly responder) ->
+                 SomeMiniProtocol start $ ResponderProtocolOnly responder
+               SomeMiniProtocol start (InitiatorAndResponderProtocol initiator responder) ->
+                 SomeMiniProtocol start $
+                   InitiatorAndResponderProtocol (contramapMiniProtocolCbCtx f initiator) responder
          }
   | ptcl <- ptcls
   ]
@@ -505,6 +520,5 @@ contramapInitiatorCtx f (OuroborosApplication ptcls) = OuroborosApplication
 --
 mkMiniProtocolInfos :: ForkPolicyCb
                     -> OuroborosBundle mode initiatorCtx responderCtx bytes m a b
-                    -> [MiniProtocolInfo mode]
+                    -> [MiniProtocolInfo]
 mkMiniProtocolInfos forkPolicy = foldMap (foldMap (mkMiniProtocolInfo forkPolicy))
-
