@@ -17,3 +17,4 @@ class ShowProxy p where
 
 instance ShowProxy Int where
 instance ShowProxy SlotNo where
+instance ShowProxy () where
