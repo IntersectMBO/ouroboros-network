@@ -57,7 +57,8 @@ import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Types
-import Ouroboros.Network.Context (ExpandedInitiatorContext)
+import Ouroboros.Network.Context (ExpandedInitiatorContext (..), ResponderContext (..))
+import Ouroboros.Network.ControlMessage
 import Ouroboros.Network.Diffusion.Configuration
 import Ouroboros.Network.Diffusion.Policies qualified as Diffusion.Policies
 import Ouroboros.Network.Diffusion.Types
@@ -392,7 +393,8 @@ runM Interfaces
                   idleTimeout           = Nothing,
                   withConnectionManager = localWithConnectionManager localInbInfoChannel,
                   mkConnectionHandler   = mkLocalConnectionHandler,
-                  infoChannel           = localInbInfoChannel
+                  infoChannel           = localInbInfoChannel,
+                  mkInitiatorCtx        = Nothing
                   }
               }
           (\inboundGovernorThread _ _ -> Async.wait inboundGovernorThread)
@@ -551,15 +553,13 @@ runM Interfaces
 
       let -- | parameterized version of 'withPeerStateActions'
           withPeerStateActions'
-            :: forall (muxMode :: Mx.Mode) responderCtx socket b c.
+            :: forall (muxMode :: Mx.Mode) socket b c.
                HasInitiator muxMode ~ True
-            => MuxConnectionManager
-                 muxMode socket (ExpandedInitiatorContext ntnAddr m)
-                 responderCtx ntnAddr ntnVersionData ntnVersion
-                 ByteString m a b
+            => ConnectionManagerWithExpandedCtx muxMode socket ntnAddr ntnVersionData
+                                                ntnVersion ByteString m a b
             -> (Governor.PeerStateActions
                   ntnAddr
-                  (PeerConnectionHandle muxMode responderCtx ntnAddr
+                  (PeerConnectionHandle muxMode (ResponderContext ntnAddr) ntnAddr
                      ntnVersionData ByteString m a b)
                   m
                 -> m c)
@@ -567,14 +567,15 @@ runM Interfaces
           withPeerStateActions' connectionManager =
             withPeerStateActions
               PeerStateActionsArguments {
-                    spsTracer = dtPeerSelectionActionsTracer,
+                    spsTracer            = dtPeerSelectionActionsTracer,
                     spsDeactivateTimeout = Diffusion.Policies.deactivateTimeout,
                     spsCloseConnectionTimeout =
                       Diffusion.Policies.closeConnectionTimeout,
                     spsConnectionManager = connectionManager,
-                    spsExitPolicy = exitPolicy,
-                    spsRethrowPolicy = rethrowPolicy,
-                    spsMainThreadId = mainThreadId
+                    spsExitPolicy        = exitPolicy,
+                    spsRethrowPolicy     = rethrowPolicy,
+                    spsMainThreadId      = mainThreadId,
+                    spsMkResponderCtx    = ResponderContext
                   }
 
       dnsSemaphore <- RootPeersDNS.newLedgerAndPublicRootDNSSemaphore
@@ -742,7 +743,13 @@ runM Interfaces
                    mkConnectionHandler   =
                        makeConnectionHandler' daApplicationInitiatorResponderMode
                      . MuxInitiatorResponderConnectionHandler daNtnDataFlow,
-                   infoChannel           = inboundInfoChannel
+                   infoChannel           = inboundInfoChannel,
+                   mkInitiatorCtx        =
+                     Just \connId -> ExpandedInitiatorContext {
+                       eicConnectionId    = connId,
+                       eicControlMessage  = pure Continue,
+                       eicIsBigLedgerPeer = IsNotBigLedgerPeer
+                     }
                  }
              }
 
