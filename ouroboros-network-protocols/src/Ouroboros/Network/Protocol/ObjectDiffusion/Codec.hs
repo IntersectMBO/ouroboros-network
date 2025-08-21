@@ -122,7 +122,7 @@ encodeObjectDiffusion encodeObjectId encodeObject = encode
     encode MsgInit =
       CBOR.encodeListLen 1
         <> CBOR.encodeWord 6
-    encode (MsgRequestObjectIds blocking (NumObjectIdsToAck ackNo) (NumObjectIdsToReq reqNo)) =
+    encode (MsgRequestObjectIds blocking (NumObjectIdsAck ackNo) (NumObjectIdsReq reqNo)) =
       CBOR.encodeListLen 4
         <> CBOR.encodeWord 0
         <> CBOR.encodeBool
@@ -189,8 +189,8 @@ decodeObjectDiffusion decodeObjectId decodeObject = decode
           return (SomeMessage MsgInit)
         (SingIdle, 4, 0) -> do
           blocking <- CBOR.decodeBool
-          ackNo <- NumObjectIdsToAck <$> CBOR.decodeWord16
-          reqNo <- NumObjectIdsToReq <$> CBOR.decodeWord16
+          ackNo <- NumObjectIdsAck <$> CBOR.decodeWord16
+          reqNo <- NumObjectIdsReq <$> CBOR.decodeWord16
           return $! case blocking of
             True -> SomeMessage (MsgRequestObjectIds SingBlocking ackNo reqNo)
             False -> SomeMessage (MsgRequestObjectIds SingNonBlocking ackNo reqNo)

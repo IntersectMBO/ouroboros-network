@@ -158,28 +158,28 @@ data StBlockingStyle where
   -- | In this state the peer must reply. There is a timeout.
   StNonBlocking :: StBlockingStyle
 
-newtype NumObjectIdsAck = NumObjectIdsToAck {getNumObjectIdsToAck :: Word16}
+newtype NumObjectIdsAck = NumObjectIdsAck {getNumObjectIdsAck :: Word16}
   deriving (Eq, Ord, NFData, Generic)
   deriving newtype (Num, Enum, Real, Integral, Bounded, NoThunks)
   deriving (Semigroup) via (Sum Word16)
   deriving (Monoid) via (Sum Word16)
   deriving (Show) via (Quiet NumObjectIdsAck  )
 
-newtype NumObjectIdsReq = NumObjectIdsToReq {getNumObjectIdsToReq :: Word16}
+newtype NumObjectIdsReq = NumObjectIdsReq {getNumObjectIdsReq :: Word16}
   deriving (Eq, Ord, NFData, Generic)
   deriving newtype (Num, Enum, Real, Integral, Bounded, NoThunks)
   deriving (Semigroup) via (Sum Word16)
   deriving (Monoid) via (Sum Word16)
   deriving (Show) via (Quiet NumObjectIdsReq  )
 
-newtype NumObjectsReq = NumObjectsToReq {getNumObjectsToReq :: Word16}
+newtype NumObjectsReq = NumObjectsReq {getNumObjectsReq :: Word16}
   deriving (Eq, Ord, NFData, Generic)
   deriving newtype (Num, Enum, Real, Integral, Bounded, NoThunks)
   deriving (Semigroup) via (Sum Word16)
   deriving (Monoid) via (Sum Word16)
   deriving (Show) via (Quiet NumObjectsReq  )
 
-newtype NumObjectsOutstanding = NumObjectsInFifo {getNumObjectsInFifo :: Word16}
+newtype NumObjectsOutstanding = NumObjectsOutstanding {getNumObjectsOutstanding :: Word16}
   deriving (Eq, Ord, NFData, Generic)
   deriving newtype (Num, Enum, Real, Integral, Bounded, NoThunks)
   deriving (Semigroup) via (Sum Word16)
